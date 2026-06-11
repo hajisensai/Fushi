@@ -80,6 +80,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   final CardDropRegistry<VideoBookRow> _cardDropRegistry =
       CardDropRegistry<VideoBookRow>();
 
+  /// 批量选择模式（与书架 tab 对齐）。开启后卡片点击切换勾选、长按/拖放禁用，
+  /// 底部弹批量操作栏（打标签 / 删除）。视频书是扁平 bookUid（不像书架有
+  /// epub `mediaIdentifier` + `srt_` 双类前缀），故选择集直接用 bookUid 字符串。
+  bool _selectionMode = false;
+  final Set<String> _selectedUids = <String>{};
+
+  /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
+  List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
+
   @override
   void initState() {
     super.initState();
@@ -137,6 +146,116 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     ref.invalidate(filteredVideoBookUidsProvider);
     ref.invalidate(allTagsProvider);
     _refresh();
+  }
+
+  // ── 批量选择（与书架 tab 对齐）────────────────────────────────────
+  // 书架 [reader_hibiki_history_page] 早有这套（_selectionMode / _selectedKeys /
+  // 批量打标签 + 删除）；视频 tab 共用同一 [HibikiTagFilterBar]（其 selectionMode /
+  // onToggleSelectionMode 入参书架已用、视频此前没传）。这里给视频补上 wiring，
+  // 批量操作语义对齐书架（批量打标签 + 批量删除），但因视频书是扁平 bookUid，
+  // 选择集与 picker 比书架简单一层（无 epub/srt 双类分支）。
+
+  void _toggleSelectionMode() {
+    setState(() {
+      _selectionMode = !_selectionMode;
+      _selectedUids.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedUids.clear();
+    });
+  }
+
+  void _toggleSelection(String bookUid) {
+    setState(() {
+      if (!_selectedUids.remove(bookUid)) {
+        _selectedUids.add(bookUid);
+      }
+    });
+  }
+
+  void _selectAllVisible() {
+    setState(() {
+      for (final VideoBookRow book in _visibleVideos) {
+        _selectedUids.add(book.bookUid);
+      }
+    });
+  }
+
+  void _invertSelection() {
+    setState(() {
+      final Set<String> all = <String>{
+        for (final VideoBookRow book in _visibleVideos) book.bookUid,
+      };
+      final Set<String> inverted = all.difference(_selectedUids);
+      _selectedUids
+        ..clear()
+        ..addAll(inverted);
+    });
+  }
+
+  /// 批量删除选中视频书：确认 → 逐个 [VideoBookRepository.deleteVideoBook] →
+  /// 刷新列表/标签映射 → 退出选择态 → toast。
+  Future<void> _batchDeleteConfirm() async {
+    final int count = _selectedUids.length;
+    if (count == 0) return;
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.dialog_delete),
+        content: Text(t.batch_delete_confirm(n: count)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              t.dialog_delete,
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final Set<String> toDelete = Set<String>.of(_selectedUids);
+    int deleted = 0;
+    for (final String bookUid in toDelete) {
+      await widget.repo.deleteVideoBook(bookUid);
+      deleted++;
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    _refreshAfterTagChange();
+    HibikiToast.show(msg: t.batch_delete_success(n: deleted));
+  }
+
+  /// 批量打标签：弹 [_VideoBatchTagPickerDialog]（每个标签三态：保持/添加/移除），
+  /// 应用到所有选中视频书（经 [HibikiDatabase.addTagToVideoBook] /
+  /// [HibikiDatabase.removeTagFromVideoBook]），关闭后刷新映射。
+  Future<void> _batchShowTagPicker() async {
+    if (_selectedUids.isEmpty) return;
+    final List<BookTagRow>? allTags = ref.read(allTagsProvider).valueOrNull;
+    if (allTags == null || allTags.isEmpty) {
+      HibikiToast.show(msg: t.tag_no_tags_hint);
+      return;
+    }
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => _VideoBatchTagPickerDialog(
+        allTags: allTags,
+        selectedUids: Set<String>.of(_selectedUids),
+        database: ref.read(appProvider).database,
+      ),
+    );
+    if (!mounted) return;
+    _refreshAfterTagChange();
   }
 
   Future<void> _openImport() async {
@@ -623,6 +742,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               Expanded(
                 child: _buildVideoLibraryBody(),
               ),
+              if (_selectionMode) _buildBatchActionBar(),
             ],
           ),
         ),
@@ -645,6 +765,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             : all
                 .where((VideoBookRow b) => filter.contains(b.bookUid))
                 .toList();
+        // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。同步赋字段
+        // （不 setState），仅在批量操作回调时读取。
+        _visibleVideos = books;
         return FutureBuilder<_RemoteVideoState?>(
           future: _remoteFuture,
           builder: (BuildContext context,
@@ -872,14 +995,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   /// 标签筛选栏：与书架完全一致——复用 [HibikiTagFilterBar]（内联 chip 点选筛选、
-  /// 长按拖拽重排、末尾「管理标签」齿轮）。共享 [selectedTagIdsProvider] 与书架联动；
-  /// 视频 tab 无批量选择，故不传 onToggleSelectionMode。无标签时整栏隐藏。
+  /// 长按拖拽重排、末尾「管理标签」齿轮 + 「批量选择」动作）。共享
+  /// [selectedTagIdsProvider] 与书架联动；批量选择动作经 [onToggleSelectionMode]
+  /// 与书架对齐（TODO-063：此前视频 tab 没传，缺了「标签设置旁的选择」）。
+  ///
+  /// 渲染条件：与书架 [reader_hibiki_history_page._buildTagBar] 一致——**永远渲染
+  /// 整栏**（不再「无标签隐藏」），批量选择按钮才能常驻露出（否则空标签库点不到
+  /// 批量入口、无法批量删除）。组件内部「管理标签」齿轮仍只在有标签时显示，故无
+  /// 标签时整栏只剩「批量选择」按钮。
   Widget _buildTagFilterBar(List<BookTagRow> tags) {
-    if (tags.isEmpty) return const SizedBox.shrink();
     return HibikiTagFilterBar(
       tags: tags,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
+      selectionMode: _selectionMode,
+      onToggleSelectionMode: _toggleSelectionMode,
       onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
     );
   }
@@ -965,56 +1095,167 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
-    final Widget card = BookDragTarget(
-      bookId: book.bookUid,
-      onTagDropped: (BookTagRow tag) => _addTagToVideoBook(book.bookUid, tag),
-      child: HibikiCard(
-        key: ValueKey<String>('home_video_${book.bookUid}'),
-        focusId: HibikiFocusId('home-video-${book.bookUid}'),
-        padding: EdgeInsets.zero,
-        onTap: () => _open(book),
-        onLongPress: () => _showVideoMenu(book),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _buildCover(book),
-                  if (tags.isNotEmpty)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: _buildTagLabels(tags),
+    final bool selected = _selectedUids.contains(book.bookUid);
+    final HibikiCard hibikiCard = HibikiCard(
+      key: ValueKey<String>('home_video_${book.bookUid}'),
+      focusId: HibikiFocusId('home-video-${book.bookUid}'),
+      padding: EdgeInsets.zero,
+      selected: selected,
+      // 选择态：点击切换勾选、长按禁用（与书架 _buildBookCard 一致）。
+      onTap: _selectionMode
+          ? () => _toggleSelection(book.bookUid)
+          : () => _open(book),
+      onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                _buildCover(book),
+                if (tags.isNotEmpty)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: _buildTagLabels(tags),
+                  ),
+                // 播放列表角标（≥2 集才算播放列表）：右上角「▶ N」徽标，与单视频
+                // 一眼区分（C 需求②）。
+                if (episodeCount >= 2)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: _buildPlaylistBadge(episodeCount),
+                  ),
+                if (_selectionMode)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: _buildSelectionCheck(selected),
+                  ),
+                if (selected)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.12),
+                        ),
+                      ),
                     ),
-                  // 播放列表角标（≥2 集才算播放列表）：右上角「▶ N」徽标，与单视频
-                  // 一眼区分（C 需求②）。
-                  if (episodeCount >= 2)
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: _buildPlaylistBadge(episodeCount),
-                    ),
-                ],
-              ),
+                  ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Text(
-                book.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Text(
+              book.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+    // 选择态下禁用标签拖放命中（避免选卡时误触拖标签）。
+    final Widget card = _selectionMode
+        ? hibikiCard
+        : BookDragTarget(
+            bookId: book.bookUid,
+            onTagDropped: (BookTagRow tag) =>
+                _addTagToVideoBook(book.bookUid, tag),
+            child: hibikiCard,
+          );
     return CardDropZone<VideoBookRow>(
       meta: book,
       child: card,
+    );
+  }
+
+  /// 批量选择勾选标记：选中实心对勾，未选空心圆（与书架 _buildBookCard 一致）。
+  Widget _buildSelectionCheck(bool selected) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color selectionColor = tokens.surfaces.primary;
+    return IgnorePointer(
+      child: Container(
+        decoration: BoxDecoration(
+          color: selected
+              ? selectionColor
+              : tokens.surfaces.page.withValues(alpha: 0.7),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? selectionColor : tokens.surfaces.outline,
+            width: 1.5,
+          ),
+        ),
+        padding: EdgeInsets.all(tokens.spacing.gap / 4),
+        child: Icon(
+          Icons.check,
+          size: tokens.spacing.gap * 1.75,
+          color: selected
+              ? Theme.of(context).colorScheme.onPrimary
+              : Colors.transparent,
+        ),
+      ),
+    );
+  }
+
+  /// 批量操作栏（底部，仅选择态显示）：选中计数 + 全选 / 反选 + 打标签 + 删除。
+  /// 与书架 [reader_hibiki_history_page._buildBatchActionBar] 对齐。
+  Widget _buildBatchActionBar() {
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Material(
+      elevation: 6,
+      color: theme.colorScheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.gap,
+          ),
+          child: Row(
+            children: <Widget>[
+              Text(
+                t.batch_selected_count(n: _selectedUids.length),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(width: tokens.spacing.gap),
+              TextButton(
+                onPressed: _selectAllVisible,
+                child: Text(t.batch_select_all),
+              ),
+              TextButton(
+                onPressed: _invertSelection,
+                child: Text(t.batch_invert_selection),
+              ),
+              const Spacer(),
+              HibikiIconButton(
+                enabled: _selectedUids.isNotEmpty,
+                onTap: _batchShowTagPicker,
+                icon: Icons.sell_outlined,
+                tooltip: t.tag_label,
+              ),
+              SizedBox(width: tokens.spacing.gap / 2),
+              HibikiIconButton(
+                enabled: _selectedUids.isNotEmpty,
+                onTap: _batchDeleteConfirm,
+                icon: Icons.delete_outline,
+                tooltip: t.dialog_delete,
+                enabledColor: theme.colorScheme.error,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1082,6 +1323,223 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       child: Center(
         child: Icon(Icons.movie_outlined,
             size: 40, color: colors.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+/// 视频批量打标签的三态意图：保持不变 / 添加该标签 / 移除该标签。
+enum _VideoBatchTagIntent { keep, add, remove }
+
+/// 视频 tab 批量打标签对话框（TODO-063）。对一组选中视频书（扁平 bookUid）逐标签
+/// 设三态意图，应用时对每个 bookUid 调 [HibikiDatabase.addTagToVideoBook] /
+/// [HibikiDatabase.removeTagFromVideoBook]。与书架的 `_BatchTagPickerDialog` 同语义，
+/// 但视频是单一 uid 集合（无 epub `mediaIdentifier` + `srt_` 双类分支），故独立、更简单。
+class _VideoBatchTagPickerDialog extends StatefulWidget {
+  const _VideoBatchTagPickerDialog({
+    required this.allTags,
+    required this.selectedUids,
+    required this.database,
+  });
+
+  final List<BookTagRow> allTags;
+  final Set<String> selectedUids;
+  final HibikiDatabase database;
+
+  @override
+  State<_VideoBatchTagPickerDialog> createState() =>
+      _VideoBatchTagPickerDialogState();
+}
+
+class _VideoBatchTagPickerDialogState
+    extends State<_VideoBatchTagPickerDialog> {
+  final Set<int> _addTagIds = <int>{};
+  final Set<int> _removeTagIds = <int>{};
+
+  Future<void> _apply() async {
+    final HibikiDatabase db = widget.database;
+
+    for (final int tagId in _addTagIds) {
+      for (final String bookUid in widget.selectedUids) {
+        await db.addTagToVideoBook(bookUid, tagId);
+      }
+    }
+    for (final int tagId in _removeTagIds) {
+      for (final String bookUid in widget.selectedUids) {
+        await db.removeTagFromVideoBook(bookUid, tagId);
+      }
+    }
+
+    if (!mounted) return;
+    for (final int tagId in _addTagIds) {
+      final BookTagRow tag =
+          widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
+      HibikiToast.show(
+        msg: t.batch_tag_added(name: tag.name, n: widget.selectedUids.length),
+      );
+    }
+    for (final int tagId in _removeTagIds) {
+      final BookTagRow tag =
+          widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
+      HibikiToast.show(
+        msg: t.batch_tag_removed(name: tag.name, n: widget.selectedUids.length),
+      );
+    }
+    Navigator.pop(context);
+  }
+
+  void _setTagIntent(BookTagRow tag, _VideoBatchTagIntent intent) {
+    setState(() {
+      _addTagIds.remove(tag.id);
+      _removeTagIds.remove(tag.id);
+      switch (intent) {
+        case _VideoBatchTagIntent.keep:
+          break;
+        case _VideoBatchTagIntent.add:
+          _addTagIds.add(tag.id);
+        case _VideoBatchTagIntent.remove:
+          _removeTagIds.add(tag.id);
+      }
+    });
+  }
+
+  _VideoBatchTagIntent _tagIntent(BookTagRow tag) {
+    if (_addTagIds.contains(tag.id)) return _VideoBatchTagIntent.add;
+    if (_removeTagIds.contains(tag.id)) return _VideoBatchTagIntent.remove;
+    return _VideoBatchTagIntent.keep;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool canApply = _addTagIds.isNotEmpty || _removeTagIds.isNotEmpty;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.batch_tag_title,
+        leadingIcon: Icons.sell_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: ListView.builder(
+          shrinkWrap: true,
+          itemCount: widget.allTags.length,
+          itemBuilder: (BuildContext _, int i) {
+            final BookTagRow tag = widget.allTags[i];
+            return _VideoBatchTagIntentRow(
+              tag: tag,
+              selected: _tagIntent(tag),
+              onChanged: (_VideoBatchTagIntent intent) =>
+                  _setTagIntent(tag, intent),
+            );
+          },
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: canApply ? _apply : null,
+              child: Text(t.batch_tag_apply),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 单行：标签名 + 三态 segmented（保持 / 添加 / 移除）。Material 图标统一（视频
+/// tab 无需 Cupertino 分支）。
+class _VideoBatchTagIntentRow extends StatelessWidget {
+  const _VideoBatchTagIntentRow({
+    required this.tag,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final BookTagRow tag;
+  final _VideoBatchTagIntent selected;
+  final ValueChanged<_VideoBatchTagIntent> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color tagColor = Color(tag.colorValue);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return AdaptiveSettingsRow(
+      title: tag.name,
+      icon: Icons.sell_outlined,
+      controlBelow: true,
+      trailing: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: tagColor,
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(width: 12, height: 12),
+            ),
+            SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
+            Flexible(
+              child: adaptiveSegmentedButton<_VideoBatchTagIntent>(
+                context: context,
+                segments: <ButtonSegment<_VideoBatchTagIntent>>[
+                  ButtonSegment<_VideoBatchTagIntent>(
+                    value: _VideoBatchTagIntent.keep,
+                    tooltip: t.batch_tag_keep,
+                    icon: const Icon(Icons.horizontal_rule_outlined, size: 16),
+                  ),
+                  ButtonSegment<_VideoBatchTagIntent>(
+                    value: _VideoBatchTagIntent.add,
+                    tooltip: t.batch_tag_add,
+                    icon: const Icon(Icons.add, size: 16),
+                  ),
+                  ButtonSegment<_VideoBatchTagIntent>(
+                    value: _VideoBatchTagIntent.remove,
+                    tooltip: t.batch_tag_remove,
+                    icon: Icon(
+                      Icons.remove,
+                      size: 16,
+                      color: selected == _VideoBatchTagIntent.remove
+                          ? theme.colorScheme.error
+                          : null,
+                    ),
+                  ),
+                ],
+                selected: <_VideoBatchTagIntent>{selected},
+                onSelectionChanged: (Set<_VideoBatchTagIntent> values) {
+                  if (values.isNotEmpty) onChanged(values.first);
+                },
+                style: kSettingsSegmentedStyle,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

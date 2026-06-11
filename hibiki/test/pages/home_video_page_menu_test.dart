@@ -218,4 +218,122 @@ void main() {
     expect(mappings, hasLength(1));
     expect(mappings.single.videoBookUid, 'video/1');
   });
+
+  // ── TODO-063 视频批量选择（标签栏旁的「选择」+ 批量打标签/删除）──────────
+
+  /// 点标签栏旁的「批量选择」按钮进入选择态。该按钮是 [HibikiTagFilterBar] 末尾的
+  /// checklist 图标按钮（tooltip = batch_select）。
+  Future<void> enterSelectionMode(WidgetTester tester) async {
+    final Finder selectBtn = find.descendant(
+      of: find.byType(HibikiTagFilterBar),
+      matching: find.byIcon(Icons.checklist_outlined),
+    );
+    expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮（用户报的「视频少了选择」）');
+    await tester.tap(selectBtn);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('标签栏旁的「选择」按钮存在，进入选择态后出现批量操作栏', (WidgetTester tester) async {
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    // 进入前没有批量操作栏（按计数文案判定）。
+    expect(find.text(t.batch_selected_count(n: 0)), findsNothing);
+
+    await enterSelectionMode(tester);
+
+    // 进入后底部批量操作栏出现（0 选中）。
+    expect(find.text(t.batch_selected_count(n: 0)), findsOneWidget);
+    expect(find.text(t.batch_select_all), findsOneWidget);
+    expect(find.text(t.batch_invert_selection), findsOneWidget);
+  });
+
+  testWidgets('选择态点视频卡勾选 → 批量删除真删视频书', (WidgetTester tester) async {
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/1'),
+      title: Value('Episode One'),
+      videoPath: Value('/abs/ep1.mp4'),
+    ));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/2'),
+      title: Value('Episode Two'),
+      videoPath: Value('/abs/ep2.mp4'),
+    ));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect((await VideoBookRepository(db).listAll()).length, 2);
+
+    await enterSelectionMode(tester);
+
+    // 选择态下点卡片切换勾选（不再打开播放页）。
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget);
+
+    // 点批量删除（垃圾桶）→ 确认对话框 → 删除。
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    // 确认对话框的「删除」按钮（AlertDialog 内）。
+    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.pumpAndSettle();
+
+    final List<VideoBookRow> remaining =
+        await VideoBookRepository(db).listAll();
+    expect(remaining.map((VideoBookRow b) => b.bookUid), <String>['video/2'],
+        reason: 'video/1 被批量删除，video/2 保留');
+  });
+
+  testWidgets('选择态批量打标签 → 真写视频标签映射', (WidgetTester tester) async {
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/1'),
+      title: Value('Episode One'),
+      videoPath: Value('/abs/ep1.mp4'),
+    ));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/2'),
+      title: Value('Episode Two'),
+      videoPath: Value('/abs/ep2.mp4'),
+    ));
+    final int tagId = await db.createTag('Anime', 0xFF2196F3);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await enterSelectionMode(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+    // 点批量打标签按钮（批量栏的 sell_outlined）→ 打开三态 picker。dialog 打开前
+    // 页面上只有批量栏一个 sell_outlined（卡片标签层用 HibikiTagChip，不是该图标）。
+    await tester.tap(find.byIcon(Icons.sell_outlined).last);
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_tag_title), findsOneWidget);
+
+    // 把「Anime」设为「添加」（segmented 的 + 段）：在 SegmentedButton 内定位 + 图标，
+    // 避开页头导入按钮（也是 Icons.add，TODO-064 起恒渲染）。
+    final Finder segmentedButton = find.byWidgetPredicate(
+      (Widget w) => w is SegmentedButton,
+    );
+    expect(segmentedButton, findsWidgets);
+    await tester.tap(find.descendant(
+      of: segmentedButton.first,
+      matching: find.byIcon(Icons.add),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.batch_tag_apply));
+    await tester.pumpAndSettle();
+
+    expect(
+      (await db.getTagsForVideoBook('video/1')).map((BookTagRow x) => x.id),
+      contains(tagId),
+    );
+    expect(
+      (await db.getTagsForVideoBook('video/2')).map((BookTagRow x) => x.id),
+      contains(tagId),
+    );
+  });
 }

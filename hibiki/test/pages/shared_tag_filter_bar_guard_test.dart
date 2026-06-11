@@ -23,7 +23,7 @@ void main() {
     expect(src.contains('LongPressDraggable<BookTagRow>'), isTrue,
         reason: '长按拖拽重排');
     expect(src.contains('TagManagementPage'), isTrue, reason: '末尾管理标签动作');
-    // 批量选择可选：视频 tab 不传，书架传。
+    // 批量选择可选入参：书架与视频 tab 都传（TODO-063 起视频也启用批量选择）。
     expect(src.contains('onToggleSelectionMode'), isTrue);
   });
 
@@ -43,5 +43,23 @@ void main() {
     // 旧实现：筛选图标打开 TagFilterSheet 的 modal。
     expect(video.contains('builder: (_) => const TagFilterSheet()'), isFalse,
         reason: '不再用「筛选图标开 sheet」的旧标签栏样式');
+  });
+
+  test('视频 tab 启用批量选择（标签栏旁的「选择」+ 批量打标签/删除）', () {
+    final String video =
+        _read('lib/src/pages/implementations/home_video_page.dart');
+    // 标签栏旁的批量选择按钮：把 selectionMode / onToggleSelectionMode 传给共享组件。
+    expect(video.contains('selectionMode: _selectionMode'), isTrue,
+        reason: 'TODO-063：视频标签栏旁要有「选择」按钮，缺它就是用户报的「视频少了选择」');
+    expect(
+        video.contains('onToggleSelectionMode: _toggleSelectionMode'), isTrue,
+        reason: '批量选择动作要接到 toggle 回调');
+    // 批量操作语义对齐书架：批量打标签 + 批量删除。
+    expect(video.contains('_buildBatchActionBar'), isTrue, reason: '底部批量操作栏');
+    expect(video.contains('_batchShowTagPicker'), isTrue, reason: '批量打标签入口');
+    expect(video.contains('_batchDeleteConfirm'), isTrue, reason: '批量删除入口');
+    expect(video.contains('addTagToVideoBook'), isTrue,
+        reason: '批量打标签真写视频标签映射');
+    expect(video.contains('deleteVideoBook'), isTrue, reason: '批量删除真删视频书');
   });
 }

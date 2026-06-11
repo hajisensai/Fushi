@@ -38,11 +38,24 @@ void main() {
     final String src = homeVideoSrc;
 
     test('视频卡 onLongPress 走菜单，不再等于打开播放页', () {
-      expect(src.contains('onLongPress: () => _showVideoMenu(book)'), isTrue,
-          reason: '长按必须弹菜单');
+      // TODO-063 起 onLongPress 是三元（选择态禁用长按、非选择态弹菜单），故不再锁
+      // 死 `onLongPress: () => _showVideoMenu(book)` 字面量前缀，只断言长按指向
+      // _showVideoMenu（弹菜单）这条不变式。
+      expect(src.contains('_showVideoMenu(book)'), isTrue, reason: '长按必须弹菜单');
       // 旧 bug：onLongPress 与 onTap 一样调 _open。
       expect(src.contains('onLongPress: () => _open(book)'), isFalse,
           reason: '长按不能再只是打开视频（无菜单）');
+    });
+
+    test('选择态长按禁用、点击改切换勾选（批量选择，TODO-063）', () {
+      // 选择态下长按必须禁用（避免与勾选冲突），点击切换勾选而非打开播放页。
+      expect(
+          src.contains(
+              'onLongPress: _selectionMode ? null : () => _showVideoMenu(book)'),
+          isTrue,
+          reason: '选择态长按禁用，非选择态才弹菜单');
+      expect(src.contains('_toggleSelection(book.bookUid)'), isTrue,
+          reason: '选择态点卡片切换勾选');
     });
 
     test('菜单含 标签 / 封面 / 删除 三项动作', () {
