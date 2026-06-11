@@ -1650,9 +1650,17 @@ class AppModel with ChangeNotifier {
 
   /// The lookup/segmentation language. Only one language is registered
   /// (Japanese) and there is no picker, so this returns the sole registered
-  /// language directly — no persisted `target_language` pref, no map lookup
-  /// that could miss and crash.
-  Language get targetLanguage => languages.values.first;
+  /// language directly — no persisted `target_language` pref, no `late`
+  /// [languages] map lookup that could miss and crash.
+  ///
+  /// Returning [JapaneseLanguage.instance] directly (instead of
+  /// `languages.values.first`) removes the init-window race: [languages] is a
+  /// `late` field only assigned in [populateLanguages] partway through
+  /// [initialise], so any widget that rebuilds during early init (before
+  /// [populateLanguages]) and reads [targetLanguage] would throw
+  /// `LateInitializationError`. [populateLanguages] registers exactly this one
+  /// instance, so the value is identical at every point in the lifecycle.
+  Language get targetLanguage => JapaneseLanguage.instance;
 
   String get lastSelectedDeckName => prefsRepo.lastSelectedDeckName;
 

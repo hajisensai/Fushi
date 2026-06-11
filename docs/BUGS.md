@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 190 条。点号进各自文件。
+> 共 191 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-194](bugs/BUG-194-languages-late-init.md) | ✅ | ✅ | LateInitializationError: languages map accessed before populateLanguages during init |
 | [BUG-193](bugs/BUG-193-popup-engine-inappwebview-blank.md) | ✅ | ✅ | 外部查词弹窗结果空白（popup 引擎漏注册 inappwebview） |
 | [BUG-192](bugs/BUG-192-fast-exit.md) | ✅ | ✅ | 桌面 app 退出慢（几秒~十几秒） |
 | [BUG-191](bugs/BUG-191-video-autoread-setting.md) | ✅ | ✅ | 关闭查词时自动阅读后视频字幕查词仍自动阅读 |
