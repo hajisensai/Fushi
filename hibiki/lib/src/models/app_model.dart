@@ -597,6 +597,7 @@ class AppModel with ChangeNotifier {
     final termPaths = <String>[];
     final freqPaths = <String>[];
     final pitchPaths = <String>[];
+    final kanjiPaths = <String>[];
     for (final d in dictRepo.dictionaries) {
       final p = path.join(dictionaryResourceDirectory.path, d.name);
       if (!Directory(p).existsSync()) continue;
@@ -610,8 +611,15 @@ class AppModel with ChangeNotifier {
       final bool hidden = d.isHidden(targetLanguage);
       switch (d.type) {
         case DictionaryType.term:
-        case DictionaryType.kanji:
           termPaths.add(p);
+        case DictionaryType.kanji:
+          // Kanji dictionaries go into their own engine bucket so a
+          // single-character lookup resolves through query_kanji (radical /
+          // strokes / on-kun readings) instead of being mis-routed through the
+          // term index. A hidden kanji dictionary, like freq/pitch, surfaces
+          // straight from the engine with no render-time hidden filter, so gate
+          // it on isHidden (TODO-094 S4, mirrors BUG-177).
+          if (!hidden) kanjiPaths.add(p);
         case DictionaryType.frequency:
           if (!hidden) freqPaths.add(p);
         case DictionaryType.pitch:
@@ -626,6 +634,7 @@ class AppModel with ChangeNotifier {
       termPaths: termPaths,
       freqPaths: freqPaths,
       pitchPaths: pitchPaths,
+      kanjiPaths: kanjiPaths,
     );
   }
 
@@ -639,6 +648,7 @@ class AppModel with ChangeNotifier {
     final termPaths = <String>[];
     final freqPaths = <String>[];
     final pitchPaths = <String>[];
+    final kanjiPaths = <String>[];
     for (var i = 0; i < dictList.length; i++) {
       if (!existsResults[i]) continue;
       final p = path.join(dictionaryResourceDirectory.path, dictList[i].name);
@@ -647,8 +657,11 @@ class AppModel with ChangeNotifier {
       final bool hidden = dictList[i].isHidden(targetLanguage);
       switch (dictList[i].type) {
         case DictionaryType.term:
-        case DictionaryType.kanji:
           termPaths.add(p);
+        case DictionaryType.kanji:
+          // Kanji dictionaries go into their own engine bucket — see the sync
+          // _rebuildDictPathsCache for the full rationale (TODO-094 S4).
+          if (!hidden) kanjiPaths.add(p);
         case DictionaryType.frequency:
           if (!hidden) freqPaths.add(p);
         case DictionaryType.pitch:
@@ -662,6 +675,7 @@ class AppModel with ChangeNotifier {
       termPaths: termPaths,
       freqPaths: freqPaths,
       pitchPaths: pitchPaths,
+      kanjiPaths: kanjiPaths,
     );
   }
 
@@ -1958,6 +1972,43 @@ class AppModel with ChangeNotifier {
 
   /// Gets the raw unprocessed entries straight from a dictionary database
   /// given a search term. This will be processed later for user viewing.
+  /// True when [text] is exactly one CJK ideograph (a single kanji), counted by
+  /// runes so astral-plane characters (CJK Extension B+, encoded as a surrogate
+  /// pair in a Dart String) are treated as one character rather than two. Only a
+  /// single-kanji lookup is eligible for a kanji-dictionary query; multi-character
+  /// terms and kana/latin singletons skip it so the term-lookup path keeps its
+  /// current zero-overhead behaviour.
+  static bool isSingleKanji(String text) {
+    final List<int> runes = text.runes.toList();
+    if (runes.length != 1) return false;
+    return _isKanjiCodePoint(runes.single);
+  }
+
+  /// Unicode block test for Han ideographs (no kana_kit dependency in this
+  /// layer). Covers the CJK Unified Ideographs block, its common extensions, and
+  /// compatibility ideographs — the same ranges a kanji dictionary indexes.
+  static bool _isKanjiCodePoint(int cp) {
+    return (cp >= 0x4E00 && cp <= 0x9FFF) || // CJK Unified Ideographs
+        (cp >= 0x3400 && cp <= 0x4DBF) || // Extension A
+        (cp >= 0x20000 && cp <= 0x2A6DF) || // Extension B
+        (cp >= 0x2A700 && cp <= 0x2EBEF) || // Extensions C–F
+        (cp >= 0x30000 && cp <= 0x3134F) || // Extensions G–H
+        (cp >= 0xF900 && cp <= 0xFAFF) || // CJK Compatibility Ideographs
+        (cp >= 0x2F800 && cp <= 0x2FA1F); // Compatibility Ideographs Supplement
+  }
+
+  /// Queries the kanji dictionary bucket for a single-character lookup and
+  /// returns the per-character kanji results to attach to a
+  /// [DictionarySearchResult]. Returns an empty list for multi-character terms,
+  /// non-kanji singletons, or when no kanji dictionary is loaded — so the term
+  /// lookup path is never slowed for ordinary word lookups. The engine call is
+  /// only made for a real single kanji (TODO-094 S4).
+  List<HoshiKanjiResult> queryKanjiForTerm(String searchTerm) {
+    if (!isSingleKanji(searchTerm)) return const <HoshiKanjiResult>[];
+    if (!HoshiDicts.isInitialized) return const <HoshiKanjiResult>[];
+    return HoshiDicts.instance.queryKanji(searchTerm);
+  }
+
   Future<DictionarySearchResult> searchDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
@@ -2021,6 +2072,13 @@ class AppModel with ChangeNotifier {
       return DictionarySearchResult(searchTerm: searchTerm);
     }
 
+    // Kanji dictionary lookup is orthogonal to the term index: a single kanji
+    // can be both a term headword and a kanji entry, so we query the kanji
+    // bucket independently and attach the results to whatever term result comes
+    // back (or surface a kanji-only result when no term matches). Computed once
+    // here so all local FFI return paths below carry the same kanji payload.
+    final List<HoshiKanjiResult> kanjiResults = queryKanjiForTerm(searchTerm);
+
     List<HoshiLookupResult>? ffiResults =
         dictRepo.getCachedFfiLookup(searchTerm);
     DictionarySearchResult? result;
@@ -2037,6 +2095,7 @@ class AppModel with ChangeNotifier {
         maxResults: maximumDictionarySearchResults,
         maxTerms: effectiveMaxTerms,
       );
+      result = result.withKanjiResults(kanjiResults);
       swBuild.stop();
       debugPrint(
           '[dict-perf] FFI cache HIT, buildResult+popupJson: ${swBuild.elapsedMilliseconds}ms entries=${result.entries.length}');
@@ -2058,6 +2117,7 @@ class AppModel with ChangeNotifier {
           maxResults: maximumDictionarySearchResults,
           maxTerms: effectiveMaxTerms,
         );
+        result = result.withKanjiResults(kanjiResults);
       }
       swLookup.stop();
       debugPrint(
@@ -2071,6 +2131,17 @@ class AppModel with ChangeNotifier {
     if (result != null && result.entries.isNotEmpty) {
       dictRepo.cacheSearchResult(cacheKey, result);
       return result;
+    }
+    // No term match, but a single-kanji lookup hit the kanji dictionary: return
+    // a kanji-only result so the popup can still render the kanji card. Cached
+    // like a term result so a repeat lookup is served from cache.
+    if (kanjiResults.isNotEmpty) {
+      final DictionarySearchResult kanjiOnly = DictionarySearchResult(
+        searchTerm: searchTerm,
+        kanjiResults: kanjiResults,
+      );
+      dictRepo.cacheSearchResult(cacheKey, kanjiOnly);
+      return kanjiOnly;
     }
     if (allowRemoteLookup && !tryRemoteFirst) {
       final DictionarySearchResult? remoteResult =

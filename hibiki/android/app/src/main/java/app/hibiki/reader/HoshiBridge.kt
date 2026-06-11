@@ -34,9 +34,9 @@ object HoshiBridge {
                 "term" -> nativeAddTermDict(handle, path)
                 "frequency" -> nativeAddFreqDict(handle, path)
                 "pitch" -> nativeAddPitchDict(handle, path)
-                // S3 wires the route; PopupDbReader still maps "kanji" -> "term"
-                // (pre-S3 shim) so this branch stays dormant until S4 makes the
-                // DB/reader emit a real "kanji" type for the kanji bucket.
+                // S4: PopupDbReader now emits a real "kanji" type for the
+                // kanji bucket, so this branch routes kanji dictionaries to the
+                // native kanji index (TODO-094 S4).
                 "kanji" -> nativeAddKanjiDict(handle, path)
             }
         }

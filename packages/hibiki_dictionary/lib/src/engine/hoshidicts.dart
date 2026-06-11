@@ -119,6 +119,23 @@ class HoshiKanjiResult {
     required this.meanings,
     required this.dictName,
   });
+
+  /// Reconstructs a kanji result from a map decoded out of a
+  /// [DictionarySearchResult] JSON payload (e.g. when the popup process
+  /// receives a serialized search result across the process boundary). Missing
+  /// or null fields degrade to empty/zero so a partial payload never throws.
+  factory HoshiKanjiResult.fromMap(Map<String, dynamic> map) {
+    return HoshiKanjiResult(
+      character: map['character'] as String? ?? '',
+      onyomi: map['onyomi'] as String? ?? '',
+      kunyomi: map['kunyomi'] as String? ?? '',
+      radical: map['radical'] as String? ?? '',
+      strokes: (map['strokes'] as num?)?.toInt() ?? 0,
+      meanings: List<String>.from(map['meanings'] as List? ?? const <String>[]),
+      dictName: map['dictName'] as String? ?? '',
+    );
+  }
+
   final String character;
   final String onyomi;
   final String kunyomi;
@@ -126,6 +143,16 @@ class HoshiKanjiResult {
   final int strokes;
   final List<String> meanings;
   final String dictName;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'character': character,
+        'onyomi': onyomi,
+        'kunyomi': kunyomi,
+        'radical': radical,
+        'strokes': strokes,
+        'meanings': meanings,
+        'dictName': dictName,
+      };
 }
 
 // ── conversion helpers ──────────────────────────────────────────────

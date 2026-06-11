@@ -124,8 +124,15 @@ class PopupDbReader {
 
                     if (isHiddenForLanguage(hiddenJson, targetLanguage)) continue
 
+                    // Route the kanji type to its own bucket so the popup
+                    // process feeds kanji dictionaries to nativeAddKanjiDict and a
+                    // single-character lookup resolves through query_kanji. This
+                    // activates the (previously dormant) "kanji" branch in
+                    // HoshiBridge.kt (TODO-094 S4). Unknown types still fall back
+                    // to "term" to fail safe.
                     val mappedType = when (type) {
-                        "term", "kanji" -> "term"
+                        "term" -> "term"
+                        "kanji" -> "kanji"
                         "frequency" -> "frequency"
                         "pitch" -> "pitch"
                         else -> "term"
