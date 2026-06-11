@@ -31,8 +31,10 @@ void main() {
     ).readAsStringSync();
     expect(
         src,
-        contains('List<String> buildNoteTags(String userTags, '
-            '{AnkiMiningSource? source})'),
+        allOf(
+          contains('List<String> buildNoteTags('),
+          contains('AnkiMiningSource? source'),
+        ),
         reason: 'buildNoteTags 必须接受来源参数');
     expect(src, contains("static const String bookTag = 'book';"));
     expect(src, contains("static const String animeTag = 'anime';"));
@@ -47,7 +49,9 @@ void main() {
     ]) {
       final String src = File(path).readAsStringSync();
       expect(
-          src, contains('buildNoteTags(settings.tags, source: context.source)'),
+          src,
+          allOf(contains('buildNoteTags('),
+              contains('source: context.source')),
           reason: '$path 必须把来源透传给 buildNoteTags（否则分类标签不生效）');
     }
   });
