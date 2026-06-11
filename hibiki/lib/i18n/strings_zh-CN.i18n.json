@@ -1515,5 +1515,6 @@
     "popup_bottom_docked": "µײ¿¹̶¨µ¯´°",
     "popup_bottom_docked_hint": "°Ѳé´ʵ¯´°¹̶¨ΪÆÁĻµײ¿һÌõȫ¿íÃæ°壬¶ø²»ÊǸúË汻²é´ʵÄλÖá£",
     "video_subtitle_list": "字幕列表",
-    "video_subtitle_list_empty": "未加载字幕"
+    "video_subtitle_list_empty": "未加载字幕",
+    "swipe_page_turn_sensitivity": "滑动翻页灵敏度"
 }

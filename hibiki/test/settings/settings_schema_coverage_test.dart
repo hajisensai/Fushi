@@ -70,6 +70,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Volume key page turning speed': 'DEVICE: native volume-key throttle',
   'reading/Mouse wheel page-turn interval':
       'DEVICE: WebView wheel page-turn throttle',
+  'reading/Swipe page-turn sensitivity':
+      'test/reader/swipe_page_turn_sensitivity_test.dart',
   'reading/Keep screen awake': 'DEVICE: WakelockPlus channel',
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',

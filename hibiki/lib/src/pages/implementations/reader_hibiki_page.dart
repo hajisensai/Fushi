@@ -1655,6 +1655,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   String _buildReaderSetupScript({String? sasayakiCuesJson}) {
     final ReaderSettings s = _settings!;
+    // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 72px（纯距离触发）/ 36px
+    // （配合速度的快速短滑触发），系数 1.0 = 原手感，越大越迟钝（需滑得更远）。
+    final ({int dist, int fastDist}) swipeThresholds =
+        ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
+    final int swipeDistThreshold = swipeThresholds.dist;
+    final int swipeFastDistThreshold = swipeThresholds.fastDist;
     final String selectionJs = ReaderSelectionScripts.source();
     final Size screenSize = MediaQuery.of(context).size;
     // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
@@ -1766,7 +1772,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     var absDx = Math.abs(dx);
     var absDy = Math.abs(dy);
     var velocity = absDx / Math.max(1, elapsed) * 1000;
-    if (absDx > absDy && (absDx >= 72 || (absDx >= 36 && velocity >= 900))) {
+    if (absDx > absDy && (absDx >= $swipeDistThreshold || (absDx >= $swipeFastDistThreshold && velocity >= 900))) {
       if (e && e.preventDefault) e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');

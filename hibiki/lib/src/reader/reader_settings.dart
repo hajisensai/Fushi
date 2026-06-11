@@ -234,6 +234,38 @@ class ReaderSettings {
   Future<void> setDismissSwipeSensitivity(double v) =>
       _set<double>('dismiss_swipe_sensitivity', v);
 
+  /// 翻页滑动灵敏度系数（TODO-113）。1.0 = 默认手感；<1 更灵敏（更短的滑动即可
+  /// 翻页），>1 更迟钝（需滑得更远）。系数缩放 JS 端 `_gestureEnd` 的基础距离阈值
+  /// （72px / 快速短滑 36px），见 reader_hibiki_page.dart `_buildReaderSetupScript`。
+  static double normalizeSwipePageTurnSensitivity(num value) =>
+      value.toDouble().clamp(0.3, 2.0).toDouble();
+
+  double get swipePageTurnSensitivity => normalizeSwipePageTurnSensitivity(
+        _get<double>('swipe_page_turn_sensitivity', 1.0),
+      );
+  Future<void> setSwipePageTurnSensitivity(double v) => _set<double>(
+        'swipe_page_turn_sensitivity',
+        normalizeSwipePageTurnSensitivity(v),
+      );
+
+  /// 基础滑动翻页距离阈值（px）：纯距离触发 [baseDistPx]，配合速度的快速短滑触发
+  /// [baseFastDistPx]。系数 1.0 时与旧硬编码值一致（72 / 36）。
+  static const int baseSwipeDistPx = 72;
+  static const int baseSwipeFastDistPx = 36;
+
+  /// 把灵敏度系数 [sensitivity] 解析成 JS `_gestureEnd` 用的两个距离阈值（px）。
+  /// 系数越大阈值越大（越迟钝，需滑得更远）；越小越灵敏。这是 reader 注入脚本与
+  /// 守卫测试共用的单一真相，保证「改系数→阈值变」在 UI 与 JS 两侧一致（TODO-113）。
+  static ({int dist, int fastDist}) swipePageTurnDistThresholds(
+    double sensitivity,
+  ) {
+    final double s = normalizeSwipePageTurnSensitivity(sensitivity);
+    return (
+      dist: (baseSwipeDistPx * s).round().clamp(8, 600),
+      fastDist: (baseSwipeFastDistPx * s).round().clamp(4, 600),
+    );
+  }
+
   /// 鼠标滚轮翻页的节流间隔（毫秒）：滚一下翻一页后，此时长内忽略后续滚轮事件。
   /// 越大翻页越慢。默认 450ms（旧实现写死 250ms，偏快）。
   int get wheelPageTurnInterval => _get<int>('wheel_page_turn_interval', 450);

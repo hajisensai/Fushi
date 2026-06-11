@@ -552,6 +552,28 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  /// 翻页滑动灵敏度系数（TODO-113），缩放 JS `_gestureEnd` 的距离阈值；越大越迟钝。
+  double get swipePageTurnSensitivity =>
+      readerSettings?.swipePageTurnSensitivity ??
+      ReaderSettings.normalizeSwipePageTurnSensitivity(
+        getPreference<double>(
+          key: 'swipe_page_turn_sensitivity',
+          defaultValue: 1.0,
+        ),
+      );
+
+  Future<void> setSwipePageTurnSensitivity(double value) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setSwipePageTurnSensitivity(value);
+      return;
+    }
+    await setPreference<double>(
+      key: 'swipe_page_turn_sensitivity',
+      value: ReaderSettings.normalizeSwipePageTurnSensitivity(value),
+    );
+  }
+
   bool get highlightOnTap =>
       readerSettings?.highlightOnTap ??
       getPreference<bool>(key: 'highlight_on_tap', defaultValue: true);

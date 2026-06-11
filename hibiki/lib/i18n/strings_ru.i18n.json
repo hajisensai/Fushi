@@ -1515,5 +1515,6 @@
     "popup_bottom_docked": "Bottom-docked popup",
     "popup_bottom_docked_hint": "Pin the lookup popup as a full-width panel at the bottom of the screen instead of following the looked-up word.",
     "video_subtitle_list": "Subtitle list",
-    "video_subtitle_list_empty": "No subtitles loaded"
+    "video_subtitle_list_empty": "No subtitles loaded",
+    "swipe_page_turn_sensitivity": "Swipe page-turn sensitivity"
 }

@@ -792,6 +792,26 @@ SettingsDestination _readingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          SettingsSliderItem(
+            id: 'reading_controls.swipe_page_turn_sensitivity',
+            title: t.swipe_page_turn_sensitivity,
+            icon: Icons.swipe_outlined,
+            min: 0.3,
+            max: 2.0,
+            divisions: 17,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 8,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.swipePageTurnSensitivity,
+            label: (double value) => value.toStringAsFixed(1),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource
+                  .setSwipePageTurnSensitivity(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           SettingsSwitchItem(
             id: 'reading_controls.keep_screen_awake',
             title: t.keep_screen_awake,

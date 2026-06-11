@@ -371,6 +371,12 @@ html, body {
   background: ${colors.backgroundColor} !important;
   color: ${colors.textColor} !important;
   writing-mode: ${settings.writingMode} !important;
+  /* TODO-114: 分页模式翻页本是瞬时跳页（hoshiReader.assignPagePosition 直接赋值
+     scrollTop/scrollLeft）。但触摸拖动会让 WebView 把手势当原生 pan，让页面跟手
+     位移再被 snap 回弹 —— 那段跟手 + 回弹就是用户看到的「滑动翻页动画」。禁用
+     touch-action 后触摸不再被翻译成原生滚动，翻页只由 onSwipe 检测后瞬时跳页，
+     动画消失；touch-action 只影响 pan/zoom 手势，不影响长按文本选择。 */
+  touch-action: none !important;
 }
 body {
   font-family: $resolvedFontFamily !important;
