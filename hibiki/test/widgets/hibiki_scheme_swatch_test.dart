@@ -150,4 +150,109 @@ void main() {
     expect(card.borderRadius, isNotNull,
         reason: 'rounded square, not a full circle');
   });
+
+  group('TODO-138 · 所有主题指示器都显示完整对角预览（不只底色）', () {
+    SchemeDiagonalPainter painterOf(WidgetTester tester) {
+      final CustomPaint cp = tester.widget<CustomPaint>(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is CustomPaint && w.painter is SchemeDiagonalPainter,
+          ),
+        ),
+      );
+      return cp.painter! as SchemeDiagonalPainter;
+    }
+
+    const List<Color> colors = <Color>[
+      Color(0xFF112233),
+      Color(0xFF445566),
+      Color(0xFF778899),
+      Color(0xFFAABBCC),
+    ];
+
+    testWidgets('preset swatch（无 overlay）画完整预览（含「文」glyph）',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(child: HibikiSchemeSwatch(colors: colors)),
+          ),
+        ),
+      );
+      expect(painterOf(tester).showGlyph, isTrue);
+    });
+
+    testWidgets('system/custom swatch（有 overlay）也画完整预览（含「文」glyph）',
+        (WidgetTester tester) async {
+      // 这是 TODO-138 的核心：旧实现 overlay != null → showGlyph=false +
+      // 居中徽章盖住对角预览，只剩底色。撤回旧实现这条会红。
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: colors,
+                overlay: Icon(Icons.palette_outlined),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(painterOf(tester).showGlyph, isTrue,
+          reason: 'system/custom 也必须画完整预览，不能只剩底色 + 居中徽章');
+    });
+
+    testWidgets('selected swatch 仍画完整预览（含「文」glyph）',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: colors,
+                selected: true,
+                overlay: Icon(Icons.auto_awesome_outlined),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(painterOf(tester).showGlyph, isTrue);
+    });
+
+    testWidgets('overlay 徽章放角落（bottomLeft），不再居中盖住预览',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: colors,
+                overlay: Icon(Icons.palette_outlined),
+              ),
+            ),
+          ),
+        ),
+      );
+      // 徽章经 Align(bottomLeft) 定位在角落（让出中央完整预览），
+      // 而不是旧的 Center 居中盖住。
+      final Finder badgeAlign = find.descendant(
+        of: find.byType(HibikiSchemeSwatch),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is Align && w.alignment == Alignment.bottomLeft,
+        ),
+      );
+      expect(badgeAlign, findsOneWidget);
+      // overlay 图标仍然渲染（徽章没被丢弃，只是移到角落）。
+      expect(
+        find.descendant(
+          of: find.byType(HibikiSchemeSwatch),
+          matching: find.byIcon(Icons.palette_outlined),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
 }

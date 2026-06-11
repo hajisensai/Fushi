@@ -1268,24 +1268,28 @@ class HibikiSchemeSwatch extends StatelessWidget {
       width: selected ? 3 : 1,
     );
     final Widget? badgeChild =
-        selected ? const Icon(Icons.check, size: 14) : overlay;
-    // For non-preset swatches (system = auto / custom = palette) a legible
-    // centred badge replaces the diagonal preview's glyph + dot — its disc uses
-    // the menu surface so the icon reads over either triangle.
+        selected ? const Icon(Icons.check, size: 10) : overlay;
+    // TODO-138: every swatch — including system (= auto) and custom (= palette) —
+    // now shows the FULL diagonal preview (「文」 glyph + accent dot). The badge is
+    // no longer a centred disc that hid that preview; it is a small corner marker
+    // in the bottom-left (the menu triangle, clear of the top-left 「文」 at 30% and
+    // the bottom-right accent dot at 68%), so system/custom previews read exactly
+    // like the presets, just with an extra hint icon.
     final Widget? badge = badgeChild == null
         ? null
         : Container(
-            padding: const EdgeInsets.all(3),
+            padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               color: menuRole,
               shape: BoxShape.circle,
+              border: Border.all(color: cs.outlineVariant, width: 0.5),
             ),
             child: IconTheme.merge(
-              data: IconThemeData(color: cs.onSurface, size: 14),
+              data: IconThemeData(color: cs.onSurface, size: 10),
               child: badgeChild,
             ),
           );
-    // Rounded-square card painted by [_SchemeDiagonalPainter]: top-left triangle
+    // Rounded-square card painted by [SchemeDiagonalPainter]: top-left triangle
     // = page background with a text-coloured 「文」 (text-on-background); bottom-
     // right triangle = popup-menu surface with a button-coloured dot
     // (button-on-menu). The selection ring rides the card border via `decoration`
@@ -1305,17 +1309,27 @@ class HibikiSchemeSwatch extends StatelessWidget {
       child: ClipRRect(
         borderRadius: tokens.radii.chipRadius,
         child: CustomPaint(
-          painter: _SchemeDiagonalPainter(
+          painter: SchemeDiagonalPainter(
             textColor: textRole,
             backgroundColor: backgroundRole,
             buttonColor: colors[2],
             menuColor: menuRole,
-            // The 「文」 glyph (text role on background) is hidden when a badge
-            // takes the centre, but the dot/triangles still convey the palette.
-            showGlyph: badge == null,
+            // TODO-138: always paint the full preview — the 「文」 glyph and the
+            // accent dot — for EVERY swatch. The badge (if any) sits in the corner
+            // and no longer replaces the glyph, so system/custom show a complete
+            // preview, not just a base colour behind a centred badge.
+            showGlyph: true,
             textDirection: Directionality.of(context),
           ),
-          child: badge == null ? null : Center(child: badge),
+          child: badge == null
+              ? null
+              : Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: badge,
+                  ),
+                ),
         ),
       ),
     );
@@ -1336,8 +1350,9 @@ class HibikiSchemeSwatch extends StatelessWidget {
 /// [backgroundColor] (carrying a [textColor] 「文」 glyph) and a bottom-right
 /// triangle filled with [menuColor] (carrying a [buttonColor] dot). This mirrors
 /// how a user reads a theme: text on the page vs a button on a popup menu.
-class _SchemeDiagonalPainter extends CustomPainter {
-  const _SchemeDiagonalPainter({
+@visibleForTesting
+class SchemeDiagonalPainter extends CustomPainter {
+  const SchemeDiagonalPainter({
     required this.textColor,
     required this.backgroundColor,
     required this.buttonColor,
@@ -1402,7 +1417,7 @@ class _SchemeDiagonalPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SchemeDiagonalPainter oldDelegate) =>
+  bool shouldRepaint(SchemeDiagonalPainter oldDelegate) =>
       oldDelegate.textColor != textColor ||
       oldDelegate.backgroundColor != backgroundColor ||
       oldDelegate.buttonColor != buttonColor ||
