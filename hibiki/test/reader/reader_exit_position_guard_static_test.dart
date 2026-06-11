@@ -58,6 +58,35 @@ void main() {
           'the DB write is flushed.',
     );
   });
+
+  test('BUG-203 returning to the shelf flushes the live WebView page (await)',
+      () {
+    // The back-button path is the only awaitable exit hook: dispose()'s
+    // _syncAndFlushPosition() is fire-and-forget and loses the race against
+    // super.dispose() tearing down the WebView, so the saved position falls
+    // back to the stale 10s-poll/debounce value (restore drifts back pages).
+    // BaseSourcePageState.onWillPop awaits onSourcePagePop() BEFORE closeMedia
+    // / triggerAutoSyncAfterClose, so the reader must override it to write the
+    // currently displayed page through first.
+    final String onPop = _functionSource(
+      source,
+      '  Future<void> onSourcePagePop() async',
+      '  // The input device flipped between touch',
+    );
+    expect(
+      onPop,
+      contains('await _syncAndFlushPosition()'),
+      reason:
+          'the back-button exit path must capture the live WebView page before '
+          'the base class runs closeMedia/auto-sync, otherwise the restore '
+          'point drifts to a previous page (BUG-203).',
+    );
+    expect(
+      onPop.indexOf('await _syncAndFlushPosition()'),
+      lessThan(onPop.indexOf('await _flushReadingStats()')),
+      reason: 'position sync must precede the reading-stats flush on exit.',
+    );
+  });
 }
 
 String _functionSource(String source, String start, String end) {

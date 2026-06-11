@@ -1,0 +1,6 @@
+## BUG-203 · 安卓退出重进恢复点漂移在前面好几页
+- **报告**：2026-06-11（用户：安卓·阅读器退出重进恢复点不对，在前面好几页，不是退出的地方；不止滚动模式，其他模式退出重进也有问题）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`：`dispose()` 里 `_syncAndFlushPosition()`（原 ~1235）是 fire-and-forget——dispose 同步签名无法 await，它内部 `await _syncPositionFromWebViewProgress()`（读实时 WebView 进度）+ `await _flushPosition()`（DB 写）抢不过紧随的 `super.dispose()` 拆 WebView，落库退回 10s 轮询/debounce 缓存的陈旧 `_lastProgress*`。返回链上 `onWillPop`（~1411）→ `base_source_page.dart:110 onSourcePagePop()` 是空 hook、reader 未覆写，先于 closeMedia / triggerAutoSyncAfterClose 都没把当前页落库。与模式无关（分页/连续/竖排同一 dispose flush）。
+- **[x] ① 已修复** — reader 覆写 `onSourcePagePop()`（`reader_hibiki_page.dart` `_ReaderHibikiPageState`，紧接 `dispose()` 之后）为 `await _syncAndFlushPosition(); await _flushReadingStats();`。基类 `onWillPop` 在 closeMedia / triggerAutoSyncAfterClose 之前 `await onSourcePagePop()`，且此刻页面仍 mounted、WebView 仍存活，对它 evaluateJavascript 安全（不同于进程退出期 `_flushAllForProcessExit` 故意不碰 WebView）。dispose 的 fire-and-forget 保留作兜底（硬 kill / 系统回收 onWillPop 不一定跑到）。提交：<待补>
+- **[x] ② 已加自动化测试** — 扩 `hibiki/test/reader/reader_exit_position_guard_static_test.dart`：源码守卫断言 reader 覆写 `onSourcePagePop` 且其体内 `await _syncAndFlushPosition()` 在 `await _flushReadingStats()` 之前；撤覆写转红。提交：<待补>
+- **备注**：真机复验留用户（安卓翻到中段→返回书架→重进恢复点对）。

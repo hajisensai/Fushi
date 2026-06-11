@@ -1257,6 +1257,27 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     super.dispose();
   }
 
+  /// BUG-203：返回书架前，先把 WebView 当前显示页落库，再交回基类走
+  /// closeMedia / triggerAutoSyncAfterClose。
+  ///
+  /// 根因：dispose() 里的 [_syncAndFlushPosition] 是 fire-and-forget（dispose
+  /// 同步签名无法 await），它内部 `await _syncPositionFromWebViewProgress()`
+  /// （读实时 WebView 进度）与 `await _flushPosition()`（DB 写）抢不过紧随的
+  /// super.dispose() 拆 WebView，恢复点退回 10s 轮询/debounce 的陈旧
+  /// `_lastProgress*`，表现为退出重进落在前面好几页（分页/连续/竖排同此
+  /// dispose flush，与模式无关）。
+  ///
+  /// 修：基类 [BaseSourcePageState.onWillPop] 在 closeMedia / triggerAutoSync
+  /// 之前 `await onSourcePagePop()`，且此刻页面仍 mounted、WebView 仍存活，
+  /// 对它 evaluateJavascript 安全（不同于进程退出期的 [_flushAllForProcessExit]
+  /// 故意不碰 WebView）。这里 await 把实时当前页写穿，dispose 的 fire-and-forget
+  /// 保留作兜底（硬 kill / 系统回收时 onWillPop 不一定跑到）。
+  @override
+  Future<void> onSourcePagePop() async {
+    await _syncAndFlushPosition();
+    await _flushReadingStats();
+  }
+
   // The input device flipped between touch (mouse/pointer) and keyboard/gamepad.
   void _onHighlightModeChanged(FocusHighlightMode mode) {
     if (!mounted) return;
@@ -4173,6 +4194,30 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Key Navigation ────────────────────────────────────────────────
 
+  /// 当前按下的修饰键集合（Ctrl/Shift/Alt/Meta）。键盘快捷解析与底栏焦点的
+  /// Space 覆写共用，避免两处各自重建一份。
+  Set<ModifierKey> _activeModifiers() {
+    final Set<ModifierKey> modifiers = <ModifierKey>{};
+    if (HardwareKeyboard.instance.isControlPressed) {
+      modifiers.add(ModifierKey.ctrl);
+    }
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      modifiers.add(ModifierKey.shift);
+    }
+    if (HardwareKeyboard.instance.isAltPressed) {
+      modifiers.add(ModifierKey.alt);
+    }
+    if (HardwareKeyboard.instance.isMetaPressed) {
+      modifiers.add(ModifierKey.meta);
+    }
+    return modifiers;
+  }
+
+  /// 有声书是否已激活（有控制器且本章有 cue）。Space 播放/暂停覆写的统一闸门，
+  /// 正文焦点路径与底栏焦点路径（BUG-204）共用同一判据。
+  bool get _hasActiveAudiobook =>
+      _audiobookController != null && _audiobookController!.chapterCueCount > 0;
+
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     // The popup header toolbar (sibling of the popup content). Down returns to
     // the content caret; B/Escape dismiss the popup (ascend out of it). Left/
@@ -4219,6 +4264,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
           event.logicalKey == LogicalKeyboardKey.escape) {
         unawaited(Navigator.of(context).maybePop());
         return KeyEventResult.handled;
+      }
+      // BUG-204: 焦点落底栏控件时，裸 Space 仍应播放/暂停有声书。否则它在这里
+      // 被吞成 ignored，到不了下方 [resolveReaderSpaceOverride]，冒泡到全局
+      // 导航把裸 Space 中和为 DoNothingIntent（c152fcd91 用户裁定的正确全局
+      // 行为，**不回退**），有声书永不暂停。仅在有声书激活 + 无修饰 Space 时
+      // 拦截（与正文焦点路径同一 [resolveReaderSpaceOverride] 闸门），其余键
+      // 一律落 ignored，底栏控件本身的 Space 语义不受影响。
+      final ShortcutAction? chromeSpaceOverride = resolveReaderSpaceOverride(
+        key: event.logicalKey,
+        modifiers: _activeModifiers(),
+        hasActiveAudiobook: _hasActiveAudiobook,
+      );
+      if (chromeSpaceOverride != null) {
+        return _executeShortcutAction(chromeSpaceOverride);
       }
       return KeyEventResult.ignored;
     }
@@ -4315,19 +4374,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       _focusNode.requestFocus();
     }
 
-    final modifiers = <ModifierKey>{};
-    if (HardwareKeyboard.instance.isControlPressed) {
-      modifiers.add(ModifierKey.ctrl);
-    }
-    if (HardwareKeyboard.instance.isShiftPressed) {
-      modifiers.add(ModifierKey.shift);
-    }
-    if (HardwareKeyboard.instance.isAltPressed) {
-      modifiers.add(ModifierKey.alt);
-    }
-    if (HardwareKeyboard.instance.isMetaPressed) {
-      modifiers.add(ModifierKey.meta);
-    }
+    final Set<ModifierKey> modifiers = _activeModifiers();
 
     // 有声书激活时，无修饰 Space 改作播放/暂停（媒体播放器惯例），先于
     // reader scope 的「翻页」解析，否则 Space 永远被 reader scope 抢成翻页
@@ -4335,8 +4382,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final ShortcutAction? spaceOverride = resolveReaderSpaceOverride(
       key: event.logicalKey,
       modifiers: modifiers,
-      hasActiveAudiobook: _audiobookController != null &&
-          _audiobookController!.chapterCueCount > 0,
+      hasActiveAudiobook: _hasActiveAudiobook,
     );
     // BUG-099: bare Left/Right page-turn follows the reading direction (RTL book
     // advances on Left). Resolved before the registry, which binds Right=forward

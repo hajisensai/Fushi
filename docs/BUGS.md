@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 199 条。点号进各自文件。
+> 共 201 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-204](bugs/BUG-204-todo-137-chrome-focus-space-no-pause.md) | ✅ | ✅ | 底栏焦点点空格不暂停音频 |
+| [BUG-203](bugs/BUG-203-todo-133-android-exit-resume-drift.md) | ✅ | ✅ | 安卓退出重进恢复点漂移在前面好几页 |
 | [BUG-202](bugs/BUG-202-delete-remote-book-stale-folder-cache.md) | ✅ | ✅ | 删远端书后无法复传（陈旧 folder 缓存指向已删/trashed 文件夹） |
 | [BUG-201](bugs/BUG-201-sync-exit-kill-false-conflict.md) | ✅ | ✅ | 退出书后杀后台重开总弹假冲突(baseline 与远端进度传输非原子) |
 | [BUG-200](bugs/BUG-200-no-subtitle-prev-button-stuck.md) | ✅ | ✅ | 转场/无字幕段「上一句字幕」按钮没反应回退不了 |
