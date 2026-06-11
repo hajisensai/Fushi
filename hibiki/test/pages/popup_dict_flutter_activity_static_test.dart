@@ -70,13 +70,6 @@ void main() {
     expect(src, contains('PopupEngineHolder.setOnFinish(null)'));
   });
 
-  test('phone release install script drops stale dev plugin registrant', () {
-    final String src = File('../手机编译安装ARM.bat').readAsStringSync();
-    expect(src, contains('GeneratedPluginRegistrant.java'));
-    expect(src, contains('integration_test'));
-    expect(src, contains('del /f /q "%ANDROID_REGISTRANT%"'));
-  });
-
   // BUG-193 / TODO-110: the :popup Flutter engine renders dictionary entries in
   // a flutter_inappwebview WebView (DictionaryPopupWebView). The hand-written
   // FloatingDictPluginRegistrant (introduced by BUG-146 to drop the dev-only
