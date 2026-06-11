@@ -19,7 +19,7 @@
     `loadCuesForSource`→`controller.load(cues:)`→`setCues`（`video_player_controller.dart:378`）、内嵌文本轨经
     `_loadEmbeddedSubtitleIfNeeded`→`setCues`（`:536`）都仍喂 overlay。本 bug 只是 libmpv/SubtitleView 自己
     **额外**画了一层不可点字幕，禁用它字幕不会消失（overlay 仍在）。
-- **[x] ① 已修复** — commit `387e83edf`
+- **[x] ① 已修复** — commit `631055df6`
   - **禁用内置 SubtitleView（两处）**：窗口侧与全屏路由侧两个 `Video(...)` 的 `subtitleViewConfiguration`
     都显式设成 `const SubtitleViewConfiguration(visible: false)`
     （`video_hibiki_page.dart:3327` 窗口、`:1851` 全屏路由）。全屏侧虽与窗口侧共享
