@@ -34,6 +34,10 @@ object HoshiBridge {
                 "term" -> nativeAddTermDict(handle, path)
                 "frequency" -> nativeAddFreqDict(handle, path)
                 "pitch" -> nativeAddPitchDict(handle, path)
+                // S3 wires the route; PopupDbReader still maps "kanji" -> "term"
+                // (pre-S3 shim) so this branch stays dormant until S4 makes the
+                // DB/reader emit a real "kanji" type for the kanji bucket.
+                "kanji" -> nativeAddKanjiDict(handle, path)
             }
         }
 
@@ -69,6 +73,12 @@ object HoshiBridge {
     }
 
     @Synchronized
+    fun queryKanjiJson(character: String): String {
+        if (handle == 0L) return "[]"
+        return nativeQueryKanjiJson(handle, character)
+    }
+
+    @Synchronized
     fun getStylesJson(): String {
         if (handle == 0L) return "{}"
         return nativeGetStylesJson(handle)
@@ -95,11 +105,13 @@ object HoshiBridge {
     private external fun nativeAddTermDict(handle: Long, path: String)
     private external fun nativeAddFreqDict(handle: Long, path: String)
     private external fun nativeAddPitchDict(handle: Long, path: String)
+    private external fun nativeAddKanjiDict(handle: Long, path: String)
     private external fun nativeLoadTransforms(handle: Long, json: String)
     private external fun nativeLookupJson(
         handle: Long, text: String,
         maxResults: Int, scanLength: Int, maxTerms: Int
     ): String
+    private external fun nativeQueryKanjiJson(handle: Long, character: String): String
     private external fun nativeGetStylesJson(handle: Long): String
     private external fun nativeGetMedia(
         handle: Long, dictName: String, mediaPath: String

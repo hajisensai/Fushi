@@ -115,6 +115,25 @@ final class FfiMediaFile extends Struct {
   external int size;
 }
 
+final class FfiKanjiResult extends Struct {
+  external Pointer<Utf8> character;
+  external Pointer<Utf8> onyomi;
+  external Pointer<Utf8> kunyomi;
+  external Pointer<Utf8> radical;
+  @Int32()
+  external int strokes;
+  external Pointer<Pointer<Utf8>> meanings;
+  @Int32()
+  external int meaningCount;
+  external Pointer<Utf8> dictName;
+}
+
+final class FfiKanjiResults extends Struct {
+  external Pointer<FfiKanjiResult> results;
+  @Int32()
+  external int count;
+}
+
 // ── native function typedefs ────────────────────────────────────────
 
 typedef _ImportDart = FfiImportResult Function(
@@ -152,9 +171,13 @@ typedef _GetMediaDart = FfiMediaFile Function(
 
 typedef _FreeMediaDart = void Function(Pointer<FfiMediaFile> r);
 
-typedef _LookupPopupJsonDart = Pointer<Utf8> Function(
-    Pointer<Void> handle, Pointer<Utf8> text, int maxResults, int scanLength,
-    int maxTerms);
+typedef _QueryKanjiDart = FfiKanjiResults Function(
+    Pointer<Void> handle, Pointer<Utf8> character);
+
+typedef _FreeKanjiResultsDart = void Function(Pointer<FfiKanjiResults> r);
+
+typedef _LookupPopupJsonDart = Pointer<Utf8> Function(Pointer<Void> handle,
+    Pointer<Utf8> text, int maxResults, int scanLength, int maxTerms);
 
 typedef _FreeStringDart = void Function(Pointer<Utf8> s);
 
@@ -180,6 +203,8 @@ class HoshidictsFfiBindings {
         'hoshidicts_add_freq_dict');
     addPitchDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
         'hoshidicts_add_pitch_dict');
+    addKanjiDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
+        'hoshidicts_add_kanji_dict');
     loadTransforms = _lib.lookupFunction<
         Void Function(Pointer<Void>, Pointer<Utf8>),
         _LoadTransformsDart>('hoshidicts_load_transforms');
@@ -204,11 +229,19 @@ class HoshidictsFfiBindings {
         _GetMediaDart>('hoshidicts_get_media');
     freeMedia = _lib.lookupFunction<Void Function(Pointer<FfiMediaFile>),
         _FreeMediaDart>('hoshidicts_free_media');
+    queryKanji = _lib.lookupFunction<
+        FfiKanjiResults Function(Pointer<Void>, Pointer<Utf8>),
+        _QueryKanjiDart>('hoshidicts_query_kanji');
+    freeKanjiResults = _lib.lookupFunction<
+        Void Function(Pointer<FfiKanjiResults>),
+        _FreeKanjiResultsDart>('hoshidicts_free_kanji_results');
     lookupPopupJson = _lib.lookupFunction<
-        Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32, Int32),
+        Pointer<Utf8> Function(
+            Pointer<Void>, Pointer<Utf8>, Int32, Int32, Int32),
         _LookupPopupJsonDart>('hoshidicts_lookup_popup_json');
-    freeString = _lib.lookupFunction<Void Function(Pointer<Utf8>),
-        _FreeStringDart>('hoshidicts_free_string');
+    freeString =
+        _lib.lookupFunction<Void Function(Pointer<Utf8>), _FreeStringDart>(
+            'hoshidicts_free_string');
   }
   late final DynamicLibrary _lib;
 
@@ -219,6 +252,7 @@ class HoshidictsFfiBindings {
   late final _AddDictDart addTermDict;
   late final _AddDictDart addFreqDict;
   late final _AddDictDart addPitchDict;
+  late final _AddDictDart addKanjiDict;
   late final _LoadTransformsDart loadTransforms;
   late final _QueryDart query;
   late final _FreeQueryResultDart freeQueryResult;
@@ -228,6 +262,8 @@ class HoshidictsFfiBindings {
   late final _FreeStylesDart freeStyles;
   late final _GetMediaDart getMedia;
   late final _FreeMediaDart freeMedia;
+  late final _QueryKanjiDart queryKanji;
+  late final _FreeKanjiResultsDart freeKanjiResults;
   late final _LookupPopupJsonDart lookupPopupJson;
   late final _FreeStringDart freeString;
 }

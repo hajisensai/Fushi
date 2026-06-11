@@ -109,6 +109,25 @@ class HoshiDictStyle {
   final String styles;
 }
 
+class HoshiKanjiResult {
+  const HoshiKanjiResult({
+    required this.character,
+    required this.onyomi,
+    required this.kunyomi,
+    required this.radical,
+    required this.strokes,
+    required this.meanings,
+    required this.dictName,
+  });
+  final String character;
+  final String onyomi;
+  final String kunyomi;
+  final String radical;
+  final int strokes;
+  final List<String> meanings;
+  final String dictName;
+}
+
 // ── conversion helpers ──────────────────────────────────────────────
 
 /// Converts a possibly-null native UTF-8 pointer to a Dart string, treating
@@ -189,6 +208,24 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
   );
 }
 
+HoshiKanjiResult _convertKanji(FfiKanjiResult ffi) {
+  final meanings = <String>[];
+  if (ffi.meaningCount > 0 && ffi.meanings != nullptr) {
+    for (int i = 0; i < ffi.meaningCount; i++) {
+      meanings.add(_utf8OrEmpty(ffi.meanings[i]));
+    }
+  }
+  return HoshiKanjiResult(
+    character: _utf8OrEmpty(ffi.character),
+    onyomi: _utf8OrEmpty(ffi.onyomi),
+    kunyomi: _utf8OrEmpty(ffi.kunyomi),
+    radical: _utf8OrEmpty(ffi.radical),
+    strokes: ffi.strokes,
+    meanings: meanings,
+    dictName: _utf8OrEmpty(ffi.dictName),
+  );
+}
+
 // ── main wrapper class ──────────────────────────────────────────────
 
 class HoshiDicts {
@@ -261,6 +298,7 @@ class HoshiDicts {
     List<String> termPaths = const [],
     List<String> freqPaths = const [],
     List<String> pitchPaths = const [],
+    List<String> kanjiPaths = const [],
   }) {
     _instance?.dispose();
     final h = HoshiDicts();
@@ -273,6 +311,9 @@ class HoshiDicts {
     }
     for (final p in pitchPaths) {
       h.addPitchDict(p);
+    }
+    for (final p in kanjiPaths) {
+      h.addKanjiDict(p);
     }
     _instance = h;
     _rebuildStylesCache();
@@ -329,6 +370,15 @@ class HoshiDicts {
     final p = path.toNativeUtf8(allocator: calloc);
     try {
       _bindings!.addPitchDict(_handle!, p);
+    } finally {
+      calloc.free(p);
+    }
+  }
+
+  void addKanjiDict(String path) {
+    final p = path.toNativeUtf8(allocator: calloc);
+    try {
+      _bindings!.addKanjiDict(_handle!, p);
     } finally {
       calloc.free(p);
     }
@@ -402,6 +452,28 @@ class HoshiDicts {
       }
     } finally {
       calloc.free(ep);
+    }
+  }
+
+  // ── kanji query ─────────────────────────────────────────────────
+  List<HoshiKanjiResult> queryKanji(String character) {
+    final cp = character.toNativeUtf8(allocator: calloc);
+    try {
+      final r = _bindings!.queryKanji(_handle!, cp);
+      final rPtr = calloc<FfiKanjiResults>();
+      rPtr.ref = r;
+      try {
+        final results = <HoshiKanjiResult>[];
+        for (int i = 0; i < r.count; i++) {
+          results.add(_convertKanji(r.results[i]));
+        }
+        return results;
+      } finally {
+        _bindings!.freeKanjiResults(rPtr);
+        calloc.free(rPtr);
+      }
+    } finally {
+      calloc.free(cp);
     }
   }
 
@@ -539,13 +611,20 @@ class HoshiDicts {
     }
   }
 
-  static T withPaths<T>(List<String> paths, T Function(HoshiDicts h) action) {
+  static T withPaths<T>(
+    List<String> paths,
+    T Function(HoshiDicts h) action, {
+    List<String> kanjiPaths = const [],
+  }) {
     final h = HoshiDicts();
     h._loadCachedTransforms();
     for (final p in paths) {
       h.addTermDict(p);
       h.addFreqDict(p);
       h.addPitchDict(p);
+    }
+    for (final p in kanjiPaths) {
+      h.addKanjiDict(p);
     }
     try {
       return action(h);

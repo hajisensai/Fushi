@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -12,6 +13,67 @@ struct HoshidictsHandle {
   DictionaryQuery query;
   Deinflector deinflector;
 };
+
+namespace {
+
+// Minimal JSON string escaper for kanji fields (no external dep). Handles the
+// control / quote / backslash bytes that would otherwise break the JSON sent to
+// the Android popup WebView; multi-byte UTF-8 is passed through unchanged.
+void append_json_escaped(std::string& out, const std::string& s) {
+  out.push_back('"');
+  for (char c : s) {
+    switch (c) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      default:
+        if (static_cast<unsigned char>(c) < 0x20) {
+          char buf[8];
+          std::snprintf(buf, sizeof(buf), "\\u%04x",
+                        static_cast<unsigned>(static_cast<unsigned char>(c)));
+          out += buf;
+        } else {
+          out.push_back(c);
+        }
+    }
+  }
+  out.push_back('"');
+}
+
+// Serialize a kanji query result vector to a JSON array. Each element mirrors
+// the KanjiResult fields the Android popup needs:
+//   {character, onyomi, kunyomi, radical, strokes, meanings:[...], dictName}
+std::string build_kanji_json(const std::vector<KanjiResult>& kanji) {
+  std::string out = "[";
+  for (size_t i = 0; i < kanji.size(); i++) {
+    if (i) out.push_back(',');
+    const KanjiResult& k = kanji[i];
+    out += "{\"character\":";
+    append_json_escaped(out, k.character);
+    out += ",\"onyomi\":";
+    append_json_escaped(out, k.onyomi);
+    out += ",\"kunyomi\":";
+    append_json_escaped(out, k.kunyomi);
+    out += ",\"radical\":";
+    append_json_escaped(out, k.radical);
+    out += ",\"strokes\":";
+    out += std::to_string(k.strokes);
+    out += ",\"meanings\":[";
+    for (size_t j = 0; j < k.meanings.size(); j++) {
+      if (j) out.push_back(',');
+      append_json_escaped(out, k.meanings[j]);
+    }
+    out += "],\"dictName\":";
+    append_json_escaped(out, k.dict_name);
+    out.push_back('}');
+  }
+  out.push_back(']');
+  return out;
+}
+
+}  // namespace
 
 extern "C" {
 
@@ -53,6 +115,15 @@ Java_app_hibiki_reader_HoshiBridge_nativeAddPitchDict(JNIEnv* env, jclass,
 }
 
 JNIEXPORT void JNICALL
+Java_app_hibiki_reader_HoshiBridge_nativeAddKanjiDict(JNIEnv* env, jclass,
+                                                      jlong handle,
+                                                      jstring path) {
+  const char* p = env->GetStringUTFChars(path, nullptr);
+  reinterpret_cast<HoshidictsHandle*>(handle)->query.add_kanji_dict(p);
+  env->ReleaseStringUTFChars(path, p);
+}
+
+JNIEXPORT void JNICALL
 Java_app_hibiki_reader_HoshiBridge_nativeLoadTransforms(JNIEnv* env, jclass,
                                                         jlong handle,
                                                         jstring json) {
@@ -80,6 +151,18 @@ Java_app_hibiki_reader_HoshiBridge_nativeLookupJson(JNIEnv* env, jclass,
       build_popup_json(results, static_cast<int>(max_terms));
   // NewStringUTF uses Modified UTF-8; supplementary codepoints (U+10000+) are
   // technically non-conformant but Android ART handles them correctly.
+  return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_app_hibiki_reader_HoshiBridge_nativeQueryKanjiJson(JNIEnv* env, jclass,
+                                                        jlong handle,
+                                                        jstring character) {
+  auto* h = reinterpret_cast<HoshidictsHandle*>(handle);
+  const char* c = env->GetStringUTFChars(character, nullptr);
+  std::vector<KanjiResult> kanji = h->query.query_kanji(c);
+  env->ReleaseStringUTFChars(character, c);
+  std::string json = build_kanji_json(kanji);
   return env->NewStringUTF(json.c_str());
 }
 

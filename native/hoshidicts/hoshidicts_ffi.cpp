@@ -97,6 +97,22 @@ struct FfiDictStyles {
   int32_t count;
 };
 
+struct FfiKanjiResult {
+  char* character;
+  char* onyomi;
+  char* kunyomi;
+  char* radical;
+  int32_t strokes;
+  char** meanings;
+  int32_t meaning_count;
+  char* dict_name;
+};
+
+struct FfiKanjiResults {
+  FfiKanjiResult* results;
+  int32_t count;
+};
+
 // ── conversion helpers ──────────────────────────────────────────────
 
 static FfiTermResult convert_term(const TermResult& t) {
@@ -273,6 +289,11 @@ void hoshidicts_add_pitch_dict(void* handle, const char* path) {
 }
 
 HOSHI_EXPORT
+void hoshidicts_add_kanji_dict(void* handle, const char* path) {
+  static_cast<HoshidictsHandle*>(handle)->query.add_kanji_dict(path);
+}
+
+HOSHI_EXPORT
 void hoshidicts_load_transforms(void* handle, const char* json) {
   static_cast<HoshidictsHandle*>(handle)->deinflector.load_transforms_json(json);
 }
@@ -299,6 +320,51 @@ void hoshidicts_free_query_result(FfiQueryResult* r) {
     free_term(r->terms[i]);
   }
   free(r->terms);
+}
+
+// ── kanji query ─────────────────────────────────────────────────────
+
+HOSHI_EXPORT
+FfiKanjiResults hoshidicts_query_kanji(void* handle, const char* character) {
+  FfiKanjiResults r{};
+  auto& q = static_cast<HoshidictsHandle*>(handle)->query;
+  auto kanji = q.query_kanji(character);
+  r.count = static_cast<int32_t>(kanji.size());
+  r.results = static_cast<FfiKanjiResult*>(malloc(sizeof(FfiKanjiResult) * r.count));
+  for (int i = 0; i < r.count; i++) {
+    const auto& k = kanji[i];
+    auto& dst = r.results[i];
+    dst.character = dup(k.character);
+    dst.onyomi = dup(k.onyomi);
+    dst.kunyomi = dup(k.kunyomi);
+    dst.radical = dup(k.radical);
+    dst.strokes = static_cast<int32_t>(k.strokes);
+    dst.dict_name = dup(k.dict_name);
+    dst.meaning_count = static_cast<int32_t>(k.meanings.size());
+    dst.meanings = static_cast<char**>(malloc(sizeof(char*) * dst.meaning_count));
+    for (int j = 0; j < dst.meaning_count; j++) {
+      dst.meanings[j] = dup(k.meanings[j]);
+    }
+  }
+  return r;
+}
+
+HOSHI_EXPORT
+void hoshidicts_free_kanji_results(FfiKanjiResults* r) {
+  if (!r) return;
+  for (int i = 0; i < r->count; i++) {
+    auto& k = r->results[i];
+    free(k.character);
+    free(k.onyomi);
+    free(k.kunyomi);
+    free(k.radical);
+    free(k.dict_name);
+    for (int j = 0; j < k.meaning_count; j++) {
+      free(k.meanings[j]);
+    }
+    free(k.meanings);
+  }
+  free(r->results);
 }
 
 // ── lookup ──────────────────────────────────────────────────────────
