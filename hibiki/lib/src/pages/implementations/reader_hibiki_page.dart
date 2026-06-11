@@ -188,6 +188,36 @@ ReaderThemeColors resolveReaderThemeColors({
   );
 }
 
+/// 本 session 阅读字数推进结果：[charsAdded] 本次新计入的字数（>=0），
+/// [highWaterMark] 更新后的「本 session 历史最高已读绝对字符位置」（只升不降）。
+typedef ReadProgressResult = ({int charsAdded, int highWaterMark});
+
+/// TODO-147 / BUG-211：把「本 session 阅读字数推进」算成相对历史最高已读位置
+/// （high-water mark）的增量，而不是相邻两次采样的正向差。
+///
+/// 旧逻辑（错）：每次进度回调 `charDiff = absolute - last; if(charDiff>0) chars+=charDiff;
+/// last = absolute;`——`last` 无条件下移。日语精读常见的「读一句→往回看→再往前」
+/// 往返翻页会把重叠区间反复计入，统计字数随往返次数倍增，呈现「字数明显非常高」。
+///
+/// 新逻辑（对）：只有当前绝对位置 [absoluteChars] **超过本 session 历史最高位置**
+/// [highWaterMark] 时，才把超出部分计入，并抬高水位；回退、以及再前进经过旧区间都
+/// 不重复计数。水位「只升不降」消除了往返重复这个特殊情况（导航/flush 时由调用方把
+/// 水位重置到新 session 起点）。
+///
+/// 纯函数，无副作用，供单测锁定 high-water mark 语义（撤销修复 → 测试转红）。
+ReadProgressResult accumulateSessionChars({
+  required int absoluteChars,
+  required int highWaterMark,
+}) {
+  if (absoluteChars > highWaterMark) {
+    return (
+      charsAdded: absoluteChars - highWaterMark,
+      highWaterMark: absoluteChars,
+    );
+  }
+  return (charsAdded: 0, highWaterMark: highWaterMark);
+}
+
 /// 解析结果 + 每章字符数，一次 isolate 往返同时算好，避免把整本书
 /// （含全部章节 HTML）二次序列化进新 isolate 只为数字符。
 class ParsedBookData {
@@ -364,7 +394,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   int? _progressTotalChars;
 
   int _sessionCharsRead = 0;
-  int _lastAbsoluteCount = 0;
+  // TODO-147 / BUG-211：本 session 历史最高已读绝对字符位置（high-water mark，
+  // 只升不降）。统计字数只在越过它时增量计入，往返翻页不重复累计。导航/后台
+  // flush 起新 session 时由调用方重置到当前位置。
+  int _sessionMaxAbsoluteChars = 0;
   DateTime _sessionStartTime = DateTime.now();
 
   List<int> _chapterCharCounts = [];
@@ -758,9 +791,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// TODO-131: DB 计数缺失（旧书 / chaptersJson 无 characters 字段）时，把整本
   /// html_parser 逐章计数放后台 isolate 补算，**不阻塞首屏**。落定后用
-  /// [_applyCharCounts] 补齐总字数，并把统计基准 `_lastAbsoluteCount` 重置到当前
-  /// 位置——否则零计数期间它停在 0，计数落定后首个进度回调会把整段前缀误当本次
-  /// 读到的新字数（charDiff 幻象 spike）。重置后差分相对正确基准，统计字数等价。
+  /// [_applyCharCounts] 补齐总字数，并把统计水位 `_sessionMaxAbsoluteChars` 重置到
+  /// 当前位置——否则零计数期间它停在 0，计数落定后首个进度回调会把整段前缀误当本次
+  /// 读到的新字数（幻象 spike）。重置后增量相对正确基准，统计字数等价。
   void _recomputeCharCountsInBackground() {
     final EpubBook? book = _book;
     if (book == null || book.chapters.isEmpty) return;
@@ -772,7 +805,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         return;
       }
       _applyCharCounts(counts);
-      _lastAbsoluteCount = _absoluteCharPosition(_lastProgressValue);
+      _sessionMaxAbsoluteChars = _absoluteCharPosition(_lastProgressValue);
     }).catchError((Object e, StackTrace s) {
       ErrorLogService.instance
           .log('ReaderHibiki._recomputeCharCountsInBackground', e, s);
@@ -2716,7 +2749,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _readingTimeTracker ??= ReadingTimeTracker(appModel.database);
     _readingTimeTracker!.start();
     _sessionStartTime = DateTime.now();
-    _lastAbsoluteCount = _absoluteCharPosition(_initialProgress);
+    _sessionMaxAbsoluteChars = _absoluteCharPosition(_initialProgress);
 
     _refreshProgress();
     _startProgressPoll();
@@ -4002,11 +4035,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
     _lastProgressValue = progress;
     _lastProgressCharOffset = charOffset;
     final int absoluteChars = _absoluteCharPosition(progress);
-    final int charDiff = absoluteChars - _lastAbsoluteCount;
-    if (charDiff > 0) {
-      _sessionCharsRead += charDiff;
-    }
-    _lastAbsoluteCount = absoluteChars;
+    // TODO-147 / BUG-211：按 high-water mark 增量计数，避免往返翻页重复累计。
+    final ReadProgressResult delta = accumulateSessionChars(
+      absoluteChars: absoluteChars,
+      highWaterMark: _sessionMaxAbsoluteChars,
+    );
+    _sessionCharsRead += delta.charsAdded;
+    _sessionMaxAbsoluteChars = delta.highWaterMark;
     _debouncedSavePosition(progress, charOffset);
 
     if (mounted) {

@@ -41,15 +41,17 @@ void main() {
 
   test('DB 计数缺失时后台补算并重置统计基准（避免 charDiff 幻象 spike）', () {
     expect(src.contains('_recomputeCharCountsInBackground'), isTrue);
-    // 后台补算落定后必须重置 _lastAbsoluteCount，否则零计数期间它停在 0，
-    // 计数落定后首个进度回调会把整段前缀误当本次新读字数累进统计。
+    // 后台补算落定后必须重置统计水位 _sessionMaxAbsoluteChars（TODO-147 改名前
+    // 为 _lastAbsoluteCount），否则零计数期间它停在 0，计数落定后首个进度回调会把
+    // 整段前缀误当本次新读字数累进统计。
     final int recomputeIdx =
         src.indexOf('void _recomputeCharCountsInBackground()');
     expect(recomputeIdx, greaterThan(0));
     final int nextMethodIdx = src.indexOf('void _setupVolumeKeyHandlers()');
     final String body = src.substring(recomputeIdx, nextMethodIdx);
-    expect(body.contains('_lastAbsoluteCount = _absoluteCharPosition('), isTrue,
-        reason: '补算落定后必须把 _lastAbsoluteCount 校到当前位置，杜绝统计 spike');
+    expect(body.contains('_sessionMaxAbsoluteChars = _absoluteCharPosition('),
+        isTrue,
+        reason: '补算落定后必须把统计水位校到当前位置，杜绝统计 spike');
     expect(body.contains('identical(_book, book)'), isTrue,
         reason: '只在仍是同一本书时采用补算结果（防换书竞态）');
   });

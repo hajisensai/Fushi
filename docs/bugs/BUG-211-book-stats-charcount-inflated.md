@@ -1,0 +1,6 @@
+## BUG-211 · 书籍统计字数明显过高
+- **报告**：2026-06-12（用户：）TODO-147
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:3996-4001`（修复前）——阅读统计「字数」按相邻两次进度采样的正向差累加，`_lastAbsoluteCount`（旧名）每次进度回调无条件下移到当前绝对位置。回退翻页时差为负不计入，但水位被下移；再前进经过同一段时差又转正，重叠区间被反复累加。日语精读常见的「读一句→往回看→再往前」往返翻页，使统计字数随往返次数倍增（单测实证：来回研读 `[0,200]` 三遍，旧逻辑计 900，真实只读了 200~300），呈现「字数明显非常高」。与 TODO-131（commit `3925b8173`）无关——该 commit 只动开书计数复用，未触碰 charDiff 累加逻辑，往返重复计数是 131 之前就存在的预存缺陷；也与 TODO-146 翻页跳章首不同源（146 是翻页定位，147 是计数语义）。
+- **[x] ① 已修复** — `reader_hibiki_page.dart`：新增纯函数 `accumulateSessionChars`（high-water mark 语义：仅当当前绝对位置越过本 session 历史最高已读位置时增量计入，水位只升不降，回退/重读旧区间不重复计数）；`_refreshProgress` 改用该纯函数；字段 `_lastAbsoluteCount` 改名 `_sessionMaxAbsoluteChars`（语义从「上次位置」变「历史最高已读位置」），三处 baseline 重置点（开书 onRestoreComplete、后台重算落定）保留为「新 session 起点的水位初值」。提交：见下方 commit。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/session_char_count_test.dart`（6 例：首次前进/单调前进/回退不计且不降水位/**往返翻页不重复计数**/多次往返不倍增/原地轮询不累计）。撤销修复（回到无条件正向差 + 水位下移）→ 往返/多次往返/回退三例转红（实证 Actual 170/900/50 vs Expected 120/300/100），证明测试真抓根因。另更新 TODO-131 守卫 `book_open_perf_wiring_guard_test.dart` 适配字段改名。提交：见下方 commit。
+- **备注**：分页翻页/10秒轮询/导航各路径已逐一核对；DB 层 `addReadingStatistic` 为正常 ACCUMULATE 语义无重复；导入/读取两端章字数均为 `chapterPlainText().length` 对称。听有声书时文字自动跟随也会经此路径计入字数（属产品语义，非本 bug，未改）。host 可计算自验，真机统计页观感待用户复测。
