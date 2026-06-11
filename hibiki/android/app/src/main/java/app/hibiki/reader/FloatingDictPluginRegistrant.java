@@ -57,5 +57,17 @@ final class FloatingDictPluginRegistrant {
         } catch (Exception e) {
             Log.e(TAG, "Error registering plugin fluttertoast", e);
         }
+        try {
+            flutterEngine.getPlugins().add(
+                new com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFlutterPlugin());
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering plugin flutter_inappwebview_android", e);
+        }
+        try {
+            flutterEngine.getPlugins().add(
+                new io.flutter.plugins.urllauncher.UrlLauncherPlugin());
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering plugin url_launcher_android", e);
+        }
     }
 }

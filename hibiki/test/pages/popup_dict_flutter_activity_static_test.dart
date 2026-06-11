@@ -76,6 +76,32 @@ void main() {
     expect(src, contains('integration_test'));
     expect(src, contains('del /f /q "%ANDROID_REGISTRANT%"'));
   });
+
+  // BUG-193 / TODO-110: the :popup Flutter engine renders dictionary entries in
+  // a flutter_inappwebview WebView (DictionaryPopupWebView). The hand-written
+  // FloatingDictPluginRegistrant (introduced by BUG-146 to drop the dev-only
+  // integration_test plugin) must still register the runtime plugins the popup
+  // render path actually uses, or the WebView platform view never builds and the
+  // result area stays blank.
+  test('floating dict registrant registers popup-render runtime plugins', () {
+    const String registrantPath =
+        'android/app/src/main/java/app/hibiki/reader/FloatingDictPluginRegistrant.java';
+    final String src = File(registrantPath).readAsStringSync();
+    // Root cause: word entries render in an InAppWebView platform view.
+    expect(
+        src,
+        contains(
+            'com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFlutterPlugin'),
+        reason: 'popup 引擎用 InAppWebView 渲染词条，漏注册它结果区永久空白');
+    // Word-entry external links call launchUrl (DictionaryPopupWebView).
+    expect(src, contains('io.flutter.plugins.urllauncher.UrlLauncherPlugin'),
+        reason: '词条外链点击走 url_launcher，缺它外链点击无反应');
+    // Must NOT drag the dev-only integration_test plugin back in (BUG-146).
+    expect(src, isNot(contains('integration_test')),
+        reason: 'popup 引擎不得带回 integration_test dev 插件（BUG-146 初衷）');
+    expect(src, isNot(contains('IntegrationTestPlugin')),
+        reason: 'popup 引擎不得带回 integration_test dev 插件（BUG-146 初衷）');
+  });
 }
 
 String _functionSource(String source, String startToken, String endToken) {
