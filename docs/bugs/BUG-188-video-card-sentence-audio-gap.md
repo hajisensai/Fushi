@@ -1,0 +1,8 @@
+## BUG-188 · 视频制卡字幕gap时缺真实句子音频
+- **报告**：2026-06-11（用户：「有声书和视频制卡没句子声音」，TODO-104b）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart`（旧 `:1219` 捕获 / `:1528` 制卡取 cue）。用户要的是制卡附「当前正在学那句字幕」对应的**视频声轨真实音频段**（绝无 TTS）。制卡取 cue 复用 `VideoPlayerController.currentCue`，而它被字幕显示语义独占——句间静音 gap / 末句之后被清成 null（BUG-074：真实字幕在时间窗结束后就该消失）。用户常在「字幕刚消失那一瞬」（已暂停、字幕条已撤但查词浮层还在）制卡，此刻 `currentCue == null` → 制卡链路 `_lastLookupCue ?? currentCue` 拿不到 cue → `sasayakiAudioPath` 字段空。**数据所有权冲突**：同一个 `_currentCue` 既服务 UI 显示又被制卡复用。
+- **[x] ① 已修复** — `hibiki/lib/src/pages/implementations/video_hibiki_page.dart`：新增顶层纯函数 `resolveMiningCueForPosition({cues, positionMs, delayMs})`，制卡走**独立的按位置解析**（findCueIndex 精确命中 → gap/末句后 floor 回退到「起点 <= 当前位置」的最后一条 cue → 位置早于全部 cue / 空 cue 诚实返回 null），不复用被 gap 清空的 UI 状态 `currentCue`。`_lookupAt` 捕获处 `_lastLookupCue = controller.currentCue ?? resolveMiningCueForPosition(...)`；`onMineEntry` 取 cue 处二段兜底 `_lastLookupCue ?? controller.currentCue ?? resolveMiningCueForPosition(...)`。只读调用 `VideoPlayerController`（cues/positionMs/delayMs），**未改 video_player_controller.dart**（TODO-073 在改）。提交哈希：见下。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/video_mine_cue_resolution_test.dart`（8 例，直测纯函数）：显示期精确命中 / 闭区间边界 / **gap 复现（撤 floor 兜底转红）** / 末句后 / 多段 gap / 早于首句 null / 空 cue null / 音画延迟扣减。撤掉 floor 兜底（退回裸 findCueIndex）→ 4 个守卫用例转红，正常路径仍绿（已实测）。
+  - `hibiki/test/pages/video_mining_context_guard_test.dart`（源码守卫，更新）：锁定 `_lookupAt` gap 兜底用 `resolveMiningCueForPosition` + `onMineEntry` 二段兜底链 + `startMs/endMs/cueSentence` 仍正确传递。
+- **备注**：与有声书线（TODO-104a，BUG-172，已合 develop）同一类「制卡缺真实句子音频」用户诉求，但视频线根因独立（UI cue 被 gap 清空 vs 有声书 TTS 回退）。绝无 TTS。host 无 libmpv/ffmpeg，真机视频听声留用户验证。**采番 188**（185/186/187 已占；073/082 也在取号，PM 集成时若撞号重编）。

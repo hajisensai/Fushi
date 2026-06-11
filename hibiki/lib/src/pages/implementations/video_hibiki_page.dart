@@ -84,6 +84,52 @@ import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 /// 渲染 → 清晰。中和后浮层坐标系即真实屏幕空间（净变换=1），与 `localToGlobal` 的字符
 /// rect 同系，故 [_lookupAt] **直接**用该屏幕 rect 定位（不再 ÷s 换算到画布），界面任意
 /// 缩放下定位都不偏。
+///
+/// 制卡取 cue 的纯函数：按播放位置 [positionMs] 解析「用户正在学的那条字幕句」，
+/// 供 [VideoHibikiPage] 制卡裁真实句子音频段用（TODO-104b / BUG-188）。
+///
+/// **为什么不直接复用 [VideoPlayerController.currentCue]**：`currentCue` 被字幕显示
+/// 语义独占——句间静音 gap / 末句之后必须清成 null（真实字幕在时间窗结束后就该消失，
+/// BUG-074）。用户常在「字幕刚消失的那一瞬」（已暂停、字幕条已撤但查词浮层还在）制卡，
+/// 此刻 `currentCue == null`，制卡链路（`_lastLookupCue ?? currentCue`）拿不到 cue →
+/// 句子音频字段空。这是**数据所有权冲突**：同一个 `_currentCue` 既服务 UI 显示又被制卡
+/// 复用。本函数让制卡走**独立的按位置解析**，不复用被 gap 清空的 UI 状态。
+///
+/// 解析规则（与字幕显示同一 [effectiveSubtitlePositionMs] 坐标系，保证裁的就是用户看到
+/// 的那句）：
+/// 1. [JsonAlignmentParser.findCueIndex] 精确命中（位置落在某条 cue 的 `[startMs, endMs]`
+///    闭区间内）→ 返回该 cue（与字幕显示期一致，不改正常路径）。
+/// 2. 命中 -1（gap / 早于首句）→ floor 回退：取「起点 `startMs <= effectivePos` 的最后一条
+///    cue」=用户最后看到、正在学的那句。
+/// 3. floor 也无（位置早于全部 cue，一句都没起播过）/ 空 cue → 返回 null，制卡诚实留空。
+AudioCue? resolveMiningCueForPosition({
+  required List<AudioCue> cues,
+  required int positionMs,
+  required int delayMs,
+}) {
+  if (cues.isEmpty) return null;
+  final int effectivePos = effectiveSubtitlePositionMs(positionMs, delayMs);
+  // 1. 精确命中：位置落在某条 cue 的时间窗内（与字幕显示期同一判据）。
+  final int hit =
+      JsonAlignmentParser.findCueIndex(cues: cues, positionMs: effectivePos);
+  if (hit >= 0) return cues[hit];
+  // 2. gap / 末句后：floor 找「起点 <= 当前位置」的最后一条 cue（用户最后看到的那句）。
+  //    [cues] 由 [VideoPlayerController.setCues] 保证按 startMs 升序，可二分。
+  int lo = 0;
+  int hi = cues.length;
+  while (lo < hi) {
+    final int mid = (lo + hi) >>> 1;
+    if (cues[mid].startMs <= effectivePos) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  final int floor = lo - 1;
+  // 3. 位置早于全部 cue（floor < 0）：一句都没起播过，诚实返回 null。
+  return floor >= 0 ? cues[floor] : null;
+}
+
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
     required this.bookUid,
@@ -1216,7 +1262,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       unawaited(controller.pause());
     }
     _lastLookupSentence = sentence;
-    _lastLookupCue = controller.currentCue;
+    // 制卡要裁「用户正在学的那句」的真实声轨音频。currentCue 在字幕 gap / 末句后被
+    // 清成 null（BUG-074 字幕条该消失），而查词往往就发生在字幕刚消失那一瞬——若直接
+    // 取 currentCue，制卡时句子音频字段会空（TODO-104b / BUG-188）。故 null 时按当前
+    // 播放位置独立解析最近一条 cue（只读 controller，不复用被 gap 清空的 UI 状态）。
+    _lastLookupCue = controller.currentCue ??
+        resolveMiningCueForPosition(
+          cues: controller.cues,
+          positionMs: controller.positionMs ?? 0,
+          delayMs: controller.delayMs,
+        );
     await pushNestedPopup(
       query: term,
       selectionRect: charRect,
@@ -1525,7 +1580,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
 
-    final AudioCue? cue = _lastLookupCue ?? controller.currentCue;
+    // _lastLookupCue 在查词那刻已按位置解析过（含 gap 兜底，见 _lookupAt）；这里
+    // 再以「currentCue → 按位置解析」二段兜底，覆盖未经查词捕获或制卡瞬间字幕又消失
+    // 的边界，保证有 cue 可裁真实句子音频（TODO-104b / BUG-188）。
+    final AudioCue? cue = _lastLookupCue ??
+        controller.currentCue ??
+        resolveMiningCueForPosition(
+          cues: controller.cues,
+          positionMs: controller.positionMs ?? 0,
+          delayMs: controller.delayMs,
+        );
     final String? videoPath = controller.videoPath;
 
     // 视频卡片封面 → coverPath（→`{book-cover}`）：优先把**当前 cue 时间段**导出成
