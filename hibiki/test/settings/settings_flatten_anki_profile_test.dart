@@ -31,6 +31,11 @@ import '../helpers/test_platform_services.dart';
 /// 2. 渲染后正文确实内联（AnkiSettingsBody / ProfileManagementBody 现身）、且
 ///    详情页里不再有任何子页跳转行；
 /// 3. 平铺进来的「自动添加书名到标签」开关仍真生效（写穿 prefs）。
+/// 4. TODO-135（方案A）：默认标签区三个开关——「hibiki」「来源分类」「自动添加
+///    书名」——并入同一个**无条件显示**的区块。未配置 Anki 时它们也都露出（方案A
+///    取舍），且「自动添加书名」仍可翻转写穿（绝不退化）。这是方案A的行为守卫：
+///    撤掉「把两 tag 开关移出 isConfigured 门控」的修复，未配置态就只剩一个开关，
+///    本测试转红。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -169,14 +174,33 @@ void main() {
     expect(find.byType(AdaptiveSettingsNavigationRow), findsNothing,
         reason: '平铺后不应再出现指向 Anki 子页的跳转行');
 
-    // ③ 平铺进来的「自动添加书名到标签」开关真生效（未配置 Anki 时它是页面里
-    //    唯一的开关行）。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsOneWidget);
+    // ③ TODO-135 方案A：默认标签区三个开关（hibiki / 来源分类 / 自动添加书名）都
+    //    并入一个无条件显示的区块。未配置 Anki 时它们也都露出——故页面里恰有三个
+    //    SwitchRow（旧行为：仅「自动添加书名」一个）。
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(3),
+        reason: 'TODO-135 方案A：未配置 Anki 时默认标签区三个开关都应显示'
+            '（hibiki / 来源分类 / 自动添加书名）');
+    expect(find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "hibiki" tag'),
+        findsOneWidget,
+        reason: 'hibiki 标签开关应无条件显示');
+    expect(
+        find.widgetWithText(
+            AdaptiveSettingsSwitchRow, 'Add source category tag'),
+        findsOneWidget,
+        reason: '来源分类开关应无条件显示');
+    final Finder autoAddRow = find.widgetWithText(
+        AdaptiveSettingsSwitchRow, 'Auto-add book title to tags');
+    expect(autoAddRow, findsOneWidget,
+        reason: '「自动添加书名」开关必须仍无条件可用（方案B会破坏，绝不退化）');
+
+    // ④「自动添加书名」开关仍真生效（写穿 prefs）——必须保留的用户目标。
     final bool before = appModel.autoAddBookNameToTags;
     // 开关在 Anki 正文底部，初始在视口外——先滚动到它再点，否则 tap 落空。
-    await tester.ensureVisible(find.byType(Switch));
+    final Finder autoAddSwitch =
+        find.descendant(of: autoAddRow, matching: find.byType(Switch));
+    await tester.ensureVisible(autoAddSwitch);
     await tester.pump();
-    await tester.tap(find.byType(Switch));
+    await tester.tap(autoAddSwitch);
     await tester.pump();
     expect(appModel.autoAddBookNameToTags, isNot(before),
         reason: '点开关应翻转 autoAddBookNameToTags 并写穿 prefs');

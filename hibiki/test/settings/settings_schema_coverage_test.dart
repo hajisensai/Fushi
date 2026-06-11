@@ -49,6 +49,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
   'cardCreation/Auto-add book title to tags':
       'test/creator/tags_field_auto_add_book_test.dart',
+  // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
+  // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
+  // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡
+  // 测试咬住（tagIncludeHibiki/tagIncludeCategory 开/关各分支）。
+  'cardCreation/Add "hibiki" tag':
+      'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
+  'cardCreation/Add source category tag':
+      'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
   'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
   'system/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',

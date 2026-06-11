@@ -119,23 +119,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             children: _buildFieldMappings(settings, vm),
           ),
           AdaptiveSettingsSection(
-            title: t.anki_tag_default_section,
-            children: [
-              AdaptiveSettingsSwitchRow(
-                title: t.anki_tag_include_hibiki,
-                subtitle: t.anki_tag_include_hibiki_hint,
-                value: settings.tagIncludeHibiki,
-                onChanged: vm.updateTagIncludeHibiki,
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.anki_tag_include_category,
-                subtitle: t.anki_tag_include_category_hint,
-                value: settings.tagIncludeCategory,
-                onChanged: vm.updateTagIncludeCategory,
-              ),
-            ],
-          ),
-          AdaptiveSettingsSection(
             children: [
               _buildTagsInput(settings, vm),
               AdaptiveSettingsSwitchRow(
@@ -153,11 +136,27 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             ],
           ),
         ],
-        // 「自动添加书名到标签」——原本是「制卡」分组里 Anki 子菜单之外的独立开关；
-        // 现在 Anki 正文已平铺进本页，把它并入页尾与其它制卡偏好同区。标题保持
-        // `t.auto_add_book_name_to_tags` 不变，覆盖率测试的 accounting 键沿用。
+        // 默认标签区（TODO-135）：三个「自动给卡片加什么标签」的开关并到一处，
+        // 且无条件显示——它们写的都是 pref（hibiki/分类写 AnkiSettings，书名写
+        // AppModel.autoAddBookNameToTags），与 Anki 是否已连接无关，所以不再藏在
+        // `uiState.isConfigured` 门控里。方案 A 的取舍：未配置 Anki 时 hibiki/分类
+        // 两开关也会露出（用户已接受），换来三个语义同类的开关视觉聚在一起。
+        // 标题/各开关 key 沿用 TODO-115/117 现有 i18n 与覆盖率 accounting 键。
         AdaptiveSettingsSection(
+          title: t.anki_tag_default_section,
           children: [
+            AdaptiveSettingsSwitchRow(
+              title: t.anki_tag_include_hibiki,
+              subtitle: t.anki_tag_include_hibiki_hint,
+              value: settings.tagIncludeHibiki,
+              onChanged: vm.updateTagIncludeHibiki,
+            ),
+            AdaptiveSettingsSwitchRow(
+              title: t.anki_tag_include_category,
+              subtitle: t.anki_tag_include_category_hint,
+              value: settings.tagIncludeCategory,
+              onChanged: vm.updateTagIncludeCategory,
+            ),
             AdaptiveSettingsSwitchRow(
               title: t.auto_add_book_name_to_tags,
               icon: Icons.label_outline,
