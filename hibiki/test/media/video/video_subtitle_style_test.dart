@@ -24,8 +24,9 @@ void main() {
     expect(s.resolveShadowThickness(1.0), 5);
     expect(s.backgroundColor, isNull);
     expect(s.backgroundOpacity, closeTo(0.0, 1e-9));
-    // 默认位置上移到控制条之上（TODO-089）：75 -> 100，避开底部进度条。
-    expect(s.bottomPadding, 100);
+    // 默认位置是用户基线 75（TODO-129 反转 089 的恒抬升）：不再把控制条避让恒含进默认值，
+    // 避让改由 overlay 在控制条可见时动态叠加。
+    expect(s.bottomPadding, 75);
   });
 
   test('unconfigured weight and shadow follow app UI scale', () {
@@ -164,30 +165,32 @@ void main() {
     expect(s.resolveShadowThickness(1.0), 5); // 加大后的默认（TODO-051）。
   });
 
-  group('default subtitle position clears the bottom controls bar (TODO-089)',
-      () {
-    test('default bottomPadding lifts subtitle clear of the controls reserve',
+  group('dynamic subtitle dodge of the bottom controls bar (TODO-129)', () {
+    test(
+        'default bottomPadding is the natural user baseline, NOT a forced lift',
         () {
-      // 用户诉求：字幕默认不要遮盖底部进度条/控制条。media_kit 控制条显示时底部
-      // 进度条+按钮条占据 [kVideoControlsBottomReserve] 高度；自绘字幕 overlay 不随
-      // 控制条显隐上推，故默认抬升量必须 >= 该预留高度，否则控制条显示时被盖住。
+      // TODO-129 反转 089：默认 bottomPadding 不再把控制条避让恒加进去（否则进度条
+      // 隐藏时字幕也恒抬高、留一大块空白）。默认回到自然基线 75；避让改由 overlay 在
+      // 控制条可见时动态叠加 [kVideoControlsBottomReserve]、隐藏时落回（见
+      // video_subtitle_overlay_test.dart）。撤回修复（恒含避让 => 默认 >= 98）则本条变红。
+      expect(VideoSubtitleStyle.defaults.bottomPadding, 75);
       expect(
         VideoSubtitleStyle.defaults.bottomPadding,
-        greaterThanOrEqualTo(kVideoControlsBottomReserve),
+        lessThan(kVideoControlsBottomReserve),
+        reason: '默认不应把控制条避让恒含进 bottomPadding（那是 089 的恒抬升，已反转）',
       );
     });
 
     test('controls reserve matches media_kit default bottom bar geometry', () {
-      // 守卫：预留高度 = bottomButtonBarMargin.vertical(42) + buttonBarHeight(56)。
+      // 守卫：避让高度 = bottomButtonBarMargin.vertical(42) + buttonBarHeight(56)。
       // 若 media_kit 升级改了默认布局，这条会提醒重新核对常量。
       expect(kVideoControlsBottomReserve, 98);
     });
 
-    test(
-        'an explicit user bottomPadding is honoured verbatim, even below the bar',
-        () {
-      // 「除非用户手动调位置」：用户显式选的任何值（含故意放进控制条区）都如实尊重，
-      // 不被默认避让逻辑改写——模型里就是同一个字段，无「是否手动」分支。
+    test('an explicit user bottomPadding is honoured verbatim', () {
+      // 「除非用户手动调位置」：用户显式选的任何值都如实尊重，不被默认 / 动态避让逻辑
+      // 改写——模型里就是同一个字段，无「是否手动」分支。动态避让在 overlay 侧叠加在
+      // 这个基线之上，不污染持久化的用户位置。
       final VideoSubtitleStyle back = VideoSubtitleStyle.decode(
         VideoSubtitleStyle.encode(
           VideoSubtitleStyle.defaults.copyWith(bottomPadding: 20),

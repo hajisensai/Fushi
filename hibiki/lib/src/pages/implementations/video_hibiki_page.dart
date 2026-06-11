@@ -360,6 +360,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
 
+  /// media_kit 底部控制条当前是否可见（TODO-129）——驱动字幕动态避让进度条。
+  ///
+  /// 根因约束：media_kit 的 [MaterialDesktopVideoControls] / [MaterialVideoControls]
+  /// 把控制条可见性 `visible` 与隐藏 `Timer` 全藏在私有 State 里，**不暴露任何回调 /
+  /// notifier / 公开 API**（已查证 media_kit_video 的 `setSubtitleViewPadding` 也只写进
+  /// SubtitleView 私有 State，Hibiki 又禁用了内置 SubtitleView）。故无法直接读 media_kit
+  /// 的可见性。这里在 Hibiki 侧自建一份镜像：复刻 media_kit **同一套触发源**——桌面
+  /// hover（[_videoControlsHoverRegion] 的 onEnter/onHover/onExit）、移动端点画面 toggle
+  /// （[_handleVideoPointerUp]）、键盘 / seek 唤起（[_pokeControlsVisible]）+ 同样的
+  /// `controlsHoverDuration`(2s) 自动隐藏定时（[_scheduleControlsHide]）、初始不可见
+  /// （media_kit 两端默认 `visibleOnMount:false`）。
+  ///
+  /// 用 [ValueNotifier] 而非 setState：字幕 overlay 在 media_kit controls builder 内的
+  /// [Stack]（[_buildVideoControlsInner]），全屏是推到根 navigator 的独立路由、不随本页
+  /// setState 重建（与 [_titleNotifier] / [_immersiveLocked] 同源，BUG-120）。监听
+  /// notifier 才能让窗口与全屏两种场景字幕都随控制条显隐上顶 / 落回。
+  ///
+  /// 取舍（诚实声明）：自建镜像与 media_kit 私有时序可能有细微漂移（如 buffering 强制
+  /// 可见、拖进度条等次要触发本镜像未覆盖），方案受限于 media_kit 不暴露可见性 API。
+  final ValueNotifier<bool> _videoControlsVisible = ValueNotifier<bool>(false);
+
+  /// 控制条自动隐藏定时器（TODO-129）。每次唤起重置，时长与 media_kit 主题的
+  /// `controlsHoverDuration` 同为 2s（见 [_mobileControlsTheme] / [_desktopControlsTheme]）。
+  Timer? _videoControlsHideTimer;
+
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
   void _showOsd(String message, {IconData? icon, double? progress}) {
@@ -1227,6 +1252,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _immersiveLocked.value = next;
     if (next) {
       _showOsd(t.video_immersive_locked, icon: Icons.lock_outline);
+      // 锁定后 media_kit 控制条不再弹（指针被 IgnorePointer 挡），镜像同步收起、字幕
+      // 落回用户位置基线（无控制条可遮挡，不需避让；TODO-129）。
+      _markControlsVisible(false);
     } else {
       _showOsd(t.video_immersive_unlocked, icon: Icons.lock_open_outlined);
       // 解锁瞬间把控制条唤回（poke 在 _immersiveLocked 复位后才放行），让用户立刻
@@ -1270,6 +1298,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _crossSubRecorder.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
+    _videoControlsHideTimer?.cancel();
+    _videoControlsVisible.dispose();
     super.dispose();
   }
 
@@ -1357,6 +1387,51 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         kind: PointerDeviceKind.mouse,
       ),
     );
+    // 镜像可见性同步翻可见 + 重置隐藏定时（TODO-129）：键盘 / seek 唤起控制条时字幕也
+    // 跟着上顶（与刚派发的合成 hover 让 media_kit 控制条出现语义一致）。
+    _markControlsVisible(true);
+  }
+
+  /// media_kit 控制条自动隐藏时长，与两端控制主题的 `controlsHoverDuration` 同源（2s）。
+  static const Duration _videoControlsHoverDuration = Duration(seconds: 2);
+
+  /// 翻转控制条镜像可见性（TODO-129），驱动字幕动态避让。
+  ///
+  /// 复刻 media_kit 自己的可见性时序：唤起（hover / tap / 键盘 / seek）时置可见并重置
+  /// `controlsHoverDuration` 自动隐藏定时；显式移出（鼠标离开视频区）时立即不可见、取消
+  /// 定时。锁定 / 沉浸模式（[_immersiveLocked]）下 media_kit 控制条本就不弹（被
+  /// [IgnorePointer] 挡掉指针），故镜像也强制不可见、字幕不避让（无控制条可遮挡）。
+  void _markControlsVisible(bool visible) {
+    if (!mounted) return;
+    if (_immersiveLocked.value) {
+      _videoControlsHideTimer?.cancel();
+      _videoControlsHideTimer = null;
+      _videoControlsVisible.value = false;
+      return;
+    }
+    _videoControlsVisible.value = visible;
+    _videoControlsHideTimer?.cancel();
+    _videoControlsHideTimer = null;
+    if (visible) {
+      _videoControlsHideTimer = Timer(_videoControlsHoverDuration, () {
+        if (mounted) _videoControlsVisible.value = false;
+      });
+    }
+  }
+
+  /// 桌面鼠标移出视频区：与 media_kit `onExit` 一致立即收起控制条镜像（字幕落回基线）。
+  void _onVideoControlsHoverExit() {
+    if (!mounted) return;
+    _videoControlsHideTimer?.cancel();
+    _videoControlsHideTimer = null;
+    _videoControlsVisible.value = false;
+  }
+
+  /// 移动端点画面（非控制条按钮、非字幕字符）toggle 控制条可见（镜像 media_kit 移动控制
+  /// 条的 `onTap`，TODO-129）。桌面走 hover，不经此路径。
+  void _toggleControlsVisibleForTap() {
+    if (!mounted || _immersiveLocked.value) return;
+    _markControlsVisible(!_videoControlsVisible.value);
   }
 
   /// 是否当前用 media_kit 桌面控制条（仅桌面三端有 hover 自动隐藏语义）。
@@ -3648,6 +3723,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
 
+    // 移动端点画面（非控制条按钮）toggle 控制条可见性镜像（TODO-129），镜像 media_kit
+    // 移动控制条的 `onTap`：让字幕跟随控制条上顶 / 落回。桌面走 hover（[_videoControlsHoverWrap]）
+    // 不经此路径。注意此处只在确认点的是画面区（已过 [_isVideoChromePointer] 闸）后触发。
+    if (!_isDesktopVideoControls) _toggleControlsVisibleForTap();
+
     final DateTime now = DateTime.now();
     final DateTime? lastAt = _lastVideoPointerUpAt;
     final Offset? lastPosition = _lastVideoPointerUpPosition;
@@ -3857,83 +3937,107 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 桌面 hover 追踪层（TODO-129）：覆盖整个视频控制区，镜像 media_kit 自己的
+  /// `MouseRegion.onEnter/onHover/onExit` 翻 [_videoControlsVisible]，让字幕动态避让进度
+  /// 条。`opaque:false`：不阻断 hover hit-test 继续下探到 media_kit 的 `MouseRegion`，
+  /// 故 media_kit 控制条仍照常被鼠标唤起、字幕逐字查词 / 点击不受影响（与字幕层
+  /// BUG-198 同款 non-opaque 纪律）。仅桌面挂 hover；移动端无 hover 语义，可见性走
+  /// [_handleVideoPointerUp] 的点画面 toggle，故透传 child 零开销。本层与字幕 overlay
+  /// 同在 controls builder 内，全屏复用同一 builder → 窗口与全屏共用同一追踪。
+  Widget _videoControlsHoverWrap({required Widget child}) {
+    if (!_isDesktopVideoControls) return child;
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) => _markControlsVisible(true),
+      onHover: (_) => _markControlsVisible(true),
+      onExit: (_) => _onVideoControlsHoverExit(),
+      child: child,
+    );
+  }
+
   /// [_buildVideoControls] 的实体（gate 之内）：拖放目标 + controls + 字幕 overlay
   /// + OSD。
   Widget _buildVideoControlsInner(
     VideoState state,
     VideoPlayerController controller,
   ) {
-    return HibikiFileDropTarget(
-      onDrop: (List<String> paths, Offset _) {
-        _handlePlaybackDrop(controller, paths);
-      },
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerUp: _handleVideoPointerUp,
-        // 桌面右键 = 视频上下文菜单（TODO-048c）。GestureDetector 只接管次按钮
-        // （右键）的 tap，左键双击全屏仍走外层 Listener.onPointerUp（两路指针语义互不
-        // 干扰）。onSecondaryTapUp 提供右键松手处的 globalPosition 作 showMenu 锚点。
-        // 移动端无次按钮、永不触发，但 [_handleSecondaryTap] 内再门控一次（双保险）。
-        child: GestureDetector(
+    return _videoControlsHoverWrap(
+      child: HibikiFileDropTarget(
+        onDrop: (List<String> paths, Offset _) {
+          _handlePlaybackDrop(controller, paths);
+        },
+        child: Listener(
           behavior: HitTestBehavior.translucent,
-          onSecondaryTapUp: (TapUpDetails details) =>
-              _handleSecondaryTap(details.globalPosition),
-          child: Stack(
-            children: <Widget>[
-              // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
-              // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
-              // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
-              // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
-              Positioned.fill(
-                child: Builder(
-                  builder: (BuildContext controlsContext) {
-                    _videoControlsContext = controlsContext;
-                    // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
-                    // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
-                    // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
-                    // 过滤指针，不影响键盘：media_kit 的 CallbackShortcuts + Focus 是
-                    // MouseRegion 的祖先（见 media_kit material_desktop.dart），快捷键照常
-                    // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
-                    // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
-                    // 让全屏路由也响应（BUG-120 同源）。
-                    return ValueListenableBuilder<bool>(
-                      valueListenable: _immersiveLocked,
-                      builder: (BuildContext _, bool locked, __) =>
-                          IgnorePointer(
-                        ignoring: locked,
-                        child: AdaptiveVideoControls(state),
-                      ),
-                    );
-                  },
+          onPointerUp: _handleVideoPointerUp,
+          // 桌面右键 = 视频上下文菜单（TODO-048c）。GestureDetector 只接管次按钮
+          // （右键）的 tap，左键双击全屏仍走外层 Listener.onPointerUp（两路指针语义互不
+          // 干扰）。onSecondaryTapUp 提供右键松手处的 globalPosition 作 showMenu 锚点。
+          // 移动端无次按钮、永不触发，但 [_handleSecondaryTap] 内再门控一次（双保险）。
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onSecondaryTapUp: (TapUpDetails details) =>
+                _handleSecondaryTap(details.globalPosition),
+            child: Stack(
+              children: <Widget>[
+                // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
+                // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
+                // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
+                // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
+                Positioned.fill(
+                  child: Builder(
+                    builder: (BuildContext controlsContext) {
+                      _videoControlsContext = controlsContext;
+                      // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
+                      // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
+                      // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
+                      // 过滤指针，不影响键盘：media_kit 的 CallbackShortcuts + Focus 是
+                      // MouseRegion 的祖先（见 media_kit material_desktop.dart），快捷键照常
+                      // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
+                      // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
+                      // 让全屏路由也响应（BUG-120 同源）。
+                      return ValueListenableBuilder<bool>(
+                        valueListenable: _immersiveLocked,
+                        builder: (BuildContext _, bool locked, __) =>
+                            IgnorePointer(
+                          ignoring: locked,
+                          child: AdaptiveVideoControls(state),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              ),
-              Positioned.fill(
-                child: VideoSubtitleOverlay(
-                  controller: controller,
-                  onCharTap: _lookupAt,
-                  hitTester: _subtitleHitTester,
-                  blurEnabled: appModel.videoSubtitleBlur,
-                  fontSize: _subtitleStyle.fontSize,
-                  textColor: _subtitleStyle.resolveTextColor(
-                      _subtitleTextColor(_videoChromeColorScheme(context))),
-                  fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
-                  shadowColor: _subtitleStyle.resolveShadowColor(
-                      _subtitleShadowColor(_videoChromeColorScheme(context))),
-                  shadowThickness:
-                      _subtitleStyle.resolveShadowThickness(_videoUiScale),
-                  backgroundColor: _subtitleStyle.resolveBackgroundColor(
-                      _subtitleBackgroundColor(
-                          _videoChromeColorScheme(context))),
-                  backgroundOpacity: _subtitleStyle.backgroundOpacity,
-                  bottomPadding: _subtitleStyle.bottomPadding,
-                  fontFamily: appModel.appFontFamily,
+                Positioned.fill(
+                  child: VideoSubtitleOverlay(
+                    controller: controller,
+                    onCharTap: _lookupAt,
+                    hitTester: _subtitleHitTester,
+                    blurEnabled: appModel.videoSubtitleBlur,
+                    fontSize: _subtitleStyle.fontSize,
+                    textColor: _subtitleStyle.resolveTextColor(
+                        _subtitleTextColor(_videoChromeColorScheme(context))),
+                    fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
+                    shadowColor: _subtitleStyle.resolveShadowColor(
+                        _subtitleShadowColor(_videoChromeColorScheme(context))),
+                    shadowThickness:
+                        _subtitleStyle.resolveShadowThickness(_videoUiScale),
+                    backgroundColor: _subtitleStyle.resolveBackgroundColor(
+                        _subtitleBackgroundColor(
+                            _videoChromeColorScheme(context))),
+                    backgroundOpacity: _subtitleStyle.backgroundOpacity,
+                    bottomPadding: _subtitleStyle.bottomPadding,
+                    // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕在用户位置
+                    // 之上额外上顶 kVideoControlsBottomReserve、隐藏落回。全屏复用同一
+                    // builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
+                    controlsVisible: _videoControlsVisible,
+                    fontFamily: appModel.appFontFamily,
+                  ),
                 ),
-              ),
-              _buildSubtitleJumpPanel(controller),
-              _buildOsdOverlay(),
-              _buildLockOverlay(),
-              _buildCrossSubtitleRecordingOverlay(),
-            ],
+                _buildSubtitleJumpPanel(controller),
+                _buildOsdOverlay(),
+                _buildLockOverlay(),
+                _buildCrossSubtitleRecordingOverlay(),
+              ],
+            ),
           ),
         ),
       ),

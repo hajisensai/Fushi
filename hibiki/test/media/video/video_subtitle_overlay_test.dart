@@ -30,42 +30,112 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
-  group('default position clears the bottom controls bar (TODO-089)', () {
-    testWidgets('default subtitle bottom stays above the controls reserve',
-        (tester) async {
-      // 用户诉求：字幕默认不遮盖底部进度条。默认 overlay（bottomPadding=100）渲染时，
-      // 字幕底缘到容器底的距离必须 >= 控制条预留高度，否则进度条会盖住字幕。
-      final VideoPlayerController c = _controllerWithCue('A');
-      await _pump(tester, VideoSubtitleOverlay(controller: c));
-
+  group('dynamic dodge of the bottom controls bar (TODO-129)', () {
+    // 字幕字符底缘到容器底的距离 = bottomPadding + 控制条避让(可见时) + 字幕盒自身的
+    // 垂直内 padding（实现细节，[EdgeInsets.symmetric(vertical: 6)] 的底部 6px）。守卫
+    // 把这个固定偏移算进期望值，断言才精确锁定真正语义量（避让叠加 / 落回）。
+    const double kBoxPadBottom = 6;
+    double gapFromBottom(WidgetTester tester) {
       final Rect overlayRect =
           tester.getRect(find.byType(VideoSubtitleOverlay));
       final Rect charRect = tester.getRect(find.text('A'));
-      final double gapFromBottom = overlayRect.bottom - charRect.bottom;
-      expect(
-        gapFromBottom,
-        greaterThanOrEqualTo(kVideoControlsBottomReserve),
-        reason: '字幕底缘距容器底 $gapFromBottom < 控制条预留 '
-            '$kVideoControlsBottomReserve，会被进度条遮挡',
-      );
-    });
+      return overlayRect.bottom - charRect.bottom;
+    }
 
     testWidgets(
-        'a manual lower bottomPadding is respected (covers bar by choice)',
+        'no controlsVisible: subtitle sits at the user baseline (no dodge)',
         (tester) async {
-      // 「除非用户手动调位置」：用户显式把字幕放低（20px）时如实尊重，不强制抬升。
+      // 无控制条可见性（有声书 / 测试 / 无控制条场景）：字幕恒贴 bottomPadding 基线，
+      // 不叠加任何避让（与历史像素级一致）。
       final VideoPlayerController c = _controllerWithCue('A');
       await _pump(
         tester,
-        VideoSubtitleOverlay(controller: c, bottomPadding: 20),
+        VideoSubtitleOverlay(controller: c, bottomPadding: 75),
       );
+      expect(gapFromBottom(tester), closeTo(75 + kBoxPadBottom, 0.5));
+    });
 
-      final Rect overlayRect =
-          tester.getRect(find.byType(VideoSubtitleOverlay));
-      final Rect charRect = tester.getRect(find.text('A'));
-      final double gapFromBottom = overlayRect.bottom - charRect.bottom;
-      // 字幕被有意放进控制条区：底缘距底应明显小于预留高度（尊重用户值）。
-      expect(gapFromBottom, lessThan(kVideoControlsBottomReserve));
+    testWidgets(
+        'controls visible -> subtitle lifts by exactly the controls reserve',
+        (tester) async {
+      // 控制条可见时字幕在用户基线之上额外上顶 [kVideoControlsBottomReserve]（进度条
+      // 把字幕往上顶对应高度）。撤回修复（不读 controlsVisible / 不叠加 reserve）则
+      // gap 仍是 75 < 期望 => 红。
+      final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+      addTearDown(visible.dispose);
+      final VideoPlayerController c = _controllerWithCue('A');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(
+          controller: c,
+          bottomPadding: 75,
+          controlsVisible: visible,
+        ),
+      );
+      // AnimatedPadding 动画到位。
+      await tester.pumpAndSettle();
+      expect(
+        gapFromBottom(tester),
+        closeTo(75 + kVideoControlsBottomReserve + kBoxPadBottom, 0.5),
+        reason: '控制条可见时字幕应在基线 75 之上叠加 $kVideoControlsBottomReserve',
+      );
+    });
+
+    testWidgets('controls hide -> subtitle drops back to the user baseline',
+        (tester) async {
+      // 控制条隐藏（visible 翻 false）：字幕落回 bottomPadding 基线，不再被避让恒抬高
+      // （这正是反转 089「恒抬升」的核心：进度条不在时不留空白）。
+      final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+      addTearDown(visible.dispose);
+      final VideoPlayerController c = _controllerWithCue('A');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(
+          controller: c,
+          bottomPadding: 75,
+          controlsVisible: visible,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final double visibleGap = gapFromBottom(tester);
+      expect(visibleGap,
+          closeTo(75 + kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
+
+      visible.value = false;
+      await tester.pumpAndSettle();
+      final double hiddenGap = gapFromBottom(tester);
+      expect(hiddenGap, closeTo(75 + kBoxPadBottom, 0.5),
+          reason: '控制条隐藏后字幕应落回用户基线 75，不残留避让抬升');
+      // 核心守卫（不依赖盒内 padding）：上顶增量恰为控制条避让量（进度条把字幕顶起对应
+      // 高度）。撤回修复则差值为 0 => 红。
+      expect(visibleGap - hiddenGap, closeTo(kVideoControlsBottomReserve, 0.5));
+    });
+
+    testWidgets(
+        'manual lower bottomPadding stays the baseline the dodge stacks on',
+        (tester) async {
+      // 「除非用户手动调位置」：用户显式低位置（20px）是基线，控制条可见时避让叠加在
+      // 其上（20 + reserve），隐藏时落回 20——手动位置永不被动态避让吞掉。
+      final ValueNotifier<bool> visible = ValueNotifier<bool>(false);
+      addTearDown(visible.dispose);
+      final VideoPlayerController c = _controllerWithCue('A');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(
+          controller: c,
+          bottomPadding: 20,
+          controlsVisible: visible,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // 控制条隐藏：尊重用户低位置（落进控制条区是用户的选择）。
+      expect(gapFromBottom(tester), closeTo(20 + kBoxPadBottom, 0.5));
+
+      visible.value = true;
+      await tester.pumpAndSettle();
+      // 控制条可见：避让叠加在用户基线 20 之上，不改写基线本身。
+      expect(gapFromBottom(tester),
+          closeTo(20 + kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
     });
   });
 

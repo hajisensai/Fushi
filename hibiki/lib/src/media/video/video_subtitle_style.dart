@@ -11,9 +11,12 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 /// 视图正是用这个量（`subtitleVerticalShiftOffset = padding.bottom + bottomButtonBarMargin.vertical
 /// + buttonBarHeight`）在控制条显示时把字幕上推、避开进度条。
 ///
-/// Hibiki 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图），不随控制条显隐
-/// 动态上推，故字幕**默认**抬升量必须 >= 本值，否则控制条显示时进度条/按钮条会盖住
-/// 字幕（TODO-089）。Hibiki 的两套控制主题都未覆盖这两项 margin，故走 media_kit 默认。
+/// Hibiki 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图）。TODO-129 起字幕
+/// **动态**避让：控制条出现时把字幕在用户位置之上额外上顶本值、隐藏时落回用户位置
+/// （由 [VideoSubtitleOverlay] 的 `controlsVisible` 驱动 `AnimatedPadding`），不再像
+/// TODO-089 那样把本值恒加进默认 [VideoSubtitleStyle.bottomPadding]。本常量现在是
+/// 「控制条可见时的避让高度」，不再是默认抬升的下限。Hibiki 的两套控制主题都未覆盖
+/// 这两项 margin，故仍走 media_kit 默认几何（与之同源）。
 const double kVideoControlsBottomReserve = 42 + 56;
 
 /// Video subtitle appearance persisted as app preferences.
@@ -52,12 +55,15 @@ class VideoSubtitleStyle {
   /// low-contrast themes. [fontWeight]/[shadowThickness] stay null to follow the
   /// global UI scale ([defaultFontWeight] / [defaultShadowThickness] at 1.0).
   ///
-  /// [bottomPadding] defaults clear of the bottom controls bar: the self-drawn
-  /// [VideoSubtitleOverlay] doesn't shift with the controls, so the default lift
-  /// must be >= [kVideoControlsBottomReserve] or the progress/seek bar covers the
-  /// subtitle when controls are visible (TODO-089). Users who manually pick a
-  /// lower position keep their value verbatim (no "is-manual" branch — it's the
-  /// same field).
+  /// [bottomPadding] is the user's subtitle position only (default 75). It no
+  /// longer bakes in the controls-bar clearance: TODO-129 made the self-drawn
+  /// [VideoSubtitleOverlay] dodge the bar *dynamically* — when the controls show
+  /// it lifts an extra [kVideoControlsBottomReserve] above this position and
+  /// drops back when they hide (driven by `controlsVisible`). So the default
+  /// stays at the natural 75 and is only pushed up while the progress bar is
+  /// actually on screen, instead of being permanently raised (TODO-089). Users
+  /// who manually pick a position keep their value verbatim (no "is-manual"
+  /// branch — it's the same field; the dynamic dodge stacks on top of it).
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
     fontSize: 36,
     textColor: Color(0xFFFFFFFF),
@@ -66,8 +72,8 @@ class VideoSubtitleStyle {
     shadowThickness: null,
     backgroundColor: null,
     backgroundOpacity: 0,
-    // 100 >= kVideoControlsBottomReserve(98)：默认抬升越过控制条，留 2px 余量。
-    bottomPadding: 100,
+    // 用户位置基线（不含控制条避让）：避让在控制条可见时由 overlay 动态叠加（TODO-129）。
+    bottomPadding: 75,
   );
 
   final double fontSize;

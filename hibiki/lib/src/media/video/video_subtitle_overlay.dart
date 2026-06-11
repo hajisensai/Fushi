@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
@@ -51,7 +52,9 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.shadowThickness = VideoSubtitleStyle.defaultShadowThickness,
     this.backgroundColor,
     this.backgroundOpacity = 0,
-    this.bottomPadding = 100,
+    this.bottomPadding = 75,
+    this.controlsVisible,
+    this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.fontFamily,
     super.key,
   });
@@ -91,8 +94,20 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 字幕背景不透明度 0..1（外观设置；历史值 0.54 = Colors.black54）。
   final double backgroundOpacity;
 
-  /// 字幕距底部抬升量（避开 media_kit 控制条；外观设置）。
+  /// 字幕距底部的**用户位置**（外观设置）。控制条避让不再含在此值里——TODO-129 起
+  /// 由 [controlsVisible] 在控制条可见时动态叠加 [controlsBottomReserve]，此处只是
+  /// 用户手选的基线位置。
   final double bottomPadding;
+
+  /// media_kit 控制条当前是否可见（TODO-129）。非 null 时驱动字幕动态避让：可见时把
+  /// 字幕在 [bottomPadding] 基线之上额外上顶 [controlsBottomReserve]、隐藏时落回基线
+  /// （[AnimatedPadding] 平滑过渡），让进度条「把字幕往上顶对应的高度」。null（默认、
+  /// 测试、有声书等无控制条场景）= 不避让，字幕恒贴 [bottomPadding] 基线（旧行为）。
+  final ValueListenable<bool>? controlsVisible;
+
+  /// 控制条可见时字幕额外上顶的避让高度（默认 [kVideoControlsBottomReserve]）。仅在
+  /// [controlsVisible] 非 null 时生效；0 等价于不避让。
+  final double controlsBottomReserve;
 
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
   final String? fontFamily;
@@ -310,10 +325,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
             // 无 \pos：按 \an 锚点对齐（anchor==null → 历史底居中，像素级不变）。
             return Align(
               alignment: _alignFor(markup?.anchor),
-              child: Padding(
-                padding: _paddingFor(markup?.anchor),
-                child: hoverable,
-              ),
+              child: _anchoredPadded(markup?.anchor, hoverable),
             );
           },
         );
@@ -410,14 +422,46 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     return Alignment(x, y);
   }
 
-  /// 顶部锚点用顶部 padding、底部用现有 bottomPadding、中部不加。
-  EdgeInsets _paddingFor(SubtitleAnchor? a) {
+  /// 顶部锚点用顶部 padding、底部用 bottomPadding + [extraBottom]（控制条避让）、中部不加。
+  /// [extraBottom] 仅对底部锚点叠加——控制条在底部，只有底部字幕会被进度条遮挡，顶部 /
+  /// 中部字幕不需要避让。
+  EdgeInsets _paddingFor(SubtitleAnchor? a, double extraBottom) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
     return switch (v) {
-      SubtitleVAlign.bottom => EdgeInsets.only(bottom: widget.bottomPadding),
+      SubtitleVAlign.bottom =>
+        EdgeInsets.only(bottom: widget.bottomPadding + extraBottom),
       SubtitleVAlign.top => EdgeInsets.only(top: widget.bottomPadding),
       SubtitleVAlign.middle => EdgeInsets.zero,
     };
+  }
+
+  /// 给字幕盒套底部 padding。无 [VideoSubtitleOverlay.controlsVisible]（测试 / 有声书 /
+  /// 无控制条场景）走静态 [Padding]，与历史像素级一致（extraBottom=0）。有控制条可见性
+  /// 时改 [ValueListenableBuilder] 监听 + [AnimatedPadding]：控制条出现 → 底部 padding
+  /// 在 bottomPadding 基线上叠加 [VideoSubtitleOverlay.controlsBottomReserve]、隐藏 →
+  /// 落回基线，进度条「把字幕往上顶对应的高度」（TODO-129）。用户手选的
+  /// [VideoSubtitleOverlay.bottomPadding] 永远是基线、避让只在其上叠加，故手动位置不被
+  /// 动态避让覆盖（同一字段无特例分支）。
+  Widget _anchoredPadded(SubtitleAnchor? anchor, Widget child) {
+    final ValueListenable<bool>? visible = widget.controlsVisible;
+    if (visible == null) {
+      return Padding(padding: _paddingFor(anchor, 0), child: child);
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: visible,
+      builder: (BuildContext _, bool controlsVisible, Widget? padded) {
+        final double extraBottom =
+            controlsVisible ? widget.controlsBottomReserve : 0;
+        return AnimatedPadding(
+          // 与 media_kit 控制条淡入淡出同量级（~200ms），字幕上顶/落回跟随控制条显隐。
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          padding: _paddingFor(anchor, extraBottom),
+          child: padded,
+        );
+      },
+      child: child,
+    );
   }
 
   /// 把 [charContext] 对应字符的局部布局矩形转成全局屏幕矩形（弹窗定位用）。
