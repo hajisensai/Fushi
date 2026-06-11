@@ -1,6 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
 /// TODO-069 字幕跳转列表（asbplayer 式 transcript 面板）+ TODO-121 真 push-aside 的
 /// 源码守卫。
@@ -87,11 +91,22 @@ void main() {
   });
 
   test('L 键映射到打开字幕跳转列表（asbplayer 式，未撞既有键）', () {
+    // TODO-134: bare L default lives in the registry now
+    // (videoToggleSubtitleList); action->callback wiring stays in
+    // video_player_shortcuts.dart.
     expect(
-      shortcuts.contains('const SingleActivator(LogicalKeyboardKey.keyL): '
-          'actions.toggleSubtitleList'),
+      ShortcutDefaults.forPlatform(
+              TargetPlatform.windows)[ShortcutAction.videoToggleSubtitleList]!
+          .keyboardBindings
+          .contains(const InputBinding(key: LogicalKeyboardKey.keyL)),
       isTrue,
-      reason: '裸 L 键未绑定到 toggleSubtitleList',
+      reason: '裸 L 键未绑定到 videoToggleSubtitleList 默认键',
+    );
+    expect(
+      shortcuts.contains(
+          'ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList'),
+      isTrue,
+      reason: 'videoToggleSubtitleList action 未接到 toggleSubtitleList 回调',
     );
     expect(src.contains('toggleSubtitleList: _toggleSubtitleJumpList'), isTrue,
         reason: 'toggleSubtitleList action 未接到 _toggleSubtitleJumpList');

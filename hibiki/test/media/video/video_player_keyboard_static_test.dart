@@ -1,46 +1,82 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
-/// 源码守卫：视频键盘交互 + 自动播放——都依赖真实 libmpv player，无法纯单测
-/// （测试宿主无 libmpv，`load()` / Player 构造即抛），故在源码层钉死结构。
+/// Source guard: video keyboard interaction + autoplay both need a real libmpv
+/// player (the host has none; load()/Player construction throws), so structure
+/// is pinned at the source level.
+///
+/// TODO-134: the video keyboard keys were migrated out of the hard-coded
+/// Map<ShortcutActivator, VoidCallback> in video_player_shortcuts.dart into the
+/// remappable registry. The DEFAULT bindings now live in shortcut_defaults.dart
+/// (ShortcutDefaults.forPlatform); the action->callback WIRING is
+/// videoActionCallbacks in video_player_shortcuts.dart; the callback BEHAVIOUR
+/// still lives in video_hibiki_page.dart. Assertions that used to scan the
+/// shortcuts source for LogicalKeyboardKey.xxx strings now assert the registry
+/// defaults (using the real enum / InputBinding, stronger than string scans);
+/// the page behaviour assertions are unchanged.
 void main() {
   String read(String relPath) => File(relPath).readAsStringSync();
 
-  group('Escape 退出视频页（覆盖 media_kit 默认）', () {
+  // Windows defaults are the canonical desktop video bindings (asbplayer/mpv).
+  final Map<ShortcutAction, ShortcutBindingSet> videoDefaults =
+      ShortcutDefaults.forPlatform(TargetPlatform.windows);
+
+  // Whether [action] has a keyboard default matching [key] + [modifiers].
+  bool defaultHasKey(
+    ShortcutAction action,
+    LogicalKeyboardKey key, {
+    Set<ModifierKey> modifiers = const <ModifierKey>{},
+  }) {
+    final InputBinding target = InputBinding(key: key, modifiers: modifiers);
+    return videoDefaults[action]!.keyboardBindings.contains(target);
+  }
+
+  group('video page Escape overrides media_kit default', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
-    final String shortcuts =
-        read('lib/src/media/video/video_player_shortcuts.dart');
 
-    test('桌面控制主题覆盖 keyboardShortcuts', () {
+    test('desktop controls theme overrides keyboardShortcuts', () {
       expect(
           page.contains('keyboardShortcuts: _videoKeyboardShortcuts('), isTrue,
-          reason: 'media_kit 默认 Escape 只 exitFullscreen，非全屏吞掉 Esc → 必须整表覆盖');
+          reason:
+              'media_kit default Escape only exits fullscreen; must replace '
+              'the whole table');
     });
 
-    test('Escape 非全屏退页面、全屏退全屏', () {
-      expect(shortcuts.contains('LogicalKeyboardKey.escape'), isTrue);
+    test('Escape exits page when windowed, exits fullscreen when fullscreen',
+        () {
+      // Escape default key now comes from the registry videoEscape default.
+      expect(
+          defaultHasKey(ShortcutAction.videoEscape, LogicalKeyboardKey.escape),
+          isTrue,
+          reason: 'videoEscape default must bind Escape');
       expect(page.contains('escape: () {'), isTrue,
-          reason: '页面必须把 Escape action 接入真实退出逻辑');
-      expect(page.contains('isFullscreen('), isTrue, reason: '全屏时 Escape 应退全屏');
+          reason: 'page must wire the Escape action to real exit logic');
+      expect(page.contains('isFullscreen('), isTrue,
+          reason: 'fullscreen Escape exits fullscreen');
       expect(page.contains('_exitVideoFullscreen('), isTrue,
-          reason: 'Escape 全屏退出必须走 Hibiki 中和后的 fullscreen helper');
+          reason: 'Escape fullscreen exit goes through the neutralised helper');
       expect(page.contains('_handleBackOrExit()'), isTrue,
-          reason: '非全屏时 Escape 应退出视频页');
+          reason: 'windowed Escape exits the video page');
     });
 
-    test('退出汇聚点 PopScope 与 Escape 共用（行为一致）', () {
+    test('exit confluence: PopScope and Escape share _handleBackOrExit', () {
       expect(page.contains('Future<void> _handleBackOrExit() async'), isTrue);
-      // PopScope 的 onPop 与 Escape 都走 _handleBackOrExit。
       expect('_handleBackOrExit()'.allMatches(page).length,
           greaterThanOrEqualTo(2),
-          reason: 'PopScope onPop 与 Escape 快捷键都必须汇聚到 _handleBackOrExit');
+          reason:
+              'PopScope onPop and Escape both converge on _handleBackOrExit');
     });
 
-    test('全屏 helper 用 controls 子树捕获的 context（非本页祖先 context）', () {
+    test('fullscreen helper uses the controls-subtree context', () {
       expect(page.contains('_videoControlsContext = controlsContext'), isTrue,
-          reason: 'isFullscreen/toggle/exitFullscreen 需 controls 子树内 context');
+          reason: 'isFullscreen/toggle/exitFullscreen need a controls-subtree '
+              'context');
     });
   });
 
@@ -50,89 +86,104 @@ void main() {
     final String shortcuts =
         read('lib/src/media/video/video_player_shortcuts.dart');
 
-    test('TODO-090：普通 arrowLeft = 时间 seek（seekBackward）', () {
-      // 普通方向键不再绑跳句，改绑 ±秒时间 seek（asbplayer 习惯）。
-      final int left = shortcuts.indexOf('LogicalKeyboardKey.arrowLeft):');
-      expect(left, greaterThanOrEqualTo(0), reason: '普通（无修饰键）arrowLeft 必须存在');
-      final String leftLine =
-          shortcuts.substring(left, shortcuts.indexOf('\n', left));
-      expect(leftLine.contains('actions.seekBackward'), isTrue,
-          reason: '普通 arrowLeft = 时间回退 seek（TODO-090）');
-      // 普通方向键不应绑句子跳转（那是 Ctrl 组合的活）。
-      expect(leftLine.contains('previousSubtitle'), isFalse);
+    test('TODO-090: bare arrowLeft = time seek (seekBackward)', () {
+      // Bare (unmodified) arrows are time seek, not sentence skip (asbplayer).
+      // Default-key source of truth is now the registry: videoSeekBackward
+      // binds bare arrowLeft.
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekBackward, LogicalKeyboardKey.arrowLeft),
+          isTrue,
+          reason: 'bare arrowLeft must bind videoSeekBackward (TODO-090)');
+      // Bare arrowLeft must NOT be sentence skip (that is the Ctrl combo).
+      expect(
+          defaultHasKey(ShortcutAction.videoPreviousSubtitle,
+              LogicalKeyboardKey.arrowLeft),
+          isFalse,
+          reason: 'bare arrowLeft does not bind previousSubtitle');
+      // action->callback wiring: videoSeekBackward -> actions.seekBackward.
+      expect(
+          shortcuts.contains(
+              'ShortcutAction.videoSeekBackward: actions.seekBackward'),
+          isTrue);
     });
 
-    test('TODO-090：普通 arrowRight = 时间 seek（seekForward）', () {
-      final int right = shortcuts.indexOf('LogicalKeyboardKey.arrowRight):');
-      expect(right, greaterThanOrEqualTo(0));
-      final String rightLine =
-          shortcuts.substring(right, shortcuts.indexOf('\n', right));
-      expect(rightLine.contains('actions.seekForward'), isTrue,
-          reason: '普通 arrowRight = 时间前进 seek（TODO-090）');
-      expect(rightLine.contains('nextSubtitle'), isFalse);
+    test('TODO-090: bare arrowRight = time seek (seekForward)', () {
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekForward, LogicalKeyboardKey.arrowRight),
+          isTrue,
+          reason: 'bare arrowRight must bind videoSeekForward (TODO-090)');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoNextSubtitle, LogicalKeyboardKey.arrowRight),
+          isFalse,
+          reason: 'bare arrowRight does not bind nextSubtitle');
+      expect(
+          shortcuts
+              .contains('ShortcutAction.videoSeekForward: actions.seekForward'),
+          isTrue);
     });
 
-    test('TODO-090：Ctrl+←/→ = 上/下一句字幕（句子 seek）', () {
-      final int ctrlLeft =
-          shortcuts.indexOf('LogicalKeyboardKey.arrowLeft, control: true');
-      final int ctrlRight =
-          shortcuts.indexOf('LogicalKeyboardKey.arrowRight, control: true');
-      expect(ctrlLeft, greaterThanOrEqualTo(0), reason: 'Ctrl+← 必须绑句子跳转');
-      expect(ctrlRight, greaterThanOrEqualTo(0), reason: 'Ctrl+→ 必须绑句子跳转');
-      expect(shortcuts.indexOf('actions.previousSubtitle', ctrlLeft),
-          greaterThan(ctrlLeft),
-          reason: 'Ctrl+← = previousSubtitle');
-      expect(shortcuts.indexOf('actions.nextSubtitle', ctrlRight),
-          greaterThan(ctrlRight),
-          reason: 'Ctrl+→ = nextSubtitle');
+    test('TODO-090: Ctrl+Left/Right = prev/next subtitle (sentence seek)', () {
+      // Ctrl+arrow = sentence skip; default keys provided by the registry
+      // (videoPreviousSubtitle / videoNextSubtitle bind Ctrl+arrow); wiring in
+      // videoActionCallbacks.
+      expect(
+          defaultHasKey(ShortcutAction.videoPreviousSubtitle,
+              LogicalKeyboardKey.arrowLeft,
+              modifiers: const <ModifierKey>{ModifierKey.ctrl}),
+          isTrue,
+          reason: 'Ctrl+Left must bind videoPreviousSubtitle (sentence skip)');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoNextSubtitle, LogicalKeyboardKey.arrowRight,
+              modifiers: const <ModifierKey>{ModifierKey.ctrl}),
+          isTrue,
+          reason: 'Ctrl+Right must bind videoNextSubtitle (sentence skip)');
+      expect(
+          shortcuts.contains(
+              'ShortcutAction.videoPreviousSubtitle: actions.previousSubtitle'),
+          isTrue);
+      expect(
+          shortcuts.contains(
+              'ShortcutAction.videoNextSubtitle: actions.nextSubtitle'),
+          isTrue);
     });
 
-    test('TODO-085：Ctrl+← 上句太远退化回退 Xs（skipToPrevCueOrSeekBack）', () {
-      // previousSubtitle action 走集中决策方法，内部按 seekSeconds 阈值跳句 or 回退。
+    test('TODO-085: Ctrl+Left far-prev degrades to seek back Xs', () {
       expect(page.contains('skipToPrevCueOrSeekBack('), isTrue,
-          reason: 'Ctrl+← 必须走含「上句太远回退 Xs」退化的决策方法');
+          reason: 'Ctrl+Left goes through the degrade decision method');
       expect(page.contains('seekSeconds: _asbConfig.seekSeconds'), isTrue,
-          reason: '退化阈值用配置的 seekSeconds 秒');
-      // TODO-073：下一句也集中到 skipToNextCueOrSeekForward（无字幕时前进 Xs、
-      // 不再卡住 / 回开头），与 previousSubtitle 的 skipToPrevCueOrSeekBack 对称。
+          reason: 'degrade threshold uses the configured seekSeconds');
       expect(page.contains('skipToNextCueOrSeekForward('), isTrue,
-          reason: '下一句走含「无字幕前进 Xs」的集中决策方法（TODO-073）');
+          reason:
+              'next sentence uses the centralised decision method (TODO-073)');
       expect(page.contains('_asbSeekMs'), isTrue);
     });
 
-    test('TODO-119：底栏 / 胶囊条「上一句」按钮在无字幕/转场段也回退（不裸 skipToPrevCue）', () {
-      // 用户报「转场片段没字幕时按字幕回退键没反应、回退不了」(BUG-200)。根因=底栏
-      // skip_previous 按钮 + 胶囊条 backward 分支接的是裸 controller.skipToPrevCue()，
-      // 空 cue / 上句太远时 no-op；而对称的「下一句」按钮已 TODO-073 改成
-      // skipToNextCueOrSeekForward。两处「上一句」都改走含「无字幕回退 Xs」的
-      // skipToPrevCueOrSeekBack（切集用的 skip_previous「上一集」走 _switchEpisode，不算）。
-
-      // ① video_hibiki_page 内不应再有任何裸的 controller.skipToPrevCue() 调用
-      //    （字幕「上一句」全部走退化决策；底栏切集按钮走 _switchEpisode 不受影响）。
+    test('TODO-119: prev-sentence button degrades on no-subtitle segments', () {
+      // No bare controller.skipToPrevCue() left in the page (BUG-200).
       expect(page.contains('controller.skipToPrevCue()'), isFalse,
-          reason:
-              '页面里不能再裸调 controller.skipToPrevCue()（无字幕段会 no-op 卡住，BUG-200）');
+          reason: 'no bare controller.skipToPrevCue() (no-op on gap, BUG-200)');
       expect(page.contains('skipToPrevCueOrSeekBack('), isTrue,
-          reason: '「上一句」字幕按钮 / 键盘必须走含无字幕回退的 skipToPrevCueOrSeekBack');
+          reason: 'prev-sentence must go through skipToPrevCueOrSeekBack');
 
-      // ② 胶囊条 / 桌面控制条「上/下一句」共用 _skipCueAndPokeControls：backward 分支
-      //    走 skipToPrevCueOrSeekBack、forward 分支走 skipToNextCueOrSeekForward（对称）。
       final int helperAt =
           page.indexOf('Future<void> _skipCueAndPokeControls(');
       expect(helperAt, greaterThanOrEqualTo(0),
-          reason: '找不到 _skipCueAndPokeControls 方法（上/下一句胶囊条/桌面控制条共用）');
-      // 取方法体：从方法名到下一个方法声明（'Future<void> _saveScreenshot'）之间。
+          reason: 'cannot find _skipCueAndPokeControls');
       final int helperEnd =
           page.indexOf('Future<void> _saveScreenshot', helperAt);
       expect(helperEnd, greaterThan(helperAt));
       final String body = page.substring(helperAt, helperEnd);
       expect(body.contains('skipToPrevCueOrSeekBack('), isTrue,
-          reason: '胶囊条「上一句」backward 分支必须走 skipToPrevCueOrSeekBack（TODO-119）');
+          reason: 'backward branch uses skipToPrevCueOrSeekBack (TODO-119)');
       expect(body.contains('skipToNextCueOrSeekForward('), isTrue,
-          reason: 'forward 分支仍走 skipToNextCueOrSeekForward（对称，TODO-073）');
+          reason: 'forward branch uses skipToNextCueOrSeekForward (TODO-073)');
     });
 
-    test('TODO-085 决策纯函数 prevSeekDecisionFor 存在并按 seekSeconds 阈值退化', () {
+    test('TODO-085 prevSeekDecisionFor exists and degrades on seekSeconds', () {
       final String controller =
           read('lib/src/media/video/video_player_controller.dart');
       expect(
@@ -140,9 +191,9 @@ void main() {
           isTrue);
       expect(controller.contains('final int thresholdMs = seekSeconds * 1000;'),
           isTrue,
-          reason: '阈值 = seekSeconds 秒');
+          reason: 'threshold = seekSeconds');
       expect(controller.contains('if (gapMs > thresholdMs)'), isTrue,
-          reason: 'gap 超过阈值才退化成回退 Xs（> 才退化，恰好等于仍跳句）');
+          reason: 'only degrade when gap exceeds threshold');
     });
 
     test('A/D and Shift+F use one configured asbplayer seek value', () {
@@ -150,40 +201,51 @@ void main() {
       expect(page.contains('_asbConfig.seekSeconds * 1000'), isTrue);
       expect(page.contains('_asbFastSeekMs'), isFalse);
       expect(page.contains('fastSeekSeconds'), isFalse);
-      expect(shortcuts.contains('LogicalKeyboardKey.keyA'), isTrue);
+      // A/D time-seek default keys now come from the registry
+      // (videoSeekBackward has KeyA; videoSeekForward has KeyD and Shift+KeyF).
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekBackward, LogicalKeyboardKey.keyA),
+          isTrue,
+          reason: 'A = seek back');
       expect(page.contains('seekRelative(-_asbSeekMs)'), isTrue);
-      expect(shortcuts.contains('LogicalKeyboardKey.keyD'), isTrue);
-      expect(page.contains('seekRelative(_asbSeekMs)'), isTrue);
-      final int shiftF = shortcuts.indexOf('LogicalKeyboardKey.keyF,');
-      expect(shiftF, greaterThanOrEqualTo(0));
-      expect(shortcuts.indexOf('shift: true', shiftF), greaterThan(shiftF));
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekForward, LogicalKeyboardKey.keyD),
+          isTrue,
+          reason: 'D = seek forward');
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSeekForward, LogicalKeyboardKey.keyF,
+              modifiers: const <ModifierKey>{ModifierKey.shift}),
+          isTrue,
+          reason: 'Shift+F = seek forward');
       expect(page.contains('seekRelative(_asbSeekMs)'), isTrue);
     });
 
     test('up/down remain volume keys and do not adjust subtitle offset', () {
-      final int up = shortcuts.indexOf('LogicalKeyboardKey.arrowUp');
-      final int down = shortcuts.indexOf('LogicalKeyboardKey.arrowDown');
-      final int equal = shortcuts.indexOf('LogicalKeyboardKey.equal');
-      expect(up, greaterThanOrEqualTo(0));
-      expect(down, greaterThan(up));
-      expect(equal, greaterThan(down));
-      final String arrowBlock = shortcuts.substring(up, equal);
-      expect(arrowBlock.contains('actions.volumeUp'), isTrue);
-      expect(arrowBlock.contains('actions.volumeDown'), isTrue);
+      // Up/Down are always volume (registry: videoVolumeUp has arrowUp,
+      // videoVolumeDown has arrowDown); never subtitle sync.
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeUp, LogicalKeyboardKey.arrowUp),
+          isTrue);
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeDown, LogicalKeyboardKey.arrowDown),
+          isTrue);
       expect(page.contains('_adjustVolume(_volumeStep)'), isTrue);
       expect(page.contains('_adjustVolume(-_volumeStep)'), isTrue);
-      expect(arrowBlock.contains('_adjustSubtitleOffset'), isFalse);
+      expect(shortcuts.contains('_adjustSubtitleOffset'), isFalse);
     });
 
     test('subtitle sync is a settings control, not an arrow-key binding', () {
-      // TODO-060：字幕调轴改由设置面板的「字幕调轴」行（滑条 + ± 按钮 + 数值输入框）
-      // 经 onSetDelay → _setDelayMs 绝对提交，不再走旧的 _adjustSubtitleOffset 增量
-      // 回调（已删）。字幕调轴绝不能绑到方向键（方向键恒为音量）。
+      // TODO-060: subtitle sync moved to the settings panel row, committed via
+      // onSetDelay -> _setDelayMs; no arrow-key increment binding.
       expect(page.contains('onSetDelay: _setDelayMs'), isTrue);
       expect(page.contains('_setDelayMs'), isTrue);
       expect(shortcuts.contains('_setDelayMs'), isFalse,
-          reason: '字幕调轴不绑方向键，只在设置面板调');
-      // 旧的增量调轴 plumbing 已彻底移除（防回潮）。
+          reason: 'subtitle sync is not bound to arrows, only in settings');
       expect(page.contains('_adjustSubtitleOffset'), isFalse);
       expect(page.contains('_subtitleOffsetStepMs'), isFalse);
     });
@@ -196,25 +258,57 @@ void main() {
     });
 
     test('mpv-style common playback shortcuts are mapped where supported', () {
-      expect(shortcuts.contains('LogicalKeyboardKey.keyP'), isTrue,
+      // mpv-style default keys all live in the registry now (TODO-134). Assert
+      // each registry default; assert the callback behaviour on the page side.
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoTogglePlayPause, LogicalKeyboardKey.keyP),
+          isTrue,
           reason: 'mpv default: p toggles play/pause');
-      expect(shortcuts.contains('LogicalKeyboardKey.digit9'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeDown, LogicalKeyboardKey.digit9),
+          isTrue,
           reason: 'mpv default: 9 decreases volume');
-      expect(shortcuts.contains('LogicalKeyboardKey.digit0'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoVolumeUp, LogicalKeyboardKey.digit0),
+          isTrue,
           reason: 'mpv default: 0 increases volume');
-      expect(shortcuts.contains('LogicalKeyboardKey.keyM'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoToggleMute, LogicalKeyboardKey.keyM),
+          isTrue,
           reason: 'mpv default: m toggles mute');
-      expect(shortcuts.contains('LogicalKeyboardKey.bracketLeft'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSpeedDown, LogicalKeyboardKey.bracketLeft),
+          isTrue,
           reason: 'mpv default: [ decreases speed');
-      expect(shortcuts.contains('LogicalKeyboardKey.bracketRight'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoSpeedUp, LogicalKeyboardKey.bracketRight),
+          isTrue,
           reason: 'mpv default: ] increases speed');
-      expect(shortcuts.contains('LogicalKeyboardKey.backspace'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoResetSpeed, LogicalKeyboardKey.backspace),
+          isTrue,
           reason: 'mpv default: Backspace resets speed');
-      expect(shortcuts.contains('LogicalKeyboardKey.comma'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoPreviousFrame, LogicalKeyboardKey.comma),
+          isTrue,
           reason: 'mpv default: , steps one frame backward');
-      expect(shortcuts.contains('LogicalKeyboardKey.period'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoNextFrame, LogicalKeyboardKey.period),
+          isTrue,
           reason: 'mpv default: . steps one frame forward');
-      expect(shortcuts.contains('LogicalKeyboardKey.keyS'), isTrue,
+      expect(
+          defaultHasKey(
+              ShortcutAction.videoScreenshot, LogicalKeyboardKey.keyS),
+          isTrue,
           reason: 'mpv default: s takes a screenshot');
       expect(page.contains('_toggleMute()'), isTrue);
       expect(page.contains('_setSpeed(1.0)'), isTrue);
@@ -224,60 +318,63 @@ void main() {
     });
   });
 
-  group('查词浮层打开时点同句另一个词：切换查词、保持暂停', () {
+  group('lookup popup re-tap on same sentence: switch word, keep paused', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
 
-    test('dismiss barrier 走 onTapUp → _onDismissBarrierTap（带坐标判定）', () {
+    test('dismiss barrier uses onTapUp -> _onDismissBarrierTap (coord check)',
+        () {
       expect(page.contains('onTapUp: (TapUpDetails d) =>'), isTrue);
       expect(page.contains('_onDismissBarrierTap(d.globalPosition)'), isTrue,
-          reason: 'barrier 需带坐标判定，而非无脑 _popNestedPopupAt');
+          reason: 'barrier needs a coordinate check, not a blind pop');
     });
 
-    test('_onDismissBarrierTap：命中字符则 _lookupAt（不关栈不恢复），否则 dismiss', () {
+    test('_onDismissBarrierTap: hit char -> _lookupAt; else dismiss', () {
       final RegExpMatch? body = RegExp(
         r'void _onDismissBarrierTap\(Offset globalPos\) \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(page);
-      expect(body, isNotNull, reason: '找不到 _onDismissBarrierTap 方法体');
+      expect(body, isNotNull, reason: 'cannot find _onDismissBarrierTap body');
       final String b = body!.group(1)!;
       final int hitAt = b.indexOf('_subtitleHitTester.hitTest(globalPos)');
       final int lookupAt = b.indexOf('_lookupAt(');
       final int popAt = b.indexOf('_popNestedPopupAt(0)');
-      expect(hitAt, greaterThanOrEqualTo(0), reason: '需先反查字幕字符命中');
+      expect(hitAt, greaterThanOrEqualTo(0), reason: 'hit-test the char first');
       expect(lookupAt, greaterThan(hitAt),
-          reason: '命中字符后切换查词（保持暂停：_lookupAt 已暂停不再暂停、不清标记）');
-      expect(popAt, greaterThan(lookupAt), reason: '未命中字符才 dismiss + 恢复');
+          reason: 'on hit, switch lookup (keeps paused)');
+      expect(popAt, greaterThan(lookupAt),
+          reason: 'only dismiss + resume when no char is hit');
     });
 
-    test('字幕 overlay 绑定 _subtitleHitTester', () {
+    test('subtitle overlay binds _subtitleHitTester', () {
       expect(page.contains('hitTester: _subtitleHitTester'), isTrue);
     });
   });
 
-  group('进页面/换集自动播放', () {
+  group('autoplay on enter page / episode switch', () {
     final String controller =
         read('lib/src/media/video/video_player_controller.dart');
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
 
-    test('load 支持 autoPlay 参数', () {
+    test('load supports the autoPlay parameter', () {
       expect(controller.contains('bool autoPlay = false'), isTrue,
-          reason: 'autoPlay 默认 false 保留既有测试/行为');
+          reason: 'autoPlay defaults to false to preserve existing behaviour');
     });
 
-    test('autoPlay 在恢复 seek 之后调用 player.play()（避免起播闪跳）', () {
+    test('autoPlay calls player.play() after the restore seek', () {
       final int restore = controller.indexOf('await player.seek(');
       final int auto = controller.indexOf('if (autoPlay && _player == player)');
       final int play = controller.indexOf('await player.play();');
       expect(restore, greaterThanOrEqualTo(0));
       expect(auto, greaterThan(restore),
-          reason: 'autoPlay 播放必须在恢复 seek 之后（否则从 0 起播再跳）');
+          reason: 'autoPlay must play after the restore seek');
       expect(play, greaterThan(auto));
     });
 
-    test('页面 _loadVideo 传 autoPlay: true', () {
-      expect(page.contains('autoPlay: true'), isTrue, reason: '进页面/换集后应直接开播');
+    test('page _loadVideo passes autoPlay: true', () {
+      expect(page.contains('autoPlay: true'), isTrue,
+          reason: 'enter page / episode switch should start playing');
     });
   });
 }

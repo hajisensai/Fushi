@@ -1,6 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
 /// B（缺效果预览/对比）source guard: 视频页接「着色器对比原画」——`C` 快捷键 + 右键
 /// 菜单项（仅有启用着色器时出现），都切换 controller 的旁路态（保留启用集）。
@@ -56,22 +60,30 @@ void main() {
   });
 
   test('C 快捷键切换着色器对比', () {
-    expect(pageSrc.contains('buildVideoPlayerShortcuts('), isTrue,
-        reason: '视频页应委托共用快捷键构建器');
+    // TODO-134: video keys live in the remappable registry now. The page
+    // delegates to buildVideoPlayerShortcutsFromRegistry; the C-key default
+    // is in shortcut_defaults.dart (videoToggleShaderCompare); the
+    // action->callback wiring is in video_player_shortcuts.dart.
+    expect(pageSrc.contains('buildVideoPlayerShortcutsFromRegistry('), isTrue,
+        reason: 'page delegates to the shared registry-backed builder');
     expect(
         pageSrc.contains(
           'toggleShaderCompare: () => unawaited(_toggleShaderCompare())',
         ),
         isTrue,
-        reason: '页面 shortcut action 应走 _toggleShaderCompare');
-    expect(shortcutsSrc.contains('LogicalKeyboardKey.keyC'), isTrue,
-        reason: 'C 键绑定着色器对比');
-    final int k = shortcutsSrc.indexOf('LogicalKeyboardKey.keyC');
+        reason: 'page shortcut action runs _toggleShaderCompare');
+    final InputBinding cKey = const InputBinding(key: LogicalKeyboardKey.keyC);
     expect(
-        shortcutsSrc
-            .substring(k, k + 120)
-            .contains('actions.toggleShaderCompare'),
+        ShortcutDefaults.forPlatform(TargetPlatform.windows)[
+                ShortcutAction.videoToggleShaderCompare]!
+            .keyboardBindings
+            .contains(cKey),
         isTrue,
-        reason: 'C 键走 toggleShaderCompare action');
+        reason: 'C is the default key for videoToggleShaderCompare');
+    expect(
+        shortcutsSrc.contains('ShortcutAction.videoToggleShaderCompare: '
+            'actions.toggleShaderCompare'),
+        isTrue,
+        reason: 'C action wired to toggleShaderCompare');
   });
 }

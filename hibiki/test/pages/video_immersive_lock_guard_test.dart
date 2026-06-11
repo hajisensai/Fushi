@@ -1,6 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
 /// TODO-101 锁定 / 沉浸模式的源码守卫。
 ///
@@ -147,22 +151,33 @@ void main() {
   });
 
   test('④ Shift+L 切换锁定（与裸 L 字幕列表区分，未撞键），并接到本页 action', () {
+    // TODO-134: keys live in the registry. Shift+L default is
+    // videoToggleImmersiveLock; bare L is videoToggleSubtitleList; the
+    // action->callback wiring stays in video_player_shortcuts.dart.
+    final Map<ShortcutAction, ShortcutBindingSet> vd =
+        ShortcutDefaults.forPlatform(TargetPlatform.windows);
     expect(
-      shortcuts.contains(
-          'const SingleActivator(LogicalKeyboardKey.keyL, shift: true):'),
+      vd[ShortcutAction.videoToggleImmersiveLock]!.keyboardBindings.contains(
+          const InputBinding(
+              key: LogicalKeyboardKey.keyL,
+              modifiers: <ModifierKey>{ModifierKey.shift})),
       isTrue,
-      reason: 'Shift+L 未绑定切换锁定',
+      reason: 'Shift+L is the default key for immersive lock',
     );
-    expect(shortcuts.contains('actions.toggleImmersiveLock'), isTrue,
-        reason: 'Shift+L 未接到 toggleImmersiveLock action');
-    expect(src.contains('toggleImmersiveLock: _toggleImmersiveLock'), isTrue,
-        reason: 'toggleImmersiveLock action 未接到 _toggleImmersiveLock');
-    // 裸 L 仍是字幕列表（Shift+L 不能撞掉它）。
     expect(
-      shortcuts.contains('const SingleActivator(LogicalKeyboardKey.keyL): '
-          'actions.toggleSubtitleList'),
+        shortcuts.contains('ShortcutAction.videoToggleImmersiveLock: '
+            'actions.toggleImmersiveLock'),
+        isTrue,
+        reason: 'Shift+L action wired to toggleImmersiveLock');
+    expect(src.contains('toggleImmersiveLock: _toggleImmersiveLock'), isTrue,
+        reason: 'toggleImmersiveLock action wired to _toggleImmersiveLock');
+    // bare L still owns the subtitle list (Shift+L must not steal it).
+    expect(
+      vd[ShortcutAction.videoToggleSubtitleList]!
+          .keyboardBindings
+          .contains(const InputBinding(key: LogicalKeyboardKey.keyL)),
       isTrue,
-      reason: '裸 L（字幕列表）被 Shift+L 撞掉',
+      reason: 'bare L still opens the subtitle list',
     );
   });
 

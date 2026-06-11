@@ -1,6 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
 /// TODO-102 跨字幕制卡（区间录制；参考 asbplayer）的源码守卫。
 ///
@@ -98,10 +102,17 @@ void main() {
   });
 
   test('④ R 快捷键切换录制（未撞既有键），并接到本页 action', () {
+    // TODO-134: R default key lives in the registry now (videoToggle
+    // CrossSubtitleRecording); the action->callback wiring stays in
+    // video_player_shortcuts.dart.
+    final Map<ShortcutAction, ShortcutBindingSet> vd =
+        ShortcutDefaults.forPlatform(TargetPlatform.windows);
     expect(
-      shortcuts.contains('const SingleActivator(LogicalKeyboardKey.keyR):'),
+      vd[ShortcutAction.videoToggleCrossSubtitleRecording]!
+          .keyboardBindings
+          .contains(const InputBinding(key: LogicalKeyboardKey.keyR)),
       isTrue,
-      reason: 'R 未绑定切换跨字幕录制',
+      reason: 'R is the default key for cross-subtitle recording',
     );
     expect(shortcuts.contains('actions.toggleCrossSubtitleRecording'), isTrue,
         reason: 'R 未接到 toggleCrossSubtitleRecording action');
@@ -110,12 +121,22 @@ void main() {
             'toggleCrossSubtitleRecording: _toggleCrossSubtitleRecording'),
         isTrue,
         reason: 'action 未接到 _toggleCrossSubtitleRecording');
-    // 裸 L（字幕列表）/ Shift+L（锁定）/ S（截图）不被 R 撞掉。
+    // bare L (subtitle list) / Shift+L (lock) / S (screenshot) not clobbered
+    // by R. Bare L still owns videoToggleSubtitleList by default, and R does
+    // not.
     expect(
-      shortcuts.contains('const SingleActivator(LogicalKeyboardKey.keyL): '
-          'actions.toggleSubtitleList'),
+      vd[ShortcutAction.videoToggleSubtitleList]!
+          .keyboardBindings
+          .contains(const InputBinding(key: LogicalKeyboardKey.keyL)),
       isTrue,
-      reason: '裸 L（字幕列表）被撞掉',
+      reason: 'bare L still opens the subtitle list',
+    );
+    expect(
+      vd[ShortcutAction.videoToggleCrossSubtitleRecording]!
+          .keyboardBindings
+          .contains(const InputBinding(key: LogicalKeyboardKey.keyL)),
+      isFalse,
+      reason: 'R recording must not steal bare L',
     );
   });
 
