@@ -299,31 +299,20 @@ void main() {
     });
   });
 
-  group('kRecommendedShaders（推荐着色器目录）', () {
-    test('非空，id 唯一', () {
-      expect(kRecommendedShaders, isNotEmpty);
-      final Set<String> ids =
-          kRecommendedShaders.map((RecommendedShader e) => e.id).toSet();
-      expect(ids.length, kRecommendedShaders.length);
-    });
-
-    test('全部是 GitHub raw 单文件直链，fileName 为 .hook/.glsl', () {
-      for (final RecommendedShader s in kRecommendedShaders) {
-        expect(s.url, startsWith('https://raw.githubusercontent.com/'),
-            reason: '${s.id} 用 raw 直链（下载时 shaderDownloadUrlsFor 直链优先+镜像兜底）');
-        final String ext = p.extension(s.fileName).toLowerCase();
-        expect(<String>['.hook', '.glsl'].contains(ext), isTrue,
-            reason: '${s.id} 落盘文件名扩展应是着色器');
-      }
-    });
-
-    test('RAVU/NNEDI3 均来自维护中的 bjin/mpv-prescalers（实测可下）', () {
-      expect(
-        kRecommendedShaders
-            .every((RecommendedShader s) => s.url.contains('mpv-prescalers')),
-        isTrue,
-      );
-    });
+  // TODO-125：经典推荐着色器（RAVU/NNEDI3）整批删除——五档画质增强已覆盖普通用户，
+  // 经典单文件着色器只对懂的人有意义，他们仍可走「粘贴链接下载」。守卫符号不再回潮。
+  test('经典推荐着色器（RAVU/NNEDI3）符号已删除，不再内置', () {
+    final String src = File('lib/src/media/video/video_shader_downloader.dart')
+        .readAsStringSync();
+    expect(src, isNot(contains('kRecommendedShaders')),
+        reason: 'TODO-125 删经典推荐着色器目录');
+    expect(src, isNot(contains('class RecommendedShader')),
+        reason: 'TODO-125 删 RecommendedShader 模型');
+    expect(src, isNot(contains('mpv-prescalers')),
+        reason: 'TODO-125 删 RAVU/NNEDI3 直链');
+    // 手动「粘贴链接下载」逃生口仍在（懂的人仍可自取经典着色器）。
+    expect(src, contains('downloadShaderFromUrl'), reason: '粘贴链接下载逃生口必须保留');
+    expect(src, contains('shaderDownloadUrlsFor'), reason: '链接镜像兜底逃生口必须保留');
   });
 
   group('downloadShaderFromUrl', () {

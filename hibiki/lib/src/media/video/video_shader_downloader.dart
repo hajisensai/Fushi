@@ -189,68 +189,6 @@ const Anime4kPreset kArtCnnC4F32Preset = Anime4kPreset(
   ],
 );
 
-/// 一个「推荐着色器」：单文件、来自维护中的权威仓库，一键下载（经 [downloadShaderFromUrl]
-/// 的直链优先 + 镜像兜底）。不必本机装 mpv。
-///
-/// 选型只收**当前确实可下载、仓库在维护**的经典着色器（实测 200）。FSRCNNX / FSR / CAS
-/// 等的官方仓库已删除/迁移、无稳定 raw 源，故不内置（用户可用「粘贴链接下载」自取）。
-class RecommendedShader {
-  const RecommendedShader({
-    required this.id,
-    required this.name,
-    required this.url,
-  });
-
-  /// 稳定 id（i18n 说明键 / 测试用）。
-  final String id;
-
-  /// 显示名（专有名词，不翻译）。
-  final String name;
-
-  /// 单文件直链（GitHub raw）。
-  final String url;
-
-  /// 落盘文件名（basename）。
-  String get fileName => shaderFileNameFromUrl(url);
-}
-
-/// 推荐的单文件着色器（除 Anime4K 外的经典选择，均来自维护中的权威仓库、实测可下）。
-///
-/// - **RAVU**（bjin/mpv-prescalers）：通用亮度放大，`lite` 快、`ar` 抗振铃，r2/r3 越大越精细。
-/// - **NNEDI3**（bjin/mpv-prescalers）：经典神经网络放大，nns 越大质量越高、越吃 GPU。
-const List<RecommendedShader> kRecommendedShaders = <RecommendedShader>[
-  RecommendedShader(
-    id: 'ravu_lite_ar_r2',
-    name: 'RAVU Lite AR (r2)',
-    url:
-        'https://raw.githubusercontent.com/bjin/mpv-prescalers/master/ravu-lite-ar-r2.hook',
-  ),
-  RecommendedShader(
-    id: 'ravu_lite_ar_r3',
-    name: 'RAVU Lite AR (r3)',
-    url:
-        'https://raw.githubusercontent.com/bjin/mpv-prescalers/master/ravu-lite-ar-r3.hook',
-  ),
-  RecommendedShader(
-    id: 'nnedi3_nns32',
-    name: 'NNEDI3 (nns32)',
-    url:
-        'https://raw.githubusercontent.com/bjin/mpv-prescalers/master/nnedi3-nns32-win8x6.hook',
-  ),
-  RecommendedShader(
-    id: 'nnedi3_nns64',
-    name: 'NNEDI3 (nns64)',
-    url:
-        'https://raw.githubusercontent.com/bjin/mpv-prescalers/master/nnedi3-nns64-win8x6.hook',
-  ),
-  RecommendedShader(
-    id: 'nnedi3_nns128',
-    name: 'NNEDI3 (nns128)',
-    url:
-        'https://raw.githubusercontent.com/bjin/mpv-prescalers/master/nnedi3-nns128-win8x6.hook',
-  ),
-];
-
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（主源 + 镜像回退）。纯函数。
 ///
 /// 顺序：① jsDelivr CDN（对 GitHub raw 最稳，中国可达，优先）→ ② gh 加速代理 →

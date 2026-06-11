@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
+import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/utils.dart';
 
@@ -104,9 +105,11 @@ void main() {
     expect(t.video_shader_tier_medium_hint, contains('RX 6600'));
     expect(t.video_shader_tier_high_hint, contains('RX 7700 XT'));
     expect(t.video_shader_tier_ultra_hint, contains('RX 7900 XTX'));
-    // 进阶（手动着色器）仍保留经典推荐入口，但不再单列 Anime4K 下载项。
+    // TODO-125：进阶仅保留手动导入/粘贴链接/从 mpv 导入（逃生口），删经典推荐入口。
     expect(t.video_shader_section_advanced, contains('Advanced'));
-    expect(t.video_shader_recommended, 'Recommended image enhancements');
+    expect(t.video_shader_import, contains('Import shader'));
+    expect(t.video_shader_download_url, contains('link'));
+    expect(t.video_shader_import_from_mpv, contains('mpv'));
     expect(t.video_shader_first_use_body, contains('Anime4K'));
     expect(t.video_shader_first_use_download, contains('Download'));
   });
@@ -124,19 +127,54 @@ void main() {
     // 顶部是五档单选器（无/低/中/高/极高）。
     expect(find.text(t.video_shader_quality_tier), findsOneWidget);
     expect(find.byType(SegmentedButton<VideoShaderTier>), findsOneWidget);
-    expect(find.text(t.video_shader_tier_off), findsOneWidget);
-    expect(find.text(t.video_shader_tier_low), findsOneWidget);
-    expect(find.text(t.video_shader_tier_medium), findsOneWidget);
-    expect(find.text(t.video_shader_tier_high), findsOneWidget);
-    expect(find.text(t.video_shader_tier_ultra), findsOneWidget);
+    // 单选器每档都有一个 ButtonSegment（五段互斥单选）。
+    final SegmentedButton<VideoShaderTier> seg =
+        tester.widget<SegmentedButton<VideoShaderTier>>(
+      find.byType(SegmentedButton<VideoShaderTier>),
+    );
+    expect(seg.segments.map((s) => s.value).toSet(), <VideoShaderTier>{
+      VideoShaderTier.off,
+      VideoShaderTier.low,
+      VideoShaderTier.medium,
+      VideoShaderTier.high,
+      VideoShaderTier.ultra,
+    });
+    // 档名在选择器分段 + 下方对照表各出现一次（findsWidgets，对照表故意复列档名）。
+    expect(find.text(t.video_shader_tier_off), findsWidgets);
+    expect(find.text(t.video_shader_tier_low), findsWidgets);
+    expect(find.text(t.video_shader_tier_medium), findsWidgets);
+    expect(find.text(t.video_shader_tier_high), findsWidgets);
+    expect(find.text(t.video_shader_tier_ultra), findsWidgets);
 
     // 诉求 2：不再单列「下载 Anime4K 推荐着色器」入口。
     expect(find.text(t.video_shader_download_anime4k), findsNothing);
 
-    // 进阶 section 仍保留经典推荐 + 手动下载链接（给懂的人），位于档位选择器下方。
+    // TODO-125：经典推荐着色器（RAVU/NNEDI3）入口整批删除（i18n key 一并删，
+    // 故不再引用其旧 key，改由进阶 section 仅含手动逃生口来证明已删除）。
+
+    // 进阶 section 仅保留手动逃生口（导入文件 / 粘贴链接 / 从 mpv 导入），给懂的人用。
     expect(find.text(t.video_shader_section_advanced), findsOneWidget);
-    expect(find.text(t.video_shader_classic_recommended), findsOneWidget);
+    expect(find.text(t.video_shader_import), findsOneWidget);
     expect(find.text(t.video_shader_download_url), findsOneWidget);
+    expect(find.text(t.video_shader_import_from_mpv), findsOneWidget);
+
+    // TODO-125 诉求 2：五档显卡要求常驻对照表——选档前就能比较每档的画质取舍与
+    // GPU 门槛（型号示例），不用点选某档才看到要求。五档说明全在选择器下方常驻渲染。
+    expect(find.byType(VideoShaderTierComparison), findsOneWidget);
+    expect(find.text(t.video_shader_tier_off_hint), findsOneWidget);
+    expect(find.text(t.video_shader_tier_low_hint), findsOneWidget);
+    expect(find.text(t.video_shader_tier_medium_hint), findsOneWidget);
+    expect(find.text(t.video_shader_tier_high_hint), findsOneWidget);
+    expect(find.text(t.video_shader_tier_ultra_hint), findsOneWidget);
+    // 对照表常驻在档位选择器下方、进阶项上方。
+    final double comparisonY =
+        tester.getTopLeft(find.byType(VideoShaderTierComparison)).dy;
+    final double tierSelectorY =
+        tester.getTopLeft(find.text(t.video_shader_quality_tier)).dy;
+    final double advancedSectionY =
+        tester.getTopLeft(find.text(t.video_shader_section_advanced)).dy;
+    expect(tierSelectorY, lessThan(comparisonY));
+    expect(comparisonY, lessThan(advancedSectionY));
 
     final double tierY =
         tester.getTopLeft(find.text(t.video_shader_quality_tier)).dy;
@@ -164,13 +202,17 @@ void main() {
 
     // 初始默认（highQuality=true + 空启用集）已高亮「低」档；先点「无」（值变化触发回调）：
     // 「无」档零下载——关闭内置缩放 + 空启用集，直接经回调切档、不弹下载框。
-    await tester.tap(find.text(t.video_shader_tier_off));
+    // 档名在选择器分段 + 下方对照表都出现，故须定位到选择器内的分段（对照表只展示不可点）。
+    final Finder selector = find.byType(SegmentedButton<VideoShaderTier>);
+    await tester.tap(find.descendant(
+        of: selector, matching: find.text(t.video_shader_tier_off)));
     await tester.pumpAndSettle();
     expect(selectedTier, VideoShaderTier.off);
     expect(selectedHq, isFalse);
 
     // 再点「低」（零下载，仅 mpv 内置 scale）：又一次值变化，经回调切回低档。
-    await tester.tap(find.text(t.video_shader_tier_low));
+    await tester.tap(find.descendant(
+        of: selector, matching: find.text(t.video_shader_tier_low)));
     await tester.pumpAndSettle();
     expect(selectedTier, VideoShaderTier.low);
     expect(selectedHq, isTrue);

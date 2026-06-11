@@ -226,35 +226,6 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
     ));
   }
 
-  /// 打开「推荐着色器」子对话框（Anime4K 之外的经典单文件着色器，如 RAVU/NNEDI3）：
-  /// 选一个 → 直链优先下载（不必装 mpv）→ 刷新列表。
-  Future<void> _openRecommended() async {
-    final RecommendedShader? shader = await showDialog<RecommendedShader>(
-      context: context,
-      builder: (_) =>
-          RecommendedShaderPickerDialog(downloadedFiles: _files.toSet()),
-    );
-    if (shader == null || !mounted) return;
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      SnackBar(content: Text(t.video_shader_downloading)),
-    );
-    String? name;
-    try {
-      name = await downloadShaderFromUrl(shader.url);
-    } catch (_) {
-      name = null;
-    }
-    if (!mounted) return;
-    await _refresh();
-    if (!mounted) return;
-    messenger.showSnackBar(SnackBar(
-      content: Text(name != null
-          ? t.video_shader_download_done(count: 1)
-          : t.video_shader_download_failed),
-    ));
-  }
-
   /// 下载某预设的全部着色器到 mpv_shaders（进度对话框 + 取消），完成刷新列表 + 提示。
   /// 返回 true 表示该预设的全部文件现已就绪（全部下载成功或已存在），可据此启用该档。
   Future<bool> _downloadPreset(Anime4kPreset preset) async {
@@ -402,13 +373,17 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
               current: _currentTier,
               onSelect: _selectTier,
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-              child: Text(
-                _tierHint(),
-                style: Theme.of(context).textTheme.bodySmall,
+            // 选档前就把五档「档名 — 一句话 + 显卡要求」常驻列出，便于横向比较，
+            // 不用点开某档才看到要求（用户诉求 2）。当前命中档加粗高亮。
+            VideoShaderTierComparison(current: _currentTier),
+            if (_currentTier == null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+                child: Text(
+                  t.video_shader_tier_custom_hint,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
-            ),
             if (isMobilePlatform)
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
@@ -421,16 +396,10 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
               ),
           ],
         ),
-        // ── 进阶：经典推荐着色器 + 手动导入/下载（默认折叠观感，给懂的人用）──────
+        // ── 进阶：手动导入文件 / 粘贴链接下载 / 从本机 mpv 导入（给懂的人用的逃生口）──
         AdaptiveSettingsSection(
           title: t.video_shader_section_advanced,
           children: <Widget>[
-            _actionRow(
-              title: t.video_shader_classic_recommended,
-              subtitle: t.video_shader_recommended_hint,
-              icon: Icons.auto_awesome_outlined,
-              onTap: _openRecommended,
-            ),
             _actionRow(
               title: t.video_shader_import,
               icon: Icons.add_outlined,
@@ -458,13 +427,6 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
         ),
       ],
     );
-  }
-
-  /// 当前档位的一句话说明（自定义勾选状态给「自定义」文案）。
-  String _tierHint() {
-    final VideoShaderTier? tier = _currentTier;
-    if (tier == null) return t.video_shader_tier_custom_hint;
-    return shaderTierLabelDescription(tier);
   }
 
   AdaptiveSettingsRow _actionRow({
@@ -651,71 +613,6 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
   }
 }
 
-/// 「推荐着色器」选择对话框：列出 [kRecommendedShaders]（RAVU/NNEDI3 等单文件经典），
-/// 已下载的标 check 并禁选；点未下载的 pop 回该 [RecommendedShader]，取消 pop null。
-class RecommendedShaderPickerDialog extends StatelessWidget {
-  const RecommendedShaderPickerDialog(
-      {required this.downloadedFiles, super.key});
-
-  /// 已在 mpv_shaders 里的文件名集合（标「已下载」）。
-  final Set<String> downloadedFiles;
-
-  /// 着色器 id → 本地化说明（按系列前缀映射）。
-  static String descriptionFor(String id) {
-    if (id.startsWith('ravu')) return t.video_shader_desc_ravu;
-    if (id.startsWith('nnedi3')) return t.video_shader_desc_nnedi3;
-    return '';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return AlertDialog(
-      title: Text(t.video_shader_recommended),
-      content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              t.video_shader_recommended_hint,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: <Widget>[
-                  for (final RecommendedShader s in kRecommendedShaders)
-                    () {
-                      final bool added = downloadedFiles.contains(s.fileName);
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(s.name),
-                        subtitle: Text(descriptionFor(s.id)),
-                        trailing: added
-                            ? Icon(Icons.check, color: cs.primary)
-                            : const Icon(Icons.download_outlined),
-                        onTap: added ? null : () => Navigator.pop(context, s),
-                      );
-                    }(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        FilledButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_close),
-        ),
-      ],
-    );
-  }
-}
-
 /// Anime4K 下载进度对话框：显示「文件 i/N」+ 当前文件百分比 + 取消。
 class _Anime4kProgressDialog extends StatelessWidget {
   const _Anime4kProgressDialog({
@@ -839,6 +736,69 @@ class VideoShaderTierSelector extends StatelessWidget {
           if (selection.isEmpty) return;
           onSelect(selection.first);
         },
+      ),
+    );
+  }
+}
+
+/// 五档画质对照表：把「无/低/中/高/极高」每一档的「档名 — 一句话说明 + 显卡要求」
+/// 紧凑列出，常驻在档位选择器下方——让用户**选档前**就能横向比较各档的画质取舍与
+/// GPU 门槛（型号示例已写在各档 [shaderTierLabelDescription] 里），而不是点选某档后
+/// 才看到要求（用户诉求 2）。当前命中的 [current] 档加粗高亮；自定义勾选（current=null）
+/// 时不高亮任何档。纯展示，不可点（切档仍走上方的 [VideoShaderTierSelector]）。
+class VideoShaderTierComparison extends StatelessWidget {
+  const VideoShaderTierComparison({required this.current, super.key});
+
+  /// 当前命中的档（null=自定义勾选，不高亮任何行）。
+  final VideoShaderTier? current;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+            () {
+              final bool active = current == spec.tier;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    // 档名列：定宽，加粗高亮当前档，便于上下对齐成「表格」观感。
+                    SizedBox(
+                      width: 52,
+                      child: Text(
+                        shaderTierLabel(spec.tier),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight:
+                              active ? FontWeight.w700 : FontWeight.w500,
+                          color: active ? cs.primary : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // 说明列：一句话 + 显卡要求（含 N卡/A卡型号示例）。
+                    Expanded(
+                      child: Text(
+                        shaderTierLabelDescription(spec.tier),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: active
+                              ? cs.onSurface
+                              : cs.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }(),
+        ],
       ),
     );
   }

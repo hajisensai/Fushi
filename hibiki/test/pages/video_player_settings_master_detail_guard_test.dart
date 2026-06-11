@@ -140,12 +140,20 @@ void main() {
         reason: '着色器详情顶部是画质档位 section');
     expect(buildMethod, contains('VideoShaderTierSelector('),
         reason: '五档单选器嵌入档位 section');
-    // 进阶 section 保留经典推荐 + 手动导入，但移除单列 Anime4K 下载入口（诉求 2）。
+    // TODO-125：进阶 section 仅保留手动导入逃生口，删经典推荐着色器（RAVU/NNEDI3）入口。
     expect(buildMethod, contains('video_shader_section_advanced'));
-    expect(buildMethod, contains('video_shader_classic_recommended'));
     expect(buildMethod, contains('video_shader_section_installed'));
+    expect(buildMethod, isNot(contains('video_shader_classic_recommended')),
+        reason: 'TODO-125：删经典推荐着色器入口');
+    expect(buildMethod, isNot(contains('_openRecommended')),
+        reason: 'TODO-125：经典推荐着色器动作已删除');
     expect(buildMethod, isNot(contains('video_shader_download_anime4k')),
         reason: '诉求 2：不再单列「下载 Anime4K 推荐着色器」入口');
+    // TODO-125 诉求 2：五档显卡要求常驻对照表（替换原单行 _tierHint）。
+    expect(buildMethod, contains('VideoShaderTierComparison'),
+        reason: 'TODO-125：五档显卡要求常驻对照表');
+    expect(buildMethod, isNot(contains('_tierHint()')),
+        reason: 'TODO-125：单行 _tierHint 已被五档对照表替换');
     expect(buildMethod, isNot(contains('Wrap(')),
         reason: '不能把下载/导入动作作为同级按钮堆在顶部');
   });
