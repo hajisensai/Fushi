@@ -804,13 +804,28 @@ SettingsDestination _readingDestination() {
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
           ),
-          // 快捷键设置入口暂时隐藏，后面再更新（功能保留，仅不在设置中展示）。
-          // SettingsNavigationItem(
-          //   id: 'reading_controls.keyboard_shortcuts',
-          //   title: t.shortcut_settings_title,
-          //   icon: Icons.keyboard_outlined,
-          //   builder: (BuildContext context) => const ShortcutSettingsPage(),
-          // ),
+          // 快捷键设置入口：标注「实验性」（subtitle 复用 settings_experimental_suffix，
+          // 与 yomitan-api / texthooker / 焦点导航同范式），并挂 ReaderPlacement 让它
+          // 同时出现在书内快捷面板（reading controls 分组 = ReaderGroup.behavior）。
+          // onTap + pushSettingsPage 与本页其它导航项一致，全局设置详情页与书籍
+          // 设置底部弹窗都能正确推路由（builder 走 Navigator.push 在弹窗里同样有效，
+          // 但 onTap/pushSettingsPage 是仓库的既定范式，统一走它）。
+          SettingsNavigationItem(
+            id: 'reading_controls.keyboard_shortcuts',
+            title: t.shortcut_settings_title,
+            subtitle: t.settings_experimental_suffix,
+            icon: Icons.keyboard_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 20,
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const ShortcutSettingsPage(),
+              );
+            },
+          ),
         ],
       ),
     ],
