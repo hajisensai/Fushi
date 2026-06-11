@@ -1480,49 +1480,98 @@ function createEntryHeader(entry, idx) {
         buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
     }
 
+    // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
+    // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.
+    //
+    // PRIMARY MECHANISM — detection at lookup time:
+    //   When the popup renders this word (createEntryHeader runs as part of
+    //   renderPopup, which rebuilds the DOM on every lookup), the initial
+    //   `duplicateCheck` below queries Anki live (AnkiConnect findNotes /
+    //   AnkiDroid findDuplicateNotes — both already real-time) and sets a real
+    //   `data-mined` state: card in Anki → 已制卡 ✓; card absent → 可制卡 +.
+    //   `data-mined` is the source of truth for what a click does, so the ✓ is
+    //   NOT decorative — it means "Anki has this card right now".
+    //
+    //   TODO-084 (re-look-up the word after deleting its card in Anki) is
+    //   satisfied for free: a fresh lookup re-renders → re-runs this detection →
+    //   card is gone → 可制卡 → can re-mine.
+    //
+    // EDGE-CASE FALLBACK — same popup, card deleted in Anki WITHOUT re-looking
+    //   up (TODO-087): a click on the 已制卡 ✓ button re-verifies against Anki
+    //   first; if the card is genuinely gone it re-mines, if it still exists
+    //   (dupes off) it just refreshes ✓ and adds nothing. This is a safety net
+    //   for stale state, not the primary path.
+    const setMineState = (isMined) => {
+        // Single source of truth for the button's lookup-time-detected state.
+        mineButton.dataset.mined = isMined ? '1' : '';
+        mineButton.textContent = isMined ? '✓' : '+';
+        if (isMined) {
+            mineButton.classList.add('duplicate');
+        } else {
+            mineButton.classList.remove('duplicate');
+        }
+    };
     const mineButton = el('button', {
         className: 'mine-button',
         textContent: '+',
-        disabled: true,
         ontouchstart: () => {
             lastSelection = window.getSelection()?.toString() || '';
         },
         onclick: async () => {
+            // Single-flight guard against double-firing one click. Always cleared
+            // in finally — it is the ONLY thing that disables the button, never a
+            // permanent lock (BUG-077).
+            if (mineButton.dataset.mining === '1') return;
+            mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
-                const isAnkiConnect = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
-                const checkDuplicate = async () => {
-                    const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
-                    mineButton.textContent = wasAdded ? '✓' : '+';
-                    if (wasAdded) {
-                        mineButton.classList.add('duplicate');
+                if (mineButton.dataset.mined === '1') {
+                    // Button shows 已制卡 ✓ (detected mined at lookup time). The
+                    // only reason to click it is the TODO-087 edge case: the card
+                    // may have been deleted in Anki since, with no re-lookup. So
+                    // re-verify against Anki before doing anything.
+                    const stillExists = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                    if (stillExists && !window.allowDupes) {
+                        // Still really in Anki, dupes off → keep 已制卡, add nothing.
+                        setMineState(true);
+                        return;
                     }
-                    mineButton.disabled = wasAdded && !window.allowDupes;
+                    // Deleted in Anki (or dupes allowed) → fall through and re-mine.
+                }
+
+                const isAnkiConnect = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                const refreshFromAnki = async () => {
+                    // Re-detect from Anki so the post-mine state is the real one.
+                    const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                    setMineState(wasAdded);
                 };
 
                 if (isAnkiConnect) {
-                    await checkDuplicate();
+                    await refreshFromAnki();
                 } else {
-                    setTimeout(checkDuplicate, 1000);
+                    setTimeout(refreshFromAnki, 1000);
                 }
             } catch (e) {
                 // BUG-077: a rejected mineEntry/duplicateCheck (Dart handler threw,
                 // or a JS payload-builder error) must never leave the button stuck
                 // disabled showing '+' with no feedback. Restore it to a clickable
-                // '+' so the user can see it failed and retry.
+                // 可制卡 + so the user sees it failed and can retry.
                 console.error('mine button: mineEntry failed', e);
-                mineButton.textContent = '+';
+                setMineState(false);
+            } finally {
+                // The single-flight guard is ALWAYS released; the button's
+                // long-term enabled/disabled is driven only by data-mined, never
+                // stuck disabled.
+                mineButton.dataset.mining = '';
                 mineButton.disabled = false;
             }
         }
     });
     buttonsContainer.appendChild(mineButton);
+    // Lookup-time detection: query Anki's real card existence for THIS word as
+    // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
     window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(isDuplicate => {
-        if (isDuplicate) {
-            mineButton.textContent = '✓';
-            mineButton.classList.add('duplicate');
-        }
-        mineButton.disabled = isDuplicate && !window.allowDupes;
+        setMineState(isDuplicate);
     });
     
     header.appendChild(buttonsContainer);

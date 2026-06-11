@@ -47,6 +47,11 @@ class FakeElement {
     this.textContent = '';
     this.src = '';
     this.alt = '';
+    // Pre-declared so el()'s `key in element` check routes these as real
+    // properties (a callable handler / boolean), not stringified attributes.
+    this.onclick = null;
+    this.ontouchstart = null;
+    this.disabled = false;
   }
 
   get innerHTML() {
@@ -632,6 +637,180 @@ async function testMineEntryDoesNotReuseAudioFromPreviousExpression() {
   );
 }
 
+// ── TODO-084/087: mine button state is DETECTED AT LOOKUP TIME ─────────────
+// Builds an entry header, finds its mine button, and drives the duplicateCheck
+// handler. The button's 已制卡 ✓ / 可制卡 + state is the real Anki status
+// detected when the popup renders the word (the initial duplicateCheck), NOT a
+// purely-visual always-clickable indicator. Re-looking-up the word rebuilds the
+// DOM and re-detects (TODO-084); a click on a ✓ re-verifies as an edge-case
+// fallback for same-popup external deletion (TODO-087).
+
+function buildMineHeader(context) {
+  // reading === expression skips buildFuriganaEl (the fake DOM cannot append the
+  // bare text nodes that furigana rendering produces); the mine button is built
+  // either way and that is all these tests exercise.
+  const entry = {
+    expression: '刀',
+    reading: '刀',
+    matched: '刀',
+    frequencies: [],
+    pitches: [],
+    rules: [],
+  };
+  const header = context.createEntryHeader(entry, 0);
+  const hasClass = (node, name) =>
+    (node.className || '').split(/\s+/).includes(name) ||
+    (node.classList && node.classList.contains(name));
+  const findMine = (node) => {
+    if (hasClass(node, 'mine-button')) return node;
+    for (const child of node.children ?? []) {
+      const found = findMine(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const mineButton = findMine(header);
+  assert.ok(mineButton, 'mine button was not created');
+  return mineButton;
+}
+
+async function flush() {
+  // Drain microtasks (the in-flight duplicateCheck/mineEntry promises).
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+// LOOKUP-TIME DETECTION (primary mechanism): when the popup renders a word the
+// initial duplicateCheck queries Anki and sets the ACCURATE button state.
+// Card present -> 已制卡 ✓ + data-mined='1'. Card absent -> 可制卡 + + no
+// data-mined. The ✓ is a real detected state, not decoration.
+async function testLookupTimeDetectionSetsAccurateStateForExistingCard() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true); // card in Anki
+    return Promise.resolve(true);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush(); // initial lookup-time duplicateCheck resolves
+  assert.equal(mineButton.textContent, '✓', 'existing card detected at lookup time shows 已制卡 ✓');
+  assert.equal(mineButton.dataset.mined, '1', 'lookup-time detection records a real mined state');
+  assert.ok(mineButton.classList.contains('duplicate'), '✓ carries the duplicate class');
+}
+
+async function testLookupTimeDetectionSetsMineableStateForAbsentCard() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false); // not in Anki
+    return Promise.resolve(true);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.textContent, '+', 'absent card detected at lookup time shows 可制卡 +');
+  assert.notEqual(mineButton.dataset.mined, '1', 'an absent card is not a mined state');
+}
+
+// TODO-084 (primary): re-looking-up the word after deleting its card in Anki
+// rebuilds the DOM (a fresh createEntryHeader) and re-detects at lookup time, so
+// the new button shows 可制卡 + and can re-mine. Simulated by building a second
+// header after the card was deleted.
+async function testRelookupAfterDeletionDetectsMineableAndReMines() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const mined = [];
+  let cardExists = true; // first lookup: card is in Anki
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      cardExists = true;
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  };
+
+  // First lookup detects the existing card.
+  const firstButton = buildMineHeader(context);
+  await flush();
+  assert.equal(firstButton.dataset.mined, '1', 'first lookup detects the card -> 已制卡');
+
+  // User deletes the card in Anki, then RE-LOOKS-UP the word (new header).
+  cardExists = false;
+  const secondButton = buildMineHeader(context);
+  await flush();
+  assert.notEqual(secondButton.dataset.mined, '1', 're-lookup detects deletion -> 可制卡');
+  assert.equal(secondButton.textContent, '+', 're-lookup button is mineable again');
+
+  // Clicking it re-mines the (now absent) card.
+  await secondButton.onclick();
+  await flush();
+  assert.equal(mined.length, 1, 're-looked-up word can be mined again after deletion');
+}
+
+// TODO-087 (edge-case fallback): same popup, card deleted in Anki WITHOUT a
+// re-lookup. The button still shows 已制卡 ✓ (stale). Clicking it re-verifies
+// against Anki, finds the card gone, and re-mines.
+async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const mined = [];
+  let cardExists = true; // card already in Anki at lookup time
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      cardExists = true; // mining recreates the card
+      return Promise.resolve(true); // isAnkiConnect -> synchronous re-check
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush(); // lookup-time detection -> 已制卡 ✓
+  assert.equal(mineButton.dataset.mined, '1', 'lookup-time detection marks the existing card as mined');
+  assert.equal(typeof mineButton.onclick, 'function', 'onclick must be a real handler');
+
+  // User deletes the card in Anki, popup still open, NO re-lookup / re-open.
+  cardExists = false;
+
+  // Edge-case fallback: clicking the stale ✓ re-verifies, finds no card, re-mines.
+  await mineButton.onclick();
+  await flush();
+  assert.equal(mined.length, 1, 'clicking a stale ✓ after in-Anki deletion must re-mine');
+  assert.equal(mineButton.textContent, '✓', 'after re-mining the state is 已制卡 ✓ again');
+  assert.equal(mineButton.disabled, false, 'button stays clickable, never a dead lock');
+}
+
+// TODO-087 fallback, no-deletion case: clicking a 已制卡 ✓ whose card is still
+// genuinely in Anki (dupes off) must re-verify and add NOTHING.
+async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const mined = [];
+  let cardExists = true; // card really is still in Anki
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush(); // initial lookup-time detection paints 已制卡 ✓
+  assert.equal(mineButton.textContent, '✓', 'lookup-time detection shows 已制卡 ✓ for an existing card');
+  assert.equal(mineButton.dataset.mined, '1', 'mined state is recorded');
+
+  await mineButton.onclick();
+  await flush();
+  assert.equal(mined.length, 0, 'must not duplicate a card that still exists in Anki');
+  assert.equal(mineButton.textContent, '✓', 'indicator stays 已制卡 ✓');
+  assert.equal(mineButton.disabled, false, 'button is still clickable, never locked');
+}
+
 testEmSizedWideImagesUseHorizontalScrollWrapper();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
@@ -649,6 +828,31 @@ testSelectionHighlightReturnsBoundsForPopupPositioning();
 // testLongPressFallsBackFromElementToTextNode();
 
 testMineEntryDoesNotReuseAudioFromPreviousExpression().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testLookupTimeDetectionSetsAccurateStateForExistingCard().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testLookupTimeDetectionSetsMineableStateForAbsentCard().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testRelookupAfterDeletionDetectsMineableAndReMines().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testMineButtonReMinesAfterCardDeletedWithoutReopening().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testMineButtonDoesNotDuplicateWhenCardStillExists().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

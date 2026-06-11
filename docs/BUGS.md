@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 182 条。点号进各自文件。
+> 共 183 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-186](bugs/BUG-186-anki-real-card-status.md) | ✅ | ✅ | 制卡按钮态在查词时检测 Anki 真实卡存在性（删卡后可重制） |
 | [BUG-185](bugs/BUG-185-video-seek-arrow-vs-ctrl.md) | ✅ | ✅ | 视频普通箭头改时间seek/Ctrl箭头改句子seek+上句太远回退3s |
 | [BUG-184](bugs/BUG-184-android-video-seekbar-bottom.md) | ✅ | ✅ | 安卓视频进度条贴屏幕最底(移动控制条丢失底部留白margin) |
 | [BUG-183](bugs/BUG-183-font-backup-path-stale.md) | ✅ | ✅ | 备份恢复后自定义字体不生效（字体文件未打包+配置绝对路径未重定位） |
