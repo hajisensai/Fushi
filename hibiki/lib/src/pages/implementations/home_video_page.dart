@@ -619,7 +619,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           child: Column(
             children: <Widget>[
               if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
-              _buildExperimentalBanner(context),
               _buildTagFilterBar(allTags),
               Expanded(
                 child: _buildVideoLibraryBody(),
@@ -869,35 +868,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             onTap: _openImport,
           ),
       ],
-    );
-  }
-
-  /// 视频功能毕业为常驻 tab，但播放/查词/制卡仍为实验性：页头下方常驻一条提示
-  /// 横幅，与底栏图标的小圆点徽标呼应。用 secondaryContainer 调性，不抢内容焦点。
-  Widget _buildExperimentalBanner(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      color: colors.secondaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            Icons.science_outlined,
-            size: 18,
-            color: colors.onSecondaryContainer,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              t.video_experimental_banner,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.onSecondaryContainer,
-                  ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

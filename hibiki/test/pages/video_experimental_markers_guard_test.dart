@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫：锁定「视频功能毕业为常驻 tab + 实验性视觉标记」这次改动，防回归：
+/// 源码守卫：锁定「视频功能已毕业为常驻 tab，移除所有实验性视觉标记」，防回归：
 ///   1. 设置页不再有「实验性功能」区块里的视频开关（功能不再受开关门控）。
-///   2. 底栏视频 tab 图标带实验性小圆点徽标（AdaptiveNavItem.experimentalBadge）。
-///   3. 视频页头下方有常驻实验性提示横幅（t.video_experimental_banner）。
+///   2. 底栏视频 tab 图标不带实验性小圆点徽标（视频已是常驻功能）。
+///   3. 视频页头下方不再有实验性提示横幅，且 i18n key video_experimental_banner 已删除。
 ///
 /// 用源码扫描而非整页 widget pump：底栏自绘导航 + 视频页都依赖完整 AppModel + DB +
 /// HibikiFocusRoot，整页启动成本高且脆弱；这些不变式正是本次需求的精确正面，源码
@@ -63,24 +63,26 @@ void main() {
     });
   });
 
-  group('视频页实验性提示横幅', () {
+  group('视频页不再有实验性提示横幅', () {
     final String videoSrc =
         _read('lib/src/pages/implementations/home_video_page.dart');
+    final String baseI18n = _read('lib/i18n/strings.i18n.json');
+    final String zhI18n = _read('lib/i18n/strings_zh-CN.i18n.json');
 
-    test('页面渲染实验性横幅，使用 video_experimental_banner 文案', () {
-      expect(videoSrc.contains('_buildExperimentalBanner('), isTrue,
-          reason: '视频页应有实验性提示横幅');
-      expect(videoSrc.contains('t.video_experimental_banner'), isTrue,
-          reason: '横幅文案走 i18n key video_experimental_banner');
+    test('视频页不再渲染实验性横幅（方法与调用均已删除）', () {
+      expect(videoSrc.contains('_buildExperimentalBanner'), isFalse,
+          reason: '视频已是常驻功能，实验性横幅方法/调用应已删除');
+      expect(videoSrc.contains('video_experimental_banner'), isFalse,
+          reason: '视频页不应再引用 video_experimental_banner 文案');
+      expect(videoSrc.contains('Icons.science_outlined'), isFalse,
+          reason: '实验性烧瓶图标应随横幅一并删除');
     });
 
-    test('横幅位于标签筛选栏之前（页头下方第一条）', () {
-      final int bannerAt =
-          videoSrc.indexOf('_buildExperimentalBanner(context)');
-      final int tagBarAt = videoSrc.indexOf('_buildTagFilterBar(allTags)');
-      expect(bannerAt, greaterThan(0));
-      expect(tagBarAt, greaterThan(0));
-      expect(bannerAt, lessThan(tagBarAt), reason: '横幅应在标签筛选栏之前渲染');
+    test('i18n key video_experimental_banner 已从源文件删除', () {
+      expect(baseI18n.contains('video_experimental_banner'), isFalse,
+          reason: '英文源文件不应再有该 key');
+      expect(zhI18n.contains('video_experimental_banner'), isFalse,
+          reason: '中文源文件不应再有该 key');
     });
   });
 

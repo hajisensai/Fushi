@@ -1373,7 +1373,6 @@
     "video_screenshot": "Screenshot",
     "video_screenshot_saved": "Screenshot saved",
     "video_screenshot_failed": "Screenshot failed",
-    "video_experimental_banner": "Video is experimental — playback, dictionary lookup and card creation may be unstable.",
     "stat_mined": "Cards mined",
     "stat_favorited": "Favorited",
     "video_settings_cat_playback": "Playback",
