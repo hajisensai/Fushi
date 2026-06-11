@@ -1717,10 +1717,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         },
         nextSubtitle: () {
           _pokeControlsVisible();
+          // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
+          // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
+          // skipToPrevCueOrSeekBack 对称，TODO-073）。
           unawaited(
-            controller.cues.isEmpty
-                ? controller.seekRelative(_asbSeekMs)
-                : controller.skipToNextCue(),
+            controller.skipToNextCueOrSeekForward(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
           );
         },
         // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
@@ -1763,7 +1766,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// media_kit 桌面控制主题。底部胶囊条改成居中传输组
   /// `[−10s][上一句][暂停][下一句][+10s]`（清空中央 primaryButtonBar 避免重复），
   /// 左端进度、右端全屏；顶栏右侧放 截图/字幕/音轨/倍速/设置 图标（参照截图）。
-  /// 上/下一句走 cue 导航（[VideoPlayerController.skipToPrevCue]/[skipToNextCue]）。
+  /// 上/下一句走 cue 导航（[VideoPlayerController.skipToPrevCue]/[VideoPlayerController.skipToNextCueOrSeekForward]）。
   Future<void> _toggleVideoFullscreen(BuildContext context) {
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
@@ -2181,7 +2184,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         const MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
         MaterialCustomButton(
           icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
-          onPressed: () => controller.skipToNextCue(),
+          // 无字幕(OP)时也前进 seekSeconds 秒、不卡住(TODO-073)。
+          onPressed: () => controller.skipToNextCueOrSeekForward(
+            seekSeconds: _asbConfig.seekSeconds,
+          ),
         ),
         if (roomyBottomBar)
           MaterialCustomButton(
@@ -2485,7 +2491,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _pokeControlsVisible();
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    await (forward ? controller.skipToNextCue() : controller.skipToPrevCue());
+    // 下一句无字幕时前进 seekSeconds 秒(TODO-073)；上一句保持纯 skipToPrevCue
+    // (底栏「上一句」按钮语义不退化，BUG-185)。
+    await (forward
+        ? controller.skipToNextCueOrSeekForward(
+            seekSeconds: _asbConfig.seekSeconds,
+          )
+        : controller.skipToPrevCue());
   }
 
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter

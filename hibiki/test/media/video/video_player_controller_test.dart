@@ -696,4 +696,81 @@ void main() {
       );
     });
   });
+
+  // TODO-073: 视频 OP（片头）段没有字幕时，按「下一句字幕」按钮跳回开头。
+  //
+  // 用户复现：OP 歌词没有字幕（首条 cue 在 OP 之后，如真实龙女仆 S01E01 首条 cue
+  // 在 38456ms）。在 OP 里按下一句：
+  //   - 有字幕但 position 早于首句：nextCueIndexFor 返回 0 → 跳到首句 startMs（前进，
+  //     绝不回开头/0）。这是 BUG-176 已修的正确行为，这里用真实 OP cue 结构钉死防回归。
+  //   - 无字幕（空 cue 列表）：旧的按钮直接 skipToNextCue() → no-op（按钮毫无反应，用户
+  //     感知「卡住 / 没动」）。新增 skipToNextCueOrSeekForward 让无字幕时前进 seekSeconds
+  //     秒（与 skipToPrevCueOrSeekBack 对称），跨过没字幕的 OP。
+  group('TODO-073 OP 无字幕「下一句」不回开头', () {
+    // 真实结构：首条 cue 在 OP 之后（38456ms）。OP 段 0..38456 无 cue。
+    final opCues = <AudioCue>[
+      _cue(0, 38456, 42000),
+      _cue(1, 45212, 48000),
+      _cue(2, 48758, 52000),
+    ];
+
+    test('OP 里（position 早于首句）下一句 = 首句索引 0（跳到 38456ms = 前进，不回 0）', () {
+      for (final int pos in <int>[0, 1000, 10000, 20000, 38000]) {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: opCues, currentCueIndex: -1, positionMs: pos),
+          0,
+          reason:
+              'OP position=$pos 早于首句：下一句应是首句(0)，seek 到 ${opCues[0].startMs}ms '
+              '前进，绝不返回越界/负值导致回开头',
+        );
+      }
+    });
+
+    test('回归：tick 把 OP position 同步成 currentCueIndex=-1 后，下一句仍前进到首句', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(opCues);
+      c.debugUpdateCueForPosition(10000); // OP 内：早于首句 38456 → -1
+      expect(c.currentCueIndex, -1, reason: 'OP 段无 cue 覆盖，当前索引应为 -1');
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: c.cues,
+            currentCueIndex: c.currentCueIndex,
+            positionMs: 10000),
+        0,
+        reason: '从 OP gap 按下一句必须前进到首句(0=38456ms)，不能回开头',
+      );
+    });
+
+    test('已在末句之后（片尾无字幕）下一句 = null（保持原位，不回开头也不越界）', () {
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: opCues, currentCueIndex: -1, positionMs: 200000),
+        isNull,
+      );
+    });
+
+    test('skipToNextCueOrSeekForward：空 cue 列表不抛、安全 no-op（无 player 时）',
+        () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      // 无字幕 + 无 player：empty 分支走 seekRelative，positionMs==null → no-op 安全。
+      await c.skipToNextCueOrSeekForward(seekSeconds: 5);
+      expect(c.cues, isEmpty);
+      expect(c.positionMs, isNull, reason: '无 player：seekRelative 不动（不会回到 0）');
+    });
+
+    test('skipToNextCueOrSeekForward：有 cue 时走 cue 决策（无 player 时安全 no-op）',
+        () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(opCues);
+      c.debugUpdateCueForPosition(10000);
+      // 无 player：skipToCue→seekMs 是 no-op，但不应抛、不应改 cue 状态指向原点。
+      await c.skipToNextCueOrSeekForward(seekSeconds: 5);
+      expect(c.currentCueIndex, -1,
+          reason: 'seek 是 no-op（无 player），cue 状态不被错误改写');
+    });
+  });
 }

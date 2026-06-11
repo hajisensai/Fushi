@@ -93,8 +93,10 @@ void main() {
           reason: 'Ctrl+← 必须走含「上句太远回退 Xs」退化的决策方法');
       expect(page.contains('seekSeconds: _asbConfig.seekSeconds'), isTrue,
           reason: '退化阈值用配置的 seekSeconds 秒');
-      // 下一句仍纯句子跳（无 cue 才前进 Xs）。
-      expect(page.contains('skipToNextCue()'), isTrue);
+      // TODO-073：下一句也集中到 skipToNextCueOrSeekForward（无字幕时前进 Xs、
+      // 不再卡住 / 回开头），与 previousSubtitle 的 skipToPrevCueOrSeekBack 对称。
+      expect(page.contains('skipToNextCueOrSeekForward('), isTrue,
+          reason: '下一句走含「无字幕前进 Xs」的集中决策方法（TODO-073）');
       expect(page.contains('_asbSeekMs'), isTrue);
     });
 

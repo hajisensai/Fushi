@@ -898,6 +898,35 @@ class VideoPlayerController extends ChangeNotifier
     // PrevSeekDecision.none：已在首句，保持 no-op（不强行回退到负位置）。
   }
 
+  /// 「下一句」按钮 / 键盘用：跳到下一句字幕，但**无字幕时退化成前进 [seekSeconds]
+  /// 秒**（TODO-073）。与 [skipToPrevCueOrSeekBack] 对称——后者无字幕时当回退键，这里
+  /// 无字幕时当快进键。动机：用户报「OP 段没有字幕时按下一句字幕按钮，画面像回到开头
+  /// 一样不前进」。根因是空 [_cues] 时旧的 [skipToNextCue] 直接 no-op，按钮毫无反应，
+  /// 用户感知为「卡住 / 没动」；有字幕时 [skipToNextCue] 本就正确前进（[nextCueIndexFor]
+  /// 在 OP gap 里二分定位首句、永不回原点，BUG-176）。
+  ///
+  /// 决策：
+  /// - 空 [_cues]：前进 [seekSeconds] 秒（让用户能跨过没有字幕的 OP；下界 clamp 同
+  ///   [seekRelative]，不会变成负位置 / 回开头）。
+  /// - 有下一句 cue：跳到该 cue 起点（[skipToNextCue] 同源决策，OP gap 里也前进到首句）。
+  /// - 已在末句之后（无下一句）：no-op（保持原位，**不**强行前进越过片尾）。
+  Future<void> skipToNextCueOrSeekForward({required int seekSeconds}) async {
+    if (_cues.isEmpty) {
+      // 无字幕：下一句键当快进键，前进 seekSeconds 秒（与键盘 nextSubtitle 旧的
+      // `cues.isEmpty ? seekRelative(+X)` 内联分支同语义，集中到此处便于单测 + 按钮共享）。
+      await seekRelative(seekSeconds * 1000);
+      return;
+    }
+    final int? next = nextCueIndexFor(
+      cues: _cues,
+      currentCueIndex: _currentCueIndex,
+      positionMs: positionMs,
+    );
+    // next == null：已在末句之后，无下一句 → 保持 no-op（不前进越过片尾，避免误跳到结尾）。
+    if (next == null) return;
+    await skipToCue(_cues[next]);
+  }
+
   /// 纯函数：「下一句」目标索引（[skipToNextCue] 决策，抽出便于单测）。
   ///
   /// - 已定位到当前 cue（`currentCueIndex` 合法）：取它的下一条；已在末句返回 null。
