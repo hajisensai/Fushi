@@ -171,8 +171,10 @@ bool _caretKeepsArrow(EditableText editable, TraversalDirection dir) {
 ///   framework's own Escape handling.
 /// * The gamepad B button triggers a global back/dismiss.
 /// * [focusNavigationEnabled] 为实验性「键盘/手柄焦点导航」总开关（默认关闭，见
-///   AppModel.experimentalFocusNavigationEnabled）。仅它控制手柄按钮分发、方向键
-///   移焦、以及手柄 B 返回；关闭时这些一律不挂，App 回退到 Flutter 原生焦点遍历。
+///   AppModel.experimentalFocusNavigationEnabled）。它控制手柄按钮分发、方向键
+///   移焦、手柄 B 返回；关闭时这些一律不挂。**关闭时还把 Tab / Shift+Tab 中和成
+///   [DoNothingIntent]**，停掉 Flutter [WidgetsApp] 内建的 Tab 焦点遍历——用户裁定
+///   没开焦点导航时按 Tab 不该有动作（TODO-112）。开启时不中和，原生 Tab 遍历照常。
 ///   与焦点导航无关、始终生效的两件事不受其影响：
 ///     * Escape 退出整页层级（桌面键盘惯例）；
 ///     * 裸空格中和为 [DoNothingIntent]，使焦点确认永不走空格（确认键统一 Enter /
@@ -185,6 +187,17 @@ Widget wrapWithGlobalNavigation({
 }) {
   final Map<ShortcutActivator, Intent> shortcuts = <ShortcutActivator, Intent>{
     const SingleActivator(LogicalKeyboardKey.space): const DoNothingIntent(),
+    // 焦点导航总开关关闭时，把 Tab / Shift+Tab 中和成 DoNothingIntent，使 Flutter
+    // [WidgetsApp] 内建的 NextFocusIntent/PreviousFocusIntent 遍历不再生效——本
+    // Shortcuts 比 WidgetsApp 默认 shortcuts 更靠近焦点节点，故先匹配并阻断冒泡。
+    // 用户裁定：没开「键盘/手柄焦点导航」时按 Tab 不该有动作（与裸空格中和同范式）。
+    // 开启时不加这两条，Flutter 原生 Tab 遍历照常工作。文本框输入不受影响：Tab 在
+    // 文本框内本就是焦点遍历键（不插入制表符），中和它只停遍历，不改文本编辑。
+    if (!focusNavigationEnabled) ...<ShortcutActivator, Intent>{
+      const SingleActivator(LogicalKeyboardKey.tab): const DoNothingIntent(),
+      const SingleActivator(LogicalKeyboardKey.tab, shift: true):
+          const DoNothingIntent(),
+    },
     if (focusNavigationEnabled)
       const SingleActivator(LogicalKeyboardKey.gameButtonB):
           const HibikiPopIntent(),

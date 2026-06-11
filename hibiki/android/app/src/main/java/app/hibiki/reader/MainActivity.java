@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.media.AudioManager;
 import android.view.KeyEvent;
 import android.view.WindowManager;
 import androidx.annotation.NonNull;
@@ -179,12 +180,32 @@ public class MainActivity extends AudioServiceActivity {
         new Handler(Looper.getMainLooper()).post(() -> ch.invokeMethod("ankiExport", args));
     }
 
+    // TODO-112 / BUG-196: volume keys must NEVER reach the FlutterView key
+    // pipeline. super.dispatchKeyEvent() forwards the event to the view hierarchy
+    // (including FlutterView) BEFORE Activity.onKeyDown adjusts the volume, so the
+    // raw VOLUME_UP/DOWN leaked into Flutter and flipped FocusManager's highlight
+    // mode to "traditional" -> a stray focus ring appeared on the reading content
+    // even when volume-key page turning was OFF and the user only ever touched the
+    // screen. We intercept volume keys here for BOTH states and never call super
+    // for them:
+    //   * intercept ON  (page turning): forward the key-down to Dart, swallow it
+    //     (no volume change), exactly as before.
+    //   * intercept OFF (default): adjust the system volume ourselves with
+    //     adjustSuggestedStreamVolume(USE_DEFAULT_STREAM_TYPE, FLAG_SHOW_UI) — the
+    //     standard "behave like the hardware volume key" API (picks the active
+    //     stream, shows the volume slider) — so the buttons still work normally,
+    //     but the event no longer pollutes Flutter's focus highlight mode.
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (volumeKeyIntercept) {
-            int code = event.getKeyCode();
-            if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN && volumeKeyChannel != null) {
+        int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                // Consume the UP edge too so it never reaches FlutterView either;
+                // the DOWN edge already did the work below.
+                return true;
+            }
+            if (volumeKeyIntercept) {
+                if (volumeKeyChannel != null) {
                     final String method = code == KeyEvent.KEYCODE_VOLUME_UP
                             ? "onVolumeUp"
                             : "onVolumeDown";
@@ -194,8 +215,27 @@ public class MainActivity extends AudioServiceActivity {
                 }
                 return true;
             }
+            adjustSystemVolume(code == KeyEvent.KEYCODE_VOLUME_UP);
+            return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    // Mirror the OS hardware-volume-key behaviour without routing the key through
+    // FlutterView. USE_DEFAULT_STREAM_TYPE lets the framework pick the active
+    // audio stream (music while playing, ring otherwise) and FLAG_SHOW_UI shows
+    // the standard volume slider, so the user sees no difference from the default.
+    private void adjustSystemVolume(boolean raise) {
+        AudioManager audioManager =
+                (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager == null) return;
+        int direction = raise
+                ? AudioManager.ADJUST_RAISE
+                : AudioManager.ADJUST_LOWER;
+        audioManager.adjustSuggestedStreamVolume(
+                direction,
+                AudioManager.USE_DEFAULT_STREAM_TYPE,
+                AudioManager.FLAG_SHOW_UI);
     }
 
     @Override
