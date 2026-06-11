@@ -27,11 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 195 条。点号进各自文件。
+> 共 197 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-200](bugs/BUG-200-no-subtitle-prev-button-stuck.md) | ✅ | ✅ | 转场/无字幕段「上一句字幕」按钮没反应回退不了 |
+| [BUG-199](bugs/BUG-199-lookup-reblurs-subtitle.md) | ✅ | ✅ | 查词时模糊字幕又变模糊 |
+| [BUG-198](bugs/BUG-198-subtitle-eats-mouse.md) | ✅ | ✅ | 字幕吞鼠标 hover/控制条不唤起 |
 | [BUG-197](bugs/BUG-197-video-playback-crash-audit.md) | ✅ | ✅ | 视频播放高频闪退全平台根因排查 (TODO-116) |
 | [BUG-196](bugs/BUG-196-focus-nav-volume-gate.md) | ✅ | ✅ | 焦点导航/音量键开关未真正 gate 输入（Tab 仍遍历 + 音量键出焦点框） |
 | [BUG-195](bugs/BUG-195-android-system-focus-highlight.md) | ✅ | ✅ | 三星 OneUI 6.5 系统默认焦点框与 app 自绘焦点环双重重叠 |

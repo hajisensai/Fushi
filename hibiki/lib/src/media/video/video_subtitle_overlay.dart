@@ -177,7 +177,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         }
         final SubtitleMarkup? markup = widget.controller.currentCue?.markup;
         final List<String> chars = text.characters.toList(growable: false);
-        final bool blurred = widget.blurEnabled && !_revealed;
+        // 听力沉浸模糊只在「播放中」生效：暂停（含查词暂停、用户手动暂停）时字幕一律
+        // 清晰。查词必然先暂停视频，旧实现靠桌面 hover 维持清晰，但查词浮层弹出后鼠标
+        // 移到浮层 → 字幕 MouseRegion 收到 onExit → _revealed 复位 → 字幕又变模糊
+        // （用户正盯着这句查词，却被打码，BUG-199）。沉浸模糊的语义本就是「播放中逼你
+        // 听」，暂停时没有在听、显形理所当然，故以 isPlaying 为闸根除该竞态——无需让
+        // overlay 感知浮层栈状态。
+        final bool blurred =
+            widget.blurEnabled && !_revealed && widget.controller.isPlaying;
         _currentBlurred = blurred;
 
         final Color backgroundColor = widget.backgroundOpacity <= 0
@@ -197,21 +204,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
                 for (int i = 0; i < chars.length; i++)
                   Builder(
                     builder: (BuildContext charContext) {
-                      // 登记字符 context（下标==i==grapheme 下标）供全局坐标反查。
+                      // 登记字符 context（下标==i==grapheme 下标）供全局坐标反查
+                      // （[_charHitTest]）。字符本身不再各自包 opaque GestureDetector
+                      // ——那样每个字符矩形都吞掉指针 hover hit-test，盖在其下的
+                      // media_kit `MouseRegion.onHover/onEnter` 收不到鼠标 → 鼠标移到
+                      // 字幕文字上时控制条不再被唤起、光标被字幕层吃掉（BUG-198）。
+                      // tap 命中改由下方整片 translucent GestureDetector + 本登记表
+                      // 反查承载。
                       _charContexts.add(charContext);
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: widget.onCharTap == null
-                            ? null
-                            : () => widget.onCharTap!(
-                                  text,
-                                  i,
-                                  _globalRectOf(charContext),
-                                ),
-                        child: Text(
-                          chars[i],
-                          style: _styleForGrapheme(i, markup),
-                        ),
+                      return Text(
+                        chars[i],
+                        style: _styleForGrapheme(i, markup),
                       );
                     },
                   ),
@@ -219,6 +222,28 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
             ),
           ),
         );
+
+        // 字符点击查词：整个字幕盒一个 translucent GestureDetector，松手时用
+        // [_charHitTest] 按全局坐标反查命中的字符 grapheme 再回调 [onCharTap]。
+        // - translucent：hover/指针 hit-test 不被本层独占，media_kit 的
+        //   `MouseRegion` 仍进 path → 鼠标在字幕上时控制条照常唤起、不被吞
+        //   （BUG-198，对比旧的逐字符 opaque）。
+        // - 本层在 Stack 上层，tap 会赢手势竞技场 → media_kit 的 `playAndPauseOnTap`
+        //   （onTapDown）被截断 → 点字幕文字仍是查词、不会顺手暂停（保留旧 opaque
+        //   行为）；点字幕盒内字符间空白则什么也不做（不查词、不暂停）。
+        if (widget.onCharTap != null) {
+          box = GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTapUp: (TapUpDetails details) {
+              final SubtitleCharHit? hit = _charHitTest(details.globalPosition);
+              if (hit != null) {
+                widget.onCharTap!(
+                    hit.sentence, hit.graphemeIndex, hit.charRect);
+              }
+            },
+            child: box,
+          );
+        }
 
         if (blurred) {
           // 模糊态：盖一层高斯模糊 + 拦截字符点击（避免误触查词），并提供显形热区。
@@ -229,11 +254,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
                 imageFilter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: box,
               ),
-              // 透明覆盖：拦截字符点击 + 移动端点它显形。
+              // 透明覆盖：拦字符点击（避免模糊态误触查词）+ 移动端点它显形。
+              // translucent（非 opaque）：tap 仍由本层（Stack 上层）赢手势竞技场、
+              // 截断 media_kit 暂停，但 hover hit-test 不被独占 → 鼠标在模糊字幕上时
+              // media_kit `MouseRegion` 照常收 hover、控制条可唤起、不被吞（BUG-198）。
               Positioned.fill(
                 child: GestureDetector(
                   key: const Key('video-subtitle-reveal'),
-                  behavior: HitTestBehavior.opaque,
+                  behavior: HitTestBehavior.translucent,
                   onTap: () => _setRevealed(true),
                 ),
               ),
@@ -241,9 +269,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
           );
         }
 
-        // 桌面悬停显形/移开复原（移动端无 hover，靠上面的点击热区）。
+        // 桌面悬停显形/移开复原（移动端无 hover，靠上面的点击热区）。opaque:false：
+        // 本 MouseRegion 收 hover 的同时不阻断 hover hit-test 继续下探到 media_kit 的
+        // `MouseRegion` → 鼠标在字幕上时字幕显形与控制条唤起并存、光标不被吞
+        // （BUG-198）。
         final Widget hoverable = widget.blurEnabled
             ? MouseRegion(
+                opaque: false,
                 onEnter: (_) => _setRevealed(true),
                 onExit: (_) => _setRevealed(false),
                 child: box,

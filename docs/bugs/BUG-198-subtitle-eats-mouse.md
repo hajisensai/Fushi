@@ -1,0 +1,6 @@
+## BUG-198 · 字幕吞鼠标 hover/控制条不唤起
+- **报告**：2026-06-11（用户：「字幕会把鼠标吞掉，修复」）
+- **真实性**：✅ 真 bug — `hibiki/lib/src/media/video/video_subtitle_overlay.dart`（旧 202-203）每个字幕字符用 `GestureDetector(HitTestBehavior.opaque)` 包裹；该 overlay 是 `video_hibiki_page.dart` 的 `Positioned.fill`，叠在 media_kit `AdaptiveVideoControls` 之上。鼠标 hover 到字幕文字上时，opaque 字符 box 独占 hover hit-test，盖在其下的 media_kit `MouseRegion.onHover/onEnter`（`material_desktop.dart:658-664`）收不到鼠标 → 控制条不被唤起、光标被字幕层吃掉。模糊态的 `Positioned.fill` opaque `GestureDetector` 与 `MouseRegion`（默认 opaque）吞得更多。
+- **[x] ① 已修复** — 根因修：字符层不再各自包 opaque `GestureDetector`，改成整片 `GestureDetector(HitTestBehavior.translucent)` + `onTapUp` 用已有 `_charHitTest(globalPos)` 反查命中字符再 `onCharTap`（translucent 让 hover hit-test 下探到 media_kit `MouseRegion` → 控制条照常唤起、光标不被吞；本层在 Stack 上层 tap 赢竞技场 → media_kit `playAndPauseOnTap` 被截断 → 点字幕仍是查词、不顺手暂停）。模糊态 reveal `Positioned.fill` 改 `translucent`、hover `MouseRegion` 改 `opaque: false`，同样透传 hover。`video_subtitle_overlay.dart` build()（commit 见下）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_overlay_test.dart` group「BUG-198 …」：①断言字幕层无任何 opaque `GestureDetector`、且存在 translucent 的 tap 层（撤修复改回逐字符 opaque → 红，已实测）②tap 字幕字符仍触发 `onCharTap` 命中正确 grapheme。
+- **备注**：与 BUG-199 同文件同次提交（blur/pointer 路径），claim `codex-todo-118-130-subtitle-blur-pointer`。真机 hover/光标观感待用户。

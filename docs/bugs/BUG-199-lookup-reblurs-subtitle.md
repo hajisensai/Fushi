@@ -1,0 +1,6 @@
+## BUG-199 · 查词时模糊字幕又变模糊
+- **报告**：2026-06-11（用户：「模糊字幕，在查词的时候，还会变成模糊的」）
+- **真实性**：✅ 真 bug — `hibiki/lib/src/media/video/video_subtitle_overlay.dart`（旧 `blurred = widget.blurEnabled && !_revealed`）。听力沉浸模糊靠桌面 `MouseRegion.onEnter` 把 `_revealed=true` 才清晰。查词流程：hover 字幕→清晰→点字符 `onCharTap`→视频暂停→查词浮层弹出（根 Overlay，盖在字幕上）→鼠标移到浮层 → 字幕 `MouseRegion.onExit` → `_revealed` 复位 → 字幕又被打码。用户正盯着这句查词却被模糊。
+- **[x] ① 已修复** — 根因修：模糊只在「播放中」生效——`blurred = widget.blurEnabled && !_revealed && widget.controller.isPlaying`。查词必然先暂停视频（`isPlaying==false`）→ 字幕一律清晰，从根上消除 onExit 复位竞态，无需 overlay 感知浮层栈状态。语义自洽：沉浸模糊本意是「播放中逼你听」，暂停时没在听、显形理所当然。`controller.isPlaying` 经 `player.stream.playing.listen→notifyListeners`（`video_player_controller.dart:466`）驱动 overlay `AnimatedBuilder` 重绘。副作用：用户**手动**暂停时字幕也清晰（合理，且无人报怨暂停该保持模糊）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_overlay_test.dart` group「BUG-199 …」：playing=true 有 `ImageFiltered`、置 playing=false（查词暂停）后无 `ImageFiltered`（撤 `&& isPlaying` → 暂停仍模糊 → 红，已实测）。配套 `VideoPlayerController.debugSetIsPlayingForTesting` 测试钩子（widget 测试 controller 无真 Player，isPlaying 恒 false）。同时同套既有 blur 测试更新为先设 playing。
+- **备注**：与 BUG-198 同文件同次提交，claim `codex-todo-118-130-subtitle-blur-pointer`。真机模糊/清晰观感待用户。

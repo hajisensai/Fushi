@@ -173,8 +173,21 @@ class VideoPlayerController extends ChangeNotifier
   /// 视频文件绝对路径（制卡裁字幕音频用）；未 [load] 时为空。
   String? get videoPath => _videoPath;
 
+  /// 测试可注入的播放态：widget 测试用的 controller 没有真实 [Player]
+  /// （[_player]==null → isPlaying 恒 false），无法驱动「播放中才模糊」
+  /// （BUG-199 听力沉浸）等以 [isPlaying] 为闸的逻辑。置非 null 时覆盖。
+  bool? _debugIsPlayingOverride;
+
+  /// 测试可见：模拟播放/暂停态（驱动字幕沉浸模糊门控等）。传 null 还原真实来源。
+  @visibleForTesting
+  void debugSetIsPlayingForTesting(bool? playing) {
+    _debugIsPlayingOverride = playing;
+    notifyListeners();
+  }
+
   @override
-  bool get isPlaying => _player?.state.playing ?? false;
+  bool get isPlaying =>
+      _debugIsPlayingOverride ?? (_player?.state.playing ?? false);
 
   /// 当前播放位置（毫秒）；未 [load] 时为 null。换集前用它补记当前集精确进度
   /// （tick 整秒节流外的尾差）。
