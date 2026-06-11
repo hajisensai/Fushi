@@ -42,8 +42,12 @@ class FloatingLyricWindow {
   using LookupCallback =
       std::function<void(const std::string& text, int char_index)>;
   // Reports a tap on one of the control buttons. |action| is one of
-  // "previousCue", "playPause", "nextCue", "close".
+  // "previousCue", "playPause", "nextCue", "close" (the "lock" button is
+  // handled internally and surfaced through LockCallback instead).
   using ControlCallback = std::function<void(const std::string& action)>;
+  // Reports the new locked state after the user toggles the lock button, so the
+  // Dart side can persist it and refresh any in-app mirror of the strip state.
+  using LockCallback = std::function<void(bool locked)>;
 
   struct Style {
     double font_size = 20.0;
@@ -59,6 +63,8 @@ class FloatingLyricWindow {
     std::wstring previous = L"Previous";
     std::wstring play_pause = L"Play";
     std::wstring next = L"Next";
+    std::wstring lock = L"Lock";
+    std::wstring unlock = L"Unlock";
     std::wstring close = L"Close";
   };
 
@@ -73,6 +79,9 @@ class FloatingLyricWindow {
   }
   void SetControlCallback(ControlCallback callback) {
     on_control_ = std::move(callback);
+  }
+  void SetLockCallback(LockCallback callback) {
+    on_lock_ = std::move(callback);
   }
 
   // Creates (if needed) and shows the strip. Returns false if the OS window
@@ -89,6 +98,11 @@ class FloatingLyricWindow {
   void UpdateLabels(const Labels& labels);
   void SetPlaybackState(bool playing);
   void SetClickLookupEnabled(bool enabled);
+  // Position lock: when locked the strip can no longer be dragged, but word
+  // lookup taps and the playback-control buttons keep working (mirrors the
+  // Android FloatingLyricService position lock — drag-only restriction).
+  void SetLocked(bool locked);
+  bool IsLocked() const { return locked_; }
 
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
@@ -128,6 +142,13 @@ class FloatingLyricWindow {
   // Returns the control action at the client point, or empty when none.
   std::string ControlActionAt(float x, float y);
 
+  // True when the client point falls inside the bottom-right resize grip — used
+  // by WM_NCHITTEST to hand the corner to the system resize loop.
+  bool ResizeGripContains(float x, float y) const;
+  // Recomputes the logical strip size from the current window size (after a
+  // system resize) so the font + control layout track the new dimensions.
+  void SyncStripSizeFromWindow();
+
   float ScaleForDpi(float value) const;
 
   HWND hwnd_ = nullptr;
@@ -136,10 +157,18 @@ class FloatingLyricWindow {
   bool playing_ = false;
   bool click_lookup_enabled_ = true;
   bool hovered_ = false;
+  // Position lock: drag disabled, everything else (lookup + controls) still
+  // works. Toggled by the lock button or SetLocked() over the channel.
+  bool locked_ = false;
   // True while the strip is currently accepting mouse input (WS_EX_TRANSPARENT
   // cleared). Starts false so a freshly shown strip lets clicks fall through.
   bool interactive_ = false;
   UINT dpi_ = 96;
+
+  // Logical (96-DPI) strip size. Mutable so the bottom-right resize grip can
+  // grow / shrink the bar; the font + control layout follow this size.
+  float strip_width_dip_ = 720.0f;
+  float strip_height_dip_ = 96.0f;
 
   // Timer id for the global-cursor poll that drives click-through toggling.
   static constexpr UINT_PTR kCursorPollTimerId = 1;
@@ -153,9 +182,19 @@ class FloatingLyricWindow {
 
   TextLayoutRect text_rect_;
 
-  // Drag state for moving the strip.
-  bool dragging_ = false;
-  POINT drag_anchor_ = {0, 0};
+  // Press / drag / resize state for moving and sizing the strip.
+  //
+  // A left-press over the lyric text starts in the "pressed, not yet decided"
+  // state: if the cursor moves past a small threshold it becomes a drag,
+  // otherwise the button-up fires a word-lookup at the original press point.
+  // This is what makes the bar draggable from anywhere on the text instead of
+  // only the tiny blank margins (BUG-203), while preserving single-tap lookup.
+  bool pressed_ = false;        // left button held, decision pending
+  bool press_was_text_ = false; // press landed on the lyric text (lookup case)
+  bool dragging_ = false;       // promoted to a move-the-strip drag
+  POINT drag_anchor_ = {0, 0};  // cursor offset inside the window at press
+  POINT press_origin_ = {0, 0}; // screen point where the press began
+  POINT press_client_ = {0, 0}; // client point where the press began (lookup)
 
   // Direct2D / DirectWrite.
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
@@ -166,6 +205,7 @@ class FloatingLyricWindow {
 
   LookupCallback on_lookup_;
   ControlCallback on_control_;
+  LockCallback on_lock_;
 };
 
 #endif  // RUNNER_FLOATING_LYRIC_WINDOW_H_

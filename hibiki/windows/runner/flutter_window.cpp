@@ -390,6 +390,15 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
             "lookupText",
             std::make_unique<flutter::EncodableValue>(std::move(map)));
       });
+  // The user toggling the lock button on the strip reports the new state back
+  // so the Dart side can persist it / refresh any in-app mirror.
+  floating_lyric_window_->SetLockCallback([this](bool locked) {
+    flutter::EncodableMap map{
+        {flutter::EncodableValue("locked"), flutter::EncodableValue(locked)},
+    };
+    floating_lyric_channel_->InvokeMethod(
+        "lockChanged", std::make_unique<flutter::EncodableValue>(std::move(map)));
+  });
 
   floating_lyric_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -406,6 +415,11 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           floating_lyric_window_->UpdateStyle(StyleFromArgs(args));
           floating_lyric_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
+          if (args != nullptr &&
+              args->find(flutter::EncodableValue("locked")) != args->end()) {
+            floating_lyric_window_->SetLocked(
+                BoolFromValue(args, "locked", false));
+          }
           const bool shown = floating_lyric_window_->Show(GetHandle());
           result->Success(flutter::EncodableValue(shown));
         } else if (method == "hide") {
@@ -430,6 +444,8 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           labels.play_pause =
               WideFromValue(args, "playPause", labels.play_pause);
           labels.next = WideFromValue(args, "next", labels.next);
+          labels.lock = WideFromValue(args, "lock", labels.lock);
+          labels.unlock = WideFromValue(args, "unlock", labels.unlock);
           labels.close = WideFromValue(args, "close", labels.close);
           floating_lyric_window_->UpdateLabels(labels);
           result->Success();
@@ -442,9 +458,11 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
               BoolFromValue(args, "enabled", true));
           result->Success();
         } else if (method == "setLocked") {
-          // The desktop strip has no lock affordance (it is already an
-          // unobtrusive, drag-to-move overlay); accept the call as a no-op so
-          // the shared Dart contract stays uniform.
+          // Position lock: drag disabled, lookup + playback controls still work
+          // (mirrors the Android FloatingLyricService lock). The strip reports
+          // any user-driven toggle back over "lockChanged".
+          floating_lyric_window_->SetLocked(
+              BoolFromValue(args, "locked", false));
           result->Success();
         } else {
           result->NotImplemented();

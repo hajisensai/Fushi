@@ -18,7 +18,9 @@ namespace {
 
 constexpr wchar_t kWindowClassName[] = L"HibikiFloatingLyricWindow";
 
-// Logical (96-DPI) strip metrics; scaled per-monitor in Render().
+// Logical (96-DPI) strip metrics; scaled per-monitor in Render(). The width /
+// height defaults seed the initial window; the live size lives in
+// strip_width_dip_ / strip_height_dip_ so the resize grip can change it.
 constexpr float kStripWidthDip = 720.0f;
 constexpr float kStripHeightDip = 96.0f;
 constexpr float kCornerRadiusDip = 14.0f;
@@ -26,6 +28,23 @@ constexpr float kHorizontalPaddingDip = 20.0f;
 constexpr float kButtonSizeDip = 30.0f;
 constexpr float kButtonGapDip = 10.0f;
 constexpr float kControlsTopDip = 8.0f;
+// Bottom-right resize grip and the min / max the user may drag the bar to.
+constexpr float kResizeGripDip = 18.0f;
+constexpr float kMinStripWidthDip = 280.0f;
+constexpr float kMinStripHeightDip = 64.0f;
+constexpr float kMaxStripWidthDip = 2400.0f;
+constexpr float kMaxStripHeightDip = 480.0f;
+// A press must travel this far (logical px) before it becomes a drag rather
+// than a word-lookup tap — lets the bar be dragged from anywhere on the text.
+constexpr float kDragThresholdDip = 6.0f;
+// Base logical font size the lyric text was authored at; the rendered font
+// scales with the bar height so growing the bar enlarges the text too.
+constexpr float kBaseStripHeightForFontDip = 96.0f;
+// Control row slots, in draw / hit-test order: previous, play-pause, next,
+// lock, close. The lock button (slot 3) is the TODO-136 addition; both Render()
+// and ControlActionAt() derive their geometry from this single count so the
+// hit areas can never drift from what is drawn.
+constexpr int kControlSlotCount = 5;
 
 // ARGB (0xAARRGGBB) -> D2D1_COLOR_F (straight alpha).
 D2D1_COLOR_F ColorFromArgb(uint32_t argb) {
@@ -125,8 +144,10 @@ bool FloatingLyricWindow::Show(HWND owner) {
     GetMonitorInfo(monitor, &mi);
 
     dpi_ = GetDpiForSystem();
-    const int width = static_cast<int>(ScaleForDpi(kStripWidthDip));
-    const int height = static_cast<int>(ScaleForDpi(kStripHeightDip));
+    strip_width_dip_ = kStripWidthDip;
+    strip_height_dip_ = kStripHeightDip;
+    const int width = static_cast<int>(ScaleForDpi(strip_width_dip_));
+    const int height = static_cast<int>(ScaleForDpi(strip_height_dip_));
     const int work_w = mi.rcWork.right - mi.rcWork.left;
     const int x = mi.rcWork.left + (work_w - width) / 2;
     const int y = mi.rcWork.bottom - height - static_cast<int>(ScaleForDpi(48));
@@ -202,6 +223,24 @@ void FloatingLyricWindow::SetPlaybackState(bool playing) {
 
 void FloatingLyricWindow::SetClickLookupEnabled(bool enabled) {
   click_lookup_enabled_ = enabled;
+}
+
+void FloatingLyricWindow::SetLocked(bool locked) {
+  if (locked_ == locked) {
+    return;
+  }
+  locked_ = locked;
+  // A lock taken while a press / drag was pending must not strand the strip in
+  // a half-dragging state; drop any in-flight gesture so the next click is
+  // interpreted fresh.
+  if (locked_ && (pressed_ || dragging_)) {
+    pressed_ = false;
+    dragging_ = false;
+    if (GetCapture() == hwnd_) {
+      ReleaseCapture();
+    }
+  }
+  RequestRender();
 }
 
 void FloatingLyricWindow::RequestRender() {
@@ -307,34 +346,96 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
     }
     case WM_MOUSEMOVE: {
       // The strip only receives mouse messages while interactive (the poll
-      // dropped WS_EX_TRANSPARENT because the cursor is over us); the fade state
-      // is owned by PollCursorInteractivity(), so here we only drag.
+      // dropped WS_EX_TRANSPARENT because the cursor is over us). Here we drive
+      // the three live gestures: resize, drag, and the press->drag promotion.
       if (dragging_) {
         POINT cursor;
         GetCursorPos(&cursor);
-        RECT rc;
-        GetWindowRect(hwnd_, &rc);
         const int new_x = cursor.x - drag_anchor_.x;
         const int new_y = cursor.y - drag_anchor_.y;
         SetWindowPos(hwnd_, HWND_TOPMOST, new_x, new_y, 0, 0,
                      SWP_NOSIZE | SWP_NOACTIVATE);
+        return 0;
+      }
+      // A pending press becomes a drag once the cursor travels past the
+      // threshold — but only when the strip is not position-locked. This is the
+      // fix for BUG-205: the bar is now draggable from anywhere on the text,
+      // while a press that does NOT move is still treated as a word-lookup tap.
+      if (pressed_ && !locked_) {
+        POINT cursor;
+        GetCursorPos(&cursor);
+        const int dx = cursor.x - press_origin_.x;
+        const int dy = cursor.y - press_origin_.y;
+        const int threshold = static_cast<int>(ScaleForDpi(kDragThresholdDip));
+        if (dx * dx + dy * dy >= threshold * threshold) {
+          RECT rc;
+          GetWindowRect(hwnd_, &rc);
+          drag_anchor_.x = cursor.x - rc.left;
+          drag_anchor_.y = cursor.y - rc.top;
+          dragging_ = true;
+        }
       }
       return 0;
     }
     case WM_LBUTTONDOWN: {
       const float x = static_cast<float>(GET_X_LPARAM(lparam));
       const float y = static_cast<float>(GET_Y_LPARAM(lparam));
+
+      // 1. Control buttons (prev / play-pause / next / lock / close) win first.
       const std::string action = ControlActionAt(x, y);
+      if (action == "lock") {
+        // The lock button toggles the position lock locally and reports the new
+        // state to Dart; it is never a no-op (unlike the old desktop strip).
+        locked_ = !locked_;
+        if (locked_ && (pressed_ || dragging_)) {
+          pressed_ = false;
+          dragging_ = false;
+        }
+        if (on_lock_) {
+          on_lock_(locked_);
+        }
+        RequestRender();
+        return 0;
+      }
       if (!action.empty()) {
         if (on_control_) {
           on_control_(action);
         }
         return 0;
       }
-      if (click_lookup_enabled_) {
-        const int index = CharIndexAt(x, y);
-        if (index >= 0 && on_lookup_) {
-          // UTF-16 -> UTF-8 for the channel.
+
+      // 2. Otherwise this is a pending press over the body of the strip. We do
+      // NOT decide lookup-vs-drag yet: a still press is a lookup on button-up,
+      // a moving press is promoted to a drag in WM_MOUSEMOVE.
+      POINT cursor;
+      GetCursorPos(&cursor);
+      pressed_ = true;
+      dragging_ = false;
+      press_origin_ = cursor;
+      press_client_.x = static_cast<LONG>(x);
+      press_client_.y = static_cast<LONG>(y);
+      press_was_text_ =
+          click_lookup_enabled_ && CharIndexAt(x, y) >= 0 && on_lookup_;
+      SetCapture(hwnd_);
+      return 0;
+    }
+    case WM_LBUTTONUP: {
+      const bool was_dragging = dragging_;
+      const bool was_pressed = pressed_;
+      const bool was_text = press_was_text_;
+      const POINT lookup_pt = press_client_;
+      dragging_ = false;
+      pressed_ = false;
+      press_was_text_ = false;
+      if (GetCapture() == hwnd_) {
+        ReleaseCapture();
+      }
+      // A press that never moved into a drag over the lyric text fires the word
+      // lookup now — single-tap lookup preserved.
+      if (!was_dragging && was_pressed && was_text && on_lookup_) {
+        const int index = CharIndexAt(static_cast<float>(lookup_pt.x),
+                                      static_cast<float>(lookup_pt.y));
+        if (index >= 0) {
           int utf8_len = WideCharToMultiByte(CP_UTF8, 0, text_.c_str(),
                                              static_cast<int>(text_.size()),
                                              nullptr, 0, nullptr, nullptr);
@@ -343,25 +444,41 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
                               static_cast<int>(text_.size()), utf8.data(),
                               utf8_len, nullptr, nullptr);
           on_lookup_(utf8, index);
-          return 0;
         }
       }
-      // Otherwise begin dragging the strip.
-      POINT cursor;
-      GetCursorPos(&cursor);
-      RECT rc;
-      GetWindowRect(hwnd_, &rc);
-      drag_anchor_.x = cursor.x - rc.left;
-      drag_anchor_.y = cursor.y - rc.top;
-      dragging_ = true;
-      SetCapture(hwnd_);
       return 0;
     }
-    case WM_LBUTTONUP: {
-      if (dragging_) {
-        dragging_ = false;
-        ReleaseCapture();
+    case WM_NCHITTEST: {
+      // Hand the bottom-right grip to the system resize loop so the user can
+      // drag the corner to grow / shrink the bar (QQ-Music style). Everywhere
+      // else stays HTCLIENT so our own mouse handlers (lookup / drag / control
+      // buttons) keep receiving WM_LBUTTON*.
+      POINT screen = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      POINT client = screen;
+      ScreenToClient(hwnd_, &client);
+      if (ResizeGripContains(static_cast<float>(client.x),
+                             static_cast<float>(client.y))) {
+        return HTBOTTOMRIGHT;
       }
+      return HTCLIENT;
+    }
+    case WM_SIZE: {
+      // A system resize (corner drag) changed the window rect; recompute the
+      // logical strip size and re-render so the text + controls follow.
+      SyncStripSizeFromWindow();
+      text_format_.Reset();
+      text_layout_.Reset();
+      RequestRender();
+      return 0;
+    }
+    case WM_GETMINMAXINFO: {
+      // Clamp the system resize to the same sane bounds the bar is authored
+      // for, so the user cannot drag it to an unusable size.
+      auto* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
+      mmi->ptMinTrackSize.x = static_cast<LONG>(ScaleForDpi(kMinStripWidthDip));
+      mmi->ptMinTrackSize.y = static_cast<LONG>(ScaleForDpi(kMinStripHeightDip));
+      mmi->ptMaxTrackSize.x = static_cast<LONG>(ScaleForDpi(kMaxStripWidthDip));
+      mmi->ptMaxTrackSize.y = static_cast<LONG>(ScaleForDpi(kMaxStripHeightDip));
       return 0;
     }
     case WM_DPICHANGED: {
@@ -430,12 +547,18 @@ void FloatingLyricWindow::Render() {
                                         brush.GetAddressOf());
   render_target_->FillRoundedRectangle(bg_rect, brush.Get());
 
-  // Text format / layout.
+  // Text format / layout. The authored font size assumes the default bar
+  // height; the live font scales with strip_height_dip_ so dragging the resize
+  // grip larger enlarges the lyric text too.
   if (text_format_ == nullptr) {
+    const float height_scale =
+        strip_height_dip_ / kBaseStripHeightForFontDip;
+    const float scaled_font = static_cast<float>(style_.font_size) *
+                              std::max(0.5f, height_scale);
     dwrite_factory_->CreateTextFormat(
         L"Yu Gothic UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-        static_cast<float>(ScaleForDpi(static_cast<float>(style_.font_size))),
+        static_cast<float>(ScaleForDpi(scaled_font)),
         L"", text_format_.GetAddressOf());
     if (text_format_ != nullptr) {
       text_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -500,20 +623,25 @@ void FloatingLyricWindow::Render() {
   const float btn = ScaleForDpi(kButtonSizeDip);
   const float gap = ScaleForDpi(kButtonGapDip);
   const float ctrl_top = ScaleForDpi(kControlsTopDip);
-  const float controls_total = btn * 4 + gap * 3;
+  const float controls_total =
+      btn * kControlSlotCount + gap * (kControlSlotCount - 1);
   const float ctrl_left = (width - controls_total) / 2.0f;
   const float control_alpha = hovered_ ? 1.0f : 0.35f;
 
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_bg;
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_fg;
+  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active;
   render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
                                         btn_bg.GetAddressOf());
   render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
                                         btn_fg.GetAddressOf());
+  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
+                                        btn_active.GetAddressOf());
   btn_bg->SetOpacity(control_alpha);
   btn_fg->SetOpacity(control_alpha);
+  btn_active->SetOpacity(control_alpha);
 
-  auto draw_glyph = [&](int slot, const wchar_t* glyph) {
+  auto draw_glyph = [&](int slot, const wchar_t* glyph, bool active) {
     const float bx = ctrl_left + slot * (btn + gap);
     D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
         D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
@@ -527,17 +655,37 @@ void FloatingLyricWindow::Render() {
     if (glyph_fmt != nullptr) {
       glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
       glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-      render_target_->DrawTextW(glyph, 1, glyph_fmt.Get(),
-                                D2D1::RectF(bx, ctrl_top, bx + btn,
-                                            ctrl_top + btn),
-                                btn_fg.Get());
+      render_target_->DrawTextW(
+          glyph, 1, glyph_fmt.Get(),
+          D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
+          active ? btn_active.Get() : btn_fg.Get());
     }
   };
 
-  draw_glyph(0, L"⏮");                       // previous
-  draw_glyph(1, playing_ ? L"⏸" : L"▶");  // pause / play
-  draw_glyph(2, L"⏭");                       // next
-  draw_glyph(3, L"✕");                        // close
+  draw_glyph(0, L"⏮", false);                       // previous
+  draw_glyph(1, playing_ ? L"⏸" : L"▶", false);  // pause / play
+  draw_glyph(2, L"⏭", false);                       // next
+  // Lock: padlock glyph, tinted with the active colour while locked so the
+  // state is visible at a glance (mirrors the Android lock button).
+  draw_glyph(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
+  draw_glyph(4, L"✕", false);                        // close
+
+  // Bottom-right resize grip: three short diagonal ticks hinting the corner can
+  // be dragged to size the bar.
+  {
+    const float grip = ScaleForDpi(kResizeGripDip);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
+    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
+                                          grip_brush.GetAddressOf());
+    grip_brush->SetOpacity(control_alpha * 0.7f);
+    const float stroke = std::max(1.0f, ScaleForDpi(1.5f));
+    for (int i = 1; i <= 3; ++i) {
+      const float off = grip * (i / 4.0f);
+      render_target_->DrawLine(
+          D2D1::Point2F(width - off, height - 2.0f),
+          D2D1::Point2F(width - 2.0f, height - off), grip_brush.Get(), stroke);
+    }
+  }
 
   HRESULT hr = render_target_->EndDraw();
   if (hr == D2DERR_RECREATE_TARGET) {
@@ -570,12 +718,13 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
   const float btn = ScaleForDpi(kButtonSizeDip);
   const float gap = ScaleForDpi(kButtonGapDip);
   const float ctrl_top = ScaleForDpi(kControlsTopDip);
-  const float controls_total = btn * 4 + gap * 3;
+  const float controls_total =
+      btn * kControlSlotCount + gap * (kControlSlotCount - 1);
   const float ctrl_left = (width - controls_total) / 2.0f;
   if (y < ctrl_top || y > ctrl_top + btn) {
     return std::string();
   }
-  for (int slot = 0; slot < 4; ++slot) {
+  for (int slot = 0; slot < kControlSlotCount; ++slot) {
     const float bx = ctrl_left + slot * (btn + gap);
     if (x >= bx && x <= bx + btn) {
       switch (slot) {
@@ -586,6 +735,8 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
         case 2:
           return "nextCue";
         case 3:
+          return "lock";
+        case 4:
           return "close";
         default:
           return std::string();
@@ -593,6 +744,32 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
     }
   }
   return std::string();
+}
+
+bool FloatingLyricWindow::ResizeGripContains(float x, float y) const {
+  if (hwnd_ == nullptr) {
+    return false;
+  }
+  RECT rc;
+  GetClientRect(hwnd_, &rc);
+  const float width = static_cast<float>(rc.right - rc.left);
+  const float height = static_cast<float>(rc.bottom - rc.top);
+  const float grip = ScaleForDpi(kResizeGripDip);
+  return x >= width - grip && x <= width && y >= height - grip && y <= height;
+}
+
+void FloatingLyricWindow::SyncStripSizeFromWindow() {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  RECT rc;
+  GetWindowRect(hwnd_, &rc);
+  const float scale = static_cast<float>(dpi_) / 96.0f;
+  if (scale <= 0.0f) {
+    return;
+  }
+  strip_width_dip_ = static_cast<float>(rc.right - rc.left) / scale;
+  strip_height_dip_ = static_cast<float>(rc.bottom - rc.top) / scale;
 }
 
 int FloatingLyricWindow::CharIndexAt(float x, float y) {

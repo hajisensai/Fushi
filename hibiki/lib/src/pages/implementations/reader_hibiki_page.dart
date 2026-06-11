@@ -5409,7 +5409,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
         FloatingLyricChannel.clearEventHandlers();
         await appModel.setShowFloatingLyric(false);
       },
-      onLockChanged: (bool locked) {},
+      // Position-lock toggled from the strip's own lock button. The native
+      // strip owns and renders its lock state (Android via SharedPreferences,
+      // Windows in the runner window's locked_ field), so there is no in-app
+      // mirror to update here — the callback exists purely to keep the shared
+      // floating-lyric contract symmetric across back-ends. The debug log makes
+      // the toggle observable when diagnosing the desktop strip.
+      onLockChanged: (bool locked) {
+        debugPrint('[Hibiki] floating-lyric position lock -> $locked');
+      },
     );
   }
 
