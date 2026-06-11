@@ -497,6 +497,13 @@ class SftpSyncBackend extends SyncBackend {
     }
   }
 
+  @override
+  void evictFolderId(String folderId) {
+    // 按值反查逐出书名→folderId 缓存里指向 [folderId] 的条目，消除删书后陈旧态
+    // （BUG-202）。路径式后端的 folderId 是按名派生的路径，逐出仍是廉价正确性。
+    _titleToFolderId.removeWhere((_, id) => id == folderId);
+  }
+
   // ── Test connection ───────────────────────────────────────────────
 
   Future<void> testConnection({

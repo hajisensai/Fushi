@@ -83,6 +83,9 @@ class _FakeSyncBackend implements SyncBackend {
       <DriveFile>[DriveFile(id: folderId, name: bookTitle)];
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
+
+  @override
+  void evictFolderId(String folderId) {}
   @override
   Future<DriveSyncFiles> listSyncFiles(String f) async =>
       const DriveSyncFiles();

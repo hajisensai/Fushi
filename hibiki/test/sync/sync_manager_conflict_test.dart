@@ -118,6 +118,8 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<void> refreshAuth() async {}
   @override
+  void evictFolderId(String folderId) {}
+  @override
   Future<List<DriveFile>> listBooks(String rootFolderId) async => const [];
   @override
   Future<List<TtuStatistics>> getStatsFile(String fileId) async => const [];

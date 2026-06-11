@@ -65,6 +65,13 @@ class GoogleDriveHandler {
     _cachedApi = null;
   }
 
+  /// 按 folderId 反查并逐出书名→folderId 缓存里所有指向 [folderId] 的条目。
+  /// 删除某本书的远端文件夹后调用，消除「书名仍映射到已删/已 trash folderId」的
+  /// 陈旧态（BUG-202）。同一 folderId 理论上只对一个书名，但反查删全保险。
+  void evictFolderId(String folderId) {
+    _titleToFolderId.removeWhere((_, id) => id == folderId);
+  }
+
   void restoreCache({String? rootFolderId, FolderCache? titleToFolderId}) {
     _rootFolderId = rootFolderId;
     if (titleToFolderId != null) {
@@ -189,8 +196,15 @@ class GoogleDriveHandler {
   }) async {
     final sanitized = sanitizeTtuFilename(bookTitle);
 
-    if (_titleToFolderId.containsKey(sanitized)) {
-      return _titleToFolderId[sanitized]!;
+    // 双保险（BUG-202）：命中缓存仅在该 folderId 仍存在且未 trash 时才信任。
+    // folderId 是不可变 ID，删后进回收站；陈旧命中会让上传打向 trashed 文件夹
+    // 而永不回云。校验失败则丢弃陈旧条目，回退到下面的按名查/建。
+    final cachedId = _titleToFolderId[sanitized];
+    if (cachedId != null) {
+      if (await _isFolderUsable(cachedId)) {
+        return cachedId;
+      }
+      _titleToFolderId.remove(sanitized);
     }
 
     final qRoot = _escapeQuery(rootFolder);
@@ -586,6 +600,27 @@ class GoogleDriveHandler {
   /// 由调用方按幂等吞掉（`GoogleDriveError.isStaleCacheError`）。
   Future<void> deleteFile(String fileId) async {
     await _call<void>((api) => api.files.delete(fileId));
+  }
+
+  /// 该 [folderId] 是否仍可用作书文件夹：存在且未 trash。
+  /// 用于 `ensureBookFolder` 校验缓存命中（BUG-202）。404/已删/已 trash → false，
+  /// 调用方据此丢弃陈旧缓存条目并重新按名查/建。其它错误（网络/权限）保守返回
+  /// true，不因瞬时故障误删缓存。
+  Future<bool> _isFolderUsable(String folderId) async {
+    try {
+      return await _call((api) async {
+        final file = await api.files.get(
+          folderId,
+          $fields: 'id,trashed',
+        ) as drive.File;
+        return file.trashed != true;
+      });
+    } on GoogleDriveError catch (e) {
+      if (e.isStaleCacheError) return false; // 404：已不存在。
+      return true; // 其它错误保守信任缓存，避免瞬时故障误删。
+    } catch (_) {
+      return true;
+    }
   }
 
   Future<DriveFile?> _findFile(String folderId, String fileName) async {

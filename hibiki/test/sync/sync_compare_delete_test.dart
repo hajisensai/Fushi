@@ -66,6 +66,8 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
   @override
+  void evictFolderId(String folderId) {}
+  @override
   Future<DriveSyncFiles> listSyncFiles(String folderId) async => withAudio
       // Only the audioBook field is populated, so _fetchRemoteBookData touches
       // getAudioBookFile but never getProgressFile/getStatsFile.

@@ -1,0 +1,14 @@
+## BUG-202 · 删远端书后无法复传（陈旧 folder 缓存指向已删/trashed 文件夹）
+- **报告**：2026-06-11（用户：TODO-123 Part2）
+- **真实性**：✅ 真 bug。根因链：
+  - `hibiki/lib/src/sync/sync_compare_dialog.dart:844` `_deleteRemote` 删远端书走 `backend.deleteAsset(folderId, isFolder:true)`。
+  - `hibiki/lib/src/sync/google_drive_handler.dart:587` `deleteFile(folderId)` 只删 Drive 文件夹，**不清** `_titleToFolderId`（书名→folderId 缓存，`google_drive_handler.dart:59`）。
+  - `hibiki/lib/src/sync/google_drive_handler.dart:192-194` `ensureBookFolder` 命中陈旧缓存直接返回**已删 folderId**，不校验。
+  - 缓存还经 `sync_compare_dialog.dart:298`/`sync_manager.dart:802` → `SyncRepository.setFolderCache`（`sync_repository.dart:86`）**持久化**到 `preferences` 表，重启仍在。
+  - 下次同步 `listSyncFiles`/`uploadContentFile` 打向已删（trashed）文件夹；trashed 父文件夹 `files.list` 返回空而非 404，绕过 `isStaleCacheError`(404) 自愈 → 上传永不回云（石沉）。
+- **[x] ① 已修复** — 提交 7b32b949b。
+  - 新增 `SyncBackend.evictFolderId(String folderId)`（`sync_backend.dart`）+ 各后端实现：按值反查从 `_titleToFolderId` 删该 folderId 的所有映射（内存）。
+  - `sync_compare_dialog.dart` `_deleteRemote` 删整本书文件夹成功后调 `backend.evictFolderId(id)`，再 `repo.setFolderCache(backend.cachedFolderIds)` 重写持久化（条目已被 evict，从持久层消失）。
+  - 双保险：Google Drive `ensureBookFolder` 命中缓存后校验该 folder 未 trashed/存在；trashed 或不存在则丢弃陈旧条目、回退按名查/建（`google_drive_handler.dart`）。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/sync_delete_evicts_folder_cache_test.dart`。
+- **备注**：根因是 Google Drive folderId 为不可变 ID，删后进 trash 仍可被陈旧缓存命中；路径式后端（FTP/SFTP/WebDAV/Dropbox/OneDrive/hibiki server）缓存的是按名派生的路径，删后同名重建路径一致、上传期 ensureCollection 自愈，故无静默失败——evictFolderId 对它们仍生效（廉价正确性，零行为风险），但 trashed 校验仅 Google Drive 需要。

@@ -88,6 +88,9 @@ class _RecordingExportBackend implements SyncBackend {
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
 
+  @override
+  void evictFolderId(String folderId) {}
+
   // ── SyncAssetStore (unused by this test) ──────────────────────────
   @override
   Future<String> ensureNamespace(String name) async =>

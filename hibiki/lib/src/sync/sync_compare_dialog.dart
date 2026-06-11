@@ -850,6 +850,15 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     if (!await _confirmDelete(name)) return;
     try {
       await widget.backend.deleteAsset(id, isFolder: isFolder);
+      if (isFolder) {
+        // 删的是整本书文件夹：逐出书名→folderId 内存缓存里这个 folderId，再把
+        // 逐出后的缓存重写回持久层。否则陈旧条目（书名仍映射到已删/已 trash 的
+        // folderId）会被 ensureBookFolder 命中，上传打向 trashed 文件夹 → 复传石沉
+        // （BUG-202）。DB 写不依赖 UI，放在 mounted 检查前以保证一定落盘。
+        widget.backend.evictFolderId(id);
+        await SyncRepository(widget.db)
+            .setFolderCache(widget.backend.cachedFolderIds);
+      }
       if (!mounted) return;
       setState(onSuccess);
       showSyncMessage(context, t.sync_compare_deleted);

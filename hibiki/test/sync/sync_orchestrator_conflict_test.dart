@@ -84,6 +84,9 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
 
+  @override
+  void evictFolderId(String folderId) {}
+
   // ── Unreached stub members ──────────────────────────────────────────
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {}

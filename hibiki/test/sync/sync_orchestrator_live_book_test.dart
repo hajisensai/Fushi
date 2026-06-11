@@ -238,6 +238,9 @@ class _FakeSyncBackend implements SyncBackend {
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
+
+  @override
+  void evictFolderId(String folderId) {}
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────

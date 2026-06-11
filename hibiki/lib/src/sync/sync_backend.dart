@@ -106,6 +106,16 @@ abstract class SyncBackend implements SyncAssetStore {
   String? get cachedRootFolderId;
   Map<String, String> get cachedFolderIds;
   void cacheBookFolderIds(List<DriveFile> folders);
+
+  /// 删除某本书的远端文件夹（[folderId] = `ensureBookFolder` 返回的定位符）后，
+  /// 把它从书名→folderId 缓存里逐出（按值反查，删所有指向 [folderId] 的条目）。
+  ///
+  /// 不逐出会留下「书名仍映射到已删/已 trash 的 folderId」的陈旧态：Google Drive
+  /// 的 folderId 是不可变 ID，删后进回收站仍能被缓存命中，`ensureBookFolder` 命中
+  /// 即返回 trashed folderId，后续上传打向 trashed 文件夹（其 `files.list` 返回空而
+  /// 非 404，绕过 404 自愈）→ 复传石沉（BUG-202）。调用方逐出内存后须再
+  /// `SyncRepository.setFolderCache(cachedFolderIds)` 重写持久化缓存。
+  void evictFolderId(String folderId);
 }
 
 // HBK-AUDIT-091: resolver lives next to SyncBackendType (its switch subject)

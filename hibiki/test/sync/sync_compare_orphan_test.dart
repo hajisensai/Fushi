@@ -32,6 +32,9 @@ class _OrphanFakeBackend implements SyncBackend {
       <DriveFile>[DriveFile(id: _folderId, name: 'GhostBook')];
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
+
+  @override
+  void evictFolderId(String folderId) {}
   @override
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override

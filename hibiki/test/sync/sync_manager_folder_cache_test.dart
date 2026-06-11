@@ -116,6 +116,9 @@ class _AlwaysRetryableBackend implements SyncBackend {
   void cacheBookFolderIds(List<DriveFile> folders) =>
       throw UnimplementedError();
 
+  @override
+  void evictFolderId(String folderId) {}
+
   // ── SyncAssetStore (unreached: findOrCreateRootFolder throws first) ──
   @override
   Future<String> ensureNamespace(String name) async =>

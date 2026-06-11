@@ -198,6 +198,9 @@ class GoogleDriveSyncBackend extends SyncBackend {
   void cacheBookFolderIds(List<DriveFile> folders) =>
       _drive.cacheBookFolderIds(folders);
 
+  @override
+  void evictFolderId(String folderId) => _drive.evictFolderId(folderId);
+
   // ── SyncAssetStore ─────────────────────────────────────────────────
 
   @override

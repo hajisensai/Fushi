@@ -46,6 +46,9 @@ class _FakeSyncBackend implements SyncBackend {
       ];
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
+
+  @override
+  void evictFolderId(String folderId) {}
   @override
   Future<DriveSyncFiles> listSyncFiles(String folderId) async {
     final _RemoteBook? book = _byFolder(folderId);
