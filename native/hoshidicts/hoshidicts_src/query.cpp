@@ -150,6 +150,9 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
     case PITCH:
       pitch_dicts_.push_back(std::move(dict));
       break;
+    case KANJI:
+      kanji_dicts_.push_back(std::move(dict));
+      break;
   }
 }
 
@@ -159,6 +162,10 @@ void DictionaryQuery::add_freq_dict(const std::string& path) { add_dict(path, Di
 
 void DictionaryQuery::add_pitch_dict(const std::string& path) {
   add_dict(path, DictionaryQuery::DictionaryType::PITCH);
+}
+
+void DictionaryQuery::add_kanji_dict(const std::string& path) {
+  add_dict(path, DictionaryQuery::DictionaryType::KANJI);
 }
 
 std::vector<TermResult> DictionaryQuery::query(const std::string& expression) const {
@@ -249,6 +256,83 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
   query_freq(results);
   query_pitch(results);
 
+  return results;
+}
+
+std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& character) const {
+  std::vector<KanjiResult> results;
+  for (const auto& [name, styles, data] : kanji_dicts_) {
+    uint64_t offset_addr = data->table(character);
+    if (offset_addr == 0) {
+      continue;
+    }
+    if (offset_addr + sizeof(uint32_t) > data->blobs.size) {
+      continue;
+    }
+    BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
+
+    auto count = idx.read<uint32_t>();
+    for (uint32_t i = 0; i < count; i++) {
+      if (!idx.has(sizeof(uint64_t))) {
+        break;
+      }
+      auto offset = idx.read<uint64_t>();
+      if (offset + 1 > data->blobs.size) {
+        continue;
+      }
+      BlobReader blob(data->blobs.data + offset, data->blobs.size - offset);
+
+      auto type = blob.read<uint8_t>();
+      if (type != 2) {
+        continue;
+      }
+
+      auto char_len = blob.read<uint16_t>();
+      std::string_view ch = blob.read_str(char_len);
+      if (ch != character) {
+        continue;
+      }
+
+      auto ony_len = blob.read<uint16_t>();
+      std::string_view onyomi = blob.read_str(ony_len);
+      auto kun_len = blob.read<uint16_t>();
+      std::string_view kunyomi = blob.read_str(kun_len);
+      auto rad_len = blob.read<uint8_t>();
+      std::string_view radical = blob.read_str(rad_len);
+      auto strokes = blob.read<uint16_t>();
+      auto tags_len = blob.read<uint8_t>();
+      (void)blob.read_str(tags_len);  // tags: reserved (consume to keep cursor aligned)
+
+      auto meanings_offset = blob.read<uint64_t>();
+      auto meanings_size = blob.read<uint32_t>();
+
+      KanjiResult result;
+      result.character = std::string(ch);
+      result.onyomi = std::string(onyomi);
+      result.kunyomi = std::string(kunyomi);
+      result.radical = std::string(radical);
+      result.strokes = static_cast<int>(strokes);
+      result.dict_name = name;
+
+      if (meanings_size > 0 && meanings_offset < data->blobs.size) {
+        std::string joined = decompress_glossary(data->blobs.data + meanings_offset, meanings_size);
+        size_t start = 0;
+        while (start <= joined.size()) {
+          size_t nl = joined.find('\n', start);
+          if (nl == std::string::npos) {
+            if (start < joined.size()) {
+              result.meanings.emplace_back(joined.substr(start));
+            }
+            break;
+          }
+          result.meanings.emplace_back(joined.substr(start, nl - start));
+          start = nl + 1;
+        }
+      }
+
+      results.push_back(std::move(result));
+    }
+  }
   return results;
 }
 

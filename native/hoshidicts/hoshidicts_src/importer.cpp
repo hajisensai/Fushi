@@ -349,6 +349,261 @@ ProcessedFile process_meta_bank(const std::string& content) {
   return processed;
 }
 
+// ---------------------------------------------------------------------------
+// S0 binary contract -- kanji record (type byte == 2).
+//
+// Kanji records live in the SAME blobs.bin and share the SAME hash.table /
+// bloom.filter index as term (type 0) and meta (type 1) records. The hash key
+// is xxh3(character). Layout (little-endian, mirrors the term layout so the
+// existing build_offset_index / query plumbing is reused unchanged):
+//
+//   [u8  = 2]                       record type tag (term=0 / meta=1 / kanji=2)
+//   [u16 char_len][char bytes]      single kanji, UTF-8
+//   [u16 ony_len ][onyomi bytes]    onyomi (space-separated, as in Yomitan)
+//   [u16 kun_len ][kunyomi bytes]   kunyomi (space-separated)
+//   [u8  rad_len ][radical bytes]   radical from stats (may be empty)
+//   [u16 strokes ]                  stroke count from stats (0 == unknown)
+//   [u8  tags_len][tags bytes]      kanji tags (space-separated, may be empty)
+//   [u64 meanings_offset][u32 meanings_blob_size]
+//                                   meanings joined by newline, ZSTD-compressed,
+//                                   pooled in the shared glossary blob region
+//                                   (identical mechanism as term glossaries).
+//
+// meanings are joined with newline because Yomitan kanji meanings are
+// single-line phrases; the reader splits them back on newline.
+// ---------------------------------------------------------------------------
+
+}  // end anonymous namespace (reopened below) -- glz::meta must be at global scope
+
+// Stats{} is an open-ended object whose key names differ per dictionary. Pull
+// the two fields the UI needs (radical, stroke count) by trying the common
+// KANJIDIC-derived key names; missing keys are tolerated. Defined at global
+// scope so its glz::meta specialization is not in an anonymous namespace.
+struct KanjiStats {
+  std::optional<std::string_view> radical;
+  std::optional<std::string_view> rad;
+  std::optional<std::string_view> kangxi_radical;
+  std::optional<std::string_view> strokes;
+  std::optional<std::string_view> stroke_count;
+};
+
+template <>
+struct glz::meta<KanjiStats> {
+  using T = KanjiStats;
+  static constexpr auto value = object("radical", &T::radical, "rad", &T::rad, "kangxi_radical", &T::kangxi_radical,
+                                       "strokes", &T::strokes, "stroke count", &T::stroke_count);
+};
+
+namespace {
+
+// Parse the raw stats blob for radical (string) and stroke count (uint16).
+void extract_kanji_stats(std::string_view stats_json, std::string_view& radical_out, uint16_t& strokes_out) {
+  radical_out = {};
+  strokes_out = 0;
+  if (stats_json.empty()) {
+    return;
+  }
+  KanjiStats stats;
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(stats, stats_json);
+  if (error) {
+    return;
+  }
+  if (stats.radical.has_value() && !stats.radical->empty()) {
+    radical_out = *stats.radical;
+  } else if (stats.rad.has_value() && !stats.rad->empty()) {
+    radical_out = *stats.rad;
+  } else if (stats.kangxi_radical.has_value() && !stats.kangxi_radical->empty()) {
+    radical_out = *stats.kangxi_radical;
+  }
+  std::string_view strokes_str;
+  if (stats.strokes.has_value()) {
+    strokes_str = *stats.strokes;
+  } else if (stats.stroke_count.has_value()) {
+    strokes_str = *stats.stroke_count;
+  }
+  if (!strokes_str.empty()) {
+    unsigned long parsed = 0;
+    for (char c : strokes_str) {
+      if (c < 0x30 || c > 0x39) {
+        break;
+      }
+      parsed = parsed * 10 + static_cast<unsigned long>(c - 0x30);
+      if (parsed > std::numeric_limits<uint16_t>::max()) {
+        parsed = std::numeric_limits<uint16_t>::max();
+        break;
+      }
+    }
+    strokes_out = static_cast<uint16_t>(parsed);
+  }
+}
+
+ProcessedFile process_kanji_bank(const std::string& content) {
+  ProcessedFile processed;
+  if (content.empty()) {
+    return processed;
+  }
+
+  std::vector<Kanji> out;
+  if (!yomitan_parser::parse_kanji_bank(content, out)) {
+    return processed;
+  }
+
+  std::vector<char> compressed;
+  ZSTD_CCtx* cctx = ZSTD_createCCtx();
+  if (!cctx) {
+    return processed;
+  }
+
+  for (auto& kanji : out) {
+    if (processed.data.size() > kMaxDataBufferBytes) {
+      HOSHI_LOGW("kanji bank data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
+      break;
+    }
+    if (processed.count >= kMaxEntriesPerBank) {
+      HOSHI_LOGW("kanji bank entry count exceeded %zu, stopping", kMaxEntriesPerBank);
+      break;
+    }
+
+    std::string_view character = kanji.character;
+    if (character.empty()) {
+      continue;
+    }
+    if (character.size() > std::numeric_limits<uint16_t>::max() ||
+        kanji.onyomi.size() > std::numeric_limits<uint16_t>::max() ||
+        kanji.kunyomi.size() > std::numeric_limits<uint16_t>::max() ||
+        kanji.tags.size() > std::numeric_limits<uint8_t>::max()) {
+      HOSHI_LOGW("kanji field too long, skipping entry");
+      continue;
+    }
+
+    std::string meanings_joined;
+    for (size_t i = 0; i < kanji.meanings.size(); i++) {
+      if (i) {
+        meanings_joined.push_back(static_cast<char>(0x0a));
+      }
+      meanings_joined.append(kanji.meanings[i]);
+    }
+    if (meanings_joined.size() > kMaxGlossarySizeBytes) {
+      HOSHI_LOGW("kanji meanings too large (%zu bytes), skipping entry", meanings_joined.size());
+      continue;
+    }
+
+    uint64_t meanings_hash = XXH3_64bits(meanings_joined.data(), meanings_joined.size());
+    auto it = processed.glossaries.find(meanings_hash);
+    if (it == processed.glossaries.end()) {
+      const size_t bound = ZSTD_compressBound(meanings_joined.size());
+      compressed.resize(bound);
+      const size_t compressed_size =
+          ZSTD_compressCCtx(cctx, compressed.data(), bound, meanings_joined.data(), meanings_joined.size(), 0);
+      if (ZSTD_isError(compressed_size)) {
+        ZSTD_freeCCtx(cctx);
+        throw std::runtime_error("failed to compress kanji meanings");
+      }
+      compressed.resize(compressed_size);
+      processed.glossaries.emplace(meanings_hash, compressed);
+    }
+
+    std::string_view radical;
+    uint16_t strokes = 0;
+    extract_kanji_stats(kanji.stats.str, radical, strokes);
+    if (radical.size() > std::numeric_limits<uint8_t>::max()) {
+      radical = {};
+    }
+
+    uint64_t offset = processed.data.size();
+    uint32_t blob_size = static_cast<uint32_t>(processed.glossaries[meanings_hash].size());
+
+    write_val<uint8_t>(processed.data, 2);
+    write_val<uint16_t>(processed.data, static_cast<uint16_t>(character.size()));
+    write_str(processed.data, character);
+    write_val<uint16_t>(processed.data, static_cast<uint16_t>(kanji.onyomi.size()));
+    write_str(processed.data, kanji.onyomi);
+    write_val<uint16_t>(processed.data, static_cast<uint16_t>(kanji.kunyomi.size()));
+    write_str(processed.data, kanji.kunyomi);
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>(radical.size()));
+    write_str(processed.data, radical);
+    write_val<uint16_t>(processed.data, strokes);
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>(kanji.tags.size()));
+    write_str(processed.data, kanji.tags);
+
+    uint64_t meanings_offset_pos = processed.data.size();
+    write_val<uint64_t>(processed.data, 0);
+    write_val<uint32_t>(processed.data, blob_size);
+    processed.glossary_offsets.emplace_back(meanings_hash, meanings_offset_pos);
+
+    processed.offsets.emplace_back(XXH3_64bits(character.data(), character.size()), offset);
+    processed.count++;
+  }
+  ZSTD_freeCCtx(cctx);
+
+  return processed;
+}
+
+void write_kanji(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
+                 const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram,
+                 ankerl::unordered_dense::map<uint64_t, uint64_t>& glossaries) {
+  if (files.empty()) {
+    return;
+  }
+
+  size_t max_threads =
+      low_ram ? 2 : std::max<size_t>(4, static_cast<const unsigned long>(std::thread::hardware_concurrency()) + 4);
+  std::deque<std::future<ProcessedFile>> threads;
+
+  bool limit_reached = false;
+  auto write_processed = [&](ProcessedFile&& processed) {
+    if (processed.data.empty() || limit_reached) {
+      return;
+    }
+    if (result.kanji_count + processed.count > kMaxTotalEntries) {
+      HOSHI_LOGW("total kanji entries would exceed %zu, stopping import of further banks", kMaxTotalEntries);
+      limit_reached = true;
+      return;
+    }
+
+    std::vector<char> meanings_buf;
+    for (auto& [hash, compressed] : processed.glossaries) {
+      auto [it, inserted] = glossaries.try_emplace(hash, write_offset);
+      if (inserted) {
+        write_bytes(meanings_buf, compressed.data(), compressed.size());
+        write_offset += compressed.size();
+      }
+    }
+    if (!meanings_buf.empty()) {
+      file.write(meanings_buf.data(), static_cast<std::streamsize>(meanings_buf.size()));
+    }
+
+    for (auto& [hash, pos] : processed.glossary_offsets) {
+      uint64_t meanings_offset = glossaries[hash];
+      std::memcpy(processed.data.data() + pos, &meanings_offset, sizeof(uint64_t));
+    }
+
+    file.write(processed.data.data(), static_cast<std::streamsize>(processed.data.size()));
+
+    for (auto& [hash, offset] : processed.offsets) {
+      offsets.emplace_back(hash, offset + write_offset);
+    }
+
+    write_offset += processed.data.size();
+    result.kanji_count += processed.count;
+  };
+
+  for (int file_index : files) {
+    threads.push_back(
+        std::async(std::launch::async, [&zip, file_index]() { return process_kanji_bank(zip.read(file_index)); }));
+
+    if (threads.size() == max_threads) {
+      write_processed(threads.front().get());
+      threads.pop_front();
+    }
+  }
+
+  while (!threads.empty()) {
+    write_processed(threads.front().get());
+    threads.pop_front();
+  }
+}
+
 void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
                  const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram) {
   if (files.empty()) {
@@ -919,7 +1174,12 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
     uint64_t write_offset = 0;
     write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram);
     write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram);
+    ankerl::unordered_dense::map<uint64_t, uint64_t> kanji_glossaries;
+    write_kanji(blobs, offsets, zip, files.kanji_banks, write_offset, result, low_ram, kanji_glossaries);
     if (offsets.empty()) {
+      // A kanji-only dictionary still produces offsets (one per character), so
+      // the only way to reach here is a dictionary with no parseable entries of
+      // any kind. Keep the guard; kanji entries now count toward it.
       throw std::runtime_error("empty dictionary");
     }
 

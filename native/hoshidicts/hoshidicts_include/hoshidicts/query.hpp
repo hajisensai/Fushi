@@ -53,6 +53,16 @@ struct TermResult {
   std::vector<PitchEntry> pitches;
 };
 
+struct KanjiResult {
+  std::string character;
+  std::string onyomi;
+  std::string kunyomi;
+  std::string radical;
+  int strokes = 0;
+  std::vector<std::string> meanings;
+  std::string dict_name;
+};
+
 class DictionaryQuery {
  public:
   DictionaryQuery();
@@ -67,11 +77,13 @@ class DictionaryQuery {
   void add_term_dict(const std::string& path);
   void add_freq_dict(const std::string& path);
   void add_pitch_dict(const std::string& path);
+  void add_kanji_dict(const std::string& path);
 
   void query_freq(std::vector<TermResult>& terms) const;
   void query_pitch(std::vector<TermResult>& terms) const;
 
   std::vector<TermResult> query(const std::string& expression) const;
+  std::vector<KanjiResult> query_kanji(const std::string& character) const;
 
   std::vector<char> get_media_file(const std::string& dict_name, const std::string& media_path) const;
   SWIFT_IMPORT_UNSAFE
@@ -90,7 +102,7 @@ class DictionaryQuery {
     std::string styles;
     std::unique_ptr<DictionaryData> data;
   };
-  enum DictionaryType : uint8_t { TERM, FREQ, PITCH };
+  enum DictionaryType : uint8_t { TERM, FREQ, PITCH, KANJI };
 
   void add_dict(const std::string& path, DictionaryType);
 
@@ -98,4 +110,5 @@ class DictionaryQuery {
   std::vector<Dictionary> term_dicts_;
   std::vector<Dictionary> freq_dicts_;
   std::vector<Dictionary> pitch_dicts_;
+  std::vector<Dictionary> kanji_dicts_;
 };

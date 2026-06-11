@@ -1,0 +1,9 @@
+# Native test build artifacts (cl /Fo objects, linked exes, CMake build trees).
+# Tests are compiled on demand via their run_*.bat; only sources + CMakeLists
+# are tracked.
+*.obj
+*.exe
+*.pdb
+*.ilk
+build/
+*/build/
