@@ -45,7 +45,7 @@
 | [BUG-175](bugs/BUG-175-clipboard-lookup-tiny-centered.md) | ✅ | ✅ | 剪贴板查词显示文字太小且居中 (应像 yomitan 正常字号左对齐) |
 | [BUG-174](bugs/BUG-174-win-update-installer-crash.md) | ✅ | ✅ | Windows 自动更新启动安装器崩溃/静默消失 |
 | [BUG-173](bugs/BUG-173-subtitle-drop-video-card.md) | ✅ | ✅ | 字幕拖到主页视频卡未挂到该视频（重复导入建副本） |
-| [BUG-172](bugs/BUG-172-reader-card-sentence-audio-tts-fallback.md) | ✅ | ✅ | 纯文本书籍制卡无句子音频（Lapis SentenceAudio 空） |
+| [BUG-172](bugs/BUG-172-reader-card-sentence-audio-tts-fallback.md) | ✅ | ✅ | 有声书制卡词落 cue 空隙时句子音频静默为空（Lapis SentenceAudio 空） |
 | [BUG-171](bugs/BUG-171-dict-delete-engine-stale.md) | ✅ | ✅ | 删除词典后查词仍命中已删词典(引擎实例未reload/dispose,需重启) |
 | [BUG-170](bugs/BUG-170-nested-popup-white-flash.md) | ✅ | ✅ | 第二个嵌套查词弹窗出现白屏一瞬 |
 | [BUG-169](bugs/BUG-169-reader-scroll-skips-two-pages.md) | ✅ | ✅ | 阅读器滚轮/翻页有时一次翻两页（misaligned scroll 经 round 跳页） |

@@ -32,7 +32,7 @@ void main() {
         ),
       ];
 
-      final AudioPlaybackRange clip = miningSentenceAudioRange(
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
         cues: cues,
         cue: cues[1],
         sentence: '「僕は学校へ行った。」',
@@ -41,7 +41,8 @@ void main() {
         sentenceNormCharLength: 60,
       );
 
-      expect(clip.startMs, 1000);
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 1000);
       expect(clip.endMs, 4300);
     });
 
@@ -53,13 +54,14 @@ void main() {
         _cue(startMs: 4300, endMs: 5200, text: '次の文'),
       ];
 
-      final AudioPlaybackRange clip = miningSentenceAudioRange(
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
         cues: cues,
         cue: cues[1],
         sentence: '「僕は学校へ行った。」',
       );
 
-      expect(clip.startMs, 1000);
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 1000);
       expect(clip.endMs, 4300);
     });
 
@@ -74,7 +76,7 @@ void main() {
         _cue(startMs: 10300, endMs: 12300, text: '学校へ行った'),
       ];
 
-      final AudioPlaybackRange clip = miningSentenceAudioRange(
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
         cues: cues,
         cue: cues[4],
         sentence: '僕は学校へ行った。',
@@ -83,48 +85,139 @@ void main() {
         sentenceNormCharLength: 60,
       );
 
-      expect(clip.startMs, 9000);
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 9000);
       expect(clip.endMs, 12300);
     });
 
     test('falls back to the exact cue range without tail padding', () {
       final AudioCue cue = _cue(startMs: 5000, endMs: 6200, text: 'は');
 
-      final AudioPlaybackRange clip = miningSentenceAudioRange(
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
         cues: <AudioCue>[cue],
         cue: cue,
         sentence: '別の文',
       );
 
-      expect(clip.startMs, 5000);
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 5000);
       expect(clip.endMs, 6200);
     });
 
     test('applies playback delay by shifting the whole range', () {
       final AudioCue cue = _cue(startMs: 5000, endMs: 6200, text: 'は');
 
-      final AudioPlaybackRange clip = miningSentenceAudioRange(
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
         cues: <AudioCue>[cue],
         cue: cue,
         sentence: 'は',
         delayMs: -250,
       );
 
-      expect(clip.startMs, 4750);
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 4750);
       expect(clip.endMs, 5950);
     });
 
     test('keeps invalid fallback ranges valid', () {
       final AudioCue cue = _cue(startMs: 5000, endMs: 5000, text: 'は');
 
-      final AudioPlaybackRange clip = miningSentenceAudioRange(
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
         cues: <AudioCue>[cue],
         cue: cue,
         sentence: '',
       );
 
-      expect(clip.startMs, 5000);
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 5000);
       expect(clip.endMs, 5001);
+    });
+
+    // BUG-172 / TODO-104a: gap word — the looked-up word fell in covered-but-
+    // uncued text so the reader resolves no lookup cue (cue == null). The
+    // sentence span must still recover the full audio range from the cues that
+    // surround the gap. Reverting the cue-by-range fallback turns this red.
+    test('recovers sentence audio for a gap word with no lookup cue', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕',
+          textFragmentId: _frag(0, 0, 10),
+        ),
+        _cue(
+          startMs: 1600,
+          endMs: 2300,
+          text: 'は',
+          textFragmentId: _frag(0, 10, 20),
+        ),
+        _cue(
+          startMs: 2300,
+          endMs: 4300,
+          text: '学校へ行った',
+          textFragmentId: _frag(0, 20, 60),
+        ),
+      ];
+
+      // cue == null mirrors _findCueForOffset returning null for a gap word; the
+      // sentence still spans cues [0..2] via its normalized range.
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: null,
+        sentence: '「僕は学校へ行った。」',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 60,
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 1000);
+      expect(clip.endMs, 4300);
+    });
+
+    test('returns null when there is no cue and no usable sentence span', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕',
+          textFragmentId: _frag(0, 0, 10),
+        ),
+      ];
+
+      // No cue and no sentence offset/length: nothing can be derived, so the
+      // mining gate must skip sentence audio rather than fabricate a range.
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: null,
+        sentence: '何か',
+      );
+
+      expect(clip, isNull);
+    });
+
+    test('returns null for a gap word when the section has no matching cues',
+        () {
+      // Sentence span points at section 1, but every cue belongs to section 0.
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕',
+          textFragmentId: _frag(0, 0, 10),
+        ),
+      ];
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: null,
+        sentence: '僕は',
+        sectionIndex: 1,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 20,
+      );
+
+      expect(clip, isNull);
     });
   });
 }

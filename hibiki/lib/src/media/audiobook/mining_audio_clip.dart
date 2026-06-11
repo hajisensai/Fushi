@@ -7,46 +7,71 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 /// Hoshi Android's behavior by expanding to adjacent cues whose text belongs to
 /// the selected sentence. [delayMs] is the user's global A/V sync offset and is
 /// applied to both edges, not as a sentence-tail padding.
-AudioPlaybackRange miningSentenceAudioRange({
+///
+/// [cue] is the cue the looked-up word fell inside. It can be null: audiobook
+/// cue alignment leaves gaps (titles, captions, alignment misses, chapter
+/// edges), so a word can sit in covered-but-uncued text while the sentence it
+/// belongs to is still spanned by surrounding cues. In that case we resolve the
+/// range purely from the sentence's normalized [sectionIndex] + offset/length
+/// span instead of giving up — that is the only way to recover sentence audio
+/// for those gap words (TODO-104a / BUG-172). Returns null only when no range
+/// can be derived at all (no cue and no usable sentence span).
+AudioPlaybackRange? miningSentenceAudioRange({
   required List<AudioCue> cues,
-  required AudioCue cue,
+  required AudioCue? cue,
   required String sentence,
   int? sectionIndex,
   int? sentenceNormCharOffset,
   int? sentenceNormCharLength,
   int delayMs = 0,
 }) {
-  final AudioPlaybackRange baseRange = _rangeFromSentencePosition(
-        cues: cues,
-        cue: cue,
-        sentence: sentence,
-        sectionIndex: sectionIndex,
-        sentenceNormCharOffset: sentenceNormCharOffset,
-        sentenceNormCharLength: sentenceNormCharLength,
-      ) ??
-      _expandAroundCue(cues: cues, cue: cue, sentence: sentence) ??
-      _cueRange(cue);
+  final AudioPlaybackRange? positionRange = _rangeFromSentencePosition(
+    cues: cues,
+    cue: cue,
+    sectionIndex: sectionIndex,
+    sentenceNormCharOffset: sentenceNormCharOffset,
+    sentenceNormCharLength: sentenceNormCharLength,
+  );
 
+  // When the word did not land in any cue (gap), the sentence span is the only
+  // anchor we have; do not fall through to cue-relative expansion.
+  final AudioPlaybackRange? baseRange = positionRange ??
+      (cue == null
+          ? null
+          : (_expandAroundCue(cues: cues, cue: cue, sentence: sentence) ??
+              _cueRange(cue)));
+
+  if (baseRange == null) {
+    return null;
+  }
   return _shiftRange(baseRange, delayMs);
 }
 
 AudioPlaybackRange? _rangeFromSentencePosition({
   required List<AudioCue> cues,
-  required AudioCue cue,
-  required String sentence,
+  required AudioCue? cue,
   required int? sectionIndex,
   required int? sentenceNormCharOffset,
   required int? sentenceNormCharLength,
 }) {
-  final SasayakiFragment? cueFragment =
-      SasayakiMatchCodec.tryDecode(cue.textFragmentId);
   if (sectionIndex == null ||
       sentenceNormCharOffset == null ||
       sentenceNormCharLength == null ||
-      sentenceNormCharLength <= 0 ||
-      cueFragment == null ||
-      cueFragment.sectionIndex != sectionIndex) {
+      sentenceNormCharLength <= 0) {
     return null;
+  }
+  // When a lookup cue exists, keep the original guard: trust the sentence span
+  // only if the cue actually decodes to this section (the word truly belongs to
+  // the cued text). When there is no cue (gap word), the cue cannot vouch for
+  // the section, so we trust [sectionIndex] directly — it comes from the
+  // reader's current chapter / lyrics fragment, which is authoritative for the
+  // selection regardless of cue coverage.
+  if (cue != null) {
+    final SasayakiFragment? cueFragment =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (cueFragment == null || cueFragment.sectionIndex != sectionIndex) {
+      return null;
+    }
   }
   return CollectionAudioMatcher.findPlaybackRange(
     cues: cues,

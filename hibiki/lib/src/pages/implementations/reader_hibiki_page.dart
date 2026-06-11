@@ -2819,7 +2819,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return null;
   }
 
-  List<AudioCue> _sentenceAudioMiningCues(AudioCue cue) {
+  List<AudioCue> _sentenceAudioMiningCues(AudioCue? cue) {
     if (_lyricsMode && _lyricsCueList.isNotEmpty) {
       return _lyricsCueList;
     }
@@ -2851,7 +2851,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return chapterCues;
     }
 
-    return <AudioCue>[cue];
+    // Gap word with no cue and no section/chapter cues: nothing to clip.
+    return cue != null ? <AudioCue>[cue] : const <AudioCue>[];
   }
 
   void _syncCueSentence() {
@@ -2893,8 +2894,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final AudioCue? cue = _lookupCue;
     final AudiobookPlayerController? audioController = _audiobookController;
     final List<File>? audioFiles = audioController?.audioFiles;
-    if (cue != null && audioFiles != null) {
-      final AudioPlaybackRange clip = miningSentenceAudioRange(
+    // BUG-172 / TODO-104a: do not gate on `cue != null`. Audiobook cue alignment
+    // leaves gaps (titles, captions, alignment misses, chapter edges); a word can
+    // land in covered-but-uncued text so `_lookupCue` is null, yet the sentence
+    // is still spanned by surrounding cues. As long as audio files exist, resolve
+    // the range by the sentence span (cue-by-range) instead of silently dropping
+    // sentence audio. `miningSentenceAudioRange` returns null when nothing can be
+    // derived (no cue and no usable sentence span), so the gate stays honest.
+    if (audioFiles != null) {
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
         cues: _sentenceAudioMiningCues(cue),
         cue: cue,
         sentence: sentence,
@@ -2903,7 +2911,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         sentenceNormCharLength: _cachedSentenceRange?.length,
         delayMs: audioController?.delayMs.value ?? 0,
       );
-      if (clip.audioFileIndex >= 0 && clip.audioFileIndex < audioFiles.length) {
+      if (clip != null &&
+          clip.audioFileIndex >= 0 &&
+          clip.audioFileIndex < audioFiles.length) {
         final File inputFile = audioFiles[clip.audioFileIndex];
         sasayakiTempDir =
             Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
@@ -2913,6 +2923,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: outputPath,
+        );
+      } else if (cue == null) {
+        // Visibility: audio exists but neither a lookup cue nor a sentence span
+        // could be resolved to a cue range. Log so a future "no sentence audio"
+        // report is traceable instead of being a silent drop.
+        debugPrint(
+          '[ReaderHibiki] mine: audio present but no sentence-audio range '
+          '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}).',
         );
       }
     }

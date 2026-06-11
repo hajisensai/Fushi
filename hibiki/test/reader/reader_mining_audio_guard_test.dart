@@ -66,7 +66,7 @@ void main() {
 
       expect(
         source,
-        contains('final AudioPlaybackRange clip = miningSentenceAudioRange('),
+        contains('final AudioPlaybackRange? clip = miningSentenceAudioRange('),
         reason:
             'Card sentence audio must resolve the selected sentence to a full '
             'audio range, not export only the lookup cue.',
@@ -89,6 +89,38 @@ void main() {
         source,
         isNot(contains('kMiningSentenceAudioTailPaddingMs')),
         reason: 'Fixed tail padding is not a complete-sentence range resolver.',
+      );
+    });
+
+    test('does not gate sentence audio on a non-null lookup cue (BUG-172)', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_hibiki_page.dart',
+      ).readAsStringSync();
+
+      // Audiobook cue alignment leaves gaps: a word can fall in covered-but-
+      // uncued text so _lookupCue is null while the sentence is still spanned by
+      // surrounding cues. The mining gate must not require a cue; it must try the
+      // sentence-span range whenever audio files exist.
+      expect(
+        source,
+        isNot(contains('if (cue != null && audioFiles != null) {')),
+        reason:
+            'Gating sentence audio on `cue != null` silently drops sentence '
+            'audio for gap words; resolve by sentence span instead.',
+      );
+      expect(
+        source,
+        contains('if (audioFiles != null) {'),
+        reason:
+            'Sentence-audio mining should attempt a clip whenever audio files '
+            'exist and let miningSentenceAudioRange decide if a range is found.',
+      );
+      expect(
+        source,
+        contains('if (clip != null &&'),
+        reason:
+            'miningSentenceAudioRange is now nullable; the reader must null-check '
+            'the clip before extracting a segment.',
       );
     });
   });
