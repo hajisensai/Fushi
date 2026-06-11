@@ -484,6 +484,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
     // 桌面 no-op。
     unawaited(_ensureEnterBrightness());
+    // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
+    unawaited(_lockLandscapeForVideo());
     _init();
   }
 
@@ -1148,6 +1150,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // TODO-057: 退出播放器还原屏幕亮度——把进页快照写回（iOS 系统级亮度），未
     // 取过快照时 Android 侧设回「跟随系统」(-1)。防止把用户系统亮度永久留在拖动后值。
     unawaited(_brightness.restore(previous: _enterBrightness));
+    // TODO-099: 退出视频页还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
+    unawaited(_restoreOrientationOnExit());
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
@@ -2389,6 +2393,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 重建让 [_mobileControlsTheme] 把真实 initialBrightness 喂给 media_kit，
     // 否则首次亮度拖动会从其默认 0.5 起跳（而非用户当前实际亮度）。
     if (mounted) setState(() {});
+  }
+
+  /// TODO-099: 进入视频页时锁横屏（移动端）。只锁本页，不动全 app
+  /// 默认方向策略（保护竖排小说能竖屏）；退出由 [_restoreOrientationOnExit] 还原。
+  /// 桌面门控 no-op（桌面窗口不走设备方向）。
+  Future<void> _lockLandscapeForVideo() async {
+    if (!isMobilePlatform) return;
+    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  /// TODO-099: 退出视频页时还原为 app 默认允许态（竖屏 + 两个横屏，
+  /// 与 [main] 初始化一致），而非空列表（空列表会放开 4 向含倒置）。在
+  /// 同步 [dispose] 里可靠还原，不把阅读器 / 首页锁死在横屏。桌面门控 no-op。
+  Future<void> _restoreOrientationOnExit() async {
+    if (!isMobilePlatform) return;
+    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
   /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。

@@ -133,4 +133,70 @@ void main() {
           reason: '退到后台时必须 flush 播放位置（dispose 在硬杀时不跑）');
     });
   });
+
+  // TODO-099: video page forces landscape on enter, restores on exit.
+  // Mobile-only; desktop is no-op. Source-level guard (needs a real device
+  // orientation system, cannot be exercised in a pure unit test).
+  group('VideoHibikiPage forced landscape wiring (TODO-099)', () {
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+
+    test('initState locks landscape on entering the video page', () {
+      final RegExpMatch? body = RegExp(
+        r'void initState\(\) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull, reason: 'initState method body not found');
+      expect(body!.group(1), contains('_lockLandscapeForVideo()'),
+          reason: 'initState must lock landscape on entering the page');
+    });
+
+    test('the lock method is mobile-gated and locks only landscape', () {
+      final RegExpMatch? body = RegExp(
+        r'Future<void> _lockLandscapeForVideo\(\) async \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull,
+          reason: '_lockLandscapeForVideo method body not found');
+      final String b = body!.group(1)!;
+      expect(b, contains('if (!isMobilePlatform) return;'),
+          reason: 'must be mobile-gated (desktop no-op)');
+      expect(b, contains('setPreferredOrientations'),
+          reason: 'must lock via SystemChrome.setPreferredOrientations');
+      expect(b, contains('DeviceOrientation.landscapeLeft'),
+          reason: 'landscape lock must include landscapeLeft');
+      expect(b, contains('DeviceOrientation.landscapeRight'),
+          reason: 'landscape lock must include landscapeRight');
+      expect(b.contains('DeviceOrientation.portraitUp'), isFalse,
+          reason: 'landscape lock must not re-allow portrait');
+    });
+
+    test('dispose restores the orientation on leaving the page', () {
+      final RegExpMatch? body = RegExp(
+        r'void dispose\(\) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull, reason: 'dispose method body not found');
+      expect(body!.group(1), contains('_restoreOrientationOnExit()'),
+          reason: 'dispose must restore orientation on leaving the page');
+    });
+
+    test('the restore method is mobile-gated and re-allows portrait', () {
+      final RegExpMatch? body = RegExp(
+        r'Future<void> _restoreOrientationOnExit\(\) async \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull,
+          reason: '_restoreOrientationOnExit method body not found');
+      final String b = body!.group(1)!;
+      expect(b, contains('if (!isMobilePlatform) return;'),
+          reason: 'must be mobile-gated (desktop no-op)');
+      expect(b, contains('DeviceOrientation.portraitUp'),
+          reason: 'restore must re-allow portrait (so novels can be portrait)');
+      expect(b, contains('DeviceOrientation.landscapeLeft'),
+          reason: 'restore to app default must include landscapeLeft');
+      expect(b, contains('DeviceOrientation.landscapeRight'),
+          reason: 'restore to app default must include landscapeRight');
+    });
+  });
 }
