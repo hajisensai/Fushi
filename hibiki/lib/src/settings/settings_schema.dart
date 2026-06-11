@@ -1212,6 +1212,18 @@ SettingsDestination _lookupDestination() {
               settingsContext.refresh();
             },
           ),
+          SettingsSwitchItem(
+            id: 'lookup.popup_bottom_docked',
+            title: t.popup_bottom_docked,
+            subtitle: t.popup_bottom_docked_hint,
+            icon: Icons.vertical_align_bottom_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupBottomDocked,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPopupBottomDocked(value);
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
     ],

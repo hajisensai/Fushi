@@ -307,6 +307,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-108：查词弹窗显示模式。默认 OFF（跟随被查词位置，即现状的左/右/上/下避让）。
+  // ON 时弹窗固定为屏幕底部一条全宽面板，忽略选区位置——适合需要稳定固定弹窗落点的
+  // 用户。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留其存值。
+  bool get popupBottomDocked =>
+      getPref('popup_bottom_docked', defaultValue: false) as bool;
+
+  Future<void> setPopupBottomDocked(bool value) async {
+    await setPref('popup_bottom_docked', value);
+    notifyListeners();
+  }
+
   final int defaultDoubleTapSeekDuration = 5000;
 
   int get doubleTapSeekDuration => getPref('double_tap_seek_duration',

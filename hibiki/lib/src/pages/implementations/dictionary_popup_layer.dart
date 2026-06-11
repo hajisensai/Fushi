@@ -18,6 +18,15 @@ Rect calcPopupPosition({
 
   /// 竖排（vertical-rl）时把弹窗放在当前列的左/右侧而非上/下，避免压住正在读的列。
   bool verticalWriting = false,
+
+  /// TODO-107：竖排两侧都放不下时回退横排上下避让的最小宽度阈值。两侧可用宽度都
+  /// 低于它（极窄屏 / 选区贴边把弹窗压成窄条）时，左右避让已无意义，改走横排上/下
+  /// 避让把整宽留给弹窗——避免「为了不压列而把弹窗挤成一根竖条」的更差观感。
+  double minPopupWidth = 200.0,
+
+  /// TODO-107：上下避让分支若被压扁到此高度以下视为「装不下」。仅作竖排回退判据的
+  /// 下界保护，避免回退横排后弹窗反而被压成一条更矮的横带——两难时不引入更差结果。
+  double minPopupHeight = 120.0,
 }) {
   final double reserve = bottomReserve.clamp(0, screen.height);
   final double effectiveTop = topReserve.clamp(0, screen.height);
@@ -39,14 +48,73 @@ Rect calcPopupPosition({
 
   const double gap = 4.0;
 
+  // 横排上/下避让：把弹窗整宽放在选区上方或下方，绝不与 selectionRect 垂直重叠
+  // （BUG-098）。竖排两侧都放不下时也回退到它（TODO-107），故抽成共用闭包。
+  Rect placeAboveBelow() {
+    final double width = availableWidth;
+    // 高度直接用 availableHeight（已按 maxHeight 与屏幕可用空间双重 clamp）。
+    // 旧实现额外乘 0.5 把高度顶死在半屏，使「弹窗最大高度」设置在半屏以上失效；
+    // 去掉后高度设置真正说了算，最高可拉到接近整屏（减边距）。
+    double height = availableHeight;
+    final double maxLeft = screen.width - width - horizontalInset;
+
+    // BUG-098: the popup must never cover the looked-up word. Place it flush
+    // against the selection (above or below) and, when neither side fits the
+    // full height, pick the side with more room and shrink the popup to that
+    // room — so its rect never overlaps [selectionRect]. The old
+    // `top.clamp(maxTop)` pulled a too-tall "below" popup back up over the
+    // selection.
+    final double roomBelow = maxBottom - (selectionRect.bottom + gap);
+    final double roomAbove = (selectionRect.top - gap) - safeMinTop;
+    final bool below = height <= roomBelow
+        ? true
+        : (height <= roomAbove ? false : roomBelow >= roomAbove);
+
+    double top;
+    if (below) {
+      if (height > roomBelow) height = roomBelow.clamp(0, availableHeight);
+      top = selectionRect.bottom + gap;
+    } else {
+      if (height > roomAbove) height = roomAbove.clamp(0, availableHeight);
+      top = (selectionRect.top - gap) - height;
+    }
+    // Final guard: keep the rect on-screen without re-introducing overlap (the
+    // upper bound never drops below minTop / the chosen flush edge).
+    final double maxTop = (maxBottom - height).clamp(safeMinTop, maxBottom);
+    top = top.clamp(safeMinTop, maxTop);
+
+    double left = selectionRect.left;
+    left = left.clamp(minLeft, maxLeft);
+
+    return Rect.fromLTWH(left, top, width, height);
+  }
+
   if (verticalWriting) {
     // 竖排 vertical-rl：右→左读，右侧是已读列。优先把弹窗贴当前列右侧（盖已读、
     // 不挡左边还没读的下一列）；右侧放不下才退到左侧。竖直方向锚到选区顶端往下铺，
     // 与列并排——不与 selectionRect 水平重叠即不压当前列。
     double width = availableWidth;
-    double height = availableHeight;
+    final double height = availableHeight;
     final double roomRight = maxRight - (selectionRect.right + gap);
     final double roomLeft = (selectionRect.left - gap) - minLeft;
+
+    // TODO-107：两侧都装不下整宽弹窗、且都低于最小宽阈值时，左右避让只会把弹窗压成
+    // 一根挡视线的窄竖条——回退横排上/下避让（placeAboveBelow）把整宽让给弹窗，改从
+    // 竖直方向避开当前列。仅当横排回退确有可用高度（>=minPopupHeight）才回退，否则
+    // 保留原竖排逻辑（极端两难时不引入更差结果）。
+    final bool widthFitsAside = width <= roomRight || width <= roomLeft;
+    if (!widthFitsAside &&
+        roomRight < minPopupWidth &&
+        roomLeft < minPopupWidth) {
+      final double roomBelow = maxBottom - (selectionRect.bottom + gap);
+      final double roomAbove = (selectionRect.top - gap) - safeMinTop;
+      final double bestVerticalRoom =
+          roomBelow > roomAbove ? roomBelow : roomAbove;
+      if (bestVerticalRoom >= minPopupHeight) {
+        return placeAboveBelow();
+      }
+    }
+
     final bool right = width <= roomRight
         ? true
         : (width <= roomLeft ? false : roomRight >= roomLeft);
@@ -66,41 +134,36 @@ Rect calcPopupPosition({
     return Rect.fromLTWH(left, top, width, height);
   }
 
-  final double width = availableWidth;
-  // 高度直接用 availableHeight（已按 maxHeight 与屏幕可用空间双重 clamp）。
-  // 旧实现额外乘 0.5 把高度顶死在半屏，使「弹窗最大高度」设置在半屏以上失效；
-  // 去掉后高度设置真正说了算，最高可拉到接近整屏（减边距）。
-  double height = availableHeight;
-  final double maxLeft = screen.width - width - horizontalInset;
+  return placeAboveBelow();
+}
 
-  // BUG-098: the popup must never cover the looked-up word. Place it flush
-  // against the selection (above or below) and, when neither side fits the full
-  // height, pick the side with more room and shrink the popup to that room —
-  // so its rect never overlaps [selectionRect]. The old `top.clamp(maxTop)`
-  // pulled a too-tall "below" popup back up over the selection.
-  final double roomBelow = maxBottom - (selectionRect.bottom + gap);
-  final double roomAbove = (selectionRect.top - gap) - safeMinTop;
-  final bool below = height <= roomBelow
-      ? true
-      : (height <= roomAbove ? false : roomBelow >= roomAbove);
-
-  double top;
-  if (below) {
-    if (height > roomBelow) height = roomBelow.clamp(0, availableHeight);
-    top = selectionRect.bottom + gap;
-  } else {
-    if (height > roomAbove) height = roomAbove.clamp(0, availableHeight);
-    top = (selectionRect.top - gap) - height;
-  }
-  // Final guard: keep the rect on-screen without re-introducing overlap (the
-  // upper bound never drops below minTop / the chosen flush edge).
-  final double maxTop = (maxBottom - height).clamp(safeMinTop, maxBottom);
-  top = top.clamp(safeMinTop, maxTop);
-
-  double left = selectionRect.left;
-  left = left.clamp(minLeft, maxLeft);
-
-  return Rect.fromLTWH(left, top, width, height);
+/// TODO-108：底部固定（dock）模式下的弹窗矩形——忽略选区位置，把弹窗放成屏幕底部
+/// 一条全宽面板。[screen] 是可用区域大小；[inset] 是左右及离屏底的内边距；[dockedHeight]
+/// 是面板目标高度（会按可用高度 clamp）；[bottomReserve]/[topReserve] 与跟随模式同义
+/// （底栏/状态栏等预留），保证 dock 面板不被这些区域遮住。纯函数，reader 与 video 两个
+/// 收口点共用同一实现，保证两表面 dock 行为一致。
+Rect dockedPopupRect({
+  required Size screen,
+  double inset = 6.0,
+  double dockedHeight = 360.0,
+  double bottomReserve = 0.0,
+  double topReserve = 0.0,
+}) {
+  final double reserve = bottomReserve.clamp(0, screen.height);
+  final double effectiveTop = topReserve.clamp(0, screen.height);
+  final double effectiveBottom = screen.height - reserve;
+  final double horizontalInset = inset.clamp(0, screen.width / 2);
+  final double verticalInset =
+      inset.clamp(0, (effectiveBottom).clamp(0, screen.height) / 2);
+  final double width =
+      (screen.width - horizontalInset * 2).clamp(0, screen.width);
+  final double maxAvail = (effectiveBottom - effectiveTop - verticalInset * 2)
+      .clamp(0, screen.height);
+  final double height = dockedHeight.clamp(0, maxAvail);
+  final double top = (effectiveBottom - verticalInset - height)
+      .clamp(effectiveTop + verticalInset, effectiveBottom)
+      .toDouble();
+  return Rect.fromLTWH(horizontalInset, top, width, height);
 }
 
 /// Maps a word rect reported in the popup WebView's own coordinate space

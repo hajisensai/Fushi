@@ -1512,5 +1512,7 @@
     "backup_category_dictionary": "Dictionaries",
     "backup_category_books": "Books",
     "backup_category_audiobooks": "Audiobook audio",
-    "backup_category_fonts": "Custom fonts"
+    "backup_category_fonts": "Custom fonts",
+    "popup_bottom_docked": "Bottom-docked popup",
+    "popup_bottom_docked_hint": "Pin the lookup popup as a full-width panel at the bottom of the screen instead of following the looked-up word."
 }

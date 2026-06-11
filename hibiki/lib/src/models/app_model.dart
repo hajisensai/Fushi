@@ -2653,6 +2653,10 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupInstantScroll(bool value) =>
       prefsRepo.setPopupInstantScroll(value);
 
+  bool get popupBottomDocked => prefsRepo.popupBottomDocked;
+  Future<void> setPopupBottomDocked(bool value) =>
+      prefsRepo.setPopupBottomDocked(value);
+
   int get defaultDoubleTapSeekDuration =>
       prefsRepo.defaultDoubleTapSeekDuration;
   int get doubleTapSeekDuration => prefsRepo.doubleTapSeekDuration;

@@ -329,4 +329,125 @@ void main() {
       expect(below || above, isTrue, reason: '横排须维持上/下放置，避开当前行');
     });
   });
+
+  group(
+      'TODO-107: vertical writing falls back to above/below when neither '
+      'side fits', () {
+    // 窄屏 + 选区横向居中：左右两侧可用宽都 < minPopupWidth(200)，整宽弹窗两侧都放不下。
+    // 左右避让只会把弹窗压成一根挡视线的窄竖条 → 应回退横排上/下避让，把整宽留给弹窗。
+    test('narrow screen, centered selection: falls back to placeAboveBelow',
+        () {
+      // 屏宽 300、选区 x∈[140,160]：roomRight=roomLeft=130(<200)，竖向有充足空间。
+      const Size screen = Size(300, 600);
+      const Rect sel = Rect.fromLTWH(140, 50, 20, 20);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        verticalWriting: true,
+      );
+
+      // 回退后走横排：弹窗放在选区下方（顶边不越选区底边），不被压成窄条。
+      final bool below = popup.top >= sel.bottom;
+      final bool above = popup.bottom <= sel.top;
+      expect(below || above, isTrue, reason: '两侧都放不下时应回退上/下避让');
+      // 横排回退把整宽给弹窗——比任一侧的窄竖条(<=130)宽得多，故水平上与当前列重叠。
+      final bool overlapsColumn =
+          popup.left < sel.right && popup.right > sel.left;
+      expect(overlapsColumn, isTrue, reason: '回退后弹窗占整宽（不再贴列侧），证明确实回退而非竖排窄条');
+      expect(popup.width, greaterThan(130), reason: '回退后宽度远超任一侧可用窄宽(130)');
+    });
+
+    test('min-height protection: no fallback when vertical room is too small',
+        () {
+      // 同样两侧都放不下，但选区几乎占满竖向高度 → 上下都没有 >=minPopupHeight 的空间，
+      // 不应回退（回退后弹窗反而被压成更矮的横带），保留原竖排逻辑落在某一侧。
+      const Size screen = Size(300, 200);
+      // 选区高 180：roomBelow=200-6-(186+4)<0、roomAbove=(6-4)-6<0，均 < minPopupHeight。
+      const Rect sel = Rect.fromLTWH(140, 6, 20, 180);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        verticalWriting: true,
+      );
+
+      // 未回退：仍走竖排侧放——弹窗与当前列不水平重叠（在列左/右侧）。
+      final bool onRight = popup.left >= sel.right;
+      final bool onLeft = popup.right <= sel.left;
+      expect(onRight || onLeft, isTrue, reason: '竖向空间不足时不回退，保留竖排侧放（与列不水平重叠）');
+    });
+
+    test('reverting the fallback turns the narrow-screen case red', () {
+      // 守卫：撤掉 TODO-107 回退增强（即把判据当作恒不触发），narrow-screen 用例会落到
+      // 竖排侧放——此时弹窗与当前列不水平重叠。本断言要求“水平重叠”，故撤增强即转红。
+      const Size screen = Size(300, 600);
+      const Rect sel = Rect.fromLTWH(140, 50, 20, 20);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        verticalWriting: true,
+      );
+      final bool overlapsColumn =
+          popup.left < sel.right && popup.right > sel.left;
+      expect(overlapsColumn, isTrue);
+    });
+  });
+
+  group('TODO-108: dockedPopupRect pins a full-width bottom panel', () {
+    const Size screen = Size(800, 600);
+
+    test('ignores selection: full-width panel pinned to the bottom', () {
+      final Rect docked = dockedPopupRect(
+        screen: screen,
+        dockedHeight: 360,
+      );
+
+      // 全宽（减左右内边距），贴屏底（减底内边距），与选区无关。
+      expect(docked.left, 6, reason: '左边距=inset');
+      expect(docked.width, 800 - 6 * 2, reason: '占满屏宽减左右内边距');
+      expect(docked.right, lessThanOrEqualTo(800));
+      expect(docked.bottom, lessThanOrEqualTo(600 - 6), reason: '底边贴屏底减底内边距');
+      expect(docked.height, 360);
+    });
+
+    test('docked rect is identical regardless of where the word sits', () {
+      // 同一屏、相同参数 → 结果只取决于屏与高度，不含选区。
+      final Rect a = dockedPopupRect(screen: screen, dockedHeight: 300);
+      final Rect b = dockedPopupRect(screen: screen, dockedHeight: 300);
+      expect(a, b, reason: 'dock 矩形是选区无关的纯函数');
+    });
+
+    test('clamps docked height to the available space and respects reserves',
+        () {
+      final Rect docked = dockedPopupRect(
+        screen: screen,
+        dockedHeight: 5000, // 远超屏高
+        bottomReserve: 80,
+        topReserve: 40,
+      );
+
+      expect(docked.top, greaterThanOrEqualTo(40), reason: '不越过顶部预留');
+      expect(docked.bottom, lessThanOrEqualTo(600 - 80), reason: '不越过底部预留');
+      expect(docked.left, greaterThanOrEqualTo(0));
+      expect(docked.right, lessThanOrEqualTo(800));
+    });
+
+    test('survives a reserve larger than the surface without throwing', () {
+      final Rect docked = dockedPopupRect(
+        screen: const Size(80, 48),
+        dockedHeight: 360,
+        bottomReserve: 80, // > 屏高
+      );
+      expect(docked.left, greaterThanOrEqualTo(0));
+      expect(docked.top, greaterThanOrEqualTo(0));
+      expect(docked.right, lessThanOrEqualTo(80));
+      expect(docked.bottom, lessThanOrEqualTo(48));
+      expect(docked.width.isFinite && docked.height.isFinite, isTrue);
+    });
+  });
 }

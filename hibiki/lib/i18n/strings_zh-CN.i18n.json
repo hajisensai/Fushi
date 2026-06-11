@@ -1512,5 +1512,7 @@
     "backup_category_dictionary": "´ʵä",
     "backup_category_books": "Ê鼮ÄÚÈÝ",
     "backup_category_audiobooks": "ÓÐÉùÊéÒôƵ",
-    "backup_category_fonts": "×Զ¨Òå×ÖÌå"
+    "backup_category_fonts": "×Զ¨Òå×ÖÌå",
+    "popup_bottom_docked": "µײ¿¹̶¨µ¯´°",
+    "popup_bottom_docked_hint": "°Ѳé´ʵ¯´°¹̶¨ΪÆÁĻµײ¿һÌõȫ¿íÃæ°壬¶ø²»ÊǸúË汻²é´ʵÄλÖá£"
 }

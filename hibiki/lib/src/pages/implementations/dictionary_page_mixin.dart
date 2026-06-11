@@ -67,6 +67,29 @@ mixin DictionaryPageMixin {
     return const Rect.fromLTWH(12, 12, 1, 1);
   }
 
+  /// TODO-108：video 家族（及独立查词页 / 首页查词）查词弹窗位置计算的单一收口点——
+  /// 等价于 base_source_page._calculatePopupPosition 之于 reader 家族。底部固定模式时
+  /// 忽略选区位置返回屏幕底部全宽 dock 面板（[dockedPopupRect]），否则沿用原跟随逻辑
+  /// （[calcPopupPosition]，尺寸随界面大小放大）。在共享 mixin 收口而非 video_hibiki_page，
+  /// 一处分流即覆盖 buildNestedPopupLayer / buildPopupLoadingPlaceholder 两个调用点，且
+  /// 不触碰 video 页本体。盒子尺寸口径与原两处一致（maxWidth/Height × appUiScale，padding
+  /// 与 reserve 走 calcPopupPosition 默认 6/0）。
+  Rect _calcMixinPopupPosition(Rect selectionRect, Size screen) {
+    if (mixinAppModel.popupBottomDocked) {
+      return dockedPopupRect(
+        screen: screen,
+        dockedHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
+      );
+    }
+    return calcPopupPosition(
+      selectionRect: selectionRect,
+      screen: screen,
+      // 盒子尺寸随界面大小放大（同 base_source_page.popupMaxWidth/Height）。
+      maxWidth: mixinAppModel.popupMaxWidth * mixinAppModel.appUiScale,
+      maxHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
+    );
+  }
+
   /// Mines the current dictionary entry to Anki.
   ///
   /// Shows a Fluttertoast for each outcome and returns `true` on success.
@@ -222,13 +245,7 @@ mixin DictionaryPageMixin {
     required void Function(int index) onPop,
   }) {
     final DictionaryPopupEntry entry = controller.entries[index];
-    final Rect pos = calcPopupPosition(
-      selectionRect: entry.selectionRect,
-      screen: screen,
-      // 盒子尺寸随界面大小放大（同 base_source_page.popupMaxWidth/Height）。
-      maxWidth: mixinAppModel.popupMaxWidth * mixinAppModel.appUiScale,
-      maxHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
-    );
+    final Rect pos = _calcMixinPopupPosition(entry.selectionRect, screen);
     final bool isDark =
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).brightness ==
             Brightness.dark;
@@ -317,12 +334,7 @@ mixin DictionaryPageMixin {
     required Rect rect,
     required Size screen,
   }) {
-    final Rect pos = calcPopupPosition(
-      selectionRect: rect,
-      screen: screen,
-      maxWidth: mixinAppModel.popupMaxWidth * mixinAppModel.appUiScale,
-      maxHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
-    );
+    final Rect pos = _calcMixinPopupPosition(rect, screen);
     final ColorScheme cs =
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).colorScheme;
     final Color fill = mixinAppModel.overrideDictionaryColor ?? cs.surface;

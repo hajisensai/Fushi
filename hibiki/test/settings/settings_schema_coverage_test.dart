@@ -43,6 +43,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Instant popup scroll': 'test/reader/reader_caret_scripts_test.dart',
+  // TODO-108: 底部固定弹窗开关——生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流（非 reader CSS / 主题树），
+  // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
+  'lookup/Bottom-docked popup':
+      'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
   'cardCreation/Auto-add book title to tags':
       'test/creator/tags_field_auto_add_book_test.dart',
   'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
