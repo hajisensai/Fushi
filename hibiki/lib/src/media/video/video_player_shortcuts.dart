@@ -21,6 +21,7 @@ class VideoPlayerShortcutActions {
     required this.nextFrame,
     required this.screenshot,
     required this.toggleFullscreen,
+    required this.toggleSubtitleList,
     required this.escape,
   });
 
@@ -42,6 +43,9 @@ class VideoPlayerShortcutActions {
   final VoidCallback nextFrame;
   final VoidCallback screenshot;
   final VoidCallback toggleFullscreen;
+
+  /// 打开/关闭字幕跳转列表面板（TODO-069，裸 L 键；asbplayer 式 transcript 列表）。
+  final VoidCallback toggleSubtitleList;
   final VoidCallback escape;
 }
 
@@ -85,6 +89,9 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcuts(
     const SingleActivator(LogicalKeyboardKey.comma): actions.previousFrame,
     const SingleActivator(LogicalKeyboardKey.period): actions.nextFrame,
     const SingleActivator(LogicalKeyboardKey.keyS): actions.screenshot,
+    // 'L' = 打开/关闭字幕跳转列表（TODO-069；asbplayer 式 transcript 面板，按一下右侧
+    // 出现字幕句子列表，点句跳到对应画面）。未与既有键冲突（裸 L 此前未绑定）。
+    const SingleActivator(LogicalKeyboardKey.keyL): actions.toggleSubtitleList,
     const SingleActivator(LogicalKeyboardKey.keyF): actions.toggleFullscreen,
     const SingleActivator(LogicalKeyboardKey.escape): actions.escape,
   };

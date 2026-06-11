@@ -1513,5 +1513,7 @@
     "backup_category_audiobooks": "ÓÐÉùÊéÒôƵ",
     "backup_category_fonts": "×Զ¨Òå×ÖÌå",
     "popup_bottom_docked": "µײ¿¹̶¨µ¯´°",
-    "popup_bottom_docked_hint": "°Ѳé´ʵ¯´°¹̶¨ΪÆÁĻµײ¿һÌõȫ¿íÃæ°壬¶ø²»ÊǸúË汻²é´ʵÄλÖá£"
+    "popup_bottom_docked_hint": "°Ѳé´ʵ¯´°¹̶¨ΪÆÁĻµײ¿һÌõȫ¿íÃæ°壬¶ø²»ÊǸúË汻²é´ʵÄλÖá£",
+    "video_subtitle_list": "字幕列表",
+    "video_subtitle_list_empty": "未加载字幕"
 }

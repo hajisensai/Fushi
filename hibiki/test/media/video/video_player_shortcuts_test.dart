@@ -28,6 +28,7 @@ void main() {
         nextFrame: () {},
         screenshot: () {},
         toggleFullscreen: () {},
+        toggleSubtitleList: () {},
         escape: () {},
       ),
     );
@@ -70,6 +71,7 @@ void main() {
         nextFrame: () => actions.add('nextFrame'),
         screenshot: () => actions.add('screenshot'),
         toggleFullscreen: () => actions.add('fullscreen'),
+        toggleSubtitleList: () => actions.add('subtitleList'),
         escape: () => actions.add('escape'),
       ),
     );
@@ -131,6 +133,7 @@ void main() {
         nextFrame: () {},
         screenshot: () {},
         toggleFullscreen: () {},
+        toggleSubtitleList: () {},
         escape: () {},
       ),
     );
@@ -150,5 +153,39 @@ void main() {
       'previousSubtitle',
       'nextSubtitle',
     ]);
+  });
+
+  test('TODO-069: bare L opens subtitle jump list', () {
+    final List<String> actions = <String>[];
+    final Map<ShortcutActivator, VoidCallback> shortcuts =
+        buildVideoPlayerShortcuts(
+      VideoPlayerShortcutActions(
+        togglePlayPause: () {},
+        play: () {},
+        pause: () {},
+        previousSubtitle: () {},
+        nextSubtitle: () {},
+        seekBackward: () {},
+        seekForward: () {},
+        toggleShaderCompare: () {},
+        volumeUp: () {},
+        volumeDown: () {},
+        toggleMute: () {},
+        speedUp: () {},
+        speedDown: () {},
+        resetSpeed: () {},
+        previousFrame: () {},
+        nextFrame: () {},
+        screenshot: () {},
+        toggleFullscreen: () {},
+        toggleSubtitleList: () => actions.add('subtitleList'),
+        escape: () {},
+      ),
+    );
+
+    // 裸 L 键映射到字幕跳转列表 toggle。
+    shortcuts[const SingleActivator(LogicalKeyboardKey.keyL)]!();
+    // 它不与既有键冲突：keyL 是字幕列表专属，未被其它动作绑定。
+    expect(actions, <String>['subtitleList']);
   });
 }

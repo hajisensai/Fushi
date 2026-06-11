@@ -38,6 +38,7 @@ import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
+import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -312,6 +313,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `setState` 不会重建全屏路由 → 全屏换集后标题停在旧集。改用 [ValueNotifier] + 顶栏
   /// `ValueListenableBuilder` 监听：它在全屏路由内也会随 notifier 变化自重建，标题跟上。
   final ValueNotifier<String?> _titleNotifier = ValueNotifier<String?>(null);
+
+  /// 字幕跳转列表面板的可见性（TODO-069；asbplayer 式 transcript 面板）。
+  ///
+  /// 用 [ValueNotifier] 而非 setState：面板渲染在 media_kit controls builder 内的
+  /// [Stack]（[_buildVideoControlsInner]），全屏是推到根 navigator 的独立路由、不随
+  /// 本页 setState 重建（与标题 [_titleNotifier] 同源，BUG-120）。监听 notifier 才能
+  /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
+  final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
 
   /// 视频内角标通知（mpv 式 OSD）。取代会从屏幕底部弹出、遮挡控制条、且与 mpv 等
   /// 播放器观感割裂的 Material SnackBar（用户要求改成 mpv 那样的左上角短暂提示）。
@@ -1145,6 +1154,24 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     });
   }
 
+  /// 翻转字幕跳转列表面板可见性（TODO-069；裸 L 键 / 控制条入口按钮）。
+  ///
+  /// asbplayer 式 transcript 面板：右侧出现当前视频的所有字幕句子，点某句 → seek 到该
+  /// 句对应画面。可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也生效，见其
+  /// 文档）。打开时顺带唤醒控制条（桌面键盘交互不触发 media_kit hover 重置）。
+  void _toggleSubtitleJumpList() {
+    final bool next = !_subtitleListVisible.value;
+    _subtitleListVisible.value = next;
+    if (next) _pokeControlsVisible();
+  }
+
+  /// 点字幕跳转列表里某句：seek 到该 cue 起点（复用现成 [VideoPlayerController.skipToCue]）
+  /// 并唤醒控制条。不关面板——用户常连点多句逐句跳，保持列表常驻（与 asbplayer 一致）。
+  void _handleSubtitleJumpTap(AudioCue cue) {
+    _pokeControlsVisible();
+    unawaited(_controller?.skipToCue(cue));
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -1175,6 +1202,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
+    _subtitleListVisible.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
     super.dispose();
@@ -1797,7 +1825,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             unawaited(_toggleVideoFullscreen(ctx));
           }
         },
+        // 'L' = 开/关字幕跳转列表（TODO-069）。
+        toggleSubtitleList: _toggleSubtitleJumpList,
         escape: () {
+          // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
+          if (_subtitleListVisible.value) {
+            _subtitleListVisible.value = false;
+            return;
+          }
           final BuildContext? ctx = _videoControlsContext;
           if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
             unawaited(_exitVideoFullscreen(ctx));
@@ -2072,6 +2107,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
+        // 字幕跳转列表（TODO-069；裸 L 键同此入口）。
+        MaterialDesktopCustomButton(
+          icon: Icon(
+            Icons.format_list_bulleted,
+            size: _videoControlIconSize,
+          ),
+          onPressed: _toggleSubtitleJumpList,
+        ),
         MaterialDesktopCustomButton(
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
@@ -2211,6 +2254,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         MaterialCustomButton(
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
+        ),
+        // 字幕跳转列表（TODO-069）。
+        MaterialCustomButton(
+          icon: Icon(
+            Icons.format_list_bulleted,
+            size: _videoControlIconSize,
+          ),
+          onPressed: _toggleSubtitleJumpList,
         ),
         MaterialCustomButton(
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
@@ -3483,8 +3534,57 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 fontFamily: appModel.appFontFamily,
               ),
             ),
+            _buildSubtitleJumpPanel(controller),
             _buildOsdOverlay(),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 字幕跳转列表面板层（TODO-069）。贴视频右侧，按 [_subtitleListVisible] 滑入/滑出。
+  ///
+  /// 与字幕 overlay 同源放进 controls Stack：media_kit 全屏复用同一 controls builder，
+  /// 故窗口与全屏两种场景共用一层。可见性走 [ValueListenableBuilder]（[_subtitleListVisible]
+  /// 是 [ValueNotifier]，全屏路由也响应）。宽度按界面宽取 ~28%（横屏右侧栏，clamp
+  /// 240..420），不遮挡过多画面（参照 asbplayer / YouTube transcript 侧栏占比）。
+  Widget _buildSubtitleJumpPanel(VideoPlayerController controller) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final double screenWidth = MediaQuery.sizeOf(context).width;
+    final double panelWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
+    return Positioned(
+      top: 0,
+      right: 0,
+      bottom: 0,
+      child: SafeArea(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _subtitleListVisible,
+          builder: (BuildContext _, bool visible, __) {
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (Widget child, Animation<double> anim) =>
+                  SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1, 0),
+                  end: Offset.zero,
+                ).animate(anim),
+                child: child,
+              ),
+              child: visible
+                  ? VideoSubtitleJumpPanel(
+                      key: const ValueKey<String>('video-subtitle-jump-panel'),
+                      controller: controller,
+                      onTapCue: _handleSubtitleJumpTap,
+                      onClose: () => _subtitleListVisible.value = false,
+                      colorScheme: cs,
+                      title: t.video_subtitle_list,
+                      emptyHint: t.video_subtitle_list_empty,
+                      fontSize: 14 * _videoUiScale,
+                      width: panelWidth,
+                    )
+                  : const SizedBox.shrink(),
+            );
+          },
         ),
       ),
     );

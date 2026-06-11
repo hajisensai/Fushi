@@ -605,6 +605,11 @@ void main() {
       'lib/src/media/video/video_subtitle_overlay.dart':
           'Video subtitle overlay renders caption content (fixed '
               'white-on-black caption radius/size), not ordinary page chrome.',
+      'lib/src/media/video/video_subtitle_jump_panel.dart':
+          'Subtitle jump list (asbplayer-style transcript panel) renders cue '
+              'text + timestamp rows as video-subsystem content; row/timestamp '
+              'font size scales with appUiScale, not ordinary page chrome '
+              '(same content rationale as the allowlisted subtitle overlay).',
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
               'size (content), defaults mirror the allowlisted overlay caption.',
