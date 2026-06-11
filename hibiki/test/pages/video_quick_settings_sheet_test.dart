@@ -93,11 +93,17 @@ void main() {
     expect(t.video_shader_tier_medium_hint, contains('Anime4K'));
     expect(t.video_shader_tier_high_hint, contains('Anime4K'));
     expect(t.video_shader_tier_ultra_hint, contains('ArtCNN'));
-    // TODO-054: 每档（无除外）标注代表性显卡示例，让用户自识别自己该选哪档。
+    // TODO-054: 每档（无除外）标注代表性显卡示例（N卡 + A卡），让用户自识别该选哪档。
+    // NVIDIA 示例（沿用 TODO-041 既有锚点，保证向后不破坏）。
     expect(t.video_shader_tier_low_hint, contains('GTX'));
     expect(t.video_shader_tier_medium_hint, contains('GTX 1660'));
     expect(t.video_shader_tier_high_hint, contains('RTX 4060'));
     expect(t.video_shader_tier_ultra_hint, contains('RTX 5090'));
+    // AMD（A卡）示例：每档都给出对应代表型号，用户两套显卡都能对号入座。
+    expect(t.video_shader_tier_low_hint, contains('RX 560'));
+    expect(t.video_shader_tier_medium_hint, contains('RX 6600'));
+    expect(t.video_shader_tier_high_hint, contains('RX 7700 XT'));
+    expect(t.video_shader_tier_ultra_hint, contains('RX 7900 XTX'));
     // 进阶（手动着色器）仍保留经典推荐入口，但不再单列 Anime4K 下载项。
     expect(t.video_shader_section_advanced, contains('Advanced'));
     expect(t.video_shader_recommended, 'Recommended image enhancements');
