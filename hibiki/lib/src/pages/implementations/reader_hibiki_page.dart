@@ -119,6 +119,47 @@ bool shouldReclaimReaderFocusAfterGesture({
 }) =>
     !popupVisible && !chromeHasFocus;
 
+/// 阅读器主题用的四个颜色角色：正文背景、正文字色、私语(振假名/sasayaki)叠色、
+/// 是否暗色。preset 主题在 [_ReaderHibikiPageState._themeMap] 里手调，其余主题
+/// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
+/// 回落到真实 ColorScheme 派生，避免再写死成白底（BUG-208 / TODO-143）。
+typedef ReaderThemeColors = ({Color bg, Color fg, Color sasayaki, bool dark});
+
+/// 把当前主题 key 解析成阅读器的四个颜色角色。
+///
+/// 关键修复（BUG-208 / TODO-143）：旧逻辑只查私有 [presetMap]，命中失败就硬编码
+/// 白底/黑字/默认私语色。但 `themePresets` 里还有 `light-theme`，且**默认主题**是
+/// `system-theme`，两者都不在 presetMap 中，于是阅读器背景永远是白色——无论系统
+/// 强调色或明暗如何，「书籍背景没吃主题」。
+///
+/// 现在：
+/// - `custom-theme`：用用户自定义的背景/字色/私语色（与旧行为一致）。
+/// - presetMap 命中（ecru/water/gray/dark/black）：用手调底色（向后兼容，零变化）。
+/// - 其余（light-theme / system-theme / 未来新增 key）：从真实 [scheme] 派生
+///   surface/onSurface/brightness，让阅读器背景真正跟随当前主题。
+ReaderThemeColors resolveReaderThemeColors({
+  required String themeKey,
+  required Map<String, ReaderThemeColors> presetMap,
+  required ColorScheme scheme,
+  ReaderThemeColors? customColors,
+}) {
+  if (themeKey == 'custom-theme' && customColors != null) {
+    return customColors;
+  }
+  final ReaderThemeColors? preset = presetMap[themeKey];
+  if (preset != null) {
+    return preset;
+  }
+  // light-theme / system-theme / 未覆盖的 key：跟随真实 ColorScheme。
+  final bool dark = scheme.brightness == Brightness.dark;
+  return (
+    bg: scheme.surface,
+    fg: scheme.onSurface,
+    sasayaki: scheme.primary.withValues(alpha: dark ? 0.34 : 0.40),
+    dark: dark,
+  );
+}
+
 /// 解析结果 + 每章字符数，一次 isolate 往返同时算好，避免把整本书
 /// （含全部章节 HTML）二次序列化进新 isolate 只为数字符。
 class ParsedBookData {
@@ -6170,8 +6211,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Theme Colors ──────────────────────────────────────────────────
 
-  static const Map<String, ({Color bg, Color fg, Color sasayaki, bool dark})>
-      _themeMap = {
+  static const Map<String, ReaderThemeColors> _themeMap = {
     'ecru-theme': (
       bg: Color(0xFFF7F6EB),
       fg: Color(0xDE000000),
@@ -6204,39 +6244,40 @@ window.flutter_inappwebview.callHandler('spreadReady');
     ),
   };
 
-  Color _themeBackgroundColor() {
-    final String key = appModel.appThemeKey;
-    if (key == 'custom-theme') {
-      return appModel.customThemeBackgroundColor ?? const Color(0xFFFFFFFF);
-    }
-    return _themeMap[key]?.bg ?? const Color(0xFFFFFFFF);
+  /// custom-theme 的四个角色色（用户自定义；任一项缺省回落到合理默认）。
+  ReaderThemeColors get _customReaderThemeColors {
+    final bool dark = appModel.customThemeDark;
+    return (
+      bg: appModel.customThemeBackgroundColor ?? const Color(0xFFFFFFFF),
+      fg: appModel.customThemeFontColor ??
+          (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000)),
+      sasayaki:
+          appModel.customThemeSasayakiColor ?? HibikiColor.defaultSasayakiColor,
+      dark: dark,
+    );
   }
 
-  Color _themeTextColor() {
+  /// 当前主题 key 解析出的四个阅读器角色色，统一经 [resolveReaderThemeColors]：
+  /// preset 命中用手调底色，未命中（light/system/未来 key）跟随真实 ColorScheme。
+  ReaderThemeColors get _readerThemeColors {
     final String key = appModel.appThemeKey;
-    if (key == 'custom-theme') {
-      return appModel.customThemeFontColor ??
-          (appModel.customThemeDark
-              ? const Color(0xDEFFFFFF)
-              : const Color(0xDE000000));
-    }
-    return _themeMap[key]?.fg ?? const Color(0xDE000000);
+    return resolveReaderThemeColors(
+      themeKey: key,
+      presetMap: _themeMap,
+      scheme: appModel.buildColorScheme(
+        appModel.isDarkMode ? Brightness.dark : Brightness.light,
+      ),
+      customColors: key == 'custom-theme' ? _customReaderThemeColors : null,
+    );
   }
 
-  Color _themeSasayakiColor() {
-    final String key = appModel.appThemeKey;
-    if (key == 'custom-theme') {
-      return appModel.customThemeSasayakiColor ??
-          HibikiColor.defaultSasayakiColor;
-    }
-    return _themeMap[key]?.sasayaki ?? HibikiColor.defaultSasayakiColor;
-  }
+  Color _themeBackgroundColor() => _readerThemeColors.bg;
 
-  bool get _isReaderThemeDark {
-    final String key = appModel.appThemeKey;
-    if (key == 'custom-theme') return appModel.customThemeDark;
-    return _themeMap[key]?.dark ?? false;
-  }
+  Color _themeTextColor() => _readerThemeColors.fg;
+
+  Color _themeSasayakiColor() => _readerThemeColors.sasayaki;
+
+  bool get _isReaderThemeDark => _readerThemeColors.dark;
 
   String get _readerBackgroundHex {
     final Color bg = _themeBackgroundColor();

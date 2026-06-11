@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 202 条。点号进各自文件。
+> 共 203 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-208](bugs/BUG-208-reader-bg-ignores-system-light-theme.md) | ✅ | ✅ | 阅读器背景在 system-theme/light-theme 下不吃主题(恒白) |
 | [BUG-205](bugs/BUG-205-desktop-floating-strip-drag-dead.md) | ✅ | ✅ | Windows悬浮字幕条拖不动/无锁按钮/无法缩放 |
 | [BUG-204](bugs/BUG-204-todo-137-chrome-focus-space-no-pause.md) | ✅ | ✅ | 底栏焦点点空格不暂停音频 |
 | [BUG-203](bugs/BUG-203-todo-133-android-exit-resume-drift.md) | ✅ | ✅ | 安卓退出重进恢复点漂移在前面好几页 |
