@@ -1525,5 +1525,10 @@
     "video_cross_subtitle_mining": "正在用 $count 句字幕製卡",
     "video_cross_subtitle_cancelled": "已取消跨字幕錄製",
     "video_cross_subtitle_no_subtitle": "沒有可錄製的字幕",
-    "video_cross_subtitle_lookup_first": "請先查詞製一張卡"
+    "video_cross_subtitle_lookup_first": "請先查詞製一張卡",
+    "video_menu_play_pause": "Play / Pause",
+    "video_menu_fullscreen": "Toggle fullscreen",
+    "video_menu_lock": "Immersive / lock mode",
+    "video_menu_cross_subtitle": "Cross-subtitle mining",
+    "video_menu_subtitle_track": "Subtitle track"
 }
