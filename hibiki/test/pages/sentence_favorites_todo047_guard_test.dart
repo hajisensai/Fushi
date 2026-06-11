@@ -15,7 +15,7 @@ void main() {
         read('lib/src/pages/implementations/video_hibiki_page.dart');
 
     test('视频查词浮层 header 渲染句子收藏星标（star/star_border）', () {
-      expect(src, contains("buildPopupHeaderFor"),
+      expect(src, contains('buildPopupHeaderFor'),
           reason: '应覆写 mixin 的 buildPopupHeaderFor 注入句子收藏星标');
       expect(src, contains("Key('video_favorite_sentence_button')"));
       expect(src, contains('Icons.star'));

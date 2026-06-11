@@ -34,6 +34,17 @@ add_definitions(-DUNICODE -D_UNICODE)
 # represent characters in third-party plugin sources.
 add_compile_options(/utf-8)
 
+# GitHub's windows-latest image rolled forward to VS 2026 / MSVC 14.51, whose
+# updated STL turned the <experimental/coroutine> deprecation (STL1011) from a
+# warning into a hard static_assert. The forked flutter_inappwebview_windows
+# plugin (via <winrt/base.h> / WIL) and the upstream permission_handler_windows
+# plugin still pull that header in, so both fail to compile under the new
+# toolchain even though our code is unchanged. Define the silencer Microsoft's
+# own diagnostic points to, globally, so it reaches every plugin subproject
+# (permission_handler_windows is a pub.dev dep we cannot edit). Remove once the
+# affected plugins drop <experimental/coroutine>.
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
