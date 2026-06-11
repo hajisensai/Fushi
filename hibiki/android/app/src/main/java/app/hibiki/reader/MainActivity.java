@@ -108,6 +108,28 @@ public class MainActivity extends AudioServiceActivity {
         ttsChannelHandler = new TtsChannelHandler(context);
 
         super.onCreate(savedInstanceState);
+
+        disableSystemFocusHighlight();
+    }
+
+    // BUG-195: On API 26+ every View defaults to defaultFocusHighlightEnabled=true,
+    // so when touch mode is exited the framework draws a system focus rectangle on
+    // the currently focused View -- including the FlutterView host that hosts the
+    // whole UI. On some skins (Samsung OneUI 6.5) that system frame overlaps Hibiki's
+    // own keyboard/gamepad focus ring drawn in Flutter (see hibiki_focus_ring.dart),
+    // giving a double highlight. We disable only the Android system default highlight
+    // here; the Flutter self-drawn focus ring and focus navigation are untouched.
+    // Done in code on the decorView (rather than only a theme attribute) because the
+    // FlutterSurfaceView host is created programmatically inside super.onCreate, so a
+    // direct setDefaultFocusHighlightEnabled(false) on the window's view hierarchy is
+    // the deterministic place to kill it.
+    private void disableSystemFocusHighlight() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            android.view.View decorView = getWindow().getDecorView();
+            if (decorView != null) {
+                decorView.setDefaultFocusHighlightEnabled(false);
+            }
+        }
     }
 
     @Override
