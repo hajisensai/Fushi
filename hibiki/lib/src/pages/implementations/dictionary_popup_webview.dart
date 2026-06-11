@@ -411,6 +411,16 @@ class DictionaryPopupWebViewState
 
     final stylesJson = _getStylesJson();
 
+    // TODO-094 S5: serialize the kanji-dictionary results onto the same
+    // payload the popup WebView receives, so the kanji card renders inline with
+    // the term entries (no parallel channel). HoshiKanjiResult.toMap mirrors the
+    // popup.js field names (character/onyomi/kunyomi/radical/strokes/meanings).
+    final String kanjiResultsJson = jsonEncode(
+      widget.result.kanjiResults
+          .map((HoshiKanjiResult k) => k.toMap())
+          .toList(),
+    );
+
     final appModel = ref.read(appProvider);
     // 内容缩放：跟随「词典字号」与「界面大小」。盒子尺寸在 Dart 侧已乘 appUiScale
     // （base_source_page / dictionary_page_mixin），这里把内容也等比放大，二者一致。
@@ -468,6 +478,17 @@ class DictionaryPopupWebViewState
       try { window.lookupEntries = $entriesJson; } catch(e) {
         console.error('[popup] lookupEntries parse error', e);
         window.lookupEntries = [];
+      }
+      // TODO-094 S5: single-character lookups carry per-character kanji
+      // dictionary results (onyomi / kunyomi / radical / strokes / meanings)
+      // on the SAME DictionarySearchResult that produced lookupEntries. They
+      // ride the same injection path — popup.js renders a kanji card above the
+      // term entries when this is non-empty, and nothing when it is empty
+      // (multi-char / kana / latin lookups). Empty array keeps renderPopup's
+      // kanji section unrendered.
+      try { window.kanjiResults = $kanjiResultsJson; } catch(e) {
+        console.error('[popup] kanjiResults parse error', e);
+        window.kanjiResults = [];
       }
       window.dictionaryStyles = $stylesJson;
       window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};

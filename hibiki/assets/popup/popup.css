@@ -631,3 +631,83 @@ html[data-theme="dark"] {
     font-size: 32px;
     opacity: 0.5;
 }
+
+/* TODO-094 S5: kanji dictionary card. Rendered above the term entries for a
+   single-character lookup, showing the character's own readings (on/kun),
+   radical, stroke count and meanings. Colours reuse the popup's existing MD3
+   surface / outline / primary variables so the card follows the active theme
+   (light / dark / dynamic colour) like the rest of the popup, never an
+   out-of-place hardcoded panel. */
+.kanji-card-section {
+    margin: 4px 0 6px;
+}
+
+.kanji-card {
+    margin-top: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--outline-variant);
+    border-radius: 8px;
+    background: var(--surface-container);
+}
+
+.kanji-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.kanji-card-char {
+    font-size: 36px;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-user-select: none;
+    color: var(--text-color);
+}
+
+.kanji-card-char:active {
+    opacity: 0.6;
+}
+
+.kanji-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.kanji-card-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 13px;
+    margin-top: 2px;
+}
+
+.kanji-card-head .kanji-card-row {
+    margin-top: 0;
+}
+
+.kanji-card-label {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--primary-color);
+    -webkit-user-select: none;
+}
+
+.kanji-card-value {
+    -webkit-user-select: text;
+}
+
+.kanji-card-meanings {
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.4;
+    -webkit-user-select: text;
+}
+
+.kanji-card-dict {
+    margin-top: 4px;
+    font-size: 10px;
+    opacity: 0.6;
+    -webkit-user-select: none;
+}

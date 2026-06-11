@@ -811,6 +811,164 @@ async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   assert.equal(mineButton.disabled, false, 'button is still clickable, never locked');
 }
 
+// ── TODO-094 S5: kanji dictionary card ─────────────────────────────────────
+// A single-character lookup carries per-character kanji-dictionary results
+// (onyomi / kunyomi / radical / strokes / meanings) on window.kanjiResults,
+// injected alongside window.lookupEntries by dictionary_popup_webview.dart.
+// buildKanjiCards() renders a card per character; an empty / missing array
+// renders nothing (so multi-char / kana / latin lookups are untouched).
+//
+// SCOPE NOTE: these tests exercise ONLY the render logic for a GIVEN kanji
+// payload — they do NOT assert the FFI actually returns kanji. On-device,
+// queryKanji is still empty until the hoshidicts native libs are rebuilt with
+// the S3 kanji exports across all 5 platforms; until then this card never
+// appears on a real lookup. End-to-end is therefore pending that rebuild +
+// device verification; this S5 work makes the render pipeline ready + testable.
+
+function findByClass(node, className) {
+  if (!node) return null;
+  const has = (node.className || '').split(/\s+/).includes(className) ||
+    (node.classList && node.classList.contains(className));
+  if (has) return node;
+  for (const child of node.children ?? []) {
+    const found = findByClass(child, className);
+    if (found) return found;
+  }
+  return null;
+}
+
+function collectText(node) {
+  if (!node) return '';
+  if (node.children && node.children.length) {
+    return node.children.map(collectText).join('');
+  }
+  return node.textContent || '';
+}
+
+function sampleKanji() {
+  return {
+    character: '水',
+    onyomi: 'スイ',
+    kunyomi: 'みず',
+    radical: '水',
+    strokes: 4,
+    meanings: ['water', 'liquid'],
+    dictName: 'KANJIDIC',
+  };
+}
+
+function testKanjiCardRendersAllFields() {
+  const context = loadPopup();
+  context.window.kanjiResults = [sampleKanji()];
+
+  const section = context.buildKanjiCards();
+  assert.ok(section, 'kanji section should render for a non-empty payload');
+  assert.equal(section.className, 'kanji-card-section');
+
+  const card = findByClass(section, 'kanji-card');
+  assert.ok(card, 'a kanji card should be produced');
+
+  const charEl = findByClass(card, 'kanji-card-char');
+  assert.ok(charEl, 'the big character should render');
+  assert.equal(charEl.textContent, '水');
+
+  const meanings = findByClass(card, 'kanji-card-meanings');
+  assert.ok(meanings, 'meanings should render');
+  assert.equal(meanings.textContent, 'water, liquid');
+
+  // On / Kun / Radical / Strokes rows: assert the values are present somewhere
+  // in the card text (label text is an English fallback; value is what matters).
+  const cardText = collectText(card);
+  assert.ok(cardText.includes('スイ'), 'onyomi value must be rendered');
+  assert.ok(cardText.includes('みず'), 'kunyomi value must be rendered');
+  assert.ok(cardText.includes('水'), 'radical value must be rendered');
+  assert.ok(cardText.includes('4'), 'stroke count must be rendered');
+  assert.ok(cardText.includes('KANJIDIC'), 'source dict name must be rendered');
+}
+
+function testKanjiCardEmptyPayloadRendersNothing() {
+  const context = loadPopup();
+
+  context.window.kanjiResults = [];
+  assert.equal(context.buildKanjiCards(), null,
+    'an empty kanji array must render no card (multi-char / kana / latin lookups)');
+
+  delete context.window.kanjiResults;
+  assert.equal(context.buildKanjiCards(), null,
+    'a missing kanji array must render no card');
+}
+
+function testKanjiCardOmitsAbsentFields() {
+  const context = loadPopup();
+  // A kanji dictionary that only carries meanings (no readings / radical /
+  // strokes) must not emit empty reading rows or a 0-stroke row.
+  context.window.kanjiResults = [{
+    character: '々',
+    onyomi: '',
+    kunyomi: '',
+    radical: '',
+    strokes: 0,
+    meanings: ['repetition mark'],
+    dictName: 'KanjiDict',
+  }];
+
+  const section = context.buildKanjiCards();
+  const card = findByClass(section, 'kanji-card');
+  assert.ok(card, 'card still renders when only meanings are present');
+  assert.equal(findByClass(card, 'kanji-card-meanings').textContent, 'repetition mark');
+  // No reading rows for empty on/kun, no row for 0 strokes.
+  assert.equal(card.children.some((c) => c.className === 'kanji-card-row'), false,
+    'absent readings/radical/strokes must not produce empty rows');
+}
+
+function stubRenderPopupRuntime(context, container) {
+  // renderPopup touches a few DOM/runtime members the shared fake DOM does not
+  // implement; stub exactly what its kanji-only / no-results branches reach.
+  context.document.getElementById = (id) =>
+    id === 'entries-container' ? container : null;
+  context.document.querySelectorAll = () => [];
+  context.document.body.scrollHeight = 0;
+  context.performance = { now: () => 0 };
+  // applyCustomCSS appends <style> nodes via document.querySelectorAll; it is
+  // not under test here, so neutralize it on the vm-global the script calls.
+  context.applyCustomCSS = () => {};
+}
+
+function testRenderPopupShowsKanjiCardWithNoTermEntries() {
+  const context = loadPopup();
+  // A kanji-only result (character only in a kanji dictionary, no term headword)
+  // must still render the kanji card instead of "No results".
+  const container = new FakeElement('div');
+  stubRenderPopupRuntime(context, container);
+
+  context.window.lookupEntries = [];
+  context.window.kanjiResults = [sampleKanji()];
+
+  context.window.renderPopup();
+
+  assert.ok(findByClass(container, 'kanji-card'),
+    'a kanji-only lookup must render the kanji card');
+  assert.equal(findByClass(container, 'no-results'), null,
+    'a kanji-only lookup must NOT fall through to the no-results state');
+}
+
+function testRenderPopupNoKanjiNoEntriesShowsNoResults() {
+  const context = loadPopup();
+  const container = new FakeElement('div');
+  stubRenderPopupRuntime(context, container);
+
+  context.window.lookupEntries = [];
+  context.window.kanjiResults = [];
+
+  context.window.renderPopup();
+
+  // No kanji + no entries keeps the original no-results behaviour: the
+  // container's innerHTML is set to the no-results placeholder markup.
+  assert.ok((container.textContent || '').includes('No results') ||
+    (container.textContent || '').includes('no-results'),
+    'empty everything must still show the no-results placeholder');
+}
+
 testEmSizedWideImagesUseHorizontalScrollWrapper();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
@@ -819,6 +977,11 @@ testTappingDefinitionImageOpensLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
 testStructuredContentTablesUseHorizontalScrollContainer();
 testFormOfGlossaryArrayRendersSeparatedTermAndTags();
+testKanjiCardRendersAllFields();
+testKanjiCardEmptyPayloadRendersNothing();
+testKanjiCardOmitsAbsentFields();
+testRenderPopupShowsKanjiCardWithNoTermEntries();
+testRenderPopupNoKanjiNoEntriesShowsNoResults();
 testSelectionHighlightReturnsBoundsForPopupPositioning();
 // TODO: testLongPress* tests access document.__listeners.touchstart but popup.js
 // registers touchstart on per-entry summary elements. Rewrite tests to create a

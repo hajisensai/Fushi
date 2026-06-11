@@ -1800,6 +1800,110 @@ function applyCustomCSS() {
     }
 }
 
+// TODO-094 S5: kanji dictionary card. A single-character lookup carries
+// per-character kanji results (onyomi / kunyomi / radical / strokes / meanings)
+// on window.kanjiResults, injected alongside window.lookupEntries by
+// dictionary_popup_webview.dart. Rendered as its own card ABOVE the term
+// entries so the reading/meaning of the character itself is visible even when
+// the same character is also a term headword. Field names mirror
+// HoshiKanjiResult.toMap (Dart). Empty / missing -> nothing rendered, so
+// multi-char / kana / latin lookups are unaffected.
+function createKanjiReadingRow(label, value) {
+    if (!value) {
+        return null;
+    }
+    const row = el('div', { className: 'kanji-card-row' });
+    row.appendChild(el('span', { className: 'kanji-card-label', textContent: label }));
+    row.appendChild(el('span', { className: 'kanji-card-value', textContent: value }));
+    return row;
+}
+
+function createKanjiCard(kanji) {
+    if (!kanji || !kanji.character) {
+        return null;
+    }
+    const card = el('div', { className: 'kanji-card' });
+
+    const head = el('div', { className: 'kanji-card-head' });
+    const charEl = el('div', { className: 'kanji-card-char', textContent: kanji.character });
+    // Tapping the big character re-looks it up (consistent with the term
+    // headword + kanji-breakdown tags), so a kanji card is also a jump-off
+    // point for a fresh lookup.
+    charEl.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = charEl.getBoundingClientRect();
+        window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height
+        });
+    });
+    head.appendChild(charEl);
+
+    const headMeta = el('div', { className: 'kanji-card-meta' });
+    const radicalRow = createKanjiReadingRow(window._kanjiLabels?.radical || 'Radical', kanji.radical);
+    if (radicalRow) {
+        headMeta.appendChild(radicalRow);
+    }
+    if (typeof kanji.strokes === 'number' && kanji.strokes > 0) {
+        const strokesRow = createKanjiReadingRow(
+            window._kanjiLabels?.strokes || 'Strokes', String(kanji.strokes));
+        if (strokesRow) {
+            headMeta.appendChild(strokesRow);
+        }
+    }
+    if (headMeta.children.length > 0) {
+        head.appendChild(headMeta);
+    }
+    card.appendChild(head);
+
+    const onyomiRow = createKanjiReadingRow(window._kanjiLabels?.onyomi || 'On', kanji.onyomi);
+    if (onyomiRow) {
+        card.appendChild(onyomiRow);
+    }
+    const kunyomiRow = createKanjiReadingRow(window._kanjiLabels?.kunyomi || 'Kun', kanji.kunyomi);
+    if (kunyomiRow) {
+        card.appendChild(kunyomiRow);
+    }
+
+    const meanings = Array.isArray(kanji.meanings)
+        ? kanji.meanings.filter((m) => typeof m === 'string' && m.length > 0)
+        : [];
+    if (meanings.length > 0) {
+        const meaningEl = el('div', { className: 'kanji-card-meanings' });
+        meaningEl.textContent = meanings.join(', ');
+        card.appendChild(meaningEl);
+    }
+
+    if (kanji.dictName) {
+        card.appendChild(el('div', { className: 'kanji-card-dict', textContent: kanji.dictName }));
+    }
+
+    return card;
+}
+
+// Builds the container holding every kanji card for the current lookup, or null
+// when there are no kanji results. Each character in a multi-character (rare,
+// but the array supports it) result gets its own card.
+function buildKanjiCards() {
+    const kanji = window.kanjiResults;
+    if (!Array.isArray(kanji) || kanji.length === 0) {
+        return null;
+    }
+    const section = el('div', { className: 'kanji-card-section' });
+    let appended = 0;
+    for (const entry of kanji) {
+        const card = createKanjiCard(entry);
+        if (card) {
+            section.appendChild(card);
+            appended++;
+        }
+    }
+    return appended > 0 ? section : null;
+}
+
 window._renderGeneration = 0;
 
 // TODO-058 fail-safe: always notify Dart that rendering finished, even when
@@ -1821,7 +1925,19 @@ window.renderPopup = function() {
     if (!container) { _firePopupRendered(); return; }
 
     const entries = window.lookupEntries;
-    if (!entries || !entries.length) {
+    // TODO-094 S5: a kanji-dictionary card may be present even with NO term
+    // entries (a single kanji that is only in a kanji dictionary, not a term
+    // headword). Build it first so it sits above the terms, and so a kanji-only
+    // result still renders instead of falling through to "No results".
+    let kanjiSection = null;
+    try {
+        kanjiSection = buildKanjiCards();
+    } catch (e) {
+        console.error('[popup] renderPopup kanji card render failed', e);
+        kanjiSection = null;
+    }
+
+    if ((!entries || !entries.length) && !kanjiSection) {
         container.innerHTML = '<div class="no-results">'
             + '<div class="no-results-icon">&#x1F50D;</div>'
             + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
@@ -1833,9 +1949,25 @@ window.renderPopup = function() {
 
     const gen = ++window._renderGeneration;
 
+    // Kanji-only result (no term entries): render just the kanji card(s).
+    if (!entries || !entries.length) {
+        container.innerHTML = '';
+        if (kanjiSection) {
+            container.appendChild(kanjiSection);
+        }
+        applyCustomCSS();
+        window._renderedGlossaryCounts = [];
+        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=0 kanji=1');
+        _firePopupRendered();
+        return;
+    }
+
     try {
         container.innerHTML = '';
 
+        if (kanjiSection) {
+            container.appendChild(kanjiSection);
+        }
         const firstEntry = buildEntryElement(entries[0], 0);
         container.appendChild(firstEntry);
         postProcessRuby(firstEntry);
