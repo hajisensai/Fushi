@@ -2379,7 +2379,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
       ],
       bottomButtonBar: <Widget>[
-        const MaterialDesktopPositionIndicator(),
+        // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
+        // [MaterialDesktopPositionIndicator] 不传 style 时回退硬编码 fontSize 12.0，
+        // 永不随 appUiScale 缩放（视频页被 [HibikiAppUiScaleNeutralizer] 中和回 1.0）。
+        // 这里显式传 style，仅把字号乘 [_videoUiScale]；color 沿用 media_kit 默认时间
+        // 文字色 buttonBarButtonColor（本主题为 cs.primary），不改色只缩放字号。
+        MaterialDesktopPositionIndicator(
+          style: TextStyle(
+            height: 1.0,
+            fontSize: 12.0 * _videoUiScale,
+            color: cs.primary,
+          ),
+        ),
         const Spacer(),
         if (roomyBottomBar)
           MaterialDesktopCustomButton(
@@ -2524,7 +2535,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
       ],
       bottomButtonBar: <Widget>[
-        const MaterialPositionIndicator(),
+        // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
+        // [MaterialPositionIndicator] 不传 style 时回退硬编码 fontSize 12.0，永不随
+        // appUiScale 缩放（视频页被 [HibikiAppUiScaleNeutralizer] 中和回 1.0）。这里
+        // 显式传 style，仅把字号乘 [_videoUiScale]；color 沿用 media_kit 默认时间文字
+        // 色 buttonBarButtonColor（本主题为 cs.primary），不改色只缩放字号。
+        MaterialPositionIndicator(
+          style: TextStyle(
+            height: 1.0,
+            fontSize: 12.0 * _videoUiScale,
+            color: cs.primary,
+          ),
+        ),
         const Spacer(),
         if (roomyBottomBar)
           MaterialCustomButton(

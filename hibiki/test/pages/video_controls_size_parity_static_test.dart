@@ -45,6 +45,28 @@ void main() {
       reason: 'top-bar title font size must follow appUiScale (TODO-067)',
     );
 
+    // TODO-128:底栏进度/总时长文字（media_kit PositionIndicator）默认硬编码 fontSize
+    // 12.0、不传 style 时永不随 appUiScale 缩放（067 漏）。桌面 + 移动两处都必须显式
+    // 传 style 把字号乘 _videoUiScale。撤掉任一 * _videoUiScale 即转红。
+    expect(
+      'fontSize: 12.0 * _videoUiScale'.allMatches(source).length,
+      2,
+      reason:
+          'desktop+mobile position indicators must scale time text by appUiScale (TODO-128)',
+    );
+    expect(
+      source,
+      isNot(contains('const MaterialDesktopPositionIndicator()')),
+      reason:
+          'desktop position indicator must pass a scaled style, not fall back to hardcoded 12.0 (TODO-128)',
+    );
+    expect(
+      source,
+      isNot(contains('const MaterialPositionIndicator()')),
+      reason:
+          'mobile position indicator must pass a scaled style, not fall back to hardcoded 12.0 (TODO-128)',
+    );
+
     expect(
       'buttonBarButtonSize: _videoControlIconSize'.allMatches(source).length,
       2,
