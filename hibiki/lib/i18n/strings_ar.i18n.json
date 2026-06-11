@@ -1500,5 +1500,7 @@
     "video_subtitle_attached_to_video": "Subtitle attached to $title ($count cues)",
     "video_subtitle_attach_playlist_hint": "Open the playlist to attach a subtitle per episode",
     "video_brightness": "Brightness",
-    "video_brightness_unsupported": "Brightness control not available on this platform"
+    "video_brightness_unsupported": "Brightness control not available on this platform",
+    "dict_import_started": "Importing dictionaries in the background...",
+    "dict_import_success_summary": "Imported $n dictionary(s)"
 }

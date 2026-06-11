@@ -1500,5 +1500,7 @@
     "video_subtitle_attached_to_video": "已为《$title》挂上字幕（$count 句）",
     "video_subtitle_attach_playlist_hint": "请进入播放页按集挂载字幕",
     "video_brightness": "亮度",
-    "video_brightness_unsupported": "此平台不支持调节屏幕亮度"
+    "video_brightness_unsupported": "此平台不支持调节屏幕亮度",
+    "dict_import_started": "正在后台导入词典…",
+    "dict_import_success_summary": "已导入 $n 本词典"
 }

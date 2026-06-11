@@ -345,6 +345,9 @@ class _DictionaryDialogPageState extends BasePageState {
         totalNotifier: totalNotifier,
       ),
     );
+    // TODO-082：导入一开始就给用户一个明确反馈（开始后台导入），不只让用户盯着
+    // 模态进度框猜测进度。
+    HibikiToast.show(msg: t.dict_import_started);
 
     bool hadMemoryError = false;
     final List<String> failedNames = [];
@@ -386,6 +389,13 @@ class _DictionaryDialogPageState extends BasePageState {
         msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
         toastLength: Toast.LENGTH_LONG,
       );
+    }
+
+    // TODO-082：成功导入的词典数 = 总数 - 失败数；> 0 就给一条明确的成功提示
+    // （失败的另由上面的失败汇总文案告知，两者可同时出现：部分成功部分失败）。
+    final int successCount = dictFiles.length - failedNames.length;
+    if (successCount > 0) {
+      HibikiToast.show(msg: t.dict_import_success_summary(n: successCount));
     }
 
     if (hadMemoryError && mounted) {
@@ -818,6 +828,9 @@ class _DictionaryDialogPageState extends BasePageState {
           totalNotifier: totalNotifier,
         ),
       );
+      // TODO-082：目录导入也在开始时给明确反馈（成功/失败提示由
+      // DictionaryImportManager.importFromDirectory 在完成时弹出）。
+      HibikiToast.show(msg: t.dict_import_started);
     }
 
     bool hadMemoryError = false;

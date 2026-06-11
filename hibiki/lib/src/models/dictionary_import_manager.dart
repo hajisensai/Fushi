@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
@@ -117,6 +118,12 @@ class DictionaryImportManager {
             msg: formatImportFailureSummary(failedNames),
             toastLength: Toast.LENGTH_LONG);
       }
+      // TODO-082：成功导入数 = 总数 - 失败数；> 0 给一条明确成功提示，与失败汇总
+      // 可同时出现（部分成功部分失败）。
+      final int succeeded = zipFiles.length - failedNames.length;
+      if (succeeded > 0) {
+        HibikiToast.show(msg: t.dict_import_success_summary(n: succeeded));
+      }
       return;
     }
 
@@ -129,15 +136,11 @@ class DictionaryImportManager {
           path.join(_resourceDirectory.path, 'import_temp_dir.zip');
       final tempZip = File(tempZipPath);
 
-      final archive = Archive();
-      for (final entity in directory.listSync(recursive: true)) {
-        if (entity is File) {
-          final relativePath = path.relative(entity.path, from: directory.path);
-          archive.addFile(ArchiveFile(
-              relativePath, entity.lengthSync(), entity.readAsBytesSync()));
-        }
-      }
-      tempZip.writeAsBytesSync(ZipEncoder().encode(archive)!);
+      // 把整个目录读进内存再 zip 压缩是纯文件操作但很重（大词典目录可达数百
+      // MB），若在主 isolate 同步跑会卡死 UI（TODO-082）。参数都是 String 路径，
+      // 可安全丢进后台 isolate，让 UI 在打包期保持响应。native FFI 导入本就在
+      // 自己的 isolate（HoshiDicts.importDictionary）。
+      await Isolate.run(() => packDirectoryToZip(directory.path, tempZipPath));
 
       try {
         final tempOutputDir =
@@ -217,6 +220,8 @@ class DictionaryImportManager {
 
         progressNotifier.value = t.import_complete;
         onImportSuccess();
+        // TODO-082：单目录导入成功，给一条明确成功提示（与文件/批量路径一致）。
+        HibikiToast.show(msg: t.dict_import_success_summary(n: 1));
       } finally {
         if (tempZip.existsSync()) tempZip.deleteSync();
       }
@@ -394,6 +399,25 @@ class DictionaryImportManager {
       default:
         return DictionaryType.term;
     }
+  }
+
+  /// 把 [srcDirPath] 目录递归打包成 [zipPath] 处的 zip 文件。**纯路径输入/纯文件
+  /// 输出**，不触碰任何实例状态，可安全在后台 isolate 经 [Isolate.run] 执行
+  /// （TODO-082：避免大目录的同步读取+压缩卡死主 isolate）。暴露给测试以在 host
+  /// 上验证打包正确性（无需 native FFI）。
+  @visibleForTesting
+  static void packDirectoryToZip(String srcDirPath, String zipPath) {
+    final Directory directory = Directory(srcDirPath);
+    final Archive archive = Archive();
+    for (final FileSystemEntity entity in directory.listSync(recursive: true)) {
+      if (entity is File) {
+        final String relativePath =
+            path.relative(entity.path, from: directory.path);
+        archive.addFile(ArchiveFile(
+            relativePath, entity.lengthSync(), entity.readAsBytesSync()));
+      }
+    }
+    File(zipPath).writeAsBytesSync(ZipEncoder().encode(archive)!);
   }
 
   static void _copyDirectory(Directory source, Directory destination) {
