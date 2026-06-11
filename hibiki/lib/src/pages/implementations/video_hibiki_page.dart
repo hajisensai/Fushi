@@ -2054,7 +2054,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// media_kit 桌面控制主题。底部胶囊条改成居中传输组
   /// `[−10s][上一句][暂停][下一句][+10s]`（清空中央 primaryButtonBar 避免重复），
   /// 左端进度、右端全屏；顶栏右侧放 截图/字幕/音轨/倍速/设置 图标（参照截图）。
-  /// 上/下一句走 cue 导航（[VideoPlayerController.skipToPrevCue]/[VideoPlayerController.skipToNextCueOrSeekForward]）。
+  /// 上/下一句走 cue 导航（无字幕/转场段对称回退/前进，
+  /// [VideoPlayerController.skipToPrevCueOrSeekBack]/[VideoPlayerController.skipToNextCueOrSeekForward]）。
   Future<void> _toggleVideoFullscreen(BuildContext context) {
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
@@ -2555,7 +2556,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         MaterialCustomButton(
           icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-          onPressed: () => controller.skipToPrevCue(),
+          // 无字幕/转场(OP)段也回退 seekSeconds 秒、不卡住(TODO-119，对称 TODO-073
+          // 的「下一句」按钮)。原裸 skipToPrevCue 在空 cue / 上句太远时 no-op，用户
+          // 报「转场片段没字幕时按字幕回退键没反应」(BUG-198)。
+          onPressed: () => controller.skipToPrevCueOrSeekBack(
+            seekSeconds: _asbConfig.seekSeconds,
+          ),
         ),
         MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
         MaterialCustomButton(
@@ -2890,13 +2896,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _pokeControlsVisible();
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    // 下一句无字幕时前进 seekSeconds 秒(TODO-073)；上一句保持纯 skipToPrevCue
-    // (底栏「上一句」按钮语义不退化，BUG-185)。
+    // 无字幕/转场段：下一句前进 seekSeconds 秒(TODO-073)、上一句对称回退
+    // seekSeconds 秒(TODO-119，BUG-198)。两侧都不再在没字幕时 no-op 卡住。
     await (forward
         ? controller.skipToNextCueOrSeekForward(
             seekSeconds: _asbConfig.seekSeconds,
           )
-        : controller.skipToPrevCue());
+        : controller.skipToPrevCueOrSeekBack(
+            seekSeconds: _asbConfig.seekSeconds,
+          ));
   }
 
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter

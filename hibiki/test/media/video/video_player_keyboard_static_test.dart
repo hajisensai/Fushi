@@ -100,6 +100,38 @@ void main() {
       expect(page.contains('_asbSeekMs'), isTrue);
     });
 
+    test('TODO-119：底栏 / 胶囊条「上一句」按钮在无字幕/转场段也回退（不裸 skipToPrevCue）', () {
+      // 用户报「转场片段没字幕时按字幕回退键没反应、回退不了」(BUG-200)。根因=底栏
+      // skip_previous 按钮 + 胶囊条 backward 分支接的是裸 controller.skipToPrevCue()，
+      // 空 cue / 上句太远时 no-op；而对称的「下一句」按钮已 TODO-073 改成
+      // skipToNextCueOrSeekForward。两处「上一句」都改走含「无字幕回退 Xs」的
+      // skipToPrevCueOrSeekBack（切集用的 skip_previous「上一集」走 _switchEpisode，不算）。
+
+      // ① video_hibiki_page 内不应再有任何裸的 controller.skipToPrevCue() 调用
+      //    （字幕「上一句」全部走退化决策；底栏切集按钮走 _switchEpisode 不受影响）。
+      expect(page.contains('controller.skipToPrevCue()'), isFalse,
+          reason:
+              '页面里不能再裸调 controller.skipToPrevCue()（无字幕段会 no-op 卡住，BUG-200）');
+      expect(page.contains('skipToPrevCueOrSeekBack('), isTrue,
+          reason: '「上一句」字幕按钮 / 键盘必须走含无字幕回退的 skipToPrevCueOrSeekBack');
+
+      // ② 胶囊条 / 桌面控制条「上/下一句」共用 _skipCueAndPokeControls：backward 分支
+      //    走 skipToPrevCueOrSeekBack、forward 分支走 skipToNextCueOrSeekForward（对称）。
+      final int helperAt =
+          page.indexOf('Future<void> _skipCueAndPokeControls(');
+      expect(helperAt, greaterThanOrEqualTo(0),
+          reason: '找不到 _skipCueAndPokeControls 方法（上/下一句胶囊条/桌面控制条共用）');
+      // 取方法体：从方法名到下一个方法声明（'Future<void> _saveScreenshot'）之间。
+      final int helperEnd =
+          page.indexOf('Future<void> _saveScreenshot', helperAt);
+      expect(helperEnd, greaterThan(helperAt));
+      final String body = page.substring(helperAt, helperEnd);
+      expect(body.contains('skipToPrevCueOrSeekBack('), isTrue,
+          reason: '胶囊条「上一句」backward 分支必须走 skipToPrevCueOrSeekBack（TODO-119）');
+      expect(body.contains('skipToNextCueOrSeekForward('), isTrue,
+          reason: 'forward 分支仍走 skipToNextCueOrSeekForward（对称，TODO-073）');
+    });
+
     test('TODO-085 决策纯函数 prevSeekDecisionFor 存在并按 seekSeconds 阈值退化', () {
       final String controller =
           read('lib/src/media/video/video_player_controller.dart');
