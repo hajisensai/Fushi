@@ -72,7 +72,7 @@ void main() {
         ),
         isTrue,
         reason: 'page shortcut action runs _toggleShaderCompare');
-    final InputBinding cKey = const InputBinding(key: LogicalKeyboardKey.keyC);
+    const InputBinding cKey = InputBinding(key: LogicalKeyboardKey.keyC);
     expect(
         ShortcutDefaults.forPlatform(TargetPlatform.windows)[
                 ShortcutAction.videoToggleShaderCompare]!
