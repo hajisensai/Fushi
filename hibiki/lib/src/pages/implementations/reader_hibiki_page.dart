@@ -138,9 +138,65 @@ List<int> countChapterChars(EpubBook book) {
 
 /// 在单个 isolate 内解析 EPUB 并计算每章纯文本长度。供 compute() 调用，
 /// 也可直接调用做等价性校验。
+///
+/// TODO-131: 冷开书的首屏不需要逐章字符数（只进度/统计要）。开书路径优先用
+/// [parseBookOnly] 拿渲染必需结构、再用 [charCountsFromChaptersJson] 复用导入时
+/// 已落库的计数，整本 html_parser 计数仅在 DB 计数缺失时经 [countChapterChars]
+/// 后台补算。此函数保留给等价性测试与不复用 DB 的旧路径。
 ParsedBookData parseAndCountChapters(String extractDir) {
   final EpubBook book = EpubParser.parseFromExtracted(extractDir);
   return ParsedBookData(book, countChapterChars(book));
+}
+
+/// TODO-131: 只解析渲染必需结构（章节 href / spine / 资源 / TOC / spread），不在
+/// isolate 里逐章跑 html_parser 计数。供 compute() 调用——开书首屏走这条，把每章
+/// 纯文本计数从「整本 isolate 计数」降到「只解析必要项」。
+EpubBook parseBookOnly(String extractDir) {
+  return EpubParser.parseFromExtracted(extractDir);
+}
+
+/// TODO-131: 从 [EpubBooks.chaptersJson]（导入时由 EpubImporter 写入的
+/// `characters` 字段，值即 `chapterPlainText().length`）复用每章字符数，避免开书时
+/// 对整本 EPUB 重跑 html_parser。
+///
+/// 仅当**每一章**都带合法非负 `characters` int、且条目数与 [expectedChapters]
+/// 严格一致时返回计数列表；任一缺失/类型错误/数量不符返回 null，调用方回退到
+/// 后台 [countChapterChars] 重算。这样旧书（导入早于该字段）与异常数据都安全降级，
+/// 不会用错的总字数破坏进度/统计正确性。
+List<int>? charCountsFromChaptersJson(
+  String chaptersJson,
+  int expectedChapters,
+) {
+  if (expectedChapters <= 0) return null;
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(chaptersJson);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! List || decoded.length != expectedChapters) return null;
+  final List<int> counts = <int>[];
+  for (final Object? entry in decoded) {
+    if (entry is! Map) return null;
+    final Object? raw = entry['characters'];
+    if (raw is! int || raw < 0) return null;
+    counts.add(raw);
+  }
+  return counts;
+}
+
+/// TODO-131: 书本磁盘定位结果。`_locateBookOnDisk` 与 profile/settings 链并行返回，
+/// `bookRow` 携带 chaptersJson（供 DB 计数复用）；`exists` 为 false 时调用方提示
+/// 文件丢失并退出。
+class _BookLocateResult {
+  const _BookLocateResult({
+    required this.bookRow,
+    required this.extractDir,
+    required this.exists,
+  });
+  final EpubBookRow? bookRow;
+  final String extractDir;
+  final bool exists;
 }
 
 class ReaderHibikiPage extends BaseSourcePage {
@@ -452,48 +508,49 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Future<void> _initBook() async {
     final HibikiDatabase db = appModelNoUpdate.database;
 
-    await _resolveAndApplyProfile(db);
-    if (!mounted) return;
+    // TODO-131: profile→settings 链与 book 定位→解析链互不依赖（前者动
+    // ReaderHibikiSource.readerSettings / active profile，后者动 _book / _extractDir），
+    // 并行起跑把 profile/settings 的 DB 往返与 EPUB 解析 isolate 重叠，缩短白屏。
+    final Future<void> profileSettingsFuture = _resolveProfileAndSettings(db);
+    final Future<_BookLocateResult> bookLocateFuture = _locateBookOnDisk(db);
 
-    if (ReaderHibikiSource.readerSettings == null) {
-      final rs = ReaderSettings(db);
-      await rs.refreshFromDb();
-      ReaderHibikiSource.readerSettings = rs;
-    }
+    await profileSettingsFuture;
+    if (!mounted) return;
     _settings = ReaderHibikiSource.readerSettings;
-    if (!mounted) return;
 
-    // Locate the book on disk by its stored extract_dir column (the on-disk
-    // folder name may still be a legacy int id; the column is the truth).
-    final EpubBookRow? bookRow = await db.getEpubBook(widget.bookKey);
+    final _BookLocateResult located = await bookLocateFuture;
     if (!mounted) return;
-    final String extractDir = bookRow?.extractDir ?? '';
-    final bool exists = await EpubStorage.bookDirExists(extractDir);
-    if (!mounted) return;
-    if (!exists) {
+    if (!located.exists) {
       debugPrint('[ReaderHibiki] book ${widget.bookKey} not found on disk');
       HibikiToast.show(msg: t.book_file_not_found);
       Navigator.of(context).pop();
       return;
     }
 
+    final EpubBookRow? bookRow = located.bookRow;
+    final String extractDir = located.extractDir;
     _extractDir = extractDir;
 
+    // TODO-131: charsFromDb 命中 = 跳过整本 html_parser 计数（导入时已落库）。
+    // 缺失（旧书 / 异常）时为 null → 后台 compute 补算，首屏不阻塞。
+    List<int>? charsFromDb;
     try {
-      final ParsedBookData parsed =
-          await compute(parseAndCountChapters, extractDir);
-      _book = parsed.book;
-      _chapterCharCounts = parsed.charCounts;
+      _book = await compute(parseBookOnly, extractDir);
       debugPrint(
           '[ReaderHibiki] parsed EPUB: ${_book!.chapters.length} chapters');
+      if (bookRow != null) {
+        charsFromDb = charCountsFromChaptersJson(
+            bookRow.chaptersJson, _book!.chapters.length);
+      }
     } on FormatException catch (e) {
       debugPrint('[ReaderHibiki] EPUB parse failed ($e), trying DB metadata');
       _book = await _buildBookFromDb(db, widget.bookKey, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
-      // fallback 路径没在解析 isolate 里算字符数，这里补一趟；书已在内存，
-      // 但仍走 compute() 放后台 isolate，避免在 UI 线程跑 html 解析。
-      _chapterCharCounts = await compute(countChapterChars, _book!);
+      if (bookRow != null) {
+        charsFromDb = charCountsFromChaptersJson(
+            bookRow.chaptersJson, _book!.chapters.length);
+      }
       if (!mounted) return;
       HibikiToast.show(msg: t.epub_parse_fallback);
     }
@@ -501,16 +558,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderHibiki] chapter hrefs: $hrefs');
 
-    int cumulative = 0;
-    _chapterCumulativeChars = <int>[];
-    for (final int count in _chapterCharCounts) {
-      _chapterCumulativeChars.add(cumulative);
-      cumulative += count;
+    if (charsFromDb != null) {
+      _applyCharCounts(charsFromDb);
+    } else {
+      // DB 计数不可用：以零计数占位（所有消费点已 >0 / empty 守卫，进度回退 JS
+      // total、统计暂累 0），同时后台 isolate 重算整本，落定后 _applyCharCounts
+      // 补齐 totalChars 并重置统计基准，保证最终进度/统计字数等价、不丢字数。
+      _applyCharCounts(
+          List<int>.filled(_book!.chapters.length, 0, growable: false));
+      _recomputeCharCountsInBackground();
     }
 
-    await _initSpreadMap(appModelNoUpdate.database);
-
-    await _resolveAudioSlot();
+    // TODO-131: spread map 与 audio slot 互不依赖（前者写 _spreadMap/_edgeMatchResults，
+    // 后者写 _audiobookController，都只读已就绪的 _book），并行等待两组 DB 往返。
+    await Future.wait(<Future<void>>[
+      _initSpreadMap(appModelNoUpdate.database),
+      _resolveAudioSlot(),
+    ]);
     if (!mounted) return;
 
     final Bookmark? bm = widget.initialBookmarkJump;
@@ -572,6 +636,78 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _audioSlotResolved = true;
 
     setState(() {});
+  }
+
+  /// TODO-131: profile 解析+应用 → 阅读器设置刷新。两步有依赖（profile 切换可能
+  /// 改哪份 profile-scoped 设置生效），故内部串行；整条与书本定位/解析链并行。
+  Future<void> _resolveProfileAndSettings(HibikiDatabase db) async {
+    await _resolveAndApplyProfile(db);
+    if (!mounted) return;
+    if (ReaderHibikiSource.readerSettings == null) {
+      final ReaderSettings rs = ReaderSettings(db);
+      await rs.refreshFromDb();
+      ReaderHibikiSource.readerSettings = rs;
+    }
+  }
+
+  /// TODO-131: 按 bookKey 查 EpubBooks 行 + 校验磁盘目录存在。与 profile/settings
+  /// 链并行起跑；`chaptersJson` 随行带回，供 [charCountsFromChaptersJson] 复用计数。
+  Future<_BookLocateResult> _locateBookOnDisk(HibikiDatabase db) async {
+    // Locate the book on disk by its stored extract_dir column (the on-disk
+    // folder name may still be a legacy int id; the column is the truth).
+    final EpubBookRow? bookRow = await db.getEpubBook(widget.bookKey);
+    final String extractDir = bookRow?.extractDir ?? '';
+    final bool exists = await EpubStorage.bookDirExists(extractDir);
+    return _BookLocateResult(
+      bookRow: bookRow,
+      extractDir: extractDir,
+      exists: exists,
+    );
+  }
+
+  /// TODO-131: 落定每章字符数并重建累计前缀 + 刷新进度条总字数。开书时与延后重算
+  /// 完成时共用。空/零计数也安全（消费点 >0 守卫），延后重算落定后再调一次补齐。
+  void _applyCharCounts(List<int> counts) {
+    _chapterCharCounts = counts;
+    int cumulative = 0;
+    _chapterCumulativeChars = <int>[];
+    for (final int count in counts) {
+      _chapterCumulativeChars.add(cumulative);
+      cumulative += count;
+    }
+    if (mounted) {
+      final int newTotal = _chapterCumulativeChars.isNotEmpty
+          ? _chapterCumulativeChars.last + _chapterCharCounts.last
+          : 0;
+      if (newTotal > 0 && _progressTotalChars != newTotal) {
+        setState(() {
+          _progressTotalChars = newTotal;
+        });
+      }
+    }
+  }
+
+  /// TODO-131: DB 计数缺失（旧书 / chaptersJson 无 characters 字段）时，把整本
+  /// html_parser 逐章计数放后台 isolate 补算，**不阻塞首屏**。落定后用
+  /// [_applyCharCounts] 补齐总字数，并把统计基准 `_lastAbsoluteCount` 重置到当前
+  /// 位置——否则零计数期间它停在 0，计数落定后首个进度回调会把整段前缀误当本次
+  /// 读到的新字数（charDiff 幻象 spike）。重置后差分相对正确基准，统计字数等价。
+  void _recomputeCharCountsInBackground() {
+    final EpubBook? book = _book;
+    if (book == null || book.chapters.isEmpty) return;
+    unawaited(compute(countChapterChars, book).then((List<int> counts) {
+      // 书可能在重算期间被换（重载 / 退出）；仅当仍是同一本、长度一致才采用。
+      if (!mounted ||
+          !identical(_book, book) ||
+          counts.length != book.chapters.length) {
+        return;
+      }
+      _applyCharCounts(counts);
+      _lastAbsoluteCount = _absoluteCharPosition(_lastProgressValue);
+    }).catchError((Object e, StackTrace s) {
+      ErrorLogService.instance
+          .log('ReaderHibiki._recomputeCharCountsInBackground', e, s);
+    }));
   }
 
   void _setupVolumeKeyHandlers() {
