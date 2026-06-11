@@ -410,9 +410,20 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double maxHeight =
-        (MediaQuery.of(context).size.height * 0.24).clamp(56.0, 320.0);
 
+    // 弹窗整体高度只由外层 [HibikiDialogFrame.maxHeightFactor]（0.96）封顶：
+    // sheet 不再叠加更紧的内层上限，由 [HibikiModalSheetFrame] 的 [Flexible] body
+    // 在 DialogFrame 给的空间里自然填满并滚动（header / 搜索框 / footer 固定，选项
+    // ListView 吃掉剩余高度）。早先这里用 `(height * 0.24).clamp(56, 320)` 的内层
+    // ConstrainedBox 把整个 body（搜索框 + 十几~三十个选项的 ListView）死压在屏高
+    // 24% / 封顶 320px——与外层 0.96 彻底矛盾，结果无论屏多大选项区永远只有一点点高
+    // （800 高的设备上仅 ~192px），用户嫌「小得可怜」。现在去掉那个封顶后，选项区在
+    // 高窗口能占大半屏；小窗口（如 320×240）下 body 是 Flexible 会收缩，header+搜索框
+    // +footer 在 DialogFrame 的 0.96×height 上限内，不溢出。
+    //
+    // 注意：不要在 sheet 上设比 0.96 更小的 maxHeightFactor——那会在小窗口把 sheet
+    // 夹得连 header+footer 都装不下而溢出（实测 240 高 + 0.82 factor → 196.8px 不够，
+    // RenderFlex overflowed 20px）。
     return HibikiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.96,
@@ -435,42 +446,36 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
           tokens.spacing.card,
           tokens.spacing.gap,
         ),
-        body: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: double.maxFinite,
-            maxHeight: maxHeight,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AdaptiveSettingsTextField(
-                controller: _controller,
-                hintText: t.anki_field_not_mapped,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AdaptiveSettingsTextField(
+              controller: _controller,
+              hintText: t.anki_field_not_mapped,
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.options.length,
+                itemBuilder: (_, i) {
+                  final opt = widget.options[i];
+                  if (opt == '-') return const Divider(height: 1);
+                  final isSelected = widget.initialValue == opt;
+                  return AdaptiveSettingsRow(
+                    title: opt,
+                    trailing: isSelected
+                        ? Icon(
+                            Icons.check,
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                        : null,
+                    onTap: () => Navigator.pop(context, opt),
+                  );
+                },
               ),
-              SizedBox(height: tokens.spacing.gap),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: widget.options.length,
-                  itemBuilder: (_, i) {
-                    final opt = widget.options[i];
-                    if (opt == '-') return const Divider(height: 1);
-                    final isSelected = widget.initialValue == opt;
-                    return AdaptiveSettingsRow(
-                      title: opt,
-                      trailing: isSelected
-                          ? Icon(
-                              Icons.check,
-                              color: Theme.of(context).colorScheme.primary,
-                            )
-                          : null,
-                      onTap: () => Navigator.pop(context, opt),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
         footer: Wrap(
           alignment: WrapAlignment.end,

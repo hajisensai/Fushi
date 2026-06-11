@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/anki_settings_page.dart';
+import 'package:hibiki/utils.dart';
 
 void main() {
   setUp(() {
@@ -37,4 +37,46 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(TextField), findsOneWidget);
   });
+
+  // TODO-103 / BUG-187: the value picker used to clamp its whole body
+  // (search field + options ListView) to `height * 0.24` capped at 320px, so
+  // on any normal window the options area was a tiny sliver ("小得可怜"). It now
+  // takes a generous share of the screen height so users can actually browse
+  // the handlebar options. Removing the fix (re-introducing the 320px cap)
+  // turns this red because the sheet can no longer grow past ~320px.
+  testWidgets(
+    'anki handlebar picker grows well past the old 320px cap on a tall window',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 1200);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        buildApp(
+          AnkiHandlebarPickerDialog(
+            title: 'Select value for Expression',
+            initialValue: '{expression}',
+            options: List<String>.generate(
+              30,
+              (index) => '{single-glossary-long-dictionary-name-$index}',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+
+      final Size sheetSize = tester.getSize(find.byType(HibikiModalSheetFrame));
+      // Old behaviour capped the body at 320px; the sheet (header + body +
+      // footer) is even larger now. Assert it clears that old ceiling with
+      // margin so a regression to the cap is caught.
+      expect(
+        sheetSize.height,
+        greaterThan(500.0),
+        reason: 'picker should use a generous slice of the 1200px-tall window, '
+            'not the old ~320px sliver',
+      );
+    },
+  );
 }
