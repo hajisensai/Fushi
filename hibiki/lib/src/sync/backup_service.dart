@@ -8,6 +8,31 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
+/// Optional file-tree categories a backup export can include. The database
+/// (`hibiki.db`) is NOT a category - it carries every table's metadata
+/// (books / stats / favorites / profiles / settings / dictionary records) whose
+/// rows FK into each other, so it is ALWAYS exported as one consistent blob;
+/// only the bulky sidecar file trees below are individually selectable.
+///
+/// When [BackupService.exportBackup] is called with a [categories] set, only the
+/// listed trees are packed; an unselected tree's root is skipped exactly as if
+/// the user had no such content. A null set means "everything" (the legacy
+/// all-in export), so existing callers are unchanged.
+enum BackupCategory {
+  /// Imported dictionary resource files (`dictionaryResources/`).
+  dictionary,
+
+  /// Extracted book content tree (`hoshi_books/`: epub + html/images/fonts +
+  /// covers).
+  books,
+
+  /// Audiobook audio + alignment files (`audiobooks/`).
+  audiobooks,
+
+  /// User-imported custom font files (`custom_fonts/`).
+  fonts,
+}
+
 /// Rewrites an absolute [oldPath] that lives under [oldRoot] so it lives under
 /// [newRoot] instead, preserving the sub-path. Returns [oldPath] verbatim when
 /// it is not under [oldRoot] (already local, or an unrelated location).
@@ -195,7 +220,22 @@ class BackupService {
   String get _dbPath => p.join(_dbDirectory, _dbName);
 
   /// Create a backup ZIP file at [outputPath].
-  Future<BackupMeta> exportBackup(String outputPath) async {
+  ///
+  /// [categories] selects which optional file trees are packed. A null set
+  /// (default) packs every tree this service was constructed with - the legacy
+  /// all-in export, so existing callers are unchanged. A non-null set packs
+  /// ONLY the listed trees; an omitted tree is skipped (its root treated as if
+  /// it carried no content), exactly the same as constructing the service
+  /// without that root. The database (`hibiki.db`) is always included
+  /// regardless, since it holds every table's metadata. [BackupMeta] still
+  /// records the source roots of the trees that were actually packed so import
+  /// can rebase them; an omitted tree's root is left null in the meta.
+  Future<BackupMeta> exportBackup(
+    String outputPath, {
+    Set<BackupCategory>? categories,
+  }) async {
+    bool wants(BackupCategory c) =>
+        categories == null || categories.contains(c);
     final tmpDir = await Directory.systemTemp.createTemp('hibiki_backup_');
     try {
       final cleanDbPath = p.join(tmpDir.path, _dbName);
@@ -235,7 +275,10 @@ class BackupService {
       // for everything). Still strip dictionary DB rows when the resource files
       // are absent, so the restore never resurrects un-queryable ghost
       // dictionaries.
-      final bool includeDictionary =
+      // Honor the category selection: when the user unticked Dictionaries,
+      // exclude them entirely (and strip their DB rows below) even if the
+      // resource files are present on disk.
+      final bool includeDictionary = wants(BackupCategory.dictionary) &&
           await _hasCompleteDictionaryResources(dictionaryResourceRoot);
       await _stripCredentials(tmpDir.path);
       if (!includeDictionary) {
@@ -254,9 +297,14 @@ class BackupService {
         createdAt: DateTime.now(),
         bookCount: books.length,
         statsCount: stats.length,
-        booksRoot: _booksRootDirectory,
-        audiobooksRoot: _audiobooksRootDirectory,
-        fontsRoot: _fontsRootDirectory,
+        // Only record a tree's source root when that tree is actually packed,
+        // so import never rebases stored paths against a tree the backup never
+        // carried (a no-op for the missing tree either way, but keeping the
+        // meta honest avoids surprising the restore code).
+        booksRoot: wants(BackupCategory.books) ? _booksRootDirectory : null,
+        audiobooksRoot:
+            wants(BackupCategory.audiobooks) ? _audiobooksRootDirectory : null,
+        fontsRoot: wants(BackupCategory.fonts) ? _fontsRootDirectory : null,
       );
 
       // Build the flat "zip-path → disk-path" map, then stream every file into
@@ -270,15 +318,16 @@ class BackupService {
         await _collectTreeFiles(
             dictionaryResourceRoot!, _dictionaryResourcesPrefix, files);
       }
-      if (_booksRootDirectory != null) {
+      if (_booksRootDirectory != null && wants(BackupCategory.books)) {
         await _collectTreeFiles(
             Directory(_booksRootDirectory), _booksPrefix, files);
       }
-      if (_audiobooksRootDirectory != null) {
+      if (_audiobooksRootDirectory != null &&
+          wants(BackupCategory.audiobooks)) {
         await _collectTreeFiles(
             Directory(_audiobooksRootDirectory), _audiobooksPrefix, files);
       }
-      if (_fontsRootDirectory != null) {
+      if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
         await _collectTreeFiles(
             Directory(_fontsRootDirectory), _fontsPrefix, files);
       }

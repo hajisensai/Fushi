@@ -1506,5 +1506,11 @@
     "section_system_theme": "System Theme Color",
     "section_audiobook_lyrics": "Audiobook & Lyrics",
     "video_subtitle_color_note": "Subtitle colors are set inside the video player.",
-    "theme_seed_preview_hint": "Swatches below preview the colors actually generated from your seed. To force a specific color as the primary accent, turn on the Primary toggle and pick it explicitly."
+    "theme_seed_preview_hint": "Swatches below preview the colors actually generated from your seed. To force a specific color as the primary accent, turn on the Primary toggle and pick it explicitly.",
+    "backup_export_categories_title": "Choose what to export",
+    "backup_export_categories_hint": "Selected categories are packed into the backup. The database (books, statistics, favorites, profiles, settings) is always included.",
+    "backup_category_dictionary": "Dictionaries",
+    "backup_category_books": "Books",
+    "backup_category_audiobooks": "Audiobook audio",
+    "backup_category_fonts": "Custom fonts"
 }

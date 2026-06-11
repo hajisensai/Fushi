@@ -1506,5 +1506,11 @@
     "section_system_theme": "系统主题色",
     "section_audiobook_lyrics": "有声书与歌词",
     "video_subtitle_color_note": "视频字幕颜色在视频播放器内设置。",
-    "theme_seed_preview_hint": "下方色板预览由种子色实际生成的颜色。想让某个颜色固定作为主色强调色，请打开「主色」开关并显式指定。"
+    "theme_seed_preview_hint": "下方色板预览由种子色实际生成的颜色。想让某个颜色固定作为主色强调色，请打开「主色」开关并显式指定。",
+    "backup_export_categories_title": "ѡÔñҪµ¼³öµÄÄÚÈÝ",
+    "backup_export_categories_hint": "¹´ѡµÄÀà±ð»ᱻ´ò°ü½ø±¸·ݡ£Êý¾ݿ⣨Ê鼮¡¢ͳ¼ơ¢Êղء¢ÅäÖ÷½°¸¡¢ÉèÖã©ʼÖհüº¬¡£",
+    "backup_category_dictionary": "´ʵä",
+    "backup_category_books": "Ê鼮ÄÚÈÝ",
+    "backup_category_audiobooks": "ÓÐÉùÊéÒôƵ",
+    "backup_category_fonts": "×Զ¨Òå×ÖÌå"
 }

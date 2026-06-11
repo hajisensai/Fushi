@@ -831,6 +831,10 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
     // both call this, so ignore a second trigger while an export is running.
     if (_isExporting) return;
+    // Ask which sidecar trees to include (default all). Null = the user
+    // cancelled the dialog → abort the export entirely (TODO-106).
+    final Set<BackupCategory>? categories = await _pickExportCategories();
+    if (categories == null || !mounted) return;
     setState(() => _isExporting = true);
     try {
       final appModel = widget.settingsContext.appModel;
@@ -854,7 +858,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       final tmpDir = await getTemporaryDirectory();
       final filename = service.defaultFilename();
       final tmpPath = p.join(tmpDir.path, filename);
-      await service.exportBackup(tmpPath);
+      await service.exportBackup(tmpPath, categories: categories);
 
       if (!mounted) return;
 
@@ -887,6 +891,101 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     } finally {
       if (mounted) setState(() => _isExporting = false);
     }
+  }
+
+  /// Prompts the user to choose which optional file trees travel in the backup.
+  /// All categories start ticked (the user asked for "default all selected"),
+  /// so confirming without touching anything reproduces the legacy all-in
+  /// export. Returns the chosen set, or null if the user cancelled.
+  Future<Set<BackupCategory>?> _pickExportCategories() async {
+    // Every category enabled by default.
+    final Set<BackupCategory> selected = BackupCategory.values.toSet();
+    String labelFor(BackupCategory c) {
+      switch (c) {
+        case BackupCategory.dictionary:
+          return t.backup_category_dictionary;
+        case BackupCategory.books:
+          return t.backup_category_books;
+        case BackupCategory.audiobooks:
+          return t.backup_category_audiobooks;
+        case BackupCategory.fonts:
+          return t.backup_category_fonts;
+      }
+    }
+
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) {
+          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+          return HibikiDialogFrame(
+            maxWidth: 420,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.card,
+            ),
+            scrollable: false,
+            child: HibikiModalSheetFrame(
+              title: t.backup_export_categories_title,
+              scrollable: true,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              footerPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    t.backup_export_categories_hint,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 4),
+                  for (final BackupCategory c in BackupCategory.values)
+                    AdaptiveSettingsSwitchRow(
+                      title: labelFor(c),
+                      value: selected.contains(c),
+                      onChanged: (bool v) => setLocal(() {
+                        if (v) {
+                          selected.add(c);
+                        } else {
+                          selected.remove(c);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              footer: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(t.dialog_cancel),
+                  ),
+                  adaptiveDialogAction(
+                    context: ctx,
+                    isDefaultAction: true,
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(t.dialog_ok),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    return confirmed == true ? selected : null;
   }
 
   @override
