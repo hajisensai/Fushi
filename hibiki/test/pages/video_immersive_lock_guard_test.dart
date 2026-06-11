@@ -80,27 +80,70 @@ void main() {
         reason: '快捷键表必须始终传给 media_kit 主题（锁定态快捷键不被禁用）');
   });
 
-  test('④ 锁屏入口按钮挂在桌面 + 移动控制条（两态都可进入）', () {
-    const String needle = 'onPressed: _toggleImmersiveLock,';
-    final int count = needle.allMatches(src).length;
-    // 桌面入口 + 移动入口 + 常驻解锁层 = 3 处；至少桌面 + 移动两个入口。
-    expect(count, greaterThanOrEqualTo(2), reason: '桌面 + 移动控制条都应有锁屏入口按钮');
+  test('④ 锁屏入口可达：视频左侧锁按钮 + 上下文菜单项（TODO-126 已移出 topButtonBar）', () {
+    // TODO-126：锁按钮从 topButtonBar 移到视频左侧居中的 [_buildSideLockButton]，
+    // 非沉浸态显示锁图标（进入沉浸）、沉浸态显示解锁图标（退出沉浸），同一枚侧边按钮。
+    // 入口至少两条：侧边按钮 onPressed + 上下文菜单项。
     expect(
-        src.contains('Icon(Icons.lock_outline, size: _videoControlIconSize)'),
-        isTrue,
-        reason: '锁屏入口按钮应是 lock 图标');
+      src.contains('onPressed: _toggleImmersiveLock,'),
+      isTrue,
+      reason: '视频左侧锁 / 解锁按钮未接到 _toggleImmersiveLock',
+    );
+    expect(
+      src.contains('t.video_menu_lock, _toggleImmersiveLock'),
+      isTrue,
+      reason: '上下文菜单缺锁屏入口项',
+    );
+    // 侧边按钮同一枚承载两态图标：锁（进入）/ 解锁（退出）。
+    expect(
+      RegExp(r'locked\s*\?\s*Icons\.lock_open_outlined\s*:\s*Icons\.lock_outline')
+          .hasMatch(src),
+      isTrue,
+      reason: '侧边锁按钮应按 _immersiveLocked 在锁 / 解锁图标间切换',
+    );
   });
 
-  test('④ 锁定态有常驻解锁层（唯一常驻 chrome，挂在 controls Stack）', () {
-    expect(src.contains('_buildLockOverlay(),'), isTrue,
-        reason: '常驻解锁层未挂进 controls Stack（全屏将看不到解锁按钮）');
-    expect(src.contains('Widget _buildLockOverlay()'), isTrue,
-        reason: '缺常驻解锁层构建函数');
+  test('④ 沉浸态常驻解锁层移到视频左侧居中（_buildSideLockButton，挂在 controls Stack）', () {
+    expect(src.contains('_buildSideLockButton(),'), isTrue,
+        reason: '侧边锁 / 解锁层未挂进 controls Stack（全屏将看不到解锁按钮）');
+    expect(src.contains('Widget _buildSideLockButton()'), isTrue,
+        reason: '缺侧边锁 / 解锁层构建函数');
     // 解锁层点击退出锁定。
-    final int idx = src.indexOf('Widget _buildLockOverlay()');
+    final int idx = src.indexOf('Widget _buildSideLockButton()');
     expect(
         src.indexOf('onPressed: _toggleImmersiveLock,', idx), greaterThan(idx),
-        reason: '常驻解锁按钮未接到 _toggleImmersiveLock');
+        reason: '侧边解锁按钮未接到 _toggleImmersiveLock');
+    // TODO-126：放在视频正左边、垂直居中（左侧贴边 + centerLeft 对齐）。
+    final int alignIdx = src.indexOf('alignment: Alignment.centerLeft', idx);
+    expect(alignIdx, greaterThan(idx),
+        reason: '侧边锁按钮应在视频正左边垂直居中（Alignment.centerLeft）');
+  });
+
+  test('④ 侧边解锁按钮无操作淡出 + 鼠标 / 触屏唤回（TODO-126），退出仍可达', () {
+    // 独立可见性源（不被锁 gate），AnimatedOpacity 淡出。
+    expect(src.contains('ValueNotifier<bool> _lockButtonVisible'), isTrue,
+        reason: '缺侧边锁按钮独立可见性 notifier');
+    expect(src.contains('void _pokeLockButton()'), isTrue,
+        reason: '缺侧边锁按钮唤回方法');
+    final int sideIdx = src.indexOf('Widget _buildSideLockButton()');
+    expect(src.indexOf('valueListenable: _lockButtonVisible', sideIdx),
+        greaterThan(sideIdx),
+        reason: '侧边锁按钮未监听 _lockButtonVisible（淡出不生效）');
+    expect(src.indexOf('AnimatedOpacity(', sideIdx), greaterThan(sideIdx),
+        reason: '侧边锁按钮淡出应用 AnimatedOpacity');
+    // 唤回路径：桌面 hover（onEnter/onHover）+ 移动 / 触屏点画面（_handleVideoPointerUp）。
+    expect('_pokeLockButton()'.allMatches(src).length, greaterThanOrEqualTo(3),
+        reason: 'hover + 触屏 + toggle 三处都应唤回侧边锁按钮');
+    // 退出仍可达：_pokeLockButton 不被锁 gate（与 _markControlsVisible 区分），故沉浸态
+    // 解锁按钮淡出后仍能唤回；Esc / Shift+L 另有专门用例钉死。
+    final int pokeIdx = src.indexOf('void _pokeLockButton()');
+    final int pokeEnd = src.indexOf('void ', pokeIdx + 1);
+    final String pokeBody = src.substring(pokeIdx, pokeEnd);
+    expect(pokeBody.contains('_immersiveLocked.value'), isFalse,
+        reason: '_pokeLockButton 不得被锁 gate（否则沉浸态解锁按钮淡出后唤不回，失去退出口）');
+    // 释放。
+    expect(src.contains('_lockButtonVisible.dispose();'), isTrue,
+        reason: '_lockButtonVisible 未在 dispose 释放');
   });
 
   test('④ Shift+L 切换锁定（与裸 L 字幕列表区分，未撞键），并接到本页 action', () {

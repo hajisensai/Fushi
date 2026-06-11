@@ -385,6 +385,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `controlsHoverDuration` 同为 2s（见 [_mobileControlsTheme] / [_desktopControlsTheme]）。
   Timer? _videoControlsHideTimer;
 
+  /// 视频左侧常驻锁 / 解锁按钮（TODO-126）的可见性。非沉浸态显示锁图标（进入沉浸）、
+  /// 沉浸态显示解锁图标（退出沉浸）——两态用同一枚侧边按钮（[_buildSideLockButton]）。
+  ///
+  /// 与 [_videoControlsVisible] 同样走「hover / tap 唤起 + 2s 自动淡出」时序，但**独立于
+  /// 它**：沉浸态下 [_markControlsVisible] 被锁强制 false（防 media_kit 控制条弹出），若解
+  /// 锁按钮复用 [_videoControlsVisible] 就会被一起 gate 成永久淡出、再也唤不回（用户就没有
+  /// 可见退出口了）。故另起一份不被锁 gate 的可见性源 [_pokeLockButton]，保证沉浸态解锁按钮
+  /// 无操作淡出后仍能被鼠标移动 / 触屏唤回。Esc / Shift+L 始终可解锁（守卫已钉），淡出不
+  /// 影响这两条退出口。用 [ValueNotifier] 让全屏路由也随之翻转（与 [_immersiveLocked] /
+  /// [_videoControlsVisible] 同源，BUG-120）。初始 true：开页先显示让用户发现锁按钮，2s 淡出。
+  final ValueNotifier<bool> _lockButtonVisible = ValueNotifier<bool>(true);
+
+  /// 侧边锁 / 解锁按钮自动淡出定时器（TODO-126）。每次 [_pokeLockButton] 唤起重置。
+  Timer? _lockButtonHideTimer;
+
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
   void _showOsd(String message, {IconData? icon, double? progress}) {
@@ -1250,6 +1265,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _toggleImmersiveLock() {
     final bool next = !_immersiveLocked.value;
     _immersiveLocked.value = next;
+    // 翻转后把视频左侧锁 / 解锁按钮唤回一次（TODO-126）：进入沉浸即露出解锁口、退出沉浸
+    // 即露出锁按钮，给用户即时反馈；随后照常 2s 淡出。
+    _pokeLockButton();
     if (next) {
       _showOsd(t.video_immersive_locked, icon: Icons.lock_outline);
       // 锁定后 media_kit 控制条不再弹（指针被 IgnorePointer 挡），镜像同步收起、字幕
@@ -1295,6 +1313,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _titleNotifier.dispose();
     _subtitleListVisible.dispose();
     _immersiveLocked.dispose();
+    _lockButtonHideTimer?.cancel();
+    _lockButtonVisible.dispose();
     _crossSubRecorder.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
@@ -1432,6 +1452,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _toggleControlsVisibleForTap() {
     if (!mounted || _immersiveLocked.value) return;
     _markControlsVisible(!_videoControlsVisible.value);
+  }
+
+  /// 唤回视频左侧锁 / 解锁按钮并重置 2s 自动淡出（TODO-126）。鼠标移动（hover）/ 触屏点画面
+  /// 时调用。**不被锁 gate**（与 [_markControlsVisible] 不同）——沉浸态解锁按钮要能淡出后再
+  /// 被唤回，否则用户失去可见退出口。Esc / Shift+L 始终另有退出路径，不依赖此可见性。
+  void _pokeLockButton() {
+    if (!mounted) return;
+    _lockButtonVisible.value = true;
+    _lockButtonHideTimer?.cancel();
+    _lockButtonHideTimer = Timer(_videoControlsHoverDuration, () {
+      if (mounted) _lockButtonVisible.value = false;
+    });
   }
 
   /// 是否当前用 media_kit 桌面控制条（仅桌面三端有 hover 自动隐藏语义）。
@@ -2385,13 +2417,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        // 锁屏 / 沉浸模式入口（TODO-101，左侧紧挨返回）：点击进入锁定态，
-        // 之后鼠标移动不再弹按钮、视频纯画面播放，查词与快捷键仍可用；解锁
-        // 走锁定态左上角常驻的解锁按钮（[_buildLockOverlay]）或 Shift+L。
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.lock_outline, size: _videoControlIconSize),
-          onPressed: _toggleImmersiveLock,
-        ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -2566,12 +2591,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         MaterialCustomButton(
           icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        // 锁屏 / 沉浸模式入口（TODO-101，左侧紧挨返回）。移动端无 hover，但
-        // 触摸唤起的控制条同样被抑制；解锁走锁定态左上角常驻解锁按钮。
-        MaterialCustomButton(
-          icon: Icon(Icons.lock_outline, size: _videoControlIconSize),
-          onPressed: _toggleImmersiveLock,
         ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
@@ -3726,6 +3745,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 查词浮层打开时点击被根 Overlay barrier 拦截、到不了这里，guard 仅兜底；点
     // 控制条按钮随后弹出的菜单/对话框会再夺焦，其 whenComplete 自会归还，不冲突。
     if (!_hasVisiblePopup) _refocusVideo();
+    // 触屏点画面唤回视频左侧锁 / 解锁按钮（TODO-126）。沉浸态下控制条指针被 gate，但本
+    // 外层 Listener 在 gate 之外仍收到指针，故沉浸态点画面也能唤回解锁按钮（移动端无 hover）。
+    _pokeLockButton();
     final BuildContext? controlsContext = _videoControlsContext;
     if (controlsContext == null ||
         !controlsContext.mounted ||
@@ -3912,8 +3934,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
             subtitleViewConfiguration:
                 const SubtitleViewConfiguration(visible: false),
-            // 视频不满屏时的 letterbox/pillarbox 填充色固定纯黑（TODO-053）：播放器
-            // 画面外围按播放器惯例用黑底，不跟随主题 surface，深浅主题统一为黑。
+            // 窗口模式画面占满媒体框、无 letterbox/pillarbox 黑边（TODO-122）。
+            // 根因：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
+            // 两侧补黑（[fill]）。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] →
+            // window_manager `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**
+            // 时（WM_SIZING）约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例
+            // 不等于视频，contain 仍留黑边（平台限制，不侵入式 setSize 无法让当前窗口贴合）。
+            // 用户要求「占满左右上下」，故窗口模式用 `BoxFit.cover` 铺满、超出部分裁切。配合
+            // 比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁
+            // 画面边缘（这是「占满」的取舍）。字幕是独立 overlay 层（[VideoSubtitleOverlay]，
+            // 不在 [Video] 内）不受裁切影响。全屏路由的 Video 仍走 notifier 的 `fit`（默认
+            // contain），不受此处影响。
+            fit: BoxFit.cover,
+            // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
+            // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
             fill: Colors.black,
             // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
             // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
@@ -3965,8 +3999,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (!_isDesktopVideoControls) return child;
     return MouseRegion(
       opaque: false,
-      onEnter: (_) => _markControlsVisible(true),
-      onHover: (_) => _markControlsVisible(true),
+      // 鼠标移动也唤回视频左侧锁 / 解锁按钮（TODO-126）。[_pokeLockButton] 不被锁 gate
+      // （[_markControlsVisible] 在沉浸态强制 false），故沉浸态解锁按钮淡出后能被鼠标唤回。
+      // onExit 不立即收起锁按钮——交给 [_pokeLockButton] 的 2s 计时器自然淡出（无操作淡出）。
+      onEnter: (_) {
+        _markControlsVisible(true);
+        _pokeLockButton();
+      },
+      onHover: (_) {
+        _markControlsVisible(true);
+        _pokeLockButton();
+      },
       onExit: (_) => _onVideoControlsHoverExit(),
       child: child,
     );
@@ -4050,7 +4093,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   ),
                 ),
                 _buildOsdOverlay(),
-                _buildLockOverlay(),
+                _buildSideLockButton(),
                 _buildCrossSubtitleRecordingOverlay(),
               ],
             ),
@@ -4229,44 +4272,66 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 锁定 / 沉浸模式的常驻解锁层（TODO-101）。仅当 [_immersiveLocked] 为真时，在左上角
-  /// 渲染一枚极小、半透明的锁图标按钮——这是沉浸态下**唯一**常驻可见 chrome，作为清晰
-  /// 可发现的默认退出方式（点它解锁）。其余 chrome 全被抑制。
+  /// 视频左侧锁 / 解锁按钮（TODO-126，前身 TODO-101 左上角常驻解锁层 [_buildLockOverlay]）。
+  /// 移到**视频正左边、垂直居中**，像侧边锁：
+  ///   - 非沉浸态（[_immersiveLocked] 为 false）：显示锁图标，点击进入沉浸（取代原 topButtonBar
+  ///     里的锁按钮，TODO-101）。跟随 hover / tap 唤起、2s 自动淡出，不再占顶栏。
+  ///   - 沉浸态（true）：显示解锁图标，点击退出沉浸。这是沉浸态下唯一常驻可见 chrome，作为
+  ///     清晰可发现的默认退出口；其余 chrome 全被抑制。
+  ///
+  /// 可见性走独立的 [_lockButtonVisible]（[_pokeLockButton] 唤回，不被锁 gate）：无操作 2s 后
+  /// 淡出（[AnimatedOpacity]），鼠标移动 / 触屏点画面唤回。淡出后 [IgnorePointer] 不拦点击，
+  /// 但 Esc / Shift+L 始终可解锁（守卫已钉）——故淡出不会让用户失去退出口。
   ///
   /// 它是 controls Stack 里独立的 [Positioned] 兄弟层（不在 gate `AdaptiveVideoControls`
-  /// 的 [IgnorePointer] 之内），故锁定态下仍可点。可见性走 [ValueNotifier]，全屏路由也
-  /// 响应（与字幕跳转面板 / OSD 同源，BUG-120）。
-  Widget _buildLockOverlay() {
+  /// 的 [IgnorePointer] 之内），故沉浸态下仍可点。可见性走 [ValueNotifier]，全屏路由也响应
+  /// （与字幕跳转面板 / OSD 同源，BUG-120）。
+  Widget _buildSideLockButton() {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double iconSize = _videoControlIconSize;
     return Positioned(
-      top: 0,
       left: 0,
+      top: 0,
+      bottom: 0,
       child: SafeArea(
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _immersiveLocked,
-          builder: (BuildContext _, bool locked, __) {
-            return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: !locked
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      padding: const EdgeInsets.only(left: 8, top: 8),
-                      child: Material(
-                        color: cs.surface.withValues(alpha: 0.55),
-                        shape: const CircleBorder(),
-                        clipBehavior: Clip.antiAlias,
-                        child: IconButton(
-                          tooltip: t.video_immersive_unlock,
-                          iconSize: iconSize,
-                          color: cs.onSurface,
-                          icon: const Icon(Icons.lock_outline),
-                          onPressed: _toggleImmersiveLock,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _immersiveLocked,
+            builder: (BuildContext _, bool locked, __) {
+              return ValueListenableBuilder<bool>(
+                valueListenable: _lockButtonVisible,
+                builder: (BuildContext __, bool visible, ___) {
+                  return IgnorePointer(
+                    ignoring: !visible,
+                    child: AnimatedOpacity(
+                      opacity: visible ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Material(
+                          color: cs.surface.withValues(alpha: 0.55),
+                          shape: const CircleBorder(),
+                          clipBehavior: Clip.antiAlias,
+                          child: IconButton(
+                            tooltip: locked
+                                ? t.video_immersive_unlock
+                                : t.video_menu_lock,
+                            iconSize: iconSize,
+                            color: cs.onSurface,
+                            icon: Icon(locked
+                                ? Icons.lock_open_outlined
+                                : Icons.lock_outline),
+                            onPressed: _toggleImmersiveLock,
+                          ),
                         ),
                       ),
                     ),
-            );
-          },
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );
