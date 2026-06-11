@@ -3651,6 +3651,96 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return local.dy <= topChromeBottom || local.dy >= bottomChromeTop;
   }
 
+  /// 桌面右键 = 视频上下文菜单（TODO-048c）。右键松手处 [globalPosition] 作锚点弹
+  /// [showMenu] PopupMenu，项全部复用既有动作 helper（不重造）。锚定到
+  /// [_videoControlsContext]——它在全屏期间是全屏路由子树的 context（见
+  /// [_buildVideoControlsInner] / [VideoControlsFocusGate]），故 showMenu 找到的是
+  /// 全屏路由的 Overlay，菜单在窗口与全屏两种场景都能正确浮出（与字幕跳转列表 /
+  /// 锁定层同源的全屏安全范式，TODO-069/101）。移动端无次按钮、此回调不触发，且
+  /// 这里再门控一次（[_isDesktopVideoControls]）双保险。锁定 / 沉浸模式下仍允许右键
+  /// （这是用户显式操作，不同于被动 hover 唤起控制条，故不被 [_immersiveLocked] 挡）。
+  void _handleSecondaryTap(Offset globalPosition) {
+    if (!_isDesktopVideoControls) return;
+    final VideoPlayerController? controller = _controller;
+    final BuildContext? ctx = _videoControlsContext;
+    if (controller == null || ctx == null || !ctx.mounted) return;
+    final RenderObject? renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final Offset local = renderObject.globalToLocal(globalPosition);
+    final RelativeRect position = RelativeRect.fromLTRB(
+      local.dx,
+      local.dy,
+      renderObject.size.width - local.dx,
+      renderObject.size.height - local.dy,
+    );
+    unawaited(
+      showMenu<VoidCallback>(
+        context: ctx,
+        position: position,
+        items: _buildVideoContextMenuItems(controller),
+      ).then((VoidCallback? action) {
+        action?.call();
+        // 菜单关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还，与其它 sheet
+        // 同样的 _refocusVideo 收尾）。点中项时其 helper 可能再弹 sheet 并各自归还，
+        // 不冲突；未点中（点外部关闭）时这一下把焦点收回。
+        _refocusVideo();
+      }),
+    );
+  }
+
+  /// 构造桌面右键上下文菜单项（TODO-048c）。每项 value 是该项动作回调，菜单关闭后由
+  /// [_handleSecondaryTap] 统一执行——避免在 onTap 里立刻 pop 再异步执行的时序问题。
+  /// 项集对齐桌面控制条按钮（播放/暂停、全屏、速度、字幕轨、音轨、截图、字幕列表、
+  /// 锁定、跨字幕制卡），全部复用既有 helper。着色器「对比原画」仅在启用着色器时出现
+  /// （与控制条同条件 [_hasShadersEnabled]）。
+  List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(
+    VideoPlayerController controller,
+  ) {
+    PopupMenuItem<VoidCallback> item(
+      IconData icon,
+      String label,
+      VoidCallback onSelected,
+    ) {
+      return PopupMenuItem<VoidCallback>(
+        value: onSelected,
+        child: Row(
+          children: <Widget>[
+            Icon(icon, size: _videoControlIconSize),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label)),
+          ],
+        ),
+      );
+    }
+
+    return <PopupMenuEntry<VoidCallback>>[
+      item(Icons.play_arrow, t.video_menu_play_pause,
+          () => unawaited(controller.playOrPause())),
+      item(Icons.fullscreen, t.video_menu_fullscreen, () {
+        final BuildContext? ctx = _videoControlsContext;
+        if (ctx != null && ctx.mounted) {
+          unawaited(_toggleVideoFullscreen(ctx));
+        }
+      }),
+      item(Icons.speed, t.video_setting_speed, _showSpeedMenu),
+      const PopupMenuDivider(),
+      item(Icons.subtitles, t.video_menu_subtitle_track,
+          () => _showSubtitleSourceMenu(controller)),
+      item(Icons.format_list_bulleted, t.video_subtitle_list,
+          _toggleSubtitleJumpList),
+      item(Icons.audiotrack, t.video_audio_track,
+          () => _showAudioTrackMenu(controller)),
+      const PopupMenuDivider(),
+      item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
+      item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
+      item(Icons.fiber_manual_record, t.video_menu_cross_subtitle,
+          _toggleCrossSubtitleRecording),
+      if (_hasShadersEnabled)
+        item(Icons.compare, t.video_shader_compare,
+            () => unawaited(_toggleShaderCompare())),
+    ];
+  }
+
   /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
   /// 根 Overlay（[_syncPopupOverlay] / [_buildPopupOverlay]），以便全屏时浮在全屏
   /// 路由之上。每次 build 在 post-frame 同步根 Overlay 与当前栈。
@@ -3750,60 +3840,71 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerUp: _handleVideoPointerUp,
-        child: Stack(
-          children: <Widget>[
-            // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
-            // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
-            // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
-            // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
-            Positioned.fill(
-              child: Builder(
-                builder: (BuildContext controlsContext) {
-                  _videoControlsContext = controlsContext;
-                  // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
-                  // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
-                  // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
-                  // 过滤指针，不影响键盘：media_kit 的 CallbackShortcuts + Focus 是
-                  // MouseRegion 的祖先（见 media_kit material_desktop.dart），快捷键照常
-                  // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
-                  // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
-                  // 让全屏路由也响应（BUG-120 同源）。
-                  return ValueListenableBuilder<bool>(
-                    valueListenable: _immersiveLocked,
-                    builder: (BuildContext _, bool locked, __) => IgnorePointer(
-                      ignoring: locked,
-                      child: AdaptiveVideoControls(state),
-                    ),
-                  );
-                },
+        // 桌面右键 = 视频上下文菜单（TODO-048c）。GestureDetector 只接管次按钮
+        // （右键）的 tap，左键双击全屏仍走外层 Listener.onPointerUp（两路指针语义互不
+        // 干扰）。onSecondaryTapUp 提供右键松手处的 globalPosition 作 showMenu 锚点。
+        // 移动端无次按钮、永不触发，但 [_handleSecondaryTap] 内再门控一次（双保险）。
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapUp: (TapUpDetails details) =>
+              _handleSecondaryTap(details.globalPosition),
+          child: Stack(
+            children: <Widget>[
+              // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
+              // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
+              // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
+              // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
+              Positioned.fill(
+                child: Builder(
+                  builder: (BuildContext controlsContext) {
+                    _videoControlsContext = controlsContext;
+                    // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
+                    // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
+                    // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
+                    // 过滤指针，不影响键盘：media_kit 的 CallbackShortcuts + Focus 是
+                    // MouseRegion 的祖先（见 media_kit material_desktop.dart），快捷键照常
+                    // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
+                    // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
+                    // 让全屏路由也响应（BUG-120 同源）。
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: _immersiveLocked,
+                      builder: (BuildContext _, bool locked, __) =>
+                          IgnorePointer(
+                        ignoring: locked,
+                        child: AdaptiveVideoControls(state),
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
-            Positioned.fill(
-              child: VideoSubtitleOverlay(
-                controller: controller,
-                onCharTap: _lookupAt,
-                hitTester: _subtitleHitTester,
-                blurEnabled: appModel.videoSubtitleBlur,
-                fontSize: _subtitleStyle.fontSize,
-                textColor: _subtitleStyle.resolveTextColor(
-                    _subtitleTextColor(_videoChromeColorScheme(context))),
-                fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
-                shadowColor: _subtitleStyle.resolveShadowColor(
-                    _subtitleShadowColor(_videoChromeColorScheme(context))),
-                shadowThickness:
-                    _subtitleStyle.resolveShadowThickness(_videoUiScale),
-                backgroundColor: _subtitleStyle.resolveBackgroundColor(
-                    _subtitleBackgroundColor(_videoChromeColorScheme(context))),
-                backgroundOpacity: _subtitleStyle.backgroundOpacity,
-                bottomPadding: _subtitleStyle.bottomPadding,
-                fontFamily: appModel.appFontFamily,
+              Positioned.fill(
+                child: VideoSubtitleOverlay(
+                  controller: controller,
+                  onCharTap: _lookupAt,
+                  hitTester: _subtitleHitTester,
+                  blurEnabled: appModel.videoSubtitleBlur,
+                  fontSize: _subtitleStyle.fontSize,
+                  textColor: _subtitleStyle.resolveTextColor(
+                      _subtitleTextColor(_videoChromeColorScheme(context))),
+                  fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
+                  shadowColor: _subtitleStyle.resolveShadowColor(
+                      _subtitleShadowColor(_videoChromeColorScheme(context))),
+                  shadowThickness:
+                      _subtitleStyle.resolveShadowThickness(_videoUiScale),
+                  backgroundColor: _subtitleStyle.resolveBackgroundColor(
+                      _subtitleBackgroundColor(
+                          _videoChromeColorScheme(context))),
+                  backgroundOpacity: _subtitleStyle.backgroundOpacity,
+                  bottomPadding: _subtitleStyle.bottomPadding,
+                  fontFamily: appModel.appFontFamily,
+                ),
               ),
-            ),
-            _buildSubtitleJumpPanel(controller),
-            _buildOsdOverlay(),
-            _buildLockOverlay(),
-            _buildCrossSubtitleRecordingOverlay(),
-          ],
+              _buildSubtitleJumpPanel(controller),
+              _buildOsdOverlay(),
+              _buildLockOverlay(),
+              _buildCrossSubtitleRecordingOverlay(),
+            ],
+          ),
         ),
       ),
     );
