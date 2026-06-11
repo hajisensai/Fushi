@@ -29,6 +29,7 @@ void main() {
         screenshot: () {},
         toggleFullscreen: () {},
         toggleSubtitleList: () {},
+        toggleImmersiveLock: () {},
         escape: () {},
       ),
     );
@@ -72,6 +73,7 @@ void main() {
         screenshot: () => actions.add('screenshot'),
         toggleFullscreen: () => actions.add('fullscreen'),
         toggleSubtitleList: () => actions.add('subtitleList'),
+        toggleImmersiveLock: () => actions.add('lock'),
         escape: () => actions.add('escape'),
       ),
     );
@@ -134,6 +136,7 @@ void main() {
         screenshot: () {},
         toggleFullscreen: () {},
         toggleSubtitleList: () {},
+        toggleImmersiveLock: () {},
         escape: () {},
       ),
     );
@@ -179,13 +182,15 @@ void main() {
         screenshot: () {},
         toggleFullscreen: () {},
         toggleSubtitleList: () => actions.add('subtitleList'),
+        toggleImmersiveLock: () => actions.add('lock'),
         escape: () {},
       ),
     );
 
     // 裸 L 键映射到字幕跳转列表 toggle。
     shortcuts[const SingleActivator(LogicalKeyboardKey.keyL)]!();
-    // 它不与既有键冲突：keyL 是字幕列表专属，未被其它动作绑定。
-    expect(actions, <String>['subtitleList']);
+    // Shift+L = 锁定 / 沉浸模式 toggle（TODO-101），与裸 L 区分、互不撞键。
+    shortcuts[const SingleActivator(LogicalKeyboardKey.keyL, shift: true)]!();
+    expect(actions, <String>['subtitleList', 'lock']);
   });
 }

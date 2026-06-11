@@ -322,6 +322,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
 
+  /// 锁定 / 沉浸模式（TODO-101）。开启后：鼠标移动 / 单击不再唤起 media_kit 控制条
+  /// （顶/底栏按钮全部不弹），视频纯画面播放；但查词（点字幕字符）与所有键盘 / 手柄
+  /// 快捷键（上下句、seek、字幕列表、播放暂停等）仍照常工作。痛点：「每次鼠标查词就
+  /// 弹按钮有点烦」。
+  ///
+  /// 用 [ValueNotifier] 而非 setState：锁定态要在 media_kit controls builder 内的
+  /// [Stack]（[_buildVideoControlsInner]）里 gate `AdaptiveVideoControls` 的指针、并驱动
+  /// 常驻解锁按钮的显隐；全屏是推到根 navigator 的独立路由、不随本页 setState 重建
+  /// （与 [_titleNotifier] / [_subtitleListVisible] 同源，BUG-120）。监听 notifier 才能
+  /// 让窗口与全屏两种场景都随锁屏按钮 / 快捷键翻转。
+  final ValueNotifier<bool> _immersiveLocked = ValueNotifier<bool>(false);
+
   /// 视频内角标通知（mpv 式 OSD）。取代会从屏幕底部弹出、遮挡控制条、且与 mpv 等
   /// 播放器观感割裂的 Material SnackBar（用户要求改成 mpv 那样的左上角短暂提示）。
   /// null=不显示。渲染在 [_buildVideoControls] 的 controls overlay 里，故窗口/全屏
@@ -1172,6 +1184,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_controller?.skipToCue(cue));
   }
 
+  /// 翻转锁定 / 沉浸模式（TODO-101；锁屏按钮 / Shift+L 快捷键 / 常驻解锁按钮共用）。
+  ///
+  /// 进入：抑制 media_kit 控制条对鼠标 hover / 点击的响应（[_buildVideoControlsInner]
+  /// 里 gate `AdaptiveVideoControls` 的指针），顶/底栏按钮不再弹；查词与快捷键不受影响。
+  /// 退出：恢复控制条响应，并 [_pokeControlsVisible] 立刻把控制条唤回一次（给用户「已解锁」
+  /// 的即时反馈，且 poke 在解锁后才放行）。可见性走 [_immersiveLocked]（[ValueNotifier]，
+  /// 全屏路由也生效）。
+  void _toggleImmersiveLock() {
+    final bool next = !_immersiveLocked.value;
+    _immersiveLocked.value = next;
+    if (next) {
+      _showOsd(t.video_immersive_locked, icon: Icons.lock_outline);
+    } else {
+      _showOsd(t.video_immersive_unlocked, icon: Icons.lock_open_outlined);
+      // 解锁瞬间把控制条唤回（poke 在 _immersiveLocked 复位后才放行），让用户立刻
+      // 看到顶/底栏回来、确认已退出沉浸模式。
+      _pokeControlsVisible();
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -1203,6 +1235,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
     _subtitleListVisible.dispose();
+    _immersiveLocked.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
     super.dispose();
@@ -1275,6 +1308,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （全屏复用同一 builder 时为全屏子树），其 RenderBox 即控制条命中区。
   void _pokeControlsVisible() {
     if (!_isDesktopVideoControls) return;
+    // 锁定 / 沉浸模式下不唤起控制条（TODO-101）：键盘跳句 / seek 等仍照常生效，
+    // 只是不再因此弹出顶/底栏按钮（用户痛点：查词 / 操作就弹按钮有点烦）。
+    if (_immersiveLocked.value) return;
     final BuildContext? ctx = _videoControlsContext;
     if (ctx == null || !ctx.mounted) return;
     final RenderObject? renderObject = ctx.findRenderObject();
@@ -1830,8 +1866,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         },
         // 'L' = 开/关字幕跳转列表（TODO-069）。
         toggleSubtitleList: _toggleSubtitleJumpList,
+        // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
+        toggleImmersiveLock: _toggleImmersiveLock,
         escape: () {
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
+          // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
+          if (_immersiveLocked.value) {
+            _toggleImmersiveLock();
+            return;
+          }
           if (_subtitleListVisible.value) {
             _subtitleListVisible.value = false;
             return;
@@ -2066,6 +2109,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
+        // 锁屏 / 沉浸模式入口（TODO-101，左侧紧挨返回）：点击进入锁定态，
+        // 之后鼠标移动不再弹按钮、视频纯画面播放，查词与快捷键仍可用；解锁
+        // 走锁定态左上角常驻的解锁按钮（[_buildLockOverlay]）或 Shift+L。
+        MaterialDesktopCustomButton(
+          icon: Icon(Icons.lock_outline, size: _videoControlIconSize),
+          onPressed: _toggleImmersiveLock,
+        ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -2227,6 +2277,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         MaterialCustomButton(
           icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        // 锁屏 / 沉浸模式入口（TODO-101，左侧紧挨返回）。移动端无 hover，但
+        // 触摸唤起的控制条同样被抑制；解锁走锁定态左上角常驻解锁按钮。
+        MaterialCustomButton(
+          icon: Icon(Icons.lock_outline, size: _videoControlIconSize),
+          onPressed: _toggleImmersiveLock,
         ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
@@ -3512,7 +3568,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               child: Builder(
                 builder: (BuildContext controlsContext) {
                   _videoControlsContext = controlsContext;
-                  return AdaptiveVideoControls(state);
+                  // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
+                  // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
+                  // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
+                  // 过滤指针，不影响键盘：media_kit 的 CallbackShortcuts + Focus 是
+                  // MouseRegion 的祖先（见 media_kit material_desktop.dart），快捷键照常
+                  // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
+                  // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
+                  // 让全屏路由也响应（BUG-120 同源）。
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: _immersiveLocked,
+                    builder: (BuildContext _, bool locked, __) => IgnorePointer(
+                      ignoring: locked,
+                      child: AdaptiveVideoControls(state),
+                    ),
+                  );
                 },
               ),
             ),
@@ -3539,6 +3609,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
             _buildSubtitleJumpPanel(controller),
             _buildOsdOverlay(),
+            _buildLockOverlay(),
           ],
         ),
       ),
@@ -3680,6 +3751,49 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 锁定 / 沉浸模式的常驻解锁层（TODO-101）。仅当 [_immersiveLocked] 为真时，在左上角
+  /// 渲染一枚极小、半透明的锁图标按钮——这是沉浸态下**唯一**常驻可见 chrome，作为清晰
+  /// 可发现的默认退出方式（点它解锁）。其余 chrome 全被抑制。
+  ///
+  /// 它是 controls Stack 里独立的 [Positioned] 兄弟层（不在 gate `AdaptiveVideoControls`
+  /// 的 [IgnorePointer] 之内），故锁定态下仍可点。可见性走 [ValueNotifier]，全屏路由也
+  /// 响应（与字幕跳转面板 / OSD 同源，BUG-120）。
+  Widget _buildLockOverlay() {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final double iconSize = _videoControlIconSize;
+    return Positioned(
+      top: 0,
+      left: 0,
+      child: SafeArea(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _immersiveLocked,
+          builder: (BuildContext _, bool locked, __) {
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: !locked
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: const EdgeInsets.only(left: 8, top: 8),
+                      child: Material(
+                        color: cs.surface.withValues(alpha: 0.55),
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.antiAlias,
+                        child: IconButton(
+                          tooltip: t.video_immersive_unlock,
+                          iconSize: iconSize,
+                          color: cs.onSurface,
+                          icon: const Icon(Icons.lock_outline),
+                          onPressed: _toggleImmersiveLock,
+                        ),
+                      ),
+                    ),
+            );
+          },
         ),
       ),
     );

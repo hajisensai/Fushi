@@ -1516,5 +1516,8 @@
     "popup_bottom_docked_hint": "°Ѳé´ʵ¯´°¹̶¨ΪÆÁĻµײ¿һÌõȫ¿íÃæ°壬¶ø²»ÊǸúË汻²é´ʵÄλÖá£",
     "video_subtitle_list": "字幕列表",
     "video_subtitle_list_empty": "未加载字幕",
-    "swipe_page_turn_sensitivity": "滑动翻页灵敏度"
+    "swipe_page_turn_sensitivity": "滑动翻页灵敏度",
+    "video_immersive_locked": "已进入沉浸模式",
+    "video_immersive_unlocked": "已退出沉浸模式",
+    "video_immersive_unlock": "解锁"
 }

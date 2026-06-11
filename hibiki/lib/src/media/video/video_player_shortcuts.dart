@@ -22,6 +22,7 @@ class VideoPlayerShortcutActions {
     required this.screenshot,
     required this.toggleFullscreen,
     required this.toggleSubtitleList,
+    required this.toggleImmersiveLock,
     required this.escape,
   });
 
@@ -46,6 +47,10 @@ class VideoPlayerShortcutActions {
 
   /// 打开/关闭字幕跳转列表面板（TODO-069，裸 L 键；asbplayer 式 transcript 列表）。
   final VoidCallback toggleSubtitleList;
+
+  /// 翻转锁定 / 沉浸模式（TODO-101，Shift+L）。锁定后控制条按钮不再随鼠标/触摸弹出，
+  /// 视频纯画面播放，但查词与快捷键仍可用；再按一次（或点常驻解锁按钮）退出。
+  final VoidCallback toggleImmersiveLock;
   final VoidCallback escape;
 }
 
@@ -92,6 +97,10 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcuts(
     // 'L' = 打开/关闭字幕跳转列表（TODO-069；asbplayer 式 transcript 面板，按一下右侧
     // 出现字幕句子列表，点句跳到对应画面）。未与既有键冲突（裸 L 此前未绑定）。
     const SingleActivator(LogicalKeyboardKey.keyL): actions.toggleSubtitleList,
+    // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。与裸 L（字幕列表）区分；锁定态
+    // 下所有快捷键仍生效，故此键也用来快速解锁（常驻解锁按钮是默认退出）。
+    const SingleActivator(LogicalKeyboardKey.keyL, shift: true):
+        actions.toggleImmersiveLock,
     const SingleActivator(LogicalKeyboardKey.keyF): actions.toggleFullscreen,
     const SingleActivator(LogicalKeyboardKey.escape): actions.escape,
   };
