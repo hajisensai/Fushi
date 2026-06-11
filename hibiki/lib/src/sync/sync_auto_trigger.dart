@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
@@ -85,11 +86,19 @@ void triggerAutoSyncAfterClose({
   required ScaffoldMessengerState messenger,
   SyncReportCallback? onReport,
 }) {
-  _runAutoSync(
-    db: db,
-    mediaIdentifier: mediaIdentifier,
-    messenger: messenger,
-    onReport: onReport,
+  // TODO-132 诉求B：退出书同步是 fire-and-forget（不 await，不阻塞 onWillPop /
+  // 退出 UI）。但把这个游离 Future 登记进 app-scope [BookExitSyncScope]，使页面
+  // 销毁后它照样跑完，且进程退出路径能有界等它落定——避免「退出书后立刻杀应用」
+  // 时关书 export 被打成半截（与 132A/BUG-201 的 baseline 原子化互补）。
+  // messenger 仍传入（保留签名 + 留给冲突对话框的祖先上下文经 onReport 走
+  // navigatorKey，不依赖它），但**不再**用它弹打断式「同步成功」SnackBar。
+  BookExitSyncScope.instance.register(
+    _runAutoSync(
+      db: db,
+      mediaIdentifier: mediaIdentifier,
+      messenger: messenger,
+      onReport: onReport,
+    ),
   );
 }
 
@@ -311,27 +320,11 @@ Future<void> _runAutoSync({
         syncContent: syncContent,
       );
 
-      final String? message = switch (result.direction) {
-        SyncResult.imported =>
-          t.sync_auto_complete(direction: '↓', title: book.title),
-        SyncResult.exported =>
-          t.sync_auto_complete(direction: '↑', title: book.title),
-        SyncResult.synced => null,
-        SyncResult.skipped => null,
-        // Auto-sync stays silent on conflict: divergent progress must not be
-        // resolved by a toast. The compare dialog drives the user decision.
-        SyncResult.conflict => null,
-      };
-
-      if (message != null && messenger != null) {
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ));
-      }
+      // TODO-132 诉求B：退出书同步静默——不再弹 imported/exported「同步成功」
+      // SnackBar（打断用户、让用户误以为「必须等同步成功条才能离开」=卡手）。
+      // 同步是 fire-and-forget 后台动作，成功无需打断式提示；真正需要用户介入的
+      // **冲突**仍经下方 onReport → presentAutoConflicts 弹对话框（不是 SnackBar）。
+      // messenger 参数保留（签名兼容，背景/app-open 路径本就传 null）。
 
       // Surface a genuine fork to the caller as a one-conflict report so the
       // book-exit flow can prompt resolution. The single-book path runs
