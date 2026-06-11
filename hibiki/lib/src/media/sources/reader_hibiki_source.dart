@@ -453,16 +453,23 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  // TODO-080B: read through THIS source's profile-aware preference cache
+  // ([_preferences], reloaded by AppModel.refreshPrefCache on every profile
+  // switch) instead of the reader-page-owned static [readerSettings] snapshot.
+  // The video page (and any DictionaryPageMixin surface) never refreshes
+  // [readerSettings], so going through it leaked a stale "last reader profile"
+  // value — subtitle lookups auto-read even after the user turned the setting
+  // off. The DB row (`src:reader_ttu:auto_read_on_lookup`) is identical for
+  // both code paths, so there is a single source of truth and no migration.
   bool get autoReadOnLookup =>
-      readerSettings?.autoReadOnLookup ??
       getPreference<bool>(key: 'auto_read_on_lookup', defaultValue: true);
 
+  // Single source of truth: write through this source's profile-aware cache +
+  // DB row. No other reader reads ReaderSettings.autoReadOnLookup directly
+  // (every consumer goes through this getter), so there is nothing to keep in
+  // sync — the old `if (readerSettings != null)` branch was a redundant second
+  // write to the same DB row in a different encoding. See [autoReadOnLookup].
   void toggleAutoReadOnLookup() async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.toggleAutoReadOnLookup();
-      return;
-    }
     await setPreference<bool>(
       key: 'auto_read_on_lookup',
       value: !autoReadOnLookup,

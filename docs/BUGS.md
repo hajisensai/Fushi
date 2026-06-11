@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 187 条。点号进各自文件。
+> 共 188 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-191](bugs/BUG-191-video-autoread-setting.md) | ✅ | ✅ | 关闭查词时自动阅读后视频字幕查词仍自动阅读 |
 | [BUG-190](bugs/BUG-190-video-subtitle-layer.md) | ✅ | ✅ | 禁用 media_kit 内置 SubtitleView：字幕透明/查词坏/横竖屏残留黑字 |
 | [BUG-189](bugs/BUG-189-no-subtitle-next-jump.md) | ✅ | ✅ | 视频OP无字幕时按下一句字幕按钮不前进（用户感知「跳回开头」） |
 | [BUG-188](bugs/BUG-188-video-card-sentence-audio-gap.md) | ✅ | ✅ | 视频制卡字幕gap时缺真实句子音频 |

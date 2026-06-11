@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:hibiki/src/reader/reader_settings.dart';
 
 void main() {
   group('ReaderHibikiSource shelf actions', () {
@@ -162,6 +163,106 @@ void main() {
         source.getPreference<String?>(
             key: 'shortcut_bindings_json', defaultValue: null),
         isNull,
+      );
+    });
+  });
+  group('autoReadOnLookup is profile-aware (TODO-080B 视频字幕查词)', () {
+    setUp(() {
+      // The static reader-settings snapshot is a reader-page-owned cache that
+      // the video page never refreshes. Tests below pin it explicitly so the
+      // "stale reader snapshot" never silently leaks the real fix.
+      ReaderHibikiSource.readerSettings = null;
+    });
+    tearDown(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+
+    test(
+        '视频上下文：DB(=当前 profile)关闭自动阅读时 autoReadOnLookup 为 false，'
+        '即使阅读器遗留的静态 readerSettings 快照仍是 true', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+
+      // 当前(视频)上下文：用户关闭"查词时自动阅读" → 写穿 DB + source 缓存。
+      await source.setPreference<bool>(
+        key: 'auto_read_on_lookup',
+        value: false,
+      );
+
+      // 阅读器页面遗留的全局静态快照仍停在另一个 profile 的 true（视频页从不刷新它）。
+      final ReaderSettings staleReaderSnapshot = ReaderSettings(db);
+      await staleReaderSnapshot.refreshFromDb();
+      // 把快照强制改回 true，模拟"最后一次打开阅读器的 profile"自动阅读=开。
+      if (!staleReaderSnapshot.autoReadOnLookup) {
+        await staleReaderSnapshot.toggleAutoReadOnLookup();
+      }
+      ReaderHibikiSource.readerSettings = staleReaderSnapshot;
+
+      // 视频字幕查词读 source.autoReadOnLookup：必须反映当前 profile 的真实设置(false)，
+      // 而不是陈旧的阅读器快照(true)。修复前会读到 true → 自动阅读，红。
+      expect(source.autoReadOnLookup, isFalse);
+
+      // 反向：DB(=当前 profile)开启时为 true。
+      await source.setPreference<bool>(
+        key: 'auto_read_on_lookup',
+        value: true,
+      );
+      expect(source.autoReadOnLookup, isTrue);
+    });
+
+    test('profile 切换(refreshPreferencesFromDb)后 autoReadOnLookup 立即跟随',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      // Profile A: 关闭自动阅读并落 DB。
+      await source.setPreference<bool>(
+        key: 'auto_read_on_lookup',
+        value: false,
+      );
+      expect(source.autoReadOnLookup, isFalse);
+
+      // 模拟切到 Profile B(自动阅读=开)：applyProfile 写穿 DB，refreshPrefCache
+      // 重载每个 source 的 _preferences。
+      await db.setPref('src:reader_ttu:auto_read_on_lookup', 'true');
+      await source.refreshPreferencesFromDb();
+      expect(source.autoReadOnLookup, isTrue);
+    });
+
+    test('toggleAutoReadOnLookup 写穿 DB 且读写对称(不再依赖静态 readerSettings)', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      // 默认 true。
+      expect(source.autoReadOnLookup, isTrue);
+
+      // 关闭：toggle 后立即一致，且写穿 DB(profile 快照从 DB 读取)。
+      source.toggleAutoReadOnLookup();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(source.autoReadOnLookup, isFalse);
+      expect(
+        await db.getPref('src:reader_ttu:auto_read_on_lookup'),
+        'b:false',
+      );
+
+      // 再开启：对称回到 true。
+      source.toggleAutoReadOnLookup();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(source.autoReadOnLookup, isTrue);
+      expect(
+        await db.getPref('src:reader_ttu:auto_read_on_lookup'),
+        'b:true',
       );
     });
   });
