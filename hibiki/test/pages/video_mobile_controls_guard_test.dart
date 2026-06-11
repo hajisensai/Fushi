@@ -83,10 +83,16 @@ void expectBottomBarUsesWidthGate(String methodBody, String label) {
       reason: '$label bottom bar should expose a volume adjustment entry');
   expect(bottomBar.contains('_buildFullscreenButton('), isTrue,
       reason: '$label bottom bar should use Hibiki neutralized fullscreen');
-  expect(bottomBar.contains('Icons.replay_10'), isTrue,
+  // TODO-067: ±10s 按钮换成左右对称、平行的 fast_rewind/forward 图标(取代显歪的
+  // replay_10/forward_10),功能不变。守卫意图仍是「宽屏保留 ±N 秒 seek 按钮」。
+  expect(bottomBar.contains('Icons.fast_rewind_rounded'), isTrue,
       reason: '$label controls should keep -10s when width allows');
-  expect(bottomBar.contains('Icons.forward_10'), isTrue,
+  expect(bottomBar.contains('Icons.fast_forward_rounded'), isTrue,
       reason: '$label controls should keep +10s when width allows');
+  expect(bottomBar.contains('Icons.replay_10'), isFalse,
+      reason: 'lopsided replay_10 must stay replaced (TODO-067)');
+  expect(bottomBar.contains('Icons.forward_10'), isFalse,
+      reason: 'lopsided forward_10 must stay replaced (TODO-067)');
   expect(bottomBar.contains('Icons.skip_previous'), isTrue,
       reason: '$label controls should keep previous subtitle cue');
   expect(bottomBar.contains('Icons.skip_next'), isTrue,

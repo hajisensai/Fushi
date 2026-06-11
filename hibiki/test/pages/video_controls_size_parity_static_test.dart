@@ -8,11 +8,43 @@ void main() {
         File('lib/src/pages/implementations/video_hibiki_page.dart')
             .readAsStringSync();
 
-    expect(source, contains('static const double _videoButtonBarHeight = 56'));
-    expect(source, contains('static const double _videoControlIconSize = 32'));
+    // 尺寸基线常量(界面缩放×1.0 时的值)保持 56/32/36(TODO-067 未改基线数值)。
     expect(
-        source, contains('static const double _videoPlayPauseIconSize = 36'));
+        source, contains('static const double _videoButtonBarHeightBase = 56'));
+    expect(
+        source, contains('static const double _videoControlIconSizeBase = 32'));
+    expect(source,
+        contains('static const double _videoPlayPauseIconSizeBase = 36'));
+    expect(source,
+        contains('static const double _videoControlTitleFontSizeBase = 16'));
     expect(source, contains('TextStyle _videoControlTitleStyle(ColorScheme'));
+
+    // TODO-067:控制条尺寸 getter 必须乘以 _videoUiScale,让顶/底栏图标、按钮条高度、
+    // 播放键、标题字号都随「界面大小」缩放(视频页被 HibikiAppUiScaleNeutralizer 中和,
+    // 否则控制条不吃缩放)。撤掉任一 * _videoUiScale 即转红。
+    expect(
+      source,
+      contains(
+          'double get _videoButtonBarHeight => _videoButtonBarHeightBase * _videoUiScale'),
+      reason: 'button bar height must follow appUiScale (TODO-067)',
+    );
+    expect(
+      source,
+      contains(
+          'double get _videoControlIconSize => _videoControlIconSizeBase * _videoUiScale'),
+      reason: 'control icon size must follow appUiScale (TODO-067)',
+    );
+    expect(
+      source,
+      contains('_videoPlayPauseIconSizeBase * _videoUiScale'),
+      reason: 'play/pause icon size must follow appUiScale (TODO-067)',
+    );
+    expect(
+      source,
+      contains('_videoControlTitleFontSizeBase * _videoUiScale'),
+      reason: 'top-bar title font size must follow appUiScale (TODO-067)',
+    );
+
     expect(
       'buttonBarButtonSize: _videoControlIconSize'.allMatches(source).length,
       2,
@@ -41,6 +73,25 @@ void main() {
       source,
       isNot(contains(
           'style: const TextStyle(color: Colors.white, fontSize: 16)')),
+    );
+
+    // TODO-067:左下快进快退用左右镜像对称、平行的 fast_rewind/forward(实心双三角),
+    // 取代视觉重心偏移的 replay_10/forward_10(带数字「10」圆弧箭头,显歪)。
+    expect(source, isNot(contains('Icons.replay_10')),
+        reason:
+            'lopsided replay_10 replaced by parallel fast_rewind (TODO-067)');
+    expect(source, isNot(contains('Icons.forward_10')),
+        reason:
+            'lopsided forward_10 replaced by parallel fast_forward (TODO-067)');
+    expect(
+      'Icons.fast_rewind_rounded'.allMatches(source).length,
+      2,
+      reason: 'desktop+mobile both use parallel fast_rewind (TODO-067)',
+    );
+    expect(
+      'Icons.fast_forward_rounded'.allMatches(source).length,
+      2,
+      reason: 'desktop+mobile both use parallel fast_forward (TODO-067)',
     );
   });
 

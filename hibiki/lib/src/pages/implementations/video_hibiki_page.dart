@@ -224,9 +224,25 @@ abstract class VideoHibikiTestHooks {
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
-  static const double _videoButtonBarHeight = 56;
-  static const double _videoControlIconSize = 32;
-  static const double _videoPlayPauseIconSize = 36;
+  // 控制条尺寸基线（界面缩放 ×1.0 时的值）。视频页整页被
+  // [HibikiAppUiScaleNeutralizer] 中和回 scale=1.0（保证 WebView 查词坐标一致），
+  // 故 media_kit 控制条不会自动吃全局「界面大小」——这些基线再乘 [_videoUiScale]
+  // 暴露成下面的实例 getter，让顶/底栏图标、按钮条高度、播放键与查词弹窗同一口径
+  // 随界面缩放一起放大缩小（TODO-067）。
+  static const double _videoButtonBarHeightBase = 56;
+  static const double _videoControlIconSizeBase = 32;
+  static const double _videoPlayPauseIconSizeBase = 36;
+  static const double _videoControlTitleFontSizeBase = 16;
+
+  /// 按钮条触摸高度，随界面大小缩放（TODO-067）。
+  double get _videoButtonBarHeight => _videoButtonBarHeightBase * _videoUiScale;
+
+  /// 顶/底栏控制图标尺寸，随界面大小缩放（TODO-067）。与查词弹窗 ×appUiScale 同口径。
+  double get _videoControlIconSize => _videoControlIconSizeBase * _videoUiScale;
+
+  /// 中央播放/暂停键尺寸，随界面大小缩放（TODO-067）。
+  double get _videoPlayPauseIconSize =>
+      _videoPlayPauseIconSizeBase * _videoUiScale;
 
   /// 移动控制条底部留白基线（BUG-184）：进度条 / 底部按钮条不贴屏幕物理底边。
   ///
@@ -262,9 +278,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ColorScheme _videoChromeColorScheme(BuildContext context) =>
       Theme.of(context).colorScheme;
 
+  /// 顶栏标题字号，随界面大小缩放（TODO-067），与图标按钮同口径。
+  double get _videoControlTitleFontSize =>
+      _videoControlTitleFontSizeBase * _videoUiScale;
+
   TextStyle _videoControlTitleStyle(ColorScheme cs) => TextStyle(
         color: cs.onSurface,
-        fontSize: 16,
+        fontSize: _videoControlTitleFontSize,
       );
 
   Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
@@ -1968,7 +1988,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required bool desktop,
   }) {
     if (desktop) {
-      return const MaterialDesktopVolumeButton(
+      return MaterialDesktopVolumeButton(
         iconSize: _videoControlIconSize,
       );
     }
@@ -2005,7 +2025,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。
       topButtonBar: <Widget>[
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.arrow_back, size: _videoControlIconSize),
+          icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         Expanded(
@@ -2023,13 +2043,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
         if (_isPlaylist) ...<Widget>[
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
+            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
             onPressed: () {
               if (_currentEpisode > 0) _switchEpisode(_currentEpisode - 1);
             },
           ),
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
+            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
             onPressed: () {
               if (_currentEpisode < _episodes.length - 1) {
                 _switchEpisode(_currentEpisode + 1);
@@ -2037,38 +2057,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             },
           ),
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.playlist_play, size: _videoControlIconSize),
+            icon: Icon(Icons.playlist_play, size: _videoControlIconSize),
             onPressed: _showEpisodeList,
           ),
         ],
         MaterialDesktopCustomButton(
-          icon: const Icon(
+          icon: Icon(
             Icons.photo_camera_outlined,
             size: _videoControlIconSize,
           ),
           onPressed: _saveScreenshot,
         ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.subtitles, size: _videoControlIconSize),
+          icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.audiotrack, size: _videoControlIconSize),
+          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
         ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.speed, size: _videoControlIconSize),
+          icon: Icon(Icons.speed, size: _videoControlIconSize),
           onPressed: _showSpeedMenu,
         ),
         // 着色器「对比原画」：仅在配置了启用着色器时出现，点一下/按 C 切换旁路看原画
         // （B：效果预览/对比）。着色器仅桌面 libmpv 生效，故只在桌面控制条放此按钮。
         if (_hasShadersEnabled)
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.compare, size: _videoControlIconSize),
+            icon: Icon(Icons.compare, size: _videoControlIconSize),
             onPressed: _toggleShaderCompare,
           ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.tune, size: _videoControlIconSize),
+          icon: Icon(Icons.tune, size: _videoControlIconSize),
           onPressed: _showPlayerSettings,
         ),
       ],
@@ -2077,23 +2097,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         const Spacer(),
         if (roomyBottomBar)
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.replay_10, size: _videoControlIconSize),
+            icon: Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
             onPressed: () => _seekRelative(-10000),
           ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
+          icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
           onPressed: () => _skipCueAndPokeControls(forward: false),
         ),
-        const MaterialDesktopPlayOrPauseButton(
+        MaterialDesktopPlayOrPauseButton(
           iconSize: _videoPlayPauseIconSize,
         ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
+          icon: Icon(Icons.skip_next, size: _videoControlIconSize),
           onPressed: () => _skipCueAndPokeControls(forward: true),
         ),
         if (roomyBottomBar)
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.forward_10, size: _videoControlIconSize),
+            icon: Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
             onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
@@ -2159,7 +2179,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 右侧只放手机上最常用且需要直接命中的入口。倍速仍可从设置进入。
       topButtonBar: <Widget>[
         MaterialCustomButton(
-          icon: const Icon(Icons.arrow_back, size: _videoControlIconSize),
+          icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         Expanded(
@@ -2178,26 +2198,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 剧集列表（播放列表时）两端常驻。
         if (_isPlaylist)
           MaterialCustomButton(
-            icon: const Icon(Icons.playlist_play, size: _videoControlIconSize),
+            icon: Icon(Icons.playlist_play, size: _videoControlIconSize),
             onPressed: _showEpisodeList,
           ),
         MaterialCustomButton(
-          icon: const Icon(
+          icon: Icon(
             Icons.photo_camera_outlined,
             size: _videoControlIconSize,
           ),
           onPressed: _saveScreenshot,
         ),
         MaterialCustomButton(
-          icon: const Icon(Icons.subtitles, size: _videoControlIconSize),
+          icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
         MaterialCustomButton(
-          icon: const Icon(Icons.audiotrack, size: _videoControlIconSize),
+          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
         ),
         MaterialCustomButton(
-          icon: const Icon(Icons.tune, size: _videoControlIconSize),
+          icon: Icon(Icons.tune, size: _videoControlIconSize),
           onPressed: _showPlayerSettings,
         ),
       ],
@@ -2206,16 +2226,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         const Spacer(),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.replay_10, size: _videoControlIconSize),
+            icon: Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
             onPressed: () => _seekRelative(-10000),
           ),
         MaterialCustomButton(
-          icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
+          icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
           onPressed: () => controller.skipToPrevCue(),
         ),
-        const MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
+        MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
         MaterialCustomButton(
-          icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
+          icon: Icon(Icons.skip_next, size: _videoControlIconSize),
           // 无字幕(OP)时也前进 seekSeconds 秒、不卡住(TODO-073)。
           onPressed: () => controller.skipToNextCueOrSeekForward(
             seekSeconds: _asbConfig.seekSeconds,
@@ -2223,7 +2243,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.forward_10, size: _videoControlIconSize),
+            icon: Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
             onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
