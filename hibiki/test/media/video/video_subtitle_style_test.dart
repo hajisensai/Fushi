@@ -210,4 +210,50 @@ void main() {
     expect(s.backgroundOpacity, lessThanOrEqualTo(1.0));
     expect(s.bottomPadding, greaterThanOrEqualTo(0));
   });
+
+  group('buildSubtitleShadows (BUG-222 对称描边而非单向投影)', () {
+    const Color c = Color(0xFF224466);
+
+    test('thickness<=0 无描边', () {
+      expect(buildSubtitleShadows(c, 0), isEmpty);
+      expect(buildSubtitleShadows(c, -3), isEmpty);
+    });
+
+    test('正粗细生成八方向对称描边、无单向下方投影', () {
+      final List<Shadow> shadows = buildSubtitleShadows(c, 6);
+      // 八方向 → 多个阴影（不再是单个）。
+      expect(shadows.length, 8);
+      for (final Shadow s in shadows) {
+        expect(s.color, c);
+        expect(s.blurRadius, 6); // blurRadius == thickness
+      }
+      // 对称：所有偏移向量求和为零 → 围绕文字、无单向「掉落」。
+      final double sumDx =
+          shadows.fold(0.0, (double a, Shadow s) => a + s.offset.dx);
+      final double sumDy =
+          shadows.fold(0.0, (double a, Shadow s) => a + s.offset.dy);
+      expect(sumDx, moreOrLessEquals(0, epsilon: 1e-6));
+      expect(sumDy, moreOrLessEquals(0, epsilon: 1e-6));
+      // 绝不含旧的「纯向下 Offset(0, thickness)」投影。
+      expect(
+        shadows.any((Shadow s) => s.offset == const Offset(0, 6)),
+        isFalse,
+      );
+      // 也不含任何 dx==0 且 |dy| 等于整粗细的纯竖直大偏移（描边偏移是半粗细）。
+      expect(
+        shadows.any((Shadow s) => s.offset.dx == 0 && s.offset.dy.abs() >= 6),
+        isFalse,
+      );
+    });
+
+    test('描边偏移围绕文字四周（上下左右四个正交方向都有）', () {
+      final List<Shadow> shadows = buildSubtitleShadows(c, 8);
+      bool hasDir(double dx, double dy) => shadows.any((Shadow s) =>
+          s.offset.dx.sign == dx.sign && s.offset.dy.sign == dy.sign);
+      expect(hasDir(1, 0), isTrue); // 右
+      expect(hasDir(-1, 0), isTrue); // 左
+      expect(hasDir(0, 1), isTrue); // 下
+      expect(hasDir(0, -1), isTrue); // 上（旧实现完全没有的方向）
+    });
+  });
 }

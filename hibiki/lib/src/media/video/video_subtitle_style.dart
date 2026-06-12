@@ -207,3 +207,44 @@ class VideoSubtitleStyle {
     return HibikiAppUiScale.normalize(uiScale);
   }
 }
+
+/// 字幕描边阴影：把粗细 [thickness] 渲染成**贴合文字四周的对称描边/光晕**，而非
+/// 单向下方的投影（BUG-222）。
+///
+/// 旧实现是一个 `Shadow(offset: Offset(0, thickness))` 纯向下位移的 drop shadow：
+/// thickness 越大阴影越往下「掉」，字幕移动/换句时阴影与字身分离，观感像「阴影没跟住、
+/// 总有残留」。字幕该有的是 ASS/asbplayer 式的 **outline**——阴影包住字身四周。
+///
+/// 做法：八个方向（上下左右 + 四对角）各放一个小偏移阴影，偏移半径取 `thickness/2`
+/// （对角乘 ~0.707 归一成圆形描边），`blurRadius=thickness` 让描边软化成贴合字身的
+/// 光晕。八向对称 → 合成结果围绕文字、无单向「掉落」感。thickness 仍是用户/缩放控制的
+/// 描边强度（0 = 无描边），[color] 仍是用户/主题阴影色，语义不变。
+///
+/// [thickness] <= 0 返回空列表（无描边，与旧 `shadowThickness<=0` 分支等价）。
+List<Shadow> buildSubtitleShadows(Color color, double thickness) {
+  if (thickness <= 0) return const <Shadow>[];
+  // 描边偏移半径：thickness 的一半，最小 0.5px 保证薄描边也成形。
+  final double r = (thickness / 2).clamp(0.5, double.infinity).toDouble();
+  final double diag = r * 0.70710678; // 对角归一成圆形描边（cos45°）。
+  const List<({double dx, double dy})> dirs = <({double dx, double dy})>[
+    (dx: 1, dy: 0),
+    (dx: -1, dy: 0),
+    (dx: 0, dy: 1),
+    (dx: 0, dy: -1),
+    (dx: 1, dy: 1),
+    (dx: 1, dy: -1),
+    (dx: -1, dy: 1),
+    (dx: -1, dy: -1),
+  ];
+  return <Shadow>[
+    for (final ({double dx, double dy}) d in dirs)
+      Shadow(
+        color: color,
+        blurRadius: thickness,
+        offset: Offset(
+          (d.dx.abs() == d.dy.abs() ? diag : r) * d.dx,
+          (d.dx.abs() == d.dy.abs() ? diag : r) * d.dy,
+        ),
+      ),
+  ];
+}
