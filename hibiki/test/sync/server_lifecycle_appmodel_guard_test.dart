@@ -57,6 +57,25 @@ void main() {
           reason: 'AppModel 必须把 libraryServiceFactory 传给 controller');
     });
 
+    test('AppModel passes target language into video sidecar matcher', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      final int factory = src.indexOf('libraryServiceFactory: () => '
+          'AppModelLibraryHostService(');
+      expect(factory, greaterThanOrEqualTo(0));
+      final int removeLocalAudio =
+          src.indexOf('removeLocalAudioEntry:', factory);
+      expect(removeLocalAudio, greaterThan(factory));
+      final int languageArg = src.indexOf(
+        'videoSubtitleLangCode: targetLanguage.languageCode',
+        factory,
+      );
+      expect(languageArg, greaterThan(factory),
+          reason: '生产 host service 不能落回构造器默认 ja');
+      expect(languageArg, lessThan(removeLocalAudio),
+          reason: 'sidecar 语言匹配应使用当前学习语言偏好');
+    });
+
     test(
         '_propagateDictionaryDeleteToRemote routes live backend via '
         'backend.deleteRemoteDictionary', () {

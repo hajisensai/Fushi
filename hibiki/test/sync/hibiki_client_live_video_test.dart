@@ -15,8 +15,10 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_client_vid');
     videoFile = File('${tmp.path}/sample.mp4');
     videoFile.writeAsBytesSync(_videoBytes);
-    subtitleFile = File('${tmp.path}/sample.ja.srt');
-    subtitleFile.writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\nテスト\n');
+    subtitleFile = File('${tmp.path}/sample.ja.vtt');
+    subtitleFile.writeAsStringSync(
+      'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nテスト\n',
+    );
   }
 
   static const String videoId = 'video/sample';
@@ -168,6 +170,7 @@ void main() {
     expect(urls.streamUrl, contains('/stream?token='));
     expect(urls.subtitleUrl, startsWith('$base/api/library/videos/'));
     expect(urls.subtitleUrl, contains('/subtitle'));
+    expect(urls.subtitleFileName, 'sample.ja.vtt');
     expect(backend.remoteVideoAuthHeaders(), isEmpty);
 
     final HttpClient c = HttpClient();
@@ -188,7 +191,7 @@ void main() {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_sub');
-    final File dest = File('${tmp.path}/sample.ja.srt');
+    final File dest = File('${tmp.path}/sample.ja.vtt');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
     await backend.getRemoteVideoSubtitle(_FakeLibraryService.videoId, dest);

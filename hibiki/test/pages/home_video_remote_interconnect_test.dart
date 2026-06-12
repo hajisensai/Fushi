@@ -142,6 +142,22 @@ void main() {
     expect(remoteClient.streamUrlRequests, <String>['remote/video-1']);
   });
 
+  testWidgets('remote video stages subtitle with host sidecar extension',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(
+      const ValueKey<String>('remote_video_card_remote_video-1'),
+    ));
+    await _pumpUntil(
+      tester,
+      () => remoteClient.subtitleDestinations.isNotEmpty,
+    );
+
+    expect(remoteClient.subtitleDestinations.single, endsWith('.vtt'));
+  });
+
   testWidgets('remote video download action downloads to this device',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
@@ -175,6 +191,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   final String coverPath;
   final List<String> downloadedIds = <String>[];
   final List<String> streamUrlRequests = <String>[];
+  final List<String> subtitleDestinations = <String>[];
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
@@ -194,6 +211,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
       streamUrl: 'http://127.0.0.1:1/api/library/videos/remote/video-1/stream',
       subtitleUrl:
           'http://127.0.0.1:1/api/library/videos/remote/video-1/subtitle',
+      subtitleFileName: 'remote-video-1.ja.vtt',
     );
   }
 
@@ -203,7 +221,10 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
     File dest, {
     void Function(double progress)? onProgress,
   }) async {
-    await dest.writeAsString('1\n00:00:00,000 --> 00:00:01,000\n字幕\n');
+    subtitleDestinations.add(dest.path);
+    await dest.writeAsString(
+      'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nSubtitle\n',
+    );
     onProgress?.call(1);
   }
 

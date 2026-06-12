@@ -806,7 +806,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (urls.subtitleUrl != null) {
         final Directory temp = await getTemporaryDirectory();
         final File subtitle = File(
-          p.join(temp.path, 'hibiki_remote_${_safeFileName(info.id)}.srt'),
+          p.join(
+            temp.path,
+            _remoteSubtitleTempFileName(info.id, urls.subtitleFileName),
+          ),
         );
         await client.getRemoteVideoSubtitle(info.id, subtitle);
         externalSub = subtitle.path;
@@ -1079,8 +1082,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
   ///
   /// 按 app 学习语言优先（学日语 → `.ja.srt > .ja.ass > … > .srt > .ass …`，
-  /// 见 [findSidecarSubtitle]）；按扩展名路由 [SrtParser] / [AssParser]。IO + 解析
-  /// 失败静默返回 null。
+  /// 见 [findSidecarSubtitle]）；按扩展名路由统一字幕 parser。IO + 解析失败静默返回 null。
   Future<({String path, List<AudioCue> cues})?> _detectSidecar(
     String videoPath,
     String bookUid,
@@ -1091,10 +1093,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     if (sidecarPath == null) return null;
     try {
+      final SubtitleFormat? format = subtitleFormatForPath(sidecarPath);
+      if (format == null) return null;
       final String text = await readTextWithEncoding(File(sidecarPath));
-      final List<AudioCue> cues = sidecarPath.toLowerCase().endsWith('.ass')
-          ? AssParser.parseString(content: text, bookKey: bookUid)
-          : SrtParser.parseString(content: text, bookKey: bookUid);
+      final List<AudioCue> cues = parseSubtitleContent(
+        format,
+        content: text,
+        bookUid: bookUid,
+      );
       if (cues.isEmpty) return null;
       return (path: sidecarPath, cues: cues);
     } catch (e) {
@@ -1108,10 +1114,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String bookUid,
   ) async {
     try {
+      final SubtitleFormat? format = subtitleFormatForPath(path);
+      if (format == null) return const <AudioCue>[];
       final String text = await readTextWithEncoding(File(path));
-      return path.toLowerCase().endsWith('.ass')
-          ? AssParser.parseString(content: text, bookKey: bookUid)
-          : SrtParser.parseString(content: text, bookKey: bookUid);
+      return parseSubtitleContent(format, content: text, bookUid: bookUid);
     } catch (e) {
       debugPrint('[VideoHibikiPage] external subtitle parse failed: $e');
       return const <AudioCue>[];
@@ -1250,6 +1256,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   String _safeFileName(String input) =>
       input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+
+  String _remoteSubtitleTempFileName(String videoId, String? hostFileName) {
+    final String fallback = 'hibiki_remote_${_safeFileName(videoId)}.srt';
+    if (hostFileName == null || hostFileName.trim().isEmpty) return fallback;
+    final String baseName = p.basename(hostFileName.trim());
+    if (subtitleFormatForPath(baseName) == null) return fallback;
+    final String stem = _safeFileName(p.basenameWithoutExtension(baseName));
+    final String safeStem = stem.isEmpty ? _safeFileName(videoId) : stem;
+    return 'hibiki_remote_$safeStem${p.extension(baseName)}';
+  }
 
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
   /// 按 id 匹配并切换，恢复用户上次选的音轨（退出重进 / 换集复用）。
