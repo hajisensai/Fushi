@@ -24,6 +24,26 @@ void main() {
         .readAsStringSync();
   });
 
+  String bodyFromBrace(String source, int start, int braceStart, String label) {
+    int depth = 0;
+    for (int i = braceStart; i < source.length; i++) {
+      final String ch = source[i];
+      if (ch == '{') depth++;
+      if (ch == '}') {
+        depth--;
+        if (depth == 0) return source.substring(start, i + 1);
+      }
+    }
+    fail('method body brace never closed: $label');
+  }
+
+  String methodBody(String source, String signature) {
+    final int start = source.indexOf(signature);
+    expect(start, greaterThanOrEqualTo(0), reason: 'missing $signature');
+    final int braceStart = start + signature.length - 1;
+    return bodyFromBrace(source, start, braceStart, signature);
+  }
+
   test(
       'TODO-174: four persisted immersive modes exist and default to lookup-only',
       () {
@@ -84,6 +104,55 @@ void main() {
       reason:
           'keyboard/media actions must be blocked outside full mode while locked',
     );
+  });
+
+  test(
+      'TODO-174: seek-and-lookup locked mode consumes unsafe double-tap fallback',
+      () {
+    final String body = methodBody(
+        pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
+    final int seekIdx = body.indexOf('final bool doubleTapHandled =');
+    final int seekCallIdx =
+        body.indexOf('_handleDoubleTapSeek(controlsContext, event.position)');
+    expect(seekIdx, greaterThanOrEqualTo(0),
+        reason:
+            'double-tap seek result must be captured before platform fallback');
+    expect(seekCallIdx, greaterThan(seekIdx),
+        reason:
+            'captured double-tap result must come from _handleDoubleTapSeek');
+    final int seekReturnIdx =
+        body.indexOf('if (doubleTapHandled) return;', seekIdx);
+    expect(seekReturnIdx, greaterThan(seekIdx),
+        reason: 'handled left/right seek must return before fallback');
+    final int seekAndLookupBlockIdx =
+        body.indexOf('if (_immersiveLocked.value &&', seekReturnIdx);
+    final int seekAndLookupModeIdx = body.indexOf(
+        '_videoImmersiveMode == VideoImmersiveMode.seekAndLookup',
+        seekAndLookupBlockIdx);
+    expect(seekAndLookupBlockIdx, greaterThan(seekReturnIdx),
+        reason:
+            'locked seek-and-lookup must consume center/off double-taps before pause/fullscreen fallback');
+    expect(seekAndLookupModeIdx, greaterThan(seekAndLookupBlockIdx),
+        reason: 'fallback-consuming gate must target seek-and-lookup mode');
+    final int platformBranch = body.indexOf('if (_isDesktopVideoControls) {');
+    expect(platformBranch, greaterThan(seekAndLookupBlockIdx),
+        reason:
+            'pause/fullscreen fallback must be unreachable in locked seek-and-lookup mode');
+  });
+
+  test('TODO-174: locked context menu is available only to full-control mode',
+      () {
+    final String body = methodBody(
+        pageSrc, 'void _handleSecondaryTap(Offset globalPosition) {');
+    final int fullControlsGate =
+        body.indexOf('if (!_immersiveAllowsFullControls) return;');
+    expect(fullControlsGate, greaterThanOrEqualTo(0),
+        reason:
+            'right-click menu exposes full controls and must be gated by immersive mode');
+    final int menuIdx = body.indexOf('showMenu<VoidCallback>(');
+    expect(menuIdx, greaterThan(fullControlsGate),
+        reason:
+            'full-control gate must run before building/showing the context menu');
   });
 
   test('TODO-174: video settings sheet exposes the four-mode selector', () {

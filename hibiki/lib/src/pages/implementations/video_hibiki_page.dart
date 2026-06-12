@@ -3979,9 +3979,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
     // TODO-173/BUG-231: 双击左/右区先尝试快进/快退（或跳上/下一句）。落在左 / 右
-    // 区（且双击行为已开启）则在此早返回，中带（中间 1/3）落空继续走下方平台分流，
-    // 保留 BUG-221 的双击暂停（移动）/ 全屏（桌面）。
-    if (_handleDoubleTapSeek(controlsContext, event.position)) return;
+    // 区（且双击行为已开启）则在此早返回。未锁定或 full 模式下，中带（中间 1/3）
+    // 落空继续走下方平台分流，保留 BUG-221 的双击暂停（移动）/ 全屏（桌面）。
+    final bool doubleTapHandled =
+        _handleDoubleTapSeek(controlsContext, event.position);
+    if (doubleTapHandled) return;
+    // seekAndLookup 锁定态只允许左右双击 seek + 查词；配置为 0、点中带或布局不可判定时
+    // 必须消费掉双击，不能漏到暂停 / 全屏 fallback。
+    if (_immersiveLocked.value &&
+        _videoImmersiveMode == VideoImmersiveMode.seekAndLookup) {
+      return;
+    }
     // BUG-221: 双击命中（中带）后按平台分流。
     // - 移动端：双击 = 播放/暂停。原先双击 → [_toggleVideoFullscreen] → media_kit 全屏路由，
     //   退出时弹回竖屏，用户感知为「双击 = 竖屏」。移动端横屏沉浸态即唯一形态、无「全屏」
@@ -4056,10 +4064,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [_buildVideoControlsInner] / [VideoControlsFocusGate]），故 showMenu 找到的是
   /// 全屏路由的 Overlay，菜单在窗口与全屏两种场景都能正确浮出（与字幕跳转列表 /
   /// 锁定层同源的全屏安全范式，TODO-069/101）。移动端无次按钮、此回调不触发，且
-  /// 这里再门控一次（[_isDesktopVideoControls]）双保险。锁定 / 沉浸模式下仍允许右键
-  /// （这是用户显式操作，不同于被动 hover 唤起控制条，故不被 [_immersiveLocked] 挡）。
+  /// 这里再门控一次（[_isDesktopVideoControls]）双保险。右键菜单含完整播放控制，沉浸锁
+  /// 仅 full 模式允许打开；seekAndLookup / lookupOnly / unlockOnly 均不能绕过四段 gate。
   void _handleSecondaryTap(Offset globalPosition) {
     if (!_isDesktopVideoControls) return;
+    if (!_immersiveAllowsFullControls) return;
     final VideoPlayerController? controller = _controller;
     final BuildContext? ctx = _videoControlsContext;
     if (controller == null || ctx == null || !ctx.mounted) return;
