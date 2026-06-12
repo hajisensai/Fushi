@@ -3,6 +3,12 @@ cmake_policy(SET CMP0077 NEW)
 
 project(hoshidicts_ffi LANGUAGES C CXX)
 
+# Linux links the hoshidicts static archive and its bundled static deps into
+# libhoshidicts_ffi.so. Build those objects as PIC so GNU ld can embed them.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

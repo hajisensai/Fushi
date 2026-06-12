@@ -195,9 +195,32 @@ jobs:
       - name: Build Linux (debug)
         working-directory: hibiki
         shell: bash
-        run: >-
-          PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH"
-          flutter build linux --debug
+        run: |
+          set -euo pipefail
+          if PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH" \
+              flutter build linux --debug --verbose; then
+            exit 0
+          fi
+
+          echo "::group::Linux CMake/Ninja diagnostics"
+          cache="build/linux/x64/debug/CMakeCache.txt"
+          if [ -f "$cache" ]; then
+            grep -E 'CMAKE_(C|CXX)_COMPILER|CMAKE_CXX_STANDARD|CMAKE_BUILD_TYPE' "$cache" || true
+          fi
+          compiler_file="$(
+            find build/linux/x64/debug/CMakeFiles \
+              -name CMakeCXXCompiler.cmake -print -quit 2>/dev/null || true
+          )"
+          if [ -n "$compiler_file" ]; then
+            grep -E 'CMAKE_CXX_COMPILER(_ID|_VERSION)?|CMAKE_CXX_STANDARD' \
+              "$compiler_file" || true
+          fi
+          if [ -d build/linux/x64/debug ]; then
+            PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH" \
+              ninja -C build/linux/x64/debug -v install || true
+          fi
+          echo "::endgroup::"
+          exit 1
 
   # macOS gates the desktop build plus the shared smoke contract.
   macos:

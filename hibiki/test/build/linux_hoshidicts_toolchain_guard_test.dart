@@ -10,6 +10,13 @@ void main() {
     return file.readAsStringSync();
   }
 
+  String readHoshidictsCmake() {
+    final File file = File('../native/hoshidicts/CMakeLists.txt');
+    expect(file.existsSync(), isTrue,
+        reason: 'expected hoshidicts CMake at ${file.absolute.path}');
+    return file.readAsStringSync();
+  }
+
   test('Linux CI pins a C++23 std::expected-capable hoshidicts toolchain', () {
     final String workflow = readWorkflow();
     final int linuxJobStart = workflow.indexOf('  linux:');
@@ -51,6 +58,40 @@ void main() {
       lessThan(linuxJob.indexOf('Build Linux (debug)')),
       reason:
           'Flutter hardcodes CC=clang/CXX=clang++; shim must exist before build.',
+    );
+    expect(linuxJob, contains('flutter build linux --debug --verbose'));
+    expect(linuxJob, contains('::group::Linux CMake/Ninja diagnostics'));
+    expect(linuxJob, contains('ninja -C build/linux/x64/debug -v install'));
+    expect(linuxJob, contains('::endgroup::'));
+    expect(linuxJob, contains('exit 1'));
+  });
+
+  test('Linux hoshidicts static archives are PIC before shared FFI link', () {
+    final String cmake = readHoshidictsCmake();
+    final int linuxGuardStart =
+        cmake.indexOf('if(CMAKE_SYSTEM_NAME STREQUAL "Linux")');
+    final int picSetting =
+        cmake.indexOf('set(CMAKE_POSITION_INDEPENDENT_CODE ON)');
+    final int bundledDepsStart =
+        cmake.indexOf('add_subdirectory(hoshidicts_external/glaze');
+    final int staticTargetStart =
+        cmake.indexOf('add_library(hoshidicts STATIC');
+    final int sharedTargetStart =
+        cmake.indexOf('add_library(hoshidicts_ffi SHARED');
+
+    expect(linuxGuardStart, isNonNegative);
+    expect(picSetting, greaterThan(linuxGuardStart));
+    expect(bundledDepsStart, greaterThan(picSetting));
+    expect(staticTargetStart, isNonNegative);
+    expect(picSetting, lessThan(staticTargetStart));
+    expect(sharedTargetStart, greaterThan(staticTargetStart));
+
+    expect(
+      picSetting,
+      lessThan(bundledDepsStart),
+      reason: 'Linux links hoshidicts.a plus bundled static dependencies into '
+          'libhoshidicts_ffi.so; PIC must be enabled before those static '
+          'targets are created or ld fails during the Flutter Linux link step.',
     );
   });
 }
