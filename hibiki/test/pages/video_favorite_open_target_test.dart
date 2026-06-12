@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
+import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
@@ -68,6 +69,47 @@ void main() {
 
       expect(target.episodeIndex, 1);
       expect(target.startMs, 12345);
+    });
+  });
+
+  group('videoFavoriteCacheKey', () {
+    test(
+        'single video persisted sectionIndex 0 still matches live cue star key',
+        () {
+      final String liveCueKey = videoFavoriteCacheKey(
+        text: '字幕行',
+        startMs: 12345,
+        episodeIndex: null,
+        isPlaylist: false,
+      );
+      final String restoredPersistedKey = videoFavoriteCacheKey(
+        text: '字幕行',
+        startMs: 12345,
+        episodeIndex: 0,
+        isPlaylist: false,
+      );
+
+      expect(restoredPersistedKey, liveCueKey);
+      expect(liveCueKey, 'cue|single|12345|字幕行');
+    });
+
+    test('playlist keeps episode index in cue favorite cache keys', () {
+      final String episode0Key = videoFavoriteCacheKey(
+        text: '字幕行',
+        startMs: 12345,
+        episodeIndex: 0,
+        isPlaylist: true,
+      );
+      final String episode1Key = videoFavoriteCacheKey(
+        text: '字幕行',
+        startMs: 12345,
+        episodeIndex: 1,
+        isPlaylist: true,
+      );
+
+      expect(episode0Key, 'cue|0|12345|字幕行');
+      expect(episode1Key, 'cue|1|12345|字幕行');
+      expect(episode0Key, isNot(episode1Key));
     });
   });
 }

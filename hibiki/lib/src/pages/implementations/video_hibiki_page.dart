@@ -150,6 +150,19 @@ int resolveMiningCueIndexForPosition({
   return lo - 1;
 }
 
+@visibleForTesting
+String videoFavoriteCacheKey({
+  required String text,
+  required int? startMs,
+  required int? episodeIndex,
+  required bool isPlaylist,
+}) {
+  final int? normalizedEpisodeIndex = isPlaylist ? episodeIndex : null;
+  return startMs == null
+      ? 'legacy|$text'
+      : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
+}
+
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
     required this.bookUid,
@@ -1861,9 +1874,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   String _videoFavoriteCacheKey(String text, int? startMs, int? episodeIndex) =>
-      startMs == null
-          ? 'legacy|$text'
-          : 'cue|${episodeIndex ?? 'single'}|$startMs|$text';
+      videoFavoriteCacheKey(
+        text: text,
+        startMs: startMs,
+        episodeIndex: episodeIndex,
+        isPlaylist: _episodes.isNotEmpty,
+      );
 
   Future<List<FavoriteSentence>> _matchingVideoFavorites(
     String sentence,
