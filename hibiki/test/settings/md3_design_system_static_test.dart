@@ -536,7 +536,7 @@ void main() {
               ? _functionSource(
                   fileSource,
                   'Widget _bookCardShell({',
-                  'Widget _titleOverlay(String title)',
+                  'Widget _cardBadge({',
                 )
               : entry.key.endsWith('dictionary_dialog_page.dart')
                   ? _functionSource(
@@ -733,14 +733,14 @@ void main() {
     expect(buildSource, isNot(contains('const EdgeInsets.all(8)')));
   });
 
-  test('reader history card overlays use shared MD3 spacing tokens', () {
+  test('reader history card footer uses shared MD3 spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
     ).readAsStringSync();
-    final String srtCardChrome = _functionSource(
+    final String cardLayout = _functionSource(
       source,
-      'Widget? _buildTagLabels(String bookKey)',
-      '  Widget _buildSrtCover(SrtBook book)',
+      'Widget _bookCardLayout({',
+      'Widget _cardBadge({',
     );
     final String epubCardChrome = _functionSource(
       source,
@@ -748,19 +748,22 @@ void main() {
       'Widget buildMediaItem(MediaItem item)',
     );
 
-    for (final String cardChrome in <String>[
-      srtCardChrome,
-      epubCardChrome,
-    ]) {
-      expect(cardChrome, contains('HibikiDesignTokens.of(context)'));
-      expect(cardChrome, contains('tokens.spacing'));
-      expect(
-          cardChrome, isNot(contains('EdgeInsets.only(right: 3, bottom: 2)')));
-      expect(cardChrome, isNot(contains('EdgeInsets.fromLTRB(12, 8, 12, 2)')));
-      expect(cardChrome, isNot(contains('top: 6,')));
-      expect(cardChrome, isNot(contains('right: 6,')));
-      expect(cardChrome, isNot(contains('left: 6,')));
-    }
+    expect(source, isNot(contains('Widget _titleOverlay(String title)')));
+    expect(cardLayout, contains('Widget _bookCardFooter({'));
+    expect(cardLayout, contains('HibikiDesignTokens.of(context)'));
+    expect(cardLayout, contains('tokens.spacing'));
+    expect(cardLayout, contains('tokens.surfaces'));
+    expect(cardLayout, contains('EdgeInsetsDirectional.fromSTEB('));
+    expect(cardLayout, contains('BorderSide(color: tokens.surfaces.outline)'));
+    expect(cardLayout, contains('TextOverflow.ellipsis'));
+    expect(epubCardChrome, contains('_bookCardLayout('));
+    expect(cardLayout, isNot(contains('EdgeInsets.only(right: 3, bottom: 2)')));
+    expect(cardLayout, isNot(contains('EdgeInsets.fromLTRB(12, 8, 12, 2)')));
+    expect(cardLayout, isNot(contains('constraints.maxHeight * 0.38')));
+    expect(cardLayout, isNot(contains('LinearGradient(')));
+    expect(cardLayout, isNot(contains('top: 6,')));
+    expect(cardLayout, isNot(contains('right: 6,')));
+    expect(cardLayout, isNot(contains('left: 6,')));
   });
 
   test('settings renderer rows use shared MD3 row primitives', () {
@@ -791,7 +794,7 @@ void main() {
     final String cardShell = _functionSource(
       source,
       'Widget _bookCardShell({',
-      'Widget _titleOverlay(String title)',
+      'Widget _bookCardLayout({',
     );
 
     expect(cardShell, contains('HibikiDesignTokens.of(context)'));
@@ -851,13 +854,13 @@ void main() {
     );
   });
 
-  test('reader history title and drag overlays use shared MD3 tokens', () {
+  test('reader history card footer and drag target use shared MD3 tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
     ).readAsStringSync();
-    final String titleOverlay = _functionSource(
+    final String cardFooter = _functionSource(
       source,
-      'Widget _titleOverlay(String title)',
+      'Widget _bookCardFooter({',
       'Widget _cardBadge({',
     );
     // BookDragTarget 已提取到独立文件 book_drag_target.dart，守卫跟随。
@@ -870,12 +873,16 @@ void main() {
       dragSource.length,
     );
 
-    expect(titleOverlay, contains('HibikiDesignTokens.of(context)'));
-    expect(titleOverlay, contains('tokens.spacing'));
-    expect(titleOverlay, contains('tokens.surfaces'));
-    expect(titleOverlay, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
-    expect(titleOverlay, isNot(contains('theme.colorScheme.surface')));
-    expect(titleOverlay, isNot(contains('theme.colorScheme.onSurface')));
+    expect(source, isNot(contains('Widget _titleOverlay(String title)')));
+    expect(cardFooter, contains('HibikiDesignTokens.of(context)'));
+    expect(cardFooter, contains('tokens.spacing'));
+    expect(cardFooter, contains('tokens.surfaces'));
+    expect(cardFooter, contains('tokens.surfaces.card'));
+    expect(cardFooter, contains('tokens.surfaces.outline'));
+    expect(cardFooter, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
+    expect(cardFooter, isNot(contains('theme.colorScheme.surface')));
+    expect(cardFooter, isNot(contains('theme.colorScheme.onSurface')));
+    expect(cardFooter, isNot(contains('LinearGradient(')));
 
     expect(dragTarget, contains('HibikiDesignTokens.of(context)'));
     expect(dragTarget, contains('tokens.spacing'));
