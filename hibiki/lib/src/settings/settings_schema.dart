@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
+import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/reader/reader_settings.dart' show FontTarget;
@@ -25,6 +27,7 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
     _readingDestination(),
     _lookupDestination(),
     _cardCreationDestination(),
+    _videoDestination(),
     _listeningDestination(),
     buildSyncBackupDestination(),
     _systemDestination(),
@@ -1256,6 +1259,147 @@ SettingsDestination _cardCreationDestination() {
     sections: const <SettingsSection>[],
     body: (_) => const AnkiSettingsBody(),
   );
+}
+
+SettingsDestination _videoDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.video,
+    title: t.settings_destination_video,
+    summary: t.video_settings_title,
+    icon: Icons.movie_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        title: t.section_video_playback,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<VideoImmersiveMode>(
+            id: 'video.playback.immersive_mode',
+            title: t.video_setting_immersive_mode,
+            subtitle: t.video_setting_immersive_mode_hint,
+            icon: Icons.lock_outline,
+            options: <SettingsSegmentOption<VideoImmersiveMode>>[
+              for (final VideoImmersiveMode mode in VideoImmersiveMode.values)
+                SettingsSegmentOption<VideoImmersiveMode>(
+                  value: mode,
+                  label: _videoImmersiveModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoImmersiveMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoImmersiveMode mode,
+            ) async {
+              await settingsContext.appModel.setVideoImmersiveMode(mode);
+            },
+          ),
+          SettingsSegmentedItem<VideoFitMode>(
+            id: 'video.playback.picture_fit',
+            title: t.video_setting_picture_fit,
+            subtitle: t.video_setting_picture_fit_hint,
+            icon: Icons.fit_screen_outlined,
+            options: <SettingsSegmentOption<VideoFitMode>>[
+              SettingsSegmentOption<VideoFitMode>(
+                value: VideoFitMode.cover,
+                label: t.video_setting_picture_fit_cover,
+              ),
+              SettingsSegmentOption<VideoFitMode>(
+                value: VideoFitMode.contain,
+                label: t.video_setting_picture_fit_contain,
+              ),
+              SettingsSegmentOption<VideoFitMode>(
+                value: VideoFitMode.fill,
+                label: t.video_setting_picture_fit_fill,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoFitMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoFitMode mode,
+            ) async {
+              await settingsContext.appModel.setVideoFitMode(mode);
+            },
+          ),
+          SettingsSegmentedItem<int>(
+            id: 'video.playback.double_tap',
+            title: t.video_setting_double_tap,
+            subtitle: t.video_setting_double_tap_hint,
+            icon: Icons.touch_app_outlined,
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.video_setting_double_tap_off,
+              ),
+              for (final int seconds in <int>[3, 5, 10])
+                SettingsSegmentOption<int>(
+                  value: seconds,
+                  label: '${seconds}s',
+                ),
+              SettingsSegmentOption<int>(
+                value: VideoAsbplayerConfig.kDoubleTapSubtitle,
+                label: t.video_setting_double_tap_subtitle,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                VideoAsbplayerConfig.decode(
+              settingsContext.appModel.videoAsbplayerConfig,
+            ).doubleTapSeekSeconds,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              final VideoAsbplayerConfig current = VideoAsbplayerConfig.decode(
+                settingsContext.appModel.videoAsbplayerConfig,
+              );
+              await settingsContext.appModel.setVideoAsbplayerConfig(
+                VideoAsbplayerConfig.encode(
+                  current.copyWith(doubleTapSeekSeconds: value),
+                ),
+              );
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.lock_window_aspect',
+            title: t.video_setting_lock_window_aspect,
+            icon: Icons.aspect_ratio_outlined,
+            visible: (_) => isDesktopPlatform,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoLockWindowAspectRatio,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoLockWindowAspectRatio(value);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.section_video_subtitles,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'video.subtitle.blur',
+            title: t.video_setting_subtitle_blur,
+            subtitle: t.video_setting_subtitle_blur_hint,
+            icon: Icons.blur_on_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleBlur,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoSubtitleBlur(value);
+            },
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+String _videoImmersiveModeLabel(VideoImmersiveMode mode) {
+  switch (mode) {
+    case VideoImmersiveMode.full:
+      return t.video_immersive_mode_full;
+    case VideoImmersiveMode.seekAndLookup:
+      return t.video_immersive_mode_seek_lookup;
+    case VideoImmersiveMode.lookupOnly:
+      return t.video_immersive_mode_lookup_only;
+    case VideoImmersiveMode.unlockOnly:
+      return t.video_immersive_mode_unlock_only;
+  }
 }
 
 SettingsDestination _listeningDestination() {

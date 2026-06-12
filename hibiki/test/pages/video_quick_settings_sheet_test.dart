@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
+import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
@@ -19,6 +20,7 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoMpvConfig)? onMpvConfigChanged,
   void Function(VideoShaderTier tier, bool highQuality)? onSelectShaderTier,
   void Function(VideoFitMode mode)? onVideoFitModeChanged,
+  void Function(VideoImmersiveMode mode)? onImmersiveModeChanged,
   double uiScale = 1.0,
   int initialDelayMs = 0,
 }) {
@@ -46,6 +48,9 @@ VideoQuickSettingsSheet _sheet({
     initialVideoFitMode: VideoFitMode.cover,
     onVideoFitModeChanged: (VideoFitMode mode) async =>
         onVideoFitModeChanged?.call(mode),
+    initialImmersiveMode: VideoImmersiveMode.lookupOnly,
+    onImmersiveModeChanged: (VideoImmersiveMode mode) async =>
+        onImmersiveModeChanged?.call(mode),
     uiScale: uiScale,
   );
 }

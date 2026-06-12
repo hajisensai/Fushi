@@ -1568,5 +1568,14 @@
     "video_setting_double_tap_hint": "双击视频左右两侧快退快进",
     "video_setting_double_tap": "双击快进",
     "video_double_tap_prev_cue": "上一句",
-    "video_setting_double_tap_off": "关"
+    "video_setting_double_tap_off": "关",
+    "section_video_subtitles": "字幕",
+    "section_video_playback": "播放",
+    "video_setting_immersive_mode": "沉浸模式",
+    "settings_destination_video": "视频",
+    "video_setting_immersive_mode_hint": "控制按下侧边锁后仍允许哪些操作",
+    "video_immersive_mode_lookup_only": "仅查词",
+    "video_immersive_mode_full": "全部功能",
+    "video_immersive_mode_seek_lookup": "跳转 + 查词",
+    "video_immersive_mode_unlock_only": "仅解锁"
 }

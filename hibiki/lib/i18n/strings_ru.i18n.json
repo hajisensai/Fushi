@@ -1568,5 +1568,14 @@
     "video_setting_double_tap_hint": "Double-tap the left or right of the video to seek",
     "video_setting_double_tap": "Double-tap seek",
     "video_double_tap_prev_cue": "Previous line",
-    "video_setting_double_tap_off": "Off"
+    "video_setting_double_tap_off": "Off",
+    "section_video_subtitles": "Subtitles",
+    "section_video_playback": "Playback",
+    "video_setting_immersive_mode": "Immersive mode",
+    "settings_destination_video": "Video",
+    "video_setting_immersive_mode_hint": "Controls what remains available after pressing the side lock button",
+    "video_immersive_mode_lookup_only": "Lookup only",
+    "video_immersive_mode_full": "Full controls",
+    "video_immersive_mode_seek_lookup": "Seek + lookup",
+    "video_immersive_mode_unlock_only": "Unlock only"
 }

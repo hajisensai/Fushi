@@ -9,6 +9,7 @@ enum SettingsDestinationId {
   reading,
   lookup,
   cardCreation,
+  video,
   listening,
   syncBackup,
   system,

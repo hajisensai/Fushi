@@ -27,6 +27,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
 import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
@@ -1347,6 +1348,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  VideoImmersiveMode get _videoImmersiveMode => appModel.videoImmersiveMode;
+
+  bool get _immersiveAllowsFullControls =>
+      !_immersiveLocked.value || _videoImmersiveMode == VideoImmersiveMode.full;
+
+  bool get _immersiveAllowsDoubleTapSeek =>
+      !_immersiveLocked.value ||
+      _videoImmersiveMode == VideoImmersiveMode.full ||
+      _videoImmersiveMode == VideoImmersiveMode.seekAndLookup;
+
+  bool get _immersiveAllowsLookup =>
+      !_immersiveLocked.value ||
+      _videoImmersiveMode == VideoImmersiveMode.full ||
+      _videoImmersiveMode == VideoImmersiveMode.seekAndLookup ||
+      _videoImmersiveMode == VideoImmersiveMode.lookupOnly;
+
+  void _runWhenImmersiveAllowsFullControls(VoidCallback action) {
+    if (!_immersiveAllowsFullControls) return;
+    action();
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -1817,10 +1839,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _onDismissBarrierTap(Offset globalPos) {
     final SubtitleCharHit? hit = _subtitleHitTester.hitTest(globalPos);
     if (hit != null) {
-      unawaited(_lookupAt(hit.sentence, hit.graphemeIndex, hit.charRect));
+      _handleSubtitleLookupTap(hit.sentence, hit.graphemeIndex, hit.charRect);
       return;
     }
     _popNestedPopupAt(0);
+  }
+
+  void _handleSubtitleLookupTap(
+    String sentence,
+    int graphemeIndex,
+    Rect charRect,
+  ) {
+    if (!_immersiveAllowsLookup) return;
+    unawaited(_lookupAt(sentence, graphemeIndex, charRect));
   }
 
   void _popNestedPopupAt(int index) {
@@ -2122,64 +2153,98 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return buildVideoPlayerShortcutsFromRegistry(
       appModel.shortcutRegistry,
       VideoPlayerShortcutActions(
-        togglePlayPause: () => unawaited(controller.playOrPause()),
-        play: () => unawaited(controller.play()),
-        pause: () => unawaited(controller.pause()),
+        togglePlayPause: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(controller.playOrPause()),
+        ),
+        play: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(controller.play()),
+        ),
+        pause: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(controller.pause()),
+        ),
         // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
         // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
         // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
         // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
         // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
         previousSubtitle: () {
-          _pokeControlsVisible();
-          unawaited(
-            controller.skipToPrevCueOrSeekBack(
-              seekSeconds: _asbConfig.seekSeconds,
-            ),
-          );
+          _runWhenImmersiveAllowsFullControls(() {
+            _pokeControlsVisible();
+            unawaited(
+              controller.skipToPrevCueOrSeekBack(
+                seekSeconds: _asbConfig.seekSeconds,
+              ),
+            );
+          });
         },
         nextSubtitle: () {
-          _pokeControlsVisible();
-          // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
-          // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
-          // skipToPrevCueOrSeekBack 对称，TODO-073）。
-          unawaited(
-            controller.skipToNextCueOrSeekForward(
-              seekSeconds: _asbConfig.seekSeconds,
-            ),
-          );
+          _runWhenImmersiveAllowsFullControls(() {
+            _pokeControlsVisible();
+            // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
+            // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
+            // skipToPrevCueOrSeekBack 对称，TODO-073）。
+            unawaited(
+              controller.skipToNextCueOrSeekForward(
+                seekSeconds: _asbConfig.seekSeconds,
+              ),
+            );
+          });
         },
         // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
-        seekBackward: () {
+        seekBackward: () => _runWhenImmersiveAllowsFullControls(() {
           _pokeControlsVisible();
           unawaited(controller.seekRelative(-_asbSeekMs));
-        },
-        seekForward: () {
+        }),
+        seekForward: () => _runWhenImmersiveAllowsFullControls(() {
           _pokeControlsVisible();
           unawaited(controller.seekRelative(_asbSeekMs));
-        },
-        toggleShaderCompare: () => unawaited(_toggleShaderCompare()),
-        volumeUp: () => unawaited(_adjustVolume(_volumeStep)),
-        volumeDown: () => unawaited(_adjustVolume(-_volumeStep)),
-        toggleMute: () => unawaited(_toggleMute()),
-        speedUp: () => unawaited(_adjustSpeed(_speedStep)),
-        speedDown: () => unawaited(_adjustSpeed(-_speedStep)),
-        resetSpeed: () => unawaited(_setSpeed(1.0)),
-        previousFrame: () => unawaited(controller.frameStep(forward: false)),
-        nextFrame: () => unawaited(controller.frameStep(forward: true)),
-        screenshot: () => unawaited(_saveScreenshot()),
-        toggleFullscreen: () {
+        }),
+        toggleShaderCompare: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_toggleShaderCompare()),
+        ),
+        volumeUp: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_adjustVolume(_volumeStep)),
+        ),
+        volumeDown: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_adjustVolume(-_volumeStep)),
+        ),
+        toggleMute: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_toggleMute()),
+        ),
+        speedUp: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_adjustSpeed(_speedStep)),
+        ),
+        speedDown: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_adjustSpeed(-_speedStep)),
+        ),
+        resetSpeed: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_setSpeed(1.0)),
+        ),
+        previousFrame: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(controller.frameStep(forward: false)),
+        ),
+        nextFrame: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(controller.frameStep(forward: true)),
+        ),
+        screenshot: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_saveScreenshot()),
+        ),
+        toggleFullscreen: () => _runWhenImmersiveAllowsFullControls(() {
           final BuildContext? ctx = _videoControlsContext;
           if (ctx != null && ctx.mounted) {
             unawaited(_toggleVideoFullscreen(ctx));
           }
-        },
+        }),
         // 'L' = 开/关字幕跳转列表（TODO-069）。
-        toggleSubtitleList: _toggleSubtitleJumpList,
+        toggleSubtitleList: () => _runWhenImmersiveAllowsFullControls(
+          _toggleSubtitleJumpList,
+        ),
         // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
         toggleImmersiveLock: _toggleImmersiveLock,
         // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
-        toggleSubtitleBlur: () => unawaited(_toggleSubtitleBlur()),
+        toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_toggleSubtitleBlur()),
+        ),
         escape: () {
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
@@ -3284,6 +3349,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       initialVideoFitMode: _videoFitMode,
       onVideoFitModeChanged: _setVideoFitMode,
+      initialImmersiveMode: appModel.videoImmersiveMode,
+      onImmersiveModeChanged: appModel.setVideoImmersiveMode,
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
       initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
@@ -3908,10 +3975,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     _lastVideoPointerUpAt = null;
     _lastVideoPointerUpPosition = null;
+    if (_immersiveLocked.value && !_immersiveAllowsDoubleTapSeek) {
+      return;
+    }
     // TODO-173/BUG-231: 双击左/右区先尝试快进/快退（或跳上/下一句）。落在左 / 右
-    // 区（且双击行为已开启）则在此早返回，中带（中间 1/3）落空继续走下方平台分流，
-    // 保留 BUG-221 的双击暂停（移动）/ 全屏（桌面）。
-    if (_handleDoubleTapSeek(controlsContext, event.position)) return;
+    // 区（且双击行为已开启）则在此早返回。未锁定或 full 模式下，中带（中间 1/3）
+    // 落空继续走下方平台分流，保留 BUG-221 的双击暂停（移动）/ 全屏（桌面）。
+    final bool doubleTapHandled =
+        _handleDoubleTapSeek(controlsContext, event.position);
+    if (doubleTapHandled) return;
+    // seekAndLookup 锁定态只允许左右双击 seek + 查词；配置为 0、点中带或布局不可判定时
+    // 必须消费掉双击，不能漏到暂停 / 全屏 fallback。
+    if (_immersiveLocked.value &&
+        _videoImmersiveMode == VideoImmersiveMode.seekAndLookup) {
+      return;
+    }
     // BUG-221: 双击命中（中带）后按平台分流。
     // - 移动端：双击 = 播放/暂停。原先双击 → [_toggleVideoFullscreen] → media_kit 全屏路由，
     //   退出时弹回竖屏，用户感知为「双击 = 竖屏」。移动端横屏沉浸态即唯一形态、无「全屏」
@@ -3986,10 +4064,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [_buildVideoControlsInner] / [VideoControlsFocusGate]），故 showMenu 找到的是
   /// 全屏路由的 Overlay，菜单在窗口与全屏两种场景都能正确浮出（与字幕跳转列表 /
   /// 锁定层同源的全屏安全范式，TODO-069/101）。移动端无次按钮、此回调不触发，且
-  /// 这里再门控一次（[_isDesktopVideoControls]）双保险。锁定 / 沉浸模式下仍允许右键
-  /// （这是用户显式操作，不同于被动 hover 唤起控制条，故不被 [_immersiveLocked] 挡）。
+  /// 这里再门控一次（[_isDesktopVideoControls]）双保险。右键菜单含完整播放控制，沉浸锁
+  /// 仅 full 模式允许打开；seekAndLookup / lookupOnly / unlockOnly 均不能绕过四段 gate。
   void _handleSecondaryTap(Offset globalPosition) {
     if (!_isDesktopVideoControls) return;
+    if (!_immersiveAllowsFullControls) return;
     final VideoPlayerController? controller = _controller;
     final BuildContext? ctx = _videoControlsContext;
     if (controller == null || ctx == null || !ctx.mounted) return;
@@ -4253,7 +4332,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 Positioned.fill(
                   child: VideoSubtitleOverlay(
                     controller: controller,
-                    onCharTap: _lookupAt,
+                    onCharTap: _handleSubtitleLookupTap,
                     hitTester: _subtitleHitTester,
                     blurEnabled: appModel.videoSubtitleBlur,
                     fontSize: _subtitleStyle.fontSize,

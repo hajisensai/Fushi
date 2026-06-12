@@ -1808,6 +1808,11 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoMpvConfig(String json) =>
       prefsRepo.setVideoMpvConfig(json);
 
+  VideoImmersiveMode get videoImmersiveMode => prefsRepo.videoImmersiveMode;
+
+  Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) =>
+      prefsRepo.setVideoImmersiveMode(mode);
+
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 

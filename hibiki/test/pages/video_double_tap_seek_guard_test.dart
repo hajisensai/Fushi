@@ -93,10 +93,14 @@ void main() {
     test('_handleVideoPointerUp 双击命中后先按 dx 分区（早返回），再走平台分流', () {
       final String body = methodBody(
           pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
-      final int seekIdx = body.indexOf(
-          'if (_handleDoubleTapSeek(controlsContext, event.position)) return;');
+      final int seekIdx =
+          body.indexOf('_handleDoubleTapSeek(controlsContext, event.position)');
       expect(seekIdx, greaterThanOrEqualTo(0),
           reason: '双击命中后必须先尝试 _handleDoubleTapSeek 左右分区（命中则早返回）');
+      final int handledReturnIdx =
+          body.indexOf('if (doubleTapHandled) return;', seekIdx);
+      expect(handledReturnIdx, greaterThan(seekIdx),
+          reason: '_handleDoubleTapSeek 命中左/右区后必须早返回');
       // 分区判定必须排在平台分流（BUG-221 暂停/全屏）之前。
       final int platformBranch = body.indexOf('if (_isDesktopVideoControls) {');
       expect(platformBranch, greaterThan(seekIdx),

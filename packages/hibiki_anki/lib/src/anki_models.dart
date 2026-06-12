@@ -92,7 +92,7 @@ class AnkiSettings {
   /// 默认 `true`（保持 TODO-115/062 现状）。
   final bool tagIncludeHibiki;
 
-  /// 是否按制卡来源追加分类默认标签（书籍→`book` / 视频→`anime`，TODO-117 开关）。
+  /// 是否按制卡来源追加分类默认标签（书籍→`book` / 视频→`video`，TODO-117/TODO-185）。
   /// 默认 `true`（保持 TODO-115 现状）。来源为 `null` 时本就不追加分类标签。
   final bool tagIncludeCategory;
   final bool allowDupes;
