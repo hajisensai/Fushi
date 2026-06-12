@@ -8,11 +8,34 @@ import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/pages/base_page.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
 enum _CollectionType { bookmark, sentence }
+
+@visibleForTesting
+({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
+  required VideoBookRow row,
+  required int? favoriteSectionIndex,
+  required int? favoriteStartMs,
+}) {
+  final int episodeCount = playlistEpisodeCount(row.playlistJson);
+  if (episodeCount <= 0) {
+    return (episodeIndex: null, startMs: favoriteStartMs);
+  }
+  if (favoriteSectionIndex == null) {
+    return (episodeIndex: null, startMs: null);
+  }
+  return (
+    episodeIndex: favoriteSectionIndex.clamp(0, episodeCount - 1),
+    startMs: favoriteStartMs,
+  );
+}
 
 MediaItem buildCollectionReaderMediaItem({
   required String bookKey,
@@ -61,8 +84,8 @@ class _CollectionItem {
   final String? favoriteId;
 
   /// 收藏句子来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。书签恒
-  /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子不能当 EPUB 打开
-  /// （bookKey 是视频 bookUid），故据此关掉导航。
+  /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子的 [bookKey] 是视频
+  /// bookUid，点击时走 [VideoHibikiPage] 并按 [normCharOffset] 的 startMs seek。
   final String source;
 }
 
@@ -111,33 +134,37 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final items = <_CollectionItem>[];
 
     for (final bm in allBookmarks) {
-      items.add(_CollectionItem(
-        type: _CollectionType.bookmark,
-        createdAt: bm.createdAt,
-        bookTitle: bm.bookTitle ??
-            (bm.bookKey != null ? bookTitleMap[bm.bookKey] : null),
-        bookKey: bm.bookKey,
-        label: bm.label,
-        sectionIndex: bm.sectionIndex,
-        normCharOffset: bm.normCharOffset,
-        bookmarkId: bm.id,
-      ));
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.bookmark,
+          createdAt: bm.createdAt,
+          bookTitle: bm.bookTitle ??
+              (bm.bookKey != null ? bookTitleMap[bm.bookKey] : null),
+          bookKey: bm.bookKey,
+          label: bm.label,
+          sectionIndex: bm.sectionIndex,
+          normCharOffset: bm.normCharOffset,
+          bookmarkId: bm.id,
+        ),
+      );
     }
 
     for (final fav in allFavorites) {
-      items.add(_CollectionItem(
-        type: _CollectionType.sentence,
-        createdAt: fav.createdAt,
-        bookTitle: fav.bookTitle,
-        bookKey: fav.bookKey,
-        text: fav.text,
-        chapterLabel: fav.chapterLabel,
-        sectionIndex: fav.sectionIndex,
-        normCharOffset: fav.normCharOffset,
-        normCharLength: fav.normCharLength,
-        favoriteId: fav.id,
-        source: fav.source,
-      ));
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.sentence,
+          createdAt: fav.createdAt,
+          bookTitle: fav.bookTitle,
+          bookKey: fav.bookKey,
+          text: fav.text,
+          chapterLabel: fav.chapterLabel,
+          sectionIndex: fav.sectionIndex,
+          normCharOffset: fav.normCharOffset,
+          normCharLength: fav.normCharLength,
+          favoriteId: fav.id,
+          source: fav.source,
+        ),
+      );
     }
 
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -233,6 +260,59 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     );
   }
 
+  Future<void> _openVideoSentence(_CollectionItem item) async {
+    final String? bookUid = item.bookKey;
+    if (bookUid == null || bookUid.isEmpty) return;
+
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+    final VideoBookRow? row = await repo.getByBookUid(bookUid);
+    if (row == null) return;
+
+    final int? startMs = await _resolveVideoFavoriteStartMs(repo, row, item);
+    final target = resolveVideoFavoriteOpenTarget(
+      row: row,
+      favoriteSectionIndex: item.sectionIndex,
+      favoriteStartMs: startMs,
+    );
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) => VideoHibikiPage.neutralized(
+          bookUid: row.bookUid,
+          repo: repo,
+          initialCueStartMs: target.startMs,
+          initialEpisodeIndex: target.episodeIndex,
+          initialSubtitleListVisible: true,
+        ),
+      ),
+    );
+  }
+
+  Future<int?> _resolveVideoFavoriteStartMs(
+    VideoBookRepository repo,
+    VideoBookRow row,
+    _CollectionItem item,
+  ) async {
+    if (_isPlaylistVideo(row) && item.sectionIndex == null) {
+      return null;
+    }
+    if (item.normCharOffset != null) return item.normCharOffset;
+    final String? text = item.text?.trim();
+    final String? bookUid = item.bookKey;
+    if (text == null || text.isEmpty || bookUid == null || bookUid.isEmpty) {
+      return null;
+    }
+    final List<AudioCue> cues = await repo.loadCues(bookUid);
+    for (final AudioCue cue in cues) {
+      if (cue.text.trim() == text) return cue.startMs;
+    }
+    return null;
+  }
+
+  bool _isPlaylistVideo(VideoBookRow row) =>
+      playlistEpisodeCount(row.playlistJson) > 0;
+
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
     required String? audioRoot,
@@ -309,8 +389,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     try {
       final String inputPath = audioFiles[range.audioFileIndex].path;
       final Directory tmpDir = await getTemporaryDirectory();
-      final String outputPath =
-          p.join(tmpDir.path, 'collections_audio_segment.aac');
+      final String outputPath = p.join(
+        tmpDir.path,
+        'collections_audio_segment.aac',
+      );
 
       final String? result = await TtsChannel.instance.extractAudioSegment(
         inputPath: inputPath,
@@ -358,11 +440,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Future<void> _showItemDialog(_CollectionItem item) async {
     final isBookmark = item.type == _CollectionType.bookmark;
-    // 视频来源句子不可当书打开（同 _buildItem），对话框也不放「阅读」按钮。
     final bool isVideoSentence =
         !isBookmark && item.source == kFavoriteSentenceSourceVideo;
-    final canNavigate =
-        item.bookKey != null && item.bookKey!.isNotEmpty && !isVideoSentence;
+    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
     final hasAudio = _hasAudio(item);
     final displayTitle = isBookmark ? (item.label ?? '') : (item.text ?? '');
     final cs = Theme.of(context).colorScheme;
@@ -370,10 +450,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     await showAppDialog<void>(
       context: context,
       builder: (ctx) => CollectionItemDialogFrame(
-        title: SelectableText(
-          displayTitle,
-          maxLines: 3,
-        ),
+        title: SelectableText(displayTitle, maxLines: 3),
         content: item.bookTitle != null
             ? Text(item.bookTitle!, style: textTheme.bodyMedium)
             : null,
@@ -411,11 +488,20 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           ),
           if (canNavigate)
             FilledButton.icon(
-              icon: const Icon(Icons.menu_book_outlined, size: 18),
-              label: Text(t.dialog_read),
+              icon: Icon(
+                isVideoSentence
+                    ? Icons.movie_outlined
+                    : Icons.menu_book_outlined,
+                size: 18,
+              ),
+              label: Text(isVideoSentence ? t.nav_video : t.dialog_read),
               onPressed: () {
                 Navigator.pop(ctx);
-                _openBook(item);
+                if (isVideoSentence) {
+                  _openVideoSentence(item);
+                } else {
+                  _openBook(item);
+                }
               },
             ),
         ],
@@ -470,10 +556,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }
 
-    // 视频来源句子的 bookKey 是视频 bookUid，不能当 EPUB 阅读器打开 —— 关掉导航，
-    // 点击只弹条目菜单（复制/删除）。书内/有声书句子仍可跳回阅读器。
-    final canNavigate =
-        item.bookKey != null && item.bookKey!.isNotEmpty && !isVideoSentence;
+    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
 
     final key = isBookmark
         ? 'bm_${item.bookKey}_${item.createdAt.microsecondsSinceEpoch}'
@@ -488,8 +571,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           right: tokens.spacing.card + tokens.spacing.gap / 2,
         ),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(Icons.delete_outline,
-            color: Theme.of(context).colorScheme.onError),
+        child: Icon(
+          Icons.delete_outline,
+          color: Theme.of(context).colorScheme.onError,
+        ),
       ),
       confirmDismiss: (_) async {
         final String message = isBookmark
@@ -514,11 +599,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             leading: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Icon(icon,
-                    size: 20,
-                    color: isBookmark
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.tertiary),
+                Icon(
+                  icon,
+                  size: 20,
+                  color: isBookmark
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.tertiary,
+                ),
                 Text(
                   typeLabel,
                   style: textTheme.labelSmall?.copyWith(
@@ -527,11 +614,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 ),
               ],
             ),
-            title: Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+            title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
             subtitle: Text(
               [
                 if (subtitle != null && subtitle.isNotEmpty) subtitle,
@@ -574,7 +657,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             // Non-navigable rows still get an onTap so they are a gamepad focus
             // stop (otherwise hold-A / the item menu can never be reached).
             onTap: canNavigate
-                ? () => _openBook(item)
+                ? () {
+                    if (isVideoSentence) {
+                      _openVideoSentence(item);
+                    } else {
+                      _openBook(item);
+                    }
+                  }
                 : () => _showItemDialog(item),
           ),
         ),
@@ -696,12 +785,7 @@ class CollectionDeleteDialog extends StatelessWidget {
               ),
             ),
             SizedBox(width: tokens.spacing.gap + 4),
-            Expanded(
-              child: Text(
-                message,
-                style: tokens.type.listSubtitle,
-              ),
-            ),
+            Expanded(child: Text(message, style: tokens.type.listSubtitle)),
           ],
         ),
         footer: Wrap(

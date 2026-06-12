@@ -259,7 +259,9 @@ class VideoPlayerController extends ChangeNotifier
     // 否则用户选了图形字幕却看不到（回归 BUG-122）。sub-auto 仍保持 no（轨由这里显式
     // 选定，不交给 mpv 自动选）。
     await applySubtitleMpvPropertiesToPlayer(
-        player, buildGraphicSubtitleVisibilityProperties());
+      player,
+      buildGraphicSubtitleVisibilityProperties(),
+    );
     return true;
   }
 
@@ -351,7 +353,9 @@ class VideoPlayerController extends ChangeNotifier
     final Player? player = _player;
     if (player != null) {
       await applyShadersToPlayer(
-          player, bypass ? const <String>[] : _shaderPaths);
+        player,
+        bypass ? const <String>[] : _shaderPaths,
+      );
     }
     return _shadersBypassed;
   }
@@ -428,10 +432,7 @@ class VideoPlayerController extends ChangeNotifier
       _videoController = VideoController(player);
     }
 
-    await player.open(
-      Media(sourceUri),
-      play: false,
-    );
+    await player.open(Media(sourceUri), play: false);
 
     // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
     // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
@@ -451,7 +452,9 @@ class VideoPlayerController extends ChangeNotifier
     // sub-visibility=no 让 libmpv 永不自动选轨、永不画画面字幕（图形 PGS 轨例外，
     // selectEmbeddedGraphicTrack 内会按需打开 sub-visibility）。
     await applySubtitleMpvPropertiesToPlayer(
-        player, buildSubtitleSuppressionProperties());
+      player,
+      buildSubtitleSuppressionProperties(),
+    );
 
     // 应用启用的 mpv 着色器（Anime4K 等）。五平台 libmpv 后端均生效——移动端 media_kit
     // 走 vo=gpu 渲染路径，glsl-shaders 进管线（见 applyShadersToPlayer doc）；仅非 libmpv
@@ -479,6 +482,7 @@ class VideoPlayerController extends ChangeNotifier
       _restoreTargetMs = null;
       _restoreGuardTicksLeft = 0;
     }
+    updateCueForPosition(initialPositionMs);
 
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
     _playingSub = player.stream.playing.listen((_) {
@@ -538,8 +542,10 @@ class VideoPlayerController extends ChangeNotifier
     final String? videoPath = _videoPath;
     if (videoPath == null) return;
 
-    final List<SubtitleSource> sources =
-        await listAllSubtitleSources(videoPath, langCode: 'ja');
+    final List<SubtitleSource> sources = await listAllSubtitleSources(
+      videoPath,
+      langCode: 'ja',
+    );
     if (_videoPath != videoPath) return; // 枚举期间换片：丢弃。
 
     // 第一条「能转文本 cue」的内嵌轨（codec 映射非 null）；跳过图形轨。
@@ -555,8 +561,11 @@ class VideoPlayerController extends ChangeNotifier
       return;
     }
 
-    final List<AudioCue> cues =
-        await loadCuesForSource(chosen, videoPath, bookUid);
+    final List<AudioCue> cues = await loadCuesForSource(
+      chosen,
+      videoPath,
+      bookUid,
+    );
     if (_videoPath != videoPath) return; // 加载期间换片：丢弃。
     if (cues.isEmpty) {
       debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
@@ -765,9 +774,7 @@ class VideoPlayerController extends ChangeNotifier
   /// mpv-style single-frame stepping. mpv requires playback to be paused first.
   Future<void> frameStep({required bool forward}) async {
     await pause();
-    await _mpvCommand(<String>[
-      forward ? 'frame-step' : 'frame-back-step',
-    ]);
+    await _mpvCommand(<String>[forward ? 'frame-step' : 'frame-back-step']);
   }
 
   void setPauseAtSubtitleEnd(bool enabled) {

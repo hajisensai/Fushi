@@ -29,6 +29,9 @@ void main() {
         bookTitle: 'ビデオ',
         createdAt: DateTime(2026, 6, 10, 8, 30),
         bookKey: 'video-uid-123',
+        sectionIndex: 7,
+        normCharOffset: 123456,
+        normCharLength: 2400,
         source: kFavoriteSentenceSourceVideo,
         dateKey: '2026-06-10',
       );
@@ -37,6 +40,21 @@ void main() {
       expect(round.dateKey, '2026-06-10');
       expect(round.bookKey, 'video-uid-123');
       expect(round.text, '映画の字幕');
+      expect(
+        round.sectionIndex,
+        7,
+        reason: '视频收藏句用 sectionIndex 兼容保存 playlist episode index',
+      );
+      expect(
+        round.normCharOffset,
+        123456,
+        reason: '视频收藏句用 normCharOffset 兼容保存 cue.startMs',
+      );
+      expect(
+        round.normCharLength,
+        2400,
+        reason: '视频收藏句用 normCharLength 兼容保存 cue durationMs',
+      );
     });
 
     test('toJson 始终写 source；dateKey 为 null 时不写键', () {
