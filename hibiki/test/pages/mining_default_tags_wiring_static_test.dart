@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 源码守卫（TODO-115）：制卡默认标签接线。
 ///
-/// 行为本体（`hibiki` + `book`/`anime` 分类标签的拼装、两后端对称、去重保序）由
+/// 行为本体（`hibiki` + `book`/`video` 分类标签的拼装、两后端对称、去重保序）由
 /// `packages/hibiki_anki/test/mining_tag_and_parallel_test.dart` 的真制卡行为测试咬住。
 /// 本守卫补两块行为测试照不到的接线：
 ///   1. AnkiDroid 原生 `addNote` 不再硬编码注入旧 fork 的 `"Yuuna"` 默认 tag
@@ -25,7 +25,7 @@ void main() {
         reason: 'AnkiDroid 必须透传 Dart 传入的 tags');
   });
 
-  test('buildNoteTags 把来源映射成 book/anime 分类标签（追加不覆盖）', () {
+  test('buildNoteTags 把来源映射成 book/video 分类标签（追加不覆盖）', () {
     final String src = File(
       '../packages/hibiki_anki/lib/src/base_anki_repository.dart',
     ).readAsStringSync();
@@ -37,7 +37,7 @@ void main() {
         ),
         reason: 'buildNoteTags 必须接受来源参数');
     expect(src, contains("static const String bookTag = 'book';"));
-    expect(src, contains("static const String animeTag = 'anime';"));
+    expect(src, contains("static const String videoTag = 'video';"));
     expect(src, contains("static const String hibikiTag = 'hibiki';"),
         reason: 'hibiki 固定标签不得丢（TODO-062）');
   });
@@ -67,7 +67,7 @@ void main() {
         File('lib/src/pages/implementations/video_hibiki_page.dart')
             .readAsStringSync();
     expect(src, contains('source: AnkiMiningSource.video'),
-        reason: 'video 制卡应标记视频来源 → anime 分类标签');
+        reason: 'video 制卡应标记视频来源 → video 分类标签');
   });
 
   test('mixin 把 dictionarySourceType 映射进 AnkiMiningContext.source', () {
