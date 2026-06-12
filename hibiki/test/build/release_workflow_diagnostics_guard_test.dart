@@ -73,7 +73,7 @@ void main() {
     expect(
         postBuildDiagnostics, contains('find build/app/outputs/flutter-apk'));
     expect(
-        postBuildDiagnostics, contains("find build/app/outputs -maxdepth 5"));
+        postBuildDiagnostics, contains('find build/app/outputs -maxdepth 5'));
     expect(
       workflow.indexOf('Build release APK (split per ABI)'),
       lessThan(workflow.indexOf('Collect Android post-build diagnostics')),
