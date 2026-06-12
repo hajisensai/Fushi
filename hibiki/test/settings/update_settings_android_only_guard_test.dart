@@ -45,7 +45,7 @@ void main() {
       ),
     );
     expect(workflow, contains('BUILD_DEBUG_CHANNEL_APK=true'));
-    expect(workflow, contains('flutter build apk --release'));
+    expect(workflow, contains('flutter --verbose build apk --release'));
     expect(
       workflow,
       contains(
