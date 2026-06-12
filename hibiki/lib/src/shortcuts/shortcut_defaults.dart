@@ -88,6 +88,21 @@ class ShortcutDefaults {
     ]),
     // R3 toggles furigana (gamepad-only; keyboard furigana stays in settings).
     ShortcutAction.readerToggleFurigana: _kb([], [_gR3]),
+    // Reader lookup/card actions now live in the remappable registry instead
+    // of being only hard-wired in the page. Enter/A keep the old "activate at
+    // cursor" feel; Shift+Enter is an explicit plain lookup; Ctrl+Enter mines
+    // the top dictionary popup entry when one is visible.
+    ShortcutAction.readerLookupAtCursor: _kb([
+      _key(LogicalKeyboardKey.enter),
+    ], [
+      GamepadBinding(GamepadButton.a),
+    ]),
+    ShortcutAction.readerShiftLookup: _kb([
+      _key(LogicalKeyboardKey.enter, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.readerCreateCardFromPopup: _kb([
+      _key(LogicalKeyboardKey.enter, {ModifierKey.ctrl}),
+    ]),
     ShortcutAction.homeTabBooks: _kb([
       _key(LogicalKeyboardKey.digit1, {ModifierKey.ctrl}),
     ]),

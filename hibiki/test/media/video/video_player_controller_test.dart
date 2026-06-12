@@ -121,6 +121,24 @@ void main() {
       // posMs - delayMs 为负时夹到 0，不能查出负位置。
       expect(effectiveSubtitlePositionMs(100, 5000), 0);
     });
+
+    test('cue seek target is inverse of effective subtitle position', () {
+      // 显示/决策查 cue 用 effective = playerPos - delay；跳到 cue 起点时必须反算
+      // 回播放器轴 playerPos = cueStart + delay，否则调轴后按“上一句字幕”会跳到字幕轴
+      // 的原始时间点，画面与字幕错位。
+      expect(
+        VideoPlayerController.cueSeekTargetMs(cueStartMs: 10000, delayMs: 500),
+        10500,
+      );
+      expect(
+        VideoPlayerController.cueSeekTargetMs(cueStartMs: 10000, delayMs: -700),
+        9300,
+      );
+      expect(
+        VideoPlayerController.cueSeekTargetMs(cueStartMs: 300, delayMs: -1000),
+        0,
+      );
+    });
   });
 
   group('VideoPlayerController pause at subtitle end', () {

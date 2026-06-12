@@ -69,4 +69,15 @@ void main() {
           reason: 'settings page is missing video action label: $label');
     }
   });
+
+  test('settings page labels reader lookup and card shortcut actions', () {
+    for (final String label in <String>[
+      't.shortcut_action_reader_lookup_at_cursor',
+      't.shortcut_action_reader_shift_lookup',
+      't.shortcut_action_reader_create_card_from_popup',
+    ]) {
+      expect(src.contains(label), isTrue,
+          reason: 'settings page is missing reader shortcut label: $label');
+    }
+  });
 }

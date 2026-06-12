@@ -194,6 +194,11 @@ class VideoPlayerController extends ChangeNotifier
   @override
   int? get positionMs => _player?.state.position.inMilliseconds;
 
+  int? get _effectivePositionMs {
+    final int? pos = positionMs;
+    return pos == null ? null : effectiveSubtitlePositionMs(pos, _delayMs);
+  }
+
   /// 媒体总时长（毫秒）；未 [load] / 未解析媒体头时为 null。
   @override
   int? get durationMs => _player?.state.duration.inMilliseconds;
@@ -803,7 +808,9 @@ class VideoPlayerController extends ChangeNotifier
       await (_pauseAtSubtitleEndOverride ?? pause).call();
       final Future<void> Function(int positionMs) seekToEnd =
           _pauseAtSubtitleEndSeekOverride ?? seekMs;
-      await seekToEnd(cue.endMs);
+      await seekToEnd(
+        cueSeekTargetMs(cueStartMs: cue.endMs, delayMs: _delayMs),
+      );
     }());
   }
 
@@ -875,8 +882,19 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 跳到指定 cue 的起始位置。
   Future<void> skipToCue(AudioCue cue) async {
-    await seekMs(cue.startMs);
+    await seekMs(cueSeekTargetMs(cueStartMs: cue.startMs, delayMs: _delayMs));
   }
+
+  /// 把 cue 时间轴上的目标点反算回播放器 seek 时间轴。
+  ///
+  /// cue 命中使用 [effectiveSubtitlePositionMs]：`effective = playerPos - delay`。
+  /// 因此跳到某个 cue 起点/终点时必须做逆变换：`playerPos = cueTime + delay`。
+  @visibleForTesting
+  static int cueSeekTargetMs({
+    required int cueStartMs,
+    required int delayMs,
+  }) =>
+      (cueStartMs + delayMs).clamp(0, 1 << 30).toInt();
 
   /// 跳到下一句 cue（已是最后一句时 no-op）。
   ///
@@ -890,7 +908,7 @@ class VideoPlayerController extends ChangeNotifier
     final int? next = nextCueIndexFor(
       cues: _cues,
       currentCueIndex: _currentCueIndex,
-      positionMs: positionMs,
+      positionMs: _effectivePositionMs,
     );
     if (next == null) return;
     await skipToCue(_cues[next]);
@@ -907,7 +925,7 @@ class VideoPlayerController extends ChangeNotifier
     final int? prev = prevCueIndexFor(
       cues: _cues,
       currentCueIndex: _currentCueIndex,
-      positionMs: positionMs,
+      positionMs: _effectivePositionMs,
     );
     if (prev == null) return;
     await skipToCue(_cues[prev]);
@@ -927,7 +945,7 @@ class VideoPlayerController extends ChangeNotifier
     final PrevSeekDecision decision = prevSeekDecisionFor(
       cues: _cues,
       currentCueIndex: _currentCueIndex,
-      positionMs: positionMs,
+      positionMs: _effectivePositionMs,
       seekSeconds: seekSeconds,
     );
     if (decision.cueIndex != null) {
@@ -960,7 +978,7 @@ class VideoPlayerController extends ChangeNotifier
     final int? next = nextCueIndexFor(
       cues: _cues,
       currentCueIndex: _currentCueIndex,
-      positionMs: positionMs,
+      positionMs: _effectivePositionMs,
     );
     // next == null：已在末句之后，无下一句 → 保持 no-op（不前进越过片尾，避免误跳到结尾）。
     if (next == null) return;

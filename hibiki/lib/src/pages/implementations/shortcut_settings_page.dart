@@ -24,6 +24,12 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_reader_toggle_bookmark;
     case ShortcutAction.readerToggleFurigana:
       return t.shortcut_action_reader_toggle_furigana;
+    case ShortcutAction.readerLookupAtCursor:
+      return t.shortcut_action_reader_lookup_at_cursor;
+    case ShortcutAction.readerShiftLookup:
+      return t.shortcut_action_reader_shift_lookup;
+    case ShortcutAction.readerCreateCardFromPopup:
+      return t.shortcut_action_reader_create_card_from_popup;
     case ShortcutAction.homeTabBooks:
       return t.shortcut_action_home_tab_books;
     case ShortcutAction.homeTabDict:

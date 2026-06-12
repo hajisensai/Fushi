@@ -1579,6 +1579,15 @@ function createEntryHeader(entry, idx) {
     return header;
 }
 
+window.hoshiPopupMineFirstEntry = async function() {
+    const mineButton = document.querySelector('.mine-button');
+    if (!mineButton || mineButton.disabled) {
+        return false;
+    }
+    mineButton.click();
+    return true;
+};
+
 function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
