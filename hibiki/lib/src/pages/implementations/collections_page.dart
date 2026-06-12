@@ -10,12 +10,32 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/pages/base_page.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
 enum _CollectionType { bookmark, sentence }
+
+@visibleForTesting
+({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
+  required VideoBookRow row,
+  required int? favoriteSectionIndex,
+  required int? favoriteStartMs,
+}) {
+  final int episodeCount = playlistEpisodeCount(row.playlistJson);
+  if (episodeCount <= 0) {
+    return (episodeIndex: null, startMs: favoriteStartMs);
+  }
+  if (favoriteSectionIndex == null) {
+    return (episodeIndex: null, startMs: null);
+  }
+  return (
+    episodeIndex: favoriteSectionIndex.clamp(0, episodeCount - 1),
+    startMs: favoriteStartMs,
+  );
+}
 
 MediaItem buildCollectionReaderMediaItem({
   required String bookKey,
@@ -248,7 +268,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final VideoBookRow? row = await repo.getByBookUid(bookUid);
     if (row == null) return;
 
-    final int? startMs = await _resolveVideoFavoriteStartMs(repo, item);
+    final int? startMs = await _resolveVideoFavoriteStartMs(repo, row, item);
+    final target = resolveVideoFavoriteOpenTarget(
+      row: row,
+      favoriteSectionIndex: item.sectionIndex,
+      favoriteStartMs: startMs,
+    );
     if (!mounted) return;
     Navigator.push(
       context,
@@ -256,7 +281,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         builder: (_) => VideoHibikiPage.neutralized(
           bookUid: row.bookUid,
           repo: repo,
-          initialCueStartMs: startMs,
+          initialCueStartMs: target.startMs,
+          initialEpisodeIndex: target.episodeIndex,
           initialSubtitleListVisible: true,
         ),
       ),
@@ -265,8 +291,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Future<int?> _resolveVideoFavoriteStartMs(
     VideoBookRepository repo,
+    VideoBookRow row,
     _CollectionItem item,
   ) async {
+    if (_isPlaylistVideo(row) && item.sectionIndex == null) {
+      return null;
+    }
     if (item.normCharOffset != null) return item.normCharOffset;
     final String? text = item.text?.trim();
     final String? bookUid = item.bookKey;
@@ -279,6 +309,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
     return null;
   }
+
+  bool _isPlaylistVideo(VideoBookRow row) =>
+      playlistEpisodeCount(row.playlistJson) > 0;
 
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,

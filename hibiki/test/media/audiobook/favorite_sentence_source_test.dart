@@ -40,7 +40,11 @@ void main() {
       expect(round.dateKey, '2026-06-10');
       expect(round.bookKey, 'video-uid-123');
       expect(round.text, '映画の字幕');
-      expect(round.sectionIndex, 7);
+      expect(
+        round.sectionIndex,
+        7,
+        reason: '视频收藏句用 sectionIndex 兼容保存 playlist episode index',
+      );
       expect(
         round.normCharOffset,
         123456,
@@ -67,11 +71,11 @@ void main() {
     test('向后兼容：旧 JSON（无 source / 无 dateKey）→ 默认 book / null', () {
       final FavoriteSentence legacy =
           FavoriteSentence.fromJson(<String, dynamic>{
-            'id': 'hl_old',
-            'text': '旧条目',
-            'bookTitle': '旧本',
-            'createdAt': DateTime(2025, 1, 1).toIso8601String(),
-          });
+        'id': 'hl_old',
+        'text': '旧条目',
+        'bookTitle': '旧本',
+        'createdAt': DateTime(2025, 1, 1).toIso8601String(),
+      });
       expect(legacy.source, kFavoriteSentenceSourceBook);
       expect(legacy.dateKey, isNull);
       expect(legacy.id, 'hl_old');

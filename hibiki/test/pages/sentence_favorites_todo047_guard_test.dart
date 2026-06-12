@@ -40,8 +40,8 @@ void main() {
       );
       expect(
         src,
-        contains('sectionIndex: cue.sentenceIndex'),
-        reason: '同一视频内用 cue.sentenceIndex 辅助定位/排错',
+        contains('sectionIndex: _currentEpisode'),
+        reason: '播放列表收藏必须把 episode index 存进 FavoriteSentence.sectionIndex',
       );
       expect(
         src,
@@ -121,8 +121,13 @@ void main() {
       );
       expect(
         src,
-        contains('initialCueStartMs: startMs'),
+        contains('initialCueStartMs: target.startMs'),
         reason: '收藏页必须把视频 cue startMs 传给视频页 seek',
+      );
+      expect(
+        src,
+        contains('initialEpisodeIndex: target.episodeIndex'),
+        reason: '播放列表收藏页必须把 episode index 传给视频页，避免只靠 bookUid+startMs 打开错集',
       );
       expect(
         src,
@@ -135,6 +140,36 @@ void main() {
         reason: '旧收藏无 startMs 时要按文本从已保存 cue 里回退解析',
       );
       expect(src, contains('t.nav_video'), reason: '视频来源句子前缀标注');
+    });
+
+    test('视频页初始化播放列表时消费收藏页传入的 episode + cue startMs', () {
+      final String videoSrc = read(
+        'lib/src/pages/implementations/video_hibiki_page.dart',
+      );
+      expect(videoSrc, contains('final int? initialEpisodeIndex'));
+      expect(
+        videoSrc,
+        contains('widget.initialEpisodeIndex ?? row.currentEpisode'),
+        reason: '播放列表打开应优先使用收藏句 episode 锚点，再回退上次播放集',
+      );
+      expect(
+        videoSrc,
+        contains('widget.initialCueStartMs ?? _episodes[idx].positionMs'),
+        reason: '定位到收藏 episode 后，还要 seek 到该 cue 的 startMs',
+      );
+    });
+
+    test('播放列表旧收藏无 episode 锚点时保持文本 fallback 但不伪造稳定定位', () {
+      expect(
+        src,
+        contains('resolveVideoFavoriteOpenTarget'),
+        reason: '新收藏有 episode 锚点时必须精确定位',
+      );
+      expect(
+        src,
+        contains('favoriteSectionIndex == null'),
+        reason: '旧收藏缺 episode identity 时只能保留兼容 fallback，不能假装稳定定位到某集',
+      );
     });
   });
 

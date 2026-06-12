@@ -41,7 +41,7 @@ class PrevSeekDecision {
 
   /// 回退（或前进）[deltaMs] 毫秒的相对时间 seek（TODO-085 退化分支恒为负）。
   const PrevSeekDecision.timeSeek(int deltaMs)
-    : this._(timeSeekDeltaMs: deltaMs);
+      : this._(timeSeekDeltaMs: deltaMs);
 
   /// 无可后退的上一句：不动（保持原 no-op 语义）。
   static const PrevSeekDecision none = PrevSeekDecision._();

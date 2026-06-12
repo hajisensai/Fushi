@@ -155,6 +155,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     required this.bookUid,
     required this.repo,
     this.initialCueStartMs,
+    this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     super.key,
   })  : remoteInfo = null,
@@ -165,6 +166,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     required this.repo,
     required RemoteVideoClient client,
     this.initialCueStartMs,
+    this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     super.key,
   })  : bookUid = info.id,
@@ -176,6 +178,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   final RemoteVideoInfo? remoteInfo;
   final RemoteVideoClient? remoteClient;
   final int? initialCueStartMs;
+  final int? initialEpisodeIndex;
   final bool initialSubtitleListVisible;
 
   /// 打开视频播放页的**唯一入口**：在路由层用 [HibikiAppUiScaleNeutralizer] 把整页中和
@@ -190,6 +193,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     required String bookUid,
     required VideoBookRepository repo,
     int? initialCueStartMs,
+    int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
   }) =>
       HibikiAppUiScaleNeutralizer(
@@ -197,6 +201,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
           bookUid: bookUid,
           repo: repo,
           initialCueStartMs: initialCueStartMs,
+          initialEpisodeIndex: initialEpisodeIndex,
           initialSubtitleListVisible: initialSubtitleListVisible,
         ),
       );
@@ -206,6 +211,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     required VideoBookRepository repo,
     required RemoteVideoClient client,
     int? initialCueStartMs,
+    int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
   }) =>
       HibikiAppUiScaleNeutralizer(
@@ -214,6 +220,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
           repo: repo,
           client: client,
           initialCueStartMs: initialCueStartMs,
+          initialEpisodeIndex: initialEpisodeIndex,
           initialSubtitleListVisible: initialSubtitleListVisible,
         ),
       );
@@ -747,12 +754,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
 
     if (_episodes.isNotEmpty) {
-      final int idx = row.currentEpisode.clamp(0, _episodes.length - 1);
+      final int idx = (widget.initialEpisodeIndex ?? row.currentEpisode)
+          .clamp(0, _episodes.length - 1);
+      if (widget.initialEpisodeIndex != null && idx != row.currentEpisode) {
+        unawaited(widget.repo.updateCurrentEpisode(widget.bookUid, idx));
+      }
       // 每集各记自己的进度：恢复到 currentEpisode 那集的 entry.positionMs
       // （取代旧的「整个 VideoBook 一个 lastPositionMs」）。
       await _loadEpisode(
         idx,
-        initialPositionMs: _episodes[idx].positionMs,
+        initialPositionMs:
+            widget.initialCueStartMs ?? _episodes[idx].positionMs,
         subtitleSource: row.subtitleSource,
       );
       return;
@@ -1697,12 +1709,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         setState(() {
           _currentVideoSentenceIsFavorited = false;
           if (cue != null) {
-            _favoritedVideoSentences.remove(
-              _videoFavoriteCacheKey(sentence, cue.startMs),
-            );
+            _favoritedVideoSentences.remove(_videoFavoriteCacheKey(
+              sentence,
+              cue.startMs,
+              _currentEpisode,
+            ));
           }
           _favoritedVideoSentences.remove(
-            _videoFavoriteCacheKey(sentence, null),
+            _videoFavoriteCacheKey(sentence, null, null),
           );
         });
       }
@@ -1717,7 +1731,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         bookTitle: _title ?? widget.bookUid,
         createdAt: DateTime.now(),
         bookKey: widget.bookUid,
-        sectionIndex: cue?.sentenceIndex,
+        sectionIndex: _currentEpisode,
         normCharOffset: cue?.startMs,
         normCharLength: cue == null
             ? null
@@ -1729,9 +1743,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) {
       setState(() {
         _currentVideoSentenceIsFavorited = true;
-        _favoritedVideoSentences.add(
-          _videoFavoriteCacheKey(sentence, cue?.startMs),
-        );
+        _favoritedVideoSentences.add(_videoFavoriteCacheKey(
+          sentence,
+          cue?.startMs,
+          _episodes.isEmpty ? null : _currentEpisode,
+        ));
       });
     }
     HibikiToast.show(msg: t.favorite_added);
@@ -1748,10 +1764,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
   bool _isCueFavorited(AudioCue cue) {
     final String text = cue.text.trim();
-    return _favoritedVideoSentences.contains(
-          _videoFavoriteCacheKey(text, cue.startMs),
-        ) ||
-        _favoritedVideoSentences.contains(_videoFavoriteCacheKey(text, null));
+    return _favoritedVideoSentences.contains(_videoFavoriteCacheKey(
+          text,
+          cue.startMs,
+          _episodes.isEmpty ? null : _currentEpisode,
+        )) ||
+        _favoritedVideoSentences
+            .contains(_videoFavoriteCacheKey(text, null, null));
   }
 
   /// 从字幕跳转列表面板行内 toggle 某句收藏（TODO-152 子A）。与查词浮层收藏走同一
@@ -1779,7 +1798,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           bookTitle: _title ?? widget.bookUid,
           createdAt: DateTime.now(),
           bookKey: widget.bookUid,
-          sectionIndex: cue.sentenceIndex,
+          sectionIndex: _currentEpisode,
           normCharOffset: cue.startMs,
           normCharLength: (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
           source: kFavoriteSentenceSourceVideo,
@@ -1791,12 +1810,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     setState(() {
       if (wasFavorited) {
         _favoritedVideoSentences
-          ..remove(_videoFavoriteCacheKey(sentence, cue.startMs))
-          ..remove(_videoFavoriteCacheKey(sentence, null));
+          ..remove(_videoFavoriteCacheKey(
+            sentence,
+            cue.startMs,
+            _episodes.isEmpty ? null : _currentEpisode,
+          ))
+          ..remove(_videoFavoriteCacheKey(sentence, null, null));
       } else {
-        _favoritedVideoSentences.add(
-          _videoFavoriteCacheKey(sentence, cue.startMs),
-        );
+        _favoritedVideoSentences.add(_videoFavoriteCacheKey(
+          sentence,
+          cue.startMs,
+          _episodes.isEmpty ? null : _currentEpisode,
+        ));
       }
       // 列表 toggle 的若是当前查词那句，同步浮层星标态（两处共用同一收藏记录）。
       if (sentence == _lastLookupSentence.trim()) {
@@ -1825,15 +1850,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     s.source == kFavoriteSentenceSourceVideo,
               )
               .map(
-                (FavoriteSentence s) =>
-                    _videoFavoriteCacheKey(s.text.trim(), s.normCharOffset),
+                (FavoriteSentence s) => _videoFavoriteCacheKey(
+                  s.text.trim(),
+                  s.normCharOffset,
+                  s.sectionIndex,
+                ),
               ),
         );
     });
   }
 
-  String _videoFavoriteCacheKey(String text, int? startMs) =>
-      startMs == null ? 'legacy|$text' : 'cue|$startMs|$text';
+  String _videoFavoriteCacheKey(String text, int? startMs, int? episodeIndex) =>
+      startMs == null
+          ? 'legacy|$text'
+          : 'cue|${episodeIndex ?? 'single'}|$startMs|$text';
 
   Future<List<FavoriteSentence>> _matchingVideoFavorites(
     String sentence,
@@ -1843,6 +1873,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final List<FavoriteSentence> all = await FavoriteSentenceRepository(
       appModel.database,
     ).getAll();
+    final int? episodeIndex = _episodes.isEmpty ? null : _currentEpisode;
     return all
         .where(
           (FavoriteSentence s) =>
@@ -1851,7 +1882,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               s.text.trim() == text &&
               (cue == null
                   ? s.normCharOffset == null
-                  : s.normCharOffset == cue.startMs ||
+                  : (s.normCharOffset == cue.startMs &&
+                          (_episodes.isEmpty ||
+                              s.sectionIndex == episodeIndex)) ||
                       (s.normCharOffset == null && s.sectionIndex == null)),
         )
         .toList();
