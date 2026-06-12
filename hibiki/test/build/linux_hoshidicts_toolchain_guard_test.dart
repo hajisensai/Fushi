@@ -17,6 +17,20 @@ void main() {
     return file.readAsStringSync();
   }
 
+  String readLinuxCmake() {
+    final File file = File('linux/CMakeLists.txt');
+    expect(file.existsSync(), isTrue,
+        reason: 'expected Linux CMake at ${file.absolute.path}');
+    return file.readAsStringSync();
+  }
+
+  String readLinuxRunnerCmake() {
+    final File file = File('linux/runner/CMakeLists.txt');
+    expect(file.existsSync(), isTrue,
+        reason: 'expected Linux runner CMake at ${file.absolute.path}');
+    return file.readAsStringSync();
+  }
+
   test('Linux CI pins a C++23 std::expected-capable hoshidicts toolchain', () {
     final String workflow = readWorkflow();
     final int linuxJobStart = workflow.indexOf('  linux:');
@@ -92,6 +106,45 @@ void main() {
       reason: 'Linux links hoshidicts.a plus bundled static dependencies into '
           'libhoshidicts_ffi.so; PIC must be enabled before those static '
           'targets are created or ld fails during the Flutter Linux link step.',
+    );
+  });
+
+  test('Linux warnings-as-errors stay on the app runner target only', () {
+    final String linuxCmake = readLinuxCmake();
+    final String runnerCmake = readLinuxRunnerCmake();
+
+    final int standardSettingsStart =
+        linuxCmake.indexOf('function(APPLY_STANDARD_SETTINGS TARGET)');
+    final int standardSettingsEnd = linuxCmake.indexOf(
+      'endfunction()',
+      standardSettingsStart,
+    );
+    final int runnerSubdirectory =
+        linuxCmake.indexOf('add_subdirectory("runner")');
+    final int generatedPlugins =
+        linuxCmake.indexOf('include(flutter/generated_plugins.cmake)');
+
+    expect(standardSettingsStart, isNonNegative);
+    expect(standardSettingsEnd, greaterThan(standardSettingsStart));
+    expect(runnerSubdirectory, greaterThan(standardSettingsEnd));
+    expect(generatedPlugins, greaterThan(runnerSubdirectory));
+
+    final String standardSettings = linuxCmake.substring(
+      standardSettingsStart,
+      standardSettingsEnd,
+    );
+
+    expect(standardSettings, contains('-Wall'));
+    expect(
+      standardSettings,
+      isNot(contains('-Werror')),
+      reason: 'Flutter Linux pub-cache plugins call APPLY_STANDARD_SETTINGS; '
+          'their warnings must not be promoted to CI build failures.',
+    );
+    expect(
+      runnerCmake,
+      contains(r'target_compile_options(${BINARY_NAME} PRIVATE -Werror)'),
+      reason: 'The app runner still owns warnings-as-errors for project code.',
     );
   });
 }
