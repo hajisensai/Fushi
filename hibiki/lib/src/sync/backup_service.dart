@@ -90,6 +90,34 @@ String rebaseFontListJson(String json, String oldRoot, String newRoot) {
   }
 }
 
+/// Rebases every file-font `path` inside the canonical font catalog JSON
+/// (`{version, fonts:[{id, name, path}]}`) from [oldRoot] onto [newRoot].
+/// Target rows (`font_targets`) refer to catalog entries by id and do not carry
+/// paths, so preserving ids while rebasing catalog paths keeps targets valid.
+/// Malformed values are returned verbatim so a corrupt pref never aborts import.
+String rebaseFontCatalogJson(String json, String oldRoot, String newRoot) {
+  try {
+    final dynamic decoded = jsonDecode(json);
+    if (decoded is! Map) return json;
+    final Map<String, dynamic> root = Map<String, dynamic>.from(decoded);
+    final dynamic fonts = root['fonts'];
+    if (fonts is! List) return json;
+    root['fonts'] = fonts.map<dynamic>((dynamic e) {
+      if (e is! Map) return e;
+      final Map<String, dynamic> row = Map<String, dynamic>.from(e);
+      final Object? path = row['path'];
+      if (path is! String) return row;
+      return <String, dynamic>{
+        ...row,
+        'path': rebasePath(path, oldRoot, newRoot),
+      };
+    }).toList();
+    return jsonEncode(root);
+  } catch (_) {
+    return json; // never throw on a corrupt pref value
+  }
+}
+
 class BackupMeta {
   BackupMeta({
     required this.appVersion,
@@ -120,7 +148,7 @@ class BackupMeta {
 
   /// Absolute root of the custom-font tree on the SOURCE device
   /// (`<appDoc>/custom_fonts`), captured so import can rebase the stored
-  /// font-config paths (`custom_fonts`/`app_ui_fonts`/`dict_fonts` prefs) to
+  /// font-config paths (`font_catalog` plus legacy shadow prefs) to
   /// this device's root. Null for legacy backups → import skips font rebasing.
   final String? fontsRoot;
 
@@ -203,10 +231,14 @@ class BackupService {
   static const String _audiobooksPrefix = 'audiobooks';
   static const String _fontsPrefix = 'custom_fonts';
 
-  /// Persisted preference keys (ReaderSettings prefix included) whose JSON
-  /// value is a font list `[{name, path, enabled}]`. Their file paths are
-  /// rebased onto this device's font root on import (BUG-183).
-  static const List<String> _fontPrefKeys = <String>[
+  /// Persisted preference key (ReaderSettings prefix included) whose JSON
+  /// value is the canonical catalog `{version, fonts:[{id, name, path}]}`.
+  static const String _fontCatalogPrefKey = 'src:reader_ttu:font_catalog';
+
+  /// Persisted legacy shadow preference keys (ReaderSettings prefix included)
+  /// whose JSON value is a font list `[{name, path, enabled}]`. These remain
+  /// import-compatible while `font_catalog` is the canonical model.
+  static const List<String> _legacyFontPrefKeys = <String>[
     'src:reader_ttu:custom_fonts',
     'src:reader_ttu:app_ui_fonts',
     'src:reader_ttu:dict_fonts',
@@ -1063,10 +1095,11 @@ class BackupService {
   }
 
   /// Rebases the imported DB's stored custom-font paths from the backup's
-  /// [BackupMeta.fontsRoot] onto this device's [newFontsRoot]. The font config
-  /// lives in the `preferences` table as JSON lists under [_fontPrefKeys];
-  /// each file-font path is rebased via [rebaseFontListJson] (system fonts and
-  /// unrelated paths untouched). No-op when either root is null.
+  /// [BackupMeta.fontsRoot] onto this device's [newFontsRoot]. The canonical
+  /// `font_catalog` carries paths, while `font_targets` only carries catalog
+  /// ids/order/enabled rows; legacy shadow lists also carry paths. Every stored
+  /// file-font path is rebased (system fonts and unrelated paths untouched).
+  /// No-op when either root is null.
   static Future<void> _rebaseFontPaths({
     required String dbDirectory,
     required BackupMeta meta,
@@ -1077,7 +1110,18 @@ class BackupService {
     final HibikiDatabase db = HibikiDatabase(dbDirectory);
     try {
       final Map<String, String> prefs = await db.getAllPrefs();
-      for (final String key in _fontPrefKeys) {
+      final String? catalog = prefs[_fontCatalogPrefKey];
+      if (catalog != null) {
+        final String rebasedCatalog = rebaseFontCatalogJson(
+          catalog,
+          oldFonts,
+          newFontsRoot,
+        );
+        if (rebasedCatalog != catalog) {
+          await db.setPref(_fontCatalogPrefKey, rebasedCatalog);
+        }
+      }
+      for (final String key in _legacyFontPrefKeys) {
         final String? raw = prefs[key];
         if (raw == null) continue;
         final String rebased = rebaseFontListJson(raw, oldFonts, newFontsRoot);

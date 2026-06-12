@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
@@ -42,6 +43,7 @@ class ReaderSettings {
       _cache[shortKey] = _parseValue(entry.value);
     }
     await _migrateMargins();
+    await _ensureFontCatalogState();
   }
 
   /// Reload all settings from the database, e.g. after a profile switch.
@@ -298,16 +300,11 @@ class ReaderSettings {
   Future<void> setVolumePageTurningSpeed(int v) =>
       _set<int>('volume_page_turning_speed', v);
 
-  // ── Custom fonts (three independent targets) ──────────────────────
+  // ── Custom fonts (catalog + per-target refs) ─────────────────────
   //
-  // TODO-049: 把字体拆成三个相互独立的目标，各存一份独立的 `[{name,path,enabled}]`
-  // 列表。三处共用同一份解析/CSS 逻辑（[customFontCssForEntries]），只是数据来源 key
-  // 不同：
-  //   - 小说正文字体  -> 旧 key `custom_fonts`（语义不变，向后兼容铁律）
-  //   - 软件系统字体  -> 新 key `app_ui_fonts`
-  //   - 词典字体      -> 新 key `dict_fonts`
-  // 新 key 首次缺省时**懒迁移**：复制旧 `custom_fonts` 的值，使已设字体不丢、三处初始
-  // 一致；用户在某一目标改动后，三者各自独立持久化、互不影响。
+  // TODO-225 / TODO-221A: fonts now persist as a shared `font_catalog` plus
+  // `font_targets` membership/order/enabled rows. The public list-shaped API is
+  // intentionally kept stable for the current UI/rendering call sites.
 
   /// Persistence key for the legacy/body font list. Kept verbatim so existing
   /// user data migrates automatically.
@@ -319,43 +316,151 @@ class ReaderSettings {
   /// Persistence key for the dictionary popup font list. New in TODO-049.
   static const String fontKeyDictionary = 'dict_fonts';
 
-  /// Parses the persisted JSON array stored under [key] into a font-entry list.
-  /// Malformed/missing data degrades to an empty list (logged), never throws.
-  List<Map<String, dynamic>> _fontListForKey(String key) {
-    final String raw = _get<String>(key, '[]');
+  /// Persistence key for the shared font catalog.
+  static const String fontCatalogKey = 'font_catalog';
+
+  /// Persistence key for target membership/order/enabled state.
+  static const String fontTargetsKey = 'font_targets';
+
+  static const List<String> _fontTargetKeys = <String>[
+    fontKeyBody,
+    fontKeyAppUi,
+    fontKeyDictionary,
+  ];
+
+  bool get _hasAnyFontPrefs =>
+      _cache.containsKey(fontCatalogKey) ||
+      _cache.containsKey(fontTargetsKey) ||
+      _fontTargetKeys.any(_cache.containsKey);
+
+  /// Parses a legacy list stored under [key]. Malformed/missing data degrades
+  /// to an empty list (logged), never throws.
+  List<Map<String, dynamic>> _legacyFontListForKey(String key) {
+    final dynamic value = _cache[key];
+    if (value is! String) return <Map<String, dynamic>>[];
     try {
-      return (jsonDecode(raw) as List<dynamic>).cast<Map<String, dynamic>>();
+      return <Map<String, dynamic>>[
+        for (final dynamic row in jsonDecode(value) as List<dynamic>)
+          if (row is Map<dynamic, dynamic>) row.cast<String, dynamic>(),
+      ];
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderSettings.fontList:$key', e, stack);
       return <Map<String, dynamic>>[];
     }
   }
 
-  /// Reads the font list for a NEW target [key], lazily seeding it from the
-  /// legacy body list ([fontKeyBody]) the first time it is accessed while still
-  /// absent. This keeps a user's pre-split font choice intact across all three
-  /// targets on the first run after upgrade, without ever touching the body key.
-  List<Map<String, dynamic>> _fontListMigrated(String key) {
-    if (_cache.containsKey(key)) {
-      return _fontListForKey(key);
+  Map<String, List<Map<String, dynamic>>> _legacyFontListsByTarget() {
+    return <String, List<Map<String, dynamic>>>{
+      if (_cache.containsKey(fontKeyBody))
+        fontKeyBody: _legacyFontListForKey(fontKeyBody),
+      if (_cache.containsKey(fontKeyAppUi))
+        fontKeyAppUi: _legacyFontListForKey(fontKeyAppUi),
+      if (_cache.containsKey(fontKeyDictionary))
+        fontKeyDictionary: _legacyFontListForKey(fontKeyDictionary),
+    };
+  }
+
+  FontCatalogState? _readFontCatalogState() {
+    final dynamic catalog = _cache[fontCatalogKey];
+    final dynamic targets = _cache[fontTargetsKey];
+    if (catalog is! String || targets is! String) return null;
+    final FontCatalogState? state = FontCatalogState.tryParse(
+      catalogJson: catalog,
+      targetsJson: targets,
+      targetKeys: _fontTargetKeys,
+    );
+    if (state == null) {
+      ErrorLogService.instance.log(
+        'ReaderSettings.fontCatalog',
+        const FormatException('Invalid font_catalog/font_targets JSON'),
+        StackTrace.current,
+      );
     }
-    final List<Map<String, dynamic>> seed = _fontListForKey(fontKeyBody);
-    // Persist the seed so the new target becomes its own independent source.
-    // An empty seed is still written so subsequent reads short-circuit above and
-    // an empty new target does not keep re-seeding from a later-changed body.
-    _set<String>(key, jsonEncode(seed));
-    return seed;
+    return state;
+  }
+
+  FontCatalogState _fontCatalogState() {
+    return _readFontCatalogState() ??
+        FontCatalogState.fromLegacy(_legacyFontListsByTarget());
+  }
+
+  Future<FontCatalogState> _ensureFontCatalogState() async {
+    final FontCatalogState? existing = _readFontCatalogState();
+    if (existing != null) return existing;
+    final FontCatalogState migrated = _hasAnyFontPrefs
+        ? FontCatalogState.fromLegacy(_legacyFontListsByTarget())
+        : FontCatalogState.empty();
+    if (_hasAnyFontPrefs) {
+      await _persistFontCatalogState(migrated, syncLegacyKeys: true);
+    }
+    return migrated;
+  }
+
+  Future<void> _persistFontCatalogState(
+    FontCatalogState state, {
+    required bool syncLegacyKeys,
+  }) async {
+    _cacheFontCatalogState(state, syncLegacyKeys: syncLegacyKeys);
+    try {
+      await _db.setPref(
+        '$_prefix$fontCatalogKey',
+        _cache[fontCatalogKey] as String,
+      );
+      await _db.setPref(
+        '$_prefix$fontTargetsKey',
+        _cache[fontTargetsKey] as String,
+      );
+      if (!syncLegacyKeys) return;
+      for (final String key in _fontTargetKeys) {
+        if (!state.hasTarget(key)) continue;
+        await _db.setPref('$_prefix$key', _cache[key] as String);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderSettings.fontCatalog.write', e, stack);
+      debugPrint('[ReaderSettings] write error: $e');
+    }
+  }
+
+  void _cacheFontCatalogState(
+    FontCatalogState state, {
+    required bool syncLegacyKeys,
+  }) {
+    _cache[fontCatalogKey] = jsonEncode(state.toCatalogJson());
+    _cache[fontTargetsKey] = jsonEncode(state.toTargetsJson());
+    if (!syncLegacyKeys) return;
+    for (final String key in _fontTargetKeys) {
+      if (!state.hasTarget(key)) continue;
+      _cache[key] = jsonEncode(state.fontListForTarget(key));
+    }
+  }
+
+  List<Map<String, dynamic>> _fontListForTargetKey(String key) {
+    final FontCatalogState state = _fontCatalogState();
+    if (key != fontKeyBody &&
+        !state.hasTarget(key) &&
+        state.hasTarget(fontKeyBody)) {
+      final FontCatalogState seeded = state.withTargetFonts(
+        key,
+        state.fontListForTarget(fontKeyBody),
+      );
+      _cacheFontCatalogState(seeded, syncLegacyKeys: true);
+      return seeded.fontListForTarget(key);
+    }
+    return state.fontListForTarget(key);
   }
 
   /// Body (novel text) font list -- legacy `custom_fonts` key, unchanged.
-  List<Map<String, dynamic>> get customFonts => _fontListForKey(fontKeyBody);
+  List<Map<String, dynamic>> get customFonts =>
+      _fontListForTargetKey(fontKeyBody);
 
-  /// App-wide UI (ThemeData) font list -- independent `app_ui_fonts` key.
-  List<Map<String, dynamic>> get appUiFonts => _fontListMigrated(fontKeyAppUi);
+  /// App-wide UI (ThemeData) font list.
+  List<Map<String, dynamic>> get appUiFonts =>
+      _fontListForTargetKey(fontKeyAppUi);
 
-  /// Dictionary popup font list -- independent `dict_fonts` key.
+  /// Dictionary popup font list.
   List<Map<String, dynamic>> get dictionaryFonts =>
-      _fontListMigrated(fontKeyDictionary);
+      _fontListForTargetKey(fontKeyDictionary);
 
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
@@ -405,8 +510,14 @@ class ReaderSettings {
   Future<void> setFontsForTarget(
     FontTarget target,
     List<Map<String, dynamic>> fonts,
-  ) =>
-      _set<String>(fontKeyForTarget(target), jsonEncode(fonts));
+  ) async {
+    final FontCatalogState state = await _ensureFontCatalogState();
+    final FontCatalogState updated = state.withTargetFonts(
+      fontKeyForTarget(target),
+      fonts,
+    );
+    await _persistFontCatalogState(updated, syncLegacyKeys: true);
+  }
 
   Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) =>
       setFontsForTarget(FontTarget.body, fonts);

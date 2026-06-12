@@ -117,7 +117,7 @@ void main() {
   group('BackupService custom-font round-trip', () {
     test(
         'export packs the custom_fonts tree and import restores files + '
-        'rebases the three font-config keys onto this device', () async {
+        'rebases font config keys onto this device', () async {
       final Directory srcDir =
           await Directory.systemTemp.createTemp('bug183_src_db_');
       final Directory srcFontsDir =
@@ -151,6 +151,35 @@ void main() {
         jsonEncode(<Map<String, dynamic>>[
           {'name': 'Klee One', 'path': bodyFontPath, 'enabled': false},
         ]),
+      );
+      await srcDb.setPref(
+        'src:reader_ttu:font_catalog',
+        jsonEncode(<String, dynamic>{
+          'version': 1,
+          'fonts': <Map<String, dynamic>>[
+            {'id': 'font_1', 'name': 'Klee One', 'path': bodyFontPath},
+            {'id': 'font_2', 'name': 'Mincho', 'path': uiFontPath},
+            {'id': 'font_3', 'name': 'Yu Gothic', 'path': null},
+          ],
+        }),
+      );
+      await srcDb.setPref(
+        'src:reader_ttu:font_targets',
+        jsonEncode(<String, dynamic>{
+          'version': 1,
+          'targets': <String, dynamic>{
+            'custom_fonts': <Map<String, dynamic>>[
+              {'fontId': 'font_1', 'enabled': true},
+            ],
+            'app_ui_fonts': <Map<String, dynamic>>[
+              {'fontId': 'font_2', 'enabled': true},
+              {'fontId': 'font_3', 'enabled': true},
+            ],
+            'dict_fonts': <Map<String, dynamic>>[
+              {'fontId': 'font_1', 'enabled': false},
+            ],
+          },
+        }),
       );
 
       final Directory zipDir =
@@ -218,6 +247,27 @@ void main() {
           jsonDecode(prefs['src:reader_ttu:dict_fonts']!) as List<dynamic>;
       expect((dict[0] as Map)['path'], '${dstFontsDir.path}/Klee_1.ttf');
       expect((dict[0] as Map)['enabled'], false);
+
+      final Map<String, dynamic> catalog =
+          jsonDecode(prefs['src:reader_ttu:font_catalog']!)
+              as Map<String, dynamic>;
+      final List<dynamic> catalogFonts = catalog['fonts'] as List<dynamic>;
+      final Map<String, Object?> catalogPathById = <String, Object?>{
+        for (final dynamic row in catalogFonts)
+          (row as Map<dynamic, dynamic>)['id'] as String: row['path'],
+      };
+      expect(catalogPathById['font_1'], '${dstFontsDir.path}/Klee_1.ttf');
+      expect(catalogPathById['font_2'], '${dstFontsDir.path}/Mincho_2.otf');
+      expect(catalogPathById['font_3'], isNull);
+
+      final Map<String, dynamic> targets =
+          jsonDecode(prefs['src:reader_ttu:font_targets']!)
+              as Map<String, dynamic>;
+      final Map<String, dynamic> targetRows =
+          (targets['targets'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+      final List<dynamic> dictRows = targetRows['dict_fonts'] as List<dynamic>;
+      expect((dictRows.single as Map<dynamic, dynamic>)['fontId'], 'font_1');
+      expect((dictRows.single as Map<dynamic, dynamic>)['enabled'], false);
     });
 
     test('legacy backup (no fontsRoot) imports without crashing', () async {
