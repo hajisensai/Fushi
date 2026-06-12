@@ -53,4 +53,30 @@ void main() {
     expect(body.contains('widget.repo.saveSubtitleSelection'), isFalse);
     expect(body.contains('widget.repo.updateSubtitleSource'), isFalse);
   });
+
+  test('远端/外挂字幕解析统一按扩展名路由 parser', () {
+    final int detectStart = src.indexOf(
+      'Future<({String path, List<AudioCue> cues})?> _detectSidecar(',
+    );
+    expect(detectStart, greaterThanOrEqualTo(0));
+    final int detectEnd = src.indexOf(
+      'Future<List<AudioCue>> _loadExternalSubtitleCues(',
+      detectStart,
+    );
+    expect(detectEnd, greaterThan(detectStart));
+    final String detectBody = src.substring(detectStart, detectEnd);
+    expect(detectBody.contains('subtitleFormatForPath(sidecarPath)'), isTrue);
+    expect(detectBody.contains('parseSubtitleContent('), isTrue);
+    expect(detectBody.contains("endsWith('.ass')"), isFalse);
+
+    final int loadStart =
+        src.indexOf('Future<List<AudioCue>> _loadExternalSubtitleCues(');
+    expect(loadStart, greaterThanOrEqualTo(0));
+    final int loadEnd = src.indexOf('Future<void> _applyLoad({', loadStart);
+    expect(loadEnd, greaterThan(loadStart));
+    final String loadBody = src.substring(loadStart, loadEnd);
+    expect(loadBody.contains('subtitleFormatForPath(path)'), isTrue);
+    expect(loadBody.contains('parseSubtitleContent('), isTrue);
+    expect(loadBody.contains("endsWith('.ass')"), isFalse);
+  });
 }

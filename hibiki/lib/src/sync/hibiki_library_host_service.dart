@@ -318,12 +318,15 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 ///              目前恒为 null（占位）。
 /// [hasSubtitle] host 能找到外挂字幕（当前集 sidecar）时为 true；
 ///               内封字幕不算，外挂字幕缺失或文件路径未知时为 false。
+/// [subtitleFileName] host 找到的 sidecar 字幕文件名（含真实扩展名），供 client
+///                    下载到本地临时文件时保留 `.ass/.ssa/.vtt/.srt` 解析语义。
 class RemoteVideoInfo {
   const RemoteVideoInfo({
     required this.id,
     required this.title,
     this.sizeBytes,
     this.hasSubtitle = false,
+    this.subtitleFileName,
     this.durationMs,
     this.hasCover = false,
     this.coverUrl,
@@ -334,6 +337,7 @@ class RemoteVideoInfo {
   final String title;
   final int? sizeBytes;
   final bool hasSubtitle;
+  final String? subtitleFileName;
   final int? durationMs;
   final bool hasCover;
   final String? coverUrl;
@@ -347,6 +351,7 @@ class RemoteVideoInfo {
         'title': title,
         if (sizeBytes != null) 'sizeBytes': sizeBytes,
         'hasSubtitle': hasSubtitle,
+        if (_isNonEmpty(subtitleFileName)) 'subtitleFileName': subtitleFileName,
         if (durationMs != null) 'durationMs': durationMs,
         if (hasDisplayCover) 'hasCover': true,
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
@@ -356,12 +361,14 @@ class RemoteVideoInfo {
     bool? hasCover,
     String? coverUrl,
     String? coverPath,
+    String? subtitleFileName,
   }) =>
       RemoteVideoInfo(
         id: id,
         title: title,
         sizeBytes: sizeBytes,
         hasSubtitle: hasSubtitle,
+        subtitleFileName: subtitleFileName ?? this.subtitleFileName,
         durationMs: durationMs,
         hasCover: hasCover ?? this.hasCover,
         coverUrl: coverUrl ?? this.coverUrl,
@@ -371,11 +378,13 @@ class RemoteVideoInfo {
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
     final String? coverUrl = _jsonString(json['coverUrl']);
     final String? coverPath = _jsonString(json['coverPath']);
+    final String? subtitleFileName = _jsonString(json['subtitleFileName']);
     return RemoteVideoInfo(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
       hasSubtitle: json['hasSubtitle'] == true,
+      subtitleFileName: subtitleFileName,
       durationMs: (json['durationMs'] as num?)?.toInt(),
       hasCover: json['hasCover'] == true ||
           _isNonEmpty(coverUrl) ||
@@ -398,21 +407,26 @@ bool _isNonEmpty(String? value) => value != null && value.isNotEmpty;
 ///
 /// [streamUrl] 是可直接交给播放器的短时 token URL；[subtitleUrl] 仅表示 host 有
 /// 可下载外挂字幕，实际播放器应先通过 client 下载到本地再复用现有字幕路径。
+/// [subtitleFileName] 与 [subtitleUrl] 配套，保留 host sidecar 的真实文件名/扩展名。
 class RemoteVideoStreamUrls {
   const RemoteVideoStreamUrls({
     required this.streamUrl,
     this.subtitleUrl,
+    this.subtitleFileName,
   });
 
   final String streamUrl;
   final String? subtitleUrl;
+  final String? subtitleFileName;
 
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
     final String streamUrl = json['url']?.toString() ?? '';
     final String? subtitleUrl = json['subtitleUrl']?.toString();
+    final String? subtitleFileName = _jsonString(json['subtitleFileName']);
     return RemoteVideoStreamUrls(
       streamUrl: streamUrl,
       subtitleUrl: subtitleUrl,
+      subtitleFileName: subtitleFileName,
     );
   }
 }
@@ -527,5 +541,5 @@ abstract class HibikiLibraryHostService {
   ///
   /// 用 [langCode] 优先匹配带语言标记的字幕（如 `.ja.srt`）；内封字幕不在此列。
   /// 找不到外挂字幕或视频未知时返回 null。
-  Future<File?> resolveVideoSubtitle(String id, {String langCode = 'ja'});
+  Future<File?> resolveVideoSubtitle(String id, {String langCode = ''});
 }

@@ -121,12 +121,35 @@ void main() {
       expect(list[0].hasSubtitle, isTrue);
     });
 
+    test('sidecar 字幕文件名保留真实扩展名', () async {
+      final String videoPath = p.join(tmp.path, 'show.mkv');
+      File(videoPath).writeAsBytesSync(<int>[0]);
+      File(p.join(tmp.path, 'show.ja.vtt')).writeAsStringSync(
+        'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n',
+      );
+
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/show',
+        title: 'Show',
+        videoPath: videoPath,
+      ));
+
+      final AppModelLibraryHostService svc =
+          _makeService(db: db, tmp: tmp, langCode: 'ja');
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+
+      expect(list.single.hasSubtitle, isTrue);
+      expect(list.single.subtitleFileName, 'show.ja.vtt');
+      expect(list.single.toJson()['subtitleFileName'], 'show.ja.vtt');
+    });
+
     test('toJson/fromJson 往返一致', () {
       const RemoteVideoInfo info = RemoteVideoInfo(
         id: 'video/test',
         title: 'Test',
         sizeBytes: 2048,
         hasSubtitle: true,
+        subtitleFileName: 'test.ja.ass',
         durationMs: null,
       );
       final Map<String, Object?> json = info.toJson();
@@ -135,6 +158,7 @@ void main() {
       expect(restored.title, info.title);
       expect(restored.sizeBytes, info.sizeBytes);
       expect(restored.hasSubtitle, info.hasSubtitle);
+      expect(restored.subtitleFileName, info.subtitleFileName);
       expect(restored.durationMs, info.durationMs);
     });
 

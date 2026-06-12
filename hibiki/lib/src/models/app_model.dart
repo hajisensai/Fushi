@@ -230,6 +230,7 @@ class AppModel with ChangeNotifier {
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
+      videoSubtitleLangCode: targetLanguage.languageCode,
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。

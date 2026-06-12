@@ -15,9 +15,14 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_test');
     videoFile = File('${tmp.path}/sample.mp4');
     videoFile.writeAsBytesSync(_videoBytes);
-    // 创建临时字幕文件
-    subtitleFile = File('${tmp.path}/sample.ja.srt');
-    subtitleFile.writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\nテスト\n');
+    // 创建临时字幕文件：用 ASS 覆盖远端 sidecar 不能退化成 .srt 的协议契约。
+    subtitleFile = File('${tmp.path}/sample.ja.ass');
+    subtitleFile.writeAsStringSync(
+      '[Script Info]\n'
+      'Title: test\n'
+      '[Events]\n'
+      'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,テスト\n',
+    );
     coverFile = File('${tmp.path}/sample.png')..writeAsBytesSync(_coverBytes);
   }
 
@@ -235,6 +240,8 @@ void main() {
     expect(url, contains('/stream'), reason: 'url 应指向 stream 端点');
     expect(url, contains('token='), reason: 'url 应携带 token 参数');
     expect(json['subtitleUrl'], isNotNull, reason: '有字幕时应返回 subtitleUrl');
+    expect(json['subtitleFileName'], 'sample.ja.ass',
+        reason: '远端字幕协议必须保留 sidecar 扩展名，客户端才不会按 .srt 误解析');
     c.close();
   });
 
@@ -355,6 +362,7 @@ void main() {
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
+    expect(res.headers.contentType?.mimeType, 'text/plain');
     final String body = await res.transform(utf8.decoder).join();
     expect(body, contains('テスト'), reason: '应返回字幕内容');
     c.close();

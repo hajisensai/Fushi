@@ -983,6 +983,7 @@ class HibikiSyncServer {
       return _jsonResponse(<String, dynamic>{
         'url': streamUri.toString(),
         'subtitleUrl': subtitleUri?.toString(),
+        if (sub != null) 'subtitleFileName': p.basename(sub.path),
       });
     }
 

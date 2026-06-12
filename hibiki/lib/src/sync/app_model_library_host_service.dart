@@ -482,6 +482,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     final String videoPath = row.videoPath;
     int? sizeBytes;
     bool hasSubtitle = false;
+    String? subtitleFileName;
 
     if (videoPath.isNotEmpty) {
       final File f = File(videoPath);
@@ -494,7 +495,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         // 检查外挂字幕 sidecar
         final String? sub =
             findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
-        hasSubtitle = sub != null && File(sub).existsSync();
+        if (sub != null && File(sub).existsSync()) {
+          hasSubtitle = true;
+          subtitleFileName = p.basename(sub);
+        }
       }
     }
 
@@ -504,6 +508,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       title: row.title,
       sizeBytes: sizeBytes,
       hasSubtitle: hasSubtitle,
+      subtitleFileName: subtitleFileName,
       // durationMs: 暂为 null，DB 无此列（后续接线任务填充）
       hasCover: coverPath != null,
       coverPath: coverPath,
@@ -530,13 +535,16 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   @override
   Future<File?> resolveVideoSubtitle(
     String id, {
-    String langCode = 'ja',
+    String langCode = '',
   }) async {
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
     if (row == null) return null;
     final String videoPath = row.videoPath;
     if (videoPath.isEmpty) return null;
-    final String? subPath = findSidecarSubtitle(videoPath, langCode: langCode);
+    final String effectiveLangCode =
+        langCode.isEmpty ? _videoSubtitleLangCode : langCode;
+    final String? subPath =
+        findSidecarSubtitle(videoPath, langCode: effectiveLangCode);
     if (subPath == null) return null;
     final File f = File(subPath);
     return f.existsSync() ? f : null;
