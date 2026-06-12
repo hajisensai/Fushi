@@ -58,5 +58,32 @@ void main() {
       expect(desktop, contains('_player.setVolume(volume.clamp(0.0, 1.0))'));
       expect(android, contains('mediaPlayer.setVolume(volume, volume)'));
     });
+
+    test('only automatic lookup playback is routed through the dedupe gate',
+        () {
+      final String baseSource = _read('lib/src/pages/base_source_page.dart');
+      final String dictionaryPage = _read(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      );
+      final String popupWebView = _read(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      );
+
+      expect(
+        baseSource,
+        contains('LookupAutoReadCoordinator.instance.runAutomatic'),
+        reason: 'reader/source auto-read must use the shared dedupe gate',
+      );
+      expect(
+        dictionaryPage,
+        contains('LookupAutoReadCoordinator.instance.runAutomatic'),
+        reason: 'dictionary/video auto-read must use the shared dedupe gate',
+      );
+      expect(
+        popupWebView,
+        isNot(contains('LookupAutoReadCoordinator')),
+        reason: 'manual popup audio buttons must remain replayable',
+      );
+    });
   });
 }

@@ -10,6 +10,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
+import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/utils.dart';
 
 // 弹窗条目统一为共享的 [DictionaryPopupEntry]（见 dictionary_popup_controller.dart）；
@@ -136,46 +137,50 @@ mixin DictionaryPageMixin {
   /// Resolves and plays the audio for [expression] / [reading] via
   /// [WordAudioResolver] + [TtsChannel].
   Future<void> autoReadWord(String expression, String reading) async {
-    try {
-      final WordAudioResolver resolver = WordAudioResolver(
-        queryLocalAudio: (expression, reading) async {
-          try {
-            return await TtsChannel.instance
-                .queryLocalAudio(expression, reading)
-                .timeout(const Duration(milliseconds: 500));
-          } on TimeoutException {
-            return null;
-          }
-        },
-        queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
-          try {
-            return await TtsChannel.instance
-                .queryLocalAudio(expression, reading, dbIndex: dbIndex)
-                .timeout(const Duration(milliseconds: 500));
-          } on TimeoutException {
-            return null;
-          }
-        },
-        extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-        queryRemoteAudio: (expression, reading) =>
-            mixinAppModel.lookupRemoteAudio(
-          expression,
-          reading,
-        ),
-      );
-      final String? url = await resolver.resolveConfigured(
-        expression: expression,
-        reading: reading,
-        sources: mixinAppModel.audioSourceConfigs,
-      );
-      if (url == null || url.isEmpty) return;
-      await TtsChannel.instance.playAudioRef(
-        url,
-        volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-      );
-    } catch (e, st) {
-      debugPrint('[hibiki-autoread] error: $e\n$st');
-    }
+    await LookupAutoReadCoordinator.instance.runAutomatic(
+      expression: expression,
+      reading: reading,
+      play: () => _playAutoReadWord(expression, reading),
+    );
+  }
+
+  Future<void> _playAutoReadWord(String expression, String reading) async {
+    final WordAudioResolver resolver = WordAudioResolver(
+      queryLocalAudio: (expression, reading) async {
+        try {
+          return await TtsChannel.instance
+              .queryLocalAudio(expression, reading)
+              .timeout(const Duration(milliseconds: 500));
+        } on TimeoutException {
+          return null;
+        }
+      },
+      queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
+        try {
+          return await TtsChannel.instance
+              .queryLocalAudio(expression, reading, dbIndex: dbIndex)
+              .timeout(const Duration(milliseconds: 500));
+        } on TimeoutException {
+          return null;
+        }
+      },
+      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+      queryRemoteAudio: (expression, reading) =>
+          mixinAppModel.lookupRemoteAudio(
+        expression,
+        reading,
+      ),
+    );
+    final String? url = await resolver.resolveConfigured(
+      expression: expression,
+      reading: reading,
+      sources: mixinAppModel.audioSourceConfigs,
+    );
+    if (url == null || url.isEmpty) return;
+    await TtsChannel.instance.playAudioRef(
+      url,
+      volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+    );
   }
 
   /// Checks whether a card for [expression] / [reading] already exists in Anki.
