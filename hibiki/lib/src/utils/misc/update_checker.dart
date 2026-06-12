@@ -23,6 +23,23 @@ final RegExp _kDebugReleaseTagPattern =
 final RegExp _kBetaVersionPattern = RegExp(r'^\d+(?:\.\d+)*-beta\.\d+$');
 final RegExp _kDebugVersionPattern = RegExp(r'^\d+(?:\.\d+)*-debug\.\d+$');
 
+@visibleForTesting
+class UpdateReleaseSelection {
+  const UpdateReleaseSelection({
+    required this.release,
+    required this.version,
+    required this.releaseNotes,
+    required this.downloadUrl,
+  });
+
+  final Map<String, dynamic> release;
+  final String version;
+  final String releaseNotes;
+  final String? downloadUrl;
+
+  String? get htmlUrl => release['html_url'] as String?;
+}
+
 class UpdateChecker {
   UpdateChecker._();
 
@@ -90,8 +107,17 @@ class UpdateChecker {
       client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
 
-      final json = await _fetchReleaseForChannel(client, channel);
-      if (json == null) return;
+      final List<Map<String, dynamic>> releases =
+          await _fetchReleasesForChannel(client, channel);
+      final UpdateReleaseSelection? selection =
+          await selectUpdateReleaseForCurrentPlatform(
+        releases,
+        currentVersion: currentVersion,
+        channel: channel,
+        updater: updater,
+      );
+      if (selection == null) return;
+      final Map<String, dynamic> json = selection.release;
 
       final String? tagName =
           normalizeReleaseVersionTag(json['tag_name'] as String? ?? '');
@@ -172,16 +198,29 @@ class UpdateChecker {
     return null;
   }
 
-  static Future<Map<String, dynamic>?> _fetchReleaseForChannel(
+  static Future<List<Map<String, dynamic>>> _fetchReleasesForChannel(
     HttpClient client,
     UpdateChannel channel,
-  ) {
-    return switch (channel) {
-      UpdateChannel.stable => _fetchStableRelease(client),
-      UpdateChannel.beta ||
-      UpdateChannel.debug =>
-        _fetchLatestChannelRelease(client, channel),
-    };
+  ) async {
+    if (channel == UpdateChannel.stable) {
+      final Map<String, dynamic>? release = await _fetchStableRelease(client);
+      return release == null
+          ? const <Map<String, dynamic>>[]
+          : <Map<String, dynamic>>[release];
+    }
+
+    final body = await _httpGetString(
+      client,
+      'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=20',
+      headers: {'Accept': 'application/vnd.github+json'},
+    );
+    if (body == null) return const <Map<String, dynamic>>[];
+    final list = jsonDecode(body) as List<dynamic>;
+    return list
+        .whereType<Map<String, dynamic>>()
+        .where((Map<String, dynamic> release) {
+      return releaseMatchesUpdateChannel(release, channel);
+    }).toList(growable: false);
   }
 
   static Future<Map<String, dynamic>?> _fetchStableRelease(
@@ -198,24 +237,6 @@ class UpdateChecker {
       return null;
     }
     return release;
-  }
-
-  static Future<Map<String, dynamic>?> _fetchLatestChannelRelease(
-    HttpClient client,
-    UpdateChannel channel,
-  ) async {
-    final body = await _httpGetString(
-      client,
-      'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=20',
-      headers: {'Accept': 'application/vnd.github+json'},
-    );
-    if (body == null) return null;
-    final list = jsonDecode(body) as List<dynamic>;
-    for (final Map<String, dynamic> release
-        in list.whereType<Map<String, dynamic>>()) {
-      if (releaseMatchesUpdateChannel(release, channel)) return release;
-    }
-    return null;
   }
 
   static bool _isNewer(String remote, String local) =>
@@ -400,6 +421,39 @@ String hostLabelForUpdateUrl(String url) {
   } catch (_) {
     return url;
   }
+}
+
+@visibleForTesting
+Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
+  List<Map<String, dynamic>> releases, {
+  required String currentVersion,
+  required UpdateChannel channel,
+  required PlatformUpdater updater,
+}) async {
+  UpdateReleaseSelection? fallback;
+  for (final Map<String, dynamic> release in releases) {
+    if (!releaseMatchesUpdateChannel(release, channel)) continue;
+    final String? version =
+        normalizeReleaseVersionTag(release['tag_name'] as String? ?? '');
+    if (version == null || version.isEmpty) continue;
+    if (!isUpdateVersionNewer(version, currentVersion, channel)) continue;
+
+    final List<Map<String, dynamic>> assetMaps =
+        (release['assets'] as List<dynamic>? ?? <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .toList(growable: false);
+    final String? downloadUrl =
+        await updater.selectAsset(assetMaps, channel: channel);
+    final UpdateReleaseSelection selection = UpdateReleaseSelection(
+      release: release,
+      version: version,
+      releaseNotes: release['body'] as String? ?? '',
+      downloadUrl: downloadUrl,
+    );
+    if (downloadUrl != null) return selection;
+    fallback ??= selection;
+  }
+  return fallback;
 }
 
 @visibleForTesting
