@@ -165,6 +165,31 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build macos --debug
+      - name: Verify macOS hoshidicts dylib bundle
+        working-directory: hibiki
+        run: |
+          set -euo pipefail
+          app_dir="build/macos/Build/Products/Debug/hibiki.app"
+          dylib="$app_dir/Contents/Frameworks/libhoshidicts_ffi.dylib"
+          test -f "$dylib"
+          found="$(find "$app_dir/Contents/Frameworks" -maxdepth 1 -type f -name 'libhoshidicts_ffi.dylib' -print -quit)"
+          test "$found" = "$dylib"
+          otool -D "$dylib"
+          test "$(otool -D "$dylib" | tail -n +2)" = "@rpath/libhoshidicts_ffi.dylib"
+          otool -L "$dylib"
+          otool -l "$app_dir/Contents/MacOS/hibiki" | grep -A2 LC_RPATH | grep -F '@executable_path/../Frameworks'
+          DYLIB_PATH="$dylib" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DYLIB_PATH"])
+          lib.hoshidicts_create.restype = ctypes.c_void_p
+          lib.hoshidicts_destroy.argtypes = [ctypes.c_void_p]
+          handle = lib.hoshidicts_create()
+          if not handle:
+              raise SystemExit("hoshidicts_create returned null")
+          lib.hoshidicts_destroy(handle)
+          print("hoshidicts dylib smoke ok")
+          PY
       - name: Run macOS comprehensive automation contract
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
 

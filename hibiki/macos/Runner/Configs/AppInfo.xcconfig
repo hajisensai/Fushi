@@ -12,3 +12,9 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.hibiki
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+
+// Native hoshidicts FFI library, built by the macOS Runner target and copied
+// into Contents/Frameworks so DynamicLibrary.open can resolve it from the app.
+HOSHIDICTS_SOURCE_DIR = $(PROJECT_DIR)/../../native/hoshidicts
+HOSHIDICTS_BUILD_DIR = $(PROJECT_DIR)/Flutter/ephemeral/hoshidicts/$(CONFIGURATION)
+HOSHIDICTS_DYLIB_NAME = libhoshidicts_ffi.dylib

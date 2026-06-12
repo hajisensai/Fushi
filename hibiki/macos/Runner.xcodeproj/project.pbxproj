@@ -213,6 +213,7 @@
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
+				B20100000000000000000001 /* Build HoshiDicts FFI */,
 			);
 			buildRules = (
 			);
@@ -338,6 +339,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
+		};
+		B20100000000000000000001 /* Build HoshiDicts FFI */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(HOSHIDICTS_SOURCE_DIR)/CMakeLists.txt",
+			);
+			name = "Build HoshiDicts FFI";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/$(HOSHIDICTS_DYLIB_NAME)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\n\n: \"${HOSHIDICTS_SOURCE_DIR:?HOSHIDICTS_SOURCE_DIR is not set}\"\n: \"${HOSHIDICTS_BUILD_DIR:?HOSHIDICTS_BUILD_DIR is not set}\"\n: \"${HOSHIDICTS_DYLIB_NAME:=libhoshidicts_ffi.dylib}\"\n\ncmake_archs=\"${ARCHS:-`uname -m`}\"\ncmake_archs=\"${cmake_archs// /;}\"\n\ncmake -S \"$HOSHIDICTS_SOURCE_DIR\" -B \"$HOSHIDICTS_BUILD_DIR\" \\\n  -DCMAKE_BUILD_TYPE=\"$CONFIGURATION\" \\\n  -DCMAKE_OSX_ARCHITECTURES=\"$cmake_archs\" \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET:-10.15}\"\ncmake --build \"$HOSHIDICTS_BUILD_DIR\" --target hoshidicts_ffi --config \"$CONFIGURATION\"\n\nbuilt_dylib=\"`find \"$HOSHIDICTS_BUILD_DIR\" -type f -name \"$HOSHIDICTS_DYLIB_NAME\" | head -n 1`\"\nif [[ -z \"$built_dylib\" ]]; then\n  echo \"error: $HOSHIDICTS_DYLIB_NAME was not produced under $HOSHIDICTS_BUILD_DIR\" >&2\n  exit 1\nfi\n\ndestination_dir=\"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\ndestination=\"$destination_dir/$HOSHIDICTS_DYLIB_NAME\"\nmkdir -p \"$destination_dir\"\ncp -f \"$built_dylib\" \"$destination\"\n\ninstall_name_tool -id \"@rpath/$HOSHIDICTS_DYLIB_NAME\" \"$destination\"\n\nif [[ \"${CODE_SIGNING_ALLOWED:-}\" != \"NO\" ]] && command -v codesign >/dev/null 2>&1; then\n  sign_identity=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}\"\n  if [[ -z \"$sign_identity\" ]]; then\n    sign_identity=\"-\"\n  fi\n  codesign --force --sign \"$sign_identity\" --timestamp=none \"$destination\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
