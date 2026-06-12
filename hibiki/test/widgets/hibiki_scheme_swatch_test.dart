@@ -255,4 +255,112 @@ void main() {
       );
     });
   });
+
+  group('BUG-212 · 徽章图标随徽章背景取对比，不借 app 主题 onSurface', () {
+    // 读徽章图标实际生效的颜色：用 Icon 自己的 BuildContext 解析 IconTheme.of，
+    // 这正是 Icon 渲染时读到的颜色（用户真正看到的）。旧实现 = app 主题
+    // cs.onSurface（深色主题下浅色），修复后 = _swatchForegroundFor(menuRole)
+    // （相对徽章自己背景取黑/白）。size==10 确认我们读的是徽章那层而非外层默认。
+    Color badgeIconColor(WidgetTester tester) {
+      final BuildContext iconContext =
+          tester.element(find.byIcon(Icons.palette_outlined));
+      final IconThemeData iconTheme = IconTheme.of(iconContext);
+      expect(iconTheme.size, 10, reason: '应读到徽章那层 size==10 的 IconTheme');
+      return iconTheme.color!;
+    }
+
+    // colors = [text, background, button, menu]；menu(colors[3]) 是徽章背景。
+    // 故意让徽章背景是浅色，被预览方案是浅色方案的 surfaceContainerHigh。
+    const Color lightMenu = Color(0xFFEFEFEF);
+    const List<Color> lightSchemeColors = <Color>[
+      Color(0xFF1A1A1A), // text / onSurface（浅色方案里是深色）
+      Color(0xFFFDFDFD), // background / surface
+      Color(0xFF3366AA), // button / primary
+      lightMenu, // menu / surfaceContainerHigh —— 徽章背景
+    ];
+
+    testWidgets('深色 app 主题 + 浅色徽章背景：图标取黑色对比，仍可见', (WidgetTester tester) async {
+      // 深色 app 主题下 cs.onSurface 是浅色（近白）。旧实现会把图标涂成它，
+      // 浅图标画在浅色徽章背景上 → 用户看不见。这正是「黑色主题下调色盘消失」。
+      final ColorScheme darkAppScheme = buildHibikiColorScheme(
+        seedColor: const Color(0xFF1F4959),
+        brightness: Brightness.dark,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.from(colorScheme: darkAppScheme),
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: lightSchemeColors,
+                overlay: const Icon(Icons.palette_outlined),
+              ),
+            ),
+          ),
+        ),
+      );
+      final Color iconColor = badgeIconColor(tester);
+      // 修复后：相对浅色徽章背景取对比 → 黑色（可见）。
+      expect(
+        iconColor,
+        Colors.black,
+        reason: '浅色徽章背景上图标必须是黑色（可见），而不是 app 主题的浅色 onSurface',
+      );
+      // 反向锁死回归：图标绝不能等于深色 app 主题的浅色 onSurface
+      // （那正是旧实现让图标在深色主题下消失的根因）。
+      expect(
+        iconColor,
+        isNot(equals(darkAppScheme.onSurface)),
+        reason: '不能再借 app 主题 onSurface —— 那会在深色主题 + 浅色方案下与背景撞色',
+      );
+    });
+
+    testWidgets('浅色 app 主题 + 浅色徽章背景：图标同样取黑色对比（深浅主题一致）',
+        (WidgetTester tester) async {
+      // 用户说浅色主题下图标「还在」。修复不能破坏这一点：同一浅色徽章背景，
+      // 无论 app 主题深浅，图标都应是黑色 —— 颜色只由徽章背景决定，与 app 主题无关。
+      final ColorScheme lightAppScheme = buildHibikiColorScheme(
+        seedColor: const Color(0xFF1F4959),
+        brightness: Brightness.light,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.from(colorScheme: lightAppScheme),
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: lightSchemeColors,
+                overlay: const Icon(Icons.palette_outlined),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(badgeIconColor(tester), Colors.black);
+    });
+
+    testWidgets('深色徽章背景：图标取白色对比（另一极也正确）', (WidgetTester tester) async {
+      const Color darkMenu = Color(0xFF101010);
+      const List<Color> darkSchemeColors = <Color>[
+        Color(0xFFEFEFEF),
+        Color(0xFF020202),
+        Color(0xFF99BBFF),
+        darkMenu, // 徽章背景：深色
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: HibikiSchemeSwatch(
+                colors: darkSchemeColors,
+                overlay: const Icon(Icons.palette_outlined),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(badgeIconColor(tester), Colors.white,
+          reason: '深色徽章背景上图标必须是白色（可见）');
+    });
+  });
 }

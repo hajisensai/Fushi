@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 208 条。点号进各自文件。
+> 共 209 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-212](bugs/BUG-212-theme-custom-palette-icon-dark-invisible.md) | ✅ | ✅ | 自定义主题调色盘图标深色主题消失 |
 | [BUG-211](bugs/BUG-211-book-stats-charcount-inflated.md) | ✅ | ✅ | 书籍统计字数明显过高 |
 | [BUG-210](bugs/BUG-210-reader-paging-jumps-chapter-start.md) | ✅ | ✅ | 阅读器翻页跳回章节开头 |
 | [BUG-209](bugs/BUG-209-wgc-graphics-capture-crash.md) | ✅ | ✅ | 手机闪退实为Windows WGC FramePool teardown崩溃 |

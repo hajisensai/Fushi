@@ -1285,7 +1285,19 @@ class HibikiSchemeSwatch extends StatelessWidget {
               border: Border.all(color: cs.outlineVariant, width: 0.5),
             ),
             child: IconTheme.merge(
-              data: IconThemeData(color: cs.onSurface, size: 10),
+              // BUG-212: contrast the badge icon against the badge's OWN
+              // background (`menuRole` = the previewed scheme's
+              // surfaceContainerHigh), not the app theme's `cs.onSurface`.
+              // Borrowing `cs.onSurface` made the icon track a different
+              // colorScheme than the disc behind it: under a dark app theme a
+              // light custom scheme gave a light icon on a light disc → the
+              // palette/auto glyph vanished. Mirrors `HibikiColorSwatch`'s
+              // `_swatchForegroundFor(color)` so the badge foreground always
+              // reads on its own background, in every theme combination.
+              data: IconThemeData(
+                color: _swatchForegroundFor(menuRole),
+                size: 10,
+              ),
               child: badgeChild,
             ),
           );
