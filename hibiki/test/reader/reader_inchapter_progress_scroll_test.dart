@@ -138,7 +138,9 @@ void main() {
       expect(src.contains('=> _handleReaderScroll()'), isTrue);
       final int idx = src.indexOf('void _handleReaderScroll()');
       expect(idx, greaterThan(0), reason: '_handleReaderScroll 必须存在');
-      final String body = src.substring(idx, idx + 600);
+      // 窗口放宽到 1100：TODO-151/164(BUG-225) 在该函数内插入了诊断日志块，函数体加长，
+      // 600 字符窗口会切断在诊断块中间漏掉末尾 _refreshProgress();（旧窗口会误转红）。
+      final String body = src.substring(idx, idx + 1100);
       expect(body.contains('readerScrollProgressRefreshAllowed('), isTrue,
           reason: '门控必须走纯函数 readerScrollProgressRefreshAllowed');
       expect(body.contains('_refreshProgress();'), isTrue,

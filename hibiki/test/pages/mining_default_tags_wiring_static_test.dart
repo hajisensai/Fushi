@@ -48,10 +48,8 @@ void main() {
       '../packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
     ]) {
       final String src = File(path).readAsStringSync();
-      expect(
-          src,
-          allOf(contains('buildNoteTags('),
-              contains('source: context.source')),
+      expect(src,
+          allOf(contains('buildNoteTags('), contains('source: context.source')),
           reason: '$path 必须把来源透传给 buildNoteTags（否则分类标签不生效）');
     }
   });

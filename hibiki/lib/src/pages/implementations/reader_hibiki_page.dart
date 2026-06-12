@@ -48,6 +48,7 @@ import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
@@ -1827,8 +1828,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return '<style id="hoshi-reader-style">\n${ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
-      customBg: _isCustomTheme ? _readerBackgroundHex : null,
-      customFg: _isCustomTheme ? _customThemeTextCss : null,
+      // TODO-165 / BUG-224：正文 <body> 背景/字色统一吃 `_readerThemeColors` 派生色。
+      // preset 命中时 _themeColors 走 switch case 用手调底色（忽略 customBg → 零破坏）；
+      // system-theme（默认主题）/light-theme/未命中 key 落 default 分支，原来恒白底
+      // #fff，现在吃这套真实 ColorScheme.surface/onSurface；custom-theme→用户色。
+      customBg: _readerBackgroundHex,
+      customFg: _customThemeTextCss,
+      // selection/sasayaki/link 是 preset 主题在 _themeColors switch 里手调的专色，
+      // 仅 custom-theme 由 page 端覆盖（无条件传会用 _themeMap 的等价副本覆盖掉
+      // preset switch 专色，引入双份硬编码耦合）；system-theme 用 _themeColors 默认兜底。
       selectionColor: _isCustomTheme
           ? _colorToCssRgba(appModel.customThemeSelectionColor)
           : null,
@@ -1858,8 +1866,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final String css = ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
-      customBg: _isCustomTheme ? _readerBackgroundHex : null,
-      customFg: _isCustomTheme ? _customThemeTextCss : null,
+      // TODO-165 / BUG-224：与 _computeStyleTag 对称——正文背景/字色统一吃当前主题
+      // 派生色，system-theme（默认主题）不再恒白底。
+      customBg: _readerBackgroundHex,
+      customFg: _customThemeTextCss,
       selectionColor: _isCustomTheme
           ? _colorToCssRgba(appModel.customThemeSelectionColor)
           : null,
@@ -2201,6 +2211,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     var _progressScrollTimer = null;
     function _reportReaderScroll() {
       var r = window.hoshiReader;
+      // TODO-151/164 / BUG-225 诊断：默认 off（${DebugLogService.instance.enabled}
+      // 由 DebugLogService 门控注入），开了才打印。reanchorPending=true 会早返回不回传，
+      // hasBridge=false 说明 callHandler 不可用——便于真机定位「滚动了但进度没动」哪一链断。
+      // console.log 经 onConsoleMessage → debugPrint → DebugLogService 环形缓冲。
+      if (${DebugLogService.instance.enabled}) {
+        console.log('[ReaderDiag] scroll report'
+          + ' reanchorPending=' + (r ? r._reanchorPending === true : 'noReader')
+          + ' hasBridge=' + !!(window.flutter_inappwebview && window.flutter_inappwebview.callHandler));
+      }
       if (r && r._reanchorPending === true) return;
       if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
         window.flutter_inappwebview.callHandler('onReaderScroll');
@@ -2831,12 +2850,24 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// （high-water-mark 计字不重复累计、`_debouncedSavePosition` 自带 500ms 去抖，
   /// 不改字数累加路径）。恢复期/歌词/未就绪由纯函数统一抑制。
   void _handleReaderScroll() {
-    if (!readerScrollProgressRefreshAllowed(
+    final bool allowed = readerScrollProgressRefreshAllowed(
       readerContentReady: _readerContentReady,
       restoreInFlight: _restoreInFlight,
       lyricsMode: _lyricsMode,
       controllerAvailable: _controller != null,
-    )) {
+    );
+    // TODO-151/164 / BUG-225 诊断（默认 off，DebugLogService.instance.enabled 门控）：
+    // 记四个门控条件各自真值 + 是否实际调 _refreshProgress，便于真机定位「滚动回传到了
+    // 但进度不刷新」是被哪个门控挡掉的（恢复期/歌词/未就绪/控制器释放）。不改 151 逻辑。
+    if (DebugLogService.instance.enabled) {
+      debugPrint('[ReaderDiag] _handleReaderScroll'
+          ' readerContentReady=$_readerContentReady'
+          ' restoreInFlight=$_restoreInFlight'
+          ' lyricsMode=$_lyricsMode'
+          ' controllerAvailable=${_controller != null}'
+          ' allowed=$allowed → refresh=${allowed ? 'yes' : 'no'}');
+    }
+    if (!allowed) {
       return;
     }
     _refreshProgress();
@@ -4133,6 +4164,14 @@ window.flutter_inappwebview.callHandler('spreadReady');
           _progressCurrentChars = absoluteChars;
           _progressTotalChars = newTotal;
         });
+      }
+      // TODO-151/164 / BUG-225 诊断（默认 off，DebugLogService.instance.enabled 门控）：
+      // 记重算后章内进度 UI 字段最终值，便于真机确认滚动后进度数确实推进/未推进。
+      if (DebugLogService.instance.enabled) {
+        debugPrint('[ReaderDiag] _refreshProgress'
+            ' progressCurrentChars=$_progressCurrentChars'
+            ' progressTotalChars=$_progressTotalChars'
+            ' (progress=${progress.toStringAsFixed(4)} section=$_currentChapter)');
       }
     }
   }

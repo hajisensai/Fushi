@@ -89,8 +89,7 @@ void main() {
         ));
     final pos = await repo.findByBookKey('book-99');
     expect(pos, isNotNull);
-    expect(pos!.charOffset, isNull,
-        reason: 'DB -1 should map to model null');
+    expect(pos!.charOffset, isNull, reason: 'DB -1 should map to model null');
   });
 
   test('findByTtuBookId returns null for absent book', () async {
@@ -150,7 +149,6 @@ void main() {
     await repo.save(bookKey: 'book-50', sectionIndex: 0, normCharOffset: 100);
     final pos = await repo.findByBookKey('book-50');
     expect(pos!.charOffset, isNull,
-        reason:
-            'first save without charOffset → DB default -1 → model null');
+        reason: 'first save without charOffset → DB default -1 → model null');
   });
 }

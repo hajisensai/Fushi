@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 220 条。点号进各自文件。
+> 共 222 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-225](bugs/BUG-225-reader-inchapter-progress-diag-logs.md) | ✅ | ✅ | 章内滚动进度链路三点诊断日志(TODO-151/164) |
+| [BUG-224](bugs/BUG-224-reader-system-theme-book-background-white.md) | ✅ | ✅ | 默认主题书籍正文背景不吃背景色(恒白) |
 | [BUG-223](bugs/BUG-223-shelf-book-settings-buttons-uneven-wrap.md) | ✅ | ✅ | 书籍设置弹窗三按钮换行参差 |
 | [BUG-222](bugs/BUG-222-video-subtitle-shadow-offset-detached.md) | ✅ | ✅ | 视频字幕阴影单向下投影像残留/不跟随 |
 | [BUG-221](bugs/BUG-221-video-remove-portrait-fullscreen-orientation.md) | ✅ | ✅ | 删除视频竖屏模式+双击暂停+返回手势直接退出 |
