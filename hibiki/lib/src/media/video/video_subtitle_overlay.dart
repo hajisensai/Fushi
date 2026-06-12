@@ -94,19 +94,20 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 字幕背景不透明度 0..1（外观设置；历史值 0.54 = Colors.black54）。
   final double backgroundOpacity;
 
-  /// 字幕距底部的**用户位置**（外观设置）。控制条避让不再含在此值里——TODO-129 起
-  /// 由 [controlsVisible] 在控制条可见时动态叠加 [controlsBottomReserve]，此处只是
+  /// 字幕距底部的**用户位置**（外观设置）。控制条避让不含在此值里——TODO-129 起由
+  /// [controlsVisible] 在控制条可见时对 [controlsBottomReserve] 取下限（max），此处只是
   /// 用户手选的基线位置。
   final double bottomPadding;
 
-  /// media_kit 控制条当前是否可见（TODO-129）。非 null 时驱动字幕动态避让：可见时把
-  /// 字幕在 [bottomPadding] 基线之上额外上顶 [controlsBottomReserve]、隐藏时落回基线
-  /// （[AnimatedPadding] 平滑过渡），让进度条「把字幕往上顶对应的高度」。null（默认、
-  /// 测试、有声书等无控制条场景）= 不避让，字幕恒贴 [bottomPadding] 基线（旧行为）。
+  /// media_kit 控制条当前是否可见（TODO-129/161）。非 null 时驱动字幕动态避让：可见时
+  /// 字幕底部 padding 取 `max([bottomPadding], [controlsBottomReserve])`（字幕底缘骑到
+  /// 控制条顶、躲开进度条），隐藏时落回 [bottomPadding] 基线（[AnimatedPadding] 平滑过渡）。
+  /// 取下限而非加法：基线 < 控制条高时不会被顶飞、手选高位也不被改写。null（默认、测试、
+  /// 有声书等无控制条场景）= 不避让，字幕恒贴 [bottomPadding] 基线（旧行为）。
   final ValueListenable<bool>? controlsVisible;
 
-  /// 控制条可见时字幕额外上顶的避让高度（默认 [kVideoControlsBottomReserve]）。仅在
-  /// [controlsVisible] 非 null 时生效；0 等价于不避让。
+  /// 控制条可见时字幕底缘对其取下限的避让高度（默认 [kVideoControlsBottomReserve]=控制条
+  /// 总高）。仅在 [controlsVisible] 非 null 时生效；基线 ≥ 本值则避让不抬（取基线）。
   final double controlsBottomReserve;
 
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
@@ -418,41 +419,50 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     return Alignment(x, y);
   }
 
-  /// 顶部锚点用顶部 padding、底部用 bottomPadding + [extraBottom]（控制条避让）、中部不加。
-  /// [extraBottom] 仅对底部锚点叠加——控制条在底部，只有底部字幕会被进度条遮挡，顶部 /
-  /// 中部字幕不需要避让。
-  EdgeInsets _paddingFor(SubtitleAnchor? a, double extraBottom) {
+  /// 顶部锚点用顶部 padding、中部不加、底部按 [controlsVisible] 取避让下限。
+  ///
+  /// 底部锚点避让是「字幕底缘 ≥ 控制条顶缘」的约束，故控制条可见时底部 padding 取
+  /// `max(bottomPadding, controlsBottomReserve)`——而**不是** `bottomPadding + reserve`
+  /// 的加法叠加。基线 75 < 控制条高 98 时，加法会把字幕顶到 173px（凭空多抬整个基线、
+  /// 顶进画面中上部 / 顶出可视底带 = TODO-161 用户报「桌面 hover 字幕消失」）；取下限只
+  /// 抬到 98 恰骑控制条顶，避开进度条又不飞。用户手选高位（> reserve）时 max 取其值、
+  /// 不被避让改写；手选低位（< reserve）时控制条可见仍抬到 reserve 躲进度条、隐藏落回原值。
+  /// 避让只对底部锚点生效——控制条在底部，顶部 / 中部字幕不会被进度条遮挡。
+  EdgeInsets _paddingFor(SubtitleAnchor? a, bool controlsVisible) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
     return switch (v) {
-      SubtitleVAlign.bottom =>
-        EdgeInsets.only(bottom: widget.bottomPadding + extraBottom),
+      SubtitleVAlign.bottom => EdgeInsets.only(
+          bottom: controlsVisible
+              ? (widget.bottomPadding > widget.controlsBottomReserve
+                  ? widget.bottomPadding
+                  : widget.controlsBottomReserve)
+              : widget.bottomPadding,
+        ),
       SubtitleVAlign.top => EdgeInsets.only(top: widget.bottomPadding),
       SubtitleVAlign.middle => EdgeInsets.zero,
     };
   }
 
   /// 给字幕盒套底部 padding。无 [VideoSubtitleOverlay.controlsVisible]（测试 / 有声书 /
-  /// 无控制条场景）走静态 [Padding]，与历史像素级一致（extraBottom=0）。有控制条可见性
-  /// 时改 [ValueListenableBuilder] 监听 + [AnimatedPadding]：控制条出现 → 底部 padding
-  /// 在 bottomPadding 基线上叠加 [VideoSubtitleOverlay.controlsBottomReserve]、隐藏 →
-  /// 落回基线，进度条「把字幕往上顶对应的高度」（TODO-129）。用户手选的
-  /// [VideoSubtitleOverlay.bottomPadding] 永远是基线、避让只在其上叠加，故手动位置不被
-  /// 动态避让覆盖（同一字段无特例分支）。
+  /// 无控制条场景）走静态 [Padding]，与历史像素级一致（controlsVisible=false → 贴
+  /// bottomPadding 基线）。有控制条可见性时改 [ValueListenableBuilder] 监听 +
+  /// [AnimatedPadding]：控制条出现 → 底部 padding 取 `max(bottomPadding, reserve)`（字幕
+  /// 底缘骑到控制条顶、躲开进度条）、隐藏 → 落回 bottomPadding 基线（TODO-129/161，几何
+  /// 见 [_paddingFor]）。取下限而非加法，故基线 < 控制条高时不会把字幕顶飞、手选高位也
+  /// 不被改写（同一字段无特例分支）。
   Widget _anchoredPadded(SubtitleAnchor? anchor, Widget child) {
     final ValueListenable<bool>? visible = widget.controlsVisible;
     if (visible == null) {
-      return Padding(padding: _paddingFor(anchor, 0), child: child);
+      return Padding(padding: _paddingFor(anchor, false), child: child);
     }
     return ValueListenableBuilder<bool>(
       valueListenable: visible,
       builder: (BuildContext _, bool controlsVisible, Widget? padded) {
-        final double extraBottom =
-            controlsVisible ? widget.controlsBottomReserve : 0;
         return AnimatedPadding(
           // 与 media_kit 控制条淡入淡出同量级（~200ms），字幕上顶/落回跟随控制条显隐。
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
-          padding: _paddingFor(anchor, extraBottom),
+          padding: _paddingFor(anchor, controlsVisible),
           child: padded,
         );
       },

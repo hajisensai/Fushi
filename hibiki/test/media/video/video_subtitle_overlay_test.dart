@@ -55,12 +55,12 @@ void main() {
       expect(gapFromBottom(tester), closeTo(75 + kBoxPadBottom, 0.5));
     });
 
-    testWidgets(
-        'controls visible -> subtitle lifts by exactly the controls reserve',
+    testWidgets('controls visible -> subtitle底缘对控制条高度取下限，不凭空多抬基线',
         (tester) async {
-      // 控制条可见时字幕在用户基线之上额外上顶 [kVideoControlsBottomReserve]（进度条
-      // 把字幕往上顶对应高度）。撤回修复（不读 controlsVisible / 不叠加 reserve）则
-      // gap 仍是 75 < 期望 => 红。
+      // 控制条可见时字幕底缘 = max(bottomPadding, reserve)：基线 75 < 控制条高 98，故
+      // 抬到 98 恰骑控制条顶（避开进度条又不飞）。撤回成旧的 75+98=173 加法（凭空多抬一
+      // 个基线、把字幕顶进画面中上部 / 顶出可视底带 = TODO-161 用户报「hover 字幕消失」）
+      // 则 gap=173 > 期望 98 => 红。撤回成完全不避让则 gap=75 < 98 => 红。
       final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
       addTearDown(visible.dispose);
       final VideoPlayerController c = _controllerWithCue('A');
@@ -76,8 +76,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         gapFromBottom(tester),
-        closeTo(75 + kVideoControlsBottomReserve + kBoxPadBottom, 0.5),
-        reason: '控制条可见时字幕应在基线 75 之上叠加 $kVideoControlsBottomReserve',
+        closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5),
+        reason:
+            '控制条可见时字幕底缘应骑在控制条顶（max(基线 75, 避让 $kVideoControlsBottomReserve)），'
+            '不再凭空多抬一个基线（TODO-161）',
       );
     });
 
@@ -98,24 +100,26 @@ void main() {
       );
       await tester.pumpAndSettle();
       final double visibleGap = gapFromBottom(tester);
+      // 可见：底缘对控制条高取下限 = max(75, 98) = 98。
       expect(visibleGap,
-          closeTo(75 + kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
+          closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
 
       visible.value = false;
       await tester.pumpAndSettle();
       final double hiddenGap = gapFromBottom(tester);
       expect(hiddenGap, closeTo(75 + kBoxPadBottom, 0.5),
           reason: '控制条隐藏后字幕应落回用户基线 75，不残留避让抬升');
-      // 核心守卫（不依赖盒内 padding）：上顶增量恰为控制条避让量（进度条把字幕顶起对应
-      // 高度）。撤回修复则差值为 0 => 红。
-      expect(visibleGap - hiddenGap, closeTo(kVideoControlsBottomReserve, 0.5));
+      // 核心守卫（不依赖盒内 padding）：上顶增量 = 取下限差（避让高 - 基线 = 98 - 75 = 23），
+      // 不是整段避让高 98——后者是旧的加法 bug（凭空多抬一个基线，TODO-161）。
+      expect(visibleGap - hiddenGap,
+          closeTo(kVideoControlsBottomReserve - 75, 0.5));
     });
 
-    testWidgets(
-        'manual lower bottomPadding stays the baseline the dodge stacks on',
+    testWidgets('manual low bottomPadding: 隐藏尊重低位，可见取下限躲进度条（不叠加飞走）',
         (tester) async {
-      // 「除非用户手动调位置」：用户显式低位置（20px）是基线，控制条可见时避让叠加在
-      // 其上（20 + reserve），隐藏时落回 20——手动位置永不被动态避让吞掉。
+      // 用户显式低位置（20px）< 控制条高：隐藏时尊重 20（贴底是用户的选择），可见时
+      // max(20, 98) = 98 恰躲开进度条——不是 20+98=118 的加法叠加（那会把低位用户的字幕
+      // 也顶飞，TODO-161）。
       final ValueNotifier<bool> visible = ValueNotifier<bool>(false);
       addTearDown(visible.dispose);
       final VideoPlayerController c = _controllerWithCue('A');
@@ -128,14 +132,39 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // 控制条隐藏：尊重用户低位置（落进控制条区是用户的选择）。
+      // 控制条隐藏：尊重用户低位置。
       expect(gapFromBottom(tester), closeTo(20 + kBoxPadBottom, 0.5));
 
       visible.value = true;
       await tester.pumpAndSettle();
-      // 控制条可见：避让叠加在用户基线 20 之上，不改写基线本身。
+      // 控制条可见：对控制条高取下限 = max(20, 98) = 98（躲进度条），非 20+98。
       expect(gapFromBottom(tester),
-          closeTo(20 + kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
+          closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
+    });
+
+    testWidgets('manual high bottomPadding stays verbatim (基线 > 避让则取基线，不被改写)',
+        (tester) async {
+      // 用户显式高位置（200px）> 控制条高：取下限 max(200, 98) = 200，可见 / 隐藏都用 200
+      // ——高位用户已在进度条之上，避让不该把它再往上推或往下拉，尊重原值。
+      final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+      addTearDown(visible.dispose);
+      final VideoPlayerController c = _controllerWithCue('A');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(
+          controller: c,
+          bottomPadding: 200,
+          controlsVisible: visible,
+        ),
+      );
+      await tester.pumpAndSettle();
+      // 可见：max(200, 98) = 200。
+      expect(gapFromBottom(tester), closeTo(200 + kBoxPadBottom, 0.5));
+
+      visible.value = false;
+      await tester.pumpAndSettle();
+      // 隐藏：仍 200（基线）。
+      expect(gapFromBottom(tester), closeTo(200 + kBoxPadBottom, 0.5));
     });
   });
 

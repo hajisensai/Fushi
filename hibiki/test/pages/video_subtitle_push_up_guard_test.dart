@@ -18,14 +18,18 @@ void main() {
   final File page =
       File('lib/src/pages/implementations/video_hibiki_page.dart');
   final File style = File('lib/src/media/video/video_subtitle_style.dart');
+  final File overlay = File('lib/src/media/video/video_subtitle_overlay.dart');
 
   late String src;
   late String styleSrc;
+  late String overlaySrc;
   setUpAll(() {
     expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
     expect(style.existsSync(), isTrue, reason: '字幕样式源文件应存在');
+    expect(overlay.existsSync(), isTrue, reason: '字幕 overlay 源文件应存在');
     src = page.readAsStringSync();
     styleSrc = style.readAsStringSync();
+    overlaySrc = overlay.readAsStringSync();
   });
 
   test('反转 089：默认 bottomPadding 是自然基线 75，不再恒含控制条避让', () {
@@ -98,5 +102,25 @@ void main() {
     final String body = src.substring(mark, markEnd);
     expect(body, contains('_immersiveLocked.value'),
         reason: '锁定态下镜像应强制不可见（无控制条可遮挡）');
+  });
+
+  test('避让对控制条高度取下限（max），不是 bottomPadding + reserve 加法（TODO-161）', () {
+    // 根因守卫：TODO-129 原把可见时底部 padding 算成 `bottomPadding + extraBottom`，
+    // 基线 75 < 控制条高 98 时得 173px，凭空多抬一个基线把字幕顶飞出画面（桌面 hover
+    // 字幕「消失」）。TODO-161 改成对控制条高取下限 max(bottomPadding, reserve)。撤回成
+    // 加法（恢复 `bottomPadding + extraBottom` / `+ widget.controlsBottomReserve`）即露。
+    final int fn = overlaySrc.indexOf('EdgeInsets _paddingFor(');
+    expect(fn, greaterThanOrEqualTo(0), reason: '_paddingFor 应存在');
+    final int fnEnd = overlaySrc.indexOf('\n  }', fn);
+    final String body = overlaySrc.substring(fn, fnEnd);
+    // 底部分支用「基线 vs 控制条高」取下限的三元，非加法。
+    expect(
+        body, contains('widget.bottomPadding > widget.controlsBottomReserve'),
+        reason: '底部避让应对控制条高度取下限（max），让字幕底缘骑控制条顶、不飞');
+    expect(body, isNot(contains('bottomPadding + ')),
+        reason: '避让不能用 `bottomPadding + reserve` 加法（173px 把字幕顶飞，TODO-161）');
+    // _anchoredPadded 应把可见性布尔直接喂给 _paddingFor，不再算 extraBottom 数值叠加。
+    expect(overlaySrc, isNot(contains('extraBottom')),
+        reason: '不应残留 extraBottom 加法量（已改为取下限的布尔驱动）');
   });
 }
