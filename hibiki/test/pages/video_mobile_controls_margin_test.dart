@@ -8,12 +8,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// `bottom: 0`（贴屏幕物理最底）。底部留白 = 基线 + 系统导航栏/手势栏 inset
 /// （[_videoBottomSystemInset] 读 viewPadding.bottom）。
 ///
-/// 【BUG-214 / TODO-156】进度条要抬到底部按钮条**上方**，而不是与按钮条同一底部基线
+/// 【BUG-217 / TODO-156】进度条要抬到底部按钮条**上方**，而不是与按钮条同一底部基线
 /// 重叠。media_kit 把进度条与按钮条放同一个 bottomCenter Stack、都按 `bottom` 对齐，
 /// 进度条 `bottom` 必须 = 按钮条基线 + 按钮条高 + 间距，否则两者落同一基线、按钮压在
 /// 进度条上（手机上「按钮没在进度条下面」）。
 ///
-/// 【BUG-215 / TODO-157】进度条触摸热区 / 滑块 / 轨道必须抬高于 media_kit 默认
+/// 【BUG-218 / TODO-157】进度条触摸热区 / 滑块 / 轨道必须抬高于 media_kit 默认
 /// （seekBarContainerHeight=36 / seekBarThumbSize=12.8 / seekBarHeight=2.4），否则手机上
 /// 太细难命中、滑不到 / 拖不动。三者随界面缩放（[_videoUiScale]）。
 ///
@@ -108,7 +108,7 @@ void main() {
     );
   });
 
-  // ── BUG-214 / TODO-156：进度条抬到按钮条上方 ────────────────────────────
+  // ── BUG-217 / TODO-156：进度条抬到按钮条上方 ────────────────────────────
 
   test('进度条 bottom 偏移含按钮条高（抬到按钮条上方，不与按钮重叠）', () {
     // seekBarBottom = bottomChromeInset + 按钮条高 + 间距，进度条整体落在按钮条上方。
@@ -131,7 +131,7 @@ void main() {
     expect(
       expr.contains('_videoButtonBarHeight'),
       isTrue,
-      reason: 'seekBarBottom 必须叠加按钮条高，进度条才落在按钮条上方（BUG-214 核心）',
+      reason: 'seekBarBottom 必须叠加按钮条高，进度条才落在按钮条上方（BUG-217 核心）',
     );
     expect(
       expr.contains('_videoSeekBarButtonGap'),
@@ -153,7 +153,7 @@ void main() {
     );
   });
 
-  // ── BUG-215 / TODO-157：触摸热区 / 滑块 / 轨道抬高 ─────────────────────
+  // ── BUG-218 / TODO-157：触摸热区 / 滑块 / 轨道抬高 ─────────────────────
 
   test('进度条触摸热区 / 滑块 / 轨道字段接进主题（不是死代码）', () {
     expect(

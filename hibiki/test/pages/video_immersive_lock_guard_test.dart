@@ -99,7 +99,7 @@ void main() {
     );
   });
 
-  test('④ 侧边锁按钮图标用状态语义：锁住=闭锁、未锁=开锁（TODO-153/BUG-213）', () {
+  test('④ 侧边锁按钮图标用状态语义：锁住=闭锁、未锁=开锁（TODO-153/BUG-216）', () {
     // 原先反成「动作提示」语义（locked ? lock_open_outlined : lock_outline）=锁住却显示
     // 开锁，与用户「锁住=闭锁」的状态预期相反，也与 OSD / 悬浮字幕锁 / 原生两端不一致。
     // 修复后状态语义：locked → Icons.lock_outline（闭锁），未锁 → Icons.lock_open_outlined。
@@ -114,7 +114,7 @@ void main() {
       RegExp(r'locked\s*\?\s*Icons\.lock_open_outlined\s*:\s*Icons\.lock_outline')
           .hasMatch(src),
       isFalse,
-      reason: '不得倒回「锁住显开锁」的反向动作语义（回归 BUG-213）',
+      reason: '不得倒回「锁住显开锁」的反向动作语义（回归 BUG-216）',
     );
     // tooltip 保持动作语义（锁住时「点击解锁」合理），与图标状态语义并存。
     expect(

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（TODO-158 / BUG-216）：视频页系统栏沉浸**持续隐藏**。
+/// 源码守卫（TODO-158 / BUG-219）：视频页系统栏沉浸**持续隐藏**。
 ///
 /// 这与控制条 UI 锁（`_immersiveLocked`，见 video_immersive_lock_guard_test）是两回事：
 /// 那个锁的是 media_kit 控制条是否弹出；这里管的是 Android 系统状态栏 / 导航栏是否

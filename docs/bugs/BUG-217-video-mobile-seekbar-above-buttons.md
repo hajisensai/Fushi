@@ -1,4 +1,4 @@
-## BUG-214 · 移动端进度条没在播放按钮上方
+## BUG-217 · 移动端进度条没在播放按钮上方
 - **报告**：2026-06-12（用户：）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` `_mobileControlsTheme`（约 line 2625-2635）：进度条 `seekBarMargin.bottom` 与底部按钮条 `bottomButtonBarMargin.bottom` 原先都取同一个 `bottomChromeInset` 基线。media_kit 的 `MaterialVideoControls` 把进度条（seekBar）与底部按钮条（bottomButtonBar）放在**同一个** `Stack(alignment: bottomCenter)`、两者都按各自 margin 的 `bottom` 对屏幕底对齐——两个 bottom 相等时它们落在同一水平基线、按钮压在进度条上，手机上表现为「播放按钮没在进度条下面 / 与进度条挤在一起」。
 - **[x] ① 已修复** — 在 `_mobileControlsTheme` 内新增 `seekBarBottom = bottomChromeInset + _videoButtonBarHeight + _videoSeekBarButtonGap`，把 `seekBarMargin.bottom` 从 `bottomChromeInset` 改为 `seekBarBottom`，让进度条整体抬到按钮条**上方**（= 按钮条基线 + 按钮条高 + 间距）。`bottomButtonBarMargin.bottom` 仍是 `bottomChromeInset`，保留 BUG-184 的「抬离系统导航栏/手势栏」逻辑（`bottomChromeInset = _videoBottomChromeBaseline + _videoBottomSystemInset()`）。新增间距常量 `_videoSeekBarButtonGapBase=8` + getter `_videoSeekBarButtonGap`（随 `_videoUiScale` 缩放）。提交见 git log（TODO-156）。

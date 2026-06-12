@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（TODO-148/BUG-212 ②）：连按快进/跳句时控制条自动隐藏计时不续命。
+/// 源码守卫（TODO-148/BUG-215 ②）：连按快进/跳句时控制条自动隐藏计时不续命。
 ///
 /// 根因=[_pokeControlsVisible] 每次都把合成 hover 派发到控制条**固定中心点**，
 /// Flutter `MouseTracker` 对「同一设备落同一坐标」的连续 hover 去重 → 第二次起
@@ -23,7 +23,7 @@ void main() {
 
   test('存在 _pokeParity 抖动开关字段', () {
     expect(src.contains('bool _pokeParity = false;'), isTrue,
-        reason: '必须有合成 hover 位置抖动开关字段（TODO-148/BUG-212）');
+        reason: '必须有合成 hover 位置抖动开关字段（TODO-148/BUG-215）');
   });
 
   test('每次 poke 翻转 _pokeParity 并据此 ±1px 偏移合成 hover 位置', () {
@@ -54,7 +54,7 @@ void main() {
     expect(
       RegExp(r'PointerHoverEvent\(\s*position: center,').hasMatch(body),
       isFalse,
-      reason: '不得回退用固定 center 派发（会触发 MouseTracker 同坐标去重，回归 BUG-212）',
+      reason: '不得回退用固定 center 派发（会触发 MouseTracker 同坐标去重，回归 BUG-215）',
     );
   });
 }
