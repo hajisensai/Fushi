@@ -2229,6 +2229,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 上/下一句走 cue 导航（无字幕/转场段对称回退/前进，
   /// [VideoPlayerController.skipToPrevCueOrSeekBack]/[VideoPlayerController.skipToNextCueOrSeekForward]）。
   Future<void> _toggleVideoFullscreen(BuildContext context) {
+    // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
+    // no-op，杜绝任何入口（双击 / 全屏按钮 / 快捷键 / 右键菜单）把移动端推进全屏路由——
+    // 全屏路由会带来「退全屏弹回竖屏」与「全屏 PopScope 吞第一次返回的两段式退出」。桌面
+    // 不受影响（窗口全屏走 native window，返回行为本就合理）。
+    if (isMobilePlatform) return Future<void>.value();
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
         : _pushNeutralizedVideoFullscreen(context);
@@ -2387,6 +2392,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   Widget _buildFullscreenButton({required bool desktop}) {
+    // BUG-221: 移动端不提供全屏按钮。移动端视频全程横屏沉浸（[_lockLandscapeForVideo] +
+    // [_applyVideoImmersiveMode]），画面已占满，「全屏」无额外语义；进 media_kit 全屏路由
+    // 反而引入「退全屏弹回竖屏 + 两段式返回」（全屏路由吞第一次返回）。移动端永不进全屏，
+    // 故隐藏入口（与双击不再全屏、[_toggleVideoFullscreen] 移动端 no-op 一致）。
+    if (isMobilePlatform) return const SizedBox.shrink();
     return Builder(
       builder: (BuildContext buttonContext) {
         final Widget icon = Icon(
@@ -2958,6 +2968,54 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _applyVideoImmersiveMode() async {
     if (!isMobilePlatform) return;
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  /// BUG-221: media_kit 全屏「进入」回调，**替换** media_kit 默认
+  /// [defaultEnterNativeFullscreen]。窗口侧与自建全屏路由的 [Video] 都传这个，
+  /// 经由 media_kit 的 `state.widget.onEnterFullscreen` 链路生效。
+  ///
+  /// 移动端：语义与 [_lockLandscapeForVideo] + [_applyVideoImmersiveMode] 一致——
+  /// 只允许两个横屏 + 沉浸隐栏，**永不 `setPreferredOrientations([])`**（病根是
+  /// media_kit 默认退全屏时放开全部方向把设备弹回竖屏）。
+  ///
+  /// 桌面：**保留** media_kit 默认 [defaultEnterNativeFullscreen]，它经 MethodChannel
+  /// `Utils.EnterNativeFullscreen` 把 OS 窗口切真原生全屏（覆盖任务栏）。桌面分支不碰
+  /// 设备方向，无竖屏问题；之前若在桌面 no-op 会悄悄砍掉桌面「全屏 = OS 窗口真全屏」
+  /// （改动前窗口侧 Video 未传回调、落 media_kit 默认 = 桌面真全屏），属本修复范围外的
+  /// 桌面回归，故桌面转调默认回调原样保留。
+  Future<void> _enterVideoNativeFullscreen() async {
+    if (!isMobilePlatform) return defaultEnterNativeFullscreen();
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.immersiveSticky,
+      overlays: <SystemUiOverlay>[],
+    );
+    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  /// BUG-221: media_kit 全屏「退出」回调，**替换** media_kit 默认
+  /// [defaultExitNativeFullscreen]。
+  ///
+  /// 移动端：media_kit 默认退全屏时调 `setPreferredOrientations([])` 放开全部方向
+  /// （含竖屏/倒置），让设备转回竖屏 = 用户感知的「竖屏模式」。本回调退全屏时**仍只允许
+  /// 两个横屏**（视频页全程横屏，方向唯一拥有者），系统栏保持沉浸隐藏（与窗口态一致，
+  /// 不在退全屏瞬间闪回系统栏）。真正放开方向交给退页时的 [_restoreOrientationOnExit]。
+  ///
+  /// 桌面：**保留** media_kit 默认 [defaultExitNativeFullscreen]（MethodChannel
+  /// `Utils.ExitNativeFullscreen` 把 OS 窗口还原回非全屏），与进入回调对称。桌面分支不碰
+  /// 设备方向，无竖屏问题。
+  Future<void> _exitVideoNativeFullscreen() async {
+    if (!isMobilePlatform) return defaultExitNativeFullscreen();
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.immersiveSticky,
+      overlays: <SystemUiOverlay>[],
+    );
+    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
   /// TODO-099: 退出视频页时还原为 app 默认允许态（竖屏 + 两个横屏，
@@ -3883,7 +3941,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     _lastVideoPointerUpAt = null;
     _lastVideoPointerUpPosition = null;
-    unawaited(_toggleVideoFullscreen(controlsContext));
+    // BUG-221: 双击命中后按平台分流。
+    // - 移动端：双击 = 播放/暂停。原先双击 → [_toggleVideoFullscreen] → media_kit 全屏路由，
+    //   退出时弹回竖屏，用户感知为「双击 = 竖屏」。移动端横屏沉浸态即唯一形态、无「全屏」
+    //   语义，双击应等同原生播放器的暂停手势。
+    // - 桌面：保留双击全屏（窗口全屏有意义，走 native window 不碰设备方向）。
+    if (_isDesktopVideoControls) {
+      unawaited(_toggleVideoFullscreen(controlsContext));
+    } else {
+      unawaited(_controller?.playOrPause() ?? Future<void>.value());
+    }
   }
 
   bool _isVideoChromePointer(
@@ -4057,6 +4124,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
           controls: (VideoState state) =>
               _buildVideoControls(state, controller),
+          // BUG-221: 替换 media_kit 默认全屏方向回调，禁止移动端退全屏时
+          // `setPreferredOrientations([])` 弹回竖屏。自建全屏路由（[_pushNeutralizedVideoFullscreen]）
+          // 经 `state.widget.onEnterFullscreen`/`onExitFullscreen` 取的就是这俩，故窗口侧设
+          // 一次即覆盖全部全屏方向行为。移动端门控在 helper 内（只锁横屏，永不放开方向）；
+          // 桌面转调 media_kit 默认回调，保留「全屏 = OS 窗口真全屏」（不碰设备方向）。
+          onEnterFullscreen: _enterVideoNativeFullscreen,
+          onExitFullscreen: _exitVideoNativeFullscreen,
         ),
       ),
     );
