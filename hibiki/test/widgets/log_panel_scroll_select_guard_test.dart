@@ -53,6 +53,7 @@ void main() {
     final TextField field = tester.widget<TextField>(fieldFinder);
     expect(field.readOnly, isTrue);
     expect(field.controller?.text, log);
+    expect(field.scrollController, isNotNull);
     expect(field.selectionControls, isA<HibikiTextSelectionControls>());
 
     // 旧的会被「拽回」的结构必须消失。
@@ -83,6 +84,8 @@ void main() {
     );
 
     expect(panel, contains('readOnly: true'));
+    expect(panel, contains('_LogSelectionScrollController'));
+    expect(panel, contains('scrollController: _scrollController'));
     // 断言旧的「会被拽回」结构的构造调用消失（用 ASCII 括号形避免误伤说明注释里
     // 提及这两个类名的文字）。
     expect(panel, isNot(contains('SelectableText(')));

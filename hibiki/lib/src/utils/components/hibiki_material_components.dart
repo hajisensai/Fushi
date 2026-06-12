@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -2064,6 +2067,8 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
   // scroll controller，没有外层 SingleChildScrollView 来抢/拽，消除嵌套滚动冲突。
   late final TextEditingController _controller =
       TextEditingController(text: widget.log);
+  late final _LogSelectionScrollController _scrollController =
+      _LogSelectionScrollController();
 
   @override
   void didUpdateWidget(covariant HibikiLogPanel oldWidget) {
@@ -2076,6 +2081,7 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
   @override
   void dispose() {
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -2088,33 +2094,210 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
         padding: EdgeInsets.all(tokens.spacing.page),
         child: HibikiCard(
           padding: EdgeInsets.zero,
-          child: TextField(
-            controller: _controller,
-            readOnly: true,
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            style: tokens.type.metadata.copyWith(
-              color: tokens.surfaces.onSurface,
-              fontFamily: 'monospace',
-            ),
-            selectionControls: HibikiTextSelectionControls(
-              shareAction: widget.shareAction,
-              allowCopy: true,
-              allowCut: false,
-              allowPaste: false,
-              allowSelectAll: true,
-            ),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.all(tokens.spacing.card),
-            ),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double viewportHeight = constraints.maxHeight.isFinite
+                  ? constraints.maxHeight
+                  : MediaQuery.sizeOf(context).height;
+              return Listener(
+                onPointerDown: (PointerDownEvent event) {
+                  if (event.buttons & kPrimaryButton == 0) return;
+                  _scrollController.beginPointerSelection(
+                    pointerY: event.localPosition.dy,
+                    viewportHeight: viewportHeight,
+                  );
+                },
+                onPointerMove: (PointerMoveEvent event) {
+                  if (event.buttons & kPrimaryButton == 0) {
+                    _scrollController.endPointerSelection();
+                    return;
+                  }
+                  _scrollController.updatePointerSelection(
+                    pointerY: event.localPosition.dy,
+                    viewportHeight: viewportHeight,
+                  );
+                },
+                onPointerUp: (_) => _scrollController.endPointerSelection(),
+                onPointerCancel: (_) => _scrollController.endPointerSelection(),
+                child: TextField(
+                  controller: _controller,
+                  scrollController: _scrollController,
+                  readOnly: true,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: tokens.type.metadata.copyWith(
+                    color: tokens.surfaces.onSurface,
+                    fontFamily: 'monospace',
+                  ),
+                  selectionControls: HibikiTextSelectionControls(
+                    shareAction: widget.shareAction,
+                    allowCopy: true,
+                    allowCut: false,
+                    allowPaste: false,
+                    allowSelectAll: true,
+                  ),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.all(tokens.spacing.card),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),
     );
+  }
+}
+
+class _LogSelectionScrollController extends ScrollController {
+  _LogSelectionScrollController()
+      : super(debugLabel: 'hibiki-log-selection-scroll');
+
+  bool _pointerSelectionActive = false;
+  bool _userScrolledDuringSelection = false;
+  double? _pointerY;
+  double? _viewportHeight;
+
+  void beginPointerSelection({
+    required double pointerY,
+    required double viewportHeight,
+  }) {
+    _pointerSelectionActive = true;
+    _userScrolledDuringSelection = false;
+    updatePointerSelection(
+      pointerY: pointerY,
+      viewportHeight: viewportHeight,
+    );
+  }
+
+  void updatePointerSelection({
+    required double pointerY,
+    required double viewportHeight,
+  }) {
+    _pointerY = pointerY;
+    _viewportHeight = viewportHeight;
+  }
+
+  void endPointerSelection() {
+    _pointerSelectionActive = false;
+    _userScrolledDuringSelection = false;
+    _pointerY = null;
+    _viewportHeight = null;
+  }
+
+  void _markUserScroll(double oldPixels, double newPixels) {
+    if (!_pointerSelectionActive) return;
+    if ((newPixels - oldPixels).abs() <= 0.5) return;
+    _userScrolledDuringSelection = true;
+  }
+
+  bool _allowProgrammaticScroll(double targetOffset) {
+    if (!_pointerSelectionActive || !hasClients || positions.length != 1) {
+      return true;
+    }
+
+    final double delta = targetOffset - position.pixels;
+    if (delta.abs() <= 0.5) return true;
+
+    final double? pointerY = _pointerY;
+    final double? viewportHeight = _viewportHeight;
+    if (pointerY != null && viewportHeight != null && viewportHeight > 0) {
+      final double edgeBand = math.min(
+        96.0,
+        math.max(48.0, viewportHeight * 0.18),
+      );
+      final bool nearTop = pointerY <= edgeBand;
+      final bool nearBottom = pointerY >= viewportHeight - edgeBand;
+
+      if (nearTop || nearBottom) {
+        final bool movesUp = delta < 0;
+        final bool movesDown = delta > 0;
+        return (nearTop && movesUp) || (nearBottom && movesDown);
+      }
+    }
+
+    return !_userScrolledDuringSelection;
+  }
+
+  @override
+  ScrollPosition createScrollPosition(
+    ScrollPhysics physics,
+    ScrollContext context,
+    ScrollPosition? oldPosition,
+  ) {
+    return _LogSelectionScrollPosition(
+      physics: physics,
+      context: context,
+      oldPosition: oldPosition,
+      debugLabel: debugLabel,
+      controller: this,
+    );
+  }
+
+  @override
+  Future<void> animateTo(
+    double offset, {
+    required Duration duration,
+    required Curve curve,
+  }) {
+    if (!_allowProgrammaticScroll(offset)) {
+      return Future<void>.value();
+    }
+    return super.animateTo(offset, duration: duration, curve: curve);
+  }
+
+  @override
+  void jumpTo(double value) {
+    if (!_allowProgrammaticScroll(value)) return;
+    super.jumpTo(value);
+  }
+}
+
+class _LogSelectionScrollPosition extends ScrollPositionWithSingleContext {
+  _LogSelectionScrollPosition({
+    required super.physics,
+    required super.context,
+    required super.oldPosition,
+    required super.debugLabel,
+    required this.controller,
+  });
+
+  final _LogSelectionScrollController controller;
+
+  @override
+  void applyUserOffset(double delta) {
+    final double oldPixels = pixels;
+    super.applyUserOffset(delta);
+    controller._markUserScroll(oldPixels, pixels);
+  }
+
+  @override
+  Future<void> animateTo(
+    double to, {
+    required Duration duration,
+    required Curve curve,
+  }) {
+    if (!controller._allowProgrammaticScroll(to)) {
+      return Future<void>.value();
+    }
+    return super.animateTo(to, duration: duration, curve: curve);
+  }
+
+  @override
+  void jumpTo(double value) {
+    if (!controller._allowProgrammaticScroll(value)) return;
+    super.jumpTo(value);
+  }
+
+  @override
+  void pointerScroll(double delta) {
+    final double oldPixels = pixels;
+    super.pointerScroll(delta);
+    controller._markUserScroll(oldPixels, pixels);
   }
 }
 
