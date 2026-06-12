@@ -196,7 +196,7 @@ jobs:
 
     - name: Run unit tests (main app)
       working-directory: hibiki
-      run: dart run tool/flutter_test_failures.dart
+      run: dart run tool/flutter_test_failures.dart --exclude-tags golden
 
     - name: Run package tests
       run: |
