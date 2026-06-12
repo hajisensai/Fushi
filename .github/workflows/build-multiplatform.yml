@@ -66,6 +66,11 @@ jobs:
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
+      - name: Remove aliyun mirrors from gradle files
+        working-directory: hibiki/android
+        run: |
+          sed -i "/maven.*aliyun/d" build.gradle
+          sed -i "/maven.*aliyun/d" settings.gradle
       - name: Apply pub cache patches
         run: |
           chmod +x ci/apply-patches.sh

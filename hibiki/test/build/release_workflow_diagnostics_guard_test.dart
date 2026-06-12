@@ -3,11 +3,33 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  String readReleaseWorkflow() {
-    final File file = File('../.github/workflows/release.yml');
+  String readRepositoryWorkflow(String relativePath) {
+    final File file = File('../.github/workflows/$relativePath');
     expect(file.existsSync(), isTrue,
-        reason: 'expected release workflow at ${file.absolute.path}');
+        reason: 'expected workflow at ${file.absolute.path}');
     return file.readAsStringSync();
+  }
+
+  String readReleaseWorkflow() {
+    return readRepositoryWorkflow('release.yml');
+  }
+
+  String readBuildMultiplatformWorkflow() {
+    return readRepositoryWorkflow('build-multiplatform.yml');
+  }
+
+  String workflowJob(String workflow, String name) {
+    final String marker = '  $name:\n';
+    final int start = workflow.indexOf(marker);
+    expect(start, isNonNegative, reason: 'missing workflow job: $name');
+    final RegExp nextJobPattern = RegExp(r'\n  [a-zA-Z0-9_-]+:\n');
+    final Match? nextJob = nextJobPattern.firstMatch(
+      workflow.substring(start + marker.length),
+    );
+    return workflow.substring(
+      start,
+      nextJob == null ? workflow.length : start + marker.length + nextJob.start,
+    );
   }
 
   String workflowStep(String workflow, String name) {
@@ -16,6 +38,20 @@ void main() {
     expect(start, isNonNegative, reason: 'missing workflow step: $name');
     final int next = workflow.indexOf('\n    - name:', start + marker.length);
     return workflow.substring(start, next == -1 ? workflow.length : next);
+  }
+
+  void expectWorkflowOrder(
+    String workflow,
+    String before,
+    String after,
+  ) {
+    final int beforeIndex = workflow.indexOf(before);
+    final int afterIndex = workflow.indexOf(after);
+    expect(beforeIndex, isNonNegative,
+        reason: 'missing workflow marker: $before');
+    expect(afterIndex, isNonNegative,
+        reason: 'missing workflow marker: $after');
+    expect(beforeIndex, lessThan(afterIndex));
   }
 
   test('Android release workflow bounds and diagnoses APK build hangs', () {
@@ -77,6 +113,38 @@ void main() {
     expect(
       workflow.indexOf('Build release APK (split per ABI)'),
       lessThan(workflow.indexOf('Collect Android post-build diagnostics')),
+    );
+  });
+
+  test('build-multiplatform Android appSmoke removes aliyun mirrors first', () {
+    final String workflow = readBuildMultiplatformWorkflow();
+    final String androidJob = workflowJob(workflow, 'android');
+    final String removeAliyunMirrors = workflowStep(
+      androidJob,
+      'Remove aliyun mirrors from gradle files',
+    );
+    final String appSmoke = workflowStep(
+      androidJob,
+      'Run Android comprehensive automation contract',
+    );
+
+    expect(removeAliyunMirrors, contains('working-directory: hibiki/android'));
+    expect(removeAliyunMirrors,
+        contains('sed -i "/maven.*aliyun/d" build.gradle'));
+    expect(
+      removeAliyunMirrors,
+      contains('sed -i "/maven.*aliyun/d" settings.gradle'),
+    );
+    expect(appSmoke, contains('--platform=android --only=appSmoke'));
+    expectWorkflowOrder(
+      androidJob,
+      'Flutter pub get',
+      'Remove aliyun mirrors from gradle files',
+    );
+    expectWorkflowOrder(
+      androidJob,
+      'Remove aliyun mirrors from gradle files',
+      'Run Android comprehensive automation contract',
     );
   });
 }
