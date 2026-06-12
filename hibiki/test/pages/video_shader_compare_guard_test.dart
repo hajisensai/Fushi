@@ -66,12 +66,19 @@ void main() {
     // action->callback wiring is in video_player_shortcuts.dart.
     expect(pageSrc.contains('buildVideoPlayerShortcutsFromRegistry('), isTrue,
         reason: 'page delegates to the shared registry-backed builder');
-    expect(
-        pageSrc.contains(
-          'toggleShaderCompare: () => unawaited(_toggleShaderCompare())',
-        ),
-        isTrue,
-        reason: 'page shortcut action runs _toggleShaderCompare');
+    final int actionIdx = pageSrc.indexOf('toggleShaderCompare:');
+    expect(actionIdx, greaterThanOrEqualTo(0),
+        reason: 'page must provide toggleShaderCompare action');
+    final int nextActionIdx = pageSrc.indexOf('volumeUp:', actionIdx);
+    expect(nextActionIdx, greaterThan(actionIdx),
+        reason: 'toggleShaderCompare callback must end before volumeUp');
+    final String callback = pageSrc.substring(actionIdx, nextActionIdx);
+    final int gate = callback.indexOf('_runWhenImmersiveAllowsFullControls');
+    final int toggle = callback.indexOf('_toggleShaderCompare()');
+    expect(gate, greaterThanOrEqualTo(0),
+        reason: 'C shortcut must respect the full-controls immersive gate');
+    expect(toggle, greaterThan(gate),
+        reason: 'C shortcut action runs _toggleShaderCompare after the gate');
     const InputBinding cKey = InputBinding(key: LogicalKeyboardKey.keyC);
     expect(
         ShortcutDefaults.forPlatform(TargetPlatform.windows)[

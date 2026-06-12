@@ -329,7 +329,7 @@ void main() {
           reason: 'barrier needs a coordinate check, not a blind pop');
     });
 
-    test('_onDismissBarrierTap: hit char -> _lookupAt; else dismiss', () {
+    test('_onDismissBarrierTap: hit char -> lookup handler; else dismiss', () {
       final RegExpMatch? body = RegExp(
         r'void _onDismissBarrierTap\(Offset globalPos\) \{(.*?)\n  \}',
         dotAll: true,
@@ -337,13 +337,33 @@ void main() {
       expect(body, isNotNull, reason: 'cannot find _onDismissBarrierTap body');
       final String b = body!.group(1)!;
       final int hitAt = b.indexOf('_subtitleHitTester.hitTest(globalPos)');
-      final int lookupAt = b.indexOf('_lookupAt(');
+      final int handlerAt = b.indexOf('_handleSubtitleLookupTap(');
       final int popAt = b.indexOf('_popNestedPopupAt(0)');
       expect(hitAt, greaterThanOrEqualTo(0), reason: 'hit-test the char first');
-      expect(lookupAt, greaterThan(hitAt),
-          reason: 'on hit, switch lookup (keeps paused)');
-      expect(popAt, greaterThan(lookupAt),
+      expect(handlerAt, greaterThan(hitAt),
+          reason: 'on hit, switch lookup through the lookup gate handler');
+      expect(popAt, greaterThan(handlerAt),
           reason: 'only dismiss + resume when no char is hit');
+    });
+
+    test('_handleSubtitleLookupTap gates lookup before _lookupAt', () {
+      final RegExpMatch? body = RegExp(
+        r'void _handleSubtitleLookupTap\(\n'
+        r'    String sentence,\n'
+        r'    int graphemeIndex,\n'
+        r'    Rect charRect,\n'
+        r'  \) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull,
+          reason: 'cannot find _handleSubtitleLookupTap body');
+      final String b = body!.group(1)!;
+      final int gate = b.indexOf('_immersiveAllowsLookup');
+      final int lookupAt = b.indexOf('_lookupAt(');
+      expect(gate, greaterThanOrEqualTo(0),
+          reason: 'subtitle lookup must respect lookup-only immersive modes');
+      expect(lookupAt, greaterThan(gate),
+          reason: 'lookup handler must call _lookupAt only after the gate');
     });
 
     test('subtitle overlay binds _subtitleHitTester', () {
