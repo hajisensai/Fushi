@@ -211,7 +211,7 @@ void main() {
     expect(s.bottomPadding, greaterThanOrEqualTo(0));
   });
 
-  group('buildSubtitleShadows (BUG-221 对称描边而非单向投影)', () {
+  group('buildSubtitleShadows (BUG-222 对称描边而非单向投影)', () {
     const Color c = Color(0xFF224466);
 
     test('thickness<=0 无描边', () {

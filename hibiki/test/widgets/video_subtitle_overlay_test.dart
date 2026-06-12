@@ -99,7 +99,7 @@ void main() {
     expect(text.style!.fontSize, 36);
     expect(text.style!.fontWeight, FontWeight.w500);
     expect(text.style!.fontFamily, 'ReaderFont');
-    // BUG-221: 阴影是贴合文字四周的对称描边/光晕（八方向），不再是单个
+    // BUG-222: 阴影是贴合文字四周的对称描边/光晕（八方向），不再是单个
     // 向下偏移 Offset(0, thickness) 的 drop shadow（thickness 越大越「掉」、
     // 换句时与字身分离像残留）。
     final List<Shadow> shadows = text.style!.shadows!;

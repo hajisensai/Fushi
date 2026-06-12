@@ -346,7 +346,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
       fontFamilyFallback: _kSubtitleCjkFallback,
       fontWeight: _fontWeight(widget.fontWeight),
-      // 贴合文字四周的对称描边/光晕（BUG-221），而非单向下方的 drop shadow——
+      // 贴合文字四周的对称描边/光晕（BUG-222），而非单向下方的 drop shadow——
       // 后者 thickness 越大阴影越往下「掉」，换句/移动时与字身分离像残留。
       shadows: buildSubtitleShadows(
         widget.shadowColor ?? Theme.of(context).colorScheme.shadow,

@@ -209,7 +209,7 @@ class VideoSubtitleStyle {
 }
 
 /// 字幕描边阴影：把粗细 [thickness] 渲染成**贴合文字四周的对称描边/光晕**，而非
-/// 单向下方的投影（BUG-221）。
+/// 单向下方的投影（BUG-222）。
 ///
 /// 旧实现是一个 `Shadow(offset: Offset(0, thickness))` 纯向下位移的 drop shadow：
 /// thickness 越大阴影越往下「掉」，字幕移动/换句时阴影与字身分离，观感像「阴影没跟住、
