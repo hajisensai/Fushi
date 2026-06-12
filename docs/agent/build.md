@@ -32,6 +32,15 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 - GitHub Release：`.github/workflows/release.yml` 在 `release.published` 事件里也会构建同名 debug APK，并和正式 split ABI release APK 一起上传到对应 GitHub Release 的 **Assets** 区域。
 - 安全边界：`main` / `develop` push 和手动 `workflow_dispatch` 的 debug APK 只作为 Actions artifact；只有明确的 GitHub Release 事件才上传到 Release 页面。PR 事件不上传可下载调试包，避免未审代码被误当成更新包。
 
+## 版本号与 build number
+
+Flutter 版本号以 `hibiki/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。准备 push 前先判断本轮改动是否影响用户可安装/可分发产物：
+
+- 大模块、大功能、用户可见的大改：升 minor 并重置 patch，例如 `0.5.0+33` -> `0.6.0+34`。
+- 小模块、小功能、修复：升 patch，例如 `0.5.0+33` -> `0.5.1+34`。
+- 每次语义版本 `X.Y.Z` 变化时，`+build` 同步 +1，保证 Android `versionCode` 单调递增。
+- 纯文档、PM 元数据、不影响分发行为的 CI 维护不强制 bump；发布、安装包或运行行为变化应 bump。
+
 ## 依赖补丁
 
 Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：
