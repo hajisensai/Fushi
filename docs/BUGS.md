@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 217 条。点号进各自文件。
+> 共 219 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-222](bugs/BUG-222-reader-inchapter-progress-diag-logs.md) | ✅ | ✅ | 章内滚动进度链路三点诊断日志(TODO-151/164) |
+| [BUG-221](bugs/BUG-221-reader-system-theme-book-background-white.md) | ✅ | ✅ | 默认主题书籍正文背景不吃背景色(恒白) |
 | [BUG-220](bugs/BUG-220-shelf-author-not-shown-editable.md) | ✅ | ✅ | 书架作者导入后不回显不可编辑+tag竖排参差 |
 | [BUG-219](bugs/BUG-219-video-statusbar-not-persistent-immersive.md) | ✅ | ✅ | 视频沉浸状态栏不持续隐藏（后台返回残留） |
 | [BUG-218](bugs/BUG-218-video-mobile-seekbar-touch-target.md) | ✅ | ✅ | 移动端进度条触摸热区太小难命中 |

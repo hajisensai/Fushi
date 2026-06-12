@@ -99,6 +99,54 @@ void main() {
       expect(css, contains('#FF0000'));
       expect(css, contains('#00FF00'));
     });
+
+    // TODO-165 / BUG-221：默认主题 system-theme（以及 light-theme / 任何未命中 preset
+    // 的 key）此前落 _themeColors 的 default 分支，正文 <body> 背景恒白底 #fff，无视
+    // 调用方按真实 ColorScheme 派生传入的 customBg → 「书籍正文背景没吃背景色」。
+    // 现在：传了 customBg/customFg 时正文用它们；preset/custom 行为不变。
+    test('system-theme with derived customBg uses it as body background',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(
+        settings: settings,
+        themeOverride: 'system-theme',
+        customBg: '#1E2A38',
+        customFg: '#ECEFF4',
+      );
+      // 断言精确到正文 <body> 背景 selector（`background: <bg> !important;`），而不是
+      // 宽泛 contains('#fff')——CSS 里另有无关的 `--hoshi-system-text-color: #fff`
+      // dark 媒体查询变量，与正文背景无关，不能误伤。
+      expect(css, contains('background: #1E2A38 !important'),
+          reason: 'system-theme 正文背景应吃派生的 ColorScheme 背景色');
+      expect(css, contains('#ECEFF4'));
+      expect(css, isNot(contains('background: #fff')),
+          reason: '传了派生背景后正文背景不应再落硬编码白底');
+    });
+
+    test('unknown theme key with derived customBg follows it (not white)',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(
+        settings: settings,
+        themeOverride: 'future-unmapped-theme',
+        customBg: '#0A0A0A',
+        customFg: '#F0F0F0',
+      );
+      expect(css, contains('background: #0A0A0A !important'));
+      expect(css, isNot(contains('background: #fff')));
+    });
+
+    test(
+        'system-theme without customBg still falls back to white body (compat)',
+        () async {
+      // 调用方未提供派生色时（无主题信息），正文背景保持旧的浅色默认 #fff，向后兼容。
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(
+        settings: settings,
+        themeOverride: 'system-theme',
+      );
+      expect(css, contains('background: #fff !important'));
+    });
   });
 
   group('ReaderContentStyles.css with custom settings', () {

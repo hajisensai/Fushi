@@ -529,7 +529,19 @@ body.show-all-rt rt {
           colorScheme: _isDarkBackground(customBg) ? 'dark' : 'light',
         );
       default:
-        return const _ThemeColors();
+        // system-theme（默认主题）/ light-theme / 未来未命中 preset 的 key（TODO-165
+        // / BUG-221）：调用方按当前主题的真实 ColorScheme 派生出 customBg/customFg
+        // 传进来时，正文 <body> 背景/字色必须吃这套色，而不是硬编码白底 #fff
+        // （否则默认主题下「书籍正文背景没吃背景色」）。没传则回退到旧的浅色默认，
+        // 保持 ReaderContentStyles.css(settings) 无主题信息时的向后兼容行为。
+        if (customBg == null && customFg == null) {
+          return const _ThemeColors();
+        }
+        return _ThemeColors(
+          textColor: customFg ?? 'rgba(0, 0, 0, 0.87)',
+          backgroundColor: customBg ?? '#fff',
+          colorScheme: _isDarkBackground(customBg) ? 'dark' : 'light',
+        );
     }
   }
 
