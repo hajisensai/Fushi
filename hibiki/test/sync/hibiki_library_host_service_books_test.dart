@@ -19,6 +19,7 @@ Future<String> _insertBookWithExtractDir({
   required HibikiDatabase db,
   required String title,
   required String extractDir,
+  String? bookKey,
 }) async {
   Directory(extractDir).createSync(recursive: true);
   // 写入 mimetype（repackageExtractedEpub 靠它识别 EPUB 格式）
@@ -42,7 +43,7 @@ Future<String> _insertBookWithExtractDir({
 
   return db.insertEpubBook(
     EpubBooksCompanion.insert(
-      bookKey: title,
+      bookKey: bookKey ?? title,
       title: title,
       epubPath: p.join(extractDir, 'original.epub'),
       extractDir: extractDir,
@@ -129,6 +130,16 @@ void main() {
       final RemoteBookInfo decoded = RemoteBookInfo.fromJson(info.toJson());
       expect(decoded.title, info.title);
       expect(decoded.hasContent, info.hasContent);
+    });
+
+    test('bookKey survives JSON round-trip for download identity', () {
+      final RemoteBookInfo info = RemoteBookInfo.fromJson(<String, Object?>{
+        'title': r'Vol 1/2\3?..: Finale',
+        'bookKey': 'Vol_1_2_3_Finale',
+        'hasContent': true,
+      });
+
+      expect(info.toJson()['bookKey'], 'Vol_1_2_3_Finale');
     });
 
     test('fromJson 缺字段降级为安全默认值', () {
@@ -247,6 +258,26 @@ void main() {
       expect(pkg.existsSync(), isTrue);
       expect(pkg.lengthSync(), greaterThan(0));
       expect(pkg.path, endsWith('.epub'));
+    });
+
+    test('exportBook accepts stable bookKey for special display titles',
+        () async {
+      const String displayTitle = r'Vol 1/2\3?..: Finale';
+      const String bookKey = 'Vol_1_2_3_Finale';
+      final String extractDir = p.join(tmp.path, 'SpecialTitle');
+      await _insertBookWithExtractDir(
+        db: db,
+        title: displayTitle,
+        bookKey: bookKey,
+        extractDir: extractDir,
+      );
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final File pkg = await svc.exportBook(bookKey);
+      addTearDown(() => pkg.parent.deleteSync(recursive: true));
+
+      expect(pkg.existsSync(), isTrue);
+      expect(pkg.lengthSync(), greaterThan(0));
     });
 
     test('exportBook 自动使用 extractDir 下的真实 EPUB 根目录', () async {
