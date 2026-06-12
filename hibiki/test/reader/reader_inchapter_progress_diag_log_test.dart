@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-151 / TODO-164 / BUG-222：章内滚动进度链路三点诊断日志。
+/// TODO-151 / TODO-164 / BUG-225：章内滚动进度链路三点诊断日志。
 ///
 /// 背景：BUG-213 已把章内原生滚动接进 `onReaderScroll → _handleReaderScroll →
 /// _refreshProgress` 刷新章内进度。用户仍报「还是没修好」，可能是用分页模式（章内

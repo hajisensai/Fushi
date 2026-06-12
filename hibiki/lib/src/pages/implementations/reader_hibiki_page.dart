@@ -1828,7 +1828,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return '<style id="hoshi-reader-style">\n${ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
-      // TODO-165 / BUG-221：正文 <body> 背景/字色统一吃 `_readerThemeColors` 派生色。
+      // TODO-165 / BUG-224：正文 <body> 背景/字色统一吃 `_readerThemeColors` 派生色。
       // preset 命中时 _themeColors 走 switch case 用手调底色（忽略 customBg → 零破坏）；
       // system-theme（默认主题）/light-theme/未命中 key 落 default 分支，原来恒白底
       // #fff，现在吃这套真实 ColorScheme.surface/onSurface；custom-theme→用户色。
@@ -1866,7 +1866,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final String css = ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
-      // TODO-165 / BUG-221：与 _computeStyleTag 对称——正文背景/字色统一吃当前主题
+      // TODO-165 / BUG-224：与 _computeStyleTag 对称——正文背景/字色统一吃当前主题
       // 派生色，system-theme（默认主题）不再恒白底。
       customBg: _readerBackgroundHex,
       customFg: _customThemeTextCss,
@@ -2211,7 +2211,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     var _progressScrollTimer = null;
     function _reportReaderScroll() {
       var r = window.hoshiReader;
-      // TODO-151/164 / BUG-222 诊断：默认 off（${DebugLogService.instance.enabled}
+      // TODO-151/164 / BUG-225 诊断：默认 off（${DebugLogService.instance.enabled}
       // 由 DebugLogService 门控注入），开了才打印。reanchorPending=true 会早返回不回传，
       // hasBridge=false 说明 callHandler 不可用——便于真机定位「滚动了但进度没动」哪一链断。
       // console.log 经 onConsoleMessage → debugPrint → DebugLogService 环形缓冲。
@@ -2856,7 +2856,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       lyricsMode: _lyricsMode,
       controllerAvailable: _controller != null,
     );
-    // TODO-151/164 / BUG-222 诊断（默认 off，DebugLogService.instance.enabled 门控）：
+    // TODO-151/164 / BUG-225 诊断（默认 off，DebugLogService.instance.enabled 门控）：
     // 记四个门控条件各自真值 + 是否实际调 _refreshProgress，便于真机定位「滚动回传到了
     // 但进度不刷新」是被哪个门控挡掉的（恢复期/歌词/未就绪/控制器释放）。不改 151 逻辑。
     if (DebugLogService.instance.enabled) {
@@ -4165,7 +4165,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
           _progressTotalChars = newTotal;
         });
       }
-      // TODO-151/164 / BUG-222 诊断（默认 off，DebugLogService.instance.enabled 门控）：
+      // TODO-151/164 / BUG-225 诊断（默认 off，DebugLogService.instance.enabled 门控）：
       // 记重算后章内进度 UI 字段最终值，便于真机确认滚动后进度数确实推进/未推进。
       if (DebugLogService.instance.enabled) {
         debugPrint('[ReaderDiag] _refreshProgress'

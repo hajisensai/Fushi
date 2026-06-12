@@ -100,7 +100,7 @@ void main() {
       expect(css, contains('#00FF00'));
     });
 
-    // TODO-165 / BUG-221：默认主题 system-theme（以及 light-theme / 任何未命中 preset
+    // TODO-165 / BUG-224：默认主题 system-theme（以及 light-theme / 任何未命中 preset
     // 的 key）此前落 _themeColors 的 default 分支，正文 <body> 背景恒白底 #fff，无视
     // 调用方按真实 ColorScheme 派生传入的 customBg → 「书籍正文背景没吃背景色」。
     // 现在：传了 customBg/customFg 时正文用它们；preset/custom 行为不变。

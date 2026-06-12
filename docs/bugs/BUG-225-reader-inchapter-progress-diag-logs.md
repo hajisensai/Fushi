@@ -1,4 +1,4 @@
-## BUG-222 · 章内滚动进度链路三点诊断日志(TODO-151/164)
+## BUG-225 · 章内滚动进度链路三点诊断日志(TODO-151/164)
 - **报告**：2026-06-12（用户：章内滚动进度「还是没修好」；TODO-164 要求加错误日志检测）
 - **真实性**：✅ 真需求（非新 bug）。BUG-213(`5ef9e28a9`) 的修复（JS scroll reporter →
   `onReaderScroll` → `_handleReaderScroll` 纯函数门控 → `_refreshProgress`）对**连续模式

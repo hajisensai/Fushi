@@ -1,4 +1,4 @@
-## BUG-221 · 默认主题书籍正文背景不吃背景色(恒白)
+## BUG-224 · 默认主题书籍正文背景不吃背景色(恒白)
 - **报告**：2026-06-12（用户：TODO-165「默认主题(强调色那个=system-theme)下书籍正文背景没吃背景颜色」）
 - **真实性**：✅ 真 bug。BUG-208/TODO-143 修了阅读器**外壳** WebView 背景跟随主题
   （`resolveReaderThemeColors` + `_themeBackgroundColor` 等 getter），但**正文 `<body>`

@@ -71,7 +71,9 @@ void main() {
     expect(mine, contains('cueSentence: cue?.text'));
   });
 
-  test('TODO-102: _mineVideoCard extracts the passed [clipStartMs, clipEndMs] range', () {
+  test(
+      'TODO-102: _mineVideoCard extracts the passed [clipStartMs, clipEndMs] range',
+      () {
     // 统一落卡链路把区间端点喂给真实的 ffmpeg 抽取器（单句 = cue 时间窗；跨字幕 = 整段）。
     final String mineCard = region(
       'Future<bool> _mineVideoCard(',
