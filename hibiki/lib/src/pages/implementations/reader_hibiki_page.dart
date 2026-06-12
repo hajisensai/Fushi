@@ -68,6 +68,7 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 import 'package:hibiki/src/shortcuts/reader_space_override.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 
 /// Which WebView surface the char-level reading cursor lives on. The cursor is
 /// on the reader content, or — after a dictionary lookup — on the top popup,
@@ -441,6 +442,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 阅读器底栏的隐形界面缩放系数：取自全局 appUiScale（阅读器子树被中和器改写成
   /// 1.0，故不能用 HibikiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
   double get _readerChromeScale => appModel.appUiScale;
+
+  /// 图片右键菜单由 Flutter PopupMenuRoute 承载，不在阅读器中和后的 chrome 子树内。
+  /// 所以这里复用 reader chrome 的用户界面缩放口径，且只缩放菜单自身，不改鼠标锚点。
+  double get _readerImageMenuScale =>
+      HibikiAppUiScale.normalize(_readerChromeScale);
 
   /// 缩放后底栏在屏高度。所有把底栏高度喂给 WebView/光标/焦点环/正文预留的地方都
   /// 走这个 getter，保证视觉高度与预留高度恒等。
@@ -5460,24 +5466,45 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
     final RenderBox? box = context.findRenderObject() as RenderBox?;
-    final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
     final Offset global = box?.localToGlobal(webViewOffset) ?? webViewOffset;
+    await _showReaderImageContextMenuAtGlobalPosition(imgUrl, global);
+  }
+
+  Future<void> _showReaderImageContextMenuAtGlobalPosition(
+    String imgUrl,
+    Offset globalPosition, {
+    BuildContext? menuContext,
+  }) async {
+    if (!mounted || !isWindowsPlatform) return;
+    final BuildContext effectiveContext = menuContext ?? context;
+    final RenderBox overlay =
+        Overlay.of(effectiveContext).context.findRenderObject()! as RenderBox;
+    final double menuScale = _readerImageMenuScale;
     final String? action = await showMenu<String>(
-      context: context,
+      context: effectiveContext,
       position: RelativeRect.fromRect(
-        Rect.fromLTWH(global.dx, global.dy, 1, 1),
+        Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 1, 1),
         Offset.zero & overlay.size,
       ),
+      constraints: BoxConstraints(
+        minWidth: 112.0 * menuScale,
+        maxWidth: 280.0 * menuScale,
+      ),
+      menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
       items: <PopupMenuEntry<String>>[
         PopupMenuItem<String>(
           value: 'copy',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Icon(Icons.copy_outlined, size: 18),
-              const SizedBox(width: 12),
-              Text(t.reader_copy_image),
+              Icon(Icons.copy_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(
+                t.reader_copy_image,
+                style: TextStyle(fontSize: 14.0 * menuScale),
+              ),
             ],
           ),
         ),
@@ -5531,8 +5558,19 @@ window.flutter_inappwebview.callHandler('spreadReady');
         barrierColor:
             Theme.of(context).colorScheme.scrim.withValues(alpha: 0.87),
         barrierDismissible: true,
-        pageBuilder: (_, __, ___) => GestureDetector(
+        pageBuilder: (BuildContext routeContext, __, ___) => GestureDetector(
           onTap: () => Navigator.pop(context),
+          onSecondaryTapDown: isWindowsPlatform
+              ? (TapDownDetails details) {
+                  unawaited(
+                    _showReaderImageContextMenuAtGlobalPosition(
+                      imgUrl,
+                      details.globalPosition,
+                      menuContext: routeContext,
+                    ),
+                  );
+                }
+              : null,
           child: InteractiveViewer(
             minScale: 0.5,
             maxScale: 10,
