@@ -20,6 +20,19 @@ void main() {
     expect(cmake, contains('BUILD_WITH_INSTALL_NAME_DIR TRUE'));
   });
 
+  test('native CMake requires C++23 std::expected for hoshidicts targets', () {
+    final String cmake = read('../native/hoshidicts/CMakeLists.txt');
+
+    expect(cmake, contains('include(CheckCXXSourceCompiles)'));
+    expect(cmake, contains('__cpp_lib_expected'));
+    expect(cmake, contains('std::expected<int, int>'));
+    expect(cmake, contains('std::unexpected(1)'));
+    expect(cmake, contains('target_compile_features(hoshidicts PUBLIC'));
+    expect(cmake, contains('cxx_std_23'));
+    expect(cmake, contains('target_compile_features(hoshidicts_ffi PRIVATE'));
+    expect(cmake, contains('target_compile_features(hoshidicts_jni PRIVATE'));
+  });
+
   test('macOS Runner builds hoshidicts and copies the dylib into Frameworks',
       () {
     final String project = read('macos/Runner.xcodeproj/project.pbxproj');
