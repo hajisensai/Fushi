@@ -28,7 +28,6 @@ import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
 import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
-import 'package:hibiki/src/media/video/cross_subtitle_recorder.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
@@ -521,20 +520,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 点字符查词时即时记录，确保制卡例句是「点词那一刻的那句字幕」。
   String _lastLookupSentence = '';
 
-  /// 最近一次正常制卡（单句查词制卡）的词典 fields。跨字幕制卡（TODO-102）没有自己的查词
-  /// 浮层，区间录制停止时复用这份 fields 当卡片词条（term/reading/glossary），只把句子 +
-  /// 音频换成区间内容。从未制过卡时为 null，跨字幕停止会提示用户先查词制一张卡。
-  Map<String, String>? _lastMineFields;
-
   /// 最近一次字幕查词所在 cue。制卡可能发生在弹窗打开后数秒，此时视频播放位置可能已
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;
-
-  /// 跨字幕制卡区间录制器（TODO-102，参考 asbplayer）。承载录制态（idle ⇄ recording）+
-  /// 区间计算纯逻辑；按一次开始（记起始 cue 下标 + 继续播放）、再按一次结束（记结束 cue
-  /// 下标），把区间内所有字幕文本拼接 + 区间音频抽成一段，合并到一张 Anki 卡。录制态走
-  /// [ValueNotifier]，全屏路由也响应（与 [_immersiveLocked] 同源，BUG-120）。
-  final CrossSubtitleRecorder _crossSubRecorder = CrossSubtitleRecorder();
 
   /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
   ///
@@ -1226,10 +1214,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisode) return;
 
-    // 换集自动取消跨字幕录制（TODO-102）：起始 cue 下标是按本集 cue 列表算的，换集后
-    // 列表整体换掉，下标失去意义 → 静默丢弃这次未完成的区间录制（决策见任务报告）。
-    _crossSubRecorder.cancel();
-
     // 切前补记当前集精确位置（tick 只整秒写，补这一下避免丢尾部几百 ms）。
     final int? curPos = _controller?.positionMs;
     if (curPos != null) {
@@ -1371,7 +1355,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
-    _crossSubRecorder.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
     _videoControlsHideTimer?.cancel();
@@ -1889,10 +1872,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     if (controller == null) return false;
 
-    // 跨字幕制卡（TODO-102）要复用「最近一次词典查词的 fields」当卡片词条，故每次正常制卡
-    // 都记下本次 fields；区间录制停止时用它配上区间文本/音频生成一张卡。
-    _lastMineFields = Map<String, String>.of(fields);
-
     // _lastLookupCue 在查词那刻已按位置解析过（含 gap 兜底，见 _lookupAt）；这里
     // 再以「currentCue → 按位置解析」二段兜底，覆盖未经查词捕获或制卡瞬间字幕又消失
     // 的边界，保证有 cue 可裁真实句子音频（TODO-104b / BUG-188）。
@@ -1914,9 +1893,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 视频制卡的统一落卡链路（单句 [onMineEntry] 与跨字幕 [_mineCrossSubtitleSelection]
-  /// 共用，TODO-102）：把音频/封面区间 `[clipStartMs, clipEndMs]` 抽成 GIF + 音频片段，
-  /// 配 [sentence]/[cueSentence]/[fields] 经 [BaseAnkiRepository.mineEntry] 生成**一张**卡，
+  /// 视频制卡的落卡链路（单句 [onMineEntry] 走这里）：把音频/封面区间
+  /// `[clipStartMs, clipEndMs]`（单句即该 cue 的时间窗）抽成 GIF + 音频片段，配
+  /// [sentence]/[cueSentence]/[fields] 经 [BaseAnkiRepository.mineEntry] 生成**一张**卡，
   /// 计入视频统计并回 OSD。区间非正（`clipEndMs <= clipStartMs`，如无 cue）时不抽媒体、
   /// 回退当前帧截图作封面——制卡仍诚实进行（句子字段可能只剩文本）。
   Future<bool> _mineVideoCard({
@@ -1999,96 +1978,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     _showOsd(message);
     return outcome.result == MineResult.success;
-  }
-
-  /// 跨字幕制卡（TODO-102，参考 asbplayer）：翻转区间录制态。
-  ///
-  /// 第一次按：按当前播放位置解析「正在学那句」作起始 cue（含 gap floor 兜底，与单句制卡
-  /// 同源），置位录制态、继续播放、OSD 提示「录制中」；不暂停（用户要一直播到结束句）。
-  /// 第二次按：按当前位置解析结束 cue、与起点规范化成升序区间，把区间内所有字幕文本拼接
-  /// + 区间音频 `[起始cue.startMs, 结束cue.endMs]` 抽成一段，合并到**一张** Anki 卡。
-  ///
-  /// 决策（见任务报告）：
-  /// - **起始/结束 cue**：取「按下时正在学那句」——位置落在某 cue 时间窗内即该句；落在句间
-  ///   gap / 末句后则 floor 回退到「最近一条已起播 cue」（用户最后看到的那句），与
-  ///   [resolveMiningCueForPosition] 同源。位置早于全部 cue（一句都没起播）则拒绝开始。
-  /// - **无最近查词词条**：跨字幕卡仍需 term/reading/glossary 等词条字段；复用最近一次正常
-  ///   制卡的 fields（[_lastMineFields]）。从未制过卡时无词条可挂，提示用户先查词制一张卡。
-  void _toggleCrossSubtitleRecording() {
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
-    _pokeControlsVisible();
-
-    if (_crossSubRecorder.isRecording.value) {
-      // 第二次按 = 结束：解析结束 cue 下标，产出区间。
-      final int endIdx = resolveMiningCueIndexForPosition(
-        cues: controller.cues,
-        positionMs: controller.positionMs ?? 0,
-        delayMs: controller.delayMs,
-      );
-      final CrossSubtitleSelection? selection =
-          _crossSubRecorder.stop(endIdx >= 0 ? endIdx : null);
-      if (selection == null) {
-        _showOsd(t.video_cross_subtitle_cancelled,
-            icon: Icons.fiber_manual_record);
-        return;
-      }
-      unawaited(_mineCrossSubtitleSelection(selection));
-      return;
-    }
-
-    // 第一次按 = 开始：解析起始 cue 下标。
-    final int startIdx = resolveMiningCueIndexForPosition(
-      cues: controller.cues,
-      positionMs: controller.positionMs ?? 0,
-      delayMs: controller.delayMs,
-    );
-    if (!_crossSubRecorder.start(startIdx >= 0 ? startIdx : null)) {
-      // 无字幕 / 一句都没起播：跨字幕制卡无字幕可录，诚实提示。
-      _showOsd(t.video_cross_subtitle_no_subtitle,
-          icon: Icons.fiber_manual_record);
-      return;
-    }
-    _showOsd(t.video_cross_subtitle_recording_started,
-        icon: Icons.fiber_manual_record);
-  }
-
-  /// 把跨字幕区间 [selection] 落成一张 Anki 卡：拼接区间内所有字幕文本作句子、抽区间音频
-  /// 作音频，复用单句的 [_mineVideoCard] 链路（生成一张卡）。
-  Future<void> _mineCrossSubtitleSelection(
-      CrossSubtitleSelection selection) async {
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
-    final List<AudioCue> cues = controller.cues;
-
-    // 跨字幕卡需要词条字段（term/reading/glossary）；复用最近一次正常制卡的 fields。
-    final Map<String, String>? fields = _lastMineFields;
-    if (fields == null) {
-      _showOsd(t.video_cross_subtitle_lookup_first,
-          icon: Icons.fiber_manual_record);
-      return;
-    }
-
-    final String sentence = selection.joinText(cues);
-    final CrossSubtitleAudioRange? range =
-        selection.audioRange(cues, delayMs: controller.delayMs);
-    if (range == null) {
-      _showOsd(t.video_cross_subtitle_cancelled,
-          icon: Icons.fiber_manual_record);
-      return;
-    }
-
-    _showOsd(
-      t.video_cross_subtitle_mining(count: selection.cueCount),
-      icon: Icons.fiber_manual_record,
-    );
-    await _mineVideoCard(
-      fields: fields,
-      clipStartMs: range.startMs,
-      clipEndMs: range.endMs,
-      sentence: sentence,
-      cueSentence: sentence,
-    );
   }
 
   /// 弹音轨菜单（顶栏 ♪ 按钮共用）。
@@ -2189,19 +2078,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         toggleSubtitleList: _toggleSubtitleJumpList,
         // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
         toggleImmersiveLock: _toggleImmersiveLock,
-        // 'R' = 翻转跨字幕制卡区间录制（TODO-102）。
-        toggleCrossSubtitleRecording: _toggleCrossSubtitleRecording,
         // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
         toggleSubtitleBlur: () => unawaited(_toggleSubtitleBlur()),
         escape: () {
-          // 跨字幕录制中时，Esc 先取消录制（最外层临时态，逐级退出，TODO-102）——不丢用户
-          // 这次没录完的区间却误退页/退全屏。取消不制卡（区别于再按 R 结束并制卡）。
-          if (_crossSubRecorder.isRecording.value) {
-            _crossSubRecorder.cancel();
-            _showOsd(t.video_cross_subtitle_cancelled,
-                icon: Icons.fiber_manual_record);
-            return;
-          }
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
           if (_immersiveLocked.value) {
@@ -2420,33 +2299,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 跨字幕制卡入口按钮（TODO-102）：录制中高亮（红点图标 + primary 着色），点击翻转
-  /// 录制态（开始/结束）。挂在桌面 + 移动控制条顶栏。可见性 / 高亮走
-  /// [ValueListenableBuilder]（[CrossSubtitleRecorder.isRecording] 是 [ValueNotifier]，
-  /// 全屏路由也响应，BUG-120 同源）。
-  Widget _buildCrossSubtitleRecordButton({required bool desktop}) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    return ValueListenableBuilder<bool>(
-      valueListenable: _crossSubRecorder.isRecording,
-      builder: (BuildContext _, bool recording, __) {
-        final Widget icon = Icon(
-          recording ? Icons.stop_circle_outlined : Icons.video_call_outlined,
-          size: _videoControlIconSize,
-          color: recording ? cs.error : null,
-        );
-        return desktop
-            ? MaterialDesktopCustomButton(
-                icon: icon,
-                onPressed: _toggleCrossSubtitleRecording,
-              )
-            : MaterialCustomButton(
-                icon: icon,
-                onPressed: _toggleCrossSubtitleRecording,
-              );
-      },
-    );
-  }
-
   Widget _buildVolumeButton(
     VideoPlayerController controller, {
     required bool desktop,
@@ -2536,8 +2388,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
-        // 跨字幕制卡（TODO-102；参考 asbplayer）：点开始录、再点结束，区间文本+音频成一张卡。
-        _buildCrossSubtitleRecordButton(desktop: true),
         MaterialDesktopCustomButton(
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
@@ -2703,8 +2553,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
-        // 跨字幕制卡（TODO-102；参考 asbplayer）。
-        _buildCrossSubtitleRecordButton(desktop: false),
         MaterialCustomButton(
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
@@ -4053,8 +3901,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
-      item(Icons.fiber_manual_record, t.video_menu_cross_subtitle,
-          _toggleCrossSubtitleRecording),
       if (_hasShadersEnabled)
         item(Icons.compare, t.video_shader_compare,
             () => unawaited(_toggleShaderCompare())),
@@ -4270,7 +4116,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ),
                 _buildOsdOverlay(),
                 _buildSideLockButton(),
-                _buildCrossSubtitleRecordingOverlay(),
               ],
             ),
           ),
@@ -4512,62 +4357,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     ),
                   );
                 },
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 跨字幕录制中的常驻指示层（TODO-102）。录制可能持续几十秒（用户一直播到结束句），
-  /// 而 OSD 2.6s 就自动消失——故录制态另起一枚常驻角标（顶部居中红点 + 「录制中」），
-  /// 全程提醒用户「正在跨字幕录制，再按一次结束」。可见性走 [ValueNotifier]，全屏路由也
-  /// 响应（与 [_buildLockOverlay] / OSD 同源，BUG-120）。[IgnorePointer] 包裹，不拦点击。
-  Widget _buildCrossSubtitleRecordingOverlay() {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: SafeArea(
-        child: IgnorePointer(
-          child: ValueListenableBuilder<bool>(
-            valueListenable: _crossSubRecorder.isRecording,
-            builder: (BuildContext _, bool recording, __) {
-              return AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: !recording
-                    ? const SizedBox.shrink()
-                    : Align(
-                        alignment: Alignment.topCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: _osdSurfaceColor(cs),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                Icon(Icons.fiber_manual_record,
-                                    size: 14, color: cs.error),
-                                const SizedBox(width: 6),
-                                Text(
-                                  t.video_cross_subtitle_recording_badge,
-                                  style: TextStyle(
-                                    color: _osdTextColor(cs),
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
               );
             },
           ),

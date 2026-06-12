@@ -121,8 +121,6 @@ void main() {
           bar.substring(jumpIdx + jumpSig.length, settingsIdx);
       expect(between.contains('onPressed:'), isFalse,
           reason: '$themeSig 字幕列表与设置之间不应再夹其它按钮（须为倒数第二）');
-      expect(between.contains('_buildCrossSubtitleRecordButton'), isFalse,
-          reason: '$themeSig 字幕列表与设置之间不应再夹跨字幕制卡按钮');
     }
 
     test('桌面顶栏字幕列表是倒数第二（紧挨设置左侧）', () {

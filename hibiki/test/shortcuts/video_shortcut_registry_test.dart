@@ -31,7 +31,6 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     toggleFullscreen: () => log.add('toggleFullscreen'),
     toggleSubtitleList: () => log.add('toggleSubtitleList'),
     toggleImmersiveLock: () => log.add('toggleImmersiveLock'),
-    toggleCrossSubtitleRecording: () => log.add('toggleCrossSubtitleRecording'),
     toggleSubtitleBlur: () => log.add('toggleSubtitleBlur'),
     escape: () => log.add('escape'),
   );

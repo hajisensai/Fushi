@@ -90,8 +90,6 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_video_toggle_subtitle_list;
     case ShortcutAction.videoToggleImmersiveLock:
       return t.shortcut_action_video_toggle_immersive_lock;
-    case ShortcutAction.videoToggleCrossSubtitleRecording:
-      return t.shortcut_action_video_toggle_cross_subtitle_recording;
     case ShortcutAction.videoToggleSubtitleBlur:
       return t.shortcut_action_video_toggle_subtitle_blur;
     case ShortcutAction.videoEscape:

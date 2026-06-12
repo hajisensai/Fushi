@@ -85,8 +85,6 @@ enum ShortcutAction {
   videoToggleFullscreen(ShortcutScope.video, 'video_toggle_fullscreen'),
   videoToggleSubtitleList(ShortcutScope.video, 'video_toggle_subtitle_list'),
   videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
-  videoToggleCrossSubtitleRecording(
-      ShortcutScope.video, 'video_toggle_cross_subtitle_recording'),
   videoToggleSubtitleBlur(ShortcutScope.video, 'video_toggle_subtitle_blur'),
   videoEscape(ShortcutScope.video, 'video_escape');
 

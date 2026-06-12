@@ -25,7 +25,6 @@ class VideoPlayerShortcutActions {
     required this.toggleFullscreen,
     required this.toggleSubtitleList,
     required this.toggleImmersiveLock,
-    required this.toggleCrossSubtitleRecording,
     required this.toggleSubtitleBlur,
     required this.escape,
   });
@@ -55,11 +54,6 @@ class VideoPlayerShortcutActions {
   /// 翻转锁定 / 沉浸模式（TODO-101，默认 Shift+L）。锁定后控制条按钮不再随鼠标/触摸弹出，
   /// 视频纯画面播放，但查词与快捷键仍可用；再按一次（或点常驻解锁按钮）退出。
   final VoidCallback toggleImmersiveLock;
-
-  /// 翻转跨字幕制卡区间录制（TODO-102，默认 R 键；参考 asbplayer）。第一次按开始记录当前
-  /// 字幕作起始句并继续播放，第二次按以当前句作结束句，把区间内所有字幕文本 + 区间音频
-  /// 合并到一张 Anki 卡。
-  final VoidCallback toggleCrossSubtitleRecording;
 
   /// 翻转字幕模糊（默认 B 键，asbplayer 同款）。原本挂在 video 本体内层独立
   /// CallbackShortcuts，TODO-134 起并入可重映射注册表，与其它视频键统一。
@@ -96,8 +90,6 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
     ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,
-    ShortcutAction.videoToggleCrossSubtitleRecording:
-        actions.toggleCrossSubtitleRecording,
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
     ShortcutAction.videoEscape: actions.escape,
   };

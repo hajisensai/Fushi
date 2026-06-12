@@ -120,14 +120,14 @@ void main() {
     });
   });
 
-  group('resolveMiningCueIndexForPosition (TODO-102 跨字幕区间下标)', () {
+  group('resolveMiningCueIndexForPosition (下标版，单句解析底层)', () {
     final List<AudioCue> cues = <AudioCue>[
       _cue(0, 0, 1000),
       _cue(1, 2000, 3000),
       _cue(2, 5000, 6000),
     ];
 
-    test('显示期命中返回该 cue 下标（跨字幕按下标界定区间）', () {
+    test('显示期命中返回该 cue 下标', () {
       expect(
         resolveMiningCueIndexForPosition(
             cues: cues, positionMs: 2500, delayMs: 0),

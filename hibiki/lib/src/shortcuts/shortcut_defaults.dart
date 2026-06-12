@@ -217,9 +217,6 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleImmersiveLock: _kb([
       _key(LogicalKeyboardKey.keyL, {ModifierKey.shift}),
     ]),
-    ShortcutAction.videoToggleCrossSubtitleRecording: _kb([
-      _key(LogicalKeyboardKey.keyR),
-    ]),
     ShortcutAction.videoToggleSubtitleBlur: _kb([
       _key(LogicalKeyboardKey.keyB),
     ]),

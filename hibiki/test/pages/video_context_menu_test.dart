@@ -99,11 +99,6 @@ void main() {
       expect(items.contains('_toggleImmersiveLock'), isTrue);
     });
 
-    test('含跨字幕制卡（TODO-102）', () {
-      expect(items.contains('t.video_menu_cross_subtitle'), isTrue);
-      expect(items.contains('_toggleCrossSubtitleRecording'), isTrue);
-    });
-
     test('着色器对比仅在启用着色器时出现', () {
       expect(items.contains('if (_hasShadersEnabled)'), isTrue,
           reason: '着色器对比项与控制条同条件（_hasShadersEnabled）');
