@@ -150,6 +150,23 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('remote book title is placed below the cover area',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Rect coverRect = tester.getRect(find.byKey(
+      const ValueKey<String>('remote_book_cover_Remote_Book'),
+    ));
+    final Rect titleRect = tester.getRect(find.text('Remote Book'));
+
+    expect(
+      titleRect.top,
+      greaterThanOrEqualTo(coverRect.bottom - 0.5),
+      reason: 'remote book title must live in the card footer, not over cover',
+    );
+  });
+
   testWidgets('remote book download action pulls epub and imports locally',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
@@ -172,18 +189,51 @@ void main() {
     expect(remoteClient.downloadedTitles, <String>['Remote Book']);
     expect(importedFiles.single.existsSync(), isTrue);
   });
+
+  testWidgets('remote book download uses stable bookKey for special titles',
+      (WidgetTester tester) async {
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      title: r'Vol 1/2\3?..: Finale',
+      bookKey: 'Vol_1_2_3_Finale',
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byTooltip(t.remote_book_download));
+      for (int i = 0; i < 30; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (remoteClient.downloadedTitles.isNotEmpty &&
+            importedFiles.isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pump();
+
+    expect(remoteClient.downloadedTitles, <String>['Vol_1_2_3_Finale']);
+    expect(importedFiles.single.existsSync(), isTrue);
+  });
 }
 
 class _FakeRemoteBookClient implements RemoteBookClient {
-  _FakeRemoteBookClient({required this.coverPath});
+  _FakeRemoteBookClient({
+    required this.coverPath,
+    this.title = 'Remote Book',
+    this.bookKey,
+  });
 
   final String coverPath;
+  final String title;
+  final String? bookKey;
   final List<String> downloadedTitles = <String>[];
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
         RemoteBookInfo.fromJson(<String, Object?>{
-          'title': 'Remote Book',
+          'title': title,
+          if (bookKey != null) 'bookKey': bookKey,
           'hasContent': true,
           'coverPath': coverPath,
         }),

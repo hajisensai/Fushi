@@ -150,6 +150,7 @@ class RemoteBookInfo {
   const RemoteBookInfo({
     required this.title,
     required this.hasContent,
+    this.bookKey,
     this.hasCover = false,
     this.coverUrl,
     this.coverPath,
@@ -157,21 +158,26 @@ class RemoteBookInfo {
 
   final String title;
   final bool hasContent;
+  final String? bookKey;
   final bool hasCover;
   final String? coverUrl;
   final String? coverPath;
+
+  String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'title': title,
+        if (_isNonEmpty(bookKey)) 'bookKey': bookKey,
         'hasContent': hasContent,
         if (hasDisplayCover) 'hasCover': true,
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
       };
 
   RemoteBookInfo copyWith({
+    String? bookKey,
     bool? hasCover,
     String? coverUrl,
     String? coverPath,
@@ -179,6 +185,7 @@ class RemoteBookInfo {
       RemoteBookInfo(
         title: title,
         hasContent: hasContent,
+        bookKey: bookKey ?? this.bookKey,
         hasCover: hasCover ?? this.hasCover,
         coverUrl: coverUrl ?? this.coverUrl,
         coverPath: coverPath ?? this.coverPath,
@@ -190,6 +197,7 @@ class RemoteBookInfo {
     return RemoteBookInfo(
       title: json['title']?.toString() ?? '',
       hasContent: json['hasContent'] == true,
+      bookKey: _jsonString(json['bookKey']),
       hasCover: json['hasCover'] == true ||
           _isNonEmpty(coverUrl) ||
           _isNonEmpty(coverPath),

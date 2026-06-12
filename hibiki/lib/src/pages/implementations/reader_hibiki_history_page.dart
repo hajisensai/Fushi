@@ -770,38 +770,29 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildRemoteBookCard(RemoteBookInfo book) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double overlayInset = tokens.spacing.gap * 0.75;
     final String safeKey = _safeRemoteBookKey(book.title);
     return _bookCardShell(
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
       focusId: HibikiFocusId('reader-shelf-remote-book-$safeKey'),
       onTap: () => _downloadRemoteBook(book),
       onLongPress: () => _downloadRemoteBook(book),
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          _buildRemoteBookCover(book),
-          _titleOverlay(book.title),
-          Positioned(
-            top: overlayInset,
-            right: overlayInset,
-            child: _downloadingBooks.containsKey(book.title)
-                ? RemoteDownloadProgressBadge(
-                    key: ValueKey<String>('remote_book_downloading_$safeKey'),
-                    progress: _downloadingBooks[book.title],
-                    tooltip: t.remote_book_downloading,
-                  )
-                : IconButton.filledTonal(
-                    key: ValueKey<String>('remote_book_download_$safeKey'),
-                    tooltip: t.remote_book_download,
-                    iconSize: 18,
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.download_outlined),
-                    onPressed: () => _downloadRemoteBook(book),
-                  ),
-          ),
-        ],
+      child: _bookCardLayout(
+        title: book.title,
+        cover: _buildRemoteBookCover(book),
+        trailing: _downloadingBooks.containsKey(book.title)
+            ? RemoteDownloadProgressBadge(
+                key: ValueKey<String>('remote_book_downloading_$safeKey'),
+                progress: _downloadingBooks[book.title],
+                tooltip: t.remote_book_downloading,
+              )
+            : IconButton.filledTonal(
+                key: ValueKey<String>('remote_book_download_$safeKey'),
+                tooltip: t.remote_book_download,
+                iconSize: 18,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.download_outlined),
+                onPressed: () => _downloadRemoteBook(book),
+              ),
       ),
     );
   }
@@ -852,7 +843,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     try {
       final File dest = await _remoteBookDestination(book);
       await client.getRemoteBook(
-        book.title,
+        book.downloadId,
         dest,
         onProgress: (double progress) {
           if (!mounted) return;
@@ -919,8 +910,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildSrtCard(SrtBook book) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double overlayInset = tokens.spacing.gap * 0.75;
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -933,27 +922,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           srtBookId == null ? null : (tag) => _addTagToSrtBook(srtBookId, tag),
       onTap: () => _openSrtBook(book),
       onLongPress: () => _showSrtBookDialog(book),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          _buildSrtCover(book),
-          _titleOverlay(book.title),
-          Positioned(
-            top: overlayInset,
-            right: overlayInset,
-            child: _cardBadge(
-              icon: Icons.subtitles_outlined,
-              background: theme.colorScheme.secondaryContainer,
-              foreground: theme.colorScheme.onSecondaryContainer,
-            ),
-          ),
-          if (tagWidget != null)
-            Positioned(
-              top: overlayInset,
-              left: overlayInset,
-              child: tagWidget,
-            ),
-        ],
+      child: _bookCardLayout(
+        title: book.title,
+        cover: _buildSrtCover(book),
+        leading: tagWidget,
+        trailing: _cardBadge(
+          icon: Icons.subtitles_outlined,
+          background: theme.colorScheme.secondaryContainer,
+          foreground: theme.colorScheme.onSecondaryContainer,
+        ),
       ),
     );
   }
@@ -967,8 +944,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildVideoCard(VideoBookRow book) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double overlayInset = tokens.spacing.gap * 0.75;
     final tagWidget = _buildVideoBookTagLabels(book.bookUid);
     return _bookCardShell(
       cardKey: ValueKey<String>('video_entry_${book.bookUid}'),
@@ -977,27 +952,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onTagDropped: (tag) => _addTagToVideoBook(book.bookUid, tag),
       onTap: () => _openVideoBook(book),
       onLongPress: () => _showVideoBookDialog(book),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          _buildVideoCover(book),
-          _titleOverlay(book.title),
-          Positioned(
-            top: overlayInset,
-            right: overlayInset,
-            child: _cardBadge(
-              icon: Icons.movie_outlined,
-              background: theme.colorScheme.tertiaryContainer,
-              foreground: theme.colorScheme.onTertiaryContainer,
-            ),
-          ),
-          if (tagWidget != null)
-            Positioned(
-              top: overlayInset,
-              left: overlayInset,
-              child: tagWidget,
-            ),
-        ],
+      child: _bookCardLayout(
+        title: book.title,
+        cover: _buildVideoCover(book),
+        leading: tagWidget,
+        trailing: _cardBadge(
+          icon: Icons.movie_outlined,
+          background: theme.colorScheme.tertiaryContainer,
+          foreground: theme.colorScheme.onTertiaryContainer,
+        ),
       ),
     );
   }
@@ -1262,44 +1225,107 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget _titleOverlay(String title) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: Container(
-          height: constraints.maxHeight * 0.38,
-          width: double.infinity,
-          alignment: Alignment.bottomCenter,
-          padding: EdgeInsetsDirectional.fromSTEB(
-            tokens.spacing.gap * 0.75,
-            tokens.spacing.gap / 2,
-            tokens.spacing.gap * 0.75,
-            tokens.spacing.gap * 0.75,
-          ),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                tokens.surfaces.page.withValues(alpha: 0),
-                tokens.surfaces.page.withValues(alpha: 0.85),
-              ],
-            ),
-          ),
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            softWrap: true,
-            style: textTheme.labelSmall?.copyWith(
-              color: tokens.surfaces.onSurface,
-            ),
-          ),
+  Widget _bookCardLayout({
+    required String title,
+    required Widget cover,
+    Widget? leading,
+    Widget? trailing,
+    Widget? metadata,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ClipRect(child: cover),
         ),
-      );
-    });
+        _bookCardFooter(
+          title: title,
+          leading: leading,
+          trailing: trailing,
+          metadata: metadata,
+        ),
+      ],
+    );
+  }
+
+  Widget _bookCardFooter({
+    required String title,
+    Widget? leading,
+    Widget? trailing,
+    Widget? metadata,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final TextStyle titleStyle =
+        (textTheme.labelSmall ?? const TextStyle()).copyWith(
+      color: tokens.surfaces.onSurface,
+      fontWeight: FontWeight.w600,
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.surfaces.card,
+        border: Border(
+          top: BorderSide(color: tokens.surfaces.outline),
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsetsDirectional.fromSTEB(
+          tokens.spacing.gap * 0.75,
+          tokens.spacing.gap * 0.625,
+          tokens.spacing.gap * 0.75,
+          tokens.spacing.gap * 0.75,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (leading != null) ...[
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: tokens.spacing.gap * 7.5,
+                  maxHeight: tokens.spacing.gap * 3.5,
+                ),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  widthFactor: 1,
+                  child: ClipRect(child: leading),
+                ),
+              ),
+              SizedBox(width: tokens.spacing.gap / 2),
+            ],
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    title,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: metadata == null ? 2 : 1,
+                    textAlign: TextAlign.start,
+                    softWrap: true,
+                    style: titleStyle,
+                  ),
+                  if (metadata != null) ...[
+                    SizedBox(height: tokens.spacing.gap / 2),
+                    metadata,
+                  ],
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              SizedBox(width: tokens.spacing.gap / 2),
+              SizedBox.square(
+                dimension: tokens.spacing.gap * 5,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: trailing,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _cardBadge({
@@ -1635,8 +1661,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildMediaItemContent(MediaItem item) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double overlayInset = tokens.spacing.gap * 0.75;
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     // Audiobook info is keyed by the book's bookKey (the Audiobooks table key),
     // NOT the MediaItem.uniqueKey (which is the source-prefixed identifier).
@@ -1646,45 +1670,28 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
     final tagWidget = bookKey != null ? _buildTagLabels(bookKey) : null;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        FadeInImage(
-          imageErrorBuilder: (_, __, ___) =>
-              _coverPlaceholderIcon(Icons.menu_book_outlined),
-          placeholder: MemoryImage(kTransparentImage),
-          image: mediaSource.getDisplayThumbnailFromMediaItem(
-            appModel: appModel,
-            item: item,
-          ),
-          alignment: Alignment.topCenter,
-          fit: BoxFit.fitHeight,
+    return _bookCardLayout(
+      title: mediaSource.getDisplayTitleFromMediaItem(item),
+      cover: FadeInImage(
+        imageErrorBuilder: (_, __, ___) =>
+            _coverPlaceholderIcon(Icons.menu_book_outlined),
+        placeholder: MemoryImage(kTransparentImage),
+        image: mediaSource.getDisplayThumbnailFromMediaItem(
+          appModel: appModel,
+          item: item,
         ),
-        _titleOverlay(mediaSource.getDisplayTitleFromMediaItem(item)),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: _progressBar(item),
-        ),
-        Positioned(
-          top: overlayInset,
-          right: overlayInset,
-          child: hasAudiobook
-              ? _audiobookBadge(healthKind)
-              : _cardBadge(
-                  icon: Icons.menu_book_outlined,
-                  background: theme.colorScheme.surfaceContainerHighest,
-                  foreground: theme.colorScheme.onSurfaceVariant,
-                ),
-        ),
-        if (tagWidget != null)
-          Positioned(
-            top: overlayInset,
-            left: overlayInset,
-            child: tagWidget,
-          ),
-      ],
+        alignment: Alignment.topCenter,
+        fit: BoxFit.fitHeight,
+      ),
+      leading: tagWidget,
+      trailing: hasAudiobook
+          ? _audiobookBadge(healthKind)
+          : _cardBadge(
+              icon: Icons.menu_book_outlined,
+              background: theme.colorScheme.surfaceContainerHighest,
+              foreground: theme.colorScheme.onSurfaceVariant,
+            ),
+      metadata: _progressBar(item),
     );
   }
 

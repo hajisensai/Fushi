@@ -26,10 +26,18 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<File> exportBook(String title) async {
+    final RemoteBookInfo? book = books.cast<RemoteBookInfo?>().firstWhere(
+          (RemoteBookInfo? b) =>
+              b!.title == title || b.toJson()['bookKey'] == title,
+          orElse: () => null,
+        );
+    if (book == null) {
+      throw StateError('book not found: $title');
+    }
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_fake_book');
-    final File f = File('${tmp.path}/$title.epub');
+    final File f = File('${tmp.path}/book.epub');
     // fake EPUB 内容：足以验证 round-trip 的小字符串（UTF-8 一致，与词典范式相同）。
-    f.writeAsStringSync('EPUB:$title');
+    f.writeAsStringSync('EPUB:${book.title}');
     return f;
   }
 
@@ -176,6 +184,35 @@ void main() {
 
     expect(dest.existsSync(), isTrue);
     expect(dest.readAsStringSync(), 'EPUB:吾輩は猫である');
+  });
+
+  test('getRemoteBook downloads special-character title by bookKey', () async {
+    const String displayTitle = r'Vol 1/2\3?..: Finale';
+    const String bookKey = 'Vol_1_2_3_Finale';
+    lib.books.add(RemoteBookInfo.fromJson(<String, Object?>{
+      'title': displayTitle,
+      'bookKey': bookKey,
+      'hasContent': true,
+    }));
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    final Directory tmp =
+        Directory.systemTemp.createTempSync('hbk_book_dl_special');
+    final File dest = File('${tmp.path}/special.epub');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+
+    final List<RemoteBookInfo> listed = await backend.listRemoteBooks();
+    expect(
+      listed
+          .singleWhere((RemoteBookInfo b) => b.title == displayTitle)
+          .toJson()['bookKey'],
+      bookKey,
+    );
+
+    await backend.getRemoteBook(bookKey, dest);
+
+    expect(dest.existsSync(), isTrue);
+    expect(dest.readAsStringSync(), 'EPUB:$displayTitle');
   });
 
   // ── putRemoteBook ─────────────────────────────────────────────────────────

@@ -116,6 +116,16 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     }
   }
 
+  static EpubBookRow? _findBookByTitleOrKey(
+    List<EpubBookRow> rows,
+    String titleOrBookKey,
+  ) =>
+      rows.cast<EpubBookRow?>().firstWhere(
+            (EpubBookRow? r) =>
+                r!.bookKey == titleOrBookKey || r.title == titleOrBookKey,
+            orElse: () => null,
+          );
+
   static String? _existingFilePath(String? path) {
     if (path == null || path.isEmpty) return null;
     return File(path).existsSync() ? path : null;
@@ -194,6 +204,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       );
       return RemoteBookInfo(
         title: r.title,
+        bookKey: r.bookKey,
         hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
         hasCover: coverPath != null,
         coverPath: coverPath,
@@ -209,10 +220,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   Future<File> exportBook(String title) async {
     _assertSafeName(title);
     final List<EpubBookRow> rows = await _db.getAllEpubBooks();
-    final EpubBookRow? row = rows.cast<EpubBookRow?>().firstWhere(
-          (EpubBookRow? r) => r!.title == title,
-          orElse: () => null,
-        );
+    final EpubBookRow? row = _findBookByTitleOrKey(rows, title);
     if (row == null) {
       throw StateError('book not found: $title');
     }
@@ -223,7 +231,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     final Directory tmpDir =
         Directory.systemTemp.createTempSync('hibiki_book_export');
     // 文件名用 title 但扩展名用 .epub，保证重导入时 fileName 是合法 epub 名。
-    final String safeBasename = '$title.epub';
+    final String safeBasename = '${row.bookKey}.epub';
     final File out = File(p.join(tmpDir.path, safeBasename));
     final bool ok = await repackageExtractedEpub(row.extractDir, out.path);
     if (!ok) {
@@ -255,10 +263,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     _assertSafeName(title);
     await _runExclusive(() async {
       final List<EpubBookRow> rows = await _db.getAllEpubBooks();
-      final EpubBookRow? row = rows.cast<EpubBookRow?>().firstWhere(
-            (EpubBookRow? r) => r!.title == title,
-            orElse: () => null,
-          );
+      final EpubBookRow? row = _findBookByTitleOrKey(rows, title);
       if (row == null) return; // 幂等：不存在则静默跳过
 
       // 先让注入的磁盘清理回调运行（AudiobookStorage / SrtBook 等 DB 行外资源），

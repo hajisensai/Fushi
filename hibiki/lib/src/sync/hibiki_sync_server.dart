@@ -597,28 +597,30 @@ class HibikiSyncServer {
     const String coverSuffix = '/cover';
     if (reqPath.startsWith(bookPrefix) && reqPath.endsWith(coverSuffix)) {
       if (method != 'GET') return shelf.Response(405);
-      final String coverTitle = reqPath.substring(
+      final String coverBookId = reqPath.substring(
           bookPrefix.length, reqPath.length - coverSuffix.length);
-      if (coverTitle.isEmpty) {
+      if (coverBookId.isEmpty) {
         return shelf.Response.notFound('Missing book title');
       }
-      if (coverTitle.contains('/') ||
-          coverTitle.contains('\\') ||
-          coverTitle.contains('..')) {
+      if (coverBookId.contains('/') ||
+          coverBookId.contains('\\') ||
+          coverBookId.contains('..')) {
         return shelf.Response.forbidden('Invalid book title');
       }
-      final File? cover = await _resolveBookCover(svc, coverTitle);
+      final File? cover = await _resolveBookCover(svc, coverBookId);
       if (cover == null) return shelf.Response.notFound('Book cover not found');
       return serveFileWithRange(cover, request);
     }
 
-    final String title = reqPath.substring(bookPrefix.length);
-    if (title.isEmpty) {
+    final String bookId = reqPath.substring(bookPrefix.length);
+    if (bookId.isEmpty) {
       return shelf.Response.notFound('Missing book title');
     }
     // HBK-AUDIT-012: reject path-traversal attempts.  Book titles must
     // never contain path separators or dot-dot sequences.
-    if (title.contains('/') || title.contains('\\') || title.contains('..')) {
+    if (bookId.contains('/') ||
+        bookId.contains('\\') ||
+        bookId.contains('..')) {
       return shelf.Response.forbidden('Invalid book title');
     }
 
@@ -626,7 +628,7 @@ class HibikiSyncServer {
       case 'GET':
         File file;
         try {
-          file = await svc.exportBook(title);
+          file = await svc.exportBook(bookId);
         } on StateError {
           return shelf.Response.notFound('Book not found');
         }
@@ -658,7 +660,7 @@ class HibikiSyncServer {
       case 'PUT':
         final Directory tmpDir =
             Directory.systemTemp.createTempSync('hibiki_book_in');
-        final File tmp = File(p.join(tmpDir.path, '$title.epub'));
+        final File tmp = File(p.join(tmpDir.path, '$bookId.epub'));
         final IOSink sink = tmp.openWrite();
         try {
           await request.read().forEach(sink.add);
@@ -681,7 +683,7 @@ class HibikiSyncServer {
         }
 
       case 'DELETE':
-        await svc.deleteBook(title);
+        await svc.deleteBook(bookId);
         return shelf.Response(204);
 
       default:
@@ -699,7 +701,13 @@ class HibikiSyncServer {
     if (_coverFile(book.coverPath) != null) {
       json['hasCover'] = true;
       json['coverUrl'] = request.requestedUri.replace(
-        pathSegments: <String>['api', 'library', 'books', book.title, 'cover'],
+        pathSegments: <String>[
+          'api',
+          'library',
+          'books',
+          book.downloadId,
+          'cover',
+        ],
         queryParameters: <String, String>{},
       ).toString();
     }
@@ -708,11 +716,13 @@ class HibikiSyncServer {
 
   Future<File?> _resolveBookCover(
     HibikiLibraryHostService service,
-    String title,
+    String bookId,
   ) async {
     final List<RemoteBookInfo> books = await service.listBooks();
     for (final RemoteBookInfo book in books) {
-      if (book.title == title) return _coverFile(book.coverPath);
+      if (book.downloadId == bookId || book.title == bookId) {
+        return _coverFile(book.coverPath);
+      }
     }
     return null;
   }
