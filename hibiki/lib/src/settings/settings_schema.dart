@@ -8,7 +8,6 @@ import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/reader/reader_settings.dart' show FontTarget;
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
@@ -137,40 +136,16 @@ SettingsDestination _appearanceDestination() {
       SettingsSection(
         title: t.section_typography,
         items: <SettingsItem>[
-          // TODO-049: 三处字体相互独立——软件系统字体 / 小说正文字体 / 词典字体，
-          // 各自打开同一套字体管理页（不同 FontTarget），各自持久化、各自生效。
+          // TODO-231: one visible font library; each row manages app UI /
+          // body / dictionary target membership via font_catalog/font_targets.
           SettingsNavigationItem(
-            id: 'appearance.fonts_app_ui',
-            title: t.font_target_app_ui,
+            id: 'appearance.font_catalog',
+            title: t.custom_fonts_catalog_title,
             icon: Icons.font_download_outlined,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
                 settingsContext,
-                (_) => const CustomFontsPage(target: FontTarget.appUi),
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsNavigationItem(
-            id: 'appearance.fonts_body',
-            title: t.font_target_body,
-            icon: Icons.menu_book_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const CustomFontsPage(target: FontTarget.body),
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsNavigationItem(
-            id: 'appearance.fonts_dictionary',
-            title: t.font_target_dictionary,
-            icon: Icons.translate_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const CustomFontsPage(target: FontTarget.dictionary),
+                (_) => const CustomFontsPage(),
               );
               notifyReaderSettingsChanged(settingsContext);
             },

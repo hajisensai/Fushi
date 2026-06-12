@@ -1577,5 +1577,6 @@
     "video_immersive_mode_lookup_only": "Lookup only",
     "video_immersive_mode_full": "Full controls",
     "video_immersive_mode_seek_lookup": "Seek + lookup",
-    "video_immersive_mode_unlock_only": "Unlock only"
+    "video_immersive_mode_unlock_only": "Unlock only",
+    "custom_fonts_catalog_title": "Font library"
 }
