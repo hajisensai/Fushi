@@ -108,8 +108,20 @@ void main() {
       isTrue,
       reason: 'videoToggleSubtitleList action 未接到 toggleSubtitleList 回调',
     );
-    expect(src.contains('toggleSubtitleList: _toggleSubtitleJumpList'), isTrue,
-        reason: 'toggleSubtitleList action 未接到 _toggleSubtitleJumpList');
+    final int actionIdx = src.indexOf('toggleSubtitleList:');
+    expect(actionIdx, greaterThanOrEqualTo(0),
+        reason: 'page 缺 toggleSubtitleList action');
+    final int nextActionIdx = src.indexOf('toggleImmersiveLock:', actionIdx);
+    expect(nextActionIdx, greaterThan(actionIdx),
+        reason: 'toggleSubtitleList 回调终点缺 toggleImmersiveLock');
+    final String callback = src.substring(actionIdx, nextActionIdx);
+    final int gate = callback.indexOf('_runWhenImmersiveAllowsFullControls');
+    final int toggle = callback.indexOf('_toggleSubtitleJumpList');
+    expect(gate, greaterThanOrEqualTo(0),
+        reason: 'L 快捷键必须先走沉浸模式 full-controls gate');
+    expect(toggle, greaterThan(gate),
+        reason:
+            'toggleSubtitleList action 通过 gate 后必须接到 _toggleSubtitleJumpList');
   });
 
   test('Esc 优先关面板（逐级退出，不直接退页/退全屏）', () {

@@ -26,6 +26,14 @@ void main() {
   }
 
   group('① 控制条无着色器对比按钮（保留 C / 右键 / _toggleShaderCompare）', () {
+    String actionCallback(String field, String nextField) {
+      final int start = src.indexOf('$field:');
+      expect(start, greaterThanOrEqualTo(0), reason: '缺 $field 回调');
+      final int end = src.indexOf('$nextField:', start);
+      expect(end, greaterThan(start), reason: '缺 $field 回调终点 $nextField');
+      return src.substring(start, end);
+    }
+
     test('控制条不含 Icons.compare 按钮', () {
       expect(controlsThemes().contains('Icons.compare'), isFalse,
           reason: '着色器对比按钮应移出桌面 / 移动控制条');
@@ -34,12 +42,13 @@ void main() {
       expect(
           src.contains('Future<void> _toggleShaderCompare() async {'), isTrue,
           reason: '_toggleShaderCompare 方法必须保留（右键菜单 + 快捷键引用）');
-      expect(
-          src.contains(
-            'toggleShaderCompare: () => unawaited(_toggleShaderCompare())',
-          ),
-          isTrue,
-          reason: 'C 快捷键 action 接线保留');
+      final String callback = actionCallback('toggleShaderCompare', 'volumeUp');
+      final int gate = callback.indexOf('_runWhenImmersiveAllowsFullControls');
+      final int toggle = callback.indexOf('_toggleShaderCompare()');
+      expect(gate, greaterThanOrEqualTo(0),
+          reason: 'C 快捷键 action 必须先走沉浸模式 full-controls gate');
+      expect(toggle, greaterThan(gate),
+          reason: 'C 快捷键 action 通过 gate 后必须调用 _toggleShaderCompare');
     });
   });
 
