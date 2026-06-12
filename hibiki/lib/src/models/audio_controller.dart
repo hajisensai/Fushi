@@ -27,6 +27,12 @@ class AudioController {
   final StreamController<void> _skipPreviousController =
       StreamController.broadcast();
 
+  /// 通知栏「悬浮字幕」custom action 广播流。
+  Stream<void> get toggleFloatingLyricStream =>
+      _toggleFloatingLyricController.stream;
+  final StreamController<void> _toggleFloatingLyricController =
+      StreamController.broadcast();
+
   Stream<void> get currentMediaPauseStream => _mediaPauseController.stream;
   final StreamController<void> _mediaPauseController =
       StreamController.broadcast();
@@ -58,6 +64,7 @@ class AudioController {
           onFastForward: () => _fastForwardController.add(null),
           onSkipToNext: () => _skipNextController.add(null),
           onSkipToPrevious: () => _skipPreviousController.add(null),
+          onToggleFloatingLyric: () => _toggleFloatingLyricController.add(null),
         ),
         config: const ag.AudioServiceConfig(
           androidNotificationChannelId: 'app.hibiki.reader.channel.audio',
@@ -77,6 +84,7 @@ class AudioController {
         onFastForward: () => _fastForwardController.add(null),
         onSkipToNext: () => _skipNextController.add(null),
         onSkipToPrevious: () => _skipPreviousController.add(null),
+        onToggleFloatingLyric: () => _toggleFloatingLyricController.add(null),
       );
     }
   }
@@ -91,5 +99,6 @@ class AudioController {
     _fastForwardController.close();
     _skipNextController.close();
     _skipPreviousController.close();
+    _toggleFloatingLyricController.close();
   }
 }

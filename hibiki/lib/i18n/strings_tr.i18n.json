@@ -1548,5 +1548,6 @@
     "shortcut_action_video_toggle_immersive_lock": "Toggle Immersive Lock",
     "shortcut_action_video_toggle_subtitle_blur": "Toggle Subtitle Blur",
     "shortcut_action_video_escape": "Exit / Back",
-    "book_edit_author": "Author"
+    "book_edit_author": "Author",
+    "floating_lyric_toggle_action": "Floating subtitle"
 }
