@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
@@ -35,6 +36,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onMpvConfigChanged,
     required this.initialLockWindowAspectRatio,
     required this.onLockWindowAspectRatioChanged,
+    required this.initialVideoFitMode,
+    required this.onVideoFitModeChanged,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
@@ -104,6 +107,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 切换桌面窗口比例锁定。
   final Future<void> Function(bool value) onLockWindowAspectRatioChanged;
 
+  /// 当前画面缩放/比例模式（窗口 + 全屏 Video fit；全平台显示）。
+  final VideoFitMode initialVideoFitMode;
+
+  /// 切画面缩放/比例模式（即时落盘 + 重建 Video，调用方负责）。
+  final Future<void> Function(VideoFitMode mode) onVideoFitModeChanged;
+
   /// Actual app UI scale. Video routes neutralize [HibikiAppUiScale] so the
   /// inherited scale inside the sheet can be 1.0 even when the app setting is
   /// larger or smaller.
@@ -128,6 +137,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late double _speed = widget.initialSpeed;
   late bool _blur = widget.initialSubtitleBlur;
   late bool _lockWindowAspectRatio = widget.initialLockWindowAspectRatio;
+  late VideoFitMode _videoFitMode = widget.initialVideoFitMode;
   late VideoAsbplayerConfig _asbConfig = widget.initialAsbConfig;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
 
@@ -387,9 +397,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   Widget _buildPlaybackDetail() {
     return AdaptiveSettingsSection(
       children: <Widget>[
+        _buildVideoFitModeRow(),
         if (isDesktopPlatform)
           AdaptiveSettingsSwitchRow(
-            title: t.video_setting_mpv_aspect,
+            title: t.video_setting_lock_window_aspect,
             icon: Icons.aspect_ratio_outlined,
             value: _lockWindowAspectRatio,
             onChanged: (bool value) async {
@@ -403,6 +414,36 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         _buildSpeedStepRow(),
         _buildPauseAtSubtitleEndRow(),
       ],
+    );
+  }
+
+  /// 画面缩放/比例模式（窗口 + 全屏 Video fit，TODO-152 子B）：保持比例占满(无黑边) /
+  /// 保持比例完整(加黑边) / 拉伸填充。与 mpv 几何里的 aspectOverride 不同层（那个改 mpv
+  /// 渲染管线），故独立一项、用专属文案。选中即落盘 + 重建 Video（调用方负责）。
+  Widget _buildVideoFitModeRow() {
+    return AdaptiveSettingsPickerRow<VideoFitMode>(
+      title: t.video_setting_picture_fit,
+      subtitle: t.video_setting_picture_fit_hint,
+      icon: Icons.fit_screen_outlined,
+      selected: _videoFitMode,
+      options: <AdaptiveSettingsPickerOption<VideoFitMode>>[
+        AdaptiveSettingsPickerOption<VideoFitMode>(
+          value: VideoFitMode.cover,
+          label: t.video_setting_picture_fit_cover,
+        ),
+        AdaptiveSettingsPickerOption<VideoFitMode>(
+          value: VideoFitMode.contain,
+          label: t.video_setting_picture_fit_contain,
+        ),
+        AdaptiveSettingsPickerOption<VideoFitMode>(
+          value: VideoFitMode.fill,
+          label: t.video_setting_picture_fit_fill,
+        ),
+      ],
+      onChanged: (VideoFitMode mode) async {
+        setState(() => _videoFitMode = mode);
+        await widget.onVideoFitModeChanged(mode);
+      },
     );
   }
 

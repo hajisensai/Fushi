@@ -42,6 +42,7 @@ import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
@@ -539,6 +540,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [FavoriteSentenceRepository]（preferences JSON），来源标 [kFavoriteSentenceSourceVideo]。
   bool _currentVideoSentenceIsFavorited = false;
 
+  /// 本视频已收藏句文本的缓存集合（驱动字幕跳转列表行内收藏星标的实心/空心，TODO-152
+  /// 子A）。同步查询需要（[VideoSubtitleJumpPanel.isCueFavorited] 每次重建调用），故缓存
+  /// 而非每行异步查 DB。打开列表面板时 [_refreshFavoritedCueCache] 从 repo 拉一次，
+  /// 行内收藏 toggle 后增量更新。按 `cue.text` 匹配（与 repo 的 video 句收藏键
+  /// `bookKey + sectionIndex=null + normCharOffset=null` 唯一对应一句文本）。
+  final Set<String> _favoritedVideoSentences = <String>{};
+
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
   @override
   AppModel get mixinAppModel => appModel;
@@ -597,6 +605,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
   bool _lockWindowAspectRatio = true;
   double? _appliedWindowAspectRatio;
+
+  /// 画面缩放/比例模式（窗口 + 全屏 [Video] fit 共用；TODO-152 子B）。默认 cover=
+  /// 保持比例占满无黑边（与旧硬编码 `BoxFit.cover` 一致 → 向后兼容）。init 时读全局
+  /// 偏好快照，设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
+  VideoFitMode _videoFitMode = VideoFitMode.cover;
 
   bool get _isPlaylist => _episodes.length > 1;
 
@@ -699,6 +712,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
+    _videoFitMode = appModel.videoFitMode;
 
     // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
     final String? playlistJson = row.playlistJson;
@@ -1285,7 +1299,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _toggleSubtitleJumpList() {
     final bool next = !_subtitleListVisible.value;
     _subtitleListVisible.value = next;
-    if (next) _pokeControlsVisible();
+    if (next) {
+      _pokeControlsVisible();
+      // 打开列表时刷新本视频已收藏句缓存，让行内收藏星标即时正确（TODO-152 子A）。
+      unawaited(_refreshFavoritedCueCache());
+    }
   }
 
   /// 点字幕跳转列表里某句：seek 到该 cue 起点（复用现成 [VideoPlayerController.skipToCue]）
@@ -1640,6 +1658,80 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     if (mounted) setState(() => _currentVideoSentenceIsFavorited = true);
     HibikiToast.show(msg: t.favorite_added);
+  }
+
+  /// 从字幕跳转列表面板行内复制某句文本到剪贴板（TODO-152 子A）。不暂停 / 不查词。
+  void _copyCueText(AudioCue cue) {
+    final String text = cue.text.trim();
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
+    HibikiToast.show(msg: t.copied_to_clipboard);
+  }
+
+  /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
+  bool _isCueFavorited(AudioCue cue) =>
+      _favoritedVideoSentences.contains(cue.text);
+
+  /// 从字幕跳转列表面板行内 toggle 某句收藏（TODO-152 子A）。与查词浮层收藏走同一
+  /// [FavoriteSentenceRepository]（视频句键 `bookKey + sectionIndex=null +
+  /// normCharOffset=null`），保持两处一致：toggle 后更新缓存集；若恰好是当前查词句，
+  /// 同步 [_currentVideoSentenceIsFavorited] 让浮层星标也刷新。
+  Future<void> _toggleFavoriteCueForVideo(AudioCue cue) async {
+    final String sentence = cue.text.trim();
+    if (sentence.isEmpty) return;
+    final FavoriteSentenceRepository repo =
+        FavoriteSentenceRepository(appModel.database);
+    final bool wasFavorited = _favoritedVideoSentences.contains(cue.text);
+    if (wasFavorited) {
+      await repo.removeByContent(
+        text: sentence,
+        bookKey: widget.bookUid,
+        sectionIndex: null,
+        normCharOffset: null,
+      );
+    } else {
+      await repo.add(
+        FavoriteSentence(
+          text: sentence,
+          bookTitle: _title ?? widget.bookUid,
+          createdAt: DateTime.now(),
+          bookKey: widget.bookUid,
+          source: kFavoriteSentenceSourceVideo,
+          dateKey: statTodayKey(),
+        ),
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      if (wasFavorited) {
+        _favoritedVideoSentences.remove(cue.text);
+      } else {
+        _favoritedVideoSentences.add(cue.text);
+      }
+      // 列表 toggle 的若是当前查词那句，同步浮层星标态（两处共用同一收藏记录）。
+      if (sentence == _lastLookupSentence.trim()) {
+        _currentVideoSentenceIsFavorited = !wasFavorited;
+      }
+    });
+    HibikiToast.show(msg: wasFavorited ? t.favorite_removed : t.favorite_added);
+  }
+
+  /// 拉本视频已收藏句填充 [_favoritedVideoSentences]（打开字幕跳转列表前调一次）。
+  /// 只取本 bookKey + video 来源那批，按 `text` 建集供同步查询。
+  Future<void> _refreshFavoritedCueCache() async {
+    final FavoriteSentenceRepository repo =
+        FavoriteSentenceRepository(appModel.database);
+    final List<FavoriteSentence> all = await repo.getAll();
+    if (!mounted) return;
+    setState(() {
+      _favoritedVideoSentences
+        ..clear()
+        ..addAll(all
+            .where((FavoriteSentence s) =>
+                s.bookKey == widget.bookUid &&
+                s.source == kFavoriteSentenceSourceVideo)
+            .map((FavoriteSentence s) => s.text));
+    });
   }
 
   /// 查词浮层顶部「收藏当前字幕句」星标行（覆写 [DictionaryPageMixin.buildPopupHeaderFor]）。
@@ -2184,7 +2276,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             controller: controllerValue,
                             width: null,
                             height: null,
-                            fit: params.fit,
+                            // 全屏 fit 跟随窗口同一 [_videoFitMode] 偏好（TODO-152 子B），
+                            // 不再用 notifier 默认 `params.fit`（contain）——保证用户选的
+                            // 画面比例在窗口与全屏一致。其余 params 字段（fill/alignment
+                            // /aspectRatio 等）照旧走 notifier。
+                            fit: videoFitModeToBoxFit(_videoFitMode),
                             fill: params.fill,
                             alignment: params.alignment,
                             aspectRatio: params.aspectRatio,
@@ -2901,6 +2997,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
+  /// 切画面缩放/比例模式（TODO-152 子B）：落盘 + setState 重建窗口 Video（fit 换算变化）。
+  /// 全屏路由的 Video 在其 builder 内读 [_videoFitMode] 经 [videoFitModeToBoxFit] 换算，
+  /// 故全屏在栈上时本 setState 不重建它，但下次进全屏/退回窗口都跟随新偏好。
+  Future<void> _setVideoFitMode(VideoFitMode mode) async {
+    if (_videoFitMode == mode) return;
+    _videoFitMode = mode;
+    await appModel.setVideoFitMode(mode);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _clearWindowAspectRatioLock() async {
     if (!isDesktopPlatform || _appliedWindowAspectRatio == null) return;
     _appliedWindowAspectRatio = null;
@@ -3165,6 +3271,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       },
       initialLockWindowAspectRatio: _lockWindowAspectRatio,
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
+      initialVideoFitMode: _videoFitMode,
+      onVideoFitModeChanged: _setVideoFitMode,
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
       initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
@@ -3950,18 +4058,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
           subtitleViewConfiguration:
               const SubtitleViewConfiguration(visible: false),
-          // 窗口模式画面占满媒体框、无 letterbox/pillarbox 黑边（TODO-122）。
-          // 根因：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
-          // 两侧补黑（[fill]）。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] →
-          // window_manager `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**
-          // 时（WM_SIZING）约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例
-          // 不等于视频，contain 仍留黑边（平台限制，不侵入式 setSize 无法让当前窗口贴合）。
-          // 用户要求「占满左右上下」，故窗口模式用 `BoxFit.cover` 铺满、超出部分裁切。配合
-          // 比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁
-          // 画面边缘（这是「占满」的取舍）。字幕是独立 overlay 层（[VideoSubtitleOverlay]，
-          // 不在 [Video] 内）不受裁切影响。全屏路由的 Video 仍走 notifier 的 `fit`（默认
-          // contain），不受此处影响。
-          fit: BoxFit.cover,
+          // 窗口模式画面缩放/比例由用户偏好 [_videoFitMode] 决定（TODO-152 子B），
+          // 默认 [VideoFitMode.cover] → `BoxFit.cover` 保持比例占满媒体框、无
+          // letterbox/pillarbox 黑边（与旧硬编码 cover 一致 → 向后兼容；TODO-122）。
+          // 根因背景：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
+          // 两侧补黑。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] → window_manager
+          // `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**时（WM_SIZING）
+          // 约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例不等于视频，
+          // contain 仍留黑边（平台限制）。故默认 cover 铺满、超出裁切（比例锁稳态下窗口
+          // 贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁画面边缘）。
+          // 用户改选 [VideoFitMode.contain] 即「画面缩窄时上下/左右加黑」、[fill] 拉伸。
+          // 字幕是独立 overlay 层（[VideoSubtitleOverlay]，不在 [Video] 内）不受裁切影响。
+          // 全屏路由的 Video 在其 builder 内读同一 [_videoFitMode] 换算，跟随同偏好。
+          fit: videoFitModeToBoxFit(_videoFitMode),
           // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
           // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
           fill: Colors.black,
@@ -4186,6 +4295,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       key: const ValueKey<String>('video-subtitle-jump-panel'),
                       controller: controller,
                       onTapCue: _handleSubtitleJumpTap,
+                      onCopyCue: _copyCueText,
+                      onFavoriteCue: _toggleFavoriteCueForVideo,
+                      isCueFavorited: _isCueFavorited,
                       onClose: () => _subtitleListVisible.value = false,
                       colorScheme: cs,
                       title: t.video_subtitle_list,
