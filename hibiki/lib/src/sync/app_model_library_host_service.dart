@@ -2,6 +2,11 @@ import 'dart:io';
 
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
+import 'package:hibiki/src/media/video/video_subtitle_source.dart'
+    show
+        EmbeddedSubtitleTrack,
+        listEmbeddedSubtitleTracks,
+        subtitleFormatForCodec;
 import 'package:hibiki/src/media/video/video_sidecar.dart'
     show findSidecarSubtitle;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -477,17 +482,21 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       return tb.compareTo(ta);
     });
 
-    return <RemoteVideoInfo>[
-      for (final VideoBookRow row in rows) _videoInfoFromRow(row),
-    ];
+    final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[];
+    for (final VideoBookRow row in rows) {
+      videos.add(await _videoInfoFromRow(row));
+    }
+    return videos;
   }
 
   /// 构建单条 [RemoteVideoInfo]（内部辅助，不做 IO 之外的副作用）。
-  RemoteVideoInfo _videoInfoFromRow(VideoBookRow row) {
+  Future<RemoteVideoInfo> _videoInfoFromRow(VideoBookRow row) async {
     final String videoPath = row.videoPath;
     int? sizeBytes;
     bool hasSubtitle = false;
     String? subtitleFileName;
+    List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
+        const <RemoteVideoEmbeddedSubtitleTrack>[];
 
     if (videoPath.isNotEmpty) {
       final File f = File(videoPath);
@@ -504,6 +513,14 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
           hasSubtitle = true;
           subtitleFileName = p.basename(sub);
         }
+        embeddedSubtitleTracks = await _embeddedSubtitleTracksForVideo(
+          videoPath,
+        );
+        if (embeddedSubtitleTracks.any(
+          (RemoteVideoEmbeddedSubtitleTrack track) => track.isText,
+        )) {
+          hasSubtitle = true;
+        }
       }
     }
 
@@ -514,10 +531,29 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       sizeBytes: sizeBytes,
       hasSubtitle: hasSubtitle,
       subtitleFileName: subtitleFileName,
+      embeddedSubtitleTracks: embeddedSubtitleTracks,
       // durationMs: 暂为 null，DB 无此列（后续接线任务填充）
       hasCover: coverPath != null,
       coverPath: coverPath,
     );
+  }
+
+  Future<List<RemoteVideoEmbeddedSubtitleTrack>>
+      _embeddedSubtitleTracksForVideo(
+    String videoPath,
+  ) async {
+    final List<EmbeddedSubtitleTrack> tracks =
+        await listEmbeddedSubtitleTracks(videoPath);
+    return <RemoteVideoEmbeddedSubtitleTrack>[
+      for (final EmbeddedSubtitleTrack track in tracks)
+        RemoteVideoEmbeddedSubtitleTrack(
+          streamIndex: track.streamIndex,
+          codec: track.codec,
+          language: track.language,
+          title: track.title,
+          isText: subtitleFormatForCodec(track.codec) != null,
+        ),
+    ];
   }
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。

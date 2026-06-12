@@ -625,6 +625,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 的同目录枚举（恒 null → 早返回 → 点了没反应，#2），故单独记下这条 host 字幕，
   /// 让远端字幕菜单可在「关闭 / host 字幕 / 本地导入」三者间切换。
   String? _remoteSubtitlePath;
+  List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
+      const <RemoteVideoEmbeddedSubtitleTrack>[];
 
   /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / null=关闭）；
   /// 用于字幕源菜单高亮当前项。
@@ -801,6 +803,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
         info.id,
       );
+      _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
       String? externalSub;
       List<AudioCue> cues = const <AudioCue>[];
       if (urls.subtitleUrl != null) {
@@ -3767,6 +3770,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     _applyRemoteSubtitle(controller, hostSub);
                   },
                 ),
+              for (final RemoteVideoEmbeddedSubtitleTrack track
+                  in _remoteEmbeddedSubtitleTracks)
+                ListTile(
+                  leading: Icon(
+                    track.isText
+                        ? Icons.movie_filter_outlined
+                        : Icons.image_not_supported_outlined,
+                  ),
+                  title: Text(_remoteEmbeddedSubtitleLabel(track)),
+                  subtitle: Text(
+                    track.isText
+                        ? (track.fileName ?? track.codec)
+                        : t.video_subtitle_import_unsupported,
+                  ),
+                  enabled: track.isText,
+                  selected: _currentSubtitleSource ==
+                      _remoteEmbeddedSubtitleSource(track),
+                  selectedColor: Theme.of(ctx).colorScheme.primary,
+                  onTap: track.isText
+                      ? () {
+                          Navigator.pop(ctx);
+                          _applyRemoteEmbeddedSubtitle(controller, track);
+                        }
+                      : null,
+                ),
             ],
           ),
         ),
@@ -3800,8 +3828,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 解析空 cue（坏字幕 / 图形轨）时诚实告知失败、不切换。
   Future<void> _applyRemoteSubtitle(
     VideoPlayerController controller,
-    String path,
-  ) async {
+    String path, {
+    String? selectedSource,
+    String? label,
+  }) async {
+    final String displayLabel = label ?? p.basename(path);
     _showSubtitleLoadingOverlay();
     final List<AudioCue> cues;
     try {
@@ -3811,14 +3842,63 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     if (!mounted) return;
     if (cues.isEmpty) {
-      _showOsd(t.video_subtitle_load_failed(label: p.basename(path)));
+      _showOsd(t.video_subtitle_load_failed(label: displayLabel));
       return;
     }
     controller.setCues(cues);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     if (!mounted) return;
-    setState(() => _currentSubtitleSource = path);
-    _showOsd(t.video_subtitle_switched(label: p.basename(path)));
+    setState(() => _currentSubtitleSource = selectedSource ?? path);
+    _showOsd(t.video_subtitle_switched(label: displayLabel));
+  }
+
+  String _remoteEmbeddedSubtitleSource(
+    RemoteVideoEmbeddedSubtitleTrack track,
+  ) =>
+      'embedded:${track.streamIndex}';
+
+  String _remoteEmbeddedSubtitleLabel(RemoteVideoEmbeddedSubtitleTrack track) {
+    final List<String> parts = <String>[
+      if ((track.language ?? '').isNotEmpty) track.language!,
+      if ((track.title ?? '').isNotEmpty) track.title!,
+      track.codec,
+    ];
+    return 'Embedded ${track.streamIndex}: ${parts.join(' / ')}';
+  }
+
+  Future<void> _applyRemoteEmbeddedSubtitle(
+    VideoPlayerController controller,
+    RemoteVideoEmbeddedSubtitleTrack track,
+  ) async {
+    if (!track.isText) {
+      _showOsd(t.video_subtitle_import_unsupported);
+      return;
+    }
+    final RemoteVideoClient? client = widget.remoteClient;
+    final RemoteVideoInfo? info = widget.remoteInfo;
+    if (client == null || info == null) return;
+    final Directory temp = await getTemporaryDirectory();
+    final File subtitle = File(
+      p.join(
+        temp.path,
+        _remoteSubtitleTempFileName(
+          info.id,
+          track.fileName ?? 'embedded_${track.streamIndex}.srt',
+        ),
+      ),
+    );
+    await client.getRemoteVideoSubtitle(
+      info.id,
+      subtitle,
+      embeddedStreamIndex: track.streamIndex,
+    );
+    final String source = _remoteEmbeddedSubtitleSource(track);
+    await _applyRemoteSubtitle(
+      controller,
+      subtitle.path,
+      selectedSource: source,
+      label: _remoteEmbeddedSubtitleLabel(track),
+    );
   }
 
   /// 远端模式：关闭字幕（清空 cue overlay + 关 libmpv 字幕轨；仅内存，不写本地 DB）。

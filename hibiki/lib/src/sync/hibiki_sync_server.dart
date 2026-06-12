@@ -4,6 +4,13 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/media/video/video_subtitle_source.dart'
+    show
+        EmbeddedSubtitleTrack,
+        extractEmbeddedSubtitleTrackFile,
+        listEmbeddedSubtitleTracks,
+        subtitleExtensionForCodec,
+        subtitleFormatForCodec;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:path/path.dart' as p;
@@ -1003,10 +1010,21 @@ class HibikiSyncServer {
               queryParameters: <String, String>{},
             )
           : null;
+      final List<RemoteVideoEmbeddedSubtitleTrack> embeddedTracks =
+          await _embeddedSubtitleTracksForRequest(
+        file,
+        request,
+        streamUrlId,
+      );
       return _jsonResponse(<String, dynamic>{
         'url': streamUri.toString(),
         'subtitleUrl': subtitleUri?.toString(),
         if (sub != null) 'subtitleFileName': p.basename(sub.path),
+        if (embeddedTracks.isNotEmpty)
+          'embeddedSubtitleTracks': <Map<String, Object?>>[
+            for (final RemoteVideoEmbeddedSubtitleTrack track in embeddedTracks)
+              track.toJson(),
+          ],
       });
     }
 
@@ -1036,7 +1054,15 @@ class HibikiSyncServer {
     final String? subtitleId = _extractVideoId(reqPath, 'subtitle');
     if (subtitleId != null) {
       if (method != 'GET') return shelf.Response(405);
-      final File? sub = await svc.resolveVideoSubtitle(subtitleId);
+      final String? embeddedIndexText =
+          request.url.queryParameters['embeddedStreamIndex'];
+      final File? sub = embeddedIndexText == null
+          ? await svc.resolveVideoSubtitle(subtitleId)
+          : await _resolveEmbeddedVideoSubtitle(
+              svc,
+              subtitleId,
+              int.tryParse(embeddedIndexText),
+            );
       if (sub == null) return shelf.Response.notFound('Subtitle not found');
       final int length = sub.lengthSync();
       return shelf.Response.ok(
@@ -1067,6 +1093,82 @@ class HibikiSyncServer {
       ).toString();
     }
     return json;
+  }
+
+  Future<List<RemoteVideoEmbeddedSubtitleTrack>>
+      _embeddedSubtitleTracksForRequest(
+    File videoFile,
+    shelf.Request request,
+    String videoId,
+  ) async {
+    final List<EmbeddedSubtitleTrack> tracks =
+        await listEmbeddedSubtitleTracks(videoFile.path);
+    final String encodedId = Uri.encodeFull(videoId);
+    final String videoStem = p.basenameWithoutExtension(videoFile.path);
+    return <RemoteVideoEmbeddedSubtitleTrack>[
+      for (final EmbeddedSubtitleTrack track in tracks)
+        _remoteEmbeddedSubtitleTrackForRequest(
+          track,
+          request,
+          encodedId,
+          videoStem,
+        ),
+    ];
+  }
+
+  RemoteVideoEmbeddedSubtitleTrack _remoteEmbeddedSubtitleTrackForRequest(
+    EmbeddedSubtitleTrack track,
+    shelf.Request request,
+    String encodedId,
+    String videoStem,
+  ) {
+    final String? extension = subtitleExtensionForCodec(track.codec);
+    final bool isText = extension != null;
+    return RemoteVideoEmbeddedSubtitleTrack(
+      streamIndex: track.streamIndex,
+      codec: track.codec,
+      language: track.language,
+      title: track.title,
+      isText: isText,
+      url: isText
+          ? request.requestedUri.replace(
+              path: '/api/library/videos/$encodedId/subtitle',
+              queryParameters: <String, String>{
+                'embeddedStreamIndex': '${track.streamIndex}',
+              },
+            ).toString()
+          : null,
+      fileName: isText
+          ? '${_safeDownloadStem(videoStem)}.embedded.${track.streamIndex}$extension'
+          : null,
+    );
+  }
+
+  static String _safeDownloadStem(String value) {
+    final String safe = value.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+    return safe.isEmpty ? 'video' : safe;
+  }
+
+  Future<File?> _resolveEmbeddedVideoSubtitle(
+    HibikiLibraryHostService service,
+    String id,
+    int? streamIndex,
+  ) async {
+    if (streamIndex == null || streamIndex < 0) return null;
+    final File? videoFile = await service.resolveVideoFile(id);
+    if (videoFile == null) return null;
+    final List<EmbeddedSubtitleTrack> tracks =
+        await listEmbeddedSubtitleTracks(videoFile.path);
+    for (final EmbeddedSubtitleTrack track in tracks) {
+      if (track.streamIndex != streamIndex) continue;
+      if (subtitleFormatForCodec(track.codec) == null) return null;
+      return extractEmbeddedSubtitleTrackFile(
+        videoPath: videoFile.path,
+        streamIndex: track.streamIndex,
+        codec: track.codec,
+      );
+    }
+    return null;
   }
 
   Future<File?> _resolveVideoCover(

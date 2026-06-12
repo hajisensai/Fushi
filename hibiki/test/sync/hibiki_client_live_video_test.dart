@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
@@ -15,6 +16,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_client_vid');
     videoFile = File('${tmp.path}/sample.mp4');
     videoFile.writeAsBytesSync(_videoBytes);
+    videoFile.setLastModifiedSync(_uniqueSubtitleCacheMtime(tmp.path));
     subtitleFile = File('${tmp.path}/sample.ja.vtt');
     subtitleFile.writeAsStringSync(
       'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nテスト\n',
@@ -106,6 +108,11 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 HibikiDatabase _testDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
+DateTime _uniqueSubtitleCacheMtime(String seed) {
+  final int offsetMs = seed.hashCode & 0x3fffffff;
+  return DateTime.fromMillisecondsSinceEpoch(1700000000000 + offsetMs);
+}
+
 Future<HibikiClientSyncBackend> _buildBackend({
   required String base,
   required String token,
@@ -128,9 +135,12 @@ Future<HibikiClientSyncBackend> _buildBackend({
 void main() {
   late HibikiSyncServer server;
   late String base;
+  late _EmbeddedSubtitleFfmpegBackend ffmpeg;
   const String token = 'live-video-token';
 
   setUp(() async {
+    ffmpeg = _EmbeddedSubtitleFfmpegBackend();
+    setFfmpegBackendForTesting(ffmpeg);
     server = HibikiSyncServer(
       syncDataDir:
           Directory.systemTemp.createTempSync('hbk_live_video_srv').path,
@@ -143,7 +153,10 @@ void main() {
     base = 'http://127.0.0.1:${server.port}';
   });
 
-  tearDown(() async => server.stop());
+  tearDown(() async {
+    setFfmpegBackendForTesting(null);
+    await server.stop();
+  });
 
   test('listRemoteVideos returns host video entries', () async {
     final HibikiClientSyncBackend backend =
@@ -171,6 +184,14 @@ void main() {
     expect(urls.subtitleUrl, startsWith('$base/api/library/videos/'));
     expect(urls.subtitleUrl, contains('/subtitle'));
     expect(urls.subtitleFileName, 'sample.ja.vtt');
+    expect(urls.embeddedSubtitleTracks, hasLength(3));
+    expect(urls.embeddedSubtitleTracks[0].streamIndex, 0);
+    expect(
+      urls.embeddedSubtitleTracks[0].url,
+      contains('embeddedStreamIndex=0'),
+    );
+    expect(urls.embeddedSubtitleTracks[1].codec, 'mov_text');
+    expect(urls.embeddedSubtitleTracks[2].isText, isFalse);
     expect(backend.remoteVideoAuthHeaders(), isEmpty);
 
     final HttpClient c = HttpClient();
@@ -198,6 +219,26 @@ void main() {
 
     expect(dest.existsSync(), isTrue);
     expect(dest.readAsStringSync(), contains('テスト'));
+  });
+
+  test(
+      'getRemoteVideoSubtitle downloads embedded text subtitle with Basic auth',
+      () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_embsub');
+    final File dest = File('${tmp.path}/sample.embedded.srt');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+
+    await backend.getRemoteVideoSubtitle(
+      _FakeLibraryService.videoId,
+      dest,
+      embeddedStreamIndex: 0,
+    );
+
+    expect(dest.existsSync(), isTrue);
+    expect(dest.readAsStringSync(), contains('Remote embedded subtitle'));
+    expect(ffmpeg.extractedSubtitleIndices, contains(0));
   });
 
   test('downloadRemoteVideo streams video bytes to destination file', () async {
@@ -231,4 +272,35 @@ void main() {
       throwsA(isA<SyncAuthError>()),
     );
   });
+}
+
+class _EmbeddedSubtitleFfmpegBackend implements FfmpegBackend {
+  final List<int> extractedSubtitleIndices = <int>[];
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    if (args.contains('-hide_banner')) {
+      return const FfmpegRunResult(returnCode: 1, output: '''
+  Stream #0:0: Video: h264
+  Stream #0:1(jpn): Subtitle: subrip (srt) (default)
+  Stream #0:2(eng): Subtitle: mov_text (tx3g)
+  Stream #0:3(jpn): Subtitle: hdmv_pgs_subtitle
+''');
+    }
+
+    for (int i = 0; i < args.length - 2; i++) {
+      if (args[i] == '-map' && args[i + 1].startsWith('0:s:')) {
+        final int index = int.parse(args[i + 1].substring('0:s:'.length));
+        extractedSubtitleIndices.add(index);
+        final File output = File(args[i + 2]);
+        output.parent.createSync(recursive: true);
+        output.writeAsStringSync('''
+1
+00:00:01,000 --> 00:00:02,000
+Remote embedded subtitle $index
+''');
+      }
+    }
+    return const FfmpegRunResult(returnCode: 0, output: '');
+  }
 }

@@ -324,10 +324,68 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 ///             文件不存在或无法 stat 时为 null。
 /// [durationMs] DB 无 duration 列，此字段留给后续任务由 ffprobe/libmpv 填充；
 ///              目前恒为 null（占位）。
-/// [hasSubtitle] host 能找到外挂字幕（当前集 sidecar）时为 true；
-///               内封字幕不算，外挂字幕缺失或文件路径未知时为 false。
+/// [hasSubtitle] host 能找到可下载/可查词的文本字幕时为 true；
+///               包括当前集 sidecar 或容器内封文本轨，不包括 PGS/DVD 等图形轨。
 /// [subtitleFileName] host 找到的 sidecar 字幕文件名（含真实扩展名），供 client
 ///                    下载到本地临时文件时保留 `.ass/.ssa/.vtt/.srt` 解析语义。
+///                    内封字幕的临时下载名在 [RemoteVideoEmbeddedSubtitleTrack.fileName]。
+class RemoteVideoEmbeddedSubtitleTrack {
+  const RemoteVideoEmbeddedSubtitleTrack({
+    required this.streamIndex,
+    required this.codec,
+    this.language,
+    this.title,
+    this.isText = true,
+    this.url,
+    this.fileName,
+  });
+
+  final int streamIndex;
+  final String codec;
+  final String? language;
+  final String? title;
+  final bool isText;
+  final String? url;
+  final String? fileName;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'streamIndex': streamIndex,
+        'codec': codec,
+        if (_isNonEmpty(language)) 'language': language,
+        if (_isNonEmpty(title)) 'title': title,
+        'isText': isText,
+        if (_isNonEmpty(url)) 'url': url,
+        if (_isNonEmpty(fileName)) 'fileName': fileName,
+      };
+
+  RemoteVideoEmbeddedSubtitleTrack copyWith({
+    String? url,
+    String? fileName,
+  }) =>
+      RemoteVideoEmbeddedSubtitleTrack(
+        streamIndex: streamIndex,
+        codec: codec,
+        language: language,
+        title: title,
+        isText: isText,
+        url: url ?? this.url,
+        fileName: fileName ?? this.fileName,
+      );
+
+  static RemoteVideoEmbeddedSubtitleTrack fromJson(
+    Map<String, Object?> json,
+  ) =>
+      RemoteVideoEmbeddedSubtitleTrack(
+        streamIndex: _jsonInt(json['streamIndex']) ?? -1,
+        codec: json['codec']?.toString() ?? '',
+        language: _jsonString(json['language']),
+        title: _jsonString(json['title']),
+        isText: json['isText'] != false,
+        url: _jsonString(json['url']),
+        fileName: _jsonString(json['fileName']),
+      );
+}
+
 class RemoteVideoInfo {
   const RemoteVideoInfo({
     required this.id,
@@ -335,6 +393,7 @@ class RemoteVideoInfo {
     this.sizeBytes,
     this.hasSubtitle = false,
     this.subtitleFileName,
+    this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
     this.durationMs,
     this.hasCover = false,
     this.coverUrl,
@@ -346,6 +405,7 @@ class RemoteVideoInfo {
   final int? sizeBytes;
   final bool hasSubtitle;
   final String? subtitleFileName;
+  final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
   final int? durationMs;
   final bool hasCover;
   final String? coverUrl;
@@ -360,6 +420,12 @@ class RemoteVideoInfo {
         if (sizeBytes != null) 'sizeBytes': sizeBytes,
         'hasSubtitle': hasSubtitle,
         if (_isNonEmpty(subtitleFileName)) 'subtitleFileName': subtitleFileName,
+        if (embeddedSubtitleTracks.isNotEmpty)
+          'embeddedSubtitleTracks': <Map<String, Object?>>[
+            for (final RemoteVideoEmbeddedSubtitleTrack track
+                in embeddedSubtitleTracks)
+              track.toJson(),
+          ],
         if (durationMs != null) 'durationMs': durationMs,
         if (hasDisplayCover) 'hasCover': true,
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
@@ -370,6 +436,7 @@ class RemoteVideoInfo {
     String? coverUrl,
     String? coverPath,
     String? subtitleFileName,
+    List<RemoteVideoEmbeddedSubtitleTrack>? embeddedSubtitleTracks,
   }) =>
       RemoteVideoInfo(
         id: id,
@@ -377,6 +444,8 @@ class RemoteVideoInfo {
         sizeBytes: sizeBytes,
         hasSubtitle: hasSubtitle,
         subtitleFileName: subtitleFileName ?? this.subtitleFileName,
+        embeddedSubtitleTracks:
+            embeddedSubtitleTracks ?? this.embeddedSubtitleTracks,
         durationMs: durationMs,
         hasCover: hasCover ?? this.hasCover,
         coverUrl: coverUrl ?? this.coverUrl,
@@ -387,12 +456,15 @@ class RemoteVideoInfo {
     final String? coverUrl = _jsonString(json['coverUrl']);
     final String? coverPath = _jsonString(json['coverPath']);
     final String? subtitleFileName = _jsonString(json['subtitleFileName']);
+    final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
+        _jsonEmbeddedSubtitleTracks(json['embeddedSubtitleTracks']);
     return RemoteVideoInfo(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
       hasSubtitle: json['hasSubtitle'] == true,
       subtitleFileName: subtitleFileName,
+      embeddedSubtitleTracks: embeddedSubtitleTracks,
       durationMs: (json['durationMs'] as num?)?.toInt(),
       hasCover: json['hasCover'] == true ||
           _isNonEmpty(coverUrl) ||
@@ -409,6 +481,25 @@ String? _jsonString(Object? value) {
   return text.isEmpty ? null : text;
 }
 
+int? _jsonInt(Object? value) {
+  if (value is num) return value.toInt();
+  if (value == null) return null;
+  return int.tryParse(value.toString());
+}
+
+List<RemoteVideoEmbeddedSubtitleTrack> _jsonEmbeddedSubtitleTracks(
+  Object? value,
+) {
+  if (value is! List) return const <RemoteVideoEmbeddedSubtitleTrack>[];
+  return <RemoteVideoEmbeddedSubtitleTrack>[
+    for (final Object? item in value)
+      if (item is Map)
+        RemoteVideoEmbeddedSubtitleTrack.fromJson(
+          item.cast<String, Object?>(),
+        ),
+  ];
+}
+
 bool _isNonEmpty(String? value) => value != null && value.isNotEmpty;
 
 /// client 向 host 申请到的视频播放 URL。
@@ -421,20 +512,25 @@ class RemoteVideoStreamUrls {
     required this.streamUrl,
     this.subtitleUrl,
     this.subtitleFileName,
+    this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
   });
 
   final String streamUrl;
   final String? subtitleUrl;
   final String? subtitleFileName;
+  final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
 
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
     final String streamUrl = json['url']?.toString() ?? '';
     final String? subtitleUrl = json['subtitleUrl']?.toString();
     final String? subtitleFileName = _jsonString(json['subtitleFileName']);
+    final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
+        _jsonEmbeddedSubtitleTracks(json['embeddedSubtitleTracks']);
     return RemoteVideoStreamUrls(
       streamUrl: streamUrl,
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
+      embeddedSubtitleTracks: embeddedSubtitleTracks,
     );
   }
 }

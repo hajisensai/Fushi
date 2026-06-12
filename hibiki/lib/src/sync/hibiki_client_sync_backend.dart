@@ -888,11 +888,19 @@ class HibikiClientSyncBackend extends SyncBackend
   Future<void> getRemoteVideoSubtitle(
     String id,
     File dest, {
+    int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
   }) async {
     await _ensureResolved();
+    final Uri uri = Uri.parse(
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+    ).replace(
+      queryParameters: embeddedStreamIndex == null
+          ? null
+          : <String, String>{'embeddedStreamIndex': '$embeddedStreamIndex'},
+    );
     await downloadContentFile(
-      fileId: '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+      fileId: uri.toString(),
       destination: dest,
       onProgress: onProgress,
     );

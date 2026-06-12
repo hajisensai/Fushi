@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -37,6 +38,7 @@ void main() {
   });
 
   tearDown(() async {
+    setFfmpegBackendForTesting(null);
     await db.close();
     tmp.deleteSync(recursive: true);
   });
@@ -143,6 +145,40 @@ void main() {
       expect(list.single.toJson()['subtitleFileName'], 'show.ja.vtt');
     });
 
+    test(
+        'embedded text subtitle tracks are exposed and graphic tracks are marked unsupported',
+        () async {
+      setFfmpegBackendForTesting(const _EmbeddedSubtitleProbeBackend());
+      final String videoPath = p.join(tmp.path, 'embedded.mkv');
+      File(videoPath).writeAsBytesSync(<int>[0, 1, 2, 3]);
+
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/embedded',
+        title: 'Embedded',
+        videoPath: videoPath,
+      ));
+
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+
+      expect(list.single.hasSubtitle, isTrue);
+      expect(list.single.subtitleFileName, isNull);
+      expect(list.single.embeddedSubtitleTracks, hasLength(3));
+      expect(
+        list.single.embeddedSubtitleTracks
+            .map((RemoteVideoEmbeddedSubtitleTrack track) => track.codec),
+        <String>['subrip', 'mov_text', 'hdmv_pgs_subtitle'],
+      );
+      expect(list.single.embeddedSubtitleTracks[0].isText, isTrue);
+      expect(list.single.embeddedSubtitleTracks[1].isText, isTrue);
+      expect(list.single.embeddedSubtitleTracks[2].isText, isFalse);
+
+      final RemoteVideoInfo restored =
+          RemoteVideoInfo.fromJson(list.single.toJson());
+      expect(restored.embeddedSubtitleTracks[1].language, 'eng');
+      expect(restored.embeddedSubtitleTracks[2].isText, isFalse);
+    });
+
     test('toJson/fromJson 往返一致', () {
       const RemoteVideoInfo info = RemoteVideoInfo(
         id: 'video/test',
@@ -150,6 +186,14 @@ void main() {
         sizeBytes: 2048,
         hasSubtitle: true,
         subtitleFileName: 'test.ja.ass',
+        embeddedSubtitleTracks: <RemoteVideoEmbeddedSubtitleTrack>[
+          RemoteVideoEmbeddedSubtitleTrack(
+            streamIndex: 0,
+            codec: 'ass',
+            language: 'jpn',
+            isText: true,
+          ),
+        ],
         durationMs: null,
       );
       final Map<String, Object?> json = info.toJson();
@@ -159,6 +203,8 @@ void main() {
       expect(restored.sizeBytes, info.sizeBytes);
       expect(restored.hasSubtitle, info.hasSubtitle);
       expect(restored.subtitleFileName, info.subtitleFileName);
+      expect(restored.embeddedSubtitleTracks, hasLength(1));
+      expect(restored.embeddedSubtitleTracks.single.codec, 'ass');
       expect(restored.durationMs, info.durationMs);
     });
 
@@ -264,4 +310,21 @@ void main() {
       expect(f, isNull);
     });
   });
+}
+
+class _EmbeddedSubtitleProbeBackend implements FfmpegBackend {
+  const _EmbeddedSubtitleProbeBackend();
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    if (args.contains('-hide_banner')) {
+      return const FfmpegRunResult(returnCode: 1, output: '''
+  Stream #0:0: Video: h264
+  Stream #0:1(jpn): Subtitle: subrip (srt) (default)
+  Stream #0:2(eng): Subtitle: mov_text (tx3g)
+  Stream #0:3(jpn): Subtitle: hdmv_pgs_subtitle
+''');
+    }
+    return const FfmpegRunResult(returnCode: 0, output: '');
+  }
 }

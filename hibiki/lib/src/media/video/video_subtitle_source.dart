@@ -192,6 +192,22 @@ SubtitleFormat? subtitleFormatForCodec(String codec) {
 }
 
 /// **纯函数**：按格式路由到对应 parser，把字幕内容解析为 cue 列表。
+String subtitleExtensionForFormat(SubtitleFormat format) {
+  switch (format) {
+    case SubtitleFormat.srt:
+      return '.srt';
+    case SubtitleFormat.ass:
+      return '.ass';
+    case SubtitleFormat.vtt:
+      return '.vtt';
+  }
+}
+
+String? subtitleExtensionForCodec(String codec) {
+  final SubtitleFormat? format = subtitleFormatForCodec(codec);
+  return format == null ? null : subtitleExtensionForFormat(format);
+}
+
 List<AudioCue> parseSubtitleContent(
   SubtitleFormat format, {
   required String content,
@@ -601,6 +617,26 @@ Future<void> prewarmEmbeddedSubtitleCache(String videoPath) async {
 
 /// In-flight extract-all futures keyed by cache dir, so two near-simultaneous
 /// switches (or initial load + a quick switch) don't both re-demux the file.
+Future<File?> extractEmbeddedSubtitleTrackFile({
+  required String videoPath,
+  required int streamIndex,
+  required String codec,
+}) async {
+  final SubtitleFormat? format = subtitleFormatForCodec(codec);
+  if (format == null) return null;
+  final Directory cacheDir = embeddedSubtitleCacheDir(videoPath);
+  final File cached = File(
+    p.join(
+      cacheDir.path,
+      'sub_$streamIndex${subtitleExtensionForFormat(format)}',
+    ),
+  );
+  if (!(cached.existsSync() && cached.lengthSync() > 0)) {
+    await _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir);
+  }
+  return cached.existsSync() && cached.lengthSync() > 0 ? cached : null;
+}
+
 final Map<String, Future<void>> _embeddedExtractInFlight =
     <String, Future<void>>{};
 
@@ -728,12 +764,5 @@ Future<List<AudioCue>> _loadExternalCues(
 
 /// 临时抽字幕文件的扩展名（让 ffmpeg 按扩展名选输出 muxer）。
 String _ext(SubtitleFormat format) {
-  switch (format) {
-    case SubtitleFormat.srt:
-      return '.srt';
-    case SubtitleFormat.ass:
-      return '.ass';
-    case SubtitleFormat.vtt:
-      return '.vtt';
-  }
+  return subtitleExtensionForFormat(format);
 }
