@@ -4,6 +4,13 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 
+bool hasExitFlushRegistration(String source) {
+  return RegExp(
+    r'ExitFlushRegistry\.instance\.register\s*\(\s*'
+    r'_flushAllForProcessExit\s*,?\s*\)',
+  ).hasMatch(source);
+}
+
 /// TODO-086 / BUG-192：桌面退出快杀（exit(0)）前必须 await flush 所有活跃页面尚未
 /// 落库的阅读位置/统计/观看时长，否则进程一死这些 debounce/周期写就丢。本测试锁住
 /// [ExitFlushRegistry] 的行为契约，以及 main.dart/reader/video 退出路径的源码结构
@@ -132,10 +139,7 @@ void main() {
       final String reader =
           File('lib/src/pages/implementations/reader_hibiki_page.dart')
               .readAsStringSync();
-      expect(
-          reader.contains(
-              'ExitFlushRegistry.instance.register(_flushAllForProcessExit)'),
-          isTrue,
+      expect(hasExitFlushRegistration(reader), isTrue,
           reason: '阅读器活跃时必须登记退出 flush，否则退出丢最后进度/统计');
       expect(reader.contains('ExitFlushRegistry.instance.unregister('), isTrue,
           reason: 'dispose 必须注销，避免对已销毁页面 flush');
@@ -152,10 +156,7 @@ void main() {
       final String video =
           File('lib/src/pages/implementations/video_hibiki_page.dart')
               .readAsStringSync();
-      expect(
-          video.contains(
-              'ExitFlushRegistry.instance.register(_flushAllForProcessExit)'),
-          isTrue,
+      expect(hasExitFlushRegistration(video), isTrue,
           reason: '视频活跃时必须登记退出 flush（播放位置 + 观看统计）');
       expect(video.contains('ExitFlushRegistry.instance.unregister('), isTrue,
           reason: 'dispose 必须注销');
