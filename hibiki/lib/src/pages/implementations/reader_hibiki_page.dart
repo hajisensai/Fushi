@@ -4690,11 +4690,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   KeyEventResult? _handleGamepadAKeyEvent(KeyEvent event) {
     if (event.logicalKey != LogicalKeyboardKey.gameButtonA) return null;
-    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
+    final ShortcutAction? resolvedAction =
+        appModel.shortcutRegistry.resolveGamepad(
       GamepadButton.a,
       scope: ShortcutScope.reader,
     );
-    if (action != ShortcutAction.readerLookupAtCursor) return null;
+    if (resolvedAction != ShortcutAction.readerLookupAtCursor) return null;
     if (event is KeyDownEvent) {
       if (_gamepadAHoldTimer != null) return KeyEventResult.handled;
       _gamepadALongFired = false;
@@ -4712,7 +4713,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       _clearGamepadAHold();
       if (longFired) return KeyEventResult.handled;
       return _executeShortcutAction(
-        action,
+        ShortcutAction.readerLookupAtCursor,
         gamepadTriggerButton: GamepadButton.a,
       );
     }
