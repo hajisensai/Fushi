@@ -147,9 +147,39 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      - name: Flutter Linux CMake toolchain shim
+        working-directory: hibiki
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/linux
+          mkdir -p "$RUNNER_TEMP/hibiki-linux-toolchain"
+          cat > "$RUNNER_TEMP/hibiki-linux-toolchain/clang" <<'SH'
+          #!/usr/bin/env bash
+          exec gcc-14 "$@"
+          SH
+          cat > "$RUNNER_TEMP/hibiki-linux-toolchain/clang++" <<'SH'
+          #!/usr/bin/env bash
+          exec g++-14 "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/hibiki-linux-toolchain/clang" \
+            "$RUNNER_TEMP/hibiki-linux-toolchain/clang++"
+
+          # Flutter 3.44 invokes Linux CMake with CC=clang/CXX=clang++,
+          # ignoring the job-level CC/CXX. Put the wrappers first in PATH so
+          # Flutter's CMake configure and the real build use the same
+          # std::expected-capable GNU 14 toolchain verified above.
+          PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH" \
+            flutter build linux --debug --config-only
+
+          cache="build/linux/x64/debug/CMakeCache.txt"
+          grep -F "CMAKE_CXX_COMPILER:FILEPATH=$RUNNER_TEMP/hibiki-linux-toolchain/clang++" "$cache"
+          grep -F "CMAKE_CXX_COMPILER_ID:INTERNAL=GNU" "$cache"
       - name: Build Linux (debug)
         working-directory: hibiki
+        shell: bash
         run: >-
+          PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH"
           flutter build linux --debug
 
   # macOS gates the desktop build plus the shared smoke contract.
