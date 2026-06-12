@@ -148,7 +148,8 @@ void main() {
     });
   });
 
-  group('TODO-115: source maps to category tag (book/anime), both backends',
+  group(
+      'TODO-115/TODO-185: source maps to category tag (book/video), both backends',
       () {
     Future<List<String>> tagsForConnect(String configured,
         {AnkiMiningSource? source}) async {
@@ -202,10 +203,10 @@ void main() {
           <String>['hibiki', 'book']);
     });
 
-    test('video source -> appends both hibiki and anime (AnkiConnect)',
+    test('video source -> appends both hibiki and video (AnkiConnect)',
         () async {
       expect(await tagsForConnect('', source: AnkiMiningSource.video),
-          <String>['hibiki', 'anime']);
+          <String>['hibiki', 'video']);
     });
 
     test('null source -> only hibiki, no category tag (AnkiConnect)', () async {
@@ -215,7 +216,7 @@ void main() {
     test('user tags preserved, then hibiki, then category (AnkiConnect)',
         () async {
       expect(await tagsForConnect('jp::vocab', source: AnkiMiningSource.video),
-          <String>['jp::vocab', 'hibiki', 'anime']);
+          <String>['jp::vocab', 'hibiki', 'video']);
     });
 
     test('a user-configured category tag is not duplicated (AnkiConnect)',
@@ -228,7 +229,7 @@ void main() {
       expect(await tagsForDroid('', source: AnkiMiningSource.book),
           <String>['hibiki', 'book']);
       expect(await tagsForDroid('', source: AnkiMiningSource.video),
-          <String>['hibiki', 'anime']);
+          <String>['hibiki', 'video']);
       expect(
           await tagsForDroid('foo', source: null), <String>['foo', 'hibiki']);
     });
@@ -306,7 +307,7 @@ void main() {
       expect(await tagsForConnect('jp', source: AnkiMiningSource.book),
           <String>['jp', 'hibiki', 'book']);
       expect(await tagsForDroid('jp', source: AnkiMiningSource.video),
-          <String>['jp', 'hibiki', 'anime']);
+          <String>['jp', 'hibiki', 'video']);
     });
 
     test('hibiki switch off -> hibiki tag dropped, category kept', () async {
@@ -318,7 +319,7 @@ void main() {
       expect(
         await tagsForDroid('jp',
             source: AnkiMiningSource.video, includeHibiki: false),
-        <String>['jp', 'anime'],
+        <String>['jp', 'video'],
       );
     });
 

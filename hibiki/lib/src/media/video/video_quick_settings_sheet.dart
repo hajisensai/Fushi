@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
+import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
@@ -38,6 +39,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onLockWindowAspectRatioChanged,
     required this.initialVideoFitMode,
     required this.onVideoFitModeChanged,
+    required this.initialImmersiveMode,
+    required this.onImmersiveModeChanged,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
@@ -113,6 +116,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 切画面缩放/比例模式（即时落盘 + 重建 Video，调用方负责）。
   final Future<void> Function(VideoFitMode mode) onVideoFitModeChanged;
 
+  /// 侧边锁进入后的沉浸交互级别。
+  final VideoImmersiveMode initialImmersiveMode;
+
+  /// 切沉浸模式默认级别（即时落盘，下一次锁定和已锁定状态立即按 getter 生效）。
+  final Future<void> Function(VideoImmersiveMode mode) onImmersiveModeChanged;
+
   /// Actual app UI scale. Video routes neutralize [HibikiAppUiScale] so the
   /// inherited scale inside the sheet can be 1.0 even when the app setting is
   /// larger or smaller.
@@ -138,6 +147,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late bool _blur = widget.initialSubtitleBlur;
   late bool _lockWindowAspectRatio = widget.initialLockWindowAspectRatio;
   late VideoFitMode _videoFitMode = widget.initialVideoFitMode;
+  late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
   late VideoAsbplayerConfig _asbConfig = widget.initialAsbConfig;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
 
@@ -410,6 +420,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           ),
         _buildDelayRow(),
         _buildSpeedRow(),
+        _buildImmersiveModeRow(),
         _buildSeekSecondsRow(),
         _buildDoubleTapRow(),
         _buildSpeedStepRow(),
@@ -446,6 +457,41 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         await widget.onVideoFitModeChanged(mode);
       },
     );
+  }
+
+  Widget _buildImmersiveModeRow() {
+    return AdaptiveSettingsSegmentedRow<VideoImmersiveMode>(
+      title: t.video_setting_immersive_mode,
+      subtitle: t.video_setting_immersive_mode_hint,
+      icon: Icons.lock_outline,
+      controlBelow: true,
+      segments: <ButtonSegment<VideoImmersiveMode>>[
+        for (final VideoImmersiveMode mode in VideoImmersiveMode.values)
+          ButtonSegment<VideoImmersiveMode>(
+            value: mode,
+            label: Text(_immersiveModeLabel(mode)),
+            tooltip: _immersiveModeLabel(mode),
+          ),
+      ],
+      selected: _immersiveMode,
+      onChanged: (VideoImmersiveMode mode) async {
+        setState(() => _immersiveMode = mode);
+        await widget.onImmersiveModeChanged(mode);
+      },
+    );
+  }
+
+  String _immersiveModeLabel(VideoImmersiveMode mode) {
+    switch (mode) {
+      case VideoImmersiveMode.full:
+        return t.video_immersive_mode_full;
+      case VideoImmersiveMode.seekAndLookup:
+        return t.video_immersive_mode_seek_lookup;
+      case VideoImmersiveMode.lookupOnly:
+        return t.video_immersive_mode_lookup_only;
+      case VideoImmersiveMode.unlockOnly:
+        return t.video_immersive_mode_unlock_only;
+    }
   }
 
   /// 字幕调轴权威提交：滑条 / ± 按钮 / 数值输入框三处共享。clamp 到 ±[_subtitleSyncClampMs]

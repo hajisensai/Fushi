@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/player/blur_options.dart';
@@ -482,6 +483,19 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoMpvConfig(String json) async {
     await setPref('video_mpv_config', json);
+    notifyListeners();
+  }
+
+  /// 侧边锁进入后的沉浸交互级别。旧库没有该 key 时默认仅查词，不需要迁移。
+  VideoImmersiveMode get videoImmersiveMode => VideoImmersiveMode.fromStorage(
+        getPref(
+          'video_immersive_mode',
+          defaultValue: VideoImmersiveMode.fallback.storageValue,
+        ) as String,
+      );
+
+  Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) async {
+    await setPref('video_immersive_mode', mode.storageValue);
     notifyListeners();
   }
 

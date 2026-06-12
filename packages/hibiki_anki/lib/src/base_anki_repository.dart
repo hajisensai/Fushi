@@ -104,9 +104,9 @@ abstract class BaseAnkiRepository {
   /// 书籍来源（EPUB 阅读、独立查词、有声书）的分类标签。
   static const String bookTag = 'book';
 
-  /// 视频/动漫来源的分类标签。用户口径为「动漫」，故用 `anime`（而非 `video`），
-  /// 与统计来源标识 `kStatSourceVideo`('video') 有意错开。
-  static const String animeTag = 'anime';
+  /// 视频来源的分类标签。旧版本曾写入 `anime`；这里仅决定新制卡默认标签，不迁移
+  /// 或重写用户 Anki 中的既有卡片，避免碰旧数据。
+  static const String videoTag = 'video';
 
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
@@ -114,7 +114,7 @@ abstract class BaseAnkiRepository {
       case AnkiMiningSource.book:
         return bookTag;
       case AnkiMiningSource.video:
-        return animeTag;
+        return videoTag;
       case null:
         return null;
     }
@@ -124,8 +124,8 @@ abstract class BaseAnkiRepository {
   /// **追加** [hibikiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
   /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `hibiki` + 分类标签。
-  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`anime`）。
-  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`anime`，不会出现两个。
+  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`video`）。
+  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`video`，不会出现两个。
   /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `hibiki`。
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。
