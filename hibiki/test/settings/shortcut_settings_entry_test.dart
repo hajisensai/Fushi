@@ -41,8 +41,7 @@ void main() {
     return null;
   }
 
-  testWidgets(
-      'shortcut settings entry is visible in system settings only',
+  testWidgets('shortcut settings entry is visible in system settings only',
       (WidgetTester tester) async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
