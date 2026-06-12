@@ -29,14 +29,25 @@ object PopupEngineHolder {
     @Volatile
     private var pendingText: String = ""
 
+    /**
+     * Character index of the tapped word inside [pendingText], or -1 when the
+     * caller has no per-character hit (e.g. a whole-sentence PROCESS_TEXT from
+     * the system text-selection menu). The floating lyric/subtitle strip taps a
+     * specific glyph and ships its index here so the Dart popup can segment the
+     * tapped word instead of always searching from the sentence head.
+     */
+    @Volatile
+    private var pendingCharIndex: Int = -1
+
     @Volatile
     private var onFinish: (() -> Unit)? = null
 
     @Volatile
     private var channel: MethodChannel? = null
 
-    fun setPendingText(text: String) {
+    fun setPendingText(text: String, charIndex: Int = -1) {
         pendingText = text
+        pendingCharIndex = charIndex
     }
 
     fun setOnFinish(callback: (() -> Unit)?) {
@@ -58,7 +69,7 @@ object PopupEngineHolder {
                 "getInitialProcessText" -> {
                     val map = HashMap<String, Any>()
                     map["text"] = pendingText
-                    map["charIndex"] = -1
+                    map["charIndex"] = pendingCharIndex
                     result.success(map)
                 }
                 "finishPopup" -> {
@@ -79,13 +90,14 @@ object PopupEngineHolder {
     }
 
     /** Warm-reuse / onNewIntent path: push a new term into the running Dart app. */
-    fun pushProcessText(text: String) {
+    fun pushProcessText(text: String, charIndex: Int = -1) {
         if (text.isBlank()) return
         pendingText = text
+        pendingCharIndex = charIndex
         val ch = channel ?: return
         val args = HashMap<String, Any>()
         args["text"] = text
-        args["charIndex"] = -1
+        args["charIndex"] = charIndex
         Handler(Looper.getMainLooper()).post { ch.invokeMethod("onNewProcessText", args) }
     }
 }
