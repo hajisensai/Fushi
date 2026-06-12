@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
-    show readerScrollProgressRefreshAllowed;
+    show parseReaderStableProgressDetails, readerScrollProgressRefreshAllowed;
 
 /// BUG-213：章内原生滚动进度不更新（用户：「章内滚动进度不会动，只有到下一章了
 /// 进度才会更新一次」）。
@@ -92,6 +92,31 @@ void main() {
     });
   });
 
+  group('parseReaderStableProgressDetails（stable 进度结果解析）', () {
+    test('解析稳定进度和精确 charOffset', () {
+      final snapshot = parseReaderStableProgressDetails('"250,1000,345"');
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.progress, 0.25);
+      expect(snapshot.charOffset, 345);
+    });
+
+    test('稳定章首 0 是合法用户位置，不被一刀切禁掉', () {
+      final snapshot = parseReaderStableProgressDetails('0,1000,0');
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.progress, 0.0);
+      expect(snapshot.charOffset, 0);
+    });
+
+    test('未 settle / 空结果不生成可保存快照', () {
+      expect(parseReaderStableProgressDetails(null), isNull);
+      expect(parseReaderStableProgressDetails(''), isNull);
+      expect(parseReaderStableProgressDetails('0,0,0'), isNull);
+      expect(parseReaderStableProgressDetails('not-progress'), isNull);
+    });
+  });
+
   group('源码守卫：章内滚动进度回传通道存在（防回归）', () {
     late String src;
 
@@ -145,6 +170,23 @@ void main() {
           reason: '门控必须走纯函数 readerScrollProgressRefreshAllowed');
       expect(body.contains('_refreshProgress();'), isTrue,
           reason: '门控通过后必须调 _refreshProgress 刷新章内进度');
+    });
+
+    test('刷新进度必须走 stableProgressInvocation，避免恢复/重锚瞬态 0 落库', () {
+      final int idx = src.indexOf('Future<void> _refreshProgress() async');
+      expect(idx, greaterThan(0), reason: '_refreshProgress 必须存在');
+      final String body = src.substring(idx, idx + 3200);
+      expect(
+        body.contains('ReaderPaginationScripts.stableProgressInvocation()'),
+        isTrue,
+        reason: '恢复完成和滚动回传复用 _refreshProgress；这里必须走 stable '
+            'gate，_reanchorPending 时返回 null，不能直接读瞬态 progress=0',
+      );
+      expect(
+        body.contains("source: 'window.hoshiProgressDetails()'"),
+        isFalse,
+        reason: '裸 hoshiProgressDetails 会绕过 _reanchorPending/settled gate',
+      );
     });
   });
 }

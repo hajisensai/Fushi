@@ -243,6 +243,39 @@ bool readerScrollProgressRefreshAllowed({
       controllerAvailable;
 }
 
+typedef ReaderStableProgressDetails = ({
+  int current,
+  int total,
+  double progress,
+  int charOffset,
+});
+
+/// Parses `window.hoshiProgressDetails()` after the JS-side settled gate.
+///
+/// A stable `0,total,0` is a valid chapter-start position (manual chapter
+/// jumps must still persist it). `null`/empty/invalid/zero-total results mean
+/// the reader has not settled enough to make a durable position decision.
+ReaderStableProgressDetails? parseReaderStableProgressDetails(dynamic result) {
+  if (result == null) return null;
+  final String str = result.toString().replaceAll('"', '').trim();
+  if (str.isEmpty) return null;
+
+  final List<String> parts = str.split(',');
+  if (parts.length < 2) return null;
+  final int? current = int.tryParse(parts[0]);
+  final int? total = int.tryParse(parts[1]);
+  if (current == null || total == null || total <= 0) return null;
+
+  final int charOffset =
+      parts.length >= 3 ? (int.tryParse(parts[2]) ?? -1) : -1;
+  return (
+    current: current,
+    total: total,
+    progress: (current / total).clamp(0.0, 1.0).toDouble(),
+    charOffset: charOffset,
+  );
+}
+
 /// 解析结果 + 每章字符数，一次 isolate 往返同时算好，避免把整本书
 /// （含全部章节 HTML）二次序列化进新 isolate 只为数字符。
 class ParsedBookData {
@@ -489,7 +522,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 会偏窄，靠这条基线让 content-ready 后的 _syncPageSize 检出差异并重排。
   double _paginatedWidth = 0;
   double _paginatedHeight = 0;
-  double _displayedProgress = 0;
 
   final FocusNode _focusNode = FocusNode();
 
@@ -1510,16 +1542,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     if (widthChanged) {
       final dynamic result = await _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.progressInvocation(),
+        source: ReaderPaginationScripts.stableProgressInvocation(),
       );
       if (!mounted || _controller == null) return;
-      final double? progress = ReaderPaginationScripts.doubleResult(result);
-      if (progress != null && progress > 0) {
-        _displayedProgress = progress;
-      }
+      final ReaderStableProgressDetails? snapshot =
+          parseReaderStableProgressDetails(result);
+      final bool hasSameChapterCache = _lastProgressSection == _currentChapter;
+      final double progress = snapshot?.progress ??
+          (hasSameChapterCache ? _lastProgressValue : 0.0);
+      final int? charOffset = snapshot?.charOffset ??
+          (hasSameChapterCache ? _lastProgressCharOffset : null);
       await _navigateToChapter(
         _currentChapter,
-        progress: _displayedProgress,
+        progress: progress,
+        charOffset: charOffset,
       );
     } else {
       await _controller!.evaluateJavascript(
@@ -3497,6 +3533,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Future<void> _navigateToChapter(
     int index, {
     double progress = 0.0,
+    int? charOffset,
     bool manual = false,
   }) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
@@ -3521,11 +3558,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _currentChapter = index;
     _initialProgress = progress;
-    // BUG-162: 翻章是去新位置，无该章精确锚 → -1 走分数，别把上次恢复的锚带进来。
-    _initialCharOffset = -1;
-    _displayedProgress = progress;
+    // BUG-162: 普通翻章是去新位置，无该章精确锚 → -1 走分数，别把上次恢复的
+    // 锚带进来；同章程序化重分页可显式传入稳定 charOffset，保持不动点。
+    _initialCharOffset = charOffset ?? -1;
     _lastProgressSection = index;
     _lastProgressValue = progress;
+    _lastProgressCharOffset = _initialCharOffset;
     // HBK-AUDIT-037: ordinary navigation does not want a fragment jump. Clear
     // it at the start of every fragment-less navigation so a stale fragment
     // from a prior internal-link nav can never leak into this chapter's setup
@@ -3624,7 +3662,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _currentChapter = index;
     _initialProgress = 0.0;
     _initialCharOffset = -1; // BUG-162: 新章/fragment 跳转走分数/fragment，非 char 锚。
-    _displayedProgress = 0.0;
     _lastProgressSection = index;
     _lastProgressValue = 0.0;
     _initialFragment = fragment;
@@ -3754,7 +3791,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _currentChapter = entry.chapterIndex;
     _initialProgress = 0.0;
     _initialCharOffset = -1; // BUG-162: spread 导航去章首，无 char 锚。
-    _displayedProgress = 0.0;
     _lastProgressSection = entry.chapterIndex;
     _lastProgressValue = 0.0;
     // HBK-AUDIT-037: spread navigation does not want a fragment jump; clear any
@@ -4117,32 +4153,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
   Future<void> _refreshProgress() async {
     if (_controller == null || _lyricsMode) return;
     final dynamic result = await _controller!.evaluateJavascript(
-      source: 'window.hoshiProgressDetails()',
+      source: ReaderPaginationScripts.stableProgressInvocation(),
     );
     if (result == null || !mounted) return;
-    final String str = result.toString().replaceAll('"', '').trim();
-    if (str.isEmpty) return;
-
-    final List<String> parts = str.split(',');
-    if (parts.length < 2) {
-      // HBK-AUDIT-119: surface bridge format drift instead of silently no-oping.
-      debugPrint('[ReaderHibiki] _refreshProgress unexpected result: "$str"');
-      return;
-    }
-    final int? current = int.tryParse(parts[0]);
-    final int? total = int.tryParse(parts[1]);
-    // BUG-162: 第三段 = section 内精确字符偏移（hoshiProgressDetails 追加）。旧格式
-    // （两段）或解析失败按 -1（无精确锚）处理。
-    final int charOffset =
-        parts.length >= 3 ? (int.tryParse(parts[2]) ?? -1) : -1;
-    if (current == null || total == null || total <= 0) {
-      // HBK-AUDIT-119: unparseable / non-positive total — log so drift is visible.
-      debugPrint('[ReaderHibiki] _refreshProgress unparseable result: "$str"');
+    final ReaderStableProgressDetails? snapshot =
+        parseReaderStableProgressDetails(result);
+    if (snapshot == null) {
       return;
     }
 
-    final double progress = current / total;
-    _displayedProgress = progress;
+    final int total = snapshot.total;
+    final int charOffset = snapshot.charOffset;
+    final double progress = snapshot.progress;
     _lastProgressSection = _currentChapter;
     _lastProgressValue = progress;
     _lastProgressCharOffset = charOffset;
@@ -4202,34 +4224,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     if (!mounted) return;
 
-    final String str = result.toString().replaceAll('"', '').trim();
-    if (str.isEmpty) return;
-
-    final List<String> parts = str.split(',');
-    if (parts.length < 2) {
-      debugPrint(
-        '[ReaderHibiki] syncPositionFromWebViewProgress unexpected result: '
-        '"$str"',
-      );
-      return;
-    }
-    final int? current = int.tryParse(parts[0]);
-    final int? total = int.tryParse(parts[1]);
-    final int charOffset =
-        parts.length >= 3 ? (int.tryParse(parts[2]) ?? -1) : -1;
-    if (current == null || total == null || total <= 0) {
-      debugPrint(
-        '[ReaderHibiki] syncPositionFromWebViewProgress unparseable result: '
-        '"$str"',
-      );
+    final ReaderStableProgressDetails? snapshot =
+        parseReaderStableProgressDetails(result);
+    if (snapshot == null) {
       return;
     }
 
-    final double clamped = (current / total).clamp(0.0, 1.0).toDouble();
-    _displayedProgress = clamped;
     _lastProgressSection = _currentChapter;
-    _lastProgressValue = clamped;
-    _lastProgressCharOffset = charOffset;
+    _lastProgressValue = snapshot.progress;
+    _lastProgressCharOffset = snapshot.charOffset;
   }
 
   void _debouncedSavePosition(double progress, int charOffset) {
@@ -6415,7 +6418,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final dynamic result;
     try {
       result = await _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.progressInvocation(),
+        source: ReaderPaginationScripts.stableProgressInvocation(),
       );
     } catch (e, stack) {
       // 半销毁的 WebView 上 evaluateJavascript 抛 PlatformException；此处尚未改
@@ -6425,13 +6428,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
     if (!mounted || _controller == null) return;
-    final double? progress = _toDouble(result);
-    _initialProgress = progress ?? 0.0;
-    // BUG-162: full reload 暂沿用粗粒度分数重锚（与改动前一致，不回归）。精确字符
-    // 重锚是后续可做的增量；本次只根治退出再进的持久化恢复。
-    _initialCharOffset = -1;
+    final ReaderStableProgressDetails? snapshot =
+        parseReaderStableProgressDetails(result);
+    final bool hasSameChapterCache = _lastProgressSection == _currentChapter;
+    _initialProgress =
+        snapshot?.progress ?? (hasSameChapterCache ? _lastProgressValue : 0.0);
+    // BUG-162 / TODO-219: reload 是同章程序化重建，优先沿用稳定精确锚；
+    // stable gate 暂时不给快照时保留同章缓存，避免把瞬态章首 0 当新位置。
+    _initialCharOffset = snapshot?.charOffset ??
+        (hasSameChapterCache ? _lastProgressCharOffset : -1);
     _lastProgressSection = _currentChapter;
     _lastProgressValue = _initialProgress;
+    _lastProgressCharOffset = _initialCharOffset;
 
     final int gen = ++_navigateGeneration;
     _restoreExpectedGeneration = gen;
