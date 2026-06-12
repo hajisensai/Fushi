@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-228](bugs/BUG-228-video-subtitle-list-polish-and-aspect-ratio.md) | ✅ | ✅ | 字幕列表仿asbplayer精致度 + 引入画面比例设置 (TODO-152) |
+| [BUG-229](bugs/BUG-229-video-subtitle-list-polish-and-aspect-ratio.md) | ✅ | ✅ | 字幕列表仿asbplayer精致度 + 引入画面比例设置 (TODO-152) |
 | [BUG-226](bugs/BUG-226-video-subtitle-hover-dodge-clipped.md) | ✅ | ✅ | 桌面 hover 视频时字幕被避让顶飞「消失」（底部+右侧列表都不见） |
 | [BUG-225](bugs/BUG-225-reader-inchapter-progress-diag-logs.md) | ✅ | ✅ | 章内滚动进度链路三点诊断日志(TODO-151/164) |
 | [BUG-224](bugs/BUG-224-reader-system-theme-book-background-white.md) | ✅ | ✅ | 默认主题书籍正文背景不吃背景色(恒白) |

@@ -1,4 +1,4 @@
-## BUG-228 · 字幕列表仿asbplayer精致度 + 引入画面比例设置 (TODO-152)
+## BUG-229 · 字幕列表仿asbplayer精致度 + 引入画面比例设置 (TODO-152)
 - **报告**：2026-06-12（用户：）
 - **真实性**：✅ enhancement（非 bug）。子A=字幕跳转列表（`hibiki/lib/src/media/video/video_subtitle_jump_panel.dart`）已是 asbplayer 式竖列但每行只有 InkWell+时间戳+文本，缺行内操作按钮/hover/工具栏；子B=窗口模式 Video 在 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:4118` 硬编码 `fit:BoxFit.cover`、全屏走 `params.fit`（默认 contain），两处不可由用户选画面比例。
 - **采番**：bug.dart new 在本 worktree 取 227，但 227 号已被并发任务（TODO-171 改 `video_subtitle_style`）占用，手动改号 **228** 避免撞号；本地 `docs/bugs/` 在 226 后直接是 228（227 为并发空号），`reindex` 已据真实文件重建索引、移除前任残留的错误 BUG-227 索引行。
