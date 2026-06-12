@@ -141,7 +141,7 @@ jobs:
         BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
         case "$CHANNEL" in
           debug)
-            if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]]; then
+            if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
               echo "::error title=Invalid debug tag::Use v<version>-debug.<run>+<short-sha>, not debug-<sha>."
               exit 1
             fi

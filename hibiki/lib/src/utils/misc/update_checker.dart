@@ -17,6 +17,12 @@ const List<String> _kProxyPrefixes = [
   'https://mirror.ghproxy.com/',
 ];
 
+final RegExp _kBetaReleaseTagPattern = RegExp(r'^v\d+(?:\.\d+)*-beta\.\d+$');
+final RegExp _kDebugReleaseTagPattern =
+    RegExp(r'^v\d+(?:\.\d+)*-debug\.\d+\+[0-9A-Fa-f]{7,40}$');
+final RegExp _kBetaVersionPattern = RegExp(r'^\d+(?:\.\d+)*-beta\.\d+$');
+final RegExp _kDebugVersionPattern = RegExp(r'^\d+(?:\.\d+)*-debug\.\d+$');
+
 class UpdateChecker {
   UpdateChecker._();
 
@@ -409,16 +415,16 @@ bool releaseMatchesUpdateChannel(
   UpdateChannel channel,
 ) {
   if (release['draft'] == true) return false;
-  final String? version =
-      normalizeReleaseVersionTag(release['tag_name'] as String? ?? '');
+  final String tag = release['tag_name'] as String? ?? '';
+  final String? version = normalizeReleaseVersionTag(tag);
   if (version == null) return false;
   final bool prerelease = release['prerelease'] == true;
   return switch (channel) {
     UpdateChannel.stable => !prerelease && _prereleasePart(version) == null,
     UpdateChannel.beta =>
-      prerelease && _versionBelongsToChannel(version, UpdateChannel.beta),
+      prerelease && _releaseTagMatchesChannel(tag, UpdateChannel.beta),
     UpdateChannel.debug =>
-      prerelease && _versionBelongsToChannel(version, UpdateChannel.debug),
+      prerelease && _releaseTagMatchesChannel(tag, UpdateChannel.debug),
   };
 }
 
@@ -492,16 +498,28 @@ int _compareBaseVersion(String remote, String local) {
 }
 
 bool _versionBelongsToChannel(String version, UpdateChannel channel) {
-  final String? prerelease = _prereleasePart(version);
-  if (prerelease == null) return false;
-  return _prereleaseBelongsToChannel(prerelease, channel);
+  final String normalized = _stripBuildMetadata(version.trim());
+  return switch (channel) {
+    UpdateChannel.beta => _kBetaVersionPattern.hasMatch(normalized),
+    UpdateChannel.debug => _kDebugVersionPattern.hasMatch(normalized),
+    UpdateChannel.stable => false,
+  };
+}
+
+bool _releaseTagMatchesChannel(String tag, UpdateChannel channel) {
+  final String normalized = tag.trim();
+  return switch (channel) {
+    UpdateChannel.beta => _kBetaReleaseTagPattern.hasMatch(normalized),
+    UpdateChannel.debug => _kDebugReleaseTagPattern.hasMatch(normalized),
+    UpdateChannel.stable => false,
+  };
 }
 
 bool _prereleaseBelongsToChannel(String prerelease, UpdateChannel channel) {
-  final String first = prerelease.split('.').first.toLowerCase();
+  final String normalized = prerelease.trim();
   return switch (channel) {
-    UpdateChannel.beta => first == 'beta',
-    UpdateChannel.debug => first == 'debug',
+    UpdateChannel.beta => _kBetaVersionPattern.hasMatch('0.0.0-$normalized'),
+    UpdateChannel.debug => _kDebugVersionPattern.hasMatch('0.0.0-$normalized'),
     UpdateChannel.stable => false,
   };
 }

@@ -67,6 +67,18 @@ void main() {
       contains(r'make_latest: ${{ steps.channel.outputs.make_latest }}'),
     );
   });
+
+  test('build docs describe the comparable debug tag format', () {
+    final String docs = File('../docs/agent/build.md').readAsStringSync();
+    expect(
+      docs,
+      contains(r'v<version>-debug.<run>+<short-sha>'),
+    );
+    expect(
+      docs,
+      isNot(contains(r'debug-<short-sha>')),
+    );
+  });
 }
 
 String _functionSource(String source, String start, String end) {

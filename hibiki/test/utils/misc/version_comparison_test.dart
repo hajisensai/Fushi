@@ -120,7 +120,28 @@ void main() {
       );
       expect(
         releaseMatchesUpdateChannel(
+          _release(tag: 'v0.5.1-beta.12+abc1234', prerelease: true),
+          UpdateChannel.beta,
+        ),
+        isFalse,
+      );
+      expect(
+        releaseMatchesUpdateChannel(
           _release(tag: 'v0.5.1-debug.12+abc1234', prerelease: true),
+          UpdateChannel.beta,
+        ),
+        isFalse,
+      );
+      expect(
+        releaseMatchesUpdateChannel(
+          _release(tag: 'v0.5.1-beta.foo', prerelease: true),
+          UpdateChannel.beta,
+        ),
+        isFalse,
+      );
+      expect(
+        releaseMatchesUpdateChannel(
+          _release(tag: 'v0.5.1-beta', prerelease: true),
           UpdateChannel.beta,
         ),
         isFalse,
@@ -137,7 +158,35 @@ void main() {
       );
       expect(
         releaseMatchesUpdateChannel(
+          _release(tag: 'v0.5.1-debug.12', prerelease: true),
+          UpdateChannel.debug,
+        ),
+        isFalse,
+      );
+      expect(
+        releaseMatchesUpdateChannel(
+          _release(tag: 'v0.5.1-debug.12+foo', prerelease: true),
+          UpdateChannel.debug,
+        ),
+        isFalse,
+      );
+      expect(
+        releaseMatchesUpdateChannel(
           _release(tag: 'debug-abc1234', prerelease: true),
+          UpdateChannel.debug,
+        ),
+        isFalse,
+      );
+      expect(
+        releaseMatchesUpdateChannel(
+          _release(tag: 'v0.5.1-debug.foo', prerelease: true),
+          UpdateChannel.debug,
+        ),
+        isFalse,
+      );
+      expect(
+        releaseMatchesUpdateChannel(
+          _release(tag: 'v0.5.1-debug', prerelease: true),
           UpdateChannel.debug,
         ),
         isFalse,
