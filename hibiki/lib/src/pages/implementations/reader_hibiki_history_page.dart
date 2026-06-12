@@ -1799,7 +1799,25 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         label: t.book_css_editor_edit_css,
         onPressed: () => _openCssEditor(bookKey),
       ),
+      if (Platform.isAndroid || Platform.isWindows)
+        DialogListAction(
+          label: appModel.showFloatingLyric
+              ? '${t.floating_lyric_toggle_action} ✓'
+              : t.floating_lyric_toggle_action,
+          onPressed: _toggleFloatingLyricFromShelf,
+        ),
     ];
+  }
+
+  /// 书架长按菜单切悬浮字幕。书架无 reader / 无 audiobook controller / 无书内
+  /// 样式，故套设置页 no-reader 范式（settings_schema.dart 的
+  /// `listening.floating_lyric`）：只切 `show_floating_lyric` 偏好，不启停 native
+  /// service —— 此刻没有正在播放的有声书，悬浮条无内容可显示。下次在 reader 页
+  /// 打开有声书时由 reader 的 `_toggleFloatingLyric` 真正拉起 service。
+  Future<void> _toggleFloatingLyricFromShelf() async {
+    Navigator.pop(context);
+    await appModel.setShowFloatingLyric(!appModel.showFloatingLyric);
+    if (mounted) setState(() {});
   }
 
   Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
