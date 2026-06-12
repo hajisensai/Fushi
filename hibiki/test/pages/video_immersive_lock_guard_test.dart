@@ -86,8 +86,7 @@ void main() {
 
   test('④ 锁屏入口可达：视频左侧锁按钮 + 上下文菜单项（TODO-126 已移出 topButtonBar）', () {
     // TODO-126：锁按钮从 topButtonBar 移到视频左侧居中的 [_buildSideLockButton]，
-    // 非沉浸态显示锁图标（进入沉浸）、沉浸态显示解锁图标（退出沉浸），同一枚侧边按钮。
-    // 入口至少两条：侧边按钮 onPressed + 上下文菜单项。
+    // 同一枚侧边按钮承载两态图标。入口至少两条：侧边按钮 onPressed + 上下文菜单项。
     expect(
       src.contains('onPressed: _toggleImmersiveLock,'),
       isTrue,
@@ -98,12 +97,31 @@ void main() {
       isTrue,
       reason: '上下文菜单缺锁屏入口项',
     );
-    // 侧边按钮同一枚承载两态图标：锁（进入）/ 解锁（退出）。
+  });
+
+  test('④ 侧边锁按钮图标用状态语义：锁住=闭锁、未锁=开锁（TODO-153/BUG-213）', () {
+    // 原先反成「动作提示」语义（locked ? lock_open_outlined : lock_outline）=锁住却显示
+    // 开锁，与用户「锁住=闭锁」的状态预期相反，也与 OSD / 悬浮字幕锁 / 原生两端不一致。
+    // 修复后状态语义：locked → Icons.lock_outline（闭锁），未锁 → Icons.lock_open_outlined。
+    expect(
+      RegExp(r'locked\s*\?\s*Icons\.lock_outline\s*:\s*Icons\.lock_open_outlined')
+          .hasMatch(src),
+      isTrue,
+      reason: '侧边锁按钮图标必须是状态语义：锁住显闭锁、未锁显开锁',
+    );
+    // 防回归倒回旧的「动作提示」反向。
     expect(
       RegExp(r'locked\s*\?\s*Icons\.lock_open_outlined\s*:\s*Icons\.lock_outline')
           .hasMatch(src),
+      isFalse,
+      reason: '不得倒回「锁住显开锁」的反向动作语义（回归 BUG-213）',
+    );
+    // tooltip 保持动作语义（锁住时「点击解锁」合理），与图标状态语义并存。
+    expect(
+      RegExp(r'tooltip: locked\s*\?\s*t\.video_immersive_unlock\s*:\s*t\.video_menu_lock')
+          .hasMatch(src),
       isTrue,
-      reason: '侧边锁按钮应按 _immersiveLocked 在锁 / 解锁图标间切换',
+      reason: 'tooltip 应保持动作语义（locked → 点击解锁）',
     );
   });
 

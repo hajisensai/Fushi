@@ -4299,10 +4299,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 视频左侧锁 / 解锁按钮（TODO-126，前身 TODO-101 左上角常驻解锁层 [_buildLockOverlay]）。
   /// 移到**视频正左边、垂直居中**，像侧边锁：
-  ///   - 非沉浸态（[_immersiveLocked] 为 false）：显示锁图标，点击进入沉浸（取代原 topButtonBar
-  ///     里的锁按钮，TODO-101）。跟随 hover / tap 唤起、2s 自动淡出，不再占顶栏。
-  ///   - 沉浸态（true）：显示解锁图标，点击退出沉浸。这是沉浸态下唯一常驻可见 chrome，作为
-  ///     清晰可发现的默认退出口；其余 chrome 全被抑制。
+  ///   - 非沉浸态（[_immersiveLocked] 为 false）：图标显示**开着的锁** [Icons.lock_open_outlined]
+  ///     （未锁状态），点击进入沉浸（取代原 topButtonBar 里的锁按钮，TODO-101）。跟随 hover /
+  ///     tap 唤起、2s 自动淡出，不再占顶栏。
+  ///   - 沉浸态（true）：图标显示**关着的锁** [Icons.lock_outline]（已锁状态），点击退出沉浸。
+  ///     这是沉浸态下唯一常驻可见 chrome，作为清晰可发现的默认退出口；其余 chrome 全被抑制。
+  ///
+  /// 图标是**状态语义**（锁住=闭锁图标），与悬浮字幕锁 / OSD（[_toggleImmersiveLock] 里
+  /// 锁定用 [Icons.lock_outline] / 解锁用 [Icons.lock_open_outlined]）/ Android FloatingLyricService
+  /// / Windows floating_lyric_window 统一（TODO-153/BUG-213，原先反成「动作提示」语义=锁住却
+  /// 显示开锁，与用户预期相反）。tooltip 仍是**动作语义**（锁住时「点击解锁」合理）。
   ///
   /// 可见性走独立的 [_lockButtonVisible]（[_pokeLockButton] 唤回，不被锁 gate）：无操作 2s 后
   /// 淡出（[AnimatedOpacity]），鼠标移动 / 触屏点画面唤回。淡出后 [IgnorePointer] 不拦点击，
@@ -4344,9 +4350,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                                 : t.video_menu_lock,
                             iconSize: iconSize,
                             color: cs.onSurface,
+                            // 状态语义（TODO-153/BUG-213）：锁住=闭锁图标、未锁=开锁图标。
                             icon: Icon(locked
-                                ? Icons.lock_open_outlined
-                                : Icons.lock_outline),
+                                ? Icons.lock_outline
+                                : Icons.lock_open_outlined),
                             onPressed: _toggleImmersiveLock,
                           ),
                         ),
