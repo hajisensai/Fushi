@@ -55,6 +55,13 @@ D2D1_COLOR_F ColorFromArgb(uint32_t argb) {
   return D2D1::ColorF(r, g, b, a);
 }
 
+UINT32 GlyphLength(const wchar_t* glyph) {
+  if (glyph == nullptr) {
+    return 0;
+  }
+  return static_cast<UINT32>(std::char_traits<wchar_t>::length(glyph));
+}
+
 }  // namespace
 
 FloatingLyricWindow::FloatingLyricWindow() = default;
@@ -152,34 +159,30 @@ bool FloatingLyricWindow::Show(HWND owner) {
     const int x = mi.rcWork.left + (work_w - width) / 2;
     const int y = mi.rcWork.bottom - height - static_cast<int>(ScaleForDpi(48));
 
-    // WS_EX_TRANSPARENT: born click-through so the apps underneath stay fully
-    // usable. WS_EX_NOACTIVATE keeps clicks from stealing keyboard focus.
-    // The cursor-poll timer below restores interactivity only while the cursor
-    // is over the strip, so words remain tappable for lookup.
+    // The strip must be mouse-interactive immediately so the first click after
+    // entering the bar cannot fall through to the app below. WS_EX_NOACTIVATE
+    // keeps that click from stealing keyboard focus.
     hwnd_ = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
-            WS_EX_TRANSPARENT,
+        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         kWindowClassName, L"Hibiki Lyric", WS_POPUP, x, y, width, height,
         nullptr, nullptr, GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
     }
-    interactive_ = false;
   }
 
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   visible_ = true;
-  StartCursorPoll();
   RequestRender();
   return true;
 }
 
 void FloatingLyricWindow::Hide() {
   visible_ = false;
-  StopCursorPoll();
   hovered_ = false;
+  tracking_mouse_leave_ = false;
   dragging_ = false;
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
@@ -249,73 +252,6 @@ void FloatingLyricWindow::RequestRender() {
   }
 }
 
-void FloatingLyricWindow::StartCursorPoll() {
-  if (hwnd_ != nullptr) {
-    SetTimer(hwnd_, kCursorPollTimerId, kCursorPollIntervalMs, nullptr);
-  }
-}
-
-void FloatingLyricWindow::StopCursorPoll() {
-  if (hwnd_ != nullptr) {
-    KillTimer(hwnd_, kCursorPollTimerId);
-  }
-  ApplyInteractive(false);
-}
-
-bool FloatingLyricWindow::CursorOverStrip() const {
-  if (hwnd_ == nullptr) {
-    return false;
-  }
-  POINT cursor;
-  if (!GetCursorPos(&cursor)) {
-    return false;
-  }
-  RECT rc;
-  if (!GetWindowRect(hwnd_, &rc)) {
-    return false;
-  }
-  // The topmost window directly under the cursor must be us; otherwise another
-  // window is overlapping the strip and should keep the click.
-  if (!PtInRect(&rc, cursor)) {
-    return false;
-  }
-  HWND top = WindowFromPoint(cursor);
-  return top == hwnd_;
-}
-
-void FloatingLyricWindow::ApplyInteractive(bool interactive) {
-  if (hwnd_ == nullptr || interactive_ == interactive) {
-    return;
-  }
-  interactive_ = interactive;
-  LONG_PTR ex = GetWindowLongPtr(hwnd_, GWL_EXSTYLE);
-  if (interactive) {
-    ex &= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
-  } else {
-    ex |= static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
-  }
-  SetWindowLongPtr(hwnd_, GWL_EXSTYLE, ex);
-  // The controls fade in only while interactive, mirroring QQ Music: the row is
-  // dim when the cursor is away and crisp when the strip is hot.
-  if (hovered_ != interactive) {
-    hovered_ = interactive;
-    RequestRender();
-  }
-}
-
-void FloatingLyricWindow::PollCursorInteractivity() {
-  if (!visible_) {
-    return;
-  }
-  // Never drop interactivity mid-drag: SetCapture keeps the messages flowing,
-  // and flipping WS_EX_TRANSPARENT here would abort the move.
-  if (dragging_) {
-    ApplyInteractive(true);
-    return;
-  }
-  ApplyInteractive(CursorOverStrip());
-}
-
 LRESULT CALLBACK FloatingLyricWindow::WndProc(HWND hwnd, UINT message,
                                               WPARAM wparam,
                                               LPARAM lparam) noexcept {
@@ -338,16 +274,23 @@ LRESULT CALLBACK FloatingLyricWindow::WndProc(HWND hwnd, UINT message,
 LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
                                            LPARAM lparam) noexcept {
   switch (message) {
-    case WM_TIMER: {
-      if (wparam == kCursorPollTimerId) {
-        PollCursorInteractivity();
-      }
-      return 0;
-    }
     case WM_MOUSEMOVE: {
-      // The strip only receives mouse messages while interactive (the poll
-      // dropped WS_EX_TRANSPARENT because the cursor is over us). Here we drive
-      // the three live gestures: resize, drag, and the press->drag promotion.
+      // Mouse messages arrive immediately because the strip is not born
+      // transparent. Here we drive hover affordances, drag, and the press->drag
+      // promotion.
+      if (!hovered_) {
+        hovered_ = true;
+        RequestRender();
+      }
+      if (!tracking_mouse_leave_) {
+        TRACKMOUSEEVENT tme = {};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd_;
+        if (TrackMouseEvent(&tme)) {
+          tracking_mouse_leave_ = true;
+        }
+      }
       if (dragging_) {
         POINT cursor;
         GetCursorPos(&cursor);
@@ -374,6 +317,14 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
           drag_anchor_.y = cursor.y - rc.top;
           dragging_ = true;
         }
+      }
+      return 0;
+    }
+    case WM_MOUSELEAVE: {
+      tracking_mouse_leave_ = false;
+      if (hovered_ && !dragging_) {
+        hovered_ = false;
+        RequestRender();
       }
       return 0;
     }
@@ -429,6 +380,15 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       press_was_text_ = false;
       if (GetCapture() == hwnd_) {
         ReleaseCapture();
+      }
+      POINT cursor;
+      if (GetCursorPos(&cursor)) {
+        RECT rc;
+        if (GetWindowRect(hwnd_, &rc) && !PtInRect(&rc, cursor) && hovered_) {
+          hovered_ = false;
+          tracking_mouse_leave_ = false;
+          RequestRender();
+        }
       }
       // A press that never moved into a drag over the lyric text fires the word
       // lookup now — single-tap lookup preserved.
@@ -656,7 +616,7 @@ void FloatingLyricWindow::Render() {
       glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
       glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
       render_target_->DrawTextW(
-          glyph, 1, glyph_fmt.Get(),
+          glyph, GlyphLength(glyph), glyph_fmt.Get(),
           D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
           active ? btn_active.Get() : btn_fg.Get());
     }

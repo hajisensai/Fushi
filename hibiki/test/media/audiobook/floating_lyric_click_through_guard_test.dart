@@ -21,45 +21,38 @@ void main() {
   });
 
   group('desktop floating-lyric click-through guards', () {
-    test('strip is created mouse-transparent so other apps stay usable', () {
-      // WS_EX_TRANSPARENT in the CreateWindowEx flags is what lets clicks fall
-      // through to the apps underneath by default.
+    test(
+        'strip is created mouse-interactive so first clicks cannot fall through',
+        () {
+      final int createWindow = cpp.indexOf('CreateWindowExW(');
+      final int className = cpp.indexOf('kWindowClassName', createWindow);
+      final String createFlags = cpp.substring(createWindow, className);
+
+      // The native strip must be interactive from the first hit-test. Keeping
+      // WS_EX_TRANSPARENT in the creation flags reopens the race where a fast
+      // first click reaches the app underneath before a timer clears the bit.
       expect(
-        cpp.contains('WS_EX_TRANSPARENT'),
-        isTrue,
-        reason: 'The strip must be born click-through (WS_EX_TRANSPARENT).',
+        createFlags.contains('WS_EX_TRANSPARENT'),
+        isFalse,
+        reason: 'The strip must not be born mouse-transparent.',
       );
       // It must still not steal keyboard focus.
-      expect(cpp.contains('WS_EX_NOACTIVATE'), isTrue);
+      expect(createFlags.contains('WS_EX_NOACTIVATE'), isTrue);
       // And it must float over every app, not just the Hibiki window.
-      expect(cpp.contains('WS_EX_TOPMOST'), isTrue);
+      expect(createFlags.contains('WS_EX_TOPMOST'), isTrue);
     });
 
-    test('a cursor poll restores interactivity over the strip', () {
-      // Transparent windows receive no WM_MOUSEMOVE, so hover must be detected
-      // by polling the global cursor on a WM_TIMER.
-      expect(cpp.contains('WM_TIMER'), isTrue);
-      expect(cpp.contains('SetTimer('), isTrue);
-      expect(cpp.contains('KillTimer('), isTrue);
-      expect(cpp.contains('PollCursorInteractivity'), isTrue);
-      expect(cpp.contains('GetCursorPos'), isTrue);
-    });
-
-    test('interactivity toggles WS_EX_TRANSPARENT instead of staying on', () {
-      // ApplyInteractive clears the bit when the cursor is over the strip and
-      // sets it again when the cursor leaves, so the desktop is usable the rest
-      // of the time. Both directions must exist.
+    test('interactivity is not driven by a hover timer', () {
+      // A timer-driven transparent/interactive flip is inherently racy: a fast
+      // mouse-enter + click can arrive while WS_EX_TRANSPARENT is still set.
+      expect(cpp.contains('PollCursorInteractivity'), isFalse);
+      expect(cpp.contains('ApplyInteractive'), isFalse);
+      expect(cpp.contains('SetTimer('), isFalse);
+      expect(cpp.contains('KillTimer('), isFalse);
+      expect(cpp.contains('&= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT)'),
+          isFalse);
       expect(
-          cpp.contains('&= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT)'), isTrue);
-      expect(
-          cpp.contains('|= static_cast<LONG_PTR>(WS_EX_TRANSPARENT)'), isTrue);
-      expect(cpp.contains('SetWindowLongPtr(hwnd_, GWL_EXSTYLE'), isTrue);
-    });
-
-    test('a drag never drops interactivity mid-move', () {
-      // The poll must keep the strip interactive while dragging, otherwise
-      // flipping transparent would abort the move.
-      expect(cpp.contains('if (dragging_)'), isTrue);
+          cpp.contains('|= static_cast<LONG_PTR>(WS_EX_TRANSPARENT)'), isFalse);
     });
 
     test('word lookup is preserved — taps still report a char index', () {
@@ -74,6 +67,16 @@ void main() {
     test('control buttons are still hit-tested and reported', () {
       expect(cpp.contains('ControlActionAt'), isTrue);
       expect(cpp.contains('on_control_'), isTrue);
+    });
+
+    test('padlock glyphs are drawn as full UTF-16 strings', () {
+      expect(cpp.contains('GlyphLength'), isTrue,
+          reason: 'Emoji glyphs need their full UTF-16 code-unit length.');
+      expect(cpp.contains('DrawTextW(\n          glyph, GlyphLength(glyph),'),
+          isTrue,
+          reason: 'DrawTextW must not truncate surrogate-pair glyphs.');
+      expect(cpp.contains('DrawTextW(\n          glyph, 1,'), isFalse,
+          reason: 'Length 1 truncates U+1F512/U+1F513 padlock glyphs.');
     });
   });
 
