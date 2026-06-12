@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 224 条。点号进各自文件。
+> 共 226 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-231](bugs/BUG-231-video-doubletap-seek.md) | ✅ | ✅ | 视频缺双击左右快进 + 步长设置（TODO-173） |
+| [BUG-230](bugs/BUG-230-video-vertical-gesture-sensitivity.md) | ✅ | ✅ | 视频亮度/音量竖滑手势太敏感（TODO-172） |
 | [BUG-227](bugs/BUG-227-floating-lyric-toggle-in-booklongpress-and-notification.md) | ✅ | ✅ | 悬浮字幕开关加到长按书籍菜单+通知栏 |
 | [BUG-226](bugs/BUG-226-video-subtitle-hover-dodge-clipped.md) | ✅ | ✅ | 桌面 hover 视频时字幕被避让顶飞「消失」（底部+右侧列表都不见） |
 | [BUG-225](bugs/BUG-225-reader-inchapter-progress-diag-logs.md) | ✅ | ✅ | 章内滚动进度链路三点诊断日志(TODO-151/164) |

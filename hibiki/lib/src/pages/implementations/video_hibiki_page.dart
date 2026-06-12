@@ -325,6 +325,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   bool _pokeParity = false;
   static const double _volumeStep = 5.0;
 
+  /// media_kit 移动控制条竖滑（左=亮度 / 右=音量）的灵敏度（TODO-172/BUG-230）。
+  /// media_kit 公式是 `value -= delta.dy / verticalGestureSensitivity`——值越大越
+  /// 不敏感。其默认 100（满量程仅需约 100px 竖向拖动，太敏感，轻轻一划就拉满 / 归零）。
+  /// 抬到 320（灵敏度降到约 1/3，满量程约需 320px 拖动），符合用户「太灵敏」反馈。
+  /// 仅移动端有此竖滑手势，传给 [_mobileControlsTheme]；桌面 [_desktopControlsTheme]
+  /// 无此手势、不设此参数（诚实降级）。
+  static const double _videoVerticalGestureSensitivity = 320.0;
+
   // TODO-057: 视频左半区竖滑调屏幕亮度、右半区竖滑调音量。手势 + 指示器复用
   // media_kit 移动控制条内建实现（见 [_mobileControlsTheme] 的 volumeGesture/
   // brightnessGesture + 回调）；亮度落设备背光经此 controller，桌面诚实门控。
@@ -2482,6 +2490,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
       volumeGesture: _brightness.canControl,
       brightnessGesture: _brightness.canControl,
+      // 竖滑灵敏度降到约 1/3（TODO-172/BUG-230）：media_kit 默认 100 太敏感，轻划即
+      // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
+      verticalGestureSensitivity: _videoVerticalGestureSensitivity,
       seekGesture: false,
       onVolumeChanged: _onMediaKitVolumeChanged,
       onBrightnessChanged: _onMediaKitBrightnessChanged,
@@ -3789,7 +3800,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     _lastVideoPointerUpAt = null;
     _lastVideoPointerUpPosition = null;
-    // BUG-221: 双击命中后按平台分流。
+    // TODO-173/BUG-231: 双击左/右区先尝试快进/快退（或跳上/下一句）。落在左 / 右
+    // 区（且双击行为已开启）则在此早返回，中带（中间 1/3）落空继续走下方平台分流，
+    // 保留 BUG-221 的双击暂停（移动）/ 全屏（桌面）。
+    if (_handleDoubleTapSeek(controlsContext, event.position)) return;
+    // BUG-221: 双击命中（中带）后按平台分流。
     // - 移动端：双击 = 播放/暂停。原先双击 → [_toggleVideoFullscreen] → media_kit 全屏路由，
     //   退出时弹回竖屏，用户感知为「双击 = 竖屏」。移动端横屏沉浸态即唯一形态、无「全屏」
     //   语义，双击应等同原生播放器的暂停手势。
@@ -3799,6 +3814,44 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     } else {
       unawaited(_controller?.playOrPause() ?? Future<void>.value());
     }
+  }
+
+  /// 双击左 / 右区快退 / 快进（TODO-173/BUG-231）。返回 true=已处理（左 / 右区），
+  /// 调用方应早返回、不再走平台默认的暂停 / 全屏；false=落在中带（中间 1/3）或功能
+  /// 关闭，调用方继续走 BUG-221 的暂停 / 全屏分流。
+  ///
+  /// 用 [_videoControlsContext] 的 [RenderBox] 把双击点 [globalPosition] 换成本地坐标
+  /// 拿 dx 与可视区宽度（复用 [_isVideoChromePointer] 的 `globalToLocal` 范式），按
+  /// 三等分判定：左 1/3 → 后退、右 1/3 → 前进、中间 1/3 → 中带（保留暂停 / 全屏）。
+  /// [VideoAsbplayerConfig.doubleTapSeekSeconds]：0=关（整体跳过分区）、3/5/10=相对
+  /// seek 该秒数、[VideoAsbplayerConfig.kDoubleTapSubtitle]=跳上 / 下一句。
+  bool _handleDoubleTapSeek(
+      BuildContext controlsContext, Offset globalPosition) {
+    final int action = _asbConfig.doubleTapSeekSeconds;
+    if (action == 0) return false; // 关：双击全部走暂停/全屏（向后兼容默认）。
+    final RenderObject? renderObject = controlsContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final double width = renderObject.size.width;
+    if (width <= 0) return false;
+    final double localDx = renderObject.globalToLocal(globalPosition).dx;
+    final bool left = localDx < width / 3;
+    final bool right = localDx > width * 2 / 3;
+    if (!left && !right) return false; // 中带：落空，交回平台分流。
+    final bool forward = right;
+    if (action == VideoAsbplayerConfig.kDoubleTapSubtitle) {
+      // 字幕模式：双击左/右 = 跳上/下一句（无字幕段回退/前进 seekSeconds 秒，TODO-119/073）。
+      unawaited(_skipCueAndPokeControls(forward: forward));
+      _showOsd(
+          forward ? t.video_double_tap_next_cue : t.video_double_tap_prev_cue,
+          icon: forward ? Icons.fast_forward : Icons.fast_rewind);
+    } else {
+      // 秒数模式：相对 seek ±action 秒。
+      final int deltaMs = (forward ? action : -action) * 1000;
+      unawaited(_seekRelative(deltaMs));
+      _showOsd('${forward ? '+' : '-'}${action}s',
+          icon: forward ? Icons.fast_forward : Icons.fast_rewind);
+    }
+    return true;
   }
 
   bool _isVideoChromePointer(

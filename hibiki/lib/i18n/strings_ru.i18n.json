@@ -1549,5 +1549,11 @@
     "shortcut_action_video_toggle_subtitle_blur": "Toggle Subtitle Blur",
     "shortcut_action_video_escape": "Exit / Back",
     "book_edit_author": "Author",
-    "floating_lyric_toggle_action": "Floating subtitle"
+    "floating_lyric_toggle_action": "Floating subtitle",
+    "video_setting_double_tap": "Double-tap seek",
+    "video_setting_double_tap_hint": "Double-tap the left/right of the video to seek",
+    "video_setting_double_tap_off": "Off",
+    "video_setting_double_tap_subtitle": "Subtitle",
+    "video_double_tap_next_cue": "Next line",
+    "video_double_tap_prev_cue": "Previous line"
 }

@@ -1549,5 +1549,11 @@
     "shortcut_action_video_toggle_subtitle_blur": "切换字幕模糊",
     "shortcut_action_video_escape": "退出/返回",
     "book_edit_author": "作者",
-    "floating_lyric_toggle_action": "悬浮字幕"
+    "floating_lyric_toggle_action": "悬浮字幕",
+    "video_setting_double_tap": "双击快进",
+    "video_setting_double_tap_hint": "双击视频左/右侧快退/快进",
+    "video_setting_double_tap_off": "关",
+    "video_setting_double_tap_subtitle": "下一句",
+    "video_double_tap_next_cue": "下一句",
+    "video_double_tap_prev_cue": "上一句"
 }
