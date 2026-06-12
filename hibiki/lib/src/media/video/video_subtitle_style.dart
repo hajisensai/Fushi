@@ -3,21 +3,31 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 
-/// media_kit 默认底部控制条（进度条 + 按钮条）在视频底部占据的高度（逻辑像素）。
+/// media_kit 默认底部控制条的**进度条（seek bar）上缘**距视频底边的清空高度（逻辑像素）。
 ///
-/// 来源是 media_kit `MaterialVideoControlsThemeData` 的默认布局：底部按钮条本体
-/// [bottomButtonBarMargin] 的垂直外边距（默认 `bottom: 42`，vertical=42）加上按钮条
-/// 高度（默认 `buttonBarHeight: 56`，Hibiki 两端主题都钉同值）。media_kit 自带字幕
-/// 视图正是用这个量（`subtitleVerticalShiftOffset = padding.bottom + bottomButtonBarMargin.vertical
-/// + buttonBarHeight`）在控制条显示时把字幕上推、避开进度条。
+/// TODO-171（抄 B站）：字幕避让只需让出**进度条本身那一条**，不是整条底部按钮行。
+/// media_kit 底部控制条在同一个 `Stack(bottomCenter)` 里自底向上堆：按钮行
+/// （`buttonBarHeight: 56`，播放/快进/时间/全屏图标），进度条（seek bar）骑在按钮行
+/// 上沿（桌面用 `Transform.translate(Offset(0, 16))` 把进度条下压、与按钮行顶部重叠）。
+/// 真正会遮住字幕的只有进度条那一条，它落在距视频底约一个按钮行高（`buttonBarHeight`）
+/// 处。故避让高度取 [_kButtonBarHeight]=56：字幕底缘抬到进度条上方一点点恰骑其顶，
+/// 不再多抬整条按钮行 + 离底 margin（旧 `42 + 56 = 98` 把字幕顶过整条按钮行、飞进
+/// 画面中上部，用户报「进度条出来把字幕往上顶太高很怪」）。
+///
+/// 旧值的 `42` 是 media_kit 导出常量 [kDefaultMaterialVideoControlsThemeData] 那套含
+/// `bottomButtonBarMargin.bottom: 42` 的整体离底留白——它是控制条离屏幕底边的空白，
+/// 不是遮挡字幕的实体，叠进避让只会凭空多抬一个 margin。Hibiki 实际 new 的桌面主题
+/// （`MaterialDesktopVideoControlsThemeData`）走构造器默认（`bottomButtonBarMargin`
+/// 只有左右、vertical=0），本就没有这 42px，故去掉它也更贴合 Hibiki 真实几何。
 ///
 /// Hibiki 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图）。TODO-129 起字幕
-/// **动态**避让：控制条出现时把字幕在用户位置之上额外上顶本值、隐藏时落回用户位置
-/// （由 [VideoSubtitleOverlay] 的 `controlsVisible` 驱动 `AnimatedPadding`），不再像
-/// TODO-089 那样把本值恒加进默认 [VideoSubtitleStyle.bottomPadding]。本常量现在是
-/// 「控制条可见时的避让高度」，不再是默认抬升的下限。Hibiki 的两套控制主题都未覆盖
-/// 这两项 margin，故仍走 media_kit 默认几何（与之同源）。
-const double kVideoControlsBottomReserve = 42 + 56;
+/// **动态**避让：控制条出现时把字幕在用户位置之上抬到 `max(用户位置, 本值)`、隐藏时
+/// 落回用户位置（由 [VideoSubtitleOverlay] 的 `controlsVisible` 驱动 `AnimatedPadding`，
+/// TODO-161 取下限而非加法），不再像 TODO-089 那样把本值恒加进默认
+/// [VideoSubtitleStyle.bottomPadding]。本常量是「控制条可见时字幕底缘骑到的进度条上缘
+/// 高度」。
+const double _kButtonBarHeight = 56;
+const double kVideoControlsBottomReserve = _kButtonBarHeight;
 
 /// Video subtitle appearance persisted as app preferences.
 ///
@@ -58,12 +68,14 @@ class VideoSubtitleStyle {
   /// [bottomPadding] is the user's subtitle position only (default 75). It no
   /// longer bakes in the controls-bar clearance: TODO-129 made the self-drawn
   /// [VideoSubtitleOverlay] dodge the bar *dynamically* — when the controls show
-  /// it lifts an extra [kVideoControlsBottomReserve] above this position and
-  /// drops back when they hide (driven by `controlsVisible`). So the default
-  /// stays at the natural 75 and is only pushed up while the progress bar is
-  /// actually on screen, instead of being permanently raised (TODO-089). Users
-  /// who manually pick a position keep their value verbatim (no "is-manual"
-  /// branch — it's the same field; the dynamic dodge stacks on top of it).
+  /// it lifts the subtitle to `max(this position, [kVideoControlsBottomReserve])`
+  /// (the progress-bar upper edge) and drops back when they hide (driven by
+  /// `controlsVisible`, lower-bound not addition — TODO-161). So the default
+  /// stays at the natural 75 and is only nudged just above the progress bar
+  /// while it is on screen, instead of being permanently raised (TODO-089) or
+  /// lifted over the whole button row (TODO-171). Users who manually pick a
+  /// position keep their value verbatim (no "is-manual" branch — it's the same
+  /// field; the dynamic dodge takes the lower bound on top of it).
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
     fontSize: 36,
     textColor: Color(0xFFFFFFFF),
