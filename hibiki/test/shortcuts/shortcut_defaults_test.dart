@@ -244,6 +244,38 @@ void main() {
       );
     });
 
+    test('reader lookup/card creation actions have configurable defaults', () {
+      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      expect(
+        defaults[ShortcutAction.readerLookupAtCursor]!.keyboardBindings,
+        contains(const InputBinding(key: LogicalKeyboardKey.enter)),
+      );
+      expect(
+        defaults[ShortcutAction.readerLookupAtCursor]!
+            .gamepadBindings
+            .map((b) => b.button),
+        contains(GamepadButton.a),
+      );
+      expect(
+        defaults[ShortcutAction.readerShiftLookup]!.keyboardBindings,
+        contains(
+          const InputBinding(
+            key: LogicalKeyboardKey.enter,
+            modifiers: <bindings.ModifierKey>{bindings.ModifierKey.shift},
+          ),
+        ),
+      );
+      expect(
+        defaults[ShortcutAction.readerCreateCardFromPopup]!.keyboardBindings,
+        contains(
+          const InputBinding(
+            key: LogicalKeyboardKey.enter,
+            modifiers: <bindings.ModifierKey>{bindings.ModifierKey.ctrl},
+          ),
+        ),
+      );
+    });
+
     test(
         'seek-to-clicked-sentence defaults to middle mouse on desktop & mobile',
         () {

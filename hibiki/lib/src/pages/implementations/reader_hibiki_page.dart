@@ -4542,10 +4542,22 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
+    final Set<ModifierKey> modifiers = _activeModifiers();
+
+    final ShortcutAction? directReaderAction =
+        appModel.shortcutRegistry.resolveKeyboard(
+      event.logicalKey,
+      modifiers: modifiers,
+      scope: ShortcutScope.reader,
+    );
+
     // Char-level reading cursor (book has focus; chrome already returned above).
     // While active, the cursor owns Tab / arrows / A(Enter) / B(Esc) before the
     // registry is consulted. While inactive, A / Enter ENTER the cursor.
     if (_focusNavEnabled && _caretActive) {
+      if (_isReaderDirectCaretShortcut(directReaderAction)) {
+        return _executeShortcutAction(directReaderAction!);
+      }
       // LB/RB flip a whole page on the cursor surface, mirroring the polled
       // gamepad branch in _handleGamepadButton. Android gamepads deliver the
       // shoulders here as gameButton key events, mapped back via fromLogicalKey;
@@ -4581,12 +4593,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
         unawaited(_runCaretAction(caretAction));
         return KeyEventResult.handled;
       }
-    } else if (ReaderCaretRouter.isEnterTriggerKeyboard(
-      event.logicalKey,
-      focusNavEnabled: _focusNavEnabled,
-    )) {
-      unawaited(_enterCaret());
-      return KeyEventResult.handled;
+    } else if (_isReaderDirectCaretShortcut(directReaderAction)) {
+      return _executeShortcutAction(directReaderAction!);
     }
 
     // Caret inactive: arrow Down drops focus into the bottom bar (the sibling
@@ -4608,8 +4616,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
       _focusNode.requestFocus();
     }
 
-    final Set<ModifierKey> modifiers = _activeModifiers();
-
     // 有声书激活时，无修饰 Space 改作播放/暂停（媒体播放器惯例），先于
     // reader scope 的「翻页」解析，否则 Space 永远被 reader scope 抢成翻页
     // （翻页仍可用方向键/PageDown；Shift+Space 后退翻页、Ctrl+Space 原义不变）。
@@ -4629,6 +4635,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
     ShortcutAction? action = spaceOverride ??
         arrowOverride ??
+        directReaderAction ??
         appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
@@ -4658,8 +4665,24 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return _executeShortcutAction(action);
   }
 
+  static bool _isReaderDirectCaretShortcut(ShortcutAction? action) {
+    switch (action) {
+      case ShortcutAction.readerLookupAtCursor:
+      case ShortcutAction.readerShiftLookup:
+      case ShortcutAction.readerCreateCardFromPopup:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   KeyEventResult? _handleGamepadAKeyEvent(KeyEvent event) {
     if (event.logicalKey != LogicalKeyboardKey.gameButtonA) return null;
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
+      GamepadButton.a,
+      scope: ShortcutScope.reader,
+    );
+    if (action != ShortcutAction.readerLookupAtCursor) return null;
     if (event is KeyDownEvent) {
       if (_gamepadAHoldTimer != null) return KeyEventResult.handled;
       _gamepadALongFired = false;
@@ -4849,6 +4872,26 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _controller?.evaluateJavascript(
           source: "document.body.classList.toggle('show-all-rt');",
         );
+        return KeyEventResult.handled;
+      case ShortcutAction.readerLookupAtCursor:
+        if (_focusNavEnabled && _caretActive) {
+          unawaited(_runCaretAction(CaretAction.activate));
+        } else if (_focusNavEnabled) {
+          unawaited(_enterCaret());
+        }
+        return KeyEventResult.handled;
+      case ShortcutAction.readerShiftLookup:
+        if (_focusNavEnabled && _caretActive) {
+          unawaited(_runCaretAction(CaretAction.lookup));
+        } else if (_focusNavEnabled) {
+          unawaited(_enterCaret());
+        }
+        return KeyEventResult.handled;
+      case ShortcutAction.readerCreateCardFromPopup:
+        final Future<void>? mining = topPopupState?.mineFirstVisibleEntry();
+        if (mining != null) {
+          unawaited(mining);
+        }
         return KeyEventResult.handled;
       case ShortcutAction.audiobookPlayPause:
         _audiobookController?.togglePlayPause();

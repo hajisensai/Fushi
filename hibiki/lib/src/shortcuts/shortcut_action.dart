@@ -37,6 +37,10 @@ enum ShortcutAction {
   readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
   readerToggleBookmark(ShortcutScope.reader, 'reader_toggle_bookmark'),
   readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),
+  readerLookupAtCursor(ShortcutScope.reader, 'reader_lookup_at_cursor'),
+  readerShiftLookup(ShortcutScope.reader, 'reader_shift_lookup'),
+  readerCreateCardFromPopup(
+      ShortcutScope.reader, 'reader_create_card_from_popup'),
 
   // Home
   homeTabBooks(ShortcutScope.home, 'home_tab_books'),

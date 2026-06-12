@@ -270,6 +270,13 @@ class DictionaryPopupWebViewState
         source: ReaderCaretScripts.longPressInvocation());
   }
 
+  Future<void> mineFirstVisibleEntry() async {
+    await _controller?.evaluateJavascript(
+      source: 'window.hoshiPopupMineFirstEntry'
+          ' ? window.hoshiPopupMineFirstEntry() : false',
+    );
+  }
+
   Future<void> caretRefresh() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.refreshInvocation());
