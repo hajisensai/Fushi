@@ -1,15 +1,16 @@
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
-/// The char-level reading cursor is entered with A / Enter and left with B / Esc
-/// — handled contextually on the reader page (depends on cursor state + whether
-/// the bottom chrome has focus), NOT via a registry action. These tests pin the
-/// surrounding registry consequences: A is freed of any reader/audiobook binding
-/// (so the page-level interception owns it), play/pause relocates to L3, and the
-/// bookmark stays on X.
+/// The char-level reading cursor keeps A / Enter as configurable reader-scope
+/// defaults via [ShortcutAction.readerLookupAtCursor]. The reader page still
+/// handles them contextually (enter caret when inactive, activate when active),
+/// and [ReaderCaretRouter] gates that caret behavior on the global focus
+/// navigation switch. These tests pin the registry consequences: A belongs to
+/// reader lookup, audiobook play/pause stays on L3, and bookmark stays on X.
 void main() {
   group('caret control bindings', () {
     HibikiShortcutRegistry registryFor(TargetPlatform platform) =>
@@ -22,12 +23,13 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.iOS,
     ]) {
-      test('controller A has no reader/audiobook registry binding on $platform',
+      test(
+          'controller A resolves to reader lookup, not audiobook, on $platform',
           () {
         final registry = registryFor(platform);
         expect(
           registry.resolveGamepad(GamepadButton.a, scope: ShortcutScope.reader),
-          isNull,
+          ShortcutAction.readerLookupAtCursor,
         );
         expect(
           registry.resolveGamepad(GamepadButton.a,
@@ -54,9 +56,7 @@ void main() {
       });
     }
 
-    test(
-        'Enter is NOT a registry action in the reader scope (cursor entry is '
-        'page-level, contextual on focus + cursor state)', () {
+    test('Enter resolves to readerLookupAtCursor in the reader scope', () {
       final registry = registryFor(TargetPlatform.windows);
       expect(
         registry.resolveKeyboard(
@@ -64,7 +64,39 @@ void main() {
           modifiers: const {},
           scope: ShortcutScope.reader,
         ),
-        isNull,
+        ShortcutAction.readerLookupAtCursor,
+      );
+    });
+
+    test('focus navigation switch gates Enter / A caret entry', () {
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(
+          LogicalKeyboardKey.enter,
+          focusNavEnabled: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(
+          LogicalKeyboardKey.gameButtonA,
+          focusNavEnabled: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerGamepad(
+          GamepadButton.a,
+          focusNavEnabled: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
+        isTrue,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a),
+        isTrue,
       );
     });
   });
