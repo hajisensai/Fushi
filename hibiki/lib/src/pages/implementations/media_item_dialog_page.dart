@@ -300,18 +300,53 @@ class MediaItemDialogFrame extends StatelessWidget {
     );
   }
 
+  /// 单行等宽时单个 chip 仍能容纳中文「导入有声书」这类标签的保守最小宽度；
+  /// 平分后低于此宽度就降级成竖排整行，避免 intrinsic-width 横排被 ellipsis 截断。
+  static const double _quickActionMinChipWidth = 96.0;
+
   Widget _buildQuickActions(HibikiDesignTokens tokens) {
-    return Wrap(
-      spacing: tokens.spacing.gap,
-      runSpacing: tokens.spacing.gap,
-      children: <Widget>[
-        for (final DialogQuickAction action in quickActions)
-          HibikiActionChip(
-            label: action.label,
-            icon: action.icon,
-            onPressed: action.onPressed,
-          ),
-      ],
+    final double gap = tokens.spacing.gap;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int count = quickActions.length;
+        final double available = constraints.maxWidth;
+        // 一行平分后每格仍够宽 → 等宽横排；否则窄屏降级成竖排整行。
+        final bool fitsOneRow = available.isFinite &&
+            (available - gap * (count - 1)) / count >= _quickActionMinChipWidth;
+        return fitsOneRow ? _quickActionsRow(gap) : _quickActionsColumn(gap);
+      },
+    );
+  }
+
+  /// 等宽横排：每个 chip 用 Expanded 平分一行，消除 intrinsic-width 参差。
+  Widget _quickActionsRow(double gap) {
+    final List<Widget> children = <Widget>[];
+    for (int i = 0; i < quickActions.length; i++) {
+      if (i > 0) children.add(SizedBox(width: gap));
+      children.add(Expanded(child: _quickActionChip(quickActions[i])));
+    }
+    return Row(children: children);
+  }
+
+  /// 窄屏降级：每个 chip 占整行，宽度一致。
+  Widget _quickActionsColumn(double gap) {
+    final List<Widget> children = <Widget>[];
+    for (int i = 0; i < quickActions.length; i++) {
+      if (i > 0) children.add(SizedBox(height: gap));
+      children.add(
+        SizedBox(
+            width: double.infinity, child: _quickActionChip(quickActions[i])),
+      );
+    }
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
+  }
+
+  Widget _quickActionChip(DialogQuickAction action) {
+    return HibikiActionChip(
+      label: action.label,
+      icon: action.icon,
+      onPressed: action.onPressed,
     );
   }
 }
