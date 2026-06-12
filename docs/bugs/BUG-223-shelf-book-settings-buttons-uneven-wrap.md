@@ -1,4 +1,4 @@
-## BUG-221 · 书籍设置弹窗三按钮换行参差
+## BUG-223 · 书籍设置弹窗三按钮换行参差
 - **报告**：2026-06-12（用户：长按书架书籍弹出的「书籍设置」弹窗里一行三个按钮——查看插画/导入有声书/标签，换行后巨丑）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/media_item_dialog_page.dart:303-316`（修复前）：`MediaItemDialogFrame._buildQuickActions` 把 `extraActions()`（`reader_hibiki_history_page.dart:1779-1793` 的 3 个 `DialogQuickAction`：`view_illustrations`/`audiobook_import`/`tag_label`）渲染成 `Wrap` 里 3 个 `HibikiActionChip`。`HibikiActionChip` 内部是 `OutlinedButton.icon`（`hibiki_material_components.dart:580-596`），宽度=label intrinsic width。三个中文标签长度不等 → `Wrap` 按内容宽度从左流式换行，换行后剩 1 个孤立 chip 宽度又不一致 → 参差不齐。
 - **[x] ① 已修复** — `media_item_dialog_page.dart:303-351`（commit 见下）。`_buildQuickActions` 改用 `LayoutBuilder` 取真实可用宽：一行平分后每格 `>= _quickActionMinChipWidth(96px)` 时走等宽横排 `_quickActionsRow`（每个 chip 套 `Expanded` 平分一行）；否则窄屏降级 `_quickActionsColumn`（每个 chip 套 `SizedBox(width: double.infinity)` 整行 + `Column(crossAxisAlignment: stretch)`）。两条分支都保证所有按钮等宽，彻底消除 `Wrap` 的 intrinsic-width 参差特殊情况。96px 是能容纳「导入有声书」（5 字 + 图标 + 内边距）的保守阈值，宁可早降级竖排也不让横排被 ellipsis 截断。

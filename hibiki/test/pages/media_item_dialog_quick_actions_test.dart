@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
-/// BUG-221: 长按书架书籍弹出的「书籍设置」弹窗，一行三个 quick-action 按钮
+/// BUG-223: 长按书架书籍弹出的「书籍设置」弹窗，一行三个 quick-action 按钮
 /// （查看插画 / 导入有声书 / 标签）原先用 intrinsic-width 的 [Wrap]，标签长度
 /// 不等 → 按内容宽换行参差。修复后必须等宽布局：宽屏等宽横排、窄屏降级竖排整行。
 void main() {
