@@ -80,6 +80,13 @@ target_link_libraries(hoshidicts_ffi PRIVATE
     ${HOSHIDICTS_PLATFORM_LIBS}
 )
 
+if(APPLE)
+  set_target_properties(hoshidicts_ffi PROPERTIES
+      INSTALL_NAME_DIR "@rpath"
+      BUILD_WITH_INSTALL_NAME_DIR TRUE
+  )
+endif()
+
 # Windows: set output name without 'lib' prefix
 if(WIN32)
   set_target_properties(hoshidicts_ffi PROPERTIES
