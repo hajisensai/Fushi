@@ -276,7 +276,7 @@ void main() {
       client.close();
     });
 
-    test('remote audio lookup returns an opaque file id, not a filesystem path',
+    test('remote audio lookup returns a naked-player URL guarded by opaque id',
         () async {
       final HibikiSyncServer lookupServer = HibikiSyncServer(
         syncDataDir: tempDir.path,
@@ -290,6 +290,18 @@ void main() {
       await server.start();
 
       final client = HttpClient();
+      final unauthenticated = await client.postUrl(Uri.parse(
+        'http://localhost:${server.port}/api/lookup/audio',
+      ));
+      unauthenticated.headers.contentType = ContentType.json;
+      unauthenticated.add(utf8.encode(jsonEncode(<String, dynamic>{
+        'expression': '猫',
+        'reading': 'ねこ',
+      })));
+      final rejected = await unauthenticated.close();
+      await rejected.drain<void>();
+      expect(rejected.statusCode, 401);
+
       final request = await client.postUrl(Uri.parse(
         'http://localhost:${server.port}/api/lookup/audio',
       ));
@@ -313,9 +325,14 @@ void main() {
       expect(url, contains('/api/lookup/audio/file?id='));
       expect(url, isNot(contains('secret.mp3')));
 
+      final invalidRequest = await client.getUrl(Uri.parse(
+        'http://localhost:${server.port}/api/lookup/audio/file?id=missing',
+      ));
+      final invalidResponse = await invalidRequest.close();
+      await invalidResponse.drain<void>();
+      expect(invalidResponse.statusCode, 404);
+
       final fileRequest = await client.getUrl(Uri.parse(url));
-      fileRequest.headers.set('Authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
       final fileResponse = await fileRequest.close();
       final bytes = await fileResponse.fold<List<int>>(
         <int>[],
@@ -324,6 +341,47 @@ void main() {
       expect(fileResponse.statusCode, 200);
       expect(fileResponse.headers.value('content-type'), 'audio/mpeg');
       expect(bytes, <int>[1, 2, 3, 4]);
+      client.close();
+    });
+
+    test('remote audio file id expires before naked playback', () async {
+      DateTime now = DateTime(2026, 1, 1, 12);
+      final HibikiSyncServer lookupServer = HibikiSyncServer(
+        syncDataDir: tempDir.path,
+        port: 0,
+        token: token,
+        allowLan: true,
+        remoteLookupService: _FakeRemoteLookupService(),
+        now: () => now,
+      );
+      await server.stop();
+      server = lookupServer;
+      await server.start();
+
+      final client = HttpClient();
+      final request = await client.postUrl(Uri.parse(
+        'http://localhost:${server.port}/api/lookup/audio',
+      ));
+      request.headers
+        ..set('Authorization',
+            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}')
+        ..contentType = ContentType.json;
+      request.add(utf8.encode(jsonEncode(<String, dynamic>{
+        'expression': '猫',
+        'reading': 'ねこ',
+      })));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final String url = json['url'] as String;
+
+      now = now.add(const Duration(minutes: 5, seconds: 1));
+      final fileRequest = await client.getUrl(Uri.parse(url));
+      final fileResponse = await fileRequest.close();
+      await fileResponse.drain<void>();
+
+      expect(response.statusCode, 200);
+      expect(fileResponse.statusCode, 404);
       client.close();
     });
   });

@@ -75,6 +75,7 @@ class HibikiSyncServer {
     HibikiRemoteMiningService? miningService,
     HibikiRemoteHistoryService? historyService,
     HibikiLibraryHostService? libraryService,
+    DateTime Function()? now,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
@@ -82,7 +83,8 @@ class HibikiSyncServer {
         _remoteLookupService = remoteLookupService,
         _miningService = miningService,
         _historyService = historyService,
-        _libraryService = libraryService;
+        _libraryService = libraryService,
+        _now = now ?? DateTime.now;
 
   final String syncDataDir;
   final int _requestedPort;
@@ -92,6 +94,7 @@ class HibikiSyncServer {
   final HibikiRemoteMiningService? _miningService;
   final HibikiRemoteHistoryService? _historyService;
   final HibikiLibraryHostService? _libraryService;
+  final DateTime Function() _now;
   final Map<String, _RemoteAudioToken> _remoteAudioTokens =
       <String, _RemoteAudioToken>{};
   final Map<String, _VideoStreamToken> _videoStreamTokens =
@@ -164,6 +167,13 @@ class HibikiSyncServer {
         // Only the /stream sub-path is exempted; /streamurl, /subtitle, and the
         // video list still require Basic auth.
         if (_isVideoStreamPath(request.url.path)) return innerHandler(request);
+        // Remote lookup audio file URLs are handed to platform audio players,
+        // which issue a bare GET without Authorization. The lookup endpoint
+        // stays authenticated; the file endpoint is guarded by an opaque,
+        // short-lived in-memory id in _handleAudioFile.
+        if (_isLookupAudioFilePath(request.url.path)) {
+          return innerHandler(request);
+        }
         final auth = request.headers['authorization'];
         if (auth == null || !_validateAuth(auth)) {
           return shelf.Response(401,
@@ -185,6 +195,9 @@ class HibikiSyncServer {
         urlPath.substring(prefix.length, urlPath.length - suffix.length);
     return idPart.isNotEmpty;
   }
+
+  static bool _isLookupAudioFilePath(String urlPath) =>
+      urlPath == 'api/lookup/audio/file';
 
   bool _validateAuth(String header) {
     if (!header.startsWith('Basic ')) return false;
@@ -396,7 +409,7 @@ class HibikiSyncServer {
     _remoteAudioTokens[id] = _RemoteAudioToken(
       bytes: lookup.bytes,
       contentType: lookup.contentType,
-      createdAt: DateTime.now(),
+      createdAt: _now(),
     );
     final Uri url = request.requestedUri.replace(
       path: '/api/lookup/audio/file',
@@ -965,7 +978,7 @@ class HibikiSyncServer {
       final String tokenValue = _generateVideoToken();
       _videoStreamTokens[tokenValue] = _VideoStreamToken(
         videoId: streamUrlId,
-        createdAt: DateTime.now(),
+        createdAt: _now(),
       );
       final String encodedId = Uri.encodeFull(streamUrlId);
       final Uri streamUri = request.requestedUri.replace(
@@ -1070,7 +1083,7 @@ class HibikiSyncServer {
 
   void _pruneVideoTokens() {
     // 视频播放时间长，token 有效期设为 6 小时
-    final DateTime cutoff = DateTime.now().subtract(const Duration(hours: 6));
+    final DateTime cutoff = _now().subtract(const Duration(hours: 6));
     _videoStreamTokens.removeWhere(
       (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
     );
@@ -1102,7 +1115,7 @@ class HibikiSyncServer {
   }
 
   void _pruneAudioTokens() {
-    final DateTime cutoff = DateTime.now().subtract(const Duration(minutes: 5));
+    final DateTime cutoff = _now().subtract(const Duration(minutes: 5));
     _remoteAudioTokens.removeWhere(
       (String _, _RemoteAudioToken token) => token.createdAt.isBefore(cutoff),
     );
