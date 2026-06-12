@@ -21,16 +21,14 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 > Google Drive 同步的 OAuth 凭据已写死进源码默认值（`lib/src/sync/google_drive_auth.dart`），构建无需再传 `--dart-define`。如需换凭据，改该文件的 `defaultValue` 或自行加 `--dart-define` 覆盖。
 
-## GitHub 调试版 APK
+## 发布通道
 
-`.github/workflows/main.yml` 是“每次更新上传到 Git/GitHub 的调试版”的当前落点：在 `main` / `develop` push 或手动 `workflow_dispatch` 成功跑完 debug APK 构建后，CI 会上传 GitHub Actions artifact。
+默认 push 只发 debug 通道；beta/test 和 formal 都必须手动触发。任何 push 触发的 GitHub Release 都必须是 prerelease 且 `make_latest: false`，不得创建或更新 Latest/正式 release。
 
-- 产物入口：对应 workflow run 的 **Artifacts** 区域。
-- Artifact 名称：`hibiki-debug-apk-${{ github.sha }}`。
-- APK 文件名：`hibiki-<version>-<short-sha>-debug.apk`。
-- 保留时间：14 天。
-- GitHub Release：`.github/workflows/release.yml` 在 `release.published` 事件里也会构建同名 debug APK，并和正式 split ABI release APK 一起上传到对应 GitHub Release 的 **Assets** 区域。
-- 安全边界：`main` / `develop` push 和手动 `workflow_dispatch` 的 debug APK 只作为 Actions artifact；只有明确的 GitHub Release 事件才上传到 Release 页面。PR 事件不上传可下载调试包，避免未审代码被误当成更新包。
+- debug（push 自动）：`main` / `develop` push 会走 `.github/workflows/main.yml` 上传 Actions artifact，并走 `.github/workflows/release.yml` 发布 debug GitHub prerelease。Artifact 名称为 `hibiki-debug-apk-${{ github.sha }}`，APK 文件名为 `hibiki-<version>-<short-sha>-debug.apk`，保留 14 天。debug GitHub Release 默认 tag 为 `debug-<short-sha>`，只上传 debug APK，必须是 prerelease / non-Latest。
+- beta/test（手动）：通过 `.github/workflows/release.yml` 或 `.github/workflows/release-desktop.yml` 的 `workflow_dispatch` 选择 `beta`，或手动发布一个勾选 prerelease 且非 Latest 的 GitHub Release。Android 默认 tag 为 `v<version>-beta.<run>`，产物包含 `hibiki-<version>-<short-sha>-debug.apk` 与 split ABI release APK `hibiki-<version>-<abi>.apk`；Windows 产物为 `hibiki-<version>-windows-setup.exe`。如需 Android 和 Windows 合并到同一 beta/test Release，两个手动 workflow 使用同一个 `tag_name`。
+- formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer。formal 是唯一允许成为 Latest 的通道。
+- 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
 
 ## 版本号与 build number
 
