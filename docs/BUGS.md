@@ -27,10 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 211 条。点号进各自文件。
+> 共 216 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-219](bugs/BUG-219-video-statusbar-not-persistent-immersive.md) | ✅ | ✅ | 视频沉浸状态栏不持续隐藏（后台返回残留） |
+| [BUG-218](bugs/BUG-218-video-mobile-seekbar-touch-target.md) | ✅ | ✅ | 移动端进度条触摸热区太小难命中 |
+| [BUG-217](bugs/BUG-217-video-mobile-seekbar-above-buttons.md) | ✅ | ✅ | 移动端进度条没在播放按钮上方 |
+| [BUG-216](bugs/BUG-216-video-side-lock-icon-semantics.md) | ✅ | ✅ | 视频侧边锁按钮图标语义反了 |
+| [BUG-215](bugs/BUG-215-video-controls-poke-dedup.md) | ✅ | ✅ | 连按快进时控件自动隐藏计时器不刷新 |
 | [BUG-214](bugs/BUG-214-android-popup-lookup-charindex-regression.md) | ✅ | ✅ | Android 悬浮字幕条查词退化：点哪都查句首+弹键盘 |
 | [BUG-213](bugs/BUG-213-reader-inchapter-progress-stale.md) | ✅ | ✅ | 阅读器章内滚动进度不更新 |
 | [BUG-212](bugs/BUG-212-theme-custom-palette-icon-dark-invisible.md) | ✅ | ✅ | 自定义主题调色盘图标深色主题消失 |

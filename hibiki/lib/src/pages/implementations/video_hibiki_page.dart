@@ -271,12 +271,59 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 这个基线把进度条与按钮条整体抬离最底，再叠加 [_videoBottomSystemInset] 的系统
   /// 导航栏/手势栏 inset。
   static const double _videoBottomChromeBaseline = 24;
+
+  /// 移动控制条进度条与底部按钮条之间的竖直间距基线（TODO-156/BUG-217）。media_kit
+  /// 把进度条与底部按钮条放在**同一个** `Stack(alignment: bottomCenter)`，两者都按
+  /// `bottom` 对齐；本页原先把 `seekBarMargin.bottom` 与 `bottomButtonBarMargin.bottom`
+  /// 设成同一基线 → 进度条落到按钮条同一基线上、与按钮重叠（手机上「按钮没在进度条
+  /// 下面」）。把 `seekBarMargin.bottom` 抬高 = 按钮条高 + 本间距，让进度条整体落在
+  /// 按钮条上方。随界面大小缩放（[_videoUiScale]）。
+  static const double _videoSeekBarButtonGapBase = 8;
+
+  /// 移动控制条进度条触摸热区高度基线（TODO-157/BUG-218）。media_kit 默认
+  /// `seekBarContainerHeight=36`，对准才滑得到；抬高扩大可命中热区。随界面缩放。
+  /// 热区向上长（[_mobileControlsTheme] 把进度条整体抬到按钮条上方），不向下侵入
+  /// 系统边缘手势区。
+  static const double _videoSeekBarContainerHeightBase = 52;
+
+  /// 移动控制条进度条拖动滑块尺寸基线（TODO-157/BUG-218）。media_kit 默认 12.8；
+  /// 抬高让滑块更易对准。随界面缩放。
+  static const double _videoSeekBarThumbSizeBase = 18;
+
+  /// 移动控制条进度条轨道高度基线（TODO-157/BUG-218）。media_kit 默认 2.4；抬高让
+  /// 轨道更醒目、更易滑。随界面缩放。
+  static const double _videoSeekBarTrackHeightBase = 5;
+
+  /// 进度条与按钮条竖直间距，随界面大小缩放（TODO-156）。
+  double get _videoSeekBarButtonGap =>
+      _videoSeekBarButtonGapBase * _videoUiScale;
+
+  /// 进度条触摸热区高度，随界面大小缩放（TODO-157）。
+  double get _videoSeekBarContainerHeight =>
+      _videoSeekBarContainerHeightBase * _videoUiScale;
+
+  /// 进度条拖动滑块尺寸，随界面大小缩放（TODO-157）。
+  double get _videoSeekBarThumbSize =>
+      _videoSeekBarThumbSizeBase * _videoUiScale;
+
+  /// 进度条轨道高度，随界面大小缩放（TODO-157）。
+  double get _videoSeekBarTrackHeight =>
+      _videoSeekBarTrackHeightBase * _videoUiScale;
+
   static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
   static const double _videoDoubleClickSlop = 48;
 
   /// 唤醒控制条用的合成 hover 设备 id（[_pokeControlsVisible]）。取一个不与真实
   /// 鼠标/触控设备号冲突的固定值，使重复派发落在同一逻辑设备上。
   static const int _syntheticHoverDevice = 0x6869626B; // 'hibk'
+
+  /// 合成 hover 位置的 ±1px 抖动开关（TODO-148/BUG-215）。Flutter `MouseTracker`
+  /// 对**同一设备落在同一坐标**的连续 hover 会去重（位置没变就不再回调 onHover），
+  /// 连按快进 / 跳句时 [_pokeControlsVisible] 每次都派发到控制条**固定中心点**，第二
+  /// 次起 media_kit 的 `MouseRegion.onHover` 不再触发、隐藏 `Timer` 不续命，控制条
+  /// 仍只活 2 秒就消失。每次派发翻转此标志、把 x 偏 ±1px，使坐标始终变化，强制
+  /// MouseTracker 每次都回调 onHover 续命。仅 1px 抖动不会偏出控制条命中区。
+  bool _pokeParity = false;
   static const double _volumeStep = 5.0;
 
   // TODO-057: 视频左半区竖滑调屏幕亮度、右半区竖滑调音量。手势 + 指示器复用
@@ -594,6 +641,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_ensureEnterBrightness());
     // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
     unawaited(_lockLandscapeForVideo());
+    // TODO-158/BUG-219: 进入视频页显式持有「沉浸隐藏系统栏」所有权（移动端）。原先
+    // 只靠 [AppModel.openMedia] 在打开媒体时一次性设 immersiveSticky（书 / 视频共用
+    // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出由
+    // [AppModel.closeMedia] 的 setHomeShellSystemUiMode 还原；桌面 no-op。
+    unawaited(_applyVideoImmersiveMode());
     _init();
   }
 
@@ -617,6 +669,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case AppLifecycleState.resumed:
         // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
         _watchTracker?.start();
+        // TODO-158/BUG-219: 回前台重申沉浸隐藏系统栏（移动端）。后台 / 通知栏下拉 /
+        // 多任务切回后 Android 会把系统栏恢复显示，immersiveSticky 只在进入时设一次
+        // 不会自动复申 → 这里主动重设，保证「一直隐藏」。桌面 no-op。
+        unawaited(_applyVideoImmersiveMode());
         // 切窗 / 系统对话框返回（TODO-040 ①）：窗口重新激活时若键盘所有权仍属
         // 本页（页面或其全屏路由是当前路由、无查词浮层），把焦点收回视频——
         // OS 层焦点丢失后 Flutter 不保证归还到原节点。
@@ -1399,9 +1455,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
     final Offset center =
         renderObject.localToGlobal(renderObject.size.center(Offset.zero));
+    // ±1px 抖动 x 坐标（TODO-148/BUG-215）：连续派发到同一坐标会被 MouseTracker
+    // 去重、media_kit onHover 不再触发；每次翻转让坐标始终变化，强制每次都续命
+    // 隐藏定时。1px 仍稳落控制条命中区内。
+    _pokeParity = !_pokeParity;
+    final Offset pokePosition =
+        Offset(center.dx + (_pokeParity ? 1.0 : -1.0), center.dy);
     GestureBinding.instance.handlePointerEvent(
       PointerHoverEvent(
-        position: center,
+        position: pokePosition,
         // 复用一个稳定的合成设备 id，避免与真实鼠标/触控设备冲突。
         device: _syntheticHoverDevice,
         kind: PointerDeviceKind.mouse,
@@ -2543,6 +2605,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
     final double bottomChromeInset =
         _videoBottomChromeBaseline + _videoBottomSystemInset();
+    // 进度条抬到底部按钮条上方（TODO-156/BUG-217）：media_kit 把进度条与按钮条放同一
+    // 个 bottomCenter Stack、都按 bottom 对齐，进度条 bottom 必须 = 按钮条底部基线 +
+    // 按钮条高 + 间距，否则两者落同一基线重叠。保留 [bottomChromeInset]（BUG-184 抬离
+    // 系统栏）作为按钮条基线，进度条偏移叠加其上。
+    final double seekBarBottom =
+        bottomChromeInset + _videoButtonBarHeight + _videoSeekBarButtonGap;
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
@@ -2561,18 +2629,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialBrightness: _enterBrightness,
       onBrightnessReset: () =>
           unawaited(_brightness.restore(previous: _enterBrightness)),
-      // 进度条留底部空间：不传时 media_kit 构造器默认 EdgeInsets.zero 会贴屏幕最底。
+      // 进度条抬到按钮条上方（TODO-156）：bottom = 按钮条基线 + 按钮条高 + 间距，
+      // 不再与按钮条同基线重叠。
       seekBarMargin: EdgeInsets.only(
         left: 16,
         right: 16,
-        bottom: bottomChromeInset,
+        bottom: seekBarBottom,
       ),
-      // 底部按钮条与进度条同一底部基线（沿用 media_kit 默认的左右 16/8）。
+      // 底部按钮条留在系统栏上方基线（沿用 media_kit 默认的左右 16/8）。
       bottomButtonBarMargin: EdgeInsets.only(
         left: 16,
         right: 8,
         bottom: bottomChromeInset,
       ),
+      // 进度条触摸热区 / 滑块 / 轨道整体抬高（TODO-157/BUG-218）：media_kit 默认
+      // seekBarContainerHeight=36 / seekBarThumbSize=12.8 / seekBarHeight=2.4 在手机上
+      // 太细、难命中（手指比默认热区窄，滑不到 / 拖不动）。改用随界面缩放的基线放大
+      // 命中区与可视轨道。三者由 [_videoSeekBarButtonGap] 把进度条整体抬到按钮条上方
+      // 后才有竖直空间承接更高的热区（向上长，不向下侵入系统边缘手势区）。
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      seekBarThumbSize: _videoSeekBarThumbSize,
+      seekBarHeight: _videoSeekBarTrackHeight,
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
@@ -2867,6 +2944,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+  }
+
+  /// TODO-158/BUG-219: 视频页持有「沉浸隐藏系统栏」所有权（移动端）。在 [initState]
+  /// 显式设、在 [didChangeAppLifecycleState] 的 `resumed` 重申，让系统栏在视频期间
+  /// **持续隐藏**，而非只靠 [AppModel.openMedia] 打开媒体时一次性设、从不复申。
+  ///
+  /// 用 [SystemUiMode.immersiveSticky]（与 openMedia 既有基线一致）：上划仍可临时
+  /// 唤出系统栏，但随后自动重隐；配合 `resumed` 重申覆盖后台返回 / 通知栏交互后的
+  /// 残留。严格限本页：不动 openMedia（书 / 视频共用入口，竖排小说由 reader 自设
+  /// edgeToEdge 覆盖、首页由 setHomeShellSystemUiMode 接管），退出由 [AppModel.closeMedia]
+  /// 的 setHomeShellSystemUiMode 统一还原。桌面门控 no-op（桌面无系统栏）。
+  Future<void> _applyVideoImmersiveMode() async {
+    if (!isMobilePlatform) return;
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   /// TODO-099: 退出视频页时还原为 app 默认允许态（竖屏 + 两个横屏，
@@ -3930,45 +4021,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: _videoWithSubtitlePanel(
         controller,
         Video(
-            controller: videoController,
-            // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-            // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-            // 快捷键（见 [_refocusVideo]）。
-            focusNode: _videoFocusNode,
-            // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
-            // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
-            // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
-            // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
-            // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
-            // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
-            // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
-            // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
-            // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
-            subtitleViewConfiguration:
-                const SubtitleViewConfiguration(visible: false),
-            // 窗口模式画面占满媒体框、无 letterbox/pillarbox 黑边（TODO-122）。
-            // 根因：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
-            // 两侧补黑（[fill]）。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] →
-            // window_manager `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**
-            // 时（WM_SIZING）约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例
-            // 不等于视频，contain 仍留黑边（平台限制，不侵入式 setSize 无法让当前窗口贴合）。
-            // 用户要求「占满左右上下」，故窗口模式用 `BoxFit.cover` 铺满、超出部分裁切。配合
-            // 比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁
-            // 画面边缘（这是「占满」的取舍）。字幕是独立 overlay 层（[VideoSubtitleOverlay]，
-            // 不在 [Video] 内）不受裁切影响。全屏路由的 Video 仍走 notifier 的 `fit`（默认
-            // contain），不受此处影响。
-            fit: BoxFit.cover,
-            // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
-            // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
-            fill: Colors.black,
-            // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
-            // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
-            // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
-            controls: (VideoState state) =>
-                _buildVideoControls(state, controller),
-          ),
+          controller: videoController,
+          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+          // 快捷键（见 [_refocusVideo]）。
+          focusNode: _videoFocusNode,
+          // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
+          // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
+          // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
+          // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
+          // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
+          // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
+          // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
+          // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
+          // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
+          subtitleViewConfiguration:
+              const SubtitleViewConfiguration(visible: false),
+          // 窗口模式画面占满媒体框、无 letterbox/pillarbox 黑边（TODO-122）。
+          // 根因：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
+          // 两侧补黑（[fill]）。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] →
+          // window_manager `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**
+          // 时（WM_SIZING）约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例
+          // 不等于视频，contain 仍留黑边（平台限制，不侵入式 setSize 无法让当前窗口贴合）。
+          // 用户要求「占满左右上下」，故窗口模式用 `BoxFit.cover` 铺满、超出部分裁切。配合
+          // 比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁
+          // 画面边缘（这是「占满」的取舍）。字幕是独立 overlay 层（[VideoSubtitleOverlay]，
+          // 不在 [Video] 内）不受裁切影响。全屏路由的 Video 仍走 notifier 的 `fit`（默认
+          // contain），不受此处影响。
+          fit: BoxFit.cover,
+          // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
+          // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
+          fill: Colors.black,
+          // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+          // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+          // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
+          controls: (VideoState state) =>
+              _buildVideoControls(state, controller),
         ),
-      );
+      ),
+    );
   }
 
   /// media_kit `controls` builder：默认桌面控制条 + 可点字幕 [VideoSubtitleOverlay]
@@ -4285,10 +4376,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 视频左侧锁 / 解锁按钮（TODO-126，前身 TODO-101 左上角常驻解锁层 [_buildLockOverlay]）。
   /// 移到**视频正左边、垂直居中**，像侧边锁：
-  ///   - 非沉浸态（[_immersiveLocked] 为 false）：显示锁图标，点击进入沉浸（取代原 topButtonBar
-  ///     里的锁按钮，TODO-101）。跟随 hover / tap 唤起、2s 自动淡出，不再占顶栏。
-  ///   - 沉浸态（true）：显示解锁图标，点击退出沉浸。这是沉浸态下唯一常驻可见 chrome，作为
-  ///     清晰可发现的默认退出口；其余 chrome 全被抑制。
+  ///   - 非沉浸态（[_immersiveLocked] 为 false）：图标显示**开着的锁** [Icons.lock_open_outlined]
+  ///     （未锁状态），点击进入沉浸（取代原 topButtonBar 里的锁按钮，TODO-101）。跟随 hover /
+  ///     tap 唤起、2s 自动淡出，不再占顶栏。
+  ///   - 沉浸态（true）：图标显示**关着的锁** [Icons.lock_outline]（已锁状态），点击退出沉浸。
+  ///     这是沉浸态下唯一常驻可见 chrome，作为清晰可发现的默认退出口；其余 chrome 全被抑制。
+  ///
+  /// 图标是**状态语义**（锁住=闭锁图标），与悬浮字幕锁 / OSD（[_toggleImmersiveLock] 里
+  /// 锁定用 [Icons.lock_outline] / 解锁用 [Icons.lock_open_outlined]）/ Android FloatingLyricService
+  /// / Windows floating_lyric_window 统一（TODO-153/BUG-216，原先反成「动作提示」语义=锁住却
+  /// 显示开锁，与用户预期相反）。tooltip 仍是**动作语义**（锁住时「点击解锁」合理）。
   ///
   /// 可见性走独立的 [_lockButtonVisible]（[_pokeLockButton] 唤回，不被锁 gate）：无操作 2s 后
   /// 淡出（[AnimatedOpacity]），鼠标移动 / 触屏点画面唤回。淡出后 [IgnorePointer] 不拦点击，
@@ -4330,9 +4427,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                                 : t.video_menu_lock,
                             iconSize: iconSize,
                             color: cs.onSurface,
+                            // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
                             icon: Icon(locked
-                                ? Icons.lock_open_outlined
-                                : Icons.lock_outline),
+                                ? Icons.lock_outline
+                                : Icons.lock_open_outlined),
                             onPressed: _toggleImmersiveLock,
                           ),
                         ),
