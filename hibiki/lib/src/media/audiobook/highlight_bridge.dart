@@ -22,6 +22,20 @@ class HighlightBridge {
     pink:   [255,64,129],
     purple: [170,0,255]
   };
+  var MARK_COLORS = {
+    yellow: [184,132,0],
+    green:  [0,126,54],
+    blue:   [36,92,190],
+    pink:   [196,38,92],
+    purple: [126,0,190]
+  };
+  var MARK_VAR_NAMES = {
+    yellow: '--hoshi-hl-yellow-mark',
+    green:  '--hoshi-hl-green-mark',
+    blue:   '--hoshi-hl-blue-mark',
+    pink:   '--hoshi-hl-pink-mark',
+    purple: '--hoshi-hl-purple-mark'
+  };
   window.__hibikiHighlightBg = '#ffffff';
   window.__hibikiCustomHighlightColor = null;
   window.__hibikiHighlightRangeMap = {};
@@ -52,6 +66,12 @@ class HighlightBridge {
     var rgb = BASE_COLORS[name] || BASE_COLORS.yellow;
     var a = _pickAlpha(name, _luminance(window.__hibikiHighlightBg));
     return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')';
+  }
+
+  function _hlMarkColor(name) {
+    if (window.__hibikiCustomHighlightColor) return window.__hibikiCustomHighlightColor;
+    var rgb = MARK_COLORS[name] || MARK_COLORS.yellow;
+    return 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
   }
 
   function _root() {
@@ -155,6 +175,7 @@ class HighlightBridge {
     for (var ci2 = 0; ci2 < ALL_COLORS.length; ci2++) {
       var cn = ALL_COLORS[ci2];
       root.style.setProperty('--hoshi-hl-' + cn, _hlColor(cn));
+      root.style.setProperty(MARK_VAR_NAMES[cn], _hlMarkColor(cn));
     }
   }
 
@@ -256,6 +277,7 @@ class HighlightBridge {
         var groups = _buildGroups(map, hl.offset, hl.length);
         if (groups.length === 0) continue;
         var color = _hlColor(hl.color || 'yellow');
+        var markColor = _hlMarkColor(hl.color || 'yellow');
         for (var g = groups.length - 1; g >= 0; g--) {
           try {
             var r = document.createRange();
@@ -265,6 +287,10 @@ class HighlightBridge {
             span.setAttribute('data-highlight-id', hl.id);
             span.style.backgroundColor = color;
             span.style.borderRadius = '2px';
+            span.style.textDecorationLine = 'underline';
+            span.style.textDecorationColor = markColor;
+            span.style.textDecorationThickness = '0.12em';
+            span.style.textUnderlineOffset = '0.18em';
             r.surroundContents(span);
           } catch (e) { console.warn('[hoshi-hl] wrap error:', e); }
         }

@@ -296,18 +296,38 @@ ruby.hoshi-selection-ruby-active {
 }
 ::highlight(hoshi-hl-yellow) {
   background-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
+  text-decoration-line: underline;
+  text-decoration-color: var(--hoshi-hl-yellow-mark, rgb(184, 132, 0));
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
 }
 ::highlight(hoshi-hl-green) {
   background-color: var(--hoshi-hl-green, rgba(0,200,83,0.30));
+  text-decoration-line: underline;
+  text-decoration-color: var(--hoshi-hl-green-mark, rgb(0, 126, 54));
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
 }
 ::highlight(hoshi-hl-blue) {
   background-color: var(--hoshi-hl-blue, rgba(68,138,255,0.30));
+  text-decoration-line: underline;
+  text-decoration-color: var(--hoshi-hl-blue-mark, rgb(36, 92, 190));
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
 }
 ::highlight(hoshi-hl-pink) {
   background-color: var(--hoshi-hl-pink, rgba(255,64,129,0.30));
+  text-decoration-line: underline;
+  text-decoration-color: var(--hoshi-hl-pink-mark, rgb(196, 38, 92));
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
 }
 ::highlight(hoshi-hl-purple) {
   background-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
+  text-decoration-line: underline;
+  text-decoration-color: var(--hoshi-hl-purple-mark, rgb(126, 0, 190));
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
 }
 .hoshi-dict-highlight {
   background-color: $selectionOpaque !important;
