@@ -29,7 +29,8 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 - Artifact 名称：`hibiki-debug-apk-${{ github.sha }}`。
 - APK 文件名：`hibiki-<version>-<short-sha>-debug.apk`。
 - 保留时间：14 天。
-- 安全边界：只上传 `flutter build apk --debug` 产生的 debug APK；正式 release APK 仍只由 `release.yml` / `release-desktop.yml` 在 GitHub Release 事件里上传。PR 事件不上传可下载调试包，避免未审代码被误当成更新包。
+- GitHub Release：`.github/workflows/release.yml` 在 `release.published` 事件里也会构建同名 debug APK，并和正式 split ABI release APK 一起上传到对应 GitHub Release 的 **Assets** 区域。
+- 安全边界：`main` / `develop` push 和手动 `workflow_dispatch` 的 debug APK 只作为 Actions artifact；只有明确的 GitHub Release 事件才上传到 Release 页面。PR 事件不上传可下载调试包，避免未审代码被误当成更新包。
 
 ## 依赖补丁
 

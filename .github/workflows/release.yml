@@ -102,18 +102,46 @@ jobs:
           fi
         done
 
+    - name: Build debug APK
+      working-directory: hibiki
+      run: >-
+        flutter build apk --debug
+
+    - name: Prepare debug APK release asset
+      working-directory: hibiki
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+        SHORT_SHA="${GITHUB_SHA::7}"
+        APK_DIR=build/app/outputs/flutter-apk
+        OUT_DIR=build/release-artifacts
+        DEBUG_APK=$(find "$APK_DIR" -maxdepth 1 -type f -name '*-debug.apk' | sort | head -n 1)
+        if [ -z "$DEBUG_APK" ]; then
+          echo "::error title=Debug APK missing::No *-debug.apk found in $APK_DIR"
+          exit 1
+        fi
+        mkdir -p "$OUT_DIR"
+        rm -f "$OUT_DIR"/hibiki-*.apk
+        cp "$DEBUG_APK" "$OUT_DIR/hibiki-${VERSION}-${SHORT_SHA}-debug.apk"
+
     - name: Build release APK (split per ABI)
       working-directory: hibiki
       run: >-
         flutter build apk --split-per-abi --release
-    - name: Rename APKs
+
+    - name: Prepare release APK assets
       working-directory: hibiki
+      shell: bash
       run: |
+        set -euo pipefail
         VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
         APK_DIR=build/app/outputs/flutter-apk
+        OUT_DIR=build/release-artifacts
+        mkdir -p "$OUT_DIR"
         for f in "$APK_DIR"/app-*-release.apk; do
           ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
-          mv "$f" "$APK_DIR/hibiki-${VERSION}-${ABI}.apk"
+          cp "$f" "$OUT_DIR/hibiki-${VERSION}-${ABI}.apk"
         done
 
     - name: Upload APKs to release
@@ -121,4 +149,4 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          hibiki/build/app/outputs/flutter-apk/hibiki-*.apk
+          hibiki/build/release-artifacts/hibiki-*.apk
