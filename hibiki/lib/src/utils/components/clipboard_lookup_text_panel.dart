@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+
+const double _dictionaryHeadwordBaseFontSize = 26.0;
 
 class ClipboardLookupTextPanel extends StatefulWidget {
   const ClipboardLookupTextPanel({
@@ -8,13 +11,13 @@ class ClipboardLookupTextPanel extends StatefulWidget {
     required this.onLookup,
     super.key,
     this.coordinateSpaceKey,
-    this.headwordTextStyle,
+    this.dictionaryHeadwordScale = 1.0,
   });
 
   final String text;
   final void Function(String query, Rect localRect) onLookup;
   final GlobalKey? coordinateSpaceKey;
-  final TextStyle? headwordTextStyle;
+  final double dictionaryHeadwordScale;
 
   @override
   State<ClipboardLookupTextPanel> createState() =>
@@ -32,10 +35,7 @@ class _ClipboardLookupTextPanelState extends State<ClipboardLookupTextPanel> {
     final ThemeData theme = Theme.of(context);
     final List<String> chars = trimmed.characters.toList(growable: false);
     // 每个字符是独立可点 span，逐字保持原有点击/Shift 悬停查词行为。
-    final TextStyle charStyle = (widget.headwordTextStyle ??
-            theme.textTheme.bodyLarge ??
-            const TextStyle())
-        .copyWith(
+    final TextStyle charStyle = _dictionaryHeadwordTextStyle(context).copyWith(
       color: theme.colorScheme.onSurface,
       height: 1.5,
     );
@@ -79,6 +79,21 @@ class _ClipboardLookupTextPanelState extends State<ClipboardLookupTextPanel> {
           ],
         ),
       ),
+    );
+  }
+
+  TextStyle _dictionaryHeadwordTextStyle(BuildContext context) {
+    final TextStyle base = HibikiDesignTokens.of(context).type.pageTitle;
+    final double baseSize = base.fontSize ?? _dictionaryHeadwordBaseFontSize;
+    final double safeBaseSize = baseSize.isFinite && baseSize > 0
+        ? baseSize
+        : _dictionaryHeadwordBaseFontSize;
+    final double requestedScale = widget.dictionaryHeadwordScale;
+    final double safeScale =
+        requestedScale.isFinite && requestedScale > 0 ? requestedScale : 1.0;
+    return base.apply(
+      fontSizeFactor:
+          (_dictionaryHeadwordBaseFontSize / safeBaseSize) * safeScale,
     );
   }
 

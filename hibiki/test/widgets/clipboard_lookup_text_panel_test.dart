@@ -10,14 +10,14 @@ void main() {
   Widget buildSubject({
     required String text,
     required void Function(String query, Rect rect) onLookup,
-    TextStyle? headwordTextStyle,
+    double dictionaryHeadwordScale = 1.0,
   }) {
     return MaterialApp(
       home: Scaffold(
         body: ClipboardLookupTextPanel(
           text: text,
           onLookup: onLookup,
-          headwordTextStyle: headwordTextStyle,
+          dictionaryHeadwordScale: dictionaryHeadwordScale,
         ),
       ),
     );
@@ -138,9 +138,9 @@ void main() {
     expect(find.byType(HibikiCard), findsNothing);
   });
 
-  // BUG-175：剪贴板查词文字「小的可怜」。回归守卫——字号必须是正文级别
-  // （bodyLarge≈16），不能退回到 metadata 的 labelMedium（≈12）小字。
-  testWidgets('characters render at body-size font, not tiny metadata size',
+  // BUG-175 / TODO-222：剪贴板查词标题必须和词典弹窗 headword 标题同级，
+  // 不能退回到 metadata 的 labelMedium（≈12）或普通 bodyLarge（≈16）小字。
+  testWidgets('characters render at dictionary headword title size',
       (WidgetTester tester) async {
     late final ThemeData theme;
     await tester.pumpWidget(
@@ -161,33 +161,28 @@ void main() {
 
     final Text rendered = tester.widget<Text>(find.text('あ'));
     final double? fontSize = rendered.style?.fontSize;
-    final double bodyLarge = theme.textTheme.bodyLarge?.fontSize ?? 16;
     final double labelMedium = theme.textTheme.labelMedium?.fontSize ?? 12;
 
     expect(fontSize, isNotNull);
-    // 字号取正文 bodyLarge，明显大于此前的 labelMedium 小字。
-    expect(fontSize, equals(bodyLarge));
+    expect(fontSize, 26);
+    expect(rendered.style?.fontWeight, FontWeight.w600);
     expect(fontSize, greaterThan(labelMedium));
+    expect(fontSize, greaterThan(theme.textTheme.bodyLarge?.fontSize ?? 16));
   });
 
-  testWidgets('characters can render with caller-provided headword style',
+  testWidgets('characters scale with the dictionary font ratio',
       (WidgetTester tester) async {
-    const TextStyle headwordStyle = TextStyle(
-      fontSize: 26,
-      fontWeight: FontWeight.w600,
-    );
-
     await tester.pumpWidget(
       buildSubject(
         text: 'あ',
         onLookup: (_, __) {},
-        headwordTextStyle: headwordStyle,
+        dictionaryHeadwordScale: 1.5,
       ),
     );
 
     final Text rendered = tester.widget<Text>(find.text('あ'));
 
-    expect(rendered.style?.fontSize, 26);
+    expect(rendered.style?.fontSize, 39);
     expect(rendered.style?.fontWeight, FontWeight.w600);
   });
 
