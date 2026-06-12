@@ -15,6 +15,13 @@ import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
  */
 class PopupDictFlutterActivity : FlutterActivity() {
     companion object {
+        /**
+         * Intent extra carrying the tapped glyph index from the floating
+         * lyric/subtitle strip. Shared with FloatingLyricService so the two
+         * sides cannot drift apart on a magic string.
+         */
+        const val EXTRA_CHAR_INDEX: String = "charIndex"
+
         @Volatile
         private var webViewDataDirConfigured = false
 
@@ -50,14 +57,15 @@ class PopupDictFlutterActivity : FlutterActivity() {
         // entrypoint inside ensureEngine and Dart immediately polls
         // getInitialProcessText.
         val text: String = extractProcessText(intent).orEmpty()
-        PopupEngineHolder.setPendingText(text)
+        val charIndex: Int = extractCharIndex(intent)
+        PopupEngineHolder.setPendingText(text, charIndex)
         engineWasCold = PopupEngineHolder.ensureEngine(this)
         PopupEngineHolder.setOnFinish { runOnUiThread { finish() } }
         super.onCreate(savedInstanceState)
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
-            PopupEngineHolder.pushProcessText(text)
+            PopupEngineHolder.pushProcessText(text, charIndex)
         }
     }
 
@@ -70,7 +78,10 @@ class PopupDictFlutterActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        PopupEngineHolder.pushProcessText(extractProcessText(intent).orEmpty())
+        PopupEngineHolder.pushProcessText(
+            extractProcessText(intent).orEmpty(),
+            extractCharIndex(intent),
+        )
     }
 
     override fun onDestroy() {
@@ -89,5 +100,16 @@ class PopupDictFlutterActivity : FlutterActivity() {
             }
         }
         return null
+    }
+
+    /**
+     * Index of the tapped glyph inside the process text, supplied by the
+     * floating lyric/subtitle strip (FloatingLyricService.handleTap). Whole-
+     * sentence system lookups (PROCESS_TEXT / SEND / TRANSLATE) carry no index,
+     * so the default -1 makes the Dart popup search the full text — preserving
+     * the existing system-menu behaviour.
+     */
+    private fun extractCharIndex(intent: Intent?): Int {
+        return intent?.getIntExtra(EXTRA_CHAR_INDEX, -1) ?: -1
     }
 }
