@@ -39,6 +39,8 @@ class HighlightBridge {
   window.__hibikiHighlightBg = '#ffffff';
   window.__hibikiCustomHighlightColor = null;
   window.__hibikiHighlightRangeMap = {};
+  window.__hibikiHighlightRubyElements = [];
+  window.__hibikiFallbackHighlightRubyMap = {};
 
   function _luminance(hex) {
     var h = hex.replace('#','');
@@ -76,6 +78,78 @@ class HighlightBridge {
 
   function _root() {
     return document.body;
+  }
+
+  function _syncHighlightVars() {
+    var root = document.documentElement;
+    for (var ci = 0; ci < ALL_COLORS.length; ci++) {
+      var cn = ALL_COLORS[ci];
+      root.style.setProperty('--hoshi-hl-' + cn, _hlColor(cn));
+      root.style.setProperty(MARK_VAR_NAMES[cn], _hlMarkColor(cn));
+    }
+  }
+
+  function _rubyForNode(node) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return el && el.closest ? el.closest('ruby') : null;
+  }
+
+  function _removeFavoriteRubyClasses(ruby) {
+    if (!ruby || !ruby.classList) return;
+    for (var i = 0; i < ALL_COLORS.length; i++) {
+      ruby.classList.remove('hoshi-hl-' + ALL_COLORS[i] + '-ruby-active');
+    }
+  }
+
+  function _addRubyHighlightClass(ruby, color, bucket) {
+    if (!ruby || !ruby.classList) return;
+    color = color || 'yellow';
+    ruby.classList.add('hoshi-hl-' + color + '-ruby-active');
+    if (bucket && bucket.indexOf(ruby) < 0) bucket.push(ruby);
+  }
+
+  function _clearCssRubyHighlights() {
+    var elements = window.__hibikiHighlightRubyElements || [];
+    for (var i = 0; i < elements.length; i++) {
+      _removeFavoriteRubyClasses(elements[i]);
+    }
+    window.__hibikiHighlightRubyElements = [];
+  }
+
+  function _clearFallbackRubyHighlights() {
+    var map = window.__hibikiFallbackHighlightRubyMap || {};
+    for (var id in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, id)) continue;
+      var elements = map[id].elements || [];
+      for (var i = 0; i < elements.length; i++) {
+        _removeFavoriteRubyClasses(elements[i]);
+      }
+    }
+    window.__hibikiFallbackHighlightRubyMap = {};
+  }
+
+  function _reapplyFallbackRubyHighlights() {
+    var map = window.__hibikiFallbackHighlightRubyMap || {};
+    var touched = [];
+    for (var id in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, id)) continue;
+      var elements = map[id].elements || [];
+      for (var i = 0; i < elements.length; i++) {
+        if (touched.indexOf(elements[i]) < 0) {
+          _removeFavoriteRubyClasses(elements[i]);
+          touched.push(elements[i]);
+        }
+      }
+    }
+    for (var id2 in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, id2)) continue;
+      var entry = map[id2];
+      var color = entry.color || 'yellow';
+      var rubyElements = entry.elements || [];
+      for (var j = 0; j < rubyElements.length; j++) {
+        _addRubyHighlightClass(rubyElements[j], color);
+      }
+    }
   }
 
   function _walker(root) {
@@ -151,7 +225,9 @@ class HighlightBridge {
 
   function _rebuildCssHighlightsNow() {
     _rebuildPending = false;
+    _clearCssRubyHighlights();
     var colorGroups = {};
+    var activeRubyElements = [];
     var rangeMap = window.__hibikiHighlightRangeMap;
     for (var id in rangeMap) {
       var entry = rangeMap[id];
@@ -160,23 +236,25 @@ class HighlightBridge {
       for (var i = 0; i < entry.ranges.length; i++) {
         colorGroups[color].push(entry.ranges[i]);
       }
+      var rubyElements = entry.rubyElements || [];
+      for (var ri = 0; ri < rubyElements.length; ri++) {
+        _addRubyHighlightClass(rubyElements[ri], color, activeRubyElements);
+      }
     }
     for (var ci = 0; ci < ALL_COLORS.length; ci++) {
       var c = ALL_COLORS[ci];
       var hlName = 'hoshi-hl-' + c;
       var ranges = colorGroups[c];
       if (ranges && ranges.length) {
-        CSS.highlights.set(hlName, new Highlight(...ranges));
+        var highlight = new Highlight(...ranges);
+        highlight.priority = 1;
+        CSS.highlights.set(hlName, highlight);
       } else {
         CSS.highlights.delete(hlName);
       }
     }
-    var root = document.documentElement;
-    for (var ci2 = 0; ci2 < ALL_COLORS.length; ci2++) {
-      var cn = ALL_COLORS[ci2];
-      root.style.setProperty('--hoshi-hl-' + cn, _hlColor(cn));
-      root.style.setProperty(MARK_VAR_NAMES[cn], _hlMarkColor(cn));
-    }
+    window.__hibikiHighlightRubyElements = activeRubyElements;
+    _syncHighlightVars();
   }
 
   function _rebuildCssHighlights() {
@@ -230,8 +308,10 @@ class HighlightBridge {
 
   // ── 应用高亮 ──
   window.__hibikiApplyHighlights = function(highlightsJson) {
+    _syncHighlightVars();
     if (window.__hoshiCssHighlightsSupported) {
       window.__hibikiHighlightRangeMap = {};
+      _clearCssRubyHighlights();
       if (!highlightsJson || highlightsJson.length === 0) {
         for (var i = 0; i < ALL_COLORS.length; i++) {
           CSS.highlights.delete('hoshi-hl-' + ALL_COLORS[i]);
@@ -241,9 +321,16 @@ class HighlightBridge {
       var map = _buildOffsetMap();
       for (var h = 0; h < highlightsJson.length; h++) {
         var hl = highlightsJson[h];
+        var color = hl.color || 'yellow';
         var groups = _buildGroups(map, hl.offset, hl.length);
         var ranges = [];
+        var rubyElements = [];
         for (var g = 0; g < groups.length; g++) {
+          var ruby = _rubyForNode(groups[g].node);
+          if (ruby) {
+            if (rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+            continue;
+          }
           try {
             var r = document.createRange();
             r.setStart(groups[g].node, groups[g].start);
@@ -251,15 +338,17 @@ class HighlightBridge {
             ranges.push(r);
           } catch (e) { console.warn('[hoshi-hl] range error:', e); }
         }
-        if (ranges.length) {
+        if (ranges.length || rubyElements.length) {
           window.__hibikiHighlightRangeMap[hl.id] = {
-            color: hl.color || 'yellow',
-            ranges: ranges
+            color: color,
+            ranges: ranges,
+            rubyElements: rubyElements
           };
         }
       }
       _rebuildCssHighlightsNow();
     } else {
+      _clearFallbackRubyHighlights();
       document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
         var parent = el.parentNode;
         while (el.firstChild) parent.insertBefore(el.firstChild, el);
@@ -276,16 +365,24 @@ class HighlightBridge {
         var hl = sorted[h];
         var groups = _buildGroups(map, hl.offset, hl.length);
         if (groups.length === 0) continue;
-        var color = _hlColor(hl.color || 'yellow');
-        var markColor = _hlMarkColor(hl.color || 'yellow');
+        var color = hl.color || 'yellow';
+        var highlightColor = _hlColor(color);
+        var markColor = _hlMarkColor(color);
+        var rubyElements = [];
         for (var g = groups.length - 1; g >= 0; g--) {
+          var ruby = _rubyForNode(groups[g].node);
+          if (ruby) {
+            if (rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+            continue;
+          }
           try {
             var r = document.createRange();
             r.setStart(groups[g].node, groups[g].start);
             r.setEnd(groups[g].node, groups[g].end);
             var span = document.createElement('span');
             span.setAttribute('data-highlight-id', hl.id);
-            span.style.backgroundColor = color;
+            span.className = 'hoshi-hl hoshi-hl-' + color;
+            span.style.backgroundColor = highlightColor;
             span.style.borderRadius = '2px';
             span.style.textDecorationLine = 'underline';
             span.style.textDecorationColor = markColor;
@@ -294,7 +391,14 @@ class HighlightBridge {
             r.surroundContents(span);
           } catch (e) { console.warn('[hoshi-hl] wrap error:', e); }
         }
+        if (rubyElements.length) {
+          window.__hibikiFallbackHighlightRubyMap[hl.id] = {
+            color: color,
+            elements: rubyElements
+          };
+        }
       }
+      _reapplyFallbackRubyHighlights();
     }
   };
 
@@ -339,6 +443,15 @@ class HighlightBridge {
       delete window.__hibikiHighlightRangeMap[id];
       _rebuildCssHighlights();
     } else {
+      var rubyEntry = window.__hibikiFallbackHighlightRubyMap[id];
+      if (rubyEntry) {
+        var rubyElements = rubyEntry.elements || [];
+        for (var i = 0; i < rubyElements.length; i++) {
+          _removeFavoriteRubyClasses(rubyElements[i]);
+        }
+        delete window.__hibikiFallbackHighlightRubyMap[id];
+        _reapplyFallbackRubyHighlights();
+      }
       var els = document.querySelectorAll('[data-highlight-id="' + id + '"]');
       els.forEach(function(el) {
         var parent = el.parentNode;
