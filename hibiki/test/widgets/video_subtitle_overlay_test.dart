@@ -99,9 +99,27 @@ void main() {
     expect(text.style!.fontSize, 36);
     expect(text.style!.fontWeight, FontWeight.w500);
     expect(text.style!.fontFamily, 'ReaderFont');
-    expect(text.style!.shadows, isNotNull);
-    expect(text.style!.shadows!.single.color, const Color(0xFF224466));
-    expect(text.style!.shadows!.single.blurRadius, 6);
-    expect(text.style!.shadows!.single.offset, const Offset(0, 6));
+    // BUG-221: 阴影是贴合文字四周的对称描边/光晕（八方向），不再是单个
+    // 向下偏移 Offset(0, thickness) 的 drop shadow（thickness 越大越「掉」、
+    // 换句时与字身分离像残留）。
+    final List<Shadow> shadows = text.style!.shadows!;
+    expect(shadows.length, greaterThan(1));
+    for (final Shadow s in shadows) {
+      expect(s.color, const Color(0xFF224466));
+      expect(s.blurRadius, 6); // blurRadius == thickness
+    }
+    // 描边对称：x 偏移与 y 偏移的和都为 0（八向相互抵消），且不存在
+    // 任何「offset==(0, thickness)」的纯向下投影。
+    final double sumDx =
+        shadows.fold(0.0, (double a, Shadow s) => a + s.offset.dx);
+    final double sumDy =
+        shadows.fold(0.0, (double a, Shadow s) => a + s.offset.dy);
+    expect(sumDx, moreOrLessEquals(0, epsilon: 1e-6));
+    expect(sumDy, moreOrLessEquals(0, epsilon: 1e-6));
+    expect(
+      shadows.any((Shadow s) => s.offset == const Offset(0, 6)),
+      isFalse,
+      reason: '不应再有单向下方 Offset(0, thickness) 的投影',
+    );
   });
 }

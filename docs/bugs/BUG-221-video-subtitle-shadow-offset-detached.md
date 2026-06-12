@@ -1,0 +1,9 @@
+## BUG-221 · 视频字幕阴影单向下投影像残留/不跟随
+- **报告**：2026-06-12（用户：字幕阴影是不是没跟随字幕、总有阴影残留）
+- **真实性**：✅ 真 bug（观感问题，非真实残影/状态错误）——根因 `hibiki/lib/src/media/video/video_subtitle_overlay.dart:349-358`（修复前）。字幕字符的 `TextStyle.shadows` 是单个 `Shadow(blurRadius: thickness, offset: Offset(0, thickness))` 的纯向下 drop shadow（thickness 由 `video_subtitle_style.dart:124 resolveShadowThickness` 解析，clamp 0..12，最大 12px）。阴影只往下方偏移、不包字身，thickness 越大阴影越「掉」在文字下面；换句/移动字幕时阴影与字身分离，观感像「阴影没跟住、总有残留」。用户确认：①未开字幕模糊 ②不确定切句还是移动 ③移动端——排除真实残影，定性为 offset 向下投影的观感问题。
+- **[x] ① 已修复** — 阴影从「单向下方 drop shadow」改为「贴合文字四周的八方向对称描边/光晕」（ASS/asbplayer 式 outline）。新增纯函数 `hibiki/lib/src/media/video/video_subtitle_style.dart` 顶层 `buildSubtitleShadows(Color, double)`：thickness<=0 返回空列表；正粗细生成上/下/左/右 + 四对角共 8 个 Shadow，偏移半径 `thickness/2`（对角乘 cos45°≈0.707 归一成圆形描边），`blurRadius=thickness` 软化成贴合字身的光晕；八向对称 → 合成围绕文字、无单向掉落。`video_subtitle_overlay.dart` `_styleForGrapheme` 的 shadows 改调本函数。保留 `shadowColor`/`shadowThickness` 用户设置语义（thickness=描边强度，0=无描边）。提交：（见报告末）
+- **[x] ② 已加自动化测试** —
+  - 纯逻辑单测 `hibiki/test/media/video/video_subtitle_style_test.dart` 新增 group `buildSubtitleShadows (BUG-221 对称描边而非单向投影)`：thickness<=0 无描边；正粗细生成 8 个同色同 blurRadius 阴影且偏移向量求和为零（对称）、绝无 `Offset(0, thickness)` 纯向下投影、绝无 dx==0 且 |dy|>=thickness 的纯竖直大偏移、上下左右四正交方向都覆盖（含旧实现完全没有的「上」方向）。
+  - widget 行为测试 `hibiki/test/widgets/video_subtitle_overlay_test.dart` 的「uses themed asbplayer-style bold text shadow」用例断言同步更新：从 `shadows.single.offset == Offset(0, 6)` 改为断言多阴影、对称（sumDx/sumDy≈0）、不含 `Offset(0,6)`。
+  - 验证：`cd hibiki && flutter test` 全量 4291 passed / 2 skipped（预存 golden 门控）/ 0 failed。
+- **备注**：dev=True，真机看观感（移动端字幕阴影应围绕文字四周成描边，不再像掉在下方）。源码守卫覆盖逻辑正确性。本改动只动 `video_subtitle_overlay.dart`（shadows 一处）+ `video_subtitle_style.dart`（新增纯函数），未碰 hover/blur 逻辑（TODO-161）、未碰 `video_hibiki_page.dart`（TODO-149 在改）。编号 221 由 worktree base develop@b07ad082b 取下一空号；若 integration 发现与并发 agent 撞号，由 integration 改号。
