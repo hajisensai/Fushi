@@ -90,6 +90,25 @@ void main() {
       );
       expect(normalizeReleaseVersionTag('debug-abc1234'), isNull);
     });
+
+    test('same installed debug run with build metadata is not newer again', () {
+      expect(
+        isUpdateVersionNewer(
+          '0.5.4-debug.37',
+          '0.5.4-debug.37+37',
+          UpdateChannel.debug,
+        ),
+        isFalse,
+      );
+      expect(
+        isUpdateVersionNewer(
+          '0.5.4-debug.38',
+          '0.5.4-debug.37',
+          UpdateChannel.debug,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('releaseMatchesUpdateChannel', () {

@@ -88,6 +88,19 @@ void main() {
     expect(workflow, contains(r'BUILD_VERSION_NAME="${TAG#v}"'));
     expect(
         workflow, contains(r'BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"'));
+    expect(workflow, contains('flutter build windows --release'));
+    expect(
+      workflow,
+      contains(
+        r'--build-name "${{ steps.channel.outputs.build_version_name }}"',
+      ),
+      reason: 'installed Windows debug build must report the debug run version',
+    );
+    expect(
+      workflow,
+      contains(r'--build-number "${{ github.run_number }}"'),
+      reason: 'Windows version resource needs a monotonic numeric build suffix',
+    );
     expect(
       workflow,
       contains(

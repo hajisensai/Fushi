@@ -170,7 +170,10 @@ jobs:
           bash ci/apply-patches.sh
       - name: Build Windows release
         working-directory: hibiki
-        run: flutter build windows --release
+        run: >-
+          flutter build windows --release
+          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-number "${{ github.run_number }}"
       - name: Download ffmpeg-min (Windows)
         id: ffmpeg_min
         shell: bash
