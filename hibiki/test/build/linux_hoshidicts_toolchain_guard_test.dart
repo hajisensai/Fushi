@@ -27,10 +27,26 @@ void main() {
     expect(linuxJob, contains('#include <expected>'));
     expect(linuxJob, contains('__cpp_lib_expected'));
     expect(linuxJob, contains(r'"$CXX" -std=c++23'));
+    expect(linuxJob, contains('Flutter Linux CMake toolchain shim'));
+    expect(linuxJob, contains(r'exec gcc-14 "$@"'));
+    expect(linuxJob, contains(r'exec g++-14 "$@"'));
+    expect(
+      linuxJob,
+      contains(r'PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH"'),
+    );
+    expect(linuxJob, contains('flutter build linux --debug --config-only'));
+    expect(linuxJob, contains('CMAKE_CXX_COMPILER_ID:INTERNAL=GNU'));
+    expect(linuxJob, contains('CMAKE_CXX_COMPILER:FILEPATH='));
     expect(
       linuxJob.indexOf('Verify Linux C++23 compiler'),
       lessThan(linuxJob.indexOf('Build Linux (debug)')),
       reason: 'fail fast before Flutter configures CMake with the toolchain.',
+    );
+    expect(
+      linuxJob.indexOf('Flutter Linux CMake toolchain shim'),
+      lessThan(linuxJob.indexOf('Build Linux (debug)')),
+      reason:
+          'Flutter hardcodes CC=clang/CXX=clang++; shim must exist before build.',
     );
   });
 }
