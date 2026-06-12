@@ -277,6 +277,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 唤醒控制条用的合成 hover 设备 id（[_pokeControlsVisible]）。取一个不与真实
   /// 鼠标/触控设备号冲突的固定值，使重复派发落在同一逻辑设备上。
   static const int _syntheticHoverDevice = 0x6869626B; // 'hibk'
+
+  /// 合成 hover 位置的 ±1px 抖动开关（TODO-148/BUG-212）。Flutter `MouseTracker`
+  /// 对**同一设备落在同一坐标**的连续 hover 会去重（位置没变就不再回调 onHover），
+  /// 连按快进 / 跳句时 [_pokeControlsVisible] 每次都派发到控制条**固定中心点**，第二
+  /// 次起 media_kit 的 `MouseRegion.onHover` 不再触发、隐藏 `Timer` 不续命，控制条
+  /// 仍只活 2 秒就消失。每次派发翻转此标志、把 x 偏 ±1px，使坐标始终变化，强制
+  /// MouseTracker 每次都回调 onHover 续命。仅 1px 抖动不会偏出控制条命中区。
+  bool _pokeParity = false;
   static const double _volumeStep = 5.0;
 
   // TODO-057: 视频左半区竖滑调屏幕亮度、右半区竖滑调音量。手势 + 指示器复用
@@ -1399,9 +1407,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
     final Offset center =
         renderObject.localToGlobal(renderObject.size.center(Offset.zero));
+    // ±1px 抖动 x 坐标（TODO-148/BUG-212）：连续派发到同一坐标会被 MouseTracker
+    // 去重、media_kit onHover 不再触发；每次翻转让坐标始终变化，强制每次都续命
+    // 隐藏定时。1px 仍稳落控制条命中区内。
+    _pokeParity = !_pokeParity;
+    final Offset pokePosition =
+        Offset(center.dx + (_pokeParity ? 1.0 : -1.0), center.dy);
     GestureBinding.instance.handlePointerEvent(
       PointerHoverEvent(
-        position: center,
+        position: pokePosition,
         // 复用一个稳定的合成设备 id，避免与真实鼠标/触控设备冲突。
         device: _syntheticHoverDevice,
         kind: PointerDeviceKind.mouse,
@@ -3930,45 +3944,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: _videoWithSubtitlePanel(
         controller,
         Video(
-            controller: videoController,
-            // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-            // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-            // 快捷键（见 [_refocusVideo]）。
-            focusNode: _videoFocusNode,
-            // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
-            // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
-            // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
-            // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
-            // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
-            // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
-            // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
-            // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
-            // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
-            subtitleViewConfiguration:
-                const SubtitleViewConfiguration(visible: false),
-            // 窗口模式画面占满媒体框、无 letterbox/pillarbox 黑边（TODO-122）。
-            // 根因：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
-            // 两侧补黑（[fill]）。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] →
-            // window_manager `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**
-            // 时（WM_SIZING）约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例
-            // 不等于视频，contain 仍留黑边（平台限制，不侵入式 setSize 无法让当前窗口贴合）。
-            // 用户要求「占满左右上下」，故窗口模式用 `BoxFit.cover` 铺满、超出部分裁切。配合
-            // 比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁
-            // 画面边缘（这是「占满」的取舍）。字幕是独立 overlay 层（[VideoSubtitleOverlay]，
-            // 不在 [Video] 内）不受裁切影响。全屏路由的 Video 仍走 notifier 的 `fit`（默认
-            // contain），不受此处影响。
-            fit: BoxFit.cover,
-            // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
-            // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
-            fill: Colors.black,
-            // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
-            // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
-            // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
-            controls: (VideoState state) =>
-                _buildVideoControls(state, controller),
-          ),
+          controller: videoController,
+          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+          // 快捷键（见 [_refocusVideo]）。
+          focusNode: _videoFocusNode,
+          // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
+          // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
+          // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
+          // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
+          // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
+          // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
+          // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
+          // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
+          // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
+          subtitleViewConfiguration:
+              const SubtitleViewConfiguration(visible: false),
+          // 窗口模式画面占满媒体框、无 letterbox/pillarbox 黑边（TODO-122）。
+          // 根因：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
+          // 两侧补黑（[fill]）。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] →
+          // window_manager `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**
+          // 时（WM_SIZING）约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例
+          // 不等于视频，contain 仍留黑边（平台限制，不侵入式 setSize 无法让当前窗口贴合）。
+          // 用户要求「占满左右上下」，故窗口模式用 `BoxFit.cover` 铺满、超出部分裁切。配合
+          // 比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁
+          // 画面边缘（这是「占满」的取舍）。字幕是独立 overlay 层（[VideoSubtitleOverlay]，
+          // 不在 [Video] 内）不受裁切影响。全屏路由的 Video 仍走 notifier 的 `fit`（默认
+          // contain），不受此处影响。
+          fit: BoxFit.cover,
+          // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
+          // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
+          fill: Colors.black,
+          // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+          // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+          // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
+          controls: (VideoState state) =>
+              _buildVideoControls(state, controller),
         ),
-      );
+      ),
+    );
   }
 
   /// media_kit `controls` builder：默认桌面控制条 + 可点字幕 [VideoSubtitleOverlay]
