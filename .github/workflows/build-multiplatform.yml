@@ -91,6 +91,9 @@ jobs:
   # Linux gates the GTK/evdev desktop build path.
   linux:
     runs-on: ubuntu-latest
+    env:
+      CC: gcc-14
+      CXX: g++-14
     steps:
       - uses: actions/checkout@v6
       - name: Install Linux build deps
@@ -98,7 +101,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             ninja-build clang cmake pkg-config \
-            libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev libstdc++-12-dev
+            gcc-14 g++-14 libstdc++-14-dev \
+            libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev
+      - name: Verify Linux C++23 compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$CC" --version
+          "$CXX" --version
+          cat > /tmp/hoshidicts_expected.cpp <<'CPP'
+          #include <expected>
+          #ifndef __cpp_lib_expected
+          #error __cpp_lib_expected missing
+          #endif
+          int main() {
+            std::expected<int, int> ok = 23;
+            std::expected<int, int> fail = std::unexpected(1);
+            return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
+          }
+          CPP
+          "$CXX" -std=c++23 /tmp/hoshidicts_expected.cpp -o /tmp/hoshidicts_expected
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
