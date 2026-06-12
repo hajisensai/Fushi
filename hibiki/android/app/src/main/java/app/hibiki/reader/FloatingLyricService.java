@@ -298,7 +298,7 @@ public class FloatingLyricService extends BaseFloatingService {
         // a tap-to-lookup word card with no forced search keyboard — matching
         // every other lookup surface. The 0.5.0 Kotlin rewrite migrated the
         // system PROCESS_TEXT entry points but left this strip pointing at the
-        // old native Activity (BUG-212).
+        // old native Activity (BUG-214).
         Intent intent = new Intent(this, PopupDictFlutterActivity.class);
         intent.putExtra(Intent.EXTRA_PROCESS_TEXT, currentText);
         intent.putExtra(PopupDictFlutterActivity.EXTRA_CHAR_INDEX, index);

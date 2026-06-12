@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Source-scan guards for BUG-212: the Android floating lyric/subtitle strip
+/// Source-scan guards for BUG-214: the Android floating lyric/subtitle strip
 /// lookup regressed in 0.5.0 (commit 0248a0260, "rewrite PopupDict from Java to
 /// Kotlin"). The Kotlin rewrite migrated the system PROCESS_TEXT entry points to
 /// the keyboard-free Flutter popup (PopupDictFlutterActivity) but left
@@ -26,7 +26,7 @@ void main() {
   String read(String relative) =>
       File('$androidRoot/$relative').readAsStringSync();
 
-  group('BUG-212 floating lyric lookup charIndex wiring', () {
+  group('BUG-214 floating lyric lookup charIndex wiring', () {
     test(
       'FloatingLyricService routes the tap into the Flutter popup, not the '
       'deactivated native PopupDictActivity, and ships the tapped charIndex',
@@ -90,7 +90,7 @@ void main() {
 
     test(
       'PopupEngineHolder forwards the real charIndex to Dart instead of the '
-      'hardcoded -1 it carried before BUG-212',
+      'hardcoded -1 it carried before BUG-214',
       () {
         final String holder = read('PopupEngineHolder.kt');
 
