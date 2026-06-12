@@ -8,6 +8,7 @@ import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/utils.dart';
@@ -17,6 +18,7 @@ VideoQuickSettingsSheet _sheet({
   void Function(double)? onSetSpeed,
   void Function(VideoMpvConfig)? onMpvConfigChanged,
   void Function(VideoShaderTier tier, bool highQuality)? onSelectShaderTier,
+  void Function(VideoFitMode mode)? onVideoFitModeChanged,
   double uiScale = 1.0,
   int initialDelayMs = 0,
 }) {
@@ -41,6 +43,9 @@ VideoQuickSettingsSheet _sheet({
     onMpvConfigChanged: (VideoMpvConfig c) async => onMpvConfigChanged?.call(c),
     initialLockWindowAspectRatio: true,
     onLockWindowAspectRatioChanged: (_) async {},
+    initialVideoFitMode: VideoFitMode.cover,
+    onVideoFitModeChanged: (VideoFitMode mode) async =>
+        onVideoFitModeChanged?.call(mode),
     uiScale: uiScale,
   );
 }
@@ -599,5 +604,48 @@ void main() {
         reason: '倍速不得回退到 16 段 segmented 条');
     expect(src, isNot(contains('_speedPresets')));
     expect(src, contains('_speedDivisions = 15'), reason: '滑条档位须与旧 0.1 步档位等价');
+  });
+
+  // ── TODO-152 子B：画面缩放/比例设置（窗口 + 全屏 Video fit 同源偏好） ──────
+
+  testWidgets('playback detail shows the picture-fit picker (TODO-152 子B)',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    // 默认进 playback 详情：画面缩放行常驻（三选：占满/适应/拉伸）。
+    // picker 行（与 hwdec 同款）会为测宽离屏复刻一份标题文本 → findsWidgets。
+    expect(find.text(t.video_setting_picture_fit), findsWidgets);
+    final AdaptiveSettingsPickerRow<VideoFitMode> row =
+        tester.widget<AdaptiveSettingsPickerRow<VideoFitMode>>(
+      find.byType(AdaptiveSettingsPickerRow<VideoFitMode>),
+    );
+    expect(row.selected, VideoFitMode.cover);
+    expect(row.options.map((o) => o.value).toList(), <VideoFitMode>[
+      VideoFitMode.cover,
+      VideoFitMode.contain,
+      VideoFitMode.fill,
+    ]);
+  });
+
+  testWidgets('picking a picture-fit mode drives onVideoFitModeChanged',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    VideoFitMode? picked;
+    await _pump(
+      tester,
+      _sheet(onVideoFitModeChanged: (VideoFitMode mode) => picked = mode),
+    );
+
+    // 选「适应（加黑边）」= contain → 即时落回调（无保存按钮）。
+    final AdaptiveSettingsPickerRow<VideoFitMode> row =
+        tester.widget<AdaptiveSettingsPickerRow<VideoFitMode>>(
+      find.byType(AdaptiveSettingsPickerRow<VideoFitMode>),
+    );
+    row.onChanged(VideoFitMode.contain);
+    await tester.pump();
+    expect(picked, VideoFitMode.contain);
   });
 }

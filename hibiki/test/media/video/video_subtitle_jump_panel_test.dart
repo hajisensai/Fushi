@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 AudioCue _cue(int i, int s, int e, String text) => AudioCue()
@@ -58,6 +59,9 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
         title: 'Subtitle list',
         emptyHint: 'empty',
@@ -84,6 +88,9 @@ void main() {
         controller: controller,
         onTapCue: (AudioCue cue) => tapped = cue,
         onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
         title: 'Subtitle list',
         emptyHint: 'empty',
@@ -111,6 +118,9 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
         title: 'Subtitle list',
         emptyHint: 'empty',
@@ -147,6 +157,9 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
         title: 'Subtitle list',
         emptyHint: 'No subtitles loaded',
@@ -165,6 +178,9 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () => closed = true,
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),
         title: 'Subtitle list',
         emptyHint: 'empty',
@@ -174,5 +190,175 @@ void main() {
       await tester.pump();
       expect(closed, isTrue);
     });
+
+    // TODO-152 sub-A: inline action buttons (jump/copy/favorite) + header toolbar.
+
+    testWidgets('current cue row shows inline jump/copy/favorite buttons', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha'),
+        _cue(1, 2000, 3000, 'beta'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      // Selecting the current cue keeps its inline three buttons visible.
+      controller.debugUpdateCueForPosition(500);
+      await tester.pump();
+
+      expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+      expect(find.byIcon(Icons.content_copy_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.star_border), findsOneWidget);
+    });
+
+    testWidgets('inline copy button fires onCopyCue with the row cue', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'copy me')]);
+      AudioCue? copied;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (AudioCue c) => copied = c,
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      controller.debugUpdateCueForPosition(500);
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.content_copy_outlined));
+      await tester.pump();
+      expect(copied, isNotNull);
+      expect(copied!.text, 'copy me');
+    });
+
+    testWidgets(
+        'inline favorite button fires onFavoriteCue + filled star when '
+        'favorited', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'fav me')]);
+      AudioCue? favorited;
+      bool isFav = false;
+
+      VideoSubtitleJumpPanel panel() => VideoSubtitleJumpPanel(
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (_) {},
+            onFavoriteCue: (AudioCue c) async => favorited = c,
+            isCueFavorited: (_) => isFav,
+            onClose: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          );
+
+      await tester.pumpWidget(_wrap(panel()));
+      controller.debugUpdateCueForPosition(500);
+      await tester.pump();
+
+      // Not favorited yet -> hollow star.
+      expect(find.byIcon(Icons.star_border), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.star_border));
+      await tester.pump();
+      expect(favorited, isNotNull);
+      expect(favorited!.text, 'fav me');
+
+      // Favorited state rebuild -> filled star.
+      isFav = true;
+      await tester.pumpWidget(_wrap(panel()));
+      controller.debugUpdateCueForPosition(500);
+      await tester.pump();
+      expect(find.byIcon(Icons.star), findsOneWidget);
+    });
+
+    testWidgets('header toolbar has font A-/A+ and auto-scroll toggle', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      // Font step buttons + auto-scroll (default on -> filled icon).
+      expect(find.byIcon(Icons.text_decrease), findsOneWidget);
+      expect(find.byIcon(Icons.text_increase), findsOneWidget);
+      expect(find.byIcon(Icons.vertical_align_center), findsOneWidget);
+
+      // Toggle auto-scroll off -> pause icon.
+      await tester.tap(find.byIcon(Icons.vertical_align_center));
+      await tester.pump();
+      expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
+    });
+
+    testWidgets('larger font button enlarges row text', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      double fontOf(String text) =>
+          tester.widget<Text>(find.text(text)).style!.fontSize!;
+      final double before = fontOf('sized');
+
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pump();
+      expect(fontOf('sized'), greaterThan(before),
+          reason: 'A+ enlarges row font (local transient step)');
+    });
+  });
+
+  // Source guard: inline tooltips wire to existing i18n keys; copy toast reuses
+  // copied_to_clipboard (no new redundant copied key).
+  test('source guard: jump panel inline action i18n keys exist', () {
+    expect(t.video_subtitle_list_jump, isNotEmpty);
+    expect(t.video_subtitle_list_font_smaller, isNotEmpty);
+    expect(t.video_subtitle_list_font_larger, isNotEmpty);
+    expect(t.video_subtitle_list_auto_scroll, isNotEmpty);
+    expect(t.copy, isNotEmpty);
+    expect(t.collection_sentence, isNotEmpty);
   });
 }

@@ -1785,6 +1785,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoLockWindowAspectRatio(bool value) =>
       prefsRepo.setVideoLockWindowAspectRatio(value);
 
+  /// 视频画面缩放/比例模式（窗口+全屏 Video fit；默认 cover=保持比例占满无黑边）。
+  VideoFitMode get videoFitMode => prefsRepo.videoFitMode;
+
+  Future<void> setVideoFitMode(VideoFitMode mode) =>
+      prefsRepo.setVideoFitMode(mode);
+
   String get videoAsbplayerConfig => prefsRepo.videoAsbplayerConfig;
 
   Future<void> setVideoAsbplayerConfig(String json) =>

@@ -1556,5 +1556,15 @@
     "shortcut_action_video_toggle_cross_subtitle_recording": "Toggle Cross-Subtitle Recording",
     "shortcut_action_video_toggle_subtitle_blur": "Toggle Subtitle Blur",
     "shortcut_action_video_escape": "Exit / Back",
-    "book_edit_author": "Author"
+    "book_edit_author": "Author",
+    "video_setting_lock_window_aspect": "Lock window to video aspect",
+    "video_setting_picture_fit": "Picture scaling",
+    "video_setting_picture_fit_hint": "How the picture fills the player area",
+    "video_setting_picture_fit_cover": "Fill (keep ratio, crop edges)",
+    "video_setting_picture_fit_contain": "Fit (keep ratio, add black bars)",
+    "video_setting_picture_fit_fill": "Stretch to fill",
+    "video_subtitle_list_font_smaller": "Smaller text",
+    "video_subtitle_list_font_larger": "Larger text",
+    "video_subtitle_list_auto_scroll": "Auto-scroll",
+    "video_subtitle_list_jump": "Jump to this line"
 }

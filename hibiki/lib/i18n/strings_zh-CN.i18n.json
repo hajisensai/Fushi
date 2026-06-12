@@ -1556,5 +1556,15 @@
     "shortcut_action_video_toggle_cross_subtitle_recording": "切换跨字幕录制",
     "shortcut_action_video_toggle_subtitle_blur": "切换字幕模糊",
     "shortcut_action_video_escape": "退出/返回",
-    "book_edit_author": "作者"
+    "book_edit_author": "作者",
+    "video_setting_lock_window_aspect": "锁定窗口为视频比例",
+    "video_setting_picture_fit": "画面缩放",
+    "video_setting_picture_fit_hint": "画面如何填充播放区域",
+    "video_setting_picture_fit_cover": "占满（保持比例，裁切边缘）",
+    "video_setting_picture_fit_contain": "适应（保持比例，加黑边）",
+    "video_setting_picture_fit_fill": "拉伸填充",
+    "video_subtitle_list_font_smaller": "缩小字号",
+    "video_subtitle_list_font_larger": "放大字号",
+    "video_subtitle_list_auto_scroll": "自动滚动",
+    "video_subtitle_list_jump": "跳转到此句"
 }

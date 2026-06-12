@@ -25,6 +25,45 @@ enum DesktopClipboardWindowMode {
   }
 }
 
+/// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
+///
+/// 与 mpv 内置几何（`video_setting_mpv_aspect`/`zoom`/`panscan`）是两个不同层：这里只决定
+/// 解码后的画面如何映射进媒体框，不改 mpv 渲染管线。窗口模式与全屏路由共用本偏好。
+/// - [cover]：保持比例铺满媒体框、超出部分裁切（默认，无 letterbox/pillarbox 黑边，
+///   即用户要的「像 mpv 保持比例且无黑边」稳态）。
+/// - [contain]：保持比例完整显示，比例不匹配时上下/左右补黑边（画面缩窄时加黑，
+///   即用户要的「画面缩窄时上下加黑」）。
+/// - [fill]：拉伸填满整个媒体框、不保持比例（变形）。
+enum VideoFitMode {
+  cover('cover'),
+  contain('contain'),
+  fill('fill');
+
+  const VideoFitMode(this.storageValue);
+
+  final String storageValue;
+
+  static VideoFitMode fromStorage(String value) {
+    for (final VideoFitMode mode in VideoFitMode.values) {
+      if (mode.storageValue == value) return mode;
+    }
+    return VideoFitMode.cover;
+  }
+}
+
+/// 把 [VideoFitMode] 映射成 Flutter [BoxFit]（纯函数，是窗口/全屏 [Video] fit 与单测的
+/// 共享真相源）。穷举枚举无 default 分支，新增模式编译期强制补齐。
+BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
+  switch (mode) {
+    case VideoFitMode.cover:
+      return BoxFit.cover;
+    case VideoFitMode.contain:
+      return BoxFit.contain;
+    case VideoFitMode.fill:
+      return BoxFit.fill;
+  }
+}
+
 class PreferencesRepository extends ChangeNotifier {
   PreferencesRepository(this._db);
 
@@ -405,6 +444,18 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoLockWindowAspectRatio(bool value) async {
     await setPref('video_lock_window_aspect_ratio', value);
+    notifyListeners();
+  }
+
+  /// 视频画面缩放/比例模式（窗口模式 + 全屏的 [Video] fit；默认 [VideoFitMode.cover]
+  /// = 保持比例占满无黑边，与旧硬编码 `BoxFit.cover` 行为一致 → 向后兼容）。
+  VideoFitMode get videoFitMode => VideoFitMode.fromStorage(
+        getPref('video_fit_mode', defaultValue: VideoFitMode.cover.storageValue)
+            as String,
+      );
+
+  Future<void> setVideoFitMode(VideoFitMode mode) async {
+    await setPref('video_fit_mode', mode.storageValue);
     notifyListeners();
   }
 
