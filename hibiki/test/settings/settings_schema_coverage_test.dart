@@ -69,6 +69,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
   'syncBackup/Upload audiobook files': 'test/sync/sync_orchestrator_test.dart',
   'syncBackup/Sync local audio': 'test/sync/sync_orchestrator_test.dart',
+  // TODO-212: video destination items are behavior-heavy; schema coverage proves
+  // focus/change/persist/restore here, while these narrower probes guard their
+  // runtime consumption or the desktop/device seam.
+  'video/Immersive mode':
+      'test/pages/video_immersive_mode_levels_guard_test.dart + test/pages/video_statusbar_immersive_guard_test.dart',
+  'video/Picture scaling':
+      'test/pages/video_fit_mode_test.dart + test/pages/video_window_aspect_lock_static_test.dart',
+  'video/Double-tap seek':
+      'test/pages/video_double_tap_seek_guard_test.dart + test/pages/video_immersive_mode_levels_guard_test.dart',
+  'video/Lock window to video aspect':
+      'test/pages/video_window_aspect_lock_static_test.dart',
+  'video/Blur subtitles (immersion)':
+      'test/media/video/video_subtitle_overlay_test.dart + test/shortcuts/video_shortcut_registry_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
