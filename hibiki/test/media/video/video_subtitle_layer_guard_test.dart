@@ -26,6 +26,20 @@ void main() {
     return src.substring(start, end);
   }
 
+  final RegExp disabledSubtitleViewConfig = RegExp(
+    r'subtitleViewConfiguration:\s*const\s+'
+    r'SubtitleViewConfiguration\s*\(\s*visible:\s*false\s*,?\s*\)',
+  );
+  final RegExp noTrackThenSuppression = RegExp(
+    r'setSubtitleTrack\s*\(\s*SubtitleTrack\.no\(\)\s*\)[\s\S]*?'
+    r'applySubtitleMpvPropertiesToPlayer\s*\(\s*player\s*,\s*'
+    r'buildSubtitleSuppressionProperties\(\)\s*,?\s*\)',
+  );
+  final RegExp graphicVisibilityOverride = RegExp(
+    r'applySubtitleMpvPropertiesToPlayer\s*\(\s*player\s*,\s*'
+    r'buildGraphicSubtitleVisibilityProperties\(\)\s*,?\s*\)',
+  );
+
   group('video_hibiki_page disables media_kit built-in SubtitleView', () {
     final String src =
         File('lib/src/pages/implementations/video_hibiki_page.dart')
@@ -33,11 +47,7 @@ void main() {
 
     test('both Video widgets set subtitleViewConfiguration visible:false', () {
       // 两处 Video（窗口侧 + 全屏路由侧）都必须显式禁用内置 SubtitleView。
-      final RegExp visibleFalse = RegExp(
-        r'subtitleViewConfiguration:\s*\n?\s*'
-        r'const SubtitleViewConfiguration\(visible:\s*false\)',
-      );
-      final int count = visibleFalse.allMatches(src).length;
+      final int count = disabledSubtitleViewConfig.allMatches(src).length;
       expect(count, greaterThanOrEqualTo(2),
           reason: '窗口侧与全屏路由侧两个 Video 都要显式 visible:false，'
               '否则内置 SubtitleView 会把字幕渲染成不可点块叠在 overlay 上 '
@@ -57,10 +67,7 @@ void main() {
       );
       expect(body.contains('setSubtitleTrack(SubtitleTrack.no())'), isTrue,
           reason: 'load 仍需先把选中轨清成 no()');
-      expect(
-          body.contains(
-              'applySubtitleMpvPropertiesToPlayer(\n        player, buildSubtitleSuppressionProperties())'),
-          isTrue,
+      expect(noTrackThenSuppression.hasMatch(body), isTrue,
           reason: 'load 必须注入 sub-auto=no + sub-visibility=no，'
               '根除字幕轨异步就绪后被 mpv 自动重选的竞态 (BUG-190)');
     });
@@ -71,10 +78,7 @@ void main() {
         'Future<bool> selectEmbeddedGraphicTrack(',
         'Future<void> _waitUntilSubtitleTracksReady(',
       );
-      expect(
-          body.contains(
-              'applySubtitleMpvPropertiesToPlayer(\n        player, buildGraphicSubtitleVisibilityProperties())'),
-          isTrue,
+      expect(graphicVisibilityOverride.hasMatch(body), isTrue,
           reason: '图形 PGS 轨是字幕抑制的唯一例外：选轨后必须重开 sub-visibility，'
               '否则用户选了图形字幕却看不到 (回归 BUG-122)');
     });

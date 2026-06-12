@@ -102,7 +102,9 @@ void main() {
       'Future<List<SubtitleSource>> _subtitleSourcesForMenu(',
       'SubtitleSource? _firstMatching(',
     );
-    expect(helper.contains('listAllSubtitleSources(videoPath'), isTrue,
+    expect(
+        RegExp(r'listAllSubtitleSources\s*\(\s*videoPath\s*,').hasMatch(helper),
+        isTrue,
         reason: '菜单基础列表仍应来自当前视频的内封轨 + 同目录 sidecar');
     expect(helper.contains('includeCurrentPersistedSubtitleForMenu('), isTrue,
         reason: '当前持久化导入字幕的补入逻辑要走可行为测试的 helper');
