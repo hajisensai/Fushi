@@ -22,6 +22,21 @@ void main() {
     expect(src, contains('_externalLookupText = text'));
     expect(src, contains('_pushNestedPopup(query, localRect'));
     expect(
+      _withoutWhitespace(resultBody),
+      contains(
+        '26.0*'
+        '(appModel.dictionaryFontSize/appModel.defaultDictionaryFontSize)',
+      ),
+      reason: 'Clipboard lookup text should visually match the popup '
+          'headword size, which is 26px scaled by dictionary font size only.',
+    );
+    expect(
+      resultBody,
+      contains('headwordTextStyle:'),
+      reason: 'HomeDictionaryPage must pass a headword-level style into the '
+          'native clipboard strip instead of relying on its default body text.',
+    );
+    expect(
       resultBody,
       contains('Column('),
       reason: 'External lookup text must reserve layout space above results.',
@@ -58,3 +73,6 @@ String _functionSource(String source, String start, String end) {
   expect(endIndex, isNonNegative, reason: 'missing end marker: $end');
   return source.substring(startIndex, endIndex);
 }
+
+String _withoutWhitespace(String source) =>
+    source.replaceAll(RegExp(r'\s+'), '');

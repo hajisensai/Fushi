@@ -10,12 +10,14 @@ void main() {
   Widget buildSubject({
     required String text,
     required void Function(String query, Rect rect) onLookup,
+    TextStyle? headwordTextStyle,
   }) {
     return MaterialApp(
       home: Scaffold(
         body: ClipboardLookupTextPanel(
           text: text,
           onLookup: onLookup,
+          headwordTextStyle: headwordTextStyle,
         ),
       ),
     );
@@ -166,6 +168,27 @@ void main() {
     // 字号取正文 bodyLarge，明显大于此前的 labelMedium 小字。
     expect(fontSize, equals(bodyLarge));
     expect(fontSize, greaterThan(labelMedium));
+  });
+
+  testWidgets('characters can render with caller-provided headword style',
+      (WidgetTester tester) async {
+    const TextStyle headwordStyle = TextStyle(
+      fontSize: 26,
+      fontWeight: FontWeight.w600,
+    );
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'あ',
+        onLookup: (_, __) {},
+        headwordTextStyle: headwordStyle,
+      ),
+    );
+
+    final Text rendered = tester.widget<Text>(find.text('あ'));
+
+    expect(rendered.style?.fontSize, 26);
+    expect(rendered.style?.fontWeight, FontWeight.w600);
   });
 
   // BUG-175：剪贴板查词文字「默认居中了」。回归守卫——本组件占满父级宽度并

@@ -8,11 +8,13 @@ class ClipboardLookupTextPanel extends StatefulWidget {
     required this.onLookup,
     super.key,
     this.coordinateSpaceKey,
+    this.headwordTextStyle,
   });
 
   final String text;
   final void Function(String query, Rect localRect) onLookup;
   final GlobalKey? coordinateSpaceKey;
+  final TextStyle? headwordTextStyle;
 
   @override
   State<ClipboardLookupTextPanel> createState() =>
@@ -29,10 +31,11 @@ class _ClipboardLookupTextPanelState extends State<ClipboardLookupTextPanel> {
 
     final ThemeData theme = Theme.of(context);
     final List<String> chars = trimmed.characters.toList(growable: false);
-    // yomitan 观感：正文字号（bodyLarge）左对齐，不再用 metadata 的 labelMedium
-    // 小字。每个字符是独立可点 span，逐字保持原有点击/Shift 悬停查词行为。
-    final TextStyle charStyle =
-        (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
+    // 每个字符是独立可点 span，逐字保持原有点击/Shift 悬停查词行为。
+    final TextStyle charStyle = (widget.headwordTextStyle ??
+            theme.textTheme.bodyLarge ??
+            const TextStyle())
+        .copyWith(
       color: theme.colorScheme.onSurface,
       height: 1.5,
     );
