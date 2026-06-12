@@ -174,7 +174,24 @@ jobs:
 
           cache="build/linux/x64/debug/CMakeCache.txt"
           grep -F "CMAKE_CXX_COMPILER:FILEPATH=$RUNNER_TEMP/hibiki-linux-toolchain/clang++" "$cache"
-          grep -F "CMAKE_CXX_COMPILER_ID:INTERNAL=GNU" "$cache"
+          compiler_file="$(find build/linux/x64/debug/CMakeFiles -name CMakeCXXCompiler.cmake -print -quit)"
+          test -n "$compiler_file"
+          grep -F 'set(CMAKE_CXX_COMPILER_ID "GNU")' "$compiler_file"
+
+          cat > /tmp/hoshidicts_flutter_cmake_expected.cpp <<'CPP'
+          #include <expected>
+          #ifndef __cpp_lib_expected
+          #error __cpp_lib_expected missing
+          #endif
+          int main() {
+            std::expected<int, int> ok = 23;
+            std::expected<int, int> fail = std::unexpected(1);
+            return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
+          }
+          CPP
+          "$RUNNER_TEMP/hibiki-linux-toolchain/clang++" -std=c++23 \
+            /tmp/hoshidicts_flutter_cmake_expected.cpp \
+            -o /tmp/hoshidicts_flutter_cmake_expected
       - name: Build Linux (debug)
         working-directory: hibiki
         shell: bash

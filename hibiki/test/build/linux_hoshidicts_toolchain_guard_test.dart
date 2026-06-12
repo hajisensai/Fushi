@@ -35,8 +35,12 @@ void main() {
       contains(r'PATH="$RUNNER_TEMP/hibiki-linux-toolchain:$PATH"'),
     );
     expect(linuxJob, contains('flutter build linux --debug --config-only'));
-    expect(linuxJob, contains('CMAKE_CXX_COMPILER_ID:INTERNAL=GNU'));
     expect(linuxJob, contains('CMAKE_CXX_COMPILER:FILEPATH='));
+    expect(linuxJob, contains('CMakeCXXCompiler.cmake'));
+    expect(linuxJob, contains(r'set(CMAKE_CXX_COMPILER_ID "GNU")'));
+    expect(linuxJob,
+        contains(r'"$RUNNER_TEMP/hibiki-linux-toolchain/clang++" -std=c++23'));
+    expect(linuxJob, isNot(contains('CMAKE_CXX_COMPILER_ID:INTERNAL=GNU')));
     expect(
       linuxJob.indexOf('Verify Linux C++23 compiler'),
       lessThan(linuxJob.indexOf('Build Linux (debug)')),
