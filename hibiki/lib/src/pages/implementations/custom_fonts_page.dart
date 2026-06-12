@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
@@ -6,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
@@ -59,6 +61,151 @@ class CustomFontEntry {
         path: path,
         enabled: enabled ?? this.enabled,
       );
+}
+
+@visibleForTesting
+class CustomFontCatalogRow {
+  CustomFontCatalogRow({
+    required this.id,
+    required this.name,
+    required this.path,
+    required Map<FontTarget, bool> targetEnabled,
+  }) : targetEnabled = Map<FontTarget, bool>.of(targetEnabled);
+
+  final String? id;
+  final String name;
+  final String? path;
+  final Map<FontTarget, bool> targetEnabled;
+
+  bool get isFile => path != null;
+
+  Set<FontTarget> get targets => targetEnabled.keys.toSet();
+
+  String get identity => '$name\u0000${path ?? ''}';
+
+  CustomFontEntry toCustomFontEntry(FontTarget target) => CustomFontEntry(
+        name: name,
+        path: path,
+        enabled: targetEnabled[target] ?? true,
+      );
+}
+
+@visibleForTesting
+List<CustomFontCatalogRow> customFontCatalogRowsFromState(
+  FontCatalogState state,
+) {
+  final Map<String, CustomFontCatalogRow> rowsById =
+      <String, CustomFontCatalogRow>{
+    for (final FontCatalogEntry font in state.fonts)
+      font.id: CustomFontCatalogRow(
+        id: font.id,
+        name: font.name,
+        path: font.path,
+        targetEnabled: <FontTarget, bool>{},
+      ),
+  };
+
+  for (final FontTarget target in FontTarget.values) {
+    final String targetKey = ReaderSettings.fontKeyForTarget(target);
+    for (final FontTargetFont row
+        in state.targets[targetKey] ?? const <FontTargetFont>[]) {
+      rowsById[row.fontId]?.targetEnabled[target] = row.enabled;
+    }
+  }
+
+  return <CustomFontCatalogRow>[
+    for (final FontCatalogEntry font in state.fonts)
+      if (rowsById[font.id] != null) rowsById[font.id]!,
+  ];
+}
+
+@visibleForTesting
+FontCatalogState customFontCatalogStateFromRows(
+  List<CustomFontCatalogRow> rows,
+) {
+  final Set<String> usedIds = <String>{};
+  int nextGeneratedId = _nextCatalogFontId(rows);
+
+  String idForRow(CustomFontCatalogRow row) {
+    final String? existing = row.id;
+    if (existing != null &&
+        existing.isNotEmpty &&
+        !usedIds.contains(existing)) {
+      usedIds.add(existing);
+      return existing;
+    }
+    while (usedIds.contains('font_$nextGeneratedId')) {
+      nextGeneratedId += 1;
+    }
+    final String generated = 'font_$nextGeneratedId';
+    usedIds.add(generated);
+    nextGeneratedId += 1;
+    return generated;
+  }
+
+  final List<FontCatalogEntry> fonts = <FontCatalogEntry>[];
+  final Map<FontTarget, List<FontTargetFont>> targetRows =
+      <FontTarget, List<FontTargetFont>>{
+    for (final FontTarget target in FontTarget.values)
+      target: <FontTargetFont>[],
+  };
+
+  for (final CustomFontCatalogRow row in rows) {
+    if (row.name.isEmpty) continue;
+    final String id = idForRow(row);
+    fonts.add(FontCatalogEntry(id: id, name: row.name, path: row.path));
+    for (final FontTarget target in FontTarget.values) {
+      final bool? enabled = row.targetEnabled[target];
+      if (enabled == null) continue;
+      targetRows[target]!.add(FontTargetFont(fontId: id, enabled: enabled));
+    }
+  }
+
+  return FontCatalogState(
+    fonts: fonts,
+    targets: <String, List<FontTargetFont>>{
+      for (final FontTarget target in FontTarget.values)
+        ReaderSettings.fontKeyForTarget(target): targetRows[target]!,
+    },
+  );
+}
+
+@visibleForTesting
+Map<String, List<Map<String, dynamic>>> customFontLegacyListsFromRows(
+  List<CustomFontCatalogRow> rows,
+) {
+  return <String, List<Map<String, dynamic>>>{
+    for (final FontTarget target in FontTarget.values)
+      ReaderSettings.fontKeyForTarget(target): <Map<String, dynamic>>[
+        for (final CustomFontCatalogRow row in rows)
+          if (row.targets.contains(target))
+            row.toCustomFontEntry(target).toMap(),
+      ],
+  };
+}
+
+@visibleForTesting
+bool customFontFileStillReferenced(
+  List<CustomFontCatalogRow> rows,
+  String filePath,
+) {
+  return rows.any((CustomFontCatalogRow row) => row.path == filePath);
+}
+
+int _nextCatalogFontId(List<CustomFontCatalogRow> rows) {
+  final RegExp generatedId = RegExp(r'^font_(\d+)$');
+  int next = 1;
+  for (final CustomFontCatalogRow row in rows) {
+    final String? id = row.id;
+    if (id == null) continue;
+    final RegExpMatch? match = generatedId.firstMatch(id);
+    final int? value =
+        match == null ? null : int.tryParse(match.group(1) ?? '');
+    if (value != null && value >= next) {
+      next = value + 1;
+    }
+  }
+  return next;
 }
 
 class _RecommendedFont {
@@ -403,23 +550,14 @@ class CustomFontsPage extends BasePage {
   BasePageState createState() => _CustomFontsPageState();
 }
 
+const String _readerSettingsPrefix = 'src:reader_ttu:';
+
+String _readerPrefKey(String shortKey) => '$_readerSettingsPrefix$shortKey';
+
 class _CustomFontsPageState extends BasePageState {
   ReaderSettings? _settings;
 
-  // HBK-AUDIT-116: typed in-memory model; converted to/from the persisted
-  // `List<Map<String, dynamic>>` only at the ReaderSettings boundary below.
-  List<CustomFontEntry> _fonts = [];
-
-  FontTarget get _target => (widget as CustomFontsPage).target;
-
-  String get _pageTitle => switch (_target) {
-        FontTarget.appUi => t.font_target_app_ui,
-        FontTarget.body => t.font_target_body,
-        FontTarget.dictionary => t.font_target_dictionary,
-      };
-
-  List<CustomFontEntry> _entriesFromSettings(ReaderSettings settings) =>
-      settings.fontsForTarget(_target).map(CustomFontEntry.fromMap).toList();
+  List<CustomFontCatalogRow> _fonts = [];
 
   @override
   void initState() {
@@ -430,28 +568,68 @@ class _CustomFontsPageState extends BasePageState {
       rs.refreshFromDb().then((_) {
         ReaderHibikiSource.readerSettings = rs;
         if (!mounted) return;
-        setState(() => _fonts = _entriesFromSettings(rs));
+        _loadFonts(rs);
       });
       _settings = rs;
     } else {
-      _fonts = _entriesFromSettings(_settings!);
+      _loadFonts(_settings!);
     }
   }
 
-  Future<void> _save() async {
-    await _settings!.setFontsForTarget(
-      _target,
-      _fonts.map((e) => e.toMap()).toList(),
+  Future<void> _loadFonts(ReaderSettings settings) async {
+    final FontCatalogState state = await _readCatalogState(settings);
+    if (!mounted) return;
+    setState(() => _fonts = customFontCatalogRowsFromState(state));
+  }
+
+  Future<FontCatalogState> _readCatalogState(ReaderSettings settings) async {
+    final String? catalogJson = await appModel.database.getPref(
+      _readerPrefKey(ReaderSettings.fontCatalogKey),
     );
-    // The app-wide UI font is resolved from the appUi target only; re-resolve it
-    // when that target changed. Body/dictionary changes apply live in their own
-    // WebViews (reader CSS / popup font injection) and must NOT clobber the UI
-    // font (TODO-049: the three targets are independent).
-    if (_target == FontTarget.appUi) {
-      await appModel.refreshAppFont();
-    } else if (_target == FontTarget.body) {
-      ReaderHibikiSource.onSettingsChangedLive?.call();
+    final String? targetsJson = await appModel.database.getPref(
+      _readerPrefKey(ReaderSettings.fontTargetsKey),
+    );
+    if (catalogJson != null && targetsJson != null) {
+      final FontCatalogState? state = FontCatalogState.tryParse(
+        catalogJson: catalogJson,
+        targetsJson: targetsJson,
+        targetKeys: <String>[
+          for (final FontTarget target in FontTarget.values)
+            ReaderSettings.fontKeyForTarget(target),
+        ],
+      );
+      if (state != null) return state;
     }
+    return FontCatalogState.fromLegacy(<String, List<Map<String, dynamic>>>{
+      for (final FontTarget target in FontTarget.values)
+        ReaderSettings.fontKeyForTarget(target):
+            settings.fontsForTarget(target),
+    });
+  }
+
+  Future<void> _save() async {
+    final FontCatalogState state = customFontCatalogStateFromRows(_fonts);
+    final Map<String, List<Map<String, dynamic>>> legacy =
+        customFontLegacyListsFromRows(_fonts);
+
+    await appModel.database.setPref(
+      _readerPrefKey(ReaderSettings.fontCatalogKey),
+      jsonEncode(state.toCatalogJson()),
+    );
+    await appModel.database.setPref(
+      _readerPrefKey(ReaderSettings.fontTargetsKey),
+      jsonEncode(state.toTargetsJson()),
+    );
+    for (final MapEntry<String, List<Map<String, dynamic>>> entry
+        in legacy.entries) {
+      await appModel.database.setPref(
+        _readerPrefKey(entry.key),
+        jsonEncode(entry.value),
+      );
+    }
+    await _settings!.refreshFromDb();
+    await appModel.refreshAppFont();
+    ReaderHibikiSource.onSettingsChangedLive?.call();
   }
 
   Directory get _fontsDir {
@@ -510,7 +688,12 @@ class _CustomFontsPageState extends BasePageState {
     final destPath = p.join(
         _fontsDir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}$ext');
     await srcFile.copy(destPath);
-    final entry = CustomFontEntry(name: name, path: destPath, enabled: true);
+    final entry = CustomFontCatalogRow(
+      id: null,
+      name: name,
+      path: destPath,
+      targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+    );
     if (mounted) {
       setState(() => _fonts.add(entry));
     } else {
@@ -615,8 +798,12 @@ class _CustomFontsPageState extends BasePageState {
           '${overrideName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}_${DateTime.now().millisecondsSinceEpoch}$ext',
         );
         File(destPath).writeAsBytesSync(entry.content as List<int>);
-        final fontEntry =
-            CustomFontEntry(name: overrideName, path: destPath, enabled: true);
+        final fontEntry = CustomFontCatalogRow(
+          id: null,
+          name: overrideName,
+          path: destPath,
+          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+        );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
         } else {
@@ -632,8 +819,12 @@ class _CustomFontsPageState extends BasePageState {
         final ext = p.extension(entry.name);
         final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
         File(destPath).writeAsBytesSync(entry.content as List<int>);
-        final fontEntry =
-            CustomFontEntry(name: baseName, path: destPath, enabled: true);
+        final fontEntry = CustomFontCatalogRow(
+          id: null,
+          name: baseName,
+          path: destPath,
+          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+        );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
         } else {
@@ -834,7 +1025,7 @@ class _CustomFontsPageState extends BasePageState {
   // system picker keyed only on system fonts (`path == null`), so a file font
   // and a system font sharing a name disagreed about what was "already added".
   Set<String> get _addedFontNames =>
-      _fonts.map((CustomFontEntry e) => e.name).toSet();
+      _fonts.map((CustomFontCatalogRow e) => e.name).toSet();
 
   Future<void> _openRecommended() async {
     final font = await Navigator.push<_RecommendedFont>(
@@ -858,17 +1049,22 @@ class _CustomFontsPageState extends BasePageState {
     );
     if (selected == null || !mounted) return;
     setState(() {
-      _fonts.add(CustomFontEntry(name: selected, path: null, enabled: true));
+      _fonts.add(CustomFontCatalogRow(
+        id: null,
+        name: selected,
+        path: null,
+        targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+      ));
     });
     _save();
   }
 
   Future<void> _removeFont(int index) async {
-    final CustomFontEntry entry = _fonts[index];
+    final CustomFontCatalogRow entry = _fonts[index];
     final String? filePath = entry.path;
     setState(() => _fonts.removeAt(index));
     await _save();
-    if (filePath != null) {
+    if (filePath != null && !customFontFileStillReferenced(_fonts, filePath)) {
       try {
         final f = File(filePath);
         if (await f.exists()) await f.delete();
@@ -889,9 +1085,14 @@ class _CustomFontsPageState extends BasePageState {
     _save();
   }
 
-  void _toggleFont(int index) {
+  void _toggleTarget(int index, FontTarget target) {
     setState(() {
-      _fonts[index] = _fonts[index].copyWith(enabled: !_fonts[index].enabled);
+      final CustomFontCatalogRow entry = _fonts[index];
+      if (entry.targetEnabled.containsKey(target)) {
+        entry.targetEnabled.remove(target);
+      } else {
+        entry.targetEnabled[target] = true;
+      }
     });
     _save();
   }
@@ -899,7 +1100,7 @@ class _CustomFontsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsScaffold(
-      title: Text(_pageTitle),
+      title: Text(t.custom_fonts_catalog_title),
       children: [
         AdaptiveSettingsSection(
           children: [
@@ -955,15 +1156,16 @@ class _CustomFontsPageState extends BasePageState {
                   itemCount: _fonts.length,
                   onReorder: _onReorder,
                   itemBuilder: (context, index) {
-                    final CustomFontEntry entry = _fonts[index];
-                    return _FontTile(
+                    final CustomFontCatalogRow entry = _fonts[index];
+                    return CustomFontCatalogTile(
                       key: ValueKey('${entry.name}-$index'),
                       name: entry.name,
                       isFile: entry.isFile,
-                      enabled: entry.enabled,
+                      targets: entry.targets,
                       index: index,
                       isLast: index == _fonts.length - 1,
-                      onToggle: () => _toggleFont(index),
+                      onTargetToggled: (FontTarget target) =>
+                          _toggleTarget(index, target),
                       onDelete: () => _removeFont(index),
                       onMoveUp: () => _onReorder(index, index - 1),
                       onMoveDown: () => _onReorder(index, index + 2),
@@ -1151,14 +1353,15 @@ class _RecommendedFontsPage extends StatelessWidget {
   }
 }
 
-class _FontTile extends StatelessWidget {
-  const _FontTile({
+@visibleForTesting
+class CustomFontCatalogTile extends StatelessWidget {
+  const CustomFontCatalogTile({
     required this.name,
     required this.isFile,
-    required this.enabled,
+    required this.targets,
     required this.index,
     required this.isLast,
-    required this.onToggle,
+    required this.onTargetToggled,
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
@@ -1167,51 +1370,80 @@ class _FontTile extends StatelessWidget {
 
   final String name;
   final bool isFile;
-  final bool enabled;
+  final Set<FontTarget> targets;
   final int index;
   final bool isLast;
-  final VoidCallback onToggle;
+  final ValueChanged<FontTarget> onTargetToggled;
   final VoidCallback onDelete;
   final VoidCallback onMoveUp;
   final VoidCallback onMoveDown;
+
+  String _targetLabel(FontTarget target) => switch (target) {
+        FontTarget.appUi => t.font_target_app_ui,
+        FontTarget.body => t.font_target_body,
+        FontTarget.dictionary => t.font_target_dictionary,
+      };
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     // 整行拖拽重排（不再显示 ☰ 手柄）：桌面鼠标按下即拖、移动端长按再拖
     // （见 HibikiReorderDragListener）；上下箭头按钮是无障碍/手柄重排路径。
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiReorderDragListener(
       index: index,
-      child: AdaptiveSettingsSwitchActionRow(
+      child: AdaptiveSettingsRow(
         title: name,
         subtitle: isFile ? t.font_source_file : t.font_source_system,
         icon:
             isFile ? Icons.file_present_outlined : Icons.phone_android_outlined,
-        value: enabled,
-        onChanged: (_) => onToggle(),
-        actions: [
-          HibikiIconButton(
-            icon: Icons.keyboard_arrow_up,
-            size: 18,
-            tooltip: t.move_up,
-            enabled: index > 0,
-            onTap: onMoveUp,
-          ),
-          HibikiIconButton(
-            icon: Icons.keyboard_arrow_down,
-            size: 18,
-            tooltip: t.move_down,
-            enabled: !isLast,
-            onTap: onMoveDown,
-          ),
-          HibikiIconButton(
-            icon: Icons.delete_outline,
-            size: 18,
-            enabledColor: scheme.error,
-            tooltip: t.custom_fonts_removed,
-            onTap: onDelete,
-          ),
-        ],
+        controlBelow: true,
+        trailing: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: [
+                for (final FontTarget target in FontTarget.values)
+                  FilterChip(
+                    label: Text(_targetLabel(target)),
+                    selected: targets.contains(target),
+                    onSelected: (_) => onTargetToggled(target),
+                  ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              children: [
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_up,
+                  size: 18,
+                  tooltip: t.move_up,
+                  enabled: index > 0,
+                  onTap: onMoveUp,
+                ),
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_down,
+                  size: 18,
+                  tooltip: t.move_down,
+                  enabled: !isLast,
+                  onTap: onMoveDown,
+                ),
+                HibikiIconButton(
+                  icon: Icons.delete_outline,
+                  size: 18,
+                  enabledColor: scheme.error,
+                  tooltip: t.custom_fonts_removed,
+                  onTap: onDelete,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

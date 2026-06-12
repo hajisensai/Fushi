@@ -55,14 +55,23 @@ void main() {
     );
   });
 
-  test('settings exposes three independent font targets', () {
-    final String src = read('lib/src/settings/settings_schema.dart');
-    expect(src.contains('FontTarget.appUi'), isTrue);
-    expect(src.contains('FontTarget.body'), isTrue);
-    expect(src.contains('FontTarget.dictionary'), isTrue);
-    expect(src.contains("'appearance.fonts_app_ui'"), isTrue);
-    expect(src.contains("'appearance.fonts_body'"), isTrue);
-    expect(src.contains("'appearance.fonts_dictionary'"), isTrue);
+  test('settings exposes one font catalog entry with three row targets', () {
+    final String schema = read('lib/src/settings/settings_schema.dart');
+    expect(schema.contains("'appearance.font_catalog'"), isTrue);
+    expect(schema.contains('t.custom_fonts_catalog_title'), isTrue);
+    expect(schema.contains("'appearance.fonts_app_ui'"), isFalse);
+    expect(schema.contains("'appearance.fonts_body'"), isFalse);
+    expect(schema.contains("'appearance.fonts_dictionary'"), isFalse);
+
+    final String page =
+        read('lib/src/pages/implementations/custom_fonts_page.dart');
+    expect(page.contains('for (final FontTarget target in FontTarget.values)'),
+        isTrue);
+    expect(page.contains('customFontCatalogRowsFromState'), isTrue);
+    expect(page.contains('customFontCatalogStateFromRows'), isTrue);
+    expect(page.contains('ReaderSettings.fontCatalogKey'), isTrue);
+    expect(page.contains('ReaderSettings.fontTargetsKey'), isTrue);
+    expect(page.contains('customFontLegacyListsFromRows'), isTrue);
   });
 
   test('the legacy body key is never renamed (backward-compat ironclad)', () {
