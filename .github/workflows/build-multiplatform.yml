@@ -88,12 +88,8 @@ jobs:
           path: .codex-test/comprehensive/
           if-no-files-found: ignore
 
-  # TEMPORARILY DISABLED (per request): Linux build paused. Re-enable by
-  # removing `if: false`. Linux currently failed only on the gitignored OAuth
-  # secret (now stubbed for Android/Windows), so re-enabling needs the same
-  # secret-stub step added back here.
+  # Linux gates the GTK/evdev desktop build path.
   linux:
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -106,6 +102,22 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+      # See the android job: bake the real OAuth secret in when the
+      # GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, else stub from the example
+      # so the import in google_drive_auth.dart compiles (TODO-045).
+      - name: Provide gitignored Google OAuth secret stub
+        shell: bash
+        env:
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          fi
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -117,17 +129,31 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build linux --debug
-  # TEMPORARILY DISABLED (per request): macOS build paused. Re-enable by
-  # removing `if: false`. Failed only on the gitignored OAuth secret; add the
-  # secret-stub step back when re-enabling.
+
+  # macOS gates the desktop build plus the shared smoke contract.
   macos:
-    if: false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+      # See the android job: bake the real OAuth secret in when the
+      # GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, else stub from the example
+      # so the import in google_drive_auth.dart compiles (TODO-045).
+      - name: Provide gitignored Google OAuth secret stub
+        shell: bash
+        env:
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          fi
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
