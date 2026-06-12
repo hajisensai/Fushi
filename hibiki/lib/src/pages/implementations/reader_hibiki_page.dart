@@ -477,6 +477,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   StreamSubscription<Duration>? _seekStreamSub;
   StreamSubscription<void>? _skipNextSub;
   StreamSubscription<void>? _skipPrevSub;
+  StreamSubscription<void>? _floatingLyricSub;
 
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
@@ -1371,6 +1372,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _seekStreamSub?.cancel();
     _skipNextSub?.cancel();
     _skipPrevSub?.cancel();
+    _floatingLyricSub?.cancel();
     FloatingLyricChannel.clearEventHandlers();
     if (appModel.showFloatingLyric) {
       FloatingLyricChannel.hide();
@@ -5478,6 +5480,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     _seekStreamSub?.cancel();
     _skipNextSub?.cancel();
     _skipPrevSub?.cancel();
+    _floatingLyricSub?.cancel();
     _playStreamSub = appModel.playStream.listen((_) {
       ctrl.togglePlayPause();
     });
@@ -5499,6 +5502,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
       } else {
         ctrl.seekRelative(-s);
       }
+    });
+    _floatingLyricSub = appModel.toggleFloatingLyricStream.listen((_) {
+      _toggleFloatingLyric();
     });
   }
 

@@ -8,6 +8,7 @@ class HibikiAudioHandler extends ag.BaseAudioHandler {
     required this.onFastForward,
     this.onSkipToNext,
     this.onSkipToPrevious,
+    this.onToggleFloatingLyric,
   });
 
   final Function() onPlayPause;
@@ -16,6 +17,10 @@ class HibikiAudioHandler extends ag.BaseAudioHandler {
   final Function() onFastForward;
   final Function()? onSkipToNext;
   final Function()? onSkipToPrevious;
+
+  /// 通知栏「悬浮字幕」custom action 回调（仅 Android 媒体通知）。null 时不在
+  /// 通知 controls 里加该按钮。
+  final Function()? onToggleFloatingLyric;
 
   @override
   Future<void> play() async {
@@ -52,17 +57,41 @@ class HibikiAudioHandler extends ag.BaseAudioHandler {
     onSkipToPrevious?.call();
   }
 
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (name == _toggleFloatingLyricAction) {
+      onToggleFloatingLyric?.call();
+      return null;
+    }
+    return super.customAction(name, extras);
+  }
+
+  static const String _toggleFloatingLyricAction = 'toggleFloatingLyric';
+
+  /// 「悬浮字幕」通知 custom action。仅当 [onToggleFloatingLyric] 非 null 时加入
+  /// controls，触发回 [customAction] 路由 `toggleFloatingLyric`。
+  ag.MediaControl get _floatingLyricControl => ag.MediaControl.custom(
+        androidIcon: 'drawable/ic_notif_floating_lyric',
+        label: 'Floating subtitle',
+        name: _toggleFloatingLyricAction,
+      );
+
   void updatePlaybackState({
     required bool playing,
     required Duration position,
     required double speed,
     required Duration duration,
   }) {
+    final bool withFloatingLyric = onToggleFloatingLyric != null;
     playbackState.add(ag.PlaybackState(
       controls: [
         ag.MediaControl.skipToPrevious,
         if (playing) ag.MediaControl.pause else ag.MediaControl.play,
         ag.MediaControl.skipToNext,
+        if (withFloatingLyric) _floatingLyricControl,
       ],
       systemActions: const {
         ag.MediaAction.seek,

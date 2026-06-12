@@ -1,0 +1,17 @@
+## BUG-227 · 悬浮字幕开关加到长按书籍菜单+通知栏
+- **报告**：2026-06-12（用户：）
+- **真实性**：✅ 真需求（功能增强，TODO-160子d）。悬浮字幕（FloatingLyric）开关此前只在阅读器底栏「设置」里，用户希望在两个更顺手的入口也能切换：①书架长按 EPUB 书籍菜单 ②Android 媒体播放通知栏。复用已有的 `show_floating_lyric` 偏好状态与 reader 页的 `_toggleFloatingLyric()`，不新增第二套状态。
+- **[x] ① 已修复** — 两入口接线：
+  - **入口①·书架长按菜单**：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart:1802`（`extraActions` 里追加 `DialogListAction`，Android/Windows 门控，label 带 ✓ 反映当前状态）+ `:1815` `_toggleFloatingLyricFromShelf()`（书架无 reader/无 audiobook controller，套设置页 no-reader 范式：只切 `appModel.setShowFloatingLyric` 偏好，不启停 native service —— 此刻无正在播放的有声书，service 由下次 reader 打开有声书时拉起）。提交 `866dacfdd`。
+  - **入口②·通知栏 custom action**：沿用 prev/next/playPause 的 `StreamController` 路由范式，补完整条链路：
+    - `hibiki/lib/src/utils/misc/hibiki_audio_handler.dart`：加 `onToggleFloatingLyric` 字段、覆写 `customAction()` 路由 `toggleFloatingLyric`、`updatePlaybackState()` 在 controls 里加 `MediaControl.custom`（图标 `drawable/ic_notif_floating_lyric`，仅当回调非 null 时加入）。
+    - `hibiki/lib/src/models/audio_controller.dart`：加 `toggleFloatingLyricStream` 广播流，`initialiseHandler()` 两处 builder 把 handler 的 `onToggleFloatingLyric` 接到 stream，`dispose()` 关闭。
+    - `hibiki/lib/src/models/app_model.dart`：加 `toggleFloatingLyricStream` 委托 getter（透传 `audioCtrl`）。
+    - `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`：`_subscribeNotificationStreams()` 订阅 `appModel.toggleFloatingLyricStream` 调 `_toggleFloatingLyric()`，新增 `_floatingLyricSub` 字段并在 `dispose()` 与重订阅时 cancel。
+    - 通知图标 vector `hibiki/android/app/src/main/res/drawable/ic_notif_floating_lyric.xml`，提交 `25001aba4`。
+    - 通知 Dart 接线（handler/controller/app_model/reader）+ i18n key（`floating_lyric_toggle_action`，提交 `dc16802d1`）在本轮文档+测试同批提交。
+- **[x] ② 已加自动化测试** —
+  - 通知栏接线源码扫描守卫：`hibiki/test/media/audiobook/notification_floating_lyric_action_test.dart`（5 例：handler 字段/customAction 路由/MediaControl.custom 含图标、controller wire stream、reader 订阅 stream 调 `_toggleFloatingLyric()`）。audio_service 平台通道在 host 不可用，故钉源码接线。
+  - 书架菜单守卫：`hibiki/test/pages/booklongpress_floating_lyric_toggle_test.dart`（3 例：extraActions 含 label、切换调 `setShowFloatingLyric`、Android/Windows 门控与 `isSupported` 一致不删现有入口）。提交 `866dacfdd`。
+  - 两守卫合计 9 例全绿；`flutter analyze` 0 issue；全套 `flutter test` 4321 通过 0 失败。
+- **备注**：通知栏 custom action 的真机点击效果（点通知栏「悬浮字幕」按钮真启停 Android 悬浮窗 service）需真机/模拟器验证——audio_service 平台通道 host 测不到，源码扫描只钉接线契约。修复过程中发现并修正了 4 个 lib 文件被工具写入翻成 CRLF 行尾（HEAD 为 LF），已转回 LF，git diff 仅含真实新增行。

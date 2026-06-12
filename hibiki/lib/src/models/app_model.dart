@@ -2700,6 +2700,8 @@ class AppModel with ChangeNotifier {
   Stream<void> get fastForwardStream => audioCtrl.fastForwardStream;
   Stream<void> get skipNextStream => audioCtrl.skipNextStream;
   Stream<void> get skipPreviousStream => audioCtrl.skipPreviousStream;
+  Stream<void> get toggleFloatingLyricStream =>
+      audioCtrl.toggleFloatingLyricStream;
 
   HibikiAudioHandler? get audioHandler => audioCtrl.audioHandler;
 
