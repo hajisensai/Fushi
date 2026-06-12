@@ -26,6 +26,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: write
 
@@ -260,13 +261,38 @@ jobs:
           fi
         done
 
+    - name: Collect Android release build diagnostics
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: hibiki
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Tool versions"
+        pwd
+        git rev-parse --short HEAD
+        flutter --version
+        dart --version
+        java -version
+        (cd android && timeout 120s ./gradlew --version --no-daemon) || true
+        echo "::endgroup::"
+        echo "::group::Pre-build output paths"
+        ls -la build || true
+        ls -la build/app || true
+        ls -la build/app/outputs || true
+        ls -la build/app/outputs/flutter-apk || true
+        find build/app/outputs/flutter-apk -maxdepth 1 -type f -name '*.apk' -print -exec ls -lh {} \; || true
+        echo "::endgroup::"
+
     - name: Build debug APK
       if: steps.channel.outputs.build_debug_apk == 'true'
       working-directory: hibiki
-      run: >-
-        flutter build apk --debug
-        --build-name "${{ steps.channel.outputs.build_version_name }}"
-        --build-number "${{ steps.channel.outputs.android_build_number }}"
+      timeout-minutes: 20
+      shell: bash
+      run: |
+        set -euo pipefail
+        flutter --verbose build apk --debug \
+          --build-name "${{ steps.channel.outputs.build_version_name }}" \
+          --build-number "${{ steps.channel.outputs.android_build_number }}"
 
     - name: Prepare debug APK release asset
       if: steps.channel.outputs.build_debug_apk == 'true'
@@ -290,10 +316,13 @@ jobs:
     - name: Build release-signed debug-channel APK
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
       working-directory: hibiki
-      run: >-
-        flutter build apk --release
-        --build-name "${{ steps.channel.outputs.build_version_name }}"
-        --build-number "${{ steps.channel.outputs.android_build_number }}"
+      timeout-minutes: 30
+      shell: bash
+      run: |
+        set -euo pipefail
+        flutter --verbose build apk --release \
+          --build-name "${{ steps.channel.outputs.build_version_name }}" \
+          --build-number "${{ steps.channel.outputs.android_build_number }}"
 
     - name: Prepare release-signed debug-channel APK asset
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
@@ -317,10 +346,25 @@ jobs:
     - name: Build release APK (split per ABI)
       if: steps.channel.outputs.build_split_release_apk == 'true'
       working-directory: hibiki
-      run: >-
-        flutter build apk --split-per-abi --release
-        --build-name "${{ steps.channel.outputs.build_version_name }}"
-        --build-number "${{ steps.channel.outputs.android_build_number }}"
+      timeout-minutes: 60
+      shell: bash
+      run: |
+        set -euo pipefail
+        flutter --verbose build apk --split-per-abi --release \
+          --build-name "${{ steps.channel.outputs.build_version_name }}" \
+          --build-number "${{ steps.channel.outputs.android_build_number }}"
+
+    - name: Collect Android post-build diagnostics
+      if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}
+      working-directory: hibiki
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Post-build APK diagnostics"
+        pwd
+        find build/app/outputs/flutter-apk -maxdepth 1 -type f -name '*.apk' -print -exec ls -lh {} \; || true
+        find build/app/outputs -maxdepth 5 -type f \( -name '*.apk' -o -name '*.aab' \) -print || true
+        echo "::endgroup::"
 
     - name: Prepare release APK assets
       if: steps.channel.outputs.build_split_release_apk == 'true'
