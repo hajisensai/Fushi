@@ -68,6 +68,75 @@ void main() {
     expect(source, isNot(contains('Clipboard.setData')));
   });
 
+  test('reader image context menu scales with reader chrome only', () {
+    final String source =
+        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+
+    expect(source, contains('double get _readerImageMenuScale'));
+    final String menu = _functionSource(
+      source,
+      'Future<void> _showReaderImageContextMenuAtGlobalPosition(',
+      'Future<void> _shareReaderImage(String imgUrl)',
+    );
+
+    expect(menu, contains('final double menuScale = _readerImageMenuScale'));
+    expect(
+      RegExp(r'minWidth:\s*112(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
+      isTrue,
+    );
+    expect(
+      RegExp(r'maxWidth:\s*280(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
+      isTrue,
+    );
+    expect(
+      RegExp(r'height:\s*kMinInteractiveDimension\s*\*\s*menuScale')
+          .hasMatch(menu),
+      isTrue,
+    );
+    expect(
+      RegExp(r'horizontal:\s*16(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
+      isTrue,
+    );
+    expect(
+      RegExp(r'size:\s*18(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
+      isTrue,
+    );
+    expect(
+      RegExp(r'width:\s*12(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
+      isTrue,
+    );
+    expect(
+      RegExp(r'fontSize:\s*14(?:\.0)?\s*\*\s*menuScale').hasMatch(menu),
+      isTrue,
+    );
+
+    // The JS/WebView point is converted once to global coordinates; scaling the
+    // menu must not also scale or rebase the mouse anchor.
+    expect(menu, contains('Rect.fromLTWH('));
+    expect(menu, contains('globalPosition.dx'));
+    expect(menu, contains('globalPosition.dy'));
+    expect(menu, isNot(contains('webViewOffset *')));
+    expect(menu, isNot(contains('webViewOffset.dx * menuScale')));
+    expect(menu, isNot(contains('webViewOffset.dy * menuScale')));
+  });
+
+  test('expanded reader image viewer exposes Windows right-click copy menu',
+      () {
+    final String source =
+        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String viewer = _functionSource(
+      source,
+      'void _openImageViewer(String imgUrl)',
+      '  // ── Audio Features Init',
+    );
+
+    expect(viewer, contains('_readerImageFileForUrl(imgUrl)'));
+    expect(viewer, contains('onSecondaryTapDown'));
+    expect(viewer, contains('isWindowsPlatform'));
+    expect(viewer, contains('details.globalPosition'));
+    expect(viewer, contains('_showReaderImageContextMenuAtGlobalPosition'));
+  });
+
   test('Windows runner registers a native image clipboard channel', () {
     final String constants = read('lib/src/utils/misc/channel_constants.dart');
     final String header = read('windows/runner/flutter_window.h');
