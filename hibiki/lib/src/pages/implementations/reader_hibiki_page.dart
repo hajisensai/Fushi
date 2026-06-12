@@ -4511,7 +4511,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
         hasActiveAudiobook: _hasActiveAudiobook,
       );
       if (chromeSpaceOverride != null) {
-        return _executeShortcutAction(chromeSpaceOverride);
+        return _executeShortcutAction(
+          chromeSpaceOverride,
+          keyboardTriggerKey: event.logicalKey,
+        );
       }
       return KeyEventResult.ignored;
     }
@@ -4556,7 +4559,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // registry is consulted. While inactive, A / Enter ENTER the cursor.
     if (_focusNavEnabled && _caretActive) {
       if (_isReaderDirectCaretShortcut(directReaderAction)) {
-        return _executeShortcutAction(directReaderAction!);
+        return _executeShortcutAction(
+          directReaderAction!,
+          keyboardTriggerKey: event.logicalKey,
+        );
       }
       // LB/RB flip a whole page on the cursor surface, mirroring the polled
       // gamepad branch in _handleGamepadButton. Android gamepads deliver the
@@ -4594,7 +4600,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
         return KeyEventResult.handled;
       }
     } else if (_isReaderDirectCaretShortcut(directReaderAction)) {
-      return _executeShortcutAction(directReaderAction!);
+      return _executeShortcutAction(
+        directReaderAction!,
+        keyboardTriggerKey: event.logicalKey,
+      );
     }
 
     // Caret inactive: arrow Down drops focus into the bottom bar (the sibling
@@ -4662,7 +4671,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
 
     if (action == null) return KeyEventResult.ignored;
-    return _executeShortcutAction(action);
+    return _executeShortcutAction(
+      action,
+      keyboardTriggerKey: event.logicalKey,
+    );
   }
 
   static bool _isReaderDirectCaretShortcut(ShortcutAction? action) {
@@ -4699,12 +4711,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
       final bool longFired = _gamepadALongFired;
       _clearGamepadAHold();
       if (longFired) return KeyEventResult.handled;
-      if (_caretActive) {
-        unawaited(_runCaretAction(CaretAction.activate));
-      } else {
-        unawaited(_enterCaret());
-      }
-      return KeyEventResult.handled;
+      return _executeShortcutAction(
+        action,
+        gamepadTriggerButton: GamepadButton.a,
+      );
     }
     return KeyEventResult.handled;
   }
@@ -4807,7 +4817,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
           scope: ShortcutScope.audiobook,
         );
     if (action == null) return false;
-    return _executeShortcutAction(action) == KeyEventResult.handled;
+    return _executeShortcutAction(
+          action,
+          gamepadTriggerButton: button,
+        ) ==
+        KeyEventResult.handled;
   }
 
   bool _handleGamepadLongPress(GamepadButton button) {
@@ -4837,7 +4851,30 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (cue != null) controller.playCueAndContinue(cue);
   }
 
-  KeyEventResult _executeShortcutAction(ShortcutAction action) {
+  bool _isCaretEntryTrigger({
+    LogicalKeyboardKey? keyboardTriggerKey,
+    GamepadButton? gamepadTriggerButton,
+  }) {
+    if (keyboardTriggerKey != null) {
+      return ReaderCaretRouter.isEnterTriggerKeyboard(
+        keyboardTriggerKey,
+        focusNavEnabled: _focusNavEnabled,
+      );
+    }
+    if (gamepadTriggerButton != null) {
+      return ReaderCaretRouter.isEnterTriggerGamepad(
+        gamepadTriggerButton,
+        focusNavEnabled: _focusNavEnabled,
+      );
+    }
+    return _focusNavEnabled;
+  }
+
+  KeyEventResult _executeShortcutAction(
+    ShortcutAction action, {
+    LogicalKeyboardKey? keyboardTriggerKey,
+    GamepadButton? gamepadTriggerButton,
+  }) {
     switch (action) {
       case ShortcutAction.readerPageForward:
         _paginate(ReaderNavigationDirection.forward);
@@ -4876,7 +4913,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
       case ShortcutAction.readerLookupAtCursor:
         if (_focusNavEnabled && _caretActive) {
           unawaited(_runCaretAction(CaretAction.activate));
-        } else if (_focusNavEnabled) {
+        } else if (_isCaretEntryTrigger(
+          keyboardTriggerKey: keyboardTriggerKey,
+          gamepadTriggerButton: gamepadTriggerButton,
+        )) {
           unawaited(_enterCaret());
         }
         return KeyEventResult.handled;
