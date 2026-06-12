@@ -29,13 +29,35 @@ void main() {
       expect(url, isNull);
     });
 
-    test('debug channel has no Windows install asset', () async {
+    test('debug channel selects a debug Windows setup asset', () async {
       final WindowsUpdater u = WindowsUpdater();
       final String? url = await u.selectAsset(
-        _assets(<String>['hibiki-0.5.1-windows-setup.exe']),
+        _assets(<String>[
+          'hibiki-0.5.1-windows-setup.exe',
+          'hibiki-0.5.1-debug.412-windows-setup.exe',
+        ]),
         channel: UpdateChannel.debug,
       );
-      expect(url, isNull);
+      expect(
+        url,
+        'https://example.com/hibiki-0.5.1-debug.412-windows-setup.exe',
+      );
+    });
+
+    test('stable and beta ignore debug Windows setup assets', () async {
+      final WindowsUpdater u = WindowsUpdater();
+      final List<Map<String, dynamic>> assets = _assets(<String>[
+        'hibiki-0.5.1-debug.412-windows-setup.exe',
+      ]);
+
+      expect(
+        await u.selectAsset(assets, channel: UpdateChannel.stable),
+        isNull,
+      );
+      expect(
+        await u.selectAsset(assets, channel: UpdateChannel.beta),
+        isNull,
+      );
     });
 
     test('supports update check and in-app install', () {

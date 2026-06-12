@@ -6,15 +6,16 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 'Release channel: beta or formal'
+        description: 'Release channel: debug, beta, or formal'
         required: true
         default: beta
         type: choice
         options:
+          - debug
           - beta
           - formal
       tag_name:
-        description: 'Optional release tag. Defaults to v<version>-beta.<run> or v<version>.'
+        description: 'Optional release tag. Defaults to v<version>-debug.<run>+<sha>, v<version>-beta.<run>, or v<version>.'
         required: false
       release_name:
         description: 'Optional GitHub Release title.'
@@ -58,6 +59,11 @@ jobs:
           case "$EVENT" in
             workflow_dispatch)
               case "$CHANNEL" in
+                debug)
+                  TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
+                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                  ;;
                 beta)
                   TAG="${TAG:-v${VERSION}-beta.${GITHUB_RUN_NUMBER}}"
                   NAME="${NAME:-Hibiki ${VERSION} beta ${GITHUB_RUN_NUMBER}}"
@@ -71,7 +77,7 @@ jobs:
                   MAKE_LATEST=true
                   ;;
                 *)
-                  echo "::error title=Invalid release channel::Use beta or formal."
+                  echo "::error title=Invalid release channel::Use debug, beta, or formal."
                   exit 1
                   ;;
               esac
@@ -87,6 +93,32 @@ jobs:
               ;;
           esac
 
+          BUILD_VERSION_NAME="$VERSION"
+          case "$CHANNEL" in
+            debug)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+                echo "::error title=Invalid debug tag::Use v<version>-debug.<run>+<short-sha>, not debug-<sha>."
+                exit 1
+              fi
+              ;;
+            beta)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
+                echo "::error title=Invalid beta tag::Use v<version>-beta.<run>."
+                exit 1
+              fi
+              ;;
+            formal)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "::error title=Invalid formal tag::Use v<version>."
+                exit 1
+              fi
+              ;;
+          esac
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+            BUILD_VERSION_NAME="${TAG#v}"
+            BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
+          fi
+
           {
             echo "channel=$CHANNEL"
             echo "tag=$TAG"
@@ -94,6 +126,7 @@ jobs:
             echo "prerelease=$PRERELEASE"
             echo "make_latest=$MAKE_LATEST"
             echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "build_version_name=$BUILD_VERSION_NAME"
             echo "body<<EOF"
             echo "$BODY"
             echo "EOF"
@@ -177,18 +210,12 @@ jobs:
           }
           Copy-Item -LiteralPath $source -Destination $target -Force
           Get-Item -LiteralPath $target | Select-Object FullName, Length
-      - name: Read version
-        id: ver
-        shell: bash
-        run: |
-          V=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
-          echo "version=$V" >> "$GITHUB_OUTPUT"
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-          & "$iscc" "/DAppVersion=${{ steps.ver.outputs.version }}" `
+          & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
             "/DSourceDir=$PWD\hibiki\build\windows\x64\runner\Release" `
             "/DOutputDir=$PWD\hibiki\build\installer" `
             "hibiki\windows\installer\hibiki.iss"
@@ -208,7 +235,7 @@ jobs:
         run: |
           [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
           $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
-          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\hibiki\build\installer\hibiki-${{ steps.ver.outputs.version }}-windows-setup.exe"
+          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\hibiki\build\installer\hibiki-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
       - name: Upload to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3

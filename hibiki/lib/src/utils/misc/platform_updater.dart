@@ -61,6 +61,19 @@ bool _androidAssetMatchesChannel(String name, UpdateChannel channel) {
   };
 }
 
+bool _isDebugWindowsSetupAsset(String name) =>
+    name.endsWith('-windows-setup.exe') && name.contains('-debug.');
+
+bool _windowsAssetMatchesChannel(String name, UpdateChannel channel) {
+  if (!name.endsWith('-windows-setup.exe')) return false;
+  return switch (channel) {
+    UpdateChannel.debug => _isDebugWindowsSetupAsset(name),
+    UpdateChannel.stable ||
+    UpdateChannel.beta =>
+      !_isDebugWindowsSetupAsset(name),
+  };
+}
+
 class AndroidUpdater extends PlatformUpdater {
   AndroidUpdater({Future<List<String>> Function()? abiProvider})
       : _abiProvider = abiProvider ?? _defaultAbis;
@@ -118,9 +131,8 @@ class WindowsUpdater extends PlatformUpdater {
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
-    if (channel == UpdateChannel.debug) return null;
     for (final (String name, String url) in _downloadable(assets)) {
-      if (name.endsWith('-windows-setup.exe')) return url;
+      if (_windowsAssetMatchesChannel(name, channel)) return url;
     }
     return null;
   }

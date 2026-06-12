@@ -68,6 +68,43 @@ void main() {
     );
   });
 
+  test('desktop release workflow publishes comparable debug Windows installer',
+      () {
+    final String workflow =
+        File('../.github/workflows/release-desktop.yml').readAsStringSync();
+    expect(workflow, contains('Release channel: debug, beta, or formal'));
+    expect(workflow, contains('- debug'));
+    expect(
+      workflow,
+      contains(
+        r'TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"',
+      ),
+    );
+    expect(workflow, contains(r'BUILD_VERSION_NAME="${TAG#v}"'));
+    expect(
+        workflow, contains(r'BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"'));
+    expect(
+      workflow,
+      contains(
+        r'"/DAppVersion=${{ steps.channel.outputs.build_version_name }}"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        r'hibiki-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe',
+      ),
+    );
+    expect(
+      workflow,
+      contains(r'prerelease: ${{ steps.channel.outputs.prerelease }}'),
+    );
+    expect(
+      workflow,
+      contains(r'make_latest: ${{ steps.channel.outputs.make_latest }}'),
+    );
+  });
+
   test('build docs describe the comparable debug tag format', () {
     final String docs = File('../docs/agent/build.md').readAsStringSync();
     expect(
