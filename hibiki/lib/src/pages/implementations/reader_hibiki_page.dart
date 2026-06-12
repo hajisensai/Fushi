@@ -218,6 +218,30 @@ ReadProgressResult accumulateSessionChars({
   return (charsAdded: 0, highWaterMark: highWaterMark);
 }
 
+/// BUG-213：章内原生滚动回传（`onReaderScroll`）到来时，是否应刷新章内进度。
+///
+/// 章内进度 UI 字段只在 `_refreshProgress()` 里写；原生滚动（连续模式 window 滚动、
+/// 分页模式触摸/trackpad/键盘箭头）此前没有任何刷新通道，进度条要等 10s 轮询或翻章才
+/// 更新。setup 脚本新增的 scroll reporter 把滚动回传给这里，但必须在以下时机一律抑制，
+/// 避免恢复期程序化滚动、歌词模式或控制器未就绪时误触发：
+/// - [restoreInFlight]：章节恢复/重载期间 WebView 正被程序化滚动到锚点；
+/// - [lyricsMode]：歌词模式不是正文阅读，无章内进度语义；
+/// - !`readerContentReady`：内容尚未就绪，`hoshiProgressDetails` 可能算不出总数；
+/// - !`controllerAvailable`：WebView 控制器已释放（dispose 竞态）。
+///
+/// 纯函数，无副作用，供单测锁定门控真值表（撤销任一守卫 → 对应用例转红）。
+bool readerScrollProgressRefreshAllowed({
+  required bool readerContentReady,
+  required bool restoreInFlight,
+  required bool lyricsMode,
+  required bool controllerAvailable,
+}) {
+  return readerContentReady &&
+      !restoreInFlight &&
+      !lyricsMode &&
+      controllerAvailable;
+}
+
 /// 解析结果 + 每章字符数，一次 isolate 往返同时算好，避免把整本书
 /// （含全部章节 HTML）二次序列化进新 isolate 只为数字符。
 class ParsedBookData {
@@ -2166,6 +2190,36 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ? r.getFirstVisibleCharOffset() : -1;
     return Math.round(p * total) + ',' + total + ',' + off;
   };
+  // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸/trackpad/键盘箭头
+  // 落 body 的原生滚动）没有进度回传通道，进度条要等 10s 轮询或翻章才更新。这里给
+  // 两模式共享的 setup 脚本挂一条统一 scroll → Dart 通道：capture 阶段监听让 window
+  // 与 body 内部滚动都进来，rAF 合一帧 + 200ms debounce 抑制高频抖动后回传一次；
+  // 程序化重锚期（_reanchorPending）跳过，避免恢复/重排瞬态误触发（恢复期的
+  // _restoreInFlight / 歌词模式由 Dart 侧 onReaderScroll 再门控一道）。
+  (function() {
+    var _progressScrollRaf = 0;
+    var _progressScrollTimer = null;
+    function _reportReaderScroll() {
+      var r = window.hoshiReader;
+      if (r && r._reanchorPending === true) return;
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onReaderScroll');
+      }
+    }
+    function _onReaderScrollEvent() {
+      if (_progressScrollRaf) cancelAnimationFrame(_progressScrollRaf);
+      _progressScrollRaf = requestAnimationFrame(function() {
+        _progressScrollRaf = 0;
+        if (_progressScrollTimer) clearTimeout(_progressScrollTimer);
+        _progressScrollTimer = setTimeout(function() {
+          _progressScrollTimer = null;
+          _reportReaderScroll();
+        }, 200);
+      });
+    }
+    window.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
+    document.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
+  })();
   var cloak = document.getElementById('hoshi-cloak');
   if (cloak) cloak.remove();
 })();
@@ -2300,6 +2354,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
           callback: (_) => _onRestoreComplete(),
+        );
+
+        // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸·trackpad·键盘
+        // 箭头落 body 的原生滚动）经 setup 脚本的 scroll reporter 回传，刷新章内进度
+        // 条。门控由 readerScrollProgressRefreshAllowed 纯函数统一判定，恢复期/歌词/
+        // 未就绪一律不触发（JS 侧已抑制 _reanchorPending 重锚瞬态）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onReaderScroll',
+          callback: (_) => _handleReaderScroll(),
         );
 
         // BUG-117: primary internal-link path. The JS click interceptor (in the
@@ -2761,6 +2824,22 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       const Duration(seconds: 10),
       (_) => _refreshProgress(),
     );
+  }
+
+  /// BUG-213：setup 脚本的 scroll reporter 在章内原生滚动稳定后（rAF + 200ms
+  /// debounce）回传到此。门控通过则复用既有 `_refreshProgress()` 重算章内进度
+  /// （high-water-mark 计字不重复累计、`_debouncedSavePosition` 自带 500ms 去抖，
+  /// 不改字数累加路径）。恢复期/歌词/未就绪由纯函数统一抑制。
+  void _handleReaderScroll() {
+    if (!readerScrollProgressRefreshAllowed(
+      readerContentReady: _readerContentReady,
+      restoreInFlight: _restoreInFlight,
+      lyricsMode: _lyricsMode,
+      controllerAvailable: _controller != null,
+    )) {
+      return;
+    }
+    _refreshProgress();
   }
 
   // ── Lyrics Mode ──────────────────────────────────────────────────
