@@ -6,6 +6,24 @@ project(hoshidicts_ffi LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+#include <expected>
+#ifndef __cpp_lib_expected
+#error __cpp_lib_expected missing
+#endif
+int main() {
+  std::expected<int, int> ok = 23;
+  std::expected<int, int> fail = std::unexpected(1);
+  return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
+}
+" HOSHIDICTS_HAS_STD_EXPECTED)
+if(NOT HOSHIDICTS_HAS_STD_EXPECTED)
+  message(FATAL_ERROR
+      "hoshidicts/glaze requires C++23 std::expected/std::unexpected. "
+      "Select a compiler and standard library that provide <expected>.")
+endif()
+
 # MSVC: UTF-8 source/execution charset, disable min/max macros, enable C++23 features
 if(MSVC)
   add_compile_options(/utf-8 /Zc:__cplusplus /permissive-)
@@ -47,6 +65,10 @@ add_library(hoshidicts STATIC
     hoshidicts_src/popup_json.cpp
 )
 
+target_compile_features(hoshidicts PUBLIC
+    cxx_std_23
+)
+
 target_include_directories(hoshidicts PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_include
     ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_external/utfcpp/source
@@ -69,6 +91,10 @@ target_link_libraries(hoshidicts PRIVATE
 
 add_library(hoshidicts_ffi SHARED
     hoshidicts_ffi.cpp
+)
+
+target_compile_features(hoshidicts_ffi PRIVATE
+    cxx_std_23
 )
 
 target_include_directories(hoshidicts_ffi PRIVATE
@@ -99,6 +125,10 @@ endif()
 if(ANDROID)
   add_library(hoshidicts_jni SHARED
       hoshidicts_jni.cpp
+  )
+
+  target_compile_features(hoshidicts_jni PRIVATE
+      cxx_std_23
   )
 
   target_include_directories(hoshidicts_jni PRIVATE
