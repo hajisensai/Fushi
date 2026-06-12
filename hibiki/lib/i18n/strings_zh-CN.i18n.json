@@ -1555,5 +1555,6 @@
     "shortcut_action_video_toggle_immersive_lock": "切换沉浸锁定",
     "shortcut_action_video_toggle_cross_subtitle_recording": "切换跨字幕录制",
     "shortcut_action_video_toggle_subtitle_blur": "切换字幕模糊",
-    "shortcut_action_video_escape": "退出/返回"
+    "shortcut_action_video_escape": "退出/返回",
+    "book_edit_author": "作者"
 }

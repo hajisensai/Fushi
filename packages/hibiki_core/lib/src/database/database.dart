@@ -1282,6 +1282,17 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
           .write(EpubBooksCompanion(epubPath: Value(epubPath)));
 
+  /// Update a book's author (BUG-220). Unlike [updateEpubBookTitle], the author
+  /// column is NOT the primary key (bookKey = sanitized title), so this is a
+  /// plain UPDATE with no cascading re-key. Pass a blank/empty [author] to clear
+  /// it (stored as NULL) so the detail dialog hides the author line.
+  Future<void> updateEpubBookAuthor(String bookKey, String? author) {
+    final String? trimmed = author?.trim();
+    final String? value = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    return (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
+        .write(EpubBooksCompanion(author: Value(value)));
+  }
+
   /// Rewrites a book's on-disk content paths (full-data backup restore rebases
   /// absolute paths to this device's roots). Only supplied fields are written;
   /// null leaves a column unchanged.

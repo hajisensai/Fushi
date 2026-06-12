@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/media.dart';
@@ -264,6 +265,131 @@ void main() {
         await db.getPref('src:reader_ttu:auto_read_on_lookup'),
         'b:true',
       );
+    });
+  });
+
+  group('ReaderHibikiSource author editing (BUG-220 子3)', () {
+    EpubBooksCompanion bookWithAuthor(String key, {String? author}) {
+      return EpubBooksCompanion.insert(
+        bookKey: key,
+        title: key,
+        author: author == null ? const Value.absent() : Value(author),
+        epubPath: '/tmp/$key.epub',
+        extractDir: '/tmp/$key',
+        chapterCount: 1,
+        chaptersJson: '["ch1"]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+
+    test('supportsAuthorEdit is true for the EPUB shelf source', () {
+      expect(ReaderHibikiSource.instance.supportsAuthorEdit, isTrue);
+    });
+
+    test('setAuthorFromMediaItem writes the author into epubBooks.author',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      await db.insertEpubBook(bookWithAuthor('Kokoro'));
+
+      final source = ReaderHibikiSource.instance;
+      final item = MediaItem(
+        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('Kokoro'),
+        title: 'Kokoro',
+        mediaTypeIdentifier: source.mediaType.uniqueKey,
+        mediaSourceIdentifier: source.uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      );
+
+      await source.setAuthorFromMediaItem(item: item, author: '夏目漱石');
+
+      final row = await db.getEpubBook('Kokoro');
+      expect(row, isNotNull);
+      expect(row!.author, '夏目漱石');
+    });
+
+    test('setAuthorFromMediaItem trims and clears a blank author to NULL',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      await db.insertEpubBook(bookWithAuthor('Botchan', author: '夏目漱石'));
+
+      final source = ReaderHibikiSource.instance;
+      final item = MediaItem(
+        mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor('Botchan'),
+        title: 'Botchan',
+        mediaTypeIdentifier: source.mediaType.uniqueKey,
+        mediaSourceIdentifier: source.uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      );
+
+      // Whitespace-only edit clears the column rather than storing spaces.
+      await source.setAuthorFromMediaItem(item: item, author: '   ');
+      expect((await db.getEpubBook('Botchan'))!.author, isNull);
+
+      // A real value with surrounding whitespace is trimmed.
+      await source.setAuthorFromMediaItem(item: item, author: '  芥川  ');
+      expect((await db.getEpubBook('Botchan'))!.author, '芥川');
+    });
+
+    test(
+        'updateEpubBookAuthor is a plain UPDATE that keeps the bookKey (not a '
+        're-key like the title)', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      await db.insertEpubBook(bookWithAuthor('SameKey', author: 'old'));
+
+      await db.updateEpubBookAuthor('SameKey', 'new');
+
+      final row = await db.getEpubBook('SameKey');
+      expect(row, isNotNull, reason: 'bookKey (primary key) must be unchanged');
+      expect(row!.author, 'new');
+    });
+  });
+
+  group('ReaderHibikiSource author wiring guards (BUG-220 子3 源码守卫)', () {
+    test('_bookToMediaItem fills MediaItem.author from the EpubBookRow', () {
+      final String source = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      // The shelf MediaItem must carry the DB author so the detail dialog shows
+      // it; missing this line regresses BUG-220 子3-a (author never displayed).
+      expect(source, contains('author: book.author'));
+    });
+
+    test('author override writes back to epubBooks.author column', () {
+      final String source = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      expect(source, contains('bool get supportsAuthorEdit => true'));
+      expect(source, contains('updateEpubBookAuthor'));
+    });
+
+    test('detail dialog renders the author when present', () {
+      final String source = File(
+        'lib/src/pages/implementations/media_item_dialog_page.dart',
+      ).readAsStringSync();
+      // The frame receives the author so MediaItemDialogFrame can show it.
+      expect(source, contains('author: hasAuthor ? author : null'));
+    });
+
+    test(
+        'edit dialog exposes an author field gated on supportsAuthorEdit and '
+        'saves via setAuthorFromMediaItem', () {
+      final String source = File(
+        'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
+      ).readAsStringSync();
+      expect(source, contains('_supportsAuthorEdit'));
+      expect(source, contains('_authorController'));
+      expect(source, contains('setAuthorFromMediaItem'));
     });
   });
 }

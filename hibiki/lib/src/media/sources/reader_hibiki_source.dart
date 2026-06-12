@@ -94,6 +94,25 @@ class ReaderHibikiSource extends ReaderMediaSource {
     return null;
   }
 
+  /// BUG-220: EPUB books carry an editable author column, so expose author
+  /// editing in the media edit dialog.
+  @override
+  bool get supportsAuthorEdit => true;
+
+  /// BUG-220: persist the edited author directly to the `epubBooks.author`
+  /// column (NOT the primary key, so no re-key is needed — unlike the title,
+  /// which is overridden via a preference). A blank author clears the column.
+  @override
+  Future<void> setAuthorFromMediaItem({
+    required MediaItem item,
+    required String? author,
+  }) async {
+    final String? bookKey = parseBookKey(item.mediaIdentifier);
+    final HibikiDatabase? db = sharedDatabase;
+    if (bookKey == null || db == null) return;
+    await db.updateEpubBookAuthor(bookKey, author);
+  }
+
   @override
   Future<void> prepareResources() async {}
 
@@ -260,6 +279,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
     return MediaItem(
       mediaIdentifier: mediaIdentifierFor(book.bookKey),
       title: book.title,
+      // BUG-220: 回填导入时写入 epubBooks.author 的作者，详情弹窗据此显示。
+      author: book.author,
       imageUrl: imageUrl,
       mediaTypeIdentifier: mediaType.uniqueKey,
       mediaSourceIdentifier: uniqueKey,

@@ -1555,5 +1555,6 @@
     "shortcut_action_video_toggle_immersive_lock": "Toggle Immersive Lock",
     "shortcut_action_video_toggle_cross_subtitle_recording": "Toggle Cross-Subtitle Recording",
     "shortcut_action_video_toggle_subtitle_blur": "Toggle Subtitle Blur",
-    "shortcut_action_video_escape": "Exit / Back"
+    "shortcut_action_video_escape": "Exit / Back",
+    "book_edit_author": "Author"
 }
