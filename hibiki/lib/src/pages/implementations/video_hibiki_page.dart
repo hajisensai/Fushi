@@ -641,6 +641,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_ensureEnterBrightness());
     // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
     unawaited(_lockLandscapeForVideo());
+    // TODO-158/BUG-216: 进入视频页显式持有「沉浸隐藏系统栏」所有权（移动端）。原先
+    // 只靠 [AppModel.openMedia] 在打开媒体时一次性设 immersiveSticky（书 / 视频共用
+    // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出由
+    // [AppModel.closeMedia] 的 setHomeShellSystemUiMode 还原；桌面 no-op。
+    unawaited(_applyVideoImmersiveMode());
     _init();
   }
 
@@ -664,6 +669,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case AppLifecycleState.resumed:
         // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
         _watchTracker?.start();
+        // TODO-158/BUG-216: 回前台重申沉浸隐藏系统栏（移动端）。后台 / 通知栏下拉 /
+        // 多任务切回后 Android 会把系统栏恢复显示，immersiveSticky 只在进入时设一次
+        // 不会自动复申 → 这里主动重设，保证「一直隐藏」。桌面 no-op。
+        unawaited(_applyVideoImmersiveMode());
         // 切窗 / 系统对话框返回（TODO-040 ①）：窗口重新激活时若键盘所有权仍属
         // 本页（页面或其全屏路由是当前路由、无查词浮层），把焦点收回视频——
         // OS 层焦点丢失后 Flutter 不保证归还到原节点。
@@ -2935,6 +2944,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+  }
+
+  /// TODO-158/BUG-216: 视频页持有「沉浸隐藏系统栏」所有权（移动端）。在 [initState]
+  /// 显式设、在 [didChangeAppLifecycleState] 的 `resumed` 重申，让系统栏在视频期间
+  /// **持续隐藏**，而非只靠 [AppModel.openMedia] 打开媒体时一次性设、从不复申。
+  ///
+  /// 用 [SystemUiMode.immersiveSticky]（与 openMedia 既有基线一致）：上划仍可临时
+  /// 唤出系统栏，但随后自动重隐；配合 `resumed` 重申覆盖后台返回 / 通知栏交互后的
+  /// 残留。严格限本页：不动 openMedia（书 / 视频共用入口，竖排小说由 reader 自设
+  /// edgeToEdge 覆盖、首页由 setHomeShellSystemUiMode 接管），退出由 [AppModel.closeMedia]
+  /// 的 setHomeShellSystemUiMode 统一还原。桌面门控 no-op（桌面无系统栏）。
+  Future<void> _applyVideoImmersiveMode() async {
+    if (!isMobilePlatform) return;
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   /// TODO-099: 退出视频页时还原为 app 默认允许态（竖屏 + 两个横屏，
