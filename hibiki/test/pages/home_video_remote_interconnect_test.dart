@@ -219,6 +219,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   Future<void> getRemoteVideoSubtitle(
     String id,
     File dest, {
+    int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
   }) async {
     subtitleDestinations.add(dest.path);

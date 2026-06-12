@@ -1,10 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
 const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 5, 6, 7, 8];
+
+DateTime _uniqueSubtitleCacheMtime(String seed) {
+  final int offsetMs = seed.hashCode & 0x3fffffff;
+  return DateTime.fromMillisecondsSinceEpoch(1700000000000 + offsetMs);
+}
 
 /// Fake 库服务：视频方法真实、其他方法存根。
 ///
@@ -15,6 +21,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_test');
     videoFile = File('${tmp.path}/sample.mp4');
     videoFile.writeAsBytesSync(_videoBytes);
+    videoFile.setLastModifiedSync(_uniqueSubtitleCacheMtime(tmp.path));
     // 创建临时字幕文件：用 ASS 覆盖远端 sidecar 不能退化成 .srt 的协议契约。
     subtitleFile = File('${tmp.path}/sample.ja.ass');
     subtitleFile.writeAsStringSync(
@@ -123,11 +130,14 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 void main() {
   late HibikiSyncServer server;
   late _FakeLibraryService lib;
+  late _EmbeddedSubtitleFfmpegBackend ffmpeg;
   const String token = 'test-token-video';
   late String base;
   String authHeader() => 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
 
   setUp(() async {
+    ffmpeg = _EmbeddedSubtitleFfmpegBackend();
+    setFfmpegBackendForTesting(ffmpeg);
     lib = _FakeLibraryService();
     server = HibikiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync('hbk_vid_srv').path,
@@ -140,7 +150,10 @@ void main() {
     base = 'http://127.0.0.1:${server.port}';
   });
 
-  tearDown(() async => server.stop());
+  tearDown(() async {
+    setFfmpegBackendForTesting(null);
+    await server.stop();
+  });
 
   // ── capabilities ─────────────────────────────────────────────────────────────
 
@@ -258,6 +271,78 @@ void main() {
   });
 
   // ── stream（token 鉴权，豁免 Basic）──────────────────────────────────────────
+
+  test(
+      'GET /api/library/videos/<id>/streamurl exposes embedded subtitle tracks',
+      () async {
+    final HttpClient c = HttpClient();
+    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+    final HttpClientRequest req = await c
+        .getUrl(Uri.parse('$base/api/library/videos/$encodedId/streamurl'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 200);
+    final Map<String, dynamic> json =
+        jsonDecode(await res.transform(utf8.decoder).join())
+            as Map<String, dynamic>;
+
+    final List<dynamic> tracks =
+        json['embeddedSubtitleTracks'] as List<dynamic>;
+    expect(tracks, hasLength(3));
+    final Map<String, dynamic> subrip =
+        (tracks[0] as Map).cast<String, dynamic>();
+    final Map<String, dynamic> movText =
+        (tracks[1] as Map).cast<String, dynamic>();
+    final Map<String, dynamic> pgs = (tracks[2] as Map).cast<String, dynamic>();
+
+    expect(subrip['streamIndex'], 0);
+    expect(subrip['codec'], 'subrip');
+    expect(subrip['isText'], isTrue);
+    expect(subrip['url'], contains('embeddedStreamIndex=0'));
+    expect(subrip['fileName'], endsWith('.srt'));
+    expect(movText['codec'], 'mov_text');
+    expect(movText['fileName'], endsWith('.srt'));
+    expect(pgs['codec'], 'hdmv_pgs_subtitle');
+    expect(pgs['isText'], isFalse);
+    expect(pgs.containsKey('url'), isFalse);
+    c.close();
+  });
+
+  test('GET /api/library/videos/<id>/subtitle extracts embedded text subtitle',
+      () async {
+    final HttpClient c = HttpClient();
+    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+    final Uri subtitleUri = Uri.parse(
+      '$base/api/library/videos/$encodedId/subtitle?embeddedStreamIndex=0',
+    );
+    final HttpClientRequest req = await c.getUrl(subtitleUri);
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+
+    expect(res.statusCode, 200);
+    final String body = await res.transform(utf8.decoder).join();
+    expect(body, contains('Remote embedded subtitle'));
+    expect(ffmpeg.extractedSubtitleIndices, contains(0));
+    expect(ffmpeg.extractedSubtitleIndices, contains(1),
+        reason: 'remote extraction should reuse the all-text-track demux path');
+    c.close();
+  });
+
+  test('GET embedded graphical subtitle returns 404 instead of fake text',
+      () async {
+    final HttpClient c = HttpClient();
+    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+    final Uri subtitleUri = Uri.parse(
+      '$base/api/library/videos/$encodedId/subtitle?embeddedStreamIndex=2',
+    );
+    final HttpClientRequest req = await c.getUrl(subtitleUri);
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+
+    expect(res.statusCode, 404);
+    await res.drain<void>();
+    c.close();
+  });
 
   group('video stream', () {
     /// 取得有效 stream url（含 token）。
@@ -441,4 +526,47 @@ void main() {
     c.close();
     await bare.stop();
   });
+}
+
+class _EmbeddedSubtitleFfmpegBackend implements FfmpegBackend {
+  final List<int> extractedSubtitleIndices = <int>[];
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    if (args.contains('-hide_banner')) {
+      return const FfmpegRunResult(returnCode: 1, output: '''
+  Stream #0:0: Video: h264
+  Stream #0:1(jpn): Subtitle: subrip (srt) (default)
+  Stream #0:2(eng): Subtitle: mov_text (tx3g)
+  Stream #0:3(jpn): Subtitle: hdmv_pgs_subtitle
+''');
+    }
+
+    for (int i = 0; i < args.length - 2; i++) {
+      if (args[i] == '-map' && args[i + 1].startsWith('0:s:')) {
+        final int index = int.parse(args[i + 1].substring('0:s:'.length));
+        extractedSubtitleIndices.add(index);
+        final File output = File(args[i + 2]);
+        output.parent.createSync(recursive: true);
+        output.writeAsStringSync(_subtitleTextFor(output.path, index));
+      }
+    }
+    return const FfmpegRunResult(returnCode: 0, output: '');
+  }
+
+  String _subtitleTextFor(String outputPath, int index) {
+    if (outputPath.toLowerCase().endsWith('.ass')) {
+      return '''
+[Script Info]
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Remote embedded subtitle $index
+''';
+    }
+    return '''
+1
+00:00:01,000 --> 00:00:02,000
+Remote embedded subtitle $index
+''';
+  }
 }

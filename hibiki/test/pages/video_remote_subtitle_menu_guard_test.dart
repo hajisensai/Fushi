@@ -43,6 +43,18 @@ void main() {
     expect(src.contains('_remoteSubtitlePath'), isTrue);
   });
 
+  test(
+      'remote menu enumerates embedded text tracks from streamurl and downloads by stream index',
+      () {
+    expect(src.contains('_remoteEmbeddedSubtitleTracks'), isTrue);
+    expect(src.contains('urls.embeddedSubtitleTracks'), isTrue);
+    expect(src.contains('_applyRemoteEmbeddedSubtitle('), isTrue);
+    expect(src.contains('embeddedStreamIndex:'), isTrue);
+    expect(src.contains('track.isText'), isTrue,
+        reason:
+            'graphic tracks must be filtered or disabled, never faked as text');
+  });
+
   test('远端字幕应用路径仅内存（不写本地 VideoBookRepository 持久化）', () {
     // 截取 _applyRemoteSubtitle 函数体，断言其内不调用 repo 持久化方法。
     final int start = src.indexOf('Future<void> _applyRemoteSubtitle(');

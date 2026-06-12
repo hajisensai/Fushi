@@ -166,6 +166,7 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<void> getRemoteVideoSubtitle(
     String id,
     File dest, {
+    int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
   }) async {}
 
@@ -195,6 +196,7 @@ class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
   Future<void> getRemoteVideoSubtitle(
     String id,
     File dest, {
+    int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
   }) async {}
 

@@ -10,6 +10,7 @@ abstract class RemoteVideoClient {
   Future<void> getRemoteVideoSubtitle(
     String id,
     File dest, {
+    int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
   });
 
