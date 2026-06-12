@@ -91,4 +91,4 @@ jobs:
           path: |
             out/bin/ffmpeg
             out/bin/ffmpeg.exe
-          if-no-files-found: warn
+          if-no-files-found: error

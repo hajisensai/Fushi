@@ -19,11 +19,15 @@ on:
       release_name:
         description: 'Optional GitHub Release title.'
         required: false
+      ffmpeg_min_run_id:
+        description: 'Optional ffmpeg-min workflow run ID. Defaults to the latest successful ffmpeg-min run.'
+        required: false
 
 jobs:
   windows:
     runs-on: windows-2022
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@v6
@@ -125,6 +129,54 @@ jobs:
       - name: Build Windows release
         working-directory: hibiki
         run: flutter build windows --release
+      - name: Download ffmpeg-min (Windows)
+        id: ffmpeg_min
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_FFMPEG_MIN_RUN_ID: ${{ inputs.ffmpeg_min_run_id }}
+        run: |
+          set -euo pipefail
+          artifact=ffmpeg-min-windows-x64
+          run_id="${INPUT_FFMPEG_MIN_RUN_ID:-}"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh run list \
+              --workflow ffmpeg-min.yml \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              -q '.[0].databaseId')"
+          fi
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo "::error title=Missing ffmpeg-min run::Run the ffmpeg-min workflow successfully, or pass ffmpeg_min_run_id."
+            exit 1
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+              --paginate \
+              -q ".artifacts[] | select(.name == \"${artifact}\" and .expired == false) | .name" \
+              | grep -qx "$artifact"; then
+            echo "::error title=Missing ffmpeg-min artifact::Run ${run_id} does not contain a non-expired ${artifact} artifact."
+            exit 1
+          fi
+          rm -rf hibiki/build/ffmpeg-min
+          mkdir -p hibiki/build/ffmpeg-min
+          gh run download "$run_id" --name "$artifact" --dir hibiki/build/ffmpeg-min
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Install ffmpeg-min into Windows bundle
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'hibiki\build\ffmpeg-min\ffmpeg.exe'
+          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release'
+          $target = Join-Path $targetDir 'ffmpeg.exe'
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Missing downloaded ffmpeg-min executable: $source"
+          }
+          if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            throw "Missing Windows release bundle directory: $targetDir"
+          }
+          Copy-Item -LiteralPath $source -Destination $target -Force
+          Get-Item -LiteralPath $target | Select-Object FullName, Length
       - name: Read version
         id: ver
         shell: bash
