@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// BUG-113/BUG-163/BUG-209 源码守卫：Windows WebView2 离屏捕获桥（vendored fork
 /// flutter_inappwebview_windows）的 TextureBridge::StopInternal() 必须按 dump 实证
 /// 的根因修复契约拆除：Close session -> remove_FrameArrived 断源 -> Close 帧池设
-/// closed-flag -> 帧池 ComPtr 移交进程级退役注册表代际保活。
+/// closed-flag -> 帧池 ComPtr 移交进程级退役注册表**永久保活**。
 ///
 /// 根因（dump 决定性证据 hibiki.exe.8952.dmp / .99916.dmp，cdb analyze）：WGC 把
 /// FirePresentEvent 作为 deferred call 排进 UI 线程 CoreMessaging 队列，已排队的
@@ -14,13 +14,22 @@ import 'package:flutter_test/flutter_test.dart';
 /// 成员（framepool+0x60 的 m_targets）-> 野 delegate 数组 -> null TypedEventHandler
 /// -> GraphicsCapture.dll c0000005（operator+0x15, rcx=0）。
 ///
-/// 前七修共同盲点：都在判断或依赖在途 deferral 的时机或引用（drain-hop 判排空、
-/// 赌 deferral 持强引用延后析构），dump 全部反证：deferral 不持强引用，帧池在
-/// FirePresentEvent 运行期已被释放。根因修复用两层因果不变量：(1) teardown 显式
-/// Close 帧池（同步设 closed-flag，让在途 FirePresentEvent 在开头 cmp 早返回
-/// no-op，不读 event 成员）；(2) 帧池 ComPtr 移交 RetiredFramePoolRegistry 保活，
-/// 按代延迟释放（只释放比当前 teardown 早 >=2 代的退役帧池），使帧池内存在可能有
-/// 在途 deferral 的窗口内绝不释放。
+/// 第八修（代际 retired-list，2 代后释放老帧池）被新 dump 反证：hibiki.exe.81504.dmp
+/// （含第八修的包 a8ff069a7，2026-06-12 11:35 崩溃）仍崩同一偏移 0xf0d5，崩溃帧池
+/// 内存 MEM_FREE + closed-flag=0（越过 FirePresentEvent 早返回）+ 崩溃栈无 hibiki
+/// teardown 帧。即「2 代后释放」是会输的时机赌注：快速连续查词时老帧池在其在途
+/// deferral 派发完之前就被代际逻辑 Release -> 内存 free -> deferral fire 读 free
+/// 内存（closed-flag 字节随对象消失读到野值 0）-> 崩。closed-flag 双保险只在帧池
+/// 内存有效期内成立，代际 Release 一旦释放帧池，双保险随内存消失。
+///
+/// 前八修共同盲点：都在判断或依赖在途 deferral 的时机或引用（drain-hop 判排空、
+/// 赌 deferral 持强引用延后析构、代际 2 代后释放）。WGC 不暴露「deferral 已排空」
+/// 的同步信号，故任何「在某时机释放退役帧池」都是赌注。唯一不依赖时机的因果不变量：
+/// (1) teardown 显式 Close 帧池（同步设 closed-flag，让在途 FirePresentEvent 在开头
+/// cmp 早返回 no-op，不读 event 成员）；(2) 帧池 ComPtr 移交 RetiredFramePoolRegistry
+/// **永久保活，绝不主动释放** —— 帧池内存永久有效 -> closed-flag 永久 = 1 ->
+/// 任何迟到 deferral 永久安全早返回。已 Close 帧池只剩小 COM 壳（GPU 资源随 Close
+/// 释放），是有界小泄漏，换零时机赌注的根治。
 void main() {
   test(
       'BUG-209: TextureBridge teardown closes pool and retires it to survive '
@@ -159,11 +168,31 @@ void main() {
     expect(src.contains('kCaptureTeardownDrainHops'), isFalse,
         reason: 'drain-hop 延迟 Close 押注已被 Close + 退役保活取代');
     expect(src.contains('PendingCaptureTeardown'), isFalse,
-        reason: '不再用延迟销毁 holder 判排空：Close 设 closed-flag + 退役注册表代际保活');
+        reason: '不再用延迟销毁 holder 判排空：Close 设 closed-flag + 退役注册表永久保活');
     expect(src.contains('RetiredFramePoolRegistry'), isTrue,
         reason: '必须有进程级退役帧池注册表保活已 Close 的帧池');
-    expect(src.contains('kRetiredGenerationGap'), isTrue,
-        reason: '退役注册表必须按代延迟释放（>=2 代跨完整消息循环才释放）');
+
+    // 第八修代际释放（kRetiredGenerationGap，2 代后释放老帧池）被 81504 dump 反证为
+    // 会输的时机赌注。永久保活契约：退役注册表只 push、绝不主动释放，禁止任何代际/
+    // 时机判断的释放逻辑回潮。
+    expect(src.contains('kRetiredGenerationGap'), isFalse,
+        reason: '禁止回潮第八修代际释放（2 代后释放）——81504 dump 反证它是会输的时机'
+            '赌注，老帧池在其在途 deferral 派发完前被代际 Release -> UAF');
+    expect(src.contains('generation_counter_'), isFalse,
+        reason: '退役注册表永久保活，不需要代际计数器');
+    expect(src.contains('std::remove_if'), isFalse,
+        reason: '退役注册表不得用 remove_if 释放任何退役帧池（永久保活，只 push）');
+    final int registryStart = src.indexOf('class RetiredFramePoolRegistry');
+    expect(registryStart, greaterThanOrEqualTo(0),
+        reason: 'RetiredFramePoolRegistry 必须可审计');
+    final int registryEnd = src.indexOf('};', registryStart);
+    expect(registryEnd, greaterThan(registryStart));
+    final String registryBody = src.substring(registryStart, registryEnd);
+    expect(registryBody.contains('.erase('), isFalse,
+        reason: '退役注册表 Retire 不得 erase 任何条目：已 Close 帧池必须永久保活，'
+            '内存永久有效使 closed-flag 永久=1，迟到 deferral 永久安全早返回');
+    expect(registryBody.contains('push_back'), isTrue,
+        reason: 'Retire 必须把帧池 push 进退役注册表保活');
 
     final int destructorStart =
         platformViewSrc.indexOf('CustomPlatformView::~CustomPlatformView()');

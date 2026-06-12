@@ -18,41 +18,48 @@ namespace flutter_inappwebview_plugin
 
   namespace
   {
-    // BUG-209 退役帧池保活注册表（进程级，单 UI 线程访问）。
+    // BUG-209 退役帧池保活注册表（进程级，单 UI 线程访问）——「Close 后永久保活」。
     //
-    // dump 决定性证据（hibiki.exe.8952.dmp / .99916.dmp，cdb !analyze）：崩点在
-    // GraphicsCapture.dll 内部
-    //   FirePresentEvent -> winrt::event::operator() (读 [framepool+0x60] 的 m_targets)
-    //   -> delegate::Invoke -> TypedEventHandler::operator()+0x15: mov rax,[rcx], rcx=0
-    // 且 framepool 对象所在整页内存已 unmapped（????）。即：一个已排进 UI 线程
-    // CoreMessaging DispatcherQueue 的 deferred FirePresentEvent，在帧池对象已被
-    // 释放之后才 fire——它对帧池不持强引用（否则页不会被回收），event::operator()
-    // 读已释放的 m_targets 野指针，遍历到 null delegate abi 指针即崩。
+    // dump 决定性证据：
+    //   * hibiki.exe.8952.dmp（第七修包 b1f960290）/ .99916.dmp：崩点在
+    //     GraphicsCapture.dll 内部
+    //       FirePresentEvent -> winrt::event::operator()（读 [framepool+0x60] 的 m_targets）
+    //       -> delegate::Invoke -> TypedEventHandler::operator()+0x15: mov rax,[rcx], rcx=0，
+    //     且 framepool 对象所在整页内存已释放回收。即：一个已排进 UI 线程 CoreMessaging
+    //     DispatcherQueue 的 deferred FirePresentEvent，在帧池对象已被释放之后才 fire——
+    //     它对帧池不持强引用（两份 dump 一致：帧池页已被回收），event::operator() 读已
+    //     释放的 m_targets 野指针，遍历到 null delegate abi 指针即崩。
+    //   * hibiki.exe.81504.dmp（**含第八修代际 retired-list 的包 a8ff069a7**，2026-06-12
+    //     11:35 崩溃）：仍崩同一偏移 0xf0d5（TypedEventHandler::operator()+0x15, rcx=0），
+    //     崩溃帧池 0x2205274af10 内存 MEM_FREE（`!vprot` 无区域）+ closed-flag [pool+129h]
+    //     读到 0（越过 FirePresentEvent+0x1c 的 cmp/jne 早返回，进了 event::operator()）+
+    //     崩溃栈无任何 hibiki teardown 帧（消息泵正常派发早先排队的 deferral）。
     //
-    // 前七修共同盲点：都在「判断/依赖在途 deferral 的时机或引用」（drain-hop 判排空、
-    // 赌 deferral 强引用延后析构），dump 全部反证。唯一不依赖时机判断的不变量是：
-    // 帧池对象内存在「可能存在在途 deferral」的窗口内绝不释放，且已 Close
-    // （closed-flag=1 让真要 fire 的在途 FirePresentEvent 在开头 cmp [pool+129h],0
-    //  -> jne 早返回 no-op，永不读 event 成员/delegate 表）。
+    // 第八修为何不彻底：它把 Close 后的帧池 move 进注册表，但按「代」延迟释放——第 N 次
+    // teardown 释放第 N-2 次的帧池，赌「两次 teardown 之间 UI 线程必跨过完整消息循环 ->
+    // 老帧池在途 deferral 已派发完」。81504 dump 反证这是个会输的时机赌注：用户快速连续
+    // 查词时多次 teardown 在数百毫秒内完成，而 DispatcherQueue 里该帧池的 deferred
+    // FirePresentEvent 仍积压未 fire；代际逻辑提前 Release 老帧池 -> 内存 free ->
+    // 在途 deferral fire 时读 free 内存（closed-flag 字节随对象消失读到野值 0，越过
+    // 早返回）-> 进 event::operator() 读野 m_targets -> null delegate -> 崩。closed-flag
+    // 双保险只在帧池内存有效期内成立；代际逻辑一旦 Release 帧池，双保险随内存一起消失。
     //
-    // 实现：teardown 时 Close 帧池后把 ComPtr move 进本注册表保活，并按「代」延迟
-    // 释放——只释放比当前 teardown 早 >=kRetiredGenerationGap 代的条目。两次 teardown
-    // 之间 UI 线程必然跨过完整消息循环（否则第二次 dispose 的 method-channel 调用根本
-    // 到不了），故 2 代前帧池的在途 deferred FirePresentEvent 必已派发完毕，释放安全。
-    // 双保险：即便代际判断有误，已 Close 的 closed-flag 也保证在途事件不读 event 成员。
-    // 常驻最多 kRetiredGenerationGap 个已 Close 退役帧池，不随开关次数累积。
+    // 前八修共同盲点：都在「判断/依赖在途 deferral 的时机或引用」（drain-hop 判排空、
+    // 赌 deferral 强引用延后析构、代际 2 代后释放），dump 全部反证。WGC 不暴露任何
+    // 「在途 deferral 已排空」的同步信号，故任何「在某个时机释放退役帧池」的方案都是赌注。
+    //
+    // 唯一不依赖时机判断的因果不变量：**已 Close 的退役帧池永不主动释放**。
+    //   (1) Close 释放帧池全部 D3D/GPU 资源（CloseInternal -> ResetD3DResources，反汇编
+    //       实证），退役帧池只剩一个小 COM 壳（几百字节），不占 GPU/服务端资源。
+    //   (2) 帧池内存永久有效 -> closed-flag [pool+129h] 永久 = 1 -> 任何迟到的 deferred
+    //       FirePresentEvent 在开头 cmp/jne 永久早返回 no-op，永不读 event 成员/delegate
+    //       表。null-delegate UAF 在因果上不可能发生（不再有「内存被释放」的窗口）。
+    // 代价：每次 WebView teardown 泄漏一个已 Close 的小帧池壳，进程退出随 OS 回收。
+    // teardown 频率有界（开关书/弹窗 WebView 销毁），是有界小泄漏，换零时机赌注的根治。
+    // 这是 WGC API 不提供「排空 deferral」同步原语下的必要兼容代价。
     //
     // 仅 UI 线程访问（teardown 与 FrameArrived 同线程串行），无需锁；mutex 仅防御性
     // 兜底，零竞争路径。
-    constexpr uint64_t kRetiredGenerationGap = 2;
-
-    struct RetiredFramePool {
-      uint64_t generation;
-      winrt::com_ptr<
-        ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool>
-        pool;
-    };
-
     class RetiredFramePoolRegistry {
     public:
       static RetiredFramePoolRegistry& Instance()
@@ -61,8 +68,9 @@ namespace flutter_inappwebview_plugin
         return instance;
       }
 
-      // 把一个已 Close 的帧池 ComPtr 移交保活；返回前释放比本次早
-      // >=kRetiredGenerationGap 代的退役帧池（它们的在途 deferral 已跨完整消息循环）。
+      // 把一个已 Close 的帧池 ComPtr 移交永久保活：只 push，绝不释放。帧池内存因此
+      // 永久有效 -> closed-flag 永久 = 1 -> 任何迟到 deferred FirePresentEvent 永久
+      // 安全早返回。已 Close 帧池只剩小 COM 壳（GPU 资源随 Close 释放）。
       void Retire(
         winrt::com_ptr<
           ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool> pool)
@@ -71,25 +79,15 @@ namespace flutter_inappwebview_plugin
           return;
         }
         const std::lock_guard<std::mutex> lock(mutex_);
-        const uint64_t generation = ++generation_counter_;
-        // 先释放够老的：保留 [generation - gap + 1 .. generation]，移除更早代。
-        if (generation >= kRetiredGenerationGap) {
-          const uint64_t release_threshold = generation - kRetiredGenerationGap;
-          retired_.erase(
-            std::remove_if(retired_.begin(), retired_.end(),
-              [release_threshold](const RetiredFramePool& entry) {
-                return entry.generation <= release_threshold;
-              }),
-            retired_.end());
-        }
-        retired_.push_back(RetiredFramePool{ generation, std::move(pool) });
+        retired_.push_back(std::move(pool));
       }
 
     private:
       RetiredFramePoolRegistry() = default;
       std::mutex mutex_;
-      uint64_t generation_counter_ = 0;
-      std::vector<RetiredFramePool> retired_;
+      std::vector<winrt::com_ptr<
+        ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool>>
+        retired_;
     };
   }  // namespace
 
@@ -145,7 +143,7 @@ namespace flutter_inappwebview_plugin
     // 派发，渲染管线线程模型与多年稳定版一致）。FreeThreaded 帧池（第四修）已实证
     // 在 Release 构建下纹理不更新（书籍文字全空，2026-06-10 用户验证 v1 无字 /
     // v2 revert 有字），禁止回潮。teardown 崩溃改由 StopInternal 的「Close 帧池 +
-    // 退役帧池代际保活」解决（见上方 RetiredFramePoolRegistry）。
+    // 退役帧池永久保活」解决（见上方 RetiredFramePoolRegistry）。
     frame_pool_ = graphics_context_->CreateCaptureFramePool(
       graphics_context_->device(),
       static_cast<ABI::Windows::Graphics::DirectX::DirectXPixelFormat>(
@@ -214,12 +212,13 @@ namespace flutter_inappwebview_plugin
   {
     is_running_ = false;
 
-    // BUG-209（Close + 退役帧池代际保活）：dump 决定性根因——已排进 UI 线程
+    // BUG-209（Close + 退役帧池永久保活）：dump 决定性根因——已排进 UI 线程
     // CoreMessaging DispatcherQueue 的 deferred FirePresentEvent 不持帧池强引用，
     // 在帧池被释放后才 fire；GraphicsCapture.dll 内部 event::operator() 读已释放的
     // 帧池 event 成员（[framepool+0x60] 的 m_targets）-> 野 delegate 数组 -> null
     // TypedEventHandler -> c0000005（崩在我们 lambda 之前，前七修的 callback_state/
-    // ComPtr-release/drain-hop 防线全部够不着）。
+    // ComPtr-release/drain-hop 防线全部够不着；第八修代际释放也被 81504 dump 反证，
+    // 见上方 RetiredFramePoolRegistry 注释）。
     //
     // 根因修复用两层因果不变量，按以下顺序拆除：
     //   1) Close session：同步停止产生新帧。
@@ -230,14 +229,14 @@ namespace flutter_inappwebview_plugin
     //      的 deferred FirePresentEvent，在其开头 cmp byte ptr [pool+129h],0 -> jne
     //      早返回 no-op，绝不读 event 成员/delegate 表（dump 反汇编实证此检查在 event
     //      fire 之前）。
-    //   4) 把帧池 ComPtr move 进进程级退役注册表保活，绝不在此处释放最后强引用。
-    //      注册表按「代」延迟释放：只释放比本次 teardown 早 >=2 代的退役帧池——那些
-    //      帧池的在途 deferral 已跨越完整消息循环（必已派发完），释放安全。
+    //   4) 把帧池 ComPtr move 进进程级退役注册表**永久保活**，绝不主动释放。帧池内存
+    //      因此永久有效 -> closed-flag 永久 = 1 -> 任何迟到的在途 deferral 永久安全
+    //      早返回（不再有第八修代际释放制造的「内存已 free」窗口）。
     //
-    // 因果不变量：帧池对象内存在「可能存在在途 deferred FirePresentEvent」的窗口内
-    // 永不释放；真要 fire 的在途事件因 closed-flag 而 no-op。两条叠加使 null-delegate
-    // UAF 在因果上不可能发生。常驻最多 2 个已 Close 退役帧池（小 COM 对象，WGC 服务端
-    // 资源已随 Close 释放），不随 WebView 开关次数累积。
+    // 因果不变量：已 Close 的帧池内存永不释放 -> closed-flag 永久有效 -> 真要 fire 的
+    // 在途事件因 closed-flag 而 no-op，永不读 event 成员。null-delegate UAF 在因果上
+    // 不可能发生。代价是每次 teardown 常驻一个已 Close 小 COM 壳（WGC 服务端/GPU 资源
+    // 随 Close 释放），有界小泄漏，进程退出随 OS 回收。
     if (capture_session_) {
       auto session_closable =
         capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
@@ -262,8 +261,8 @@ namespace flutter_inappwebview_plugin
       if (pool_closable) {
         pool_closable->Close();
       }
-      // 帧池强引用移交退役注册表保活（不在此释放），让其内存在所有在途 deferral
-      // 跑完（跨完整消息循环）之前都有效；注册表代际释放更老的退役帧池。
+      // 帧池强引用移交退役注册表永久保活（不在此释放，注册表也绝不主动释放），让其
+      // 内存永久有效，使 closed-flag 永久 = 1，任何迟到 deferral 永久安全早返回。
       RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_));
       frame_pool_ = nullptr;
     }
