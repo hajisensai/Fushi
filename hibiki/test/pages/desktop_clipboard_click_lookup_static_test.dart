@@ -24,17 +24,18 @@ void main() {
     expect(
       _withoutWhitespace(resultBody),
       contains(
-        '26.0*'
-        '(appModel.dictionaryFontSize/appModel.defaultDictionaryFontSize)',
+        'dictionaryHeadwordScale:'
+        'appModel.dictionaryFontSize/appModel.defaultDictionaryFontSize',
       ),
       reason: 'Clipboard lookup text should visually match the popup '
-          'headword size, which is 26px scaled by dictionary font size only.',
+          'headword size through the shared panel style, scaled by dictionary '
+          'font size only.',
     );
     expect(
       resultBody,
-      contains('headwordTextStyle:'),
-      reason: 'HomeDictionaryPage must pass a headword-level style into the '
-          'native clipboard strip instead of relying on its default body text.',
+      isNot(contains('headwordTextStyle:')),
+      reason: 'HomeDictionaryPage must not reopen page-local text-style '
+          'decisions to size the native clipboard strip.',
     );
     expect(
       resultBody,
