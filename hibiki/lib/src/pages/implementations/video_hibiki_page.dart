@@ -129,8 +129,10 @@ int resolveMiningCueIndexForPosition({
   if (cues.isEmpty) return -1;
   final int effectivePos = effectiveSubtitlePositionMs(positionMs, delayMs);
   // 1. 精确命中：位置落在某条 cue 的时间窗内（与字幕显示期同一判据）。
-  final int hit =
-      JsonAlignmentParser.findCueIndex(cues: cues, positionMs: effectivePos);
+  final int hit = JsonAlignmentParser.findCueIndex(
+    cues: cues,
+    positionMs: effectivePos,
+  );
   if (hit >= 0) return hit;
   // 2. gap / 末句后：floor 找「起点 <= 当前位置」的最后一条 cue（用户最后看到的那句）。
   //    [cues] 由 [VideoPlayerController.setCues] 保证按 startMs 升序，可二分。
@@ -152,6 +154,8 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
     required this.bookUid,
     required this.repo,
+    this.initialCueStartMs,
+    this.initialSubtitleListVisible = false,
     super.key,
   })  : remoteInfo = null,
         remoteClient = null;
@@ -160,6 +164,8 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     required RemoteVideoInfo info,
     required this.repo,
     required RemoteVideoClient client,
+    this.initialCueStartMs,
+    this.initialSubtitleListVisible = false,
     super.key,
   })  : bookUid = info.id,
         remoteInfo = info,
@@ -169,6 +175,8 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   final VideoBookRepository repo;
   final RemoteVideoInfo? remoteInfo;
   final RemoteVideoClient? remoteClient;
+  final int? initialCueStartMs;
+  final bool initialSubtitleListVisible;
 
   /// 打开视频播放页的**唯一入口**：在路由层用 [HibikiAppUiScaleNeutralizer] 把整页中和
   /// （与阅读器 [ReaderHibikiSource.buildLaunchPage] 同范式）。
@@ -181,21 +189,32 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   static Widget neutralized({
     required String bookUid,
     required VideoBookRepository repo,
+    int? initialCueStartMs,
+    bool initialSubtitleListVisible = false,
   }) =>
       HibikiAppUiScaleNeutralizer(
-        child: VideoHibikiPage(bookUid: bookUid, repo: repo),
+        child: VideoHibikiPage(
+          bookUid: bookUid,
+          repo: repo,
+          initialCueStartMs: initialCueStartMs,
+          initialSubtitleListVisible: initialSubtitleListVisible,
+        ),
       );
 
   static Widget neutralizedRemote({
     required RemoteVideoInfo info,
     required VideoBookRepository repo,
     required RemoteVideoClient client,
+    int? initialCueStartMs,
+    bool initialSubtitleListVisible = false,
   }) =>
       HibikiAppUiScaleNeutralizer(
         child: VideoHibikiPage.remote(
           info: info,
           repo: repo,
           client: client,
+          initialCueStartMs: initialCueStartMs,
+          initialSubtitleListVisible: initialSubtitleListVisible,
         ),
       );
 
@@ -215,11 +234,7 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
 }
 
 class _VideoOsdMessage {
-  const _VideoOsdMessage({
-    required this.message,
-    this.icon,
-    this.progress,
-  });
+  const _VideoOsdMessage({required this.message, this.icon, this.progress});
 
   final String message;
   final IconData? icon;
@@ -354,10 +369,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   double get _videoControlTitleFontSize =>
       _videoControlTitleFontSizeBase * _videoUiScale;
 
-  TextStyle _videoControlTitleStyle(ColorScheme cs) => TextStyle(
-        color: cs.onSurface,
-        fontSize: _videoControlTitleFontSize,
-      );
+  TextStyle _videoControlTitleStyle(ColorScheme cs) =>
+      TextStyle(color: cs.onSurface, fontSize: _videoControlTitleFontSize);
 
   Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
@@ -548,11 +561,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [FavoriteSentenceRepository]（preferences JSON），来源标 [kFavoriteSentenceSourceVideo]。
   bool _currentVideoSentenceIsFavorited = false;
 
-  /// 本视频已收藏句文本的缓存集合（驱动字幕跳转列表行内收藏星标的实心/空心，TODO-152
+  /// 本视频已收藏句锚点的缓存集合（驱动字幕跳转列表行内收藏星标的实心/空心，TODO-152
   /// 子A）。同步查询需要（[VideoSubtitleJumpPanel.isCueFavorited] 每次重建调用），故缓存
   /// 而非每行异步查 DB。打开列表面板时 [_refreshFavoritedCueCache] 从 repo 拉一次，
-  /// 行内收藏 toggle 后增量更新。按 `cue.text` 匹配（与 repo 的 video 句收藏键
-  /// `bookKey + sectionIndex=null + normCharOffset=null` 唯一对应一句文本）。
+  /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
+  /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
@@ -642,9 +655,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
     _popup = DictionaryPopupController(lowMemory: false);
+    _subtitleListVisible.value = widget.initialSubtitleListVisible;
     WidgetsBinding.instance.addObserver(this);
-    _exitFlushCallback =
-        ExitFlushRegistry.instance.register(_flushAllForProcessExit);
+    _exitFlushCallback = ExitFlushRegistry.instance.register(
+      _flushAllForProcessExit,
+    );
     // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
     // 桌面 no-op。
     unawaited(_ensureEnterBrightness());
@@ -757,16 +772,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
 
     try {
-      final RemoteVideoStreamUrls urls =
-          await client.remoteVideoStreamUrls(info.id);
+      final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
+        info.id,
+      );
       String? externalSub;
       List<AudioCue> cues = const <AudioCue>[];
       if (urls.subtitleUrl != null) {
         final Directory temp = await getTemporaryDirectory();
-        final File subtitle = File(p.join(
-          temp.path,
-          'hibiki_remote_${_safeFileName(info.id)}.srt',
-        ));
+        final File subtitle = File(
+          p.join(temp.path, 'hibiki_remote_${_safeFileName(info.id)}.srt'),
+        );
         await client.getRemoteVideoSubtitle(info.id, subtitle);
         externalSub = subtitle.path;
         _remoteSubtitlePath = subtitle.path;
@@ -810,7 +825,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         final ({
           String persisted,
           List<AudioCue> cues,
-          int? graphicStreamIndex
+          int? graphicStreamIndex,
         })? restored = await _restorePersistedSubtitle(
           videoPath: row.videoPath,
           persisted: row.subtitleSource,
@@ -836,7 +851,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       videoPath: row.videoPath,
       cues: cues,
       title: row.title,
-      initialPositionMs: row.lastPositionMs,
+      initialPositionMs: widget.initialCueStartMs ?? row.lastPositionMs,
       externalSubtitlePath: externalSub,
       renderGraphicStreamIndex: graphicStreamIndex,
     );
@@ -881,8 +896,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         externalPath: persisted,
         label: p.basename(persisted),
       );
-      final List<AudioCue> cues =
-          await loadCuesForSource(external, videoPath, widget.bookUid);
+      final List<AudioCue> cues = await loadCuesForSource(
+        external,
+        videoPath,
+        widget.bookUid,
+      );
       if (cues.isNotEmpty) {
         return (
           persisted: external.toPersistedValue(),
@@ -893,8 +911,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 文件在但解析空（坏字幕）：落回下面的同目录枚举，别让一个坏导入挡住别的源。
     }
 
-    final List<SubtitleSource> sources =
-        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+    final List<SubtitleSource> sources = await listAllSubtitleSources(
+      videoPath,
+      langCode: _targetLangCode,
+    );
     if (sources.isEmpty) return null;
 
     final SubtitleSource? chosen = crossEpisode
@@ -912,8 +932,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
     }
 
-    final List<AudioCue> cues =
-        await loadCuesForSource(chosen, videoPath, widget.bookUid);
+    final List<AudioCue> cues = await loadCuesForSource(
+      chosen,
+      videoPath,
+      widget.bookUid,
+    );
     if (cues.isEmpty) return null;
     return (
       persisted: chosen.toPersistedValue(),
@@ -928,8 +951,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required String? currentSubtitleSource,
     required List<AudioCue> currentCues,
   }) async {
-    final List<SubtitleSource> sources =
-        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+    final List<SubtitleSource> sources = await listAllSubtitleSources(
+      videoPath,
+      langCode: _targetLangCode,
+    );
     return includeCurrentPersistedSubtitleForMenu(
       sources,
       videoPath: videoPath,
@@ -1000,15 +1025,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     // 慢路径（ffmpeg 枚举 + cue 解析）期间若已被后续切集取代，放弃应用避免覆盖新集。
     if (seq != _episodeLoadSeq || !mounted) {
-      debugPrint('[video-episode] superseded: ep$index seq=$seq '
-          'cur=$_episodeLoadSeq — skip apply');
+      debugPrint(
+        '[video-episode] superseded: ep$index seq=$seq '
+        'cur=$_episodeLoadSeq — skip apply',
+      );
       return;
     }
     // 诊断（用户报「切到第4集字幕/音画对不上」，本机不可复现）：记录实际选中的字幕源
     // 与解析出的 cue 数 + 首句，便于真机切集后回看日志锁定是否选错源/空 cue/错集。
-    debugPrint('[video-episode] load ep$index "${episode.title}" '
-        'path=${episode.path} subSrc=$externalSub cues=${cues.length}'
-        '${cues.isNotEmpty ? ' first=[${cues.first.startMs}ms]${cues.first.text}' : ''}');
+    debugPrint(
+      '[video-episode] load ep$index "${episode.title}" '
+      'path=${episode.path} subSrc=$externalSub cues=${cues.length}'
+      '${cues.isNotEmpty ? ' first=[${cues.first.startMs}ms]${cues.first.text}' : ''}',
+    );
 
     _currentEpisode = index;
     await _applyLoad(
@@ -1030,8 +1059,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String videoPath,
     String bookUid,
   ) async {
-    final String? sidecarPath =
-        findSidecarSubtitle(videoPath, langCode: _targetLangCode);
+    final String? sidecarPath = findSidecarSubtitle(
+      videoPath,
+      langCode: _targetLangCode,
+    );
     if (sidecarPath == null) return null;
     try {
       final String text = await readTextWithEncoding(File(sidecarPath));
@@ -1073,13 +1104,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) async {
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
-    final VideoMpvConfig mpvConfig =
-        VideoMpvConfig.decode(appModel.videoMpvConfig);
+    final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
+      appModel.videoMpvConfig,
+    );
     // 解析启用的 mpv 着色器为绝对路径（桌面 libmpv 生效，移动端最终静默）。
     // 「画质增强」主开关关闭时保留持久化勾选，但运行时旁路所有 shader。
     final List<String> shaderPaths = mpvConfig.highQuality
         ? await resolveEnabledShaderPaths(
-            decodeEnabledShaders(appModel.videoShadersEnabled))
+            decodeEnabledShaders(appModel.videoShadersEnabled),
+          )
         : const <String>[];
     try {
       await controller.load(
@@ -1157,7 +1190,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             db.markVideoCompleted(uid, DateTime.now()),
         addHourly: (String dateKey, int hour, int deltaMs) =>
             db.addVideoHourlyWatchTime(
-                dateKey: dateKey, hour: hour, deltaMs: deltaMs),
+          dateKey: dateKey,
+          hour: hour,
+          deltaMs: deltaMs,
+        ),
       )
         ..attach(controller)
         ..start();
@@ -1183,9 +1219,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 把当前 [_episodes] 序列化回 playlistJson（带各集 positionMs）。
-  String _encodeEpisodes() => jsonEncode(
-        _episodes.map((PlaylistEntry e) => e.toJson()).toList(),
-      );
+  String _encodeEpisodes() =>
+      jsonEncode(_episodes.map((PlaylistEntry e) => e.toJson()).toList());
 
   String _safeFileName(String input) =>
       input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
@@ -1221,9 +1256,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
     if (!mounted) return;
     setState(() => _currentAudioTrackId = track.id);
-    _showOsd(t.video_audio_track_switched(
-      label: _trackLabel(track.title, track.language, track.id),
-    ));
+    _showOsd(
+      t.video_audio_track_switched(
+        label: _trackLabel(track.title, track.language, track.id),
+      ),
+    );
   }
 
   /// 切到第 [index] 集：保存当前集进度 → 持久化 currentEpisode → 用**目标集自己
@@ -1276,9 +1313,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 selectedColor: Theme.of(ctx).colorScheme.primary,
                 leading: selected
                     ? const Icon(Icons.play_arrow)
-                    : Text('${i + 1}',
+                    : Text(
+                        '${i + 1}',
                         style: TextStyle(
-                            color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                 title: Text(
                   _episodes[i].title,
                   maxLines: 2,
@@ -1462,14 +1502,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (ctx == null || !ctx.mounted) return;
     final RenderObject? renderObject = ctx.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
-    final Offset center =
-        renderObject.localToGlobal(renderObject.size.center(Offset.zero));
+    final Offset center = renderObject.localToGlobal(
+      renderObject.size.center(Offset.zero),
+    );
     // ±1px 抖动 x 坐标（TODO-148/BUG-215）：连续派发到同一坐标会被 MouseTracker
     // 去重、media_kit onHover 不再触发；每次翻转让坐标始终变化，强制每次都续命
     // 隐藏定时。1px 仍稳落控制条命中区内。
     _pokeParity = !_pokeParity;
-    final Offset pokePosition =
-        Offset(center.dx + (_pokeParity ? 1.0 : -1.0), center.dy);
+    final Offset pokePosition = Offset(
+      center.dx + (_pokeParity ? 1.0 : -1.0),
+      center.dy,
+    );
     GestureBinding.instance.handlePointerEvent(
       PointerHoverEvent(
         position: pokePosition,
@@ -1601,29 +1644,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       autoRead: true,
     );
     debugPrint(
-        '[video-lookup] popup ready in ${swLookup.elapsedMilliseconds}ms term="$term"');
+      '[video-lookup] popup ready in ${swLookup.elapsedMilliseconds}ms term="$term"',
+    );
     // 刷新查词浮层顶部收藏星标：判定当前字幕句是否已收藏（异步，不阻塞弹窗）。
     unawaited(_refreshVideoSentenceFavorite());
   }
 
-  /// 当前查词字幕句的收藏唯一键：视频句子没有 epub 的 section/offset 坐标，故用
-  /// (text=整句, bookKey=视频 bookUid) 去重，[sectionIndex]/[normCharOffset] 留空。
-  /// [FavoriteSentenceRepository] 的内容匹配两边 null 即按 text+bookKey 比较，天然兼容。
+  /// 当前查词字幕句的收藏键：视频句子把 cue.startMs 兼容写入
+  /// [FavoriteSentence.normCharOffset]，用 `bookUid + startMs` 指回时间轴；没有 cue 的
+  /// 旧条目继续以 `text + bookUid` 兼容匹配。
   Future<void> _refreshVideoSentenceFavorite() async {
     final String sentence = _lastLookupSentence;
+    final AudioCue? cue = _lastLookupCue;
     if (sentence.isEmpty) {
       if (mounted && _currentVideoSentenceIsFavorited) {
         setState(() => _currentVideoSentenceIsFavorited = false);
       }
       return;
     }
-    final bool favorited =
-        await FavoriteSentenceRepository(appModel.database).isFavorited(
-      text: sentence,
-      bookKey: widget.bookUid,
-      sectionIndex: null,
-      normCharOffset: null,
-    );
+    final bool favorited = (await _matchingVideoFavorites(
+      sentence,
+      cue,
+    ))
+        .isNotEmpty;
     if (mounted && favorited != _currentVideoSentenceIsFavorited) {
       setState(() => _currentVideoSentenceIsFavorited = favorited);
     }
@@ -1639,16 +1682,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       HibikiToast.show(msg: t.no_sentence_selected);
       return;
     }
-    final FavoriteSentenceRepository repo =
-        FavoriteSentenceRepository(appModel.database);
+    final AudioCue? cue = _lastLookupCue;
+    final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
+      appModel.database,
+    );
     if (_currentVideoSentenceIsFavorited) {
-      await repo.removeByContent(
-        text: sentence,
-        bookKey: widget.bookUid,
-        sectionIndex: null,
-        normCharOffset: null,
-      );
-      if (mounted) setState(() => _currentVideoSentenceIsFavorited = false);
+      for (final FavoriteSentence fav in await _matchingVideoFavorites(
+        sentence,
+        cue,
+      )) {
+        await repo.removeById(fav.id);
+      }
+      if (mounted) {
+        setState(() {
+          _currentVideoSentenceIsFavorited = false;
+          if (cue != null) {
+            _favoritedVideoSentences.remove(
+              _videoFavoriteCacheKey(sentence, cue.startMs),
+            );
+          }
+          _favoritedVideoSentences.remove(
+            _videoFavoriteCacheKey(sentence, null),
+          );
+        });
+      }
       HibikiToast.show(msg: t.favorite_removed);
       return;
     }
@@ -1660,11 +1717,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         bookTitle: _title ?? widget.bookUid,
         createdAt: DateTime.now(),
         bookKey: widget.bookUid,
+        sectionIndex: cue?.sentenceIndex,
+        normCharOffset: cue?.startMs,
+        normCharLength: cue == null
+            ? null
+            : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
         source: kFavoriteSentenceSourceVideo,
         dateKey: statTodayKey(),
       ),
     );
-    if (mounted) setState(() => _currentVideoSentenceIsFavorited = true);
+    if (mounted) {
+      setState(() {
+        _currentVideoSentenceIsFavorited = true;
+        _favoritedVideoSentences.add(
+          _videoFavoriteCacheKey(sentence, cue?.startMs),
+        );
+      });
+    }
     HibikiToast.show(msg: t.favorite_added);
   }
 
@@ -1677,26 +1746,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
-  bool _isCueFavorited(AudioCue cue) =>
-      _favoritedVideoSentences.contains(cue.text);
+  bool _isCueFavorited(AudioCue cue) {
+    final String text = cue.text.trim();
+    return _favoritedVideoSentences.contains(
+          _videoFavoriteCacheKey(text, cue.startMs),
+        ) ||
+        _favoritedVideoSentences.contains(_videoFavoriteCacheKey(text, null));
+  }
 
   /// 从字幕跳转列表面板行内 toggle 某句收藏（TODO-152 子A）。与查词浮层收藏走同一
-  /// [FavoriteSentenceRepository]（视频句键 `bookKey + sectionIndex=null +
-  /// normCharOffset=null`），保持两处一致：toggle 后更新缓存集；若恰好是当前查词句，
+  /// [FavoriteSentenceRepository]，视频句键优先用 `bookUid + cue.startMs`，并兼容旧
+  /// text-only 条目。toggle 后更新缓存集；若恰好是当前查词句，
   /// 同步 [_currentVideoSentenceIsFavorited] 让浮层星标也刷新。
   Future<void> _toggleFavoriteCueForVideo(AudioCue cue) async {
     final String sentence = cue.text.trim();
     if (sentence.isEmpty) return;
-    final FavoriteSentenceRepository repo =
-        FavoriteSentenceRepository(appModel.database);
-    final bool wasFavorited = _favoritedVideoSentences.contains(cue.text);
+    final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
+      appModel.database,
+    );
+    final bool wasFavorited = _isCueFavorited(cue);
     if (wasFavorited) {
-      await repo.removeByContent(
-        text: sentence,
-        bookKey: widget.bookUid,
-        sectionIndex: null,
-        normCharOffset: null,
-      );
+      for (final FavoriteSentence fav in await _matchingVideoFavorites(
+        sentence,
+        cue,
+      )) {
+        await repo.removeById(fav.id);
+      }
     } else {
       await repo.add(
         FavoriteSentence(
@@ -1704,6 +1779,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           bookTitle: _title ?? widget.bookUid,
           createdAt: DateTime.now(),
           bookKey: widget.bookUid,
+          sectionIndex: cue.sentenceIndex,
+          normCharOffset: cue.startMs,
+          normCharLength: (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
           source: kFavoriteSentenceSourceVideo,
           dateKey: statTodayKey(),
         ),
@@ -1712,9 +1790,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (!mounted) return;
     setState(() {
       if (wasFavorited) {
-        _favoritedVideoSentences.remove(cue.text);
+        _favoritedVideoSentences
+          ..remove(_videoFavoriteCacheKey(sentence, cue.startMs))
+          ..remove(_videoFavoriteCacheKey(sentence, null));
       } else {
-        _favoritedVideoSentences.add(cue.text);
+        _favoritedVideoSentences.add(
+          _videoFavoriteCacheKey(sentence, cue.startMs),
+        );
       }
       // 列表 toggle 的若是当前查词那句，同步浮层星标态（两处共用同一收藏记录）。
       if (sentence == _lastLookupSentence.trim()) {
@@ -1727,19 +1809,52 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 拉本视频已收藏句填充 [_favoritedVideoSentences]（打开字幕跳转列表前调一次）。
   /// 只取本 bookKey + video 来源那批，按 `text` 建集供同步查询。
   Future<void> _refreshFavoritedCueCache() async {
-    final FavoriteSentenceRepository repo =
-        FavoriteSentenceRepository(appModel.database);
+    final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
+      appModel.database,
+    );
     final List<FavoriteSentence> all = await repo.getAll();
     if (!mounted) return;
     setState(() {
       _favoritedVideoSentences
         ..clear()
-        ..addAll(all
-            .where((FavoriteSentence s) =>
-                s.bookKey == widget.bookUid &&
-                s.source == kFavoriteSentenceSourceVideo)
-            .map((FavoriteSentence s) => s.text));
+        ..addAll(
+          all
+              .where(
+                (FavoriteSentence s) =>
+                    s.bookKey == widget.bookUid &&
+                    s.source == kFavoriteSentenceSourceVideo,
+              )
+              .map(
+                (FavoriteSentence s) =>
+                    _videoFavoriteCacheKey(s.text.trim(), s.normCharOffset),
+              ),
+        );
     });
+  }
+
+  String _videoFavoriteCacheKey(String text, int? startMs) =>
+      startMs == null ? 'legacy|$text' : 'cue|$startMs|$text';
+
+  Future<List<FavoriteSentence>> _matchingVideoFavorites(
+    String sentence,
+    AudioCue? cue,
+  ) async {
+    final String text = sentence.trim();
+    final List<FavoriteSentence> all = await FavoriteSentenceRepository(
+      appModel.database,
+    ).getAll();
+    return all
+        .where(
+          (FavoriteSentence s) =>
+              s.source == kFavoriteSentenceSourceVideo &&
+              s.bookKey == widget.bookUid &&
+              s.text.trim() == text &&
+              (cue == null
+                  ? s.normCharOffset == null
+                  : s.normCharOffset == cue.startMs ||
+                      (s.normCharOffset == null && s.sectionIndex == null)),
+        )
+        .toList();
   }
 
   /// 查词浮层顶部「收藏当前字幕句」星标行（覆写 [DictionaryPageMixin.buildPopupHeaderFor]）。
@@ -1824,8 +1939,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _popNestedPopupAt(int index) {
-    debugPrint('[video-lookup] dismiss popup index=$index '
-        'visibleTop=$_topVisiblePopupIndex');
+    debugPrint(
+      '[video-lookup] dismiss popup index=$index '
+      'visibleTop=$_topVisiblePopupIndex',
+    );
     // Hide-and-keep the warm slot instead of clearing it, so its loaded WebView
     // survives for the next lookup (BUG-094): closing index 0 hides the warm
     // slot + drops children; closing a child drops from there up.
@@ -1925,8 +2042,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             // （退视频/退全屏同帧）；此刻读 appModel(ref.read)/mixinTheme 会做失效祖先查找
             // 抛异常红屏（BUG-121）。销毁期标志置位则空渲染兜底。
             if (!mounted || _overlayInert) return const SizedBox.shrink();
-            final Size screen =
-                Size(constraints.maxWidth, constraints.maxHeight);
+            final Size screen = Size(
+              constraints.maxWidth,
+              constraints.maxHeight,
+            );
             return Stack(
               // BUG-135: 隐藏热槽被停到屏幕右外侧（buildNestedPopupLayer），默认
               // Clip.hardEdge 会把它裁掉 → 原生 WebView 可能不再渲染、丢失预热。用
@@ -2084,10 +2203,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _showAudioTrackMenu(VideoPlayerController controller) {
     _showTrackMenu(
       controller.audioTracks
-          .map((AudioTrack tr) => (
-                label: _trackLabel(tr.title, tr.language, tr.id),
-                onSelected: () => _selectAudioTrack(controller, tr),
-              ))
+          .map(
+            (AudioTrack tr) => (
+              label: _trackLabel(tr.title, tr.language, tr.id),
+              onSelected: () => _selectAudioTrack(controller, tr),
+            ),
+          )
           .toList(),
     );
   }
@@ -2222,8 +2343,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (_videoFullscreenTransitioning || isFullscreen(context)) return;
     if (!context.mounted) return;
     _videoFullscreenTransitioning = true;
-    final VideoStateInheritedWidget inherited =
-        VideoStateInheritedWidget.of(context);
+    final VideoStateInheritedWidget inherited = VideoStateInheritedWidget.of(
+      context,
+    );
     final VideoState stateValue = inherited.state;
     final contextNotifierValue = inherited.contextNotifier;
     final videoViewParametersNotifierValue =
@@ -2275,11 +2397,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       disposeNotifiers: false,
                       child: ValueListenableBuilder<VideoViewParameters>(
                         valueListenable: videoViewParametersNotifierValue,
-                        builder: (
-                          BuildContext _,
-                          VideoViewParameters params,
-                          __,
-                        ) {
+                        builder:
+                            (BuildContext _, VideoViewParameters params, __) {
                           final Widget fullscreenVideo = Video(
                             controller: controllerValue,
                             width: null,
@@ -2330,9 +2449,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _videoFullscreenRoute = fullscreenRoute;
       // 全屏路由关闭的唯一汇聚点：Esc / F / 全屏按钮 / 双击 / 系统返回全部
       // 经由路由 future 完成，无论哪条退出路径都在这里复位 + 归还焦点。
-      Navigator.of(context, rootNavigator: true)
-          .push<void>(fullscreenRoute)
-          .whenComplete(_onVideoFullscreenRouteClosed);
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).push<void>(fullscreenRoute).whenComplete(_onVideoFullscreenRouteClosed);
       await enterNativeFullscreen();
     } finally {
       _videoFullscreenTransitioning = false;
@@ -2408,13 +2528,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required bool desktop,
   }) {
     if (desktop) {
-      return MaterialDesktopVolumeButton(
-        iconSize: _videoControlIconSize,
-      );
+      return MaterialDesktopVolumeButton(iconSize: _videoControlIconSize);
     }
     return MaterialCustomButton(
-      icon:
-          Icon(_volumeIconFor(controller.volume), size: _videoControlIconSize),
+      icon: Icon(
+        _volumeIconFor(controller.volume),
+        size: _videoControlIconSize,
+      ),
       onPressed: () => _showVolumeMenu(controller),
     );
   }
@@ -2482,10 +2602,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ],
         MaterialDesktopCustomButton(
-          icon: Icon(
-            Icons.photo_camera_outlined,
-            size: _videoControlIconSize,
-          ),
+          icon: Icon(Icons.photo_camera_outlined, size: _videoControlIconSize),
           onPressed: _saveScreenshot,
         ),
         MaterialDesktopCustomButton(
@@ -2500,10 +2617,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // （TODO-127）：倍速 / 着色器对比按钮已移出控制条（改从右键菜单 / 快捷键 /
         // 设置进入），字幕列表是顶栏最常直接命中的入口，故放在设置（tune）左边。
         MaterialDesktopCustomButton(
-          icon: Icon(
-            Icons.format_list_bulleted,
-            size: _videoControlIconSize,
-          ),
+          icon: Icon(Icons.format_list_bulleted, size: _videoControlIconSize),
           onPressed: _toggleSubtitleJumpList,
         ),
         MaterialDesktopCustomButton(
@@ -2534,9 +2648,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
           onPressed: () => _skipCueAndPokeControls(forward: false),
         ),
-        MaterialDesktopPlayOrPauseButton(
-          iconSize: _videoPlayPauseIconSize,
-        ),
+        MaterialDesktopPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
         MaterialDesktopCustomButton(
           icon: Icon(Icons.skip_next, size: _videoControlIconSize),
           onPressed: () => _skipCueAndPokeControls(forward: true),
@@ -2650,10 +2762,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: _showEpisodeList,
           ),
         MaterialCustomButton(
-          icon: Icon(
-            Icons.photo_camera_outlined,
-            size: _videoControlIconSize,
-          ),
+          icon: Icon(Icons.photo_camera_outlined, size: _videoControlIconSize),
           onPressed: _saveScreenshot,
         ),
         MaterialCustomButton(
@@ -2667,10 +2776,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 字幕跳转列表（TODO-069）。倒数第二、紧挨设置按钮左侧（TODO-127）：与桌面
         // 控制条顺序一致，字幕列表是顶栏最常直接命中的入口，放在设置（tune）左边。
         MaterialCustomButton(
-          icon: Icon(
-            Icons.format_list_bulleted,
-            size: _videoControlIconSize,
-          ),
+          icon: Icon(Icons.format_list_bulleted, size: _videoControlIconSize),
           onPressed: _toggleSubtitleJumpList,
         ),
         MaterialCustomButton(
@@ -2735,9 +2841,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 安全区）而非 `padding`（会被 immersive 模式抹平），且不受软键盘弹出影响。
   double _videoBottomSystemInset() => MediaQuery.of(context).viewPadding.bottom;
 
-  void _showTrackMenu(
-    List<({String label, VoidCallback onSelected})> tracks,
-  ) {
+  void _showTrackMenu(List<({String label, VoidCallback onSelected})> tracks) {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
     // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。音轨 / 字幕轨条目
@@ -2792,10 +2896,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       context: context,
       builder: (BuildContext ctx) {
         return StatefulBuilder(
-          builder: (
-            BuildContext ctx,
-            StateSetter setModalState,
-          ) {
+          builder: (BuildContext ctx, StateSetter setModalState) {
             void setVolume(double value) {
               final double next = value.clamp(0.0, 100.0).toDouble();
               setModalState(() => volume = next);
@@ -2805,8 +2906,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
             return SafeArea(
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
                 child: Row(
                   children: <Widget>[
                     IconButton(
@@ -3085,10 +3188,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     bool highQuality,
     List<String> enabledNames,
   ) async {
-    final VideoMpvConfig cfg =
-        VideoMpvConfig.decode(appModel.videoMpvConfig).copyWith(
-      highQuality: highQuality,
-    );
+    final VideoMpvConfig cfg = VideoMpvConfig.decode(
+      appModel.videoMpvConfig,
+    ).copyWith(highQuality: highQuality);
     await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
     await appModel.setVideoShadersEnabled(encodeEnabledShaders(enabledNames));
     await _controller?.applyMpvConfig(cfg);
@@ -3105,9 +3207,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (controller == null) return;
     final bool bypassed = await controller.toggleShaderBypass();
     if (!mounted) return;
-    _showOsd(bypassed
-        ? t.video_shader_showing_original
-        : t.video_shader_showing_shaded);
+    _showOsd(
+      bypassed
+          ? t.video_shader_showing_original
+          : t.video_shader_showing_shaded,
+    );
   }
 
   /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 / 快捷键共用）。每次都唤醒控制条并
@@ -3163,10 +3267,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           _showOsd(t.video_screenshot_saved);
         }
       } else {
-        await Share.shareXFiles(
-          <XFile>[XFile(tmp.path, mimeType: 'image/jpeg')],
-          subject: name,
-        );
+        await Share.shareXFiles(<XFile>[
+          XFile(tmp.path, mimeType: 'image/jpeg'),
+        ], subject: name);
       }
     } catch (_) {
       _showOsd(t.video_screenshot_failed);
@@ -3207,8 +3310,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 dense: true,
                 title: Text('${s}x'),
                 trailing: (s - _playbackSpeed).abs() < 0.001
-                    ? Icon(Icons.check,
-                        color: Theme.of(ctx).colorScheme.primary)
+                    ? Icon(
+                        Icons.check,
+                        color: Theme.of(ctx).colorScheme.primary,
+                      )
                     : null,
                 onTap: () {
                   _setSpeed(s);
@@ -3261,10 +3366,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 着色器勾选 → 持久化启用集 + 解析绝对路径 + 实时应用；mpv 配置即改即生效。
       initialShadersEnabled: decodeEnabledShaders(appModel.videoShadersEnabled),
       onApplyShaders: (List<String> enabledNames) async {
-        await appModel
-            .setVideoShadersEnabled(encodeEnabledShaders(enabledNames));
-        final VideoMpvConfig cfg =
-            VideoMpvConfig.decode(appModel.videoMpvConfig);
+        await appModel.setVideoShadersEnabled(
+          encodeEnabledShaders(enabledNames),
+        );
+        final VideoMpvConfig cfg = VideoMpvConfig.decode(
+          appModel.videoMpvConfig,
+        );
         final List<String> paths = cfg.highQuality
             ? await resolveEnabledShaderPaths(enabledNames)
             : const <String>[];
@@ -3276,7 +3383,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await _controller?.applyMpvConfig(cfg);
         final List<String> paths = cfg.highQuality
             ? await resolveEnabledShaderPaths(
-                decodeEnabledShaders(appModel.videoShadersEnabled))
+                decodeEnabledShaders(appModel.videoShadersEnabled),
+              )
             : const <String>[];
         await _controller?.applyShaders(paths);
       },
@@ -3323,9 +3431,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 顶部「关闭字幕」项。选某源 → 解析成 cue → 切 overlay + 持久化 + SnackBar。
   ///
   /// 这是运行时覆盖；默认 load 行为（自动 sidecar 优先 + 内嵌兜底）不变。
-  Future<void> _showSubtitleSourceMenu(
-    VideoPlayerController controller,
-  ) async {
+  Future<void> _showSubtitleSourceMenu(VideoPlayerController controller) async {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
     // #2: 远端模式没有本地视频文件，[_currentVideoPath] 恒 null，原逻辑直接早返回
@@ -3479,9 +3585,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// - 不走 [_currentVideoPath] 的同目录枚举（远端没有同目录）；
   /// - 不写本地 [VideoBookRepository]（远端 bookUid 在本地没有对应行）；
   /// - 仅在内存里切换 cue overlay：关闭 / host 下发的那条外挂字幕 / 本地导入字幕。
-  Future<void> _showRemoteSubtitleMenu(
-    VideoPlayerController controller,
-  ) async {
+  Future<void> _showRemoteSubtitleMenu(VideoPlayerController controller) async {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
     if (!context.mounted) {
@@ -3718,8 +3822,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // bitmap→bitmap 拒绝），交给 libmpv 当画面字幕渲染：看得到、不可逐字查词。瞬时
     // 切轨、无需抽取，故不走加载遮罩 / loadCuesForSource。
     if (source.isGraphicEmbedded) {
-      final bool shown =
-          await controller.selectEmbeddedGraphicTrack(source.streamIndex!);
+      final bool shown = await controller.selectEmbeddedGraphicTrack(
+        source.streamIndex!,
+      );
       if (!mounted) return false;
       if (!shown) {
         _showOsd(t.video_subtitle_load_failed(label: source.label));
@@ -3845,9 +3950,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return Scaffold(
       backgroundColor: cs.surface,
       body: _failed
-          ? Center(
-              child: Icon(Icons.error_outline, color: cs.error, size: 48),
-            )
+          ? Center(child: Icon(Icons.error_outline, color: cs.error, size: 48))
           : (controller == null || videoController == null)
               ? const Center(child: CircularProgressIndicator())
               : _pageDropTarget(
@@ -3934,7 +4037,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [VideoAsbplayerConfig.doubleTapSeekSeconds]：0=关（整体跳过分区）、3/5/10=相对
   /// seek 该秒数、[VideoAsbplayerConfig.kDoubleTapSubtitle]=跳上 / 下一句。
   bool _handleDoubleTapSeek(
-      BuildContext controlsContext, Offset globalPosition) {
+    BuildContext controlsContext,
+    Offset globalPosition,
+  ) {
     final int action = _asbConfig.doubleTapSeekSeconds;
     if (action == 0) return false; // 关：双击全部走暂停/全屏（向后兼容默认）。
     final RenderObject? renderObject = controlsContext.findRenderObject();
@@ -3950,20 +4055,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 字幕模式：双击左/右 = 跳上/下一句（无字幕段回退/前进 seekSeconds 秒，TODO-119/073）。
       unawaited(_skipCueAndPokeControls(forward: forward));
       _showOsd(
-          forward ? t.video_double_tap_next_cue : t.video_double_tap_prev_cue,
-          icon: forward ? Icons.fast_forward : Icons.fast_rewind);
+        forward ? t.video_double_tap_next_cue : t.video_double_tap_prev_cue,
+        icon: forward ? Icons.fast_forward : Icons.fast_rewind,
+      );
     } else {
       // 秒数模式：相对 seek ±action 秒。
       final int deltaMs = (forward ? action : -action) * 1000;
       unawaited(_seekRelative(deltaMs));
-      _showOsd('${forward ? '+' : '-'}${action}s',
-          icon: forward ? Icons.fast_forward : Icons.fast_rewind);
+      _showOsd(
+        '${forward ? '+' : '-'}${action}s',
+        icon: forward ? Icons.fast_forward : Icons.fast_rewind,
+      );
     }
     return true;
   }
 
   bool _isVideoChromePointer(
-      BuildContext controlsContext, Offset globalPosition) {
+    BuildContext controlsContext,
+    Offset globalPosition,
+  ) {
     final RenderObject? renderObject = controlsContext.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return false;
     final Offset local = renderObject.globalToLocal(globalPosition);
@@ -4043,8 +4153,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
 
     return <PopupMenuEntry<VoidCallback>>[
-      item(Icons.play_arrow, t.video_menu_play_pause,
-          () => unawaited(controller.playOrPause())),
+      item(
+        Icons.play_arrow,
+        t.video_menu_play_pause,
+        () => unawaited(controller.playOrPause()),
+      ),
       item(Icons.fullscreen, t.video_menu_fullscreen, () {
         final BuildContext? ctx = _videoControlsContext;
         if (ctx != null && ctx.mounted) {
@@ -4053,18 +4166,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }),
       item(Icons.speed, t.video_setting_speed, _showSpeedMenu),
       const PopupMenuDivider(),
-      item(Icons.subtitles, t.video_menu_subtitle_track,
-          () => _showSubtitleSourceMenu(controller)),
-      item(Icons.format_list_bulleted, t.video_subtitle_list,
-          _toggleSubtitleJumpList),
-      item(Icons.audiotrack, t.video_audio_track,
-          () => _showAudioTrackMenu(controller)),
+      item(
+        Icons.subtitles,
+        t.video_menu_subtitle_track,
+        () => _showSubtitleSourceMenu(controller),
+      ),
+      item(
+        Icons.format_list_bulleted,
+        t.video_subtitle_list,
+        _toggleSubtitleJumpList,
+      ),
+      item(
+        Icons.audiotrack,
+        t.video_audio_track,
+        () => _showAudioTrackMenu(controller),
+      ),
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
       if (_hasShadersEnabled)
-        item(Icons.compare, t.video_shader_compare,
-            () => unawaited(_toggleShaderCompare())),
+        item(
+          Icons.compare,
+          t.video_shader_compare,
+          () => unawaited(_toggleShaderCompare()),
+        ),
     ];
   }
 
@@ -4109,8 +4234,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
           // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
           // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
-          subtitleViewConfiguration:
-              const SubtitleViewConfiguration(visible: false),
+          subtitleViewConfiguration: const SubtitleViewConfiguration(
+            visible: false,
+          ),
           // 窗口模式画面缩放/比例由用户偏好 [_videoFitMode] 决定（TODO-152 子B），
           // 默认 [VideoFitMode.cover] → `BoxFit.cover` 保持比例占满媒体框、无
           // letterbox/pillarbox 黑边（与旧硬编码 cover 一致 → 向后兼容；TODO-122）。
@@ -4258,15 +4384,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     blurEnabled: appModel.videoSubtitleBlur,
                     fontSize: _subtitleStyle.fontSize,
                     textColor: _subtitleStyle.resolveTextColor(
-                        _subtitleTextColor(_videoChromeColorScheme(context))),
+                      _subtitleTextColor(_videoChromeColorScheme(context)),
+                    ),
                     fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
                     shadowColor: _subtitleStyle.resolveShadowColor(
-                        _subtitleShadowColor(_videoChromeColorScheme(context))),
-                    shadowThickness:
-                        _subtitleStyle.resolveShadowThickness(_videoUiScale),
+                      _subtitleShadowColor(_videoChromeColorScheme(context)),
+                    ),
+                    shadowThickness: _subtitleStyle.resolveShadowThickness(
+                      _videoUiScale,
+                    ),
                     backgroundColor: _subtitleStyle.resolveBackgroundColor(
-                        _subtitleBackgroundColor(
-                            _videoChromeColorScheme(context))),
+                      _subtitleBackgroundColor(
+                        _videoChromeColorScheme(context),
+                      ),
+                    ),
                     backgroundOpacity: _subtitleStyle.backgroundOpacity,
                     bottomPadding: _subtitleStyle.bottomPadding,
                     // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕在用户位置
@@ -4395,7 +4526,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             ),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
                                 color: _osdSurfaceColor(cs),
                                 borderRadius: BorderRadius.circular(6),
@@ -4432,8 +4565,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                                             child: LinearProgressIndicator(
                                               value: osd.progress,
                                               minHeight: 3,
-                                              backgroundColor: _osdTextColor(cs)
-                                                  .withValues(alpha: 0.25),
+                                              backgroundColor: _osdTextColor(
+                                                cs,
+                                              ).withValues(alpha: 0.25),
                                               valueColor:
                                                   AlwaysStoppedAnimation<Color>(
                                                 _osdTextColor(cs),
@@ -4512,9 +4646,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             iconSize: iconSize,
                             color: cs.onSurface,
                             // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
-                            icon: Icon(locked
-                                ? Icons.lock_outline
-                                : Icons.lock_open_outlined),
+                            icon: Icon(
+                              locked
+                                  ? Icons.lock_outline
+                                  : Icons.lock_open_outlined,
+                            ),
                             onPressed: _toggleImmersiveLock,
                           ),
                         ),

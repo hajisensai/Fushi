@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 228 条。点号进各自文件。
+> 共 229 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-232](bugs/BUG-232-video-favorite-cue-loop.md) | ✅ | ✅ | 视频收藏句缺少字幕锚点和收藏页跳回闭环（TODO-176/TODO-177） |
 | [BUG-231](bugs/BUG-231-video-doubletap-seek.md) | ✅ | ✅ | 视频缺双击左右快进 + 步长设置（TODO-173） |
 | [BUG-230](bugs/BUG-230-video-vertical-gesture-sensitivity.md) | ✅ | ✅ | 视频亮度/音量竖滑手势太敏感（TODO-172） |
 | [BUG-229](bugs/BUG-229-video-subtitle-list-polish-and-aspect-ratio.md) | ✅ | ✅ | 字幕列表仿asbplayer精致度 + 引入画面比例设置 (TODO-152) |
