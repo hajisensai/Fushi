@@ -72,14 +72,19 @@ void main() {
       () {
     final String workflow =
         File('../.github/workflows/release-desktop.yml').readAsStringSync();
+    expect(workflow, contains("push:\n    branches: ['main', 'develop']"));
     expect(workflow, contains('Release channel: debug, beta, or formal'));
     expect(workflow, contains('- debug'));
+    expect(workflow, contains(r'case "$EVENT" in'));
+    expect(workflow, contains('push)'));
     expect(
       workflow,
       contains(
         r'TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"',
       ),
     );
+    expect(workflow, contains('CHANNEL=debug'));
+    expect(workflow, contains('PUBLISH_MANAGED_RELEASE=true'));
     expect(workflow, contains(r'BUILD_VERSION_NAME="${TAG#v}"'));
     expect(
         workflow, contains(r'BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"'));
@@ -94,6 +99,16 @@ void main() {
       contains(
         r'hibiki-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe',
       ),
+    );
+    expect(workflow, contains('Prepare Windows installer release asset'));
+    expect(
+      workflow,
+      contains(r'*-debug.*-windows-setup.exe'),
+      reason: 'debug channel installer asset must match WindowsUpdater',
+    );
+    expect(
+      workflow,
+      contains('hibiki/build/release-artifacts/hibiki-*-windows-setup.exe'),
     );
     expect(
       workflow,

@@ -1,6 +1,8 @@
 name: Build Desktop Release Artifacts
 
 on:
+  push:
+    branches: ['main', 'develop']
   release:
     types: [published]
   workflow_dispatch:
@@ -57,6 +59,13 @@ jobs:
           PUBLISH_MANAGED_RELEASE=false
 
           case "$EVENT" in
+            push)
+              CHANNEL=debug
+              TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
+              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
             workflow_dispatch)
               case "$CHANNEL" in
                 debug)
@@ -236,12 +245,37 @@ jobs:
           [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
           $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
           & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\hibiki\build\installer\hibiki-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
+      - name: Prepare Windows installer release asset
+        shell: bash
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+        run: |
+          set -euo pipefail
+          installer="hibiki/build/installer/hibiki-${BUILD_VERSION_NAME}-windows-setup.exe"
+          asset_name="$(basename "$installer")"
+          if [ ! -f "$installer" ]; then
+            echo "::error title=Windows installer missing::Expected $installer"
+            exit 1
+          fi
+          if [ "$CHANNEL" = "debug" ]; then
+            case "$asset_name" in
+              *-debug.*-windows-setup.exe) ;;
+              *)
+                echo "::error title=Invalid debug Windows installer asset::Expected *-debug.*-windows-setup.exe, got $asset_name"
+                exit 1
+                ;;
+            esac
+          fi
+          mkdir -p hibiki/build/release-artifacts
+          rm -f hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
+          cp "$installer" "hibiki/build/release-artifacts/$asset_name"
       - name: Upload to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.channel.outputs.tag }}
-          files: hibiki/build/installer/hibiki-*-windows-setup.exe
+          files: hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
       - name: Publish desktop channel release
         if: steps.channel.outputs.publish_managed_release == 'true'
         uses: softprops/action-gh-release@v3
@@ -252,4 +286,4 @@ jobs:
           body: ${{ steps.channel.outputs.body }}
           prerelease: ${{ steps.channel.outputs.prerelease }}
           make_latest: ${{ steps.channel.outputs.make_latest }}
-          files: hibiki/build/installer/hibiki-*-windows-setup.exe
+          files: hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
