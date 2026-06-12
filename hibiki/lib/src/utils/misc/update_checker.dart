@@ -28,11 +28,14 @@ class UpdateChecker {
     bool betaChannel = false,
     bool debugChannel = false,
   }) {
+    final UpdateChannel channel = debugChannel
+        ? UpdateChannel.debug
+        : betaChannel
+            ? UpdateChannel.beta
+            : UpdateChannel.stable;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _check(context, currentVersion,
-          neverRemind: neverRemind,
-          autoInstall: autoInstall,
-          betaChannel: betaChannel || debugChannel);
+          neverRemind: neverRemind, autoInstall: autoInstall, channel: channel);
     });
   }
 
@@ -68,7 +71,7 @@ class UpdateChecker {
     String currentVersion, {
     bool neverRemind = false,
     bool autoInstall = false,
-    bool betaChannel = false,
+    UpdateChannel channel = UpdateChannel.stable,
   }) async {
     final PlatformUpdater updater = updaterForCurrentPlatform();
     if (!updater.supportsUpdateCheck) return;
@@ -81,18 +84,16 @@ class UpdateChecker {
       client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
 
-      final json = betaChannel
-          ? await _fetchLatestRelease(client)
-          : await _fetchStableRelease(client);
+      final json = await _fetchReleaseForChannel(client, channel);
       if (json == null) return;
 
-      final tagName =
-          (json['tag_name'] as String? ?? '').replaceAll(RegExp('^v'), '');
-      if (tagName.isEmpty) {
+      final String? tagName =
+          normalizeReleaseVersionTag(json['tag_name'] as String? ?? '');
+      if (tagName == null || tagName.isEmpty) {
         return;
       }
 
-      if (!_isNewer(tagName, currentVersion)) {
+      if (!isUpdateVersionNewer(tagName, currentVersion, channel)) {
         return;
       }
 
@@ -101,7 +102,8 @@ class UpdateChecker {
       final assets = json['assets'] as List<dynamic>? ?? [];
       final List<Map<String, dynamic>> assetMaps =
           assets.whereType<Map<String, dynamic>>().toList(growable: false);
-      final String? downloadUrl = await updater.selectAsset(assetMaps);
+      final String? downloadUrl =
+          await updater.selectAsset(assetMaps, channel: channel);
 
       // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 打开发布页。
       if (downloadUrl == null) {
@@ -164,6 +166,18 @@ class UpdateChecker {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> _fetchReleaseForChannel(
+    HttpClient client,
+    UpdateChannel channel,
+  ) {
+    return switch (channel) {
+      UpdateChannel.stable => _fetchStableRelease(client),
+      UpdateChannel.beta ||
+      UpdateChannel.debug =>
+        _fetchLatestChannelRelease(client, channel),
+    };
+  }
+
   static Future<Map<String, dynamic>?> _fetchStableRelease(
       HttpClient client) async {
     final body = await _httpGetString(
@@ -172,20 +186,30 @@ class UpdateChecker {
       headers: {'Accept': 'application/vnd.github+json'},
     );
     if (body == null) return null;
-    return jsonDecode(body) as Map<String, dynamic>;
+    final Map<String, dynamic> release =
+        jsonDecode(body) as Map<String, dynamic>;
+    if (!releaseMatchesUpdateChannel(release, UpdateChannel.stable)) {
+      return null;
+    }
+    return release;
   }
 
-  static Future<Map<String, dynamic>?> _fetchLatestRelease(
-      HttpClient client) async {
+  static Future<Map<String, dynamic>?> _fetchLatestChannelRelease(
+    HttpClient client,
+    UpdateChannel channel,
+  ) async {
     final body = await _httpGetString(
       client,
-      'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=1',
+      'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=20',
       headers: {'Accept': 'application/vnd.github+json'},
     );
     if (body == null) return null;
     final list = jsonDecode(body) as List<dynamic>;
-    if (list.isEmpty) return null;
-    return list.first as Map<String, dynamic>;
+    for (final Map<String, dynamic> release
+        in list.whereType<Map<String, dynamic>>()) {
+      if (releaseMatchesUpdateChannel(release, channel)) return release;
+    }
+    return null;
   }
 
   static bool _isNewer(String remote, String local) =>
@@ -372,26 +396,136 @@ String hostLabelForUpdateUrl(String url) {
   }
 }
 
+@visibleForTesting
+String? normalizeReleaseVersionTag(String tag) {
+  final String normalized = tag.trim().replaceFirst(RegExp(r'^[vV]'), '');
+  if (!_looksLikeVersion(normalized)) return null;
+  return _stripBuildMetadata(normalized);
+}
+
+@visibleForTesting
+bool releaseMatchesUpdateChannel(
+  Map<String, dynamic> release,
+  UpdateChannel channel,
+) {
+  if (release['draft'] == true) return false;
+  final String? version =
+      normalizeReleaseVersionTag(release['tag_name'] as String? ?? '');
+  if (version == null) return false;
+  final bool prerelease = release['prerelease'] == true;
+  return switch (channel) {
+    UpdateChannel.stable => !prerelease && _prereleasePart(version) == null,
+    UpdateChannel.beta =>
+      prerelease && _versionBelongsToChannel(version, UpdateChannel.beta),
+    UpdateChannel.debug =>
+      prerelease && _versionBelongsToChannel(version, UpdateChannel.debug),
+  };
+}
+
+@visibleForTesting
+bool isUpdateVersionNewer(
+  String remote,
+  String local,
+  UpdateChannel channel,
+) {
+  if (channel == UpdateChannel.stable) return isVersionNewer(remote, local);
+
+  final String remoteVersion = _stripBuildMetadata(remote.trim());
+  final String localVersion = _stripBuildMetadata(local.trim());
+  if (!_versionBelongsToChannel(remoteVersion, channel)) return false;
+
+  final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
+  if (baseCompare != 0) return baseCompare > 0;
+
+  final String? localPrerelease = _prereleasePart(localVersion);
+  if (localPrerelease == null) return true;
+  if (!_prereleaseBelongsToChannel(localPrerelease, channel)) return true;
+
+  final String remotePrerelease = _prereleasePart(remoteVersion)!;
+  return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
+}
+
 bool isVersionNewer(String remote, String local) {
-  String strip(String v) => v.split('+').first;
-  List<int> base(String s) =>
-      s.split('-').first.split('.').map((p) => int.tryParse(p) ?? 0).toList();
-  bool pre(String s) => s.contains('-');
+  final String remoteVersion = _stripBuildMetadata(remote.trim());
+  final String localVersion = _stripBuildMetadata(local.trim());
+  final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
+  if (baseCompare != 0) return baseCompare > 0;
 
-  final String rs = strip(remote);
-  final String ls = strip(local);
-  final List<int> r = base(rs);
-  final List<int> l = base(ls);
+  final String? remotePrerelease = _prereleasePart(remoteVersion);
+  final String? localPrerelease = _prereleasePart(localVersion);
+  if (remotePrerelease == null && localPrerelease != null) return true;
+  if (remotePrerelease == null || localPrerelease == null) return false;
+  return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
+}
 
+String _stripBuildMetadata(String version) => version.split('+').first;
+
+bool _looksLikeVersion(String version) => RegExp(
+      r'^\d+(?:\.\d+)*(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$',
+    ).hasMatch(version);
+
+String _basePart(String version) =>
+    _stripBuildMetadata(version).split('-').first;
+
+String? _prereleasePart(String version) {
+  final String stripped = _stripBuildMetadata(version);
+  final int hyphen = stripped.indexOf('-');
+  if (hyphen < 0 || hyphen == stripped.length - 1) return null;
+  return stripped.substring(hyphen + 1);
+}
+
+List<int> _baseSegments(String version) => _basePart(version)
+    .split('.')
+    .map((String part) => int.tryParse(part) ?? 0)
+    .toList(growable: false);
+
+int _compareBaseVersion(String remote, String local) {
+  final List<int> r = _baseSegments(remote);
+  final List<int> l = _baseSegments(local);
   final int len = r.length > l.length ? r.length : l.length;
   for (int i = 0; i < len; i++) {
     final int rv = i < r.length ? r[i] : 0;
     final int lv = i < l.length ? l[i] : 0;
-    if (rv > lv) return true;
-    if (rv < lv) return false;
+    if (rv != lv) return rv.compareTo(lv);
   }
-  if (!pre(rs) && pre(ls)) return true;
-  return false;
+  return 0;
+}
+
+bool _versionBelongsToChannel(String version, UpdateChannel channel) {
+  final String? prerelease = _prereleasePart(version);
+  if (prerelease == null) return false;
+  return _prereleaseBelongsToChannel(prerelease, channel);
+}
+
+bool _prereleaseBelongsToChannel(String prerelease, UpdateChannel channel) {
+  final String first = prerelease.split('.').first.toLowerCase();
+  return switch (channel) {
+    UpdateChannel.beta => first == 'beta',
+    UpdateChannel.debug => first == 'debug',
+    UpdateChannel.stable => false,
+  };
+}
+
+int _comparePrerelease(String remote, String local) {
+  final List<String> r = remote.split('.');
+  final List<String> l = local.split('.');
+  final int len = r.length > l.length ? r.length : l.length;
+  for (int i = 0; i < len; i++) {
+    if (i >= r.length) return -1;
+    if (i >= l.length) return 1;
+    final int part = _comparePrereleasePart(r[i], l[i]);
+    if (part != 0) return part;
+  }
+  return 0;
+}
+
+int _comparePrereleasePart(String remote, String local) {
+  final int? ri = int.tryParse(remote);
+  final int? li = int.tryParse(local);
+  if (ri != null && li != null) return ri.compareTo(li);
+  if (ri != null) return -1;
+  if (li != null) return 1;
+  return remote.compareTo(local);
 }
 
 @visibleForTesting

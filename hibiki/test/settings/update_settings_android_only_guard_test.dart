@@ -33,6 +33,40 @@ void main() {
         reason: '检查流程已按 updater.supportsUpdateCheck 门控');
     expect(src, contains('updaterForCurrentPlatform()'));
   });
+
+  test('release workflow publishes comparable release-signed debug channel',
+      () {
+    final String workflow =
+        File('../.github/workflows/release.yml').readAsStringSync();
+    expect(
+      workflow,
+      contains(
+        r'TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"',
+      ),
+    );
+    expect(workflow, contains('BUILD_DEBUG_CHANNEL_APK=true'));
+    expect(workflow, contains('flutter build apk --release'));
+    expect(
+      workflow,
+      contains(
+        r'--build-name "${{ steps.channel.outputs.build_version_name }}"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        r'--build-number "${{ steps.channel.outputs.android_build_number }}"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(r'prerelease: ${{ steps.channel.outputs.prerelease }}'),
+    );
+    expect(
+      workflow,
+      contains(r'make_latest: ${{ steps.channel.outputs.make_latest }}'),
+    );
+  });
 }
 
 String _functionSource(String source, String start, String end) {

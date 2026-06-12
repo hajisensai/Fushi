@@ -5,6 +5,8 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart'; // ErrorLogService
 
+enum UpdateChannel { stable, beta, debug }
+
 /// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
 /// 共享的 GitHub 拉取/版本比较/下载浮层仍在 UpdateChecker。
 abstract class PlatformUpdater {
@@ -16,7 +18,10 @@ abstract class PlatformUpdater {
 
   /// 从 release 的 [assets]（每项含 name / browser_download_url）挑本平台可安装包的
   /// 下载 URL；null = 无适配包（上层回退打开发布页）。
-  Future<String?> selectAsset(List<Map<String, dynamic>> assets);
+  Future<String?> selectAsset(
+    List<Map<String, dynamic>> assets, {
+    UpdateChannel channel = UpdateChannel.stable,
+  });
 
   /// 应用已下载到 [file] 的更新。仅在 [supportsInAppInstall] 为 true 时被调用。
   Future<void> apply(File file, String version);
@@ -45,6 +50,17 @@ Iterable<(String, String)> _downloadable(
   }
 }
 
+bool _isDebugApkAsset(String name) =>
+    name.endsWith('-debug.apk') || name.contains('-debug.');
+
+bool _androidAssetMatchesChannel(String name, UpdateChannel channel) {
+  if (!name.endsWith('.apk')) return false;
+  return switch (channel) {
+    UpdateChannel.debug => _isDebugApkAsset(name),
+    UpdateChannel.stable || UpdateChannel.beta => !_isDebugApkAsset(name),
+  };
+}
+
 class AndroidUpdater extends PlatformUpdater {
   AndroidUpdater({Future<List<String>> Function()? abiProvider})
       : _abiProvider = abiProvider ?? _defaultAbis;
@@ -68,13 +84,16 @@ class AndroidUpdater extends PlatformUpdater {
   bool get supportsInAppInstall => true;
 
   @override
-  Future<String?> selectAsset(List<Map<String, dynamic>> assets) async {
+  Future<String?> selectAsset(
+    List<Map<String, dynamic>> assets, {
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
     final List<String> abis = await _abiProvider();
     final List<String> abiTags =
         abis.map((String a) => a.replaceAll('_', '-')).toList();
     String? fallback;
     for (final (String name, String url) in _downloadable(assets)) {
-      if (!name.endsWith('.apk')) continue;
+      if (!_androidAssetMatchesChannel(name, channel)) continue;
       if (abiTags.any(name.contains)) return url;
       fallback ??= url;
     }
@@ -95,7 +114,11 @@ class WindowsUpdater extends PlatformUpdater {
   bool get supportsInAppInstall => true;
 
   @override
-  Future<String?> selectAsset(List<Map<String, dynamic>> assets) async {
+  Future<String?> selectAsset(
+    List<Map<String, dynamic>> assets, {
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
+    if (channel == UpdateChannel.debug) return null;
     for (final (String name, String url) in _downloadable(assets)) {
       if (name.endsWith('-windows-setup.exe')) return url;
     }
@@ -117,7 +140,11 @@ class UnsupportedUpdater extends PlatformUpdater {
   bool get supportsInAppInstall => false;
 
   @override
-  Future<String?> selectAsset(List<Map<String, dynamic>> assets) async => null;
+  Future<String?> selectAsset(
+    List<Map<String, dynamic>> assets, {
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async =>
+      null;
 
   @override
   Future<void> apply(File file, String version) async {

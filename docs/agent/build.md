@@ -19,6 +19,12 @@ cd hibiki
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
+### TODO-207 release channel invariants
+
+客户端按 stable / beta / debug 三个通道过滤 GitHub Release。stable 只看正式 Latest；beta/debug 扫描最近 releases，但只接受 tag 形如 `v<version>-beta.<run>` / `v<version>-debug.<run>+<short-sha>` 且 `prerelease=true` 的 release。旧的 `debug-<sha>` tag 不可比较，客户端会忽略。
+
+debug 通道发布的是 release-signed debug-channel APK：文件名保留 `-debug.apk` 供客户端过滤，APK 使用 release keystore、写入 `versionName=<version>-debug.<run>` 和 CI 扩展后的单调 `versionCode`，用于覆盖正式签名包并让后续 debug/beta/formal release 仍可比较。debug push 仍必须是 prerelease / non-Latest，绝不能创建或更新 formal / Latest。
+
 > Google Drive 同步的 OAuth 凭据已写死进源码默认值（`lib/src/sync/google_drive_auth.dart`），构建无需再传 `--dart-define`。如需换凭据，改该文件的 `defaultValue` 或自行加 `--dart-define` 覆盖。
 
 ## 发布通道

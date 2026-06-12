@@ -17,7 +17,7 @@ on:
           - beta
           - formal
       tag_name:
-        description: 'Optional release tag. Defaults to debug-<sha>, v<version>-beta.<run>, or v<version>.'
+        description: 'Optional release tag. Defaults to v<version>-debug.<run>+<sha>, v<version>-beta.<run>, or v<version>.'
         required: false
       release_name:
         description: 'Optional GitHub Release title.'
@@ -52,7 +52,17 @@ jobs:
         RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
       run: |
         set -euo pipefail
-        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+        PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
+        VERSION="${PUBSPEC_VERSION%%+*}"
+        PUBSPEC_BUILD="${PUBSPEC_VERSION#*+}"
+        if [ "$PUBSPEC_BUILD" = "$PUBSPEC_VERSION" ]; then
+          PUBSPEC_BUILD=1
+        fi
+        if ! [[ "$PUBSPEC_BUILD" =~ ^[0-9]+$ ]]; then
+          echo "::error title=Invalid pubspec build number::Expected numeric +build in $PUBSPEC_VERSION"
+          exit 1
+        fi
+        ANDROID_BUILD_NUMBER=$((PUBSPEC_BUILD * 10000 + GITHUB_RUN_NUMBER))
         SHORT_SHA="${GITHUB_SHA::7}"
         EVENT="${GITHUB_EVENT_NAME}"
         CHANNEL="${INPUT_CHANNEL:-}"
@@ -62,30 +72,40 @@ jobs:
         PRERELEASE=true
         MAKE_LATEST=false
         FILES="hibiki/build/release-artifacts/*-debug.apk"
-        BUILD_RELEASE_APK=false
+        BUILD_DEBUG_APK=true
+        BUILD_DEBUG_CHANNEL_APK=false
+        BUILD_SPLIT_RELEASE_APK=false
+        NEEDS_RELEASE_KEYSTORE=false
         PUBLISH_MANAGED_RELEASE=false
 
         case "$EVENT" in
           push)
             CHANNEL=debug
-            TAG="${TAG:-debug-${SHORT_SHA}}"
+            TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
             NAME="${NAME:-Hibiki debug ${VERSION} (${SHORT_SHA})}"
-            BODY="Automated debug build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+            BODY="Automated release-signed debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+            BUILD_DEBUG_APK=false
+            BUILD_DEBUG_CHANNEL_APK=true
+            NEEDS_RELEASE_KEYSTORE=true
             PUBLISH_MANAGED_RELEASE=true
             ;;
           workflow_dispatch)
             case "$CHANNEL" in
               debug)
-                TAG="${TAG:-debug-${SHORT_SHA}}"
+                TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
                 NAME="${NAME:-Hibiki debug ${VERSION} (${SHORT_SHA})}"
-                BODY="Manual debug build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                BODY="Manual release-signed debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                BUILD_DEBUG_APK=false
+                BUILD_DEBUG_CHANNEL_APK=true
+                NEEDS_RELEASE_KEYSTORE=true
                 ;;
               beta)
                 TAG="${TAG:-v${VERSION}-beta.${GITHUB_RUN_NUMBER}}"
                 NAME="${NAME:-Hibiki ${VERSION} beta ${GITHUB_RUN_NUMBER}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                 FILES="hibiki/build/release-artifacts/hibiki-*.apk"
-                BUILD_RELEASE_APK=true
+                BUILD_SPLIT_RELEASE_APK=true
+                NEEDS_RELEASE_KEYSTORE=true
                 ;;
               formal)
                 TAG="${TAG:-v${VERSION}}"
@@ -94,7 +114,8 @@ jobs:
                 PRERELEASE=false
                 MAKE_LATEST=true
                 FILES="hibiki/build/release-artifacts/hibiki-*.apk"
-                BUILD_RELEASE_APK=true
+                BUILD_SPLIT_RELEASE_APK=true
+                NEEDS_RELEASE_KEYSTORE=true
                 ;;
               *)
                 echo "::error title=Invalid release channel::Use debug, beta, or formal."
@@ -107,11 +128,35 @@ jobs:
             CHANNEL=github-release
             TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
             FILES="hibiki/build/release-artifacts/hibiki-*.apk"
-            BUILD_RELEASE_APK=true
+            BUILD_SPLIT_RELEASE_APK=true
+            NEEDS_RELEASE_KEYSTORE=true
             ;;
           *)
             echo "::error title=Unsupported event::$EVENT is not a release channel event."
             exit 1
+            ;;
+        esac
+
+        BUILD_VERSION_NAME="${TAG#v}"
+        BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
+        case "$CHANNEL" in
+          debug)
+            if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error title=Invalid debug tag::Use v<version>-debug.<run>+<short-sha>, not debug-<sha>."
+              exit 1
+            fi
+            ;;
+          beta)
+            if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
+              echo "::error title=Invalid beta tag::Use v<version>-beta.<run>."
+              exit 1
+            fi
+            ;;
+          formal)
+            if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+              echo "::error title=Invalid formal tag::Use v<version>."
+              exit 1
+            fi
             ;;
         esac
 
@@ -121,7 +166,12 @@ jobs:
           echo "name=$NAME"
           echo "prerelease=$PRERELEASE"
           echo "make_latest=$MAKE_LATEST"
-          echo "build_release_apk=$BUILD_RELEASE_APK"
+          echo "build_debug_apk=$BUILD_DEBUG_APK"
+          echo "build_debug_channel_apk=$BUILD_DEBUG_CHANNEL_APK"
+          echo "build_split_release_apk=$BUILD_SPLIT_RELEASE_APK"
+          echo "needs_release_keystore=$NEEDS_RELEASE_KEYSTORE"
+          echo "build_version_name=$BUILD_VERSION_NAME"
+          echo "android_build_number=$ANDROID_BUILD_NUMBER"
           echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
           echo "files=$FILES"
           echo "body<<EOF"
@@ -130,12 +180,12 @@ jobs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Decode keystore
-      if: steps.channel.outputs.build_release_apk == 'true'
+      if: steps.channel.outputs.needs_release_keystore == 'true'
       run: |
         echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > hibiki/android/hibiki-release.jks
 
     - name: Create key.properties
-      if: steps.channel.outputs.build_release_apk == 'true'
+      if: steps.channel.outputs.needs_release_keystore == 'true'
       working-directory: hibiki/android
       run: |
         cat > key.properties <<EOF
@@ -211,16 +261,20 @@ jobs:
         done
 
     - name: Build debug APK
+      if: steps.channel.outputs.build_debug_apk == 'true'
       working-directory: hibiki
       run: >-
         flutter build apk --debug
+        --build-name "${{ steps.channel.outputs.build_version_name }}"
+        --build-number "${{ steps.channel.outputs.android_build_number }}"
 
     - name: Prepare debug APK release asset
+      if: steps.channel.outputs.build_debug_apk == 'true'
       working-directory: hibiki
       shell: bash
       run: |
         set -euo pipefail
-        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+        BUILD_VERSION_NAME="${{ steps.channel.outputs.build_version_name }}"
         SHORT_SHA="${GITHUB_SHA::7}"
         APK_DIR=build/app/outputs/flutter-apk
         OUT_DIR=build/release-artifacts
@@ -231,27 +285,56 @@ jobs:
         fi
         mkdir -p "$OUT_DIR"
         rm -f "$OUT_DIR"/hibiki-*.apk
-        cp "$DEBUG_APK" "$OUT_DIR/hibiki-${VERSION}-${SHORT_SHA}-debug.apk"
+        cp "$DEBUG_APK" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
 
-    - name: Build release APK (split per ABI)
-      if: steps.channel.outputs.build_release_apk == 'true'
+    - name: Build release-signed debug-channel APK
+      if: steps.channel.outputs.build_debug_channel_apk == 'true'
       working-directory: hibiki
       run: >-
-        flutter build apk --split-per-abi --release
+        flutter build apk --release
+        --build-name "${{ steps.channel.outputs.build_version_name }}"
+        --build-number "${{ steps.channel.outputs.android_build_number }}"
 
-    - name: Prepare release APK assets
-      if: steps.channel.outputs.build_release_apk == 'true'
+    - name: Prepare release-signed debug-channel APK asset
+      if: steps.channel.outputs.build_debug_channel_apk == 'true'
       working-directory: hibiki
       shell: bash
       run: |
         set -euo pipefail
-        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+        BUILD_VERSION_NAME="${{ steps.channel.outputs.build_version_name }}"
+        SHORT_SHA="${GITHUB_SHA::7}"
+        APK_DIR=build/app/outputs/flutter-apk
+        OUT_DIR=build/release-artifacts
+        DEBUG_CHANNEL_APK=$(find "$APK_DIR" -maxdepth 1 -type f -name '*.apk' ! -name '*-debug.apk' | sort | head -n 1)
+        if [ -z "$DEBUG_CHANNEL_APK" ]; then
+          echo "::error title=Debug channel APK missing::No release-signed APK found in $APK_DIR"
+          exit 1
+        fi
+        mkdir -p "$OUT_DIR"
+        rm -f "$OUT_DIR"/hibiki-*.apk
+        cp "$DEBUG_CHANNEL_APK" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${SHORT_SHA}-debug.apk"
+
+    - name: Build release APK (split per ABI)
+      if: steps.channel.outputs.build_split_release_apk == 'true'
+      working-directory: hibiki
+      run: >-
+        flutter build apk --split-per-abi --release
+        --build-name "${{ steps.channel.outputs.build_version_name }}"
+        --build-number "${{ steps.channel.outputs.android_build_number }}"
+
+    - name: Prepare release APK assets
+      if: steps.channel.outputs.build_split_release_apk == 'true'
+      working-directory: hibiki
+      shell: bash
+      run: |
+        set -euo pipefail
+        BUILD_VERSION_NAME="${{ steps.channel.outputs.build_version_name }}"
         APK_DIR=build/app/outputs/flutter-apk
         OUT_DIR=build/release-artifacts
         mkdir -p "$OUT_DIR"
         for f in "$APK_DIR"/app-*-release.apk; do
           ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
-          cp "$f" "$OUT_DIR/hibiki-${VERSION}-${ABI}.apk"
+          cp "$f" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${ABI}.apk"
         done
 
     - name: Upload APKs to GitHub Release event

@@ -29,6 +29,15 @@ void main() {
       expect(url, isNull);
     });
 
+    test('debug channel has no Windows install asset', () async {
+      final WindowsUpdater u = WindowsUpdater();
+      final String? url = await u.selectAsset(
+        _assets(<String>['hibiki-0.5.1-windows-setup.exe']),
+        channel: UpdateChannel.debug,
+      );
+      expect(url, isNull);
+    });
+
     test('supports update check and in-app install', () {
       final WindowsUpdater u = WindowsUpdater();
       expect(u.supportsUpdateCheck, isTrue);
@@ -47,6 +56,49 @@ void main() {
         'hibiki-0.4.2-windows-setup.exe',
       ]));
       expect(url, 'https://example.com/hibiki-0.4.2-arm64-v8a.apk');
+    });
+
+    test('stable and beta ignore debug APK assets', () async {
+      final AndroidUpdater u = AndroidUpdater(
+        abiProvider: () async => <String>['arm64-v8a'],
+      );
+      final List<Map<String, dynamic>> assets = _assets(<String>[
+        'hibiki-0.5.1-debug.412-abc1234-debug.apk',
+        'hibiki-0.5.1-arm64-v8a.apk',
+      ]);
+
+      expect(
+        await u.selectAsset(assets, channel: UpdateChannel.stable),
+        'https://example.com/hibiki-0.5.1-arm64-v8a.apk',
+      );
+      expect(
+        await u.selectAsset(assets, channel: UpdateChannel.beta),
+        'https://example.com/hibiki-0.5.1-arm64-v8a.apk',
+      );
+    });
+
+    test('debug channel only selects debug APK assets', () async {
+      final AndroidUpdater u = AndroidUpdater(
+        abiProvider: () async => <String>['arm64-v8a'],
+      );
+
+      expect(
+        await u.selectAsset(
+          _assets(<String>[
+            'hibiki-0.5.1-arm64-v8a.apk',
+            'hibiki-0.5.1-debug.412-abc1234-debug.apk',
+          ]),
+          channel: UpdateChannel.debug,
+        ),
+        'https://example.com/hibiki-0.5.1-debug.412-abc1234-debug.apk',
+      );
+      expect(
+        await u.selectAsset(
+          _assets(<String>['hibiki-0.5.1-arm64-v8a.apk']),
+          channel: UpdateChannel.debug,
+        ),
+        isNull,
+      );
     });
 
     test('falls back to first apk when no ABI match', () async {
