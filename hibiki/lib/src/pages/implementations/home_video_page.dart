@@ -972,8 +972,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return HibikiPageHeader(
       title: t.nav_video,
       actions: <Widget>[
-        // 图标顺序与书架统一：收藏夹 → 统计（书架是 导入/收藏夹/统计，相对顺序一致），
-        // 视频导入按钮保留在末尾（视频 tab 才有导入入口）。
+        // 图标顺序与书架完全一致：导入 → 收藏夹 → 统计。书架
+        // [reader_hibiki_history_page._buildPageHeader] 把导入按钮放在第一位
+        // （buildBookImportButton），收藏夹、统计紧随其后；视频 tab 照此对齐
+        // （TODO-162：此前视频把导入放在末尾，与书架不一致）。视频导入仍受
+        // [canImport] 门控（仅视频 tab 才有导入入口），这里只调整位置不改门控。
+        if (canImport)
+          HibikiIconButton(
+            tooltip: t.video_import_action,
+            icon: Icons.add,
+            onTap: _openImport,
+          ),
         HibikiIconButton(
           tooltip: t.collections,
           icon: Icons.collections_bookmark_outlined,
@@ -984,12 +993,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
         ),
-        if (canImport)
-          HibikiIconButton(
-            tooltip: t.video_import_action,
-            icon: Icons.add,
-            onTap: _openImport,
-          ),
       ],
     );
   }
