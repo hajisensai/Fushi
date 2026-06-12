@@ -476,24 +476,32 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         );
 
         if (maxSlots >= tags.length) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [for (final tag in tags) _tagChip(tag)],
+          return _uniformWidthTagColumn(
+            [for (final tag in tags) _tagChip(tag)],
           );
         }
 
         final int visibleCount = maxSlots <= 1 ? 1 : maxSlots - 1;
         final int overflow = tags.length - visibleCount;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final tag in tags.take(visibleCount)) _tagChip(tag),
-            if (overflow > 0 && maxSlots > 1) _overflowChip(overflow),
-          ],
-        );
+        return _uniformWidthTagColumn([
+          for (final tag in tags.take(visibleCount)) _tagChip(tag),
+          if (overflow > 0 && maxSlots > 1) _overflowChip(overflow),
+        ]);
       },
+    );
+  }
+
+  /// BUG-212(子2): 卡片左上角竖排标签原来用 `crossAxisAlignment.start`，每个 chip
+  /// 宽度等于自身文字宽度，导致一行长一行短的参差。用 `IntrinsicWidth` 把整列宽度
+  /// 收敛到最宽 chip，再用 `stretch` 让每个 chip 拉到该统一宽度（chip 内部文字仍左
+  /// 对齐），竖排整齐。不改 [HibikiTagChip]，不影响别处用法。
+  Widget _uniformWidthTagColumn(List<Widget> chips) {
+    return IntrinsicWidth(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: chips,
+      ),
     );
   }
 

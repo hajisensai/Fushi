@@ -32,10 +32,15 @@ class _MediaItemEditDialogPageState
   bool _clearOverrideImage = false;
 
   final TextEditingController _nameOverrideController = TextEditingController();
+  // BUG-212: author editing, only shown when the source supports it (EPUB).
+  final TextEditingController _authorController = TextEditingController();
+
+  bool get _supportsAuthorEdit => mediaSource.supportsAuthorEdit;
 
   @override
   void dispose() {
     _nameOverrideController.dispose();
+    _authorController.dispose();
     super.dispose();
   }
 
@@ -46,6 +51,7 @@ class _MediaItemEditDialogPageState
           mediaSource.getOverrideTitleFromMediaItem(widget.item);
       String title = overrideTitle ?? widget.item.title;
       _nameOverrideController.text = title;
+      _authorController.text = widget.item.author ?? '';
 
       _defaultImageProvider = mediaSource.getDisplayThumbnailFromMediaItem(
         appModel: appModel,
@@ -87,6 +93,24 @@ class _MediaItemEditDialogPageState
               },
             ),
           ),
+          if (_supportsAuthorEdit) ...<Widget>[
+            const SizedBox(height: 8),
+            HibikiTextField(
+              controller: _authorController,
+              labelText: t.book_edit_author,
+              hintText: t.book_edit_author,
+              maxLines: 1,
+              suffixIcon: HibikiIconButton(
+                tooltip: t.undo,
+                isWideTapArea: true,
+                icon: Icons.undo_outlined,
+                onTap: () async {
+                  _authorController.text = widget.item.author ?? '';
+                  FocusScope.of(context).unfocus();
+                },
+              ),
+            ),
+          ],
           MediaItemCoverOverrideField(
             imageProvider: _coverImageProvider ?? _defaultImageProvider!,
             onPickImage: () async {
@@ -157,6 +181,15 @@ class _MediaItemEditDialogPageState
         file: _newFile,
         clearOverrideImage: _clearOverrideImage,
       );
+
+      // BUG-212: persist the edited author (e.g. epubBooks.author). No-op for
+      // sources that do not support author editing.
+      if (_supportsAuthorEdit) {
+        await mediaSource.setAuthorFromMediaItem(
+          item: widget.item,
+          author: _authorController.text,
+        );
+      }
 
       navigator.pop();
       navigator.pop();

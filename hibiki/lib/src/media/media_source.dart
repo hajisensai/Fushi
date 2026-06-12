@@ -87,6 +87,12 @@ abstract class MediaSource {
   /// Call from [AppModel.initialise] before initialising media sources.
   static void setDatabase(HibikiDatabase db) => _sharedDb = db;
 
+  /// Shared database for subclasses that persist beyond the preference cache
+  /// (e.g. ReaderHibikiSource writing back epubBooks.author for BUG-212). Null
+  /// until [setDatabase] runs in [AppModel.initialise].
+  @protected
+  HibikiDatabase? get sharedDatabase => _sharedDb;
+
   /// In-memory preference cache for this source. Loaded from the Drift
   /// database on [initialise] and written through on [setPreference].
   final Map<String, dynamic> _preferences = {};
@@ -479,6 +485,21 @@ abstract class MediaSource {
 
     await setPreference<String?>(key: key, value: value);
   }
+
+  /// Whether this source lets the user edit a [MediaItem]'s author in the edit
+  /// dialog (BUG-212). Default false: the author field is hidden and
+  /// [setAuthorFromMediaItem] is a no-op. Sources backing an editable author
+  /// column (e.g. EPUB books) override this to true.
+  bool get supportsAuthorEdit => false;
+
+  /// Persist a [MediaItem]'s author (BUG-212). Default no-op for sources that do
+  /// not support author editing; override alongside [supportsAuthorEdit] to
+  /// write the author back to the underlying store. A blank/empty [author]
+  /// clears it.
+  Future<void> setAuthorFromMediaItem({
+    required MediaItem item,
+    required String? author,
+  }) async {}
 
   /// Given a [MediaItem], set its override display thumbnail. If null, this
   /// deletes the override thumbnail.
