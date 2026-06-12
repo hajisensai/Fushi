@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-212](bugs/BUG-212-shelf-author-not-shown-editable.md) | ✅ | ✅ | 书架作者导入后不回显不可编辑+tag竖排参差 |
+| [BUG-220](bugs/BUG-220-shelf-author-not-shown-editable.md) | ✅ | ✅ | 书架作者导入后不回显不可编辑+tag竖排参差 |
 | [BUG-211](bugs/BUG-211-book-stats-charcount-inflated.md) | ✅ | ✅ | 书籍统计字数明显过高 |
 | [BUG-210](bugs/BUG-210-reader-paging-jumps-chapter-start.md) | ✅ | ✅ | 阅读器翻页跳回章节开头 |
 | [BUG-209](bugs/BUG-209-wgc-graphics-capture-crash.md) | ✅ | ✅ | 手机闪退实为Windows WGC FramePool teardown崩溃 |

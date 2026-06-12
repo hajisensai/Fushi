@@ -1,4 +1,4 @@
-## BUG-212 · 书架作者导入后不回显不可编辑+tag竖排参差
+## BUG-220 · 书架作者导入后不回显不可编辑+tag竖排参差
 - **报告**：2026-06-12（用户：）拆自 TODO-159 子2/子3（TODO-167）
 - **真实性**：✅ 真 bug（两处真实缺失）。根因：
   - **子3-a 作者不回显**：`hibiki/lib/src/media/sources/reader_hibiki_source.dart:260` 的 `MediaItem(...)` 构造完全没传 `author`，所以 EPUB 书 `MediaItem.author` 恒 null；而 `epubBooks.author` 列（`packages/hibiki_core/lib/src/database/tables.dart:232`）导入时已写库。详情弹窗 `media_item_dialog_page.dart:126-132` 在 `item.author` 非空时本就会显示，缺的只是 source 没把 DB author 填进 MediaItem。

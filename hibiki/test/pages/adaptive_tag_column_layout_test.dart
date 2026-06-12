@@ -86,7 +86,7 @@ void main() {
         tester.getSize(find.byKey(const Key('cover'))), const Size(200, 300));
   });
 
-  group('BUG-212 子2: 卡片标签竖排统一宽度(消除参差)', () {
+  group('BUG-220 子2: 卡片标签竖排统一宽度(消除参差)', () {
     testWidgets('IntrinsicWidth + stretch 让不同文字宽度的标签 chip 渲染成同一宽度',
         (WidgetTester tester) async {
       // 复刻修复后的 _uniformWidthTagColumn 结构：用最宽 chip 决定列宽，
@@ -126,7 +126,7 @@ void main() {
     });
   });
 
-  group('BUG-212 子2 源码守卫', () {
+  group('BUG-220 子2 源码守卫', () {
     test('_adaptiveTagColumn 走统一宽度列(IntrinsicWidth + stretch)而非裸 start 列', () {
       final String source = File(
         'lib/src/pages/implementations/reader_hibiki_history_page.dart',

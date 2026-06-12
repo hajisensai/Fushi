@@ -88,7 +88,7 @@ abstract class MediaSource {
   static void setDatabase(HibikiDatabase db) => _sharedDb = db;
 
   /// Shared database for subclasses that persist beyond the preference cache
-  /// (e.g. ReaderHibikiSource writing back epubBooks.author for BUG-212). Null
+  /// (e.g. ReaderHibikiSource writing back epubBooks.author for BUG-220). Null
   /// until [setDatabase] runs in [AppModel.initialise].
   @protected
   HibikiDatabase? get sharedDatabase => _sharedDb;
@@ -487,12 +487,12 @@ abstract class MediaSource {
   }
 
   /// Whether this source lets the user edit a [MediaItem]'s author in the edit
-  /// dialog (BUG-212). Default false: the author field is hidden and
+  /// dialog (BUG-220). Default false: the author field is hidden and
   /// [setAuthorFromMediaItem] is a no-op. Sources backing an editable author
   /// column (e.g. EPUB books) override this to true.
   bool get supportsAuthorEdit => false;
 
-  /// Persist a [MediaItem]'s author (BUG-212). Default no-op for sources that do
+  /// Persist a [MediaItem]'s author (BUG-220). Default no-op for sources that do
   /// not support author editing; override alongside [supportsAuthorEdit] to
   /// write the author back to the underlying store. A blank/empty [author]
   /// clears it.

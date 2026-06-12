@@ -32,7 +32,7 @@ class _MediaItemEditDialogPageState
   bool _clearOverrideImage = false;
 
   final TextEditingController _nameOverrideController = TextEditingController();
-  // BUG-212: author editing, only shown when the source supports it (EPUB).
+  // BUG-220: author editing, only shown when the source supports it (EPUB).
   final TextEditingController _authorController = TextEditingController();
 
   bool get _supportsAuthorEdit => mediaSource.supportsAuthorEdit;
@@ -182,7 +182,7 @@ class _MediaItemEditDialogPageState
         clearOverrideImage: _clearOverrideImage,
       );
 
-      // BUG-212: persist the edited author (e.g. epubBooks.author). No-op for
+      // BUG-220: persist the edited author (e.g. epubBooks.author). No-op for
       // sources that do not support author editing.
       if (_supportsAuthorEdit) {
         await mediaSource.setAuthorFromMediaItem(

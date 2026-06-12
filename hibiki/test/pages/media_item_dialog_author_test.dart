@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
 
-/// BUG-212 子3-a: the EPUB shelf MediaItem now carries the DB author, and the
+/// BUG-220 子3-a: the EPUB shelf MediaItem now carries the DB author, and the
 /// detail dialog must surface it. These tests exercise the pure layout frame
 /// ([MediaItemDialogFrame]) so they do not depend on AppModel / a database.
 void main() {

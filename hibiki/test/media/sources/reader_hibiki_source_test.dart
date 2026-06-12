@@ -268,7 +268,7 @@ void main() {
     });
   });
 
-  group('ReaderHibikiSource author editing (BUG-212 子3)', () {
+  group('ReaderHibikiSource author editing (BUG-220 子3)', () {
     EpubBooksCompanion bookWithAuthor(String key, {String? author}) {
       return EpubBooksCompanion.insert(
         bookKey: key,
@@ -355,13 +355,13 @@ void main() {
     });
   });
 
-  group('ReaderHibikiSource author wiring guards (BUG-212 子3 源码守卫)', () {
+  group('ReaderHibikiSource author wiring guards (BUG-220 子3 源码守卫)', () {
     test('_bookToMediaItem fills MediaItem.author from the EpubBookRow', () {
       final String source = File(
         'lib/src/media/sources/reader_hibiki_source.dart',
       ).readAsStringSync();
       // The shelf MediaItem must carry the DB author so the detail dialog shows
-      // it; missing this line regresses BUG-212 子3-a (author never displayed).
+      // it; missing this line regresses BUG-220 子3-a (author never displayed).
       expect(source, contains('author: book.author'));
     });
 

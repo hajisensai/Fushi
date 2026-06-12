@@ -1282,7 +1282,7 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
           .write(EpubBooksCompanion(epubPath: Value(epubPath)));
 
-  /// Update a book's author (BUG-212). Unlike [updateEpubBookTitle], the author
+  /// Update a book's author (BUG-220). Unlike [updateEpubBookTitle], the author
   /// column is NOT the primary key (bookKey = sanitized title), so this is a
   /// plain UPDATE with no cascading re-key. Pass a blank/empty [author] to clear
   /// it (stored as NULL) so the detail dialog hides the author line.
