@@ -1559,5 +1559,11 @@
     "video_setting_picture_fit_fill": "Stretch to fill",
     "video_setting_picture_fit_contain": "Fit keep ratio add black bars",
     "video_setting_lock_window_aspect": "Lock window to video aspect",
-    "video_subtitle_list_font_larger": "Larger text"
+    "video_subtitle_list_font_larger": "Larger text",
+    "video_double_tap_next_cue": "Next line",
+    "video_setting_double_tap_subtitle": "Subtitle",
+    "video_setting_double_tap_hint": "Double-tap the left or right of the video to seek",
+    "video_setting_double_tap": "Double-tap seek",
+    "video_double_tap_prev_cue": "Previous line",
+    "video_setting_double_tap_off": "Off"
 }

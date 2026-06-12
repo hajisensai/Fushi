@@ -411,6 +411,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         _buildDelayRow(),
         _buildSpeedRow(),
         _buildSeekSecondsRow(),
+        _buildDoubleTapRow(),
         _buildSpeedStepRow(),
         _buildPauseAtSubtitleEndRow(),
       ],
@@ -603,6 +604,42 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       format: (double v) => '${v.round()}s',
       onChanged: (double v) => _commitAsb(
         _asbConfig.copyWith(seekSeconds: v.round()),
+      ),
+    );
+  }
+
+  /// 双击左/右区快进步长（TODO-173/BUG-231）。离散单选：关 / 3s / 5s / 10s / 下一句
+  /// （字幕跳句）。值就是 [VideoAsbplayerConfig.doubleTapSeekSeconds]（0=关、3/5/10=
+  /// 相对 seek 秒数、[VideoAsbplayerConfig.kDoubleTapSubtitle]=字幕跳句）。用与有声书
+  /// `image_pause` 同款的 [AdaptiveSettingsSegmentedRow]（chips + 单焦点停 + 方向键步进，
+  /// 焦点驱动友好）。onChanged 走 [_commitAsb] 落盘 + 即时回调页面。
+  Widget _buildDoubleTapRow() {
+    return AdaptiveSettingsSegmentedRow<int>(
+      title: t.video_setting_double_tap,
+      subtitle: t.video_setting_double_tap_hint,
+      icon: Icons.touch_app_outlined,
+      controlBelow: true,
+      segments: <ButtonSegment<int>>[
+        ButtonSegment<int>(
+          value: 0,
+          label: Text(t.video_setting_double_tap_off),
+          tooltip: t.video_setting_double_tap_off,
+        ),
+        for (final int s in <int>[3, 5, 10])
+          ButtonSegment<int>(
+            value: s,
+            label: Text('${s}s'),
+            tooltip: '${s}s',
+          ),
+        ButtonSegment<int>(
+          value: VideoAsbplayerConfig.kDoubleTapSubtitle,
+          label: Text(t.video_setting_double_tap_subtitle),
+          tooltip: t.video_setting_double_tap_subtitle,
+        ),
+      ],
+      selected: _asbConfig.doubleTapSeekSeconds,
+      onChanged: (int value) => _commitAsb(
+        _asbConfig.copyWith(doubleTapSeekSeconds: value),
       ),
     );
   }

@@ -1559,5 +1559,11 @@
     "video_setting_picture_fit_fill": "拉伸填满",
     "video_setting_picture_fit_contain": "适应(保持比例加黑边)",
     "video_setting_lock_window_aspect": "锁定窗口为视频比例",
-    "video_subtitle_list_font_larger": "放大字号"
+    "video_subtitle_list_font_larger": "放大字号",
+    "video_double_tap_next_cue": "下一句",
+    "video_setting_double_tap_subtitle": "字幕",
+    "video_setting_double_tap_hint": "双击视频左右两侧快退快进",
+    "video_setting_double_tap": "双击快进",
+    "video_double_tap_prev_cue": "上一句",
+    "video_setting_double_tap_off": "关"
 }
