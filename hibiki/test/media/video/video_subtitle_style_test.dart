@@ -171,20 +171,33 @@ void main() {
         () {
       // TODO-129 反转 089：默认 bottomPadding 不再把控制条避让恒加进去（否则进度条
       // 隐藏时字幕也恒抬高、留一大块空白）。默认回到自然基线 75；避让改由 overlay 在
-      // 控制条可见时动态叠加 [kVideoControlsBottomReserve]、隐藏时落回（见
-      // video_subtitle_overlay_test.dart）。撤回修复（恒含避让 => 默认 >= 98）则本条变红。
+      // 控制条可见时对 [kVideoControlsBottomReserve] 取下限、隐藏时落回（见
+      // video_subtitle_overlay_test.dart）。撤回修复（恒含避让 => 默认 = 75 + reserve）
+      // 则本条变红。
       expect(VideoSubtitleStyle.defaults.bottomPadding, 75);
+      // 反转 089 的核心：默认就是裸基线 75，不是「基线 + 整条控制条避让」的恒抬升合值。
+      // TODO-171 把 reserve 降到 56（< 基线 75）后不能再用 `< reserve` 表达这层语义（默认
+      // 基线本就高于进度条上缘 = 已避开进度条），改为直接守「不等于 089 的恒抬升合值」。
       expect(
         VideoSubtitleStyle.defaults.bottomPadding,
-        lessThan(kVideoControlsBottomReserve),
+        isNot(75 + kVideoControlsBottomReserve),
         reason: '默认不应把控制条避让恒含进 bottomPadding（那是 089 的恒抬升，已反转）',
       );
     });
 
-    test('controls reserve matches media_kit default bottom bar geometry', () {
-      // 守卫：避让高度 = bottomButtonBarMargin.vertical(42) + buttonBarHeight(56)。
-      // 若 media_kit 升级改了默认布局，这条会提醒重新核对常量。
-      expect(kVideoControlsBottomReserve, 98);
+    test('controls reserve = 进度条上缘高度（一个按钮行），不再含整条按钮行 + margin 累加（TODO-171）',
+        () {
+      // TODO-171（抄 B站）根因守卫：避让只让出底部控制条的**进度条那一条**，不是整条
+      // 底部按钮行。进度条骑在按钮行上沿，落在距视频底约一个按钮行高（buttonBarHeight=56）
+      // 处，故避让高度 = 56。旧值 42 + 56 = 98 把字幕顶过整条按钮行 + 离底 margin（飞进
+      // 画面中上部，用户报「进度条出来把字幕往上顶太高很怪」）。
+      expect(kVideoControlsBottomReserve, 56,
+          reason: '避让应只到进度条上缘（一个按钮行高 56），抄 B站只让出进度条那一条');
+      // 防回退：撤回成 98 / 重新把 42 离底 margin 累加进来即转红。
+      expect(kVideoControlsBottomReserve, isNot(98),
+          reason: '不应再抬过整条按钮行 + 离底 margin（旧 42 + 56 = 98，TODO-171 已减小）');
+      expect(kVideoControlsBottomReserve, lessThan(98),
+          reason: '避让高度必须比旧的整条控制条高 98 小（只让出进度条上缘那一条）');
     });
 
     test('an explicit user bottomPadding is honoured verbatim', () {

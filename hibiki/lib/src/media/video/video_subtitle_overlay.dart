@@ -106,8 +106,10 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 有声书等无控制条场景）= 不避让，字幕恒贴 [bottomPadding] 基线（旧行为）。
   final ValueListenable<bool>? controlsVisible;
 
-  /// 控制条可见时字幕底缘对其取下限的避让高度（默认 [kVideoControlsBottomReserve]=控制条
-  /// 总高）。仅在 [controlsVisible] 非 null 时生效；基线 ≥ 本值则避让不抬（取基线）。
+  /// 控制条可见时字幕底缘对其取下限的避让高度（默认 [kVideoControlsBottomReserve]=底部
+  /// 控制条**进度条上缘**距视频底边的高度，约一个按钮行高，TODO-171 起只让出进度条那一条、
+  /// 不再抬过整条按钮行）。仅在 [controlsVisible] 非 null 时生效；基线 ≥ 本值则避让不抬
+  /// （取基线）。
   final double controlsBottomReserve;
 
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
