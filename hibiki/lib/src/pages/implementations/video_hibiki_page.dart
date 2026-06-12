@@ -271,6 +271,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 这个基线把进度条与按钮条整体抬离最底，再叠加 [_videoBottomSystemInset] 的系统
   /// 导航栏/手势栏 inset。
   static const double _videoBottomChromeBaseline = 24;
+
+  /// 移动控制条进度条与底部按钮条之间的竖直间距基线（TODO-156/BUG-214）。media_kit
+  /// 把进度条与底部按钮条放在**同一个** `Stack(alignment: bottomCenter)`，两者都按
+  /// `bottom` 对齐；本页原先把 `seekBarMargin.bottom` 与 `bottomButtonBarMargin.bottom`
+  /// 设成同一基线 → 进度条落到按钮条同一基线上、与按钮重叠（手机上「按钮没在进度条
+  /// 下面」）。把 `seekBarMargin.bottom` 抬高 = 按钮条高 + 本间距，让进度条整体落在
+  /// 按钮条上方。随界面大小缩放（[_videoUiScale]）。
+  static const double _videoSeekBarButtonGapBase = 8;
+
+  /// 移动控制条进度条触摸热区高度基线（TODO-157/BUG-215）。media_kit 默认
+  /// `seekBarContainerHeight=36`，对准才滑得到；抬高扩大可命中热区。随界面缩放。
+  /// 热区向上长（[_mobileControlsTheme] 把进度条整体抬到按钮条上方），不向下侵入
+  /// 系统边缘手势区。
+  static const double _videoSeekBarContainerHeightBase = 52;
+
+  /// 移动控制条进度条拖动滑块尺寸基线（TODO-157/BUG-215）。media_kit 默认 12.8；
+  /// 抬高让滑块更易对准。随界面缩放。
+  static const double _videoSeekBarThumbSizeBase = 18;
+
+  /// 移动控制条进度条轨道高度基线（TODO-157/BUG-215）。media_kit 默认 2.4；抬高让
+  /// 轨道更醒目、更易滑。随界面缩放。
+  static const double _videoSeekBarTrackHeightBase = 5;
+
+  /// 进度条与按钮条竖直间距，随界面大小缩放（TODO-156）。
+  double get _videoSeekBarButtonGap =>
+      _videoSeekBarButtonGapBase * _videoUiScale;
+
+  /// 进度条触摸热区高度，随界面大小缩放（TODO-157）。
+  double get _videoSeekBarContainerHeight =>
+      _videoSeekBarContainerHeightBase * _videoUiScale;
+
+  /// 进度条拖动滑块尺寸，随界面大小缩放（TODO-157）。
+  double get _videoSeekBarThumbSize =>
+      _videoSeekBarThumbSizeBase * _videoUiScale;
+
+  /// 进度条轨道高度，随界面大小缩放（TODO-157）。
+  double get _videoSeekBarTrackHeight =>
+      _videoSeekBarTrackHeightBase * _videoUiScale;
+
   static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
   static const double _videoDoubleClickSlop = 48;
 
@@ -2557,6 +2596,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
     final double bottomChromeInset =
         _videoBottomChromeBaseline + _videoBottomSystemInset();
+    // 进度条抬到底部按钮条上方（TODO-156/BUG-214）：media_kit 把进度条与按钮条放同一
+    // 个 bottomCenter Stack、都按 bottom 对齐，进度条 bottom 必须 = 按钮条底部基线 +
+    // 按钮条高 + 间距，否则两者落同一基线重叠。保留 [bottomChromeInset]（BUG-184 抬离
+    // 系统栏）作为按钮条基线，进度条偏移叠加其上。
+    final double seekBarBottom =
+        bottomChromeInset + _videoButtonBarHeight + _videoSeekBarButtonGap;
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
@@ -2575,18 +2620,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialBrightness: _enterBrightness,
       onBrightnessReset: () =>
           unawaited(_brightness.restore(previous: _enterBrightness)),
-      // 进度条留底部空间：不传时 media_kit 构造器默认 EdgeInsets.zero 会贴屏幕最底。
+      // 进度条抬到按钮条上方（TODO-156）：bottom = 按钮条基线 + 按钮条高 + 间距，
+      // 不再与按钮条同基线重叠。
       seekBarMargin: EdgeInsets.only(
         left: 16,
         right: 16,
-        bottom: bottomChromeInset,
+        bottom: seekBarBottom,
       ),
-      // 底部按钮条与进度条同一底部基线（沿用 media_kit 默认的左右 16/8）。
+      // 底部按钮条留在系统栏上方基线（沿用 media_kit 默认的左右 16/8）。
       bottomButtonBarMargin: EdgeInsets.only(
         left: 16,
         right: 8,
         bottom: bottomChromeInset,
       ),
+      // 进度条触摸热区 / 滑块 / 轨道整体抬高（TODO-157/BUG-215）：media_kit 默认
+      // seekBarContainerHeight=36 / seekBarThumbSize=12.8 / seekBarHeight=2.4 在手机上
+      // 太细、难命中（手指比默认热区窄，滑不到 / 拖不动）。改用随界面缩放的基线放大
+      // 命中区与可视轨道。三者由 [_videoSeekBarButtonGap] 把进度条整体抬到按钮条上方
+      // 后才有竖直空间承接更高的热区（向上长，不向下侵入系统边缘手势区）。
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      seekBarThumbSize: _videoSeekBarThumbSize,
+      seekBarHeight: _videoSeekBarTrackHeight,
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
