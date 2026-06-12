@@ -31,11 +31,11 @@ jobs:
             artifact: ffmpeg-min-linux-x64
           - os: macos-latest
             artifact: ffmpeg-min-macos
-          - os: windows-latest
+          - os: windows-2022
             artifact: ffmpeg-min-windows-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install deps (Linux)
         if: runner.os == 'Linux'
@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: Get-Item out/bin/ffmpeg.exe | Select-Object Name, Length
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ${{ matrix.artifact }}

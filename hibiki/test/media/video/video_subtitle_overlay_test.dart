@@ -58,7 +58,7 @@ void main() {
     // 取一个明确低于避让高的基线（与具体 reserve 数值解耦，TODO-171 把 reserve 从 98
     // 降到 56 后，默认基线 75 已高于 reserve，故验证「抬到 reserve」的几何前提必须用低
     // 于 reserve 的基线才成立）。低 1px 保证 < reserve 且与其联动。
-    final double lowBaseline = kVideoControlsBottomReserve - 1;
+    const double lowBaseline = kVideoControlsBottomReserve - 1;
 
     testWidgets('controls visible -> 基线低于避让高时字幕底缘抬到避让高（骑进度条上缘）',
         (tester) async {
