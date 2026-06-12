@@ -294,35 +294,47 @@ ruby.hoshi-selection-ruby-active {
   background-color: $selectionOpaque !important;
   color: inherit;
 }
-::highlight(hoshi-hl-yellow) {
+/* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
+   三条路径共用背景 + underline，和 sasayaki/current sentence 重叠时仍保留收藏语义。 */
+::highlight(hoshi-hl-yellow),
+.hoshi-hl-yellow,
+ruby.hoshi-hl-yellow-ruby-active {
   background-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
   text-decoration-line: underline;
   text-decoration-color: var(--hoshi-hl-yellow-mark, rgb(184, 132, 0));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-green) {
+::highlight(hoshi-hl-green),
+.hoshi-hl-green,
+ruby.hoshi-hl-green-ruby-active {
   background-color: var(--hoshi-hl-green, rgba(0,200,83,0.30));
   text-decoration-line: underline;
   text-decoration-color: var(--hoshi-hl-green-mark, rgb(0, 126, 54));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-blue) {
+::highlight(hoshi-hl-blue),
+.hoshi-hl-blue,
+ruby.hoshi-hl-blue-ruby-active {
   background-color: var(--hoshi-hl-blue, rgba(68,138,255,0.30));
   text-decoration-line: underline;
   text-decoration-color: var(--hoshi-hl-blue-mark, rgb(36, 92, 190));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-pink) {
+::highlight(hoshi-hl-pink),
+.hoshi-hl-pink,
+ruby.hoshi-hl-pink-ruby-active {
   background-color: var(--hoshi-hl-pink, rgba(255,64,129,0.30));
   text-decoration-line: underline;
   text-decoration-color: var(--hoshi-hl-pink-mark, rgb(196, 38, 92));
   text-decoration-thickness: 0.12em;
   text-underline-offset: 0.18em;
 }
-::highlight(hoshi-hl-purple) {
+::highlight(hoshi-hl-purple),
+.hoshi-hl-purple,
+ruby.hoshi-hl-purple-ruby-active {
   background-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
   text-decoration-line: underline;
   text-decoration-color: var(--hoshi-hl-purple-mark, rgb(126, 0, 190));

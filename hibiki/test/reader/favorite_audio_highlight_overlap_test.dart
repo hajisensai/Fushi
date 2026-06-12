@@ -54,5 +54,41 @@ void main() {
       expect(bridge, contains('span.style.textDecorationColor = markColor'),
           reason: 'fallback underline 要使用独立标记色');
     });
+
+    test('收藏高亮 ruby 和 fallback span 都保留 hoshi-hl 语义', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      final String bridge =
+          File('lib/src/media/audiobook/highlight_bridge.dart')
+              .readAsStringSync();
+
+      for (final String color in <String>[
+        'yellow',
+        'green',
+        'blue',
+        'pink',
+        'purple',
+      ]) {
+        expect(css, contains('.hoshi-hl-$color'),
+            reason: '旧 WebView span fallback 应使用和 CSS Highlight 同名的颜色 class');
+        expect(css, contains('ruby.hoshi-hl-$color-ruby-active'),
+            reason: '收藏句高亮遇到 ruby 时应改用元素 class，避免 ::highlight 双绘遮字');
+      }
+
+      expect(bridge, contains('_rubyForNode'),
+          reason: 'HighlightBridge 需要像 sasayaki/selection 一样识别 ruby 节点');
+      expect(bridge, contains('rubyElements'),
+          reason: 'ruby 元素应从 CSS Highlight range / fallback span 包裹中分流出来');
+      expect(
+        bridge,
+        contains("className = 'hoshi-hl hoshi-hl-' + color"),
+        reason: 'fallback span 必须暴露 hoshi-hl-* 语义，和 ::highlight(hoshi-hl-*) 对齐',
+      );
+      expect(
+        bridge,
+        contains("classList.add('hoshi-hl-' + color + '-ruby-active')"),
+        reason: 'ruby 收藏高亮应使用颜色化 class，而不是包裹 ruby 内部文本',
+      );
+    });
   });
 }
