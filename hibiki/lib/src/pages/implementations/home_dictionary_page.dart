@@ -489,12 +489,19 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── search results with nested popups ──────────────────────────────
 
   Widget _buildSearchResultBody() {
+    final double clipboardLookupHeadwordFontSize = 26.0 *
+        (appModel.dictionaryFontSize / appModel.defaultDictionaryFontSize);
+
     return Column(
       children: [
         if (_externalLookupText.trim().isNotEmpty)
           ClipboardLookupTextPanel(
             text: _externalLookupText,
             coordinateSpaceKey: _resultStackKey,
+            headwordTextStyle:
+                (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
+              fontSize: clipboardLookupHeadwordFontSize,
+            ),
             onLookup: (String query, Rect localRect) {
               _pushNestedPopup(query, localRect, replaceStack: true);
             },
