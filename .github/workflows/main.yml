@@ -15,6 +15,9 @@ on:
     paths: *ci_paths
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Cancel a superseded PR run when the PR is updated; never cancel a
 # push-to-main/develop or release build mid-way (each commit's build matters
 # for bisecting the previously-untested develop history).
@@ -110,6 +113,33 @@ jobs:
       working-directory: hibiki
       run: >-
         flutter build apk --debug
+
+    - name: Prepare debug APK artifact
+      if: github.event_name != 'pull_request'
+      working-directory: hibiki
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+        SHORT_SHA="${GITHUB_SHA::7}"
+        APK_DIR=build/app/outputs/flutter-apk
+        OUT_DIR=build/debug-artifacts
+        APK=$(find "$APK_DIR" -maxdepth 1 -type f -name '*-debug.apk' | sort | head -n 1)
+        if [ -z "$APK" ]; then
+          echo "::error title=Debug APK missing::No *-debug.apk found in $APK_DIR"
+          exit 1
+        fi
+        mkdir -p "$OUT_DIR"
+        cp "$APK" "$OUT_DIR/hibiki-${VERSION}-${SHORT_SHA}-debug.apk"
+
+    - name: Upload debug APK artifact
+      if: github.event_name != 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: hibiki-debug-apk-${{ github.sha }}
+        path: hibiki/build/debug-artifacts/*.apk
+        if-no-files-found: error
+        retention-days: 14
     # The release build (minify/R8/proguard + C++23 native) is the variant that
     # ships; without a keystore it was never exercised on PRs, so R8/keep-rule
     # regressions stayed invisible until a tagged release (HBK-AUDIT-026).

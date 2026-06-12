@@ -21,6 +21,16 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 > Google Drive 同步的 OAuth 凭据已写死进源码默认值（`lib/src/sync/google_drive_auth.dart`），构建无需再传 `--dart-define`。如需换凭据，改该文件的 `defaultValue` 或自行加 `--dart-define` 覆盖。
 
+## GitHub 调试版 APK
+
+`.github/workflows/main.yml` 是“每次更新上传到 Git/GitHub 的调试版”的当前落点：在 `main` / `develop` push 或手动 `workflow_dispatch` 成功跑完 debug APK 构建后，CI 会上传 GitHub Actions artifact。
+
+- 产物入口：对应 workflow run 的 **Artifacts** 区域。
+- Artifact 名称：`hibiki-debug-apk-${{ github.sha }}`。
+- APK 文件名：`hibiki-<version>-<short-sha>-debug.apk`。
+- 保留时间：14 天。
+- 安全边界：只上传 `flutter build apk --debug` 产生的 debug APK；正式 release APK 仍只由 `release.yml` / `release-desktop.yml` 在 GitHub Release 事件里上传。PR 事件不上传可下载调试包，避免未审代码被误当成更新包。
+
 ## 依赖补丁
 
 Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：
