@@ -148,9 +148,29 @@ void main() {
       'void _markControlsVisible(bool visible) {',
       '/// 桌面鼠标移出视频区',
     );
+    final String pokeMethod = _between(
+      source,
+      'void _pokeControlsVisible() {',
+      '/// media_kit 控制条自动隐藏时长',
+    );
     final String hoverExitMethod = _between(
       source,
       'void _onVideoControlsHoverExit() {',
+      'bool _isSyntheticControlsHover(PointerEvent event)',
+    );
+    final String syntheticHoverMethod = _between(
+      source,
+      'bool _isSyntheticControlsHover(PointerEvent event)',
+      'void _handleVideoControlsHover(PointerEvent event) {',
+    );
+    final String hoverHandlerMethod = _between(
+      source,
+      'void _handleVideoControlsHover(PointerEvent event) {',
+      'void _handleVideoControlsHoverExit(PointerEvent event) {',
+    );
+    final String hoverExitHandlerMethod = _between(
+      source,
+      'void _handleVideoControlsHoverExit(PointerEvent event) {',
       '/// 移动端点画面',
     );
     final String hoverWrapMethod = _between(
@@ -171,10 +191,23 @@ void main() {
         reason: '设置侧栏必须独立于控制条自动隐藏，不应随 action rail 一起卸载');
 
     expect(source, contains('bool _videoControlsHovered = false;'));
+    expect(pokeMethod, contains('device: _syntheticHoverDevice'));
+    expect(pokeMethod, contains('_markControlsVisible(true);'));
     expect(
         visibilityMethod, contains('if (visible && !_videoControlsHovered)'));
     expect(hoverExitMethod, contains('_videoControlsHovered = false;'));
-    expect(hoverWrapMethod, contains('_videoControlsHovered = true;'));
+    expect(syntheticHoverMethod,
+        contains('event.device == _syntheticHoverDevice'));
+    expect(
+        hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
+    expect(hoverHandlerMethod, contains('_videoControlsHovered = true;'));
+    expect(hoverHandlerMethod, contains('_markControlsVisible(true);'));
+    expect(hoverExitHandlerMethod,
+        contains('if (_isSyntheticControlsHover(event)) return;'));
+    expect(hoverExitHandlerMethod, contains('_onVideoControlsHoverExit();'));
+    expect(hoverWrapMethod, contains('onEnter: _handleVideoControlsHover'));
+    expect(hoverWrapMethod, contains('onHover: _handleVideoControlsHover'));
+    expect(hoverWrapMethod, contains('onExit: _handleVideoControlsHoverExit'));
   });
 
   test('shader manager is grouped instead of a flat action button pile', () {

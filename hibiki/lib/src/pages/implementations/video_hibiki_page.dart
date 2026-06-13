@@ -1777,6 +1777,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlsVisible.value = false;
   }
 
+  bool _isSyntheticControlsHover(PointerEvent event) =>
+      event.device == _syntheticHoverDevice;
+
+  void _handleVideoControlsHover(PointerEvent event) {
+    if (!_isSyntheticControlsHover(event)) {
+      _videoControlsHovered = true;
+    }
+    _markControlsVisible(true);
+    _pokeLockButton();
+  }
+
+  void _handleVideoControlsHoverExit(PointerEvent event) {
+    if (_isSyntheticControlsHover(event)) return;
+    _onVideoControlsHoverExit();
+  }
+
   /// 移动端点画面（非控制条按钮、非字幕字符）toggle 控制条可见（镜像 media_kit 移动控制
   /// 条的 `onTap`，TODO-129）。桌面走 hover，不经此路径。
   void _toggleControlsVisibleForTap() {
@@ -4930,17 +4946,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 鼠标移动也唤回视频左侧锁 / 解锁按钮（TODO-126）。[_pokeLockButton] 不被锁 gate
       // （[_markControlsVisible] 在沉浸态强制 false），故沉浸态解锁按钮淡出后能被鼠标唤回。
       // onExit 不立即收起锁按钮——交给 [_pokeLockButton] 的 2s 计时器自然淡出（无操作淡出）。
-      onEnter: (_) {
-        _videoControlsHovered = true;
-        _markControlsVisible(true);
-        _pokeLockButton();
-      },
-      onHover: (_) {
-        _videoControlsHovered = true;
-        _markControlsVisible(true);
-        _pokeLockButton();
-      },
-      onExit: (_) => _onVideoControlsHoverExit(),
+      onEnter: _handleVideoControlsHover,
+      onHover: _handleVideoControlsHover,
+      onExit: _handleVideoControlsHoverExit,
       child: child,
     );
   }
