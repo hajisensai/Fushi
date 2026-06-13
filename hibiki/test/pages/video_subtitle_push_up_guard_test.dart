@@ -56,6 +56,35 @@ void main() {
         reason: 'overlay 必须接上 _videoControlsVisible 才能动态避让进度条');
   });
 
+  test('视频页显式传入按平台真实几何 + 随缩放的 reserve（BUG-238，不回退裸常量 56）', () {
+    // 根因守卫：overlay 默认 controlsBottomReserve = 常量 56，既不随缩放、又 < 默认基线
+    // 75，移动端 max(75,56)=75 把字幕留在被抬高的进度条下面被遮（用户报「只动一点点」）。
+    // 视频页必须显式传入按真实控制条几何加总的 reserve（移动 ≈140×缩放 > 75）才真正抬升。
+    expect(src,
+        contains('controlsBottomReserve: _subtitleControlsBottomReserve()'),
+        reason: 'overlay 必须接上视频页计算的真实几何 reserve，否则回退裸常量 56 被遮');
+    // 计算函数由真实控制条 getter 加总（均已 ×_videoUiScale），故随界面缩放。
+    final int fn = src.indexOf('double _subtitleControlsBottomReserve()');
+    expect(fn, greaterThanOrEqualTo(0),
+        reason: '应有 _subtitleControlsBottomReserve 计算真实几何 reserve');
+    final int fnEnd = src.indexOf('\n  }', fn);
+    final String body = src.substring(fn, fnEnd);
+    expect(body, contains('videoSubtitleControlsReserve('),
+        reason: 'reserve 应经纯函数 videoSubtitleControlsReserve 按几何加总（页面/测试同源）');
+    for (final String getter in <String>[
+      '_videoButtonBarHeight',
+      '_videoSeekBarButtonGap',
+      '_videoSeekBarContainerHeight',
+      '_videoBottomChromeBaseline',
+      '_videoBottomSystemInset()',
+    ]) {
+      expect(body, contains(getter),
+          reason: 'reserve 必须由真实控制条几何项 $getter 加总（随缩放、盖过移动进度条）');
+    }
+    expect(body, contains('_isDesktopVideoControls'),
+        reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条上缘）');
+  });
+
   test('桌面 hover 镜像 media_kit onEnter/onHover/onExit', () {
     expect(src, contains('Widget _videoControlsHoverWrap('),
         reason: '应有桌面 hover 包裹层镜像 media_kit MouseRegion 时序');
@@ -65,9 +94,26 @@ void main() {
     final String wrapBody = src.substring(wrap, wrapEnd);
     expect(wrapBody, contains('opaque: false'),
         reason: 'hover 包裹层必须 non-opaque，否则吞 hover、media_kit 控制条不再被唤起');
-    expect(wrapBody, contains('_markControlsVisible(true)'),
+    // hover 时序绑到专用 handler（enter/move 唤起、exit 收起），handler 内再翻镜像。
+    expect(wrapBody, contains('onEnter: _handleVideoControlsHover'),
+        reason: 'hover enter 应绑 _handleVideoControlsHover');
+    expect(wrapBody, contains('onHover: _handleVideoControlsHover'),
+        reason: 'hover move 应绑 _handleVideoControlsHover');
+    expect(wrapBody, contains('onExit: _handleVideoControlsHoverExit'),
+        reason: 'hover exit 应绑 _handleVideoControlsHoverExit');
+    // enter/move handler 翻镜像可见（字幕上顶避让进度条）。
+    final int enter = src.indexOf('void _handleVideoControlsHover(');
+    expect(enter, greaterThanOrEqualTo(0),
+        reason: '应有 _handleVideoControlsHover');
+    final String enterBody = src.substring(enter, src.indexOf('\n  }', enter));
+    expect(enterBody, contains('_markControlsVisible(true)'),
         reason: 'hover enter/move 应翻镜像可见');
-    expect(wrapBody, contains('_onVideoControlsHoverExit()'),
+    // exit handler 收起镜像（字幕落回基线）。
+    final int exit = src.indexOf('void _handleVideoControlsHoverExit(');
+    expect(exit, greaterThanOrEqualTo(0),
+        reason: '应有 _handleVideoControlsHoverExit');
+    final String exitBody = src.substring(exit, src.indexOf('\n  }', exit));
+    expect(exitBody, contains('_onVideoControlsHoverExit()'),
         reason: 'hover exit 应收起镜像（字幕落回基线）');
   });
 

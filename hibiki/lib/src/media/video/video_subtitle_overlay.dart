@@ -106,10 +106,14 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 有声书等无控制条场景）= 不避让，字幕恒贴 [bottomPadding] 基线（旧行为）。
   final ValueListenable<bool>? controlsVisible;
 
-  /// 控制条可见时字幕底缘对其取下限的避让高度（默认 [kVideoControlsBottomReserve]=底部
-  /// 控制条**进度条上缘**距视频底边的高度，约一个按钮行高，TODO-171 起只让出进度条那一条、
-  /// 不再抬过整条按钮行）。仅在 [controlsVisible] 非 null 时生效；基线 ≥ 本值则避让不抬
-  /// （取基线）。
+  /// 控制条可见时字幕底缘对其取下限的避让高度 = 底部控制条**进度条上缘**距视频底边的
+  /// 高度。仅在 [controlsVisible] 非 null 时生效；基线 ≥ 本值则避让不抬（取基线）。
+  ///
+  /// 默认 [kVideoControlsBottomReserve]=56（桌面进度条骑按钮行上沿那一条，约一个按钮行
+  /// 高，TODO-171/BUG-228；也是测试 / 无控制条场景的兜底）。视频页**显式传入**按平台真实
+  /// 控制条几何加总 + 随界面缩放的值（`videoSubtitleControlsReserve`，BUG-238）：移动端
+  /// 进度条被抬到按钮行上方，上缘 ≈140×缩放 > 默认基线 75，故取下限 `max(75,140)` 才真正
+  /// 抬升盖过进度条；否则常量 56 < 75 → `max(75,56)=75` 把字幕留在进度条下面被遮。
   final double controlsBottomReserve;
 
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
@@ -425,11 +429,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   ///
   /// 底部锚点避让是「字幕底缘 ≥ 控制条顶缘」的约束，故控制条可见时底部 padding 取
   /// `max(bottomPadding, controlsBottomReserve)`——而**不是** `bottomPadding + reserve`
-  /// 的加法叠加。基线 75 < 控制条高 98 时，加法会把字幕顶到 173px（凭空多抬整个基线、
-  /// 顶进画面中上部 / 顶出可视底带 = TODO-161 用户报「桌面 hover 字幕消失」）；取下限只
-  /// 抬到 98 恰骑控制条顶，避开进度条又不飞。用户手选高位（> reserve）时 max 取其值、
-  /// 不被避让改写；手选低位（< reserve）时控制条可见仍抬到 reserve 躲进度条、隐藏落回原值。
-  /// 避让只对底部锚点生效——控制条在底部，顶部 / 中部字幕不会被进度条遮挡。
+  /// 的加法叠加。加法会把高位字幕凭空多抬一个基线、顶出可视底带（TODO-161 用户报「桌面
+  /// hover 字幕消失」，BUG-226）；取下限只把字幕抬到 reserve（=进度条上缘）恰骑控制条顶，
+  /// 避开进度条又不飞。reserve 是按平台真实控制条几何加总 + 随界面缩放的值（视频页传入
+  /// `videoSubtitleControlsReserve`，BUG-238），移动端 ≈140×缩放 > 默认基线 75，故默认字幕
+  /// 在控制条可见时真正被抬升盖过被抬高的移动进度条。用户手选高位（> reserve）时 max 取其
+  /// 值、不被避让改写；手选低位（< reserve）时控制条可见仍抬到 reserve 躲进度条、隐藏落回
+  /// 原值。避让只对底部锚点生效——控制条在底部，顶部 / 中部字幕不会被进度条遮挡。
   EdgeInsets _paddingFor(SubtitleAnchor? a, bool controlsVisible) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
     return switch (v) {

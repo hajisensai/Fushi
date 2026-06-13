@@ -29,6 +29,48 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 const double _kButtonBarHeight = 56;
 const double kVideoControlsBottomReserve = _kButtonBarHeight;
 
+/// 控制条可见时字幕要让出的「进度条上缘距视频底边的高度」（逻辑像素），由真实控制条
+/// 几何加总而成，并随界面缩放（`uiScale`）放大（BUG-238）。
+///
+/// 背景（BUG-226/228 的失效区间）：避让用 `max(bottomPadding, reserve)`（取下限，
+/// 非加法——加法会把高位字幕顶飞，BUG-226），但旧 reserve 是**常量** 56：
+/// - 不随界面缩放（放大界面后控制条变高、reserve 不变 → 盖不住）；
+/// - 桌面进度条骑按钮行上沿（约一个按钮行高）56 够用，但**移动端**进度条被抬到
+///   `底部留白 + 按钮行 + 间距 + 进度条热区` 之上，上缘 ≈ 140px，远高于默认基线 75，
+///   `max(75, 56)=75` 把字幕留在进度条**下面**被遮（用户报「只动了一点点」=实际 0）。
+///
+/// 故 reserve 必须 = 进度条上缘真实高度（按平台几何加总）×缩放，且 > 默认基线 75 才能
+/// 让取下限真正抬升字幕盖过进度条。本函数把这套几何收敛成纯函数（页面与测试同源调用）：
+/// - 桌面：进度条骑按钮行上沿 → reserve = 一个按钮行高（[buttonBarHeight]），保持
+///   BUG-228「只让出进度条那一条、不抬过整条按钮行」的桌面观感，但现在随缩放变化；
+/// - 移动：进度条整体被抬到按钮行上方 → reserve = [bottomChromeBaseline] + 系统底部
+///   inset + [buttonBarHeight] + [seekBarButtonGap] + [seekBarContainerHeight]（=进度条
+///   热区上缘距视频底边），盖过被抬高的移动进度条。
+///
+/// 几何项均来自 `video_hibiki_page.dart` 的同名控制条 getter（已 ×uiScale）；本函数不再
+/// 二次乘 uiScale，由调用方传入已缩放值，避免双重缩放。[bottomChromeBaseline] 是不随
+/// 缩放的离底基线常量（与页面 `_videoBottomChromeBaseline` 一致），故在此显式加上而非
+/// 乘缩放。
+double videoSubtitleControlsReserve({
+  required bool isDesktop,
+  required double buttonBarHeight,
+  required double seekBarButtonGap,
+  required double seekBarContainerHeight,
+  required double bottomChromeBaseline,
+  required double bottomSystemInset,
+}) {
+  if (isDesktop) {
+    // 桌面进度条骑按钮行上沿：让出一个（已缩放的）按钮行高即可（BUG-228）。
+    return buttonBarHeight;
+  }
+  // 移动进度条上缘 = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距 + 进度条热区高。
+  return bottomChromeBaseline +
+      bottomSystemInset +
+      buttonBarHeight +
+      seekBarButtonGap +
+      seekBarContainerHeight;
+}
+
 /// Video subtitle appearance persisted as app preferences.
 ///
 /// The default is a high-contrast caption look: fixed white text with a thick

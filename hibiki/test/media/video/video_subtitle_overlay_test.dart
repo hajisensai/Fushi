@@ -171,6 +171,88 @@ void main() {
       // 隐藏：仍 200（基线）。
       expect(gapFromBottom(tester), closeTo(200 + kBoxPadBottom, 0.5));
     });
+
+    group('BUG-238 视频页传入真实几何 reserve（盖过被抬高的移动进度条）', () {
+      // 视频页移动端实际传入的 reserve ≈ 进度条上缘高度（基线 + 按钮行 + 间距 + 热区，
+      // ×缩放），远大于默认基线 75。旧默认常量 56 < 75 → max(75,56)=75 把字幕留在进度条
+      // 下面被遮（用户报「只动一点点」=实际 0）。本组用「显式大 reserve」复刻视频页接线，
+      // 断言字幕真正被抬过进度条；并验证 reserve 越大（界面放大）抬得越高。
+      const double mobileReserveAt1x = 140; // 24 + 56 + 8 + 52（与页面几何一致）。
+      const double mobileReserveAt2x = 256; // 24 + (56+8+52)*2。
+
+      testWidgets(
+          'controls visible + 真实 reserve(140) > 默认基线 75：字幕抬到 reserve（盖过进度条）',
+          (tester) async {
+        // 根因守卫：默认基线 75 + 真实移动 reserve 140 → max(75,140)=140，字幕底缘抬到
+        // 进度条上缘（盖过被抬高的移动进度条）。撤回 reserve 到旧常量 56 → max(75,56)=75
+        // < 140，字幕停在 75 被遮（「只动一点点」）→ 红。
+        final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+        addTearDown(visible.dispose);
+        final VideoPlayerController c = _controllerWithCue('A');
+        await _pump(
+          tester,
+          VideoSubtitleOverlay(
+            controller: c,
+            bottomPadding: 75, // 默认基线。
+            controlsVisible: visible,
+            controlsBottomReserve: mobileReserveAt1x,
+          ),
+        );
+        await tester.pumpAndSettle();
+        // 字幕底缘抬到 reserve 140，严格高于默认基线 75（真正盖过进度条）。
+        expect(gapFromBottom(tester),
+            closeTo(mobileReserveAt1x + kBoxPadBottom, 0.5));
+        expect(gapFromBottom(tester), greaterThan(75 + kBoxPadBottom),
+            reason: '控制条可见时字幕底缘必须严格高于默认基线 75 才不被进度条遮（根因）');
+      });
+
+      testWidgets('controls hide + 真实 reserve(140)：字幕落回默认基线 75（不残留避让）',
+          (tester) async {
+        final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+        addTearDown(visible.dispose);
+        final VideoPlayerController c = _controllerWithCue('A');
+        await _pump(
+          tester,
+          VideoSubtitleOverlay(
+            controller: c,
+            bottomPadding: 75,
+            controlsVisible: visible,
+            controlsBottomReserve: mobileReserveAt1x,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final double visibleGap = gapFromBottom(tester);
+        expect(visibleGap, closeTo(mobileReserveAt1x + kBoxPadBottom, 0.5));
+
+        visible.value = false;
+        await tester.pumpAndSettle();
+        // 隐藏：落回默认基线 75（= bottomPadding，无避让残留）。
+        expect(gapFromBottom(tester), closeTo(75 + kBoxPadBottom, 0.5),
+            reason: '控制条隐藏后字幕落回 bottomPadding 基线');
+      });
+
+      testWidgets('reserve 随界面放大（256 > 140）：字幕抬得更高（避让随缩放）', (tester) async {
+        // 界面放大后控制条变高，视频页传入更大的 reserve（256），字幕避让随之抬得更高。
+        // 旧常量 56 恒定不随缩放、放大后仍盖不住 → 红。
+        final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+        addTearDown(visible.dispose);
+        final VideoPlayerController c = _controllerWithCue('A');
+        await _pump(
+          tester,
+          VideoSubtitleOverlay(
+            controller: c,
+            bottomPadding: 75,
+            controlsVisible: visible,
+            controlsBottomReserve: mobileReserveAt2x,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(gapFromBottom(tester),
+            closeTo(mobileReserveAt2x + kBoxPadBottom, 0.5));
+        expect(mobileReserveAt2x, greaterThan(mobileReserveAt1x),
+            reason: '界面放大后 reserve 必须更大（避让随缩放）');
+      });
+    });
   });
 
   testWidgets('blur off: no ImageFiltered around subtitle', (tester) async {
