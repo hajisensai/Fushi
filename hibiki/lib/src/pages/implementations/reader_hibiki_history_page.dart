@@ -779,7 +779,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       child: _bookCardLayout(
         title: book.title,
         cover: _buildRemoteBookCover(book),
-        trailing: _downloadingBooks.containsKey(book.title)
+        coverBadge: _downloadingBooks.containsKey(book.title)
             ? RemoteDownloadProgressBadge(
                 key: ValueKey<String>('remote_book_downloading_$safeKey'),
                 progress: _downloadingBooks[book.title],
@@ -925,8 +925,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       child: _bookCardLayout(
         title: book.title,
         cover: _buildSrtCover(book),
-        leading: tagWidget,
-        trailing: _cardBadge(
+        tagLabels: tagWidget,
+        coverBadge: _cardBadge(
           icon: Icons.subtitles_outlined,
           background: theme.colorScheme.secondaryContainer,
           foreground: theme.colorScheme.onSecondaryContainer,
@@ -955,8 +955,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       child: _bookCardLayout(
         title: book.title,
         cover: _buildVideoCover(book),
-        leading: tagWidget,
-        trailing: _cardBadge(
+        tagLabels: tagWidget,
+        coverBadge: _cardBadge(
           icon: Icons.movie_outlined,
           background: theme.colorScheme.tertiaryContainer,
           foreground: theme.colorScheme.onTertiaryContainer,
@@ -1228,20 +1228,37 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _bookCardLayout({
     required String title,
     required Widget cover,
-    Widget? leading,
-    Widget? trailing,
+    Widget? tagLabels,
+    Widget? coverBadge,
     Widget? metadata,
   }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: ClipRect(child: cover),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipRect(child: cover),
+              if (coverBadge != null)
+                PositionedDirectional(
+                  end: tokens.spacing.gap * 0.75,
+                  bottom: tokens.spacing.gap * 0.75,
+                  child: SizedBox.square(
+                    dimension: tokens.spacing.gap * 5,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: coverBadge,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         _bookCardFooter(
           title: title,
-          leading: leading,
-          trailing: trailing,
+          tagLabels: tagLabels,
           metadata: metadata,
         ),
       ],
@@ -1250,8 +1267,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _bookCardFooter({
     required String title,
-    Widget? leading,
-    Widget? trailing,
+    Widget? tagLabels,
     Widget? metadata,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -1275,29 +1291,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           tokens.spacing.gap * 0.75,
           tokens.spacing.gap * 0.75,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (leading != null) ...[
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: tokens.spacing.gap * 7.5,
-                  maxHeight: tokens.spacing.gap * 3.5,
-                ),
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  widthFactor: 1,
-                  child: ClipRect(child: leading),
-                ),
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-            ],
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
                     title,
                     overflow: TextOverflow.ellipsis,
                     maxLines: metadata == null ? 2 : 1,
@@ -1305,26 +1307,30 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                     softWrap: true,
                     style: titleStyle,
                   ),
-                  if (metadata != null) ...[
-                    SizedBox(height: tokens.spacing.gap / 2),
-                    metadata,
-                  ],
-                ],
-              ),
-            ),
-            if (trailing != null) ...[
-              SizedBox(width: tokens.spacing.gap / 2),
-              SizedBox.square(
-                dimension: tokens.spacing.gap * 5,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: trailing,
                 ),
-              ),
+              ],
+            ),
+            if (metadata != null) ...[
+              SizedBox(height: tokens.spacing.gap / 2),
+              metadata,
+            ],
+            if (tagLabels != null) ...[
+              SizedBox(height: tokens.spacing.gap / 2),
+              _bookCardTagArea(tagLabels),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _bookCardTagArea(Widget tagLabels) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: tokens.spacing.gap * 3.5,
+      ),
+      child: ClipRect(child: tagLabels),
     );
   }
 
@@ -1683,8 +1689,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         alignment: Alignment.topCenter,
         fit: BoxFit.fitHeight,
       ),
-      leading: tagWidget,
-      trailing: hasAudiobook
+      tagLabels: tagWidget,
+      coverBadge: hasAudiobook
           ? _audiobookBadge(healthKind)
           : _cardBadge(
               icon: Icons.menu_book_outlined,
