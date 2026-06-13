@@ -12,9 +12,14 @@ import 'package:hibiki/utils.dart';
 
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
 
+// GitHub 直连不通时的镜像回退候选（GFW 机器）。这些公共镜像会不定期轮换/下线，
+// 按顺序逐个尝试（见 _fetchWithFallback），全部失败才优雅静默放弃。`mirror.ghproxy.com`
+// 已废弃下线，移除；补入当前可用候选。具体哪个通取决于用户机器与时段。
 const List<String> _kProxyPrefixes = [
   'https://ghfast.top/',
-  'https://mirror.ghproxy.com/',
+  'https://gh-proxy.com/',
+  'https://ghproxy.net/',
+  'https://ghproxy.cc/',
 ];
 
 final RegExp _kBetaReleaseTagPattern = RegExp(r'^v\d+(?:\.\d+)*-beta\.\d+$');
