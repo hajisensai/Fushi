@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -119,25 +120,65 @@ class EpubBook {
 }
 
 class EpubChapter {
+  /// Eager constructor — [html] is already in memory. Used by DB-metadata /
+  /// legacy fallbacks, audiobook import dialogs, and tests.
   EpubChapter({
     required this.id,
     required this.href,
     required this.mediaType,
-    required this.html,
+    required String html,
     this.spineIndex,
     this.linear = true,
     this.spreadProperty,
-  });
+  })  : _eagerHtml = html,
+        _filePath = null;
+
+  /// TODO-296: lazy constructor — chapter XHTML is read + decoded from
+  /// [filePath] on first [html] access and cached, instead of slurping every
+  /// spine chapter into memory at parse/open time. The WebView already serves
+  /// chapter bodies straight from disk (reader intercept), so the only in-memory
+  /// consumers are [chapterPlainText]/search/spread analysis — all of which now
+  /// pull the same on-disk bytes on demand, keeping the rendered/aligned text
+  /// byte-identical while bounding open-book heap and latency.
+  EpubChapter.lazy({
+    required this.id,
+    required this.href,
+    required this.mediaType,
+    required String filePath,
+    this.spineIndex,
+    this.linear = true,
+    this.spreadProperty,
+  })  : _eagerHtml = null,
+        _filePath = filePath;
 
   final String id;
   final String href;
   final String mediaType;
-  final String html;
   final int? spineIndex;
   final bool linear;
 
   /// `page-spread-left`, `page-spread-right`, or `null`.
   final String? spreadProperty;
+
+  final String? _eagerHtml;
+  final String? _filePath;
+  String? _lazyHtml;
+
+  /// Chapter XHTML source. For lazy chapters this reads + decodes [_filePath]
+  /// on first access and caches the result; a missing file degrades to `''`
+  /// (matches the DB-fallback builder contract) rather than throwing.
+  String get html {
+    final String? eager = _eagerHtml;
+    if (eager != null) return eager;
+    return _lazyHtml ??= _readChapterFile(_filePath);
+  }
+
+  static String _readChapterFile(String? filePath) {
+    if (filePath == null) return '';
+    final File file = File(filePath);
+    if (!file.existsSync()) return '';
+    return decodeEpubText(file.readAsBytesSync());
+  }
 }
 
 class EpubTocItem {
@@ -161,6 +202,26 @@ class EpubResource {
     final File file = File(filePath!);
     return file.existsSync() ? file.readAsBytesSync() : null;
   }
+}
+
+/// Decodes EPUB text-file bytes as UTF-8, degrading gracefully instead of
+/// throwing on non-UTF-8 input. EPUB mandates UTF-8 for its XML, but legacy
+/// Japanese books/raw XHTML sometimes carry Shift_JIS/EUC-JP; strict utf8
+/// decoding would throw FormatException and abort the whole load
+/// (HBK-AUDIT-033). A UTF-8 BOM is stripped; malformed bytes become U+FFFD.
+///
+/// Single source of truth shared by [EpubParser] (structure parse) and
+/// [EpubChapter.html] (TODO-296 lazy read) so eager and lazy chapter text are
+/// byte-identical.
+String decodeEpubText(List<int> rawBytes) {
+  List<int> bytes = rawBytes;
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xEF &&
+      bytes[1] == 0xBB &&
+      bytes[2] == 0xBF) {
+    bytes = bytes.sublist(3);
+  }
+  return utf8.decode(bytes, allowMalformed: true);
 }
 
 String normalizeHref(String href) => href

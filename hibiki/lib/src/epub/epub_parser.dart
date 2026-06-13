@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -300,11 +299,14 @@ class EpubParser {
         }
       }
 
-      chapters.add(EpubChapter(
+      // TODO-296: defer the chapter XHTML read. _parseSpine still verifies the
+      // file exists above, but the bytes are read + decoded lazily on first
+      // [EpubChapter.html] access — open-book no longer slurps the whole book.
+      chapters.add(EpubChapter.lazy(
         id: item.id,
         href: normalizeHref(relPath),
         mediaType: item.mediaType,
-        html: _readText(file),
+        filePath: absPath,
         spineIndex: index,
         linear: linear != 'no',
         spreadProperty: spreadProperty,
@@ -590,22 +592,11 @@ class EpubParser {
     return null;
   }
 
-  /// Reads a text file as UTF-8, degrading gracefully instead of throwing on
-  /// non-UTF-8 bytes. EPUB mandates UTF-8 for its XML, but legacy Japanese
-  /// books/raw XHTML sometimes carry Shift_JIS/EUC-JP; strict utf8 decoding
-  /// would throw FormatException and abort the whole import (HBK-AUDIT-033).
-  /// A UTF-8 BOM is stripped; malformed bytes become U+FFFD rather than a
-  /// crash. (Full Shift_JIS/EUC-JP transcoding needs a charset converter dep
-  /// and is out of scope here.)
+  /// Reads a text file with the shared UTF-8/BOM-tolerant decoder
+  /// ([decodeEpubText], HBK-AUDIT-033) used by both structure parse and the
+  /// TODO-296 lazy chapter read.
   static String _readText(File file) {
-    List<int> bytes = file.readAsBytesSync();
-    if (bytes.length >= 3 &&
-        bytes[0] == 0xEF &&
-        bytes[1] == 0xBB &&
-        bytes[2] == 0xBF) {
-      bytes = bytes.sublist(3);
-    }
-    return utf8.decode(bytes, allowMalformed: true);
+    return decodeEpubText(file.readAsBytesSync());
   }
 
   /// Percent-decodes an href/path, tolerating malformed sequences (a literal
