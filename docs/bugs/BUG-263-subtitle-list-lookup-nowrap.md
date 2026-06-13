@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug — 两处根因：
   - **(a) 无法查词**：`hibiki/lib/src/media/video/video_subtitle_jump_panel.dart:395` 列表项字幕文本是纯 `Text(cue.text)`，无任何查词触发；视频底部字幕 overlay 经 `onCharTap → _handleSubtitleLookupTap → _lookupAt`（`video_hibiki_page.dart:2253/1894`）能逐字查词，但列表项没接这条链路。
   - **(b) 换行**：`video_subtitle_jump_panel.dart:397` 文本 `maxLines: 2`（允许换行），在固定 `_itemExtent`（`56*scale`）下长句换行/被裁。
-- **[x] ① 已修复** — 提交 `<C1>`
+- **[x] ① 已修复** — 提交 `a2ad8bbb2`
   - 给 `VideoSubtitleJumpPanel` 加可选 `onLookupCue(AudioCue, Rect)` 字段（`video_subtitle_jump_panel.dart`）；列表项文本拆为 `_buildRowText`：单行不换行（`maxLines:1 + softWrap:false + ellipsis`，修 b），并在 `onLookupCue != null` 时叠一片 `HitTestBehavior.translucent` 的 tap 层（赢手势竞技场截断外层 InkWell 的 seek）→ 点文本调 `onLookupCue(cue, textRect)`（textRect 取文本 widget 的 `localToGlobal` 屏幕矩形）。
   - 页面层 `_handleSubtitleListLookup`（`video_hibiki_page.dart`）复用同一条 `_lookupAt(cue.text, 0, textRect)` 查词链路（暂停视频 → 推与阅读器/词典页同款查词浮层，从句首最长匹配），并把它接到面板的 `onLookupCue`。`onLookupCue == null` 时文本不可查、行点击仍 seek（向后兼容）。
 - **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_jump_panel_test.dart`（widget 行为）：
