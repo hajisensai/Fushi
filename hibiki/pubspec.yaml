@@ -204,6 +204,15 @@ dependency_overrides:
     path: ../third_party/media_kit_libs_ios_video
   media_kit_libs_android_video:
     path: ../third_party/media_kit_libs_android_video
+  # BUG-235: media_kit_video 2.0.1's MaterialDesktopSeekBarState.onPointerUp /
+  # onPointerMove call controller(context) (dereferences State.context) with no
+  # mounted guard. Hibiki tears down the controls subtree on fullscreen
+  # enter/exit and episode switch (VideoControlsFocusGate), so releasing the
+  # seek bar drag right then crashes with "Null check operator used on a null
+  # value". Vendored fork adds `if (!mounted) return;` to both handlers. See
+  # third_party/media_kit_video/PATCHES.md.
+  media_kit_video:
+    path: ../third_party/media_kit_video
 
 dev_dependencies:
   build_runner: ^2.3.3
