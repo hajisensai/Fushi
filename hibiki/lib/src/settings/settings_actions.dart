@@ -435,15 +435,31 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
   );
 }
 
+/// 「界面大小」设置项。
+///
+/// TODO-323: 自动/自定义不再做成独立全权重的设置行（原 `app_ui_scale_mode` 整行带
+/// 自己的标题/副标题/图标，突兀地堆在滑条上方）。两者本就同属一项，这里收敛为一项：
+/// - 标题行 = 「界面大小」（[t.app_ui_scale]），自动/自定义作为该行尾部的轻量内联
+///   切换（[AdaptiveSettingsSegmentedRow] 的 `controlBelow: false`，仅两段短标签）。
+/// - 自动模式：只读展示当前自动计算的百分比（[AppModel.autoAppUiScale]），不显示滑条。
+/// - 自定义模式：显示可拖动的百分比滑条（[_AppUiScaleSliderRow]）。
+///
+/// 语义钩子不变：拖滑条会经 [ThemeNotifier.setAppUiScale] 自动翻成自定义；切回自动走
+/// [ThemeNotifier.setAppUiScaleMode]；legacy 迁移（只存过 app_ui_scale 的旧装机仍判为
+/// 自定义）由 [ThemeNotifier.appUiScaleMode] 兜底，本改动不触及。
 Widget buildAppUiScaleSelector(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
+  final bool isCustom =
+      appModel.appUiScaleMode == ThemeNotifier.appUiScaleModeCustom;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: <Widget>[
       AdaptiveSettingsSegmentedRow<String>(
-        title: t.app_ui_scale_mode,
-        subtitle: t.app_ui_scale_mode_hint,
+        title: t.app_ui_scale,
+        subtitle: t.app_ui_scale_hint,
         icon: Icons.format_size_outlined,
+        // 仅两段短标签（自动/自定义），内联在标题行尾即可，不再单独占整行。
+        controlBelow: false,
         segments: <ButtonSegment<String>>[
           ButtonSegment<String>(
             value: ThemeNotifier.appUiScaleModeAuto,
@@ -464,7 +480,17 @@ Widget buildAppUiScaleSelector(SettingsContext settingsContext) {
           settingsContext.refresh();
         },
       ),
-      _AppUiScaleSliderRow(appModel: appModel),
+      if (isCustom)
+        _AppUiScaleSliderRow(appModel: appModel)
+      else
+        // 自动模式无可拖滑条：只读展示当前自动计算出的百分比，避免无用滑条占位。
+        AdaptiveSettingsRow(
+          title: t.app_ui_scale_auto,
+          trailing: Text(
+            '${(appModel.autoAppUiScale * 100).round()}%',
+            style: Theme.of(settingsContext.context).textTheme.bodyMedium,
+          ),
+        ),
     ],
   );
 }
