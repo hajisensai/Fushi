@@ -1594,7 +1594,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               label,
               style: theme.textTheme.labelSmall,
               textAlign: TextAlign.center,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ],
