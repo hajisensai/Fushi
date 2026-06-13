@@ -414,8 +414,26 @@ void main() {
       notifier.loadFromPrefsSnapshot(<String, String>{});
 
       expect(HibikiAppUiScale.defaultScale, 1.0);
+      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeAuto);
       expect(notifier.appUiScale, HibikiAppUiScale.defaultScale);
       expect(notifier.appUiScale, 1.0);
+    });
+
+    test('legacy app_ui_scale without mode stays custom after upgrade', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale': PrefCodec.encode(1.5),
+      });
+
+      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
+      expect(notifier.customAppUiScale, 1.5);
+      expect(notifier.appUiScale, 1.5);
+
+      final double resolved = notifier.resolveAppUiScaleForViewport(
+        viewport: const Size(800, 600),
+        platform: TargetPlatform.windows,
+      );
+      expect(resolved, 1.5, reason: 'legacy custom scale must stay effective');
+      expect(notifier.autoAppUiScale, lessThan(1.0));
     });
 
     test('app_ui_scale stored as int → still normalized as double', () {

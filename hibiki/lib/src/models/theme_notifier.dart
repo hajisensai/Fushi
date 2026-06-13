@@ -291,11 +291,12 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   String get appUiScaleMode {
-    final Object value = _get(
-      'app_ui_scale_mode',
-      defaultValue: appUiScaleModeAuto,
-    );
+    final bool hasModePref = _prefs.containsKey('app_ui_scale_mode');
+    final Object? value = _get('app_ui_scale_mode');
     if (value is String) return normalizeAppUiScaleMode(value);
+    if (hasModePref) return appUiScaleModeAuto;
+    // Legacy installs saved only app_ui_scale; keep that manual choice active.
+    if (_prefs.containsKey('app_ui_scale')) return appUiScaleModeCustom;
     return appUiScaleModeAuto;
   }
 
