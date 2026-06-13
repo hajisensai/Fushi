@@ -2593,15 +2593,37 @@ class _BatchTagIntentRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
     final Color tagColor = Color(tag.colorValue);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    // TODO-308: 三段意图原来用 keep=`horizontal_rule`、remove=`remove` 两个几乎
+    // 一样的横杠（语义相反却长得一样），且纯图标无可见文字（tooltip 只有桌面悬停
+    // 才出，手机/手柄看不到）。这里给每段配语义区分的图标 + 颜色 + 可见文字标签
+    // （复用已有 i18n key），三段一眼可辨：
+    //   keep   = 中性灰 圈内横杠（不改动）
+    //   add    = 主色   实心加号圈（添加）
+    //   remove = 错误红 禁止圈（移除，整段连文字一起染红）
+    final Color removeColor = colors.error;
+    final Color addColor = colors.primary;
+    final Color keepColor = colors.onSurfaceVariant;
+
+    Widget segmentLabel(String text, _BatchTagIntent intent, Color color) {
+      return Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: selected == intent ? color : null,
+        ),
+      );
+    }
 
     return AdaptiveSettingsRow(
       title: tag.name,
       icon: cupertino ? CupertinoIcons.tag : Icons.sell_outlined,
       controlBelow: true,
       trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 220),
+        constraints: const BoxConstraints(maxWidth: 300),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2620,29 +2642,40 @@ class _BatchTagIntentRow extends StatelessWidget {
                   ButtonSegment<_BatchTagIntent>(
                     value: _BatchTagIntent.keep,
                     tooltip: t.batch_tag_keep,
+                    label: segmentLabel(
+                        t.batch_tag_keep, _BatchTagIntent.keep, keepColor),
                     icon: Icon(
                       cupertino
-                          ? CupertinoIcons.minus
-                          : Icons.horizontal_rule_outlined,
+                          ? CupertinoIcons.minus_circle
+                          : Icons.remove_circle_outline,
                       size: 16,
+                      color:
+                          selected == _BatchTagIntent.keep ? keepColor : null,
                     ),
                   ),
                   ButtonSegment<_BatchTagIntent>(
                     value: _BatchTagIntent.add,
                     tooltip: t.batch_tag_add,
+                    label: segmentLabel(
+                        t.batch_tag_add, _BatchTagIntent.add, addColor),
                     icon: Icon(
-                      cupertino ? CupertinoIcons.plus : Icons.add,
+                      cupertino ? CupertinoIcons.add_circled : Icons.add_circle,
                       size: 16,
+                      color: selected == _BatchTagIntent.add ? addColor : null,
                     ),
                   ),
                   ButtonSegment<_BatchTagIntent>(
                     value: _BatchTagIntent.remove,
                     tooltip: t.batch_tag_remove,
+                    label: segmentLabel(t.batch_tag_remove,
+                        _BatchTagIntent.remove, removeColor),
                     icon: Icon(
-                      cupertino ? CupertinoIcons.xmark : Icons.remove,
+                      cupertino
+                          ? CupertinoIcons.minus_circle_fill
+                          : Icons.do_not_disturb_on,
                       size: 16,
                       color: selected == _BatchTagIntent.remove
-                          ? theme.colorScheme.error
+                          ? removeColor
                           : null,
                     ),
                   ),
@@ -2659,6 +2692,26 @@ class _BatchTagIntentRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// TODO-308 测试钩子：渲染批量打标签的「保持 / 添加 / 移除」三段意图行，供 widget
+/// 守卫断言三段各有可见文字标签与语义区分的图标（不再是两个一样的横杠）。
+/// [selectedIndex] 0=keep / 1=add / 2=remove。
+@visibleForTesting
+Widget buildBatchTagIntentRowForTesting({
+  required BookTagRow tag,
+  int selectedIndex = 0,
+}) {
+  const List<_BatchTagIntent> intents = <_BatchTagIntent>[
+    _BatchTagIntent.keep,
+    _BatchTagIntent.add,
+    _BatchTagIntent.remove,
+  ];
+  return _BatchTagIntentRow(
+    tag: tag,
+    selected: intents[selectedIndex],
+    onChanged: (_) {},
+  );
 }
 
 class _AudiobookInfo {
