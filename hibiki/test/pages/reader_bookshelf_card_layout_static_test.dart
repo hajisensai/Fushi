@@ -55,6 +55,37 @@ void main() {
         reason: 'the first semantic child in the title row must be the title');
   });
 
+  test('book type badge is pinned to the top-right corner of the cover', () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+
+    // The badge must sit at the trailing top corner, not the bottom.
+    expect(
+      layout,
+      contains('PositionedDirectional('),
+      reason: 'the badge must be positioned within the cover stack',
+    );
+    expect(
+      layout,
+      contains('top: tokens.spacing.gap * 0.75'),
+      reason: 'the type badge must be pinned to the top of the cover',
+    );
+    expect(
+      layout,
+      isNot(contains('bottom: tokens.spacing.gap * 0.75')),
+      reason: 'the type badge must not sit at the bottom of the cover',
+    );
+
+    // The single PositionedDirectional drives all card variants' badge spot.
+    expect(
+      RegExp(r'PositionedDirectional\(').allMatches(layout).length,
+      equals(1),
+      reason: 'badge placement must stay centralized in one layout helper',
+    );
+  });
+
   test('long or multiple book tags are clipped in their own footer area', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')

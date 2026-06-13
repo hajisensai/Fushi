@@ -1244,7 +1244,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               if (coverBadge != null)
                 PositionedDirectional(
                   end: tokens.spacing.gap * 0.75,
-                  bottom: tokens.spacing.gap * 0.75,
+                  top: tokens.spacing.gap * 0.75,
                   child: SizedBox.square(
                     dimension: tokens.spacing.gap * 5,
                     child: FittedBox(
