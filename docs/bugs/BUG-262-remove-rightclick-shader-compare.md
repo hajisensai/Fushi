@@ -1,0 +1,12 @@
+## BUG-262 · 删除视频右键菜单的对比原画项
+- **报告**：2026-06-14（用户：）
+- **真实性**：✅ 用户要求（非缺陷，按 bug 流程登记的功能裁剪）。位置 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_buildVideoContextMenuItems` 末尾的 `if (_hasShadersEnabled) item(Icons.compare, t.video_shader_compare, ...)`。
+- **[x] ① 已修复** — 删右键菜单的「对比原画」项（`Icons.compare` / `t.video_shader_compare` / `if (_hasShadersEnabled)` 块）。连带清理：
+  - 删该项后 `_hasShadersEnabled` getter 成为唯一引用被移除的死代码（`C` 快捷键 `toggleShaderCompare` 不依赖它），故一并删除 getter（避免 analyze 把 `unused_element` warning 当致命）；`decodeEnabledShaders(...)` 仍被着色器视图等多处引用，不受影响。
+  - 保留 `_toggleShaderCompare` 方法 + `C` 快捷键接线（`ShortcutAction.videoToggleShaderCompare`，`hibiki/lib/src/media/video/video_player_shortcuts.dart`）+ 设置页入口（用户只要求删右键项，最小改）。
+  - i18n key `video_shader_compare` 删项后全仓库无引用（`shortcut_action` 用的是另一个 key `video_toggle_shader_compare`），经 `tool/i18n_sync.dart --remove video_shader_compare` 删除 17 个语言文件 + `dart run slang` 重生成 `strings.g.dart`（保持 slang 原生 tab 风格，不跑 dart format 以免整文件改写）。提交：本提交。
+- **[x] ② 已加自动化测试** — 翻转/新增源码守卫：
+  - `hibiki/test/pages/video_context_menu_test.dart`：删原「着色器对比仅在启用着色器时出现」用例，改为「不再含着色器对比项（BUG-261）」断言菜单项不含 `Icons.compare` / `t.video_shader_compare`。
+  - `hibiki/test/pages/video_shader_compare_guard_test.dart`：把「右键菜单仍在启用着色器时提供对比项」翻转为「右键菜单不再含着色器对比项」，断言整页源码不含 `Icons.compare`、不含 `if (_hasShadersEnabled)`；并更新文件头说明。
+  - 控制条 cleanup 守卫（`video_controls_cleanup_guard_test.dart`）只查控制条段（`MaterialDesktopVideoControlsThemeData`..`_showTrackMenu`）不查右键菜单，删项不影响它——其 `_toggleShaderCompare` + `C` 接线保留断言仍绿（实测通过）。提交：本提交。
+- **备注**：采番——`tool/bug.dart new` 取 262（全 worktree 并集 260 被 `integration/wave-1` 占、261 = 本批右键坐标修复占）。`video_shader_compare_guard_test` 仍有 1 个**预存红**（`控制条不再放着色器对比按钮`，因 `controlsThemes()` 锚点 `_showTrackMenu` 已被重命名/移除，与本改动无关、ff 基线即红）。真机验证待用户。

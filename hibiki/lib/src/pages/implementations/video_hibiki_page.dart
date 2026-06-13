@@ -3787,10 +3787,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
-  /// 当前是否配置了启用着色器（决定是否显示「对比原画」按钮/快捷键的语义）。
-  bool get _hasShadersEnabled =>
-      decodeEnabledShaders(appModel.videoShadersEnabled).isNotEmpty;
-
   /// **一键画质档位应用**（无/低/中/高/极高）：原子写两套正交状态——mpv 内置缩放开关
   /// （[highQuality] → videoMpvConfig）+ GLSL 启用集（[enabledNames] →
   /// videoShadersEnabled），再一次性 applyMpvConfig + applyShaders 实时生效。
@@ -5011,8 +5007,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 构造桌面右键上下文菜单项（TODO-048c）。每项 value 是该项动作回调，菜单关闭后由
   /// [_handleSecondaryTap] 统一执行——避免在 onTap 里立刻 pop 再异步执行的时序问题。
   /// 项集对齐桌面控制条按钮（播放/暂停、全屏、速度、字幕轨、音轨、截图、字幕列表、
-  /// 锁定、跨字幕制卡），全部复用既有 helper。着色器「对比原画」仅在启用着色器时出现
-  /// （与控制条同条件 [_hasShadersEnabled]）。
+  /// 锁定、跨字幕制卡），全部复用既有 helper。
+  ///
+  /// 着色器「对比原画」已从右键菜单移除（BUG-261，用户要求）：该功能改只走 `C` 快捷键
+  /// （`ShortcutAction.videoToggleShaderCompare`，见 video_player_shortcuts.dart）与设置页
+  /// 进入。[_toggleShaderCompare] 方法与 `C` 接线保留，只删右键这一项；右键不再依赖
+  /// 「是否启用着色器」的判定（原 `_hasShadersEnabled` getter 随该项一并移除）。
   List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(
     VideoPlayerController controller,
   ) {
@@ -5070,12 +5070,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
-      if (_hasShadersEnabled)
-        item(
-          Icons.compare,
-          t.video_shader_compare,
-          () => unawaited(_toggleShaderCompare()),
-        ),
     ];
   }
 

@@ -126,10 +126,14 @@ void main() {
       expect(items.contains('_toggleImmersiveLock'), isTrue);
     });
 
-    test('着色器对比仅在启用着色器时出现', () {
-      expect(items.contains('if (_hasShadersEnabled)'), isTrue,
-          reason: '着色器对比项与控制条同条件（_hasShadersEnabled）');
-      expect(items.contains('_toggleShaderCompare()'), isTrue);
+    // BUG-261: 着色器「对比原画」项已从右键菜单移除（用户要求），改只走 `C` 快捷键 /
+    // 设置页进入。原「对比仅在启用着色器时出现」用例随之删除，由下面的不变量守住
+    // 「右键菜单不再含对比项」。
+    test('不再含着色器对比项（BUG-261，改走 C 快捷键 / 设置）', () {
+      expect(items.contains('Icons.compare'), isFalse,
+          reason: '右键菜单已移除「对比原画」项（BUG-261）');
+      expect(items.contains('t.video_shader_compare'), isFalse,
+          reason: '右键菜单不再引用 video_shader_compare（i18n key 已随项移除）');
     });
   });
 }
