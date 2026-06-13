@@ -127,4 +127,47 @@ void main() {
     expect(page, contains('clipEndMs: cue?.endMs ?? 0'));
     expect(page, contains('if (usedSelectedCue && mined)'));
   });
+
+  test('TODO-266 integrated subtitle sidebar keeps playback and card semantics',
+      () {
+    final String panel =
+        read('lib/src/media/video/video_subtitle_jump_panel.dart');
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+
+    expect(panel, contains('SegmentedButton<VideoSubtitleListFilter>'));
+    expect(panel, contains('VideoSubtitleListFilter.all'));
+    expect(panel, contains('VideoSubtitleListFilter.favorites'));
+    expect(panel, contains('VideoSubtitleListFilter.selected'));
+    expect(panel, contains('onTap: () => widget.onTapCue(cue)'));
+    expect(panel, contains('Checkbox('));
+    expect(
+      panel,
+      contains('onChanged: (_) => widget.onToggleCueSelection?.call(cue)'),
+    );
+
+    expect(page, contains('void _handleSubtitleJumpTap(AudioCue cue)'));
+    expect(page, contains('_controller?.skipToCue(cue)'));
+    expect(page, contains('_lastLookupCue = controller.currentCue ??'));
+    expect(page, contains('buildSelectedSubtitleCueContext'));
+    expect(page, contains('rawPayloadJson: jsonEncode(fields)'));
+  });
+
+  test(
+      'TODO-266 playback preview and auto-read do not gate Anki sentence audio',
+      () {
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final int mineStart = page.indexOf('Future<bool> _mineVideoCard');
+    final int mineEnd = page.indexOf('void _showAudioTrackMenu', mineStart);
+    expect(mineStart, greaterThanOrEqualTo(0));
+    expect(mineEnd, greaterThan(mineStart));
+    final String mineBody = page.substring(mineStart, mineEnd);
+
+    expect(mineBody, contains('extractAudioSegmentViaFfmpeg'));
+    expect(mineBody, contains('sasayakiAudioPath: audioPath'));
+    expect(mineBody, contains('repo.mineEntry('));
+    expect(mineBody, isNot(contains('autoRead')));
+    expect(mineBody, isNot(contains('_pausedForLookup')));
+  });
 }
