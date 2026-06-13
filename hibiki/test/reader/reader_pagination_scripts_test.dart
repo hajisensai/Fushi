@@ -216,6 +216,46 @@ void main() {
     });
   });
 
+  group('ReaderPaginationScripts continuous vertical position contract', () {
+    final String continuous = ReaderPaginationScripts.shellScript(
+      initialProgress: 0.5,
+      continuousMode: true,
+    );
+
+    test('continuous paginate actually scrolls before reporting scrolled', () {
+      final String body = _between(
+        continuous,
+        'paginate: function(direction) {',
+        '  getFirstVisibleCharOffset: function() {',
+      );
+
+      expect(body, contains('window.scrollBy({left: step'));
+      expect(body, contains('return moved ? "scrolled" : "limit";'));
+    });
+
+    test('continuous vertical visible-char sampling uses viewport width', () {
+      final String body = _between(
+        continuous,
+        'getFirstVisibleCharOffset: function() {',
+        '  // BUG-162:',
+      );
+
+      expect(body, contains('window.innerWidth - pr - 2'));
+      expect(body, isNot(contains('document.body.clientWidth - pr - 2')));
+    });
+
+    test('continuous vertical char restore uses viewport right edge', () {
+      final String body = _between(
+        continuous,
+        'scrollToCharOffset: function(charOffset) {',
+        '  // BUG-162:',
+      );
+
+      expect(body, contains('window.innerWidth - pr'));
+      expect(body, isNot(contains('document.body.clientWidth - pr')));
+    });
+  });
+
   // HBK-AUDIT-053: the shellScript group above only greps generated JS for
   // substrings. These tests instead exercise real Dart behaviour — the
   // string-literal escaping used when injecting user/data values into JS
@@ -362,4 +402,12 @@ void main() {
           reason: '连续模式重排后必须按进度重新滚动到同一位置');
     });
   });
+}
+
+String _between(String source, String start, String end) {
+  final int startIndex = source.indexOf(start);
+  expect(startIndex, isNonNegative, reason: 'Missing start marker: $start');
+  final int endIndex = source.indexOf(end, startIndex + start.length);
+  expect(endIndex, isNonNegative, reason: 'Missing end marker: $end');
+  return source.substring(startIndex, endIndex);
 }

@@ -4305,9 +4305,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
       bookKey: widget.bookKey,
       sectionIndex: section,
       normCharOffset: normOffset,
-      // BUG-162: >=0 写精确锚（char_offset 列），<0 传 null → 同 section 保留既有锚、
-      // 跨 section 失效（repo.save 逻辑）。不动 sync 的 ttu_char_offset 列。
-      charOffset: charOffset >= 0 ? charOffset : null,
+      // BUG-162/TODO-265: >=0 writes the exact anchor. -1 explicitly clears
+      // a stale same-section anchor so restore can use the current progress.
+      charOffset: charOffset,
     );
   }
 
@@ -5450,6 +5450,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       if (!_didScroll(result)) {
         _handlePageTurnLimit(direction.jsValue);
       } else {
+        await _refreshProgress();
+        if (!mounted || _controller == null) return;
         await _caretReanchor(direction);
       }
       return;
