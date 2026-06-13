@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 258 条。点号进各自文件。
+> 共 260 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-264](bugs/BUG-264-dead-configurable-shortcut-actions.md) | ✅ | ✅ | 快捷键设置每个选项是否都生效（死项审计 + 完整性守卫） |
+| [BUG-263](bugs/BUG-263-focus-vs-shortcut-arrow-dispatch.md) | ✅ | ✅ | 焦点遍历与方向键快捷键互抢（按下/重复分属两套焦点引擎） |
 | [BUG-262](bugs/BUG-262-remove-rightclick-shader-compare.md) | ✅ | ✅ | 删除视频右键菜单的对比原画项 |
 | [BUG-261](bugs/BUG-261-rightclick-popup-coord-uiscale.md) | ✅ | ✅ | 调界面大小后视频右键菜单位置不在鼠标处 |
 | [BUG-260](bugs/BUG-260-popup-wheel-scroll-granularity.md) | ✅ | ✅ | 查词弹窗滚轮滚动粒度太粗 |
