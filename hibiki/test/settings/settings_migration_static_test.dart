@@ -14,8 +14,12 @@ void main() {
       'AdaptiveSettingsSection',
       'AdaptiveSettingsSwitchRow',
     ],
+    // TODO-317: miscellaneous_settings_page.dart now exports the no-scaffold
+    // MiscellaneousSettingsBody and projects it through the unified settings
+    // detail shell (buildSettingsDetailShell), mirroring AnkiSettingsBody — so
+    // it no longer carries its own AdaptiveSettingsScaffold; still organises the
+    // body with AdaptiveSettingsSection.
     'miscellaneous_settings_page.dart': <String>[
-      'AdaptiveSettingsScaffold',
       'AdaptiveSettingsSection',
     ],
     'custom_fonts_page.dart': <String>[

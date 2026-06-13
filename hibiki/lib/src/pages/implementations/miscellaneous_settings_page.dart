@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/base_page.dart';
+import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
@@ -16,6 +20,11 @@ const iconAssetMap = <String, String>{
   'hibiki_minimal': 'assets/meta/launcher_icon_minimal.png',
 };
 
+/// 应用图标（app icon）设置子页。薄壳：把 [MiscellaneousSettingsBody] 投影进与
+/// 统一设置详情面板完全一致的页壳（见 [buildSettingsDetailShell]），不再使用自带
+/// 的 [AdaptiveSettingsScaffold]——从「外观」设置点进来不会再有脚手架/卡片风格跳变
+/// （TODO-317）。正文是 Android-only 的图标网格，故走 `SettingsDestination.body`
+/// 逃生口而非 schema items。
 class MiscellaneousSettingsPage extends BasePage {
   const MiscellaneousSettingsPage({super.key});
 
@@ -26,6 +35,47 @@ class MiscellaneousSettingsPage extends BasePage {
 
 class _MiscellaneousSettingsPageState
     extends BasePageState<MiscellaneousSettingsPage> {
+  @override
+  Widget build(BuildContext context) {
+    final SettingsContext settingsContext = SettingsContext(
+      context: context,
+      appModel: appModel,
+      ref: ref,
+      readerSource: ReaderHibikiSource.instance,
+      refresh: () {
+        if (mounted) setState(() {});
+      },
+    );
+
+    final SettingsDestination destination = SettingsDestination(
+      id: SettingsDestinationId.appearance,
+      title: t.app_icon_label,
+      icon: Icons.widgets_outlined,
+      sections: const <SettingsSection>[],
+      body: (_) => const MiscellaneousSettingsBody(),
+    );
+
+    return buildSettingsDetailShell(
+      context: context,
+      settingsContext: settingsContext,
+      destination: destination,
+    );
+  }
+}
+
+/// 应用图标设置正文（无脚手架）。返回一个 [Column]，自身不带 `Scaffold` / 独立
+/// 滚动——外层（统一设置详情壳或脚手架）已提供滚动与内边距，与 [AnkiSettingsBody]
+/// / [ProfileManagementBody] 同范式。
+class MiscellaneousSettingsBody extends BasePage {
+  const MiscellaneousSettingsBody({super.key});
+
+  @override
+  BasePageState<MiscellaneousSettingsBody> createState() =>
+      _MiscellaneousSettingsBodyState();
+}
+
+class _MiscellaneousSettingsBodyState
+    extends BasePageState<MiscellaneousSettingsBody> {
   String _currentIcon = 'default';
   bool _switching = false;
   bool _customSupported = false;
@@ -143,8 +193,8 @@ class _MiscellaneousSettingsPageState
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveSettingsScaffold(
-      title: Text(t.app_icon_label),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (Platform.isAndroid)
           AdaptiveSettingsSection(

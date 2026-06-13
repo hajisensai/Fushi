@@ -1683,20 +1683,32 @@ void main() {
     expect(tileSource, isNot(contains('child: Chip(')));
   });
 
-  test('shortcut section headers use shared MD3 spacing tokens', () {
+  test('shortcut scopes render as unified settings sections', () {
+    // TODO-317: each scope is now an AdaptiveSettingsSection card (shared
+    // SettingsSectionHeader title via AdaptiveSettingsSection.title) projected
+    // through the unified settings detail shell — the bespoke primary-coloured
+    // _ScopeSectionHeader and the standalone HibikiPageScaffold/ListView are
+    // gone. Reset is an in-card AdaptiveSettingsRow action.
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings_page.dart',
     ).readAsStringSync();
-    final String headerSource = _sectionSource(
+    final String scopeSections = _functionSource(
       source,
-      'class _ScopeSectionHeader',
-      'class _ActionTile',
+      'Widget _buildScopeSections(BuildContext context)',
+      '  @override',
     );
 
-    expect(headerSource, contains('HibikiDesignTokens.of(context)'));
-    expect(headerSource, contains('tokens.spacing'));
+    expect(scopeSections, contains('AdaptiveSettingsSection('));
+    expect(scopeSections, contains('title: _scopeLabel(scope)'));
+    expect(scopeSections, contains('AdaptiveSettingsRow('));
+    expect(scopeSections, contains('t.shortcut_reset_defaults'));
+    expect(scopeSections, contains('_ActionTile('));
+
+    // Converged: no bespoke section-header class, no standalone scaffold/list.
+    expect(source, isNot(contains('class _ScopeSectionHeader')));
+    expect(source, contains('buildSettingsDetailShell('));
     expect(
-      headerSource,
+      source,
       isNot(contains('const EdgeInsets.fromLTRB(16, 16, 8, 4)')),
     );
   });

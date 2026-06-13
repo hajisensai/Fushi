@@ -159,16 +159,22 @@ void main() {
     expect(source, isNot(contains('AlertDialog(')));
   });
 
-  test('display settings contains reader layout only', () {
-    final String source = readNormalizedSource(
-        'lib/src/pages/implementations/display_settings_page.dart');
-
-    expect(source, isNot(contains('design_system_label')));
-    expect(source, isNot(contains('ProfileSelector')));
-    // Now a thin schema-projected page: no hand-written ttu setters, renders
-    // via SettingsRenderer.buildDetailContent.
-    expect(source, isNot(contains('setTtuFontSize')));
-    expect(source, contains('buildDetailContent'));
+  test('legacy standalone display settings page is removed', () {
+    // TODO-317: the residual DisplaySettingsPage (an AdaptiveSettingsScaffold
+    // sub-page with zero live `lib/` references — its appearance row already
+    // pointed elsewhere) was deleted. Reader display settings now live solely in
+    // the schema `reading` destination rendered through the unified detail shell.
+    expect(
+      File('lib/src/pages/implementations/display_settings_page.dart')
+          .existsSync(),
+      isFalse,
+      reason: 'DisplaySettingsPage should be deleted, not resurrected',
+    );
+    expect(
+      readNormalizedSource('lib/pages.dart'),
+      isNot(contains('display_settings_page.dart')),
+      reason: 'pages barrel must not export the deleted display settings page',
+    );
   });
 
   test('settings schema uses task-oriented destinations', () {
@@ -376,5 +382,40 @@ void main() {
         'lib/src/settings/material_settings_renderer.dart');
     expect(source, contains('HibikiListItemSelectedShape'));
     expect(source, contains('pushRoutes ? const Icon(Icons.chevron_right)'));
+  });
+
+  test('unified settings detail shell is the single page chrome (TODO-317)',
+      () {
+    // The shared shell delegates to the active platform renderer's
+    // buildDetailPage, so every page built on it gets the SAME chrome
+    // (HibikiPageScaffold + 24px + AdaptiveSettingsSection on Material).
+    final String shell =
+        readNormalizedSource('lib/src/settings/settings_detail_page.dart');
+    expect(shell, contains('Widget buildSettingsDetailShell('));
+    expect(shell, contains('renderer.buildDetailPage('));
+
+    // Every settings sub-page that the unified detail panel can navigate into
+    // must route through that one shell — NOT its own bespoke scaffold — so the
+    // user never sees a style jump between the detail pane and what it opens.
+    // (Anki / Profile are projected as destination bodies and so are covered by
+    // the renderer directly; these two are pushed sub-pages.)
+    for (final String path in <String>[
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+      'lib/src/pages/implementations/miscellaneous_settings_page.dart',
+    ]) {
+      final String source = readNormalizedSource(path);
+      expect(source, contains('buildSettingsDetailShell('),
+          reason:
+              '$path must render through the unified settings detail shell');
+      // No parallel page-shell vocabulary: the converged pages do not stand up
+      // their own AdaptiveSettingsScaffold or hand-rolled HibikiPageScaffold.
+      expect(source, isNot(contains('AdaptiveSettingsScaffold(')),
+          reason: '$path must not reintroduce its own settings scaffold');
+      expect(source, isNot(contains('return HibikiPageScaffold(')),
+          reason: '$path must not hand-roll a page scaffold + bare list');
+      // Body content is grouped into the shared section cards.
+      expect(source, contains('AdaptiveSettingsSection('),
+          reason: '$path body must use shared AdaptiveSettingsSection cards');
+    }
   });
 }
