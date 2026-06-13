@@ -613,6 +613,8 @@ void main() {
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
               'size (content), defaults mirror the allowlisted overlay caption.',
+      'lib/src/media/video/video_danmaku_overlay.dart':
+          'Danmaku overlay renders timed video content text, not app chrome.',
       'lib/src/media/video/video_quick_settings_sheet.dart':
           'Video quick settings sheet (media-page chrome like reader/audiobook) '
               'drives the user-configurable subtitle caption font size '

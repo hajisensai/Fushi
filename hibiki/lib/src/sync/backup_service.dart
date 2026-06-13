@@ -402,7 +402,18 @@ class BackupService {
 
       return meta;
     } finally {
-      if (tmpDir.existsSync()) await tmpDir.delete(recursive: true);
+      await _deleteDirectoryIfPresent(tmpDir);
+    }
+  }
+
+  static Future<void> _deleteDirectoryIfPresent(Directory directory) async {
+    try {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    } on PathNotFoundException {
+      // Cleanup is already satisfied if the temp tree vanished between the
+      // existence check and deletion.
     }
   }
 
