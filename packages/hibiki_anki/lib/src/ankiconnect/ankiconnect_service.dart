@@ -302,6 +302,48 @@ class AnkiConnectService implements AnkiService {
   Future<void> createDeck(String name) async {
     await _request('createDeck', {'deck': name});
   }
+
+  // TODO-270 C1：更新已存在 note 的字段。AnkiConnect `updateNoteFields` 接收
+  // `{note: {id, fields}}`，只覆盖给出的字段，其余保留。带固定 [noteId]，重发
+  // 幂等（同 id + 同 fields 结果一致），故不列入 [_nonIdempotentActions]——可像
+  // storeMediaFile 一样在连接掉线时安全重试。
+  @override
+  Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
+    await _request('updateNoteFields', {
+      'note': {
+        'id': noteId,
+        'fields': fields,
+      },
+    });
+  }
+
+  // TODO-270 C1：读取一个 note 的现有字段。AnkiConnect `notesInfo` 接收
+  // `{notes: [id]}`，返回每个 note 一项 `{noteId, modelName, tags,
+  // fields: {<name>: {value, order}}}`。我们只取 `fields` 拍平成 `name → value`。
+  // note 不存在时 AnkiConnect 返回一个空对象项（无 noteId/fields）；这里统一以
+  // 「无 fields」当作不存在返回 `null`。
+  @override
+  Future<Map<String, String>?> notesInfo(int noteId) async {
+    final result = await _request('notesInfo', {
+      'notes': [noteId],
+    });
+    if (result is! List || result.isEmpty) return null;
+    final first = result.first;
+    if (first is! Map) return null;
+    final rawFields = first['fields'];
+    if (rawFields is! Map) return null;
+    final fields = <String, String>{};
+    rawFields.forEach((dynamic key, dynamic value) {
+      // 每个字段是 `{value: <html>, order: <int>}`；取 value。
+      if (value is Map && value['value'] is String) {
+        fields[key.toString()] = value['value'] as String;
+      } else if (value is String) {
+        // 容错：某些代理/版本可能直接给字符串值。
+        fields[key.toString()] = value;
+      }
+    });
+    return fields;
+  }
 }
 
 String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');

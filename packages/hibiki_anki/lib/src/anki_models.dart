@@ -632,12 +632,18 @@ enum MineResult { success, duplicate, notConfigured, error }
 class MineOutcome {
   const MineOutcome(
     this.result, {
+    this.noteId,
     this.errorDetail,
     this.error,
     this.stackTrace,
   });
 
-  const MineOutcome.success()
+  /// TODO-270：成功时可携带后端返回的 note id（AnkiConnect `addNote` 返回的整数
+  /// 主键），供后续「更新已制卡片」（[updateMinedNote]）按 id 覆盖字段。
+  /// [noteId] 默认为 `null`，现有不关心 id 的调用点 `MineOutcome.success()` 行为
+  /// 不变（向后兼容，Never break userspace）。AnkiDroid 后端暂不回传 id（子任务 B），
+  /// 仍走默认 `null`。
+  const MineOutcome.success({this.noteId})
       : result = MineResult.success,
         errorDetail = null,
         error = null,
@@ -645,12 +651,14 @@ class MineOutcome {
 
   const MineOutcome.duplicate()
       : result = MineResult.duplicate,
+        noteId = null,
         errorDetail = null,
         error = null,
         stackTrace = null;
 
   const MineOutcome.notConfigured()
       : result = MineResult.notConfigured,
+        noteId = null,
         errorDetail = null,
         error = null,
         stackTrace = null;
@@ -661,11 +669,16 @@ class MineOutcome {
     Object? error,
     StackTrace? stackTrace,
   })  : result = MineResult.error,
+        noteId = null,
         errorDetail = detail,
         error = error,
         stackTrace = stackTrace;
 
   final MineResult result;
+
+  /// 仅在 [result] == [MineResult.success] 时可能非空：后端返回的 note id。
+  /// 用于「制卡后更新同一张卡片字段」（[updateMinedNote]）。AnkiDroid 暂为 `null`。
+  final int? noteId;
 
   /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因。
   final String? errorDetail;
