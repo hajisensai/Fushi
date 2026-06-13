@@ -173,6 +173,54 @@ void main() {
     });
   });
 
+  group('TODO-310 收藏夹音频播放反馈 + 视频收藏句播放按钮', () {
+    final String src = read(
+      'lib/src/pages/implementations/collections_page.dart',
+    );
+
+    test('① 抽音失败(result==null)弹 audio_clip_failed 提示，不再静默(BUG-252)', () {
+      // 修前 _playItemAudio 在 result!=null 时才 playFile，else 什么都不做。
+      expect(
+        src,
+        contains('HibikiToast.show(msg: t.audio_clip_failed)'),
+        reason: 'ffmpeg 抽音失败必须给用户可见反馈，否则点了像没反应',
+      );
+      // 失败提示必须挂在 extractAudioSegment 返回 null 的 else 分支上。
+      final int playIdx = src.indexOf('_extractAndPlay({');
+      expect(playIdx, greaterThanOrEqualTo(0),
+          reason: '抽音+播放+失败提示应收敛到单一 _extractAndPlay 路径');
+      final String body = src.substring(playIdx, playIdx + 900);
+      expect(body.contains('if (result != null)'), isTrue);
+      expect(
+        body.contains('} else {') && body.contains('t.audio_clip_failed'),
+        isTrue,
+        reason: '失败提示必须在 result==null 的 else 分支',
+      );
+    });
+
+    test('② 视频来源句也能解析音频片段并显示播放按钮', () {
+      // _load 增查 VideoBookRepository 填 _videoRowMap。
+      expect(src, contains('VideoBookRepository(db)'));
+      expect(src, contains('_videoRowMap'));
+      expect(src, contains('getByBookUid'));
+      // _hasAudio / _playItemAudio 对视频来源走 resolveVideoFavoriteAudioClip。
+      expect(src, contains('resolveVideoFavoriteAudioClip'));
+      expect(
+        src,
+        contains('item.source == kFavoriteSentenceSourceVideo'),
+        reason: '视频来源句的音频解析路径必须与书内/有声书分开',
+      );
+      expect(src, contains('_playVideoFavoriteAudio'));
+    });
+
+    test('视频抽音复用 cue 时间窗(normCharOffset=startMs / normCharLength=时长)', () {
+      // 收藏字段语义：视频收藏句的 normCharOffset 存 cue startMs、normCharLength 存时长。
+      expect(src, contains('favoriteStartMs: item.normCharOffset'));
+      expect(src, contains('favoriteDurationMs: item.normCharLength'));
+      expect(src, contains('favoriteSectionIndex: item.sectionIndex'));
+    });
+  });
+
   group('E 两统计页有「收藏语句」卡片', () {
     test('阅读统计页加收藏语句桶（非 video 来源）', () {
       final String src = read(
