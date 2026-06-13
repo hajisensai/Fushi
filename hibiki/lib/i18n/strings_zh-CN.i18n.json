@@ -1588,5 +1588,9 @@
     "video_setting_danmaku_online": "在线匹配 Dandanplay",
     "video_setting_danmaku_online_hint": "没有可用本地 sidecar 时，用 Dandanplay 匹配当前视频并拉取关联弹幕。",
     "video_setting_danmaku_max_active": "同时显示上限",
-    "video_setting_danmaku_max_active_hint": "限制每帧渲染的弹幕数量，避免大文件拖慢播放。"
+    "video_setting_danmaku_max_active_hint": "限制每帧渲染的弹幕数量，避免大文件拖慢播放。",
+    "app_ui_scale_mode": "界面大小模式",
+    "app_ui_scale_mode_hint": "按当前设备和窗口自动设置界面大小，也可切换为自定义百分比。",
+    "app_ui_scale_auto": "自动",
+    "app_ui_scale_custom": "自定义"
 }

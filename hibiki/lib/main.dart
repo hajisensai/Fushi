@@ -812,22 +812,29 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             child: CupertinoTheme(
               data:
                   hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
-              child: HibikiAppUiScale(
-                scale: appModel.appUiScale,
-                // 实验性「键盘/手柄焦点导航」总开关（默认关闭）。开启时安装
-                // HibikiFocusRoot（焦点控制器）+ HibikiFocusRing（可见焦点环），并让
-                // wrapWithGlobalNavigation 处理手柄/方向键移焦与手柄 B 返回；关闭时
-                // 一律不挂，App 回退到 Flutter 原生焦点遍历。无论开关如何，
-                // wrapWithGlobalNavigation 始终保留 Escape 退页与「空格不确认焦点」。
-                child: _wrapFocusNavigation(
-                  enabled: appModel.experimentalFocusNavigationEnabled,
-                  child: wrapWithGlobalNavigation(
-                    navigatorKey: appModel.navigatorKey,
-                    focusNavigationEnabled:
-                        appModel.experimentalFocusNavigationEnabled,
-                    child: child!,
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final Size viewport = constraints.hasBoundedWidth &&
+                          constraints.hasBoundedHeight
+                      ? constraints.biggest
+                      : MediaQuery.sizeOf(context);
+                  final double uiScale = appModel.resolveAppUiScaleForViewport(
+                    viewport: viewport,
+                    platform: Theme.of(context).platform,
+                  );
+                  return HibikiAppUiScale(
+                    scale: uiScale,
+                    child: _wrapFocusNavigation(
+                      enabled: appModel.experimentalFocusNavigationEnabled,
+                      child: wrapWithGlobalNavigation(
+                        navigatorKey: appModel.navigatorKey,
+                        focusNavigationEnabled:
+                            appModel.experimentalFocusNavigationEnabled,
+                        child: child!,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           );

@@ -112,7 +112,11 @@ void main() {
       expect(notifier.themeMode, ThemeMode.system);
     });
 
-    test('default appUiScale is 100 percent', () {
+    test('default appUiScaleMode is automatic', () {
+      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeAuto);
+    });
+
+    test('default appUiScale is 100 percent before a viewport is resolved', () {
       expect(notifier.appUiScale, 1.0);
     });
 
@@ -163,22 +167,51 @@ void main() {
       expect(notifyCount, 1);
     });
 
-    test('setAppUiScale clamps to 30-300 percent, persists, and notifies',
-        () async {
+    test(
+        'setAppUiScale switches to custom mode, clamps to 30-300 percent, '
+        'persists, and notifies', () async {
       int notifyCount = 0;
       notifier.addListener(() => notifyCount++);
 
       await notifier.setAppUiScale(3.5);
       expect(notifier.appUiScale, 3.0);
+      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
       expect(notifyCount, 1);
 
       final ThemeNotifier reloaded = ThemeNotifier(db, textThemeBuilder);
       addTearDown(reloaded.dispose);
       await reloaded.refreshFromDb();
       expect(reloaded.appUiScale, 3.0);
+      expect(reloaded.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
 
       await notifier.setAppUiScale(0.2);
       expect(notifier.appUiScale, 0.3);
+    });
+
+    test('automatic mode follows viewport scale until user picks custom',
+        () async {
+      final double fullHd = notifier.resolveAppUiScaleForViewport(
+        viewport: const Size(1920, 1080),
+        platform: TargetPlatform.windows,
+      );
+      expect(fullHd, greaterThan(1.0));
+      expect(notifier.appUiScale, fullHd);
+
+      await notifier.setAppUiScale(1.7);
+      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
+      expect(notifier.appUiScale, 1.7);
+
+      final double compact = notifier.resolveAppUiScaleForViewport(
+        viewport: const Size(800, 600),
+        platform: TargetPlatform.windows,
+      );
+      expect(compact, 1.7, reason: 'custom mode must ignore auto resize');
+      expect(notifier.autoAppUiScale, lessThan(1.0));
+      expect(notifier.customAppUiScale, 1.7);
+
+      await notifier.setAppUiScaleMode(ThemeNotifier.appUiScaleModeAuto);
+      expect(notifier.appUiScale, notifier.autoAppUiScale);
+      expect(notifier.appUiScale, lessThan(1.0));
     });
 
     test('setCustomThemeSeed persists color', () async {
@@ -344,6 +377,8 @@ void main() {
   group('ThemeNotifier.appUiScale reflects app_ui_scale pref', () {
     test('app_ui_scale=1.5 → appUiScale is the in-range normalized value', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale_mode':
+            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(1.5),
       });
 
@@ -353,6 +388,8 @@ void main() {
 
     test('out-of-range app_ui_scale=5.0 → clamped to maxScale (3.0)', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale_mode':
+            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(5.0),
       });
 
@@ -363,6 +400,8 @@ void main() {
 
     test('below-range app_ui_scale=0.1 → clamped to minScale (0.3)', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale_mode':
+            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(0.1),
       });
 
@@ -381,10 +420,23 @@ void main() {
 
     test('app_ui_scale stored as int → still normalized as double', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale_mode':
+            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(2),
       });
 
       expect(notifier.appUiScale, 2.0);
+    });
+
+    test('auto mode ignores stored custom scale for the effective appUiScale',
+        () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale_mode': PrefCodec.encode(ThemeNotifier.appUiScaleModeAuto),
+        'app_ui_scale': PrefCodec.encode(2),
+      });
+
+      expect(notifier.customAppUiScale, 2.0);
+      expect(notifier.appUiScale, HibikiAppUiScale.defaultScale);
     });
   });
 }

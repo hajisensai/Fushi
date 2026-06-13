@@ -4,6 +4,70 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
 void main() {
+  group('automatic UI scale calculation', () {
+    test('defaults to phone-sized scale on a regular mobile viewport', () {
+      final double scale = HibikiAppUiScale.automaticScaleForViewport(
+        viewport: const Size(390, 844),
+        platform: TargetPlatform.android,
+      );
+
+      expect(scale, closeTo(1.0, 0.001));
+    });
+
+    test('shrinks cramped mobile viewports but grows tablet viewports', () {
+      final double smallPhone = HibikiAppUiScale.automaticScaleForViewport(
+        viewport: const Size(320, 568),
+        platform: TargetPlatform.android,
+      );
+      final double tablet = HibikiAppUiScale.automaticScaleForViewport(
+        viewport: const Size(768, 1024),
+        platform: TargetPlatform.android,
+      );
+
+      expect(smallPhone, lessThan(1.0));
+      expect(smallPhone, greaterThanOrEqualTo(0.92));
+      expect(tablet, greaterThan(1.0));
+      expect(tablet, lessThanOrEqualTo(1.12));
+    });
+
+    test('uses desktop window size as a continuous input', () {
+      final double compactWindow = HibikiAppUiScale.automaticScaleForViewport(
+        viewport: const Size(800, 600),
+        platform: TargetPlatform.windows,
+      );
+      final double fullHdWindow = HibikiAppUiScale.automaticScaleForViewport(
+        viewport: const Size(1920, 1080),
+        platform: TargetPlatform.windows,
+      );
+      final double largeWindow = HibikiAppUiScale.automaticScaleForViewport(
+        viewport: const Size(3840, 2160),
+        platform: TargetPlatform.windows,
+      );
+
+      expect(compactWindow, lessThan(1.0));
+      expect(fullHdWindow, greaterThan(1.0));
+      expect(largeWindow, greaterThan(fullHdWindow));
+      expect(largeWindow, lessThanOrEqualTo(1.16));
+    });
+
+    test('falls back to defaultScale for invalid viewport sizes', () {
+      expect(
+        HibikiAppUiScale.automaticScaleForViewport(
+          viewport: Size.zero,
+          platform: TargetPlatform.android,
+        ),
+        HibikiAppUiScale.defaultScale,
+      );
+      expect(
+        HibikiAppUiScale.automaticScaleForViewport(
+          viewport: const Size(double.nan, 800),
+          platform: TargetPlatform.windows,
+        ),
+        HibikiAppUiScale.defaultScale,
+      );
+    });
+  });
+
   testWidgets('整体缩放：固定尺寸子节点视觉尺寸按 scale 放大', (
     WidgetTester tester,
   ) async {

@@ -17,6 +17,8 @@ class ProfileKeys {
     'first_time_setup',
     'current_home_tab_index',
     'startup_default_dictionary_tab',
+    'app_ui_scale',
+    'app_ui_scale_mode',
     'app_locale',
     'last_selected_deck',
     'last_selected_dictionary_format',

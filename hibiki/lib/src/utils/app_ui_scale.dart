@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
@@ -29,6 +31,50 @@ class HibikiAppUiScale extends StatelessWidget {
   static double normalize(double value) {
     if (value.isNaN || !value.isFinite) return defaultScale;
     return value.clamp(minScale, maxScale).toDouble();
+  }
+
+  static bool isDesktopPlatform(TargetPlatform platform) {
+    switch (platform) {
+      case TargetPlatform.macOS:
+      case TargetPlatform.linux:
+      case TargetPlatform.windows:
+        return true;
+      case TargetPlatform.android:
+      case TargetPlatform.fuchsia:
+      case TargetPlatform.iOS:
+        return false;
+    }
+  }
+
+  static double automaticScaleForViewport({
+    required Size viewport,
+    required TargetPlatform platform,
+  }) {
+    bool positiveFinite(double value) =>
+        value.isFinite && !value.isNaN && value > 0;
+    if (!positiveFinite(viewport.width) || !positiveFinite(viewport.height)) {
+      return defaultScale;
+    }
+
+    final bool desktop = isDesktopPlatform(platform);
+    final double shortestSide = math.min(viewport.width, viewport.height);
+    final double diagonal = math.sqrt(
+      viewport.width * viewport.width + viewport.height * viewport.height,
+    );
+
+    final double targetShortSide = desktop ? 900.0 : 390.0;
+    final double targetDiagonal = desktop ? 1500.0 : 930.0;
+    final double sensitivity = desktop ? 0.22 : 0.18;
+    final double minAutoScale = desktop ? 0.88 : 0.92;
+    final double maxAutoScale = desktop ? 1.16 : 1.12;
+
+    final double shortRatio = shortestSide / targetShortSide;
+    final double diagonalRatio = diagonal / targetDiagonal;
+    final double blendedRatio = shortRatio * 0.70 + diagonalRatio * 0.30;
+    final double raw =
+        defaultScale + (blendedRatio - defaultScale) * sensitivity;
+
+    return raw.clamp(minAutoScale, maxAutoScale).toDouble();
   }
 
   /// 读取最近一层祖先注入的有效缩放系数；无祖先时返回 [defaultScale]。

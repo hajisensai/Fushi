@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/utils.dart';
@@ -435,7 +436,37 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
 }
 
 Widget buildAppUiScaleSelector(SettingsContext settingsContext) {
-  return _AppUiScaleSliderRow(appModel: settingsContext.appModel);
+  final AppModel appModel = settingsContext.appModel;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      AdaptiveSettingsSegmentedRow<String>(
+        title: t.app_ui_scale_mode,
+        subtitle: t.app_ui_scale_mode_hint,
+        icon: Icons.format_size_outlined,
+        segments: <ButtonSegment<String>>[
+          ButtonSegment<String>(
+            value: ThemeNotifier.appUiScaleModeAuto,
+            icon: const Icon(Icons.auto_awesome_outlined, size: 16),
+            label: Text(t.app_ui_scale_auto),
+            tooltip: t.app_ui_scale_auto,
+          ),
+          ButtonSegment<String>(
+            value: ThemeNotifier.appUiScaleModeCustom,
+            icon: const Icon(Icons.tune_outlined, size: 16),
+            label: Text(t.app_ui_scale_custom),
+            tooltip: t.app_ui_scale_custom,
+          ),
+        ],
+        selected: appModel.appUiScaleMode,
+        onChanged: (String value) async {
+          await appModel.setAppUiScaleMode(value);
+          settingsContext.refresh();
+        },
+      ),
+      _AppUiScaleSliderRow(appModel: appModel),
+    ],
+  );
 }
 
 /// 「界面大小」滑条行。

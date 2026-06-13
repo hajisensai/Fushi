@@ -1588,5 +1588,9 @@
     "video_setting_danmaku_online": "Online Dandanplay match",
     "video_setting_danmaku_online_hint": "When no usable local sidecar exists, match the opened video with Dandanplay and fetch related comments.",
     "video_setting_danmaku_max_active": "Active danmaku limit",
-    "video_setting_danmaku_max_active_hint": "Caps comments rendered per frame to keep large files responsive."
+    "video_setting_danmaku_max_active_hint": "Caps comments rendered per frame to keep large files responsive.",
+    "app_ui_scale_mode": "UI size mode",
+    "app_ui_scale_mode_hint": "Choose automatic sizing for this screen or use your custom percentage.",
+    "app_ui_scale_auto": "Automatic",
+    "app_ui_scale_custom": "Custom"
 }

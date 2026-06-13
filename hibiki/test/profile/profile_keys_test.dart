@@ -20,6 +20,8 @@ void main() {
       expect(ProfileKeys.isExcludedPref('update_beta_channel'), isTrue);
       expect(
           ProfileKeys.isExcludedPref('startup_default_dictionary_tab'), isTrue);
+      expect(ProfileKeys.isExcludedPref('app_ui_scale'), isTrue);
+      expect(ProfileKeys.isExcludedPref('app_ui_scale_mode'), isTrue);
     });
 
     test('excludes keys with current_source/ prefix', () {
