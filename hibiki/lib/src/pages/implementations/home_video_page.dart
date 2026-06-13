@@ -729,21 +729,32 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // 统一：不再用自带 Scaffold + adaptiveAppBar（小标题 + 标准 IconButton），改成
     // DesktopContentLayout + HibikiPageHeader（大标题 + HibikiIconButton），三个
     // 首页 tab 的标题字号与动作按钮位置因此完全一致。外层 Scaffold 由 HomePage 提供。
-    return HibikiFileDropTarget(
-      onDrop: _handleVideoDrop,
-      child: CardDropScope<VideoBookRow>(
-        registry: _cardDropRegistry,
-        child: DesktopContentLayout(
-          kind: DesktopContentKind.readerShelf,
-          child: Column(
-            children: <Widget>[
-              if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
-              _buildTagFilterBar(allTags),
-              Expanded(
-                child: _buildVideoLibraryBody(),
-              ),
-              if (_selectionMode) _buildBatchActionBar(),
-            ],
+    // BUG-250: 视频 tab 的批量选择模式（[_selectionMode]）和书架一样活在 tab
+    // 内容里、不是独立 route。顶层 HomePage 的 PopScope 对它无感，返回键会直接
+    // 退出 App，而不是退出选择模式。这里用嵌套 PopScope 拦截：选择模式开启时
+    // canPop=false，返回先退出选择模式（与书架 / 查词 tab 一致）。
+    return PopScope(
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        if (_selectionMode) _exitSelectionMode();
+      },
+      child: HibikiFileDropTarget(
+        onDrop: _handleVideoDrop,
+        child: CardDropScope<VideoBookRow>(
+          registry: _cardDropRegistry,
+          child: DesktopContentLayout(
+            kind: DesktopContentKind.readerShelf,
+            child: Column(
+              children: <Widget>[
+                if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
+                _buildTagFilterBar(allTags),
+                Expanded(
+                  child: _buildVideoLibraryBody(),
+                ),
+                if (_selectionMode) _buildBatchActionBar(),
+              ],
+            ),
           ),
         ),
       ),

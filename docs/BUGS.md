@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 246 条。点号进各自文件。
+> 共 247 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-251](bugs/BUG-251-import-row-tap-dead.md) | ✅ | ✅ | 导入对话框点文字标题没反应，只有右边图标可点 |
+| [BUG-250](bugs/BUG-250-tag-selection-back-exits-app.md) | ✅ | ✅ | 书架/视频标签多选模式按返回键直接退出 App（TODO-306） |
 | [BUG-249](bugs/BUG-249-reader-font-size-cap-64.md) | ✅ | ✅ | 阅读器正文字号最大只能调到 64（TODO-299「为什么字体大小只有64最大」） |
 | [BUG-248](bugs/BUG-248-video-volume-squeeze-and-duplicate-settings.md) | ✅ | ✅ | 桌面音量按钮挤走全屏键 + 顶栏设置入口与右栏重复 (TODO-283) |
 | [BUG-247](bugs/BUG-247-video-bottom-bar-tooltips.md) | ✅ | ✅ | 视频底栏 5 个按钮缺 tooltip (TODO-282) |
