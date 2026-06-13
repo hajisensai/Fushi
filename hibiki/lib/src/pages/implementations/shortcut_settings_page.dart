@@ -4,6 +4,9 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
@@ -215,72 +218,66 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     setState(() {});
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return HibikiPageScaffold(
-      title: t.shortcut_settings_title,
-      body: ListView(
-        children: <Widget>[
-          for (final ShortcutScope scope in ShortcutScope.values) ...[
-            _ScopeSectionHeader(
-              scope: scope,
-              onReset: () => _confirmResetScope(scope),
-            ),
-            for (final ShortcutAction action
-                in ShortcutAction.actionsForScope(scope))
-              _ActionTile(
-                action: action,
-                bindings: _registry.bindingsFor(action),
-                onEdit: () => _editBinding(action),
+  /// 把每个 scope 投影成一张统一的 [AdaptiveSettingsSection] 卡片（标题用共享的
+  /// section header 样式，不再是孤立的 primary 色标题），卡片内首行是「恢复默认」
+  /// 动作行，其后是各 action 行。返回裸内容（无脚手架），由统一详情壳承载滚动与
+  /// 内边距，使从统一设置详情面板点进来不再有风格跳变。
+  Widget _buildScopeSections(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (final ShortcutScope scope in ShortcutScope.values)
+          AdaptiveSettingsSection(
+            title: _scopeLabel(scope),
+            children: <Widget>[
+              AdaptiveSettingsRow(
+                title: t.shortcut_reset_defaults,
+                icon: Icons.restore_outlined,
+                showIcon: true,
+                onTap: () => _confirmResetScope(scope),
               ),
-          ],
-        ],
-      ),
+              for (final ShortcutAction action
+                  in ShortcutAction.actionsForScope(scope))
+                _ActionTile(
+                  action: action,
+                  bindings: _registry.bindingsFor(action),
+                  onEdit: () => _editBinding(action),
+                ),
+            ],
+          ),
+      ],
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// Section header with scope name + reset button
-// ---------------------------------------------------------------------------
-
-class _ScopeSectionHeader extends StatelessWidget {
-  const _ScopeSectionHeader({
-    required this.scope,
-    required this.onReset,
-  });
-
-  final ShortcutScope scope;
-  final VoidCallback onReset;
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.gap / 2,
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              _scopeLabel(scope),
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: colors.primary,
-                  ),
-            ),
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.restore, size: 18),
-            label: Text(t.shortcut_reset_defaults),
-            onPressed: onReset,
-          ),
-        ],
-      ),
+    final SettingsContext settingsContext = SettingsContext(
+      context: context,
+      appModel: appModel,
+      ref: ref,
+      readerSource: ReaderHibikiSource.instance,
+      refresh: () {
+        if (mounted) setState(() {});
+      },
+    );
+
+    // Synthesise a settings destination that projects the scoped binding cards
+    // through the SAME detail shell the unified settings renderer uses, so a
+    // push into shortcuts is visually identical to a real schema destination
+    // (TODO-317). The content is custom/stateful, so it rides the `body` escape
+    // hatch instead of schema items.
+    final SettingsDestination destination = SettingsDestination(
+      id: SettingsDestinationId.system,
+      title: t.shortcut_settings_title,
+      icon: Icons.keyboard_outlined,
+      sections: const <SettingsSection>[],
+      body: (_) => _buildScopeSections(context),
+    );
+
+    return buildSettingsDetailShell(
+      context: context,
+      settingsContext: settingsContext,
+      destination: destination,
     );
   }
 }

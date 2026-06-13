@@ -8,10 +8,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/display_settings_page.dart';
+import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
@@ -67,7 +69,7 @@ void main() {
       final Map<String, String> before =
           Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);
 
-      await _openDisplaySettingsPage(tester);
+      await _openReadingSettingsPage(tester);
 
       final FocusDriver driver = FocusDriver(tester);
       final int driven =
@@ -75,7 +77,7 @@ void main() {
       debugPrint('[comprehensive-settings] focus-driven rows=$driven');
       expect(driven, greaterThanOrEqualTo(2),
           reason: 'focus must drive at least two real settings controls '
-              '(Switch/Slider/Stepper/Segmented) on DisplaySettingsPage');
+              '(Switch/Slider/Stepper/Segmented) on the reading settings page');
 
       await appModel.prefsRepo.refreshFromDb();
       final Map<String, String> after =
@@ -166,13 +168,31 @@ _RowKind? _focusedRowKind() {
   return found;
 }
 
-Future<void> _openDisplaySettingsPage(WidgetTester tester) async {
+/// Push the REAL reading settings detail page — the same schema destination the
+/// removed DisplaySettingsPage used to project — rendered through the unified
+/// settings detail shell (SettingsDetailPage). It carries the same focusable
+/// Switch/Slider/Stepper/Segmented controls the focus driver exercises.
+Future<void> _openReadingSettingsPage(WidgetTester tester) async {
   final NavigatorState nav = Navigator.of(
     tester.element(find.byType(Scaffold).first),
   );
   unawaited(nav.push(
     MaterialPageRoute<void>(
-      builder: (_) => const DisplaySettingsPage(),
+      builder: (BuildContext routeCtx) => Consumer(
+        builder: (BuildContext ctx, WidgetRef ref, _) {
+          final SettingsContext sctx = SettingsContext(
+            context: ctx,
+            appModel: ref.read(appProvider),
+            ref: ref,
+            readerSource: ReaderHibikiSource.instance,
+            refresh: () {},
+          );
+          final SettingsDestination reading = buildSettingsSchema(sctx)
+              .firstWhere((SettingsDestination d) =>
+                  d.id == SettingsDestinationId.reading);
+          return SettingsDetailPage(destination: reading);
+        },
+      ),
     ),
   ));
   await tester.pump(const Duration(seconds: 2));

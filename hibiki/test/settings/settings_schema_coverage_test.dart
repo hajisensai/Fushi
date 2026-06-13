@@ -39,7 +39,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_content_styles_test.dart',
   'reading/VPAL (Vertical Alt)': 'test/reader/reader_content_styles_test.dart',
   'appearance/Design System': 'test/models/theme_notifier_test.dart',
+  // buildAppUiScaleSelector renders BOTH a slider ("UI size") AND a segmented
+  // scale-mode chooser ("UI size mode", t.app_ui_scale_mode); each is a distinct
+  // focus-driven verdict id, so both must be accounted.
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
+  'appearance/UI size mode': 'test/models/theme_notifier_test.dart',
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
