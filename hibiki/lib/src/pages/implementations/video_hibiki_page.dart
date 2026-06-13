@@ -54,6 +54,8 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
+    show MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
@@ -2375,9 +2377,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   @override
-  Future<bool> onMineEntry(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
+    if (controller == null) return const MinePopupResult();
 
     // _lastLookupCue 在查词那刻已按位置解析过（含 gap 兜底，见 _lookupAt）；这里
     // 再以「currentCue → 按位置解析」二段兜底，覆盖未经查词捕获或制卡瞬间字幕又消失
@@ -2393,7 +2395,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           delayMs: controller.delayMs,
         );
 
-    final bool mined = await _mineVideoCard(
+    final MinePopupResult result = await _mineVideoCard(
       fields: fields,
       // 单句制卡：音频/封面区间就是当前 cue 的时间窗（cue 为空则两端相等→不抽）。
       clipStartMs: cue?.startMs ?? 0,
@@ -2401,26 +2403,62 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       sentence: _lastLookupSentence,
       cueSentence: cue?.text,
     );
-    if (usedSelectedCue && mined) {
+    // result.ankiConnect 是「制卡成功」信号（两后端成功时都置 true；noteId 仅
+    // AnkiConnect 非空，故清选中句不能以 noteId 为判据，否则 AnkiDroid 成功也不清）。
+    if (usedSelectedCue && result.ankiConnect) {
       _clearSelectedMiningCues();
     }
-    return mined;
+    return result;
   }
 
-  /// 视频制卡的落卡链路（单句 [onMineEntry] 走这里）：把音频/封面区间
-  /// `[clipStartMs, clipEndMs]`（单句即该 cue 的时间窗）抽成 GIF + 音频片段，配
-  /// [sentence]/[cueSentence]/[fields] 经 [BaseAnkiRepository.mineEntry] 生成**一张**卡，
-  /// 计入视频统计并回 OSD。区间非正（`clipEndMs <= clipStartMs`，如无 cue）时不抽媒体、
-  /// 回退当前帧截图作封面——制卡仍诚实进行（句子字段可能只剩文本）。
-  Future<bool> _mineVideoCard({
+  /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）。视频页覆写了 [onMineEntry] 绕过
+  /// mixin，故覆盖路径也在本页复用视频媒体链路（GIF 封面 + 区间音频），按 id 真实
+  /// 覆盖而非删旧建新（[_mineVideoCard] 的 `updateNoteId` 分支）。
+  @override
+  Future<MinePopupResult> onUpdateEntry(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return const MinePopupResult();
+
+    final AudioCue? selectedCue = _selectedMiningCueForCard(controller);
+    final AudioCue? cue = selectedCue ??
+        _lastLookupCue ??
+        controller.currentCue ??
+        resolveMiningCueForPosition(
+          cues: controller.cues,
+          positionMs: controller.positionMs ?? 0,
+          delayMs: controller.delayMs,
+        );
+
+    return _mineVideoCard(
+      fields: fields,
+      clipStartMs: cue?.startMs ?? 0,
+      clipEndMs: cue?.endMs ?? 0,
+      sentence: _lastLookupSentence,
+      cueSentence: cue?.text,
+      updateNoteId: noteId,
+    );
+  }
+
+  /// 视频制卡/覆盖的落卡链路（单句 [onMineEntry]/[onUpdateEntry] 走这里）：把音频/封面
+  /// 区间 `[clipStartMs, clipEndMs]`（单句即该 cue 的时间窗）抽成 GIF + 音频片段，配
+  /// [sentence]/[cueSentence]/[fields] 经 [BaseAnkiRepository] 生成**一张**卡，回 OSD。
+  /// [updateNoteId] 为空时新制一张（计入视频统计），非空时按 id 覆盖那张卡（不计入统计、
+  /// 走 [BaseAnkiRepository.updateMinedNote]）。返回 [MinePopupResult]：成功带回 note id
+  /// （新制时来自 addNote，覆盖时即 [updateNoteId]），让弹窗保持「最新可改」第三态。
+  /// 区间非正（`clipEndMs <= clipStartMs`，如无 cue）时不抽媒体、回退当前帧截图作封面。
+  Future<MinePopupResult> _mineVideoCard({
     required Map<String, String> fields,
     required int clipStartMs,
     required int clipEndMs,
     required String sentence,
     String? cueSentence,
+    int? updateNoteId,
   }) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
+    if (controller == null) return const MinePopupResult();
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
     final String? videoPath = controller.videoPath;
@@ -2470,19 +2508,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 绕过 DictionaryPageMixin 的 source 注入，故在此显式指定）。
       source: AnkiMiningSource.video,
     );
-    final MineOutcome outcome = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
-    );
-    if (!context.mounted) return outcome.result == MineResult.success;
+    final MineOutcome outcome = updateNoteId == null
+        ? await repo.mineEntry(
+            rawPayloadJson: jsonEncode(fields),
+            context: miningContext,
+          )
+        : await repo.updateMinedNote(
+            noteId: updateNoteId,
+            rawPayloadJson: jsonEncode(fields),
+            context: miningContext,
+          );
+    final MinePopupResult result = outcome.result == MineResult.success
+        ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
+        : const MinePopupResult();
+    if (!context.mounted) return result;
     final String message;
     switch (outcome.result) {
       case MineResult.success:
-        // 制卡成功计入视频统计（dictionarySourceType=video）。本页覆写了
-        // onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
-        unawaited(recordMined());
+        // 新制成功计入视频统计（dictionarySourceType=video）；覆盖不计入（非新卡）。
+        // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
+        if (updateNoteId == null) {
+          unawaited(recordMined());
+        }
         final AnkiSettings settings = await repo.loadSettings();
-        message = t.card_exported(deck: settings.selectedDeckName ?? '');
+        message = updateNoteId == null
+            ? t.card_exported(deck: settings.selectedDeckName ?? '')
+            : t.card_overwritten(deck: settings.selectedDeckName ?? '');
       case MineResult.duplicate:
         message = t.card_duplicate;
       case MineResult.notConfigured:
@@ -2491,7 +2542,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         message = logMineFailure(outcome);
     }
     _showOsd(message);
-    return outcome.result == MineResult.success;
+    return result;
   }
 
   /// 弹音轨菜单（顶栏 ♪ 按钮共用）。

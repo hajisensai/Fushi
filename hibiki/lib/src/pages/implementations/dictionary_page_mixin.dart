@@ -9,6 +9,8 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
+    show MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/utils.dart';
@@ -101,7 +103,7 @@ mixin DictionaryPageMixin {
       ? AnkiMiningSource.video
       : AnkiMiningSource.book;
 
-  Future<bool> onMineEntry(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
@@ -121,16 +123,56 @@ mixin DictionaryPageMixin {
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
         );
-        return true;
+        // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
+        // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
+        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
       case MineResult.duplicate:
         HibikiToast.show(msg: t.card_duplicate);
-        return false;
+        return const MinePopupResult();
       case MineResult.notConfigured:
         HibikiToast.show(msg: t.card_export_not_configured);
-        return false;
+        return const MinePopupResult();
       case MineResult.error:
         HibikiToast.show(msg: logMineFailure(outcome));
-        return false;
+        return const MinePopupResult();
+    }
+  }
+
+  /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）的字段——走 repo.updateMinedNote
+  /// 按 id 真实覆盖（不删旧建新、不查重、不计入统计）。后端不支持覆盖（AnkiDroid）时
+  /// repo 返回明确失败 → 这里弹 toast 提示，不崩。
+  Future<MinePopupResult> onUpdateEntry(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    final repo = ref.read(ankiRepositoryProvider);
+    final miningContext = AnkiMiningContext(
+      sentence: fields['sentence'] ?? '',
+      source: _miningSource,
+    );
+    final outcome = await repo.updateMinedNote(
+      noteId: noteId,
+      rawPayloadJson: jsonEncode(fields),
+      context: miningContext,
+    );
+    switch (outcome.result) {
+      case MineResult.success:
+        final settings = await repo.loadSettings();
+        HibikiToast.show(
+          msg: t.card_overwritten(deck: settings.selectedDeckName ?? ''),
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      case MineResult.duplicate:
+        HibikiToast.show(msg: t.card_duplicate);
+        return const MinePopupResult();
+      case MineResult.notConfigured:
+        HibikiToast.show(msg: t.card_export_not_configured);
+        return const MinePopupResult();
+      case MineResult.error:
+        HibikiToast.show(msg: logMineFailure(outcome));
+        return const MinePopupResult();
     }
   }
 
@@ -333,6 +375,7 @@ mixin DictionaryPageMixin {
             onPush(query, childRect);
           },
           onMineEntry: onMineEntry,
+          onUpdateEntry: onUpdateEntry,
           onDuplicateCheck: checkDuplicate,
           onFavoriteEntry: onFavoriteEntry,
           onFavoriteCheck: onFavoriteCheck,

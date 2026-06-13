@@ -29,7 +29,7 @@ import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
-    show DictionaryPopupWebViewState;
+    show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
@@ -3358,9 +3358,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     super.clearDictionaryResult();
   }
 
-  @override
-  Future<bool> onMineFromPopup(Map<String, String> fields) async {
-    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+  /// TODO-270 D：reader 制卡/覆盖共用的「构造制卡上下文」。返回构造好的
+  /// [AnkiMiningContext] 与一个 `cleanup` 闭包（清理句子音频临时目录，调用方在 mine/
+  /// update 完成后必须调用）。当句子音频导出失败（已弹 toast）时返回 `context: null`，
+  /// 调用方据此直接放弃本次制卡/覆盖。把这段重逻辑抽出来，使制卡与覆盖走完全一致的
+  /// 封面/句子音频/句子偏移/分类标签链路（避免两份漂移）。
+  Future<({AnkiMiningContext? context, void Function() cleanup})>
+      _prepareMiningContext() async {
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
 
@@ -3441,7 +3445,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           reason: 'sentence audio export failed',
         ),
       );
-      return false;
+      return (context: null, cleanup: cleanupSasayakiTempDir);
     }
 
     final String cueSentence =
@@ -3458,6 +3462,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       source: AnkiMiningSource.book,
     );
 
+    return (context: miningContext, cleanup: cleanupSasayakiTempDir);
+  }
+
+  @override
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    final prepared = await _prepareMiningContext();
+    final AnkiMiningContext? miningContext = prepared.context;
+    if (miningContext == null) {
+      prepared.cleanup();
+      return const MinePopupResult();
+    }
+
     final MineOutcome outcome;
     try {
       outcome = await repo.mineEntry(
@@ -3465,7 +3482,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         context: miningContext,
       );
     } finally {
-      cleanupSasayakiTempDir();
+      prepared.cleanup();
     }
 
     switch (outcome.result) {
@@ -3480,16 +3497,66 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
         );
-        return true;
+        // TODO-270 D：AnkiConnect 成功制卡带回 note id（noteId 非空），让弹窗把这张
+        // 标记为「最新可改」第三态；AnkiDroid 的 noteId 恒为 null（优雅降级，进不了
+        // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
+        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
       case MineResult.duplicate:
         HibikiToast.show(msg: t.card_duplicate);
-        return false;
+        return const MinePopupResult();
       case MineResult.notConfigured:
         HibikiToast.show(msg: t.card_export_not_configured);
-        return false;
+        return const MinePopupResult();
       case MineResult.error:
         HibikiToast.show(msg: logMineFailure(outcome));
-        return false;
+        return const MinePopupResult();
+    }
+  }
+
+  @override
+  Future<MinePopupResult> onUpdateFromPopup(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    final prepared = await _prepareMiningContext();
+    final AnkiMiningContext? miningContext = prepared.context;
+    if (miningContext == null) {
+      prepared.cleanup();
+      return const MinePopupResult();
+    }
+
+    final MineOutcome outcome;
+    try {
+      outcome = await repo.updateMinedNote(
+        noteId: noteId,
+        rawPayloadJson: jsonEncode(fields),
+        context: miningContext,
+      );
+    } finally {
+      prepared.cleanup();
+    }
+
+    switch (outcome.result) {
+      case MineResult.success:
+        // 覆盖已有卡片不再计入统计（不是新制一张）。保留「最新可改」第三态，故带回
+        // 同一 noteId。
+        final AnkiSettings settings = await repo.loadSettings();
+        HibikiToast.show(
+          msg: t.card_overwritten(deck: settings.selectedDeckName ?? ''),
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      case MineResult.duplicate:
+        HibikiToast.show(msg: t.card_duplicate);
+        return const MinePopupResult();
+      case MineResult.notConfigured:
+        HibikiToast.show(msg: t.card_export_not_configured);
+        return const MinePopupResult();
+      case MineResult.error:
+        HibikiToast.show(msg: logMineFailure(outcome));
+        return const MinePopupResult();
     }
   }
 

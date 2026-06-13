@@ -1631,5 +1631,6 @@
     "section_video_danmaku": "弹幕",
     "video_setting_danmaku_server_url": "弹幕服务器地址",
     "video_setting_danmaku_app_id": "弹弹play AppId",
-    "video_setting_danmaku_app_secret": "弹弹play AppSecret"
+    "video_setting_danmaku_app_secret": "弹弹play AppSecret",
+    "card_overwritten": "卡片已覆盖到『$deck』。"
 }

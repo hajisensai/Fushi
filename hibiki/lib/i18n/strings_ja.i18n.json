@@ -1631,5 +1631,6 @@
     "section_video_danmaku": "Danmaku",
     "video_setting_danmaku_server_url": "Danmaku server URL",
     "video_setting_danmaku_app_id": "Dandanplay AppId",
-    "video_setting_danmaku_app_secret": "Dandanplay AppSecret"
+    "video_setting_danmaku_app_secret": "Dandanplay AppSecret",
+    "card_overwritten": "Card overwritten in 『$deck』."
 }

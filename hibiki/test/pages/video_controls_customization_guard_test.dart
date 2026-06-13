@@ -153,7 +153,9 @@ void main() {
     expect(page, contains('cueSentence: cue?.text'));
     expect(page, contains('clipStartMs: cue?.startMs ?? 0'));
     expect(page, contains('clipEndMs: cue?.endMs ?? 0'));
-    expect(page, contains('if (usedSelectedCue && mined)'));
+    // TODO-270 D：清选中句以「制卡成功」信号 result.ankiConnect 为判据（两后端成功
+    // 时都 true），不能用仅 AnkiConnect 非空的 note id，否则 AnkiDroid 成功也不清。
+    expect(page, contains('if (usedSelectedCue && result.ankiConnect)'));
   });
 
   test('TODO-266 integrated subtitle sidebar keeps playback and card semantics',
@@ -186,7 +188,8 @@ void main() {
       () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
-    final int mineStart = page.indexOf('Future<bool> _mineVideoCard');
+    final int mineStart =
+        page.indexOf('Future<MinePopupResult> _mineVideoCard');
     final int mineEnd = page.indexOf('void _showAudioTrackMenu', mineStart);
     expect(mineStart, greaterThanOrEqualTo(0));
     expect(mineEnd, greaterThan(mineStart));
