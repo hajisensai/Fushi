@@ -57,6 +57,34 @@ void main() {
     expect(page, contains('_showVideoSidePanel'));
     expect(page, contains('Positioned.fill'));
     expect(page, contains('_buildVideoSidePanelOverlay'));
+    expect(page, contains('_VideoSidePanelKind.subtitleSources'));
+    expect(page, contains('_VideoSidePanelKind.audioTracks'));
+
+    String body(String start, String end) {
+      final int startIndex = page.indexOf(start);
+      expect(startIndex, greaterThanOrEqualTo(0), reason: start);
+      final int endIndex = page.indexOf(end, startIndex);
+      expect(endIndex, greaterThan(startIndex), reason: end);
+      return page.substring(startIndex, endIndex);
+    }
+
+    final String subtitleMenu = body(
+      'Future<void> _showSubtitleSourceMenu',
+      'Future<void> _openJimakuDialog',
+    );
+    final String audioMenu = body(
+      'void _showAudioTrackMenu',
+      'Future<void> _handleBackOrExit',
+    );
+    final String subtitleLoading = body(
+      'void _showSubtitleLoadingOverlay',
+      '/// 选中某字幕源',
+    );
+
+    expect(subtitleMenu, isNot(contains('showModalBottomSheet')));
+    expect(audioMenu, isNot(contains('showModalBottomSheet')));
+    expect(subtitleLoading, isNot(contains('showDialog')));
+    expect(subtitleLoading, isNot(contains('Navigator.of')));
   });
 
   test('video shortcuts reach real favorite and replay actions', () {

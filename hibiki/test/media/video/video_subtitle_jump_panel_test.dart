@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:hibiki/src/media/video/video_subtitle_selection.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
@@ -102,6 +103,87 @@ void main() {
       expect(tapped, isNotNull);
       expect(tapped!.startMs, 2000);
       expect(tapped!.text, 'second line');
+    });
+
+    testWidgets(
+        'filters favorites/selected, checkbox multi-selects card context, '
+        'and row tap still seeks', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta favorite'),
+        _cue(2, 4000, 5200, 'gamma line'),
+      ];
+      controller.setCues(cues);
+      final Set<int> selectedStarts = <int>{};
+      AudioCue? tapped;
+
+      await tester.pumpWidget(_wrap(StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          return VideoSubtitleJumpPanel(
+            controller: controller,
+            onTapCue: (AudioCue cue) => tapped = cue,
+            onClose: () {},
+            onCopyCue: (_) {},
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
+            isCueSelectedForCard: (AudioCue cue) =>
+                selectedStarts.contains(cue.startMs),
+            onToggleCueSelection: (AudioCue cue) {
+              setState(() {
+                if (!selectedStarts.add(cue.startMs)) {
+                  selectedStarts.remove(cue.startMs);
+                }
+              });
+            },
+            onClearCueSelection: () => setState(selectedStarts.clear),
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+            width: 520,
+          );
+        },
+      )));
+
+      expect(find.text('alpha line'), findsOneWidget);
+      expect(find.text('beta favorite'), findsOneWidget);
+      expect(find.text('gamma line'), findsOneWidget);
+
+      await tester.tap(find.text(t.video_subtitle_filter_favorites));
+      await tester.pumpAndSettle();
+      expect(find.text('beta favorite'), findsOneWidget);
+      expect(find.text('alpha line'), findsNothing);
+
+      await tester.tap(find.text(t.video_subtitle_filter_all));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Checkbox).at(0));
+      await tester.pump();
+      expect(tapped, isNull,
+          reason: 'checkbox selection must not trigger the row seek callback');
+      await tester.tap(find.byType(Checkbox).at(2));
+      await tester.pump();
+      expect(selectedStarts, <int>{0, 4000});
+
+      final AudioCue? context = buildSelectedSubtitleCueContext(
+        cues: cues,
+        selectedStartMs: selectedStarts,
+      );
+      expect(context, isNotNull);
+      expect(context!.startMs, 0);
+      expect(context.endMs, 5200);
+      expect(context.text, 'alpha line\ngamma line');
+
+      await tester.tap(find.text(t.video_subtitle_filter_selected));
+      await tester.pumpAndSettle();
+      expect(find.text('alpha line'), findsOneWidget);
+      expect(find.text('gamma line'), findsOneWidget);
+      expect(find.text('beta favorite'), findsNothing);
+
+      await tester.tap(find.text('gamma line'));
+      await tester.pump();
+      expect(tapped, isNotNull);
+      expect(tapped!.startMs, 4000);
     });
 
     testWidgets('highlights the current playing cue and follows changes', (

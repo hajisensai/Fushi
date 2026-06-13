@@ -39,10 +39,9 @@ void main() {
 
   // TODO-122 -> TODO-152 子B：窗口模式无 letterbox/pillarbox 黑边的诉求升级为可配的
   // 画面缩放/比例偏好（VideoFitMode）。旧实现硬编码窗口 BoxFit.cover、全屏 params.fit；
-  // 子B 把窗口 + 全屏两处统一改成 fit: videoFitModeToBoxFit(_videoFitMode)，默认
-  // VideoFitMode.cover -> BoxFit.cover，与旧硬编码 cover 行为一致（向后兼容 TODO-122 的
-  // 「占满无黑边」稳态），同时让用户可改 contain（加黑边）/ fill（拉伸）。
-  test('TODO-122/152 窗口+全屏 Video 经 videoFitModeToBoxFit 跟随偏好（默认 cover 不破坏）',
+  // 子B 把窗口 + 全屏两处统一改成 fit: videoFitModeToBoxFit(_videoFitMode)，TODO-257
+  // 将新安装默认改为 contain（适应），同时保留用户已有 cover（裁切）/ fill（拉伸）偏好。
+  test('TODO-122/152/257 窗口+全屏 Video 经 videoFitModeToBoxFit 跟随偏好（默认 contain）',
       () {
     final String source =
         File('lib/src/pages/implementations/video_hibiki_page.dart')
@@ -67,11 +66,11 @@ void main() {
       greaterThanOrEqualTo(2),
       reason: '窗口与全屏 Video 必须共用 _videoFitMode 偏好换算 fit',
     );
-    // 旧硬编码窗口 cover 已移除（升级为偏好驱动，默认 cover 行为不变）。
+    // 旧硬编码窗口 cover 已移除（升级为偏好驱动，默认由 PreferencesRepository 给 contain）。
     expect(
       source.contains('fit: BoxFit.cover'),
       isFalse,
-      reason: '窗口模式 fit 不得再硬编码 BoxFit.cover（已改偏好驱动，默认仍 cover）',
+      reason: '窗口模式 fit 不得再硬编码 BoxFit.cover（已改偏好驱动，默认 contain）',
     );
   });
 }

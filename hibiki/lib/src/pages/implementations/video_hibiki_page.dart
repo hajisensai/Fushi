@@ -281,6 +281,8 @@ enum _VideoSidePanelKind {
   settings,
   favoriteSentences,
   subtitleList,
+  subtitleSources,
+  audioTracks,
 }
 
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
@@ -437,6 +439,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
   final ValueNotifier<_VideoSidePanelKind?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelKind?>(null);
+  List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
+  bool _subtitleMenuLoading = false;
 
   /// 锁定 / 沉浸模式（TODO-101）。开启后：鼠标移动 / 单击不再唤起 media_kit 控制条
   /// （顶/底栏按钮全部不弹），视频纯画面播放；但查词（点字幕字符）与所有键盘 / 手柄
@@ -2347,17 +2351,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 弹音轨菜单（顶栏 ♪ 按钮共用）。
-  void _showAudioTrackMenu(VideoPlayerController controller) {
-    _showTrackMenu(
-      controller.audioTracks
-          .map(
-            (AudioTrack tr) => (
-              label: _trackLabel(tr.title, tr.language, tr.id),
-              onSelected: () => _selectAudioTrack(controller, tr),
-            ),
-          )
-          .toList(),
-    );
+  void _showAudioTrackMenu(VideoPlayerController _) {
+    _showVideoSidePanel(_VideoSidePanelKind.audioTracks);
   }
 
   /// 退出/返回汇聚点：浮层栈有可见层先关栈（一层层退），否则 await 落库后真正
@@ -3109,42 +3104,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 安全区）而非 `padding`（会被 immersive 模式抹平），且不受软键盘弹出影响。
   double _videoBottomSystemInset() => MediaQuery.of(context).viewPadding.bottom;
 
-  void _showTrackMenu(List<({String label, VoidCallback onSelected})> tracks) {
-    if (_videoSheetOpen) return;
-    _videoSheetOpen = true;
-    // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。音轨 / 字幕轨条目
-    // 数不定，横屏 / 多轨时整列可超过半屏高，故同 [_showSpeedMenu] 走 isScrollControlled
-    // + maxHeight 约束 + 可滚动 ListView，避免末尾轨道被裁（TODO-127）。
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
-          ),
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: tracks.length,
-            itemBuilder: (BuildContext _, int i) {
-              final ({String label, VoidCallback onSelected}) o = tracks[i];
-              return ListTile(
-                title: Text(o.label),
-                onTap: () {
-                  o.onSelected();
-                  Navigator.pop(ctx);
-                },
-              );
-            },
-          ),
-        ),
-      ),
-    ).whenComplete(() {
-      _videoSheetOpen = false;
-      _refocusVideo();
-    });
-  }
-
   /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化
   /// 到 VideoBook.delayMs（换集复用、跨重启保留）+ 刷新面板显示。
   Future<void> _setDelayMs(int delayMs) async {
@@ -3755,6 +3714,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_favorite_sentences;
       case _VideoSidePanelKind.subtitleList:
         return t.video_subtitle_list;
+      case _VideoSidePanelKind.subtitleSources:
+        return t.video_menu_subtitle_track;
+      case _VideoSidePanelKind.audioTracks:
+        return t.video_audio_track;
     }
   }
 
@@ -3765,6 +3728,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case _VideoSidePanelKind.subtitleList:
       case _VideoSidePanelKind.favoriteSentences:
         return 420;
+      case _VideoSidePanelKind.subtitleSources:
+      case _VideoSidePanelKind.audioTracks:
       case _VideoSidePanelKind.speed:
         return 320;
     }
@@ -3783,6 +3748,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return _buildFavoriteSentencesSidePanel();
       case _VideoSidePanelKind.subtitleList:
         return _buildSubtitleListSidePanel(controller);
+      case _VideoSidePanelKind.subtitleSources:
+        return _buildSubtitleSourcesSidePanel(controller);
+      case _VideoSidePanelKind.audioTracks:
+        return _buildAudioTracksSidePanel(controller);
     }
   }
 
@@ -3824,6 +3793,151 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  Widget _buildSubtitleSourcesSidePanel(VideoPlayerController controller) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final String? hostSub = _remoteSubtitlePath;
+    final List<Widget> rows = <Widget>[
+      if (_subtitleMenuLoading) const LinearProgressIndicator(),
+      if (!_isRemote && _currentVideoPath != null)
+        ListTile(
+          leading: const Icon(Icons.cloud_download_outlined),
+          title: Text(t.video_jimaku_fetch),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_openJimakuDialog(controller)),
+        ),
+      ListTile(
+        leading: const Icon(Icons.file_open_outlined),
+        title: Text(t.video_subtitle_import_file),
+        enabled: !_subtitleLoadingShown,
+        onTap: _subtitleLoadingShown
+            ? null
+            : () => unawaited(
+                  _isRemote
+                      ? _pickAndImportRemoteSubtitle(controller)
+                      : _pickAndImportSubtitle(controller),
+                ),
+      ),
+      const Divider(height: 1),
+      ListTile(
+        leading: const Icon(Icons.subtitles_off),
+        title: Text(t.video_subtitle_off),
+        selected: _currentSubtitleSource == null,
+        selectedColor: cs.primary,
+        enabled: !_subtitleLoadingShown,
+        onTap: _subtitleLoadingShown
+            ? null
+            : () => unawaited(
+                  _isRemote
+                      ? _clearRemoteSubtitle(controller)
+                      : _selectSubtitleOff(controller),
+                ),
+      ),
+      if (_isRemote && hostSub != null)
+        ListTile(
+          leading: const Icon(Icons.cloud_done_outlined),
+          title: Text(t.video_subtitle_remote_host),
+          subtitle: Text(p.basename(hostSub)),
+          selected: _currentSubtitleSource == hostSub,
+          selectedColor: cs.primary,
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_applyRemoteSubtitle(controller, hostSub)),
+        ),
+      if (_isRemote)
+        for (final RemoteVideoEmbeddedSubtitleTrack track
+            in _remoteEmbeddedSubtitleTracks)
+          ListTile(
+            leading: Icon(
+              track.isText
+                  ? Icons.movie_filter_outlined
+                  : Icons.image_not_supported_outlined,
+            ),
+            title: Text(_remoteEmbeddedSubtitleLabel(track)),
+            subtitle: Text(
+              track.isText
+                  ? (track.fileName ?? track.codec)
+                  : t.video_subtitle_import_unsupported,
+            ),
+            enabled: track.isText && !_subtitleLoadingShown,
+            selected:
+                _currentSubtitleSource == _remoteEmbeddedSubtitleSource(track),
+            selectedColor: cs.primary,
+            onTap: track.isText && !_subtitleLoadingShown
+                ? () => unawaited(
+                      _applyRemoteEmbeddedSubtitle(controller, track),
+                    )
+                : null,
+          ),
+      if (!_isRemote)
+        for (final SubtitleSource source in _subtitleMenuSources)
+          ListTile(
+            leading: Icon(
+              source.isGraphicEmbedded
+                  ? Icons.image_outlined
+                  : (source.isEmbedded ? Icons.movie : Icons.subtitles),
+            ),
+            title: Text(source.label),
+            subtitle: source.isGraphicEmbedded
+                ? Text(t.video_subtitle_graphic_hint)
+                : null,
+            selected: subtitleSourceMatchesPersistedForMenu(
+              source,
+              _currentSubtitleSource,
+            ),
+            selectedColor: cs.primary,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(_selectSubtitleSource(controller, source)),
+          ),
+    ];
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: rows,
+    );
+  }
+
+  Widget _buildAudioTracksSidePanel(VideoPlayerController controller) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final List<AudioTrack> tracks = controller.audioTracks;
+    if (tracks.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            t.video_audio_track,
+            style: TextStyle(color: cs.onSurfaceVariant),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: tracks.length,
+      itemBuilder: (BuildContext _, int i) {
+        final AudioTrack track = tracks[i];
+        final String label = _trackLabel(
+          track.title,
+          track.language,
+          track.id,
+        );
+        final bool selected = _currentAudioTrackId == track.id;
+        return ListTile(
+          dense: true,
+          leading: const Icon(Icons.audiotrack),
+          title: Text(label),
+          selected: selected,
+          selectedColor: cs.primary,
+          trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
+          onTap: () => unawaited(_selectAudioTrack(controller, track)),
+        );
+      },
+    );
+  }
+
   Widget _buildFavoriteSentencesSidePanel() {
     return FutureBuilder<List<FavoriteSentence>>(
       future: FavoriteSentenceRepository(appModel.database).getAll(),
@@ -3858,103 +3972,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 这是运行时覆盖；默认 load 行为（自动 sidecar 优先 + 内嵌兜底）不变。
   Future<void> _showSubtitleSourceMenu(VideoPlayerController controller) async {
     if (_videoSheetOpen) return;
-    _videoSheetOpen = true;
-    // #2: 远端模式没有本地视频文件，[_currentVideoPath] 恒 null，原逻辑直接早返回
-    // → 字幕菜单点了没反应。远端走独立菜单（关闭 / host 字幕 / 本地导入），不依赖
-    // 同目录枚举与本地 DB 持久化。内封多轨切换列为 follow-up（远端流当前不枚举内封轨）。
     if (_isRemote) {
-      _videoSheetOpen = false;
-      await _showRemoteSubtitleMenu(controller);
+      setState(() {
+        _subtitleMenuSources = const <SubtitleSource>[];
+        _subtitleMenuLoading = false;
+      });
+      _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
       return;
     }
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) {
-      _videoSheetOpen = false;
+      setState(() {
+        _subtitleMenuSources = const <SubtitleSource>[];
+        _subtitleMenuLoading = false;
+      });
+      _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
       return;
     }
 
-    final List<SubtitleSource> sources = await _subtitleSourcesForMenu(
-      videoPath: videoPath,
-      currentSubtitleSource: _currentSubtitleSource,
-      currentCues: controller.cues,
-    );
-    if (!context.mounted) {
-      _videoSheetOpen = false;
+    setState(() {
+      _subtitleMenuSources = const <SubtitleSource>[];
+      _subtitleMenuLoading = true;
+    });
+    _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
+    final List<SubtitleSource> sources;
+    try {
+      sources = await _subtitleSourcesForMenu(
+        videoPath: videoPath,
+        currentSubtitleSource: _currentSubtitleSource,
+        currentCues: controller.cues,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _subtitleMenuLoading = false);
       return;
     }
-
-    // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            children: <Widget>[
-              // 自动获取字幕（Jimaku）：用番名搜 → 下载 → 应用为外挂源。
-              ListTile(
-                leading: const Icon(Icons.cloud_download_outlined),
-                title: Text(t.video_jimaku_fetch),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _openJimakuDialog(controller);
-                },
-              ),
-              // 从本地文件导入字幕：FilePicker 选 srt/ass/ssa/vtt → 拷到持久目录 →
-              // 复用 _selectSubtitleSource 应用（解决 sidecar 名对不上 / 字幕在别目录）。
-              ListTile(
-                leading: const Icon(Icons.file_open_outlined),
-                title: Text(t.video_subtitle_import_file),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickAndImportSubtitle(controller);
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.subtitles_off),
-                title: Text(t.video_subtitle_off),
-                selected: _currentSubtitleSource == null,
-                selectedColor: Theme.of(ctx).colorScheme.primary,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _selectSubtitleOff(controller);
-                },
-              ),
-              for (final SubtitleSource source in sources)
-                ListTile(
-                  // 图形内封轨（PGS/DVD 等位图）用不同图标 + 副标题点明「画面显示·不可
-                  // 查词」，让用户在点击前就分辨哪条能查词、哪条只是画面字幕（BUG-122）。
-                  leading: Icon(
-                    source.isGraphicEmbedded
-                        ? Icons.image_outlined
-                        : (source.isEmbedded ? Icons.movie : Icons.subtitles),
-                  ),
-                  title: Text(source.label),
-                  subtitle: source.isGraphicEmbedded
-                      ? Text(t.video_subtitle_graphic_hint)
-                      : null,
-                  selected: subtitleSourceMatchesPersistedForMenu(
-                    source,
-                    _currentSubtitleSource,
-                  ),
-                  selectedColor: Theme.of(ctx).colorScheme.primary,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _selectSubtitleSource(controller, source);
-                  },
-                ),
-            ],
-          ),
-        ),
-      ),
-    ).whenComplete(() {
-      _videoSheetOpen = false;
-      _refocusVideo();
+    if (!mounted) return;
+    setState(() {
+      _subtitleMenuSources = sources;
+      _subtitleMenuLoading = false;
     });
   }
 
@@ -4004,95 +4060,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final String? path = result?.files.single.path;
     if (path == null) return;
     await _importExternalSubtitle(controller, path);
-  }
-
-  /// 远端模式专用字幕菜单（#2）。远端视频是网络流、无本地文件、无本地库 DB 行，故：
-  /// - 不走 [_currentVideoPath] 的同目录枚举（远端没有同目录）；
-  /// - 不写本地 [VideoBookRepository]（远端 bookUid 在本地没有对应行）；
-  /// - 仅在内存里切换 cue overlay：关闭 / host 下发的那条外挂字幕 / 本地导入字幕。
-  Future<void> _showRemoteSubtitleMenu(VideoPlayerController controller) async {
-    if (_videoSheetOpen) return;
-    _videoSheetOpen = true;
-    if (!context.mounted) {
-      _videoSheetOpen = false;
-      return;
-    }
-    final String? hostSub = _remoteSubtitlePath;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.file_open_outlined),
-                title: Text(t.video_subtitle_import_file),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickAndImportRemoteSubtitle(controller);
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.subtitles_off),
-                title: Text(t.video_subtitle_off),
-                selected: _currentSubtitleSource == null,
-                selectedColor: Theme.of(ctx).colorScheme.primary,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _clearRemoteSubtitle(controller);
-                },
-              ),
-              if (hostSub != null)
-                ListTile(
-                  leading: const Icon(Icons.cloud_done_outlined),
-                  title: Text(t.video_subtitle_remote_host),
-                  subtitle: Text(p.basename(hostSub)),
-                  selected: _currentSubtitleSource == hostSub,
-                  selectedColor: Theme.of(ctx).colorScheme.primary,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _applyRemoteSubtitle(controller, hostSub);
-                  },
-                ),
-              for (final RemoteVideoEmbeddedSubtitleTrack track
-                  in _remoteEmbeddedSubtitleTracks)
-                ListTile(
-                  leading: Icon(
-                    track.isText
-                        ? Icons.movie_filter_outlined
-                        : Icons.image_not_supported_outlined,
-                  ),
-                  title: Text(_remoteEmbeddedSubtitleLabel(track)),
-                  subtitle: Text(
-                    track.isText
-                        ? (track.fileName ?? track.codec)
-                        : t.video_subtitle_import_unsupported,
-                  ),
-                  enabled: track.isText,
-                  selected: _currentSubtitleSource ==
-                      _remoteEmbeddedSubtitleSource(track),
-                  selectedColor: Theme.of(ctx).colorScheme.primary,
-                  onTap: track.isText
-                      ? () {
-                          Navigator.pop(ctx);
-                          _applyRemoteEmbeddedSubtitle(controller, track);
-                        }
-                      : null,
-                ),
-            ],
-          ),
-        ),
-      ),
-    ).whenComplete(() {
-      _videoSheetOpen = false;
-      _refocusVideo();
-    });
   }
 
   /// 远端模式：弹文件选择器挑字幕 → 直接在内存里应用到当前流（不拷盘、不持久化）。
@@ -4279,33 +4246,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await _selectSubtitleSource(controller, source);
   }
 
-  /// 字幕抽取加载遮罩当前是否已弹出（防重复 push / 防错 pop）。
+  /// 字幕抽取/解析当前是否在进行。状态显示在右侧半透明字幕源面板里，画面仍可见；
+  /// 底层 ffmpeg/文件解析 Future 目前没有取消契约，关闭面板只是不再打断观看。
   bool _subtitleLoadingShown = false;
 
-  /// 弹出不可关的字幕抽取加载遮罩（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
+  /// 在字幕源侧栏里展示非阻塞加载状态（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
   void _showSubtitleLoadingOverlay() {
     if (_subtitleLoadingShown || !mounted) return;
-    _subtitleLoadingShown = true;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black54,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    setState(() => _subtitleLoadingShown = true);
+    if (_videoSidePanel.value != _VideoSidePanelKind.subtitleSources) {
+      _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
+    }
   }
 
-  /// 关闭字幕抽取加载遮罩。配对 [_showSubtitleLoadingOverlay]，幂等。
-  ///
-  /// 这个遮罩是模态对话框、会夺走键盘焦点；media_kit 关闭覆盖层后**不会**自动把焦点
-  /// 还给 [Video] 的 FocusNode（见 [_refocusVideo]）→ 关掉后空格等快捷键失灵（BUG-131：
-  /// 导入字幕走 _pickAndImportSubtitle→_importExternalSubtitle→_selectSubtitleSource，
-  /// 其中 _pickAndImportSubtitle 的 refocus 发生在本遮罩**之前**，遮罩一关焦点又悬空）。
-  /// 故 pop 后在下一帧（让 pop 自身的焦点变更先落定）主动归还焦点给视频。
+  /// 关闭字幕抽取加载状态。配对 [_showSubtitleLoadingOverlay]，幂等，并在下一帧把
+  /// 键盘焦点还给视频，避免文件选择器/外部对话框返回后快捷键悬空。
   void _hideSubtitleLoadingOverlay() {
     if (!_subtitleLoadingShown) return;
-    _subtitleLoadingShown = false;
     if (mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
+      setState(() => _subtitleLoadingShown = false);
       WidgetsBinding.instance.addPostFrameCallback((_) => _refocusVideo());
     }
   }
