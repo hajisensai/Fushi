@@ -233,7 +233,12 @@ SettingsDestination _readingDestination() {
             title: t.ttu_font_size,
             icon: Icons.format_size,
             min: 8,
-            max: 64,
+            // 64 was a conservative UI cap, not a technical one (TODO-299):
+            // `font-size: ${settings.fontSize}px` 直接喂 CSS，ruby 用相对
+            // `0.45em`、column-gap/padding-bottom 也只是按字号加几像素，
+            // 字号再大 WebView/分页都按渲染高度重新换行，没有上限依赖。
+            // 抬到 128 给低视力/大屏用户留足空间（128px 已是任何屏上的超大字）。
+            max: 128,
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.appearance,
