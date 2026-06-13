@@ -1,0 +1,12 @@
+## BUG-263 · 焦点遍历与方向键快捷键互抢（按下/重复分属两套焦点引擎）
+- **报告**：2026-06-14（用户：焦点抢快捷键啊，不管是左右还是什么，总是会冲突 / TODO-294）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/shortcuts/global_navigation.dart:113`（旧实现 `if (event is! KeyRepeatEvent) return KeyEventResult.ignored;`）。
+- **根因（数据流）**：方向键的「焦点遍历 vs 快捷键动作」没有单一裁决者，按下边沿与自动重复分属**两套不同的焦点引擎**：
+  - 键事件自焦点节点向上冒泡，最近的 `Focus.onKeyEvent` 先处理。app 级 `wrapWithGlobalNavigation` 的 `Focus` 比 `WidgetsApp` 内建 `Shortcuts` 更靠近焦点，但比各页页级 handler 更远。
+  - 旧 `_handleGlobalArrowFocus` **故意只接管 `KeyRepeatEvent`**（`:113` 对非重复直接 `ignored`），把**按下边沿 `KeyDownEvent` 留给 `WidgetsApp` 的框架 `DirectionalFocusAction`**（朴素 `focusInDirection`，无 Hibiki 的 reading-order / 面板 / 滚动边沿兜底）。
+  - 结果：在一个 Hibiki 受管控件上按住方向键 →**按下走框架引擎、每次重复走 Hibiki 引擎**。在行/面板/滚动边沿处，框架按下会卡死（dead-end），紧接着的 Hibiki 重复却能逃逸到另一面板；在普通受管控件上两套引擎甚至解析到不同目标。这种「同一次按住中途切换焦点引擎 + 按下与重复行为分裂」就是用户感知的「焦点抢快捷键、左右总冲突」。
+  - 这不是某个键的特例，而是**中央派发缺少单一裁决**：按下边沿的归属（焦点遍历 or 框架）与重复边沿的归属（Hibiki）被拆开，由冒泡顺序和事件类型隐式决定。
+- **[x] ① 已修复** — 根因修（消除特殊情况，非打补丁）：让 `wrapWithGlobalNavigation._handleGlobalArrowFocus` 在 `focusNavigationEnabled` 开 + 焦点落在受管目标（`HibikiFocusController.primaryFocusIsManagedTarget`）时**同时接管按下与重复**，二者都走同一 `gamepadMoveFocusInDirection`（Hibiki 几何 + reading-order + 滚动兜底）并在按下边沿即 `KeyEventResult.handled` 消费。`arrowFocusMoveDirection` 本就只对 KeyDown/KeyRepeat 返回非空（KeyUp 永远 null），故两条边沿共用同一移焦路径、永不分裂；按下被消费后框架 `DirectionalFocusAction` 再也拿不到方向键 →**全 app 只剩单一焦点引擎**。受管目标门控不变，故阅读器翻页/字符光标、视频 seek、WebView 等「自己拥有方向键」的表面（其 FocusNode 非受管目标、且各自更近的 `Focus.onKeyEvent` 先消费方向键）完全不受影响；`focusNavigationEnabled` 关（默认）时整块不挂，回退 Flutter 原生遍历，默认构建零变化。
+  - 改动文件：`hibiki/lib/src/shortcuts/global_navigation.dart`（删去 `:113` 的按下边沿让位，按下/重复合一）。提交：8a6e77229
+- **[x] ② 已加自动化测试** — `hibiki/test/shortcuts/focus_vs_shortcut_arrow_dispatch_test.dart`（widget 行为）。决定性手法：在 wrapper 之上放一个**哨兵 `Focus`** 记录上冒到它的方向键 KeyDown——wrapper 若在按下边沿 `handled`（修复后），方向键被消费、哨兵收不到、且不落框架引擎；若 `ignored`（修复前），方向键上冒到哨兵 + 框架 `DirectionalFocusAction`。三例：①受管目标按下被 wrapper 消费、哨兵为空、activeId 经 Hibiki 引擎前进一格；②按下+重复同引擎连续步进、两者都不上冒框架；③`focusNavigationEnabled:false` 时 wrapper 不消费、按下照常上冒（原生遍历兜底，符合 BUG-161/196 裁定）。撤修复（恢复 `:113`）即红（实测：例①②红、例③绿）。`flutter analyze` 0 issues；`flutter test test/shortcuts test/focus` 244 例全绿。
+- **备注**：纯中央派发层修复，不碰 reader/video 巨文件。**真机/桌面待验**：开启「键盘/手柄焦点导航」后，在设置页/对话框/阅读器底栏等受管页面按住左右/上下方向键，焦点连续平滑步进、按下与重复一致、不再「抢」或在边沿处行为突变；阅读器正文翻页、视频 seek 等绑定方向键的表面行为不变。host 单测覆盖派发契约，真实长按几何与跨面板边沿只能真机复测。

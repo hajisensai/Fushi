@@ -82,17 +82,33 @@ KeyEventResult _handleGlobalEscape(
 ///    no longer on the field. left/right and multi-line up/down stay with the
 ///    caret.
 ///
-/// 2. CONTINUE directional focus movement on OS auto-repeat ([KeyRepeatEvent])
-///    when NO text field is focused. Holding an arrow advances focus
-///    continuously instead of one step per press. The press edge is deliberately
-///    NOT claimed here (it is left to the page/home/framework owners, so this is
-///    a zero-regression addition); only the repeat is taken so it runs the SAME
-///    [gamepadMoveFocusInDirection] (panel-aware geometry + reading-order
-///    fallback) as the press edge would on home/gamepad — the framework's bare
-///    [DirectionalFocusAction] that would otherwise handle the repeat does not
-///    carry that fallback and dead-ends at row/panel edges. The home page
-///    handles its own repeats and consumes them before they reach here; this
-///    catches every other page (settings, dialogs, reader chrome) uniformly.
+/// 2. OWN directional focus movement for BOTH the press edge ([KeyDownEvent])
+///    AND OS auto-repeat ([KeyRepeatEvent]) when NO text field is focused and
+///    focus rests on a real Hibiki-managed control (BUG-263). This is the single
+///    arbiter for "arrow = focus traversal": press and repeat now go through the
+///    SAME [gamepadMoveFocusInDirection] (panel-aware geometry + reading-order +
+///    scroll-edge fallback) — the gamepad D-pad and the keyboard arrow reach the
+///    exact same focus engine. Previously the press edge was deliberately left to
+///    WidgetsApp's framework [DirectionalFocusAction] (a plain focusInDirection
+///    with none of Hibiki's fallbacks) while only the repeat was taken here, so
+///    holding an arrow switched focus engines mid-hold: the press could dead-end
+///    at a row/panel/scroll edge that the very next repeat then escaped, and at a
+///    managed control the framework press and the Hibiki repeat resolved to
+///    DIFFERENT targets. That split is the "focus steals shortcut / left-right
+///    always conflicts" the user hit. Claiming the press here consumes the arrow
+///    before it can reach the framework's [DirectionalFocusAction], so exactly
+///    one focus engine runs.
+///
+///    The managed-target gate is what keeps this from hijacking an arrow on a
+///    surface that owns it for itself — the reader's reading content / page-turn
+///    and char cursor (its FocusNode is not a managed target), the video player,
+///    the WebView. Those surfaces also consume the arrow in their OWN nearer
+///    [Focus.onKeyEvent] before it ever bubbles here, so this never competes with
+///    a bound page-turn / seek shortcut. The home page handles its own arrows and
+///    consumes them before they reach here; this catches every other managed
+///    page (settings, dialogs, reader chrome) uniformly. Disabled entirely when
+///    [focusNavigationEnabled] is off (the whole arrow/gamepad block is gated by
+///    the caller), so the default build is unchanged.
 KeyEventResult _handleGlobalArrowFocus(
   GlobalKey<NavigatorState> navigatorKey,
   KeyEvent event,
@@ -102,19 +118,19 @@ KeyEventResult _handleGlobalArrowFocus(
   final EditableText? editable = focusedEditableText();
 
   if (editable == null) {
-    // Part 2: no field focused — continue movement on OS auto-repeat ONLY, and
-    // ONLY while focus rests on a real Hibiki-managed control. The managed-target
-    // gate is what keeps this from hijacking a held arrow on a surface that owns
-    // the arrow for itself — the reader's reading content / page-turn and char
-    // cursor (its FocusNode is not a managed target; the reader consumes its own
-    // caret repeats before they reach here). The press edge is left to the
-    // page/framework owners, so this only ADDS repeat continuation, never changes
-    // a single press.
-    if (event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    // Part 2: no field focused — move focus on the press edge AND every repeat,
+    // but ONLY while focus rests on a real Hibiki-managed control. The
+    // managed-target gate keeps this from hijacking an arrow on a surface that
+    // owns it (reader page-turn / char cursor, video seek, raw page sink); those
+    // surfaces are not managed targets and consume the arrow in their own nearer
+    // handler first. [arrowFocusMoveDirection] already returns non-null only for
+    // a KeyDown or KeyRepeat (never a KeyUp), so both edges flow through the
+    // single shared move below — press and repeat can never diverge.
+    //
     // Resolve the controller from the FOCUSED context (the HibikiFocusRoot sits
     // below the Navigator, so navigatorKey.currentContext is ABOVE the scope and
     // cannot see it; the primary focus is inside the root). No focus / no root →
-    // leave the repeat to the framework (unchanged behaviour).
+    // leave the arrow to the framework (unchanged behaviour).
     final BuildContext? focusContext =
         FocusManager.instance.primaryFocus?.context;
     final HibikiFocusController? controller = focusContext == null
