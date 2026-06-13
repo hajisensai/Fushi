@@ -461,9 +461,7 @@ class _HomePageState extends BasePageState<HomePage>
         resizeToAvoidBottomInset: false,
         body: SafeArea(
           child: FocusTraversalGroup(
-            child: HibikiSettingsContent(
-              onBack: () => _selectTab(_previousTab),
-            ),
+            child: _buildSettingsTabContent(showBackButton: true),
           ),
         ),
       );
@@ -556,10 +554,62 @@ class _HomePageState extends BasePageState<HomePage>
       case HomeTab.texthooker:
         return const TexthookerPage();
       case HomeTab.settings:
-        return const HibikiSettingsContent();
+        // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
+        // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。
+        return _buildSettingsTabContent(showBackButton: false);
       case HomeTab.books:
         return const HomeReaderPage();
     }
+  }
+
+  /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏
+  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧，可直接切回）不
+  /// 显示箭头，系统返回手势仍由 [HomeSettingsTabContent] 内的 PopScope 拦截。
+  Widget _buildSettingsTabContent({required bool showBackButton}) {
+    return HomeSettingsTabContent(
+      showBackButton: showBackButton,
+      onReturnToPreviousTab: () => _selectTab(_previousTab),
+    );
+  }
+}
+
+/// 设置 tab 的内容外壳：用 [PopScope] 拦截系统返回键（Android 硬件返回 / 手势返回），
+/// 消费后切回来源 tab（[onReturnToPreviousTab]）而不是让事件冒泡到 home 顶层
+/// [PopScope] 退出 app（BUG-236）。内层 PopScope 离焦点更近，先于顶层同步态 PopScope
+/// 收到事件；非设置 tab 不构造此 widget，仍走顶层 PopScope 的正常退出/同步告警逻辑。
+///
+/// 设置内容默认是 [HibikiSettingsContent]；[child] 仅供 widget 测试注入轻量占位以独立
+/// 验证 PopScope 拦截行为（生产路径始终用默认值）。
+class HomeSettingsTabContent extends StatelessWidget {
+  const HomeSettingsTabContent({
+    super.key,
+    required this.onReturnToPreviousTab,
+    this.showBackButton = false,
+    this.child,
+  });
+
+  /// 系统返回键被拦截后调用：切回进入设置前的来源 tab。
+  final VoidCallback onReturnToPreviousTab;
+
+  /// 是否在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
+  final bool showBackButton;
+
+  /// 设置内容；为空时回落到默认的 [HibikiSettingsContent]。
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        onReturnToPreviousTab();
+      },
+      child: child ??
+          HibikiSettingsContent(
+            onBack: showBackButton ? onReturnToPreviousTab : null,
+          ),
+    );
   }
 }
 
