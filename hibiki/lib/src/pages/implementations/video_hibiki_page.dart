@@ -515,6 +515,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 自定义 action rail 藏掉，否则用户会看到“鼠标放到设置上面设置消失”。
   bool _videoControlsHovered = false;
 
+  /// OS 鼠标光标是否应隐藏的单一真相源（TODO-318 / BUG-258）。
+  ///
+  /// 根因：media_kit 自己用 `MouseRegion(cursor: none)`（`hideMouseOnControlsRemoval`）在
+  /// 控制条淡出时隐藏光标，但 hibiki 把 overlay chrome（锁按钮 rail / OSD / 字幕跳转面板等）
+  /// 叠在 media_kit 之上 → 最上层 MouseRegion 的 cursor 解析胜出 → 鼠标放到这些 chrome 上时
+  /// 光标重现；沉浸锁态下 [IgnorePointer] 又剥了 media_kit 的 region，光标更无人隐藏。
+  ///
+  /// 解法：在 controls 子树最外层（[_videoControlsHoverWrap]）包一个 `MouseRegion(cursor:
+  /// none)`，由本 notifier 驱动统一胜出，盖过所有 chrome。隐藏时机镜像 controls 自动隐藏
+  /// 2s 计时 + 沉浸锁态；真实鼠标移动经 [_handleVideoControlsHover] 自然唤回（置 false）。
+  /// 用 [ValueNotifier] 让全屏路由也响应（与 [_videoControlsVisible] / [_immersiveLocked]
+  /// 同源，BUG-120）。仅桌面有 OS 光标语义；移动端 [_videoControlsHoverWrap] 透传 child。
+  final ValueNotifier<bool> _cursorHidden = ValueNotifier<bool>(false);
+
+  /// 翻转 OS 光标隐藏单一真相源（TODO-318）。仅桌面生效（移动端无 OS 光标）。
+  void _setCursorHidden(bool hidden) {
+    if (!_isDesktopVideoControls) return;
+    _cursorHidden.value = hidden;
+  }
+
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
   void _showOsd(String message, {IconData? icon, double? progress}) {
@@ -1584,11 +1604,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _showOsd(t.video_immersive_locked, icon: Icons.lock_outline);
       // 锁定后 media_kit 控制条不再弹（指针被 IgnorePointer 挡），镜像同步收起、字幕
       // 落回用户位置基线（无控制条可遮挡，不需避让；TODO-129）。
+      // _markControlsVisible(false) 在锁态分支里会同时 _setCursorHidden(true)（TODO-318）。
       _markControlsVisible(false);
     } else {
       _showOsd(t.video_immersive_unlocked, icon: Icons.lock_open_outlined);
       // 解锁瞬间把控制条唤回（poke 在 _immersiveLocked 复位后才放行），让用户立刻
-      // 看到顶/底栏回来、确认已退出沉浸模式。
+      // 看到顶/底栏回来、确认已退出沉浸模式。光标也同步唤回（即时反馈，TODO-318）。
+      _setCursorHidden(false);
       _pokeControlsVisible();
     }
   }
@@ -1653,6 +1675,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _osdNotifier.dispose();
     _videoControlsHideTimer?.cancel();
     _videoControlsVisible.dispose();
+    _cursorHidden.dispose();
     super.dispose();
   }
 
@@ -1776,6 +1799,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _videoControlsHideTimer?.cancel();
       _videoControlsHideTimer = null;
       _videoControlsVisible.value = false;
+      // 沉浸锁 / 侧栏态：控制条不弹，光标也无 chrome 该承载 → 统一隐藏（TODO-318）。
+      _setCursorHidden(true);
       return;
     }
     _videoControlsVisible.value = visible;
@@ -1783,7 +1808,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlsHideTimer = null;
     if (visible && !_videoControlsHovered) {
       _videoControlsHideTimer = Timer(_videoControlsHoverDuration, () {
-        if (mounted) _videoControlsVisible.value = false;
+        if (mounted) {
+          _videoControlsVisible.value = false;
+          // 控制条 2s 自动淡出同时隐藏光标（镜像 media_kit hideMouseOnControlsRemoval）。
+          _setCursorHidden(true);
+        }
       });
     }
   }
@@ -1795,6 +1824,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlsHideTimer?.cancel();
     _videoControlsHideTimer = null;
     _videoControlsVisible.value = false;
+    // 鼠标移出视频区：光标交还系统/外部，不再由本层强制隐藏（TODO-318）。
+    _setCursorHidden(false);
   }
 
   bool _isSyntheticControlsHover(PointerEvent event) =>
@@ -1803,6 +1834,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _handleVideoControlsHover(PointerEvent event) {
     if (!_isSyntheticControlsHover(event)) {
       _videoControlsHovered = true;
+      // 真实鼠标移动 → 唤回光标（TODO-318）。合成 poke（键盘/seek 续命）不强制显示光标，
+      // 否则键盘连按快进会让本该隐藏的光标常驻。沉浸锁态也借此唤回光标找解锁按钮。
+      _setCursorHidden(false);
     }
     _markControlsVisible(true);
     _pokeLockButton();
@@ -5093,6 +5127,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// OS 光标隐藏统一胜出层（TODO-318 / BUG-258）。放在 controls Stack **最顶层**
+  /// （front-most），cursor 解析按 front-to-back 取第一个非 defer：故隐藏时本层 `none`
+  /// 胜过下方所有 chrome（锁按钮 rail / 字幕面板 / OSD 等）的 click cursor。`opaque:false`
+  /// 不阻断指针下探（按钮 hover / 点击照常到下层 chrome），故不回归 BUG-198 hover 穿透；
+  /// `IgnorePointer` 在不隐藏时彻底让出（cursor: defer 透明）。仅桌面有 OS 光标，移动端
+  /// 调用方根本不挂本层。
+  Widget _buildCursorOverlay() {
+    return Positioned.fill(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _cursorHidden,
+        builder: (BuildContext _, bool hidden, __) {
+          if (!hidden) return const SizedBox.shrink();
+          return const MouseRegion(
+            opaque: false,
+            cursor: SystemMouseCursors.none,
+          );
+        },
+      ),
+    );
+  }
+
   /// [_buildVideoControls] 的实体（gate 之内）：拖放目标 + controls + 字幕 overlay
   /// + OSD。
   Widget _buildVideoControlsInner(
@@ -5202,6 +5257,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 _buildSideLockButton(),
                 _buildVideoSideActionRail(controller),
                 _buildVideoSidePanelOverlay(controller),
+                // TODO-318：光标隐藏统一胜出层放 Stack 最顶（front-most），隐藏时其
+                // cursor:none 胜过下方所有 chrome 的 click cursor；桌面才挂（移动端无 OS 光标）。
+                if (_isDesktopVideoControls) _buildCursorOverlay(),
               ],
             ),
           ),
