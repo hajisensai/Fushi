@@ -1625,5 +1625,11 @@
     "video_bottom_seek_forward": "Forward 10s",
     "video_bottom_prev_cue": "Previous subtitle (back a bit if none)",
     "video_bottom_next_cue": "Next subtitle (forward a bit if none)",
-    "video_bottom_play_pause": "Play / Pause"
+    "video_bottom_play_pause": "Play / Pause",
+    "audio_clip_failed": "Couldn't extract the audio clip — the audio source may be missing or unreadable",
+    "video_setting_seek_seconds": "Seek seconds",
+    "section_video_danmaku": "Danmaku",
+    "video_setting_danmaku_server_url": "Danmaku server URL",
+    "video_setting_danmaku_app_id": "Dandanplay AppId",
+    "video_setting_danmaku_app_secret": "Dandanplay AppSecret"
 }
