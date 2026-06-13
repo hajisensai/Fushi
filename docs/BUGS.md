@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 230 条。点号进各自文件。
+> 共 231 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-244](bugs/BUG-244-reader-audio-buttons-md3-frame.md) | ✅ | ✅ | 阅读器有声书音频控制键被改成扁平样式，需还原「图标 + 圆框 md3」旧观感（TODO-297） |
 | [BUG-233](bugs/BUG-233-todo-267-card-crash-winlog.md) | ✅ | ✅ | Reader card mining fails when bundled ffmpeg is invalid |
 | [BUG-232](bugs/BUG-232-video-favorite-cue-loop.md) | ✅ | ✅ | 视频收藏句缺少字幕锚点和收藏页跳回闭环（TODO-176/TODO-177） |
 | [BUG-231](bugs/BUG-231-video-doubletap-seek.md) | ✅ | ✅ | 视频缺双击左右快进 + 步长设置（TODO-173） |
