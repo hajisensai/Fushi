@@ -3787,10 +3787,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
-  /// 当前是否配置了启用着色器（决定是否显示「对比原画」按钮/快捷键的语义）。
-  bool get _hasShadersEnabled =>
-      decodeEnabledShaders(appModel.videoShadersEnabled).isNotEmpty;
-
   /// **一键画质档位应用**（无/低/中/高/极高）：原子写两套正交状态——mpv 内置缩放开关
   /// （[highQuality] → videoMpvConfig）+ GLSL 启用集（[enabledNames] →
   /// videoShadersEnabled），再一次性 applyMpvConfig + applyShaders 实时生效。
@@ -4950,6 +4946,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 锁定层同源的全屏安全范式，TODO-069/101）。移动端无次按钮、此回调不触发，且
   /// 这里再门控一次（[_isDesktopVideoControls]）双保险。右键菜单含完整播放控制，沉浸锁
   /// 仅 full 模式允许打开；seekAndLookup / lookupOnly / unlockOnly 均不能绕过四段 gate。
+  ///
+  /// 界面缩放坐标对齐（BUG-260）：视频页整页被 [HibikiAppUiScaleNeutralizer] 中和回
+  /// 净缩放=1 的**真实视口空间**（见 [VideoHibikiPage.neutralized]），故
+  /// [_videoControlsContext] 的 RenderBox 在真实屏幕坐标系；而 [showMenu] 把
+  /// [RelativeRect] 解读为路由 **Overlay** 的坐标系——该 Overlay 在全局
+  /// [HibikiAppUiScale] 的 `FittedBox(BoxFit.fill)` 之内＝缩放后的画布空间。两套坐标差
+  /// 一个 factor=scale，原实现直接拿 controls 盒子的 `globalToLocal` 当锚点（真实空间），
+  /// 界面大小≠100% 时菜单偏离鼠标 factor≈scale（用户报「调界面大小后右键菜单不在鼠标处」）。
+  ///
+  /// 修复与查词浮层（[_lookupAt]/[_buildPopupOverlay]）同范式：不读 scale 数值逆算
+  /// （界面大小「自动」模式下生效 scale 由视口/平台动态算出，≠ `appModel.appUiScale`），
+  /// 而用 `localToGlobal(..., ancestor: overlay)` 把右键点从 controls 盒子的本地（真实）
+  /// 空间沿真实渲染变换链一路映射到 **Overlay 盒子** 坐标系——其间的 FittedBox 缩放被
+  /// render transform 链自动吸收，对任意 scale（含自动模式）都自洽、无残差；缩放=1 时
+  /// `ancestor` 变换为单位阵，与原行为逐像素等价（向后兼容）。
   void _handleSecondaryTap(Offset globalPosition) {
     if (!_isDesktopVideoControls) return;
     if (!_immersiveAllowsFullControls) return;
@@ -4958,12 +4969,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (controller == null || ctx == null || !ctx.mounted) return;
     final RenderObject? renderObject = ctx.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
-    final Offset local = renderObject.globalToLocal(globalPosition);
+    // showMenu 用 [ctx] 最近的 Navigator（rootNavigator:false）的 Overlay 作菜单宿主；
+    // [RelativeRect] 须落在该 Overlay 的坐标系。取同一个 Overlay 的 RenderBox 作变换
+    // 目标，使锚点与菜单宿主同系（FittedBox 缩放残差被 ancestor 变换吸收，BUG-260）。
+    final RenderObject? overlayObject =
+        Overlay.of(ctx).context.findRenderObject();
+    if (overlayObject is! RenderBox || !overlayObject.hasSize) return;
+    // 右键点：globalPosition 先回 controls 本地（真实空间），再沿真实渲染变换链映射到
+    // Overlay 坐标系（吃掉中和器还原 + 全局 FittedBox 缩放的所有变换）。
+    final Offset localInControls = renderObject.globalToLocal(globalPosition);
+    final Offset anchor = renderObject.localToGlobal(
+      localInControls,
+      ancestor: overlayObject,
+    );
+    final Size overlaySize = overlayObject.size;
     final RelativeRect position = RelativeRect.fromLTRB(
-      local.dx,
-      local.dy,
-      renderObject.size.width - local.dx,
-      renderObject.size.height - local.dy,
+      anchor.dx,
+      anchor.dy,
+      overlaySize.width - anchor.dx,
+      overlaySize.height - anchor.dy,
     );
     unawaited(
       showMenu<VoidCallback>(
@@ -4983,8 +5007,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 构造桌面右键上下文菜单项（TODO-048c）。每项 value 是该项动作回调，菜单关闭后由
   /// [_handleSecondaryTap] 统一执行——避免在 onTap 里立刻 pop 再异步执行的时序问题。
   /// 项集对齐桌面控制条按钮（播放/暂停、全屏、速度、字幕轨、音轨、截图、字幕列表、
-  /// 锁定、跨字幕制卡），全部复用既有 helper。着色器「对比原画」仅在启用着色器时出现
-  /// （与控制条同条件 [_hasShadersEnabled]）。
+  /// 锁定、跨字幕制卡），全部复用既有 helper。
+  ///
+  /// 着色器「对比原画」已从右键菜单移除（BUG-261，用户要求）：该功能改只走 `C` 快捷键
+  /// （`ShortcutAction.videoToggleShaderCompare`，见 video_player_shortcuts.dart）与设置页
+  /// 进入。[_toggleShaderCompare] 方法与 `C` 接线保留，只删右键这一项；右键不再依赖
+  /// 「是否启用着色器」的判定（原 `_hasShadersEnabled` getter 随该项一并移除）。
   List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(
     VideoPlayerController controller,
   ) {
@@ -5042,12 +5070,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
-      if (_hasShadersEnabled)
-        item(
-          Icons.compare,
-          t.video_shader_compare,
-          () => unawaited(_toggleShaderCompare()),
-        ),
     ];
   }
 

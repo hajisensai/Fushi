@@ -6,12 +6,14 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
-/// B（缺效果预览/对比）source guard: 视频页接「着色器对比原画」——`C` 快捷键 + 右键
-/// 菜单项（仅有启用着色器时出现），都切换 controller 的旁路态（保留启用集）。
+/// B（缺效果预览/对比）source guard: 视频页接「着色器对比原画」——经 `C` 快捷键切换
+/// controller 的旁路态（保留启用集）。
 ///
-/// TODO-127：对比按钮已移出控制条（顶栏只放最常直接命中的入口；着色器对比属配置类
-/// 操作，改从右键菜单 / 快捷键 / 设置进入）。`_toggleShaderCompare` 逻辑、`C` 快捷键、
-/// 右键菜单项均保留——只删控制条上的那枚按钮。
+/// TODO-127：对比按钮先移出控制条（顶栏只放最常直接命中的入口；着色器对比属配置类
+/// 操作）。
+/// BUG-261：进一步把对比项从**右键菜单**也移除（用户要求），现只走 `C` 快捷键 / 设置页
+/// 进入。`_toggleShaderCompare` 逻辑与 `C` 快捷键接线保留——控制条与右键菜单都不再含
+/// 该按钮 / 项。
 void main() {
   final String pageSrc =
       File('lib/src/pages/implementations/video_hibiki_page.dart')
@@ -48,15 +50,13 @@ void main() {
         reason: '控制条不应再直接挂 _toggleShaderCompare 按钮');
   });
 
-  test('右键菜单仍在启用着色器时提供对比项（保留可达性）', () {
-    expect(pageSrc.contains('if (_hasShadersEnabled)'), isTrue,
-        reason: '对比项按是否配置启用着色器条件显示');
-    expect(pageSrc.contains('Icons.compare'), isTrue,
-        reason: '对比项仍用 compare 图标（右键菜单）');
-    expect(
-        pageSrc.contains('decodeEnabledShaders(appModel.videoShadersEnabled)'),
-        isTrue,
-        reason: '_hasShadersEnabled 由启用集解码判定');
+  test('右键菜单不再含着色器对比项（BUG-261；改走 C 快捷键 / 设置）', () {
+    // 整页源码（含控制条与右键菜单）都不应再出现 compare 图标——对比项已两处皆删。
+    expect(pageSrc.contains('Icons.compare'), isFalse,
+        reason: '着色器对比项已从右键菜单移除（BUG-261），控制条早已无（TODO-127）');
+    // 右键菜单不再依赖「是否启用着色器」的门控（原 _hasShadersEnabled getter 随该项移除）。
+    expect(pageSrc.contains('if (_hasShadersEnabled)'), isFalse,
+        reason: '右键不再按启用着色器条件显示对比项（_hasShadersEnabled 已移除）');
   });
 
   test('C 快捷键切换着色器对比', () {

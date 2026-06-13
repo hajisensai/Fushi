@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 256 条。点号进各自文件。
+> 共 258 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-262](bugs/BUG-262-remove-rightclick-shader-compare.md) | ✅ | ✅ | 删除视频右键菜单的对比原画项 |
+| [BUG-261](bugs/BUG-261-rightclick-popup-coord-uiscale.md) | ✅ | ✅ | 调界面大小后视频右键菜单位置不在鼠标处 |
 | [BUG-260](bugs/BUG-260-popup-wheel-scroll-granularity.md) | ✅ | ✅ | 查词弹窗滚轮滚动粒度太粗 |
 | [BUG-259](bugs/BUG-259-cue-seek-preroll-precision.md) | ✅ | ✅ | 视频上/下一句字幕容易漏掉开头 0.x 秒（句首被关键帧吸附吃掉） |
 | [BUG-258](bugs/BUG-258-immersive-cursor-hide-over-chrome.md) | ✅ | ✅ | 沉浸/锁屏鼠标放字幕/面板上不隐藏 |

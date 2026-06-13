@@ -1417,7 +1417,6 @@
     "video_playlist_episodes": "$count eps",
     "video_audio_track": "Audio track",
     "video_more": "More",
-    "video_shader_compare": "Compare original",
     "video_shader_showing_original": "Shaders off (original)",
     "video_shader_showing_shaded": "Shaders on",
     "video_shader_pick_mpv_dir": "Specify mpv folder",
