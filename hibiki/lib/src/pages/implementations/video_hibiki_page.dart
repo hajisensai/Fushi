@@ -1367,6 +1367,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 视频就绪后预热查词浮层（BUG-094）：seed 一个常驻隐藏热 WebView，全程复用，
     // 查词不再每次冷加载白屏。放成功分支（缺书/错误态不预热，无视频无需查词）。
     _seedWarmPopup();
+    // TODO-301/BUG-264: fill the favorited-sentence cache once on video
+    // open so the bottom subtitle overlay's favorite star
+    // ([_isCueFavorited] reads [_favoritedVideoSentences]) shows for
+    // already-favorited cues even before the subtitle list is ever opened.
+    unawaited(_refreshFavoritedCueCache());
     if (videoPath != null) {
       // TODO-011: large REMUX containers can spend many seconds demuxing text
       // embedded subtitles on the first switch. Start the shared cache fill
@@ -5305,6 +5310,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     controller: controller,
                     onCharTap: _handleSubtitleLookupTap,
                     hitTester: _subtitleHitTester,
+                    // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
+                    // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
+                    // 后 setState 触发本 builder 重建，标记即时更新。
+                    isCueFavorited: _isCueFavorited,
                     blurEnabled: appModel.videoSubtitleBlur,
                     fontSize: _subtitleStyle.fontSize,
                     textColor: _subtitleStyle.resolveTextColor(
