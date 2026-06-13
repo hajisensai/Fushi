@@ -34,6 +34,7 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
@@ -1813,6 +1814,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoDanmakuMaxActive(int value) =>
       prefsRepo.setVideoDanmakuMaxActive(value);
+
+  /// Dandanplay 弹幕来源配置（自建服务器地址 + 可选 API 凭据）。
+  DandanplayConfig get videoDanmakuConfig => prefsRepo.videoDanmakuConfig;
+
+  Future<void> setVideoDanmakuConfig(DandanplayConfig config) =>
+      prefsRepo.setVideoDanmakuConfig(config);
 
   int? getVideoDanmakuEpisodeId(String bookUid) =>
       prefsRepo.getVideoDanmakuEpisodeId(bookUid);

@@ -619,6 +619,11 @@ void main() {
           'Video quick settings sheet (media-page chrome like reader/audiobook) '
               'drives the user-configurable subtitle caption font size '
               '(_style.copyWith(fontSize:)), which is content, not page chrome.',
+      'lib/src/settings/settings_schema.dart':
+          'Home video settings expose the same user-configurable subtitle '
+              'caption font size (VideoSubtitleStyle.copyWith(fontSize:)) for '
+              'parity with the in-player sheet (TODO-286); it is caption content, '
+              'not page chrome — same rationale as video_quick_settings_sheet.',
       'lib/src/pages/implementations/video_hibiki_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',
