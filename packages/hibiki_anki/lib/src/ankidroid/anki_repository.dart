@@ -181,11 +181,100 @@ class AnkiRepository extends BaseAnkiRepository {
       );
     }
 
-    // BUG-166: 制卡慢的根因——封面、句子(sasayaki)音频、单词远程音频、N 条
-    // 词典外字这几路媒体写入彼此独立，过去被串成一条 `await` 链（每路一次
-    // AnkiDroid `addFileToMedia` 平台通道往返 + 文件读取/SHA256）。它们互不
-    // 依赖，平台通道调用可并发发起；一次性 `Future.wait` 并发，总耗时从「各路
-    // 之和」降到「最慢一路」。dupe 检查 / addNote 仍串行在其后（依赖渲染结果）。
+    final fields = await _renderMinedFields(
+      settings: settings,
+      payload: payload,
+      context: context,
+    );
+
+    if (!settings.allowDupes) {
+      final firstFieldValue = noteType.fields.isNotEmpty
+          ? (fields[noteType.fields.first] ?? '')
+          : '';
+      if (firstFieldValue.isNotEmpty) {
+        final readingIdx =
+            _findReadingFieldIndex(noteType, settings.fieldMappings);
+        try {
+          final isDupe = await _channel.invokeMethod('checkForDuplicates', {
+            'models': [noteType.name],
+            'key': firstFieldValue,
+            'reading': payload.reading,
+            'readingFieldIndices': [readingIdx],
+          });
+          if (isDupe == true) return const MineOutcome.duplicate();
+        } catch (e, stack) {
+          debugPrint('AnkiRepository.mineEntry.dupeCheck: $e\n$stack');
+        }
+      }
+    }
+
+    final fieldArray = noteType.fields.map((f) => fields[f] ?? '').toList();
+    // AddContentApi accepts an array of empty strings and creates a blank note
+    // that the channel reports as success. Refuse if nothing rendered into any
+    // field (HBK-AUDIT-018).
+    if (fieldArray.every((v) => v.trim().isEmpty)) {
+      return MineOutcome.failure(
+        'All fields are empty — refusing to create a blank card. '
+        'Check your note type field mappings.',
+      );
+    }
+    // TODO-062: append the `hibiki` tag (de-duped, order preserved) to the
+    // user's configured tags via the shared base helper — same behavior as the
+    // AnkiConnect backend.
+    final tags = buildNoteTags(
+      settings.tags,
+      source: context.source,
+      includeHibiki: settings.tagIncludeHibiki,
+      includeCategory: settings.tagIncludeCategory,
+    );
+
+    try {
+      // TODO-270 B：接住 native addNote 返回的真实 note id（Long → int），带回
+      // MineOutcome.success，供「制卡后更新已有卡片」（updateMinedNote）按 id 覆盖
+      // 字段使用。与 AnkiConnect 后端对称。旧版 native 返回字符串 "Added note"（无 id），
+      // 升级前装的 app 仍可工作：_asNoteId 解析失败时返回 null = 优雅降级（弹窗进不了
+      // 「最新可改」第三态，与现状一致，Never break userspace）。
+      final dynamic addResult =
+          await _channel.invokeMethod('addNote', <String, dynamic>{
+        'deck': deck.name,
+        'model': noteType.name,
+        'fields': fieldArray,
+        'tags': tags,
+      });
+      return MineOutcome.success(noteId: _asNoteId(addResult));
+    } on PlatformException catch (e, stack) {
+      return MineOutcome.failure(
+        'AnkiDroid: ${e.message ?? e.code}',
+        error: e,
+        stackTrace: stack,
+      );
+    }
+  }
+
+  /// TODO-270 B：把 native addNote 返回值解析成 note id。新版 native 返回 `Long`
+  /// （平台通道解码成 Dart `int`）；旧版返回常量字符串 `"Added note"`（无 id）或
+  /// 测试桩可能返回 `true`。无法解析成正整数时返回 `null`（优雅降级，弹窗据此不进
+  /// 「最新可改」第三态）。
+  static int? _asNoteId(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    final int? parsed = int.tryParse(value?.toString() ?? '');
+    return parsed;
+  }
+
+  /// TODO-270 C2：把 [payload] + [context] 按 [settings] 的字段映射渲染成 Anki note
+  /// 字段（含并发媒体写入）。制卡（[_mineEntryInner]）与更新已制卡片
+  /// （[updateMinedNote]）共用这一段，避免两份漂移——与 AnkiConnect 的
+  /// [AnkiConnectRepository] `_renderMinedFields` 对称。
+  ///
+  /// BUG-166: 封面、句子(sasayaki)音频、单词远程音频、N 条词典外字这几路媒体写入
+  /// 彼此独立（每路一次 AnkiDroid `addFileToMedia` 平台通道往返 + 文件读取/SHA256），
+  /// 一次性 `Future.wait` 并发，总耗时从「各路之和」降到「最慢一路」。
+  Future<Map<String, String>> _renderMinedFields({
+    required AnkiSettings settings,
+    required AnkiMiningPayload payload,
+    required AnkiMiningContext context,
+  }) async {
     final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
       context.coverPath != null
           ? _addCoverImage(context.coverPath!)
@@ -234,69 +323,105 @@ class AnkiRepository extends BaseAnkiRepository {
       dictionaryMedia: payload.dictionaryMedia,
     );
 
-    final fields = buildMinedFields(
+    return buildMinedFields(
       fieldMappings: settings.fieldMappings,
       payload: mediaPayload,
       context: mediaContext,
       dictionaryMediaTags: dictionaryMediaTags,
     );
+  }
 
-    if (!settings.allowDupes) {
-      final firstFieldValue = noteType.fields.isNotEmpty
-          ? (fields[noteType.fields.first] ?? '')
-          : '';
-      if (firstFieldValue.isNotEmpty) {
-        final readingIdx =
-            _findReadingFieldIndex(noteType, settings.fieldMappings);
-        try {
-          final isDupe = await _channel.invokeMethod('checkForDuplicates', {
-            'models': [noteType.name],
-            'key': firstFieldValue,
-            'reading': payload.reading,
-            'readingFieldIndices': [readingIdx],
-          });
-          if (isDupe == true) return const MineOutcome.duplicate();
-        } catch (e, stack) {
-          debugPrint('AnkiRepository.mineEntry.dupeCheck: $e\n$stack');
-        }
-      }
-    }
-
-    final fieldArray = noteType.fields.map((f) => fields[f] ?? '').toList();
-    // AddContentApi accepts an array of empty strings and creates a blank note
-    // that the channel reports as success. Refuse if nothing rendered into any
-    // field (HBK-AUDIT-018).
-    if (fieldArray.every((v) => v.trim().isEmpty)) {
-      return MineOutcome.failure(
-        'All fields are empty — refusing to create a blank card. '
-        'Check your note type field mappings.',
-      );
-    }
-    // TODO-062: append the `hibiki` tag (de-duped, order preserved) to the
-    // user's configured tags via the shared base helper — same behavior as the
-    // AnkiConnect backend.
-    final tags = buildNoteTags(
-      settings.tags,
-      source: context.source,
-      includeHibiki: settings.tagIncludeHibiki,
-      includeCategory: settings.tagIncludeCategory,
-    );
-
+  /// TODO-270 C2：更新一张**已存在**的 AnkiDroid 制卡（[noteId]）的字段。
+  ///
+  /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体写入链路）从
+  /// [rawPayloadJson] + [context] 生成 fields，再经平台通道 `updateNoteFields`
+  /// 按 id 覆盖（native 端只覆盖给出的字段，未给出的保留）。与 [mineEntry] 一样
+  /// 保证**返回** [MineOutcome] 而非抛出（供调用方统一 switch 处理 toast/UI）。
+  /// 不新增卡片、不改 tag、不查重（更新语义）——与 AnkiConnect 后端对称。
+  ///
+  /// 渲染出的 fields 为空（什么都没渲染出来）时拒绝更新，避免把已有卡片清空。
+  @override
+  Future<MineOutcome> updateMinedNote({
+    required int noteId,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
     try {
-      await _channel.invokeMethod('addNote', <String, dynamic>{
-        'deck': deck.name,
-        'model': noteType.name,
-        'fields': fieldArray,
-        'tags': tags,
-      });
-      return const MineOutcome.success();
-    } on PlatformException catch (e, stack) {
+      final settings = await loadSettings();
+
+      final AnkiMiningPayload payload;
+      try {
+        final json =
+            Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
+        payload = AnkiMiningPayload.fromJson(json);
+      } catch (e, stack) {
+        return MineOutcome.failure(
+          'Invalid card data (payload parse failed): $e',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+
+      final fields = await _renderMinedFields(
+        settings: settings,
+        payload: payload,
+        context: context,
+      );
+
+      // 渲染为空说明没有任何字段映射命中，更新会把已有卡片清空——拒绝。
+      if (fields.isEmpty) {
+        return MineOutcome.failure(
+          'All fields are empty — refusing to clear an existing card. '
+          'Check your note type field mappings.',
+        );
+      }
+
+      try {
+        await _channel.invokeMethod('updateNoteFields', <String, dynamic>{
+          'noteId': noteId,
+          'fieldValues': fields,
+        });
+        return MineOutcome.success(noteId: noteId);
+      } on PlatformException catch (e, stack) {
+        return MineOutcome.failure(
+          'AnkiDroid: ${e.message ?? e.code}',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+    } catch (e, stack) {
       return MineOutcome.failure(
-        'AnkiDroid: ${e.message ?? e.code}',
+        'AnkiDroid: unexpected error: $e',
         error: e,
         stackTrace: stack,
       );
     }
+  }
+
+  /// TODO-270 C2：按 [noteId] 覆盖该 note 的给定字段（字段名 → 值，未给出的字段
+  /// 保留）。直接经平台通道 `updateNoteFields` 调 AnkiDroid `AddContentApi`。
+  /// 与 AnkiConnect 的 `AnkiConnectService.updateNoteFields` 对称的低层入口；高层「制卡后覆盖」
+  /// 走 [updateMinedNote]（含字段渲染 + 媒体写入）。带固定 [noteId] 幂等。
+  Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
+    await _channel.invokeMethod('updateNoteFields', <String, dynamic>{
+      'noteId': noteId,
+      'fieldValues': fields,
+    });
+  }
+
+  /// TODO-270 C2：读取 [noteId] 对应 note 的现有字段（字段名 → 值），用于覆盖前
+  /// 回显/合并。note 不存在时返回 `null`。直接经平台通道 `notesInfo` 调 AnkiDroid
+  /// `AddContentApi.getNote`（native 端把位置数组按 model 字段名拍平成
+  /// name→value）。与 AnkiConnect 的 `AnkiConnectService.notesInfo` 对称。
+  Future<Map<String, String>?> notesInfo(int noteId) async {
+    final result = await _channel.invokeMethod('notesInfo', <String, dynamic>{
+      'noteId': noteId,
+    });
+    if (result is! Map) return null;
+    return result.map(
+      (dynamic key, dynamic value) =>
+          MapEntry<String, String>(key.toString(), value?.toString() ?? ''),
+    );
   }
 
   @override
