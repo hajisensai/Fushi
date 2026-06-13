@@ -20,14 +20,22 @@ class VideoTranslucentSidePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final Size screen = MediaQuery.sizeOf(context);
+    const double horizontalMargin = 10.0;
+    final double availableWidth =
+        (screen.width - horizontalMargin * 2).clamp(0.0, double.infinity);
+    final double maxPanelWidth = availableWidth * 0.88;
+    final double minPanelWidth = maxPanelWidth < 280.0 ? maxPanelWidth : 280.0;
     final double panelWidth =
-        width.clamp(280.0, screen.width * 0.88).toDouble();
+        width.clamp(minPanelWidth, maxPanelWidth).toDouble();
 
     return Align(
       alignment: alignment,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          padding: const EdgeInsets.symmetric(
+            horizontal: horizontalMargin,
+            vertical: 10,
+          ),
           child: SizedBox(
             width: panelWidth,
             child: Material(
