@@ -117,16 +117,20 @@ void main() {
     expect(inBookSource, isNot(contains('VisualDensity.compact')));
   });
 
-  test('audiobook play bar uses shared MD3 icon controls', () {
+  test('audiobook play bar restores the MD3 filled-tonal play frame (TODO-297)',
+      () {
+    // 代际守卫翻转：48a8d2044 曾把播放条全部按钮换成扁平的 HibikiIconButton，
+    // TODO-297 把主操作（播放/暂停）还原成原生 [IconButton.filledTonal]（MD3 圆框
+    // + state-layer + ripple），其余键（上一句/下一句/follow/设置）还原成无框原生
+    // [IconButton]。锁住「图标 + 圆框 md3」旧观感不再回退到扁平自定义按钮。
     final String source =
         File('lib/src/media/audiobook/audiobook_play_bar.dart')
             .readAsStringSync();
 
-    expect(source, contains('HibikiIconButton('));
-    final String normalized = _withoutSharedIconButton(source);
-    expect(normalized, isNot(contains('return IconButton(')));
-    expect(normalized, isNot(contains('child: IconButton(')));
-    expect(source, isNot(contains('IconButton.filledTonal(')));
+    // 播放/暂停键是 filled-tonal 圆框。
+    expect(source, contains('IconButton.filledTonal('));
+    // 不再用扁平的共享 HibikiIconButton 渲染播放条按钮。
+    expect(source, isNot(contains('HibikiIconButton(')));
   });
 
   test('reader quick settings sheet uses MD3 spacing tokens', () {

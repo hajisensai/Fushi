@@ -46,13 +46,21 @@ class AudiobookPlayBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color? fg = foregroundColor;
-    // 播放按钮用纸张前景色做 12% 的 tonal 底，图标用满前景色——保证在任何
-    // 纸张主题上都有对比度，且不再泄漏 app Material 主题的 secondaryContainer。
-    final Color playBackground = fg != null
-        ? fg.withValues(alpha: 0.12)
-        : Theme.of(context).colorScheme.secondaryContainer;
-    final Color playForeground =
-        fg ?? Theme.of(context).colorScheme.onSecondaryContainer;
+    // 播放/暂停键回到原生 [IconButton.filledTonal]：标准 MD3 圆形 tonal 容器 +
+    // state-layer + ripple（TODO-297 还原「图标 + 圆框 md3」旧版观感）。注入纸张
+    // 前景色时（c3dbe59a1）用 12% tonal 底 + 满前景色，保证任何纸张主题上都有
+    // 对比度且不泄漏 app Material 主题的 secondaryContainer；为 null 时回退到
+    // filledTonal 的默认 secondaryContainer/onSecondaryContainer 配色。
+    final ButtonStyle? playStyle = fg != null
+        ? IconButton.styleFrom(
+            backgroundColor: fg.withValues(alpha: 0.12),
+            foregroundColor: fg,
+          )
+        : null;
+    // 上一句/下一句、设置齿轮按旧版是无框原生 [IconButton]（仅图标），纸张主题
+    // 前景色经 [IconButton.styleFrom] 的 foregroundColor 注入。
+    final ButtonStyle? flatStyle =
+        fg != null ? IconButton.styleFrom(foregroundColor: fg) : null;
     final TextStyle? cueStyle = fg != null
         ? Theme.of(context).textTheme.bodySmall?.copyWith(color: fg)
         : Theme.of(context).textTheme.bodySmall;
@@ -61,17 +69,18 @@ class AudiobookPlayBar extends StatelessWidget {
     final Widget playbackControls = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        HibikiIconButton(
-          icon: skipActionSeconds == 0
-              ? Icons.skip_previous_outlined
-              : Icons.fast_rewind_outlined,
-          size: 22,
-          enabledColor: fg,
-          padding: EdgeInsets.all(tokens.spacing.gap),
+        IconButton(
+          icon: Icon(
+            skipActionSeconds == 0
+                ? Icons.skip_previous_outlined
+                : Icons.fast_rewind_outlined,
+          ),
+          iconSize: 22,
+          style: flatStyle,
           tooltip: skipActionSeconds == 0
               ? t.prev_sentence
               : '-${skipActionSeconds}s',
-          onTap: () {
+          onPressed: () {
             if (skipActionSeconds == 0) {
               controller.skipToPrevCue();
             } else {
@@ -79,28 +88,29 @@ class AudiobookPlayBar extends StatelessWidget {
             }
           },
         ),
-        HibikiIconButton(
-          icon: controller.isPlaying
-              ? Icons.pause_outlined
-              : Icons.play_arrow_outlined,
-          size: 24,
-          backgroundColor: playBackground,
-          enabledColor: playForeground,
-          padding: EdgeInsets.all(tokens.spacing.gap),
-          onTap: controller.togglePlayPause,
+        IconButton.filledTonal(
+          icon: Icon(
+            controller.isPlaying
+                ? Icons.pause_outlined
+                : Icons.play_arrow_outlined,
+          ),
+          iconSize: 24,
+          style: playStyle,
+          onPressed: controller.togglePlayPause,
           tooltip: controller.isPlaying ? t.pause : t.play,
         ),
-        HibikiIconButton(
-          icon: skipActionSeconds == 0
-              ? Icons.skip_next_outlined
-              : Icons.fast_forward_outlined,
-          size: 22,
-          enabledColor: fg,
-          padding: EdgeInsets.all(tokens.spacing.gap),
+        IconButton(
+          icon: Icon(
+            skipActionSeconds == 0
+                ? Icons.skip_next_outlined
+                : Icons.fast_forward_outlined,
+          ),
+          iconSize: 22,
+          style: flatStyle,
           tooltip: skipActionSeconds == 0
               ? t.next_sentence
               : '+${skipActionSeconds}s',
-          onTap: () {
+          onPressed: () {
             if (skipActionSeconds == 0) {
               controller.skipToNextCue();
             } else {
@@ -125,12 +135,11 @@ class AudiobookPlayBar extends StatelessWidget {
         controller: controller,
         foregroundColor: fg,
       ),
-      HibikiIconButton(
-        icon: Icons.tune_outlined,
-        size: 20,
-        enabledColor: fg,
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        onTap: onOpenSettings,
+      IconButton(
+        icon: const Icon(Icons.tune_outlined),
+        iconSize: 20,
+        style: flatStyle,
+        onPressed: onOpenSettings,
         tooltip: t.reader_settings_section,
       ),
     ];
@@ -174,18 +183,18 @@ class AudiobookFollowAudioButton extends StatelessWidget {
       valueListenable: controller.followAudio,
       builder: (context, on, _) {
         final ColorScheme colors = Theme.of(context).colorScheme;
-        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
         final Color onColor = foregroundColor ?? colors.primary;
         final Color offColor = foregroundColor != null
             ? foregroundColor!.withValues(alpha: 0.6)
             : colors.onSurfaceVariant;
-        return HibikiIconButton(
-          icon: on ? Icons.link : Icons.link_off,
-          size: 20,
-          enabledColor: on ? onColor : offColor,
-          padding: EdgeInsets.all(tokens.spacing.gap),
+        // 旧版 follow 键是无框原生 [IconButton]（仅图标着色），还原其观感的同时
+        // 保留 c3dbe59a1 的纸张前景色注入：开启态用满前景色 / 关闭态 60%。
+        return IconButton(
+          icon: Icon(on ? Icons.link : Icons.link_off),
+          iconSize: 20,
+          color: on ? onColor : offColor,
           tooltip: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
-          onTap: () {
+          onPressed: () {
             // persist 回调在 reader 页面把 controller 和 repo 绑上；这里
             // 只翻内存状态，controller.setFollowAudio 内部会用绑好的回调
             // 落库，按钮自己不碰 Isar。
