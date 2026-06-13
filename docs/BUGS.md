@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 256 条。点号进各自文件。
+> 共 258 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-264](bugs/BUG-264-dead-configurable-shortcut-actions.md) | ✅ | ✅ | 快捷键设置每个选项是否都生效（死项审计 + 完整性守卫） |
+| [BUG-263](bugs/BUG-263-focus-vs-shortcut-arrow-dispatch.md) | ✅ | ✅ | 焦点遍历与方向键快捷键互抢（按下/重复分属两套焦点引擎） |
 | [BUG-260](bugs/BUG-260-popup-wheel-scroll-granularity.md) | ✅ | ✅ | 查词弹窗滚轮滚动粒度太粗 |
 | [BUG-259](bugs/BUG-259-cue-seek-preroll-precision.md) | ✅ | ✅ | 视频上/下一句字幕容易漏掉开头 0.x 秒（句首被关键帧吸附吃掉） |
 | [BUG-258](bugs/BUG-258-immersive-cursor-hide-over-chrome.md) | ✅ | ✅ | 沉浸/锁屏鼠标放字幕/面板上不隐藏 |

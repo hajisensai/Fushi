@@ -1,0 +1,16 @@
+## BUG-264 · 快捷键设置每个选项是否都生效（死项审计 + 完整性守卫）
+- **报告**：2026-06-14（用户：快捷键设置真的每个选项都生效吗？感觉有好几个选项的按钮不生效 / TODO-276）
+- **真实性**：⚠️ 部分真。逐项审计 `shortcut_action.dart` 全部 42 个可配置 action 对照 ①平台默认表、②设置页本地化标签、③执行体派发引用：**源码层无完全孤立的死项**——每个 action 三平台默认表都有条目、设置页 `switch` 编译期穷举标签、且至少被一个执行体文件按枚举名派发。用户感知的「按了没反应」来自**按表面的派发门控**，不是中央 wiring 缺失。
+- **审计结论（执行体归属）**：
+  - reader scope + audiobookPlayPause/Next/PrevSentence → `reader_hibiki_page.dart::_executeShortcutAction`
+  - home scope + globalBack → `home_page.dart::_executeShortcutAction`
+  - video scope（26 个）→ `video_player_shortcuts.dart::videoActionCallbacks` → `buildVideoPlayerShortcutsFromRegistry`
+  - globalScrollPageDown/Up → `gamepad_service.dart::_tryScrollPage`（手柄 LB/RB，无键盘默认）
+  - audiobookSeekToClickedSentence → `pointer_seek.dart`（鼠标中键，位置型）
+  - 默认空键盘绑定（手柄/鼠标-only，非死项）：`readerToggleFurigana`(R3)、`homeTabPrev/Next`(LT/RT)、`globalScrollPageDown/Up`(LB/RB)、`audiobookSeekToClickedSentence`(中键)。
+- **真实「按了没反应」的 gated 项（执行体在被其它车道占用的巨文件，本轮不改，列跟进）**：
+  - **A. `readerLookupAtCursor`（默认 Enter）/ `readerShiftLookup`（默认 Shift+Enter）**：执行体 `reader_hibiki_page.dart:5050-5066` 门控在 `_focusNavEnabled`（实验性「键盘/手柄焦点导航」开关，**默认关闭**）。开关关时按 Enter/Shift+Enter 在书里无任何反应——属 BUG-161 用户裁定（关态停焦点导航类动作），但**设置页未提示该项依赖此开关**，用户配了以为坏了。跟进方向：设置页对这两项加「需开启键盘/手柄焦点导航」副标提示（设置 UI 改动，非阅读器巨文件）。
+  - **B. 视频部分动作的沉浸锁定门控**：video scope 大量 action 经 `_runWhenImmersiveAllowsFullControls(...)` 包裹（`video_hibiki_page.dart`），沉浸锁定态下静默不执行；`videoToggleShaderCompare` 还依赖是否加载了着色器。属表面态门控，需 `video_hibiki_page.dart` 巨文件 + 真机确认，本轮不动。
+- **[x] ① 已修复（中央可修部分）** — 无中央 wiring 死项需删/补；以**不可回退的完整性守卫**钉死「可配置即必须可执行」契约，杜绝未来新增 action 配了不执行。上述 A/B 属 gated 跟进（执行体在 reader/video 巨文件，让位给对应车道），不在本轮中央层改。提交：86c36dbc9
+- **[x] ② 已加自动化测试** — `hibiki/test/shortcuts/shortcut_action_wiring_guard_test.dart`（源码扫描守卫）：①断言每个 `ShortcutAction` 在 windows/macOS/android 三平台默认表都有条目（缺 → 红）；②断言每个 action 至少被一个执行体文件（reader/home/video/pointer_seek/gamepad_service/reader_space_override）按 `ShortcutAction.<name>` 派发引用（任一 action 在所有执行体里都无引用 = 死项 → 红）。新增 action 若忘登记默认或忘接执行体即红。`flutter analyze` 0 issues；`flutter test test/shortcuts test/focus` 244 例全绿。
+- **备注**：本守卫只能证「可执行体引用存在」，不能证「在某表面态下真的跑到」（如开关关/沉浸锁定）。A/B 两项的真实生效需对应车道改巨文件 + 真机复测，已明确列为 gated 跟进。
