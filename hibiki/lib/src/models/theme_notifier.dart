@@ -94,9 +94,13 @@ ColorScheme buildHibikiColorScheme({
 class ThemeNotifier extends ChangeNotifier {
   ThemeNotifier(this._db, this._textThemeBuilder);
 
+  static const String appUiScaleModeAuto = 'auto';
+  static const String appUiScaleModeCustom = 'custom';
+
   final HibikiDatabase _db;
   final TextTheme Function() _textThemeBuilder;
   final Map<String, String> _prefs = {};
+  double _autoAppUiScale = HibikiAppUiScale.defaultScale;
 
   CorePalette? _systemPalette;
   // OS accent color, the only system-color signal Windows / macOS / Linux
@@ -280,7 +284,23 @@ class ThemeNotifier extends ChangeNotifier {
     }
   }
 
-  double get appUiScale {
+  static String normalizeAppUiScaleMode(String value) {
+    return value == appUiScaleModeCustom
+        ? appUiScaleModeCustom
+        : appUiScaleModeAuto;
+  }
+
+  String get appUiScaleMode {
+    final bool hasModePref = _prefs.containsKey('app_ui_scale_mode');
+    final Object? value = _get('app_ui_scale_mode');
+    if (value is String) return normalizeAppUiScaleMode(value);
+    if (hasModePref) return appUiScaleModeAuto;
+    // Legacy installs saved only app_ui_scale; keep that manual choice active.
+    if (_prefs.containsKey('app_ui_scale')) return appUiScaleModeCustom;
+    return appUiScaleModeAuto;
+  }
+
+  double get customAppUiScale {
     final Object value = _get(
       'app_ui_scale',
       defaultValue: HibikiAppUiScale.defaultScale,
@@ -289,8 +309,32 @@ class ThemeNotifier extends ChangeNotifier {
     return HibikiAppUiScale.defaultScale;
   }
 
+  double get autoAppUiScale => _autoAppUiScale;
+
+  double get appUiScale {
+    if (appUiScaleMode == appUiScaleModeCustom) return customAppUiScale;
+    return autoAppUiScale;
+  }
+
+  double resolveAppUiScaleForViewport({
+    required Size viewport,
+    required TargetPlatform platform,
+  }) {
+    _autoAppUiScale = HibikiAppUiScale.automaticScaleForViewport(
+      viewport: viewport,
+      platform: platform,
+    );
+    return appUiScale;
+  }
+
+  Future<void> setAppUiScaleMode(String value) async {
+    await _set('app_ui_scale_mode', normalizeAppUiScaleMode(value));
+    notifyListeners();
+  }
+
   Future<void> setAppUiScale(double value) async {
     await _set('app_ui_scale', HibikiAppUiScale.normalize(value));
+    await _set('app_ui_scale_mode', appUiScaleModeCustom);
     notifyListeners();
   }
 

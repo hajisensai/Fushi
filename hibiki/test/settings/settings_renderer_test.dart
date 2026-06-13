@@ -455,7 +455,7 @@ void main() {
     expect(source, isNot(contains('pubspec.yaml')));
   });
 
-  testWidgets('appearance settings exposes app UI size slider',
+  testWidgets('appearance settings exposes automatic app UI size mode + slider',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       _harness(
@@ -480,6 +480,18 @@ void main() {
       ),
     );
 
+    expect(find.text(t.app_ui_scale_mode), findsOneWidget);
+    expect(find.text(t.app_ui_scale_auto), findsOneWidget);
+    expect(find.text(t.app_ui_scale_custom), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsSegmentedRow<String> &&
+            widget.title == t.app_ui_scale_mode &&
+            widget.selected == ThemeNotifier.appUiScaleModeAuto,
+      ),
+      findsOneWidget,
+    );
     expect(find.text(t.app_ui_scale), findsOneWidget);
     expect(
       find.byWidgetPredicate(
@@ -626,6 +638,8 @@ void main() {
         );
 
     expect(appModel.appUiScale, 1.0);
+    expect(appModel.themeNotifier.appUiScaleMode,
+        ThemeNotifier.appUiScaleModeAuto);
 
     // 拖动中：onChanged 只更新本地显示值，绝不提交真实缩放——否则全局
     // HibikiAppUiScale 的 Transform 会实时重排，滑块在手指下被缩放位移导致
@@ -639,6 +653,8 @@ void main() {
     row().onChangeEnd!(2.0);
     await tester.pump();
     expect(appModel.appUiScale, 2.0, reason: '松手提交真实缩放');
+    expect(appModel.themeNotifier.appUiScaleMode,
+        ThemeNotifier.appUiScaleModeCustom);
     expect(row().value, 2.0);
   });
 

@@ -94,6 +94,35 @@ void main() {
       expect(keys, isNot(contains('current_source/reader')));
     });
 
+    test('snapshot and apply keep app UI scale prefs device-local', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('A');
+      final legacyScale = PrefCodec.encode(1.5);
+      final legacyMode = PrefCodec.encode('custom');
+      final liveScale = PrefCodec.encode(2.0);
+      final liveMode = PrefCodec.encode('auto');
+
+      await db.setPref('app_ui_scale', legacyScale);
+      await db.setPref('app_ui_scale_mode', legacyMode);
+      await db.setPref('font_size', '16');
+      await repo.snapshotCurrentSettings(pid);
+
+      final keys = await _prefKeys(db, pid);
+      expect(keys, contains('font_size'));
+      expect(keys, isNot(contains('app_ui_scale')));
+      expect(keys, isNot(contains('app_ui_scale_mode')));
+
+      await db.setPref('font_size', '99');
+      await db.setPref('app_ui_scale', liveScale);
+      await db.setPref('app_ui_scale_mode', liveMode);
+      await repo.applyProfile(pid);
+
+      expect(await db.getPref('font_size'), '16');
+      expect(await db.getPref('app_ui_scale'), liveScale);
+      expect(await db.getPref('app_ui_scale_mode'), liveMode);
+    });
+
     test('apply prunes orphan live prefs but preserves excluded ones',
         () async {
       final db = await _openDb();
