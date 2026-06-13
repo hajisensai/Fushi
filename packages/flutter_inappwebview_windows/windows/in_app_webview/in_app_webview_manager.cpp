@@ -20,6 +20,11 @@ namespace flutter_inappwebview_plugin
     : plugin(plugin),
     ChannelDelegate(plugin->registrar->messenger(), InAppWebViewManager::METHOD_CHANNEL_NAME)
   {
+    // BUG-255：登记一个存活实例。进程级共享单例（rohelper_/dispatcher_queue_
+    // controller_/graphics_context_/compositor_）只由首个实例创建（下面 `if (!rohelper_)`），
+    // 但必须在「最后一个」实例析构时受控释放，否则会落到 CRT atexit 触发 FailFast。
+    ++instance_count_;
+
     if (!rohelper_) {
       rohelper_ = std::make_unique<rx::RoHelper>(RO_INIT_SINGLETHREADED);
 
@@ -238,10 +243,53 @@ namespace flutter_inappwebview_plugin
   InAppWebViewManager::~InAppWebViewManager()
   {
     debugLog("dealloc InAppWebViewManager");
+    // 先释放本实例拥有的 WebView（消费 compositor 的下游），再判断是否到了释放
+    // 进程级共享单例的时机。webViews 等通过 graphics_context() 持有对 compositor_
+    // 的弱引用使用，必须先全部清空再动 compositor_。
     webViews.clear();
     keepAliveWebViews.clear();
     windowWebViews.clear();
     UnregisterClass(windowClass_.lpszClassName, nullptr);
     plugin = nullptr;
+
+    // BUG-255 / TODO-313 Family B：受控退出时序，避免进程退出时的 dcomp
+    // Compositor::CleanupSession FailFast。
+    // 析构在 Flutter engine/window 受控 teardown 期发生（UI 线程，且
+    // DispatcherQueueController 仍存活、CoreMessaging 尚未被 LdrShutdownProcess
+    // 拆除）。只有当最后一个 InAppWebViewManager 析构时，才在这个受控时机显式释放
+    // 进程级共享单例——而不是把它们留给 CRT atexit 表（execute_onexit_table）。
+    // dump 证据（cdb 分析多个 .dmp）：ExceptionCode e0464645，栈为
+    //   CoreMessaging!Abandonment::Fail
+    //     <- dcomp!Compositor::CleanupSession+0x54
+    //     <- CompositorCommon::Destroy <- OnFinalRelease
+    //     <- flutter_inappwebview_windows_plugin onexit(atexit execute_onexit_table)
+    //     <- ntdll!RtlExitUserProcess
+    // 即 compositor_ 的最终 Release 跑在 CoreMessaging 已半拆之后。把这次 Release
+    // 提前到受控时机后，CleanupSession 在 CoreMessaging 仍完整时运行，FailFast 窗口
+    // 被确定性消除。
+    if (--instance_count_ <= 0) {
+      instance_count_ = 0;
+      releaseSharedCompositionResources();
+    }
+  }
+
+  // BUG-255：按依赖顺序释放进程级共享单例。释放顺序至关重要——
+  // dcomp Compositor 依赖 WinRT DispatcherQueue/CoreMessaging，故 compositor_ 必须
+  // 先于 dispatcher_queue_controller_ 释放，这样 CleanupSession 运行时
+  // CoreMessaging 仍完整。graphics_context_（D3D 设备/上下文）夹在中间。
+  void InAppWebViewManager::releaseSharedCompositionResources()
+  {
+    // 1) DirectComposition Compositor：最终 Release 触发
+    //    OnFinalRelease -> CompositorCommon::Destroy -> dcomp!Compositor::CleanupSession。
+    //    此刻 dispatcher_queue_controller_ 仍持活，CoreMessaging 完整，不会 FailFast。
+    compositor_ = nullptr;
+    // 2) GraphicsContext（D3D11 device/context + WinRT IDirect3DDevice）。
+    graphics_context_ = nullptr;
+    // 3) WinRT DispatcherQueueController 最后释放：它背后的 CoreMessaging 必须
+    //    存活到 compositor_ 的 CleanupSession 跑完为止。
+    dispatcher_queue_controller_ = nullptr;
+    // 4) RoHelper（WinRT 运行时入口包装）。
+    rohelper_ = nullptr;
+    valid_ = false;
   }
 }

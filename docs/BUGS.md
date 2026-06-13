@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 248 条。点号进各自文件。
+> 共 249 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-255](bugs/BUG-255-dcomp-compositor-cleanup-exit-crash.md) | ✅ | ✅ | 进程退出时 dcomp Compositor::CleanupSession FailFast 崩溃（TODO-313 Family B） |
 | [BUG-252](bugs/BUG-252-collection-audio-play-silent-fail.md) | ✅ | ✅ | 收藏夹播放按钮抽音失败时静默无反馈（「点了没用」）+ 视频收藏句缺播放按钮 |
 | [BUG-251](bugs/BUG-251-import-row-tap-dead.md) | ✅ | ✅ | 导入对话框点文字标题没反应，只有右边图标可点 |
 | [BUG-250](bugs/BUG-250-tag-selection-back-exits-app.md) | ✅ | ✅ | 书架/视频标签多选模式按返回键直接退出 App（TODO-306） |
