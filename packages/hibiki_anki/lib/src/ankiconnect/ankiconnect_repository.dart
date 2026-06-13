@@ -354,13 +354,94 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
 
-    // BUG-166: 制卡慢的根因——封面、句子(sasayaki)音频、单词远程音频、N 条
-    // 词典外字这几路媒体上传彼此独立，过去被串成一条 `await` 链（每路一次
-    // AnkiConnect `storeMediaFile` 往返），一张带封面+音频+外字的卡会累加
-    // 5~8 次串行往返。`storeMediaFile` 是幂等纯写入（文件名由内容 SHA256 决定，
-    // 不同文件互不冲突），并发安全。把互相独立的几路一次性 `Future.wait` 并发，
-    // 总耗时从「各路之和」降到「最慢一路」。isDuplicate / addNote 仍串行在其后
-    // （依赖渲染结果，且 addNote 非幂等，见 _nonIdempotentActions）。
+    final fields = await _renderMinedFields(
+      service: service,
+      settings: settings,
+      payload: payload,
+      context: context,
+    );
+
+    if (!settings.allowDupes) {
+      final firstFieldValue = noteType.fields.isNotEmpty
+          ? (fields[noteType.fields.first] ?? '')
+          : '';
+      if (firstFieldValue.isNotEmpty) {
+        // HBK-AUDIT-060: fail closed. A failed dupe query must not fall through
+        // to addNote as if the entry were unique — that silently bypasses the
+        // no-duplicates guarantee. Surface the failure as an error instead.
+        try {
+          final isDupe = await service.isDuplicate(
+            deckName: deck.name,
+            fieldName: noteType.fields.first,
+            fieldValue: firstFieldValue,
+          );
+          if (isDupe) return const MineOutcome.duplicate();
+        } catch (e, stack) {
+          return MineOutcome.failure(
+            'Duplicate check failed: $e',
+            error: e,
+            stackTrace: stack,
+          );
+        }
+      }
+    }
+
+    // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
+    // the user's configured tags (de-duped, order preserved) via the shared
+    // base helper, so both backends behave identically.
+    final tags = buildNoteTags(
+      settings.tags,
+      source: context.source,
+      includeHibiki: settings.tagIncludeHibiki,
+      includeCategory: settings.tagIncludeCategory,
+    );
+
+    // `fields` only holds entries that rendered to a non-empty value; if it is
+    // empty, nothing rendered and adding the note would create a blank card
+    // reported as success (HBK-AUDIT-018).
+    if (fields.isEmpty) {
+      return MineOutcome.failure(
+        'All fields are empty — refusing to create a blank card. '
+        'Check your note type field mappings.',
+      );
+    }
+    try {
+      // TODO-270 A：接住 addNote 返回的 note id，带回 MineOutcome.success，供
+      // 后续「更新已制卡片」（updateMinedNote）按 id 覆盖字段使用。
+      final int? noteId = await service.addNote(
+        deckName: deck.name,
+        modelName: noteType.name,
+        fields: fields,
+        tags: tags,
+        allowDuplicate: settings.allowDupes,
+      );
+      return MineOutcome.success(noteId: noteId);
+    } on AnkiConnectException catch (e, stack) {
+      return MineOutcome.failure(
+        'AnkiConnect: ${e.message}',
+        error: e,
+        stackTrace: stack,
+      );
+    }
+  }
+
+  /// 把 [payload] + [context] 按 [settings] 的字段映射渲染成 Anki note 字段。
+  ///
+  /// BUG-166: 制卡慢的根因——封面、句子(sasayaki)音频、单词远程音频、N 条
+  /// 词典外字这几路媒体上传彼此独立，过去被串成一条 `await` 链（每路一次
+  /// AnkiConnect `storeMediaFile` 往返），一张带封面+音频+外字的卡会累加
+  /// 5~8 次串行往返。`storeMediaFile` 是幂等纯写入（文件名由内容 SHA256 决定，
+  /// 不同文件互不冲突），并发安全。把互相独立的几路一次性 `Future.wait` 并发，
+  /// 总耗时从「各路之和」降到「最慢一路」。
+  ///
+  /// TODO-270 C1：制卡（[_mineEntryInner]）与更新已制卡片（[updateMinedNote]）
+  /// 共用这一段渲染，避免两份漂移。
+  Future<Map<String, String>> _renderMinedFields({
+    required AnkiConnectService service,
+    required AnkiSettings settings,
+    required AnkiMiningPayload payload,
+    required AnkiMiningContext context,
+  }) async {
     final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
       context.coverPath != null
           ? _storeLocalMedia(service, context.coverPath!, 'hibiki_cover_')
@@ -415,69 +496,72 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       dictionaryMedia: payload.dictionaryMedia,
     );
 
-    final fields = buildMinedFields(
+    return buildMinedFields(
       fieldMappings: settings.fieldMappings,
       payload: mediaPayload,
       context: mediaContext,
       dictionaryMediaTags: dictionaryMediaTags,
     );
+  }
 
-    if (!settings.allowDupes) {
-      final firstFieldValue = noteType.fields.isNotEmpty
-          ? (fields[noteType.fields.first] ?? '')
-          : '';
-      if (firstFieldValue.isNotEmpty) {
-        // HBK-AUDIT-060: fail closed. A failed dupe query must not fall through
-        // to addNote as if the entry were unique — that silently bypasses the
-        // no-duplicates guarantee. Surface the failure as an error instead.
-        try {
-          final isDupe = await service.isDuplicate(
-            deckName: deck.name,
-            fieldName: noteType.fields.first,
-            fieldValue: firstFieldValue,
-          );
-          if (isDupe) return const MineOutcome.duplicate();
-        } catch (e, stack) {
-          return MineOutcome.failure(
-            'Duplicate check failed: $e',
-            error: e,
-            stackTrace: stack,
-          );
-        }
-      }
-    }
-
-    // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
-    // the user's configured tags (de-duped, order preserved) via the shared
-    // base helper, so both backends behave identically.
-    final tags = buildNoteTags(
-      settings.tags,
-      source: context.source,
-      includeHibiki: settings.tagIncludeHibiki,
-      includeCategory: settings.tagIncludeCategory,
-    );
-
-    // `fields` only holds entries that rendered to a non-empty value; if it is
-    // empty, nothing rendered and adding the note would create a blank card
-    // reported as success (HBK-AUDIT-018).
-    if (fields.isEmpty) {
-      return MineOutcome.failure(
-        'All fields are empty — refusing to create a blank card. '
-        'Check your note type field mappings.',
-      );
-    }
+  /// TODO-270 C1：更新一张**已存在**的 Hibiki 制卡（[noteId]）的字段。
+  ///
+  /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体上传链路）从
+  /// [rawPayloadJson] + [context] 生成 fields，再调 [AnkiConnectService.updateNoteFields]
+  /// 按 id 覆盖。与 [mineEntry] 一样保证**返回** [MineOutcome] 而非抛出（供调用方
+  /// 统一 switch 处理 toast/UI）。不新增卡片、不改 tag、不查重（更新语义）。
+  ///
+  /// 渲染出的 fields 为空（什么都没渲染出来）时拒绝更新，避免把已有卡片清空。
+  Future<MineOutcome> updateMinedNote({
+    required int noteId,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
     try {
-      await service.addNote(
-        deckName: deck.name,
-        modelName: noteType.name,
-        fields: fields,
-        tags: tags,
-        allowDuplicate: settings.allowDupes,
+      final settings = await loadSettings();
+      final service = _serviceForSettings(settings);
+
+      final AnkiMiningPayload payload;
+      try {
+        final json =
+            Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
+        payload = AnkiMiningPayload.fromJson(json);
+      } catch (e, stack) {
+        return MineOutcome.failure(
+          'Invalid card data (payload parse failed): $e',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+
+      final fields = await _renderMinedFields(
+        service: service,
+        settings: settings,
+        payload: payload,
+        context: context,
       );
-      return const MineOutcome.success();
-    } on AnkiConnectException catch (e, stack) {
+
+      // 渲染为空说明没有任何字段映射命中，更新会把已有卡片清空——拒绝。
+      if (fields.isEmpty) {
+        return MineOutcome.failure(
+          'All fields are empty — refusing to clear an existing card. '
+          'Check your note type field mappings.',
+        );
+      }
+
+      try {
+        await service.updateNoteFields(noteId, fields);
+        return MineOutcome.success(noteId: noteId);
+      } on AnkiConnectException catch (e, stack) {
+        return MineOutcome.failure(
+          'AnkiConnect: ${e.message}',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+    } catch (e, stack) {
       return MineOutcome.failure(
-        'AnkiConnect: ${e.message}',
+        'AnkiConnect: unexpected error: $e',
         error: e,
         stackTrace: stack,
       );
