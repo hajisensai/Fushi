@@ -2859,15 +2859,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller, {
     required bool desktop,
   }) {
-    if (desktop) {
-      return MaterialDesktopVolumeButton(iconSize: _videoControlIconSize);
-    }
-    return MaterialCustomButton(
-      icon: Icon(
-        _volumeIconFor(controller.volume),
-        size: _videoControlIconSize,
-      ),
-      onPressed: () => _showVolumeMenu(controller),
+    // 桌面与移动统一用「固定宽度音量按钮 + 点击弹音量菜单」（BUG-248A）：
+    // media_kit 的 [MaterialDesktopVolumeButton] 在 hover 时把内部 [AnimatedContainer]
+    // 宽度从 12 撑到 82px、实时挤走右邻全屏键（用户报「音量挤按钮」）。这里放弃 hover
+    // 展开条，复用移动端已验证的 [MaterialCustomButton] + [_showVolumeMenu] 路径，按钮
+    // 宽度恒定不再随 hover 抖动，桌面也能从弹出的滑块菜单调音量。
+    final Widget button = desktop
+        ? MaterialDesktopCustomButton(
+            icon: Icon(
+              _volumeIconFor(controller.volume),
+              size: _videoControlIconSize,
+            ),
+            onPressed: () => _showVolumeMenu(controller),
+          )
+        : MaterialCustomButton(
+            icon: Icon(
+              _volumeIconFor(controller.volume),
+              size: _videoControlIconSize,
+            ),
+            onPressed: () => _showVolumeMenu(controller),
+          );
+    return Tooltip(
+      message: t.audio_volume,
+      child: button,
     );
   }
 
@@ -2945,13 +2959,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
         ),
-        // 字幕跳转列表（TODO-069；裸 L 键同此入口）。倒数第二、紧挨设置按钮左侧
-        // （TODO-127）：倍速 / 着色器对比按钮已移出控制条（改从右键菜单 / 快捷键 /
-        // 设置进入），字幕列表是顶栏最常直接命中的入口，故放在设置（tune）左边。
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.tune, size: _videoControlIconSize),
-          onPressed: _showPlayerSettings,
-        ),
+        // 设置入口（tune）不再写死在顶栏（BUG-248B）：它与右侧 rail 的可配置 settings
+        // 按钮（[VideoControlCustomization] 默认 placement=rightRail → [_buildVideoSideActionRail]
+        // → [_activateVideoControlButton](settings) → 同一个 [_showPlayerSettings]）功能完全
+        // 重复。统一交给可配置的 rightRail settings 按钮负责（默认就在 rightRail），用户也
+        // 可经控制条自定义改放它处（TODO-274）。
       ],
       bottomButtonBar: <Widget>[
         // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
@@ -2967,24 +2979,46 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ),
         const Spacer(),
+        // 底栏 5 键全部包 Flutter [Tooltip]（BUG-247）：media_kit 的
+        // [MaterialDesktopCustomButton] / [MaterialDesktopPlayOrPauseButton] 没有
+        // tooltip 参数，悬停无任何提示；文案诚实反映双重语义（上一句/下一句在无字幕段
+        // 退化成相对 seek）。
         if (roomyBottomBar)
-          MaterialDesktopCustomButton(
-            icon: Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
-            onPressed: () => _seekRelative(-10000),
+          Tooltip(
+            message: t.video_bottom_seek_back,
+            child: MaterialDesktopCustomButton(
+              icon:
+                  Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
+              onPressed: () => _seekRelative(-10000),
+            ),
           ),
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-          onPressed: () => _skipCueAndPokeControls(forward: false),
+        Tooltip(
+          message: t.video_bottom_prev_cue,
+          child: MaterialDesktopCustomButton(
+            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+            onPressed: () => _skipCueAndPokeControls(forward: false),
+          ),
         ),
-        MaterialDesktopPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-          onPressed: () => _skipCueAndPokeControls(forward: true),
+        Tooltip(
+          message: t.video_bottom_play_pause,
+          child: MaterialDesktopPlayOrPauseButton(
+              iconSize: _videoPlayPauseIconSize),
+        ),
+        Tooltip(
+          message: t.video_bottom_next_cue,
+          child: MaterialDesktopCustomButton(
+            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+            onPressed: () => _skipCueAndPokeControls(forward: true),
+          ),
         ),
         if (roomyBottomBar)
-          MaterialDesktopCustomButton(
-            icon: Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
-            onPressed: () => _seekRelative(10000),
+          Tooltip(
+            message: t.video_bottom_seek_forward,
+            child: MaterialDesktopCustomButton(
+              icon:
+                  Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
+              onPressed: () => _seekRelative(10000),
+            ),
           ),
         const Spacer(),
         ..._customBottomControlButtons(controller, desktop: true),
@@ -3102,12 +3136,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
         ),
-        // 字幕跳转列表（TODO-069）。倒数第二、紧挨设置按钮左侧（TODO-127）：与桌面
-        // 控制条顺序一致，字幕列表是顶栏最常直接命中的入口，放在设置（tune）左边。
-        MaterialCustomButton(
-          icon: Icon(Icons.tune, size: _videoControlIconSize),
-          onPressed: _showPlayerSettings,
-        ),
+        // 设置入口（tune）不再写死在顶栏（BUG-248B）：与右侧 rail 的可配置 settings
+        // 按钮功能完全重复，统一交给可配置的 rightRail settings 按钮负责（与桌面一致）。
       ],
       bottomButtonBar: <Widget>[
         // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
@@ -3123,32 +3153,52 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ),
         const Spacer(),
+        // 底栏 5 键全部包 Flutter [Tooltip]（BUG-247）：media_kit 的 [MaterialCustomButton]
+        // / [MaterialPlayOrPauseButton] 没有 tooltip 参数；文案诚实反映双重语义（上一句/
+        // 下一句在无字幕段退化成相对 seek）。
         if (roomyBottomBar)
-          MaterialCustomButton(
-            icon: Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
-            onPressed: () => _seekRelative(-10000),
+          Tooltip(
+            message: t.video_bottom_seek_back,
+            child: MaterialCustomButton(
+              icon:
+                  Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
+              onPressed: () => _seekRelative(-10000),
+            ),
           ),
-        MaterialCustomButton(
-          icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-          // 无字幕/转场(OP)段也回退 seekSeconds 秒、不卡住(TODO-119，对称 TODO-073
-          // 的「下一句」按钮)。原裸 skipToPrevCue 在空 cue / 上句太远时 no-op，用户
-          // 报「转场片段没字幕时按字幕回退键没反应」(BUG-198)。
-          onPressed: () => controller.skipToPrevCueOrSeekBack(
-            seekSeconds: _asbConfig.seekSeconds,
+        Tooltip(
+          message: t.video_bottom_prev_cue,
+          child: MaterialCustomButton(
+            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+            // 无字幕/转场(OP)段也回退 seekSeconds 秒、不卡住(TODO-119，对称 TODO-073
+            // 的「下一句」按钮)。原裸 skipToPrevCue 在空 cue / 上句太远时 no-op，用户
+            // 报「转场片段没字幕时按字幕回退键没反应」(BUG-198)。
+            onPressed: () => controller.skipToPrevCueOrSeekBack(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
           ),
         ),
-        MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
-        MaterialCustomButton(
-          icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-          // 无字幕(OP)时也前进 seekSeconds 秒、不卡住(TODO-073)。
-          onPressed: () => controller.skipToNextCueOrSeekForward(
-            seekSeconds: _asbConfig.seekSeconds,
+        Tooltip(
+          message: t.video_bottom_play_pause,
+          child: MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
+        ),
+        Tooltip(
+          message: t.video_bottom_next_cue,
+          child: MaterialCustomButton(
+            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+            // 无字幕(OP)时也前进 seekSeconds 秒、不卡住(TODO-073)。
+            onPressed: () => controller.skipToNextCueOrSeekForward(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
           ),
         ),
         if (roomyBottomBar)
-          MaterialCustomButton(
-            icon: Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
-            onPressed: () => _seekRelative(10000),
+          Tooltip(
+            message: t.video_bottom_seek_forward,
+            child: MaterialCustomButton(
+              icon:
+                  Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
+              onPressed: () => _seekRelative(10000),
+            ),
           ),
         const Spacer(),
         ..._customBottomControlButtons(controller, desktop: false),
@@ -3928,6 +3978,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         valueListenable: _videoSidePanel,
         builder: (BuildContext context, _VideoSidePanelKind? kind, __) {
           if (kind == null) return const SizedBox.shrink();
+          // 字幕列表面板（[VideoSubtitleJumpPanel]）自带完整标题栏（标题 + 字号步进 +
+          // 自动滚动 + 关闭按钮），不能再套 [VideoTranslucentSidePanel]（它也画一条
+          // 标题栏 + 关闭），否则两条标题叠在一起（BUG-245）。这里像 settings 那样走
+          // bypass：直接返回自带壳的面板，只补外层 [Align]/[SafeArea]/[Padding] 让它
+          // 右贴边、避让安全区（[VideoTranslucentSidePanel] 原本提供的定位语义）。
+          if (kind == _VideoSidePanelKind.subtitleList) {
+            return Align(
+              alignment: Alignment.centerRight,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                  child: _buildSubtitleListSidePanel(controller),
+                ),
+              ),
+            );
+          }
           final Widget panel = VideoTranslucentSidePanel(
             title: _videoSidePanelTitle(kind),
             width: _videoSidePanelWidth(kind),
@@ -4618,6 +4687,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 触屏点画面唤回视频左侧锁 / 解锁按钮（TODO-126）。沉浸态下控制条指针被 gate，但本
     // 外层 Listener 在 gate 之外仍收到指针，故沉浸态点画面也能唤回解锁按钮（移动端无 hover）。
     _pokeLockButton();
+    // 侧栏（设置 / 字幕列表 / 音轨等）打开时，点面板本身不应被误判成「点画面」（BUG-246）：
+    // 侧栏 overlay 是本 Stack 的子节点，但本外层 [Listener] 用 translucent 命中行为，仍会
+    // 收到落在面板上的 pointer-up；若放行下方逻辑，连续两次点面板会被 400ms/48px 双击判据
+    // 误判成「双击画面」→ 桌面触发 [_toggleVideoFullscreen]、移动触发暂停。这里对齐沉浸锁
+    // 的早返回门控：任意侧栏开着时一律不参与控制条 toggle / 双击 / 暂停 / 全屏判定，并清掉
+    // 双击追踪，避免关闭面板后残留时间戳被下一次真点画面误配成双击。
+    if (_videoSidePanel.value != null) {
+      _lastVideoPointerUpAt = null;
+      _lastVideoPointerUpPosition = null;
+      return;
+    }
     final BuildContext? controlsContext = _videoControlsContext;
     if (controlsContext == null ||
         !controlsContext.mounted ||
