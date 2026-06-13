@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 数值正确性由 reader_paginate_step_test.dart 的纯函数影子覆盖，这里只锁 JS 公式不回退。
 void main() {
   late String paginate;
+  late String stepWithFreshMetrics;
 
   setUpAll(() {
     final String source = File(
@@ -18,6 +19,12 @@ void main() {
       source,
       '  paginate: function(direction) {',
       '\n  getFirstVisibleCharOffset:',
+    );
+    // BUG-240：跨章 limit 的 settle 复核函数。
+    stepWithFreshMetrics = _functionSource(
+      source,
+      '  _stepWithFreshMetrics: function(context, direction) {',
+      '\n  paginate: function(direction) {',
     );
   });
 
@@ -49,6 +56,43 @@ void main() {
       isFalse,
       reason: '旧的 round((cur-pitch)/pitch) backward 同样会错位，必须移除',
     );
+  });
+
+  group('BUG-240: cross-chapter limit must be settle-rechecked', () {
+    test('paginate forward limit defers to _stepWithFreshMetrics', () {
+      expect(
+        paginate
+            .contains('return this._stepWithFreshMetrics(context, "forward")'),
+        isTrue,
+        reason: 'forward 翻不动时必须先重建 metrics 复核，不能直接返回 limit 跨章',
+      );
+    });
+
+    test('paginate backward limit defers to _stepWithFreshMetrics', () {
+      expect(
+        paginate
+            .contains('return this._stepWithFreshMetrics(context, "backward")'),
+        isTrue,
+        reason: 'backward 翻不动时同样必须 settle 复核',
+      );
+    });
+
+    test('_stepWithFreshMetrics rebuilds metrics fresh', () {
+      expect(
+        stepWithFreshMetrics.contains('this.buildPaginationMetrics()'),
+        isTrue,
+        reason: 'limit 复核必须重建 metrics，消除陈旧 max/min/pitch 误判',
+      );
+    });
+
+    test('_stepWithFreshMetrics rechecks against the live context.maxScroll',
+        () {
+      expect(
+        stepWithFreshMetrics.contains('context.maxScroll'),
+        isTrue,
+        reason: '末页复核必须锚到 DOM 实时滚动上限（永不陈旧），给测量噪声留容差',
+      );
+    });
   });
 }
 
