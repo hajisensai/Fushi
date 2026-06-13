@@ -225,6 +225,7 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.videoToggleFullscreen: _kb([
       _key(LogicalKeyboardKey.keyF),
+      _key(LogicalKeyboardKey.f12),
     ]),
     ShortcutAction.videoToggleSubtitleList: _kb([
       _key(LogicalKeyboardKey.keyL),

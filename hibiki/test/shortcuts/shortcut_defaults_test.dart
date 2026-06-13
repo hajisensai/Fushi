@@ -277,6 +277,26 @@ void main() {
     });
 
     test(
+        'video fullscreen toggle binds to both F and F12 on every platform '
+        '(TODO-302: F12 is an additional fullscreen key)', () {
+      for (final p in const <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      ]) {
+        final keys = ShortcutDefaults.forPlatform(
+                p)[ShortcutAction.videoToggleFullscreen]!
+            .keyboardBindings
+            .map((b) => b.key)
+            .toList();
+        expect(keys, contains(LogicalKeyboardKey.keyF), reason: '$p');
+        expect(keys, contains(LogicalKeyboardKey.f12), reason: '$p');
+      }
+    });
+
+    test(
         'seek-to-clicked-sentence defaults to middle mouse on desktop & mobile',
         () {
       for (final p in const <TargetPlatform>[
