@@ -355,6 +355,9 @@ class ReaderPaginationScripts {
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onRestoreComplete');
     }
+    if (typeof this.warmPaginationMetrics === 'function') {
+      this.warmPaginationMetrics();
+    }
   },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;
@@ -969,6 +972,18 @@ $_sharedJs
   contentFirstPageScroll: function(context) {
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     return metrics.minScroll;
+  },
+  warmPaginationMetrics: function() {
+    if (this.paginationMetrics) return;
+    var run = () => {
+      if (this.paginationMetrics) return;
+      this.buildPaginationMetrics();
+    };
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(run, { timeout: 1000 });
+    } else {
+      setTimeout(run, 200);
+    }
   },
   buildPaginationMetrics: function() {
     var context = this.getScrollContext();

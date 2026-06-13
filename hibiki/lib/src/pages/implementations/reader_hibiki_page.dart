@@ -495,6 +495,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   List<(int firstIdx, int lastIdx)>? _srtChapterRanges;
 
   bool _audioSlotResolved = false;
+  List<FavoriteSentence>? _favoriteSentencesForBookCache;
+  Future<List<FavoriteSentence>>? _favoriteSentencesForBookFuture;
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
@@ -2753,20 +2755,53 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
-  Future<void> _applyChapterHighlights() async {
-    if (_controller == null) return;
+  void _invalidateFavoriteSentenceCache() {
+    _favoriteSentencesForBookCache = null;
+    _favoriteSentencesForBookFuture = null;
+  }
+
+  Future<List<FavoriteSentence>> _loadFavoriteSentencesForBook() async {
     final FavoriteSentenceRepository repo =
         FavoriteSentenceRepository(appModel.database);
-    final List<FavoriteSentence> all = await repo.getAll();
+    try {
+      final List<FavoriteSentence> favorites = (await repo.getAll())
+          .where((FavoriteSentence s) => s.bookKey == widget.bookKey)
+          .toList(growable: false);
+      _favoriteSentencesForBookCache = favorites;
+      return favorites;
+    } finally {
+      _favoriteSentencesForBookFuture = null;
+    }
+  }
+
+  Future<List<FavoriteSentence>> _favoriteSentencesForBook() {
+    final List<FavoriteSentence>? cached = _favoriteSentencesForBookCache;
+    if (cached != null) {
+      return Future<List<FavoriteSentence>>.value(cached);
+    }
+    return _favoriteSentencesForBookFuture ??= _loadFavoriteSentencesForBook();
+  }
+
+  Future<List<FavoriteSentence>> _favoriteSentencesForSection(
+      int section) async {
+    final List<FavoriteSentence> favorites = await _favoriteSentencesForBook();
+    return favorites
+        .where((FavoriteSentence s) =>
+            s.bookKey == widget.bookKey && s.sectionIndex == section)
+        .toList(growable: false);
+  }
+
+  Future<void> _applyChapterHighlights() async {
+    if (_controller == null) return;
+    final List<FavoriteSentence> chapterFavs =
+        await _favoriteSentencesForSection(_currentChapter);
     if (!mounted || _controller == null) return;
-    final List<FavoriteSentence> chapterFavs = all
-        .where((s) =>
-            s.bookKey == widget.bookKey && s.sectionIndex == _currentChapter)
-        .toList();
     final int withOffsets =
         chapterFavs.where((s) => s.normCharOffset != null).length;
+    final int total =
+        _favoriteSentencesForBookCache?.length ?? chapterFavs.length;
     debugPrint('[hoshi-hl] chapter=$_currentChapter '
-        'total=${all.length} chapterFavs=${chapterFavs.length} '
+        'total=$total chapterFavs=${chapterFavs.length} '
         'withOffsets=$withOffsets');
     if (chapterFavs.isNotEmpty) {
       await HighlightBridge.applyHighlights(_controller!, chapterFavs,
@@ -2784,15 +2819,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   Future<void> _applyLyricsFavorites() async {
     if (_controller == null) return;
-    final FavoriteSentenceRepository repo =
-        FavoriteSentenceRepository(appModel.database);
-    final List<FavoriteSentence> all = await repo.getAll();
+    final List<FavoriteSentence> all = await _favoriteSentencesForBook();
     if (_controller == null || !mounted) return;
-    final List<String> texts = all
-        .where((s) => s.bookKey == widget.bookKey)
-        .map((s) => s.text)
-        .where((t) => t.isNotEmpty)
-        .toList();
+    final List<String> texts =
+        all.map((s) => s.text).where((t) => t.isNotEmpty).toList();
     final String json = jsonEncode(texts);
     await _controller!.evaluateJavascript(
       source:
@@ -6148,9 +6178,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
           FavoriteSentenceRepository(appModel.database);
 
       List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookKey);
-      final List<FavoriteSentence> allFavorites = await favRepo.getAll();
       final List<FavoriteSentence> favorites =
-          allFavorites.where((f) => f.bookKey == bookKey).toList();
+          await _favoriteSentencesForBook();
 
       if (!mounted) return;
 
@@ -6255,6 +6284,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
         favoriteSentences: favorites,
         onDeleteFavorite: (fav) async {
           await favRepo.removeById(fav.id);
+          _invalidateFavoriteSentenceCache();
+          if (fav.sectionIndex == _currentChapter || _lyricsMode) {
+            await _refreshSectionHighlights(
+                fav.sectionIndex ?? _currentChapter);
+          }
         },
         onJumpToFavorite: (fav) async {
           if (fav.sectionIndex == null) return;
@@ -6694,11 +6728,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       await _applyLyricsFavorites();
       return;
     }
-    final List<FavoriteSentence> all =
-        await FavoriteSentenceRepository(appModel.database).getAll();
-    final List<FavoriteSentence> chapterFavs = all
-        .where((s) => s.bookKey == widget.bookKey && s.sectionIndex == section)
-        .toList();
+    final List<FavoriteSentence> chapterFavs =
+        await _favoriteSentencesForSection(section);
     await HighlightBridge.applyHighlights(_controller!, chapterFavs,
         backgroundHex: _readerBackgroundHex,
         customHighlightCss: _customHighlightCss);
@@ -6739,6 +6770,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
         sectionIndex: section,
         normCharOffset: sentenceRange?.offset,
       );
+      _invalidateFavoriteSentenceCache();
       setState(() => _currentSentenceIsFavorited = false);
       if (sentenceRange != null || _lyricsMode) {
         await _refreshSectionHighlights(section);
@@ -6758,6 +6790,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       normCharLength: sentenceRange?.length,
     );
     await repo.add(fav);
+    _invalidateFavoriteSentenceCache();
     setState(() => _currentSentenceIsFavorited = true);
     if (sentenceRange != null || _lyricsMode) {
       await _refreshSectionHighlights(section);
