@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -506,10 +507,20 @@ class _HomePageState extends BasePageState<HomePage>
               ),
             ),
             const VerticalDivider(thickness: 1, width: 1),
-            Expanded(child: FocusTraversalGroup(child: buildBody())),
+            Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
           ],
         ),
       ),
+    );
+  }
+
+  /// 内容主体 + 底部「正在听书」迷你条（TODO-291 阶段2，无活动会话时收起）。
+  Widget _bodyWithMiniBar() {
+    return Column(
+      children: <Widget>[
+        Expanded(child: buildBody()),
+        const NowListeningMiniBar(),
+      ],
     );
   }
 
@@ -527,7 +538,7 @@ class _HomePageState extends BasePageState<HomePage>
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      body: SafeArea(child: buildBody()),
+      body: SafeArea(child: _bodyWithMiniBar()),
       bottomNavigationBar: adaptiveBottomBar(
         context: context,
         currentIndex: visualIndex,

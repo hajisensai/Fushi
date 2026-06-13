@@ -234,6 +234,16 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  /// 按 bookKey 解析出 [MediaItem]（TODO-291：首页「正在听书」迷你条「回到书」用，
+  /// 此处没有现成的 MediaItem，需按 key 重建）。书不存在返回 null。
+  Future<MediaItem?> mediaItemForBookKey(String bookKey) async {
+    final HibikiDatabase? db = sharedDatabase;
+    if (db == null) return null;
+    final EpubBookRow? book = await db.getEpubBook(bookKey);
+    if (book == null) return null;
+    return _bookToMediaItem(book, ReaderPositionRepository(db));
+  }
+
   /// Resolve a single [EpubBookRow] into a [MediaItem], reading its reader
   /// position and cover concurrently with sibling books (HBK-AUDIT-128).
   Future<MediaItem> _bookToMediaItem(

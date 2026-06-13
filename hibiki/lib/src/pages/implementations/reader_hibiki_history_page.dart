@@ -1828,28 +1828,50 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.code_outlined,
         onPressed: () => _openCssEditor(bookKey),
       ),
-      // TODO-291 will refine this entry's semantics; for now it stays a single
-      // toggle button. The ✓ suffix reflects the current floating-lyric state.
+      // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
+      // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
       if (Platform.isAndroid || Platform.isWindows)
         DialogListAction(
-          label: appModel.showFloatingLyric
+          label: _isBackgroundListeningBook(bookKey)
               ? '${t.floating_lyric_toggle_action} ✓'
               : t.floating_lyric_toggle_action,
           icon: Icons.subtitles_outlined,
-          onPressed: _toggleFloatingLyricFromShelf,
+          onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];
   }
 
-  /// 书架长按菜单切悬浮字幕。书架无 reader / 无 audiobook controller / 无书内
-  /// 样式，故套设置页 no-reader 范式（settings_schema.dart 的
-  /// `listening.floating_lyric`）：只切 `show_floating_lyric` 偏好，不启停 native
-  /// service —— 此刻没有正在播放的有声书，悬浮条无内容可显示。下次在 reader 页
-  /// 打开有声书时由 reader 的 `_toggleFloatingLyric` 真正拉起 service。
-  Future<void> _toggleFloatingLyricFromShelf() async {
+  /// 该书当前是否就是活动后台听书会话。
+  bool _isBackgroundListeningBook(String bookKey) {
+    final session = appModel.audiobookSession;
+    return session.isActive && session.book?.bookKey == bookKey;
+  }
+
+  /// 书架长按菜单切「后台听书」（TODO-291 阶段2）。
+  /// - 该书已是活动会话 → 停止后台听书。
+  /// - 否则 → 启动该书的后台听书会话（无正在播用该书启动；有别的书在播则顶掉切到该书），
+  ///   并拉起悬浮窗。无可播放音频时提示。
+  Future<void> _toggleFloatingLyricFromShelf(String bookKey) async {
     Navigator.pop(context);
-    await appModel.setShowFloatingLyric(!appModel.showFloatingLyric);
-    if (mounted) setState(() {});
+    if (_isBackgroundListeningBook(bookKey)) {
+      await appModel.stopBackgroundListening();
+      if (mounted) setState(() {});
+      return;
+    }
+    final BackgroundListenResult result =
+        await appModel.startBackgroundListening(bookKey);
+    if (!mounted) return;
+    switch (result) {
+      case BackgroundListenResult.started:
+        break;
+      case BackgroundListenResult.noAudio:
+        HibikiToast.show(msg: t.floating_lyric_no_audio);
+        break;
+      case BackgroundListenResult.loadFailed:
+        HibikiToast.show(msg: t.audiobook_load_error);
+        break;
+    }
+    setState(() {});
   }
 
   Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
