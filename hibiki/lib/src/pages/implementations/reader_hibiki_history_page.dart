@@ -1413,10 +1413,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ),
         DialogListAction(
           label: t.profile_book_profile,
+          icon: Icons.account_circle_outlined,
           onPressed: () => _openBookProfilePicker(item, bookKey),
         ),
         DialogListAction(
           label: t.book_css_editor_edit_css,
+          icon: Icons.code_outlined,
           onPressed: () {
             Navigator.pop(dialogContext);
             _openCssEditor(bookKey);
@@ -1806,17 +1808,22 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ),
       DialogListAction(
         label: t.profile_book_profile,
+        icon: Icons.account_circle_outlined,
         onPressed: () => _openBookProfilePicker(item, bookKey),
       ),
       DialogListAction(
         label: t.book_css_editor_edit_css,
+        icon: Icons.code_outlined,
         onPressed: () => _openCssEditor(bookKey),
       ),
+      // TODO-291 will refine this entry's semantics; for now it stays a single
+      // toggle button. The ✓ suffix reflects the current floating-lyric state.
       if (Platform.isAndroid || Platform.isWindows)
         DialogListAction(
           label: appModel.showFloatingLyric
               ? '${t.floating_lyric_toggle_action} ✓'
               : t.floating_lyric_toggle_action,
+          icon: Icons.subtitles_outlined,
           onPressed: _toggleFloatingLyricFromShelf,
         ),
     ];
