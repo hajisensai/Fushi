@@ -24,22 +24,29 @@ void main() {
     });
 
     test('reader wires the lookup handler so taps reach the dictionary', () {
-      final File file = File(
+      final String reader = File(
         'lib/src/pages/implementations/reader_hibiki_page.dart',
-      );
-      final String src = file.readAsStringSync();
-      // Before this feature onLookupText was never passed; the desktop strip
-      // relies on it to route a tapped word into the in-app popup.
+      ).readAsStringSync();
+      final String session = File(
+        'lib/src/media/audiobook/audiobook_session.dart',
+      ).readAsStringSync();
+      // TODO-291 阶段2: the desktop strip handlers now live on AudiobookSession;
+      // the reader installs its popup-lookup handler into the session while
+      // attached (session.installReaderSurfaces(onFloatingLyricLookup: ...)).
       expect(
-        src.contains('onLookupText: _lookupFromFloatingLyric'),
+        reader.contains('onFloatingLyricLookup: _lookupFromFloatingLyric'),
         isTrue,
-        reason: 'Floating-lyric taps must be wired to the lookup handler.',
+        reason: 'Reader must install its lookup handler into the session.',
       );
-      expect(src.contains('_lookupFromFloatingLyric(String text, int index)'),
+      expect(session.contains('onLookupText: _onFloatingLyricLookup'), isTrue,
+          reason:
+              'Session wires the strip lookup tap to the installed handler.');
+      expect(
+          reader.contains('_lookupFromFloatingLyric(String text, int index)'),
           isTrue);
       // The lookup must reuse the existing segmenter + popup path.
-      expect(src.contains('wordFromIndex('), isTrue);
-      expect(src.contains('searchDictionaryResult('), isTrue);
+      expect(reader.contains('wordFromIndex('), isTrue);
+      expect(reader.contains('searchDictionaryResult('), isTrue);
     });
 
     test('desktop failure shows the generic hint, not a false permission hint',

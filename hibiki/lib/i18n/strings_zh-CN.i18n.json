@@ -1631,5 +1631,7 @@
     "video_setting_danmaku_app_secret": "弹弹play AppSecret",
     "card_overwritten": "卡片已覆盖到『$deck』。",
     "video_bottom_seek_back_label": "−10s",
-    "video_bottom_seek_forward_label": "+10s"
+    "video_bottom_seek_forward_label": "+10s",
+    "floating_lyric_no_audio": "这本书没有可听的音频",
+    "now_listening_label": "正在听书"
 }

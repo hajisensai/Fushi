@@ -20,6 +20,8 @@ import 'package:hibiki/src/epub/epub_spread_analyzer.dart';
 import 'package:hibiki/src/epub/epub_spread_map.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:hibiki/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
@@ -405,7 +407,8 @@ class ReaderHibikiPage extends BaseSourcePage {
 }
 
 class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver
+    implements ReaderAudiobookView {
   InAppWebViewController? _controller;
   EpubBook? _book;
   EpubSpreadMap? _spreadMap;
@@ -514,11 +517,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   ReadingTimeTracker? _readingTimeTracker;
 
-  StreamSubscription<void>? _playStreamSub;
-  StreamSubscription<Duration>? _seekStreamSub;
-  StreamSubscription<void>? _skipNextSub;
-  StreamSubscription<void>? _skipPrevSub;
-  StreamSubscription<void>? _floatingLyricSub;
+  // TODO-291 阶段2：audioHandler 控制流（play/seek/skip/悬浮字幕翻转）订阅已上移到
+  // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
@@ -1003,32 +1003,44 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     );
   }
 
-  Future<void> _resolveAudioSlot() async {
+  /// 解析并接管本书的有声书会话（TODO-291 阶段2）。
+  ///
+  /// 控制器现由进程级 [AudiobookSession] 持有。reader 不再自己 new / dispose 控制器，
+  /// 而是：① 若已有同书的后台会话 → 直接复用（退书后台听书再进，无缝接回）；
+  /// ② 否则让 session 起新会话；③ attach reader 的 WebView 侧回调。
+  ///
+  /// [forceReload] = true 时（导入新音频后重解析）先 stop 旧会话，逼 session 重新 load
+  /// 新音频；首次开书 = false，优先复用既有后台会话。
+  Future<void> _resolveAudioSlot({bool forceReload = false}) async {
+    final AudiobookSession session = appModel.audiobookSession;
     final AudiobookPlayerController? old = _audiobookController;
     if (old != null) {
-      old.removeListener(_onCueChanged);
-      old.dispose();
+      // 旧引用是 session 控制器：先 detach（不 dispose）。reader 字段清掉等下面重接。
+      session.detachReader(this);
       _audiobookController = null;
       _audiobookBookKey = null;
       _srtBookUid = null;
       _srtCueChapterMap = null;
       _srtChapterRanges = null;
     }
+    if (forceReload && session.isActive) {
+      // 导入了新音频：必须重 load，stop 旧会话让 session.start 走全新加载分支。
+      await session.stop();
+    }
 
     final HibikiDatabase db = appModel.database;
     final String bookKey = widget.bookKey;
-    final Audiobook? ab =
-        (await db.getAudiobookByBookKey(bookKey))?.let(_audiobookFromRow);
-    final SrtBook? srt =
-        (await db.getSrtBookByBookKey(bookKey))?.let(_srtBookFromRow);
 
-    if (ab != null) {
-      await _initAudiobookController(ab, bookKey);
-    }
-    // Audiobook 记录存在但无音频文件时 _initAudiobookController 提前返回，
-    // controller 仍为 null → 回退到 SrtBook 路径加载音频。
-    if (_audiobookController == null && srt != null) {
-      await _initSrtBookController(srt);
+    final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
+    final AudiobookSessionStartRequest? req = await launcher.resolve(bookKey);
+    if (req != null) {
+      // 若进程级会话已持有本书控制器（退书后台听书后重进 / 同书重开），直接复用
+      // （session.book.bookKey 对 EPUB 是 bookKey、对 SRT 是 uid，与 req.info.bookKey 同源）。
+      if (session.isActive && session.book?.bookKey == req.info.bookKey) {
+        await _attachExistingSession(session);
+      } else {
+        await _startAndAttachSession(session, req);
+      }
     }
 
     await _primeAudioCuesForCurrentBook();
@@ -1037,6 +1049,72 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _lyricsMode = false;
       await ReaderHibikiSource.instance.setLyricsMode(false);
     }
+  }
+
+  /// 复用 session 已持有的控制器：装 reader WebView 侧回调 + 监听 cue（经 session 转发）。
+  Future<void> _attachExistingSession(AudiobookSession session) async {
+    final AudiobookPlayerController? controller = session.controller;
+    if (controller == null) return;
+    final SessionBookInfo? info = session.book;
+    // 恢复 SRT 路径标识（_srtBookUid / _audiobookBookKey），cue 同步分支据此走 SRT/EPUB。
+    if (info != null) {
+      if (info.audiobook.alignmentFormat == 'srt') {
+        _srtBookUid = info.bookKey;
+      } else {
+        _audiobookBookKey = info.bookKey;
+      }
+    }
+    _installReaderSessionSurfaces(session);
+    session.attachReader(this);
+    setState(() {
+      _audiobookController = controller;
+    });
+    // 同步一次当前 cue 到 WebView（暂停态也即时高亮）。
+    _onCueChanged();
+  }
+
+  /// 起新会话并 attach。失败弹提示。
+  Future<void> _startAndAttachSession(
+    AudiobookSession session,
+    AudiobookSessionStartRequest req,
+  ) async {
+    AudiobookPlayerController? controller;
+    try {
+      controller = await session.start(
+        info: req.info,
+        audioFiles: req.audioFiles,
+        prefs: req.prefs,
+        persist: req.persist,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHibiki.startSession', e, stack);
+      debugPrint('[ReaderHibiki] audiobook session start failed: $e');
+      if (mounted) HibikiToast.show(msg: t.audiobook_load_error);
+      return;
+    }
+    if (controller == null) return;
+    if (!mounted) {
+      // 页面在 await 期间被弃：会话仍可在后台续播（用户决策①后台继续），不 stop。
+      return;
+    }
+    if (req.info.audiobook.alignmentFormat == 'srt') {
+      _srtBookUid = req.info.bookKey;
+    } else {
+      _audiobookBookKey = req.info.bookKey;
+    }
+    _installReaderSessionSurfaces(session);
+    session.attachReader(this);
+    setState(() {
+      _audiobookController = controller;
+    });
+  }
+
+  /// 把 reader 主题样式 + reader 弹窗查词装进 session（attach 期悬浮窗用 reader 主题）。
+  void _installReaderSessionSurfaces(AudiobookSession session) {
+    session.installReaderSurfaces(
+      floatingLyricStyle: _readerFloatingLyricStyle,
+      onFloatingLyricLookup: _lookupFromFloatingLyric,
+    );
   }
 
   Future<void> _primeAudioCuesForCurrentBook() async {
@@ -1180,199 +1258,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return -1;
   }
 
-  Future<void> _initAudiobookController(
-    Audiobook audiobook,
-    String bookKey,
-  ) async {
-    final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    final List<File> audioFiles = await _resolveAudioFiles(
-      audioPaths: audiobook.audioPaths,
-      audioRoot: audiobook.audioRoot,
-    );
-    if (audioFiles.isEmpty) {
-      debugPrint('[ReaderHibiki] audiobook found but no audio files');
-      debugPrint('[ReaderHibiki] audio slot cleared: no files found');
-      return;
-    }
-
-    final AudiobookPlayerController controller = AudiobookPlayerController();
-    final List<Object> prefs = await Future.wait(<Future<Object>>[
-      repo.readFollowAudio(bookKey),
-      repo.readDelayMs(bookKey),
-      repo.readSpeed(bookKey),
-      repo.readPositionMs(bookKey),
-      repo.readImagePauseSec(bookKey),
-      repo.readVolume(bookKey),
-    ]);
-    try {
-      await controller.load(
-        audiobook: audiobook,
-        audioFiles: audioFiles,
-        initialFollowAudio: prefs[0] as bool,
-        initialDelayMs: prefs[1] as int,
-        initialSpeed: prefs[2] as double,
-        initialPositionMs: prefs[3] as int,
-        initialImagePauseSec: prefs[4] as int,
-        initialVolume: prefs[5] as double,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki.loadAudiobook', e, stack);
-      debugPrint('[ReaderHibiki] audiobook load failed: $e');
-      controller.dispose();
-      if (mounted) {
-        HibikiToast.show(msg: t.audiobook_load_error);
-      }
-      return;
-    }
-
-    if (!mounted) {
-      controller.dispose();
-      return;
-    }
-
-    controller.onPositionWrite =
-        (key, posMs) => repo.updatePositionMs(bookKey: key, positionMs: posMs);
-    controller.onDelayPersist = (ms) async {
-      await repo.updateDelayMs(bookKey: bookKey, ms: ms);
-    };
-    controller.onSpeedPersist = (speed) async {
-      await repo.updateSpeed(bookKey: bookKey, speed: speed);
-    };
-    controller.onVolumePersist = (volume) async {
-      await repo.updateVolume(bookKey: bookKey, volume: volume);
-    };
-    controller.onImagePausePersist = (sec) async {
-      await repo.updateImagePauseSec(bookKey: bookKey, sec: sec);
-    };
-    controller.onFollowAudioPersist = (value) async {
-      await repo.updateFollowAudio(bookKey: bookKey, value: value);
-    };
-    controller.getCurrentReaderSection = () => _currentChapter;
-    controller.onCrossChapter = _handleCueCrossChapter;
-    controller.onBoundarySkip = _handleBoundarySkip;
-    controller.addListener(_onCueChanged);
-
-    _audiobookBookKey = bookKey;
-
-    setState(() {
-      _audiobookController = controller;
-    });
-    _initAudioFeatures(controller);
-  }
-
-  Future<void> _initSrtBookController(SrtBook srtBook) async {
-    final List<File> audioFiles = await _resolveAudioFiles(
-      audioPaths: srtBook.audioPaths,
-      audioRoot: srtBook.audioRoot,
-    );
-    if (audioFiles.isEmpty) {
-      debugPrint('[ReaderHibiki] srt book found but no audio files');
-      debugPrint('[ReaderHibiki] audio slot cleared: no files found');
-      return;
-    }
-
-    final Audiobook syntheticAudiobook = Audiobook()
-      ..bookKey = srtBook.uid
-      ..audioRoot = srtBook.audioRoot
-      ..audioPaths = srtBook.audioPaths
-      ..alignmentFormat = 'srt'
-      ..alignmentPath = srtBook.srtPath;
-
-    final String srtBookUid = srtBook.uid;
-    final AudiobookRepository abRepo = AudiobookRepository(appModel.database);
-    final AudiobookPlayerController controller = AudiobookPlayerController();
-
-    final List<Object> prefs = await Future.wait(<Future<Object>>[
-      abRepo.readFollowAudio(srtBookUid),
-      abRepo.readDelayMs(srtBookUid),
-      abRepo.readSpeed(srtBookUid),
-      abRepo.readPositionMs(srtBookUid),
-      abRepo.readImagePauseSec(srtBookUid),
-      abRepo.readVolume(srtBookUid),
-    ]);
-    try {
-      await controller.load(
-        audiobook: syntheticAudiobook,
-        audioFiles: audioFiles,
-        initialFollowAudio: prefs[0] as bool,
-        initialDelayMs: prefs[1] as int,
-        initialSpeed: prefs[2] as double,
-        initialPositionMs: prefs[3] as int,
-        initialImagePauseSec: prefs[4] as int,
-        initialVolume: prefs[5] as double,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHibiki.loadSrtBook', e, stack);
-      debugPrint('[ReaderHibiki] srt book load failed: $e');
-      controller.dispose();
-      if (mounted) {
-        HibikiToast.show(msg: t.audiobook_load_error);
-      }
-      return;
-    }
-
-    if (!mounted) {
-      controller.dispose();
-      return;
-    }
-
-    controller.onPositionWrite = (String key, int posMs) =>
-        abRepo.updatePositionMs(bookKey: key, positionMs: posMs);
-    controller.onDelayPersist = (int ms) async {
-      await abRepo.updateDelayMs(bookKey: srtBookUid, ms: ms);
-    };
-    controller.onSpeedPersist = (double speed) async {
-      await abRepo.updateSpeed(bookKey: srtBookUid, speed: speed);
-    };
-    controller.onVolumePersist = (double volume) async {
-      await abRepo.updateVolume(bookKey: srtBookUid, volume: volume);
-    };
-    controller.onImagePausePersist = (int sec) async {
-      await abRepo.updateImagePauseSec(bookKey: srtBookUid, sec: sec);
-    };
-    controller.onFollowAudioPersist = (bool value) async {
-      await abRepo.updateFollowAudio(bookKey: srtBookUid, value: value);
-    };
-    controller.getCurrentReaderSection = () => _currentChapter;
-    controller.onCrossChapter = _handleCueCrossChapter;
-    controller.onBoundarySkip = _handleBoundarySkip;
-    controller.addListener(_onCueChanged);
-
-    _srtBookUid = srtBookUid;
-
-    setState(() {
-      _audiobookController = controller;
-    });
-    _initAudioFeatures(controller);
-  }
-
-  Future<List<File>> _resolveAudioFiles({
-    required List<String>? audioPaths,
-    required String? audioRoot,
-  }) async {
-    if (audioPaths != null && audioPaths.isNotEmpty) {
-      final List<File> files = <File>[];
-      for (final String path in audioPaths) {
-        final File f = File(path);
-        if (await f.exists()) files.add(f);
-      }
-      return files;
-    }
-    if (audioRoot != null) {
-      final Directory dir = Directory(audioRoot);
-      final bool exists = await dir.exists();
-      if (!exists) return <File>[];
-      final List<FileSystemEntity> entries = await dir.list().toList();
-      final List<File> files = entries
-          .whereType<File>()
-          .where((f) => AudiobookStorage.isAudioFile(f.path))
-          .toList()
-        ..sort((a, b) => compareAudioFilePath(a.path, b.path));
-      return files;
-    }
-    return <File>[];
-  }
-
   @override
   void dispose() {
     assert(() {
@@ -1400,24 +1285,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     appModel.setOverrideDictionaryTheme(null);
     appModel.setOverrideDictionaryColor(null);
     // HBK-AUDIT-122: shared sync-then-flush (also used by lifecycle handler).
+    // 必须在 detachReader 之前：flush 读的是 _audiobookController（= session 控制器），
+    // detach 不 dispose 控制器，但这里先把退出那一刻的位置写穿（BUG-203/032）。
     _syncAndFlushPosition();
     _flushReadingStats();
-    _audiobookController?.removeListener(_onCueChanged);
-    _audiobookController?.dispose();
+    // TODO-291 阶段2：退出书籍页不再 dispose 控制器、不再隐藏悬浮窗 / 清通知。
+    // 控制器归 [AudiobookSession] 进程级持有，detach 仅卸下 reader 的 WebView 侧回调，
+    // 让会话在后台继续播 + 悬浮窗继续刷字 + 通知继续更新（用户决策①后台继续）。
+    // 控制流订阅、悬浮窗显隐、媒体通知现都由 session 管理，reader 不再触碰。
+    appModel.audiobookSession.detachReader(this);
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
     _chromeFocusScope.dispose();
     _popupHeaderScope.dispose();
-    _playStreamSub?.cancel();
-    _seekStreamSub?.cancel();
-    _skipNextSub?.cancel();
-    _skipPrevSub?.cancel();
-    _floatingLyricSub?.cancel();
-    FloatingLyricChannel.clearEventHandlers();
-    if (appModel.showFloatingLyric) {
-      FloatingLyricChannel.hide();
-    }
-    appModel.audioHandler?.clearNotification();
     try {
       WakelockPlus.disable();
     } catch (e) {
@@ -3150,6 +3030,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   // ── Audiobook Cue Wiring ──────────────────────────────────────────
 
+  /// TODO-291 阶段2：实现 [ReaderAudiobookView.onReaderCueChanged]。由 session 的
+  /// 控制器监听器转发（reader attach 期才被调用）。只管 WebView 侧（正文高亮 / lyrics /
+  /// 进度同步）——悬浮窗 / 媒体通知同步已上移到 session 常驻执行，这里不再做，避免双写。
+  @override
+  void onReaderCueChanged() => _onCueChanged();
+
   void _onCueChanged() {
     if (!mounted || _controller == null) return;
     final AudiobookPlayerController? controller = _audiobookController;
@@ -3171,8 +3057,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         }
       }
       _syncPositionFromCurrentCue();
-      _syncFloatingLyric(controller);
-      _syncMediaNotification(controller);
       return;
     }
 
@@ -3182,8 +3066,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
       if (frag != null && frag.sectionIndex != _currentChapter) {
         AudiobookBridge.highlight(_controller!);
-        _syncFloatingLyric(controller);
-        _syncMediaNotification(controller);
         return;
       }
       if (frag == null && _srtCueChapterMap != null) {
@@ -3194,8 +3076,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           } else {
             AudiobookBridge.highlight(_controller!);
           }
-          _syncFloatingLyric(controller);
-          _syncMediaNotification(controller);
           return;
         }
       }
@@ -3204,8 +3084,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final bool reveal = forceReveal || controller.shouldRevealCurrentCue;
     AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
     _syncPositionFromCurrentCue();
-    _syncFloatingLyric(controller);
-    _syncMediaNotification(controller);
   }
 
   Future<void> _handleCueCrossChapter(int newSection) async {
@@ -3238,6 +3116,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     await controller.skipToCue(targetCues.first);
   }
+
+  // ── ReaderAudiobookView（TODO-291 阶段2：reader 向 session 暴露 WebView 侧回调） ──
+
+  @override
+  int getCurrentReaderSection() => _currentChapter;
+
+  @override
+  Future<void> onCueCrossChapter(int sectionIndex) =>
+      _handleCueCrossChapter(sectionIndex);
+
+  @override
+  Future<void> onBoundarySkip(int delta) => _handleBoundarySkip(delta);
 
   AudioCue? _lookupCue;
   ({int offset, int length, String text})? _cachedSelectionRange;
@@ -5712,92 +5602,24 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
   }
 
-  // ── Audio Features Init ────────────────────────────────────────────
-
-  Future<void> _initAudioFeatures(AudiobookPlayerController ctrl) async {
-    _subscribeNotificationStreams(ctrl);
-    if (appModel.showFloatingLyric) {
-      final bool canDraw = await FloatingLyricChannel.canDrawOverlays();
-      if (canDraw) {
-        await _showFloatingLyricOverlay();
-        _syncFloatingLyric(ctrl);
-      }
-    }
-    if (appModel.showMediaNotification) {
-      _setMediaItemWithCover(ctrl);
-      _syncMediaNotification(ctrl);
-    }
-  }
-
-  void _subscribeNotificationStreams(AudiobookPlayerController ctrl) {
-    _playStreamSub?.cancel();
-    _seekStreamSub?.cancel();
-    _skipNextSub?.cancel();
-    _skipPrevSub?.cancel();
-    _floatingLyricSub?.cancel();
-    _playStreamSub = appModel.playStream.listen((_) {
-      ctrl.togglePlayPause();
-    });
-    _seekStreamSub = appModel.seekStream.listen((pos) {
-      ctrl.seekMs(pos.inMilliseconds);
-    });
-    _skipNextSub = appModel.skipNextStream.listen((_) {
-      final int s = ReaderHibikiSource.instance.skipActionSeconds;
-      if (s == 0) {
-        ctrl.skipToNextCue();
-      } else {
-        ctrl.seekRelative(s);
-      }
-    });
-    _skipPrevSub = appModel.skipPreviousStream.listen((_) {
-      final int s = ReaderHibikiSource.instance.skipActionSeconds;
-      if (s == 0) {
-        ctrl.skipToPrevCue();
-      } else {
-        ctrl.seekRelative(-s);
-      }
-    });
-    _floatingLyricSub = appModel.toggleFloatingLyricStream.listen((_) {
-      _toggleFloatingLyric();
-    });
-  }
-
-  void _setMediaItemWithCover(AudiobookPlayerController ctrl) {
-    final handler = appModel.audioHandler;
-    if (handler == null) return;
-    Uri? artUri;
-    if (_book?.coverHref != null && _extractDir != null) {
-      final File coverFile = File(p.join(_extractDir!, _book!.coverHref));
-      if (coverFile.existsSync()) {
-        artUri = coverFile.uri;
-      }
-    }
-    handler.setMediaItemInfo(
-      title: _book?.title ?? 'Hibiki',
-      artist: _book?.author,
-      duration: ctrl.duration,
-      artUri: artUri,
-    );
-  }
-
   // ── Floating Lyric ─────────────────────────────────────────────────
+  //
+  // TODO-291 阶段2：悬浮窗 / 媒体通知的「拉起 + cue 同步 + 控制流订阅」已上移到进程级
+  // [AudiobookSession]，让退出书籍后仍能后台听书 + 悬浮刷字。reader 这里只保留：
+  // ① reader 主题样式 [_readerFloatingLyricStyle]（attach 期通过 session.installReaderSurfaces
+  //    注入，使悬浮窗用 reader 当前书的深色/竖排主题）；
+  // ② 桌面悬浮窗点词路由 [_lookupFromFloatingLyric]（attach 期注入，路由进 reader 弹窗）；
+  // ③ 设置开关 [_toggleFloatingLyric] / [_toggleMediaNotification]（薄壳，委托 session）。
 
-  ({
-    double fontSize,
-    int textColor,
-    int bgColor,
-    int buttonTextColor,
-    int buttonBgColor,
-    int highlightColor,
-    int activeColor,
-  }) _floatingLyricStyle({double? fontSize}) {
+  /// reader 主题悬浮窗样式（attach 期注入 session）。
+  FloatingLyricStyle _readerFloatingLyricStyle({double? fontSize}) {
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final bool dark = _isReaderThemeDark;
     final Color accent = dark
         ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
-    return (
+    return FloatingLyricStyle(
       fontSize: fontSize ?? appModel.floatingLyricFontSize,
       textColor: fg.value,
       bgColor: bg.withAlpha(dark ? 230 : 220).value,
@@ -5809,108 +5631,37 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
   }
 
-  Future<bool> _showFloatingLyricWithStyle() {
-    final style = _floatingLyricStyle();
-    return FloatingLyricChannel.show(
-      fontSize: style.fontSize,
-      textColor: style.textColor,
-      bgColor: style.bgColor,
-      buttonTextColor: style.buttonTextColor,
-      buttonBgColor: style.buttonBgColor,
-      highlightColor: style.highlightColor,
-      activeColor: style.activeColor,
-      clickLookupEnabled: appModel.floatingLyricClickLookup,
-    );
-  }
-
-  Future<void> _applyFloatingLyricStyle() async {
-    final style = _floatingLyricStyle();
-    await FloatingLyricChannel.updateStyle(
-      fontSize: style.fontSize,
-      textColor: style.textColor,
-      bgColor: style.bgColor,
-      buttonTextColor: style.buttonTextColor,
-      buttonBgColor: style.buttonBgColor,
-      highlightColor: style.highlightColor,
-      activeColor: style.activeColor,
-    );
-    await FloatingLyricChannel.setClickLookupEnabled(
-      appModel.floatingLyricClickLookup,
-    );
-    await FloatingLyricChannel.updateLabels(
-      previous: t.floating_lyric_previous,
-      playPause: t.floating_lyric_play_pause,
-      next: t.floating_lyric_next,
-      lock: t.floating_lyric_lock,
-      unlock: t.floating_lyric_unlock,
-      close: t.floating_lyric_close,
-    );
-  }
-
-  Future<void> _showFloatingLyricOverlay() async {
-    await _showFloatingLyricWithStyle();
-    await _applyFloatingLyricStyle();
-    _setupFloatingLyricHandlers();
-  }
-
+  /// 设置 / 通知 custom action 翻转悬浮窗。委托 [AppModel.toggleFloatingLyricFromControls]
+  /// （session 拉起/隐藏 + 偏好读写），失败时按平台显示提示。
   Future<bool> _toggleFloatingLyric() async {
-    final bool current = appModel.showFloatingLyric;
-    if (!current) {
-      final bool shown = await _showFloatingLyricWithStyle();
-      if (!shown) {
-        if (mounted) {
-          // Android needs the OS "draw over other apps" permission, so its
-          // failure is a permission prompt. The desktop strip is a runner-owned
-          // window with no such permission, so a failure there means window
-          // creation failed — show the generic hint instead of a false
-          // permission message.
-          final String hint = Platform.isAndroid
-              ? t.floating_lyric_permission_hint
-              : t.floating_lyric_unavailable_hint;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(hint),
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
-        return false;
+    final bool wasOn = appModel.showFloatingLyric;
+    final bool ok = await appModel.toggleFloatingLyricFromControls();
+    if (!ok) {
+      if (mounted) {
+        // Android needs the OS "draw over other apps" permission, so its
+        // failure is a permission prompt. The desktop strip is a runner-owned
+        // window with no such permission, so a failure there means window
+        // creation failed — show the generic hint instead of a false
+        // permission message.
+        final String hint = Platform.isAndroid
+            ? t.floating_lyric_permission_hint
+            : t.floating_lyric_unavailable_hint;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(hint),
+            duration: const Duration(seconds: 4),
+          ),
+        );
       }
-      await _applyFloatingLyricStyle();
-      await appModel.setShowFloatingLyric(true);
-      _setupFloatingLyricHandlers();
-      if (_audiobookController != null) {
-        _syncFloatingLyric(_audiobookController!);
-      }
-    } else {
-      await FloatingLyricChannel.hide();
-      FloatingLyricChannel.clearEventHandlers();
-      await appModel.setShowFloatingLyric(false);
+      return false;
+    }
+    if (mounted) setState(() {});
+    // 刚开启：让悬浮窗用 reader 主题样式（session 默认已是 app 级；attach 期 install 过
+    // reader 样式，但若 toggle 在 attach 之前发生则补一次）。
+    if (!wasOn) {
+      await appModel.audiobookSession.applyFloatingLyricStyle();
     }
     return true;
-  }
-
-  void _setupFloatingLyricHandlers() {
-    FloatingLyricChannel.setEventHandlers(
-      onLookupText: _lookupFromFloatingLyric,
-      onPlayPause: () => _audiobookController?.togglePlayPause(),
-      onPreviousCue: () => _audiobookController?.skipToPrevCue(),
-      onNextCue: () => _audiobookController?.skipToNextCue(),
-      onClose: () async {
-        await FloatingLyricChannel.hide();
-        FloatingLyricChannel.clearEventHandlers();
-        await appModel.setShowFloatingLyric(false);
-      },
-      // Position-lock toggled from the strip's own lock button. The native
-      // strip owns and renders its lock state (Android via SharedPreferences,
-      // Windows in the runner window's locked_ field), so there is no in-app
-      // mirror to update here — the callback exists purely to keep the shared
-      // floating-lyric contract symmetric across back-ends. The debug log makes
-      // the toggle observable when diagnosing the desktop strip.
-      onLockChanged: (bool locked) {
-        debugPrint('[Hibiki] floating-lyric position lock -> $locked');
-      },
-    );
   }
 
   /// Routes a tap on the desktop floating-lyric strip into the in-app
@@ -5949,43 +5700,14 @@ window.flutter_inappwebview.callHandler('spreadReady');
     await _highlightAndShowPopup(highlightCount, selectionRect);
   }
 
-  void _syncFloatingLyric(AudiobookPlayerController ctrl) {
-    if (!appModel.showFloatingLyric) return;
-    final AudioCue? cue = ctrl.currentCue;
-    FloatingLyricChannel.updateText(cue?.text ?? '');
-    FloatingLyricChannel.setPlaybackState(playing: ctrl.isPlaying);
-  }
-
   // ── Media Notification ────────────────────────────────────────────
-
-  void _syncMediaNotification(AudiobookPlayerController ctrl) {
-    if (!appModel.showMediaNotification) return;
-    final handler = appModel.audioHandler;
-    if (handler == null) return;
-    handler.updatePlaybackState(
-      playing: ctrl.isPlaying,
-      position: ctrl.position,
-      speed: ctrl.speed,
-      duration: ctrl.duration,
-    );
-    final AudioCue? cue = ctrl.currentCue;
-    if (cue != null) {
-      handler.updateNotificationSubtitle(
-        title: _book?.title ?? 'Hibiki',
-        subtitle: cue.text,
-      );
-    }
-  }
+  // TODO-291 阶段2：媒体通知的 cue/播放态同步已上移到 [AudiobookSession] 常驻执行。
+  // reader 只保留设置开关，翻转后委托 session 装/清通知卡片。
 
   Future<void> _toggleMediaNotification() async {
     final bool newValue = !appModel.showMediaNotification;
     await appModel.setShowMediaNotification(newValue);
-    if (newValue && _audiobookController != null) {
-      _setMediaItemWithCover(_audiobookController!);
-      _syncMediaNotification(_audiobookController!);
-    } else {
-      appModel.audioHandler?.clearNotification();
-    }
+    appModel.audiobookSession.onMediaNotificationToggled(enabled: newValue);
   }
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
@@ -6173,7 +5895,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
 
     try {
-      await _resolveAudioSlot();
+      // 导入了新音频：强制重 load（停旧会话再起新），否则同书会复用旧控制器不换源。
+      await _resolveAudioSlot(forceReload: true);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.openAudioImport', e, stack);
       debugPrint('[ReaderHibiki] resolveAudioSlot after import failed: $e');
@@ -6220,7 +5943,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       book.audioRoot = null;
       await repo.save(book);
 
-      await _resolveAudioSlot();
+      // 换了 SRT 书的音频：强制重 load（停旧会话再起新）。
+      await _resolveAudioSlot(forceReload: true);
       if (mounted) {
         setState(() {});
         HibikiToast.show(msg: t.audiobook_import_success);
@@ -6311,7 +6035,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
         floatingLyricFontSize: appModel.floatingLyricFontSize,
         onFloatingLyricFontSizeChanged: (v) async {
           await appModel.setFloatingLyricFontSize(v);
-          final style = _floatingLyricStyle(fontSize: v);
+          final FloatingLyricStyle style =
+              _readerFloatingLyricStyle(fontSize: v);
           await FloatingLyricChannel.updateStyle(
             fontSize: style.fontSize,
             textColor: style.textColor,
@@ -6774,7 +6499,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
     await _settings?.setTheme(appModel.appThemeKey);
     _syncDictionaryTheme();
     if (appModel.showFloatingLyric) {
-      await _applyFloatingLyricStyle();
+      // reader 主题变了：让 session 用新的 reader 样式重刷悬浮窗
+      // （reader 样式已在 attach 时 install 进 session）。
+      await appModel.audiobookSession.applyFloatingLyricStyle();
     }
     if (_lyricsMode) {
       await _updateLyricsStyleLive();
@@ -7004,37 +6731,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   // ── Helpers ───────────────────────────────────────────────────────
-
-  Audiobook _audiobookFromRow(AudiobookRow row) {
-    final Audiobook ab = Audiobook()
-      ..id = row.id
-      ..bookKey = row.bookKey
-      ..audioRoot = row.audioRoot
-      ..alignmentFormat = row.alignmentFormat
-      ..alignmentPath = row.alignmentPath;
-    if (row.audioPathsJson != null) {
-      ab.audioPaths =
-          (jsonDecode(row.audioPathsJson!) as List<dynamic>).cast<String>();
-    }
-    return ab;
-  }
-
-  SrtBook _srtBookFromRow(SrtBookRow row) {
-    final SrtBook book = SrtBook()
-      ..id = row.id
-      ..uid = row.uid
-      ..title = row.title
-      ..author = row.author
-      ..audioRoot = row.audioRoot
-      ..srtPath = row.srtPath
-      ..coverPath = row.coverPath
-      ..bookKey = row.bookKey;
-    if (row.audioPathsJson != null) {
-      book.audioPaths =
-          (jsonDecode(row.audioPathsJson!) as List<dynamic>).cast<String>();
-    }
-    return book;
-  }
+  // TODO-291 阶段2：_audiobookFromRow / _srtBookFromRow / _resolveAudioFiles 已移到
+  // [AudiobookSessionLauncher]（reader 与书架共用会话解析）。
 }
 
 @visibleForTesting
@@ -7142,8 +6840,4 @@ class ReaderSrtAudioPickerDialog extends StatelessWidget {
       ),
     );
   }
-}
-
-extension _LetExtension<T> on T {
-  R let<R>(R Function(T) block) => block(this);
 }

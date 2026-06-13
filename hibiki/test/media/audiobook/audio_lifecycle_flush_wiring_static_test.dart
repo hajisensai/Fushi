@@ -28,16 +28,19 @@ void main() {
     );
   });
 
-  test('both audio init paths forward onPositionWrite to the repo future', () {
-    // `=> repo.updatePositionMs(...)` / `=> abRepo.updatePositionMs(...)`：
-    // 用箭头转发返回 Future<void>，flushPosition 才能 await 到落库。
+  test('session launcher forwards onPositionWrite to the repo future', () {
+    // TODO-291 阶段2：控制器 persist 接线下沉到 [AudiobookSessionLauncher]。
+    // `onPositionWrite: (key, posMs) => repo.updatePositionMs(...)` 用箭头转发返回
+    // Future<void>，flushPosition 才能 await 到落库（保 BUG-032 后台 flush 语义）。
+    final String launcher = File(
+      'lib/src/media/audiobook/audiobook_session_launcher.dart',
+    ).readAsStringSync();
     expect(
-      RegExp(r'onPositionWrite =\s*\([^)]*\) =>\s*\w+\.updatePositionMs\(',
+      RegExp(r'onPositionWrite:\s*\([^)]*\)\s*=>\s*\w+\.updatePositionMs\(',
               dotAll: true)
-          .allMatches(src)
-          .length,
-      greaterThanOrEqualTo(2),
-      reason: '两条路径都要用箭头把 updatePositionMs 的 Future 交回给控制器',
+          .hasMatch(launcher),
+      isTrue,
+      reason: 'launcher 要用箭头把 updatePositionMs 的 Future 交回给控制器',
     );
   });
 }
