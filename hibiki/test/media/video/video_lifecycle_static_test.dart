@@ -79,6 +79,28 @@ void main() {
     });
   });
 
+  group('VideoPlayerController restore bootstrap (TODO-250)', () {
+    final String src = read('lib/src/media/video/video_player_controller.dart');
+
+    test('load() does not persist synthetic initialPositionMs', () {
+      final int bodyStart =
+          src.indexOf('}) async {', src.indexOf('Future<void> load({'));
+      expect(bodyStart, greaterThanOrEqualTo(0), reason: '找不到 load 方法体');
+      final int bodyEnd = src.indexOf('订阅播放态翻转', bodyStart);
+      expect(bodyEnd, greaterThan(bodyStart), reason: '找不到 load 恢复段尾界标');
+      final String b = src.substring(bodyStart, bodyEnd);
+      expect(b, isNot(contains('updateCueForPosition(initialPositionMs)')),
+          reason: 'initialPositionMs 是 load 合成的恢复目标，不是真实 player tick，不能走持久化路径');
+      expect(
+        b,
+        contains(
+          '_syncCueForPosition(initialPositionMs, persistPosition: false)',
+        ),
+        reason: 'load 仍要用 initialPositionMs 初始化字幕，但必须跳过位置持久化',
+      );
+    });
+  });
+
   // 真正的断点是**页面层**：controller.dispose() 里的 `_forceSavePositionSync()`
   // 是 fire-and-forget，与 Navigator 同步销毁 State 竞争、写不完，导致「退出再进
   // 没回到上次位置」。页面必须在路由 pop **之前** await `_controller.flushPosition()`
