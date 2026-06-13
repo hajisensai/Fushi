@@ -451,7 +451,9 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
       downloadUrl: downloadUrl,
     );
     if (downloadUrl != null) return selection;
-    fallback ??= selection;
+    // Self-installing platforms must ignore wrong-platform releases instead of
+    // treating independent Android/Windows workflow run numbers as comparable.
+    if (!updater.supportsInAppInstall) fallback ??= selection;
   }
   return fallback;
 }

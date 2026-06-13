@@ -94,6 +94,111 @@ void main() {
       );
     });
 
+    test('debug Windows returns null when newer releases are APK-only',
+        () async {
+      final UpdateReleaseSelection? selected =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _release(
+            tag: 'v0.5.5-debug.55+abc1234',
+            prerelease: true,
+            assets: <String>[
+              'hibiki-0.5.5-debug.55-abc1234-debug.apk',
+            ],
+          ),
+        ],
+        currentVersion: '0.5.5-debug.4',
+        channel: UpdateChannel.debug,
+        updater: WindowsUpdater(),
+      );
+
+      expect(selected, isNull);
+    });
+
+    test('debug Android returns null when newer releases are Windows-only',
+        () async {
+      final UpdateReleaseSelection? selected =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _release(
+            tag: 'v0.5.5-debug.55+abc1234',
+            prerelease: true,
+            assets: <String>[
+              'hibiki-0.5.5-debug.55-windows-setup.exe',
+            ],
+          ),
+        ],
+        currentVersion: '0.5.5-debug.4',
+        channel: UpdateChannel.debug,
+        updater: AndroidUpdater(
+          abiProvider: () async => <String>['arm64-v8a'],
+        ),
+      );
+
+      expect(selected, isNull);
+    });
+
+    test('debug combined release lets each platform choose its own asset',
+        () async {
+      final Map<String, dynamic> combinedRelease = _release(
+        tag: 'v0.5.5-debug.55+abc1234',
+        prerelease: true,
+        assets: <String>[
+          'hibiki-0.5.5-debug.55-windows-setup.exe',
+          'hibiki-0.5.5-debug.55-abc1234-debug.apk',
+        ],
+      );
+
+      final UpdateReleaseSelection? windowsSelected =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[combinedRelease],
+        currentVersion: '0.5.5-debug.4',
+        channel: UpdateChannel.debug,
+        updater: WindowsUpdater(),
+      );
+      final UpdateReleaseSelection? androidSelected =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[combinedRelease],
+        currentVersion: '0.5.5-debug.4',
+        channel: UpdateChannel.debug,
+        updater: AndroidUpdater(
+          abiProvider: () async => <String>['arm64-v8a'],
+        ),
+      );
+
+      expect(
+        windowsSelected?.downloadUrl,
+        'https://example.com/hibiki-0.5.5-debug.55-windows-setup.exe',
+      );
+      expect(
+        androidSelected?.downloadUrl,
+        'https://example.com/hibiki-0.5.5-debug.55-abc1234-debug.apk',
+      );
+    });
+
+    test('unsupported platforms still fall back to opening the release page',
+        () async {
+      final UpdateReleaseSelection? selected =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _release(
+            tag: 'v0.5.5-debug.55+abc1234',
+            prerelease: true,
+            assets: <String>[
+              'hibiki-0.5.5-debug.55-windows-setup.exe',
+            ],
+          ),
+        ],
+        currentVersion: '0.5.5-debug.4',
+        channel: UpdateChannel.debug,
+        updater: UnsupportedUpdater(),
+      );
+
+      expect(selected, isNotNull);
+      expect(selected!.version, '0.5.5-debug.55');
+      expect(selected.downloadUrl, isNull);
+    });
+
     test('beta channel ignores debug releases with matching platform assets',
         () async {
       final UpdateReleaseSelection? selected =
