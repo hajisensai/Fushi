@@ -30,7 +30,7 @@ void main() {
 
     test('菜单锚定 _videoControlsContext（全屏路由内可弹）', () {
       final int idx = page.indexOf('void _handleSecondaryTap(');
-      final String body = page.substring(idx, idx + 1200);
+      final String body = page.substring(idx, idx + 1800);
       expect(body.contains('_videoControlsContext'), isTrue,
           reason: 'showMenu 须用 controls 子树 context，全屏路由复用同一 builder 才能弹出');
       expect(body.contains('showMenu<VoidCallback>('), isTrue,
@@ -39,9 +39,36 @@ void main() {
           reason: '右键位置须转成 RelativeRect 作菜单锚点');
     });
 
+    // BUG-260：界面缩放（appUiScale ≠ 1）下右键菜单落点必须与鼠标对齐。
+    //
+    // 根因：视频页整页被 [HibikiAppUiScaleNeutralizer] 中和回净缩放=1 的真实视口空间，
+    // 故 controls 盒子在真实屏幕坐标系；而 showMenu 的 RelativeRect 解读为路由 Overlay
+    // 坐标系（在全局 HibikiAppUiScale 的 FittedBox 缩放画布内）。两套坐标差 factor=scale。
+    // 修复：用 `localToGlobal(..., ancestor: overlay)` 把右键点沿真实渲染变换链映射到
+    // showMenu 所用 Overlay 的 RenderBox 坐标系——FittedBox 缩放被 ancestor 变换自动吸收，
+    // 与查词浮层 charRect 走同一「锚点跟随真实渲染几何」范式，对任意 scale 自洽无残差。
+    test('菜单锚点用 Overlay 相对变换吃掉界面缩放残差（BUG-260）', () {
+      final int idx = page.indexOf('void _handleSecondaryTap(');
+      expect(idx, greaterThan(0));
+      final String body = page.substring(idx, idx + 1800);
+      // 取 showMenu 实际使用的 Navigator(rootNavigator:false) 的 Overlay RenderBox。
+      expect(
+          body.contains('Overlay.of(ctx).context.findRenderObject()'), isTrue,
+          reason: '锚点须落在 showMenu 所用 Overlay 的坐标系，故取该 Overlay 的 RenderBox');
+      // 用 ancestor 变换把右键点映射到 Overlay 空间，沿真实渲染链吸收 FittedBox 缩放。
+      expect(body.contains('ancestor: overlayObject'), isTrue,
+          reason: 'localToGlobal(..., ancestor: overlay) 让锚点与菜单宿主同坐标系（吃掉缩放残差）');
+      // RelativeRect 须基于 Overlay 尺寸 + 映射后的 anchor，而非中和后真实视口的尺寸/local。
+      expect(body.contains('overlaySize.width - anchor.dx'), isTrue,
+          reason: 'right/bottom 须以 Overlay 尺寸算（缩放画布空间），与 anchor 同系');
+      // 不得回退到旧的「直接拿 controls 盒子真实 local 当锚点」写法（那正是 BUG-260 偏移源）。
+      expect(body.contains('renderObject.size.width - local.dx'), isFalse,
+          reason: '旧的真实空间 local 锚点会偏离鼠标 factor≈scale，必须已替换');
+    });
+
     test('菜单关闭后归还键盘焦点', () {
       final int idx = page.indexOf('void _handleSecondaryTap(');
-      final String body = page.substring(idx, idx + 1400);
+      final String body = page.substring(idx, idx + 2000);
       expect(body.contains('_refocusVideo()'), isTrue,
           reason: '覆盖层夺焦后不会自动归还，菜单关闭须 _refocusVideo');
     });

@@ -1,0 +1,10 @@
+## BUG-261 · 调界面大小后视频右键菜单位置不在鼠标处
+- **报告**：2026-06-14（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_handleSecondaryTap`（原实现用中和后真实视口空间的 `globalToLocal` 当 `showMenu` 的 `RelativeRect` 锚点）。
+  - 视频页整页被 `HibikiAppUiScaleNeutralizer` 中和回净缩放=1 的**真实视口空间**（`VideoHibikiPage.neutralized` / `neutralizedRemote`），故 `_videoControlsContext` 的 `RenderBox` 在**真实屏幕坐标系**。
+  - 而 `showMenu` 把 `RelativeRect` 解读为路由 **Overlay** 的坐标系——该 Overlay 在全局 `HibikiAppUiScale` 的 `FittedBox(BoxFit.fill)` 之内＝**缩放后的画布空间**（`hibiki/lib/src/utils/app_ui_scale.dart`）。
+  - 两套坐标差一个 `factor = scale`。原实现 `local = renderObject.globalToLocal(globalPosition)` + `RelativeRect.fromLTRB(local.dx, local.dy, size.width - local.dx, size.height - local.dy)` 全在真实空间算，菜单落在缩放画布里就偏离鼠标 `factor ≈ scale`（界面大小 ≠ 100% 时）。
+  - 对照：查词浮层（`_lookupAt` / `_buildPopupOverlay`）正确，因其 charRect 与浮层子树同被 `HibikiAppUiScaleNeutralizer` 中和、坐标自洽（BUG-129 坐标族）；右键菜单是 `showMenu` 推路由、宿主 Overlay 没被中和，故缺这层对齐。
+- **[x] ① 已修复** — `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` `_handleSecondaryTap`：改用 `Overlay.of(ctx).context.findRenderObject()` 取 `showMenu` 实际所用 Navigator(rootNavigator:false) 的 Overlay `RenderBox`，再用 `renderObject.localToGlobal(localInControls, ancestor: overlayObject)` 把右键点沿**真实渲染变换链**一路映射到 Overlay 坐标系——其间的 FittedBox 缩放被 render transform 链自动吸收；`RelativeRect` 改以 `overlaySize` + 映射后的 `anchor` 计算。不读 scale 数值逆算（界面大小「自动」模式生效 scale 由视口/平台动态算出，≠ `appModel.appUiScale`），故对任意 scale（含自动模式）自洽无残差；缩放=1 时 ancestor 变换为单位阵，与原行为逐像素等价（向后兼容）。提交：本提交。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_context_menu_test.dart` 新增「菜单锚点用 Overlay 相对变换吃掉界面缩放残差」源码守卫：断言 `Overlay.of(ctx).context.findRenderObject()` + `ancestor: overlayObject` + `overlaySize.width - anchor.dx`，并钉死旧的 `renderObject.size.width - local.dx`（真实空间 local 锚点 = 偏移源）已被移除。整页 widget 测试依赖真实 libmpv（测试宿主无）故按既有视频守卫范式在源码层钉死结构不变量。提交：本提交。
+- **备注**：采番坑——`tool/bug.dart` 本地索引只到 259、`new` 取 260，但全 worktree 并集 BUG-260 已被 `integration/wave-1` 的 `BUG-260-popup-wheel-scroll-granularity` 占用，故手动顺延至 261（采番前已遍历所有 worktree 分支 `git ls-tree` 取并集）。真机验证待用户——尤其需 app_ui_scale ≠ 1（界面大小非 100%）时实测右键菜单对准鼠标。
