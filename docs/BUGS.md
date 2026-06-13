@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 250 条。点号进各自文件。
+> 共 253 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-258](bugs/BUG-258-immersive-cursor-hide-over-chrome.md) | ✅ | ✅ | 沉浸/锁屏鼠标放字幕/面板上不隐藏 |
+| [BUG-257](bugs/BUG-257-video-play-center-seek-labels.md) | ✅ | ✅ | play 按钮不居中 + seek 按钮看不懂 |
+| [BUG-256](bugs/BUG-256-subtitle-list-push-aside.md) | ✅ | ✅ | 字幕列表应挤画面到左（非浮层遮挡） |
 | [BUG-254](bugs/BUG-254-video-panel-remove-x-tap-outside-close.md) | ✅ | ✅ | 视频侧栏面板删右上角 X、改点左侧 / 空白关闭 |
 | [BUG-253](bugs/BUG-253-video-panel-controls-still-show.md) | ✅ | ✅ | 视频侧栏面板打开后背景控制条 / 右侧 rail 仍冒出来 |
 | [BUG-252](bugs/BUG-252-collection-audio-play-silent-fail.md) | ✅ | ✅ | 收藏夹播放按钮抽音失败时静默无反馈（「点了没用」）+ 视频收藏句缺播放按钮 |

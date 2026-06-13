@@ -280,11 +280,12 @@ abstract class VideoHibikiTestHooks {
   Future<void> debugPlay();
 }
 
+// TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
+// / [_videoWithSubtitlePanel]），把画面真挤窄到左侧而非浮层遮挡。故此枚举不再含字幕列表项。
 enum _VideoSidePanelKind {
   speed,
   settings,
   favoriteSentences,
-  subtitleList,
   subtitleSources,
   audioTracks,
 }
@@ -1533,17 +1534,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     });
   }
 
-  /// 翻转字幕跳转列表面板可见性（TODO-069；裸 L 键 / 控制条入口按钮）。
+  /// 翻转字幕跳转列表面板可见性（TODO-069/TODO-314；裸 L 键 / 控制条入口按钮）。
   ///
   /// asbplayer 式 transcript 面板：右侧出现当前视频的所有字幕句子，点某句 → seek 到该
-  /// 句对应画面。可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也生效，见其
-  /// 文档）。打开时顺带唤醒控制条（桌面键盘交互不触发 media_kit hover 重置）。
+  /// 句对应画面。**走 push-aside 布局**（[_videoWithSubtitlePanel] / [_subtitleListVisible]，
+  /// `Row[Expanded(video), 面板列]`）真把画面挤窄到左侧、不浮层遮挡（TODO-314 根因：此前误经
+  /// `_showVideoSidePanel(subtitleList)` 进 overlay 系统，push-aside 成死代码）。与其它浮层
+  /// 互斥：开字幕列表先关任何打开的浮层（[_videoSidePanel]）。打开时唤醒控制条让用户看到入口。
   void _toggleSubtitleJumpList() {
-    final bool next = _videoSidePanel.value != _VideoSidePanelKind.subtitleList;
+    final bool next = !_subtitleListVisible.value;
     if (next) {
-      _showVideoSidePanel(_VideoSidePanelKind.subtitleList);
+      // 与浮层互斥：开 push-aside 字幕列表前关掉任何打开的浮层（设置/音轨/倍速等）。
+      if (_videoSidePanel.value != null) {
+        _hideVideoSidePanel();
+      }
+      _subtitleListVisible.value = true;
+      unawaited(_refreshFavoritedCueCache());
+      _markControlsVisible(false);
+      _refocusVideo();
     } else {
-      _hideVideoSidePanel();
+      _clearSelectedMiningCues();
+      _subtitleListVisible.value = false;
+      _pokeControlsVisible();
+      _refocusVideo();
     }
   }
 
@@ -2643,7 +2656,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         escape: () {
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
-          if (_videoSidePanel.value != null || _subtitleListVisible.value) {
+          // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
+          if (_subtitleListVisible.value) {
+            _toggleSubtitleJumpList();
+            return;
+          }
+          if (_videoSidePanel.value != null) {
             _hideVideoSidePanel();
             return;
           }
@@ -3902,16 +3920,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   void _showVideoSidePanel(_VideoSidePanelKind kind) {
     if (_videoSheetOpen) return;
-    final bool leavingSubtitleList =
-        _videoSidePanel.value == _VideoSidePanelKind.subtitleList &&
-            kind != _VideoSidePanelKind.subtitleList;
     _videoSidePanel.value = kind;
-    _subtitleListVisible.value = false;
-    if (leavingSubtitleList) {
+    // 与 push-aside 字幕列表互斥（TODO-314）：开任何浮层都先关字幕列表。
+    if (_subtitleListVisible.value) {
       _clearSelectedMiningCues();
-    }
-    if (kind == _VideoSidePanelKind.subtitleList) {
-      unawaited(_refreshFavoritedCueCache());
+      _subtitleListVisible.value = false;
     }
     // BUG-253：开面板时不再唤起背景控制条（旧 [_pokeControlsVisible]），而是立刻把
     // 已经在显示的 media_kit 控制条 / 右侧 rail 镜像收起，避免它们冒在面板后面。
@@ -3921,13 +3934,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _hideVideoSidePanel() {
-    final bool wasSubtitleList =
-        _videoSidePanel.value == _VideoSidePanelKind.subtitleList;
     _videoSidePanel.value = null;
-    _subtitleListVisible.value = false;
-    if (wasSubtitleList) {
-      _clearSelectedMiningCues();
-    }
     // BUG-253：面板关闭后唤回一次控制条（poke 在 [_videoSidePanel] 复位为 null 之后才
     // 放行），给用户「面板已关、控制条回来了」的即时反馈，与解锁沉浸态的范式一致。
     _pokeControlsVisible();
@@ -3942,8 +3949,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_settings_title;
       case _VideoSidePanelKind.favoriteSentences:
         return t.video_favorite_sentences;
-      case _VideoSidePanelKind.subtitleList:
-        return t.video_subtitle_list;
       case _VideoSidePanelKind.subtitleSources:
         return t.video_menu_subtitle_track;
       case _VideoSidePanelKind.audioTracks:
@@ -3955,7 +3960,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     switch (kind) {
       case _VideoSidePanelKind.settings:
         return 560;
-      case _VideoSidePanelKind.subtitleList:
       case _VideoSidePanelKind.favoriteSentences:
         return 420;
       case _VideoSidePanelKind.subtitleSources:
@@ -3976,8 +3980,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return _buildVideoQuickSettingsSheet();
       case _VideoSidePanelKind.favoriteSentences:
         return _buildFavoriteSentencesSidePanel();
-      case _VideoSidePanelKind.subtitleList:
-        return _buildSubtitleListSidePanel(controller);
       case _VideoSidePanelKind.subtitleSources:
         return _buildSubtitleSourcesSidePanel(controller);
       case _VideoSidePanelKind.audioTracks:
@@ -4017,28 +4019,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 单纯构造侧栏面板的「内容 + 定位」部分（不含 BUG-254 的点外关闭 barrier）。
+  /// 字幕跳转列表已改 push-aside（TODO-314），不再经此 overlay 路径。
   Widget _buildVideoSidePanelContent(
     _VideoSidePanelKind kind,
     VideoPlayerController controller,
   ) {
-    // 字幕列表面板（[VideoSubtitleJumpPanel]）自带完整标题栏（标题 + 字号步进 +
-    // 自动滚动），不能再套 [VideoTranslucentSidePanel]（它也画一条标题栏），否则两条
-    // 标题叠在一起（BUG-245）。这里像 settings 那样走 bypass：直接返回自带壳的面板，
-    // 只补外层 [Align]/[SafeArea]/[Padding] 让它右贴边、避让安全区。
-    if (kind == _VideoSidePanelKind.subtitleList) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 10,
-            ),
-            child: _buildSubtitleListSidePanel(controller),
-          ),
-        ),
-      );
-    }
     final Widget panel = VideoTranslucentSidePanel(
       title: _videoSidePanelTitle(kind),
       width: _videoSidePanelWidth(kind),
@@ -4049,27 +4034,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return HibikiAppUiScale(
       scale: _videoUiScale,
       child: panel,
-    );
-  }
-
-  Widget _buildSubtitleListSidePanel(VideoPlayerController controller) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    return VideoSubtitleJumpPanel(
-      key: const ValueKey<String>('video-subtitle-jump-panel'),
-      controller: controller,
-      onTapCue: _handleSubtitleJumpTap,
-      onCopyCue: _copyCueText,
-      onFavoriteCue: _toggleFavoriteCueForVideo,
-      isCueFavorited: _isCueFavorited,
-      isCueSelectedForCard: _isCueSelectedForCard,
-      onToggleCueSelection: _toggleCueSelectedForCard,
-      onClearCueSelection: _clearSelectedMiningCues,
-      onClose: _hideVideoSidePanel,
-      colorScheme: cs,
-      title: t.video_subtitle_list,
-      emptyHint: t.video_subtitle_list_empty,
-      fontSize: 14 * _videoUiScale,
-      width: _videoSidePanelWidth(_VideoSidePanelKind.subtitleList),
     );
   }
 
@@ -5280,7 +5244,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Expanded(child: video),
+            Expanded(
+              child: visible
+                  // BUG-256：push-aside 字幕列表开着时，在画面区叠一层不可见 barrier，
+                  // 点画面/外部 → 关列表（除控制条字幕按钮外的明确关闭入口）。barrier 用
+                  // [HitTestBehavior.opaque] 吃掉点击、不冒泡到下方控制条 [Listener]，故点
+                  // 画面只关列表、不触发暂停/全屏（与 overlay 面板的点外关闭一致）。
+                  ? Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        video,
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              _clearSelectedMiningCues();
+                              _subtitleListVisible.value = false;
+                              _pokeControlsVisible();
+                              _refocusVideo();
+                            },
+                          ),
+                        ),
+                      ],
+                    )
+                  : video,
+            ),
             _subtitleJumpSidePanel(controller, visible),
           ],
         );
