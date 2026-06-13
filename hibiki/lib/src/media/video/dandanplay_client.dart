@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -65,11 +66,14 @@ class DandanplayClient {
   DandanplayClient({
     http.Client? httpClient,
     Uri? baseUri,
+    Duration timeout = const Duration(seconds: 8),
   })  : _client = httpClient ?? http.Client(),
-        _baseUri = baseUri ?? Uri.parse('https://api.dandanplay.net');
+        _baseUri = baseUri ?? Uri.parse('https://api.dandanplay.net'),
+        _timeout = timeout;
 
   final http.Client _client;
   final Uri _baseUri;
+  final Duration _timeout;
 
   void close() => _client.close();
 
@@ -98,6 +102,11 @@ class DandanplayClient {
         status: DandanplayFetchStatus.networkError,
         error: e,
       );
+    } on TimeoutException catch (e) {
+      return DandanplayFetchResult(
+        status: DandanplayFetchStatus.networkError,
+        error: e,
+      );
     } catch (e) {
       return DandanplayFetchResult(
         status: DandanplayFetchStatus.serverError,
@@ -114,13 +123,15 @@ class DandanplayClient {
       'fileSize': file.lengthSync(),
       'matchMode': 'hashAndFileName',
     };
-    final http.Response response = await _client.post(
-      uri,
-      headers: const <String, String>{
-        HttpHeaders.contentTypeHeader: 'application/json',
-      },
-      body: jsonEncode(body),
-    );
+    final http.Response response = await _client
+        .post(
+          uri,
+          headers: const <String, String>{
+            HttpHeaders.contentTypeHeader: 'application/json',
+          },
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return DandanplayFetchResult(
         status: DandanplayFetchStatus.serverError,
@@ -165,7 +176,7 @@ class DandanplayClient {
         'withRelated': 'true',
       },
     );
-    final http.Response response = await _client.get(uri);
+    final http.Response response = await _client.get(uri).timeout(_timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return const <VideoDanmakuItem>[];
     }

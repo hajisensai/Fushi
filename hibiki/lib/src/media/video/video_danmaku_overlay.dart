@@ -28,7 +28,21 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
   late final AnimationController _ticker = AnimationController(
     vsync: this,
     duration: const Duration(days: 1),
-  )..repeat();
+  );
+
+  bool get _shouldTick => widget.enabled && widget.items.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(VideoDanmakuOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTicker();
+  }
 
   @override
   void dispose() {
@@ -36,17 +50,29 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
     super.dispose();
   }
 
+  void _syncTicker() {
+    if (_shouldTick) {
+      if (!_ticker.isAnimating) _ticker.repeat();
+    } else if (_ticker.isAnimating) {
+      _ticker.stop(canceled: false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_shouldTick) {
+      return const IgnorePointer(
+        key: Key('video-danmaku-ignore-pointer'),
+        ignoring: true,
+        child: SizedBox.expand(),
+      );
+    }
     return IgnorePointer(
       key: const Key('video-danmaku-ignore-pointer'),
       ignoring: true,
       child: AnimatedBuilder(
         animation: _ticker,
         builder: (BuildContext context, _) {
-          if (!widget.enabled || widget.items.isEmpty) {
-            return const SizedBox.expand();
-          }
           return LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final VideoDanmakuLayoutSnapshot snapshot =

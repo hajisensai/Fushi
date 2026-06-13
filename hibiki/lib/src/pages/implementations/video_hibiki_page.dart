@@ -1197,6 +1197,41 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  void _clearDanmakuForCurrentVideo() {
+    ++_danmakuLoadSeq;
+    if (!mounted) {
+      _danmakuItems = const <VideoDanmakuItem>[];
+      return;
+    }
+    setState(() => _danmakuItems = const <VideoDanmakuItem>[]);
+  }
+
+  Future<void> _setVideoDanmakuEnabled(bool value) async {
+    await appModel.setVideoDanmakuEnabled(value);
+    if (!mounted) return;
+    if (value) {
+      unawaited(_loadDanmakuForVideo(_currentVideoPath));
+    } else {
+      _clearDanmakuForCurrentVideo();
+    }
+  }
+
+  Future<void> _setVideoDanmakuOnlineEnabled(bool value) async {
+    await appModel.setVideoDanmakuOnlineEnabled(value);
+    if (!mounted) return;
+    if (appModel.videoDanmakuEnabled) {
+      unawaited(_loadDanmakuForVideo(_currentVideoPath));
+    } else {
+      setState(() {});
+    }
+  }
+
+  Future<void> _setVideoDanmakuMaxActive(int value) async {
+    await appModel.setVideoDanmakuMaxActive(value);
+    if (!mounted) return;
+    setState(() {});
+  }
+
   Future<List<AudioCue>> _loadExternalSubtitleCues(
     String path,
     String bookUid,
@@ -3618,9 +3653,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialDanmakuEnabled: appModel.videoDanmakuEnabled,
       initialDanmakuOnlineEnabled: appModel.videoDanmakuOnlineEnabled,
       initialDanmakuMaxActive: appModel.videoDanmakuMaxActive,
-      onDanmakuEnabledChanged: appModel.setVideoDanmakuEnabled,
-      onDanmakuOnlineEnabledChanged: appModel.setVideoDanmakuOnlineEnabled,
-      onDanmakuMaxActiveChanged: appModel.setVideoDanmakuMaxActive,
+      onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
+      onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
+      onDanmakuMaxActiveChanged: _setVideoDanmakuMaxActive,
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
       initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),

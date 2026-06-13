@@ -149,6 +149,39 @@ void main() {
       expect(failure.items, isEmpty);
     });
 
+    test('comment fetch timeout degrades gracefully', () async {
+      final File file = File(p.join(tempDir.path, 'Episode 04.mkv'));
+      file.writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final DandanplayClient client = DandanplayClient(
+        timeout: const Duration(milliseconds: 1),
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.path == '/api/v2/match') {
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'success': true,
+                'isMatched': true,
+                'matches': <Map<String, dynamic>>[
+                  <String, dynamic>{'episodeId': 42},
+                ],
+              }),
+              200,
+            );
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          return http.Response(
+            jsonEncode(<String, dynamic>{'comments': <dynamic>[]}),
+            200,
+          );
+        }),
+      );
+
+      final DandanplayFetchResult result =
+          await client.fetchBestDanmakuForFile(file);
+
+      expect(result.status, DandanplayFetchStatus.networkError);
+      expect(result.items, isEmpty);
+    });
+
     test('comment parser is real Dandanplay JSON parser, not a mocked core',
         () {
       final List<VideoDanmakuItem> items = dandanplayCommentsToDanmaku(

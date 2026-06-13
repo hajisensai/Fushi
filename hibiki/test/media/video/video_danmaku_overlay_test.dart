@@ -73,4 +73,39 @@ void main() {
     expect(ignorePointer.ignoring, isTrue);
     expect(find.text('hidden'), findsNothing);
   });
+
+  testWidgets('disabled or empty overlay does not keep a frame ticker alive',
+      (WidgetTester tester) async {
+    await _pump(
+      tester,
+      VideoDanmakuOverlay(
+        items: <VideoDanmakuItem>[_item(0, 'hidden')],
+        enabled: false,
+        maxActive: 20,
+        positionMs: () => 1000,
+      ),
+    );
+
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 16),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(milliseconds: 120),
+    );
+
+    await _pump(
+      tester,
+      VideoDanmakuOverlay(
+        items: const <VideoDanmakuItem>[],
+        enabled: true,
+        maxActive: 20,
+        positionMs: () => 1000,
+      ),
+    );
+
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 16),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(milliseconds: 120),
+    );
+  });
 }

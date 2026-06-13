@@ -13,6 +13,7 @@ import 'package:hibiki/utils.dart';
 
 VideoQuickSettingsSheet _sheet({
   void Function(bool)? onDanmakuEnabledChanged,
+  void Function(bool)? onDanmakuOnlineEnabledChanged,
   void Function(int)? onDanmakuMaxActiveChanged,
 }) {
   return VideoQuickSettingsSheet(
@@ -43,6 +44,9 @@ VideoQuickSettingsSheet _sheet({
     onDanmakuEnabledChanged: (bool value) async {
       onDanmakuEnabledChanged?.call(value);
     },
+    onDanmakuOnlineEnabledChanged: (bool value) async {
+      onDanmakuOnlineEnabledChanged?.call(value);
+    },
     onDanmakuMaxActiveChanged: (int value) async {
       onDanmakuMaxActiveChanged?.call(value);
     },
@@ -65,11 +69,13 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     bool? enabled;
+    bool? onlineEnabled;
     int? maxActive;
     await _pump(
       tester,
       _sheet(
         onDanmakuEnabledChanged: (bool value) => enabled = value,
+        onDanmakuOnlineEnabledChanged: (bool value) => onlineEnabled = value,
         onDanmakuMaxActiveChanged: (int value) => maxActive = value,
       ),
     );
@@ -78,6 +84,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.video_setting_danmaku_enabled), findsOneWidget);
+    expect(find.text(t.video_setting_danmaku_online), findsOneWidget);
     expect(find.text(t.video_setting_danmaku_max_active), findsOneWidget);
 
     final AdaptiveSettingsSwitchRow enabledRow =
@@ -90,6 +97,17 @@ void main() {
     enabledRow.onChanged!(false);
     await tester.pump();
     expect(enabled, isFalse);
+
+    final AdaptiveSettingsSwitchRow onlineRow =
+        tester.widget<AdaptiveSettingsSwitchRow>(
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        t.video_setting_danmaku_online,
+      ),
+    );
+    onlineRow.onChanged!(false);
+    await tester.pump();
+    expect(onlineEnabled, isFalse);
 
     final AdaptiveSettingsStepperRow maxRow =
         tester.widget<AdaptiveSettingsStepperRow>(
@@ -136,5 +154,31 @@ void main() {
       expect(src, isNot(contains('currentCue')),
           reason: '弹幕是多条同时活动，不是单 currentCue');
     }
+  });
+
+  test('source guard: danmaku settings reload or clear the current video', () {
+    final String page =
+        File('lib/src/pages/implementations/video_hibiki_page.dart')
+            .readAsStringSync();
+
+    expect(page, contains('Future<void> _setVideoDanmakuEnabled'));
+    expect(page, contains('Future<void> _setVideoDanmakuOnlineEnabled'));
+    expect(page, contains('Future<void> _setVideoDanmakuMaxActive'));
+    expect(page, contains('void _clearDanmakuForCurrentVideo'));
+    expect(page, contains('++_danmakuLoadSeq'));
+    expect(
+        page, contains('unawaited(_loadDanmakuForVideo(_currentVideoPath))'));
+    expect(page, contains('onDanmakuEnabledChanged: _setVideoDanmakuEnabled'));
+    expect(
+      page,
+      contains('onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled'),
+    );
+    expect(
+        page, contains('onDanmakuMaxActiveChanged: _setVideoDanmakuMaxActive'));
+    expect(
+      page,
+      isNot(
+          contains('onDanmakuEnabledChanged: appModel.setVideoDanmakuEnabled')),
+    );
   });
 }
