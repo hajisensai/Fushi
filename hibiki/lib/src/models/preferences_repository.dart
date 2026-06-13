@@ -394,6 +394,14 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('current_home_tab_index', index);
   }
 
+  bool get startupDefaultDictionaryTab =>
+      getPref('startup_default_dictionary_tab', defaultValue: false) as bool;
+
+  Future<void> setStartupDefaultDictionaryTab(bool value) async {
+    await setPref('startup_default_dictionary_tab', value);
+    notifyListeners();
+  }
+
   bool get reverseNavigationBar =>
       getPref('reverse_navigation_bar', defaultValue: false) as bool;
 

@@ -133,6 +133,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',
   'system/Auto-install updates': 'DEVICE: Android-only UpdateChecker install',
   'appearance/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',
+  'appearance/Open lookup on startup': 'test/pages/home_page_tabs_test.dart',
   'reading/Reverse reader bottom bar':
       'DEVICE: reader bottom-bar layout order (like reverse nav bar)',
 };

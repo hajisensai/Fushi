@@ -1756,6 +1756,11 @@ class AppModel with ChangeNotifier {
   Future<void> setCurrentHomeTabIndex(int index) =>
       prefsRepo.setCurrentHomeTabIndex(index);
 
+  bool get startupDefaultDictionaryTab => prefsRepo.startupDefaultDictionaryTab;
+
+  Future<void> setStartupDefaultDictionaryTab(bool value) =>
+      prefsRepo.setStartupDefaultDictionaryTab(value);
+
   /// 「视频」功能现已毕业为常驻：首页底栏永久显示「视频」tab、视频页导入入口
   /// 永久放出、书架不再重复显示视频分区。功能仍标记为实验性（底栏图标徽标 +
   /// 视频页提示横幅），但不再受设置开关门控——故此处恒为 true，保持所有调用点

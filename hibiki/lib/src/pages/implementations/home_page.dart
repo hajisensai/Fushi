@@ -41,6 +41,35 @@ List<HomeTab> homeActiveTabs({
       HomeTab.settings,
     ];
 
+HomeTab homeInitialTab({
+  required bool startupDefaultDictionaryTab,
+  required HomeTab fallback,
+}) {
+  if (startupDefaultDictionaryTab) return HomeTab.dictionaries;
+  return fallback;
+}
+
+int homeVisualIndexForTab({
+  required List<HomeTab> tabs,
+  required HomeTab tab,
+  required bool reversed,
+}) {
+  final int logical = tabs.indexOf(tab);
+  if (logical < 0) return 0;
+  return reversed ? tabs.length - 1 - logical : logical;
+}
+
+HomeTab homeTabForVisualIndex({
+  required List<HomeTab> tabs,
+  required int visualIndex,
+  required bool reversed,
+}) {
+  final int logicalIndex =
+      reversed ? (tabs.length - 1 - visualIndex) : visualIndex;
+  if (logicalIndex < 0 || logicalIndex >= tabs.length) return HomeTab.books;
+  return tabs[logicalIndex];
+}
+
 class HomePage extends BasePage {
   const HomePage({super.key});
 
@@ -62,6 +91,11 @@ class _HomePageState extends BasePageState<HomePage>
   @override
   void initState() {
     super.initState();
+
+    _currentTab = homeInitialTab(
+      startupDefaultDictionaryTab: appModelNoUpdate.startupDefaultDictionaryTab,
+      fallback: _currentTab,
+    );
 
     WidgetsBinding.instance.addObserver(this);
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
@@ -440,12 +474,18 @@ class _HomePageState extends BasePageState<HomePage>
     final List<AdaptiveNavItem> items = _navItems(tabs);
     final List<AdaptiveNavItem> displayItems =
         reversed ? items.reversed.toList() : items;
-    final int logical = tabs.indexOf(_visibleTab);
-    final int visualIndex = reversed ? (tabs.length - 1 - logical) : logical;
+    final int visualIndex = homeVisualIndexForTab(
+      tabs: tabs,
+      tab: _visibleTab,
+      reversed: reversed,
+    );
 
     void selectVisual(int index) {
-      final int logicalIndex = reversed ? (tabs.length - 1 - index) : index;
-      _selectTab(tabs[logicalIndex]);
+      _selectTab(homeTabForVisualIndex(
+        tabs: tabs,
+        visualIndex: index,
+        reversed: reversed,
+      ));
     }
 
     return Scaffold(
@@ -481,8 +521,11 @@ class _HomePageState extends BasePageState<HomePage>
     final List<AdaptiveNavItem> items = _navItems(tabs);
     final List<AdaptiveNavItem> displayItems =
         reversed ? items.reversed.toList() : items;
-    final int logical = tabs.indexOf(_visibleTab);
-    final int visualIndex = reversed ? (tabs.length - 1 - logical) : logical;
+    final int visualIndex = homeVisualIndexForTab(
+      tabs: tabs,
+      tab: _visibleTab,
+      reversed: reversed,
+    );
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -491,8 +534,11 @@ class _HomePageState extends BasePageState<HomePage>
         context: context,
         currentIndex: visualIndex,
         onTap: (int index) {
-          final int logicalIndex = reversed ? (tabs.length - 1 - index) : index;
-          _selectTab(tabs[logicalIndex]);
+          _selectTab(homeTabForVisualIndex(
+            tabs: tabs,
+            visualIndex: index,
+            reversed: reversed,
+          ));
         },
         items: displayItems,
       ),

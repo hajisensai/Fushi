@@ -16,6 +16,7 @@ class ProfileKeys {
     'active_profile_id',
     'first_time_setup',
     'current_home_tab_index',
+    'startup_default_dictionary_tab',
     'app_locale',
     'last_selected_deck',
     'last_selected_dictionary_format',

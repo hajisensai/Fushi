@@ -8,6 +8,66 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 /// 文本钩子 tab 仅在文本钩子开关开启时出现（用户要求「只有开了文本钩子才会显示」），
 /// 开启后固定夹在词典与设置之间。
 void main() {
+  group('startup default dictionary tab', () {
+    test('开关关闭时保留既有初始 tab', () {
+      expect(
+        homeInitialTab(
+          startupDefaultDictionaryTab: false,
+          fallback: HomeTab.books,
+        ),
+        HomeTab.books,
+      );
+      expect(
+        homeInitialTab(
+          startupDefaultDictionaryTab: false,
+          fallback: HomeTab.settings,
+        ),
+        HomeTab.settings,
+      );
+    });
+
+    test('开关开启时冷启动进入查词 tab', () {
+      expect(
+        homeInitialTab(
+          startupDefaultDictionaryTab: true,
+          fallback: HomeTab.books,
+        ),
+        HomeTab.dictionaries,
+      );
+    });
+
+    test('反向导航和视频 tab 插入只影响视觉索引，不改变启动逻辑 tab', () {
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, texthookerEnabled: false);
+      final HomeTab initial = homeInitialTab(
+        startupDefaultDictionaryTab: true,
+        fallback: HomeTab.books,
+      );
+
+      expect(initial, HomeTab.dictionaries);
+      expect(
+        homeVisualIndexForTab(
+          tabs: tabs,
+          tab: initial,
+          reversed: false,
+        ),
+        tabs.indexOf(HomeTab.dictionaries),
+      );
+      expect(
+        homeTabForVisualIndex(
+          tabs: tabs,
+          visualIndex: homeVisualIndexForTab(
+            tabs: tabs,
+            tab: initial,
+            reversed: true,
+          ),
+          reversed: true,
+        ),
+        HomeTab.dictionaries,
+      );
+    });
+  });
+
   group('texthooker home tab', () {
     test('HomeTab 枚举包含 texthooker', () {
       expect(HomeTab.values, contains(HomeTab.texthooker));

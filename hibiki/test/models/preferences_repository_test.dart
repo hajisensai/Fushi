@@ -178,6 +178,10 @@ void main() {
     test('reverseNavigationBar defaults to false', () {
       expect(repo.reverseNavigationBar, false);
     });
+
+    test('startupDefaultDictionaryTab defaults to false', () {
+      expect(repo.startupDefaultDictionaryTab, false);
+    });
   });
 
   // ── round-trip persistence ───────────────────────────────────────────
@@ -374,6 +378,15 @@ void main() {
       repo.toggleReverseNavigationBar();
       await Future<void>.delayed(Duration.zero);
       expect(repo.reverseNavigationBar, false);
+    });
+
+    test('setStartupDefaultDictionaryTab persists bool', () async {
+      await repo.setStartupDefaultDictionaryTab(true);
+
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.startupDefaultDictionaryTab, true);
+      repo2.dispose();
     });
 
     test('yomitan api server prefs round-trip', () async {

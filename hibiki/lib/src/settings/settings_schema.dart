@@ -173,6 +173,19 @@ SettingsDestination _appearanceDestination() {
               settingsContext.refresh();
             },
           ),
+          SettingsSwitchItem(
+            id: 'appearance.startup_default_dictionary_tab',
+            title: t.startup_default_dictionary_tab,
+            subtitle: t.startup_default_dictionary_tab_hint,
+            icon: Icons.manage_search_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.startupDefaultDictionaryTab,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setStartupDefaultDictionaryTab(value);
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
     ],

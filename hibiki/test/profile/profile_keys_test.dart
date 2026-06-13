@@ -18,6 +18,8 @@ void main() {
       expect(ProfileKeys.isExcludedPref('update_never_remind'), isTrue);
       expect(ProfileKeys.isExcludedPref('update_auto_install'), isTrue);
       expect(ProfileKeys.isExcludedPref('update_beta_channel'), isTrue);
+      expect(
+          ProfileKeys.isExcludedPref('startup_default_dictionary_tab'), isTrue);
     });
 
     test('excludes keys with current_source/ prefix', () {
