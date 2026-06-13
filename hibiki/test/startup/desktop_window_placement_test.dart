@@ -67,6 +67,26 @@ void main() {
 
       expect(selected, const Rect.fromLTWH(1920, 0, 1440, 900));
     });
+
+    test('restores to secondary display when saved bounds are there', () {
+      const Rect savedBounds = Rect.fromLTWH(2000, 80, 1200, 800);
+      final Rect workArea = DesktopWindowPlacement.selectInitialWorkArea(
+        workAreas: const <Rect>[
+          Rect.fromLTWH(0, 0, 1920, 1040),
+          Rect.fromLTWH(1920, 0, 1440, 900),
+        ],
+        savedBounds: savedBounds,
+        currentBounds: const Rect.fromLTWH(10, 10, 1280, 720),
+      );
+
+      final Rect bounds = DesktopWindowPlacement.resolveInitialBounds(
+        workArea: workArea,
+        savedBounds: savedBounds,
+      );
+
+      expect(workArea, const Rect.fromLTWH(1920, 0, 1440, 900));
+      expect(bounds, savedBounds);
+    });
   });
 
   group('desktop startup wiring', () {

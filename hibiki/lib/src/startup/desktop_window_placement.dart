@@ -37,14 +37,17 @@ class DesktopWindowPlacement {
 
     try {
       final Rect? currentBounds = await _tryGetCurrentBounds();
-      final List<Rect> workAreas = await _loadWorkAreas(currentBounds);
-      final Rect workArea = selectWorkArea(
+      final Rect? savedBounds = await _readSavedBounds();
+      final Rect? placementAnchor = savedBounds ?? currentBounds;
+      final List<Rect> workAreas = await _loadWorkAreas(placementAnchor);
+      final Rect workArea = selectInitialWorkArea(
         workAreas: workAreas,
+        savedBounds: savedBounds,
         currentBounds: currentBounds,
       );
       final Rect initialBounds = resolveInitialBounds(
         workArea: workArea,
-        savedBounds: await _readSavedBounds(),
+        savedBounds: savedBounds,
       );
 
       await windowManager.setMinimumSize(minimumSizeForWorkArea(workArea));
@@ -136,6 +139,17 @@ class DesktopWindowPlacement {
     return Size(
       math.max(1, math.min(minimumSize.width, workArea.width)),
       math.max(1, math.min(minimumSize.height, workArea.height)),
+    );
+  }
+
+  static Rect selectInitialWorkArea({
+    required List<Rect> workAreas,
+    Rect? savedBounds,
+    Rect? currentBounds,
+  }) {
+    return selectWorkArea(
+      workAreas: workAreas,
+      currentBounds: _isUsableRect(savedBounds) ? savedBounds : currentBounds,
     );
   }
 
