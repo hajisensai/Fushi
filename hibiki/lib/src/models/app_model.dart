@@ -49,6 +49,8 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
 import 'package:hibiki/src/models/audio_controller.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
@@ -164,6 +166,18 @@ ColorScheme buildHibikiColorScheme({
       tertiary: tertiary,
       primaryContainer: primaryContainer,
     );
+
+/// 书架长按「悬浮字幕」启动后台听书的结果（供 UI 决定提示）。
+enum BackgroundListenResult {
+  /// 已启动后台听书会话。
+  started,
+
+  /// 该书没有可播放的有声书 / 字幕书（无记录或无音频文件）。
+  noAudio,
+
+  /// 找到了音频但加载失败。
+  loadFailed,
+}
 
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
@@ -326,6 +340,32 @@ class AppModel with ChangeNotifier {
   /// Extracted sub-managers.
   late final AudioController audioCtrl = AudioController();
   late final AnkiIntegration ankiIntegration = AnkiIntegration();
+
+  /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
+  /// 当前书元数据，常驻执行 cue→悬浮窗/媒体通知/位置落库同步，脱离 reader 页生命周期。
+  /// reader 在场时经 [AudiobookSession.attachReader] 注册 WebView 侧回调。
+  late final AudiobookSession audiobookSession = AudiobookSession(
+    audioHandler: () => audioCtrl.audioHandler,
+    showFloatingLyric: () => showFloatingLyric,
+    showMediaNotification: () => showMediaNotification,
+    floatingLyricStyle: _appLevelFloatingLyricStyle,
+    floatingLyricClickLookup: () => floatingLyricClickLookup,
+    onFloatingLyricLookup: (String text, int index) {
+      // app 级（无 reader attach）桌面悬浮窗点词：当前无弹窗宿主可显示词典，忽略。
+      // reader attach 时会换成 reader 的弹窗查词处理器。
+      debugPrint('[Hibiki] floating-lyric tap with no reader host: $text');
+    },
+    controlStreams: AudioControlStreams(
+      playStream: audioCtrl.playStream,
+      seekStream: audioCtrl.seekStream,
+      skipNextStream: audioCtrl.skipNextStream,
+      skipPreviousStream: audioCtrl.skipPreviousStream,
+      toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
+    ),
+  )
+    ..skipActionSeconds = (() => ReaderHibikiSource.instance.skipActionSeconds)
+    ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
+    ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
   late DictionaryImportManager _dictImportManager;
   late FileExportManager _fileExportManager;
   late LocalAudioManager _localAudioManager;
@@ -2774,6 +2814,100 @@ class AppModel with ChangeNotifier {
 
   Future<void> initialiseAudioHandler() => audioCtrl.initialiseHandler();
 
+  // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
+
+  /// app 级（无 reader）悬浮窗样式：用全局主题色，背景跟随当前明暗。reader attach
+  /// 时会用 reader 主题样式覆盖。
+  FloatingLyricStyle _appLevelFloatingLyricStyle() {
+    final Brightness brightness =
+        themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light;
+    final ColorScheme scheme = buildColorScheme(brightness);
+    final bool dark = brightness == Brightness.dark;
+    final Color bg = scheme.surface;
+    final Color fg = scheme.onSurface;
+    final Color accent = scheme.primary;
+    return FloatingLyricStyle(
+      fontSize: floatingLyricFontSize,
+      textColor: fg.value,
+      bgColor: bg.withAlpha(dark ? 230 : 220).value,
+      buttonTextColor: fg.value,
+      buttonBgColor:
+          (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
+      highlightColor: accent.withAlpha(128).value,
+      activeColor: accent.value,
+    );
+  }
+
+  /// 通知栏「悬浮字幕」custom action / 设置开关翻转悬浮窗（含偏好读写）。返回 false
+  /// 表示开启失败（如缺 overlay 权限）。
+  Future<bool> toggleFloatingLyricFromControls() async {
+    final bool currentlyOn = showFloatingLyric;
+    final bool ok =
+        await audiobookSession.toggleFloatingLyric(currentlyOn: currentlyOn);
+    if (!ok) return false;
+    await setShowFloatingLyric(!currentlyOn);
+    notifyListeners();
+    return true;
+  }
+
+  /// 书架长按「悬浮字幕」入口：启动该书的后台听书会话（无正在播则用该书启动；已有
+  /// 别的书在播则顶掉切到该书）。同时打开悬浮窗偏好并拉起悬浮窗。返回结果供 UI 提示。
+  Future<BackgroundListenResult> startBackgroundListening(
+      String bookKey) async {
+    await initialiseAudioHandler();
+    final AudiobookSessionLauncher launcher =
+        AudiobookSessionLauncher(database);
+    final AudiobookSessionStartRequest? req = await launcher.resolve(bookKey);
+    if (req == null) {
+      return BackgroundListenResult.noAudio;
+    }
+    // 开启悬浮窗偏好，让 session.start 的 _startBackgroundSurfaces 自动拉起悬浮窗。
+    if (!showFloatingLyric) {
+      await setShowFloatingLyric(true);
+    }
+    try {
+      final controller = await audiobookSession.start(
+        info: req.info,
+        audioFiles: req.audioFiles,
+        prefs: req.prefs,
+        persist: req.persist,
+      );
+      if (controller == null) return BackgroundListenResult.loadFailed;
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('AppModel.startBackgroundListening', e, stack);
+      return BackgroundListenResult.loadFailed;
+    }
+    // 无正在播则用该书开播（用户决策④：无正在播 → 用该书启动）。
+    final controller = audiobookSession.controller;
+    if (controller != null && !controller.isPlaying) {
+      await controller.play();
+    }
+    notifyListeners();
+    return BackgroundListenResult.started;
+  }
+
+  /// 停止后台听书会话（迷你条 / 悬浮窗关闭 → 完全停止）。
+  Future<void> stopBackgroundListening() async {
+    await audiobookSession.stop();
+    if (showFloatingLyric) {
+      await setShowFloatingLyric(false);
+    }
+    notifyListeners();
+  }
+
+  /// 首页「正在听书」迷你条「回到书」：打开当前后台会话所属书的 reader 页。
+  /// 重建 MediaItem（迷你条手头无现成 item）；解析不到（如 standalone SRT 无 EPUB 行）
+  /// 时静默不导航（迷你条仍可用 stop / 状态显示）。
+  Future<void> openBackgroundListeningBook(WidgetRef ref) async {
+    final SessionBookInfo? info = audiobookSession.book;
+    if (info == null) return;
+    final ReaderHibikiSource source = ReaderHibikiSource.instance;
+    final MediaItem? item = await source.mediaItemForBookKey(info.bookKey);
+    if (item == null) return;
+    await openMedia(ref: ref, mediaSource: source, item: item);
+  }
+
   // ── search & dictionary display (delegated to PreferencesRepository) ─
 
   bool get autoSearchEnabled => prefsRepo.autoSearchEnabled;
@@ -2869,6 +3003,8 @@ class AppModel with ChangeNotifier {
     dictionaryMenuNotifier.dispose();
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
+    // session 的控制流订阅引用 audioCtrl 的 stream，须在 audioCtrl.dispose 前拆。
+    audiobookSession.dispose();
     audioCtrl.dispose();
     gamepadService.dispose();
     // Dispose the extracted repository notifiers (all ChangeNotifiers). Only
