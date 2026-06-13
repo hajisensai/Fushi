@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -35,6 +36,54 @@ enum _CollectionType { bookmark, sentence }
     episodeIndex: favoriteSectionIndex.clamp(0, episodeCount - 1),
     startMs: favoriteStartMs,
   );
+}
+
+/// 从一条**视频来源**收藏句解析出「该截哪个文件的哪段音频」。纯函数（无 IO），可单测。
+///
+/// 视频收藏句保存时（[VideoHibikiPage] `_toggleFavoriteSentenceForVideo` /
+/// `_toggleFavoriteCueForVideo`）把 cue 时间窗直接编进收藏字段：
+/// - [favoriteSectionIndex] = 集索引（`_currentEpisode`，单视频恒 0）；
+/// - [favoriteStartMs] = cue 起点毫秒（存进 `normCharOffset`，**非字符偏移**）；
+/// - [favoriteDurationMs] = cue 时长毫秒（存进 `normCharLength`，可空）。
+///
+/// 因此收藏句**自带**裁剪所需的全部信息，无需经 [CollectionAudioMatcher]：直接据此
+/// 算出 `[startMs, endMs)`，并选出该集对应的视频文件路径（单视频用 [VideoBookRow.videoPath]；
+/// 多集播放列表按集索引从 [VideoBookRow.playlistJson] 取那一集的绝对路径）。
+///
+/// 返回 null 表示无法播放（缺起点、时长非正、播放列表越界 / 解析失败）——调用方据此
+/// 不显示播放按钮 / 点击后提示。
+@visibleForTesting
+({String filePath, int startMs, int endMs})? resolveVideoFavoriteAudioClip({
+  required VideoBookRow row,
+  required int? favoriteSectionIndex,
+  required int? favoriteStartMs,
+  required int? favoriteDurationMs,
+}) {
+  final int? startMs = favoriteStartMs;
+  if (startMs == null || startMs < 0) return null;
+  final int duration = favoriteDurationMs ?? 0;
+  if (duration <= 0) return null;
+  final int endMs = startMs + duration;
+
+  final int episodeCount = playlistEpisodeCount(row.playlistJson);
+  if (episodeCount <= 0) {
+    // 单视频：直接用 videoPath（与播放器单视频路径一致）。
+    return (filePath: row.videoPath, startMs: startMs, endMs: endMs);
+  }
+
+  // 多集播放列表：按收藏的集索引取那一集的绝对路径。
+  final int episodeIndex =
+      (favoriteSectionIndex ?? 0).clamp(0, episodeCount - 1);
+  try {
+    final dynamic decoded = jsonDecode(row.playlistJson!);
+    if (decoded is! List) return null;
+    final PlaylistEntry entry =
+        PlaylistEntry.fromJson(decoded[episodeIndex] as Map<String, dynamic>);
+    if (entry.path.isEmpty) return null;
+    return (filePath: entry.path, startMs: startMs, endMs: endMs);
+  } catch (_) {
+    return null;
+  }
 }
 
 MediaItem buildCollectionReaderMediaItem({
@@ -102,6 +151,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Map<String, String> _bookTitleMap = {};
   Map<String, List<AudioCue>> _cueMap = {};
   Map<String, List<File>> _audioFileMap = {};
+
+  /// 视频来源收藏句的 [VideoBookRow]（按 bookUid 索引），由 [_load] 填充。视频句的
+  /// 播放音频不走 [_cueMap]/[_audioFileMap]——收藏句字段自带 cue 时间窗，配上这里的
+  /// row 即可定位「该集视频文件 + 时间段」，按需 ffmpeg 抽音（见
+  /// [resolveVideoFavoriteAudioClip] / [_playVideoFavoriteAudio]）。
+  Map<String, VideoBookRow> _videoRowMap = {};
   bool _playingAudio = false;
   final _dateFmt = DateFormat('MM/dd HH:mm');
 
@@ -181,6 +236,23 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       }
     }
 
+    // 视频来源收藏句的 bookUid（按需查 VideoBooks 表）。视频句的 bookKey 是视频
+    // bookUid，既不在 SrtBooks 也不在 Audiobooks 里，故单独解析。
+    final videoBookUids = <String>{};
+    for (final fav in allFavorites) {
+      if (fav.source == kFavoriteSentenceSourceVideo &&
+          fav.bookKey != null &&
+          fav.bookKey!.isNotEmpty) {
+        videoBookUids.add(fav.bookKey!);
+      }
+    }
+    final videoRepo = VideoBookRepository(db);
+    final videoRowMap = <String, VideoBookRow>{};
+    for (final bookUid in videoBookUids) {
+      final VideoBookRow? row = await videoRepo.getByBookUid(bookUid);
+      if (row != null) videoRowMap[bookUid] = row;
+    }
+
     final cueMap = <String, List<AudioCue>>{};
     final audioFileMap = <String, List<File>>{};
 
@@ -227,6 +299,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         _bookTitleMap = bookTitleMap;
         _cueMap = cueMap;
         _audioFileMap = audioFileMap;
+        _videoRowMap = videoRowMap;
         _loading = false;
       });
     }
@@ -357,6 +430,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       return;
     }
 
+    // 视频来源句：从收藏字段自带的 cue 时间窗 + 该集视频文件抽音（容器内交错，但
+    // ffmpeg `-ss`/`-t` 在 `-i` 前快速输入定位，只解码这几秒，不读穿整个文件）。
+    if (item.source == kFavoriteSentenceSourceVideo) {
+      await _playVideoFavoriteAudio(item, bookKey);
+      return;
+    }
+
     final List<File>? audioFiles = _audioFileMap[bookKey];
     if (audioFiles == null || audioFiles.isEmpty) {
       HibikiToast.show(msg: t.srt_audio_unresolved);
@@ -385,9 +465,55 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       return;
     }
 
+    await _extractAndPlay(
+      inputPath: audioFiles[range.audioFileIndex].path,
+      startMs: range.startMs,
+      endMs: range.endMs,
+    );
+  }
+
+  /// 视频来源收藏句的音频播放：用 [resolveVideoFavoriteAudioClip] 从该集视频文件 +
+  /// 收藏自带的时间窗解析出 `[startMs, endMs)`，再走 [_extractAndPlay] 抽音播放。
+  /// 无法解析（缺 row / 缺起点时长 / 播放列表越界）时提示。
+  Future<void> _playVideoFavoriteAudio(
+    _CollectionItem item,
+    String bookUid,
+  ) async {
+    final VideoBookRow? row = _videoRowMap[bookUid];
+    if (row == null) {
+      HibikiToast.show(msg: t.srt_audio_unresolved);
+      return;
+    }
+    final ({String filePath, int startMs, int endMs})? clip =
+        resolveVideoFavoriteAudioClip(
+      row: row,
+      favoriteSectionIndex: item.sectionIndex,
+      favoriteStartMs: item.normCharOffset,
+      favoriteDurationMs: item.normCharLength,
+    );
+    if (clip == null) {
+      HibikiToast.show(msg: t.srt_audio_unresolved);
+      return;
+    }
+    await _extractAndPlay(
+      inputPath: clip.filePath,
+      startMs: clip.startMs,
+      endMs: clip.endMs,
+    );
+  }
+
+  /// 抽取 [inputPath] 的 `[startMs, endMs)` 段并播放。抽取失败（ffmpeg 不存在 / 损坏 /
+  /// 退出非零，返回 null）时弹 [t.audio_clip_failed] 提示——BUG-252：原先 result==null
+  /// 静默无反馈，用户看到「点了没用」；现在明确告知是音频截取失败而非按钮坏了。
+  /// 桌面端经 [TtsChannel.extractAudioSegment] → ffmpeg；ffmpeg 可执行的「覆盖>捆绑>
+  /// PATH」解析与捆绑损坏自动回退 PATH 由 ffmpeg_backend.dart 统一保证（BUG-233）。
+  Future<void> _extractAndPlay({
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+  }) async {
     setState(() => _playingAudio = true);
     try {
-      final String inputPath = audioFiles[range.audioFileIndex].path;
       final Directory tmpDir = await getTemporaryDirectory();
       final String outputPath = p.join(
         tmpDir.path,
@@ -396,12 +522,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
       final String? result = await TtsChannel.instance.extractAudioSegment(
         inputPath: inputPath,
-        startMs: range.startMs,
-        endMs: range.endMs,
+        startMs: startMs,
+        endMs: endMs,
         outputPath: outputPath,
       );
       if (result != null) {
         await TtsChannel.instance.playFile(result);
+      } else {
+        HibikiToast.show(msg: t.audio_clip_failed);
       }
     } finally {
       if (mounted) setState(() => _playingAudio = false);
@@ -434,6 +562,18 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   bool _hasAudio(_CollectionItem item) {
+    // 视频来源句：有该视频的 row 且收藏自带可用 cue 时间窗即可抽音（不进 _cueMap）。
+    if (item.source == kFavoriteSentenceSourceVideo) {
+      final VideoBookRow? row = _videoRowMap[item.bookKey];
+      if (row == null) return false;
+      return resolveVideoFavoriteAudioClip(
+            row: row,
+            favoriteSectionIndex: item.sectionIndex,
+            favoriteStartMs: item.normCharOffset,
+            favoriteDurationMs: item.normCharLength,
+          ) !=
+          null;
+    }
     return _cueMap.containsKey(item.bookKey) &&
         _audioFileMap.containsKey(item.bookKey);
   }
