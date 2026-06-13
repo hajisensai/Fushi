@@ -104,10 +104,13 @@ void main() {
       'HibikiTextField',
       'HibikiColorSwatch',
     ],
+    // TODO-293 长按媒体对话框重设计：旧版用 HibikiListItem 行 + HibikiActionChip 列举动作；
+    // 重设计后封面即「阅读」点击目标，动作改为叠在封面上的半透明胶囊（_TranslucentActionChip）
+    // + 危险动作藏进溢出菜单（内容性视觉，不再是 list 行 / 通用 chip）。共享 MD3 锚点收敛到
+    // 仍真实使用的 HibikiDialogFrame（外框 chrome）+ HibikiDesignTokens（spacing/type/surface 令牌）。
     'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
-      'HibikiListItem',
-      'HibikiActionChip',
       'HibikiDialogFrame',
+      'HibikiDesignTokens',
     ],
     'lib/src/utils/misc/update_checker.dart': <String>[
       'HibikiCard',
@@ -219,8 +222,14 @@ void main() {
     'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
       'HibikiTextField',
     ],
+    // BUG-244 / TODO-297：阅读器有声书播放条的播放/暂停键从扁平 HibikiIconButton
+    // 还原成原生 MD3 [IconButton.filledTonal]（标准圆形 filled-tonal 容器 +
+    // state-layer + ripple），上一句/下一句/follow/设置改无框原生 IconButton。
+    // 共享 MD3 锚点收敛到原生 filled-tonal 框 + HibikiDesignTokens（spacing 令牌）；
+    // 「圆框 md3 观感」由专用守卫 audiobook_play_bar_md3_frame_test.dart 锁定。
     'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
-      'HibikiIconButton',
+      'IconButton.filledTonal',
+      'HibikiDesignTokens',
     ],
     'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
       'HibikiSelectableChip',
@@ -594,6 +603,11 @@ void main() {
           'WebView result theming injects MD3 ColorScheme surface roles into popup CSS.',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
+      'lib/src/pages/implementations/media_item_dialog_page.dart':
+          'TODO-293 long-press media dialog redesign: the cover-hero placeholder '
+              '(no-cover case) paints a surfaceContainerHighest->High tonal '
+              'gradient as immersive cover content, not ordinary page chrome. '
+              'Surfaces still flow through HibikiDialogFrame + HibikiDesignTokens.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
       'lib/src/pages/implementations/reader_hibiki_page.dart':
@@ -1466,7 +1480,9 @@ void main() {
     final String dictionaryLoading = _functionSource(
       sourcePage,
       'Widget buildDictionaryLoading()',
-      'Future<bool> onMineFromPopup',
+      // TODO-270-D 把 onMineFromPopup/onUpdateFromPopup 的返回类型由 Future<bool>
+      // 改成 Future<MinePopupResult>，守卫的区段结束锚点跟随新签名。
+      'Future<MinePopupResult> onMineFromPopup',
     );
     expect(dictionaryLoading, contains('HibikiCard('));
     expect(
