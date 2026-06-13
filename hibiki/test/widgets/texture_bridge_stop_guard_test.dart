@@ -30,6 +30,19 @@ import 'package:flutter_test/flutter_test.dart';
 /// **永久保活，绝不主动释放** —— 帧池内存永久有效 -> closed-flag 永久 = 1 ->
 /// 任何迟到 deferral 永久安全早返回。已 Close 帧池只剩小 COM 壳（GPU 资源随 Close
 /// 释放），是有界小泄漏，换零时机赌注的根治。
+///
+/// 第九修（永久保活）仍崩（重开 BUG-209 第十修）：第九修只在 StopInternal 走退役保活，
+/// 但帧池还有另两条**非 StopInternal** 的丢弃/替换路径漏网，正是 dump 81504 崩溃池
+/// MEM_FREE 且不在 retired-list 的来源：
+///   (A) Start() 重入覆盖：CustomPlatformView setSize 每次都调 texture_bridge_->Start()。
+///       若上一轮 Start 在 CreateCaptureSession/StartCapture 失败后早返回（不设
+///       is_running_，但 frame_pool_ 已赋值且已 add_FrameArrived），下一次 Start 越过
+///       is_running_ 守卫直接覆盖 frame_pool_ ComPtr -> 旧池裸释放（挂着在途 deferral）。
+///   (B) OnFrameArrived resize：原 frame_pool_->Recreate(...) 复用同一池只换 back buffer，
+///       但拆掉旧池内部 present 基建，其在途 deferral 仍指向被拆状态 -> UAF。
+/// 第十修把退役保活三步（remove_FrameArrived 断源 -> Close 设 closed-flag -> 永久保活）
+/// 收敛进单一 RetireFramePoolLocked，StopInternal / Start 重入 / OnFrameArrived resize 三条
+/// 路径全走它；resize 改为退役旧池 + 建全新池（RecreateFramePoolLocked），删除裸 Recreate。
 void main() {
   test(
       'BUG-209: TextureBridge teardown closes pool and retires it to survive '
@@ -136,28 +149,91 @@ void main() {
         stopInternalBody.indexOf('session_closable->Close()');
     expect(siSessionClose, greaterThanOrEqualTo(0),
         reason: 'StopInternal 必须先 Close capture session 停止产生新帧');
-    final int siRevoke = stopInternalBody
-        .indexOf('remove_FrameArrived(on_frame_arrived_token_)');
-    expect(siRevoke, greaterThan(siSessionClose),
-        reason: 'StopInternal 必须在 Close session 后同步 remove_FrameArrived 断源');
-    final int siPoolClose = stopInternalBody.indexOf('pool_closable');
-    expect(siPoolClose, greaterThan(siRevoke),
-        reason: 'StopInternal 必须在 remove_FrameArrived 之后显式 Close 帧池'
+    // 第十修：帧池断源 + Close + 退役保活三步收敛进 RetireFramePoolLocked，
+    // StopInternal 在 Close session 后调它（不再在 StopInternal 体内内联）。
+    final int siRetireCall = stopInternalBody.indexOf('RetireFramePoolLocked()');
+    expect(siRetireCall, greaterThan(siSessionClose),
+        reason: 'StopInternal 必须在 Close session 后调 RetireFramePoolLocked '
+            '退役保活帧池（断源 + Close + 永久保活的统一不变量）');
+
+    // RetireFramePoolLocked 体内必须按 dump 实证顺序执行三步根因防线。
+    final int retireStart =
+        src.indexOf('void TextureBridge::RetireFramePoolLocked()');
+    expect(retireStart, greaterThanOrEqualTo(0),
+        reason: 'TextureBridge::RetireFramePoolLocked 必须可审计');
+    final int retireEnd = src.indexOf('void TextureBridge::', retireStart + 1);
+    expect(retireEnd, greaterThan(retireStart),
+        reason: 'RetireFramePoolLocked 之后应还有其它 TextureBridge 方法定义');
+    final String retireBody = src.substring(retireStart, retireEnd);
+
+    final int rRevoke =
+        retireBody.indexOf('remove_FrameArrived(on_frame_arrived_token_)');
+    expect(rRevoke, greaterThanOrEqualTo(0),
+        reason: 'RetireFramePoolLocked 必须同步 remove_FrameArrived 断源');
+    final int rPoolClose = retireBody.indexOf('pool_closable');
+    expect(rPoolClose, greaterThan(rRevoke),
+        reason: 'RetireFramePoolLocked 必须在 remove_FrameArrived 之后显式 Close 帧池'
             '（IClosable）设 closed-flag：在途/迟到 deferred FirePresentEvent 据此'
             '早返回 no-op，不读 event 成员（dump 实证根因防线）');
-    expect(RegExp(r'pool_closable\s*->\s*Close\(\)').hasMatch(stopInternalBody),
+    expect(RegExp(r'pool_closable\s*->\s*Close\(\)').hasMatch(retireBody),
         isTrue,
-        reason: 'StopInternal 必须对帧池 IClosable 调用 Close 设 closed-flag');
-    final int siRetire = stopInternalBody.indexOf(
+        reason: 'RetireFramePoolLocked 必须对帧池 IClosable 调用 Close 设 closed-flag');
+    final int rRetire = retireBody.indexOf(
         'RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_))');
-    expect(siRetire, greaterThan(siPoolClose),
-        reason: 'StopInternal 必须在 Close 帧池后把帧池 ComPtr move 进 '
+    expect(rRetire, greaterThan(rPoolClose),
+        reason: 'RetireFramePoolLocked 必须在 Close 帧池后把帧池 ComPtr move 进 '
             'RetiredFramePoolRegistry 保活：帧池内存在所有在途 deferral 跑完前绝不释放');
-    final int siPoolNull =
-        stopInternalBody.indexOf('frame_pool_ = nullptr', siRetire);
-    expect(siPoolNull, greaterThan(siRetire),
-        reason: 'frame_pool_ 必须先 move 进退役注册表再置空：不得在 teardown 当下'
-            '释放帧池最后强引用（第七修的赌注，已被 dump 反证）');
+    final int rPoolNull = retireBody.indexOf('frame_pool_ = nullptr', rRetire);
+    expect(rPoolNull, greaterThan(rRetire),
+        reason: 'frame_pool_ 必须先 move 进退役注册表再置空：不得在任何路径裸释放'
+            '帧池最后强引用（第七修赌注已被 dump 反证）');
+
+    // 第十修核心：扩展保活到所有「丢弃/替换帧池」的路径。
+    // (A) Start() 重入覆盖 frame_pool_ 前必须先退役保活旧池——dump 81504 崩溃池
+    //     MEM_FREE 且不在 retired-list，正是从这条路径裸覆盖释放。
+    final int startStart = src.indexOf('bool TextureBridge::Start()');
+    expect(startStart, greaterThanOrEqualTo(0),
+        reason: 'TextureBridge::Start 必须可审计');
+    final int startEnd = src.indexOf('bool TextureBridge::Create', startStart);
+    expect(startEnd, greaterThan(startStart),
+        reason: 'Start 之后应还有 CreateAndStartFramePoolLocked 定义');
+    final String startBody = src.substring(startStart, startEnd);
+    expect(startBody.contains('RetireFramePoolLocked()'), isTrue,
+        reason: 'Start() 在覆盖 frame_pool_ 前必须先 RetireFramePoolLocked 退役旧池：'
+            'setSize 每次都调 Start()，CreateCaptureSession/StartCapture 失败后早返回会'
+            '留下已 add_FrameArrived 的旧池，下一次 Start 越过 is_running_ 守卫裸覆盖它');
+
+    // (B) OnFrameArrived 的 resize 路径禁止 frame_pool_->Recreate（拆旧池内部 present
+    //     基建而在途 deferral 仍指向旧状态 -> UAF），必须改走退役旧池 + 建全新池。
+    expect(src.contains('frame_pool_->Recreate('), isFalse,
+        reason: '禁止 frame_pool_->Recreate：resize 复用同一池会拆旧内部 present 基建，'
+            '其在途 deferred FirePresentEvent 仍指向被拆状态 -> 同一 0xf0d5 null-delegate '
+            'UAF。必须改走 RecreateFramePoolLocked（退役旧池保活 + 建全新池）');
+    final int onFrameArrivedStart =
+        src.indexOf('void TextureBridge::OnFrameArrived()');
+    expect(onFrameArrivedStart, greaterThanOrEqualTo(0),
+        reason: 'TextureBridge::OnFrameArrived 必须可审计');
+    final String onFrameArrivedBody = src.substring(onFrameArrivedStart);
+    expect(onFrameArrivedBody.contains('RecreateFramePoolLocked()'), isTrue,
+        reason: 'OnFrameArrived 的 needs_update_(resize) 分支必须走 '
+            'RecreateFramePoolLocked 退役保活旧池 + 建全新池，不得裸 Recreate');
+
+    // RecreateFramePoolLocked 必须先退役保活旧池再重建，绝不裸释放/裸 Recreate。
+    final int recreateStart =
+        src.indexOf('void TextureBridge::RecreateFramePoolLocked()');
+    expect(recreateStart, greaterThanOrEqualTo(0),
+        reason: 'TextureBridge::RecreateFramePoolLocked 必须可审计');
+    final int recreateEnd = src.indexOf('void TextureBridge::', recreateStart + 1);
+    expect(recreateEnd, greaterThan(recreateStart),
+        reason: 'RecreateFramePoolLocked 之后应还有其它 TextureBridge 方法定义');
+    final String recreateBody = src.substring(recreateStart, recreateEnd);
+    final int recRetire = recreateBody.indexOf('RetireFramePoolLocked()');
+    final int recCreate =
+        recreateBody.indexOf('CreateAndStartFramePoolLocked()');
+    expect(recRetire, greaterThanOrEqualTo(0),
+        reason: 'RecreateFramePoolLocked 必须先退役保活旧池');
+    expect(recCreate, greaterThan(recRetire),
+        reason: 'RecreateFramePoolLocked 必须在退役旧池后再建全新池（顺序不可换）');
 
     expect(src.contains('TryEnqueueWithPriority'), isFalse,
         reason: '禁止回退到第五修的 Low 优先级押注模型');
