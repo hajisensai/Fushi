@@ -274,9 +274,9 @@ void main() {
 
     // TODO-152 sub-A: inline action buttons (jump/copy/favorite) + header toolbar.
 
-    testWidgets('current cue row shows inline jump/copy/favorite buttons', (
-      WidgetTester tester,
-    ) async {
+    testWidgets(
+        'TODO-309/BUG-265: every row shows inline jump/copy/favorite buttons '
+        'persistently (not only hover/selected)', (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[
@@ -295,13 +295,13 @@ void main() {
         title: 'Subtitle list',
         emptyHint: 'empty',
       )));
-      // Selecting the current cue keeps its inline three buttons visible.
-      controller.debugUpdateCueForPosition(500);
-      await tester.pump();
-
-      expect(find.byIcon(Icons.play_arrow), findsOneWidget);
-      expect(find.byIcon(Icons.content_copy_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.star_border), findsOneWidget);
+      // No cue is current, no hover, nothing selected: the action buttons must
+      // STILL be present on every row (regression guard: revert to the old
+      // `showActions = hovered || selected || selectedForCard` gate -> these
+      // would be findsNothing -> red).
+      expect(find.byIcon(Icons.play_arrow), findsNWidgets(2));
+      expect(find.byIcon(Icons.content_copy_outlined), findsNWidgets(2));
+      expect(find.byIcon(Icons.star_border), findsNWidgets(2));
     });
 
     testWidgets('inline copy button fires onCopyCue with the row cue', (
@@ -400,6 +400,150 @@ void main() {
       await tester.tap(find.byIcon(Icons.vertical_align_center));
       await tester.pump();
       expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
+    });
+
+    testWidgets(
+        'TODO-278b/BUG-263: row subtitle text is single-line no-wrap '
+        '(maxLines 1 + softWrap false, no 2-line wrap)',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000,
+            'a very very very long subtitle line that would wrap if allowed'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 280,
+      )));
+
+      final Text rowText = tester.widget<Text>(find.text(
+          'a very very very long subtitle line that would wrap if allowed'));
+      // Revert to maxLines:2 / softWrap default -> these would be wrong -> red.
+      expect(rowText.maxLines, 1);
+      expect(rowText.softWrap, isFalse);
+      expect(rowText.overflow, TextOverflow.ellipsis);
+    });
+
+    testWidgets(
+        'TODO-278a/BUG-263: with onLookupCue, tapping row text triggers lookup '
+        'and NOT the seek/onTapCue', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'lookup me')]);
+      AudioCue? seeked;
+      AudioCue? lookedUp;
+      Rect? lookupRect;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (AudioCue c) => seeked = c,
+        onLookupCue: (AudioCue c, Rect r) {
+          lookedUp = c;
+          lookupRect = r;
+        },
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      await tester.tap(find.text('lookup me'));
+      await tester.pump();
+
+      // Text tap -> lookup (with a real screen rect), not the row seek.
+      expect(lookedUp, isNotNull);
+      expect(lookedUp!.text, 'lookup me');
+      expect(lookupRect, isNotNull);
+      expect(lookupRect, isNot(Rect.zero));
+      expect(seeked, isNull,
+          reason: 'tapping text must look up, not seek (BUG-263)');
+    });
+
+    testWidgets(
+        'TODO-278a/BUG-263: without onLookupCue, tapping row text still seeks '
+        '(backward compatible)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'seek me')]);
+      AudioCue? seeked;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (AudioCue c) => seeked = c,
+        // onLookupCue intentionally omitted (null).
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      await tester.tap(find.text('seek me'));
+      await tester.pump();
+      expect(seeked, isNotNull);
+      expect(seeked!.text, 'seek me');
+    });
+
+    testWidgets(
+        'TODO-301/BUG-264: favorited row gets a left tertiary border marker',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'plain row'),
+        _cue(1, 2000, 3000, 'fav row'),
+      ]);
+      const ColorScheme cs = ColorScheme.dark();
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (AudioCue c) => c.text == 'fav row',
+        onClose: () {},
+        colorScheme: cs,
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      Border? borderOf(String text) {
+        // Nearest Container ancestor of the row text == the row's own Container
+        // (which carries the favorite left-border decoration).
+        final Container container = tester
+            .widgetList<Container>(
+              find.ancestor(
+                of: find.text(text),
+                matching: find.byType(Container),
+              ),
+            )
+            .first;
+        return (container.decoration as BoxDecoration?)?.border as Border?;
+      }
+
+      // Favorited row has a left border in the tertiary color; plain row has
+      // none (revert the favorite marker -> both null -> red).
+      final Border? favBorder = borderOf('fav row');
+      expect(favBorder, isNotNull);
+      expect(favBorder!.left.color, cs.tertiary);
+      expect(favBorder.left.width, 3);
+
+      expect(borderOf('plain row')?.left.width ?? 0, 0);
     });
 
     testWidgets('larger font button enlarges row text', (

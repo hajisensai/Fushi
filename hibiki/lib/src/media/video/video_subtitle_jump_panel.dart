@@ -33,6 +33,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.onFavoriteCue,
     required this.isCueFavorited,
     required this.onClose,
+    this.onLookupCue,
     required this.colorScheme,
     required this.title,
     required this.emptyHint,
@@ -49,6 +50,11 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final Future<void> Function(AudioCue cue) onFavoriteCue;
   final bool Function(AudioCue cue) isCueFavorited;
   final VoidCallback onClose;
+
+  /// 点列表项字幕文本 → 从句首起查词（BUG-263）。[cue] 为被点行的字幕句，[textRect]
+  /// 为该行文本 widget 的全局屏幕矩形（查词浮层定位用）。null 时文本不可查词、行点击
+  /// 仅 seek（向后兼容：部分调用方 / 测试不接查词）。
+  final void Function(AudioCue cue, Rect textRect)? onLookupCue;
   final ColorScheme colorScheme;
   final String title;
   final String emptyHint;
@@ -343,13 +349,19 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   Widget _buildRow(ColorScheme cs, AudioCue cue, int index, bool selected) {
     final bool hovered = index == _hoveredIndex;
     final bool selectedForCard = _isCueSelectedForCard(cue);
+    // 收藏（[favorited]）是持久属性，不抢「正在播 / 挖词选中 / hover」的背景色：用左侧
+    // 竖色条 + 行内实心星标记，与三种瞬态背景正交叠加（BUG-264）。背景优先级仍为
+    // current > selectedForCard > hover。
+    final bool favorited = widget.isCueFavorited(cue);
     final Color bg = selected
         ? cs.primaryContainer
         : selectedForCard
             ? cs.secondaryContainer.withValues(alpha: 0.72)
-            : (hovered
-                ? cs.onSurface.withValues(alpha: 0.06)
-                : Colors.transparent);
+            : favorited
+                ? cs.tertiaryContainer.withValues(alpha: 0.32)
+                : (hovered
+                    ? cs.onSurface.withValues(alpha: 0.06)
+                    : Colors.transparent);
     final Color tsColor = selected
         ? cs.onPrimaryContainer
         : selectedForCard
@@ -360,17 +372,26 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         : selectedForCard
             ? cs.onSecondaryContainer
             : cs.onSurface;
-    final bool showActions = hovered || selected || selectedForCard;
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredIndex = index),
       onExit: (_) {
         if (_hoveredIndex == index) setState(() => _hoveredIndex = -1);
       },
       child: InkWell(
+        // 行点击 = seek 到该句（与 asbplayer transcript 一致）。文本字符查词由文本区
+        // 叠加的 translucent hit-test 层承载（[onLookupCue] 非 null 时），它赢手势竞技场、
+        // 截断本 InkWell，故点字查词、点空白 / 时间戳 seek，两不冲突（BUG-263）。
         onTap: () => widget.onTapCue(cue),
         child: Container(
-          color: bg,
+          // 左侧 3px 竖色条标记已收藏行（BUG-264）：未收藏时无边框、像素级不变。背景色
+          // 统一走 [decoration]（不能同时传 color 与 decoration）。
           padding: const EdgeInsets.only(left: 8, right: 4, top: 8, bottom: 8),
+          decoration: BoxDecoration(
+            color: bg,
+            border: favorited
+                ? Border(left: BorderSide(color: cs.tertiary, width: 3))
+                : null,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -393,24 +414,57 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  cue.text,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: _effectiveFontSize,
-                    fontWeight:
-                        selected || selectedForCard ? FontWeight.w600 : null,
-                    height: 1.25,
-                  ),
-                ),
-              ),
-              if (showActions) _buildRowActions(cs, cue, selected),
+                  child: _buildRowText(
+                      cs, cue, textColor, selected, selectedForCard)),
+              // 操作按钮（跳转 / 复制 / 收藏）常驻，不再仅 hover / 选中可见（BUG-265）：
+              // 长文本由上面单行省略让出空间，按钮不会挤坏布局。
+              _buildRowActions(cs, cue, selected, favorited),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 行的字幕文本。**单行不换行 + 省略**（BUG-263 ②：固定 [_itemExtent] 下旧 `maxLines:2`
+  /// 长句会换行 / 被裁），并在 [VideoSubtitleJumpPanel.onLookupCue] 非 null 时叠加一片
+  /// translucent 的 tap 层 → 点文本从句首起查词（复用页面层 `_lookupAt` 链路：暂停 →
+  /// 推查词浮层，BUG-263 ①）。[onLookupCue] 为 null（无查词能力 / 部分测试）时不叠加，
+  /// 行点击仍 seek（向后兼容）。
+  Widget _buildRowText(
+    ColorScheme cs,
+    AudioCue cue,
+    Color textColor,
+    bool selected,
+    bool selectedForCard,
+  ) {
+    final Widget text = Text(
+      cue.text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+      style: TextStyle(
+        color: textColor,
+        fontSize: _effectiveFontSize,
+        fontWeight: selected || selectedForCard ? FontWeight.w600 : null,
+        height: 1.25,
+      ),
+    );
+    final void Function(AudioCue, Rect)? onLookup = widget.onLookupCue;
+    if (onLookup == null) return text;
+    final GlobalKey textKey = GlobalKey();
+    return GestureDetector(
+      // translucent：tap 赢手势竞技场截断外层 InkWell（点文本 = 查词、非 seek），
+      // 但不独占 hover hit-test（与底部 overlay BUG-198 同范式）。
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        final RenderObject? ro = textKey.currentContext?.findRenderObject();
+        final Rect rect = ro is RenderBox && ro.hasSize
+            ? (ro.localToGlobal(Offset.zero) & ro.size)
+            : Rect.zero;
+        onLookup(cue, rect);
+      },
+      child: KeyedSubtree(key: textKey, child: text),
     );
   }
 
@@ -434,10 +488,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     );
   }
 
-  Widget _buildRowActions(ColorScheme cs, AudioCue cue, bool selected) {
+  Widget _buildRowActions(
+    ColorScheme cs,
+    AudioCue cue,
+    bool selected,
+    bool favorited,
+  ) {
     final Color iconColor =
         selected ? cs.onPrimaryContainer : cs.onSurfaceVariant;
-    final bool favorited = widget.isCueFavorited(cue);
     final double iconSize = _effectiveFontSize + 2;
     return Row(
       mainAxisSize: MainAxisSize.min,
