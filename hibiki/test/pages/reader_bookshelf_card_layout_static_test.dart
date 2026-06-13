@@ -25,4 +25,56 @@ void main() {
       reason: 'all bookshelf card variants should share the footer layout',
     );
   });
+
+  test(
+      'book title row starts with title and does not reserve leading tag width',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+    final String footer = _functionSource(source, 'Widget _bookCardFooter({');
+
+    expect(layout, contains('Widget? tagLabels'));
+    expect(layout, contains('Widget? coverBadge'));
+    expect(layout, isNot(contains('Widget? leading')));
+    expect(layout, isNot(contains('Widget? trailing')));
+    expect(source, isNot(contains('leading: tagWidget')));
+
+    final int titleText = footer.indexOf('Text(\n                    title,');
+    final int tagArea = footer.indexOf('_bookCardTagArea(tagLabels)');
+    expect(titleText, isNonNegative, reason: 'title must be rendered directly');
+    expect(tagArea, greaterThan(titleText),
+        reason: 'tags must render after the title area, not as title leading');
+
+    final RegExp titleFirstRow = RegExp(
+      r'Row\([\s\S]*?children:\s*\[[\s\S]*?Expanded\([\s\S]*?Text\(\s*title,',
+      multiLine: true,
+    );
+    expect(titleFirstRow.hasMatch(footer), isTrue,
+        reason: 'the first semantic child in the title row must be the title');
+  });
+
+  test('long or multiple book tags are clipped in their own footer area', () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String tagArea = _functionSource(source, 'Widget _bookCardTagArea(');
+
+    expect(tagArea, contains('ConstrainedBox('));
+    expect(tagArea, contains('maxHeight: tokens.spacing.gap * 3.5'));
+    expect(tagArea, contains('ClipRect(child: tagLabels)'));
+  });
+}
+
+String _functionSource(String source, String startToken) {
+  final int start = source.indexOf(startToken);
+  expect(start, isNonNegative, reason: 'missing $startToken');
+  final RegExp nextWidget = RegExp(r'\n  Widget [_A-Za-z0-9]+\(');
+  final RegExpMatch? next = nextWidget.firstMatch(
+    source.substring(start + startToken.length),
+  );
+  final int end =
+      next == null ? source.length : start + startToken.length + next.start + 1;
+  return source.substring(start, end);
 }
