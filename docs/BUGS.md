@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 250 条。点号进各自文件。
+> 共 251 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-259](bugs/BUG-259-cue-seek-preroll-precision.md) | ✅ | ✅ | 视频上/下一句字幕容易漏掉开头 0.x 秒（句首被关键帧吸附吃掉） |
 | [BUG-254](bugs/BUG-254-video-panel-remove-x-tap-outside-close.md) | ✅ | ✅ | 视频侧栏面板删右上角 X、改点左侧 / 空白关闭 |
 | [BUG-253](bugs/BUG-253-video-panel-controls-still-show.md) | ✅ | ✅ | 视频侧栏面板打开后背景控制条 / 右侧 rail 仍冒出来 |
 | [BUG-252](bugs/BUG-252-collection-audio-play-silent-fail.md) | ✅ | ✅ | 收藏夹播放按钮抽音失败时静默无反馈（「点了没用」）+ 视频收藏句缺播放按钮 |

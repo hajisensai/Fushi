@@ -141,6 +141,98 @@ void main() {
     });
   });
 
+  group('BUG-259 cue seek 前导余量（句首不被关键帧吸附吃掉）', () {
+    test('默认 preRoll=0 时行为不变（与字幕结束暂停精确 seek 同语义）', () {
+      // 字幕结束暂停 _pauseAndSeekForSubtitleEnd 用 cueStartMs: cue.endMs + 默认 0 余量，
+      // 不能被前导余量影响——否则暂停点被拉回句中。
+      expect(
+        VideoPlayerController.cueSeekTargetMs(cueStartMs: 10000, delayMs: 0),
+        10000,
+      );
+      expect(
+        VideoPlayerController.cueSeekTargetMs(cueStartMs: 10000, delayMs: 500),
+        10500,
+      );
+    });
+
+    test('preRoll 把目标点往前移，吸收 media_kit 关键帧吸附（落点不越过句首）', () {
+      // 跳到 10000ms 句首、余量 180ms：请求 seek 到 9820，让关键帧吸附后落回句首附近。
+      // 撤掉余量（preRoll=0）会请求 10000，吸附后越过句首 → 漏开头（红）。
+      expect(
+        VideoPlayerController.cueSeekTargetMs(
+          cueStartMs: 10000,
+          delayMs: 0,
+          preRollMs: 180,
+        ),
+        9820,
+      );
+    });
+
+    test('实链路：skipToCue 用 kCueSeekPreRollMs 常量（生产值 > 0，落点先于句首）', () {
+      // 钉住生产常量本身是正的前导余量：若被改回 0，前导余量整体失效（漏开头回归）。
+      expect(VideoPlayerController.kCueSeekPreRollMs, greaterThan(0));
+    });
+
+    test('余量减出负值时下界 clamp 到 0', () {
+      expect(
+        VideoPlayerController.cueSeekTargetMs(
+          cueStartMs: 100,
+          delayMs: 0,
+          preRollMs: 180,
+        ),
+        0,
+      );
+    });
+
+    test('上一句下界：余量过大不串回前一句（落点钳到上一句起点）', () {
+      // 当前句 10000ms、余量 500ms 本会落到 9500；但上一句起点在 9800ms，
+      // 落点钳到 9800（不带入上一句尾巴）。
+      expect(
+        VideoPlayerController.cueSeekTargetMs(
+          cueStartMs: 10000,
+          delayMs: 0,
+          preRollMs: 500,
+          prevCueStartMs: 9800,
+        ),
+        9800,
+      );
+      // 余量没越过上一句起点时按余量落点（10000-180=9820 > 9800）。
+      expect(
+        VideoPlayerController.cueSeekTargetMs(
+          cueStartMs: 10000,
+          delayMs: 0,
+          preRollMs: 180,
+          prevCueStartMs: 9800,
+        ),
+        9820,
+      );
+    });
+
+    test('前导余量与下界都在 cue 轴上算完后再叠加 delay（逆变换在最后）', () {
+      // cue 轴目标 = max(10000-500, 9800) = 9800，再叠加 delay 300 → 10100。
+      expect(
+        VideoPlayerController.cueSeekTargetMs(
+          cueStartMs: 10000,
+          delayMs: 300,
+          preRollMs: 500,
+          prevCueStartMs: 9800,
+        ),
+        10100,
+      );
+    });
+
+    test('负 preRoll 当 0 处理（防御）', () {
+      expect(
+        VideoPlayerController.cueSeekTargetMs(
+          cueStartMs: 10000,
+          delayMs: 0,
+          preRollMs: -50,
+        ),
+        10000,
+      );
+    });
+  });
+
   group('VideoPlayerController pause at subtitle end', () {
     test('pauses once when leaving the active cue', () {
       final c = VideoPlayerController();
