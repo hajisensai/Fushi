@@ -44,6 +44,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     required this.controller,
     this.onCharTap,
     this.hitTester,
+    this.isCueFavorited,
     this.blurEnabled = false,
     this.fontSize = 36,
     this.textColor,
@@ -69,6 +70,11 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 可选的字符命中句柄：build 时把按全局坐标反查字符的实现绑进来，供查词浮层的
   /// dismiss barrier「点同句换词保持暂停」用（见 [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester? hitTester;
+
+  /// 当前字幕句是否已收藏（TODO-301 / BUG-264）。非 null 时，当前句已收藏会在字幕盒
+  /// 起始处显示一枚实心星标记（与字幕列表行的收藏标记同语义）。null（测试 / 有声书等
+  /// 无收藏数据源场景）= 不显示标记，外观与历史像素级一致。
+  final bool Function(AudioCue cue)? isCueFavorited;
 
   /// 听力沉浸：字幕默认模糊，悬停/点击显形。
   final bool blurEnabled;
@@ -244,6 +250,37 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
             ),
           ),
         );
+
+        // 当前句已收藏：在字幕盒左上角外侧叠一枚实心星角标（TODO-301 / BUG-264），与
+        // 字幕列表行的收藏标记同语义。用 [Stack](clipBehavior: none) + [Positioned] 叠在
+        // 盒外，不挤压字符布局（不改字幕盒尺寸、不影响居中与字符 hit-test 几何）。
+        // [isCueFavorited] 为 null（测试 / 无收藏数据源）时不叠，外观像素级不变。
+        final AudioCue? currentCue = widget.controller.currentCue;
+        final bool favorited = currentCue != null &&
+            (widget.isCueFavorited?.call(currentCue) ?? false);
+        if (favorited) {
+          final Color starColor =
+              widget.textColor ?? Theme.of(context).colorScheme.tertiary;
+          box = Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              box,
+              Positioned(
+                left: -6,
+                top: -10,
+                child: Icon(
+                  Icons.star,
+                  size: widget.fontSize * 0.6,
+                  color: starColor,
+                  shadows: buildSubtitleShadows(
+                    widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
+                    widget.shadowThickness,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
 
         // 字符点击查词：整个字幕盒一个 translucent GestureDetector，松手时用
         // [_charHitTest] 按全局坐标反查命中的字符 grapheme 再回调 [onCharTap]。

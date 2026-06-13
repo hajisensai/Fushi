@@ -1367,6 +1367,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 视频就绪后预热查词浮层（BUG-094）：seed 一个常驻隐藏热 WebView，全程复用，
     // 查词不再每次冷加载白屏。放成功分支（缺书/错误态不预热，无视频无需查词）。
     _seedWarmPopup();
+    // TODO-301/BUG-264: fill the favorited-sentence cache once on video
+    // open so the bottom subtitle overlay's favorite star
+    // ([_isCueFavorited] reads [_favoritedVideoSentences]) shows for
+    // already-favorited cues even before the subtitle list is ever opened.
+    unawaited(_refreshFavoritedCueCache());
     if (videoPath != null) {
       // TODO-011: large REMUX containers can spend many seconds demuxing text
       // embedded subtitles on the first switch. Start the shared cache fill
@@ -1587,6 +1592,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _handleSubtitleJumpTap(AudioCue cue) {
     _pokeControlsVisible();
     unawaited(_controller?.skipToCue(cue));
+  }
+
+  /// 点字幕跳转列表里某句的文本 → 从句首起查词（TODO-278 / BUG-263）。复用底部字幕
+  /// 字符点击的同一条查词链路 [_lookupAt]（暂停视频 → 推与阅读器 / 词典页同款查词浮层），
+  /// graphemeIndex 取 0（从句首最长匹配），[textRect] 为该行文本的屏幕矩形供浮层定位。
+  /// 沉浸锁不允许查词时早返回（与字幕字符点击 [_handleSubtitleLookupTap] 同门控）。
+  void _handleSubtitleListLookup(AudioCue cue, Rect textRect) {
+    if (!_immersiveAllowsLookup) return;
+    final String sentence = cue.text;
+    if (sentence.trim().isEmpty) return;
+    unawaited(_lookupAt(sentence, 0, textRect));
   }
 
   /// 翻转锁定 / 沉浸模式（TODO-101；锁屏按钮 / Shift+L 快捷键 / 常驻解锁按钮共用）。
@@ -5294,6 +5310,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     controller: controller,
                     onCharTap: _handleSubtitleLookupTap,
                     hitTester: _subtitleHitTester,
+                    // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
+                    // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
+                    // 后 setState 触发本 builder 重建，标记即时更新。
+                    isCueFavorited: _isCueFavorited,
                     blurEnabled: appModel.videoSubtitleBlur,
                     fontSize: _subtitleStyle.fontSize,
                     textColor: _subtitleStyle.resolveTextColor(
@@ -5476,6 +5496,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       key: const ValueKey<String>('video-subtitle-jump-panel'),
                       controller: controller,
                       onTapCue: _handleSubtitleJumpTap,
+                      onLookupCue: _handleSubtitleListLookup,
                       onCopyCue: _copyCueText,
                       onFavoriteCue: _toggleFavoriteCueForVideo,
                       isCueFavorited: _isCueFavorited,

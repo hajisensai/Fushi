@@ -282,6 +282,45 @@ void main() {
     expect(find.byType(ImageFiltered), findsNothing);
   });
 
+  group('TODO-301/BUG-267 favorited current cue shows a star marker', () {
+    testWidgets('isCueFavorited true -> filled star icon rendered', (
+      tester,
+    ) async {
+      final VideoPlayerController c = _controllerWithCue('テスト');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(
+          controller: c,
+          isCueFavorited: (_) => true,
+        ),
+      );
+      // Revert the marker / pass isCueFavorited:false -> findsNothing -> red.
+      expect(find.byIcon(Icons.star), findsOneWidget);
+    });
+
+    testWidgets('isCueFavorited false -> no star marker (pixel-identical)', (
+      tester,
+    ) async {
+      final VideoPlayerController c = _controllerWithCue('テスト');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(
+          controller: c,
+          isCueFavorited: (_) => false,
+        ),
+      );
+      expect(find.byIcon(Icons.star), findsNothing);
+    });
+
+    testWidgets('isCueFavorited null -> no star marker (no data source)', (
+      tester,
+    ) async {
+      final VideoPlayerController c = _controllerWithCue('テスト');
+      await _pump(tester, VideoSubtitleOverlay(controller: c));
+      expect(find.byIcon(Icons.star), findsNothing);
+    });
+  });
+
   testWidgets('appearance: custom font size applied', (tester) async {
     final VideoPlayerController c = _controllerWithCue('A');
     await _pump(

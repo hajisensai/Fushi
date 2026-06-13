@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 260 条。点号进各自文件。
+> 共 263 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-268](bugs/BUG-268-subtitle-list-actions-persistent.md) | ✅ | ✅ | 字幕列表行操作按钮应常驻 |
+| [BUG-267](bugs/BUG-267-subtitle-list-favorite-highlight.md) | ✅ | ✅ | 收藏字幕在列表和底栏应有标记 |
+| [BUG-266](bugs/BUG-266-subtitle-list-lookup-nowrap.md) | ✅ | ✅ | 字幕列表无法查词且长文本换行 |
 | [BUG-264](bugs/BUG-264-dead-configurable-shortcut-actions.md) | ✅ | ✅ | 快捷键设置每个选项是否都生效（死项审计 + 完整性守卫） |
 | [BUG-263](bugs/BUG-263-focus-vs-shortcut-arrow-dispatch.md) | ✅ | ✅ | 焦点遍历与方向键快捷键互抢（按下/重复分属两套焦点引擎） |
 | [BUG-262](bugs/BUG-262-remove-rightclick-shader-compare.md) | ✅ | ✅ | 删除视频右键菜单的对比原画项 |

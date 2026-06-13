@@ -1,0 +1,12 @@
+## BUG-267 · 收藏字幕在列表和底栏应有标记
+- **报告**：2026-06-14（用户：TODO-301）
+- **真实性**：✅ 真 bug — 收藏字幕（收藏语句）的数据源是 `FavoriteSentence` 表 + `FavoriteSentenceRepository`，视频来源标 `kFavoriteSentenceSourceVideo`，按 `bookKey + normCharOffset(=cue.startMs) + sectionIndex(=episode)` 匹配；页面用同步缓存 `_favoritedVideoSentences`（`video_hibiki_page.dart:2041 _isCueFavorited`）。原实现：① 列表行只有「收藏星按钮」可点，没有「已收藏」的行级视觉标记；② 底部字幕 overlay（`video_subtitle_overlay.dart`）完全不知道当前句是否收藏、无任何标记；③ `_favoritedVideoSentences` 只在打开字幕列表时（`_refreshFavoritedCueCache`）才填，未开过列表则底栏拿不到收藏态。
+- **[x] ① 已修复** — 提交 `22087c2f9（overlay 星标+页面接线）/ a2ad8bbb2（列表行收藏标记，随 _buildRow 重写）`
+  - **列表行标记**（`video_subtitle_jump_panel.dart` `_buildRow`）：已收藏行加左侧 3px `cs.tertiary` 竖色条 + 低透明 `tertiaryContainer` 底色；与「正在播 / 挖词选中 / hover」三种瞬态背景正交（收藏是持久属性，不抢瞬态背景优先级）。
+  - **底栏 overlay 标记**（`video_subtitle_overlay.dart`）：新增 `isCueFavorited(AudioCue)?` 回调，当前句已收藏时在字幕盒左上角外侧用 `Stack(clipBehavior:none)+Positioned` 叠一枚实心星（不挤压字符布局、不影响居中与字符 hit-test 几何）；null 时不叠、外观像素级不变。
+  - **缓存提前填充**（`video_hibiki_page.dart`）：视频就绪成功路径（`_seedWarmPopup` 后）调一次 `_refreshFavoritedCueCache()`，底栏星标在未开列表时也可用。页面把 `_isCueFavorited` 同时接到 overlay 与列表面板。
+- **[x] ② 已加自动化测试** — widget 行为 + 源码守卫：
+  - `video_subtitle_jump_panel_test.dart`：已收藏行有左 `tertiary` border（width 3）、未收藏行无 border。
+  - `video_subtitle_overlay_test.dart`：`isCueFavorited` true → 渲染实心星；false / null → 无星标。
+  - `video_subtitle_list_wiring_guard_test.dart`：overlay 与 panel 都接 `isCueFavorited`、cache 在 `_seedWarmPopup` 后刷新。
+- **备注**：收藏/取消收藏后 `setState` 触发 overlay builder 重建，标记即时更新。
