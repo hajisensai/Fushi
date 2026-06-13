@@ -38,10 +38,9 @@ void main() {
       }
     });
 
-    test('unknown / legacy value falls back to cover (backward compatible)',
-        () {
-      expect(VideoFitMode.fromStorage(''), VideoFitMode.cover);
-      expect(VideoFitMode.fromStorage('bogus'), VideoFitMode.cover);
+    test('unknown / legacy value falls back to contain', () {
+      expect(VideoFitMode.fromStorage(''), VideoFitMode.contain);
+      expect(VideoFitMode.fromStorage('bogus'), VideoFitMode.contain);
     });
   });
 
@@ -60,17 +59,27 @@ void main() {
       await db.close();
     });
 
-    test('defaults to cover (matches old hard-coded BoxFit.cover)', () {
-      expect(repo.videoFitMode, VideoFitMode.cover);
+    test('defaults to contain for new installs', () {
+      expect(repo.videoFitMode, VideoFitMode.contain);
     });
 
-    test('persists across a reload', () async {
-      await repo.setVideoFitMode(VideoFitMode.contain);
-      expect(repo.videoFitMode, VideoFitMode.contain);
+    test('preserves an existing cover preference across a reload', () async {
+      await repo.setVideoFitMode(VideoFitMode.cover);
+      expect(repo.videoFitMode, VideoFitMode.cover);
 
       final PreferencesRepository reloaded = PreferencesRepository(db);
       await reloaded.loadFromDb();
-      expect(reloaded.videoFitMode, VideoFitMode.contain);
+      expect(reloaded.videoFitMode, VideoFitMode.cover);
+      reloaded.dispose();
+    });
+
+    test('preserves an existing fill preference across a reload', () async {
+      await repo.setVideoFitMode(VideoFitMode.fill);
+      expect(repo.videoFitMode, VideoFitMode.fill);
+
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.videoFitMode, VideoFitMode.fill);
       reloaded.dispose();
     });
   });

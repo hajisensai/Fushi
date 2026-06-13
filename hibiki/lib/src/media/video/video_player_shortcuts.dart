@@ -26,6 +26,10 @@ class VideoPlayerShortcutActions {
     required this.toggleSubtitleList,
     required this.toggleImmersiveLock,
     required this.toggleSubtitleBlur,
+    required this.toggleFavoriteSentence,
+    required this.replayCurrentSubtitle,
+    required this.replayPreviousSubtitle,
+    required this.showFavoriteSentences,
     required this.escape,
   });
 
@@ -59,6 +63,11 @@ class VideoPlayerShortcutActions {
   /// CallbackShortcuts，TODO-134 起并入可重映射注册表，与其它视频键统一。
   final VoidCallback toggleSubtitleBlur;
 
+  final VoidCallback toggleFavoriteSentence;
+  final VoidCallback replayCurrentSubtitle;
+  final VoidCallback replayPreviousSubtitle;
+  final VoidCallback showFavoriteSentences;
+
   final VoidCallback escape;
 }
 
@@ -91,6 +100,10 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
     ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
+    ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
+    ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
+    ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
+    ShortcutAction.videoShowFavoriteSentences: actions.showFavoriteSentences,
     ShortcutAction.videoEscape: actions.escape,
   };
 }

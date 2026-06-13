@@ -34,6 +34,7 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
@@ -1822,6 +1823,14 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoAsbplayerConfig(String json) =>
       prefsRepo.setVideoAsbplayerConfig(json);
+
+  VideoControlCustomization get videoControlCustomization =>
+      prefsRepo.videoControlCustomization;
+
+  Future<void> setVideoControlCustomization(
+    VideoControlCustomization customization,
+  ) =>
+      prefsRepo.setVideoControlCustomization(customization);
 
   /// 视频字幕外观（JSON；见 VideoSubtitleStyle）。
   String get videoSubtitleStyle => prefsRepo.videoSubtitleStyle;

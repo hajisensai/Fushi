@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -42,6 +43,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onVideoFitModeChanged,
     required this.initialImmersiveMode,
     required this.onImmersiveModeChanged,
+    this.initialControlCustomization = VideoControlCustomization.defaults,
+    this.onControlCustomizationChanged,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
@@ -129,6 +132,11 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 切沉浸模式默认级别（即时落盘，下一次锁定和已锁定状态立即按 getter 生效）。
   final Future<void> Function(VideoImmersiveMode mode) onImmersiveModeChanged;
 
+  final VideoControlCustomization initialControlCustomization;
+
+  final Future<void> Function(VideoControlCustomization customization)?
+      onControlCustomizationChanged;
+
   /// Actual app UI scale. Video routes neutralize [HibikiAppUiScale] so the
   /// inherited scale inside the sheet can be 1.0 even when the app setting is
   /// larger or smaller.
@@ -163,6 +171,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late VideoFitMode _videoFitMode = widget.initialVideoFitMode;
   late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
   late VideoAsbplayerConfig _asbConfig = widget.initialAsbConfig;
+  late VideoControlCustomization _controlCustomization =
+      widget.initialControlCustomization;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
   late bool _danmakuEnabled = widget.initialDanmakuEnabled;
   late bool _danmakuOnlineEnabled = widget.initialDanmakuOnlineEnabled;
@@ -324,6 +334,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         icon: Icons.forum_outlined,
         label: t.video_settings_cat_danmaku,
       ),
+      (
+        id: 'controls',
+        icon: Icons.dashboard_customize_outlined,
+        label: t.video_settings_cat_controls,
+      ),
     ];
   }
 
@@ -408,6 +423,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return _buildSubtitleDetail();
       case 'danmaku':
         return _buildDanmakuDetail();
+      case 'controls':
+        return _buildControlsDetail();
       default:
         return const SizedBox.shrink();
     }
@@ -425,6 +442,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return t.video_settings_cat_subtitle;
       case 'danmaku':
         return t.video_settings_cat_danmaku;
+      case 'controls':
+        return t.video_settings_cat_controls;
       default:
         return '';
     }
@@ -447,6 +466,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           ),
         _buildDelayRow(),
         _buildSpeedRow(),
+        _buildLongPressSpeedRow(),
         _buildImmersiveModeRow(),
         _buildSeekSecondsRow(),
         _buildDoubleTapRow(),
@@ -665,6 +685,37 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 旧持久化的档位间值也归到最近档）。
   double _snapSpeed(double v) =>
       ((v * 10).roundToDouble() / 10).clamp(_speedMin, _speedMax).toDouble();
+
+  Widget _buildLongPressSpeedRow() {
+    final double value = _snapLongPressSpeed(_asbConfig.longPressSpeed);
+    return AdaptiveSettingsSliderRow(
+      title: t.video_setting_long_press_speed,
+      subtitle: t.video_setting_long_press_speed_hint,
+      icon: Icons.touch_app_outlined,
+      min: 1.0,
+      max: 4.0,
+      divisions: 30,
+      value: value,
+      label: '${value.toStringAsFixed(1)}x',
+      onChanged: (double v) {
+        setState(
+          () => _asbConfig = _asbConfig.copyWith(
+            longPressSpeed: _snapLongPressSpeed(v),
+          ),
+        );
+      },
+      onChangeEnd: (double v) async {
+        final VideoAsbplayerConfig next = _asbConfig.copyWith(
+          longPressSpeed: _snapLongPressSpeed(v),
+        );
+        setState(() => _asbConfig = next);
+        await widget.onAsbConfigChanged(next);
+      },
+    );
+  }
+
+  double _snapLongPressSpeed(double v) =>
+      ((v * 10).roundToDouble() / 10).clamp(1.0, 4.0).toDouble();
 
   Widget _buildSeekSecondsRow() {
     return AdaptiveSettingsStepperRow(
@@ -1036,6 +1087,72 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
       ],
     );
+  }
+
+  Widget _buildControlsDetail() {
+    return AdaptiveSettingsSection(
+      children: <Widget>[
+        for (final VideoControlButton button in VideoControlButton.values)
+          AdaptiveSettingsPickerRow<VideoControlPlacement>(
+            title: _controlButtonLabel(button),
+            subtitle: button == VideoControlButton.settings
+                ? t.video_control_settings_required_hint
+                : null,
+            icon: _controlButtonIcon(button),
+            selected: _controlCustomization.placementFor(button),
+            options: <AdaptiveSettingsPickerOption<VideoControlPlacement>>[
+              AdaptiveSettingsPickerOption<VideoControlPlacement>(
+                value: VideoControlPlacement.bottom,
+                label: t.video_control_placement_bottom,
+              ),
+              AdaptiveSettingsPickerOption<VideoControlPlacement>(
+                value: VideoControlPlacement.rightRail,
+                label: t.video_control_placement_right,
+              ),
+              AdaptiveSettingsPickerOption<VideoControlPlacement>(
+                value: VideoControlPlacement.settingsOnly,
+                label: t.video_control_placement_settings,
+              ),
+            ],
+            onChanged: (VideoControlPlacement placement) async {
+              final VideoControlCustomization next =
+                  _controlCustomization.copyWithPlacement(button, placement);
+              setState(() => _controlCustomization = next);
+              await widget.onControlCustomizationChanged?.call(next);
+            },
+          ),
+      ],
+    );
+  }
+
+  String _controlButtonLabel(VideoControlButton button) {
+    switch (button) {
+      case VideoControlButton.speed:
+        return t.video_control_speed;
+      case VideoControlButton.subtitleList:
+        return t.video_control_subtitle_list;
+      case VideoControlButton.favoriteSentence:
+        return t.video_control_favorite_sentence;
+      case VideoControlButton.favoriteSentences:
+        return t.video_control_favorite_sentences;
+      case VideoControlButton.settings:
+        return t.video_control_settings;
+    }
+  }
+
+  IconData _controlButtonIcon(VideoControlButton button) {
+    switch (button) {
+      case VideoControlButton.speed:
+        return Icons.speed_outlined;
+      case VideoControlButton.subtitleList:
+        return Icons.format_list_bulleted;
+      case VideoControlButton.favoriteSentence:
+        return Icons.star_border_rounded;
+      case VideoControlButton.favoriteSentences:
+        return Icons.collections_bookmark_outlined;
+      case VideoControlButton.settings:
+        return Icons.tune;
+    }
   }
 
   // ── 字幕：模糊 + 外观（字号/背景不透明度/位置 + 重置）─────────────────

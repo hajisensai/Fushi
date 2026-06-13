@@ -6,6 +6,7 @@ class VideoAsbplayerConfig {
     required this.speedStep,
     required this.pauseAtSubtitleEnd,
     required this.doubleTapSeekSeconds,
+    required this.longPressSpeed,
   });
 
   /// 双击「字幕跳句」哨兵值（TODO-173/BUG-231）：[doubleTapSeekSeconds] 取此值时，
@@ -29,11 +30,13 @@ class VideoAsbplayerConfig {
     speedStep: 0.1,
     pauseAtSubtitleEnd: false,
     doubleTapSeekSeconds: 0,
+    longPressSpeed: 2.0,
   );
 
   final int seekSeconds;
   final double speedStep;
   final bool pauseAtSubtitleEnd;
+  final double longPressSpeed;
 
   /// 双击视频左/右区的行为（TODO-173/BUG-231）。见 [doubleTapSeekOptions] /
   /// [kDoubleTapSubtitle]。0=关（双击仍走平台默认的暂停/全屏，不分区）。
@@ -44,12 +47,14 @@ class VideoAsbplayerConfig {
     double? speedStep,
     bool? pauseAtSubtitleEnd,
     int? doubleTapSeekSeconds,
+    double? longPressSpeed,
   }) {
     return VideoAsbplayerConfig(
       seekSeconds: seekSeconds ?? this.seekSeconds,
       speedStep: speedStep ?? this.speedStep,
       pauseAtSubtitleEnd: pauseAtSubtitleEnd ?? this.pauseAtSubtitleEnd,
       doubleTapSeekSeconds: doubleTapSeekSeconds ?? this.doubleTapSeekSeconds,
+      longPressSpeed: longPressSpeed ?? this.longPressSpeed,
     );
   }
 
@@ -58,6 +63,7 @@ class VideoAsbplayerConfig {
         'speedStep': speedStep,
         'pauseAtSubtitleEnd': pauseAtSubtitleEnd,
         'doubleTapSeekSeconds': doubleTapSeekSeconds,
+        'longPressSpeed': longPressSpeed,
       };
 
   static String encode(VideoAsbplayerConfig config) =>
@@ -77,6 +83,10 @@ class VideoAsbplayerConfig {
         pauseAtSubtitleEnd:
             raw['pauseAtSubtitleEnd'] as bool? ?? defaults.pauseAtSubtitleEnd,
         doubleTapSeekSeconds: _readDoubleTap(raw['doubleTapSeekSeconds']),
+        longPressSpeed:
+            _readDouble(raw['longPressSpeed'], defaults.longPressSpeed)
+                .clamp(1.0, 4.0)
+                .toDouble(),
       );
     } catch (_) {
       return defaults;
