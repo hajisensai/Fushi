@@ -28,6 +28,7 @@ import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
@@ -108,6 +109,7 @@ void main([List<String> args = const <String>[]]) {
     final binding = WidgetsFlutterBinding.ensureInitialized();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
+      await DesktopWindowPlacement.applyInitialPlacement();
       // Intercept the native window-close signal so we can tear down Bonsoir's
       // mDNS event sources (LAN broadcast + discovery) BEFORE the Flutter engine
       // exits. Without this, a queued mDNS event delivered to a torn-down
@@ -402,6 +404,16 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     await _flushAndExitForWindowClose();
   }
 
+  @override
+  void onWindowMoved() {
+    DesktopWindowPlacement.rememberCurrentBounds();
+  }
+
+  @override
+  void onWindowResized() {
+    DesktopWindowPlacement.rememberCurrentBounds();
+  }
+
   /// 桌面关闭快杀路径（TODO-086/BUG-191）。过去这里 await windowManager 的 destroy
   /// 触发原生 WM_DESTROY → 同步逐插件拆 Flutter 引擎（WebView2 / WGC 捕获 /
   /// libmpv），每个原生 teardown 几百 ms~秒级、串行叠加成几秒~十几秒卡死 UI 线程
@@ -418,6 +430,12 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     if (_shutdownStarted) return;
     _shutdownStarted = true;
     final AppModel appModel = ref.read(appProvider);
+    try {
+      await DesktopWindowPlacement.saveCurrentBoundsNow()
+          .timeout(const Duration(milliseconds: 800));
+    } catch (e) {
+      debugPrint('[Hibiki] desktop window placement save on exit failed: $e');
+    }
     // ① 切断 Bonsoir 事件源（事件订阅同步 cancel；原生 stop fire-and-forget）。
     //    收紧超时到 1.5s：cutEventSourceForExit 不再 await 原生 stop，正常瞬间返回。
     try {

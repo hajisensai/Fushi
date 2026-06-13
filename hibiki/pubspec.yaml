@@ -136,6 +136,7 @@ dependencies:
   web_socket_channel: ^3.0.0
   clipboard_watcher: ^0.3.0
   hotkey_manager: ^0.2.3
+  screen_retriever: ^0.2.0
   window_manager: ^0.5.1
 dependency_overrides:
   # 自编 ffmpeg-kit（arthenica 源码重编，android 用 third_party 内自编 AAR；修 BUG-122
