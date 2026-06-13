@@ -17,6 +17,6 @@
 - `reader_hibiki_page.dart` `_interceptRequest`：sanitize 后 HTML 进 LRU（按 filePath 键），正反翻章命中跳过磁盘读+decode+sanitize+注入。
 - 翻章后台预取下一章（按当前阅读方向）暂存进同一 LRU，跨章近即时。
 
-- **[x] ① 已修复** — A：`epub_book.dart`/`epub_parser.dart` 懒解析+共用解码器；B：`reader_hibiki_page.dart` sanitize-HTML LRU + 翻章预取。
+- **[x] ① 已修复** — A（`300459183`）：`epub_book.dart`/`epub_parser.dart` 懒解析+共用解码器；B（`6a52f5523`）：`reader_hibiki_page.dart` sanitize-HTML LRU + 翻章预取。
 - **[x] ② 已加自动化测试** — A：`hibiki/test/epub/epub_lazy_chapter_test.dart`（懒读返回正确内容/删文件后访问证明非 eager/缓存稳定/eager 仍服务内存 html）；B：`hibiki/test/pages/reader_chapter_html_cache_test.dart`（LRU 命中/预取/失效）。
-- **备注**：性能优化，非崩溃 bug。开书/跨章实际提速需真机；host 只验正确性（懒读内容、缓存命中等价）。提交哈希见下。
+- **备注**：性能优化，非崩溃 bug。提交 A=`300459183` / B=`6a52f5523`（分支 `worktree-agent-import296`，基线 `2609de4a1`/integration/wave-1）。开书/跨章实际提速需真机；host 已验正确性（懒读内容、缓存命中/淘汰、样式失效清缓存）。全项目 `flutter analyze` 0 issue；epub+audiobook 481 绿、reader 405 绿、新测试全绿；`test/pages` 19 项预存红与本改动无关（video/image 守卫扫未改文件，已在基线 `2609de4a1` 复现同 19 项）。
