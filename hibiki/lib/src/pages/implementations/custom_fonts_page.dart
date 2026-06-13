@@ -1390,59 +1390,93 @@ class CustomFontCatalogTile extends StatelessWidget {
     // 整行拖拽重排（不再显示 ☰ 手柄）：桌面鼠标按下即拖、移动端长按再拖
     // （见 HibikiReorderDragListener）；上下箭头按钮是无障碍/手柄重排路径。
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool cupertino = isCupertinoPlatform(context);
+    final TextStyle? titleStyle = cupertino
+        ? tokens.type.listTitle
+        : Theme.of(context).textTheme.bodyMedium;
+    final TextStyle? subtitleStyle =
+        Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            );
+    final Widget actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        HibikiIconButton(
+          icon: Icons.keyboard_arrow_up,
+          size: 18,
+          tooltip: t.move_up,
+          enabled: index > 0,
+          onTap: onMoveUp,
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        HibikiIconButton(
+          icon: Icons.keyboard_arrow_down,
+          size: 18,
+          tooltip: t.move_down,
+          enabled: !isLast,
+          onTap: onMoveDown,
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        HibikiIconButton(
+          icon: Icons.delete_outline,
+          size: 18,
+          enabledColor: scheme.error,
+          tooltip: t.custom_fonts_removed,
+          onTap: onDelete,
+        ),
+      ],
+    );
     return HibikiReorderDragListener(
       index: index,
-      child: AdaptiveSettingsRow(
-        title: name,
-        subtitle: isFile ? t.font_source_file : t.font_source_system,
-        icon:
-            isFile ? Icons.file_present_outlined : Icons.phone_android_outlined,
-        controlBelow: true,
-        trailing: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Wrap(
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap,
-              children: [
-                for (final FontTarget target in FontTarget.values)
-                  FilterChip(
-                    label: Text(_targetLabel(target)),
-                    selected: targets.contains(target),
-                    onSelected: (_) => onTargetToggled(target),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: cupertino ? 16 : 12,
+          vertical: 10,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: cupertino ? 58 : 60),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: titleStyle,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   ),
-              ],
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: [
-                HibikiIconButton(
-                  icon: Icons.keyboard_arrow_up,
-                  size: 18,
-                  tooltip: t.move_up,
-                  enabled: index > 0,
-                  onTap: onMoveUp,
+                  SizedBox(width: tokens.spacing.gap),
+                  actions,
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  isFile ? t.font_source_file : t.font_source_system,
+                  style: subtitleStyle,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
                 ),
-                HibikiIconButton(
-                  icon: Icons.keyboard_arrow_down,
-                  size: 18,
-                  tooltip: t.move_down,
-                  enabled: !isLast,
-                  onTap: onMoveDown,
-                ),
-                HibikiIconButton(
-                  icon: Icons.delete_outline,
-                  size: 18,
-                  enabledColor: scheme.error,
-                  tooltip: t.custom_fonts_removed,
-                  onTap: onDelete,
-                ),
-              ],
-            ),
-          ],
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              Wrap(
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: [
+                  for (final FontTarget target in FontTarget.values)
+                    FilterChip(
+                      label: Text(_targetLabel(target)),
+                      selected: targets.contains(target),
+                      onSelected: (_) => onTargetToggled(target),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

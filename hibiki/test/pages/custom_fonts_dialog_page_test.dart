@@ -4,6 +4,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/custom_fonts_page.dart';
 import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
 void main() {
   setUp(() {
@@ -97,6 +98,63 @@ void main() {
     await tester.pump();
 
     expect(toggledTargets, <FontTarget>[FontTarget.appUi]);
+  });
+
+  testWidgets('font catalog row keeps three action buttons inline with title', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 420);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        Scaffold(
+          body: CustomFontCatalogTile(
+            name: 'Aozora Mincho Super Family',
+            isFile: false,
+            index: 1,
+            isLast: false,
+            targets: const <FontTarget>{
+              FontTarget.appUi,
+              FontTarget.body,
+              FontTarget.dictionary,
+            },
+            onTargetToggled: (_) {},
+            onDelete: () {},
+            onMoveUp: () {},
+            onMoveDown: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(HibikiIconButton), findsNWidgets(3));
+
+    final Rect titleRect =
+        tester.getRect(find.text('Aozora Mincho Super Family'));
+    final Rect moveUpRect = tester.getRect(find.bySemanticsLabel(t.move_up));
+    final Rect moveDownRect =
+        tester.getRect(find.bySemanticsLabel(t.move_down));
+    final Rect deleteRect =
+        tester.getRect(find.bySemanticsLabel(t.custom_fonts_removed));
+
+    for (final Rect buttonRect in <Rect>[
+      moveUpRect,
+      moveDownRect,
+      deleteRect,
+    ]) {
+      expect(
+        (buttonRect.center.dy - titleRect.center.dy).abs(),
+        lessThanOrEqualTo(6),
+        reason: 'Font row actions must visually share the title line.',
+      );
+    }
+
+    expect(titleRect.right, lessThanOrEqualTo(moveUpRect.left));
+    expect(moveUpRect.right, lessThanOrEqualTo(moveDownRect.left));
+    expect(moveDownRect.right, lessThanOrEqualTo(deleteRect.left));
   });
 
   test('font catalog rows include fonts with no target membership', () {
