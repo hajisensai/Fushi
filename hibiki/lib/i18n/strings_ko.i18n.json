@@ -1619,5 +1619,10 @@
     "app_ui_scale_mode": "UI size mode",
     "app_ui_scale_mode_hint": "Choose automatic sizing for this screen or use your custom percentage.",
     "app_ui_scale_auto": "Automatic",
-    "app_ui_scale_custom": "Custom"
+    "app_ui_scale_custom": "Custom",
+    "video_bottom_seek_back": "Back 10s",
+    "video_bottom_seek_forward": "Forward 10s",
+    "video_bottom_prev_cue": "Previous subtitle (back a bit if none)",
+    "video_bottom_next_cue": "Next subtitle (forward a bit if none)",
+    "video_bottom_play_pause": "Play / Pause"
 }

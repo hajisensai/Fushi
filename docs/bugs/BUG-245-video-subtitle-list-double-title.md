@@ -1,0 +1,6 @@
+## BUG-245 · 视频字幕列表侧栏出现两个标题 (TODO-280)
+- **报告**：2026-06-14（用户：）
+- **真实性**：✅ 真 bug。`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:3908` 的 `_buildVideoSidePanelOverlay` 对除 `settings` 外所有 `_VideoSidePanelKind` 一律套 `VideoTranslucentSidePanel`（`hibiki/lib/src/media/video/video_side_panel.dart:51-71` 自带一条「标题 + 关闭」标题栏）；但字幕列表用的 `_buildSubtitleListSidePanel` 返回的 `VideoSubtitleJumpPanel`（`hibiki/lib/src/media/video/video_subtitle_jump_panel.dart:231-289`）**自带完整 header**（标题 + 字号步进 A-/A+ + 自动滚动开关 + 关闭按钮）。外壳标题 + 面板标题 = 两条标题叠在一起。
+- **[x] ① 已修复** — `video_hibiki_page.dart:_buildVideoSidePanelOverlay`：让 `subtitleList` 走 bypass 分支（与 `settings` 同范式），不再套 `VideoTranslucentSidePanel`，直接返回 `_buildSubtitleListSidePanel(controller)`，外层只补 `Align(centerRight)` + `SafeArea` + `Padding`（10）以保留 `VideoTranslucentSidePanel` 原本提供的右贴边/避让安全区定位语义。面板自带的关闭按钮（`_handleClose → onClose: _hideVideoSidePanel`）仍可用。提交哈希：见本轮提交。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_subtitle_list_double_title_guard_test.dart`：源码守卫断言 `_buildVideoSidePanelOverlay` 的 `subtitleList` 分支不再套 `VideoTranslucentSidePanel`、且直接调 `_buildSubtitleListSidePanel`。media_kit controls 跑不了 headless，故锁源码结构不变量（与既有 video 守卫范式一致）。
+- **备注**：真机看字幕列表只剩一条标题、关闭按钮可用，待用户。

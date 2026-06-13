@@ -1,0 +1,6 @@
+## BUG-246 · 调视频设置侧栏时误触发全屏 (TODO-275)
+- **报告**：2026-06-14（用户：）
+- **真实性**：✅ 真 bug。设置（及其它）侧栏 overlay 是视频 controls `Stack` 的子节点（`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:_buildVideoControlsInner` 的 `Stack`），但外层 `Listener(behavior: HitTestBehavior.translucent, onPointerUp: _handleVideoPointerUp)`（`video_hibiki_page.dart:4967`）用 translucent 命中行为，落在面板上的 pointer-up 仍会冒泡到它。`_handleVideoPointerUp`（`video_hibiki_page.dart:4614`）的双击判定（`_videoDoubleClickInterval` 400ms / `_videoDoubleClickSlop` 48px）把「连续两次点面板」误判成「双击画面」→ 桌面 `_toggleVideoFullscreen`、移动暂停。
+- **[x] ① 已修复** — `video_hibiki_page.dart:_handleVideoPointerUp`：在 `_pokeLockButton()` 之后、读 `_videoControlsContext` 之前加早返回门控（对齐已有沉浸锁 gate 范式）——当 `_videoSidePanel.value != null`（任意侧栏开着）时一律不参与控制条 toggle / 双击 / 暂停 / 全屏判定，并清掉 `_lastVideoPointerUpAt` / `_lastVideoPointerUpPosition`（避免关闭面板后残留时间戳被下一次真点画面误配成双击）。仍保留 `_refocusVideo` / `_pokeLockButton`（焦点/锁按钮恢复无害）。提交哈希：见本轮提交。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_settings_panel_no_fullscreen_guard_test.dart`：源码守卫断言 `_handleVideoPointerUp` 在 `_pokeLockButton()` 之后立即出现 `if (_videoSidePanel.value != null)` 的早返回块，且该早返回出现在双击判定（`_videoDoubleClickInterval` / `_toggleVideoFullscreen`）之前。media_kit controls + 全屏路由跑不了 headless，故锁源码结构不变量。
+- **备注**：真机验证设置侧栏打开时连点面板不再进全屏/暂停，待用户。

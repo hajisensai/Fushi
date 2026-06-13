@@ -1,0 +1,6 @@
+## BUG-247 · 视频底栏 5 个按钮缺 tooltip (TODO-282)
+- **报告**：2026-06-14（用户：）
+- **真实性**：✅ 真 bug（可用性）。视频底栏 5 键（桌面 `_desktopControlsTheme` / 移动 `_mobileControlsTheme` 的 `bottomButtonBar`，`hibiki/lib/src/pages/implementations/video_hibiki_page.dart`）：fast_rewind（后退 10 秒 `_seekRelative(-10000)`）/ skip_previous（上一句字幕，无字幕段退化为后退 seekSeconds 秒）/ play-pause / skip_next（下一句字幕，无字幕段退化为前进）/ fast_forward（前进 10 秒）。这些用 media_kit 的 `MaterialDesktopCustomButton` / `MaterialCustomButton` / `MaterialDesktopPlayOrPauseButton` / `MaterialPlayOrPauseButton`，**均无 tooltip 参数**，悬停无任何提示，skip 键的「字幕/秒数」双重语义对用户不透明。
+- **[x] ① 已修复** — `video_hibiki_page.dart` 桌面 + 移动两套 `bottomButtonBar`：用 Flutter `Tooltip` 包裹这 5 个按钮，文案诚实反映双重语义。新增 i18n key（经 `tool/i18n_sync.dart --add`，17 语言完整 + `dart run slang` 重生成 `strings.g.dart`，TAB 缩进保留、未对其跑 dart format）：`video_bottom_seek_back`（后退 10 秒）/ `video_bottom_seek_forward`（前进 10 秒）/ `video_bottom_prev_cue`（上一句字幕（无字幕则后退一段））/ `video_bottom_next_cue`（下一句字幕（无字幕则前进一段））/ `video_bottom_play_pause`（播放 / 暂停）。音量按钮也顺带补 `t.audio_volume` tooltip（见 BUG-248A）。提交哈希：见本轮提交。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_bottom_bar_tooltips_guard_test.dart`：源码守卫断言桌面 + 移动 `bottomButtonBar` 各 5 键都被 `Tooltip(message: t.video_bottom_*)` 包裹，且 5 个 i18n key 在 `strings.i18n.json` 与 `strings.g.dart` 都存在。
+- **备注**：真机/桌面悬停看 tooltip 文案，待用户。
