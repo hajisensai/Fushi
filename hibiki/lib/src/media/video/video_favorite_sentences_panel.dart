@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 class VideoFavoriteSentencesPanel extends StatelessWidget {
   const VideoFavoriteSentencesPanel({
@@ -45,8 +46,8 @@ class VideoFavoriteSentencesPanel extends StatelessWidget {
       itemBuilder: (BuildContext context, int index) {
         final FavoriteSentence sentence = currentEpisodeSentences[index];
         final int? startMs = sentence.normCharOffset;
-        return ListTile(
-          dense: true,
+        return HibikiListItem(
+          density: HibikiListDensity.compact,
           leading: const Icon(Icons.star_rounded),
           title: Text(
             sentence.text,
@@ -54,6 +55,7 @@ class VideoFavoriteSentencesPanel extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: startMs == null ? null : Text(_formatTimestamp(startMs)),
+          titleMaxLines: 3,
           onTap: () => onTapSentence(sentence),
         );
       },

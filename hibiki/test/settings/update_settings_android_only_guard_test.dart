@@ -41,7 +41,17 @@ void main() {
     expect(
       workflow,
       contains(
-        r'TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"',
+        r'TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(r'RELEASE_SEQUENCE=$(git rev-list --count HEAD)'),
+    );
+    expect(
+      workflow,
+      contains(
+        r'ANDROID_BUILD_NUMBER=$((PUBSPEC_BUILD * 1000000 + RELEASE_SEQUENCE))',
       ),
     );
     expect(workflow, contains('BUILD_DEBUG_CHANNEL_APK=true'));
@@ -81,8 +91,12 @@ void main() {
     expect(
       workflow,
       contains(
-        r'TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"',
+        r'TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"',
       ),
+    );
+    expect(
+      workflow,
+      contains(r'RELEASE_SEQUENCE=$(git rev-list --count HEAD)'),
     );
     expect(workflow, contains('CHANNEL=debug'));
     expect(workflow, contains('PUBLISH_MANAGED_RELEASE=true'));
@@ -99,8 +113,10 @@ void main() {
     );
     expect(
       workflow,
-      contains(r'--build-number "${{ github.run_number }}"'),
-      reason: 'Windows version resource needs a monotonic numeric build suffix',
+      contains(
+        r'--build-number "${{ steps.channel.outputs.release_sequence }}"',
+      ),
+      reason: 'Windows version resource uses the shared release sequence',
     );
     expect(
       workflow,
@@ -138,19 +154,19 @@ void main() {
     final String docs = File('../docs/agent/build.md').readAsStringSync();
     expect(
       docs,
-      contains(r'v<version>-debug.<run>+<short-sha>'),
+      contains(r'v<version>-debug.<seq>+<short-sha>'),
     );
     expect(
       docs,
-      contains('Android / Windows debug/beta workflow 的 `github.run_number`'),
+      contains('git rev-list --count HEAD'),
     );
     expect(
       docs,
-      contains('不能跨平台当作同一条可比较版本序列'),
+      contains('github.run_number` / `GITHUB_RUN_NUMBER'),
     );
     expect(
       docs,
-      contains('客户端自装平台必须先按本平台 asset 过滤 release'),
+      contains('single GitHub Release'),
     );
     expect(
       docs,
