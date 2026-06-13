@@ -183,11 +183,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     }
   }
 
-  void _handleClose() {
-    widget.onClearCueSelection?.call();
-    widget.onClose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = widget.colorScheme;
@@ -279,13 +274,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 onPressed: _toggleAutoScroll,
                 visualDensity: VisualDensity.compact,
               ),
-              IconButton(
-                tooltip: MaterialLocalizations.of(context).closeButtonLabel,
-                icon: Icon(Icons.close, size: iconSize + 2),
-                color: cs.onSurfaceVariant,
-                onPressed: _handleClose,
-                visualDensity: VisualDensity.compact,
-              ),
+              // BUG-254：去掉右上角 X 关闭按钮，改为点击面板外的空白区域关闭（由页面层
+              // 全屏透明 barrier 承载）。关闭时的 onClearCueSelection 由页面层
+              // [_hideVideoSidePanel] 统一清理（字幕列表关闭即清挖词选择），故移除按钮不丢
+              // 该副作用。
             ],
           ),
           Row(

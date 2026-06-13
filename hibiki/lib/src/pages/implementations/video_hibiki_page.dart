@@ -1713,6 +1713,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 锁定 / 沉浸模式下不唤起控制条（TODO-101）：键盘跳句 / seek 等仍照常生效，
     // 只是不再因此弹出顶/底栏按钮（用户痛点：查词 / 操作就弹按钮有点烦）。
     if (_immersiveLocked.value) return;
+    // 侧栏（设置 / 字幕列表 / 音轨等）打开时也不唤起背景控制条（BUG-253）：键盘 /
+    // seek 仍照常生效，只是不再因此把 media_kit 控制条 / 右侧 rail 弹回来盖在面板
+    // 后面。与沉浸锁同源门控（[_videoSidePanel] 是 ValueNotifier）。
+    if (_videoSidePanel.value != null) return;
     final BuildContext? ctx = _videoControlsContext;
     if (ctx == null || !ctx.mounted) return;
     final RenderObject? renderObject = ctx.findRenderObject();
@@ -1752,7 +1756,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [IgnorePointer] 挡掉指针），故镜像也强制不可见、字幕不避让（无控制条可遮挡）。
   void _markControlsVisible(bool visible) {
     if (!mounted) return;
-    if (_immersiveLocked.value) {
+    // 锁定 / 沉浸模式（[_immersiveLocked]）或侧栏打开（[_videoSidePanel]，BUG-253）下
+    // 一律强制不可见：前者控制条本被 [IgnorePointer] 挡掉，后者面板盖在控制条上、
+    // 背景控制条 / 字幕避让都不该再被 hover 唤起。两者同源门控、同样取消隐藏定时。
+    if (_immersiveLocked.value || _videoSidePanel.value != null) {
       _videoControlsHideTimer?.cancel();
       _videoControlsHideTimer = null;
       _videoControlsVisible.value = false;
@@ -3906,7 +3913,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (kind == _VideoSidePanelKind.subtitleList) {
       unawaited(_refreshFavoritedCueCache());
     }
-    _pokeControlsVisible();
+    // BUG-253：开面板时不再唤起背景控制条（旧 [_pokeControlsVisible]），而是立刻把
+    // 已经在显示的 media_kit 控制条 / 右侧 rail 镜像收起，避免它们冒在面板后面。
+    // 面板开着期间 [_markControlsVisible] / [_pokeControlsVisible] 都被门控成不可见。
+    _markControlsVisible(false);
     _refocusVideo();
   }
 
@@ -3918,6 +3928,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (wasSubtitleList) {
       _clearSelectedMiningCues();
     }
+    // BUG-253：面板关闭后唤回一次控制条（poke 在 [_videoSidePanel] 复位为 null 之后才
+    // 放行），给用户「面板已关、控制条回来了」的即时反馈，与解锁沉浸态的范式一致。
+    _pokeControlsVisible();
     _refocusVideo();
   }
 
@@ -3978,38 +3991,64 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         valueListenable: _videoSidePanel,
         builder: (BuildContext context, _VideoSidePanelKind? kind, __) {
           if (kind == null) return const SizedBox.shrink();
-          // 字幕列表面板（[VideoSubtitleJumpPanel]）自带完整标题栏（标题 + 字号步进 +
-          // 自动滚动 + 关闭按钮），不能再套 [VideoTranslucentSidePanel]（它也画一条
-          // 标题栏 + 关闭），否则两条标题叠在一起（BUG-245）。这里像 settings 那样走
-          // bypass：直接返回自带壳的面板，只补外层 [Align]/[SafeArea]/[Padding] 让它
-          // 右贴边、避让安全区（[VideoTranslucentSidePanel] 原本提供的定位语义）。
-          if (kind == _VideoSidePanelKind.subtitleList) {
-            return Align(
-              alignment: Alignment.centerRight,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 10,
-                  ),
-                  child: _buildSubtitleListSidePanel(controller),
-                ),
-              ),
-            );
-          }
-          final Widget panel = VideoTranslucentSidePanel(
-            title: _videoSidePanelTitle(kind),
-            width: _videoSidePanelWidth(kind),
-            onClose: _hideVideoSidePanel,
-            child: _buildVideoSidePanelChild(kind, controller),
+          final Widget panelContent = _buildVideoSidePanelContent(
+            kind,
+            controller,
           );
-          if (kind != _VideoSidePanelKind.settings) return panel;
-          return HibikiAppUiScale(
-            scale: _videoUiScale,
-            child: panel,
+          // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
+          // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用
+          // [HitTestBehavior.opaque] 吃掉点击，**不**冒泡到下方控制条 [Listener]，
+          // 因此点空白只关面板、不会触发暂停 / 全屏（与 [_handleVideoPointerUp] 的侧栏
+          // 早返回门控一致）。面板本体是不透明 Material、在 Stack 上层，点面板内部命中
+          // 面板自身、到不了 barrier，故只有点外部才关闭。
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _hideVideoSidePanel,
+              ),
+              panelContent,
+            ],
           );
         },
       ),
+    );
+  }
+
+  /// 单纯构造侧栏面板的「内容 + 定位」部分（不含 BUG-254 的点外关闭 barrier）。
+  Widget _buildVideoSidePanelContent(
+    _VideoSidePanelKind kind,
+    VideoPlayerController controller,
+  ) {
+    // 字幕列表面板（[VideoSubtitleJumpPanel]）自带完整标题栏（标题 + 字号步进 +
+    // 自动滚动），不能再套 [VideoTranslucentSidePanel]（它也画一条标题栏），否则两条
+    // 标题叠在一起（BUG-245）。这里像 settings 那样走 bypass：直接返回自带壳的面板，
+    // 只补外层 [Align]/[SafeArea]/[Padding] 让它右贴边、避让安全区。
+    if (kind == _VideoSidePanelKind.subtitleList) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 10,
+            ),
+            child: _buildSubtitleListSidePanel(controller),
+          ),
+        ),
+      );
+    }
+    final Widget panel = VideoTranslucentSidePanel(
+      title: _videoSidePanelTitle(kind),
+      width: _videoSidePanelWidth(kind),
+      onClose: _hideVideoSidePanel,
+      child: _buildVideoSidePanelChild(kind, controller),
+    );
+    if (kind != _VideoSidePanelKind.settings) return panel;
+    return HibikiAppUiScale(
+      scale: _videoUiScale,
+      child: panel,
     );
   }
 
@@ -5092,11 +5131,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
                       // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
                       // 让全屏路由也响应（BUG-120 同源）。
-                      return ValueListenableBuilder<bool>(
-                        valueListenable: _immersiveLocked,
-                        builder: (BuildContext _, bool locked, __) =>
-                            IgnorePointer(
-                          ignoring: locked,
+                      //
+                      // 侧栏打开时也一并 gate（BUG-253）：面板盖在控制条上，但 media_kit
+                      // 自己的 MouseRegion 仍会在鼠标移过透明背景区时把控制条弹回到面板
+                      // 后面。把 [IgnorePointer] 同时绑 [_videoSidePanel]，面板期间 media_kit
+                      // 收不到 hover → 背景控制条不再冒出来。键盘仍不受影响（同上）。
+                      return ListenableBuilder(
+                        listenable: Listenable.merge(
+                          <Listenable>[_immersiveLocked, _videoSidePanel],
+                        ),
+                        builder: (BuildContext _, __) => IgnorePointer(
+                          ignoring: _immersiveLocked.value ||
+                              _videoSidePanel.value != null,
                           child: AdaptiveVideoControls(state),
                         ),
                       );
@@ -5168,7 +5214,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: ValueListenableBuilder<bool>(
         valueListenable: _videoControlsVisible,
         builder: (BuildContext context, bool controlsVisible, __) {
-          if (!controlsVisible || _immersiveLocked.value) {
+          // 沉浸锁或侧栏打开（BUG-253）时一律不显示右侧 rail——面板盖在它上面、
+          // 背景操作按钮不该再冒出来。controlsVisible 在面板期间已被强制 false，这里
+          // 再显式门控 [_videoSidePanel] 做双保险。
+          if (!controlsVisible ||
+              _immersiveLocked.value ||
+              _videoSidePanel.value != null) {
             return const SizedBox.shrink();
           }
           return Align(

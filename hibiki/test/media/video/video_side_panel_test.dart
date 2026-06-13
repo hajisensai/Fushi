@@ -35,6 +35,8 @@ void main() {
     expect(material.color!.a, lessThan(1));
     expect(find.text('Speed'), findsOneWidget);
     expect(find.text('1.5x'), findsOneWidget);
+    // BUG-254：右上角 X 关闭按钮已删除（关闭改由页面层全屏 barrier 点面板外承载）。
+    expect(find.byIcon(Icons.close), findsNothing);
   });
 
   testWidgets('VideoFavoriteSentencesPanel shows only the current episode',

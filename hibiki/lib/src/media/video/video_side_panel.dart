@@ -48,26 +48,17 @@ class VideoTranslucentSidePanel extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
+                  // BUG-254：去掉右上角 X 关闭按钮，改为点击面板外的空白区域关闭
+                  // （由页面层的全屏透明 barrier 承载，见 video_hibiki_page 的
+                  // [_buildVideoSidePanelOverlay]）。[onClose] 仍保留供 barrier / 其他
+                  // 调用方复用，header 不再渲染关闭按钮。
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
-                    child: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        if (onClose != null)
-                          IconButton(
-                            tooltip: MaterialLocalizations.of(context)
-                                .closeButtonTooltip,
-                            icon: const Icon(Icons.close),
-                            onPressed: onClose,
-                          ),
-                      ],
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                   const Divider(height: 1),

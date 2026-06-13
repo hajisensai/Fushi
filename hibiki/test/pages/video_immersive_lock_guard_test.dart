@@ -43,14 +43,17 @@ void main() {
 
   test('② 锁定态 gate AdaptiveVideoControls 的指针（控制条不弹）', () {
     // AdaptiveVideoControls 必须被 IgnorePointer 包住、ignoring 跟随锁定态，鼠标 hover
-    // 收不到 → media_kit 控制条不被唤起。
+    // 收不到 → media_kit 控制条不被唤起。BUG-253 起 ignoring 还并入侧栏门控
+    // （_videoSidePanel），故只断言 ignoring 含 _immersiveLocked.value、child 是
+    // AdaptiveVideoControls（折行无关，压成单空格后匹配）。
     final int idx = src.indexOf('IgnorePointer(');
     expect(idx, greaterThanOrEqualTo(0),
         reason: '锁定态必须用 IgnorePointer 拦掉送往 media_kit controls 的指针');
-    // ignoring 必须绑定锁定态变量（而非常量）。
+    final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      RegExp(r'IgnorePointer\(\s*ignoring: locked,\s*child: AdaptiveVideoControls\(state\),')
-          .hasMatch(src),
+      RegExp(r'IgnorePointer\( ignoring: _immersiveLocked\.value[^,]*, '
+              r'child: AdaptiveVideoControls\(state\),')
+          .hasMatch(flat),
       isTrue,
       reason: 'IgnorePointer.ignoring 必须跟随锁定态、child 必须是 AdaptiveVideoControls',
     );

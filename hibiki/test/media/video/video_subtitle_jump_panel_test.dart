@@ -250,16 +250,16 @@ void main() {
       expect(find.text('No subtitles loaded'), findsOneWidget);
     });
 
-    testWidgets('close button fires onClose', (WidgetTester tester) async {
+    testWidgets('no close X button (tap-outside closes, BUG-254)',
+        (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
-      bool closed = false;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onClose: () => closed = true,
+        onClose: () {},
         onCopyCue: (_) {},
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
@@ -268,9 +268,8 @@ void main() {
         emptyHint: 'empty',
       )));
 
-      await tester.tap(find.byIcon(Icons.close));
-      await tester.pump();
-      expect(closed, isTrue);
+      // BUG-254：右上角 X 关闭按钮已删除，关闭改由页面层全屏 barrier（点面板外）承载。
+      expect(find.byIcon(Icons.close), findsNothing);
     });
 
     // TODO-152 sub-A: inline action buttons (jump/copy/favorite) + header toolbar.
