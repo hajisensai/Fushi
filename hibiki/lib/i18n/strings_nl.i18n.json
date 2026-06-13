@@ -1580,5 +1580,6 @@
     "video_immersive_mode_unlock_only": "Unlock only",
     "custom_fonts_catalog_title": "Font library",
     "startup_default_dictionary_tab": "Open lookup on startup",
-    "startup_default_dictionary_tab_hint": "Start the home screen on the lookup tab instead of the current default."
+    "startup_default_dictionary_tab_hint": "Start the home screen on the lookup tab instead of the current default.",
+    "backup_category_videos": "Videos"
 }

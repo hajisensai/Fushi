@@ -31,6 +31,12 @@ enum BackupCategory {
 
   /// User-imported custom font files (`custom_fonts/`).
   fonts,
+
+  /// Video files referenced by `video_books.video_path` / playlist episodes.
+  ///
+  /// Videos can be very large and are often stored outside the app documents
+  /// directory, so the UI leaves this category opt-in by default.
+  videos,
 }
 
 /// Rewrites an absolute [oldPath] that lives under [oldRoot] so it lives under
@@ -128,6 +134,7 @@ class BackupMeta {
     this.booksRoot,
     this.audiobooksRoot,
     this.fontsRoot,
+    this.videoFiles = const <String, String>{},
   });
 
   final String appVersion;
@@ -152,6 +159,15 @@ class BackupMeta {
   /// this device's root. Null for legacy backups → import skips font rebasing.
   final String? fontsRoot;
 
+  /// Exact source video path -> archive-relative path under `videos/`.
+  ///
+  /// Imported videos are not copied into one stable app directory today; the DB
+  /// stores the user's original absolute file paths. A single source root is
+  /// therefore not enough to rebase them after restore, so the backup records
+  /// the exact paths it packed and import rewrites matching DB paths onto the
+  /// chosen local video restore root.
+  final Map<String, String> videoFiles;
+
   Map<String, dynamic> toJson() => {
         'appVersion': appVersion,
         'schemaVersion': schemaVersion,
@@ -161,6 +177,7 @@ class BackupMeta {
         if (booksRoot != null) 'booksRoot': booksRoot,
         if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
         if (fontsRoot != null) 'fontsRoot': fontsRoot,
+        if (videoFiles.isNotEmpty) 'videoFiles': videoFiles,
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -173,6 +190,9 @@ class BackupMeta {
         booksRoot: json['booksRoot'] as String?,
         audiobooksRoot: json['audiobooksRoot'] as String?,
         fontsRoot: json['fontsRoot'] as String?,
+        videoFiles: (json['videoFiles'] as Map?)?.map(
+                (dynamic k, dynamic v) => MapEntry(k as String, v as String)) ??
+            const <String, String>{},
       );
 
   static BackupMeta? tryParse(String source) {
@@ -230,6 +250,7 @@ class BackupService {
   static const String _booksPrefix = 'hoshi_books';
   static const String _audiobooksPrefix = 'audiobooks';
   static const String _fontsPrefix = 'custom_fonts';
+  static const String _videosPrefix = 'videos';
 
   /// Persisted preference key (ReaderSettings prefix included) whose JSON
   /// value is the canonical catalog `{version, fonts:[{id, name, path}]}`.
@@ -320,6 +341,18 @@ class BackupService {
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
 
+      // Build the flat "zip-path → disk-path" map, then stream every file into
+      // the ZIP off the UI isolate. The old path read each file fully into a
+      // single in-memory Archive and ran a synchronous ZipEncoder().encode() on
+      // the UI isolate — that froze the app (ANR) on any non-trivial library.
+      final Map<String, String> files = <String, String>{
+        _dbName: cleanDbPath,
+      };
+      Map<String, String> videoFiles = const <String, String>{};
+      if (wants(BackupCategory.videos)) {
+        videoFiles = await _collectVideoFiles(files);
+      }
+
       // Record the SOURCE-device content roots so import can rebase the stored
       // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
       // importing device's roots. Null roots → legacy db-only backup.
@@ -337,15 +370,9 @@ class BackupService {
         audiobooksRoot:
             wants(BackupCategory.audiobooks) ? _audiobooksRootDirectory : null,
         fontsRoot: wants(BackupCategory.fonts) ? _fontsRootDirectory : null,
+        videoFiles: videoFiles,
       );
 
-      // Build the flat "zip-path → disk-path" map, then stream every file into
-      // the ZIP off the UI isolate. The old path read each file fully into a
-      // single in-memory Archive and ran a synchronous ZipEncoder().encode() on
-      // the UI isolate — that froze the app (ANR) on any non-trivial library.
-      final Map<String, String> files = <String, String>{
-        _dbName: cleanDbPath,
-      };
       if (includeDictionary) {
         await _collectTreeFiles(
             dictionaryResourceRoot!, _dictionaryResourcesPrefix, files);
@@ -498,6 +525,7 @@ class BackupService {
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
     String? fontsRootDirectory,
+    String? videosRootDirectory,
   }) async {
     final dbPath = p.join(dbDirectory, _dbName);
     // Stream the central directory instead of buffering the whole (GB-scale)
@@ -591,6 +619,11 @@ class BackupService {
                 archive, _fontsPrefix, fontsRootDirectory)) {
           toCommit.add(fontsRootDirectory);
         }
+        if (videosRootDirectory != null &&
+            await _prepareTreeRestore(
+                archive, _videosPrefix, videosRootDirectory)) {
+          toCommit.add(videosRootDirectory);
+        }
       } catch (_) {
         // A write failed: drop every staged temp dir; no tree was swapped.
         if (booksRootDirectory != null) {
@@ -601,6 +634,9 @@ class BackupService {
         }
         if (fontsRootDirectory != null) {
           await _abortPreparedTree(fontsRootDirectory);
+        }
+        if (videosRootDirectory != null) {
+          await _abortPreparedTree(videosRootDirectory);
         }
         rethrow;
       }
@@ -640,6 +676,11 @@ class BackupService {
           dbDirectory: dbDirectory,
           meta: meta,
           newFontsRoot: fontsRootDirectory,
+        );
+        await _rebaseVideoPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newVideosRoot: videosRootDirectory,
         );
       }
 
@@ -781,6 +822,84 @@ class BackupService {
           p.posix.join(archivePrefix, relativePath.replaceAll(r'\', '/'));
       into[archivePath] = entity.path;
     }
+  }
+
+  Future<Map<String, String>> _collectVideoFiles(
+    Map<String, String> into,
+  ) async {
+    final Map<String, String> sourcePathToArchiveRelative = <String, String>{};
+    final Set<String> usedArchiveRelativePaths = <String>{};
+    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    for (final VideoBookRow row in rows) {
+      int index = 0;
+      for (final String videoPath in _videoPathsForRow(row)) {
+        if (videoPath.isEmpty ||
+            sourcePathToArchiveRelative.containsKey(videoPath)) {
+          continue;
+        }
+        final File videoFile = File(videoPath);
+        if (!await videoFile.exists()) continue;
+        final String relativePath = _videoArchiveRelativePath(
+          bookUid: row.bookUid,
+          sourcePath: videoPath,
+          index: index,
+          used: usedArchiveRelativePaths,
+        );
+        sourcePathToArchiveRelative[videoPath] = relativePath;
+        into[p.posix.join(_videosPrefix, relativePath)] = videoPath;
+        index++;
+      }
+    }
+    return sourcePathToArchiveRelative;
+  }
+
+  static Iterable<String> _videoPathsForRow(VideoBookRow row) sync* {
+    yield row.videoPath;
+    final String? playlistJson = row.playlistJson;
+    if (playlistJson == null || playlistJson.isEmpty) return;
+    try {
+      final dynamic decoded = jsonDecode(playlistJson);
+      if (decoded is! List) return;
+      for (final dynamic entry in decoded) {
+        if (entry is! Map) continue;
+        final Object? path = entry['path'];
+        if (path is String) yield path;
+      }
+    } catch (_) {
+      return;
+    }
+  }
+
+  static String _videoArchiveRelativePath({
+    required String bookUid,
+    required String sourcePath,
+    required int index,
+    required Set<String> used,
+  }) {
+    final String folder = _safeArchiveSegment(bookUid);
+    final String basename = _safeArchiveSegment(
+      _crossPlatformBasename(sourcePath).isEmpty
+          ? 'video'
+          : _crossPlatformBasename(sourcePath),
+    );
+    String candidate = p.posix.join(folder, '${index + 1}-$basename');
+    int suffix = 2;
+    while (used.contains(candidate)) {
+      candidate = p.posix.join(folder, '${index + 1}-$suffix-$basename');
+      suffix++;
+    }
+    used.add(candidate);
+    return candidate;
+  }
+
+  static String _crossPlatformBasename(String path) {
+    final int sep = path.lastIndexOf(RegExp(r'[\\/]'));
+    return sep >= 0 ? path.substring(sep + 1) : path;
+  }
+
+  static String _safeArchiveSegment(String value) {
+    final String safe = value.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+    return safe.isEmpty ? 'item' : safe;
   }
 
   /// Streams every file in [archivePathToSource] into a ZIP at [outputPath] on a
@@ -1131,6 +1250,99 @@ class BackupService {
     } finally {
       await db.close();
     }
+  }
+
+  static Future<void> _rebaseVideoPaths({
+    required String dbDirectory,
+    required BackupMeta meta,
+    required String? newVideosRoot,
+  }) async {
+    if (newVideosRoot == null || meta.videoFiles.isEmpty) return;
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      for (final VideoBookRow row in await db.allVideoBooks()) {
+        final String videoPath =
+            _rebaseVideoPath(row.videoPath, meta.videoFiles, newVideosRoot);
+        final String? playlistJson = _rebaseVideoPlaylistJson(
+          row.playlistJson,
+          meta.videoFiles,
+          newVideosRoot,
+        );
+        if (videoPath == row.videoPath && playlistJson == row.playlistJson) {
+          continue;
+        }
+        await db.customStatement(
+          'UPDATE video_books SET video_path = ?, playlist_json = ? '
+          'WHERE book_uid = ?',
+          <Object?>[videoPath, playlistJson, row.bookUid],
+        );
+      }
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  static String _rebaseVideoPath(
+    String oldPath,
+    Map<String, String> sourcePathToArchiveRelative,
+    String newVideosRoot,
+  ) {
+    final String? relativePath = sourcePathToArchiveRelative[oldPath];
+    if (relativePath == null) return oldPath;
+    return _restoredVideoPath(newVideosRoot, relativePath);
+  }
+
+  static String? _rebaseVideoPlaylistJson(
+    String? playlistJson,
+    Map<String, String> sourcePathToArchiveRelative,
+    String newVideosRoot,
+  ) {
+    if (playlistJson == null || playlistJson.isEmpty) return playlistJson;
+    try {
+      final dynamic decoded = jsonDecode(playlistJson);
+      if (decoded is! List) return playlistJson;
+      bool changed = false;
+      final List<dynamic> rewritten = decoded.map<dynamic>((dynamic entry) {
+        if (entry is! Map) return entry;
+        final Map<String, dynamic> row = Map<String, dynamic>.from(entry);
+        final Object? path = row['path'];
+        if (path is! String) return row;
+        final String rebased =
+            _rebaseVideoPath(path, sourcePathToArchiveRelative, newVideosRoot);
+        if (rebased != path) {
+          row['path'] = rebased;
+          changed = true;
+        }
+        return row;
+      }).toList();
+      return changed ? jsonEncode(rewritten) : playlistJson;
+    } catch (_) {
+      return playlistJson;
+    }
+  }
+
+  static String _restoredVideoPath(
+    String videosRoot,
+    String archiveRelativePath,
+  ) {
+    final String relative = archiveRelativePath.replaceAll(r'\', '/');
+    final String normalizedRelative = p.posix.normalize(relative);
+    if (relative.isEmpty ||
+        p.posix.isAbsolute(relative) ||
+        normalizedRelative == '..' ||
+        normalizedRelative.startsWith('../')) {
+      throw FormatException('Invalid backup video path: $archiveRelativePath');
+    }
+    final String targetPath =
+        p.normalize(p.join(videosRoot, normalizedRelative));
+    final String canonicalRoot = p.canonicalize(videosRoot);
+    final String canonicalTarget = p.canonicalize(targetPath);
+    if (canonicalTarget != canonicalRoot &&
+        !p.isWithin(canonicalRoot, canonicalTarget)) {
+      throw FormatException('Invalid backup video path: $archiveRelativePath');
+    }
+    return targetPath;
   }
 
   /// Rebases [path] trying the books mapping first, then the audiobooks mapping.

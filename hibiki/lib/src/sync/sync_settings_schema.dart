@@ -261,6 +261,11 @@ SettingsDestination buildSyncBackupDestination() {
   );
 }
 
+@visibleForTesting
+Set<BackupCategory> defaultBackupExportCategories() => BackupCategory.values
+    .where((BackupCategory c) => c != BackupCategory.videos)
+    .toSet();
+
 // HBK-AUDIT-044: 同步设置的内存态由所有者 AppModel（持有 database）拥有，
 // 而不是某个 widget。之前 _activeSyncState 的生命周期挂在 _BackendSelectorWidget
 // 上（initState 创建、dispose 置 null），其它开关和 _LanDiscoveryWidget 却共享同一
@@ -898,8 +903,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   /// so confirming without touching anything reproduces the legacy all-in
   /// export. Returns the chosen set, or null if the user cancelled.
   Future<Set<BackupCategory>?> _pickExportCategories() async {
-    // Every category enabled by default.
-    final Set<BackupCategory> selected = BackupCategory.values.toSet();
+    final Set<BackupCategory> selected = defaultBackupExportCategories();
+    assert(!selected.contains(BackupCategory.videos));
     String labelFor(BackupCategory c) {
       switch (c) {
         case BackupCategory.dictionary:
@@ -910,6 +915,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
           return t.backup_category_audiobooks;
         case BackupCategory.fonts:
           return t.backup_category_fonts;
+        case BackupCategory.videos:
+          return t.backup_category_videos;
       }
     }
 
@@ -1096,6 +1103,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         // BUG-183: restore the custom-font files and rebase the stored font
         // config paths onto this device's root.
         fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+        videosRootDirectory: p.join(appModel.appDirectory.path, 'videos'),
       );
 
       if (mounted) {
