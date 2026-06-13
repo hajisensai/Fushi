@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 
 /// 源码守卫（TODO-115）：制卡默认标签接线。
 ///
@@ -80,5 +81,28 @@ void main() {
         reason: 'mixin 的 onMineEntry 必须把来源传进 context');
     expect(src, contains('AnkiMiningSource.video'));
     expect(src, contains('AnkiMiningSource.book'));
+  });
+
+  // TODO-295 / BUG-242：设置页「添加来源分类标签」开关的提示文案，必须如实描述
+  // 视频卡片得到的标签字面量是 `video`（见 base_anki_repository.dart 的
+  // `videoTag = 'video'`），不得再写成 `anime`/「动漫」误导用户。
+  // 行为本体（写进 Anki 的 tag 确实是 video）由 hibiki_anki 的真制卡行为测试咬住；
+  // 本守卫只盯用户可见的提示文案别再漂回旧名。
+  test('分类标签提示文案描述视频标签为 video，而非 anime/动漫', () {
+    final String enHint =
+        AppLocale.en.translations.anki_tag_include_category_hint;
+    final String zhHint =
+        AppLocale.zhCn.translations.anki_tag_include_category_hint;
+
+    expect(enHint.contains('video'), isTrue,
+        reason: 'EN 提示应说明视频卡片得到 "video" 标签');
+    expect(enHint.toLowerCase().contains('anime'), isFalse,
+        reason: 'EN 提示不得再把视频标签写成 "anime"（实际写入的是 video）');
+
+    expect(zhHint.contains('video'), isTrue,
+        reason: 'zh-CN 提示应说明视频卡片得到「video」标签');
+    expect(zhHint.contains('anime'), isFalse, reason: 'zh-CN 提示不得再出现 "anime"');
+    expect(zhHint.contains('动漫'), isFalse,
+        reason: 'zh-CN 提示不得把视频写成「动漫」（视频≠动画）');
   });
 }

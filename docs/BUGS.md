@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 238 条。点号进各自文件。
+> 共 239 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-242](bugs/BUG-242-video-category-tag-naming.md) | ✅ | ✅ | 制卡「添加来源分类标签」开关提示把视频写成 anime/动漫 |
 | [BUG-241](bugs/BUG-241-ankidroid-collection-unavailable.md) | ✅ | ✅ | 从 AnkiDroid 获取时显示 "collection is not available" |
 | [BUG-240](bugs/BUG-240-paged-mode-cross-chapter.md) | ✅ | ✅ | 分页模式未到章节末页就意外跨章 |
 | [BUG-239](bugs/BUG-239-continuous-mode-no-pageturn.md) | ✅ | ✅ | 连续/滚动模式滑动无法翻页（手势轴向与原生滚动冲突） |
