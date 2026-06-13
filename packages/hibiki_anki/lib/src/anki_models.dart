@@ -270,7 +270,7 @@ class DictionaryMedia {
   final String filename;
 }
 
-/// 制卡来源类别：用于给卡片追加分类标签（书籍 vs 视频/动漫）。
+/// 制卡来源类别：用于给卡片追加分类标签（书籍 vs 视频）。
 ///
 /// 与 `kStatSourceBook`/`kStatSourceVideo`（主 app 的统计/收藏来源标识）一一对应，
 /// 但 hibiki_anki 是独立包不能依赖主 app，故在此重新声明一个无关枚举；调用方
@@ -280,7 +280,7 @@ enum AnkiMiningSource {
   /// 书籍/EPUB 阅读、独立查词页、有声书 —— 归「书籍」分类标签。
   book,
 
-  /// 视频/动漫字幕查词 —— 归「动漫」分类标签。
+  /// 视频字幕查词 —— 归「视频」分类标签（写入 Anki 的标签字面量为 `video`）。
   video,
 }
 

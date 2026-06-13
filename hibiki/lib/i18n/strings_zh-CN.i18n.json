@@ -1526,7 +1526,7 @@
     "anki_tag_include_hibiki": "添加「hibiki」标签",
     "anki_tag_include_hibiki_hint": "为每张 Hibiki 制出的卡片打上标记",
     "anki_tag_include_category": "添加来源分类标签",
-    "anki_tag_include_category_hint": "书籍标「book」、视频标「anime」",
+    "anki_tag_include_category_hint": "书籍标「book」、视频标「video」",
     "reverse_arrow_page_turn": "反转方向键翻页方向",
     "shortcut_scope_video": "视频",
     "shortcut_action_video_toggle_play_pause": "播放/暂停",

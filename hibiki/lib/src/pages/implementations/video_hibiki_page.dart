@@ -2466,7 +2466,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       documentTitle: _title,
       coverPath: coverPath,
       sasayakiAudioPath: audioPath,
-      // TODO-115: 视频/动漫来源 → 卡片追加 `anime` 分类标签（本页覆写了 onMineEntry，
+      // TODO-115: 视频来源 → 卡片追加 `video` 分类标签（本页覆写了 onMineEntry，
       // 绕过 DictionaryPageMixin 的 source 注入，故在此显式指定）。
       source: AnkiMiningSource.video,
     );
