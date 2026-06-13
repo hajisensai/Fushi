@@ -72,7 +72,7 @@ void main() {
     final String setStateBody = source.substring(setStateIdx, setStateEnd);
     expect(setStateBody.contains('isLatestEditable('), isTrue,
         reason: 'the green latest state must require a held note id');
-    expect(setStateBody.contains("dataset.latest ="), isTrue,
+    expect(setStateBody.contains('dataset.latest ='), isTrue,
         reason: 'setMineState must record the latest sub-state on the button');
   });
 
