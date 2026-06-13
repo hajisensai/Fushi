@@ -1515,16 +1515,21 @@ $_sharedJs
   paginate: function(direction) {
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
-    if (direction === "forward") {
-      if (vertical) {
-        return Math.abs(window.scrollX) + window.innerWidth >= root.scrollWidth - 2 ? "limit" : "scrolled";
-      }
-      return root.scrollTop + window.innerHeight >= root.scrollHeight - 2 ? "limit" : "scrolled";
-    }
+    var before = vertical ? window.scrollX : root.scrollTop;
+    var wm = window.getComputedStyle(document.body).writingMode;
+    var amount = vertical
+      ? Math.max(1, Math.floor(window.innerWidth * 0.9))
+      : Math.max(1, Math.floor(window.innerHeight * 0.9));
+    var forwardSign = vertical && wm === 'vertical-rl' ? -1 : 1;
+    var step = amount * (direction === "forward" ? forwardSign : -forwardSign);
     if (vertical) {
-      return window.scrollX >= -2 ? "limit" : "scrolled";
+      window.scrollBy({left: step, top: 0, behavior: 'auto'});
+    } else {
+      window.scrollBy({left: 0, top: step, behavior: 'auto'});
     }
-    return root.scrollTop <= 2 ? "limit" : "scrolled";
+    var after = vertical ? window.scrollX : root.scrollTop;
+    var moved = Math.abs(after - before) > 1;
+    return moved ? "scrolled" : "limit";
   },
   getFirstVisibleCharOffset: function() {
     var vertical = this.isVertical();
@@ -1532,7 +1537,7 @@ $_sharedJs
     var pt = parseFloat(cs.paddingTop) || 0;
     var pl = parseFloat(cs.paddingLeft) || 0;
     var pr = parseFloat(cs.paddingRight) || 0;
-    var x = vertical ? (document.body.clientWidth - pr - 2) : (pl + 2);
+    var x = vertical ? (window.innerWidth - pr - 2) : (pl + 2);
     var y = pt + 2;
     var range = document.caretRangeFromPoint(x, y);
     if (!range || !range.startContainer) return -1;
@@ -1594,7 +1599,7 @@ $_sharedJs
     var cs = getComputedStyle(document.body);
     if (vertical) {
       var pr = parseFloat(cs.paddingRight) || 0;
-      var targetX = document.body.clientWidth - pr;
+      var targetX = window.innerWidth - pr;
       root.scrollLeft += rect.left - targetX;
     } else {
       var pt = parseFloat(cs.paddingTop) || 0;
