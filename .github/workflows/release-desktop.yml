@@ -17,7 +17,7 @@ on:
           - beta
           - formal
       tag_name:
-        description: 'Optional release tag. Defaults to v<version>-debug.<run>+<sha>, v<version>-beta.<run>, or v<version>.'
+        description: 'Optional release tag. Defaults to v<version>-debug.<seq>+<sha>, v<version>-beta.<seq>, or v<version>.'
         required: false
       release_name:
         description: 'Optional GitHub Release title.'
@@ -25,6 +25,10 @@ on:
       ffmpeg_min_run_id:
         description: 'Optional ffmpeg-min workflow run ID. Defaults to the latest successful ffmpeg-min run.'
         required: false
+
+concurrency:
+  group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   windows:
@@ -34,6 +38,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Validate unified release policy
+        shell: pwsh
+        run: ./tool/check_release_policy.ps1
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -48,6 +57,11 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
           SHORT_SHA="${GITHUB_SHA::7}"
           EVENT="${GITHUB_EVENT_NAME}"
           CHANNEL="${INPUT_CHANNEL:-}"
@@ -61,7 +75,7 @@ jobs:
           case "$EVENT" in
             push)
               CHANNEL=debug
-              TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
+              TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
               NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
               BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
               PUBLISH_MANAGED_RELEASE=true
@@ -69,13 +83,13 @@ jobs:
             workflow_dispatch)
               case "$CHANNEL" in
                 debug)
-                  TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
+                  TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
                   NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
                   BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                   ;;
                 beta)
-                  TAG="${TAG:-v${VERSION}-beta.${GITHUB_RUN_NUMBER}}"
-                  NAME="${NAME:-Hibiki ${VERSION} beta ${GITHUB_RUN_NUMBER}}"
+                  TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                   ;;
                 formal)
@@ -106,13 +120,13 @@ jobs:
           case "$CHANNEL" in
             debug)
               if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
-                echo "::error title=Invalid debug tag::Use v<version>-debug.<run>+<short-sha>, not debug-<sha>."
+                echo "::error title=Invalid debug tag::Use v<version>-debug.<sequence>+<short-sha>, not debug-<sha>."
                 exit 1
               fi
               ;;
             beta)
               if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
-                echo "::error title=Invalid beta tag::Use v<version>-beta.<run>."
+                echo "::error title=Invalid beta tag::Use v<version>-beta.<sequence>."
                 exit 1
               fi
               ;;
@@ -136,6 +150,7 @@ jobs:
             echo "make_latest=$MAKE_LATEST"
             echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
             echo "EOF"
@@ -173,7 +188,7 @@ jobs:
         run: >-
           flutter build windows --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
-          --build-number "${{ github.run_number }}"
+          --build-number "${{ steps.channel.outputs.release_sequence }}"
       - name: Download ffmpeg-min (Windows)
         id: ffmpeg_min
         shell: bash

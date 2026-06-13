@@ -17,11 +17,15 @@ on:
           - beta
           - formal
       tag_name:
-        description: 'Optional release tag. Defaults to v<version>-debug.<run>+<sha>, v<version>-beta.<run>, or v<version>.'
+        description: 'Optional release tag. Defaults to v<version>-debug.<seq>+<sha>, v<version>-beta.<seq>, or v<version>.'
         required: false
       release_name:
         description: 'Optional GitHub Release title.'
         required: false
+
+concurrency:
+  group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -32,6 +36,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Validate unified release policy
+      shell: pwsh
+      run: ./tool/check_release_policy.ps1
 
     - uses: actions/setup-java@v5
       with:
@@ -63,7 +73,12 @@ jobs:
           echo "::error title=Invalid pubspec build number::Expected numeric +build in $PUBSPEC_VERSION"
           exit 1
         fi
-        ANDROID_BUILD_NUMBER=$((PUBSPEC_BUILD * 10000 + GITHUB_RUN_NUMBER))
+        RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+        if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+          echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+          exit 1
+        fi
+        ANDROID_BUILD_NUMBER=$((PUBSPEC_BUILD * 1000000 + RELEASE_SEQUENCE))
         SHORT_SHA="${GITHUB_SHA::7}"
         EVENT="${GITHUB_EVENT_NAME}"
         CHANNEL="${INPUT_CHANNEL:-}"
@@ -82,7 +97,7 @@ jobs:
         case "$EVENT" in
           push)
             CHANNEL=debug
-            TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
+            TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
             NAME="${NAME:-Hibiki debug ${VERSION} (${SHORT_SHA})}"
             BODY="Automated release-signed debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
             BUILD_DEBUG_APK=false
@@ -93,7 +108,7 @@ jobs:
           workflow_dispatch)
             case "$CHANNEL" in
               debug)
-                TAG="${TAG:-v${VERSION}-debug.${GITHUB_RUN_NUMBER}+${SHORT_SHA}}"
+                TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
                 NAME="${NAME:-Hibiki debug ${VERSION} (${SHORT_SHA})}"
                 BODY="Manual release-signed debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                 BUILD_DEBUG_APK=false
@@ -101,8 +116,8 @@ jobs:
                 NEEDS_RELEASE_KEYSTORE=true
                 ;;
               beta)
-                TAG="${TAG:-v${VERSION}-beta.${GITHUB_RUN_NUMBER}}"
-                NAME="${NAME:-Hibiki ${VERSION} beta ${GITHUB_RUN_NUMBER}}"
+                TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+                NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                 FILES="hibiki/build/release-artifacts/hibiki-*.apk"
                 BUILD_SPLIT_RELEASE_APK=true
@@ -143,13 +158,13 @@ jobs:
         case "$CHANNEL" in
           debug)
             if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
-              echo "::error title=Invalid debug tag::Use v<version>-debug.<run>+<short-sha>, not debug-<sha>."
+              echo "::error title=Invalid debug tag::Use v<version>-debug.<sequence>+<short-sha>, not debug-<sha>."
               exit 1
             fi
             ;;
           beta)
             if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
-              echo "::error title=Invalid beta tag::Use v<version>-beta.<run>."
+              echo "::error title=Invalid beta tag::Use v<version>-beta.<sequence>."
               exit 1
             fi
             ;;
@@ -173,6 +188,7 @@ jobs:
           echo "needs_release_keystore=$NEEDS_RELEASE_KEYSTORE"
           echo "build_version_name=$BUILD_VERSION_NAME"
           echo "android_build_number=$ANDROID_BUILD_NUMBER"
+          echo "release_sequence=$RELEASE_SEQUENCE"
           echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
           echo "files=$FILES"
           echo "body<<EOF"
