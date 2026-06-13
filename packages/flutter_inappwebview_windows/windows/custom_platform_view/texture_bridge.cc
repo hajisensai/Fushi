@@ -136,13 +136,41 @@ namespace flutter_inappwebview_plugin
       return false;
     }
 
+    // BUG-209 第十修（扩展保活到 Start 重入路径）：CustomPlatformView::HandleMethodCall
+    // 的 setSize 每次都调 texture_bridge_->Start()（custom_platform_view.cc:323），不止
+    // 首帧。is_running_ 守卫只挡「已成功 StartCapture 后的重入」；但若上一轮 Start 在
+    // CreateCaptureSession 失败（:179-183 return，不设 is_running_）或 StartCapture 失败
+    // （:190 return，不设 is_running_）后早返回，frame_pool_ 已被赋值且已 add_FrameArrived
+    // 注册了句柄，is_running_ 仍为 false。下一次 setSize -> Start 越过 is_running_ 守卫，
+    // 直接在 :147 用新池**覆盖** frame_pool_ ComPtr——旧池最后强引用归零、内存 free，
+    // 但旧池仍挂着已注册的 FrameArrived，其在途 deferred FirePresentEvent 在旧池 free 后
+    // 才 fire -> 读 free 内存的 event 成员 -> null delegate -> 同一 0xf0d5 崩点。第九修的
+    // 永久保活只覆盖 StopInternal，这条 Start 覆盖路径是它漏掉的池销毁路径之一（dump
+    // 81504 的崩溃池 MEM_FREE 且不在 retired-list，正是非 StopInternal 路径释放的池）。
+    // 修：覆盖前用与 StopInternal 同一个 RetireFramePoolLocked 不变量先 Close + 退役保活，
+    // 绝不让任何挂着在途 deferral 的旧池被裸覆盖释放。
+    RetireFramePoolLocked();
+
+    if (!CreateAndStartFramePoolLocked()) {
+      return false;
+    }
+    is_running_ = true;
+    return true;
+  }
+
+  bool TextureBridge::CreateAndStartFramePoolLocked()
+  {
+    // BUG-209：帧池的创建 + FrameArrived 挂载 + CaptureSession 建立 + StartCapture 收敛进
+    // 单一 helper（调用方持 mutex_），供首帧 Start() 与 resize 时的 RecreateFramePoolLocked()
+    // 共用——两条路径用完全相同的 WGC 线程模型 / delegate 注册，resize 不再走 Recreate。
+    // 进入前 frame_pool_ 必为空（调用方已 RetireFramePoolLocked 退役旧池）。
     ABI::Windows::Graphics::SizeInt32 size;
     capture_item_->get_Size(&size);
 
     // BUG-163/BUG-209: 帧池必须用 CreateCaptureFramePool（UI 线程 DispatcherQueue
     // 派发，渲染管线线程模型与多年稳定版一致）。FreeThreaded 帧池（第四修）已实证
     // 在 Release 构建下纹理不更新（书籍文字全空，2026-06-10 用户验证 v1 无字 /
-    // v2 revert 有字），禁止回潮。teardown 崩溃改由 StopInternal 的「Close 帧池 +
+    // v2 revert 有字），禁止回潮。teardown 崩溃改由 RetireFramePoolLocked 的「Close 帧池 +
     // 退役帧池永久保活」解决（见上方 RetiredFramePoolRegistry）。
     frame_pool_ = graphics_context_->CreateCaptureFramePool(
       graphics_context_->device(),
@@ -182,12 +210,32 @@ namespace flutter_inappwebview_plugin
       return false;
     }
 
-    if (SUCCEEDED(capture_session_->StartCapture())) {
-      is_running_ = true;
-      return true;
+    return SUCCEEDED(capture_session_->StartCapture());
+  }
+
+  void TextureBridge::RecreateFramePoolLocked()
+  {
+    // BUG-209 第十修（resize 路径替换 frame_pool_->Recreate）：调用方（OnFrameArrived）
+    // 持 mutex_。原 Recreate 复用同一帧池只换 back buffer，但会拆掉旧池内部 present 基建，
+    // 其在途 deferral 仍指向被拆状态 -> UAF。改为：退役保活旧池（Close + 永久保活）+
+    // 建全新池。旧 CaptureSession 绑在旧池上，随旧池退役一并 Close 重建（见下）。
+    RetireFramePoolLocked();
+
+    if (capture_session_) {
+      auto session_closable =
+        capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
+      if (session_closable) {
+        session_closable->Close();
+      }
+      capture_session_ = nullptr;
     }
 
-    return false;
+    // 建新池并 StartCapture。失败则保持 frame_pool_ 为空（已退役旧池），下一次 setSize ->
+    // Start() 会再尝试；与旧 Recreate 失败时同样不致崩（OnFrameArrived 开头读 frame_pool_
+    // 前已无新帧投递）。注意：CreateAndStartFramePoolLocked 内部若 CreateCaptureSession
+    // 失败会留下 frame_pool_ 非空但未启动——由下一次 Start() 入口的 RetireFramePoolLocked
+    // 兜底退役保活，不裸释放。
+    CreateAndStartFramePoolLocked();
   }
 
   void TextureBridge::Stop()
@@ -246,30 +294,64 @@ namespace flutter_inappwebview_plugin
       capture_session_ = nullptr;
     }
 
-    if (frame_pool_ && on_frame_arrived_token_.value != 0) {
+    // BUG-209：帧池的「断源 -> Close 设 closed-flag -> 永久保活」三步收敛进单一
+    // RetireFramePoolLocked，让 StopInternal / Start 重入 / OnFrameArrived resize 三条
+    // 会丢弃或替换帧池的路径走完全相同的不变量，消除「某条路径裸释放挂着在途 deferral
+    // 的帧池」的窗口（第九修只在 StopInternal 走这套，漏了另两条）。
+    RetireFramePoolLocked();
+
+    // 释放我们持有的 FrameArrived delegate ComPtr。frame_arrived_state_ 保留
+    // （active 已被 InvalidateFrameArrivedCallback 置 false）。
+    frame_arrived_handler_ = nullptr;
+  }
+
+  void TextureBridge::RetireFramePoolLocked()
+  {
+    // BUG-209 第十修（统一帧池退役不变量，覆盖所有丢弃/替换帧池的路径）：
+    //
+    // 此函数把「当前 frame_pool_」按 dump 实证的根因不变量退役保活，调用方持 mutex_：
+    //   StopInternal()        —— WebView teardown（清栈式销毁）。
+    //   Start()               —— setSize 重入时覆盖旧池前（第九修漏的路径，dump 81504
+    //                            的 MEM_FREE 崩溃池正是从这里裸释放）。
+    //   OnFrameArrived() 的    —— surface resize 不再 Recreate 复用同一池（Recreate 会
+    //   needs_update_ 分支         拆掉旧池内部 present 基建，但其在途 deferred
+    //                            FirePresentEvent 仍指向被拆的内部状态），改为退役旧池 +
+    //                            建全新池，让旧池内存 + closed-flag 永久存活。
+    //
+    // 步骤（顺序即因果防线，与第九修 StopInternal 完全一致）：
+    //   1) remove_FrameArrived(token)：同步从 WGC 内部 event delegate 表摘掉本项（帧池
+    //      仍存活，只动有效表，不留野指针）。返回后 WGC 不再向本 token 投递新事件。
+    //   2) Close 帧池（IClosable）：同步设 closed-flag [pool+129h]=1。此后任何已排队未派发
+    //      的 deferred FirePresentEvent 在其开头 cmp/jne 早返回 no-op，绝不读 event 成员。
+    //   3) 帧池 ComPtr move 进进程级退役注册表**永久保活**，绝不主动释放 -> 帧池内存永久
+    //      有效 -> closed-flag 永久 = 1 -> 任何迟到 deferral 永久安全早返回。
+    //
+    // 因果不变量：任何曾经 add_FrameArrived 的帧池，从此一律退役保活、永不裸释放，故
+    // null-delegate UAF（GraphicsCapture!TypedEventHandler::operator()+0x15, rcx=0）在
+    // 因果上不可能发生。代价是每次退役常驻一个已 Close 小 COM 壳（GPU/服务端资源随 Close
+    // 释放），有界小泄漏，进程退出随 OS 回收。
+    if (!frame_pool_) {
+      return;
+    }
+
+    if (on_frame_arrived_token_.value != 0) {
       // 同步 revoke：返回后 WGC 不再向本 token 投递新 FirePresentEvent。
       // 帧池此刻仍存活，移除只动有效 delegate 表，不产生野指针。
       frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
       on_frame_arrived_token_ = {};
     }
 
-    if (frame_pool_) {
-      // 同步设 closed-flag：在途/迟到的 deferred FirePresentEvent 据此早返回 no-op，
-      // 不再读帧池 event 成员（崩点的前置防线）。
-      auto pool_closable =
-        frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
-      if (pool_closable) {
-        pool_closable->Close();
-      }
-      // 帧池强引用移交退役注册表永久保活（不在此释放，注册表也绝不主动释放），让其
-      // 内存永久有效，使 closed-flag 永久 = 1，任何迟到 deferral 永久安全早返回。
-      RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_));
-      frame_pool_ = nullptr;
+    // 同步设 closed-flag：在途/迟到的 deferred FirePresentEvent 据此早返回 no-op，
+    // 不再读帧池 event 成员（崩点的前置防线）。
+    auto pool_closable =
+      frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
+    if (pool_closable) {
+      pool_closable->Close();
     }
-
-    // 释放我们持有的 FrameArrived delegate ComPtr。frame_arrived_state_ 保留
-    // （active 已被 InvalidateFrameArrivedCallback 置 false）。
-    frame_arrived_handler_ = nullptr;
+    // 帧池强引用移交退役注册表永久保活（不在此释放，注册表也绝不主动释放），让其
+    // 内存永久有效，使 closed-flag 永久 = 1，任何迟到 deferral 永久安全早返回。
+    RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_));
+    frame_pool_ = nullptr;
   }
 
   void TextureBridge::OnFrameArrived()
@@ -297,14 +379,21 @@ namespace flutter_inappwebview_plugin
     }
 
     if (needs_update_) {
-      ABI::Windows::Graphics::SizeInt32 size;
-      capture_item_->get_Size(&size);
-      frame_pool_->Recreate(
-        graphics_context_->device(),
-        static_cast<ABI::Windows::Graphics::DirectX::DirectXPixelFormat>(
-          kPixelFormat),
-        kNumBuffers, size);
+      // BUG-209 第十修（覆盖 resize 这条之前漏的帧池替换路径）：原先用帧池的 Recreate
+      // 方法在 surface resize 时复用同一帧池 COM 对象、只换内部 back buffer。问题是
+      // Recreate 会同步拆掉旧池的内部 present 基建（旧的 swap-chain / present 子对象），
+      // 而此前已排进 UI 线程 CoreMessaging 队列、尚未 fire 的 deferred FirePresentEvent
+      // 仍指向被拆的旧内部状态——它之后 fire 时读已释放的 event 成员 -> null delegate ->
+      // 同一 0xf0d5 崩点。该方法不走第九修的 Close + 退役保活，是 dump 81504 之外另一条
+      // 「帧池（内部状态）被释放而在途 deferral 仍在途」的窗口。
+      //
+      // 改为：把旧帧池整体退役保活（remove_FrameArrived 断源 + Close 设 closed-flag +
+      // 移交退役注册表永久保活，与 StopInternal/Start 同一 RetireFramePoolLocked 不变量），
+      // 再建一个全新的帧池并重新挂 FrameArrived / 新建 CaptureSession。旧池内存 +
+      // closed-flag 永久存活，其任何迟到 deferral 永久安全早返回；新池干净无在途 deferral。
+      // 代价同退役保活：每次 resize 常驻一个已 Close 小 COM 壳（resize 频率有界）。
       needs_update_ = false;
+      RecreateFramePoolLocked();
     }
 
     if (has_frame && frame_available_) {

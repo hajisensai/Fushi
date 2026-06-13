@@ -1,6 +1,6 @@
 ## BUG-209 · 手机闪退实为Windows WGC FramePool teardown崩溃
 - **报告**：2026-06-12（用户报「又闪退了」，指认 Windows 桌面版 hibiki-windows-b1f960290）
-- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。
+- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。**第十修重开（2026-06-14，TODO-305，「看有声书闪退」）**：第九修永久保活只覆盖 `StopInternal` 一条路径，漏了 `Start()` 重入覆盖 + `OnFrameArrived` resize `Recreate` 两条帧池丢弃/替换路径（详见文末「第十修」）。
 
 ### dump 真实崩溃栈（决定性证据）
 两份 minidump（`hibiki.exe.8952.dmp` 6/12 0:11、`hibiki.exe.99916.dmp` 6/11 22:10）崩溃签名完全一致：
@@ -61,3 +61,27 @@ teardown 顺序：`session.Close()` -> `remove_FrameArrived(token)` -> `frame_po
 - **[x] ② 自动化测试已更新** —— `hibiki/test/widgets/texture_bridge_stop_guard_test.dart` 改写为永久保活契约：**禁止** `kRetiredGenerationGap` / `generation_counter_` / `std::remove_if` 回潮、`RetiredFramePoolRegistry` 类体内**禁止** `.erase(`、必须 `push_back` 保活；保留全部既有契约（Close 顺序、`remove_FrameArrived` 断源、不显式 Close 之外的回潮禁令、FreeThreaded/TryEnqueueWithPriority/QuietHops/DrainHops/PendingCaptureTeardown 禁令）。`flutter test test/widgets/texture_bridge_stop_guard_test.dart` 绿。
 - **验证**：①守卫测试绿 ②`flutter build windows --release` 编译验证（见提交说明）③**Windows 真机复现验证（查词弹窗滑动关闭反复触发 -> 不再崩 GraphicsCapture）待 PM/用户**——崩溃为延迟 UAF，host 单测跑不了 WGC，只能用户真机 Release 反复跑「开 EPUB/视频 -> 查词 -> 复制/滑动关闭弹窗 -> 反复」收口。
 - **诚实标注的不确定点**：①永久保活的「有界小泄漏」假设依赖「teardown 频率有界」——极端重度用户长时间高频开关 WebView 会线性累积小壳（每个几百字节），需真机内存监控确认增长可接受（不是无界爆炸，但确实只增不减直到进程退出）。②dump 81504 是含第八修的包，证明第八修代际释放失败是确定的；但「永久保活能根治」是因果论证（closed-flag 永久有效 -> 迟到 deferral 永久早返回），**未经真机 Release 反复触发实测确认崩溃消失**——这是本类延迟 UAF 的固有验证局限，前八修均栽在「论证对了但真机仍复发」，本修虽消除了所有时机赌注，仍需真机收口。
+
+### 第十修（永久保活只覆盖 StopInternal -> 扩展到所有帧池路径，重开 BUG-209，TODO-305，2026-06-14）
+
+**第九修为何仍崩（新 dump 取证 + 第九修的覆盖盲点）**：用户报「Windows 看有声书闪退」。新崩溃 dump（cdb 分析 hibiki.exe，版本 `0.7.2.4720`，**已含第九修永久保活 commit `0a089484a`**）签名与前九修**逐字一致**：`ExceptionCode c0000005`（ACCESS_VIOLATION），`GraphicsCapture!TypedEventHandler<Direct3D11CaptureFramePool,IInspectable>::operator()` 在 null delegate 上 fire（`rcx=0`，`mov rax,[rcx]`），栈 = `CoreMessaging DeferredCall::Callback_Dispatch -> GraphicsCapture!Direct3D11CaptureFramePool::FirePresentEvent -> null delegate`，无 hibiki teardown 帧 = 延迟 UAF。
+
+**决定性证据**：触发 FirePresentEvent 的帧池内存全 `????`（MEM_FREE）——这个帧池**没被第九修的永久保活住**。永久保活的帧池引用计数 >0 绝不会 free。结论：**第九修的永久保活只覆盖了 `StopInternal` 这一条帧池销毁路径，漏了另外两条非 StopInternal 的帧池丢弃/替换路径**，崩溃帧池正是从漏掉的路径裸释放的。
+
+**第九修漏掉的两条帧池路径（根因 file:line）**：
+
+1. **`Start()` 重入覆盖**（`texture_bridge.cc:147` `frame_pool_ = CreateCaptureFramePool(...)`，旧基线行号）。`CustomPlatformView::HandleMethodCall` 的 `setSize` 分支（`custom_platform_view.cc:323` `texture_bridge_->Start()`）**每次 resize/setSize 都调 `Start()`**，不止首帧。`is_running_` 守卫只挡「已成功 `StartCapture` 后的重入」。但若上一轮 `Start()` 在 `CreateCaptureSession` 失败（`:179-183` return，不设 `is_running_`）或 `StartCapture` 失败（`:190` return，不设 `is_running_`）后早返回，此时 `frame_pool_` 已被赋值且已 `add_FrameArrived` 注册了句柄，而 `is_running_` 仍为 `false`。下一次 `setSize -> Start()` 越过 `is_running_` 守卫，直接在 `:147` 用新池**覆盖** `frame_pool_` ComPtr -> 旧池最后强引用归零、内存 free（= dump 的 MEM_FREE），但旧池仍挂着已注册的 FrameArrived，其在途 deferred FirePresentEvent 在旧池 free 后才 fire -> 读 free 内存的 event 成员 -> null delegate -> 同一崩点。
+
+2. **`OnFrameArrived()` 的 resize 路径**（`texture_bridge.cc:302` `frame_pool_->Recreate(...)`，旧基线行号）。`NotifySurfaceSizeChanged() -> needs_update_ = true -> OnFrameArrived` 里对同一帧池调 `Recreate` 复用 COM 对象、只换内部 back buffer。但 `Recreate` 会同步拆掉旧池的内部 present 基建（旧 swap-chain / present 子对象），而此前已排进 UI 线程 CoreMessaging 队列、尚未 fire 的 deferred FirePresentEvent 仍指向被拆的旧内部状态 -> 之后 fire 时读已释放的 event 成员 -> null delegate -> 同一崩点。`Recreate` 完全不走第九修的「Close 设 closed-flag + 退役保活」。有声书场景查词弹窗 / WebView 高频开关 + 阅读器布局变化使 setSize（path 1）和 resize（path 2）都更密集，故复发率更高。
+
+**第十修（把永久保活不变量扩展到所有丢弃/替换帧池的路径）**：把「断源（`remove_FrameArrived`）-> Close 设 closed-flag -> 移交退役注册表永久保活」三步收敛进单一 `RetireFramePoolLocked()`（`texture_bridge.cc`），并让**所有**会丢弃/替换帧池的路径都走它：
+- `StopInternal()` —— Close session 后调 `RetireFramePoolLocked()`（第九修已覆盖，重构为复用同一 helper，行为不变）。
+- `Start()` —— 在覆盖 `frame_pool_` 前先调 `RetireFramePoolLocked()` 退役保活可能残留的旧池（修路径 1）。
+- `OnFrameArrived()` resize 分支 —— **删除裸的帧池 Recreate 调用**，改走新增的 `RecreateFramePoolLocked()`：先 `RetireFramePoolLocked()` 退役保活旧池 + Close 旧 CaptureSession，再 `CreateAndStartFramePoolLocked()` 建全新干净帧池 + 新会话（修路径 2）。
+
+抽出 `CreateAndStartFramePoolLocked()` 共用「建池 + 挂 FrameArrived + 建 CaptureSession + StartCapture」给 `Start()` 与 `RecreateFramePoolLocked()`，确保 resize 用与首帧创建完全相同的 WGC 线程模型 / delegate 注册（不回潮 FreeThreaded）。因果不变量升级为：**任何曾经 add_FrameArrived 的帧池，从此一律退役保活、永不裸释放**，故 null-delegate UAF 在因果上不可能发生。GPU 子类 `TextureBridgeGpu::StopInternal` 不受影响（仍委托基类）；resize 时 GPU 目标 `surface_` 由 `EnsureSurface` 按 size 变化自愈，与帧池重建解耦。
+
+- **[x] ① 第十修已实现** —— `texture_bridge.cc` 新增 `RetireFramePoolLocked` / `CreateAndStartFramePoolLocked` / `RecreateFramePoolLocked`，`StopInternal` / `Start` / `OnFrameArrived` 三路径统一走退役保活，删除裸的帧池 Recreate 调用；`texture_bridge.h` 加三个方法声明 + BUG-209 注释。commit 见提交说明。
+- **[x] ② 自动化测试已更新** —— `hibiki/test/widgets/texture_bridge_stop_guard_test.dart` 加：`StopInternal` 必须调 `RetireFramePoolLocked`、`RetireFramePoolLocked` 体内三步顺序（断源 -> Close -> Retire -> 置空）、`Start` 覆盖前必须 `RetireFramePoolLocked`、**禁止裸的 `frame_pool_->Recreate(`**、`OnFrameArrived` resize 必须走 `RecreateFramePoolLocked`、`RecreateFramePoolLocked` 必须「先退役旧池再建新池」。保留全部既有契约。`flutter test test/widgets/texture_bridge_stop_guard_test.dart` 绿。
+- **验证**：①守卫测试绿 ②Dart 侧 `flutter analyze` 无新 error ③`flutter build windows`（native 编译验证，见提交说明）④**Windows 真机复现验证（看有声书 -> 反复查词/开关弹窗 WebView -> 不再崩 GraphicsCapture）待 PM/用户**——host 跑不了 WGC，守卫测试是最强可落地证据。
+- **诚实标注的不确定点**：①本修消除了「帧池被裸释放而在途 deferral 仍在途」的**全部已知**窗口（StopInternal/Start 重入/resize 三条），但与前九修一样，「能根治」是因果论证（所有曾 add_FrameArrived 的帧池永久保活 -> closed-flag 永久有效 -> 迟到 deferral 永久早返回），**未经真机 Release 反复触发实测确认崩溃消失**——这是本类延迟 UAF 的固有验证局限。②若真机仍崩，需用户提供**崩溃当下的精确 minidump**（`%LOCALAPPDATA%\CrashDumps\hibiki.exe.*.dmp`）+ 出包版本号，按前九修方法（cdb `!vprot` 验崩溃帧池内存状态 + `[pool+0x129]` closed-flag + `~* k` 全线程栈）确认崩溃帧池是否仍 MEM_FREE，以定位是否还有第四条漏网的帧池路径。③永久保活的有界小泄漏假设不变（每次 teardown/Start 重入/resize 常驻一个已 Close 小壳，进程退出随 OS 回收）。
