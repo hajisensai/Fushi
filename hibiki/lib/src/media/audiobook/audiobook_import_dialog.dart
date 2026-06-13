@@ -436,6 +436,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           ? null
           : _alignmentName ?? p.basename(_alignmentPath!),
       icon: Icons.align_horizontal_left,
+      onTap: _pickAlignment,
       actions: [
         HibikiIconButton(
           icon: Icons.align_horizontal_left,

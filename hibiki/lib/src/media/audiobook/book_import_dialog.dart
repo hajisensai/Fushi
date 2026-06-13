@@ -225,6 +225,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       title: t.srt_import_pick_epub,
       subtitle: _epubPath == null ? null : _epubName ?? p.basename(_epubPath!),
       icon: Icons.menu_book_outlined,
+      onTap: () => _pickEpub(),
       actions: [
         HibikiIconButton(
           icon: Icons.menu_book_outlined,
@@ -243,6 +244,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ? null
           : _subtitleName ?? p.basename(_subtitlePath!),
       icon: Icons.subtitles_outlined,
+      onTap: _pickSubtitle,
       actions: [
         if (_subtitlePath != null)
           HibikiIconButton(
@@ -273,6 +275,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
               ? p.basename(_audioPaths.first)
               : t.file_count(count: _audioPaths.length),
       icon: Icons.audio_file_outlined,
+      onTap: _pickAudio,
       actions: [
         if (_audioPaths.isNotEmpty)
           HibikiIconButton(
@@ -458,6 +461,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       title: t.srt_import_pick_cover,
       subtitle: effectiveCover == null ? null : p.basename(effectiveCover),
       icon: Icons.image_outlined,
+      onTap: _pickCover,
       actions: [
         if (effectiveCover != null)
           HibikiIconButton(
