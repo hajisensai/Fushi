@@ -510,6 +510,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 侧边锁 / 解锁按钮自动淡出定时器（TODO-126）。每次 [_pokeLockButton] 唤起重置。
   Timer? _lockButtonHideTimer;
 
+  /// 桌面鼠标是否仍在视频 chrome 区内。停在设置按钮/侧栏上时不能让 2s 计时器把
+  /// 自定义 action rail 藏掉，否则用户会看到“鼠标放到设置上面设置消失”。
+  bool _videoControlsHovered = false;
+
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
   void _showOsd(String message, {IconData? icon, double? progress}) {
@@ -1757,7 +1761,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlsVisible.value = visible;
     _videoControlsHideTimer?.cancel();
     _videoControlsHideTimer = null;
-    if (visible) {
+    if (visible && !_videoControlsHovered) {
       _videoControlsHideTimer = Timer(_videoControlsHoverDuration, () {
         if (mounted) _videoControlsVisible.value = false;
       });
@@ -1767,9 +1771,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 桌面鼠标移出视频区：与 media_kit `onExit` 一致立即收起控制条镜像（字幕落回基线）。
   void _onVideoControlsHoverExit() {
     if (!mounted) return;
+    _videoControlsHovered = false;
     _videoControlsHideTimer?.cancel();
     _videoControlsHideTimer = null;
     _videoControlsVisible.value = false;
+  }
+
+  bool _isSyntheticControlsHover(PointerEvent event) =>
+      event.device == _syntheticHoverDevice;
+
+  void _handleVideoControlsHover(PointerEvent event) {
+    if (!_isSyntheticControlsHover(event)) {
+      _videoControlsHovered = true;
+    }
+    _markControlsVisible(true);
+    _pokeLockButton();
+  }
+
+  void _handleVideoControlsHoverExit(PointerEvent event) {
+    if (_isSyntheticControlsHover(event)) return;
+    _onVideoControlsHoverExit();
   }
 
   /// 移动端点画面（非控制条按钮、非字幕字符）toggle 控制条可见（镜像 media_kit 移动控制
@@ -3890,11 +3911,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         valueListenable: _videoSidePanel,
         builder: (BuildContext context, _VideoSidePanelKind? kind, __) {
           if (kind == null) return const SizedBox.shrink();
-          return VideoTranslucentSidePanel(
+          final Widget panel = VideoTranslucentSidePanel(
             title: _videoSidePanelTitle(kind),
             width: _videoSidePanelWidth(kind),
             onClose: _hideVideoSidePanel,
             child: _buildVideoSidePanelChild(kind, controller),
+          );
+          if (kind != _VideoSidePanelKind.settings) return panel;
+          return HibikiAppUiScale(
+            scale: _videoUiScale,
+            child: panel,
           );
         },
       ),
@@ -4920,15 +4946,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 鼠标移动也唤回视频左侧锁 / 解锁按钮（TODO-126）。[_pokeLockButton] 不被锁 gate
       // （[_markControlsVisible] 在沉浸态强制 false），故沉浸态解锁按钮淡出后能被鼠标唤回。
       // onExit 不立即收起锁按钮——交给 [_pokeLockButton] 的 2s 计时器自然淡出（无操作淡出）。
-      onEnter: (_) {
-        _markControlsVisible(true);
-        _pokeLockButton();
-      },
-      onHover: (_) {
-        _markControlsVisible(true);
-        _pokeLockButton();
-      },
-      onExit: (_) => _onVideoControlsHoverExit(),
+      onEnter: _handleVideoControlsHover,
+      onHover: _handleVideoControlsHover,
+      onExit: _handleVideoControlsHoverExit,
       child: child,
     );
   }

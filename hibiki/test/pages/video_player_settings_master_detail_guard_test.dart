@@ -18,40 +18,51 @@ void main() {
     final String source =
         File('lib/src/pages/implementations/video_hibiki_page.dart')
             .readAsStringSync();
-    final String method = _between(
+    final String showMethod = _between(
       source,
       'void _showPlayerSettings() {',
-      '_showSubtitleSourceMenu(',
+      'void _showVideoSidePanel(_VideoSidePanelKind kind) {',
+    );
+    final String buildMethod = _between(
+      source,
+      'Widget _buildVideoQuickSettingsSheet() {',
+      'void _showPlayerSettings() {',
+    );
+    final String panelChildMethod = _between(
+      source,
+      'Widget _buildVideoSidePanelChild(',
+      'Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {',
     );
 
-    // 用共享面板 + 与阅读器一致的呈现（桌面分栏宽画布 / 移动 bottom sheet）。
-    expect(method, contains('VideoQuickSettingsSheet('));
-    expect(method, contains('HibikiDialogFrame('));
-    expect(method, contains('maxWidth: 900'));
-    expect(method, contains('scrollable: false'));
-    expect(method, contains('adaptiveModalSheet<void>('));
-    expect(method, contains('isDesktopPlatform'));
+    // 用统一半透明侧栏承载共享面板；面板内部仍按宽度决定 master-detail / push。
+    expect(showMethod,
+        contains('_showVideoSidePanel(_VideoSidePanelKind.settings)'));
+    expect(source, contains('VideoTranslucentSidePanel('));
+    expect(panelChildMethod, contains('case _VideoSidePanelKind.settings:'));
+    expect(
+        panelChildMethod, contains('return _buildVideoQuickSettingsSheet()'));
+    expect(buildMethod, contains('VideoQuickSettingsSheet('));
 
     // 着色器/mpv 配置改为面板内嵌：构造面板时直接喂初值 + 内嵌回调，不再弹独立对话框。
-    expect(method, contains('initialShadersEnabled:'));
-    expect(method, contains('onApplyShaders:'));
-    expect(method, contains('initialMpvConfig:'));
-    expect(method, contains('onMpvConfigChanged:'));
-    expect(method, contains('initialLockWindowAspectRatio:'));
-    expect(method, contains('onLockWindowAspectRatioChanged:'));
-    expect(method, contains('initialAsbConfig:'));
-    expect(method, contains('onAsbConfigChanged:'));
+    expect(buildMethod, contains('initialShadersEnabled:'));
+    expect(buildMethod, contains('onApplyShaders:'));
+    expect(buildMethod, contains('initialMpvConfig:'));
+    expect(buildMethod, contains('onMpvConfigChanged:'));
+    expect(buildMethod, contains('initialLockWindowAspectRatio:'));
+    expect(buildMethod, contains('onLockWindowAspectRatioChanged:'));
+    expect(buildMethod, contains('initialAsbConfig:'));
+    expect(buildMethod, contains('onAsbConfigChanged:'));
     // TODO-060：字幕调轴经 onSetDelay 绝对提交（滑条/±/输入框三处共享）；
     // 旧的增量 onSubtitleOffsetChanged 已删。
-    expect(method, contains('onSetDelay:'));
-    expect(method, contains('initialDelayMs:'));
+    expect(buildMethod, contains('onSetDelay:'));
+    expect(buildMethod, contains('initialDelayMs:'));
 
     // 旧 bespoke 深色单列面板已移除（防回归）。
-    expect(method, isNot(contains('showModalBottomSheet')),
+    expect(showMethod, isNot(contains('showModalBottomSheet')),
         reason: '播放设置不再走 bespoke bottom sheet');
-    expect(method, isNot(contains('Colors.black87')));
-    expect(method, isNot(contains('StatefulBuilder')));
-    expect(method, isNot(contains('ChoiceChip')));
+    expect(buildMethod, isNot(contains('Colors.black87')));
+    expect(buildMethod, isNot(contains('StatefulBuilder')));
+    expect(buildMethod, isNot(contains('ChoiceChip')));
 
     // 着色器/mpv 不再弹独立对话框（防回归到旧的 pop 面板 + 二级对话框）。
     expect(source, isNot(contains('_openShaderDialog')),
@@ -121,6 +132,82 @@ void main() {
     expect(source, contains('AdaptiveSettingsStepperRow'));
     expect(source, isNot(contains('widget.onOpenShaders')));
     expect(source, isNot(contains('widget.onOpenMpvConfig')));
+  });
+
+  test('video settings side panel owns UI scale and hover lifetime', () {
+    final String source =
+        File('lib/src/pages/implementations/video_hibiki_page.dart')
+            .readAsStringSync();
+    final String panelMethod = _between(
+      source,
+      'Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {',
+      'Widget _buildSubtitleListSidePanel(VideoPlayerController controller) {',
+    );
+    final String visibilityMethod = _between(
+      source,
+      'void _markControlsVisible(bool visible) {',
+      '/// 桌面鼠标移出视频区',
+    );
+    final String pokeMethod = _between(
+      source,
+      'void _pokeControlsVisible() {',
+      '/// media_kit 控制条自动隐藏时长',
+    );
+    final String hoverExitMethod = _between(
+      source,
+      'void _onVideoControlsHoverExit() {',
+      'bool _isSyntheticControlsHover(PointerEvent event)',
+    );
+    final String syntheticHoverMethod = _between(
+      source,
+      'bool _isSyntheticControlsHover(PointerEvent event)',
+      'void _handleVideoControlsHover(PointerEvent event) {',
+    );
+    final String hoverHandlerMethod = _between(
+      source,
+      'void _handleVideoControlsHover(PointerEvent event) {',
+      'void _handleVideoControlsHoverExit(PointerEvent event) {',
+    );
+    final String hoverExitHandlerMethod = _between(
+      source,
+      'void _handleVideoControlsHoverExit(PointerEvent event) {',
+      '/// 移动端点画面',
+    );
+    final String hoverWrapMethod = _between(
+      source,
+      'Widget _videoControlsHoverWrap({required Widget child}) {',
+      '/// [_buildVideoControls] 的实体',
+    );
+
+    expect(
+      panelMethod,
+      contains('kind != _VideoSidePanelKind.settings'),
+      reason: '只有设置侧栏需要重新吃 app UI scale，避免字幕列表等已经手动缩放的面板二次放大',
+    );
+    expect(panelMethod, contains('HibikiAppUiScale('));
+    expect(panelMethod, contains('scale: _videoUiScale'));
+    expect(
+        panelMethod, isNot(contains('valueListenable: _videoControlsVisible')),
+        reason: '设置侧栏必须独立于控制条自动隐藏，不应随 action rail 一起卸载');
+
+    expect(source, contains('bool _videoControlsHovered = false;'));
+    expect(pokeMethod, contains('device: _syntheticHoverDevice'));
+    expect(pokeMethod, contains('_markControlsVisible(true);'));
+    expect(
+        visibilityMethod, contains('if (visible && !_videoControlsHovered)'));
+    expect(hoverExitMethod, contains('_videoControlsHovered = false;'));
+    expect(syntheticHoverMethod,
+        contains('event.device == _syntheticHoverDevice'));
+    expect(
+        hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
+    expect(hoverHandlerMethod, contains('_videoControlsHovered = true;'));
+    expect(hoverHandlerMethod, contains('_markControlsVisible(true);'));
+    expect(hoverExitHandlerMethod,
+        contains('if (_isSyntheticControlsHover(event)) return;'));
+    expect(hoverExitHandlerMethod, contains('_onVideoControlsHoverExit();'));
+    expect(hoverWrapMethod, contains('onEnter: _handleVideoControlsHover'));
+    expect(hoverWrapMethod, contains('onHover: _handleVideoControlsHover'));
+    expect(hoverWrapMethod, contains('onExit: _handleVideoControlsHoverExit'));
   });
 
   test('shader manager is grouped instead of a flat action button pile', () {

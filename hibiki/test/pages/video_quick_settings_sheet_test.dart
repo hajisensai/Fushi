@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
+import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
@@ -380,6 +381,32 @@ void main() {
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
     expect(find.text(t.video_setting_av_delay), findsNothing);
+  });
+
+  testWidgets('scaled settings side panel stays inside a narrow viewport',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(720, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(
+      tester,
+      HibikiAppUiScale(
+        scale: 2.0,
+        child: VideoTranslucentSidePanel(
+          title: t.video_settings_title,
+          width: 560,
+          child: _sheet(uiScale: 2.0),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
+
+    await tester.tap(find.text(t.video_settings_cat_playback));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
   testWidgets('mpv category renders the config inline (no sub-dialog)',
