@@ -37,4 +37,54 @@ void main() {
       );
     });
   });
+
+  group('runCliFfmpegForTesting bundled fallback', () {
+    test('Windows bundled ffmpeg invalid image falls back to PATH ffmpeg',
+        () async {
+      final List<String> calls = <String>[];
+
+      final FfmpegRunResult result = await runCliFfmpegForTesting(
+        override: null,
+        bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+        isWindows: true,
+        args: <String>['-version'],
+        timeout: const Duration(seconds: 1),
+        runner: (String executable, List<String> args, Duration timeout) async {
+          calls.add(executable);
+          if (executable.endsWith(r'Hibiki\ffmpeg.exe')) {
+            return const FfmpegRunResult(
+              returnCode: -1073741701,
+              output: 'STATUS_INVALID_IMAGE_FORMAT',
+            );
+          }
+          return const FfmpegRunResult(returnCode: 0, output: 'ffmpeg version');
+        },
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+    });
+
+    test('explicit HIBIKI_FFMPEG invalid image does not fall back', () async {
+      final List<String> calls = <String>[];
+
+      final FfmpegRunResult result = await runCliFfmpegForTesting(
+        override: r'D:\Custom\ffmpeg.exe',
+        bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+        isWindows: true,
+        args: <String>['-version'],
+        timeout: const Duration(seconds: 1),
+        runner: (String executable, List<String> args, Duration timeout) async {
+          calls.add(executable);
+          return const FfmpegRunResult(
+            returnCode: -1073741701,
+            output: 'STATUS_INVALID_IMAGE_FORMAT',
+          );
+        },
+      );
+
+      expect(result.isSuccess, isFalse);
+      expect(calls, <String>[r'D:\Custom\ffmpeg.exe']);
+    });
+  });
 }
