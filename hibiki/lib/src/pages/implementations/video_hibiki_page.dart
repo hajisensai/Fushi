@@ -282,11 +282,12 @@ abstract class VideoHibikiTestHooks {
   Future<void> debugPlay();
 }
 
+// TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
+// / [_videoWithSubtitlePanel]），把画面真挤窄到左侧而非浮层遮挡。故此枚举不再含字幕列表项。
 enum _VideoSidePanelKind {
   speed,
   settings,
   favoriteSentences,
-  subtitleList,
   subtitleSources,
   audioTracks,
 }
@@ -515,6 +516,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 桌面鼠标是否仍在视频 chrome 区内。停在设置按钮/侧栏上时不能让 2s 计时器把
   /// 自定义 action rail 藏掉，否则用户会看到“鼠标放到设置上面设置消失”。
   bool _videoControlsHovered = false;
+
+  /// OS 鼠标光标是否应隐藏的单一真相源（TODO-318 / BUG-258）。
+  ///
+  /// 根因：media_kit 自己用 `MouseRegion(cursor: none)`（`hideMouseOnControlsRemoval`）在
+  /// 控制条淡出时隐藏光标，但 hibiki 把 overlay chrome（锁按钮 rail / OSD / 字幕跳转面板等）
+  /// 叠在 media_kit 之上 → 最上层 MouseRegion 的 cursor 解析胜出 → 鼠标放到这些 chrome 上时
+  /// 光标重现；沉浸锁态下 [IgnorePointer] 又剥了 media_kit 的 region，光标更无人隐藏。
+  ///
+  /// 解法：在 controls 子树最外层（[_videoControlsHoverWrap]）包一个 `MouseRegion(cursor:
+  /// none)`，由本 notifier 驱动统一胜出，盖过所有 chrome。隐藏时机镜像 controls 自动隐藏
+  /// 2s 计时 + 沉浸锁态；真实鼠标移动经 [_handleVideoControlsHover] 自然唤回（置 false）。
+  /// 用 [ValueNotifier] 让全屏路由也响应（与 [_videoControlsVisible] / [_immersiveLocked]
+  /// 同源，BUG-120）。仅桌面有 OS 光标语义；移动端 [_videoControlsHoverWrap] 透传 child。
+  final ValueNotifier<bool> _cursorHidden = ValueNotifier<bool>(false);
+
+  /// 翻转 OS 光标隐藏单一真相源（TODO-318）。仅桌面生效（移动端无 OS 光标）。
+  void _setCursorHidden(bool hidden) {
+    if (!_isDesktopVideoControls) return;
+    _cursorHidden.value = hidden;
+  }
 
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
@@ -1535,17 +1556,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     });
   }
 
-  /// 翻转字幕跳转列表面板可见性（TODO-069；裸 L 键 / 控制条入口按钮）。
+  /// 翻转字幕跳转列表面板可见性（TODO-069/TODO-314；裸 L 键 / 控制条入口按钮）。
   ///
   /// asbplayer 式 transcript 面板：右侧出现当前视频的所有字幕句子，点某句 → seek 到该
-  /// 句对应画面。可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也生效，见其
-  /// 文档）。打开时顺带唤醒控制条（桌面键盘交互不触发 media_kit hover 重置）。
+  /// 句对应画面。**走 push-aside 布局**（[_videoWithSubtitlePanel] / [_subtitleListVisible]，
+  /// `Row[Expanded(video), 面板列]`）真把画面挤窄到左侧、不浮层遮挡（TODO-314 根因：此前误经
+  /// `_showVideoSidePanel(subtitleList)` 进 overlay 系统，push-aside 成死代码）。与其它浮层
+  /// 互斥：开字幕列表先关任何打开的浮层（[_videoSidePanel]）。打开时唤醒控制条让用户看到入口。
   void _toggleSubtitleJumpList() {
-    final bool next = _videoSidePanel.value != _VideoSidePanelKind.subtitleList;
+    final bool next = !_subtitleListVisible.value;
     if (next) {
-      _showVideoSidePanel(_VideoSidePanelKind.subtitleList);
+      // 与浮层互斥：开 push-aside 字幕列表前关掉任何打开的浮层（设置/音轨/倍速等）。
+      if (_videoSidePanel.value != null) {
+        _hideVideoSidePanel();
+      }
+      _subtitleListVisible.value = true;
+      unawaited(_refreshFavoritedCueCache());
+      _markControlsVisible(false);
+      _refocusVideo();
     } else {
-      _hideVideoSidePanel();
+      _clearSelectedMiningCues();
+      _subtitleListVisible.value = false;
+      _pokeControlsVisible();
+      _refocusVideo();
     }
   }
 
@@ -1573,11 +1606,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _showOsd(t.video_immersive_locked, icon: Icons.lock_outline);
       // 锁定后 media_kit 控制条不再弹（指针被 IgnorePointer 挡），镜像同步收起、字幕
       // 落回用户位置基线（无控制条可遮挡，不需避让；TODO-129）。
+      // _markControlsVisible(false) 在锁态分支里会同时 _setCursorHidden(true)（TODO-318）。
       _markControlsVisible(false);
     } else {
       _showOsd(t.video_immersive_unlocked, icon: Icons.lock_open_outlined);
       // 解锁瞬间把控制条唤回（poke 在 _immersiveLocked 复位后才放行），让用户立刻
-      // 看到顶/底栏回来、确认已退出沉浸模式。
+      // 看到顶/底栏回来、确认已退出沉浸模式。光标也同步唤回（即时反馈，TODO-318）。
+      _setCursorHidden(false);
       _pokeControlsVisible();
     }
   }
@@ -1642,6 +1677,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _osdNotifier.dispose();
     _videoControlsHideTimer?.cancel();
     _videoControlsVisible.dispose();
+    _cursorHidden.dispose();
     super.dispose();
   }
 
@@ -1765,6 +1801,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _videoControlsHideTimer?.cancel();
       _videoControlsHideTimer = null;
       _videoControlsVisible.value = false;
+      // 沉浸锁 / 侧栏态：控制条不弹，光标也无 chrome 该承载 → 统一隐藏（TODO-318）。
+      _setCursorHidden(true);
       return;
     }
     _videoControlsVisible.value = visible;
@@ -1772,7 +1810,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlsHideTimer = null;
     if (visible && !_videoControlsHovered) {
       _videoControlsHideTimer = Timer(_videoControlsHoverDuration, () {
-        if (mounted) _videoControlsVisible.value = false;
+        if (mounted) {
+          _videoControlsVisible.value = false;
+          // 控制条 2s 自动淡出同时隐藏光标（镜像 media_kit hideMouseOnControlsRemoval）。
+          _setCursorHidden(true);
+        }
       });
     }
   }
@@ -1784,6 +1826,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlsHideTimer?.cancel();
     _videoControlsHideTimer = null;
     _videoControlsVisible.value = false;
+    // 鼠标移出视频区：光标交还系统/外部，不再由本层强制隐藏（TODO-318）。
+    _setCursorHidden(false);
   }
 
   bool _isSyntheticControlsHover(PointerEvent event) =>
@@ -1792,6 +1836,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _handleVideoControlsHover(PointerEvent event) {
     if (!_isSyntheticControlsHover(event)) {
       _videoControlsHovered = true;
+      // 真实鼠标移动 → 唤回光标（TODO-318）。合成 poke（键盘/seek 续命）不强制显示光标，
+      // 否则键盘连按快进会让本该隐藏的光标常驻。沉浸锁态也借此唤回光标找解锁按钮。
+      _setCursorHidden(false);
     }
     _markControlsVisible(true);
     _pokeLockButton();
@@ -2694,7 +2741,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         escape: () {
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
-          if (_videoSidePanel.value != null || _subtitleListVisible.value) {
+          // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
+          if (_subtitleListVisible.value) {
+            _toggleSubtitleJumpList();
+            return;
+          }
+          if (_videoSidePanel.value != null) {
             _hideVideoSidePanel();
             return;
           }
@@ -2947,7 +2999,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
@@ -3024,64 +3075,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 可经控制条自定义改放它处（TODO-274）。
       ],
       bottomButtonBar: <Widget>[
-        // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
-        // [MaterialDesktopPositionIndicator] 不传 style 时回退硬编码 fontSize 12.0，
-        // 永不随 appUiScale 缩放（视频页被 [HibikiAppUiScaleNeutralizer] 中和回 1.0）。
-        // 这里显式传 style，仅把字号乘 [_videoUiScale]；color 沿用 media_kit 默认时间
-        // 文字色 buttonBarButtonColor（本主题为 cs.primary），不改色只缩放字号。
-        MaterialDesktopPositionIndicator(
-          style: TextStyle(
-            height: 1.0,
-            fontSize: 12.0 * _videoUiScale,
-            color: cs.primary,
-          ),
+        // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
+        // seek 簇。±10s 带可见标注（旧底栏只有 tooltip，用户看不懂图标）。media_kit 把
+        // bottomButtonBar 放进 Row，用单个 [Expanded] 占满整宽承接绝对定位布局。
+        // 进度/时长文字吃「界面大小」（TODO-128）、5 键带 Tooltip（BUG-247）均在
+        // [_centeredBottomControlBar] 内保留。
+        Expanded(
+          child: _centeredBottomControlBar(controller, desktop: true),
         ),
-        const Spacer(),
-        // 底栏 5 键全部包 Flutter [Tooltip]（BUG-247）：media_kit 的
-        // [MaterialDesktopCustomButton] / [MaterialDesktopPlayOrPauseButton] 没有
-        // tooltip 参数，悬停无任何提示；文案诚实反映双重语义（上一句/下一句在无字幕段
-        // 退化成相对 seek）。
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_back,
-            child: MaterialDesktopCustomButton(
-              icon:
-                  Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(-10000),
-            ),
-          ),
-        Tooltip(
-          message: t.video_bottom_prev_cue,
-          child: MaterialDesktopCustomButton(
-            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-            onPressed: () => _skipCueAndPokeControls(forward: false),
-          ),
-        ),
-        Tooltip(
-          message: t.video_bottom_play_pause,
-          child: MaterialDesktopPlayOrPauseButton(
-              iconSize: _videoPlayPauseIconSize),
-        ),
-        Tooltip(
-          message: t.video_bottom_next_cue,
-          child: MaterialDesktopCustomButton(
-            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-            onPressed: () => _skipCueAndPokeControls(forward: true),
-          ),
-        ),
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_forward,
-            child: MaterialDesktopCustomButton(
-              icon:
-                  Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(10000),
-            ),
-          ),
-        const Spacer(),
-        ..._customBottomControlButtons(controller, desktop: true),
-        _buildVolumeButton(controller, desktop: true),
-        _buildFullscreenButton(desktop: true),
       ],
     );
   }
@@ -3096,7 +3097,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     // 进度条 / 底部按钮条的底部留白（BUG-184）：基线 + 系统导航栏/手势栏 inset，
     // 让进度条回到「底部按钮条同一基线、抬离屏幕物理最底」的控制条惯例位置，而不是
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
@@ -3198,70 +3198,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 按钮功能完全重复，统一交给可配置的 rightRail settings 按钮负责（与桌面一致）。
       ],
       bottomButtonBar: <Widget>[
-        // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
-        // [MaterialPositionIndicator] 不传 style 时回退硬编码 fontSize 12.0，永不随
-        // appUiScale 缩放（视频页被 [HibikiAppUiScaleNeutralizer] 中和回 1.0）。这里
-        // 显式传 style，仅把字号乘 [_videoUiScale]；color 沿用 media_kit 默认时间文字
-        // 色 buttonBarButtonColor（本主题为 cs.primary），不改色只缩放字号。
-        MaterialPositionIndicator(
-          style: TextStyle(
-            height: 1.0,
-            fontSize: 12.0 * _videoUiScale,
-            color: cs.primary,
-          ),
+        // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
+        // seek 簇，与桌面同源（[_centeredBottomControlBar]）。±10s 带可见标注、5 键带
+        // Tooltip（BUG-247）、上/下一句走动态 cue 导航（无字幕段对称回退/前进，TODO-073/
+        // TODO-119/BUG-198，动态 _asbConfig.seekSeconds 不写死）均在 helper 内保留。
+        Expanded(
+          child: _centeredBottomControlBar(controller, desktop: false),
         ),
-        const Spacer(),
-        // 底栏 5 键全部包 Flutter [Tooltip]（BUG-247）：media_kit 的 [MaterialCustomButton]
-        // / [MaterialPlayOrPauseButton] 没有 tooltip 参数；文案诚实反映双重语义（上一句/
-        // 下一句在无字幕段退化成相对 seek）。
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_back,
-            child: MaterialCustomButton(
-              icon:
-                  Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(-10000),
-            ),
-          ),
-        Tooltip(
-          message: t.video_bottom_prev_cue,
-          child: MaterialCustomButton(
-            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-            // 无字幕/转场(OP)段也回退 seekSeconds 秒、不卡住(TODO-119，对称 TODO-073
-            // 的「下一句」按钮)。原裸 skipToPrevCue 在空 cue / 上句太远时 no-op，用户
-            // 报「转场片段没字幕时按字幕回退键没反应」(BUG-198)。
-            onPressed: () => controller.skipToPrevCueOrSeekBack(
-              seekSeconds: _asbConfig.seekSeconds,
-            ),
-          ),
-        ),
-        Tooltip(
-          message: t.video_bottom_play_pause,
-          child: MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
-        ),
-        Tooltip(
-          message: t.video_bottom_next_cue,
-          child: MaterialCustomButton(
-            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-            // 无字幕(OP)时也前进 seekSeconds 秒、不卡住(TODO-073)。
-            onPressed: () => controller.skipToNextCueOrSeekForward(
-              seekSeconds: _asbConfig.seekSeconds,
-            ),
-          ),
-        ),
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_forward,
-            child: MaterialCustomButton(
-              icon:
-                  Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(10000),
-            ),
-          ),
-        const Spacer(),
-        ..._customBottomControlButtons(controller, desktop: false),
-        _buildVolumeButton(controller, desktop: false),
-        _buildFullscreenButton(desktop: false),
       ],
     );
   }
@@ -3275,6 +3218,155 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           in _controlCustomization.buttonsFor(VideoControlPlacement.bottom))
         _buildVideoControlButton(controller, button, desktop: desktop),
     ];
+  }
+
+  /// 底栏传输组：`[−10s][上一句][play][下一句][+10s]`，[play] 钉在几何正中（BUG-257）。
+  ///
+  /// 根因：旧底栏 `[时间] Spacer [seek 簇] Spacer [尾部按钮…]` 用两个 [Spacer] 在「时间」
+  /// 与「尾部按钮」间均分，尾部按钮越多 seek 簇离整条几何中心越远 → play 偏左。改用 [Stack]
+  /// 三区绝对定位：左区时间、右区尾部按钮、[Center] 居中 seek 簇，play 恒处几何中心、两侧
+  /// seek 对称，与尾部按钮数量无关。桌面/移动共用本布局（仅控件类型与播放暂停按钮不同）。
+  Widget _centeredBottomControlBar(
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
+    final Widget positionIndicator = desktop
+        ? MaterialDesktopPositionIndicator(
+            style: TextStyle(
+              height: 1.0,
+              fontSize: 12.0 * _videoUiScale,
+              color: cs.primary,
+            ),
+          )
+        : MaterialPositionIndicator(
+            style: TextStyle(
+              height: 1.0,
+              fontSize: 12.0 * _videoUiScale,
+              color: cs.primary,
+            ),
+          );
+    final List<Widget> rightCluster = <Widget>[
+      ..._customBottomControlButtons(controller, desktop: desktop),
+      _buildVolumeButton(controller, desktop: desktop),
+      _buildFullscreenButton(desktop: desktop),
+    ];
+    // seek 传输簇（居中绝对定位）：±10s 带可见标注（BUG-257 用户看不懂图标），上/下一句走
+    // cue 导航（无字幕段对称回退/前进，动态 _asbConfig.seekSeconds，不写死 ±3s）。
+    final Widget transport = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (roomyBottomBar)
+          _seekLabelButton(
+            icon: Icons.fast_rewind_rounded,
+            label: t.video_bottom_seek_back_label,
+            tooltip: t.video_bottom_seek_back,
+            color: cs.primary,
+            onPressed: () => _seekRelative(-10000),
+          ),
+        Tooltip(
+          message: t.video_bottom_prev_cue,
+          child: desktop
+              ? MaterialDesktopCustomButton(
+                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: false),
+                )
+              : MaterialCustomButton(
+                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: false),
+                ),
+        ),
+        Tooltip(
+          message: t.video_bottom_play_pause,
+          child: desktop
+              ? MaterialDesktopPlayOrPauseButton(
+                  iconSize: _videoPlayPauseIconSize)
+              : MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
+        ),
+        Tooltip(
+          message: t.video_bottom_next_cue,
+          child: desktop
+              ? MaterialDesktopCustomButton(
+                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: true),
+                )
+              : MaterialCustomButton(
+                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: true),
+                ),
+        ),
+        if (roomyBottomBar)
+          _seekLabelButton(
+            icon: Icons.fast_forward_rounded,
+            label: t.video_bottom_seek_forward_label,
+            tooltip: t.video_bottom_seek_forward,
+            color: cs.primary,
+            onPressed: () => _seekRelative(10000),
+          ),
+      ],
+    );
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        // 居中传输簇：play 恒处整条底栏几何中心。
+        Center(child: transport),
+        // 左区：时间指示器（与中心簇绝对独立，宽度变化不挤偏 play）。
+        Align(
+          alignment: Alignment.centerLeft,
+          child: positionIndicator,
+        ),
+        // 右区：自定义按钮 + 音量 + 全屏（宽度变化不挤偏 play）。
+        Align(
+          alignment: Alignment.centerRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: rightCluster,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 带可见标注的 seek 按钮（图标 + `−10s`/`+10s`）。media_kit 的 `MaterialCustomButton`
+  /// 只接受单 icon、无可见文字，用户看不懂图标（BUG-257）；这里用 [InkWell] 自绘
+  /// 图标 + 紧凑标注，颜色对齐 `buttonBarButtonColor`（cs.primary），仍带 [Tooltip]。
+  Widget _seekLabelButton({
+    required IconData icon,
+    required String label,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 6 * _videoUiScale,
+            vertical: 4 * _videoUiScale,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: _videoControlIconSize * 0.82, color: color),
+              SizedBox(width: 2 * _videoUiScale),
+              Text(
+                label,
+                style: TextStyle(
+                  height: 1.0,
+                  fontSize: 11.0 * _videoUiScale,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildVideoControlButton(
@@ -3953,16 +4045,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   void _showVideoSidePanel(_VideoSidePanelKind kind) {
     if (_videoSheetOpen) return;
-    final bool leavingSubtitleList =
-        _videoSidePanel.value == _VideoSidePanelKind.subtitleList &&
-            kind != _VideoSidePanelKind.subtitleList;
     _videoSidePanel.value = kind;
-    _subtitleListVisible.value = false;
-    if (leavingSubtitleList) {
+    // 与 push-aside 字幕列表互斥（TODO-314）：开任何浮层都先关字幕列表。
+    if (_subtitleListVisible.value) {
       _clearSelectedMiningCues();
-    }
-    if (kind == _VideoSidePanelKind.subtitleList) {
-      unawaited(_refreshFavoritedCueCache());
+      _subtitleListVisible.value = false;
     }
     // BUG-253：开面板时不再唤起背景控制条（旧 [_pokeControlsVisible]），而是立刻把
     // 已经在显示的 media_kit 控制条 / 右侧 rail 镜像收起，避免它们冒在面板后面。
@@ -3972,13 +4059,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _hideVideoSidePanel() {
-    final bool wasSubtitleList =
-        _videoSidePanel.value == _VideoSidePanelKind.subtitleList;
     _videoSidePanel.value = null;
-    _subtitleListVisible.value = false;
-    if (wasSubtitleList) {
-      _clearSelectedMiningCues();
-    }
     // BUG-253：面板关闭后唤回一次控制条（poke 在 [_videoSidePanel] 复位为 null 之后才
     // 放行），给用户「面板已关、控制条回来了」的即时反馈，与解锁沉浸态的范式一致。
     _pokeControlsVisible();
@@ -3993,8 +4074,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_settings_title;
       case _VideoSidePanelKind.favoriteSentences:
         return t.video_favorite_sentences;
-      case _VideoSidePanelKind.subtitleList:
-        return t.video_subtitle_list;
       case _VideoSidePanelKind.subtitleSources:
         return t.video_menu_subtitle_track;
       case _VideoSidePanelKind.audioTracks:
@@ -4006,7 +4085,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     switch (kind) {
       case _VideoSidePanelKind.settings:
         return 560;
-      case _VideoSidePanelKind.subtitleList:
       case _VideoSidePanelKind.favoriteSentences:
         return 420;
       case _VideoSidePanelKind.subtitleSources:
@@ -4027,8 +4105,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return _buildVideoQuickSettingsSheet();
       case _VideoSidePanelKind.favoriteSentences:
         return _buildFavoriteSentencesSidePanel();
-      case _VideoSidePanelKind.subtitleList:
-        return _buildSubtitleListSidePanel(controller);
       case _VideoSidePanelKind.subtitleSources:
         return _buildSubtitleSourcesSidePanel(controller);
       case _VideoSidePanelKind.audioTracks:
@@ -4068,28 +4144,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 单纯构造侧栏面板的「内容 + 定位」部分（不含 BUG-254 的点外关闭 barrier）。
+  /// 字幕跳转列表已改 push-aside（TODO-314），不再经此 overlay 路径。
   Widget _buildVideoSidePanelContent(
     _VideoSidePanelKind kind,
     VideoPlayerController controller,
   ) {
-    // 字幕列表面板（[VideoSubtitleJumpPanel]）自带完整标题栏（标题 + 字号步进 +
-    // 自动滚动），不能再套 [VideoTranslucentSidePanel]（它也画一条标题栏），否则两条
-    // 标题叠在一起（BUG-245）。这里像 settings 那样走 bypass：直接返回自带壳的面板，
-    // 只补外层 [Align]/[SafeArea]/[Padding] 让它右贴边、避让安全区。
-    if (kind == _VideoSidePanelKind.subtitleList) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 10,
-            ),
-            child: _buildSubtitleListSidePanel(controller),
-          ),
-        ),
-      );
-    }
     final Widget panel = VideoTranslucentSidePanel(
       title: _videoSidePanelTitle(kind),
       width: _videoSidePanelWidth(kind),
@@ -4100,27 +4159,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return HibikiAppUiScale(
       scale: _videoUiScale,
       child: panel,
-    );
-  }
-
-  Widget _buildSubtitleListSidePanel(VideoPlayerController controller) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    return VideoSubtitleJumpPanel(
-      key: const ValueKey<String>('video-subtitle-jump-panel'),
-      controller: controller,
-      onTapCue: _handleSubtitleJumpTap,
-      onCopyCue: _copyCueText,
-      onFavoriteCue: _toggleFavoriteCueForVideo,
-      isCueFavorited: _isCueFavorited,
-      isCueSelectedForCard: _isCueSelectedForCard,
-      onToggleCueSelection: _toggleCueSelectedForCard,
-      onClearCueSelection: _clearSelectedMiningCues,
-      onClose: _hideVideoSidePanel,
-      colorScheme: cs,
-      title: t.video_subtitle_list,
-      emptyHint: t.video_subtitle_list_empty,
-      fontSize: 14 * _videoUiScale,
-      width: _videoSidePanelWidth(_VideoSidePanelKind.subtitleList),
     );
   }
 
@@ -5140,6 +5178,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// OS 光标隐藏统一胜出层（TODO-318 / BUG-258）。放在 controls Stack **最顶层**
+  /// （front-most），cursor 解析按 front-to-back 取第一个非 defer：故隐藏时本层 `none`
+  /// 胜过下方所有 chrome（锁按钮 rail / 字幕面板 / OSD 等）的 click cursor。`opaque:false`
+  /// 不阻断指针下探（按钮 hover / 点击照常到下层 chrome），故不回归 BUG-198 hover 穿透；
+  /// `IgnorePointer` 在不隐藏时彻底让出（cursor: defer 透明）。仅桌面有 OS 光标，移动端
+  /// 调用方根本不挂本层。
+  Widget _buildCursorOverlay() {
+    return Positioned.fill(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _cursorHidden,
+        builder: (BuildContext _, bool hidden, __) {
+          if (!hidden) return const SizedBox.shrink();
+          return const MouseRegion(
+            opaque: false,
+            cursor: SystemMouseCursors.none,
+          );
+        },
+      ),
+    );
+  }
+
   /// [_buildVideoControls] 的实体（gate 之内）：拖放目标 + controls + 字幕 overlay
   /// + OSD。
   Widget _buildVideoControlsInner(
@@ -5249,6 +5308,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 _buildSideLockButton(),
                 _buildVideoSideActionRail(controller),
                 _buildVideoSidePanelOverlay(controller),
+                // TODO-318：光标隐藏统一胜出层放 Stack 最顶（front-most），隐藏时其
+                // cursor:none 胜过下方所有 chrome 的 click cursor；桌面才挂（移动端无 OS 光标）。
+                if (_isDesktopVideoControls) _buildCursorOverlay(),
               ],
             ),
           ),
@@ -5331,7 +5393,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Expanded(child: video),
+            Expanded(
+              child: visible
+                  // BUG-256：push-aside 字幕列表开着时，在画面区叠一层不可见 barrier，
+                  // 点画面/外部 → 关列表（除控制条字幕按钮外的明确关闭入口）。barrier 用
+                  // [HitTestBehavior.opaque] 吃掉点击、不冒泡到下方控制条 [Listener]，故点
+                  // 画面只关列表、不触发暂停/全屏（与 overlay 面板的点外关闭一致）。
+                  ? Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        video,
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              _clearSelectedMiningCues();
+                              _subtitleListVisible.value = false;
+                              _pokeControlsVisible();
+                              _refocusVideo();
+                            },
+                          ),
+                        ),
+                      ],
+                    )
+                  : video,
+            ),
             _subtitleJumpSidePanel(controller, visible),
           ],
         );

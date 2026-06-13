@@ -2,17 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫：视频字幕列表侧栏只保留**一条**标题（BUG-245 / TODO-280）。
+/// 源码守卫：视频字幕列表只保留**一条**标题（BUG-245 / TODO-280；TODO-314 改 push-aside 后续守）。
 ///
-/// 根因：[_buildVideoSidePanelOverlay] 曾对除 settings 外所有 `_VideoSidePanelKind`
-/// 一律套 [VideoTranslucentSidePanel]（自带「标题 + 关闭」标题栏），但字幕列表用的
-/// [VideoSubtitleJumpPanel] 自带完整 header（标题 + 字号步进 + 自动滚动 + 关闭）——
-/// 外壳标题 + 面板标题叠成两条。修复让 subtitleList 走 bypass 分支（像 settings 那样）：
-/// 不套 [VideoTranslucentSidePanel]，直接返回 [_buildSubtitleListSidePanel]，只补外层
-/// [Align]/[SafeArea]/[Padding] 保留右贴边/安全区定位。
+/// 根因（BUG-245 原文）：overlay side-panel 系统曾对除 settings 外所有面板套
+/// [VideoTranslucentSidePanel]（自带标题栏），而字幕列表的 [VideoSubtitleJumpPanel] 自带
+/// 完整 header → 双标题。
 ///
-/// media_kit controls 跑不了 headless，按平台分流的真实侧栏渲染难稳定复现，故锁源码
-/// 结构不变量（与既有 video 守卫范式一致）。
+/// TODO-314：字幕列表已整体改 push-aside（不再走 overlay），由 [_subtitleJumpSidePanel] /
+/// [_videoWithSubtitlePanel] 直接渲染 [VideoSubtitleJumpPanel]（自带 header），不再被
+/// [VideoTranslucentSidePanel] 套壳。本守卫改为锁 push-aside 面板**直接**渲染
+/// VideoSubtitleJumpPanel、不二次套外壳标题栏，延续「单标题」不变量。
+///
+/// media_kit controls 跑不了 headless，故锁源码结构不变量（与既有 video 守卫范式一致）。
 void main() {
   final File page = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
@@ -24,48 +25,38 @@ void main() {
     src = page.readAsStringSync();
   });
 
-  /// 截取 [_buildVideoSidePanelOverlay] 方法体（到下一个 `_buildSubtitleListSidePanel`
-  /// 定义为止，足够覆盖整个 builder）。
-  String overlayBody() {
-    final int start = src.indexOf(
-      'Widget _buildVideoSidePanelOverlay(',
-    );
+  /// 截取 push-aside 字幕面板列构造器 [_subtitleJumpSidePanel] 方法体。
+  String pushAsidePanelBody() {
+    final int start = src.indexOf('Widget _subtitleJumpSidePanel(');
     expect(start, greaterThanOrEqualTo(0),
-        reason: '需有 _buildVideoSidePanelOverlay 方法');
-    final int end = src.indexOf(
-      'Widget _buildSubtitleListSidePanel(',
-      start,
-    );
-    expect(end, greaterThan(start),
-        reason: '需有 _buildSubtitleListSidePanel 作为 overlay 段终点');
+        reason: '需有 push-aside 字幕面板列 _subtitleJumpSidePanel');
+    // 到下一个顶层方法定义为止（OSD overlay 构造器）。
+    final int end = src.indexOf('Widget _buildOsdOverlay() {', start);
+    expect(end, greaterThan(start), reason: '_subtitleJumpSidePanel 应正常闭合');
     return src.substring(start, end);
   }
 
-  test('overlay 对 subtitleList 走 bypass 分支（不套 VideoTranslucentSidePanel）', () {
-    final String body = overlayBody();
-    final int branchIdx =
-        body.indexOf('if (kind == _VideoSidePanelKind.subtitleList) {');
-    expect(branchIdx, greaterThanOrEqualTo(0),
-        reason: 'overlay 应对 subtitleList 单独分支（像 settings 那样 bypass 外壳标题栏）');
-    final int translucentIdx = body.indexOf('VideoTranslucentSidePanel(');
-    expect(translucentIdx, greaterThan(branchIdx),
-        reason: 'subtitleList 分支必须在 VideoTranslucentSidePanel 构造之前早返回，'
-            '不能再被它套一层标题栏');
-    // subtitleList 分支体内（到分支闭合前）不得出现 VideoTranslucentSidePanel。
-    final String branchToTranslucent =
-        body.substring(branchIdx, translucentIdx);
-    expect(branchToTranslucent.contains('VideoTranslucentSidePanel'), isFalse,
-        reason: 'subtitleList 分支不应套 VideoTranslucentSidePanel（否则双标题）');
+  test('push-aside 字幕面板直接渲染 VideoSubtitleJumpPanel（自带 header，不双标题）', () {
+    final String body = pushAsidePanelBody();
+    expect(body.contains('VideoSubtitleJumpPanel('), isTrue,
+        reason: 'push-aside 面板应直接渲染 VideoSubtitleJumpPanel（自带 header + 关闭）');
+    expect(body.contains('VideoTranslucentSidePanel('), isFalse,
+        reason: '字幕面板不应再被 VideoTranslucentSidePanel 套一层标题栏（否则双标题，BUG-245）');
   });
 
-  test('subtitleList 分支直接返回 _buildSubtitleListSidePanel（面板自带标题/关闭）', () {
-    final String body = overlayBody();
-    final int branchIdx =
-        body.indexOf('if (kind == _VideoSidePanelKind.subtitleList) {');
-    final int translucentIdx = body.indexOf('VideoTranslucentSidePanel(');
-    final String branch = body.substring(branchIdx, translucentIdx);
-    expect(branch.contains('_buildSubtitleListSidePanel(controller)'), isTrue,
-        reason:
-            'subtitleList 分支应直接返回 _buildSubtitleListSidePanel（自带 header + 关闭）');
+  test('字幕列表已无 overlay 路径（不再走 _buildVideoSidePanelContent 的 subtitleList 分支）',
+      () {
+    // overlay 内容构造器不应再对 subtitleList 单独分支（该 kind 已删）。
+    final int start = src.indexOf('Widget _buildVideoSidePanelContent(');
+    expect(start, greaterThanOrEqualTo(0));
+    final int end =
+        src.indexOf('Widget _buildSubtitleSourcesSidePanel(', start);
+    expect(end, greaterThan(start));
+    final String contentBody = src.substring(start, end);
+    expect(
+      contentBody.contains('_VideoSidePanelKind.subtitleList'),
+      isFalse,
+      reason: 'overlay 内容构造器不应再引用 subtitleList（已改 push-aside）',
+    );
   });
 }
