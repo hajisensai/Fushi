@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
@@ -8,8 +9,8 @@ import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
-/// TODO-106: the export dialog lets the user pick which sidecar trees travel in
-/// the backup (default all). [BackupService.exportBackup]'s [categories] param
+/// TODO-106/TODO-249: the export dialog lets the user pick which sidecar trees
+/// travel in the backup. [BackupService.exportBackup]'s [categories] param
 /// is the contract: a null set packs everything (legacy all-in export); a
 /// non-null set packs ONLY the listed trees. The db is always packed.
 void main() {
@@ -22,7 +23,11 @@ void main() {
   });
   tearDown(() async {
     for (final d in [src, dst]) {
-      if (d.existsSync()) await d.delete(recursive: true);
+      try {
+        if (d.existsSync()) await d.delete(recursive: true);
+      } on PathNotFoundException {
+        // Windows recursive cleanup can race with already-removed temp paths.
+      }
     }
   });
 
@@ -32,10 +37,10 @@ void main() {
     await f.writeAsString(content);
   }
 
-  /// Lays out a source "device" with all four optional trees populated, plus a
+  /// Lays out a source "device" with all optional trees populated, plus a
   /// db row that gives the dictionary tree real metadata (so
   /// `_hasCompleteDictionaryResources` accepts it). Returns the built service +
-  /// the four roots so each test can export with a different category set.
+  /// roots so each test can export with a different category set.
   Future<({BackupService service, HibikiDatabase db, String dictRoot})>
       buildFullSource() async {
     final String dbDir = p.join(src.path, 'db');
@@ -43,12 +48,15 @@ void main() {
     final String audio = p.join(src.path, 'audiobooks');
     final String fonts = p.join(src.path, 'custom_fonts');
     final String dict = p.join(src.path, 'dictionaryResources');
+    final String videos = p.join(src.path, 'external_videos');
     Directory(dbDir).createSync(recursive: true);
 
     await writeFile(p.join(books, 'Bk', 'original.epub'), 'EPUB');
     await writeFile(p.join(audio, 'h', 'a.mp3'), 'MP3');
     await writeFile(p.join(fonts, 'MyFont.ttf'), 'FONT');
     await writeFile(p.join(dict, 'JMdict', 'index.bin'), 'IDX');
+    await writeFile(p.join(videos, 'Film.mp4'), 'MP4');
+    await writeFile(p.join(videos, 'Episode1.mkv'), 'EP1');
 
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());
     await db.insertEpubBook(EpubBooksCompanion.insert(
@@ -71,6 +79,17 @@ void main() {
       name: 'JMdict',
       formatKey: 'yomitan',
       order: 0,
+    ));
+    await db.upsertVideoBook(VideoBooksCompanion.insert(
+      bookUid: 'video/film',
+      title: 'Film',
+      videoPath: p.join(videos, 'Film.mp4'),
+      playlistJson: Value(jsonEncode(<Map<String, Object?>>[
+        <String, Object?>{
+          'title': 'Episode 1',
+          'path': p.join(videos, 'Episode1.mkv'),
+        },
+      ])),
     ));
 
     final service = BackupService(
@@ -105,6 +124,11 @@ void main() {
     expect(archive.findFile('audiobooks/h/a.mp3'), isNotNull);
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNotNull);
     expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNotNull);
+    expect(
+      archive.files.any((ArchiveFile f) =>
+          f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mp4')),
+      isTrue,
+    );
     expect(archive.findFile('hibiki.db'), isNotNull);
     // Meta records every packed tree's root.
     expect(meta.booksRoot, isNotNull);
@@ -130,6 +154,10 @@ void main() {
     expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNull);
     expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNull);
+    expect(
+      archive.files.any((ArchiveFile f) => f.name.startsWith('videos/')),
+      isFalse,
+    );
     // Meta only records the packed tree's root; omitted trees are null.
     expect(meta.booksRoot, isNotNull);
     expect(meta.audiobooksRoot, isNull);
@@ -148,6 +176,59 @@ void main() {
     expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNull);
     expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNull);
+    expect(
+      archive.files.any((ArchiveFile f) => f.name.startsWith('videos/')),
+      isFalse,
+    );
+  });
+
+  test('selecting videos packs video files and import rewrites videoPath',
+      () async {
+    final built = await buildFullSource();
+    final zip = p.join(src.path, 'videos.zip');
+    await built.service.exportBackup(zip, categories: {BackupCategory.videos});
+    await built.db.close();
+
+    final Archive archive = await readZip(zip);
+    final ArchiveFile videoEntry = archive.files.singleWhere(
+      (ArchiveFile f) =>
+          f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mp4'),
+    );
+    final ArchiveFile playlistEntry = archive.files.singleWhere(
+      (ArchiveFile f) =>
+          f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mkv'),
+    );
+    expect(String.fromCharCodes(videoEntry.content as List<int>), 'MP4');
+    expect(String.fromCharCodes(playlistEntry.content as List<int>), 'EP1');
+    expect(archive.findFile('hoshi_books/Bk/original.epub'), isNull);
+    expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
+
+    final String dstDbDir = p.join(dst.path, 'db');
+    final String dstVideos = p.join(dst.path, 'videos');
+    Directory(dstDbDir).createSync(recursive: true);
+
+    await BackupService.importBackupFiles(
+      dbDirectory: dstDbDir,
+      zipPath: zip,
+      videosRootDirectory: dstVideos,
+    );
+
+    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    try {
+      final VideoBookRow? row =
+          await restored.getVideoBookByBookUid('video/film');
+      expect(row, isNotNull);
+      expect(row!.videoPath, startsWith(dstVideos));
+      expect(File(row.videoPath).readAsStringSync(), 'MP4');
+      final List<dynamic> playlist =
+          jsonDecode(row.playlistJson!) as List<dynamic>;
+      final String episodePath =
+          (playlist.single as Map<String, dynamic>)['path'] as String;
+      expect(episodePath, startsWith(dstVideos));
+      expect(File(episodePath).readAsStringSync(), 'EP1');
+    } finally {
+      await restored.close();
+    }
   });
 
   test(
@@ -179,29 +260,35 @@ void main() {
         reason: 'audio tree absent from backup → existing tree untouched');
   });
   test(
-      'BackupCategory enumerates exactly the four optional sidecar trees '
+      'BackupCategory enumerates exactly the five optional sidecar trees '
       '(db is never a category)', () {
     expect(BackupCategory.values.toSet(), <BackupCategory>{
       BackupCategory.dictionary,
       BackupCategory.books,
       BackupCategory.audiobooks,
       BackupCategory.fonts,
+      BackupCategory.videos,
     });
   });
 
   // Source guards: the export UI must (1) gate behind a category picker that
-  // (2) defaults to every category selected, and (3) forward the chosen set to
-  // exportBackup. These pin the wiring so a refactor can't silently drop the
-  // dialog or flip the default to "nothing selected" (TODO-106).
-  test('export UI wires the category picker with all-selected default', () {
+  // (2) keeps existing categories selected but leaves videos opt-in because
+  // they are usually huge, and (3) forward the chosen set to exportBackup.
+  test('export UI wires the category picker with video opt-in default', () {
     final File ui = File('lib/src/sync/sync_settings_schema.dart');
     final String src = ui.readAsStringSync();
     expect(src.contains('_pickExportCategories()'), isTrue,
         reason: 'export must prompt for categories before running');
     expect(
-      RegExp(r'BackupCategory\.values\.toSet\(\)').hasMatch(src),
+      src.contains('defaultBackupExportCategories()'),
       isTrue,
-      reason: 'the picker must start with every category ticked (default all)',
+      reason: 'the picker must use the explicit default set',
+    );
+    expect(
+      src.contains('!selected.contains(BackupCategory.videos)') ||
+          src.contains('selected.remove(BackupCategory.videos)'),
+      isTrue,
+      reason: 'video files must be an explicit opt-in, not silently selected',
     );
     expect(src.contains('categories: categories'), isTrue,
         reason: 'the chosen set must be forwarded to exportBackup');

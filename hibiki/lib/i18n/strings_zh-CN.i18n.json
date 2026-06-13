@@ -1580,5 +1580,6 @@
     "video_immersive_mode_unlock_only": "仅解锁",
     "custom_fonts_catalog_title": "字体库",
     "startup_default_dictionary_tab": "启动时打开查词",
-    "startup_default_dictionary_tab_hint": "应用开屏后直接显示查词页；关闭时保留当前默认首页。"
+    "startup_default_dictionary_tab_hint": "应用开屏后直接显示查词页；关闭时保留当前默认首页。",
+    "backup_category_videos": "视频"
 }
