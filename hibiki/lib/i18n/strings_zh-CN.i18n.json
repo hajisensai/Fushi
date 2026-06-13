@@ -1614,5 +1614,6 @@
     "video_subtitle_list_select_for_card": "选入词卡",
     "video_subtitle_list_remove_from_card": "移出词卡",
     "video_subtitle_list_clear_selection": "清空选择",
-    "video_subtitle_list_next_card_selection": "已选入下一张卡"
+    "video_subtitle_list_next_card_selection": "已选入下一张卡",
+    "app_version": "应用版本"
 }

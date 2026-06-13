@@ -1555,6 +1555,11 @@ SettingsDestination _systemDestination() {
             icon: Icons.translate_outlined,
             builder: buildLanguageSelector,
           ),
+          SettingsCustomItem(
+            id: 'system.app_version',
+            icon: Icons.info_outline,
+            builder: _buildRuntimeAppVersionRow,
+          ),
           SettingsSwitchItem(
             id: 'system.low_memory_mode',
             title: t.low_memory_mode,
@@ -1647,6 +1652,16 @@ String _selectedUpdateChannel(SettingsContext settingsContext) {
   if (settingsContext.appModel.updateDebugChannel) return 'debug';
   if (settingsContext.appModel.updateBetaChannel) return 'beta';
   return 'stable';
+}
+
+Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
+  final packageInfo = settingsContext.appModel.packageInfo;
+  return AdaptiveSettingsRow(
+    title: t.app_version,
+    subtitle: '${packageInfo.version}+${packageInfo.buildNumber}',
+    icon: Icons.info_outline,
+    showIcon: true,
+  );
 }
 
 Widget _buildYomitanApiKeyField(SettingsContext settingsContext) {

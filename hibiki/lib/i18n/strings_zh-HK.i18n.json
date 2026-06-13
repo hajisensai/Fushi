@@ -1614,5 +1614,6 @@
     "video_subtitle_list_select_for_card": "Select for card",
     "video_subtitle_list_remove_from_card": "Remove from card selection",
     "video_subtitle_list_clear_selection": "Clear card selection",
-    "video_subtitle_list_next_card_selection": "selected for next card"
+    "video_subtitle_list_next_card_selection": "selected for next card",
+    "app_version": "App version"
 }

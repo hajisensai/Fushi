@@ -21,6 +21,7 @@ import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -179,7 +180,10 @@ Widget _harness({
   );
 }
 
-Future<AppModel> _prefsBackedAppModel(HibikiDatabase db) async {
+Future<AppModel> _prefsBackedAppModel(
+  HibikiDatabase db, {
+  PackageInfo? packageInfo,
+}) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir =
@@ -188,7 +192,10 @@ Future<AppModel> _prefsBackedAppModel(HibikiDatabase db) async {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
 
-  return _RendererTestAppModel()
+  final AppModel appModel = packageInfo == null
+      ? _RendererTestAppModel()
+      : _VersionedRendererTestAppModel(packageInfo);
+  return appModel
     ..wireLocalAudioForTesting(
       prefsRepo: prefsRepo,
       databaseDirectory: tempDir,
@@ -377,6 +384,75 @@ void main() {
         },
       ),
     );
+  });
+
+  testWidgets('system settings exposes the runtime app version',
+      (WidgetTester tester) async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(
+      db,
+      packageInfo: PackageInfo(
+        appName: 'Hibiki',
+        packageName: 'jp.hibiki.test',
+        version: '9.8.7',
+        buildNumber: '654',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        database: db,
+        appModel: appModel,
+        builder: (SettingsContext settingsContext) {
+          final SettingsDestination system =
+              buildSettingsSchema(settingsContext).firstWhere(
+            (SettingsDestination destination) =>
+                destination.id == SettingsDestinationId.system,
+          );
+          final List<SettingsItem> versionItems = system.sections
+              .expand((SettingsSection section) => section.items)
+              .where((SettingsItem item) => item.id == 'system.app_version')
+              .toList(growable: false);
+          final SettingsDestination versionOnly = SettingsDestination(
+            id: system.id,
+            title: system.title,
+            icon: system.icon,
+            sections: <SettingsSection>[
+              SettingsSection(items: versionItems),
+            ],
+          );
+          return MaterialSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: versionOnly,
+          );
+        },
+      ),
+    );
+
+    expect(find.text('App version'), findsOneWidget);
+    expect(find.text('9.8.7+654'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsRow &&
+            widget.title == 'App version' &&
+            widget.subtitle == '9.8.7+654' &&
+            widget.onTap == null,
+      ),
+      findsOneWidget,
+      reason: 'version must be displayed as a read-only settings row',
+    );
+  });
+
+  test('system app version row is sourced from runtime PackageInfo', () {
+    final String source =
+        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+
+    expect(source, contains("id: 'system.app_version'"));
+    expect(source, contains('settingsContext.appModel.packageInfo'));
+    expect(source, isNot(contains('pubspec.yaml')));
   });
 
   testWidgets('appearance settings exposes app UI size slider',
@@ -760,4 +836,13 @@ class _RendererTestAppModel extends AppModel {
 
   @override
   bool get reverseReaderBottomBar => false;
+}
+
+class _VersionedRendererTestAppModel extends _RendererTestAppModel {
+  _VersionedRendererTestAppModel(this._packageInfo);
+
+  final PackageInfo _packageInfo;
+
+  @override
+  PackageInfo get packageInfo => _packageInfo;
 }
