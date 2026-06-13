@@ -471,6 +471,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   List<int> _chapterCumulativeChars = [];
 
   final Map<String, Uint8List> _sanitizedCssCache = {};
+
+  // BUG-270 (TODO-296 B): cross-chapter LRU cache of fully sanitized + style-
+  // injected chapter HTML, keyed by absolute file path. The styleTag is baked
+  // into each cached entry, so the cache MUST be dropped on every style
+  // invalidation (see _invalidateStyleCache). Forward/back paging and prefetch
+  // both hit this cache, turning a repeat chapter visit into an in-memory map
+  // lookup instead of disk read + utf8 decode + sanitize + regex inject.
+  static const int _kChapterHtmlCacheLimit = 6;
+  final LinkedHashMap<String, Uint8List> _sanitizedHtmlCache =
+      LinkedHashMap<String, Uint8List>();
+
+  // BUG-270: in-flight prefetch dedup — the file path currently being warmed in
+  // the background, so a navigation that lands on it does not race a second read.
+  String? _prefetchingHtmlPath;
+
   String? _cachedStyleTag;
 
   Timer? _saveDebounce;
@@ -1697,38 +1712,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
-      // HBK-AUDIT-118: legacy Japanese XHTML can be Shift_JIS/EUC-JP; strict
-      // utf8.decode throws FormatException here and the chapter fails to load.
-      // Degrade gracefully (malformed bytes -> U+FFFD) to match epub_parser's
-      // _readText contract (HBK-AUDIT-033) instead of crashing the load.
-      String html = utf8.decode(data, allowMalformed: true);
-      // BUG-079: XHTML self-closing raw-text elements (e.g. `<script .../>` with
-      // no `</script>`) swallow the whole body under the HTML5 parser, blanking
-      // the page. Normalize them to paired tags before injecting reader styles.
-      html = ReaderResourceSanitizer.sanitizeXhtml(html);
-      final String styleTag = _buildStyleTag();
-      const String hideUntilReady =
-          '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
-      // Cloak goes early (right after <head>) to hide FOUC.
-      // Reader style goes last (before </head>) so it wins over EPUB
-      // CSS in !important specificity ties (later declaration wins).
-      final RegExp headOpenPattern =
-          RegExp('<head[^>]*>', caseSensitive: false);
-      final RegExp headClosePattern =
-          RegExp(r'</head\s*>', caseSensitive: false);
-      final RegExpMatch? headOpen = headOpenPattern.firstMatch(html);
-      final RegExpMatch? headClose = headClosePattern.firstMatch(html);
-      if (headOpen != null && headClose != null) {
-        html = '${html.substring(0, headOpen.end)}\n$hideUntilReady'
-            '${html.substring(headOpen.end, headClose.start)}\n$styleTag\n'
-            '${html.substring(headClose.start)}';
-      } else if (headOpen != null) {
-        html =
-            '${html.substring(0, headOpen.end)}\n$hideUntilReady\n$styleTag${html.substring(headOpen.end)}';
-      } else {
-        html = '$hideUntilReady\n$styleTag\n$html';
-      }
-      data = Uint8List.fromList(utf8.encode(html));
+      // BUG-270 (TODO-296 B): repeat chapter visits (forward/back paging,
+      // prefetched chapters) reuse the sanitized + style-injected bytes from
+      // the LRU cache instead of re-reading/decoding/sanitizing/injecting. The
+      // cache is dropped on every style change (_invalidateStyleCache), so a
+      // cached entry always carries the current styleTag.
+      data = _chapterHtmlBytes(filePath, data);
     }
 
     return WebResourceResponse(
@@ -1742,6 +1731,111 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       },
       data: data,
     );
+  }
+
+  // BUG-270 (TODO-296 B): return the sanitized + style-injected chapter bytes
+  // for [filePath], serving from the LRU cache on a hit and building+caching on
+  // a miss. [rawData] is the already-read on-disk bytes from _interceptRequest
+  // (avoids a second disk read on the cold path). On an LRU hit the entry is
+  // moved to most-recently-used.
+  Uint8List _chapterHtmlBytes(String filePath, Uint8List rawData) {
+    final Uint8List? cached = _sanitizedHtmlCache.remove(filePath);
+    if (cached != null) {
+      _sanitizedHtmlCache[filePath] = cached; // bump to MRU
+      return cached;
+    }
+    final Uint8List built = _buildSanitizedChapterHtmlBytes(rawData);
+    _putChapterHtml(filePath, built);
+    return built;
+  }
+
+  // BUG-270: insert into the LRU, evicting the least-recently-used entry when
+  // over the size limit. LinkedHashMap preserves insertion order; the oldest key
+  // is removed first.
+  void _putChapterHtml(String filePath, Uint8List bytes) {
+    _sanitizedHtmlCache.remove(filePath);
+    _sanitizedHtmlCache[filePath] = bytes;
+    while (_sanitizedHtmlCache.length > _kChapterHtmlCacheLimit) {
+      _sanitizedHtmlCache.remove(_sanitizedHtmlCache.keys.first);
+    }
+  }
+
+  // BUG-270: the sanitize + style-inject pipeline, extracted from
+  // _interceptRequest so it can also run during prefetch. Decodes the raw
+  // chapter bytes (UTF-8/BOM tolerant, HBK-AUDIT-118), normalizes self-closing
+  // raw-text elements (BUG-079), injects the FOUC cloak + reader styleTag, and
+  // returns the final UTF-8 bytes served to the WebView.
+  Uint8List _buildSanitizedChapterHtmlBytes(Uint8List rawData) {
+    String html = utf8.decode(rawData, allowMalformed: true);
+    html = ReaderResourceSanitizer.sanitizeXhtml(html);
+    final String styleTag = _buildStyleTag();
+    const String hideUntilReady =
+        '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
+    // Cloak goes early (right after <head>) to hide FOUC. Reader style goes last
+    // (before </head>) so it wins over EPUB CSS in !important specificity ties.
+    final RegExp headOpenPattern = RegExp('<head[^>]*>', caseSensitive: false);
+    final RegExp headClosePattern = RegExp(r'</head\s*>', caseSensitive: false);
+    final RegExpMatch? headOpen = headOpenPattern.firstMatch(html);
+    final RegExpMatch? headClose = headClosePattern.firstMatch(html);
+    if (headOpen != null && headClose != null) {
+      html = '${html.substring(0, headOpen.end)}\n$hideUntilReady'
+          '${html.substring(headOpen.end, headClose.start)}\n$styleTag\n'
+          '${html.substring(headClose.start)}';
+    } else if (headOpen != null) {
+      html =
+          '${html.substring(0, headOpen.end)}\n$hideUntilReady\n$styleTag${html.substring(headOpen.end)}';
+    } else {
+      html = '$hideUntilReady\n$styleTag\n$html';
+    }
+    return Uint8List.fromList(utf8.encode(html));
+  }
+
+  // BUG-270: resolve the absolute on-disk path of chapter [index]'s XHTML, or
+  // null when out of range / book not ready. Mirrors the path resolution in
+  // _interceptRequest (extractDir + chapter href) so cache keys line up.
+  String? _chapterFilePath(int index) {
+    final EpubBook? book = _book;
+    final String? dir = _extractDir;
+    if (book == null || dir == null) return null;
+    if (index < 0 || index >= book.chapters.length) return null;
+    final String href = normalizeHref(book.chapters[index].href);
+    final String filePath = p.canonicalize(p.join(dir, href));
+    if (!p.isWithin(p.canonicalize(dir), filePath)) return null;
+    return filePath;
+  }
+
+  // BUG-270: warm the LRU with the next chapter (in reading direction) so a
+  // forward page-turn that crosses a chapter boundary hits the cache instead of
+  // paying disk read + decode + sanitize + inject. Runs off the UI frame; skips
+  // when already cached, already in flight, or settings/book not ready. Reads on
+  // the main isolate (sanitizeXhtml is sync) but only one chapter at a time, and
+  // the result is dropped if the page was disposed or styles changed meanwhile.
+  void _prefetchAdjacentChapter(int index) {
+    if (_settings == null) return;
+    final String? filePath = _chapterFilePath(index);
+    if (filePath == null) return;
+    if (_sanitizedHtmlCache.containsKey(filePath)) return;
+    if (_prefetchingHtmlPath == filePath) return;
+    _prefetchingHtmlPath = filePath;
+    scheduleMicrotask(() {
+      try {
+        if (!mounted || _settings == null) return;
+        if (_sanitizedHtmlCache.containsKey(filePath)) return;
+        final File file = File(filePath);
+        if (!file.existsSync()) return;
+        final Uint8List raw = file.readAsBytesSync();
+        final Uint8List built = _buildSanitizedChapterHtmlBytes(raw);
+        if (!mounted) return;
+        _putChapterHtml(filePath, built);
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibiki._prefetchAdjacentChapter', e, stack);
+      } finally {
+        if (_prefetchingHtmlPath == filePath) {
+          _prefetchingHtmlPath = null;
+        }
+      }
+    });
   }
 
   bool get _isCustomTheme => appModel.appThemeKey == 'custom-theme';
@@ -1777,6 +1871,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   void _invalidateStyleCache() {
     _cachedStyleTag = null;
+    // BUG-270: cached chapter HTML bakes in the styleTag, so any style change
+    // must drop it — the next served chapter then rebuilds with the fresh tag.
+    _sanitizedHtmlCache.clear();
   }
 
   Future<void> _applyStylesLive() async {
@@ -2637,6 +2734,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // MediaQuery——这样后续 resize 才与真正生效的版面宽度比对。
       _lastSyncedWidth = _paginatedWidth;
       _lastSyncedHeight = _paginatedHeight;
+      // BUG-270 (TODO-296 B): warm the next chapter so a forward boundary
+      // page-turn hits the LRU cache instead of disk read + decode + sanitize +
+      // inject. Background, single chapter, dropped if disposed/style-changed.
+      _prefetchAdjacentChapter(chapterSnapshot + 1);
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._onChapterLoadComplete', e, stack);
