@@ -249,61 +249,73 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ref.watch(filteredBookIdsProvider);
     final allTags = ref.watch(allTagsProvider);
 
-    return HibikiFileDropTarget(
-      onDrop: _handleShelfDrop,
-      child: CardDropScope<String>(
-        registry: _cardDropRegistry,
-        child: DesktopContentLayout(
-          kind: DesktopContentKind.readerShelf,
-          child: Column(
-            children: [
-              if (!isCupertinoPlatform(context)) _buildPageHeader(),
-              _buildTagBar(allTags.valueOrNull ?? const []),
-              Expanded(
-                child: books.when(
-                  data: (bookList) {
-                    _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
-                    _videoBooksFuture ??= _loadVideoBooks();
-                    _remoteBooksFuture ??= _loadRemoteBooks();
-                    final Set<String>? filterSet = filteredIds.valueOrNull;
-                    final List<MediaItem> filtered;
-                    if (filterSet == null) {
-                      filtered = bookList;
-                    } else {
-                      filtered = bookList.where((item) {
-                        final String? key = _parseBookKey(item.mediaIdentifier);
-                        return key != null && filterSet.contains(key);
-                      }).toList();
-                    }
-                    return FutureBuilder<Map<String, _AudiobookInfo>>(
-                      future: _batchAudiobookInfoFuture,
-                      builder: (context, abSnapshot) =>
-                          FutureBuilder<List<VideoBookRow>>(
-                        future: _videoBooksFuture,
-                        builder: (context, videoSnapshot) =>
-                            FutureBuilder<_RemoteBookState?>(
-                          future: _remoteBooksFuture,
-                          builder: (context, remoteSnapshot) =>
-                              buildBody(filtered, remoteSnapshot),
+    // BUG-250: 书架批量选择模式（[_selectionMode]）活在本 tab 内容里，不是独立
+    // route。顶层 HomePage 的 PopScope 对它无感，返回键会直接弹掉 root route 退
+    // 出 App，而不是退出选择模式。这里像查词 tab（home_dictionary_page）一样用
+    // 嵌套 PopScope 拦截：选择模式开启时 canPop=false，返回先退出选择模式。
+    return PopScope(
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        if (_selectionMode) _exitSelectionMode();
+      },
+      child: HibikiFileDropTarget(
+        onDrop: _handleShelfDrop,
+        child: CardDropScope<String>(
+          registry: _cardDropRegistry,
+          child: DesktopContentLayout(
+            kind: DesktopContentKind.readerShelf,
+            child: Column(
+              children: [
+                if (!isCupertinoPlatform(context)) _buildPageHeader(),
+                _buildTagBar(allTags.valueOrNull ?? const []),
+                Expanded(
+                  child: books.when(
+                    data: (bookList) {
+                      _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
+                      _videoBooksFuture ??= _loadVideoBooks();
+                      _remoteBooksFuture ??= _loadRemoteBooks();
+                      final Set<String>? filterSet = filteredIds.valueOrNull;
+                      final List<MediaItem> filtered;
+                      if (filterSet == null) {
+                        filtered = bookList;
+                      } else {
+                        filtered = bookList.where((item) {
+                          final String? key =
+                              _parseBookKey(item.mediaIdentifier);
+                          return key != null && filterSet.contains(key);
+                        }).toList();
+                      }
+                      return FutureBuilder<Map<String, _AudiobookInfo>>(
+                        future: _batchAudiobookInfoFuture,
+                        builder: (context, abSnapshot) =>
+                            FutureBuilder<List<VideoBookRow>>(
+                          future: _videoBooksFuture,
+                          builder: (context, videoSnapshot) =>
+                              FutureBuilder<_RemoteBookState?>(
+                            future: _remoteBooksFuture,
+                            builder: (context, remoteSnapshot) =>
+                                buildBody(filtered, remoteSnapshot),
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                  error: (error, stack) => buildError(
-                    error: error,
-                    stack: stack,
-                    refresh: () {
-                      _refreshSrtBooks();
-                      ref.invalidate(
-                        hibikiBooksProvider(appModel.targetLanguage),
                       );
                     },
+                    error: (error, stack) => buildError(
+                      error: error,
+                      stack: stack,
+                      refresh: () {
+                        _refreshSrtBooks();
+                        ref.invalidate(
+                          hibikiBooksProvider(appModel.targetLanguage),
+                        );
+                      },
+                    ),
+                    loading: () => buildLoading(),
                   ),
-                  loading: () => buildLoading(),
                 ),
-              ),
-              if (_selectionMode) _buildBatchActionBar(),
-            ],
+                if (_selectionMode) _buildBatchActionBar(),
+              ],
+            ),
           ),
         ),
       ),
