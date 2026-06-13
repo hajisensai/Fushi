@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 258 条。点号进各自文件。
+> 共 261 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-265](bugs/BUG-265-subtitle-list-actions-persistent.md) | ✅ | ✅ | 字幕列表行操作按钮应常驻 |
+| [BUG-264](bugs/BUG-264-subtitle-list-favorite-highlight.md) | ✅ | ✅ | 收藏字幕在列表和底栏应有标记 |
+| [BUG-263](bugs/BUG-263-subtitle-list-lookup-nowrap.md) | ✅ | ✅ | 字幕列表无法查词且长文本换行 |
 | [BUG-262](bugs/BUG-262-remove-rightclick-shader-compare.md) | ✅ | ✅ | 删除视频右键菜单的对比原画项 |
 | [BUG-261](bugs/BUG-261-rightclick-popup-coord-uiscale.md) | ✅ | ✅ | 调界面大小后视频右键菜单位置不在鼠标处 |
 | [BUG-260](bugs/BUG-260-popup-wheel-scroll-granularity.md) | ✅ | ✅ | 查词弹窗滚轮滚动粒度太粗 |
