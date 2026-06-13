@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/models.dart';
@@ -197,7 +198,7 @@ void main() {
     });
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final AppModel appModel = AppModel(testPlatformServices())
+    final AppModel appModel = _CoverageAppModel()
       ..themeNotifier = themeNotifier
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
@@ -517,4 +518,18 @@ class _FocusedRow {
   const _FocusedRow({required this.title, required this.kind});
   final String title;
   final _RowKind kind;
+}
+
+class _CoverageAppModel extends AppModel {
+  _CoverageAppModel() : super(testPlatformServices());
+
+  final PackageInfo _packageInfo = PackageInfo(
+    appName: 'Hibiki',
+    packageName: 'jp.hibiki.test',
+    version: '9.8.7',
+    buildNumber: '654',
+  );
+
+  @override
+  PackageInfo get packageInfo => _packageInfo;
 }
