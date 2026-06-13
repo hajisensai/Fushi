@@ -1,0 +1,17 @@
+## BUG-271 · 画质增强切到「中」下载失败一个 + 说明只说动画（误导真人/电视剧）
+- **报告**：2026-06-14（用户：视频画质增强切换到中，下载失败一个；为什么画质增强说明是动画，我不能看电视剧吗 / TODO-273）
+- **真实性**：✅ 真（两个独立问题）。
+  - **① 下载失败一个**：根因在 `hibiki/lib/src/media/video/video_shader_downloader.dart`。「中」档 = `kAnime4kFastPreset`（Mode A Fast，6 个 `.glsl`）。原 `anime4kMirrorUrls`（旧 198-209 行）**只生成 3 个源**：`cdn.jsdelivr.net` 单节点 → `ghfast.top` 单代理 → `raw.githubusercontent.com` 直连；且 `downloadAnime4kFiles`（旧 416-453 行）**每个镜像只试一次、无重试**。app 运行时下载**不走**本机命令行代理（代码注释明示），中国网络下 jsDelivr 单个 CDN 边缘节点对某文件偶发缓存未命中/限流/超时，回退的 ghfast / raw 在中国本就不稳——6 个文件里偏偏某 1 个撞上瞬态抖动就整文件失败计入 `failed`。这正是「整档偏偏失败一个」的典型表现：**单源单试对瞬态故障脆弱**。
+  - **② 说明只说动画**：`hibiki/lib/i18n/*.i18n.json` 的 `video_shader_tier_medium_hint`/`_high_hint`/`_ultra_hint`/`video_quality_enhancement_hint` 文案只提 anime/动画，让用户以为真人电视剧不能用。实际 Anime4K/ArtCNN 对真人影视也有清晰度提升（增益小于动画），low 档（mpv 内置缩放锐化）对动画/真人通用——文案误导。
+- **[x] ① 已修复（根因，非补丁）** — 提交：d8c93886b
+  - **多镜像（复用 BUG-319 `update_checker.dart::_kProxyPrefixes` 范式）**：`anime4kMirrorUrls` 改为生成 9 个候选——jsDelivr 4 个独立 CDN 边缘节点（cdn/fastly/gcore/testingcf，一个抖动另一个能成）+ BUG-319 同款 4 个 gh 加速代理前缀（ghfast.top/gh-proxy.com/ghproxy.net/ghproxy.cc）套 raw 直链 + raw 官方兜底。新增 `_kJsDelivrHosts` / `_kGhProxyPrefixes` 两个 const。
+  - **有界重试（根因=瞬态抖动，换轮重试整组多镜像）**：`downloadAnime4kFiles` 把单文件多镜像尝试提取成纯函数 `_downloadFileViaMirrors`，外层每个文件对整组镜像最多跑 `1 + maxRetries`（默认 3）轮，轮间递增退避 `retryBackoff × 轮次`（默认 1s）。镜像可达性已 curl 验证：4 个 jsDelivr 节点 + ghfast/gh-proxy/ghproxy.net 对带 `+` 目录的文件均 200，ArtCNN 极高档路径 200。
+  - **粘链接下载同步加固**：`shaderDownloadUrlsFor` 也从 3 源升级为「直链优先 + 同款多节点/代理前缀兜底」。
+  - **失败反馈非静默**：`video_shader_dialog.dart::_downloadPreset` 早已对 `Anime4kDownloadResult` 区分全成功/部分失败(`video_shader_download_partial` 报 ok/failed 数)/全失败(`video_shader_download_failed`) 弹 SnackBar，不吞异常——本次未改其反馈逻辑，多镜像+重试把「失败一个」从常态降到极少。
+- **[x] ② 已修复（文案）** — 提交：b614a9f79
+  - 17 语言文件的 `video_quality_enhancement_hint` / `video_shader_tier_low_hint` / `_medium_hint` / `_high_hint` / `_ultra_hint` 改为通用引导：点明「动画提升最明显，真人影视/电视剧也能用（增益较小）」，low 档点明动画/真人通用。中文（zh-CN/zh-HK）、日文（ja）本地化，其余 14 语言用修正后英文。`dart run slang` 重生成 `strings.g.dart`。
+- **[x] ② 已加自动化测试** — 提交：d8c93886b / b614a9f79
+  - 下载多镜像/重试：`hibiki/test/media/video/video_shader_downloader_test.dart` 更新 + 新增——多镜像顺序/唯一性、jsDelivr 节点间回退、jsDelivr 全挂回退代理、**整组一轮全挂退避后重试救回**、maxRetries:0 关重试、全候选×全轮失败才 failed、`shaderDownloadUrlsFor` 多镜像。
+  - 文案守卫：`hibiki/test/i18n/shader_quality_hint_not_anime_only_test.dart`（源码扫描）——断言 en/zh-CN/zh-HK 的四个档位说明都提及真人/live-action/电视剧，且不出现 anime-only 排他措辞；回退到「仅动画」文案即红。
+- **备注（真机待验）**：host 测试只验逻辑（假 Dio adapter）。真实「中」档在中国网络真机下 6 文件全下成功、真人视频开启画质增强生效，需桌面真机复测（CLAUDE.md 验证纪律）。`ghproxy.cc` 经本机代理偶发 000，作为多候选之一无害（BUG-319 范式：公共镜像轮换，多备几个）。
+- **未触及**：未改 `video_hibiki_page.dart`（另一车道占用）——下载/应用链全在 `video_shader_downloader.dart` + `video_shader_dialog.dart` + `video_quick_settings_sheet.dart` 内闭环，tier 应用经 `onSelectTier` 回调上报，本次无需改回调实现。
