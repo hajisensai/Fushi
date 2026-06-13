@@ -146,6 +146,7 @@ Widget _harness({
   String designSystem = 'auto',
   AppModel? appModel,
   HibikiDatabase? database,
+  Map<String, String> extraThemePrefs = const <String, String>{},
 }) {
   final HibikiDatabase db = database ?? _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -154,6 +155,7 @@ Widget _harness({
       'app_theme_key': PrefCodec.encode('system-theme'),
       'brightness_mode': PrefCodec.encode('system'),
       'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
+      ...extraThemePrefs,
     });
   final AppModel resolvedAppModel = appModel ?? _RendererTestAppModel();
   resolvedAppModel.themeNotifier = themeNotifier;
@@ -455,50 +457,93 @@ void main() {
     expect(source, isNot(contains('pubspec.yaml')));
   });
 
-  testWidgets('appearance settings exposes automatic app UI size mode + slider',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.android,
-        builder: (SettingsContext settingsContext) {
-          final SettingsDestination appearance =
-              buildSettingsSchema(settingsContext).firstWhere(
-            (SettingsDestination destination) =>
-                destination.id == SettingsDestinationId.appearance,
-          );
-          final SettingsDestination interfaceOnly = SettingsDestination(
-            id: appearance.id,
-            title: appearance.title,
-            icon: appearance.icon,
-            sections: <SettingsSection>[appearance.sections.first],
-          );
-          return MaterialSettingsRenderer().buildDetailPage(
-            settingsContext: settingsContext,
-            destination: interfaceOnly,
-          );
-        },
-      ),
+  // TODO-323: 自动/自定义不再是独立全权重行，而是「界面大小」标题行尾的内联切换；
+  // 自动模式不再渲染无用滑条，只读展示当前自动百分比。
+  Widget interfaceSettingsHarness({
+    Map<String, String> extraThemePrefs = const <String, String>{},
+  }) {
+    return _harness(
+      platform: TargetPlatform.android,
+      extraThemePrefs: extraThemePrefs,
+      builder: (SettingsContext settingsContext) {
+        final SettingsDestination appearance =
+            buildSettingsSchema(settingsContext).firstWhere(
+          (SettingsDestination destination) =>
+              destination.id == SettingsDestinationId.appearance,
+        );
+        final SettingsDestination interfaceOnly = SettingsDestination(
+          id: appearance.id,
+          title: appearance.title,
+          icon: appearance.icon,
+          sections: <SettingsSection>[appearance.sections.first],
+        );
+        return MaterialSettingsRenderer().buildDetailPage(
+          settingsContext: settingsContext,
+          destination: interfaceOnly,
+        );
+      },
     );
+  }
 
-    expect(find.text(t.app_ui_scale_mode), findsOneWidget);
-    expect(find.text(t.app_ui_scale_auto), findsOneWidget);
+  testWidgets(
+      'app UI size inlines the auto/custom toggle and hides the slider in auto',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(interfaceSettingsHarness());
+
+    // Auto/Custom 收敛为「界面大小」一行尾部的内联切换：该项不再有独立的
+    // app_ui_scale_mode 标题/副标题，标题统一是 app_ui_scale。
+    expect(find.text(t.app_ui_scale), findsOneWidget);
+    expect(find.text(t.app_ui_scale_auto), findsWidgets);
     expect(find.text(t.app_ui_scale_custom), findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (Widget widget) =>
             widget is AdaptiveSettingsSegmentedRow<String> &&
-            widget.title == t.app_ui_scale_mode &&
+            widget.title == t.app_ui_scale &&
+            widget.subtitle == t.app_ui_scale_hint &&
+            widget.controlBelow == false &&
             widget.selected == ThemeNotifier.appUiScaleModeAuto,
       ),
       findsOneWidget,
     );
-    expect(find.text(t.app_ui_scale), findsOneWidget);
+
+    // 自动模式下不渲染可拖滑条（原行为是恒渲染，本改动消除无用占位）。
+    expect(
+      find.byType(AdaptiveSettingsSliderRow),
+      findsNothing,
+      reason: '自动模式只读展示当前自动百分比，不应有滑条',
+    );
+  });
+
+  testWidgets('app UI size shows the draggable slider in custom mode',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      interfaceSettingsHarness(
+        extraThemePrefs: <String, String>{
+          'app_ui_scale_mode':
+              PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
+          'app_ui_scale': PrefCodec.encode(1.5),
+        },
+      ),
+    );
+
+    // 标题仍统一是 app_ui_scale；自定义模式下内联切换行与滑条行都用该标题，故出现两处。
+    expect(find.text(t.app_ui_scale), findsWidgets);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsSegmentedRow<String> &&
+            widget.title == t.app_ui_scale &&
+            widget.selected == ThemeNotifier.appUiScaleModeCustom,
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byWidgetPredicate(
         (Widget widget) =>
             widget is AdaptiveSettingsSliderRow &&
             widget.title == t.app_ui_scale &&
-            widget.value == 1.0 &&
+            widget.value == 1.5 &&
             widget.min == 0.3 &&
             widget.max == 3.0 &&
             widget.divisions == 27,
@@ -612,6 +657,12 @@ void main() {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.android,
+        // TODO-323: 滑条只在自定义模式渲染；以自定义模式起步才能驱动其拖动语义。
+        extraThemePrefs: <String, String>{
+          'app_ui_scale_mode':
+              PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
+          'app_ui_scale': PrefCodec.encode(1.0),
+        },
         builder: (SettingsContext settingsContext) {
           appModel = settingsContext.appModel;
           final SettingsDestination appearance =
@@ -639,7 +690,7 @@ void main() {
 
     expect(appModel.appUiScale, 1.0);
     expect(appModel.themeNotifier.appUiScaleMode,
-        ThemeNotifier.appUiScaleModeAuto);
+        ThemeNotifier.appUiScaleModeCustom);
 
     // 拖动中：onChanged 只更新本地显示值，绝不提交真实缩放——否则全局
     // HibikiAppUiScale 的 Transform 会实时重排，滑块在手指下被缩放位移导致

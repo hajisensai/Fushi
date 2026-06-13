@@ -1616,8 +1616,6 @@
     "video_subtitle_list_clear_selection": "清空选择",
     "video_subtitle_list_next_card_selection": "已选入下一张卡",
     "app_version": "应用版本",
-    "app_ui_scale_mode": "界面大小模式",
-    "app_ui_scale_mode_hint": "按当前设备和窗口自动设置界面大小，也可切换为自定义百分比。",
     "app_ui_scale_auto": "自动",
     "app_ui_scale_custom": "自定义",
     "anki_error_collection_unavailable": "AnkiDroid 数据库当前不可用：请先打开 AnkiDroid 至少一次，确认它没有在同步且已开启 API，然后重试。",

@@ -55,7 +55,7 @@ void main() {
     });
 
     test('代理 URL 取代理主机（真正发起连接、真正超时的那一跳）', () {
-      // ghfast.top / mirror.ghproxy.com 前缀拼接的 URL，host 是代理本身。
+      // ghfast.top / gh-proxy.com 等前缀拼接的 URL，host 是代理本身。
       expect(
         hostLabelForUpdateUrl(
             'https://ghfast.top/https://api.github.com/repos/x/y'),
@@ -63,8 +63,8 @@ void main() {
       );
       expect(
         hostLabelForUpdateUrl(
-            'https://mirror.ghproxy.com/https://api.github.com/repos/x/y'),
-        'mirror.ghproxy.com',
+            'https://gh-proxy.com/https://api.github.com/repos/x/y'),
+        'gh-proxy.com',
       );
     });
 
