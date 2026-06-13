@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
@@ -1669,9 +1670,80 @@ SettingsDestination _videoDestination() {
               );
             },
           ),
+          // TODO-277：弹幕来源配置——自建/镜像 Dandanplay 服务器地址 + 可选 API 凭据。
+          // 空地址=用官方 api.dandanplay.net；AppId/AppSecret 同时填写时按 v2 签名请求。
+          // 写入 videoDanmakuConfig（纯 pref），同步推进程级 DandanplayConfig.current，
+          // 下次匹配弹幕即生效（播放页里无参构造的 DandanplayClient 自动读取）。
+          SettingsCustomItem(
+            id: 'video.danmaku.server_url',
+            builder: _buildDanmakuServerField,
+          ),
+          SettingsCustomItem(
+            id: 'video.danmaku.app_id',
+            builder: _buildDanmakuAppIdField,
+          ),
+          SettingsCustomItem(
+            id: 'video.danmaku.app_secret',
+            builder: _buildDanmakuAppSecretField,
+          ),
         ],
       ),
     ],
+  );
+}
+
+/// 读改写 videoDanmakuConfig（纯 pref）：decode 当前 → 应用 [mutate] → 落盘 → 刷新面板。
+Future<void> _commitVideoDanmakuConfig(
+  SettingsContext settingsContext,
+  DandanplayConfig Function(DandanplayConfig config) mutate,
+) async {
+  final DandanplayConfig current = settingsContext.appModel.videoDanmakuConfig;
+  await settingsContext.appModel.setVideoDanmakuConfig(mutate(current));
+  settingsContext.refresh();
+}
+
+Widget _buildDanmakuServerField(SettingsContext settingsContext) {
+  return _SettingsSecretField(
+    title: t.video_setting_danmaku_server_url,
+    icon: Icons.dns_outlined,
+    initialValue: settingsContext.appModel.videoDanmakuConfig.baseUrl,
+    keyboardType: TextInputType.url,
+    onChanged: (String value) async {
+      await _commitVideoDanmakuConfig(
+        settingsContext,
+        (DandanplayConfig c) => c.copyWith(baseUrl: value.trim()),
+      );
+    },
+  );
+}
+
+Widget _buildDanmakuAppIdField(SettingsContext settingsContext) {
+  return _SettingsSecretField(
+    title: t.video_setting_danmaku_app_id,
+    icon: Icons.badge_outlined,
+    initialValue: settingsContext.appModel.videoDanmakuConfig.appId,
+    onChanged: (String value) async {
+      await _commitVideoDanmakuConfig(
+        settingsContext,
+        (DandanplayConfig c) => c.copyWith(appId: value.trim()),
+      );
+    },
+  );
+}
+
+Widget _buildDanmakuAppSecretField(SettingsContext settingsContext) {
+  return _SettingsSecretField(
+    title: t.video_setting_danmaku_app_secret,
+    icon: Icons.key_outlined,
+    initialValue: settingsContext.appModel.videoDanmakuConfig.appSecret,
+    obscureText: true,
+    keyboardType: TextInputType.visiblePassword,
+    onChanged: (String value) async {
+      await _commitVideoDanmakuConfig(
+        settingsContext,
+        (DandanplayConfig c) => c.copyWith(appSecret: value.trim()),
+      );
+    },
   );
 }
 

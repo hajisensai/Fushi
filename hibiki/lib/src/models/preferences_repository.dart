@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
@@ -79,6 +80,11 @@ class PreferencesRepository extends ChangeNotifier {
     _prefCache
       ..clear()
       ..addAll(all);
+    // 启动即把弹幕来源配置推进进程级静态，供播放页里无参构造的 DandanplayClient 读取
+    // （它在 prefs 加载后才会被构造，故此处一次推送即可覆盖首次播放）。
+    DandanplayConfig.current = DandanplayConfig.decode(
+      getPref('video_danmaku_config', defaultValue: '') as String,
+    );
   }
 
   Map<String, String> get prefsSnapshot =>
@@ -478,6 +484,23 @@ class PreferencesRepository extends ChangeNotifier {
       'video_danmaku_max_active',
       normalizeVideoDanmakuMaxActive(value),
     );
+    notifyListeners();
+  }
+
+  /// Dandanplay 弹幕来源配置（自建服务器地址 + 可选 API 凭据，JSON；见
+  /// [DandanplayConfig]）。读时同步推送进程级 [DandanplayConfig.current]，使无参
+  /// 构造的 [DandanplayClient]（播放页里）立即吃到配置，无需改播放页的构造调用点。
+  DandanplayConfig get videoDanmakuConfig {
+    final DandanplayConfig config = DandanplayConfig.decode(
+      getPref('video_danmaku_config', defaultValue: '') as String,
+    );
+    DandanplayConfig.current = config;
+    return config;
+  }
+
+  Future<void> setVideoDanmakuConfig(DandanplayConfig config) async {
+    DandanplayConfig.current = config;
+    await setPref('video_danmaku_config', DandanplayConfig.encode(config));
     notifyListeners();
   }
 

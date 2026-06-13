@@ -1621,5 +1621,8 @@
     "app_ui_scale_auto": "自动",
     "app_ui_scale_custom": "自定义",
     "video_setting_seek_seconds": "快进/快退步长（秒）",
-    "section_video_danmaku": "弹幕"
+    "section_video_danmaku": "弹幕",
+    "video_setting_danmaku_server_url": "弹幕服务器地址",
+    "video_setting_danmaku_app_id": "弹弹play AppId",
+    "video_setting_danmaku_app_secret": "弹弹play AppSecret"
 }

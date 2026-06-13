@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -42,6 +43,42 @@ void main() {
       expect(reloaded.videoDanmakuEnabled, isFalse);
       expect(reloaded.videoDanmakuMaxActive, kMaxVideoDanmakuActive);
       reloaded.dispose();
+    });
+
+    test('default danmaku source config is empty (official, unsigned)', () {
+      expect(repo.videoDanmakuConfig, DandanplayConfig.defaults);
+    });
+
+    test('persists danmaku server config round-trip and pushes the static',
+        () async {
+      const DandanplayConfig config = DandanplayConfig(
+        baseUrl: 'https://mirror.example.com',
+        appId: 'app-123',
+        appSecret: 's3cret',
+      );
+      await repo.setVideoDanmakuConfig(config);
+
+      // Writing publishes to the process-wide static the zero-arg client reads.
+      expect(DandanplayConfig.current, config);
+
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.videoDanmakuConfig, config);
+      // loadFromDb primes the static so the in-player client picks it up at boot.
+      expect(DandanplayConfig.current, config);
+      reloaded.dispose();
+    });
+
+    test('loadFromDb resets the static to defaults when no config persisted',
+        () async {
+      DandanplayConfig.current =
+          const DandanplayConfig(baseUrl: 'https://stale.example');
+      final HibikiDatabase freshDb = _testDb();
+      addTearDown(freshDb.close);
+      final PreferencesRepository fresh = PreferencesRepository(freshDb);
+      addTearDown(fresh.dispose);
+      await fresh.loadFromDb();
+      expect(DandanplayConfig.current, DandanplayConfig.defaults);
     });
   });
 }
