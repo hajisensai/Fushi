@@ -34,7 +34,7 @@ void main() {
     expect(src, contains('updaterForCurrentPlatform()'));
   });
 
-  test('release workflow publishes comparable release-signed debug channel',
+  test('release workflow publishes platform-filtered debug Android channel',
       () {
     final String workflow =
         File('../.github/workflows/release.yml').readAsStringSync();
@@ -68,7 +68,8 @@ void main() {
     );
   });
 
-  test('desktop release workflow publishes comparable debug Windows installer',
+  test(
+      'desktop release workflow publishes platform-filtered debug Windows installer',
       () {
     final String workflow =
         File('../.github/workflows/release-desktop.yml').readAsStringSync();
@@ -133,11 +134,23 @@ void main() {
     );
   });
 
-  test('build docs describe the comparable debug tag format', () {
+  test('build docs describe platform-scoped debug run numbers', () {
     final String docs = File('../docs/agent/build.md').readAsStringSync();
     expect(
       docs,
       contains(r'v<version>-debug.<run>+<short-sha>'),
+    );
+    expect(
+      docs,
+      contains('Android / Windows debug/beta workflow 的 `github.run_number`'),
+    );
+    expect(
+      docs,
+      contains('不能跨平台当作同一条可比较版本序列'),
+    );
+    expect(
+      docs,
+      contains('客户端自装平台必须先按本平台 asset 过滤 release'),
     );
     expect(
       docs,
