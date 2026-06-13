@@ -1619,5 +1619,7 @@
     "app_ui_scale_mode": "UI size mode",
     "app_ui_scale_mode_hint": "Choose automatic sizing for this screen or use your custom percentage.",
     "app_ui_scale_auto": "Automatic",
-    "app_ui_scale_custom": "Custom"
+    "app_ui_scale_custom": "Custom",
+    "video_setting_seek_seconds": "Seek seconds",
+    "section_video_danmaku": "Danmaku"
 }

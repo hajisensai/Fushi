@@ -40,6 +40,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/VPAL (Vertical Alt)': 'test/reader/reader_content_styles_test.dart',
   'appearance/Design System': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
+  // app_ui_scale_mode (fixed/auto) round-trips through ThemeNotifier.appUiScaleMode,
+  // probed in theme_notifier_test.dart alongside the UI size slider.
+  'appearance/UI size mode': 'test/models/theme_notifier_test.dart',
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
@@ -83,6 +86,36 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_window_aspect_lock_static_test.dart',
   'video/Blur subtitles (immersion)':
       'test/media/video/video_subtitle_overlay_test.dart + test/shortcuts/video_shortcut_registry_test.dart',
+  // TODO-286: pref-only video settings surfaced in home settings for parity with
+  // the in-player sheet. Schema coverage here proves focus/change/persist/restore
+  // through the DB; the runtime effect of each underlying config is guarded by the
+  // model round-trip / apply tests below (they all flow into the controller on the
+  // next play via applyMpvConfigToPlayer / VideoSubtitleOverlay / asb config).
+  'video/Long-press speed':
+      'test/media/video/video_asbplayer_config_test.dart + test/pages/video_settings_schema_guard_test.dart',
+  'video/Seek seconds':
+      'test/media/video/video_asbplayer_config_test.dart + test/media/video/video_seek_relative_test.dart',
+  'video/Subtitle Pause Playback Mode':
+      'test/media/video/video_asbplayer_config_test.dart',
+  'video/Quality enhancement':
+      'test/media/video/video_mpv_config_test.dart + test/media/video/video_shader_manager_test.dart',
+  'video/Hardware decoding': 'test/media/video/video_mpv_config_test.dart',
+  'video/Debanding': 'test/media/video/video_mpv_config_test.dart',
+  'video/Loop file': 'test/media/video/video_mpv_config_test.dart',
+  'video/Font size':
+      'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_overlay_test.dart',
+  'video/Font weight':
+      'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_font_consistency_test.dart',
+  'video/Shadow': 'test/media/video/video_subtitle_style_test.dart',
+  'video/Background opacity': 'test/media/video/video_subtitle_style_test.dart',
+  'video/Vertical position':
+      'test/media/video/video_subtitle_style_test.dart + test/pages/video_subtitle_push_up_guard_test.dart',
+  'video/Show danmaku':
+      'test/media/video/video_danmaku_settings_test.dart + test/pages/video_danmaku_wiring_guard_test.dart',
+  'video/Online Dandanplay match':
+      'test/media/video/video_danmaku_settings_test.dart + test/pages/video_danmaku_wiring_guard_test.dart',
+  'video/Active danmaku limit':
+      'test/media/video/video_danmaku_settings_test.dart + test/media/video/video_danmaku_layout_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',

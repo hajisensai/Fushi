@@ -1619,5 +1619,7 @@
     "app_ui_scale_mode": "界面大小模式",
     "app_ui_scale_mode_hint": "按当前设备和窗口自动设置界面大小，也可切换为自定义百分比。",
     "app_ui_scale_auto": "自动",
-    "app_ui_scale_custom": "自定义"
+    "app_ui_scale_custom": "自定义",
+    "video_setting_seek_seconds": "快进/快退步长（秒）",
+    "section_video_danmaku": "弹幕"
 }
