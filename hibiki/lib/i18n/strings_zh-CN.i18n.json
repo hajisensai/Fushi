@@ -1620,5 +1620,10 @@
     "app_ui_scale_mode_hint": "按当前设备和窗口自动设置界面大小，也可切换为自定义百分比。",
     "app_ui_scale_auto": "自动",
     "app_ui_scale_custom": "自定义",
-    "anki_error_collection_unavailable": "AnkiDroid 数据库当前不可用：请先打开 AnkiDroid 至少一次，确认它没有在同步且已开启 API，然后重试。"
+    "anki_error_collection_unavailable": "AnkiDroid 数据库当前不可用：请先打开 AnkiDroid 至少一次，确认它没有在同步且已开启 API，然后重试。",
+    "video_bottom_seek_back": "后退 10 秒",
+    "video_bottom_seek_forward": "前进 10 秒",
+    "video_bottom_prev_cue": "上一句字幕（无字幕则后退一段）",
+    "video_bottom_next_cue": "下一句字幕（无字幕则前进一段）",
+    "video_bottom_play_pause": "播放 / 暂停"
 }

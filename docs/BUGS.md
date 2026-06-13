@@ -27,11 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 241 条。点号进各自文件。
+> 共 245 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-249](bugs/BUG-249-reader-font-size-cap-64.md) | ✅ | ✅ | 阅读器正文字号最大只能调到 64（TODO-299「为什么字体大小只有64最大」） |
+| [BUG-248](bugs/BUG-248-video-volume-squeeze-and-duplicate-settings.md) | ✅ | ✅ | 桌面音量按钮挤走全屏键 + 顶栏设置入口与右栏重复 (TODO-283) |
+| [BUG-247](bugs/BUG-247-video-bottom-bar-tooltips.md) | ✅ | ✅ | 视频底栏 5 个按钮缺 tooltip (TODO-282) |
+| [BUG-246](bugs/BUG-246-video-settings-triggers-fullscreen.md) | ✅ | ✅ | 调视频设置侧栏时误触发全屏 (TODO-275) |
+| [BUG-245](bugs/BUG-245-video-subtitle-list-double-title.md) | ✅ | ✅ | 视频字幕列表侧栏出现两个标题 (TODO-280) |
 | [BUG-244](bugs/BUG-244-reader-audio-buttons-md3-frame.md) | ✅ | ✅ | 阅读器有声书音频控制键被改成扁平样式，需还原「图标 + 圆框 md3」旧观感（TODO-297） |
 | [BUG-242](bugs/BUG-242-video-category-tag-naming.md) | ✅ | ✅ | 制卡「添加来源分类标签」开关提示把视频写成 anime/动漫 |
 | [BUG-241](bugs/BUG-241-ankidroid-collection-unavailable.md) | ✅ | ✅ | 从 AnkiDroid 获取时显示 "collection is not available" |

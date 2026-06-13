@@ -1620,5 +1620,10 @@
     "app_ui_scale_mode_hint": "Choose automatic sizing for this screen or use your custom percentage.",
     "app_ui_scale_auto": "Automatic",
     "app_ui_scale_custom": "Custom",
-    "anki_error_collection_unavailable": "AnkiDroid's collection is currently unavailable. Open AnkiDroid at least once, make sure it isn't syncing and the API is enabled, then retry."
+    "anki_error_collection_unavailable": "AnkiDroid's collection is currently unavailable. Open AnkiDroid at least once, make sure it isn't syncing and the API is enabled, then retry.",
+    "video_bottom_seek_back": "Back 10s",
+    "video_bottom_seek_forward": "Forward 10s",
+    "video_bottom_prev_cue": "Previous subtitle (back a bit if none)",
+    "video_bottom_next_cue": "Next subtitle (forward a bit if none)",
+    "video_bottom_play_pause": "Play / Pause"
 }
