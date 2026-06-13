@@ -3248,6 +3248,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 安全区）而非 `padding`（会被 immersive 模式抹平），且不受软键盘弹出影响。
   double _videoBottomSystemInset() => MediaQuery.of(context).viewPadding.bottom;
 
+  /// 字幕动态避让的「进度条上缘」高度（BUG-238）：控制条可见时字幕底缘对它取下限
+  /// （`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条
+  /// 几何加总（同名 getter 已 ×[_videoUiScale]），故随界面缩放一起变大——旧默认常量 56
+  /// 既不随缩放、又低于默认基线 75，移动端 `max(75,56)=75` 把字幕留在被抬高的进度条
+  /// 下面被遮。桌面进度条骑按钮行上沿 → 只让一个按钮行高（保 BUG-228 观感）；移动端
+  /// 进度条整体被 [_mobileControlsTheme] 抬到按钮行上方 → 让出其热区上缘（≈140×缩放）。
+  double _subtitleControlsBottomReserve() {
+    return videoSubtitleControlsReserve(
+      isDesktop: _isDesktopVideoControls,
+      buttonBarHeight: _videoButtonBarHeight,
+      seekBarButtonGap: _videoSeekBarButtonGap,
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      bottomChromeBaseline: _videoBottomChromeBaseline,
+      bottomSystemInset: _videoBottomSystemInset(),
+    );
+  }
+
   /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化
   /// 到 VideoBook.delayMs（换集复用、跨重启保留）+ 刷新面板显示。
   Future<void> _setDelayMs(int delayMs) async {
@@ -5038,10 +5055,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     ),
                     backgroundOpacity: _subtitleStyle.backgroundOpacity,
                     bottomPadding: _subtitleStyle.bottomPadding,
-                    // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕在用户位置
-                    // 之上额外上顶 kVideoControlsBottomReserve、隐藏落回。全屏复用同一
-                    // builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
+                    // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕底缘对
+                    // 进度条上缘取下限（max，非加法——BUG-226 防顶飞）、隐藏落回。全屏
+                    // 复用同一 builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
                     controlsVisible: _videoControlsVisible,
+                    // 进度条上缘距视频底边的真实高度（按平台控制条几何加总 + 随界面
+                    // 缩放，BUG-238）。旧默认常量 56 既不随缩放、又低于默认基线 75 →
+                    // 移动端 `max(75, 56)=75` 把字幕留在被抬高的进度条下面被遮（用户报
+                    // 「只动一点点」）。显式传入真实几何，移动端 reserve ≈ 140×缩放 >
+                    // 75 才真正抬升盖过进度条；桌面仍只让一个按钮行高（保 BUG-228 观感）。
+                    controlsBottomReserve: _subtitleControlsBottomReserve(),
                     fontFamily: appModel.appFontFamily,
                   ),
                 ),

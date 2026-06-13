@@ -213,6 +213,79 @@ void main() {
     });
   });
 
+  group('videoSubtitleControlsReserve 按平台真实几何 + 随缩放（BUG-238）', () {
+    // 视频页控制条几何基线（×1.0）：与 video_hibiki_page.dart 同名常量保持一致。
+    const double buttonBarBase = 56;
+    const double seekGapBase = 8;
+    const double seekContainerBase = 52;
+    const double chromeBaseline = 24; // 不随缩放的离底基线常量。
+
+    double mobileReserve(double scale) => videoSubtitleControlsReserve(
+          isDesktop: false,
+          buttonBarHeight: buttonBarBase * scale,
+          seekBarButtonGap: seekGapBase * scale,
+          seekBarContainerHeight: seekContainerBase * scale,
+          bottomChromeBaseline: chromeBaseline,
+          bottomSystemInset: 0,
+        );
+    double desktopReserve(double scale) => videoSubtitleControlsReserve(
+          isDesktop: true,
+          buttonBarHeight: buttonBarBase * scale,
+          seekBarButtonGap: seekGapBase * scale,
+          seekBarContainerHeight: seekContainerBase * scale,
+          bottomChromeBaseline: chromeBaseline,
+          bottomSystemInset: 0,
+        );
+
+    test('移动端 reserve = 进度条上缘高度（基线 + 按钮行 + 间距 + 热区）且 > 默认基线 75', () {
+      // 旧常量 56 < 默认基线 75 → max(75,56)=75 把字幕留在被抬高的移动进度条下面被遮
+      // （用户报「只动一点点」=实际 0）。真实几何 reserve 必须盖过进度条上缘且 > 75，
+      // 取下限 max(75, reserve) 才真正抬升字幕盖过进度条。
+      // scale=1.0：24 + 56 + 8 + 52 = 140。
+      expect(mobileReserve(1.0), closeTo(140, 0.001));
+      expect(mobileReserve(1.0),
+          greaterThan(VideoSubtitleStyle.defaults.bottomPadding),
+          reason: '移动 reserve 必须 > 默认基线 75，否则 max 不抬升、字幕被进度条遮（根因）');
+      // 防回退：撤回成旧常量 56 → 本条红（56 < 75）。
+      expect(mobileReserve(1.0), greaterThan(kVideoControlsBottomReserve),
+          reason: '真实几何 reserve 应远大于旧的常量 56');
+    });
+
+    test('系统底部 inset 计入移动 reserve（导航条唤回时进度条随之上移）', () {
+      // 唤回手势导航条时进度条整体上移，字幕避让也要跟着抬高。
+      expect(mobileReserve(1.0) + 48, closeTo(140 + 48, 0.001));
+      final double withInset = videoSubtitleControlsReserve(
+        isDesktop: false,
+        buttonBarHeight: buttonBarBase,
+        seekBarButtonGap: seekGapBase,
+        seekBarContainerHeight: seekContainerBase,
+        bottomChromeBaseline: chromeBaseline,
+        bottomSystemInset: 48,
+      );
+      expect(withInset, closeTo(140 + 48, 0.001));
+    });
+
+    test('reserve 随界面缩放放大（缩放敏感几何项 ×scale）', () {
+      // 旧常量 56 恒定不随缩放，放大界面后控制条变高、reserve 不变 → 盖不住（根因之二）。
+      // 缩放敏感项（按钮行/间距/热区）随 scale 放大；离底基线常量不随缩放。
+      expect(mobileReserve(2.0), greaterThan(mobileReserve(1.0)),
+          reason: 'reserve 必须随界面缩放变大，否则放大界面后盖不住进度条');
+      // scale=2.0：24 + (56+8+52)*2 = 24 + 232 = 256。
+      expect(mobileReserve(2.0), closeTo(256, 0.001));
+      // 桌面也随缩放：一个按钮行高 ×scale。
+      expect(desktopReserve(2.0), greaterThan(desktopReserve(1.0)));
+      expect(desktopReserve(2.0), closeTo(112, 0.001)); // 56 * 2.0
+    });
+
+    test('桌面 reserve = 一个按钮行高（进度条骑按钮行上沿，保 BUG-228 观感）', () {
+      // 桌面进度条用 Transform.translate 骑在按钮行上沿，只需让出一个按钮行高；
+      // 默认基线 75 已在其上（scale 1.0 时 max(75,56)=75），不被多抬（BUG-228）。
+      expect(desktopReserve(1.0), closeTo(56, 0.001));
+      expect(desktopReserve(1.0), lessThan(mobileReserve(1.0)),
+          reason: '桌面 reserve 应小于移动（桌面进度条没被抬高）');
+    });
+  });
+
   test('decode clamps out-of-range', () {
     final VideoSubtitleStyle s = VideoSubtitleStyle.decode(
         '{"fontSize":999,"fontWeight":9999,"shadowThickness":999,'
