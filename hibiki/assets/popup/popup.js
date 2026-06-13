@@ -2186,6 +2186,81 @@ window.updatePopupIncremental = function() {
 };
 
 
+// BUG-260: finer mouse-wheel scroll granularity for the lookup popup.
+//
+// The popup has no wheel listener of its own, so wheel events fell through to
+// the WebView's native page scroll, which steps a fixed, coarse number of CSS
+// px per notch. Worse, dictionary_popup_webview injects
+// `document.documentElement.style.zoom` (popupContentZoom, follows UI scale +
+// dictionary font size): a scroll of D *layout* px moves D*zoom px on screen,
+// so any zoom>1 amplifies the already-coarse native step and each notch jumps
+// even further. Result: scrolling feels chunky, unlike a normal web page.
+//
+// Take over 'wheel' (passive:false so preventDefault works), normalize the
+// delta across deltaMode (LINE/PAGE report in lines/pages, not px), apply a
+// fraction so a single notch travels a small, smooth distance, then divide the
+// layout-px scroll amount by the current zoom so the *visual* step is the same
+// regardless of zoom (a V-px visual move needs V/zoom layout px). behavior:auto
+// keeps it crisp (no smooth-scroll lag stacking up across rapid notches).
+//
+// Inner vertically-scrollable containers (the description overlay, any glossary
+// element with its own y-overflow) keep native scroll until they hit a boundary,
+// so nested scroll regions are not stolen — only the main document scroll, which
+// is the coarse one, is refined.
+const POPUP_WHEEL_PIXEL_FACTOR = 0.35; // fraction of the raw px delta per notch
+const POPUP_WHEEL_LINE_HEIGHT = 16;    // px per line for deltaMode === LINE
+function popupCurrentZoom() {
+    const z = parseFloat(document.documentElement.style.zoom);
+    return (Number.isFinite(z) && z > 0) ? z : 1;
+}
+// Normalize a wheel delta (any axis) to CSS pixels, accounting for deltaMode.
+function popupWheelDeltaToPixels(delta, deltaMode, pageExtent) {
+    if (deltaMode === 1 /* DOM_DELTA_LINE */) {
+        return delta * POPUP_WHEEL_LINE_HEIGHT;
+    }
+    if (deltaMode === 2 /* DOM_DELTA_PAGE */) {
+        return delta * (pageExtent || POPUP_WHEEL_LINE_HEIGHT);
+    }
+    return delta; // DOM_DELTA_PIXEL
+}
+// Walk up from the event target looking for an ancestor that can still consume
+// this vertical wheel natively (it scrolls on Y and is not yet at the boundary
+// in the wheel's direction). If found we leave the event alone.
+function popupAncestorAbsorbsVerticalWheel(target, deltaPx) {
+    let node = (target && target.nodeType === Node.TEXT_NODE)
+        ? target.parentElement : target;
+    while (node && node !== document.body && node !== document.documentElement) {
+        const style = window.getComputedStyle(node);
+        const oy = style.overflowY;
+        const canScrollY = (oy === 'auto' || oy === 'scroll') &&
+            node.scrollHeight > node.clientHeight + 1;
+        if (canScrollY) {
+            const atTop = node.scrollTop <= 0;
+            const atBottom =
+                node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
+            if ((deltaPx < 0 && !atTop) || (deltaPx > 0 && !atBottom)) {
+                return true;
+            }
+        }
+        node = node.parentElement;
+    }
+    return false;
+}
+document.addEventListener('wheel', (e) => {
+    // Ignore zoom gestures (ctrl+wheel / pinch) and pure horizontal scroll.
+    if (e.ctrlKey) return;
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    const deltaPx = popupWheelDeltaToPixels(e.deltaY, e.deltaMode, window.innerHeight);
+    if (deltaPx === 0) return;
+    if (popupAncestorAbsorbsVerticalWheel(e.target, deltaPx)) return;
+    e.preventDefault();
+    // Divide by zoom so the on-screen step is zoom-independent; scale by the
+    // fraction so each notch is a small, smooth move.
+    const step = (deltaPx * POPUP_WHEEL_PIXEL_FACTOR) / popupCurrentZoom();
+    window.scrollBy({ top: step, behavior: 'auto' });
+}, { passive: false });
+
+
 let _popupMouseDownPos = null;
 document.addEventListener('mousedown', (e) => {
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
