@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,7 +20,9 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import app.hibiki.reader.constants.ChannelNames;
@@ -60,6 +63,8 @@ public class AnkiChannelHandler {
                 final String back = call.argument("back");
                 final String css = call.argument("css");
                 final String deckName = call.argument("deckName");
+                final Number noteIdArg = call.argument("noteId");
+                final Map<String, String> fieldValues = call.argument("fieldValues");
 
                 switch (call.method) {
                     case "addNote":
@@ -70,11 +75,56 @@ public class AnkiChannelHandler {
                             result.error("INVALID_FIELDS",
                                 "fields is null or empty", null);
                         } else {
-                            String addError = addNote(model, deck, fields, tags);
-                            if (addError != null) {
-                                result.error("ADD_NOTE_FAILED", addError, null);
-                            } else {
-                                result.success("Added note");
+                            try {
+                                // TODO-270 B：返回新建 note 的真实 id（Long），供
+                                // Dart 端 MineOutcome.success(noteId:) 携带，弹窗据此
+                                // 进入「最新可改」第三态、后续 updateNoteFields 覆盖。
+                                Long newNoteId = addNote(model, deck, fields, tags);
+                                if (newNoteId == null) {
+                                    result.error("ADD_NOTE_FAILED",
+                                        "AnkiDroid returned no note id "
+                                            + "(duplicate or note type not found)",
+                                        null);
+                                } else {
+                                    result.success(newNoteId);
+                                }
+                            } catch (IllegalStateException e) {
+                                // addNote throws this when the note type is missing.
+                                result.error("ADD_NOTE_FAILED", e.getMessage(), null);
+                            }
+                        }
+                        break;
+                    case "notesInfo":
+                        // TODO-270 C2：读取一个 note 的现有字段（字段名 -> 值）。
+                        if (noteIdArg == null) {
+                            result.error("MISSING_ARG", "noteId is required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                result.success(notesInfo(noteIdArg.longValue()));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
+                                    e.getMessage(), null);
+                            }
+                        }
+                        break;
+                    case "updateNoteFields":
+                        // TODO-270 C2：按 noteId 覆盖给定字段（名 -> 值），其余字段保留。
+                        if (noteIdArg == null || fieldValues == null) {
+                            result.error("MISSING_ARG",
+                                "noteId and fieldValues are required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                String updateError = updateNoteFields(
+                                    noteIdArg.longValue(), fieldValues);
+                                if (updateError != null) {
+                                    result.error("UPDATE_NOTE_FAILED",
+                                        updateError, null);
+                                } else {
+                                    result.success(null);
+                                }
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
+                                    e.getMessage(), null);
                             }
                         }
                         break;
@@ -243,8 +293,19 @@ public class AnkiChannelHandler {
         return true;
     }
 
-    private String addNote(String model, String deck,
-                           ArrayList<String> fields, ArrayList<String> tags) {
+    /**
+     * Adds a note via {@link AddContentApi#addNote} and returns the new note id.
+     *
+     * <p>TODO-270 B: AnkiDroid addNote returns the {@code Long} id of the newly
+     * created note (or {@code null} if it refused to create one - e.g. a
+     * duplicate the collection rejected). We surface that id all the way back to
+     * {@code MineOutcome.noteId} so the popup can later overwrite this exact note
+     * by id (symmetric with the AnkiConnect backend).
+     *
+     * @throws IllegalStateException if the note type cannot be found.
+     */
+    private Long addNote(String model, String deck,
+                         ArrayList<String> fields, ArrayList<String> tags) {
         final AddContentApi api = new AddContentApi(activity);
 
         long deckId;
@@ -257,7 +318,7 @@ public class AnkiChannelHandler {
 
         Long modelIdObj = ankiDroid.findModelIdByName(model, fields.size());
         if (modelIdObj == null) {
-            return "Note type not found: " + model;
+            throw new IllegalStateException("Note type not found: " + model);
         }
         long modelId = modelIdObj;
 
@@ -270,8 +331,119 @@ public class AnkiChannelHandler {
             allTags.addAll(tags);
         }
 
-        api.addNote(modelId, deckId, fields.toArray(new String[0]), allTags);
-        return null;
+        return api.addNote(modelId, deckId, fields.toArray(new String[0]), allTags);
+    }
+
+    /**
+     * TODO-270 C2: reads an existing note's fields as a {@code name -> value}
+     * map (symmetric with the AnkiConnect notesInfo contract).
+     *
+     * <p>AnkiDroid is positional: {@link NoteInfo#getFields()} is an array in the
+     * note's model field order, with no field names attached. We resolve the
+     * note's model id (via the {@code Note.MID} column) and zip its field-name
+     * list ({@link AddContentApi#getFieldList}) with the positional values.
+     *
+     * @return {@code name -> value} (insertion-ordered by field order), or
+     *         {@code null} if the note no longer exists / its model is gone.
+     */
+    private Map<String, String> notesInfo(long noteId) {
+        final AddContentApi api = new AddContentApi(activity);
+        NoteInfo note = api.getNote(noteId);
+        if (note == null) {
+            return null;
+        }
+        String[] fieldNames = fieldNamesForNote(api, noteId);
+        if (fieldNames == null) {
+            return null;
+        }
+        String[] values = note.getFields();
+        Map<String, String> result = new LinkedHashMap<>();
+        for (int i = 0; i < fieldNames.length && i < values.length; i++) {
+            result.put(fieldNames[i], values[i] == null ? "" : values[i]);
+        }
+        return result;
+    }
+
+    /**
+     * TODO-270 C2: overwrites only the given fields of an existing note,
+     * preserving every field the caller did not name (symmetric with the
+     * AnkiConnect updateNoteFields contract).
+     *
+     * <p>{@link AddContentApi#updateNoteFields} takes a positional
+     * {@code String[]} keyed by the model's field order. We start from the note's
+     * current values and overwrite only the named ones, so unspecified fields are
+     * not cleared.
+     *
+     * @return {@code null} on success, or a human-readable error string when the
+     *         note / its model cannot be found or AnkiDroid refused the update.
+     */
+    private String updateNoteFields(long noteId, Map<String, String> fieldValues) {
+        final AddContentApi api = new AddContentApi(activity);
+        NoteInfo note = api.getNote(noteId);
+        if (note == null) {
+            return "Note not found: " + noteId;
+        }
+        String[] fieldNames = fieldNamesForNote(api, noteId);
+        if (fieldNames == null) {
+            return "Note type not found for note: " + noteId;
+        }
+        // Start from the existing values so unspecified fields are preserved
+        // (overwrite-given-fields-only semantics).
+        String[] existing = note.getFields();
+        String[] merged = new String[fieldNames.length];
+        for (int i = 0; i < fieldNames.length; i++) {
+            String value = fieldValues.get(fieldNames[i]);
+            if (value != null) {
+                merged[i] = value;
+            } else if (i < existing.length && existing[i] != null) {
+                merged[i] = existing[i];
+            } else {
+                merged[i] = "";
+            }
+        }
+        boolean ok = api.updateNoteFields(noteId, merged);
+        return ok ? null : "AnkiDroid rejected the field update for note " + noteId;
+    }
+
+    /**
+     * Resolves the field-name list (in field order) for the model that owns
+     * noteId. {@link NoteInfo} carries no model id, so we read the note's
+     * {@code Note.MID} column from the ContentProvider, then ask
+     * {@link AddContentApi#getFieldList} for that model's field names.
+     *
+     * @return the field names in order, or {@code null} if the note / model is
+     *         not resolvable.
+     */
+    private String[] fieldNamesForNote(AddContentApi api, long noteId) {
+        Long modelId = modelIdForNote(noteId);
+        if (modelId == null) {
+            return null;
+        }
+        return api.getFieldList(modelId);
+    }
+
+    /**
+     * Reads the {@code mid} (model id) column of a note from AnkiDroid's
+     * {@link FlashCardsContract.Note} ContentProvider. Returns {@code null} if
+     * the note does not exist or the provider yields no row.
+     */
+    private Long modelIdForNote(long noteId) {
+        ContentResolver resolver = activity.getContentResolver();
+        Uri noteUri = Uri.withAppendedPath(
+            FlashCardsContract.Note.CONTENT_URI, Long.toString(noteId));
+        try (Cursor cursor = resolver.query(
+                noteUri,
+                new String[]{FlashCardsContract.Note.MID},
+                null, null, null)) {
+            if (cursor == null || !cursor.moveToFirst()) {
+                return null;
+            }
+            int midIndex = cursor.getColumnIndex(FlashCardsContract.Note.MID);
+            if (midIndex < 0 || cursor.isNull(midIndex)) {
+                return null;
+            }
+            return cursor.getLong(midIndex);
+        }
     }
 
     private boolean checkForDuplicates(ArrayList<String> models, String key,
