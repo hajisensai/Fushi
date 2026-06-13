@@ -1581,5 +1581,12 @@
     "custom_fonts_catalog_title": "字体库",
     "startup_default_dictionary_tab": "启动时打开查词",
     "startup_default_dictionary_tab_hint": "应用开屏后直接显示查词页；关闭时保留当前默认首页。",
-    "backup_category_videos": "视频"
+    "backup_category_videos": "视频",
+    "video_settings_cat_danmaku": "弹幕",
+    "video_setting_danmaku_enabled": "显示弹幕",
+    "video_setting_danmaku_enabled_hint": "在视频上渲染本地或在线匹配的弹幕，不阻挡播放器操作。",
+    "video_setting_danmaku_online": "在线匹配 Dandanplay",
+    "video_setting_danmaku_online_hint": "没有可用本地 sidecar 时，用 Dandanplay 匹配当前视频并拉取关联弹幕。",
+    "video_setting_danmaku_max_active": "同时显示上限",
+    "video_setting_danmaku_max_active_hint": "限制每帧渲染的弹幕数量，避免大文件拖慢播放。"
 }

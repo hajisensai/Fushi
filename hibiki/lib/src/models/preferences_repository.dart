@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -445,6 +446,51 @@ class PreferencesRepository extends ChangeNotifier {
   Future<void> setVideoSubtitleBlur(bool value) async {
     await setPref('video_subtitle_blur', value);
     notifyListeners();
+  }
+
+  /// 视频弹幕 overlay 开关：默认开启，只在有本地/在线弹幕源时显示。
+  bool get videoDanmakuEnabled =>
+      getPref('video_danmaku_enabled', defaultValue: true) as bool;
+
+  Future<void> setVideoDanmakuEnabled(bool value) async {
+    await setPref('video_danmaku_enabled', value);
+    notifyListeners();
+  }
+
+  /// 是否在本地 sidecar 不可用时尝试在线 Dandanplay 精确匹配。
+  bool get videoDanmakuOnlineEnabled =>
+      getPref('video_danmaku_online_enabled', defaultValue: true) as bool;
+
+  Future<void> setVideoDanmakuOnlineEnabled(bool value) async {
+    await setPref('video_danmaku_online_enabled', value);
+    notifyListeners();
+  }
+
+  int get videoDanmakuMaxActive => normalizeVideoDanmakuMaxActive(
+        getPref(
+          'video_danmaku_max_active',
+          defaultValue: kDefaultVideoDanmakuMaxActive,
+        ) as int,
+      );
+
+  Future<void> setVideoDanmakuMaxActive(int value) async {
+    await setPref(
+      'video_danmaku_max_active',
+      normalizeVideoDanmakuMaxActive(value),
+    );
+    notifyListeners();
+  }
+
+  int? getVideoDanmakuEpisodeId(String bookUid) {
+    final int value = getPref(
+      'video_danmaku_episode/$bookUid',
+      defaultValue: 0,
+    ) as int;
+    return value > 0 ? value : null;
+  }
+
+  Future<void> setVideoDanmakuEpisodeId(String bookUid, int episodeId) async {
+    await setPref('video_danmaku_episode/$bookUid', episodeId);
   }
 
   /// 桌面视频页按视频原始比例锁定原生窗口；移动端窗口不可改尺寸，不使用此项。

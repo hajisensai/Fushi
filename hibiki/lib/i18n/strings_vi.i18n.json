@@ -1581,5 +1581,12 @@
     "custom_fonts_catalog_title": "Font library",
     "startup_default_dictionary_tab": "Open lookup on startup",
     "startup_default_dictionary_tab_hint": "Start the home screen on the lookup tab instead of the current default.",
-    "backup_category_videos": "Videos"
+    "backup_category_videos": "Videos",
+    "video_settings_cat_danmaku": "Danmaku",
+    "video_setting_danmaku_enabled": "Show danmaku",
+    "video_setting_danmaku_enabled_hint": "Render local or matched danmaku over the video without blocking controls.",
+    "video_setting_danmaku_online": "Online Dandanplay match",
+    "video_setting_danmaku_online_hint": "When no usable local sidecar exists, match the opened video with Dandanplay and fetch related comments.",
+    "video_setting_danmaku_max_active": "Active danmaku limit",
+    "video_setting_danmaku_max_active_hint": "Caps comments rendered per frame to keep large files responsive."
 }

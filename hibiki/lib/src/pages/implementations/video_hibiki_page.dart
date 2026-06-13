@@ -21,11 +21,15 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
 import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
+import 'package:hibiki/src/media/video/video_danmaku_model.dart';
+import 'package:hibiki/src/media/video/video_danmaku_overlay.dart';
+import 'package:hibiki/src/media/video/video_danmaku_source.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -412,6 +416,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VideoPlayerController? _controller;
   bool _failed = false;
   String? _title;
+  List<VideoDanmakuItem> _danmakuItems = const <VideoDanmakuItem>[];
+  int _danmakuLoadSeq = 0;
 
   /// 顶栏标题的响应式来源（BUG-120）。顶栏文字渲染在 media_kit 控制条主题里，全屏是
   /// 推到根 navigator 的独立路由、进入时**快照捕获**当时的主题（含标题字符串），页面
@@ -1112,6 +1118,120 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  Future<void> _loadDanmakuForVideo(String? videoPath) async {
+    final int seq = ++_danmakuLoadSeq;
+    if (mounted) {
+      setState(() => _danmakuItems = const <VideoDanmakuItem>[]);
+    }
+    if (videoPath == null || !appModel.videoDanmakuEnabled) return;
+
+    final String? sidecarPath = findDanmakuSidecar(videoPath);
+    if (sidecarPath != null) {
+      final VideoDanmakuLoadResult local =
+          await loadDanmakuSidecarFile(File(sidecarPath));
+      if (seq != _danmakuLoadSeq || !mounted) return;
+      if (local.tooLarge) {
+        debugPrint(
+          '[VideoDanmaku] local sidecar too large: ${local.sourcePath}',
+        );
+      } else if (local.items.isNotEmpty) {
+        setState(() => _danmakuItems = local.items);
+        debugPrint(
+          '[VideoDanmaku] loaded ${local.items.length} local comments '
+          'from ${local.sourcePath}',
+        );
+        return;
+      } else if (local.error != null) {
+        debugPrint('[VideoDanmaku] local sidecar parse failed: ${local.error}');
+      }
+    }
+
+    if (!appModel.videoDanmakuOnlineEnabled) return;
+    final File file = File(videoPath);
+    if (!file.existsSync()) return;
+    final DandanplayClient client = DandanplayClient();
+    try {
+      DandanplayFetchResult result;
+      final int? savedEpisodeId =
+          appModel.getVideoDanmakuEpisodeId(widget.bookUid);
+      if (savedEpisodeId != null) {
+        final DandanplayMatch cached =
+            DandanplayMatch(episodeId: savedEpisodeId);
+        final List<VideoDanmakuItem> cachedItems =
+            await client.fetchCommentsForMatch(cached);
+        if (cachedItems.isNotEmpty) {
+          result = DandanplayFetchResult(
+            status: DandanplayFetchStatus.hit,
+            items: cachedItems,
+            match: cached,
+          );
+        } else {
+          result = await client.fetchBestDanmakuForFile(file);
+        }
+      } else {
+        result = await client.fetchBestDanmakuForFile(file);
+      }
+      if (seq != _danmakuLoadSeq || !mounted) return;
+      if (result.status == DandanplayFetchStatus.hit &&
+          result.items.isNotEmpty) {
+        final int? episodeId = result.match?.episodeId;
+        if (episodeId != null) {
+          await appModel.setVideoDanmakuEpisodeId(widget.bookUid, episodeId);
+        }
+        if (seq != _danmakuLoadSeq || !mounted) return;
+        setState(() => _danmakuItems = result.items);
+        debugPrint(
+          '[VideoDanmaku] loaded ${result.items.length} Dandanplay comments '
+          'episode=${episodeId ?? savedEpisodeId}',
+        );
+      } else {
+        debugPrint(
+          '[VideoDanmaku] online fallback: ${result.status} '
+          'matches=${result.matches.length}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[VideoDanmaku] online load failed: $e');
+    } finally {
+      client.close();
+    }
+  }
+
+  void _clearDanmakuForCurrentVideo() {
+    ++_danmakuLoadSeq;
+    if (!mounted) {
+      _danmakuItems = const <VideoDanmakuItem>[];
+      return;
+    }
+    setState(() => _danmakuItems = const <VideoDanmakuItem>[]);
+  }
+
+  Future<void> _setVideoDanmakuEnabled(bool value) async {
+    await appModel.setVideoDanmakuEnabled(value);
+    if (!mounted) return;
+    if (value) {
+      unawaited(_loadDanmakuForVideo(_currentVideoPath));
+    } else {
+      _clearDanmakuForCurrentVideo();
+    }
+  }
+
+  Future<void> _setVideoDanmakuOnlineEnabled(bool value) async {
+    await appModel.setVideoDanmakuOnlineEnabled(value);
+    if (!mounted) return;
+    if (appModel.videoDanmakuEnabled) {
+      unawaited(_loadDanmakuForVideo(_currentVideoPath));
+    } else {
+      setState(() {});
+    }
+  }
+
+  Future<void> _setVideoDanmakuMaxActive(int value) async {
+    await appModel.setVideoDanmakuMaxActive(value);
+    if (!mounted) return;
+    setState(() {});
+  }
+
   Future<List<AudioCue>> _loadExternalSubtitleCues(
     String path,
     String bookUid,
@@ -1203,6 +1323,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // embedded subtitles on the first switch. Start the shared cache fill
       // only after playback has opened so UI/video startup is not blocked.
       unawaited(prewarmEmbeddedSubtitleCache(videoPath));
+      unawaited(_loadDanmakuForVideo(videoPath));
+    } else {
+      unawaited(_loadDanmakuForVideo(null));
     }
 
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
@@ -3527,6 +3650,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onVideoFitModeChanged: _setVideoFitMode,
       initialImmersiveMode: appModel.videoImmersiveMode,
       onImmersiveModeChanged: appModel.setVideoImmersiveMode,
+      initialDanmakuEnabled: appModel.videoDanmakuEnabled,
+      initialDanmakuOnlineEnabled: appModel.videoDanmakuOnlineEnabled,
+      initialDanmakuMaxActive: appModel.videoDanmakuMaxActive,
+      onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
+      onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
+      onDanmakuMaxActiveChanged: _setVideoDanmakuMaxActive,
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
       initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
@@ -4598,6 +4727,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                         ),
                       );
                     },
+                  ),
+                ),
+                Positioned.fill(
+                  child: VideoDanmakuOverlay(
+                    items: _danmakuItems,
+                    enabled: appModel.videoDanmakuEnabled,
+                    maxActive: appModel.videoDanmakuMaxActive,
+                    positionMs: () => controller.positionMs ?? 0,
                   ),
                 ),
                 Positioned.fill(
