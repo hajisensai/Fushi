@@ -2010,6 +2010,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
     final int swipeDistThreshold = swipeThresholds.dist;
     final int swipeFastDistThreshold = swipeThresholds.fastDist;
+    // BUG-239: 连续模式靠原生滚动（滚动轴 = 书写轴），章间切换走边界手势 IIFE。
+    // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
+    // 原生滚动产生轴向冲突，故注入 continuousMode 标志在 _gestureEnd 内门控。
+    final bool continuousMode = s.isContinuousMode;
     final String selectionJs = ReaderSelectionScripts.source();
     final Size screenSize = MediaQuery.of(context).size;
     // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
@@ -2053,6 +2057,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   $caretJs
   $caretInit;
   $furiganaJs
+  // BUG-239: 连续模式不让 _gestureEnd 回传 onSwipe（交给原生滚动 + 边界 IIFE），
+  // 消除横向滑动 90% 跳页与原生滚动的轴向冲突；分页模式照旧水平滑动翻页。
+  var hoshiContinuousMode = $continuousMode;
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   var imageLongPressTimer = null;
   var imageLongPressConsumed = false;
@@ -2121,7 +2128,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     var absDx = Math.abs(dx);
     var absDy = Math.abs(dy);
     var velocity = absDx / Math.max(1, elapsed) * 1000;
-    if (absDx > absDy && (absDx >= $swipeDistThreshold || (absDx >= $swipeFastDistThreshold && velocity >= 900))) {
+    // BUG-239: 连续模式（hoshiContinuousMode）不在此回传 onSwipe——原生滚动沿书写轴
+    // 翻屏，到边界由 onBoundarySwipe 跨章；此处的水平 onSwipe 只属分页模式。
+    if (!hoshiContinuousMode && absDx > absDy && (absDx >= $swipeDistThreshold || (absDx >= $swipeFastDistThreshold && velocity >= 900))) {
       if (e && e.preventDefault) e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');

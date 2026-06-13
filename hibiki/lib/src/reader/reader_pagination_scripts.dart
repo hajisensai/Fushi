@@ -145,11 +145,79 @@ class ReaderPaginationScripts {
     }
   }
 
+  /// BUG-240 纯谓词：分页 `paginate()` 在「这一步翻不动」时，是否应当真的跨章
+  /// （而不是被陈旧/低估的 metrics 误判成已到章节边界）。JS `_stepWithFreshMetrics`
+  /// 的 Dart 影子——给定 **settle 后重建** 的几何，判定还有没有真实可滚动整页。
+  ///
+  /// 入参（均为 settle/重建后的实时几何）：
+  /// - [currentScroll]：当前对齐滚动量；
+  /// - [columnPitch]：当前 settle 后的整页步距；
+  /// - [metricsMaxScroll] / [metricsMinScroll]：重建后 `buildPaginationMetrics`
+  ///   的内容末/首页（`min(maxAlignedScroll, lastContentScroll)` 派生，可能因末列
+  ///   内容边缘低估而偏小）；
+  /// - [trueMaxScroll]：`getScrollContext().maxScroll`（DOM 实时滚动上限，含末尾
+  ///   占位空白，永不陈旧）。
+  ///
+  /// 返回 true ⇒ 真到章节首/末页，调用方可放心跨章；false ⇒ 还有整页可翻，
+  /// 不该跨章（消除「翻不动 == 到边界」的特例混淆）。forward 复核用
+  /// `max(metricsMaxScroll, trueMaxAligned)` 作容差上界，抵消内容边缘低估。
+  @visibleForTesting
+  static bool shouldCrossChapterOnLimit({
+    required ReaderNavigationDirection direction,
+    required double currentScroll,
+    required double columnPitch,
+    required double metricsMaxScroll,
+    required double metricsMinScroll,
+    required double trueMaxScroll,
+  }) {
+    if (columnPitch <= 0) return true;
+    if (direction == ReaderNavigationDirection.forward) {
+      final double trueMaxAligned =
+          (trueMaxScroll / columnPitch).floor() * columnPitch;
+      final double ceiling =
+          metricsMaxScroll > trueMaxAligned ? metricsMaxScroll : trueMaxAligned;
+      double target =
+          (currentScroll / columnPitch).floor() * columnPitch + columnPitch;
+      if (target > ceiling) target = ceiling;
+      if (target < metricsMinScroll) target = metricsMinScroll;
+      // 还有 >1px 的整页可前进 ⇒ 不跨章。
+      return target <= currentScroll + 1;
+    } else {
+      double target =
+          (currentScroll / columnPitch).ceil() * columnPitch - columnPitch;
+      if (target < metricsMinScroll) target = metricsMinScroll;
+      if (target > metricsMaxScroll) target = metricsMaxScroll;
+      return target >= currentScroll - 1;
+    }
+  }
+
   static double _clampDouble(double v, double lo, double hi) =>
       v < lo ? lo : (v > hi ? hi : v);
 
   static int _clampInt(int v, int lo, int hi) =>
       v < lo ? lo : (v > hi ? hi : v);
+
+  /// BUG-239 纯谓词：阅读器统一手势 `_gestureEnd` 检测到一次滑动后，是否应当
+  /// 回传 `onSwipe`（→ 90% 整屏翻页）。
+  ///
+  /// - **分页模式**（[continuousMode] == false）：CSS `touch-action:none` 禁掉原生
+  ///   pan，水平滑动是唯一翻页通道 → 沿用「水平滑动（`absDx > absDy`）才翻页」。
+  /// - **连续模式**（[continuousMode] == true）：靠原生滚动（滚动轴 = 书写轴），
+  ///   章间切换由边界手势 IIFE（`onBoundarySwipe`）负责。再让 `_gestureEnd` 回传
+  ///   `onSwipe` 会与原生滚动产生轴向冲突（横向滑动错误触发垂直 90% 跳页 / 沿滚动
+  ///   轴的滑动被原生滚动吞掉）→ 一律不回传，交给原生滚动 + 边界 IIFE + 按钮/键盘/
+  ///   音量键 `_paginate` 连续分支。
+  ///
+  /// JS `_gestureEnd` 用同一判定（见 setup 脚本注入的 `continuousMode` 门控）。
+  @visibleForTesting
+  static bool continuousSwipeShouldPaginate({
+    required bool continuousMode,
+    required double absDx,
+    required double absDy,
+  }) {
+    if (continuousMode) return false;
+    return absDx > absDy;
+  }
 
   static String paginateInvocation(ReaderNavigationDirection direction) =>
       "window.hoshiReader && window.hoshiReader.paginate('${direction.jsValue}')";
@@ -1138,6 +1206,39 @@ $_sharedJs
     }, 16);
     return true;
   },
+  // BUG-240：跨章 limit 的 settle 复核。已对齐 currentScroll 出发的整页步进若被
+  // 当前（可能陈旧/低估的）metrics clamp 成「翻不动」，先重建一次 metrics 拿到
+  // settle 后的真实 max/min，再用 getScrollContext().maxScroll（DOM 实时滚动上限，
+  // 永不陈旧）派生的整页末页作 1px 容差复核：只要 currentScroll 之后仍有真实可滚动
+  // 整页就放行翻页，避免「这一次没滚动」被误当「已到章节首/末页」而提前跨章。
+  // 不动 BUG-169 的 floor+1/ceil-1 步长公式，只在 limit 边缘多一道复核。
+  _stepWithFreshMetrics: function(context, direction) {
+    var metrics = this.buildPaginationMetrics();
+    var pitch = context.columnPitch;
+    var currentScroll = this.getPagePosition(context);
+    // 真末页/真首页：用实时 maxScroll 派生整页边界，metrics.maxScroll 取两者较大者，
+    // 抵消末列内容边缘被低估导致的 metrics.maxScroll 偏小。trueMaxAligned 含末尾占位
+    // 空白页 → 只作 forward 复核的容差上界，不作落点（落点仍用 metrics.maxScroll）。
+    var trueMaxAligned = Math.floor(context.maxScroll / pitch) * pitch;
+    if (direction === "forward") {
+      var maxF = Math.max(metrics.maxScroll, trueMaxAligned);
+      var targetF = (Math.floor(currentScroll / pitch) + 1) * pitch;
+      if (targetF > maxF) targetF = maxF;
+      if (targetF < metrics.minScroll) targetF = metrics.minScroll;
+      if (targetF <= currentScroll + 1) return "limit";
+      // 落点仍 clamp 到内容末页，不停在末尾空白占位页。
+      var dest = Math.min(targetF, Math.max(metrics.maxScroll, currentScroll));
+      this.setPagePosition(context, dest);
+      return "scrolled";
+    } else {
+      var targetB = (Math.ceil(currentScroll / pitch) - 1) * pitch;
+      if (targetB < metrics.minScroll) targetB = metrics.minScroll;
+      if (targetB > metrics.maxScroll) targetB = metrics.maxScroll;
+      if (targetB >= currentScroll - 1) return "limit";
+      this.setPagePosition(context, targetB);
+      return "scrolled";
+    }
+  },
   paginate: function(direction) {
     var context = this.getScrollContext();
     if (context.columnPitch <= 0) return "limit";
@@ -1156,7 +1257,9 @@ $_sharedJs
       var targetForward = (Math.floor(currentScroll / pitch) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
-      if (targetForward <= currentScroll + 1) return "limit";
+      // BUG-240：陈旧/低估的 metrics 让这一步看似翻不动时，重建 metrics + 实时 maxScroll
+      // 复核后再定夺是否真到末页，避免提前跨章。
+      if (targetForward <= currentScroll + 1) return this._stepWithFreshMetrics(context, "forward");
       this.setPagePosition(context, targetForward);
       var afterScrollF = this.getPagePosition(context);
       console.log('[HoshiPagination] paginate FORWARD: before=' + currentScroll
@@ -1168,7 +1271,8 @@ $_sharedJs
       var targetBack = (Math.ceil(currentScroll / pitch) - 1) * pitch;
       if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
-      if (targetBack >= currentScroll - 1) return "limit";
+      // BUG-240：backward 同理用 settle 后的 metrics 复核，避免低估 minScroll 提前回上一章。
+      if (targetBack >= currentScroll - 1) return this._stepWithFreshMetrics(context, "backward");
       this.setPagePosition(context, targetBack);
       var afterScrollB = this.getPagePosition(context);
       console.log('[HoshiPagination] paginate BACKWARD: before=' + currentScroll
