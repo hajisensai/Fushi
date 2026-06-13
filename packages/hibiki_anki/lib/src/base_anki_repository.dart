@@ -44,6 +44,24 @@ abstract class BaseAnkiRepository {
     required AnkiMiningContext context,
   });
 
+  /// TODO-270 D：覆盖一张**已存在**的 Hibiki 制卡（[noteId]）的字段，用同一字段
+  /// 渲染链路从 [rawPayloadJson]+[context] 生成 fields 后按 id 覆盖（不新增卡片、
+  /// 不查重）。供「刚制完卡又点 ✓」时真实 update 上一张卡片，而非删旧建新。
+  ///
+  /// **默认实现 = 优雅降级**：基类返回 [MineResult.error]，说明该后端暂不支持覆盖。
+  /// 只有能按 id 覆盖字段的后端（[AnkiConnectRepository]）才覆写它做真实更新；
+  /// AnkiDroid 后端（子任务 B/C2 延后）继承默认降级——它的 [MineOutcome.noteId]
+  /// 恒为 `null`，弹窗根本进不了「最新可改」第三态、不会调本方法，故这条降级仅作
+  /// 防御兜底（万一被调用也不崩、返回明确失败），不破坏现状（Never break userspace）。
+  Future<MineOutcome> updateMinedNote({
+    required int noteId,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async =>
+      MineOutcome.failure(
+        'This Anki backend does not support overwriting a mined card.',
+      );
+
   Future<bool> isDuplicate(String expression, String reading);
 
   /// Create [template] as a note type in the backend. Idempotent: returns

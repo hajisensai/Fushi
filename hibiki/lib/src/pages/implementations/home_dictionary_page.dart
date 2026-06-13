@@ -525,6 +525,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                         _pushNestedPopup(query, localRect, replaceStack: true);
                       },
                       onMineEntry: onMineEntry,
+                      onUpdateEntry: onUpdateEntry,
                       onDuplicateCheck: checkDuplicate,
                       onScrolledToBottom: _allLoaded ? null : _loadMore,
                       onTopPullReleased: _clearSearchFromResultPull,

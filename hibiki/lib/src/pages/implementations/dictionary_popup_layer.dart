@@ -214,6 +214,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onLinkClick,
     required this.onMineEntry,
     required this.onDuplicateCheck,
+    this.onUpdateEntry,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.isSearching = false,
@@ -245,7 +246,13 @@ class DictionaryPopupLayer extends StatelessWidget {
   final VoidCallback onDismiss;
   final void Function(String text, Rect localRect) onTextSelected;
   final void Function(String query, Rect localRect) onLinkClick;
-  final Future<bool> Function(Map<String, String> fields) onMineEntry;
+  final Future<MinePopupResult> Function(Map<String, String> fields)
+      onMineEntry;
+
+  /// TODO-270 D：覆盖「最新制的那张卡」（[noteId] + 新字段）。null 时弹窗不进
+  /// 「最新可改」第三态，点 ✓ 仍走旧的查重/再制流程（向后兼容）。
+  final Future<MinePopupResult> Function(
+      int noteId, Map<String, String> fields)? onUpdateEntry;
   final Future<bool> Function(String expression, String reading)
       onDuplicateCheck;
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
@@ -314,6 +321,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onTextSelected: onTextSelected,
             onLinkClick: onLinkClick,
             onMineEntry: onMineEntry,
+            onUpdateEntry: onUpdateEntry,
             onDuplicateCheck: onDuplicateCheck,
             onFavoriteEntry: onFavoriteEntry,
             onFavoriteCheck: onFavoriteCheck,

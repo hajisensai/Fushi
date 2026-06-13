@@ -139,6 +139,16 @@ body {
     transform: translateY(0.5px);
 }
 
+/* TODO-270 D: the "latest editable" ✓↩ — the single most-recently-mined card
+   that can be overwritten in place. Green + a slightly smaller glyph (it carries
+   the extra undo mark) + full opacity so it visibly reads as "click to fix the
+   last card", distinct from an ordinary mined ✓. */
+.mine-button.latest {
+    color: #2e9e4f;
+    opacity: 1;
+    font-size: 15px;
+}
+
 .mine-button:disabled {
     opacity: 0.15;
 }

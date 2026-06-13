@@ -512,6 +512,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// 统一 switch 处理 toast/UI）。不新增卡片、不改 tag、不查重（更新语义）。
   ///
   /// 渲染出的 fields 为空（什么都没渲染出来）时拒绝更新，避免把已有卡片清空。
+  @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
     required String rawPayloadJson,

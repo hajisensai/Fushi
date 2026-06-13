@@ -510,6 +510,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             );
           },
           onMineEntry: onMineFromPopup,
+          onUpdateEntry: onUpdateFromPopup,
           onDuplicateCheck: (expression, reading) async {
             final repo = ref.read(ankiRepositoryProvider);
             return repo.isDuplicate(expression, reading);
@@ -700,8 +701,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
-  Future<bool> onMineFromPopup(Map<String, String> fields) async {
-    return false;
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+    return const MinePopupResult();
+  }
+
+  /// TODO-270 D：覆盖「最新制的那张卡」（reader 覆写做真实更新；基类无操作）。
+  Future<MinePopupResult> onUpdateFromPopup(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    return const MinePopupResult();
   }
 
   /// Placeholder when there are no search results.

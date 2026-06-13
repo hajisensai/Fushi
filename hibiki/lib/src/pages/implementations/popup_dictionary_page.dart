@@ -245,6 +245,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           _pushSearch(query, localRect);
         },
         onMineEntry: onMineEntry,
+        onUpdateEntry: onUpdateEntry,
         onDuplicateCheck: checkDuplicate,
       ),
     );

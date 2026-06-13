@@ -18,6 +18,29 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// TODO-270 D：制卡（mineEntry）回传给弹窗 JS 的结构化结果。
+///
+/// [ankiConnect] 沿用旧的 `Future<bool>` 语义（true=AnkiConnect 同步刷新，
+/// false=AnkiDroid 延时刷新 ✓ 状态）；新增 [noteId] 带回后端 note id（仅
+/// AnkiConnect 成功制卡时非空），供 popup.js 把刚制的这张标记为「最新可改」第三态，
+/// 再点 ✓ 时按 id 走 `updateEntry` 覆盖而非新建。AnkiDroid 恒 `null` → 永远进不了
+/// 第三态（优雅降级）。失败/重复/未配置时 [noteId] 为 `null`。
+class MinePopupResult {
+  const MinePopupResult({this.ankiConnect = false, this.noteId});
+
+  /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
+  final bool ankiConnect;
+
+  /// 后端返回的 note id；仅 AnkiConnect 成功制卡时非空。
+  final int? noteId;
+
+  /// 序列化成 JS 可读的 Map（经 inappwebview callHandler 回传）。
+  Map<String, Object?> toJson() => <String, Object?>{
+        'ankiConnect': ankiConnect,
+        'noteId': noteId,
+      };
+}
+
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
@@ -26,6 +49,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onLinkClick,
     this.onTapOutside,
     this.onMineEntry,
+    this.onUpdateEntry,
     this.onDuplicateCheck,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
@@ -39,7 +63,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final void Function(String text, Rect localRect)? onTextSelected;
   final void Function(String query, Rect localRect)? onLinkClick;
   final VoidCallback? onTapOutside;
-  final Future<bool> Function(Map<String, String> fields)? onMineEntry;
+  final Future<MinePopupResult> Function(Map<String, String> fields)?
+      onMineEntry;
+
+  /// TODO-270 D：覆盖「最新制的那张卡」。[noteId] 是要覆盖的卡片 id，[fields] 是新
+  /// 内容。返回 [MinePopupResult]（成功时带回同一 [noteId]，保持 ✓ 第三态）。
+  final Future<MinePopupResult> Function(
+      int noteId, Map<String, String> fields)? onUpdateEntry;
   final Future<bool> Function(String expression, String reading)?
       onDuplicateCheck;
 
@@ -720,9 +750,39 @@ class DictionaryPopupWebViewState
               // 落盘词典媒体（gaiji）字节供 repo 嵌进卡片；必须在 onMineEntry
               // （→repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
               await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-              return widget.onMineEntry!(fields);
+              final MinePopupResult result = await widget.onMineEntry!(fields);
+              // TODO-270 D：回传结构化结果（ankiConnect + noteId）给 popup.js，
+              // 让它把刚制的这张标记为「最新可改」第三态。
+              return result.toJson();
             }
-            return false;
+            return const MinePopupResult().toJson();
+          },
+        );
+
+        // TODO-270 D：覆盖「最新制的那张卡」——popup.js 点绿 ✓ 时带 noteId+新字段
+        // 调本处理器，走 repo.updateMinedNote 按 id 真实覆盖（不删旧建新、不查重）。
+        controller.addJavaScriptHandler(
+          handlerName: 'updateEntry',
+          callback: (args) async {
+            if (args.isNotEmpty &&
+                args[0] is Map &&
+                widget.onUpdateEntry != null) {
+              final data = args[0] as Map;
+              final int? noteId = (data['noteId'] as num?)?.toInt();
+              final fieldsRaw = data['fields'];
+              if (noteId == null || fieldsRaw is! Map) {
+                return const MinePopupResult().toJson();
+              }
+              final fields = Map<String, String>.from(
+                fieldsRaw.map((k, v) => MapEntry(k.toString(), v.toString())),
+              );
+              // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
+              await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+              final MinePopupResult result =
+                  await widget.onUpdateEntry!(noteId, fields);
+              return result.toJson();
+            }
+            return const MinePopupResult().toJson();
           },
         );
 

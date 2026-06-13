@@ -811,6 +811,159 @@ async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   assert.equal(mineButton.disabled, false, 'button is still clickable, never locked');
 }
 
+// ── TODO-270 D: tri-state mine button (overwrite the latest mined card) ─────
+// After a successful mine that returns a real note id (AnkiConnect only) the
+// button becomes a GREEN "latest editable" ✓↩: clicking it overwrites THAT note
+// (updateEntry) instead of re-mining. Mining a different word supersedes it back
+// to a plain ✓ (only the most-recently-mined card stays editable). AnkiDroid
+// returns no id -> never enters the third state (graceful degrade).
+
+function buildMineHeaderFor(context, expression) {
+  // reading === expression skips buildFuriganaEl (the fake DOM cannot append the
+  // bare text nodes furigana rendering produces). The mine button — all these
+  // tests exercise — is built either way, and the entry key still differs per
+  // expression so supersession across distinct words is exercised correctly.
+  const entry = {
+    expression,
+    reading: expression,
+    matched: expression,
+    frequencies: [],
+    pitches: [],
+    rules: [],
+  };
+  const header = context.createEntryHeader(entry, 0);
+  const hasClass = (node, name) =>
+    (node.className || '').split(/\s+/).includes(name) ||
+    (node.classList && node.classList.contains(name));
+  const findMine = (node) => {
+    if (hasClass(node, 'mine-button')) return node;
+    for (const child of node.children ?? []) {
+      const found = findMine(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const mineButton = findMine(header);
+  assert.ok(mineButton, 'mine button was not created');
+  return mineButton;
+}
+
+// Mining a word whose backend returns a note id makes the button the editable
+// latest (green ✓↩); clicking it again calls updateEntry with that note id and
+// the new fields — NOT a second mineEntry.
+async function testLatestMinedCardCanBeOverwrittenInPlace() {
+  const context = loadPopup();
+  context.window.allowDupes = true; // skip the re-verify branch noise
+  const mined = [];
+  const updated = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      // AnkiConnect-style structured reply with a real note id.
+      return Promise.resolve({ ankiConnect: true, noteId: 555 });
+    }
+    if (name === 'updateEntry') {
+      updated.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: payload.noteId });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeaderFor(context, '猫');
+  await flush(); // lookup-time detection (card present here)
+
+  // First click mines and the note id makes it the editable latest.
+  await mineButton.onclick();
+  await flush();
+  assert.equal(mined.length, 1, 'first click mines a new card');
+  assert.equal(mineButton.dataset.latest, '1', 'a mined card with a note id is the editable latest');
+  assert.equal(mineButton.textContent, '✓↩', 'latest editable shows the ✓ + undo glyph');
+  assert.ok(mineButton.classList.contains('latest'), 'latest carries the .latest class');
+
+  // Second click OVERWRITES the same note instead of mining again.
+  await mineButton.onclick();
+  await flush();
+  assert.equal(mined.length, 1, 'overwriting must NOT create a second card');
+  assert.equal(updated.length, 1, 'clicking the green ✓↩ calls updateEntry');
+  assert.equal(updated[0].noteId, 555, 'updateEntry targets the latest note id');
+  assert.ok(updated[0].fields && updated[0].fields.expression === '猫',
+    'updateEntry carries the freshly-built fields');
+  assert.equal(mineButton.dataset.latest, '1', 'a successful update stays the editable latest');
+  assert.equal(mineButton.disabled, false, 'button never sticks disabled');
+}
+
+// Mining a SECOND word supersedes the first: the first word is no longer the
+// latest, so clicking its (now stale) button does NOT call updateEntry — it
+// falls back to the ordinary mined path.
+async function testMiningNextCardDowngradesPreviousFromEditable() {
+  const context = loadPopup();
+  context.window.allowDupes = true;
+  const mined = [];
+  const updated = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'mineEntry') {
+      mined.push(payload.expression);
+      return Promise.resolve({ ankiConnect: true, noteId: mined.length });
+    }
+    if (name === 'updateEntry') {
+      updated.push(payload.noteId);
+      return Promise.resolve({ ankiConnect: true, noteId: payload.noteId });
+    }
+    return Promise.resolve(true);
+  };
+
+  // Mine word A -> it is the editable latest.
+  const buttonA = buildMineHeaderFor(context, '猫');
+  await flush();
+  await buttonA.onclick();
+  await flush();
+  assert.equal(buttonA.dataset.latest, '1', 'A is editable right after mining');
+
+  // Mine word B (a different popup entry) -> B becomes the latest, superseding A.
+  const buttonB = buildMineHeaderFor(context, '犬');
+  await flush();
+  await buttonB.onclick();
+  await flush();
+  assert.equal(buttonB.dataset.latest, '1', 'B is now the editable latest');
+
+  // Clicking A's stale button must NOT overwrite — A is no longer the latest.
+  await buttonA.onclick();
+  await flush();
+  assert.equal(updated.length, 0,
+    'a superseded earlier card must not be overwritten in place');
+  // A re-mines through the ordinary path instead (allowDupes -> a new mine).
+  assert.ok(mined.includes('猫'), 'the earlier word goes through the normal mine path');
+}
+
+// AnkiDroid graceful degrade: a mine that returns no note id (bare true / no id)
+// never becomes the editable latest — it stays an ordinary ✓.
+async function testNoNoteIdNeverBecomesEditableLatest() {
+  const context = loadPopup();
+  context.window.allowDupes = true;
+  const updated = [];
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'mineEntry') return Promise.resolve(true); // AnkiDroid: bare bool, no id
+    if (name === 'updateEntry') { updated.push(1); return Promise.resolve(true); }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeaderFor(context, '本');
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  assert.notEqual(mineButton.dataset.latest, '1',
+    'no note id -> never the editable latest (AnkiDroid degrade)');
+  assert.equal(mineButton.textContent, '✓', 'shows an ordinary ✓, not the ✓↩ glyph');
+
+  // Clicking again must not attempt an in-place overwrite.
+  await mineButton.onclick();
+  await flush();
+  assert.equal(updated.length, 0, 'without a note id, clicks never call updateEntry');
+}
+
 // ── TODO-094 S5: kanji dictionary card ─────────────────────────────────────
 // A single-character lookup carries per-character kanji-dictionary results
 // (onyomi / kunyomi / radical / strokes / meanings) on window.kanjiResults,
@@ -1016,6 +1169,21 @@ testMineButtonReMinesAfterCardDeletedWithoutReopening().catch((error) => {
 });
 
 testMineButtonDoesNotDuplicateWhenCardStillExists().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testLatestMinedCardCanBeOverwrittenInPlace().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testMiningNextCardDowngradesPreviousFromEditable().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testNoNoteIdNeverBecomesEditableLatest().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

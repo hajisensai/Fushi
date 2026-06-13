@@ -44,6 +44,63 @@ let lastSelection = '';
 let currentDictionaryMedia = null;
 const selectedDictionaries = {};
 
+// TODO-270 D: tri-state mine button — "overwrite the latest mined card".
+//
+// After a successful mine that returned a backend note id (AnkiConnect only),
+// remember WHICH word was the latest card so its ✓ becomes a green
+// "editable" ✓⤺: clicking it again UPDATES that same note (repo.updateMinedNote)
+// instead of deleting+re-creating. Mining a different word, or re-querying,
+// supersedes the previous latest — only the single most-recently-mined word in
+// this popup session stays editable; older ones fall back to an ordinary ✓.
+//
+// `lastMinedNoteId` is the note id to overwrite; `lastMinedEntryKey` identifies
+// which expression / reading owns that id. AnkiDroid never returns an id
+// (noteId stays null) → the latest state is never entered → graceful degrade to
+// the existing two-state behaviour.
+let lastMinedNoteId = null;
+let lastMinedEntryKey = null;
+
+// Stable identity for a popup entry (expression + reading): the same key the
+// Dart side and the lookup-time duplicateCheck use.
+function mineEntryKey(expression, reading) {
+    return `${expression || ''}\u0000${reading || ''}`;
+}
+
+// Normalize the mineEntry/updateEntry handler reply into {ankiConnect, noteId}.
+// The Dart handler now returns the structured MinePopupResult JSON; older/edge
+// returns (a bare boolean, or null) are tolerated so a handler that has not been
+// wired for updates still drives the ✓ refresh exactly as before.
+function parseMineResult(reply) {
+    if (reply && typeof reply === 'object') {
+        const rawId = reply.noteId;
+        const noteId = (typeof rawId === 'number' && Number.isFinite(rawId))
+            ? rawId
+            : null;
+        return { ankiConnect: reply.ankiConnect === true, noteId };
+    }
+    return { ankiConnect: reply === true, noteId: null };
+}
+
+// Records the just-mined word as the editable "latest" card when the backend
+// returned a note id; clears it otherwise (AnkiDroid / failure) so the button
+// never shows a green ✓⤺ it cannot honour.
+function rememberLatestMined(expression, reading, noteId) {
+    if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+        lastMinedNoteId = noteId;
+        lastMinedEntryKey = mineEntryKey(expression, reading);
+    } else {
+        lastMinedNoteId = null;
+        lastMinedEntryKey = null;
+    }
+}
+
+// True when [expression]/[reading] is the single most-recently-mined word whose
+// card can still be overwritten in place (a real note id is held for it).
+function isLatestEditable(expression, reading) {
+    return lastMinedNoteId !== null &&
+        lastMinedEntryKey === mineEntryKey(expression, reading);
+}
+
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
     for (const [key, value] of Object.entries(props)) {
@@ -839,7 +896,10 @@ function getFrequencyHarmonicRank(frequencies) {
     return String(Math.floor(values.length / sumOfReciprocals));
 }
 
-async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+// Builds the Anki field payload for a popup entry. Shared by mineEntry (create)
+// and updateEntry (overwrite the latest card) so both carry identical fields,
+// media, and audio — no second render path to drift (TODO-270 D).
+async function buildMinePayload(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
     const idx = entryIndex || 0;
     const furiganaPlain = constructFuriganaPlain(expression, reading);
     currentDictionaryMedia = new Map();
@@ -852,7 +912,7 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
     const pitchPositions = constructPitchPositionHtml(pitches);
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
-    
+
     const audioReading = reading || expression;
     let audio = '';
     if (window.audioSources?.length && window.needsAudio) {
@@ -863,8 +923,8 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
             audio = cached.url;
         }
     }
-    
-    return await window.flutter_inappwebview.callHandler('mineEntry', {
+
+    return {
         expression,
         reading,
         matched,
@@ -880,7 +940,23 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
-    });
+    };
+}
+
+async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const payload = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('mineEntry', payload);
+}
+
+// TODO-270 D: overwrite an EXISTING card ([noteId]) in place with freshly-built
+// fields (same payload as mineEntry). Used by the green ✓⤺ "latest editable"
+// state so "I mined the wrong content, fix the last card" truly updates that
+// note instead of creating a second one.
+async function updateEntry(noteId, expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const fields = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('updateEntry', { noteId, fields });
 }
 
 const INLINE_HTML_RE = /<(?:ruby|rt|rp|b|i|em|strong|span|sup|sub|br)\b[^>]*>/i;
@@ -1501,14 +1577,31 @@ function createEntryHeader(entry, idx) {
     //   first; if the card is genuinely gone it re-mines, if it still exists
     //   (dupes off) it just refreshes ✓ and adds nothing. This is a safety net
     //   for stale state, not the primary path.
+    //
+    // TODO-270 D — THIRD STATE "latest editable": the single most-recently-mined
+    //   word (whose backend returned a real note id, AnkiConnect only) shows a
+    //   GREEN ✓ with an undo glyph (✓⤺) instead of an ordinary ✓. Clicking it
+    //   OVERWRITES that card (updateEntry → repo.updateMinedNote) so a mistake on
+    //   the last card is fixed in place — no delete-then-recreate. Mining another
+    //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
+    //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
     const setMineState = (isMined) => {
         // Single source of truth for the button's lookup-time-detected state.
+        // The optional second flag is the "latest editable" sub-state; it is only
+        // meaningful when the word is the current latest-mined card.
+        const latest = isMined && isLatestEditable(expression, reading);
         mineButton.dataset.mined = isMined ? '1' : '';
-        mineButton.textContent = isMined ? '✓' : '+';
+        mineButton.dataset.latest = latest ? '1' : '';
+        mineButton.textContent = isMined ? (latest ? '✓↩' : '✓') : '+';
         if (isMined) {
             mineButton.classList.add('duplicate');
         } else {
             mineButton.classList.remove('duplicate');
+        }
+        if (latest) {
+            mineButton.classList.add('latest');
+        } else {
+            mineButton.classList.remove('latest');
         }
     };
     const mineButton = el('button', {
@@ -1525,6 +1618,21 @@ function createEntryHeader(entry, idx) {
             mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
+                if (mineButton.dataset.latest === '1' && isLatestEditable(expression, reading)) {
+                    // TODO-270 D green ✓⤺: this is the latest mined card and it
+                    // carries a real note id → OVERWRITE that note in place with
+                    // the freshly-built fields (does NOT create a second card).
+                    const reply = await updateEntry(
+                        lastMinedNoteId, expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                    const result = parseMineResult(reply);
+                    // A successful update keeps the same note id (handler echoes it)
+                    // → stays the editable latest. A failed update drops the latest
+                    //   flag back to a plain ✓ (the card is still mined).
+                    rememberLatestMined(expression, reading, result.noteId);
+                    setMineState(true);
+                    return;
+                }
+
                 if (mineButton.dataset.mined === '1') {
                     // Button shows 已制卡 ✓ (detected mined at lookup time). The
                     // only reason to click it is the TODO-087 edge case: the card
@@ -1539,14 +1647,19 @@ function createEntryHeader(entry, idx) {
                     // Deleted in Anki (or dupes allowed) → fall through and re-mine.
                 }
 
-                const isAnkiConnect = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                const reply = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                const result = parseMineResult(reply);
                 const refreshFromAnki = async () => {
                     // Re-detect from Anki so the post-mine state is the real one.
                     const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
                     setMineState(wasAdded);
                 };
 
-                if (isAnkiConnect) {
+                if (result.ankiConnect) {
+                    // TODO-270 D: a freshly mined card with a real note id becomes
+                    // the new "latest editable"; this also supersedes any prior
+                    // latest word (only one editable card at a time).
+                    rememberLatestMined(expression, reading, result.noteId);
                     await refreshFromAnki();
                 } else {
                     setTimeout(refreshFromAnki, 1000);

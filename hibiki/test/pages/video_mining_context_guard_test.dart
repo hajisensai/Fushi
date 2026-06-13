@@ -49,16 +49,20 @@ void main() {
   });
 
   test('video mining exports media from the cached lookup cue', () {
+    // TODO-270 D：onMineEntry 返回类型从 Future<bool> 改为 Future<MinePopupResult>
+    // （回传 note id 以驱动「最新可改」第三态）；锚点随之更新。
     final String mine = region(
-      'Future<bool> onMineEntry(Map<String, String> fields) async {',
-      'void _showAudioTrackMenu(VideoPlayerController controller) {',
+      'Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {',
+      'Future<MinePopupResult> onUpdateEntry(',
     );
-    // 制卡 cue 取值：lookup 缓存优先（不漂移到后来的 cue），其后以 currentCue →
-    // 按位置解析二段兜底，覆盖未经查词捕获 / 制卡瞬间字幕又消失的边界
+    // 制卡 cue 取值：选中句优先 → lookup 缓存（不漂移到后来的 cue）→ currentCue →
+    // 按位置解析多段兜底，覆盖未经查词捕获 / 制卡瞬间字幕又消失的边界
     // （TODO-104b / BUG-188，保证有 cue 可裁真实句子音频）。
-    expect(mine, contains('final AudioCue? cue = _lastLookupCue ??'),
+    expect(mine, contains('final AudioCue? cue = selectedCue ??'),
         reason:
-            'Mining must start from the cached lookup cue, no later drift.');
+            'Mining must prefer the selected cue, then the cached lookup cue, '
+            'no later drift.');
+    expect(mine, contains('_lastLookupCue ??'));
     expect(mine, contains('controller.currentCue ??'));
     expect(mine, contains('resolveMiningCueForPosition('),
         reason: 'currentCue 为空（gap/末句后）时须按位置解析，制卡才有句子音频。');
@@ -73,9 +77,10 @@ void main() {
 
   test('_mineVideoCard extracts the passed [clipStartMs, clipEndMs] range', () {
     // 落卡链路把区间端点喂给真实的 ffmpeg 抽取器（单句 = cue 时间窗）。
+    // TODO-270 D：返回类型改为 Future<MinePopupResult>（成功带回 note id）。
     final String mineCard = region(
-      'Future<bool> _mineVideoCard(',
-      'void _showAudioTrackMenu(VideoPlayerController controller) {',
+      'Future<MinePopupResult> _mineVideoCard(',
+      'void _showAudioTrackMenu(VideoPlayerController _) {',
     );
     expect(mineCard, contains('startMs: clipStartMs'),
         reason: '区间音频/封面起点必须是传入的 clipStartMs。');
