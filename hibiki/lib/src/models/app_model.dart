@@ -1785,6 +1785,27 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleBlur(bool value) =>
       prefsRepo.setVideoSubtitleBlur(value);
 
+  bool get videoDanmakuEnabled => prefsRepo.videoDanmakuEnabled;
+
+  Future<void> setVideoDanmakuEnabled(bool value) =>
+      prefsRepo.setVideoDanmakuEnabled(value);
+
+  bool get videoDanmakuOnlineEnabled => prefsRepo.videoDanmakuOnlineEnabled;
+
+  Future<void> setVideoDanmakuOnlineEnabled(bool value) =>
+      prefsRepo.setVideoDanmakuOnlineEnabled(value);
+
+  int get videoDanmakuMaxActive => prefsRepo.videoDanmakuMaxActive;
+
+  Future<void> setVideoDanmakuMaxActive(int value) =>
+      prefsRepo.setVideoDanmakuMaxActive(value);
+
+  int? getVideoDanmakuEpisodeId(String bookUid) =>
+      prefsRepo.getVideoDanmakuEpisodeId(bookUid);
+
+  Future<void> setVideoDanmakuEpisodeId(String bookUid, int episodeId) =>
+      prefsRepo.setVideoDanmakuEpisodeId(bookUid, episodeId);
+
   /// 桌面视频页按视频原始比例锁定原生窗口；默认开启。
   bool get videoLockWindowAspectRatio => prefsRepo.videoLockWindowAspectRatio;
 

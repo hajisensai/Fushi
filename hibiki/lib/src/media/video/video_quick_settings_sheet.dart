@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
+import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -44,6 +45,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
+    this.initialDanmakuEnabled = true,
+    this.initialDanmakuOnlineEnabled = true,
+    this.initialDanmakuMaxActive = kDefaultVideoDanmakuMaxActive,
+    this.onDanmakuEnabledChanged,
+    this.onDanmakuOnlineEnabledChanged,
+    this.onDanmakuMaxActiveChanged,
     super.key,
   });
 
@@ -127,6 +134,13 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// larger or smaller.
   final double uiScale;
 
+  final bool initialDanmakuEnabled;
+  final bool initialDanmakuOnlineEnabled;
+  final int initialDanmakuMaxActive;
+  final Future<void> Function(bool value)? onDanmakuEnabledChanged;
+  final Future<void> Function(bool value)? onDanmakuOnlineEnabledChanged;
+  final Future<void> Function(int value)? onDanmakuMaxActiveChanged;
+
   @override
   State<VideoQuickSettingsSheet> createState() =>
       _VideoQuickSettingsSheetState();
@@ -150,6 +164,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
   late VideoAsbplayerConfig _asbConfig = widget.initialAsbConfig;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
+  late bool _danmakuEnabled = widget.initialDanmakuEnabled;
+  late bool _danmakuOnlineEnabled = widget.initialDanmakuOnlineEnabled;
+  late int _danmakuMaxActive =
+      normalizeVideoDanmakuMaxActive(widget.initialDanmakuMaxActive);
 
   /// mpv 配置（内嵌详情即改即生效，本地权威 + 回调持久化/实时应用）。
   late VideoMpvConfig _mpvConfig = widget.initialMpvConfig;
@@ -301,6 +319,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         icon: Icons.subtitles_outlined,
         label: t.video_settings_cat_subtitle,
       ),
+      (
+        id: 'danmaku',
+        icon: Icons.forum_outlined,
+        label: t.video_settings_cat_danmaku,
+      ),
     ];
   }
 
@@ -383,6 +406,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return _buildMpvDetail();
       case 'subtitle':
         return _buildSubtitleDetail();
+      case 'danmaku':
+        return _buildDanmakuDetail();
       default:
         return const SizedBox.shrink();
     }
@@ -398,6 +423,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return t.video_settings_cat_mpv;
       case 'subtitle':
         return t.video_settings_cat_subtitle;
+      case 'danmaku':
+        return t.video_settings_cat_danmaku;
       default:
         return '';
     }
@@ -1123,6 +1150,48 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   void _previewStyle(VideoSubtitleStyle next) {
     setState(() => _style = next);
     widget.onSubtitleStylePreview(next);
+  }
+
+  Widget _buildDanmakuDetail() {
+    return AdaptiveSettingsSection(
+      children: <Widget>[
+        AdaptiveSettingsSwitchRow(
+          title: t.video_setting_danmaku_enabled,
+          subtitle: t.video_setting_danmaku_enabled_hint,
+          icon: Icons.forum_outlined,
+          value: _danmakuEnabled,
+          onChanged: (bool value) async {
+            setState(() => _danmakuEnabled = value);
+            await widget.onDanmakuEnabledChanged?.call(value);
+          },
+        ),
+        AdaptiveSettingsSwitchRow(
+          title: t.video_setting_danmaku_online,
+          subtitle: t.video_setting_danmaku_online_hint,
+          icon: Icons.cloud_sync_outlined,
+          value: _danmakuOnlineEnabled,
+          onChanged: (bool value) async {
+            setState(() => _danmakuOnlineEnabled = value);
+            await widget.onDanmakuOnlineEnabledChanged?.call(value);
+          },
+        ),
+        AdaptiveSettingsStepperRow(
+          title: t.video_setting_danmaku_max_active,
+          subtitle: t.video_setting_danmaku_max_active_hint,
+          icon: Icons.speed_outlined,
+          value: _danmakuMaxActive.toDouble(),
+          step: 10,
+          min: 10,
+          max: kMaxVideoDanmakuActive.toDouble(),
+          format: (double v) => v.round().toString(),
+          onChanged: (double value) async {
+            final int next = normalizeVideoDanmakuMaxActive(value.round());
+            setState(() => _danmakuMaxActive = next);
+            await widget.onDanmakuMaxActiveChanged?.call(next);
+          },
+        ),
+      ],
+    );
   }
 }
 
