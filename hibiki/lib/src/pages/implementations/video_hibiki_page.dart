@@ -669,9 +669,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   bool _lockWindowAspectRatio = true;
   double? _appliedWindowAspectRatio;
 
-  /// 画面缩放/比例模式（窗口 + 全屏 [Video] fit 共用；TODO-152 子B）。默认 cover=
-  /// 保持比例占满无黑边（与旧硬编码 `BoxFit.cover` 一致 → 向后兼容）。init 时读全局
-  /// 偏好快照，设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
+  /// 画面缩放/比例模式（窗口 + 全屏 [Video] fit 共用；TODO-152 子B）。新安装默认
+  /// contain/适应；init 时读全局偏好快照，已有用户偏好 cover/fill 会按原值恢复，
+  /// 设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
   VideoFitMode _videoFitMode = VideoFitMode.contain;
 
   bool get _isPlaylist => _episodes.length > 1;
@@ -4716,15 +4716,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             visible: false,
           ),
           // 窗口模式画面缩放/比例由用户偏好 [_videoFitMode] 决定（TODO-152 子B），
-          // 默认 [VideoFitMode.cover] → `BoxFit.cover` 保持比例占满媒体框、无
-          // letterbox/pillarbox 黑边（与旧硬编码 cover 一致 → 向后兼容；TODO-122）。
+          // 新安装默认 [VideoFitMode.contain] → `BoxFit.contain` 保持比例完整适应；
+          // 已有用户偏好 [cover]/[fill] 会按持久化值恢复；
+          // 不会被新安装初始值覆盖。
           // 根因背景：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
           // 两侧补黑。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] → window_manager
           // `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**时（WM_SIZING）
           // 约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例不等于视频，
-          // contain 仍留黑边（平台限制）。故默认 cover 铺满、超出裁切（比例锁稳态下窗口
-          // 贴合视频比例 → cover≈contain 几乎不裁；仅窗口被拖成怪比例时裁画面边缘）。
-          // 用户改选 [VideoFitMode.contain] 即「画面缩窄时上下/左右加黑」、[fill] 拉伸。
+          // contain 仍留黑边（平台限制）。用户改选 [VideoFitMode.cover] 即铺满并裁切
+          // 超出边缘（比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁）；
+          // [VideoFitMode.fill] 则拉伸填满。
           // 字幕是独立 overlay 层（[VideoSubtitleOverlay]，不在 [Video] 内）不受裁切影响。
           // 全屏路由的 Video 在其 builder 内读同一 [_videoFitMode] 换算，跟随同偏好。
           fit: videoFitModeToBoxFit(_videoFitMode),
