@@ -90,6 +90,14 @@ enum ShortcutAction {
   videoToggleSubtitleList(ShortcutScope.video, 'video_toggle_subtitle_list'),
   videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
   videoToggleSubtitleBlur(ShortcutScope.video, 'video_toggle_subtitle_blur'),
+  videoToggleFavoriteSentence(
+      ShortcutScope.video, 'video_toggle_favorite_sentence'),
+  videoReplayCurrentSubtitle(
+      ShortcutScope.video, 'video_replay_current_subtitle'),
+  videoReplayPreviousSubtitle(
+      ShortcutScope.video, 'video_replay_previous_subtitle'),
+  videoShowFavoriteSentences(
+      ShortcutScope.video, 'video_show_favorite_sentences'),
   videoEscape(ShortcutScope.video, 'video_escape');
 
   const ShortcutAction(this.scope, this.key);

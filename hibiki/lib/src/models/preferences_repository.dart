@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -48,7 +49,7 @@ enum VideoFitMode {
     for (final VideoFitMode mode in VideoFitMode.values) {
       if (mode.storageValue == value) return mode;
     }
-    return VideoFitMode.cover;
+    return VideoFitMode.contain;
   }
 }
 
@@ -459,8 +460,8 @@ class PreferencesRepository extends ChangeNotifier {
   /// 视频画面缩放/比例模式（窗口模式 + 全屏的 [Video] fit；默认 [VideoFitMode.cover]
   /// = 保持比例占满无黑边，与旧硬编码 `BoxFit.cover` 行为一致 → 向后兼容）。
   VideoFitMode get videoFitMode => VideoFitMode.fromStorage(
-        getPref('video_fit_mode', defaultValue: VideoFitMode.cover.storageValue)
-            as String,
+        getPref('video_fit_mode',
+            defaultValue: VideoFitMode.contain.storageValue) as String,
       );
 
   Future<void> setVideoFitMode(VideoFitMode mode) async {
@@ -473,6 +474,18 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoAsbplayerConfig(String json) async {
     await setPref('video_asbplayer_config', json);
+    notifyListeners();
+  }
+
+  VideoControlCustomization get videoControlCustomization =>
+      VideoControlCustomization.decode(
+        getPref('video_control_customization', defaultValue: '') as String,
+      );
+
+  Future<void> setVideoControlCustomization(
+    VideoControlCustomization customization,
+  ) async {
+    await setPref('video_control_customization', customization.encode());
     notifyListeners();
   }
 

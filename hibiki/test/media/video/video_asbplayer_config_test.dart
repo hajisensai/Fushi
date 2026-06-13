@@ -6,6 +6,7 @@ void main() {
     expect(VideoAsbplayerConfig.defaults.seekSeconds, 3);
     expect(VideoAsbplayerConfig.defaults.speedStep, 0.1);
     expect(VideoAsbplayerConfig.defaults.pauseAtSubtitleEnd, isFalse);
+    expect(VideoAsbplayerConfig.defaults.longPressSpeed, 2.0);
     // TODO-173/BUG-231: 双击行为默认 0=关（向后兼容，双击仍走暂停/全屏，不分区）。
     expect(VideoAsbplayerConfig.defaults.doubleTapSeekSeconds, 0);
   });
@@ -16,6 +17,7 @@ void main() {
       speedStep: 0.2,
       pauseAtSubtitleEnd: true,
       doubleTapSeekSeconds: 10,
+      longPressSpeed: 2.5,
     );
 
     final VideoAsbplayerConfig decoded =
@@ -25,6 +27,7 @@ void main() {
     expect(decoded.speedStep, 0.2);
     expect(decoded.pauseAtSubtitleEnd, isTrue);
     expect(decoded.doubleTapSeekSeconds, 10);
+    expect(decoded.longPressSpeed, 2.5);
   });
 
   test('decode tolerates empty and clamps unsupported values', () {
@@ -37,6 +40,7 @@ void main() {
     expect(decoded.seekSeconds, 1);
     expect(decoded.speedStep, 0.5);
     expect(decoded.pauseAtSubtitleEnd, isTrue);
+    expect(decoded.longPressSpeed, 2.0);
     // 旧档无 doubleTapSeekSeconds 键 → 回默认 0=关。
     expect(decoded.doubleTapSeekSeconds, 0);
   });

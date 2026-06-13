@@ -24,8 +24,10 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
 import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
+import 'package:hibiki/src/media/video/video_favorite_sentences_panel.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -34,6 +36,7 @@ import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
+import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
@@ -41,6 +44,7 @@ import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
+import 'package:hibiki/src/media/video/video_subtitle_selection.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -54,9 +58,7 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
-import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
@@ -274,6 +276,13 @@ abstract class VideoHibikiTestHooks {
   Future<void> debugPlay();
 }
 
+enum _VideoSidePanelKind {
+  speed,
+  settings,
+  favoriteSentences,
+  subtitleList,
+}
+
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
@@ -426,6 +435,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 本页 setState 重建（与标题 [_titleNotifier] 同源，BUG-120）。监听 notifier 才能
   /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
+  final ValueNotifier<_VideoSidePanelKind?> _videoSidePanel =
+      ValueNotifier<_VideoSidePanelKind?>(null);
 
   /// 锁定 / 沉浸模式（TODO-101）。开启后：鼠标移动 / 单击不再唤起 media_kit 控制条
   /// （顶/底栏按钮全部不弹），视频纯画面播放；但查词（点字幕字符）与所有键盘 / 手柄
@@ -588,6 +599,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
+  final Set<int> _selectedMiningCueStarts = <int>{};
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
   @override
@@ -641,10 +653,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 播放倍速：用户在设置面板调，跨重启保留；换集复用同一值（速度记忆）。
   double _playbackSpeed = 1.0;
+  double? _longPressPreviousSpeed;
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
   VideoAsbplayerConfig _asbConfig = VideoAsbplayerConfig.defaults;
+  VideoControlCustomization _controlCustomization =
+      VideoControlCustomization.defaults;
 
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
   bool _lockWindowAspectRatio = true;
@@ -653,7 +668,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 画面缩放/比例模式（窗口 + 全屏 [Video] fit 共用；TODO-152 子B）。默认 cover=
   /// 保持比例占满无黑边（与旧硬编码 `BoxFit.cover` 一致 → 向后兼容）。init 时读全局
   /// 偏好快照，设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
-  VideoFitMode _videoFitMode = VideoFitMode.cover;
+  VideoFitMode _videoFitMode = VideoFitMode.contain;
 
   bool get _isPlaylist => _episodes.length > 1;
 
@@ -757,6 +772,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _playbackSpeed = _readPersistedSpeed();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
+    _controlCustomization = appModel.videoControlCustomization;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
 
@@ -798,6 +814,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _delayMs = 0;
     _playbackSpeed = _readPersistedSpeed();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
+    _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
+    _controlCustomization = appModel.videoControlCustomization;
 
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
@@ -1390,12 +1408,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 句对应画面。可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也生效，见其
   /// 文档）。打开时顺带唤醒控制条（桌面键盘交互不触发 media_kit hover 重置）。
   void _toggleSubtitleJumpList() {
-    final bool next = !_subtitleListVisible.value;
-    _subtitleListVisible.value = next;
+    final bool next = _videoSidePanel.value != _VideoSidePanelKind.subtitleList;
     if (next) {
-      _pokeControlsVisible();
-      // 打开列表时刷新本视频已收藏句缓存，让行内收藏星标即时正确（TODO-152 子A）。
-      unawaited(_refreshFavoritedCueCache());
+      _showVideoSidePanel(_VideoSidePanelKind.subtitleList);
+    } else {
+      _hideVideoSidePanel();
     }
   }
 
@@ -1484,6 +1501,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
     _subtitleListVisible.dispose();
+    _videoSidePanel.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
@@ -2185,6 +2203,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 发音 `{audio}`、例句字段等）基础上，注入视频专属上下文——当前帧截图
   /// coverPath（→`{book-cover}`）+ 当前字幕 cue 的音频片段（裁**当前选中音轨**）
   /// sasayakiAudioPath（→`{sasayaki-audio}`）+ 例句 sentence。复用现有 Anki 字段。
+  bool _isCueSelectedForCard(AudioCue cue) =>
+      _selectedMiningCueStarts.contains(cue.startMs);
+
+  void _toggleCueSelectedForCard(AudioCue cue) {
+    setState(() {
+      if (!_selectedMiningCueStarts.add(cue.startMs)) {
+        _selectedMiningCueStarts.remove(cue.startMs);
+      }
+    });
+  }
+
+  void _clearSelectedMiningCues() {
+    if (_selectedMiningCueStarts.isEmpty) return;
+    setState(_selectedMiningCueStarts.clear);
+  }
+
+  AudioCue? _selectedMiningCueForCard(VideoPlayerController controller) {
+    return buildSelectedSubtitleCueContext(
+      cues: controller.cues,
+      selectedStartMs: _selectedMiningCueStarts,
+    );
+  }
+
   @override
   Future<bool> onMineEntry(Map<String, String> fields) async {
     final VideoPlayerController? controller = _controller;
@@ -2193,7 +2234,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // _lastLookupCue 在查词那刻已按位置解析过（含 gap 兜底，见 _lookupAt）；这里
     // 再以「currentCue → 按位置解析」二段兜底，覆盖未经查词捕获或制卡瞬间字幕又消失
     // 的边界，保证有 cue 可裁真实句子音频（TODO-104b / BUG-188）。
-    final AudioCue? cue = _lastLookupCue ??
+    final AudioCue? selectedCue = _selectedMiningCueForCard(controller);
+    final bool usedSelectedCue = selectedCue != null;
+    final AudioCue? cue = selectedCue ??
+        _lastLookupCue ??
         controller.currentCue ??
         resolveMiningCueForPosition(
           cues: controller.cues,
@@ -2201,7 +2245,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           delayMs: controller.delayMs,
         );
 
-    return _mineVideoCard(
+    final bool mined = await _mineVideoCard(
       fields: fields,
       // 单句制卡：音频/封面区间就是当前 cue 的时间窗（cue 为空则两端相等→不抽）。
       clipStartMs: cue?.startMs ?? 0,
@@ -2209,6 +2253,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       sentence: _lastLookupSentence,
       cueSentence: cue?.text,
     );
+    if (usedSelectedCue && mined) {
+      _clearSelectedMiningCues();
+    }
+    return mined;
   }
 
   /// 视频制卡的落卡链路（单句 [onMineEntry] 走这里）：把音频/封面区间
@@ -2434,15 +2482,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
           () => unawaited(_toggleSubtitleBlur()),
         ),
+        toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_toggleFavoriteCurrentCue()),
+        ),
+        replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_replayCurrentCueAndPokeControls()),
+        ),
+        replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_replayPreviousCueAndPokeControls()),
+        ),
+        showFavoriteSentences: () => _runWhenImmersiveAllowsFullControls(
+          _showFavoriteSentencesPanel,
+        ),
         escape: () {
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
-          if (_immersiveLocked.value) {
-            _toggleImmersiveLock();
+          if (_videoSidePanel.value != null || _subtitleListVisible.value) {
+            _hideVideoSidePanel();
             return;
           }
-          if (_subtitleListVisible.value) {
-            _subtitleListVisible.value = false;
+          if (_immersiveLocked.value) {
+            _toggleImmersiveLock();
             return;
           }
           final BuildContext? ctx = _videoControlsContext;
@@ -2750,10 +2810,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // （TODO-127）：倍速 / 着色器对比按钮已移出控制条（改从右键菜单 / 快捷键 /
         // 设置进入），字幕列表是顶栏最常直接命中的入口，故放在设置（tune）左边。
         MaterialDesktopCustomButton(
-          icon: Icon(Icons.format_list_bulleted, size: _videoControlIconSize),
-          onPressed: _toggleSubtitleJumpList,
-        ),
-        MaterialDesktopCustomButton(
           icon: Icon(Icons.tune, size: _videoControlIconSize),
           onPressed: _showPlayerSettings,
         ),
@@ -2792,6 +2848,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
+        ..._customBottomControlButtons(controller, desktop: true),
         _buildVolumeButton(controller, desktop: true),
         _buildFullscreenButton(desktop: true),
       ],
@@ -2909,10 +2966,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 字幕跳转列表（TODO-069）。倒数第二、紧挨设置按钮左侧（TODO-127）：与桌面
         // 控制条顺序一致，字幕列表是顶栏最常直接命中的入口，放在设置（tune）左边。
         MaterialCustomButton(
-          icon: Icon(Icons.format_list_bulleted, size: _videoControlIconSize),
-          onPressed: _toggleSubtitleJumpList,
-        ),
-        MaterialCustomButton(
           icon: Icon(Icons.tune, size: _videoControlIconSize),
           onPressed: _showPlayerSettings,
         ),
@@ -2959,10 +3012,92 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
+        ..._customBottomControlButtons(controller, desktop: false),
         _buildVolumeButton(controller, desktop: false),
         _buildFullscreenButton(desktop: false),
       ],
     );
+  }
+
+  List<Widget> _customBottomControlButtons(
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    return <Widget>[
+      for (final VideoControlButton button
+          in _controlCustomization.buttonsFor(VideoControlPlacement.bottom))
+        _buildVideoControlButton(controller, button, desktop: desktop),
+    ];
+  }
+
+  Widget _buildVideoControlButton(
+    VideoPlayerController controller,
+    VideoControlButton button, {
+    required bool desktop,
+  }) {
+    final Widget icon = Icon(
+      _videoControlButtonIcon(button),
+      size: _videoControlIconSize,
+    );
+    return desktop
+        ? MaterialDesktopCustomButton(
+            icon: icon,
+            onPressed: () => _activateVideoControlButton(button),
+          )
+        : MaterialCustomButton(
+            icon: icon,
+            onPressed: () => _activateVideoControlButton(button),
+          );
+  }
+
+  IconData _videoControlButtonIcon(VideoControlButton button) {
+    switch (button) {
+      case VideoControlButton.speed:
+        return Icons.speed;
+      case VideoControlButton.subtitleList:
+        return Icons.format_list_bulleted;
+      case VideoControlButton.favoriteSentence:
+        return Icons.star_border_rounded;
+      case VideoControlButton.favoriteSentences:
+        return Icons.collections_bookmark_outlined;
+      case VideoControlButton.settings:
+        return Icons.tune;
+    }
+  }
+
+  String _videoControlButtonTooltip(VideoControlButton button) {
+    switch (button) {
+      case VideoControlButton.speed:
+        return t.video_control_speed;
+      case VideoControlButton.subtitleList:
+        return t.video_control_subtitle_list;
+      case VideoControlButton.favoriteSentence:
+        return t.video_control_favorite_sentence;
+      case VideoControlButton.favoriteSentences:
+        return t.video_control_favorite_sentences;
+      case VideoControlButton.settings:
+        return t.video_control_settings;
+    }
+  }
+
+  void _activateVideoControlButton(VideoControlButton button) {
+    switch (button) {
+      case VideoControlButton.speed:
+        _showSpeedMenu();
+        break;
+      case VideoControlButton.subtitleList:
+        _toggleSubtitleJumpList();
+        break;
+      case VideoControlButton.favoriteSentence:
+        unawaited(_toggleFavoriteCurrentCue());
+        break;
+      case VideoControlButton.favoriteSentences:
+        _showFavoriteSentencesPanel();
+        break;
+      case VideoControlButton.settings:
+        _showPlayerSettings();
+        break;
+    }
   }
 
   bool _hasRoomyVideoBottomBar() => MediaQuery.of(context).size.width >= 600;
@@ -3222,13 +3357,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。
-  Future<void> _setSpeed(double speed) async {
+  Future<void> _setSpeed(double speed, {bool persist = true}) async {
     final double clamped = speed.clamp(0.25, 4.0).toDouble();
     if ((clamped - _playbackSpeed).abs() < 0.001) return;
     _playbackSpeed = clamped;
     await _controller?.setSpeed(clamped);
-    await appModel.prefsRepo.setPref(_speedPrefKey, clamped);
+    if (persist) {
+      await appModel.prefsRepo.setPref(_speedPrefKey, clamped);
+    }
     if (mounted) setState(() {});
+  }
+
+  void _handleVideoLongPressStart(LongPressStartDetails details) {
+    if (_videoSheetOpen || _longPressPreviousSpeed != null) return;
+    _longPressPreviousSpeed = _playbackSpeed;
+    final double speed = _asbConfig.longPressSpeed;
+    unawaited(_setSpeed(speed, persist: false));
+    _showOsd('${speed.toStringAsFixed(1)}x', icon: Icons.speed);
+  }
+
+  void _handleVideoLongPressEnd(LongPressEndDetails details) {
+    final double? previous = _longPressPreviousSpeed;
+    _longPressPreviousSpeed = null;
+    if (previous == null) return;
+    unawaited(_setSpeed(previous, persist: false));
   }
 
   Future<void> _adjustSpeed(double delta) async {
@@ -3251,6 +3403,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (_videoFitMode == mode) return;
     _videoFitMode = mode;
     await appModel.setVideoFitMode(mode);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _setVideoControlCustomization(
+    VideoControlCustomization customization,
+  ) async {
+    _controlCustomization = customization;
+    await appModel.setVideoControlCustomization(customization);
     if (mounted) setState(() {});
   }
 
@@ -3371,6 +3531,39 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ));
   }
 
+  AudioCue? _currentCueForAction() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return null;
+    return controller.currentCue ??
+        resolveMiningCueForPosition(
+          cues: controller.cues,
+          positionMs: controller.positionMs ?? 0,
+          delayMs: _delayMs,
+        );
+  }
+
+  Future<void> _toggleFavoriteCurrentCue() async {
+    final AudioCue? cue = _currentCueForAction();
+    if (cue == null || cue.text.trim().isEmpty) {
+      HibikiToast.show(msg: t.no_sentence_selected);
+      return;
+    }
+    _pokeControlsVisible();
+    await _toggleFavoriteCueForVideo(cue);
+  }
+
+  Future<void> _replayCurrentCueAndPokeControls() async {
+    final AudioCue? cue = _currentCueForAction();
+    if (cue == null) return;
+    _pokeControlsVisible();
+    await _controller?.skipToCue(cue);
+  }
+
+  Future<void> _replayPreviousCueAndPokeControls() async {
+    _pokeControlsVisible();
+    await _controller?.skipToPrevCue();
+  }
+
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
   /// 的平台分流）。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
   Future<void> _saveScreenshot() async {
@@ -3423,44 +3616,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 横屏 / 小屏时整列可超过半屏高。故走 `isScrollControlled` + maxHeight 约束 +
   /// 可滚动 [ListView]（参考 [_showEpisodeList]），底部档位不再被裁（TODO-127）。
   void _showSpeedMenu() {
-    if (_videoSheetOpen) return;
-    _videoSheetOpen = true;
-    final List<double> speedPresets = _speedMenuPresets();
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
-          ),
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: speedPresets.length,
-            itemBuilder: (BuildContext _, int i) {
-              final double s = speedPresets[i];
-              return ListTile(
-                dense: true,
-                title: Text('${s}x'),
-                trailing: (s - _playbackSpeed).abs() < 0.001
-                    ? Icon(
-                        Icons.check,
-                        color: Theme.of(ctx).colorScheme.primary,
-                      )
-                    : null,
-                onTap: () {
-                  _setSpeed(s);
-                  Navigator.pop(ctx);
-                },
-              );
-            },
-          ),
-        ),
-      ),
-    ).whenComplete(() {
-      _videoSheetOpen = false;
-      _refocusVideo();
-    });
+    _showVideoSidePanel(_VideoSidePanelKind.speed);
   }
 
   List<double> _speedMenuPresets() {
@@ -3472,15 +3628,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return values.toList()..sort();
   }
 
+  Widget _buildSpeedSidePanel() {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final List<double> speedPresets = _speedMenuPresets();
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: speedPresets.length,
+      itemBuilder: (BuildContext ctx, int i) {
+        final double speed = speedPresets[i];
+        final bool selected = (speed - _playbackSpeed).abs() < 0.001;
+        return ListTile(
+          dense: true,
+          title: Text('${speed}x'),
+          trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
+          onTap: () => unawaited(_setSpeed(speed)),
+        );
+      },
+    );
+  }
+
   /// 弹视频播放设置面板：与阅读器同款 master-detail（宽窗左分类固定 + 右详情独立
   /// 滚动，窄窗降级单列 push）。桌面经 [HibikiDialogFrame]（maxWidth 900）进入分栏，
   /// 移动端走 bottom sheet。所有项都不是 schema 项，经回调即时生效 + 持久化 + 实时
   /// 预览（见 [_setDelayMs] / [_setSpeed] / [_persistSubtitleStyle]）。关闭后把键盘
   /// 焦点还给 Video（覆盖层夺焦后不会自动归还），恢复空格等快捷键。
-  void _showPlayerSettings() {
-    if (_videoSheetOpen) return;
-    _videoSheetOpen = true;
-    final Widget sheet = VideoQuickSettingsSheet(
+  Widget _buildVideoQuickSettingsSheet() {
+    return VideoQuickSettingsSheet(
       initialDelayMs: _delayMs,
       initialSpeed: _playbackSpeed,
       initialSubtitleBlur: appModel.videoSubtitleBlur,
@@ -3535,31 +3708,148 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onSelectShaderTier:
           (VideoShaderTier tier, bool highQuality, List<String> enabledNames) =>
               _applyShaderTier(highQuality, enabledNames),
+      initialControlCustomization: _controlCustomization,
+      onControlCustomizationChanged: _setVideoControlCustomization,
     );
-    if (isDesktopPlatform) {
-      showAppDialog<void>(
-        context: context,
-        builder: (_) => HibikiDialogFrame(
-          // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口由面板
-          // 内部 LayoutBuilder 自动降级回单列 push（同阅读器）。
-          maxWidth: 900,
-          maxHeightFactor: 0.80,
-          scrollable: false,
-          child: sheet,
-        ),
-      ).whenComplete(() {
-        _videoSheetOpen = false;
-        _refocusVideo();
-      });
-    } else {
-      adaptiveModalSheet<void>(
-        context: context,
-        builder: (_) => sheet,
-      ).whenComplete(() {
-        _videoSheetOpen = false;
-        _refocusVideo();
-      });
+  }
+
+  void _showPlayerSettings() {
+    _showVideoSidePanel(_VideoSidePanelKind.settings);
+  }
+
+  void _showVideoSidePanel(_VideoSidePanelKind kind) {
+    if (_videoSheetOpen) return;
+    final bool leavingSubtitleList =
+        _videoSidePanel.value == _VideoSidePanelKind.subtitleList &&
+            kind != _VideoSidePanelKind.subtitleList;
+    _videoSidePanel.value = kind;
+    _subtitleListVisible.value = false;
+    if (leavingSubtitleList) {
+      _clearSelectedMiningCues();
     }
+    if (kind == _VideoSidePanelKind.subtitleList) {
+      unawaited(_refreshFavoritedCueCache());
+    }
+    _pokeControlsVisible();
+    _refocusVideo();
+  }
+
+  void _hideVideoSidePanel() {
+    final bool wasSubtitleList =
+        _videoSidePanel.value == _VideoSidePanelKind.subtitleList;
+    _videoSidePanel.value = null;
+    _subtitleListVisible.value = false;
+    if (wasSubtitleList) {
+      _clearSelectedMiningCues();
+    }
+    _refocusVideo();
+  }
+
+  String _videoSidePanelTitle(_VideoSidePanelKind kind) {
+    switch (kind) {
+      case _VideoSidePanelKind.speed:
+        return t.video_setting_speed;
+      case _VideoSidePanelKind.settings:
+        return t.video_settings_title;
+      case _VideoSidePanelKind.favoriteSentences:
+        return t.video_favorite_sentences;
+      case _VideoSidePanelKind.subtitleList:
+        return t.video_subtitle_list;
+    }
+  }
+
+  double _videoSidePanelWidth(_VideoSidePanelKind kind) {
+    switch (kind) {
+      case _VideoSidePanelKind.settings:
+        return 560;
+      case _VideoSidePanelKind.subtitleList:
+      case _VideoSidePanelKind.favoriteSentences:
+        return 420;
+      case _VideoSidePanelKind.speed:
+        return 320;
+    }
+  }
+
+  Widget _buildVideoSidePanelChild(
+    _VideoSidePanelKind kind,
+    VideoPlayerController controller,
+  ) {
+    switch (kind) {
+      case _VideoSidePanelKind.speed:
+        return _buildSpeedSidePanel();
+      case _VideoSidePanelKind.settings:
+        return _buildVideoQuickSettingsSheet();
+      case _VideoSidePanelKind.favoriteSentences:
+        return _buildFavoriteSentencesSidePanel();
+      case _VideoSidePanelKind.subtitleList:
+        return _buildSubtitleListSidePanel(controller);
+    }
+  }
+
+  Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {
+    return Positioned.fill(
+      child: ValueListenableBuilder<_VideoSidePanelKind?>(
+        valueListenable: _videoSidePanel,
+        builder: (BuildContext context, _VideoSidePanelKind? kind, __) {
+          if (kind == null) return const SizedBox.shrink();
+          return VideoTranslucentSidePanel(
+            title: _videoSidePanelTitle(kind),
+            width: _videoSidePanelWidth(kind),
+            onClose: _hideVideoSidePanel,
+            child: _buildVideoSidePanelChild(kind, controller),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSubtitleListSidePanel(VideoPlayerController controller) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    return VideoSubtitleJumpPanel(
+      key: const ValueKey<String>('video-subtitle-jump-panel'),
+      controller: controller,
+      onTapCue: _handleSubtitleJumpTap,
+      onCopyCue: _copyCueText,
+      onFavoriteCue: _toggleFavoriteCueForVideo,
+      isCueFavorited: _isCueFavorited,
+      isCueSelectedForCard: _isCueSelectedForCard,
+      onToggleCueSelection: _toggleCueSelectedForCard,
+      onClearCueSelection: _clearSelectedMiningCues,
+      onClose: _hideVideoSidePanel,
+      colorScheme: cs,
+      title: t.video_subtitle_list,
+      emptyHint: t.video_subtitle_list_empty,
+      fontSize: 14 * _videoUiScale,
+      width: _videoSidePanelWidth(_VideoSidePanelKind.subtitleList),
+    );
+  }
+
+  Widget _buildFavoriteSentencesSidePanel() {
+    return FutureBuilder<List<FavoriteSentence>>(
+      future: FavoriteSentenceRepository(appModel.database).getAll(),
+      builder: (BuildContext context,
+          AsyncSnapshot<List<FavoriteSentence>> snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return VideoFavoriteSentencesPanel(
+          currentEpisode: _currentEpisode,
+          sentences: snapshot.data ?? const <FavoriteSentence>[],
+          emptyLabel: t.video_favorite_sentences_empty,
+          onTapSentence: (FavoriteSentence sentence) {
+            final int? startMs = sentence.normCharOffset;
+            if (startMs != null) {
+              _pokeControlsVisible();
+              unawaited(_controller?.seekMs(startMs));
+            }
+          },
+        );
+      },
+    );
+  }
+
+  void _showFavoriteSentencesPanel() {
+    _showVideoSidePanel(_VideoSidePanelKind.favoriteSentences);
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
@@ -4401,6 +4691,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _toggleSubtitleJumpList,
       ),
       item(
+        Icons.collections_bookmark_outlined,
+        t.video_favorite_sentences,
+        _showFavoriteSentencesPanel,
+      ),
+      item(
         Icons.audiotrack,
         t.video_audio_track,
         () => _showAudioTrackMenu(controller),
@@ -4571,6 +4866,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             behavior: HitTestBehavior.translucent,
             onSecondaryTapUp: (TapUpDetails details) =>
                 _handleSecondaryTap(details.globalPosition),
+            onLongPressStart: _handleVideoLongPressStart,
+            onLongPressEnd: _handleVideoLongPressEnd,
             child: Stack(
               children: <Widget>[
                 // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
@@ -4633,10 +4930,56 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ),
                 _buildOsdOverlay(),
                 _buildSideLockButton(),
+                _buildVideoSideActionRail(controller),
+                _buildVideoSidePanelOverlay(controller),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildVideoSideActionRail(VideoPlayerController controller) {
+    final List<VideoControlButton> buttons =
+        _controlCustomization.buttonsFor(VideoControlPlacement.rightRail);
+    if (buttons.isEmpty) return const SizedBox.shrink();
+    return Positioned.fill(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _videoControlsVisible,
+        builder: (BuildContext context, bool controlsVisible, __) {
+          if (!controlsVisible || _immersiveLocked.value) {
+            return const SizedBox.shrink();
+          }
+          return Align(
+            alignment: Alignment.centerRight,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (final VideoControlButton button
+                        in buttons) ...<Widget>[
+                      Material(
+                        color: Colors.black.withValues(alpha: 0.42),
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.antiAlias,
+                        child: IconButton(
+                          tooltip: _videoControlButtonTooltip(button),
+                          icon: Icon(_videoControlButtonIcon(button)),
+                          color: Colors.white,
+                          onPressed: () => _activateVideoControlButton(button),
+                        ),
+                      ),
+                      if (button != buttons.last) const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -4706,7 +5049,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       onCopyCue: _copyCueText,
                       onFavoriteCue: _toggleFavoriteCueForVideo,
                       isCueFavorited: _isCueFavorited,
-                      onClose: () => _subtitleListVisible.value = false,
+                      isCueSelectedForCard: _isCueSelectedForCard,
+                      onToggleCueSelection: _toggleCueSelectedForCard,
+                      onClearCueSelection: _clearSelectedMiningCues,
+                      onClose: () {
+                        _clearSelectedMiningCues();
+                        _subtitleListVisible.value = false;
+                      },
                       colorScheme: cs,
                       title: t.video_subtitle_list,
                       emptyHint: t.video_subtitle_list_empty,

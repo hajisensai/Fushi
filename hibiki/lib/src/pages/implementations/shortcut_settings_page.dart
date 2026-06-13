@@ -98,6 +98,14 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_video_toggle_immersive_lock;
     case ShortcutAction.videoToggleSubtitleBlur:
       return t.shortcut_action_video_toggle_subtitle_blur;
+    case ShortcutAction.videoToggleFavoriteSentence:
+      return t.shortcut_action_video_toggle_favorite_sentence;
+    case ShortcutAction.videoReplayCurrentSubtitle:
+      return t.shortcut_action_video_replay_current_subtitle;
+    case ShortcutAction.videoReplayPreviousSubtitle:
+      return t.shortcut_action_video_replay_previous_subtitle;
+    case ShortcutAction.videoShowFavoriteSentences:
+      return t.shortcut_action_video_show_favorite_sentences;
     case ShortcutAction.videoEscape:
       return t.shortcut_action_video_escape;
   }
