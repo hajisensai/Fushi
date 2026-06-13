@@ -2914,7 +2914,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
@@ -2991,64 +2990,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 可经控制条自定义改放它处（TODO-274）。
       ],
       bottomButtonBar: <Widget>[
-        // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
-        // [MaterialDesktopPositionIndicator] 不传 style 时回退硬编码 fontSize 12.0，
-        // 永不随 appUiScale 缩放（视频页被 [HibikiAppUiScaleNeutralizer] 中和回 1.0）。
-        // 这里显式传 style，仅把字号乘 [_videoUiScale]；color 沿用 media_kit 默认时间
-        // 文字色 buttonBarButtonColor（本主题为 cs.primary），不改色只缩放字号。
-        MaterialDesktopPositionIndicator(
-          style: TextStyle(
-            height: 1.0,
-            fontSize: 12.0 * _videoUiScale,
-            color: cs.primary,
-          ),
+        // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
+        // seek 簇。±10s 带可见标注（旧底栏只有 tooltip，用户看不懂图标）。media_kit 把
+        // bottomButtonBar 放进 Row，用单个 [Expanded] 占满整宽承接绝对定位布局。
+        // 进度/时长文字吃「界面大小」（TODO-128）、5 键带 Tooltip（BUG-247）均在
+        // [_centeredBottomControlBar] 内保留。
+        Expanded(
+          child: _centeredBottomControlBar(controller, desktop: true),
         ),
-        const Spacer(),
-        // 底栏 5 键全部包 Flutter [Tooltip]（BUG-247）：media_kit 的
-        // [MaterialDesktopCustomButton] / [MaterialDesktopPlayOrPauseButton] 没有
-        // tooltip 参数，悬停无任何提示；文案诚实反映双重语义（上一句/下一句在无字幕段
-        // 退化成相对 seek）。
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_back,
-            child: MaterialDesktopCustomButton(
-              icon:
-                  Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(-10000),
-            ),
-          ),
-        Tooltip(
-          message: t.video_bottom_prev_cue,
-          child: MaterialDesktopCustomButton(
-            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-            onPressed: () => _skipCueAndPokeControls(forward: false),
-          ),
-        ),
-        Tooltip(
-          message: t.video_bottom_play_pause,
-          child: MaterialDesktopPlayOrPauseButton(
-              iconSize: _videoPlayPauseIconSize),
-        ),
-        Tooltip(
-          message: t.video_bottom_next_cue,
-          child: MaterialDesktopCustomButton(
-            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-            onPressed: () => _skipCueAndPokeControls(forward: true),
-          ),
-        ),
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_forward,
-            child: MaterialDesktopCustomButton(
-              icon:
-                  Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(10000),
-            ),
-          ),
-        const Spacer(),
-        ..._customBottomControlButtons(controller, desktop: true),
-        _buildVolumeButton(controller, desktop: true),
-        _buildFullscreenButton(desktop: true),
       ],
     );
   }
@@ -3063,7 +3012,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     // 进度条 / 底部按钮条的底部留白（BUG-184）：基线 + 系统导航栏/手势栏 inset，
     // 让进度条回到「底部按钮条同一基线、抬离屏幕物理最底」的控制条惯例位置，而不是
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
@@ -3165,70 +3113,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 按钮功能完全重复，统一交给可配置的 rightRail settings 按钮负责（与桌面一致）。
       ],
       bottomButtonBar: <Widget>[
-        // 进度/总时长文字也吃「界面大小」（TODO-128，067 补漏）：media_kit 的
-        // [MaterialPositionIndicator] 不传 style 时回退硬编码 fontSize 12.0，永不随
-        // appUiScale 缩放（视频页被 [HibikiAppUiScaleNeutralizer] 中和回 1.0）。这里
-        // 显式传 style，仅把字号乘 [_videoUiScale]；color 沿用 media_kit 默认时间文字
-        // 色 buttonBarButtonColor（本主题为 cs.primary），不改色只缩放字号。
-        MaterialPositionIndicator(
-          style: TextStyle(
-            height: 1.0,
-            fontSize: 12.0 * _videoUiScale,
-            color: cs.primary,
-          ),
+        // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
+        // seek 簇，与桌面同源（[_centeredBottomControlBar]）。±10s 带可见标注、5 键带
+        // Tooltip（BUG-247）、上/下一句走动态 cue 导航（无字幕段对称回退/前进，TODO-073/
+        // TODO-119/BUG-198，动态 _asbConfig.seekSeconds 不写死）均在 helper 内保留。
+        Expanded(
+          child: _centeredBottomControlBar(controller, desktop: false),
         ),
-        const Spacer(),
-        // 底栏 5 键全部包 Flutter [Tooltip]（BUG-247）：media_kit 的 [MaterialCustomButton]
-        // / [MaterialPlayOrPauseButton] 没有 tooltip 参数；文案诚实反映双重语义（上一句/
-        // 下一句在无字幕段退化成相对 seek）。
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_back,
-            child: MaterialCustomButton(
-              icon:
-                  Icon(Icons.fast_rewind_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(-10000),
-            ),
-          ),
-        Tooltip(
-          message: t.video_bottom_prev_cue,
-          child: MaterialCustomButton(
-            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-            // 无字幕/转场(OP)段也回退 seekSeconds 秒、不卡住(TODO-119，对称 TODO-073
-            // 的「下一句」按钮)。原裸 skipToPrevCue 在空 cue / 上句太远时 no-op，用户
-            // 报「转场片段没字幕时按字幕回退键没反应」(BUG-198)。
-            onPressed: () => controller.skipToPrevCueOrSeekBack(
-              seekSeconds: _asbConfig.seekSeconds,
-            ),
-          ),
-        ),
-        Tooltip(
-          message: t.video_bottom_play_pause,
-          child: MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
-        ),
-        Tooltip(
-          message: t.video_bottom_next_cue,
-          child: MaterialCustomButton(
-            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-            // 无字幕(OP)时也前进 seekSeconds 秒、不卡住(TODO-073)。
-            onPressed: () => controller.skipToNextCueOrSeekForward(
-              seekSeconds: _asbConfig.seekSeconds,
-            ),
-          ),
-        ),
-        if (roomyBottomBar)
-          Tooltip(
-            message: t.video_bottom_seek_forward,
-            child: MaterialCustomButton(
-              icon:
-                  Icon(Icons.fast_forward_rounded, size: _videoControlIconSize),
-              onPressed: () => _seekRelative(10000),
-            ),
-          ),
-        const Spacer(),
-        ..._customBottomControlButtons(controller, desktop: false),
-        _buildVolumeButton(controller, desktop: false),
-        _buildFullscreenButton(desktop: false),
       ],
     );
   }
@@ -3242,6 +3133,155 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           in _controlCustomization.buttonsFor(VideoControlPlacement.bottom))
         _buildVideoControlButton(controller, button, desktop: desktop),
     ];
+  }
+
+  /// 底栏传输组：`[−10s][上一句][play][下一句][+10s]`，[play] 钉在几何正中（BUG-257）。
+  ///
+  /// 根因：旧底栏 `[时间] Spacer [seek 簇] Spacer [尾部按钮…]` 用两个 [Spacer] 在「时间」
+  /// 与「尾部按钮」间均分，尾部按钮越多 seek 簇离整条几何中心越远 → play 偏左。改用 [Stack]
+  /// 三区绝对定位：左区时间、右区尾部按钮、[Center] 居中 seek 簇，play 恒处几何中心、两侧
+  /// seek 对称，与尾部按钮数量无关。桌面/移动共用本布局（仅控件类型与播放暂停按钮不同）。
+  Widget _centeredBottomControlBar(
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
+    final Widget positionIndicator = desktop
+        ? MaterialDesktopPositionIndicator(
+            style: TextStyle(
+              height: 1.0,
+              fontSize: 12.0 * _videoUiScale,
+              color: cs.primary,
+            ),
+          )
+        : MaterialPositionIndicator(
+            style: TextStyle(
+              height: 1.0,
+              fontSize: 12.0 * _videoUiScale,
+              color: cs.primary,
+            ),
+          );
+    final List<Widget> rightCluster = <Widget>[
+      ..._customBottomControlButtons(controller, desktop: desktop),
+      _buildVolumeButton(controller, desktop: desktop),
+      _buildFullscreenButton(desktop: desktop),
+    ];
+    // seek 传输簇（居中绝对定位）：±10s 带可见标注（BUG-257 用户看不懂图标），上/下一句走
+    // cue 导航（无字幕段对称回退/前进，动态 _asbConfig.seekSeconds，不写死 ±3s）。
+    final Widget transport = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (roomyBottomBar)
+          _seekLabelButton(
+            icon: Icons.fast_rewind_rounded,
+            label: t.video_bottom_seek_back_label,
+            tooltip: t.video_bottom_seek_back,
+            color: cs.primary,
+            onPressed: () => _seekRelative(-10000),
+          ),
+        Tooltip(
+          message: t.video_bottom_prev_cue,
+          child: desktop
+              ? MaterialDesktopCustomButton(
+                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: false),
+                )
+              : MaterialCustomButton(
+                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: false),
+                ),
+        ),
+        Tooltip(
+          message: t.video_bottom_play_pause,
+          child: desktop
+              ? MaterialDesktopPlayOrPauseButton(
+                  iconSize: _videoPlayPauseIconSize)
+              : MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
+        ),
+        Tooltip(
+          message: t.video_bottom_next_cue,
+          child: desktop
+              ? MaterialDesktopCustomButton(
+                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: true),
+                )
+              : MaterialCustomButton(
+                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: true),
+                ),
+        ),
+        if (roomyBottomBar)
+          _seekLabelButton(
+            icon: Icons.fast_forward_rounded,
+            label: t.video_bottom_seek_forward_label,
+            tooltip: t.video_bottom_seek_forward,
+            color: cs.primary,
+            onPressed: () => _seekRelative(10000),
+          ),
+      ],
+    );
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        // 居中传输簇：play 恒处整条底栏几何中心。
+        Center(child: transport),
+        // 左区：时间指示器（与中心簇绝对独立，宽度变化不挤偏 play）。
+        Align(
+          alignment: Alignment.centerLeft,
+          child: positionIndicator,
+        ),
+        // 右区：自定义按钮 + 音量 + 全屏（宽度变化不挤偏 play）。
+        Align(
+          alignment: Alignment.centerRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: rightCluster,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 带可见标注的 seek 按钮（图标 + `−10s`/`+10s`）。media_kit 的 `MaterialCustomButton`
+  /// 只接受单 icon、无可见文字，用户看不懂图标（BUG-257）；这里用 [InkWell] 自绘
+  /// 图标 + 紧凑标注，颜色对齐 `buttonBarButtonColor`（cs.primary），仍带 [Tooltip]。
+  Widget _seekLabelButton({
+    required IconData icon,
+    required String label,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 6 * _videoUiScale,
+            vertical: 4 * _videoUiScale,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: _videoControlIconSize * 0.82, color: color),
+              SizedBox(width: 2 * _videoUiScale),
+              Text(
+                label,
+                style: TextStyle(
+                  height: 1.0,
+                  fontSize: 11.0 * _videoUiScale,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildVideoControlButton(

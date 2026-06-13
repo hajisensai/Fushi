@@ -1,0 +1,6 @@
+## BUG-257 · play 按钮不居中 + seek 按钮看不懂
+- **报告**：2026-06-14（用户：TODO-315 视频底栏播放按钮不在正中央、几个快进快退按钮看不懂在干嘛）
+- **真实性**：✅ 真 bug。底栏 `bottomButtonBar`（桌面 `_desktopControlsTheme`，`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:2975`；移动 `_mobileControlsTheme`:3149）= `[时间] Spacer [seek 簇] Spacer [自定义按钮... 音量 全屏]`。两个 `Spacer` 只在「时间」与「右侧尾部按钮」之间均分，尾部按钮越多，seek 簇（含 play）离整条几何中心越远 → play 偏左（同 283 布局缺陷）。seek 键虽有 tooltip（BUG-247），但 ±10s / 上一句 / 下一句无可见标注，用户看图标看不懂。
+- **[x] ① 已修复** — 底栏改三区 `Stack` 布局：左区放时间指示器（左对齐）、右区放自定义按钮 + 音量 + 全屏（右对齐）、`Center` 绝对定位 seek 簇（`[−10s][上一句][play][下一句][+10s]`），play 恒处几何中心、两侧 seek 对称，不再被尾部按钮挤偏。`fast_rewind/fast_forward` 改用带可见标注的按钮（`−10s` / `+10s`，TextSpan 叠在图标旁），`skip_prev/next` tooltip 文案保持「上一句/下一句」（动态 `_asbConfig.seekSeconds`，不写死）。桌面/移动两套主题同步。文案走 i18n（复用 BUG-247 已加的 `video_bottom_*` + 新增 `video_bottom_seek_back_label`/`video_bottom_seek_forward_label`）。提交哈希见末行。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_play_center_seek_labels_guard_test.dart` 源码守卫：底栏用 `Center` 居中 seek 簇 / 三区布局；seek 按钮带可见 ±10s 标注；skip 键仍用动态 seekSeconds 不写死 ±3s。同步更新 `video_bottom_bar_tooltips_guard_test.dart`（5 键 Tooltip 守卫改扫共享 `_centeredBottomControlBar`）。
+- **备注**：底栏 5 键从两套主题各自平铺合并为共享 `_centeredBottomControlBar`（桌面/移动同源）。与 integration/wave-1 ff 基线对照零新增回归。真机验证待用户。

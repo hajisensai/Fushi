@@ -14,19 +14,22 @@ void main() {
       File('lib/src/media/video/video_player_shortcuts.dart')
           .readAsStringSync();
 
-  test('字幕列表走半透明统一侧栏，不再回到旧的阻塞弹窗', () {
+  test('字幕列表走 push-aside（把画面挤左），不再 overlay 浮层遮挡也不回旧阻塞弹窗（TODO-314）', () {
     final int toggleIdx = src.indexOf('void _toggleSubtitleJumpList()');
     final int nextHandlerIdx =
         src.indexOf('void _handleSubtitleJumpTap', toggleIdx);
     final String toggleBody = src.substring(toggleIdx, nextHandlerIdx);
 
-    expect(
-        src, contains('ValueNotifier<_VideoSidePanelKind?> _videoSidePanel'));
-    expect(src, contains('VideoTranslucentSidePanel'));
-    expect(src, contains('_buildVideoSidePanelOverlay(controller)'));
+    // push-aside 由 _subtitleListVisible / _videoWithSubtitlePanel 承载（Row 真挤窄画面）。
+    expect(src, contains('final ValueNotifier<bool> _subtitleListVisible'));
+    expect(src, contains('Widget _videoWithSubtitlePanel('));
     expect(src, contains('VideoSubtitleJumpPanel('));
+    // 不再经 overlay side-panel 系统开字幕列表（那会浮在画面上遮挡，TODO-314 根因）。
+    expect(toggleBody, contains('_subtitleListVisible.value'));
     expect(
-        src, contains('_showVideoSidePanel(_VideoSidePanelKind.subtitleList)'));
+        toggleBody,
+        isNot(
+            contains('_showVideoSidePanel(_VideoSidePanelKind.subtitleList)')));
     expect(toggleBody, isNot(contains('showModalBottomSheet')));
   });
 
@@ -81,15 +84,23 @@ void main() {
     expect(toggle, greaterThan(gate));
   });
 
-  test('Esc 优先关统一侧栏，再退页或退全屏', () {
+  test('Esc 优先关 push-aside 字幕列表 / 浮层，再退页或退全屏（TODO-314）', () {
     final int escIdx = src.indexOf('escape: () {');
     expect(escIdx, greaterThanOrEqualTo(0), reason: '缺 escape 回调');
-    final int panelGate = src.indexOf(
-        '_videoSidePanel.value != null || _subtitleListVisible.value', escIdx);
+    // push-aside 字幕列表分支先判 _subtitleListVisible → 关列表。
+    final int listGate =
+        src.indexOf('if (_subtitleListVisible.value) {', escIdx);
+    final int listCloseIdx = src.indexOf('_toggleSubtitleJumpList();', escIdx);
+    // 浮层分支判 _videoSidePanel → _hideVideoSidePanel。
+    final int panelGate =
+        src.indexOf('if (_videoSidePanel.value != null) {', escIdx);
     final int closeIdx = src.indexOf('_hideVideoSidePanel();', escIdx);
     final int exitIdx = src.indexOf('_handleBackOrExit()', escIdx);
-    expect(panelGate, greaterThanOrEqualTo(0), reason: 'Esc 未先判断侧栏状态');
-    expect(closeIdx, greaterThan(panelGate), reason: 'Esc 侧栏分支未关闭侧栏');
+    expect(listGate, greaterThanOrEqualTo(0),
+        reason: 'Esc 未先判 push-aside 字幕列表');
+    expect(listCloseIdx, greaterThan(listGate), reason: 'Esc 字幕列表分支未关列表');
+    expect(panelGate, greaterThan(listGate), reason: 'Esc 浮层分支应在字幕列表之后');
+    expect(closeIdx, greaterThan(panelGate), reason: 'Esc 浮层分支未关浮层');
     expect(closeIdx, lessThan(exitIdx), reason: 'Esc 关侧栏必须排在退页之前');
   });
 

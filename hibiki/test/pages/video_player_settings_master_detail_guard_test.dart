@@ -138,10 +138,12 @@ void main() {
     final String source =
         File('lib/src/pages/implementations/video_hibiki_page.dart')
             .readAsStringSync();
+    // TODO-314：字幕列表改 push-aside 后 overlay 版 _buildSubtitleListSidePanel 已删，
+    // _buildVideoSidePanelContent 之后直接是 _buildSubtitleSourcesSidePanel。
     final String panelMethod = _between(
       source,
       'Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {',
-      'Widget _buildSubtitleListSidePanel(VideoPlayerController controller) {',
+      'Widget _buildSubtitleSourcesSidePanel(VideoPlayerController controller) {',
     );
     final String visibilityMethod = _between(
       source,
