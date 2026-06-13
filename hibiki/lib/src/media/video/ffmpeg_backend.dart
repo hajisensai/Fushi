@@ -19,6 +19,16 @@ class FfmpegRunResult {
   bool get isSuccess => returnCode == 0;
 }
 
+typedef FfmpegProcessRunner = Future<FfmpegRunResult> Function(
+  String executable,
+  List<String> args,
+  Duration timeout,
+);
+
+const int _windowsStatusInvalidImageFormatSigned = -1073741701;
+const int _windowsStatusInvalidImageFormatUnsigned = 0xC000007B;
+const int _windowsBadExeFormatErrorCode = 193;
+
 /// ffmpeg 执行底座抽象：所有 ffmpeg 调用经它，与「系统 CLI / 捆绑库」实现解耦。
 ///
 /// 只有一个原语 [run]——跑一次 ffmpeg，返回退出码 + stderr 文本：
@@ -98,6 +108,83 @@ Future<FfmpegRunResult> runFfmpegProcess(
   }
 }
 
+bool _isWindowsInvalidImageFormatExitCode(
+  int? returnCode, {
+  required bool isWindows,
+}) {
+  if (!isWindows || returnCode == null) return false;
+  return returnCode == _windowsStatusInvalidImageFormatSigned ||
+      returnCode == _windowsStatusInvalidImageFormatUnsigned;
+}
+
+bool _isWindowsBadExeFormatProcessException(
+  Object error, {
+  required bool isWindows,
+}) =>
+    isWindows &&
+    error is ProcessException &&
+    error.errorCode == _windowsBadExeFormatErrorCode;
+
+Future<FfmpegRunResult> _runCliFfmpeg({
+  required String? override,
+  required String? bundledPath,
+  required bool isWindows,
+  required List<String> args,
+  required Duration timeout,
+  required FfmpegProcessRunner runner,
+}) async {
+  final String? o = override?.trim();
+  if (o != null && o.isNotEmpty) {
+    return runner(o, args, timeout);
+  }
+
+  final String? bundled = bundledPath?.trim();
+  if (bundled != null && bundled.isNotEmpty) {
+    try {
+      final FfmpegRunResult bundledResult =
+          await runner(bundled, args, timeout);
+      if (!_isWindowsInvalidImageFormatExitCode(
+        bundledResult.returnCode,
+        isWindows: isWindows,
+      )) {
+        return bundledResult;
+      }
+      debugPrint(
+        '[hibiki-ffmpeg] bundled ffmpeg is STATUS_INVALID_IMAGE_FORMAT; '
+        'falling back to PATH ffmpeg: $bundled',
+      );
+    } on ProcessException catch (e) {
+      if (!_isWindowsBadExeFormatProcessException(e, isWindows: isWindows)) {
+        rethrow;
+      }
+      debugPrint(
+        '[hibiki-ffmpeg] bundled ffmpeg is not a valid Windows executable; '
+        'falling back to PATH ffmpeg: $bundled',
+      );
+    }
+  }
+
+  return runner('ffmpeg', args, timeout);
+}
+
+@visibleForTesting
+Future<FfmpegRunResult> runCliFfmpegForTesting({
+  required String? override,
+  required String? bundledPath,
+  required bool isWindows,
+  required List<String> args,
+  required Duration timeout,
+  required FfmpegProcessRunner runner,
+}) =>
+    _runCliFfmpeg(
+      override: override,
+      bundledPath: bundledPath,
+      isWindows: isWindows,
+      args: args,
+      timeout: timeout,
+      runner: runner,
+    );
+
 /// 系统 ffmpeg（`Process.start`）后端：桌面三端（Windows/macOS/Linux）。
 /// 委托 [runFfmpegProcess]，可执行文件经 [resolveFfmpegExecutable] 解析（覆盖>捆绑>PATH）。
 class CliFfmpegBackend implements FfmpegBackend {
@@ -105,7 +192,14 @@ class CliFfmpegBackend implements FfmpegBackend {
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
-      runFfmpegProcess(resolveFfmpegExecutable(), args, timeout);
+      _runCliFfmpeg(
+        override: Platform.environment['HIBIKI_FFMPEG'],
+        bundledPath: _bundledFfmpegPath(),
+        isWindows: Platform.isWindows,
+        args: args,
+        timeout: timeout,
+        runner: runFfmpegProcess,
+      );
 }
 
 /// 移动端（Android/iOS）后端：进程内调用「自编」的 ffmpeg-kit（arthenica 源码 +

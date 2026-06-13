@@ -3363,6 +3363,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     String? sasayakiAudioPath;
     Directory? sasayakiTempDir;
+    bool requestedSentenceAudioClip = false;
+    void cleanupSasayakiTempDir() {
+      if (sasayakiTempDir != null && sasayakiTempDir.existsSync()) {
+        try {
+          sasayakiTempDir.deleteSync(recursive: true);
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('ReaderHibiki.mineEntry.cleanupAudio', e, stack);
+        }
+      }
+    }
+
     final AudioCue? cue = _lookupCue;
     final AudiobookPlayerController? audioController = _audiobookController;
     final List<File>? audioFiles = audioController?.audioFiles;
@@ -3390,6 +3402,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         sasayakiTempDir =
             Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
         final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
+        requestedSentenceAudioClip = true;
         sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
           inputPath: inputFile.path,
           startMs: clip.startMs,
@@ -3405,6 +3418,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}).',
         );
       }
+    }
+
+    if (requestedSentenceAudioClip && sasayakiAudioPath == null) {
+      cleanupSasayakiTempDir();
+      ErrorLogService.instance.log(
+        'ReaderHibiki.mineEntry.sentenceAudio',
+        'sentence audio export failed',
+        StackTrace.current,
+      );
+      HibikiToast.show(
+        msg: t.card_export_failed_detail(
+          reason: 'sentence audio export failed',
+        ),
+      );
+      return false;
     }
 
     final String cueSentence =
@@ -3428,14 +3456,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         context: miningContext,
       );
     } finally {
-      if (sasayakiTempDir != null && sasayakiTempDir.existsSync()) {
-        try {
-          sasayakiTempDir.deleteSync(recursive: true);
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('ReaderHibiki.mineEntry.cleanupAudio', e, stack);
-        }
-      }
+      cleanupSasayakiTempDir();
     }
 
     switch (outcome.result) {

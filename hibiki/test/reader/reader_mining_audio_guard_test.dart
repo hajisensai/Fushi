@@ -123,5 +123,45 @@ void main() {
             'the clip before extracting a segment.',
       );
     });
+
+    test('aborts mining when requested sentence-audio export fails', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_hibiki_page.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('bool requestedSentenceAudioClip = false'),
+        reason: 'The reader must remember that a real sentence-audio clip was '
+            'requested; otherwise ffmpeg failures become silent no-audio cards.',
+      );
+      expect(
+        source,
+        contains('requestedSentenceAudioClip = true'),
+        reason:
+            'The failure guard should only fire after a clip range and output '
+            'path were actually chosen.',
+      );
+      expect(
+        source,
+        contains(
+            'if (requestedSentenceAudioClip && sasayakiAudioPath == null)'),
+        reason:
+            'A requested but failed sentence-audio export must stop card mining '
+            'with a visible error instead of continuing as a success.',
+      );
+      expect(
+        source,
+        contains('card_export_failed_detail'),
+        reason: 'The stopped path must be user-visible, not just logged.',
+      );
+
+      final int guardIndex = source.indexOf(
+        'if (requestedSentenceAudioClip && sasayakiAudioPath == null)',
+      );
+      final int mineIndex = source.indexOf('outcome = await repo.mineEntry');
+      expect(guardIndex, greaterThanOrEqualTo(0));
+      expect(mineIndex, greaterThan(guardIndex));
+    });
   });
 }
