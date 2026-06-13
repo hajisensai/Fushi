@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -13,6 +14,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
+import 'helpers/focus_driver.dart';
 import 'helpers/pagination_test_harness.dart';
 import 'test_helpers.dart';
 
@@ -41,6 +43,7 @@ void main() {
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('M1: Reader pagination invariants hold across page turns',
+      timeout: const Timeout(Duration(minutes: 5)),
       (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
@@ -56,43 +59,31 @@ void main() {
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
       debugPrint('[M1] Home ready');
+      final FocusDriver driver = FocusDriver(tester);
 
       // === Open first book ===
       // Ensure we're on the Books tab before looking for entries (home may
       // default to another tab; the shelf list also lazy-loads).
-      final navTargets = findPrimaryNavigationTargets();
-      if (navTargets.isNotEmpty) {
-        await tester.tap(navTargets.first);
-        await tester.pumpAndSettle();
-      }
+      await _openBooksTab(tester, driver);
 
-      var bookEntries = findBookEntries();
-      for (int i = 0; i < 20 && bookEntries.evaluate().isEmpty; i++) {
+      // Always import and open this run's marker EPUB. Windows off-screen tests
+      // reuse the user's app data, so opening the first existing shelf book can
+      // silently downgrade marker coverage to a real-book smoke test.
+      debugPrint('[M1] Importing synthetic marker EPUB');
+      final String bookKey = await _seedTestBook(tester);
+      await _openBooksTab(tester, driver);
+      final String seededEntryKey =
+          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
+      final Finder seededEntry = find.byKey(ValueKey<String>(seededEntryKey));
+      for (int i = 0; i < 20 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
-        bookEntries = findBookEntries();
+      }
+      if (seededEntry.evaluate().isEmpty) {
+        fail('M1 blocked: seeded test EPUB did not appear on shelf '
+            '($seededEntryKey).');
       }
 
-      // flutter drive installs a fresh, empty app each run, so seed the
-      // synthetic marker EPUB ourselves to keep the test hermetic.
-      if (bookEntries.evaluate().isEmpty) {
-        debugPrint('[M1] Shelf empty — importing synthetic marker EPUB');
-        await _seedTestBook(tester);
-        if (navTargets.isNotEmpty) {
-          await tester.tap(navTargets.first);
-          await tester.pumpAndSettle();
-        }
-        bookEntries = findBookEntries();
-        for (int i = 0; i < 20 && bookEntries.evaluate().isEmpty; i++) {
-          await tester.pump(const Duration(milliseconds: 500));
-          bookEntries = findBookEntries();
-        }
-      }
-
-      if (bookEntries.evaluate().isEmpty) {
-        fail('M1 blocked: failed to seed test EPUB onto shelf.');
-      }
-
-      await tester.tap(bookEntries.first);
+      await _activateBook(tester, driver, seededEntry);
       await tester.pump(const Duration(seconds: 3));
 
       // === Wait for WebView ===
@@ -229,14 +220,12 @@ void main() {
       final beforeMarkers = parseMarkers(
           await eval('window.hoshiTestHarness.getVisibleMarkers();') as String);
 
-      // Toggle reader chrome on/off (center tap) without changing settings.
-      final centerTap = Offset(
-        tester.view.physicalSize.width / tester.view.devicePixelRatio / 2,
-        tester.view.physicalSize.height / tester.view.devicePixelRatio / 2,
-      );
-      await tester.tapAt(centerTap);
+      // Toggle reader chrome on/off via the real reader keyboard shortcut.
+      // Coordinate taps are banned for off-screen integration tests because
+      // overlays, platform windows, and layout drift can make them miss.
+      await _toggleReaderChrome(tester, find.byKey(webViewKey));
       await tester.pump(const Duration(seconds: 1));
-      await tester.tapAt(centerTap);
+      await _toggleReaderChrome(tester, find.byKey(webViewKey));
       await tester.pump(const Duration(seconds: 1));
 
       final afterState = PaginationState.fromJson(
@@ -292,7 +281,7 @@ void main() {
 
       // Fire 8 chrome toggles with only one frame between taps (no settle).
       for (int i = 0; i < 8; i++) {
-        await tester.tapAt(centerTap);
+        await _toggleReaderChrome(tester, find.byKey(webViewKey));
         await tester.pump(const Duration(milliseconds: 16));
       }
       await tester.pump(const Duration(seconds: 1));
@@ -332,13 +321,60 @@ void main() {
   });
 }
 
+Future<void> _openBooksTab(
+  WidgetTester tester,
+  FocusDriver driver,
+) async {
+  final List<Finder> navTargets = findPrimaryNavigationTargets();
+  if (navTargets.isEmpty) return;
+  final bool focused = await driver.focusWidget(navTargets.first);
+  expect(focused, isTrue, reason: 'Books tab must be reachable by focus');
+  await driver.activate();
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
+Future<void> _activateBook(
+  WidgetTester tester,
+  FocusDriver driver,
+  Finder bookEntry,
+) async {
+  final bool focused = await driver.focusWidget(bookEntry);
+  expect(focused, isTrue, reason: 'Book card must be reachable by focus');
+  await driver.activate();
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
+Future<void> _toggleReaderChrome(
+  WidgetTester tester,
+  Finder webView,
+) async {
+  _focusReaderSurface(webView);
+  await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+}
+
+void _focusReaderSurface(Finder webView) {
+  final Iterable<Element> matches = webView.evaluate();
+  expect(matches, isNotEmpty, reason: 'Reader WebView must be mounted');
+  bool focused = false;
+  matches.single.visitAncestorElements((Element ancestor) {
+    final Widget widget = ancestor.widget;
+    if (widget is Focus && widget.onKeyEvent != null) {
+      widget.focusNode?.requestFocus();
+      focused = true;
+      return false;
+    }
+    return true;
+  });
+  expect(focused, isTrue, reason: 'Reader focus surface must wrap WebView');
+}
+
 Map<String, dynamic> _decode(String json) =>
     jsonDecode(json) as Map<String, dynamic>;
 
 /// Imports the synthetic marker EPUB directly into the app database, then
 /// refreshes the shelf provider so the book appears. Keeps the pagination
 /// test self-contained on an otherwise-empty fresh install.
-Future<void> _seedTestBook(WidgetTester tester) async {
+Future<String> _seedTestBook(WidgetTester tester) async {
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
@@ -359,4 +395,5 @@ Future<void> _seedTestBook(WidgetTester tester) async {
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
   await tester.pumpAndSettle();
+  return bookKey;
 }

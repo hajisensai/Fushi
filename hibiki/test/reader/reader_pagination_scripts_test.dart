@@ -332,6 +332,24 @@ void main() {
               '勿退回 scrollToProgressPaged 的进度分数对齐');
     });
 
+    test('paginated restore completion warms pagination metrics during idle',
+        () {
+      expect(paginated, contains('warmPaginationMetrics: function()'),
+          reason:
+              'Hoshi Android 在 restore 完成后 idle 预热分页 metrics，避免下次翻页才同步扫 DOM');
+      expect(paginated,
+          contains("typeof this.warmPaginationMetrics === 'function'"));
+      expect(paginated, contains('this.warmPaginationMetrics();'));
+      expect(paginated,
+          contains('window.requestIdleCallback(run, { timeout: 1000 });'));
+      expect(paginated, contains('setTimeout(run, 200);'));
+      expect(paginated, contains('this.buildPaginationMetrics();'));
+      expect(continuous,
+          contains("typeof this.warmPaginationMetrics === 'function'"),
+          reason:
+              'notifyRestoreComplete 是 shared JS，连续模式必须安全跳过 paginated-only warm');
+    });
+
     test('continuous re-anchor captures progress and re-scrolls', () {
       final int idx = continuous.indexOf('reanchorAfterStyleChange =');
       expect(idx, greaterThanOrEqualTo(0));

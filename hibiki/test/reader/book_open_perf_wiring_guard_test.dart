@@ -64,4 +64,66 @@ void main() {
     expect(body.contains('_chapterCumulativeChars'), isTrue);
     expect(body.contains('_progressTotalChars'), isTrue);
   });
+
+  test('跨章收藏高亮复用书内缓存并按 section 过滤', () {
+    expect(src, contains('_favoriteSentencesForBookCache'),
+        reason: 'reader 应缓存当前书收藏，跨章只做内存过滤，避免每章全量 getAll/decode/sort');
+    expect(src, contains('_favoriteSentencesForSection'));
+
+    final int helperIdx = src.indexOf('_favoriteSentencesForSection');
+    final int applyIdx = src.indexOf('Future<void> _applyChapterHighlights()');
+    final int lyricsIdx = src.indexOf('Future<void> _applyLyricsFavorites()');
+    final int refreshIdx =
+        src.indexOf('Future<void> _refreshSectionHighlights(int section)');
+    final int toggleIdx = src.indexOf('Future<void> _toggleFavoriteSentence()');
+    expect(helperIdx, greaterThan(0));
+    expect(applyIdx, greaterThan(0));
+    expect(lyricsIdx, greaterThan(applyIdx));
+    expect(refreshIdx, greaterThan(lyricsIdx));
+    expect(toggleIdx, greaterThan(refreshIdx));
+
+    final String helperBody = src.substring(helperIdx, applyIdx);
+    expect(helperBody, contains('s.bookKey == widget.bookKey'));
+    expect(helperBody, contains('s.sectionIndex == section'),
+        reason: '章节高亮必须只取当前 section，不能把整本收藏都交给高亮桥');
+
+    final String applyBody = src.substring(applyIdx, lyricsIdx);
+    final String refreshBody = src.substring(refreshIdx, toggleIdx);
+    expect(
+        applyBody, contains('_favoriteSentencesForSection(_currentChapter)'));
+    expect(refreshBody, contains('_favoriteSentencesForSection(section)'));
+    expect(applyBody, isNot(contains('getAll()')),
+        reason: '_applyChapterHighlights 跑在每章加载路径，不能每章全量解码收藏');
+    expect(refreshBody, isNot(contains('getAll()')),
+        reason: '_refreshSectionHighlights 也应复用缓存并只按 section 筛');
+  });
+
+  test('收藏新增删除会失效缓存再刷新高亮', () {
+    expect(src, contains('void _invalidateFavoriteSentenceCache()'));
+
+    final int settingsIdx = src.indexOf('Future<void> _showAppearanceSheet()');
+    final int progressIdx = src.indexOf('Widget _buildTopProgressBar()');
+    final int toggleIdx = src.indexOf('Future<void> _toggleFavoriteSentence()');
+    final int popupIdx = src.indexOf('Widget? buildPopupAudioControls()');
+    expect(settingsIdx, greaterThan(0));
+    expect(progressIdx, greaterThan(settingsIdx));
+    expect(toggleIdx, greaterThan(progressIdx));
+    expect(popupIdx, greaterThan(toggleIdx));
+
+    final String settingsBody = src.substring(settingsIdx, progressIdx);
+    final String toggleBody = src.substring(toggleIdx, popupIdx);
+    expect(
+        settingsBody,
+        contains(
+            'await favRepo.removeById(fav.id);\n          _invalidateFavoriteSentenceCache();'),
+        reason: '设置面板删除收藏后，当前 reader 缓存必须失效');
+    expect(toggleBody,
+        contains('await repo.removeByContent(\n        text: sentence,'));
+    expect(toggleBody, contains('_invalidateFavoriteSentenceCache();'));
+    expect(
+        toggleBody,
+        contains(
+            'await repo.add(fav);\n    _invalidateFavoriteSentenceCache();'),
+        reason: '新增收藏后必须重新拉取/过滤，保证高亮和星标状态准确');
+  });
 }
