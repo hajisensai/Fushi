@@ -56,9 +56,25 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       case AnkiFetchSuccess():
         final settings = await _repository.loadSettings();
         state = state.copyWith(settings: settings, isFetching: false);
-      case AnkiFetchError(:final message):
-        state = state.copyWith(isFetching: false, errorMessage: message);
+      case AnkiFetchError(:final message, :final code):
+        state = state.copyWith(
+          isFetching: false,
+          errorMessage: localizeAnkiFetchError(message, code),
+        );
     }
+  }
+
+  /// TODO-292: map a classified AnkiDroid fetch error to a localized,
+  /// actionable hint. AnkiDroid raising "collection is not available" is
+  /// external app state the host app cannot fix (collection in use / mid-sync /
+  /// corrupt, AnkiDroid never opened once, API disabled, background process
+  /// killed); show the user what to do instead of the raw English text.
+  /// Unclassified errors keep their verbatim [message].
+  static String localizeAnkiFetchError(String message, String? code) {
+    if (code == AnkiErrorCode.collectionUnavailable) {
+      return t.anki_error_collection_unavailable;
+    }
+    return message;
   }
 
   Future<void> selectDeck(AnkiDeck deck) async {

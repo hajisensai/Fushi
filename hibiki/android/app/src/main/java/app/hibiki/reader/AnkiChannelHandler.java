@@ -107,7 +107,7 @@ public class AnkiChannelHandler {
                             try {
                                 result.success(api.getDeckList());
                             } catch (Exception e) {
-                                result.error("ANKI_PROVIDER_ERROR",
+                                result.error(providerErrorCode(e),
                                     e.getMessage(), null);
                             }
                         }
@@ -117,7 +117,7 @@ public class AnkiChannelHandler {
                             try {
                                 result.success(api.getModelList());
                             } catch (Exception e) {
-                                result.error("ANKI_PROVIDER_ERROR",
+                                result.error(providerErrorCode(e),
                                     e.getMessage(), null);
                             }
                         }
@@ -137,7 +137,7 @@ public class AnkiChannelHandler {
                                         Arrays.asList(api.getFieldList(mid)));
                                 }
                             } catch (Exception e) {
-                                result.error("ANKI_PROVIDER_ERROR",
+                                result.error(providerErrorCode(e),
                                     e.getMessage(), null);
                             }
                         }
@@ -211,6 +211,25 @@ public class AnkiChannelHandler {
                         result.notImplemented();
                 }
             });
+    }
+
+    /**
+     * TODO-292: classify an exception thrown by AnkiDroid's {@link AddContentApi}
+     * ContentProvider client. When the collection database cannot be opened
+     * (collection in use / mid-sync / corrupt, AnkiDroid never opened once, API
+     * disabled, background process killed) AnkiDroid throws with the literal
+     * message {@code "collection is not available"}. Surface that as a dedicated
+     * {@code ANKI_COLLECTION_UNAVAILABLE} code so the Dart layer can show a
+     * localized, actionable hint instead of the raw English text. All other
+     * failures keep the generic {@code ANKI_PROVIDER_ERROR} code.
+     */
+    private String providerErrorCode(Exception e) {
+        final String message = e.getMessage();
+        if (message != null
+                && message.toLowerCase().contains("collection is not available")) {
+            return "ANKI_COLLECTION_UNAVAILABLE";
+        }
+        return "ANKI_PROVIDER_ERROR";
     }
 
     private boolean requirePermission(MethodChannel.Result result) {

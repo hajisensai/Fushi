@@ -1,0 +1,17 @@
+## BUG-241 · 从 AnkiDroid 获取时显示 "collection is not available"
+- **报告**：2026-06-13（TODO-292：从 AnkiDroid 获取牌组/模型/字段时弹出英文 "collection is not available"，对用户无指导）
+- **真实性**：真 bug（用户体验层）。"collection is not available" 不是本项目硬编码字符串，是 AnkiDroid 的 `AddContentApi`（ContentProvider 客户端）在 collection 数据库打不开时抛出的运行时异常消息，被本 app 原样透传给用户。属外部 App 状态（collection 被占用/正在同步/损坏、AnkiDroid 从未首次打开、API 开关关闭、后台进程被杀），本 app 无法修 AnkiDroid 的 collection；但当前代码只是把英文原文直显，没有诊断分类和可操作引导。
+- **根因**：
+  - `hibiki/android/app/src/main/java/app/hibiki/reader/AnkiChannelHandler.java`：`getDecks`(~108-112)/`getModelList`(~118-122)/`getFieldList`(~139-142) 的 catch 一律回笼统 `result.error("ANKI_PROVIDER_ERROR", e.getMessage(), null)`，把 AnkiDroid 抛的英文异常消息原样透传。
+  - `packages/hibiki_anki/lib/src/ankidroid/anki_repository.dart` `fetchConfiguration` (~95-97)：`on PlatformException catch(e) → AnkiFetchResult.error(e.message)` 丢弃 `e.code`，无法区分错误种类。
+  - `hibiki/lib/src/anki/anki_view_model.dart` `fetchConfiguration` (~52-62)：`AnkiFetchError(:final message)` 直接把 message 塞进 `errorMessage`。
+  - UI `hibiki/lib/src/pages/implementations/anki_settings_page.dart` (~80-93)：直显 `uiState.errorMessage`（即 AnkiDroid 英文原文）。
+- **[x] ① 已修复**（诊断分类 + 可操作引导，性质为外部 App 状态不可控的兼容层）：
+  - `AnkiChannelHandler.java` 新增 `providerErrorCode(Exception)`：当 `e.getMessage()` 小写后含子串 `collection is not available` 时回专用 error code `ANKI_COLLECTION_UNAVAILABLE`，否则保持 `ANKI_PROVIDER_ERROR`；`getDecks`/`getModelList`/`getFieldList` 三处 catch 改用该 helper。其余 error code（MISSING_ARG/MODEL_NOT_FOUND/PERMISSION_DENIED 等）不变。
+  - `AnkiFetchError` 新增可选 `code` 字段（位置参数 `message` 不变，向后兼容），`fetchConfiguration` 的 `PlatformException` 分支透传 `e.code`；新增 `AnkiErrorCode.collectionUnavailable` 常量作为 Java code 的 Dart 镜像，消除魔法字符串。
+  - `AnkiViewModel` 新增纯函数 `localizeAnkiFetchError(String message, String? code)`：`code == AnkiErrorCode.collectionUnavailable` 时返回本地化可操作提示 `t.anki_error_collection_unavailable`（"AnkiDroid 数据库当前不可用：请先打开 AnkiDroid 至少一次、确认未在同步且已开启 API，然后重试"），其余 code 仍直显原 message。新增 i18n key `anki_error_collection_unavailable`（经 `tool/i18n_sync.dart` 补齐 17 语言 + `dart run slang` 重生成 strings.g.dart）。
+- **[x] ② 已加自动化测试**：`hibiki/test/anki/anki_collection_unavailable_test.dart`
+  - Dart 行为测试：模拟 `PlatformException(code: ANKI_COLLECTION_UNAVAILABLE)` 经 fake repo → `AnkiViewModel.fetchConfiguration` → `state.errorMessage` 得到友好本地化消息而非英文原文；普通 code 仍直显 message（回归保护）。
+  - 纯函数测试：`localizeAnkiFetchError` 对该 code 返回 `t.anki_error_collection_unavailable`，对其它/null code 返回原 message。
+  - Java 源码守卫：`AnkiChannelHandler.java` 的 catch 块必须按 message 区分 `ANKI_COLLECTION_UNAVAILABLE`（Java 改 host 跑不到，用源码扫描守住契约）。
+- **备注**：根因在 AnkiDroid 端（collection 数据库不可用），本 app 只能做诊断分类 + 引导，无法替用户修复 collection。真正确认是哪种成因（占用/同步/损坏/未首启/API 关）需在真机上观察 AnkiDroid 状态。本改动只把笼统英文错误升级为可操作的本地化提示，不改变成功路径行为；影响范围限 AnkiDroid（Android）获取配置路径，桌面 AnkiConnect 后端不受影响。

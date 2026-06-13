@@ -93,8 +93,15 @@ class AnkiRepository extends BaseAnkiRepository {
         noteTypes: updated.availableNoteTypes,
       );
     } on PlatformException catch (e) {
-      return AnkiFetchResult.error(e.message ??
-          'Could not access AnkiDroid. Grant permission and retry.');
+      // TODO-292: carry the stable channel error code (e.g.
+      // ANKI_COLLECTION_UNAVAILABLE) back to the UI so it can map a known
+      // failure to a localized, actionable hint instead of AnkiDroid's raw
+      // English exception text. The verbatim message is still kept as the
+      // fallback for unclassified errors (code == null).
+      return AnkiFetchResult.error(
+        e.message ?? 'Could not access AnkiDroid. Grant permission and retry.',
+        code: e.code,
+      );
     } catch (e, stack) {
       // HBK-AUDIT-063: a malformed/typed channel response (TypeError,
       // FormatException, etc.) must not crash the fetch out of the provider;

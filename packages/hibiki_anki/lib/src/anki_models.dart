@@ -575,13 +575,30 @@ const _ankiGaijiImageStyle = '<style>'
     '{position:static!important;width:1em!important;height:1em!important;vertical-align:text-bottom!important}'
     '</style>';
 
+/// TODO-292: stable error codes carried back from the AnkiDroid platform
+/// channel so the UI layer can map a known failure to a localized, actionable
+/// hint instead of surfacing AnkiDroid's raw (English) exception text.
+///
+/// `collectionUnavailable` is raised when AnkiDroid's `AddContentApi` cannot
+/// open the collection database (collection in use / mid-sync / corrupt,
+/// AnkiDroid never opened once, API disabled, background process killed). This
+/// is *external app state* the host app cannot fix; the app's job is to
+/// classify it and tell the user what to do.
+class AnkiErrorCode {
+  const AnkiErrorCode._();
+
+  /// Mirror of the Java `ANKI_COLLECTION_UNAVAILABLE` channel error code.
+  static const String collectionUnavailable = 'ANKI_COLLECTION_UNAVAILABLE';
+}
+
 sealed class AnkiFetchResult {
   const AnkiFetchResult();
   const factory AnkiFetchResult.success({
     required List<AnkiDeck> decks,
     required List<AnkiNoteType> noteTypes,
   }) = AnkiFetchSuccess;
-  const factory AnkiFetchResult.error(String message) = AnkiFetchError;
+  const factory AnkiFetchResult.error(String message, {String? code}) =
+      AnkiFetchError;
 }
 
 class AnkiFetchSuccess extends AnkiFetchResult {
@@ -591,8 +608,12 @@ class AnkiFetchSuccess extends AnkiFetchResult {
 }
 
 class AnkiFetchError extends AnkiFetchResult {
-  const AnkiFetchError(this.message);
+  const AnkiFetchError(this.message, {this.code});
   final String message;
+
+  /// Stable classification code (see [AnkiErrorCode]); null for unclassified
+  /// errors, in which case [message] is shown verbatim as before.
+  final String? code;
 }
 
 enum MineResult { success, duplicate, notConfigured, error }
