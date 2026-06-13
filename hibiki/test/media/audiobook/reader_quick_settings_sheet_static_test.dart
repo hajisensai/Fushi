@@ -198,14 +198,22 @@ void main() {
     expect(actionRowSource, isNot(contains('MainAxisAlignment.spaceAround')),
         reason: 'spaceAround 不缩子项，是 3.3px 右溢出的根因');
 
-    // 标签在槽位内也要安全降级，避免极端长标签把 Column 撑高/裁切。
+    // 标签在槽位内也要安全降级：短 CJK 标签可换成两行完整显示，
+    // 极端长标签仍用 ellipsis 兜底，避免把 Column 无限撑高。
+    final String lyricsActionSource = _between(
+      source,
+      'label: widget.lyricsMode ? t.book_mode : t.lyrics_mode',
+      'label: t.action_bookmark',
+    );
+    expect(lyricsActionSource, contains('widget.onToggleLyricsMode!()'));
+
     final String actionBtnSource = _between(
       source,
       '  Widget _actionBtn(',
       'class _InBookSettingsHeader',
     );
     expect(actionBtnSource, contains('overflow: TextOverflow.ellipsis'));
-    expect(actionBtnSource, contains('maxLines: 1'));
+    expect(actionBtnSource, contains('maxLines: 2'));
   });
 
   test('reader page opens the reader quick settings sheet', () {
