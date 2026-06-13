@@ -1,0 +1,128 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+/// BUG-255 / TODO-313 Family B 源码守卫：vendored fork flutter_inappwebview_windows
+/// 的进程级 DirectComposition Compositor 单例必须在**受控退出时机**释放，绝不能
+/// 把最终 COM Release 留给 CRT atexit 表。
+///
+/// 根因（dump 决定性证据，cdb 分析多份 .dmp）：
+///   ExceptionCode e0464645（CoreMessaging Abandonment FailFast），栈为
+///     CoreMessaging!Abandonment::Fail
+///       <- dcomp!Compositor::CleanupSession+0x54
+///       <- CompositorCommon::Destroy <- OnFinalRelease
+///       <- flutter_inappwebview_windows_plugin onexit(atexit execute_onexit_table)
+///       <- ntdll!RtlExitUserProcess
+///   compositor_ 等是 in_app_webview_manager.h 里的 inline static（static storage
+///   duration），其最终 Release 落到 CRT atexit；此时 LdrShutdownProcess 已开始拆除
+///   CoreMessaging/DispatcherQueue，dcomp Compositor::CleanupSession 对半拆的
+///   CoreMessaging 操作 -> FailFast。这是退出时序崩溃，非 FrameArrived UAF（那是
+///   Family A / BUG-209，已由 texture_bridge.cc 帧池永久保活覆盖）。
+///
+/// 修复不变量（受控退出时序，非吞异常）：
+///   ① ~InAppWebViewManager() 用 instance_count_ 引用计数，只在最后一个实例析构
+///      （受控 teardown：UI 线程、DispatcherQueue 仍存活）时释放共享单例；
+///   ② releaseSharedCompositionResources() 按 dcomp -> WinRT 依赖顺序释放：
+///      compositor_ 先于 dispatcher_queue_controller_（CleanupSession 跑时 CoreMessaging
+///      必须仍完整）。
+/// 本守卫扫源码钉死这两条，防回归把释放退回 atexit / 打乱释放顺序。
+void main() {
+  test(
+      'BUG-255: InAppWebViewManager releases dcomp compositor on controlled '
+      'shutdown (not CRT atexit), in dcomp->WinRT order', () {
+    final List<String> sourceCandidates = <String>[
+      'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+      '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+    ];
+    final List<String> headerCandidates = <String>[
+      'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.h',
+      '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.h',
+    ];
+    final File? sourceFile = sourceCandidates
+        .map(File.new)
+        .cast<File?>()
+        .firstWhere((File? f) => f != null && f.existsSync(),
+            orElse: () => null);
+    final File? headerFile = headerCandidates
+        .map(File.new)
+        .cast<File?>()
+        .firstWhere((File? f) => f != null && f.existsSync(),
+            orElse: () => null);
+    expect(sourceFile, isNotNull, reason: 'in_app_webview_manager.cpp 未找到');
+    expect(headerFile, isNotNull, reason: 'in_app_webview_manager.h 未找到');
+
+    final String src = sourceFile!.readAsStringSync();
+    final String header = headerFile!.readAsStringSync();
+
+    // 修复说明注释必须保留 BUG-255 标识，钉住 dump 实证的退出时序根因。
+    expect(src.contains('BUG-255'), isTrue,
+        reason: '修复说明注释应保留 BUG-255，标识 dcomp 退出时序 FailFast 根因与修复契约');
+    expect(header.contains('BUG-255'), isTrue,
+        reason: '头文件应注释 inline static 落 atexit 的根因（BUG-255）');
+
+    // ① 引用计数：构造 ++，析构 --，只在归零时释放共享单例。
+    expect(header.contains('instance_count_'), isTrue,
+        reason: '必须有 instance_count_ 统计存活的 InAppWebViewManager 实例数，'
+            '只在最后一个实例析构时释放进程级共享单例');
+    expect(src.contains('++instance_count_'), isTrue,
+        reason: '构造函数必须登记存活实例（++instance_count_）');
+
+    // 必须有受控释放函数，且不再把 compositor_ 留给 CRT atexit 默默 Release。
+    expect(header.contains('releaseSharedCompositionResources'), isTrue,
+        reason: '头文件必须声明 releaseSharedCompositionResources（受控释放共享单例）');
+    expect(
+        src.contains(
+            'void InAppWebViewManager::releaseSharedCompositionResources'),
+        isTrue,
+        reason: '必须实现 releaseSharedCompositionResources');
+
+    // ~InAppWebViewManager() 必须在计数归零时调用受控释放（不依赖 atexit）。
+    final int dtorStart =
+        src.indexOf('InAppWebViewManager::~InAppWebViewManager()');
+    expect(dtorStart, greaterThanOrEqualTo(0),
+        reason: '~InAppWebViewManager 必须可审计');
+    final int dtorEnd =
+        src.indexOf('releaseSharedCompositionResources()', dtorStart);
+    // 析构体内必须出现 --instance_count_ 与受控释放调用。
+    final int dtorReleaseGuard = src.indexOf('--instance_count_', dtorStart);
+    expect(dtorReleaseGuard, greaterThan(dtorStart),
+        reason: '~InAppWebViewManager 必须 --instance_count_ 注销实例');
+    expect(dtorEnd, greaterThan(dtorReleaseGuard),
+        reason:
+            '~InAppWebViewManager 必须在计数归零时调用 releaseSharedCompositionResources，'
+            '把 compositor_ 的最终 Release 提前到受控时机，而非留给 CRT atexit');
+
+    // ② 释放顺序：compositor_ 必须先于 dispatcher_queue_controller_ 置空，
+    //    使 dcomp Compositor::CleanupSession 在 CoreMessaging 仍完整时运行。
+    final int relStart = src
+        .indexOf('void InAppWebViewManager::releaseSharedCompositionResources');
+    expect(relStart, greaterThanOrEqualTo(0));
+    final int relEnd = src.indexOf('\n  }', relStart);
+    expect(relEnd, greaterThan(relStart),
+        reason: 'releaseSharedCompositionResources 必须有完整函数体');
+    final String relBody = src.substring(relStart, relEnd);
+    final int compositorNull = relBody.indexOf('compositor_ = nullptr');
+    final int dqcNull =
+        relBody.indexOf('dispatcher_queue_controller_ = nullptr');
+    expect(compositorNull, greaterThanOrEqualTo(0),
+        reason: 'releaseSharedCompositionResources 必须释放 compositor_');
+    expect(dqcNull, greaterThanOrEqualTo(0),
+        reason:
+            'releaseSharedCompositionResources 必须释放 dispatcher_queue_controller_');
+    expect(compositorNull, lessThan(dqcNull),
+        reason:
+            'compositor_ 必须先于 dispatcher_queue_controller_ 释放：dcomp Compositor 的 '
+            'CleanupSession 依赖 CoreMessaging/DispatcherQueue，后者必须存活到前者跑完，'
+            '否则在退出阶段重现 e0464645 FailFast');
+    // graphics_context_ 也应在受控时机释放（夹在中间）。
+    expect(relBody.contains('graphics_context_ = nullptr'), isTrue,
+        reason: 'releaseSharedCompositionResources 必须释放 graphics_context_');
+
+    // compositor_ 仍必须是进程级共享单例（inline static），由首个实例创建。
+    expect(
+        header.contains(
+            'inline static winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor> compositor_'),
+        isTrue,
+        reason: 'compositor_ 仍是进程级 inline static 共享单例（修复不改这点，只改释放时机）');
+  });
+}
