@@ -63,6 +63,7 @@
 - 完成代码/文档/测试/审查改动后默认提交本轮。
 - push 前按 [docs/agent/build.md](docs/agent/build.md) 的版本号规则判断是否 bump `hibiki/pubspec.yaml`：大功能升 minor 并重置 patch，小功能/修复升 patch；语义版本变化时 build number 同步 +1。
 - 发布通道硬规则：默认 `main` / `develop` push 只能进入 debug / prerelease / non-Latest 通道；测试版和正式版只能通过手动 `workflow_dispatch` 或手动发布 GitHub Release 触发；push 不得创建或更新 Latest/正式 release。
+- Android / Windows debug/beta 发布必须按 [docs/agent/build.md](docs/agent/build.md) 使用跨 workflow 统一 release 序列；同一 commit/语义版本不得用各自 workflow run number 拆成两个同版本预发布入口，发布 workflow 会先跑 `tool/check_release_policy.ps1` 守卫。
 - 提交前 `git status --short`，**只 stage 本轮相关文件**（禁止 `git add -A`——本工作区可能有并发 agent 的无关改动）；再 `git diff --cached --check`。
 - 提交信息简洁说明真实改动（如 `docs: rewrite agent rules` / `fix(reader): preserve restore position`）。
 - 提交后再 `git status --short`，回复中给出提交哈希和仍存在的无关未提交改动。
