@@ -343,6 +343,45 @@ void main() {
   // 这一程进度全被跳过（没回到上次位置，也没记住这次）。修复给守护加有界宽限：连续
   // _restoreGuardGraceTicks 次仍未追上目标即放弃守护，让写入恢复正常。
   group('VideoPlayerController BUG-179 恢复守护有界宽限', () {
+    test('TODO-250: synthetic 初始位置只同步 cue，不写入也不清恢复守护', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.setCues(<AudioCue>[_cue(0, 49000, 51000)]);
+      c.debugPrimeRestoreGuardForTesting(bookUid: 'v1', restoreTargetMs: 50000);
+
+      c.debugSyncInitialCueForPosition(50000);
+
+      expect(c.currentCueIndex, 0,
+          reason: 'load 仍要用 initialPositionMs 初始化当前字幕');
+      expect(writes, isEmpty,
+          reason: 'synthetic initialPositionMs 不是真实 player position，不能落库');
+      expect(c.debugRestoreGuardActive, isTrue,
+          reason: 'synthetic initialPositionMs 不能被当成 seek 已追上目标');
+    });
+
+    test('TODO-250: synthetic 后真实低位 tick 仍被挡，追近目标才写入', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.setCues(<AudioCue>[_cue(0, 49000, 51000)]);
+      c.debugPrimeRestoreGuardForTesting(bookUid: 'v1', restoreTargetMs: 50000);
+
+      c.debugSyncInitialCueForPosition(50000);
+      c.debugUpdateCueForPosition(0);
+      c.debugUpdateCueForPosition(1000);
+
+      expect(writes, isEmpty, reason: '真实播放器还停在 0/1000 时，不能覆盖已保存进度');
+      expect(c.debugRestoreGuardActive, isTrue);
+
+      c.debugUpdateCueForPosition(49000); // 进入 1.5s 容差，视为 seek 已落地。
+
+      expect(c.debugRestoreGuardActive, isFalse);
+      expect(writes, <int>[49000], reason: '只有真实 tick 追近/追上目标后，本次位置才允许落库');
+    });
+
     test('正常恢复：position 追上目标后立即清守护、恢复写入', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);

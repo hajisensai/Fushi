@@ -482,7 +482,7 @@ class VideoPlayerController extends ChangeNotifier
       _restoreTargetMs = null;
       _restoreGuardTicksLeft = 0;
     }
-    updateCueForPosition(initialPositionMs);
+    _syncCueForPosition(initialPositionMs, persistPosition: false);
 
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
     _playingSub = player.stream.playing.listen((_) {
@@ -586,7 +586,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 5. 命中下标与 [_currentCueIndex] 相同时不重复 [notifyListeners]。
   /// 6. 否则更新当前 cue 并通知。
   void updateCueForPosition(int posMs) {
-    _maybeSavePosition(posMs);
+    _syncCueForPosition(posMs, persistPosition: true);
+  }
+
+  void _syncCueForPosition(int posMs, {required bool persistPosition}) {
+    if (persistPosition) {
+      _maybeSavePosition(posMs);
+    }
     if (_cues.isEmpty) return;
     final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
     final int idx = JsonAlignmentParser.findCueIndex(
@@ -621,6 +627,10 @@ class VideoPlayerController extends ChangeNotifier
 
   @visibleForTesting
   void debugUpdateCueForPosition(int posMs) => updateCueForPosition(posMs);
+
+  @visibleForTesting
+  void debugSyncInitialCueForPosition(int posMs) =>
+      _syncCueForPosition(posMs, persistPosition: false);
 
   /// 测试钩子：在**不实例化 [Player]**（宿主无 libmpv）的前提下，把
   /// [VideoPlayerController] 摆成「load 后正处于恢复 seek 守护中」的状态，以驱动
