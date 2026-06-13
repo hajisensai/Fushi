@@ -897,21 +897,78 @@ class VideoPlayerController extends ChangeNotifier
     return _muted;
   }
 
+  /// 句子跳转（上/下一句）的前导余量（毫秒）。
+  ///
+  /// media_kit / libmpv 的 [Player.seek] **不是帧精确**的：请求 seek 到某毫秒位置后，
+  /// 播放器会把落点吸附到最近的可解码点（关键帧），而吸附**几乎总落在请求位置之后**
+  /// 几十到几百毫秒。结果：按「上/下一句」精确 seek 到 `cue.startMs` 时，真正落点已
+  /// 越过句首，听到的句子开头被吃掉 0.x 秒（BUG-259）。
+  ///
+  /// 修法是请求 seek 到 `cueStartMs - 前导余量`，让关键帧吸附后的实际落点回到句首或
+  /// 略前，吸收吸附幅度。取 180ms 作经验值：足够吸收常见容器的关键帧间隔尾差，又不至于
+  /// 大到把整句开头之前一大段静音/上一句尾巴也带进来；并由 [cueSeekTargetMs] 的「不早于
+  /// 上一句起点」下界兜住，确保再大的余量也不会串到前一句。真机若仍偏，调此常量即可。
+  static const int kCueSeekPreRollMs = 180;
+
   /// 跳到指定 cue 的起始位置。
+  ///
+  /// 用 [kCueSeekPreRollMs] 前导余量吸收 media_kit 关键帧吸附（BUG-259），并把下界
+  /// 钳到「上一句起点」以免余量过大串回前一句。上一句起点经 [_prevCueStartMsBefore]
+  /// 在升序 [_cues] 上二分求得（无上一句时为 null）。
   Future<void> skipToCue(AudioCue cue) async {
-    await seekMs(cueSeekTargetMs(cueStartMs: cue.startMs, delayMs: _delayMs));
+    await seekMs(cueSeekTargetMs(
+      cueStartMs: cue.startMs,
+      delayMs: _delayMs,
+      preRollMs: kCueSeekPreRollMs,
+      prevCueStartMs: _prevCueStartMsBefore(cue.startMs),
+    ));
+  }
+
+  /// 在升序 [_cues] 上求「起点严格早于 [cueStartMs] 的最后一条」的起点（即上一句起点）；
+  /// 无更早的 cue 时返回 null。供 [skipToCue] 钳前导余量下界，避免 seek 串回前一句。
+  int? _prevCueStartMsBefore(int cueStartMs) {
+    int lo = 0;
+    int hi = _cues.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (_cues[mid].startMs < cueStartMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo == 0 ? null : _cues[lo - 1].startMs;
   }
 
   /// 把 cue 时间轴上的目标点反算回播放器 seek 时间轴。
   ///
   /// cue 命中使用 [effectiveSubtitlePositionMs]：`effective = playerPos - delay`。
   /// 因此跳到某个 cue 起点/终点时必须做逆变换：`playerPos = cueTime + delay`。
+  ///
+  /// [preRollMs]：句子跳转的前导余量（>=0），在 cue 时间轴上把目标点往**前**移，吸收
+  /// media_kit 关键帧吸附把落点推到句首之后的偏差（BUG-259）。默认 0 —— 字幕结束暂停
+  /// （[_pauseAndSeekForSubtitleEnd] 用 `cueStartMs: cue.endMs`）等精确 seek 不能加余量，
+  /// 否则会把暂停点拉回句中，故只有 [skipToCue] 传非零余量。
+  ///
+  /// [prevCueStartMs]：上一句起点（cue 时间轴，可空）。前导余量减完后下界钳到它，
+  /// 保证再大的余量也不会把落点拉回上一句，避免「上/下一句」误带前句尾巴。
   @visibleForTesting
   static int cueSeekTargetMs({
     required int cueStartMs,
     required int delayMs,
-  }) =>
-      (cueStartMs + delayMs).clamp(0, 1 << 30).toInt();
+    int preRollMs = 0,
+    int? prevCueStartMs,
+  }) {
+    // 1) 在 cue 时间轴上扣前导余量，下界不为负。
+    int cueTarget = cueStartMs - (preRollMs < 0 ? 0 : preRollMs);
+    if (cueTarget < 0) cueTarget = 0;
+    // 2) 不早于上一句起点（防止余量过大串回前一句）。
+    if (prevCueStartMs != null && cueTarget < prevCueStartMs) {
+      cueTarget = prevCueStartMs;
+    }
+    // 3) 逆变换到播放器轴并 clamp。
+    return (cueTarget + delayMs).clamp(0, 1 << 30).toInt();
+  }
 
   /// 跳到下一句 cue（已是最后一句时 no-op）。
   ///
