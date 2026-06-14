@@ -130,6 +130,7 @@ class AudiobookSession extends ChangeNotifier {
     required List<File> audioFiles,
     required SessionPrefs prefs,
     required SessionPersistCallbacks persist,
+    List<AudioCue> cues = const <AudioCue>[],
   }) async {
     final AudiobookPlayerController? existing = _controller;
     if (existing != null && _book?.bookKey == info.bookKey) {
@@ -159,6 +160,16 @@ class AudiobookSession extends ChangeNotifier {
     } catch (e) {
       controller.dispose();
       rethrow;
+    }
+
+    // 后台听书无 reader 灌 cue。把解析好的全书 cue 喂进控制器：load() 已 seek 到
+    // initialPositionMs，setChapterCues 内部立即按当前位置 _updateCurrentCue 解析
+    // currentCue，使悬浮窗在首次开启（无需进书）即有字（TODO-354 根因②）。reader
+    // 后续 attach 时仍会按章节重新 setChapterCues 覆盖，行为不变。cues 为空（如 reader
+    // 自己接管 cue 加载的路径）时不动控制器，保留既有逻辑。
+    if (cues.isNotEmpty) {
+      controller.setAllBookCues(cues);
+      controller.setChapterCues(cues);
     }
 
     _rewirePersist(controller, persist);

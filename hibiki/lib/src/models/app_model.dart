@@ -51,6 +51,7 @@ import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
 import 'package:hibiki/src/models/audio_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
+import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
@@ -351,9 +352,10 @@ class AppModel with ChangeNotifier {
     floatingLyricStyle: _appLevelFloatingLyricStyle,
     floatingLyricClickLookup: () => floatingLyricClickLookup,
     onFloatingLyricLookup: (String text, int index) {
-      // app 级（无 reader attach）桌面悬浮窗点词：当前无弹窗宿主可显示词典，忽略。
-      // reader attach 时会换成 reader 的弹窗查词处理器。
-      debugPrint('[Hibiki] floating-lyric tap with no reader host: $text');
+      // app 级（无 reader attach）桌面悬浮窗点词：路由进常驻主窗口的查词宿主
+      // [FloatingLyricLookupHost]（main.dart 根 builder 挂载），不依赖进任何书
+      // （TODO-354 ①）。reader attach 时会换成 reader 的弹窗查词处理器。
+      FloatingLyricLookupNotifier.instance.requestLookup(text, index);
     },
     controlStreams: AudioControlStreams(
       playStream: audioCtrl.playStream,
@@ -2871,6 +2873,8 @@ class AppModel with ChangeNotifier {
         audioFiles: req.audioFiles,
         prefs: req.prefs,
         persist: req.persist,
+        // 灌全书 cue：后台听书无 reader 喂 cue，否则悬浮窗推空串（TODO-354 根因②）。
+        cues: req.cues,
       );
       if (controller == null) return BackgroundListenResult.loadFailed;
     } catch (e, stack) {

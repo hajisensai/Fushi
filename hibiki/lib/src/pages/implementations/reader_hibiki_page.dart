@@ -1101,6 +1101,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         audioFiles: req.audioFiles,
         prefs: req.prefs,
         persist: req.persist,
+        // 灌扁平全书 cue 作初值（_primeAudioCuesForCurrentBook 随后按章节精确覆盖）；
+        // 与后台听书路径共用 req.cues，使 attach 前的瞬态也有 cue（TODO-354）。
+        cues: req.cues,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.startSession', e, stack);
