@@ -14,7 +14,7 @@
     `stopBackgroundListening()`）。该停止路径只 `pause` → Android(ExoPlayer) 解码器仍存活、
     仍占输出 → 用户感知「退出/停止后还在响」。
   - 即「退出阅读器本身后台续播」是设计，但**停止会话**必须真正止声/释放；当前没有。
-- **[x] ① 已修复** — commit `<本轮提交哈希>`
+- **[x] ① 已修复** — commit `9defa941a`
   - `packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart`：新增可 await 的
     `Future<void> stopPlayback()`——`await _player.stop()` + `_clipPlayer.stop()`（just_audio
     `stop()` 走 `_setPlatformActive(false)`，释放 native 解码器、置 playing=false），再
