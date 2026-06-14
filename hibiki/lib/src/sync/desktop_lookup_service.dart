@@ -164,8 +164,27 @@ class DesktopLookupService extends ChangeNotifier
     return null;
   }
 
+  /// TODO-341：在桌面词典页里复制文本会让 Windows 任务栏的 Hibiki 图标高亮
+  /// （图标闪烁/请求注意），用户得点一下 app 才能消掉。
+  ///
+  /// 根因：`window_manager` 的 `show()`/`focus()` 在 Windows 上都调
+  /// `SetForegroundWindow`（见 window_manager-0.5.1/windows/window_manager.cpp
+  /// `Show()`/`Focus()`）。`SetForegroundWindow` 对一个**本就在前台**的窗口调用
+  /// 时，会被系统的前台锁定规则拒绝并退化为「闪烁该窗口的任务栏按钮以提醒用户」
+  /// （MSDN 明文）——即任务栏高亮。用户在词典页复制时主窗口仍在前台，却仍走到
+  /// 这条唤前台路径（外部复制/失焦判据被同进程子窗口焦点切换等情形误触），于是
+  /// 出现「复制即任务栏高亮」。
+  ///
+  /// 修法（消除特殊情况，而非按来源打补丁）：「把待查词带到前台」对一个**已经
+  /// 在前台**的窗口本就无事可做——唤前台无用、置顶是用户没要的副作用、且
+  /// `SetForegroundWindow` 还会触发任务栏 flash。所以已前台时整个调用 no-op。
+  /// 热键/真正的外部复制场景窗口不在前台，`isFocused()` 为 false，照常唤起 +
+  /// 置顶，行为不变。
   Future<void> bringPendingLookupToFront() async {
     if (!isDesktop) return;
+    // 已在前台无需（也不该）做任何唤起/置顶动作：对前台窗口调
+    // SetForegroundWindow 会被 Windows 前台锁定退化成任务栏 flash（TODO-341）。
+    if (await _isWindowFocused()) return;
     try {
       await windowManager.show();
       await windowManager.focus();
@@ -176,6 +195,19 @@ class DesktopLookupService extends ChangeNotifier
     }
     if (_windowMode != DesktopClipboardWindowMode.normal) {
       await _setAlwaysOnTop(true);
+    }
+  }
+
+  /// 查询主窗口是否已在前台。插件缺失（widget 测试）或平台调用失败时保守返回
+  /// false，让 [bringPendingLookupToFront] 退回到改前的「照常唤前台」行为，
+  /// 不因一次瞬态查询失败而漏掉真正需要的唤起。
+  Future<bool> _isWindowFocused() async {
+    try {
+      return await windowManager.isFocused();
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
     }
   }
 }

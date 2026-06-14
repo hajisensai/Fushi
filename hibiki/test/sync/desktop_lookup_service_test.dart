@@ -125,6 +125,8 @@ void main() {
         (MethodCall call) async {
       windowCalls.add(call);
       if (call.method == 'isMinimized') return false;
+      // 窗口不在前台 → 走真正的唤前台路径（本测试关心置顶时机，TODO-341）。
+      if (call.method == 'isFocused') return false;
       return null;
     });
 
@@ -164,6 +166,7 @@ void main() {
     messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
         (MethodCall call) async {
       if (call.method == 'isMinimized') return false;
+      if (call.method == 'isFocused') return false; // 不在前台 → 走唤前台路径
       if (call.method == 'show') {
         throw PlatformException(code: 'window-failed');
       }
@@ -174,6 +177,36 @@ void main() {
     svc.debugReset();
 
     await expectLater(svc.bringPendingLookupToFront(), completes);
+  });
+
+  // TODO-341：在桌面词典页里复制文本 → Windows 任务栏 Hibiki 图标高亮。根因 =
+  // 窗口已在前台时仍走唤前台路径，window_manager 的 show()/focus() 对前台窗口
+  // 调 SetForegroundWindow 被前台锁定退化成任务栏 flash。守卫：窗口已在前台时
+  // bringPendingLookupToFront 一律 no-op（不 show/focus/setAlwaysOnTop）。
+  testWidgets('focused window: bringPendingLookupToFront is a no-op (TODO-341)',
+      (WidgetTester tester) async {
+    final List<String> windowCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call.method);
+      if (call.method == 'isMinimized') return false;
+      if (call.method == 'isFocused') return true; // 窗口已在前台
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    // 即使在置顶模式，已前台也不应做任何窗口动作（否则触发任务栏 flash）。
+    await svc.configureWindowMode(DesktopClipboardWindowMode.lookup);
+    windowCalls.clear();
+    await svc.bringPendingLookupToFront();
+
+    expect(windowCalls, isNot(contains('show')));
+    expect(windowCalls, isNot(contains('focus')));
+    expect(windowCalls, isNot(contains('setAlwaysOnTop')));
   });
 }
 
