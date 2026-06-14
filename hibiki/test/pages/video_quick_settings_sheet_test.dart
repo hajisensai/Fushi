@@ -680,4 +680,53 @@ void main() {
     await tester.pump();
     expect(picked, VideoFitMode.contain);
   });
+
+  // ── TODO-209：沉浸模式 4 个长标签改下拉单选（不再用会裁段的 4 段 SegmentedButton） ──
+
+  testWidgets(
+      'immersive mode is a dropdown picker offering all four modes (TODO-209)',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    // 默认进 playback 详情：沉浸模式行常驻，且是下拉单选 picker（与画面缩放同款），
+    // 不再是等宽不换行的 4 段 SegmentedButton（窄面板会裁掉尾段，TODO-209）。
+    expect(find.text(t.video_setting_immersive_mode), findsWidgets);
+    final AdaptiveSettingsPickerRow<VideoImmersiveMode> row =
+        tester.widget<AdaptiveSettingsPickerRow<VideoImmersiveMode>>(
+      find.byType(AdaptiveSettingsPickerRow<VideoImmersiveMode>),
+    );
+    // 默认选中「仅查词」（与 _sheet 初值一致 = VideoImmersiveMode.fallback）。
+    expect(row.selected, VideoImmersiveMode.lookupOnly);
+    // 4 个模式按 enum 顺序全量呈现，一个不少（窄面板曾裁掉尾段的根因已消除）。
+    expect(row.options.map((o) => o.value).toList(), VideoImmersiveMode.values);
+    // 沉浸模式行不再走 segmented 条（防回潮）。
+    expect(
+      find.byType(AdaptiveSettingsSegmentedRow<VideoImmersiveMode>),
+      findsNothing,
+      reason: '沉浸模式不得用会裁长标签的 4 段 SegmentedButton',
+    );
+  });
+
+  testWidgets('picking an immersive mode drives onImmersiveModeChanged',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    VideoImmersiveMode? picked;
+    await _pump(
+      tester,
+      _sheet(
+          onImmersiveModeChanged: (VideoImmersiveMode mode) => picked = mode),
+    );
+
+    // 选「全部功能」= full → 即时落回调（无保存按钮）。
+    final AdaptiveSettingsPickerRow<VideoImmersiveMode> row =
+        tester.widget<AdaptiveSettingsPickerRow<VideoImmersiveMode>>(
+      find.byType(AdaptiveSettingsPickerRow<VideoImmersiveMode>),
+    );
+    row.onChanged(VideoImmersiveMode.full);
+    await tester.pump();
+    expect(picked, VideoImmersiveMode.full);
+  });
 }

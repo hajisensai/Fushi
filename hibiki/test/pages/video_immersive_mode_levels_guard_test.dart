@@ -164,4 +164,33 @@ void main() {
         reason:
             'immersive selector must live in the playback video settings group');
   });
+
+  test(
+      'TODO-209: immersive selector is a dropdown picker, not a 4-segment strip '
+      '(long labels must never be clipped on a narrow panel)', () {
+    // 找到 _buildImmersiveModeRow 方法体（到下一个方法定义为止），只在它内部断言，
+    // 不被同文件别处的 segmented 行（如档位选择器）干扰。
+    final String body =
+        methodBody(sheetSrc, 'Widget _buildImmersiveModeRow() {');
+    // 根因修复 TODO-209：4 个较长中文标签用等宽不换行的 SegmentedButton 会被裁，
+    // 必须改用下拉单选 picker（行内只显示当前项、展开为竖排单选列表）。
+    expect(
+      body.contains('AdaptiveSettingsPickerRow<VideoImmersiveMode>'),
+      isTrue,
+      reason:
+          'immersive mode must use a dropdown picker so long labels are not clipped',
+    );
+    expect(
+      body.contains('AdaptiveSettingsSegmentedRow'),
+      isFalse,
+      reason:
+          'immersive mode must NOT use a fixed-width segmented strip (clips the 4 long labels)',
+    );
+    // 4 个模式仍由 VideoImmersiveMode.values 全量映射成选项，一个不少。
+    expect(body.contains('VideoImmersiveMode.values'), isTrue,
+        reason: 'all four immersive modes must be offered as picker options');
+    expect(body.contains('AdaptiveSettingsPickerOption<VideoImmersiveMode>'),
+        isTrue,
+        reason: 'each immersive mode must map to one picker option');
+  });
 }

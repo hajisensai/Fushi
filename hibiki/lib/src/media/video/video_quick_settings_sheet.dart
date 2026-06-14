@@ -506,21 +506,26 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
+  /// 沉浸锁定模式（解锁后仍放行哪些操作）：4 个模式的标签都是较长中文短语
+  /// （全部功能 / 跳转 + 查词 / 仅查词 / 仅解锁），等宽不换行的 4 段
+  /// [AdaptiveSettingsSegmentedRow]（SegmentedButton）在窄面板里挤不下、尾段被裁
+  /// （沉浸四按钮显示不全 TODO-209）。改用与上方画面缩放行同款的
+  /// [AdaptiveSettingsPickerRow]（下拉单选）：行内只显示当前选中标签（永不被裁），
+  /// 展开后是每模式一行的竖排单选列表（4 项 < [kSettingsPickerInlineLimit]，
+  /// 走 inline dropdown 分支，体验与画面缩放行一致）。
   Widget _buildImmersiveModeRow() {
-    return AdaptiveSettingsSegmentedRow<VideoImmersiveMode>(
+    return AdaptiveSettingsPickerRow<VideoImmersiveMode>(
       title: t.video_setting_immersive_mode,
       subtitle: t.video_setting_immersive_mode_hint,
       icon: Icons.lock_outline,
-      controlBelow: true,
-      segments: <ButtonSegment<VideoImmersiveMode>>[
+      selected: _immersiveMode,
+      options: <AdaptiveSettingsPickerOption<VideoImmersiveMode>>[
         for (final VideoImmersiveMode mode in VideoImmersiveMode.values)
-          ButtonSegment<VideoImmersiveMode>(
+          AdaptiveSettingsPickerOption<VideoImmersiveMode>(
             value: mode,
-            label: Text(_immersiveModeLabel(mode)),
-            tooltip: _immersiveModeLabel(mode),
+            label: _immersiveModeLabel(mode),
           ),
       ],
-      selected: _immersiveMode,
       onChanged: (VideoImmersiveMode mode) async {
         setState(() => _immersiveMode = mode);
         await widget.onImmersiveModeChanged(mode);
