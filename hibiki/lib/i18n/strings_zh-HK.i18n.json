@@ -1453,7 +1453,7 @@
     "video_shader_section_templates": "Shader templates",
     "video_shader_section_import": "Import shaders",
     "video_shader_section_installed": "Installed shaders",
-    "video_quality_enhancement_hint": "預設使用 mpv 內建高畫質縮放。對任何影片都有效——動畫提升最明顯，真人影視/電視劇也能提升、幅度較小。下方選擇的著色器只會在開啟時套用。",
+    "video_quality_enhancement_hint": "開啟後用 mpv 內建高畫質縮放讓畫面更清晰，動畫、真人影視/電視劇都適用。想用 Anime4K 等著色器進一步增強，請在播放影片時的「畫質增強」裡選擇檔位。",
     "remote_video_downloading": "Downloading…",
     "remote_book_downloading": "Downloading…",
     "remote_video_unavailable": "Paired device unavailable",

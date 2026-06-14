@@ -1453,7 +1453,7 @@
     "video_shader_section_templates": "着色器模板",
     "video_shader_section_import": "导入着色器",
     "video_shader_section_installed": "已安装着色器",
-    "video_quality_enhancement_hint": "默认使用 mpv 内置高画质缩放。对任何视频都有效——动画提升最明显，真人影视/电视剧也能提升、幅度较小。下方选择的着色器只会在开启时应用。",
+    "video_quality_enhancement_hint": "开启后用 mpv 内置高画质缩放让画面更清晰，动画、真人影视/电视剧都适用。想用 Anime4K 等着色器进一步增强，请在播放视频时的「画质增强」里选择档位。",
     "remote_video_downloading": "正在下载…",
     "remote_book_downloading": "正在下载…",
     "remote_video_unavailable": "配对设备不可用",
