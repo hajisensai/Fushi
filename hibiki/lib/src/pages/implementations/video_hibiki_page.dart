@@ -3093,11 +3093,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     if (!desktop) {
       // 触屏：点击图标弹 popover（滑条 + 静音按钮），无 hover / 滚轮语义。
+      // 与桌面分支同样挂 [_volumeButtonKey]，让 [_volumeAnchorRectInOverlay] 能定位锚点
+      // （否则 currentContext 为 null → popover 渲染空白）。桌面 / 触屏控制条由
+      // [AdaptiveVideoControls] 按平台互斥择一渲染（见 [_mobileControlsTheme] 注释），
+      // 同一时刻只有一个分支挂载，故安全复用同一 GlobalKey。
       return Tooltip(
         message: t.audio_volume,
-        child: MaterialCustomButton(
-          icon: icon,
-          onPressed: () => _toggleVolumePopover(controller),
+        child: KeyedSubtree(
+          key: _volumeButtonKey,
+          child: MaterialCustomButton(
+            icon: icon,
+            onPressed: () => _toggleVolumePopover(controller),
+          ),
         ),
       );
     }

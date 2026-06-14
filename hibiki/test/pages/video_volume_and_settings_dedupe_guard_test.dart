@@ -88,6 +88,57 @@ void main() {
     });
   });
 
+  group('子C：触屏 + 桌面两分支都挂音量锚点 key（TODO-337 复核退回）', () {
+    // 缺陷：触屏分支 (!desktop) 的音量按钮曾未挂 [_volumeButtonKey]，
+    // [_volumeAnchorRectInOverlay] 读 _volumeButtonKey.currentContext 取 null →
+    // [_buildVolumePopover] 的 `if (anchor == null) return const SizedBox.shrink()`
+    // → 触屏端音量 popover 渲染空白。桌面 / 触屏控制条由 AdaptiveVideoControls
+    // 按平台互斥择一渲染，故复用同一 GlobalKey 安全（同一时刻只有一个分支挂载）。
+    test('_buildVolumeButton 两分支均经 KeyedSubtree 挂 _volumeButtonKey', () {
+      final String body = volumeButtonBody();
+      // body 内 `key: _volumeButtonKey` 应出现两次（桌面 + 触屏各一）。
+      final int keyCount =
+          RegExp(r'key:\s*_volumeButtonKey').allMatches(body).length;
+      expect(keyCount, 2,
+          reason: '触屏与桌面分支都应挂 _volumeButtonKey（各一），否则该平台音量 popover 取不到锚点而空白');
+    });
+
+    test('触屏分支 (!desktop) 内挂了 _volumeButtonKey', () {
+      final String body = volumeButtonBody();
+      // 截触屏分支：从 `if (!desktop) {` 到桌面分支起点 `return MouseRegion(`。
+      final int touchStart = body.indexOf('if (!desktop) {');
+      expect(touchStart, greaterThanOrEqualTo(0),
+          reason: '需有 if (!desktop) 触屏分支');
+      final int desktopStart = body.indexOf('return MouseRegion(', touchStart);
+      expect(desktopStart, greaterThan(touchStart),
+          reason: '桌面分支应以 return MouseRegion( 起');
+      final String touchBranch = body.substring(touchStart, desktopStart);
+      expect(
+          RegExp(r'KeyedSubtree\(\s*key:\s*_volumeButtonKey')
+              .hasMatch(touchBranch),
+          isTrue,
+          reason: '触屏音量按钮必须用 KeyedSubtree 挂 _volumeButtonKey 作 popover 锚点');
+      // 触屏分支仍用 MaterialCustomButton（移动控件）+ 点击切 popover。
+      expect(
+          touchBranch.contains('MaterialCustomButton(') &&
+              touchBranch.contains('_toggleVolumePopover(controller)'),
+          isTrue,
+          reason: '触屏音量按钮点击应弹 popover（_toggleVolumePopover）');
+    });
+
+    test('_volumeAnchorRectInOverlay 经 _volumeButtonKey.currentContext 定位锚点',
+        () {
+      final int start = src.indexOf('Rect? _volumeAnchorRectInOverlay() {');
+      expect(start, greaterThanOrEqualTo(0),
+          reason: '需有 _volumeAnchorRectInOverlay');
+      final int end = src.indexOf('void _showVolumePopover(', start);
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+      expect(body.contains('_volumeButtonKey.currentContext'), isTrue,
+          reason: '锚点矩形从 _volumeButtonKey.currentContext 的 RenderBox 推算');
+    });
+  });
+
   group('子B：顶栏设置入口去重', () {
     test('桌面顶栏不再写死 _showPlayerSettings 入口', () {
       expect(
