@@ -3,56 +3,64 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('bookshelf cards use footer layout instead of title cover overlay', () {
+  test('bookshelf cards render the title as a cover overlay, not a footer', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();
 
+    // Titles are pressed back onto the cover (bottom gradient scrim) instead of
+    // a separate footer band below the cover.
     expect(
       source,
-      isNot(contains('_titleOverlay(')),
-      reason:
-          'titles for local, SRT, video, and remote books must not overlay covers',
+      contains('Widget _titleOverlay(String title)'),
+      reason: 'local, SRT, video, and remote book titles overlay the cover',
     );
     expect(
       source,
-      isNot(contains('constraints.maxHeight * 0.38')),
-      reason: 'the old bottom overlay occupied a large part of the cover',
+      isNot(contains('Widget _bookCardFooter(')),
+      reason: 'the below-cover title footer must be gone after the revert',
+    );
+    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+    expect(
+      layout,
+      contains('_titleOverlay(title)'),
+      reason: 'the shared card layout draws the title overlay on the cover',
     );
     expect(
       RegExp(r'(?:child:|return) _bookCardLayout\(').allMatches(source).length,
       greaterThanOrEqualTo(4),
-      reason: 'all bookshelf card variants should share the footer layout',
+      reason: 'all bookshelf card variants should share the overlay layout',
     );
   });
 
-  test(
-      'book title row starts with title and does not reserve leading tag width',
+  test('card layout exposes title, tags, badge, and metadata over the cover',
       () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
-    final String footer = _functionSource(source, 'Widget _bookCardFooter({');
 
+    // Signature stays footer-era compatible so the four call sites need no edit.
     expect(layout, contains('Widget? tagLabels'));
     expect(layout, contains('Widget? coverBadge'));
+    expect(layout, contains('Widget? metadata'));
     expect(layout, isNot(contains('Widget? leading')));
     expect(layout, isNot(contains('Widget? trailing')));
     expect(source, isNot(contains('leading: tagWidget')));
 
-    final int titleText = footer.indexOf('Text(\n                    title,');
-    final int tagArea = footer.indexOf('_bookCardTagArea(tagLabels)');
-    expect(titleText, isNonNegative, reason: 'title must be rendered directly');
-    expect(tagArea, greaterThan(titleText),
-        reason: 'tags must render after the title area, not as title leading');
+    // The cover fills the whole card; title/badge/tags/progress all overlay it.
+    expect(layout, contains('Stack('));
+    expect(layout, contains('ClipRect(child: cover)'));
+    expect(layout, contains('_titleOverlay(title)'));
+    expect(layout, contains('_bookCardTagArea(tagLabels)'));
 
-    final RegExp titleFirstRow = RegExp(
-      r'Row\([\s\S]*?children:\s*\[[\s\S]*?Expanded\([\s\S]*?Text\(\s*title,',
-      multiLine: true,
-    );
-    expect(titleFirstRow.hasMatch(footer), isTrue,
-        reason: 'the first semantic child in the title row must be the title');
+    // The progress metadata stays visible, pinned to the bottom of the cover.
+    final int metadataPin = layout.indexOf('child: metadata,');
+    expect(metadataPin, isNonNegative,
+        reason: 'progress metadata must still render');
+    final int bottomPin = layout.lastIndexOf('bottom: 0,', metadataPin);
+    expect(bottomPin, isNonNegative,
+        reason: 'metadata (progress bar) must be pinned to the cover bottom');
   });
 
   test('book type badge is pinned to the top-right corner of the cover', () {
@@ -61,7 +69,7 @@ void main() {
             .readAsStringSync();
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
 
-    // The badge must sit at the trailing top corner, not the bottom.
+    // The badge must sit at the trailing top corner, not the bottom (TODO-284).
     expect(
       layout,
       contains('PositionedDirectional('),
@@ -69,24 +77,17 @@ void main() {
     );
     expect(
       layout,
-      contains('top: tokens.spacing.gap * 0.75'),
+      contains('top: overlayInset,'),
       reason: 'the type badge must be pinned to the top of the cover',
     );
-    expect(
-      layout,
-      isNot(contains('bottom: tokens.spacing.gap * 0.75')),
-      reason: 'the type badge must not sit at the bottom of the cover',
-    );
 
-    // The single PositionedDirectional drives all card variants' badge spot.
-    expect(
-      RegExp(r'PositionedDirectional\(').allMatches(layout).length,
-      equals(1),
-      reason: 'badge placement must stay centralized in one layout helper',
-    );
+    // The badge PositionedDirectional carries the coverBadge child.
+    final int badgeAnchor = layout.indexOf('child: coverBadge,');
+    expect(badgeAnchor, isNonNegative,
+        reason: 'the cover badge must render in the top-right slot');
   });
 
-  test('long or multiple book tags are clipped in their own footer area', () {
+  test('long or multiple book tags are clipped in their own overlay area', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();

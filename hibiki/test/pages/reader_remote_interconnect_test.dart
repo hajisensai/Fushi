@@ -150,7 +150,7 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('remote book title is placed below the cover area',
+  testWidgets('remote book title overlays the bottom of the cover',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -160,10 +160,17 @@ void main() {
     ));
     final Rect titleRect = tester.getRect(find.text('Remote Book'));
 
+    // The title is pressed onto the cover (bottom gradient scrim), so it sits
+    // inside the cover bounds rather than in a footer band below it.
+    expect(
+      titleRect.bottom,
+      lessThanOrEqualTo(coverRect.bottom + 0.5),
+      reason: 'remote book title must overlay the cover, not a footer below it',
+    );
     expect(
       titleRect.top,
-      greaterThanOrEqualTo(coverRect.bottom - 0.5),
-      reason: 'remote book title must live in the card footer, not over cover',
+      greaterThan(coverRect.top),
+      reason: 'the overlaid title sits in the lower part of the cover',
     );
   });
 
