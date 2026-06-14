@@ -5,31 +5,42 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String rel) => File(rel).readAsStringSync();
 
-  test('video page wires persisted player control customization', () {
+  // TODO-274/312 phase 2: persistence + editor moved from the legacy 3-tier
+  // VideoControlCustomization to the 9-slot VideoControlLayout. The legacy pref
+  // key is reused (auto-migrating old v1 blobs), so old configs upgrade losslessly.
+  test('video page wires the persisted 9-slot control layout', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
     final String appModel = read('lib/src/models/app_model.dart');
     final String prefs = read('lib/src/models/preferences_repository.dart');
 
-    expect(page, contains('VideoControlCustomization _controlCustomization'));
-    expect(page, contains('appModel.videoControlCustomization'));
-    expect(page, contains('_setVideoControlCustomization'));
-    expect(appModel, contains('videoControlCustomization'));
-    expect(appModel, contains('setVideoControlCustomization'));
+    expect(page, contains('VideoControlLayout _controlLayout'));
+    expect(page, contains('appModel.videoControlLayout'));
+    expect(page, contains('_setVideoControlLayout'));
+    expect(appModel, contains('videoControlLayout'));
+    expect(appModel, contains('setVideoControlLayout'));
+    // Same persisted key as the legacy model (v1 auto-migrates via decode).
     expect(prefs, contains('video_control_customization'));
+    expect(prefs, contains('videoControlLayout'));
+    expect(prefs, contains('setVideoControlLayout'));
   });
 
-  test('quick settings exposes control placement customization', () {
+  test('quick settings exposes the 9-slot control placement editor', () {
     final String settings =
         read('lib/src/media/video/video_quick_settings_sheet.dart');
 
-    expect(settings, contains('initialControlCustomization'));
-    expect(settings, contains('onControlCustomizationChanged'));
-    expect(settings, contains('VideoControlButton.speed'));
-    expect(settings, contains('VideoControlButton.subtitleList'));
-    expect(settings, contains('VideoControlPlacement.bottom'));
-    expect(settings, contains('VideoControlPlacement.rightRail'));
-    expect(settings, contains('VideoControlPlacement.settingsOnly'));
+    expect(settings, contains('initialControlLayout'));
+    expect(settings, contains('onControlLayoutChanged'));
+    // Editor iterates the customizable learning items and offers slot choices.
+    expect(settings, contains('VideoControlItem.customizableLearning'));
+    expect(settings, contains('VideoControlSlot.editableSlots'));
+    expect(settings, contains('_controlLayout.moveItem('));
+    // The four on-player slots + hidden are the user-facing choices.
+    expect(settings, contains('VideoControlSlot.bottomLeft'));
+    expect(settings, contains('VideoControlSlot.bottomRight'));
+    expect(settings, contains('VideoControlSlot.screenLeft'));
+    expect(settings, contains('VideoControlSlot.screenRight'));
+    expect(settings, contains('VideoControlSlot.hidden'));
   });
 
   test('player chrome includes right rail, bottom custom buttons and fallbacks',

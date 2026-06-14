@@ -129,19 +129,30 @@ void main() {
       src = page.readAsStringSync();
     });
 
-    test('control bar reads VideoControlLayout via _controlLayout', () {
-      expect(src, contains('VideoControlLayout get _controlLayout'));
-      expect(src,
-          contains('VideoControlLayout.fromLegacy(_controlCustomization)'));
+    test('control bar reads the persisted VideoControlLayout (phase 2)', () {
+      // Phase 2: _controlLayout is now a persisted field (the v2 source of
+      // truth), loaded from AppModel.videoControlLayout, not derived read-only
+      // from the legacy customization.
+      expect(src, contains('VideoControlLayout _controlLayout'));
+      expect(src, contains('_controlLayout = appModel.videoControlLayout'));
+      expect(src, contains('appModel.setVideoControlLayout(layout)'));
+      // The phase-1 read-only derivation is gone.
+      expect(
+          src,
+          isNot(contains(
+              'VideoControlLayout.fromLegacy(_controlCustomization)')));
     });
 
-    test('both customizable render points go through _slotLearningButtons', () {
+    test('all four customizable render points go through _slotLearningButtons',
+        () {
       expect(src, contains('List<VideoControlButton> _slotLearningButtons('));
-      // bottom cluster + right rail both resolve their buttons from the slot.
+      // bottom bar left/right + screen left/right rails all resolve from slots.
+      expect(
+          src, contains('_slotLearningButtons(VideoControlSlot.bottomLeft)'));
       expect(
           src, contains('_slotLearningButtons(VideoControlSlot.bottomRight)'));
-      expect(
-          src, contains('_slotLearningButtons(VideoControlSlot.screenRight)'));
+      expect(src, contains('VideoControlSlot.screenLeft'));
+      expect(src, contains('VideoControlSlot.screenRight'));
       // Legacy direct placement lookups removed from the render path.
       expect(src, isNot(contains('buttonsFor(VideoControlPlacement.bottom)')));
       expect(

@@ -306,4 +306,60 @@ void main() {
           contains(VideoControlButton.subtitleList));
     });
   });
+
+  group('phase 2 editor catalog (slots + items the picker exposes)', () {
+    test('editableSlots == the 4 rendered on-player slots + hidden', () {
+      expect(VideoControlSlot.editableSlots, <VideoControlSlot>[
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomRight,
+        VideoControlSlot.screenLeft,
+        VideoControlSlot.screenRight,
+        VideoControlSlot.hidden,
+      ]);
+      // bottomCenter / top* are fixed chrome and never offered to the user.
+      expect(VideoControlSlot.editableSlots,
+          isNot(contains(VideoControlSlot.bottomCenter)));
+      expect(VideoControlSlot.editableSlots,
+          isNot(contains(VideoControlSlot.topCenter)));
+    });
+
+    test(
+        'customizableLearning == exactly the 5 learning keys (have a legacy peer)',
+        () {
+      final List<VideoControlItem> learning =
+          VideoControlItem.customizableLearning;
+      expect(learning, <VideoControlItem>[
+        VideoControlItem.speed,
+        VideoControlItem.subtitleList,
+        VideoControlItem.favoriteSentence,
+        VideoControlItem.favoriteSentences,
+        VideoControlItem.settings,
+      ]);
+      for (final VideoControlItem item in learning) {
+        expect(item.legacyButton, isNotNull);
+      }
+      // No transport key leaks into the editable set.
+      expect(learning, isNot(contains(VideoControlItem.playPause)));
+      expect(learning, isNot(contains(VideoControlItem.volume)));
+    });
+
+    test(
+        'moving a learning key to every editable slot is honored (except '
+        'hiding the required settings key)', () {
+      for (final VideoControlItem item
+          in VideoControlItem.customizableLearning) {
+        for (final VideoControlSlot slot in VideoControlSlot.editableSlots) {
+          final VideoControlLayout moved =
+              VideoControlLayout.defaults.moveItem(item, slot);
+          if (item.pinnedRequired && slot == VideoControlSlot.hidden) {
+            // required keys bounce back — never end up hidden.
+            expect(moved.isOnPlayer(item), isTrue);
+          } else {
+            expect(moved.slotOf(item), slot,
+                reason: '${item.name} should move into ${slot.name}');
+          }
+        }
+      }
+    });
+  });
 }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
@@ -22,6 +23,8 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoShaderTier tier, bool highQuality)? onSelectShaderTier,
   void Function(VideoFitMode mode)? onVideoFitModeChanged,
   void Function(VideoImmersiveMode mode)? onImmersiveModeChanged,
+  void Function(VideoControlLayout layout)? onControlLayoutChanged,
+  VideoControlLayout? initialControlLayout,
   double uiScale = 1.0,
   int initialDelayMs = 0,
 }) {
@@ -52,6 +55,9 @@ VideoQuickSettingsSheet _sheet({
     initialImmersiveMode: VideoImmersiveMode.lookupOnly,
     onImmersiveModeChanged: (VideoImmersiveMode mode) async =>
         onImmersiveModeChanged?.call(mode),
+    initialControlLayout: initialControlLayout,
+    onControlLayoutChanged: (VideoControlLayout layout) async =>
+        onControlLayoutChanged?.call(layout),
     uiScale: uiScale,
   );
 }
@@ -819,5 +825,104 @@ void main() {
     expect(padding.left, 24);
     expect(padding.right, 24);
     expect(padding.top, 16);
+  });
+
+  // ── TODO-274/312 phase 2：控制条按钮 9-槽位编辑器（抄 B 站可定制控制条） ──────
+  group('control button layout editor (TODO-274/312 phase 2)', () {
+    // 按行标题挑出对应的 slot picker。不能用 find.widgetWithText：DropdownButton 会为
+    // 测宽离屏复刻一份标题文本，导致 widgetWithText 命中多个，故直接从 widgetList 按
+    // .title 字段过滤。
+    AdaptiveSettingsPickerRow<VideoControlSlot> pickerByTitle(
+      WidgetTester tester,
+      String title,
+    ) {
+      return tester
+          .widgetList<AdaptiveSettingsPickerRow<VideoControlSlot>>(
+            find.byType(AdaptiveSettingsPickerRow<VideoControlSlot>),
+          )
+          .firstWhere((AdaptiveSettingsPickerRow<VideoControlSlot> r) =>
+              r.title == title);
+    }
+
+    testWidgets('controls category shows a slot picker per customizable button',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+
+      await tester.tap(find.text(t.video_settings_cat_controls));
+      await tester.pumpAndSettle();
+
+      // 每个可定制学习按钮一行 slot picker。
+      final Iterable<AdaptiveSettingsPickerRow<VideoControlSlot>> rows =
+          tester.widgetList<AdaptiveSettingsPickerRow<VideoControlSlot>>(
+        find.byType(AdaptiveSettingsPickerRow<VideoControlSlot>),
+      );
+      expect(rows.length, VideoControlItem.customizableLearning.length);
+
+      // 倍速行（非必选）提供全部 5 个可编辑槽（含隐藏）。
+      final AdaptiveSettingsPickerRow<VideoControlSlot> speedRow =
+          pickerByTitle(tester, t.video_control_speed);
+      expect(speedRow.options.map((o) => o.value).toList(),
+          VideoControlSlot.editableSlots);
+
+      // 设置行（必选）不提供「隐藏」选项（模型层也会回弹）。
+      final AdaptiveSettingsPickerRow<VideoControlSlot> settingsRow =
+          pickerByTitle(tester, t.video_control_settings);
+      expect(
+        settingsRow.options.map((o) => o.value),
+        isNot(contains(VideoControlSlot.hidden)),
+      );
+    });
+
+    testWidgets(
+        'picking a slot drives onControlLayoutChanged with the new slot',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? committed;
+      await _pump(
+        tester,
+        _sheet(
+          onControlLayoutChanged: (VideoControlLayout l) => committed = l,
+        ),
+      );
+
+      await tester.tap(find.text(t.video_settings_cat_controls));
+      await tester.pumpAndSettle();
+
+      // 把「字幕列表」从默认 screenRight 移到 bottomLeft → 回调带新布局，且新布局里
+      // 该按钮确实落在 bottomLeft。
+      pickerByTitle(tester, t.video_control_subtitle_list)
+          .onChanged(VideoControlSlot.bottomLeft);
+      await tester.pump();
+
+      expect(committed, isNotNull);
+      expect(committed!.slotOf(VideoControlItem.subtitleList),
+          VideoControlSlot.bottomLeft);
+    });
+
+    testWidgets('hiding a button persists it into the hidden slot',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? committed;
+      await _pump(
+        tester,
+        _sheet(
+          onControlLayoutChanged: (VideoControlLayout l) => committed = l,
+        ),
+      );
+
+      await tester.tap(find.text(t.video_settings_cat_controls));
+      await tester.pumpAndSettle();
+
+      pickerByTitle(tester, t.video_control_speed)
+          .onChanged(VideoControlSlot.hidden);
+      await tester.pump();
+
+      expect(committed, isNotNull);
+      expect(committed!.isOnPlayer(VideoControlItem.speed), isFalse);
+    });
   });
 }

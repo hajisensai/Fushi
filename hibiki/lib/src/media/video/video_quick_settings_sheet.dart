@@ -43,8 +43,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onVideoFitModeChanged,
     required this.initialImmersiveMode,
     required this.onImmersiveModeChanged,
-    this.initialControlCustomization = VideoControlCustomization.defaults,
-    this.onControlCustomizationChanged,
+    this.initialControlLayout,
+    this.onControlLayoutChanged,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
@@ -132,10 +132,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 切沉浸模式默认级别（即时落盘，下一次锁定和已锁定状态立即按 getter 生效）。
   final Future<void> Function(VideoImmersiveMode mode) onImmersiveModeChanged;
 
-  final VideoControlCustomization initialControlCustomization;
+  /// 初始 9-槽位控制按钮布局（TODO-274/312 phase 2）。null = 当前 chrome 默认。
+  final VideoControlLayout? initialControlLayout;
 
-  final Future<void> Function(VideoControlCustomization customization)?
-      onControlCustomizationChanged;
+  /// 用户在控制条编辑器里改变某按钮槽位 / 显隐后回调：持久化 v2 布局 + 实时生效。
+  final Future<void> Function(VideoControlLayout layout)?
+      onControlLayoutChanged;
 
   /// Actual app UI scale. Video routes neutralize [HibikiAppUiScale] so the
   /// inherited scale inside the sheet can be 1.0 even when the app setting is
@@ -176,8 +178,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late VideoFitMode _videoFitMode = widget.initialVideoFitMode;
   late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
   late VideoAsbplayerConfig _asbConfig = widget.initialAsbConfig;
-  late VideoControlCustomization _controlCustomization =
-      widget.initialControlCustomization;
+  late VideoControlLayout _controlLayout =
+      widget.initialControlLayout ?? VideoControlLayout.currentChrome;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
   late bool _danmakuEnabled = widget.initialDanmakuEnabled;
   late bool _danmakuOnlineEnabled = widget.initialDanmakuOnlineEnabled;
@@ -1114,40 +1116,84 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
+  /// 控制条编辑器（TODO-274/312 phase 2，抄 B 站可定制控制条）：每个可定制学习按钮
+  /// 一行槽位选择器，把按钮放到底栏左 / 底栏右 / 屏幕左 / 屏幕右，或隐藏（仍可从设置 /
+  /// 右键菜单到达）。写入直接驱动 9-槽位 [VideoControlLayout]（v2 持久化），不再走旧三档。
   Widget _buildControlsDetail() {
     return AdaptiveSettingsSection(
       children: <Widget>[
-        for (final VideoControlButton button in VideoControlButton.values)
-          AdaptiveSettingsPickerRow<VideoControlPlacement>(
-            title: _controlButtonLabel(button),
-            subtitle: button == VideoControlButton.settings
+        AdaptiveSettingsRow(
+          title: t.video_control_customize_hint,
+          icon: Icons.dashboard_customize_outlined,
+          showIcon: true,
+        ),
+        for (final VideoControlItem item
+            in VideoControlItem.customizableLearning)
+          AdaptiveSettingsPickerRow<VideoControlSlot>(
+            title: _controlButtonLabel(item.legacyButton!),
+            subtitle: item.pinnedRequired
                 ? t.video_control_settings_required_hint
                 : null,
-            icon: _controlButtonIcon(button),
-            selected: _controlCustomization.placementFor(button),
-            options: <AdaptiveSettingsPickerOption<VideoControlPlacement>>[
-              AdaptiveSettingsPickerOption<VideoControlPlacement>(
-                value: VideoControlPlacement.bottom,
-                label: t.video_control_placement_bottom,
-              ),
-              AdaptiveSettingsPickerOption<VideoControlPlacement>(
-                value: VideoControlPlacement.rightRail,
-                label: t.video_control_placement_right,
-              ),
-              AdaptiveSettingsPickerOption<VideoControlPlacement>(
-                value: VideoControlPlacement.settingsOnly,
-                label: t.video_control_placement_settings,
-              ),
+            icon: _controlButtonIcon(item.legacyButton!),
+            selected: _slotForPicker(item),
+            options: <AdaptiveSettingsPickerOption<VideoControlSlot>>[
+              for (final VideoControlSlot slot
+                  in VideoControlSlot.editableSlots)
+                // 必选按钮（设置）不提供「隐藏」选项——模型层也会回弹，UI 先不列出。
+                if (!(item.pinnedRequired && slot == VideoControlSlot.hidden))
+                  AdaptiveSettingsPickerOption<VideoControlSlot>(
+                    value: slot,
+                    label: _controlSlotLabel(slot),
+                  ),
             ],
-            onChanged: (VideoControlPlacement placement) async {
-              final VideoControlCustomization next =
-                  _controlCustomization.copyWithPlacement(button, placement);
-              setState(() => _controlCustomization = next);
-              await widget.onControlCustomizationChanged?.call(next);
+            onChanged: (VideoControlSlot slot) async {
+              final VideoControlLayout next =
+                  _controlLayout.moveItem(item, slot);
+              setState(() => _controlLayout = next);
+              await widget.onControlLayoutChanged?.call(next);
             },
           ),
       ],
     );
+  }
+
+  /// 当前布局里 [item] 实际所在槽位，clamp 到编辑器可选集合：若按钮当前停在编辑器不
+  /// 暴露的固定槽（如 bottomCenter / top*），回显成最接近的可选项，避免 picker 选中态
+  /// 落到不在 options 里的值（Dropdown 断言）。
+  VideoControlSlot _slotForPicker(VideoControlItem item) {
+    final VideoControlSlot actual = _controlLayout.slotOf(item);
+    if (VideoControlSlot.editableSlots.contains(actual)) return actual;
+    switch (actual) {
+      case VideoControlSlot.bottomCenter:
+        return VideoControlSlot.bottomRight;
+      case VideoControlSlot.topLeft:
+      case VideoControlSlot.topCenter:
+      case VideoControlSlot.topRight:
+        return VideoControlSlot.screenRight;
+      default:
+        return VideoControlSlot.bottomRight;
+    }
+  }
+
+  String _controlSlotLabel(VideoControlSlot slot) {
+    switch (slot) {
+      case VideoControlSlot.bottomLeft:
+        return t.video_control_slot_bottom_left;
+      case VideoControlSlot.bottomRight:
+        return t.video_control_slot_bottom_right;
+      case VideoControlSlot.screenLeft:
+        return t.video_control_slot_screen_left;
+      case VideoControlSlot.screenRight:
+        return t.video_control_slot_screen_right;
+      case VideoControlSlot.hidden:
+        return t.video_control_slot_hidden;
+      case VideoControlSlot.bottomCenter:
+      case VideoControlSlot.topLeft:
+      case VideoControlSlot.topCenter:
+      case VideoControlSlot.topRight:
+        // 这些槽不在编辑器可选集合里（固定 chrome），无需面向用户的标签。
+        return slot.storageValue;
+    }
   }
 
   String _controlButtonLabel(VideoControlButton button) {

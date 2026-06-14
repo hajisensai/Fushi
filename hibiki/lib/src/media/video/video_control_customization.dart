@@ -177,6 +177,20 @@ enum VideoControlSlot {
     }
     return null;
   }
+
+  /// The slots the phase-2 editor exposes and the player actually renders for
+  /// customizable learning buttons. Restricted to the positions that have a real
+  /// render target today (bottom bar left/right regions + floating left/right
+  /// rails + hidden), so the picker never offers a slot that silently no-ops.
+  /// The bottom-center transport cluster and the top bar host fixed transport /
+  /// nav chrome and are intentionally not in this set.
+  static const List<VideoControlSlot> editableSlots = <VideoControlSlot>[
+    VideoControlSlot.bottomLeft,
+    VideoControlSlot.bottomRight,
+    VideoControlSlot.screenLeft,
+    VideoControlSlot.screenRight,
+    VideoControlSlot.hidden,
+  ];
 }
 
 /// Full button library: transport keys + learning keys. Phase 0 only models it.
@@ -255,6 +269,15 @@ enum VideoControlItem {
     }
     return null;
   }
+
+  /// The learning-key items the phase-2 editor lets users place / hide (the five
+  /// keys with a legacy peer: speed / subtitleList / favoriteSentence /
+  /// favoriteSentences / settings). Transport / nav keys stay fixed in the
+  /// chrome and are not user-customizable in this stage.
+  static List<VideoControlItem> get customizableLearning => <VideoControlItem>[
+        for (final VideoControlItem item in VideoControlItem.values)
+          if (item.legacyButton != null) item,
+      ];
 }
 
 /// Per-slot ordered full control button layout (v2). Each [VideoControlSlot]
