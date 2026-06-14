@@ -258,6 +258,28 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   }) =>
       stackEmpty && pausedForLookup;
 
+  /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
+  /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
+  /// [longPressDragMaxSpeed] 全程而手感不过敏。
+  static const double longPressDragSpeedPerPixel = 1.0 / 200.0;
+
+  /// 长按拖动调速的下/上限（TODO-338）。
+  static const double longPressDragMinSpeed = 0.5;
+  static const double longPressDragMaxSpeed = 4.0;
+
+  /// 把长按拖动的横向位移映射成目标倍速（TODO-338，纯函数供单测）：以 [baseSpeed]
+  /// （长按固定加速速）为基准，[dx]（相对长按起点的横向位移，右正左负）按
+  /// [longPressDragSpeedPerPixel] 线性加减，clamp 到 [longPressDragMinSpeed]..
+  /// [longPressDragMaxSpeed]，再 snap 到 0.1x 步进。向右拖加速、向左减速。
+  @visibleForTesting
+  static double longPressDragSpeedFor(double baseSpeed, double dx) {
+    final double target = (baseSpeed + dx * longPressDragSpeedPerPixel).clamp(
+      longPressDragMinSpeed,
+      longPressDragMaxSpeed,
+    );
+    return (target * 10).roundToDouble() / 10;
+  }
+
   @override
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
@@ -691,6 +713,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 播放倍速：用户在设置面板调，跨重启保留；换集复用同一值（速度记忆）。
   double _playbackSpeed = 1.0;
   double? _longPressPreviousSpeed;
+
+  /// 长按拖动调速的基准速（长按起点的固定加速速，TODO-338）。非空表示正处于一次长按
+  /// 调速手势中；横向拖动以此为基准连续加减，松手清空。
+  double? _longPressDragBaseSpeed;
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
@@ -3762,13 +3788,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (_videoSheetOpen || _longPressPreviousSpeed != null) return;
     _longPressPreviousSpeed = _playbackSpeed;
     final double speed = _asbConfig.longPressSpeed;
+    // 长按拖动以固定加速速为基准（TODO-338）：拖动位移在此基础上连续加减。
+    _longPressDragBaseSpeed = speed;
     unawaited(_setSpeed(speed, persist: false));
     _showOsd('${speed.toStringAsFixed(1)}x', icon: Icons.speed);
+  }
+
+  /// 长按后横向拖动连续调速（TODO-338）：向右拖加速、向左减速，以长按固定加速速
+  /// [_longPressDragBaseSpeed] 为基准，按 [_kLongPressDragSpeedPerPixel] 线性映射横向
+  /// 位移，clamp 到 [_kLongPressDragMinSpeed]..[_kLongPressDragMaxSpeed]，松手恢复原速
+  /// （[_handleVideoLongPressEnd]）。位移用相对长按起点的 [localOffsetFromOrigin]。
+  void _handleVideoLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    final double? base = _longPressDragBaseSpeed;
+    if (base == null) return;
+    // 0.1x 步进（避免每像素抖动；_setSpeed 内另有 0.001 去重）。
+    final double snapped = VideoHibikiPage.longPressDragSpeedFor(
+      base,
+      details.localOffsetFromOrigin.dx,
+    );
+    if ((snapped - _playbackSpeed).abs() < 0.001) return;
+    unawaited(_setSpeed(snapped, persist: false));
+    _showOsd('${snapped.toStringAsFixed(1)}x', icon: Icons.speed);
   }
 
   void _handleVideoLongPressEnd(LongPressEndDetails details) {
     final double? previous = _longPressPreviousSpeed;
     _longPressPreviousSpeed = null;
+    _longPressDragBaseSpeed = null;
     if (previous == null) return;
     unawaited(_setSpeed(previous, persist: false));
   }
@@ -5315,6 +5361,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onSecondaryTapUp: (TapUpDetails details) =>
                 _handleSecondaryTap(details.globalPosition),
             onLongPressStart: _handleVideoLongPressStart,
+            onLongPressMoveUpdate: _handleVideoLongPressMoveUpdate,
             onLongPressEnd: _handleVideoLongPressEnd,
             child: Stack(
               children: <Widget>[
