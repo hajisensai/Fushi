@@ -1,0 +1,17 @@
+## BUG-282 · 有声书播放高亮按句漂移：不可命中cue回落污染单调游标，后续可命中cue被推偏(TODO-366 BUG-060跟进)
+- **报告**：2026-06-15（用户：更新后音频高亮对不上，之前没问题）
+- **真实性**：✅ 真 bug（host 单测确定复现根因；高亮 DOM 几何最终需真机复测原始失败路径）
+  - 根因 `hibiki/lib/src/reader/reader_pagination_scripts.dart:547-551`（JS `collectSasayakiCueRanges` 回落分支）+ 影子 `:92-98`（`resolveCueNormStartsForTesting`）。
+  - BUG-060（`b362f3736`）把播放高亮从「死偏移逐字计数」改为「用 cue 原文在实时 DOM 就近重定位」，意在消除累积漂移。但**回落分支**（cue 原文在 DOM 搜不到时——转写差异 / gaiji 被白名单剥掉 / 模糊匹配产生的 cue 文本与正文不一致）执行 `cursor = spanStart + len`，按**未经核实的 hint 猜测**推进了单调游标 `cursor`。
+  - 单调游标的搜索窗口下界是 `max(cursor, hint-window)`。一旦某条不可命中 cue 把 `cursor` 推到 hint 猜测处，而该猜测**越过了后面真正能在 DOM 精确命中的 cue 的真实位置**，后续 cue 的搜索窗口就把真实位置排除在外 → 也走回落 → 逐句累积漂移。表现为「音频高亮和正在读的句子对不上，越往后越偏」，正是 BUG-060 想根治、却在回落漏洞里复发的累积漂移。
+  - 不变量识别：游标应当**只在 DOM 真命中时前进**（消费了可核实的文本范围）；回落 cue 没消费任何可核实文本，不应推进游标。
+- **[x] ① 已修复** — 回落分支只为这一条 cue 选尽力而为的回落区间（`resolved`/`spanStart`+`spanLen`），**不再推进单调游标 `cursor`**；游标只在 `best>=0`（DOM 真命中）分支前进。JS（`collectSasayakiCueRanges`）与 Dart 影子（`resolveCueNormStartsForTesting`）同改，保持两侧同算法。提交：<本轮 commit>。
+  - 范围：只动有声书播放高亮的 cue→offset 链路；不碰收藏句高亮（`highlight_bridge.dart`）、不碰播放/seek 选句（`audiobook_controller.dart` / `findCueIndex`）。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/sasayaki_cue_mapping_drift_test.dart`：
+  - 行为测试（红→绿）：①「不可命中 cue(hint 越界)后，可命中 cue 仍锚定真实位置」②「连续两条不可命中后，真实可命中句仍命中」——改前分别漂到 10 / 18，改后正确锚 5。
+  - 源码守卫：「JS 回落分支不推进单调游标 cursor」——锁定 `collectSasayakiCueRanges` 函数体，断言命中分支仍推进游标、回落分支不得出现 `cursor = spanStart + len`。
+  - 原 BUG-060 七条不变量测试全部仍绿（命中/单调/窗口/就近/回落自身位置无回归）。
+- **备注**：
+  - 验证：`flutter test test/reader test/media/audiobook` 全绿（832）；`dart analyze` 改动文件 No issues。
+  - **待真机/模拟器**：高亮最终落点是 WebView DOM 几何，host 只能验偏移算法不变量。需在真实有声书（尤其含与正文转写有差异的 cue / 含外字的章节）上复测原始失败路径，确认逐句高亮不再随阅读累积偏移。
+  - 撞号风险：本 worktree 基线 `develop@c4759b28b`，`bug.dart` 取号 282；develop 上索引条数更少，PM 合并时可能需重编号。
