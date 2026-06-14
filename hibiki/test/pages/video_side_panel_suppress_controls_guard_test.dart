@@ -40,18 +40,21 @@ void main() {
         reason: '_pokeControlsVisible 必须在 _videoSidePanel 非空时早返回，不唤起背景控制条');
   });
 
-  test('_markControlsVisible 的强制隐藏分支同时门控沉浸锁与侧栏', () {
+  test('_markControlsVisible 的强制隐藏分支门控沉浸锁 / 侧栏 / 字幕列表', () {
     final String body = methodBody(
       'void _markControlsVisible(bool visible) {',
       'void _onVideoControlsHoverExit()',
     );
+    // TODO-329：分支条件扩展到字幕列表（折行后压成单空格再断言三条件都在）。
+    final String flat = body.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      body.contains(
-        'if (_immersiveLocked.value || _videoSidePanel.value != null) {',
+      flat.contains(
+        'if (_immersiveLocked.value || _videoSidePanel.value != null || '
+        '_subtitleListVisible.value) {',
       ),
       isTrue,
-      reason:
-          '_markControlsVisible 强制不可见分支必须同时含 _immersiveLocked 与 _videoSidePanel',
+      reason: '_markControlsVisible 强制不可见分支必须含 _immersiveLocked / '
+          '_videoSidePanel / _subtitleListVisible 三条件',
     );
   });
 
@@ -74,22 +77,26 @@ void main() {
         reason: 'rail gate 应含侧栏门控（面板开则不显示 rail）');
   });
 
-  test('media_kit controls 的 IgnorePointer 经 Listenable.merge 绑侧栏', () {
-    // 修复把原来只绑 _immersiveLocked 的 ValueListenableBuilder 换成 merge 两 notifier。
-    expect(
-      src.contains('<Listenable>[_immersiveLocked, _videoSidePanel]'),
-      isTrue,
-      reason: 'media_kit controls 的 IgnorePointer 必须同时监听沉浸锁与侧栏',
-    );
-    // 折行无关：把源码空白压成单空格后断言 ignoring 同时含两条件（避免锁死缩进）。
+  test('media_kit controls 的 IgnorePointer 经 Listenable.merge 绑侧栏 / 字幕列表', () {
+    // 修复把原来只绑 _immersiveLocked 的 ValueListenableBuilder 换成 merge 三 notifier
+    // （TODO-329 把字幕列表也纳入，否则其 hideMouseOnControlsRemoval 隐藏画面光标）。
     final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
     expect(
       flat.contains(
-        'ignoring: _immersiveLocked.value || _videoSidePanel.value != null',
+        '<Listenable>[ _immersiveLocked, _videoSidePanel, '
+        '_subtitleListVisible, ]',
       ),
       isTrue,
-      reason:
-          'IgnorePointer.ignoring 必须含 _immersiveLocked 与 _videoSidePanel 两条件',
+      reason: 'media_kit controls 的 IgnorePointer 必须监听沉浸锁 / 侧栏 / 字幕列表',
+    );
+    expect(
+      flat.contains(
+        'ignoring: _immersiveLocked.value || _videoSidePanel.value != null || '
+        '_subtitleListVisible.value',
+      ),
+      isTrue,
+      reason: 'IgnorePointer.ignoring 必须含 _immersiveLocked / _videoSidePanel / '
+          '_subtitleListVisible 三条件',
     );
   });
 

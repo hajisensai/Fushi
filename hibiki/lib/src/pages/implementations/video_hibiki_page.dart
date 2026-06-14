@@ -1813,6 +1813,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// media_kit 控制条自动隐藏时长，与两端控制主题的 `controlsHoverDuration` 同源（2s）。
   static const Duration _videoControlsHoverDuration = Duration(seconds: 2);
 
+  /// 当前是否有承载光标操作的 overlay 打开（设置 / 音轨等浮层 [_videoSidePanel]，或
+  /// 字幕跳转列表 [_subtitleListVisible]，TODO-329）。有 overlay 时光标不该被沉浸 /
+  /// 自动隐藏定时吃掉（用户要在 overlay 上操作）；纯沉浸锁（无 overlay）静止超时仍隐藏
+  /// 画面光标（BUG-258）。
+  bool get _hasVideoOverlay =>
+      _videoSidePanel.value != null || _subtitleListVisible.value;
+
   /// 翻转控制条镜像可见性（TODO-129），驱动字幕动态避让。
   ///
   /// 复刻 media_kit 自己的可见性时序：唤起（hover / tap / 键盘 / seek）时置可见并重置
@@ -1821,17 +1828,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [IgnorePointer] 挡掉指针），故镜像也强制不可见、字幕不避让（无控制条可遮挡）。
   void _markControlsVisible(bool visible) {
     if (!mounted) return;
-    // 锁定 / 沉浸模式（[_immersiveLocked]）或侧栏打开（[_videoSidePanel]，BUG-253）下
-    // 一律强制控制条镜像不可见：前者控制条本被 [IgnorePointer] 挡掉，后者面板盖在
-    // 控制条上、背景控制条 / 字幕避让都不该再被 hover 唤起。两者同样取消隐藏定时。
-    if (_immersiveLocked.value || _videoSidePanel.value != null) {
+    // 锁定 / 沉浸模式（[_immersiveLocked]）或有 overlay 打开（设置 / 音轨等浮层
+    // [_videoSidePanel]，BUG-253；或字幕跳转列表 [_subtitleListVisible]，TODO-329）下
+    // 一律强制控制条镜像不可见：沉浸锁的控制条本被 [IgnorePointer] 挡掉，浮层 / 字幕
+    // 列表盖在控制条上、背景控制条 / 字幕避让都不该再被 hover 唤起。三者同样取消隐藏定时。
+    if (_immersiveLocked.value ||
+        _videoSidePanel.value != null ||
+        _subtitleListVisible.value) {
       _videoControlsHideTimer?.cancel();
       _videoControlsHideTimer = null;
       _videoControlsVisible.value = false;
-      // 光标语义在两态分叉（TODO-318 回归）：
-      // - 侧栏 / 设置面板打开：用户要在面板上操作，光标必须可见 → 显式 false；
-      // - 纯沉浸锁（无侧面板）：控制条被 [IgnorePointer] 挡掉、无 chrome 承载光标 → 隐藏。
-      _setCursorHidden(_videoSidePanel.value == null);
+      // 光标语义在两态分叉（TODO-318 回归 / TODO-329）：
+      // - 有 overlay（侧栏 / 设置面板 / 字幕跳转列表）打开：用户要在 overlay 上操作，
+      //   光标必须可见、不被 2s 定时隐藏 → 显式 false；
+      // - 纯沉浸锁（无任何 overlay）：控制条被 [IgnorePointer] 挡掉、无 chrome 承载
+      //   光标、静止超时应隐藏 → true（保 BUG-258）。
+      _setCursorHidden(!_hasVideoOverlay);
       return;
     }
     _videoControlsVisible.value = visible;
@@ -5318,17 +5330,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
                       // 让全屏路由也响应（BUG-120 同源）。
                       //
-                      // 侧栏打开时也一并 gate（BUG-253）：面板盖在控制条上，但 media_kit
-                      // 自己的 MouseRegion 仍会在鼠标移过透明背景区时把控制条弹回到面板
-                      // 后面。把 [IgnorePointer] 同时绑 [_videoSidePanel]，面板期间 media_kit
-                      // 收不到 hover → 背景控制条不再冒出来。键盘仍不受影响（同上）。
+                      // 侧栏 / 字幕列表打开时也一并 gate（BUG-253 / TODO-329）：overlay 盖在
+                      // 控制条上，但 media_kit 自己的 MouseRegion 仍会在鼠标移过透明背景区时
+                      // 把控制条弹回到 overlay 后面，且其 `hideMouseOnControlsRemoval` 会在
+                      // 控制条 2s 自动收起后隐藏视频区光标（用户报「沉浸/锁屏下鼠标放字幕被
+                      // 隐藏」的画面区分支）。把 [IgnorePointer] 同时绑 [_videoSidePanel] 与
+                      // [_subtitleListVisible]，overlay 期间 media_kit 收不到 hover → 背景控制条
+                      // 不再冒出来、其 cursor:none 也不接管光标。键盘仍不受影响（同上）。
                       return ListenableBuilder(
                         listenable: Listenable.merge(
-                          <Listenable>[_immersiveLocked, _videoSidePanel],
+                          <Listenable>[
+                            _immersiveLocked,
+                            _videoSidePanel,
+                            _subtitleListVisible,
+                          ],
                         ),
                         builder: (BuildContext _, __) => IgnorePointer(
                           ignoring: _immersiveLocked.value ||
-                              _videoSidePanel.value != null,
+                              _videoSidePanel.value != null ||
+                              _subtitleListVisible.value,
                           child: AdaptiveVideoControls(state),
                         ),
                       );

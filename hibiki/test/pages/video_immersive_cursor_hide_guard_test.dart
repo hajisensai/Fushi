@@ -78,7 +78,7 @@ void main() {
         src.indexOf('void _onVideoControlsHoverExit()', markIdx);
     final String mark = src.substring(markIdx, markEnd);
     expect(mark.contains('_setCursorHidden(true)'), isTrue,
-        reason: '锁态 / 控制条自动淡出时隐藏光标');
+        reason: '控制条 2s 自动淡出时隐藏光标（纯沉浸 / 无 hover 场景）');
 
     // 真实鼠标移动唤回光标（合成 poke 不强制显示）。
     final int hoverIdx =
@@ -98,6 +98,43 @@ void main() {
     final String lock = src.substring(lockIdx, lockEnd);
     expect(lock.contains('_setCursorHidden(false)'), isTrue,
         reason: '解锁沉浸应立即唤回光标（即时反馈）');
+  });
+
+  test('TODO-329: 字幕列表打开时光标纳入「有 overlay 即可见」门控', () {
+    // _markControlsVisible 早返回分支条件包含 _subtitleListVisible（字幕列表打开
+    // 也强制控制条收起 + 取消定时），且光标语义按 _hasVideoOverlay 分叉。
+    final int markIdx =
+        src.indexOf('void _markControlsVisible(bool visible) {');
+    final int markEnd =
+        src.indexOf('void _onVideoControlsHoverExit()', markIdx);
+    final String mark = src.substring(markIdx, markEnd);
+    expect(mark.contains('_subtitleListVisible.value'), isTrue,
+        reason: '字幕列表打开应纳入 _markControlsVisible 早返回门控（TODO-329）');
+    expect(mark.contains('_setCursorHidden(!_hasVideoOverlay)'), isTrue,
+        reason: '有 overlay（侧栏 / 字幕列表）时光标可见，纯沉浸锁才隐藏（保 BUG-258）');
+
+    // _hasVideoOverlay getter 把侧栏与字幕列表统一为「有 overlay」单一判据。
+    expect(
+      RegExp(r'bool get _hasVideoOverlay =>[\s\S]*?_videoSidePanel\.value '
+              r'!= null \|\|[\s\S]*?_subtitleListVisible\.value')
+          .hasMatch(src),
+      isTrue,
+      reason: '_hasVideoOverlay 应同时覆盖侧栏与字幕列表（TODO-329）',
+    );
+  });
+
+  test('TODO-329: 字幕列表打开时 IgnorePointer 也 gate 掉 media_kit 控制条', () {
+    // 字幕列表打开时 media_kit 的 hideMouseOnControlsRemoval 会在控制条收起后隐藏
+    // 画面区光标 → 必须把 IgnorePointer 也绑 _subtitleListVisible，让 media_kit 收不到
+    // hover、其 cursor:none 不接管光标。
+    expect(
+      RegExp(r'IgnorePointer\(\s*ignoring: _immersiveLocked\.value \|\|'
+              r'[\s\S]*?_videoSidePanel\.value != null \|\|'
+              r'[\s\S]*?_subtitleListVisible\.value,')
+          .hasMatch(src),
+      isTrue,
+      reason: 'IgnorePointer 的 ignoring 条件应包含 _subtitleListVisible（TODO-329）',
+    );
   });
 
   test('不 per-overlay 加 opaque MouseRegion（防 BUG-198 hover 穿透）', () {
