@@ -1281,6 +1281,36 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   // ── 生命周期 ───────────────────────────────────────────────────────────────
 
+  /// 真正停播（止声）：停掉主播放器与 clip 播放器并释放其 native 解码器，
+  /// 再强制落库当前位置。供退出/停止会话路径在 [dispose] 之前 `await`。
+  ///
+  /// 根因（BUG-276 / TODO-367）：会话停止路径 [AudiobookSession.stop] 此前是
+  /// `await controller.pause(); controller.dispose();`。`pause()`（just_audio
+  /// 语义「保留解码器以便快速恢复」）**不释放 native 资源**，紧随的
+  /// `dispose()` 在 `ChangeNotifier` 同步签名里是 fire-and-forget（无法 await
+  /// 异步的平台拆除），二者竞争——Android(ExoPlayer) 上表现为退出/停止后音频仍在响。
+  ///
+  /// `stop()`（just_audio 语义「app 暂时不再播音频，释放解码器与 native 资源」）
+  /// 才是真正「让声音停下并放掉资源」的操作，与 [load] 第一步、[stopClip] 的
+  /// 「先 stop 再 dispose」一致。把它做成可 `await`：先 stop settle 完平台切换，
+  /// 再让调用方 dispose，避免「stop 的异步平台切换」与「dispose 置 `_disposed`」
+  /// 交错触发 just_audio 内部状态机崩溃。`_clipPlayer` 同理。
+  Future<void> stopPlayback() async {
+    _imagePauseTimer?.cancel();
+    _imagePauseTimer = null;
+    _resumeMainAfterClip = false;
+    final AudioPlayer? clip = _clipPlayer;
+    await Future.wait<void>(<Future<void>>[
+      _player.stop(),
+      if (clip != null) clip.stop(),
+    ]);
+    _maybeSavePosition(force: true);
+  }
+
+  /// 测试钩子：主播放器是否处于播放态（just_audio 公开状态）。
+  @visibleForTesting
+  bool get debugMainPlayerPlaying => _player.playing;
+
   @override
   void dispose() {
     _maybeSavePosition(force: true);
@@ -1293,6 +1323,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     imagePauseSec.dispose();
     _clipStateSub?.cancel();
     _clipStateSub = null;
+    // 同步 dispose 无法 await stop（会与 just_audio 异步平台切换竞争），止声职责
+    // 交给停止路径（[AudiobookSession.stop] → [stopPlayback]）在 dispose 前完成；
+    // 这里只做 just_audio 自身的资源释放。
     _clipPlayer?.dispose();
     _clipPlayer = null;
     _player.dispose();
