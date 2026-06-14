@@ -31,14 +31,18 @@ void main() {
     });
 
     test('_handleSubtitleListLookup routes through the _lookupAt chain', () {
+      // TODO-340: signature now carries the hit graphemeIndex (precise lookup,
+      // not always 0); still routes through the shared _lookupAt chain.
       expect(
         RegExp(
-          r'void _handleSubtitleListLookup\(AudioCue cue, Rect textRect\)'
-          r'[\s\S]*?_lookupAt\(',
+          r'void _handleSubtitleListLookup\(\s*AudioCue cue,\s*'
+          r'int graphemeIndex,\s*Rect charRect,?\s*\)'
+          r'[\s\S]*?_lookupAt\(sentence, graphemeIndex, charRect\)',
         ).hasMatch(src),
         isTrue,
-        reason: 'list lookup must reuse the shared _lookupAt lookup chain '
-            '(same popup as bottom subtitle / reader / dictionary page)',
+        reason:
+            'list lookup must pass the hit graphemeIndex through the shared '
+            '_lookupAt chain (TODO-340: precise per-char lookup, not index 0)',
       );
     });
   });

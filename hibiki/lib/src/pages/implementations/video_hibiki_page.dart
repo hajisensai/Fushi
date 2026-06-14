@@ -1605,15 +1605,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_controller?.skipToCue(cue));
   }
 
-  /// 点字幕跳转列表里某句的文本 → 从句首起查词（TODO-278 / BUG-263）。复用底部字幕
-  /// 字符点击的同一条查词链路 [_lookupAt]（暂停视频 → 推与阅读器 / 词典页同款查词浮层），
-  /// graphemeIndex 取 0（从句首最长匹配），[textRect] 为该行文本的屏幕矩形供浮层定位。
+  /// 点字幕跳转列表里某句的文本 → 从点击命中的字符起查词（TODO-340，修 TODO-278 的
+  /// 「恒从句首」回归）。复用底部字幕字符点击的同一条查词链路 [_lookupAt]（暂停视频 →
+  /// 推与阅读器 / 词典页同款查词浮层），[graphemeIndex] 为列表项点击位置命中的 grapheme
+  /// 下标（与底部字幕逐字查词同语义），[charRect] 为被点字符的屏幕矩形供浮层定位。
   /// 沉浸锁不允许查词时早返回（与字幕字符点击 [_handleSubtitleLookupTap] 同门控）。
-  void _handleSubtitleListLookup(AudioCue cue, Rect textRect) {
+  void _handleSubtitleListLookup(
+    AudioCue cue,
+    int graphemeIndex,
+    Rect charRect,
+  ) {
     if (!_immersiveAllowsLookup) return;
     final String sentence = cue.text;
     if (sentence.trim().isEmpty) return;
-    unawaited(_lookupAt(sentence, 0, textRect));
+    unawaited(_lookupAt(sentence, graphemeIndex, charRect));
   }
 
   /// 翻转锁定 / 沉浸模式（TODO-101；锁屏按钮 / Shift+L 快捷键 / 常驻解锁按钮共用）。
