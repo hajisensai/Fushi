@@ -1263,7 +1263,7 @@
     "video_subtitle_switched": "Subtitle: $label",
     "video_audio_track_switched": "Audio track: $label",
     "video_import_subtitle_optional": "Optional external subtitle (you can switch between embedded/external subtitles anytime during playback)",
-    "video_settings_title": "Player settings",
+    "video_settings_title": "視頻設置",
     "video_setting_av_delay": "字幕調軸",
     "video_setting_av_delay_hint": "正數 = 字幕延後（字幕整體往後撥）；負數 = 字幕提前。可拖滑桿、按 ± 或直接輸入數值。",
     "video_setting_speed": "Playback speed",

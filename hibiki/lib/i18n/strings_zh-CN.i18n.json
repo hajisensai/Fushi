@@ -1263,7 +1263,7 @@
     "video_subtitle_switched": "已切换字幕：$label",
     "video_audio_track_switched": "音轨: $label",
     "video_import_subtitle_optional": "可选外挂字幕（播放时可随时在内嵌/外挂字幕间切换）",
-    "video_settings_title": "播放设置",
+    "video_settings_title": "视频设置",
     "video_setting_av_delay": "字幕调轴",
     "video_setting_av_delay_hint": "正数 = 字幕延后（字幕整体往后拨）；负数 = 字幕提前。可拖滑条、按 ± 或直接输入数值。",
     "video_setting_speed": "播放速度",
