@@ -708,7 +708,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       VideoControlLayout.fromLegacy(_controlCustomization);
 
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
-  bool _lockWindowAspectRatio = true;
+  /// 初始 false 与偏好默认对齐（回归修复）：偏好快照在 init 赋值前不主动锁窗口，
+  /// 消除「赋值前 stale true 抢锁」的瞬态窗口。
+  bool _lockWindowAspectRatio = false;
   double? _appliedWindowAspectRatio;
 
   /// 画面缩放/比例模式（窗口 + 全屏 [Video] fit 共用；TODO-152 子B）。新安装默认
@@ -1820,14 +1822,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _markControlsVisible(bool visible) {
     if (!mounted) return;
     // 锁定 / 沉浸模式（[_immersiveLocked]）或侧栏打开（[_videoSidePanel]，BUG-253）下
-    // 一律强制不可见：前者控制条本被 [IgnorePointer] 挡掉，后者面板盖在控制条上、
-    // 背景控制条 / 字幕避让都不该再被 hover 唤起。两者同源门控、同样取消隐藏定时。
+    // 一律强制控制条镜像不可见：前者控制条本被 [IgnorePointer] 挡掉，后者面板盖在
+    // 控制条上、背景控制条 / 字幕避让都不该再被 hover 唤起。两者同样取消隐藏定时。
     if (_immersiveLocked.value || _videoSidePanel.value != null) {
       _videoControlsHideTimer?.cancel();
       _videoControlsHideTimer = null;
       _videoControlsVisible.value = false;
-      // 沉浸锁 / 侧栏态：控制条不弹，光标也无 chrome 该承载 → 统一隐藏（TODO-318）。
-      _setCursorHidden(true);
+      // 光标语义在两态分叉（TODO-318 回归）：
+      // - 侧栏 / 设置面板打开：用户要在面板上操作，光标必须可见 → 显式 false；
+      // - 纯沉浸锁（无侧面板）：控制条被 [IgnorePointer] 挡掉、无 chrome 承载光标 → 隐藏。
+      _setCursorHidden(_videoSidePanel.value == null);
       return;
     }
     _videoControlsVisible.value = visible;
