@@ -5,6 +5,7 @@ const vm = require('vm');
 
 const dictMediaPath = path.resolve(__dirname, '../../../assets/popup/dict-media.js');
 const popupPath = path.resolve(__dirname, '../../../assets/popup/popup.js');
+const popupCssPath = path.resolve(__dirname, '../../../assets/popup/popup.css');
 const selectionPath = path.resolve(__dirname, '../../../assets/popup/selection.js');
 
 class FakeClassList {
@@ -298,6 +299,76 @@ function testEmSizedWideImagesUseHorizontalScrollWrapper() {
   assert.equal(node.children[0].style.maxWidth, 'none');
   assert.equal(node.children[0].children[0].style.width, '100em');
   assert.equal(node.children[0].children[0].style.maxWidth, 'none');
+}
+
+// TODO-350: Sanseido (三省堂国語辞典) marks pitch accent as a small inline SVG
+// embedded in the term_bank structured content — `{tag:'img', width:0.5,
+// height:1.0, sizeUnits:'em', path:'sankoku8/svg-accent/アクセント.svg'}` — NOT as
+// Yomitan pitch term_meta. createDefinitionImage routes every em-sized image
+// through the gloss-image-scroll wrapper (added in 290b42feb for very wide em
+// images like 100em×10em). The wrapper must stay inline so the 0.5em accent mark
+// stays on the same line as the kana it annotates; a block wrapper bumped it onto
+// its own line and detached the accent from the reading ("音調显示有问题",
+// hoshi-android renders it inline because upstream Yomitan has no scroll wrapper).
+// The inline-block + overflow-x:auto fix (in popup.css) lets layout decide whether
+// scrolling is needed from real geometry, so wide images still scroll while the
+// narrow accent mark collapses to its content width and stays inline.
+function testSanseidoEmAccentImageStaysInlineAndPointsAtDictionaryMedia() {
+  const context = loadPopup();
+  const node = context.createDefinitionImage(
+    {
+      tag: 'img',
+      width: 0.5,
+      height: 1.0,
+      sizeUnits: 'em',
+      appearance: 'auto',
+      background: false,
+      collapsible: false,
+      collapsed: false,
+      path: 'sankoku8/svg-accent/アクセント.svg',
+    },
+    '三省堂国語辞典　第八版',
+    false,
+  );
+
+  // The em path still wraps for the wide-image scroll case…
+  assert.equal(node.className, 'gloss-image-scroll');
+  const link = node.children[0];
+  assert.equal(link.className, 'gloss-image-link');
+  const container = link.children[0];
+  // …but the accent mark keeps its own 0.5em width (not stretched to a block row).
+  assert.equal(container.style.width, '0.5em');
+  // SVG aspect ratio is preserved (height 1.0 / width 0.5 = 200%).
+  assert.equal(container.children[0].style.paddingTop, '200%');
+  // The accent SVG resolves to the dictionary media scheme with its CJK path
+  // percent-encoded (regression for the embedded-SVG accent never loading).
+  const img = container.children[3];
+  assert.equal(img.className, 'gloss-image');
+  assert.equal(
+    img.src,
+    'image://?dictionary=%E4%B8%89%E7%9C%81%E5%A0%82%E5%9B%BD%E8%AA%9E%E8%BE%9E' +
+      '%E5%85%B8%E3%80%80%E7%AC%AC%E5%85%AB%E7%89%88&path=sankoku8%2Fsvg-accent' +
+      '%2F%E3%82%A2%E3%82%AF%E3%82%BB%E3%83%B3%E3%83%88.svg',
+  );
+}
+
+// CSS guard: the gloss-image-scroll wrapper must be inline-block so an em-sized
+// accent mark stays in the kana's inline flow. A bare div (display:block) detaches
+// the Sanseido pitch accent from its reading (TODO-350).
+function testGlossImageScrollWrapperIsInline() {
+  const css = fs.readFileSync(popupCssPath, 'utf8');
+  const ruleMatch = css.match(/\.gloss-image-scroll\s*\{([^}]*)\}/);
+  assert.ok(ruleMatch, '.gloss-image-scroll rule must exist in popup.css');
+  const body = ruleMatch[1];
+  assert.ok(
+    /display\s*:\s*inline-block\s*;/.test(body),
+    '.gloss-image-scroll must be inline-block so small em images stay inline; got: ' +
+      body.trim(),
+  );
+  assert.ok(
+    /overflow-x\s*:\s*auto\s*;/.test(body),
+    '.gloss-image-scroll must keep overflow-x:auto for wide em images',
+  );
 }
 
 function testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad() {
@@ -1123,6 +1194,8 @@ function testRenderPopupNoKanjiNoEntriesShowsNoResults() {
 }
 
 testEmSizedWideImagesUseHorizontalScrollWrapper();
+testSanseidoEmAccentImageStaysInlineAndPointsAtDictionaryMedia();
+testGlossImageScrollWrapperIsInline();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
 testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();

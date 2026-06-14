@@ -337,6 +337,8 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .gloss-image-scroll {
+    display: inline-block;
+    vertical-align: inherit;
     overflow-x: auto;
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
