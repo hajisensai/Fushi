@@ -495,30 +495,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
 
-  /// media_kit 底部控制条当前是否可见（TODO-129）——驱动字幕动态避让进度条。
+  /// media_kit 底部控制条 **真实** 可见性（TODO-364）——单一真相源，由 media_kit 自己的
+  /// 控制条 State 在每次 `visible` 变化时推进来。
   ///
-  /// 根因约束：media_kit 的 [MaterialDesktopVideoControls] / [MaterialVideoControls]
-  /// 把控制条可见性 `visible` 与隐藏 `Timer` 全藏在私有 State 里，**不暴露任何回调 /
-  /// notifier / 公开 API**（已查证 media_kit_video 的 `setSubtitleViewPadding` 也只写进
-  /// SubtitleView 私有 State，Hibiki 又禁用了内置 SubtitleView）。故无法直接读 media_kit
-  /// 的可见性。这里在 Hibiki 侧自建一份镜像：复刻 media_kit **同一套触发源**——桌面
-  /// hover（[_videoControlsHoverRegion] 的 onEnter/onHover/onExit）、移动端点画面 toggle
-  /// （[_handleVideoPointerUp]）、键盘 / seek 唤起（[_pokeControlsVisible]）+ 同样的
-  /// `controlsHoverDuration`(2s) 自动隐藏定时（[_scheduleControlsHide]）、初始不可见
-  /// （media_kit 两端默认 `visibleOnMount:false`）。
+  /// 历史根因（TODO-129 旧实现）：media_kit 把控制条可见性 `visible` 与隐藏 `Timer` 藏在
+  /// 私有 State，旧 Hibiki 侧另建一份 **镜像** [_videoControlsVisible] + 一个独立隐藏
+  /// `Timer`（已删）复刻同一套触发源喂给字幕避让。两套 `Timer` 各自计时、
+  /// 各入口（hover / 移动 tap / 键盘 poke）独立维护 → 镜像与真实控制条 **相位会反**：
+  /// 进度条起落动画中又来一次操作时，镜像翻成与真实可见态相反，字幕避让方向就反了
+  /// （用户：「进度条起来下去同时其他操作字幕行为相反，让他们用同一个变量」）。
+  ///
+  /// 修复：vendored media_kit_video fork 给两套控制主题加 `visibilityNotifier`，控制条
+  /// State 每次改 `visible` 都推进本 notifier（见 third_party/media_kit_video/PATCHES.md）。
+  /// 本字段即那唯一真相源，字幕避让消费它派生出的 [_videoControlsVisible]，彻底消除独立
+  /// 镜像 + 第二个 `Timer` 的相位漂移。窗口 / 全屏复用同一 controls builder，故两套主题
+  /// 都注入同一个 notifier。
+  final ValueNotifier<bool> _mediaKitControlsVisible =
+      ValueNotifier<bool>(false);
+
+  /// 字幕避让真正消费的控制条可见性（TODO-129/364）。**单一写入点** =
+  /// [_applyControlsVisibilityFromMediaKit]：它把 media_kit 真实可见性
+  /// （[_mediaKitControlsVisible]）按沉浸锁 / 侧栏 / 字幕列表门控取下限派生进来。不再有
+  /// 任何入口直接乐观翻它（那是 TODO-364 相位反的根因），故它恒等于「真实可见态 且 无遮挡
+  /// overlay」。
   ///
   /// 用 [ValueNotifier] 而非 setState：字幕 overlay 在 media_kit controls builder 内的
   /// [Stack]（[_buildVideoControlsInner]），全屏是推到根 navigator 的独立路由、不随本页
   /// setState 重建（与 [_titleNotifier] / [_immersiveLocked] 同源，BUG-120）。监听
   /// notifier 才能让窗口与全屏两种场景字幕都随控制条显隐上顶 / 落回。
-  ///
-  /// 取舍（诚实声明）：自建镜像与 media_kit 私有时序可能有细微漂移（如 buffering 强制
-  /// 可见、拖进度条等次要触发本镜像未覆盖），方案受限于 media_kit 不暴露可见性 API。
   final ValueNotifier<bool> _videoControlsVisible = ValueNotifier<bool>(false);
-
-  /// 控制条自动隐藏定时器（TODO-129）。每次唤起重置，时长与 media_kit 主题的
-  /// `controlsHoverDuration` 同为 2s（见 [_mobileControlsTheme] / [_desktopControlsTheme]）。
-  Timer? _videoControlsHideTimer;
 
   /// 视频左侧常驻锁 / 解锁按钮（TODO-126）的可见性。非沉浸态显示锁图标（进入沉浸）、
   /// 沉浸态显示解锁图标（退出沉浸）——两态用同一枚侧边按钮（[_buildSideLockButton]）。
@@ -534,10 +539,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 侧边锁 / 解锁按钮自动淡出定时器（TODO-126）。每次 [_pokeLockButton] 唤起重置。
   Timer? _lockButtonHideTimer;
-
-  /// 桌面鼠标是否仍在视频 chrome 区内。停在设置按钮/侧栏上时不能让 2s 计时器把
-  /// 自定义 action rail 藏掉，否则用户会看到“鼠标放到设置上面设置消失”。
-  bool _videoControlsHovered = false;
 
   /// OS 鼠标光标是否应隐藏的单一真相源（TODO-318 / BUG-258）。
   ///
@@ -789,6 +790,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
     _popup = DictionaryPopupController(lowMemory: false);
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
+    // TODO-364 单一真相源：字幕避让可见性恒由 media_kit 真实可见性
+    // （[_mediaKitControlsVisible]）+ 三个门控派生。订阅这四个输入，任一变化即重派生
+    // [_videoControlsVisible]，杜绝旧镜像与真实控制条相位反。
+    _mediaKitControlsVisible.addListener(_applyControlsVisibilityFromMediaKit);
+    _immersiveLocked.addListener(_applyControlsVisibilityFromMediaKit);
+    _videoSidePanel.addListener(_applyControlsVisibilityFromMediaKit);
+    _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
@@ -1756,6 +1764,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
+    // TODO-364：先摘控制条可见性派生监听，再 dispose 各 notifier（监听回调读多个 notifier，
+    // 顺序错会在 dispose 后回调里触碰已释放对象）。
+    _mediaKitControlsVisible
+        .removeListener(_applyControlsVisibilityFromMediaKit);
+    _immersiveLocked.removeListener(_applyControlsVisibilityFromMediaKit);
+    _videoSidePanel.removeListener(_applyControlsVisibilityFromMediaKit);
+    _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.dispose();
     _videoSidePanel.dispose();
     _immersiveLocked.dispose();
@@ -1763,7 +1778,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _lockButtonVisible.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
-    _videoControlsHideTimer?.cancel();
+    _mediaKitControlsVisible.dispose();
     _videoControlsVisible.dispose();
     _cursorHidden.dispose();
     super.dispose();
@@ -1866,9 +1881,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         kind: PointerDeviceKind.mouse,
       ),
     );
-    // 镜像可见性同步翻可见 + 重置隐藏定时（TODO-129）：键盘 / seek 唤起控制条时字幕也
-    // 跟着上顶（与刚派发的合成 hover 让 media_kit 控制条出现语义一致）。
-    _markControlsVisible(true);
+    // 不再在 Hibiki 侧另翻镜像可见性（TODO-364）：刚派发的合成 hover 会命中 media_kit
+    // 自己的 MouseRegion → 其 onHover 翻 `visible=true` 并重置 **它唯一的** 隐藏 Timer、
+    // 把真实可见性推进 [_mediaKitControlsVisible]，由 [_applyControlsVisibilityFromMediaKit]
+    // 派生进 [_videoControlsVisible]。键盘 / seek 唤起控制条时字幕跟着上顶，且与真实控制条
+    // 同相位（旧实现这里直接翻镜像 + 另起 Timer 是相位反的根因）。
   }
 
   /// media_kit 控制条自动隐藏时长，与两端控制主题的 `controlsHoverDuration` 同源（2s）。
@@ -1881,61 +1898,55 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   bool get _hasVideoOverlay =>
       _videoSidePanel.value != null || _subtitleListVisible.value;
 
-  /// 翻转控制条镜像可见性（TODO-129），驱动字幕动态避让。
+  /// 控制条避让可见性的 **唯一派生 / 写入点**（TODO-364）。
   ///
-  /// 复刻 media_kit 自己的可见性时序：唤起（hover / tap / 键盘 / seek）时置可见并重置
-  /// `controlsHoverDuration` 自动隐藏定时；显式移出（鼠标离开视频区）时立即不可见、取消
-  /// 定时。锁定 / 沉浸模式（[_immersiveLocked]）下 media_kit 控制条本就不弹（被
-  /// [IgnorePointer] 挡掉指针），故镜像也强制不可见、字幕不避让（无控制条可遮挡）。
-  void _markControlsVisible(bool visible) {
+  /// 输入只有两类真相：①media_kit 控制条自己推来的真实可见性
+  /// （[_mediaKitControlsVisible]，由 vendored fork 的 `visibilityNotifier` 在每次
+  /// `visible` 变化时推送）②Hibiki 侧三个遮挡门控（沉浸锁 [_immersiveLocked] / 侧栏
+  /// [_videoSidePanel] / 字幕跳转列表 [_subtitleListVisible]）。门控成立时控制条本被
+  /// [IgnorePointer] 挡掉 / 被 overlay 盖住，字幕不该避让 → 强制 false；否则字幕避让恒
+  /// 等于真实可见态。任何这五个输入变化都重跑本函数（在 [initState] 订阅），故
+  /// [_videoControlsVisible] 永不与真实控制条相位反（消除旧镜像 + 第二个 Timer 的漂移）。
+  ///
+  /// 同时承接两个跟随控制条显隐的副作用（旧 `_markControlsVisible` 内的逻辑）：
+  /// - 门控隐藏控制条时关闭音量 popover（TODO-337，其锚点随控制条消失）；
+  /// - OS 光标隐藏（TODO-318 / BUG-258）：控制条不可见且无 overlay → 隐藏画面光标
+  ///   （镜像 media_kit `hideMouseOnControlsRemoval`）；可见或有 overlay → 显示。真实鼠标
+  ///   移动经 [_handleVideoControlsHover] 仍随时唤回光标，不被本派生压制。
+  void _applyControlsVisibilityFromMediaKit() {
     if (!mounted) return;
-    // 锁定 / 沉浸模式（[_immersiveLocked]）或有 overlay 打开（设置 / 音轨等浮层
-    // [_videoSidePanel]，BUG-253；或字幕跳转列表 [_subtitleListVisible]，TODO-329）下
-    // 一律强制控制条镜像不可见：沉浸锁的控制条本被 [IgnorePointer] 挡掉，浮层 / 字幕
-    // 列表盖在控制条上、背景控制条 / 字幕避让都不该再被 hover 唤起。三者同样取消隐藏定时。
-    if (_immersiveLocked.value ||
+    final bool gated = _immersiveLocked.value ||
         _videoSidePanel.value != null ||
-        _subtitleListVisible.value) {
-      _videoControlsHideTimer?.cancel();
-      _videoControlsHideTimer = null;
-      _videoControlsVisible.value = false;
-      // 控制条被强制隐藏（锁定 / 侧栏 / 字幕列表打开）时关闭音量 popover（TODO-337）：
-      // 其锚点（音量按钮）随控制条消失，不应留下悬空 popover。
-      _dismissVolumePopover();
-      // 光标语义在两态分叉（TODO-318 回归 / TODO-329）：
-      // - 有 overlay（侧栏 / 设置面板 / 字幕跳转列表）打开：用户要在 overlay 上操作，
-      //   光标必须可见、不被 2s 定时隐藏 → 显式 false；
-      // - 纯沉浸锁（无任何 overlay）：控制条被 [IgnorePointer] 挡掉、无 chrome 承载
-      //   光标、静止超时应隐藏 → true（保 BUG-258）。
-      _setCursorHidden(!_hasVideoOverlay);
-      return;
-    }
+        _subtitleListVisible.value;
+    final bool visible = !gated && _mediaKitControlsVisible.value;
     _videoControlsVisible.value = visible;
-    _videoControlsHideTimer?.cancel();
-    _videoControlsHideTimer = null;
-    // 音量 popover 打开时不启动自动隐藏（TODO-337）：popover 浮在控制条上方的独立
-    // Overlay，鼠标移到它上面会让 media_kit 控制条 onExit → 若此时让控制条 2s 淡出，
-    // 音量按钮（popover 锚点）随之消失会导致 popover 闪烁。popover 开着 = 用户正在操作
-    // 音量，控制条应保持可见；关闭 popover（鼠标移出 / Esc / 点外部）后恢复正常计时。
-    if (visible && !_videoControlsHovered && _volumeOverlayEntry == null) {
-      _videoControlsHideTimer = Timer(_videoControlsHoverDuration, () {
-        if (mounted) {
-          _videoControlsVisible.value = false;
-          // 控制条 2s 自动淡出同时隐藏光标（镜像 media_kit hideMouseOnControlsRemoval）。
-          _setCursorHidden(true);
-        }
-      });
+    if (gated) {
+      // 控制条被门控隐藏（锁定 / 侧栏 / 字幕列表打开）：关闭悬空的音量 popover（TODO-337）。
+      _dismissVolumePopover();
     }
+    // 光标：可见 → 显示；不可见但有 overlay（用户要在 overlay 上操作）→ 显示；不可见且
+    // 无 overlay（纯沉浸 / 自动淡出）→ 隐藏（保 BUG-258 / 镜像 hideMouseOnControlsRemoval）。
+    _setCursorHidden(!visible && !_hasVideoOverlay);
   }
 
-  /// 桌面鼠标移出视频区：与 media_kit `onExit` 一致立即收起控制条镜像（字幕落回基线）。
+  /// 收起控制条可见性的兼容入口（TODO-364 后只接受 `false`）。沉浸锁 / 开侧栏 / 开字幕
+  /// 列表的调用方在翻转各自门控 [ValueNotifier] 后调本方法，立即重派生
+  /// [_videoControlsVisible]（门控订阅本就会触发，但同帧调用确保即时收起、不等微任务）。
+  /// 不再接受「乐观翻 true」——可见性由 media_kit 真实态唯一决定（[_pokeControlsVisible]
+  /// / 真实 hover 经 media_kit 自己唤起并推送），杜绝旧镜像与真实控制条相位反。
+  void _markControlsVisible(bool visible) {
+    if (!mounted) return;
+    assert(
+      !visible,
+      '_markControlsVisible 仅用于门控收起（false）；唤起交给 media_kit 真实可见性（TODO-364）',
+    );
+    _applyControlsVisibilityFromMediaKit();
+  }
+
+  /// 桌面鼠标移出视频区：光标交还系统 / 外部（TODO-318）。控制条的隐藏由 media_kit
+  /// 自己的 `onExit` 决定并推送 [_mediaKitControlsVisible]，不在 Hibiki 侧另判（TODO-364）。
   void _onVideoControlsHoverExit() {
     if (!mounted) return;
-    _videoControlsHovered = false;
-    _videoControlsHideTimer?.cancel();
-    _videoControlsHideTimer = null;
-    _videoControlsVisible.value = false;
-    // 鼠标移出视频区：光标交还系统/外部，不再由本层强制隐藏（TODO-318）。
     _setCursorHidden(false);
   }
 
@@ -1944,25 +1955,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   void _handleVideoControlsHover(PointerEvent event) {
     if (!_isSyntheticControlsHover(event)) {
-      _videoControlsHovered = true;
       // 真实鼠标移动 → 唤回光标（TODO-318）。合成 poke（键盘/seek 续命）不强制显示光标，
       // 否则键盘连按快进会让本该隐藏的光标常驻。沉浸锁态也借此唤回光标找解锁按钮。
       _setCursorHidden(false);
     }
-    _markControlsVisible(true);
+    // 控制条可见性不在此翻（TODO-364）：本 hover 包裹层 `opaque:false`，真实鼠标 hover 会
+    // 继续下探命中 media_kit 自己的 MouseRegion → 其 onHover 翻 `visible` 并推送
+    // [_mediaKitControlsVisible]，字幕避让由 [_applyControlsVisibilityFromMediaKit] 派生，
+    // 与真实控制条同相位。
     _pokeLockButton();
   }
 
   void _handleVideoControlsHoverExit(PointerEvent event) {
     if (_isSyntheticControlsHover(event)) return;
     _onVideoControlsHoverExit();
-  }
-
-  /// 移动端点画面（非控制条按钮、非字幕字符）toggle 控制条可见（镜像 media_kit 移动控制
-  /// 条的 `onTap`，TODO-129）。桌面走 hover，不经此路径。
-  void _toggleControlsVisibleForTap() {
-    if (!mounted || _immersiveLocked.value) return;
-    _markControlsVisible(!_videoControlsVisible.value);
   }
 
   /// 唤回视频左侧锁 / 解锁按钮并重置 2s 自动淡出（TODO-126）。鼠标移动（hover）/ 触屏点画面
@@ -3330,7 +3336,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               _volumePopoverHovered = true;
               _volumePopoverHoverCloseTimer?.cancel();
               _volumePopoverHoverCloseTimer = null;
+              // TODO-337/364：鼠标移到 popover（media_kit 控制条之外的独立 Overlay）会让
+              // media_kit onExit 隐藏控制条 → 锚点（音量按钮）随之消失、字幕落回。用户正在
+              // 操作音量，控制条应保持可见：poke 一次 media_kit 自己的隐藏 Timer 续命（驱动
+              // 真实可见性单一真相源，而非旧的 Hibiki 镜像旁路）。
+              _pokeControlsVisible();
             },
+            onHover: (_) => _pokeControlsVisible(),
             onExit: (_) {
               _volumePopoverHovered = false;
               _scheduleVolumePopoverHoverClose();
@@ -3349,6 +3361,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // TODO-364：media_kit 控制条把它**真实**的 `visible` 推进这个 notifier，字幕避让
+      // 唯一消费它（见 [_mediaKitControlsVisible] / [_applyControlsVisibilityFromMediaKit]），
+      // 不再另建镜像 + 第二个 Timer（旧实现两套计时相位反 = 本 BUG 根因）。
+      visibilityNotifier: _mediaKitControlsVisible,
       // 控制条隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       hideMouseOnControlsRemoval: true,
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
@@ -3458,6 +3474,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // TODO-364：移动控制条的真实 `visible`（含 onTap toggle）推进同一个 notifier，字幕避让
+      // 唯一消费它，移动端不再用 Hibiki 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
+      visibilityNotifier: _mediaKitControlsVisible,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势（含内建亮度/音量指示器）。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。不开
@@ -5167,10 +5186,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
 
-    // 移动端点画面（非控制条按钮）toggle 控制条可见性镜像（TODO-129），镜像 media_kit
-    // 移动控制条的 `onTap`：让字幕跟随控制条上顶 / 落回。桌面走 hover（[_videoControlsHoverWrap]）
-    // 不经此路径。注意此处只在确认点的是画面区（已过 [_isVideoChromePointer] 闸）后触发。
-    if (!_isDesktopVideoControls) _toggleControlsVisibleForTap();
+    // 移动端点画面（非控制条按钮）的控制条显隐 toggle 不再在 Hibiki 侧另做镜像
+    // （TODO-364）：本外层 [Listener] 是 translucent，同一次点击会继续命中下方 media_kit
+    // 移动控制条自己的手势层 → 其 `onTap` 翻 `visible` 并推送 [_mediaKitControlsVisible]，
+    // 字幕避让由 [_applyControlsVisibilityFromMediaKit] 派生，与真实控制条同相位（旧实现在此
+    // 用 Hibiki 镜像独立 toggle，与 media_kit 各自计时 → 并发操作时方向反，是本 BUG 根因）。
 
     final DateTime now = DateTime.now();
     final DateTime? lastAt = _lastVideoPointerUpAt;

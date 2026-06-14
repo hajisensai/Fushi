@@ -173,7 +173,7 @@ void main() {
     final String hoverExitHandlerMethod = _between(
       source,
       'void _handleVideoControlsHoverExit(PointerEvent event) {',
-      '/// 移动端点画面',
+      '/// 唤回视频左侧锁',
     );
     final String hoverWrapMethod = _between(
       source,
@@ -192,22 +192,30 @@ void main() {
         panelMethod, isNot(contains('valueListenable: _videoControlsVisible')),
         reason: '设置侧栏必须独立于控制条自动隐藏，不应随 action rail 一起卸载');
 
-    expect(source, contains('bool _videoControlsHovered = false;'));
+    // TODO-364：poke 仍派合成 hover 驱动 media_kit 自己的可见性/Timer（单一真相源），
+    // 但不再另翻 Hibiki 镜像（相位反根因）。
     expect(pokeMethod, contains('device: _syntheticHoverDevice'));
-    expect(pokeMethod, contains('_markControlsVisible(true);'));
-    // TODO-337：音量 popover 打开期间不启动自动隐藏（popover 锚在音量按钮，控制条
-    // 2s 淡出会让锚点消失致 popover 闪烁），故隐藏定时条件追加 `_volumeOverlayEntry == null`。
+    expect(pokeMethod, isNot(contains('_markControlsVisible(true);')),
+        reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收合成 hover 后推送，TODO-364）');
+    // TODO-364：_markControlsVisible 收敛成仅门控收起（assert(!visible)）+ 重派生；
+    // 不再有 Hibiki 侧独立隐藏 Timer 条件。
+    expect(visibilityMethod, contains('_applyControlsVisibilityFromMediaKit()'),
+        reason: '_markControlsVisible 应委托唯一派生函数');
+    expect(visibilityMethod, isNot(contains('_videoControlsHideTimer')),
+        reason: '不应残留 Hibiki 侧独立隐藏 Timer（TODO-364）');
+    // TODO-364：鼠标移出只交还光标，控制条隐藏由 media_kit onExit 推送，不在 Hibiki 侧判可见。
+    expect(hoverExitMethod, contains('_setCursorHidden(false)'),
+        reason: '鼠标移出应交还光标');
     expect(
-        visibilityMethod,
-        contains(
-            'if (visible && !_videoControlsHovered && _volumeOverlayEntry == null)'));
-    expect(hoverExitMethod, contains('_videoControlsHovered = false;'));
+        hoverExitMethod, isNot(contains('_videoControlsVisible.value = false')),
+        reason: '鼠标移出不应在 Hibiki 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）');
     expect(syntheticHoverMethod,
         contains('event.device == _syntheticHoverDevice'));
     expect(
         hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
-    expect(hoverHandlerMethod, contains('_videoControlsHovered = true;'));
-    expect(hoverHandlerMethod, contains('_markControlsVisible(true);'));
+    // TODO-364：真实 hover 不再乐观翻镜像（可见性由 media_kit onHover 推送）。
+    expect(hoverHandlerMethod, isNot(contains('_markControlsVisible(true);')),
+        reason: 'hover 不应再乐观翻镜像（可见性由 media_kit 真实态推送，TODO-364）');
     expect(hoverExitHandlerMethod,
         contains('if (_isSyntheticControlsHover(event)) return;'));
     expect(hoverExitHandlerMethod, contains('_onVideoControlsHoverExit();'));

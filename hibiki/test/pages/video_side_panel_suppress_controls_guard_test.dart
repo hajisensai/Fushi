@@ -40,22 +40,25 @@ void main() {
         reason: '_pokeControlsVisible 必须在 _videoSidePanel 非空时早返回，不唤起背景控制条');
   });
 
-  test('_markControlsVisible 的强制隐藏分支门控沉浸锁 / 侧栏 / 字幕列表', () {
+  test('控制条可见性派生（_applyControlsVisibilityFromMediaKit）门控沉浸锁 / 侧栏 / 字幕列表', () {
+    // TODO-364：可见性收敛到唯一派生函数，门控成立时强制不可见（旧 _markControlsVisible
+    // 强制隐藏分支已并入此处）。TODO-329：门控含字幕列表。
     final String body = methodBody(
+      'void _applyControlsVisibilityFromMediaKit() {',
       'void _markControlsVisible(bool visible) {',
-      'void _onVideoControlsHoverExit()',
     );
-    // TODO-329：分支条件扩展到字幕列表（折行后压成单空格再断言三条件都在）。
     final String flat = body.replaceAll(RegExp(r'\s+'), ' ');
     expect(
       flat.contains(
-        'if (_immersiveLocked.value || _videoSidePanel.value != null || '
-        '_subtitleListVisible.value) {',
+        'final bool gated = _immersiveLocked.value || '
+        '_videoSidePanel.value != null || _subtitleListVisible.value;',
       ),
       isTrue,
-      reason: '_markControlsVisible 强制不可见分支必须含 _immersiveLocked / '
-          '_videoSidePanel / _subtitleListVisible 三条件',
+      reason: '派生的门控 gated 必须含 _immersiveLocked / _videoSidePanel / '
+          '_subtitleListVisible 三条件',
     );
+    expect(flat.contains('!gated && _mediaKitControlsVisible.value'), isTrue,
+        reason: '门控成立强制不可见、否则等于 media_kit 真实可见性（单一真相源）');
   });
 
   test('右侧操作 rail gate 含侧栏门控', () {

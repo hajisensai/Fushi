@@ -172,6 +172,87 @@ void main() {
       expect(gapFromBottom(tester), closeTo(200 + kBoxPadBottom, 0.5));
     });
 
+    group('TODO-364 字幕避让方向始终跟随单一真相源（不反相）', () {
+      // 根因守卫（消费侧）：字幕避让只读 controlsVisible 这一个 notifier，padding 方向必须
+      // 与该 notifier 的真实值单调对应——可见=抬到 reserve、隐藏=落回基线，任意快速翻转
+      // 序列都不出现「方向反」（避让目标恒等于 notifier 当前值，无独立计时/取反旁路）。
+      // 视频页根因（镜像 + 第二个 Timer 相位反）由 video_subtitle_push_up_guard_test.dart
+      // 锁结构、需真机验观感；本测试锁定 overlay 对单一真相源的方向一致性。
+      const double lowBaselineForDodge = kVideoControlsBottomReserve - 1;
+
+      double dodgeGap(WidgetTester tester) => gapFromBottom(tester);
+
+      testWidgets('显示→隐藏→显示：每一步方向都跟随 notifier，不反相', (tester) async {
+        final ValueNotifier<bool> visible = ValueNotifier<bool>(false);
+        addTearDown(visible.dispose);
+        final VideoPlayerController c = _controllerWithCue('A');
+        await _pump(
+          tester,
+          VideoSubtitleOverlay(
+            controller: c,
+            bottomPadding: lowBaselineForDodge,
+            controlsVisible: visible,
+          ),
+        );
+        await tester.pumpAndSettle();
+        // 初始隐藏：贴基线。
+        final double hidden0 = dodgeGap(tester);
+        expect(hidden0, closeTo(lowBaselineForDodge + kBoxPadBottom, 0.5));
+
+        // 显示：抬到 reserve（> 基线）——方向「上」。
+        visible.value = true;
+        await tester.pumpAndSettle();
+        final double shown1 = dodgeGap(tester);
+        expect(
+            shown1, closeTo(kVideoControlsBottomReserve + kBoxPadBottom, 0.5));
+        expect(shown1, greaterThan(hidden0),
+            reason: '显示时字幕必须上抬（gap 变大），不能反向下落');
+
+        // 隐藏：落回基线（< reserve）——方向「下」。
+        visible.value = false;
+        await tester.pumpAndSettle();
+        final double hidden2 = dodgeGap(tester);
+        expect(hidden2, closeTo(lowBaselineForDodge + kBoxPadBottom, 0.5));
+        expect(hidden2, lessThan(shown1), reason: '隐藏时字幕必须下落（gap 变小），不能反向上抬');
+
+        // 再显示：再次上抬，方向与第一次一致（不因前序操作而反相）。
+        visible.value = true;
+        await tester.pumpAndSettle();
+        final double shown3 = dodgeGap(tester);
+        expect(shown3, closeTo(shown1, 0.5),
+            reason: '同一真相源同一值必须给出同一避让位置（无相位漂移）');
+      });
+
+      testWidgets('动画途中翻回（并发操作）：避让目标恒等于 notifier 最终值，不残留反向', (tester) async {
+        // 模拟「进度条起来途中又来一次操作把它按下去」：上抬动画未结束就把 notifier 翻回
+        // 隐藏，最终必须停在隐藏基线（跟随真相源最终值），不会卡在反向的上抬位置。
+        final ValueNotifier<bool> visible = ValueNotifier<bool>(false);
+        addTearDown(visible.dispose);
+        final VideoPlayerController c = _controllerWithCue('A');
+        await _pump(
+          tester,
+          VideoSubtitleOverlay(
+            controller: c,
+            bottomPadding: lowBaselineForDodge,
+            controlsVisible: visible,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 开始上抬，只推进一帧（动画进行中）。
+        visible.value = true;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        // 动画途中翻回隐藏（并发操作）。
+        visible.value = false;
+        await tester.pumpAndSettle();
+        // 最终停在隐藏基线，跟随真相源最终值（不卡在上抬的反向位置）。
+        expect(
+            dodgeGap(tester), closeTo(lowBaselineForDodge + kBoxPadBottom, 0.5),
+            reason: '并发翻回后避让目标必须跟随 notifier 最终值（隐藏=基线），不反相残留');
+      });
+    });
+
     group('BUG-238 视频页传入真实几何 reserve（盖过被抬高的移动进度条）', () {
       // 视频页移动端实际传入的 reserve ≈ 进度条上缘高度（基线 + 按钮行 + 间距 + 热区，
       // ×缩放），远大于默认基线 75。旧默认常量 56 < 75 → max(75,56)=75 把字幕留在进度条

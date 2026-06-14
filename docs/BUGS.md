@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 269 条。点号进各自文件。
+> 共 270 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-276](bugs/BUG-276-subtitle-avoid-direction-race.md) | ✅ | ✅ | 字幕避让方向反/竞态：避让与控制条可见性未用同一真相源 |
 | [BUG-275](bugs/BUG-275-bundled-ffmpeg-launch-fallback.md) | ✅ | ✅ | Bundled ffmpeg.exe invalid 时字幕枚举静默失败(TODO-336) |
 | [BUG-274](bugs/BUG-274-video-favorite-cross-episode.md) | ✅ | ✅ | 视频收藏句子面板跨集/跨视频污染（缺 bookKey 过滤） |
 | [BUG-273](bugs/BUG-273-multicue-mining-reader.md) | ✅ | ✅ | 查词窗口多句合一制卡(书籍/有声书·乙方案草稿累积) |
