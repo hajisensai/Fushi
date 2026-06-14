@@ -391,6 +391,19 @@ class ReaderHibikiSource extends ReaderMediaSource {
       } else {
         await deletePreference(key: getOverrideTitleKey(item));
       }
+
+      // BUG-276: 上面已删 DB 行 + 解压目录/有声书副本，但 SQLite 删除只把页放回
+      // freelist、不归还磁盘；WAL 也会继续增长。删一本书后 VACUUM 回收空间
+      // （否则用户「书都删了占用没降」）。VACUUM 必须在事务外，这里已在事务外；
+      // 失败不应让删除整体失败（行已删），只记日志。
+      try {
+        await db.customStatement('VACUUM');
+        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibikiSource.deleteBook.vacuum', e, stack);
+        debugPrint('[ReaderHibikiSource] VACUUM after delete failed: $e');
+      }
       return true;
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibikiSource.deleteBook', e, stack);

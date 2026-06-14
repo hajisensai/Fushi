@@ -187,6 +187,137 @@ void main() {
     expect((await repo.getByBookUid('video/d'))!.delayMs, 1200);
   });
 
+  test('deleteVideoBook removes the row AND its subtitle cue rows (BUG-276)',
+      () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/del'),
+      title: Value('Del'),
+      videoPath: Value('/del.mp4'),
+    ));
+    final cue = AudioCue()
+      ..bookKey = 'video/del'
+      ..chapterHref = 'video://default'
+      ..sentenceIndex = 0
+      ..textFragmentId = ''
+      ..text = 'bye'
+      ..startMs = 0
+      ..endMs = 1000
+      ..audioFileIndex = 0;
+    await repo.saveCues(bookUid: 'video/del', cues: [cue]);
+    // A second, unrelated video's cues must NOT be collaterally deleted.
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/other'),
+      title: Value('Other'),
+      videoPath: Value('/other.mp4'),
+    ));
+    final otherCue = AudioCue()
+      ..bookKey = 'video/other'
+      ..chapterHref = 'video://default'
+      ..sentenceIndex = 0
+      ..textFragmentId = ''
+      ..text = 'stay'
+      ..startMs = 0
+      ..endMs = 1000
+      ..audioFileIndex = 0;
+    await repo.saveCues(bookUid: 'video/other', cues: [otherCue]);
+
+    expect(await repo.loadCues('video/del'), hasLength(1));
+
+    await repo.deleteVideoBook('video/del');
+
+    expect(await repo.getByBookUid('video/del'), isNull);
+    expect(await repo.loadCues('video/del'), isEmpty,
+        reason: 'cue rows must be cleared, not orphaned');
+    // Sibling video untouched.
+    expect((await repo.getByBookUid('video/other'))!.title, 'Other');
+    expect(await repo.loadCues('video/other'), hasLength(1));
+  });
+
+  test(
+      'collectReferencedAssetPaths gathers covers + subtitles (BUG-276 GC set)',
+      () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/a'),
+      title: Value('A'),
+      videoPath: Value('/a.mp4'),
+      coverPath: Value('/docs/video_covers/a.jpg'),
+      subtitleSource: Value('/docs/video_subtitles/a.ass'),
+    ));
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/b'),
+      title: Value('B'),
+      videoPath: Value('/b.mp4'),
+      coverPath: Value('/docs/video_covers/b.jpg'),
+      // No subtitle source (embedded track only).
+    ));
+
+    final refs = await repo.collectReferencedAssetPaths();
+    expect(
+      refs.covers,
+      containsAll(<String>[
+        '/docs/video_covers/a.jpg',
+        '/docs/video_covers/b.jpg',
+      ]),
+    );
+    expect(refs.subtitles, contains('/docs/video_subtitles/a.ass'));
+    // null/empty values are not included.
+    expect(refs.subtitles, hasLength(1));
+  });
+
+  test(
+      'collectReferencedAssetPaths(excludeBookUid) drops the deleted book\'s own '
+      'refs (BUG-276 delete guard set)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/keep'),
+      title: Value('Keep'),
+      videoPath: Value('/keep.mp4'),
+      coverPath: Value('/docs/video_covers/keep.jpg'),
+      subtitleSource: Value('/docs/video_subtitles/keep.ass'),
+    ));
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/del'),
+      title: Value('Del'),
+      videoPath: Value('/del.mp4'),
+      coverPath: Value('/docs/video_covers/del.jpg'),
+      subtitleSource: Value('/docs/video_subtitles/del.ass'),
+    ));
+
+    // The delete path collects the "all OTHER books" reference set so the
+    // deleted book's own paths don't accidentally protect themselves.
+    final refs =
+        await repo.collectReferencedAssetPaths(excludeBookUid: 'video/del');
+    expect(refs.covers, contains('/docs/video_covers/keep.jpg'));
+    expect(refs.covers, isNot(contains('/docs/video_covers/del.jpg')));
+    expect(refs.subtitles, contains('/docs/video_subtitles/keep.ass'));
+    expect(refs.subtitles, isNot(contains('/docs/video_subtitles/del.ass')));
+  });
+
+  test('database VACUUM after delete runs without error (BUG-276)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/vac'),
+      title: Value('Vac'),
+      videoPath: Value('/vac.mp4'),
+    ));
+    await repo.deleteVideoBook('video/vac');
+    // The reclaim path calls VACUUM outside any transaction; assert it is a
+    // valid statement against the real schema (catches "VACUUM inside
+    // transaction" / syntax regressions).
+    await db.customStatement('VACUUM');
+    expect(await repo.listAll(), isEmpty);
+  });
+
   test('updateTitle round-trips the playlist/video title (C 重命名)', () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

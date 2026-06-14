@@ -46,8 +46,39 @@ class VideoBookRepository {
   Future<void> updateTitle(String bookUid, String title) =>
       _db.updateVideoBookTitle(bookUid, title);
 
-  /// 删除视频书（标签映射经 FK cascade 自动清理）。
+  /// 删除视频书：DB 行 + 本视频的字幕 cue 行一并删（[HibikiDatabase.deleteVideoBook]
+  /// 在一个事务里删 videoBooks + audio_cues；标签映射经 FK cascade）。on-disk 的
+  /// 封面/字幕副本回收交给调用方的 [VideoStorage.deleteBookAssets]（按被删 book 精确
+  /// 删，不全库 sweep，BUG-276）。
   Future<void> deleteVideoBook(String bookUid) => _db.deleteVideoBook(bookUid);
+
+  /// 收集「当前 DB 仍引用的、app 拥有的视频副本路径」，供删除回收做护栏 / 封面历史
+  /// GC 用作保留集。
+  ///
+  /// - `covers`：每本视频的 `coverPath`（落在 `<appDocs>/video_covers/`，文件名由
+  ///   bookUid 1:1 派生，引用集对封面完整）。
+  /// - `subtitles`：每本视频的 `subtitleSource`（手动导入/Jimaku 下载的外挂字幕落在
+  ///   `<appDocs>/video_subtitles/`；sidecar/内嵌源也会被收进来，但它们不在该目录里，
+  ///   无害）。**注意**：播放列表只在该列存最后选中那集的字幕路径，其余各集副本不在
+  ///   DB，故字幕引用集**不完整**——只可用作删除护栏（命中则保留），不可拿去全库 sweep
+  ///   删字幕，否则会误删别集活副本（见 [VideoStorage] 类注释 / BUG-276）。
+  ///
+  /// [excludeBookUid] 非 null 时跳过该 book 自己的引用（删除时取「全库其余 book」的
+  /// 引用集，避免被删 book 自己的路径反而把自己的资产护住不删）。
+  Future<({Set<String> covers, Set<String> subtitles})>
+      collectReferencedAssetPaths({String? excludeBookUid}) async {
+    final List<VideoBookRow> all = await listAll();
+    final Set<String> covers = <String>{};
+    final Set<String> subtitles = <String>{};
+    for (final VideoBookRow row in all) {
+      if (excludeBookUid != null && row.bookUid == excludeBookUid) continue;
+      final String? cover = row.coverPath;
+      if (cover != null && cover.isNotEmpty) covers.add(cover);
+      final String? sub = row.subtitleSource;
+      if (sub != null && sub.isNotEmpty) subtitles.add(sub);
+    }
+    return (covers: covers, subtitles: subtitles);
+  }
 
   Future<void> saveCues({
     required String bookUid,

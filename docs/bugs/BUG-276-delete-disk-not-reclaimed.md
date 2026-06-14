@@ -1,0 +1,24 @@
+## BUG-276 · 删除书/视频只删DB行不回收磁盘(TODO-365·13GB泄漏)
+- **报告**：2026-06-15（用户：「存储数据删除的时候清理了吗，为什么手机上有13gb占用，一共就剩5本书，视频都清了」）
+- **真实性**：✅ 真 bug。删除视频/书时只删 DB 行，app 拥有的磁盘副本与 SQLite 空间从不回收。多处根因：
+  - 视频删除零磁盘清理：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart:1112` `_confirmDeleteVideoBook` → `hibiki/lib/src/media/video/video_book_repository.dart:50` `deleteVideoBook` → `packages/hibiki_core/lib/src/database/database.dart:881` `deleteVideoBook`（旧实现纯删 `videoBooks` 行）。
+  - 视频字幕 cue 行泄漏：`packages/hibiki_core/lib/src/database/database.dart:879` 注释「cue 在 audio_cues，按需另清」——`audio_cues.bookKey` 不是 FK（有声书/SRT/视频共用一个字符串 owner key），cascade 不覆盖，删视频时 cue 行永久残留。
+  - 视频封面副本泄漏：`hibiki/lib/src/media/video/video_import_dialog.dart:111-113` / `88-92` 写 `<appDocs>/video_covers/<sanitized uid>.jpg`，删除从不删。
+  - 下载/导入字幕副本泄漏：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:4929-4935`（手动导入/拖入拷贝）、`4724-4725`（Jimaku 下载 saveDir）写 `<appDocs>/video_subtitles/`，删除从不删。
+  - 无 VACUUM：删除后 SQLite 只把页放回 freelist、不归还磁盘，WAL 持续增长；`VACUUM` 仅 `hibiki/lib/src/sync/backup_service.dart:298/498/513` 出现，删除路径从未调用。
+  - 注：`videoPath` / 播放列表各集 path 是用户原始视频文件的绝对路径（导入只存路径、从不复制），删除时**绝不删**。
+- **[x] ① 已修复** — 提交 `<本轮提交哈希>`（base 上一轮 `4b2b37937`，复核退回后重修）：
+  - `database.dart` `deleteVideoBook` 改为事务，同删 `videoBooks` 行 + `audio_cues` 里 `bookKey=uid` 的字幕 cue 行（修 DB 泄漏；标签映射仍走 FK cascade）。**复核通过，保留。**
+  - `reader_hibiki_source.dart` `deleteBook` 在已有磁盘清理后追加 `VACUUM` + `wal_checkpoint(TRUNCATE)`（书删除现有行为不回退，只补空间回收）。**复核通过，保留。**
+  - `reader_hibiki_history_page.dart` `_confirmDeleteVideoBook` 删 DB 后调 `_reclaimVideoDiskSpace()`（资产回收 + `VACUUM` + `wal_checkpoint(TRUNCATE)`，均事务外，失败只记日志不阻断删除）。
+- **复核退回（High 数据丢失）**：上一轮 `VideoStorage.gcOrphans` 在**任意删除**后无条件对整个 `video_subtitles/` 全库 mark-and-sweep，以全库 `subtitleSource` 引用集为保留集。但播放列表换集导入/Jimaku 下载字幕每集都拷一份进 `video_subtitles/`（`video_hibiki_page.dart:4930/4725`、`jimaku_subtitle_dialog.dart:138`），DB 只在 `subtitleSource` **单列**记最后选中那集；`playlistJson` 只存 `[{title,path}]` 不含字幕。`collectReferencedAssetPaths` 只收 `row.subtitleSource` → 一个多集播放列表引用集里只有 1 个字幕路径 → 删任意（甚至无关）视频时，别的播放列表各集副本被当孤儿**永久删除**（复核 thread aad8f701 实证）。违反 Never break userspace。
+- **[x] ① 重修（根因·方案1：删除时按被删 book 精确删自己资产，不全库 sweep）**：
+  - `video_storage.dart` 删掉全库 sweep 的 `gcOrphans`，新增 `deleteBookAssets`：删 book A 时**只删 A 自己**在 DB 能确定的 `coverPath` / `subtitleSource`，且经「全库其余 book 引用集」护栏（仍被别本引用则保留）+「必须落在对应 app 拥有目录内」前缀护栏（`p.isWithin`，杜绝误删目录外用户原始视频/外部 sidecar）。A 那些 DB 不知道的播放列表别集副本**绝不去碰**（保守留存）。
+  - `video_storage.dart` 另留**安全的封面历史 GC** `gcOrphanCovers`：仅对 `video_covers/` 做全库 sweep——封面文件名由 bookUid 1:1 派生、每本视频封面路径都完整存 DB `coverPath`，引用集对封面**完整**，sweep 不会丢活封面。**绝不**对字幕目录做此 sweep。
+  - `video_book_repository.dart` `collectReferencedAssetPaths` 加可选 `excludeBookUid`（删除时取「全库其余 book」引用集做护栏 + 封面 GC 保留集）；文档说明字幕引用集不完整、只可作护栏不可全库删。
+  - `reader_hibiki_history_page.dart` `_confirmDeleteVideoBook` 删 DB **前**抓被删 book 的 `coverPath`/`subtitleSource`（删后行没了查不到），删后调 `_reclaimVideoDiskSpace(deletedBookUid, deletedCoverPath, deletedSubtitlePath)` → `deleteBookAssets`（精确删 + 护栏）+ `gcOrphanCovers`（安全封面历史 GC）+ `VACUUM`。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/video_storage_test.dart`：`deleteBookAssets` 删被删 book 自己封面+字幕、**删 A 不碰播放列表 B 各集副本（DB 不知道的也保住）= 数据丢失回归守卫**、护栏保留被别本引用文件、护栏拒删目录外用户视频、null/缺失 no-op、路径归一；`gcOrphanCovers` 删未引用封面/全清/缺目录容错。撤掉护栏/改回全库 sweep → 「B 各集副本保住」红。
+  - `hibiki/test/media/video/video_book_repository_test.dart`：保留上一轮 `deleteVideoBook` 删 cue 不误删兄弟、`collectReferencedAssetPaths` 收集集、删后 `VACUUM` 不报错；新增 `collectReferencedAssetPaths(excludeBookUid)` 删被删 book 自身引用断言。
+- **历史 13GB**：封面历史孤儿由 `gcOrphanCovers` 安全清（封面引用集完整）。**字幕目录历史孤儿显式延后**——当前模型下「已删视频的遗留字幕副本」与「活着的播放列表别集副本」都不在引用集、**不可区分**，任何全库 sweep 都会误删后者（违反硬约束）。要安全清字幕历史须先让引用集完整（方案2：`playlistJson` 每项加 `subtitlePath` 或建新表存每集字幕路径=schema 改动），属更大改动，待单列出 spec 后再做。字幕大头副本（多为 srt/ass 文本，KB 级）泄漏量远小于视频本体（视频从不复制，仅存路径），13GB 主要应是视频缓存外的封面/字幕及 SQLite freelist，VACUUM + 封面 GC 已覆盖可安全回收部分。
+- **备注**：移动端缓存目录平台差异（getApplicationDocumentsDirectory）、回收效果需真机删完看占用是否真降。`VACUUM` 重建整库在大库上有几秒成本，但删除是低频手动操作可接受。
