@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,15 +13,67 @@ import 'package:hibiki/utils.dart';
 
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
 
-// GitHub 直连不通时的镜像回退候选（GFW 机器）。这些公共镜像会不定期轮换/下线，
-// 按顺序逐个尝试（见 _fetchWithFallback），全部失败才优雅静默放弃。`mirror.ghproxy.com`
-// 已废弃下线，移除；补入当前可用候选。具体哪个通取决于用户机器与时段。
-const List<String> _kProxyPrefixes = [
+/// 单个候选 URL 的尝试超时。`HttpClient.connectionTimeout` 只管「建立 TCP 连接」
+/// 那一跳；某个镜像 TCP 连上却挂起不返回时，需要这个整体超时把它判死、回退到下一个，
+/// 否则一个坏镜像就能拖垮整轮检查（BUG-276）。
+const Duration _kPerAttemptTimeout = Duration(seconds: 15);
+
+/// GitHub 直连不通时（GFW 机器，且 app 运行时**不走**本机命令行代理）套在 GitHub
+/// API / 直链前的加速代理前缀。逐个尝试（见 [fetchFirstSuccessfulBody]），任一成功即
+/// 返回，全部失败才优雅放弃。这些公共镜像会不定期轮换/下线（`mirror.ghproxy.com` 已
+/// 下线移除），具体哪个通取决于用户机器与时段，故多备几个——用户日志里连不上的
+/// `ghproxy.cc` 也保留为多候选之一（BUG-276：单点不可达不该让整轮检查失败）。
+///
+/// 与 `video_shader_downloader.dart` 的 `_kGhProxyPrefixes`（BUG-319/271）同一范式。
+@visibleForTesting
+const List<String> updateCheckProxyPrefixes = <String>[
   'https://ghfast.top/',
   'https://gh-proxy.com/',
   'https://ghproxy.net/',
   'https://ghproxy.cc/',
+  'https://gh.llkk.cc/',
+  'https://ghproxy.homeboyc.cn/',
 ];
+
+/// **纯函数**：为一个 GitHub API / 直链 [url] 生成按优先级排序的候选 URL 列表。
+///
+/// 顺序：① 直连 [url] 本身（有 VPN / 系统代理时最快、最权威）→ ② 每个
+/// [updateCheckProxyPrefixes] 套在直连前（GFW 兜底）。逐个尝试，任一成功即整体成功
+/// （见 [fetchFirstSuccessfulBody]）。直连只出现一次、候选无重复。
+@visibleForTesting
+List<String> updateCheckUrls(String url) {
+  return <String>[
+    url,
+    for (final String prefix in updateCheckProxyPrefixes) '$prefix$url',
+  ];
+}
+
+/// **可注入核心**：按顺序对 [urls] 逐个调用 [fetch]，返回**第一个成功**（非 null）的
+/// 响应体；全部失败才返回 null。这是更新检查可达性的真正逻辑（BUG-276 把它从原
+/// `_httpGetString` 的真实网络 IO 里抽出来，使「首镜像失败自动试下一个 / 任一成功即
+/// 成功 / 全失败才失败 / 日志记录正确」可被单测固定）。
+///
+/// - [fetch] 返回非 null → 视为成功，立即返回，不再试后续候选。
+/// - [fetch] 返回 null 或抛异常 → 视为该候选失败，记 [onFailure]（主机标签 +
+///   错误对象，异常时非 null）并继续下一个。异常**不冒泡**终止回退。
+/// - 全部候选耗尽仍无成功 → 返回 null（由调用方决定如何提示「全失败」）。
+@visibleForTesting
+Future<String?> fetchFirstSuccessfulBody(
+  List<String> urls, {
+  required Future<String?> Function(String url) fetch,
+  void Function(String host, Object? error)? onFailure,
+}) async {
+  for (final String url in urls) {
+    try {
+      final String? body = await fetch(url);
+      if (body != null) return body;
+      onFailure?.call(hostLabelForUpdateUrl(url), null);
+    } catch (e) {
+      onFailure?.call(hostLabelForUpdateUrl(url), e);
+    }
+  }
+  return null;
+}
 
 final RegExp _kBetaReleaseTagPattern = RegExp(r'^v\d+(?:\.\d+)*-beta\.\d+$');
 final RegExp _kDebugReleaseTagPattern =
@@ -170,37 +223,54 @@ class UpdateChecker {
     }
   }
 
+  /// 多镜像回退的更新检查请求（BUG-276）。生成「直连 + 各 gh 代理前缀」候选列表
+  /// （[updateCheckUrls]），交给可注入核心 [fetchFirstSuccessfulBody] 逐个尝试：任一
+  /// 返回 HTTP 200 即整体成功，单点不可达/超时自动回退下一个，全失败才返回 null。
+  /// 每个候选带 [_kPerAttemptTimeout] 整体超时，避免坏镜像拖垮整轮检查。
   static Future<String?> _httpGetString(
     HttpClient client,
     String url, {
     Map<String, String> headers = const {},
-  }) async {
-    final urls = [url, ..._kProxyPrefixes.map((p) => '$p$url')];
-    for (final u in urls) {
-      try {
-        final request = await client.getUrl(Uri.parse(u));
-        for (final e in headers.entries) {
-          request.headers.set(e.key, e.value);
-        }
-        final response = await request.close();
-        if (response.statusCode == 200) {
-          return await response.transform(utf8.decoder).join();
-        }
-        await response.drain<void>();
-      } catch (e, stack) {
+  }) {
+    return fetchFirstSuccessfulBody(
+      updateCheckUrls(url),
+      fetch: (String u) => _fetchOne(client, u, headers),
+      onFailure: (String host, Object? error) {
         // 网络类失败（连不上/超时/TLS 握手）记一条可读的 i18n 摘要、不带堆栈，
         // 让用户在日志里看到「连不上哪个源」而不被原始堆栈噪音淹没；其它异常
         // （解析/逻辑错误）才是真问题，连堆栈一起记。
-        if (isExpectedUpdateNetworkFailure(e)) {
+        if (error == null || isExpectedUpdateNetworkFailure(error)) {
           ErrorLogService.instance.log('UpdateChecker.httpGet',
-              t.update_network_unreachable(host: hostLabelForUpdateUrl(u)));
+              t.update_network_unreachable(host: host));
         } else {
-          ErrorLogService.instance.log('UpdateChecker.httpGet', e, stack);
+          ErrorLogService.instance.log('UpdateChecker.httpGet', error);
         }
-        debugPrint('[Hibiki] update check failed ($u): $e');
+        debugPrint('[Hibiki] update check failed ($host): $error');
+      },
+    );
+  }
+
+  /// 单个候选 URL 的一次抓取：HTTP 200 返回响应体，否则返回 null（让回退继续）。
+  /// 带 [_kPerAttemptTimeout] 整体超时——TCP 连上却挂起的镜像会被判死并回退。
+  static Future<String?> _fetchOne(
+    HttpClient client,
+    String url,
+    Map<String, String> headers,
+  ) async {
+    Future<String?> attempt() async {
+      final HttpClientRequest request = await client.getUrl(Uri.parse(url));
+      for (final MapEntry<String, String> e in headers.entries) {
+        request.headers.set(e.key, e.value);
       }
+      final HttpClientResponse response = await request.close();
+      if (response.statusCode == 200) {
+        return response.transform(utf8.decoder).join();
+      }
+      await response.drain<void>();
+      return null;
     }
-    return null;
+
+    return attempt().timeout(_kPerAttemptTimeout);
   }
 
   static Future<List<Map<String, dynamic>>> _fetchReleasesForChannel(
@@ -329,7 +399,9 @@ class UpdateChecker {
       client.connectionTimeout = const Duration(seconds: 30);
       client.idleTimeout = const Duration(seconds: 60);
 
-      final urls = [url, ..._kProxyPrefixes.map((p) => '$p$url')];
+      // 下载与检查共用同一组 GitHub 镜像候选（updateCheckUrls）：直连优先、各 gh
+      // 代理前缀兜底。下载的写盘/安装逻辑不变，只是镜像清单与检查保持同步（BUG-276）。
+      final List<String> urls = updateCheckUrls(url);
       var downloaded = false;
       for (final u in urls) {
         try {
@@ -410,11 +482,15 @@ String _extOf(String url) {
 }
 
 /// 更新检查与下载都是 best-effort。网络类失败——连不上、连接超时、TLS 握手
-/// 失败、底层 HTTP 协议错误——是预期现象（尤其 GFW 下访问 GitHub / 代理本就
-/// 不稳），不该当错误带完整堆栈塞进用户可见的错误日志，否则真正的 bug 信号会
-/// 被这类噪音淹没。返回 true 表示该异常只需 debugPrint，无需写 ErrorLogService。
+/// 失败、底层 HTTP 协议错误、单候选整体超时（[_kPerAttemptTimeout]）——是预期现象
+/// （尤其 GFW 下访问 GitHub / 代理本就不稳），不该当错误带完整堆栈塞进用户可见的
+/// 错误日志，否则真正的 bug 信号会被这类噪音淹没。返回 true 表示该异常只需
+/// debugPrint / i18n 摘要，无需写完整堆栈到 ErrorLogService。
 bool isExpectedUpdateNetworkFailure(Object e) =>
-    e is SocketException || e is HandshakeException || e is HttpException;
+    e is SocketException ||
+    e is HandshakeException ||
+    e is HttpException ||
+    e is TimeoutException;
 
 /// 从更新请求 URL 取主机名，作为日志里「连不上哪个源」的可读标签。代理 URL
 /// 形如 `https://ghfast.top/https://api.github.com/...`，其 host 是代理本身
