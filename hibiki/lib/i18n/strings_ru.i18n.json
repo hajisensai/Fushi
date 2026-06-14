@@ -1634,5 +1634,6 @@
     "video_bottom_seek_forward_label": "+10s",
     "floating_lyric_no_audio": "This book has no audio to listen to",
     "now_listening_label": "Now listening",
-    "app_ui_scale_auto_current": "Currently ${percent}"
+    "app_ui_scale_auto_current": "Currently ${percent}",
+    "video_favorite_sentences_count": "$count saved in this episode"
 }

@@ -1634,5 +1634,6 @@
     "video_bottom_seek_forward_label": "+10s",
     "floating_lyric_no_audio": "这本书没有可听的音频",
     "now_listening_label": "正在听书",
-    "app_ui_scale_auto_current": "当前 ${percent}"
+    "app_ui_scale_auto_current": "当前 ${percent}",
+    "video_favorite_sentences_count": "本集收藏 $count 句"
 }

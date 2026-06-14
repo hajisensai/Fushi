@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/utils.dart';
 
 class VideoFavoriteSentencesPanel extends StatelessWidget {
   const VideoFavoriteSentencesPanel({
@@ -45,26 +45,73 @@ class VideoFavoriteSentencesPanel extends StatelessWidget {
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: currentEpisodeSentences.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (BuildContext context, int index) {
-        final FavoriteSentence sentence = currentEpisodeSentences[index];
-        final int? startMs = sentence.normCharOffset;
-        return HibikiListItem(
-          density: HibikiListDensity.compact,
-          leading: const Icon(Icons.star_rounded),
-          title: Text(
-            sentence.text,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+    // TODO-357：面板顶部加一行收藏数统计 header（「本集收藏 N 句」），让用户一眼看到
+    // 本集已收藏多少句。仅在非空时显示——空状态已由上方 emptyLabel 说明，避免文案重复。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _buildCountHeader(context, currentEpisodeSentences.length),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: currentEpisodeSentences.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (BuildContext context, int index) {
+              final FavoriteSentence sentence = currentEpisodeSentences[index];
+              final int? startMs = sentence.normCharOffset;
+              return HibikiListItem(
+                density: HibikiListDensity.compact,
+                leading: const Icon(Icons.star_rounded),
+                title: Text(
+                  sentence.text,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle:
+                    startMs == null ? null : Text(_formatTimestamp(startMs)),
+                titleMaxLines: 3,
+                onTap: () => onTapSentence(sentence),
+              );
+            },
           ),
-          subtitle: startMs == null ? null : Text(_formatTimestamp(startMs)),
-          titleMaxLines: 3,
-          onTap: () => onTapSentence(sentence),
-        );
-      },
+        ),
+      ],
+    );
+  }
+
+  /// 收藏数统计 header：星标图标 + 「本集收藏 N 句」（i18n `video_favorite_sentences_count`，
+  /// 带 `$count` 占位符）。用设计 token 的 spacing，文案走当前 locale 翻译。
+  Widget _buildCountHeader(BuildContext context, int count) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.star_rounded,
+            size: 18,
+            color: theme.colorScheme.primary,
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: Text(
+              t.video_favorite_sentences_count(count: count),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

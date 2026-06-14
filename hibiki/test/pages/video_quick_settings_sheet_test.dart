@@ -729,4 +729,95 @@ void main() {
     await tester.pump();
     expect(picked, VideoImmersiveMode.full);
   });
+
+  // ── TODO-342：右详情（子设置）pane 半透明叠加层，比左分类 pane 视觉深一档 ──────
+
+  testWidgets(
+      'wide video settings tints the detail pane darker than the category pane '
+      '(TODO-342)', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    // 右 primary pane 由一层半透明 ColoredBox 包裹（叠加在面板 0.78 半透明 surface 之上），
+    // 而左 supporting pane 没有这层叠加 → 右详情视觉比左分类更实/更深一档。
+    final Finder layout = find.byType(MaterialSupportingPaneLayout);
+    // 右 pane 的叠加层是包住 KeyedSubtree 的那个 ColoredBox（左 pane 无此结构）。
+    final Finder primaryTint = find.ancestor(
+      of: find.byType(KeyedSubtree).last,
+      matching: find.byType(ColoredBox),
+    );
+    final ColoredBox tint = tester.widget<ColoredBox>(primaryTint.first);
+    // 叠加层是半透明（不完全不透明），仍能透出视频画面。
+    expect(tint.color.a, greaterThan(0.0));
+    expect(tint.color.a, lessThan(1.0));
+    // 该叠加层只在右 pane（primary）出现，左父菜单（supporting）侧没有同款 ColoredBox
+    // 直接包 SingleChildScrollView 的结构。
+    final Finder supportingScroll = find
+        .descendant(of: layout, matching: find.byType(SingleChildScrollView))
+        .first;
+    final Finder supportingTint = find.ancestor(
+      of: supportingScroll,
+      matching: find.byType(ColoredBox),
+    );
+    // 左 pane 的滚动区不被本功能新增的半透明叠加层包裹（其祖先可能仍有别的 ColoredBox，
+    // 但不含本功能在右 pane 引入的 0<alpha<1 叠加色）——通过断言右 pane 的叠加色独有来守卫。
+    final Iterable<ColoredBox> supportingBoxes =
+        tester.widgetList<ColoredBox>(supportingTint);
+    for (final ColoredBox box in supportingBoxes) {
+      expect(box.color, isNot(tint.color),
+          reason: '左分类 pane 不应带与右详情 pane 相同的半透明叠加色');
+    }
+  });
+
+  // ── TODO-344：四边 padding 按 MD3 spacing 放宽，消除「贴死」 ──────────────
+
+  testWidgets(
+      'wide video settings uses roomy MD3 padding on all four edges '
+      '(TODO-344)', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    final Finder layout = find.byType(MaterialSupportingPaneLayout);
+    final List<SingleChildScrollView> paneScrollViews = tester
+        .widgetList<SingleChildScrollView>(
+          find.descendant(
+            of: layout,
+            matching: find.byType(SingleChildScrollView),
+          ),
+        )
+        .take(2)
+        .toList();
+    final EdgeInsets supportingPadding =
+        paneScrollViews.first.padding! as EdgeInsets;
+    final EdgeInsets primaryPadding =
+        paneScrollViews.last.padding! as EdgeInsets;
+    // 四边都留出 MD3 级别的呼吸位（不再是顶部仅 4px 的「贴死」）。
+    // 水平 = page(16) + gap(8) = 24；顶部 = card(16)。
+    expect(supportingPadding.left, 24);
+    expect(supportingPadding.right, 24);
+    expect(supportingPadding.top, 16);
+    expect(primaryPadding.left, 24);
+    expect(primaryPadding.right, 24);
+    expect(primaryPadding.top, 16);
+    // 顶部不再贴死（旧值仅 gap/2 = 4）。
+    expect(supportingPadding.top, greaterThanOrEqualTo(16));
+  });
+
+  testWidgets('narrow video settings uses roomy MD3 padding (TODO-344)',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    // 窄窗主页同样用放宽后的 padding（顶部 >= 16，不再贴死）。窄窗 body 的最外层
+    // SingleChildScrollView 承载本功能的 padding（内部组件可能另有自己的 scroll，故取 first）。
+    final SingleChildScrollView scroll = tester.widget<SingleChildScrollView>(
+        find.byType(SingleChildScrollView).first);
+    final EdgeInsets padding = scroll.padding! as EdgeInsets;
+    expect(padding.left, 24);
+    expect(padding.right, 24);
+    expect(padding.top, 16);
+  });
 }
