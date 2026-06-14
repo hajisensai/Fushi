@@ -56,6 +56,19 @@ mixin DictionaryPageMixin {
   /// 字幕句，覆写方应只对 index == 0 返回非 null。
   Widget? buildPopupHeaderFor(int index) => null;
 
+  /// TODO-270 E「查词窗口多句合一制卡」(乙方案·视频车道)：弹窗「+句」追加当前正查句到
+  /// 本表面会话级制卡草稿，返回累积句数（含本句）。默认 null = 不支持（纯查词页 / 首页
+  /// 词典页无句子概念，不渲染「+句」）。视频页覆写返回非空闭包：把当前字幕句 + 其 cue
+  /// 音频/画面区间推进 [MiningSentenceDraft]，制卡时合并成一张卡。
+  ///
+  /// 与 reader 车道（[BaseSourcePageState.supportsSentenceDraft] +
+  /// [BaseSourcePageState.onAppendSentenceToDraft]）对称：reader 走 base_source_page
+  /// 的弹窗构造，视频/首页查词走本 mixin 的 [buildNestedPopupLayer]，故各自有一个收口
+  /// 入口；popup.js「+句」按钮、`appendSentence` JS 处理器、`MiningSentenceDraft` 草稿
+  /// 模型三者均平台无关，两条车道共用。非空时弹窗才渲染「+句」（经
+  /// `window.sentenceDraftEnabled`）。
+  Future<int> Function()? get onAppendSentenceToDraft => null;
+
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
   String _statTodayKey() => statTodayKey();
 
@@ -379,6 +392,9 @@ mixin DictionaryPageMixin {
           onDuplicateCheck: checkDuplicate,
           onFavoriteEntry: onFavoriteEntry,
           onFavoriteCheck: onFavoriteCheck,
+          // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）
+          // 才传回调 → popup 渲染「+句」累积；其余（纯查词/首页词典）传 null 不渲染。
+          onAppendSentence: onAppendSentenceToDraft,
           headerWidget: buildPopupHeaderFor(index),
         ),
       ),

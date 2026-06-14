@@ -19,6 +19,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
@@ -637,6 +638,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 最近一次字幕查词所在 cue。制卡可能发生在弹窗打开后数秒，此时视频播放位置可能已
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;
+
+  /// TODO-270 E「查词窗口多句合一制卡」(乙方案·视频车道)：会话级制卡草稿缓冲。弹窗点
+  /// 「+句」把当前正查字幕句（[_lastLookupSentence]）+ 其 cue 的画面/音频时间窗推进
+  /// 这里，连续查多句累积；制卡（[onMineEntry] / [onUpdateEntry]）时把草稿全部句 +
+  /// 当前句用 [MiningSentenceDraft.composeText] 合成 sentence 字段、用
+  /// [MiningSentenceDraft.composeAudioRange] 合并成「首句起→末句止」的单一区间（GIF +
+  /// 音频共用，与字幕列表多选 [_selectedMiningCueStarts] 同观感，但属不同入口）。制卡
+  /// 成功或关闭整条查词浮层栈后清空。视频所有 cue 同属一个视频文件，故区间合并恒成功
+  /// （[MiningSentenceDraft] 把 [AudioPlaybackRange.audioFileIndex] 当文件键，视频统一
+  /// 用 0）。reader/有声书车道（[ReaderHibikiPage] 的 `_miningDraft`）共用同一草稿模型。
+  final MiningSentenceDraft _miningDraft = MiningSentenceDraft();
+
+  /// TODO-270 E：弹窗「+句」追加当前正查字幕句到本视频会话级制卡草稿，返回累积句数
+  /// （含本句）。把 [_lastLookupSentence] + [_lastLookupCue] 的时间窗（无 cue 则无区间，
+  /// 退化为只合文本）推进草稿。当前句为空（没有正查内容）时不入队，返回现有句数。
+  /// mixin 的 [buildNestedPopupLayer] 据此非空回调让 popup 渲染「+句」按钮。
+  @override
+  Future<int> Function()? get onAppendSentenceToDraft => _appendSentenceToDraft;
+
+  /// 把 [_lastLookupCue] 的画面/音频时间窗转成草稿可合并的区间。视频所有 cue 同属一个
+  /// 视频文件，[audioFileIndex] 统一用 0（合并恒成功，取 min start / max end）。无 cue
+  /// 时返回 null（草稿据此退化为只合文本，不静默拼坏区间）。
+  AudioPlaybackRange? _currentLookupCueRange() {
+    final AudioCue? cue = _lastLookupCue;
+    if (cue == null) return null;
+    return AudioPlaybackRange(
+      audioFileIndex: 0,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+    );
+  }
+
+  Future<int> _appendSentenceToDraft() async {
+    _miningDraft.append(MiningDraftSentence(
+      sentence: _lastLookupSentence,
+      audioRange: _currentLookupCueRange(),
+    ));
+    return _miningDraft.length;
+  }
 
   /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
   ///
@@ -2401,7 +2441,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 夺走的焦点不会自动归还；这里与「恢复播放」共用同一个关栈汇聚点，覆盖点遮罩 /
     // 返回键 / Esc / 滑动全部关闭路径（TODO-040 ①「点了外面后快捷键失灵」的查词
     // 浮层分支）。
-    if (stackEmpty) _refocusVideo();
+    if (stackEmpty) {
+      // TODO-270 E：整条查词浮层栈关闭 = 一次「查词会话」结束，丢弃未制卡的多句草稿
+      // （避免下次查词带着上次没用掉的累积句）。制卡成功已在 onMineEntry/onUpdateEntry
+      // 清过，这里兜住「攒了几句但没制卡就关掉」的情况（与 reader onAllPopupsDismissed
+      // 同语义；视频用 DictionaryPageMixin 没有该钩子，故在关栈汇聚点清）。点同句另一
+      // 字 / 字幕条另一句切换查词走 _lookupAt(replaceStack)，栈不空，草稿不被清。
+      _miningDraft.clear();
+      _refocusVideo();
+    }
   }
 
   Widget _buildNestedPopupLayer(int index, Size screen) {
@@ -2542,44 +2590,104 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  @override
-  Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return const MinePopupResult();
-
-    // _lastLookupCue 在查词那刻已按位置解析过（含 gap 兜底，见 _lookupAt）；这里
-    // 再以「currentCue → 按位置解析」二段兜底，覆盖未经查词捕获或制卡瞬间字幕又消失
-    // 的边界，保证有 cue 可裁真实句子音频（TODO-104b / BUG-188）。
+  /// 视频制卡/覆盖共用的「解析这一张卡的区间 + 文本」。把三个并存入口收口成一处，避免
+  /// [onMineEntry] / [onUpdateEntry] 两份漂移：
+  /// - **字幕列表多选**（TODO-102，[_selectedMiningCueStarts] 非空）优先：用
+  ///   [buildSelectedSubtitleCueContext] 合成的单段区间 + join 文本，**不掺查词草稿**。
+  /// - 否则**查词窗口多句合一草稿**（TODO-270 E）：当前 cue 取「lookup 缓存 → currentCue
+  ///   → 按位置解析」多段兜底（含 gap，BUG-188）；文本用 [MiningSentenceDraft.composeText]
+  ///   合并草稿全部句 + 当前句，区间用 [MiningSentenceDraft.composeAudioRange] 合并成首句
+  ///   起→末句止（草稿空时等价于单句原行为：trim 文本 + 单 cue 区间）。
+  ///
+  /// [usedSelectedCue] 回传「本次是否走了字幕列表多选」，供成功后清多选用。
+  ({
+    int clipStartMs,
+    int clipEndMs,
+    String sentence,
+    String? cueSentence,
+    bool usedSelectedCue
+  }) _resolveVideoMiningRange(VideoPlayerController controller) {
     final AudioCue? selectedCue = _selectedMiningCueForCard(controller);
-    final bool usedSelectedCue = selectedCue != null;
-    final AudioCue? cue = selectedCue ??
-        _lastLookupCue ??
+    if (selectedCue != null) {
+      // 字幕列表多选（独立入口）：单段区间就是合成 cue 的时间窗，文本即其 join。
+      return (
+        clipStartMs: selectedCue.startMs,
+        clipEndMs: selectedCue.endMs,
+        sentence: selectedCue.text,
+        cueSentence: selectedCue.text,
+        usedSelectedCue: true,
+      );
+    }
+
+    // 查词窗口多句合一（TODO-270 E）。当前 cue 多段兜底（含 gap，BUG-188）。
+    final AudioCue? cue = _lastLookupCue ??
         controller.currentCue ??
         resolveMiningCueForPosition(
           cues: controller.cues,
           positionMs: controller.positionMs ?? 0,
           delayMs: controller.delayMs,
         );
+    // 草稿全部句 + 当前查词句合成 sentence（草稿空 → 单句 _lastLookupSentence trim）。
+    final String mergedSentence = _miningDraft.composeText(_lastLookupSentence);
+    // 草稿全部句区间 + 当前 cue 区间合并成首句起→末句止（草稿空 → 单 cue 区间）。
+    final AudioPlaybackRange? mergedRange = _miningDraft.composeAudioRange(
+      cue == null
+          ? null
+          : AudioPlaybackRange(
+              audioFileIndex: 0,
+              startMs: cue.startMs,
+              endMs: cue.endMs,
+            ),
+    );
+    return (
+      clipStartMs: mergedRange?.startMs ?? cue?.startMs ?? 0,
+      clipEndMs: mergedRange?.endMs ?? cue?.endMs ?? 0,
+      // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
+      cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
+      sentence: mergedSentence,
+      usedSelectedCue: false,
+    );
+  }
+
+  @override
+  Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return const MinePopupResult();
+
+    final ({
+      int clipStartMs,
+      int clipEndMs,
+      String sentence,
+      String? cueSentence,
+      bool usedSelectedCue,
+    }) range = _resolveVideoMiningRange(controller);
 
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
-      // 单句制卡：音频/封面区间就是当前 cue 的时间窗（cue 为空则两端相等→不抽）。
-      clipStartMs: cue?.startMs ?? 0,
-      clipEndMs: cue?.endMs ?? 0,
-      sentence: _lastLookupSentence,
-      cueSentence: cue?.text,
+      // 音频/封面区间 = 合并后的首句起→末句止（单句即该 cue 时间窗，两端相等→不抽）。
+      clipStartMs: range.clipStartMs,
+      clipEndMs: range.clipEndMs,
+      sentence: range.sentence,
+      cueSentence: range.cueSentence,
     );
     // result.ankiConnect 是「制卡成功」信号（两后端成功时都置 true；noteId 仅
     // AnkiConnect 非空，故清选中句不能以 noteId 为判据，否则 AnkiDroid 成功也不清）。
-    if (usedSelectedCue && result.ankiConnect) {
-      _clearSelectedMiningCues();
+    if (result.ankiConnect) {
+      if (range.usedSelectedCue) {
+        _clearSelectedMiningCues();
+      } else {
+        // TODO-270 E：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，两端在
+        // 同一事件归零、不漂移）。下一次查词从空草稿重新累积。
+        _miningDraft.clear();
+      }
     }
     return result;
   }
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）。视频页覆写了 [onMineEntry] 绕过
   /// mixin，故覆盖路径也在本页复用视频媒体链路（GIF 封面 + 区间音频），按 id 真实
-  /// 覆盖而非删旧建新（[_mineVideoCard] 的 `updateNoteId` 分支）。
+  /// 覆盖而非删旧建新（[_mineVideoCard] 的 `updateNoteId` 分支）。覆盖同样吃多句合一
+  /// 草稿（合并卡=一张卡，天然吃覆盖，与 270-D 正交）；覆盖成功后清空草稿。
   @override
   Future<MinePopupResult> onUpdateEntry(
     int noteId,
@@ -2588,24 +2696,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     if (controller == null) return const MinePopupResult();
 
-    final AudioCue? selectedCue = _selectedMiningCueForCard(controller);
-    final AudioCue? cue = selectedCue ??
-        _lastLookupCue ??
-        controller.currentCue ??
-        resolveMiningCueForPosition(
-          cues: controller.cues,
-          positionMs: controller.positionMs ?? 0,
-          delayMs: controller.delayMs,
-        );
+    final ({
+      int clipStartMs,
+      int clipEndMs,
+      String sentence,
+      String? cueSentence,
+      bool usedSelectedCue,
+    }) range = _resolveVideoMiningRange(controller);
 
-    return _mineVideoCard(
+    final MinePopupResult result = await _mineVideoCard(
       fields: fields,
-      clipStartMs: cue?.startMs ?? 0,
-      clipEndMs: cue?.endMs ?? 0,
-      sentence: _lastLookupSentence,
-      cueSentence: cue?.text,
+      clipStartMs: range.clipStartMs,
+      clipEndMs: range.clipEndMs,
+      sentence: range.sentence,
+      cueSentence: range.cueSentence,
       updateNoteId: noteId,
     );
+    if (result.ankiConnect) {
+      if (range.usedSelectedCue) {
+        _clearSelectedMiningCues();
+      } else {
+        _miningDraft.clear();
+      }
+    }
+    return result;
   }
 
   /// 视频制卡/覆盖的落卡链路（单句 [onMineEntry]/[onUpdateEntry] 走这里）：把音频/封面
