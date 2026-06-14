@@ -8,6 +8,16 @@ void main() {
         File('lib/src/pages/implementations/video_hibiki_page.dart')
             .readAsStringSync();
 
+    // 两套 media_kit controls 主题方法体区间（桌面 + 移动），用于把「主题构造器参数」类
+    // 计数限定在主题里——BUG-238 让 _subtitleControlsBottomReserve 也用了同名命名参数
+    // `buttonBarHeight:`，全文件裸计数会被它污染（2→3），故 theme 参数按区间内计数。
+    final int themesStart = source.indexOf(
+        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
+    final int themesEnd = source.indexOf('Widget _buildVideoControlButton(');
+    expect(themesStart, greaterThanOrEqualTo(0));
+    expect(themesEnd, greaterThan(themesStart));
+    final String themes = source.substring(themesStart, themesEnd);
+
     // 尺寸基线常量(界面缩放×1.0 时的值)保持 56/32/36(TODO-067 未改基线数值)。
     expect(
         source, contains('static const double _videoButtonBarHeightBase = 56'));
@@ -68,13 +78,13 @@ void main() {
     );
 
     expect(
-      'buttonBarButtonSize: _videoControlIconSize'.allMatches(source).length,
+      'buttonBarButtonSize: _videoControlIconSize'.allMatches(themes).length,
       2,
       reason:
           'media_kit built-in fullscreen buttons must use the same shared icon size as custom controls',
     );
     expect(
-      'buttonBarHeight: _videoButtonBarHeight'.allMatches(source).length,
+      'buttonBarHeight: _videoButtonBarHeight'.allMatches(themes).length,
       2,
       reason:
           'normal and fullscreen controls should share one explicit touch-height source',
@@ -105,15 +115,20 @@ void main() {
     expect(source, isNot(contains('Icons.forward_10')),
         reason:
             'lopsided forward_10 replaced by parallel fast_forward (TODO-067)');
+    // BUG-257：桌面 + 移动底栏合并为单一 _centeredBottomControlBar(desktop:)，故并行
+    // fast_rewind/forward 各只出现一次（不再 per-theme 重复）。守卫意图（用对称图标、
+    // 不用显歪的 replay_10/forward_10）仍由上面的 isNot(replay_10/forward_10) + 此处存在性守住。
     expect(
       'Icons.fast_rewind_rounded'.allMatches(source).length,
-      2,
-      reason: 'desktop+mobile both use parallel fast_rewind (TODO-067)',
+      1,
+      reason:
+          'shared bottom bar uses parallel fast_rewind once (BUG-257/TODO-067)',
     );
     expect(
       'Icons.fast_forward_rounded'.allMatches(source).length,
-      2,
-      reason: 'desktop+mobile both use parallel fast_forward (TODO-067)',
+      1,
+      reason:
+          'shared bottom bar uses parallel fast_forward once (BUG-257/TODO-067)',
     );
   });
 

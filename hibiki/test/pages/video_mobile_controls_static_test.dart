@@ -75,15 +75,19 @@ void main() {
     );
   });
 
-  test('移动 controls 主题含字幕/音轨/设置入口', () {
-    // 截取 _mobileControlsTheme 方法体，断言三个入口都在其中，避免误把桌面主题的命中算进来。
+  test('移动 controls 主题含字幕/音轨入口；设置经可配置右侧 rail', () {
+    // 截取 _mobileControlsTheme 方法体，断言入口都在其中，避免误把桌面主题命中算进来。
     final int start = src.indexOf(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
     );
     expect(start, greaterThanOrEqualTo(0),
         reason: '应能定位 _mobileControlsTheme 方法');
-    // 方法体以 'void _showTrackMenu(' 为下界（紧随其后定义）。
-    final int end = src.indexOf('void _showTrackMenu(', start);
+    // TODO-274：轨道菜单 _showTrackMenu 改名 _showAudioTrackMenu 且移到 themes 之前，
+    // 方法体下界改用 themes 之后紧邻的 _customBottomControlButtons（仅在 themes 之后定义）。
+    final int end = src.indexOf(
+      'List<Widget> _customBottomControlButtons(',
+      start,
+    );
     expect(end, greaterThan(start), reason: '应能界定 _mobileControlsTheme 方法体范围');
     final String body = src.substring(start, end);
 
@@ -97,10 +101,19 @@ void main() {
       contains('_showAudioTrackMenu(controller)'),
       reason: '移动 controls 应有音轨切换入口（经共享 _showAudioTrackMenu）',
     );
+    // BUG-248B / TODO-274：设置（tune）已从 topButtonBar 移出（与桌面一致），改由可配置
+    // 的右侧 rail settings 按钮（VideoControlButton.settings → _activateVideoControlButton
+    // → _showPlayerSettings）承载，全屏复用同一 builder 故仍可达。故此处不再断言
+    // topButtonBar 含设置按钮，而验证设置走数据化按钮模型。
     expect(
-      body,
-      contains('onPressed: _showPlayerSettings'),
-      reason: '移动端全屏丢 AppBar，设置入口必须进 controls 才可达',
+      src,
+      contains('case VideoControlButton.settings:'),
+      reason: '设置入口经可配置 VideoControlButton.settings 承载',
+    );
+    expect(
+      src,
+      contains('_showPlayerSettings();'),
+      reason: '可配置 settings 按钮激活时仍打开 _showPlayerSettings',
     );
     expect(
       body,

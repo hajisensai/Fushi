@@ -23,20 +23,30 @@ void main() {
     src = _readVideoPage();
   });
 
-  test('远端模式从字幕菜单分流到独立远端菜单（不走 videoPath==null 早返回）', () {
-    // _showSubtitleSourceMenu 顶部存在 _isRemote 分支，调用 _showRemoteSubtitleMenu。
+  test('远端模式在字幕菜单顶部分流，不走 videoPath==null 早返回', () {
+    // TODO-274：独立 _showRemoteSubtitleMenu 已并入 _showSubtitleSourceMenu —— 远端
+    // 与本地都走右侧 push-aside side panel（_VideoSidePanelKind.subtitleSources），
+    // 面板内容按 _isRemote 渲染远端/本地条目。不变式仍是：_isRemote 分支必须在
+    // videoPath==null 早返回之前，否则远端永远先被 videoPath==null 卡死。
     final int menuIdx = src.indexOf('Future<void> _showSubtitleSourceMenu(');
     expect(menuIdx, greaterThanOrEqualTo(0));
     final int nullGuardIdx = src.indexOf('if (videoPath == null) {', menuIdx);
     final int remoteBranchIdx = src.indexOf('if (_isRemote) {', menuIdx);
     expect(remoteBranchIdx, greaterThanOrEqualTo(0));
-    // 远端分支必须在 videoPath==null 早返回之前（否则远端永远先被早返回卡死）。
     expect(remoteBranchIdx, lessThan(nullGuardIdx));
-    expect(src.contains('_showRemoteSubtitleMenu('), isTrue);
+    // 远端分支与统一字幕菜单都打开同一个 subtitleSources side panel。
+    expect(
+        src.contains(
+            '_showVideoSidePanel(_VideoSidePanelKind.subtitleSources)'),
+        isTrue,
+        reason: '字幕源（含远端）菜单走统一 side panel');
   });
 
-  test('远端字幕菜单提供 关闭 / host 字幕 / 本地导入 三项', () {
-    expect(src.contains('Future<void> _showRemoteSubtitleMenu('), isTrue);
+  test('字幕源 side panel 远端分支提供 关闭 / host 字幕 / 本地导入', () {
+    // 远端三项接线（清除 / host 字幕 / 本地导入）仍在，只是从独立菜单挪进 side panel
+    // 内容构建器 _buildSubtitleSourcesSidePanel 的 _isRemote 分支。
+    expect(src.contains('Widget _buildSubtitleSourcesSidePanel('), isTrue,
+        reason: '字幕源 side panel 内容构建器存在');
     expect(src.contains('_clearRemoteSubtitle('), isTrue);
     expect(src.contains('_pickAndImportRemoteSubtitle('), isTrue);
     expect(src.contains('t.video_subtitle_remote_host'), isTrue);

@@ -52,17 +52,25 @@ void main() {
   });
 
   test('每个会夺焦的覆盖层关闭后都归还焦点', () {
-    // bottom sheet 们的 whenComplete 现为闭包 `() { _videoSheetOpen = false;
-    // _refocusVideo(); }`（兼做重入守卫复位，见 video_menu_guard_test）；
-    // showDialog/picker 仍直接调用。统计所有 _refocusVideo() 调用点覆盖 5 个 sheet +
-    // 着色器/Jimaku 对话框。
+    // TODO-274：倍速/音轨/字幕源/设置四菜单迁到 side panel，关闭走 [_hideVideoSidePanel]
+    // （内含 _refocusVideo()）；剩 2 个 modal sheet（剧集/音量）的 whenComplete 仍为闭包
+    // `() { _videoSheetOpen = false; _refocusVideo(); }`；showDialog/picker 仍直接调。
+    // 统计所有 _refocusVideo() 调用点覆盖 modal sheet + side panel 关闭 + 各对话框/picker。
     final int refocusCalls = '_refocusVideo();'.allMatches(src).length;
     expect(refocusCalls, greaterThanOrEqualTo(6),
-        reason: '所有夺焦覆盖层（5 个 sheet + 着色器/Jimaku 对话框）关闭后都应 _refocusVideo()');
-    // sheet 关闭回调里必须同时复位重入守卫，否则守卫卡死再也开不了菜单。
+        reason:
+            '所有夺焦覆盖层（modal sheet + side panel + 着色器/Jimaku/picker）关闭后都应 _refocusVideo()');
+    // side panel 关闭汇聚点 [_hideVideoSidePanel] 必须归还键盘焦点。
+    final int hideIdx = src.indexOf('void _hideVideoSidePanel() {');
+    expect(hideIdx, greaterThanOrEqualTo(0),
+        reason: 'side panel 菜单需有统一关闭汇聚点 _hideVideoSidePanel');
+    final int hideEnd = src.indexOf('\n  }', hideIdx);
+    expect(src.substring(hideIdx, hideEnd).contains('_refocusVideo()'), isTrue,
+        reason: 'side panel 关闭后必须归还键盘焦点');
+    // 剩余 2 个 modal sheet 的 whenComplete 仍须复位重入守卫，否则守卫卡死再开不了菜单。
     final int guardReset = '_videoSheetOpen = false;'.allMatches(src).length;
-    expect(guardReset, greaterThanOrEqualTo(5),
-        reason: '每个 sheet 的 whenComplete 必须复位 _videoSheetOpen');
+    expect(guardReset, greaterThanOrEqualTo(2),
+        reason: '每个 modal sheet 的 whenComplete 必须复位 _videoSheetOpen');
   });
 
   // ── TODO-040/042：三类「快捷键失灵」的统一修复接线 ────────────────────────

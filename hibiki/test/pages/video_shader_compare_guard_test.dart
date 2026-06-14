@@ -25,10 +25,12 @@ void main() {
   /// 截出两套 controls 主题方法体（桌面 + 移动），用于断言「控制条里没有对比按钮」。
   String controlsThemes() {
     final int start = pageSrc.indexOf('MaterialDesktopVideoControlsThemeData');
-    final int end = pageSrc.indexOf('void _showTrackMenu(');
+    // TODO-274：旧终点 `_showTrackMenu` 改名且移到 themes 之前；改用 themes 之后紧邻
+    // 的 `_buildVideoControlButton` 作为控制条段终点（仍夹住两套 controls 主题）。
+    final int end = pageSrc.indexOf('Widget _buildVideoControlButton(');
     expect(start, greaterThanOrEqualTo(0), reason: '需有桌面 controls 主题');
     expect(end, greaterThan(start),
-        reason: '需有 _showTrackMenu 作为 controls 段终点');
+        reason: '需有 _buildVideoControlButton 作为 controls 段终点');
     return pageSrc.substring(start, end);
   }
 

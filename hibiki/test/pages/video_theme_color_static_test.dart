@@ -2,11 +2,27 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+/// 剥掉 `_buildVideoSideActionRail` 方法体（TODO-274 右侧悬浮操作 rail）：浮在视频画面
+/// 上的圆形操作按钮按播放器惯例用「半透明黑底 + 白图标」做高对比悬浮 chrome（与
+/// allowlist 的 letterbox `fill: Colors.black` 同理是覆盖在画面上的内容层，不是跟随主题
+/// 的页面 chrome）。白/黑禁令针对的是字幕 / 控制条颜色应跟随 ColorScheme，不应殃及该
+/// 悬浮 rail，否则守卫会误把这枚合法浮层按钮判为「硬编码白色」。
+String _withoutVideoSideActionRail(String source) {
+  const String start = 'Widget _buildVideoSideActionRail(';
+  final int startIdx = source.indexOf(start);
+  if (startIdx < 0) return source;
+  // rail 方法后紧跟一个 doc-comment + 方法；用下一个方法签名作为终点边界。
+  final int endIdx = source.indexOf('/// 把 [video]（media_kit', startIdx);
+  if (endIdx <= startIdx) return source;
+  return source.substring(0, startIdx) + source.substring(endIdx);
+}
+
 void main() {
   test('video subtitles and chrome derive visible colors from ColorScheme', () {
-    final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    final String source = _withoutVideoSideActionRail(
+      File('lib/src/pages/implementations/video_hibiki_page.dart')
+          .readAsStringSync(),
+    );
 
     expect(source, contains('_subtitleTextColor(ColorScheme'));
     expect(source, contains('_videoChromeColorScheme'));
