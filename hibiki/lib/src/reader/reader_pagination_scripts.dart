@@ -90,12 +90,16 @@ class ReaderPaginationScripts {
           resolved = best;
           cursor = best + needle.length;
         } else {
+          // BUG-282：未命中只为这一条 cue 选一个尽力而为的回落位置，**绝不推进
+          // 单调游标**。游标只在「DOM 真命中」时前进；若让回落按未经核实的 hint
+          // 猜测推进 cursor，就可能越过后面真正能命中的 cue 的真实位置，使其搜索
+          // 窗口下界 max(cursor, hint-window) 把真实位置排除掉 → 整本逐句累积漂移
+          // （BUG-060 想消除的正是累积漂移，这里是它的回落漏洞）。
           resolved = _clampInt(hint, cursor, fullNorm.length);
-          cursor = resolved + c.length;
         }
       } else {
+        // 空 needle 同理：只给回落位置，不污染游标。
         resolved = _clampInt(hint, cursor, fullNorm.length);
-        cursor = resolved + c.length;
       }
       out.add(resolved);
     }
@@ -541,9 +545,12 @@ class ReaderPaginationScripts {
       if (resolved >= 0) {
         spanStart = resolved; spanLen = normLen;
       } else {
+        // BUG-282：未命中只给这一条 cue 一个尽力而为的回落区间，**不推进单调
+        // 游标 cursor**。游标只在 DOM 真命中时前进；让回落按未核实的 hint 猜测
+        // 推进游标会越过后面真正能命中 cue 的真实位置，把其搜索窗口下界顶过去
+        // → 整本逐句累积漂移（与 Dart 影子 resolveCueNormStartsForTesting 同改）。
         spanStart = hint < cursor ? cursor : (hint > map.length ? map.length : hint);
         spanLen = len;
-        cursor = spanStart + len;
       }
       out.push({ id: cue.id, ranges: this.rangesForNormSpan(map, spanStart, spanLen) });
     }

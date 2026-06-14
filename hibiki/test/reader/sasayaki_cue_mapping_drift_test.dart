@@ -79,6 +79,35 @@ void main() {
       ]);
       expect(out.single, full.length);
     });
+
+    // BUG-282（TODO-366，BUG-060 跟进）：不可命中 cue 的回落**不得污染单调游标**。
+    // 旧实现回落后 `cursor = resolved + length`，会把游标推到 hint 猜测处；若该
+    // 猜测越过后面**真正能命中**的 cue 的真实位置，后续 cue 的搜索窗口下界
+    // (max(cursor, hint-window)) 就把真实位置排除掉 → 整本逐句漂移。
+    // full 索引: あ0 い1 う2 え3 お4 か5 き6 く7 け8 こ9 さ10 し11 す12 せ13 そ14
+    test('回落不污染游标：不可命中 cue(hint 越界)后，可命中 cue 仍锚定真实位置', () {
+      const String full = 'あいうえおかきくけこさしすせそ';
+      final out = _resolve(full, const <SasayakiCueHint>[
+        // cue1 在 DOM 搜不到（转写差异 / gaiji 被剥 / 模糊匹配）。matcher 给的
+        // hint=8、length=2 把旧游标推到 10，越过 cue2 真实位置 5。
+        SasayakiCueHint(needle: 'みつからん', hint: 8, length: 2),
+        // cue2「かきくけこ」DOM 真实位置 5，能精确命中，不该被前句回落污染推到 10。
+        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+      ]);
+      expect(out[1], 5, reason: '可命中 cue 必须自愈到 5，不被前一条回落 cue 的游标污染');
+    });
+
+    test('回落不污染游标：连续两条不可命中后，真实可命中句仍命中', () {
+      const String full = 'あいうえおかきくけこさしすせそたちつてと';
+      final out = _resolve(full, const <SasayakiCueHint>[
+        // 两条都搜不到且 hint 越界靠后；旧实现累积把游标推到很靠后。
+        SasayakiCueHint(needle: 'なし1', hint: 12, length: 3),
+        SasayakiCueHint(needle: 'なし2', hint: 14, length: 3),
+        // 真实「かきくけこ」在 5，必须能命中。
+        SasayakiCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+      ]);
+      expect(out[2], 5, reason: '多条回落不得累积推进游标越过真实可命中句');
+    });
   });
 
   // 源码守卫：JS collectSasayakiCueRanges 必须与上面被测的 Dart 影子同算法
@@ -107,6 +136,36 @@ void main() {
       // 回落仍走 rangesForNormSpan（绝不空高亮整章）。
       expect(src.contains('rangesForNormSpan('), isTrue,
           reason: '命中/回落都经统一的 span→DOM range 映射');
+    });
+
+    // BUG-282 源码守卫：JS collectSasayakiCueRanges 的回落分支**不得**再推进
+    // 单调游标 cursor（否则不可命中 cue 的猜测会越过后面可命中 cue 的真实位置，
+    // 重新引入逐句累积漂移）。游标只允许在 DOM 真命中分支（best>=0）前进。
+    test('JS 回落分支不推进单调游标 cursor（BUG-282）', () {
+      final String src = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
+
+      // 锁定 collectSasayakiCueRanges 函数体。
+      final int fnStart = src.indexOf('collectSasayakiCueRanges: function');
+      expect(fnStart, greaterThanOrEqualTo(0));
+      final int fnEnd = src.indexOf('applySasayakiCues: function', fnStart);
+      expect(fnEnd, greaterThan(fnStart));
+      final String fnBody = src.substring(fnStart, fnEnd);
+
+      // 命中分支必须推进游标（best>=0 时 cursor = best + normLen）。
+      expect(
+        RegExp(r'best\s*>=\s*0.*cursor\s*=\s*best\s*\+\s*normLen', dotAll: true)
+            .hasMatch(fnBody),
+        isTrue,
+        reason: '命中分支仍应推进游标',
+      );
+      // 回落分支（resolved < 0 / else 块）绝不能把 cursor 设成 spanStart+len。
+      expect(
+        fnBody.contains('cursor = spanStart + len'),
+        isFalse,
+        reason: '回落不得推进游标，否则越过后续可命中句重新引入累积漂移（BUG-282）',
+      );
     });
   });
 }
