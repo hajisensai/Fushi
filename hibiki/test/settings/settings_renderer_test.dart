@@ -493,18 +493,35 @@ void main() {
     // Auto/Custom 收敛为「界面大小」一行尾部的内联切换：该项不再有独立的
     // app_ui_scale_mode 标题/副标题，标题统一是 app_ui_scale。
     expect(find.text(t.app_ui_scale), findsOneWidget);
-    expect(find.text(t.app_ui_scale_auto), findsWidgets);
     expect(find.text(t.app_ui_scale_custom), findsOneWidget);
+    // BUG fix（界面大小「两个选项」困惑）：自动模式不再渲染一个带独立标题「自动」的整行。
+    // 「自动」一词此后只作为分段切换里的段标签出现，不再作为某个 AdaptiveSettingsRow 的
+    // 标题——因此不存在 title == app_ui_scale_auto 的设置行。
     expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsRow &&
+            widget.title == t.app_ui_scale_auto,
+      ),
+      findsNothing,
+      reason: '自动模式不应再有独立的「自动」整行（百分比已折进标题行副标题）',
+    );
+    final AdaptiveSettingsSegmentedRow<String> autoRow = tester.widget(
       find.byWidgetPredicate(
         (Widget widget) =>
             widget is AdaptiveSettingsSegmentedRow<String> &&
             widget.title == t.app_ui_scale &&
-            widget.subtitle == t.app_ui_scale_hint &&
             widget.controlBelow == false &&
             widget.selected == ThemeNotifier.appUiScaleModeAuto,
       ),
-      findsOneWidget,
+    );
+    // 当前自动计算出的百分比折进唯一标题行的副标题（以原 hint 起头、附带「N%」读数），
+    // 而不是另起一行——这正是消除「两个选项」错觉的落点。
+    expect(autoRow.subtitle, startsWith(t.app_ui_scale_hint));
+    expect(
+      autoRow.subtitle,
+      contains('%'),
+      reason: '自动模式的百分比读数必须贴在「界面大小」标题行副标题里',
     );
 
     // 自动模式下不渲染可拖滑条（原行为是恒渲染，本改动消除无用占位）。
