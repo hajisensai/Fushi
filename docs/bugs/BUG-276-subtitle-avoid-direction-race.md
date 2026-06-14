@@ -1,0 +1,16 @@
+## BUG-276 · 字幕避让方向反/竞态：避让与控制条可见性未用同一真相源
+- **报告**：2026-06-15（用户：「进度条起来、下去的时候，如果同时进行其他操作会导致字幕起来下去的行为相反，tmd让他们用同一个变量」）
+- **真实性**：✅ 真 bug。根因 = 视频字幕避让读的是 Hibiki **自建镜像** `_videoControlsVisible` + **独立隐藏 Timer** `_videoControlsHideTimer`（旧 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_markControlsVisible` / `_videoControlsHideTimer` / `_toggleControlsVisibleForTap`），而 media_kit 控制条自身在私有 State 里另有一份真实 `visible` + 私有 `Timer`（`third_party/media_kit_video/.../material_desktop.dart:378/380`、`material.dart:534/535`）。两套 Timer 各自计时、Hibiki 各入口（hover / 移动 tap / 键盘 poke）独立维护镜像，**与 media_kit 真实可见态会相位反**：
+  - 移动端 `_toggleControlsVisibleForTap` 用镜像取反决定下一态（旧 `video_hibiki_page.dart` 的 `_markControlsVisible(!_videoControlsVisible.value)`）；当镜像因自家 2s Timer 先/后于 media_kit 隐藏而漂移后，下一次点击把镜像翻成与真实控制条相反 → 字幕往上顶而进度条在下落（或反之）。
+  - 进度条起落动画（`AnimatedPadding` 200ms）期间又来一次操作，两套 Timer 不同步即把避让目标翻反 → 用户看到「字幕起来下去的行为相反」。
+- **[x] ① 已修复** — 用户原话「用同一个变量」= 让字幕避让消费 media_kit 控制条的**真实可见性单一真相源**，删掉旁路镜像 Timer：
+  - vendored fork `third_party/media_kit_video` 给两套控制主题加可选 `visibilityNotifier`（`material_desktop.dart` / `material.dart` 的 `MaterialDesktopVideoControlsThemeData` / `MaterialVideoControlsThemeData`），控制条 State 每次改 `visible`（onHover/onEnter/onExit/onTap/mount-timer/seek-end-timer）都把真实值推进 notifier（新增 `_publishVisibility()`）；mount 初值用 post-frame 推送避免 didChangeDependencies 同步重入宿主 setState。
+  - `hibiki/lib/src/pages/implementations/video_hibiki_page.dart`：新增 `_mediaKitControlsVisible`（接收 media_kit 真实可见性），把它经 `visibilityNotifier:` 注入两套主题（`_desktopControlsTheme` / `_mobileControlsTheme`）；字幕避让消费的 `_videoControlsVisible` 改由**唯一派生函数** `_applyControlsVisibilityFromMediaKit()` 写入 = `!gated && _mediaKitControlsVisible.value`（gated = 沉浸锁/侧栏/字幕列表）；`initState` 订阅 media_kit 可见性 + 三门控四输入，`dispose` 先摘监听再释放。
+  - 删除独立隐藏 Timer `_videoControlsHideTimer`（media_kit 自己的 Timer 成为唯一计时）、删除移动端镜像 toggle `_toggleControlsVisibleForTap`（移动 tap 由 media_kit `onTap` toggle 并推送）、删除 hover/poke 里的乐观翻镜像（真实 hover/合成 poke 经 media_kit 自己的 MouseRegion 唤起并推送）；`_markControlsVisible` 收敛成仅门控收起（`assert(!visible)`）+ 重派生；音量 popover hover 改 `_pokeControlsVisible()` 续命 media_kit 真实 Timer（保 TODO-337）。
+  - 副作用（光标隐藏 BUG-258/TODO-318、popover 关闭 TODO-337、侧栏/沉浸门控 BUG-253/TODO-329）全部并入唯一派生函数，行为等价。
+  - 提交：见报告（commit 哈希）。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/video_subtitle_overlay_test.dart`：新增「跟随真实可见性、方向不反」组——同一个 `controlsVisible` notifier 模拟「显示→隐藏」与并发翻转，断言字幕 padding 方向**始终**跟随该 notifier 真实值（撤回成镜像独立翻转/反相则红）。
+  - `hibiki/test/pages/video_subtitle_push_up_guard_test.dart`：更新源码守卫到新单一真相源结构（media_kit `visibilityNotifier` 注入两套主题 + `_applyControlsVisibilityFromMediaKit` 唯一派生 + 无独立隐藏 Timer / 无镜像 toggle）。
+  - `hibiki/test/third_party/media_kit_video_visibility_notifier_guard_test.dart`：守卫 fork 两控制文件每个 `visible =` 变更后都有 `_publishVisibility()`，且主题类带 `visibilityNotifier` 字段（防 fork 升级/回退丢补丁）。
+- **备注**：字幕上下避让的**最终观感**（进度条起落 + 并发操作时字幕方向）属纯几何/时序，headless 不可稳定复现 → 需用户真机复测原始失败路径（桌面 hover/键盘 seek + 移动点画面）。media_kit 私有 State 的 hover/timer 时序也跑不了 headless，故用源码守卫 + overlay 几何 widget 测试兜底（与既有 push-up guard 同范式）。

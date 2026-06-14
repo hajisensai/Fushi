@@ -71,14 +71,17 @@ void main() {
   });
 
   test('沉浸锁 / 控制条淡出隐藏光标；真实鼠标移动唤回；解锁立即唤回', () {
-    // _markControlsVisible 锁态分支隐藏光标。
+    // TODO-364：光标隐藏逻辑从 _markControlsVisible 收敛进唯一派生函数
+    // _applyControlsVisibilityFromMediaKit（控制条不可见且无 overlay 即隐藏光标，
+    // 镜像 media_kit 的 hideMouseOnControlsRemoval，2s 由 media_kit 自己的 Timer 触发并推送）。
     final int markIdx =
-        src.indexOf('void _markControlsVisible(bool visible) {');
+        src.indexOf('void _applyControlsVisibilityFromMediaKit() {');
     final int markEnd =
-        src.indexOf('void _onVideoControlsHoverExit()', markIdx);
+        src.indexOf('void _markControlsVisible(bool visible) {', markIdx);
     final String mark = src.substring(markIdx, markEnd);
-    expect(mark.contains('_setCursorHidden(true)'), isTrue,
-        reason: '控制条 2s 自动淡出时隐藏光标（纯沉浸 / 无 hover 场景）');
+    expect(mark.contains('_setCursorHidden(!visible && !_hasVideoOverlay)'),
+        isTrue,
+        reason: '控制条不可见且无 overlay（纯沉浸 / 自动淡出）时隐藏光标');
 
     // 真实鼠标移动唤回光标（合成 poke 不强制显示）。
     final int hoverIdx =
@@ -101,16 +104,18 @@ void main() {
   });
 
   test('TODO-329: 字幕列表打开时光标纳入「有 overlay 即可见」门控', () {
-    // _markControlsVisible 早返回分支条件包含 _subtitleListVisible（字幕列表打开
-    // 也强制控制条收起 + 取消定时），且光标语义按 _hasVideoOverlay 分叉。
+    // TODO-364：派生函数 _applyControlsVisibilityFromMediaKit 的门控 gated 含
+    // _subtitleListVisible（字幕列表打开强制控制条不可见），且光标语义按 _hasVideoOverlay
+    // 分叉（有 overlay 即可见，纯沉浸才隐藏，保 BUG-258）。
     final int markIdx =
-        src.indexOf('void _markControlsVisible(bool visible) {');
+        src.indexOf('void _applyControlsVisibilityFromMediaKit() {');
     final int markEnd =
-        src.indexOf('void _onVideoControlsHoverExit()', markIdx);
+        src.indexOf('void _markControlsVisible(bool visible) {', markIdx);
     final String mark = src.substring(markIdx, markEnd);
     expect(mark.contains('_subtitleListVisible.value'), isTrue,
-        reason: '字幕列表打开应纳入 _markControlsVisible 早返回门控（TODO-329）');
-    expect(mark.contains('_setCursorHidden(!_hasVideoOverlay)'), isTrue,
+        reason: '字幕列表打开应纳入派生门控 gated（TODO-329/364）');
+    expect(mark.contains('_setCursorHidden(!visible && !_hasVideoOverlay)'),
+        isTrue,
         reason: '有 overlay（侧栏 / 字幕列表）时光标可见，纯沉浸锁才隐藏（保 BUG-258）');
 
     // _hasVideoOverlay getter 把侧栏与字幕列表统一为「有 overlay」单一判据。

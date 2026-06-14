@@ -179,6 +179,21 @@ class MaterialDesktopVideoControlsThemeData {
   /// Whether to shift the subtitles upwards when the controls are visible.
   final bool shiftSubtitlesOnControlsVisibilityChange;
 
+  // VISIBILITY (Hibiki patch)
+
+  /// Optional notifier the controls push their real `visible` state into on
+  /// every change (hover / enter / exit / auto-hide timer / seek-bar drag).
+  ///
+  /// Hibiki renders its own subtitle overlay and dodges the bottom controls
+  /// bar; it used to keep a *separate* mirror of visibility with its own timer,
+  /// which drifted out of phase with this State's private `visible` + `_timer`
+  /// and made the subtitle dodge reverse direction under concurrent input
+  /// (TODO-364). Exposing the single authoritative `visible` here lets the host
+  /// consume one source of truth instead of duplicating the state machine.
+  /// Null (upstream default) = no publishing, behaviour identical to pub.dev.
+  /// See third_party/media_kit_video/PATCHES.md.
+  final ValueNotifier<bool>? visibilityNotifier;
+
   /// {@macro material_desktop_video_controls_theme_data}
   const MaterialDesktopVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -228,6 +243,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.volumeBarThumbColor = const Color(0xFFFFFFFF),
     this.volumeBarTransitionDuration = const Duration(milliseconds: 150),
     this.shiftSubtitlesOnControlsVisibilityChange = true,
+    this.visibilityNotifier,
   });
 
   /// Creates a copy of this [MaterialDesktopVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -269,6 +285,7 @@ class MaterialDesktopVideoControlsThemeData {
     Color? volumeBarThumbColor,
     Duration? volumeBarTransitionDuration,
     bool? shiftSubtitlesOnControlsVisibilityChange,
+    ValueNotifier<bool>? visibilityNotifier,
   }) {
     return MaterialDesktopVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -323,6 +340,7 @@ class MaterialDesktopVideoControlsThemeData {
       shiftSubtitlesOnControlsVisibilityChange:
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
+      visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
     );
   }
 }
@@ -426,6 +444,19 @@ class _MaterialDesktopVideoControlsState
         ],
       );
 
+      // Publish the initial visibility (visibleOnMount) so the host's mirror
+      // starts in phase with this State (Hibiki patch, TODO-364). Deferred to a
+      // post-frame callback: didChangeDependencies runs during mount, and a
+      // synchronous notifier write could re-enter a host listener's setState
+      // mid-build.
+      final ValueNotifier<bool>? notifier = _theme(context).visibilityNotifier;
+      if (notifier != null) {
+        final bool initialVisible = visible;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) notifier.value = initialVisible;
+        });
+      }
+
       if (_theme(context).visibleOnMount) {
         _timer = Timer(
           _theme(context).controlsHoverDuration,
@@ -434,6 +465,7 @@ class _MaterialDesktopVideoControlsState
               setState(() {
                 visible = false;
               });
+              _publishVisibility();
               unshiftSubtitle();
             }
           },
@@ -472,11 +504,22 @@ class _MaterialDesktopVideoControlsState
     }
   }
 
+  /// Push the current real [visible] into the host's single-source-of-truth
+  /// notifier (Hibiki patch, TODO-364). Called after every [visible] mutation so
+  /// the host's subtitle dodge follows this State's authoritative visibility
+  /// instead of a separate, drift-prone mirror. No-op when unmounted or when no
+  /// notifier was injected (upstream default).
+  void _publishVisibility() {
+    if (!mounted) return;
+    _theme(context).visibilityNotifier?.value = visible;
+  }
+
   void onHover() {
     setState(() {
       mount = true;
       visible = true;
     });
+    _publishVisibility();
     shiftSubtitle();
     _timer?.cancel();
     _timer = Timer(_theme(context).controlsHoverDuration, () {
@@ -484,6 +527,7 @@ class _MaterialDesktopVideoControlsState
         setState(() {
           visible = false;
         });
+        _publishVisibility();
         unshiftSubtitle();
       }
     });
@@ -494,6 +538,7 @@ class _MaterialDesktopVideoControlsState
       mount = true;
       visible = true;
     });
+    _publishVisibility();
     shiftSubtitle();
     _timer?.cancel();
     _timer = Timer(_theme(context).controlsHoverDuration, () {
@@ -501,6 +546,7 @@ class _MaterialDesktopVideoControlsState
         setState(() {
           visible = false;
         });
+        _publishVisibility();
         unshiftSubtitle();
       }
     });
@@ -510,6 +556,7 @@ class _MaterialDesktopVideoControlsState
     setState(() {
       visible = false;
     });
+    _publishVisibility();
     unshiftSubtitle();
     _timer?.cancel();
   }
@@ -783,6 +830,7 @@ class _MaterialDesktopVideoControlsState
                                                     setState(() {
                                                       visible = false;
                                                     });
+                                                    _publishVisibility();
                                                     unshiftSubtitle();
                                                   }
                                                 },

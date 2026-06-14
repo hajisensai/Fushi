@@ -2,18 +2,23 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫：字幕动态避让进度条（TODO-129，反转 TODO-089 的恒抬升）的接线不被回退。
+/// 源码守卫：字幕动态避让进度条（TODO-129，反转 TODO-089 的恒抬升）的接线不被回退，
+/// 且 TODO-364 的「单一真相源」修复不被退回旧镜像 + 第二个 Timer。
 ///
 /// 背景：media_kit 用自绘 [VideoSubtitleOverlay]（禁用了内置 SubtitleView）。089 曾把
 /// 控制条避让恒加进默认 bottomPadding（字幕恒抬高、进度条隐藏时也留空白）。129 改成
-/// 「控制条出现时把字幕往上顶对应高度、隐藏落回」的动态避让。难点：media_kit 控制条
-/// 可见性 `visible` 藏在私有 State、不暴露任何回调 / notifier / 公开 API（已查证
-/// `setSubtitleViewPadding` 也只写进 SubtitleView 私有 State）。故 Hibiki 侧自建一份镜像
-/// （[_videoControlsVisible]），复刻 media_kit 同一套触发源（桌面 hover、移动 tap、键盘
-/// /seek poke、controlsHoverDuration 自动隐藏）喂给 overlay。
+/// 「控制条出现时把字幕往上顶对应高度、隐藏落回」的动态避让。
+///
+/// TODO-364 根因：旧实现 Hibiki 侧自建一份**镜像** `_videoControlsVisible` + **独立隐藏
+/// Timer** `_videoControlsHideTimer`，与 media_kit 私有 `visible` + 私有 Timer 各自计时、
+/// 各入口（hover/移动 tap/键盘 poke）独立维护 → 与真实控制条相位会反（进度条起落时并发
+/// 操作字幕方向反）。修复：vendored media_kit_video fork 给两套控制主题加 `visibilityNotifier`，
+/// 控制条把**真实** `visible` 推进它（[_mediaKitControlsVisible]），字幕避让消费的
+/// [_videoControlsVisible] 改由唯一派生函数 [_applyControlsVisibilityFromMediaKit]
+/// （= !gated && 真实可见）写入，删掉镜像独立 Timer / 移动镜像 toggle / hover-poke 乐观翻镜像。
 ///
 /// 显隐时序依赖 media_kit 私有 State + 真实 hover/timer，widget 测试难稳定复现，故用
-/// 源码扫描守卫这些不变式；动态 padding 的几何由 video_subtitle_overlay_test.dart 验。
+/// 源码扫描守卫这些不变式；动态 padding 的几何与方向由 video_subtitle_overlay_test.dart 验。
 void main() {
   final File page =
       File('lib/src/pages/implementations/video_hibiki_page.dart');
@@ -40,20 +45,54 @@ void main() {
         reason: '默认不应把控制条避让恒含进 bottomPadding（那是 089 的恒抬升）');
   });
 
-  test('State 持有控制条可见性镜像 ValueNotifier 并在 dispose 释放', () {
+  test('TODO-364 单一真相源：State 持有 media_kit 真实可见性 + 派生可见性，dispose 释放', () {
+    expect(src, contains('ValueNotifier<bool> _mediaKitControlsVisible'),
+        reason: '应有 _mediaKitControlsVisible 接收 media_kit 控制条真实可见性（单一真相源）');
     expect(src, contains('ValueNotifier<bool> _videoControlsVisible'),
-        reason: '应有 State 级别的 _videoControlsVisible 镜像 media_kit 控制条可见性');
+        reason: '应有派生的 _videoControlsVisible 供字幕避让消费');
+    expect(src, contains('_mediaKitControlsVisible.dispose()'),
+        reason: '真相源 notifier 必须在 dispose 释放');
     expect(src, contains('_videoControlsVisible.dispose()'),
-        reason: 'notifier 必须在 dispose 释放，避免泄漏');
-    expect(src, contains('_videoControlsHideTimer'),
-        reason: '应有自动隐藏定时器复刻 media_kit controlsHoverDuration 时序');
-    expect(src, contains('_videoControlsHideTimer?.cancel()'),
-        reason: '隐藏定时器必须在 dispose / 重置时取消');
+        reason: '派生 notifier 必须在 dispose 释放，避免泄漏');
   });
 
-  test('可见性镜像喂给字幕 overlay（驱动动态避让，全屏复用同一 builder 故跨全屏）', () {
+  test('TODO-364 反退回：不再有 Hibiki 侧独立隐藏 Timer / 移动镜像 toggle', () {
+    // 旧实现的镜像独立 Timer 与 media_kit 私有 Timer 相位反（根因），修复后删除。
+    expect(src, isNot(contains('_videoControlsHideTimer')),
+        reason: '不应残留 Hibiki 侧独立隐藏 Timer（media_kit 自己的 Timer 是唯一计时，TODO-364）');
+    expect(src, isNot(contains('_toggleControlsVisibleForTap')),
+        reason: '不应残留移动端镜像 toggle（移动 tap 由 media_kit onTap 决定并推送，TODO-364）');
+  });
+
+  test('TODO-364 media_kit 真实可见性经 visibilityNotifier 注入两套控制主题', () {
+    // 桌面 + 移动主题都注入同一个真相源 notifier，窗口/全屏复用同一 builder 故跨全屏。
+    final int count =
+        'visibilityNotifier: _mediaKitControlsVisible'.allMatches(src).length;
+    expect(count, greaterThanOrEqualTo(2),
+        reason: '桌面与移动两套控制主题都必须注入 _mediaKitControlsVisible 作真相源');
+  });
+
+  test('TODO-364 字幕避让消费的 _videoControlsVisible 只由唯一派生函数写入', () {
     expect(src, contains('controlsVisible: _videoControlsVisible'),
-        reason: 'overlay 必须接上 _videoControlsVisible 才能动态避让进度条');
+        reason: 'overlay 必须接上派生的 _videoControlsVisible 才能动态避让进度条');
+    expect(src, contains('void _applyControlsVisibilityFromMediaKit()'),
+        reason: '应有唯一派生函数把 media_kit 真实可见性 + 门控派生进 _videoControlsVisible');
+    final int fn = src.indexOf('void _applyControlsVisibilityFromMediaKit()');
+    final int fnEnd = src.indexOf('\n  }', fn);
+    final String body = src.substring(fn, fnEnd);
+    expect(body, contains('_mediaKitControlsVisible.value'),
+        reason: '派生必须读 media_kit 真实可见性（单一真相源）');
+    expect(body, contains('_videoControlsVisible.value ='),
+        reason: '派生是 _videoControlsVisible 的唯一写入点');
+    // 订阅四输入（真相源 + 三门控）任一变化即重派生。
+    for (final String sub in <String>[
+      '_mediaKitControlsVisible.addListener(_applyControlsVisibilityFromMediaKit)',
+      '_immersiveLocked.addListener(_applyControlsVisibilityFromMediaKit)',
+      '_videoSidePanel.addListener(_applyControlsVisibilityFromMediaKit)',
+      '_subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit)',
+    ]) {
+      expect(src, contains(sub), reason: 'initState 必须订阅 $sub，任一输入变化即重派生避让方向');
+    }
   });
 
   test('视频页显式传入按平台真实几何 + 随缩放的 reserve（BUG-238，不回退裸常量 56）', () {
@@ -85,39 +124,33 @@ void main() {
         reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条上缘）');
   });
 
-  test('桌面 hover 镜像 media_kit onEnter/onHover/onExit', () {
+  test('桌面 hover 包裹层 non-opaque 下探 media_kit 自己的 MouseRegion（TODO-364）', () {
     expect(src, contains('Widget _videoControlsHoverWrap('),
-        reason: '应有桌面 hover 包裹层镜像 media_kit MouseRegion 时序');
-    // non-opaque：不阻断 hover 下探到 media_kit 自己的 MouseRegion（BUG-198 纪律）。
+        reason: '应有桌面 hover 包裹层（唤回光标 / 锁按钮）');
+    // non-opaque：不阻断 hover 下探到 media_kit 自己的 MouseRegion（BUG-198 纪律）——这正是
+    // TODO-364 把可见性交还 media_kit 的前提：真实 hover 命中其 onHover 翻 visible 并推送。
     final int wrap = src.indexOf('Widget _videoControlsHoverWrap(');
     final int wrapEnd = src.indexOf('\n  }', wrap);
     final String wrapBody = src.substring(wrap, wrapEnd);
     expect(wrapBody, contains('opaque: false'),
-        reason: 'hover 包裹层必须 non-opaque，否则吞 hover、media_kit 控制条不再被唤起');
-    // hover 时序绑到专用 handler（enter/move 唤起、exit 收起），handler 内再翻镜像。
+        reason: 'hover 包裹层必须 non-opaque，否则吞 hover、media_kit 控制条不再被唤起/推送');
     expect(wrapBody, contains('onEnter: _handleVideoControlsHover'),
         reason: 'hover enter 应绑 _handleVideoControlsHover');
     expect(wrapBody, contains('onHover: _handleVideoControlsHover'),
         reason: 'hover move 应绑 _handleVideoControlsHover');
     expect(wrapBody, contains('onExit: _handleVideoControlsHoverExit'),
         reason: 'hover exit 应绑 _handleVideoControlsHoverExit');
-    // enter/move handler 翻镜像可见（字幕上顶避让进度条）。
+    // TODO-364：hover handler 不再乐观翻镜像可见（避免与 media_kit 真实态相位反）；
+    // 可见性交给 media_kit 自己的 onHover 推送。撤回成 `_markControlsVisible(true)` → 红。
     final int enter = src.indexOf('void _handleVideoControlsHover(');
     expect(enter, greaterThanOrEqualTo(0),
         reason: '应有 _handleVideoControlsHover');
     final String enterBody = src.substring(enter, src.indexOf('\n  }', enter));
-    expect(enterBody, contains('_markControlsVisible(true)'),
-        reason: 'hover enter/move 应翻镜像可见');
-    // exit handler 收起镜像（字幕落回基线）。
-    final int exit = src.indexOf('void _handleVideoControlsHoverExit(');
-    expect(exit, greaterThanOrEqualTo(0),
-        reason: '应有 _handleVideoControlsHoverExit');
-    final String exitBody = src.substring(exit, src.indexOf('\n  }', exit));
-    expect(exitBody, contains('_onVideoControlsHoverExit()'),
-        reason: 'hover exit 应收起镜像（字幕落回基线）');
+    expect(enterBody, isNot(contains('_markControlsVisible(true)')),
+        reason: 'hover 不应再乐观翻镜像可见（可见性由 media_kit 真实态推送，TODO-364）');
   });
 
-  test('键盘/seek 唤起控制条（_pokeControlsVisible）同步翻镜像可见', () {
+  test('键盘/seek 唤起（_pokeControlsVisible）派合成 hover 给 media_kit、不乱翻镜像', () {
     final int poke = src.indexOf('void _pokeControlsVisible()');
     expect(poke, greaterThanOrEqualTo(0));
     final int pokeEnd = src.indexOf(
@@ -127,27 +160,37 @@ void main() {
     expect(pokeEnd, greaterThan(poke),
         reason: '_videoControlsHoverDuration 常量应紧随 poke 方法');
     final String pokeBody = src.substring(poke, pokeEnd);
-    expect(pokeBody, contains('_markControlsVisible(true)'),
-        reason: '键盘 / seek 唤起控制条时字幕也应跟着上顶');
+    // poke 仍派发合成 hover 命中 media_kit MouseRegion（其 onHover 翻 visible 并推送）。
+    expect(pokeBody, contains('PointerHoverEvent('),
+        reason: 'poke 应派发合成 hover 驱动 media_kit 自己的可见性 / Timer（单一真相源）');
+    // TODO-364：poke 不再另翻镜像可见（旧 `_markControlsVisible(true)` 是相位反根因之一）。
+    expect(pokeBody, isNot(contains('_markControlsVisible(true)')),
+        reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收到合成 hover 后推送，TODO-364）');
   });
 
-  test('移动端点画面 toggle 镜像 media_kit 移动控制条 onTap', () {
+  test('移动端点画面 toggle 交给 media_kit onTap（不再 Hibiki 镜像旁路，TODO-364）', () {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
     final int handlerEnd =
         src.indexOf('\n  bool _isVideoChromePointer(', handler);
     final String body = src.substring(handler, handlerEnd);
-    expect(body, contains('_toggleControlsVisibleForTap()'),
-        reason: '移动端点画面应 toggle 控制条镜像可见性（镜像 media_kit onTap）');
+    expect(body, isNot(contains('_toggleControlsVisibleForTap()')),
+        reason:
+            '移动端点画面不应再走 Hibiki 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）');
   });
 
-  test('锁定 / 沉浸模式下镜像强制不可见（控制条本就不弹、字幕不避让）', () {
-    final int mark = src.indexOf('void _markControlsVisible(');
-    expect(mark, greaterThanOrEqualTo(0));
-    final int markEnd = src.indexOf('\n  /// 桌面鼠标移出视频区', mark);
-    final String body = src.substring(mark, markEnd);
-    expect(body, contains('_immersiveLocked.value'),
-        reason: '锁定态下镜像应强制不可见（无控制条可遮挡）');
+  test('锁定 / 沉浸 / 侧栏 / 字幕列表门控下派生强制不可见（字幕不避让）', () {
+    final int fn = src.indexOf('void _applyControlsVisibilityFromMediaKit()');
+    expect(fn, greaterThanOrEqualTo(0), reason: '应有唯一派生函数');
+    final int fnEnd = src.indexOf('\n  }', fn);
+    final String body = src.substring(fn, fnEnd);
+    for (final String gate in <String>[
+      '_immersiveLocked.value',
+      '_videoSidePanel.value != null',
+      '_subtitleListVisible.value',
+    ]) {
+      expect(body, contains(gate), reason: '派生的门控必须含 $gate（门控成立时强制不可见、字幕不避让）');
+    }
   });
 
   test('避让对控制条高度取下限（max），不是 bottomPadding + reserve 加法（TODO-161）', () {

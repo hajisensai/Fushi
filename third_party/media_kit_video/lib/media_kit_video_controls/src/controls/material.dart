@@ -290,6 +290,16 @@ class MaterialVideoControlsThemeData {
   /// Whether to shift the subtitles upwards when the controls are visible.
   final bool shiftSubtitlesOnControlsVisibilityChange;
 
+  // VISIBILITY (Hibiki patch)
+
+  /// Optional notifier the controls push their real `visible` state into on
+  /// every change (tap toggle / auto-hide timer / mount). Hibiki consumes this
+  /// single source of truth for its subtitle dodge instead of duplicating the
+  /// visibility state machine with a separate timer that drifts out of phase
+  /// (TODO-364). Null (upstream default) = no publishing, behaviour identical to
+  /// pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final ValueNotifier<bool>? visibilityNotifier;
+
   /// {@macro material_video_controls_theme_data}
   const MaterialVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -354,6 +364,7 @@ class MaterialVideoControlsThemeData {
     this.seekBarThumbColor = const Color(0xFFFF0000),
     this.seekBarAlignment = Alignment.bottomCenter,
     this.shiftSubtitlesOnControlsVisibilityChange = false,
+    this.visibilityNotifier,
   });
 
   /// Creates a copy of this [MaterialVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -407,6 +418,7 @@ class MaterialVideoControlsThemeData {
     Color? seekBarThumbColor,
     Alignment? seekBarAlignment,
     bool? shiftSubtitlesOnControlsVisibilityChange,
+    ValueNotifier<bool>? visibilityNotifier,
   }) {
     return MaterialVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -481,6 +493,7 @@ class MaterialVideoControlsThemeData {
       shiftSubtitlesOnControlsVisibilityChange:
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
+      visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
     );
   }
 }
@@ -630,6 +643,18 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
         ],
       );
 
+      // Publish the initial visibility so the host's mirror starts in phase
+      // with this State (Hibiki patch, TODO-364). Deferred to a post-frame
+      // callback: didChangeDependencies runs during mount, and a synchronous
+      // notifier write could re-enter a host listener's setState mid-build.
+      final ValueNotifier<bool>? notifier = _theme(context).visibilityNotifier;
+      if (notifier != null) {
+        final bool initialVisible = visible;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) notifier.value = initialVisible;
+        });
+      }
+
       if (_theme(context).visibleOnMount) {
         _timer = Timer(
           _theme(context).controlsHoverDuration,
@@ -638,6 +663,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
               setState(() {
                 visible = false;
               });
+              _publishVisibility();
               unshiftSubtitle();
             }
           },
@@ -679,12 +705,23 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     }
   }
 
+  /// Push the current real [visible] into the host's single-source-of-truth
+  /// notifier (Hibiki patch, TODO-364). Called after every [visible] mutation so
+  /// the host's subtitle dodge follows this State's authoritative visibility
+  /// instead of a separate, drift-prone mirror. No-op when unmounted or when no
+  /// notifier was injected (upstream default).
+  void _publishVisibility() {
+    if (!mounted) return;
+    _theme(context).visibilityNotifier?.value = visible;
+  }
+
   void onTap() {
     if (!visible) {
       setState(() {
         mount = true;
         visible = true;
       });
+      _publishVisibility();
       shiftSubtitle();
       _timer?.cancel();
       _timer = Timer(_theme(context).controlsHoverDuration, () {
@@ -692,6 +729,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
           setState(() {
             visible = false;
           });
+          _publishVisibility();
           unshiftSubtitle();
         }
       });
@@ -699,6 +737,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       setState(() {
         visible = false;
       });
+      _publishVisibility();
       unshiftSubtitle();
       _timer?.cancel();
     }
@@ -1038,6 +1077,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                               setState(() {
                                                 visible = false;
                                               });
+                                              _publishVisibility();
                                               unshiftSubtitle();
                                             }
                                           },
