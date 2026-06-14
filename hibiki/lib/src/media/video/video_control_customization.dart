@@ -335,6 +335,69 @@ class VideoControlLayout {
     },
   );
 
+  /// The layout that reproduces the **current** player chrome pixel-for-pixel
+  /// (TODO-274 phase 1 wiring default). Distinct from [defaults] (the phase-0
+  /// aspirational target where favorites land in bottomRight): [currentChrome]
+  /// keeps every button exactly where today's hardcoded media_kit theme draws
+  /// it, so feeding it into the slot renderer leaves the chrome unchanged.
+  ///
+  /// Mapping of today's chrome:
+  ///   - learning keys (speed / subtitleList / favorites / settings): the legacy
+  ///     [VideoControlCustomization.defaults] placed speed in the bottom cluster
+  ///     and the rest on the right rail -> bottomRight / screenRight respectively.
+  ///   - transport / nav keys: drawn in the fixed top bar (back via topLeft,
+  ///     title topCenter, episode nav / screenshot / subtitle-track / audio-track
+  ///     topRight) and the bottom-center transport cluster (previousCue /
+  ///     playPause / nextCue + seek labels) with the position indicator at
+  ///     bottomLeft and volume / fullscreen trailing in bottomRight.
+  static final VideoControlLayout currentChrome =
+      VideoControlLayout.fromAssignments(
+    const <VideoControlItem, VideoControlSlot>{
+      // -- fixed top bar (drawn inline; not user-customizable in phase 1) --
+      VideoControlItem.title: VideoControlSlot.topCenter,
+      VideoControlItem.episodeList: VideoControlSlot.topRight,
+      VideoControlItem.screenshot: VideoControlSlot.topRight,
+      VideoControlItem.subtitleTrack: VideoControlSlot.topRight,
+      VideoControlItem.audioTrack: VideoControlSlot.topRight,
+      // -- bottom-center transport cluster (play pinned geometric centre) --
+      VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
+      VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
+      VideoControlItem.playPause: VideoControlSlot.bottomCenter,
+      VideoControlItem.nextCue: VideoControlSlot.bottomCenter,
+      VideoControlItem.seekForward: VideoControlSlot.bottomCenter,
+      // -- bottom row trailing / leading --
+      VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
+      VideoControlItem.volume: VideoControlSlot.bottomRight,
+      VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
+      // -- learning keys, mirroring the legacy default placement --
+      VideoControlItem.speed: VideoControlSlot.bottomRight,
+      VideoControlItem.subtitleList: VideoControlSlot.screenRight,
+      VideoControlItem.favoriteSentence: VideoControlSlot.screenRight,
+      VideoControlItem.favoriteSentences: VideoControlSlot.screenRight,
+      VideoControlItem.settings: VideoControlSlot.screenRight,
+    },
+  );
+
+  /// Build the live render layout from the persisted legacy
+  /// [VideoControlCustomization] (the single persisted source of truth today).
+  /// Learning keys follow the user's saved 3-tier placement; transport / nav
+  /// keys keep their fixed [currentChrome] positions (the legacy model never
+  /// tracked them). Phase 1 reads this so the renderer is data-driven while
+  /// persistence stays on the legacy model (phase 2 migrates the picker).
+  factory VideoControlLayout.fromLegacy(VideoControlCustomization legacy) {
+    final Map<VideoControlItem, VideoControlSlot> assignments =
+        <VideoControlItem, VideoControlSlot>{
+      for (final VideoControlItem item in VideoControlItem.values)
+        item: currentChrome.slotOf(item),
+    };
+    for (final VideoControlButton button in VideoControlButton.values) {
+      final VideoControlItem? item = VideoControlItem.fromLegacy(button);
+      if (item == null) continue;
+      assignments[item] = _slotForLegacyPlacement(legacy.placementFor(button));
+    }
+    return VideoControlLayout.fromAssignments(assignments);
+  }
+
   final Map<VideoControlSlot, List<VideoControlItem>> _slots;
 
   /// Ordered buttons in a slot (unmodifiable copy).
