@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
-/// BUG-276 / TODO-367：退出阅读 / 停止会话后有声书仍在播放。
+/// BUG-278 / TODO-367：退出阅读 / 停止会话后有声书仍在播放。
 ///
 /// 根因：[AudiobookSession.stop] 在 dispose 控制器前只 `pause()`（just_audio 语义
 /// 「保留解码器以便快速恢复」，不释放 native 资源），紧随的同步 `dispose()` 抢不过
@@ -22,7 +22,7 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('AudiobookPlayerController.stopPlayback (BUG-276)', () {
+  group('AudiobookPlayerController.stopPlayback (BUG-278)', () {
     test('releases the native player (stop), not just pause', () async {
       final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
 
@@ -93,7 +93,7 @@ void main() {
     });
   });
 
-  group('AudiobookSession.stop source guard (BUG-276)', () {
+  group('AudiobookSession.stop source guard (BUG-278)', () {
     test('stop() releases the controller via stopPlayback() before dispose()',
         () {
       final File sessionFile = File(

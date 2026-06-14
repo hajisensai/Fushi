@@ -27,11 +27,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 270 条。点号进各自文件。
+> 共 273 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-276](bugs/BUG-276-updatechecker-mirror-fallback.md) | ✅ | ✅ | 更新检查端点单点不可达就整体失败(缺多镜像回退/不可测) |
+| [BUG-279](bugs/BUG-279-jimaku-dialog-list-no-scroll.md) | ✅ | ✅ | 移动端 Jimaku 自动获取字幕对话框候选列表太矮且吞滚动 |
+| [BUG-278](bugs/BUG-278-audiobook-exit-not-stopped.md) | ✅ | ✅ | 退出阅读后有声书仍在播放（dispose 未先 stop 播放器） |
+| [BUG-277](bugs/BUG-277-updatechecker-mirror-fallback.md) | ✅ | ✅ | 更新检查端点单点不可达就整体失败(缺多镜像回退/不可测) |
+| [BUG-276](bugs/BUG-276-delete-disk-not-reclaimed.md) | ✅ | ✅ | 删除书/视频只删DB行不回收磁盘(TODO-365·13GB泄漏) |
 | [BUG-275](bugs/BUG-275-bundled-ffmpeg-launch-fallback.md) | ✅ | ✅ | Bundled ffmpeg.exe invalid 时字幕枚举静默失败(TODO-336) |
 | [BUG-274](bugs/BUG-274-video-favorite-cross-episode.md) | ✅ | ✅ | 视频收藏句子面板跨集/跨视频污染（缺 bookKey 过滤） |
 | [BUG-273](bugs/BUG-273-multicue-mining-reader.md) | ✅ | ✅ | 查词窗口多句合一制卡(书籍/有声书·乙方案草稿累积) |

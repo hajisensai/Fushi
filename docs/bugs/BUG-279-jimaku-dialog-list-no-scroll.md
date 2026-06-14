@@ -1,4 +1,4 @@
-## BUG-276 · 移动端 Jimaku 自动获取字幕对话框候选列表太矮且吞滚动
+## BUG-279 · 移动端 Jimaku 自动获取字幕对话框候选列表太矮且吞滚动
 
 - **报告**：2026-06-15（用户：「手机的搜搜字幕，没办法滚动还是什么，高度太低了？滚动没反应。apikey配置完以后是不是可以缩小显示」）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/jimaku_subtitle_dialog.dart:164`（修复前的 `build()`）。

@@ -251,7 +251,7 @@ class AudiobookSession extends ChangeNotifier {
 
     if (controller != null) {
       controller.removeListener(_onControllerChanged);
-      // BUG-276/TODO-367：dispose 前必须真正 stop（释放 native 解码器止声），不能
+      // BUG-278/TODO-367：dispose 前必须真正 stop（释放 native 解码器止声），不能
       // 只 pause（pause 保留解码器，紧随的同步 dispose 又抢不过异步平台拆除，
       // Android 上表现为停止后仍在响）。stopPlayback 可 await 到平台切换 settle，
       // 也 force-flush 位置；之后 dispose 不再与异步平台切换竞争。

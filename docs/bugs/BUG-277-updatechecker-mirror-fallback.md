@@ -1,4 +1,4 @@
-## BUG-276 · 更新检查端点单点不可达就整体失败(缺多镜像回退/不可测)
+## BUG-277 · 更新检查端点单点不可达就整体失败(缺多镜像回退/不可测)
 - **报告**：2026-06-15（用户：日志 `[2026-06-14 18:41:08] UpdateChecker.httpGet ... 连不上 ghproxy.cc`，自动更新检查请求失败）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/utils/misc/update_checker.dart`：
   - 旧 `_httpGetString`（原 `update_checker.dart:225` 起）把「逐镜像尝试 → 任一成功即返回 → 全失败才放弃」这条**核心可达性逻辑**死死耦合在 `static private` 方法里，直接 `client.getUrl` 真实网络 IO，**无任何单测能注入/固定该回退行为**（TODO-319/348/224 簇此前只动了超时参数、日志摘要、镜像名，从没把回退逻辑抽成可测试单元——注释甚至引用一个根本不存在的 `_fetchWithFallback`，是重构遗留的谎注释）。

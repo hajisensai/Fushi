@@ -1284,7 +1284,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 真正停播（止声）：停掉主播放器与 clip 播放器并释放其 native 解码器，
   /// 再强制落库当前位置。供退出/停止会话路径在 [dispose] 之前 `await`。
   ///
-  /// 根因（BUG-276 / TODO-367）：会话停止路径 [AudiobookSession.stop] 此前是
+  /// 根因（BUG-278 / TODO-367）：会话停止路径 [AudiobookSession.stop] 此前是
   /// `await controller.pause(); controller.dispose();`。`pause()`（just_audio
   /// 语义「保留解码器以便快速恢复」）**不释放 native 资源**，紧随的
   /// `dispose()` 在 `ChangeNotifier` 同步签名里是 fire-and-forget（无法 await

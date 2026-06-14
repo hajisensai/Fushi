@@ -215,7 +215,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
     // 用 Dialog（而非 AlertDialog）：Dialog 把它的 child 约束到屏幕减去 inset 的有界高度，
     // 于是 Column(min) 拿到有界的高度天花板，候选列表的 Flexible 能正确分到剩余空间。
     // 旧 AlertDialog 不给 content 固定高度，Column.min 下 Flexible 拿到 0 → 列表被压成
-    // 0 高、看不见且吞滚动（BUG-276 根因）。
+    // 0 高、看不见且吞滚动（BUG-279 根因）。
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
@@ -300,7 +300,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
 ///
 /// 关键不变量：由外层（对话框里的 [Flexible]，其祖先 [Dialog] 已把整个对话框高度有界
 /// 化）给定有界高度，内部用普通可滚动 [ListView]（**非** `shrinkWrap`），从而在矮屏上
-/// 保持非 0 高度且能正常滚动（BUG-276）。
+/// 保持非 0 高度且能正常滚动（BUG-279）。
 class JimakuCandidateList extends StatelessWidget {
   const JimakuCandidateList({
     required this.candidates,

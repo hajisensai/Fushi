@@ -15,14 +15,14 @@ const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
 
 /// 单个候选 URL 的尝试超时。`HttpClient.connectionTimeout` 只管「建立 TCP 连接」
 /// 那一跳；某个镜像 TCP 连上却挂起不返回时，需要这个整体超时把它判死、回退到下一个，
-/// 否则一个坏镜像就能拖垮整轮检查（BUG-276）。
+/// 否则一个坏镜像就能拖垮整轮检查（BUG-277）。
 const Duration _kPerAttemptTimeout = Duration(seconds: 15);
 
 /// GitHub 直连不通时（GFW 机器，且 app 运行时**不走**本机命令行代理）套在 GitHub
 /// API / 直链前的加速代理前缀。逐个尝试（见 [fetchFirstSuccessfulBody]），任一成功即
 /// 返回，全部失败才优雅放弃。这些公共镜像会不定期轮换/下线（`mirror.ghproxy.com` 已
 /// 下线移除），具体哪个通取决于用户机器与时段，故多备几个——用户日志里连不上的
-/// `ghproxy.cc` 也保留为多候选之一（BUG-276：单点不可达不该让整轮检查失败）。
+/// `ghproxy.cc` 也保留为多候选之一（BUG-277：单点不可达不该让整轮检查失败）。
 ///
 /// 与 `video_shader_downloader.dart` 的 `_kGhProxyPrefixes`（BUG-319/271）同一范式。
 @visibleForTesting
@@ -49,7 +49,7 @@ List<String> updateCheckUrls(String url) {
 }
 
 /// **可注入核心**：按顺序对 [urls] 逐个调用 [fetch]，返回**第一个成功**（非 null）的
-/// 响应体；全部失败才返回 null。这是更新检查可达性的真正逻辑（BUG-276 把它从原
+/// 响应体；全部失败才返回 null。这是更新检查可达性的真正逻辑（BUG-277 把它从原
 /// `_httpGetString` 的真实网络 IO 里抽出来，使「首镜像失败自动试下一个 / 任一成功即
 /// 成功 / 全失败才失败 / 日志记录正确」可被单测固定）。
 ///
@@ -223,7 +223,7 @@ class UpdateChecker {
     }
   }
 
-  /// 多镜像回退的更新检查请求（BUG-276）。生成「直连 + 各 gh 代理前缀」候选列表
+  /// 多镜像回退的更新检查请求（BUG-277）。生成「直连 + 各 gh 代理前缀」候选列表
   /// （[updateCheckUrls]），交给可注入核心 [fetchFirstSuccessfulBody] 逐个尝试：任一
   /// 返回 HTTP 200 即整体成功，单点不可达/超时自动回退下一个，全失败才返回 null。
   /// 每个候选带 [_kPerAttemptTimeout] 整体超时，避免坏镜像拖垮整轮检查。
@@ -400,7 +400,7 @@ class UpdateChecker {
       client.idleTimeout = const Duration(seconds: 60);
 
       // 下载与检查共用同一组 GitHub 镜像候选（updateCheckUrls）：直连优先、各 gh
-      // 代理前缀兜底。下载的写盘/安装逻辑不变，只是镜像清单与检查保持同步（BUG-276）。
+      // 代理前缀兜底。下载的写盘/安装逻辑不变，只是镜像清单与检查保持同步（BUG-277）。
       final List<String> urls = updateCheckUrls(url);
       var downloaded = false;
       for (final u in urls) {
