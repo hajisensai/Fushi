@@ -110,6 +110,15 @@ class ReaderSettings {
   Future<void> setLyricsFontSize(double v) =>
       _set<double>('lyrics_font_size', v);
 
+  /// TODO-368: 歌词字幕文字色，独立于主题色单独可调（参照视频字幕色）。存储为 ARGB
+  /// int；`0`（完全透明，作为正文色永远无效）作哨兵 = 「未设置 / 跟随主题」，保持
+  /// 向后兼容：未设过的用户落 0 → 消费端回退到主题文字色，与历史行为一致。
+  int get lyricsTextColor => _get<int>('lyrics_text_color', 0);
+  Future<void> setLyricsTextColor(int v) => _set<int>('lyrics_text_color', v);
+
+  /// 清除自定义歌词色 → 回退跟随主题（哨兵 0）。
+  Future<void> clearLyricsTextColor() => _set<int>('lyrics_text_color', 0);
+
   double get lyricsMarginTop => _get<double>('lyrics_margin_top', 0);
   Future<void> setLyricsMarginTop(double v) =>
       _set<double>('lyrics_margin_top', v);

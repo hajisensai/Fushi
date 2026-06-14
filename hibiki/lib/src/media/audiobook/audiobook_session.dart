@@ -595,6 +595,16 @@ class FloatingLyricStyle {
   final int buttonBgColor;
   final int highlightColor;
   final int activeColor;
+
+  /// TODO-370: 按百分比（0..100）缩放某个 ARGB 颜色的 alpha 通道。100 = 原 alpha 不变
+  /// （保持各表面历史观感），调小变更透明。两个悬浮字幕样式构造点（app 级 / reader 级）
+  /// 共用此唯一实现，保证「同一个透明度设置，两处一致」。
+  static int scaleAlpha(int argb, int opacityPercent) {
+    final int pct = opacityPercent.clamp(0, 100);
+    final int baseAlpha = (argb >> 24) & 0xFF;
+    final int newAlpha = (baseAlpha * pct / 100).round().clamp(0, 255);
+    return (newAlpha << 24) | (argb & 0x00FFFFFF);
+  }
 }
 
 /// audioHandler 控制流集合（lock-screen / 通知按钮 → 控制器）。由 AppModel 的

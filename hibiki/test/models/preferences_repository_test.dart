@@ -604,4 +604,35 @@ void main() {
       expect(repo2.floatingLyricClickLookup, false);
     });
   });
+
+  // TODO-370: 悬浮字幕透明度（文字 / 按钮底色），0..100%，默认 100=保持现观感。
+  group('floatingLyric opacity (TODO-370)', () {
+    test('text and button-bg opacity default to 100 (unchanged look)', () {
+      expect(repo.floatingLyricTextOpacity, 100);
+      expect(repo.floatingLyricButtonBgOpacity, 100);
+    });
+
+    test('clamps out-of-range values into 0..100', () async {
+      await repo.setFloatingLyricTextOpacity(140);
+      expect(repo.floatingLyricTextOpacity, 100);
+      await repo.setFloatingLyricTextOpacity(-20);
+      expect(repo.floatingLyricTextOpacity, 0);
+
+      await repo.setFloatingLyricButtonBgOpacity(999);
+      expect(repo.floatingLyricButtonBgOpacity, 100);
+      await repo.setFloatingLyricButtonBgOpacity(-1);
+      expect(repo.floatingLyricButtonBgOpacity, 0);
+    });
+
+    test('round-trip through DB', () async {
+      await repo.setFloatingLyricTextOpacity(60);
+      await repo.setFloatingLyricButtonBgOpacity(40);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.floatingLyricTextOpacity, 60);
+      expect(repo2.floatingLyricButtonBgOpacity, 40);
+    });
+  });
 }

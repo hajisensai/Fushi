@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -1389,6 +1390,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             widget.onStyleChanged?.call();
           },
         ),
+        _buildLyricsTextColorRow(context),
         _numberStepper(
           label: t.margin_top,
           value: _src.lyricsMarginTop,
@@ -1442,6 +1444,71 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           },
         ),
       ],
+    );
+  }
+
+  /// TODO-368: 歌词字幕文字色独立色选。开关 = 是否用自定义色（关 = 跟随主题，与历史
+  /// 行为一致，哨兵 0）；开时下方展开内联取色器。改色即写穿 source + 触发 live 重绘。
+  Widget _buildLyricsTextColorRow(BuildContext context) {
+    final int stored = _src.lyricsTextColor;
+    final bool custom = stored != 0;
+    final Color themeFallback = Theme.of(context).colorScheme.onSurface;
+    final Color current = custom ? Color(stored) : themeFallback;
+    return AdaptiveSettingsSwitchActionRow(
+      title: t.lyrics_text_color,
+      subtitle: t.lyrics_text_color_hint,
+      value: custom,
+      onChanged: (bool enabled) {
+        if (enabled) {
+          // 开启自定义：种一个不透明的初始色（用当前主题文字色），避免落哨兵 0。
+          final Color seed =
+              Color(0xFF000000 | (themeFallback.value & 0xFFFFFF));
+          _src.setLyricsTextColor(seed.value);
+        } else {
+          _src.clearLyricsTextColor();
+        }
+        setState(() {});
+        widget.onStyleChanged?.call();
+      },
+      body: Row(
+        children: [
+          HibikiColorSwatch(
+            color: current,
+            size: 20,
+            shape: HibikiColorSwatchShape.dot,
+            borderColor: Theme.of(context).dividerColor,
+          ),
+        ],
+      ),
+      panel: custom
+          ? LayoutBuilder(
+              builder:
+                  (BuildContext layoutContext, BoxConstraints constraints) {
+                final double pickerWidth = constraints.maxWidth.clamp(
+                  0.0,
+                  MediaQuery.of(layoutContext).size.width - 64,
+                );
+                return ColorPicker(
+                  pickerColor: current,
+                  onColorChanged: (Color c) {
+                    // 强制不透明（文字色透明无意义；也保证非哨兵 0）。
+                    final Color opaque =
+                        Color(0xFF000000 | (c.value & 0xFFFFFF));
+                    _src.setLyricsTextColor(opaque.value);
+                    setState(() {});
+                    widget.onStyleChanged?.call();
+                  },
+                  portraitOnly: true,
+                  colorPickerWidth: pickerWidth,
+                  pickerAreaHeightPercent: 0.5,
+                  enableAlpha: false,
+                  displayThumbColor: true,
+                  hexInputBar: true,
+                  labelTypes: const <ColorLabelType>[],
+                );
+              },
+            )
+          : null,
     );
   }
 

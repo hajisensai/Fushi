@@ -713,6 +713,22 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// TODO-368: 歌词字幕文字色（独立于主题色）。ARGB int；`0` = 未设置（跟随主题）。
+  int get lyricsTextColor =>
+      readerSettings?.lyricsTextColor ??
+      getPreference<int>(key: 'lyrics_text_color', defaultValue: 0);
+  Future<void> setLyricsTextColor(int v) async {
+    await (readerSettings?.setLyricsTextColor(v) ??
+        setPreference<int>(key: 'lyrics_text_color', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  Future<void> clearLyricsTextColor() async {
+    await (readerSettings?.clearLyricsTextColor() ??
+        setPreference<int>(key: 'lyrics_text_color', value: 0));
+    onSettingsChangedLive?.call();
+  }
+
   double get lyricsMarginTop =>
       readerSettings?.lyricsMarginTop ??
       getPreference<double>(key: 'lyrics_margin_top', defaultValue: 0);

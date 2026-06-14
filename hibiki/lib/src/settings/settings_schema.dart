@@ -1864,6 +1864,49 @@ SettingsDestination _listeningDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-370: 悬浮字幕「文字透明度」+「按钮底色透明度」自定义（0..100%，
+          // 100=保持现观感）。与字号一样仅 Android/Windows 可见（有原生悬浮窗后端）。
+          SettingsStepperItem(
+            id: 'listening.floating_lyric_text_opacity',
+            title: t.floating_lyric_text_opacity,
+            subtitle: t.floating_lyric_text_opacity_hint,
+            icon: Icons.opacity_outlined,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            min: 0,
+            max: 100,
+            step: 5,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.floatingLyricTextOpacity.toDouble(),
+            format: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setFloatingLyricTextOpacity(value.round());
+              await settingsContext.appModel.audiobookSession
+                  .applyFloatingLyricStyle();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsStepperItem(
+            id: 'listening.floating_lyric_button_bg_opacity',
+            title: t.floating_lyric_button_bg_opacity,
+            subtitle: t.floating_lyric_button_bg_opacity_hint,
+            icon: Icons.smart_button_outlined,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            min: 0,
+            max: 100,
+            step: 5,
+            value: (SettingsContext settingsContext) => settingsContext
+                .appModel.floatingLyricButtonBgOpacity
+                .toDouble(),
+            format: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setFloatingLyricButtonBgOpacity(value.round());
+              await settingsContext.appModel.audiobookSession
+                  .applyFloatingLyricStyle();
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'listening.floating_lyric_click_lookup',
             title: t.floating_lyric_click_lookup,
