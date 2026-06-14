@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 
-/// BUG-298 守卫：备份导出在 finally 里递归删临时目录时，Windows 上 sqlite/AV
+/// BUG-272 守卫：备份导出在 finally 里递归删临时目录时，Windows 上 sqlite/AV
 /// 句柄的瞬时占用会把 delete 打成 ERROR_DIR_NOT_EMPTY(145) /
 /// ERROR_SHARING_VIOLATION(32) / ERROR_ACCESS_DENIED(5)。
 /// [BackupService.deleteDirectoryWithRetry] 必须对这类瞬时错误有界重试（用尽后
