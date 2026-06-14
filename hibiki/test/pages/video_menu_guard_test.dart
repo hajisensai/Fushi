@@ -18,27 +18,48 @@ void main() {
   ).readAsStringSync();
 
   group('菜单重入守卫（双开）', () {
-    test('5 个菜单路径都有对应的 _videoSheetOpen 守卫', () {
-      // 4 个底部 sheet（剧集/轨道/倍速/字幕源）+ 1 个设置面板（master-detail
-      // VideoQuickSettingsSheet，走 dialog 不再是 bottom sheet）= 5 个菜单路径。
-      final int sheets =
-          RegExp(r'showModalBottomSheet<void>\(').allMatches(src).length;
-      expect(sheets, greaterThanOrEqualTo(4), reason: '应有 4 个底部 sheet');
-      expect(src, contains('VideoQuickSettingsSheet('),
-          reason: '设置面板走 master-detail VideoQuickSettingsSheet（第 5 个菜单路径）');
-      const int menuPaths = 5;
-      // 进入守卫：开菜单前置真。
+    // TODO-274 重入守卫双机制：剧集 / 音量两菜单仍走 [showModalBottomSheet] +
+    // [_videoSheetOpen]（开置 true、whenComplete 复位 false）；倍速 / 音轨 / 字幕源 / 设置
+    // 四菜单迁到右侧 push-aside side panel（[_showVideoSidePanel]），靠单个
+    // [_videoSidePanel] ValueNotifier 做面板间互斥（一次只一个），且 [_showVideoSidePanel]
+    // 顶部也有 `if (_videoSheetOpen) return;` 门控，不会与 modal sheet 叠开。
+    test('所有菜单入口都有 _videoSheetOpen 重入门控（modal + side panel）', () {
+      // 2 个 modal sheet（剧集 / 音量）+ side panel 调度入口 [_showVideoSidePanel] +
+      // 字幕源入口 [_showSubtitleSourceMenu] 都要先过 `if (_videoSheetOpen) return;`。
       final int enter =
           RegExp(r'if \(_videoSheetOpen\) return;').allMatches(src).length;
+      expect(enter, greaterThanOrEqualTo(4),
+          reason: '剧集 / 音量 / side panel 调度 / 字幕源入口都要 _videoSheetOpen 门控');
+
+      // 2 个 modal sheet 仍在（其余菜单已迁 side panel），且 modal 路径置 true。
+      final int sheets =
+          RegExp(r'showModalBottomSheet<void>\(').allMatches(src).length;
+      expect(sheets, greaterThanOrEqualTo(2),
+          reason: '剧集 / 音量仍走 modal bottom sheet');
       final int setTrue =
           RegExp(r'_videoSheetOpen = true;').allMatches(src).length;
-      expect(enter, greaterThanOrEqualTo(menuPaths),
-          reason: '每个菜单开启前都要 if (_videoSheetOpen) return; 守卫');
-      expect(setTrue, greaterThanOrEqualTo(menuPaths),
-          reason: '每个菜单开启前都要置 _videoSheetOpen = true');
+      expect(setTrue, greaterThanOrEqualTo(2),
+          reason: '每个 modal sheet 开启前都要置 _videoSheetOpen = true');
+
+      // 4 个 side panel 菜单经统一调度，靠单 ValueNotifier 互斥（一次只一个）。
+      expect(src, contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
+          reason: '倍速菜单走 side panel');
+      expect(
+          src.contains('_showVideoSidePanel(_VideoSidePanelKind.audioTracks)'),
+          isTrue,
+          reason: '音轨菜单走 side panel');
+      expect(
+          src.contains(
+              '_showVideoSidePanel(_VideoSidePanelKind.subtitleSources)'),
+          isTrue,
+          reason: '字幕源菜单走 side panel');
+      expect(src, contains('_showVideoSidePanel(_VideoSidePanelKind.settings)'),
+          reason: '设置面板走 side panel（master-detail VideoQuickSettingsSheet）');
+      expect(src, contains('VideoQuickSettingsSheet('),
+          reason: '设置面板内容仍是 master-detail VideoQuickSettingsSheet');
     });
 
-    test('sheet 关闭后复位 _videoSheetOpen=false（whenComplete）', () {
+    test('modal sheet 关闭后复位 _videoSheetOpen=false（whenComplete）', () {
       expect(src, contains('_videoSheetOpen = false;'),
           reason: 'whenComplete / 异步早返回必须复位守卫，否则守卫卡死再也开不了菜单');
       // whenComplete 不再裸调 _refocusVideo（已并入复位回调）。

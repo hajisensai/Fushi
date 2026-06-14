@@ -37,9 +37,16 @@ void main() {
     );
   });
 
-  test('遮罩用不可关的 dialog（barrierDismissible:false + 进度圈）', () {
-    expect(src.contains('barrierDismissible: false'), isTrue);
+  test('抽取期间面板不可交互（行 disabled + 进度圈），等价旧不可关遮罩', () {
+    // TODO-274：加载从独立 barrier dialog 迁到字幕源 side panel —— 抽取期间靠
+    // [_subtitleLoadingShown] 标记把面板所有行 `enabled: !_subtitleLoadingShown`
+    // 置灰（点不动 = 不可关/不可误触），并显示进度圈，与旧 barrierDismissible:false
+    // 遮罩同义。
+    expect(src.contains('enabled: !_subtitleLoadingShown'), isTrue,
+        reason: '抽取期间面板行必须 disabled，避免中途误触切别的源');
     expect(src.contains('CircularProgressIndicator'), isTrue);
+    expect(src.contains('LinearProgressIndicator'), isTrue,
+        reason: '面板抽取期显示进度条');
   });
 
   test('_selectSubtitleSource 在抽取前后包裹遮罩（show…try/finally hide）', () {

@@ -127,7 +127,7 @@ void main() {
     final String viewer = _functionSource(
       source,
       'void _openImageViewer(String imgUrl)',
-      '  // ── Audio Features Init',
+      'void _toggleChrome(',
     );
 
     expect(viewer, contains('_readerImageFileForUrl(imgUrl)'));

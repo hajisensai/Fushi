@@ -37,7 +37,7 @@ void main() {
 
     final String mute = region(
       'Future<void> _toggleMute() async {',
-      'Future<void> _setSpeed(double speed) async {',
+      'void _showVolumeOsd(double volume) {',
     );
     expect(mute.contains('_showVolumeOsd('), isTrue,
         reason: 'Mute/unmute should use the same volume visual language.');

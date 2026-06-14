@@ -616,6 +616,20 @@ void main() {
           'Reader quick settings and audiobook chrome migrate under Task 8.',
       'lib/src/media/audiobook/audiobook_bridge.dart':
           'Serialized audiobook bridge data includes reader font size.',
+      'lib/src/media/audiobook/audiobook_session.dart':
+          'Audiobook session forwards the user-configurable floating-lyric font '
+              'size to the platform overlay channel (content/data passed to '
+              'FloatingLyricChannel.show/updateStyle), not page chrome — same '
+              'rationale as audiobook_bridge.',
+      'lib/src/media/audiobook/now_listening_mini_bar.dart':
+          'Now-listening media mini-bar: surface role + book-cover thumbnail '
+              'radius are media-subsystem content chrome (same category as the '
+              'allowlisted reader-shelf book covers / media_item_dialog cover '
+              'hero), driven off the active ColorScheme.',
+      'lib/src/models/app_model.dart':
+          'AppModel builds the FloatingLyricStyle data object (overlay font '
+              'size is user content passed to the platform overlay), not an '
+              'ordinary page-chrome TextStyle.',
       'lib/src/media/video/video_subtitle_overlay.dart':
           'Video subtitle overlay renders caption content (fixed '
               'white-on-black caption radius/size), not ordinary page chrome.',
@@ -2197,7 +2211,7 @@ void main() {
     final String popupAudio = _functionSource(
       source,
       'Widget? buildPopupAudioControls()',
-      '  Audiobook _audiobookFromRow',
+      '  // ── Helpers ',
     );
 
     expect(popupAudio, contains('HibikiDesignTokens.of(context)'));

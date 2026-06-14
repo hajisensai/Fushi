@@ -2,10 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-134/147 follow-up source guard: mobile video controls must not depend
-/// on a top-right overflow menu. Ten-second seek buttons are gated by available
-/// width, not by platform, so narrow desktop windows and narrow phones compact
-/// the same way while wide controls keep the buttons.
+/// BUG-134/147 follow-up source guard（随 TODO-274 + BUG-248B + BUG-257 刷新）。
+///
+/// 不变式：
+/// - 移动视频 controls 顶栏直接暴露动作（字幕/音轨/截图），不依赖右上角「⋮」溢出菜单；
+///   设置（tune）已移出顶栏（BUG-248B），改由可配置右侧 rail 承载（与桌面一致）。
+/// - 底栏 ±10s seek 按钮按可用宽度门控（窄屏收起），桌面/移动**共用**同一个
+///   [_centeredBottomControlBar]（BUG-257：底栏从两套主题各写一遍合并为单一 helper，
+///   按 `desktop:` 参数择按钮组件），故进度/播放/seek 各图标只出现一次。
 void main() {
   final String src =
       File('lib/src/pages/implementations/video_hibiki_page.dart')
@@ -20,9 +24,11 @@ void main() {
   }
 
   test('mobile top bar exposes actions directly without a more menu', () {
+    // TODO-274：themes 之后第一个成员是 _customBottomControlButtons，用它作为
+    // _mobileControlsTheme 方法体下界（旧 _showTrackMenu 已改名且前移）。
     final String body = region(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
-      'void _showTrackMenu(',
+      'List<Widget> _customBottomControlButtons(',
     );
     final String topBar = topButtonBarRegion(body);
     expect(topBar.contains('Icons.more_vert'), isFalse,
@@ -36,24 +42,24 @@ void main() {
         reason: 'subtitle source must be directly tappable in the top bar');
     expect(topBar.contains('Icons.audiotrack'), isTrue,
         reason: 'audio track must be directly tappable in the top bar');
-    expect(topBar.contains('Icons.tune'), isTrue,
-        reason: 'settings must be directly tappable in the top bar');
     expect(topBar.contains('Icons.photo_camera_outlined'), isTrue,
         reason: 'screenshot action must remain directly tappable');
+    // BUG-248B：设置（tune）已从顶栏移出，改由可配置右侧 rail 承载（与桌面一致），
+    // 故顶栏不再硬编码 tune 按钮；设置仍经数据化按钮模型可达。
+    expect(topBar.contains('Icons.tune'), isFalse,
+        reason:
+            'settings moved off the top bar to the configurable right rail');
+    expect(src.contains('case VideoControlButton.settings:'), isTrue,
+        reason:
+            'settings reachable via configurable VideoControlButton.settings');
     expect(topBar.contains('Icons.speed'), isFalse,
         reason:
             'speed remains reachable from settings without crowding top bar');
   });
 
-  test('video bottom bars are compact by available width, not platform', () {
-    final String desktopBody = region(
-      'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
-      'MaterialVideoControlsThemeData _mobileControlsTheme(',
-    );
-    final String mobileBody = region(
-      'MaterialVideoControlsThemeData _mobileControlsTheme(',
-      'void _showTrackMenu(',
-    );
+  test('video bottom bar is one shared width-gated helper (BUG-257)', () {
+    // BUG-257：桌面 + 移动底栏合并为单一 [_centeredBottomControlBar]（按 desktop: 参数
+    // 择 Material*/MaterialDesktop* 组件），故各按钮只出现一次，不再 per-theme 重复。
     expect(
       src.contains('bool _hasRoomyVideoBottomBar() =>'),
       isTrue,
@@ -61,42 +67,47 @@ void main() {
     );
     expect(src.contains('MediaQuery.of(context).size.width >= 600'), isTrue,
         reason: 'bottom bar should branch by available width');
+    // 两套 controls 主题 bottomButtonBar 都委托同一个共享 helper。
+    expect(
+      'child: _centeredBottomControlBar('.allMatches(src).length,
+      2,
+      reason:
+          'both desktop and mobile bottomButtonBar delegate the shared helper',
+    );
 
-    expectBottomBarUsesWidthGate(desktopBody, 'desktop');
-    expectBottomBarUsesWidthGate(mobileBody, 'mobile');
+    final String bar = region(
+      'Widget _centeredBottomControlBar(',
+      'Widget _seekLabelButton(',
+    );
+    expect(
+      bar.contains('final bool roomyBottomBar = _hasRoomyVideoBottomBar();'),
+      isTrue,
+      reason: 'shared bottom bar should use the shared width predicate',
+    );
+    expect(bar.contains('if (roomyBottomBar)'), isTrue,
+        reason:
+            'shared bottom bar should hide 10s buttons only on narrow widths');
+    expect(bar.contains('PositionIndicator'), isTrue);
+    expect(bar.contains('PlayOrPauseButton'), isTrue);
+    expect(bar.contains('_buildVolumeButton(controller'), isTrue,
+        reason: 'bottom bar should expose a volume adjustment entry');
+    expect(bar.contains('_buildFullscreenButton('), isTrue,
+        reason: 'bottom bar should use Hibiki neutralized fullscreen');
+    // TODO-067: ±10s 按钮用左右对称的 fast_rewind/forward（取代显歪的 replay_10/forward_10），
+    // 守卫意图仍是「宽屏保留 ±N 秒 seek 按钮」。BUG-257 合并后各只出现一次。
+    expect(bar.contains('Icons.fast_rewind_rounded'), isTrue,
+        reason: 'shared bottom bar keeps -10s when width allows');
+    expect(bar.contains('Icons.fast_forward_rounded'), isTrue,
+        reason: 'shared bottom bar keeps +10s when width allows');
+    expect(bar.contains('Icons.replay_10'), isFalse,
+        reason: 'lopsided replay_10 must stay replaced (TODO-067)');
+    expect(bar.contains('Icons.forward_10'), isFalse,
+        reason: 'lopsided forward_10 must stay replaced (TODO-067)');
+    expect(bar.contains('Icons.skip_previous'), isTrue,
+        reason: 'shared bottom bar keeps previous subtitle cue');
+    expect(bar.contains('Icons.skip_next'), isTrue,
+        reason: 'shared bottom bar keeps next subtitle cue');
   });
-}
-
-void expectBottomBarUsesWidthGate(String methodBody, String label) {
-  final String bottomBar = bottomButtonBarRegion(methodBody);
-  expect(
-    methodBody
-        .contains('final bool roomyBottomBar = _hasRoomyVideoBottomBar();'),
-    isTrue,
-    reason: '$label controls should use the shared width predicate',
-  );
-  expect(bottomBar.contains('if (roomyBottomBar)'), isTrue,
-      reason: '$label controls should hide 10s buttons only on narrow widths');
-  expect(bottomBar.contains('PositionIndicator'), isTrue);
-  expect(bottomBar.contains('PlayOrPauseButton'), isTrue);
-  expect(bottomBar.contains('_buildVolumeButton(controller'), isTrue,
-      reason: '$label bottom bar should expose a volume adjustment entry');
-  expect(bottomBar.contains('_buildFullscreenButton('), isTrue,
-      reason: '$label bottom bar should use Hibiki neutralized fullscreen');
-  // TODO-067: ±10s 按钮换成左右对称、平行的 fast_rewind/forward 图标(取代显歪的
-  // replay_10/forward_10),功能不变。守卫意图仍是「宽屏保留 ±N 秒 seek 按钮」。
-  expect(bottomBar.contains('Icons.fast_rewind_rounded'), isTrue,
-      reason: '$label controls should keep -10s when width allows');
-  expect(bottomBar.contains('Icons.fast_forward_rounded'), isTrue,
-      reason: '$label controls should keep +10s when width allows');
-  expect(bottomBar.contains('Icons.replay_10'), isFalse,
-      reason: 'lopsided replay_10 must stay replaced (TODO-067)');
-  expect(bottomBar.contains('Icons.forward_10'), isFalse,
-      reason: 'lopsided forward_10 must stay replaced (TODO-067)');
-  expect(bottomBar.contains('Icons.skip_previous'), isTrue,
-      reason: '$label controls should keep previous subtitle cue');
-  expect(bottomBar.contains('Icons.skip_next'), isTrue,
-      reason: '$label controls should keep next subtitle cue');
 }
 
 String topButtonBarRegion(String methodBody) {
@@ -105,12 +116,4 @@ String topButtonBarRegion(String methodBody) {
   expect(top, greaterThanOrEqualTo(0), reason: 'missing topButtonBar');
   expect(bottom, greaterThan(top), reason: 'missing bottomButtonBar');
   return methodBody.substring(top, bottom);
-}
-
-String bottomButtonBarRegion(String methodBody) {
-  final int bottom = methodBody.indexOf('bottomButtonBar:');
-  final int end = methodBody.indexOf('],', bottom);
-  expect(bottom, greaterThanOrEqualTo(0), reason: 'missing bottomButtonBar');
-  expect(end, greaterThan(bottom), reason: 'missing bottomButtonBar end');
-  return methodBody.substring(bottom, end);
 }

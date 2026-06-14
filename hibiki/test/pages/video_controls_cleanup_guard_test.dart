@@ -2,26 +2,34 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-127 视频控制条清理（4 子项）源码守卫。
+/// TODO-127 视频控制条清理源码守卫（随 TODO-274 控制条数据化重构刷新）。
 ///
-/// media_kit 跑不了 headless，桌面/移动 controls 主题与 bottom sheet 都难在 widget
-/// 测试里真实驱动，故把不变量锁在 `video_hibiki_page.dart` 的源码结构上：
+/// media_kit 跑不了 headless，桌面/移动 controls 主题与菜单都难在 widget 测试里真实
+/// 驱动，故把不变量锁在 `video_hibiki_page.dart` 的源码结构上：
 /// ① 控制条不再放着色器对比按钮（C 快捷键 + 右键菜单 + `_toggleShaderCompare` 保留）。
-/// ② 倍速 / 音轨字幕轨 bottom sheet 可滚动（isScrollControlled + maxHeight 约束）。
+/// ② 倍速 / 音轨 / 字幕源菜单可滚动——TODO-274 后这些菜单从 bottom sheet 迁到右侧
+///    push-aside **side panel**（`_VideoSidePanelKind`），面板内容用可滚动
+///    `ListView.builder`（不再裸 Column 堆 ListTile，否则长档位列表裁底）。
 /// ③ 控制条不再放倍速按钮（`_showSpeedMenu` 方法保留——右键菜单仍引用）。
-/// ④ 字幕列表按钮移到 topButtonBar 倒数第二（设置 tune 按钮左边），桌面 + 移动一致。
+///
+/// 注：旧 ④「字幕列表按钮在 topButtonBar 倒数第二」已随 BUG-248B / TODO-274 作废——
+/// 设置（tune）与字幕列表按钮都已移出 topButtonBar，改由可配置的右侧 rail / 侧栏
+/// （`VideoControlButton` 数据模型 + `_activateVideoControlButton`）承载，topButtonBar
+/// 不再硬编码这两枚按钮，故该结构断言已删（详见 video_mobile_controls_static_test）。
 void main() {
   final String src =
       File('lib/src/pages/implementations/video_hibiki_page.dart')
           .readAsStringSync();
 
-  /// 桌面 + 移动两套 controls 主题方法体（含两条 topButtonBar）。
+  /// 桌面 + 移动两套 controls 主题方法体。TODO-274 把轨道菜单 `_showTrackMenu` 改名
+  /// `_showAudioTrackMenu` 且移到 themes 之前，故控制条段终点改用 themes 之后紧邻的
+  /// `_buildVideoControlButton`（仍夹住两套 controls 主题 + 其 topButtonBar/bottomBar）。
   String controlsThemes() {
     final int start = src.indexOf('MaterialDesktopVideoControlsThemeData');
-    final int end = src.indexOf('void _showTrackMenu(');
+    final int end = src.indexOf('Widget _buildVideoControlButton(');
     expect(start, greaterThanOrEqualTo(0), reason: '需有桌面 controls 主题起点');
     expect(end, greaterThan(start),
-        reason: '需有 _showTrackMenu 作为 controls 段终点');
+        reason: '需有 _buildVideoControlButton 作为 controls 段终点');
     return src.substring(start, end);
   }
 
@@ -52,36 +60,59 @@ void main() {
     });
   });
 
-  group('② 倍速 / 音轨字幕轨菜单可滚动', () {
-    String sheetBody(String startSig) {
+  group('② 倍速 / 音轨 / 字幕源菜单可滚动（TODO-274 迁到 side panel）', () {
+    String panelBody(String startSig) {
       final int start = src.indexOf(startSig);
       expect(start, greaterThanOrEqualTo(0), reason: '需有 $startSig');
-      final int end = src.indexOf('.whenComplete(', start);
-      expect(end, greaterThan(start), reason: '$startSig 缺 whenComplete 终点');
+      // 各 side-panel builder 方法体到下一个方法/builder 之前。用 `\n  Widget ` /
+      // `\n  Future` / `\n  void ` 作为下一成员边界的近似终点（取最近者）。
+      final List<int> ends = <int>[
+        src.indexOf('\n  Widget ', start + startSig.length),
+        src.indexOf('\n  Future', start + startSig.length),
+        src.indexOf('\n  void ', start + startSig.length),
+        src.indexOf('\n  List<', start + startSig.length),
+        src.indexOf('\n  double ', start + startSig.length),
+      ].where((int i) => i > start).toList();
+      final int end =
+          ends.isEmpty ? src.length : ends.reduce((a, b) => a < b ? a : b);
       return src.substring(start, end);
     }
 
-    test('_showSpeedMenu 用 isScrollControlled + maxHeight + 可滚动 ListView', () {
-      final String body = sheetBody('void _showSpeedMenu() {');
-      expect(body.contains('isScrollControlled: true'), isTrue,
-          reason: '倍速 sheet 须 isScrollControlled（否则半屏裁掉底部档位）');
-      expect(body.contains('maxHeight:'), isTrue,
-          reason: '倍速 sheet 须 maxHeight 约束');
+    test('倍速菜单是可滚动 ListView side panel（_buildSpeedSidePanel）', () {
+      expect(src.contains('void _showSpeedMenu() {'), isTrue,
+          reason: '_showSpeedMenu 方法保留（右键菜单仍引用）');
+      expect(src.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
+          isTrue,
+          reason: '倍速菜单走 side panel（不再 showModalBottomSheet 半屏裁底部档位）');
+      final String body = panelBody('Widget _buildSpeedSidePanel() {');
       expect(body.contains('ListView.builder('), isTrue,
-          reason: '倍速 sheet 须用可滚动 ListView（不再裸 Column 堆 ListTile）');
-      expect(body.contains('Column('), isFalse,
-          reason: '倍速 sheet 不应再用不可滚动的 Column 堆档位');
+          reason: '倍速面板须用可滚动 ListView.builder（长档位列表不裁底）');
     });
 
-    test('_showTrackMenu 同病同治：isScrollControlled + maxHeight + 可滚动 ListView',
-        () {
-      final String body = sheetBody('void _showTrackMenu(');
-      expect(body.contains('isScrollControlled: true'), isTrue,
-          reason: '音轨 / 字幕轨 sheet 须 isScrollControlled');
-      expect(body.contains('maxHeight:'), isTrue,
-          reason: '音轨 / 字幕轨 sheet 须 maxHeight 约束');
+    test('音轨菜单是可滚动 ListView side panel（_buildAudioTracksSidePanel）', () {
+      expect(src.contains('void _showAudioTrackMenu('), isTrue,
+          reason: '音轨菜单方法保留');
+      expect(
+          src.contains('_showVideoSidePanel(_VideoSidePanelKind.audioTracks)'),
+          isTrue,
+          reason: '音轨菜单走 side panel');
+      final String body =
+          panelBody('Widget _buildAudioTracksSidePanel(VideoPlayerController');
       expect(body.contains('ListView.builder('), isTrue,
-          reason: '音轨 / 字幕轨 sheet 须用可滚动 ListView.builder');
+          reason: '音轨面板须用可滚动 ListView.builder');
+    });
+
+    test('字幕源菜单是可滚动 side panel（_buildSubtitleSourcesSidePanel）', () {
+      expect(
+          src.contains(
+              '_showVideoSidePanel(_VideoSidePanelKind.subtitleSources)'),
+          isTrue,
+          reason: '字幕源菜单走 side panel');
+      final String body = panelBody(
+          'Widget _buildSubtitleSourcesSidePanel(VideoPlayerController');
+      expect(body.contains('ListView.builder(') || body.contains('ListView('),
+          isTrue,
+          reason: '字幕源面板须可滚动（条目多时不裁底）');
     });
   });
 
@@ -98,46 +129,6 @@ void main() {
               '_showSpeedMenu)'),
           isTrue,
           reason: '右键菜单倍速项仍走 _showSpeedMenu');
-    });
-  });
-
-  group('④ 字幕列表按钮在 topButtonBar 倒数第二（设置左边）', () {
-    /// 截某套主题的 topButtonBar 段（从 `topButtonBar:` 到 `bottomButtonBar:`）。
-    String topBar(String themeSig) {
-      final int themeIdx = src.indexOf(themeSig);
-      expect(themeIdx, greaterThanOrEqualTo(0), reason: '需有 $themeSig');
-      final int top = src.indexOf('topButtonBar:', themeIdx);
-      final int bottom = src.indexOf('bottomButtonBar:', top);
-      expect(top, greaterThanOrEqualTo(0), reason: '$themeSig 缺 topButtonBar');
-      expect(bottom, greaterThan(top), reason: '$themeSig 缺 bottomButtonBar');
-      return src.substring(top, bottom);
-    }
-
-    void expectJumpListSecondToLast(String themeSig) {
-      final String bar = topBar(themeSig);
-      // 字幕列表按钮以其 onPressed 锚定（图标 + onPressed 同属一枚按钮）。
-      const String jumpSig = 'onPressed: _toggleSubtitleJumpList,';
-      final int jumpIdx = bar.indexOf(jumpSig);
-      final int settingsIdx = bar.indexOf('onPressed: _showPlayerSettings');
-      expect(jumpIdx, greaterThanOrEqualTo(0), reason: '$themeSig 顶栏缺字幕列表按钮');
-      expect(settingsIdx, greaterThanOrEqualTo(0), reason: '$themeSig 顶栏缺设置按钮');
-      // 字幕列表必须排在设置之前（左边）。
-      expect(jumpIdx, lessThan(settingsIdx),
-          reason: '$themeSig 字幕列表按钮应在设置按钮左边');
-      // 倒数第二 = 字幕列表自身 onPressed 之后、设置按钮之前不再夹别的按钮的
-      // onPressed（紧挨设置左侧，二者之间只剩设置按钮构造器）。
-      final String between =
-          bar.substring(jumpIdx + jumpSig.length, settingsIdx);
-      expect(between.contains('onPressed:'), isFalse,
-          reason: '$themeSig 字幕列表与设置之间不应再夹其它按钮（须为倒数第二）');
-    }
-
-    test('桌面顶栏字幕列表是倒数第二（紧挨设置左侧）', () {
-      expectJumpListSecondToLast('MaterialDesktopVideoControlsThemeData');
-    });
-    test('移动顶栏字幕列表是倒数第二（紧挨设置左侧）', () {
-      expectJumpListSecondToLast(
-          'MaterialVideoControlsThemeData _mobileControlsTheme(');
     });
   });
 }
