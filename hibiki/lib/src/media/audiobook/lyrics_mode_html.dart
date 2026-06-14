@@ -192,16 +192,57 @@ window.__lyricsScrollToCue = function(index) {
 };
 
 // ── 点击：所有句子→查词 ──
-document.getElementById('lc').addEventListener('click', function(e) {
-  var el = e.target.closest('.cue');
-  if (!el) return;
+// BUG-276: 原来用 DOM 'click' 事件触发查词。click 只在「pointerdown→pointerup 全程
+// 未被宿主层认领」时由浏览器合成；当 Flutter 端弹窗可见时，整屏有一层 translucent
+// 手势屏障（base_source_page 的 Positioned.fill GestureDetector，onTap=关闭弹窗）会在
+// 手势竞技场里认领这次点按 → WebView 收不到合成 click → 查完一个词后再点下一句只关掉
+// 弹窗、不发新查词（无法连续查）。阅读器正文连续查词靠的是自绘的 touchend / pointerup
+// （passive:false）原始指针监听，绕过合成 click；这里对齐同一机制：用原始 pointerup /
+// touchend + 小位移门控（拖动滚动不误触发），使弹窗屏障在场时 WebView 仍能拿到点按并
+// 发起下一次查词。
+var _lyTapX = 0, _lyTapY = 0, _lyTapMoved = false, _lyHasTap = false;
+function _lyTapStart(x, y) {
+  _lyTapX = x; _lyTapY = y; _lyTapMoved = false; _lyHasTap = true;
+}
+function _lyTapMove(x, y) {
+  if (!_lyHasTap) return;
+  if (Math.abs(x - _lyTapX) > 12 || Math.abs(y - _lyTapY) > 12) _lyTapMoved = true;
+}
+function _lyTapEnd(x, y) {
+  if (!_lyHasTap) return;
+  _lyHasTap = false;
+  if (_lyTapMoved) return;
+  var el = document.elementFromPoint(x, y);
+  if (!el || !el.closest('.cue')) return;
   if (window.hoshiSelection) {
-    window.hoshiSelection.selectText(e.clientX, e.clientY, 400);
+    window.hoshiSelection.selectText(x, y, 400);
   }
-});
+}
+var _lc = document.getElementById('lc');
+_lc.addEventListener('touchstart', function(e) {
+  var t = e.touches[0]; _lyTapStart(t.clientX, t.clientY);
+}, {passive: true});
+_lc.addEventListener('touchmove', function(e) {
+  var t = e.touches[0]; _lyTapMove(t.clientX, t.clientY);
+}, {passive: true});
+_lc.addEventListener('touchend', function(e) {
+  var t = e.changedTouches[0]; _lyTapEnd(t.clientX, t.clientY);
+}, {passive: false});
+_lc.addEventListener('pointerdown', function(e) {
+  if (e.pointerType === 'touch' || e.button !== 0) return;
+  _lyTapStart(e.clientX, e.clientY);
+}, {passive: true});
+_lc.addEventListener('pointermove', function(e) {
+  if (e.pointerType === 'touch') return;
+  _lyTapMove(e.clientX, e.clientY);
+}, {passive: true});
+_lc.addEventListener('pointerup', function(e) {
+  if (e.pointerType === 'touch' || e.button !== 0) return;
+  _lyTapEnd(e.clientX, e.clientY);
+}, {passive: false});
 
 // ── 中键点句 → seek 到该 cue 并播放（标准 click 不触发中键，单列 mousedown）──
-document.getElementById('lc').addEventListener('mousedown', function(e) {
+_lc.addEventListener('mousedown', function(e) {
   if (e.button === 0) return;
   var el = e.target.closest('.cue');
   if (!el) return;

@@ -19,7 +19,7 @@ void main() {
       expect(html, contains('.hoshi-dict-highlight'));
     });
 
-    test('current cue click uses selection without disabling native selection',
+    test('current cue tap uses selection without disabling native selection',
         () {
       final String html = LyricsModeHtml.generate(
         cues: <AudioCue>[_cue(0)],
@@ -30,15 +30,41 @@ void main() {
         fontSize: 20,
       );
 
-      expect(
-        html,
-        contains('window.hoshiSelection.selectText(e.clientX, e.clientY, 400)'),
-      );
+      // BUG-276: tap-to-lookup now fires from the raw pointer-up/touch-end path
+      // (see _lyTapEnd) instead of the synthesized DOM 'click', so it still
+      // calls hoshiSelection.selectText.
+      expect(html, contains('window.hoshiSelection.selectText('));
       expect(html, isNot(contains('-webkit-user-select: none;')));
       expect(html, isNot(contains('user-select: none;')));
       expect(html, isNot(contains('var _longPressed')));
-      expect(html, isNot(contains("document.addEventListener('pointerdown'")));
-      expect(html, isNot(contains("document.addEventListener('touchstart'")));
+    });
+
+    // BUG-276: 歌词模式查完一个词后无法继续查下一句。原因是 #lc 用 DOM 'click'
+    // 触发查词，而 click 只在「pointerdown→up 全程未被宿主层认领」时由浏览器合成；
+    // 当 Flutter 端弹窗可见时整屏有一层 translucent 手势屏障会认领点按 → WebView 收
+    // 不到 click → 只关弹窗不发新查词。修复=对齐阅读器正文，用原始 pointerup/touchend
+    // （passive:false）+ 小位移门控触发查词，使屏障在场时 WebView 仍能拿到点按。
+    test('lyrics tap uses raw pointer/touch (not synthesized click) for lookup',
+        () {
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0), _cue(1)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+      );
+
+      // Raw pointer-up / touch-end listeners on #lc drive the lookup so the
+      // gesture reaches the WebView even when the Flutter dismiss barrier is up.
+      expect(html, contains("_lc.addEventListener('pointerup'"));
+      expect(html, contains("_lc.addEventListener('touchend'"));
+      // Lookup must NOT be wired to the synthesized 'click' event (the broken
+      // path the dismiss barrier swallowed).
+      expect(html, isNot(contains("addEventListener('click'")));
+      // touchend / pointerup register passive:false so preventing/handling the
+      // gesture is allowed (mirrors the reader content gesture handlers).
+      expect(html, contains('{passive: false}'));
     });
 
     // BUG-017: the active cue used `max-width: 92vw` while `.cue.current` was
