@@ -14,6 +14,8 @@ analyzer:
     - '**.freezed.dart'
     - '**.g.dart'
     - '**/generated_plugin_registrant.dart'
+    - '**/google_oauth_secret.dart'
+    - '**/log_upload_secret.dart'
   errors:
     deprecated_member_use: ignore
     library_private_types_in_public_api: ignore
