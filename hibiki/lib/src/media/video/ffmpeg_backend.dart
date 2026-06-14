@@ -27,7 +27,6 @@ typedef FfmpegProcessRunner = Future<FfmpegRunResult> Function(
 
 const int _windowsStatusInvalidImageFormatSigned = -1073741701;
 const int _windowsStatusInvalidImageFormatUnsigned = 0xC000007B;
-const int _windowsBadExeFormatErrorCode = 193;
 
 /// ffmpeg 执行底座抽象：所有 ffmpeg 调用经它，与「系统 CLI / 捆绑库」实现解耦。
 ///
@@ -117,14 +116,6 @@ bool _isWindowsInvalidImageFormatExitCode(
       returnCode == _windowsStatusInvalidImageFormatUnsigned;
 }
 
-bool _isWindowsBadExeFormatProcessException(
-  Object error, {
-  required bool isWindows,
-}) =>
-    isWindows &&
-    error is ProcessException &&
-    error.errorCode == _windowsBadExeFormatErrorCode;
-
 Future<FfmpegRunResult> _runCliFfmpeg({
   required String? override,
   required String? bundledPath,
@@ -154,12 +145,19 @@ Future<FfmpegRunResult> _runCliFfmpeg({
         'falling back to PATH ffmpeg: $bundled',
       );
     } on ProcessException catch (e) {
-      if (!_isWindowsBadExeFormatProcessException(e, isWindows: isWindows)) {
-        rethrow;
-      }
+      // bundledPath 已通过 `_bundledFfmpegPath()` 的 `existsSync()`：文件在磁盘上
+      // 却 `Process.start` 抛 ProcessException，意味着「找到了 bundled ffmpeg 但
+      // 它跑不起来」——损坏 / 架构不匹配 / 无执行权限。这种损坏在 Windows 上的
+      // errorCode 随损坏方式而异（实测 STATUS_INVALID_IMAGE_FORMAT 时退出码非 0，
+      // 而彻底无效的 PE 在启动期抛 ProcessException，errorCode 可能是
+      // ERROR_FILE_NOT_FOUND(2) / ERROR_BAD_EXE_FORMAT(193) /
+      // ERROR_EXE_MACHINE_TYPE_MISMATCH(216) 等）。既然 bundled 这个文件确实存在
+      // 却跑不起来，唯一正确处置就是回退到 PATH 上的 ffmpeg（app 拥有的安全网），
+      // 而不是死盯单一错误码——否则字幕枚举 / 制卡音频会把真失败吞成「无字幕」。
+      // 显式 HIBIKI_FFMPEG 覆盖走上面的分支、不进这里，旧契约不变（如实报错）。
       debugPrint(
-        '[hibiki-ffmpeg] bundled ffmpeg is not a valid Windows executable; '
-        'falling back to PATH ffmpeg: $bundled',
+        '[hibiki-ffmpeg] bundled ffmpeg failed to launch '
+        '(errorCode=${e.errorCode}); falling back to PATH ffmpeg: $bundled',
       );
     }
   }
