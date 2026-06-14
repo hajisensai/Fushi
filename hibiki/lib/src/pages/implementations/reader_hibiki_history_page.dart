@@ -19,6 +19,7 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
@@ -1109,11 +1110,38 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ),
     );
     if (confirmed != true || !mounted) return;
+    // ① 删 DB 行（含字幕 cue，事务内）。
     await _videoRepo.deleteVideoBook(book.bookUid);
+    // ② 回收 app 拥有的封面/字幕副本：以删后仍存的 DB 引用为保留集做孤儿 GC
+    //    （BUG-276：用户的 13GB 占用主要是这些从未回收的副本）。videoPath 是用户
+    //    原始文件、不在这两个目录里，绝不会被删。
+    await _reclaimVideoDiskSpace();
     if (mounted) {
       ref.invalidate(videoBookTagMapProvider);
       ref.invalidate(filteredVideoBookUidsProvider);
       _refreshVideoBooks();
+    }
+  }
+
+  /// 删除视频后回收磁盘：孤儿封面/字幕 GC + SQLite `VACUUM`（回收 freelist/WAL）。
+  /// 失败不应阻断删除流程（DB 行已删），只记日志。VACUUM 必须在事务外调用。
+  Future<void> _reclaimVideoDiskSpace() async {
+    try {
+      final ({Set<String> covers, Set<String> subtitles}) refs =
+          await _videoRepo.collectReferencedAssetPaths();
+      await VideoStorage.gcOrphans(
+        referencedCoverPaths: refs.covers,
+        referencedSubtitlePaths: refs.subtitles,
+      );
+    } catch (e) {
+      debugPrint('ReaderHistory: video asset GC failed: $e');
+    }
+    try {
+      await appModel.database.customStatement('VACUUM');
+      await appModel.database
+          .customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e) {
+      debugPrint('ReaderHistory: VACUUM after video delete failed: $e');
     }
   }
 

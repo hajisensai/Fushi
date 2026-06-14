@@ -1,0 +1,19 @@
+## BUG-276 · 删除书/视频只删DB行不回收磁盘(TODO-365·13GB泄漏)
+- **报告**：2026-06-15（用户：「存储数据删除的时候清理了吗，为什么手机上有13gb占用，一共就剩5本书，视频都清了」）
+- **真实性**：✅ 真 bug。删除视频/书时只删 DB 行，app 拥有的磁盘副本与 SQLite 空间从不回收。多处根因：
+  - 视频删除零磁盘清理：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart:1112` `_confirmDeleteVideoBook` → `hibiki/lib/src/media/video/video_book_repository.dart:50` `deleteVideoBook` → `packages/hibiki_core/lib/src/database/database.dart:881` `deleteVideoBook`（旧实现纯删 `videoBooks` 行）。
+  - 视频字幕 cue 行泄漏：`packages/hibiki_core/lib/src/database/database.dart:879` 注释「cue 在 audio_cues，按需另清」——`audio_cues.bookKey` 不是 FK（有声书/SRT/视频共用一个字符串 owner key），cascade 不覆盖，删视频时 cue 行永久残留。
+  - 视频封面副本泄漏：`hibiki/lib/src/media/video/video_import_dialog.dart:111-113` / `88-92` 写 `<appDocs>/video_covers/<sanitized uid>.jpg`，删除从不删。
+  - 下载/导入字幕副本泄漏：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:4929-4935`（手动导入/拖入拷贝）、`4724-4725`（Jimaku 下载 saveDir）写 `<appDocs>/video_subtitles/`，删除从不删。
+  - 无 VACUUM：删除后 SQLite 只把页放回 freelist、不归还磁盘，WAL 持续增长；`VACUUM` 仅 `hibiki/lib/src/sync/backup_service.dart:298/498/513` 出现，删除路径从未调用。
+  - 注：`videoPath` / 播放列表各集 path 是用户原始视频文件的绝对路径（导入只存路径、从不复制），删除时**绝不删**。
+- **[x] ① 已修复** — 提交 `<本轮提交哈希>`：
+  - `database.dart` `deleteVideoBook` 改为事务，同删 `videoBooks` 行 + `audio_cues` 里 `bookKey=uid` 的字幕 cue 行（修 DB 泄漏；标签映射仍走 FK cascade）。
+  - 新增 `hibiki/lib/src/media/video/video_storage.dart` `VideoStorage.gcOrphans`：以「当前 DB 仍引用的封面/字幕路径」为唯一真相，mark-and-sweep 清 `video_covers/` 与 `video_subtitles/` 里的孤儿文件（同时回收删除时遗留 + 历史 13GB 泄漏）；用 `p.canonicalize` 归一比对；只删常规文件、不递归、不碰目录外文件。
+  - `video_book_repository.dart` 新增 `collectReferencedAssetPaths()` 收集全库 `coverPath` / `subtitleSource` 引用集供 GC。
+  - `reader_hibiki_history_page.dart` `_confirmDeleteVideoBook` 删 DB 后调 `_reclaimVideoDiskSpace()`（孤儿 GC + `VACUUM` + `wal_checkpoint(TRUNCATE)`，均事务外，失败只记日志不阻断删除）。
+  - `reader_hibiki_source.dart` `deleteBook` 在已有磁盘清理后追加 `VACUUM` + `wal_checkpoint(TRUNCATE)`（书删除现有行为不回退，只补空间回收）。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/video_storage_test.dart`：孤儿 GC 删未引用文件、全清、路径归一、不碰目录外用户视频、目录缺失容错（5 例）。
+  - `hibiki/test/media/video/video_book_repository_test.dart`：`deleteVideoBook` 删 cue 行且不误删兄弟视频 cue（TDD 红→绿，回退 DB 修复实测红：cue 残留 `Expected: empty / Actual: [Instance of 'AudioCue']`）、`collectReferencedAssetPaths` 收集集、删后 `VACUUM` 在真 schema 下不报错（事务外）。
+- **备注**：移动端可能存在缓存目录平台差异（getApplicationDocumentsDirectory 行为），孤儿 GC 与 VACUUM 的真机回收效果需真实设备复测原始失败路径（删完看占用是否真降）。`VACUUM` 重建整库在大库上有几秒成本，但删除是低频手动操作可接受。本轮未做：删除路径外的「启动期 GC」（一次性历史泄漏已由删除时的全量 mark-and-sweep 覆盖，故未单独加启动 GC）。

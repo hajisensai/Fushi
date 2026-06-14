@@ -876,10 +876,15 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(title: Value(title)));
 
-  /// 删除视频书：FK `onDelete: cascade` 自动清掉它在
-  /// video_book_tag_mappings 的标签映射（cue 在 audio_cues，按需另清）。
-  Future<void> deleteVideoBook(String bookUid) =>
-      (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid))).go();
+  /// 删除视频书：FK `onDelete: cascade` 自动清掉它在 video_book_tag_mappings 的
+  /// 标签映射；audio_cues 的 bookKey 不是外键（它对有声书/SRT/视频共用一个字符串
+  /// owner key，无法挂 FK），故必须在同一事务里显式删掉本视频的字幕 cue 行
+  /// （BUG-276：否则删视频后 cue 行永久残留，删一本占用却不降）。
+  Future<void> deleteVideoBook(String bookUid) => transaction(() async {
+        await (delete(audioCues)..where((t) => t.bookKey.equals(bookUid))).go();
+        await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+            .go();
+      });
 
   // ── audio cues ──────────────────────────────────────────────────
   // [bookKey] is the owner key: either an audiobook bookKey OR an srt_books.uid
