@@ -1453,7 +1453,7 @@
     "video_shader_section_templates": "Shader templates",
     "video_shader_section_import": "Import shaders",
     "video_shader_section_installed": "Installed shaders",
-    "video_quality_enhancement_hint": "既定で mpv 内蔵の高画質スケーリングを使用します。あらゆる映像に有効で、アニメで効果が最も大きく、実写でも（効果は控えめながら）向上します。下のシェーダー選択はこれが有効なときのみ適用されます。",
+    "video_quality_enhancement_hint": "オンにすると mpv 内蔵の高画質スケーリングで映像がくっきりします。アニメはもちろん実写ドラマや映画にも使えます。Anime4K などのシェーダーでさらに強化したいときは、動画の再生中に「画質強化」を開いてレベルを選んでください。",
     "remote_video_downloading": "Downloading…",
     "remote_book_downloading": "Downloading…",
     "remote_video_unavailable": "Paired device unavailable",

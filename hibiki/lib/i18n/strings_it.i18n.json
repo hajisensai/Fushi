@@ -1453,7 +1453,7 @@
     "video_shader_section_templates": "Shader templates",
     "video_shader_section_import": "Import shaders",
     "video_shader_section_installed": "Installed shaders",
-    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Works on any video - animation gets the biggest boost, live-action gets a smaller one. Shader choices below only apply while this is on.",
+    "video_quality_enhancement_hint": "Turn this on to sharpen the picture with mpv's built-in high-quality scaling. Works for anime as well as live-action shows and movies. To go further with shaders like Anime4K, open Image enhancement while a video is playing and pick a level there.",
     "remote_video_downloading": "Downloading…",
     "remote_book_downloading": "Downloading…",
     "remote_video_unavailable": "Paired device unavailable",
