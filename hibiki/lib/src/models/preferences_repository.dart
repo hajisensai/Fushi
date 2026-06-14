@@ -517,8 +517,11 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   /// 桌面视频页按视频原始比例锁定原生窗口；移动端窗口不可改尺寸，不使用此项。
+  ///
+  /// 默认 false（回归修复）：用户没要求时不主动把 app 窗口尺寸贴成视频宽高比，
+  /// 视频区适配走 [videoFitMode] 的 BoxFit；想锁窗口比例的用户可在设置里手动开启。
   bool get videoLockWindowAspectRatio =>
-      getPref('video_lock_window_aspect_ratio', defaultValue: true) as bool;
+      getPref('video_lock_window_aspect_ratio', defaultValue: false) as bool;
 
   Future<void> setVideoLockWindowAspectRatio(bool value) async {
     await setPref('video_lock_window_aspect_ratio', value);

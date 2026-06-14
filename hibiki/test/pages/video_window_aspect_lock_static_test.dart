@@ -25,7 +25,7 @@ void main() {
     expect(source, contains('controller.videoHeight'));
   });
 
-  test('video aspect-ratio lock preference defaults on', () {
+  test('video aspect-ratio lock preference defaults off (regression)', () {
     final String appModel =
         File('lib/src/models/app_model.dart').readAsStringSync();
     final String prefs =
@@ -34,7 +34,13 @@ void main() {
     expect(appModel, contains('bool get videoLockWindowAspectRatio'));
     expect(appModel, contains('setVideoLockWindowAspectRatio'));
     expect(prefs, contains("'video_lock_window_aspect_ratio'"));
-    expect(prefs, contains('defaultValue: true'));
+    // 回归：默认不主动锁窗口比例，用户没要求时别把 app 窗口贴成视频尺寸。
+    expect(
+      prefs,
+      contains(
+        "getPref('video_lock_window_aspect_ratio', defaultValue: false)",
+      ),
+    );
   });
 
   // TODO-122 -> TODO-152 子B：窗口模式无 letterbox/pillarbox 黑边的诉求升级为可配的

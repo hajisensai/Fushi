@@ -708,7 +708,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       VideoControlLayout.fromLegacy(_controlCustomization);
 
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
-  bool _lockWindowAspectRatio = true;
+  /// 初始 false 与偏好默认对齐（回归修复）：偏好快照在 init 赋值前不主动锁窗口，
+  /// 消除「赋值前 stale true 抢锁」的瞬态窗口。
+  bool _lockWindowAspectRatio = false;
   double? _appliedWindowAspectRatio;
 
   /// 画面缩放/比例模式（窗口 + 全屏 [Video] fit 共用；TODO-152 子B）。新安装默认
