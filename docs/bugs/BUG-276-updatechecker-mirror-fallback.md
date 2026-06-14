@@ -1,0 +1,15 @@
+## BUG-276 · 更新检查端点单点不可达就整体失败(缺多镜像回退/不可测)
+- **报告**：2026-06-15（用户：日志 `[2026-06-14 18:41:08] UpdateChecker.httpGet ... 连不上 ghproxy.cc`，自动更新检查请求失败）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/utils/misc/update_checker.dart`：
+  - 旧 `_httpGetString`（原 `update_checker.dart:225` 起）把「逐镜像尝试 → 任一成功即返回 → 全失败才放弃」这条**核心可达性逻辑**死死耦合在 `static private` 方法里，直接 `client.getUrl` 真实网络 IO，**无任何单测能注入/固定该回退行为**（TODO-319/348/224 簇此前只动了超时参数、日志摘要、镜像名，从没把回退逻辑抽成可测试单元——注释甚至引用一个根本不存在的 `_fetchWithFallback`，是重构遗留的谎注释）。
+  - 镜像候选清单偏少（4 个），用户机器/时段下首批镜像（含 `ghproxy.cc`）全不可达就整轮失败，缺更多后备。
+  - 单候选只有 `connectionTimeout`（建连那一跳），**没有整体 per-attempt 超时**：某镜像 TCP 连上却挂起会拖垮整轮检查。
+- **319/348/224 已做（避免重复，未回退）**：`69aa9032c` 检查超时 10s→30s + 预期网络失败不污染错误日志；`3553791e7` 网络失败记 i18n 摘要(无堆栈) + `isExpectedUpdateNetworkFailure`/`hostLabelForUpdateUrl`；`7b611feeb` 刷新代理镜像、删除下线的 `mirror.ghproxy.com`。本次只补它们没碰的「回退逻辑可测化 + per-attempt 超时 + 扩充镜像」遗留缺口。
+- **[x] ① 已修复** — `update_checker.dart`：
+  - 抽纯函数 `updateCheckUrls(url)`（`:44`）生成候选列表 `[直连, ...各代理前缀套直连]`（直连优先、无重复）。
+  - 抽可注入核心 `fetchFirstSuccessfulBody(urls, fetch, onFailure)`（`:61`）：逐候选尝试，任一非 null 即整体成功且不再试后续；null/异常都视为该候选失败、记 `onFailure(主机标签, 错误)` 并继续（异常不冒泡终止回退）；全失败才返回 null。
+  - `_httpGetString`（`:230`）改为薄壳复用上述两者；`_fetchOne`（`:255`）给单候选加 `_kPerAttemptTimeout = 15s`（`:19`）整体超时；`isExpectedUpdateNetworkFailure` 补 `TimeoutException` 归类（`:485`）。
+  - 扩充 `updateCheckProxyPrefixes`（`:29`）4→6 个候选（保留 `ghproxy.cc`，新增 `gh.llkk.cc`/`ghproxy.homeboyc.cn`）；下载流程 `_downloadAndInstall` 同步改用 `updateCheckUrls`（写盘/安装逻辑不变，仅候选源与检查统一）。
+  - 提交：`<本轮提交，见报告>`
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/update_checker_mirror_fallback_test.dart`（10 例）：`updateCheckUrls` 直连优先/各前缀套直连/无重复/常量可维护；`fetchFirstSuccessfulBody` 首成功即返回不试后续 / 首失败自动试下一个 / 异常继续回退 / 全失败才 null / 每个失败都记主机标签 / 成功不记 onFailure。TDD 红（方法未定义编译失败）→ 绿（10/10 + 同目录 134 测试全绿）。
+- **备注**：真机网络环境需用户验（中国网络真机下自动更新检查能命中某个镜像成功）。镜像为公共加速代理、会轮换/下线，作为多候选之一无害（BUG-319/271 同款范式）。本轮 `dart analyze lib test` No issues。
