@@ -4361,6 +4361,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           return const Center(child: CircularProgressIndicator());
         }
         return VideoFavoriteSentencesPanel(
+          currentBookKey: widget.bookUid,
           currentEpisode: _currentEpisode,
           sentences: snapshot.data ?? const <FavoriteSentence>[],
           emptyLabel: t.video_favorite_sentences_empty,

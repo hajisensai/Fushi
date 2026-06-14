@@ -4,6 +4,7 @@ import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 class VideoFavoriteSentencesPanel extends StatelessWidget {
   const VideoFavoriteSentencesPanel({
+    required this.currentBookKey,
     required this.currentEpisode,
     required this.sentences,
     required this.onTapSentence,
@@ -11,6 +12,10 @@ class VideoFavoriteSentencesPanel extends StatelessWidget {
     super.key,
   });
 
+  /// 当前视频/系列的身份键（写入时为 [FavoriteSentence.bookKey] = `bookUid`）。面板必须
+  /// 按它隔离——单视频各自 `sectionIndex == 0`，仅按集号过滤会把别的视频的收藏混进来
+  /// （BUG-274）。
+  final String currentBookKey;
   final int currentEpisode;
   final List<FavoriteSentence> sentences;
   final ValueChanged<FavoriteSentence> onTapSentence;
@@ -22,6 +27,7 @@ class VideoFavoriteSentencesPanel extends StatelessWidget {
         .where(
           (FavoriteSentence sentence) =>
               sentence.source == kFavoriteSentenceSourceVideo &&
+              sentence.bookKey == currentBookKey &&
               sentence.sectionIndex == currentEpisode,
         )
         .toList(growable: false);

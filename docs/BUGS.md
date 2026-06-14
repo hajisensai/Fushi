@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 267 条。点号进各自文件。
+> 共 268 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-274](bugs/BUG-274-video-favorite-cross-episode.md) | ✅ | ✅ | 视频收藏句子面板跨集/跨视频污染（缺 bookKey 过滤） |
 | [BUG-273](bugs/BUG-273-multicue-mining-reader.md) | ✅ | ✅ | 查词窗口多句合一制卡(书籍/有声书·乙方案草稿累积) |
 | [BUG-272](bugs/BUG-272-backup-win-tempdir-delete-race.md) | ✅ | ✅ | 备份导出Win临时目录删除竞争errno145 |
 | [BUG-271](bugs/BUG-271-shader-download-mirror-anime-only.md) | ✅ | ✅ | 画质增强切到「中」下载失败一个 + 说明只说动画（误导真人/电视剧） |
