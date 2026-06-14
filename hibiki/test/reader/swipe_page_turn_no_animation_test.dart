@@ -87,4 +87,40 @@ void main() {
           'reader page must derive thresholds from the shared pure function',
     );
   });
+
+  test(
+      'continuous mode wheel passes through to native scroll '
+      '(no preventDefault / no onSwipe page-turn)', () {
+    // BUG-239 同源回归守卫：连续模式靠浏览器原生滚动（滚动轴 = 书写轴），
+    // 滚轮就是原生滚动主要驱动。wheel 监听里历史上无条件 preventDefault +
+    // 回传 onSwipe（90% 整屏跳页），把连续模式的原生滚轮杀死、章内滚不动。
+    // 这里钉住：wheel 监听必须先 `if (hoshiContinuousMode) return;` 放行原生
+    // 滚动，且该早返回必须出现在 onSwipe 回传与 preventDefault 之前。
+    final File page = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
+    );
+    final String src = page.readAsStringSync();
+
+    // 定位 wheel 监听块（从 addEventListener('wheel' 到其闭合 `}, {passive`)。
+    final int wheelStart = src.indexOf("addEventListener('wheel'");
+    expect(wheelStart, greaterThanOrEqualTo(0),
+        reason: 'wheel listener must exist in the reader setup script');
+    final int wheelEnd = src.indexOf('{passive: false});', wheelStart);
+    expect(wheelEnd, greaterThan(wheelStart),
+        reason: 'wheel listener must be a passive:false block');
+    final String wheelBlock = src.substring(wheelStart, wheelEnd);
+
+    final int guardIdx = wheelBlock.indexOf('if (hoshiContinuousMode) return;');
+    expect(guardIdx, greaterThanOrEqualTo(0),
+        reason: 'wheel must early-return in continuous mode to keep native '
+            'scrolling (pass-through, no page-turn)');
+
+    final int swipeIdx = wheelBlock.indexOf("callHandler('onSwipe'");
+    final int preventIdx = wheelBlock.indexOf('e.preventDefault();');
+    expect(swipeIdx, greaterThan(guardIdx),
+        reason: 'continuous-mode guard must precede the onSwipe page-turn');
+    expect(preventIdx, greaterThan(guardIdx),
+        reason: 'continuous-mode guard must precede preventDefault so native '
+            'wheel scrolling is not killed');
+  });
 }

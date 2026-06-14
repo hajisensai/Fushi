@@ -2197,6 +2197,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   });
   var _wheelTimer = null;
   document.addEventListener('wheel', function(e) {
+    // BUG-239 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴），滚轮就是
+    // 原生滚动的主要驱动。此处一旦 preventDefault + 回传 onSwipe（90% 整屏跳页），
+    // 就把原生滚轮杀死、连续模式滚不动。故连续模式直接放行（不 preventDefault、
+    // 不设 timer、不回传 onSwipe），交给浏览器原生滚动；分页模式照旧滚轮翻页。
+    if (hoshiContinuousMode) return;
     if (_wheelTimer) return;
     var r = window.hoshiReader;
     if (!r || !('paginationMetrics' in r)) return;
