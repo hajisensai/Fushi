@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 273 条。点号进各自文件。
+> 共 275 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-281](bugs/BUG-281-subtitle-avoid-direction-race.md) | ✅ | ✅ | 字幕避让方向反/竞态：避让与控制条可见性未用同一真相源 |
+| [BUG-280](bugs/BUG-280-lyrics-continuous-lookup.md) | ✅ | ✅ | 歌词模式查完一个词无法继续查下一个 |
 | [BUG-279](bugs/BUG-279-jimaku-dialog-list-no-scroll.md) | ✅ | ✅ | 移动端 Jimaku 自动获取字幕对话框候选列表太矮且吞滚动 |
 | [BUG-278](bugs/BUG-278-audiobook-exit-not-stopped.md) | ✅ | ✅ | 退出阅读后有声书仍在播放（dispose 未先 stop 播放器） |
 | [BUG-277](bugs/BUG-277-updatechecker-mirror-fallback.md) | ✅ | ✅ | 更新检查端点单点不可达就整体失败(缺多镜像回退/不可测) |

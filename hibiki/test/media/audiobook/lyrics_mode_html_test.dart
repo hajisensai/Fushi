@@ -30,7 +30,7 @@ void main() {
         fontSize: 20,
       );
 
-      // BUG-276: tap-to-lookup now fires from the raw pointer-up/touch-end path
+      // BUG-280: tap-to-lookup now fires from the raw pointer-up/touch-end path
       // (see _lyTapEnd) instead of the synthesized DOM 'click', so it still
       // calls hoshiSelection.selectText.
       expect(html, contains('window.hoshiSelection.selectText('));
@@ -39,7 +39,7 @@ void main() {
       expect(html, isNot(contains('var _longPressed')));
     });
 
-    // BUG-276: 歌词模式查完一个词后无法继续查下一句。原因是 #lc 用 DOM 'click'
+    // BUG-280: 歌词模式查完一个词后无法继续查下一句。原因是 #lc 用 DOM 'click'
     // 触发查词，而 click 只在「pointerdown→up 全程未被宿主层认领」时由浏览器合成；
     // 当 Flutter 端弹窗可见时整屏有一层 translucent 手势屏障会认领点按 → WebView 收
     // 不到 click → 只关弹窗不发新查词。修复=对齐阅读器正文，用原始 pointerup/touchend

@@ -1,4 +1,4 @@
-## BUG-276 · 歌词模式查完一个词无法继续查下一个
+## BUG-280 · 歌词模式查完一个词无法继续查下一个
 - **报告**：2026-06-15（用户：）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/audiobook/lyrics_mode_html.dart:195`（旧 `#lc` 用 DOM `'click'` 事件触发查词）。
   - 歌词页查词靠 `#lc` 的 `click` 监听 → `hoshiSelection.selectText`。`click` 只在「pointerdown→pointerup 全程未被宿主层认领」时由浏览器合成。

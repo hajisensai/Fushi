@@ -192,7 +192,7 @@ window.__lyricsScrollToCue = function(index) {
 };
 
 // ── 点击：所有句子→查词 ──
-// BUG-276: 原来用 DOM 'click' 事件触发查词。click 只在「pointerdown→pointerup 全程
+// BUG-280: 原来用 DOM 'click' 事件触发查词。click 只在「pointerdown→pointerup 全程
 // 未被宿主层认领」时由浏览器合成；当 Flutter 端弹窗可见时，整屏有一层 translucent
 // 手势屏障（base_source_page 的 Positioned.fill GestureDetector，onTap=关闭弹窗）会在
 // 手势竞技场里认领这次点按 → WebView 收不到合成 click → 查完一个词后再点下一句只关掉

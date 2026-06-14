@@ -1,4 +1,4 @@
-## BUG-276 · 字幕避让方向反/竞态：避让与控制条可见性未用同一真相源
+## BUG-281 · 字幕避让方向反/竞态：避让与控制条可见性未用同一真相源
 - **报告**：2026-06-15（用户：「进度条起来、下去的时候，如果同时进行其他操作会导致字幕起来下去的行为相反，tmd让他们用同一个变量」）
 - **真实性**：✅ 真 bug。根因 = 视频字幕避让读的是 Hibiki **自建镜像** `_videoControlsVisible` + **独立隐藏 Timer** `_videoControlsHideTimer`（旧 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_markControlsVisible` / `_videoControlsHideTimer` / `_toggleControlsVisibleForTap`），而 media_kit 控制条自身在私有 State 里另有一份真实 `visible` + 私有 `Timer`（`third_party/media_kit_video/.../material_desktop.dart:378/380`、`material.dart:534/535`）。两套 Timer 各自计时、Hibiki 各入口（hover / 移动 tap / 键盘 poke）独立维护镜像，**与 media_kit 真实可见态会相位反**：
   - 移动端 `_toggleControlsVisibleForTap` 用镜像取反决定下一态（旧 `video_hibiki_page.dart` 的 `_markControlsVisible(!_videoControlsVisible.value)`）；当镜像因自家 2s Timer 先/后于 media_kit 隐藏而漂移后，下一次点击把镜像翻成与真实控制条相反 → 字幕往上顶而进度条在下落（或反之）。
