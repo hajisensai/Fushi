@@ -208,6 +208,15 @@ class DesktopLookupService extends ChangeNotifier
       return false;
     } on PlatformException {
       return false;
+    } on TypeError {
+      // window_manager.isFocused() does `return await invokeMethod(...)` typed
+      // as Future<bool>; a host/channel that yields null (e.g. an incomplete
+      // mock or a misbehaving platform impl) makes that implicit bool cast throw
+      // a TypeError. Per this method's contract, any inability to determine the
+      // focus state conservatively returns false so bringPendingLookupToFront
+      // falls back to the pre-TODO-341 "bring to front as usual" path instead of
+      // letting the error escape the unawaited call into the global zone.
+      return false;
     }
   }
 }

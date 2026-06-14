@@ -102,6 +102,11 @@ void main() {
       (MethodCall call) {
         windowCalls.add(call.method);
         if (call.method == 'isMinimized') return Future<bool>.value(false);
+        // External desktop lookup = Hibiki is NOT in the foreground (the user
+        // copied in another app). bringPendingLookupToFront only attempts the
+        // show/focus path when isFocused() is false (TODO-341 gates the path
+        // for an already-foreground window to avoid the Windows taskbar flash).
+        if (call.method == 'isFocused') return Future<bool>.value(false);
         if (call.method == 'show') return showCompleter.future;
         if (call.method == 'focus') return focusCompleter.future;
         return Future<void>.value();
