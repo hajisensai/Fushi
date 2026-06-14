@@ -64,6 +64,17 @@ int adaptiveTagSlots({
   return (usable / chipHeight).floor().clamp(1, tagCount);
 }
 
+/// 书架书卡封面右上角类型徽章（有声书 / 普通书）的方框边长（逻辑像素）。
+///
+/// 历史：早期徽章夹在封面下方的 footer 文字行里、紧贴小号书名，读作一个克制的小角标。
+/// TODO-355 把徽章移到封面图上后，旧布局用 `SizedBox.square(gap*5=40) + BoxFit.scaleDown`
+/// 包住内在 22px（HibikiBadge：icon 14 + padding gap 8）的徽章——`scaleDown` 永不放大也
+/// 永不缩小已小于 40px 的徽章，于是徽章仍按 22px 满尺寸压在封面图上，比原来「大了一圈」。
+/// 这里把方框收到设计 token 基准 `gap * 2 = 16` 并改用 `BoxFit.contain`，让 22px 徽章等比
+/// 缩到 16px，恢复书架原来那种约「半个」大小（用户记忆里的 0.5 显示）的小角标观感。
+/// 用顶层常量 + 测试可见，便于 widget 守卫断言渲染尺寸，防止再次漂移。
+const double kShelfCoverBadgeDimension = 8.0 * 2;
+
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
     this.remoteBookClientLoader,
@@ -1320,10 +1331,17 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           PositionedDirectional(
             end: overlayInset,
             top: overlayInset,
+            // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361）。徽章内在尺寸
+            // 是 22px（HibikiBadge: icon 14 + padding gap）。早期徽章夹在封面下方的
+            // footer 文字行里，紧贴小号书名，视觉上读作约「半个」封面元素；TODO-355 把
+            // 徽章挪到封面图上后，旧的 `SizedBox.square(gap*5=40) + scaleDown` 永远不会
+            // 缩小 22px 的徽章，于是在封面图上读起来比原来「大了一圈」。这里改成
+            // `gap*2=16` 的方框 + `BoxFit.contain`，把徽章等比缩到约 16px，恢复书架
+            // 原来那种克制的小角标观感（≈用户记忆里的 0.5 显示）。
             child: SizedBox.square(
-              dimension: tokens.spacing.gap * 5,
+              dimension: kShelfCoverBadgeDimension,
               child: FittedBox(
-                fit: BoxFit.scaleDown,
+                fit: BoxFit.contain,
                 child: coverBadge,
               ),
             ),

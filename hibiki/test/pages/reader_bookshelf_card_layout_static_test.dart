@@ -87,6 +87,43 @@ void main() {
         reason: 'the cover badge must render in the top-right slot');
   });
 
+  test(
+      'cover type badge is shrunk to the restored small-corner size (TODO-361)',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+
+    // The badge box is the centralized small-corner dimension, scaled with
+    // BoxFit.contain so the 22px HibikiBadge is shrunk down (not left at full
+    // size like the old gap*5 + scaleDown box did on the cover art).
+    expect(
+      layout,
+      contains('dimension: kShelfCoverBadgeDimension'),
+      reason: 'the cover badge must use the centralized small-corner dimension',
+    );
+    expect(
+      layout,
+      contains('fit: BoxFit.contain'),
+      reason: 'BoxFit.contain shrinks the badge into the small box; '
+          'BoxFit.scaleDown would leave the 22px badge at full size',
+    );
+    expect(
+      layout,
+      isNot(contains('dimension: tokens.spacing.gap * 5')),
+      reason: 'the oversized gap*5 cover badge box must be gone',
+    );
+
+    // The constant must stay smaller than the badge intrinsic size (22px),
+    // otherwise BoxFit.contain would not shrink anything.
+    expect(
+      source,
+      contains('const double kShelfCoverBadgeDimension = 8.0 * 2;'),
+      reason: 'the cover badge dimension must be the restored 16px small size',
+    );
+  });
+
   test('long or multiple book tags are clipped in their own overlay area', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
