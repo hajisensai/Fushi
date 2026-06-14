@@ -104,7 +104,11 @@ void main() {
     expect(pop, greaterThanOrEqualTo(0));
     final String body =
         src.substring(pop, src.indexOf('Widget _buildNestedPopupLayer', pop));
-    expect(body, contains('if (stackEmpty) _refocusVideo();'),
+    // TODO-270 E：关栈汇聚点的 stackEmpty 分支扩成块体（清未制卡草稿 + 归还焦点）；
+    // 焦点归还仍在同一汇聚点，覆盖点遮罩/返回/Esc/滑动全部关闭路径。
+    expect(body, contains('if (stackEmpty) {'),
+        reason: '浮层全关后必须在关栈汇聚点处理（清草稿 + 归还焦点）');
+    expect(body, contains('_refocusVideo();'),
         reason: '浮层全关后键盘所有权必须回到视频，否则查词一次后空格失灵');
   });
 

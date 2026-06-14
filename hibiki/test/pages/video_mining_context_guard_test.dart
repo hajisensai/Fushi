@@ -49,30 +49,43 @@ void main() {
   });
 
   test('video mining exports media from the cached lookup cue', () {
-    // TODO-270 D：onMineEntry 返回类型从 Future<bool> 改为 Future<MinePopupResult>
-    // （回传 note id 以驱动「最新可改」第三态）；锚点随之更新。
+    // TODO-270 D：onMineEntry 返回类型从 Future<bool> 改为 Future<MinePopupResult>。
+    // TODO-270 E：制卡 cue / 区间 / 文本解析收口到 _resolveVideoMiningRange（onMineEntry
+    // 与 onUpdateEntry 共用，避免两份漂移），守卫锚点随之搬到该 helper。语义不变：选中句
+    // 优先（字幕列表多选，独立入口）→ 否则查词草稿合并，当前 cue 走 lookup 缓存兜底。
+    final String resolve = region(
+      '_resolveVideoMiningRange(VideoPlayerController controller) {',
+      'Future<MinePopupResult> onMineEntry(',
+    );
+    // 字幕列表多选（TODO-102）优先：合成 cue 单段区间 + join 文本，不掺草稿。
+    expect(resolve, contains('if (selectedCue != null) {'),
+        reason:
+            'Mining must prefer the selected cue (subtitle list multi-select).');
+    expect(resolve, contains('usedSelectedCue: true'));
+    // 否则查词草稿路径：当前 cue lookup 缓存（不漂移）→ currentCue → 按位置解析多段兜底，
+    // 覆盖未经查词捕获 / 制卡瞬间字幕又消失的边界（TODO-104b / BUG-188，保证句子音频非空）。
+    expect(resolve, contains('_lastLookupCue ??'),
+        reason:
+            'Draft path must anchor on the cached lookup cue, no later drift.');
+    expect(resolve, contains('controller.currentCue ??'));
+    expect(resolve, contains('resolveMiningCueForPosition('),
+        reason: 'currentCue 为空（gap/末句后）时须按位置解析，制卡才有句子音频。');
+    // 制卡区间 = 合并后的首句起→末句止（单句即该 cue 时间窗）；草稿空时退回单 cue 起止。
+    expect(resolve, contains('mergedRange?.startMs ?? cue?.startMs ?? 0'),
+        reason: '制卡音频/封面区间起点 = 合并区间起点（单句即该 cue 的 startMs）。');
+    expect(resolve, contains('mergedRange?.endMs ?? cue?.endMs ?? 0'),
+        reason: '制卡音频/封面区间终点 = 合并区间终点（单句即该 cue 的 endMs）。');
+
+    // onMineEntry 把解析结果喂给落卡链路 _mineVideoCard（单句/多句同一出口）。
     final String mine = region(
       'Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {',
-      'Future<MinePopupResult> onUpdateEntry(',
+      'TODO-270 D：覆盖',
     );
-    // 制卡 cue 取值：选中句优先 → lookup 缓存（不漂移到后来的 cue）→ currentCue →
-    // 按位置解析多段兜底，覆盖未经查词捕获 / 制卡瞬间字幕又消失的边界
-    // （TODO-104b / BUG-188，保证有 cue 可裁真实句子音频）。
-    expect(mine, contains('final AudioCue? cue = selectedCue ??'),
-        reason:
-            'Mining must prefer the selected cue, then the cached lookup cue, '
-            'no later drift.');
-    expect(mine, contains('_lastLookupCue ??'));
-    expect(mine, contains('controller.currentCue ??'));
-    expect(mine, contains('resolveMiningCueForPosition('),
-        reason: 'currentCue 为空（gap/末句后）时须按位置解析，制卡才有句子音频。');
-    // 单句制卡把 cue 的时间窗作区间 [clipStartMs, clipEndMs] 传给落卡链路 _mineVideoCard，
-    // 故区间来自 cue 的起止。
-    expect(mine, contains('clipStartMs: cue?.startMs ?? 0'),
-        reason: '单句制卡音频区间起点必须是该 cue 的 startMs（经 _mineVideoCard）。');
-    expect(mine, contains('clipEndMs: cue?.endMs ?? 0'),
-        reason: '单句制卡音频区间终点必须是该 cue 的 endMs（经 _mineVideoCard）。');
-    expect(mine, contains('cueSentence: cue?.text'));
+    expect(mine, contains('_resolveVideoMiningRange(controller)'));
+    expect(mine, contains('clipStartMs: range.clipStartMs'));
+    expect(mine, contains('clipEndMs: range.clipEndMs'));
+    expect(mine, contains('sentence: range.sentence'));
+    expect(mine, contains('cueSentence: range.cueSentence'));
   });
 
   test('_mineVideoCard extracts the passed [clipStartMs, clipEndMs] range', () {

@@ -165,15 +165,21 @@ void main() {
         'final AudioCue? selectedCue = _selectedMiningCueForCard(controller);',
       ),
     );
-    expect(page, contains('final AudioCue? cue = selectedCue ??'));
+    // TODO-270 E：制卡 cue/区间/文本解析收口到 _resolveVideoMiningRange；选中字幕仍
+    // 优先（独立分支，不掺查词草稿），用其单段区间 + join 文本覆盖下一张卡上下文。
+    expect(page, contains('if (selectedCue != null) {'),
+        reason: '字幕列表多选优先覆盖制卡上下文（独立入口，不掺草稿）。');
+    expect(page, contains('clipStartMs: selectedCue.startMs'));
+    expect(page, contains('clipEndMs: selectedCue.endMs'));
+    expect(page, contains('usedSelectedCue: true'));
     expect(page, contains('_lastLookupCue ??'));
     expect(page, contains('_mineVideoCard('));
-    expect(page, contains('cueSentence: cue?.text'));
-    expect(page, contains('clipStartMs: cue?.startMs ?? 0'));
-    expect(page, contains('clipEndMs: cue?.endMs ?? 0'));
     // TODO-270 D：清选中句以「制卡成功」信号 result.ankiConnect 为判据（两后端成功
     // 时都 true），不能用仅 AnkiConnect 非空的 note id，否则 AnkiDroid 成功也不清。
-    expect(page, contains('if (usedSelectedCue && result.ankiConnect)'));
+    // TODO-270 E：成功后按 usedSelectedCue 分流——多选清选中句、草稿路径清草稿。
+    expect(page, contains('if (result.ankiConnect) {'));
+    expect(page, contains('if (range.usedSelectedCue) {'));
+    expect(page, contains('_clearSelectedMiningCues();'));
   });
 
   test('TODO-266 integrated subtitle sidebar keeps playback and card semantics',
