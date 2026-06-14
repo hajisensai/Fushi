@@ -242,9 +242,6 @@ class ShortcutDefaults {
     ShortcutAction.videoReplayCurrentSubtitle: _kb([
       _key(LogicalKeyboardKey.keyR),
     ]),
-    ShortcutAction.videoReplayPreviousSubtitle: _kb([
-      _key(LogicalKeyboardKey.keyR, {ModifierKey.shift}),
-    ]),
     ShortcutAction.videoShowFavoriteSentences: _kb([
       _key(LogicalKeyboardKey.keyL, {ModifierKey.ctrl}),
     ]),

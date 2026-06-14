@@ -1604,7 +1604,6 @@
     "video_favorite_sentences_empty": "No saved sentences in this episode",
     "shortcut_action_video_toggle_favorite_sentence": "Favorite current sentence",
     "shortcut_action_video_replay_current_subtitle": "Replay current subtitle",
-    "shortcut_action_video_replay_previous_subtitle": "Replay previous subtitle",
     "shortcut_action_video_show_favorite_sentences": "Show episode favorites",
     "video_subtitle_filter_all": "All",
     "video_subtitle_filter_favorites": "Favorites",

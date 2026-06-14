@@ -94,8 +94,6 @@ enum ShortcutAction {
       ShortcutScope.video, 'video_toggle_favorite_sentence'),
   videoReplayCurrentSubtitle(
       ShortcutScope.video, 'video_replay_current_subtitle'),
-  videoReplayPreviousSubtitle(
-      ShortcutScope.video, 'video_replay_previous_subtitle'),
   videoShowFavoriteSentences(
       ShortcutScope.video, 'video_show_favorite_sentences'),
   videoEscape(ShortcutScope.video, 'video_escape');

@@ -100,7 +100,6 @@ void main() {
     for (final String action in <String>[
       'videoToggleFavoriteSentence',
       'videoReplayCurrentSubtitle',
-      'videoReplayPreviousSubtitle',
       'videoShowFavoriteSentences',
     ]) {
       expect(actions, contains(action));
@@ -109,9 +108,17 @@ void main() {
       expect(settings, contains(action));
     }
 
+    // TODO-328：移除「重播上一句」(videoReplayPreviousSubtitle / Shift+R)。它与逐句
+    // 导航「上一句」(videoPreviousSubtitle) 行为重复，用户决定只保留逐句导航且不要
+    // 退化回退。守卫这两个符号确实从所有快捷键层与页面回调中消失，防止回归。
+    expect(actions, isNot(contains('videoReplayPreviousSubtitle')));
+    expect(defaults, isNot(contains('videoReplayPreviousSubtitle')));
+    expect(shortcuts, isNot(contains('replayPreviousSubtitle')));
+    expect(settings, isNot(contains('videoReplayPreviousSubtitle')));
+    expect(page, isNot(contains('_replayPreviousCueAndPokeControls')));
+
     expect(page, contains('_toggleFavoriteCurrentCue'));
     expect(page, contains('_replayCurrentCueAndPokeControls'));
-    expect(page, contains('_replayPreviousCueAndPokeControls'));
     expect(page, contains('_showFavoriteSentencesPanel'));
   });
 

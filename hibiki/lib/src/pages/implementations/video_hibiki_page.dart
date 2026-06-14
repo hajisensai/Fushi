@@ -2804,9 +2804,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
           () => unawaited(_replayCurrentCueAndPokeControls()),
         ),
-        replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_replayPreviousCueAndPokeControls()),
-        ),
         showFavoriteSentences: () => _runWhenImmersiveAllowsFullControls(
           _showFavoriteSentencesPanel,
         ),
@@ -3989,11 +3986,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (cue == null) return;
     _pokeControlsVisible();
     await _controller?.skipToCue(cue);
-  }
-
-  Future<void> _replayPreviousCueAndPokeControls() async {
-    _pokeControlsVisible();
-    await _controller?.skipToPrevCue();
   }
 
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
