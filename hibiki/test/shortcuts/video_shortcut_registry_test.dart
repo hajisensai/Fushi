@@ -34,7 +34,6 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     toggleSubtitleBlur: () => log.add('toggleSubtitleBlur'),
     toggleFavoriteSentence: () => log.add('toggleFavoriteSentence'),
     replayCurrentSubtitle: () => log.add('replayCurrentSubtitle'),
-    replayPreviousSubtitle: () => log.add('replayPreviousSubtitle'),
     showFavoriteSentences: () => log.add('showFavoriteSentences'),
     escape: () => log.add('escape'),
   );

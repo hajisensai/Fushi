@@ -28,7 +28,6 @@ class VideoPlayerShortcutActions {
     required this.toggleSubtitleBlur,
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
-    required this.replayPreviousSubtitle,
     required this.showFavoriteSentences,
     required this.escape,
   });
@@ -65,7 +64,6 @@ class VideoPlayerShortcutActions {
 
   final VoidCallback toggleFavoriteSentence;
   final VoidCallback replayCurrentSubtitle;
-  final VoidCallback replayPreviousSubtitle;
   final VoidCallback showFavoriteSentences;
 
   final VoidCallback escape;
@@ -102,7 +100,6 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
-    ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
     ShortcutAction.videoShowFavoriteSentences: actions.showFavoriteSentences,
     ShortcutAction.videoEscape: actions.escape,
   };

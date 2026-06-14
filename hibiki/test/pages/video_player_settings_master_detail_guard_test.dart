@@ -195,8 +195,12 @@ void main() {
     expect(source, contains('bool _videoControlsHovered = false;'));
     expect(pokeMethod, contains('device: _syntheticHoverDevice'));
     expect(pokeMethod, contains('_markControlsVisible(true);'));
+    // TODO-337：音量 popover 打开期间不启动自动隐藏（popover 锚在音量按钮，控制条
+    // 2s 淡出会让锚点消失致 popover 闪烁），故隐藏定时条件追加 `_volumeOverlayEntry == null`。
     expect(
-        visibilityMethod, contains('if (visible && !_videoControlsHovered)'));
+        visibilityMethod,
+        contains(
+            'if (visible && !_videoControlsHovered && _volumeOverlayEntry == null)'));
     expect(hoverExitMethod, contains('_videoControlsHovered = false;'));
     expect(syntheticHoverMethod,
         contains('event.device == _syntheticHoverDevice'));

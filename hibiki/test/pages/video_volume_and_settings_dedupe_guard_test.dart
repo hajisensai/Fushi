@@ -5,8 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// 源码守卫：桌面音量按钮不再 hover 展开挤按钮 + 顶栏设置入口去重（BUG-248 / TODO-283）。
 ///
 /// 子A：桌面 [_buildVolumeButton] 曾用 media_kit 的 [MaterialDesktopVolumeButton]，
-///      hover 时内部 AnimatedContainer 宽度 12→82px 实时挤走右邻全屏键。修复改用固定
-///      宽度的 [MaterialDesktopCustomButton] + [_showVolumeMenu]（复用移动端弹滑块路径）。
+///      hover 时内部 AnimatedContainer 宽度 12→82px 实时挤走右邻全屏键。改用固定宽度的
+///      [MaterialDesktopCustomButton]；TODO-337 起桌面 hover 弹竖向 popover
+///      ([_showVolumePopover])、点击切静音 ([_toggleMute])、滚轮调音量，绝不再用
+///      居中 dialog / showModalBottomSheet。
 /// 子B：桌面/移动 topButtonBar 各写死一枚 tune→_showPlayerSettings，与右侧 rail 的
 ///      可配置 settings 按钮（默认 placement=rightRail）功能完全重复。修复删掉顶栏写死
 ///      入口，统一由 rightRail settings 按钮负责（_showPlayerSettings 方法 + rightRail
@@ -52,13 +54,37 @@ void main() {
           reason: '桌面音量按钮不应再用 hover 展开的 MaterialDesktopVolumeButton');
     });
 
-    test('_buildVolumeButton 桌面走 MaterialDesktopCustomButton + _showVolumeMenu',
+    test(
+        '_buildVolumeButton 桌面 hover 弹 popover / 点击静音 / 滚轮调音量（非 modal，TODO-337）',
         () {
       final String body = volumeButtonBody();
       expect(body.contains('MaterialDesktopCustomButton('), isTrue,
           reason: '桌面音量按钮改用固定宽度 MaterialDesktopCustomButton');
-      expect(body.contains('_showVolumeMenu(controller)'), isTrue,
-          reason: '桌面音量按钮点击应弹音量菜单（复用移动端路径）');
+      // 桌面：hover 进出走 _onVolumeAnchorHover → _showVolumePopover（就地竖滑条 popover）。
+      expect(body.contains('_onVolumeAnchorHover(controller'), isTrue,
+          reason: '桌面 hover 音量按钮应弹竖向滑条 popover（_onVolumeAnchorHover）');
+      // 点击图标 = 静音 / 取消静音。
+      expect(body.contains('_toggleMute()'), isTrue,
+          reason: '点击音量图标应切换静音（_toggleMute）');
+      // 悬停时鼠标滚轮调音量。
+      expect(
+          body.contains('PointerScrollEvent') &&
+              body.contains('_onVolumeWheel(controller'),
+          isTrue,
+          reason: '悬停音量按钮时滚轮应调音量（_onVolumeWheel）');
+    });
+
+    test('音量交互彻底去 modal：不再用 _showVolumeMenu / showModalBottomSheet（TODO-337）',
+        () {
+      // 全文不应再有旧的 modal 音量菜单方法名（连同其 showModalBottomSheet 弹法）。
+      expect(src.contains('_showVolumeMenu'), isFalse,
+          reason: '旧的 showModalBottomSheet 音量菜单 _showVolumeMenu 必须移除');
+      // popover 走独立 OverlayEntry 锚定音量按钮（非 modal）。
+      expect(
+          src.contains('void _showVolumePopover(VideoPlayerController') &&
+              src.contains('OverlayEntry? _volumeOverlayEntry'),
+          isTrue,
+          reason: '音量改用锚定到按钮的 OverlayEntry popover（非 modal）');
     });
   });
 

@@ -682,6 +682,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 返回时复位。修「点菜单/字幕点快了弹出两个」。
   bool _videoSheetOpen = false;
 
+  /// 音量 popover（TODO-337）状态。桌面 hover 音量按钮就地弹紧凑竖向滑条 popover，
+  /// 触屏点击弹同款 popover（滑条 + 静音按钮），均非 modal——锚定到音量按钮，浮在
+  /// 全屏安全的 Overlay（与 [_handleSecondaryTap] 右键菜单同范式，吸收界面缩放残差）。
+  /// 用户决策：绝不再用居中 dialog / showModalBottomSheet。
+  OverlayEntry? _volumeOverlayEntry;
+
+  /// 音量按钮的 [GlobalKey]：取其 RenderBox 把按钮屏幕矩形映射到 Overlay 坐标系作锚点。
+  final GlobalKey _volumeButtonKey = GlobalKey();
+
+  /// popover 内滑条的工作副本（0..100）。拖动时即时写 controller + OSD，并据此重建 popover。
+  double _volumePopoverValue = 0;
+
+  /// popover builder 的局部 [StateSetter]，拖动滑条时只重建 popover 自身（不 setState 整页）。
+  StateSetter? _volumePopoverSetState;
+
+  /// 鼠标是否悬停在「音量按钮或 popover」上（桌面 hover 显隐判据）。鼠标在按钮与 popover
+  /// 之间移动时会先 onExit 再 onEnter，用延迟关闭定时容错这段间隙，避免 popover 闪烁。
+  bool _volumeAnchorHovered = false;
+  bool _volumePopoverHovered = false;
+  Timer? _volumePopoverHoverCloseTimer;
+
   /// 换集加载代际计数：每次 [_loadEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
   /// 枚举字幕源 + 解析 cue）跑完后若序号已被后续切集取代，则放弃应用，避免「播放中
   /// 途快速切集时旧的慢加载落地后覆盖新集字幕/视频」（用户报：切到第4集字幕/音画
@@ -1714,6 +1735,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _popupOverlayEntry = null;
     }
     _popup.clear();
+    // 音量 popover（TODO-337）overlay + 延迟关闭定时清理。
+    _volumePopoverHoverCloseTimer?.cancel();
+    _volumePopoverHoverCloseTimer = null;
+    final OverlayEntry? volumeEntry = _volumeOverlayEntry;
+    if (volumeEntry != null) {
+      if (volumeEntry.mounted) volumeEntry.remove();
+      volumeEntry.dispose();
+      _volumeOverlayEntry = null;
+    }
     _watchTracker?.dispose();
     _watchTracker = null;
     _controller?.removeListener(_syncWindowAspectRatioLock);
@@ -1869,6 +1899,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _videoControlsHideTimer?.cancel();
       _videoControlsHideTimer = null;
       _videoControlsVisible.value = false;
+      // 控制条被强制隐藏（锁定 / 侧栏 / 字幕列表打开）时关闭音量 popover（TODO-337）：
+      // 其锚点（音量按钮）随控制条消失，不应留下悬空 popover。
+      _dismissVolumePopover();
       // 光标语义在两态分叉（TODO-318 回归 / TODO-329）：
       // - 有 overlay（侧栏 / 设置面板 / 字幕跳转列表）打开：用户要在 overlay 上操作，
       //   光标必须可见、不被 2s 定时隐藏 → 显式 false；
@@ -1880,7 +1913,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlsVisible.value = visible;
     _videoControlsHideTimer?.cancel();
     _videoControlsHideTimer = null;
-    if (visible && !_videoControlsHovered) {
+    // 音量 popover 打开时不启动自动隐藏（TODO-337）：popover 浮在控制条上方的独立
+    // Overlay，鼠标移到它上面会让 media_kit 控制条 onExit → 若此时让控制条 2s 淡出，
+    // 音量按钮（popover 锚点）随之消失会导致 popover 闪烁。popover 开着 = 用户正在操作
+    // 音量，控制条应保持可见；关闭 popover（鼠标移出 / Esc / 点外部）后恢复正常计时。
+    if (visible && !_videoControlsHovered && _volumeOverlayEntry == null) {
       _videoControlsHideTimer = Timer(_videoControlsHoverDuration, () {
         if (mounted) {
           _videoControlsVisible.value = false;
@@ -2804,13 +2841,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
           () => unawaited(_replayCurrentCueAndPokeControls()),
         ),
-        replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
-          () => unawaited(_replayPreviousCueAndPokeControls()),
-        ),
         showFavoriteSentences: () => _runWhenImmersiveAllowsFullControls(
           _showFavoriteSentencesPanel,
         ),
         escape: () {
+          // 音量 popover 开着时 Esc 先关它（最轻量的浮层，逐级退出最先级，TODO-337）。
+          if (_volumeOverlayEntry != null) {
+            _dismissVolumePopover();
+            return;
+          }
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
           // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
@@ -3037,33 +3076,262 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 音量按钮（TODO-337）。固定宽度按钮（不用 media_kit 的 hover 展开条——它会把内部
+  /// [AnimatedContainer] 宽度从 12 撑到 82px、实时挤走右邻全屏键，BUG-248A 原症状）。
+  ///
+  /// 桌面：hover 音量按钮就地弹紧凑竖向滑条 popover（[_showVolumePopover]），点击图标 =
+  /// 静音 / 取消静音，悬停时鼠标滚轮调音量（[_onVolumeWheel]）；鼠标移出按钮且未移到
+  /// popover 上、或控制条隐藏、或 Esc → 关闭 popover（均非 modal）。
+  /// 触屏：点击图标弹同款竖向 popover（滑条 + 静音按钮）。
   Widget _buildVolumeButton(
     VideoPlayerController controller, {
     required bool desktop,
   }) {
-    // 桌面与移动统一用「固定宽度音量按钮 + 点击弹音量菜单」（BUG-248A）：
-    // media_kit 的 [MaterialDesktopVolumeButton] 在 hover 时把内部 [AnimatedContainer]
-    // 宽度从 12 撑到 82px、实时挤走右邻全屏键（用户报「音量挤按钮」）。这里放弃 hover
-    // 展开条，复用移动端已验证的 [MaterialCustomButton] + [_showVolumeMenu] 路径，按钮
-    // 宽度恒定不再随 hover 抖动，桌面也能从弹出的滑块菜单调音量。
-    final Widget button = desktop
-        ? MaterialDesktopCustomButton(
-            icon: Icon(
-              _volumeIconFor(controller.volume),
-              size: _videoControlIconSize,
+    final Widget icon = Icon(
+      _volumeIconFor(controller.volume),
+      size: _videoControlIconSize,
+    );
+    if (!desktop) {
+      // 触屏：点击图标弹 popover（滑条 + 静音按钮），无 hover / 滚轮语义。
+      return Tooltip(
+        message: t.audio_volume,
+        child: MaterialCustomButton(
+          icon: icon,
+          onPressed: () => _toggleVolumePopover(controller),
+        ),
+      );
+    }
+    // 桌面：MouseRegion(hover 显示 popover) + Listener(滚轮调音量)；点击 = 静音切换。
+    return MouseRegion(
+      onEnter: (_) => _onVolumeAnchorHover(controller, true),
+      onExit: (_) => _onVolumeAnchorHover(controller, false),
+      child: Listener(
+        onPointerSignal: (PointerSignalEvent event) {
+          if (event is PointerScrollEvent) {
+            _onVolumeWheel(controller, event.scrollDelta.dy);
+          }
+        },
+        child: Tooltip(
+          message: t.audio_volume,
+          child: KeyedSubtree(
+            key: _volumeButtonKey,
+            child: MaterialDesktopCustomButton(
+              icon: icon,
+              onPressed: () => unawaited(_toggleMute()),
             ),
-            onPressed: () => _showVolumeMenu(controller),
-          )
-        : MaterialCustomButton(
-            icon: Icon(
-              _volumeIconFor(controller.volume),
-              size: _videoControlIconSize,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 桌面：鼠标进入 / 离开音量按钮。进入即弹 popover；离开走延迟关闭，给「从按钮移到
+  /// popover」的间隙容错（其间 popover 自己的 [MouseRegion] 会 onEnter 取消关闭定时）。
+  void _onVolumeAnchorHover(VideoPlayerController controller, bool hovered) {
+    _volumeAnchorHovered = hovered;
+    if (hovered) {
+      _volumePopoverHoverCloseTimer?.cancel();
+      _volumePopoverHoverCloseTimer = null;
+      _showVolumePopover(controller);
+    } else {
+      _scheduleVolumePopoverHoverClose();
+    }
+  }
+
+  /// 桌面：悬停音量按钮时滚轮调音量（向上滚增、向下滚减，[_volumeStep] 步进）。滚轮
+  /// 的 [scrollDelta] 向下为正，故取负号让「上滚 = 增大」符合直觉。
+  void _onVolumeWheel(VideoPlayerController controller, double scrollDeltaY) {
+    final double delta = scrollDeltaY > 0 ? -_volumeStep : _volumeStep;
+    unawaited(_adjustVolume(delta));
+    // 滚轮调音量时若 popover 开着，同步刷新其滑条显示。
+    _syncVolumePopover(controller.volume);
+  }
+
+  /// 离开按钮 / popover 后延迟关闭（容错鼠标在两者间的移动间隙）。
+  void _scheduleVolumePopoverHoverClose() {
+    _volumePopoverHoverCloseTimer?.cancel();
+    _volumePopoverHoverCloseTimer =
+        Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      if (!_volumeAnchorHovered && !_volumePopoverHovered) {
+        _dismissVolumePopover();
+      }
+    });
+  }
+
+  /// 触屏点击：开则关、关则开（toggle）。
+  void _toggleVolumePopover(VideoPlayerController controller) {
+    if (_volumeOverlayEntry != null) {
+      _dismissVolumePopover();
+    } else {
+      _showVolumePopover(controller);
+    }
+  }
+
+  /// 把音量按钮的屏幕矩形映射到 Overlay 坐标系（吸收界面缩放 + 全屏路由变换，与
+  /// [_handleSecondaryTap] 同范式），返回锚点矩形；几何不可用时返回 null。
+  Rect? _volumeAnchorRectInOverlay() {
+    final BuildContext? overlayHost = _videoControlsContext;
+    if (overlayHost == null || !overlayHost.mounted) return null;
+    final RenderObject? buttonObject =
+        _volumeButtonKey.currentContext?.findRenderObject();
+    if (buttonObject is! RenderBox || !buttonObject.hasSize) return null;
+    final RenderObject? overlayObject =
+        Overlay.of(overlayHost).context.findRenderObject();
+    if (overlayObject is! RenderBox || !overlayObject.hasSize) return null;
+    final Offset topLeft = buttonObject.localToGlobal(
+      Offset.zero,
+      ancestor: overlayObject,
+    );
+    return topLeft & buttonObject.size;
+  }
+
+  /// 弹出 / 复用音量 popover。已开则只刷新（滚轮 / 静音改值时复用同一 entry）。
+  void _showVolumePopover(VideoPlayerController controller) {
+    if (!mounted) return;
+    _volumePopoverValue = controller.volume.clamp(0.0, 100.0).toDouble();
+    if (_volumeOverlayEntry != null) {
+      _volumeOverlayEntry!.markNeedsBuild();
+      return;
+    }
+    final BuildContext? overlayHost = _videoControlsContext;
+    if (overlayHost == null || !overlayHost.mounted) return;
+    final OverlayState? overlay = Overlay.maybeOf(overlayHost);
+    if (overlay == null) return;
+    final OverlayEntry entry = OverlayEntry(
+      builder: (BuildContext ctx) => _buildVolumePopover(ctx, controller),
+    );
+    _volumeOverlayEntry = entry;
+    overlay.insert(entry);
+  }
+
+  /// 关闭音量 popover（鼠标移出 / 点外部 / Esc / 控制条隐藏 / 切换均走此一处汇聚）。
+  void _dismissVolumePopover() {
+    _volumePopoverHoverCloseTimer?.cancel();
+    _volumePopoverHoverCloseTimer = null;
+    _volumeAnchorHovered = false;
+    _volumePopoverHovered = false;
+    _volumePopoverSetState = null;
+    final OverlayEntry? entry = _volumeOverlayEntry;
+    if (entry != null) {
+      if (entry.mounted) entry.remove();
+      entry.dispose();
+      _volumeOverlayEntry = null;
+    }
+  }
+
+  /// 调音量后同步 popover 滑条显示（popover 未开则 no-op）。
+  void _syncVolumePopover(double volume) {
+    if (_volumeOverlayEntry == null) return;
+    final double next = volume.clamp(0.0, 100.0).toDouble();
+    final StateSetter? setPopover = _volumePopoverSetState;
+    if (setPopover != null) {
+      setPopover(() => _volumePopoverValue = next);
+    } else {
+      _volumePopoverValue = next;
+      _volumeOverlayEntry!.markNeedsBuild();
+    }
+  }
+
+  /// 构建竖向音量 popover：透明全屏 barrier（仅触屏点外部关闭用，桌面靠 hover）+ 锚定到
+  /// 音量按钮上方的紧凑竖滑条 + 静音按钮。barrier 桌面不拦点击（[HitTestBehavior]），
+  /// 桌面靠按钮 / popover 的 hover 进出收口；触屏点 barrier 关闭。
+  Widget _buildVolumePopover(
+    BuildContext context,
+    VideoPlayerController controller,
+  ) {
+    final Rect? anchor = _volumeAnchorRectInOverlay();
+    if (anchor == null) return const SizedBox.shrink();
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    const double popoverWidth = 56;
+    const double popoverHeight = 188;
+    const double gap = 8;
+    // 默认放按钮正上方居中；若上方空间不足则翻到下方（音量键在底栏，通常上方足够）。
+    final double centerX = anchor.left + anchor.width / 2;
+    double left = centerX - popoverWidth / 2;
+    double top = anchor.top - gap - popoverHeight;
+    final Size screen = MediaQuery.of(context).size;
+    if (top < 0) top = anchor.bottom + gap;
+    left =
+        left.clamp(0.0, (screen.width - popoverWidth).clamp(0.0, screen.width));
+
+    final Widget panel = StatefulBuilder(
+      builder: (BuildContext ctx, StateSetter setPopover) {
+        _volumePopoverSetState = setPopover;
+        void setVolume(double value) {
+          final double next = value.clamp(0.0, 100.0).toDouble();
+          setPopover(() => _volumePopoverValue = next);
+          unawaited(controller.setVolume(next));
+          if (mounted) _showVolumeOsd(next);
+        }
+
+        return Material(
+          color: cs.surface.withValues(alpha: 0.94),
+          elevation: 8,
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            width: popoverWidth,
+            height: popoverHeight,
+            child: Column(
+              children: <Widget>[
+                const SizedBox(height: 8),
+                Expanded(
+                  child: RotatedBox(
+                    quarterTurns: 3,
+                    child: Slider(
+                      value: _volumePopoverValue,
+                      min: 0,
+                      max: 100,
+                      onChanged: setVolume,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: t.shortcut_action_video_toggle_mute,
+                  iconSize: _videoControlIconSize * 0.82,
+                  color: cs.primary,
+                  icon: Icon(_volumeIconFor(controller.volume)),
+                  onPressed: () async {
+                    await _toggleMute();
+                    _syncVolumePopover(controller.volume);
+                  },
+                ),
+                const SizedBox(height: 4),
+              ],
             ),
-            onPressed: () => _showVolumeMenu(controller),
-          );
-    return Tooltip(
-      message: t.audio_volume,
-      child: button,
+          ),
+        );
+      },
+    );
+
+    return Stack(
+      children: <Widget>[
+        // 触屏点外部关闭：透明全屏 barrier。桌面 hover 进出已收口，barrier 仅在触屏
+        // （非桌面控制条）拦截点击关闭，避免桌面误吞画面点击。
+        if (!_isDesktopVideoControls)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _dismissVolumePopover,
+            ),
+          ),
+        Positioned(
+          left: left,
+          top: top,
+          child: MouseRegion(
+            onEnter: (_) {
+              _volumePopoverHovered = true;
+              _volumePopoverHoverCloseTimer?.cancel();
+              _volumePopoverHoverCloseTimer = null;
+            },
+            onExit: (_) {
+              _volumePopoverHovered = false;
+              _scheduleVolumePopoverHoverClose();
+            },
+            child: panel,
+          ),
+        ),
+      ],
     );
   }
 
@@ -3572,69 +3840,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
-  void _showVolumeMenu(VideoPlayerController controller) {
-    if (_videoSheetOpen) return;
-    _videoSheetOpen = true;
-    double volume = controller.volume.clamp(0.0, 100.0).toDouble();
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (BuildContext ctx) {
-        return StatefulBuilder(
-          builder: (BuildContext ctx, StateSetter setModalState) {
-            void setVolume(double value) {
-              final double next = value.clamp(0.0, 100.0).toDouble();
-              setModalState(() => volume = next);
-              unawaited(controller.setVolume(next));
-              if (mounted) _showVolumeOsd(next);
-            }
-
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    IconButton(
-                      icon: Icon(_volumeIconFor(0)),
-                      onPressed: () => setVolume(0),
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: volume,
-                        min: 0,
-                        max: 100,
-                        divisions: 20,
-                        onChanged: setVolume,
-                      ),
-                    ),
-                    SizedBox(
-                      width: 48,
-                      child: Text(
-                        '${volume.round()}%',
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      _videoSheetOpen = false;
-      _refocusVideo();
-    });
-  }
-
   Future<void> _adjustVolume(double delta) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final double next = (controller.volume + delta).clamp(0.0, 100.0);
     await controller.setVolume(next);
-    if (mounted) _showVolumeOsd(next);
+    if (mounted) {
+      _showVolumeOsd(next);
+      // 键盘音量键调音量时若 popover 开着，同步刷新其滑条（TODO-337）。
+      _syncVolumePopover(next);
+    }
   }
 
   Future<void> _toggleMute() async {
@@ -3643,6 +3858,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final bool muted = await controller.toggleMute();
     if (mounted) {
       _showVolumeOsd(muted ? 0 : controller.volume);
+      // 静音键 / popover 静音按钮 / 点音量图标切换静音时同步 popover 滑条（TODO-337）。
+      _syncVolumePopover(muted ? 0 : controller.volume);
     }
   }
 
@@ -3989,11 +4206,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (cue == null) return;
     _pokeControlsVisible();
     await _controller?.skipToCue(cue);
-  }
-
-  Future<void> _replayPreviousCueAndPokeControls() async {
-    _pokeControlsVisible();
-    await _controller?.skipToPrevCue();
   }
 
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
