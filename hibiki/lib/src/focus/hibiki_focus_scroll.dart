@@ -4,14 +4,17 @@ import 'package:hibiki/src/focus/focus_geometry.dart';
 class HibikiFocusScroll {
   const HibikiFocusScroll._();
 
-  static void ensureVisible(BuildContext context) {
+  static void ensureVisible(
+    BuildContext context, {
+    Duration duration = const Duration(milliseconds: 120),
+  }) {
     if (!context.mounted) return;
     final ScrollableState? scrollable = Scrollable.maybeOf(context);
     if (scrollable == null) return;
     Scrollable.ensureVisible(
       context,
       alignment: 0.5,
-      duration: const Duration(milliseconds: 120),
+      duration: duration,
       curve: Curves.easeOutCubic,
     );
   }

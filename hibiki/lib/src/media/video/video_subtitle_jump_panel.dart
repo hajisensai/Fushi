@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -85,7 +86,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   VideoSubtitleListFilter _filter = VideoSubtitleListFilter.all;
 
   /// 每个可见行的 [GlobalKey]（按 visibleIndex），供自适应行高下用
-  /// [Scrollable.ensureVisible] 滚到当前 cue（TODO-340：放弃固定 itemExtent 换行后，
+  /// [HibikiFocusScroll.ensureVisible] 滚到当前 cue（TODO-340：放弃固定 itemExtent 换行后，
   /// 不能再按 `index * itemExtent` 算偏移）。每帧 build 重建。
   final Map<int, GlobalKey> _rowKeys = <int, GlobalKey>{};
 
@@ -136,12 +137,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 再精确居中（TODO-340）。
     final BuildContext? rowContext = _rowKeys[visibleIndex]?.currentContext;
     if (rowContext != null) {
-      Scrollable.ensureVisible(
-        rowContext,
-        alignment: 0.5,
-        duration: duration,
-        curve: curve,
-      );
+      HibikiFocusScroll.ensureVisible(rowContext, duration: duration);
       return;
     }
     final double viewport = _scrollController.position.viewportDimension;
@@ -156,7 +152,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       if (!mounted) return;
       final BuildContext? settled = _rowKeys[visibleIndex]?.currentContext;
       if (settled != null) {
-        Scrollable.ensureVisible(settled, alignment: 0.5, duration: duration);
+        HibikiFocusScroll.ensureVisible(settled, duration: duration);
       }
     });
   }
