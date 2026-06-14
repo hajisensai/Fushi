@@ -3,11 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
 
-/// TODO-293 redesign (supersedes the BUG-223 equal-width guard): the long-press
-/// dialog actions are now translucent capsule buttons layered over the cover,
-/// laid out in a wrapping bar. The intrinsic-width parity that BUG-223 fixed no
-/// longer applies — but the actions must still render their labels without
-/// overflow and lay out without exceptions on both wide and narrow dialogs.
+/// The long-press dialog quick actions are equal-width chips laid out below the
+/// cover: a single Expanded row when they fit, degrading to full-width vertical
+/// rows on a narrow dialog. Labels must render without overflow on both wide and
+/// narrow dialogs, and on a wide dialog the chips must share the row equally.
 void main() {
   // Three Japanese labels of differing length, the real
   // view_illustrations / audiobook_import / tag_label set.
@@ -63,10 +62,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a narrow dialog wraps the action chips without overflowing',
+  testWidgets('a wide dialog lays the quick-action chips out equal-width',
       (WidgetTester tester) async {
-    // Narrow enough that all three chips cannot sit on a single row; the
-    // wrapping bar must lay them out without throwing or clipping.
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpFrame(tester);
+
+    final double w1 = _chipWidth(tester, '査看插画');
+    final double w2 = _chipWidth(tester, '导入有声书');
+    final double w3 = _chipWidth(tester, '标签');
+    // Equal-width parity: the three chips share the row evenly regardless of
+    // their intrinsic label lengths.
+    expect((w1 - w2).abs(), lessThan(1.0));
+    expect((w2 - w3).abs(), lessThan(1.0));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a narrow dialog stacks the action chips without overflowing',
+      (WidgetTester tester) async {
+    // Narrow enough that the three chips cannot sit on a single row; the layout
+    // degrades to full-width vertical rows without throwing or clipping.
     tester.view.physicalSize = const Size(360, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -110,4 +128,14 @@ void main() {
     expect(tapped, 1);
     expect(tester.takeException(), isNull);
   });
+}
+
+/// Width of the chip wrapping the given label (the OutlinedButton ancestor).
+double _chipWidth(WidgetTester tester, String label) {
+  final Finder button = find.ancestor(
+    of: find.text(label),
+    matching: find.byType(OutlinedButton),
+  );
+  expect(button, findsOneWidget, reason: 'chip for "$label" not found');
+  return tester.getSize(button).width;
 }

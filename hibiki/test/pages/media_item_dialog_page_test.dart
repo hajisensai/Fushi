@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
 
-/// TODO-293 redesign: the long-press "book settings" dialog dropped the big
-/// "continue reading" FilledButton (it fought the tap-outside-to-dismiss
-/// barrier). Now the cover is the hero — tapping it opens the book — and the
-/// actions are translucent buttons layered over the cover. Destructive actions
-/// live behind a translucent overflow menu so they cannot be mis-tapped.
+/// The long-press "book settings" dialog shows the cover complete at the top and
+/// a column of full-width action buttons below it: a primary "read" launch
+/// button, quick actions, list actions, and (muted) destructive actions. The
+/// buttons live in their own below-cover column instead of translucent chips
+/// stacked over the cover, so the artwork is never eaten by the controls.
 void main() {
   Widget buildApp(Widget child) {
     return MaterialApp(home: Scaffold(body: Center(child: child)));
@@ -30,8 +30,7 @@ void main() {
         DialogListAction(label: 'Edit CSS', onPressed: () {}),
       ];
 
-  testWidgets(
-      'cover is the tap-to-read affordance — no big launch button is rendered',
+  testWidgets('a full-width launch button reads the book below the cover',
       (WidgetTester tester) async {
     int launched = 0;
     await tester.pumpWidget(
@@ -49,20 +48,40 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    // The redesigned dialog must NOT show a big "READ" FilledButton anymore.
-    expect(find.text('READ'), findsNothing);
-    expect(find.byType(FilledButton), findsNothing);
+    // The launch action is a real labelled FilledButton, not a cover tap.
+    expect(find.widgetWithText(FilledButton, 'READ'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'READ'));
+    await tester.pump();
+    expect(launched, 1, reason: 'tapping READ should invoke onLaunch');
+  });
 
-    // Tapping the cover opens the book (= read). The cover hero is wrapped in
-    // an InkWell carrying a [Semantics] button labelled with [launchLabel].
-    final Finder coverTap = find.descendant(
-      of: find.bySemanticsLabel('READ'),
+  testWidgets('the cover is rendered complete and is not a read affordance',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        MediaItemDialogFrame(
+          cover: const SizedBox(
+            key: ValueKey<String>('cover-image'),
+            width: 260,
+            height: 100,
+          ),
+          title: 'Test title',
+          launchLabel: 'READ',
+          onLaunch: () {},
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    // The cover widget is shown directly (no InkWell read wrapper over it); the
+    // read affordance is the separate FilledButton, not the cover.
+    expect(find.byKey(const ValueKey<String>('cover-image')), findsOneWidget);
+    final Finder coverInkWell = find.ancestor(
+      of: find.byKey(const ValueKey<String>('cover-image')),
       matching: find.byType(InkWell),
     );
-    expect(coverTap, findsWidgets);
-    await tester.tap(coverTap.first);
-    await tester.pump();
-    expect(launched, 1, reason: 'tapping the cover should invoke onLaunch');
+    expect(coverInkWell, findsNothing,
+        reason: 'the cover must not be the tap-to-read target');
   });
 
   testWidgets('all non-destructive actions render as labelled buttons',
@@ -90,8 +109,7 @@ void main() {
     expect(find.text('Edit CSS'), findsOneWidget);
   });
 
-  testWidgets(
-      'destructive actions are hidden behind a translucent overflow menu',
+  testWidgets('destructive actions render as visible (muted) buttons',
       (WidgetTester tester) async {
     int deleted = 0;
     await tester.pumpWidget(
@@ -110,41 +128,17 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    // Danger actions must NOT be flat buttons sitting in the dialog — they live
-    // behind the overflow menu and are not visible until it is opened.
-    expect(find.text('Delete'), findsNothing);
-    expect(find.text('Clear'), findsNothing);
-    expect(find.byType(PopupMenuButton<DialogDangerAction>), findsOneWidget);
-
-    // Opening the overflow reveals them and selecting fires the callback.
-    await tester.tap(find.byType(PopupMenuButton<DialogDangerAction>));
-    await tester.pumpAndSettle();
+    // Danger actions are plain visible buttons below the cover, not hidden
+    // behind an overflow menu.
+    expect(find.byType(PopupMenuButton<DialogDangerAction>), findsNothing);
     expect(find.text('Delete'), findsOneWidget);
     expect(find.text('Clear'), findsOneWidget);
     await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(deleted, 1);
   });
 
-  testWidgets('with no danger actions, no overflow menu is shown',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      buildApp(
-        MediaItemDialogFrame(
-          cover: const SizedBox(width: 260, height: 100),
-          title: 'No danger',
-          launchLabel: 'READ',
-          onLaunch: () {},
-          quickActions: quick(),
-        ),
-      ),
-    );
-
-    expect(tester.takeException(), isNull);
-    expect(find.byType(PopupMenuButton<DialogDangerAction>), findsNothing);
-  });
-
-  testWidgets('renders a tappable placeholder hero when cover is null',
+  testWidgets('renders the title with no cover and no exceptions',
       (WidgetTester tester) async {
     int launched = 0;
     await tester.pumpWidget(
@@ -159,13 +153,8 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('No cover'), findsOneWidget);
-    // Even without a cover image the hero stays tappable (= read).
-    final Finder coverTap = find.descendant(
-      of: find.bySemanticsLabel('READ'),
-      matching: find.byType(InkWell),
-    );
-    expect(coverTap, findsWidgets);
-    await tester.tap(coverTap.first);
+    // The launch button is still the read affordance even without a cover.
+    await tester.tap(find.widgetWithText(FilledButton, 'READ'));
     await tester.pump();
     expect(launched, 1);
   });
