@@ -53,6 +53,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onDuplicateCheck,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
+    this.onAppendSentence,
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
@@ -79,6 +80,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 查询某词条当前是否已收藏，用于按钮初始 ☆/★ 状态。
   final Future<bool> Function(String expression, String reading)?
       onFavoriteCheck;
+
+  /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：把当前正查的这一句追加进会话级
+  /// 制卡草稿缓冲。popup 点「+句」按钮经 `appendSentence` JS 处理器触发本回调；宿主
+  /// 把当前句（+句子音频区间）推入草稿，并返回草稿现累积的句数（含本句）。返回值给
+  /// popup 更新「已攒 N 句」角标。非空才在 popup 渲染「+句」按钮（书籍/有声书启用；
+  /// 视频 E 后续复用同一入口）。
+  final Future<int> Function()? onAppendSentence;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onTopPullReleased;
 
@@ -501,6 +509,9 @@ class DictionaryPopupWebViewState
       };
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
+      // TODO-270 F/G：宿主接受 appendSentence（书籍/有声书；视频 E 后续）时才渲染
+      // 弹窗「+句」按钮——纯查词页（首页词典）无草稿语义，恒 false 不显示。
+      window.sentenceDraftEnabled = ${widget.onAppendSentence != null};
       // 启用制卡时词典媒体（gaiji 外字）嵌入：popup.js 据此把外字渲染成
       // <img src="hoshi_dict_N.ext"> 并登记到 dictionaryMedia 负载，制卡处理器
       // (mineEntry handler) 再 writeDictionaryMediaCache 落盘供 repo 嵌进卡片。
@@ -832,6 +843,19 @@ class DictionaryPopupWebViewState
               return widget.onFavoriteCheck!(expression, reading);
             }
             return false;
+          },
+        );
+
+        // TODO-270 F/G：弹窗「+句」追加当前句到本卡草稿（乙方案）。不碰 mineEntry
+        // 字段契约——只发「append 当前句」信号给宿主，宿主把当前句推进草稿并回传
+        // 草稿现有句数（含本句），popup 据此更新「已攒 N 句」角标。三表面共用入口。
+        controller.addJavaScriptHandler(
+          handlerName: 'appendSentence',
+          callback: (_) async {
+            if (widget.onAppendSentence != null) {
+              return widget.onAppendSentence!();
+            }
+            return 0;
           },
         );
 

@@ -101,6 +101,54 @@ function isLatestEditable(expression, reading) {
         lastMinedEntryKey === mineEntryKey(expression, reading);
 }
 
+// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：弹窗「+句」入口把当前正查的这一句
+// 累积进宿主侧会话级草稿缓冲，连续查多句攒成一张合并卡。
+//
+// 数据流：JS 不持有草稿内容（句子文本/音频区间都由宿主 Dart 拥有，参见
+// MiningSentenceDraft）。这里只镜像草稿「句数」用于按钮角标——
+//   - 点「+句」→ callHandler('appendSentence') → 宿主推当前句进草稿 → 回传新句数。
+//   - 制卡成功（mineEntry）→ 宿主清空草稿 → JS 同步把镜像计数清零。
+// 两个状态拥有者（Dart 草稿、JS 角标）只在同两个事件（追加、制卡）更新，绝不漂移。
+let sentenceDraftCount = 0;
+
+// 刷新页面上所有「+句」按钮的视觉态（多词条头共享同一镜像计数）。
+// querySelectorAll 不可用时（极端 fake DOM）静默跳过，不影响制卡主流程。
+function refreshAllAppendSentenceButtons() {
+    if (typeof document.querySelectorAll !== 'function') return;
+    document.querySelectorAll('.append-sentence-button')
+        .forEach(refreshAppendSentenceButton);
+}
+
+// 把「+句」按钮的视觉态（角标句数 + 高亮）同步到当前镜像计数。N>=1 时显示「+N」
+// 角标并高亮，0 时只显示「+句」基态。
+function refreshAppendSentenceButton(button) {
+    if (!button) return;
+    button.textContent = '+句';
+    if (sentenceDraftCount > 0) {
+        const badge = el('span', {
+            className: 'append-count',
+            textContent: String(sentenceDraftCount),
+        });
+        button.appendChild(badge);
+        button.classList.add('has-draft');
+    } else {
+        button.classList.remove('has-draft');
+    }
+}
+
+// 追加当前句到宿主草稿，回传宿主侧的新句数（含本句）。宿主未接入时回 0（按钮也不会
+// 渲染，故正常路径不到这里）。
+async function appendSentenceToDraft() {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler('appendSentence');
+        const n = (typeof reply === 'number' && Number.isFinite(reply)) ? reply : 0;
+        return n >= 0 ? n : 0;
+    } catch (e) {
+        console.error('appendSentence failed', e);
+        return sentenceDraftCount;
+    }
+}
+
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
     for (const [key, value] of Object.entries(props)) {
@@ -1649,6 +1697,13 @@ function createEntryHeader(entry, idx) {
 
                 const reply = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
                 const result = parseMineResult(reply);
+                // TODO-270 F/G：制卡后宿主清空草稿（合并卡已落地），同步把 JS 镜像
+                // 计数清零并刷新「+句」角标，使两端状态在同一事件归零、不漂移。
+                // 仅在启用草稿的表面才动 DOM（纯查词页/视频 E 未接入时不渲染「+句」）。
+                if (window.sentenceDraftEnabled) {
+                    sentenceDraftCount = 0;
+                    refreshAllAppendSentenceButtons();
+                }
                 const refreshFromAnki = async () => {
                     // Re-detect from Anki so the post-mine state is the real one.
                     const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
@@ -1686,7 +1741,35 @@ function createEntryHeader(entry, idx) {
     window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(isDuplicate => {
         setMineState(isDuplicate);
     });
-    
+
+    // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅书籍/有声书（宿主接受
+    // appendSentence）渲染「+句」入口。点一次把当前句累积进宿主草稿，连续查多句攒成
+    // 一张合并卡；角标显示已攒句数。不碰 mineEntry 字段契约——只发追加信号。
+    if (window.sentenceDraftEnabled) {
+        const appendButton = el('button', {
+            className: 'append-sentence-button',
+            ontouchstart: () => {
+                lastSelection = window.getSelection()?.toString() || '';
+            },
+            onclick: async () => {
+                if (appendButton.dataset.busy === '1') return;
+                appendButton.dataset.busy = '1';
+                appendButton.disabled = true;
+                try {
+                    sentenceDraftCount = await appendSentenceToDraft();
+                    // 全弹窗共享同一镜像计数：刷新所有「+句」按钮角标，使任意词条头
+                    // 的累积态一致。
+                    refreshAllAppendSentenceButtons();
+                } finally {
+                    appendButton.dataset.busy = '';
+                    appendButton.disabled = false;
+                }
+            },
+        });
+        refreshAppendSentenceButton(appendButton);
+        buttonsContainer.appendChild(appendButton);
+    }
+
     header.appendChild(buttonsContainer);
     
     return header;

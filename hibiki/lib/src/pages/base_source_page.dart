@@ -515,6 +515,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             final repo = ref.read(ankiRepositoryProvider);
             return repo.isDuplicate(expression, reading);
           },
+          // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅支持草稿的表面（reader 覆写
+          // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
+          onAppendSentence:
+              supportsSentenceDraft ? onAppendSentenceToDraft : null,
         ),
       ),
     );
@@ -558,6 +562,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Called when all dictionary popups are dismissed (stack becomes empty).
   /// Override in subclasses to hook post-dismiss logic.
   void onAllPopupsDismissed() {}
+
+  /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：本表面是否支持「+句」累积草稿。
+  /// 默认 false（纯查词/视频 E 未接入），reader 覆写为 true。决定弹窗是否渲染「+句」
+  /// 按钮（经 [onAppendSentence] → `window.sentenceDraftEnabled`）。
+  @protected
+  bool get supportsSentenceDraft => false;
+
+  /// TODO-270 F/G：弹窗「+句」追加当前正查句到本表面会话级制卡草稿，返回累积句数
+  /// （含本句）。默认 no-op 返回 0（[supportsSentenceDraft] 为 false 时不会被调用）。
+  /// reader 覆写：把当前句 + 句子音频区间推进草稿。
+  @protected
+  Future<int> onAppendSentenceToDraft() async => 0;
 
   /// Called when a non-last popup layer is dismissed (the stack shrinks but a
   /// parent popup remains). Override (reader) to keep the char cursor following
