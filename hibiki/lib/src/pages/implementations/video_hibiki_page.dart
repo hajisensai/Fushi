@@ -698,6 +698,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VideoControlCustomization _controlCustomization =
       VideoControlCustomization.defaults;
 
+  /// Live 9-slot render layout (TODO-274 phase 1). Derived from the persisted
+  /// legacy [_controlCustomization] (single persisted source of truth) so the
+  /// control bar is rendered data-driven over [VideoControlLayout] while the
+  /// picker / persistence stay on the legacy model until phase 2. For the
+  /// default config this resolves to [VideoControlLayout.currentChrome] →
+  /// pixel-identical to the hardcoded chrome it replaces.
+  VideoControlLayout get _controlLayout =>
+      VideoControlLayout.fromLegacy(_controlCustomization);
+
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
   bool _lockWindowAspectRatio = true;
   double? _appliedWindowAspectRatio;
@@ -3231,8 +3240,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) {
     return <Widget>[
       for (final VideoControlButton button
-          in _controlCustomization.buttonsFor(VideoControlPlacement.bottom))
+          in _slotLearningButtons(VideoControlSlot.bottomRight))
         _buildVideoControlButton(controller, button, desktop: desktop),
+    ];
+  }
+
+  /// Slot renderer core (TODO-274 phase 1): the ordered, user-customizable
+  /// learning buttons that live in [slot] of the live [_controlLayout].
+  ///
+  /// This is the single data-driven mapping `VideoControlSlot → ordered buttons`
+  /// that replaces the hardcoded `_controlCustomization.buttonsFor(...)` lookups
+  /// at every render point. Phase 1 only exposes the five learning keys as
+  /// customizable items (transport / nav keys stay fixed in the chrome), so the
+  /// renderer filters the slot to learning items ([VideoControlItem.legacyButton]
+  /// non-null) and maps them back to [VideoControlButton] for the shared
+  /// icon / tooltip / activate path. Special-render transport items in the same
+  /// slot (volume / fullscreen / playPause / title / positionIndicator) are
+  /// drawn by their dedicated builders and are intentionally excluded here.
+  ///
+  /// For the default config [_controlLayout] == [VideoControlLayout.currentChrome]
+  /// → bottomRight yields `[speed]` and screenRight yields
+  /// `[subtitleList, favoriteSentence, favoriteSentences, settings]`, identical
+  /// to the legacy `buttonsFor(bottom)` / `buttonsFor(rightRail)` it replaces.
+  List<VideoControlButton> _slotLearningButtons(VideoControlSlot slot) {
+    return <VideoControlButton>[
+      for (final VideoControlItem item in _controlLayout.itemsIn(slot))
+        if (item.legacyButton != null) item.legacyButton!,
     ];
   }
 
@@ -5362,8 +5395,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
+    // Slot renderer (TODO-274 phase 1): the floating right rail is the
+    // screenRight slot of the live [_controlLayout]. Default config →
+    // [subtitleList, favoriteSentence, favoriteSentences, settings], identical
+    // to the legacy rightRail placement it replaces.
     final List<VideoControlButton> buttons =
-        _controlCustomization.buttonsFor(VideoControlPlacement.rightRail);
+        _slotLearningButtons(VideoControlSlot.screenRight);
     if (buttons.isEmpty) return const SizedBox.shrink();
     return Positioned.fill(
       child: ValueListenableBuilder<bool>(
