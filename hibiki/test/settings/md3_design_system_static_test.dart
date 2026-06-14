@@ -768,14 +768,14 @@ void main() {
     expect(buildSource, isNot(contains('const EdgeInsets.all(8)')));
   });
 
-  test('reader history card footer uses shared MD3 spacing tokens', () {
+  test('reader history card layout uses shared MD3 spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
     ).readAsStringSync();
     final String cardLayout = _functionSource(
       source,
       'Widget _bookCardLayout({',
-      'Widget _cardBadge({',
+      'Widget _titleOverlay(String title)',
     );
     final String epubCardChrome = _functionSource(
       source,
@@ -783,19 +783,14 @@ void main() {
       'Widget buildMediaItem(MediaItem item)',
     );
 
-    expect(source, isNot(contains('Widget _titleOverlay(String title)')));
-    expect(cardLayout, contains('Widget _bookCardFooter({'));
     expect(cardLayout, contains('HibikiDesignTokens.of(context)'));
     expect(cardLayout, contains('tokens.spacing'));
-    expect(cardLayout, contains('tokens.surfaces'));
-    expect(cardLayout, contains('EdgeInsetsDirectional.fromSTEB('));
-    expect(cardLayout, contains('BorderSide(color: tokens.surfaces.outline)'));
-    expect(cardLayout, contains('TextOverflow.ellipsis'));
+    expect(cardLayout, contains('_titleOverlay(title)'));
+    expect(cardLayout, contains('PositionedDirectional('));
+    expect(cardLayout, contains('tokens.spacing.gap * 0.75'));
     expect(epubCardChrome, contains('_bookCardLayout('));
     expect(cardLayout, isNot(contains('EdgeInsets.only(right: 3, bottom: 2)')));
     expect(cardLayout, isNot(contains('EdgeInsets.fromLTRB(12, 8, 12, 2)')));
-    expect(cardLayout, isNot(contains('constraints.maxHeight * 0.38')));
-    expect(cardLayout, isNot(contains('LinearGradient(')));
     expect(cardLayout, isNot(contains('top: 6,')));
     expect(cardLayout, isNot(contains('right: 6,')));
     expect(cardLayout, isNot(contains('left: 6,')));
@@ -889,14 +884,15 @@ void main() {
     );
   });
 
-  test('reader history card footer and drag target use shared MD3 tokens', () {
+  test('reader history title overlay and drag target use shared MD3 tokens',
+      () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
     ).readAsStringSync();
-    final String cardFooter = _functionSource(
+    final String titleOverlay = _functionSource(
       source,
-      'Widget _bookCardFooter({',
-      'Widget _cardBadge({',
+      'Widget _titleOverlay(String title)',
+      'Widget _bookCardTagArea(',
     );
     // BookDragTarget 已提取到独立文件 book_drag_target.dart，守卫跟随。
     final String dragSource = File(
@@ -908,16 +904,16 @@ void main() {
       dragSource.length,
     );
 
-    expect(source, isNot(contains('Widget _titleOverlay(String title)')));
-    expect(cardFooter, contains('HibikiDesignTokens.of(context)'));
-    expect(cardFooter, contains('tokens.spacing'));
-    expect(cardFooter, contains('tokens.surfaces'));
-    expect(cardFooter, contains('tokens.surfaces.card'));
-    expect(cardFooter, contains('tokens.surfaces.outline'));
-    expect(cardFooter, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
-    expect(cardFooter, isNot(contains('theme.colorScheme.surface')));
-    expect(cardFooter, isNot(contains('theme.colorScheme.onSurface')));
-    expect(cardFooter, isNot(contains('LinearGradient(')));
+    // 书名暗角覆盖层用共享 token，不允许硬编码颜色/像素。
+    expect(titleOverlay, contains('HibikiDesignTokens.of(context)'));
+    expect(titleOverlay, contains('tokens.spacing'));
+    expect(titleOverlay, contains('tokens.surfaces'));
+    expect(titleOverlay, contains('tokens.surfaces.page.withValues'));
+    expect(titleOverlay, contains('tokens.surfaces.onSurface'));
+    expect(titleOverlay, contains('LinearGradient('));
+    expect(titleOverlay, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
+    expect(titleOverlay, isNot(contains('theme.colorScheme.surface')));
+    expect(titleOverlay, isNot(contains('theme.colorScheme.onSurface')));
 
     expect(dragTarget, contains('HibikiDesignTokens.of(context)'));
     expect(dragTarget, contains('tokens.spacing'));

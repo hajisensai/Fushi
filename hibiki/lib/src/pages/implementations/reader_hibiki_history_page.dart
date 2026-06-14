@@ -1245,101 +1245,89 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Widget? metadata,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final double overlayInset = tokens.spacing.gap * 0.75;
+    // 书名压在封面内（底部渐变暗角），封面铺满整张卡片不被下方 footer 压缩；
+    // 右上角类型徽章（TODO-284）、左上角标签、底部进度条均叠加在封面上。
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRect(child: cover),
-              if (coverBadge != null)
-                PositionedDirectional(
-                  end: tokens.spacing.gap * 0.75,
-                  top: tokens.spacing.gap * 0.75,
-                  child: SizedBox.square(
-                    dimension: tokens.spacing.gap * 5,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: coverBadge,
-                    ),
-                  ),
-                ),
-            ],
+        ClipRect(child: cover),
+        _titleOverlay(title),
+        if (metadata != null)
+          PositionedDirectional(
+            start: 0,
+            end: 0,
+            bottom: 0,
+            child: metadata,
           ),
-        ),
-        _bookCardFooter(
-          title: title,
-          tagLabels: tagLabels,
-          metadata: metadata,
-        ),
+        if (coverBadge != null)
+          PositionedDirectional(
+            end: overlayInset,
+            top: overlayInset,
+            child: SizedBox.square(
+              dimension: tokens.spacing.gap * 5,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: coverBadge,
+              ),
+            ),
+          ),
+        if (tagLabels != null)
+          PositionedDirectional(
+            start: overlayInset,
+            top: overlayInset,
+            child: _bookCardTagArea(tagLabels),
+          ),
       ],
     );
   }
 
-  Widget _bookCardFooter({
-    required String title,
-    Widget? tagLabels,
-    Widget? metadata,
-  }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final TextStyle titleStyle =
-        (textTheme.labelSmall ?? const TextStyle()).copyWith(
-      color: tokens.surfaces.onSurface,
-      fontWeight: FontWeight.w600,
-    );
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tokens.surfaces.card,
-        border: Border(
-          top: BorderSide(color: tokens.surfaces.outline),
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsetsDirectional.fromSTEB(
-          tokens.spacing.gap * 0.75,
-          tokens.spacing.gap * 0.625,
-          tokens.spacing.gap * 0.75,
-          tokens.spacing.gap * 0.75,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: metadata == null ? 2 : 1,
-                    textAlign: TextAlign.start,
-                    softWrap: true,
-                    style: titleStyle,
-                  ),
-                ),
+  Widget _titleOverlay(String title) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          height: constraints.maxHeight * 0.38,
+          width: double.infinity,
+          alignment: Alignment.bottomCenter,
+          padding: EdgeInsetsDirectional.fromSTEB(
+            tokens.spacing.gap * 0.75,
+            tokens.spacing.gap / 2,
+            tokens.spacing.gap * 0.75,
+            tokens.spacing.gap * 0.75,
+          ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                tokens.surfaces.page.withValues(alpha: 0),
+                tokens.surfaces.page.withValues(alpha: 0.85),
               ],
             ),
-            if (metadata != null) ...[
-              SizedBox(height: tokens.spacing.gap / 2),
-              metadata,
-            ],
-            if (tagLabels != null) ...[
-              SizedBox(height: tokens.spacing.gap / 2),
-              _bookCardTagArea(tagLabels),
-            ],
-          ],
+          ),
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            softWrap: true,
+            style: textTheme.labelSmall?.copyWith(
+              color: tokens.surfaces.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   Widget _bookCardTagArea(Widget tagLabels) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
+        maxWidth: tokens.spacing.gap * 9,
         maxHeight: tokens.spacing.gap * 3.5,
       ),
       child: ClipRect(child: tagLabels),
