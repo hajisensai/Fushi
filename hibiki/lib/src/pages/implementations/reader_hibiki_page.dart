@@ -28,6 +28,7 @@ import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
+import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
@@ -3236,6 +3237,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   int? _cachedSentenceOffset;
   bool _currentSentenceIsFavorited = false;
 
+  /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：会话级制卡草稿缓冲。弹窗点「+句」
+  /// 把当前句（+句子音频区间）推进这里，连续查多句累积；制卡时合成一段写入卡片
+  /// sentence 字段（[joinMinedSentences]），音频区间合并（[mergeMiningAudioRanges]，
+  /// 跨章/跨音频文件退化为只合文本）。制卡成功或关闭弹窗栈后清空。书籍 + 有声书共用
+  /// 同一 reader 页 / currentSentence 链路，区别只在裁句子音频。
+  final MiningSentenceDraft _miningDraft = MiningSentenceDraft();
+
+  /// reader（书籍/有声书）支持「+句」累积草稿。
+  @override
+  bool get supportsSentenceDraft => true;
+
   int get _lookupSectionIndex {
     if (_lyricsMode && _lookupCue != null) {
       final SasayakiFragment? frag =
@@ -3349,6 +3361,48 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     super.clearDictionaryResult();
   }
 
+  /// TODO-104a / BUG-172：当前正查这一句对应的句子音频区间（已含 A/V 同步偏移）。
+  /// 抽出来给「制卡」与「+句追加草稿」共用，确保两条路径裁的是同一句同一区间。
+  /// 返回 null 表示无音频文件，或无法从当前 cue / 句子 span 解析出区间。
+  AudioPlaybackRange? _currentSentenceAudioRange() {
+    final AudiobookPlayerController? audioController = _audiobookController;
+    final List<File>? audioFiles = audioController?.audioFiles;
+    if (audioFiles == null) return null;
+    final AudioCue? cue = _lookupCue;
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    final AudioPlaybackRange? clip = miningSentenceAudioRange(
+      cues: _sentenceAudioMiningCues(cue),
+      cue: cue,
+      sentence: sentence,
+      sectionIndex: _lookupSectionIndex,
+      sentenceNormCharOffset: _cachedSentenceRange?.offset,
+      sentenceNormCharLength: _cachedSentenceRange?.length,
+      delayMs: audioController?.delayMs.value ?? 0,
+    );
+    if (clip == null ||
+        clip.audioFileIndex < 0 ||
+        clip.audioFileIndex >= audioFiles.length) {
+      return null;
+    }
+    return clip;
+  }
+
+  /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：把当前正查的这一句（+句子音频
+  /// 区间）追加进会话级制卡草稿，返回累积句数（含本句）。书籍纯阅读时音频区间为
+  /// null（只合文本）；有声书把当前句区间一并入队，制卡时合并成首句起→末句止。
+  /// 当前句为空（没有正查内容）则不入队，返回现有句数。
+  @override
+  Future<int> onAppendSentenceToDraft() async {
+    final String currentSentence =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    _miningDraft.append(MiningDraftSentence(
+      sentence: currentSentence,
+      audioRange: _currentSentenceAudioRange(),
+    ));
+    return _miningDraft.length;
+  }
+
   /// TODO-270 D：reader 制卡/覆盖共用的「构造制卡上下文」。返回构造好的
   /// [AnkiMiningContext] 与一个 `cleanup` 闭包（清理句子音频临时目录，调用方在 mine/
   /// update 完成后必须调用）。当句子音频导出失败（已弹 toast）时返回 `context: null`，
@@ -3356,8 +3410,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 封面/句子音频/句子偏移/分类标签链路（避免两份漂移）。
   Future<({AnkiMiningContext? context, void Function() cleanup})>
       _prepareMiningContext() async {
-    final String sentence =
+    final String currentSentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
+    // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：把已累积的草稿句 + 当前句合成一段
+    // 写入卡片 sentence 字段；草稿为空时等价于原来的单句（joinMinedSentences 单句
+    // 直接 trim 返回）。音频区间同理合并（跨章/跨音频文件退化为只合文本）。
+    final String sentence = _miningDraft.composeText(currentSentence);
 
     String? coverPath;
     if (_book?.coverHref != null && _extractDir != null) {
@@ -3380,8 +3438,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     final AudioCue? cue = _lookupCue;
-    final AudiobookPlayerController? audioController = _audiobookController;
-    final List<File>? audioFiles = audioController?.audioFiles;
+    final List<File>? audioFiles = _audiobookController?.audioFiles;
     // BUG-172 / TODO-104a: do not gate on `cue != null`. Audiobook cue alignment
     // leaves gaps (titles, captions, alignment misses, chapter edges); a word can
     // land in covered-but-uncued text so `_lookupCue` is null, yet the sentence
@@ -3389,16 +3446,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // the range by the sentence span (cue-by-range) instead of silently dropping
     // sentence audio. `miningSentenceAudioRange` returns null when nothing can be
     // derived (no cue and no usable sentence span), so the gate stays honest.
+    //
+    // TODO-270 F/G：把当前句区间与草稿累积的句子区间合并成「首句起→末句止」。
+    // 跨章/跨音频文件时 MiningSentenceDraft.composeAudioRange 返回 null →退化为只
+    // 合文本（不静默拼坏音频），并诚实记日志。
     if (audioFiles != null) {
-      final AudioPlaybackRange? clip = miningSentenceAudioRange(
-        cues: _sentenceAudioMiningCues(cue),
-        cue: cue,
-        sentence: sentence,
-        sectionIndex: _lookupSectionIndex,
-        sentenceNormCharOffset: _cachedSentenceRange?.offset,
-        sentenceNormCharLength: _cachedSentenceRange?.length,
-        delayMs: audioController?.delayMs.value ?? 0,
-      );
+      final AudioPlaybackRange? currentRange = _currentSentenceAudioRange();
+      final AudioPlaybackRange? clip =
+          _miningDraft.composeAudioRange(currentRange);
       if (clip != null &&
           clip.audioFileIndex >= 0 &&
           clip.audioFileIndex < audioFiles.length) {
@@ -3414,12 +3469,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           outputPath: outputPath,
         );
       } else if (cue == null) {
-        // Visibility: audio exists but neither a lookup cue nor a sentence span
-        // could be resolved to a cue range. Log so a future "no sentence audio"
+        // Visibility: audio exists but neither a lookup cue / sentence span nor a
+        // mergeable draft range resolved to a cue range (or the draft spans
+        // multiple audio files → text-only). Log so a future "no sentence audio"
         // report is traceable instead of being a silent drop.
         debugPrint(
           '[ReaderHibiki] mine: audio present but no sentence-audio range '
-          '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}).',
+          '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}, '
+          'draftSentences=${_miningDraft.length}).',
         );
       }
     }
@@ -3478,6 +3535,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     switch (outcome.result) {
       case MineResult.success:
+        // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
+        // 两端在同一事件归零、不漂移）。下一次查词从空草稿重新累积。
+        _miningDraft.clear();
         // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，
         // 不 mixin DictionaryPageMixin，故直接调 addMiningCount，来源固定 book）。
         // 失败不影响制卡结果，吞掉并记日志。
@@ -4080,6 +4140,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
   @override
   void onAllPopupsDismissed() {
     if (!mounted) return;
+    // TODO-270 F/G：整条查词浮层栈关闭 = 一次「查词会话」结束，丢弃未制卡的多句
+    // 草稿（避免下次查词带着上次没用掉的累积句）。制卡成功已在 onMineFromPopup
+    // 清过，这里兜住「攒了几句但没制卡就关掉」的情况。
+    _miningDraft.clear();
     _clearLookupState();
     // Return Flutter focus to the reading content. The dismissed popup's WebView
     // held the keyboard/gamepad focus, so without this the reader receives no key

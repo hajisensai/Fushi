@@ -217,6 +217,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onUpdateEntry,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
+    this.onAppendSentence,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.onTapOutside,
@@ -258,6 +259,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
   final Future<bool> Function(String expression, String reading)?
       onFavoriteCheck;
+
+  /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：弹窗「+句」追加当前句到宿主草稿，
+  /// 返回累积句数。null 时弹窗不渲染「+句」按钮（纯查词页 / 视频 E 未接入前向后兼容）。
+  final Future<int> Function()? onAppendSentence;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -325,6 +330,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onDuplicateCheck: onDuplicateCheck,
             onFavoriteEntry: onFavoriteEntry,
             onFavoriteCheck: onFavoriteCheck,
+            onAppendSentence: onAppendSentence,
             onScrolledToBottom: onScrolledToBottom,
             onRendered: onRendered,
             onRenderError: onRenderError,

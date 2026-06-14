@@ -121,7 +121,8 @@ body {
 }
 
 .audio-button,
-.mine-button {
+.mine-button,
+.append-sentence-button {
     padding: 0 4px;
     border: none;
     background: transparent;
@@ -150,6 +151,30 @@ body {
 }
 
 .mine-button:disabled {
+    opacity: 0.15;
+}
+
+/* TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：把当前句追加进本卡草稿。点一次
+   累积一句，连续查多句攒成一张合并卡（文本 join('
+'，与视频一致），制卡后清空。
+   有草稿时高亮 + 角标显示已攒句数，让累积态可见。仅在宿主接受 appendSentence
+   时渲染（书籍/有声书；视频 E 后续复用同一入口）。*/
+.append-sentence-button {
+    position: relative;
+}
+
+.append-sentence-button.has-draft {
+    color: #2e9e4f;
+    opacity: 1;
+}
+
+.append-sentence-button .append-count {
+    font-size: 11px;
+    vertical-align: super;
+    margin-left: 1px;
+}
+
+.append-sentence-button:disabled {
     opacity: 0.15;
 }
 

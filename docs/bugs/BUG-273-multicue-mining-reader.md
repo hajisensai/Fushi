@@ -1,0 +1,14 @@
+## BUG-273 · 查词窗口多句合一制卡(书籍/有声书·乙方案草稿累积)
+- **报告**：2026-06-14（用户：）
+- **真实性**：✅ 功能续作（TODO-270 E/F/G 之 F/G）。乙方案：查词时把当前句累积进一张卡的会话级草稿，连续查多句累积，最后制成合并卡。设计文档 `.codex-test/TODO-270-EFG-multicue-design.md` 已证：卡片 sentence 字段值由宿主 Dart 定（reader `onMineFromPopup` → `_prepareMiningContext` → `AnkiMiningContext.sentence`），非 popup.js，故多句合一全落宿主 + 纯 helper，popup 制卡字段契约零改。
+- **[x] ① 已实现** —
+  - 共享草稿模型 `hibiki/lib/src/media/audiobook/mining_sentence_draft.dart`：`MiningSentenceDraft`（会话级累积 `List<MiningDraftSentence>`）+ 纯函数 `joinMinedSentences`（逐句 trim/丢空/join('\n')，与视频 `buildSelectedSubtitleCueContext` 一致）+ `mergeMiningAudioRanges`（首句起→末句止合并；跨 `audioFileIndex` 退化 null）。
+  - popup「+句」通用入口：`hibiki/assets/popup/popup.js` 加 `append-sentence-button` + `callHandler('appendSentence')`（不碰 mineEntry 字段契约，只发追加信号），gated on `window.sentenceDraftEnabled`；制卡成功后清零镜像计数。`popup.css` 加按钮/角标样式。
+  - 宿主三段接线：`dictionary_popup_webview.dart` 注册 `appendSentence` handler + `onAppendSentence` 回调 + 注入 `window.sentenceDraftEnabled`；`dictionary_popup_layer.dart` 透传；`base_source_page.dart` 加虚 `supportsSentenceDraft`（默认 false）+ `onAppendSentenceToDraft`（默认 0），仅支持的表面传回调。
+  - reader 宿主：`reader_hibiki_page.dart` `supportsSentenceDraft=true`，`onAppendSentenceToDraft` 推当前句 + 句子音频区间进草稿；`_prepareMiningContext` 用 `composeText`/`composeAudioRange` 合并；制卡成功 + 关闭弹窗栈清空草稿。有声书共用同一 reader 页/currentSentence 链路（区别只在裁句子音频，跨章/跨音频文件退化只合文本 + 诚实记日志）。与 270-D 覆盖正交（合并卡=一张卡天然吃覆盖，不碰 noteId/updateEntry）。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/audiobook/mining_sentence_draft_test.dart`：joinMinedSentences（单句/换行/丢空/空）+ mergeMiningAudioRanges（同文件合并/跨文件退化 null/null 间隙/单区间）+ 草稿累积/清空/composeText/composeAudioRange。
+  - `hibiki/test/reader/popup_append_sentence_asset_test.dart`：popup.js/css 资产守卫（appendSentence handler、sentenceDraftEnabled gate、mineEntry/updateEntry 各仅 1 处、制卡清零、按钮/角标样式）。
+  - `hibiki/test/pages/sentence_draft_wiring_guard_test.dart`：宿主三段接线 + reader 草稿消费 + 清空时机源码守卫。
+  - node 行为测试 `hibiki/test/utils/misc/popup_asset_behavior_test.js` 通过（制卡 ✓↩ 第三态不回归）。
+- **备注**：视频 E 待办——只需把 `video_hibiki_page.dart`（`DictionaryPageMixin`）接到同一 `onAppendSentenceToDraft` 入口（mixin 内自带一份 `MiningSentenceDraft` + override `supportsSentenceDraft`），无需再改 popup.js（`+句` 按钮已通用，gated on `window.sentenceDraftEnabled`）。本轮严禁碰 video_hibiki（视频 E 另派）。`flutter analyze` No issues；reader/anki/audiobook/pages 全绿；真机待用户。
