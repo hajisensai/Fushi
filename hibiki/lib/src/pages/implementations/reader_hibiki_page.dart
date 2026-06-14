@@ -2197,13 +2197,27 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   });
   var _wheelTimer = null;
   document.addEventListener('wheel', function(e) {
-    // BUG-239 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴），滚轮就是
-    // 原生滚动的主要驱动。此处一旦 preventDefault + 回传 onSwipe（90% 整屏跳页），
-    // 就把原生滚轮杀死、连续模式滚不动。故连续模式直接放行（不 preventDefault、
-    // 不设 timer、不回传 onSwipe），交给浏览器原生滚动；分页模式照旧滚轮翻页。
-    if (hoshiContinuousMode) return;
-    if (_wheelTimer) return;
+    // BUG-239 / TODO-345 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴）。
+    // 此处一旦在连续模式回传 onSwipe（90% 整屏跳页），就与原生滚动产生轴向冲突。
     var r = window.hoshiReader;
+    if (hoshiContinuousMode) {
+      // TODO-345: 横排连续滚动轴 = 纵向（与桌面鼠标滚轮的 deltaY 默认轴一致），
+      // 放行原生滚动即可顺滑滚动。竖排连续滚动轴 = 横向（CSS overflow-x 可滚、
+      // overflow-y:hidden），但桌面鼠标滚轮只产生 deltaY、不产生 deltaX，浏览器
+      // 不会把垂直滚轮可靠地映射到横向可滚轴 → 竖排连续模式滚轮滚不动。故竖排
+      // 显式把滚轮的主 delta 投影到横向 scrollBy（沿真实书写轴），方向与
+      // hoshiReader.paginate 一致（vertical-rl forward 往左 = scrollLeft 减小），
+      // 并 preventDefault 防止浏览器把它误吞到不可滚的纵轴；横排放行原生滚动不变。
+      if (!r || !r.isVertical || !r.isVertical()) return;
+      var delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (delta === 0) return;
+      var wm = window.getComputedStyle(document.body).writingMode;
+      var sign = (wm === 'vertical-rl') ? -1 : 1;
+      window.scrollBy({left: delta * sign, top: 0, behavior: 'auto'});
+      e.preventDefault();
+      return;
+    }
+    if (_wheelTimer) return;
     if (!r || !('paginationMetrics' in r)) return;
     _wheelTimer = setTimeout(function() { _wheelTimer = null; }, ${s.wheelPageTurnInterval});
     var forward = (e.deltaY < 0 || e.deltaX > 0);

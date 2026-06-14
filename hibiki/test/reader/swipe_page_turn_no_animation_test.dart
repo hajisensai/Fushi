@@ -89,13 +89,21 @@ void main() {
   });
 
   test(
-      'continuous mode wheel passes through to native scroll '
-      '(no preventDefault / no onSwipe page-turn)', () {
+      'continuous mode wheel: horizontal pass-through + vertical-writing '
+      'explicit horizontal scroll (BUG-239 / TODO-345)', () {
     // BUG-239 同源回归守卫：连续模式靠浏览器原生滚动（滚动轴 = 书写轴），
     // 滚轮就是原生滚动主要驱动。wheel 监听里历史上无条件 preventDefault +
     // 回传 onSwipe（90% 整屏跳页），把连续模式的原生滚轮杀死、章内滚不动。
-    // 这里钉住：wheel 监听必须先 `if (hoshiContinuousMode) return;` 放行原生
-    // 滚动，且该早返回必须出现在 onSwipe 回传与 preventDefault 之前。
+    //
+    // TODO-345：横排连续滚动轴 = 纵向（与桌面滚轮 deltaY 默认轴一致），放行原生
+    // 滚动即可。竖排连续滚动轴 = 横向（overflow-x 可滚 / overflow-y:hidden），但
+    // 桌面滚轮只产生 deltaY，浏览器不会可靠地把垂直滚轮映射到横向轴 → 竖排连续
+    // 模式滚轮滚不动。修复：连续模式分支里，竖排显式把滚轮 delta 投影到横向
+    // scrollBy + preventDefault；横排仍放行原生滚动（不 onSwipe / 不 preventDefault）。
+    //
+    // 这里钉住：(1) 连续分支必须先于分页的 onSwipe 翻页通道；(2) 连续分支内必须
+    // 有「仅竖排（isVertical）才显式 scrollBy({left: ...}) 横向滚动」；(3) 横排
+    // 连续仍是早返回（不触发 onSwipe / preventDefault）。
     final File page = File(
       'lib/src/pages/implementations/reader_hibiki_page.dart',
     );
@@ -110,17 +118,23 @@ void main() {
         reason: 'wheel listener must be a passive:false block');
     final String wheelBlock = src.substring(wheelStart, wheelEnd);
 
-    final int guardIdx = wheelBlock.indexOf('if (hoshiContinuousMode) return;');
+    // 连续模式分支必须存在，且先于分页 onSwipe 翻页通道（轴向冲突的根因门控）。
+    final int guardIdx = wheelBlock.indexOf('if (hoshiContinuousMode)');
     expect(guardIdx, greaterThanOrEqualTo(0),
-        reason: 'wheel must early-return in continuous mode to keep native '
-            'scrolling (pass-through, no page-turn)');
+        reason: 'wheel must branch on continuous mode before the paginated '
+            'onSwipe page-turn');
 
     final int swipeIdx = wheelBlock.indexOf("callHandler('onSwipe'");
-    final int preventIdx = wheelBlock.indexOf('e.preventDefault();');
     expect(swipeIdx, greaterThan(guardIdx),
-        reason: 'continuous-mode guard must precede the onSwipe page-turn');
-    expect(preventIdx, greaterThan(guardIdx),
-        reason: 'continuous-mode guard must precede preventDefault so native '
-            'wheel scrolling is not killed');
+        reason: 'continuous-mode branch must precede the onSwipe page-turn');
+
+    // 连续分支内：竖排显式横向滚动（沿真实书写轴），桌面垂直滚轮才滚得动。
+    final String continuousBranch = wheelBlock.substring(guardIdx, swipeIdx);
+    expect(continuousBranch, contains('isVertical'),
+        reason: 'continuous-mode wheel must gate the explicit scroll on '
+            'vertical writing (horizontal mode stays native pass-through)');
+    expect(continuousBranch, contains('scrollBy({left:'),
+        reason: 'vertical continuous mode must drive horizontal scrollBy so '
+            'the desktop wheel scrolls along the real (horizontal) axis');
   });
 }
