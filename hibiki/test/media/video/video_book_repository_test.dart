@@ -270,6 +270,37 @@ void main() {
     expect(refs.subtitles, hasLength(1));
   });
 
+  test(
+      'collectReferencedAssetPaths(excludeBookUid) drops the deleted book\'s own '
+      'refs (BUG-276 delete guard set)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/keep'),
+      title: Value('Keep'),
+      videoPath: Value('/keep.mp4'),
+      coverPath: Value('/docs/video_covers/keep.jpg'),
+      subtitleSource: Value('/docs/video_subtitles/keep.ass'),
+    ));
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/del'),
+      title: Value('Del'),
+      videoPath: Value('/del.mp4'),
+      coverPath: Value('/docs/video_covers/del.jpg'),
+      subtitleSource: Value('/docs/video_subtitles/del.ass'),
+    ));
+
+    // The delete path collects the "all OTHER books" reference set so the
+    // deleted book's own paths don't accidentally protect themselves.
+    final refs =
+        await repo.collectReferencedAssetPaths(excludeBookUid: 'video/del');
+    expect(refs.covers, contains('/docs/video_covers/keep.jpg'));
+    expect(refs.covers, isNot(contains('/docs/video_covers/del.jpg')));
+    expect(refs.subtitles, contains('/docs/video_subtitles/keep.ass'));
+    expect(refs.subtitles, isNot(contains('/docs/video_subtitles/del.ass')));
+  });
+
   test('database VACUUM after delete runs without error (BUG-276)', () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

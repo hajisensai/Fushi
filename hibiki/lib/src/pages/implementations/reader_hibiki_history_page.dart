@@ -1110,12 +1110,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ),
     );
     if (confirmed != true || !mounted) return;
-    // ① 删 DB 行（含字幕 cue，事务内）。
+    // ① 删 DB 行（含字幕 cue，事务内）。删前先抓被删 book 自己的封面/字幕路径——
+    //    删后行没了就查不到了，删除回收要拿它来精确删自己的资产。
+    final String? deletedCover = book.coverPath;
+    final String? deletedSubtitle = book.subtitleSource;
     await _videoRepo.deleteVideoBook(book.bookUid);
-    // ② 回收 app 拥有的封面/字幕副本：以删后仍存的 DB 引用为保留集做孤儿 GC
-    //    （BUG-276：用户的 13GB 占用主要是这些从未回收的副本）。videoPath 是用户
-    //    原始文件、不在这两个目录里，绝不会被删。
-    await _reclaimVideoDiskSpace();
+    // ② 回收 app 拥有的封面/字幕副本：只删被删 book 自己那两个明确路径，并用「全库
+    //    其余 book 的引用集」做护栏（仍被别本引用则保留）。绝不全库 sweep 字幕目录
+    //    （那会误删别的播放列表各集的导入副本 = 永久数据丢失，BUG-276 复核退回）。
+    //    videoPath 是用户原始文件、不在这两个目录里，绝不会被删。
+    await _reclaimVideoDiskSpace(
+      deletedBookUid: book.bookUid,
+      deletedCoverPath: deletedCover,
+      deletedSubtitlePath: deletedSubtitle,
+    );
     if (mounted) {
       ref.invalidate(videoBookTagMapProvider);
       ref.invalidate(filteredVideoBookUidsProvider);
@@ -1123,16 +1131,36 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  /// 删除视频后回收磁盘：孤儿封面/字幕 GC + SQLite `VACUUM`（回收 freelist/WAL）。
-  /// 失败不应阻断删除流程（DB 行已删），只记日志。VACUUM 必须在事务外调用。
-  Future<void> _reclaimVideoDiskSpace() async {
+  /// 删除视频后回收磁盘：精确删被删 book 自己的封面/字幕副本 + 安全的封面历史 GC
+  /// + SQLite `VACUUM`（回收 freelist/WAL）。失败不应阻断删除流程（DB 行已删），
+  /// 只记日志。VACUUM 必须在事务外调用。
+  ///
+  /// 关键：**不**对 `video_subtitles/` 做全库 sweep——播放列表只在 DB 存最后选中那集
+  /// 的字幕路径，全库 sweep 会把别的播放列表各集的导入副本当孤儿删掉（永久数据丢失，
+  /// BUG-276 复核退回）。字幕只删被删 book 自己 [deletedSubtitlePath]、且经「全库其余
+  /// 引用集」护栏（仍被别本引用则保留）。封面文件名与 bookUid 1:1 绑定、引用集完整，
+  /// 故可安全地全库清历史孤儿。
+  Future<void> _reclaimVideoDiskSpace({
+    required String deletedBookUid,
+    required String? deletedCoverPath,
+    required String? deletedSubtitlePath,
+  }) async {
     try {
+      // 删除后「全库其余 book」的引用集：被删 book 已不在 listAll，但仍显式排除其
+      // uid 以防并发/事务时序，且用作封面历史 GC 的完整保留集。
       final ({Set<String> covers, Set<String> subtitles}) refs =
-          await _videoRepo.collectReferencedAssetPaths();
-      await VideoStorage.gcOrphans(
-        referencedCoverPaths: refs.covers,
-        referencedSubtitlePaths: refs.subtitles,
+          await _videoRepo.collectReferencedAssetPaths(
+        excludeBookUid: deletedBookUid,
       );
+      // ① 精确删被删 book 自己的封面/字幕（仍被别本引用则保留）。
+      await VideoStorage.deleteBookAssets(
+        deletedCoverPath: deletedCoverPath,
+        deletedSubtitlePath: deletedSubtitlePath,
+        stillReferencedCoverPaths: refs.covers,
+        stillReferencedSubtitlePaths: refs.subtitles,
+      );
+      // ② 安全的封面历史 GC：清掉已删视频遗留的孤儿封面（封面引用集完整）。
+      await VideoStorage.gcOrphanCovers(referencedCoverPaths: refs.covers);
     } catch (e) {
       debugPrint('ReaderHistory: video asset GC failed: $e');
     }
