@@ -111,7 +111,11 @@ void main() {
         onFollowAudioPersist: (_) async {},
       );
 
-  Future<AudiobookSession> startedSession(String key) async {
+  Future<AudiobookSession> startedSession(
+    String key, {
+    List<AudioCue> cues = const <AudioCue>[],
+    int positionMs = 0,
+  }) async {
     installPlatform();
     final AudiobookSession session = makeSession();
     addTearDown(session.dispose);
@@ -123,8 +127,16 @@ void main() {
         mediaIdentifier: 'hoshi://book/$key',
       ),
       audioFiles: <File>[makeFile('hibiki-session-$key.mp3')],
-      prefs: prefs(),
+      prefs: SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: positionMs,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
       persist: persist(),
+      cues: cues,
     );
     return session;
   }
@@ -134,6 +146,31 @@ void main() {
     expect(session.isActive, isTrue);
     expect(session.controller, isNotNull);
     expect(session.book?.bookKey, 'a');
+  });
+
+  test('start loads cues so currentCue resolves without a reader (TODO-354)',
+      () async {
+    // 后台听书（书架开悬浮字幕）无 reader 喂 cue。把 cue 随 start 传入后，控制器应在
+    // load 后立即按当前位置解析 currentCue（悬浮窗首帧有字），无需进 reader。
+    final AudiobookSession session = await startedSession(
+      'a',
+      cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
+      positionMs: 1000,
+    );
+    final AudiobookPlayerController c = session.controller!;
+    expect(c.chapterCueCount, 3, reason: 'cue 应灌进控制器供跳句/解析');
+    expect(c.currentCue, isNotNull, reason: '无 reader 也应解析出 currentCue（首帧有字）');
+    expect(c.currentCue?.startMs, 1000,
+        reason: 'currentCue 应对应 initialPositionMs=1000 那一句');
+  });
+
+  test('start without cues leaves the controller cue-less (reader path)',
+      () async {
+    // 不传 cue（reader 自己接管 cue 加载）时不动控制器，保留既有逻辑。
+    final AudiobookSession session = await startedSession('a');
+    final AudiobookPlayerController c = session.controller!;
+    expect(c.chapterCueCount, 0);
+    expect(c.currentCue, isNull);
   });
 
   test('attachReader wires the controller WebView callbacks to the reader',

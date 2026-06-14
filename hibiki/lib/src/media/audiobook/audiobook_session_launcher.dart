@@ -47,6 +47,12 @@ class AudiobookSessionLauncher {
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
     final (String title, String? author, String? coverPath) =
         await _bookMeta(bookKey);
+    // 后台听书无 reader 喂 cue（reader 才调 setChapterCues）；这里一次性把全书 cue
+    // 取出随 request 返回，让 session.start 直接灌进控制器，否则 _chapterCues 为空、
+    // _updateCurrentCue 提前 return、currentCue 恒 null → 悬浮窗推空串（TODO-354
+    // 「开着悬浮字幕进书再出来才有字」根因）。后台一本书按扁平 cue 处理（无章节上
+    // 下文），与 reader 的 sasayaki/allSrtDefault 分支同序。
+    final List<AudioCue> cues = await repo.cuesForBook(bookKey);
 
     return AudiobookSessionStartRequest(
       info: SessionBookInfo(
@@ -60,6 +66,7 @@ class AudiobookSessionLauncher {
       audioFiles: audioFiles,
       prefs: prefs,
       persist: persist,
+      cues: cues,
     );
   }
 
@@ -82,6 +89,10 @@ class AudiobookSessionLauncher {
     final String key = srtBook.uid;
     final SessionPrefs prefs = await _readPrefs(repo, key);
     final SessionPersistCallbacks persist = _persistFor(repo, key);
+    // SRT 书的 cue 全挂在 SrtParser.defaultChapter 下（扁平），用 SrtBookRepository
+    // 按 uid 取（与 reader `_primeAudioCuesForCurrentBook` 的 `_srtBookUid` 分支同源）。
+    final SrtBookRepository srtRepo = SrtBookRepository(_db);
+    final List<AudioCue> cues = await srtRepo.cuesFor(key);
 
     return AudiobookSessionStartRequest(
       info: SessionBookInfo(
@@ -96,6 +107,7 @@ class AudiobookSessionLauncher {
       audioFiles: audioFiles,
       prefs: prefs,
       persist: persist,
+      cues: cues,
     );
   }
 
@@ -231,10 +243,16 @@ class AudiobookSessionStartRequest {
     required this.audioFiles,
     required this.prefs,
     required this.persist,
+    this.cues = const <AudioCue>[],
   });
 
   final SessionBookInfo info;
   final List<File> audioFiles;
   final SessionPrefs prefs;
   final SessionPersistCallbacks persist;
+
+  /// 全书对齐 cue（扁平，无章节上下文）。供后台听书 [AudiobookSession.start] 在无
+  /// reader 时灌进控制器，让 currentCue 在 load 后即可解析（悬浮窗有字）。reader 在场
+  /// 时 reader 仍会按章节重新 setChapterCues，覆盖此扁平列表，行为不变。
+  final List<AudioCue> cues;
 }

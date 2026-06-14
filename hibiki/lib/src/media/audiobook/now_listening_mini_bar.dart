@@ -94,6 +94,21 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
                   ],
                 ),
               ),
+              // TODO-354 ③：书架底栏迷你条上的「悬浮字幕」开关——真启停 app 外悬浮字幕
+              // 窗口（复用 toggleFloatingLyricFromControls：拉起/隐藏悬浮窗 + 偏好读写）。
+              // 仅 Android/Windows 有 native 悬浮窗后端（floating_lyric_channel），其余桌面
+              // 隐藏开关（优雅降级）。开着态用实心高亮图标提示当前已开。
+              if (Platform.isAndroid || Platform.isWindows)
+                IconButton(
+                  icon: Icon(
+                    appModel.showFloatingLyric
+                        ? Icons.subtitles
+                        : Icons.subtitles_outlined,
+                    color: appModel.showFloatingLyric ? scheme.primary : null,
+                  ),
+                  tooltip: t.floating_lyric_toggle_action,
+                  onPressed: () => _toggleFloatingLyric(appModel),
+                ),
               IconButton(
                 icon: Icon(playing ? Icons.pause : Icons.play_arrow),
                 tooltip: t.floating_lyric_play_pause,
@@ -109,6 +124,27 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         ),
       ),
     );
+  }
+
+  /// 翻转 app 外悬浮字幕窗口（委托 [AppModel.toggleFloatingLyricFromControls]：
+  /// session 拉起/隐藏 + 偏好读写）。失败（缺 overlay 权限 / 窗口创建失败）按平台
+  /// 提示，与 reader 的同名开关一致。
+  Future<void> _toggleFloatingLyric(AppModel appModel) async {
+    final bool ok = await appModel.toggleFloatingLyricFromControls();
+    if (!mounted) return;
+    if (!ok) {
+      final String hint = Platform.isAndroid
+          ? t.floating_lyric_permission_hint
+          : t.floating_lyric_unavailable_hint;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(hint),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    setState(() {});
   }
 
   Widget _cover(SessionBookInfo book, ColorScheme scheme) {

@@ -34,6 +34,7 @@ import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
@@ -830,7 +831,15 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         navigatorKey: appModel.navigatorKey,
                         focusNavigationEnabled:
                             appModel.experimentalFocusNavigationEnabled,
-                        child: child!,
+                        // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
+                        // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
+                        // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                        child: Stack(
+                          children: <Widget>[
+                            child!,
+                            const FloatingLyricLookupHost(),
+                          ],
+                        ),
                       ),
                     ),
                   );
