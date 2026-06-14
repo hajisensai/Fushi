@@ -1634,5 +1634,11 @@
     "floating_lyric_no_audio": "This book has no audio to listen to",
     "now_listening_label": "Now listening",
     "app_ui_scale_auto_current": "Currently ${percent}",
-    "video_favorite_sentences_count": "$count saved in this episode"
+    "video_favorite_sentences_count": "$count saved in this episode",
+    "lyrics_text_color": "Lyrics text color",
+    "lyrics_text_color_hint": "Use a custom color for lyrics text instead of following the theme",
+    "floating_lyric_text_opacity": "Floating subtitle text opacity",
+    "floating_lyric_text_opacity_hint": "Lower this to make the floating subtitle text more transparent",
+    "floating_lyric_button_bg_opacity": "Floating subtitle button background opacity",
+    "floating_lyric_button_bg_opacity_hint": "Adjust how transparent the floating subtitle control buttons are"
 }

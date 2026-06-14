@@ -1634,5 +1634,11 @@
     "floating_lyric_no_audio": "这本书没有可听的音频",
     "now_listening_label": "正在听书",
     "app_ui_scale_auto_current": "当前 ${percent}",
-    "video_favorite_sentences_count": "本集收藏 $count 句"
+    "video_favorite_sentences_count": "本集收藏 $count 句",
+    "lyrics_text_color": "歌词字幕颜色",
+    "lyrics_text_color_hint": "歌词字幕用自定义颜色（不跟随主题）",
+    "floating_lyric_text_opacity": "悬浮字幕文字透明度",
+    "floating_lyric_text_opacity_hint": "调低让悬浮字幕文字更透明",
+    "floating_lyric_button_bg_opacity": "悬浮字幕按钮底色透明度",
+    "floating_lyric_button_bg_opacity_hint": "调整悬浮字幕控制按钮底色的透明度"
 }
