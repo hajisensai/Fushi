@@ -848,6 +848,38 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-370: 悬浮字幕「按钮底色透明度」+「文字透明度」自定义。两值都是 0..100 的
+  // 百分比，作用于基础 ARGB 的 alpha 通道——100 = 保持各主题原有观感（默认），调小变更
+  // 透明。按钮底色基色按主题（深色白/浅色黑）随明暗变，故用百分比缩放其原 alpha 保证
+  // 默认 100 时与历史像素一致；文字 alpha 默认满（100）。
+
+  static int normalizeFloatingLyricOpacity(num value) =>
+      value.round().clamp(0, 100).toInt();
+
+  int get floatingLyricButtonBgOpacity => normalizeFloatingLyricOpacity(
+        getPref('floating_lyric_button_bg_opacity', defaultValue: 100) as int,
+      );
+
+  Future<void> setFloatingLyricButtonBgOpacity(int value) async {
+    await setPref(
+      'floating_lyric_button_bg_opacity',
+      normalizeFloatingLyricOpacity(value),
+    );
+    notifyListeners();
+  }
+
+  int get floatingLyricTextOpacity => normalizeFloatingLyricOpacity(
+        getPref('floating_lyric_text_opacity', defaultValue: 100) as int,
+      );
+
+  Future<void> setFloatingLyricTextOpacity(int value) async {
+    await setPref(
+      'floating_lyric_text_opacity',
+      normalizeFloatingLyricOpacity(value),
+    );
+    notifyListeners();
+  }
+
   bool get showFloatingDict =>
       getPref('show_floating_dict', defaultValue: false) as bool;
 

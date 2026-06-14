@@ -3037,7 +3037,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         currentIdx >= 0 ? currentIdx : _lyricsEntryCueIndex;
 
     final Color bg = _themeBackgroundColor();
-    final Color fg = _themeTextColor();
+    final Color fg = _lyricsTextColor();
     final Color accent = _isReaderThemeDark
         ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
@@ -3066,10 +3066,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     );
   }
 
+  /// TODO-368: 歌词字幕文字色——用户设过自定义色（[ReaderHibikiSource.lyricsTextColor]
+  /// 非哨兵 0）则用它，否则回退主题文字色 [_themeTextColor]（向后兼容默认跟随主题）。
+  Color _lyricsTextColor() {
+    final int custom = ReaderHibikiSource.instance.lyricsTextColor;
+    if (custom != 0) return Color(custom);
+    return _themeTextColor();
+  }
+
   Future<void> _updateLyricsStyleLive() async {
     if (!mounted || _controller == null || !_lyricsPageReady) return;
     final Color bg = _themeBackgroundColor();
-    final Color fg = _themeTextColor();
+    final Color fg = _lyricsTextColor();
     final Color accent = _isReaderThemeDark
         ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
@@ -5806,13 +5814,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final Color accent = dark
         ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
+    final int textOpacity = appModel.floatingLyricTextOpacity;
+    final int buttonBgOpacity = appModel.floatingLyricButtonBgOpacity;
     return FloatingLyricStyle(
       fontSize: fontSize ?? appModel.floatingLyricFontSize,
-      textColor: fg.value,
+      // TODO-370: 文字 / 按钮底色透明度按设置缩放 alpha（默认 100=保持原观感）。
+      textColor: FloatingLyricStyle.scaleAlpha(fg.value, textOpacity),
       bgColor: bg.withAlpha(dark ? 230 : 220).value,
       buttonTextColor: fg.value,
-      buttonBgColor:
-          (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
+      buttonBgColor: FloatingLyricStyle.scaleAlpha(
+        (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
+        buttonBgOpacity,
+      ),
       highlightColor: accent.withAlpha(128).value,
       activeColor: accent.value,
     );
