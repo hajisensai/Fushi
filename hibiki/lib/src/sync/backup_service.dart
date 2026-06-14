@@ -407,13 +407,61 @@ class BackupService {
   }
 
   static Future<void> _deleteDirectoryIfPresent(Directory directory) async {
-    try {
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
+    await deleteDirectoryWithRetry(
+      exists: directory.exists,
+      delete: () => directory.delete(recursive: true),
+      sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+      isWindows: Platform.isWindows,
+    );
+  }
+
+  /// Whether a Windows OS error code is a transient filesystem-busy condition
+  /// that clears once an external handle is released. The recursive delete of
+  /// the export's temp dir runs right after [_stripCredentials] /
+  /// [_stripDictionaryState] closed their sqlite connections; on Windows the OS
+  /// (and Defender / search-indexer scanning the just-written `hibiki.db` copy)
+  /// can keep a handle open for a brief window after `close()` returns, so the
+  /// delete fails with ERROR_ACCESS_DENIED(5), ERROR_SHARING_VIOLATION(32) or
+  /// ERROR_DIR_NOT_EMPTY(145, a child file still locked). Same family as the
+  /// dictionary-import rename lock (BUG-050).
+  static bool _isWindowsTransientFsBusy(int? code) =>
+      code == 5 || code == 32 || code == 145;
+
+  /// Pure, dependency-injected core of [_deleteDirectoryIfPresent]: deletes a
+  /// directory tree, tolerating both a vanished tree ([PathNotFoundException]:
+  /// already cleaned up) and -- on Windows only -- a transient filesystem-busy
+  /// error (see [_isWindowsTransientFsBusy]) via a bounded, backing-off retry
+  /// that gives the lingering external handle time to release.
+  ///
+  /// A non-Windows error, or a Windows error that is NOT transient FS-busy, is
+  /// rethrown immediately (never swallowed -- a real cleanup failure must
+  /// surface). If every attempt hits transient FS-busy the last exception is
+  /// rethrown rather than silently leaving the temp tree on disk. POSIX deletes
+  /// succeed on the first attempt and never enter the retry branch.
+  @visibleForTesting
+  static Future<void> deleteDirectoryWithRetry({
+    required Future<bool> Function() exists,
+    required Future<void> Function() delete,
+    required Future<void> Function(int delayMs) sleep,
+    required bool isWindows,
+    int maxAttempts = 10,
+  }) async {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        if (await exists()) {
+          await delete();
+        }
+        return;
+      } on PathNotFoundException {
+        // Cleanup is already satisfied if the temp tree vanished between the
+        // existence check and deletion.
+        return;
+      } on FileSystemException catch (e) {
+        final int? code = e.osError?.errorCode;
+        final bool transient = isWindows && _isWindowsTransientFsBusy(code);
+        if (!transient || attempt == maxAttempts) rethrow;
+        await sleep(50 * attempt); // backoff: 50ms,100ms,... let handle drop
       }
-    } on PathNotFoundException {
-      // Cleanup is already satisfied if the temp tree vanished between the
-      // existence check and deletion.
     }
   }
 
