@@ -403,19 +403,21 @@ void main() {
     });
 
     testWidgets(
-        'TODO-278b/BUG-266: row subtitle text is single-line no-wrap '
-        '(maxLines 1 + softWrap false, no 2-line wrap)',
+        'TODO-340: row subtitle text wraps to full content '
+        '(no single-line ellipsis), rendered per-grapheme when lookable',
         (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000,
-            'a very very very long subtitle line that would wrap if allowed'),
-      ]);
+      // Use distinct ascii letters (no repeats) so each grapheme is uniquely
+      // findable as its own Text widget.
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'abcdefg')]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
+        // With onLookupCue the row text is rendered per-grapheme inside a Wrap
+        // (wraps + precise hit-test). Each grapheme is its own Text widget.
+        onLookupCue: (AudioCue _, int __, Rect ___) {},
         onCopyCue: (_) {},
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
@@ -426,29 +428,66 @@ void main() {
         width: 280,
       )));
 
-      final Text rowText = tester.widget<Text>(find.text(
-          'a very very very long subtitle line that would wrap if allowed'));
-      // Revert to maxLines:2 / softWrap default -> these would be wrong -> red.
-      expect(rowText.maxLines, 1);
-      expect(rowText.softWrap, isFalse);
-      expect(rowText.overflow, TextOverflow.ellipsis);
+      // Per-grapheme rendering inside a Wrap → many single-char Text widgets,
+      // none clamped to a single elided line. Revert to single-line ellipsis
+      // (one Text, maxLines:1, softWrap:false) → no Wrap, no per-char → red.
+      expect(find.byType(Wrap), findsWidgets);
+      // Each distinct character renders as its own Text widget.
+      expect(find.text('c'), findsOneWidget);
+      final Text charText = tester.widget<Text>(find.text('c'));
+      expect(charText.maxLines, isNull,
+          reason: 'per-grapheme Text must not clamp to a single elided line');
+      expect(charText.overflow, isNot(TextOverflow.ellipsis));
     });
 
     testWidgets(
-        'TODO-278a/BUG-266: with onLookupCue, tapping row text triggers lookup '
-        'and NOT the seek/onTapCue', (WidgetTester tester) async {
+        'TODO-340: without onLookupCue, row text is a single wrapping Text '
+        '(no single-line ellipsis)', (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'lookup me')]);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'wrap me to full content even without lookup'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        // onLookupCue omitted → whole sentence is a single Text, still wraps.
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 280,
+      )));
+
+      final Text rowText = tester.widget<Text>(
+          find.text('wrap me to full content even without lookup'));
+      expect(rowText.maxLines, isNull,
+          reason:
+              'row text must wrap, not clamp to one elided line (TODO-340)');
+      expect(rowText.overflow, isNot(TextOverflow.ellipsis));
+    });
+
+    testWidgets(
+        'TODO-340: tapping a grapheme looks up from that position (NOT seek, '
+        'NOT always index 0)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'lookup')]);
       AudioCue? seeked;
       AudioCue? lookedUp;
+      int? lookupIndex;
       Rect? lookupRect;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (AudioCue c) => seeked = c,
-        onLookupCue: (AudioCue c, Rect r) {
+        onLookupCue: (AudioCue c, int i, Rect r) {
           lookedUp = c;
+          lookupIndex = i;
           lookupRect = r;
         },
         onCopyCue: (_) {},
@@ -460,16 +499,19 @@ void main() {
         emptyHint: 'empty',
       )));
 
-      await tester.tap(find.text('lookup me'));
+      // Tap the 4th grapheme 'k' of "lookup" (index 3) → lookup must report
+      // graphemeIndex 3 with that char's real rect, NOT seek, NOT index 0.
+      await tester.tap(find.text('k'));
       await tester.pump();
 
-      // Text tap -> lookup (with a real screen rect), not the row seek.
       expect(lookedUp, isNotNull);
-      expect(lookedUp!.text, 'lookup me');
+      expect(lookedUp!.text, 'lookup');
+      expect(lookupIndex, 3,
+          reason:
+              'tap maps to the hit grapheme index, not always 0 (TODO-340)');
       expect(lookupRect, isNotNull);
       expect(lookupRect, isNot(Rect.zero));
-      expect(seeked, isNull,
-          reason: 'tapping text must look up, not seek (BUG-266)');
+      expect(seeked, isNull, reason: 'tapping text must look up, not seek');
     });
 
     testWidgets(

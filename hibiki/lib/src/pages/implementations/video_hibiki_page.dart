@@ -258,6 +258,28 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   }) =>
       stackEmpty && pausedForLookup;
 
+  /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
+  /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
+  /// [longPressDragMaxSpeed] 全程而手感不过敏。
+  static const double longPressDragSpeedPerPixel = 1.0 / 200.0;
+
+  /// 长按拖动调速的下/上限（TODO-338）。
+  static const double longPressDragMinSpeed = 0.5;
+  static const double longPressDragMaxSpeed = 4.0;
+
+  /// 把长按拖动的横向位移映射成目标倍速（TODO-338，纯函数供单测）：以 [baseSpeed]
+  /// （长按固定加速速）为基准，[dx]（相对长按起点的横向位移，右正左负）按
+  /// [longPressDragSpeedPerPixel] 线性加减，clamp 到 [longPressDragMinSpeed]..
+  /// [longPressDragMaxSpeed]，再 snap 到 0.1x 步进。向右拖加速、向左减速。
+  @visibleForTesting
+  static double longPressDragSpeedFor(double baseSpeed, double dx) {
+    final double target = (baseSpeed + dx * longPressDragSpeedPerPixel).clamp(
+      longPressDragMinSpeed,
+      longPressDragMaxSpeed,
+    );
+    return (target * 10).roundToDouble() / 10;
+  }
+
   @override
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
@@ -691,6 +713,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 播放倍速：用户在设置面板调，跨重启保留；换集复用同一值（速度记忆）。
   double _playbackSpeed = 1.0;
   double? _longPressPreviousSpeed;
+
+  /// 长按拖动调速的基准速（长按起点的固定加速速，TODO-338）。非空表示正处于一次长按
+  /// 调速手势中；横向拖动以此为基准连续加减，松手清空。
+  double? _longPressDragBaseSpeed;
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
@@ -1605,15 +1631,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_controller?.skipToCue(cue));
   }
 
-  /// 点字幕跳转列表里某句的文本 → 从句首起查词（TODO-278 / BUG-263）。复用底部字幕
-  /// 字符点击的同一条查词链路 [_lookupAt]（暂停视频 → 推与阅读器 / 词典页同款查词浮层），
-  /// graphemeIndex 取 0（从句首最长匹配），[textRect] 为该行文本的屏幕矩形供浮层定位。
+  /// 点字幕跳转列表里某句的文本 → 从点击命中的字符起查词（TODO-340，修 TODO-278 的
+  /// 「恒从句首」回归）。复用底部字幕字符点击的同一条查词链路 [_lookupAt]（暂停视频 →
+  /// 推与阅读器 / 词典页同款查词浮层），[graphemeIndex] 为列表项点击位置命中的 grapheme
+  /// 下标（与底部字幕逐字查词同语义），[charRect] 为被点字符的屏幕矩形供浮层定位。
   /// 沉浸锁不允许查词时早返回（与字幕字符点击 [_handleSubtitleLookupTap] 同门控）。
-  void _handleSubtitleListLookup(AudioCue cue, Rect textRect) {
+  void _handleSubtitleListLookup(
+    AudioCue cue,
+    int graphemeIndex,
+    Rect charRect,
+  ) {
     if (!_immersiveAllowsLookup) return;
     final String sentence = cue.text;
     if (sentence.trim().isEmpty) return;
-    unawaited(_lookupAt(sentence, 0, textRect));
+    unawaited(_lookupAt(sentence, graphemeIndex, charRect));
   }
 
   /// 翻转锁定 / 沉浸模式（TODO-101；锁屏按钮 / Shift+L 快捷键 / 常驻解锁按钮共用）。
@@ -1813,6 +1844,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// media_kit 控制条自动隐藏时长，与两端控制主题的 `controlsHoverDuration` 同源（2s）。
   static const Duration _videoControlsHoverDuration = Duration(seconds: 2);
 
+  /// 当前是否有承载光标操作的 overlay 打开（设置 / 音轨等浮层 [_videoSidePanel]，或
+  /// 字幕跳转列表 [_subtitleListVisible]，TODO-329）。有 overlay 时光标不该被沉浸 /
+  /// 自动隐藏定时吃掉（用户要在 overlay 上操作）；纯沉浸锁（无 overlay）静止超时仍隐藏
+  /// 画面光标（BUG-258）。
+  bool get _hasVideoOverlay =>
+      _videoSidePanel.value != null || _subtitleListVisible.value;
+
   /// 翻转控制条镜像可见性（TODO-129），驱动字幕动态避让。
   ///
   /// 复刻 media_kit 自己的可见性时序：唤起（hover / tap / 键盘 / seek）时置可见并重置
@@ -1821,17 +1859,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [IgnorePointer] 挡掉指针），故镜像也强制不可见、字幕不避让（无控制条可遮挡）。
   void _markControlsVisible(bool visible) {
     if (!mounted) return;
-    // 锁定 / 沉浸模式（[_immersiveLocked]）或侧栏打开（[_videoSidePanel]，BUG-253）下
-    // 一律强制控制条镜像不可见：前者控制条本被 [IgnorePointer] 挡掉，后者面板盖在
-    // 控制条上、背景控制条 / 字幕避让都不该再被 hover 唤起。两者同样取消隐藏定时。
-    if (_immersiveLocked.value || _videoSidePanel.value != null) {
+    // 锁定 / 沉浸模式（[_immersiveLocked]）或有 overlay 打开（设置 / 音轨等浮层
+    // [_videoSidePanel]，BUG-253；或字幕跳转列表 [_subtitleListVisible]，TODO-329）下
+    // 一律强制控制条镜像不可见：沉浸锁的控制条本被 [IgnorePointer] 挡掉，浮层 / 字幕
+    // 列表盖在控制条上、背景控制条 / 字幕避让都不该再被 hover 唤起。三者同样取消隐藏定时。
+    if (_immersiveLocked.value ||
+        _videoSidePanel.value != null ||
+        _subtitleListVisible.value) {
       _videoControlsHideTimer?.cancel();
       _videoControlsHideTimer = null;
       _videoControlsVisible.value = false;
-      // 光标语义在两态分叉（TODO-318 回归）：
-      // - 侧栏 / 设置面板打开：用户要在面板上操作，光标必须可见 → 显式 false；
-      // - 纯沉浸锁（无侧面板）：控制条被 [IgnorePointer] 挡掉、无 chrome 承载光标 → 隐藏。
-      _setCursorHidden(_videoSidePanel.value == null);
+      // 光标语义在两态分叉（TODO-318 回归 / TODO-329）：
+      // - 有 overlay（侧栏 / 设置面板 / 字幕跳转列表）打开：用户要在 overlay 上操作，
+      //   光标必须可见、不被 2s 定时隐藏 → 显式 false；
+      // - 纯沉浸锁（无任何 overlay）：控制条被 [IgnorePointer] 挡掉、无 chrome 承载
+      //   光标、静止超时应隐藏 → true（保 BUG-258）。
+      _setCursorHidden(!_hasVideoOverlay);
       return;
     }
     _videoControlsVisible.value = visible;
@@ -3745,13 +3788,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (_videoSheetOpen || _longPressPreviousSpeed != null) return;
     _longPressPreviousSpeed = _playbackSpeed;
     final double speed = _asbConfig.longPressSpeed;
+    // 长按拖动以固定加速速为基准（TODO-338）：拖动位移在此基础上连续加减。
+    _longPressDragBaseSpeed = speed;
     unawaited(_setSpeed(speed, persist: false));
     _showOsd('${speed.toStringAsFixed(1)}x', icon: Icons.speed);
+  }
+
+  /// 长按后横向拖动连续调速（TODO-338）：向右拖加速、向左减速，以长按固定加速速
+  /// [_longPressDragBaseSpeed] 为基准，按 [_kLongPressDragSpeedPerPixel] 线性映射横向
+  /// 位移，clamp 到 [_kLongPressDragMinSpeed]..[_kLongPressDragMaxSpeed]，松手恢复原速
+  /// （[_handleVideoLongPressEnd]）。位移用相对长按起点的 [localOffsetFromOrigin]。
+  void _handleVideoLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    final double? base = _longPressDragBaseSpeed;
+    if (base == null) return;
+    // 0.1x 步进（避免每像素抖动；_setSpeed 内另有 0.001 去重）。
+    final double snapped = VideoHibikiPage.longPressDragSpeedFor(
+      base,
+      details.localOffsetFromOrigin.dx,
+    );
+    if ((snapped - _playbackSpeed).abs() < 0.001) return;
+    unawaited(_setSpeed(snapped, persist: false));
+    _showOsd('${snapped.toStringAsFixed(1)}x', icon: Icons.speed);
   }
 
   void _handleVideoLongPressEnd(LongPressEndDetails details) {
     final double? previous = _longPressPreviousSpeed;
     _longPressPreviousSpeed = null;
+    _longPressDragBaseSpeed = null;
     if (previous == null) return;
     unawaited(_setSpeed(previous, persist: false));
   }
@@ -5298,6 +5361,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onSecondaryTapUp: (TapUpDetails details) =>
                 _handleSecondaryTap(details.globalPosition),
             onLongPressStart: _handleVideoLongPressStart,
+            onLongPressMoveUpdate: _handleVideoLongPressMoveUpdate,
             onLongPressEnd: _handleVideoLongPressEnd,
             child: Stack(
               children: <Widget>[
@@ -5318,17 +5382,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
                       // 让全屏路由也响应（BUG-120 同源）。
                       //
-                      // 侧栏打开时也一并 gate（BUG-253）：面板盖在控制条上，但 media_kit
-                      // 自己的 MouseRegion 仍会在鼠标移过透明背景区时把控制条弹回到面板
-                      // 后面。把 [IgnorePointer] 同时绑 [_videoSidePanel]，面板期间 media_kit
-                      // 收不到 hover → 背景控制条不再冒出来。键盘仍不受影响（同上）。
+                      // 侧栏 / 字幕列表打开时也一并 gate（BUG-253 / TODO-329）：overlay 盖在
+                      // 控制条上，但 media_kit 自己的 MouseRegion 仍会在鼠标移过透明背景区时
+                      // 把控制条弹回到 overlay 后面，且其 `hideMouseOnControlsRemoval` 会在
+                      // 控制条 2s 自动收起后隐藏视频区光标（用户报「沉浸/锁屏下鼠标放字幕被
+                      // 隐藏」的画面区分支）。把 [IgnorePointer] 同时绑 [_videoSidePanel] 与
+                      // [_subtitleListVisible]，overlay 期间 media_kit 收不到 hover → 背景控制条
+                      // 不再冒出来、其 cursor:none 也不接管光标。键盘仍不受影响（同上）。
                       return ListenableBuilder(
                         listenable: Listenable.merge(
-                          <Listenable>[_immersiveLocked, _videoSidePanel],
+                          <Listenable>[
+                            _immersiveLocked,
+                            _videoSidePanel,
+                            _subtitleListVisible,
+                          ],
                         ),
                         builder: (BuildContext _, __) => IgnorePointer(
                           ignoring: _immersiveLocked.value ||
-                              _videoSidePanel.value != null,
+                              _videoSidePanel.value != null ||
+                              _subtitleListVisible.value,
                           child: AdaptiveVideoControls(state),
                         ),
                       );
