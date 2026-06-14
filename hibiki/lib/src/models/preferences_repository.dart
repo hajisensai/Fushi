@@ -560,6 +560,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频控制按钮 9-槽位布局（TODO-274/312 phase 2）。与 legacy
+  /// [videoControlCustomization] 共用同一持久化键 `video_control_customization`：
+  /// [VideoControlLayout.decode] 自动识别 v1（旧三档 placements）并迁移成 v2 槽位，
+  /// 故老用户配置无损升级、不需要新 schema。新写入一律是 v2 JSON。
+  VideoControlLayout get videoControlLayout => VideoControlLayout.decode(
+        getPref('video_control_customization', defaultValue: '') as String,
+      );
+
+  Future<void> setVideoControlLayout(VideoControlLayout layout) async {
+    await setPref('video_control_customization', layout.encode());
+    notifyListeners();
+  }
+
   /// 视频字幕外观（JSON；解析见 VideoSubtitleStyle.encode/decode）。空串=默认外观。
   String get videoSubtitleStyle =>
       getPref('video_subtitle_style', defaultValue: '') as String;

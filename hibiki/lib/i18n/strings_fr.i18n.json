@@ -1641,5 +1641,11 @@
     "floating_lyric_text_opacity": "Floating subtitle text opacity",
     "floating_lyric_text_opacity_hint": "Lower this to make the floating subtitle text more transparent",
     "floating_lyric_button_bg_opacity": "Floating subtitle button background opacity",
-    "floating_lyric_button_bg_opacity_hint": "Adjust how transparent the floating subtitle control buttons are"
+    "floating_lyric_button_bg_opacity_hint": "Adjust how transparent the floating subtitle control buttons are",
+    "video_control_customize_hint": "Choose where each button sits on the player, or hide it.",
+    "video_control_slot_bottom_left": "Bottom bar (left)",
+    "video_control_slot_bottom_right": "Bottom bar (right)",
+    "video_control_slot_screen_left": "Screen left",
+    "video_control_slot_screen_right": "Screen right",
+    "video_control_slot_hidden": "Hidden"
 }

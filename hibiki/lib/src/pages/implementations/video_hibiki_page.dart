@@ -743,17 +743,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
   VideoAsbplayerConfig _asbConfig = VideoAsbplayerConfig.defaults;
-  VideoControlCustomization _controlCustomization =
-      VideoControlCustomization.defaults;
 
-  /// Live 9-slot render layout (TODO-274 phase 1). Derived from the persisted
-  /// legacy [_controlCustomization] (single persisted source of truth) so the
-  /// control bar is rendered data-driven over [VideoControlLayout] while the
-  /// picker / persistence stay on the legacy model until phase 2. For the
-  /// default config this resolves to [VideoControlLayout.currentChrome] →
-  /// pixel-identical to the hardcoded chrome it replaces.
-  VideoControlLayout get _controlLayout =>
-      VideoControlLayout.fromLegacy(_controlCustomization);
+  /// Live 9-slot control button layout (TODO-274/312 phase 2). This is now the
+  /// **persisted source of truth** (loaded from / saved to
+  /// [AppModel.videoControlLayout], which shares the legacy pref key and
+  /// auto-migrates any old v1 blob via [VideoControlLayout.decode]). The control
+  /// bar renders data-driven over the slots; the quick-settings editor writes
+  /// here via [_setVideoControlLayout]. Default config = current chrome.
+  VideoControlLayout _controlLayout = VideoControlLayout.currentChrome;
 
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
   /// 初始 false 与偏好默认对齐（回归修复）：偏好快照在 init 赋值前不主动锁窗口，
@@ -875,7 +872,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _playbackSpeed = _readPersistedSpeed();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
-    _controlCustomization = appModel.videoControlCustomization;
+    _controlLayout = appModel.videoControlLayout;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
 
@@ -918,7 +915,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _playbackSpeed = _readPersistedSpeed();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
-    _controlCustomization = appModel.videoControlCustomization;
+    _controlLayout = appModel.videoControlLayout;
 
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
@@ -3696,15 +3693,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
       ],
     );
+    // 左区：时间指示器 + 用户放进 bottomLeft 槽的自定义学习按钮（TODO-274/312
+    // phase 2）。与中心簇绝对独立，宽度变化不挤偏 play。
+    final List<Widget> leftCluster = <Widget>[
+      positionIndicator,
+      for (final VideoControlButton button
+          in _slotLearningButtons(VideoControlSlot.bottomLeft))
+        _buildVideoControlButton(controller, button, desktop: desktop),
+    ];
     return Stack(
       alignment: Alignment.center,
       children: <Widget>[
         // 居中传输簇：play 恒处整条底栏几何中心。
         Center(child: transport),
-        // 左区：时间指示器（与中心簇绝对独立，宽度变化不挤偏 play）。
+        // 左区：时间指示器 + bottomLeft 自定义按钮。
         Align(
           alignment: Alignment.centerLeft,
-          child: positionIndicator,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: leftCluster,
+          ),
         ),
         // 右区：自定义按钮 + 音量 + 全屏（宽度变化不挤偏 play）。
         Align(
@@ -4085,11 +4093,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
-  Future<void> _setVideoControlCustomization(
-    VideoControlCustomization customization,
-  ) async {
-    _controlCustomization = customization;
-    await appModel.setVideoControlCustomization(customization);
+  /// Persist + apply a new 9-slot control button layout (TODO-274/312 phase 2).
+  /// This is the single write path the quick-settings editor calls; it stores
+  /// the v2 layout (same pref key, auto-migrating old v1 blobs) and rebuilds so
+  /// the data-driven control bar picks up the new slots immediately.
+  Future<void> _setVideoControlLayout(VideoControlLayout layout) async {
+    _controlLayout = layout;
+    await appModel.setVideoControlLayout(layout);
     if (mounted) setState(() {});
   }
 
@@ -4384,8 +4394,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onSelectShaderTier:
           (VideoShaderTier tier, bool highQuality, List<String> enabledNames) =>
               _applyShaderTier(highQuality, enabledNames),
-      initialControlCustomization: _controlCustomization,
-      onControlCustomizationChanged: _setVideoControlCustomization,
+      initialControlLayout: _controlLayout,
+      onControlLayoutChanged: _setVideoControlLayout,
     );
   }
 
@@ -5710,55 +5720,74 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 浮动侧栏（TODO-274/312 phase 2）：把 screenLeft / screenRight 两个屏幕侧槽的
+  /// 自定义学习按钮分别渲染成左 / 右两条竖直浮条。默认配置只用 screenRight
+  /// （[subtitleList, favoriteSentence, favoriteSentences, settings]，与 legacy
+  /// rightRail 一致）；用户把按钮移到 screenLeft 后左条才出现。两条共用同一可见性
+  /// 门控（沉浸锁 / 侧栏打开时都不显示）。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
-    // Slot renderer (TODO-274 phase 1): the floating right rail is the
-    // screenRight slot of the live [_controlLayout]. Default config →
-    // [subtitleList, favoriteSentence, favoriteSentences, settings], identical
-    // to the legacy rightRail placement it replaces.
-    final List<VideoControlButton> buttons =
-        _slotLearningButtons(VideoControlSlot.screenRight);
-    if (buttons.isEmpty) return const SizedBox.shrink();
+    final Widget right = _buildVideoSideRailFor(
+      VideoControlSlot.screenRight,
+      Alignment.centerRight,
+      const EdgeInsets.only(right: 12),
+    );
+    final Widget left = _buildVideoSideRailFor(
+      VideoControlSlot.screenLeft,
+      Alignment.centerLeft,
+      const EdgeInsets.only(left: 12),
+    );
     return Positioned.fill(
       child: ValueListenableBuilder<bool>(
         valueListenable: _videoControlsVisible,
         builder: (BuildContext context, bool controlsVisible, __) {
-          // 沉浸锁或侧栏打开（BUG-253）时一律不显示右侧 rail——面板盖在它上面、
-          // 背景操作按钮不该再冒出来。controlsVisible 在面板期间已被强制 false，这里
-          // 再显式门控 [_videoSidePanel] 做双保险。
+          // 沉浸锁或侧栏打开（BUG-253）时一律不显示侧栏——面板盖在它上面、背景操作
+          // 按钮不该再冒出来。controlsVisible 在面板期间已被强制 false，这里再显式门控
+          // [_videoSidePanel] 做双保险。
           if (!controlsVisible ||
               _immersiveLocked.value ||
               _videoSidePanel.value != null) {
             return const SizedBox.shrink();
           }
-          return Align(
-            alignment: Alignment.centerRight,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    for (final VideoControlButton button
-                        in buttons) ...<Widget>[
-                      Material(
-                        color: Colors.black.withValues(alpha: 0.42),
-                        shape: const CircleBorder(),
-                        clipBehavior: Clip.antiAlias,
-                        child: IconButton(
-                          tooltip: _videoControlButtonTooltip(button),
-                          icon: Icon(_videoControlButtonIcon(button)),
-                          color: Colors.white,
-                          onPressed: () => _activateVideoControlButton(button),
-                        ),
-                      ),
-                      if (button != buttons.last) const SizedBox(height: 8),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          );
+          return Stack(children: <Widget>[left, right]);
         },
+      ),
+    );
+  }
+
+  /// 单条浮动侧栏：渲染 [slot] 槽的学习按钮成一列圆形按钮，靠 [alignment] 贴边。
+  /// 槽为空返回空白（不占位）。
+  Widget _buildVideoSideRailFor(
+    VideoControlSlot slot,
+    AlignmentGeometry alignment,
+    EdgeInsetsGeometry padding,
+  ) {
+    final List<VideoControlButton> buttons = _slotLearningButtons(slot);
+    if (buttons.isEmpty) return const SizedBox.shrink();
+    return Align(
+      alignment: alignment,
+      child: SafeArea(
+        child: Padding(
+          padding: padding,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final VideoControlButton button in buttons) ...<Widget>[
+                Material(
+                  color: Colors.black.withValues(alpha: 0.42),
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: IconButton(
+                    tooltip: _videoControlButtonTooltip(button),
+                    icon: Icon(_videoControlButtonIcon(button)),
+                    color: Colors.white,
+                    onPressed: () => _activateVideoControlButton(button),
+                  ),
+                ),
+                if (button != buttons.last) const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

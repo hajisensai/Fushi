@@ -1641,5 +1641,11 @@
     "floating_lyric_text_opacity": "悬浮字幕文字透明度",
     "floating_lyric_text_opacity_hint": "调低让悬浮字幕文字更透明",
     "floating_lyric_button_bg_opacity": "悬浮字幕按钮底色透明度",
-    "floating_lyric_button_bg_opacity_hint": "调整悬浮字幕控制按钮底色的透明度"
+    "floating_lyric_button_bg_opacity_hint": "调整悬浮字幕控制按钮底色的透明度",
+    "video_control_customize_hint": "为每个按钮选择在播放器上的位置，或将其隐藏。",
+    "video_control_slot_bottom_left": "底栏（左）",
+    "video_control_slot_bottom_right": "底栏（右）",
+    "video_control_slot_screen_left": "屏幕左侧",
+    "video_control_slot_screen_right": "屏幕右侧",
+    "video_control_slot_hidden": "隐藏"
 }
