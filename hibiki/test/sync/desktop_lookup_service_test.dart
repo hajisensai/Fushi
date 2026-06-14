@@ -208,6 +208,31 @@ void main() {
     expect(windowCalls, isNot(contains('focus')));
     expect(windowCalls, isNot(contains('setAlwaysOnTop')));
   });
+
+  // A host/channel where window_manager.isFocused() resolves to null (incomplete
+  // mock or misbehaving platform impl) makes window_manager's implicit bool cast
+  // throw a TypeError. _isWindowFocused must swallow it and conservatively report
+  // not-focused so the error never escapes the unawaited bringPendingLookupToFront
+  // call into the global zone, and the foreground path still runs.
+  testWidgets('isFocused null does not escape; foreground path still runs',
+      (WidgetTester tester) async {
+    final List<String> windowCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call.method);
+      if (call.method == 'isMinimized') return false;
+      // Intentionally return null for isFocused -> implicit bool cast throws.
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await expectLater(svc.bringPendingLookupToFront(), completes);
+    expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
+  });
 }
 
 bool _setsAlwaysOnTop(MethodCall call) {
