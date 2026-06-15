@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 project(runner LANGUAGES CXX)
 
 add_executable(${BINARY_NAME} WIN32
+  "crash_dump.cpp"
   "flutter_window.cpp"
   "floating_lyric_window.cpp"
   "main.cpp"

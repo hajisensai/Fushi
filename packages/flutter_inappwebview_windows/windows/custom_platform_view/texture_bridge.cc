@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "util/direct3d11.interop.h"
+#include "../utils/wgc_log.h"
 
 namespace flutter_inappwebview_plugin
 {
@@ -117,10 +118,12 @@ namespace flutter_inappwebview_plugin
         })
       .Get(),
           &on_closed_token_);
+    WgcLog::Write("create-bridge", this);
   }
 
   TextureBridge::~TextureBridge()
   {
+    WgcLog::Write("dtor", this);
     InvalidateFrameArrivedCallback();
     const std::lock_guard<std::mutex> lock(mutex_);
     StopInternal();
@@ -132,6 +135,8 @@ namespace flutter_inappwebview_plugin
   bool TextureBridge::Start()
   {
     const std::lock_guard<std::mutex> lock(mutex_);
+    WgcLog::Write("start", frame_pool_.get(),
+      is_running_ ? "running=1" : "running=0");
     if (is_running_ || !capture_item_) {
       return false;
     }
@@ -203,18 +208,29 @@ namespace flutter_inappwebview_plugin
         });
     frame_pool_->add_FrameArrived(frame_arrived_handler_.Get(),
       &on_frame_arrived_token_);
+    // 新池已 add_FrameArrived（自此挂在途 deferral 风险）——记录其指针，供崩溃
+    // 取证对照「崩溃帧池指针」是否能在本日志找到对应的 retire 退役行。
+    WgcLog::Write("create-pool", frame_pool_.get());
 
     if (FAILED(frame_pool_->CreateCaptureSession(capture_item_.get(),
       capture_session_.put()))) {
       std::cerr << "Creating capture session failed." << std::endl;
+      // 静默早返回点（不设 is_running_，frame_pool_ 已赋值且已 add_FrameArrived）：
+      // 记录可观测，下一次 Start() 入口的 RetireFramePoolLocked 会退役保活此残留池。
+      WgcLog::Write("createSession-fail", frame_pool_.get());
       return false;
     }
 
-    return SUCCEEDED(capture_session_->StartCapture());
+    const bool started = SUCCEEDED(capture_session_->StartCapture());
+    if (!started) {
+      WgcLog::Write("startCapture-fail", frame_pool_.get());
+    }
+    return started;
   }
 
   void TextureBridge::RecreateFramePoolLocked()
   {
+    WgcLog::Write("recreate", frame_pool_.get());
     // BUG-209 第十修（resize 路径替换 frame_pool_->Recreate）：调用方（OnFrameArrived）
     // 持 mutex_。原 Recreate 复用同一帧池只换 back buffer，但会拆掉旧池内部 present 基建，
     // 其在途 deferral 仍指向被拆状态 -> UAF。改为：退役保活旧池（Close + 永久保活）+
@@ -258,6 +274,7 @@ namespace flutter_inappwebview_plugin
 
   void TextureBridge::StopInternal()
   {
+    WgcLog::Write("stop", frame_pool_.get());
     is_running_ = false;
 
     // BUG-209（Close + 退役帧池永久保活）：dump 决定性根因——已排进 UI 线程
@@ -333,6 +350,7 @@ namespace flutter_inappwebview_plugin
     if (!frame_pool_) {
       return;
     }
+    WgcLog::Write("retire", frame_pool_.get());
 
     if (on_frame_arrived_token_.value != 0) {
       // 同步 revoke：返回后 WGC 不再向本 token 投递新 FirePresentEvent。
@@ -366,6 +384,11 @@ namespace flutter_inappwebview_plugin
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFrame>
       frame;
     auto hr = frame_pool_->TryGetNextFrame(frame.put());
+    if (FAILED(hr)) {
+      // 仅失败时写（成功路径每帧 fire，禁止每帧刷盘）：取帧失败可能预示帧池
+      // 状态异常，是观测帧池生命周期的低噪声信号。
+      WgcLog::Write("frame-getfail", frame_pool_.get());
+    }
     if (SUCCEEDED(hr) && frame) {
       winrt::com_ptr<
         ABI::Windows::Graphics::DirectX::Direct3D11::IDirect3DSurface>

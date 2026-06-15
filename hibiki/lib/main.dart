@@ -25,6 +25,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/wgc_capture_log.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
@@ -231,6 +232,10 @@ void main([List<String> args = const <String>[]]) {
     /// Initialise error log service.
     await ErrorLogService.instance.init();
     await DebugLogService.instance.init();
+    // BUG-209 / TODO-398：把上次运行残留的 Windows WGC 帧捕获生命周期日志
+    // 折进错误日志（仅 Windows），纳入现有上传链路，为 GraphicsCapture 延迟
+    // UAF 崩溃提供可读的崩前生命周期证据。
+    await WgcCaptureLog.foldIntoErrorLog();
 
     /// Initialise local file-based logging (mobile only).
     if (Platform.isAndroid || Platform.isIOS) {

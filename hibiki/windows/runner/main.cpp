@@ -2,6 +2,7 @@
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
+#include "crash_dump.h"
 #include "flutter_window.h"
 #include "utils.h"
 
@@ -9,6 +10,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   // Inno Setup 静默更新靠这个命名互斥量检测并关闭运行中的实例（见 hibiki.iss AppMutex）。
   ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
+
+  // BUG-209 / TODO-398：在 Flutter engine / COM 初始化之前安装进程级 minidump
+  // 写出（写进 %LOCALAPPDATA%\Hibiki\crashdumps\，链回引擎既有 filter），让
+  // GraphicsCapture 延迟 UAF 崩溃必留可被 cdb 分析的 dump，不再赌系统 WER。
+  ::hibiki::InstallCrashDumpHandler();
 
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
