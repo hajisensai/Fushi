@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  // BUG-284 (TODO-375) regression guard: _persistPosition must pass null (not a
+  // BUG-285 (TODO-375) regression guard: _persistPosition must pass null (not a
   // raw -1) when the WebView snapshot has no exact char offset, so a transient
   // -1 during reflow / vertical edge sampling does NOT clobber the precise
   // same-section anchor. Clobbering it degrades restore + cross-chapter audio
@@ -34,7 +34,7 @@ void main() {
       persist,
       isNot(contains('charOffset: charOffset,')),
       reason: 'Passing the raw charOffset (which may be -1) overwrites the '
-          'precise same-section anchor and is exactly the BUG-284 regression.',
+          'precise same-section anchor and is exactly the BUG-285 regression.',
     );
   });
 

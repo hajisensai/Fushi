@@ -1,4 +1,4 @@
-## BUG-284 · 音频跟随退化到章节粒度：位置保存把 -1 覆盖精确字符锚（TODO-375）
+## BUG-285 · 音频跟随退化到章节粒度：位置保存把 -1 覆盖精确字符锚（TODO-375）
 - **报告**：2026-06-15（用户：阅读器回归，"恢复回去"）
 - **真实性**：✅ 真 bug。引入回归提交 `8d878f155 fix(reader): preserve vertical scroll position`。
   根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:4492`（`_persistPosition`）：
