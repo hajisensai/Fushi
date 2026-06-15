@@ -66,7 +66,7 @@ class VideoPlayerShortcutActions {
   final VoidCallback toggleFavoriteSentence;
   final VoidCallback replayCurrentSubtitle;
 
-  /// 重播上一句（TODO-378，BUG-286）：纯句子跳转到上一条 cue 起点并播放，不退化回退。
+  /// 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，不退化回退。
   final VoidCallback replayPreviousSubtitle;
   final VoidCallback showFavoriteSentences;
 

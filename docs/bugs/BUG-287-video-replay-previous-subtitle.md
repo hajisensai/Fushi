@@ -1,4 +1,4 @@
-## BUG-286 · 恢复「重播上一句」并区分「上一句字幕」(TODO-378)
+## BUG-287 · 恢复「重播上一句」并区分「上一句字幕」(TODO-378)
 - **报告**：2026-06-15（用户：视频原本有两个独立功能「上一句字幕」与「重播上一句」，AI 把「重播上一句」删了；现在「上一句字幕」快捷键变成了「后退3秒」）
 - **真实性**：✅ 真 bug（回归）。引入提交 `8624f2a78`（`refactor(video): remove duplicate replay-previous-subtitle action (TODO-328)`）。
   - 该提交把 `videoReplayPreviousSubtitle`（默认 **Shift+R**，回调 `_replayPreviousCueAndPokeControls` → `skipToPrevCue()`，**纯句子跳转、不退化**）整条删除，误判它与「上一句字幕」`videoPreviousSubtitle` 重复。

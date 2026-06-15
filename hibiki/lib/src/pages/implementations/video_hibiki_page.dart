@@ -2988,7 +2988,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         replayCurrentSubtitle: () => _runWhenImmersiveAllowsFullControls(
           () => unawaited(_replayCurrentCueAndPokeControls()),
         ),
-        // 重播上一句（TODO-378，BUG-286，默认 Shift+R）：纯句子后退到上一条 cue 起点
+        // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
         // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
         // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
         replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
@@ -4394,7 +4394,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await _controller?.skipToCue(cue);
   }
 
-  /// 重播上一句（TODO-378，BUG-286）：跳到上一条 cue 起点并播放，**不**退化成回退几秒
+  /// 重播上一句（TODO-378，BUG-287）：跳到上一条 cue 起点并播放，**不**退化成回退几秒
   /// （走纯 [VideoPlayerController.skipToPrevCue]，与底栏「上一句」按钮同语义）。
   Future<void> _replayPreviousCueAndPokeControls() async {
     _pokeControlsVisible();

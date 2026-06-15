@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-286](bugs/BUG-286-video-replay-previous-subtitle.md) | ✅ | ✅ | 恢复「重播上一句」并区分「上一句字幕」(TODO-378) |
+| [BUG-287](bugs/BUG-287-video-replay-previous-subtitle.md) | ✅ | ✅ | 恢复「重播上一句」并区分「上一句字幕」(TODO-378) |
 | [BUG-285](bugs/BUG-285-reader-charoffset-clobber.md) | ✅ | ✅ | 音频跟随退化到章节粒度：位置保存把 -1 覆盖精确字符锚（TODO-375） |
 | [BUG-284](bugs/BUG-284-video-control-rail-flicker-cursor-vanish.md) | ✅ | ✅ | 视频右侧控制按钮闪烁 + 鼠标放字幕上光标消失 (TODO-373) |
 | [BUG-283](bugs/BUG-283-bundled-ffmpeg-empty-output-fallback.md) | ✅ | ✅ | Bundled ffmpeg 跑起来却空输出时不回退 PATH 致内封字幕枚举静默失败 |

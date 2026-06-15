@@ -119,7 +119,7 @@ void main() {
       expect(settings, contains(action));
     }
 
-    // TODO-378（BUG-286）：恢复「重播上一句」(videoReplayPreviousSubtitle / Shift+R)。
+    // TODO-378（BUG-287）：恢复「重播上一句」(videoReplayPreviousSubtitle / Shift+R)。
     // TODO-328 曾误当它与「上一句字幕」(videoPreviousSubtitle / Ctrl+←) 重复而删除，
     // 但两者语义不同：「重播上一句」走纯 skipToPrevCue（跳到上一条 cue 起点、不退化），
     // 「上一句字幕」gap 太远时按 BUG-185/TODO-085 退化时间 seek。守卫两个动作的全链路
