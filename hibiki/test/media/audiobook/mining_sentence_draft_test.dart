@@ -101,74 +101,91 @@ void main() {
     });
   });
 
-  group('MiningSentenceDraft', () {
+  group('MiningSentenceDraft (TODO-393 directional context)', () {
+    MiningDraftSentence s(String text, {int? file, int? start, int? end}) =>
+        MiningDraftSentence(
+          sentence: text,
+          audioRange: file == null
+              ? null
+              : AudioPlaybackRange(
+                  audioFileIndex: file,
+                  startMs: start ?? 0,
+                  endMs: end ?? 0,
+                ),
+        );
+
     test('starts empty', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
       expect(draft.isEmpty, isTrue);
       expect(draft.length, 0);
     });
 
-    test('append accumulates non-empty sentences in order', () {
+    test('setContext stores prev + next and counts both', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
-      expect(
-        draft.append(const MiningDraftSentence(sentence: '一句目。')),
-        isTrue,
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前1。'), s('前2。')],
+        next: <MiningDraftSentence>[s('後1。')],
       );
-      expect(
-        draft.append(const MiningDraftSentence(sentence: '二句目。')),
-        isTrue,
-      );
-      expect(draft.length, 2);
+      expect(draft.length, 3);
       expect(draft.isEmpty, isFalse);
+      expect(draft.prevSentences.map((e) => e.sentence).toList(),
+          <String>['前1。', '前2。']);
+      expect(
+          draft.nextSentences.map((e) => e.sentence).toList(), <String>['後1。']);
     });
 
-    test('append ignores blank / whitespace-only sentences', () {
+    test('setContext filters blank / whitespace-only sentences', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
-      expect(draft.append(const MiningDraftSentence(sentence: '')), isFalse);
-      expect(draft.append(const MiningDraftSentence(sentence: '   ')), isFalse);
+      draft.setContext(
+        prev: <MiningDraftSentence>[s(''), s('  '), s('前。')],
+        next: <MiningDraftSentence>[s('   ')],
+      );
+      expect(draft.length, 1);
+      expect(draft.prevSentences.single.sentence, '前。');
+      expect(draft.nextSentences, isEmpty);
+    });
+
+    test('setContext replaces (not accumulates) previous context', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.setContext(prev: <MiningDraftSentence>[s('上1。')]);
+      expect(draft.length, 1);
+      // Re-selecting "上2" replaces, not adds.
+      draft.setContext(prev: <MiningDraftSentence>[s('上1。'), s('上2。')]);
+      expect(draft.length, 2);
+      draft.setContext();
       expect(draft.isEmpty, isTrue);
     });
 
-    test('composeText joins draft sentences plus current sentence', () {
+    test('composeText orders prev -> current -> next', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
-      draft.append(const MiningDraftSentence(sentence: '一句目。'));
-      draft.append(const MiningDraftSentence(sentence: '二句目。'));
-      expect(draft.composeText('三句目。'), '一句目。\n二句目。\n三句目。');
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前1。'), s('前2。')],
+        next: <MiningDraftSentence>[s('後1。')],
+      );
+      expect(draft.composeText('現在。'), '前1。\n前2。\n現在。\n後1。');
     });
 
-    test('composeText with empty draft equals the current sentence', () {
+    test('composeText with empty context equals the current sentence', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
       expect(draft.composeText('  唯一の一文。 '), '唯一の一文。');
     });
 
     test('clear empties the buffer', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
-      draft.append(const MiningDraftSentence(sentence: '一句目。'));
+      draft.setContext(prev: <MiningDraftSentence>[s('前。')]);
       draft.clear();
       expect(draft.isEmpty, isTrue);
       expect(draft.composeText('現在の文。'), '現在の文。');
     });
 
-    test('composeAudioRange merges draft ranges plus current range', () {
+    test('composeAudioRange merges prev + current + next in order', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
-      draft.append(MiningDraftSentence(
-        sentence: '一句目。',
-        audioRange: AudioPlaybackRange(
-          audioFileIndex: 0,
-          startMs: 1000,
-          endMs: 1800,
-        ),
-      ));
-      draft.append(MiningDraftSentence(
-        sentence: '二句目。',
-        audioRange: AudioPlaybackRange(
-          audioFileIndex: 0,
-          startMs: 2200,
-          endMs: 2800,
-        ),
-      ));
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前。', file: 0, start: 1000, end: 1800)],
+        next: <MiningDraftSentence>[s('後。', file: 0, start: 3200, end: 4100)],
+      );
       final AudioPlaybackRange? merged = draft.composeAudioRange(
-        AudioPlaybackRange(audioFileIndex: 0, startMs: 3200, endMs: 4100),
+        AudioPlaybackRange(audioFileIndex: 0, startMs: 2200, endMs: 2800),
       );
       expect(merged!.startMs, 1000);
       expect(merged.endMs, 4100);
@@ -176,27 +193,21 @@ void main() {
 
     test('composeAudioRange degrades to null across audio files', () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
-      draft.append(MiningDraftSentence(
-        sentence: '前章の文。',
-        audioRange: AudioPlaybackRange(
-          audioFileIndex: 0,
-          startMs: 9000,
-          endMs: 9500,
-        ),
-      ));
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前章。', file: 0, start: 9000, end: 9500)],
+      );
       final AudioPlaybackRange? merged = draft.composeAudioRange(
         AudioPlaybackRange(audioFileIndex: 1, startMs: 200, endMs: 900),
       );
       expect(merged, isNull);
     });
 
-    test('unmodifiable sentences snapshot does not leak internal list', () {
+    test('prevSentences / nextSentences snapshots do not leak internal lists',
+        () {
       final MiningSentenceDraft draft = MiningSentenceDraft();
-      draft.append(const MiningDraftSentence(sentence: '一句目。'));
-      expect(
-        () => draft.sentences.add(const MiningDraftSentence(sentence: 'x')),
-        throwsUnsupportedError,
-      );
+      draft.setContext(prev: <MiningDraftSentence>[s('前。')]);
+      expect(() => draft.prevSentences.add(s('x')), throwsUnsupportedError);
+      expect(() => draft.nextSentences.add(s('x')), throwsUnsupportedError);
     });
   });
 }

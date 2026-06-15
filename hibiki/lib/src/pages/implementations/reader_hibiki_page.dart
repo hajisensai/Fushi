@@ -3407,22 +3407,39 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   /// TODO-104a / BUG-172：当前正查这一句对应的句子音频区间（已含 A/V 同步偏移）。
-  /// 抽出来给「制卡」与「+句追加草稿」共用，确保两条路径裁的是同一句同一区间。
-  /// 返回 null 表示无音频文件，或无法从当前 cue / 句子 span 解析出区间。
+  /// 抽出来给「制卡」与「上 N 句 / 下 N 句」上下文共用，确保两条路径裁的是同一句同一
+  /// 区间。返回 null 表示无音频文件，或无法从当前 cue / 句子 span 解析出区间。
   AudioPlaybackRange? _currentSentenceAudioRange() {
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text ?? '';
+    return _sentenceAudioRangeFor(
+      sentence: sentence,
+      cue: _lookupCue,
+      normOffset: _cachedSentenceRange?.offset,
+      normLength: _cachedSentenceRange?.length,
+    );
+  }
+
+  /// TODO-393：把任意一句（当前句或上下文句）按其整书归一化偏移解析成句子音频区间
+  /// （已含 A/V 同步偏移）。上下文句没有 cue，[cue] 传 null，纯靠 [normOffset]/
+  /// [normLength] 在本 section 的 cue 列表里定位（[miningSentenceAudioRange] 支持）。
+  /// 无音频文件或解析不出区间时返回 null（调用方退化为只合文本）。
+  AudioPlaybackRange? _sentenceAudioRangeFor({
+    required String sentence,
+    AudioCue? cue,
+    int? normOffset,
+    int? normLength,
+  }) {
     final AudiobookPlayerController? audioController = _audiobookController;
     final List<File>? audioFiles = audioController?.audioFiles;
     if (audioFiles == null) return null;
-    final AudioCue? cue = _lookupCue;
-    final String sentence =
-        appModel.currentMediaSource?.currentSentence.text ?? '';
     final AudioPlaybackRange? clip = miningSentenceAudioRange(
       cues: _sentenceAudioMiningCues(cue),
       cue: cue,
       sentence: sentence,
       sectionIndex: _lookupSectionIndex,
-      sentenceNormCharOffset: _cachedSentenceRange?.offset,
-      sentenceNormCharLength: _cachedSentenceRange?.length,
+      sentenceNormCharOffset: normOffset,
+      sentenceNormCharLength: normLength,
       delayMs: audioController?.delayMs.value ?? 0,
     );
     if (clip == null ||
@@ -3433,24 +3450,49 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return clip;
   }
 
-  /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：把当前正查的这一句（+句子音频
-  /// 区间）追加进会话级制卡草稿，返回累积句数（含本句）。书籍纯阅读时音频区间为
-  /// null（只合文本）；有声书把当前句区间一并入队，制卡时合并成首句起→末句止。
-  /// 当前句为空（没有正查内容）则不入队，返回现有句数。
+  /// TODO-393「上 N 句 / 下 N 句」上下文选择：把当前句之前 [prevCount] 句、之后
+  /// [nextCount] 句作上下文**整体设置**进会话级制卡草稿（覆盖上一次选择，不累积），
+  /// 返回上下文句总数（上 N + 下 N）。上下文句从阅读器 DOM 取（
+  /// [ReaderSelectionScripts.getSurroundingSentences]，沿用查词同一句子边界规则，止于
+  /// 段落边界），有声书顺带按各句归一化偏移裁出音频区间一并入队（制卡时合并成首句起→
+  /// 末句止；跨章/跨音频文件退化为只合文本）。无 WebView 或无选区时清空上下文返回 0。
   @override
-  Future<int> onAppendSentenceToDraft() async {
-    final String currentSentence =
-        appModel.currentMediaSource?.currentSentence.text ?? '';
-    _miningDraft.append(MiningDraftSentence(
-      sentence: currentSentence,
-      audioRange: _currentSentenceAudioRange(),
-    ));
+  Future<int> onSetSentenceContextToDraft(int prevCount, int nextCount) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || (prevCount <= 0 && nextCount <= 0)) {
+      _miningDraft.setContext();
+      return _miningDraft.length;
+    }
+    Object? raw;
+    try {
+      raw = await controller.evaluateJavascript(
+        source: ReaderSelectionScripts.surroundingSentencesInvocation(
+          prevCount,
+          nextCount,
+        ),
+      );
+    } catch (_) {
+      _miningDraft.setContext();
+      return _miningDraft.length;
+    }
+    final parsed = ReaderSelectionScripts.surroundingSentencesFromResult(raw);
+    MiningDraftSentence toEntry(SurroundingSentence s) => MiningDraftSentence(
+          sentence: s.sentence,
+          audioRange: _sentenceAudioRangeFor(
+            sentence: s.sentence,
+            normOffset: s.normOffset,
+            normLength: s.normLength,
+          ),
+        );
+    _miningDraft.setContext(
+      prev: <MiningDraftSentence>[for (final s in parsed.prev) toEntry(s)],
+      next: <MiningDraftSentence>[for (final s in parsed.next) toEntry(s)],
+    );
     return _miningDraft.length;
   }
 
-  /// TODO-382「+句」可撤销：弹窗点「清空已加句子」清掉本会话累积的全部草稿句，回传
-  /// 清空后的句数（恒 0）。给用户一个明确、可见的撤销入口（此前「+句」只能追加，误点
-  /// 后只能制卡或关栈才会被动清空）。
+  /// TODO-382 / TODO-393：弹窗点「清空已加句子」清掉本次查词的上下文选择（回到只制
+  /// 当前句），回传清空后的句数（恒 0）。给用户一个明确、可见的撤销入口。
   @override
   Future<int> onClearSentenceDraftToDraft() async {
     _miningDraft.clear();
@@ -4249,6 +4291,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (data.text.isEmpty) {
       return;
     }
+    // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃
+    // 上一个词的「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，
+    // 草稿若不在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
+    _miningDraft.clear();
 
     final bool shouldPause = ReaderHibikiSource.instance.pauseOnLookup;
     final AudiobookPlayerController? abc = _audiobookController;

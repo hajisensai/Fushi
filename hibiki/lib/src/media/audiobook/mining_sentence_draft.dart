@@ -16,55 +16,81 @@ class MiningDraftSentence {
   final AudioPlaybackRange? audioRange;
 }
 
-/// 会话级「查词窗口多句合一制卡」草稿缓冲（乙方案）。
+/// 会话级「查词窗口多句合一制卡」草稿缓冲（TODO-393 句子上下文再设计）。
 ///
-/// 查词时点弹窗「+句」追加当前句到本缓冲，连续查多句累积；制卡时把缓冲 + 当前句
-/// 用 [joinMinedSentences] 合成一段文本写入卡片 sentence 字段，制卡后清空。三表面
-/// （书籍/有声书/视频）共用同一套草稿模型 —— reader 车道先接线，视频 E 后续复用。
+/// 数据模型语义（TODO-393 取代 TODO-382 的「单按钮逐句追加」）：草稿不再是一串自由
+/// 累积的句子，而是围绕「当前正查句」的**有方向上下文**——[prevSentences]（上 N 句，
+/// 紧挨当前句之前）与 [nextSentences]（下 N 句，紧挨当前句之后）。用户在弹窗里选「上
+/// N 句 / 下 N 句」时，宿主一次性把那 N 句解析出来 [setContext] 设进来（**整体替换**
+/// 而非追加），故再点「上 2 句」会覆盖「上 1 句」，不会越攒越多。制卡时
+/// [composeText] 按「上 → 当前 → 下」顺序合成 sentence 字段，音频区间按同序合并。
+///
+/// 为什么要整体替换而非逐句追加：用户原话「+句改成上 1/2/3…句、下 1/2/3…句」——这是
+/// 一个「选多少句上下文」的标量选择，不是「再加一句」的累加动作。换词查询（新 lookup）
+/// 时宿主 [clear]，故每次查词的上下文都从零开始，不带上一个词的句子（修缓存串味）。
+///
+/// 三表面（书籍/有声书/视频）共用同一套草稿模型。
 ///
 /// 纯状态容器：不持有任何 UI/平台句柄，可单测。
 class MiningSentenceDraft {
-  final List<MiningDraftSentence> _sentences = <MiningDraftSentence>[];
+  List<MiningDraftSentence> _prev = const <MiningDraftSentence>[];
+  List<MiningDraftSentence> _next = const <MiningDraftSentence>[];
 
-  /// 已累积的草稿句子（只读快照）。
-  List<MiningDraftSentence> get sentences =>
-      List<MiningDraftSentence>.unmodifiable(_sentences);
+  /// 当前已选的「上 N 句」（紧挨当前句之前，按阅读顺序：最靠前的句在 [0]）。
+  List<MiningDraftSentence> get prevSentences =>
+      List<MiningDraftSentence>.unmodifiable(_prev);
 
-  /// 草稿是否为空（没有任何累积句）。
-  bool get isEmpty => _sentences.isEmpty;
+  /// 当前已选的「下 N 句」（紧挨当前句之后，按阅读顺序：最靠后的句在末尾）。
+  List<MiningDraftSentence> get nextSentences =>
+      List<MiningDraftSentence>.unmodifiable(_next);
 
-  /// 已累积的句子条数。
-  int get length => _sentences.length;
+  /// 草稿是否为空（没有选任何上下文句）。
+  bool get isEmpty => _prev.isEmpty && _next.isEmpty;
 
-  /// 追加一句到草稿。空白/纯空格句直接忽略（不污染计数与合并文本）。
-  /// 返回 true 表示真的入队（追加了一条），false 表示被忽略。
-  bool append(MiningDraftSentence entry) {
-    if (entry.sentence.trim().isEmpty) return false;
-    _sentences.add(entry);
-    return true;
+  /// 已选上下文句总条数（上 N + 下 N）。弹窗角标用它显示「已加 N 句」。
+  int get length => _prev.length + _next.length;
+
+  /// 整体设置上下文：[prev]（上 N 句，阅读顺序）与 [next]（下 N 句，阅读顺序）。
+  /// 空白/纯空格句被过滤（不污染计数与合并文本）。**整体替换**当前上下文——
+  /// 用户改选「上 1 句→上 2 句」时调用方传新一组，不会与上一组叠加。
+  void setContext({
+    List<MiningDraftSentence> prev = const <MiningDraftSentence>[],
+    List<MiningDraftSentence> next = const <MiningDraftSentence>[],
+  }) {
+    _prev = <MiningDraftSentence>[
+      for (final MiningDraftSentence e in prev)
+        if (e.sentence.trim().isNotEmpty) e,
+    ];
+    _next = <MiningDraftSentence>[
+      for (final MiningDraftSentence e in next)
+        if (e.sentence.trim().isNotEmpty) e,
+    ];
   }
 
-  /// 清空草稿（制卡成功或关闭弹窗栈后调用）。
+  /// 清空草稿（制卡成功、换词查询或关闭弹窗栈后调用）。
   void clear() {
-    _sentences.clear();
+    _prev = const <MiningDraftSentence>[];
+    _next = const <MiningDraftSentence>[];
   }
 
-  /// 把「草稿全部句 + 当前句」合成最终 sentence 字段文本。
-  /// [currentSentence] 是制卡时弹窗里正查的那一句（草稿尾部还没追加它）。
+  /// 把「上 N 句 + 当前句 + 下 N 句」按阅读顺序合成最终 sentence 字段文本。
+  /// [currentSentence] 是制卡时弹窗里正查的那一句（夹在上下文中间）。
   String composeText(String currentSentence) {
     final List<String> all = <String>[
-      for (final MiningDraftSentence entry in _sentences) entry.sentence,
+      for (final MiningDraftSentence entry in _prev) entry.sentence,
       currentSentence,
+      for (final MiningDraftSentence entry in _next) entry.sentence,
     ];
     return joinMinedSentences(all);
   }
 
-  /// 把「草稿全部句的音频区间 + 当前句区间」合并成一个区间。
+  /// 把「上 N 句区间 + 当前句区间 + 下 N 句区间」按阅读顺序合并成一个区间。
   /// 跨音频文件无法合并时返回 null（调用方退化为只合文本）。
   AudioPlaybackRange? composeAudioRange(AudioPlaybackRange? currentRange) {
     return mergeMiningAudioRanges(<AudioPlaybackRange?>[
-      for (final MiningDraftSentence entry in _sentences) entry.audioRange,
+      for (final MiningDraftSentence entry in _prev) entry.audioRange,
       currentRange,
+      for (final MiningDraftSentence entry in _next) entry.audioRange,
     ]);
   }
 }

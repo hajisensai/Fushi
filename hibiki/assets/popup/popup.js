@@ -101,59 +101,70 @@ function isLatestEditable(expression, reading) {
         lastMinedEntryKey === mineEntryKey(expression, reading);
 }
 
-// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：弹窗「+句」入口把当前正查的这一句
-// 累积进宿主侧会话级草稿缓冲，连续查多句攒成一张合并卡。
+// TODO-393「查词窗口句子上下文制卡」(取代 TODO-382 单按钮逐句追加)：弹窗里选「上 N 句
+// / 下 N 句」把当前正查句之前/之后的 N 句作上下文纳入这张制卡的 sentence 字段。
 //
-// 数据流：JS 不持有草稿内容（句子文本/音频区间都由宿主 Dart 拥有，参见
-// MiningSentenceDraft）。这里只镜像草稿「句数」用于按钮角标——
-//   - 点「+句」→ callHandler('appendSentence') → 宿主推当前句进草稿 → 回传新句数。
-//   - 制卡成功（mineEntry）→ 宿主清空草稿 → JS 同步把镜像计数清零。
-// 两个状态拥有者（Dart 草稿、JS 角标）只在同两个事件（追加、制卡）更新，绝不漂移。
+// 数据流：JS 不持有句子文本/音频区间（都由宿主 Dart 的 MiningSentenceDraft 拥有），只
+// 镜像两个标量「上几句 / 下几句」用于驱动选择器高亮：
+//   - 点「上 N」/「下 N」→ callHandler('setSentenceContext', {prev, next}) → 宿主按这两个
+//     数解析上下文句**整体替换**草稿 → 回传上下文句总数（上 N + 下 N）。
+//   - 制卡成功（mineEntry）/ 换词查词 → 宿主清空草稿 → JS 把两个镜像标量归零。
+// 上下文是「选多少句」的标量，不是累加动作：再点「上 2」覆盖「上 1」，不会越攒越多。
+let sentenceCtxPrev = 0;
+let sentenceCtxNext = 0;
+// 兼容守卫/旧调用：保留镜像总数（上 N + 下 N）。
 let sentenceDraftCount = 0;
 
-// 刷新页面上所有「+句」按钮的视觉态（多词条头共享同一镜像计数）。
+// 上下文选择器每个方向提供的快捷句数（上 1/2/3/4，下 1/2/3/4）。0 表示「不取该方向」。
+const SENTENCE_CONTEXT_STEPS = [0, 1, 2, 3, 4];
+
+// 刷新页面上所有句子上下文选择器的视觉态（多词条头共享同一对镜像标量）。
 // querySelectorAll 不可用时（极端 fake DOM）静默跳过，不影响制卡主流程。
-function refreshAllAppendSentenceButtons() {
+function refreshAllSentenceContextPickers() {
+    sentenceDraftCount = sentenceCtxPrev + sentenceCtxNext;
     if (typeof document.querySelectorAll !== 'function') return;
-    document.querySelectorAll('.append-sentence-button')
-        .forEach(refreshAppendSentenceButton);
-}
-
-// 把「+句」按钮的视觉态（角标句数 + 高亮 + tooltip）同步到当前镜像计数。N>=1 时显示
-// 「+N」角标并高亮，0 时只显示「+句」基态。tooltip 说明它干啥（用户报「看不懂 +句」）。
-function refreshAppendSentenceButton(button) {
-    if (!button) return;
-    button.textContent = '+句';
-    if (sentenceDraftCount > 0) {
-        const badge = el('span', {
-            className: 'append-count',
-            textContent: String(sentenceDraftCount),
-        });
-        button.appendChild(badge);
-        button.classList.add('has-draft');
-        button.title = (window.i18nAppendSentenceTooltip || '加入制卡句子') +
-            '（已加 ' + sentenceDraftCount + ' 句）';
-    } else {
-        button.classList.remove('has-draft');
-        button.title = window.i18nAppendSentenceTooltip || '加入制卡句子';
-    }
-}
-
-// TODO-382「+句」可撤销：刷新页面上所有「清空已加句子」按钮的可见性。仅在草稿非空
-// （sentenceDraftCount>0）时显示，给用户一个明确、可见的撤销整组「+句」的入口。
-function refreshAllClearDraftButtons() {
-    if (typeof document.querySelectorAll !== 'function') return;
+    document.querySelectorAll('.sentence-context-picker')
+        .forEach(refreshSentenceContextPicker);
     document.querySelectorAll('.clear-draft-button')
         .forEach(refreshClearDraftButton);
 }
 
+// 把一个上下文选择器里所有「上 N」「下 N」 step 按钮的选中态同步到镜像标量。
+function refreshSentenceContextPicker(picker) {
+    if (!picker || typeof picker.querySelectorAll !== 'function') return;
+    picker.querySelectorAll('.context-step').forEach(function(btn) {
+        const dir = btn.dataset.dir;
+        const n = parseInt(btn.dataset.count, 10) || 0;
+        const active = dir === 'prev'
+            ? n === sentenceCtxPrev
+            : n === sentenceCtxNext;
+        btn.classList.toggle('selected', active);
+    });
+}
+
+// TODO-382/393 可撤销：刷新「清空已加句子」按钮可见性。仅在已选上下文（总数>0）时显示，
+// 给用户一个明确、可见的「回到只制当前句」入口。
 function refreshClearDraftButton(button) {
     if (!button) return;
     button.title = window.i18nClearSentenceDraftTooltip || '清空已加句子';
-    button.hidden = sentenceDraftCount <= 0;
+    button.hidden = (sentenceCtxPrev + sentenceCtxNext) <= 0;
 }
 
-// 清空宿主草稿，回传清空后的句数（恒 0）。宿主未接入 / 出错时返回当前镜像计数（不漂移）。
+// 把当前两个镜像标量发给宿主整体设置上下文，回传上下文句总数。宿主未接入 / 出错时
+// 返回当前镜像总数（不漂移）。
+async function setSentenceContextOnHost() {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler(
+            'setSentenceContext', { prev: sentenceCtxPrev, next: sentenceCtxNext });
+        const n = (typeof reply === 'number' && Number.isFinite(reply)) ? reply : 0;
+        return n >= 0 ? n : 0;
+    } catch (e) {
+        console.error('setSentenceContext failed', e);
+        return sentenceCtxPrev + sentenceCtxNext;
+    }
+}
+
+// 清空宿主草稿（回到只制当前句），回传清空后的句数（恒 0）。
 async function clearSentenceDraftOnHost() {
     try {
         const reply = await window.flutter_inappwebview.callHandler('clearSentenceDraft');
@@ -161,22 +172,45 @@ async function clearSentenceDraftOnHost() {
         return n >= 0 ? n : 0;
     } catch (e) {
         console.error('clearSentenceDraft failed', e);
-        return sentenceDraftCount;
+        return sentenceCtxPrev + sentenceCtxNext;
     }
 }
 
-// 追加当前句到宿主草稿，回传宿主侧的新句数（含本句）。宿主未接入时回 0（按钮也不会
-// 渲染，故正常路径不到这里）。
-async function appendSentenceToDraft() {
-    try {
-        const reply = await window.flutter_inappwebview.callHandler('appendSentence');
-        const n = (typeof reply === 'number' && Number.isFinite(reply)) ? reply : 0;
-        return n >= 0 ? n : 0;
-    } catch (e) {
-        console.error('appendSentence failed', e);
-        return sentenceDraftCount;
-    }
+// 构造一个句子上下文选择器：两行「上 0/1/2/3/4」+「下 0/1/2/3/4」 step 按钮。点某个数
+// 就把该方向的上下文句数设成它（0=不取该方向），整组重发宿主。
+function buildSentenceContextPicker() {
+    const picker = el('div', { className: 'sentence-context-picker' });
+    const makeRow = function(dir, label) {
+        const row = el('div', { className: 'context-row' });
+        row.appendChild(el('span', { className: 'context-label', textContent: label }));
+        SENTENCE_CONTEXT_STEPS.forEach(function(n) {
+            const btn = el('button', {
+                className: 'context-step',
+                textContent: String(n),
+            });
+            btn.dataset.dir = dir;
+            btn.dataset.count = String(n);
+            btn.onclick = async function() {
+                if (picker.dataset.busy === '1') return;
+                picker.dataset.busy = '1';
+                try {
+                    if (dir === 'prev') sentenceCtxPrev = n;
+                    else sentenceCtxNext = n;
+                    sentenceDraftCount = await setSentenceContextOnHost();
+                    refreshAllSentenceContextPickers();
+                } finally {
+                    picker.dataset.busy = '';
+                }
+            };
+            row.appendChild(btn);
+        });
+        return row;
+    };
+    picker.appendChild(makeRow('prev', window.i18nContextPrevLabel || '上'));
+    picker.appendChild(makeRow('next', window.i18nContextNextLabel || '下'));
+    return picker;
 }
+
 
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
@@ -1726,13 +1760,14 @@ function createEntryHeader(entry, idx) {
 
                 const reply = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
                 const result = parseMineResult(reply);
-                // TODO-270 F/G：制卡后宿主清空草稿（合并卡已落地），同步把 JS 镜像
-                // 计数清零并刷新「+句」角标，使两端状态在同一事件归零、不漂移。
-                // 仅在启用草稿的表面才动 DOM（纯查词页/视频 E 未接入时不渲染「+句」）。
+                // TODO-393：制卡后宿主清空草稿（合并卡已落地），同步把 JS 两个镜像标量
+                // 归零并刷新上下文选择器，使两端状态在同一事件归零、不漂移。仅在启用草稿
+                // 的表面才动 DOM（纯查词页未接入时不渲染上下文选择器）。
                 if (window.sentenceDraftEnabled) {
+                    sentenceCtxPrev = 0;
+                    sentenceCtxNext = 0;
                     sentenceDraftCount = 0;
-                    refreshAllAppendSentenceButtons();
-                    refreshAllClearDraftButtons();
+                    refreshAllSentenceContextPickers();
                 }
                 const refreshFromAnki = async () => {
                     // Re-detect from Anki so the post-mine state is the real one.
@@ -1772,37 +1807,17 @@ function createEntryHeader(entry, idx) {
         setMineState(isDuplicate);
     });
 
-    // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅书籍/有声书（宿主接受
-    // appendSentence）渲染「+句」入口。点一次把当前句累积进宿主草稿，连续查多句攒成
-    // 一张合并卡；角标显示已攒句数。不碰 mineEntry 字段契约——只发追加信号。
+    // TODO-393「查词窗口句子上下文制卡」：仅支持草稿的表面（书籍/有声书/视频；宿主接受
+    // setSentenceContext）渲染「上 N 句 / 下 N 句」上下文选择器。选「上 N」「下 N」把当前
+    // 句前/后 N 句作上下文整体设进宿主草稿；紧挨的「×」清空回到只制当前句。不碰 mineEntry
+    // 字段契约——只发上下文信号。
     if (window.sentenceDraftEnabled) {
-        const appendButton = el('button', {
-            className: 'append-sentence-button',
-            ontouchstart: () => {
-                lastSelection = window.getSelection()?.toString() || '';
-            },
-            onclick: async () => {
-                if (appendButton.dataset.busy === '1') return;
-                appendButton.dataset.busy = '1';
-                appendButton.disabled = true;
-                try {
-                    sentenceDraftCount = await appendSentenceToDraft();
-                    // 全弹窗共享同一镜像计数：刷新所有「+句」按钮角标 + 清空按钮可见性，
-                    // 使任意词条头的累积态一致。
-                    refreshAllAppendSentenceButtons();
-                    refreshAllClearDraftButtons();
-                } finally {
-                    appendButton.dataset.busy = '';
-                    appendButton.disabled = false;
-                }
-            },
-        });
-        refreshAppendSentenceButton(appendButton);
-        buttonsContainer.appendChild(appendButton);
+        const picker = buildSentenceContextPicker();
+        refreshSentenceContextPicker(picker);
+        buttonsContainer.appendChild(picker);
 
-        // TODO-382「+句」可撤销：紧挨「+句」的「清空已加句子」按钮（仅草稿非空时显示）。
-        // 点一次清掉本会话累积的全部草稿句，所有「+句」角标归零——给用户一个明确、可见
-        // 的撤销入口（此前误点「+句」只能靠制卡或关栈被动清空）。
+        // TODO-382/393 可撤销：「清空已加句子」按钮（仅已选上下文时显示）。点一次把上下文
+        // 句数归零（回到只制当前句），所有选择器同步——明确、可见的撤销入口。
         const clearButton = el('button', {
             className: 'clear-draft-button',
             textContent: '×',
@@ -1811,9 +1826,10 @@ function createEntryHeader(entry, idx) {
                 clearButton.dataset.busy = '1';
                 clearButton.disabled = true;
                 try {
+                    sentenceCtxPrev = 0;
+                    sentenceCtxNext = 0;
                     sentenceDraftCount = await clearSentenceDraftOnHost();
-                    refreshAllAppendSentenceButtons();
-                    refreshAllClearDraftButtons();
+                    refreshAllSentenceContextPickers();
                 } finally {
                     clearButton.dataset.busy = '';
                     clearButton.disabled = false;

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 286 条。点号进各自文件。
+> 共 287 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-297](bugs/BUG-297-mining-sentence-draft-cross-contamination.md) | ✅ | ✅ | 查词制卡句子草稿跨词串味：换词查询不清草稿 + 热槽 WebView 角标残留 |
 | [BUG-292](bugs/BUG-292-update-check-proxy-api-rejected.md) | ✅ | ✅ | 更新检查代理镜像全失败：gh-proxy 公共镜像不代理 api.github.com（结构性 + 部分用户网络侧） |
 | [BUG-291](bugs/BUG-291-mine-sentence-undo-clarity.md) | ✅ | ✅ | 查词弹窗「+句」语义不明且不可撤销；字幕列表「选入词卡」用途不明 |
 | [BUG-290](bugs/BUG-290-log-upload-ci-not-injected.md) | ✅ | ✅ | 错误日志上传按钮在 CI 构建版（含 Windows）全平台不显示 |
