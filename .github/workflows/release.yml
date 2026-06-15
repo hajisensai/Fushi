@@ -247,6 +247,29 @@ jobs:
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
         fi
+    # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
+    # so a fresh clone compiles and the log-upload button stays hidden (it is
+    # gated by a non-empty endpoint, not by platform - see log_upload_config
+    # showUploadLogAction). When the LOG_UPLOAD_ENDPOINT / LOG_UPLOAD_TOKEN repo
+    # secrets are set, bake the real values in so CI/release builds (incl.
+    # Windows) actually show and can use the "upload log to cloud" button
+    # (TODO-385). When unset, leave the committed empty placeholder so the
+    # button stays hidden and no endpoint is exposed.
+    - name: Provide gitignored log upload secret stub
+      shell: bash
+      env:
+        LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+        LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
+      run: |
+        dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+        if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+          printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+        fi
 
     - name: Flutter pub get
       working-directory: hibiki
