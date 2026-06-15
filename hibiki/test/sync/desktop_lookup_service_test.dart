@@ -35,6 +35,32 @@ void main() {
     expect(DesktopLookupService.instance.pendingText, isNull);
   });
 
+  // TODO-376：桌面悬浮字幕点词复用剪贴板查词出口。triggerLookup 是显式查词入口
+  // （热键 / 悬浮字幕点词共用）：去空白后排进 pendingText 并通知，且**越过去重**
+  // ——连点同一个词也要每次都能再查（submitText 自身对相同词会去重）。
+  test('triggerLookup queues pendingText, bypasses dedupe, ignores blank', () {
+    int n = 0;
+    void l() => n++;
+    DesktopLookupService.instance.addListener(l);
+
+    DesktopLookupService.instance.triggerLookup('  良い ');
+    expect(DesktopLookupService.instance.pendingText, '良い');
+    expect(n, 1);
+
+    // 显式再查同一个词：必须越过去重再次排队（剪贴板被动 submitText 会去重，
+    // 这正是 triggerLookup 与 submitText 的关键区别）。
+    DesktopLookupService.instance.clearPending(); // n=2
+    DesktopLookupService.instance.triggerLookup('良い');
+    expect(DesktopLookupService.instance.pendingText, '良い');
+    expect(n, 3);
+
+    // 空白文本是 no-op（不排队、不通知）。
+    DesktopLookupService.instance.triggerLookup('   ');
+    expect(n, 3);
+
+    DesktopLookupService.instance.removeListener(l);
+  });
+
   test('shouldTriggerOnClipboard: app 内复制(聚焦)不触发, 外部复制(失焦)触发', () {
     // Hibiki 在前台聚焦 = 本 app 内复制（制卡/选词复制），不弹查词。
     expect(shouldTriggerOnClipboard(true), isFalse);

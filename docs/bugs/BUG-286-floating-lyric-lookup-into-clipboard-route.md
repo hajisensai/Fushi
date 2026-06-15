@@ -1,0 +1,12 @@
+## BUG-286 · 悬浮字幕点词复用剪贴板查词出口而非主app内浮层
+- **报告**：2026-06-15（用户：Windows 桌面悬浮字幕条点词查词时，弹窗别弹进主 app 窗口；复用剪贴板查词那套逻辑。TODO-376）
+- **真实性**：✅ 真 bug（交互问题）。根因：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart` 的 `_lookupFromFloatingLyric`（TODO-354 引入）把桌面悬浮字幕（独立 always-on-top 原生窗口 `windows/runner/floating_lyric_window.cpp`，点词经 `FloatingLyricChannel.onLookupText` 回调）点的词送进**阅读器页面内的 in-app 浮层**（`searchDictionaryResult` + `_highlightAndShowPopup`，定位在 reader 屏幕中心）。而桌面「剪贴板查词那套逻辑」的出口是 `hibiki/lib/src/sync/desktop_lookup_service.dart`（剪贴板监听 + Ctrl+Shift+D 全局热键 → `submitText` → `pendingText`）→ `hibiki/lib/src/pages/implementations/home_dictionary_page.dart:84` 的 `_onDesktopLookupPending` 消费 → 主窗**查词 tab** 展示 + `bringPendingLookupToFront`（已前台时 no-op，TODO-341）。两个出口分裂：悬浮字幕点词没复用剪贴板查词出口。
+- **[x] ① 已修复** — 提交 <PENDING>。
+  - `desktop_lookup_service.dart` 新增显式查词入口 `triggerLookup(String text)`：清 `_lastText` 越过去重 + `submitText`（热键 `_onHotKey` 也改走它），把「悬浮字幕点词」与「热键查词」统一成同一剪贴板查词管线/出口。
+  - `reader_hibiki_page.dart`：抽顶层纯函数 `floatingLyricSearchTerm(text/index/word)` 解析待查词（分词器优先、整句回退、双空 no-op）；`_lookupFromFloatingLyric` 桌面分支改为 `DesktopLookupService.instance.triggerLookup(searchTerm)` + `bringPendingLookupToFront()`，**不再走 reader in-app 浮层**；非桌面 no-op（Android 走 PopupDictActivity，不到此 handler）。
+  - `home_page.dart`：`_HomePageState` 常驻监听 `DesktopLookupService`，`pendingText` 非空且当前不在查词 tab 时自动 `_selectTab(HomeTab.dictionaries)`，让按需 `switch` 构造的 `HomeDictionaryPage` 挂载并消费 pending（修复「停在书架/视频/阅读器时查词页未挂载、pending 卡住」的消费缺口）。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/sync/desktop_lookup_service_test.dart` 新增 `triggerLookup queues pendingText, bypasses dedupe, ignores blank`（断言去空白排队 + 越过去重连查同词 + 空白 no-op）。
+  - `hibiki/test/pages/floating_lyric_search_term_test.dart` 新增纯函数 `floatingLyricSearchTerm` 的分词优先/整句回退/双空 no-op 契约测试。
+- **残留限制（需真机复测）**：reader 是 `Navigator.push` 全屏路由覆盖在 home 之上，且 `closeMedia` 会 `audioHandler.stop()`（关 reader 即停有声书）。故当用户**正前台全屏阅读 + 悬浮条**时，点词结果落在被 reader 遮挡的 home 查词 tab，需退出阅读器才可见（不能为看词强退 reader 停音频）。这是「复用剪贴板查词出口」的固有特性，与用户决策一致；典型悬浮字幕场景（主窗最小化 / 后台听书 / 停在 home）下 `bringPendingLookupToFront` 唤起主窗 + 自动切查词 tab，完全满足「不弹进主 app 阅读器浮层」。Windows 真机复测：①后台听书态点悬浮字幕词 → 主窗前台、查词 tab 显示该词；②连点同一词每次都能再查；③主窗已前台时不触发任务栏闪烁（TODO-341 不回退）。
+- **备注**：仅改桌面悬浮字幕点词路由 + 剪贴板查词出口常驻化；Android 悬浮词典 `PopupDictActivity` 路径与移动端剪贴板行为不变。

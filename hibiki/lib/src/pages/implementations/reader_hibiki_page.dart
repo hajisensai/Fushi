@@ -31,6 +31,7 @@ import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
@@ -107,6 +108,20 @@ ReaderCaretMoveOutcome readerCaretMoveOutcome(
   if (status == 'pageForward') return ReaderCaretMoveOutcome.paginateForward;
   if (status == 'pageBackward') return ReaderCaretMoveOutcome.paginateBackward;
   return ReaderCaretMoveOutcome.none;
+}
+
+/// 桌面悬浮字幕条点词时，从整句文本与点击字符索引解析出真正要查的词
+/// （TODO-376）。优先用语言分词器 [Language.wordFromIndex] 切出的 [word]；切不出
+/// （空白 / 标点 / 引擎未就绪）则回退整句 [text]。两者皆空返回空串，调用方据此
+/// no-op。提取成顶层纯函数便于单测，不必驱动整个阅读器页面。
+String floatingLyricSearchTerm({
+  required String text,
+  required int index,
+  required String word,
+}) {
+  final String trimmedWord = word.trim();
+  if (trimmedWord.isNotEmpty) return trimmedWord;
+  return text.trim();
 }
 
 /// Whether a handled reader-WebView pointer gesture (swipe / wheel / boundary
@@ -5868,40 +5883,31 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return true;
   }
 
-  /// Routes a tap on the desktop floating-lyric strip into the in-app
-  /// dictionary popup. The strip is a separate native window with no DOM
-  /// selection, so we segment the tapped word ([Language.wordFromIndex],
-  /// the same extractor the Android popup uses) and show the popup with a
-  /// centre-screen fallback rect — identical to the lyrics-mode path that
-  /// also lacks a WebView selection rect.
+  /// Routes a tap on the desktop floating-lyric strip through the **clipboard
+  /// lookup pipeline** (TODO-376). The strip is a separate native always-on-top
+  /// window with no DOM selection, so we segment the tapped word
+  /// ([floatingLyricSearchTerm] via [Language.wordFromIndex], the same extractor
+  /// the Android popup uses) and hand it to [DesktopLookupService.triggerLookup]
+  /// — the exact same outlet the desktop clipboard-watch / global-hotkey lookup
+  /// uses. Per the user's decision ("复用剪贴板查词那套逻辑"), the result is shown
+  /// in the main window's dictionary tab instead of an in-app popup rendered at
+  /// the reader's screen centre, and [bringPendingLookupToFront] surfaces the
+  /// main window (it is a no-op when already focused — TODO-341).
   ///
   /// On Android the overlay launches its own `PopupDictActivity`, so this
-  /// handler is only exercised by the Windows back-end; it is a no-op when no
-  /// usable word can be segmented.
+  /// handler is only exercised by the desktop back-end; on non-desktop hosts it
+  /// is a no-op. It also no-ops when no usable word can be segmented.
   Future<void> _lookupFromFloatingLyric(String text, int index) async {
-    final String trimmed = text.trim();
-    if (trimmed.isEmpty || !mounted) return;
-    final String word =
-        appModel.targetLanguage.wordFromIndex(text: text, index: index).trim();
-    final String searchTerm = word.isNotEmpty ? word : trimmed;
-
-    final Rect selectionRect = Rect.fromCenter(
-      center: Offset(
-        MediaQuery.of(context).size.width / 2,
-        MediaQuery.of(context).size.height / 2,
-      ),
-      width: 1,
-      height: 1,
-    );
-
-    prunePopupStack(0);
-    final int highlightCount = await searchDictionaryResult(
-      searchTerm: searchTerm,
-      selectionRect: selectionRect,
-      deferDisplay: true,
-    );
     if (!mounted) return;
-    await _highlightAndShowPopup(highlightCount, selectionRect);
+    final String searchTerm = floatingLyricSearchTerm(
+      text: text,
+      index: index,
+      word: appModel.targetLanguage.wordFromIndex(text: text, index: index),
+    );
+    if (searchTerm.isEmpty) return;
+    if (!DesktopLookupService.isDesktop) return;
+    DesktopLookupService.instance.triggerLookup(searchTerm);
+    await DesktopLookupService.instance.bringPendingLookupToFront();
   }
 
   // ── Media Notification ────────────────────────────────────────────

@@ -140,8 +140,23 @@ class DesktopLookupService extends ChangeNotifier
   Future<void> _onHotKey() async {
     final String? text = await _readClipboardText();
     if (text == null || text.trim().isEmpty) return;
-    _lastText = null; // 热键强制查（即便与上次相同）
-    submitText(text);
+    triggerLookup(text);
+  }
+
+  /// 显式查词入口（TODO-376）：把一段文本送进与剪贴板/热键完全相同的查词管线
+  /// 与出口（[pendingText] → 词典页消费 → [bringPendingLookupToFront]）。
+  ///
+  /// 与 [submitText] 的区别：这是用户的**显式**意图（按热键 / 在桌面悬浮字幕条上
+  /// 点词），故先清 [_lastText] 越过去重——即便与上次查的是同一个词也要再查一次；
+  /// 也不受 [shouldTriggerOnClipboard] 的「app 内复制不弹」聚焦过滤约束（聚焦过滤
+  /// 只针对被动的剪贴板变化）。Windows 桌面悬浮字幕点词经
+  /// `reader_hibiki_page.dart` 的 `_lookupFromFloatingLyric` 调到这里，从而复用
+  /// 剪贴板查词出口（主窗查词 tab），而不是在阅读器内弹 in-app 浮层。
+  void triggerLookup(String text) {
+    final String trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    _lastText = null; // 显式查词：越过去重，即便与上次相同也再查。
+    submitText(trimmed);
   }
 
   /// BUG-114：Windows 剪贴板是全局独占资源——刚复制的进程可能仍持有句柄，
