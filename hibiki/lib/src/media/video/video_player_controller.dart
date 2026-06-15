@@ -96,7 +96,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 当前字幕是否走 libmpv 画面渲染的**图形内封轨**（PGS/DVD 等位图，
   /// [selectEmbeddedGraphicTrack]）。图形字幕没有文本 cue，[_delayMs] 的 Dart 侧 cue
-  /// 偏移对它无效，调轴必须下发到 libmpv `sub-delay`（BUG-300）。
+  /// 偏移对它无效，调轴必须下发到 libmpv `sub-delay`（BUG-301）。
   ///
   /// 仅 [selectEmbeddedGraphicTrack] 选轨成功置 true；[setCues]（非空文本 cue）/
   /// [selectSubtitleTrack]（关字幕 `no()`）/ [load]（换片复位）置 false。不用
@@ -241,7 +241,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 切换字幕轨（运行时 / Phase 1 预留）。未 [load] 时 no-op 安全。
   Future<void> selectSubtitleTrack(SubtitleTrack track) async {
     // 关字幕 / 切到文本 overlay 都经 `no()`（图形轨改走 [selectEmbeddedGraphicTrack]
-    // 的裸 `player.setSubtitleTrack`，不经此处）→ 离开图形渲染，复位图形标志（BUG-300）。
+    // 的裸 `player.setSubtitleTrack`，不经此处）→ 离开图形渲染，复位图形标志（BUG-301）。
     if (track.id == 'no') _graphicSubtitleActive = false;
     await _player?.setSubtitleTrack(track);
   }
@@ -275,7 +275,7 @@ class VideoPlayerController extends ChangeNotifier
       buildGraphicSubtitleVisibilityProperties(),
     );
     // 进入图形轨渲染：标记图形模式，并把当前字幕调轴（[_delayMs]）下发到 libmpv
-    // `sub-delay`——否则图形字幕忽略 Dart 侧 cue 偏移，调轴滑条对它无效（BUG-300）。
+    // `sub-delay`——否则图形字幕忽略 Dart 侧 cue 偏移，调轴滑条对它无效（BUG-301）。
     _graphicSubtitleActive = true;
     await applySubtitleMpvPropertiesToPlayer(
       player,
@@ -336,7 +336,7 @@ class VideoPlayerController extends ChangeNotifier
   void setCues(List<AudioCue> cues) {
     _cues = List<AudioCue>.of(cues)
       ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
-    // 非空文本 cue → 切到可点 overlay 文本字幕，离开图形轨渲染（BUG-300）。空 cue
+    // 非空文本 cue → 切到可点 overlay 文本字幕，离开图形轨渲染（BUG-301）。空 cue
     // 不在此推断模式：可能是图形轨（[selectEmbeddedGraphicTrack] 先清空 cue 再选轨置
     // true）或无字幕段，故只在确有文本 cue 时复位图形标志。
     if (cues.isNotEmpty) _graphicSubtitleActive = false;
@@ -349,7 +349,7 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// 文本字幕（可点 overlay）的偏移由 [effectiveSubtitlePositionMs] 在 Dart 侧扣减
   /// 位置，无需碰 libmpv；图形内封字幕（PGS 等，[_graphicSubtitleActive]）由 libmpv
-  /// 画面渲染，必须把延迟下发到 `sub-delay` 才生效（BUG-300）。非图形模式显式写
+  /// 画面渲染，必须把延迟下发到 `sub-delay` 才生效（BUG-301）。非图形模式显式写
   /// `sub-delay=0` 复位，防上一段图形轨残留的 `sub-delay` 错位后续文本/无字幕渲染。
   void setDelayMs(int delayMs) {
     _delayMs = delayMs.clamp(-600000, 600000);
@@ -364,7 +364,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 下发到 libmpv `sub-delay` 的延迟（毫秒）。图形内封字幕走 libmpv 画面渲染，用
   /// 真实 [_delayMs]；文本字幕（可点 overlay）偏移已在 Dart 侧扣减，故 `sub-delay`
   /// 必须为 0（显式复位，防图形轨残留）。是 [setDelayMs] /
-  /// [selectEmbeddedGraphicTrack] 决策与单测的共享真相源（BUG-300）。
+  /// [selectEmbeddedGraphicTrack] 决策与单测的共享真相源（BUG-301）。
   int get _subtitleDelayMpvMs => _graphicSubtitleActive ? _delayMs : 0;
 
   /// 当前启用的着色器绝对路径（设置界面回显用）。
@@ -440,7 +440,7 @@ class VideoPlayerController extends ChangeNotifier
     setCues(cues);
     // 换片（复用 player）复位图形字幕标志：新片默认非图形轨，仅当下面
     // [renderGraphicStreamIndex] 触发的 [selectEmbeddedGraphicTrack] 成功才重新置 true。
-    // 这样复用 player 时上一段视频的图形轨 `sub-delay` 不会残留到新片（BUG-300）。
+    // 这样复用 player 时上一段视频的图形轨 `sub-delay` 不会残留到新片（BUG-301）。
     // 不依赖 setCues(空) 复位——空 cue 也可能是图形轨场景。
     _graphicSubtitleActive = false;
 
@@ -705,12 +705,12 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   static int get debugRestoreGuardGraceTicks => _restoreGuardGraceTicks;
 
-  /// 测试可见：当前是否处于图形内封字幕（PGS 等）渲染模式（BUG-300）。
+  /// 测试可见：当前是否处于图形内封字幕（PGS 等）渲染模式（BUG-301）。
   @visibleForTesting
   bool get debugGraphicSubtitleActive => _graphicSubtitleActive;
 
   /// 测试可见：[setDelayMs] / [selectEmbeddedGraphicTrack] 会下发到 libmpv
-  /// `sub-delay` 的延迟（毫秒）——图形模式用真实 delay，文本模式恒 0（BUG-300）。
+  /// `sub-delay` 的延迟（毫秒）——图形模式用真实 delay，文本模式恒 0（BUG-301）。
   /// 宿主无 libmpv（[_player] 恒 null）时 mpv 属性下发被跳过，本 getter 让单测仍能
   /// 断言「按字幕源类型选了对的 sub-delay」这个决策。
   @visibleForTesting
@@ -718,7 +718,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 测试可见：在不实例化 [Player]（宿主无 libmpv，[selectEmbeddedGraphicTrack]
   /// 选轨即返回 false）的前提下，模拟「已进入图形字幕渲染模式」，以驱动 [setDelayMs]
-  /// 的图形/文本分流决策（BUG-300）。
+  /// 的图形/文本分流决策（BUG-301）。
   @visibleForTesting
   void debugSetGraphicSubtitleActiveForTesting(bool active) {
     _graphicSubtitleActive = active;

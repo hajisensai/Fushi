@@ -827,7 +827,7 @@ void main() {
       );
     });
 
-    // TODO-410 / BUG-300：视频「下一句」跳到当前句。
+    // TODO-410 / BUG-302：视频「下一句」跳到当前句。
     //
     // 根因：125ms tick 更新的 [_currentCueIndex] 有滞后窗口——用户 seek 进某句后 tick
     // 尚未追平时，旧实现裸信 [_currentCueIndex]（仍停在上一句）→ next = 上一句+1 = 当前
@@ -1043,7 +1043,7 @@ void main() {
     });
   });
 
-  group('BUG-300 图形字幕调轴 → libmpv sub-delay 分流', () {
+  group('BUG-301 图形字幕调轴 → libmpv sub-delay 分流', () {
     test('文本模式（默认 / setCues 非空）：sub-delay 恒 0，不随 setDelayMs 变', () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);

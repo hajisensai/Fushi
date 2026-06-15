@@ -267,7 +267,7 @@ keep-open=yes
     });
   });
 
-  group('buildSubtitleDelayProperty (BUG-300 图形字幕调轴)', () {
+  group('buildSubtitleDelayProperty (BUG-301 图形字幕调轴)', () {
     test('positive delay -> sub-delay seconds, same sign (no flip)', () {
       // _delayMs 正＝字幕延后，mpv sub-delay 正＝字幕延后，同向不翻符号。
       final Map<String, String> m = buildSubtitleDelayProperty(1500);

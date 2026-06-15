@@ -1,9 +1,9 @@
-## BUG-300 · 字幕同步滑条对 PGS/图形内封字幕无效（从不调 mpv sub-delay）(TODO-402 档①)
+## BUG-301 · 字幕同步滑条对 PGS/图形内封字幕无效（从不调 mpv sub-delay）(TODO-402 档①)
 - **报告**：2026-06-15（用户：调「字幕同步」滑条对内嵌图形/蓝光 PGS 字幕没反应）
 - **真实性**：✅ 真 bug。根因 `file:line`：
   - `hibiki/lib/src/media/video/video_player_controller.dart` 的 `setDelayMs`（原 `:326`）只更新内部 `_delayMs`。文本字幕走可点 overlay，其偏移由纯函数 `effectiveSubtitlePositionMs(posMs, _delayMs)`（`:27`）在 **Dart 侧**扣减播放位置完成 → 文本字幕调轴有效。
   - 但**图形内封字幕**（PGS/DVD 等位图，`selectEmbeddedGraphicTrack` `:245`）没有文本 cue，由 **libmpv 画面渲染**（`buildGraphicSubtitleVisibilityProperties` 打开 `sub-visibility=yes`）。libmpv 渲染的字幕完全不经 Dart 的 `effectiveSubtitlePositionMs`，而 `setDelayMs` **从不下发 libmpv 的 `sub-delay` 属性** → 滑条对图形字幕一拨就没反应。
-- **[x] ① 已修复** — commit `166105cc5`
+- **[x] ① 已修复** — commit `77aa6e2d1`
   - 按字幕源类型分流，防双重偏移（文本走 Dart cue 偏移，图形走 libmpv `sub-delay`）：
     - `video_player_controller.dart`：新增 `bool _graphicSubtitleActive`（不用 `_cues.isEmpty` 推断——图形轨与无字幕 OP 段都是空 cue 会误判）：
       - `selectEmbeddedGraphicTrack` 选轨成功后置 `true`，并把当前 `_delayMs` 经 `buildSubtitleDelayProperty` 立即下发 `sub-delay`（进图形模式即生效）。
@@ -14,5 +14,5 @@
   - 符号：`_delayMs`（正=字幕延后）与 mpv `sub-delay`（正=字幕延后）语义同向，`sub-delay = _delayMs/1000` 不翻符号（**方向需真机用 PGS 文件确认一次**，纯函数一处可翻）。
 - **[x] ② 已加自动化测试** —
   - `hibiki/test/media/video/video_mpv_config_test.dart`：`buildSubtitleDelayProperty` 纯函数单测（正/负/0 毫秒→秒、同向不翻符号、只发 `sub-delay` 一个 key）。
-  - `hibiki/test/media/video/video_player_controller_test.dart`：BUG-300 状态机分流（新增 `@visibleForTesting` 钩子 `debugGraphicSubtitleActive` / `debugSubtitleDelayMpvMs` / `debugSetGraphicSubtitleActiveForTesting`，宿主无 libmpv 仍可断言决策）：文本模式 `sub-delay==0`、图形模式 `sub-delay==_delayMs/1000`、图形→文本/关字幕切换复位 0、`setCues(空)` 不误复位。
+  - `hibiki/test/media/video/video_player_controller_test.dart`：BUG-301 状态机分流（新增 `@visibleForTesting` 钩子 `debugGraphicSubtitleActive` / `debugSubtitleDelayMpvMs` / `debugSetGraphicSubtitleActiveForTesting`，宿主无 libmpv 仍可断言决策）：文本模式 `sub-delay==0`、图形模式 `sub-delay==_delayMs/1000`、图形→文本/关字幕切换复位 0、`setCues(空)` 不误复位。
 - **备注**：真机未验——测试宿主无 libmpv（`Player`/`load()` 构造即抛、`selectEmbeddedGraphicTrack` 选轨返 false），故走纯函数 + 控制器状态机决策测试。`sub-delay` 实际渲染生效与延迟**方向**（正负是否需翻号）需用户用真实 PGS 文件（如 BUG-122 的 VCB 蓝光 mkv）在桌面 libmpv 上拨滑条确认；若方向相反，只需把纯函数 `buildSubtitleDelayProperty` 一处的符号翻转。本档只做档①小修；档②「自动对轴」是另一档，本次不做。

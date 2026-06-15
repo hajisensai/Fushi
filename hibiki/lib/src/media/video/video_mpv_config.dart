@@ -479,7 +479,7 @@ Map<String, String> buildGraphicSubtitleVisibilityProperties() {
 /// 文本字幕走可点 overlay（cue 同步），其偏移由 [effectiveSubtitlePositionMs] 在
 /// Dart 侧完成，**不**经 libmpv；但图形内封字幕（PGS/DVD 等位图，
 /// [VideoPlayerController.selectEmbeddedGraphicTrack]）由 libmpv 画面渲染，Dart 的
-/// cue 偏移对它无效——必须把延迟下发到 libmpv 的 `sub-delay`（BUG-300）。
+/// cue 偏移对它无效——必须把延迟下发到 libmpv 的 `sub-delay`（BUG-301）。
 ///
 /// 单位换算：`_delayMs` 与 mpv `sub-delay` 语义同向（正＝字幕延后），故
 /// `sub-delay = delayMs / 1000`（秒），不翻符号。
