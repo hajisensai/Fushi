@@ -23,6 +23,9 @@ class VideoFavoriteSentencesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 默认按字幕时间（cue.startMs，视频收藏写入 [FavoriteSentence.normCharOffset]）升序，
+    // 与播放进度一致；而非 [FavoriteSentenceRepository.getAll] 的「按添加时间倒序」。
+    // 没有 cue 的句子 normCharOffset == null，按 0 处理，落在最前。
     final List<FavoriteSentence> currentEpisodeSentences = sentences
         .where(
           (FavoriteSentence sentence) =>
@@ -30,7 +33,11 @@ class VideoFavoriteSentencesPanel extends StatelessWidget {
               sentence.bookKey == currentBookKey &&
               sentence.sectionIndex == currentEpisode,
         )
-        .toList(growable: false);
+        .toList()
+      ..sort(
+        (FavoriteSentence a, FavoriteSentence b) =>
+            (a.normCharOffset ?? 0).compareTo(b.normCharOffset ?? 0),
+      );
 
     if (currentEpisodeSentences.isEmpty) {
       return Center(

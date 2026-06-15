@@ -83,6 +83,102 @@ void main() {
   });
 
   testWidgets(
+      'VideoFavoriteSentencesPanel orders sentences by subtitle time ascending '
+      '(TODO-397)', (WidgetTester tester) async {
+    // 输入顺序模拟 FavoriteSentenceRepository.getAll() 的「按添加时间倒序」：
+    // 后收藏（createdAt 较晚）的句子排在前，但它的字幕时间（normCharOffset = cue.startMs）
+    // 反而较早。面板默认排序必须改为按字幕时间升序，与播放进度一致。
+    // 字幕时间靠后（00:30）的句子是最近收藏的 → getAll 的 createdAt 倒序把它排在前。
+    // 若面板不重排，它就会先渲染，与「按字幕时间升序」相反，故能真正鉴别排序逻辑。
+    final FavoriteSentence early = FavoriteSentence(
+      text: 'Early cue at 00:05',
+      bookTitle: 'Show',
+      createdAt: DateTime(2026, 6, 13), // 先添加 → getAll 排在后
+      bookKey: 'video/show',
+      sectionIndex: 1,
+      normCharOffset: 5000,
+      source: kFavoriteSentenceSourceVideo,
+    );
+    final FavoriteSentence late = FavoriteSentence(
+      text: 'Late cue at 00:30',
+      bookTitle: 'Show',
+      createdAt: DateTime(2026, 6, 14), // 后添加 → getAll 排在前
+      bookKey: 'video/show',
+      sectionIndex: 1,
+      normCharOffset: 30000,
+      source: kFavoriteSentenceSourceVideo,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoFavoriteSentencesPanel(
+            currentBookKey: 'video/show',
+            currentEpisode: 1,
+            // 模拟 getAll 的 createdAt 倒序：late-added（晚字幕时间）排在前。
+            sentences: <FavoriteSentence>[late, early],
+            onTapSentence: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    final double earlyY = tester.getTopLeft(find.text('Early cue at 00:05')).dy;
+    final double lateY = tester.getTopLeft(find.text('Late cue at 00:30')).dy;
+    expect(
+      earlyY,
+      lessThan(lateY),
+      reason: '字幕时间较早（normCharOffset 较小）的收藏句必须排在前面（TODO-397）',
+    );
+  });
+
+  testWidgets(
+      'VideoFavoriteSentencesPanel keeps null-timestamp sentences ahead of '
+      'timed ones in default sort (TODO-397)', (WidgetTester tester) async {
+    // 没有 cue 的视频收藏句 normCharOffset == null，排序时按 0 处理，落在最前。
+    final FavoriteSentence noTime = FavoriteSentence(
+      text: 'No timestamp sentence',
+      bookTitle: 'Show',
+      createdAt: DateTime(2026, 6, 13),
+      bookKey: 'video/show',
+      sectionIndex: 1,
+      normCharOffset: null,
+      source: kFavoriteSentenceSourceVideo,
+    );
+    final FavoriteSentence timed = FavoriteSentence(
+      text: 'Timed sentence',
+      bookTitle: 'Show',
+      createdAt: DateTime(2026, 6, 14),
+      bookKey: 'video/show',
+      sectionIndex: 1,
+      normCharOffset: 8000,
+      source: kFavoriteSentenceSourceVideo,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoFavoriteSentencesPanel(
+            currentBookKey: 'video/show',
+            currentEpisode: 1,
+            sentences: <FavoriteSentence>[timed, noTime],
+            onTapSentence: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    final double noTimeY =
+        tester.getTopLeft(find.text('No timestamp sentence')).dy;
+    final double timedY = tester.getTopLeft(find.text('Timed sentence')).dy;
+    expect(
+      noTimeY,
+      lessThan(timedY),
+      reason: '无字幕时间的收藏句按 0 处理，应排在有时间的句子前面（TODO-397）',
+    );
+  });
+
+  testWidgets(
       'VideoFavoriteSentencesPanel isolates by bookKey across single videos '
       '(BUG-274)', (WidgetTester tester) async {
     // 用户场景：两个独立单集视频，都把收藏写在 sectionIndex == 0。仅按集号过滤
