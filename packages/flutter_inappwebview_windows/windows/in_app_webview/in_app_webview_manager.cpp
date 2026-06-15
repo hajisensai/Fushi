@@ -1,4 +1,5 @@
 #include <DispatcherQueue.h>
+#include <optional>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <shlobj.h>
@@ -48,6 +49,22 @@ namespace flutter_inappwebview_plugin
         graphics_context_ = std::make_unique<GraphicsContext>(rohelper_.get());
         compositor_ = graphics_context_->CreateCompositor();
         valid_ = graphics_context_->IsValid();
+
+        // BUG-289：在 root Flutter window 的 WM_DESTROY 受控时机释放共享单例。
+        // dump 实证退出时 ~InAppWebViewManager() 不被调用（plugin registrar 不在进程退出
+        // 时 tear down），单靠析构释放（BUG-255）失效，compositor_ 落到 CRT atexit ->
+        // CoreMessaging 半拆 -> dcomp!Compositor::CleanupSession FailFast (e0464645)。
+        // WM_DESTROY 在 LdrShutdownProcess 之前、UI 线程、CoreMessaging 仍完整时到达，
+        // 是确定性的受控释放点。delegate 返回 std::nullopt 不拦截消息，仅借机释放。
+        if (window_proc_delegate_id_ < 0) {
+          window_proc_delegate_id_ = plugin->registrar->RegisterTopLevelWindowProcDelegate(
+            [](HWND, UINT message, WPARAM, LPARAM) -> std::optional<LRESULT> {
+              if (message == WM_DESTROY) {
+                releaseSharedCompositionResources();
+              }
+              return std::nullopt;
+            });
+        }
       }
     }
 
@@ -279,6 +296,12 @@ namespace flutter_inappwebview_plugin
   // CoreMessaging 仍完整。graphics_context_（D3D 设备/上下文）夹在中间。
   void InAppWebViewManager::releaseSharedCompositionResources()
   {
+    // BUG-289：幂等守卫。WM_DESTROY 钩子（首达，受控时机）与析构兜底可能都调到这里，
+    // 但共享单例只能释放一次；compositor_ 等已置空后重复调用为安全 no-op。
+    if (composition_released_) {
+      return;
+    }
+    composition_released_ = true;
     // 1) DirectComposition Compositor：最终 Release 触发
     //    OnFinalRelease -> CompositorCommon::Destroy -> dcomp!Compositor::CleanupSession。
     //    此刻 dispatcher_queue_controller_ 仍持活，CoreMessaging 完整，不会 FailFast。
