@@ -468,6 +468,21 @@ class AppModel with ChangeNotifier {
   /// Notifies app to stop showing any screens.
   final ChangeNotifier databaseCloseNotifier = ChangeNotifier();
 
+  /// TODO-376：一次性「请打开首页『查词』tab」信号。值每请求一次自增（内容无关，
+  /// 仅作 edge 触发）。桌面悬浮字幕条点词（reader 路由里 `_lookupFromFloatingLyric`）
+  /// 这种**显式**查词手势，需要把主窗口从阅读器/任意 tab 切到查词 tab，让
+  /// [HomeDictionaryPage] 挂载并消费 [DesktopLookupService.pendingText]。
+  ///
+  /// 这是与被动剪贴板监听**正交**的显式导航原语：HomePage 监听本信号只切 tab，不监听
+  /// DesktopLookupService、也不在剪贴板被动命中时自动切 tab（守卫：剪贴板/热键查词仅
+  /// 在查词页生命周期内消费，HomePage 根节点不常驻 DesktopLookupService 监听）。
+  final ValueNotifier<int> homeDictionaryTabRequest = ValueNotifier<int>(0);
+
+  /// 发一次「打开查词 tab」请求（桌面悬浮字幕点词等显式手势调）。
+  void requestHomeDictionaryTab() {
+    homeDictionaryTabRequest.value++;
+  }
+
   /// These directories are prepared at startup in order to reduce redundancy
   /// in actual runtime.
   /// Directory where data that may be dumped is stored.
@@ -3015,6 +3030,7 @@ class AppModel with ChangeNotifier {
     dictionaryMenuNotifier.dispose();
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
+    homeDictionaryTabRequest.dispose();
     // session 的控制流订阅引用 audioCtrl 的 stream，须在 audioCtrl.dispose 前拆。
     audiobookSession.dispose();
     audioCtrl.dispose();

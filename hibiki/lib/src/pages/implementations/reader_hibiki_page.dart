@@ -31,7 +31,6 @@ import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
@@ -47,6 +46,7 @@ import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -5897,6 +5897,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// On Android the overlay launches its own `PopupDictActivity`, so this
   /// handler is only exercised by the desktop back-end; on non-desktop hosts it
   /// is a no-op. It also no-ops when no usable word can be segmented.
+  ///
+  /// 排队 → 唤前台 → 请求首页切到查词 tab。切 tab 让 [HomeDictionaryPage] 挂载，
+  /// 它在 initState 无条件消费已存在的 [DesktopLookupService.pendingText] 并展示——
+  /// pending 必须在请求切 tab **之前**就位（这里顺序即如此），否则页面挂载时读不到。
   Future<void> _lookupFromFloatingLyric(String text, int index) async {
     if (!mounted) return;
     final String searchTerm = floatingLyricSearchTerm(
@@ -5908,6 +5912,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (!DesktopLookupService.isDesktop) return;
     DesktopLookupService.instance.triggerLookup(searchTerm);
     await DesktopLookupService.instance.bringPendingLookupToFront();
+    if (!mounted) return;
+    // 显式请求主窗切到查词 tab（与被动剪贴板正交）：HomeDictionaryPage 挂载后消费
+    // pendingText 展示结果。不在阅读器内弹 in-app 中心浮层（用户决策）。
+    appModel.requestHomeDictionaryTab();
   }
 
   // ── Media Notification ────────────────────────────────────────────

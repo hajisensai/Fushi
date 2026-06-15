@@ -60,7 +60,17 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.addListener(_onFocusSignal);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
+    // 仅在剪贴板监听开启时启动桌面剪贴板/热键监听（受用户设置控制）。
     unawaited(_startDesktopLookupIfEnabled());
+    // TODO-376：无条件消费一次挂载前已排入的 pending（不被 desktopClipboardEnabled
+    // 门控）。桌面悬浮字幕点词由 floatingLyricClickLookup 控制、与剪贴板监听无关：它
+    // 在切到本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在
+    // 本页 addListener 之前收不到。若只在剪贴板开启分支里消费，「开了悬浮字幕点词但
+    // 关了剪贴板监听」的默认用户会 pending 卡死、查词静默丢失。故挂载即排一次后帧
+    // 消费已存在的 pending（有 pending 才消费，无 pending 则 no-op，不会乱消费）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onDesktopLookupPending();
+    });
   }
 
   void _onFocusSignal() {
@@ -77,8 +87,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     await DesktopLookupService.instance.start(
       windowMode: model.desktopClipboardWindowMode,
     );
-    if (!mounted) return;
-    _onDesktopLookupPending();
+    // 已存在的 pending 由 initState 的 post-frame 无条件消费一次（不依赖剪贴板
+    // 是否开启），这里不再重复消费——start 之后的剪贴板/热键命中走 addListener。
   }
 
   void _onDesktopLookupPending() {

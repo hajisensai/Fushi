@@ -18,7 +18,6 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。视频 tab 仅在实验开关开启时
 /// 进入 [_HomePageState._activeTabs]，故用枚举身份而非位置来切换/路由——插入这个
@@ -101,7 +100,11 @@ class _HomePageState extends BasePageState<HomePage>
 
     WidgetsBinding.instance.addObserver(this);
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
-    DesktopLookupService.instance.addListener(_onDesktopLookupPending);
+    // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
+    // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService
+    // ——剪贴板/热键的被动命中只在查词页生命周期内消费，HomePage 根节点不常驻监听。
+    appModelNoUpdate.homeDictionaryTabRequest
+        .addListener(_onHomeDictionaryTabRequested);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       appModel.populateDefaultMapping(appModel.targetLanguage);
@@ -141,17 +144,18 @@ class _HomePageState extends BasePageState<HomePage>
     setState(() {});
   }
 
-  /// TODO-376：剪贴板查词出口常驻化。词典查词（剪贴板监听 / 全局热键 / 桌面悬浮
-  /// 字幕条点词）统一把待查词排进 [DesktopLookupService.pendingText]，但真正消费它
-  /// 的 [HomeDictionaryPage] 仅在「查词」tab 可见时才挂载（[buildBody] 是按需
-  /// `switch`，非 IndexedStack）。用户在别的 tab（书架/视频）或全屏阅读器里触发查词
-  /// 时，查词页未挂载、pending 卡住不显示。home 常驻监听到 pending → 自动切到查词
-  /// tab，让 [HomeDictionaryPage] 挂载并消费 pending、展示结果（[DesktopLookupService]
-  /// 的 [DesktopLookupService.bringPendingLookupToFront] 负责把主窗带到前台）。
-  void _onDesktopLookupPending() {
-    if (!DesktopLookupService.isDesktop) return;
-    if (DesktopLookupService.instance.pendingText == null) return;
-    if (_currentTab == HomeTab.dictionaries) return; // 已在查词 tab，由其自行消费。
+  /// TODO-376：响应显式「打开查词 tab」请求（[AppModel.homeDictionaryTabRequest]）。
+  /// 桌面悬浮字幕条点词（reader 路由 `_lookupFromFloatingLyric`）这类**显式**手势会先
+  /// 把待查词排进 [DesktopLookupService.pendingText]、唤主窗前台，再发本请求；这里只把
+  /// 主窗切到查词 tab，让 [HomeDictionaryPage] 挂载——它在 initState 里无条件消费一次
+  /// 已存在的 pending 并展示。
+  ///
+  /// 这是与被动剪贴板监听正交的显式导航：本回调不读 pendingText、也不被剪贴板/热键的
+  /// 被动命中触发，故不违反「剪贴板查词只在查词页生命周期内消费、HomePage 不常驻
+  /// DesktopLookupService 监听」的守卫。已在查词 tab 时无需切换（页面已挂载并消费）。
+  void _onHomeDictionaryTabRequested() {
+    if (!mounted) return;
+    if (_currentTab == HomeTab.dictionaries) return;
     _selectTab(HomeTab.dictionaries);
   }
 
@@ -161,7 +165,8 @@ class _HomePageState extends BasePageState<HomePage>
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
-    DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
+    appModelNoUpdate.homeDictionaryTabRequest
+        .removeListener(_onHomeDictionaryTabRequested);
     super.dispose();
   }
 
