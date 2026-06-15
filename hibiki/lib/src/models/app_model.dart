@@ -1634,12 +1634,9 @@ class AppModel with ChangeNotifier {
   Future<void> setBrightnessMode(String mode) =>
       themeNotifier.setBrightnessMode(mode);
 
-  String get appUiScaleMode => themeNotifier.appUiScaleMode;
   double get customAppUiScale => themeNotifier.customAppUiScale;
   double get autoAppUiScale => themeNotifier.autoAppUiScale;
   double get appUiScale => themeNotifier.appUiScale;
-  Future<void> setAppUiScaleMode(String value) =>
-      themeNotifier.setAppUiScaleMode(value);
   Future<void> setAppUiScale(double value) =>
       themeNotifier.setAppUiScale(value);
   double resolveAppUiScaleForViewport({
