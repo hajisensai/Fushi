@@ -424,35 +424,58 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(allTagsProvider);
   }
 
-  Future<void> _addTagToBook(String bookKey, BookTagRow tag) async {
-    final existing = ref.read(bookTagMapProvider).valueOrNull;
-    final alreadyHas = existing?[bookKey]?.any((t) => t.id == tag.id) ?? false;
+  /// 给某媒体（epub/srt/video）打标签的共用流程：已有则提示并返回；否则写 DB →
+  /// 失效相关 provider → 成功提示。三种媒体只差「标签表 provider / DB 方法 / filtered
+  /// provider / 成功文案」，作参数注入（[alreadyHas] 由各调用方按自己的标签 map 算好，
+  /// [successMsg] 区分书籍 `tag_added_to_book` vs 视频 `tag_added_to_video`）。
+  Future<void> _addTagToMedia({
+    required bool alreadyHas,
+    required BookTagRow tag,
+    required Future<void> Function() addToDb,
+    required List<ProviderOrFamily> invalidate,
+    required String successMsg,
+  }) async {
     if (alreadyHas) {
       HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
       return;
     }
-    await ref.read(appProvider).database.addTagToBook(bookKey, tag.id);
-    ref.invalidate(bookTagMapProvider);
-    ref.invalidate(filteredBookIdsProvider);
-    if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
+    await addToDb();
+    for (final ProviderOrFamily p in invalidate) {
+      ref.invalidate(p);
     }
+    if (mounted) {
+      HibikiToast.show(msg: successMsg);
+    }
+  }
+
+  Future<void> _addTagToBook(String bookKey, BookTagRow tag) async {
+    final existing = ref.read(bookTagMapProvider).valueOrNull;
+    await _addTagToMedia(
+      alreadyHas: existing?[bookKey]?.any((t) => t.id == tag.id) ?? false,
+      tag: tag,
+      addToDb: () =>
+          ref.read(appProvider).database.addTagToBook(bookKey, tag.id),
+      invalidate: <ProviderOrFamily>[
+        bookTagMapProvider,
+        filteredBookIdsProvider
+      ],
+      successMsg: t.tag_added_to_book(name: tag.name),
+    );
   }
 
   Future<void> _addTagToSrtBook(int srtBookId, BookTagRow tag) async {
     final existing = ref.read(srtBookTagMapProvider).valueOrNull;
-    final alreadyHas =
-        existing?[srtBookId]?.any((t) => t.id == tag.id) ?? false;
-    if (alreadyHas) {
-      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
-      return;
-    }
-    await ref.read(appProvider).database.addTagToSrtBook(srtBookId, tag.id);
-    ref.invalidate(srtBookTagMapProvider);
-    ref.invalidate(filteredSrtBookIdsProvider);
-    if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
-    }
+    await _addTagToMedia(
+      alreadyHas: existing?[srtBookId]?.any((t) => t.id == tag.id) ?? false,
+      tag: tag,
+      addToDb: () =>
+          ref.read(appProvider).database.addTagToSrtBook(srtBookId, tag.id),
+      invalidate: <ProviderOrFamily>[
+        srtBookTagMapProvider,
+        filteredSrtBookIdsProvider,
+      ],
+      successMsg: t.tag_added_to_book(name: tag.name),
+    );
   }
 
   Widget? _buildTagLabels(String bookKey) {
@@ -1026,17 +1049,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _addTagToVideoBook(String bookUid, BookTagRow tag) async {
     final existing = ref.read(videoBookTagMapProvider).valueOrNull;
-    final alreadyHas = existing?[bookUid]?.any((t) => t.id == tag.id) ?? false;
-    if (alreadyHas) {
-      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
-      return;
-    }
-    await ref.read(appProvider).database.addTagToVideoBook(bookUid, tag.id);
-    ref.invalidate(videoBookTagMapProvider);
-    ref.invalidate(filteredVideoBookUidsProvider);
-    if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_video(name: tag.name));
-    }
+    await _addTagToMedia(
+      alreadyHas: existing?[bookUid]?.any((t) => t.id == tag.id) ?? false,
+      tag: tag,
+      addToDb: () =>
+          ref.read(appProvider).database.addTagToVideoBook(bookUid, tag.id),
+      invalidate: <ProviderOrFamily>[
+        videoBookTagMapProvider,
+        filteredVideoBookUidsProvider,
+      ],
+      // 视频用专属成功文案，区别于书籍入口（守卫 video_tags_menu_source_guard）。
+      successMsg: t.tag_added_to_video(name: tag.name),
+    );
   }
 
   /// 长按视频卡：弹底部菜单（编辑标签 / 设置封面 / 删除）。修复「视频长按没菜单」
