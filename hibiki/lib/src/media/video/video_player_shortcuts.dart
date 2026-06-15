@@ -28,6 +28,7 @@ class VideoPlayerShortcutActions {
     required this.toggleSubtitleBlur,
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
+    required this.replayPreviousSubtitle,
     required this.showFavoriteSentences,
     required this.escape,
   });
@@ -64,6 +65,9 @@ class VideoPlayerShortcutActions {
 
   final VoidCallback toggleFavoriteSentence;
   final VoidCallback replayCurrentSubtitle;
+
+  /// 重播上一句（TODO-378，BUG-286）：纯句子跳转到上一条 cue 起点并播放，不退化回退。
+  final VoidCallback replayPreviousSubtitle;
   final VoidCallback showFavoriteSentences;
 
   final VoidCallback escape;
@@ -100,6 +104,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
+    ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
     ShortcutAction.videoShowFavoriteSentences: actions.showFavoriteSentences,
     ShortcutAction.videoEscape: actions.escape,
   };

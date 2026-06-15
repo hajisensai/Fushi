@@ -31,6 +31,7 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     toggleSubtitleBlur: () => record('toggleSubtitleBlur'),
     toggleFavoriteSentence: () => record('toggleFavoriteSentence'),
     replayCurrentSubtitle: () => record('replayCurrentSubtitle'),
+    replayPreviousSubtitle: () => record('replayPreviousSubtitle'),
     showFavoriteSentences: () => record('showFavoriteSentences'),
     escape: () => record('escape'),
   );
@@ -80,12 +81,14 @@ void main() {
 
     await _sendWithModifiers(tester, LogicalKeyboardKey.keyD, control: true);
     await _sendWithModifiers(tester, LogicalKeyboardKey.keyR);
+    await _sendWithModifiers(tester, LogicalKeyboardKey.keyR, shift: true);
     await _sendWithModifiers(tester, LogicalKeyboardKey.keyL);
     await _sendWithModifiers(tester, LogicalKeyboardKey.keyL, control: true);
 
     expect(log, <String>[
       'toggleFavoriteSentence',
       'replayCurrentSubtitle',
+      'replayPreviousSubtitle',
       'toggleSubtitleList',
       'showFavoriteSentences',
     ]);

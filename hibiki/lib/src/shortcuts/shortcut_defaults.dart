@@ -242,6 +242,10 @@ class ShortcutDefaults {
     ShortcutAction.videoReplayCurrentSubtitle: _kb([
       _key(LogicalKeyboardKey.keyR),
     ]),
+    // 重播上一句（TODO-378，BUG-286）：Shift+R，纯句子后退到上一条 cue 起点（不退化）。
+    ShortcutAction.videoReplayPreviousSubtitle: _kb([
+      _key(LogicalKeyboardKey.keyR, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoShowFavoriteSentences: _kb([
       _key(LogicalKeyboardKey.keyL, {ModifierKey.ctrl}),
     ]),
