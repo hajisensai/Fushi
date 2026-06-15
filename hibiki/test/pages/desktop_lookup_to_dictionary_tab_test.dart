@@ -97,6 +97,58 @@ void main() {
         zh.contains('"desktop_clipboard_window_mode_always": "始终置顶"'), isTrue);
   });
 
+  // TODO-376 返工守卫 A：HomeDictionaryPage 挂载时**无条件**消费一次已存在的
+  // pending（不被 desktopClipboardEnabled 门控）。否则「悬浮字幕点词开 + 剪贴板监听
+  // 关」的默认用户：点词在切 tab 前设 pending，挂载时若只在剪贴板分支消费 → pending
+  // 卡死、查词静默丢失（复核退回高问题 1）。运行时回归见
+  // home_dictionary_pending_on_mount_test.dart；这里锁源码接线不变式。
+  test('HomeDictionaryPage drains existing pending on mount unconditionally',
+      () {
+    final String src =
+        read('lib/src/pages/implementations/home_dictionary_page.dart');
+    // 挂载即排一帧无条件消费已存在 pending（在 initState 里，且不在
+    // _startDesktopLookupIfEnabled 的 desktopClipboardEnabled 门控内）。
+    final int initStart = src.indexOf('void initState()');
+    final int initEnd =
+        src.indexOf('Future<void> _startDesktopLookupIfEnabled');
+    expect(initStart, isNonNegative);
+    expect(initEnd, isNonNegative);
+    final String initBody = src.substring(initStart, initEnd);
+    expect(initBody.contains('addPostFrameCallback'), isTrue,
+        reason: 'initState 必须排一帧消费已存在的 pending');
+    expect(initBody.contains('_onDesktopLookupPending()'), isTrue,
+        reason: 'initState 的 post-frame 必须无条件消费 pending（不受剪贴板开关门控）');
+    // start 分支内不得再调消费（消费已下放到 initState 无条件路径），避免回到
+    // 「只有剪贴板开启才消费」的旧门控。
+    final int startStart = initEnd;
+    final int startEnd = src.indexOf('void _onDesktopLookupPending');
+    expect(startEnd, isNonNegative);
+    final String startBody = src.substring(startStart, startEnd);
+    expect(startBody.contains('_onDesktopLookupPending()'), isFalse,
+        reason:
+            '消费不能门控在 desktopClipboardEnabled 分支（_startDesktopLookupIfEnabled）里');
+  });
+
+  // TODO-376 返工守卫 B：桌面悬浮字幕点词是**显式**手势，由 reader 经
+  // AppModel.requestHomeDictionaryTab 请求主窗切到查词 tab；HomePage 监听这个**专用**
+  // 信号切 tab，而不是常驻监听 DesktopLookupService（后者由查词页生命周期独占）。
+  test('floating-lyric tap routes via explicit home-dictionary-tab request',
+      () {
+    final String reader =
+        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String home = read('lib/src/pages/implementations/home_page.dart');
+    final String model = read('lib/src/models/app_model.dart');
+
+    expect(model.contains('requestHomeDictionaryTab'), isTrue,
+        reason: 'AppModel 必须暴露显式「打开查词 tab」请求原语');
+    expect(reader.contains('appModel.requestHomeDictionaryTab()'), isTrue,
+        reason: '悬浮字幕点词必须请求切到查词 tab，让查词页挂载消费 pending');
+    expect(home.contains('homeDictionaryTabRequest'), isTrue,
+        reason: 'HomePage 监听显式 tab 请求信号切 tab');
+    // HomePage 切 tab 走专用信号，不得监听 DesktopLookupService（守卫已在上方钉）。
+    expect(home.contains('DesktopLookupService.instance.addListener'), isFalse);
+  });
+
   test('DesktopLookupService 只排队命中词，不在剪贴板回调里抢前台', () {
     final String src = read('lib/src/sync/desktop_lookup_service.dart');
     final int clipboardStart =
