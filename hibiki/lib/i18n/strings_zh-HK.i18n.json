@@ -1648,5 +1648,7 @@
     "shortcut_action_video_replay_previous_subtitle": "Replay previous subtitle",
     "video_control_slot_drop_hint": "Drag a button here",
     "popup_append_sentence_tooltip": "Add this sentence to the card",
-    "popup_clear_sentence_draft_tooltip": "Clear added sentences"
+    "popup_clear_sentence_draft_tooltip": "Clear added sentences",
+    "video_control_slot_top_left": "Top bar (left)",
+    "video_control_slot_top_right": "Top bar (right)"
 }

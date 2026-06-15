@@ -1149,7 +1149,17 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // 上排：两条屏幕浮动轨（左 / 右）。
+          // 顶排（TODO-388）：两条顶部浮动轨（左 / 右），贴播放器上沿、固定顶栏下方。
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: _buildSlotRegion(VideoControlSlot.topLeft)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSlotRegion(VideoControlSlot.topRight)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 中上排：两条屏幕浮动轨（左 / 右），竖直居中。
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -1356,10 +1366,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     switch (actual) {
       case VideoControlSlot.bottomCenter:
         return VideoControlSlot.bottomRight;
-      case VideoControlSlot.topLeft:
+      // topLeft / topRight 现在是可编辑槽（TODO-388），直接命中上面的 contains 分支；
+      // 只剩 topCenter（固定标题 chrome 区）归到最接近的可拖动顶部槽。
       case VideoControlSlot.topCenter:
-      case VideoControlSlot.topRight:
-        return VideoControlSlot.screenRight;
+        return VideoControlSlot.topRight;
       default:
         return VideoControlSlot.bottomRight;
     }
@@ -1367,6 +1377,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   String _controlSlotLabel(VideoControlSlot slot) {
     switch (slot) {
+      case VideoControlSlot.topLeft:
+        return t.video_control_slot_top_left;
+      case VideoControlSlot.topRight:
+        return t.video_control_slot_top_right;
       case VideoControlSlot.bottomLeft:
         return t.video_control_slot_bottom_left;
       case VideoControlSlot.bottomRight:
@@ -1378,9 +1392,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       case VideoControlSlot.hidden:
         return t.video_control_slot_hidden;
       case VideoControlSlot.bottomCenter:
-      case VideoControlSlot.topLeft:
       case VideoControlSlot.topCenter:
-      case VideoControlSlot.topRight:
         // 这些槽不在编辑器可选集合里（固定 chrome），无需面向用户的标签。
         return slot.storageValue;
     }

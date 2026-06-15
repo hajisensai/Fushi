@@ -181,10 +181,19 @@ enum VideoControlSlot {
   /// The slots the phase-2 editor exposes and the player actually renders for
   /// customizable learning buttons. Restricted to the positions that have a real
   /// render target today (bottom bar left/right regions + floating left/right
-  /// rails + hidden), so the picker never offers a slot that silently no-ops.
-  /// The bottom-center transport cluster and the top bar host fixed transport /
-  /// nav chrome and are intentionally not in this set.
+  /// rails + top-area left/right floating rails + hidden), so the picker never
+  /// offers a slot that silently no-ops.
+  ///
+  /// TODO-388: topLeft / topRight were added so users can also place the
+  /// customizable learning buttons in the **top** area (a floating top rail,
+  /// mirroring the screen side rails) — the player renders them via the same
+  /// learning-button path. The bottom-center transport cluster and topCenter
+  /// host fixed transport / nav chrome (title / back / episode nav) and stay out
+  /// of this set; remodeling those fixed chrome buttons + the immersion lock as
+  /// fully draggable items is a separate, larger change (PM decision pending).
   static const List<VideoControlSlot> editableSlots = <VideoControlSlot>[
+    VideoControlSlot.topLeft,
+    VideoControlSlot.topRight,
     VideoControlSlot.bottomLeft,
     VideoControlSlot.bottomRight,
     VideoControlSlot.screenLeft,

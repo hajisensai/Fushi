@@ -308,15 +308,21 @@ void main() {
   });
 
   group('phase 2 editor catalog (slots + items the picker exposes)', () {
-    test('editableSlots == the 4 rendered on-player slots + hidden', () {
+    test('editableSlots == the 6 rendered on-player slots + hidden (TODO-388)',
+        () {
+      // TODO-388: top-area left/right floating rails joined the editable set so
+      // learning buttons can also be placed near the top (rendered via the same
+      // learning-button rail path). topCenter (title chrome) + bottomCenter
+      // (transport cluster) stay fixed and are never offered to the user.
       expect(VideoControlSlot.editableSlots, <VideoControlSlot>[
+        VideoControlSlot.topLeft,
+        VideoControlSlot.topRight,
         VideoControlSlot.bottomLeft,
         VideoControlSlot.bottomRight,
         VideoControlSlot.screenLeft,
         VideoControlSlot.screenRight,
         VideoControlSlot.hidden,
       ]);
-      // bottomCenter / top* are fixed chrome and never offered to the user.
       expect(VideoControlSlot.editableSlots,
           isNot(contains(VideoControlSlot.bottomCenter)));
       expect(VideoControlSlot.editableSlots,
