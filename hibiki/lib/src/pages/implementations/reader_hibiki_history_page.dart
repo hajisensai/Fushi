@@ -1135,16 +1135,31 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (mounted) _refreshVideoBooks();
   }
 
-  Future<void> _confirmDeleteVideoBook(VideoBookRow book) async {
+  /// 媒体删除确认对话框样板：弹 [ReaderHistoryDeleteDialog]，返回「用户确认了且本
+  /// widget 仍挂载」。video/srt/epub 三处的 DB 删除 + 失效/刷新逻辑差异大、留在各方法；
+  /// 仅这段对话框 + `confirmed != true || !mounted` 守卫收口于此（之前三份逐字复制）。
+  Future<bool> _confirmMediaDelete({
+    required String title,
+    required String message,
+  }) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
-        title: t.video_delete_title,
-        message: t.video_delete_confirm(title: book.title),
+        title: title,
+        message: message,
         onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
-    if (confirmed != true || !mounted) return;
+    return confirmed == true && mounted;
+  }
+
+  Future<void> _confirmDeleteVideoBook(VideoBookRow book) async {
+    if (!await _confirmMediaDelete(
+      title: t.video_delete_title,
+      message: t.video_delete_confirm(title: book.title),
+    )) {
+      return;
+    }
     // ① 删 DB 行（含字幕 cue，事务内）。删前先抓被删 book 自己的封面/字幕路径——
     //    删后行没了就查不到了，删除回收要拿它来精确删自己的资产。
     final String? deletedCover = book.coverPath;
@@ -1705,15 +1720,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (ctx) => ReaderHistoryDeleteDialog(
-        title: t.srt_delete_title,
-        message: t.srt_delete_confirm(title: book.title),
-        onConfirm: () => Navigator.pop(ctx, true),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    if (!await _confirmMediaDelete(
+      title: t.srt_delete_title,
+      message: t.srt_delete_confirm(title: book.title),
+    )) {
+      return;
+    }
 
     if (book.bookKey.isNotEmpty) {
       await ReaderHibikiSource.instance.deleteBook(
@@ -1962,15 +1974,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
     Navigator.pop(context);
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (ctx) => ReaderHistoryDeleteDialog(
-        title: t.epub_delete_title,
-        message: t.srt_delete_confirm(title: item.title),
-        onConfirm: () => Navigator.pop(ctx, true),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    if (!await _confirmMediaDelete(
+      title: t.epub_delete_title,
+      message: t.srt_delete_confirm(title: item.title),
+    )) {
+      return;
+    }
 
     final bool ok = await ReaderHibikiSource.instance.deleteBook(
       db: appModel.database,
