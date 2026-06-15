@@ -761,20 +761,37 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'mineEntry',
           callback: (args) async {
-            if (args.isNotEmpty &&
-                args[0] is Map &&
-                widget.onMineEntry != null) {
-              final fields = Map<String, String>.from(
-                (args[0] as Map)
-                    .map((k, v) => MapEntry(k.toString(), v.toString())),
-              );
-              // 落盘词典媒体（gaiji）字节供 repo 嵌进卡片；必须在 onMineEntry
-              // （→repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
-              await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-              final MinePopupResult result = await widget.onMineEntry!(fields);
-              // TODO-270 D：回传结构化结果（ankiConnect + noteId）给 popup.js，
-              // 让它把刚制的这张标记为「最新可改」第三态。
-              return result.toJson();
+            // BUG-293: the mine/update bridge handlers MUST always return a
+            // MinePopupResult JSON and never let an exception escape into the
+            // native inappwebview JS-handler bridge. An override
+            // (e.g. VideoHibikiPage._mineVideoCard) or writeDictionaryMediaCache
+            // can throw during the re-mine media-capture path (ffmpeg / window
+            // screenshot / WebView2 frame); an unhandled exception crossing the
+            // Dart->native JS-handler boundary takes the whole process down
+            // (crash). Honour the same "return, never throw" contract BUG-077
+            // established for the repository layer and surface the cause
+            // (BUG-089) instead of crashing.
+            try {
+              if (args.isNotEmpty &&
+                  args[0] is Map &&
+                  widget.onMineEntry != null) {
+                final fields = Map<String, String>.from(
+                  (args[0] as Map)
+                      .map((k, v) => MapEntry(k.toString(), v.toString())),
+                );
+                // 落盘词典媒体（gaiji）字节供 repo 嵌进卡片；必须在 onMineEntry
+                // （->repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
+                await writeDictionaryMediaCache(
+                    fields['dictionaryMedia'] ?? '');
+                final MinePopupResult result =
+                    await widget.onMineEntry!(fields);
+                // TODO-270 D：回传结构化结果（ankiConnect + noteId）给 popup.js，
+                // 让它把刚制的这张标记为「最新可改」第三态。
+                return result.toJson();
+              }
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('DictPopupWebview.mineEntry', e, stack);
             }
             return const MinePopupResult().toJson();
           },
@@ -785,23 +802,34 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'updateEntry',
           callback: (args) async {
-            if (args.isNotEmpty &&
-                args[0] is Map &&
-                widget.onUpdateEntry != null) {
-              final data = args[0] as Map;
-              final int? noteId = (data['noteId'] as num?)?.toInt();
-              final fieldsRaw = data['fields'];
-              if (noteId == null || fieldsRaw is! Map) {
-                return const MinePopupResult().toJson();
+            // BUG-293: same boundary contract as mineEntry above — an escaping
+            // exception from the update-in-place override (re-mining the just-
+            // mined word after deleting its Anki card hits this green check path)
+            // must become a logged failure, not an unhandled exception across
+            // the native bridge that crashes the app.
+            try {
+              if (args.isNotEmpty &&
+                  args[0] is Map &&
+                  widget.onUpdateEntry != null) {
+                final data = args[0] as Map;
+                final int? noteId = (data['noteId'] as num?)?.toInt();
+                final fieldsRaw = data['fields'];
+                if (noteId == null || fieldsRaw is! Map) {
+                  return const MinePopupResult().toJson();
+                }
+                final fields = Map<String, String>.from(
+                  fieldsRaw.map((k, v) => MapEntry(k.toString(), v.toString())),
+                );
+                // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
+                await writeDictionaryMediaCache(
+                    fields['dictionaryMedia'] ?? '');
+                final MinePopupResult result =
+                    await widget.onUpdateEntry!(noteId, fields);
+                return result.toJson();
               }
-              final fields = Map<String, String>.from(
-                fieldsRaw.map((k, v) => MapEntry(k.toString(), v.toString())),
-              );
-              // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
-              await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-              final MinePopupResult result =
-                  await widget.onUpdateEntry!(noteId, fields);
-              return result.toJson();
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('DictPopupWebview.updateEntry', e, stack);
             }
             return const MinePopupResult().toJson();
           },
