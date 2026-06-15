@@ -5476,6 +5476,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
       item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
+      // 设置入口（TODO-389）：右键菜单补一项打开视频设置侧栏，与桌面右侧 rail 的
+      // `VideoControlButton.settings` 走同一个 [_showPlayerSettings]（→
+      // [_showVideoSidePanel](_VideoSidePanelKind.settings)）。图标用 `Icons.tune`
+      // 与可配置 settings 按钮（[_controlButtonIcon] 的 VideoControlButton.settings 分支）
+      // 保持一致；标签复用既有 `video_settings_title`（侧栏标题同 key，见
+      // [_videoSidePanelTitle]）。
+      item(Icons.tune, t.video_settings_title, _showPlayerSettings),
     ];
   }
 

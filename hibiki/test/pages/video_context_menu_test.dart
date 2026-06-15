@@ -82,8 +82,12 @@ void main() {
     late final String items;
     setUpAll(() {
       expect(idx, greaterThan(0), reason: '必须有 _buildVideoContextMenuItems');
-      // 截到下一个顶层方法前，覆盖整个菜单项列表。
-      items = page.substring(idx, idx + 2000);
+      // 截到下一个顶层方法（_buildVideoBody）前，覆盖整个菜单项列表——用真实方法
+      // 边界而非固定字符数，避免新增菜单项 / 注释把尾项挤出固定窗口（TODO-389）。
+      final int end = page.indexOf('Widget _buildVideoBody(', idx);
+      expect(end, greaterThan(idx),
+          reason: '_buildVideoContextMenuItems 之后须有 _buildVideoBody 作截断锚点');
+      items = page.substring(idx, end);
     });
 
     test('含播放/暂停', () {
@@ -124,6 +128,17 @@ void main() {
     test('含锁定 / 沉浸模式（TODO-101）', () {
       expect(items.contains('t.video_menu_lock'), isTrue);
       expect(items.contains('_toggleImmersiveLock'), isTrue);
+    });
+
+    // TODO-389：右键菜单补「设置」项，打开视频设置侧栏（与右侧 rail 的
+    // VideoControlButton.settings 走同一个 _showPlayerSettings）。
+    test('含设置（TODO-389，打开视频设置侧栏）', () {
+      expect(items.contains('t.video_settings_title'), isTrue,
+          reason: '设置项标签复用既有 video_settings_title（与侧栏标题同 key）');
+      expect(items.contains('_showPlayerSettings'), isTrue,
+          reason: '设置项须接入既有 _showPlayerSettings 入口（不重造打开逻辑）');
+      expect(items.contains('Icons.tune'), isTrue,
+          reason: '图标用 Icons.tune，与 VideoControlButton.settings 控制按钮保持一致');
     });
 
     // BUG-261: 着色器「对比原画」项已从右键菜单移除（用户要求），改只走 `C` 快捷键 /
