@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 292 条。点号进各自文件。
+> 共 293 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-300](bugs/BUG-300-reader-sasayaki-highlight-missing.md) | ✅ | ✅ | 有声书文字跟随高亮在阅读器里完全不显示 |
 | [BUG-299](bugs/BUG-299-popup-textselect-triggers-swipe-close.md) | ✅ | ✅ | 查词弹窗在WebView正文框选文本误触滑动关闭 |
 | [BUG-298](bugs/BUG-298-mirror-update-check-redirect.md) | ✅ | ✅ | 更新检查走 github.com release 302 跳转使镜像无代理可用（TODO-404 方案A） |
 | [BUG-297](bugs/BUG-297-mining-sentence-draft-cross-contamination.md) | ✅ | ✅ | 查词制卡句子草稿跨词串味：换词查询不清草稿 + 热槽 WebView 角标残留 |

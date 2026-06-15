@@ -3745,17 +3745,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     if (!_cachedSasayaki) return null;
 
-    final List<Map<String, dynamic>> payload = <Map<String, dynamic>>[];
-    for (final AudioCue cue in allCues) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-      if (frag == null || frag.sectionIndex != _currentChapter) continue;
-      payload.add(<String, dynamic>{
-        'id': cue.textFragmentId,
-        'start': frag.normCharStart,
-        'length': frag.normCharEnd - frag.normCharStart,
-      });
-    }
+    // BUG-405：直接复用 AudiobookBridge.buildSasayakiPayload，与有声书桥接路径
+    // 共用同一份 payload 契约（必含 cue 原文 text）。此前 reader 这里手写的内联
+    // 循环漏了 text 字段：JS collectSasayakiCueRanges 拿到空 needle → 跳过实时
+    // DOM 就近重定位 → 只按「匹配坐标系」的 start 提示回落，而该提示在「渲染
+    // 坐标系」实时 DOM 里错位 → 高亮落空，正文看不到任何有声书跟随高亮。复用
+    // 纯函数后两条路径不会再各自漂移（BUG-060 的实时 DOM 重定位对 reader 生效）。
+    final List<Map<String, dynamic>> payload =
+        AudiobookBridge.buildSasayakiPayload(allCues, _currentChapter);
     if (payload.isEmpty) return null;
     return jsonEncode(payload);
   }
