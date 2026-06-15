@@ -51,7 +51,7 @@ void main() {
     expect(
       workflow,
       contains(
-        r'ANDROID_BUILD_NUMBER=$((PUBSPEC_BUILD * 1000000 + RELEASE_SEQUENCE))',
+        r'ANDROID_BUILD_NUMBER=$RELEASE_SEQUENCE',
       ),
     );
     expect(workflow, contains('BUILD_DEBUG_CHANNEL_APK=true'));
