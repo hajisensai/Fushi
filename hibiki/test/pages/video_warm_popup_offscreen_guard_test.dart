@@ -13,18 +13,27 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
-  test('mixin: 隐藏热槽停到屏幕右外侧', () {
+  test('parkedPopupLayer 把隐藏热槽停到屏幕右外侧（收口的单一真相）', () {
+    // BUG-135 parking 几何已收口到 dictionary_popup_layer.parkedPopupLayer；
+    // 平台视图触摸行为无 headless 测试，锁这条结构不变式。
     final String src =
-        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
-    expect(src.contains('screen.width + 8'), isTrue,
-        reason: '隐藏热槽必须停到屏外（left=screen.width+8），否则原生 WebView 吃掉控件触摸');
-    expect(src.contains('!entry.visible'), isTrue,
-        reason: '只对隐藏(!visible)的热槽停屏外，可见查词层用真实位置');
+        read('lib/src/pages/implementations/dictionary_popup_layer.dart');
+    expect(src.contains('Widget parkedPopupLayer('), isTrue);
+    expect(src.contains('visible ? pos.left : screen.width + 8'), isTrue,
+        reason: '隐藏(!visible)层停到屏外 left=screen.width+8，可见层用真实位置');
   });
 
-  test('reader base_source_page: 隐藏热槽停屏外 + Stack Clip.none', () {
+  test('mixin 经 parkedPopupLayer 渲染弹窗层', () {
+    final String src =
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+    expect(src.contains('parkedPopupLayer('), isTrue,
+        reason: '弹窗层渲染经 parkedPopupLayer（BUG-135 parking 收口处）');
+  });
+
+  test('reader base_source_page: 经 parkedPopupLayer + Stack Clip.none', () {
     final String src = read('lib/src/pages/base_source_page.dart');
-    expect(src.contains('screen.width + 8'), isTrue, reason: '阅读器隐藏热槽也要停屏外');
+    expect(src.contains('parkedPopupLayer('), isTrue,
+        reason: '阅读器弹窗层也经 parkedPopupLayer 停屏外');
     expect(src.contains('clipBehavior: Clip.none'), isTrue,
         reason: '宿主 Stack 用 Clip.none，让屏外热槽不被裁掉仍预热');
   });
