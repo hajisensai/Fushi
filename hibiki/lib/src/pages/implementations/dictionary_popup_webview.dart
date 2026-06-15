@@ -54,6 +54,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
+    this.onSetSentenceContext,
     this.onClearSentenceDraft,
     this.onScrolledToBottom,
     this.onTopPullReleased,
@@ -88,6 +89,14 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// popup 更新「已攒 N 句」角标。非空才在 popup 渲染「+句」按钮（书籍/有声书启用；
   /// 视频 E 后续复用同一入口）。
   final Future<int> Function()? onAppendSentence;
+
+  /// TODO-393「上 N 句 / 下 N 句」上下文选择：popup 点「上 N 句 / 下 N 句」经
+  /// `setSentenceContext` JS 处理器触发本回调，[prevCount]/[nextCount] 是当前句之前/
+  /// 之后想纳入制卡的句数。宿主解析出那些上下文句（+各自音频区间）**整体替换**草稿，
+  /// 返回上下文句总数（上 N + 下 N），供 popup 更新角标。非空才在 popup 渲染上下文
+  /// 选择器（与 [onAppendSentence] 同生命周期；reader/视频启用）。
+  final Future<int> Function(int prevCount, int nextCount)?
+      onSetSentenceContext;
 
   /// TODO-382「+句」可撤销：popup 点「清空已加句子」经 `clearSentenceDraft` JS
   /// 处理器触发本回调，宿主清空草稿并回传清空后句数（恒 0），popup 据此把所有「+句」
@@ -515,13 +524,15 @@ class DictionaryPopupWebViewState
       };
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
-      // TODO-270 F/G：宿主接受 appendSentence（书籍/有声书；视频 E 后续）时才渲染
-      // 弹窗「+句」按钮——纯查词页（首页词典）无草稿语义，恒 false 不显示。
-      window.sentenceDraftEnabled = ${widget.onAppendSentence != null};
-      // TODO-382「+句」可撤销 + 易懂：注入「+句」「清空已加句子」的 tooltip 文案
-      // （popup.js 无自带 i18n 机制，按钮文字硬编码中文；tooltip 走宿主 i18n 注入）。
+      // TODO-393：宿主接受 setSentenceContext（书籍/有声书/视频）时才渲染弹窗「上 N 句
+      // / 下 N 句」上下文选择器——纯查词页（首页词典）无句子上下文，恒 false 不显示。
+      window.sentenceDraftEnabled = ${widget.onSetSentenceContext != null};
+      // TODO-382/393：注入「上 N 句 / 下 N 句」选择器的方向标签与「清空」tooltip
+      // （popup.js 无自带 i18n 机制，按钮文字硬编码；文案走宿主 i18n 注入）。
       window.i18nAppendSentenceTooltip = ${jsonEncode(t.popup_append_sentence_tooltip)};
       window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
+      window.i18nContextPrevLabel = ${jsonEncode(t.popup_sentence_context_prev_label)};
+      window.i18nContextNextLabel = ${jsonEncode(t.popup_sentence_context_next_label)};
       // 启用制卡时词典媒体（gaiji 外字）嵌入：popup.js 据此把外字渲染成
       // <img src="hoshi_dict_N.ext"> 并登记到 dictionaryMedia 负载，制卡处理器
       // (mineEntry handler) 再 writeDictionaryMediaCache 落盘供 repo 嵌进卡片。
@@ -894,6 +905,23 @@ class DictionaryPopupWebViewState
               return widget.onAppendSentence!();
             }
             return 0;
+          },
+        );
+
+        // TODO-393：popup 点「上 N 句 / 下 N 句」把当前句前/后 N 句作上下文整体设进
+        // 宿主草稿（不掺历史累积），回传上下文句总数（上 N + 下 N）供 popup 更新角标。
+        controller.addJavaScriptHandler(
+          handlerName: 'setSentenceContext',
+          callback: (args) async {
+            if (widget.onSetSentenceContext == null) return 0;
+            int prevCount = 0;
+            int nextCount = 0;
+            if (args.isNotEmpty && args[0] is Map) {
+              final Map<dynamic, dynamic> data = args[0] as Map;
+              prevCount = (data['prev'] as num?)?.toInt() ?? 0;
+              nextCount = (data['next'] as num?)?.toInt() ?? 0;
+            }
+            return widget.onSetSentenceContext!(prevCount, nextCount);
           },
         );
 

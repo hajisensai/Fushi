@@ -71,16 +71,25 @@ void main() {
             'Card sentence audio must resolve the selected sentence to a full '
             'audio range, not export only the lookup cue.',
       );
+      // TODO-393：句子音频区间解析下沉到参数化 helper _sentenceAudioRangeFor，当前句
+      // 经 _currentSentenceAudioRange 把 _cachedSentenceRange 的 offset/length 传进去。
       expect(
         source,
-        contains('sentenceNormCharOffset: _cachedSentenceRange?.offset'),
+        contains('sentenceNormCharOffset: normOffset'),
         reason:
-            'The cached JS sentence range is the strongest signal for the full '
-            'sentence audio span.',
+            'The parametrized helper takes the sentence normalized offset; the '
+            'current-sentence path feeds _cachedSentenceRange?.offset into it.',
       );
       expect(
         source,
-        contains('sentenceNormCharLength: _cachedSentenceRange?.length'),
+        contains('normOffset: _cachedSentenceRange?.offset'),
+        reason:
+            'The cached JS sentence range is the strongest signal for the full '
+            'current-sentence audio span.',
+      );
+      expect(
+        source,
+        contains('normLength: _cachedSentenceRange?.length'),
         reason:
             'Without sentence length, the reader falls back to a single cue and '
             'can cut off sentences split across multiple cues.',

@@ -1,6 +1,21 @@
 import 'dart:convert';
 import 'dart:ui';
 
+/// TODO-393：阅读器 DOM 里「当前查词句」前后一条上下文句的解析结果。
+/// [normOffset]/[normLength] 是整书归一化偏移（有 [window.hoshiReader] 时才有值），
+/// 供有声书把这句映射到音频区间；纯阅读时为 null（只合文本）。
+class SurroundingSentence {
+  const SurroundingSentence({
+    required this.sentence,
+    this.normOffset,
+    this.normLength,
+  });
+
+  final String sentence;
+  final int? normOffset;
+  final int? normLength;
+}
+
 class ReaderSelectionScripts {
   ReaderSelectionScripts._();
 
@@ -11,6 +26,55 @@ class ReaderSelectionScripts {
       'JSON.stringify(window.hoshiSelection.highlightSelection($count))';
 
   static String clearInvocation() => 'window.hoshiSelection.clearSelection()';
+
+  /// TODO-393：取「当前查词句」前后各 N 句的上下文（制卡「上 N 句 / 下 N 句」用）。
+  /// 返回的 JSON 由 [surroundingSentencesFromResult] 解析。[prevCount] / [nextCount]
+  /// 是想要的最大句数（实际可能更少，到段首/文首即止）。
+  static String surroundingSentencesInvocation(int prevCount, int nextCount) =>
+      'JSON.stringify(window.hoshiSelection.getSurroundingSentences('
+      '$prevCount, $nextCount))';
+
+  /// 解析 [surroundingSentencesInvocation] 的结果为 `(prev, next)` 两组句子上下文，
+  /// 每条带 [sentence] 文本与（可选）整书归一化偏移 [normOffset]/[normLength]
+  /// （供有声书裁句子音频区间）。无选区 / 解析失败时返回两个空列表。
+  static ({List<SurroundingSentence> prev, List<SurroundingSentence> next})
+      surroundingSentencesFromResult(Object? raw) {
+    const empty = (
+      prev: <SurroundingSentence>[],
+      next: <SurroundingSentence>[],
+    );
+    if (raw == null) return empty;
+    try {
+      final Object decoded;
+      if (raw is String) {
+        final String trimmed = raw.trim();
+        if (trimmed.isEmpty || trimmed == 'null') return empty;
+        decoded = jsonDecode(trimmed) as Object;
+      } else {
+        decoded = raw;
+      }
+      if (decoded is! Map) return empty;
+      List<SurroundingSentence> parseList(Object? list) {
+        if (list is! List) return const <SurroundingSentence>[];
+        return <SurroundingSentence>[
+          for (final Object? item in list)
+            if (item is Map)
+              SurroundingSentence(
+                sentence: item['sentence']?.toString() ?? '',
+                normOffset: (item['normOffset'] as num?)?.toInt(),
+                normLength: (item['normLength'] as num?)?.toInt(),
+              ),
+        ];
+      }
+
+      return (
+        prev: parseList(decoded['prev']),
+        next: parseList(decoded['next']),
+      );
+    } catch (_) {
+      return empty;
+    }
+  }
 
   static bool didSelectNothing(String? result) {
     if (result == null) return true;
@@ -265,6 +329,95 @@ window.hoshiSelection = {
   },
   getSentence: function(startNode, startOffset) {
     return this.getSentenceContext(startNode, startOffset).sentence;
+  },
+  // TODO-393：从「当前查词句」往前 / 往后逐句采集上下文（制卡「上 N 句 / 下 N 句」）。
+  // 以当前 this.selection 的起点定位当前句边界，再用 getSentenceContext 从「当前句首
+  // 的前一个字符」继续往前取上一句、从「当前句尾的后一个字符」往后取下一句，逐句迭代。
+  // 每条返回 sentence 文本 + （有 window.hoshiReader 时）整书归一化偏移，供宿主裁句子
+  // 音频区间。到段首 / 文首（无更多字符）即止，故实际句数可能少于请求数。
+  getSurroundingSentences: function(prevCount, nextCount) {
+    var result = { prev: [], next: [] };
+    if (!this.selection) return result;
+    var self = this;
+    var describe = function(ctx) {
+      var entry = { sentence: ctx.sentence };
+      if (window.hoshiReader) {
+        var s = self.getNormalizedOffset(ctx.sStartNode, ctx.sStartOffset);
+        var e = self.getNormalizedOffset(ctx.sEndNode, ctx.sEndOffset);
+        if (s !== null && e !== null) {
+          entry.normOffset = s;
+          entry.normLength = Math.max(0, e - s);
+        }
+      }
+      return entry;
+    };
+    // 当前句边界：从查词选区起点解析。
+    var current = this.getSentenceContext(
+      this.selection.startNode, this.selection.startOffset);
+    // 往前：以「当前句首的前一个位置」作为新起点取上一句，再以它的句首继续。
+    var anchorNode = current.sStartNode;
+    var anchorOffset = current.sStartOffset;
+    for (var i = 0; i < prevCount; i++) {
+      var before = this.charBefore(anchorNode, anchorOffset);
+      if (!before) break;
+      var ctx = this.getSentenceContext(before.node, before.offset + 1);
+      if (!ctx.sentence) {
+        anchorNode = ctx.sStartNode;
+        anchorOffset = ctx.sStartOffset;
+        // 空句（纯分隔符段）：跳过它继续往前，避免死循环。
+        if (anchorNode === before.node && anchorOffset === before.offset) break;
+        continue;
+      }
+      result.prev.unshift(describe(ctx));
+      anchorNode = ctx.sStartNode;
+      anchorOffset = ctx.sStartOffset;
+    }
+    // 往后：以「当前句尾的后一个位置」作为新起点取下一句，再以它的句尾继续。
+    anchorNode = current.sEndNode;
+    anchorOffset = current.sEndOffset;
+    for (var j = 0; j < nextCount; j++) {
+      var after = this.charAt(anchorNode, anchorOffset);
+      if (!after) break;
+      var ctxN = this.getSentenceContext(after.node, after.offset);
+      if (!ctxN.sentence) {
+        anchorNode = ctxN.sEndNode;
+        anchorOffset = ctxN.sEndOffset;
+        if (anchorNode === after.node && anchorOffset === after.offset) break;
+        continue;
+      }
+      result.next.push(describe(ctxN));
+      anchorNode = ctxN.sEndNode;
+      anchorOffset = ctxN.sEndOffset;
+    }
+    return result;
+  },
+  // 返回 (node, offset) 之前一个文本字符的位置（跨文本节点，跳振假名），无则 null。
+  charBefore: function(node, offset) {
+    if (offset > 0) return { node: node, offset: offset - 1 };
+    var container = this.findParagraph(node) || document.body;
+    var walker = this.createWalker(container);
+    walker.currentNode = node;
+    var prev = walker.previousNode();
+    while (prev) {
+      if (prev.textContent.length > 0) {
+        return { node: prev, offset: prev.textContent.length - 1 };
+      }
+      prev = walker.previousNode();
+    }
+    return null;
+  },
+  // 返回 (node, offset) 处（含本位）的下一个有效文本位置，无则 null。
+  charAt: function(node, offset) {
+    if (offset < node.textContent.length) return { node: node, offset: offset };
+    var container = this.findParagraph(node) || document.body;
+    var walker = this.createWalker(container);
+    walker.currentNode = node;
+    var next = walker.nextNode();
+    while (next) {
+      if (next.textContent.length > 0) return { node: next, offset: 0 };
+      next = walker.nextNode();
+    }
+    return null;
   },
   selectText: function(x, y, maxLength) {
     if (document.elementFromPoint(x, y)?.closest('a')) {

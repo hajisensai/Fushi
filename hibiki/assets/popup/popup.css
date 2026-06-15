@@ -121,8 +121,7 @@ body {
 }
 
 .audio-button,
-.mine-button,
-.append-sentence-button {
+.mine-button {
     padding: 0 4px;
     border: none;
     background: transparent;
@@ -154,28 +153,52 @@ body {
     opacity: 0.15;
 }
 
-/* TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：把当前句追加进本卡草稿。点一次
-   累积一句，连续查多句攒成一张合并卡（文本 join('
-'，与视频一致），制卡后清空。
-   有草稿时高亮 + 角标显示已攒句数，让累积态可见。仅在宿主接受 appendSentence
-   时渲染（书籍/有声书；视频 E 后续复用同一入口）。*/
-.append-sentence-button {
-    position: relative;
+/* TODO-393「查词窗口句子上下文制卡」：「上 N 句 / 下 N 句」上下文选择器。两行（上/下），
+   每行一个方向标签 + 0/1/2/3/4 个 step 按钮。选中的句数高亮（绿色）。整组挂在词条头按钮
+   行里，紧凑、不抢制卡/发音按钮的位置。仅在宿主接受 setSentenceContext 时渲染
+   （书籍/有声书/视频；纯查词页无句子上下文不显示）。*/
+.sentence-context-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-left: 6px;
+    align-self: center;
 }
 
-.append-sentence-button.has-draft {
+.sentence-context-picker .context-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.sentence-context-picker .context-label {
+    font-size: 11px;
+    opacity: 0.6;
+    min-width: 1.2em;
+    text-align: center;
+}
+
+.sentence-context-picker .context-step {
+    min-width: 16px;
+    padding: 0 3px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    line-height: 1.4;
+    opacity: 0.5;
+    border-radius: 3px;
+    -webkit-user-select: none;
+}
+
+.sentence-context-picker .context-step:hover {
+    opacity: 0.85;
+}
+
+.sentence-context-picker .context-step.selected {
     color: #2e9e4f;
     opacity: 1;
-}
-
-.append-sentence-button .append-count {
-    font-size: 11px;
-    vertical-align: super;
-    margin-left: 1px;
-}
-
-.append-sentence-button:disabled {
-    opacity: 0.15;
+    font-weight: 600;
 }
 
 /* TODO-382「+句」可撤销：紧挨「+句」的清空按钮。仅草稿非空时显示（refreshClearDraftButton

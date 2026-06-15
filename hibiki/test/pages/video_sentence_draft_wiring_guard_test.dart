@@ -2,13 +2,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-270 E「查词窗口多句合一制卡」(乙方案·视频车道) 接线守卫。
+/// TODO-393「查词窗口句子上下文制卡」(视频车道) 接线守卫。
 ///
-/// 视频页用 [DictionaryPageMixin]（非 reader 的 base_source_page），其查词浮层在
-/// mixin 的 [DictionaryPageMixin.buildNestedPopupLayer] 构造。media_kit + 原生
-/// WebView 无法在无头 widget 测试里驱动，故用源码扫描钉死「+句」累积 → 制卡合并 →
-/// 清空 三段接线，防止任一环被悄悄断开（与 video_mining_context_guard / reader 的
-/// sentence_draft_wiring_guard 同范式）。草稿合并/join 的纯逻辑已由
+/// 视频页用 [DictionaryPageMixin]（非 reader 的 base_source_page），其查词浮层在 mixin
+/// 的 [DictionaryPageMixin.buildNestedPopupLayer] 构造。media_kit + 原生 WebView 无法在
+/// 无头 widget 测试里驱动，故用源码扫描钉死「上 N 句 / 下 N 句」上下文 → 制卡合并 →
+/// 换词/制卡清空 三段接线。草稿合并/join 的纯逻辑已由
 /// test/media/audiobook/mining_sentence_draft_test.dart 全覆盖，这里只验「接线」。
 void main() {
   String readSource(String relativePath) {
@@ -17,17 +16,16 @@ void main() {
     return file.readAsStringSync();
   }
 
-  test('mixin exposes an overridable append hook and forwards onAppendSentence',
-      () {
+  test('mixin exposes an overridable set-context hook and forwards it', () {
     final String src =
         readSource('lib/src/pages/implementations/dictionary_page_mixin.dart');
-    // 默认 null = 不支持（纯查词页 / 首页词典不渲染「+句」）。
+    // 默认 null = 不支持（纯查词页 / 首页词典不渲染选择器）。
     expect(
       src,
-      contains('Future<int> Function()? get onAppendSentenceToDraft => null;'),
+      contains('get onSetSentenceContextToDraft => null;'),
     );
-    // buildNestedPopupLayer 把钩子透传给弹窗层；非空才渲染「+句」。
-    expect(src, contains('onAppendSentence: onAppendSentenceToDraft'));
+    // buildNestedPopupLayer 把钩子透传给弹窗层；非空才渲染选择器。
+    expect(src, contains('onSetSentenceContext: onSetSentenceContextToDraft'));
   });
 
   group('video_hibiki_page', () {
@@ -53,27 +51,27 @@ void main() {
             "import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';"),
       );
       expect(src, contains('final MiningSentenceDraft _miningDraft ='));
-      // 覆写 mixin 钩子返回非空闭包 → popup 渲染「+句」。
+      // 覆写 mixin 钩子返回非空闭包 → popup 渲染上下文选择器。
       expect(
         src,
         contains(
-            'Future<int> Function()? get onAppendSentenceToDraft => _appendSentenceToDraft;'),
+            'get onSetSentenceContextToDraft => _setSentenceContextToDraft;'),
       );
     });
 
-    test('append pushes the current subtitle sentence + its cue range', () {
-      final String append = region(
-        'Future<int> _appendSentenceToDraft() async {',
+    test('set-context takes prev/next cues around the lookup cue', () {
+      final String set = region(
+        'Future<int> _setSentenceContextToDraft(int prevCount, int nextCount) async {',
         'bool _pausedForLookup',
       );
-      expect(append, contains('_miningDraft.append(MiningDraftSentence('));
-      expect(append, contains('sentence: _lastLookupSentence'));
-      expect(append, contains('audioRange: _currentLookupCueRange()'));
-      expect(append, contains('return _miningDraft.length;'));
+      expect(set, contains('_lastLookupCue'));
+      expect(set, contains('controller.cues'));
+      expect(set, contains('_miningDraft.setContext('));
+      expect(set, contains('return _miningDraft.length;'));
       // 视频所有 cue 同属一个视频文件 → audioFileIndex 恒 0（合并恒成功取 min/max）。
       final String cueRange = region(
-        'AudioPlaybackRange? _currentLookupCueRange() {',
-        'Future<int> _appendSentenceToDraft() async {',
+        'AudioPlaybackRange? _cueRange(AudioCue? cue) {',
+        'Future<int> _setSentenceContextToDraft(',
       );
       expect(cueRange, contains('audioFileIndex: 0'));
     });
@@ -83,7 +81,7 @@ void main() {
         '_resolveVideoMiningRange(VideoPlayerController controller) {',
         'Future<MinePopupResult> onMineEntry(',
       );
-      // 文本合并：草稿全部句 + 当前查词句。
+      // 文本合并：草稿上下文句 + 当前查词句。
       expect(
         resolve,
         contains('_miningDraft.composeText(_lastLookupSentence)'),
@@ -103,6 +101,16 @@ void main() {
       expect(mine, contains('_miningDraft.clear();'));
       // 多选路径成功 → 清多选（保留旧行为，与草稿正交）。
       expect(mine, contains('_clearSelectedMiningCues();'));
+    });
+
+    test(
+        'a new lookup discards the previous word context (no cross-contamination)',
+        () {
+      final String lookup = region(
+        '_lastLookupSentence = sentence;',
+        'await pushNestedPopup(',
+      );
+      expect(lookup, contains('_miningDraft.clear();'));
     });
 
     test('closing the whole popup stack discards an un-mined draft', () {

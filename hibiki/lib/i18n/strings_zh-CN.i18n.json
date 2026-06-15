@@ -1650,5 +1650,7 @@
     "popup_append_sentence_tooltip": "加入制卡句子",
     "popup_clear_sentence_draft_tooltip": "清空已加句子",
     "video_control_slot_top_left": "顶栏（左）",
-    "video_control_slot_top_right": "顶栏（右）"
+    "video_control_slot_top_right": "顶栏（右）",
+    "popup_sentence_context_prev_label": "上",
+    "popup_sentence_context_next_label": "下"
 }

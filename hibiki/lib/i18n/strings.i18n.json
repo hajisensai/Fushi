@@ -1650,5 +1650,7 @@
     "popup_append_sentence_tooltip": "Add this sentence to the card",
     "popup_clear_sentence_draft_tooltip": "Clear added sentences",
     "video_control_slot_top_left": "Top bar (left)",
-    "video_control_slot_top_right": "Top bar (right)"
+    "video_control_slot_top_right": "Top bar (right)",
+    "popup_sentence_context_prev_label": "Before",
+    "popup_sentence_context_next_label": "After"
 }

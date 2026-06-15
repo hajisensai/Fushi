@@ -519,6 +519,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
           onAppendSentence:
               supportsSentenceDraft ? onAppendSentenceToDraft : null,
+          onSetSentenceContext:
+              supportsSentenceDraft ? onSetSentenceContextToDraft : null,
           onClearSentenceDraft:
               supportsSentenceDraft ? onClearSentenceDraftToDraft : null,
         ),
@@ -576,6 +578,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// reader 覆写：把当前句 + 句子音频区间推进草稿。
   @protected
   Future<int> onAppendSentenceToDraft() async => 0;
+
+  /// TODO-393「上 N 句 / 下 N 句」上下文选择：把当前句之前 [prevCount] 句、之后
+  /// [nextCount] 句作上下文**整体设置**进本表面会话级制卡草稿（不掺历史累积），返回
+  /// 上下文句总数（上 N + 下 N）。默认 no-op 返回 0（[supportsSentenceDraft] 为 false
+  /// 时不会被调用）。reader/视频覆写：reader 走 DOM 句子上下文，视频走 cue 列表前后取。
+  @protected
+  Future<int> onSetSentenceContextToDraft(int prevCount, int nextCount) async =>
+      0;
 
   /// TODO-382「+句」可撤销：清空本表面会话级制卡草稿，返回清空后的句数（恒 0）。
   /// 默认 no-op（[supportsSentenceDraft] 为 false 时不会被调用）。reader/视频覆写。

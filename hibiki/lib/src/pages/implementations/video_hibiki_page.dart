@@ -684,18 +684,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 用 0）。reader/有声书车道（[ReaderHibikiPage] 的 `_miningDraft`）共用同一草稿模型。
   final MiningSentenceDraft _miningDraft = MiningSentenceDraft();
 
-  /// TODO-270 E：弹窗「+句」追加当前正查字幕句到本视频会话级制卡草稿，返回累积句数
-  /// （含本句）。把 [_lastLookupSentence] + [_lastLookupCue] 的时间窗（无 cue 则无区间，
-  /// 退化为只合文本）推进草稿。当前句为空（没有正查内容）时不入队，返回现有句数。
-  /// mixin 的 [buildNestedPopupLayer] 据此非空回调让 popup 渲染「+句」按钮。
+  /// TODO-393「上 N 句 / 下 N 句」上下文选择（视频车道）：弹窗选「上 N 句 / 下 N 句」
+  /// 把当前正查字幕句之前/之后的 N 条 cue 作上下文整体设置进本视频会话级制卡草稿，
+  /// 返回上下文句总数（上 N + 下 N）。mixin 的 [buildNestedPopupLayer] 据此非空回调让
+  /// popup 渲染上下文选择器。
   @override
-  Future<int> Function()? get onAppendSentenceToDraft => _appendSentenceToDraft;
+  Future<int> Function(int prevCount, int nextCount)?
+      get onSetSentenceContextToDraft => _setSentenceContextToDraft;
 
-  /// 把 [_lastLookupCue] 的画面/音频时间窗转成草稿可合并的区间。视频所有 cue 同属一个
-  /// 视频文件，[audioFileIndex] 统一用 0（合并恒成功，取 min start / max end）。无 cue
-  /// 时返回 null（草稿据此退化为只合文本，不静默拼坏区间）。
-  AudioPlaybackRange? _currentLookupCueRange() {
-    final AudioCue? cue = _lastLookupCue;
+  /// 把一条 cue 的画面/音频时间窗转成草稿可合并的区间。视频所有 cue 同属一个视频文件，
+  /// [audioFileIndex] 统一用 0（合并恒成功，取 min start / max end）。null cue → null
+  /// 区间（草稿据此退化为只合文本，不静默拼坏区间）。
+  AudioPlaybackRange? _cueRange(AudioCue? cue) {
     if (cue == null) return null;
     return AudioPlaybackRange(
       audioFileIndex: 0,
@@ -704,11 +704,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  Future<int> _appendSentenceToDraft() async {
-    _miningDraft.append(MiningDraftSentence(
-      sentence: _lastLookupSentence,
-      audioRange: _currentLookupCueRange(),
-    ));
+  /// 以当前查词 cue（[_lastLookupCue]）为锚，在 [VideoPlayerController.cues]（按 startMs
+  /// 升序）里取它之前 [prevCount] 条、之后 [nextCount] 条作上下文，整体设进草稿（覆盖
+  /// 上次选择，不累积）。无 cue / 无控制器时清空上下文返回 0。
+  Future<int> _setSentenceContextToDraft(int prevCount, int nextCount) async {
+    final VideoPlayerController? controller = _controller;
+    final AudioCue? anchor = _lastLookupCue;
+    if (controller == null || anchor == null) {
+      _miningDraft.setContext();
+      return _miningDraft.length;
+    }
+    final List<AudioCue> cues = controller.cues;
+    final int idx = cues.indexOf(anchor);
+    if (idx < 0) {
+      _miningDraft.setContext();
+      return _miningDraft.length;
+    }
+    final int prevStart = (idx - prevCount).clamp(0, idx);
+    final List<MiningDraftSentence> prev = <MiningDraftSentence>[
+      for (int i = prevStart; i < idx; i++)
+        MiningDraftSentence(
+            sentence: cues[i].text, audioRange: _cueRange(cues[i])),
+    ];
+    final int nextEnd = (idx + 1 + nextCount).clamp(idx + 1, cues.length);
+    final List<MiningDraftSentence> next = <MiningDraftSentence>[
+      for (int i = idx + 1; i < nextEnd; i++)
+        MiningDraftSentence(
+            sentence: cues[i].text, audioRange: _cueRange(cues[i])),
+    ];
+    _miningDraft.setContext(prev: prev, next: next);
     return _miningDraft.length;
   }
 
@@ -2109,6 +2133,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       unawaited(controller.pause());
     }
     _lastLookupSentence = sentence;
+    // TODO-393 / BUG-缓存串味：每次新查词都从「只制当前句」起步，丢弃上一个词的
+    // 「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，草稿若不
+    // 在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
+    _miningDraft.clear();
     // 制卡要裁「用户正在学的那句」的真实声轨音频。currentCue 在字幕 gap / 末句后被
     // 清成 null（BUG-074 字幕条该消失），而查词往往就发生在字幕刚消失那一瞬——若直接
     // 取 currentCue，制卡时句子音频字段会空（TODO-104b / BUG-188）。故 null 时按当前

@@ -69,6 +69,14 @@ mixin DictionaryPageMixin {
   /// `window.sentenceDraftEnabled`）。
   Future<int> Function()? get onAppendSentenceToDraft => null;
 
+  /// TODO-393「上 N 句 / 下 N 句」上下文选择（视频/首页查词车道）：弹窗选「上 N 句 /
+  /// 下 N 句」把当前正查句之前/之后的字幕 cue 作上下文**整体设置**进本表面草稿（不掺
+  /// 历史累积），返回上下文句总数（上 N + 下 N）。默认 null = 不支持（纯查词页无 cue
+  /// 上下文）。视频页覆写返回非空闭包：用 [VideoPlayerController.cues] 在当前 cue 前后
+  /// 取 N 条。与 reader 车道（[BaseSourcePageState.onSetSentenceContextToDraft]）对称。
+  Future<int> Function(int prevCount, int nextCount)?
+      get onSetSentenceContextToDraft => null;
+
   /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本表面会话级制卡
   /// 草稿，返回清空后的句数（恒 0）。默认 null = 不支持（与 [onAppendSentenceToDraft]
   /// 对称，纯查词页不渲染清空入口）。视频页覆写返回非空闭包清掉 [MiningSentenceDraft]。
@@ -400,6 +408,7 @@ mixin DictionaryPageMixin {
           // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）
           // 才传回调 → popup 渲染「+句」累积；其余（纯查词/首页词典）传 null 不渲染。
           onAppendSentence: onAppendSentenceToDraft,
+          onSetSentenceContext: onSetSentenceContextToDraft,
           onClearSentenceDraft: onClearSentenceDraftToDraft,
           headerWidget: buildPopupHeaderFor(index),
         ),
