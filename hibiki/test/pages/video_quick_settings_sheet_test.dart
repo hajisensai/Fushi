@@ -827,102 +827,150 @@ void main() {
     expect(padding.top, 16);
   });
 
-  // ── TODO-274/312 phase 2：控制条按钮 9-槽位编辑器（抄 B 站可定制控制条） ──────
-  group('control button layout editor (TODO-274/312 phase 2)', () {
-    // 按行标题挑出对应的 slot picker。不能用 find.widgetWithText：DropdownButton 会为
-    // 测宽离屏复刻一份标题文本，导致 widgetWithText 命中多个，故直接从 widgetList 按
-    // .title 字段过滤。
-    AdaptiveSettingsPickerRow<VideoControlSlot> pickerByTitle(
-      WidgetTester tester,
-      String title,
-    ) {
-      return tester
-          .widgetList<AdaptiveSettingsPickerRow<VideoControlSlot>>(
-            find.byType(AdaptiveSettingsPickerRow<VideoControlSlot>),
-          )
-          .firstWhere((AdaptiveSettingsPickerRow<VideoControlSlot> r) =>
-              r.title == title);
+  // ── TODO-383：控制按钮自定义改为可视化拖动（拖 chip 到槽位，不再下拉选）─
+  group('control button drag editor (TODO-383)', () {
+    // 进入控制分类详情（宽窗 master-detail）。
+    Future<void> openControls(WidgetTester tester) async {
+      await tester.tap(find.text(t.video_settings_cat_controls));
+      await tester.pumpAndSettle();
     }
 
-    testWidgets('controls category shows a slot picker per customizable button',
+    testWidgets(
+        'controls category renders a visual drag editor (no slot dropdowns)',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(tester, _sheet());
+      await openControls(tester);
 
-      await tester.tap(find.text(t.video_settings_cat_controls));
-      await tester.pumpAndSettle();
-
-      // 每个可定制学习按钮一行 slot picker。
-      final Iterable<AdaptiveSettingsPickerRow<VideoControlSlot>> rows =
-          tester.widgetList<AdaptiveSettingsPickerRow<VideoControlSlot>>(
-        find.byType(AdaptiveSettingsPickerRow<VideoControlSlot>),
-      );
-      expect(rows.length, VideoControlItem.customizableLearning.length);
-
-      // 倍速行（非必选）提供全部 5 个可编辑槽（含隐藏）。
-      final AdaptiveSettingsPickerRow<VideoControlSlot> speedRow =
-          pickerByTitle(tester, t.video_control_speed);
-      expect(speedRow.options.map((o) => o.value).toList(),
-          VideoControlSlot.editableSlots);
-
-      // 设置行（必选）不提供「隐藏」选项（模型层也会回弹）。
-      final AdaptiveSettingsPickerRow<VideoControlSlot> settingsRow =
-          pickerByTitle(tester, t.video_control_settings);
+      // 不再是下拉选择：没有 slot picker 行。
       expect(
-        settingsRow.options.map((o) => o.value),
-        isNot(contains(VideoControlSlot.hidden)),
+        find.byType(AdaptiveSettingsPickerRow<VideoControlSlot>),
+        findsNothing,
+        reason: '可视化拖动编辑器不应再用下拉选择槽位',
       );
+
+      // 每个可定制学习按钮都是一个可拖动 chip。
+      expect(
+        find.byType(Draggable<VideoControlItem>),
+        findsNWidgets(VideoControlItem.customizableLearning.length),
+      );
+      // 至少有多个槽位放置区（DragTarget）。
+      expect(
+        find.byType(DragTarget<VideoControlItem>),
+        findsNWidgets(VideoControlSlot.editableSlots.length),
+      );
+
+      // 所有可拖择槽位的标题都在场（底栏左/右、屏幕左/右、隐藏）。
+      expect(find.text(t.video_control_slot_bottom_left), findsOneWidget);
+      expect(find.text(t.video_control_slot_bottom_right), findsOneWidget);
+      expect(find.text(t.video_control_slot_screen_left), findsOneWidget);
+      expect(find.text(t.video_control_slot_screen_right), findsOneWidget);
+      expect(find.text(t.video_control_slot_hidden), findsOneWidget);
     });
 
-    testWidgets(
-        'picking a slot drives onControlLayoutChanged with the new slot',
+    testWidgets('dragging a chip onto a slot drives onControlLayoutChanged',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? committed;
       await _pump(
         tester,
-        _sheet(
-          onControlLayoutChanged: (VideoControlLayout l) => committed = l,
-        ),
+        _sheet(onControlLayoutChanged: (VideoControlLayout l) => committed = l),
       );
+      await openControls(tester);
 
-      await tester.tap(find.text(t.video_settings_cat_controls));
-      await tester.pumpAndSettle();
+      // “字幕列表”默认在 screenRight（currentChrome）。拖它的 chip 到“底栏左”
+      // 槽位区→回调带新布局，且该按钮确实落在 bottomLeft。
+      final Finder chip = find.ancestor(
+        of: find.text(t.video_control_subtitle_list),
+        matching: find.byType(Draggable<VideoControlItem>),
+      );
+      final Finder targetRegion = find.ancestor(
+        of: find.text(t.video_control_slot_bottom_left),
+        matching: find.byType(DragTarget<VideoControlItem>),
+      );
+      expect(chip, findsOneWidget);
+      expect(targetRegion, findsOneWidget);
 
-      // 把「字幕列表」从默认 screenRight 移到 bottomLeft → 回调带新布局，且新布局里
-      // 该按钮确实落在 bottomLeft。
-      pickerByTitle(tester, t.video_control_subtitle_list)
-          .onChanged(VideoControlSlot.bottomLeft);
+      final TestGesture gesture =
+          await tester.startGesture(tester.getCenter(chip));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveTo(tester.getCenter(targetRegion));
       await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
 
       expect(committed, isNotNull);
       expect(committed!.slotOf(VideoControlItem.subtitleList),
           VideoControlSlot.bottomLeft);
     });
 
-    testWidgets('hiding a button persists it into the hidden slot',
+    testWidgets('dragging a chip onto the hidden tray hides it from the player',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? committed;
       await _pump(
         tester,
-        _sheet(
-          onControlLayoutChanged: (VideoControlLayout l) => committed = l,
-        ),
+        _sheet(onControlLayoutChanged: (VideoControlLayout l) => committed = l),
+      );
+      await openControls(tester);
+
+      final Finder chip = find.ancestor(
+        of: find.text(t.video_control_speed),
+        matching: find.byType(Draggable<VideoControlItem>),
+      );
+      final Finder hiddenRegion = find.ancestor(
+        of: find.text(t.video_control_slot_hidden),
+        matching: find.byType(DragTarget<VideoControlItem>),
       );
 
-      await tester.tap(find.text(t.video_settings_cat_controls));
-      await tester.pumpAndSettle();
-
-      pickerByTitle(tester, t.video_control_speed)
-          .onChanged(VideoControlSlot.hidden);
+      final TestGesture gesture =
+          await tester.startGesture(tester.getCenter(chip));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveTo(tester.getCenter(hiddenRegion));
       await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
 
       expect(committed, isNotNull);
       expect(committed!.isOnPlayer(VideoControlItem.speed), isFalse);
+    });
+
+    testWidgets(
+        'the required settings button cannot be dropped into the hidden tray',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? committed;
+      await _pump(
+        tester,
+        _sheet(onControlLayoutChanged: (VideoControlLayout l) => committed = l),
+      );
+      await openControls(tester);
+
+      final Finder chip = find.ancestor(
+        of: find.text(t.video_control_settings),
+        matching: find.byType(Draggable<VideoControlItem>),
+      );
+      final Finder hiddenRegion = find.ancestor(
+        of: find.text(t.video_control_slot_hidden),
+        matching: find.byType(DragTarget<VideoControlItem>),
+      );
+
+      final TestGesture gesture =
+          await tester.startGesture(tester.getCenter(chip));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveTo(tester.getCenter(hiddenRegion));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      // 拖入被拒绝（必选按钮）：不会被隐藏。回调可能未触发或触发但仍在玩家。
+      if (committed != null) {
+        expect(committed!.isOnPlayer(VideoControlItem.settings), isTrue);
+      }
     });
   });
 }
