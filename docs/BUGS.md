@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 279 条。点号进各自文件。
+> 共 280 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-288](bugs/BUG-288-dict-folder-import-conf-noise.md) | ✅ | ✅ | 「导入文件夹词典」选到只含无关文件（QQ 下载的随机名 .conf）的目录报含糊错（TODO-379） |
 | [BUG-285](bugs/BUG-285-reader-charoffset-clobber.md) | ✅ | ✅ | 音频跟随退化到章节粒度：位置保存把 -1 覆盖精确字符锚（TODO-375） |
 | [BUG-284](bugs/BUG-284-video-control-rail-flicker-cursor-vanish.md) | ✅ | ✅ | 视频右侧控制按钮闪烁 + 鼠标放字幕上光标消失 (TODO-373) |
 | [BUG-283](bugs/BUG-283-bundled-ffmpeg-empty-output-fallback.md) | ✅ | ✅ | Bundled ffmpeg 跑起来却空输出时不回退 PATH 致内封字幕枚举静默失败 |
