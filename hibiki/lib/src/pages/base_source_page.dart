@@ -401,88 +401,75 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
 
-    // BUG-135: 隐藏热槽（warm slot，visible:false）的 Android 原生 WebView 即使被
-    // Visibility 的 Opacity(0)+IgnorePointer 包住也会截获触摸，盖住正文/控件点击。
-    // 停到屏幕右外侧（保持真实尺寸继续预热，Stack 用 Clip.none 不裁）即可放掉触摸。
-    final bool parked = !item.visible;
-    final double layerLeft = parked ? screen.width + 8 : pos.left;
-    final double layerTop = parked ? 0 : pos.top;
-
-    return Positioned(
-      left: layerLeft,
-      top: layerTop,
-      width: pos.width,
-      height: pos.height,
-      child: Visibility(
-        visible: item.visible,
-        maintainState: true,
-        maintainAnimation: true,
-        maintainSize: true,
-        child: DictionaryPopupLayer(
-          result: item.result,
-          webViewKey: item.webViewKey,
-          keepWebViewWarm: item.isWarmSlot,
-          isDark: isDark,
-          overrideFillColor: appModel.overrideDictionaryColor,
-          onDismiss: () => _dismissPopupAt(index),
-          // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
-          enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
-          // TODO-407①：仅顶层弹窗渲染"X 关闭"，走既有关闭汇聚点 [_dismissPopupAt]
-          // （不破坏 BUG-072 续播 / 清句 / 清栈）。嵌套层为 null（靠点窗外 / B / Esc）。
-          onClose: index == 0 ? () => _dismissPopupAt(0) : null,
-          onTapOutside: clearDictionaryResult,
-          onRendered: () => _onPopupLayerRendered(index, item),
-          // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
-          // 也显示，不卡死「点查词什么都不出」）。
-          onRenderError: () => _onPopupLayerRendered(index, item),
-          headerWidget: index == 0 ? buildPopupAudioControls() : null,
-          overlayWidget: isTop ? buildDictionaryLoading() : null,
-          onTextSelected: (text, localRect) async {
-            final childRect = localRect == Rect.zero
-                ? item.selectionRect
-                : popupWordScreenRect(
-                    webViewKey: item.webViewKey,
-                    localRect: localRect,
-                    fallback: item.selectionRect,
-                  );
-            prunePopupStack(index + 1);
-            final count = await searchDictionaryResult(
-              searchTerm: text,
-              selectionRect: childRect,
-            );
-            if (count > 0) {
-              item.webViewKey.currentState?.highlightSelection(count);
-            }
-          },
-          onLinkClick: (query, localRect) async {
-            final childRect = localRect == Rect.zero
-                ? item.selectionRect
-                : popupWordScreenRect(
-                    webViewKey: item.webViewKey,
-                    localRect: localRect,
-                    fallback: item.selectionRect,
-                  );
-            prunePopupStack(index + 1);
-            await searchDictionaryResult(
-              searchTerm: query,
-              selectionRect: childRect,
-            );
-          },
-          onMineEntry: onMineFromPopup,
-          onUpdateEntry: onUpdateFromPopup,
-          onDuplicateCheck: (expression, reading) async {
-            final repo = ref.read(ankiRepositoryProvider);
-            return repo.isDuplicate(expression, reading);
-          },
-          // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅支持草稿的表面（reader 覆写
-          // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
-          onAppendSentence:
-              supportsSentenceDraft ? onAppendSentenceToDraft : null,
-          onSetSentenceContext:
-              supportsSentenceDraft ? onSetSentenceContextToDraft : null,
-          onClearSentenceDraft:
-              supportsSentenceDraft ? onClearSentenceDraftToDraft : null,
-        ),
+    // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
+    return parkedPopupLayer(
+      pos: pos,
+      visible: item.visible,
+      screen: screen,
+      child: DictionaryPopupLayer(
+        result: item.result,
+        webViewKey: item.webViewKey,
+        keepWebViewWarm: item.isWarmSlot,
+        isDark: isDark,
+        overrideFillColor: appModel.overrideDictionaryColor,
+        onDismiss: () => _dismissPopupAt(index),
+        // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
+        enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+        // TODO-407①：仅顶层弹窗渲染"X 关闭"，走既有关闭汇聚点 [_dismissPopupAt]
+        // （不破坏 BUG-072 续播 / 清句 / 清栈）。嵌套层为 null（靠点窗外 / B / Esc）。
+        onClose: index == 0 ? () => _dismissPopupAt(0) : null,
+        onTapOutside: clearDictionaryResult,
+        onRendered: () => _onPopupLayerRendered(index, item),
+        // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
+        // 也显示，不卡死「点查词什么都不出」）。
+        onRenderError: () => _onPopupLayerRendered(index, item),
+        headerWidget: index == 0 ? buildPopupAudioControls() : null,
+        overlayWidget: isTop ? buildDictionaryLoading() : null,
+        onTextSelected: (text, localRect) async {
+          final childRect = localRect == Rect.zero
+              ? item.selectionRect
+              : popupWordScreenRect(
+                  webViewKey: item.webViewKey,
+                  localRect: localRect,
+                  fallback: item.selectionRect,
+                );
+          prunePopupStack(index + 1);
+          final count = await searchDictionaryResult(
+            searchTerm: text,
+            selectionRect: childRect,
+          );
+          if (count > 0) {
+            item.webViewKey.currentState?.highlightSelection(count);
+          }
+        },
+        onLinkClick: (query, localRect) async {
+          final childRect = localRect == Rect.zero
+              ? item.selectionRect
+              : popupWordScreenRect(
+                  webViewKey: item.webViewKey,
+                  localRect: localRect,
+                  fallback: item.selectionRect,
+                );
+          prunePopupStack(index + 1);
+          await searchDictionaryResult(
+            searchTerm: query,
+            selectionRect: childRect,
+          );
+        },
+        onMineEntry: onMineFromPopup,
+        onUpdateEntry: onUpdateFromPopup,
+        onDuplicateCheck: (expression, reading) async {
+          final repo = ref.read(ankiRepositoryProvider);
+          return repo.isDuplicate(expression, reading);
+        },
+        // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅支持草稿的表面（reader 覆写
+        // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
+        onAppendSentence:
+            supportsSentenceDraft ? onAppendSentenceToDraft : null,
+        onSetSentenceContext:
+            supportsSentenceDraft ? onSetSentenceContextToDraft : null,
+        onClearSentenceDraft:
+            supportsSentenceDraft ? onClearSentenceDraftToDraft : null,
       ),
     );
   }

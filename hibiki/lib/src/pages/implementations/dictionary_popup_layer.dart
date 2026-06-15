@@ -207,6 +207,37 @@ Rect resolvePopupRect({
   );
 }
 
+/// 把一个弹窗层 [child] 按 [pos] 摆放；隐藏层（[visible]=false，即 BUG-094 常驻热槽 /
+/// TODO-058 挂起冷层）停到屏幕右外侧 `(screen.width + 8, 0)` 继续预热。
+///
+/// BUG-135：隐藏热槽的 Android `InAppWebView` 是原生平台视图，即使被 [Visibility] 的
+/// `Opacity(0)+IgnorePointer` 包住也照样截获触摸、盖住正文/控件点击；停到屏外（仍保持
+/// 真实尺寸冷加载，宿主 Stack 须用 `Clip.none` 不裁）才放掉触摸。[Visibility] 的
+/// `maintainState/Animation/Size` 让 WebView 在树里活着、查词时翻可见。
+/// base_source_page._buildPopupLayer 与 dictionary_page_mixin.buildNestedPopupLayer
+/// 此前各写一份此 parking + Visibility 几何（BUG-135 的 `parked ? width+8` 改一处忘另
+/// 一处即漂移），收口于此；两宿主各自的 [DictionaryPopupLayer] 回调差异留在各自方法。
+Widget parkedPopupLayer({
+  required Rect pos,
+  required bool visible,
+  required Size screen,
+  required Widget child,
+}) {
+  return Positioned(
+    left: visible ? pos.left : screen.width + 8,
+    top: visible ? pos.top : 0,
+    width: pos.width,
+    height: pos.height,
+    child: Visibility(
+      visible: visible,
+      maintainState: true,
+      maintainAnimation: true,
+      maintainSize: true,
+      child: child,
+    ),
+  );
+}
+
 /// Maps a word rect reported in the popup WebView's own coordinate space
 /// ([localRect] — CSS px == the WebView's logical px, origin at the WebView's
 /// top-left) to absolute screen coordinates, using the WebView's *live*

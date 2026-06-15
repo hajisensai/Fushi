@@ -285,91 +285,72 @@ mixin DictionaryPageMixin {
     final bool isDark =
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).brightness ==
             Brightness.dark;
-    // BUG-135: 隐藏的常驻热槽（BUG-094，`visible:false`）若停在它算出的位置
-    // （seed 时 selectionRect=Rect.zero → 屏幕左上一大片），其 Android `InAppWebView`
-    // 是**原生平台视图**，即使被 [Visibility] 的 `Opacity(0)+IgnorePointer` 包住也
-    // 照样截获触摸——`IgnorePointer` 只挡 Flutter 命中测试，挡不住原生 view → 盖住的
-    // 视频控制条（顶栏/底栏）点击全被吃掉、毫无反应（手机特有，桌面 webview 无此问题）。
-    // 把隐藏热槽**移到屏幕右外侧**（仍保持真实尺寸继续冷加载预热，宿主 Stack 用
-    // `Clip.none` 不裁掉它），既不盖任何控件、又保留 BUG-094 的预热。可见（真查词）时
-    // 用真实 pos，行为完全不变。
-    final bool parked = !entry.visible;
-    final double layerLeft = parked ? screen.width + 8 : pos.left;
-    final double layerTop = parked ? 0 : pos.top;
-    return Positioned(
-      left: layerLeft,
-      top: layerTop,
-      width: pos.width,
-      height: pos.height,
-      // Hidden warm slot (BUG-094) stays in the tree (maintainState) with its
-      // WebView mounted but not painted/interactive; flips visible on lookup.
-      child: Visibility(
-        visible: entry.visible,
-        maintainState: true,
-        maintainAnimation: true,
-        maintainSize: true,
-        child: DictionaryPopupLayer(
-          result: entry.result,
-          isSearching: entry.isSearching,
-          keepWebViewWarm: entry.isWarmSlot,
-          webViewKey: entry.webViewKey,
-          isDark: isDark,
-          overrideFillColor: mixinAppModel.overrideDictionaryColor,
-          onDismiss: () => onPop(index),
-          // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
-          enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
-          // TODO-407①：仅顶层弹窗渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
-          // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。嵌套层为 null。
-          onClose: index == 0 ? () => onPop(0) : null,
-          onTapOutside: () => onPop(0),
-          // TODO-058：该层 WebView 渲染完成 → 翻可见挂起的冷层（消除白屏一瞬）。
-          // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。
-          onRendered: () {
-            if (!mounted) return;
-            if (controller.revealRendered(entry)) setState(() {});
-          },
-          // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
-          onRenderError: () {
-            if (!mounted) return;
-            if (controller.revealRendered(entry)) setState(() {});
-          },
-          onScrolledToBottom: entry.allLoaded
-              ? null
-              : () => loadMoreForEntry(entry: entry, controller: controller),
-          onTextSelected: (text, localRect) {
-            final Rect childRect = localRect == Rect.zero
-                ? entry.selectionRect
-                : popupWordScreenRect(
-                    webViewKey: entry.webViewKey,
-                    localRect: localRect,
-                    fallback: entry.selectionRect,
-                  );
-            setState(() => controller.truncateTo(index + 1));
-            onPush(text, childRect);
-          },
-          onLinkClick: (query, localRect) {
-            final Rect childRect = localRect == Rect.zero
-                ? entry.selectionRect
-                : popupWordScreenRect(
-                    webViewKey: entry.webViewKey,
-                    localRect: localRect,
-                    fallback: entry.selectionRect,
-                  );
-            setState(() => controller.truncateTo(index + 1));
-            onPush(query, childRect);
-          },
-          onMineEntry: onMineEntry,
-          onUpdateEntry: onUpdateEntry,
-          onDuplicateCheck: checkDuplicate,
-          onFavoriteEntry: onFavoriteEntry,
-          onFavoriteCheck: onFavoriteCheck,
-          // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）
-          // 才传回调 → popup 渲染「+句」累积；其余（纯查词/首页词典）传 null 不渲染。
-          onAppendSentence: onAppendSentenceToDraft,
-          onSetSentenceContext: onSetSentenceContextToDraft,
-          onClearSentenceDraft: onClearSentenceDraftToDraft,
-          headerWidget: buildPopupHeaderFor(index),
-        ),
+    // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
+    return parkedPopupLayer(
+      pos: pos,
+      visible: entry.visible,
+      screen: screen,
+      child: DictionaryPopupLayer(
+        result: entry.result,
+        isSearching: entry.isSearching,
+        keepWebViewWarm: entry.isWarmSlot,
+        webViewKey: entry.webViewKey,
+        isDark: isDark,
+        overrideFillColor: mixinAppModel.overrideDictionaryColor,
+        onDismiss: () => onPop(index),
+        // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
+        enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+        // TODO-407①：仅顶层弹窗渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
+        // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。嵌套层为 null。
+        onClose: index == 0 ? () => onPop(0) : null,
+        onTapOutside: () => onPop(0),
+        // TODO-058：该层 WebView 渲染完成 → 翻可见挂起的冷层（消除白屏一瞬）。
+        // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。
+        onRendered: () {
+          if (!mounted) return;
+          if (controller.revealRendered(entry)) setState(() {});
+        },
+        // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
+        onRenderError: () {
+          if (!mounted) return;
+          if (controller.revealRendered(entry)) setState(() {});
+        },
+        onScrolledToBottom: entry.allLoaded
+            ? null
+            : () => loadMoreForEntry(entry: entry, controller: controller),
+        onTextSelected: (text, localRect) {
+          final Rect childRect = localRect == Rect.zero
+              ? entry.selectionRect
+              : popupWordScreenRect(
+                  webViewKey: entry.webViewKey,
+                  localRect: localRect,
+                  fallback: entry.selectionRect,
+                );
+          setState(() => controller.truncateTo(index + 1));
+          onPush(text, childRect);
+        },
+        onLinkClick: (query, localRect) {
+          final Rect childRect = localRect == Rect.zero
+              ? entry.selectionRect
+              : popupWordScreenRect(
+                  webViewKey: entry.webViewKey,
+                  localRect: localRect,
+                  fallback: entry.selectionRect,
+                );
+          setState(() => controller.truncateTo(index + 1));
+          onPush(query, childRect);
+        },
+        onMineEntry: onMineEntry,
+        onUpdateEntry: onUpdateEntry,
+        onDuplicateCheck: checkDuplicate,
+        onFavoriteEntry: onFavoriteEntry,
+        onFavoriteCheck: onFavoriteCheck,
+        // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）
+        // 才传回调 → popup 渲染「+句」累积；其余（纯查词/首页词典）传 null 不渲染。
+        onAppendSentence: onAppendSentenceToDraft,
+        onSetSentenceContext: onSetSentenceContextToDraft,
+        onClearSentenceDraft: onClearSentenceDraftToDraft,
+        headerWidget: buildPopupHeaderFor(index),
       ),
     );
   }
