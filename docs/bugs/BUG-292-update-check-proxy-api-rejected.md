@@ -1,0 +1,14 @@
+## BUG-292 · 更新检查代理镜像全失败：gh-proxy 公共镜像不代理 api.github.com（结构性 + 部分用户网络侧）
+- **报告**：2026-06-15（用户：qqbotxiaoxiao）
+- **真实性**：✅ 真现象（用户日志 `UpdateChecker.httpGet 无法连接 … TLS handshake failed`），但根因为「公共 gh 代理镜像结构性不代理 `api.github.com` JSON API」+「用户 GFW 环境下直连 GitHub 同样被切断」，**非镜像列表过时**。根因定位 `hibiki/lib/src/utils/misc/update_checker.dart:29`（`updateCheckProxyPrefixes`）+ `:44`（`updateCheckUrls` 把同一组前缀同时套在「检查 API」和「下载 asset」两类 URL 前）。
+- **实测证据（2026-06-15，本机；直连 vs 经本机代理 127.0.0.1:34151）**：
+  - 直连 `https://api.github.com/repos/hdjsadgfwtg/hibiki/releases/latest`：**HTTP 200，0.72s**（本机网络可直达 GitHub）。
+  - 6 个镜像前缀套 `api.github.com`（无代理=用户 GFW 视角）：`ghfast.top`/`gh-proxy.com`/`gh.llkk.cc`/`ghproxy.homeboyc.cn` 均 **HTTP 403**；`ghproxy.net`/`ghproxy.cc` 直接 **HTTP 000 超时 20s / TLS exit 35**。
+  - 经本机代理重测仍同样全失败（403 或 TLS fail），说明不是本机网络问题。
+  - **关键头**：`gh-proxy.com` 的 403 携带 GitHub 自身的 `x-ratelimit-remaining: 0` / `x-ratelimit-used: 5000` / `x-github-request-id` —— 这些镜像是活的、确实转发到了 GitHub，403 是 **GitHub 对镜像共享出口 IP 的未授权 API 限流**，不是镜像下线。
+  - 同一组镜像套**真实 release asset 下载 URL**（`github.com/.../releases/download/v0.4.1/...apk`）：`ghfast.top`、`ghproxy.net` 返回 **HTTP 206（分片下载成功）**；`gh-proxy.com`/`ghproxy.cc` 超时；`gh.llkk.cc`/`ghproxy.homeboyc.cn` 403。
+  - **结论**：公共 gh 代理只为 `raw.githubusercontent.com` / release 资源**下载**服务，对 `api.github.com` 一律 403/限流。故更新「**检查**」步骤（命中 API）经任何镜像都不可能成功，只有直连可行；而下载步骤镜像可用。用户处直连 API 被 GFW 切断 → 检查阶段所有候选必然全失败 = 日志现象。
+- **[x] ① 根因修复（有限）** — 提交 `<HASH>`：镜像清单本身已是 TODO-277 维护过的活名单，无「过时镜像」可换；唯一可落地的改动是把误导性注释（暗示这些是可互换的「可用 API 镜像」）改为如实说明「这些镜像只代理下载、不代理 api.github.com，检查阶段只有直连可成功」，避免后续 agent 误以为换镜像能修检查。**镜像顺序与成员不变**（直连优先正确；下载阶段 ghfast.top/ghproxy.net 实测可用，保留）。
+- **[x] ② 自动化测试** — `hibiki/test/utils/misc/update_checker_mirror_fallback_test.dart`：补断言「直连恒为首候选（API 检查唯一可成功路径）」「保留多候选兜底（下载阶段镜像有用）」。
+- **决策请求（需用户确认，属部分用户网络侧）**：检查步骤在纯 GFW 环境下无任何镜像可救（GitHub API 不被公共代理代理）。可选方案：(A) 用户自行开代理/VPN 后直连 API（当前直连优先即可受益）；(B) 在 app 内提供「自定义更新源 / 自建 API 反代」配置；(C) 改用「检查也走 release 页面 HTML 解析 / 走能代理 API 的反代镜像」。请用户确认：直连 github 在其环境是否通？是否开了代理/VPN？是否愿配置自定义更新源？
+- **备注**：与 `hibiki/lib/src/media/video/video_shader_downloader.dart:212` 的 `_kGhProxyPrefixes`（BUG-319/271 名单）同范式，但那个只下载 raw 资源、不命中 API，故不受本结构性限制影响。TODO-371 的日志改善（`describeUpdateNetworkFailureReason`）保持不变。

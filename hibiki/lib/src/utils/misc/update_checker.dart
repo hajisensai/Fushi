@@ -19,12 +19,24 @@ const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
 const Duration _kPerAttemptTimeout = Duration(seconds: 15);
 
 /// GitHub 直连不通时（GFW 机器，且 app 运行时**不走**本机命令行代理）套在 GitHub
-/// API / 直链前的加速代理前缀。逐个尝试（见 [fetchFirstSuccessfulBody]），任一成功即
-/// 返回，全部失败才优雅放弃。这些公共镜像会不定期轮换/下线（`mirror.ghproxy.com` 已
-/// 下线移除），具体哪个通取决于用户机器与时段，故多备几个——用户日志里连不上的
-/// `ghproxy.cc` 也保留为多候选之一（BUG-277：单点不可达不该让整轮检查失败）。
+/// 链接前的加速代理前缀。逐个尝试（见 [fetchFirstSuccessfulBody]），任一成功即返回，
+/// 全部失败才优雅放弃。这些公共镜像会不定期轮换/下线（`mirror.ghproxy.com` 已下线
+/// 移除），具体哪个通取决于用户机器与时段，故多备几个（BUG-277：单点不可达不该让
+/// 整轮检查失败）。
 ///
-/// 与 `video_shader_downloader.dart` 的 `_kGhProxyPrefixes`（BUG-319/271）同一范式。
+/// **重要结构性事实（BUG-292，2026-06-15 实测）**：这些公共 gh 代理**只代理
+/// `raw.githubusercontent.com` / release 资源「下载」**，对 `api.github.com` JSON
+/// API 一律 HTTP 403（GitHub 对镜像共享出口 IP 的未授权限流，403 头里带
+/// `x-ratelimit-remaining: 0`）或直接 TLS 失败。所以更新「**检查**」（命中
+/// `api.github.com`，见 [_fetchReleasesForChannel]）经**任何**镜像都不可能成功——
+/// 检查阶段唯一能成功的是**直连**（[updateCheckUrls] 把直连放首位正是为此）；镜像
+/// 列表只对「**下载**」阶段（[_downloadAndInstall]，命中
+/// `github.com/.../releases/download/...`）真正有用，实测 ghfast.top / ghproxy.net
+/// 可返回 206 分片。**勿误以为「换/加 API 镜像」能修检查不通**：纯 GFW（直连 API 被
+/// 切断）环境下检查注定失败，需用户开代理/VPN 或自建 API 反代。
+///
+/// 与 `video_shader_downloader.dart` 的 `_kGhProxyPrefixes`（BUG-319/271）同一范式——
+/// 那个只下载 raw 资源、不命中 API，故不受本限制影响。
 @visibleForTesting
 const List<String> updateCheckProxyPrefixes = <String>[
   'https://ghfast.top/',

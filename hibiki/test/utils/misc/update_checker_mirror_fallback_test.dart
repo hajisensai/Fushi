@@ -35,6 +35,25 @@ void main() {
         reason: '前缀必须以 / 结尾才能直接拼接 URL',
       );
     });
+
+    test(
+        '直连 URL 恒为首候选（BUG-292：检查命中 api.github.com，'
+        '公共 gh 代理一律 403/限流，唯一可成功路径是直连）', () {
+      const String api = 'https://api.github.com/repos/x/y/releases/latest';
+      final List<String> urls = updateCheckUrls(api);
+      expect(
+        urls.first,
+        api,
+        reason: 'api.github.com 经任何镜像都被 GitHub 限流 403，'
+            '检查阶段只有直连能成功，故直连必须排第一',
+      );
+      // 镜像候选仍保留多个（对「下载」阶段有用：实测 ghfast.top/ghproxy.net 返回 206）。
+      expect(
+        urls.length,
+        greaterThan(updateCheckProxyPrefixes.length),
+        reason: '直连 + 全部镜像前缀，候选数应 = 1 + 镜像数',
+      );
+    });
   });
 
   group('fetchFirstSuccessfulBody (逐候选回退执行，注入 fetcher)', () {
