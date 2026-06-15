@@ -292,6 +292,17 @@ class SubtitleSource {
 /// `ffmpeg -i` 无输出文件时退出码非 0，但 stderr 仍含完整流信息，属正常；故不看
 /// 退出码，只解析 stderr。ffmpeg 不存在 / 出错时静默返回空列表（与无字幕一致）。
 /// 仅桌面端有意义（移动端无 ffmpeg），调用方门控。
+///
+/// BUG-303（TODO-412）：`-i` 探测的超时**必须随容器体积放大**。固定 30s 对小文件
+/// 够用，但对大体积交错容器（多 GB REMUX / 1GB+ 多字体附件 mkv）在**冷缓存 +
+/// 同时跑 [prewarmEmbeddedSubtitleCache] 整轨抽取 + libmpv 正在播放**三方争用磁盘
+/// IO 时，连「读到字幕流 codec 参数」这一步都可能超过 30s——`-i` 为给交错容器里
+/// 靠后的流定 codec 参数，会读到远超 probesize 的位置。一旦超时，[FfmpegBackend]
+/// 返回 `returnCode:null + output:''`（按设计**不回退** PATH——超时是慢 IO 非坏二进制，
+/// 见 ffmpeg_backend BUG-283 注释），解析空字符串 → **0 条字幕、菜单静默无内封字幕**
+/// （字幕菜单「一个字幕没有」的真根因；离线单跑 ffmpeg 无争用故复现不出）。
+/// 抽取路径（[subtitleExtractTimeoutForBytes]，BUG-104）早已学到这一课，枚举路径
+/// 当时漏改；本修复让两条路径用同一条 size-scaled 超时，消除这类静默失败。
 Future<List<EmbeddedSubtitleTrack>> listEmbeddedSubtitleTracks(
   String videoPath,
 ) async {
@@ -299,11 +310,21 @@ Future<List<EmbeddedSubtitleTrack>> listEmbeddedSubtitleTracks(
   try {
     // 经统一 FfmpegBackend 跑 `-i`（CLI 后端 = 旧 Process 路径；捆绑后端可在移动端
     // 工作），解析合并的 stderr 输出。`-i` 无输出文件时退出码非 0，但 stderr 仍含
-    // 完整流信息，故只看 output 不看退出码。
+    // 完整流信息，故只看 output 不看退出码。超时按容器字节数放大（见上）。
     final FfmpegRunResult result = await resolveFfmpegBackend().run(
       <String>['-hide_banner', '-i', videoPath],
-      const Duration(seconds: 30),
+      subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath)),
     );
+    // 真正失败（超时 SIGKILL → returnCode:null，且 ffmpeg 一旦跑起来 `-i` 必写 stderr，
+    // 故空输出 = 没真正探测到）必须留痕，否则「0 条字幕」与「真无字幕」无从区分，
+    // 整类静默失败不可调试。不吞，记一条诊断（不抛，保持优雅降级契约）。
+    if (result.returnCode == null && result.output.isEmpty) {
+      debugPrint(
+        '[VideoSubtitleSource] embedded enumeration timed out for "$videoPath" '
+        '(size=${_fileSizeOrZero(videoPath)} bytes) — menu will show no '
+        'embedded subtitles this time',
+      );
+    }
     return parseSubtitleStreamsFromFfmpegLog(result.output);
   } on ProcessException {
     // ffmpeg 未安装：优雅降级为无内嵌字幕。

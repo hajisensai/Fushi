@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 296 条。点号进各自文件。
+> 共 297 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-303](bugs/BUG-303-playlist-subtitle-menu-empty.md) | ✅ | ✅ | m3u8 播放列表首集字幕菜单「一个字幕没有」 |
 | [BUG-302](bugs/BUG-302-video-next-cue-current.md) | ✅ | ✅ | 视频「下一句」跳到当前句（应排除当前句） |
 | [BUG-301](bugs/BUG-301-pgs-subtitle-delay.md) | ✅ | ✅ | 字幕同步滑条对 PGS/图形内封字幕无效（从不调 mpv sub-delay）(TODO-402 档①) |
 | [BUG-300](bugs/BUG-300-reader-sasayaki-highlight-missing.md) | ✅ | ✅ | 有声书文字跟随高亮在阅读器里完全不显示 |

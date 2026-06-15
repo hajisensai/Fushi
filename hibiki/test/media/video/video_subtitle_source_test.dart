@@ -593,6 +593,76 @@ TODO016 imported subtitle survives reopen.
           reason: 'failed prewarm must clear in-flight state for fallback.');
     });
   });
+
+  group('listEmbeddedSubtitleTracks 超时 size-scaled（BUG-303 / TODO-412）', () {
+    late Directory tempDir;
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('hibiki_vsub_enum_');
+    });
+
+    tearDown(() {
+      setFfmpegBackendForTesting(null);
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+
+    test(
+        '真实 BanG Dream S01E01 ffmpeg -i 日志（1 条 ass + attachment 流 + '
+        '"Could not find codec parameters" 警告）枚举出 1 条字幕', () {
+      // 本机对真文件 `ffmpeg -hide_banner -i` 的真实 stderr：那条 ass 字幕轨在
+      // 一连串 attachment 流的 "Could not find codec parameters" 警告之后。
+      // 守住「解析层永远能从这段真实日志里挑出那条 ass」——根因不在解析。
+      const String stderr = '''
+[in#0/matroska,webm @ 0] Could not find codec parameters for stream 3 (Attachment: none): unknown codec
+[in#0/matroska,webm @ 0] Could not find codec parameters for stream 16 (Attachment: none): unknown codec
+[in#0/matroska,webm @ 0] Could not find codec parameters for stream 17 (Attachment: none): unknown codec
+Input #0, matroska,webm, from 'BanG Dream! - S01E01.mkv':
+  Stream #0:0(zxx): Video: hevc (Main 10), yuv420p10le, 1920x1080 (default)
+  Stream #0:1(jpn): Audio: flac, 48000 Hz, stereo (default)
+  Stream #0:2(eng): Subtitle: ass (ssa) (default)
+  Stream #0:3: Attachment: none
+  Stream #0:17: Attachment: none
+At least one output file must be specified
+''';
+      final List<EmbeddedSubtitleTrack> tracks =
+          parseSubtitleStreamsFromFfmpegLog(stderr);
+      expect(tracks, hasLength(1));
+      expect(tracks.single.streamIndex, 0);
+      expect(tracks.single.language, 'eng');
+      expect(tracks.single.codec, 'ass');
+    });
+
+    test(
+        '枚举 -i 的超时随容器体积放大（不再固定 30s）——用 '
+        'subtitleExtractTimeoutForBytes，与抽取路径一致', () async {
+      // 根因：原固定 30s 超时，大体积交错容器在冷缓存 + 并发抽取 + 播放争用磁盘
+      // 时 `-i` 探测可能超时 → 返回空 → 菜单「一个字幕没有」。捕获实际传给后端的
+      // timeout，断言它等于按文件字节算的 size-scaled 值，且 > 旧的 30s。
+      final File big = File(p.join(tempDir.path, 'big.mkv'))
+        ..writeAsBytesSync(List<int>.filled(2048, 0));
+      final int realSize = big.lengthSync();
+      final _TimeoutCapturingBackend backend = _TimeoutCapturingBackend();
+      setFfmpegBackendForTesting(backend);
+
+      final List<EmbeddedSubtitleTrack> tracks =
+          await listEmbeddedSubtitleTracks(big.path);
+
+      expect(backend.lastTimeout, isNotNull);
+      expect(backend.lastTimeout, subtitleExtractTimeoutForBytes(realSize));
+      expect(backend.lastTimeout!.inSeconds, greaterThan(30),
+          reason: '固定 30s 已被 size-scaled 超时取代（下限 60s）');
+      expect(tracks, hasLength(1));
+      expect(tracks.single.codec, 'ass');
+    });
+
+    test('1GB 与 27GB 容器的枚举超时 = 抽取路径同一公式（回归 BUG-104 同源）', () {
+      const int oneGb = 1024 * 1024 * 1024;
+      const int twentySevenGb = 27 * oneGb;
+      expect(subtitleExtractTimeoutForBytes(oneGb).inSeconds, greaterThan(30));
+      expect(subtitleExtractTimeoutForBytes(twentySevenGb).inSeconds,
+          greaterThan(200));
+    });
+  });
 }
 
 AudioCue _cue(String bookKey, String text) {
@@ -676,5 +746,20 @@ Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,hello
 00:00:01,000 --> 00:00:02,000
 こんにちは
 ''';
+  }
+}
+
+class _TimeoutCapturingBackend implements FfmpegBackend {
+  Duration? lastTimeout;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    lastTimeout = timeout;
+    // Mimic a working `ffmpeg -i` enumeration of a single ass embedded track.
+    return const FfmpegRunResult(
+      returnCode: 1,
+      output: '  Stream #0:2(eng): Subtitle: ass (ssa) (default)\n'
+          'At least one output file must be specified',
+    );
   }
 }
