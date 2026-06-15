@@ -730,6 +730,17 @@ void main() {
     expect(cupertino,
         isNot(contains('SettingsNavigationItem navigation => _navigation')));
     expect(cupertino, isNot(contains('segmented.onChanged as Function')));
+
+    // segmented 派发改用类型安全的 SettingsSegmentedItem.dispatchChange，
+    // 不再用 `(segmented as dynamic).onChanged` 绕过泛型逆变类型检查。
+    expect(material, isNot(contains('as dynamic).onChanged')));
+    expect(cupertino, isNot(contains('as dynamic).onChanged')));
+    expect(material, contains('.dispatchChange('));
+    expect(cupertino, contains('.dispatchChange('));
+    final String destination =
+        File('lib/src/settings/settings_destination.dart').readAsStringSync();
+    expect(destination, contains('dispatchChange('),
+        reason: 'SettingsSegmentedItem 应提供类型安全的 dispatchChange 方法');
   });
 
   // 回归：改 String 型 segmented 设置时，渲染器派发处把 SettingsSegmentedItem

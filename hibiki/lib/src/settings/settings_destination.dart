@@ -215,6 +215,13 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
   final SettingsValueGetter<T> selected;
   final SettingsValueChanged<T> onChanged;
   final bool controlBelow;
+
+  /// 类型安全地派发一次值变更。渲染器统一把本项当 `SettingsSegmentedItem<Object>`
+  /// 持有派发；若在渲染层静态读 [onChanged]（其实际签名是 `(ctx, T)`），会因函数参数
+  /// 逆变（`(Object)` 不是 `(String)` 的子类型）抛 `_TypeError`。这里在实例的真实 [T]
+  /// 上下文里把 [value] 转回 [T] 再调用，让类型校验落在编译期、渲染层不必 `as dynamic`。
+  FutureOr<void> dispatchChange(SettingsContext context, Object value) =>
+      onChanged(context, value as T);
 }
 
 class SettingsSliderItem extends SettingsItem {
