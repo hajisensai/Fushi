@@ -178,6 +178,30 @@ body {
     opacity: 0.15;
 }
 
+/* TODO-382「+句」可撤销：紧挨「+句」的清空按钮。仅草稿非空时显示（refreshClearDraftButton
+   设 hidden）。比「+句」略小、半透明，悬浮升至不透明，读作「撤销 / 清掉已加句子」。 */
+.clear-draft-button {
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 16px;
+    opacity: 0.45;
+    -webkit-user-select: none;
+}
+
+.clear-draft-button:hover {
+    opacity: 0.9;
+}
+
+.clear-draft-button[hidden] {
+    display: none;
+}
+
+.clear-draft-button:disabled {
+    opacity: 0.15;
+}
+
 .audio-button {
     transform: translateY(1px);
 }

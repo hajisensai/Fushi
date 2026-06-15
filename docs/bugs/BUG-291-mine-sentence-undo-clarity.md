@@ -1,0 +1,17 @@
+## BUG-291 · 查词弹窗「+句」语义不明且不可撤销；字幕列表「选入词卡」用途不明
+- **报告**：2026-06-15（用户：「查词弹窗旁边的『+句』是什么意思，看不懂，这个『+句』怎么撤销呢。字幕列表的『选入词卡』，然后呢，有什么用处」）—— TODO-382 / 看板 row243。
+- **真实性**：✅ 真 UX 缺口（非崩溃）。沿真实代码路径核实两处操作的语义与可逆性：
+  - 「+句」(`hibiki/assets/popup/popup.js:1748` 渲染 `.append-sentence-button` → JS handler `appendSentence` → `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:3441 onAppendSentenceToDraft` / 视频 `video_hibiki_page.dart:696 _appendSentenceToDraft`)：把**当前正查的整句**追加进会话级草稿 `MiningSentenceDraft`（`hibiki/lib/src/media/audiobook/mining_sentence_draft.dart`），连续查多句累积，制卡时 `composeText` 合并成一段写入卡片 sentence 字段（音频区间一并合并）。**此前是纯追加，无任何撤销入口**——误点只能靠制卡或关闭整个弹窗栈被动清空（`reader_hibiki_page.dart:3585/4191` 的 `_miningDraft.clear()`）。角标「+N」有累积反馈，但「这是干啥的」无任何提示（按钮纯文字「+句」、无 tooltip）。
+  - 「选入词卡」(`hibiki/lib/src/media/video/video_subtitle_jump_panel.dart:537 _buildSelectionCheckbox`)：视频字幕列表的多选 Checkbox（toggle 选入/移除），有「已选」筛选段（`VideoSubtitleListFilter.selected`）、清空按钮（`clear_all`）、行底色反馈。**本身已可撤销且有反馈**，只是 tooltip 文案「选入词卡」太简、不说明用途（选了之后制卡时合并为例句）。
+  - 两者关系：**平行而非同一**——「+句」走弹窗草稿（reader/有声书/视频弹窗），「选入词卡」走视频字幕列表的 cue 选择集；都最终服务于「制卡时把多句合并为一段例句」，但代码路径独立。
+- **根因**：「+句」只接了 append 信号、从未提供 clear/undo 信号链路；两入口都缺解释性 tooltip。
+- **[x] ① 根因修复**（加可撤销 + 可见反馈，非补注释）：
+  - 新增对称的清空草稿链路：`dictionary_popup_webview.dart` 注册 `clearSentenceDraft` JS handler + 字段 `onClearSentenceDraft`；`dictionary_popup_layer.dart` 透传；`base_source_page.dart` 加 `onClearSentenceDraftToDraft`（仅 `supportsSentenceDraft` 表面传非空）；reader 覆写 `onClearSentenceDraftToDraft` 清 `_miningDraft`；`dictionary_page_mixin.dart` 加 `onClearSentenceDraftToDraft` getter，视频页覆写。
+  - `popup.js`：「+句」旁渲染 `.clear-draft-button`（「×」），仅草稿非空时显示（`button.hidden = sentenceDraftCount <= 0`），点击调 `clearSentenceDraft` 清空全部草稿、所有「+句」角标归零——明确、可见、可逆的撤销入口。
+  - tooltip：「+句」注入 `i18nAppendSentenceTooltip`（「加入制卡句子（已加 N 句）」）、清空按钮 `i18nClearSentenceDraftTooltip`（「清空已加句子」），经宿主 i18n `popup_append_sentence_tooltip` / `popup_clear_sentence_draft_tooltip` 注入（popup.js 无自带 i18n 机制）。
+  - 「选入词卡」tooltip 文案改清晰：`video_subtitle_list_select_for_card` → 「选入词卡（制卡时合并为例句）」（en/zh-CN/zh-HK）。
+  - 提交哈希：见本轮提交。
+- **[x] ② 自动化测试**：扩展 `hibiki/test/pages/sentence_draft_wiring_guard_test.dart`（+6 用例）钉死 clear/undo 全链路接线 + popup.js 清空按钮/tooltip/隐藏逻辑；既有 `mining_sentence_draft_test.dart` 已覆盖 `clear()` 纯函数。`flutter test test/pages/sentence_draft_wiring_guard_test.dart` 10 用例绿；`test/creator/` + `test/pages/` 全量通过（仅偶发测试 harness 「loading」期 flake，单跑必绿，与本改无关）。
+- **验证**：`flutter analyze`（6 改动文件）0 issues；`dart format` 通过；i18n 17 语言完整（`dart run slang` 重生成 strings.g.dart）。
+- **需真机复测**：弹窗实际渲染走 InAppWebView（host 测试照不到），需真机/模拟器验证：①查词弹窗「+句」点出 tooltip + 角标，旁边出现「×」清空按钮，点「×」草稿归零；②长按/悬浮看 tooltip；③视频字幕列表「选入词卡」tooltip 文案。
+- **采番**：本地分支 bug.dart 会取 290，但并发 worktree 分支已占 BUG-290（遍历全分支 ls-tree 取并集确认）→ 改号 291。

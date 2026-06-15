@@ -1608,8 +1608,8 @@
     "video_subtitle_filter_favorites": "收藏",
     "video_subtitle_filter_selected": "已选",
     "video_subtitle_list_card_selection": "制卡选择",
-    "video_subtitle_list_select_for_card": "选入词卡",
-    "video_subtitle_list_remove_from_card": "移出词卡",
+    "video_subtitle_list_select_for_card": "选入词卡（制卡时合并为例句）",
+    "video_subtitle_list_remove_from_card": "从词卡选择中移除",
     "video_subtitle_list_clear_selection": "清空选择",
     "video_subtitle_list_next_card_selection": "已选入下一张卡",
     "app_version": "应用版本",
@@ -1646,5 +1646,7 @@
     "video_control_slot_hidden": "隐藏",
     "update_network_failure": "无法连接 $host：$reason",
     "shortcut_action_video_replay_previous_subtitle": "重播上一句",
-    "video_control_slot_drop_hint": "拖动按钮到这里"
+    "video_control_slot_drop_hint": "拖动按钮到这里",
+    "popup_append_sentence_tooltip": "加入制卡句子",
+    "popup_clear_sentence_draft_tooltip": "清空已加句子"
 }

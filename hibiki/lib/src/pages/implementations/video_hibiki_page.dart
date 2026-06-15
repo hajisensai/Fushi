@@ -701,6 +701,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return _miningDraft.length;
   }
 
+  /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本会话累积的全部草稿
+  /// 句，回传清空后的句数（恒 0）。不动字幕列表「选入词卡」的 cue 选择集（两套独立机制）。
+  @override
+  Future<int> Function()? get onClearSentenceDraftToDraft =>
+      _clearSentenceDraft;
+
+  Future<int> _clearSentenceDraft() async {
+    _miningDraft.clear();
+    return _miningDraft.length;
+  }
+
   /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
   ///
   /// 查词暂停 / 关浮层恢复与阅读器 [ReaderHibikiPage] 同源：浮层打开时若视频在播放则
