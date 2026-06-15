@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（TODO-388 / BUG-293）：视频侧边锁 / 解锁（沉浸）按钮在鼠标 hover 时不消失。
+/// 源码守卫（TODO-388 / BUG-295）：视频侧边锁 / 解锁（沉浸）按钮在鼠标 hover 时不消失。
 ///
 /// 根因：锁按钮可见性走 [_lockButtonVisible] + [_pokeLockButton] 的 2s 自动淡出定时器，
 /// 唤起只发生在「鼠标在视频区移动」时（[_videoControlsHoverWrap] 的 onHover）。鼠标**静止
@@ -26,7 +26,7 @@ void main() {
     expect(
       src.contains('final ValueNotifier<bool> _lockButtonHovered'),
       isTrue,
-      reason: '应有 _lockButtonHovered 单一真相源（BUG-293）',
+      reason: '应有 _lockButtonHovered 单一真相源（BUG-295）',
     );
     expect(
       src.contains('_lockButtonHovered.dispose()'),
@@ -39,7 +39,7 @@ void main() {
     expect(
       src.contains('_lockButtonVisible.value || _lockButtonHovered.value'),
       isTrue,
-      reason: '锁按钮可见性应为 _lockButtonVisible OR _lockButtonHovered（BUG-293）',
+      reason: '锁按钮可见性应为 _lockButtonVisible OR _lockButtonHovered（BUG-295）',
     );
     expect(
       src.contains(

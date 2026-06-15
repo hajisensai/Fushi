@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-293](bugs/BUG-293-video-immersion-button-hover-vanish.md) | ✅ | ✅ | 视频沉浸(锁)按钮鼠标悬停时消失 |
+| [BUG-295](bugs/BUG-295-video-immersion-button-hover-vanish.md) | ✅ | ✅ | 视频沉浸(锁)按钮鼠标悬停时消失 |
 | [BUG-292](bugs/BUG-292-update-check-proxy-api-rejected.md) | ✅ | ✅ | 更新检查代理镜像全失败：gh-proxy 公共镜像不代理 api.github.com（结构性 + 部分用户网络侧） |
 | [BUG-291](bugs/BUG-291-mine-sentence-undo-clarity.md) | ✅ | ✅ | 查词弹窗「+句」语义不明且不可撤销；字幕列表「选入词卡」用途不明 |
 | [BUG-290](bugs/BUG-290-log-upload-ci-not-injected.md) | ✅ | ✅ | 错误日志上传按钮在 CI 构建版（含 Windows）全平台不显示 |

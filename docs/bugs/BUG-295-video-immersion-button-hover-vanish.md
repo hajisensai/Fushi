@@ -1,4 +1,4 @@
-## BUG-293 · 视频沉浸(锁)按钮鼠标悬停时消失
+## BUG-295 · 视频沉浸(锁)按钮鼠标悬停时消失
 - **报告**：2026-06-15（用户：qqbotxiaoxiao）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_buildSideLockButton`（侧边锁 / 解锁 = 沉浸按钮）可见性走 `_lockButtonVisible` + `_pokeLockButton` 的 2s 自动淡出定时器，而 `_pokeLockButton` 只在「鼠标在视频区移动」（`_videoControlsHoverWrap` 的 onHover）时被调用续命。一旦鼠标**静止悬停在按钮本身**上，不再有 hover 事件续命定时器，2s 后按钮就在光标正下方淡出消失——与用户报告「沉浸按钮鼠标放上去会消失」完全一致。屏幕右侧 rail 按钮用 `_railHovered` + `_railHoverKeepAlive`（hover 期间顶住显示）解决同类问题，但锁按钮缺这套保活机制。
 - **[x] ① 已修复** — 新增 `_lockButtonHovered` ValueNotifier + `_lockButtonHoverKeepAlive(MouseRegion opaque:false)`（与 rail 的 `_railHoverKeepAlive` 同款）：鼠标进按钮置 `_lockButtonHovered=true` 顶住可见 + `_pokeLockButton()` 续命，移出置 false 回落到自然淡出。`_buildSideLockButton` 可见性判据改为 `_lockButtonVisible.value || _lockButtonHovered.value`（对齐 rail 的 `_videoControlsVisible || _railHovered`）。`hibiki/lib/src/pages/implementations/video_hibiki_page.dart`（`_lockButtonHovered` 声明 / dispose / `_lockButtonHoverKeepAlive` / `_buildSideLockButton`）。提交：a23724313
