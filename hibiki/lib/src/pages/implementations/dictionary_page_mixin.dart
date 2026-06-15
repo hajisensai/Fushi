@@ -170,25 +170,17 @@ mixin DictionaryPageMixin {
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    switch (outcome.result) {
-      case MineResult.success:
-        final settings = await repo.loadSettings();
-        HibikiToast.show(
-          msg: t.card_overwritten(deck: settings.selectedDeckName ?? ''),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
-      case MineResult.duplicate:
-        HibikiToast.show(msg: t.card_duplicate);
-        return const MinePopupResult();
-      case MineResult.notConfigured:
-        HibikiToast.show(msg: t.card_export_not_configured);
-        return const MinePopupResult();
-      case MineResult.error:
-        HibikiToast.show(msg: logMineFailure(outcome));
-        return const MinePopupResult();
+    // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。
+    final String deckName = outcome.result == MineResult.success
+        ? (await repo.loadSettings()).selectedDeckName ?? ''
+        : '';
+    final described =
+        describeMineOutcome(outcome, deckName: deckName, overwrite: true);
+    HibikiToast.show(msg: described.message);
+    if (described.success) {
+      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
+    return const MinePopupResult();
   }
 
   /// Resolves and plays the audio for [expression] / [reading] via

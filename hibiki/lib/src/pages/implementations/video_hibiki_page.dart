@@ -2900,15 +2900,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final String deckName = outcome.result == MineResult.success
         ? (await repo.loadSettings()).selectedDeckName ?? ''
         : '';
-    final described = describeMineOutcome(outcome, deckName: deckName);
-    // 新制成功计入视频统计（dictionarySourceType=video）；覆盖不计入（非新卡）。本页
-    // 覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
-    if (described.record && updateNoteId == null) unawaited(recordMined());
-    // success 覆盖（updateNoteId 非空）展示 card_overwritten；其余分支走收口消息。
-    final String message = described.success && updateNoteId != null
-        ? t.card_overwritten(deck: deckName)
-        : described.message;
-    _showOsd(message);
+    // overwrite=true（updateNoteId 非空）→ 收口产 card_overwritten + record=false；
+    // 新制 → card_exported + record=true（消息/记账判定统一在 describeMineOutcome）。
+    final described = describeMineOutcome(
+      outcome,
+      deckName: deckName,
+      overwrite: updateNoteId != null,
+    );
+    // 新制成功计入视频统计（dictionarySourceType=video）；覆盖 record=false 故不记账。
+    // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
+    if (described.record) unawaited(recordMined());
+    _showOsd(described.message);
     return result;
   }
 

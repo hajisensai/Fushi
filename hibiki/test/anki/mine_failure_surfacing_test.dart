@@ -64,7 +64,8 @@ void main() {
     });
   });
 
-  group('every mine error branch routes through describeMineOutcome → logMineFailure',
+  group(
+      'every mine error branch routes through describeMineOutcome → logMineFailure',
       () {
     // Source-scan guard (BUG-089): the cause must still surface via
     // logMineFailure — now consolidated inside the single describeMineOutcome
@@ -103,7 +104,8 @@ void main() {
         expect(
           src.contains('describeMineOutcome('),
           isTrue,
-          reason: '$path must route MineResult through describeMineOutcome, whose '
+          reason:
+              '$path must route MineResult through describeMineOutcome, whose '
               'error branch surfaces the cause via logMineFailure (BUG-089)',
         );
       });

@@ -714,8 +714,8 @@ void main() {
             .readAsStringSync();
     // schema section/item/footer 的渲染收口在共享 settings_schema_widgets，行控件
     // 全部走 settings_shared 的自适应组件（不再两个渲染器各复制一份）。
-    final String shared =
-        File('lib/src/settings/settings_schema_widgets.dart').readAsStringSync();
+    final String shared = File('lib/src/settings/settings_schema_widgets.dart')
+        .readAsStringSync();
 
     expect(shared, contains('AdaptiveSettingsNavigationRow('));
     for (final String row in <String>[

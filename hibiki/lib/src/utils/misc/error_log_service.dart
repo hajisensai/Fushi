@@ -206,16 +206,24 @@ String logMineFailure(MineOutcome outcome) {
 /// - error 分支内调 [logMineFailure]（写日志 + 取简短文案，单一来源）。
 /// - 成功消息所需的牌组名 [deckName] 由调用方仅在 `success` 时预先解析
 ///   （仅成功分支需要，避免给失败分支白白 `loadSettings`）。
+/// - [overwrite]=true 表示这是「覆盖已有卡片」（update 路径，非新制）：成功消息用
+///   `card_overwritten`、且 `record=false`（覆盖不计入制卡统计）。此前 reader/video/
+///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
+///   + 不记账），一并收口于此。
 ({String message, bool success, bool record}) describeMineOutcome(
   MineOutcome outcome, {
   String deckName = '',
+  bool overwrite = false,
 }) {
   switch (outcome.result) {
     case MineResult.success:
       return (
-        message: t.card_exported(deck: deckName),
+        message: overwrite
+            ? t.card_overwritten(deck: deckName)
+            : t.card_exported(deck: deckName),
         success: true,
-        record: true,
+        // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
+        record: !overwrite,
       );
     case MineResult.duplicate:
       return (message: t.card_duplicate, success: false, record: false);

@@ -3674,27 +3674,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       prepared.cleanup();
     }
 
-    switch (outcome.result) {
-      case MineResult.success:
-        // 覆盖已有卡片不再计入统计（不是新制一张）。保留「最新可改」第三态，故带回
-        // 同一 noteId。
-        final AnkiSettings settings = await repo.loadSettings();
-        HibikiToast.show(
-          msg: t.card_overwritten(deck: settings.selectedDeckName ?? ''),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
-      case MineResult.duplicate:
-        HibikiToast.show(msg: t.card_duplicate);
-        return const MinePopupResult();
-      case MineResult.notConfigured:
-        HibikiToast.show(msg: t.card_export_not_configured);
-        return const MinePopupResult();
-      case MineResult.error:
-        HibikiToast.show(msg: logMineFailure(outcome));
-        return const MinePopupResult();
+    // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。覆盖已有
+    // 卡片不计入统计（不是新制一张），成功仍保留「最新可改」第三态、带回同一 noteId。
+    final String deckName = outcome.result == MineResult.success
+        ? (await repo.loadSettings()).selectedDeckName ?? ''
+        : '';
+    final described =
+        describeMineOutcome(outcome, deckName: deckName, overwrite: true);
+    HibikiToast.show(msg: described.message);
+    if (described.success) {
+      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
+    return const MinePopupResult();
   }
 
   /// 把一次成功制卡计入书籍统计。reader 走 [BaseSourcePageState.onMineFromPopup]，
