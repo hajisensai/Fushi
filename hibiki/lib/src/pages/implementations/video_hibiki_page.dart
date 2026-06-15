@@ -2820,6 +2820,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         outputPath: '${tmp.path}/video_mine_audio.aac',
         audioStreamIndex: controller.currentAudioStreamIndex,
       );
+      // BUG-296 / TODO-390: sentence-audio "should-have-but-failed" visibility,
+      // symmetric with reader BUG-172. hasRange means this card was supposed to
+      // carry sentence audio, but ffmpeg returned null (ffmpeg unavailable on
+      // device / current audio track undecodable / interleaved container read
+      // failure) so the card's {sasayaki-audio}/SentenceAudio renders empty.
+      // This used to be a fully silent drop (user sees "card created" with no
+      // sentence audio and no way to diagnose - exactly the TODO-390 blind spot
+      // behind repeated "Hibiki deck has no sentence audio" reports). Do not
+      // abort the otherwise-successful card (cover/text still attach); just turn
+      // the silent drop into a traceable log + OSD hint.
+      if (audioPath == null) {
+        debugPrint(
+          '[VideoHibiki] mine: sentence-audio clip failed for range '
+          '[$clipStartMs,$clipEndMs] (ffmpeg returned null; '
+          'audioStreamIndex=${controller.currentAudioStreamIndex}).',
+        );
+        if (mounted) {
+          _showOsd(t.card_export_failed_detail(
+            reason: 'sentence audio export failed',
+          ));
+        }
+      }
     }
 
     final AnkiMiningContext miningContext = AnkiMiningContext(

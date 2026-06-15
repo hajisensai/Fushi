@@ -102,4 +102,23 @@ void main() {
     expect(mineCard, contains('extractAudioSegmentViaFfmpeg('),
         reason: '区间音频走真实 ffmpeg 抽取器（绝无 TTS）。');
   });
+
+  test('_mineVideoCard surfaces a silent sentence-audio clip failure (BUG-296)',
+      () {
+    // BUG-296 / TODO-390：有区间（hasRange）说明这张卡本应带句子音频，但 ffmpeg
+    // 抽段返回 null（真机 ffmpeg 不可用 / 音轨不可解码 / 容器读取失败）时过去是
+    // 完全静默丢弃——用户看到「制卡成功」却没句子音频，无从诊断（正是反复报
+    // 「ひびき 卡组没句子音频」却定位不到的盲区）。落卡链路必须把这条丢弃变为
+    // 可追踪日志 + OSD 提示，且仍不打断成功制卡（封面/文本仍在）。
+    final String mineCard = region(
+      'Future<MinePopupResult> _mineVideoCard(',
+      'void _showAudioTrackMenu(VideoPlayerController _) {',
+    );
+    expect(mineCard, contains('if (audioPath == null) {'),
+        reason: '抽段失败（audioPath==null）须被显式处理，而非静默落空。');
+    expect(mineCard, contains('sentence-audio clip failed'),
+        reason: '抽段失败须打可追踪日志（含区间端点供诊断）。');
+    expect(mineCard, contains('card_export_failed_detail'),
+        reason: '抽段失败须给用户可见的 OSD 提示（复用现有 i18n，不静默）。');
+  });
 }
