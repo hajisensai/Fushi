@@ -4262,6 +4262,22 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
+  /// 查词收尾序列：清栈热槽 → deferDisplay 查词 → 高亮并展示弹窗。reader 选词的
+  /// 歌词模式与普通模式两分支共用（前后各自的 cue 解析 / cached-range 设置保留在
+  /// 各分支，因时机不同：歌词从 fragment 提前设，普通从 data 在其后设）。
+  Future<void> _runLookupAndHighlight(
+    String searchTerm,
+    Rect selectionRect,
+  ) async {
+    prunePopupStack(0);
+    final int highlightCount = await searchDictionaryResult(
+      searchTerm: searchTerm,
+      selectionRect: selectionRect,
+      deferDisplay: true,
+    );
+    await _highlightAndShowPopup(highlightCount, selectionRect);
+  }
+
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
     if (data.text.isEmpty) {
       return;
@@ -4335,13 +4351,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       }
       _lookupCue ??= _audiobookController?.currentCue;
       _syncCueSentence();
-      prunePopupStack(0);
-      final int highlightCount = await searchDictionaryResult(
-        searchTerm: data.text,
-        selectionRect: selectionRect,
-        deferDisplay: true,
-      );
-      await _highlightAndShowPopup(highlightCount, selectionRect);
+      await _runLookupAndHighlight(data.text, selectionRect);
       _checkFavoriteStatus();
       return;
     }
@@ -4354,14 +4364,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     _syncCueSentence();
 
-    prunePopupStack(0);
-    final int highlightCount = await searchDictionaryResult(
-      searchTerm: data.text,
-      selectionRect: selectionRect,
-      deferDisplay: true,
-    );
-
-    await _highlightAndShowPopup(highlightCount, selectionRect);
+    await _runLookupAndHighlight(data.text, selectionRect);
     if (data.normalizedOffset != null && data.normalizedLength != null) {
       _cachedSelectionRange = (
         offset: data.normalizedOffset!,
