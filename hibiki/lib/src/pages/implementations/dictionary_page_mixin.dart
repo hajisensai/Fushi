@@ -12,6 +12,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
+import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/utils.dart';
 
@@ -212,44 +213,8 @@ mixin DictionaryPageMixin {
     );
   }
 
-  Future<void> _playAutoReadWord(String expression, String reading) async {
-    final WordAudioResolver resolver = WordAudioResolver(
-      queryLocalAudio: (expression, reading) async {
-        try {
-          return await TtsChannel.instance
-              .queryLocalAudio(expression, reading)
-              .timeout(const Duration(milliseconds: 500));
-        } on TimeoutException {
-          return null;
-        }
-      },
-      queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
-        try {
-          return await TtsChannel.instance
-              .queryLocalAudio(expression, reading, dbIndex: dbIndex)
-              .timeout(const Duration(milliseconds: 500));
-        } on TimeoutException {
-          return null;
-        }
-      },
-      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-      queryRemoteAudio: (expression, reading) =>
-          mixinAppModel.lookupRemoteAudio(
-        expression,
-        reading,
-      ),
-    );
-    final String? url = await resolver.resolveConfigured(
-      expression: expression,
-      reading: reading,
-      sources: mixinAppModel.audioSourceConfigs,
-    );
-    if (url == null || url.isEmpty) return;
-    await TtsChannel.instance.playAudioRef(
-      url,
-      volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-    );
-  }
+  Future<void> _playAutoReadWord(String expression, String reading) =>
+      playLookupAudio(mixinAppModel, expression, reading);
 
   /// Checks whether a card for [expression] / [reading] already exists in Anki.
   Future<bool> checkDuplicate(String expression, String reading) async {

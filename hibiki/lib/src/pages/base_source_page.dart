@@ -10,6 +10,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dar
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
+import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/utils.dart';
 
@@ -280,55 +281,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
-  Future<void> _playAutoReadWord(String expression, String reading) async {
-    final sources = appModel.enabledAudioSources;
-    debugPrint(
-        '[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
-    final WordAudioResolver resolver = WordAudioResolver(
-      queryLocalAudio: (expression, reading) async {
-        try {
-          return await TtsChannel.instance
-              .queryLocalAudio(expression, reading)
-              .timeout(const Duration(milliseconds: 500));
-        } on TimeoutException {
-          debugPrint(
-              '[hibiki-autoread] queryLocalAudio timed out for "$expression"');
-          return null;
-        }
-      },
-      queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
-        try {
-          return await TtsChannel.instance
-              .queryLocalAudio(expression, reading, dbIndex: dbIndex)
-              .timeout(const Duration(milliseconds: 500));
-        } on TimeoutException {
-          debugPrint(
-              '[hibiki-autoread] queryLocalAudio timed out for "$expression"');
-          return null;
-        }
-      },
-      extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-      queryRemoteAudio: (expression, reading) => appModel.lookupRemoteAudio(
-        expression,
-        reading,
-      ),
-    );
-    final String? url = await resolver.resolveConfigured(
-      expression: expression,
-      reading: reading,
-      sources: appModel.audioSourceConfigs,
-    );
-    debugPrint('[hibiki-autoread] resolved url=$url');
-    if (url == null || url.isEmpty) return;
-
-    // Plays remote URLs and local file paths uniformly, including Windows
-    // drive-letter paths (BUG-046).
-    final bool ok = await TtsChannel.instance.playAudioRef(
-      url,
-      volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-    );
-    debugPrint('[hibiki-autoread] play ok=$ok');
-  }
+  Future<void> _playAutoReadWord(String expression, String reading) =>
+      playLookupAudio(appModel, expression, reading);
 
   void clearDictionaryResult() => _dismissPopupAt(0);
 
