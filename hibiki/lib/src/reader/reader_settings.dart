@@ -266,6 +266,22 @@ class ReaderSettings {
   Future<void> setDismissSwipeSensitivity(double v) =>
       _set<double>('dismiss_swipe_sensitivity', v);
 
+  /// TODO-407②：查词弹窗是否允许"水平滑动关闭"（[SwipeDismissWrapper]）。桌面端
+  /// （Windows/Linux）鼠标左键框选正文与滑动手势的位移序列同形，默认关闭滑动关闭、
+  /// 用顶栏 X 兜底；触摸为主的平台（macOS/iOS/Android）默认开启。未持久化覆盖时
+  /// 回退到 [defaultSwipeToClose]，让"换平台即取该平台默认"成立。
+  bool get enableSwipeToClose => _get<bool>(
+        'enable_swipe_to_close',
+        defaultSwipeToClose(defaultTargetPlatform),
+      );
+  Future<void> setEnableSwipeToClose(bool v) =>
+      _set<bool>('enable_swipe_to_close', v);
+
+  /// 纯函数：某平台下查词弹窗"滑动关闭"的默认开关。Windows/Linux 默认 false
+  /// （鼠标框选易误触），其余（macOS/iOS/Android/fuchsia）默认 true。
+  static bool defaultSwipeToClose(TargetPlatform platform) =>
+      !(platform == TargetPlatform.windows || platform == TargetPlatform.linux);
+
   /// 翻页滑动灵敏度系数（TODO-113）。1.0 = 默认手感；<1 更灵敏（更短的滑动即可
   /// 翻页），>1 更迟钝（需滑得更远）。系数缩放 JS 端 `_gestureEnd` 的基础距离阈值
   /// （72px / 快速短滑 36px），见 reader_hibiki_page.dart `_buildReaderSetupScript`。

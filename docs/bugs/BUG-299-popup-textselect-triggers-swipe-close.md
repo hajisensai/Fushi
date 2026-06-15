@@ -1,0 +1,6 @@
+## BUG-299 · 查词弹窗在WebView正文框选文本误触滑动关闭
+- **报告**：2026-06-15（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart:304`（`SwipeDismissWrapper` 包裹整张弹窗，含 WebView 正文）+ `hibiki/lib/src/utils/misc/swipe_dismiss_wrapper.dart:70`（`Listener.onPointerMove` 累加位移判水平滑动）。`SwipeDismissWrapper` 用 `Listener` 包裹整个弹窗 surface（含 `DictionaryPopupWebView` body）。Listener 的指针事件会向所有祖先冒泡，用户在 WebView 正文里左键按住框选文本时，pointer 的横向位移序列被外层 swipe Listener 接收、累加，越过 `_threshold` 即判定为“水平滑动”→触发 `onDismiss` 误关弹窗。框选这种正文内交互不应进入滑动关闭判定。
+- **[x] ① 已修复** — `dictionary_popup_layer.dart`：拆分包裹边界，让 `SwipeDismissWrapper` 只裹弹窗 header + 外框/留白（可拖区），WebView 正文 body 脱离 swipe Listener 子树（不再向 swipe 冒泡），框选彻底不触发滑动关闭。同时收口平台默认：`swipeDismissible && enableSwipeToClose`（win/linux 默认不可滑关）。并加顶栏 X 关闭按钮始终可关（复用既有 `onDismiss`/`_dismissPopupAt`/`onPop(0)` 关闭汇聚点，不破坏 BUG-072 续播 / 清句 / 清栈）。提交：见 commit。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/dictionary_popup_swipe_close_test.dart`：① WebView 正文区起手水平拖动→弹窗不关（406 回归守卫）② header/边距水平拖动过阈值→关（保留 swipe）③ X tap→走 onDismiss ④ `defaultSwipeToClose` 5 平台真值表 ⑤ win/linux 综合判据 false。
+- **备注**：方案 A（拆包裹边界）+ X 兜底 + 平台默认开关（TODO-406 + TODO-407）。移动端（mac/iOS/Android）默认仍可滑关，可拖区为 header 行 + 弹窗外框/留白，X 兜底任何平台都能关。reader/WebView/布局类修复需设备肉眼复测原始失败路径（CLAUDE.md 验证纪律）：待真机。

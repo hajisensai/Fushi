@@ -178,7 +178,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // SwipeDismissWrapper 基于 Listener，指针移动会同时派发到所有祖先 Listener，
     // 外层若仍在，横滑嵌套层会连带平移整张卡片（BUG-051 的第二症状）。
     // 嵌套层各自持有横滑（仅返回上一层），故此处只在基础层套外层横滑。
-    if (_popup.entries.length > 1) return card;
+    // TODO-407②：平台/偏好禁用滑动关闭时（Windows/Linux 默认）整卡也不挂横滑，
+    // 用搜索栏的关闭按钮兜底。
+    if (_popup.entries.length > 1 ||
+        !ReaderHibikiSource.instance.enableSwipeToClose) {
+      return card;
+    }
     return SwipeDismissWrapper(
       sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
       onDismiss: _close,
@@ -224,6 +229,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         isDark: isDark,
         showBorder: false,
         swipeDismissible: !isBase,
+        enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
         overrideFillColor: isBase
             ? Colors.transparent
             : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),

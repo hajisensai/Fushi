@@ -363,6 +363,11 @@ mixin DictionaryPageMixin {
           isDark: isDark,
           overrideFillColor: mixinAppModel.overrideDictionaryColor,
           onDismiss: () => onPop(index),
+          // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
+          enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+          // TODO-407①：仅顶层弹窗渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
+          // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。嵌套层为 null。
+          onClose: index == 0 ? () => onPop(0) : null,
           onTapOutside: () => onPop(0),
           // TODO-058：该层 WebView 渲染完成 → 翻可见挂起的冷层（消除白屏一瞬）。
           // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。

@@ -31,6 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-299](bugs/BUG-299-popup-textselect-triggers-swipe-close.md) | ✅ | ✅ | 查词弹窗在WebView正文框选文本误触滑动关闭 |
 | [BUG-298](bugs/BUG-298-mirror-update-check-redirect.md) | ✅ | ✅ | 更新检查走 github.com release 302 跳转使镜像无代理可用（TODO-404 方案A） |
 | [BUG-297](bugs/BUG-297-mining-sentence-draft-cross-contamination.md) | ✅ | ✅ | 查词制卡句子草稿跨词串味：换词查询不清草稿 + 热槽 WebView 角标残留 |
 | [BUG-296](bugs/BUG-296-sentence-audio-mining-investigation.md) | ✅ | ✅ | ひびき/Lapis 卡组制卡缺句子音频根因调查（TODO-390） |

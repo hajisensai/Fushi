@@ -41,8 +41,13 @@ void main() {
       'nested swipe does not drag the whole window', () {
     final String src = File(pagePath).readAsStringSync();
     // 栈深 > 1（已下钻）时整卡外层横滑停用，避免 Listener 冒泡连带平移整卡；
-    // 嵌套层各自横滑只返回上一层。
-    expect(src, contains('if (_popup.entries.length > 1) return card;'));
+    // 嵌套层各自横滑只返回上一层。TODO-407② 又把平台/偏好级 enableSwipeToClose
+    // 并入同一门控（Windows/Linux 默认 false 也不挂整卡横滑），故断言放宽到
+    // 「栈深>1 仍 return card」这一不变式，而非僵硬字面。
+    expect(src, contains('_popup.entries.length > 1'));
+    expect(src, contains('return card;'));
+    // TODO-407②：平台/偏好禁用滑关时整卡也不挂横滑。
+    expect(src, contains('ReaderHibikiSource.instance.enableSwipeToClose'));
     expect(src, contains('() => _popAt(index)'));
   });
 }

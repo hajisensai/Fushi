@@ -1653,5 +1653,6 @@
     "popup_sentence_context_next_label": "下",
     "anki_fetch": "刷新牌组与笔记类型",
     "anki_not_configured": "点击「刷新」加载你的 Anki 牌组与笔记类型。",
-    "anki_refresh_hint": "在 Anki 里新建或重命名牌组、笔记类型后，点此刷新。"
+    "anki_refresh_hint": "在 Anki 里新建或重命名牌组、笔记类型后，点此刷新。",
+    "enable_swipe_to_close": "滑动关闭弹窗"
 }

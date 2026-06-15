@@ -232,6 +232,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.overrideFillColor,
     this.showBorder = true,
     this.swipeDismissible = true,
+    this.enableSwipeToClose = true,
+    this.onClose,
     super.key,
   });
 
@@ -287,24 +289,96 @@ class DictionaryPopupLayer extends StatelessWidget {
   final bool showBorder;
   final bool swipeDismissible;
 
+  /// TODO-407②：平台级"滑动关闭"开关。与 [swipeDismissible] 取并（两者皆真才挂
+  /// [SwipeDismissWrapper]）：调用方用 [swipeDismissible] 表达"此层是否允许滑关"
+  /// （如 popup_dictionary_page 基础层 false），用 [enableSwipeToClose] 表达"当前
+  /// 平台/偏好是否允许滑关"（Windows/Linux 默认 false）。
+  final bool enableSwipeToClose;
+
+  /// TODO-407①：顶栏右端"X 关闭"按钮的回调。非空时弹窗顶栏渲染一个始终可关的 X
+  /// （任何平台、即便滑关被禁用也能关）。点 X 走的就是各表面既有的关闭汇聚点
+  /// （reader `_dismissPopupAt(0)` / video·首页 `onPop(0)`），不另开关闭路径——
+  /// 不破坏 BUG-072 续播 / 清句 / 清栈。仅顶层（index==0）传入；嵌套层为 null。
+  final VoidCallback? onClose;
+
+  /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
+  /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
+  bool get _swipeActive => swipeDismissible && enableSwipeToClose;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final fillColor = overrideFillColor ?? colorScheme.surface;
 
+    final Widget? topBar = _buildTopBar(context);
+    final Widget body = _buildContent(context, fillColor);
+
+    final Widget surfaceChild;
+    if (topBar != null) {
+      // TODO-406：可拖/可滑区收敛到顶栏（header + X）。WebView 正文 body 不在
+      // [SwipeDismissWrapper] 的 Listener 子树内——正文里左键框选的指针位移序列
+      // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
+      final Widget topRegion = _swipeActive
+          ? SwipeDismissWrapper(
+              sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+              onDismiss: onDismiss,
+              child: topBar,
+            )
+          : topBar;
+      surfaceChild = Column(
+        children: <Widget>[
+          topRegion,
+          Expanded(child: body),
+        ],
+      );
+    } else {
+      // 无顶栏的层（如 app 外查词页 popup_dictionary_page 的嵌套返回层）保留旧的
+      // 整窗滑动语义，不改其既有横滑返回行为；其余表面顶层恒有顶栏走上面分支。
+      surfaceChild = body;
+    }
+
     final Widget content = HibikiPopupSurface(
       color: fillColor,
       showBorder: showBorder,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
-      child: _buildContent(context, fillColor),
+      child: surfaceChild,
     );
 
-    if (!swipeDismissible) return content;
+    if (topBar != null || !_swipeActive) return content;
 
     return SwipeDismissWrapper(
       sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
       onDismiss: onDismiss,
       child: content,
+    );
+  }
+
+  /// TODO-407①：顶栏 = 可选的 [headerWidget]（reader 音频控制 / video 句子收藏星标）
+  /// 叠加右端"X 关闭"按钮（[onClose] 非空时）。两者都空时返回 null（弹窗不画顶栏，
+  /// 也就没有可拖区——靠点窗外 / 返回键 / Esc 关闭）。X 用 [Stack] 叠在 header 右端，
+  /// 不改 header 自身（居中、缩放）布局。
+  Widget? _buildTopBar(BuildContext context) {
+    if (headerWidget == null && onClose == null) return null;
+    if (onClose == null) return headerWidget;
+
+    final Widget closeButton = Align(
+      alignment: Alignment.centerRight,
+      child: HibikiIconButton(
+        icon: Icons.close,
+        size: 18,
+        tooltip: t.dialog_close,
+        onTap: onClose,
+      ),
+    );
+
+    if (headerWidget == null) return closeButton;
+
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        headerWidget!,
+        Positioned.fill(child: closeButton),
+      ],
     );
   }
 
@@ -399,16 +473,8 @@ class DictionaryPopupLayer extends StatelessWidget {
         ],
       );
     }
-
-    if (headerWidget != null) {
-      return Column(
-        children: [
-          headerWidget!,
-          Expanded(child: body),
-        ],
-      );
-    }
-
+    // header 不再在此处包 Column——顶栏（header + X）由 [build] 经 [_buildTopBar]
+    // 渲染并与 body 拆成上下两块，使 swipe 只裹顶栏、body 脱离滑动判定（TODO-406）。
     return body;
   }
 }

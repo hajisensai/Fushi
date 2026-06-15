@@ -63,6 +63,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',
   'reading/Swipe dismiss sensitivity':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
+  // TODO-407②：查词弹窗"滑动关闭"开关。生效点在 DictionaryPopupLayer 的 swipe
+  // 边界（仅顶栏可滑）+ 平台默认纯函数 ReaderSettings.defaultSwipeToClose，由专项
+  // widget 行为 + 纯函数真值表测试覆盖（非 reader CSS / 主题树）。
+  'reading/Swipe to close popup':
+      'test/pages/dictionary_popup_swipe_close_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
   'syncBackup/Auto Sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync Statistics': 'test/sync/sync_gating_test.dart',

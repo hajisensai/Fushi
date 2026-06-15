@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -592,6 +593,29 @@ class ReaderHibikiSource extends ReaderMediaSource {
     }
     await setPreference<double>(
       key: 'dismiss_swipe_sensitivity',
+      value: value,
+    );
+  }
+
+  /// TODO-407②：查词弹窗是否允许"水平滑动关闭"。与 [dismissSwipeSensitivity] 同一
+  /// 双源模式：优先读 reader profile 快照（[ReaderSettings.enableSwipeToClose]），
+  /// 否则落全局偏好。未持久化时回退到 [ReaderSettings.defaultSwipeToClose]（桌面
+  /// Windows/Linux 默认 false，触摸平台 true）。
+  bool get enableSwipeToClose =>
+      readerSettings?.enableSwipeToClose ??
+      getPreference<bool>(
+        key: 'enable_swipe_to_close',
+        defaultValue: ReaderSettings.defaultSwipeToClose(defaultTargetPlatform),
+      );
+
+  Future<void> setEnableSwipeToClose(bool value) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setEnableSwipeToClose(value);
+      return;
+    }
+    await setPreference<bool>(
+      key: 'enable_swipe_to_close',
       value: value,
     );
   }
