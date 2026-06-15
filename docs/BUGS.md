@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 283 条。点号进各自文件。
+> 共 284 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-291](bugs/BUG-291-mine-sentence-undo-clarity.md) | ✅ | ✅ | 查词弹窗「+句」语义不明且不可撤销；字幕列表「选入词卡」用途不明 |
 | [BUG-289](bugs/BUG-289-dcomp-compositor-atexit-failfast.md) | ✅ | ✅ | Windows 退出时 dcomp Compositor::CleanupSession FailFast（BUG-255 受控释放修复未生效） |
 | [BUG-288](bugs/BUG-288-dict-folder-import-conf-noise.md) | ✅ | ✅ | 「导入文件夹词典」选到只含无关文件（QQ 下载的随机名 .conf）的目录报含糊错（TODO-379） |
 | [BUG-287](bugs/BUG-287-video-replay-previous-subtitle.md) | ✅ | ✅ | 恢复「重播上一句」并区分「上一句字幕」(TODO-378) |

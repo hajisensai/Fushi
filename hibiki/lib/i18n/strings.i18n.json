@@ -1608,7 +1608,7 @@
     "video_subtitle_filter_favorites": "Favorites",
     "video_subtitle_filter_selected": "Selected",
     "video_subtitle_list_card_selection": "Card selection",
-    "video_subtitle_list_select_for_card": "Select for card",
+    "video_subtitle_list_select_for_card": "Select for card (merged into the sentence when mining)",
     "video_subtitle_list_remove_from_card": "Remove from card selection",
     "video_subtitle_list_clear_selection": "Clear card selection",
     "video_subtitle_list_next_card_selection": "selected for next card",
@@ -1645,5 +1645,7 @@
     "video_control_slot_screen_right": "Screen right",
     "video_control_slot_hidden": "Hidden",
     "update_network_failure": "Could not reach $host: $reason",
-    "shortcut_action_video_replay_previous_subtitle": "Replay previous subtitle"
+    "shortcut_action_video_replay_previous_subtitle": "Replay previous subtitle",
+    "popup_append_sentence_tooltip": "Add this sentence to the card",
+    "popup_clear_sentence_draft_tooltip": "Clear added sentences"
 }

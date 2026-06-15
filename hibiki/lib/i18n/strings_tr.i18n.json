@@ -1645,5 +1645,7 @@
     "video_control_slot_screen_right": "Screen right",
     "video_control_slot_hidden": "Hidden",
     "update_network_failure": "Could not reach $host: $reason",
-    "shortcut_action_video_replay_previous_subtitle": "Replay previous subtitle"
+    "shortcut_action_video_replay_previous_subtitle": "Replay previous subtitle",
+    "popup_append_sentence_tooltip": "Add this sentence to the card",
+    "popup_clear_sentence_draft_tooltip": "Clear added sentences"
 }

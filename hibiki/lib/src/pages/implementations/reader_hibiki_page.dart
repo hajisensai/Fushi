@@ -3448,6 +3448,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return _miningDraft.length;
   }
 
+  /// TODO-382「+句」可撤销：弹窗点「清空已加句子」清掉本会话累积的全部草稿句，回传
+  /// 清空后的句数（恒 0）。给用户一个明确、可见的撤销入口（此前「+句」只能追加，误点
+  /// 后只能制卡或关栈才会被动清空）。
+  @override
+  Future<int> onClearSentenceDraftToDraft() async {
+    _miningDraft.clear();
+    return _miningDraft.length;
+  }
+
   /// TODO-270 D：reader 制卡/覆盖共用的「构造制卡上下文」。返回构造好的
   /// [AnkiMiningContext] 与一个 `cleanup` 闭包（清理句子音频临时目录，调用方在 mine/
   /// update 完成后必须调用）。当句子音频导出失败（已弹 toast）时返回 `context: null`，

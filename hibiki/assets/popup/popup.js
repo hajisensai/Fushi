@@ -119,8 +119,8 @@ function refreshAllAppendSentenceButtons() {
         .forEach(refreshAppendSentenceButton);
 }
 
-// 把「+句」按钮的视觉态（角标句数 + 高亮）同步到当前镜像计数。N>=1 时显示「+N」
-// 角标并高亮，0 时只显示「+句」基态。
+// 把「+句」按钮的视觉态（角标句数 + 高亮 + tooltip）同步到当前镜像计数。N>=1 时显示
+// 「+N」角标并高亮，0 时只显示「+句」基态。tooltip 说明它干啥（用户报「看不懂 +句」）。
 function refreshAppendSentenceButton(button) {
     if (!button) return;
     button.textContent = '+句';
@@ -131,8 +131,37 @@ function refreshAppendSentenceButton(button) {
         });
         button.appendChild(badge);
         button.classList.add('has-draft');
+        button.title = (window.i18nAppendSentenceTooltip || '加入制卡句子') +
+            '（已加 ' + sentenceDraftCount + ' 句）';
     } else {
         button.classList.remove('has-draft');
+        button.title = window.i18nAppendSentenceTooltip || '加入制卡句子';
+    }
+}
+
+// TODO-382「+句」可撤销：刷新页面上所有「清空已加句子」按钮的可见性。仅在草稿非空
+// （sentenceDraftCount>0）时显示，给用户一个明确、可见的撤销整组「+句」的入口。
+function refreshAllClearDraftButtons() {
+    if (typeof document.querySelectorAll !== 'function') return;
+    document.querySelectorAll('.clear-draft-button')
+        .forEach(refreshClearDraftButton);
+}
+
+function refreshClearDraftButton(button) {
+    if (!button) return;
+    button.title = window.i18nClearSentenceDraftTooltip || '清空已加句子';
+    button.hidden = sentenceDraftCount <= 0;
+}
+
+// 清空宿主草稿，回传清空后的句数（恒 0）。宿主未接入 / 出错时返回当前镜像计数（不漂移）。
+async function clearSentenceDraftOnHost() {
+    try {
+        const reply = await window.flutter_inappwebview.callHandler('clearSentenceDraft');
+        const n = (typeof reply === 'number' && Number.isFinite(reply)) ? reply : 0;
+        return n >= 0 ? n : 0;
+    } catch (e) {
+        console.error('clearSentenceDraft failed', e);
+        return sentenceDraftCount;
     }
 }
 
@@ -1703,6 +1732,7 @@ function createEntryHeader(entry, idx) {
                 if (window.sentenceDraftEnabled) {
                     sentenceDraftCount = 0;
                     refreshAllAppendSentenceButtons();
+                    refreshAllClearDraftButtons();
                 }
                 const refreshFromAnki = async () => {
                     // Re-detect from Anki so the post-mine state is the real one.
@@ -1757,9 +1787,10 @@ function createEntryHeader(entry, idx) {
                 appendButton.disabled = true;
                 try {
                     sentenceDraftCount = await appendSentenceToDraft();
-                    // 全弹窗共享同一镜像计数：刷新所有「+句」按钮角标，使任意词条头
-                    // 的累积态一致。
+                    // 全弹窗共享同一镜像计数：刷新所有「+句」按钮角标 + 清空按钮可见性，
+                    // 使任意词条头的累积态一致。
                     refreshAllAppendSentenceButtons();
+                    refreshAllClearDraftButtons();
                 } finally {
                     appendButton.dataset.busy = '';
                     appendButton.disabled = false;
@@ -1768,6 +1799,29 @@ function createEntryHeader(entry, idx) {
         });
         refreshAppendSentenceButton(appendButton);
         buttonsContainer.appendChild(appendButton);
+
+        // TODO-382「+句」可撤销：紧挨「+句」的「清空已加句子」按钮（仅草稿非空时显示）。
+        // 点一次清掉本会话累积的全部草稿句，所有「+句」角标归零——给用户一个明确、可见
+        // 的撤销入口（此前误点「+句」只能靠制卡或关栈被动清空）。
+        const clearButton = el('button', {
+            className: 'clear-draft-button',
+            textContent: '×',
+            onclick: async () => {
+                if (clearButton.dataset.busy === '1') return;
+                clearButton.dataset.busy = '1';
+                clearButton.disabled = true;
+                try {
+                    sentenceDraftCount = await clearSentenceDraftOnHost();
+                    refreshAllAppendSentenceButtons();
+                    refreshAllClearDraftButtons();
+                } finally {
+                    clearButton.dataset.busy = '';
+                    clearButton.disabled = false;
+                }
+            },
+        });
+        refreshClearDraftButton(clearButton);
+        buttonsContainer.appendChild(clearButton);
     }
 
     header.appendChild(buttonsContainer);

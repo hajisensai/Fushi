@@ -54,6 +54,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
+    this.onClearSentenceDraft,
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
@@ -87,6 +88,11 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// popup 更新「已攒 N 句」角标。非空才在 popup 渲染「+句」按钮（书籍/有声书启用；
   /// 视频 E 后续复用同一入口）。
   final Future<int> Function()? onAppendSentence;
+
+  /// TODO-382「+句」可撤销：popup 点「清空已加句子」经 `clearSentenceDraft` JS
+  /// 处理器触发本回调，宿主清空草稿并回传清空后句数（恒 0），popup 据此把所有「+句」
+  /// 角标归零。非空才在 popup 渲染清空入口（与 [onAppendSentence] 同生命周期）。
+  final Future<int> Function()? onClearSentenceDraft;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onTopPullReleased;
 
@@ -512,6 +518,10 @@ class DictionaryPopupWebViewState
       // TODO-270 F/G：宿主接受 appendSentence（书籍/有声书；视频 E 后续）时才渲染
       // 弹窗「+句」按钮——纯查词页（首页词典）无草稿语义，恒 false 不显示。
       window.sentenceDraftEnabled = ${widget.onAppendSentence != null};
+      // TODO-382「+句」可撤销 + 易懂：注入「+句」「清空已加句子」的 tooltip 文案
+      // （popup.js 无自带 i18n 机制，按钮文字硬编码中文；tooltip 走宿主 i18n 注入）。
+      window.i18nAppendSentenceTooltip = ${jsonEncode(t.popup_append_sentence_tooltip)};
+      window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
       // 启用制卡时词典媒体（gaiji 外字）嵌入：popup.js 据此把外字渲染成
       // <img src="hoshi_dict_N.ext"> 并登记到 dictionaryMedia 负载，制卡处理器
       // (mineEntry handler) 再 writeDictionaryMediaCache 落盘供 repo 嵌进卡片。
@@ -854,6 +864,18 @@ class DictionaryPopupWebViewState
           callback: (_) async {
             if (widget.onAppendSentence != null) {
               return widget.onAppendSentence!();
+            }
+            return 0;
+          },
+        );
+
+        // TODO-382「+句」可撤销：popup 点「清空已加句子」清空宿主草稿，回传清空后句数
+        // （恒 0）。与 appendSentence 对称——只发「清空草稿」信号，不碰 mineEntry 字段契约。
+        controller.addJavaScriptHandler(
+          handlerName: 'clearSentenceDraft',
+          callback: (_) async {
+            if (widget.onClearSentenceDraft != null) {
+              return widget.onClearSentenceDraft!();
             }
             return 0;
           },

@@ -519,6 +519,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
           onAppendSentence:
               supportsSentenceDraft ? onAppendSentenceToDraft : null,
+          onClearSentenceDraft:
+              supportsSentenceDraft ? onClearSentenceDraftToDraft : null,
         ),
       ),
     );
@@ -574,6 +576,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// reader 覆写：把当前句 + 句子音频区间推进草稿。
   @protected
   Future<int> onAppendSentenceToDraft() async => 0;
+
+  /// TODO-382「+句」可撤销：清空本表面会话级制卡草稿，返回清空后的句数（恒 0）。
+  /// 默认 no-op（[supportsSentenceDraft] 为 false 时不会被调用）。reader/视频覆写。
+  @protected
+  Future<int> onClearSentenceDraftToDraft() async => 0;
 
   /// Called when a non-last popup layer is dismissed (the stack shrinks but a
   /// parent popup remains). Override (reader) to keep the char cursor following

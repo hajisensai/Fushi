@@ -69,6 +69,11 @@ mixin DictionaryPageMixin {
   /// `window.sentenceDraftEnabled`）。
   Future<int> Function()? get onAppendSentenceToDraft => null;
 
+  /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本表面会话级制卡
+  /// 草稿，返回清空后的句数（恒 0）。默认 null = 不支持（与 [onAppendSentenceToDraft]
+  /// 对称，纯查词页不渲染清空入口）。视频页覆写返回非空闭包清掉 [MiningSentenceDraft]。
+  Future<int> Function()? get onClearSentenceDraftToDraft => null;
+
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
   String _statTodayKey() => statTodayKey();
 
@@ -395,6 +400,7 @@ mixin DictionaryPageMixin {
           // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）
           // 才传回调 → popup 渲染「+句」累积；其余（纯查词/首页词典）传 null 不渲染。
           onAppendSentence: onAppendSentenceToDraft,
+          onClearSentenceDraft: onClearSentenceDraftToDraft,
           headerWidget: buildPopupHeaderFor(index),
         ),
       ),
