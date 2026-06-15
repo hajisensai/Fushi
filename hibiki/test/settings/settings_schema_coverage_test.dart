@@ -40,9 +40,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/VPAL (Vertical Alt)': 'test/reader/reader_content_styles_test.dart',
   'appearance/Design System': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
-  // app_ui_scale_mode (fixed/auto) round-trips through ThemeNotifier.appUiScaleMode,
-  // probed in theme_notifier_test.dart alongside the UI size slider.
-  'appearance/UI size mode': 'test/models/theme_notifier_test.dart',
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',

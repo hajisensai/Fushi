@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
@@ -290,16 +291,31 @@ class ThemeNotifier extends ChangeNotifier {
         : appUiScaleModeAuto;
   }
 
-  String get appUiScaleMode {
-    final bool hasModePref = _prefs.containsKey('app_ui_scale_mode');
-    final Object? value = _get('app_ui_scale_mode');
-    if (value is String) return normalizeAppUiScaleMode(value);
-    if (hasModePref) return appUiScaleModeAuto;
-    // Legacy installs saved only app_ui_scale; keep that manual choice active.
-    if (_prefs.containsKey('app_ui_scale')) return appUiScaleModeCustom;
-    return appUiScaleModeAuto;
+  // TODO-374: 界面大小不再有「自动/自定义」模式开关，只有一个用户可拖的具体百分比
+  // （持久值 `app_ui_scale`）。
+  //
+  // 「是否已经把合适值落盘」的判据是 [_isAppUiScaleSeeded]：只要存在一个非旧 auto
+  // 模式下的 `app_ui_scale` 持久值，就认定用户面对的是一个具体可调数值，永不再自动
+  // 改写它。首启（或旧 auto 用户首次进入）则由 [resolveAppUiScaleForViewport] 用当时
+  // 视口算出的合适值落盘成 `app_ui_scale`，等价于他们原本看到的 auto 效果，不突变。
+  //
+  // 向后兼容（Never break userspace）：
+  // - 旧 custom 用户（`app_ui_scale_mode='custom'` 或 legacy 只存过 `app_ui_scale`）：
+  //   持久值就是他们手动选的值，保持不变、不重新种子。
+  // - 旧 auto 用户（`app_ui_scale_mode='auto'`）：当时 auto 忽略任何 `app_ui_scale`
+  //   旧值、按视口实时算；首次进入按当时屏幕算出合适值落盘成具体数值，覆盖那个被
+  //   忽略的陈旧值（这才等价于他们原本看到的 auto 效果）。
+  bool get _isAppUiScaleSeeded {
+    if (!_prefs.containsKey('app_ui_scale')) return false;
+    // 旧 auto 用户的 app_ui_scale 是被忽略的陈旧值，视为「未种子」，首次进入重算落盘。
+    final Object? mode = _get('app_ui_scale_mode');
+    if (mode is String && normalizeAppUiScaleMode(mode) == appUiScaleModeAuto) {
+      return false;
+    }
+    return true;
   }
 
+  /// 当前持久化的界面大小（首启种子完成后此即唯一权威值）。
   double get customAppUiScale {
     final Object value = _get(
       'app_ui_scale',
@@ -309,13 +325,20 @@ class ThemeNotifier extends ChangeNotifier {
     return HibikiAppUiScale.defaultScale;
   }
 
+  /// 最近一次按视口算出的「合适」自动值，仅用作首启种子与种子前的临时显示，不再是
+  /// 用户可见的独立模式。
   double get autoAppUiScale => _autoAppUiScale;
 
   double get appUiScale {
-    if (appUiScaleMode == appUiScaleModeCustom) return customAppUiScale;
+    if (_isAppUiScaleSeeded) return customAppUiScale;
+    // 种子前（首启 / 旧 auto 用户尚未拿到视口）：先按已算出的自动值显示，
+    // resolveAppUiScaleForViewport 拿到真实视口后会把它落盘成具体数值。
     return autoAppUiScale;
   }
 
+  /// 在拥有真实视口的渲染层调用：算出当时屏幕的「合适」缩放；若界面大小尚未种子
+  /// （首启或旧 auto 用户），把该合适值落盘成具体可调的 `app_ui_scale`，此后界面大小
+  /// 永远是一个用户可拖的数值。返回当前应生效的 [appUiScale]。
   double resolveAppUiScaleForViewport({
     required Size viewport,
     required TargetPlatform platform,
@@ -324,17 +347,32 @@ class ThemeNotifier extends ChangeNotifier {
       viewport: viewport,
       platform: platform,
     );
+    if (!_isAppUiScaleSeeded) {
+      // 首启种子：把当时屏幕算出的合适值落盘成具体百分比并清掉旧模式键，转为纯具体值。
+      // 先同步置内存 _prefs（见 _seedAppUiScale），使本帧 appUiScale 立刻返回种子值。
+      unawaited(_seedAppUiScale(_autoAppUiScale));
+      return _autoAppUiScale;
+    }
     return appUiScale;
   }
 
-  Future<void> setAppUiScaleMode(String value) async {
-    await _set('app_ui_scale_mode', normalizeAppUiScaleMode(value));
+  Future<void> _seedAppUiScale(double value) async {
+    final double normalized = HibikiAppUiScale.normalize(value);
+    // 立刻更新内存值，使同帧 _isAppUiScaleSeeded / appUiScale 反映已种子（_db 写是
+    // async，先同步置内存避免本帧/下一帧重复种子）。
+    _prefs['app_ui_scale'] = PrefCodec.encode(normalized);
+    _prefs.remove('app_ui_scale_mode');
+    await _db.setPref('app_ui_scale', PrefCodec.encode(normalized));
+    // 清掉旧 auto 模式键，避免下次启动又被判为未种子（旧 auto 用户路径）。
+    await _db.deletePref('app_ui_scale_mode');
     notifyListeners();
   }
 
   Future<void> setAppUiScale(double value) async {
     await _set('app_ui_scale', HibikiAppUiScale.normalize(value));
-    await _set('app_ui_scale_mode', appUiScaleModeCustom);
+    // 用户显式拖动即落具体值；清掉任何残留旧模式键，确保此后判为已种子。
+    _prefs.remove('app_ui_scale_mode');
+    await _db.deletePref('app_ui_scale_mode');
     notifyListeners();
   }
 

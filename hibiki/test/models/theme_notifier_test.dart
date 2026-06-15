@@ -112,11 +112,9 @@ void main() {
       expect(notifier.themeMode, ThemeMode.system);
     });
 
-    test('default appUiScaleMode is automatic', () {
-      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeAuto);
-    });
-
     test('default appUiScale is 100 percent before a viewport is resolved', () {
+      // TODO-374: 无任何持久值（首启）时，种子尚未发生，appUiScale 退回当前自动值
+      // （视口未解析前 autoAppUiScale 默认 1.0）。
       expect(notifier.appUiScale, 1.0);
     });
 
@@ -168,50 +166,62 @@ void main() {
     });
 
     test(
-        'setAppUiScale switches to custom mode, clamps to 30-300 percent, '
-        'persists, and notifies', () async {
+        'setAppUiScale persists a concrete value, clamps to 30-300 percent, '
+        'and notifies', () async {
       int notifyCount = 0;
       notifier.addListener(() => notifyCount++);
 
       await notifier.setAppUiScale(3.5);
       expect(notifier.appUiScale, 3.0);
-      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
       expect(notifyCount, 1);
 
       final ThemeNotifier reloaded = ThemeNotifier(db, textThemeBuilder);
       addTearDown(reloaded.dispose);
       await reloaded.refreshFromDb();
       expect(reloaded.appUiScale, 3.0);
-      expect(reloaded.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
 
       await notifier.setAppUiScale(0.2);
       expect(notifier.appUiScale, 0.3);
     });
 
-    test('automatic mode follows viewport scale until user picks custom',
+    test(
+        'TODO-374: first launch seeds a suitable concrete scale and persists it',
         () async {
-      final double fullHd = notifier.resolveAppUiScaleForViewport(
+      // 首启：无任何持久值。第一次按真实视口解析时把合适值落盘成具体百分比。
+      final double seeded = notifier.resolveAppUiScaleForViewport(
         viewport: const Size(1920, 1080),
         platform: TargetPlatform.windows,
       );
-      expect(fullHd, greaterThan(1.0));
-      expect(notifier.appUiScale, fullHd);
+      expect(seeded, greaterThan(1.0), reason: '大屏的合适值应放大');
+      // 同帧 appUiScale 立刻返回种子值（内存已写）。
+      expect(notifier.appUiScale, seeded);
 
-      await notifier.setAppUiScale(1.7);
-      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
-      expect(notifier.appUiScale, 1.7);
+      // 落盘后重载也是同一具体值，不再随视口变化（已是用户可调的具体数值）。
+      await Future<void>.delayed(Duration.zero);
+      final ThemeNotifier reloaded = ThemeNotifier(db, textThemeBuilder);
+      addTearDown(reloaded.dispose);
+      await reloaded.refreshFromDb();
+      expect(reloaded.customAppUiScale, seeded);
 
-      final double compact = notifier.resolveAppUiScaleForViewport(
+      final double afterResize = reloaded.resolveAppUiScaleForViewport(
         viewport: const Size(800, 600),
         platform: TargetPlatform.windows,
       );
-      expect(compact, 1.7, reason: 'custom mode must ignore auto resize');
+      expect(afterResize, seeded, reason: '种子后界面大小是固定具体值，不随窗口大小自动改变');
+    });
+
+    test('TODO-374: an explicit user value is never overwritten by reseed',
+        () async {
+      await notifier.setAppUiScale(1.7);
+      expect(notifier.appUiScale, 1.7);
+
+      final double resolved = notifier.resolveAppUiScaleForViewport(
+        viewport: const Size(800, 600),
+        platform: TargetPlatform.windows,
+      );
+      expect(resolved, 1.7, reason: '已有具体值的用户不被重新种子覆盖');
       expect(notifier.autoAppUiScale, lessThan(1.0));
       expect(notifier.customAppUiScale, 1.7);
-
-      await notifier.setAppUiScaleMode(ThemeNotifier.appUiScaleModeAuto);
-      expect(notifier.appUiScale, notifier.autoAppUiScale);
-      expect(notifier.appUiScale, lessThan(1.0));
     });
 
     test('setCustomThemeSeed persists color', () async {
@@ -377,8 +387,6 @@ void main() {
   group('ThemeNotifier.appUiScale reflects app_ui_scale pref', () {
     test('app_ui_scale=1.5 → appUiScale is the in-range normalized value', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
-        'app_ui_scale_mode':
-            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(1.5),
       });
 
@@ -388,8 +396,6 @@ void main() {
 
     test('out-of-range app_ui_scale=5.0 → clamped to maxScale (3.0)', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
-        'app_ui_scale_mode':
-            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(5.0),
       });
 
@@ -400,8 +406,6 @@ void main() {
 
     test('below-range app_ui_scale=0.1 → clamped to minScale (0.3)', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
-        'app_ui_scale_mode':
-            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(0.1),
       });
 
@@ -410,21 +414,23 @@ void main() {
       expect(notifier.appUiScale, 0.3);
     });
 
-    test('absent app_ui_scale → defaults to defaultScale (1.0)', () {
+    test('absent app_ui_scale → defaults to defaultScale (1.0) before seeding',
+        () {
       notifier.loadFromPrefsSnapshot(<String, String>{});
 
       expect(HibikiAppUiScale.defaultScale, 1.0);
-      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeAuto);
+      // 种子前（无视口解析）退回当前自动值，默认 1.0。
       expect(notifier.appUiScale, HibikiAppUiScale.defaultScale);
       expect(notifier.appUiScale, 1.0);
     });
 
-    test('legacy app_ui_scale without mode stays custom after upgrade', () {
+    test('legacy app_ui_scale without mode is a concrete value (no reseed)',
+        () {
+      // 旧 custom 用户（只存过 app_ui_scale，无模式键）：视为已种子，值保留不变。
       notifier.loadFromPrefsSnapshot(<String, String>{
         'app_ui_scale': PrefCodec.encode(1.5),
       });
 
-      expect(notifier.appUiScaleMode, ThemeNotifier.appUiScaleModeCustom);
       expect(notifier.customAppUiScale, 1.5);
       expect(notifier.appUiScale, 1.5);
 
@@ -438,23 +444,36 @@ void main() {
 
     test('app_ui_scale stored as int → still normalized as double', () {
       notifier.loadFromPrefsSnapshot(<String, String>{
-        'app_ui_scale_mode':
-            PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
         'app_ui_scale': PrefCodec.encode(2),
       });
 
       expect(notifier.appUiScale, 2.0);
     });
 
-    test('auto mode ignores stored custom scale for the effective appUiScale',
-        () {
+    test(
+        'TODO-374: legacy auto mode is reseeded from viewport on first resolve',
+        () async {
+      // 旧 auto 用户：模式键为 auto，存的 app_ui_scale 是被忽略的陈旧值。
+      // 种子前视为未种子，appUiScale 退回自动值，不用那个陈旧值。
       notifier.loadFromPrefsSnapshot(<String, String>{
         'app_ui_scale_mode': PrefCodec.encode(ThemeNotifier.appUiScaleModeAuto),
         'app_ui_scale': PrefCodec.encode(2),
       });
+      expect(notifier.appUiScale, HibikiAppUiScale.defaultScale,
+          reason: '种子前旧 auto 用户不使用陈旧的 app_ui_scale 值');
 
-      expect(notifier.customAppUiScale, 2.0);
-      expect(notifier.appUiScale, HibikiAppUiScale.defaultScale);
+      // 首次按真实视口解析：算出合适值并落盘成具体数值，覆盖陈旧值。
+      final double seeded = notifier.resolveAppUiScaleForViewport(
+        viewport: const Size(1920, 1080),
+        platform: TargetPlatform.windows,
+      );
+      expect(seeded, greaterThan(1.0));
+      expect(notifier.appUiScale, seeded);
+      expect(notifier.appUiScale, isNot(2.0),
+          reason: '旧 auto 用户被重新种子成当时屏幕的合适值，等价其原本看到的 auto 效果');
+
+      // 让 fire-and-forget 的种子落盘完成，避免其在 tearDown 关库后才命中（测试侧时序）。
+      await Future<void>.delayed(Duration.zero);
     });
   });
 }

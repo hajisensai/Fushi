@@ -486,75 +486,29 @@ void main() {
   }
 
   testWidgets(
-      'app UI size inlines the auto/custom toggle and hides the slider in auto',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(interfaceSettingsHarness());
-
-    // Auto/Custom 收敛为「界面大小」一行尾部的内联切换：该项不再有独立的
-    // app_ui_scale_mode 标题/副标题，标题统一是 app_ui_scale。
-    expect(find.text(t.app_ui_scale), findsOneWidget);
-    expect(find.text(t.app_ui_scale_custom), findsOneWidget);
-    // BUG fix（界面大小「两个选项」困惑）：自动模式不再渲染一个带独立标题「自动」的整行。
-    // 「自动」一词此后只作为分段切换里的段标签出现，不再作为某个 AdaptiveSettingsRow 的
-    // 标题——因此不存在 title == app_ui_scale_auto 的设置行。
-    expect(
-      find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is AdaptiveSettingsRow &&
-            widget.title == t.app_ui_scale_auto,
-      ),
-      findsNothing,
-      reason: '自动模式不应再有独立的「自动」整行（百分比已折进标题行副标题）',
-    );
-    final AdaptiveSettingsSegmentedRow<String> autoRow = tester.widget(
-      find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is AdaptiveSettingsSegmentedRow<String> &&
-            widget.title == t.app_ui_scale &&
-            widget.controlBelow == false &&
-            widget.selected == ThemeNotifier.appUiScaleModeAuto,
-      ),
-    );
-    // 当前自动计算出的百分比折进唯一标题行的副标题（以原 hint 起头、附带「N%」读数），
-    // 而不是另起一行——这正是消除「两个选项」错觉的落点。
-    expect(autoRow.subtitle, startsWith(t.app_ui_scale_hint));
-    expect(
-      autoRow.subtitle,
-      contains('%'),
-      reason: '自动模式的百分比读数必须贴在「界面大小」标题行副标题里',
-    );
-
-    // 自动模式下不渲染可拖滑条（原行为是恒渲染，本改动消除无用占位）。
-    expect(
-      find.byType(AdaptiveSettingsSliderRow),
-      findsNothing,
-      reason: '自动模式只读展示当前自动百分比，不应有滑条',
-    );
-  });
-
-  testWidgets('app UI size shows the draggable slider in custom mode',
+      'TODO-374: app UI size has no auto/custom toggle, only the slider',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       interfaceSettingsHarness(
         extraThemePrefs: <String, String>{
-          'app_ui_scale_mode':
-              PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
           'app_ui_scale': PrefCodec.encode(1.5),
         },
       ),
     );
 
-    // 标题仍统一是 app_ui_scale；自定义模式下内联切换行与滑条行都用该标题，故出现两处。
-    expect(find.text(t.app_ui_scale), findsWidgets);
+    // 界面大小已无模式概念：不存在任何 auto/custom 分段切换行（标题为界面大小的
+    // AdaptiveSettingsSegmentedRow）。
     expect(
       find.byWidgetPredicate(
         (Widget widget) =>
             widget is AdaptiveSettingsSegmentedRow<String> &&
-            widget.title == t.app_ui_scale &&
-            widget.selected == ThemeNotifier.appUiScaleModeCustom,
+            widget.title == t.app_ui_scale,
       ),
-      findsOneWidget,
+      findsNothing,
+      reason: 'TODO-374 删除了界面大小的自动/自定义模式切换',
     );
+
+    // 恒渲染一条可拖的具体百分比滑条。
     expect(
       find.byWidgetPredicate(
         (Widget widget) =>
@@ -674,10 +628,8 @@ void main() {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.android,
-        // TODO-323: 滑条只在自定义模式渲染；以自定义模式起步才能驱动其拖动语义。
+        // TODO-374: 滑条恒渲染；以一个具体值起步即可驱动其拖动语义。
         extraThemePrefs: <String, String>{
-          'app_ui_scale_mode':
-              PrefCodec.encode(ThemeNotifier.appUiScaleModeCustom),
           'app_ui_scale': PrefCodec.encode(1.0),
         },
         builder: (SettingsContext settingsContext) {
@@ -706,8 +658,6 @@ void main() {
         );
 
     expect(appModel.appUiScale, 1.0);
-    expect(appModel.themeNotifier.appUiScaleMode,
-        ThemeNotifier.appUiScaleModeCustom);
 
     // 拖动中：onChanged 只更新本地显示值，绝不提交真实缩放——否则全局
     // HibikiAppUiScale 的 Transform 会实时重排，滑块在手指下被缩放位移导致
@@ -721,8 +671,6 @@ void main() {
     row().onChangeEnd!(2.0);
     await tester.pump();
     expect(appModel.appUiScale, 2.0, reason: '松手提交真实缩放');
-    expect(appModel.themeNotifier.appUiScaleMode,
-        ThemeNotifier.appUiScaleModeCustom);
     expect(row().value, 2.0);
   });
 

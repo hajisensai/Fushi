@@ -437,61 +437,12 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
 
 /// 「界面大小」设置项。
 ///
-/// TODO-323: 自动/自定义不再做成独立全权重的设置行（原 `app_ui_scale_mode` 整行带
-/// 自己的标题/副标题/图标，突兀地堆在滑条上方）。两者本就同属一项，这里收敛为一项：
-/// - 标题行 = 「界面大小」（[t.app_ui_scale]），自动/自定义作为该行尾部的轻量内联
-///   切换（[AdaptiveSettingsSegmentedRow] 的 `controlBelow: false`，仅两段短标签）。
-/// - 自动模式：当前自动计算出的百分比（[AppModel.autoAppUiScale]）折进同一标题行的
-///   副标题（`hint · 当前 X%`），不再单独渲染一个带标题「自动」的整行——否则用户看到
-///   「界面大小」+「自动」两行标题，误以为是两个分开的设置项（本次修复的困惑根因）。
-/// - 自定义模式：显示可拖动的百分比滑条（[_AppUiScaleSliderRow]）。
-///
-/// 语义钩子不变：拖滑条会经 [ThemeNotifier.setAppUiScale] 自动翻成自定义；切回自动走
-/// [ThemeNotifier.setAppUiScaleMode]；legacy 迁移（只存过 app_ui_scale 的旧装机仍判为
-/// 自定义）由 [ThemeNotifier.appUiScaleMode] 兜底，本改动不触及。
+/// TODO-374: 删除「自动/自定义」模式切换。界面大小不再有模式概念——首次启动时
+/// [ThemeNotifier.resolveAppUiScaleForViewport] 已按屏幕算出合适值落盘成具体百分比，
+/// 之后用户始终面对一个可拖的具体数值。因此这里恒渲染可拖滑条（[_AppUiScaleSliderRow]），
+/// 不再有内联分段切换、不再有「自动模式只读展示」分支。
 Widget buildAppUiScaleSelector(SettingsContext settingsContext) {
-  final AppModel appModel = settingsContext.appModel;
-  final bool isCustom =
-      appModel.appUiScaleMode == ThemeNotifier.appUiScaleModeCustom;
-  // 自动模式：把当前自动百分比读数贴回唯一的「界面大小」标题行（副标题尾部），
-  // 而非另起一个独立标题行——消除「两个选项」的视觉错觉。自定义模式副标题保持原说明。
-  final String subtitle = isCustom
-      ? t.app_ui_scale_hint
-      : '${t.app_ui_scale_hint} · '
-          '${t.app_ui_scale_auto_current(percent: '${(appModel.autoAppUiScale * 100).round()}%')}';
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: <Widget>[
-      AdaptiveSettingsSegmentedRow<String>(
-        title: t.app_ui_scale,
-        subtitle: subtitle,
-        icon: Icons.format_size_outlined,
-        // 仅两段短标签（自动/自定义），内联在标题行尾即可，不再单独占整行。
-        controlBelow: false,
-        segments: <ButtonSegment<String>>[
-          ButtonSegment<String>(
-            value: ThemeNotifier.appUiScaleModeAuto,
-            icon: const Icon(Icons.auto_awesome_outlined, size: 16),
-            label: Text(t.app_ui_scale_auto),
-            tooltip: t.app_ui_scale_auto,
-          ),
-          ButtonSegment<String>(
-            value: ThemeNotifier.appUiScaleModeCustom,
-            icon: const Icon(Icons.tune_outlined, size: 16),
-            label: Text(t.app_ui_scale_custom),
-            tooltip: t.app_ui_scale_custom,
-          ),
-        ],
-        selected: appModel.appUiScaleMode,
-        onChanged: (String value) async {
-          await appModel.setAppUiScaleMode(value);
-          settingsContext.refresh();
-        },
-      ),
-      // 仅自定义模式额外渲染可拖滑条；自动模式百分比已并入上方标题行副标题，不再有第二行。
-      if (isCustom) _AppUiScaleSliderRow(appModel: appModel),
-    ],
-  );
+  return _AppUiScaleSliderRow(appModel: settingsContext.appModel);
 }
 
 /// 「界面大小」滑条行。
