@@ -1654,5 +1654,19 @@
     "anki_fetch": "刷新牌组与笔记类型",
     "anki_not_configured": "点击「刷新」加载你的 Anki 牌组与笔记类型。",
     "anki_refresh_hint": "在 Anki 里新建或重命名牌组、笔记类型后，点此刷新。",
-    "enable_swipe_to_close": "滑动关闭弹窗"
+    "enable_swipe_to_close": "滑动关闭弹窗",
+    "video_control_play_pause": "播放/暂停",
+    "video_control_seek_backward": "后退10秒",
+    "video_control_seek_forward": "前进10秒",
+    "video_control_previous_cue": "上一句字幕",
+    "video_control_next_cue": "下一句字幕",
+    "video_control_fullscreen": "全屏",
+    "video_control_screenshot": "截图",
+    "video_control_subtitle_track": "字幕轨",
+    "video_control_audio_track": "音轨",
+    "video_control_episode_list": "剧集列表",
+    "video_control_slot_bottom_center": "底栏（中间）",
+    "video_control_palette_title": "全部按钮",
+    "video_control_palette_hint": "把按钮拖入某个位置即可添加；一个按钮可放在多个位置。",
+    "video_control_remove_from_slot": "移除"
 }

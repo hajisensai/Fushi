@@ -31,15 +31,22 @@ void main() {
 
     expect(settings, contains('initialControlLayout'));
     expect(settings, contains('onControlLayoutChanged'));
-    // Editor iterates the customizable learning items and offers slot choices.
-    expect(settings, contains('VideoControlItem.customizableLearning'));
-    expect(settings, contains('VideoControlSlot.editableSlots'));
-    expect(settings, contains('_controlLayout.moveItem('));
-    // The four on-player slots + hidden are the user-facing choices.
+    // TODO-399 decision 3b: the editor now exposes the FULL customizable button
+    // set (learning + transport / nav keys), not just the five learning keys.
+    expect(settings, contains('VideoControlItem.customizableItems'));
+    // TODO-399 multi-slot: add (palette / drop) + delete (chip close button) via
+    // addItemToSlot / removeItemFromSlot, so one button can sit in several slots.
+    expect(settings, contains('addItemToSlot('));
+    expect(settings, contains('removeItemFromSlot('));
+    // All on-player slots + hidden are the user-facing drop regions, including
+    // the bottom-center transport block (decision 2).
     expect(settings, contains('VideoControlSlot.bottomLeft'));
+    expect(settings, contains('VideoControlSlot.bottomCenter'));
     expect(settings, contains('VideoControlSlot.bottomRight'));
     expect(settings, contains('VideoControlSlot.screenLeft'));
     expect(settings, contains('VideoControlSlot.screenRight'));
+    expect(settings, contains('VideoControlSlot.topLeft'));
+    expect(settings, contains('VideoControlSlot.topRight'));
     expect(settings, contains('VideoControlSlot.hidden'));
   });
 

@@ -1654,5 +1654,19 @@
     "anki_fetch": "Refresh decks & note types",
     "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
     "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh.",
-    "enable_swipe_to_close": "Swipe to close popup"
+    "enable_swipe_to_close": "Swipe to close popup",
+    "video_control_play_pause": "Play/Pause",
+    "video_control_seek_backward": "Back 10s",
+    "video_control_seek_forward": "Forward 10s",
+    "video_control_previous_cue": "Previous subtitle",
+    "video_control_next_cue": "Next subtitle",
+    "video_control_fullscreen": "Fullscreen",
+    "video_control_screenshot": "Screenshot",
+    "video_control_subtitle_track": "Subtitle track",
+    "video_control_audio_track": "Audio track",
+    "video_control_episode_list": "Episode list",
+    "video_control_slot_bottom_center": "Bottom bar (center)",
+    "video_control_palette_title": "All buttons",
+    "video_control_palette_hint": "Drag a button into a slot to add it; a button can sit in several slots.",
+    "video_control_remove_from_slot": "Remove"
 }

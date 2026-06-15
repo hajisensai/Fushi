@@ -3641,6 +3641,167 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     ];
   }
 
+  /// TODO-399 decision 3b: every chip-renderable button (learning keys PLUS the
+  /// transport / nav keys: play/pause, seek +/-, cue nav, screenshot, subtitle /
+  /// audio track, episode list, fullscreen) that the user placed into [slot],
+  /// in order. Used by the floating rails (screen / top left & right) — pure
+  /// custom overlays with no media_kit chrome of their own, so any button placed
+  /// there renders and works without colliding with the media_kit bottom bar.
+  ///
+  /// The bottom bar (bottomLeft / bottomRight / bottomCenter) intentionally
+  /// keeps using [_slotLearningButtons]: its transport cluster (play / seek /
+  /// cue-nav) and trailing volume / fullscreen are drawn by media_kit's own
+  /// theme, so rendering transport keys there again would double them. Moving a
+  /// transport key OUT of bottomCenter onto a rail honours decision 2 without
+  /// touching the play geometry (BUG-257).
+  List<VideoControlItem> _slotChipItems(VideoControlSlot slot) {
+    return <VideoControlItem>[
+      for (final VideoControlItem item in _controlLayout.itemsIn(slot))
+        if (item.isChipRenderable) item,
+    ];
+  }
+
+  /// Icon for any chip-renderable [VideoControlItem] (learning + transport/nav).
+  IconData _videoControlItemIcon(VideoControlItem item) {
+    final VideoControlButton? legacy = item.legacyButton;
+    if (legacy != null) return _videoControlButtonIcon(legacy);
+    switch (item) {
+      case VideoControlItem.playPause:
+        return Icons.play_arrow_rounded;
+      case VideoControlItem.seekBackward:
+        return Icons.fast_rewind;
+      case VideoControlItem.seekForward:
+        return Icons.fast_forward;
+      case VideoControlItem.previousCue:
+        return Icons.skip_previous;
+      case VideoControlItem.nextCue:
+        return Icons.skip_next;
+      case VideoControlItem.fullscreen:
+        return Icons.fullscreen;
+      case VideoControlItem.screenshot:
+        return Icons.photo_camera_outlined;
+      case VideoControlItem.subtitleTrack:
+        return Icons.subtitles;
+      case VideoControlItem.audioTrack:
+        return Icons.audiotrack;
+      case VideoControlItem.episodeList:
+        return Icons.playlist_play;
+      // Non-chip special renders never reach here (filtered by isChipRenderable).
+      case VideoControlItem.volume:
+      case VideoControlItem.title:
+      case VideoControlItem.positionIndicator:
+      case VideoControlItem.speed:
+      case VideoControlItem.subtitleList:
+      case VideoControlItem.favoriteSentence:
+      case VideoControlItem.favoriteSentences:
+      case VideoControlItem.settings:
+        return Icons.tune;
+    }
+  }
+
+  /// Tooltip for any chip-renderable [VideoControlItem].
+  String _videoControlItemTooltip(VideoControlItem item) {
+    final VideoControlButton? legacy = item.legacyButton;
+    if (legacy != null) return _videoControlButtonTooltip(legacy);
+    switch (item) {
+      case VideoControlItem.playPause:
+        return t.video_control_play_pause;
+      case VideoControlItem.seekBackward:
+        return t.video_control_seek_backward;
+      case VideoControlItem.seekForward:
+        return t.video_control_seek_forward;
+      case VideoControlItem.previousCue:
+        return t.video_control_previous_cue;
+      case VideoControlItem.nextCue:
+        return t.video_control_next_cue;
+      case VideoControlItem.fullscreen:
+        return t.video_control_fullscreen;
+      case VideoControlItem.screenshot:
+        return t.video_control_screenshot;
+      case VideoControlItem.subtitleTrack:
+        return t.video_control_subtitle_track;
+      case VideoControlItem.audioTrack:
+        return t.video_control_audio_track;
+      case VideoControlItem.episodeList:
+        return t.video_control_episode_list;
+      case VideoControlItem.volume:
+      case VideoControlItem.title:
+      case VideoControlItem.positionIndicator:
+      case VideoControlItem.speed:
+      case VideoControlItem.subtitleList:
+      case VideoControlItem.favoriteSentence:
+      case VideoControlItem.favoriteSentences:
+      case VideoControlItem.settings:
+        return '';
+    }
+  }
+
+  /// Activate any chip-renderable [VideoControlItem] (rail tap handler). Learning
+  /// keys go through the legacy dispatcher; transport / nav keys call the same
+  /// page methods the media_kit chrome uses, so behaviour is identical wherever
+  /// the user places the button.
+  void _activateVideoControlItem(
+    VideoControlItem item,
+    VideoPlayerController controller,
+  ) {
+    final VideoControlButton? legacy = item.legacyButton;
+    if (legacy != null) {
+      _activateVideoControlButton(legacy);
+      return;
+    }
+    switch (item) {
+      case VideoControlItem.playPause:
+        unawaited(controller.playOrPause());
+        break;
+      case VideoControlItem.seekBackward:
+        unawaited(_seekRelative(-10000));
+        break;
+      case VideoControlItem.seekForward:
+        unawaited(_seekRelative(10000));
+        break;
+      case VideoControlItem.previousCue:
+        unawaited(controller.skipToPrevCueOrSeekBack(
+          seekSeconds: _asbConfig.seekSeconds,
+        ));
+        break;
+      case VideoControlItem.nextCue:
+        unawaited(controller.skipToNextCueOrSeekForward(
+          seekSeconds: _asbConfig.seekSeconds,
+        ));
+        break;
+      case VideoControlItem.fullscreen:
+        _runWhenImmersiveAllowsFullControls(() {
+          final BuildContext? ctx = _videoControlsContext;
+          if (ctx != null && ctx.mounted) {
+            toggleFullscreen(ctx);
+          }
+        });
+        break;
+      case VideoControlItem.screenshot:
+        unawaited(_saveScreenshot());
+        break;
+      case VideoControlItem.subtitleTrack:
+        unawaited(_showSubtitleSourceMenu(controller));
+        break;
+      case VideoControlItem.audioTrack:
+        _showAudioTrackMenu(controller);
+        break;
+      case VideoControlItem.episodeList:
+        _showEpisodeList();
+        break;
+      // Non-chip / handled-by-legacy items never reach here.
+      case VideoControlItem.volume:
+      case VideoControlItem.title:
+      case VideoControlItem.positionIndicator:
+      case VideoControlItem.speed:
+      case VideoControlItem.subtitleList:
+      case VideoControlItem.favoriteSentence:
+      case VideoControlItem.favoriteSentences:
+      case VideoControlItem.settings:
+        break;
+    }
+  }
+
   /// 底栏传输组：`[−10s][上一句][play][下一句][+10s]`，[play] 钉在几何正中（BUG-257）。
   ///
   /// 根因：旧底栏 `[时间] Spacer [seek 簇] Spacer [尾部按钮…]` 用两个 [Spacer] 在「时间」
@@ -5830,11 +5991,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 被 [_slotLearningButtons] 过滤掉，不会误渲染到顶部浮条里）。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
     final Widget right = _buildVideoSideRailFor(
+      controller,
       VideoControlSlot.screenRight,
       Alignment.centerRight,
       const EdgeInsets.only(right: 12),
     );
     final Widget left = _buildVideoSideRailFor(
+      controller,
       VideoControlSlot.screenLeft,
       Alignment.centerLeft,
       const EdgeInsets.only(left: 12),
@@ -5842,11 +6005,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 顶部两条：贴上沿，留出固定顶栏高度避免压住返回 / 标题 / 字幕等固定 chrome。
     final double topInset = _videoButtonBarHeight + 8;
     final Widget topRight = _buildVideoSideRailFor(
+      controller,
       VideoControlSlot.topRight,
       Alignment.topRight,
       EdgeInsets.only(top: topInset, right: 12),
     );
     final Widget topLeft = _buildVideoSideRailFor(
+      controller,
       VideoControlSlot.topLeft,
       Alignment.topLeft,
       EdgeInsets.only(top: topInset, left: 12),
@@ -5888,12 +6053,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [_videoChromeColorScheme]（与侧边锁按钮 [_buildSideLockButton] 同源），让左 / 右
   /// 浮动 rail 与底栏 / 顶栏 / 侧边锁按钮在缩放与配色上完全统一。
   Widget _buildVideoSideRailFor(
+    VideoPlayerController controller,
     VideoControlSlot slot,
     AlignmentGeometry alignment,
     EdgeInsetsGeometry padding,
   ) {
-    final List<VideoControlButton> buttons = _slotLearningButtons(slot);
-    if (buttons.isEmpty) return const SizedBox.shrink();
+    // TODO-399 decision 3b: rails render EVERY chip-renderable item the user
+    // placed here (learning + transport/nav keys), not just the five learning
+    // keys. Rails are pure custom overlays with no media_kit chrome, so adding
+    // transport keys here never collides / doubles with the bottom bar.
+    final List<VideoControlItem> items = _slotChipItems(slot);
+    if (items.isEmpty) return const SizedBox.shrink();
     final ColorScheme cs = _videoChromeColorScheme(context);
     return Align(
       alignment: alignment,
@@ -5906,20 +6076,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                for (final VideoControlButton button in buttons) ...<Widget>[
+                for (final VideoControlItem item in items) ...<Widget>[
                   Material(
                     color: cs.surface.withValues(alpha: 0.55),
                     shape: const CircleBorder(),
                     clipBehavior: Clip.antiAlias,
                     child: IconButton(
-                      tooltip: _videoControlButtonTooltip(button),
+                      tooltip: _videoControlItemTooltip(item),
                       iconSize: _videoControlIconSize,
-                      icon: Icon(_videoControlButtonIcon(button)),
+                      icon: Icon(_videoControlItemIcon(item)),
                       color: cs.onSurface,
-                      onPressed: () => _activateVideoControlButton(button),
+                      onPressed: () =>
+                          _activateVideoControlItem(item, controller),
                     ),
                   ),
-                  if (button != buttons.last) const SizedBox(height: 8),
+                  if (item != items.last) const SizedBox(height: 8),
                 ],
               ],
             ),

@@ -307,6 +307,177 @@ void main() {
     });
   });
 
+  group(
+      'TODO-399: one button in multiple slots (addItemToSlot / removeItemFromSlot)',
+      () {
+    test('addItemToSlot copies a button into an extra slot (keeps original)',
+        () {
+      // speed defaults to bottomRight; add it to topLeft as well.
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .addItemToSlot(VideoControlItem.speed, VideoControlSlot.topLeft);
+      expect(layout.itemsIn(VideoControlSlot.bottomRight),
+          contains(VideoControlItem.speed),
+          reason: 'original placement preserved (this is a copy, not a move)');
+      expect(layout.itemsIn(VideoControlSlot.topLeft),
+          contains(VideoControlItem.speed));
+      expect(layout.slotsOf(VideoControlItem.speed), <VideoControlSlot>[
+        VideoControlSlot.bottomRight,
+        VideoControlSlot.topLeft,
+      ]);
+    });
+
+    test('addItemToSlot is idempotent (no duplicate within the same slot)', () {
+      final VideoControlLayout once = VideoControlLayout.defaults
+          .addItemToSlot(VideoControlItem.speed, VideoControlSlot.topLeft);
+      final VideoControlLayout twice =
+          once.addItemToSlot(VideoControlItem.speed, VideoControlSlot.topLeft);
+      expect(
+          twice
+              .itemsIn(VideoControlSlot.topLeft)
+              .where((VideoControlItem i) => i == VideoControlItem.speed),
+          hasLength(1));
+    });
+
+    test('removeItemFromSlot drops only that copy', () {
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .addItemToSlot(VideoControlItem.speed, VideoControlSlot.topLeft)
+          .removeItemFromSlot(VideoControlItem.speed, VideoControlSlot.topLeft);
+      expect(layout.itemsIn(VideoControlSlot.topLeft),
+          isNot(contains(VideoControlItem.speed)));
+      expect(layout.itemsIn(VideoControlSlot.bottomRight),
+          contains(VideoControlItem.speed),
+          reason: 'the other copy survives');
+    });
+
+    test('removing the last visible copy lands the button in hidden', () {
+      // speed only sits in bottomRight by default; remove it -> falls to hidden.
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .removeItemFromSlot(
+              VideoControlItem.speed, VideoControlSlot.bottomRight);
+      expect(layout.isOnPlayer(VideoControlItem.speed), isFalse);
+      expect(layout.hiddenItems, contains(VideoControlItem.speed));
+    });
+
+    test('removeItemFromSlot refuses to remove the last copy of a required key',
+        () {
+      // settings is pinnedRequired: removing its only copy must bounce it back
+      // (never leaves the player with no settings entry).
+      final VideoControlSlot home =
+          VideoControlLayout.defaults.slotOf(VideoControlItem.settings);
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .removeItemFromSlot(VideoControlItem.settings, home);
+      expect(layout.isOnPlayer(VideoControlItem.settings), isTrue);
+    });
+
+    test('a required key with two copies can still drop one copy', () {
+      final VideoControlSlot home =
+          VideoControlLayout.defaults.slotOf(VideoControlItem.settings);
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .addItemToSlot(VideoControlItem.settings, VideoControlSlot.topLeft)
+          .removeItemFromSlot(
+              VideoControlItem.settings, VideoControlSlot.topLeft);
+      expect(
+          layout.slotsOf(VideoControlItem.settings), <VideoControlSlot>[home]);
+      expect(layout.isOnPlayer(VideoControlItem.settings), isTrue);
+    });
+
+    test('encode/decode preserves a button placed in multiple slots', () {
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .addItemToSlot(VideoControlItem.fullscreen, VideoControlSlot.topRight)
+          .addItemToSlot(
+              VideoControlItem.fullscreen, VideoControlSlot.bottomLeft);
+      final VideoControlLayout decoded =
+          VideoControlLayout.decode(layout.encode());
+      expect(decoded, layout);
+      expect(decoded.itemsIn(VideoControlSlot.topRight),
+          contains(VideoControlItem.fullscreen));
+      expect(decoded.itemsIn(VideoControlSlot.bottomLeft),
+          contains(VideoControlItem.fullscreen));
+      expect(decoded.slotsOf(VideoControlItem.fullscreen).length,
+          greaterThanOrEqualTo(3));
+    });
+
+    test('decoding a v2 blob that lists a button in two slots keeps both', () {
+      final String blob = jsonEncode(<String, Object>{
+        'version': 2,
+        'slots': <String, List<String>>{
+          'topLeft': <String>['speed'],
+          'bottomRight': <String>['speed'],
+        },
+      });
+      final VideoControlLayout layout = VideoControlLayout.decode(blob);
+      expect(layout.itemsIn(VideoControlSlot.topLeft),
+          contains(VideoControlItem.speed));
+      expect(layout.itemsIn(VideoControlSlot.bottomRight),
+          contains(VideoControlItem.speed));
+    });
+
+    test('slotsOf returns hidden-only for a hidden button', () {
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .moveItem(VideoControlItem.speed, VideoControlSlot.hidden);
+      expect(layout.slotsOf(VideoControlItem.speed),
+          <VideoControlSlot>[VideoControlSlot.hidden]);
+    });
+  });
+
+  group('TODO-399 decision 2: the center transport block can be moved away',
+      () {
+    test('playPause can be moved out of bottomCenter to another slot', () {
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .moveItem(VideoControlItem.playPause, VideoControlSlot.topLeft);
+      expect(
+          layout.slotOf(VideoControlItem.playPause), VideoControlSlot.topLeft);
+      expect(layout.itemsIn(VideoControlSlot.bottomCenter),
+          isNot(contains(VideoControlItem.playPause)));
+    });
+
+    test('playPause still cannot be fully hidden (pinned guard)', () {
+      final VideoControlLayout layout = VideoControlLayout.defaults
+          .moveItem(VideoControlItem.playPause, VideoControlSlot.hidden);
+      expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
+    });
+
+    test('bottomCenter is an editable slot now (decision 2)', () {
+      expect(VideoControlSlot.editableSlots,
+          contains(VideoControlSlot.bottomCenter));
+    });
+  });
+
+  group('TODO-399 decision 3b: transport / nav keys are customizable too', () {
+    test('customizableItems includes transport/nav keys', () {
+      final List<VideoControlItem> items = VideoControlItem.customizableItems;
+      for (final VideoControlItem transport in <VideoControlItem>[
+        VideoControlItem.playPause,
+        VideoControlItem.seekBackward,
+        VideoControlItem.seekForward,
+        VideoControlItem.previousCue,
+        VideoControlItem.nextCue,
+        VideoControlItem.screenshot,
+        VideoControlItem.subtitleTrack,
+        VideoControlItem.audioTrack,
+        VideoControlItem.episodeList,
+        VideoControlItem.fullscreen,
+        VideoControlItem.speed,
+        VideoControlItem.subtitleList,
+        VideoControlItem.settings,
+      ]) {
+        expect(items, contains(transport),
+            reason: '${transport.name} should be customizable');
+      }
+    });
+
+    test(
+        'special-render items (volume/title/position) stay out of the chip set',
+        () {
+      // These have bespoke widgets (slider / text) the simple icon-chip editor
+      // cannot represent, so they are not user-draggable.
+      final List<VideoControlItem> items = VideoControlItem.customizableItems;
+      expect(items, isNot(contains(VideoControlItem.volume)));
+      expect(items, isNot(contains(VideoControlItem.title)));
+      expect(items, isNot(contains(VideoControlItem.positionIndicator)));
+    });
+  });
+
   group('phase 2 editor catalog (slots + items the picker exposes)', () {
     test('editableSlots == the 6 rendered on-player slots + hidden (TODO-388)',
         () {
@@ -314,17 +485,20 @@ void main() {
       // learning buttons can also be placed near the top (rendered via the same
       // learning-button rail path). topCenter (title chrome) + bottomCenter
       // (transport cluster) stay fixed and are never offered to the user.
+      // TODO-399 decision 2: bottomCenter joined the editable set so the central
+      // transport cluster can be moved. topCenter (fixed title chrome) stays out.
       expect(VideoControlSlot.editableSlots, <VideoControlSlot>[
         VideoControlSlot.topLeft,
         VideoControlSlot.topRight,
         VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomCenter,
         VideoControlSlot.bottomRight,
         VideoControlSlot.screenLeft,
         VideoControlSlot.screenRight,
         VideoControlSlot.hidden,
       ]);
       expect(VideoControlSlot.editableSlots,
-          isNot(contains(VideoControlSlot.bottomCenter)));
+          contains(VideoControlSlot.bottomCenter));
       expect(VideoControlSlot.editableSlots,
           isNot(contains(VideoControlSlot.topCenter)));
     });
