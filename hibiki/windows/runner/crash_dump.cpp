@@ -46,10 +46,10 @@ namespace hibiki
         wchar_t dir[MAX_PATH];
         size_t p = AppendW(dir, local_app_data);
         CoTaskMemFree(local_app_data);
-        p += AppendW(dir + p, L"\Hibiki");
+        p += AppendW(dir + p, L"\\Hibiki");
         dir[p] = L'\0';
         CreateDirectoryW(dir, nullptr);
-        p += AppendW(dir + p, L"\crashdumps");
+        p += AppendW(dir + p, L"\\crashdumps");
         dir[p] = L'\0';
         CreateDirectoryW(dir, nullptr);
 
@@ -57,7 +57,7 @@ namespace hibiki
         wchar_t path[MAX_PATH];
         size_t fp = 0;
         for (size_t i = 0; i < p; ++i) path[fp++] = dir[i];
-        fp += AppendW(path + fp, L"\hibiki-");
+        fp += AppendW(path + fp, L"\\hibiki-");
         fp += AppendDecW(path + fp, GetCurrentProcessId(), 1);
         path[fp++] = L'-';
         fp += AppendDecW(path + fp, GetTickCount(), 1);

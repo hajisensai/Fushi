@@ -47,6 +47,20 @@ void main() {
     expect(logSrc.contains('Hibiki'), isTrue,
         reason:
             'WgcLog must write under LOCALAPPDATA Hibiki (same path as Dart fold-in)');
+    // TODO-398 regression: native wide-string path literals must use an
+    // escaped double backslash. A single backslash separator is an illegal
+    // escape -- MSVC raises C4129 and drops it, so the log would land at
+    // "...LocalAppDataHibikiwgc_capture.log" and the Dart reader
+    // (Hibiki + separator + wgc_capture.log) never finds it. Pin it here.
+    expect(logSrc.contains(r'L"\\Hibiki"'), isTrue,
+        reason:
+            r'wgc_log.cpp must use escaped separator L"\\Hibiki", not single backslash');
+    expect(logSrc.contains(r'L"\\wgc_capture.log"'), isTrue,
+        reason:
+            r'wgc_log.cpp must use escaped separator L"\\wgc_capture.log", not single backslash');
+    expect(RegExp(r'L"\\[^\\]').hasMatch(logSrc), isFalse,
+        reason:
+            r'no single-backslash path literal allowed -- MSVC C4129 drops the separator');
     expect(logSrc.contains('GetCurrentThreadId'), isTrue,
         reason: 'log line must carry thread id');
     expect(logSrc.contains('GetSystemTime'), isTrue,
@@ -133,6 +147,21 @@ void main() {
     expect(crashCpp.contains('Hibiki'), isTrue,
         reason:
             'dump dir should share LOCALAPPDATA Hibiki root with wgc_capture.log');
+    // TODO-398 regression: same escaped-double-backslash invariant as
+    // wgc_log.cpp. A single backslash literal is C4129 in MSVC and drops the
+    // separator, so dumps would land at a malformed concatenated path.
+    expect(crashCpp.contains(r'L"\\Hibiki"'), isTrue,
+        reason:
+            r'crash_dump.cpp must use escaped separator L"\\Hibiki", not single backslash');
+    expect(crashCpp.contains(r'L"\\crashdumps"'), isTrue,
+        reason:
+            r'crash_dump.cpp must use escaped separator L"\\crashdumps", not single backslash');
+    expect(crashCpp.contains(r'L"\\hibiki-"'), isTrue,
+        reason:
+            r'crash_dump.cpp must use escaped separator L"\\hibiki-", not single backslash');
+    expect(RegExp(r'L"\\[^\\]').hasMatch(crashCpp), isFalse,
+        reason:
+            r'no single-backslash path literal allowed -- MSVC C4129 drops the separator');
   });
 
   test(

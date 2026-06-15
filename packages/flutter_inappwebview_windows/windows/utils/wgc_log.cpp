@@ -72,13 +72,13 @@ namespace flutter_inappwebview_plugin
       }
       std::wstring dir(local_app_data);
       CoTaskMemFree(local_app_data);
-      dir += L"\Hibiki";
+      dir += L"\\Hibiki";
       // CreateDirectoryW 在已存在时返回 ERROR_ALREADY_EXISTS，视为成功。
       if (!CreateDirectoryW(dir.c_str(), nullptr) &&
         GetLastError() != ERROR_ALREADY_EXISTS) {
         return std::wstring();
       }
-      return dir + L"\wgc_capture.log";
+      return dir + L"\\wgc_capture.log";
     }();
     return path;
   }
