@@ -30,6 +30,39 @@ abstract class PlatformUpdater {
 /// 本期支持「应用内安装」的平台集合（单一真相源；macOS/Linux 在各自阶段加入）。
 bool platformSupportsInAppInstall() => Platform.isAndroid || Platform.isWindows;
 
+/// Flutter `--split-per-abi` 产出的 Android ABI 标签（CI 的 `app-<abi>-release.apk`
+/// 即据此重命名为 `hibiki-<version>-<abi>.apk`，见 `.github/workflows/release.yml`）。
+/// 作为「stable release 资产命名」单一真相源的一部分，供 [synthesizeStableAssetNames]
+/// 在没有 GitHub API 资产清单时（TODO-404：纯 GFW 下检查只能拿到 302 跳转里的 tag）
+/// 重建候选资产名。
+const List<String> kAndroidReleaseAbis = <String>[
+  'arm64-v8a',
+  'armeabi-v7a',
+  'x86_64',
+];
+
+/// **纯函数**：按 release 资产命名规则，为某个 stable [version]（已 normalize、不带前导
+/// `v`）合成「本应存在于该 release 的可安装资产名」列表。
+///
+/// 根因背景（TODO-404 / BUG-292）：纯 GFW 且无代理时，更新「检查」打 `api.github.com`
+/// 必被镜像 403，唯一可成功的是 `github.com/.../releases/latest` 的 302 网页跳转——但
+/// 它只给得到 tag，给不到 GitHub API 的 `assets` 清单。下载阶段又必须知道精确资产名才
+/// 能拼出 `releases/download/<tag>/<name>`。命名规则本就是确定的（CI 固定生成），故这里
+/// 据 [kAndroidReleaseAbis] + Windows setup 命名把候选资产名重建出来，喂回现有
+/// `selectAsset`（Android 仍按设备真实 ABI 自行挑、Windows 直接命中 setup），不在
+/// update_checker 里硬编码命名、不绕过既有挑包逻辑。
+///
+/// 只覆盖「能应用内安装」的平台（Android / Windows，见 [platformSupportsInAppInstall]）；
+/// 其余平台 `selectAsset` 本就返 null（走打开发布页），无需合成。仅用于 **stable** 通道
+/// （beta/debug 的列表网页经镜像 403，需 TODO-404 方案 B 的 latest.json，本期不做）。
+List<String> synthesizeStableAssetNames(String version) {
+  final List<String> names = <String>[
+    'hibiki-$version-windows-setup.exe',
+    for (final String abi in kAndroidReleaseAbis) 'hibiki-$version-$abi.apk',
+  ];
+  return List<String>.unmodifiable(names);
+}
+
 /// 所有平台都至少支持「检查更新 → 打开发布页」。
 bool platformSupportsUpdateCheck() => true;
 

@@ -464,7 +464,27 @@ class UpdateChecker {
     }).toList(growable: false);
   }
 
+  /// stable 通道检查（TODO-404 根因修复）：**优先**走 `github.com/.../releases/latest`
+  /// 的 302 网页跳转拿最新 tag（公共 gh 代理可透传，纯 GFW 无代理也能成功），据 tag +
+  /// 命名规则重建一个与 API 同构的 release map（[buildStableReleaseFromTag]）；**回退**到
+  /// 原 `api.github.com` 直连（有 VPN/系统代理时更权威、还带真实 assets/release notes）。
+  ///
+  /// 两条路返回值结构一致，对上层 [_fetchReleasesForChannel] /
+  /// [selectUpdateReleaseForCurrentPlatform] 完全透明——纯叠加，不破坏既有行为。
   static Future<Map<String, dynamic>?> _fetchStableRelease(
+      HttpClient client) async {
+    final String? tag = await _fetchStableTagViaRedirect(client);
+    if (tag != null) {
+      final Map<String, dynamic> release = buildStableReleaseFromTag(tag);
+      if (releaseMatchesUpdateChannel(release, UpdateChannel.stable)) {
+        return release;
+      }
+    }
+    return _fetchStableReleaseViaApi(client);
+  }
+
+  /// 原 `api.github.com/.../releases/latest` 直连路径（保留作 302 失败后的回退）。
+  static Future<Map<String, dynamic>?> _fetchStableReleaseViaApi(
       HttpClient client) async {
     final body = await _httpGetString(
       client,
@@ -478,6 +498,57 @@ class UpdateChecker {
       return null;
     }
     return release;
+  }
+
+  /// 逐候选（[updateCheckUrls]：直连优先 + 各 gh 代理前缀兜底）请求
+  /// `releases/latest`，**关重定向跟随**读 3xx 的 `Location` 头，解析出 stable
+  /// 最新 tag；任一候选拿到合法 tag 即整体成功，全失败返 null（TODO-404）。
+  ///
+  /// 复用 [fetchFirstSuccessfulBody] 保持「直连恒首位 / 逐镜像回退 / 任一成功即成功 /
+  /// 全失败才失败 / 失败记日志」不变式（与 [_httpGetString] 同一范式）。
+  static Future<String?> _fetchStableTagViaRedirect(HttpClient client) {
+    return fetchFirstSuccessfulBody(
+      updateCheckUrls(kStableReleasesLatestUrl),
+      fetch: (String u) => _fetchRedirectTagOne(client, u),
+      onFailure: (String host, Object? error) {
+        if (error == null || isExpectedUpdateNetworkFailure(error)) {
+          ErrorLogService.instance.log(
+              'UpdateChecker.redirectTag',
+              t.update_network_failure(
+                host: host,
+                reason: describeUpdateNetworkFailureReason(error),
+              ));
+        } else {
+          ErrorLogService.instance.log('UpdateChecker.redirectTag', error);
+        }
+        debugPrint('[Hibiki] update redirect-tag failed ($host): $error');
+      },
+    );
+  }
+
+  /// 单个候选 URL 的「读 302 → 解析 tag」一次尝试：关闭重定向跟随，3xx 且
+  /// `Location` 头能解析出合法 tag 才返回该 tag（非 null = 成功），否则返 null（让回退
+  /// 继续）。带 [_kPerAttemptTimeout] 整体超时——TCP 连上却挂起的镜像会被判死并回退。
+  static Future<String?> _fetchRedirectTagOne(
+    HttpClient client,
+    String url,
+  ) async {
+    Future<String?> attempt() async {
+      final HttpClientRequest request = await client.getUrl(Uri.parse(url));
+      // 关重定向跟随：我们要的是 302 本身的 Location，而非跟到目标网页拿一坨 HTML。
+      request.followRedirects = false;
+      final HttpClientResponse response = await request.close();
+      final int code = response.statusCode;
+      final String? location =
+          response.headers.value(HttpHeaders.locationHeader);
+      await response.drain<void>();
+      if (code >= 300 && code < 400) {
+        return parseLatestTagFromRedirectLocation(location);
+      }
+      return null;
+    }
+
+    return attempt().timeout(_kPerAttemptTimeout);
   }
 
   static bool _isNewer(String remote, String local) =>
@@ -730,6 +801,77 @@ String hostLabelForUpdateUrl(String url) {
     return url;
   }
 }
+
+/// stable 通道 release 列表页「最新版」入口。GitHub 对它返回 302 → 真实
+/// `.../releases/tag/<tag>` 网页（**不是** API），公共 gh 代理会原样透传这个 302
+/// （实测 ghfast.top 返回 302），所以纯 GFW 无代理用户也能从 `Location` 头解析出最新 tag
+/// （TODO-404 / BUG-292）。与 `_fetchReleasesForChannel` 打的 `api.github.com` 形成
+/// 对比：那个被镜像 403、检查注定失败。
+const String kStableReleasesLatestUrl =
+    'https://github.com/$_kGitHubRepo/releases/latest';
+
+/// release 资产下载基址（`releases/download/<tag>/<name>` 拼在其后）。下载阶段经
+/// [updateCheckUrls] 套镜像前缀；这些「下载」路径镜像真正可用（BUG-292）。
+const String _kReleaseDownloadBase =
+    'https://github.com/$_kGitHubRepo/releases/download';
+
+/// **纯函数**：从 `releases/latest` 的 302 `Location` 头解析最新 tag。
+///
+/// [location] 形如 `https://github.com/owner/repo/releases/tag/v0.4.1`，也可能被镜像
+/// 改写成 `https://ghfast.top/https://github.com/.../releases/tag/v0.4.1`、相对路径
+/// `/owner/repo/releases/tag/v0.4.1`、或带 `?`/`#` 查询片段。安全做法：**只认
+/// `releases/tag/<tag>` 这一段、丢弃域名**（防镜像把域名改写成钓鱼站后我们误信），用
+/// `normalizeReleaseVersionTag` 归一化校验（非版本串返 null）。无 `releases/tag/` 段、
+/// tag 段非合法版本、或入参为空 → 返 null（调用方回退 API 直连）。
+@visibleForTesting
+String? parseLatestTagFromRedirectLocation(String? location) {
+  if (location == null) return null;
+  final RegExpMatch? match =
+      RegExp(r'releases/tag/(v?[^/?#]+)').firstMatch(location);
+  if (match == null) return null;
+  final String rawTag = Uri.decodeComponent(match.group(1)!);
+  final String? normalized = normalizeReleaseVersionTag(rawTag);
+  if (normalized == null || normalized.isEmpty) return null;
+  // 把原始 tag 串保留下来交给下游（download URL 用原始 tag 段，含可能的前导 v），
+  // 但调用方拿到这里的 [normalized] 仅用于「是否更新」判断；tag 段单独由
+  // [buildStableReleaseFromTag] 处理。返回原始 tag 段（trim 后）以便拼下载 URL。
+  return rawTag.trim();
+}
+
+/// **纯函数**：把 302 解析出的 stable [tag] 重建成与 GitHub API release 同构的 map，
+/// 让它能直接喂给现有 [selectUpdateReleaseForCurrentPlatform] / `selectAsset` 整条链路，
+/// 不在更新流程里另搞一套特例分支（TODO-404）。
+///
+/// 302 网页跳转拿不到 API 的 `assets` 清单与 `body`（release notes），故：
+/// * `prerelease: false`、`draft: false`、`tag_name: <tag>` —— 让 stable 通道匹配通过。
+/// * `assets`：用 [synthesizeStableAssetNames] 按命名规则重建（Android 全 ABI + Windows
+///   setup），`browser_download_url` 拼 `releases/download/<tag>/<name>`，由 `selectAsset`
+///   按平台/设备 ABI 自行挑。
+/// * `body: ''`、`html_url`：notes 缺失时上层自然退化到「打开发布页」对话框。
+@visibleForTesting
+Map<String, dynamic> buildStableReleaseFromTag(String tag) {
+  final String trimmedTag = tag.trim();
+  final String version = normalizeReleaseVersionTag(trimmedTag) ?? '';
+  final List<Map<String, dynamic>> assets = <Map<String, dynamic>>[
+    for (final String name in synthesizeStableAssetNames(version))
+      <String, dynamic>{
+        'name': name,
+        'browser_download_url': '$_kReleaseDownloadBase/$trimmedTag/$name',
+      },
+  ];
+  return <String, dynamic>{
+    'tag_name': trimmedTag,
+    'prerelease': false,
+    'draft': false,
+    'body': '',
+    'html_url': '$_kStableReleasesHtmlUrl/tag/$trimmedTag',
+    'assets': assets,
+  };
+}
+
+/// stable release 网页基址（`tag/<tag>` 拼其后，作为 fallback「打开发布页」目标）。
+const String _kStableReleasesHtmlUrl =
+    'https://github.com/$_kGitHubRepo/releases';
 
 @visibleForTesting
 Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(

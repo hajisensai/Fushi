@@ -1,0 +1,11 @@
+## BUG-298 · 更新检查走 github.com release 302 跳转使镜像无代理可用（TODO-404 方案A）
+- **报告**：2026-06-15（用户：）
+- **真实性**：✅ 真 bug（结构性）。根因 `hibiki/lib/src/utils/misc/update_checker.dart`：原 `_fetchStableRelease` 只打 `api.github.com/repos/<repo>/releases/latest`（旧 471 行附近），而所有公共 gh 代理镜像对 `api.github.com` 一律 403（GitHub 对镜像共享出口 IP 的 API 限流，见 BUG-292）。镜像只代理 `github.com` / `raw.githubusercontent.com` 的下载/网页路径（实测 `github.com/.../releases/latest` 经 ghfast.top 返回 302 透传）。故纯 GFW 无代理用户在「检查」阶段全候选必失败——无论加多少 API 镜像都修不了。
+- **[x] ① 已修复** — 提交于分支 `fix/todo-404-mirror-updatecheck`（worktree HEAD，未 push/未合 develop）。方案A（零 CI 改动）：stable 通道「检查」**优先**抓 `github.com/<repo>/releases/latest` 的 302 跳转、从 `Location` 头解析最新 tag，据命名规则重建与 API 同构的 release map 喂回现有挑包链路；**回退**到原 `api.github.com` 直连（有 VPN/系统代理时更权威、还带真实 assets/release notes）。保留「直连优先 + 逐镜像回退 + TODO-384 系统/env 代理（applyUpdateProxy）」，纯叠加向后兼容。
+  - 新增纯函数 `parseLatestTagFromRedirectLocation(String? location) -> String?`：正则 `releases/tag/(v?[^/?#]+)` 只认 tag 段、丢弃域名（防镜像改写域名诱导），`normalizeReleaseVersionTag` 校验。
+  - 新增纯函数 `buildStableReleaseFromTag(String tag) -> Map<String, dynamic>`：用 tag + `platform_updater.dart` 的 `synthesizeStableAssetNames` 合成 assets（`releases/download/<tag>/<name>`），`prerelease:false`/`body:''`，下游 `selectAsset` 按平台/设备 ABI 自行挑；notes 缺失时上层自然退化「打开发布页」。
+  - 新增 `synthesizeStableAssetNames(String version) -> List<String>`（`platform_updater.dart`，资产命名单一真相源：Windows setup + `kAndroidReleaseAbis` 全 ABI apk）。
+  - 新增 `_fetchStableTagViaRedirect` / `_fetchRedirectTagOne`（static）：逐候选 `updateCheckUrls`、`followRedirects=false` 读 3xx `Location`，复用 `fetchFirstSuccessfulBody` 保「直连恒首位/逐镜像回退/全失败才失败」不变式。
+  - 覆盖边界：**仅 stable**。beta/debug 仍走 `api.github.com` 直连（其 `/releases` 列表网页经镜像也 403，需方案B 的 latest.json，本期不做，保持现状不退化）。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/update_checker_redirect_tag_test.dart`（22 例）：`parseLatestTagFromRedirectLocation`（直连/镜像前缀/相对路径/带查询锚点/无 v/无 tag/登录跳转/null/空）、`synthesizeStableAssetNames`（命名+不可变）、`buildStableReleaseFromTag`（含 v tag 拼 download URL、stable 通道匹配、Windows/Android `selectAsset` 选包）、`fetchFirstSuccessfulBody` 注入 302 候选回退（直连首位失败回退镜像、全失败返 null）。复用现有 `update_checker_mirror_fallback_test.dart`「直连恒首位」不变式不破坏。`flutter test test/utils/misc/` 163 例全绿，`flutter analyze` 0 issue。
+- **备注**：真机未复测（需 GFW 无代理环境真机点「检查更新」走镜像验证 302→tag→选包→下载，留待用户设备验证）。本修复不动 download 阶段（已经走镜像）与 applyUpdateProxy。
