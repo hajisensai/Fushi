@@ -101,22 +101,21 @@ function isLatestEditable(expression, reading) {
         lastMinedEntryKey === mineEntryKey(expression, reading);
 }
 
-// TODO-393「查词窗口句子上下文制卡」(取代 TODO-382 单按钮逐句追加)：弹窗里选「上 N 句
-// / 下 N 句」把当前正查句之前/之后的 N 句作上下文纳入这张制卡的 sentence 字段。
+// TODO-393/405「查词窗口句子上下文制卡」(取代 TODO-382 单按钮逐句追加)：弹窗里用「➕➖
+// 递增递减步进器」把当前正查句之前/之后的 N 句作上下文纳入这张制卡的 sentence 字段。
 //
 // 数据流：JS 不持有句子文本/音频区间（都由宿主 Dart 的 MiningSentenceDraft 拥有），只
-// 镜像两个标量「上几句 / 下几句」用于驱动选择器高亮：
-//   - 点「上 N」/「下 N」→ callHandler('setSentenceContext', {prev, next}) → 宿主按这两个
-//     数解析上下文句**整体替换**草稿 → 回传上下文句总数（上 N + 下 N）。
+// 镜像两个标量「上几句 / 下几句」用于驱动步进器计数显示：
+//   - 点➕（该方向 n+=1）/ 点➖（该方向 max(0, n-1)）→ callHandler('setSentenceContext',
+//     {prev, next}) → 宿主按这两个数解析上下文句**整体替换**草稿 → 回传上下文句总数
+//     （上 N + 下 N）。JS 镜像的是「请求几句」，真实合成由宿主按真句边界封顶。
 //   - 制卡成功（mineEntry）/ 换词查词 → 宿主清空草稿 → JS 把两个镜像标量归零。
-// 上下文是「选多少句」的标量，不是累加动作：再点「上 2」覆盖「上 1」，不会越攒越多。
+// 上下文是「选多少句」的标量：➕➖只是把这个标量升 1 / 降 1（整体替换草稿），不是把句子
+// 越攒越多地累加进 JS。JS 不设硬上限——由宿主的段落/cue 边界天然封顶。
 let sentenceCtxPrev = 0;
 let sentenceCtxNext = 0;
 // 兼容守卫/旧调用：保留镜像总数（上 N + 下 N）。
 let sentenceDraftCount = 0;
-
-// 上下文选择器每个方向提供的快捷句数（上 1/2/3/4，下 1/2/3/4）。0 表示「不取该方向」。
-const SENTENCE_CONTEXT_STEPS = [0, 1, 2, 3, 4];
 
 // 刷新页面上所有句子上下文选择器的视觉态（多词条头共享同一对镜像标量）。
 // querySelectorAll 不可用时（极端 fake DOM）静默跳过，不影响制卡主流程。
@@ -129,16 +128,20 @@ function refreshAllSentenceContextPickers() {
         .forEach(refreshClearDraftButton);
 }
 
-// 把一个上下文选择器里所有「上 N」「下 N」 step 按钮的选中态同步到镜像标量。
+// 把一个上下文步进器里两个方向的计数显示同步到镜像标量：更新计数文本、n>0 时给计数加
+// .selected（绿色高亮），并在 n<=0 时禁用对应方向的➖（不能再减到负）。
 function refreshSentenceContextPicker(picker) {
     if (!picker || typeof picker.querySelectorAll !== 'function') return;
-    picker.querySelectorAll('.context-step').forEach(function(btn) {
+    picker.querySelectorAll('.context-count').forEach(function(count) {
+        const dir = count.dataset.dir;
+        const n = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+        count.textContent = String(n);
+        count.classList.toggle('selected', n > 0);
+    });
+    picker.querySelectorAll('.context-stepper-btn.minus').forEach(function(btn) {
         const dir = btn.dataset.dir;
-        const n = parseInt(btn.dataset.count, 10) || 0;
-        const active = dir === 'prev'
-            ? n === sentenceCtxPrev
-            : n === sentenceCtxNext;
-        btn.classList.toggle('selected', active);
+        const n = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+        btn.disabled = n <= 0;
     });
 }
 
@@ -188,34 +191,46 @@ window.resetSentenceContextMirror = function() {
     sentenceDraftCount = 0;
 };
 
-// 构造一个句子上下文选择器：两行「上 0/1/2/3/4」+「下 0/1/2/3/4」 step 按钮。点某个数
-// 就把该方向的上下文句数设成它（0=不取该方向），整组重发宿主。
+// 构造一个句子上下文步进器：两行「上 [➖][N][➕]」+「下 [➖][N][➕]」。点➕该方向 n+=1、点
+// ➖该方向 max(0, n-1)，把该方向的上下文句数整组重发宿主。无 JS 硬上限——由宿主的段落/
+// cue 边界天然封顶（镜像可继续升、宿主合成时按真句封顶）。
 function buildSentenceContextPicker() {
     const picker = el('div', { className: 'sentence-context-picker' });
+    const setDirCount = async function(dir, n) {
+        if (picker.dataset.busy === '1') return;
+        picker.dataset.busy = '1';
+        try {
+            if (dir === 'prev') sentenceCtxPrev = n;
+            else sentenceCtxNext = n;
+            sentenceDraftCount = await setSentenceContextOnHost();
+            refreshAllSentenceContextPickers();
+        } finally {
+            picker.dataset.busy = '';
+        }
+    };
+    const makeStepperBtn = function(dir, sign, symbol) {
+        const btn = el('button', {
+            className: 'context-stepper-btn ' + sign,
+            textContent: symbol,
+        });
+        btn.dataset.dir = dir;
+        btn.onclick = function() {
+            const cur = dir === 'prev' ? sentenceCtxPrev : sentenceCtxNext;
+            const next = sign === 'plus' ? cur + 1 : Math.max(0, cur - 1);
+            // 已到 0 再点➖是空操作（避免无谓重发宿主）。
+            if (next === cur) return;
+            setDirCount(dir, next);
+        };
+        return btn;
+    };
     const makeRow = function(dir, label) {
         const row = el('div', { className: 'context-row' });
         row.appendChild(el('span', { className: 'context-label', textContent: label }));
-        SENTENCE_CONTEXT_STEPS.forEach(function(n) {
-            const btn = el('button', {
-                className: 'context-step',
-                textContent: String(n),
-            });
-            btn.dataset.dir = dir;
-            btn.dataset.count = String(n);
-            btn.onclick = async function() {
-                if (picker.dataset.busy === '1') return;
-                picker.dataset.busy = '1';
-                try {
-                    if (dir === 'prev') sentenceCtxPrev = n;
-                    else sentenceCtxNext = n;
-                    sentenceDraftCount = await setSentenceContextOnHost();
-                    refreshAllSentenceContextPickers();
-                } finally {
-                    picker.dataset.busy = '';
-                }
-            };
-            row.appendChild(btn);
-        });
+        row.appendChild(makeStepperBtn(dir, 'minus', '➖'));
+        const count = el('span', { className: 'context-count', textContent: '0' });
+        count.dataset.dir = dir;
+        row.appendChild(count);
+        row.appendChild(makeStepperBtn(dir, 'plus', '➕'));
         return row;
     };
     picker.appendChild(makeRow('prev', window.i18nContextPrevLabel || '上'));

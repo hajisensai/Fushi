@@ -153,10 +153,10 @@ body {
     opacity: 0.15;
 }
 
-/* TODO-393「查词窗口句子上下文制卡」：「上 N 句 / 下 N 句」上下文选择器。两行（上/下），
-   每行一个方向标签 + 0/1/2/3/4 个 step 按钮。选中的句数高亮（绿色）。整组挂在词条头按钮
-   行里，紧凑、不抢制卡/发音按钮的位置。仅在宿主接受 setSentenceContext 时渲染
-   （书籍/有声书/视频；纯查词页无句子上下文不显示）。*/
+/* TODO-393/405「查词窗口句子上下文制卡」：「上 N 句 / 下 N 句」上下文步进器。两行（上/下），
+   每行一个方向标签 + [➖减][计数][➕加]：点➕该方向句数 +1、点➖ -1（递增递减，不是固定档）。
+   计数 n>0 时绿色高亮。整组挂在词条头按钮行里，紧凑、不抢制卡/发音按钮的位置。仅在宿主
+   接受 setSentenceContext 时渲染（书籍/有声书/视频；纯查词页无句子上下文不显示）。*/
 .sentence-context-picker {
     display: flex;
     flex-direction: column;
@@ -178,24 +178,39 @@ body {
     text-align: center;
 }
 
-.sentence-context-picker .context-step {
-    min-width: 16px;
-    padding: 0 3px;
+.sentence-context-picker .context-stepper-btn {
+    width: 16px;
+    height: 16px;
+    padding: 0;
     border: none;
     background: transparent;
     color: inherit;
-    font-size: 12px;
-    line-height: 1.4;
-    opacity: 0.5;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+    opacity: 0.55;
     border-radius: 3px;
     -webkit-user-select: none;
 }
 
-.sentence-context-picker .context-step:hover {
-    opacity: 0.85;
+.sentence-context-picker .context-stepper-btn:hover {
+    opacity: 0.9;
 }
 
-.sentence-context-picker .context-step.selected {
+.sentence-context-picker .context-stepper-btn:disabled {
+    opacity: 0.2;
+}
+
+.sentence-context-picker .context-count {
+    min-width: 12px;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    opacity: 0.5;
+    -webkit-user-select: none;
+}
+
+.sentence-context-picker .context-count.selected {
     color: #2e9e4f;
     opacity: 1;
     font-weight: 600;

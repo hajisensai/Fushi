@@ -1,9 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-393「查词窗口句子上下文制卡」：弹窗 popup.js 必须暴露「上 N 句 / 下 N 句」上下文
-/// 选择器，把当前句前/后 N 句作上下文发给宿主（callHandler('setSentenceContext')），并只
-/// 在宿主接受时渲染。这些守卫钉死 JS 资产本身的关键接线，防回归。
+/// TODO-393/405「查词窗口句子上下文制卡」：弹窗 popup.js 必须暴露「上 N 句 / 下 N 句」上下文
+/// 步进器（➕➖递增递减，非固定档），把当前句前/后 N 句作上下文发给宿主
+/// （callHandler('setSentenceContext')），并只在宿主接受时渲染。这些守卫钉死 JS 资产本身
+/// 的关键接线，防回归。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -48,9 +49,12 @@ void main() {
     expect(js, contains('sentenceCtxNext = 0;'));
   });
 
-  test('css styles the context picker and its selected step', () {
+  test('css styles the context picker stepper buttons and count', () {
     expect(css, contains('.sentence-context-picker'));
-    expect(css, contains('.context-step'));
-    expect(css, contains('.sentence-context-picker .context-step.selected'));
+    // TODO-405: the picker is now a ➕➖ stepper, not fixed step buttons.
+    expect(css, contains('.context-stepper-btn'));
+    expect(css, contains('.context-count'));
+    // Selected (n>0) count is highlighted green.
+    expect(css, contains('.sentence-context-picker .context-count.selected'));
   });
 }
