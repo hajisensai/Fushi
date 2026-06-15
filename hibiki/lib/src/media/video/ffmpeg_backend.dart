@@ -116,6 +116,34 @@ bool _isWindowsInvalidImageFormatExitCode(
       returnCode == _windowsStatusInvalidImageFormatUnsigned;
 }
 
+/// 判断 bundled ffmpeg 的执行结果是否「跑起来了但根本没产出 ffmpeg 的工作输出」
+/// ——即「文件存在却无法真正初始化为 ffmpeg」，应回退 PATH（BUG-283）。
+///
+/// 背景（续 BUG-275）：BUG-275 修了 bundled `Process.start` 阶段抛 ProcessException
+/// 的回退，但还有一类损坏让 `Process.start` **成功**、进程真的起来、随后才在加载期
+/// 崩掉——典型是 STATUS_DLL_NOT_FOUND(0xC0000135) / STATUS_ENTRYPOINT_NOT_FOUND
+/// (0xC0000139)：bundled ffmpeg.exe 本体没坏，但它依赖的 avcodec/avformat 等 DLL 被
+/// 杀软隔离或漏打包。此时退出码不是 BUG-275 认的 STATUS_INVALID_IMAGE_FORMAT，
+/// 旧逻辑直接把这条空结果原样返回，从不回退 PATH → 字幕枚举拿到空 stderr → 解析出
+/// 零条轨 → **无异常、无回退、静默无内封字幕**（用户报「读取不到内封字幕了」）。
+///
+/// 不死盯具体退出码（不同损坏方式码各异），改用一个稳健的语义信号：**一个真正能跑
+/// 的 ffmpeg，无论退出码是否为 0，都会往 stderr 写东西**（banner / version /
+/// `-i` 的流信息 / 真错误）。所以「退出码非 0、非超时（null）、且 stderr 完全为空」
+/// 就是「这个二进制没真正运行起来」的标志，唯一正确处置是回退 PATH 的 ffmpeg。
+///
+/// 排除项（这些**不**回退，保持原契约）：
+/// - `returnCode == null`（超时被 SIGKILL）：是慢 IO 而非坏二进制，回退会让用户再等
+///   一遍同样慢的文件；调用方按超时降级。
+/// - `returnCode == 0`（成功）：哪怕 stderr 恰好为空也是成功（如某些 extract 只写
+///   输出文件、不写 stderr）。
+/// - `output` 非空：ffmpeg 确实跑了（即便退出码非 0，如 `-i` 无输出文件恒非 0）。
+bool _bundledProducedNoUsableOutput(FfmpegRunResult result) {
+  final int? code = result.returnCode;
+  if (code == null || code == 0) return false;
+  return result.output.trim().isEmpty;
+}
+
 Future<FfmpegRunResult> _runCliFfmpeg({
   required String? override,
   required String? bundledPath,
@@ -134,14 +162,21 @@ Future<FfmpegRunResult> _runCliFfmpeg({
     try {
       final FfmpegRunResult bundledResult =
           await runner(bundled, args, timeout);
-      if (!_isWindowsInvalidImageFormatExitCode(
-        bundledResult.returnCode,
-        isWindows: isWindows,
-      )) {
+      // 回退条件统一：① Windows STATUS_INVALID_IMAGE_FORMAT 退出码（BUG-275 实证的
+      // 损坏 PE）② bundled 跑起来了但完全没产出 ffmpeg 工作输出（DLL 缺失等加载期崩，
+      // BUG-283）——两者都意味着 bundled 这个文件无法真正当 ffmpeg 用，回退 PATH。
+      // 其余结果（含 `-i` 恒非 0 但 stderr 满是流信息的正常枚举）原样返回。
+      final bool fallBack = _isWindowsInvalidImageFormatExitCode(
+            bundledResult.returnCode,
+            isWindows: isWindows,
+          ) ||
+          _bundledProducedNoUsableOutput(bundledResult);
+      if (!fallBack) {
         return bundledResult;
       }
       debugPrint(
-        '[hibiki-ffmpeg] bundled ffmpeg is STATUS_INVALID_IMAGE_FORMAT; '
+        '[hibiki-ffmpeg] bundled ffmpeg ran but produced no usable output '
+        '(returnCode=${bundledResult.returnCode}); '
         'falling back to PATH ffmpeg: $bundled',
       );
     } on ProcessException catch (e) {
