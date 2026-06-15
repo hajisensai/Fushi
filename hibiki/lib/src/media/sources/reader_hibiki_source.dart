@@ -1162,29 +1162,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   // ── Furigana helpers ────────────────────────────────────────────────
 
-  static String normalizeFuriganaMode(String mode) {
-    final String lower = mode.toLowerCase();
-    switch (lower) {
-      case 'show':
-      case 'hide':
-      case 'partial':
-      case 'toggle':
-        return lower;
-      default:
-        return 'show';
-    }
-  }
+  // 单一真相在 [ReaderSettings]；这两个同名方法只转调，消除重复 switch
+  // （历史上 source 与 settings 各写一份，改一处忘另一处即漂移）。
+  static String normalizeFuriganaMode(String mode) =>
+      ReaderSettings.normalizeFuriganaMode(mode);
 
-  static String furiganaModeToStyle(String mode) {
-    switch (normalizeFuriganaMode(mode)) {
-      case 'hide':
-        return 'Hide';
-      case 'partial':
-        return 'Partial';
-      case 'toggle':
-        return 'Toggle';
-      default:
-        return 'Show';
-    }
-  }
+  static String furiganaModeToStyle(String mode) =>
+      ReaderSettings.furiganaModeToStyle(mode);
 }
