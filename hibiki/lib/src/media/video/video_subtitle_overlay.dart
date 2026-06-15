@@ -43,6 +43,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   const VideoSubtitleOverlay({
     required this.controller,
     this.onCharTap,
+    this.onHoverChanged,
     this.hitTester,
     this.isCueFavorited,
     this.blurEnabled = false,
@@ -66,6 +67,12 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// [charRect] 为被点字符在全局坐标系下的矩形（弹窗定位用）。
   final void Function(String sentence, int graphemeIndex, Rect charRect)?
       onCharTap;
+
+  /// 鼠标进 / 出**字幕盒本身**（非整片视频区）时回调（BUG-283）。桌面用：字幕盒覆盖在
+  /// media_kit 控制条之上，鼠标停字幕上读字 / 查词时，media_kit 控制条 2s 自动隐藏会让
+  /// 画面光标被 `hideMouseOnControlsRemoval` 隐藏（用户报「鼠标放字幕上消失」）。页面据
+  /// 本回调在 hover 字幕时唤回光标 + 续命控制条。null（测试 / 有声书 / 无控制条）= 不挂。
+  final void Function(bool hovering)? onHoverChanged;
 
   /// 可选的字符命中句柄：build 时把按全局坐标反查字符的实现绑进来，供查词浮层的
   /// dismiss barrier「点同句换词保持暂停」用（见 [VideoSubtitleHitTester]）。
@@ -328,15 +335,25 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
           );
         }
 
-        // 桌面悬停显形/移开复原（移动端无 hover，靠上面的点击热区）。opaque:false：
-        // 本 MouseRegion 收 hover 的同时不阻断 hover hit-test 继续下探到 media_kit 的
-        // `MouseRegion` → 鼠标在字幕上时字幕显形与控制条唤起并存、光标不被吞
-        // （BUG-198）。
-        final Widget hoverable = widget.blurEnabled
+        // 桌面悬停：①听力沉浸显形/复原（blurEnabled）②向页面回报 hover 字幕盒，让页面
+        // 唤回光标 + 续命控制条（[onHoverChanged]，BUG-283——鼠标停字幕上读字时不被
+        // media_kit 自动隐藏吞掉光标）。两者合一个 MouseRegion。opaque:false：本 region 收
+        // hover 的同时不阻断 hover hit-test 继续下探到 media_kit 的 `MouseRegion` → 鼠标在
+        // 字幕上时字幕显形 / 查词 / 控制条唤起并存、光标不被吞（BUG-198）。仅在确需 hover
+        // （blur 或注册了 onHoverChanged）时挂，否则透传 box（外观像素级不变）。
+        final bool needHover =
+            widget.blurEnabled || widget.onHoverChanged != null;
+        final Widget hoverable = needHover
             ? MouseRegion(
                 opaque: false,
-                onEnter: (_) => _setRevealed(true),
-                onExit: (_) => _setRevealed(false),
+                onEnter: (_) {
+                  if (widget.blurEnabled) _setRevealed(true);
+                  widget.onHoverChanged?.call(true);
+                },
+                onExit: (_) {
+                  if (widget.blurEnabled) _setRevealed(false);
+                  widget.onHoverChanged?.call(false);
+                },
                 child: box,
               )
             : box;

@@ -66,10 +66,13 @@ void main() {
       'Widget _buildVideoSideActionRail(',
       'Widget _buildSideLockButton(',
     );
-    // gate 一行可能被 dart format 折行，故只断言两个并列条件都在 gate 块里出现。
-    final int gateIdx = body.indexOf('if (!controlsVisible ||');
+    // gate 一行可能被 dart format 折行，故只断言并列条件都在 gate 块里出现。
+    // BUG-284：rail 显隐判据从 `!controlsVisible` 收紧为 `(!controlsVisible &&
+    // !railHovered)`（hover 期间不被收走防闪烁），沉浸锁 / 侧栏门控仍并列在内。
+    final int gateIdx =
+        body.indexOf('if ((!controlsVisible && !railHovered) ||');
     expect(gateIdx, greaterThanOrEqualTo(0),
-        reason: 'rail 应有 !controlsVisible gate');
+        reason: 'rail 应有 (!controlsVisible && !railHovered) gate（BUG-284）');
     final int braceIdx =
         body.indexOf('return const SizedBox.shrink();', gateIdx);
     expect(braceIdx, greaterThan(gateIdx), reason: 'gate 块应闭合到 shrink');

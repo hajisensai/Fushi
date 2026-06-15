@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
@@ -525,6 +526,57 @@ void main() {
       await tester.pump();
       expect(find.byType(ImageFiltered), findsNothing,
           reason: '查词/暂停时字幕不该再被打码（BUG-199）');
+    });
+  });
+
+  group('BUG-284 hover 字幕盒回报 onHoverChanged（页面据此唤回光标 + 续命控制条）', () {
+    testWidgets('鼠标进 / 出字幕盒分别回调 true / false', (tester) async {
+      final VideoPlayerController c = _controllerWithCue('A');
+      final List<bool> events = <bool>[];
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(
+          controller: c,
+          onHoverChanged: events.add,
+        ),
+      );
+
+      final TestGesture gesture =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+
+      // 移到字幕字符上 → onHoverChanged(true)。
+      await gesture.moveTo(tester.getCenter(find.text('A')));
+      await tester.pump();
+      expect(events, contains(true),
+          reason: '鼠标进字幕盒应回报 hover=true（页面据此唤回光标，BUG-284）');
+
+      // 移出到角落 → onHoverChanged(false)。
+      await gesture.moveTo(const Offset(2, 2));
+      await tester.pump();
+      expect(events.last, isFalse, reason: '鼠标出字幕盒应回报 hover=false');
+    });
+
+    testWidgets('注册 onHoverChanged 才挂字幕盒 hover 追踪（非 blur 基线对照）',
+        (tester) async {
+      // 对照同一非 blur 布局：注册 onHoverChanged 比不注册多出恰一个用于追踪字幕盒
+      // hover 的 MouseRegion（仅 hover 需要时才挂，否则透传 box，保外观零变化，BUG-284）。
+      final VideoPlayerController c1 = _controllerWithCue('A');
+      await _pump(tester, VideoSubtitleOverlay(controller: c1));
+      final int baseline = find.byType(MouseRegion).evaluate().length;
+
+      final VideoPlayerController c2 = _controllerWithCue('A');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(controller: c2, onHoverChanged: (_) {}),
+      );
+      final int withHover = find.byType(MouseRegion).evaluate().length;
+
+      expect(withHover, baseline + 1,
+          reason: '注册 onHoverChanged 应恰多挂一个字幕盒 hover MouseRegion；'
+              '不注册时透传 box 不引入额外层（外观零变化）');
     });
   });
 }

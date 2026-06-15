@@ -526,6 +526,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// notifier 才能让窗口与全屏两种场景字幕都随控制条显隐上顶 / 落回。
   final ValueNotifier<bool> _videoControlsVisible = ValueNotifier<bool>(false);
 
+  /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
+  ///
+  /// 根因：rail 按钮是 opaque 的 [IconButton]，叠在 media_kit 桌面控制条那个**全画面**
+  /// hover-tracking [MouseRegion] 之上。鼠标移到 rail 按钮上时，Flutter MouseTracker 把
+  /// 最顶命中切到按钮 → media_kit 的 `MouseRegion.onExit` 触发 → 它**立即**把 `visible`
+  /// 置 false（见 media_kit `material_desktop.dart` 的 `onExit`）→ [_videoControlsVisible]
+  /// 派生为 false → rail [SizedBox.shrink] 消失 → 鼠标位置下方重新变成 media_kit region →
+  /// `onEnter` 把 visible 拉回 true → rail 重现 → 鼠标又落按钮上 → 每帧级别快速闪烁。
+  ///
+  /// 修复（消除特殊情况，而非去抖/延迟掩盖）：rail 的显隐判据改为
+  /// `[_videoControlsVisible] || 鼠标正悬在 rail 上`。鼠标进 rail 即置本标记 true，rail 在
+  /// hover 期间永不被 media_kit 的瞬时 visible 抖动收走 → 振荡根除。进 rail 同时
+  /// [_pokeControlsVisible] 喂合成 hover 给 media_kit（其自身设计的续命路径），底层控制条
+  /// 也跟着保持，观感统一。仅桌面有 hover 语义（移动端无，[ValueNotifier] 恒 false 不影响）。
+  final ValueNotifier<bool> _railHovered = ValueNotifier<bool>(false);
+
   /// 视频左侧常驻锁 / 解锁按钮（TODO-126）的可见性。非沉浸态显示锁图标（进入沉浸）、
   /// 沉浸态显示解锁图标（退出沉浸）——两态用同一枚侧边按钮（[_buildSideLockButton]）。
   ///
@@ -1817,6 +1833,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _osdNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _videoControlsVisible.dispose();
+    _railHovered.dispose();
     _cursorHidden.dispose();
     super.dispose();
   }
@@ -2006,6 +2023,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _handleVideoControlsHoverExit(PointerEvent event) {
     if (_isSyntheticControlsHover(event)) return;
     _onVideoControlsHoverExit();
+  }
+
+  /// 鼠标进 / 出**字幕盒**（BUG-283）。字幕盒覆盖在 media_kit 控制条之上：鼠标停字幕上
+  /// 读字 / 查词时，控制条 2s 自动隐藏会让 media_kit 的 `hideMouseOnControlsRemoval` 把
+  /// 画面光标隐藏（再叠上 hibiki 顶层 [_cursorHidden] 的 cursor:none）——用户报「鼠标放
+  /// 字幕上消失」。hover 字幕时唤回光标（[_setCursorHidden]false 让顶层胜出层让位）并
+  /// [_pokeControlsVisible] 续命控制条（避免 media_kit `mount=false` 让它自己的 cursor 置
+  /// none）；移出由 media_kit / 自动隐藏定时按既有路径接管，不强制改光标。仅桌面有 OS 光标
+  /// 语义，[_setCursorHidden] / [_pokeControlsVisible] 内部已各自桌面门控。
+  void _handleSubtitleHover(bool hovering) {
+    if (!mounted || !hovering) return;
+    _setCursorHidden(false);
+    _pokeControlsVisible();
   }
 
   /// 唤回视频左侧锁 / 解锁按钮并重置 2s 自动淡出（TODO-126）。鼠标移动（hover）/ 触屏点画面
@@ -5782,6 +5812,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   child: VideoSubtitleOverlay(
                     controller: controller,
                     onCharTap: _handleSubtitleLookupTap,
+                    onHoverChanged: _handleSubtitleHover,
                     hitTester: _subtitleHitTester,
                     // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
                     // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
@@ -5834,6 +5865,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 给浮动 rail 的按钮列套「hover 保活」MouseRegion（BUG-283）。`opaque:false`：不阻断
+  /// 指针下探到下层 chrome / media_kit（按钮点击、画面 hover 不受影响，沿用 BUG-198 的
+  /// non-opaque 纪律）。鼠标进按钮列即置 [_railHovered]=true → rail 显隐判据据此保持显示，
+  /// 杜绝「opaque 按钮遮挡 media_kit MouseRegion 触发 onExit → 收 rail → 重新 onEnter」的
+  /// 闪烁振荡；同时 [_pokeControlsVisible] 喂合成 hover 让底层控制条一并保活（media_kit 自
+  /// 身设计的续命路径）。移出按钮列置 false，rail 可见性回落到 [_videoControlsVisible]，鼠标
+  /// 落回画面会命中 media_kit region 自然续命、2s 后随控制条一起淡出。仅桌面挂（移动端无
+  /// hover，透传 child 零开销）。
+  Widget _railHoverKeepAlive({required Widget child}) {
+    if (!_isDesktopVideoControls) return child;
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) {
+        _railHovered.value = true;
+        _pokeControlsVisible();
+      },
+      onHover: (_) {
+        // 鼠标在按钮列内移动时持续保活：续命 media_kit 控制条隐藏定时，避免停留期 timer
+        // 到期把底层控制条收走（rail 本身由 [_railHovered] 顶住、不受影响）。
+        _railHovered.value = true;
+        _pokeControlsVisible();
+      },
+      onExit: (_) => _railHovered.value = false,
+      child: child,
+    );
+  }
+
   /// 浮动侧栏（TODO-274/312 phase 2）：把 screenLeft / screenRight 两个屏幕侧槽的
   /// 自定义学习按钮分别渲染成左 / 右两条竖直浮条。默认配置只用 screenRight
   /// （[subtitleList, favoriteSentence, favoriteSentences, settings]，与 legacy
@@ -5851,13 +5909,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       const EdgeInsets.only(left: 12),
     );
     return Positioned.fill(
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _videoControlsVisible,
-        builder: (BuildContext context, bool controlsVisible, __) {
+      // rail 的显隐由「控制条可见」**或**「鼠标正悬在 rail 上」决定（BUG-283）：后者保证
+      // hover 期间 rail 永不被 media_kit 控制条的瞬时 visible 抖动收走，根除 opaque 按钮
+      // 遮挡 media_kit MouseRegion 触发 onExit → 收 rail → 重新 onEnter 的闪烁振荡。
+      child: ListenableBuilder(
+        listenable:
+            Listenable.merge(<Listenable>[_videoControlsVisible, _railHovered]),
+        builder: (BuildContext context, __) {
+          final bool controlsVisible = _videoControlsVisible.value;
+          final bool railHovered = _railHovered.value;
           // 沉浸锁或侧栏打开（BUG-253）时一律不显示侧栏——面板盖在它上面、背景操作
           // 按钮不该再冒出来。controlsVisible 在面板期间已被强制 false，这里再显式门控
-          // [_videoSidePanel] 做双保险。
-          if (!controlsVisible ||
+          // [_videoSidePanel] 做双保险。railHovered 也受同样门控（沉浸/侧栏下 rail 本就不
+          // 渲染、不会有 hover）。
+          if ((!controlsVisible && !railHovered) ||
               _immersiveLocked.value ||
               _videoSidePanel.value != null) {
             return const SizedBox.shrink();
@@ -5882,24 +5947,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: SafeArea(
         child: Padding(
           padding: padding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final VideoControlButton button in buttons) ...<Widget>[
-                Material(
-                  color: Colors.black.withValues(alpha: 0.42),
-                  shape: const CircleBorder(),
-                  clipBehavior: Clip.antiAlias,
-                  child: IconButton(
-                    tooltip: _videoControlButtonTooltip(button),
-                    icon: Icon(_videoControlButtonIcon(button)),
-                    color: Colors.white,
-                    onPressed: () => _activateVideoControlButton(button),
+          // 只在真正的按钮列上挂 keep-alive hover（不是整片 Positioned.fill）——否则鼠标
+          // 在画面任意处都会被当成「悬在 rail 上」、rail 永不淡出（BUG-283）。
+          child: _railHoverKeepAlive(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (final VideoControlButton button in buttons) ...<Widget>[
+                  Material(
+                    color: Colors.black.withValues(alpha: 0.42),
+                    shape: const CircleBorder(),
+                    clipBehavior: Clip.antiAlias,
+                    child: IconButton(
+                      tooltip: _videoControlButtonTooltip(button),
+                      icon: Icon(_videoControlButtonIcon(button)),
+                      color: Colors.white,
+                      onPressed: () => _activateVideoControlButton(button),
+                    ),
                   ),
-                ),
-                if (button != buttons.last) const SizedBox(height: 8),
+                  if (button != buttons.last) const SizedBox(height: 8),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

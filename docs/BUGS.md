@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 277 条。点号进各自文件。
+> 共 278 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-284](bugs/BUG-284-video-control-rail-flicker-cursor-vanish.md) | ✅ | ✅ | 视频右侧控制按钮闪烁 + 鼠标放字幕上光标消失 (TODO-373) |
 | [BUG-283](bugs/BUG-283-bundled-ffmpeg-empty-output-fallback.md) | ✅ | ✅ | Bundled ffmpeg 跑起来却空输出时不回退 PATH 致内封字幕枚举静默失败 |
 | [BUG-282](bugs/BUG-282-audiobook-highlight-offset-regression.md) | ✅ | ✅ | 有声书播放高亮按句漂移：不可命中cue回落污染单调游标，后续可命中cue被推偏(TODO-366 BUG-060跟进) |
 | [BUG-281](bugs/BUG-281-subtitle-avoid-direction-race.md) | ✅ | ✅ | 字幕避让方向反/竞态：避让与控制条可见性未用同一真相源 |
