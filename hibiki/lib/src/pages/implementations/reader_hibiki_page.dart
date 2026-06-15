@@ -71,13 +71,14 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
+import 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart';
+// Re-export so existing references to `CaretSurface` via the reader page,
+// and the source-scan guards that read this file, still resolve the enum
+// after its definition moved into the shared caret controller (TODO-387).
+export 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart'
+    show CaretSurface;
 import 'package:hibiki/src/shortcuts/reader_space_override.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
-
-/// Which WebView surface the char-level reading cursor lives on. The cursor is
-/// on the reader content, or — after a dictionary lookup — on the top popup,
-/// following the popup stack as the user looks up deeper words and backs out.
-enum CaretSurface { none, reader, popup, lyrics }
 
 /// What the reader-surface caret move resolves to in Dart, given the physical
 /// key direction and the `status` hoshiCaret.move returned.
@@ -424,7 +425,7 @@ class ReaderHibikiPage extends BaseSourcePage {
 
 class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     with WidgetsBindingObserver
-    implements ReaderAudiobookView {
+    implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
   EpubBook? _book;
   EpubSpreadMap? _spreadMap;
@@ -579,22 +580,28 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   final FocusScopeNode _popupHeaderScope =
       FocusScopeNode(debugLabel: 'popupHeader');
 
+  // The char-level dictionary reading-cursor state machine, owned by the shared
+  // [DictionaryCaretController] (TODO-387) so video / home / standalone-window
+  // surfaces can reuse it. This page is its [DictionaryCaretHost]: the controller
+  // owns the surface / popup-state / busy fields and the popup-surface
+  // transitions, while the reader keeps its reader/lyrics JS branches, keyboard
+  // routing and the focus sandwich. The thin `_caret*` accessors below delegate
+  // straight to the controller so every existing call site (and the source-scan
+  // guards) keeps the same behaviour — only the ownership moved.
+  late final DictionaryCaretController _caret = DictionaryCaretController(this);
+
   // Which surface holds the char-level reading cursor (a focused character inside
   // a WebView's DOM, driven from JS via [ReaderCaretScripts]). The cursor lives
   // on the reader content, or — after a lookup — on the top dictionary popup, and
   // follows the popup stack as the user goes deeper / backs out. While active,
   // A/Enter looks up the word at the cursor, B/Esc backs out a layer, and
-  // directional keys / Tab step the cursor.
-  CaretSurface _caretSurface = CaretSurface.none;
+  // directional keys / Tab step the cursor. Backed by [_caret].
+  CaretSurface get _caretSurface => _caret.surface;
+  set _caretSurface(CaretSurface value) => _caret.surface = value;
 
-  // The popup-WebView state that currently holds the cursor (when _caretSurface
-  // == popup), so a re-render of the SAME popup (load-more) only re-measures the
-  // ring instead of re-seeding the cursor.
-  DictionaryPopupWebViewState? _caretPopupState;
-
-  bool get _caretActive => _caretSurface != CaretSurface.none;
-  bool get _caretOnReader => _caretSurface == CaretSurface.reader;
-  bool get _caretOnLyrics => _caretSurface == CaretSurface.lyrics;
+  bool get _caretActive => _caret.active;
+  bool get _caretOnReader => _caret.onReader;
+  bool get _caretOnLyrics => _caret.onLyrics;
 
   // The WebView char caret and focus-layer hops are part of the experimental
   // keyboard/gamepad focus navigation system. Page-turn and media shortcuts stay
@@ -606,7 +613,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // trips slower than that, so overlapping calls would evaluate against a mid-
   // pagination DOM and make the cursor jump. New directional input is dropped
   // while an op is in flight; the next auto-repeat tick moves instead.
-  bool _caretBusy = false;
+  // Backed by [_caret].
+  bool get _caretBusy => _caret.busy;
+  set _caretBusy(bool value) => _caret.busy = value;
 
   bool get _showTopProgress =>
       _readerContentReady &&
@@ -1400,19 +1409,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     setState(() {});
   }
 
-  void _resumePopupCaretForHardwareNav() {
-    final DictionaryPopupWebViewState? state = topPopupState;
-    if (state == null) {
-      _caretPopupState = null;
-      _caretSurface = CaretSurface.none;
-      return;
-    }
-    if (!identical(state, _caretPopupState)) {
-      unawaited(_transferCaretToTopPopup(state));
-      return;
-    }
-    state.caretResume();
-  }
+  void _resumePopupCaretForHardwareNav() =>
+      _caret.resumePopupCaretForHardwareNav();
 
   @override
   void didChangeMetrics() {
@@ -4215,7 +4213,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // it was in is gone — bring it back to the reader at its remembered word.
     // This covers every dismiss path (B/Esc, tap-outside, swipe).
     if (_caretSurface == CaretSurface.popup) {
-      _caretPopupState = null;
+      _caret.popupState = null;
       unawaited(_enterCaret());
     }
   }
@@ -5275,7 +5273,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     setState(() {
       _caretSurface = CaretSurface.none;
-      _caretPopupState = null;
+      _caret.popupState = null;
     });
   }
 
@@ -5407,15 +5405,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// remains: keep the cursor on the popup surface, follow it to the new top, and
   /// re-measure its ring.
   @override
-  void onDictionaryStackChanged() {
-    if (!mounted || _caretSurface != CaretSurface.popup) return;
-    final DictionaryPopupWebViewState? newTop = topPopupState;
-    if (newTop == null) return;
-    if (!identical(newTop, _caretPopupState)) {
-      setState(() => _caretPopupState = newTop);
-      unawaited(newTop.caretRefresh());
-    }
-  }
+  void onDictionaryStackChanged() => _caret.onDictionaryStackChanged();
 
   /// Drive one cursor move on the active surface. On the reader, a paged
   /// page-edge ('pageForward'/'pageBackward') asks Dart to turn the page (which
@@ -5586,48 +5576,39 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// Hand the char-level cursor to the freshly rendered top popup when in cursor
   /// mode. Pure-touch users (surface == none) are unaffected.
   @override
-  void onDictionaryPopupRendered(int index) {
-    if (_caretSurface == CaretSurface.none) return;
-    if (index != topVisiblePopupIndex) return;
-    final state = topPopupState;
-    if (state == null) return;
-    if (_caretSurface == CaretSurface.popup &&
-        identical(state, _caretPopupState)) {
-      // Same popup re-rendered (e.g. load-more) — just re-measure its ring.
-      unawaited(state.caretRefresh());
+  void onDictionaryPopupRendered(int index) =>
+      _caret.onDictionaryPopupRendered(index);
+
+  // ── DictionaryCaretHost ───────────────────────────────────────────
+  // The reader is the host for its [_caret] state machine: it supplies the
+  // popup-stack view and the `setState` / reader-ring side effects, while the
+  // controller owns the surface/popup-state/busy fields and the popup transitions.
+
+  @override
+  bool get caretHostMounted => mounted;
+
+  @override
+  DictionaryPopupWebViewState? get caretTopPopupState => topPopupState;
+
+  @override
+  int get caretTopVisiblePopupIndex => topVisiblePopupIndex;
+
+  @override
+  void caretSetState(VoidCallback fn) {
+    if (!mounted) {
+      fn();
       return;
     }
-    unawaited(_transferCaretToTopPopup(state));
+    setState(fn);
   }
 
-  Future<void> _transferCaretToTopPopup(
-      DictionaryPopupWebViewState state) async {
-    await state.caretInit();
-    String status = await state.caretEnter();
-    if (!mounted || topPopupState != state) return;
-    if (status != 'moved') {
-      // The popup may not have laid out its definition body yet (the cursor only
-      // stops inside .glossary-content). Give it a frame and retry once.
-      await Future<void>.delayed(const Duration(milliseconds: 120));
-      if (!mounted || topPopupState != state) return;
-      status = await state.caretEnter();
-      if (!mounted) return;
-    }
-    if (status != 'moved') {
-      debugPrint('[ReaderHibiki] caret transfer to popup failed: $status');
-      return; // leave the cursor on its current surface (ring still shown)
-    }
-    // Success: hide the reader ring when leaving the reader (it's the large
-    // background). A parent popup's ring is occluded by the new top, so leave it
-    // for the return trip (it re-shows when the top is dismissed).
-    if (_caretSurface == CaretSurface.reader) {
-      _controller?.evaluateJavascript(
-          source: ReaderCaretScripts.exitInvocation());
-    }
-    setState(() {
-      _caretSurface = CaretSurface.popup;
-      _caretPopupState = state;
-    });
+  /// Hide the reader-content caret ring (called by the controller only when the
+  /// cursor leaves the reader surface for a popup). Mirrors the pre-extraction
+  /// `_controller?.evaluateJavascript(ReaderCaretScripts.exit)`.
+  @override
+  void caretExitPrimaryRing() {
+    _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.exitInvocation());
   }
 
   // ── Shift+Hover over dismiss barrier ──────────────────────────────

@@ -4,13 +4,34 @@ import 'package:flutter_test/flutter_test.dart';
 /// Source-scan guard: the lyrics-mode focus caret stays wired into the reader
 /// page. JS runtime behaviour is covered by device integration tests; this
 /// keeps the Dart plumbing from silently regressing.
+///
+/// TODO-387: the `CaretSurface` enum moved into the shared
+/// [DictionaryCaretController]; this guard now asserts the enum lives there and
+/// that the reader re-exports it, while the lyrics-specific JS wiring stays in
+/// the reader page.
 void main() {
   final String src = File(
     'lib/src/pages/implementations/reader_hibiki_page.dart',
   ).readAsStringSync();
+  final String controller = File(
+    'lib/src/shortcuts/dictionary_caret_controller.dart',
+  ).readAsStringSync();
 
-  test('CaretSurface has a lyrics value', () {
-    expect(src, contains('enum CaretSurface { none, reader, popup, lyrics }'));
+  test('CaretSurface (with a lyrics value) lives in the shared controller', () {
+    expect(
+      controller,
+      contains('enum CaretSurface { none, reader, popup, lyrics }'),
+    );
+  });
+
+  test('reader re-exports CaretSurface so its references still resolve', () {
+    expect(
+      src,
+      contains(
+        "export 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart'",
+      ),
+    );
+    expect(src, contains('show CaretSurface;'));
   });
 
   test('lyrics page load injects the lyrics caret', () {

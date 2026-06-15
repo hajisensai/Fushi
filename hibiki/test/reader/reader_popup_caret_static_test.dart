@@ -2,23 +2,36 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+/// TODO-387: the popup-surface caret state machine (transfer to top popup,
+/// resume after a touch->hardware-nav flip) moved into the shared
+/// [DictionaryCaretController]. This guard now splits its assertions: the
+/// transition *algorithm* is asserted against the controller, while the reader
+/// is asserted to delegate to it and to keep its popup-only jump dispatch.
 void main() {
-  test('hardware-nav resume revalidates the top popup caret surface', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+  final String reader = File(
+    'lib/src/pages/implementations/reader_hibiki_page.dart',
+  ).readAsStringSync();
+  final String controller = File(
+    'lib/src/shortcuts/dictionary_caret_controller.dart',
+  ).readAsStringSync();
 
-    expect(source, contains('void _resumePopupCaretForHardwareNav()'));
-    expect(source, contains('if (!identical(state, _caretPopupState))'));
-    expect(source, contains('unawaited(_transferCaretToTopPopup(state))'));
-    expect(source, contains('_caretSurface = CaretSurface.none'));
+  test('hardware-nav resume revalidates the top popup caret surface', () {
+    // The algorithm lives in the controller now.
+    expect(
+      controller,
+      contains('void resumePopupCaretForHardwareNav()'),
+    );
+    expect(controller, contains('if (!identical(state, popupState))'));
+    expect(controller, contains('unawaited(transferToTopPopup(state))'));
+    expect(controller, contains('surface = CaretSurface.none'));
+    // The reader keeps the wrapper and delegates to the controller.
+    expect(reader, contains('void _resumePopupCaretForHardwareNav()'));
+    expect(reader, contains('_caret.resumePopupCaretForHardwareNav()'));
   });
 
   test('TODO-070: jump-to-dictionary is wired into the popup caret dispatch',
       () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = reader;
 
     // The popup-only jump helper exists and is dispatched from _runCaretAction
     // for both jump actions.
@@ -42,9 +55,7 @@ void main() {
 
   test('TODO-070: jump-to-dictionary fires once per press (not on auto-repeat)',
       () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = reader;
     // Both jump actions sit in the non-repeatable arm of _isRepeatableCaretMove
     // (returns false), so holding the key/trigger does not blow past every
     // section.
