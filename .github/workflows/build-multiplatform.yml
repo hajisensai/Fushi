@@ -7,12 +7,15 @@ name: Build and Test Android / macOS / Linux / Windows
 # Also runs the shared comprehensive automation contract on Android, Windows,
 # and macOS. That runner requires real test verdict text in logs, not just a
 # zero exit code.
-# Runs on PRs to main/develop (so a per-platform native break blocks the merge),
-# on manual dispatch, and on `ci/**` branch pushes for ad-hoc runs.
+# PAUSED on routine main/develop push and PRs (per request, TODO-417): these
+# iOS/macOS/Linux (+ Android/Windows verification) builds are slow/expensive and
+# are NOT the user-facing release pipeline (debug Android APK = main.yml /
+# release.yml; Windows/desktop = release-desktop.yml). They now run only on
+# manual dispatch or on dedicated `ci/**` branch pushes for ad-hoc verification.
 on:
   workflow_dispatch:
   push:
-    branches: ['main', 'develop', 'ci/**']
+    branches: ['ci/**']
     paths: &multiplatform_paths
       - 'hibiki/**'
       - 'packages/**'
@@ -22,7 +25,7 @@ on:
       - 'pubspec.yaml'
       - 'pubspec.lock'
   pull_request:
-    branches: ['main', 'develop']
+    branches: ['ci/**']
     paths: *multiplatform_paths
 
 # Cancel a superseded PR run (4 build jobs incl. 2 expensive macOS runners) when
