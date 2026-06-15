@@ -30,6 +30,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
+      with:
+        # TODO-414: versionCode derives from the commit count, so the validation
+        # builds below need the FULL history. A shallow checkout would make
+        # `git rev-list --count HEAD` report a truncated (smaller) sequence,
+        # producing a versionCode that disagrees with release.yml's. Keep this in
+        # lockstep with release.yml's `fetch-depth: 0`.
+        fetch-depth: 0
+
+    - name: Resolve shared release sequence
+      shell: bash
+      run: |
+        set -euo pipefail
+        RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+        if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+          echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+          exit 1
+        fi
+        # Same monotonic commit-count build number release.yml feeds Android, so
+        # main.yml's validation APKs carry the identical versionCode formula.
+        echo "RELEASE_SEQUENCE=$RELEASE_SEQUENCE" >> "$GITHUB_ENV"
 
     - uses: actions/setup-java@v5
       with:
@@ -113,6 +133,7 @@ jobs:
       working-directory: hibiki
       run: >-
         flutter build apk --debug
+        --build-number "$RELEASE_SEQUENCE"
 
     - name: Prepare debug APK artifact
       if: github.event_name != 'pull_request'
@@ -167,6 +188,7 @@ jobs:
       working-directory: hibiki
       run: >-
         flutter build apk --release
+        --build-number "$RELEASE_SEQUENCE"
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
@@ -195,6 +217,7 @@ jobs:
       working-directory: hibiki
       run: >-
         flutter build apk --release
+        --build-number "$RELEASE_SEQUENCE"
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 

@@ -68,7 +68,18 @@ foreach ($relativePath in $workflowPaths) {
 }
 
 $androidWorkflow = Read-RepoFile '.github/workflows/release.yml'
-Require-Text '.github/workflows/release.yml' $androidWorkflow 'ANDROID_BUILD_NUMBER=$((PUBSPEC_BUILD * 1000000 + RELEASE_SEQUENCE))' 'Android versionCode must use the shared release sequence'
+# TODO-414: versionCode = build.gradle versionCodeBase + 100 * <build-number> + abiOffset,
+# where the build number is JUST the monotonic commit count. The old
+# `PUBSPEC_BUILD * 1000000 + seq` build number produced versionCode ~6.6e9
+# (overflows int32 / exceeds Android's 2.1e9 ceiling), so the Android build
+# number must be the bare release sequence and never multiply by 1000000.
+Require-Text '.github/workflows/release.yml' $androidWorkflow 'ANDROID_BUILD_NUMBER=$RELEASE_SEQUENCE' 'Android build number must be the bare monotonic release sequence (versionCode base is applied in build.gradle)'
+Forbid-Pattern '.github/workflows/release.yml' $androidWorkflow 'PUBSPEC_BUILD \* 1000000' 'the *1000000 build number overflowed int32 / exceeded Android''s 2.1e9 versionCode ceiling (TODO-414)'
+
+$buildGradle = Read-RepoFile 'hibiki/android/app/build.gradle'
+Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def versionCodeBase = 1000000000' 'one-time versionCode migration floor must stay above every historically-shipped versionCode (TODO-414)'
+Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def maxVersionCode = 2100000000' 'versionCode ceiling guard must match Android''s 2.1e9 limit (TODO-414)'
+Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'output.versionCodeOverride = computed' 'versionCode must be the bounds-checked computed value (TODO-414)'
 
 $desktopWorkflow = Read-RepoFile '.github/workflows/release-desktop.yml'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '--build-number "${{ steps.channel.outputs.release_sequence }}"' 'desktop build number must use the shared release sequence'

@@ -78,7 +78,15 @@ jobs:
           echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
           exit 1
         fi
-        ANDROID_BUILD_NUMBER=$((PUBSPEC_BUILD * 1000000 + RELEASE_SEQUENCE))
+        # TODO-414: Android versionCode = build.gradle's versionCodeBase (1e9, a
+        # one-time migration floor above every historically-shipped versionCode)
+        # + 100 * RELEASE_SEQUENCE + ABI offset. The build number passed here is
+        # JUST the monotonic commit count, NOT PUBSPEC_BUILD * 1e6 + seq: the
+        # old *1e6 formula produced versionCode ~6.6e9, which overflows int32 and
+        # exceeds Android's 2.1e9 ceiling, so beta/release Android packages could
+        # not be built at all. PUBSPEC_BUILD stays parsed for logging only.
+        echo "PUBSPEC_BUILD (log only, not in versionCode): $PUBSPEC_BUILD"
+        ANDROID_BUILD_NUMBER=$RELEASE_SEQUENCE
         SHORT_SHA="${GITHUB_SHA::7}"
         EVENT="${GITHUB_EVENT_NAME}"
         CHANNEL="${INPUT_CHANNEL:-}"

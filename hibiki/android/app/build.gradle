@@ -22,6 +22,20 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+// TODO-414: one-time migration floor for the Android versionCode. The CI build
+// number (--build-number) is the monotonic `git rev-list --count HEAD` commit
+// count (see release.yml / main.yml). The shipped versionCode is
+//   versionCodeBase + 100 * versionCode + abiOffset
+// 1_000_000_000 sits safely above every historically-shipped versionCode
+// (the highest ever installed was ~6603) yet leaves ~10.9M commits of headroom
+// before the int32 / Android 2.1e9 ceiling, so no user has to uninstall. The
+// old `PUBSPEC_BUILD * 1_000_000 + seq` CI formula produced versionCode ~6.6e9,
+// which overflowed int32 and exceeded Android's 2.1e9 limit, so beta/release
+// Android packages could not be built. The maxVersionCode assertion in
+// applicationVariants below fails the build loudly if it ever nears the ceiling.
+def versionCodeBase = 1000000000
+def maxVersionCode = 2100000000
+
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('key.properties')
 if (keystorePropertiesFile.exists()) {
@@ -145,7 +159,11 @@ android {
                 // applied it, so the fat APK kept the default app-<type>.apk
                 // name. Assign it like the split-ABI branch does.
                 outputFileName = newName
-                output.versionCodeOverride = (100 * project.android.defaultConfig.versionCode)
+                def computed = versionCodeBase + (100 * project.android.defaultConfig.versionCode)
+                if (computed > maxVersionCode) {
+                    throw new GradleException("Android versionCode ${computed} exceeds the ${maxVersionCode} ceiling (int32 / Android limit). Reduce versionCodeBase or the build number; see TODO-414.")
+                }
+                output.versionCodeOverride = computed
             } else {
                 if (buildType == 'debug') {
                     newName = "${appName}_${defaultConfig.versionName}-${architecture}-debug.apk"
@@ -163,7 +181,11 @@ android {
                 }
 
                 outputFileName = newName
-                output.versionCodeOverride = (100 * project.android.defaultConfig.versionCode) + offset
+                def computed = versionCodeBase + (100 * project.android.defaultConfig.versionCode) + offset
+                if (computed > maxVersionCode) {
+                    throw new GradleException("Android versionCode ${computed} exceeds the ${maxVersionCode} ceiling (int32 / Android limit). Reduce versionCodeBase or the build number; see TODO-414.")
+                }
+                output.versionCodeOverride = computed
             }
         }
     }

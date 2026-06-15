@@ -18,6 +18,17 @@ void main() {
     return readRepositoryWorkflow('build-multiplatform.yml');
   }
 
+  String readBuildAndroidWorkflow() {
+    return readRepositoryWorkflow('main.yml');
+  }
+
+  String readAndroidBuildGradle() {
+    final File file = File('android/app/build.gradle');
+    expect(file.existsSync(), isTrue,
+        reason: 'expected build.gradle at ${file.absolute.path}');
+    return file.readAsStringSync();
+  }
+
   String workflowJob(String workflow, String name) {
     final String marker = '  $name:\n';
     final int start = workflow.indexOf(marker);
@@ -146,5 +157,48 @@ void main() {
       'Remove aliyun mirrors from gradle files',
       'Run Android comprehensive automation contract',
     );
+  });
+
+  test(
+      'TODO-414: Android versionCode is the monotonic git-rev-count + base, '
+      'never the overflowing *1000000 formula', () {
+    final String releaseWorkflow = readReleaseWorkflow();
+    final String mainWorkflow = readBuildAndroidWorkflow();
+    final String buildGradle = readAndroidBuildGradle();
+
+    // The *1000000 build number produced versionCode ~6.6e9 (int32 overflow /
+    // over Android's 2.1e9 ceiling), so beta/release Android packages could not
+    // be built. The Android build number must be the bare release sequence.
+    expect(releaseWorkflow, isNot(contains('* 1000000')),
+        reason: 'the *1000000 build number overflows int32 / Android 2.1e9 '
+            'versionCode ceiling (TODO-414)');
+    expect(releaseWorkflow, isNot(contains('PUBSPEC_BUILD * 1000000')));
+    expect(releaseWorkflow, contains(r'ANDROID_BUILD_NUMBER=$RELEASE_SEQUENCE'),
+        reason: 'Android build number must be the bare monotonic commit count; '
+            'the versionCode base is applied in build.gradle');
+
+    // main.yml validation builds must use the same monotonic sequence (full
+    // history + --build-number) so debug/release versionCode matches release.yml.
+    expect(mainWorkflow, contains('fetch-depth: 0'),
+        reason: 'shallow checkout would truncate git rev-list --count HEAD');
+    expect(mainWorkflow,
+        contains(r'RELEASE_SEQUENCE=$(git rev-list --count HEAD)'));
+    expect(
+        r'--build-number "$RELEASE_SEQUENCE"'.allMatches(mainWorkflow).length,
+        greaterThanOrEqualTo(2),
+        reason: 'debug + release validation builds must carry the shared '
+            'build number so their versionCode matches release.yml');
+
+    // build.gradle owns the one-time migration floor + ceiling assertion.
+    expect(buildGradle, contains('def versionCodeBase = 1000000000'),
+        reason: 'one-time versionCode floor above every shipped versionCode');
+    expect(buildGradle, contains('def maxVersionCode = 2100000000'),
+        reason: 'ceiling guard must match Android 2.1e9 limit');
+    expect(buildGradle, contains('output.versionCodeOverride = computed'),
+        reason: 'versionCode must be the bounds-checked computed value');
+    expect('throw new GradleException'.allMatches(buildGradle).length,
+        greaterThanOrEqualTo(3),
+        reason: 'fat + split versionCode ceiling assertions must both throw '
+            '(plus the pre-existing keystore guards)');
   });
 }
