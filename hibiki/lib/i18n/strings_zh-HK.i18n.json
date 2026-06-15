@@ -1241,7 +1241,6 @@
     "sync_local_audio_warning": "Syncs local audio source databases (may be large)",
     "sync_now_local_audio_in": "↓$count audio sources",
     "sync_now_local_audio_out": "↑$count audio sources",
-    "update_network_unreachable": "Could not reach $host (network timeout or unreachable).",
     "sync_progress_books": "Importing books",
     "sync_progress_reading": "Syncing reading data",
     "sync_progress_dictionaries": "Syncing dictionaries",
@@ -1647,5 +1646,6 @@
     "video_control_slot_bottom_right": "Bottom bar (right)",
     "video_control_slot_screen_left": "Screen left",
     "video_control_slot_screen_right": "Screen right",
-    "video_control_slot_hidden": "Hidden"
+    "video_control_slot_hidden": "Hidden",
+    "update_network_failure": "無法連接 $host：$reason"
 }

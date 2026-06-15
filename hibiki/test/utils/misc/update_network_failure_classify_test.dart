@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -42,6 +43,71 @@ void main() {
       expect(isExpectedUpdateNetworkFailure(Exception('All sources failed')),
           isFalse);
       expect(isExpectedUpdateNetworkFailure(ArgumentError('nope')), isFalse);
+    });
+  });
+
+  group('describeUpdateNetworkFailureReason (TODO-371)', () {
+    test('连接被拒（瞬时失败）报「connection refused」+ errno，绝不说超时', () {
+      final String reason = describeUpdateNetworkFailureReason(
+        const SocketException(
+          'Connection refused',
+          osError: OSError('Connection refused', 111),
+        ),
+      );
+      expect(reason, contains('connection refused'));
+      expect(reason, contains('errno=111'));
+      expect(reason.toLowerCase(), isNot(contains('timed out')));
+      expect(reason.toLowerCase(), isNot(contains('timeout')));
+    });
+
+    test('DNS 解析失败报「DNS lookup failed」，不说超时', () {
+      final String reason = describeUpdateNetworkFailureReason(
+        const SocketException('Failed host lookup: api.github.com'),
+      );
+      expect(reason, contains('DNS lookup failed'));
+      expect(reason.toLowerCase(), isNot(contains('timed out')));
+    });
+
+    test('真超时类异常才报超时', () {
+      expect(
+        describeUpdateNetworkFailureReason(
+          TimeoutException('attempt timed out'),
+        ),
+        contains('timed out'),
+      );
+      expect(
+        describeUpdateNetworkFailureReason(
+          const SocketException('HTTP connection timed out'),
+        ).toLowerCase(),
+        contains('timed out'),
+      );
+    });
+
+    test('TLS 握手失败报握手而非超时', () {
+      final String reason = describeUpdateNetworkFailureReason(
+          const HandshakeException('bad cert'));
+      expect(reason, contains('TLS handshake failed'));
+      expect(reason.toLowerCase(), isNot(contains('timed out')));
+    });
+
+    test('底层 HTTP 协议错误报协议错误', () {
+      expect(
+        describeUpdateNetworkFailureReason(const HttpException('broken pipe')),
+        contains('HTTP protocol error'),
+      );
+    });
+
+    test('无异常（HTTP 非 200 的失败回退）报「无有效响应」，不谎称超时', () {
+      final String reason = describeUpdateNetworkFailureReason(null);
+      expect(reason, contains('no valid response'));
+      expect(reason.toLowerCase(), isNot(contains('timed out')));
+    });
+
+    test('未知异常回退 toString，不再无条件谎称超时', () {
+      final String reason =
+          describeUpdateNetworkFailureReason(const FormatException('weird'));
+      expect(reason, contains('weird'));
+      expect(reason.toLowerCase(), isNot(contains('timed out')));
     });
   });
 

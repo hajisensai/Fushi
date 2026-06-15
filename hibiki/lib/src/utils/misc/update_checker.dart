@@ -240,8 +240,12 @@ class UpdateChecker {
         // 让用户在日志里看到「连不上哪个源」而不被原始堆栈噪音淹没；其它异常
         // （解析/逻辑错误）才是真问题，连堆栈一起记。
         if (error == null || isExpectedUpdateNetworkFailure(error)) {
-          ErrorLogService.instance.log('UpdateChecker.httpGet',
-              t.update_network_unreachable(host: host));
+          ErrorLogService.instance.log(
+              'UpdateChecker.httpGet',
+              t.update_network_failure(
+                host: host,
+                reason: describeUpdateNetworkFailureReason(error),
+              ));
         } else {
           ErrorLogService.instance.log('UpdateChecker.httpGet', error);
         }
@@ -419,8 +423,12 @@ class UpdateChecker {
           // 逐个下载源回退：网络类失败记 i18n 摘要、不带堆栈；其它异常带堆栈。
           // 全部源失败时下面的 throw 仍会被外层 catch 统一记一条并弹 SnackBar。
           if (isExpectedUpdateNetworkFailure(e)) {
-            ErrorLogService.instance.log('UpdateChecker.download',
-                t.update_network_unreachable(host: hostLabelForUpdateUrl(u)));
+            ErrorLogService.instance.log(
+                'UpdateChecker.download',
+                t.update_network_failure(
+                  host: hostLabelForUpdateUrl(u),
+                  reason: describeUpdateNetworkFailureReason(e),
+                ));
           } else {
             ErrorLogService.instance.log('UpdateChecker.download', e, stack);
           }
@@ -491,6 +499,61 @@ bool isExpectedUpdateNetworkFailure(Object e) =>
     e is HandshakeException ||
     e is HttpException ||
     e is TimeoutException;
+
+/// **纯函数**：把一次更新网络失败的异常翻译成「为什么连不上」的可读原因，供用户
+/// 错误日志使用（TODO-371）。原来无论真实异常是 DNS 解析失败、连接被拒、还是真超时，
+/// 日志都死板地写「网络超时或不可达」，把瞬时失败也误报成超时、且吞掉了 errno 等
+/// 关键线索。这里区分常见底层原因并尽量带上 `SocketException.osError`（errno +
+/// 系统 message），让用户一眼看出是 DNS 不通、被拒、超时还是证书问题。
+///
+/// - [error] 为 null（HTTP 状态非 200、无异常的失败回退）→「服务器无有效响应」。
+/// - `SocketException`：按 message / osError 细分 DNS 失败 / 连接被拒 / 超时 / 一般
+///   连接失败，并附上 `(errno=…: …)`。
+/// - `TimeoutException`：单候选整体超时。
+/// - `HandshakeException`：TLS/SSL 握手失败。
+/// - `HttpException`：底层 HTTP 协议错误。
+/// - 其它：回退到该异常的 `toString()`，不再谎称超时。
+String describeUpdateNetworkFailureReason(Object? error) {
+  if (error == null) {
+    return 'no valid response from server';
+  }
+  if (error is SocketException) {
+    final OSError? os = error.osError;
+    final String osPart =
+        os != null ? ' (errno=${os.errorCode}: ${os.message})' : '';
+    final String message = error.message;
+    final String lower = message.toLowerCase();
+    final String category;
+    if (lower.contains('failed host lookup') ||
+        lower.contains('nodename nor servname') ||
+        lower.contains('name or service not known')) {
+      category = 'DNS lookup failed';
+    } else if (lower.contains('connection refused')) {
+      category = 'connection refused';
+    } else if (lower.contains('timed out') || lower.contains('timeout')) {
+      category = 'connection timed out';
+    } else {
+      category = message.isNotEmpty ? message : 'connection failed';
+    }
+    return '$category$osPart';
+  }
+  if (error is TimeoutException) {
+    return 'connection timed out';
+  }
+  if (error is HandshakeException) {
+    final String message = error.message;
+    return message.isNotEmpty
+        ? 'TLS handshake failed: $message'
+        : 'TLS handshake failed';
+  }
+  if (error is HttpException) {
+    final String message = error.message;
+    return message.isNotEmpty
+        ? 'HTTP protocol error: $message'
+        : 'HTTP protocol error';
+  }
+  return error.toString();
+}
 
 /// 从更新请求 URL 取主机名，作为日志里「连不上哪个源」的可读标签。代理 URL
 /// 形如 `https://ghfast.top/https://api.github.com/...`，其 host 是代理本身
