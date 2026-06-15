@@ -529,7 +529,7 @@ void main() {
     });
   });
 
-  group('BUG-283 hover 字幕盒回报 onHoverChanged（页面据此唤回光标 + 续命控制条）', () {
+  group('BUG-284 hover 字幕盒回报 onHoverChanged（页面据此唤回光标 + 续命控制条）', () {
     testWidgets('鼠标进 / 出字幕盒分别回调 true / false', (tester) async {
       final VideoPlayerController c = _controllerWithCue('A');
       final List<bool> events = <bool>[];
@@ -551,7 +551,7 @@ void main() {
       await gesture.moveTo(tester.getCenter(find.text('A')));
       await tester.pump();
       expect(events, contains(true),
-          reason: '鼠标进字幕盒应回报 hover=true（页面据此唤回光标，BUG-283）');
+          reason: '鼠标进字幕盒应回报 hover=true（页面据此唤回光标，BUG-284）');
 
       // 移出到角落 → onHoverChanged(false)。
       await gesture.moveTo(const Offset(2, 2));
@@ -562,7 +562,7 @@ void main() {
     testWidgets('注册 onHoverChanged 才挂字幕盒 hover 追踪（非 blur 基线对照）',
         (tester) async {
       // 对照同一非 blur 布局：注册 onHoverChanged 比不注册多出恰一个用于追踪字幕盒
-      // hover 的 MouseRegion（仅 hover 需要时才挂，否则透传 box，保外观零变化，BUG-283）。
+      // hover 的 MouseRegion（仅 hover 需要时才挂，否则透传 box，保外观零变化，BUG-284）。
       final VideoPlayerController c1 = _controllerWithCue('A');
       await _pump(tester, VideoSubtitleOverlay(controller: c1));
       final int baseline = find.byType(MouseRegion).evaluate().length;

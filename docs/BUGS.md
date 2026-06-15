@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-283](bugs/BUG-283-video-control-rail-flicker-cursor-vanish.md) | ✅ | ✅ | 视频右侧控制按钮闪烁 + 鼠标放字幕上光标消失 (TODO-373) |
+| [BUG-284](bugs/BUG-284-video-control-rail-flicker-cursor-vanish.md) | ✅ | ✅ | 视频右侧控制按钮闪烁 + 鼠标放字幕上光标消失 (TODO-373) |
 | [BUG-282](bugs/BUG-282-audiobook-highlight-offset-regression.md) | ✅ | ✅ | 有声书播放高亮按句漂移：不可命中cue回落污染单调游标，后续可命中cue被推偏(TODO-366 BUG-060跟进) |
 | [BUG-281](bugs/BUG-281-subtitle-avoid-direction-race.md) | ✅ | ✅ | 字幕避让方向反/竞态：避让与控制条可见性未用同一真相源 |
 | [BUG-280](bugs/BUG-280-lyrics-continuous-lookup.md) | ✅ | ✅ | 歌词模式查完一个词无法继续查下一个 |

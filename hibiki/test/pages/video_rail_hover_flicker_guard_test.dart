@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（BUG-283）：视频右 / 左浮动学习按钮 rail 在鼠标 hover 时不闪烁。
+/// 源码守卫（BUG-284）：视频右 / 左浮动学习按钮 rail 在鼠标 hover 时不闪烁。
 ///
 /// 根因：rail 按钮是 opaque [IconButton]，叠在 media_kit 桌面控制条那个全画面
 /// hover-tracking [MouseRegion] 之上。鼠标移到 rail 按钮上 → media_kit 的
@@ -29,7 +29,7 @@ void main() {
     expect(
       src.contains('final ValueNotifier<bool> _railHovered'),
       isTrue,
-      reason: '应有 _railHovered 单一真相源 ValueNotifier（BUG-283）',
+      reason: '应有 _railHovered 单一真相源 ValueNotifier（BUG-284）',
     );
     expect(
       src.contains('_railHovered.dispose()'),
@@ -42,7 +42,7 @@ void main() {
     expect(
       src.contains('if ((!controlsVisible && !railHovered) ||'),
       isTrue,
-      reason: 'rail 隐藏判据应为「控制条不可见 且 不在 hover」，hover 期间永不收走（BUG-283）',
+      reason: 'rail 隐藏判据应为「控制条不可见 且 不在 hover」，hover 期间永不收走（BUG-284）',
     );
     expect(
       src.contains(
@@ -78,7 +78,7 @@ void main() {
         reason: 'keep-alive 应包在单条 rail 的按钮列上（非整片 fill）');
   });
 
-  test('字幕盒 hover 唤回光标 + 续命控制条（_handleSubtitleHover，BUG-283）', () {
+  test('字幕盒 hover 唤回光标 + 续命控制条（_handleSubtitleHover，BUG-284）', () {
     expect(src.contains('void _handleSubtitleHover(bool hovering)'), isTrue,
         reason: '应有字幕盒 hover 处理 _handleSubtitleHover');
     final int start = src.indexOf('void _handleSubtitleHover(bool hovering)');
