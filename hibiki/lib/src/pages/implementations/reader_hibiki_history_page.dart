@@ -478,13 +478,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget? _buildTagLabels(String bookKey) {
-    final tagMap = ref.watch(bookTagMapProvider).valueOrNull;
+  /// 某媒体卡上挂的标签列：标签 map 为空 / 该 key 无标签都返回 null，否则渲染
+  /// [_adaptiveTagColumn]。三种媒体（epub/srt/video）只差「watch 哪个标签 provider +
+  /// key 类型」，故各 caller 自己 `ref.watch(provider).valueOrNull`（保响应式订阅）后
+  /// 把解析好的 map 传进来，空/列逻辑收口于此泛型 helper。
+  Widget? _tagLabelsFromMap<K>(Map<K, List<BookTagRow>>? tagMap, K key) {
     if (tagMap == null) return null;
-    final tags = tagMap[bookKey];
+    final tags = tagMap[key];
     if (tags == null || tags.isEmpty) return null;
     return _adaptiveTagColumn(tags);
   }
+
+  Widget? _buildTagLabels(String bookKey) =>
+      _tagLabelsFromMap(ref.watch(bookTagMapProvider).valueOrNull, bookKey);
 
   Widget _tagChip(BookTagRow tag) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -948,13 +954,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   String _safeRemoteBookKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
-  Widget? _buildSrtBookTagLabels(int srtBookId) {
-    final tagMap = ref.watch(srtBookTagMapProvider).valueOrNull;
-    if (tagMap == null) return null;
-    final tags = tagMap[srtBookId];
-    if (tags == null || tags.isEmpty) return null;
-    return _adaptiveTagColumn(tags);
-  }
+  Widget? _buildSrtBookTagLabels(int srtBookId) => _tagLabelsFromMap(
+        ref.watch(srtBookTagMapProvider).valueOrNull,
+        srtBookId,
+      );
 
   Widget _buildSrtCard(SrtBook book) {
     final String selKey = 'srt_${book.uid}';
@@ -982,13 +985,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget? _buildVideoBookTagLabels(String bookUid) {
-    final tagMap = ref.watch(videoBookTagMapProvider).valueOrNull;
-    if (tagMap == null) return null;
-    final tags = tagMap[bookUid];
-    if (tags == null || tags.isEmpty) return null;
-    return _adaptiveTagColumn(tags);
-  }
+  Widget? _buildVideoBookTagLabels(String bookUid) => _tagLabelsFromMap(
+        ref.watch(videoBookTagMapProvider).valueOrNull,
+        bookUid,
+      );
 
   Widget _buildVideoCard(VideoBookRow book) {
     final tagWidget = _buildVideoBookTagLabels(book.bookUid);
