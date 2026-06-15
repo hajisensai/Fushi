@@ -125,4 +125,69 @@ void main() {
         isTrue,
         reason: 'compositor_ 仍是进程级 inline static 共享单例（修复不改这点，只改释放时机）');
   });
+
+  test(
+      'BUG-289: shared dcomp compositor released on root WM_DESTROY (controlled '
+      'window-proc time), not solely on ~InAppWebViewManager (which is not '
+      'called at process exit), with idempotent guard', () {
+    final List<String> sourceCandidates = <String>[
+      'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+      '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+    ];
+    final List<String> headerCandidates = <String>[
+      'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.h',
+      '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.h',
+    ];
+    final File src =
+        sourceCandidates.map(File.new).firstWhere((File f) => f.existsSync());
+    final File header =
+        headerCandidates.map(File.new).firstWhere((File f) => f.existsSync());
+    final String s = src.readAsStringSync();
+    final String h = header.readAsStringSync();
+
+    // BUG-289 根因标识必须保留（dump 实证：退出时 ~InAppWebViewManager() 不被调用，
+    // compositor_ 落到 CRT atexit 仍 FailFast e0464645，即 BUG-255 的析构释放失效）。
+    expect(s.contains('BUG-289'), isTrue,
+        reason: '修复说明应保留 BUG-289，标识「析构在进程退出不被调用」这一 BUG-255 失效根因');
+    expect(h.contains('BUG-289'), isTrue,
+        reason: '头文件应注释 BUG-289（WM_DESTROY 受控释放 + 幂等 flag）');
+
+    // ① 必须经 top-level window proc delegate 在 WM_DESTROY 受控时机释放共享单例，
+    //    不再仅依赖析构（dump 证明析构不被调用）。
+    expect(s.contains('RegisterTopLevelWindowProcDelegate'), isTrue,
+        reason:
+            '必须注册 top-level window proc delegate，在 root window WM_DESTROY 受控时机'
+            '释放 dcomp compositor，而不是只赌 ~InAppWebViewManager 被调用');
+    final int regIdx = s.indexOf('RegisterTopLevelWindowProcDelegate');
+    final int wmDestroyIdx = s.indexOf('WM_DESTROY');
+    expect(wmDestroyIdx, greaterThanOrEqualTo(0),
+        reason: 'delegate 必须在 WM_DESTROY 时触发释放');
+    // delegate body 必须在 WM_DESTROY 分支里调用受控释放。
+    final int releaseAfterWm =
+        s.indexOf('releaseSharedCompositionResources', wmDestroyIdx);
+    expect(releaseAfterWm, greaterThan(wmDestroyIdx),
+        reason: 'WM_DESTROY 分支必须调用 releaseSharedCompositionResources');
+    // delegate 必须在创建共享单例（compositor_ = ... CreateCompositor）之后注册，
+    // 确保「先有 compositor_、才挂 WM_DESTROY 释放钩子」。
+    final int createCompositorIdx = s.indexOf('CreateCompositor');
+    expect(createCompositorIdx, greaterThanOrEqualTo(0));
+    expect(regIdx, greaterThan(createCompositorIdx),
+        reason: 'window proc delegate 必须在 compositor_ 创建之后注册');
+
+    // ② 幂等守卫：WM_DESTROY 钩子与析构兜底任一先到都安全，只释放一次。
+    expect(h.contains('composition_released_'), isTrue,
+        reason: '必须有 composition_released_ 幂等 flag（WM_DESTROY 与析构两路径只释放一次）');
+    final int relStart = s
+        .indexOf('void InAppWebViewManager::releaseSharedCompositionResources');
+    expect(relStart, greaterThanOrEqualTo(0));
+    final int relEnd = s.indexOf('\n  }', relStart);
+    final String relBody = s.substring(relStart, relEnd);
+    expect(relBody.contains('composition_released_'), isTrue,
+        reason:
+            'releaseSharedCompositionResources 开头必须用 composition_released_ 做幂等早返回');
+    final int guardIdx = relBody.indexOf('composition_released_');
+    final int firstNullIdx = relBody.indexOf('compositor_ = nullptr');
+    expect(guardIdx, lessThan(firstNullIdx),
+        reason: '幂等早返回必须在真正释放（compositor_ = nullptr）之前');
+  });
 }

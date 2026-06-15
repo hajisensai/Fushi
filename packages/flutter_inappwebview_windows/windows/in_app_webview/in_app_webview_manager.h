@@ -73,8 +73,18 @@ namespace flutter_inappwebview_plugin
     WNDCLASS windowClass_ = {};
     inline static bool valid_ = false;
 
-    // BUG-255：在 DispatcherQueue 仍存活的受控时机（最后一个 manager 析构）
-    // 按 dcomp -> WinRT 依赖顺序显式释放进程级共享单例，避免落到 CRT atexit。
+    // BUG-289：dump 实证 BUG-255 的「靠 ~InAppWebViewManager() 受控释放」失效——退出时
+    // 该析构根本不被调用（Flutter Windows 进程退出不 tear down plugin registrar），
+    // compositor_ 这个 inline static com_ptr 持引用到 CRT atexit 才最终 Release，仍 FailFast。
+    // 改为在 root Flutter window 的 WM_DESTROY（受控时机：UI 线程、CoreMessaging 完整、
+    // LdrShutdownProcess 尚未开始）经 top-level window proc delegate 显式释放。
+    // composition_released_ 保证释放只发生一次（WM_DESTROY 与析构两条路径任一先到都安全且幂等）。
+    inline static bool composition_released_ = false;
+    inline static int window_proc_delegate_id_ = -1;
+
+    // BUG-255/BUG-289：在 DispatcherQueue 仍存活的受控时机（root window WM_DESTROY，
+    // 或最后一个 manager 析构兜底）按 dcomp -> WinRT 依赖顺序显式释放进程级共享单例，
+    // 避免落到 CRT atexit。幂等：重复调用为 no-op。
     static void releaseSharedCompositionResources();
   };
 }

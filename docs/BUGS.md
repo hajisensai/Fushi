@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 280 条。点号进各自文件。
+> 共 281 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-289](bugs/BUG-289-dcomp-compositor-atexit-failfast.md) | ✅ | ✅ | Windows 退出时 dcomp Compositor::CleanupSession FailFast（BUG-255 受控释放修复未生效） |
 | [BUG-287](bugs/BUG-287-video-replay-previous-subtitle.md) | ✅ | ✅ | 恢复「重播上一句」并区分「上一句字幕」(TODO-378) |
 | [BUG-285](bugs/BUG-285-reader-charoffset-clobber.md) | ✅ | ✅ | 音频跟随退化到章节粒度：位置保存把 -1 覆盖精确字符锚（TODO-375） |
 | [BUG-284](bugs/BUG-284-video-control-rail-flicker-cursor-vanish.md) | ✅ | ✅ | 视频右侧控制按钮闪烁 + 鼠标放字幕上光标消失 (TODO-373) |
