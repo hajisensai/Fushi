@@ -15,6 +15,6 @@
 ### 修复
 让枚举 `-i` 用与抽取路径同一条 size-scaled 超时：`listEmbeddedSubtitleTracks` 把 `const Duration(seconds: 30)` 改为 `subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath))`（下限 60s，大文件随体积放大），消除「固定 30s 对大容器超时 → 静默 0 字幕」整类。并在超时（`returnCode==null && output.isEmpty`）时 `debugPrint` 留痕，让「0 字幕 vs 真无字幕」未来可区分（不抛、不改降级契约）。不动 ProcessException/坏二进制回退链（BUG-275/283 已覆盖）。
 
-- **[x] ① 已修复** — `video_subtitle_source.dart listEmbeddedSubtitleTracks` 超时改 `subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath))` + 超时诊断日志。提交：498d0d8d2
+- **[x] ① 已修复** — `video_subtitle_source.dart listEmbeddedSubtitleTracks` 超时改 `subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath))` + 超时诊断日志。提交：2e934008d（amend 前 498d0d8d2）
 - **[x] ② 已加自动化测试** — `test/media/video/video_subtitle_source_test.dart` 新增组「listEmbeddedSubtitleTracks 超时 size-scaled（BUG-303）」：① 真实 BanG Dream `ffmpeg -i` 日志（含那条 ass + attachment 流 + `Could not find codec parameters` 警告）`parseSubtitleStreamsFromFfmpegLog` 返回 1 条；② 注入 `_TimeoutCapturingBackend` 捕获实际超时，断言 == `subtitleExtractTimeoutForBytes(realSize)` 且 > 30s（撤修复回 30s 变红）；③ 1GB/27GB 超时与抽取路径同公式（回归 BUG-104 同源）。
 - **备注**：media_kit 无 headless，真机「首开大容器播放列表/单片 → 字幕菜单稳定列出内封轨（含 prewarm + 播放并发期）」待用户复验。本机离线无争用故原 30s 也能过，超时是真机冷缓存 + 三方 IO 争用下的窗口；修复消除该窗口而非掩盖。若真机仍空，下一步看新增的 `[VideoSubtitleSource] embedded enumeration timed out` 日志确认是否仍卡探测。
