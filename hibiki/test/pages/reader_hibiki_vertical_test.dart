@@ -3,9 +3,16 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  // BUG-285 (TODO-375) regression guard: _persistPosition must pass null (not a
+  // raw -1) when the WebView snapshot has no exact char offset, so a transient
+  // -1 during reflow / vertical edge sampling does NOT clobber the precise
+  // same-section anchor. Clobbering it degrades restore + cross-chapter audio
+  // follow back to chapter-start granularity (symptom 1: "音频跟随只能到章节").
+  // ReaderPositionRepository.save owns the same-section-keep / cross-section-clear
+  // decision when charOffset is null.
   test(
-      'position save clears stale exact anchor when current char offset failed',
-      () {
+      'position save preserves the precise same-section anchor when the '
+      'current char offset is unavailable (-1 → null, not raw -1)', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_page.dart',
     ).readAsStringSync();
@@ -18,16 +25,16 @@ void main() {
 
     expect(
       persist,
-      contains('charOffset: charOffset,'),
-      reason: 'If the current WebView snapshot reports charOffset=-1, the '
-          'reader must clear any old exact anchor. Keeping it can make restore '
-          'prefer a stale chapter-start charOffset over the newly saved progress.',
+      contains('charOffset: charOffset >= 0 ? charOffset : null'),
+      reason: 'A transient charOffset=-1 must map to null so '
+          'ReaderPositionRepository.save keeps the existing same-section exact '
+          'anchor instead of overwriting it with -1 (chapter granularity).',
     );
     expect(
       persist,
-      isNot(contains('charOffset >= 0 ? charOffset : null')),
-      reason: 'Passing null keeps same-section char_offset unchanged in '
-          'ReaderPositionRepository.',
+      isNot(contains('charOffset: charOffset,')),
+      reason: 'Passing the raw charOffset (which may be -1) overwrites the '
+          'precise same-section anchor and is exactly the BUG-285 regression.',
     );
   });
 
