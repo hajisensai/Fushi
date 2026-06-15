@@ -530,6 +530,134 @@ void main() {
     });
   });
 
+  // TODO-362（PR#3 响应式页边距）：①左右默认各 2% 留白（每行变窄）；上下默认 0%。
+  // ②竖排/横排底部预留必须跟随 settings.fontSize，禁止退化成硬编码常量（防止大字号
+  // 正文被底栏遮挡的回归）。
+  group('TODO-362 responsive page margins', () {
+    test('default left/right margin is 2%, top/bottom 0% (single source)',
+        () async {
+      // ReaderSettings 默认是单一真相，source 的 fallback 默认引用它。
+      expect(ReaderSettings.defaultMarginLeftPercent, 2);
+      expect(ReaderSettings.defaultMarginRightPercent, 2);
+      expect(ReaderSettings.defaultMarginTopPercent, 0);
+      expect(ReaderSettings.defaultMarginBottomPercent, 0);
+
+      final ReaderSettings settings = await _defaultSettings();
+      expect(settings.marginLeft, 2);
+      expect(settings.marginRight, 2);
+      expect(settings.marginTop, 0);
+      expect(settings.marginBottom, 0);
+    });
+
+    test(
+        'reading a default margin writes the 2% default through to the DB '
+        '(existing users get 2% on first open)', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+
+      // 触发 getter → _get 把默认值写回 DB。
+      expect(settings.marginLeft, 2);
+      expect(settings.marginRight, 2);
+
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(prefs['src:reader_ttu:ttu_margin_left'], '2.0');
+      expect(prefs['src:reader_ttu:ttu_margin_right'], '2.0');
+    });
+
+    test('default css emits 2vw left/right padding and 0vh top/bottom',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      // paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw'
+      expect(css, contains('padding: 0.0vh 2.0vw 0.0vh 2.0vw !important;'));
+    });
+
+    test('normalizeMarginPercent clamps to [0, 50] and maps non-finite to 0',
+        () {
+      expect(ReaderSettings.normalizeMarginPercent(-3), 0);
+      expect(ReaderSettings.normalizeMarginPercent(60), 50);
+      expect(ReaderSettings.normalizeMarginPercent(12), 12);
+      expect(ReaderSettings.normalizeMarginPercent(double.nan), 0);
+      expect(ReaderSettings.normalizeMarginPercent(double.infinity), 0);
+    });
+
+    // ② 回归守卫：底部预留用 ${fontSize}px（跟字号），不是硬编码常量。把字号抬到接近
+    // TODO-299 的上限 128，断言底部预留 = 128px（不是 22px），否则大字号竖排正文被底栏遮挡。
+    test('vertical bottom reserve scales with fontSize, not a hardcoded const',
+        () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('vertical-rl');
+      await settings.setFontSize(128);
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      // 分页竖排 padding-bottom 跟随字号。
+      expect(
+          css,
+          contains(
+              'padding-bottom: calc(${settings.marginBottom}vh + 128px + var(--chrome-bottom-inset, 0px))'));
+      // 竖排 column-gap（翻页步距）也跟随字号。
+      expect(
+          css,
+          contains(
+              'column-gap: calc(${settings.marginTop}vh + ${settings.marginBottom}vh + 128px + var(--chrome-top-inset, 0px) + var(--chrome-bottom-inset, 0px))'));
+      // 防回归：底部预留绝不能退化成 22px（旧 bottomOverlapPx 常量）。
+      expect(css, isNot(contains('+ 22px + var(--chrome-bottom-inset')));
+    });
+
+    test('horizontal bottom reserve also scales with fontSize', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setFontSize(96);
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'padding-bottom: calc(${settings.marginBottom}vh + 96px + var(--chrome-bottom-inset, 0px))'));
+    });
+
+    test('source margin getters fall back to the 2% defaults', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      ReaderHibikiSource.readerSettings = settings;
+      addTearDown(() => ReaderHibikiSource.readerSettings = null);
+
+      expect(ReaderHibikiSource.instance.ttuMarginLeft, 2);
+      expect(ReaderHibikiSource.instance.ttuMarginRight, 2);
+      expect(ReaderHibikiSource.instance.ttuMarginTop, 0);
+      expect(ReaderHibikiSource.instance.ttuMarginBottom, 0);
+    });
+
+    test('source margin setters normalize out-of-range input', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      ReaderHibikiSource.readerSettings = settings;
+      addTearDown(() => ReaderHibikiSource.readerSettings = null);
+
+      await ReaderHibikiSource.instance.setTtuMarginLeft(99);
+      await ReaderHibikiSource.instance.setTtuMarginRight(-10);
+      expect(ReaderHibikiSource.instance.ttuMarginLeft, 50);
+      expect(ReaderHibikiSource.instance.ttuMarginRight, 0);
+    });
+  });
+
   group('ReaderHibikiSource live settings callbacks', () {
     test('style setting writes trigger the live callback', () async {
       final HibikiDatabase db =

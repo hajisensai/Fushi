@@ -9,7 +9,10 @@ class ReaderLayoutDefaults {
   static const int bottomOverlapPx = fontSizePx;
   static const double imageWidthViewportRatio = 0.95;
 
-  static const String pagePaddingCss = '0vh 2.5vw';
+  // TODO-362（PR#3 响应式页边距）：默认左右各 2vw（= ReaderSettings 默认左右 2%），
+  // 上下 0。运行时实际 padding 由 marginTop/Bottom/Left/Right 动态算（见 css()），
+  // 此常量是文档化的默认快照。
+  static const String pagePaddingCss = '0vh 2vw';
   static const String imageMaxWidthFallbackCss = '95vw';
   static const String imageMaxHeightFallbackCss =
       'calc(var(--page-height, 100vh) - 22px)';

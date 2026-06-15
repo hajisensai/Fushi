@@ -291,19 +291,22 @@ SettingsDestination _readingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
+          // TODO-362（PR#3 响应式页边距）：四个边距都是百分比（左右 = vw / 上下 = vh），
+          // 默认左右各 2%、上下 0%。范围 0~50%，禁止负值（负值与百分比语义冲突，且
+          // CSS padding 不接受负值）。格式带 `%` 提示用户这是百分比。
           SettingsStepperItem(
             id: 'reading_display.margin_top',
             title: t.margin_top,
             icon: Icons.border_top,
-            min: -5,
-            max: 30,
+            min: 0,
+            max: 50,
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 0,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginTop,
-            format: (double v) => '${v.round()}',
+            format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setTtuMarginTop(v);
               notifyReaderSettingsChanged(c);
@@ -313,15 +316,15 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.margin_bottom',
             title: t.margin_bottom,
             icon: Icons.border_bottom,
-            min: -5,
-            max: 30,
+            min: 0,
+            max: 50,
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 1,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginBottom,
-            format: (double v) => '${v.round()}',
+            format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setTtuMarginBottom(v);
               notifyReaderSettingsChanged(c);
@@ -331,15 +334,15 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.margin_left',
             title: t.margin_left,
             icon: Icons.border_left,
-            min: -5,
-            max: 30,
+            min: 0,
+            max: 50,
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 2,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginLeft,
-            format: (double v) => '${v.round()}',
+            format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setTtuMarginLeft(v);
               notifyReaderSettingsChanged(c);
@@ -349,15 +352,15 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.margin_right',
             title: t.margin_right,
             icon: Icons.border_right,
-            min: -5,
-            max: 30,
+            min: 0,
+            max: 50,
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 3,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginRight,
-            format: (double v) => '${v.round()}',
+            format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setTtuMarginRight(v);
               notifyReaderSettingsChanged(c);

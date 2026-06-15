@@ -858,37 +858,53 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   double get ttuMarginTop =>
       readerSettings?.marginTop ??
-      getPreference<double>(key: 'ttu_margin_top', defaultValue: 0);
+      getPreference<double>(
+        key: 'ttu_margin_top',
+        defaultValue: ReaderSettings.defaultMarginTopPercent,
+      );
   Future<void> setTtuMarginTop(double v) async {
-    await (readerSettings?.setMarginTop(v) ??
-        setPreference<double>(key: 'ttu_margin_top', value: v));
+    final double normalized = ReaderSettings.normalizeMarginPercent(v);
+    await (readerSettings?.setMarginTop(normalized) ??
+        setPreference<double>(key: 'ttu_margin_top', value: normalized));
     onSettingsChangedLive?.call();
   }
 
   double get ttuMarginBottom =>
       readerSettings?.marginBottom ??
-      getPreference<double>(key: 'ttu_margin_bottom', defaultValue: 0);
+      getPreference<double>(
+        key: 'ttu_margin_bottom',
+        defaultValue: ReaderSettings.defaultMarginBottomPercent,
+      );
   Future<void> setTtuMarginBottom(double v) async {
-    await (readerSettings?.setMarginBottom(v) ??
-        setPreference<double>(key: 'ttu_margin_bottom', value: v));
+    final double normalized = ReaderSettings.normalizeMarginPercent(v);
+    await (readerSettings?.setMarginBottom(normalized) ??
+        setPreference<double>(key: 'ttu_margin_bottom', value: normalized));
     onSettingsChangedLive?.call();
   }
 
   double get ttuMarginLeft =>
       readerSettings?.marginLeft ??
-      getPreference<double>(key: 'ttu_margin_left', defaultValue: 0);
+      getPreference<double>(
+        key: 'ttu_margin_left',
+        defaultValue: ReaderSettings.defaultMarginLeftPercent,
+      );
   Future<void> setTtuMarginLeft(double v) async {
-    await (readerSettings?.setMarginLeft(v) ??
-        setPreference<double>(key: 'ttu_margin_left', value: v));
+    final double normalized = ReaderSettings.normalizeMarginPercent(v);
+    await (readerSettings?.setMarginLeft(normalized) ??
+        setPreference<double>(key: 'ttu_margin_left', value: normalized));
     onSettingsChangedLive?.call();
   }
 
   double get ttuMarginRight =>
       readerSettings?.marginRight ??
-      getPreference<double>(key: 'ttu_margin_right', defaultValue: 0);
+      getPreference<double>(
+        key: 'ttu_margin_right',
+        defaultValue: ReaderSettings.defaultMarginRightPercent,
+      );
   Future<void> setTtuMarginRight(double v) async {
-    await (readerSettings?.setMarginRight(v) ??
-        setPreference<double>(key: 'ttu_margin_right', value: v));
+    final double normalized = ReaderSettings.normalizeMarginPercent(v);
+    await (readerSettings?.setMarginRight(normalized) ??
+        setPreference<double>(key: 'ttu_margin_right', value: normalized));
     onSettingsChangedLive?.call();
   }
 

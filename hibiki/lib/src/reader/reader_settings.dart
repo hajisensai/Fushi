@@ -34,6 +34,20 @@ class ReaderSettings {
 
   static const String _prefix = 'src:reader_ttu:';
 
+  /// TODO-362（PR#3 响应式页边距）：正文左右两侧默认各留白 2%（百分比 = vw），每行
+  /// 因此变窄；上下默认 0%（垂直预留由 chrome inset + 字号决定，见
+  /// `ReaderContentStyles`）。四个值是「单一真相」默认，被 `ReaderHibikiSource`
+  /// 的 fallback 默认引用，避免三处来源（settings / source / aggregate）互相矛盾。
+  static const double defaultMarginTopPercent = 0;
+  static const double defaultMarginBottomPercent = 0;
+  static const double defaultMarginLeftPercent = 2;
+  static const double defaultMarginRightPercent = 2;
+
+  /// 边距是百分比（vw/vh），CSS padding 不接受负值且过大会吃光正文；统一夹在
+  /// `[0, 50]`，非有限值（NaN/∞）落 0。
+  static double normalizeMarginPercent(double value) =>
+      value.isFinite ? value.clamp(0, 50).toDouble() : 0;
+
   // ── Core persistence ──────────────────────────────────────────────
 
   Future<void> loadFromPrefsSnapshot(Map<String, String> snapshot) async {
@@ -179,18 +193,25 @@ class ReaderSettings {
   Future<void> setTextIndentation(double v) =>
       _set<double>('ttu_text_indentation', v);
 
-  double get marginTop => _get<double>('ttu_margin_top', 0);
-  Future<void> setMarginTop(double v) => _set<double>('ttu_margin_top', v);
+  double get marginTop =>
+      _get<double>('ttu_margin_top', defaultMarginTopPercent);
+  Future<void> setMarginTop(double v) =>
+      _set<double>('ttu_margin_top', normalizeMarginPercent(v));
 
-  double get marginBottom => _get<double>('ttu_margin_bottom', 0);
+  double get marginBottom =>
+      _get<double>('ttu_margin_bottom', defaultMarginBottomPercent);
   Future<void> setMarginBottom(double v) =>
-      _set<double>('ttu_margin_bottom', v);
+      _set<double>('ttu_margin_bottom', normalizeMarginPercent(v));
 
-  double get marginLeft => _get<double>('ttu_margin_left', 0);
-  Future<void> setMarginLeft(double v) => _set<double>('ttu_margin_left', v);
+  double get marginLeft =>
+      _get<double>('ttu_margin_left', defaultMarginLeftPercent);
+  Future<void> setMarginLeft(double v) =>
+      _set<double>('ttu_margin_left', normalizeMarginPercent(v));
 
-  double get marginRight => _get<double>('ttu_margin_right', 0);
-  Future<void> setMarginRight(double v) => _set<double>('ttu_margin_right', v);
+  double get marginRight =>
+      _get<double>('ttu_margin_right', defaultMarginRightPercent);
+  Future<void> setMarginRight(double v) =>
+      _set<double>('ttu_margin_right', normalizeMarginPercent(v));
 
   int get pageColumns => _get<int>('ttu_page_columns', 0);
   Future<void> setPageColumns(int v) => _set<int>('ttu_page_columns', v);
