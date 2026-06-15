@@ -1036,16 +1036,16 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 跳到下一句 cue（已是最后一句时 no-op）。
   ///
-  /// 目标索引经 [nextCueIndexFor] 决策：当前已定位到 cue 就取下一条；落在句间
+  /// 目标索引经 [nextCueIndexFor] 决策，**完全按实时 [positionMs] 定位当前句再取
+  /// 下一条**（TODO-410），不读滞后的 [_currentCueIndex]：句中按位置 floor 即当前
+  /// 句，下一句 = floor+1（严格排除当前句，不会「下一句跳到当前句」）；落在句间
   /// gap（[updateCueForPosition] 在 gap 把 [_currentCueIndex] 清成 -1，BUG-074）
-  /// 时**不能**裸用 `_currentCueIndex + 1`（=0），否则下一句永远跳回首句起点 ——
-  /// 表现为「快进有概率直接打回原点 / 进度条圆点闪到最开头」（BUG-175）。gap 里
-  /// 按当前真实 [positionMs] 二分定位最近一条已起播 cue，再取它的下一条。
+  /// 时同样按 floor 取它的下一条，绝不裸用 `-1 + 1`（=0）打回原点（BUG-175）；
+  /// 早于首句时前进到首句（BUG-176/189）。
   Future<void> skipToNextCue() async {
     if (_cues.isEmpty) return;
     final int? next = nextCueIndexFor(
       cues: _cues,
-      currentCueIndex: _currentCueIndex,
       positionMs: _effectivePositionMs,
     );
     if (next == null) return;
@@ -1054,15 +1054,16 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 跳到上一句 cue（已是第一句时 no-op）。
   ///
-  /// 目标索引经 [prevCueIndexFor] 决策：当前已定位到 cue 就取前一条；落在 gap
-  /// （[_currentCueIndex] == -1）时按 [positionMs] 二分回退到「最近一条起点早于当前
-  /// 位置」的前一条 —— 旧实现裸用 `_currentCueIndex - 1`（=-2）在 gap 里恒越界 no-op，
-  /// 句子后退在静音间隙完全失灵（BUG-175）。
+  /// 目标索引经 [prevCueIndexFor] 决策，**完全按实时 [positionMs] 定位**（TODO-410），
+  /// 不读滞后的 [_currentCueIndex]：句中取当前句的前一条（严格排除当前句，方案 B）；
+  /// 落在 gap（findCueIndex 返回 -1）时按 [positionMs] 二分回退到 gap 之前刚播完那条
+  /// —— 旧实现裸用 `_currentCueIndex - 1`（=-2）在 gap 里恒越界 no-op，句子后退在静音
+  /// 间隙完全失灵（BUG-175）。回到当前句句首「重播本句」是另一条独立路径
+  /// （[skipToCue]，TODO-378/BUG-287），不走这里。
   Future<void> skipToPrevCue() async {
     if (_cues.isEmpty) return;
     final int? prev = prevCueIndexFor(
       cues: _cues,
-      currentCueIndex: _currentCueIndex,
       positionMs: _effectivePositionMs,
     );
     if (prev == null) return;
@@ -1082,7 +1083,6 @@ class VideoPlayerController extends ChangeNotifier
     }
     final PrevSeekDecision decision = prevSeekDecisionFor(
       cues: _cues,
-      currentCueIndex: _currentCueIndex,
       positionMs: _effectivePositionMs,
       seekSeconds: seekSeconds,
     );
@@ -1115,7 +1115,6 @@ class VideoPlayerController extends ChangeNotifier
     }
     final int? next = nextCueIndexFor(
       cues: _cues,
-      currentCueIndex: _currentCueIndex,
       positionMs: _effectivePositionMs,
     );
     // next == null：已在末句之后，无下一句 → 保持 no-op（不前进越过片尾，避免误跳到结尾）。
@@ -1125,50 +1124,56 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 纯函数：「下一句」目标索引（[skipToNextCue] 决策，抽出便于单测）。
   ///
-  /// - 已定位到当前 cue（`currentCueIndex` 合法）：取它的下一条；已在末句返回 null。
-  /// - 落在 gap（`currentCueIndex < 0`）：用 [_floorCueIndexByPosition] 按 `positionMs`
-  ///   二分定位「最近一条起点 <= 当前位置」的 cue 再取下一条；位置早于全部 cue 时
-  ///   落首句（索引 0）；位置已过末句起点则返回 null（已无下一句）。任何情况都
-  ///   **不返回负值/越界**，避免在 gap 里因裸 `-1 + 1` 打回原点（BUG-175）。
+  /// **唯一真相源是实时 [positionMs]**，不再读成员变量 `_currentCueIndex`（TODO-410）：
+  /// 后者由 125ms tick 的 [updateCueForPosition] 异步更新，存在滞后窗口——用户 seek
+  /// 进某句后 tick 尚未追平时，旧实现裸信 `_currentCueIndex` 会算出当前句本身（在该句
+  /// 内 `_currentCueIndex` 仍停在上一句、`+1` 恰好等于当前句），表现为「下一句跳到当前
+  /// 句」。改用 [_floorCueIndexByPosition] 按 `positionMs` 定位「当前/最近一条起点 <=
+  /// 位置」的 cue（句中或 gap 都返回它），其下一条即真正的下一句，**严格排除当前句**。
   ///
-  /// 注意**不能**用 [JsonAlignmentParser.findCueIndex] 求 gap 的参照 cue ——它在
-  /// gap 内（含「末句之后」与「首句之前」）一律返回 -1，无法区分「早于首句」与
-  /// 「某句之后的 gap」，会把后者也误当首句之前。这里需要 floor 语义而非命中语义。
+  /// - 位置早于全部 cue（floor < 0）：下一句 = 首句（索引 0）。
+  /// - floor 已是末句（floor + 1 越界）：返回 null（已无下一句，保持 BUG-176/189 边界）。
+  ///
+  /// 注意**不能**用 [JsonAlignmentParser.findCueIndex] 求 floor ——它在 gap 内（含
+  /// 「末句之后」与「首句之前」）一律返回 -1，无法区分「早于首句」与「某句之后的
+  /// gap」，会把后者也误当首句之前。这里需要 floor 语义而非命中语义。
   static int? nextCueIndexFor({
     required List<AudioCue> cues,
-    required int currentCueIndex,
     required int? positionMs,
   }) {
     if (cues.isEmpty) return null;
-    int idx = currentCueIndex;
-    if (idx < 0 || idx >= cues.length) {
-      final int floor = _floorCueIndexByPosition(cues, positionMs ?? 0);
-      if (floor < 0) return 0; // 早于首句：下一句 = 首句。
-      idx = floor;
-    }
-    if (idx + 1 >= cues.length) return null; // 已在末句（之后）。
-    return idx + 1;
+    final int floor = _floorCueIndexByPosition(cues, positionMs ?? 0);
+    if (floor < 0) return 0; // 早于首句：下一句 = 首句。
+    if (floor + 1 >= cues.length) return null; // floor 已是末句：无下一句。
+    return floor + 1; // 排除当前句（floor），取下一条。
   }
 
   /// 纯函数：「上一句」目标索引（[skipToPrevCue] 决策，与 [nextCueIndexFor] 对称）。
   ///
-  /// - 已定位到当前 cue：取前一条；已在首句返回 null（句子后退到头不动）。
-  /// - 落在 gap：用 [_floorCueIndexByPosition] 找「最近一条起点 <= 当前位置」的 cue，
-  ///   其前一条即「上一句」；位置正落在某句起点上则后退到它的前一条；早于全部
-  ///   cue 时落首句（索引 0）。旧实现裸用 `-1 - 1`（=-2）在 gap 里恒越界 no-op。
+  /// **唯一真相源是实时 [positionMs]**，不再读 `_currentCueIndex`（TODO-410，同
+  /// [nextCueIndexFor]）。两种语义并存，按位置是否落在某句**时间窗内**区分：
+  ///
+  /// - **句中**（[JsonAlignmentParser.findCueIndex] 命中某句 `hit >= 0`，含句首
+  ///   `pos == startMs`）：当前句 = hit，上一句 = `hit - 1`，**严格排除当前句**
+  ///   （方案 B，与 [nextCueIndexFor] 对称）；hit == 0（已在首句）返回 null。回到
+  ///   当前句句首「重播本句」是另一条独立路径（[skipToCue]），不走这里。
+  /// - **gap / 早于首句**（findCueIndex 返回 -1）：此刻没有正在播放的句子，「上一句」=
+  ///   gap 之前刚播完那条（最近一条起点 < 位置的 cue）；早于全部 cue 时落首句（索引 0）。
+  ///   这保留了 TODO-085/119 转场 gap 回退决策赖以计算「上一句距当前多远」的参照。
   static int? prevCueIndexFor({
     required List<AudioCue> cues,
-    required int currentCueIndex,
     required int? positionMs,
   }) {
     if (cues.isEmpty) return null;
-    if (currentCueIndex >= 0 && currentCueIndex < cues.length) {
-      if (currentCueIndex == 0) return null; // 已在首句。
-      return currentCueIndex - 1;
-    }
-    // gap / 未定位：找起点 <= 位置的最后一条；位置正好压在某句起点上时该句不算
-    // 「上一句」（应退到它之前），故二分用严格 `<`。
     final int pos = positionMs ?? 0;
+    // 句中（命中某句时间窗，含句首）：当前句 = hit，上一句 = hit-1，排除当前句。
+    final int hit =
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: pos);
+    if (hit >= 0) {
+      return hit == 0 ? null : hit - 1; // 已在首句无上一句。
+    }
+    // gap / 早于首句：找起点 < 位置的最后一条（gap 之前刚播完那句）；位置正好压在
+    // 某句起点上时由上面 hit 分支处理，这里恒落在 gap，故二分用严格 `<`。
     int lo = 0;
     int hi = cues.length;
     while (lo < hi) {
@@ -1197,13 +1202,11 @@ class VideoPlayerController extends ChangeNotifier
   /// [seekSeconds] <= 0 时退化阈值失效，永远跳句（防御性，正常配置恒 >= 1）。
   static PrevSeekDecision prevSeekDecisionFor({
     required List<AudioCue> cues,
-    required int currentCueIndex,
     required int? positionMs,
     required int seekSeconds,
   }) {
     final int? prev = prevCueIndexFor(
       cues: cues,
-      currentCueIndex: currentCueIndex,
       positionMs: positionMs,
     );
     if (prev == null) return PrevSeekDecision.none;

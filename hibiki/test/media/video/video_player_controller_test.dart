@@ -600,21 +600,18 @@ void main() {
     group('nextCueIndexFor', () {
       test('定位到当前 cue：取下一条', () {
         expect(
-          VideoPlayerController.nextCueIndexFor(
-              cues: cues, currentCueIndex: 0, positionMs: 500),
+          VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 500),
           1,
         );
         expect(
-          VideoPlayerController.nextCueIndexFor(
-              cues: cues, currentCueIndex: 1, positionMs: 2500),
+          VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 2500),
           2,
         );
       });
 
       test('已在末句：返回 null（不动）', () {
         expect(
-          VideoPlayerController.nextCueIndexFor(
-              cues: cues, currentCueIndex: 2, positionMs: 4500),
+          VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 4500),
           isNull,
         );
       });
@@ -622,16 +619,14 @@ void main() {
       test('gap（idx=-1）里 cue0 与 cue1 之间：下一句 = cue1，不打回原点', () {
         // pos=1500 落在 cue0(0-1000) 与 cue1(2000-3000) 的 gap。旧实现会给 0。
         expect(
-          VideoPlayerController.nextCueIndexFor(
-              cues: cues, currentCueIndex: -1, positionMs: 1500),
+          VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 1500),
           1,
         );
       });
 
       test('gap 在 cue1 与 cue2 之间：下一句 = cue2', () {
         expect(
-          VideoPlayerController.nextCueIndexFor(
-              cues: cues, currentCueIndex: -1, positionMs: 3500),
+          VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 3500),
           2,
         );
       });
@@ -641,15 +636,14 @@ void main() {
         final lateStart = <AudioCue>[_cue(0, 1000, 2000), _cue(1, 3000, 4000)];
         expect(
           VideoPlayerController.nextCueIndexFor(
-              cues: lateStart, currentCueIndex: -1, positionMs: 200),
+              cues: lateStart, positionMs: 200),
           0,
         );
       });
 
       test('gap 在末句之后：返回 null（已无下一句）', () {
         expect(
-          VideoPlayerController.nextCueIndexFor(
-              cues: cues, currentCueIndex: -1, positionMs: 9000),
+          VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 9000),
           isNull,
         );
       });
@@ -657,7 +651,7 @@ void main() {
       test('空 cue 列表：null', () {
         expect(
           VideoPlayerController.nextCueIndexFor(
-              cues: const <AudioCue>[], currentCueIndex: -1, positionMs: 0),
+              cues: const <AudioCue>[], positionMs: 0),
           isNull,
         );
       });
@@ -666,21 +660,18 @@ void main() {
     group('prevCueIndexFor', () {
       test('定位到当前 cue：取前一条', () {
         expect(
-          VideoPlayerController.prevCueIndexFor(
-              cues: cues, currentCueIndex: 2, positionMs: 4500),
+          VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 4500),
           1,
         );
         expect(
-          VideoPlayerController.prevCueIndexFor(
-              cues: cues, currentCueIndex: 1, positionMs: 2500),
+          VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 2500),
           0,
         );
       });
 
       test('已在首句：返回 null（不动）', () {
         expect(
-          VideoPlayerController.prevCueIndexFor(
-              cues: cues, currentCueIndex: 0, positionMs: 500),
+          VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 500),
           isNull,
         );
       });
@@ -689,16 +680,14 @@ void main() {
         // pos=3500 落在 cue1(2000-3000) 与 cue2(4000-5000) 的 gap。
         // 旧实现 -1-1=-2 恒 no-op；新决策回退到 gap 之前那条 = cue1。
         expect(
-          VideoPlayerController.prevCueIndexFor(
-              cues: cues, currentCueIndex: -1, positionMs: 3500),
+          VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 3500),
           1,
         );
       });
 
       test('gap 在 cue0 与 cue1 之间：上一句 = cue0', () {
         expect(
-          VideoPlayerController.prevCueIndexFor(
-              cues: cues, currentCueIndex: -1, positionMs: 1500),
+          VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 1500),
           0,
         );
       });
@@ -707,15 +696,14 @@ void main() {
         final lateStart = <AudioCue>[_cue(0, 1000, 2000), _cue(1, 3000, 4000)];
         expect(
           VideoPlayerController.prevCueIndexFor(
-              cues: lateStart, currentCueIndex: -1, positionMs: 200),
+              cues: lateStart, positionMs: 200),
           0,
         );
       });
 
       test('gap 在末句之后：上一句 = 末句', () {
         expect(
-          VideoPlayerController.prevCueIndexFor(
-              cues: cues, currentCueIndex: -1, positionMs: 9000),
+          VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 9000),
           2,
         );
       });
@@ -723,7 +711,7 @@ void main() {
       test('空 cue 列表：null', () {
         expect(
           VideoPlayerController.prevCueIndexFor(
-              cues: const <AudioCue>[], currentCueIndex: -1, positionMs: 0),
+              cues: const <AudioCue>[], positionMs: 0),
           isNull,
         );
       });
@@ -744,7 +732,6 @@ void main() {
         // 当前定位在 cue2(12000)，上一句 = cue1(10000)，距当前 ~2s <= 3s → 跳句。
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
           cues: farCues,
-          currentCueIndex: 2,
           positionMs: 12500,
           seekSeconds: 3,
         );
@@ -757,7 +744,6 @@ void main() {
         // 改回退 3s。
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
           cues: farCues,
-          currentCueIndex: 1,
           positionMs: 10000,
           seekSeconds: 3,
         );
@@ -770,7 +756,6 @@ void main() {
         // 上一句 = cue0(0)，距当前 8s > 3s → 回退 3s。
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
           cues: farCues,
-          currentCueIndex: -1,
           positionMs: 8000,
           seekSeconds: 3,
         );
@@ -781,7 +766,6 @@ void main() {
         // 上一句 = cue0(0)，pos=3000 → gap = 3000 == 3*1000，不 > 阈值 → 跳句。
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
           cues: <AudioCue>[_cue(0, 0, 1000), _cue(1, 5000, 6000)],
-          currentCueIndex: 1,
           positionMs: 3000,
           seekSeconds: 3,
         );
@@ -791,7 +775,6 @@ void main() {
       test('已在首句：none（不强行回退到负位置）', () {
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
           cues: farCues,
-          currentCueIndex: 0,
           positionMs: 500,
           seekSeconds: 3,
         );
@@ -803,7 +786,6 @@ void main() {
       test('空 cue 列表：none', () {
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
           cues: const <AudioCue>[],
-          currentCueIndex: -1,
           positionMs: 0,
           seekSeconds: 3,
         );
@@ -813,7 +795,6 @@ void main() {
       test('seekSeconds<=0 防御：阈值失效，恒跳句', () {
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
           cues: farCues,
-          currentCueIndex: 1,
           positionMs: 10000,
           seekSeconds: 0,
         );
@@ -841,10 +822,72 @@ void main() {
       // 此刻按「下一句」：决策必须按 position(1500) 回退到 cue0 再 +1 = cue1，
       // 绝不能因 -1+1 跳回 cue0（原点）。
       expect(
-        VideoPlayerController.nextCueIndexFor(
-            cues: c.cues, currentCueIndex: c.currentCueIndex, positionMs: 1500),
+        VideoPlayerController.nextCueIndexFor(cues: c.cues, positionMs: 1500),
         1,
       );
+    });
+
+    // TODO-410 / BUG-300：视频「下一句」跳到当前句。
+    //
+    // 根因：125ms tick 更新的 [_currentCueIndex] 有滞后窗口——用户 seek 进某句后 tick
+    // 尚未追平时，旧实现裸信 [_currentCueIndex]（仍停在上一句）→ next = 上一句+1 = 当前
+    // 句本身（「下一句跳到当前句」），prev = 上一句-1（乱跳 / no-op）。修复：next/prev 一
+    // 律按实时 [positionMs] 定位当前句，严格排除当前句。
+    //
+    // 构造：相邻无 gap 的两条 cue，实时位置 14000 落在 cue1 内，但成员变量
+    // [_currentCueIndex] 仍是陈旧的 0（停在 cue0）。撤掉修复（回到读 currentCueIndex）
+    // 时本用例会红：next 会算成 0+1=1（=当前句 cue1，错），prev 会算成 0-1=null（不动，错）。
+    group('TODO-410 stale currentCueIndex：next/prev 按实时 position 排除当前句', () {
+      // 相邻无 gap：cue1 紧接 cue0 之后；14000 落在 cue1 时间窗内。
+      final adjacent = <AudioCue>[
+        _cue(0, 0, 14000),
+        _cue(1, 14000, 28000),
+        _cue(2, 28000, 42000),
+      ];
+
+      test('position 在 cue1 内、currentCueIndex 陈旧停在 0：下一句 = cue2（不是 cue1）', () {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: adjacent, positionMs: 14000),
+          2,
+          reason: '实时 position=14000 已在 cue1 内，下一句应是 cue2；旧实现裸信 stale '
+              'currentCueIndex=0 会算成 cue1（=当前句本身）',
+        );
+      });
+
+      test('position 在 cue1 内、currentCueIndex 陈旧停在 0：上一句 = cue0（不乱跳/不 no-op）',
+          () {
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: adjacent, positionMs: 14000),
+          0,
+          reason: '实时 position=14000 已在 cue1 内，上一句应是 cue0；旧实现裸信 stale '
+              'currentCueIndex=0 会算成 0-1=null（不动）',
+        );
+      });
+
+      test('真实控制器：tick 滞后（currentCueIndex=0）下 next/prev 仍按 position 决策', () {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+        c.setCues(adjacent);
+        // 先把 tick 同步到 cue0（模拟刚播 cue0 时 tick 写入 currentCueIndex=0）。
+        c.debugUpdateCueForPosition(5000);
+        expect(c.currentCueIndex, 0, reason: 'tick 把当前句记成 cue0');
+        // 用户 seek 进 cue1（live position=14000），但 tick 尚未跑、currentCueIndex 仍是 0。
+        expect(c.currentCueIndex, 0, reason: 'tick 滞后：成员变量仍停在 cue0');
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: c.cues, positionMs: 14000),
+          2,
+          reason: '下一句必须按实时 position(14000=cue1) 排除当前句 → cue2',
+        );
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: c.cues, positionMs: 14000),
+          0,
+          reason: '上一句必须按实时 position(14000=cue1) → cue0',
+        );
+      });
     });
   });
 
@@ -868,8 +911,7 @@ void main() {
     test('OP 里（position 早于首句）下一句 = 首句索引 0（跳到 38456ms = 前进，不回 0）', () {
       for (final int pos in <int>[0, 1000, 10000, 20000, 38000]) {
         expect(
-          VideoPlayerController.nextCueIndexFor(
-              cues: opCues, currentCueIndex: -1, positionMs: pos),
+          VideoPlayerController.nextCueIndexFor(cues: opCues, positionMs: pos),
           0,
           reason:
               'OP position=$pos 早于首句：下一句应是首句(0)，seek 到 ${opCues[0].startMs}ms '
@@ -885,10 +927,7 @@ void main() {
       c.debugUpdateCueForPosition(10000); // OP 内：早于首句 38456 → -1
       expect(c.currentCueIndex, -1, reason: 'OP 段无 cue 覆盖，当前索引应为 -1');
       expect(
-        VideoPlayerController.nextCueIndexFor(
-            cues: c.cues,
-            currentCueIndex: c.currentCueIndex,
-            positionMs: 10000),
+        VideoPlayerController.nextCueIndexFor(cues: c.cues, positionMs: 10000),
         0,
         reason: '从 OP gap 按下一句必须前进到首句(0=38456ms)，不能回开头',
       );
@@ -896,8 +935,7 @@ void main() {
 
     test('已在末句之后（片尾无字幕）下一句 = null（保持原位，不回开头也不越界）', () {
       expect(
-        VideoPlayerController.nextCueIndexFor(
-            cues: opCues, currentCueIndex: -1, positionMs: 200000),
+        VideoPlayerController.nextCueIndexFor(cues: opCues, positionMs: 200000),
         isNull,
       );
     });
@@ -949,7 +987,6 @@ void main() {
       // 上一句 = cue0(38456)，距当前 ~31.5s > 3s → 回退 3s（绝不跳回 38456 那么远）。
       final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
         cues: transitionCues,
-        currentCueIndex: -1,
         positionMs: 70000,
         seekSeconds: 3,
       );
@@ -962,7 +999,6 @@ void main() {
       // 距当前 ~4.5s。用更大的 seekSeconds=10s 阈值 → 4.5s <= 10s → 跳句。
       final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
         cues: transitionCues,
-        currentCueIndex: -1,
         positionMs: 43000,
         seekSeconds: 10,
       );
