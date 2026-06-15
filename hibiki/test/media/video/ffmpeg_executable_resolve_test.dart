@@ -183,5 +183,120 @@ void main() {
         throwsA(isA<ProcessException>()),
       );
     });
+
+    // BUG-283 (TODO-372): 续 BUG-275。一类损坏让 bundled `Process.start` **成功**，
+    // 进程真起来、随后在加载期才崩——典型 STATUS_DLL_NOT_FOUND(0xC0000135) /
+    // STATUS_ENTRYPOINT_NOT_FOUND(0xC0000139)：ffmpeg.exe 本体没坏但依赖 DLL 缺失/
+    // 被杀软隔离。退出码不是 BUG-275 认的 STATUS_INVALID_IMAGE_FORMAT，stderr 也空，
+    // 旧逻辑原样返回这条空结果、从不回退 → 字幕枚举拿空文本 → 解析 0 条轨 → 静默
+    // 无内封字幕。回退条件必须扩展为「bundled 跑起来却没产出任何 ffmpeg 工作输出」。
+    test(
+        'bundled crashes on load (DLL missing): empty output falls back to PATH',
+        () async {
+      // STATUS_DLL_NOT_FOUND(-1073741515) / STATUS_ENTRYPOINT_NOT_FOUND
+      // (-1073741511) / 通用非 0：进程起来但无 stderr，都应回退。
+      for (final int code in <int>[-1073741515, -1073741511, 1]) {
+        final List<String> calls = <String>[];
+        final FfmpegRunResult result = await runCliFfmpegForTesting(
+          override: null,
+          bundledPath: 'C:/App/Hibiki/ffmpeg.exe',
+          isWindows: true,
+          args: <String>['-hide_banner', '-i', 'C:/v/ep.mkv'],
+          timeout: const Duration(seconds: 1),
+          runner:
+              (String executable, List<String> args, Duration timeout) async {
+            calls.add(executable);
+            if (executable == 'C:/App/Hibiki/ffmpeg.exe') {
+              // 进程起来了（无 ProcessException），但 DLL 缺失加载期崩：
+              // 退出码非 0、stderr 完全为空。
+              return FfmpegRunResult(returnCode: code, output: '');
+            }
+            return const FfmpegRunResult(
+              returnCode: 1,
+              output: '  Stream #0:2(jpn): Subtitle: ass (default)',
+            );
+          },
+        );
+
+        expect(result.output, contains('Subtitle'),
+            reason: 'returnCode=$code 空输出应回退 PATH 取到字幕枚举');
+        expect(calls, <String>['C:/App/Hibiki/ffmpeg.exe', 'ffmpeg'],
+            reason: 'returnCode=$code 应先试 bundled 再回退 PATH');
+      }
+    });
+
+    test('bundled empty output fallback is platform-agnostic (Linux/mac too)',
+        () async {
+      final List<String> calls = <String>[];
+      final FfmpegRunResult result = await runCliFfmpegForTesting(
+        override: null,
+        bundledPath: '/app/Hibiki/ffmpeg',
+        isWindows: false,
+        args: <String>['-hide_banner', '-i', '/v/ep.mkv'],
+        timeout: const Duration(seconds: 1),
+        runner: (String executable, List<String> args, Duration timeout) async {
+          calls.add(executable);
+          if (executable == '/app/Hibiki/ffmpeg') {
+            // e.g. missing shared object: launched but exits non-zero, no stderr.
+            return const FfmpegRunResult(returnCode: 127, output: '');
+          }
+          return const FfmpegRunResult(
+            returnCode: 1,
+            output: '  Stream #0:1(eng): Subtitle: subrip',
+          );
+        },
+      );
+
+      expect(result.output, contains('Subtitle'));
+      expect(calls, <String>['/app/Hibiki/ffmpeg', 'ffmpeg']);
+    });
+
+    test('normal -i enumeration (non-zero + full stderr) does NOT fall back',
+        () async {
+      // 正常工作的 ffmpeg：`-i` 无输出文件恒退出非 0，但 stderr 满是流信息——
+      // 这是成功枚举，绝不能误判成坏二进制去回退 PATH（否则平添一次进程开销）。
+      final List<String> calls = <String>[];
+      const String fullLog = 'Input #0, matroska,webm:\n'
+          '  Stream #0:0: Video: hevc\n'
+          '  Stream #0:1(jpn): Subtitle: ass (default)\n'
+          'At least one output file must be specified';
+      final FfmpegRunResult result = await runCliFfmpegForTesting(
+        override: null,
+        bundledPath: 'C:/App/Hibiki/ffmpeg.exe',
+        isWindows: true,
+        args: <String>['-hide_banner', '-i', 'C:/v/ep.mkv'],
+        timeout: const Duration(seconds: 1),
+        runner: (String executable, List<String> args, Duration timeout) async {
+          calls.add(executable);
+          return const FfmpegRunResult(returnCode: 1, output: fullLog);
+        },
+      );
+
+      expect(result.output, contains('Subtitle'));
+      expect(calls, <String>['C:/App/Hibiki/ffmpeg.exe'],
+          reason: '正常枚举只该调一次 bundled，不回退 PATH');
+    });
+
+    test('bundled timeout (returnCode null + empty) does NOT fall back',
+        () async {
+      // 超时被 SIGKILL 返回 returnCode:null + 空输出——是慢 IO 而非坏二进制，
+      // 回退会让用户对同一个慢文件再等一遍；保持原契约不回退，调用方按超时降级。
+      final List<String> calls = <String>[];
+      final FfmpegRunResult result = await runCliFfmpegForTesting(
+        override: null,
+        bundledPath: 'C:/App/Hibiki/ffmpeg.exe',
+        isWindows: true,
+        args: <String>['-hide_banner', '-i', 'C:/v/huge.mkv'],
+        timeout: const Duration(seconds: 1),
+        runner: (String executable, List<String> args, Duration timeout) async {
+          calls.add(executable);
+          return const FfmpegRunResult(returnCode: null, output: '');
+        },
+      );
+
+      expect(result.returnCode, isNull);
+      expect(calls, <String>['C:/App/Hibiki/ffmpeg.exe'],
+          reason: '超时不该回退 PATH（慢 IO 非坏二进制）');
+    });
   });
 }
