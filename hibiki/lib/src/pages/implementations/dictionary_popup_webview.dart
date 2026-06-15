@@ -761,7 +761,7 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'mineEntry',
           callback: (args) async {
-            // BUG-299: the mine/update bridge handlers MUST always return a
+            // BUG-293: the mine/update bridge handlers MUST always return a
             // MinePopupResult JSON and never let an exception escape into the
             // native inappwebview JS-handler bridge. An override
             // (e.g. VideoHibikiPage._mineVideoCard) or writeDictionaryMediaCache
@@ -802,7 +802,7 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'updateEntry',
           callback: (args) async {
-            // BUG-299: same boundary contract as mineEntry above — an escaping
+            // BUG-293: same boundary contract as mineEntry above — an escaping
             // exception from the update-in-place override (re-mining the just-
             // mined word after deleting its Anki card hits this green check path)
             // must become a logged failure, not an unhandled exception across
