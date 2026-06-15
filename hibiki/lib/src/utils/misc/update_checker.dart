@@ -87,6 +87,153 @@ Future<String?> fetchFirstSuccessfulBody(
   return null;
 }
 
+/// **根因修复（TODO-384 第二轮）**：让更新检查/下载用的 [HttpClient] 走用户机器上
+/// 正在运行的系统/环境代理。
+///
+/// 背景：BUG-292 已查明纯 GFW（直连 `api.github.com` 被切、公共 gh 代理又不代理 API）
+/// 环境下检查注定失败，唯一出路是「经用户自己的代理出口直连 API」。但**裸 `HttpClient()`
+/// 默认不设 `findProxy`，连环境变量代理都不读**，所以即便用户开着 clash/v2ray，更新请求
+/// 仍走直连被切——这是真正可修的结构性缺口。
+///
+/// Dart 的 `HttpClient.findProxyFromEnvironment` **只读环境变量**（`HTTPS_PROXY` /
+/// `HTTP_PROXY` / `NO_PROXY`，大小写均认），**不读 Windows 注册表 / macOS 系统代理设置**
+/// （已实测 + 官方文档确认）。因此：
+///   * 所有平台：合并 `Platform.environment`，覆盖「代理 app 导出了 env 变量」「Linux/macOS
+///     GUI 代理写了 env」「用户手动 `set HTTPS_PROXY` 后启动」等场景。
+///   * Windows：clash/v2ray 的「系统代理」模式只写注册表
+///     `HKCU\...\Internet Settings\ProxyServer`，env 变量为空 → 额外读注册表并把它注入
+///     environment map（见 [resolveWindowsSystemProxyEnvironment]），让同一个
+///     `findProxyFromEnvironment` 能用上。
+///
+/// 没有任何代理（env 空 + Windows 注册表未启用/读取失败）时，`findProxyFromEnvironment`
+/// 自然返回 `DIRECT`，等价于原「裸 HttpClient 直连」行为——**不破坏现有逐镜像回退**。
+Future<void> applyUpdateProxy(HttpClient client) async {
+  final Map<String, String> environment = <String, String>{
+    ...Platform.environment,
+  };
+  if (Platform.isWindows) {
+    // env 变量优先：用户显式 set 的不该被注册表覆盖。仅当 env 没给代理时才补注册表。
+    final bool hasEnvProxy = environment.keys.any((String k) {
+      final String lower = k.toLowerCase();
+      return lower == 'https_proxy' || lower == 'http_proxy';
+    });
+    if (!hasEnvProxy) {
+      final Map<String, String> registryProxy =
+          await resolveWindowsSystemProxyEnvironment();
+      environment.addAll(registryProxy);
+    }
+  }
+  client.findProxy = (Uri uri) =>
+      HttpClient.findProxyFromEnvironment(uri, environment: environment);
+}
+
+/// 读取 Windows「系统代理」设置（clash/v2ray 系统代理模式写在这里），返回可喂给
+/// [HttpClient.findProxyFromEnvironment] 的 environment 片段（`{'https_proxy': ...,
+/// 'http_proxy': ...}`）；未启用 / 读取失败 / 非 Windows 返回空 map（= 不补代理）。
+///
+/// 走 `reg query`（异步、无需 FFI、无新依赖），在构建 client 前一次性解析；解析逻辑下沉到
+/// 纯函数 [parseWindowsRegistryProxy] 以便单测。
+Future<Map<String, String>> resolveWindowsSystemProxyEnvironment() async {
+  if (!Platform.isWindows) return const <String, String>{};
+  try {
+    const String key =
+        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
+    final ProcessResult enableResult = await Process.run(
+      'reg',
+      <String>['query', key, '/v', 'ProxyEnable'],
+    );
+    final ProcessResult serverResult = await Process.run(
+      'reg',
+      <String>['query', key, '/v', 'ProxyServer'],
+    );
+    return parseWindowsRegistryProxy(
+      proxyEnableOutput:
+          enableResult.stdout is String ? enableResult.stdout as String : '',
+      proxyServerOutput:
+          serverResult.stdout is String ? serverResult.stdout as String : '',
+    );
+  } catch (e) {
+    // 读不到注册表（权限/环境异常）就当没有系统代理，回退直连——best-effort。
+    debugPrint('[UpdateChecker] read windows system proxy failed: $e');
+    return const <String, String>{};
+  }
+}
+
+/// **纯函数**：解析 `reg query ... /v ProxyEnable|ProxyServer` 的原始输出，生成
+/// `findProxyFromEnvironment` 用的 environment 片段。
+///
+/// - `ProxyEnable` 必须为 `0x1`（启用）才返回代理；`0x0`/缺失 → 空 map（系统代理关着）。
+/// - `ProxyServer` 形如 `127.0.0.1:7890`（全局）或
+///   `http=127.0.0.1:7890;https=127.0.0.1:7890;...`（分协议）。两种都解析：分协议时取
+///   `https=`（优先）/`http=` 段；全局时直接用整串。
+/// - 输出畸形 / 无 ProxyServer → 空 map。
+///
+/// `reg query` 单行格式：`    ProxyServer    REG_SZ    127.0.0.1:7890`（前导空白 + 三段，
+/// 以连续空白分隔；值本身可能含 `=`/`;`/`:` 但不含空白，故按「类型标记 REG_* 之后」取值）。
+@visibleForTesting
+Map<String, String> parseWindowsRegistryProxy({
+  required String proxyEnableOutput,
+  required String proxyServerOutput,
+}) {
+  final String? enableValue =
+      _registryValueAfterType(proxyEnableOutput, 'ProxyEnable');
+  // ProxyEnable 是 REG_DWORD，值形如 `0x1`/`0x0`。非 0x1 视为未启用。
+  if (enableValue == null || enableValue.toLowerCase() != '0x1') {
+    return const <String, String>{};
+  }
+  final String? serverValue =
+      _registryValueAfterType(proxyServerOutput, 'ProxyServer');
+  if (serverValue == null || serverValue.isEmpty) {
+    return const <String, String>{};
+  }
+
+  final String? https = _proxyForScheme(serverValue, 'https');
+  final String? http =
+      _proxyForScheme(serverValue, 'http') ?? _globalProxy(serverValue);
+  final Map<String, String> result = <String, String>{};
+  // findProxyFromEnvironment 对 https URL 读 https_proxy、回退 http_proxy；两者都填最稳。
+  final String? effectiveHttps = https ?? http;
+  if (effectiveHttps != null && effectiveHttps.isNotEmpty) {
+    result['https_proxy'] = effectiveHttps;
+  }
+  final String? effectiveHttp = http ?? https;
+  if (effectiveHttp != null && effectiveHttp.isNotEmpty) {
+    result['http_proxy'] = effectiveHttp;
+  }
+  return result;
+}
+
+/// 从单条 `reg query` 输出里取出指定值名后、`REG_<TYPE>` 标记之后的那段值。
+/// 匹配行必须含 `valueName`，再按空白切出最后一段作为值。无匹配返回 null。
+String? _registryValueAfterType(String output, String valueName) {
+  for (final String rawLine in const LineSplitter().convert(output)) {
+    final String line = rawLine.trim();
+    if (!line.startsWith(valueName)) continue;
+    final RegExpMatch? m =
+        RegExp(r'^' + valueName + r'\s+REG_\w+\s+(.+)$').firstMatch(line);
+    if (m != null) return m.group(1)!.trim();
+  }
+  return null;
+}
+
+/// 从分协议代理串（`http=h:p;https=h:p`）里取指定 scheme 的 `host:port`；全局串
+/// （不含 `=`）返回 null。
+String? _proxyForScheme(String proxyServer, String scheme) {
+  if (!proxyServer.contains('=')) return null;
+  for (final String part in proxyServer.split(';')) {
+    final int eq = part.indexOf('=');
+    if (eq < 0) continue;
+    if (part.substring(0, eq).trim().toLowerCase() == scheme) {
+      return part.substring(eq + 1).trim();
+    }
+  }
+  return null;
+}
+
+/// 全局代理串（不含 `=`，形如 `127.0.0.1:7890`）原样返回；分协议串返回 null。
+String? _globalProxy(String proxyServer) =>
+    proxyServer.contains('=') ? null : proxyServer.trim();
+
 final RegExp _kBetaReleaseTagPattern = RegExp(r'^v\d+(?:\.\d+)*-beta\.\d+$');
 final RegExp _kDebugReleaseTagPattern =
     RegExp(r'^v\d+(?:\.\d+)*-debug\.\d+\+[0-9A-Fa-f]{7,40}$');
@@ -176,6 +323,9 @@ class UpdateChecker {
       await _cleanupOldApks(currentVersion);
       client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
+      // 走系统/环境代理：用户开着 clash/v2ray 时检查请求经其出口直连 api.github.com
+      // （纯 GFW 下唯一可成功路径，BUG-292）。无代理则等价直连，不破坏镜像回退。
+      await applyUpdateProxy(client);
 
       final List<Map<String, dynamic>> releases =
           await _fetchReleasesForChannel(client, channel);
@@ -414,6 +564,8 @@ class UpdateChecker {
       client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
       client.idleTimeout = const Duration(seconds: 60);
+      // 下载同样走系统/环境代理（与检查一致）：直连/镜像不通时经用户代理出口下载。
+      await applyUpdateProxy(client);
 
       // 下载与检查共用同一组 GitHub 镜像候选（updateCheckUrls）：直连优先、各 gh
       // 代理前缀兜底。下载的写盘/安装逻辑不变，只是镜像清单与检查保持同步（BUG-277）。

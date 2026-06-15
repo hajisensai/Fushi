@@ -1,0 +1,16 @@
+## BUG-293 · 更新检查/下载 HttpClient 不走系统/环境代理（开了代理也连不上 GitHub）
+- **报告**：2026-06-15（用户：qqbotxiaoxiao）
+- **真实性**：✅ 真 bug。用户原话「有代理，但是为什么没有代理源」——本机有系统代理（clash/v2ray 等）在跑，但 app「检查更新」连不上。承接 BUG-292 的结论：纯 GFW 下直连 `api.github.com` 被切、公共 gh 代理又不代理 API，唯一可成功路径是「经用户自己的代理出口直连 API」。但 `UpdateChecker` 的 `HttpClient` **裸建、从不设 `findProxy`**，默认连环境变量代理都不读，所以即便用户开着代理，更新请求仍走直连被切。
+  - 根因 `hibiki/lib/src/utils/misc/update_checker.dart`：`_check` 里 `client = HttpClient()`（检查阶段）+ `_downloadAndInstall` 里 `client = HttpClient()`（下载阶段），两处都没设 `findProxy`。
+- **Dart HttpClient 各平台对系统代理的默认行为（调查结论，已实测 + 官方文档确认）**：
+  - 裸 `HttpClient()` 不设 `findProxy` → **既不读系统代理也不读环境变量**，永远直连。
+  - `HttpClient.findProxyFromEnvironment` **只读环境变量** `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`（大小写均认），**不读 Windows 注册表、不读 macOS/Linux GUI 系统代理设置**。
+  - Windows 上 clash/v2ray 的「系统代理」模式只写注册表 `HKCU\...\Internet Settings\ProxyServer`（+ `ProxyEnable=0x1`），env 变量为空 → Dart 默认完全无视。TUN/虚拟网卡模式则透明路由，app 不需任何配置。
+- **[x] ① 根因修复** — 提交 `<HASH>`：新增 `applyUpdateProxy(HttpClient)`，在两处建 client 后调用，设 `client.findProxy = (uri) => HttpClient.findProxyFromEnvironment(uri, environment: ...)`：
+  - 所有平台合并 `Platform.environment`（覆盖代理 app 导出 env、Linux/macOS GUI 写 env、用户手动 `set HTTPS_PROXY` 后启动）。
+  - Windows 额外读注册表系统代理（`resolveWindowsSystemProxyEnvironment` 走 `reg query`，异步、无 FFI、无新依赖），仅当 env 未给代理时注入，解析下沉纯函数 `parseWindowsRegistryProxy`（支持全局 `host:port` 与分协议 `http=/https=` 串、`ProxyEnable` 门控）。
+  - 无代理时 `findProxyFromEnvironment` 返回 `DIRECT`，等价原裸 client 直连——**不破坏 BUG-277/292 的直连优先 + 逐镜像回退**。
+- **[x] ② 自动化测试** — `hibiki/test/utils/misc/update_checker_proxy_test.dart`（10 例）：`parseWindowsRegistryProxy` 全局/分协议/未启用/缺值/大小写；解析结果喂 `findProxyFromEnvironment` 得 `PROXY host:port`；空 map → `DIRECT`（不破坏直连）。
+- **决策请求（需用户确认）**：当前自动方案覆盖「env 变量代理」（全平台）+「Windows 注册表系统代理」。**仍有缺口**：(1) macOS/Linux 的 GUI 系统代理（不导出 env 时）未读；(2) Windows PAC 脚本代理未解析。若用户主要在 Windows 用 clash「系统代理」模式，本修已直接受益。是否需要再加 app 内「自定义更新源/代理地址」输入框（确定性、跨平台兜底，但需 settings/UI/i18n 17 语言投入）？
+- **需真机复测（开/关代理两态）**：① Windows 开 clash 系统代理 + app 检查更新应成功（经代理出口）；② 关代理 / 直连可达时检查仍正常（DIRECT 等价旧行为）；③ Android：clash for Android「VPN 模式」透明路由本就走代理，env/注册表分支不触发，确认无回归。
+- **备注**：承接 BUG-292（结构性事实文档化 + 直连优先守卫），本条补真正可修的「让 HttpClient 用上代理」。下载阶段同样套用 `applyUpdateProxy`，与检查一致。
