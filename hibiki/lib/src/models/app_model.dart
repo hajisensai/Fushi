@@ -180,6 +180,43 @@ enum BackgroundListenResult {
   loadFailed,
 }
 
+/// 一条词典在 FFI 引擎分桶时需要的信息：类型、资源路径、目录是否存在、是否隐藏。
+typedef DictPathEntry = ({
+  DictionaryType type,
+  String path,
+  bool exists,
+  bool hidden,
+});
+
+/// 把词典分桶成 FFI 引擎要的四组 path（term/freq/pitch/kanji）的单一真相。
+///
+/// 隐藏的 freq/pitch/kanji 不进引擎——它们无渲染期隐藏过滤、会直接从引擎冒出来
+/// （BUG-177 / TODO-094 S4）；term 在渲染期按 hidden 过滤，故隐藏仍进桶。不存在的
+/// 目录跳过。同步 [AppModel._rebuildDictPathsCache] 与异步 `_rebuildDictPathsCacheAsync`
+/// 只差「怎么判目录存在」，分桶 switch 收口于此（之前两份逐字复制，改一处忘另一处即漂移）。
+@visibleForTesting
+({List<String> term, List<String> freq, List<String> pitch, List<String> kanji})
+    bucketDictPaths(List<DictPathEntry> entries) {
+  final term = <String>[];
+  final freq = <String>[];
+  final pitch = <String>[];
+  final kanji = <String>[];
+  for (final DictPathEntry e in entries) {
+    if (!e.exists) continue;
+    switch (e.type) {
+      case DictionaryType.term:
+        term.add(e.path);
+      case DictionaryType.kanji:
+        if (!e.hidden) kanji.add(e.path);
+      case DictionaryType.frequency:
+        if (!e.hidden) freq.add(e.path);
+      case DictionaryType.pitch:
+        if (!e.hidden) pitch.add(e.path);
+    }
+  }
+  return (term: term, freq: freq, pitch: pitch, kanji: kanji);
+}
+
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
@@ -652,90 +689,55 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  // 隐藏的 freq/pitch/kanji 不进引擎（无渲染期隐藏过滤会直接冒出来，BUG-177/TODO-094）；
+  // term 渲染期过滤故隐藏仍进桶。always rebuild 即使全空：删掉最后一本要落进空引擎让
+  // 旧 in-memory 索引失效，查询不再命中（BUG-171）。分桶 switch 收口在 [bucketDictPaths]。
   void _rebuildDictPathsCache() {
     _migrateDictionaryTypes();
-    final termPaths = <String>[];
-    final freqPaths = <String>[];
-    final pitchPaths = <String>[];
-    final kanjiPaths = <String>[];
+    final List<DictPathEntry> entries = <DictPathEntry>[];
     for (final d in dictRepo.dictionaries) {
       final p = path.join(dictionaryResourceDirectory.path, d.name);
-      if (!Directory(p).existsSync()) continue;
-      // A disabled (hidden) frequency/pitch dictionary must not be loaded into
-      // the FFI engine at all, otherwise its values keep coming back from
-      // lookupPopupJson and show up in the popup even though the user turned it
-      // off. Term glossaries are filtered at render time (dictionaryNamesByHidden)
-      // so the term bucket stays loaded; only freq/pitch — which surface straight
-      // from the engine with no render-time hidden filter — gate on isHidden
-      // (BUG-177).
-      final bool hidden = d.isHidden(targetLanguage);
-      switch (d.type) {
-        case DictionaryType.term:
-          termPaths.add(p);
-        case DictionaryType.kanji:
-          // Kanji dictionaries go into their own engine bucket so a
-          // single-character lookup resolves through query_kanji (radical /
-          // strokes / on-kun readings) instead of being mis-routed through the
-          // term index. A hidden kanji dictionary, like freq/pitch, surfaces
-          // straight from the engine with no render-time hidden filter, so gate
-          // it on isHidden (TODO-094 S4, mirrors BUG-177).
-          if (!hidden) kanjiPaths.add(p);
-        case DictionaryType.frequency:
-          if (!hidden) freqPaths.add(p);
-        case DictionaryType.pitch:
-          if (!hidden) pitchPaths.add(p);
-      }
+      entries.add((
+        type: d.type,
+        path: p,
+        exists: Directory(p).existsSync(),
+        hidden: d.isHidden(targetLanguage),
+      ));
     }
-    // Always rebuild — even with all buckets empty. Deleting the last (or last
-    // of a type) dictionary leaves the path set empty; an empty rebuild yields
-    // an empty-but-fresh engine that drops the deleted dictionary's in-memory
-    // index, so queries stop hitting it without an app restart (BUG-171).
+    final b = bucketDictPaths(entries);
     HoshiDicts.initializeTyped(
-      termPaths: termPaths,
-      freqPaths: freqPaths,
-      pitchPaths: pitchPaths,
-      kanjiPaths: kanjiPaths,
+      termPaths: b.term,
+      freqPaths: b.freq,
+      pitchPaths: b.pitch,
+      kanjiPaths: b.kanji,
     );
   }
 
   Future<void> _rebuildDictPathsCacheAsync() async {
     _migrateDictionaryTypes();
     final dictList = dictRepo.dictionaries;
-    final existsResults = await Future.wait([
+    final List<String> paths = <String>[
       for (final d in dictList)
-        Directory(path.join(dictionaryResourceDirectory.path, d.name)).exists(),
-    ]);
-    final termPaths = <String>[];
-    final freqPaths = <String>[];
-    final pitchPaths = <String>[];
-    final kanjiPaths = <String>[];
-    for (var i = 0; i < dictList.length; i++) {
-      if (!existsResults[i]) continue;
-      final p = path.join(dictionaryResourceDirectory.path, dictList[i].name);
-      // Hidden frequency/pitch dictionaries stay out of the engine — see the
-      // sync _rebuildDictPathsCache for the full rationale (BUG-177).
-      final bool hidden = dictList[i].isHidden(targetLanguage);
-      switch (dictList[i].type) {
-        case DictionaryType.term:
-          termPaths.add(p);
-        case DictionaryType.kanji:
-          // Kanji dictionaries go into their own engine bucket — see the sync
-          // _rebuildDictPathsCache for the full rationale (TODO-094 S4).
-          if (!hidden) kanjiPaths.add(p);
-        case DictionaryType.frequency:
-          if (!hidden) freqPaths.add(p);
-        case DictionaryType.pitch:
-          if (!hidden) pitchPaths.add(p);
-      }
-    }
-    // Always rebuild — see _rebuildDictPathsCache: an empty path set must still
-    // reload into an empty engine so a deleted dictionary stops resolving
-    // (BUG-171).
+        path.join(dictionaryResourceDirectory.path, d.name),
+    ];
+    final existsResults = await Future.wait(
+      [for (final p in paths) Directory(p).exists()],
+    );
+    final List<DictPathEntry> entries = <DictPathEntry>[
+      for (var i = 0; i < dictList.length; i++)
+        (
+          type: dictList[i].type,
+          path: paths[i],
+          exists: existsResults[i],
+          hidden: dictList[i].isHidden(targetLanguage),
+        ),
+    ];
+    final b = bucketDictPaths(entries);
     HoshiDicts.initializeTyped(
-      termPaths: termPaths,
-      freqPaths: freqPaths,
-      pitchPaths: pitchPaths,
-      kanjiPaths: kanjiPaths,
+      termPaths: b.term,
+      freqPaths: b.freq,
+      pitchPaths: b.pitch,
+      kanjiPaths: b.kanji,
     );
   }
 
