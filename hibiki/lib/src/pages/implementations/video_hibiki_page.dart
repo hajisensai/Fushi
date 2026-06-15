@@ -561,6 +561,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [_videoControlsVisible] 同源，BUG-120）。初始 true：开页先显示让用户发现锁按钮，2s 淡出。
   final ValueNotifier<bool> _lockButtonVisible = ValueNotifier<bool>(true);
 
+  /// 鼠标是否正悬在侧边锁 / 解锁（沉浸）按钮上（TODO-388，BUG-294）。
+  ///
+  /// 根因：侧边锁按钮的可见性走 [_lockButtonVisible] + [_pokeLockButton] 的 2s 自动淡出
+  /// 定时器，唤起只发生在「鼠标在视频区移动」时（[_videoControlsHoverWrap] 的 onHover →
+  /// [_pokeLockButton]）。一旦鼠标**静止悬停在按钮本身**上，不再有 hover 事件续命定时器，
+  /// 2s 后按钮就在光标正下方淡出消失——与用户报告「沉浸按钮鼠标放上去会消失」一致。
+  /// 屏幕右侧 rail 按钮用 [_railHovered] + [_railHoverKeepAlive] 解决同类问题（hover 期间
+  /// 顶住显示、永不被自动淡出收走）。本字段把同一机制套到锁按钮上：鼠标进按钮置 true 顶住
+  /// 可见、移出置 false 让可见性回落到 [_lockButtonVisible] 的自然淡出。仅桌面有 hover。
+  final ValueNotifier<bool> _lockButtonHovered = ValueNotifier<bool>(false);
+
   /// 侧边锁 / 解锁按钮自动淡出定时器（TODO-126）。每次 [_pokeLockButton] 唤起重置。
   Timer? _lockButtonHideTimer;
 
@@ -1834,6 +1845,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
+    _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
     _mediaKitControlsVisible.dispose();
@@ -5726,11 +5738,39 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 浮动侧栏（TODO-274/312 phase 2）：把 screenLeft / screenRight 两个屏幕侧槽的
-  /// 自定义学习按钮分别渲染成左 / 右两条竖直浮条。默认配置只用 screenRight
-  /// （[subtitleList, favoriteSentence, favoriteSentences, settings]，与 legacy
-  /// rightRail 一致）；用户把按钮移到 screenLeft 后左条才出现。两条共用同一可见性
-  /// 门控（沉浸锁 / 侧栏打开时都不显示）。
+  /// 给侧边锁 / 解锁（沉浸）按钮套「hover 保活」MouseRegion（TODO-388，BUG-294）。与
+  /// [_railHoverKeepAlive] 同款：`opaque:false` 不阻断指针下探（按钮点击 / 画面 hover 不受
+  /// 影响），鼠标进按钮置 [_lockButtonHovered]=true 顶住可见、并 [_pokeLockButton] 续命自动
+  /// 淡出定时；移出置 false，可见性回落到 [_lockButtonVisible] 的 2s 自然淡出。仅桌面挂
+  /// （移动端无 hover，透传 child 零开销，沿用 [_railHoverKeepAlive] 的纪律）。
+  Widget _lockButtonHoverKeepAlive({required Widget child}) {
+    if (!_isDesktopVideoControls) return child;
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) {
+        _lockButtonHovered.value = true;
+        _pokeLockButton();
+      },
+      onHover: (_) {
+        _lockButtonHovered.value = true;
+        _pokeLockButton();
+      },
+      onExit: (_) => _lockButtonHovered.value = false,
+      child: child,
+    );
+  }
+
+  /// 浮动侧栏（TODO-274/312 phase 2 + TODO-388）：把 screenLeft / screenRight 两个屏幕
+  /// 侧槽（竖直居中浮条）与 topLeft / topRight 两个顶部槽（顶栏下方、贴上沿的竖条）的
+  /// 自定义学习按钮分别渲染。默认配置只用 screenRight（[subtitleList, favoriteSentence,
+  /// favoriteSentences, settings]，与 legacy rightRail 一致）；用户把按钮拖到其余三槽
+  /// （screenLeft / topLeft / topRight）后对应浮条才出现。四条共用同一可见性门控（沉浸
+  /// 锁 / 侧栏打开时都不显示）。
+  ///
+  /// 顶部两槽贴上沿、留出固定顶栏高度的内边距（[_videoButtonBarHeight] + SafeArea）避免与
+  /// 返回 / 标题 / 截图 / 字幕 / 音轨等固定 chrome 重叠；其学习按钮经同一
+  /// [_buildVideoSideRailFor] 渲染（固定 chrome 是 transport/nav item、legacyButton==null，
+  /// 被 [_slotLearningButtons] 过滤掉，不会误渲染到顶部浮条里）。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
     final Widget right = _buildVideoSideRailFor(
       VideoControlSlot.screenRight,
@@ -5741,6 +5781,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       VideoControlSlot.screenLeft,
       Alignment.centerLeft,
       const EdgeInsets.only(left: 12),
+    );
+    // 顶部两条：贴上沿，留出固定顶栏高度避免压住返回 / 标题 / 字幕等固定 chrome。
+    final double topInset = _videoButtonBarHeight + 8;
+    final Widget topRight = _buildVideoSideRailFor(
+      VideoControlSlot.topRight,
+      Alignment.topRight,
+      EdgeInsets.only(top: topInset, right: 12),
+    );
+    final Widget topLeft = _buildVideoSideRailFor(
+      VideoControlSlot.topLeft,
+      Alignment.topLeft,
+      EdgeInsets.only(top: topInset, left: 12),
     );
     return Positioned.fill(
       // rail 的显隐由「控制条可见」**或**「鼠标正悬在 rail 上」决定（BUG-283）：后者保证
@@ -5761,7 +5813,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               _videoSidePanel.value != null) {
             return const SizedBox.shrink();
           }
-          return Stack(children: <Widget>[left, right]);
+          return Stack(
+            children: <Widget>[left, right, topLeft, topRight],
+          );
         },
       ),
     );
@@ -5769,6 +5823,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 单条浮动侧栏：渲染 [slot] 槽的学习按钮成一列圆形按钮，靠 [alignment] 贴边。
   /// 槽为空返回空白（不占位）。
+  ///
+  /// TODO-388：rail 按钮与其它控件一致地吃「界面大小」+「主题」（之前硬编码
+  /// `Colors.black`/`Colors.white` 背景与图标、且 `IconButton` 不传 `iconSize` →
+  /// 永远默认 24px、不随 appUiScale 缩放，也不随主题色变）。改为图标尺寸走
+  /// [_videoControlIconSize]（base × [_videoUiScale]），背景 / 图标走
+  /// [_videoChromeColorScheme]（与侧边锁按钮 [_buildSideLockButton] 同源），让左 / 右
+  /// 浮动 rail 与底栏 / 顶栏 / 侧边锁按钮在缩放与配色上完全统一。
   Widget _buildVideoSideRailFor(
     VideoControlSlot slot,
     AlignmentGeometry alignment,
@@ -5776,6 +5837,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     final List<VideoControlButton> buttons = _slotLearningButtons(slot);
     if (buttons.isEmpty) return const SizedBox.shrink();
+    final ColorScheme cs = _videoChromeColorScheme(context);
     return Align(
       alignment: alignment,
       child: SafeArea(
@@ -5789,13 +5851,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               children: <Widget>[
                 for (final VideoControlButton button in buttons) ...<Widget>[
                   Material(
-                    color: Colors.black.withValues(alpha: 0.42),
+                    color: cs.surface.withValues(alpha: 0.55),
                     shape: const CircleBorder(),
                     clipBehavior: Clip.antiAlias,
                     child: IconButton(
                       tooltip: _videoControlButtonTooltip(button),
+                      iconSize: _videoControlIconSize,
                       icon: Icon(_videoControlButtonIcon(button)),
-                      color: Colors.white,
+                      color: cs.onSurface,
                       onPressed: () => _activateVideoControlButton(button),
                     ),
                   ),
@@ -6048,9 +6111,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           child: ValueListenableBuilder<bool>(
             valueListenable: _immersiveLocked,
             builder: (BuildContext _, bool locked, __) {
-              return ValueListenableBuilder<bool>(
-                valueListenable: _lockButtonVisible,
-                builder: (BuildContext __, bool visible, ___) {
+              // TODO-388（BUG-294）：可见性 = 自动淡出 [_lockButtonVisible] **或** 鼠标正悬
+              // 在按钮上 [_lockButtonHovered]（与屏幕右侧 rail 的 _videoControlsVisible ||
+              // _railHovered 判据同款）。hover 期间永远顶住显示，根除「鼠标静止在按钮上、2s
+              // 定时器仍把它从光标正下方淡出」的消失 bug。
+              return ListenableBuilder(
+                listenable: Listenable.merge(<Listenable>[
+                  _lockButtonVisible,
+                  _lockButtonHovered,
+                ]),
+                builder: (BuildContext __, ___) {
+                  final bool visible =
+                      _lockButtonVisible.value || _lockButtonHovered.value;
                   return IgnorePointer(
                     ignoring: !visible,
                     child: AnimatedOpacity(
@@ -6058,23 +6130,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       duration: const Duration(milliseconds: 200),
                       child: Padding(
                         padding: const EdgeInsets.only(left: 8),
-                        child: Material(
-                          color: cs.surface.withValues(alpha: 0.55),
-                          shape: const CircleBorder(),
-                          clipBehavior: Clip.antiAlias,
-                          child: IconButton(
-                            tooltip: locked
-                                ? t.video_immersive_unlock
-                                : t.video_menu_lock,
-                            iconSize: iconSize,
-                            color: cs.onSurface,
-                            // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
-                            icon: Icon(
-                              locked
-                                  ? Icons.lock_outline
-                                  : Icons.lock_open_outlined,
+                        // hover 保活：鼠标进按钮置 [_lockButtonHovered]=true 顶住显示 +
+                        // [_pokeLockButton] 续命淡出定时器；移出置 false 回落到自然淡出。
+                        // 与屏幕右侧 rail 的 [_railHoverKeepAlive] 同款（用户要求「改成和屏幕
+                        // 右侧按钮一样」）。
+                        child: _lockButtonHoverKeepAlive(
+                          child: Material(
+                            color: cs.surface.withValues(alpha: 0.55),
+                            shape: const CircleBorder(),
+                            clipBehavior: Clip.antiAlias,
+                            child: IconButton(
+                              tooltip: locked
+                                  ? t.video_immersive_unlock
+                                  : t.video_menu_lock,
+                              iconSize: iconSize,
+                              color: cs.onSurface,
+                              // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
+                              icon: Icon(
+                                locked
+                                    ? Icons.lock_outline
+                                    : Icons.lock_open_outlined,
+                              ),
+                              onPressed: _toggleImmersiveLock,
                             ),
-                            onPressed: _toggleImmersiveLock,
                           ),
                         ),
                       ),

@@ -151,10 +151,18 @@ void main() {
     expect(src.contains('void _pokeLockButton()'), isTrue,
         reason: '缺侧边锁按钮唤回方法');
     final int sideIdx = src.indexOf('Widget _buildSideLockButton()');
-    expect(src.indexOf('valueListenable: _lockButtonVisible', sideIdx),
-        greaterThan(sideIdx),
-        reason: '侧边锁按钮未监听 _lockButtonVisible（淡出不生效）');
-    expect(src.indexOf('AnimatedOpacity(', sideIdx), greaterThan(sideIdx),
+    // TODO-388（BUG-293）：可见性源从单一 ValueListenableBuilder 升级为
+    // Listenable.merge([_lockButtonVisible, _lockButtonHovered])，判据
+    // `_lockButtonVisible.value || _lockButtonHovered.value`——自动淡出仍由
+    // _lockButtonVisible 驱动（hover 期间由 _lockButtonHovered 顶住，根除 hover 即消失）。
+    final int sideEnd = src.indexOf('IconData _volumeIconFor(', sideIdx);
+    expect(sideEnd, greaterThan(sideIdx));
+    final String sideBody = src.substring(sideIdx, sideEnd);
+    expect(sideBody.contains('_lockButtonVisible.value'), isTrue,
+        reason: '侧边锁按钮淡出仍由 _lockButtonVisible 驱动');
+    expect(sideBody.contains('_lockButtonHovered.value'), isTrue,
+        reason: 'hover 期间应由 _lockButtonHovered 顶住显示（BUG-293）');
+    expect(sideBody.contains('AnimatedOpacity('), isTrue,
         reason: '侧边锁按钮淡出应用 AnimatedOpacity');
     // 唤回路径：桌面 hover（onEnter/onHover）+ 移动 / 触屏点画面（_handleVideoPointerUp）。
     expect('_pokeLockButton()'.allMatches(src).length, greaterThanOrEqualTo(3),
