@@ -40,18 +40,22 @@ void main() {
       'sync.sync_now',
       'runManualFullSync',
     ],
+    // schema 行的自适应组件收口在共享 settings_schema_widgets（见下条），两个渲染器
+    // 只保留各自平台外壳并复用共享 SettingsSchemaSection。
     'lib/src/settings/material_settings_renderer.dart': <String>[
       'class MaterialSettingsRenderer',
-      'AdaptiveSettingsSection',
-      'AdaptiveSettingsSwitchRow',
-      'AdaptiveSettingsSegmentedRow',
-      'AdaptiveSettingsSliderRow',
+      'SettingsSchemaSection',
       'HibikiPageScaffold',
     ],
     'lib/src/settings/cupertino_settings_renderer.dart': <String>[
       'class CupertinoSettingsRenderer',
       'CupertinoPageScaffold',
       'CupertinoSliverNavigationBar',
+      'SettingsSchemaSection',
+    ],
+    'lib/src/settings/settings_schema_widgets.dart': <String>[
+      'class SettingsSchemaSection',
+      'class SettingsSchemaItem',
       'AdaptiveSettingsSection',
       'AdaptiveSettingsSwitchRow',
       'AdaptiveSettingsSegmentedRow',

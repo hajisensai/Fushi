@@ -705,16 +705,19 @@ void main() {
     expect(find.byIcon(Icons.contrast_outlined), findsNothing);
   });
 
-  test('settings renderers route navigation rows through shared component', () {
+  test('settings renderers route schema rows through shared component', () {
     final String material =
         File('lib/src/settings/material_settings_renderer.dart')
             .readAsStringSync();
     final String cupertino =
         File('lib/src/settings/cupertino_settings_renderer.dart')
             .readAsStringSync();
+    // schema section/item/footer 的渲染收口在共享 settings_schema_widgets，行控件
+    // 全部走 settings_shared 的自适应组件（不再两个渲染器各复制一份）。
+    final String shared =
+        File('lib/src/settings/settings_schema_widgets.dart').readAsStringSync();
 
-    expect(material, contains('AdaptiveSettingsNavigationRow('));
-    expect(cupertino, contains('AdaptiveSettingsNavigationRow('));
+    expect(shared, contains('AdaptiveSettingsNavigationRow('));
     for (final String row in <String>[
       'AdaptiveSettingsRow(',
       'AdaptiveSettingsSwitchRow(',
@@ -722,21 +725,24 @@ void main() {
       'AdaptiveSettingsSliderRow(',
       'AdaptiveSettingsStepperRow(',
     ]) {
-      expect(material, contains(row));
-      expect(cupertino, contains(row));
+      expect(shared, contains(row));
     }
-    expect(material,
-        isNot(contains('SettingsNavigationItem navigation => _navigation')));
-    expect(cupertino,
-        isNot(contains('SettingsNavigationItem navigation => _navigation')));
-    expect(cupertino, isNot(contains('segmented.onChanged as Function')));
 
-    // segmented 派发改用类型安全的 SettingsSegmentedItem.dispatchChange，
-    // 不再用 `(segmented as dynamic).onChanged` 绕过泛型逆变类型检查。
-    expect(material, isNot(contains('as dynamic).onChanged')));
-    expect(cupertino, isNot(contains('as dynamic).onChanged')));
-    expect(material, contains('.dispatchChange('));
-    expect(cupertino, contains('.dispatchChange('));
+    // 两渲染器复用共享 SettingsSchemaSection/Item，不再各自渲染行。
+    for (final String src in <String>[material, cupertino]) {
+      expect(src, contains('SettingsSchemaSection('));
+      expect(src, contains('SettingsSchemaItem('));
+    }
+
+    // segmented 派发用类型安全的 SettingsSegmentedItem.dispatchChange（在共享 widget
+    // 里），renderer / 共享文件都不再用 `(segmented as dynamic).onChanged` 绕过泛型逆变。
+    expect(shared, contains('.dispatchChange('));
+    for (final String src in <String>[material, cupertino, shared]) {
+      expect(src, isNot(contains('as dynamic).onChanged')));
+      expect(src, isNot(contains('segmented.onChanged as Function')));
+      expect(src,
+          isNot(contains('SettingsNavigationItem navigation => _navigation')));
+    }
     final String destination =
         File('lib/src/settings/settings_destination.dart').readAsStringSync();
     expect(destination, contains('dispatchChange('),

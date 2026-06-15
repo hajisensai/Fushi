@@ -228,20 +228,20 @@ void main() {
           reason: '旧的 5% 粗粒度档位不得回潮');
     });
 
-    test('both renderers pass step + readout through to the slider row', () {
-      for (final String path in <String>[
-        'lib/src/settings/material_settings_renderer.dart',
-        'lib/src/settings/cupertino_settings_renderer.dart',
-      ]) {
-        final String renderer = File(path).readAsStringSync();
-        expect(renderer, contains('step: slider.step'),
-            reason: '$path 必须把 SettingsSliderItem.step 传给滑条行');
-        expect(
-            renderer,
-            contains('readout: slider.titleReadout ? '
-                'slider.label?.call(value) : null'),
-            reason: '$path 必须把 titleReadout 投影成标题读数');
-      }
+    test('shared schema widget passes step + readout through to the slider row',
+        () {
+      // _slider 已从两个渲染器收口到共享 settings_schema_widgets（单一位置），
+      // material/cupertino 都复用它，故 step/readout 接线只需在共享文件断言一次。
+      final String shared = File(
+        'lib/src/settings/settings_schema_widgets.dart',
+      ).readAsStringSync();
+      expect(shared, contains('step: slider.step'),
+          reason: '共享 schema widget 必须把 SettingsSliderItem.step 传给滑条行');
+      expect(
+          shared,
+          contains('readout: slider.titleReadout ? '
+              'slider.label?.call(value) : null'),
+          reason: '共享 schema widget 必须把 titleReadout 投影成标题读数');
     });
   });
 }

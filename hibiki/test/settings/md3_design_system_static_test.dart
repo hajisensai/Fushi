@@ -53,8 +53,16 @@ void main() {
   const Map<String, List<String>> migratedSurfaces = <String, List<String>>{
     'lib/src/settings/material_settings_renderer.dart': <String>[
       'HibikiListItem',
-      'AdaptiveSettingsSection',
+      // schema 行的自适应组件已收口到 settings_schema_widgets（见下条）；渲染器只
+      // 复用共享 SettingsSchemaSection。
+      'SettingsSchemaSection',
       'HibikiPageScaffold',
+    ],
+    'lib/src/settings/settings_schema_widgets.dart': <String>[
+      'AdaptiveSettingsSection',
+      'AdaptiveSettingsSwitchRow',
+      'AdaptiveSettingsSegmentedRow',
+      'AdaptiveSettingsSliderRow',
     ],
     'lib/src/settings/settings_home_page.dart': <String>[
       'HibikiPageHeader',
@@ -797,12 +805,13 @@ void main() {
   });
 
   test('settings renderer rows use shared MD3 row primitives', () {
+    // schema 行渲染已从两个渲染器收口到共享 settings_schema_widgets.SettingsSchemaItem。
     final String source = File(
-      'lib/src/settings/material_settings_renderer.dart',
+      'lib/src/settings/settings_schema_widgets.dart',
     ).readAsStringSync();
     final String itemSource = _sectionSource(
       source,
-      'class _SettingsSchemaItem',
+      'class SettingsSchemaItem',
       source.length,
     );
 
