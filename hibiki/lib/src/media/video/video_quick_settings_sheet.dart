@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -1116,9 +1118,15 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
-  /// 控制条编辑器（TODO-274/312 phase 2，抄 B 站可定制控制条）：每个可定制学习按钮
-  /// 一行槽位选择器，把按钮放到底栏左 / 底栏右 / 屏幕左 / 屏幕右，或隐藏（仍可从设置 /
-  /// 右键菜单到达）。写入直接驱动 9-槽位 [VideoControlLayout]（v2 持久化），不再走旧三档。
+  /// 控制条编辑器（TODO-274/312 phase 2 -> TODO-383 可视化拖动）：不再每个按钮一行
+  /// 下拉「选择」槽位，而是把可定制学习按钮渲染成可拖动的 chip，用户直接把 chip 拖到
+  /// 代表播放器布局的槽位区域里来排布——所见即所得。写入仍直接驱动 9-槽位
+  /// [VideoControlLayout]（v2 持久化），落点经 [VideoControlLayout.moveItem]，
+  /// 复用既有数据模型、默认布局、encode/decode，与渲染契约一致。
+  ///
+  /// 槽位采用既有 [VideoControlSlot.editableSlots]（底栏左/右、屏幕左/右、隐藏），
+  /// 按其在播放器上的真实方位排成可视网格：上排=屏幕左右浮动轨，中排=底栏左右，
+  /// 下方独立一格=隐藏托盘（仍可从设置/右键菜单到达）。
   Widget _buildControlsDetail() {
     return AdaptiveSettingsSection(
       children: <Widget>[
@@ -1127,40 +1135,222 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           icon: Icons.dashboard_customize_outlined,
           showIcon: true,
         ),
-        for (final VideoControlItem item
-            in VideoControlItem.customizableLearning)
-          AdaptiveSettingsPickerRow<VideoControlSlot>(
-            title: _controlButtonLabel(item.legacyButton!),
-            subtitle: item.pinnedRequired
-                ? t.video_control_settings_required_hint
-                : null,
-            icon: _controlButtonIcon(item.legacyButton!),
-            selected: _slotForPicker(item),
-            options: <AdaptiveSettingsPickerOption<VideoControlSlot>>[
-              for (final VideoControlSlot slot
-                  in VideoControlSlot.editableSlots)
-                // 必选按钮（设置）不提供「隐藏」选项——模型层也会回弹，UI 先不列出。
-                if (!(item.pinnedRequired && slot == VideoControlSlot.hidden))
-                  AdaptiveSettingsPickerOption<VideoControlSlot>(
-                    value: slot,
-                    label: _controlSlotLabel(slot),
-                  ),
-            ],
-            onChanged: (VideoControlSlot slot) async {
-              final VideoControlLayout next =
-                  _controlLayout.moveItem(item, slot);
-              setState(() => _controlLayout = next);
-              await widget.onControlLayoutChanged?.call(next);
-            },
-          ),
+        _buildControlDragEditor(),
       ],
     );
   }
 
-  /// 当前布局里 [item] 实际所在槽位，clamp 到编辑器可选集合：若按钮当前停在编辑器不
-  /// 暴露的固定槽（如 bottomCenter / top*），回显成最接近的可选项，避免 picker 选中态
-  /// 落到不在 options 里的值（Dropdown 断言）。
-  VideoControlSlot _slotForPicker(VideoControlItem item) {
+  /// 可视化拖动编辑器主体：一个代表播放器的容器，内含 4 个屏内槽位（屏幕左/右 + 底栏
+  /// 左/右）按真实方位排布，下方一个「隐藏」托盘。每个槽位是 [DragTarget]，落入即
+  /// `moveItem`；每个按钮是 [Draggable] chip，显示在它当前所属的槽位里。
+  Widget _buildControlDragEditor() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // 上排：两条屏幕浮动轨（左 / 右）。
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: _buildSlotRegion(VideoControlSlot.screenLeft)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSlotRegion(VideoControlSlot.screenRight)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 中排：底栏左 / 右。
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: _buildSlotRegion(VideoControlSlot.bottomLeft)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSlotRegion(VideoControlSlot.bottomRight)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 隐藏托盘：拖到这里的按钮不在播放器上渲染（仍可从设置/右键菜单到达）。
+          _buildSlotRegion(VideoControlSlot.hidden),
+        ],
+      ),
+    );
+  }
+
+  /// 单个槽位放置区：标题 + 当前停在该槽的可定制学习按钮 chip（wrap 排列）。整块是
+  /// [DragTarget]，把任意可定制学习按钮拖入即 `moveItem` 到本槽。必选按钮（设置）不
+  /// 接受被拖入「隐藏」槽（onWillAccept 拒绝 + 模型层 moveItem 也会回弹兜底）。
+  Widget _buildSlotRegion(VideoControlSlot slot) {
+    final List<VideoControlItem> items = <VideoControlItem>[
+      for (final VideoControlItem item in VideoControlItem.customizableLearning)
+        if (_slotForEditor(item) == slot) item,
+    ];
+    return DragTarget<VideoControlItem>(
+      onWillAcceptWithDetails: (DragTargetDetails<VideoControlItem> details) {
+        // 必选按钮不能拖进「隐藏」槽。
+        if (details.data.pinnedRequired && slot == VideoControlSlot.hidden) {
+          return false;
+        }
+        // 已经在本槽的不算「接受」（避免无意义回调）。
+        return _slotForEditor(details.data) != slot;
+      },
+      onAcceptWithDetails: (DragTargetDetails<VideoControlItem> details) {
+        unawaited(_moveControlItem(details.data, slot));
+      },
+      builder: (
+        BuildContext context,
+        List<VideoControlItem?> candidate,
+        List<dynamic> rejected,
+      ) {
+        final ThemeData theme = Theme.of(context);
+        final bool highlighted = candidate.isNotEmpty;
+        final bool rejecting = rejected.isNotEmpty;
+        final Color borderColor = rejecting
+            ? theme.colorScheme.error
+            : highlighted
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outlineVariant;
+        return Container(
+          constraints: const BoxConstraints(minHeight: 72),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: highlighted
+                ? theme.colorScheme.primary.withValues(alpha: 0.08)
+                : theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: borderColor,
+              width: highlighted || rejecting ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                _controlSlotLabel(slot),
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text(
+                    t.video_control_slot_drop_hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.7),
+                    ),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: <Widget>[
+                    for (final VideoControlItem item in items)
+                      _buildDraggableControlChip(item),
+                  ],
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 可拖动的按钮 chip：拖动手柄 + 图标 + 标题。拖动时用半透明 feedback，原位淡出。
+  Widget _buildDraggableControlChip(VideoControlItem item) {
+    final Widget chip = _controlChipBody(item, dragging: false);
+    return Draggable<VideoControlItem>(
+      data: item,
+      feedback: Material(
+        color: Colors.transparent,
+        child: _controlChipBody(item, dragging: true),
+      ),
+      childWhenDragging: Opacity(opacity: 0.3, child: chip),
+      child: chip,
+    );
+  }
+
+  /// chip 视觉本体（拖动 feedback 与静止态共用，feedback 态加阴影更突出）。标题在窄槽
+  /// 位里会被压窄：标签用 [Flexible] + 省略号，避免长标题（如「收藏本句」全称）撑爆
+  /// 半宽槽位导致 RenderFlex 溢出。feedback 浮在 overlay（无界约束）故给定上限宽度。
+  Widget _controlChipBody(VideoControlItem item, {required bool dragging}) {
+    final ThemeData theme = Theme.of(context);
+    final Widget body = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: dragging
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.drag_indicator,
+            size: 16,
+            color:
+                theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.7),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            _controlButtonIcon(item.legacyButton!),
+            size: 16,
+            color: theme.colorScheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              _controlButtonLabel(item.legacyButton!),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    // overlay 上的 feedback 处于无界约束，给定上限宽让 [Flexible] 有界、不溢出。
+    if (dragging) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 240),
+        child: body,
+      );
+    }
+    return body;
+  }
+
+  /// 拖动落点的统一写入：`moveItem` 到目标槽 -> setState -> 回调持久化。
+  Future<void> _moveControlItem(
+    VideoControlItem item,
+    VideoControlSlot slot,
+  ) async {
+    final VideoControlLayout next = _controlLayout.moveItem(item, slot);
+    if (next == _controlLayout) return;
+    setState(() => _controlLayout = next);
+    await widget.onControlLayoutChanged?.call(next);
+  }
+
+  /// 编辑器视角下 [item] 所在槽位：clamp 到 [VideoControlSlot.editableSlots]。若按钮
+  /// 当前停在编辑器不暴露的固定槽（如 bottomCenter / top*，旧 chrome 残留），归到最接
+  /// 近的可拖动槽显示，避免 chip 落到不在编辑器里的位置而「消失」。
+  VideoControlSlot _slotForEditor(VideoControlItem item) {
     final VideoControlSlot actual = _controlLayout.slotOf(item);
     if (VideoControlSlot.editableSlots.contains(actual)) return actual;
     switch (actual) {

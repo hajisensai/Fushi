@@ -1645,5 +1645,6 @@
     "video_control_slot_screen_right": "屏幕右侧",
     "video_control_slot_hidden": "隐藏",
     "update_network_failure": "无法连接 $host：$reason",
-    "shortcut_action_video_replay_previous_subtitle": "重播上一句"
+    "shortcut_action_video_replay_previous_subtitle": "重播上一句",
+    "video_control_slot_drop_hint": "拖动按钮到这里"
 }
