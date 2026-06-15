@@ -94,6 +94,11 @@ enum ShortcutAction {
       ShortcutScope.video, 'video_toggle_favorite_sentence'),
   videoReplayCurrentSubtitle(
       ShortcutScope.video, 'video_replay_current_subtitle'),
+  // 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，**不**退化成
+  // 回退几秒。与 videoPreviousSubtitle（Ctrl+←，gap 太远时退化时间 seek，BUG-185/TODO-085）
+  // 语义不同，是两个独立功能；TODO-328 误当重复删掉，此处恢复。
+  videoReplayPreviousSubtitle(
+      ShortcutScope.video, 'video_replay_previous_subtitle'),
   videoShowFavoriteSentences(
       ShortcutScope.video, 'video_show_favorite_sentences'),
   videoEscape(ShortcutScope.video, 'video_escape');

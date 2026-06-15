@@ -119,14 +119,18 @@ void main() {
       expect(settings, contains(action));
     }
 
-    // TODO-328：移除「重播上一句」(videoReplayPreviousSubtitle / Shift+R)。它与逐句
-    // 导航「上一句」(videoPreviousSubtitle) 行为重复，用户决定只保留逐句导航且不要
-    // 退化回退。守卫这两个符号确实从所有快捷键层与页面回调中消失，防止回归。
-    expect(actions, isNot(contains('videoReplayPreviousSubtitle')));
-    expect(defaults, isNot(contains('videoReplayPreviousSubtitle')));
-    expect(shortcuts, isNot(contains('replayPreviousSubtitle')));
-    expect(settings, isNot(contains('videoReplayPreviousSubtitle')));
-    expect(page, isNot(contains('_replayPreviousCueAndPokeControls')));
+    // TODO-378（BUG-287）：恢复「重播上一句」(videoReplayPreviousSubtitle / Shift+R)。
+    // TODO-328 曾误当它与「上一句字幕」(videoPreviousSubtitle / Ctrl+←) 重复而删除，
+    // 但两者语义不同：「重播上一句」走纯 skipToPrevCue（跳到上一条 cue 起点、不退化），
+    // 「上一句字幕」gap 太远时按 BUG-185/TODO-085 退化时间 seek。守卫两个动作的全链路
+    // 接线都在，且「重播上一句」用纯 skipToPrevCue（不退化），防止再次被合并/删除。
+    expect(actions, contains('videoReplayPreviousSubtitle'));
+    expect(defaults, contains('videoReplayPreviousSubtitle'));
+    expect(shortcuts, contains('replayPreviousSubtitle'));
+    expect(settings, contains('videoReplayPreviousSubtitle'));
+    expect(page, contains('_replayPreviousCueAndPokeControls'));
+    // 「重播上一句」必须是纯句子跳转（skipToPrevCue），不得退化成时间回退。
+    expect(page, contains('skipToPrevCue();'));
 
     expect(page, contains('_toggleFavoriteCurrentCue'));
     expect(page, contains('_replayCurrentCueAndPokeControls'));

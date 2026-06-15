@@ -1,0 +1,22 @@
+## BUG-287 · 恢复「重播上一句」并区分「上一句字幕」(TODO-378)
+- **报告**：2026-06-15（用户：视频原本有两个独立功能「上一句字幕」与「重播上一句」，AI 把「重播上一句」删了；现在「上一句字幕」快捷键变成了「后退3秒」）
+- **真实性**：✅ 真 bug（回归）。引入提交 `8624f2a78`（`refactor(video): remove duplicate replay-previous-subtitle action (TODO-328)`）。
+  - 该提交把 `videoReplayPreviousSubtitle`（默认 **Shift+R**，回调 `_replayPreviousCueAndPokeControls` → `skipToPrevCue()`，**纯句子跳转、不退化**）整条删除，误判它与「上一句字幕」`videoPreviousSubtitle` 重复。
+  - 但两者语义不同：`videoPreviousSubtitle`（**Ctrl+←**）走 `controller.skipToPrevCueOrSeekBack(seekSeconds)`，当上一句 cue 距当前位置 `> seekSeconds*1000` ms 时**按 BUG-185/TODO-085 的有意设计退化成回退 seekSeconds（默认 3）秒**。这就是用户感知的「上一句字幕成了后退3秒」——它本来就会退化，只是删掉纯跳转的「重播上一句」后，用户失去了不退化的那条路径。
+  - 根因 `file:line`：
+    - 删除点（回归来源）：`8624f2a78` 删 `hibiki/lib/src/shortcuts/shortcut_action.dart`（枚举值）/`shortcut_defaults.dart`（Shift+R 默认）/`video_player_shortcuts.dart`（字段+映射）/`video_hibiki_page.dart`（回调+`_replayPreviousCueAndPokeControls`）/`shortcut_settings_page.dart`（switch case）/17 语言 i18n key。
+    - 「上一句字幕」退化逻辑（**有意设计，保留不动**）：`hibiki/lib/src/media/video/video_player_controller.dart:1134` `prevSeekDecisionFor` + `:1012` `skipToPrevCueOrSeekBack`；页面接线 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:2907` `previousSubtitle`。
+- **[x] ① 已修复** — commit `873554a51`
+  - 恢复 `videoReplayPreviousSubtitle` 整条动作（等价回退 TODO-328 的删除，**不**改 BUG-185 的 Ctrl+← 退化设计）：
+    - `shortcut_action.dart`：恢复枚举值 `videoReplayPreviousSubtitle('video_replay_previous_subtitle')`。
+    - `shortcut_defaults.dart`：恢复 `_desktop` 默认 **Shift+R**（macOS/mobile 由 `_desktop` 派生自动继承）。
+    - `video_player_shortcuts.dart`：恢复 `replayPreviousSubtitle` 字段、构造参数、`videoActionCallbacks` 映射。
+    - `video_hibiki_page.dart`：恢复回调接线 + `_replayPreviousCueAndPokeControls()`（纯 `skipToPrevCue()`，不退化）。
+    - `shortcut_settings_page.dart`：恢复 switch case 标签。
+    - i18n：经 `tool/i18n_sync.dart --add` 恢复 `shortcut_action_video_replay_previous_subtitle`（EN "Replay previous subtitle" / zh "重播上一句"，17 语言）+ `dart run slang` 重生成 `strings.g.dart`。
+  - 结果：「上一句字幕」(Ctrl+←) 维持 BUG-185 退化语义（用户当初的有意设计，Never break userspace）；「重播上一句」(Shift+R) 恢复为纯句子跳上一句 cue 起点并播放，不退化。两功能独立。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/video_player_shortcuts_dispatch_test.dart`：补回 Shift+R → `replayPreviousSubtitle` 派发断言。
+  - `hibiki/test/shortcuts/video_shortcut_registry_test.dart`：录制 actions 补回 `replayPreviousSubtitle`（每平台默认键覆盖断言自动覆盖新动作）。
+  - `hibiki/test/pages/video_controls_customization_guard_test.dart`：把 TODO-328 的「反向守卫」(断言符号消失) 翻转为正向守卫——断言 `videoReplayPreviousSubtitle` 全链路接线都在，且 `_replayPreviousCueAndPokeControls` 用纯 `skipToPrevCue();`（不退化）。撤本次修复即红。
+- **备注**：真机未验——桌面键盘 Shift+R / Ctrl+← 与底栏「上一句」按钮的实际播放跳转需用户用真实设备复测（测试宿主无 libmpv，`Player`/`load()` 构造即抛，故走源码守卫 + 派发/纯函数行为测试，与既有 video 键盘测试范式一致）。
