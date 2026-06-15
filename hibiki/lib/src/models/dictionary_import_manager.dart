@@ -127,6 +127,17 @@ class DictionaryImportManager {
       return;
     }
 
+    // TODO-379：到这里说明目录里没有 .zip/.dsl/.mdx 词典包，下面会把整个目录
+    // 递归打包成一个 zip 喂给 native（yomichan 散文件 / migaku JSON 目录路径）。
+    // 但用户可能选错目录——里头只有 QQ 下载的 `.conf` 等无关文件、没有任何词典
+    // 主文件（index.json / *.json）。旧实现会无脑把无关文件打包后再让 native 报一句含糊的 import_failed。
+    // 先做一次递归预检：目录里压根没有可识别的词典主文件时，直接抛明确的
+    // 「无法识别的词典格式」，让用户知道是选错了目录而非 app 坏了。预检与 packDirectoryToZip
+    // 同样递归，故子目录里的词典不会被误杀。
+    if (!directoryContainsImportableDictionary(directory)) {
+      throw Exception(t.dictionary_unrecognized_format);
+    }
+
     _dictRepo.clearDictionaryResultsCache();
 
     try {
@@ -399,6 +410,34 @@ class DictionaryImportManager {
       default:
         return DictionaryType.term;
     }
+  }
+
+  /// 判断 [dir] 目录（含任意层子目录）里是否存在可被 native 导入的词典主文件。
+  ///
+  /// TODO-379：「导入文件夹词典」走整目录打包时，旧实现不做任何预检——哪怕目录里
+  /// 只有 QQ 下载的随机名 `.conf` 等无关文件、没有任何词典，也照样打包丢给 native，
+  /// 让用户看到一句含糊的「导入失败」。这里复用与 native yomichan / migaku 导入器
+  /// 一致的判据（顶层或任意子目录里有 `index.json`，或存在任意 `.json` 文件即视为
+  /// 词典 JSON 集合），把「目录里没有词典」变成一个可明确诊断的正常情况，而非交给
+  /// native 去含糊报错。递归扫描，与 [packDirectoryToZip] 的 `recursive: true`
+  /// 打包范围对齐，故子目录里的 yomitan/migaku 词典不会被误判为「无词典」。
+  /// 扫描期单个目录不可读（权限等）按「该子树无词典」处理，不抛异常。
+  @visibleForTesting
+  static bool directoryContainsImportableDictionary(Directory dir) {
+    final List<FileSystemEntity> entities;
+    try {
+      entities = dir.listSync(recursive: true);
+    } on FileSystemException {
+      return false;
+    }
+    for (final FileSystemEntity entity in entities) {
+      if (entity is! File) continue;
+      final String lower = path.basename(entity.path).toLowerCase();
+      if (lower == 'index.json' || lower.endsWith('.json')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// 把 [srcDirPath] 目录递归打包成 [zipPath] 处的 zip 文件。**纯路径输入/纯文件
