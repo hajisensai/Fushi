@@ -3797,6 +3797,49 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   // ── Chapter Navigation ────────────────────────────────────────────
 
+  /// 一次导航的共用主体：递增代际 token + 完成/新建 restore completer + 置初始锚点
+  /// 字段 + 设 fragment + 标 restoreInFlight + setState 清 ready + 启动超时。
+  /// _navigateToChapter / _navigateToSpread / _navigateToChapterWithFragment 此前各复制
+  /// 这 14 行（任一改动要三处同步，否则导航/恢复代际状态机漂移）。各方法自己的前导
+  /// （进度轮询取消 / manual 标记 / cancelChapterTransition / flush 统计）保留在各自方法。
+  ///
+  /// 注意：[_navigateToChapter] 额外把 charOffset 镜像进 `_lastProgressCharOffset`，
+  /// 另两者不设 → 该字段不在此 helper 内（保各自原行为）。
+  void _beginNavigation({
+    required int chapter,
+    required double progress,
+    required int charOffset,
+    String? fragment,
+  }) {
+    _restoreExpectedGeneration = ++_navigateGeneration;
+    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+      _restoreCompleter!.complete(false);
+    }
+    _restoreCompleter = Completer<bool>();
+    _currentChapter = chapter;
+    _initialProgress = progress;
+    _initialCharOffset = charOffset;
+    _lastProgressSection = chapter;
+    _lastProgressValue = progress;
+    // HBK-AUDIT-037: 清/设 fragment——上次内链导航的残留 fragment 不得漏进本次 setup
+    // 脚本（旧的 post-await 复位在 lyrics/spread/early-return/throw 路径会被跳过）。
+    _initialFragment = fragment;
+    _restoreInFlight = true;
+    setState(() {
+      _readerContentReady = false;
+    });
+    _startContentReadyTimeout();
+  }
+
+  /// 导航装载失败的共用收尾：清 restoreInFlight、完成并清空 restore completer。
+  void _failNavigation() {
+    _restoreInFlight = false;
+    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+      _restoreCompleter!.complete(false);
+    }
+    _restoreCompleter = null;
+  }
+
   Future<void> _navigateToChapter(
     int index, {
     double progress = 0.0,
@@ -3816,43 +3859,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _progressPollTimer?.cancel();
     _flushReadingStats();
 
-    final int gen = ++_navigateGeneration;
-    _restoreExpectedGeneration = gen;
-    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-      _restoreCompleter!.complete(false);
-    }
-    _restoreCompleter = Completer<bool>();
-
-    _currentChapter = index;
-    _initialProgress = progress;
-    // BUG-162: 普通翻章是去新位置，无该章精确锚 → -1 走分数，别把上次恢复的
-    // 锚带进来；同章程序化重分页可显式传入稳定 charOffset，保持不动点。
-    _initialCharOffset = charOffset ?? -1;
-    _lastProgressSection = index;
-    _lastProgressValue = progress;
+    // BUG-162: 普通翻章去新位置，无该章精确锚 → -1 走分数；同章程序化重分页可显式
+    // 传 charOffset 保不动点。
+    _beginNavigation(
+      chapter: index,
+      progress: progress,
+      charOffset: charOffset ?? -1,
+    );
     _lastProgressCharOffset = _initialCharOffset;
-    // HBK-AUDIT-037: ordinary navigation does not want a fragment jump. Clear
-    // it at the start of every fragment-less navigation so a stale fragment
-    // from a prior internal-link nav can never leak into this chapter's setup
-    // script (the old post-await reset in _onChapterLoadComplete was skipped on
-    // lyrics/spread/early-return/throw paths).
-    _initialFragment = null;
-    _restoreInFlight = true;
-    setState(() {
-      _readerContentReady = false;
-    });
-    _startContentReadyTimeout();
 
     try {
       await _loadChapterDirectly(index);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki._navigateToChapter', e, stack);
       debugPrint('[ReaderHibiki] _navigateToChapter loadUrl failed: $e');
-      _restoreInFlight = false;
-      if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-        _restoreCompleter!.complete(false);
-      }
-      _restoreCompleter = null;
+      _failNavigation();
     }
   }
 
@@ -3919,24 +3940,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     _flushReadingStats();
 
-    final int gen = ++_navigateGeneration;
-    _restoreExpectedGeneration = gen;
-    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-      _restoreCompleter!.complete(false);
-    }
-    _restoreCompleter = Completer<bool>();
-
-    _currentChapter = index;
-    _initialProgress = 0.0;
-    _initialCharOffset = -1; // BUG-162: 新章/fragment 跳转走分数/fragment，非 char 锚。
-    _lastProgressSection = index;
-    _lastProgressValue = 0.0;
-    _initialFragment = fragment;
-    _restoreInFlight = true;
-    setState(() {
-      _readerContentReady = false;
-    });
-    _startContentReadyTimeout();
+    // BUG-162: 新章/fragment 跳转走分数/fragment，非 char 锚 → -1。
+    _beginNavigation(
+      chapter: index,
+      progress: 0.0,
+      charOffset: -1,
+      fragment: fragment,
+    );
 
     try {
       await _loadChapterDirectly(index);
@@ -3945,11 +3955,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           .log('ReaderHibiki._navigateToChapterWithFragment', e, stack);
       debugPrint(
           '[ReaderHibiki] _navigateToChapterWithFragment loadUrl failed: $e');
-      _restoreInFlight = false;
-      if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-        _restoreCompleter!.complete(false);
-      }
-      _restoreCompleter = null;
+      _failNavigation();
     }
   }
 
@@ -4048,37 +4054,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _progressPollTimer?.cancel();
     _flushReadingStats();
 
-    final int gen = ++_navigateGeneration;
-    _restoreExpectedGeneration = gen;
-    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-      _restoreCompleter!.complete(false);
-    }
-    _restoreCompleter = Completer<bool>();
-
-    _currentChapter = entry.chapterIndex;
-    _initialProgress = 0.0;
-    _initialCharOffset = -1; // BUG-162: spread 导航去章首，无 char 锚。
-    _lastProgressSection = entry.chapterIndex;
-    _lastProgressValue = 0.0;
-    // HBK-AUDIT-037: spread navigation does not want a fragment jump; clear any
-    // leftover fragment so it cannot leak into the spread setup script.
-    _initialFragment = null;
-    _restoreInFlight = true;
-    setState(() {
-      _readerContentReady = false;
-    });
-    _startContentReadyTimeout();
+    // BUG-162: spread 导航去章首，无 char 锚 → -1；不要 fragment 跳转（fragment=null）。
+    _beginNavigation(
+      chapter: entry.chapterIndex,
+      progress: 0.0,
+      charOffset: -1,
+    );
 
     try {
       await _loadSpreadPage(entry);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki._navigateToSpread', e, stack);
       debugPrint('[ReaderHibiki] _navigateToSpread failed: $e');
-      _restoreInFlight = false;
-      if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-        _restoreCompleter!.complete(false);
-      }
-      _restoreCompleter = null;
+      _failNavigation();
     }
   }
 
