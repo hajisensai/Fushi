@@ -4,7 +4,7 @@
 - **根因（数据流）**：
   - **① 宿主草稿不在换词时清空**：reader 新查词走 `reader_hibiki_page.dart` 的 `_handleTextSelected` → `prunePopupStack(0)` → `searchDictionaryResult`。`base_source_page.dart:753 prunePopupStack(0)` 为复用热槽 WebView（BUG-092/093）**保留 index 0 槽、不触发 `onAllPopupsDismissed`**，故 reader 的 `_miningDraft.clear()`（只挂在 `onAllPopupsDismissed` 与制卡成功）**在换词时不会被调用** → 上一个词攒的句子上下文带进下一个词的卡。视频同理：`video_hibiki_page.dart` 的 `_lookupAt`（`replaceStack:true`）栈不空，关栈清空钩子也不触发。
   - **② 热槽 WebView 的 JS 角标/选择器状态残留**：查词弹窗复用常驻热槽（不重载 WebView），`renderPopup()` 重建词条 DOM 但**从不重置** JS 侧镜像计数 → 即使宿主草稿被清，弹窗仍显示上一个词的「已加 N 句」角标（用户报「弹窗会缓存，所以不会清」）。
-- **[x] ① 根因修复** — 提交 `1a293cea2`：
+- **[x] ① 根因修复** — 提交 `1fc56d808`：
   - reader：`_handleTextSelected` 开头加 `_miningDraft.clear()`（每次新查词从「只制当前句」起步）。
   - 视频：`_lookupAt` 设 `_lastLookupSentence` 后加 `_miningDraft.clear()`。
   - JS：把镜像状态从「单累计计数」改为「上 N / 下 N 两个标量」，制卡成功事件 / 点×清空各自就地归零两标量并 `refreshAllSentenceContextPickers()`。
