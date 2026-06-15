@@ -94,6 +94,15 @@ class VideoPlayerController extends ChangeNotifier
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
 
+  /// 当前字幕是否走 libmpv 画面渲染的**图形内封轨**（PGS/DVD 等位图，
+  /// [selectEmbeddedGraphicTrack]）。图形字幕没有文本 cue，[_delayMs] 的 Dart 侧 cue
+  /// 偏移对它无效，调轴必须下发到 libmpv `sub-delay`（BUG-300）。
+  ///
+  /// 仅 [selectEmbeddedGraphicTrack] 选轨成功置 true；[setCues]（非空文本 cue）/
+  /// [selectSubtitleTrack]（关字幕 `no()`）/ [load]（换片复位）置 false。不用
+  /// `_cues.isEmpty` 推断——图形轨与「无字幕的 OP 段」都是空 cue，会误判。
+  bool _graphicSubtitleActive = false;
+
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
   double _lastVolume = 100.0;
@@ -231,6 +240,9 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 切换字幕轨（运行时 / Phase 1 预留）。未 [load] 时 no-op 安全。
   Future<void> selectSubtitleTrack(SubtitleTrack track) async {
+    // 关字幕 / 切到文本 overlay 都经 `no()`（图形轨改走 [selectEmbeddedGraphicTrack]
+    // 的裸 `player.setSubtitleTrack`，不经此处）→ 离开图形渲染，复位图形标志（BUG-300）。
+    if (track.id == 'no') _graphicSubtitleActive = false;
     await _player?.setSubtitleTrack(track);
   }
 
@@ -261,6 +273,13 @@ class VideoPlayerController extends ChangeNotifier
     await applySubtitleMpvPropertiesToPlayer(
       player,
       buildGraphicSubtitleVisibilityProperties(),
+    );
+    // 进入图形轨渲染：标记图形模式，并把当前字幕调轴（[_delayMs]）下发到 libmpv
+    // `sub-delay`——否则图形字幕忽略 Dart 侧 cue 偏移，调轴滑条对它无效（BUG-300）。
+    _graphicSubtitleActive = true;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleDelayProperty(_delayMs),
     );
     return true;
   }
@@ -317,15 +336,36 @@ class VideoPlayerController extends ChangeNotifier
   void setCues(List<AudioCue> cues) {
     _cues = List<AudioCue>.of(cues)
       ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+    // 非空文本 cue → 切到可点 overlay 文本字幕，离开图形轨渲染（BUG-300）。空 cue
+    // 不在此推断模式：可能是图形轨（[selectEmbeddedGraphicTrack] 先清空 cue 再选轨置
+    // true）或无字幕段，故只在确有文本 cue 时复位图形标志。
+    if (cues.isNotEmpty) _graphicSubtitleActive = false;
     _currentCue = null;
     _currentCueIndex = -1;
     notifyListeners();
   }
 
   /// 设置音画延迟（毫秒），clamp 到 ±600000（±10 分钟）。
+  ///
+  /// 文本字幕（可点 overlay）的偏移由 [effectiveSubtitlePositionMs] 在 Dart 侧扣减
+  /// 位置，无需碰 libmpv；图形内封字幕（PGS 等，[_graphicSubtitleActive]）由 libmpv
+  /// 画面渲染，必须把延迟下发到 `sub-delay` 才生效（BUG-300）。非图形模式显式写
+  /// `sub-delay=0` 复位，防上一段图形轨残留的 `sub-delay` 错位后续文本/无字幕渲染。
   void setDelayMs(int delayMs) {
     _delayMs = delayMs.clamp(-600000, 600000);
+    final Player? player = _player;
+    if (player == null) return;
+    unawaited(applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleDelayProperty(_subtitleDelayMpvMs),
+    ));
   }
+
+  /// 下发到 libmpv `sub-delay` 的延迟（毫秒）。图形内封字幕走 libmpv 画面渲染，用
+  /// 真实 [_delayMs]；文本字幕（可点 overlay）偏移已在 Dart 侧扣减，故 `sub-delay`
+  /// 必须为 0（显式复位，防图形轨残留）。是 [setDelayMs] /
+  /// [selectEmbeddedGraphicTrack] 决策与单测的共享真相源（BUG-300）。
+  int get _subtitleDelayMpvMs => _graphicSubtitleActive ? _delayMs : 0;
 
   /// 当前启用的着色器绝对路径（设置界面回显用）。
   List<String> get shaderPaths => List<String>.unmodifiable(_shaderPaths);
@@ -398,6 +438,11 @@ class VideoPlayerController extends ChangeNotifier
     final String sourceUri = mediaUri ?? mediaUriForVideoPath(videoFile!.path);
     debugPrint('[video-load] cues=${cues.length} uri=$sourceUri');
     setCues(cues);
+    // 换片（复用 player）复位图形字幕标志：新片默认非图形轨，仅当下面
+    // [renderGraphicStreamIndex] 触发的 [selectEmbeddedGraphicTrack] 成功才重新置 true。
+    // 这样复用 player 时上一段视频的图形轨 `sub-delay` 不会残留到新片（BUG-300）。
+    // 不依赖 setCues(空) 复位——空 cue 也可能是图形轨场景。
+    _graphicSubtitleActive = false;
 
     // 重复 load（换集）：取消上一次的 tick / 订阅，但**复用同一 Player /
     // VideoController**，不 dispose 重建。复用是关键（BUG-120）——media_kit 全屏是推到
@@ -659,6 +704,25 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试可见：恢复守护的宽限上限（断言用，避免测试硬编码数字与实现漂移）。
   @visibleForTesting
   static int get debugRestoreGuardGraceTicks => _restoreGuardGraceTicks;
+
+  /// 测试可见：当前是否处于图形内封字幕（PGS 等）渲染模式（BUG-300）。
+  @visibleForTesting
+  bool get debugGraphicSubtitleActive => _graphicSubtitleActive;
+
+  /// 测试可见：[setDelayMs] / [selectEmbeddedGraphicTrack] 会下发到 libmpv
+  /// `sub-delay` 的延迟（毫秒）——图形模式用真实 delay，文本模式恒 0（BUG-300）。
+  /// 宿主无 libmpv（[_player] 恒 null）时 mpv 属性下发被跳过，本 getter 让单测仍能
+  /// 断言「按字幕源类型选了对的 sub-delay」这个决策。
+  @visibleForTesting
+  int get debugSubtitleDelayMpvMs => _subtitleDelayMpvMs;
+
+  /// 测试可见：在不实例化 [Player]（宿主无 libmpv，[selectEmbeddedGraphicTrack]
+  /// 选轨即返回 false）的前提下，模拟「已进入图形字幕渲染模式」，以驱动 [setDelayMs]
+  /// 的图形/文本分流决策（BUG-300）。
+  @visibleForTesting
+  void debugSetGraphicSubtitleActiveForTesting(bool active) {
+    _graphicSubtitleActive = active;
+  }
 
   @visibleForTesting
   void debugSetPauseAtSubtitleEndForTesting({

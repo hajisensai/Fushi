@@ -267,6 +267,33 @@ keep-open=yes
     });
   });
 
+  group('buildSubtitleDelayProperty (BUG-300 图形字幕调轴)', () {
+    test('positive delay -> sub-delay seconds, same sign (no flip)', () {
+      // _delayMs 正＝字幕延后，mpv sub-delay 正＝字幕延后，同向不翻符号。
+      final Map<String, String> m = buildSubtitleDelayProperty(1500);
+      expect(m['sub-delay'], '1.5');
+      expect(m.keys.toSet(), <String>{'sub-delay'});
+    });
+
+    test('negative delay -> negative sub-delay seconds', () {
+      final Map<String, String> m = buildSubtitleDelayProperty(-2000);
+      expect(m['sub-delay'], '-2.0');
+    });
+
+    test('zero delay -> sub-delay 0 (复位)', () {
+      // 非图形模式 setDelayMs 用它显式复位，防上一段图形轨的 sub-delay 残留。
+      final Map<String, String> m = buildSubtitleDelayProperty(0);
+      expect(m['sub-delay'], '0.0');
+    });
+
+    test('only sub-delay key (不碰画质/抑制属性)', () {
+      final Map<String, String> m = buildSubtitleDelayProperty(500);
+      expect(m.containsKey('sub-visibility'), isFalse);
+      expect(m.containsKey('sub-auto'), isFalse);
+      expect(m.containsKey('audio-delay'), isFalse);
+    });
+  });
+
   group('buildNetworkCacheProperties (TODO-033 #1)', () {
     test('emits conservative network cache/readahead tuning', () {
       final Map<String, String> m = buildNetworkCacheProperties();

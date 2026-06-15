@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 AudioCue _cue(int i, int s, int e) => AudioCue()
@@ -1002,6 +1004,73 @@ void main() {
       await c.skipToPrevCueOrSeekBack(seekSeconds: 3);
       expect(c.currentCueIndex, -1,
           reason: 'seek 是 no-op（无 player），cue 状态不被错误改写');
+    });
+  });
+
+  group('BUG-300 图形字幕调轴 → libmpv sub-delay 分流', () {
+    test('文本模式（默认 / setCues 非空）：sub-delay 恒 0，不随 setDelayMs 变', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      // 默认即文本/无字幕模式：图形标志 false。
+      expect(c.debugGraphicSubtitleActive, isFalse);
+      c.setCues([_cue(0, 0, 1000)]); // 非空文本 cue
+      expect(c.debugGraphicSubtitleActive, isFalse);
+      // 文本字幕偏移在 Dart 侧扣减（effectiveSubtitlePositionMs），mpv sub-delay 恒 0。
+      c.setDelayMs(1500);
+      expect(c.delayMs, 1500);
+      expect(c.debugSubtitleDelayMpvMs, 0,
+          reason: '文本模式不把延迟下发给 libmpv（避免双重偏移）');
+    });
+
+    test('图形模式：sub-delay = _delayMs / 1000（同向，不翻符号）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      // 模拟 selectEmbeddedGraphicTrack 成功（宿主无 libmpv，真选轨返 false）。
+      c.debugSetGraphicSubtitleActiveForTesting(true);
+      c.setDelayMs(2000);
+      expect(c.debugSubtitleDelayMpvMs, 2000,
+          reason: '图形字幕走 libmpv 画面渲染：延迟必须下发到 sub-delay');
+      // 纯函数把毫秒转秒、同向：2000ms → "2.0"。
+      expect(buildSubtitleDelayProperty(c.debugSubtitleDelayMpvMs)['sub-delay'],
+          '2.0');
+      c.setDelayMs(-3000);
+      expect(c.debugSubtitleDelayMpvMs, -3000);
+      expect(buildSubtitleDelayProperty(c.debugSubtitleDelayMpvMs)['sub-delay'],
+          '-3.0');
+    });
+
+    test('图形 → 文本切换：setCues(非空) 复位图形标志 → sub-delay 回 0', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetGraphicSubtitleActiveForTesting(true);
+      c.setDelayMs(1500);
+      expect(c.debugSubtitleDelayMpvMs, 1500);
+      // 切到文本字幕源：非空 cue 复位图形标志，sub-delay 复位 0（防图形轨残留偏移）。
+      c.setCues([_cue(0, 0, 1000)]);
+      expect(c.debugGraphicSubtitleActive, isFalse);
+      expect(c.debugSubtitleDelayMpvMs, 0);
+    });
+
+    test('图形 → 关字幕：selectSubtitleTrack(no()) 复位图形标志 → sub-delay 回 0', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetGraphicSubtitleActiveForTesting(true);
+      c.setDelayMs(1000);
+      expect(c.debugSubtitleDelayMpvMs, 1000);
+      // 关字幕 / 切文本 overlay 都经 no()；无 player 时 setSubtitleTrack no-op，但标志复位。
+      await c.selectSubtitleTrack(SubtitleTrack.no());
+      expect(c.debugGraphicSubtitleActive, isFalse);
+      expect(c.debugSubtitleDelayMpvMs, 0);
+    });
+
+    test('setCues(空) 不复位图形标志（图形轨场景：先清空 cue 再选轨）', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetGraphicSubtitleActiveForTesting(true);
+      // selectEmbeddedGraphicTrack 内部先 setCues(空) 再选轨置 true；空 cue 不应误复位。
+      c.setCues(const <AudioCue>[]);
+      expect(c.debugGraphicSubtitleActive, isTrue,
+          reason: '空 cue 不推断模式（图形轨与无字幕段都空，会误判）');
     });
   });
 }

@@ -474,6 +474,25 @@ Map<String, String> buildGraphicSubtitleVisibilityProperties() {
   };
 }
 
+/// 构建图形字幕调轴用的 libmpv `sub-delay` 属性 map（`属性名→值`）。纯函数。
+///
+/// 文本字幕走可点 overlay（cue 同步），其偏移由 [effectiveSubtitlePositionMs] 在
+/// Dart 侧完成，**不**经 libmpv；但图形内封字幕（PGS/DVD 等位图，
+/// [VideoPlayerController.selectEmbeddedGraphicTrack]）由 libmpv 画面渲染，Dart 的
+/// cue 偏移对它无效——必须把延迟下发到 libmpv 的 `sub-delay`（BUG-300）。
+///
+/// 单位换算：`_delayMs` 与 mpv `sub-delay` 语义同向（正＝字幕延后），故
+/// `sub-delay = delayMs / 1000`（秒），不翻符号。
+///
+/// **不进 [VideoMpvConfig]/[buildMpvProperties]**：`sub-delay` 是每视频的字幕调轴
+/// 状态（per-video），不是 mpv 全局画质/音频偏好；与 `audio-delay`（真实音频轨移位，
+/// 属全局配置）正交。与 [buildGraphicSubtitleVisibilityProperties] 同范式，可单测。
+Map<String, String> buildSubtitleDelayProperty(int delayMs) {
+  return <String, String>{
+    'sub-delay': (delayMs / 1000).toString(),
+  };
+}
+
 /// 把 [props]（字幕抑制/可见性属性）逐条 best-effort 注入 media_kit [player]。
 ///
 /// 与 [applyMpvConfigToPlayer] / [applyNetworkCachePropertiesToPlayer] 同范式：经
