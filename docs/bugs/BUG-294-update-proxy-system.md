@@ -1,4 +1,4 @@
-## BUG-293 · 更新检查/下载 HttpClient 不走系统/环境代理（开了代理也连不上 GitHub）
+## BUG-294 · 更新检查/下载 HttpClient 不走系统/环境代理（开了代理也连不上 GitHub）
 - **报告**：2026-06-15（用户：qqbotxiaoxiao）
 - **真实性**：✅ 真 bug。用户原话「有代理，但是为什么没有代理源」——本机有系统代理（clash/v2ray 等）在跑，但 app「检查更新」连不上。承接 BUG-292 的结论：纯 GFW 下直连 `api.github.com` 被切、公共 gh 代理又不代理 API，唯一可成功路径是「经用户自己的代理出口直连 API」。但 `UpdateChecker` 的 `HttpClient` **裸建、从不设 `findProxy`**，默认连环境变量代理都不读，所以即便用户开着代理，更新请求仍走直连被切。
   - 根因 `hibiki/lib/src/utils/misc/update_checker.dart`：`_check` 里 `client = HttpClient()`（检查阶段）+ `_downloadAndInstall` 里 `client = HttpClient()`（下载阶段），两处都没设 `findProxy`。
