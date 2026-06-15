@@ -8,33 +8,39 @@ void main() {
   group('lookup audio volume wiring', () {
     test('all lookup playback paths pass the configured gain to TtsChannel',
         () {
-      final Map<String, String> sources = <String, String>{
-        'base source': _read('lib/src/pages/base_source_page.dart'),
-        'dictionary page': _read(
-          'lib/src/pages/implementations/dictionary_page_mixin.dart',
-        ),
-        'popup webview': _read(
-          'lib/src/pages/implementations/dictionary_popup_webview.dart',
-        ),
-      };
+      // 自动发音的 gain 接线收口在 playLookupAudio（lookup_audio_playback.dart）；
+      // reader/source（base）与 dictionary/video（mixin）都转调它，不再各自手抄一份
+      // playAudioRef + gain。popup webview 的手动发音按钮另走自己的路径（仍带 gain）。
+      final String playback =
+          _read('lib/src/utils/misc/lookup_audio_playback.dart');
+      expect(playback, contains('lookupAudioVolumeGain'),
+          reason: 'playLookupAudio must read the lookup audio volume setting');
+      expect(playback, contains('playAudioRef('));
+      expect(
+        playback,
+        contains('volume: ReaderHibikiSource.instance.lookupAudioVolumeGain'),
+        reason: 'playLookupAudio must pass the configured volume to playback',
+      );
 
-      for (final MapEntry<String, String> entry in sources.entries) {
-        expect(
-          entry.value,
-          contains('lookupAudioVolumeGain'),
-          reason: '${entry.key} must read the lookup audio volume setting',
-        );
-        expect(
-          entry.value,
-          contains('playAudioRef('),
-          reason: '${entry.key} must pass the configured volume to playback',
-        );
-        expect(
-          entry.value,
-          contains('volume: ReaderHibikiSource.instance.lookupAudioVolumeGain'),
-          reason: '${entry.key} must pass the configured volume to playback',
-        );
+      // base/mixin 经 playLookupAudio 转调（gain 接线随之统一到上面那一处）。
+      for (final String path in <String>[
+        'lib/src/pages/base_source_page.dart',
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      ]) {
+        expect(_read(path), contains('playLookupAudio('),
+            reason: '$path auto-read must route through playLookupAudio');
       }
+
+      // popup webview 的手动发音按钮仍各自传 gain（不经 playLookupAudio）。
+      final String popup =
+          _read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+      expect(popup, contains('lookupAudioVolumeGain'));
+      expect(popup, contains('playAudioRef('));
+      expect(
+        popup,
+        contains('volume: ReaderHibikiSource.instance.lookupAudioVolumeGain'),
+        reason: 'manual popup audio must still pass the configured volume',
+      );
     });
 
     test('TtsChannel forwards volume to platform playback', () {
