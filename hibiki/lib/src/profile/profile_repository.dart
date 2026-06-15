@@ -1,5 +1,6 @@
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/media_source.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
 
 class ProfileRepository {
@@ -106,7 +107,9 @@ class ProfileRepository {
         case ProfileKeys.categoryDictionary:
           prefMap[row.key] = row.value;
         case ProfileKeys.categoryReader:
-          prefMap['src:reader_ttu:${row.key}'] = row.value;
+          // 旧快照里 reader 偏好按 MediaSource 命名空间还原；用单一真相编码器
+          // 而非硬编码 `src:reader_ttu:` 猜下层私有 key 格式（[dbSourcePrefKey]）。
+          prefMap[dbSourcePrefKey('reader_ttu', row.key)] = row.value;
         default:
           break;
       }

@@ -13,6 +13,15 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as path;
 
+/// 一个 [MediaSource] 偏好在 Drift `preferences` 表里的命名空间化 key：
+/// `src:<sourceId>:<key>`。这是该格式的**单一真相源**——`MediaSource._dbPrefKey`
+/// 与跨层重建旧 reader 源偏好的 [ProfileRepository.applyProfile] 都调它，避免上层
+/// 服务硬编码 `src:reader_ttu:...` 字符串来猜下层私有 key 格式（历史耦合）。
+///
+/// ⚠️ 这是持久化 key 编码：格式绝不能变（变了即丢用户偏好，never break userspace），
+/// `reader_ttu` 等历史 sourceId 是冻结值。守卫测试断言其输出逐字节等于旧字符串。
+String dbSourcePrefKey(String sourceId, String key) => 'src:$sourceId:$key';
+
 /// A source for a [MediaType] that will appear on the list of sources when
 /// set as active. Handles sourcing and delivery of arguments such that the
 /// [MediaType] is able to execute and launch with the proper arguments.
@@ -100,7 +109,7 @@ abstract class MediaSource {
   /// Whether or not [initialise] has been called for this source.
   bool _initialised = false;
 
-  String _dbPrefKey(String key) => 'src:$uniqueKey:$key';
+  String _dbPrefKey(String key) => dbSourcePrefKey(uniqueKey, key);
 
   /// This function is run at startup. It is not called again if already run.
   Future<void> initialise() async {
@@ -121,7 +130,7 @@ abstract class MediaSource {
     // entries. Every in-memory pref is written through to the DB on set, so
     // nothing is lost by reloading from the authoritative DB state.
     _preferences.clear();
-    final prefix = 'src:$uniqueKey:';
+    final prefix = dbSourcePrefKey(uniqueKey, '');
     final all = await db.getAllPrefs();
     for (final entry in all.entries) {
       if (entry.key.startsWith(prefix)) {
