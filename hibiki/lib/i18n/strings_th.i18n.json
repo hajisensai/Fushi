@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "เพิ่มชื่อหนังสือปัจจุบันเป็นแท็กอัตโนมัติเมื่อสร้างการ์ด",
     "anki_duplicate_check_hint": "เลือกประเภทการ์ด Anki ที่จะตรวจสอบซ้ำก่อนเพิ่มการ์ดใหม่",
     "anki_retry": "ลองอีกครั้ง",
-    "anki_fetch": "ดึงจาก AnkiDroid",
     "anki_fetching": "กำลังดึงข้อมูล…",
     "anki_deck": "สำรับ",
     "anki_note_type": "ประเภทโน้ต",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "ข้ามการตรวจสอบซ้ำเมื่อเพิ่มการ์ด",
     "anki_compact_glossaries": "อภิธานศัพท์แบบกะทัดรัด",
     "anki_compact_glossaries_hint": "ใช้รูปแบบกะทัดรัดสำหรับรายการอภิธานศัพท์",
-    "anki_not_configured": "แตะดึงข้อมูลเพื่อโหลดสำรับและประเภทโน้ตจาก AnkiDroid",
     "anki_field_not_mapped": "ยังไม่ได้จับคู่",
     "anki_select_handlebar": "เลือกค่าสำหรับ $field",
     "hint_font_size": "ปรับขนาดฟอนต์ของข้อความหนังสือ (พิกเซล)",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

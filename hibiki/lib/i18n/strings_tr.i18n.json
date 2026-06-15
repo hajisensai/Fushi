@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "Kart oluştururken kitap başlığını otomatik olarak etiket ekle.",
     "anki_duplicate_check_hint": "Yeni kart eklemeden önce hangi Anki kart türlerinin tekrar kontrolü yapılacağını seçin.",
     "anki_retry": "Tekrar dene",
-    "anki_fetch": "AnkiDroid'dan Getir",
     "anki_fetching": "Getiriliyor…",
     "anki_deck": "Deste",
     "anki_note_type": "Not Türü",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "Kart eklerken tekrar kontrolünü atla",
     "anki_compact_glossaries": "Kompakt Sözlükçeler",
     "anki_compact_glossaries_hint": "Sözlükçe girişleri için kompakt biçim kullan",
-    "anki_not_configured": "AnkiDroid'dan deste ve not türlerini yüklemek için Getir'e dokunun.",
     "anki_field_not_mapped": "Eşlenmemiş",
     "anki_select_handlebar": "$field için değer seçin",
     "hint_font_size": "Kitap metninin yazı tipi boyutunu ayarlayın (piksel cinsinden).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

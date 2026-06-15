@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "製卡時自動將目前書名加入為標籤。",
     "anki_duplicate_check_hint": "選擇匯出前檢查哪些卡片類型中是否已有重複。",
     "anki_retry": "重試",
-    "anki_fetch": "從 AnkiDroid 擷取",
     "anki_fetching": "擷取中…",
     "anki_deck": "牌組",
     "anki_note_type": "筆記類型",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "新增卡片時跳過重複檢查",
     "anki_compact_glossaries": "精簡釋義",
     "anki_compact_glossaries_hint": "使用精簡格式顯示釋義",
-    "anki_not_configured": "請點擊「擷取」從 AnkiDroid 載入牌組和筆記類型。",
     "anki_field_not_mapped": "未對應",
     "anki_select_handlebar": "選擇 $field 的值",
     "hint_font_size": "調整正文字型大小（像素）。",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "Tự động thêm tên sách hiện tại làm tag khi tạo thẻ.",
     "anki_duplicate_check_hint": "Chọn loại thẻ Anki nào để kiểm tra trùng lặp trước khi thêm thẻ mới.",
     "anki_retry": "Thử lại",
-    "anki_fetch": "Tải từ AnkiDroid",
     "anki_fetching": "Đang tải…",
     "anki_deck": "Bộ thẻ",
     "anki_note_type": "Loại ghi chú",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "Bỏ qua kiểm tra trùng lặp khi thêm thẻ",
     "anki_compact_glossaries": "Giải nghĩa thu gọn",
     "anki_compact_glossaries_hint": "Dùng định dạng thu gọn cho các mục giải nghĩa",
-    "anki_not_configured": "Nhấn Tải để lấy bộ thẻ và loại ghi chú từ AnkiDroid.",
     "anki_field_not_mapped": "Chưa ánh xạ",
     "anki_select_handlebar": "Chọn giá trị cho $field",
     "hint_font_size": "Điều chỉnh cỡ chữ của văn bản sách (tính bằng pixel).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

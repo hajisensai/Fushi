@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "Автоматически добавлять название текущей книги как тег при создании карточек.",
     "anki_duplicate_check_hint": "Выберите, какие типы карточек Anki проверять на дубликаты перед добавлением новой карточки.",
     "anki_retry": "Повторить",
-    "anki_fetch": "Загрузить из AnkiDroid",
     "anki_fetching": "Загрузка…",
     "anki_deck": "Колода",
     "anki_note_type": "Тип заметки",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "Пропускать проверку дубликатов при добавлении карточек",
     "anki_compact_glossaries": "Компактные глоссарии",
     "anki_compact_glossaries_hint": "Использовать компактный формат для записей глоссария",
-    "anki_not_configured": "Нажмите «Загрузить», чтобы получить колоды и типы заметок из AnkiDroid.",
     "anki_field_not_mapped": "Не сопоставлено",
     "anki_select_handlebar": "Выберите значение для $field",
     "hint_font_size": "Настроить размер шрифта текста книги (в пикселях).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

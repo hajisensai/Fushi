@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "카드 생성 시 현재 책 제목을 태그로 자동 추가합니다.",
     "anki_duplicate_check_hint": "새 카드를 추가하기 전에 중복을 검사할 Anki 카드 유형을 선택합니다.",
     "anki_retry": "다시 시도",
-    "anki_fetch": "AnkiDroid에서 가져오기",
     "anki_fetching": "가져오는 중…",
     "anki_deck": "덱",
     "anki_note_type": "노트 유형",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "카드 추가 시 중복 검사를 건너뜁니다",
     "anki_compact_glossaries": "간결한 용어 해설",
     "anki_compact_glossaries_hint": "용어 해설 항목에 간결한 형식을 사용합니다",
-    "anki_not_configured": "가져오기를 눌러 AnkiDroid에서 덱과 노트 유형을 불러오세요.",
     "anki_field_not_mapped": "매핑되지 않음",
     "anki_select_handlebar": "$field에 사용할 값 선택",
     "hint_font_size": "책 텍스트의 글꼴 크기를 조정합니다 (픽셀).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

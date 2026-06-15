@@ -741,7 +741,6 @@
     "anki_auto_tag_hint": "カード作成時、現在の書籍タイトルをタグとして自動追加します。",
     "anki_duplicate_check_hint": "新しいカードを追加する前に、どのカードタイプで重複をチェックするか選択します。",
     "anki_retry": "再試行",
-    "anki_fetch": "AnkiDroidから取得",
     "anki_fetching": "取得中...",
     "anki_deck": "デッキ",
     "anki_note_type": "ノートタイプ",
@@ -752,7 +751,6 @@
     "anki_allow_duplicates_hint": "カード追加時に重複チェックをスキップ",
     "anki_compact_glossaries": "コンパクト釈義",
     "anki_compact_glossaries_hint": "釈義をコンパクトな形式で表示",
-    "anki_not_configured": "「取得」をタップしてAnkiDroidからデッキとノートタイプを読み込んでください。",
     "anki_field_not_mapped": "未割当",
     "anki_select_handlebar": "$field の値を選択",
     "hint_font_size": "本文のフォントサイズを調整します（ピクセル）。",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

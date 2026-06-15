@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "Ajouter automatiquement le titre du livre comme étiquette lors de la création de cartes.",
     "anki_duplicate_check_hint": "Sélectionner les types de cartes Anki à vérifier pour les doublons avant d'ajouter une nouvelle carte.",
     "anki_retry": "Réessayer",
-    "anki_fetch": "Récupérer depuis AnkiDroid",
     "anki_fetching": "Récupération...",
     "anki_deck": "Paquet",
     "anki_note_type": "Type de note",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "Ignorer la vérification des doublons lors de l'ajout de cartes",
     "anki_compact_glossaries": "Glossaires compacts",
     "anki_compact_glossaries_hint": "Utiliser un format compact pour les entrées de glossaire",
-    "anki_not_configured": "Appuyez sur Récupérer pour charger les paquets et types de notes depuis AnkiDroid.",
     "anki_field_not_mapped": "Non mappé",
     "anki_select_handlebar": "Sélectionner la valeur pour $field",
     "hint_font_size": "Ajuster la taille de police du texte du livre (en pixels).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

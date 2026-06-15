@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "Añadir automáticamente el título del libro como etiqueta al crear tarjetas.",
     "anki_duplicate_check_hint": "Seleccionar qué tipos de tarjetas Anki comprobar para duplicados antes de añadir una nueva tarjeta.",
     "anki_retry": "Reintentar",
-    "anki_fetch": "Obtener de AnkiDroid",
     "anki_fetching": "Obteniendo...",
     "anki_deck": "Mazo",
     "anki_note_type": "Tipo de nota",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "Omitir la comprobación de duplicados al añadir tarjetas",
     "anki_compact_glossaries": "Glosarios compactos",
     "anki_compact_glossaries_hint": "Usar formato compacto para las entradas del glosario",
-    "anki_not_configured": "Toca Obtener para cargar mazos y tipos de nota de AnkiDroid.",
     "anki_field_not_mapped": "Sin mapear",
     "anki_select_handlebar": "Seleccionar valor para $field",
     "hint_font_size": "Ajustar el tamaño de fuente del texto del libro (en píxeles).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "إضافة عنوان الكتاب الحالي تلقائياً كوسم عند إنشاء بطاقات.",
     "anki_duplicate_check_hint": "اختر أنواع بطاقات Anki للتحقق من التكرارات قبل إضافة بطاقة جديدة.",
     "anki_retry": "إعادة المحاولة",
-    "anki_fetch": "جلب من AnkiDroid",
     "anki_fetching": "جارٍ الجلب…",
     "anki_deck": "المجموعة",
     "anki_note_type": "نوع الملاحظة",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "تخطي فحص التكرارات عند إضافة البطاقات",
     "anki_compact_glossaries": "معاني مختصرة",
     "anki_compact_glossaries_hint": "استخدام تنسيق مختصر لإدخالات المعاني",
-    "anki_not_configured": "اضغط جلب لتحميل المجموعات وأنواع الملاحظات من AnkiDroid.",
     "anki_field_not_mapped": "غير معيّن",
     "anki_select_handlebar": "اختر قيمة لـ $field",
     "hint_font_size": "ضبط حجم خط نص الكتاب (بالبكسل).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

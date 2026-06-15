@@ -761,7 +761,6 @@
     "anki_auto_tag_hint": "Automatically add the current book title as a tag when creating cards.",
     "anki_duplicate_check_hint": "Select which Anki card types to check for duplicates before adding a new card.",
     "anki_retry": "Retry",
-    "anki_fetch": "Fetch from AnkiDroid",
     "anki_fetching": "Fetching...",
     "anki_deck": "Deck",
     "anki_note_type": "Note Type",
@@ -774,7 +773,6 @@
     "anki_compact_glossaries_hint": "Use compact format for glossary entries",
     "anki_connect_host": "Host",
     "anki_connect_port": "Port",
-    "anki_not_configured": "Tap Fetch to load decks and note types from AnkiDroid.",
     "anki_field_not_mapped": "Not mapped",
     "anki_select_handlebar": "Select value for $field",
     "hint_font_size": "Adjust the font size of the book text (in pixels).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

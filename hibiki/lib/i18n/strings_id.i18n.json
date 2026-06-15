@@ -736,7 +736,6 @@
     "anki_auto_tag_hint": "Tambahkan judul buku saat ini sebagai tag secara otomatis saat membuat kartu.",
     "anki_duplicate_check_hint": "Pilih tipe kartu Anki mana yang diperiksa duplikatnya sebelum menambahkan kartu baru.",
     "anki_retry": "Coba Lagi",
-    "anki_fetch": "Ambil dari AnkiDroid",
     "anki_fetching": "Mengambil…",
     "anki_deck": "Dek",
     "anki_note_type": "Tipe Catatan",
@@ -747,7 +746,6 @@
     "anki_allow_duplicates_hint": "Lewati pemeriksaan duplikat saat menambah kartu",
     "anki_compact_glossaries": "Glosarium Ringkas",
     "anki_compact_glossaries_hint": "Gunakan format ringkas untuk entri glosarium",
-    "anki_not_configured": "Ketuk Ambil untuk memuat dek dan tipe catatan dari AnkiDroid.",
     "anki_field_not_mapped": "Belum dipetakan",
     "anki_select_handlebar": "Pilih nilai untuk $field",
     "hint_font_size": "Sesuaikan ukuran font teks buku (dalam piksel).",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "Top bar (left)",
     "video_control_slot_top_right": "Top bar (right)",
     "popup_sentence_context_prev_label": "Before",
-    "popup_sentence_context_next_label": "After"
+    "popup_sentence_context_next_label": "After",
+    "anki_fetch": "Refresh decks & note types",
+    "anki_not_configured": "Tap Refresh to load your Anki decks and note types.",
+    "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh."
 }

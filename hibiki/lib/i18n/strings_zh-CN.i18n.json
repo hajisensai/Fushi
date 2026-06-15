@@ -757,7 +757,6 @@
     "anki_auto_tag_hint": "制卡时自动将当前书名添加为标签。",
     "anki_duplicate_check_hint": "选择导出前检查哪些卡片类型中是否已有重复。",
     "anki_retry": "重试",
-    "anki_fetch": "从 AnkiDroid 获取",
     "anki_fetching": "获取中...",
     "anki_deck": "牌组",
     "anki_note_type": "笔记类型",
@@ -768,7 +767,6 @@
     "anki_allow_duplicates_hint": "添加卡片时跳过重复检查",
     "anki_compact_glossaries": "紧凑释义",
     "anki_compact_glossaries_hint": "使用紧凑格式显示释义",
-    "anki_not_configured": "点击「获取」从 AnkiDroid 加载牌组和笔记类型。",
     "anki_field_not_mapped": "未映射",
     "anki_select_handlebar": "选择 $field 的值",
     "hint_font_size": "调整正文字体大小（像素）。",
@@ -1652,5 +1650,8 @@
     "video_control_slot_top_left": "顶栏（左）",
     "video_control_slot_top_right": "顶栏（右）",
     "popup_sentence_context_prev_label": "上",
-    "popup_sentence_context_next_label": "下"
+    "popup_sentence_context_next_label": "下",
+    "anki_fetch": "刷新牌组与笔记类型",
+    "anki_not_configured": "点击「刷新」加载你的 Anki 牌组与笔记类型。",
+    "anki_refresh_hint": "在 Anki 里新建或重命名牌组、笔记类型后，点此刷新。"
 }

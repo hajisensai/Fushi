@@ -177,6 +177,14 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       icon: Icons.sync_outlined,
       showIcon: true,
       title: uiState.isFetching ? t.anki_fetching : t.anki_fetch,
+      // Platform-neutral refresh hint (TODO-400): this row pulls the *current*
+      // deck + note-type snapshot from Anki (AnkiConnect on desktop / iOS,
+      // AnkiDroid on Android). The dropdowns only ever render what the last
+      // fetch returned, so a deck created/renamed in Anki afterwards stays
+      // invisible until the user taps here. The subtitle says exactly that,
+      // replacing the old AnkiDroid-only "Fetch from AnkiDroid" label that made
+      // desktop AnkiConnect users miss this as the refresh entry point.
+      subtitle: uiState.isFetching ? null : t.anki_refresh_hint,
       // Action row, not navigation: a leading icon + state-layer ripple signals
       // tappability (MD3 list-item convention, same as SettingsActionItem); the
       // tap triggers a fetch (spinner while running) rather than opening a
