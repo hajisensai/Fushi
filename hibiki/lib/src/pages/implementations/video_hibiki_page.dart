@@ -2896,25 +2896,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
         : const MinePopupResult();
     if (!context.mounted) return result;
-    final String message;
-    switch (outcome.result) {
-      case MineResult.success:
-        // 新制成功计入视频统计（dictionarySourceType=video）；覆盖不计入（非新卡）。
-        // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
-        if (updateNoteId == null) {
-          unawaited(recordMined());
-        }
-        final AnkiSettings settings = await repo.loadSettings();
-        message = updateNoteId == null
-            ? t.card_exported(deck: settings.selectedDeckName ?? '')
-            : t.card_overwritten(deck: settings.selectedDeckName ?? '');
-      case MineResult.duplicate:
-        message = t.card_duplicate;
-      case MineResult.notConfigured:
-        message = t.card_export_not_configured;
-      case MineResult.error:
-        message = logMineFailure(outcome);
-    }
+    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
+    final String deckName = outcome.result == MineResult.success
+        ? (await repo.loadSettings()).selectedDeckName ?? ''
+        : '';
+    final described = describeMineOutcome(outcome, deckName: deckName);
+    // 新制成功计入视频统计（dictionarySourceType=video）；覆盖不计入（非新卡）。本页
+    // 覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
+    if (described.record && updateNoteId == null) unawaited(recordMined());
+    // success 覆盖（updateNoteId 非空）展示 card_overwritten；其余分支走收口消息。
+    final String message = described.success && updateNoteId != null
+        ? t.card_overwritten(deck: deckName)
+        : described.message;
     _showOsd(message);
     return result;
   }

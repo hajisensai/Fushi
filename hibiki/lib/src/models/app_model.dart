@@ -3438,20 +3438,13 @@ class AppModel with ChangeNotifier {
             rawPayloadJson: jsonEncode(fields),
             context: const AnkiMiningContext(sentence: ''),
           );
-          switch (outcome.result) {
-            case MineResult.success:
-              final AnkiSettings settings = await repo.loadSettings();
-              HibikiToast.show(
-                msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-                toastLength: Toast.LENGTH_SHORT,
-              );
-            case MineResult.duplicate:
-              HibikiToast.show(msg: t.card_duplicate);
-            case MineResult.notConfigured:
-              HibikiToast.show(msg: t.card_export_not_configured);
-            case MineResult.error:
-              HibikiToast.show(msg: logMineFailure(outcome));
-          }
+          // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
+          final String deckName = outcome.result == MineResult.success
+              ? (await repo.loadSettings()).selectedDeckName ?? ''
+              : '';
+          HibikiToast.show(
+            msg: describeMineOutcome(outcome, deckName: deckName).message,
+          );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
           HibikiToast.show(msg: t.card_export_failed);

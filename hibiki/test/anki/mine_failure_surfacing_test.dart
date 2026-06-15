@@ -64,11 +64,13 @@ void main() {
     });
   });
 
-  group('every mine error branch routes through logMineFailure', () {
-    // Source-scan guard: the 5 call sites must surface the cause via
-    // logMineFailure(outcome), not a bare `t.card_export_failed` toast.
-    // (These pages embed real WebViews / platform channels and cannot be
-    // widget-tested directly, so we guard the contract at the source.)
+  group('every mine error branch routes through describeMineOutcome → logMineFailure',
+      () {
+    // Source-scan guard (BUG-089): the cause must still surface via
+    // logMineFailure — now consolidated inside the single describeMineOutcome
+    // helper, which all 5 call sites route through (no bare
+    // `t.card_export_failed` toast). These pages embed real WebViews / platform
+    // channels and cannot be widget-tested directly, so we guard at the source.
     final List<String> callSites = <String>[
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
       'lib/src/pages/implementations/reader_hibiki_page.dart',
@@ -77,8 +79,21 @@ void main() {
       'lib/src/models/app_model.dart',
     ];
 
+    test('describeMineOutcome 的 error 分支仍经 logMineFailure 浮现原因', () {
+      final String src = File(
+        'lib/src/utils/misc/error_log_service.dart',
+      ).readAsStringSync();
+      expect(src.contains('describeMineOutcome('), isTrue);
+      expect(
+        src.contains('logMineFailure(outcome)'),
+        isTrue,
+        reason: 'describeMineOutcome 的 MineResult.error 分支必须经 logMineFailure '
+            '记录完整诊断并回简短原因 (BUG-089)',
+      );
+    });
+
     for (final String path in callSites) {
-      test('$path uses logMineFailure(outcome) in its error branch', () {
+      test('$path routes mine outcome through describeMineOutcome', () {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: 'missing call site: $path');
         final String src = f.readAsStringSync();
@@ -86,10 +101,10 @@ void main() {
         expect(src.contains('mineEntry'), isTrue,
             reason: '$path no longer calls mineEntry — update this guard');
         expect(
-          src.contains('logMineFailure(outcome)'),
+          src.contains('describeMineOutcome('),
           isTrue,
-          reason: '$path must route MineResult.error through logMineFailure to '
-              'log the cause and show the concise reason (BUG-089)',
+          reason: '$path must route MineResult through describeMineOutcome, whose '
+              'error branch surfaces the cause via logMineFailure (BUG-089)',
         );
       });
     }

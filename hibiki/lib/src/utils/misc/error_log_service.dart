@@ -195,3 +195,37 @@ String logMineFailure(MineOutcome outcome) {
       ? t.card_export_failed_detail(reason: detail)
       : t.card_export_failed;
 }
+
+/// 把一次制卡结果映射成「给用户看的消息 + 是否成功 + 是否应计入制卡统计」的单一真相。
+///
+/// 此前这套四分支 switch（success/duplicate/notConfigured/error）在 5 个调用点
+/// （dictionary_page_mixin / reader_hibiki_page / video_hibiki_page /
+/// floating_dict_page / app_model）各复制一份，新增 outcome 类型或改文案要改 5 处。
+/// 收口于此后各调用点只决定**怎么展示**（toast / OSD）与**是否记账/返回 bool**。
+///
+/// - error 分支内调 [logMineFailure]（写日志 + 取简短文案，单一来源）。
+/// - 成功消息所需的牌组名 [deckName] 由调用方仅在 `success` 时预先解析
+///   （仅成功分支需要，避免给失败分支白白 `loadSettings`）。
+({String message, bool success, bool record}) describeMineOutcome(
+  MineOutcome outcome, {
+  String deckName = '',
+}) {
+  switch (outcome.result) {
+    case MineResult.success:
+      return (
+        message: t.card_exported(deck: deckName),
+        success: true,
+        record: true,
+      );
+    case MineResult.duplicate:
+      return (message: t.card_duplicate, success: false, record: false);
+    case MineResult.notConfigured:
+      return (
+        message: t.card_export_not_configured,
+        success: false,
+        record: false,
+      );
+    case MineResult.error:
+      return (message: logMineFailure(outcome), success: false, record: false);
+  }
+}

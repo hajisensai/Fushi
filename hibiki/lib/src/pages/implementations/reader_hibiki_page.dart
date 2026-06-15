@@ -3629,35 +3629,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       prepared.cleanup();
     }
 
-    switch (outcome.result) {
-      case MineResult.success:
-        // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
-        // 两端在同一事件归零、不漂移）。下一次查词从空草稿重新累积。
-        _miningDraft.clear();
-        // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，
-        // 不 mixin DictionaryPageMixin，故直接调 addMiningCount，来源固定 book）。
-        // 失败不影响制卡结果，吞掉并记日志。
-        unawaited(_recordMined());
-        final AnkiSettings settings = await repo.loadSettings();
-        HibikiToast.show(
-          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-        // TODO-270 D：AnkiConnect 成功制卡带回 note id（noteId 非空），让弹窗把这张
-        // 标记为「最新可改」第三态；AnkiDroid 的 noteId 恒为 null（优雅降级，进不了
-        // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
-        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
-      case MineResult.duplicate:
-        HibikiToast.show(msg: t.card_duplicate);
-        return const MinePopupResult();
-      case MineResult.notConfigured:
-        HibikiToast.show(msg: t.card_export_not_configured);
-        return const MinePopupResult();
-      case MineResult.error:
-        HibikiToast.show(msg: logMineFailure(outcome));
-        return const MinePopupResult();
+    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
+    final String deckName = outcome.result == MineResult.success
+        ? (await repo.loadSettings()).selectedDeckName ?? ''
+        : '';
+    final described = describeMineOutcome(outcome, deckName: deckName);
+    // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，不
+    // mixin DictionaryPageMixin，故直接 addMiningCount，来源固定 book）。失败吞掉记日志。
+    if (described.record) unawaited(_recordMined());
+    HibikiToast.show(msg: described.message);
+    if (described.success) {
+      // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
+      // 两端在同一事件归零、不漂移）。下一次查词从空草稿重新累积。
+      _miningDraft.clear();
+      // TODO-270 D：AnkiConnect 成功制卡带回 note id（noteId 非空），让弹窗把这张
+      // 标记为「最新可改」第三态；AnkiDroid 的 noteId 恒为 null（优雅降级，进不了
+      // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
+      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
+    return const MinePopupResult();
   }
 
   @override

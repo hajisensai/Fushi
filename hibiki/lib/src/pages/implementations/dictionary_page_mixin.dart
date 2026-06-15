@@ -140,29 +140,20 @@ mixin DictionaryPageMixin {
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    switch (outcome.result) {
-      case MineResult.success:
-        // 制卡成功计入统计（按来源 book/video）。失败不影响制卡结果，吞掉并记日志。
-        unawaited(recordMined());
-        final settings = await repo.loadSettings();
-        HibikiToast.show(
-          msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-        // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
-        // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
-        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
-      case MineResult.duplicate:
-        HibikiToast.show(msg: t.card_duplicate);
-        return const MinePopupResult();
-      case MineResult.notConfigured:
-        HibikiToast.show(msg: t.card_export_not_configured);
-        return const MinePopupResult();
-      case MineResult.error:
-        HibikiToast.show(msg: logMineFailure(outcome));
-        return const MinePopupResult();
+    // 牌组名仅 success 需要（避免给失败分支白白 loadSettings）。
+    final String deckName = outcome.result == MineResult.success
+        ? (await repo.loadSettings()).selectedDeckName ?? ''
+        : '';
+    final described = describeMineOutcome(outcome, deckName: deckName);
+    // 制卡成功计入统计（按来源 book/video）。失败不影响制卡结果，吞掉并记日志。
+    if (described.record) unawaited(recordMined());
+    HibikiToast.show(msg: described.message);
+    if (described.success) {
+      // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
+      // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
+      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
+    return const MinePopupResult();
   }
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）的字段——走 repo.updateMinedNote
