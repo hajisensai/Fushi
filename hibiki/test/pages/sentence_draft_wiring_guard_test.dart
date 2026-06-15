@@ -130,4 +130,33 @@ void main() {
     // Clear button is hidden when no context is selected.
     expect(js, contains('(sentenceCtxPrev + sentenceCtxNext) <= 0'));
   });
+
+  // ---- BUG-297：换词复用热槽 WebView 时重置 JS 镜像标量（视觉态归零）守卫 ----
+
+  test('popup.js exposes resetSentenceContextMirror that zeros both scalars',
+      () {
+    final String js = readSource('assets/popup/popup.js');
+    // 暴露一个把镜像标量归零的函数，供宿主换词注入时调用（不重载页面、不发宿主信号）。
+    expect(js, contains('window.resetSentenceContextMirror = function() {'));
+    // 函数体把上 N / 下 N 两个方向标量都置 0（撤掉任一行本守卫转红）。
+    final int resetAt =
+        js.indexOf('window.resetSentenceContextMirror = function() {');
+    final String resetBody = js.substring(resetAt, resetAt + 200);
+    expect(resetBody, contains('sentenceCtxPrev = 0;'));
+    expect(resetBody, contains('sentenceCtxNext = 0;'));
+  });
+
+  test('webview resets the JS sentence-context mirror on a word switch', () {
+    final String src = readSource(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart');
+    // 换词注入路径（非 loadMore）必须在 renderPopup() 之前把 JS 镜像归零，否则热槽残留
+    // 标量会把上一个词的「上 N / 下 N」按钮着色成已选、与已清的宿主草稿不一致（BUG-297 C-1）。
+    expect(src, contains('window.resetSentenceContextMirror();'));
+    final int resetCall = src.indexOf('window.resetSentenceContextMirror();');
+    final int renderCall = src.indexOf('window.renderPopup();');
+    expect(resetCall, greaterThanOrEqualTo(0));
+    expect(renderCall, greaterThanOrEqualTo(0));
+    // 归零调用排在 renderPopup() 之前，保证重建的选择器读到的是已归零的标量。
+    expect(resetCall, lessThan(renderCall));
+  });
 }

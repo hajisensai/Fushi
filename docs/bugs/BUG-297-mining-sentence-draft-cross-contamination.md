@@ -4,10 +4,11 @@
 - **根因（数据流）**：
   - **① 宿主草稿不在换词时清空**：reader 新查词走 `reader_hibiki_page.dart` 的 `_handleTextSelected` → `prunePopupStack(0)` → `searchDictionaryResult`。`base_source_page.dart:753 prunePopupStack(0)` 为复用热槽 WebView（BUG-092/093）**保留 index 0 槽、不触发 `onAllPopupsDismissed`**，故 reader 的 `_miningDraft.clear()`（只挂在 `onAllPopupsDismissed` 与制卡成功）**在换词时不会被调用** → 上一个词攒的句子上下文带进下一个词的卡。视频同理：`video_hibiki_page.dart` 的 `_lookupAt`（`replaceStack:true`）栈不空，关栈清空钩子也不触发。
   - **② 热槽 WebView 的 JS 角标/选择器状态残留**：查词弹窗复用常驻热槽（不重载 WebView），`renderPopup()` 重建词条 DOM 但**从不重置** JS 侧镜像计数 → 即使宿主草稿被清，弹窗仍显示上一个词的「已加 N 句」角标（用户报「弹窗会缓存，所以不会清」）。
-- **[x] ① 根因修复** — 提交 `<HASH>`：
+- **[x] ① 根因修复** — 提交 `1a293cea2`：
   - reader：`_handleTextSelected` 开头加 `_miningDraft.clear()`（每次新查词从「只制当前句」起步）。
   - 视频：`_lookupAt` 设 `_lastLookupSentence` 后加 `_miningDraft.clear()`。
-  - JS：把镜像状态从「单累计计数」改为「上 N / 下 N 两个标量」，制卡成功事件归零两标量并 `refreshAllSentenceContextPickers()`；换词由宿主清草稿（JS 选择器下次 `renderPopup` 重建即为初始 0/0 态，因按钮是每次重建的新 DOM 元素，`refreshSentenceContextPicker` 据当前标量着色）。
+  - JS：把镜像状态从「单累计计数」改为「上 N / 下 N 两个标量」，制卡成功事件 / 点×清空各自就地归零两标量并 `refreshAllSentenceContextPickers()`。
+  - **C-1 补修**：换词复用常驻热槽 WebView 时宿主只重注入 `lookupEntries` 再调 `renderPopup()`（不重载页面），`sentenceCtxPrev/Next` 这两个**模块级标量**不像页面刷新那样自动归零；`renderPopup` 重建的选择器按钮 `refreshSentenceContextPicker` 据残留标量着色 → 上一个词的「上 N」按钮仍 selected、清空按钮仍可见，与已清的宿主草稿不一致（视觉显示「已选上 2 句」但实际只制当前句）。修=popup.js 暴露 `window.resetSentenceContextMirror()` 把两标量 + `sentenceDraftCount` 归零，`dictionary_popup_webview.dart` 换词注入路径（非 loadMore）在 `renderPopup()` 之前调用它，使重建的选择器回到 0/0 默认态、清空按钮隐藏。
   - 数据模型 `MiningSentenceDraft` 改为有方向上下文（`setContext` 整体替换，非自由累加），从语义上消除「跨词累积」这一整类问题。
-- **[x] ② 自动化测试** — `hibiki/test/pages/sentence_draft_wiring_guard_test.dart`（reader：`_miningDraft.clear()` 出现 >=3 次：新查词 / 制卡 / 关栈）+ `hibiki/test/pages/video_sentence_draft_wiring_guard_test.dart`（新增用例「a new lookup discards the previous word context」断言 `_lookupAt` 区间内含 `_miningDraft.clear();`）+ `hibiki/test/media/audiobook/mining_sentence_draft_test.dart`（`setContext` 替换而非累积）。
+- **[x] ② 自动化测试** — `hibiki/test/pages/sentence_draft_wiring_guard_test.dart`（reader：`_miningDraft.clear()` 出现 >=3 次：新查词 / 制卡 / 关栈；**C-1 新增两守卫**：popup.js 暴露 `resetSentenceContextMirror` 且把两标量置 0 + 换词注入路径在 `renderPopup()` 之前调用它）+ `hibiki/test/pages/video_sentence_draft_wiring_guard_test.dart`（新增用例「a new lookup discards the previous word context」断言 `_lookupAt` 区间内含 `_miningDraft.clear();`）+ `hibiki/test/media/audiobook/mining_sentence_draft_test.dart`（`setContext` 替换而非累积）。
 - **真机复测**：连续查两个不同词（中间不关弹窗，靠热槽复用），对第一个词选「上 2 句」、再查第二个词制卡，断言第二张卡 sentence 字段**不含**第一个词的上下文句；弹窗上下文选择器在换词后回到 0/0 态。

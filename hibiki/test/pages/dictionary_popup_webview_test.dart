@@ -13,13 +13,25 @@ void main() {
       ).readAsStringSync();
 
       expect(source, contains('final String beforeRenderJs = isLoadMore'));
-      expect(
-        source,
-        contains('window.__hoshiResetPopupScroll();\n'
-            '          window.renderPopup();'),
-        reason: 'A preserved warm popup WebView keeps its DOM scroll position. '
-            'Fresh lookups must reset before renderPopup replaces the content.',
-      );
+      // BUG-297 / TODO-393：换词复用热槽 WebView 时，renderPopup 之前必须先 (a) 复位
+      // 视口滚动（热槽 DOM 残留旧滚动位置），(b) 归零 JS 句子上下文镜像标量（否则重建的
+      // 「上 N / 下 N」选择器据残留值着色，与已清的宿主草稿不一致）。断言三者顺序：
+      // __hoshiResetPopupScroll → resetSentenceContextMirror → renderPopup。
+      final int scrollResetAt =
+          source.indexOf('window.__hoshiResetPopupScroll();');
+      final int mirrorResetAt =
+          source.indexOf('window.resetSentenceContextMirror();');
+      final int renderAt = source.indexOf('window.renderPopup();');
+      expect(scrollResetAt, greaterThanOrEqualTo(0),
+          reason:
+              'A preserved warm popup WebView keeps its DOM scroll position. '
+              'Fresh lookups must reset viewport scroll before renderPopup.');
+      expect(mirrorResetAt, greaterThanOrEqualTo(0),
+          reason:
+              'Fresh lookups must zero the JS sentence-context mirror so the '
+              'rebuilt picker matches the host-cleared draft (BUG-297).');
+      expect(renderAt, greaterThan(mirrorResetAt));
+      expect(mirrorResetAt, greaterThan(scrollResetAt));
       expect(
         source,
         contains("? 'window.updatePopupIncremental();'"),

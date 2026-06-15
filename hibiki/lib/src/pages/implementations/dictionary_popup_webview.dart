@@ -509,6 +509,12 @@ class DictionaryPopupWebViewState
         ? 'window.updatePopupIncremental();'
         : '''
           window.__hoshiResetPopupScroll();
+          // BUG-297 / TODO-393：换词复用常驻热槽 WebView 时只重注入 lookupEntries 不重载
+          // 页面，popup.js 句子上下文镜像标量（sentenceCtxPrev/Next）不会自动归零。宿主
+          // 已在换词处清空草稿（reader/video 的 _miningDraft.clear()），这里同步把 JS 镜像
+          // 归零，使 renderPopup() 重建的「上 N / 下 N」选择器回到 0/0 默认态、清空按钮隐藏，
+          // 与已清的草稿一致——杜绝视觉显示「已选上 2 句」但实际只制当前句的串味。
+          window.resetSentenceContextMirror();
           window.renderPopup();
         ''';
     final swInject = Stopwatch()..start();
@@ -898,6 +904,8 @@ class DictionaryPopupWebViewState
         // TODO-270 F/G：弹窗「+句」追加当前句到本卡草稿（乙方案）。不碰 mineEntry
         // 字段契约——只发「append 当前句」信号给宿主，宿主把当前句推进草稿并回传
         // 草稿现有句数（含本句），popup 据此更新「已攒 N 句」角标。三表面共用入口。
+        // 已废弃（TODO-393 用「上 N 句 / 下 N 句」方向选择器取代单按钮逐句追加）：popup.js
+        // 不再调用 appendSentence，onAppendSentence 链路成死码；保留待 TODO-393 稳定后清理。
         controller.addJavaScriptHandler(
           handlerName: 'appendSentence',
           callback: (_) async {

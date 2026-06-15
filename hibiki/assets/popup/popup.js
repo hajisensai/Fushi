@@ -176,6 +176,18 @@ async function clearSentenceDraftOnHost() {
     }
 }
 
+// BUG-297 / TODO-393：把句子上下文镜像标量归零（不发宿主信号）。换词复用常驻热槽
+// WebView 时宿主只重注入 lookupEntries 再调 renderPopup()（不重载页面），这三个模块级
+// 标量不像页面刷新那样自动归零，renderPopup 据残留值会把上一个词的「上 N / 下 N」按钮
+// 着色成 selected、清空按钮显示出来，与宿主已清空的草稿不一致。宿主在换词注入脚本里调
+// 本函数把镜像与已清的草稿对齐，再 renderPopup() 重建选择器即回到初始 0/0 态。
+// 制卡成功(mineEntry)/点×清空两处已各自就地归零（同事件内同步），不依赖本函数。
+window.resetSentenceContextMirror = function() {
+    sentenceCtxPrev = 0;
+    sentenceCtxNext = 0;
+    sentenceDraftCount = 0;
+};
+
 // 构造一个句子上下文选择器：两行「上 0/1/2/3/4」+「下 0/1/2/3/4」 step 按钮。点某个数
 // 就把该方向的上下文句数设成它（0=不取该方向），整组重发宿主。
 function buildSentenceContextPicker() {
