@@ -1066,6 +1066,14 @@ class _DictionaryDialogPageState extends BasePageState {
           horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
           vertical: tokens.spacing.rowVertical,
         ),
+        // TODO-381 (user request): collapse/expand is the most-used one-tap
+        // toggle for a row, so it is promoted to the row leading (leftmost):
+        // visible at a glance, reachable with one finger, no longer buried in
+        // the trailing control cluster. The name sits in the middle and uses
+        // HibikiListItem own Expanded + ellipsis to take the full middle width,
+        // so even on narrow widths it shows as much as fits (graceful ellipsis)
+        // and is never squeezed out by the trailing controls.
+        leading: _buildDictionaryCollapseButton(dictionary),
         title: Text(
           dictionary.name,
           style: textTheme.bodyLarge?.copyWith(
@@ -1081,6 +1089,9 @@ class _DictionaryDialogPageState extends BasePageState {
             color: subtitleColor,
           ),
         ),
+        // Trailing keeps only: gamepad/a11y reorder arrows, the show/hide
+        // switch, and the three-dot menu (custom CSS + delete are real,
+        // non-droppable functions). Collapse/expand moved to leading.
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1099,7 +1110,6 @@ class _DictionaryDialogPageState extends BasePageState {
               enabled: !isLast,
               onTap: onMoveDown,
             ),
-            _buildDictionaryCollapseButton(dictionary),
             _buildDictionaryVisibilityButton(dictionary, enabled),
             SizedBox(width: tokens.spacing.gap / 2),
             buildDictionaryTileTrailing(dictionary),
@@ -1131,11 +1141,12 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  // TODO-091：把每本词典的「折叠/展开」状态从三点菜单二级提到行内一键开关，使
-  // 20+ 本词典的折叠状态可在列表里一览（图标本身即状态），单击直接切换、无需
-  // 先开菜单再选（对齐用户参考的 hsa 体验）。折叠语义 = 查词弹窗里该词典释义
-  // 默认折叠（见 dictionary_popup_webview 注入 collapsedDictionaryNames）；持久化
-  // 仍走既有 Dictionary.collapsedLanguages（按 targetLanguage 区分），不改后端逻辑。
+  // TODO-091/TODO-381：把每本词典的「折叠/展开」状态做成行首 leading（最左）的
+  // 一键开关，使 20+ 本词典的折叠状态可在列表里一眼一览（图标本身即状态），单击
+  // 直接切换、无需先开菜单再选（对齐用户参考的 hsa 体验，并按用户诉求把它放到
+  // 行最左）。折叠语义 = 查词弹窗里该词典释义默认折叠（见 dictionary_popup_webview
+  // 注入 collapsedDictionaryNames）；持久化仍走既有 Dictionary.collapsedLanguages
+  // （按 targetLanguage 区分），不改后端逻辑。
   Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
     final bool collapsed = dictionary.isCollapsed(appModel.targetLanguage);
     final String tooltip = collapsed ? t.options_expand : t.options_collapse;
@@ -1264,19 +1275,11 @@ class _DictionaryDialogPageState extends BasePageState {
   // tile opens this same getMenuItems list via buildDictionaryTileTrailing()
   // / HibikiOverflowMenu; the showMenu variant was never wired to any gesture.
 
+  // TODO-381：三点菜单只留行内没有专属控件的真实功能——自定义 CSS、删除。
+  // 显示/隐藏已由行内 Switch 一键切换（_buildDictionaryVisibilityButton），
+  // 折叠/展开已提到行首 leading，故菜单里不再重复这两项（消除冗余入口）。
   List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(Dictionary dictionary) {
     return [
-      buildPopupItem(
-        label: dictionary.isHidden(appModel.targetLanguage)
-            ? t.options_show
-            : t.options_hide,
-        icon: dictionary.isHidden(appModel.targetLanguage)
-            ? Icons.check_circle_outline
-            : Icons.block,
-        action: () {
-          _toggleDictionaryHidden(dictionary);
-        },
-      ),
       buildPopupItem(
         label: t.custom_dict_css,
         icon: Icons.code_outlined,

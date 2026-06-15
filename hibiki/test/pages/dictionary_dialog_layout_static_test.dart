@@ -228,21 +228,43 @@ void main() {
     expect(source, contains('appModel.importDictionary('));
   });
 
-  // TODO-091：每本词典的「折叠/展开」状态必须在列表行内可一览 + 一键切换，
-  // 不再藏进三点(⋮)菜单的二级项（那是「点两下」且看不见折叠状态）。守卫：
-  //  ① 列表行 trailing 直接渲染 _buildDictionaryCollapseButton；
+  // TODO-091/TODO-381：每本词典的「折叠/展开」状态必须在列表行内可一览 + 一键
+  // 切换，且按用户诉求放到行**最左**（leading），从拥挤的右侧控件串里拿出来。
+  // 守卫：
+  //  ① 折叠/展开按钮放在 HibikiListItem 的 leading（最左），不在 trailing；
   //  ② 该按钮单击即 toggleDictionaryCollapsed（一键，非先开菜单）；
   //  ③ 图标随 isCollapsed 状态切换（unfold_more/unfold_less = 状态一览）；
   //  ④ 三点菜单 getMenuItems 不再含折叠项（消除第二个慢入口）。
-  test('dictionary row surfaces an inline one-tap collapse toggle (TODO-091)',
-      () {
+  test(
+      'dictionary row puts the one-tap collapse toggle in leading (leftmost), '
+      'not trailing (TODO-091/TODO-381)', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
             .readAsStringSync();
 
-    // ① 行内按钮在 trailing 里、紧邻可见性开关。
-    expect(source, contains('_buildDictionaryCollapseButton(dictionary)'));
     expect(source, contains('Widget _buildDictionaryCollapseButton('));
+
+    // ① 折叠/展开按钮挂在 leading（最左），不在 trailing 串里。
+    expect(
+      source,
+      contains('leading: _buildDictionaryCollapseButton(dictionary)'),
+      reason: 'collapse toggle must be the row leading (leftmost)',
+    );
+    // 定位 _buildDictionaryTile 的 trailing Row，断言它不再含折叠按钮。
+    final int tileStart = source.indexOf('Widget _buildDictionaryTile({');
+    final int tileEnd =
+        source.indexOf('Widget _buildDictionaryVisibilityButton(');
+    expect(tileStart, isNonNegative);
+    expect(tileEnd, greaterThan(tileStart));
+    final String tileSource = source.substring(tileStart, tileEnd);
+    final int trailingStart = tileSource.indexOf('trailing: Row(');
+    expect(trailingStart, isNonNegative);
+    final String trailingSource = tileSource.substring(trailingStart);
+    expect(
+      trailingSource,
+      isNot(contains('_buildDictionaryCollapseButton(dictionary)')),
+      reason: 'collapse toggle moved out of trailing into leading',
+    );
 
     // ② 单击直接切换折叠状态（不经二级菜单）。
     final int btnStart =
@@ -271,5 +293,24 @@ void main() {
     expect(menuSource, isNot(contains('toggleDictionaryCollapsed')));
     expect(menuSource, isNot(contains('t.options_collapse')));
     expect(menuSource, isNot(contains('t.options_expand')));
+  });
+
+  // TODO-381：三点菜单只留行内没有专属控件的真实功能（自定义 CSS、删除）。
+  // 显示/隐藏由行内 Switch 一键切换、折叠/展开在 leading，故菜单里不再重复
+  // 这两个状态项（消除冗余入口）。守卫菜单不再含 show/hide。
+  test('three-dot menu drops the duplicate show/hide item (TODO-381)', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+    final int menuStart =
+        source.indexOf('List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(');
+    expect(menuStart, isNonNegative);
+    final String menuSource = source.substring(menuStart);
+    // 菜单仍保留真实功能：自定义 CSS、删除。
+    expect(menuSource, contains('t.custom_dict_css'));
+    expect(menuSource, contains('t.options_delete'));
+    // 但不再重复行内 Switch 已有的显示/隐藏项。
+    expect(menuSource, isNot(contains('t.options_show')));
+    expect(menuSource, isNot(contains('t.options_hide')));
   });
 }
