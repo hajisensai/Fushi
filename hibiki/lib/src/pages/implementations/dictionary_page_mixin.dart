@@ -105,16 +105,13 @@ mixin DictionaryPageMixin {
   /// 不触碰 video 页本体。盒子尺寸口径与原两处一致（maxWidth/Height × appUiScale，padding
   /// 与 reserve 走 calcPopupPosition 默认 6/0）。
   Rect _calcMixinPopupPosition(Rect selectionRect, Size screen) {
-    if (mixinAppModel.popupBottomDocked) {
-      return dockedPopupRect(
-        screen: screen,
-        dockedHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
-      );
-    }
-    return calcPopupPosition(
+    // 与 base_source_page._calculatePopupPosition 共用 [resolvePopupRect]。mixin
+    // 家族（video/首页/texthooker）不预留 reserve、不竖排避让（全用默认），盒子尺寸
+    // 随界面大小放大（同 base 的 popupMaxWidth/Height）。
+    return resolvePopupRect(
       selectionRect: selectionRect,
       screen: screen,
-      // 盒子尺寸随界面大小放大（同 base_source_page.popupMaxWidth/Height）。
+      bottomDocked: mixinAppModel.popupBottomDocked,
       maxWidth: mixinAppModel.popupMaxWidth * mixinAppModel.appUiScale,
       maxHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
     );

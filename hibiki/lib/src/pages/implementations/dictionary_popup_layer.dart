@@ -166,6 +166,47 @@ Rect dockedPopupRect({
   return Rect.fromLTWH(horizontalInset, top, width, height);
 }
 
+/// 查词弹窗位置分流的单一收口：[bottomDocked] 时忽略选区返回屏幕底部全宽 dock 面板
+/// （[dockedPopupRect]），否则跟随选区（[calcPopupPosition]）。
+///
+/// 收口自 base_source_page._calculatePopupPosition（reader/有声书/独立查词页家族）
+/// 与 dictionary_page_mixin._calcMixinPopupPosition（video/首页/texthooker 家族）两份
+/// 语义同构的包装器。两者差异仅在传参：base 传实例 getter 的 padding/reserve/
+/// verticalWriting（子类可 override），mixin 全用默认 0。故此处把它们全参数化，
+/// 默认值（padding=6.0/reserve=0/verticalWriting=false）与底层默认一致，两家族各自
+/// 传自己的值即行为不变。
+Rect resolvePopupRect({
+  required Rect selectionRect,
+  required Size screen,
+  required bool bottomDocked,
+  required double maxWidth,
+  required double maxHeight,
+  double padding = 6.0,
+  double bottomReserve = 0.0,
+  double topReserve = 0.0,
+  bool verticalWriting = false,
+}) {
+  if (bottomDocked) {
+    return dockedPopupRect(
+      screen: screen,
+      inset: padding,
+      dockedHeight: maxHeight,
+      bottomReserve: bottomReserve,
+      topReserve: topReserve,
+    );
+  }
+  return calcPopupPosition(
+    selectionRect: selectionRect,
+    screen: screen,
+    padding: padding,
+    maxWidth: maxWidth,
+    maxHeight: maxHeight,
+    bottomReserve: bottomReserve,
+    topReserve: topReserve,
+    verticalWriting: verticalWriting,
+  );
+}
+
 /// Maps a word rect reported in the popup WebView's own coordinate space
 /// ([localRect] — CSS px == the WebView's logical px, origin at the WebView's
 /// top-left) to absolute screen coordinates, using the WebView's *live*

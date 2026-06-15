@@ -590,25 +590,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     Size screen, {
     bool verticalWriting = false,
   }) {
-    // TODO-108：底部固定模式忽略选区位置，把弹窗放成屏幕底部一条全宽面板。
-    // 这是查词弹窗位置计算的单一收口点（reader/有声书/独立查词页家族共用），
-    // 在此处一处分流即覆盖整条 base_source_page 家族；video 家族在
-    // dictionary_page_mixin 用等价包装器收口（不碰 video_hibiki_page）。
-    if (appModel.popupBottomDocked) {
-      return dockedPopupRect(
-        screen: screen,
-        inset: popupPadding,
-        dockedHeight: popupMaxHeight,
-        bottomReserve: popupBottomReserve,
-        topReserve: popupTopReserve,
-      );
-    }
-    return calcPopupPosition(
+    // TODO-108：查词弹窗位置计算的单一收口点（reader/有声书/独立查词页家族共用），
+    // 底部固定模式忽略选区放屏幕底部全宽面板。video 家族在 dictionary_page_mixin
+    // 用同一个 [resolvePopupRect] 收口（不碰 video_hibiki_page）。reserve/padding/
+    // verticalWriting 走本类 getter（子类可 override，如 reader 预留底栏）。
+    return resolvePopupRect(
       selectionRect: sel,
       screen: screen,
-      padding: popupPadding,
+      bottomDocked: appModel.popupBottomDocked,
       maxWidth: popupMaxWidth,
       maxHeight: popupMaxHeight,
+      padding: popupPadding,
       bottomReserve: popupBottomReserve,
       topReserve: popupTopReserve,
       verticalWriting: verticalWriting,
