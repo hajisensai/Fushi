@@ -57,21 +57,15 @@ void main() {
   }
 
   group('kanji bucket split (sync + async path-cache rebuild)', () {
-    test(
-        '_rebuildDictPathsCache collects kanji into its own kanjiPaths bucket '
-        'and passes it to initializeTyped (not folded into termPaths)', () {
-      final String body = bodyOf(appModel, 'void _rebuildDictPathsCache(');
-      expect(body.contains('final kanjiPaths = <String>[];'), isTrue,
-          reason: 'sync rebuild must declare a separate kanjiPaths list');
+    // 分桶逻辑收口到顶层 bucketDictPaths（同步/异步两方法共用）；kanji 仍进自己的桶、
+    // 不 fall through 到 term，rebuild 方法把该桶 (b.kanji) 传给 initializeTyped。
+    test('bucketDictPaths 把 kanji 收进独立桶（不并进 term，TODO-094 S4）', () {
+      final String body = bodyOf(appModel, 'bucketDictPaths(');
       expect(
           body.contains('case DictionaryType.kanji:') &&
-              body.contains('kanjiPaths.add('),
+              body.contains('kanji.add('),
           isTrue,
-          reason: 'the kanji case must add to kanjiPaths');
-      expect(body.contains('kanjiPaths: kanjiPaths'), isTrue,
-          reason:
-              'initializeTyped must receive the kanji bucket so kanji dicts '
-              'load into the kanji index (TODO-094 S4)');
+          reason: 'bucketDictPaths 的 kanji case 必须加进独立 kanji 桶');
       expect(
           body.contains('case DictionaryType.term:\n'
               '        case DictionaryType.kanji:'),
@@ -81,18 +75,25 @@ void main() {
     });
 
     test(
-        '_rebuildDictPathsCacheAsync collects kanji into its own kanjiPaths '
-        'bucket and passes it to initializeTyped', () {
+        '_rebuildDictPathsCache passes the kanji bucket to initializeTyped '
+        '(not folded into termPaths)', () {
+      final String body = bodyOf(appModel, 'void _rebuildDictPathsCache(');
+      expect(body.contains('bucketDictPaths('), isTrue,
+          reason: 'sync rebuild must bucket via bucketDictPaths');
+      expect(body.contains('kanjiPaths: b.kanji'), isTrue,
+          reason:
+              'initializeTyped must receive the kanji bucket so kanji dicts '
+              'load into the kanji index (TODO-094 S4)');
+    });
+
+    test(
+        '_rebuildDictPathsCacheAsync passes the kanji bucket to initializeTyped',
+        () {
       final String body =
           bodyOf(appModel, 'Future<void> _rebuildDictPathsCacheAsync(');
-      expect(body.contains('final kanjiPaths = <String>[];'), isTrue,
-          reason: 'async rebuild must declare a separate kanjiPaths list');
-      expect(
-          body.contains('case DictionaryType.kanji:') &&
-              body.contains('kanjiPaths.add('),
-          isTrue,
-          reason: 'the async kanji case must add to kanjiPaths');
-      expect(body.contains('kanjiPaths: kanjiPaths'), isTrue,
+      expect(body.contains('bucketDictPaths('), isTrue,
+          reason: 'async rebuild must bucket via bucketDictPaths');
+      expect(body.contains('kanjiPaths: b.kanji'), isTrue,
           reason: 'async initializeTyped must receive the kanji bucket');
     });
   });
