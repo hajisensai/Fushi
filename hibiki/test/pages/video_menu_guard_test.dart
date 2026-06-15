@@ -9,8 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///    守卫——快速重复点击不再叠开两个（用户报「点菜单/字幕点快了弹出两个」）。剧集仍走
 ///    `showModalBottomSheet`，倍速/音轨/字幕源/设置迁到右侧 push-aside side panel
 ///    （`_showVideoSidePanel`，靠单个 `_videoSidePanel` ValueNotifier 互斥），其调度入口也过
-///    `_videoSheetOpen` 门控。音量改为锚定按钮的 popover（TODO-337，非 modal、toggle 语义、
-///    自带 OverlayEntry 单实例），不再走 modal sheet 与 `_videoSheetOpen`。
+///    `_videoSheetOpen` 门控。音量改为底栏一行式常驻控件（TODO-377：图标 + 横滑条内联，
+///    布局尺寸与 hover 无关、零叠开），不再走 modal sheet / `_videoSheetOpen`，也不再弹浮层。
 /// 2. **音轨恢复轮询**：`_restoreAudioTrack` 必须有界轮询等待 audioTracks 填充，
 ///    不能单次固定延时后一锤子匹配（列表此刻常仍空 → 音轨「退出重进丢失」）。
 void main() {
@@ -23,8 +23,8 @@ void main() {
     // （开置 true、whenComplete 复位 false）；倍速 / 音轨 / 字幕源 / 设置四菜单迁到右侧
     // push-aside side panel（[_showVideoSidePanel]），靠单个 [_videoSidePanel] ValueNotifier
     // 做面板间互斥（一次只一个），且 [_showVideoSidePanel] 顶部也有 `if (_videoSheetOpen) return;`
-    // 门控，不会与 modal sheet 叠开。音量改为锚定按钮的 popover（OverlayEntry 单实例 + toggle
-    // 语义），不叠开靠 [_volumeOverlayEntry] != null 复用同一 entry，不再用 modal / _videoSheetOpen。
+    // 门控，不会与 modal sheet 叠开。音量改为底栏一行式常驻控件（TODO-377：图标 + 横滑条
+    // 内联渲染），常驻无浮层 → 天然零叠开，不再走 popover / OverlayEntry / _videoSheetOpen。
     test('所有菜单入口都有 _videoSheetOpen 重入门控（modal + side panel）', () {
       // 剧集 modal sheet + side panel 调度入口 [_showVideoSidePanel] + 字幕源入口
       // [_showSubtitleSourceMenu] 都要先过 `if (_videoSheetOpen) return;`。
@@ -43,12 +43,12 @@ void main() {
       expect(setTrue, greaterThanOrEqualTo(1),
           reason: 'modal sheet 开启前要置 _videoSheetOpen = true');
 
-      // 音量 popover 不叠开：复用同一 OverlayEntry（已开则 markNeedsBuild、不再 insert 第二个）。
-      expect(
-          src.contains('OverlayEntry? _volumeOverlayEntry') &&
-              src.contains('if (_volumeOverlayEntry != null)'),
-          isTrue,
-          reason: '音量 popover 靠 _volumeOverlayEntry 单实例复用避免叠开');
+      // 音量改一行式常驻控件（TODO-377）：旧的 hover 弹出 popover（OverlayEntry 单实例 +
+      // toggle）整套已删，常驻控件天然零叠开，无需任何重入门控。
+      expect(src.contains('_volumeOverlayEntry'), isFalse,
+          reason: '音量不再走 popover OverlayEntry（已改一行式常驻控件，零叠开）');
+      expect(src.contains('final ValueNotifier<double> _volumeDisplay'), isTrue,
+          reason: '一行式音量控件经 _volumeDisplay 驱动常驻渲染');
 
       // 4 个 side panel 菜单经统一调度，靠单 ValueNotifier 互斥（一次只一个）。
       expect(src, contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
