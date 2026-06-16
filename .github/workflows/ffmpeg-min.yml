@@ -2,8 +2,11 @@
 # 产物 ffmpeg(.exe) 放到 app 程序旁即被 resolveFfmpegExecutable() 优先选用
 # （见 hibiki/lib/src/media/video/ffmpeg_backend.dart）。
 #
-# ⚠️ v0 脚手架：手动触发，先验证三平台能编出可用 ffmpeg、再接进 release-desktop.yml
-# 打包。configure 白名单调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
+# 手动触发：重新编出三平台「精简 ffmpeg」并产出 artifact。Windows 产物现已入库到
+# third_party/ffmpeg-min/windows/ffmpeg.exe，release-desktop.yml 直接 Copy（不再跨
+# workflow 下载 artifact，见 TODO-416）。需要刷新入库二进制时：手动跑此 workflow，
+# 下载对应平台 artifact，替换 third_party 下的 vendored 文件再提交。
+# configure 白名单调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
 name: ffmpeg-min
 
 on:
@@ -12,14 +15,6 @@ on:
       ffmpeg_ref:
         description: "FFmpeg git tag/branch"
         default: "n7.1"
-  # Temporary validation trigger while this new workflow is not yet present on
-  # the default branch. Remove before merging; workflow_dispatch then suffices.
-  push:
-    branches:
-      - worktree-card-glossary-and-video-subtitle-fixes
-    paths:
-      - ".github/workflows/ffmpeg-min.yml"
-      - "tool/ffmpeg-min/**"
 
 jobs:
   build:

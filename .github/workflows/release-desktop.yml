@@ -22,9 +22,6 @@ on:
       release_name:
         description: 'Optional GitHub Release title.'
         required: false
-      ffmpeg_min_run_id:
-        description: 'Optional ffmpeg-min workflow run ID. Defaults to the latest successful ffmpeg-min run.'
-        required: false
 
 concurrency:
   group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
@@ -34,7 +31,6 @@ jobs:
   windows:
     runs-on: windows-2022
     permissions:
-      actions: read
       contents: write
     steps:
       - uses: actions/checkout@v6
@@ -212,48 +208,21 @@ jobs:
           flutter build windows --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
-      - name: Download ffmpeg-min (Windows)
-        id: ffmpeg_min
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_FFMPEG_MIN_RUN_ID: ${{ inputs.ffmpeg_min_run_id }}
-        run: |
-          set -euo pipefail
-          artifact=ffmpeg-min-windows-x64
-          run_id="${INPUT_FFMPEG_MIN_RUN_ID:-}"
-          if [ -z "$run_id" ]; then
-            run_id="$(gh run list \
-              --workflow ffmpeg-min.yml \
-              --status success \
-              --limit 1 \
-              --json databaseId \
-              -q '.[0].databaseId')"
-          fi
-          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
-            echo "::error title=Missing ffmpeg-min run::Run the ffmpeg-min workflow successfully, or pass ffmpeg_min_run_id."
-            exit 1
-          fi
-          if ! gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
-              --paginate \
-              -q ".artifacts[] | select(.name == \"${artifact}\" and .expired == false) | .name" \
-              | grep -qx "$artifact"; then
-            echo "::error title=Missing ffmpeg-min artifact::Run ${run_id} does not contain a non-expired ${artifact} artifact."
-            exit 1
-          fi
-          rm -rf hibiki/build/ffmpeg-min
-          mkdir -p hibiki/build/ffmpeg-min
-          gh run download "$run_id" --name "$artifact" --dir hibiki/build/ffmpeg-min
-          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-      - name: Install ffmpeg-min into Windows bundle
+      # ffmpeg.exe is vendored at third_party/ffmpeg-min/windows/ffmpeg.exe
+      # (TODO-416). It used to be fetched from another workflow's build artifact,
+      # which silently broke whenever that artifact expired (90 days) or that
+      # workflow had not run on this branch, shipping a Windows bundle with NO
+      # ffmpeg -> missing video covers/subtitles. Copying the committed binary
+      # makes every release self-contained and removes the cross-workflow
+      # supply dependency.
+      - name: Install vendored ffmpeg-min into Windows bundle
         shell: pwsh
         run: |
-          $source = Join-Path $PWD 'hibiki\build\ffmpeg-min\ffmpeg.exe'
+          $source = Join-Path $PWD 'third_party\ffmpeg-min\windows\ffmpeg.exe'
           $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release'
           $target = Join-Path $targetDir 'ffmpeg.exe'
           if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-            throw "Missing downloaded ffmpeg-min executable: $source"
+            throw "Missing vendored ffmpeg-min executable: $source"
           }
           if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
             throw "Missing Windows release bundle directory: $targetDir"
