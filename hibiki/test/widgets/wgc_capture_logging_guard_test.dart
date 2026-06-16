@@ -85,6 +85,12 @@ void main() {
       'recreate',
       'createSession-fail',
       'startCapture-fail',
+      'retire-close-start',
+      'retire-remove-start',
+      'retire-remove',
+      'retire-register-start',
+      'retire-register',
+      'handler-release-done',
     ]) {
       expect(src.contains('WgcLog::Write("$evt"'), isTrue,
           reason: 'texture_bridge.cc must log WgcLog at lifecycle point: $evt');

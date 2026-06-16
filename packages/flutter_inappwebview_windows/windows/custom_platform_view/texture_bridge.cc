@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cstdio>
 #include <iostream>
 #include <mutex>
 #include <utility>
@@ -19,6 +20,14 @@ namespace flutter_inappwebview_plugin
 
   namespace
   {
+    std::string HResultDetail(const char* label, HRESULT hr)
+    {
+      char buffer[64];
+      std::snprintf(buffer, sizeof(buffer), "%s=0x%08lX", label,
+        static_cast<unsigned long>(hr));
+      return std::string(buffer);
+    }
+
     // BUG-209/TODO-439 帧池保活注册表（进程级，单 UI 线程访问）——
     // 「active 从 create 起强保活，Close 后永久保活」。
     //
@@ -55,7 +64,7 @@ namespace flutter_inappwebview_plugin
     // 对应 captureLog 第二轮 create-pool，没有 stop/retire/dtor，只有 start running=1 与
     // recreate-skip-samesize；即这个 pool 是 active/running 状态下失去最后强引用或被裸释放。
     // 因此 active pool 在创建后、注册 FrameArrived 前就必须进进程级强保活；retire 仍负责
-    // remove_FrameArrived + Close 释放 GPU 资源 + closed-flag。
+    // 先 Close 释放 GPU 资源 + 设置 closed-flag，再 remove_FrameArrived 断源。
     //
     // 对已 Close 的退役池：
     //   (1) Close 释放帧池全部 D3D/GPU 资源（CloseInternal -> ResetD3DResources，反汇编
@@ -361,7 +370,7 @@ namespace flutter_inappwebview_plugin
       capture_session_ = nullptr;
     }
 
-    // BUG-209：帧池的「断源 -> Close 设 closed-flag -> 永久保活」三步收敛进单一
+    // BUG-209：帧池的「Close 设 closed-flag -> 断源 -> 永久保活」三步收敛进单一
     // RetireFramePoolLocked，让 StopInternal / Start 重入 / OnFrameArrived resize 三条
     // 会丢弃或替换帧池的路径走完全相同的不变量，消除「某条路径裸释放挂着在途 deferral
     // 的帧池」的窗口（第九修只在 StopInternal 走这套，漏了另两条）。
@@ -372,8 +381,12 @@ namespace flutter_inappwebview_plugin
     // （active 已被 InvalidateFrameArrivedCallback 置 false）。
     if (frame_arrived_handler_) {
       WgcLog::Write("handler-release", pool_for_handler_release);
+      frame_arrived_handler_ = nullptr;
+      WgcLog::Write("handler-release-done", pool_for_handler_release);
     }
-    frame_arrived_handler_ = nullptr;
+    else {
+      frame_arrived_handler_ = nullptr;
+    }
   }
 
   void TextureBridge::RetireFramePoolLocked()
@@ -389,11 +402,13 @@ namespace flutter_inappwebview_plugin
     //                            FirePresentEvent 仍指向被拆的内部状态），改为退役旧池 +
     //                            建全新池，让旧池内存 + closed-flag 永久存活。
     //
-    // 步骤（顺序即因果防线，与第九修 StopInternal 完全一致）：
-    //   1) remove_FrameArrived(token)：同步从 WGC 内部 event delegate 表摘掉本项（帧池
-    //      仍存活，只动有效表，不留野指针）。返回后 WGC 不再向本 token 投递新事件。
-    //   2) Close 帧池（IClosable）：同步设 closed-flag [pool+129h]=1。此后任何已排队未派发
-    //      的 deferred FirePresentEvent 在其开头 cmp/jne 早返回 no-op，绝不读 event 成员。
+    // 步骤（TODO-453 后调整顺序）：
+    //   1) Close 帧池（IClosable）：尽早同步设 closed-flag [pool+129h]=1。TODO-453 的
+    //      最后一轮日志停在 retire 后、retire-close 前，说明 remove/Close 窗口仍可能在
+    //      closed-flag 设置前崩溃或重入；先 Close 可让 remove 期间任何迟到
+    //      deferred FirePresentEvent 在其开头 cmp/jne 早返回 no-op。
+    //   2) remove_FrameArrived(token)：同步从 WGC 内部 event delegate 表摘掉本项（帧池
+    //      仍存活，只动有效表，不留野指针）。HRESULT 失败也记录并继续退役保活。
     //   3) 帧池 ComPtr move 进进程级退役注册表**永久保活**，绝不主动释放 -> 帧池内存永久
     //      有效 -> closed-flag 永久 = 1 -> 任何迟到 deferral 永久安全早返回。
     //
@@ -406,27 +421,51 @@ namespace flutter_inappwebview_plugin
     }
     WgcLog::Write("retire", frame_pool_.get());
 
-    if (on_frame_arrived_token_.value != 0) {
-      // 同步 revoke：返回后 WGC 不再向本 token 投递新 FirePresentEvent。
-      // 帧池此刻仍存活，移除只动有效 delegate 表，不产生野指针。
-      frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
-      on_frame_arrived_token_ = {};
-    }
-
+    const void* pool_for_log = frame_pool_.get();
     // 同步设 closed-flag：在途/迟到的 deferred FirePresentEvent 据此早返回 no-op，
-    // 不再读帧池 event 成员（崩点的前置防线）。
+    // 不再读帧池 event 成员（崩点的前置防线）。TODO-453 后把 Close 提前到
+    // remove_FrameArrived 之前，压掉 revoke 期间的重入窗口。
+    WgcLog::Write("retire-close-start", pool_for_log);
     auto pool_closable =
       frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
     if (pool_closable) {
-      pool_closable->Close();
-      WgcLog::Write("retire-close", frame_pool_.get());
+      const HRESULT close_hr = pool_closable->Close();
+      if (SUCCEEDED(close_hr)) {
+        WgcLog::Write("retire-close", pool_for_log,
+          HResultDetail("hr", close_hr));
+      }
+      else {
+        WgcLog::Write("retire-close-fail", pool_for_log,
+          HResultDetail("hr", close_hr));
+      }
     }
     else {
-      WgcLog::Write("retire-close", frame_pool_.get(), "closable=0");
+      WgcLog::Write("retire-close", pool_for_log, "closable=0");
     }
+
+    if (on_frame_arrived_token_.value != 0) {
+      // 同步 revoke：返回后 WGC 不再向本 token 投递新 FirePresentEvent。
+      // 帧池此刻仍存活且已 Close，移除只动有效 delegate 表；若 HRESULT 失败，
+      // 仍继续保活 pool，日志保留失败分支供下一轮取证。
+      WgcLog::Write("retire-remove-start", pool_for_log);
+      const HRESULT remove_hr =
+        frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
+      on_frame_arrived_token_ = {};
+      if (SUCCEEDED(remove_hr)) {
+        WgcLog::Write("retire-remove", pool_for_log,
+          HResultDetail("hr", remove_hr));
+      }
+      else {
+        WgcLog::Write("retire-remove-fail", pool_for_log,
+          HResultDetail("hr", remove_hr));
+      }
+    }
+
     // 帧池强引用移交退役注册表永久保活（不在此释放，注册表也绝不主动释放），让其
     // 内存永久有效，使 closed-flag 永久 = 1，任何迟到 deferral 永久安全早返回。
+    WgcLog::Write("retire-register-start", pool_for_log);
     RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_));
+    WgcLog::Write("retire-register", pool_for_log);
     frame_pool_ = nullptr;
   }
 
@@ -468,7 +507,7 @@ namespace flutter_inappwebview_plugin
       // 同一 0xf0d5 崩点。该方法不走第九修的 Close + 退役保活，是 dump 81504 之外另一条
       // 「帧池（内部状态）被释放而在途 deferral 仍在途」的窗口。
       //
-      // 改为：把旧帧池整体退役保活（remove_FrameArrived 断源 + Close 设 closed-flag +
+      // 改为：把旧帧池整体退役保活（Close 设 closed-flag + remove_FrameArrived 断源 +
       // 移交退役注册表永久保活，与 StopInternal/Start 同一 RetireFramePoolLocked 不变量），
       // 再建一个全新的帧池并重新挂 FrameArrived / 新建 CaptureSession。旧池内存 +
       // closed-flag 永久存活，其任何迟到 deferral 永久安全早返回；新池干净无在途 deferral。
