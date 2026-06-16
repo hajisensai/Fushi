@@ -57,7 +57,7 @@ void main() {
     // Windows Release runner directory next to the app exe.
     expect(
       windowsJob,
-      contains(r"third_party\ffmpeg-min\windows\ffmpeg.exe"),
+      contains(r'third_party\ffmpeg-min\windows\ffmpeg.exe'),
       reason: 'Windows job must source ffmpeg from the vendored third_party '
           'path (TODO-416)',
     );
