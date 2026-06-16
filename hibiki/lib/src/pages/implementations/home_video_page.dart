@@ -233,10 +233,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       deletedBooks.add(book);
     }
     final int deleted = deletedBooks.length;
-    if (!mounted) return;
-    _exitSelectionMode();
-    _refreshAfterTagChange();
-    await _waitForVideoCardsToUnmount();
+    if (mounted) {
+      _exitSelectionMode();
+      _refreshAfterTagChange();
+      await _waitForVideoCardsToUnmount();
+    }
     for (final VideoBookRow book in deletedBooks) {
       await widget.repo.reclaimDeletedVideoBookAssets(
         deletedBookUid: book.bookUid,

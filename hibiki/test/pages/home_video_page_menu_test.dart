@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -21,6 +22,52 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
+
+class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
+  PausingBatchDeleteVideoBookRepository(
+    super.db, {
+    required this.pauseAfterDeleteCount,
+  });
+
+  final int pauseAfterDeleteCount;
+  final Completer<void> deletesCommitted = Completer<void>();
+  final Completer<void> allowDeleteReturn = Completer<void>();
+  int deleteCalls = 0;
+  int reclaimCalls = 0;
+  int compactCalls = 0;
+
+  @override
+  Future<void> deleteVideoBook(String bookUid) async {
+    await super.deleteVideoBook(bookUid);
+    deleteCalls++;
+    if (deleteCalls == pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
+      deletesCommitted.complete();
+      await allowDeleteReturn.future;
+    }
+  }
+
+  @override
+  Future<void> reclaimDeletedVideoBookAssets({
+    required String deletedBookUid,
+    required String? deletedCoverPath,
+    required String? deletedSubtitlePath,
+    required String deletedVideoPath,
+  }) async {
+    reclaimCalls++;
+    await super.reclaimDeletedVideoBookAssets(
+      deletedBookUid: deletedBookUid,
+      deletedCoverPath: deletedCoverPath,
+      deletedSubtitlePath: deletedSubtitlePath,
+      deletedVideoPath: deletedVideoPath,
+    );
+  }
+
+  @override
+  Future<void> compactAfterVideoDeleteBestEffort() async {
+    compactCalls++;
+    await super.compactAfterVideoDeleteBestEffort();
+  }
+}
 
 /// HomeVideoPage 行为测试：验证「视频长按弹菜单」与「视频卡渲染共享标签」真生效
 /// （而非只看源码）。AppModel 用 [AppModel.wireDatabaseForTesting] /
@@ -182,7 +229,11 @@ void main() {
     return db.createTag('Anime', 0xFF2196F3);
   }
 
-  Widget buildApp({bool captureToasts = false}) => ProviderScope(
+  Widget buildApp({
+    bool captureToasts = false,
+    VideoBookRepository? repo,
+  }) =>
+      ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
         ],
@@ -193,7 +244,7 @@ void main() {
             // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
             // HibikiPageHeader 的 HibikiIconButton(InkWell) 才有 Material 祖先。
             home: Scaffold(
-              body: HomeVideoPage(repo: VideoBookRepository(db)),
+              body: HomeVideoPage(repo: repo ?? VideoBookRepository(db)),
             ),
           ),
         ),
@@ -524,6 +575,82 @@ void main() {
     expect(kept.cover.existsSync(), isTrue);
     expect(kept.embeddedCache.existsSync(), isTrue);
     expect(kept.video.existsSync(), isTrue);
+  });
+
+  testWidgets('批量删除 DB 后页面卸载仍会回收 app-owned 视频资产', (WidgetTester tester) async {
+    resetAppOwnedVideoAssetDirs();
+    final selectedOne = await seedVideoWithAssets(
+      bookUid: 'video/1',
+      title: 'Episode One',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_1.png',
+        text: 'cover-one',
+      ),
+      subtitle: writeAppOwnedAsset(
+        dirName: VideoStorage.subtitlesDirName,
+        fileName: 'video_1.srt',
+        text: '1\n00:00:00,000 --> 00:00:01,000\none',
+      ),
+    );
+    final selectedTwo = await seedVideoWithAssets(
+      bookUid: 'video/2',
+      title: 'Episode Two',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_2.png',
+        text: 'cover-two',
+      ),
+      subtitle: writeAppOwnedAsset(
+        dirName: VideoStorage.subtitlesDirName,
+        fileName: 'video_2.srt',
+        text: '1\n00:00:00,000 --> 00:00:01,000\ntwo',
+      ),
+    );
+    final PausingBatchDeleteVideoBookRepository repo =
+        PausingBatchDeleteVideoBookRepository(db, pauseAfterDeleteCount: 2);
+
+    await tester.pumpWidget(buildApp(repo: repo));
+    await tester.pumpAndSettle();
+    await enterSelectionMode(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await repo.deletesCommitted.future.timeout(const Duration(seconds: 2));
+    });
+    expect(await db.getVideoBookByBookUid('video/1'), isNull);
+    expect(await db.getVideoBookByBookUid('video/2'), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    repo.allowDeleteReturn.complete();
+    await waitForAsyncCleanup(
+      tester,
+      () =>
+          !selectedOne.cover.existsSync() &&
+          !selectedOne.subtitle.existsSync() &&
+          !selectedOne.embeddedCache.existsSync() &&
+          !selectedTwo.cover.existsSync() &&
+          !selectedTwo.subtitle.existsSync() &&
+          !selectedTwo.embeddedCache.existsSync(),
+    );
+
+    expect(repo.reclaimCalls, 2);
+    expect(repo.compactCalls, 1);
+    expect(selectedOne.cover.existsSync(), isFalse);
+    expect(selectedOne.subtitle.existsSync(), isFalse);
+    expect(selectedOne.embeddedCache.existsSync(), isFalse);
+    expect(selectedTwo.cover.existsSync(), isFalse);
+    expect(selectedTwo.subtitle.existsSync(), isFalse);
+    expect(selectedTwo.embeddedCache.existsSync(), isFalse);
+    expect(selectedOne.video.existsSync(), isTrue);
+    expect(selectedTwo.video.existsSync(), isTrue);
   });
 
   testWidgets('选择态批量打标签 → 真写视频标签映射', (WidgetTester tester) async {
