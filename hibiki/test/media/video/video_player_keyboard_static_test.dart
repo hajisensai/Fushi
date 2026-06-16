@@ -22,6 +22,14 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 void main() {
   String read(String relPath) => File(relPath).readAsStringSync();
 
+  String region(String src, String startSig, String endSig) {
+    final int start = src.indexOf(startSig);
+    expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
+    final int end = src.indexOf(endSig, start + startSig.length);
+    expect(end, greaterThan(start), reason: 'missing $endSig after $startSig');
+    return src.substring(start, end);
+  }
+
   // Windows defaults are the canonical desktop video bindings (asbplayer/mpv).
   final Map<ShortcutAction, ShortcutBindingSet> videoDefaults =
       ShortcutDefaults.forPlatform(TargetPlatform.windows);
@@ -237,6 +245,17 @@ void main() {
       expect(page.contains('_adjustVolume(_volumeStep)'), isTrue);
       expect(page.contains('_adjustVolume(-_volumeStep)'), isTrue);
       expect(shortcuts.contains('_adjustSubtitleOffset'), isFalse);
+
+      final String volumeHud = region(
+        page,
+        'void _showVolumeOsd(double volume) {',
+        'void _onMediaKitVolumeChanged(double value) {',
+      );
+      expect(volumeHud.contains('_volumeHudNotifier.value'), isTrue,
+          reason: 'Keyboard volume keys must show the right-side volume HUD.');
+      expect(volumeHud.contains('_showOsd('), isFalse,
+          reason:
+              'Keyboard volume keys must not display volume in the top-left OSD.');
     });
 
     test('subtitle sync is a settings control, not an arrow-key binding', () {

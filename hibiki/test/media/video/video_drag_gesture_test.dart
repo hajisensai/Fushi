@@ -15,6 +15,18 @@ void main() {
     'lib/src/platform/screen_brightness_controller.dart',
   ).readAsStringSync();
 
+  String mobileThemeBody() {
+    final int start = videoPage.indexOf(
+      'MaterialVideoControlsThemeData _mobileControlsTheme(',
+    );
+    expect(start, greaterThanOrEqualTo(0),
+        reason: 'missing _mobileControlsTheme');
+    final int end = videoPage.indexOf('Future<void> _setDelayMs', start);
+    expect(end, greaterThan(start),
+        reason: 'missing _setDelayMs after mobile theme');
+    return videoPage.substring(start, end);
+  }
+
   group('TODO-057 video drag brightness/volume guards', () {
     test('enables media_kit built-in volume + brightness drag gestures', () {
       // 复用 media_kit 控制条手势而不是自造一套（避免与其内建手势冲突、白拿指示器）。
@@ -37,6 +49,16 @@ void main() {
       expect(videoPage.contains('onVolumeChanged: _onMediaKitVolumeChanged'),
           isTrue);
       expect(videoPage.contains('controller.setVolume(pct)'), isTrue);
+    });
+
+    test('right-side volume drag uses the shared Hibiki indicator builder', () {
+      final String body = mobileThemeBody();
+      expect(body.contains('volumeIndicatorBuilder:'), isTrue,
+          reason:
+              'Right-half vertical volume drag should render the same right-side HUD.');
+      expect(body.contains('_buildRightVolumeIndicator(value * 100.0)'), isTrue,
+          reason:
+              'media_kit passes 0..1; Hibiki HUD uses the same 0..100 volume scale.');
     });
 
     test('brightness callback goes through ScreenBrightnessController', () {

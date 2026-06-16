@@ -528,6 +528,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
 
+  /// Right-side volume HUD value (0..100). Null means hidden.
+  final ValueNotifier<double?> _volumeHudNotifier =
+      ValueNotifier<double?>(null);
+
+  /// Auto-hide timer for the right-side volume HUD.
+  Timer? _volumeHudTimer;
+
   /// media_kit 底部控制条 **真实** 可见性（TODO-364）——单一真相源，由 media_kit 自己的
   /// 控制条 State 在每次 `visible` 变化时推进来。
   ///
@@ -1908,6 +1915,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
+    _volumeHudTimer?.cancel();
+    _volumeHudNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _videoControlsVisible.dispose();
     _railHovered.dispose();
@@ -3883,6 +3892,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
       volumeGesture: _brightness.canControl,
+      volumeIndicatorBuilder: (BuildContext _, double value) =>
+          _buildRightVolumeIndicator(value * 100.0),
       brightnessGesture: _brightness.canControl,
       // 竖滑灵敏度降到约 1/3（TODO-172/BUG-230）：media_kit 默认 100 太敏感，轻划即
       // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
@@ -4588,18 +4599,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _showVolumeOsd(double volume) {
+    if (!mounted) return;
     final double clamped = volume.clamp(0.0, 100.0).toDouble();
-    _showOsd(
-      '${t.audio_volume}: ${clamped.round()}%',
-      icon: _volumeIconFor(clamped),
-      progress: clamped / 100.0,
-    );
+    _volumeHudNotifier.value = clamped;
+    _volumeHudTimer?.cancel();
+    _volumeHudTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (!mounted) return;
+      _volumeHudNotifier.value = null;
+    });
   }
 
   /// media_kit 移动控制条的「右半区竖滑调音量」回调（TODO-057）。media_kit
   /// 已做好区域判定、逐帧累积与 clamp，传入 [value] 为 0..1。我们只把它转成现有
   /// 音量通道的 0..100 并复用 [VideoPlayerController.setVolume]——与 TODO-044 方向键
-  /// 音量、音量条 UI 同一条 setter，不另开并行状态。OSD 走 media_kit 内置音量指示器。
+  /// 音量、音量条 UI 同一条 setter，不另开并行状态。竖滑指示器通过
+  /// [MaterialVideoControlsThemeData.volumeIndicatorBuilder] 复用 Hibiki 右侧 HUD 样式。
   void _onMediaKitVolumeChanged(double value) {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
@@ -6554,6 +6568,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   ),
                 ),
                 _buildOsdOverlay(),
+                _buildVolumeHudOverlay(),
                 _buildSideLockButton(),
                 _buildVideoSideActionRail(controller),
                 _buildVideoSidePanelOverlay(controller),
@@ -6863,6 +6878,106 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ),
               )
             : const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  Widget _buildRightVolumeIndicator(double volume) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final double clamped = volume.clamp(0.0, 100.0).toDouble();
+    final Color textColor = _osdTextColor(cs);
+    final double scale = _videoUiScale;
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: SafeArea(
+          minimum: EdgeInsets.only(
+            left: 16,
+            top: 16,
+            right: 76 * scale,
+            bottom: 16,
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _osdSurfaceColor(cs),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: textColor.withValues(alpha: 0.12),
+              ),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.22),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: 14 * scale,
+                vertical: 12 * scale,
+              ),
+              child: SizedBox(
+                width: 120 * scale,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          _volumeIconFor(clamped),
+                          color: textColor,
+                          size: 22 * scale,
+                        ),
+                        SizedBox(width: 10 * scale),
+                        Expanded(
+                          child: DefaultTextStyle.merge(
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 17 * scale,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            child: Text('${clamped.round()}%'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 10 * scale),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: clamped / 100.0,
+                        minHeight: 4 * scale,
+                        backgroundColor: textColor.withValues(alpha: 0.24),
+                        valueColor: AlwaysStoppedAnimation<Color>(textColor),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVolumeHudOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ValueListenableBuilder<double?>(
+          valueListenable: _volumeHudNotifier,
+          builder: (BuildContext _, double? volume, __) {
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 160),
+              child: volume == null
+                  ? const SizedBox.shrink()
+                  : _buildRightVolumeIndicator(volume),
+            );
+          },
+        ),
       ),
     );
   }
