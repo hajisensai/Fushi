@@ -24,6 +24,7 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoFitMode mode)? onVideoFitModeChanged,
   void Function(VideoImmersiveMode mode)? onImmersiveModeChanged,
   void Function(VideoControlLayout layout)? onControlLayoutChanged,
+  VoidCallback? onEditControlsOnscreen,
   VideoControlLayout? initialControlLayout,
   double uiScale = 1.0,
   int initialDelayMs = 0,
@@ -58,6 +59,7 @@ VideoQuickSettingsSheet _sheet({
     initialControlLayout: initialControlLayout,
     onControlLayoutChanged: (VideoControlLayout layout) async =>
         onControlLayoutChanged?.call(layout),
+    onEditControlsOnscreen: onEditControlsOnscreen,
     uiScale: uiScale,
   );
 }
@@ -70,29 +72,6 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
     ),
   );
   await tester.pump();
-}
-
-String _slotLabel(VideoControlSlot slot) {
-  switch (slot) {
-    case VideoControlSlot.topLeft:
-      return t.video_control_slot_top_left;
-    case VideoControlSlot.topRight:
-      return t.video_control_slot_top_right;
-    case VideoControlSlot.bottomLeft:
-      return t.video_control_slot_bottom_left;
-    case VideoControlSlot.bottomCenter:
-      return t.video_control_slot_bottom_center;
-    case VideoControlSlot.bottomRight:
-      return t.video_control_slot_bottom_right;
-    case VideoControlSlot.screenLeft:
-      return t.video_control_slot_screen_left;
-    case VideoControlSlot.screenRight:
-      return t.video_control_slot_screen_right;
-    case VideoControlSlot.hidden:
-      return t.video_control_slot_hidden;
-    case VideoControlSlot.topCenter:
-      return slot.storageValue;
-  }
 }
 
 void main() {
@@ -880,8 +859,8 @@ void main() {
     expect(padding.top, 16);
   });
 
-  // ── TODO-383：控制按钮自定义改为可视化拖动（拖 chip 到槽位，不再下拉选）─
-  group('control button drag editor (TODO-383 / TODO-399)', () {
+  // ── TODO-452：旧设置页拖拽编辑器删除，只保留「在画面上编辑」入口 ─
+  group('control button editor entry (TODO-452)', () {
     // 进入控制分类详情（宽窗上下分栏顶部 chip 行）。「控制」是末位分类，在窄宽窗下
     // 横向 chip 行里可能排到视口外（TODO-427-③），先横滑入视口再点（模拟真实用户横滑）。
     Future<void> openControls(WidgetTester tester) async {
@@ -892,214 +871,42 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    // The palette chip for [item] (source slot null) lives inside the palette
-    // Wrap; placed chips live inside slot regions. We disambiguate by the
-    // palette title being an ancestor text in the same column is hard, so we
-    // simply grab the FIRST draggable carrying [item] when only the palette has
-    // it, or use the slot region for placed chips.
-    Finder paletteChip(VideoControlItem item) => find.byWidgetPredicate(
-          (Widget w) =>
-              w is Draggable<VideoControlDragData> &&
-              w.data?.item == item &&
-              w.data?.sourceSlot == null,
-        );
-
-    Finder slotRegion(VideoControlSlot slot) => find.ancestor(
-          of: find.text(_slotLabel(slot)),
-          matching: find.byType(DragTarget<VideoControlDragData>),
-        );
-
-    testWidgets(
-        'controls category renders a visual drag editor (no slot dropdowns)',
+    testWidgets('controls category shows only the on-video editor entry',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await _pump(tester, _sheet());
+      bool opened = false;
+      await _pump(
+        tester,
+        _sheet(
+          onEditControlsOnscreen: () => opened = true,
+        ),
+      );
       await openControls(tester);
 
-      // 不再是下拉选择：没有 slot picker 行。
       expect(
         find.byType(AdaptiveSettingsPickerRow<VideoControlSlot>),
         findsNothing,
-        reason: '可视化拖动编辑器不应再用下拉选择槽位',
+        reason: '旧下拉编辑器不应保留',
       );
-
-      // TODO-399 决策 3b：调色板列出「全部按钮」(customizableItems) 作为拖动源。
-      expect(find.text(t.video_control_palette_title), findsOneWidget);
-
-      // 每个可定制按钮都至少有一个可拖动 chip（调色板源 + 已放置副本），故 Draggable
-      // 数量 >= customizableItems 数。
       expect(
         find.byType(Draggable<VideoControlDragData>),
-        findsAtLeastNWidgets(VideoControlItem.customizableItems.length),
+        findsNothing,
+        reason: '旧 quick settings 内拖拽编辑器已删除',
       );
-      // 所有可编辑槽位都是 DragTarget 放置区。
       expect(
         find.byType(DragTarget<VideoControlDragData>),
-        findsNWidgets(VideoControlSlot.editableSlots.length),
+        findsNothing,
+        reason: '槽位编辑只能出现在画面上 overlay',
       );
+      expect(find.text(t.video_control_palette_title), findsNothing);
+      expect(find.text(t.video_control_slot_hidden), findsNothing);
 
-      // 所有可拖择槽位标题都在场，含 TODO-399 决策 2 的底栏（中间）。
-      expect(find.text(t.video_control_slot_bottom_left), findsOneWidget);
-      expect(find.text(t.video_control_slot_bottom_center), findsOneWidget);
-      expect(find.text(t.video_control_slot_bottom_right), findsOneWidget);
-      expect(find.text(t.video_control_slot_screen_left), findsOneWidget);
-      expect(find.text(t.video_control_slot_screen_right), findsOneWidget);
-      expect(find.text(t.video_control_slot_top_left), findsOneWidget);
-      expect(find.text(t.video_control_slot_top_right), findsOneWidget);
-      expect(find.text(t.video_control_slot_hidden), findsOneWidget);
-    });
-
-    testWidgets(
-        'TODO-399 dragging a transport key from the palette adds it to a slot',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      VideoControlLayout? committed;
-      await _pump(
-        tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout l) => committed = l),
-      );
-      await openControls(tester);
-
-      // Screenshot is a transport/nav key (decision 3b) — drag its palette chip
-      // onto the screen-left rail. It must end up there AND keep its default
-      // placement intact (palette drag = add a copy).
-      final Finder chip = paletteChip(VideoControlItem.screenshot);
-      final Finder target = slotRegion(VideoControlSlot.screenLeft);
-      expect(chip, findsOneWidget);
-      expect(target, findsOneWidget);
-      await tester.ensureVisible(chip);
+      final Finder entry = find.text(t.video_control_edit_on_video);
+      expect(entry, findsOneWidget);
+      await tester.tap(entry);
       await tester.pumpAndSettle();
-
-      final TestGesture gesture =
-          await tester.startGesture(tester.getCenter(chip));
-      await tester.pump(const Duration(milliseconds: 50));
-      await gesture.moveTo(tester.getCenter(target));
-      await tester.pump(const Duration(milliseconds: 50));
-      await gesture.moveTo(tester.getCenter(target));
-      await tester.pump();
-      await gesture.up();
-      await tester.pumpAndSettle();
-
-      expect(committed, isNotNull);
-      expect(
-        committed!.itemsIn(VideoControlSlot.screenLeft),
-        contains(VideoControlItem.screenshot),
-      );
-    });
-
-    testWidgets(
-        'TODO-399 a button can be added to two slots at once (multi-position)',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      VideoControlLayout? committed;
-      await _pump(
-        tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout l) => committed = l),
-      );
-      await openControls(tester);
-
-      Future<void> dragPaletteTo(
-          VideoControlItem item, VideoControlSlot slot) async {
-        final Finder chip = paletteChip(item);
-        final Finder target = slotRegion(slot);
-        expect(chip, findsOneWidget);
-        expect(target, findsOneWidget);
-        await tester.ensureVisible(chip);
-        await tester.pumpAndSettle();
-        final TestGesture g = await tester.startGesture(tester.getCenter(chip));
-        await tester.pump(const Duration(milliseconds: 50));
-        await g.moveTo(tester.getCenter(target));
-        await tester.pump(const Duration(milliseconds: 50));
-        await g.moveTo(tester.getCenter(target));
-        await tester.pump();
-        await g.up();
-        await tester.pumpAndSettle();
-      }
-
-      await dragPaletteTo(
-          VideoControlItem.fullscreen, VideoControlSlot.topLeft);
-      await dragPaletteTo(
-          VideoControlItem.fullscreen, VideoControlSlot.topRight);
-
-      expect(committed, isNotNull);
-      expect(committed!.itemsIn(VideoControlSlot.topLeft),
-          contains(VideoControlItem.fullscreen));
-      expect(committed!.itemsIn(VideoControlSlot.topRight),
-          contains(VideoControlItem.fullscreen));
-    });
-
-    testWidgets(
-        'TODO-399 deleting a placed chip removes that copy (close button)',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      VideoControlLayout? committed;
-      // speed defaults to bottomRight; the placed chip there has a delete button.
-      await _pump(
-        tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout l) => committed = l),
-      );
-      await openControls(tester);
-
-      // The delete (close) button next to the placed speed chip in bottomRight.
-      final Finder placedSpeed = find.descendant(
-        of: slotRegion(VideoControlSlot.bottomRight),
-        matching: find.byWidgetPredicate((Widget w) =>
-            w is Draggable<VideoControlDragData> &&
-            w.data?.item == VideoControlItem.speed &&
-            w.data?.sourceSlot == VideoControlSlot.bottomRight),
-      );
-      expect(placedSpeed, findsOneWidget);
-      final Finder closeBtn = find.descendant(
-        of: slotRegion(VideoControlSlot.bottomRight),
-        matching: find.widgetWithIcon(IconButton, Icons.close),
-      );
-      expect(closeBtn, findsWidgets);
-      await tester.ensureVisible(closeBtn.first);
-      await tester.pumpAndSettle();
-      await tester.tap(closeBtn.first);
-      await tester.pumpAndSettle();
-
-      expect(committed, isNotNull);
-      // speed's only copy was in bottomRight -> removing it hides it.
-      expect(committed!.isOnPlayer(VideoControlItem.speed), isFalse);
-    });
-
-    testWidgets('TODO-399 decision 2: playPause can be added to a rail',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      VideoControlLayout? committed;
-      await _pump(
-        tester,
-        _sheet(onControlLayoutChanged: (VideoControlLayout l) => committed = l),
-      );
-      await openControls(tester);
-
-      // Use the screen-left rail (empty by default) as the drop target — the
-      // same proven path the screenshot test uses — to avoid landing the drop on
-      // a placed chip in an already-populated rail.
-      final Finder chip = paletteChip(VideoControlItem.playPause);
-      final Finder target = slotRegion(VideoControlSlot.screenLeft);
-      expect(chip, findsOneWidget);
-      expect(target, findsOneWidget);
-      await tester.ensureVisible(chip);
-      await tester.pumpAndSettle();
-      final TestGesture g = await tester.startGesture(tester.getCenter(chip));
-      await tester.pump(const Duration(milliseconds: 50));
-      await g.moveTo(tester.getCenter(target));
-      await tester.pump(const Duration(milliseconds: 50));
-      await g.moveTo(tester.getCenter(target));
-      await tester.pump();
-      await g.up();
-      await tester.pumpAndSettle();
-
-      expect(committed, isNotNull);
-      expect(committed!.itemsIn(VideoControlSlot.screenLeft),
-          contains(VideoControlItem.playPause));
+      expect(opened, isTrue);
     });
   });
 }

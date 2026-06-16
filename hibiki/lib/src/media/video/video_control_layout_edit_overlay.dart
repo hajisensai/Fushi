@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -26,33 +25,17 @@ class VideoControlLayoutEditOverlay extends StatefulWidget {
 
 class _VideoControlLayoutEditOverlayState
     extends State<VideoControlLayoutEditOverlay> {
-  /// Buttons that TODO-440 allows users to directly rearrange on the video
-  /// surface. Keep this separate from [VideoControlItem.customizableItems]:
-  /// subtitle/audio track are native fixed top-bar chrome for this phase.
-  static const List<VideoControlItem> _onVideoDraggableItems =
-      <VideoControlItem>[
-    VideoControlItem.speed,
-    VideoControlItem.subtitleList,
-    VideoControlItem.favoriteSentence,
-    VideoControlItem.favoriteSentences,
-    VideoControlItem.settings,
-    VideoControlItem.playPause,
-    VideoControlItem.seekBackward,
-    VideoControlItem.seekForward,
-    VideoControlItem.previousCue,
-    VideoControlItem.nextCue,
-    VideoControlItem.fullscreen,
-    VideoControlItem.screenshot,
-    VideoControlItem.clipExport,
-    VideoControlItem.episodeList,
-  ];
+  /// Buttons users can directly rearrange on the video surface.
+  static List<VideoControlItem> get _onVideoDraggableItems =>
+      VideoControlItem.customizableItems;
 
   late VideoControlLayout _layout = widget.layout;
+  bool _dirty = false;
 
   @override
   void didUpdateWidget(VideoControlLayoutEditOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.layout != widget.layout && widget.layout != _layout) {
+    if (!_dirty && oldWidget.layout != widget.layout) {
       _layout = widget.layout;
     }
   }
@@ -106,7 +89,10 @@ class _VideoControlLayoutEditOverlayState
           alignment: Alignment.topCenter,
           child: Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: _buildPalette(maxWidth: paletteWidth),
+            child: _buildPalette(
+              maxWidth: paletteWidth,
+              maxHeight: math.min(280, constraints.maxHeight - 32),
+            ),
           ),
         ),
         Positioned(
@@ -149,16 +135,6 @@ class _VideoControlLayoutEditOverlayState
           width: sideWidth,
           child: _buildSlotRegion(VideoControlSlot.bottomRight),
         ),
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 112),
-            child: SizedBox(
-              width: centerWidth,
-              child: _buildSlotRegion(VideoControlSlot.hidden),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -173,7 +149,7 @@ class _VideoControlLayoutEditOverlayState
         children: <Widget>[
           _buildPalette(
             maxWidth: availableWidth,
-            maxHeight: math.min(160, constraints.maxHeight * 0.42),
+            maxHeight: math.min(220, constraints.maxHeight * 0.6),
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -184,10 +160,11 @@ class _VideoControlLayoutEditOverlayState
                 children: <Widget>[
                   for (final VideoControlSlot slot
                       in VideoControlSlot.editableSlots)
-                    SizedBox(
-                      width: tileWidth,
-                      child: _buildSlotRegion(slot),
-                    ),
+                    if (slot.isOnPlayer)
+                      SizedBox(
+                        width: tileWidth,
+                        child: _buildSlotRegion(slot),
+                      ),
                 ],
               ),
             ),
@@ -201,6 +178,18 @@ class _VideoControlLayoutEditOverlayState
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Widget chipList = Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: <Widget>[
+        for (final VideoControlItem item in _onVideoDraggableItems)
+          _buildDraggableControlChip(
+            item,
+            sourceSlot: null,
+            sourceIndex: null,
+          ),
+      ],
+    );
     final Widget panel = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.surface.withValues(alpha: 0.92),
@@ -234,25 +223,38 @@ class _VideoControlLayoutEditOverlayState
                 IconButton(
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   icon: const Icon(Icons.close),
-                  onPressed: widget.onClose,
+                  onPressed: _cancelDraft,
                 ),
               ],
             ),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: <Widget>[
-                for (final VideoControlItem item in _onVideoDraggableItems)
-                  _buildDraggableControlChip(item, sourceSlot: null),
-              ],
-            ),
+            if (maxHeight == null)
+              chipList
+            else
+              Flexible(
+                child: SingleChildScrollView(child: chipList),
+              ),
             const SizedBox(height: 6),
             Text(
               t.video_control_palette_hint,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                  onPressed: _cancelDraft,
+                  child: Text(t.dialog_cancel),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _saveDraft,
+                  child: Text(t.dialog_save),
+                ),
+              ],
             ),
           ],
         ),
@@ -263,11 +265,7 @@ class _VideoControlLayoutEditOverlayState
         maxWidth: maxWidth,
         maxHeight: maxHeight ?? double.infinity,
       ),
-      child: maxHeight == null
-          ? panel
-          : SingleChildScrollView(
-              child: panel,
-            ),
+      child: panel,
     );
   }
 
@@ -288,10 +286,10 @@ class _VideoControlLayoutEditOverlayState
         if (item.pinnedRequired && slot == VideoControlSlot.hidden) {
           return false;
         }
-        return !items.contains(item);
+        return _canAcceptPayload(details.data, slot);
       },
       onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
-        unawaited(_moveOrAddControlItem(details.data, slot));
+        _moveOrAddControlItem(details.data, slot, targetIndex: items.length);
       },
       builder: (
         BuildContext context,
@@ -352,10 +350,11 @@ class _VideoControlLayoutEditOverlayState
                       spacing: 6,
                       runSpacing: 6,
                       children: <Widget>[
-                        for (final VideoControlItem item in items)
-                          _buildDraggableControlChip(
-                            item,
+                        for (int index = 0; index < items.length; index++)
+                          _buildPlacedControlChip(
+                            items[index],
                             sourceSlot: slot,
+                            sourceIndex: index,
                           ),
                       ],
                     ),
@@ -371,23 +370,106 @@ class _VideoControlLayoutEditOverlayState
   Widget _buildDraggableControlChip(
     VideoControlItem item, {
     required VideoControlSlot? sourceSlot,
+    required int? sourceIndex,
+    double maxWidth = 156,
   }) {
-    final Widget chip = _controlChipBody(item, dragging: false);
+    final Widget chip = _controlChipBody(
+      item,
+      dragging: false,
+      maxWidth: maxWidth,
+    );
     return Draggable<VideoControlDragData>(
-      data: VideoControlDragData(item: item, sourceSlot: sourceSlot),
+      data: VideoControlDragData(
+        item: item,
+        sourceSlot: sourceSlot,
+        sourceIndex: sourceIndex,
+      ),
       feedback: Material(
         color: Colors.transparent,
-        child: _controlChipBody(item, dragging: true),
+        child: _controlChipBody(item, dragging: true, maxWidth: 220),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: chip),
       child: chip,
     );
   }
 
-  bool _isOnVideoDraggableItem(VideoControlItem item) =>
-      _onVideoDraggableItems.contains(item);
+  Widget _buildPlacedControlChip(
+    VideoControlItem item, {
+    required VideoControlSlot sourceSlot,
+    required int sourceIndex,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return DragTarget<VideoControlDragData>(
+      onWillAcceptWithDetails:
+          (DragTargetDetails<VideoControlDragData> details) =>
+              _canAcceptPayload(details.data, sourceSlot),
+      onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
+        _moveOrAddControlItem(
+          details.data,
+          sourceSlot,
+          targetIndex: sourceIndex,
+        );
+      },
+      builder: (
+        BuildContext context,
+        List<VideoControlDragData?> candidate,
+        List<dynamic> rejected,
+      ) {
+        final bool highlighted = candidate.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          constraints: const BoxConstraints(maxWidth: 204),
+          padding: const EdgeInsets.only(right: 2),
+          decoration: BoxDecoration(
+            color: highlighted
+                ? cs.primaryContainer.withValues(alpha: 0.82)
+                : cs.secondaryContainer,
+            borderRadius: tokens.radii.controlRadius,
+            border: Border.all(
+              color: highlighted ? cs.primary : Colors.transparent,
+              width: highlighted ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _buildDraggableControlChip(
+                item,
+                sourceSlot: sourceSlot,
+                sourceIndex: sourceIndex,
+                maxWidth: 112,
+              ),
+              IconButton(
+                tooltip: t.video_control_remove_from_slot,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 28,
+                  height: 28,
+                ),
+                icon: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: cs.onSecondaryContainer,
+                ),
+                onPressed: () => _removeControlItem(item, sourceSlot),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
-  Widget _controlChipBody(VideoControlItem item, {required bool dragging}) {
+  bool _isOnVideoDraggableItem(VideoControlItem item) => item.isChipRenderable;
+
+  Widget _controlChipBody(
+    VideoControlItem item, {
+    required bool dragging,
+    required double maxWidth,
+  }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -411,12 +493,6 @@ class _VideoControlLayoutEditOverlayState
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Icon(
-              Icons.drag_indicator,
-              size: 15,
-              color: cs.onSecondaryContainer.withValues(alpha: 0.7),
-            ),
-            const SizedBox(width: 4),
-            Icon(
               _controlItemIcon(item),
               size: 15,
               color: cs.onSecondaryContainer,
@@ -438,25 +514,57 @@ class _VideoControlLayoutEditOverlayState
       ),
     );
     return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: dragging ? 220 : 156),
+      constraints: BoxConstraints(maxWidth: maxWidth),
       child: body,
     );
   }
 
-  Future<void> _moveOrAddControlItem(
+  bool _canAcceptPayload(
     VideoControlDragData payload,
     VideoControlSlot target,
-  ) async {
+  ) {
     final VideoControlItem item = payload.item;
-    final VideoControlSlot? source = payload.sourceSlot;
-    VideoControlLayout next = _layout;
-    if (source != null && source != target) {
-      next = next.removeItemFromSlot(item, source);
-    }
-    next = next.addItemToSlot(item, target);
+    if (!_isOnVideoDraggableItem(item)) return false;
+    if (item.pinnedRequired && target == VideoControlSlot.hidden) return false;
+    final List<VideoControlItem> targetItems = _layout.itemsIn(target);
+    if (payload.sourceSlot == target) return true;
+    return !targetItems.contains(item);
+  }
+
+  void _moveOrAddControlItem(
+    VideoControlDragData payload,
+    VideoControlSlot target, {
+    int? targetIndex,
+  }) {
+    final VideoControlLayout next = _layout.moveDraggedItem(
+      payload,
+      target,
+      targetIndex: targetIndex,
+    );
     if (next == _layout) return;
-    setState(() => _layout = next);
-    await widget.onLayoutChanged(next);
+    setState(() {
+      _layout = next;
+      _dirty = true;
+    });
+  }
+
+  void _removeControlItem(VideoControlItem item, VideoControlSlot slot) {
+    final VideoControlLayout next = _layout.removeItemFromSlot(item, slot);
+    if (next == _layout) return;
+    setState(() {
+      _layout = next;
+      _dirty = true;
+    });
+  }
+
+  Future<void> _saveDraft() async {
+    await widget.onLayoutChanged(_layout);
+    if (!mounted) return;
+    widget.onClose();
+  }
+
+  void _cancelDraft() {
+    widget.onClose();
   }
 
   String _controlSlotLabel(VideoControlSlot slot) {
@@ -488,6 +596,10 @@ class _VideoControlLayoutEditOverlayState
     switch (item) {
       case VideoControlItem.playPause:
         return t.video_control_play_pause;
+      case VideoControlItem.back:
+        return MaterialLocalizations.of(context).backButtonTooltip;
+      case VideoControlItem.immersiveLock:
+        return t.video_menu_lock;
       case VideoControlItem.seekBackward:
         return t.video_control_seek_backward;
       case VideoControlItem.seekForward:
@@ -506,8 +618,18 @@ class _VideoControlLayoutEditOverlayState
         return t.video_control_subtitle_track;
       case VideoControlItem.audioTrack:
         return t.video_control_audio_track;
+      case VideoControlItem.previousEpisode:
+        return t.video_prev_episode;
+      case VideoControlItem.nextEpisode:
+        return t.video_next_episode;
       case VideoControlItem.episodeList:
         return t.video_control_episode_list;
+      case VideoControlItem.previousChapter:
+        return t.shortcut_action_video_previous_chapter;
+      case VideoControlItem.nextChapter:
+        return t.shortcut_action_video_next_chapter;
+      case VideoControlItem.chapterList:
+        return t.video_chapters;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
@@ -526,6 +648,10 @@ class _VideoControlLayoutEditOverlayState
     switch (item) {
       case VideoControlItem.playPause:
         return Icons.play_arrow_rounded;
+      case VideoControlItem.back:
+        return Icons.arrow_back;
+      case VideoControlItem.immersiveLock:
+        return Icons.lock_outline;
       case VideoControlItem.seekBackward:
         return Icons.fast_rewind;
       case VideoControlItem.seekForward:
@@ -544,8 +670,18 @@ class _VideoControlLayoutEditOverlayState
         return Icons.subtitles;
       case VideoControlItem.audioTrack:
         return Icons.audiotrack;
+      case VideoControlItem.previousEpisode:
+        return Icons.skip_previous_outlined;
+      case VideoControlItem.nextEpisode:
+        return Icons.skip_next_outlined;
       case VideoControlItem.episodeList:
         return Icons.playlist_play;
+      case VideoControlItem.previousChapter:
+        return Icons.first_page;
+      case VideoControlItem.nextChapter:
+        return Icons.last_page;
+      case VideoControlItem.chapterList:
+        return Icons.format_list_numbered;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:

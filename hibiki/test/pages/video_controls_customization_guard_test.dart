@@ -25,29 +25,20 @@ void main() {
     expect(prefs, contains('setVideoControlLayout'));
   });
 
-  test('quick settings exposes the 9-slot control placement editor', () {
+  test('quick settings only exposes the on-video control editor entry', () {
     final String settings =
         read('lib/src/media/video/video_quick_settings_sheet.dart');
 
     expect(settings, contains('initialControlLayout'));
     expect(settings, contains('onControlLayoutChanged'));
-    // TODO-399 decision 3b: the editor now exposes the FULL customizable button
-    // set (learning + transport / nav keys), not just the five learning keys.
-    expect(settings, contains('VideoControlItem.customizableItems'));
-    // TODO-399 multi-slot: add (palette / drop) + delete (chip close button) via
-    // addItemToSlot / removeItemFromSlot, so one button can sit in several slots.
-    expect(settings, contains('addItemToSlot('));
-    expect(settings, contains('removeItemFromSlot('));
-    // All on-player slots + hidden are the user-facing drop regions, including
-    // the bottom-center transport block (decision 2).
-    expect(settings, contains('VideoControlSlot.bottomLeft'));
-    expect(settings, contains('VideoControlSlot.bottomCenter'));
-    expect(settings, contains('VideoControlSlot.bottomRight'));
-    expect(settings, contains('VideoControlSlot.screenLeft'));
-    expect(settings, contains('VideoControlSlot.screenRight'));
-    expect(settings, contains('VideoControlSlot.topLeft'));
-    expect(settings, contains('VideoControlSlot.topRight'));
-    expect(settings, contains('VideoControlSlot.hidden'));
+    expect(settings, contains('onEditControlsOnscreen'));
+    expect(settings, contains('t.video_control_edit_on_video'));
+
+    expect(settings, isNot(contains('_buildControlDragEditor')));
+    expect(settings, isNot(contains('DragTarget<VideoControlDragData>')));
+    expect(settings, isNot(contains('Draggable<VideoControlDragData>')));
+    expect(settings, isNot(contains('VideoControlSlot.hidden')));
+    expect(settings, isNot(contains('Icons.drag_indicator')));
   });
 
   test('video page exposes an onscreen drag edit overlay entry', () {
@@ -68,6 +59,58 @@ void main() {
     expect(settings, contains('t.video_control_edit_on_video'));
   });
 
+  test(
+      'editable item model includes all clickable chrome requested by TODO-452',
+      () {
+    final String model =
+        read('lib/src/media/video/video_control_customization.dart');
+    final int enumStart = model.indexOf('enum VideoControlItem {');
+    expect(enumStart, greaterThanOrEqualTo(0));
+    final int enumEnd =
+        model.indexOf(';\n\n  const VideoControlItem', enumStart);
+    expect(enumEnd, greaterThan(enumStart));
+    final String enumBlock = model.substring(enumStart, enumEnd);
+
+    for (final String item in <String>[
+      'back',
+      'immersiveLock',
+      'episodeList',
+      'previousEpisode',
+      'nextEpisode',
+      'chapterList',
+      'previousChapter',
+      'nextChapter',
+      'subtitleTrack',
+      'audioTrack',
+      'screenshot',
+      'fullscreen',
+      'speed',
+      'settings',
+      'favoriteSentence',
+      'favoriteSentences',
+      'subtitleList',
+    ]) {
+      expect(enumBlock, contains('$item('), reason: '$item must be editable');
+    }
+
+    final int customStart =
+        model.indexOf('static List<VideoControlItem> get customizableItems');
+    expect(customStart, greaterThanOrEqualTo(0));
+    final int customEnd = model.indexOf('];', customStart);
+    final String customBlock = model.substring(customStart, customEnd);
+    expect(customBlock, isNot(contains('VideoControlItem.title')));
+    expect(customBlock, isNot(contains('VideoControlItem.positionIndicator')));
+    expect(customBlock, isNot(contains('VideoControlItem.volume')));
+  });
+
+  test('drag payload carries source index for same-slot reorder', () {
+    final String model =
+        read('lib/src/media/video/video_control_customization.dart');
+    expect(model, contains('final int? sourceIndex'));
+    expect(model, contains('VideoControlDragData({'));
+    expect(model, contains('sourceIndex'));
+  });
+
   test('player chrome includes right rail, bottom custom buttons and fallbacks',
       () {
     final String page =
@@ -75,7 +118,7 @@ void main() {
 
     expect(page, contains('_buildVideoSideActionRail(controller)'));
     expect(page, contains('Alignment.centerRight'));
-    expect(page, contains('_customBottomControlButtons(controller'));
+    expect(page, contains('_bottomSlotButtons('));
     expect(page, contains('VideoControlButton.subtitleList'));
     expect(page, contains('_toggleSubtitleJumpList'));
     expect(page, contains('VideoControlButton.speed'));

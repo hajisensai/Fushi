@@ -73,6 +73,26 @@ void main() {
           reason: 'windowed Escape exits the video page');
     });
 
+    test('Escape cancels video control edit mode before video exit handling',
+        () {
+      final String escapeBody = region(page, 'escape: () {', '},\n      ),');
+      final int editGate = escapeBody.indexOf('_videoControlEditMode.value');
+      final int cancelEdit = escapeBody.indexOf(
+        '_hideVideoControlEditOverlay(revealControls: false)',
+      );
+      final int fullscreenExit = escapeBody.indexOf('_exitVideoFullscreen(');
+      final int backExit = escapeBody.indexOf('_handleBackOrExit()');
+
+      expect(editGate, greaterThanOrEqualTo(0),
+          reason: 'Escape must first test on-video control edit mode');
+      expect(cancelEdit, greaterThan(editGate),
+          reason: 'editing Escape should cancel the draft overlay');
+      expect(fullscreenExit, greaterThan(cancelEdit),
+          reason: 'fullscreen exit must only run after edit cancel gate');
+      expect(backExit, greaterThan(cancelEdit),
+          reason: 'page exit must only run after edit cancel gate');
+    });
+
     test('exit confluence: PopScope and Escape share _handleBackOrExit', () {
       expect(page.contains('Future<void> _handleBackOrExit() async'), isTrue);
       expect('_handleBackOrExit()'.allMatches(page).length,

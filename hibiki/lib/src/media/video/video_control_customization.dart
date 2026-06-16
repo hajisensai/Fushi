@@ -218,6 +218,9 @@ enum VideoControlSlot {
 ///   v1->v2 migration to translate old placements into new slots; transport
 ///   keys have no legacy peer (they were hardcoded in the media_kit theme).
 enum VideoControlItem {
+  back('back'),
+  immersiveLock('immersiveLock'),
+
   // -- learning keys (1:1 with legacy [VideoControlButton]) --
   speed('speed', legacyButton: VideoControlButton.speed),
   subtitleList('subtitleList', legacyButton: VideoControlButton.subtitleList),
@@ -247,7 +250,12 @@ enum VideoControlItem {
   clipExport('clipExport'),
   subtitleTrack('subtitleTrack'),
   audioTrack('audioTrack'),
+  previousEpisode('previousEpisode'),
+  nextEpisode('nextEpisode'),
   episodeList('episodeList'),
+  previousChapter('previousChapter'),
+  nextChapter('nextChapter'),
+  chapterList('chapterList'),
   title('title', isSpecialRender: true),
   positionIndicator('positionIndicator', isSpecialRender: true);
 
@@ -407,8 +415,15 @@ class VideoControlLayout {
   /// [VideoControlCustomization.defaults] (which keeps driving current chrome).
   static final VideoControlLayout defaults = VideoControlLayout.fromAssignments(
     const <VideoControlItem, VideoControlSlot>{
+      VideoControlItem.back: VideoControlSlot.topLeft,
+      VideoControlItem.immersiveLock: VideoControlSlot.screenLeft,
       VideoControlItem.title: VideoControlSlot.topCenter,
+      VideoControlItem.previousEpisode: VideoControlSlot.topRight,
+      VideoControlItem.nextEpisode: VideoControlSlot.topRight,
       VideoControlItem.episodeList: VideoControlSlot.topRight,
+      VideoControlItem.chapterList: VideoControlSlot.topRight,
+      VideoControlItem.previousChapter: VideoControlSlot.topRight,
+      VideoControlItem.nextChapter: VideoControlSlot.topRight,
       VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
       VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
       VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
@@ -426,6 +441,44 @@ class VideoControlLayout {
       VideoControlItem.favoriteSentence: VideoControlSlot.bottomRight,
       VideoControlItem.favoriteSentences: VideoControlSlot.bottomRight,
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
+    },
+    explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
+      VideoControlSlot.topLeft: <VideoControlItem>[
+        VideoControlItem.back,
+      ],
+      VideoControlSlot.topRight: <VideoControlItem>[
+        VideoControlItem.previousEpisode,
+        VideoControlItem.nextEpisode,
+        VideoControlItem.episodeList,
+        VideoControlItem.chapterList,
+        VideoControlItem.previousChapter,
+        VideoControlItem.nextChapter,
+      ],
+      VideoControlSlot.screenLeft: <VideoControlItem>[
+        VideoControlItem.immersiveLock,
+      ],
+      VideoControlSlot.bottomCenter: <VideoControlItem>[
+        VideoControlItem.seekBackward,
+        VideoControlItem.previousCue,
+        VideoControlItem.playPause,
+        VideoControlItem.nextCue,
+        VideoControlItem.seekForward,
+      ],
+      VideoControlSlot.bottomRight: <VideoControlItem>[
+        VideoControlItem.volume,
+        VideoControlItem.speed,
+        VideoControlItem.subtitleTrack,
+        VideoControlItem.audioTrack,
+        VideoControlItem.screenshot,
+        VideoControlItem.clipExport,
+        VideoControlItem.fullscreen,
+        VideoControlItem.settings,
+        VideoControlItem.favoriteSentence,
+        VideoControlItem.favoriteSentences,
+      ],
+      VideoControlSlot.screenRight: <VideoControlItem>[
+        VideoControlItem.subtitleList,
+      ],
     },
   );
 
@@ -447,13 +500,20 @@ class VideoControlLayout {
   static final VideoControlLayout currentChrome =
       VideoControlLayout.fromAssignments(
     const <VideoControlItem, VideoControlSlot>{
-      // -- fixed top bar (drawn inline; not user-customizable in phase 1) --
+      // -- fixed top bar / side lock, now rendered from layout slots --
+      VideoControlItem.back: VideoControlSlot.topLeft,
+      VideoControlItem.immersiveLock: VideoControlSlot.screenLeft,
       VideoControlItem.title: VideoControlSlot.topCenter,
+      VideoControlItem.previousEpisode: VideoControlSlot.topRight,
+      VideoControlItem.nextEpisode: VideoControlSlot.topRight,
       VideoControlItem.episodeList: VideoControlSlot.topRight,
       VideoControlItem.screenshot: VideoControlSlot.topRight,
       VideoControlItem.clipExport: VideoControlSlot.topRight,
       VideoControlItem.subtitleTrack: VideoControlSlot.topRight,
       VideoControlItem.audioTrack: VideoControlSlot.topRight,
+      VideoControlItem.chapterList: VideoControlSlot.topRight,
+      VideoControlItem.previousChapter: VideoControlSlot.topRight,
+      VideoControlItem.nextChapter: VideoControlSlot.topRight,
       // -- bottom-center transport cluster (play pinned geometric centre) --
       VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
       VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
@@ -470,6 +530,47 @@ class VideoControlLayout {
       VideoControlItem.favoriteSentence: VideoControlSlot.screenRight,
       VideoControlItem.favoriteSentences: VideoControlSlot.screenRight,
       VideoControlItem.settings: VideoControlSlot.screenRight,
+    },
+    explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
+      VideoControlSlot.topLeft: <VideoControlItem>[
+        VideoControlItem.back,
+      ],
+      VideoControlSlot.topRight: <VideoControlItem>[
+        VideoControlItem.previousEpisode,
+        VideoControlItem.nextEpisode,
+        VideoControlItem.episodeList,
+        VideoControlItem.screenshot,
+        VideoControlItem.clipExport,
+        VideoControlItem.subtitleTrack,
+        VideoControlItem.audioTrack,
+        VideoControlItem.chapterList,
+        VideoControlItem.previousChapter,
+        VideoControlItem.nextChapter,
+      ],
+      VideoControlSlot.screenLeft: <VideoControlItem>[
+        VideoControlItem.immersiveLock,
+      ],
+      VideoControlSlot.bottomCenter: <VideoControlItem>[
+        VideoControlItem.seekBackward,
+        VideoControlItem.previousCue,
+        VideoControlItem.playPause,
+        VideoControlItem.nextCue,
+        VideoControlItem.seekForward,
+      ],
+      VideoControlSlot.bottomLeft: <VideoControlItem>[
+        VideoControlItem.positionIndicator,
+      ],
+      VideoControlSlot.bottomRight: <VideoControlItem>[
+        VideoControlItem.volume,
+        VideoControlItem.fullscreen,
+        VideoControlItem.speed,
+      ],
+      VideoControlSlot.screenRight: <VideoControlItem>[
+        VideoControlItem.subtitleList,
+        VideoControlItem.favoriteSentence,
+        VideoControlItem.favoriteSentences,
+        VideoControlItem.settings,
+      ],
     },
   );
 
@@ -571,6 +672,56 @@ class VideoControlLayout {
     final List<VideoControlItem> targetList = next[target]!;
     final int insertAt =
         (index == null) ? targetList.length : index.clamp(0, targetList.length);
+    targetList.insert(insertAt, item);
+    return VideoControlLayout._(_normalize(next));
+  }
+
+  /// Move the exact dragged copy represented by [payload] into [target].
+  ///
+  /// Palette drags ([VideoControlDragData.sourceSlot] == null) add a new copy.
+  /// Placed-chip drags remove only [payload.sourceIndex] from its source slot
+  /// before inserting into [target], so another copy of the same item in a
+  /// different slot survives. Same-slot drags become an index-aware reorder.
+  VideoControlLayout moveDraggedItem(
+    VideoControlDragData payload,
+    VideoControlSlot target, {
+    int? targetIndex,
+  }) {
+    final VideoControlItem item = payload.item;
+    if (payload.sourceSlot == null) {
+      return addItemToSlot(item, target, index: targetIndex);
+    }
+    if (item.pinnedRequired && target == VideoControlSlot.hidden) {
+      return this;
+    }
+
+    final VideoControlSlot source = payload.sourceSlot!;
+    final Map<VideoControlSlot, List<VideoControlItem>> next =
+        <VideoControlSlot, List<VideoControlItem>>{
+      for (final VideoControlSlot slot in VideoControlSlot.values)
+        slot: List<VideoControlItem>.from(_slots[slot]!),
+    };
+    final List<VideoControlItem> sourceList = next[source]!;
+    final int sourceIndex = payload.sourceIndex ??
+        sourceList
+            .indexWhere((VideoControlItem candidate) => candidate == item);
+    if (sourceIndex < 0 ||
+        sourceIndex >= sourceList.length ||
+        sourceList[sourceIndex] != item) {
+      return this;
+    }
+
+    final List<VideoControlItem> targetList = next[target]!;
+    if (source != target && targetList.contains(item)) {
+      return this;
+    }
+
+    sourceList.removeAt(sourceIndex);
+    int insertAt = targetIndex ?? targetList.length;
+    if (source == target && targetIndex != null && sourceIndex < targetIndex) {
+      insertAt -= 1;
+    }
+    insertAt = insertAt.clamp(0, targetList.length);
     targetList.insert(insertAt, item);
     return VideoControlLayout._(_normalize(next));
   }
@@ -766,8 +917,13 @@ class VideoControlLayout {
 /// [VideoControlItem] plus the slot it came from ([sourceSlot] == null means it
 /// was dragged from an "all buttons" palette, i.e. an add).
 class VideoControlDragData {
-  const VideoControlDragData({required this.item, required this.sourceSlot});
+  const VideoControlDragData({
+    required this.item,
+    required this.sourceSlot,
+    this.sourceIndex,
+  });
 
   final VideoControlItem item;
   final VideoControlSlot? sourceSlot;
+  final int? sourceIndex;
 }

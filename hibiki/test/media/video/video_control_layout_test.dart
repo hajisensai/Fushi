@@ -194,7 +194,8 @@ void main() {
       expect(decoded, layout);
       expect(decoded.itemsIn(VideoControlSlot.topLeft), <VideoControlItem>[
         VideoControlItem.fullscreen,
-        VideoControlItem.speed
+        VideoControlItem.speed,
+        VideoControlItem.back,
       ]);
     });
 
