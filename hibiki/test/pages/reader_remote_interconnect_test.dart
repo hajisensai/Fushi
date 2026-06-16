@@ -150,7 +150,7 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('remote book title overlays the bottom of the cover',
+  testWidgets('remote book title renders below the cover',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -160,17 +160,17 @@ void main() {
     ));
     final Rect titleRect = tester.getRect(find.text('Remote Book'));
 
-    // The title is pressed onto the cover (bottom gradient scrim), so it sits
-    // inside the cover bounds rather than in a footer band below it.
-    expect(
-      titleRect.bottom,
-      lessThanOrEqualTo(coverRect.bottom + 0.5),
-      reason: 'remote book title must overlay the cover, not a footer below it',
-    );
+    // Remote shelf cards share the same stable cover + footer layout as local
+    // books: cover art stays unobscured and the title lives below it.
     expect(
       titleRect.top,
-      greaterThan(coverRect.top),
-      reason: 'the overlaid title sits in the lower part of the cover',
+      greaterThanOrEqualTo(coverRect.bottom - 0.5),
+      reason: 'remote book title must render in the footer below the cover',
+    );
+    expect(
+      titleRect.bottom,
+      greaterThan(coverRect.bottom),
+      reason: 'the title footer must not be drawn over the cover artwork',
     );
   });
 
