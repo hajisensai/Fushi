@@ -3,28 +3,42 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('bookshelf cards render the title as a cover overlay, not a footer', () {
+  test('bookshelf cards render the title below the cover, not as an overlay',
+      () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();
 
-    // Titles are pressed back onto the cover (bottom gradient scrim) instead of
-    // a separate footer band below the cover.
     expect(
       source,
-      contains('Widget _titleOverlay(String title)'),
-      reason: 'local, SRT, video, and remote book titles overlay the cover',
+      isNot(contains('Widget _titleOverlay(String title)')),
+      reason: 'book titles must no longer draw inside the cover artwork',
     );
     expect(
       source,
-      isNot(contains('Widget _bookCardFooter(')),
-      reason: 'the below-cover title footer must be gone after the revert',
+      contains('Widget _bookCardFooter(String title)'),
+      reason: 'the title must live in a stable below-cover footer',
     );
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
     expect(
       layout,
-      contains('_titleOverlay(title)'),
-      reason: 'the shared card layout draws the title overlay on the cover',
+      contains('Column('),
+      reason: 'the shared card layout separates cover and title footer',
+    );
+    expect(
+      layout,
+      contains('height: kShelfTitleFooterHeight'),
+      reason: 'the footer height must stay stable across long titles',
+    );
+    expect(
+      layout,
+      contains('_bookCardFooter(title)'),
+      reason: 'the title footer must render below the cover stack',
+    );
+    expect(
+      layout,
+      isNot(contains('_titleOverlay(title)')),
+      reason: 'the title must not be added to the cover stack',
     );
     expect(
       RegExp(r'(?:child:|return) _bookCardLayout\(').allMatches(source).length,
@@ -33,8 +47,7 @@ void main() {
     );
   });
 
-  test('card layout exposes title, tags, badge, and metadata over the cover',
-      () {
+  test('card layout exposes title footer, tags, badge, and metadata', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();
@@ -48,11 +61,16 @@ void main() {
     expect(layout, isNot(contains('Widget? trailing')));
     expect(source, isNot(contains('leading: tagWidget')));
 
-    // The cover fills the whole card; title/badge/tags/progress all overlay it.
+    // The cover fills its stable region; badge/tags/progress overlay the cover,
+    // while the title is rendered after the cover stack in the footer.
     expect(layout, contains('Stack('));
     expect(layout, contains('ClipRect(child: cover)'));
-    expect(layout, contains('_titleOverlay(title)'));
+    expect(layout, isNot(contains('_titleOverlay(title)')));
     expect(layout, contains('_bookCardTagArea(tagLabels)'));
+    final int coverStack = layout.indexOf('Stack(');
+    final int titleFooter = layout.indexOf('_bookCardFooter(title)');
+    expect(titleFooter, greaterThan(coverStack),
+        reason: 'the title footer must be after the cover stack');
 
     // The progress metadata stays visible, pinned to the bottom of the cover.
     final int metadataPin = layout.indexOf('child: metadata,');
@@ -61,6 +79,19 @@ void main() {
     final int bottomPin = layout.lastIndexOf('bottom: 0,', metadataPin);
     expect(bottomPin, isNonNegative,
         reason: 'metadata (progress bar) must be pinned to the cover bottom');
+  });
+
+  test('book card footer clamps long titles without resizing the grid', () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String footer = _functionSource(source, 'Widget _bookCardFooter(');
+
+    expect(source, contains('const double kShelfTitleFooterHeight ='));
+    expect(footer, contains('HibikiDesignTokens.of(context)'));
+    expect(footer, contains('maxLines: 2'));
+    expect(footer, contains('overflow: TextOverflow.ellipsis'));
+    expect(footer, contains('textAlign: TextAlign.center'));
   });
 
   test('book type badge is pinned to the top-right corner of the cover', () {

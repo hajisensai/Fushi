@@ -75,6 +75,12 @@ int adaptiveTagSlots({
 /// 用顶层常量 + 测试可见，便于 widget 守卫断言渲染尺寸，防止再次漂移。
 const double kShelfCoverBadgeDimension = 8.0 * 2;
 
+/// Stable below-cover title footer height for reader shelf cards.
+///
+/// The cover and title areas must not resize when a title wraps to two lines;
+/// this fixed footer keeps long book names from pushing the grid around.
+const double kShelfTitleFooterHeight = 40.0;
+
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
     this.remoteBookClientLoader,
@@ -1352,88 +1358,83 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double overlayInset = tokens.spacing.gap * 0.75;
-    // 书名压在封面内（底部渐变暗角），封面铺满整张卡片不被下方 footer 压缩；
-    // 右上角类型徽章（TODO-284）、左上角标签、底部进度条均叠加在封面上。
-    return Stack(
-      fit: StackFit.expand,
+    // 封面和标题 footer 分区稳定：封面内只叠加标签、类型徽章、进度条；
+    // 书名移到封面下方，避免遮住封面图，也避免长标题撑坏网格。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ClipRect(child: cover),
-        _titleOverlay(title),
-        if (metadata != null)
-          PositionedDirectional(
-            start: 0,
-            end: 0,
-            bottom: 0,
-            child: metadata,
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipRect(child: cover),
+              if (metadata != null)
+                PositionedDirectional(
+                  start: 0,
+                  end: 0,
+                  bottom: 0,
+                  child: metadata,
+                ),
+              if (coverBadge != null)
+                PositionedDirectional(
+                  end: overlayInset,
+                  top: overlayInset,
+                  // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361）。徽章内在尺寸
+                  // 是 22px（HibikiBadge: icon 14 + padding gap）。早期徽章夹在封面下方的
+                  // footer 文字行里，紧贴小号书名，视觉上读作约「半个」封面元素；TODO-355 把
+                  // 徽章挪到封面图上后，旧的 `SizedBox.square(gap*5=40) + scaleDown` 永远不会
+                  // 缩小 22px 的徽章，于是在封面图上读起来比原来「大了一圈」。这里改成
+                  // `gap*2=16` 的方框 + `BoxFit.contain`，把徽章等比缩到约 16px，恢复书架
+                  // 原来那种克制的小角标观感（≈用户记忆里的 0.5 显示）。
+                  child: SizedBox.square(
+                    dimension: kShelfCoverBadgeDimension,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: coverBadge,
+                    ),
+                  ),
+                ),
+              if (tagLabels != null)
+                PositionedDirectional(
+                  start: overlayInset,
+                  top: overlayInset,
+                  child: _bookCardTagArea(tagLabels),
+                ),
+            ],
           ),
-        if (coverBadge != null)
-          PositionedDirectional(
-            end: overlayInset,
-            top: overlayInset,
-            // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361）。徽章内在尺寸
-            // 是 22px（HibikiBadge: icon 14 + padding gap）。早期徽章夹在封面下方的
-            // footer 文字行里，紧贴小号书名，视觉上读作约「半个」封面元素；TODO-355 把
-            // 徽章挪到封面图上后，旧的 `SizedBox.square(gap*5=40) + scaleDown` 永远不会
-            // 缩小 22px 的徽章，于是在封面图上读起来比原来「大了一圈」。这里改成
-            // `gap*2=16` 的方框 + `BoxFit.contain`，把徽章等比缩到约 16px，恢复书架
-            // 原来那种克制的小角标观感（≈用户记忆里的 0.5 显示）。
-            child: SizedBox.square(
-              dimension: kShelfCoverBadgeDimension,
-              child: FittedBox(
-                fit: BoxFit.contain,
-                child: coverBadge,
-              ),
-            ),
-          ),
-        if (tagLabels != null)
-          PositionedDirectional(
-            start: overlayInset,
-            top: overlayInset,
-            child: _bookCardTagArea(tagLabels),
-          ),
+        ),
+        SizedBox(
+          height: kShelfTitleFooterHeight,
+          child: _bookCardFooter(title),
+        ),
       ],
     );
   }
 
-  Widget _titleOverlay(String title) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: Container(
-          height: constraints.maxHeight * 0.38,
-          width: double.infinity,
-          alignment: Alignment.bottomCenter,
-          padding: EdgeInsetsDirectional.fromSTEB(
-            tokens.spacing.gap * 0.75,
-            tokens.spacing.gap / 2,
-            tokens.spacing.gap * 0.75,
-            tokens.spacing.gap * 0.75,
-          ),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                tokens.surfaces.page.withValues(alpha: 0),
-                tokens.surfaces.page.withValues(alpha: 0.85),
-              ],
-            ),
-          ),
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            softWrap: true,
-            style: textTheme.labelSmall?.copyWith(
-              color: tokens.surfaces.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
+  Widget _bookCardFooter(String title) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spacing.gap * 0.75,
+        tokens.spacing.gap / 2,
+        tokens.spacing.gap * 0.75,
+        0,
+      ),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Text(
+          title,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
+          textAlign: TextAlign.center,
+          softWrap: true,
+          style: tokens.type.metadata.copyWith(
+            color: tokens.surfaces.onSurface,
+            fontWeight: FontWeight.w600,
           ),
         ),
-      );
-    });
+      ),
+    );
   }
 
   Widget _bookCardTagArea(Widget tagLabels) {
@@ -1512,12 +1513,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           await _pickSrtBookCover(book);
         },
       ),
-      if (book.id != null)
-        DialogQuickAction(
-          label: t.tag_label,
-          icon: Icons.sell_outlined,
-          onPressed: () => _openSrtBookTagPicker(book.id!),
-        ),
       if (bookKey.isNotEmpty) ...[
         DialogQuickAction(
           label: t.audio_import,
@@ -1547,6 +1542,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       builder: (ctx) => MediaItemDialogPage(
         item: _srtBookMediaItem(book),
         isHistory: true,
+        showLaunchAction: false,
         extraActions: (_) => _srtExtraActions(ctx, book),
       ),
     );
@@ -1837,6 +1833,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           builder: (_) => MediaItemDialogPage(
             item: item,
             isHistory: isHistory,
+            showLaunchAction: false,
             extraActions: extraActions,
           ),
         );
@@ -1910,11 +1907,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         label: t.audiobook_import,
         icon: Icons.headphones_outlined,
         onPressed: () => _openAudiobookImport(item, bookKey),
-      ),
-      DialogQuickAction(
-        label: t.tag_label,
-        icon: Icons.sell_outlined,
-        onPressed: () => _openTagPicker(bookKey),
       ),
       DialogListAction(
         label: t.profile_book_profile,
@@ -2139,32 +2131,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (mounted) {
       setState(() {});
     }
-  }
-
-  void _openTagPicker(String bookKey) {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      adaptivePageRoute(builder: (_) => TagPickerPage(bookKey: bookKey)),
-    ).then((_) {
-      ref.invalidate(bookTagMapProvider);
-      ref.invalidate(filteredBookIdsProvider);
-      ref.invalidate(allTagsProvider);
-    });
-  }
-
-  void _openSrtBookTagPicker(int srtBookId) {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      adaptivePageRoute(
-        builder: (_) => TagPickerPage(srtBookId: srtBookId, isSrtBook: true),
-      ),
-    ).then((_) {
-      ref.invalidate(srtBookTagMapProvider);
-      ref.invalidate(filteredSrtBookIdsProvider);
-      ref.invalidate(allTagsProvider);
-    });
   }
 
   Future<void> _openCssEditor(String bookKey) async {

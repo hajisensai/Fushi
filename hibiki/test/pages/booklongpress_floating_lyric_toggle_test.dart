@@ -48,4 +48,64 @@ void main() {
       reason: '悬浮字幕仅 Android/Windows 支持。',
     );
   });
+
+  test('书籍长按动作移除标签按钮但保留其它管理动作', () {
+    final String epubActions = _sectionSource(
+      src,
+      'List<DialogAction> extraActions(MediaItem item) {',
+      '  /// 该书当前是否就是活动后台听书会话。',
+    );
+    final String srtActions = _sectionSource(
+      src,
+      'List<DialogAction> _srtExtraActions(',
+      '  Future<void> _showSrtBookDialog(',
+    );
+
+    for (final String actions in <String>[epubActions, srtActions]) {
+      expect(
+        actions,
+        isNot(contains('t.tag_label')),
+        reason: 'TODO-455 removes the Tag button from book long-press menus.',
+      );
+      expect(actions, isNot(contains('Icons.sell_outlined')));
+    }
+
+    expect(epubActions, contains('t.view_illustrations'));
+    expect(epubActions, contains('t.audiobook_import'));
+    expect(epubActions, contains('t.profile_book_profile'));
+    expect(epubActions, contains('t.book_css_editor_edit_css'));
+    expect(epubActions, contains('floating_lyric_toggle_action'));
+
+    expect(srtActions, contains('t.srt_import_pick_cover'));
+    expect(srtActions, contains('t.audio_import'));
+    expect(srtActions, contains('t.profile_book_profile'));
+    expect(srtActions, contains('t.book_css_editor_edit_css'));
+  });
+
+  test('书籍长按对话框隐藏阅读按钮，点击卡片仍负责阅读', () {
+    final String srtDialog = _sectionSource(
+      src,
+      'Future<void> _showSrtBookDialog(SrtBook book) async {',
+      '  Future<void> _pickSrtBookCover(',
+    );
+    final String epubDialog = _sectionSource(
+      src,
+      'onLongPress: () async {',
+      '      child: buildMediaItemContent(item),',
+    );
+
+    expect(srtDialog, contains('showLaunchAction: false'));
+    expect(epubDialog, contains('showLaunchAction: false'));
+    expect(src, contains('onTap: () async {'));
+    expect(src, contains('await appModel.openMedia('));
+  });
+}
+
+String _sectionSource(String source, String startToken, String endToken) {
+  final int start = source.indexOf(startToken);
+  final int end = source.indexOf(endToken, start + startToken.length);
+  expect(start, isNonNegative, reason: 'Missing source marker: $startToken');
+  expect(end, greaterThan(start),
+      reason: 'Missing end marker after $startToken: $endToken');
+  return source.substring(start, end);
 }
