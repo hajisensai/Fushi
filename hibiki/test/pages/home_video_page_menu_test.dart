@@ -140,7 +140,7 @@ void main() {
     );
   });
 
-  testWidgets('长按视频卡弹出菜单（标签 / 封面 / 删除）', (WidgetTester tester) async {
+  testWidgets('长按视频卡弹出封面背景动作面板（五项管理动作、无播放）', (WidgetTester tester) async {
     await seedTaggedVideo();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -148,10 +148,14 @@ void main() {
     await tester.longPress(find.byType(HibikiCard).first);
     await tester.pumpAndSettle();
 
-    // 修复前长按 == 打开播放页（无菜单）；现在应弹出三项菜单。
+    // 长按只做管理动作；播放仍由卡片点击负责。
+    expect(find.byType(HibikiDialogFrame), findsOneWidget);
     expect(find.text(t.tag_label), findsOneWidget);
+    expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
+    expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
+    expect(find.text(t.dialog_read), findsNothing);
   });
 
   testWidgets('first video open prompts for Anime4K recommended shaders',

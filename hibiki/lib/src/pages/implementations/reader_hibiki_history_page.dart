@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
@@ -1045,45 +1046,57 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  /// 长按视频卡：弹底部菜单（编辑标签 / 设置封面 / 删除）。修复「视频长按没菜单」
-  /// ——此前 onLongPress 与 onTap 同样只是打开播放页。与视频 tab 菜单保持一致。
+  /// 长按视频卡：打开与书籍一致的封面背景动作面板。播放仍由卡片点击负责。
   void _showVideoBookDialog(VideoBookRow book) {
-    showModalBottomSheet<void>(
+    showAppDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.sell_outlined),
-              title: Text(t.tag_label),
-              onTap: () {
-                Navigator.pop(ctx);
-                _openVideoTagPicker(book.bookUid);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.image_outlined),
-              title: Text(t.srt_import_pick_cover),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickVideoCover(book);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(ctx).colorScheme.error),
-              title: Text(
-                t.dialog_delete,
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _confirmDeleteVideoBook(book);
-              },
-            ),
-          ],
-        ),
+      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        cover: _buildVideoCover(book),
+        title: book.title,
+        showLaunchAction: false,
+        quickActions: <DialogQuickAction>[
+          DialogQuickAction(
+            label: t.tag_label,
+            icon: Icons.sell_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _openVideoTagPicker(book.bookUid);
+            },
+          ),
+          DialogQuickAction(
+            label: t.video_rename,
+            icon: Icons.drive_file_rename_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _renameVideoBook(book);
+            },
+          ),
+          DialogQuickAction(
+            label: t.srt_import_pick_cover,
+            icon: Icons.image_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _pickVideoCover(book);
+            },
+          ),
+          DialogQuickAction(
+            label: t.video_import_pick_subtitle,
+            icon: Icons.subtitles_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _pickVideoSubtitle(book);
+            },
+          ),
+        ],
+        dangerActions: <DialogDangerAction>[
+          DialogDangerAction(
+            label: t.dialog_delete,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _confirmDeleteVideoBook(book);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1115,6 +1128,80 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       pickedPath: pickedPath,
     );
     if (mounted) _refreshVideoBooks();
+  }
+
+  Future<void> _renameVideoBook(VideoBookRow book) async {
+    final TextEditingController controller =
+        TextEditingController(text: book.title);
+    final String? newTitle = await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.video_rename),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: t.video_rename_hint),
+          onSubmitted: (String v) => Navigator.pop(ctx, v),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(t.dialog_save),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final String? trimmed = newTitle?.trim();
+    if (trimmed == null || trimmed.isEmpty || trimmed == book.title) return;
+    await _videoRepo.updateTitle(book.bookUid, trimmed);
+    if (mounted) _refreshVideoBooks();
+  }
+
+  Future<void> _pickVideoSubtitle(VideoBookRow book) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
+      allowMultiple: false,
+    );
+    final String? subtitlePath = result?.files.single.path;
+    if (subtitlePath == null || !mounted) return;
+    await _attachSubtitleToVideoBook(book, subtitlePath);
+  }
+
+  Future<void> _attachSubtitleToVideoBook(
+    VideoBookRow book,
+    String subtitlePath,
+  ) async {
+    final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+      repo: _videoRepo,
+      book: book,
+      subtitlePath: subtitlePath,
+    );
+    if (!mounted) return;
+    final String message;
+    switch (result.outcome) {
+      case SubtitleAttachOutcome.attached:
+        message = t.video_subtitle_attached_to_video(
+          title: book.title,
+          count: result.cueCount,
+        );
+        _refreshVideoBooks();
+      case SubtitleAttachOutcome.playlistNeedsPlayer:
+        message = t.video_subtitle_attach_playlist_hint;
+      case SubtitleAttachOutcome.unsupported:
+        message = t.video_subtitle_import_unsupported;
+      case SubtitleAttachOutcome.copyFailed:
+        message = t.video_subtitle_import_failed;
+      case SubtitleAttachOutcome.emptyCues:
+        message = t.video_subtitle_load_failed(label: result.label);
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _confirmDeleteVideoBook(VideoBookRow book) async {
