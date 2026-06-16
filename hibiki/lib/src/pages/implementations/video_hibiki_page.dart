@@ -42,6 +42,7 @@ import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_chapter_panel.dart';
+import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
@@ -398,6 +399,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
   static const double _videoDoubleClickSlop = 48;
+
+  /// 章节刻度层（TODO-432）淡入淡出时长：对齐 media_kit 控制条默认
+  /// `controlsTransitionDuration`（300ms，本页未覆盖），使刻度与 seek bar 同步显隐。
+  static const Duration _videoChromeFadeDuration = Duration(milliseconds: 300);
 
   /// 唤醒控制条用的合成 hover 设备 id（[_pokeControlsVisible]）。取一个不与真实
   /// 鼠标/触控设备号冲突的固定值，使重复派发落在同一逻辑设备上。
@@ -5004,6 +5009,75 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 进度条（seek bar）章节刻度层（TODO-432）：在 seek bar 同一几何上画每章一条竖线。
+  ///
+  /// media_kit 的 seek bar 不暴露注入自定义子层的钩子（其 build 写死 Stack：轨道 + 缓冲 +
+  /// 进度 + 滑块），故刻度只能作为 controls Stack 里独立的 [Positioned] 兄弟层叠上去。几何
+  /// 对齐（与 [_mobileControlsTheme] / [_desktopControlsTheme] 喂给 media_kit 的同一套值
+  /// 同源）：水平左右各内缩 16px 对齐 `seekBarMargin`（轨道宽 = 控件区宽 − 32），竖直由纯
+  /// 函数 [videoSeekBarTrackBand] 按平台算出刻度带的 `bottom`/`height`（移动端进度条被抬到
+  /// 按钮条上方、桌面骑在按钮行上沿）。[VideoChapterMarkers] 内部把 [VideoChapter.start] /
+  /// 总时长换算成 `[0,1)` 比例画线（[chapterMarkerFractions]）。
+  ///
+  /// 仅当前视频有内封章节（[_hasChapters]）时挂；可见性随控制条（[_videoControlsVisible]）
+  /// 与 seek bar 同步淡入淡出。SafeArea 吃全屏路由的系统安全区，与 media_kit 控制条
+  /// `padding`（全屏 = MediaQuery.padding）对齐，保证窗口 / 全屏两条路径都不错位。
+  Widget _buildChapterMarkersOverlay(VideoPlayerController controller) {
+    if (!_hasChapters) return const SizedBox.shrink();
+    // 刻度竖线高度：比轨道再高一截（约轨道高 + 8px×缩放），让标记探出轨道上下、清晰可见，
+    // 但不至于像整条容器那样高出一大块。
+    final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
+    final ({double bottom, double height}) band = videoSeekBarTrackBand(
+      isDesktop: _isDesktopVideoControls,
+      buttonBarHeight: _videoButtonBarHeight,
+      seekBarButtonGap: _videoSeekBarButtonGap,
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      seekBarTrackHeight: _videoSeekBarTrackHeight,
+      bottomChromeBaseline: _videoBottomChromeBaseline,
+      bottomSystemInset: _videoBottomSystemInset(),
+      tickHeight: tickHeight,
+    );
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    return Positioned.fill(
+      child: SafeArea(
+        // 全屏安全区与 media_kit 控制条 padding 对齐；窗口态安全区为 0 不影响。
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _videoControlsVisible,
+          builder: (BuildContext _, bool controlsVisible, __) {
+            return IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: controlsVisible ? 1.0 : 0.0,
+                duration: _videoChromeFadeDuration,
+                child: Padding(
+                  // 水平内缩 16px 对齐 seekBarMargin；竖直由 band 锚定到 seek bar 轨道。
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    bottom: band.bottom,
+                  ),
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SizedBox(
+                      height: band.height,
+                      width: double.infinity,
+                      child: VideoChapterMarkers(
+                        controller: controller,
+                        // 高对比刻度色：进度条用 primary，刻度改用 onSurface 让它在
+                        // 已播 / 未播段都可见（避免与 primary 进度填充同色被吞）。
+                        color: cs.onSurface.withValues(alpha: 0.7),
+                        thickness: 2.0 * _videoUiScale,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   /// 内封章节面板（TODO-424）：列出 [controller] 的章节，点击跳转，高亮当前章。
   /// 当前章由 [controller] 的播放位置对照各章起点同步算出（[VideoPlayerController
   /// .chapterIndexForPosition]），无需异步轮询 libmpv `chapter`。
@@ -6024,6 +6098,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     },
                   ),
                 ),
+                // 进度条章节刻度层（TODO-432）：叠在 seek bar 同一几何上画每章一条竖线。
+                // IgnorePointer 纯视觉、不拦 seek bar 拖动；随控制条显隐、仅有章节时画。
+                _buildChapterMarkersOverlay(controller),
                 Positioned.fill(
                   child: VideoDanmakuOverlay(
                     items: _danmakuItems,

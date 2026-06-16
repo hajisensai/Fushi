@@ -71,6 +71,46 @@ double videoSubtitleControlsReserve({
       seekBarContainerHeight;
 }
 
+/// seek bar 章节刻度层（TODO-432）相对**控制条区域底边**的竖直锚定：返回紧贴轨道的刻度带
+/// `bottom`（带底缘离控制条区底边的距离）与 `height`（带高）。纯函数，页面与测试同源。
+///
+/// 刻度带不取整个 seek bar 容器（会让竖线在桌面凭空高出一截），而是以**轨道中线**为中心、
+/// 取 [tickHeight] 的一小段，让竖线只在轨道上下各探出一点点（既盖住轨道又不喧宾夺主）。
+///
+/// 与 media_kit + [videoSubtitleControlsReserve] 同源的几何（值均已 ×uiScale，本函数不再
+/// 二次缩放，[bottomChromeBaseline] 例外为不随缩放的离底常量）：
+/// - **桌面**：media_kit 把进度条骑在底部按钮行上沿（`Transform.translate(Offset(0,16))`
+///   把进度条下压、与按钮行顶部重叠）。轨道中线大致落在距控制条底边一个按钮行高
+///   （[buttonBarHeight]）处。
+/// - **移动**：进度条容器底缘 = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距
+///   （= 页面 `seekBarBottom`），容器高 = [seekBarContainerHeight]，轨道在容器内
+///   bottomCenter（贴容器底缘）→ 轨道中线 ≈ `seekBarBottom + seekBarTrackHeight/2`。
+({double bottom, double height}) videoSeekBarTrackBand({
+  required bool isDesktop,
+  required double buttonBarHeight,
+  required double seekBarButtonGap,
+  required double seekBarContainerHeight,
+  required double seekBarTrackHeight,
+  required double bottomChromeBaseline,
+  required double bottomSystemInset,
+  required double tickHeight,
+}) {
+  final double trackCenter;
+  if (isDesktop) {
+    // 桌面：轨道骑按钮行上沿，中线 ≈ 一个按钮行高处。
+    trackCenter = buttonBarHeight;
+  } else {
+    // 移动：轨道贴容器底缘（bottomCenter），中线 = seekBarBottom + 轨道半高。
+    final double seekBarBottom = bottomChromeBaseline +
+        bottomSystemInset +
+        buttonBarHeight +
+        seekBarButtonGap;
+    trackCenter = seekBarBottom + seekBarTrackHeight / 2;
+  }
+  // 以轨道中线为中心展开 tickHeight：带底缘 = 中线 − 半高。
+  return (bottom: trackCenter - tickHeight / 2, height: tickHeight);
+}
+
 /// Video subtitle appearance persisted as app preferences.
 ///
 /// The default is a high-contrast caption look: fixed white text with a thick

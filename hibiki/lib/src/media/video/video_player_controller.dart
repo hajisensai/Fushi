@@ -336,9 +336,20 @@ class VideoPlayerController extends ChangeNotifier
     return pos == null ? null : effectiveSubtitlePositionMs(pos, _delayMs);
   }
 
+  /// 测试可见：模拟媒体总时长（毫秒，驱动 seek bar 章节刻度按 start/duration 算比例，
+  /// TODO-432）。传 null 还原真实来源（`_player.state.duration`）。
+  @visibleForTesting
+  void debugSetDurationForTesting(int? durationMs) {
+    _debugDurationOverride = durationMs;
+    notifyListeners();
+  }
+
+  int? _debugDurationOverride;
+
   /// 媒体总时长（毫秒）；未 [load] / 未解析媒体头时为 null。
   @override
-  int? get durationMs => _player?.state.duration.inMilliseconds;
+  int? get durationMs =>
+      _debugDurationOverride ?? _player?.state.duration.inMilliseconds;
 
   /// 视频原始分辨率（字幕 `\pos` letterbox 映射用）；未解码时为 null。
   int? get videoWidth => _player?.state.width;
