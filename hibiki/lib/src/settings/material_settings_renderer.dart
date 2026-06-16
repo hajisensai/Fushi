@@ -7,6 +7,7 @@ import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_schema_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/components/settings_shared.dart';
 
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();
@@ -43,21 +44,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final BuildContext context = settingsContext.context;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    return ListView.separated(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.page + mediaPadding.bottom,
-      ),
-      itemCount: destinations.length,
-      separatorBuilder: (BuildContext context, int index) =>
-          SizedBox(height: tokens.spacing.gap / 2),
-      itemBuilder: (BuildContext context, int index) {
-        final SettingsDestination destination = destinations[index];
-        final bool selected = destination.id == selectedDestinationId;
-        return HibikiListItem(
-          selected: selected,
+    final List<Widget> rows = <Widget>[
+      for (final SettingsDestination destination in destinations)
+        HibikiListItem(
+          selected: destination.id == selectedDestinationId,
           // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
           // MD3 rounded pill highlight; the narrow push list keeps full-bleed fill.
           selectedShape: pushRoutes
@@ -79,8 +69,22 @@ class MaterialSettingsRenderer implements SettingsRenderer {
               ),
             );
           },
-        );
-      },
+        ),
+    ];
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.page + mediaPadding.bottom,
+      ),
+      children: <Widget>[
+        AdaptiveSettingsSection(
+          surfaceColor: tokens.surfaces.card,
+          children: rows,
+        ),
+      ],
     );
   }
 

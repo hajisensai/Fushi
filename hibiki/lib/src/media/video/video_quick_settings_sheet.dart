@@ -365,26 +365,65 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 单选 pill 高亮 + leadingIcon），点选切 [_subPage]（与旧左 pane 同一 state）。chip 行
   /// 自身固定不滚（由外层 [Column] 钉在顶部），仅内部横向滚动以容纳放不下的分类。
   Widget _buildTopCategoryBar(String selectedId, EdgeInsets padding) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
       padding: padding,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (final ({String id, IconData icon, String label}) cat
-              in _categories())
-            Padding(
-              padding: EdgeInsets.only(
-                  right: HibikiDesignTokens.of(context).spacing.gap),
-              child: HibikiSelectableChip(
-                label: cat.label,
-                leadingIcon: cat.icon,
-                selected: cat.id == selectedId,
-                onSelected: (_) => setState(() => _subPage = cat.id),
-              ),
-            ),
-        ],
+      child: AdaptiveSettingsSurface(
+        color: tokens.surfaces.card,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.all(tokens.spacing.gap),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final ({String id, IconData icon, String label}) cat
+                  in _categories())
+                Padding(
+                  padding: EdgeInsets.only(right: tokens.spacing.gap),
+                  child: HibikiSelectableChip(
+                    label: cat.label,
+                    leadingIcon: cat.icon,
+                    selected: cat.id == selectedId,
+                    onSelected: (_) => setState(() => _subPage = cat.id),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _settingsSection({
+    required List<Widget> children,
+    String? title,
+  }) {
+    return AdaptiveSettingsSection(
+      title: title,
+      titlePlacement: SettingsSectionTitlePlacement.inside,
+      children: children,
+    );
+  }
+
+  Widget _textFieldSection({
+    required String title,
+    required Widget child,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return AdaptiveSettingsSection(
+      title: title,
+      titlePlacement: SettingsSectionTitlePlacement.inside,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.gap + tokens.spacing.gap / 2,
+            tokens.spacing.gap,
+            tokens.spacing.gap + tokens.spacing.gap / 2,
+            tokens.spacing.gap + tokens.spacing.gap / 2,
+          ),
+          child: child,
+        ),
+      ],
     );
   }
 
@@ -395,7 +434,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        AdaptiveSettingsSection(
+        _settingsSection(
           children: <Widget>[
             for (final ({String id, IconData icon, String label}) cat
                 in _categories())
@@ -469,7 +508,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   // ── 播放：音画延迟 + 倍速 ──────────────────────────────────────────────
   Widget _buildPlaybackDetail() {
-    return AdaptiveSettingsSection(
+    return _settingsSection(
       children: <Widget>[
         _buildVideoFitModeRow(),
         if (isDesktopPlatform)
@@ -904,7 +943,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         // 解码
-        AdaptiveSettingsSection(
+        _settingsSection(
           title: t.video_setting_mpv_group_decode,
           children: <Widget>[
             AdaptiveSettingsPickerRow<String>(
@@ -929,7 +968,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         SizedBox(height: gap),
         // 画质
-        AdaptiveSettingsSection(
+        _settingsSection(
           title: t.video_setting_mpv_group_quality,
           children: <Widget>[
             _mpvSwitch(t.video_setting_mpv_deband, c.deband,
@@ -956,7 +995,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         SizedBox(height: gap),
         // 画面几何
-        AdaptiveSettingsSection(
+        _settingsSection(
           title: t.video_setting_mpv_group_geometry,
           children: <Widget>[
             AdaptiveSettingsPickerRow<int>(
@@ -1016,7 +1055,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         SizedBox(height: gap),
         // 色彩均衡
-        AdaptiveSettingsSection(
+        _settingsSection(
           title: t.video_setting_mpv_group_color,
           children: <Widget>[
             _mpvIntSlider(
@@ -1043,7 +1082,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         SizedBox(height: gap),
         // 音频
-        AdaptiveSettingsSection(
+        _settingsSection(
           title: t.video_setting_mpv_group_audio,
           // TODO-060：删掉 mpv「音频延迟」入口——与「播放→字幕调轴」对用户而言重复混淆
           // （两者都是「延迟 (ms)」滑条，用户分不清）。字幕对不齐统一走字幕调轴
@@ -1078,7 +1117,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         SizedBox(height: gap),
         // 播放
-        AdaptiveSettingsSection(
+        _settingsSection(
           title: t.video_setting_mpv_group_playback,
           children: <Widget>[
             _mpvSwitch(t.video_setting_mpv_loop, c.loopFile,
@@ -1088,24 +1127,25 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         SizedBox(height: gap),
         // 高级：原始 mpv.conf（多行逃生口，AdaptiveSettingsTextField 不支持多行故用原生）
-        SettingsSectionHeader(t.video_setting_mpv_group_advanced),
-        SizedBox(height: gap / 2),
-        TextField(
-          controller: _rawConfController,
-          minLines: 3,
-          maxLines: 8,
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-          decoration: InputDecoration(
-            labelText: t.video_setting_mpv_raw,
-            helperText: t.video_setting_mpv_raw_hint,
-            helperMaxLines: 4,
-            border: const OutlineInputBorder(),
+        _textFieldSection(
+          title: t.video_setting_mpv_group_advanced,
+          child: TextField(
+            controller: _rawConfController,
+            minLines: 3,
+            maxLines: 8,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            decoration: InputDecoration(
+              labelText: t.video_setting_mpv_raw,
+              helperText: t.video_setting_mpv_raw_hint,
+              helperMaxLines: 4,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: (String v) => _commitMpv(c.copyWith(rawConf: v)),
           ),
-          onChanged: (String v) => _commitMpv(c.copyWith(rawConf: v)),
         ),
         SizedBox(height: gap),
         // 重置：全部回 mpv 默认（含清空原始 conf 框）。
-        AdaptiveSettingsSection(
+        _settingsSection(
           children: <Widget>[
             AdaptiveSettingsRow(
               title: t.video_setting_mpv_reset,
@@ -1132,7 +1172,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 按其在播放器上的真实方位排成可视网格：上排=屏幕左右浮动轨，中排=底栏左右，
   /// 下方独立一格=隐藏托盘（仍可从设置/右键菜单到达）。
   Widget _buildControlsDetail() {
-    return AdaptiveSettingsSection(
+    return _settingsSection(
       children: <Widget>[
         AdaptiveSettingsRow(
           title: t.video_control_customize_hint,
@@ -1595,7 +1635,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        AdaptiveSettingsSection(
+        _settingsSection(
           children: <Widget>[
             AdaptiveSettingsSwitchRow(
               title: t.video_setting_subtitle_blur,
@@ -1610,7 +1650,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           ],
         ),
         SizedBox(height: HibikiDesignTokens.of(context).spacing.gap),
-        AdaptiveSettingsSection(
+        _settingsSection(
           title: t.video_setting_subtitle_appearance,
           children: <Widget>[
             AdaptiveSettingsSliderRow(
@@ -1699,7 +1739,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   }
 
   Widget _buildDanmakuDetail() {
-    return AdaptiveSettingsSection(
+    return _settingsSection(
       children: <Widget>[
         AdaptiveSettingsSwitchRow(
           title: t.video_setting_danmaku_enabled,

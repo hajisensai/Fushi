@@ -150,6 +150,26 @@ void main() {
     expect(source, isNot(contains('widget.onOpenMpvConfig')));
   });
 
+  test('video quick settings groups category and detail section surfaces', () {
+    final String source =
+        File('lib/src/media/video/video_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    expect(source, contains('AdaptiveSettingsSurface('),
+        reason:
+            'wide top category bar should sit inside the shared lightweight surface');
+    expect(source,
+        contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
+        reason:
+            'video detail section headings should be visually part of their group surface');
+    expect(
+        source,
+        isNot(contains(
+            'SettingsSectionHeader(t.video_setting_mpv_group_advanced)')),
+        reason:
+            'mpv advanced heading must not float outside its settings group');
+  });
+
   test('video settings side panel owns UI scale and hover lifetime', () {
     final String source =
         File('lib/src/pages/implementations/video_hibiki_page.dart')

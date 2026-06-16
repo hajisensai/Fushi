@@ -104,15 +104,99 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
   }
 }
 
+enum SettingsSectionTitlePlacement { outside, inside }
+
+class AdaptiveSettingsSurface extends StatelessWidget {
+  const AdaptiveSettingsSurface({
+    required this.child,
+    super.key,
+    this.title,
+    this.color,
+    this.contentPadding = EdgeInsets.zero,
+  });
+
+  final Widget child;
+  final String? title;
+  final Color? color;
+  final EdgeInsetsGeometry contentPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Widget content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (title != null && title!.isNotEmpty)
+          _buildContainedTitle(context, tokens, cupertino),
+        Padding(
+          padding: contentPadding,
+          child: child,
+        ),
+      ],
+    );
+
+    if (cupertino) {
+      return ClipRRect(
+        borderRadius: tokens.radii.groupRadius,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: CupertinoColors.secondarySystemGroupedBackground
+                .resolveFrom(context),
+            borderRadius: tokens.radii.groupRadius,
+          ),
+          child: content,
+        ),
+      );
+    }
+
+    return HibikiCard(
+      padding: EdgeInsets.zero,
+      borderRadius: tokens.radii.groupRadius,
+      color: color ?? tokens.surfaces.group,
+      child: content,
+    );
+  }
+
+  Widget _buildContainedTitle(
+    BuildContext context,
+    HibikiDesignTokens tokens,
+    bool cupertino,
+  ) {
+    if (cupertino) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+        child: Text(
+          title!.toUpperCase(),
+          style: tokens.type.metadata.copyWith(
+            color: CupertinoColors.secondaryLabel.resolveFrom(context),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    return SettingsSectionHeader(
+      title!,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+    );
+  }
+}
+
 class AdaptiveSettingsSection extends StatelessWidget {
   const AdaptiveSettingsSection({
     required this.children,
     super.key,
     this.title,
+    this.titlePlacement = SettingsSectionTitlePlacement.outside,
+    this.surfaceColor,
   });
 
   final String? title;
   final List<Widget> children;
+  final SettingsSectionTitlePlacement titlePlacement;
+  final Color? surfaceColor;
 
   @override
   Widget build(BuildContext context) {
@@ -120,38 +204,24 @@ class AdaptiveSettingsSection extends StatelessWidget {
 
     final bool cupertino = isCupertinoPlatform(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool titleInside =
+        titlePlacement == SettingsSectionTitlePlacement.inside;
     final List<Widget> rows = _withDividers(context, children);
-    final Widget group = cupertino
-        ? ClipRRect(
-            borderRadius: tokens.radii.groupRadius,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: CupertinoColors.secondarySystemGroupedBackground
-                    .resolveFrom(context),
-                borderRadius: tokens.radii.groupRadius,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: rows,
-              ),
-            ),
-          )
-        : HibikiCard(
-            padding: EdgeInsets.zero,
-            borderRadius: tokens.radii.groupRadius,
-            color: tokens.surfaces.group,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: rows,
-            ),
-          );
+    final Widget group = AdaptiveSettingsSurface(
+      title: titleInside ? title : null,
+      color: surfaceColor,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: rows,
+      ),
+    );
 
     return Padding(
       padding: EdgeInsets.only(bottom: cupertino ? 14 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (title != null && title!.isNotEmpty)
+        children: <Widget>[
+          if (!titleInside && title != null && title!.isNotEmpty)
             cupertino
                 ? Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
