@@ -6,6 +6,14 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
+String _section(String src, String startToken, String endToken) {
+  final int start = src.indexOf(startToken);
+  expect(start, greaterThanOrEqualTo(0), reason: '缺少 $startToken');
+  final int end = src.indexOf(endToken, start);
+  expect(end, greaterThan(start), reason: '$startToken 后缺少 $endToken');
+  return src.substring(start, end);
+}
+
 /// TODO-101 锁定 / 沉浸模式的源码守卫。
 ///
 /// media_kit 跑不了 headless，全屏路由 + 控制条 hover / 点击都无法在 widget 测试里真实
@@ -70,6 +78,26 @@ void main() {
     expect(gateIdx, greaterThanOrEqualTo(0),
         reason: 'poke 未在锁定态早返回（锁定态键盘交互会弹控制条）');
     expect(gateIdx, lessThan(dispatchIdx), reason: '锁定态早返回必须排在派发合成 hover 之前');
+  });
+
+  test('② poke 在字幕列表等强压制态早返回，不让 hover 与控制条互相拉起', () {
+    final int pokeIdx = src.indexOf('void _pokeControlsVisible()');
+    expect(pokeIdx, greaterThanOrEqualTo(0));
+    final int dispatchIdx =
+        src.indexOf('GestureBinding.instance.handlePointerEvent', pokeIdx);
+    expect(dispatchIdx, greaterThan(pokeIdx));
+
+    for (final String gate in <String>[
+      'if (_immersiveLocked.value) return;',
+      'if (_videoSidePanel.value != null) return;',
+      'if (_subtitleListVisible.value) return;',
+      'if (_videoControlEditMode.value) return;',
+    ]) {
+      final int gateIdx = src.indexOf(gate, pokeIdx);
+      expect(gateIdx, greaterThanOrEqualTo(0),
+          reason: '_pokeControlsVisible 缺强压制态早返回：$gate');
+      expect(gateIdx, lessThan(dispatchIdx), reason: '$gate 必须排在派发合成 hover 之前');
+    }
   });
 
   test('③ 锁定态查词 / 快捷键不被禁用（IgnorePointer 不裹字幕 overlay / 快捷键）', () {
@@ -149,6 +177,26 @@ void main() {
     final int alignIdx = src.indexOf('alignment: Alignment.centerLeft', idx);
     expect(alignIdx, greaterThan(idx),
         reason: '侧边锁按钮应在视频正左边垂直居中（Alignment.centerLeft）');
+  });
+
+  test('④ 沉浸锁只压制普通 rail，仍保留可见解锁入口', () {
+    final String railBody = _section(
+      src,
+      'Widget _buildVideoSideActionRail(',
+      'Widget _buildVideoSideRailFor(',
+    );
+    final int lockedIdx = railBody.indexOf('if (_immersiveLocked.value)');
+    expect(lockedIdx, greaterThanOrEqualTo(0), reason: 'rail gate 必须单独处理沉浸锁态');
+    final int afterLocked = railBody.indexOf('if (!controlsVisible', lockedIdx);
+    expect(afterLocked, greaterThan(lockedIdx));
+    final String lockedBranch = railBody.substring(lockedIdx, afterLocked);
+
+    expect(lockedBranch.contains('_buildSideLockButton()'), isTrue,
+        reason: '沉浸锁下若锁按钮不在 rail 配置中，仍必须渲染独立解锁入口');
+    expect(lockedBranch.contains('immersiveOnly: true'), isTrue,
+        reason: '沉浸锁下若锁按钮在 rail 配置中，只能渲染 immersiveLock，不得保留普通 rail 按钮');
+    expect(lockedBranch.contains('VideoControlItem.immersiveLock'), isTrue,
+        reason: '沉浸锁分支必须保留 immersiveLock 解锁入口');
   });
 
   test('④ 侧边解锁按钮无操作淡出 + 鼠标 / 触屏唤回（TODO-126），退出仍可达', () {

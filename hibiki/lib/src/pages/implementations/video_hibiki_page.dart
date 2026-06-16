@@ -1838,12 +1838,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _toggleSubtitleJumpList() {
     final bool next = !_subtitleListVisible.value;
     if (next) {
+      _clearRailHover();
       // 与浮层互斥：开 push-aside 字幕列表前关掉任何打开的浮层（设置/音轨/倍速等）。
+      _hideVideoControlEditOverlay(revealControls: false);
+      _subtitleListVisible.value = true;
       if (_videoSidePanel.value != null) {
         _hideVideoSidePanel();
       }
-      _hideVideoControlEditOverlay(revealControls: false);
-      _subtitleListVisible.value = true;
       unawaited(_refreshFavoritedCueCache());
       _markControlsVisible(false);
       _refocusVideo();
@@ -1887,6 +1888,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 全屏路由也生效）。
   void _toggleImmersiveLock() {
     final bool next = !_immersiveLocked.value;
+    _clearRailHover();
     _immersiveLocked.value = next;
     // 翻转后把视频左侧锁 / 解锁按钮唤回一次（TODO-126）：进入沉浸即露出解锁口、退出沉浸
     // 即露出锁按钮，给用户即时反馈；随后照常 2s 淡出。
@@ -2057,13 +2059,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （全屏复用同一 builder 时为全屏子树），其 RenderBox 即控制条命中区。
   void _pokeControlsVisible() {
     if (!_isDesktopVideoControls) return;
-    // 锁定 / 沉浸模式下不唤起控制条（TODO-101）：键盘跳句 / seek 等仍照常生效，
-    // 只是不再因此弹出顶/底栏按钮（用户痛点：查词 / 操作就弹按钮有点烦）。
+    // 强压制态下不派合成 hover，避免控制条和 rail 被 poke 拉回。
     if (_immersiveLocked.value) return;
-    // 侧栏（设置 / 字幕列表 / 音轨等）打开时也不唤起背景控制条（BUG-253）：键盘 /
-    // seek 仍照常生效，只是不再因此把 media_kit 控制条 / 右侧 rail 弹回来盖在面板
-    // 后面。与沉浸锁同源门控（[_videoSidePanel] 是 ValueNotifier）。
     if (_videoSidePanel.value != null) return;
+    if (_subtitleListVisible.value) return;
     if (_videoControlEditMode.value) return;
     final BuildContext? ctx = _videoControlsContext;
     if (ctx == null || !ctx.mounted) return;
@@ -2115,6 +2114,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _videoControlPopover.value != null ||
       _subtitleListVisible.value ||
       _videoControlEditMode.value;
+
+  bool get _videoSideActionRailStronglySuppressed =>
+      _videoSidePanel.value != null ||
+      _subtitleListVisible.value ||
+      _videoControlEditMode.value;
+
+  void _clearRailHover() {
+    if (_railHovered.value) {
+      _railHovered.value = false;
+    }
+  }
 
   /// 控制条避让可见性的 **唯一派生 / 写入点**（TODO-364）。
   ///
@@ -4969,6 +4979,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   void _showVideoControlEditOverlay() {
     if (_videoSheetOpen) return;
+    _clearRailHover();
     if (_subtitleListVisible.value) {
       _clearSelectedMiningCues();
       _subtitleListVisible.value = false;
@@ -5482,6 +5493,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   void _showVideoSidePanel(_VideoSidePanelKind kind) {
     if (_videoSheetOpen) return;
+    _clearRailHover();
     _hideVideoControlEditOverlay(revealControls: false);
     _hideControlPopover();
     _videoSidePanel.value = kind;
@@ -7011,6 +7023,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           _railHovered,
           _immersiveLocked,
           _videoSidePanel,
+          _subtitleListVisible,
+          _videoControlEditMode,
         ]),
         builder: (BuildContext context, __) {
           final bool controlsVisible = _videoControlsVisible.value;
@@ -7033,6 +7047,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 right(immersiveOnly: true),
               ],
             );
+          }
+          if (_videoSideActionRailStronglySuppressed) {
+            return const SizedBox.shrink();
           }
           if (!controlsVisible && !railHovered) return const SizedBox.shrink();
           return Stack(
