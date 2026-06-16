@@ -5,6 +5,18 @@ import 'package:hibiki/src/media/video/ffmpeg_backend.dart' as ffmpeg;
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
 void main() {
+  Future<bool> ffmpegAvailable() async {
+    try {
+      final ProcessResult result = await Process.run(
+        resolveFfmpegExecutable(),
+        <String>['-version'],
+      );
+      return result.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
   group('buildFfmpegClipArgs', () {
     test('formats seek/duration in seconds and orders flags', () {
       final List<String> args = buildFfmpegClipArgs(
@@ -108,15 +120,7 @@ void main() {
 
     test('cuts a real clip when ffmpeg is available', () async {
       // Environment-dependent: skip cleanly if ffmpeg is not installed.
-      bool ffmpegPresent;
-      try {
-        final ProcessResult v =
-            await Process.run(resolveFfmpegExecutable(), <String>['-version']);
-        ffmpegPresent = v.exitCode == 0;
-      } catch (_) {
-        ffmpegPresent = false;
-      }
-      if (!ffmpegPresent) {
+      if (!await ffmpegAvailable()) {
         // ignore: avoid_print
         print('ffmpeg not present; skipping real-clip extraction test');
         return;
@@ -193,6 +197,60 @@ void main() {
       expect(failures.single, contains(r'C:\Hibiki\ffmpeg.exe -> ffmpeg'));
       expect(failures.single, contains('The application was unable'));
     });
+
+    test('writes a real clip after bundled invalid-image fallback', () async {
+      if (!await ffmpegAvailable()) {
+        // ignore: avoid_print
+        print('ffmpeg not present; skipping invalid-image fallback clip test');
+        return;
+      }
+
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_fallback_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String input = '${dir.path}/in.m4a';
+      final String output = '${dir.path}/sentence.aac';
+
+      final ProcessResult gen =
+          await Process.run(resolveFfmpegExecutable(), <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=3',
+        '-c:a',
+        'aac',
+        input,
+      ]);
+      expect(gen.exitCode, 0, reason: gen.stderr.toString());
+
+      final _InvalidBundledThenPathFfmpegBackend backend =
+          _InvalidBundledThenPathFfmpegBackend(
+        pathExecutable: resolveFfmpegExecutable(),
+      );
+      ffmpeg.setFfmpegBackendForTesting(backend);
+      final List<String> failures = <String>[];
+
+      final String? result = await extractAudioSegmentViaFfmpeg(
+        inputPath: input,
+        startMs: 1000,
+        endMs: 2000,
+        outputPath: output,
+        onFailure: failures.add,
+      );
+
+      expect(result, output);
+      expect(File(output).existsSync(), isTrue);
+      expect(File(output).lengthSync(), greaterThan(0));
+      expect(failures, isEmpty);
+      expect(
+        backend.attemptedExecutables,
+        containsAllInOrder(<String>[
+          _InvalidBundledThenPathFfmpegBackend.bundledPath,
+          'ffmpeg',
+        ]),
+      );
+    });
   });
 
   group('extractClipGifViaFfmpeg', () {
@@ -235,6 +293,67 @@ void main() {
       expect(failures, hasLength(1));
       expect(failures.single, contains('0xC000007B'));
       expect(failures.single, contains(r'C:\Hibiki\ffmpeg.exe -> ffmpeg'));
+    });
+
+    test('writes a real GIF after bundled invalid-image fallback', () async {
+      if (!await ffmpegAvailable()) {
+        // ignore: avoid_print
+        print('ffmpeg not present; skipping invalid-image fallback GIF test');
+        return;
+      }
+
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_gif_fallback_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String input = '${dir.path}/in.mp4';
+      final String output = '${dir.path}/clip.gif';
+
+      final ProcessResult gen =
+          await Process.run(resolveFfmpegExecutable(), <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=duration=2:size=160x90:rate=12',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=660:duration=2',
+        '-c:v',
+        'mpeg4',
+        '-c:a',
+        'aac',
+        '-shortest',
+        input,
+      ]);
+      expect(gen.exitCode, 0, reason: gen.stderr.toString());
+
+      final _InvalidBundledThenPathFfmpegBackend backend =
+          _InvalidBundledThenPathFfmpegBackend(
+        pathExecutable: resolveFfmpegExecutable(),
+      );
+      ffmpeg.setFfmpegBackendForTesting(backend);
+      final List<String> failures = <String>[];
+
+      final String? result = await extractClipGifViaFfmpeg(
+        inputPath: input,
+        startMs: 100,
+        endMs: 1100,
+        outputPath: output,
+        onFailure: failures.add,
+      );
+
+      expect(result, output);
+      expect(File(output).existsSync(), isTrue);
+      expect(File(output).lengthSync(), greaterThan(0));
+      expect(failures, isEmpty);
+      expect(
+        backend.attemptedExecutables,
+        containsAllInOrder(<String>[
+          _InvalidBundledThenPathFfmpegBackend.bundledPath,
+          'ffmpeg',
+        ]),
+      );
     });
   });
 
@@ -779,4 +898,41 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
     Duration timeout,
   ) async =>
       result;
+}
+
+class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
+  _InvalidBundledThenPathFfmpegBackend({required this.pathExecutable});
+
+  static const String bundledPath = r'C:\App\Hibiki\ffmpeg.exe';
+
+  final String pathExecutable;
+  final List<String> attemptedExecutables = <String>[];
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> run(
+    List<String> args,
+    Duration timeout,
+  ) {
+    return ffmpeg.runCliFfmpegForTesting(
+      override: null,
+      bundledPath: bundledPath,
+      isWindows: true,
+      args: args,
+      timeout: timeout,
+      runner: (
+        String executable,
+        List<String> args,
+        Duration timeout,
+      ) async {
+        attemptedExecutables.add(executable);
+        if (executable == bundledPath) {
+          return const ffmpeg.FfmpegRunResult(
+            returnCode: -1073741701,
+            output: 'STATUS_INVALID_IMAGE_FORMAT',
+          );
+        }
+        return ffmpeg.runFfmpegProcess(pathExecutable, args, timeout);
+      },
+    );
+  }
 }

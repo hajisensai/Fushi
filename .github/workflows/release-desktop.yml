@@ -260,6 +260,20 @@ jobs:
           }
           Copy-Item -LiteralPath $source -Destination $target -Force
           Get-Item -LiteralPath $target | Select-Object FullName, Length
+      - name: Smoke test bundled ffmpeg in Windows bundle
+        shell: pwsh
+        run: |
+          $target = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release\ffmpeg.exe'
+          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            throw "Missing bundled ffmpeg executable: $target"
+          }
+          & $target -version
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled ffmpeg failed -version with exit code $LASTEXITCODE"
+          }
+          $bash = (Get-Command bash -ErrorAction Stop).Source
+          $env:FFMPEG_MIN = ($target -replace '\\', '/')
+          & $bash -c 'FIXTURE_FFMPEG="$FFMPEG_MIN" SELF_CONTAINED_FIXTURES=1 bash tool/ffmpeg-min/smoke-test.sh'
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |

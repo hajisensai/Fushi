@@ -2866,9 +2866,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // failure) so the card's {sasayaki-audio}/SentenceAudio renders empty.
       // This used to be a fully silent drop (user sees "card created" with no
       // sentence audio and no way to diagnose - exactly the TODO-390 blind spot
-      // behind repeated "Hibiki deck has no sentence audio" reports). Do not
-      // abort the otherwise-successful card (cover/text still attach); just turn
-      // the silent drop into a traceable log + OSD hint.
+      // behind repeated "Hibiki deck has no sentence audio" reports). Treat it
+      // like the reader/audiobook path: surface the root cause and abort this
+      // mining attempt rather than creating a "successful" no-audio card.
       if (audioPath == null) {
         debugPrint(
           '[VideoHibiki] mine: sentence-audio clip failed for range '
@@ -2883,6 +2883,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 : 'sentence audio export failed: $audioFailure',
           ));
         }
+        return const MinePopupResult();
       }
     }
 
