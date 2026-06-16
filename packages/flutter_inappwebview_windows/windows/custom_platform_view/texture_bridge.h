@@ -89,8 +89,9 @@ namespace flutter_inappwebview_plugin
     virtual void StopInternal();
     // BUG-209/TODO-439：所有「丢弃/替换 frame_pool_」的路径（StopInternal teardown、
     // Start 重入覆盖、OnFrameArrived resize）统一走这套退役保活不变量——
-    // remove_FrameArrived 断源 -> Close 设 closed-flag -> 移交退役注册表永久保活。
-    // active pool 也已从 create 起被 registry 强保活；retire 只负责断源和释放 GPU 资源。
+    // Close 设 closed-flag -> remove_FrameArrived 断源 -> 移交退役注册表永久保活。
+    // active pool 也已从 create 起被 registry 强保活；retire 负责先释放 GPU 资源并
+    // 压住 remove 期间的迟到 FirePresentEvent，再断源。
     // 绝不裸释放任何曾经 add_FrameArrived 的帧池。调用方须持 mutex_。
     void RetireFramePoolLocked();
     // 创建帧池 + 挂 FrameArrived + 建 CaptureSession + StartCapture，Start 与

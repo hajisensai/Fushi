@@ -1,6 +1,6 @@
 ## BUG-209 · 手机闪退实为Windows WGC FramePool teardown崩溃
 - **报告**：2026-06-12（用户报「又闪退了」，指认 Windows 桌面版 hibiki-windows-b1f960290）
-- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。**第十修重开（2026-06-14，TODO-305，「看有声书闪退」）**：第九修永久保活只覆盖 `StopInternal` 一条路径，漏了 `Start()` 重入覆盖 + `OnFrameArrived` resize `Recreate` 两条帧池丢弃/替换路径（详见文末「第十修」）。**第十二修重开（2026-06-16，TODO-439）**：v0.9.0.5025 仍崩同一 `GraphicsCapture.dll` `0xf0d5`，崩溃池对应 `create-pool` 后没有 `stop/retire/dtor`，说明保活还必须覆盖 active/running pool，而不能只覆盖 retire 后的 closed pool。
+- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。**第十修重开（2026-06-14，TODO-305，「看有声书闪退」）**：第九修永久保活只覆盖 `StopInternal` 一条路径，漏了 `Start()` 重入覆盖 + `OnFrameArrived` resize `Recreate` 两条帧池丢弃/替换路径（详见文末「第十修」）。**第十二修重开（2026-06-16，TODO-439）**：v0.9.0.5025 仍崩同一 `GraphicsCapture.dll` `0xf0d5`，崩溃池对应 `create-pool` 后没有 `stop/retire/dtor`，说明保活还必须覆盖 active/running pool，而不能只覆盖 retire 后的 closed pool。**第十三修重开（2026-06-17，TODO-453 作为 TODO-439 新证据）**：用户日志已包含 `active-retain`，前三轮 teardown 完整闭合，最后一轮停在 `retire` 后、`retire-close` 前，失败窗口缩到 `RetireFramePoolLocked()` 内部的 remove/Close/registry/handler release 收口段。
 
 ### dump 真实崩溃栈（决定性证据）
 两份 minidump（`hibiki.exe.8952.dmp` 6/12 0:11、`hibiki.exe.99916.dmp` 6/11 22:10）崩溃签名完全一致：
@@ -116,3 +116,15 @@ teardown 顺序：`session.Close()` -> `remove_FrameArrived(token)` -> `frame_po
 - **[x] ② 自动化测试** —— `hibiki/test/widgets/texture_bridge_stop_guard_test.dart` 加 TODO-439 守卫：建池后必须 `create-pool -> RetainActive -> active-retain -> add_FrameArrived`；registry 必须有 active retain 存储；Stop 必须写 `handler-release`，Retire 必须写 `retire-close`，析构必须写 `dtor-enter` / `dtor-exit`。先红后绿。
 
 **验证边界**：源码守卫和 Windows debug 插件目标构建能证明契约与本轮 native 插件编译成立；完整 `flutter build windows --debug` 本机卡在 CMake install prefix 指向 `C:/Program Files/hibiki` 的权限问题，非本轮 C++ 编译错误。WGC 延迟 UAF 的真正消失仍需 Windows Release/Debug 实机反复走原路径（看有声书 / EPUB -> 反复查词 / 弹窗开关 / resize）并结合 `%LOCALAPPDATA%\Hibiki\wgc_capture.log` 与 crash dump 收口。active registry 会让每个曾建池的 COM 壳保留到进程退出；active 状态下 GPU 资源本来就仍属当前池，Stop/Recreate 时仍显式 Close 释放 GPU 资源，残留是进程级小 COM 壳引用增长。
+
+### 第十三修（TODO-453 日志把失败窗口缩进 RetireFramePoolLocked，2026-06-17）
+
+**复发证据**：TODO-453 是 TODO-439 的同链路新证据，不作为独立新 bug 并行施工。用户日志已经出现 TODO-439 新事件 `active-retain`、`retire-close`、`handler-release`、`dtor-enter`、`dtor-exit`，说明用户运行到含第十二修日志的版本；前三轮 pool teardown 都完整闭合。最后一轮 `pool=0x22d401dd7b8` 在 `create-pool -> active-retain -> recreate-skip-samesize` 后，只记录到 `stop` 和 `retire`，缺 `retire-close`、`handler-release`、`dtor-enter`、`dtor-exit`。本机未找到对应新 crash dump，无法直接按 cdb 核 `GraphicsCapture.dll+0xf0d5` 与 FramePool 内存状态；当前根因判断来自 WGC 结构化日志的收口缺口。
+
+**新根因窗口**：第十二修证明 active pool 已从 create 起保活，问题不再是 create 后未 retain。现有代码在 `RetireFramePoolLocked()` 中先写 `retire`，再 `remove_FrameArrived`，最后才 `IClosable::Close` 写 `retire-close`。TODO-453 停在 `retire` 后、`retire-close` 前，说明风险已缩到 remove/Close 之间。若 `remove_FrameArrived` 内部触发/重入已排队的 `FirePresentEvent`，此时 closed-flag 还没设置，迟到事件仍可能进入 event fire；即使没有崩，缺少 remove/Close/registry/handler release 前后日志也无法判断到底卡在哪个 HRESULT 或 COM 调用里。
+
+**第十三修实现**：
+- **[x] ① 根因修复** —— `RetireFramePoolLocked()` 调整为先 `IClosable::Close` 设置 closed-flag，再 `remove_FrameArrived`，最后 `RetiredFramePoolRegistry::Retire(std::move(frame_pool_))`。这样 remove 期间任何迟到/重入 `FirePresentEvent` 都会先因 closed-flag no-op，不再在 event 表仍可变时进入 null-delegate 路径。`Close` / `remove_FrameArrived` 的 HRESULT 均记录；失败不短路退役保活，继续把 pool 移进 registry，避免半拆状态。
+- **[x] ② 自动化测试** —— `texture_bridge_stop_guard_test.dart` 改为要求 `retire-close-start -> Close -> retire-close/retire-close-fail -> retire-remove-start -> remove_FrameArrived -> retire-remove/retire-remove-fail -> retire-register-start -> Retire -> retire-register`；同时要求 `handler-release -> handler-release-done`。`wgc_capture_logging_guard_test.dart` 补守新日志事件。两项均先红后绿。
+
+**验证边界**：本轮仍未拿到 TODO-453 对应 crash dump；若用户再复发，新日志应能精确区分停在 `retire-close-start` 前、Close 内部、remove 内部、registry 移交或 handler release 前后。合格日志不只要求 active retain，还要求每个 pool 最终有 `retire-close`（或 `retire-close-fail`）、`retire-remove`（或 `retire-remove-fail`）、`retire-register`、`handler-release-done`、`dtor-exit`，并且 crash dump 不再出现 BUG-209 的 `GraphicsCapture.dll+0xf0d5` 签名。

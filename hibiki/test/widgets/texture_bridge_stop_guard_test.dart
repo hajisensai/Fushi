@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-113/BUG-163/BUG-209 源码守卫：Windows WebView2 离屏捕获桥（vendored fork
 /// flutter_inappwebview_windows）的 TextureBridge::StopInternal() 必须按 dump 实证
-/// 的根因修复契约拆除：Close session -> remove_FrameArrived 断源 -> Close 帧池设
-/// closed-flag -> 帧池 ComPtr 移交进程级退役注册表**永久保活**。
+/// 的根因修复契约拆除：Close session -> Close 帧池设 closed-flag ->
+/// remove_FrameArrived 断源 -> 帧池 ComPtr 移交进程级退役注册表**永久保活**。
 ///
 /// 根因（dump 决定性证据 hibiki.exe.8952.dmp / .99916.dmp，cdb analyze）：WGC 把
 /// FirePresentEvent 作为 deferred call 排进 UI 线程 CoreMessaging 队列，已排队的
@@ -43,6 +43,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// 第十修把退役保活三步（remove_FrameArrived 断源 -> Close 设 closed-flag -> 永久保活）
 /// 收敛进单一 RetireFramePoolLocked，StopInternal / Start 重入 / OnFrameArrived resize 三条
 /// 路径全走它；resize 改为退役旧池 + 建全新池（RecreateFramePoolLocked），删除裸 Recreate。
+/// TODO-453 后第十三修把 RetireFramePoolLocked 内部顺序改为先 Close 后 remove，并补
+/// remove / Close / registry / handler release 前后日志：TODO-453 最后一轮日志停在
+/// retire 后、retire-close 前，说明必须先设置 closed-flag，压住 remove 期间可能出现的
+/// 迟到/重入 FirePresentEvent。
 void main() {
   test(
       'BUG-209: TextureBridge teardown closes pool and retires it to survive '
@@ -161,6 +165,11 @@ void main() {
     expect(siHandlerRelease, greaterThan(siRetireCall),
         reason: '释放 frame_arrived_handler_ 前必须写 handler-release 日志，'
             '下一轮取证可区分 handler 已释放与 pool 未 retire 的路径');
+    final int siHandlerReleaseDone = stopInternalBody.indexOf(
+        'WgcLog::Write("handler-release-done"', siHandlerRelease);
+    expect(siHandlerReleaseDone, greaterThan(siHandlerRelease),
+        reason: '释放 frame_arrived_handler_ 后必须写 handler-release-done 日志，'
+            '下一轮取证可区分 release 前崩溃与 release 已完成');
 
     // RetireFramePoolLocked 体内必须按 dump 实证顺序执行三步根因防线。
     final int retireStart =
@@ -172,15 +181,16 @@ void main() {
         reason: 'RetireFramePoolLocked 之后应还有其它 TextureBridge 方法定义');
     final String retireBody = src.substring(retireStart, retireEnd);
 
-    final int rRevoke =
-        retireBody.indexOf('remove_FrameArrived(on_frame_arrived_token_)');
-    expect(rRevoke, greaterThanOrEqualTo(0),
-        reason: 'RetireFramePoolLocked 必须同步 remove_FrameArrived 断源');
+    final int rCloseStart =
+        retireBody.indexOf('WgcLog::Write("retire-close-start"');
+    expect(rCloseStart, greaterThanOrEqualTo(0),
+        reason: 'RetireFramePoolLocked 必须在调用 IClosable::Close 前写 '
+            'retire-close-start，定位 Close 内部崩溃/卡死');
     final int rPoolClose = retireBody.indexOf('pool_closable');
-    expect(rPoolClose, greaterThan(rRevoke),
-        reason: 'RetireFramePoolLocked 必须在 remove_FrameArrived 之后显式 Close 帧池'
-            '（IClosable）设 closed-flag：在途/迟到 deferred FirePresentEvent 据此'
-            '早返回 no-op，不读 event 成员（dump 实证根因防线）');
+    expect(rPoolClose, greaterThan(rCloseStart),
+        reason: 'RetireFramePoolLocked 必须先显式 Close 帧池（IClosable）设 '
+            'closed-flag，再 remove_FrameArrived；TODO-453 的缺口在 retire 后，'
+            '提前 Close 可让 remove 期间任何重入/迟到 FirePresentEvent 先 no-op');
     expect(
         RegExp(r'pool_closable\s*->\s*Close\(\)').hasMatch(retireBody), isTrue,
         reason: 'RetireFramePoolLocked 必须对帧池 IClosable 调用 Close 设 closed-flag');
@@ -188,13 +198,35 @@ void main() {
         retireBody.indexOf('WgcLog::Write("retire-close"', rPoolClose);
     expect(rCloseLog, greaterThan(rPoolClose),
         reason: 'Close 帧池后必须写 retire-close 日志，明确 GPU 资源释放/closed-flag 已设置');
+    final int rRevokeStart =
+        retireBody.indexOf('WgcLog::Write("retire-remove-start"', rCloseLog);
+    expect(rRevokeStart, greaterThan(rCloseLog),
+        reason: 'remove_FrameArrived 前必须写 retire-remove-start，定位 revoke 内部崩溃');
+    final int rRevoke =
+        retireBody.indexOf('remove_FrameArrived(on_frame_arrived_token_)');
+    expect(rRevoke, greaterThan(rRevokeStart),
+        reason: 'RetireFramePoolLocked 必须在 Close 帧池后同步 remove_FrameArrived 断源');
+    final int rRevokeLog =
+        retireBody.indexOf('WgcLog::Write("retire-remove"', rRevoke);
+    expect(rRevokeLog, greaterThan(rRevoke),
+        reason: 'remove_FrameArrived 返回后必须写 retire-remove 日志，HRESULT 失败也要可见');
+    final int rRetireStart =
+        retireBody.indexOf('WgcLog::Write("retire-register-start"', rRevokeLog);
+    expect(rRetireStart, greaterThan(rRevokeLog),
+        reason: '移交 RetiredFramePoolRegistry 前必须写 retire-register-start');
     final int rRetire = retireBody.indexOf(
         'RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_))');
-    expect(rRetire, greaterThan(rCloseLog),
+    expect(rRetire, greaterThan(rRetireStart),
         reason: 'RetireFramePoolLocked 必须在 Close 帧池后把帧池 ComPtr move 进 '
             'RetiredFramePoolRegistry 保活：帧池内存在所有在途 deferral 跑完前绝不释放');
-    final int rPoolNull = retireBody.indexOf('frame_pool_ = nullptr', rRetire);
-    expect(rPoolNull, greaterThan(rRetire),
+    final int rRetireLog =
+        retireBody.indexOf('WgcLog::Write("retire-register"', rRetire);
+    expect(rRetireLog, greaterThan(rRetire),
+        reason: 'RetiredFramePoolRegistry::Retire 返回后必须写 retire-register 日志，'
+            '定位 registry 移交是否完成');
+    final int rPoolNull =
+        retireBody.indexOf('frame_pool_ = nullptr', rRetireLog);
+    expect(rPoolNull, greaterThan(rRetireLog),
         reason: 'frame_pool_ 必须先 move 进退役注册表再置空：不得在任何路径裸释放'
             '帧池最后强引用（第七修赌注已被 dump 反证）');
 
