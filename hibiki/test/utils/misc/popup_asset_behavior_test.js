@@ -882,6 +882,43 @@ async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   assert.equal(mineButton.disabled, false, 'button is still clickable, never locked');
 }
 
+// TODO-448: a failed or uncertain mineEntry result must not schedule a delayed
+// duplicateCheck that later flips the button to ✓. That was the visible "first
+// failed, then succeeded" experience when addNote reached Anki but the response
+// connection was lost.
+async function testFailedMineDoesNotRefreshIntoSuccessAfterDuplicateCheck() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  let duplicateChecks = 0;
+  let cardExists = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') {
+      duplicateChecks += 1;
+      return Promise.resolve(cardExists);
+    }
+    if (name === 'mineEntry') {
+      cardExists = true;
+      return Promise.resolve({ ankiConnect: false, noteId: null });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.textContent, '+', 'initial state is mineable');
+  assert.equal(duplicateChecks, 1, 'initial lookup-time duplicateCheck ran');
+
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(duplicateChecks, 1,
+    'failed/uncertain mine results must not run a delayed duplicateCheck');
+  assert.equal(context.__timers.size, 0,
+    'failed/uncertain mine results must not schedule delayed refresh timers');
+  assert.equal(mineButton.textContent, '+',
+    'a failed/uncertain mine must not later paint itself as success');
+}
+
 // ── TODO-270 D: tri-state mine button (overwrite the latest mined card) ─────
 // After a successful mine that returns a real note id (AnkiConnect only) the
 // button becomes a GREEN "latest editable" ✓↩: clicking it overwrites THAT note
@@ -1242,6 +1279,11 @@ testMineButtonReMinesAfterCardDeletedWithoutReopening().catch((error) => {
 });
 
 testMineButtonDoesNotDuplicateWhenCardStillExists().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testFailedMineDoesNotRefreshIntoSuccessAfterDuplicateCheck().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

@@ -31,8 +31,9 @@ const bool kSentenceContextPickerEnabled = false;
 
 /// TODO-270 D：制卡（mineEntry）回传给弹窗 JS 的结构化结果。
 ///
-/// [ankiConnect] 沿用旧的 `Future<bool>` 语义（true=AnkiConnect 同步刷新，
-/// false=AnkiDroid 延时刷新 ✓ 状态）；新增 [noteId] 带回后端 note id（仅
+/// [ankiConnect] 沿用旧的 `Future<bool>` 字段名，但现在作为「制卡成功，可立即
+/// 刷新 Anki 真实状态」信号；false 表示失败/重复/未配置/不确定，popup.js 不再安排
+/// 延时 duplicateCheck 把失败后验改成成功。新增 [noteId] 带回后端 note id（仅
 /// AnkiConnect 成功制卡时非空），供 popup.js 把刚制的这张标记为「最新可改」第三态，
 /// 再点 ✓ 时按 id 走 `updateEntry` 覆盖而非新建。AnkiDroid 恒 `null` → 永远进不了
 /// 第三态（优雅降级）。失败/重复/未配置时 [noteId] 为 `null`。

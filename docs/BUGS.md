@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 299 条。点号进各自文件。
+> 共 300 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-306](bugs/BUG-306-ankiconnect-addnote-unknown-commit.md) | ✅ | ✅ | AnkiConnect addNote 响应断开后 popup 先失败再后验成功 |
 | [BUG-305](bugs/BUG-305-video-playlist-autoplay-subtitle-loading.md) | ✅ | ✅ | 播放列表不会自动连播且下一集字幕列表初始空 |
 | [BUG-304](bugs/BUG-304-android-versioncode-overflow.md) | ✅ | ✅ | Android versionCode 经 ×1,000,000 公式溢出 int32/超 21 亿上限，beta/release 包建不出 |
 | [BUG-303](bugs/BUG-303-playlist-subtitle-menu-empty.md) | ✅ | ✅ | m3u8 播放列表首集字幕菜单「一个字幕没有」 |
