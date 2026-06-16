@@ -1450,15 +1450,18 @@ void main() {
       'Widget _buildDictionaryTile({',
       'Widget _buildDictionaryList(',
     );
+    // TODO-422：词典行尾的三点菜单已改为独立删除按钮，词典管理界面剩下的
+    // HibikiOverflowMenu 在移动端页头的溢出菜单 _buildMobilePageActions 里，
+    // 仍守卫它用共享 MD3 原语（HibikiOverflowMenu，而非裸 PopupMenuButton）。
     final String managerMenu = _functionSource(
       dictionaryManager,
-      'Widget buildDictionaryTileTrailing(',
-      'HibikiPopupMenuItem<VoidCallback> buildPopupItem({',
+      'List<Widget> _buildMobilePageActions() {',
+      'Future<void> showDictionaryClearDialog()',
     );
     final String managerPopupItem = _functionSource(
       dictionaryManager,
       'HibikiPopupMenuItem<VoidCallback> buildPopupItem({',
-      '  // HBK-AUDIT-111:',
+      '  // TODO-422：',
     );
 
     // 空分类行与全空状态统一成居中的 HibikiPlaceholderMessage（共享 MD3 原语），

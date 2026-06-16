@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
-// TODO-381：词典管理行的布局守卫（不拉起整页 AppModel/Drift，只复刻
+// TODO-381 / TODO-422：词典管理行的布局守卫（不拉起整页 AppModel/Drift，只复刻
 // 行的真实结构 = HibikiListItem(leading: 折叠按钮, title: Expanded 名字 +
-// ellipsis, trailing: 一串图标按钮)）。验证：① 折叠/展开按钮在最左（leading），
-// 在标题之前；② 窄屏下长词典名不撑爆布局（无 RenderFlex overflow），名字
-// 由 Expanded + ellipsis 优雅省略。
+// ellipsis, trailing: 一串图标按钮)）。行尾控件串末尾现在是独立删除按钮
+// （TODO-422 取代旧三点菜单）。验证：① 折叠/展开按钮在最左（leading），在标题
+// 之前；② 窄屏下长词典名不撑爆布局（无 RenderFlex overflow），名字由
+// Expanded + ellipsis 优雅省略。
 void main() {
   // 复刻 _buildDictionaryTile 的行结构（leading 折叠 + 中段名字 + 右侧控件串）。
   Widget buildRow({required double width}) {
@@ -29,7 +30,8 @@ void main() {
                   Icon(Icons.keyboard_arrow_up, size: 18),
                   Icon(Icons.keyboard_arrow_down, size: 18),
                   SizedBox(width: 40, child: Icon(Icons.toggle_on)),
-                  Icon(Icons.more_vert, size: 24),
+                  // TODO-422：行尾独立删除按钮取代旧三点菜单。
+                  Icon(Icons.delete_outline, size: 20),
                 ],
               ),
             ),

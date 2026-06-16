@@ -1090,8 +1090,10 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
         ),
         // Trailing keeps only: gamepad/a11y reorder arrows, the show/hide
-        // switch, and the three-dot menu (custom CSS + delete are real,
-        // non-droppable functions). Collapse/expand moved to leading.
+        // switch, and a single inline delete button. Collapse/expand moved to
+        // leading; custom CSS keeps its global fallback entry under settings →
+        // dictionary settings (DictCssEditorDialog 可下拉选本词典), so dropping
+        // the old three-dot menu does not lose any function (TODO-422).
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1112,7 +1114,13 @@ class _DictionaryDialogPageState extends BasePageState {
             ),
             _buildDictionaryVisibilityButton(dictionary, enabled),
             SizedBox(width: tokens.spacing.gap / 2),
-            buildDictionaryTileTrailing(dictionary),
+            // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。
+            HibikiIconButton(
+              icon: Icons.delete_outline,
+              size: 20,
+              tooltip: t.options_delete,
+              onTap: () => showDictionaryDeleteDialog(dictionary),
+            ),
           ],
         ),
       ),
@@ -1245,17 +1253,6 @@ class _DictionaryDialogPageState extends BasePageState {
     setState(() {});
   }
 
-  Widget buildDictionaryTileTrailing(Dictionary dictionary) {
-    return HibikiOverflowMenu<VoidCallback>(
-      splashRadius: 20,
-      padding: EdgeInsets.zero,
-      tooltip: t.show_options,
-      onSelected: (value) => value(),
-      items: getMenuItems(dictionary),
-      iconSize: 24,
-    );
-  }
-
   HibikiPopupMenuItem<VoidCallback> buildPopupItem({
     required String label,
     required VoidCallback action,
@@ -1270,38 +1267,10 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  // HBK-AUDIT-111: removed the dead openDictionaryOptionsMenu (an unused
-  // showMenu-based duplicate of the live overflow-menu path). The dictionary
-  // tile opens this same getMenuItems list via buildDictionaryTileTrailing()
-  // / HibikiOverflowMenu; the showMenu variant was never wired to any gesture.
-
-  // TODO-381：三点菜单只留行内没有专属控件的真实功能——自定义 CSS、删除。
-  // 显示/隐藏已由行内 Switch 一键切换（_buildDictionaryVisibilityButton），
-  // 折叠/展开已提到行首 leading，故菜单里不再重复这两项（消除冗余入口）。
-  List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(Dictionary dictionary) {
-    return [
-      buildPopupItem(
-        label: t.custom_dict_css,
-        icon: Icons.code_outlined,
-        action: () {
-          showAppDialog(
-            context: context,
-            builder: (_) => DictCssEditorDialog(
-              initialDictionaryName: dictionary.name,
-            ),
-          );
-        },
-      ),
-      buildPopupItem(
-        label: t.options_delete,
-        icon: Icons.delete_outline,
-        action: () {
-          showDictionaryDeleteDialog(dictionary);
-        },
-        color: theme.colorScheme.primary,
-      ),
-    ];
-  }
+  // TODO-422：每本词典行尾原来的三点菜单（自定义 CSS + 删除）已移除，改为行尾
+  // 一个独立删除按钮（见 _buildDictionaryTile 的 trailing Row）。删单本词典仍走
+  // showDictionaryDeleteDialog 的确认对话框；自定义 CSS 仍有设置 → 词典设置里的
+  // DictCssEditorDialog 全局入口（可下拉选本词典），故不丢功能。
 }
 
 @visibleForTesting

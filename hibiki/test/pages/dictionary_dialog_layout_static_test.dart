@@ -234,7 +234,7 @@ void main() {
   //  ① 折叠/展开按钮放在 HibikiListItem 的 leading（最左），不在 trailing；
   //  ② 该按钮单击即 toggleDictionaryCollapsed（一键，非先开菜单）；
   //  ③ 图标随 isCollapsed 状态切换（unfold_more/unfold_less = 状态一览）；
-  //  ④ 三点菜单 getMenuItems 不再含折叠项（消除第二个慢入口）。
+  //  ④ trailing 串里不再有三点菜单（TODO-422 已移除），自然也没有折叠项入口。
   test(
       'dictionary row puts the one-tap collapse toggle in leading (leftmost), '
       'not trailing (TODO-091/TODO-381)', () {
@@ -285,32 +285,52 @@ void main() {
     expect(btnSource, contains('t.options_expand'));
     expect(btnSource, contains('t.options_collapse'));
 
-    // ④ 三点菜单不再含折叠项（避免「点两下」的第二入口）。
-    final int menuStart =
-        source.indexOf('List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(');
-    expect(menuStart, isNonNegative);
-    final String menuSource = source.substring(menuStart);
-    expect(menuSource, isNot(contains('toggleDictionaryCollapsed')));
-    expect(menuSource, isNot(contains('t.options_collapse')));
-    expect(menuSource, isNot(contains('t.options_expand')));
+    // ④ 行尾的三点菜单已被 TODO-422 移除（trailing 串里没有 more_vert，也没有
+    //    buildDictionaryTileTrailing/getMenuItems 入口），自然不存在折叠项的
+    //    「第二个慢入口」。折叠仍由 leading 一键切换（前面已断言）。
+    expect(trailingSource, isNot(contains('Icons.more_vert')));
+    expect(trailingSource, isNot(contains('buildDictionaryTileTrailing(')));
+    expect(source, isNot(contains('getMenuItems(')));
   });
 
-  // TODO-381：三点菜单只留行内没有专属控件的真实功能（自定义 CSS、删除）。
-  // 显示/隐藏由行内 Switch 一键切换、折叠/展开在 leading，故菜单里不再重复
-  // 这两个状态项（消除冗余入口）。守卫菜单不再含 show/hide。
-  test('three-dot menu drops the duplicate show/hide item (TODO-381)', () {
+  // TODO-422：词典行尾的三点菜单（旧 buildDictionaryTileTrailing / getMenuItems）
+  // 已被一个独立删除按钮取代。守卫：① 整个文件不再有三点菜单方法；② trailing Row
+  // 末尾是一个删除 HibikiIconButton（图标 delete_outline、tooltip 用现有 options_delete
+  // key），onTap 仍调原删除确认对话框 showDictionaryDeleteDialog（删单本词典流程不变）。
+  test(
+      'row trailing replaces the three-dot menu with an inline delete button '
+      '(TODO-422)', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
             .readAsStringSync();
-    final int menuStart =
-        source.indexOf('List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(');
-    expect(menuStart, isNonNegative);
-    final String menuSource = source.substring(menuStart);
-    // 菜单仍保留真实功能：自定义 CSS、删除。
-    expect(menuSource, contains('t.custom_dict_css'));
-    expect(menuSource, contains('t.options_delete'));
-    // 但不再重复行内 Switch 已有的显示/隐藏项。
-    expect(menuSource, isNot(contains('t.options_show')));
-    expect(menuSource, isNot(contains('t.options_hide')));
+
+    // ① 旧三点菜单的两个方法整文件不再存在。
+    expect(source, isNot(contains('Widget buildDictionaryTileTrailing(')));
+    expect(
+      source,
+      isNot(contains('List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(')),
+    );
+
+    // ② 定位 _buildDictionaryTile 的 trailing Row。
+    final int tileStart = source.indexOf('Widget _buildDictionaryTile({');
+    final int tileEnd =
+        source.indexOf('Widget _buildDictionaryVisibilityButton(');
+    expect(tileStart, isNonNegative);
+    expect(tileEnd, greaterThan(tileStart));
+    final String tileSource = source.substring(tileStart, tileEnd);
+    final int trailingStart = tileSource.indexOf('trailing: Row(');
+    expect(trailingStart, isNonNegative);
+    final String trailingSource = tileSource.substring(trailingStart);
+
+    // trailing 里没有三点菜单，改成独立删除按钮（仍走删除确认对话框）。
+    expect(trailingSource, isNot(contains('Icons.more_vert')));
+    expect(trailingSource, isNot(contains('buildDictionaryTileTrailing(')));
+    expect(trailingSource, contains('HibikiIconButton('));
+    expect(trailingSource, contains('Icons.delete_outline'));
+    expect(trailingSource, contains('tooltip: t.options_delete'));
+    expect(
+      trailingSource,
+      contains('showDictionaryDeleteDialog(dictionary)'),
+    );
   });
 }

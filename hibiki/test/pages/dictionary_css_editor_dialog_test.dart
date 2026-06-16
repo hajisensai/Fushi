@@ -77,16 +77,26 @@ void main() {
     LocaleSettings.setLocale(AppLocale.zhCn);
   });
 
+  // TODO-422：词典管理页本身不实现任何自定义 CSS 编辑——行尾旧三点菜单（含
+  // 「自定义 CSS」项）已被独立删除按钮取代。自定义 CSS 编辑由设置 → 词典设置的
+  // 全局入口 DictCssEditorDialog（可下拉选本词典）承担，故词典管理页里不再调起
+  // DictCssEditorDialog，也不内联自己的 CSS 对话框。
   test('dictionary manager delegates custom CSS editing to settings dialog',
       () {
     final source = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
     ).readAsStringSync();
 
+    // 词典管理页不内联自己的 CSS 对话框。
     expect(source, isNot(contains('_showCustomCSSDialog')));
-    expect(source, contains('DictCssEditorDialog('));
-    expect(source, contains('initialDictionaryName: dictionary.name'));
     expect(source, isNot(contains('custom_css_title')));
+    // 行尾三点菜单移除后，词典管理页不再从行内调起 CSS 编辑器。
+    expect(source, isNot(contains('DictCssEditorDialog(')));
+
+    // 自定义 CSS 编辑仍可达：由设置 schema 的全局入口委托给 DictCssEditorDialog。
+    final settingsSource =
+        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    expect(settingsSource, contains('DictCssEditorDialog('));
   });
 
   testWidgets('dictionary CSS editor fits a compact mobile dialog', (
