@@ -22,6 +22,10 @@ void main() {
     return readRepositoryWorkflow('main.yml');
   }
 
+  String readReleaseDesktopWorkflow() {
+    return readRepositoryWorkflow('release-desktop.yml');
+  }
+
   String readAndroidBuildGradle() {
     final File file = File('android/app/build.gradle');
     expect(file.existsSync(), isTrue,
@@ -200,5 +204,47 @@ void main() {
         greaterThanOrEqualTo(3),
         reason: 'fat + split versionCode ceiling assertions must both throw '
             '(plus the pre-existing keystore guards)');
+  });
+
+  test('Windows desktop release smokes bundled ffmpeg in final bundle', () {
+    final String workflow = readReleaseDesktopWorkflow();
+    final String smoke = workflowStep(
+      workflow,
+      'Smoke test bundled ffmpeg in Windows bundle',
+    );
+
+    expect(
+      smoke,
+      contains(r'hibiki\build\windows\x64\runner\Release\ffmpeg.exe'),
+      reason: 'release must test the exact ffmpeg.exe copied beside hibiki.exe',
+    );
+    expect(
+      smoke,
+      contains('tool/ffmpeg-min/smoke-test.sh'),
+      reason:
+          'the final bundle smoke must exercise subtitle, GIF, frame, cover, and sentence audio commands',
+    );
+    expect(
+      smoke,
+      contains(r'FIXTURE_FFMPEG="$FFMPEG_MIN"'),
+      reason:
+          'the smoke must not rely on a host PATH ffmpeg when generating fixtures',
+    );
+    expect(
+      smoke,
+      contains(r'& $target -version'),
+      reason:
+          'PowerShell must execute the copied Windows binary outside MSYS2 before installer compilation',
+    );
+    expectWorkflowOrder(
+      workflow,
+      'Install vendored ffmpeg-min into Windows bundle',
+      'Smoke test bundled ffmpeg in Windows bundle',
+    );
+    expectWorkflowOrder(
+      workflow,
+      'Smoke test bundled ffmpeg in Windows bundle',
+      'Compile installer (Inno Setup)',
+    );
   });
 }

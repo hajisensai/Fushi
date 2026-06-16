@@ -109,7 +109,7 @@ void main() {
     // 抽段返回 null（真机 ffmpeg 不可用 / 音轨不可解码 / 容器读取失败）时过去是
     // 完全静默丢弃——用户看到「制卡成功」却没句子音频，无从诊断（正是反复报
     // 「ひびき 卡组没句子音频」却定位不到的盲区）。落卡链路必须把这条丢弃变为
-    // 可追踪日志 + OSD 提示，且仍不打断成功制卡（封面/文本仍在）。
+    // 可追踪日志 + OSD 提示，并中止本次制卡，不能落一张成功但无句子音频的卡。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
       'void _showAudioTrackMenu(VideoPlayerController _) {',
@@ -120,5 +120,26 @@ void main() {
         reason: '抽段失败须打可追踪日志（含区间端点供诊断）。');
     expect(mineCard, contains('card_export_failed_detail'),
         reason: '抽段失败须给用户可见的 OSD 提示（复用现有 i18n，不静默）。');
+    expect(mineCard, contains('String? audioFailure'),
+        reason: 'OSD/日志应携带底层 ffmpeg 诊断摘要，而不是只有泛化失败文案。');
+    expect(mineCard, contains('onFailure: (String summary)'),
+        reason: 'extractAudioSegmentViaFfmpeg 的失败摘要必须传回视频制卡路径。');
+    expect(mineCard, contains(r'sentence audio export failed: $audioFailure'),
+        reason: '用户可见错误应含实际 executable/fallback/0xC000007B 等摘要。');
+    expect(mineCard, contains('GIF clip export failed'),
+        reason: 'GIF 导出失败虽可回退截图，也必须留下 ffmpeg 诊断。');
+
+    final int failureGuardIndex = mineCard.indexOf('if (audioPath == null) {');
+    final int abortIndex = mineCard.indexOf(
+      'return const MinePopupResult();',
+      failureGuardIndex,
+    );
+    final int contextIndex =
+        mineCard.indexOf('final AnkiMiningContext miningContext');
+    expect(failureGuardIndex, greaterThanOrEqualTo(0));
+    expect(abortIndex, greaterThan(failureGuardIndex),
+        reason: '句子音频导出失败后必须中止视频制卡，不能继续构造缺音频 context。');
+    expect(abortIndex, lessThan(contextIndex),
+        reason: '中止必须发生在 repo.mineEntry/updateMinedNote 之前。');
   });
 }

@@ -24,6 +24,26 @@ void main() {
       expect(const FfmpegRunResult(returnCode: null, output: 'x').isSuccess,
           isFalse);
     });
+
+    test('failureSummary names Windows invalid-image exits and executable', () {
+      const FfmpegRunResult result = FfmpegRunResult(
+        returnCode: -1073741701,
+        output: 'The application was unable to start correctly.',
+        executable: r'C:\Hibiki\ffmpeg.exe',
+        attemptedExecutables: <String>[
+          r'C:\Hibiki\ffmpeg.exe',
+          'ffmpeg',
+        ],
+        fallbackReason: 'bundled ffmpeg produced STATUS_INVALID_IMAGE_FORMAT',
+      );
+
+      expect(result.failureSummary, contains('0xC000007B'));
+      expect(result.failureSummary, contains('STATUS_INVALID_IMAGE_FORMAT'));
+      expect(result.failureSummary, contains(r'C:\Hibiki\ffmpeg.exe'));
+      expect(
+          result.failureSummary, contains(r'C:\Hibiki\ffmpeg.exe -> ffmpeg'));
+      expect(result.failureSummary, contains('The application was unable'));
+    });
   });
 
   group('resolveFfmpegBackend', () {

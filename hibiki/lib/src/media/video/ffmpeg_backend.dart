@@ -11,12 +11,53 @@ import 'package:flutter/foundation.dart';
 /// [returnCode] 为 null 表示超时被强杀；[output] 是合并的 stderr 文本
 /// （ffmpeg 把流信息/进度写 stderr），内嵌字幕「列举」靠解析它。
 class FfmpegRunResult {
-  const FfmpegRunResult({required this.returnCode, required this.output});
+  const FfmpegRunResult({
+    required this.returnCode,
+    required this.output,
+    this.executable,
+    this.attemptedExecutables = const <String>[],
+    this.fallbackReason,
+  });
 
   final int? returnCode;
   final String output;
+  final String? executable;
+  final List<String> attemptedExecutables;
+  final String? fallbackReason;
 
   bool get isSuccess => returnCode == 0;
+
+  String get failureSummary {
+    final List<String> parts = <String>[_formatFfmpegReturnCode(returnCode)];
+    if (executable != null && executable!.isNotEmpty) {
+      parts.add('executable=$executable');
+    }
+    if (attemptedExecutables.isNotEmpty) {
+      parts.add('attempted=${attemptedExecutables.join(' -> ')}');
+    }
+    if (fallbackReason != null && fallbackReason!.isNotEmpty) {
+      parts.add('fallback=$fallbackReason');
+    }
+    final String stderr = _summarizeFfmpegOutput(output);
+    if (stderr.isNotEmpty) {
+      parts.add('stderr=$stderr');
+    }
+    return parts.join('; ');
+  }
+
+  FfmpegRunResult withExecutionContext({
+    required String executable,
+    required List<String> attemptedExecutables,
+    String? fallbackReason,
+  }) {
+    return FfmpegRunResult(
+      returnCode: returnCode,
+      output: output,
+      executable: executable,
+      attemptedExecutables: List<String>.unmodifiable(attemptedExecutables),
+      fallbackReason: fallbackReason ?? this.fallbackReason,
+    );
+  }
 }
 
 typedef FfmpegProcessRunner = Future<FfmpegRunResult> Function(
@@ -27,6 +68,60 @@ typedef FfmpegProcessRunner = Future<FfmpegRunResult> Function(
 
 const int _windowsStatusInvalidImageFormatSigned = -1073741701;
 const int _windowsStatusInvalidImageFormatUnsigned = 0xC000007B;
+
+String _formatFfmpegReturnCode(int? returnCode) {
+  if (returnCode == null) return 'ffmpeg timed out';
+  if (returnCode == _windowsStatusInvalidImageFormatSigned ||
+      returnCode == _windowsStatusInvalidImageFormatUnsigned) {
+    return 'ffmpeg exit $returnCode '
+        '(Windows STATUS_INVALID_IMAGE_FORMAT / 0xC000007B)';
+  }
+  return 'ffmpeg exit $returnCode';
+}
+
+String _summarizeFfmpegOutput(String output) {
+  final String oneLine = output.trim().replaceAll(RegExp(r'\s+'), ' ');
+  const int maxLength = 500;
+  if (oneLine.length <= maxLength) return oneLine;
+  return '${oneLine.substring(0, maxLength)}...';
+}
+
+String describeFfmpegProcessException(ProcessException exception) {
+  final StringBuffer buffer = StringBuffer('ffmpeg launch failed');
+  if (exception.executable.isNotEmpty) {
+    buffer.write(': executable=${exception.executable}');
+  }
+  if (exception.errorCode != 0) {
+    buffer.write('; errorCode=${exception.errorCode}');
+  }
+  if (exception.message.isNotEmpty) {
+    buffer.write('; message=${exception.message}');
+  }
+  return buffer.toString();
+}
+
+ProcessException _withFfmpegLaunchContext(
+  ProcessException exception, {
+  required List<String> attemptedExecutables,
+  String? fallbackReason,
+}) {
+  final List<String> parts = <String>[];
+  if (exception.message.isNotEmpty) {
+    parts.add(exception.message);
+  }
+  if (attemptedExecutables.isNotEmpty) {
+    parts.add('attempted=${attemptedExecutables.join(' -> ')}');
+  }
+  if (fallbackReason != null && fallbackReason.isNotEmpty) {
+    parts.add('fallback=$fallbackReason');
+  }
+  return ProcessException(
+    exception.executable,
+    exception.arguments,
+    parts.join('; '),
+    exception.errorCode,
+  );
+}
 
 /// ffmpeg 执行底座抽象：所有 ffmpeg 调用经它，与「系统 CLI / 捆绑库」实现解耦。
 ///
@@ -100,10 +195,20 @@ Future<FfmpegRunResult> runFfmpegProcess(
   try {
     final int code = await process.exitCode.timeout(timeout);
     final String output = await stderrText;
-    return FfmpegRunResult(returnCode: code, output: output);
+    return FfmpegRunResult(
+      returnCode: code,
+      output: output,
+      executable: executable,
+      attemptedExecutables: <String>[executable],
+    );
   } on TimeoutException {
     process.kill(ProcessSignal.sigkill);
-    return const FfmpegRunResult(returnCode: null, output: '');
+    return FfmpegRunResult(
+      returnCode: null,
+      output: '',
+      executable: executable,
+      attemptedExecutables: <String>[executable],
+    );
   }
 }
 
@@ -144,6 +249,17 @@ bool _bundledProducedNoUsableOutput(FfmpegRunResult result) {
   return result.output.trim().isEmpty;
 }
 
+String _bundledFallbackReason(FfmpegRunResult result, bool isWindows) {
+  if (_isWindowsInvalidImageFormatExitCode(
+    result.returnCode,
+    isWindows: isWindows,
+  )) {
+    return 'bundled ffmpeg produced STATUS_INVALID_IMAGE_FORMAT (0xC000007B)';
+  }
+  return 'bundled ffmpeg produced no usable output '
+      '(returnCode=${result.returnCode})';
+}
+
 Future<FfmpegRunResult> _runCliFfmpeg({
   required String? override,
   required String? bundledPath,
@@ -154,14 +270,22 @@ Future<FfmpegRunResult> _runCliFfmpeg({
 }) async {
   final String? o = override?.trim();
   if (o != null && o.isNotEmpty) {
-    return runner(o, args, timeout);
+    final FfmpegRunResult result = await runner(o, args, timeout);
+    return result.withExecutionContext(
+      executable: o,
+      attemptedExecutables: <String>[o],
+    );
   }
 
   final String? bundled = bundledPath?.trim();
   if (bundled != null && bundled.isNotEmpty) {
+    String? fallbackReason;
     try {
       final FfmpegRunResult bundledResult =
-          await runner(bundled, args, timeout);
+          (await runner(bundled, args, timeout)).withExecutionContext(
+        executable: bundled,
+        attemptedExecutables: <String>[bundled],
+      );
       // 回退条件统一：① Windows STATUS_INVALID_IMAGE_FORMAT 退出码（BUG-275 实证的
       // 损坏 PE）② bundled 跑起来了但完全没产出 ffmpeg 工作输出（DLL 缺失等加载期崩，
       // BUG-283）——两者都意味着 bundled 这个文件无法真正当 ffmpeg 用，回退 PATH。
@@ -174,6 +298,7 @@ Future<FfmpegRunResult> _runCliFfmpeg({
       if (!fallBack) {
         return bundledResult;
       }
+      fallbackReason = _bundledFallbackReason(bundledResult, isWindows);
       debugPrint(
         '[hibiki-ffmpeg] bundled ffmpeg ran but produced no usable output '
         '(returnCode=${bundledResult.returnCode}); '
@@ -190,14 +315,36 @@ Future<FfmpegRunResult> _runCliFfmpeg({
       // 却跑不起来，唯一正确处置就是回退到 PATH 上的 ffmpeg（app 拥有的安全网），
       // 而不是死盯单一错误码——否则字幕枚举 / 制卡音频会把真失败吞成「无字幕」。
       // 显式 HIBIKI_FFMPEG 覆盖走上面的分支、不进这里，旧契约不变（如实报错）。
+      fallbackReason = 'bundled ffmpeg launch failed '
+          '(errorCode=${e.errorCode}, message=${e.message})';
       debugPrint(
         '[hibiki-ffmpeg] bundled ffmpeg failed to launch '
         '(errorCode=${e.errorCode}); falling back to PATH ffmpeg: $bundled',
       );
     }
+    final List<String> attempted = <String>[bundled, 'ffmpeg'];
+    final FfmpegRunResult pathResult;
+    try {
+      pathResult = await runner('ffmpeg', args, timeout);
+    } on ProcessException catch (e) {
+      throw _withFfmpegLaunchContext(
+        e,
+        attemptedExecutables: attempted,
+        fallbackReason: fallbackReason,
+      );
+    }
+    return pathResult.withExecutionContext(
+      executable: 'ffmpeg',
+      attemptedExecutables: attempted,
+      fallbackReason: fallbackReason,
+    );
   }
 
-  return runner('ffmpeg', args, timeout);
+  final FfmpegRunResult result = await runner('ffmpeg', args, timeout);
+  return result.withExecutionContext(
+    executable: 'ffmpeg',
+    attemptedExecutables: <String>['ffmpeg'],
+  );
 }
 
 @visibleForTesting
@@ -256,10 +403,20 @@ class KitFfmpegBackend implements FfmpegBackend {
           await FFmpegKit.executeWithArguments(args).timeout(timeout);
       final ReturnCode? rc = await session.getReturnCode();
       final String output = (await session.getOutput()) ?? '';
-      return FfmpegRunResult(returnCode: rc?.getValue(), output: output);
+      return FfmpegRunResult(
+        returnCode: rc?.getValue(),
+        output: output,
+        executable: 'ffmpeg-kit',
+        attemptedExecutables: const <String>['ffmpeg-kit'],
+      );
     } on TimeoutException {
       await FFmpegKit.cancel();
-      return const FfmpegRunResult(returnCode: null, output: '');
+      return const FfmpegRunResult(
+        returnCode: null,
+        output: '',
+        executable: 'ffmpeg-kit',
+        attemptedExecutables: <String>['ffmpeg-kit'],
+      );
     }
   }
 }
