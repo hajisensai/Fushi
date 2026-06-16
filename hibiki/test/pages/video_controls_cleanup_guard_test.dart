@@ -7,10 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// media_kit 跑不了 headless，桌面/移动 controls 主题与菜单都难在 widget 测试里真实
 /// 驱动，故把不变量锁在 `video_hibiki_page.dart` 的源码结构上：
 /// ① 控制条不再放着色器对比按钮（C 快捷键 + 右键菜单 + `_toggleShaderCompare` 保留）。
-/// ② 倍速 / 音轨 / 字幕源菜单可滚动——TODO-274 后这些菜单从 bottom sheet 迁到右侧
+/// ② 音轨 / 字幕源菜单可滚动——TODO-274 后这些菜单从 bottom sheet 迁到右侧
 ///    push-aside **side panel**（`_VideoSidePanelKind`），面板内容用可滚动
 ///    `ListView.builder`（不再裸 Column 堆 ListTile，否则长档位列表裁底）。
-/// ③ 控制条不再放倍速按钮（`_showSpeedMenu` 方法保留——右键菜单仍引用）。
+/// ③ 倍速入口回到底栏可配置按钮，但只打开紧凑锚点浮层（TODO-438），不回到挤占
+///    顶栏/底栏的常驻宽控件，也不撑开右侧 side panel。
 ///
 /// 注：旧 ④「字幕列表按钮在 topButtonBar 倒数第二」已随 BUG-248B / TODO-274 作废——
 /// 设置（tune）与字幕列表按钮都已移出 topButtonBar，改由可配置的右侧 rail / 侧栏
@@ -60,7 +61,7 @@ void main() {
     });
   });
 
-  group('② 倍速 / 音轨 / 字幕源菜单可滚动（TODO-274 迁到 side panel）', () {
+  group('② 音轨 / 字幕源菜单可滚动（TODO-274 迁到 side panel）', () {
     String panelBody(String startSig) {
       final int start = src.indexOf(startSig);
       expect(start, greaterThanOrEqualTo(0), reason: '需有 $startSig');
@@ -77,17 +78,6 @@ void main() {
           ends.isEmpty ? src.length : ends.reduce((a, b) => a < b ? a : b);
       return src.substring(start, end);
     }
-
-    test('倍速菜单是可滚动 ListView side panel（_buildSpeedSidePanel）', () {
-      expect(src.contains('void _showSpeedMenu() {'), isTrue,
-          reason: '_showSpeedMenu 方法保留（右键菜单仍引用）');
-      expect(src.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
-          isTrue,
-          reason: '倍速菜单走 side panel（不再 showModalBottomSheet 半屏裁底部档位）');
-      final String body = panelBody('Widget _buildSpeedSidePanel() {');
-      expect(body.contains('ListView.builder('), isTrue,
-          reason: '倍速面板须用可滚动 ListView.builder（长档位列表不裁底）');
-    });
 
     test('音轨菜单是可滚动 ListView side panel（_buildAudioTracksSidePanel）', () {
       expect(src.contains('void _showAudioTrackMenu('), isTrue,
@@ -116,14 +106,18 @@ void main() {
     });
   });
 
-  group('③ 控制条无倍速按钮（_showSpeedMenu 方法保留）', () {
-    test('控制条不含 Icons.speed 按钮', () {
-      expect(controlsThemes().contains('Icons.speed'), isFalse,
-          reason: '倍速按钮应移出控制条（改从右键菜单 / [ ] 快捷键 / 设置调）');
-    });
-    test('_showSpeedMenu 方法保留（右键菜单引用）', () {
+  group('③ 倍速入口是紧凑浮层，不是旧 side panel / 常驻宽控件', () {
+    test('_showSpeedMenu 方法保留（右键菜单 / 可配置按钮引用）并打开锚点浮层', () {
       expect(src.contains('void _showSpeedMenu() {'), isTrue,
-          reason: '_showSpeedMenu 方法必须保留（右键菜单仍引用）');
+          reason: '_showSpeedMenu 方法必须保留（右键菜单 / 可配置按钮仍引用）');
+      final String show = sourceMember(src, 'void _showSpeedMenu() {');
+      expect(
+          show.contains('_toggleControlPopover(_VideoControlPopoverKind.speed'),
+          isTrue,
+          reason: 'TODO-438：倍速入口应打开或固定锚点轻浮层');
+      expect(show.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
+          isFalse,
+          reason: 'TODO-438：倍速按钮不应再打开右侧 side panel');
       expect(
           src.contains('item(Icons.speed, t.video_setting_speed, '
               '_showSpeedMenu)'),
@@ -131,4 +125,19 @@ void main() {
           reason: '右键菜单倍速项仍走 _showSpeedMenu');
     });
   });
+}
+
+String sourceMember(String src, String startSig) {
+  final int start = src.indexOf(startSig);
+  expect(start, greaterThanOrEqualTo(0), reason: '需有 $startSig');
+  final List<int> ends = <int>[
+    src.indexOf('\n  Widget ', start + startSig.length),
+    src.indexOf('\n  Future', start + startSig.length),
+    src.indexOf('\n  void ', start + startSig.length),
+    src.indexOf('\n  List<', start + startSig.length),
+    src.indexOf('\n  double ', start + startSig.length),
+  ].where((int i) => i > start).toList();
+  final int end =
+      ends.isEmpty ? src.length : ends.reduce((int a, int b) => a < b ? a : b);
+  return src.substring(start, end);
 }

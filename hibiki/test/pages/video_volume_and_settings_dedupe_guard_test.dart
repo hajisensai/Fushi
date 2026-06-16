@@ -2,13 +2,16 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫：桌面音量按钮不再 hover 展开挤按钮 + 顶栏设置入口去重（BUG-248 / TODO-283）。
+/// 源码守卫：桌面音量 / 倍速改为固定锚点轻浮层 + 顶栏设置入口去重（TODO-438）。
 ///
 /// 子A：桌面 [_buildVolumeButton] 曾用 media_kit 的 [MaterialDesktopVolumeButton]，
 ///      hover 时内部 AnimatedContainer 宽度 12→82px 实时挤走右邻全屏键（BUG-248A）。
-///      TODO-377 起音量是底栏一行式常驻控件（图标 + 横滑条内联），布局尺寸与 hover 完全
-///      无关 → 零位移、零叠开；点击图标切静音 ([_toggleMute])、滚轮调音量 ([_onVolumeWheel])、
-///      滑条拖动 ([_setVolumeFromSlider])，绝不再用 hover 展开条 / 弹出 popover / modal。
+///      TODO-438 起音量底栏只保留图标占位，hover/click/tap 打开锚定在按钮上方的紧凑
+///      浮层；滑条在浮层内竖向渲染，继续走 [_setVolumeFromSlider] / [_volumeDisplay]，
+///      点击静音仍走 [_toggleMute]。底栏按钮自身不含 Slider，几何不随 hover 改变。
+/// 子B：倍速按钮同样只占图标/短标签位，[_showSpeedMenu] 打开紧凑浮层而不是右侧 side
+///      panel；浮层复用 [_speedMenuPresets] 与 [_setSpeed]，提供 0.5x 到 2.0x slider 和
+///      1.0x 复位。长按倍速 / 快捷键仍走原通道，本测试只锁入口与控件形态。
 /// 子B：桌面/移动 topButtonBar 各写死一枚 tune→_showPlayerSettings，与右侧 rail 的
 ///      可配置 settings 按钮（默认 placement=rightRail）功能完全重复。修复删掉顶栏写死
 ///      入口，统一由 rightRail settings 按钮负责（_showPlayerSettings 方法 + rightRail
@@ -29,9 +32,9 @@ void main() {
   String volumeButtonBody() {
     final int start = src.indexOf('Widget _buildVolumeButton(');
     expect(start, greaterThanOrEqualTo(0), reason: '需有 _buildVolumeButton 方法');
-    // 到下一个方法定义为止。
-    final int end = src.indexOf('_desktopControlsTheme(', start);
-    expect(end, greaterThan(start), reason: '需有 _desktopControlsTheme 作为终点');
+    // 到浮层调度方法为止，只检查底栏按钮本体，不把浮层里的 Slider 算进去。
+    final int end = src.indexOf('void _showControlPopover(', start);
+    expect(end, greaterThan(start), reason: '需有 _showControlPopover 作为终点');
     return src.substring(start, end);
   }
 
@@ -46,22 +49,35 @@ void main() {
     return src.substring(top, bottom);
   }
 
-  group('子A：桌面音量控件不再 hover 展开 / 不弹浮层（BUG-248A / TODO-377）', () {
+  group('子A：音量与倍速使用固定锚点轻浮层（TODO-438）', () {
     test('全文不再用 hover 展开的 MaterialDesktopVolumeButton', () {
       final RegExp ctor = RegExp(r'MaterialDesktopVolumeButton\s*\(');
       expect(ctor.hasMatch(src), isFalse,
           reason: '音量控件不应再用 hover 展开的 MaterialDesktopVolumeButton（挤走右邻）');
     });
 
-    test('_buildVolumeButton 是一行式：图标静音 + 横滑条 + 滚轮调音量（非浮层 / 非 modal）', () {
+    test('底栏音量按钮只占图标位，hover / click 打开音量浮层（底栏不含 Slider）', () {
       final String body = volumeButtonBody();
-      // 图标按钮（点击 = 静音）+ 横向 Slider 同处一个 Row（一行式）。
-      expect(body.contains('Row('), isTrue, reason: '一行式：图标与滑条同处一个 Row');
-      expect(body.contains('Slider('), isTrue, reason: '一行式须含横向 Slider（非弹出浮层）');
-      expect(body.contains('_toggleMute()'), isTrue,
-          reason: '点击音量图标应切换静音（_toggleMute）');
-      expect(body.contains('_setVolumeFromSlider('), isTrue,
-          reason: '滑条拖动走 _setVolumeFromSlider');
+      expect(body.contains('Slider('), isFalse,
+          reason: '底栏只保留图标/锚点，滑条必须移入浮层，避免 hover 改宽或常驻占位');
+      expect(
+          RegExp(
+            r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.volume',
+          ).hasMatch(body),
+          isTrue,
+          reason: '音量按钮 click/tap 应打开或固定锚点音量浮层');
+      expect(body.contains('_controlPopoverAnchor('), isTrue,
+          reason: '音量按钮应包固定锚点 helper，桌面 hover 逻辑在 helper 内复用');
+      final String anchor = methodBody('Widget _controlPopoverAnchor({');
+      expect(anchor.contains('MouseRegion('), isTrue,
+          reason: '桌面 hover 应由 MouseRegion 打开音量 / 倍速浮层');
+      expect(RegExp(r'_showControlPopover\(\s*kind').hasMatch(anchor), isTrue,
+          reason: '锚点 hover 应打开对应浮层');
+      final String toggle = methodBody('void _toggleControlPopover(');
+      expect(toggle.contains('_controlPopoverPinned'), isTrue,
+          reason: 'hover 已打开时点击应固定浮层，已固定后再点才关闭');
+      expect(toggle.contains('_showControlPopover(kind, pinned: true)'), isTrue,
+          reason: 'click/tap 必须以 pinned=true 打开浮层');
       expect(
           body.contains('PointerScrollEvent') &&
               body.contains('_onVolumeWheel(controller'),
@@ -69,31 +85,55 @@ void main() {
           reason: '桌面悬停音量控件时滚轮应调音量（_onVolumeWheel）');
     });
 
-    test('零位移：占位宽度是常量、不随 hover 变化（无 AnimatedContainer / 无浮层）', () {
-      final String body = volumeButtonBody();
-      expect(body.contains('_volumeSliderWidth'), isTrue,
-          reason: '滑条用固定占位宽度常量（hover 零位移的根）');
-      expect(src.contains('static const double _volumeSliderWidthBase'), isTrue,
-          reason: '占位宽度须是源码常量，不随运行时 hover 状态计算');
-      expect(body.contains('AnimatedContainer'), isFalse,
-          reason: 'hover 不得用 AnimatedContainer 撑宽（BUG-248A 原症状）');
-      expect(body.contains('OverlayEntry'), isFalse, reason: '不再弹独立浮层');
+    test('音量浮层保留静音按钮和竖向滑条，滑条仍走现有音量同步通道', () {
+      final String body = methodBody('Widget _buildVolumePopover(');
+      expect(body.contains('RotatedBox('), isTrue,
+          reason: '音量浮层应使用竖向滑条形态（B站式紧凑竖条）');
+      expect(body.contains('Slider('), isTrue, reason: '音量浮层内必须有 Slider');
+      expect(body.contains('_toggleMute()'), isTrue, reason: '浮层内保留静音按钮');
+      expect(body.contains('_setVolumeFromSlider('), isTrue,
+          reason: '浮层滑条拖动继续走 _setVolumeFromSlider');
+      expect(body.contains('_volumeDisplay'), isTrue,
+          reason: '浮层显示值应读 _volumeDisplay，与滚轮/键盘/移动竖滑共用同步通道');
     });
 
-    test('音量交互彻底去 modal / 去 popover：无 _showVolumeMenu / 无 popover 残留', () {
+    test('倍速按钮打开紧凑浮层，复用 presets / _setSpeed / 1.0x 复位', () {
+      final String show = methodBody('void _showSpeedMenu()');
+      expect(
+          show.contains('_toggleControlPopover(_VideoControlPopoverKind.speed'),
+          isTrue,
+          reason: '倍速入口应打开或固定紧凑锚点浮层，而不是右侧 side panel');
+      expect(show.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
+          isFalse,
+          reason: '倍速按钮不应再撑开右侧设置面板');
+
+      final String body = methodBody('Widget _buildSpeedPopover(');
+      expect(body.contains('_speedMenuPresets()'), isTrue,
+          reason: '倍速浮层继续复用既有预设生成逻辑');
+      expect(body.contains('Slider('), isTrue,
+          reason: '倍速浮层应提供 0.5x 到 2.0x 紧凑 slider');
+      expect(body.contains('min: 0.5'), isTrue);
+      expect(body.contains('max: 2.0'), isTrue);
+      expect(body.contains('_setSpeed('), isTrue,
+          reason: '倍速浮层改速必须走 _setSpeed');
+      expect(body.contains('_setSpeed(1.0'), isTrue,
+          reason: '倍速浮层应提供 1.0x 快捷复位');
+    });
+
+    test('零布局位移：禁旧 hover 改宽，不写控制条可见性真相源', () {
+      final String body = volumeButtonBody();
+      expect(body.contains('AnimatedContainer'), isFalse,
+          reason: 'hover 不得用 AnimatedContainer 撑宽（BUG-248A 原症状）');
       expect(src.contains('_showVolumeMenu'), isFalse,
           reason: '旧的 showModalBottomSheet 音量菜单 _showVolumeMenu 必须移除');
-      // 旧 hover 弹出 popover 整套（TODO-337）已随一行式重构删除。
-      for (final String sym in <String>[
-        '_volumeOverlayEntry',
-        '_showVolumePopover',
-        '_buildVolumePopover',
-        '_volumeButtonKey',
-        '_volumeAnchorRectInOverlay',
-      ]) {
-        expect(src.contains(sym), isFalse,
-            reason: '旧音量 popover 符号「$sym」应已随一行式重构删除');
-      }
+      expect(src.contains('AnimatedContainer('), isFalse,
+          reason: '不能恢复 hover 改宽 AnimatedContainer');
+      expect(src.contains('_markControlsVisible(true)'), isFalse,
+          reason: '浮层交互不得乐观写控制条可见，控制条真相源仍归 media_kit');
+      expect(src.contains('_videoControlsVisible.value = true'), isFalse,
+          reason: '浮层交互不得直接把派生可见性写 true');
+      expect(src.contains('_pokeControlsVisible();'), isTrue,
+          reason: '浮层 hover/click 只能用 _pokeControlsVisible 续命控制条');
     });
   });
 
@@ -133,4 +173,23 @@ void main() {
               'rightRail settings 按钮经 _activateVideoControlButton 仍打开 _showPlayerSettings');
     });
   });
+}
+
+String methodBody(String startSig) {
+  final File page = File(
+    'lib/src/pages/implementations/video_hibiki_page.dart',
+  );
+  final String src = page.readAsStringSync();
+  final int start = src.indexOf(startSig);
+  expect(start, greaterThanOrEqualTo(0), reason: '需有 $startSig');
+  final List<int> ends = <int>[
+    src.indexOf('\n  Widget ', start + startSig.length),
+    src.indexOf('\n  void ', start + startSig.length),
+    src.indexOf('\n  Future', start + startSig.length),
+    src.indexOf('\n  List<', start + startSig.length),
+    src.indexOf('\n  Material', start + startSig.length),
+  ].where((int i) => i > start).toList();
+  final int end =
+      ends.isEmpty ? src.length : ends.reduce((int a, int b) => a < b ? a : b);
+  return src.substring(start, end);
 }

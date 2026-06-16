@@ -135,7 +135,8 @@ void main() {
     expect(
       RegExp(r'IgnorePointer\(\s*ignoring: _immersiveLocked\.value \|\|'
               r'[\s\S]*?_videoSidePanel\.value != null \|\|'
-              r'[\s\S]*?_subtitleListVisible\.value,')
+              r'[\s\S]*?_subtitleListVisible\.value'
+              r'[\s\S]*?,')
           .hasMatch(src),
       isTrue,
       reason: 'IgnorePointer 的 ignoring 条件应包含 _subtitleListVisible（TODO-329）',
