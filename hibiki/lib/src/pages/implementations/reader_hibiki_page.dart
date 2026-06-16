@@ -3522,6 +3522,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     String? sasayakiAudioPath;
     Directory? sasayakiTempDir;
     bool requestedSentenceAudioClip = false;
+    String? sentenceAudioFailure;
     void cleanupSasayakiTempDir() {
       if (sasayakiTempDir != null && sasayakiTempDir.existsSync()) {
         try {
@@ -3563,6 +3564,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: outputPath,
+          onFailure: (String summary) {
+            sentenceAudioFailure = summary;
+          },
         );
       } else if (cue == null) {
         // Visibility: audio exists but neither a lookup cue / sentence span nor a
@@ -3581,12 +3585,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       cleanupSasayakiTempDir();
       ErrorLogService.instance.log(
         'ReaderHibiki.mineEntry.sentenceAudio',
-        'sentence audio export failed',
+        sentenceAudioFailure == null
+            ? 'sentence audio export failed'
+            : 'sentence audio export failed: $sentenceAudioFailure',
         StackTrace.current,
       );
       HibikiToast.show(
         msg: t.card_export_failed_detail(
-          reason: 'sentence audio export failed',
+          reason: sentenceAudioFailure == null
+              ? 'sentence audio export failed'
+              : 'sentence audio export failed: $sentenceAudioFailure',
         ),
       );
       return (context: null, cleanup: cleanupSasayakiTempDir);

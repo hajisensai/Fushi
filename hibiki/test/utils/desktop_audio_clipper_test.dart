@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart' as ffmpeg;
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
 void main() {
@@ -76,6 +77,10 @@ void main() {
   });
 
   group('extractAudioSegmentViaFfmpeg', () {
+    tearDown(() {
+      ffmpeg.setFfmpegBackendForTesting(null);
+    });
+
     test('returns null for a non-positive range without running ffmpeg',
         () async {
       expect(
@@ -147,6 +152,89 @@ void main() {
       expect(result, output);
       expect(File(output).existsSync(), isTrue);
       expect(File(output).lengthSync(), greaterThan(0));
+    });
+
+    test('reports invalid-image diagnostics when audio clipping fails',
+        () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_fail_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String input = '${dir.path}/in.mkv';
+      final String output = '${dir.path}/out.aac';
+      File(input).writeAsBytesSync(<int>[0, 1, 2, 3]);
+      final List<String> failures = <String>[];
+
+      ffmpeg.setFfmpegBackendForTesting(_FakeFfmpegBackend(
+        const ffmpeg.FfmpegRunResult(
+          returnCode: -1073741701,
+          output: 'The application was unable to start correctly.',
+          executable: r'C:\Hibiki\ffmpeg.exe',
+          attemptedExecutables: <String>[
+            r'C:\Hibiki\ffmpeg.exe',
+            'ffmpeg',
+          ],
+          fallbackReason: 'bundled ffmpeg produced STATUS_INVALID_IMAGE_FORMAT',
+        ),
+      ));
+
+      final String? result = await extractAudioSegmentViaFfmpeg(
+        inputPath: input,
+        startMs: 1000,
+        endMs: 2000,
+        outputPath: output,
+        onFailure: failures.add,
+      );
+
+      expect(result, isNull);
+      expect(File(output).existsSync(), isFalse);
+      expect(failures, hasLength(1));
+      expect(failures.single, contains('0xC000007B'));
+      expect(failures.single, contains('STATUS_INVALID_IMAGE_FORMAT'));
+      expect(failures.single, contains(r'C:\Hibiki\ffmpeg.exe -> ffmpeg'));
+      expect(failures.single, contains('The application was unable'));
+    });
+  });
+
+  group('extractClipGifViaFfmpeg', () {
+    tearDown(() {
+      ffmpeg.setFfmpegBackendForTesting(null);
+    });
+
+    test('reports invalid-image diagnostics when GIF clipping fails', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_gif_fail_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String input = '${dir.path}/in.mkv';
+      final String output = '${dir.path}/out.gif';
+      File(input).writeAsBytesSync(<int>[0, 1, 2, 3]);
+      final List<String> failures = <String>[];
+
+      ffmpeg.setFfmpegBackendForTesting(_FakeFfmpegBackend(
+        const ffmpeg.FfmpegRunResult(
+          returnCode: -1073741701,
+          output: '',
+          executable: r'C:\Hibiki\ffmpeg.exe',
+          attemptedExecutables: <String>[
+            r'C:\Hibiki\ffmpeg.exe',
+            'ffmpeg',
+          ],
+          fallbackReason: 'bundled ffmpeg produced STATUS_INVALID_IMAGE_FORMAT',
+        ),
+      ));
+
+      final String? result = await extractClipGifViaFfmpeg(
+        inputPath: input,
+        startMs: 1000,
+        endMs: 2000,
+        outputPath: output,
+        onFailure: failures.add,
+      );
+
+      expect(result, isNull);
+      expect(File(output).existsSync(), isFalse);
+      expect(failures, hasLength(1));
+      expect(failures.single, contains('0xC000007B'));
+      expect(failures.single, contains(r'C:\Hibiki\ffmpeg.exe -> ffmpeg'));
     });
   });
 
@@ -678,4 +766,17 @@ void main() {
       expect(File(out).lengthSync(), greaterThan(0));
     });
   });
+}
+
+class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  const _FakeFfmpegBackend(this.result);
+
+  final ffmpeg.FfmpegRunResult result;
+
+  @override
+  Future<ffmpeg.FfmpegRunResult> run(
+    List<String> args,
+    Duration timeout,
+  ) async =>
+      result;
 }

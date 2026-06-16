@@ -264,6 +264,7 @@ class TtsChannel {
     required int startMs,
     required int endMs,
     required String outputPath,
+    FfmpegFailureReporter? onFailure,
   }) async {
     if (!_isSupported) {
       // No native channel off Android: cut the sentence clip with ffmpeg so
@@ -273,6 +274,7 @@ class TtsChannel {
         startMs: startMs,
         endMs: endMs,
         outputPath: outputPath,
+        onFailure: onFailure,
       );
     }
     try {
@@ -284,6 +286,7 @@ class TtsChannel {
       });
       return result as String?;
     } catch (e, stack) {
+      onFailure?.call(e.toString());
       ErrorLogService.instance.log('TtsChannel.extractAudioSegment', e, stack);
       return null;
     }

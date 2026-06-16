@@ -65,6 +65,51 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+      expect(result.executable, 'ffmpeg');
+      expect(result.attemptedExecutables,
+          <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+      expect(result.fallbackReason, contains('STATUS_INVALID_IMAGE_FORMAT'));
+    });
+
+    test('fallback PATH launch failure keeps bundled invalid-image context',
+        () async {
+      final List<String> calls = <String>[];
+
+      await expectLater(
+        runCliFfmpegForTesting(
+          override: null,
+          bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+          isWindows: true,
+          args: <String>['-version'],
+          timeout: const Duration(seconds: 1),
+          runner:
+              (String executable, List<String> args, Duration timeout) async {
+            calls.add(executable);
+            if (executable.endsWith(r'Hibiki\ffmpeg.exe')) {
+              return const FfmpegRunResult(
+                returnCode: -1073741701,
+                output: 'STATUS_INVALID_IMAGE_FORMAT',
+              );
+            }
+            throw ProcessException(executable, args, 'not found', 2);
+          },
+        ),
+        throwsA(
+          isA<ProcessException>()
+              .having(
+                (ProcessException e) => e.message,
+                'message',
+                contains(r'C:\App\Hibiki\ffmpeg.exe -> ffmpeg'),
+              )
+              .having(
+                (ProcessException e) => e.message,
+                'message',
+                contains('STATUS_INVALID_IMAGE_FORMAT'),
+              ),
+        ),
+      );
+
+      expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
     });
 
     test('explicit HIBIKI_FFMPEG invalid image does not fall back', () async {
@@ -87,6 +132,9 @@ void main() {
 
       expect(result.isSuccess, isFalse);
       expect(calls, <String>[r'D:\Custom\ffmpeg.exe']);
+      expect(result.executable, r'D:\Custom\ffmpeg.exe');
+      expect(result.attemptedExecutables, <String>[r'D:\Custom\ffmpeg.exe']);
+      expect(result.failureSummary, contains('0xC000007B'));
     });
 
     // TODO-336 / BUG-275: 一个损坏/架构不匹配的 bundled ffmpeg.exe 在 `Process.start`
@@ -119,6 +167,10 @@ void main() {
             reason: 'errorCode=$code 也应回退 PATH 取到字幕枚举输出');
         expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg'],
             reason: 'errorCode=$code 应先试 bundled 再回退 PATH');
+        expect(result.executable, 'ffmpeg');
+        expect(result.attemptedExecutables,
+            <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+        expect(result.fallbackReason, contains('launch failed'));
       }
     });
 
@@ -222,6 +274,10 @@ void main() {
             reason: 'returnCode=$code 空输出应回退 PATH 取到字幕枚举');
         expect(calls, <String>['C:/App/Hibiki/ffmpeg.exe', 'ffmpeg'],
             reason: 'returnCode=$code 应先试 bundled 再回退 PATH');
+        expect(result.executable, 'ffmpeg');
+        expect(result.attemptedExecutables,
+            <String>['C:/App/Hibiki/ffmpeg.exe', 'ffmpeg']);
+        expect(result.fallbackReason, contains('no usable output'));
       }
     });
 

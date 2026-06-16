@@ -120,5 +120,13 @@ void main() {
         reason: '抽段失败须打可追踪日志（含区间端点供诊断）。');
     expect(mineCard, contains('card_export_failed_detail'),
         reason: '抽段失败须给用户可见的 OSD 提示（复用现有 i18n，不静默）。');
+    expect(mineCard, contains('String? audioFailure'),
+        reason: 'OSD/日志应携带底层 ffmpeg 诊断摘要，而不是只有泛化失败文案。');
+    expect(mineCard, contains('onFailure: (String summary)'),
+        reason: 'extractAudioSegmentViaFfmpeg 的失败摘要必须传回视频制卡路径。');
+    expect(mineCard, contains(r'sentence audio export failed: $audioFailure'),
+        reason: '用户可见错误应含实际 executable/fallback/0xC000007B 等摘要。');
+    expect(mineCard, contains('GIF clip export failed'),
+        reason: 'GIF 导出失败虽可回退截图，也必须留下 ffmpeg 诊断。');
   });
 }

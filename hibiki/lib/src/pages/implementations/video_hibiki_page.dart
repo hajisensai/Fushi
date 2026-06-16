@@ -2820,15 +2820,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // （单句=该 cue 时间窗；跨字幕=整段区间）。桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit
     // （resolveFfmpegBackend）；无区间 / 导出失败（ffmpeg 真不可用等）时回退当前帧截图。
     String? coverPath;
+    String? gifFailure;
     if (hasRange && videoPath != null) {
       coverPath = await extractClipGifViaFfmpeg(
         inputPath: videoPath,
         startMs: clipStartMs,
         endMs: clipEndMs,
         outputPath: '${tmp.path}/video_mine_clip.gif',
+        onFailure: (String summary) {
+          gifFailure = summary;
+        },
       );
     }
     if (coverPath == null) {
+      if (gifFailure != null) {
+        debugPrint('[VideoHibiki] mine: GIF clip export failed: $gifFailure');
+      }
       final Uint8List? shot = await controller.screenshot();
       if (shot != null && shot.isNotEmpty) {
         final File f = File('${tmp.path}/video_mine_shot.jpg');
@@ -2840,6 +2847,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 区间音频片段（桌面 ffmpeg 按时间裁，映射到当前选中音轨）→ sasayakiAudioPath。
     // 跨字幕时这就是 [startCue.startMs, endCue.endMs] 一整段（不逐句抽再拼，TODO-102）。
     String? audioPath;
+    String? audioFailure;
     if (hasRange && videoPath != null) {
       audioPath = await extractAudioSegmentViaFfmpeg(
         inputPath: videoPath,
@@ -2847,6 +2855,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         endMs: clipEndMs,
         outputPath: '${tmp.path}/video_mine_audio.aac',
         audioStreamIndex: controller.currentAudioStreamIndex,
+        onFailure: (String summary) {
+          audioFailure = summary;
+        },
       );
       // BUG-296 / TODO-390: sentence-audio "should-have-but-failed" visibility,
       // symmetric with reader BUG-172. hasRange means this card was supposed to
@@ -2861,12 +2872,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (audioPath == null) {
         debugPrint(
           '[VideoHibiki] mine: sentence-audio clip failed for range '
-          '[$clipStartMs,$clipEndMs] (ffmpeg returned null; '
-          'audioStreamIndex=${controller.currentAudioStreamIndex}).',
+          '[$clipStartMs,$clipEndMs] '
+          '(audioStreamIndex=${controller.currentAudioStreamIndex}; '
+          '${audioFailure ?? 'ffmpeg returned null'}).',
         );
         if (mounted) {
           _showOsd(t.card_export_failed_detail(
-            reason: 'sentence audio export failed',
+            reason: audioFailure == null
+                ? 'sentence audio export failed'
+                : 'sentence audio export failed: $audioFailure',
           ));
         }
       }

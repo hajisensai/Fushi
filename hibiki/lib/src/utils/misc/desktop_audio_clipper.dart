@@ -8,6 +8,40 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 export 'package:hibiki/src/media/video/ffmpeg_backend.dart'
     show resolveFfmpegExecutable;
 
+typedef FfmpegFailureReporter = void Function(String summary);
+
+void _reportFfmpegFailure(
+  String source,
+  FfmpegRunResult result,
+  FfmpegFailureReporter? onFailure,
+) {
+  final String summary = result.failureSummary;
+  onFailure?.call(summary);
+  ErrorLogService.instance.log(source, summary, StackTrace.current);
+}
+
+void _reportFfmpegProcessException(
+  String source,
+  ProcessException exception,
+  StackTrace stack,
+  FfmpegFailureReporter? onFailure,
+) {
+  final String summary = describeFfmpegProcessException(exception);
+  onFailure?.call(summary);
+  ErrorLogService.instance.log(source, summary, stack);
+}
+
+void _reportFfmpegUnexpectedException(
+  String source,
+  Object error,
+  StackTrace stack,
+  FfmpegFailureReporter? onFailure,
+) {
+  final String summary = error.toString();
+  onFailure?.call(summary);
+  ErrorLogService.instance.log(source, error, stack);
+}
+
 /// Desktop (Windows/Linux/macOS) audio-clip extraction via ffmpeg.
 ///
 /// On Android the sentence-audio clip used for Anki mining is cut by the native
@@ -89,10 +123,11 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
-    final int? code = await _runFfmpeg(
+    final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegCoverArgs(inputPath: audioPath, outputPath: outputPath),
       const Duration(seconds: 30),
     );
+    final int? code = result.returnCode;
     if (code == null) {
       // Timed out / killed: drop any partial output.
       if (output.existsSync()) {
@@ -170,13 +205,14 @@ Future<String?> extractEmbeddedVideoCoverViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
-    final int? code = await _runFfmpeg(
+    final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegEmbeddedCoverArgs(
         inputPath: inputPath,
         outputPath: outputPath,
       ),
       const Duration(seconds: 30),
     );
+    final int? code = result.returnCode;
     if (code == null) {
       if (output.existsSync()) {
         try {
@@ -247,7 +283,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
-    final int? code = await _runFfmpeg(
+    final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegFrameArgs(
         inputPath: inputPath,
         outputPath: outputPath,
@@ -255,6 +291,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
       ),
       const Duration(seconds: 30),
     );
+    final int? code = result.returnCode;
     if (code == null) {
       if (output.existsSync()) {
         try {
@@ -325,6 +362,7 @@ Future<String?> extractClipGifViaFfmpeg({
   required int startMs,
   required int endMs,
   required String outputPath,
+  FfmpegFailureReporter? onFailure,
 }) async {
   if (endMs <= startMs) return null;
   if (!File(inputPath).existsSync()) return null;
@@ -332,7 +370,7 @@ Future<String?> extractClipGifViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
-    final int? code = await _runFfmpeg(
+    final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegClipGifArgs(
         inputPath: inputPath,
         startMs: startMs,
@@ -341,6 +379,7 @@ Future<String?> extractClipGifViaFfmpeg({
       ),
       const Duration(seconds: 120),
     );
+    final int? code = result.returnCode;
     if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
       return outputPath;
     }
@@ -349,18 +388,24 @@ Future<String?> extractClipGifViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    ErrorLogService.instance.log(
-      'extractClipGifViaFfmpeg',
-      code == null ? 'ffmpeg timed out' : 'ffmpeg exit $code',
-      StackTrace.current,
-    );
+    _reportFfmpegFailure('extractClipGifViaFfmpeg', result, onFailure);
     return null;
   } on ProcessException catch (e, stack) {
     // 移动端无 CLI ffmpeg：优雅回退（调用方改用单帧截图）。
-    ErrorLogService.instance.log('extractClipGifViaFfmpeg', e, stack);
+    _reportFfmpegProcessException(
+      'extractClipGifViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
     return null;
   } catch (e, stack) {
-    ErrorLogService.instance.log('extractClipGifViaFfmpeg', e, stack);
+    _reportFfmpegUnexpectedException(
+      'extractClipGifViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
     return null;
   }
 }
@@ -406,7 +451,7 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
     output.parent.createSync(recursive: true);
     // 30s bounds a hung demux; subtitle demuxing is text-only (no re-encode of
     // the multi-GB video), so even a long episode finishes in well under this.
-    final int? code = await _runFfmpeg(
+    final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegSubtitleArgs(
         inputPath: inputPath,
         streamIndex: streamIndex,
@@ -414,6 +459,7 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
       ),
       const Duration(seconds: 30),
     );
+    final int? code = result.returnCode;
     if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
       return outputPath;
     }
@@ -422,11 +468,7 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    ErrorLogService.instance.log(
-      'extractEmbeddedSubtitleViaFfmpeg',
-      code == null ? 'ffmpeg timed out' : 'ffmpeg exit $code',
-      StackTrace.current,
-    );
+    _reportFfmpegFailure('extractEmbeddedSubtitleViaFfmpeg', result, null);
     return null;
   } on ProcessException catch (e, stack) {
     // ffmpeg not installed / not on PATH — graceful no-subtitle fallback.
@@ -483,7 +525,7 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
     for (final String out in outputs.values) {
       File(out).parent.createSync(recursive: true);
     }
-    final int? code = await _runFfmpeg(
+    final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegMultiSubtitleArgs(inputPath: inputPath, outputs: outputs),
       timeout,
     );
@@ -501,12 +543,10 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
       }
     });
     if (written.isEmpty) {
-      ErrorLogService.instance.log(
+      _reportFfmpegFailure(
         'extractEmbeddedSubtitlesViaFfmpeg',
-        code == null
-            ? 'ffmpeg timed out'
-            : 'ffmpeg exit $code, no tracks written',
-        StackTrace.current,
+        result,
+        null,
       );
     }
     return written;
@@ -524,10 +564,10 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
 /// `Process.start` path — [CliFfmpegBackend] replicates it; the mobile
 /// [KitFfmpegBackend] (self-built ffmpeg-kit) slots in transparently. Throws
 /// [ProcessException] when ffmpeg is unavailable — callers handle that.
-Future<int?> _runFfmpeg(List<String> args, Duration timeout) async {
+Future<FfmpegRunResult> _runFfmpeg(List<String> args, Duration timeout) async {
   final FfmpegRunResult result =
       await resolveFfmpegBackend().run(args, timeout);
-  return result.returnCode;
+  return result;
 }
 
 /// Cuts `[startMs, endMs)` out of [inputPath] into [outputPath] using ffmpeg.
@@ -539,6 +579,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   required int endMs,
   required String outputPath,
   int? audioStreamIndex,
+  FfmpegFailureReporter? onFailure,
 }) async {
   if (endMs <= startMs) return null;
   if (!File(inputPath).existsSync()) return null;
@@ -548,7 +589,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
     output.parent.createSync(recursive: true);
     // 120s bounds a hung encode; even a several-minute clip re-encodes to AAC
     // far faster than real time, so this never truncates a legitimate clip.
-    final int? code = await _runFfmpeg(
+    final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegClipArgs(
         inputPath: inputPath,
         startMs: startMs,
@@ -558,6 +599,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
       ),
       const Duration(seconds: 120),
     );
+    final int? code = result.returnCode;
     if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
       return outputPath;
     }
@@ -566,18 +608,24 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    ErrorLogService.instance.log(
-      'extractAudioSegmentViaFfmpeg',
-      code == null ? 'ffmpeg timed out' : 'ffmpeg exit $code',
-      StackTrace.current,
-    );
+    _reportFfmpegFailure('extractAudioSegmentViaFfmpeg', result, onFailure);
     return null;
   } on ProcessException catch (e, stack) {
     // ffmpeg not installed / not on PATH — graceful no-audio fallback.
-    ErrorLogService.instance.log('extractAudioSegmentViaFfmpeg', e, stack);
+    _reportFfmpegProcessException(
+      'extractAudioSegmentViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
     return null;
   } catch (e, stack) {
-    ErrorLogService.instance.log('extractAudioSegmentViaFfmpeg', e, stack);
+    _reportFfmpegUnexpectedException(
+      'extractAudioSegmentViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
     return null;
   }
 }

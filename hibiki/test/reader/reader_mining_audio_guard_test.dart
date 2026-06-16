@@ -164,6 +164,25 @@ void main() {
         contains('card_export_failed_detail'),
         reason: 'The stopped path must be user-visible, not just logged.',
       );
+      expect(
+        source,
+        contains('String? sentenceAudioFailure'),
+        reason: 'The reader must preserve the ffmpeg failure summary for the '
+            'visible no-audio-card guard.',
+      );
+      expect(
+        source,
+        contains('onFailure: (String summary)'),
+        reason: 'TtsChannel/extractor diagnostics should flow back to the '
+            'reader mining path.',
+      );
+      expect(
+        source,
+        contains(r'sentence audio export failed: $sentenceAudioFailure'),
+        reason:
+            'The visible error should include executable/fallback/0xC000007B '
+            'details instead of a generic no-audio message.',
+      );
 
       final int guardIndex = source.indexOf(
         'if (requestedSentenceAudioClip && sasayakiAudioPath == null)',
