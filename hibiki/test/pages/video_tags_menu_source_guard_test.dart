@@ -23,9 +23,20 @@ String _methodBody(String source, String signature) {
   if (start < 0) {
     throw StateError('missing method signature: $signature');
   }
-  final int nextMethod = source.indexOf('\n  Future<void> ', start + 1);
-  if (nextMethod < 0) return source.substring(start);
-  return source.substring(start, nextMethod);
+  final int bodyStart = source.indexOf('{', start);
+  if (bodyStart < 0) {
+    throw StateError('missing method body: $signature');
+  }
+  int depth = 0;
+  for (int i = bodyStart; i < source.length; i++) {
+    final String ch = source[i];
+    if (ch == '{') depth++;
+    if (ch == '}') {
+      depth--;
+      if (depth == 0) return source.substring(start, i + 1);
+    }
+  }
+  throw StateError('unterminated method body: $signature');
 }
 
 void main() {
@@ -58,10 +69,33 @@ void main() {
           reason: '选择态点卡片切换勾选');
     });
 
-    test('菜单含 标签 / 封面 / 删除 三项动作', () {
-      expect(src.contains('_editTags(book)'), isTrue);
-      expect(src.contains('_pickCover(book)'), isTrue);
-      expect(src.contains('_confirmDelete(book)'), isTrue);
+    test('长按面板复用封面背景 frame，不再用 bottom sheet', () {
+      final String menuBody = _methodBody(
+        src,
+        'void _showVideoMenu(VideoBookRow book)',
+      );
+
+      expect(menuBody.contains('showModalBottomSheet'), isFalse,
+          reason: '_showVideoMenu 不得再弹旧底部小栏');
+      expect(menuBody.contains('showAppDialog'), isTrue);
+      expect(menuBody.contains('MediaItemDialogFrame'), isTrue,
+          reason: '视频 tab 长按必须复用 TODO-455 的共享封面背景 frame');
+    });
+
+    test('长按面板含五项管理动作且不含播放动作', () {
+      final String menuBody = _methodBody(
+        src,
+        'void _showVideoMenu(VideoBookRow book)',
+      );
+
+      expect(menuBody.contains('_editTags(book)'), isTrue);
+      expect(menuBody.contains('_renameVideo(book)'), isTrue);
+      expect(menuBody.contains('_pickCover(book)'), isTrue);
+      expect(menuBody.contains('_pickSubtitle(book)'), isTrue);
+      expect(menuBody.contains('_confirmDelete(book)'), isTrue);
+      expect(menuBody.contains('_open(book)'), isFalse,
+          reason: '播放仍由卡片点击负责，长按面板不放播放按钮');
+      expect(menuBody.contains('dialog_read'), isFalse);
     });
 
     test('编辑标签进入共享 TagPickerPage（videoBookUid 分支）', () {
@@ -98,12 +132,27 @@ void main() {
           reason: '书架视频卡长按不能再只是打开（无菜单）');
     });
 
-    test('视频卡渲染标签 + 可拖标签到卡 + 菜单三动作', () {
+    test('视频卡渲染标签 + 可拖标签到卡 + 面板五项管理动作', () {
       expect(src.contains('_buildVideoBookTagLabels(book.bookUid)'), isTrue);
       expect(src.contains('onTagDropped: (tag) => _addTagToVideoBook'), isTrue);
-      expect(src.contains('_openVideoTagPicker(book.bookUid)'), isTrue);
-      expect(src.contains('_pickVideoCover(book)'), isTrue);
-      expect(src.contains('_confirmDeleteVideoBook(book)'), isTrue);
+      final String dialogBody = _methodBody(
+        src,
+        'void _showVideoBookDialog(VideoBookRow book)',
+      );
+
+      expect(dialogBody.contains('showModalBottomSheet'), isFalse,
+          reason: '_showVideoBookDialog 不得再弹旧底部小栏');
+      expect(dialogBody.contains('showAppDialog'), isTrue);
+      expect(dialogBody.contains('MediaItemDialogFrame'), isTrue,
+          reason: '书架视频长按必须复用 TODO-455 的共享封面背景 frame');
+      expect(dialogBody.contains('_openVideoTagPicker(book.bookUid)'), isTrue);
+      expect(dialogBody.contains('_renameVideoBook(book)'), isTrue);
+      expect(dialogBody.contains('_pickVideoCover(book)'), isTrue);
+      expect(dialogBody.contains('_pickVideoSubtitle(book)'), isTrue);
+      expect(dialogBody.contains('_confirmDeleteVideoBook(book)'), isTrue);
+      expect(dialogBody.contains('_openVideoBook(book)'), isFalse,
+          reason: '播放仍由卡片点击负责，长按面板不放播放按钮');
+      expect(dialogBody.contains('dialog_read'), isFalse);
     });
 
     test('视频筛选改为按命中 bookUid 过滤（不再整组隐藏）', () {
