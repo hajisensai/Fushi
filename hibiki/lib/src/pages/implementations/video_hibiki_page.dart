@@ -43,6 +43,7 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_chapter_panel.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
+import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
@@ -844,6 +845,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 多集换集时复用同一值（用户选了日语音轨，每集都用日语）。
   String? _currentAudioTrackId;
 
+  bool _clipExportMarking = false;
+  bool _clipExporting = false;
+  int? _clipExportStartMs;
+  String? _clipExportStartPath;
+  int? _clipExportStartAudioStreamIndex;
+  int _clipExportGeneration = 0;
+
   /// 音画延迟（毫秒）：字幕 cue 同步偏移，跨重启保留；换集复用同一值。
   int _delayMs = 0;
 
@@ -1534,7 +1542,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _titleNotifier.value = title;
     // 一行式音量控件显示真相源对齐 controller 实际音量（换集复用同一 controller，TODO-377）。
     _syncVolumeDisplay(controller.volume);
+    final bool clipExportSourceChanged = _currentVideoPath != videoPath;
     setState(() {
+      if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;
       _title = title;
       _failed = false;
@@ -1872,6 +1882,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_brightness.restore(previous: _enterBrightness));
     // TODO-099: 退出视频页还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
     unawaited(_restoreOrientationOnExit());
+    _clearClipExportState();
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
@@ -3497,6 +3508,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           onPressed: _saveScreenshot,
         ),
         MaterialDesktopCustomButton(
+          icon: Icon(_clipExportIcon, size: _videoControlIconSize),
+          onPressed: () => unawaited(_toggleClipExport()),
+        ),
+        MaterialDesktopCustomButton(
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
@@ -3651,6 +3666,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           onPressed: _saveScreenshot,
         ),
         MaterialCustomButton(
+          icon: Icon(_clipExportIcon, size: _videoControlIconSize),
+          onPressed: () => unawaited(_toggleClipExport()),
+        ),
+        MaterialCustomButton(
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
@@ -3796,6 +3815,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     ];
   }
 
+  String get _clipExportTooltip {
+    if (_clipExporting) return t.video_clip_exporting;
+    if (_clipExportMarking) return t.video_clip_export_stop;
+    return t.video_clip_export_start;
+  }
+
+  IconData get _clipExportIcon {
+    if (_clipExporting) return Icons.hourglass_top;
+    if (_clipExportMarking) return Icons.stop_circle_outlined;
+    return Icons.movie_creation_outlined;
+  }
+
   /// Icon for any chip-renderable [VideoControlItem] (learning + transport/nav).
   IconData _videoControlItemIcon(VideoControlItem item) {
     final VideoControlButton? legacy = item.legacyButton;
@@ -3815,6 +3846,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return Icons.fullscreen;
       case VideoControlItem.screenshot:
         return Icons.photo_camera_outlined;
+      case VideoControlItem.clipExport:
+        return Icons.movie_creation_outlined;
       case VideoControlItem.subtitleTrack:
         return Icons.subtitles;
       case VideoControlItem.audioTrack:
@@ -3853,6 +3886,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_control_fullscreen;
       case VideoControlItem.screenshot:
         return t.video_control_screenshot;
+      case VideoControlItem.clipExport:
+        return _clipExportTooltip;
       case VideoControlItem.subtitleTrack:
         return t.video_control_subtitle_track;
       case VideoControlItem.audioTrack:
@@ -3914,6 +3949,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         break;
       case VideoControlItem.screenshot:
         unawaited(_saveScreenshot());
+        break;
+      case VideoControlItem.clipExport:
+        unawaited(_toggleClipExport());
         break;
       case VideoControlItem.subtitleTrack:
         unawaited(_showSubtitleSourceMenu(controller));
@@ -4595,6 +4633,175 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _replayPreviousCueAndPokeControls() async {
     _pokeControlsVisible();
     await _controller?.skipToPrevCue();
+  }
+
+  Future<void> _toggleClipExport() async {
+    if (_clipExporting) {
+      _showOsd(t.video_clip_exporting);
+      return;
+    }
+
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (_isRemote || _currentVideoPath == null) {
+      _showOsd(t.video_clip_export_remote_download_required);
+      return;
+    }
+
+    if (!_clipExportMarking) {
+      final int? positionMs = controller.positionMs;
+      if (positionMs == null) {
+        _showOsd(t.video_clip_export_invalid_range);
+        return;
+      }
+      setState(() {
+        _clipExportGeneration++;
+        _clipExportMarking = true;
+        _clipExportStartMs = positionMs;
+        _clipExportStartPath = _currentVideoPath;
+        _clipExportStartAudioStreamIndex = controller.currentAudioStreamIndex;
+      });
+      _showOsd(t.video_clip_export_start);
+      return;
+    }
+
+    final int? startMs = _clipExportStartMs;
+    final String? startPath = _clipExportStartPath;
+    final int? endMs = controller.positionMs;
+    if (startMs == null ||
+        startPath == null ||
+        endMs == null ||
+        startPath != _currentVideoPath) {
+      setState(_clearClipExportState);
+      _showOsd(t.video_clip_export_source_changed);
+      return;
+    }
+    if (endMs <= startMs) {
+      setState(_clearClipExportState);
+      _showOsd(t.video_clip_export_invalid_range);
+      return;
+    }
+
+    final int generation = _clipExportGeneration;
+    final int? audioStreamIndex = _clipExportStartAudioStreamIndex;
+    final String outputPath = await _clipExportOutputPath(
+      inputPath: startPath,
+      startMs: startMs,
+      endMs: endMs,
+    );
+    if (!mounted) {
+      await _deleteClipOutput(outputPath);
+      return;
+    }
+    if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
+      await _deleteClipOutput(outputPath);
+      if (mounted) {
+        setState(_clearClipExportState);
+        _showOsd(t.video_clip_export_source_changed);
+      }
+      return;
+    }
+    setState(() => _clipExporting = true);
+    _showOsd(t.video_clip_exporting);
+
+    final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+      inputPath: startPath,
+      startMs: startMs,
+      endMs: endMs,
+      outputPath: outputPath,
+      audioStreamIndex: audioStreamIndex,
+    );
+
+    if (!mounted) {
+      await _deleteClipOutput(result.outputPath ?? outputPath);
+      return;
+    }
+    if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
+      await _deleteClipOutput(result.outputPath ?? outputPath);
+      if (mounted) {
+        setState(_clearClipExportState);
+        _showOsd(t.video_clip_export_source_changed);
+      }
+      return;
+    }
+
+    setState(_clearClipExportState);
+    final String? exported = result.outputPath;
+    if (result.isSuccess && exported != null) {
+      _showOsd(t.video_clip_exported(path: exported));
+      if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+        await Share.shareXFiles(<XFile>[
+          XFile(exported),
+        ], subject: p.basename(exported));
+      }
+    } else {
+      _showOsd(t.video_clip_export_failed(
+        reason: _clipExportFailureReason(result),
+      ));
+    }
+    _refocusVideo();
+  }
+
+  void _clearClipExportState() {
+    _clipExportGeneration++;
+    _clipExportMarking = false;
+    _clipExporting = false;
+    _clipExportStartMs = null;
+    _clipExportStartPath = null;
+    _clipExportStartAudioStreamIndex = null;
+  }
+
+  Future<String> _clipExportOutputPath({
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+  }) async {
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory dir = Directory(p.join(docs.path, 'video_clips'));
+    final String rawStem = _safeFileName(p.basenameWithoutExtension(inputPath));
+    final String stem = rawStem.isEmpty ? 'video' : rawStem;
+    final String ext = p.extension(inputPath).isEmpty
+        ? '.mkv'
+        : p.extension(inputPath).toLowerCase();
+    final String name =
+        '${stem}_${_clipExportTimeToken(startMs)}-${_clipExportTimeToken(endMs)}$ext';
+    return p.join(dir.path, name);
+  }
+
+  String _clipExportTimeToken(int ms) {
+    final int totalSeconds = ms ~/ 1000;
+    final int hours = totalSeconds ~/ 3600;
+    final int minutes = (totalSeconds % 3600) ~/ 60;
+    final int seconds = totalSeconds % 60;
+    final int millis = ms % 1000;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(hours)}${two(minutes)}${two(seconds)}_'
+        '${millis.toString().padLeft(3, '0')}';
+  }
+
+  String _clipExportFailureReason(VideoClipExportResult result) {
+    switch (result.failure) {
+      case VideoClipExportFailure.invalidRange:
+        return t.video_clip_export_invalid_range;
+      case VideoClipExportFailure.inputMissing:
+        return t.video_clip_export_input_missing;
+      case VideoClipExportFailure.ffmpegUnavailable:
+        return t.video_clip_export_ffmpeg_unavailable;
+      case VideoClipExportFailure.ffmpegFailed:
+        return t.video_clip_export_ffmpeg_failed;
+      case VideoClipExportFailure.outputMissing:
+        return t.video_clip_export_output_missing;
+      case null:
+        return t.video_clip_export_ffmpeg_failed;
+    }
+  }
+
+  Future<void> _deleteClipOutput(String? path) async {
+    if (path == null) return;
+    try {
+      final File file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
@@ -5886,6 +6093,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ),
       const PopupMenuDivider(),
       item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
+      item(
+        Icons.movie_creation_outlined,
+        t.video_clip_export,
+        () => unawaited(_toggleClipExport()),
+      ),
       item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
       // 设置入口（TODO-389）：右键菜单补一项打开视频设置侧栏，与桌面右侧 rail 的
       // `VideoControlButton.settings` 走同一个 [_showPlayerSettings]（→

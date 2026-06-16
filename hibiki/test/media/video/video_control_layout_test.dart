@@ -49,6 +49,7 @@ void main() {
         VideoControlItem.volume,
         VideoControlItem.fullscreen,
         VideoControlItem.screenshot,
+        VideoControlItem.clipExport,
         VideoControlItem.subtitleTrack,
         VideoControlItem.audioTrack,
         VideoControlItem.episodeList,
@@ -95,6 +96,15 @@ void main() {
       expect(d.slotOf(VideoControlItem.title), VideoControlSlot.topCenter);
       expect(d.slotOf(VideoControlItem.subtitleList),
           VideoControlSlot.screenRight);
+      expect(
+          d.slotOf(VideoControlItem.clipExport), VideoControlSlot.bottomRight);
+      final List<VideoControlItem> bottomRight =
+          d.itemsIn(VideoControlSlot.bottomRight);
+      expect(
+        bottomRight.indexOf(VideoControlItem.clipExport),
+        bottomRight.indexOf(VideoControlItem.screenshot) + 1,
+        reason: '片段导出默认应紧挨截图按钮，保持源片段导出语义',
+      );
     });
 
     test('every button is placed in exactly one slot (no loss, no dup)', () {
@@ -105,6 +115,19 @@ void main() {
       }
       expect(seen.toSet(), VideoControlItem.values.toSet());
       expect(seen, hasLength(VideoControlItem.values.length));
+    });
+
+    test('current chrome keeps clip export next to screenshot in the top bar',
+        () {
+      final List<VideoControlItem> topRight =
+          VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
+      expect(topRight, contains(VideoControlItem.screenshot));
+      expect(topRight, contains(VideoControlItem.clipExport));
+      expect(
+        topRight.indexOf(VideoControlItem.clipExport),
+        topRight.indexOf(VideoControlItem.screenshot) + 1,
+        reason: '播放器顶栏里片段导出必须贴着截图按钮',
+      );
     });
 
     test('moveItem reorders within a slot and across slots', () {
@@ -453,6 +476,7 @@ void main() {
         VideoControlItem.previousCue,
         VideoControlItem.nextCue,
         VideoControlItem.screenshot,
+        VideoControlItem.clipExport,
         VideoControlItem.subtitleTrack,
         VideoControlItem.audioTrack,
         VideoControlItem.episodeList,

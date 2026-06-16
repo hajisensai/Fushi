@@ -125,6 +125,25 @@ void main() {
       expect(items.contains('_saveScreenshot'), isTrue);
     });
 
+    test('含片段导出且紧挨截图，文案保持源片段语义', () {
+      final int screenshotIdx = items.indexOf('t.video_screenshot');
+      final int clipIdx = items.indexOf('t.video_clip_export');
+      final String formerPixelCaptureTerm =
+          String.fromCharCodes(<int>[0x5f55, 0x5c4f]);
+      final String formerEnglishTerm =
+          <String>['screen', 'recording'].join(' ');
+      expect(screenshotIdx, greaterThanOrEqualTo(0), reason: '菜单应含截图');
+      expect(clipIdx, greaterThanOrEqualTo(0), reason: '菜单应含片段导出');
+      expect(clipIdx, greaterThan(screenshotIdx),
+          reason: '片段导出应放在截图之后，和截图入口相邻');
+      expect(items.contains('_toggleClipExport'), isTrue,
+          reason: '右键菜单须复用页面片段导出状态机');
+      expect(items.contains(formerPixelCaptureTerm), isFalse,
+          reason: 'TODO-434 菜单文案应保持源片段导出语义');
+      expect(items.contains(formerEnglishTerm), isFalse,
+          reason: 'TODO-434 menu copy should keep source clip semantics');
+    });
+
     test('含锁定 / 沉浸模式（TODO-101）', () {
       expect(items.contains('t.video_menu_lock'), isTrue);
       expect(items.contains('_toggleImmersiveLock'), isTrue);

@@ -14,4 +14,29 @@ void main() {
       );
     });
   });
+
+  group('Chinese video clip export labels', () {
+    test('uses clip export wording consistently', () {
+      final strings = AppLocale.zhCn.translations;
+      final String formerPixelCaptureTerm =
+          String.fromCharCodes(<int>[0x5f55, 0x5c4f]);
+
+      expect(strings.video_clip_export, '片段导出');
+      expect(strings.video_clip_export_start, '开始片段导出');
+      expect(strings.video_clip_export_stop, '停止并导出片段');
+      expect(strings.video_clip_exporting, '正在导出片段…');
+      expect(strings.video_clip_export_remote_download_required,
+          contains('下载到本机'));
+      expect(
+          strings.video_clip_export, isNot(contains(formerPixelCaptureTerm)));
+      expect(
+        strings.video_clip_export_start,
+        isNot(contains(formerPixelCaptureTerm)),
+      );
+      expect(
+        strings.video_clip_export_stop,
+        isNot(contains(formerPixelCaptureTerm)),
+      );
+    });
+  });
 }

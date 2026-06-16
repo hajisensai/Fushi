@@ -1499,6 +1499,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return t.video_control_fullscreen;
       case VideoControlItem.screenshot:
         return t.video_control_screenshot;
+      case VideoControlItem.clipExport:
+        return t.video_clip_export;
       case VideoControlItem.subtitleTrack:
         return t.video_control_subtitle_track;
       case VideoControlItem.audioTrack:
@@ -1536,6 +1538,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         return Icons.fullscreen;
       case VideoControlItem.screenshot:
         return Icons.photo_camera_outlined;
+      case VideoControlItem.clipExport:
+        return Icons.movie_creation_outlined;
       case VideoControlItem.subtitleTrack:
         return Icons.subtitles;
       case VideoControlItem.audioTrack:

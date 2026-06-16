@@ -1673,5 +1673,18 @@
     "video_chapters_empty": "No chapters",
     "video_chapter_n": "Chapter $n",
     "shortcut_action_video_next_chapter": "Next chapter",
-    "shortcut_action_video_previous_chapter": "Previous chapter"
+    "shortcut_action_video_previous_chapter": "Previous chapter",
+    "video_clip_export": "Clip export",
+    "video_clip_export_start": "Start clip export",
+    "video_clip_export_stop": "Stop and export clip",
+    "video_clip_exporting": "Exporting clip…",
+    "video_clip_exported": "Clip exported: ${path}",
+    "video_clip_export_failed": "Clip export failed: ${reason}",
+    "video_clip_export_remote_download_required": "Download the remote video to this device before exporting a clip",
+    "video_clip_export_invalid_range": "No valid clip range",
+    "video_clip_export_ffmpeg_unavailable": "ffmpeg is unavailable",
+    "video_clip_export_source_changed": "Video source changed; clip export cancelled",
+    "video_clip_export_ffmpeg_failed": "ffmpeg failed",
+    "video_clip_export_output_missing": "No output file was created",
+    "video_clip_export_input_missing": "Source video is unavailable"
 }

@@ -1673,5 +1673,18 @@
     "video_chapters_empty": "无章节",
     "video_chapter_n": "章节 $n",
     "shortcut_action_video_next_chapter": "下一章",
-    "shortcut_action_video_previous_chapter": "上一章"
+    "shortcut_action_video_previous_chapter": "上一章",
+    "video_clip_export": "片段导出",
+    "video_clip_export_start": "开始片段导出",
+    "video_clip_export_stop": "停止并导出片段",
+    "video_clip_exporting": "正在导出片段…",
+    "video_clip_exported": "片段已导出：${path}",
+    "video_clip_export_failed": "片段导出失败：${reason}",
+    "video_clip_export_remote_download_required": "请先把远端视频下载到本机后再导出片段",
+    "video_clip_export_invalid_range": "没有有效片段",
+    "video_clip_export_ffmpeg_unavailable": "ffmpeg 不可用",
+    "video_clip_export_source_changed": "视频源已切换，已取消片段导出",
+    "video_clip_export_ffmpeg_failed": "ffmpeg 执行失败",
+    "video_clip_export_output_missing": "没有生成导出文件",
+    "video_clip_export_input_missing": "源视频不可用"
 }
