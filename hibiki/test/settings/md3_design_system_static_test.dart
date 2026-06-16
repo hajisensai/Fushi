@@ -775,7 +775,7 @@ void main() {
     final String cardLayout = _functionSource(
       source,
       'Widget _bookCardLayout({',
-      'Widget _titleOverlay(String title)',
+      'Widget _bookCardTagArea(',
     );
     final String epubCardChrome = _functionSource(
       source,
@@ -785,15 +785,45 @@ void main() {
 
     expect(cardLayout, contains('HibikiDesignTokens.of(context)'));
     expect(cardLayout, contains('tokens.spacing'));
-    expect(cardLayout, contains('_titleOverlay(title)'));
+    expect(cardLayout, contains('_bookCardFooter(title)'));
+    expect(cardLayout, contains('height: kShelfTitleFooterHeight'));
     expect(cardLayout, contains('PositionedDirectional('));
     expect(cardLayout, contains('tokens.spacing.gap * 0.75'));
+    expect(cardLayout, isNot(contains('_titleOverlay(title)')));
     expect(epubCardChrome, contains('_bookCardLayout('));
     expect(cardLayout, isNot(contains('EdgeInsets.only(right: 3, bottom: 2)')));
     expect(cardLayout, isNot(contains('EdgeInsets.fromLTRB(12, 8, 12, 2)')));
     expect(cardLayout, isNot(contains('top: 6,')));
     expect(cardLayout, isNot(contains('right: 6,')));
     expect(cardLayout, isNot(contains('left: 6,')));
+  });
+
+  test('book long-press frame uses cover background and MD3 action layout', () {
+    final String source = File(
+      'lib/src/pages/implementations/media_item_dialog_page.dart',
+    ).readAsStringSync();
+    final String frame = _sectionSource(
+      source,
+      'class MediaItemDialogFrame extends StatelessWidget',
+      source.length,
+    );
+
+    expect(frame, contains('HibikiDialogFrame('));
+    expect(frame, contains('Stack('));
+    expect(frame, contains('Positioned.fill'));
+    expect(frame, contains('BoxFit.cover'));
+    expect(frame, contains('LinearGradient('));
+    expect(frame, contains('Wrap('));
+    expect(frame, contains('HibikiActionChip('));
+    expect(frame, contains('HibikiListItem('));
+    expect(frame, contains('TextButton('));
+    expect(frame, contains('final bool showLaunchAction;'));
+    expect(frame, contains('showLaunchAction &&'));
+    expect(frame, contains('launchLabel != null'));
+    expect(frame, contains('onLaunch != null'));
+    expect(frame, isNot(contains('SingleChildScrollView(')));
+    expect(frame, isNot(contains('ListTile(')));
+    expect(frame, isNot(contains('OutlinedButton.icon(')));
   });
 
   test('settings renderer rows use shared MD3 row primitives', () {
@@ -884,14 +914,13 @@ void main() {
     );
   });
 
-  test('reader history title overlay and drag target use shared MD3 tokens',
-      () {
+  test('reader history title footer and drag target use shared MD3 tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
     ).readAsStringSync();
-    final String titleOverlay = _functionSource(
+    final String titleFooter = _functionSource(
       source,
-      'Widget _titleOverlay(String title)',
+      'Widget _bookCardFooter(String title)',
       'Widget _bookCardTagArea(',
     );
     // BookDragTarget 已提取到独立文件 book_drag_target.dart，守卫跟随。
@@ -904,16 +933,18 @@ void main() {
       dragSource.length,
     );
 
-    // 书名暗角覆盖层用共享 token，不允许硬编码颜色/像素。
-    expect(titleOverlay, contains('HibikiDesignTokens.of(context)'));
-    expect(titleOverlay, contains('tokens.spacing'));
-    expect(titleOverlay, contains('tokens.surfaces'));
-    expect(titleOverlay, contains('tokens.surfaces.page.withValues'));
-    expect(titleOverlay, contains('tokens.surfaces.onSurface'));
-    expect(titleOverlay, contains('LinearGradient('));
-    expect(titleOverlay, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
-    expect(titleOverlay, isNot(contains('theme.colorScheme.surface')));
-    expect(titleOverlay, isNot(contains('theme.colorScheme.onSurface')));
+    // 书名 footer 用共享 token，不允许退回封面内暗角覆盖层或硬编码颜色/像素。
+    expect(source, isNot(contains('Widget _titleOverlay(String title)')));
+    expect(titleFooter, contains('HibikiDesignTokens.of(context)'));
+    expect(titleFooter, contains('tokens.spacing'));
+    expect(titleFooter, contains('tokens.surfaces'));
+    expect(titleFooter, contains('tokens.surfaces.onSurface'));
+    expect(titleFooter, contains('maxLines: 2'));
+    expect(titleFooter, contains('overflow: TextOverflow.ellipsis'));
+    expect(titleFooter, isNot(contains('LinearGradient(')));
+    expect(titleFooter, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
+    expect(titleFooter, isNot(contains('theme.colorScheme.surface')));
+    expect(titleFooter, isNot(contains('theme.colorScheme.onSurface')));
 
     expect(dragTarget, contains('HibikiDesignTokens.of(context)'));
     expect(dragTarget, contains('tokens.spacing'));

@@ -60,12 +60,14 @@ class MediaItemDialogPage extends BasePage {
     required this.item,
     required this.isHistory,
     this.extraActions,
+    this.showLaunchAction = true,
     super.key,
   });
 
   final MediaItem item;
   final bool isHistory;
   final List<DialogAction> Function(MediaItem)? extraActions;
+  final bool showLaunchAction;
 
   @override
   BasePageState createState() => _MediaItemDialogPageState();
@@ -150,6 +152,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       cover: _hasCover ? _buildCover() : null,
       title: displayTitle,
       author: hasAuthor ? author : null,
+      showLaunchAction: widget.showLaunchAction,
       launchLabel: t.dialog_read,
       onLaunch: _executeLaunch,
       quickActions: _quickActions,
@@ -191,20 +194,19 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
 
 /// Long-press book-settings dialog.
 ///
-/// The cover is shown complete (BoxFit.contain, never cropped) at the top of a
-/// vertical column. Below it sit the title / author and a column of full-width
-/// action buttons: a primary read launch button, equal-width quick actions,
-/// list actions, and (muted) destructive actions. Keeping the buttons in their
-/// own below-cover column -- instead of translucent chips stacked on the cover
-/// -- avoids the cover being eaten and the actions piling up over the artwork.
+/// The cover is used as the dialog background with a readable scrim in front.
+/// Title, author, and actions sit in the foreground using shared MD3 controls.
+/// The launch/read affordance is optional so shelf book long-press menus can
+/// stay management-only while ordinary history dialogs can still expose it.
 @visibleForTesting
 class MediaItemDialogFrame extends StatelessWidget {
   const MediaItemDialogFrame({
     required this.title,
-    required this.launchLabel,
-    required this.onLaunch,
     this.cover,
     this.author,
+    this.showLaunchAction = true,
+    this.launchLabel,
+    this.onLaunch,
     this.quickActions = const [],
     this.listActions = const [],
     this.dangerActions = const [],
@@ -214,55 +216,41 @@ class MediaItemDialogFrame extends StatelessWidget {
   final Widget? cover;
   final String title;
   final String? author;
-  final String launchLabel;
-  final VoidCallback onLaunch;
+  final bool showLaunchAction;
+  final String? launchLabel;
+  final VoidCallback? onLaunch;
   final List<DialogQuickAction> quickActions;
   final List<DialogListAction> listActions;
   final List<DialogDangerAction> dangerActions;
 
-  /// Cover height cap as a fraction of screen height. With BoxFit.contain the
-  /// artwork is letterboxed inside this box, so the whole cover stays visible
-  /// (no hard crop) while the dialog never grows taller than the screen.
-  static const double _coverHeightFactor = 0.34;
+  /// Stable virtual size for the background cover. The user's original cover
+  /// widget may already contain its own fit behavior, so we place it in this
+  /// box and let the outer [FittedBox] cover the dialog frame.
+  static const Size _backgroundCoverSize = Size(280, 420);
 
   @override
   Widget build(BuildContext context) {
-    final double screenHeight = MediaQuery.sizeOf(context).height;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
     return HibikiDialogFrame(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: <Widget>[
-          if (cover != null)
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: screenHeight * _coverHeightFactor,
-              ),
-              child: ColoredBox(
-                color: tokens.surfaces.overlay,
-                child: cover!,
-              ),
-            ),
+          Positioned.fill(child: _coverBackground(tokens, colors)),
+          Positioned.fill(child: _readabilityScrim(colors)),
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card + 4,
-              tokens.spacing.card,
-              tokens.spacing.card + 4,
-              tokens.spacing.card - 4,
-            ),
+            padding: EdgeInsets.all(tokens.spacing.card),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
                   title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listTitle.copyWith(
-                    fontWeight: FontWeight.w600,
+                  style: tokens.type.pageTitle.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 if (author != null) ...<Widget>[
@@ -271,25 +259,29 @@ class MediaItemDialogFrame extends StatelessWidget {
                     author!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: tokens.type.listSubtitle,
+                    style: tokens.type.listSubtitle.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
                 ],
                 SizedBox(height: tokens.spacing.card),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: onLaunch,
-                    child: Text(
-                      launchLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                if (showLaunchAction &&
+                    launchLabel != null &&
+                    onLaunch != null) ...<Widget>[
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: onLaunch,
+                      child: Text(
+                        launchLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
-                ),
-                if (quickActions.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap + 4),
-                  _buildQuickActions(tokens),
                 ],
+                if (quickActions.isNotEmpty) _buildQuickActions(tokens),
                 if (listActions.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap / 2),
                   const HibikiDivider(),
@@ -333,6 +325,52 @@ class MediaItemDialogFrame extends StatelessWidget {
     );
   }
 
+  Widget _coverBackground(HibikiDesignTokens tokens, ColorScheme colors) {
+    if (cover == null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[
+              tokens.surfaces.overlay,
+              tokens.surfaces.card,
+            ],
+          ),
+        ),
+      );
+    }
+    return ColoredBox(
+      color: tokens.surfaces.overlay,
+      child: Opacity(
+        opacity: 0.34,
+        child: FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox.fromSize(
+            size: _backgroundCoverSize,
+            child: cover!,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _readabilityScrim(ColorScheme colors) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            colors.surface.withValues(alpha: 0.88),
+            colors.surface.withValues(alpha: 0.72),
+            colors.surface.withValues(alpha: 0.94),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 单行等宽时单个 chip 仍能容纳中文「导入有声书」这类标签的保守最小宽度；
   /// 平分后低于此宽度就降级成竖排整行，避免 intrinsic-width 横排被 ellipsis 截断。
   static const double _quickActionMinChipWidth = 96.0;
@@ -343,36 +381,24 @@ class MediaItemDialogFrame extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         final int count = quickActions.length;
         final double available = constraints.maxWidth;
-        // 一行平分后每格仍够宽 → 等宽横排；否则窄屏降级成竖排整行。
         final bool fitsOneRow = available.isFinite &&
             (available - gap * (count - 1)) / count >= _quickActionMinChipWidth;
-        return fitsOneRow ? _quickActionsRow(gap) : _quickActionsColumn(gap);
+        final double chipWidth = fitsOneRow
+            ? (available - gap * (count - 1)) / count
+            : (available.isFinite ? available : double.infinity);
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: <Widget>[
+            for (final DialogQuickAction action in quickActions)
+              SizedBox(
+                width: chipWidth,
+                child: _quickActionChip(action),
+              ),
+          ],
+        );
       },
     );
-  }
-
-  /// 等宽横排：每个 chip 用 Expanded 平分一行，消除 intrinsic-width 参差。
-  Widget _quickActionsRow(double gap) {
-    final List<Widget> children = <Widget>[];
-    for (int i = 0; i < quickActions.length; i++) {
-      if (i > 0) children.add(SizedBox(width: gap));
-      children.add(Expanded(child: _quickActionChip(quickActions[i])));
-    }
-    return Row(children: children);
-  }
-
-  /// 窄屏降级：每个 chip 占整行，宽度一致。
-  Widget _quickActionsColumn(double gap) {
-    final List<Widget> children = <Widget>[];
-    for (int i = 0; i < quickActions.length; i++) {
-      if (i > 0) children.add(SizedBox(height: gap));
-      children.add(
-        SizedBox(
-            width: double.infinity, child: _quickActionChip(quickActions[i])),
-      );
-    }
-    return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
   }
 
   Widget _quickActionChip(DialogQuickAction action) {
