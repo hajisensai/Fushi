@@ -885,6 +885,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         await widget.onSelectShaderTier(tier, highQuality, enabledNames);
       },
       initialMpvDir: _mpvShaderDir,
+      titlePlacement: SettingsSectionTitlePlacement.inside,
       onMpvDirChanged: (String dir) async {
         setState(() => _mpvShaderDir = dir);
         await widget.onMpvShaderDirChanged?.call(dir);

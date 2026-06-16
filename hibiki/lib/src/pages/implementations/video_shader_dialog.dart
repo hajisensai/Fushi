@@ -29,6 +29,7 @@ class VideoShaderManagerView extends StatefulWidget {
     required this.onSelectTier,
     this.initialMpvDir = '',
     this.onMpvDirChanged,
+    this.titlePlacement = SettingsSectionTitlePlacement.outside,
     super.key,
   });
 
@@ -58,6 +59,8 @@ class VideoShaderManagerView extends StatefulWidget {
 
   /// 用户手动指定 mpv 目录后回调（持久化，下次优先扫它）。
   final Future<void> Function(String dir)? onMpvDirChanged;
+
+  final SettingsSectionTitlePlacement titlePlacement;
 
   @override
   State<VideoShaderManagerView> createState() => _VideoShaderManagerViewState();
@@ -368,6 +371,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
         // ── 画质档位（无/低/中/高/极高）：一键选档即下载+启用，普通用户唯一需要的入口 ──
         AdaptiveSettingsSection(
           title: t.video_shader_quality_tier,
+          titlePlacement: widget.titlePlacement,
           children: <Widget>[
             VideoShaderTierSelector(
               current: _currentTier,
@@ -399,6 +403,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
         // ── 进阶：手动导入文件 / 粘贴链接下载 / 从本机 mpv 导入（给懂的人用的逃生口）──
         AdaptiveSettingsSection(
           title: t.video_shader_section_advanced,
+          titlePlacement: widget.titlePlacement,
           children: <Widget>[
             _actionRow(
               title: t.video_shader_import,
@@ -423,6 +428,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
         ),
         AdaptiveSettingsSection(
           title: t.video_shader_section_installed,
+          titlePlacement: widget.titlePlacement,
           children: installedRows,
         ),
       ],
