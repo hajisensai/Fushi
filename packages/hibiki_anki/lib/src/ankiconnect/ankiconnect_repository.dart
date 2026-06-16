@@ -361,10 +361,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       context: context,
     );
 
+    String? addNoteReconcileFieldName;
+    String? addNoteReconcileFieldValue;
+    bool addNoteReconcileAllowed = false;
     if (!settings.allowDupes) {
-      final firstFieldValue = noteType.fields.isNotEmpty
-          ? (fields[noteType.fields.first] ?? '')
-          : '';
+      final firstFieldName =
+          noteType.fields.isNotEmpty ? noteType.fields.first : null;
+      final firstFieldValue =
+          firstFieldName != null ? (fields[firstFieldName] ?? '') : '';
       if (firstFieldValue.isNotEmpty) {
         // HBK-AUDIT-060: fail closed. A failed dupe query must not fall through
         // to addNote as if the entry were unique — that silently bypasses the
@@ -372,10 +376,13 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         try {
           final isDupe = await service.isDuplicate(
             deckName: deck.name,
-            fieldName: noteType.fields.first,
+            fieldName: firstFieldName!,
             fieldValue: firstFieldValue,
           );
           if (isDupe) return const MineOutcome.duplicate();
+          addNoteReconcileFieldName = firstFieldName;
+          addNoteReconcileFieldValue = firstFieldValue;
+          addNoteReconcileAllowed = true;
         } catch (e, stack) {
           return MineOutcome.failure(
             'Duplicate check failed: $e',
@@ -416,6 +423,39 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         allowDuplicate: settings.allowDupes,
       );
       return MineOutcome.success(noteId: noteId);
+    } on AnkiConnectCommitUnknownException catch (e, stack) {
+      if (!addNoteReconcileAllowed ||
+          addNoteReconcileFieldName == null ||
+          addNoteReconcileFieldValue == null) {
+        return MineOutcome.failure(
+          _addNoteCommitUnknownMessage(),
+          error: e,
+          stackTrace: stack,
+        );
+      }
+      try {
+        final matches = await service.findNotesByField(
+          deckName: deck.name,
+          fieldName: addNoteReconcileFieldName,
+          fieldValue: addNoteReconcileFieldValue,
+        );
+        if (matches.length == 1) {
+          return MineOutcome.success(noteId: matches.single);
+        }
+        return MineOutcome.failure(
+          _addNoteCommitUnknownMessage(matchCount: matches.length),
+          error: e,
+          stackTrace: stack,
+        );
+      } catch (reconcileError, reconcileStack) {
+        return MineOutcome.failure(
+          _addNoteCommitUnknownMessage(
+            extra: 'The follow-up Anki check also failed: $reconcileError',
+          ),
+          error: reconcileError,
+          stackTrace: reconcileStack,
+        );
+      }
     } on AnkiConnectException catch (e, stack) {
       return MineOutcome.failure(
         'AnkiConnect: ${e.message}',
@@ -423,6 +463,27 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         stackTrace: stack,
       );
     }
+  }
+
+  String _addNoteCommitUnknownMessage({int? matchCount, String? extra}) {
+    final buffer = StringBuffer(
+      'AnkiConnect may have created the card, but the response was lost.',
+    );
+    if (matchCount == null) {
+      buffer.write(' Hibiki could not uniquely confirm the new note.');
+    } else if (matchCount == 0) {
+      buffer
+          .write(' Hibiki found no matching note, so the result is uncertain.');
+    } else {
+      buffer.write(
+        ' Hibiki found $matchCount matching notes and could not uniquely confirm which one was new.',
+      );
+    }
+    if (extra != null && extra.isNotEmpty) {
+      buffer.write(' $extra');
+    }
+    buffer.write(' Please check Anki before retrying.');
+    return buffer.toString();
   }
 
   /// 把 [payload] + [context] 按 [settings] 的字段映射渲染成 Anki note 字段。

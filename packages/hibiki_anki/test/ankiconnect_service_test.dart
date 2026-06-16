@@ -57,6 +57,15 @@ void main() {
       expect(url.port, 8765);
     });
 
+    test('requests use a short connection to avoid stale pooled sockets',
+        () async {
+      final issued = <http.Request>[];
+      await withMock((s) => s.getDeckNames(),
+          sink: issued, result: const <String>[]);
+
+      expect(issued.single.headers['Connection'], 'close');
+    });
+
     test('every call carries action + version 6', () async {
       final issued = <http.Request>[];
       await withMock((s) => s.getModelNames(),
@@ -487,11 +496,12 @@ void main() {
     });
 
     test(
-        'does NOT retry addNote on a response-phase reset (may be post-delivery)',
+        'classifies response-phase addNote reset as unknown commit without retry',
         () async {
       // A "Connection reset" without a write signature could mean the write
       // succeeded and Anki already created the note before the read dropped —
-      // re-sending could duplicate. Must fail fast with a single attempt.
+      // re-sending could duplicate. Must not retry; callers need to reconcile
+      // against Anki instead of treating this as an ordinary failure.
       final f = flakyClient(
         failTimes: 99,
         exception: http.ClientException('Connection reset by peer'),
@@ -504,10 +514,11 @@ void main() {
                   modelName: 'M',
                   fields: const <String, String>{'F': 'v'},
                 )),
-        throwsA(isA<http.ClientException>()),
+        throwsA(isA<AnkiConnectCommitUnknownException>()
+            .having((e) => e.action, 'action', 'addNote')),
       );
       expect(f.attempts.length, 1,
-          reason: 'response-phase drop on addNote is never auto-retried');
+          reason: 'response-phase drop on addNote is never blindly retried');
     });
 
     test('retries the idempotent storeMediaFile on a connection drop',

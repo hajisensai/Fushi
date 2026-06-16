@@ -37,6 +37,7 @@ class AnkiConnectService implements AnkiService {
     });
     final response = await _postWithStaleConnectionRetry(
       body,
+      action: action,
       idempotent: !_nonIdempotentActions.contains(action),
     );
     // A process other than AnkiConnect (proxy, captive portal, wrong port)
@@ -107,6 +108,7 @@ class AnkiConnectService implements AnkiService {
   /// pooled socket → instant "Write failed (errno 10053)" with no retry.
   Future<http.Response> _postWithStaleConnectionRetry(
     String body, {
+    required String action,
     required bool idempotent,
   }) async {
     try {
@@ -114,8 +116,24 @@ class AnkiConnectService implements AnkiService {
     } on http.ClientException catch (e) {
       final bool retryable =
           idempotent ? _isConnectionDrop(e) : _isPreDeliveryWriteFailure(e);
-      if (!retryable) rethrow;
-      return await _post(body);
+      if (retryable) {
+        try {
+          return await _post(body);
+        } on http.ClientException catch (retryError) {
+          if (!idempotent &&
+              _isConnectionDrop(retryError) &&
+              !_isPreDeliveryWriteFailure(retryError)) {
+            throw AnkiConnectCommitUnknownException(action, retryError);
+          }
+          rethrow;
+        }
+      }
+      if (!idempotent &&
+          _isConnectionDrop(e) &&
+          !_isPreDeliveryWriteFailure(e)) {
+        throw AnkiConnectCommitUnknownException(action, e);
+      }
+      rethrow;
     }
   }
 
@@ -139,7 +157,10 @@ class AnkiConnectService implements AnkiService {
     return _client.post(
       Uri.parse('http://$host:$port'),
       body: body,
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+      },
     ).timeout(_timeout);
   }
 
@@ -258,17 +279,35 @@ class AnkiConnectService implements AnkiService {
     required String fieldName,
     required String fieldValue,
   }) async {
-    // Quote the whole "field:value" term so field names containing spaces
-    // (e.g. "Sentence Audio") are not split by Anki's query parser.
-    final query = 'deck:"${_escapeAnkiQuery(deckName)}" '
-        '"${_escapeAnkiQuery(fieldName)}:${_escapeAnkiQuery(fieldValue)}"';
-    final result = await _request('findNotes', {'query': query});
+    return (await findNotesByField(
+      deckName: deckName,
+      fieldName: fieldName,
+      fieldValue: fieldValue,
+    ))
+        .isNotEmpty;
+  }
+
+  Future<List<int>> findNotesByField({
+    required String deckName,
+    required String fieldName,
+    required String fieldValue,
+  }) async {
+    final result = await _request('findNotes', {
+      'query': _fieldValueQuery(
+        deckName: deckName,
+        fieldName: fieldName,
+        fieldValue: fieldValue,
+      ),
+    });
     if (result is! List) {
       throw AnkiConnectException(
         'Unexpected AnkiConnect response for findNotes (expected a list)',
       );
     }
-    return result.isNotEmpty;
+    return result.map((dynamic id) {
+      if (id is int) return id;
+      return int.parse(id.toString());
+    }).toList();
   }
 
   Future<void> storeMediaFile({
@@ -348,9 +387,32 @@ class AnkiConnectService implements AnkiService {
 
 String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
 
+String _fieldValueQuery({
+  required String deckName,
+  required String fieldName,
+  required String fieldValue,
+}) {
+  // Quote the whole "field:value" term so field names containing spaces
+  // (e.g. "Sentence Audio") are not split by Anki's query parser.
+  return 'deck:"${_escapeAnkiQuery(deckName)}" '
+      '"${_escapeAnkiQuery(fieldName)}:${_escapeAnkiQuery(fieldValue)}"';
+}
+
 class AnkiConnectException implements Exception {
   final String message;
   AnkiConnectException(this.message);
   @override
   String toString() => 'AnkiConnectException: $message';
+}
+
+class AnkiConnectCommitUnknownException extends AnkiConnectException {
+  AnkiConnectCommitUnknownException(this.action, this.cause)
+      : super(
+          'AnkiConnect lost the $action response after the request may have '
+          'reached Anki. The operation may have completed; verify Anki before '
+          'retrying.',
+        );
+
+  final String action;
+  final Object cause;
 }
