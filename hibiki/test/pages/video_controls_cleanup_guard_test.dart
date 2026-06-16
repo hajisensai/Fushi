@@ -106,18 +106,23 @@ void main() {
     });
   });
 
-  group('③ 倍速入口是紧凑浮层，不是旧 side panel / 常驻宽控件', () {
-    test('_showSpeedMenu 方法保留（右键菜单 / 可配置按钮引用）并打开锚点浮层', () {
-      expect(src.contains('void _showSpeedMenu() {'), isTrue,
-          reason: '_showSpeedMenu 方法必须保留（右键菜单 / 可配置按钮仍引用）');
-      final String show = sourceMember(src, 'void _showSpeedMenu() {');
+  group('③ 倍速入口是紧凑浮层；无触发源时必须有可见 fallback', () {
+    test('_showSpeedMenu 方法保留（右键菜单 / 可配置按钮引用）并按触发源选择可见路径', () {
       expect(
-          show.contains('_toggleControlPopover(_VideoControlPopoverKind.speed'),
+          src.contains('void _showSpeedMenu({LayerLink? popoverLink})'), isTrue,
+          reason: '_showSpeedMenu 方法必须保留（右键菜单 / 可配置按钮仍引用）');
+      final String show =
+          sourceMember(src, 'void _showSpeedMenu({LayerLink? popoverLink})');
+      expect(
+          RegExp(r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed')
+              .hasMatch(show),
           isTrue,
-          reason: 'TODO-438：倍速入口应打开或固定锚点轻浮层');
+          reason: 'TODO-438：带触发源的倍速入口应打开或固定锚点轻浮层');
+      expect(show.contains('if (popoverLink == null)'), isTrue,
+          reason: '右键菜单等无锚点入口不能触发不可见 follower');
       expect(show.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
-          isFalse,
-          reason: 'TODO-438：倍速按钮不应再打开右侧 side panel');
+          isTrue,
+          reason: '无触发源入口应保留可见 fallback，而不是打开无锚点浮层');
       expect(
           src.contains('item(Icons.speed, t.video_setting_speed, '
               '_showSpeedMenu)'),

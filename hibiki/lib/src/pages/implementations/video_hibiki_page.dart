@@ -486,7 +486,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
   final LayerLink _volumeControlPopoverLink = LayerLink();
-  final LayerLink _speedControlPopoverLink = LayerLink();
+  final Map<String, LayerLink> _controlPopoverItemLinks = <String, LayerLink>{};
+  LayerLink? _activeControlPopoverLink;
   bool _controlPopoverAnchorHovered = false;
   bool _controlPopoverPanelHovered = false;
   bool _controlPopoverPinned = false;
@@ -3356,7 +3357,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       opaque: false,
       onEnter: (_) {
         _controlPopoverAnchorHovered = true;
-        _showControlPopover(kind);
+        _showControlPopover(kind, popoverLink: link);
       },
       onHover: (_) {
         _controlPopoverAnchorHovered = true;
@@ -3388,14 +3389,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ? MaterialDesktopCustomButton(
                   icon:
                       Icon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () =>
-                      _toggleControlPopover(_VideoControlPopoverKind.volume),
+                  onPressed: () => _toggleControlPopover(
+                    _VideoControlPopoverKind.volume,
+                    popoverLink: _volumeControlPopoverLink,
+                  ),
                 )
               : MaterialCustomButton(
                   icon:
                       Icon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () =>
-                      _toggleControlPopover(_VideoControlPopoverKind.volume),
+                  onPressed: () => _toggleControlPopover(
+                    _VideoControlPopoverKind.volume,
+                    popoverLink: _volumeControlPopoverLink,
+                  ),
                 ),
         );
       },
@@ -3417,20 +3422,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  void _toggleControlPopover(_VideoControlPopoverKind kind) {
+  LayerLink _controlPopoverLinkFor(
+    VideoControlSlot slot,
+    VideoControlItem item,
+  ) {
+    final String key = '${slot.storageValue}:${item.storageValue}';
+    return _controlPopoverItemLinks.putIfAbsent(key, LayerLink.new);
+  }
+
+  void _toggleControlPopover(
+    _VideoControlPopoverKind kind, {
+    required LayerLink popoverLink,
+  }) {
     if (_videoControlPopover.value == kind && _controlPopoverPinned) {
       _hideControlPopover();
       return;
     }
-    _showControlPopover(kind, pinned: true);
+    _showControlPopover(kind, popoverLink: popoverLink, pinned: true);
   }
 
   void _showControlPopover(
     _VideoControlPopoverKind kind, {
+    required LayerLink popoverLink,
     bool pinned = false,
   }) {
     if (!mounted || _videoSheetOpen) return;
     _controlPopoverHideTimer?.cancel();
+    _activeControlPopoverLink = popoverLink;
     if (_videoControlPopover.value != kind) {
       _controlPopoverPinned = pinned;
     } else if (pinned) {
@@ -3452,6 +3470,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _hideControlPopover() {
     _controlPopoverHideTimer?.cancel();
     _controlPopoverPinned = false;
+    _activeControlPopoverLink = null;
     if (_videoControlPopover.value != null) {
       _videoControlPopover.value = null;
     }
@@ -3492,10 +3511,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         valueListenable: _videoControlPopover,
         builder: (BuildContext context, _VideoControlPopoverKind? kind, _) {
           if (kind == null) return const SizedBox.shrink();
-          final LayerLink link = switch (kind) {
-            _VideoControlPopoverKind.volume => _volumeControlPopoverLink,
-            _VideoControlPopoverKind.speed => _speedControlPopoverLink,
-          };
+          final LayerLink? link = _activeControlPopoverLink;
+          if (link == null) return const SizedBox.shrink();
           return Stack(
             children: <Widget>[
               Positioned.fill(
@@ -3984,7 +4001,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return <Widget>[
       for (final VideoControlButton button
           in _slotLearningButtons(VideoControlSlot.bottomRight))
-        _buildVideoControlButton(controller, button, desktop: desktop),
+        _buildVideoControlButton(
+          controller,
+          button,
+          desktop: desktop,
+          slot: VideoControlSlot.bottomRight,
+        ),
     ];
   }
 
@@ -4059,30 +4081,50 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller, {
     required bool desktop,
   }) {
+    Widget buttonFor(VideoControlItem item) {
+      final LayerLink? popoverLink = item == VideoControlItem.speed
+          ? _controlPopoverLinkFor(slot, item)
+          : null;
+      final Widget button = Tooltip(
+        message: _videoControlItemTooltip(item),
+        child: desktop
+            ? MaterialDesktopCustomButton(
+                icon: Icon(
+                  _videoControlItemIcon(item),
+                  size: _videoControlIconSize,
+                ),
+                onPressed: () => _activateVideoControlItem(
+                  item,
+                  controller,
+                  popoverLink: popoverLink,
+                ),
+              )
+            : MaterialCustomButton(
+                icon: Icon(
+                  _videoControlItemIcon(item),
+                  size: _videoControlIconSize,
+                ),
+                onPressed: () => _activateVideoControlItem(
+                  item,
+                  controller,
+                  popoverLink: popoverLink,
+                ),
+              ),
+      );
+      if (popoverLink == null) return button;
+      return _controlPopoverAnchor(
+        kind: _VideoControlPopoverKind.speed,
+        link: popoverLink,
+        desktop: desktop,
+        child: button,
+      );
+    }
+
     return <Widget>[
       for (final VideoControlItem item in _slotChipItems(slot))
         Flexible(
           fit: FlexFit.loose,
-          child: Tooltip(
-            message: _videoControlItemTooltip(item),
-            child: desktop
-                ? MaterialDesktopCustomButton(
-                    icon: Icon(
-                      _videoControlItemIcon(item),
-                      size: _videoControlIconSize,
-                    ),
-                    onPressed: () =>
-                        _activateVideoControlItem(item, controller),
-                  )
-                : MaterialCustomButton(
-                    icon: Icon(
-                      _videoControlItemIcon(item),
-                      size: _videoControlIconSize,
-                    ),
-                    onPressed: () =>
-                        _activateVideoControlItem(item, controller),
-                  ),
-          ),
+          child: buttonFor(item),
         ),
     ];
   }
@@ -4168,11 +4210,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// the user places the button.
   void _activateVideoControlItem(
     VideoControlItem item,
-    VideoPlayerController controller,
-  ) {
+    VideoPlayerController controller, {
+    LayerLink? popoverLink,
+  }) {
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) {
-      _activateVideoControlButton(legacy);
+      _activateVideoControlButton(legacy, popoverLink: popoverLink);
       return;
     }
     switch (item) {
@@ -4320,7 +4363,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       positionIndicator,
       for (final VideoControlButton button
           in _slotLearningButtons(VideoControlSlot.bottomLeft))
-        _buildVideoControlButton(controller, button, desktop: desktop),
+        _buildVideoControlButton(
+          controller,
+          button,
+          desktop: desktop,
+          slot: VideoControlSlot.bottomLeft,
+        ),
     ];
     return Stack(
       alignment: Alignment.center,
@@ -4392,7 +4440,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
     VideoControlButton button, {
     required bool desktop,
+    required VideoControlSlot slot,
   }) {
+    final LayerLink? popoverLink = button == VideoControlButton.speed
+        ? _controlPopoverLinkFor(slot, VideoControlItem.speed)
+        : null;
     final Widget icon = Icon(
       _videoControlButtonIcon(button),
       size: _videoControlIconSize,
@@ -4400,16 +4452,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final Widget controlButton = desktop
         ? MaterialDesktopCustomButton(
             icon: icon,
-            onPressed: () => _activateVideoControlButton(button),
+            onPressed: () =>
+                _activateVideoControlButton(button, popoverLink: popoverLink),
           )
         : MaterialCustomButton(
             icon: icon,
-            onPressed: () => _activateVideoControlButton(button),
+            onPressed: () =>
+                _activateVideoControlButton(button, popoverLink: popoverLink),
           );
-    if (button != VideoControlButton.speed) return controlButton;
+    if (popoverLink == null) return controlButton;
     return _controlPopoverAnchor(
       kind: _VideoControlPopoverKind.speed,
-      link: _speedControlPopoverLink,
+      link: popoverLink,
       desktop: desktop,
       child: controlButton,
     );
@@ -4445,10 +4499,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  void _activateVideoControlButton(VideoControlButton button) {
+  void _activateVideoControlButton(
+    VideoControlButton button, {
+    LayerLink? popoverLink,
+  }) {
     switch (button) {
       case VideoControlButton.speed:
-        _showSpeedMenu();
+        _showSpeedMenu(popoverLink: popoverLink);
         break;
       case VideoControlButton.subtitleList:
         _toggleSubtitleJumpList();
@@ -4962,10 +5019,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  /// 弹快捷倍速浮层（TODO-438）：锚定 speed 按钮上方，复用 [_speedMenuPresets] 与
-  /// [_setSpeed]，不再打开右侧 side panel。
-  void _showSpeedMenu() {
-    _toggleControlPopover(_VideoControlPopoverKind.speed);
+  /// 弹快捷倍速浮层（TODO-438）：有按钮触发源时锚定 speed 按钮上方，复用
+  /// [_speedMenuPresets] 与 [_setSpeed]。右键菜单没有稳定按钮锚点，退回可见 side panel，
+  /// 避免打开 showWhenUnlinked=false 的不可见 follower。
+  void _showSpeedMenu({LayerLink? popoverLink}) {
+    if (popoverLink == null) {
+      _showVideoSidePanel(_VideoSidePanelKind.speed);
+      return;
+    }
+    _toggleControlPopover(
+      _VideoControlPopoverKind.speed,
+      popoverLink: popoverLink,
+    );
   }
 
   List<double> _speedMenuPresets() {
@@ -6638,6 +6703,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final List<VideoControlItem> items = _slotChipItems(slot);
     if (items.isEmpty) return const SizedBox.shrink();
     final ColorScheme cs = _videoChromeColorScheme(context);
+
+    Widget buttonFor(VideoControlItem item) {
+      final LayerLink? popoverLink = item == VideoControlItem.speed
+          ? _controlPopoverLinkFor(slot, item)
+          : null;
+      final Widget button = Material(
+        color: cs.surface.withValues(alpha: 0.55),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: IconButton(
+          tooltip: _videoControlItemTooltip(item),
+          iconSize: _videoControlIconSize,
+          icon: Icon(_videoControlItemIcon(item)),
+          color: cs.onSurface,
+          onPressed: () => _activateVideoControlItem(
+            item,
+            controller,
+            popoverLink: popoverLink,
+          ),
+        ),
+      );
+      if (popoverLink == null) return button;
+      return _controlPopoverAnchor(
+        kind: _VideoControlPopoverKind.speed,
+        link: popoverLink,
+        desktop: _isDesktopVideoControls,
+        child: button,
+      );
+    }
+
     return Align(
       alignment: alignment,
       child: SafeArea(
@@ -6650,19 +6745,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 for (final VideoControlItem item in items) ...<Widget>[
-                  Material(
-                    color: cs.surface.withValues(alpha: 0.55),
-                    shape: const CircleBorder(),
-                    clipBehavior: Clip.antiAlias,
-                    child: IconButton(
-                      tooltip: _videoControlItemTooltip(item),
-                      iconSize: _videoControlIconSize,
-                      icon: Icon(_videoControlItemIcon(item)),
-                      color: cs.onSurface,
-                      onPressed: () =>
-                          _activateVideoControlItem(item, controller),
-                    ),
-                  ),
+                  buttonFor(item),
                   if (item != items.last) const SizedBox(height: 8),
                 ],
               ],

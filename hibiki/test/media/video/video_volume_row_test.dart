@@ -80,15 +80,16 @@ void main() {
       final String toggle = methodBody(
         page,
         RegExp(
-          r'void _toggleControlPopover\(_VideoControlPopoverKind kind\) \{(.*?)\n  \}',
+          r'void _toggleControlPopover\(\s*_VideoControlPopoverKind kind,\s*\{\s*required LayerLink popoverLink,\s*\}\s*\) \{(.*?)\n  \}',
           dotAll: true,
         ),
         '_toggleControlPopover',
       );
       expect(toggle, contains('_controlPopoverPinned'),
           reason: 'hover 已打开时点击应 pin；已 pin 时再点击才关闭');
-      expect(toggle, contains('_showControlPopover(kind, pinned: true)'),
-          reason: 'click / tap 应打开并固定浮层');
+      expect(toggle, contains('popoverLink: popoverLink'),
+          reason: 'click / tap 应沿用触发按钮自己的 LayerLink 锚点');
+      expect(toggle, contains('pinned: true'), reason: 'click / tap 应打开并固定浮层');
 
       final String popover = methodBody(
         page,

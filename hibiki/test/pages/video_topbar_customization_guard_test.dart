@@ -62,7 +62,9 @@ void main() {
     // 所有 chip-renderable 项的统一激活路径（学习键 + transport/nav 键都不丢）。
     expect(page.contains('_slotChipItems(slot)'), isTrue);
     expect(
-        page.contains('_activateVideoControlItem(item, controller)'), isTrue);
+        RegExp(r'_activateVideoControlItem\(\s*item,\s*controller,')
+            .hasMatch(page),
+        isTrue);
 
     // 旧的「固定顶栏下方浮动竖条」已删：浮动 Stack 只剩屏幕左 / 右两条
     // （[left, right]，不再有 topLeft / topRight 两条浮条）。

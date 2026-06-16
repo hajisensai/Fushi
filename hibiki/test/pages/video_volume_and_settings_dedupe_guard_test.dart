@@ -76,7 +76,7 @@ void main() {
       final String toggle = methodBody('void _toggleControlPopover(');
       expect(toggle.contains('_controlPopoverPinned'), isTrue,
           reason: 'hover 已打开时点击应固定浮层，已固定后再点才关闭');
-      expect(toggle.contains('_showControlPopover(kind, pinned: true)'), isTrue,
+      expect(toggle.contains('pinned: true'), isTrue,
           reason: 'click/tap 必须以 pinned=true 打开浮层');
       expect(
           body.contains('PointerScrollEvent') &&
@@ -98,14 +98,18 @@ void main() {
     });
 
     test('倍速按钮打开紧凑浮层，复用 presets / _setSpeed / 1.0x 复位', () {
-      final String show = methodBody('void _showSpeedMenu()');
+      final String show = methodBody('void _showSpeedMenu({');
       expect(
-          show.contains('_toggleControlPopover(_VideoControlPopoverKind.speed'),
+          RegExp(
+            r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed',
+          ).hasMatch(show),
           isTrue,
-          reason: '倍速入口应打开或固定紧凑锚点浮层，而不是右侧 side panel');
+          reason: '有锚点的倍速入口应打开或固定紧凑锚点浮层');
+      expect(show.contains('if (popoverLink == null)'), isTrue,
+          reason: '无按钮锚点的入口（如右键菜单）必须走可见 fallback，不能打开 unlinked 浮层');
       expect(show.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
-          isFalse,
-          reason: '倍速按钮不应再撑开右侧设置面板');
+          isTrue,
+          reason: '无 source link 的倍速入口应退回可见 speed side panel');
 
       final String body = methodBody('Widget _buildSpeedPopover(');
       expect(body.contains('_speedMenuPresets()'), isTrue,
@@ -118,6 +122,36 @@ void main() {
           reason: '倍速浮层改速必须走 _setSpeed');
       expect(body.contains('_setSpeed(1.0'), isTrue,
           reason: '倍速浮层应提供 1.0x 快捷复位');
+    });
+
+    test('可移动 speed 控件在 top bar / side rail / bottom 都有自己的浮层锚点', () {
+      expect(src.contains('_controlPopoverLinkFor('), isTrue,
+          reason: '可移动 speed 控件需要按所在 slot 取稳定 LayerLink');
+      expect(src.contains('LayerLink? popoverLink'), isTrue,
+          reason: '_activateVideoControlItem / _showSpeedMenu 必须传递触发源 link');
+
+      final String top = methodBody('List<Widget> _topBarLearningButtons(');
+      expect(top.contains('_controlPopoverLinkFor(slot, item)'), isTrue,
+          reason: 'top bar speed 来自 _slotChipItems(slot)，必须使用该 slot 的锚点');
+      expect(top.contains('_controlPopoverAnchor('), isTrue,
+          reason: 'top bar speed 按钮必须渲染 CompositedTransformTarget');
+      expect(top.contains('popoverLink: popoverLink'), isTrue,
+          reason: 'top bar 点击 speed 时必须把自身 link 传给 _showSpeedMenu');
+
+      final String rail = methodBody('Widget _buildVideoSideRailFor(');
+      expect(rail.contains('_controlPopoverLinkFor(slot, item)'), isTrue,
+          reason: 'side rail speed 来自 _slotChipItems(slot)，必须使用该 slot 的锚点');
+      expect(rail.contains('_controlPopoverAnchor('), isTrue,
+          reason: 'side rail speed 按钮必须渲染 CompositedTransformTarget');
+      expect(rail.contains('popoverLink: popoverLink'), isTrue,
+          reason: 'side rail 点击 speed 时必须把自身 link 传给 _showSpeedMenu');
+
+      final String bottom = methodBody('Widget _buildVideoControlButton(');
+      expect(
+          bottom
+              .contains('_controlPopoverLinkFor(slot, VideoControlItem.speed)'),
+          isTrue,
+          reason: 'bottom speed 也应走同一套 source-specific link，避免单例锚点误跟随');
     });
 
     test('零布局位移：禁旧 hover 改宽，不写控制条可见性真相源', () {
@@ -158,8 +192,7 @@ void main() {
       expect(src.contains('void _showPlayerSettings() {'), isTrue,
           reason: '_showPlayerSettings 方法必须保留（rightRail settings 按钮引用）');
       // _activateVideoControlButton 的 settings 分支调 _showPlayerSettings。
-      final int actStart =
-          src.indexOf('void _activateVideoControlButton(VideoControlButton');
+      final int actStart = src.indexOf('void _activateVideoControlButton(');
       expect(actStart, greaterThanOrEqualTo(0),
           reason: '需有 _activateVideoControlButton');
       final int actEnd =

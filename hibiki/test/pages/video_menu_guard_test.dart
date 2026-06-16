@@ -59,18 +59,24 @@ void main() {
           isTrue,
           reason: '音量按钮应打开或固定锚点轻浮层');
       expect(
-          src.contains('_toggleControlPopover(_VideoControlPopoverKind.speed'),
+          RegExp(r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed')
+              .hasMatch(src),
           isTrue,
           reason: '倍速按钮应打开或固定锚点轻浮层');
-      expect(src.contains('_showControlPopover(kind, pinned: true)'), isTrue,
+      expect(src.contains('pinned: true'), isTrue,
           reason: 'click/tap 入口必须以 pinned=true 打开，hover 已打开时点击会固定浮层');
       expect(src.contains('final ValueNotifier<double> _volumeDisplay'), isTrue,
           reason: '音量浮层仍经 _volumeDisplay 同步显示');
 
       // 3 个 side panel 菜单经统一调度，靠单 ValueNotifier 互斥（一次只一个）。
-      expect(src,
-          isNot(contains('_showVideoSidePanel(_VideoSidePanelKind.speed)')),
-          reason: '倍速不再走 side panel，避免打开大面板打断底栏微调');
+      expect(
+          src.contains('void _showSpeedMenu({LayerLink? popoverLink})'), isTrue,
+          reason: '倍速菜单必须能接收触发源 link');
+      expect(src.contains('if (popoverLink == null)'), isTrue,
+          reason: '右键菜单等无触发源入口不能打开无锚点浮层');
+      expect(src.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
+          isTrue,
+          reason: '无触发源入口应回退到可见 side panel');
       expect(
           src.contains('_showVideoSidePanel(_VideoSidePanelKind.audioTracks)'),
           isTrue,
