@@ -759,43 +759,29 @@ void main() {
     expect(picked, VideoImmersiveMode.full);
   });
 
-  // ── TODO-342：右详情（子设置）pane 半透明叠加层，比左分类 pane 视觉深一档 ──────
+  // ── TODO-423：右详情（子设置）pane 不得再叠加不透明背景（用户嫌丑，已删除）──
+  // 父/子层级区分改靠左侧分隔线 + 左侧分类选中高亮，右 pane 不包 ColoredBox 叠加层。
 
   testWidgets(
-      'wide video settings tints the detail pane darker than the category pane '
-      '(TODO-342)', (tester) async {
+      'wide video settings detail pane has no opaque tint overlay '
+      '(TODO-423)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 右 primary pane 由一层半透明 ColoredBox 包裹（叠加在面板 0.78 半透明 surface 之上），
-    // 而左 supporting pane 没有这层叠加 → 右详情视觉比左分类更实/更深一档。
-    final Finder layout = find.byType(MaterialSupportingPaneLayout);
-    // 右 pane 的叠加层是包住 KeyedSubtree 的那个 ColoredBox（左 pane 无此结构）。
-    final Finder primaryTint = find.ancestor(
+    // 右 primary pane 的 KeyedSubtree 不再被任何 0<alpha<1 的半透明 ColoredBox 包裹
+    // （TODO-342 的叠加层已移除）——遍历其全部 ColoredBox 祖先，断言无半透明叠加色。
+    final Finder primaryColoredBoxes = find.ancestor(
       of: find.byType(KeyedSubtree).last,
       matching: find.byType(ColoredBox),
     );
-    final ColoredBox tint = tester.widget<ColoredBox>(primaryTint.first);
-    // 叠加层是半透明（不完全不透明），仍能透出视频画面。
-    expect(tint.color.a, greaterThan(0.0));
-    expect(tint.color.a, lessThan(1.0));
-    // 该叠加层只在右 pane（primary）出现，左父菜单（supporting）侧没有同款 ColoredBox
-    // 直接包 SingleChildScrollView 的结构。
-    final Finder supportingScroll = find
-        .descendant(of: layout, matching: find.byType(SingleChildScrollView))
-        .first;
-    final Finder supportingTint = find.ancestor(
-      of: supportingScroll,
-      matching: find.byType(ColoredBox),
-    );
-    // 左 pane 的滚动区不被本功能新增的半透明叠加层包裹（其祖先可能仍有别的 ColoredBox，
-    // 但不含本功能在右 pane 引入的 0<alpha<1 叠加色）——通过断言右 pane 的叠加色独有来守卫。
-    final Iterable<ColoredBox> supportingBoxes =
-        tester.widgetList<ColoredBox>(supportingTint);
-    for (final ColoredBox box in supportingBoxes) {
-      expect(box.color, isNot(tint.color),
-          reason: '左分类 pane 不应带与右详情 pane 相同的半透明叠加色');
+    final Iterable<ColoredBox> boxes =
+        tester.widgetList<ColoredBox>(primaryColoredBoxes);
+    for (final ColoredBox box in boxes) {
+      final double alpha = box.color.a;
+      // 不得存在半透明叠加层（既不是完全透明也不是完全不透明的那种 tint）。
+      expect(alpha == 0.0 || alpha == 1.0, isTrue,
+          reason: '右详情 pane 不应被半透明叠加色 ColoredBox 包裹（TODO-423）');
     }
   });
 

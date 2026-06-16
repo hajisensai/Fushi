@@ -166,11 +166,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// (2.0 - 0.5) / 0.1 = 15 档，保证滑条只落在旧档位值上。
   static const int _speedDivisions = 15;
 
-  /// TODO-342：右详情 pane 叠加在面板 0.78 半透明 surface 之上的额外不透明色 alpha。
-  /// 取 0.07（落在「比左 pane 深约 0.05~0.08」区间），使子设置区合成后比左分类 pane
-  /// 略深一档而不至于完全不透明（仍能透出视频画面，保持侧栏的半透明语义）。
-  static const double _detailPaneTintAlpha = 0.07;
-
   // 本地镜像：面板在独立的 dialog/bottom-sheet 路由里，父页面 setState 不会重建它，
   // 故乐观更新本地值（同旧 StatefulBuilder 的语义），再异步回调即时生效 + 落盘。
   late int _delayMs = widget.initialDelayMs;
@@ -288,12 +283,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 horizontalInset,
                 bottomInset,
               );
-              // TODO-342：右详情（子设置）pane 在面板半透明 surface（0.78，= 左分类大项
-              // 的透明层）之上再叠一层半透明 overlay 色（surfaceContainerHighest，主题感知，
-              // 非裸值），合成后比左 pane 视觉深一档（更实），用户一眼区分「父分类 / 子详情」。
-              // 叠加层包在右 pane 外、不碰 SingleChildScrollView 自身的 padding。
-              final Color primaryPaneTint = tokens.surfaces.overlay
-                  .withValues(alpha: _detailPaneTintAlpha);
               return SizedBox(
                 height: constraints.maxHeight,
                 child: MaterialSupportingPaneLayout(
@@ -305,14 +294,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                     padding: wideSupportingPadding,
                     child: _buildWidePane(theme, selectedId),
                   ),
-                  primary: ColoredBox(
-                    color: primaryPaneTint,
-                    child: KeyedSubtree(
-                      key: ValueKey<String>(selectedId),
-                      child: SingleChildScrollView(
-                        padding: widePrimaryPadding,
-                        child: _subPageContent(selectedId),
-                      ),
+                  primary: KeyedSubtree(
+                    key: ValueKey<String>(selectedId),
+                    child: SingleChildScrollView(
+                      padding: widePrimaryPadding,
+                      child: _subPageContent(selectedId),
                     ),
                   ),
                 ),
