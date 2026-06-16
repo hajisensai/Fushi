@@ -2,9 +2,28 @@
 
 This folder is the design-selection board for the MD3 + Cupertino redesign goal. It does not change runtime code yet.
 
-## Pick format
+## Start Here
 
-Open [SELECTION_GUIDE.zh-CN.md](SELECTION_GUIDE.zh-CN.md) first for the Chinese decision flow. Open [interface-pack-comparison.html](interface-pack-comparison.html) when you want one card per interface with A/B/C images, the four pack defaults side by side, clickable per-interface picks, local saved state, reviewed/unreviewed tracking, and copyable final-selection text. Open [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md) when you want a Markdown-wide table of all 84 surfaces with A/B/C links, pack defaults, and the recommended choice in one place. Open [pack-selection-index.html](pack-selection-index.html) when you want all 4 whole-app packs expanded across every interface, then jump into the pack page that fits best: [selection-md3-practical.html](selection-md3-practical.html), [selection-reading-calm.html](selection-reading-calm.html), [selection-adaptive-power.html](selection-adaptive-power.html), or [recommended-selection-hibiki-balanced.html](recommended-selection-hibiki-balanced.html). Open [design-pack-gallery.html](design-pack-gallery.html) when you want a faster representative-image comparison before looking at all 84 surfaces. Open [gallery.html](gallery.html) for a single-page visual gallery of all boards. Use its `A` / `B` / `C` controls to save board choices, then use the per-interface selector on the same page for screen-specific exceptions. Open [interface-gallery.html](interface-gallery.html) when you want every exact UI surface listed with three visible A/B/C images, open [interface-images/index.html](interface-images/index.html) when you want direct per-interface images with a review queue, clickable picks, and copyable output, and open [variant-gallery.html](variant-gallery.html) when you want board-level crops only.
+| Need | Open |
+| --- | --- |
+| Chinese decision flow | [SELECTION_GUIDE.zh-CN.md](SELECTION_GUIDE.zh-CN.md) |
+| Fastest per-screen picker | [interface-pack-comparison.html](interface-pack-comparison.html) |
+| Printable 84-surface table | [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md) |
+| Whole-app baseline comparison | [pack-selection-index.html](pack-selection-index.html) |
+| Representative image comparison | [design-pack-gallery.html](design-pack-gallery.html) |
+| One-page board gallery | [gallery.html](gallery.html) |
+| Exact per-interface visual gallery | [interface-gallery.html](interface-gallery.html) |
+| Review queue with standalone images | [interface-images/index.html](interface-images/index.html) |
+| Board-level crops only | [variant-gallery.html](variant-gallery.html) |
+
+## Recommended Flow
+
+1. Start with [SELECTION_GUIDE.zh-CN.md](SELECTION_GUIDE.zh-CN.md) or the recommended Hibiki Balanced pack.
+2. Use [interface-pack-comparison.html](interface-pack-comparison.html) for final per-interface picks; it shows A/B/C images, pack defaults, local saved state, reviewed/unreviewed tracking, and copyable final-selection text.
+3. Use [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md) when you want the same 84 surfaces in Markdown table form.
+4. Generate the implementation spec from the copied picks before touching Flutter code.
+
+## Pick Format
 
 Reply with the copied result or with choices like:
 
@@ -18,7 +37,11 @@ Settings B
 
 You can also mix details, for example `Reader B, but use A's bottom bar`.
 
-For a complete board worksheet, use [PICKS.md](PICKS.md). For the final implementation input, use the copied text from [interface-pack-comparison.html](interface-pack-comparison.html), [interface-gallery.html](interface-gallery.html), or [interface-images/index.html](interface-images/index.html); all three copied formats are accepted by `generate-implementation-spec.mjs`. Start from [RECOMMENDED_FINAL_SELECTION.zh-CN.txt](RECOMMENDED_FINAL_SELECTION.zh-CN.txt) when you want a ready-to-edit Hibiki Balanced picks file with high-risk surfaces called out, or [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md) if you want a blank hand-edit template. For full baseline directions, start from [DESIGN_PACKS.md](DESIGN_PACKS.md) or [design-pack-gallery.html](design-pack-gallery.html), then use [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md) or [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for file-by-file exceptions. For direct visual comparison, use [interface-pack-comparison.html](interface-pack-comparison.html), [interface-gallery.html](interface-gallery.html), [interface-images/index.html](interface-images/index.html), or [variant-gallery.html](variant-gallery.html).
+For a complete board worksheet, use [PICKS.md](PICKS.md). For final implementation input, use copied text from [interface-pack-comparison.html](interface-pack-comparison.html), [interface-gallery.html](interface-gallery.html), or [interface-images/index.html](interface-images/index.html); all three copied formats are accepted by `generate-implementation-spec.mjs`.
+
+Start from [RECOMMENDED_FINAL_SELECTION.zh-CN.txt](RECOMMENDED_FINAL_SELECTION.zh-CN.txt) when you want a ready-to-edit Hibiki Balanced picks file with high-risk surfaces called out, or [FINAL_SELECTION_TEMPLATE.zh-CN.md](FINAL_SELECTION_TEMPLATE.zh-CN.md) if you want a blank hand-edit template. For full baseline directions, start from [DESIGN_PACKS.md](DESIGN_PACKS.md) or [design-pack-gallery.html](design-pack-gallery.html), then use [INTERFACE_DECISION_MATRIX.zh-CN.md](INTERFACE_DECISION_MATRIX.zh-CN.md) or [INTERFACE_PICKS.md](INTERFACE_PICKS.md) for file-by-file exceptions.
+
+## Generate Specs
 
 After choices are copied back into a text file, generate the implementation spec draft with:
 
@@ -32,7 +55,13 @@ To regenerate the reviewable final draft from the recommended Hibiki Balanced se
 node .\generate-implementation-spec.mjs --picks .\RECOMMENDED_FINAL_SELECTION.zh-CN.txt --output .\IMPLEMENTATION_SPEC_FINAL_DRAFT.md
 ```
 
-Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. A picks file may also contain `Pack: hibiki-balanced`, so a final selection can be generated with only `--picks`. The current reviewable final draft is [IMPLEMENTATION_SPEC_FINAL_DRAFT.md](IMPLEMENTATION_SPEC_FINAL_DRAFT.md), generated from [RECOMMENDED_FINAL_SELECTION.zh-CN.txt](RECOMMENDED_FINAL_SELECTION.zh-CN.txt). The pure pack-generated reference is [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md). Omit both `--pack` and `--picks` only when you want [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) from manifest defaults before final choices.
+Use `--pack hibiki-balanced` without `--picks` to generate the recommended hybrid spec directly. A picks file may also contain `Pack: hibiki-balanced`, so a final selection can be generated with only `--picks`.
+
+| Output | Meaning |
+| --- | --- |
+| [IMPLEMENTATION_SPEC_FINAL_DRAFT.md](IMPLEMENTATION_SPEC_FINAL_DRAFT.md) | Current reviewable final draft, generated from [RECOMMENDED_FINAL_SELECTION.zh-CN.txt](RECOMMENDED_FINAL_SELECTION.zh-CN.txt). |
+| [IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md](IMPLEMENTATION_SPEC_HIBIKI_BALANCED.md) | Pure pack-generated reference. |
+| [IMPLEMENTATION_SPEC_DRAFT.md](IMPLEMENTATION_SPEC_DRAFT.md) | Manifest-default draft; useful before final choices only. |
 
 ## Selection images
 
