@@ -70,17 +70,15 @@ void main() {
     // gate 一行可能被 dart format 折行，故只断言并列条件都在 gate 块里出现。
     // BUG-284：rail 显隐判据从 `!controlsVisible` 收紧为 `(!controlsVisible &&
     // !railHovered)`（hover 期间不被收走防闪烁），沉浸锁 / 侧栏门控仍并列在内。
-    final int gateIdx =
-        body.indexOf('if ((!controlsVisible && !railHovered) ||');
+    final int gateIdx = body.indexOf('if (!controlsVisible && !railHovered)');
     expect(gateIdx, greaterThanOrEqualTo(0),
         reason: 'rail 应有 (!controlsVisible && !railHovered) gate（BUG-284）');
     final int braceIdx =
         body.indexOf('return const SizedBox.shrink();', gateIdx);
     expect(braceIdx, greaterThan(gateIdx), reason: 'gate 块应闭合到 shrink');
-    final String gate = body.substring(gateIdx, braceIdx);
-    expect(gate.contains('_immersiveLocked.value'), isTrue,
-        reason: 'rail gate 应含沉浸锁');
-    expect(gate.contains('_videoSidePanel.value != null'), isTrue,
+    expect(body.contains('if (_immersiveLocked.value)'), isTrue,
+        reason: 'rail 应保留沉浸锁分支');
+    expect(body.contains('_videoSidePanel.value != null'), isTrue,
         reason: 'rail gate 应含侧栏门控（面板开则不显示 rail）');
   });
 

@@ -96,4 +96,68 @@ void main() {
       );
     });
   });
+
+  group('VideoControlLayout index-aware moves', () {
+    test('reorders one item within the same slot', () {
+      final VideoControlLayout moved =
+          VideoControlLayout.currentChrome.moveDraggedItem(
+        const VideoControlDragData(
+          item: VideoControlItem.nextCue,
+          sourceSlot: VideoControlSlot.bottomCenter,
+          sourceIndex: 3,
+        ),
+        VideoControlSlot.bottomCenter,
+        targetIndex: 0,
+      );
+
+      expect(
+        moved.itemsIn(VideoControlSlot.bottomCenter).take(5),
+        <VideoControlItem>[
+          VideoControlItem.nextCue,
+          VideoControlItem.seekBackward,
+          VideoControlItem.previousCue,
+          VideoControlItem.playPause,
+          VideoControlItem.seekForward,
+        ],
+      );
+    });
+
+    test('moves only the dragged copy across slots', () {
+      final VideoControlLayout layout = VideoControlLayout.fromSlots(
+        const <VideoControlSlot, List<VideoControlItem>>{
+          VideoControlSlot.topRight: <VideoControlItem>[
+            VideoControlItem.screenshot,
+          ],
+          VideoControlSlot.screenLeft: <VideoControlItem>[
+            VideoControlItem.screenshot,
+            VideoControlItem.settings,
+          ],
+        },
+      );
+
+      final VideoControlLayout moved = layout.moveDraggedItem(
+        const VideoControlDragData(
+          item: VideoControlItem.screenshot,
+          sourceSlot: VideoControlSlot.screenLeft,
+          sourceIndex: 0,
+        ),
+        VideoControlSlot.bottomLeft,
+        targetIndex: 0,
+      );
+
+      expect(
+        moved.itemsIn(VideoControlSlot.topRight),
+        contains(VideoControlItem.screenshot),
+        reason: 'Moving one copy must not delete another slot copy.',
+      );
+      expect(
+        moved.itemsIn(VideoControlSlot.screenLeft),
+        isNot(contains(VideoControlItem.screenshot)),
+      );
+      expect(
+        moved.itemsIn(VideoControlSlot.bottomLeft).first,
+        VideoControlItem.screenshot,
+      );
+    });
+  });
 }

@@ -3194,6 +3194,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           unawaited(controller.nextChapter());
         }),
         escape: () {
+          if (_videoControlEditMode.value) {
+            _hideVideoControlEditOverlay(revealControls: false);
+            return;
+          }
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
           // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
@@ -3828,20 +3832,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       buttonBarButtonSize: _videoControlIconSize,
       keyboardShortcuts: _videoKeyboardShortcuts(controller),
       primaryButtonBar: const <Widget>[],
-      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，右侧
-      // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。
+      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮均从用户布局
+      // slot 渲染，标题固定在 topCenter。
       topButtonBar: <Widget>[
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        // TODO-421 phase 1: user-placed top-bar-left buttons live INSIDE this
-        // fixed row (after back, before the title), not in a floating strip.
-        ..._topBarLearningButtons(
-          VideoControlSlot.topLeft,
-          controller,
-          desktop: true,
-        ),
+        ..._topBarSlotButtons(VideoControlSlot.topLeft, controller,
+            desktop: true),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -3855,61 +3850,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
           ),
         ),
-        if (_isPlaylist) ...<Widget>[
-          MaterialDesktopCustomButton(
-            icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-            onPressed: () {
-              if (_currentEpisode > 0) _switchEpisode(_currentEpisode - 1);
-            },
-          ),
-          MaterialDesktopCustomButton(
-            icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-            onPressed: () {
-              if (_currentEpisode < _episodes.length - 1) {
-                _switchEpisode(_currentEpisode + 1);
-              }
-            },
-          ),
-          MaterialDesktopCustomButton(
-            icon: Icon(Icons.playlist_play, size: _videoControlIconSize),
-            onPressed: _showEpisodeList,
-          ),
-        ],
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.photo_camera_outlined, size: _videoControlIconSize),
-          onPressed: _saveScreenshot,
-        ),
-        MaterialDesktopCustomButton(
-          icon: Icon(_clipExportIcon, size: _videoControlIconSize),
-          onPressed: () => unawaited(_toggleClipExport()),
-        ),
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.subtitles, size: _videoControlIconSize),
-          onPressed: () => _showSubtitleSourceMenu(controller),
-        ),
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
-          onPressed: () => _showAudioTrackMenu(controller),
-        ),
-        // 章节入口（TODO-424）：仅当视频有内封章节时显示（_hasChapters 由异步
-        // refreshChapters 就绪后翻转触发重建）。
-        if (_hasChapters)
-          MaterialDesktopCustomButton(
-            icon: Icon(Icons.format_list_numbered, size: _videoControlIconSize),
-            onPressed: () => _showChapterPanel(controller),
-          ),
-        // 设置入口（tune）不再写死在顶栏（BUG-248B）：它与右侧 rail 的可配置 settings
-        // 按钮（[VideoControlCustomization] 默认 placement=rightRail → [_buildVideoSideActionRail]
-        // → [_activateVideoControlButton](settings) → 同一个 [_showPlayerSettings]）功能完全
-        // 重复。统一交给可配置的 rightRail settings 按钮负责（默认就在 rightRail），用户也
-        // 可经控制条自定义改放它处（TODO-274）。
-        // TODO-421 phase 1: user-placed top-bar-right buttons live INSIDE this
-        // fixed row (trailing the track chrome), not in a floating strip.
-        ..._topBarLearningButtons(
-          VideoControlSlot.topRight,
-          controller,
-          desktop: true,
-        ),
+        ..._topBarSlotButtons(VideoControlSlot.topRight, controller,
+            desktop: true),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
@@ -4002,20 +3944,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       buttonBarHeight: _videoButtonBarHeight,
       buttonBarButtonSize: _videoControlIconSize,
       primaryButtonBar: const <Widget>[],
-      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，
-      // 右侧只放手机上最常用且需要直接命中的入口。倍速仍可从设置进入。
+      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮均从用户布局
+      // slot 渲染，标题固定在 topCenter。
       topButtonBar: <Widget>[
-        MaterialCustomButton(
-          icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        // TODO-421 phase 1: user-placed top-bar-left buttons live INSIDE this
-        // fixed row (after back, before the title), not in a floating strip.
-        ..._topBarLearningButtons(
-          VideoControlSlot.topLeft,
-          controller,
-          desktop: false,
-        ),
+        ..._topBarSlotButtons(VideoControlSlot.topLeft, controller,
+            desktop: false),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -4029,43 +3962,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
           ),
         ),
-        // 剧集列表（播放列表时）两端常驻。
-        if (_isPlaylist)
-          MaterialCustomButton(
-            icon: Icon(Icons.playlist_play, size: _videoControlIconSize),
-            onPressed: _showEpisodeList,
-          ),
-        MaterialCustomButton(
-          icon: Icon(Icons.photo_camera_outlined, size: _videoControlIconSize),
-          onPressed: _saveScreenshot,
-        ),
-        MaterialCustomButton(
-          icon: Icon(_clipExportIcon, size: _videoControlIconSize),
-          onPressed: () => unawaited(_toggleClipExport()),
-        ),
-        MaterialCustomButton(
-          icon: Icon(Icons.subtitles, size: _videoControlIconSize),
-          onPressed: () => _showSubtitleSourceMenu(controller),
-        ),
-        MaterialCustomButton(
-          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
-          onPressed: () => _showAudioTrackMenu(controller),
-        ),
-        // 章节入口（TODO-424）：仅当有内封章节时显示（与桌面同源）。
-        if (_hasChapters)
-          MaterialCustomButton(
-            icon: Icon(Icons.format_list_numbered, size: _videoControlIconSize),
-            onPressed: () => _showChapterPanel(controller),
-          ),
-        // 设置入口（tune）不再写死在顶栏（BUG-248B）：与右侧 rail 的可配置 settings
-        // 按钮功能完全重复，统一交给可配置的 rightRail settings 按钮负责（与桌面一致）。
-        // TODO-421 phase 1: user-placed top-bar-right buttons live INSIDE this
-        // fixed row (trailing the track chrome), not in a floating strip.
-        ..._topBarLearningButtons(
-          VideoControlSlot.topRight,
-          controller,
-          desktop: false,
-        ),
+        ..._topBarSlotButtons(VideoControlSlot.topRight, controller,
+            desktop: false),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
@@ -4079,64 +3977,196 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  List<Widget> _customBottomControlButtons(
-    VideoPlayerController controller, {
-    required bool desktop,
-  }) {
-    return <Widget>[
-      for (final VideoControlButton button
-          in _slotLearningButtons(VideoControlSlot.bottomRight))
-        _buildVideoControlButton(
-          controller,
-          button,
-          desktop: desktop,
-          slot: VideoControlSlot.bottomRight,
-        ),
-    ];
-  }
-
-  /// Slot renderer core (TODO-274 phase 1): the ordered, user-customizable
-  /// learning buttons that live in [slot] of the live [_controlLayout].
-  ///
-  /// This is the single data-driven mapping `VideoControlSlot → ordered buttons`
-  /// that replaces the hardcoded `_controlCustomization.buttonsFor(...)` lookups
-  /// at every render point. Phase 1 only exposes the five learning keys as
-  /// customizable items (transport / nav keys stay fixed in the chrome), so the
-  /// renderer filters the slot to learning items ([VideoControlItem.legacyButton]
-  /// non-null) and maps them back to [VideoControlButton] for the shared
-  /// icon / tooltip / activate path. Special-render transport items in the same
-  /// slot (volume / fullscreen / playPause / title / positionIndicator) are
-  /// drawn by their dedicated builders and are intentionally excluded here.
-  ///
-  /// For the default config [_controlLayout] == [VideoControlLayout.currentChrome]
-  /// → bottomRight yields `[speed]` and screenRight yields
-  /// `[subtitleList, favoriteSentence, favoriteSentences, settings]`, identical
-  /// to the legacy `buttonsFor(bottom)` / `buttonsFor(rightRail)` it replaces.
-  List<VideoControlButton> _slotLearningButtons(VideoControlSlot slot) {
-    return <VideoControlButton>[
-      for (final VideoControlItem item in _controlLayout.itemsIn(slot))
-        if (item.legacyButton != null) item.legacyButton!,
-    ];
-  }
-
   /// TODO-399 decision 3b: every chip-renderable button (learning keys PLUS the
   /// transport / nav keys: play/pause, seek +/-, cue nav, screenshot, subtitle /
   /// audio track, episode list, fullscreen) that the user placed into [slot],
-  /// in order. Used by the floating rails (screen / top left & right) — pure
-  /// custom overlays with no media_kit chrome of their own, so any button placed
-  /// there renders and works without colliding with the media_kit bottom bar.
-  ///
-  /// The bottom bar (bottomLeft / bottomRight / bottomCenter) intentionally
-  /// keeps using [_slotLearningButtons]: its transport cluster (play / seek /
-  /// cue-nav) and trailing volume / fullscreen are drawn by media_kit's own
-  /// theme, so rendering transport keys there again would double them. Moving a
-  /// transport key OUT of bottomCenter onto a rail honours decision 2 without
-  /// touching the play geometry (BUG-257).
+  /// in order. Non-chip special renders ([volume], [title],
+  /// [positionIndicator]) stay on their dedicated render paths.
   List<VideoControlItem> _slotChipItems(VideoControlSlot slot) {
     return <VideoControlItem>[
       for (final VideoControlItem item in _controlLayout.itemsIn(slot))
-        if (item.isChipRenderable) item,
+        if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
     ];
+  }
+
+  List<Widget> _bottomSlotButtons(
+    VideoControlSlot slot,
+    VideoPlayerController controller, {
+    required bool desktop,
+    required bool roomyBottomBar,
+  }) {
+    final List<VideoControlItem> rawItems = _controlLayout.itemsIn(slot);
+    return <Widget>[
+      for (final VideoControlItem item in _slotChipItems(slot))
+        _buildBottomSlotButton(
+          item,
+          controller,
+          desktop: desktop,
+          slot: slot,
+          roomyBottomBar: roomyBottomBar,
+        ),
+      if (rawItems.contains(VideoControlItem.volume))
+        _buildVolumeButton(controller, desktop: desktop),
+    ];
+  }
+
+  Widget _buildBottomSlotButton(
+    VideoControlItem item,
+    VideoPlayerController controller, {
+    required bool desktop,
+    required VideoControlSlot slot,
+    required bool roomyBottomBar,
+  }) {
+    final VideoControlButton? legacy = item.legacyButton;
+    if (legacy != null) {
+      return _buildVideoControlButton(
+        controller,
+        legacy,
+        desktop: desktop,
+        slot: slot,
+      );
+    }
+    switch (item) {
+      case VideoControlItem.playPause:
+        return Tooltip(
+          message: t.video_bottom_play_pause,
+          child: desktop
+              ? MaterialDesktopPlayOrPauseButton(
+                  iconSize: _videoPlayPauseIconSize,
+                )
+              : MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
+        );
+      case VideoControlItem.previousCue:
+        return Tooltip(
+          message: t.video_bottom_prev_cue,
+          child: desktop
+              ? MaterialDesktopCustomButton(
+                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: false),
+                )
+              : MaterialCustomButton(
+                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: false),
+                ),
+        );
+      case VideoControlItem.nextCue:
+        return Tooltip(
+          message: t.video_bottom_next_cue,
+          child: desktop
+              ? MaterialDesktopCustomButton(
+                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: true),
+                )
+              : MaterialCustomButton(
+                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  onPressed: () => _skipCueAndPokeControls(forward: true),
+                ),
+        );
+      case VideoControlItem.seekBackward:
+        if (roomyBottomBar) {
+          return _seekLabelButton(
+            icon: Icons.fast_rewind_rounded,
+            label: t.video_bottom_seek_back_label,
+            tooltip: t.video_bottom_seek_back,
+            color: Theme.of(context).colorScheme.primary,
+            onPressed: () => _seekRelative(-10000),
+          );
+        }
+        return _plainSlotButton(item, controller, desktop: desktop);
+      case VideoControlItem.seekForward:
+        if (roomyBottomBar) {
+          return _seekLabelButton(
+            icon: Icons.fast_forward_rounded,
+            label: t.video_bottom_seek_forward_label,
+            tooltip: t.video_bottom_seek_forward,
+            color: Theme.of(context).colorScheme.primary,
+            onPressed: () => _seekRelative(10000),
+          );
+        }
+        return _plainSlotButton(item, controller, desktop: desktop);
+      case VideoControlItem.fullscreen:
+        return _buildFullscreenButton(desktop: desktop);
+      case VideoControlItem.back:
+      case VideoControlItem.immersiveLock:
+      case VideoControlItem.screenshot:
+      case VideoControlItem.clipExport:
+      case VideoControlItem.subtitleTrack:
+      case VideoControlItem.audioTrack:
+      case VideoControlItem.previousEpisode:
+      case VideoControlItem.nextEpisode:
+      case VideoControlItem.episodeList:
+      case VideoControlItem.previousChapter:
+      case VideoControlItem.nextChapter:
+      case VideoControlItem.chapterList:
+        return _plainSlotButton(item, controller, desktop: desktop);
+      case VideoControlItem.volume:
+      case VideoControlItem.title:
+      case VideoControlItem.positionIndicator:
+      case VideoControlItem.speed:
+      case VideoControlItem.subtitleList:
+      case VideoControlItem.favoriteSentence:
+      case VideoControlItem.favoriteSentences:
+      case VideoControlItem.settings:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _plainSlotButton(
+    VideoControlItem item,
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    final Widget icon = Icon(
+      _videoControlItemIcon(item),
+      size: _videoControlIconSize,
+    );
+    return Tooltip(
+      message: _videoControlItemTooltip(item),
+      child: desktop
+          ? MaterialDesktopCustomButton(
+              icon: icon,
+              onPressed: () => _activateVideoControlItem(item, controller),
+            )
+          : MaterialCustomButton(
+              icon: icon,
+              onPressed: () => _activateVideoControlItem(item, controller),
+            ),
+    );
+  }
+
+  bool _shouldRenderControlItem(VideoControlItem item) {
+    switch (item) {
+      case VideoControlItem.previousEpisode:
+      case VideoControlItem.nextEpisode:
+      case VideoControlItem.episodeList:
+        return _isPlaylist;
+      case VideoControlItem.previousChapter:
+      case VideoControlItem.nextChapter:
+      case VideoControlItem.chapterList:
+        return _hasChapters;
+      case VideoControlItem.volume:
+      case VideoControlItem.title:
+      case VideoControlItem.positionIndicator:
+        return false;
+      case VideoControlItem.back:
+      case VideoControlItem.immersiveLock:
+      case VideoControlItem.speed:
+      case VideoControlItem.subtitleList:
+      case VideoControlItem.favoriteSentence:
+      case VideoControlItem.favoriteSentences:
+      case VideoControlItem.settings:
+      case VideoControlItem.playPause:
+      case VideoControlItem.seekBackward:
+      case VideoControlItem.seekForward:
+      case VideoControlItem.previousCue:
+      case VideoControlItem.nextCue:
+      case VideoControlItem.fullscreen:
+      case VideoControlItem.screenshot:
+      case VideoControlItem.clipExport:
+      case VideoControlItem.subtitleTrack:
+      case VideoControlItem.audioTrack:
+        return true;
+    }
   }
 
   /// TODO-421 phase 1: render the buttons the user placed into the **top** slots
@@ -4161,7 +4191,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// degrades gracefully in narrow windows instead of throwing a RenderFlex
   /// overflow: the Expanded title yields space first, and any residual squeeze
   /// lets the injected buttons shrink rather than paint past the edge.
-  List<Widget> _topBarLearningButtons(
+  List<Widget> _topBarSlotButtons(
     VideoControlSlot slot,
     VideoPlayerController controller, {
     required bool desktop,
@@ -4233,6 +4263,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     switch (item) {
       case VideoControlItem.playPause:
         return Icons.play_arrow_rounded;
+      case VideoControlItem.back:
+        return Icons.arrow_back;
+      case VideoControlItem.immersiveLock:
+        return _immersiveLocked.value
+            ? Icons.lock_outline
+            : Icons.lock_open_outlined;
       case VideoControlItem.seekBackward:
         return Icons.fast_rewind;
       case VideoControlItem.seekForward:
@@ -4246,13 +4282,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.screenshot:
         return Icons.photo_camera_outlined;
       case VideoControlItem.clipExport:
-        return Icons.movie_creation_outlined;
+        return _clipExportIcon;
       case VideoControlItem.subtitleTrack:
         return Icons.subtitles;
       case VideoControlItem.audioTrack:
         return Icons.audiotrack;
+      case VideoControlItem.previousEpisode:
+        return Icons.skip_previous;
+      case VideoControlItem.nextEpisode:
+        return Icons.skip_next;
       case VideoControlItem.episodeList:
         return Icons.playlist_play;
+      case VideoControlItem.previousChapter:
+        return Icons.first_page;
+      case VideoControlItem.nextChapter:
+        return Icons.last_page;
+      case VideoControlItem.chapterList:
+        return Icons.format_list_numbered;
       // Non-chip special renders never reach here (filtered by isChipRenderable).
       case VideoControlItem.volume:
       case VideoControlItem.title:
@@ -4273,6 +4319,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     switch (item) {
       case VideoControlItem.playPause:
         return t.video_control_play_pause;
+      case VideoControlItem.back:
+        return MaterialLocalizations.of(context).backButtonTooltip;
+      case VideoControlItem.immersiveLock:
+        return _immersiveLocked.value
+            ? t.video_immersive_unlock
+            : t.video_menu_lock;
       case VideoControlItem.seekBackward:
         return t.video_control_seek_backward;
       case VideoControlItem.seekForward:
@@ -4291,8 +4343,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_control_subtitle_track;
       case VideoControlItem.audioTrack:
         return t.video_control_audio_track;
+      case VideoControlItem.previousEpisode:
+        return t.video_prev_episode;
+      case VideoControlItem.nextEpisode:
+        return t.video_next_episode;
       case VideoControlItem.episodeList:
         return t.video_control_episode_list;
+      case VideoControlItem.previousChapter:
+        return t.shortcut_action_video_previous_chapter;
+      case VideoControlItem.nextChapter:
+        return t.shortcut_action_video_next_chapter;
+      case VideoControlItem.chapterList:
+        return t.video_chapters;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
@@ -4320,6 +4382,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
     switch (item) {
+      case VideoControlItem.back:
+        unawaited(_handleBackOrExit());
+        break;
+      case VideoControlItem.immersiveLock:
+        _toggleImmersiveLock();
+        break;
       case VideoControlItem.playPause:
         unawaited(controller.playOrPause());
         break;
@@ -4343,7 +4411,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _runWhenImmersiveAllowsFullControls(() {
           final BuildContext? ctx = _videoControlsContext;
           if (ctx != null && ctx.mounted) {
-            toggleFullscreen(ctx);
+            unawaited(_toggleVideoFullscreen(ctx));
           }
         });
         break;
@@ -4359,8 +4427,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.audioTrack:
         _showAudioTrackMenu(controller);
         break;
+      case VideoControlItem.previousEpisode:
+        if (_isPlaylist && _currentEpisode > 0) {
+          _switchEpisode(_currentEpisode - 1);
+        }
+        break;
+      case VideoControlItem.nextEpisode:
+        if (_isPlaylist && _currentEpisode < _episodes.length - 1) {
+          _switchEpisode(_currentEpisode + 1);
+        }
+        break;
       case VideoControlItem.episodeList:
         _showEpisodeList();
+        break;
+      case VideoControlItem.previousChapter:
+        _pokeControlsVisible();
+        unawaited(controller.previousChapter());
+        break;
+      case VideoControlItem.nextChapter:
+        _pokeControlsVisible();
+        unawaited(controller.nextChapter());
+        break;
+      case VideoControlItem.chapterList:
+        _showChapterPanel(controller);
         break;
       // Non-chip / handled-by-legacy items never reach here.
       case VideoControlItem.volume:
@@ -4403,76 +4492,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
           );
     final List<Widget> rightCluster = <Widget>[
-      ..._customBottomControlButtons(controller, desktop: desktop),
-      _buildVolumeButton(controller, desktop: desktop),
-      _buildFullscreenButton(desktop: desktop),
+      ..._bottomSlotButtons(
+        VideoControlSlot.bottomRight,
+        controller,
+        desktop: desktop,
+        roomyBottomBar: roomyBottomBar,
+      ),
     ];
-    // seek 传输簇（居中绝对定位）：±10s 带可见标注（BUG-257 用户看不懂图标），上/下一句走
-    // cue 导航（无字幕段对称回退/前进，动态 _asbConfig.seekSeconds，不写死 ±3s）。
+    // seek 传输簇（居中绝对定位）：从 bottomCenter slot 取真实顺序。默认仍是
+    // `[−10s][上一句][play][下一句][+10s]`，移动后不再硬编码重复。
     final Widget transport = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (roomyBottomBar)
-          _seekLabelButton(
-            icon: Icons.fast_rewind_rounded,
-            label: t.video_bottom_seek_back_label,
-            tooltip: t.video_bottom_seek_back,
-            color: cs.primary,
-            onPressed: () => _seekRelative(-10000),
-          ),
-        Tooltip(
-          message: t.video_bottom_prev_cue,
-          child: desktop
-              ? MaterialDesktopCustomButton(
-                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: false),
-                )
-              : MaterialCustomButton(
-                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: false),
-                ),
+        ..._bottomSlotButtons(
+          VideoControlSlot.bottomCenter,
+          controller,
+          desktop: desktop,
+          roomyBottomBar: roomyBottomBar,
         ),
-        Tooltip(
-          message: t.video_bottom_play_pause,
-          child: desktop
-              ? MaterialDesktopPlayOrPauseButton(
-                  iconSize: _videoPlayPauseIconSize)
-              : MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
-        ),
-        Tooltip(
-          message: t.video_bottom_next_cue,
-          child: desktop
-              ? MaterialDesktopCustomButton(
-                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: true),
-                )
-              : MaterialCustomButton(
-                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: true),
-                ),
-        ),
-        if (roomyBottomBar)
-          _seekLabelButton(
-            icon: Icons.fast_forward_rounded,
-            label: t.video_bottom_seek_forward_label,
-            tooltip: t.video_bottom_seek_forward,
-            color: cs.primary,
-            onPressed: () => _seekRelative(10000),
-          ),
       ],
     );
-    // 左区：时间指示器 + 用户放进 bottomLeft 槽的自定义学习按钮（TODO-274/312
-    // phase 2）。与中心簇绝对独立，宽度变化不挤偏 play。
+    // 左区：时间指示器 + bottomLeft slot 按钮。与中心簇绝对独立，宽度变化不挤偏 play。
     final List<Widget> leftCluster = <Widget>[
-      positionIndicator,
-      for (final VideoControlButton button
-          in _slotLearningButtons(VideoControlSlot.bottomLeft))
-        _buildVideoControlButton(
-          controller,
-          button,
-          desktop: desktop,
-          slot: VideoControlSlot.bottomLeft,
-        ),
+      if (_controlLayout
+          .itemsIn(VideoControlSlot.bottomLeft)
+          .contains(VideoControlItem.positionIndicator))
+        positionIndicator,
+      ..._bottomSlotButtons(
+        VideoControlSlot.bottomLeft,
+        controller,
+        desktop: desktop,
+        roomyBottomBar: roomyBottomBar,
+      ),
     ];
     return Stack(
       alignment: Alignment.center,
@@ -6836,7 +6887,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ),
                 _buildOsdOverlay(),
                 _buildVolumeHudOverlay(),
-                _buildSideLockButton(),
                 _buildVideoSideActionRail(controller),
                 _buildVideoSidePanelOverlay(controller),
                 _buildVideoControlPopoverOverlay(controller),
@@ -6914,49 +6964,64 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 浮动侧栏（TODO-274/312 phase 2）：把 screenLeft / screenRight 两个屏幕侧槽
-  /// （竖直居中浮条）的自定义学习按钮分别渲染。默认配置只用 screenRight（[subtitleList,
-  /// favoriteSentence, favoriteSentences, settings]，与 legacy rightRail 一致）；用户把
-  /// 按钮拖到 screenLeft 后左浮条才出现。两条共用同一可见性门控（沉浸锁 / 侧栏打开时都
-  /// 不显示）。
+  /// （竖直居中浮条）的自定义按钮分别渲染。默认配置右侧保留学习按钮，左侧承接
+  /// 可调整的沉浸锁；用户把按钮拖到任一侧后按真实 slot 显示。
   ///
   /// TODO-421 phase 1：topLeft / topRight 两个顶部槽不再渲染成「固定顶栏下方的浮动竖条」
   /// ——用户嫌它名不副实（选「Top bar (左/右)」却落在顶栏下方）。改为把这两槽的按钮注入
-  /// 固定顶栏行本身（[_topBarLearningButtons] → [_desktopControlsTheme] / [_mobileControlsTheme]
+  /// 固定顶栏行本身（[_topBarSlotButtons] → [_desktopControlsTheme] / [_mobileControlsTheme]
   /// 的 `topButtonBar`），此处只剩屏幕左 / 右两条浮条。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
-    final Widget right = _buildVideoSideRailFor(
-      controller,
-      VideoControlSlot.screenRight,
-      Alignment.centerRight,
-      const EdgeInsets.only(right: 12),
-    );
-    final Widget left = _buildVideoSideRailFor(
-      controller,
-      VideoControlSlot.screenLeft,
-      Alignment.centerLeft,
-      const EdgeInsets.only(left: 12),
-    );
+    Widget right({bool immersiveOnly = false}) => _buildVideoSideRailFor(
+          controller,
+          VideoControlSlot.screenRight,
+          Alignment.centerRight,
+          const EdgeInsets.only(right: 12),
+          immersiveOnly: immersiveOnly,
+        );
+    Widget left({bool immersiveOnly = false}) => _buildVideoSideRailFor(
+          controller,
+          VideoControlSlot.screenLeft,
+          Alignment.centerLeft,
+          const EdgeInsets.only(left: 12),
+          immersiveOnly: immersiveOnly,
+        );
     return Positioned.fill(
       // rail 的显隐由「控制条可见」**或**「鼠标正悬在 rail 上」决定（BUG-283）：后者保证
       // hover 期间 rail 永不被 media_kit 控制条的瞬时 visible 抖动收走，根除 opaque 按钮
       // 遮挡 media_kit MouseRegion 触发 onExit → 收 rail → 重新 onEnter 的闪烁振荡。
       child: ListenableBuilder(
-        listenable:
-            Listenable.merge(<Listenable>[_videoControlsVisible, _railHovered]),
+        listenable: Listenable.merge(<Listenable>[
+          _videoControlsVisible,
+          _railHovered,
+          _immersiveLocked,
+          _videoSidePanel,
+        ]),
         builder: (BuildContext context, __) {
           final bool controlsVisible = _videoControlsVisible.value;
           final bool railHovered = _railHovered.value;
-          // 沉浸锁或侧栏打开（BUG-253）时一律不显示侧栏——面板盖在它上面、背景操作
-          // 按钮不该再冒出来。controlsVisible 在面板期间已被强制 false，这里再显式门控
-          // [_videoSidePanel] 做双保险。railHovered 也受同样门控（沉浸/侧栏下 rail 本就不
-          // 渲染、不会有 hover）。
-          if ((!controlsVisible && !railHovered) ||
-              _immersiveLocked.value ||
-              _videoSidePanel.value != null) {
+          if (_videoSidePanel.value != null) {
             return const SizedBox.shrink();
           }
+          if (_immersiveLocked.value) {
+            final bool lockOnSideRail =
+                _slotChipItems(VideoControlSlot.screenLeft)
+                        .contains(VideoControlItem.immersiveLock) ||
+                    _slotChipItems(VideoControlSlot.screenRight)
+                        .contains(VideoControlItem.immersiveLock);
+            if (!lockOnSideRail) {
+              return Stack(children: <Widget>[_buildSideLockButton()]);
+            }
+            return Stack(
+              children: <Widget>[
+                left(immersiveOnly: true),
+                right(immersiveOnly: true),
+              ],
+            );
+          }
+          if (!controlsVisible && !railHovered) return const SizedBox.shrink();
           return Stack(
-            children: <Widget>[left, right],
+            children: <Widget>[left(), right()],
           );
         },
       ),
@@ -6976,13 +7041,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
     VideoControlSlot slot,
     AlignmentGeometry alignment,
-    EdgeInsetsGeometry padding,
-  ) {
+    EdgeInsetsGeometry padding, {
+    bool immersiveOnly = false,
+  }) {
     // TODO-399 decision 3b: rails render EVERY chip-renderable item the user
     // placed here (learning + transport/nav keys), not just the five learning
     // keys. Rails are pure custom overlays with no media_kit chrome, so adding
     // transport keys here never collides / doubles with the bottom bar.
-    final List<VideoControlItem> items = _slotChipItems(slot);
+    final List<VideoControlItem> items = <VideoControlItem>[
+      for (final VideoControlItem item in _slotChipItems(slot))
+        if (!immersiveOnly || item == VideoControlItem.immersiveLock) item,
+    ];
     if (items.isEmpty) return const SizedBox.shrink();
     final ColorScheme cs = _videoChromeColorScheme(context);
 

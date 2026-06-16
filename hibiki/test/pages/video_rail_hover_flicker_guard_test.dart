@@ -40,16 +40,20 @@ void main() {
 
   test('rail 显隐判据含「控制条可见 OR 鼠标悬在 rail 上」（hover 期间不被收走）', () {
     expect(
-      src.contains('if ((!controlsVisible && !railHovered) ||'),
+      src.contains('if (!controlsVisible && !railHovered)'),
       isTrue,
       reason: 'rail 隐藏判据应为「控制条不可见 且 不在 hover」，hover 期间永不收走（BUG-284）',
     );
-    expect(
-      src.contains(
-          'Listenable.merge(<Listenable>[_videoControlsVisible, _railHovered])'),
-      isTrue,
-      reason: 'rail 应同时监听 _videoControlsVisible 与 _railHovered',
-    );
+    final int railStart = src.indexOf('Widget _buildVideoSideActionRail(');
+    expect(railStart, greaterThanOrEqualTo(0));
+    final int mergeStart =
+        src.indexOf('Listenable.merge(<Listenable>[', railStart);
+    expect(mergeStart, greaterThanOrEqualTo(0));
+    final int mergeEnd = src.indexOf('])', mergeStart);
+    expect(mergeEnd, greaterThan(mergeStart));
+    final String merge = src.substring(mergeStart, mergeEnd);
+    expect(merge.contains('_videoControlsVisible'), isTrue);
+    expect(merge.contains('_railHovered'), isTrue);
   });
 
   test('rail 按钮列挂 keep-alive MouseRegion（opaque:false + 进 rail 续命）', () {

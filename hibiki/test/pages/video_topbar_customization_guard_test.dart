@@ -29,34 +29,31 @@ void main() {
         reason: 'topCenter（标题固定 chrome）不应纳入可编辑槽');
   });
 
-  test('拖动编辑器呈现顶部两槽放置区', () {
-    final String settings =
-        read('lib/src/media/video/video_quick_settings_sheet.dart');
+  test('画面上编辑器呈现顶部两槽放置区', () {
+    final String overlay =
+        read('lib/src/media/video/video_control_layout_edit_overlay.dart');
     expect(
-        settings.contains('_buildSlotRegion(VideoControlSlot.topLeft)'), isTrue,
+        overlay.contains('_buildSlotRegion(VideoControlSlot.topLeft)'), isTrue,
         reason: '编辑器应有 topLeft 放置区（TODO-388）');
-    expect(settings.contains('_buildSlotRegion(VideoControlSlot.topRight)'),
-        isTrue,
+    expect(
+        overlay.contains('_buildSlotRegion(VideoControlSlot.topRight)'), isTrue,
         reason: '编辑器应有 topRight 放置区（TODO-388）');
     // 顶部两槽有面向用户的标签（i18n）。
-    expect(settings.contains('t.video_control_slot_top_left'), isTrue);
-    expect(settings.contains('t.video_control_slot_top_right'), isTrue);
+    expect(overlay.contains('t.video_control_slot_top_left'), isTrue);
+    expect(overlay.contains('t.video_control_slot_top_right'), isTrue);
   });
 
   test('播放器把顶部两槽注入固定顶栏行本身（TODO-421 phase 1）', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
-    // 顶部两槽经 _topBarLearningButtons 注入 topButtonBar（不再是浮动竖条）。
+    // 顶部两槽经 _topBarSlotButtons 注入 topButtonBar（不再是浮动竖条）。
     expect(
-      page.contains('List<Widget> _topBarLearningButtons('),
+      page.contains('List<Widget> _topBarSlotButtons('),
       isTrue,
-      reason: '应有把顶部槽渲染进顶栏行的 helper（_topBarLearningButtons）',
+      reason: '应有把顶部槽渲染进顶栏行的 helper（_topBarSlotButtons）',
     );
-    // helper 用 topLeft / topRight 两槽各被注入一次（桌面 + 移动两套主题 = 各两处）。
-    expect(page.contains('VideoControlSlot.topLeft'), isTrue);
-    expect(page.contains('VideoControlSlot.topRight'), isTrue);
-    expect('_topBarLearningButtons('.allMatches(page).length,
-        greaterThanOrEqualTo(5),
+    expect(
+        '_topBarSlotButtons('.allMatches(page).length, greaterThanOrEqualTo(5),
         reason: 'helper 定义 1 处 + 桌面/移动各注入 topLeft/topRight 共 4 处');
     // 顶部两槽经 media_kit chrome 按钮渲染（吃主题色/尺寸/随控制条淡入淡出），且复用
     // 所有 chip-renderable 项的统一激活路径（学习键 + transport/nav 键都不丢）。
@@ -68,12 +65,45 @@ void main() {
 
     // 旧的「固定顶栏下方浮动竖条」已删：浮动 Stack 只剩屏幕左 / 右两条
     // （[left, right]，不再有 topLeft / topRight 两条浮条）。
-    expect(page.contains('children: <Widget>[left, right]'), isTrue,
+    expect(page.contains('children: <Widget>[left(), right()]'), isTrue,
         reason: '浮动侧栏 Stack 应只剩屏幕左/右两条（顶部两条已移入顶栏行）');
     // 顶部浮条专属的「让出固定顶栏高度」内边距随浮条一并删除（OSD 通知层用的
     // Alignment.topLeft 与本浮条无关，故不据 Alignment 判删除）。
     expect(page.contains('_videoButtonBarHeight + 8'), isFalse,
         reason: '顶部浮条的「让出顶栏高度」内边距应随浮条一并删除');
+  });
+
+  test('顶栏右侧按钮来自 topRight slot 的同一横排，不再硬编码第二套', () {
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final int desktopStart = page
+        .indexOf('MaterialDesktopVideoControlsThemeData _desktopControlsTheme');
+    final int desktopEnd =
+        page.indexOf('MaterialVideoControlsThemeData _mobileControlsTheme');
+    expect(desktopStart, greaterThanOrEqualTo(0));
+    expect(desktopEnd, greaterThan(desktopStart));
+    final String desktopTheme = page.substring(desktopStart, desktopEnd);
+
+    expect(
+      desktopTheme,
+      contains('..._topBarSlotButtons(VideoControlSlot.topRight'),
+      reason: 'topRight 应作为固定顶栏右侧横排的一段渲染',
+    );
+    expect(
+      desktopTheme,
+      isNot(contains('onPressed: _saveScreenshot')),
+      reason: '截图按钮应由 VideoControlItem.screenshot slot 渲染',
+    );
+    expect(
+      desktopTheme,
+      isNot(contains('onPressed: () => _showSubtitleSourceMenu(controller)')),
+      reason: '字幕轨按钮应由 VideoControlItem.subtitleTrack slot 渲染',
+    );
+    expect(
+      desktopTheme,
+      isNot(contains('onPressed: () => _showAudioTrackMenu(controller)')),
+      reason: '音轨按钮应由 VideoControlItem.audioTrack slot 渲染',
+    );
   });
 
   test('i18n 顶部槽标签 key 完整（17 语言）', () {

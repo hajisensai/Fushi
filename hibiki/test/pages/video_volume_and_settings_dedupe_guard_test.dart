@@ -130,7 +130,7 @@ void main() {
       expect(src.contains('LayerLink? popoverLink'), isTrue,
           reason: '_activateVideoControlItem / _showSpeedMenu 必须传递触发源 link');
 
-      final String top = methodBody('List<Widget> _topBarLearningButtons(');
+      final String top = methodBody('List<Widget> _topBarSlotButtons(');
       expect(top.contains('_controlPopoverLinkFor(slot, item)'), isTrue,
           reason: 'top bar speed 来自 _slotChipItems(slot)，必须使用该 slot 的锚点');
       expect(top.contains('_controlPopoverAnchor('), isTrue,
