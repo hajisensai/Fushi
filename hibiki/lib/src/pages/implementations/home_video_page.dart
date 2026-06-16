@@ -225,15 +225,47 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (confirmed != true || !mounted) return;
 
     final Set<String> toDelete = Set<String>.of(_selectedUids);
-    int deleted = 0;
+    final List<VideoBookRow> deletedBooks = <VideoBookRow>[];
     for (final String bookUid in toDelete) {
+      final VideoBookRow? book = await widget.repo.getByBookUid(bookUid);
+      if (book == null) continue;
       await widget.repo.deleteVideoBook(bookUid);
-      deleted++;
+      deletedBooks.add(book);
+    }
+    final int deleted = deletedBooks.length;
+    if (mounted) {
+      _exitSelectionMode();
+      _refreshAfterTagChange();
+      await _waitForVideoCardsToUnmount();
+    }
+    for (final VideoBookRow book in deletedBooks) {
+      await widget.repo.reclaimDeletedVideoBookAssets(
+        deletedBookUid: book.bookUid,
+        deletedCoverPath: book.coverPath,
+        deletedSubtitlePath: book.subtitleSource,
+        deletedVideoPath: book.videoPath,
+      );
+    }
+    if (deleted > 0) {
+      await widget.repo.compactAfterVideoDeleteBestEffort();
     }
     if (!mounted) return;
-    _exitSelectionMode();
-    _refreshAfterTagChange();
     HibikiToast.show(msg: t.batch_delete_success(n: deleted));
+  }
+
+  Future<void> _waitForVideoCardsToUnmount() async {
+    final Future<List<VideoBookRow>>? future = _future;
+    if (future != null) {
+      try {
+        await future;
+      } catch (_) {
+        // Refresh failures are surfaced by the FutureBuilder; deletion cleanup
+        // stays best-effort and should still run.
+      }
+    }
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
   }
 
   /// 批量打标签：弹 [_VideoBatchTagPickerDialog]（每个标签三态：保持/添加/移除），
@@ -712,8 +744,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    final String? deletedCoverPath = book.coverPath;
+    final String? deletedSubtitlePath = book.subtitleSource;
+    final String deletedVideoPath = book.videoPath;
     await widget.repo.deleteVideoBook(book.bookUid);
-    if (mounted) _refreshAfterTagChange();
+    if (mounted) {
+      _refreshAfterTagChange();
+      await _waitForVideoCardsToUnmount();
+    }
+    await widget.repo.reclaimDeletedVideoBookAssets(
+      deletedBookUid: book.bookUid,
+      deletedCoverPath: deletedCoverPath,
+      deletedSubtitlePath: deletedSubtitlePath,
+      deletedVideoPath: deletedVideoPath,
+    );
+    await widget.repo.compactAfterVideoDeleteBestEffort();
   }
 
   @override

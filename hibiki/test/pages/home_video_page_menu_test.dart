@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -10,14 +11,63 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
+
+class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
+  PausingBatchDeleteVideoBookRepository(
+    super.db, {
+    required this.pauseAfterDeleteCount,
+  });
+
+  final int pauseAfterDeleteCount;
+  final Completer<void> deletesCommitted = Completer<void>();
+  final Completer<void> allowDeleteReturn = Completer<void>();
+  int deleteCalls = 0;
+  int reclaimCalls = 0;
+  int compactCalls = 0;
+
+  @override
+  Future<void> deleteVideoBook(String bookUid) async {
+    await super.deleteVideoBook(bookUid);
+    deleteCalls++;
+    if (deleteCalls == pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
+      deletesCommitted.complete();
+      await allowDeleteReturn.future;
+    }
+  }
+
+  @override
+  Future<void> reclaimDeletedVideoBookAssets({
+    required String deletedBookUid,
+    required String? deletedCoverPath,
+    required String? deletedSubtitlePath,
+    required String deletedVideoPath,
+  }) async {
+    reclaimCalls++;
+    await super.reclaimDeletedVideoBookAssets(
+      deletedBookUid: deletedBookUid,
+      deletedCoverPath: deletedCoverPath,
+      deletedSubtitlePath: deletedSubtitlePath,
+      deletedVideoPath: deletedVideoPath,
+    );
+  }
+
+  @override
+  Future<void> compactAfterVideoDeleteBestEffort() async {
+    compactCalls++;
+    await super.compactAfterVideoDeleteBestEffort();
+  }
+}
 
 /// HomeVideoPage 行为测试：验证「视频长按弹菜单」与「视频卡渲染共享标签」真生效
 /// （而非只看源码）。AppModel 用 [AppModel.wireDatabaseForTesting] /
@@ -47,6 +97,8 @@ void main() {
 
   late HibikiDatabase db;
   late AppModel appModel;
+  late Directory externalVideoDir;
+  late Directory storeDir;
   late GlobalKey<NavigatorState> toastNavigatorKey;
 
   setUp(() async {
@@ -54,8 +106,9 @@ void main() {
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_home_video_store');
+    storeDir = Directory.systemTemp.createTempSync('hibiki_home_video_store');
+    externalVideoDir =
+        Directory.systemTemp.createTempSync('hibiki_home_video_external');
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -64,7 +117,98 @@ void main() {
 
   tearDown(() async {
     await db.close();
+    if (externalVideoDir.existsSync()) {
+      externalVideoDir.deleteSync(recursive: true);
+    }
+    if (storeDir.existsSync()) {
+      storeDir.deleteSync(recursive: true);
+    }
   });
+
+  void resetAppOwnedVideoAssetDirs() {
+    for (final String name in <String>[
+      VideoStorage.coversDirName,
+      VideoStorage.subtitlesDirName,
+    ]) {
+      final Directory dir = Directory(p.join(pathProviderDir.path, name));
+      if (dir.existsSync()) {
+        dir.deleteSync(recursive: true);
+      }
+      dir.createSync(recursive: true);
+    }
+  }
+
+  File writeAppOwnedAsset({
+    required String dirName,
+    required String fileName,
+    List<int>? bytes,
+    String? text,
+  }) {
+    final File file = File(p.join(pathProviderDir.path, dirName, fileName));
+    file.parent.createSync(recursive: true);
+    if (bytes != null) {
+      file.writeAsBytesSync(bytes);
+    } else {
+      file.writeAsStringSync(text ?? 'asset');
+    }
+    return file;
+  }
+
+  File writeOriginalVideo(String fileName) {
+    final File file = File(p.join(externalVideoDir.path, fileName));
+    file.parent.createSync(recursive: true);
+    file.writeAsBytesSync(<int>[0, 1, 2, 3, 4, 5]);
+    return file;
+  }
+
+  Directory writeEmbeddedSubtitleCache(File video) {
+    final Directory dir = embeddedSubtitleCacheDir(video.path);
+    dir.createSync(recursive: true);
+    File(p.join(dir.path, 'sub_0.srt'))
+        .writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello');
+    return dir;
+  }
+
+  Future<({File cover, Directory embeddedCache, File subtitle, File video})>
+      seedVideoWithAssets({
+    required String bookUid,
+    required String title,
+    required File cover,
+    required File subtitle,
+    String? videoFileName,
+  }) async {
+    final File video = writeOriginalVideo(
+      videoFileName ?? '${bookUid.replaceAll('/', '_')}.mp4',
+    );
+    final Directory embeddedCache = writeEmbeddedSubtitleCache(video);
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: Value(title),
+      videoPath: Value(video.path),
+      coverPath: Value(cover.path),
+      subtitleSource: Value(subtitle.path),
+    ));
+    return (
+      cover: cover,
+      embeddedCache: embeddedCache,
+      subtitle: subtitle,
+      video: video,
+    );
+  }
+
+  Future<void> waitForAsyncCleanup(
+    WidgetTester tester,
+    bool Function() isDone,
+  ) async {
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 2));
+    while (!isDone() && DateTime.now().isBefore(deadline)) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+    }
+    await tester.pumpAndSettle();
+  }
 
   Future<void> seedTaggedVideo() async {
     await db.upsertVideoBook(const VideoBooksCompanion(
@@ -85,7 +229,11 @@ void main() {
     return db.createTag('Anime', 0xFF2196F3);
   }
 
-  Widget buildApp({bool captureToasts = false}) => ProviderScope(
+  Widget buildApp({
+    bool captureToasts = false,
+    VideoBookRepository? repo,
+  }) =>
+      ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
         ],
@@ -96,7 +244,7 @@ void main() {
             // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
             // HibikiPageHeader 的 HibikiIconButton(InkWell) 才有 Material 祖先。
             home: Scaffold(
-              body: HomeVideoPage(repo: VideoBookRepository(db)),
+              body: HomeVideoPage(repo: repo ?? VideoBookRepository(db)),
             ),
           ),
         ),
@@ -283,6 +431,226 @@ void main() {
         await VideoBookRepository(db).listAll();
     expect(remaining.map((VideoBookRow b) => b.bookUid), <String>['video/2'],
         reason: 'video/1 被批量删除，video/2 保留');
+  });
+
+  testWidgets('长按菜单单删会回收本视频 app-owned 封面字幕与内嵌字幕缓存',
+      (WidgetTester tester) async {
+    resetAppOwnedVideoAssetDirs();
+    final deleted = await seedVideoWithAssets(
+      bookUid: 'video/1',
+      title: 'Episode One',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_1.png',
+        text: 'cover-one',
+      ),
+      subtitle: writeAppOwnedAsset(
+        dirName: VideoStorage.subtitlesDirName,
+        fileName: 'video_1.srt',
+        text: '1\n00:00:00,000 --> 00:00:01,000\none',
+      ),
+    );
+    final kept = await seedVideoWithAssets(
+      bookUid: 'video/2',
+      title: 'Episode Two',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_2.png',
+        text: 'cover-two',
+      ),
+      subtitle: writeAppOwnedAsset(
+        dirName: VideoStorage.subtitlesDirName,
+        fileName: 'video_2.srt',
+        text: '1\n00:00:00,000 --> 00:00:01,000\ntwo',
+      ),
+    );
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester
+        .longPress(find.byKey(const ValueKey<String>('home_video_video/1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, t.dialog_delete).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.pumpAndSettle();
+    await waitForAsyncCleanup(
+      tester,
+      () =>
+          !deleted.cover.existsSync() &&
+          !deleted.subtitle.existsSync() &&
+          !deleted.embeddedCache.existsSync(),
+    );
+
+    expect(await db.getVideoBookByBookUid('video/1'), isNull);
+    expect(await db.getVideoBookByBookUid('video/2'), isNotNull);
+    expect(deleted.cover.existsSync(), isFalse);
+    expect(deleted.subtitle.existsSync(), isFalse);
+    expect(deleted.embeddedCache.existsSync(), isFalse);
+    expect(deleted.video.existsSync(), isTrue,
+        reason: '删除视频书不得删除用户原始 videoPath');
+    expect(kept.cover.existsSync(), isTrue);
+    expect(kept.subtitle.existsSync(), isTrue);
+    expect(kept.embeddedCache.existsSync(), isTrue);
+    expect(kept.video.existsSync(), isTrue);
+  });
+
+  testWidgets('批量删除只回收选中视频资产且保留其他视频仍引用的字幕', (WidgetTester tester) async {
+    resetAppOwnedVideoAssetDirs();
+    final File sharedSubtitle = writeAppOwnedAsset(
+      dirName: VideoStorage.subtitlesDirName,
+      fileName: 'shared.srt',
+      text: '1\n00:00:00,000 --> 00:00:01,000\nshared',
+    );
+    final selectedOne = await seedVideoWithAssets(
+      bookUid: 'video/1',
+      title: 'Episode One',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_1.png',
+        text: 'cover-one',
+      ),
+      subtitle: sharedSubtitle,
+    );
+    final selectedTwo = await seedVideoWithAssets(
+      bookUid: 'video/2',
+      title: 'Episode Two',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_2.png',
+        text: 'cover-two',
+      ),
+      subtitle: writeAppOwnedAsset(
+        dirName: VideoStorage.subtitlesDirName,
+        fileName: 'video_2.srt',
+        text: '1\n00:00:00,000 --> 00:00:01,000\ntwo',
+      ),
+    );
+    final kept = await seedVideoWithAssets(
+      bookUid: 'video/3',
+      title: 'Episode Three',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_3.png',
+        text: 'cover-three',
+      ),
+      subtitle: sharedSubtitle,
+    );
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await enterSelectionMode(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.pumpAndSettle();
+    await waitForAsyncCleanup(
+      tester,
+      () =>
+          !selectedOne.cover.existsSync() &&
+          !selectedTwo.cover.existsSync() &&
+          !selectedTwo.subtitle.existsSync() &&
+          !selectedOne.embeddedCache.existsSync() &&
+          !selectedTwo.embeddedCache.existsSync(),
+    );
+
+    expect(await db.getVideoBookByBookUid('video/1'), isNull);
+    expect(await db.getVideoBookByBookUid('video/2'), isNull);
+    expect(await db.getVideoBookByBookUid('video/3'), isNotNull);
+    expect(selectedOne.cover.existsSync(), isFalse);
+    expect(selectedTwo.cover.existsSync(), isFalse);
+    expect(selectedTwo.subtitle.existsSync(), isFalse);
+    expect(selectedOne.embeddedCache.existsSync(), isFalse);
+    expect(selectedTwo.embeddedCache.existsSync(), isFalse);
+    expect(selectedOne.video.existsSync(), isTrue);
+    expect(selectedTwo.video.existsSync(), isTrue);
+    expect(sharedSubtitle.existsSync(), isTrue,
+        reason: '其他视频仍引用的 app-owned 字幕不能被选中视频删除波及');
+    expect(kept.cover.existsSync(), isTrue);
+    expect(kept.embeddedCache.existsSync(), isTrue);
+    expect(kept.video.existsSync(), isTrue);
+  });
+
+  testWidgets('批量删除 DB 后页面卸载仍会回收 app-owned 视频资产', (WidgetTester tester) async {
+    resetAppOwnedVideoAssetDirs();
+    final selectedOne = await seedVideoWithAssets(
+      bookUid: 'video/1',
+      title: 'Episode One',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_1.png',
+        text: 'cover-one',
+      ),
+      subtitle: writeAppOwnedAsset(
+        dirName: VideoStorage.subtitlesDirName,
+        fileName: 'video_1.srt',
+        text: '1\n00:00:00,000 --> 00:00:01,000\none',
+      ),
+    );
+    final selectedTwo = await seedVideoWithAssets(
+      bookUid: 'video/2',
+      title: 'Episode Two',
+      cover: writeAppOwnedAsset(
+        dirName: VideoStorage.coversDirName,
+        fileName: 'video_2.png',
+        text: 'cover-two',
+      ),
+      subtitle: writeAppOwnedAsset(
+        dirName: VideoStorage.subtitlesDirName,
+        fileName: 'video_2.srt',
+        text: '1\n00:00:00,000 --> 00:00:01,000\ntwo',
+      ),
+    );
+    final PausingBatchDeleteVideoBookRepository repo =
+        PausingBatchDeleteVideoBookRepository(db, pauseAfterDeleteCount: 2);
+
+    await tester.pumpWidget(buildApp(repo: repo));
+    await tester.pumpAndSettle();
+    await enterSelectionMode(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, t.dialog_delete).last);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await repo.deletesCommitted.future.timeout(const Duration(seconds: 2));
+    });
+    expect(await db.getVideoBookByBookUid('video/1'), isNull);
+    expect(await db.getVideoBookByBookUid('video/2'), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    repo.allowDeleteReturn.complete();
+    await waitForAsyncCleanup(
+      tester,
+      () =>
+          !selectedOne.cover.existsSync() &&
+          !selectedOne.subtitle.existsSync() &&
+          !selectedOne.embeddedCache.existsSync() &&
+          !selectedTwo.cover.existsSync() &&
+          !selectedTwo.subtitle.existsSync() &&
+          !selectedTwo.embeddedCache.existsSync(),
+    );
+
+    expect(repo.reclaimCalls, 2);
+    expect(repo.compactCalls, 1);
+    expect(selectedOne.cover.existsSync(), isFalse);
+    expect(selectedOne.subtitle.existsSync(), isFalse);
+    expect(selectedOne.embeddedCache.existsSync(), isFalse);
+    expect(selectedTwo.cover.existsSync(), isFalse);
+    expect(selectedTwo.subtitle.existsSync(), isFalse);
+    expect(selectedTwo.embeddedCache.existsSync(), isFalse);
+    expect(selectedOne.video.existsSync(), isTrue);
+    expect(selectedTwo.video.existsSync(), isTrue);
   });
 
   testWidgets('选择态批量打标签 → 真写视频标签映射', (WidgetTester tester) async {

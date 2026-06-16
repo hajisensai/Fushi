@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/painting.dart';
+import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -96,6 +98,23 @@ class VideoStorage {
     return removed;
   }
 
+  /// Deletes the temp cache directory used for extracted embedded subtitles of
+  /// [videoPath]. This only touches Hibiki's derived temp cache, never the
+  /// original video file.
+  static Future<bool> deleteEmbeddedSubtitleCacheForVideoPath(
+    String? videoPath,
+  ) async {
+    if (videoPath == null || videoPath.isEmpty) return false;
+    final Directory cacheDir = embeddedSubtitleCacheDir(videoPath);
+    if (!await cacheDir.exists()) return false;
+    try {
+      await cacheDir.delete(recursive: true);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 安全删除单个被删 book 的资产 [candidate]：仅当它非空、落在 [ownedDir] 内、
   /// 且不在 [stillReferenced]（规范化后）集合里时才删。返回是否真的删了。
   ///
@@ -116,12 +135,32 @@ class VideoStorage {
     if (keep.contains(canon)) return false;
     final File file = File(candidate);
     if (!await file.exists()) return false;
+    for (int attempt = 0; attempt < 6; attempt++) {
+      try {
+        await _evictImageCacheForFile(file);
+        await file.delete();
+        return true;
+      } catch (_) {
+        if (attempt == 5) {
+          // 删除失败（被占用/权限）不应抛断删除流程：跳过，下次再清。
+          return false;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+    }
+    return false;
+  }
+
+  static Future<void> _evictImageCacheForFile(File file) async {
     try {
-      await file.delete();
-      return true;
+      final ImageCache imageCache = PaintingBinding.instance.imageCache;
+      imageCache.clearLiveImages();
+      imageCache.clear();
+      await FileImage(file).evict();
     } catch (_) {
-      // 删除失败（被占用/权限）不应抛断删除流程：跳过，下次再清。
-      return false;
+      // Pure storage tests may run without a Flutter painting binding. Cache
+      // eviction is only a lock-release hint, so missing binding must not block
+      // the actual file delete.
     }
   }
 
