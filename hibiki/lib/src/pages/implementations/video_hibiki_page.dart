@@ -41,6 +41,7 @@ import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
+import 'package:hibiki/src/media/video/video_chapter_panel.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
@@ -313,6 +314,7 @@ enum _VideoSidePanelKind {
   favoriteSentences,
   subtitleSources,
   audioTracks,
+  chapters,
 }
 
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
@@ -480,6 +482,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ValueNotifier<_VideoSidePanelKind?>(null);
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
+
+  /// 当前视频是否有内封章节（TODO-424）：控制条章节入口按钮的显隐门控。章节列表是
+  /// [VideoPlayerController.refreshChapters] open 后**异步**填充的，故缓存这个布尔并由
+  /// [_onControllerChaptersChanged] 监听 controller 通知刷新——章节就绪后触发一次
+  /// setState 让按钮出现（控制条主题在 build 里构造一次，不监听 controller 不会自重建）。
+  bool _hasChapters = false;
 
   /// 锁定 / 沉浸模式（TODO-101）。开启后：鼠标移动 / 单击不再唤起 media_kit 控制条
   /// （顶/底栏按钮全部不弹），视频纯画面播放；但查词（点字幕字符）与所有键盘 / 手柄
@@ -1509,6 +1517,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     controller.onPositionWrite = _isRemote ? null : _persistPosition;
     controller.removeListener(_syncWindowAspectRatioLock);
     controller.addListener(_syncWindowAspectRatioLock);
+    controller.removeListener(_onControllerChaptersChanged);
+    controller.addListener(_onControllerChaptersChanged);
+    // 换集复用同一 controller：先按当前章节态对齐缓存（旧片有章节、新片刷新前先隐藏）。
+    _hasChapters = controller.chapters.isNotEmpty;
     if (!mounted) {
       if (_controller == null) controller.dispose();
       return;
@@ -1848,6 +1860,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _watchTracker?.dispose();
     _watchTracker = null;
     _controller?.removeListener(_syncWindowAspectRatioLock);
+    _controller?.removeListener(_onControllerChaptersChanged);
     unawaited(_clearWindowAspectRatioLock());
     // TODO-057: 退出播放器还原屏幕亮度——把进页快照写回（iOS 系统级亮度），未
     // 取过快照时 Android 侧设回「跟随系统」(-1)。防止把用户系统亮度永久留在拖动后值。
@@ -3056,6 +3069,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         showFavoriteSentences: () => _runWhenImmersiveAllowsFullControls(
           _showFavoriteSentencesPanel,
         ),
+        // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
+        // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
+        previousChapter: () => _runWhenImmersiveAllowsFullControls(() {
+          _pokeControlsVisible();
+          unawaited(controller.previousChapter());
+        }),
+        nextChapter: () => _runWhenImmersiveAllowsFullControls(() {
+          _pokeControlsVisible();
+          unawaited(controller.nextChapter());
+        }),
         escape: () {
           // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
           // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
@@ -3457,6 +3480,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
         ),
+        // 章节入口（TODO-424）：仅当视频有内封章节时显示（_hasChapters 由异步
+        // refreshChapters 就绪后翻转触发重建）。
+        if (_hasChapters)
+          MaterialDesktopCustomButton(
+            icon: Icon(Icons.format_list_numbered, size: _videoControlIconSize),
+            onPressed: () => _showChapterPanel(controller),
+          ),
         // 设置入口（tune）不再写死在顶栏（BUG-248B）：它与右侧 rail 的可配置 settings
         // 按钮（[VideoControlCustomization] 默认 placement=rightRail → [_buildVideoSideActionRail]
         // → [_activateVideoControlButton](settings) → 同一个 [_showPlayerSettings]）功能完全
@@ -3586,6 +3616,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
         ),
+        // 章节入口（TODO-424）：仅当有内封章节时显示（与桌面同源）。
+        if (_hasChapters)
+          MaterialCustomButton(
+            icon: Icon(Icons.format_list_numbered, size: _videoControlIconSize),
+            onPressed: () => _showChapterPanel(controller),
+          ),
         // 设置入口（tune）不再写死在顶栏（BUG-248B）：与右侧 rail 的可配置 settings
         // 按钮功能完全重复，统一交给可配置的 rightRail settings 按钮负责（与桌面一致）。
       ],
@@ -4332,6 +4368,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// controller 通知监听（TODO-424）：章节是 open 后异步填充的，就绪后翻转
+  /// [_hasChapters] 触发一次 setState，让控制条章节入口按钮出现 / 消失（换集换成无章节
+  /// 的片时也跟着隐藏）。只在「有无章节」真变化时 setState，避免 cue 同步等高频通知抖动。
+  void _onControllerChaptersChanged() {
+    if (!mounted) return;
+    final bool hasChapters = _controller?.chapters.isNotEmpty ?? false;
+    if (hasChapters == _hasChapters) return;
+    setState(() => _hasChapters = hasChapters);
+  }
+
   /// 持久化字幕外观并刷新 overlay（纯 Flutter overlay，不碰 mpv）。
   Future<void> _persistSubtitleStyle(VideoSubtitleStyle style) async {
     _subtitleStyle = style;
@@ -4634,6 +4680,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_menu_subtitle_track;
       case _VideoSidePanelKind.audioTracks:
         return t.video_audio_track;
+      case _VideoSidePanelKind.chapters:
+        return t.video_chapters;
     }
   }
 
@@ -4642,6 +4690,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case _VideoSidePanelKind.settings:
         return 560;
       case _VideoSidePanelKind.favoriteSentences:
+      case _VideoSidePanelKind.chapters:
         return 420;
       case _VideoSidePanelKind.subtitleSources:
       case _VideoSidePanelKind.audioTracks:
@@ -4665,6 +4714,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return _buildSubtitleSourcesSidePanel(controller);
       case _VideoSidePanelKind.audioTracks:
         return _buildAudioTracksSidePanel(controller);
+      case _VideoSidePanelKind.chapters:
+        return _buildChapterSidePanel(controller);
     }
   }
 
@@ -4861,6 +4912,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         );
       },
     );
+  }
+
+  /// 内封章节面板（TODO-424）：列出 [controller] 的章节，点击跳转，高亮当前章。
+  /// 当前章由 [controller] 的播放位置对照各章起点同步算出（[VideoPlayerController
+  /// .chapterIndexForPosition]），无需异步轮询 libmpv `chapter`。
+  Widget _buildChapterSidePanel(VideoPlayerController controller) {
+    final int current = controller.chapterIndexForPosition(
+      controller.positionMs ?? 0,
+    );
+    return VideoChapterPanel(
+      controller: controller,
+      currentIndex: current,
+      colorScheme: _videoChromeColorScheme(context),
+      emptyHint: t.video_chapters_empty,
+      onTapChapter: (VideoChapter chapter) {
+        _pokeControlsVisible();
+        unawaited(controller.seekToChapter(chapter.index));
+      },
+    );
+  }
+
+  /// 打开章节面板（控制条章节按钮 / 快捷键共用）。
+  void _showChapterPanel(VideoPlayerController _) {
+    _showVideoSidePanel(_VideoSidePanelKind.chapters);
   }
 
   Widget _buildFavoriteSentencesSidePanel() {

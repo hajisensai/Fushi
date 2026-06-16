@@ -249,6 +249,14 @@ class ShortcutDefaults {
     ShortcutAction.videoShowFavoriteSentences: _kb([
       _key(LogicalKeyboardKey.keyL, {ModifierKey.ctrl}),
     ]),
+    // 内封章节上/下一章（TODO-424）：PageUp / PageDown。video 是独立 co-active 组，
+    // 与 reader 的 PageUp/PageDown 不冲突（不同页面绝不同时激活）。
+    ShortcutAction.videoPreviousChapter: _kb([
+      _key(LogicalKeyboardKey.pageUp),
+    ]),
+    ShortcutAction.videoNextChapter: _kb([
+      _key(LogicalKeyboardKey.pageDown),
+    ]),
     ShortcutAction.videoEscape: _kb([
       _key(LogicalKeyboardKey.escape),
     ]),

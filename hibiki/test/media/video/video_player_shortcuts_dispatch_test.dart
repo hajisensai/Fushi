@@ -33,6 +33,8 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     replayCurrentSubtitle: () => record('replayCurrentSubtitle'),
     replayPreviousSubtitle: () => record('replayPreviousSubtitle'),
     showFavoriteSentences: () => record('showFavoriteSentences'),
+    previousChapter: () => record('previousChapter'),
+    nextChapter: () => record('nextChapter'),
     escape: () => record('escape'),
   );
 }

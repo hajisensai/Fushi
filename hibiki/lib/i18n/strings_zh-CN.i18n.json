@@ -1668,5 +1668,10 @@
     "video_control_slot_bottom_center": "底栏（中间）",
     "video_control_palette_title": "全部按钮",
     "video_control_palette_hint": "把按钮拖入某个位置即可添加；一个按钮可放在多个位置。",
-    "video_control_remove_from_slot": "移除"
+    "video_control_remove_from_slot": "移除",
+    "video_chapters": "章节",
+    "video_chapters_empty": "无章节",
+    "video_chapter_n": "章节 $n",
+    "shortcut_action_video_next_chapter": "下一章",
+    "shortcut_action_video_previous_chapter": "上一章"
 }

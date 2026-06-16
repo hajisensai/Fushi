@@ -30,6 +30,8 @@ class VideoPlayerShortcutActions {
     required this.replayCurrentSubtitle,
     required this.replayPreviousSubtitle,
     required this.showFavoriteSentences,
+    required this.previousChapter,
+    required this.nextChapter,
     required this.escape,
   });
 
@@ -70,6 +72,10 @@ class VideoPlayerShortcutActions {
   final VoidCallback replayPreviousSubtitle;
   final VoidCallback showFavoriteSentences;
 
+  /// 内封章节上/下一章（TODO-424）：seek 到相邻章起点，无章节时 no-op。
+  final VoidCallback previousChapter;
+  final VoidCallback nextChapter;
+
   final VoidCallback escape;
 }
 
@@ -106,6 +112,8 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
     ShortcutAction.videoShowFavoriteSentences: actions.showFavoriteSentences,
+    ShortcutAction.videoPreviousChapter: actions.previousChapter,
+    ShortcutAction.videoNextChapter: actions.nextChapter,
     ShortcutAction.videoEscape: actions.escape,
   };
 }

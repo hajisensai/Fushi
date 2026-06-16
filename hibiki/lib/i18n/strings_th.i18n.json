@@ -1668,5 +1668,10 @@
     "video_control_slot_bottom_center": "Bottom bar (center)",
     "video_control_palette_title": "All buttons",
     "video_control_palette_hint": "Drag a button into a slot to add it; a button can sit in several slots.",
-    "video_control_remove_from_slot": "Remove"
+    "video_control_remove_from_slot": "Remove",
+    "video_chapters": "Chapters",
+    "video_chapters_empty": "No chapters",
+    "video_chapter_n": "Chapter $n",
+    "shortcut_action_video_next_chapter": "Next chapter",
+    "shortcut_action_video_previous_chapter": "Previous chapter"
 }

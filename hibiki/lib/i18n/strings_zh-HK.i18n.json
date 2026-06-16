@@ -1668,5 +1668,10 @@
     "video_control_slot_bottom_center": "Bottom bar (center)",
     "video_control_palette_title": "All buttons",
     "video_control_palette_hint": "Drag a button into a slot to add it; a button can sit in several slots.",
-    "video_control_remove_from_slot": "Remove"
+    "video_control_remove_from_slot": "Remove",
+    "video_chapters": "章節",
+    "video_chapters_empty": "無章節",
+    "video_chapter_n": "章節 $n",
+    "shortcut_action_video_next_chapter": "下一章",
+    "shortcut_action_video_previous_chapter": "上一章"
 }

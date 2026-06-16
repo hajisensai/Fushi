@@ -66,6 +66,117 @@ class PrevSeekDecision {
       'PrevSeekDecision(cueIndex: $cueIndex, timeSeekDeltaMs: $timeSeekDeltaMs)';
 }
 
+/// mkv/mp4 内封章节（chapter）的一条记录（TODO-424）。只读值对象：序号 + 标题 +
+/// 起始位置，由 [VideoPlayerController.refreshChapters] 从 libmpv `chapter-list`
+/// 属性解析得到，章节面板渲染 + 跳转用。
+///
+/// [index] 是 libmpv `chapter` 属性的 0-based 章节下标（跳转时直接写回 `chapter`
+/// 或 seek 到 [start]）；[title] 为容器里写的章节名（如 `Chapter 01`，可能为空，
+/// 调用方据此回退成「章节 N」之类占位）；[start] 为该章在时间轴上的起点。
+@immutable
+class VideoChapter {
+  const VideoChapter({
+    required this.index,
+    required this.title,
+    required this.start,
+  });
+
+  /// 0-based 章节下标（对齐 libmpv `chapter` 属性）。
+  final int index;
+
+  /// 章节标题（容器里写的 `title`，可能为空字符串）。
+  final String title;
+
+  /// 章节在时间轴上的起点。
+  final Duration start;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoChapter &&
+      other.index == index &&
+      other.title == title &&
+      other.start == start;
+
+  @override
+  int get hashCode => Object.hash(index, title, start);
+
+  @override
+  String toString() =>
+      'VideoChapter(index: $index, title: "$title", start: $start)';
+}
+
+/// 把 libmpv `chapter-list` 的扁平字符串属性解析成 [VideoChapter] 列表。纯函数。
+///
+/// media_kit 的 `NativePlayer.getProperty` 走 `mpv_get_property_string`，只能逐条读
+/// **字符串**化的子属性（无 MPV_FORMAT_NODE 数组的高层封装）。libmpv 把章节暴露成：
+/// - `chapter-list/count`：章节数（整数字符串，空/非法当 0，即「无章节」）；
+/// - `chapter-list/N/title`：第 N 章标题（可能空字符串）；
+/// - `chapter-list/N/time`：第 N 章起点**秒**（浮点字符串，如 `12.500`）。
+///
+/// [count] 为 `chapter-list/count` 原始字符串；[titleAt]/[timeAt] 是按下标取
+/// `title`/`time` 子属性原始字符串的回调（[VideoPlayerController.refreshChapters]
+/// 注入真实 `getProperty`，单测注入假数据）。无章节 / count 非法时返回空列表。
+///
+/// 时间解析：秒（浮点）→ 毫秒 [Duration]，下界 clamp 到 0（防御负值 / 非法）。抽成纯
+/// 函数便于不依赖 libmpv 的单测（[VideoChapter] 解析与跳转决策都可纯测）。
+List<VideoChapter> parseChapterList({
+  required String count,
+  required String Function(int index) titleAt,
+  required String Function(int index) timeAt,
+}) {
+  final int total = int.tryParse(count.trim()) ?? 0;
+  if (total <= 0) return const <VideoChapter>[];
+  final List<VideoChapter> chapters = <VideoChapter>[];
+  for (int i = 0; i < total; i++) {
+    final double seconds = double.tryParse(timeAt(i).trim()) ?? 0.0;
+    final int ms = (seconds * 1000).round();
+    chapters.add(VideoChapter(
+      index: i,
+      title: titleAt(i),
+      start: Duration(milliseconds: ms < 0 ? 0 : ms),
+    ));
+  }
+  return chapters;
+}
+
+/// 纯函数：「上/下一章」目标章节下标决策（[VideoPlayerController.nextChapter] /
+/// [VideoPlayerController.previousChapter] 用，抽出便于单测）。
+///
+/// [chapterCount] 为章节总数；[currentIndex] 为当前 `chapter`（libmpv 在首章之前可能
+/// 返回 -1）；[forward] 为 true 取下一章、false 取上一章。
+/// - 无章节（count <= 0）：返回 null（no-op）。
+/// - forward：当前下标 + 1，越过末章返回 null（已在末章，不前进越界）；
+///   currentIndex < 0（首章之前）时落首章（0）。
+/// - backward：当前下标 - 1，早于首章返回 null（已在首章 / 首章之前，不后退越界）。
+int? adjacentChapterIndex({
+  required int chapterCount,
+  required int currentIndex,
+  required bool forward,
+}) {
+  if (chapterCount <= 0) return null;
+  if (forward) {
+    final int next = currentIndex < 0 ? 0 : currentIndex + 1;
+    return next >= chapterCount ? null : next;
+  }
+  final int prev = currentIndex - 1;
+  return prev < 0 ? null : prev;
+}
+
+/// 纯函数：按播放位置 [posMs] 求所在章节下标（起点 <= 位置的最后一章）。
+/// 空列表 / 早于首章起点返回 -1。要求 [chapters] 按 [VideoChapter.start] 升序
+/// （[parseChapterList] / libmpv `chapter-list` 天然升序）。章节面板高亮当前章用。
+int chapterIndexForPositionIn(List<VideoChapter> chapters, int posMs) {
+  int result = -1;
+  for (int i = 0; i < chapters.length; i++) {
+    if (chapters[i].start.inMilliseconds <= posMs) {
+      result = i;
+    } else {
+      break;
+    }
+  }
+  return result;
+}
+
 /// 视频播放控制器：用 media_kit 播放视频，并按字幕 cue 做 125ms 同步高亮。
 ///
 /// cue 选择语义大体照搬有声书 [AudiobookPlayerController] 的 `_updateCurrentCue`：
@@ -130,6 +241,10 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 视频文件绝对路径；制卡时按 cue 时间裁字幕音频片段用。
   String? _videoPath;
+
+  /// 当前视频的内封章节列表（TODO-424）；[load] 成功后由 [refreshChapters] 从 libmpv
+  /// `chapter-list` 读取填充，无章节 / 非 libmpv 后端时为空。章节面板 / 跳转读它。
+  List<VideoChapter> _chapters = const <VideoChapter>[];
 
   /// 上次持久化时的整秒位置；用于 [_maybeSavePosition] 节流到每秒至多一次。
   int _lastSavedSec = -1;
@@ -562,6 +677,11 @@ class VideoPlayerController extends ChangeNotifier
       // 无外挂字幕且无 cue 时，桌面端后台抽内嵌文本字幕轨成可点击 cue（不阻塞首帧）。
       unawaited(_loadEmbeddedSubtitleIfNeeded(bookUid: bookUid));
     }
+
+    // 内封章节（TODO-424）：open 后异步读 libmpv `chapter-list` 填充章节列表（不阻塞
+    // 首帧；无章节时优雅降级成空列表，章节入口按钮据此隐藏）。换集复用同一 player
+    // 时也重读，刷新成新片的章节。
+    unawaited(refreshChapters());
   }
 
   /// 桌面端后台自动抽**第一条可转文本的**内嵌字幕轨 → cue → [setCues]，触发
@@ -849,6 +969,123 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> frameStep({required bool forward}) async {
     await pause();
     await _mpvCommand(<String>[forward ? 'frame-step' : 'frame-back-step']);
+  }
+
+  /// 读一条 libmpv 字符串属性（[property]），best-effort：非 libmpv 后端（无
+  /// `getProperty`）/ 属性不存在 / 抛异常时返回 `''`。与 [_mpvCommand]（写命令）/
+  /// [applyMpvConfigToPlayer]（写属性）同范式，只是方向相反——读 `chapter-list/*`、
+  /// `chapter` 等章节属性（TODO-424）。
+  Future<String> _getMpvProperty(String property) async {
+    final dynamic native = _player?.platform;
+    if (native == null) return '';
+    try {
+      final dynamic value = await native.getProperty(property);
+      return value is String ? value : (value?.toString() ?? '');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// 当前视频的内封章节列表（TODO-424）；无章节 / 未 [load] 时为空。章节面板渲染用。
+  List<VideoChapter> get chapters => List<VideoChapter>.unmodifiable(_chapters);
+
+  /// 当前播放所在的章节下标（libmpv `chapter` 属性，0-based）；无章节 / 非 libmpv /
+  /// 首章之前可能为负（章节面板据此高亮当前章；负/越界视为「无当前章」）。未 [load]
+  /// 或解析失败时返回 null。
+  Future<int?> currentChapterIndex() async {
+    final String raw = await _getMpvProperty('chapter');
+    if (raw.isEmpty) return null;
+    return int.tryParse(raw.trim());
+  }
+
+  /// 从 libmpv 重新读取 `chapter-list` 填充 [_chapters]，读完 [notifyListeners]。
+  ///
+  /// 经 [_getMpvProperty]（`mpv_get_property_string`）逐条读 `chapter-list/count` +
+  /// 每章 `title`/`time`，交给纯函数 [parseChapterList] 组装。仅 libmpv 后端（桌面
+  /// 必生效；移动端走同一 libmpv 后端**预期一致**，但 media_kit 移动端是否暴露
+  /// `chapter-list` 子属性字符串读取**待真机验**——失败时优雅降级成空列表，不影响
+  /// 播放）。无 [_player] 时清空并返回。[load] 末尾、换集后调用。
+  Future<void> refreshChapters() async {
+    final Player? player = _player;
+    if (player == null) {
+      if (_chapters.isNotEmpty) {
+        _chapters = const <VideoChapter>[];
+        notifyListeners();
+      }
+      return;
+    }
+    final String countRaw = await _getMpvProperty('chapter-list/count');
+    if (_player != player) return; // 读取期间换片 / 销毁：丢弃。
+    final int total = int.tryParse(countRaw.trim()) ?? 0;
+    if (total <= 0) {
+      if (_chapters.isNotEmpty) {
+        _chapters = const <VideoChapter>[];
+        notifyListeners();
+      }
+      return;
+    }
+    // 逐条异步读 title/time 子属性（libmpv 属性读是异步的，纯函数 parseChapterList
+    // 只覆盖「count + 同步解析」的单测路径，运行时按真实 getProperty 逐条组装）。
+    final List<VideoChapter> chapters = <VideoChapter>[];
+    for (int i = 0; i < total; i++) {
+      final String title = await _getMpvProperty('chapter-list/$i/title');
+      final String time = await _getMpvProperty('chapter-list/$i/time');
+      if (_player != player) return; // 逐条读取期间换片：丢弃。
+      final double seconds = double.tryParse(time.trim()) ?? 0.0;
+      final int ms = (seconds * 1000).round();
+      chapters.add(VideoChapter(
+        index: i,
+        title: title,
+        start: Duration(milliseconds: ms < 0 ? 0 : ms),
+      ));
+    }
+    _chapters = chapters;
+    notifyListeners();
+  }
+
+  /// 按播放位置 [posMs] 同步算出所在章节下标（TODO-424）：起点 <= 位置的最后一章。
+  /// 无章节 / 早于首章起点时返回 -1（章节面板据此「无高亮」）。供 UI 不依赖异步
+  /// libmpv `chapter` 读取就能高亮当前章。
+  int chapterIndexForPosition(int posMs) =>
+      chapterIndexForPositionIn(_chapters, posMs);
+
+  /// 跳到第 [index] 章（TODO-424）：seek 到该章起点。[index] 越界 / 无章节 / 未
+  /// [load] 时 no-op 安全。用 seek 而非写 `chapter` 属性——seek 走与「上/下一句」同一
+  /// 条经过验证的路径（[seekMs]，含 clamp），章节起点是精确时间戳，无需关键帧前导余量。
+  Future<void> seekToChapter(int index) async {
+    if (index < 0 || index >= _chapters.length) return;
+    await seekMs(_chapters[index].start.inMilliseconds);
+  }
+
+  /// 跳到下一章（TODO-424）：已在末章 / 无章节时 no-op。当前章取自 libmpv `chapter`，
+  /// 落在首章之前（负）时前进到首章。
+  Future<void> nextChapter() async {
+    await _seekAdjacentChapter(forward: true);
+  }
+
+  /// 跳到上一章（TODO-424）：已在首章 / 无章节时 no-op。
+  Future<void> previousChapter() async {
+    await _seekAdjacentChapter(forward: false);
+  }
+
+  /// 上/下一章共用：读当前 `chapter` → [adjacentChapterIndex] 决策目标 → [seekToChapter]。
+  Future<void> _seekAdjacentChapter({required bool forward}) async {
+    if (_chapters.isEmpty) return;
+    final int current = (await currentChapterIndex()) ?? -1;
+    final int? target = adjacentChapterIndex(
+      chapterCount: _chapters.length,
+      currentIndex: current,
+      forward: forward,
+    );
+    if (target == null) return;
+    await seekToChapter(target);
+  }
+
+  /// 测试可见：直接注入章节列表（不依赖 libmpv），驱动章节面板 widget 测试。
+  @visibleForTesting
+  void debugSetChaptersForTesting(List<VideoChapter> chapters) {
+    _chapters = List<VideoChapter>.of(chapters);
+    notifyListeners();
   }
 
   void setPauseAtSubtitleEnd(bool enabled) {
@@ -1254,6 +1491,7 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
+    _chapters = const <VideoChapter>[];
     super.dispose();
   }
 
