@@ -1687,5 +1687,6 @@
     "video_clip_export_source_changed": "视频源已切换，已取消片段导出",
     "video_clip_export_ffmpeg_failed": "ffmpeg 执行失败",
     "video_clip_export_output_missing": "没有生成导出文件",
-    "video_clip_export_input_missing": "源视频不可用"
+    "video_clip_export_input_missing": "源视频不可用",
+    "video_subtitle_list_loading": "正在加载字幕…"
 }

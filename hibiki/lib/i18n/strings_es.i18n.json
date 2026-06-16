@@ -1687,5 +1687,6 @@
     "video_clip_export_source_changed": "Video source changed; clip export cancelled",
     "video_clip_export_ffmpeg_failed": "ffmpeg failed",
     "video_clip_export_output_missing": "No output file was created",
-    "video_clip_export_input_missing": "Source video is unavailable"
+    "video_clip_export_input_missing": "Source video is unavailable",
+    "video_subtitle_list_loading": "Loading subtitles..."
 }

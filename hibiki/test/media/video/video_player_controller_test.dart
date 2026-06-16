@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
@@ -101,6 +103,77 @@ void main() {
       c.setDelayMs(600);
       c.debugUpdateCueForPosition(1500); // 1500-600=900 命中 cue0
       expect(c.currentCueIndex, 0);
+    });
+  });
+
+  group('VideoPlayerController completed stream auto-advance hook', () {
+    test('completed=false is ignored; completed=true fires once per load', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      int completed = 0;
+      c.setOnCompleted(() => completed++);
+
+      c.debugHandleCompletedForTesting(false);
+      expect(completed, 0);
+
+      c.debugHandleCompletedForTesting(true);
+      c.debugHandleCompletedForTesting(true);
+      expect(completed, 1,
+          reason: 'a single media load must not auto-advance more than once');
+    });
+
+    test('a new load rearms completed=true', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      int completed = 0;
+      c.setOnCompleted(() => completed++);
+
+      c.debugHandleCompletedForTesting(true);
+      c.debugResetCompletedForNewLoadForTesting();
+      c.debugHandleCompletedForTesting(true);
+
+      expect(completed, 2,
+          reason: 'episode reload must allow the next EOF to advance again');
+    });
+
+    test('replacing the completed stream cancels the previous subscription',
+        () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final StreamController<bool> first = StreamController<bool>();
+      final StreamController<bool> second = StreamController<bool>();
+      addTearDown(first.close);
+      addTearDown(second.close);
+      int completed = 0;
+      c.setOnCompleted(() => completed++);
+
+      await c.debugAttachCompletedStreamForTesting(first.stream);
+      await c.debugAttachCompletedStreamForTesting(second.stream);
+      first.add(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(completed, 0,
+          reason: 'load must cancel the old completed subscription first');
+
+      second.add(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(completed, 1);
+    });
+
+    test('dispose cancels completed subscription and clears callback',
+        () async {
+      final c = VideoPlayerController();
+      final StreamController<bool> stream = StreamController<bool>();
+      addTearDown(stream.close);
+      int completed = 0;
+      c.setOnCompleted(() => completed++);
+      await c.debugAttachCompletedStreamForTesting(stream.stream);
+
+      c.dispose();
+      stream.add(true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(completed, 0,
+          reason: 'completed events after dispose must not call page state');
     });
   });
 

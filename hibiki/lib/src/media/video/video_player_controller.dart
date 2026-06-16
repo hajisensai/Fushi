@@ -245,6 +245,11 @@ class VideoPlayerController extends ChangeNotifier
 
   Timer? _tick;
   StreamSubscription<bool>? _playingSub;
+  StreamSubscription<bool>? _completedSub;
+  bool _completedFiredForLoad = false;
+  VoidCallback? _onCompleted;
+
+  bool _subtitleCuesLoading = false;
 
   /// 视频原始分辨率变化订阅（用于字幕 \pos letterbox 映射在分辨率到位后重定位）。
   StreamSubscription<int?>? _widthSub;
@@ -325,6 +330,14 @@ class VideoPlayerController extends ChangeNotifier
   @override
   bool get isPlaying =>
       _debugIsPlayingOverride ?? (_player?.state.playing ?? false);
+
+  /// 后台抽取/解析内封文本字幕 cue 是否仍在进行。
+  bool get isSubtitleCuesLoading => _subtitleCuesLoading;
+
+  /// 绑定媒体自然播放完毕后的回调。页面必须在 [load] 前设置，避免 EOF 竞态。
+  void setOnCompleted(VoidCallback? callback) {
+    _onCompleted = callback;
+  }
 
   /// 当前播放位置（毫秒）；未 [load] 时为 null。换集前用它补记当前集精确进度
   /// （tick 整秒节流外的尾差）。
@@ -595,10 +608,14 @@ class VideoPlayerController extends ChangeNotifier
     _tick = null;
     await _playingSub?.cancel();
     _playingSub = null;
+    await _completedSub?.cancel();
+    _completedSub = null;
+    _completedFiredForLoad = false;
     await _widthSub?.cancel();
     _widthSub = null;
     await _heightSub?.cancel();
     _heightSub = null;
+    _setSubtitleCuesLoading(false);
 
     // 裸 `Player()`：**必须保持 `PlayerConfiguration.pitch == false`（media_kit 默认）**
     // ——这是视频调速不闪退的根因不变量（TODO-116）。media_kit `setRate` 的分支由
@@ -674,6 +691,7 @@ class VideoPlayerController extends ChangeNotifier
     _playingSub = player.stream.playing.listen((_) {
       notifyListeners();
     });
+    _completedSub = player.stream.completed.listen(_handleCompletedChanged);
 
     // 订阅视频原始分辨率变化：解码出分辨率后让 overlay 重新做 \pos letterbox 映射。
     _widthSub = player.stream.width.listen((_) => notifyListeners());
@@ -713,6 +731,19 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(refreshChapters());
   }
 
+  void _handleCompletedChanged(bool completed) {
+    if (!completed) return;
+    if (_completedFiredForLoad) return;
+    _completedFiredForLoad = true;
+    _onCompleted?.call();
+  }
+
+  void _setSubtitleCuesLoading(bool loading) {
+    if (_subtitleCuesLoading == loading) return;
+    _subtitleCuesLoading = loading;
+    notifyListeners();
+  }
+
   /// 桌面端后台自动抽**第一条可转文本的**内嵌字幕轨 → cue → [setCues]，触发
   /// 可点击 overlay。
   ///
@@ -739,39 +770,47 @@ class VideoPlayerController extends ChangeNotifier
     final String? videoPath = _videoPath;
     if (videoPath == null) return;
 
-    final DefaultEmbeddedSubtitleLoadResult result =
-        await loadDefaultTextEmbeddedSubtitleCues(
-      videoPath: videoPath,
-      bookUid: bookUid,
-    );
-    if (_videoPath != videoPath) return; // 枚举/加载期间换片：丢弃。
+    _setSubtitleCuesLoading(true);
+    try {
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCues(
+        videoPath: videoPath,
+        bookUid: bookUid,
+      );
+      if (_videoPath != videoPath) return; // 枚举/加载期间换片：丢弃。
 
-    switch (result.status) {
-      case DefaultEmbeddedSubtitleLoadStatus.loaded:
-        debugPrint('[video-embedded-sub] extracted ${result.cues.length} cues');
-        setCues(result.cues);
-        onResult?.call(result);
-        return;
-      case DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks:
-        debugPrint('[video-embedded-sub] no embedded subtitle track');
-        onResult?.call(result);
-        return;
-      case DefaultEmbeddedSubtitleLoadStatus.noTextTrack:
-        debugPrint('[video-embedded-sub] no text-capable embedded track');
-        onResult?.call(result);
-        return;
-      case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
-        debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
-        onResult?.call(result);
-        return;
-      case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
-      case DefaultEmbeddedSubtitleLoadStatus.enumerationFailed:
-      case DefaultEmbeddedSubtitleLoadStatus.missingFile:
-        debugPrint(
-          '[video-embedded-sub] default load skipped: ${result.status}',
-        );
-        onResult?.call(result);
-        return;
+      switch (result.status) {
+        case DefaultEmbeddedSubtitleLoadStatus.loaded:
+          debugPrint(
+              '[video-embedded-sub] extracted ${result.cues.length} cues');
+          setCues(result.cues);
+          onResult?.call(result);
+          return;
+        case DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks:
+          debugPrint('[video-embedded-sub] no embedded subtitle track');
+          onResult?.call(result);
+          return;
+        case DefaultEmbeddedSubtitleLoadStatus.noTextTrack:
+          debugPrint('[video-embedded-sub] no text-capable embedded track');
+          onResult?.call(result);
+          return;
+        case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
+          debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
+          onResult?.call(result);
+          return;
+        case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
+        case DefaultEmbeddedSubtitleLoadStatus.enumerationFailed:
+        case DefaultEmbeddedSubtitleLoadStatus.missingFile:
+          debugPrint(
+            '[video-embedded-sub] default load skipped: ${result.status}',
+          );
+          onResult?.call(result);
+          return;
+      }
+    } finally {
+      if (_videoPath == videoPath) {
+        _setSubtitleCuesLoading(false);
+      }
     }
   }
 
@@ -890,6 +929,30 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   void debugSetGraphicSubtitleActiveForTesting(bool active) {
     _graphicSubtitleActive = active;
+  }
+
+  @visibleForTesting
+  void debugHandleCompletedForTesting(bool completed) {
+    _handleCompletedChanged(completed);
+  }
+
+  @visibleForTesting
+  void debugResetCompletedForNewLoadForTesting() {
+    _completedFiredForLoad = false;
+  }
+
+  @visibleForTesting
+  Future<void> debugAttachCompletedStreamForTesting(
+    Stream<bool> completedStream,
+  ) async {
+    await _completedSub?.cancel();
+    _completedFiredForLoad = false;
+    _completedSub = completedStream.listen(_handleCompletedChanged);
+  }
+
+  @visibleForTesting
+  void debugSetSubtitleCuesLoadingForTesting(bool loading) {
+    _setSubtitleCuesLoading(loading);
   }
 
   @visibleForTesting
@@ -1557,6 +1620,9 @@ class VideoPlayerController extends ChangeNotifier
     _tick = null;
     unawaited(_playingSub?.cancel());
     _playingSub = null;
+    unawaited(_completedSub?.cancel());
+    _completedSub = null;
+    _onCompleted = null;
     unawaited(_widthSub?.cancel());
     _widthSub = null;
     unawaited(_heightSub?.cancel());
@@ -1564,6 +1630,7 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
+    _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();
   }

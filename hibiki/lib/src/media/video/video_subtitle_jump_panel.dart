@@ -43,6 +43,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.colorScheme,
     required this.title,
     required this.emptyHint,
+    this.loadingHint,
     this.isCueSelectedForCard,
     this.onToggleCueSelection,
     this.onClearCueSelection,
@@ -67,6 +68,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final ColorScheme colorScheme;
   final String title;
   final String emptyHint;
+  final String? loadingHint;
   final bool Function(AudioCue cue)? isCueSelectedForCard;
   final void Function(AudioCue cue)? onToggleCueSelection;
   final VoidCallback? onClearCueSelection;
@@ -82,6 +84,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   int _lastScrolledIndex = -1;
   int _lastControllerCueIndex = -1;
+  bool _lastSubtitleCuesLoading = false;
   int? _scrollTargetRawIndex;
   int _hoveredIndex = -1;
   bool _autoScroll = true;
@@ -152,6 +155,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   void initState() {
     super.initState();
     _lastControllerCueIndex = widget.controller.currentCueIndex;
+    _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
     widget.controller.addListener(_onControllerChanged);
   }
 
@@ -162,6 +166,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
       _lastControllerCueIndex = widget.controller.currentCueIndex;
+      _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
       _lastScrolledIndex = -1;
       _rowKeys.clear();
     }
@@ -178,13 +183,17 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   void _onControllerChanged() {
     if (!mounted) return;
     final int currentIndex = widget.controller.currentCueIndex;
-    if (currentIndex == _lastControllerCueIndex) return;
+    final bool cuesLoading = widget.controller.isSubtitleCuesLoading;
+    final bool cueChanged = currentIndex != _lastControllerCueIndex;
+    final bool loadingChanged = cuesLoading != _lastSubtitleCuesLoading;
+    if (!cueChanged && !loadingChanged) return;
     _lastControllerCueIndex = currentIndex;
+    _lastSubtitleCuesLoading = cuesLoading;
     setState(() {
       _scrollTargetRawIndex = currentIndex >= 0 ? currentIndex : null;
       _retainRowKeyFor(_scrollTargetRawIndex);
     });
-    _scheduleScrollToCurrentCue();
+    if (cueChanged) _scheduleScrollToCurrentCue();
   }
 
   void _scheduleScrollToCurrentCue() {
@@ -382,6 +391,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
     final int currentIndex = widget.controller.currentCueIndex;
     _retainRowKeyFor(currentIndex >= 0 ? currentIndex : _scrollTargetRawIndex);
+    final bool showLoading =
+        cues.isEmpty && widget.controller.isSubtitleCuesLoading;
     return Material(
       type: MaterialType.transparency,
       child: Container(
@@ -393,41 +404,45 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             _buildHeader(cs, cues),
             const Divider(height: 1),
             Expanded(
-              child: cues.isEmpty || visibleIndexes.isEmpty
-                  ? _buildEmpty(cs)
-                  // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
-                  // GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
-                  : ListView.builder(
-                      controller: _scrollController,
-                      itemExtentBuilder:
-                          (int i, SliverLayoutDimensions dimensions) {
-                        if (i < 0 || i >= visibleIndexes.length) return null;
-                        return _estimatedRowExtentForCue(
-                          cues[visibleIndexes[i]],
-                          dimensions.crossAxisExtent,
-                        );
-                      },
-                      itemCount: visibleIndexes.length,
-                      itemBuilder: (BuildContext _, int i) {
-                        final int rawIndex = visibleIndexes[i];
-                        final AudioCue cue = cues[rawIndex];
-                        final bool selected = rawIndex == currentIndex;
-                        final bool trackKey =
-                            selected || rawIndex == _scrollTargetRawIndex;
-                        final Key rowKey = trackKey
-                            ? _rowKeys.putIfAbsent(rawIndex, GlobalKey.new)
-                            : ValueKey<int>(rawIndex);
-                        return KeyedSubtree(
-                          key: rowKey,
-                          child: _buildRow(
-                            cs,
-                            cue,
-                            i,
-                            selected,
-                          ),
-                        );
-                      },
-                    ),
+              child: showLoading
+                  ? _buildLoading(cs)
+                  : cues.isEmpty || visibleIndexes.isEmpty
+                      ? _buildEmpty(cs)
+                      // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
+                      // GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
+                      : ListView.builder(
+                          controller: _scrollController,
+                          itemExtentBuilder:
+                              (int i, SliverLayoutDimensions dimensions) {
+                            if (i < 0 || i >= visibleIndexes.length) {
+                              return null;
+                            }
+                            return _estimatedRowExtentForCue(
+                              cues[visibleIndexes[i]],
+                              dimensions.crossAxisExtent,
+                            );
+                          },
+                          itemCount: visibleIndexes.length,
+                          itemBuilder: (BuildContext _, int i) {
+                            final int rawIndex = visibleIndexes[i];
+                            final AudioCue cue = cues[rawIndex];
+                            final bool selected = rawIndex == currentIndex;
+                            final bool trackKey =
+                                selected || rawIndex == _scrollTargetRawIndex;
+                            final Key rowKey = trackKey
+                                ? _rowKeys.putIfAbsent(rawIndex, GlobalKey.new)
+                                : ValueKey<int>(rawIndex);
+                            return KeyedSubtree(
+                              key: rowKey,
+                              child: _buildRow(
+                                cs,
+                                cue,
+                                i,
+                                selected,
+                              ),
+                            );
+                          },
+                        ),
             ),
           ],
         ),
@@ -547,6 +562,29 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             color: cs.onSurfaceVariant,
             fontSize: _effectiveFontSize,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoading(ColorScheme cs) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              widget.loadingHint ?? widget.emptyHint,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
+                fontSize: _effectiveFontSize,
+              ),
+            ),
+          ],
         ),
       ),
     );

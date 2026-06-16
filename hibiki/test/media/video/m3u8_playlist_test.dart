@@ -165,6 +165,61 @@ plain.mkv
     });
   });
 
+  group('playlist auto-advance and next-subtitle prewarm helpers', () {
+    final List<PlaylistEntry> entries = <PlaylistEntry>[
+      const PlaylistEntry(title: 'e0', path: '/video/e0.mkv'),
+      const PlaylistEntry(title: 'e1', path: '/video/e1.mkv', positionMs: 7000),
+      const PlaylistEntry(title: 'e2', path: '/video/e2.mkv'),
+    ];
+
+    test('completed on a non-last episode advances to the next index', () {
+      expect(nextPlaylistIndexAfterCompletion(entries, 0), 1);
+      expect(nextPlaylistIndexAfterCompletion(entries, 1), 2);
+    });
+
+    test('completed on the last episode or non-playlist does not advance', () {
+      expect(nextPlaylistIndexAfterCompletion(entries, 2), isNull);
+      expect(
+        nextPlaylistIndexAfterCompletion(
+          const <PlaylistEntry>[
+            PlaylistEntry(title: 'only', path: '/only.mkv')
+          ],
+          0,
+        ),
+        isNull,
+      );
+      expect(nextPlaylistIndexAfterCompletion(entries, -1), isNull);
+      expect(nextPlaylistIndexAfterCompletion(entries, 3), isNull);
+    });
+
+    test('next episode subtitle prewarm returns next path and dedupes it', () {
+      expect(
+        nextPlaylistPathToPrewarm(
+          entries: entries,
+          currentIndex: 0,
+          lastPrewarmedPath: null,
+        ),
+        '/video/e1.mkv',
+      );
+      expect(
+        nextPlaylistPathToPrewarm(
+          entries: entries,
+          currentIndex: 0,
+          lastPrewarmedPath: '/video/e1.mkv',
+        ),
+        isNull,
+      );
+      expect(
+        nextPlaylistPathToPrewarm(
+          entries: entries,
+          currentIndex: 2,
+          lastPrewarmedPath: null,
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('playlistEpisodeCount（卡片角标/单视频区分用）', () {
     test('null / 空串 → 0（单视频）', () {
       expect(playlistEpisodeCount(null), 0);
