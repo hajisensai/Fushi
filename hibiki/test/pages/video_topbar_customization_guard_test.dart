@@ -2,10 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（TODO-388）：可自定义学习按钮的可放置区域扩展到「顶部」两槽（topLeft /
-/// topRight），既在数据模型 [VideoControlSlot.editableSlots] 暴露、在拖动编辑器里呈现，
-/// 也在播放器上经同一学习按钮渲染路径（顶部浮动 rail）落地——所见即所得，避免编辑器给出
-/// 一个渲染端不存在的「空槽」。
+/// 源码守卫（TODO-388 → TODO-421 phase 1）：可自定义学习按钮的可放置区域含「顶部」两槽
+/// （topLeft / topRight），既在数据模型 [VideoControlSlot.editableSlots] 暴露、在拖动编辑器
+/// 里呈现，也在播放器上真正落地——所见即所得，避免编辑器给出一个渲染端不存在的「空槽」。
+///
+/// TODO-421 phase 1：顶部两槽不再渲染成「固定顶栏下方的浮动竖条」（用户嫌名不副实），改为
+/// 把这两槽的按钮**注入固定顶栏行本身**（`topButtonBar`，经 `_topBarLearningButtons`），与
+/// 返回 / 标题 / 字幕轨同处那条最顶部控制条。本守卫钉住「注入进顶栏行、且旧浮动竖条已删」。
 void main() {
   String read(String rel) => File(rel).readAsStringSync();
 
@@ -40,16 +43,35 @@ void main() {
     expect(settings.contains('t.video_control_slot_top_right'), isTrue);
   });
 
-  test('播放器渲染顶部浮动 rail（topLeft / topRight 学习按钮落地）', () {
+  test('播放器把顶部两槽注入固定顶栏行本身（TODO-421 phase 1）', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
-    expect(page.contains('VideoControlSlot.topRight'), isTrue);
+    // 顶部两槽经 _topBarLearningButtons 注入 topButtonBar（不再是浮动竖条）。
+    expect(
+      page.contains('List<Widget> _topBarLearningButtons('),
+      isTrue,
+      reason: '应有把顶部槽渲染进顶栏行的 helper（_topBarLearningButtons）',
+    );
+    // helper 用 topLeft / topRight 两槽各被注入一次（桌面 + 移动两套主题 = 各两处）。
     expect(page.contains('VideoControlSlot.topLeft'), isTrue);
-    expect(page.contains('Alignment.topRight'), isTrue, reason: '顶部右浮条贴右上沿');
-    expect(page.contains('Alignment.topLeft'), isTrue, reason: '顶部左浮条贴左上沿');
-    // 顶部浮条留出固定顶栏高度避免压住返回 / 标题等 chrome。
-    expect(page.contains('_videoButtonBarHeight + 8'), isTrue,
-        reason: '顶部浮条应留出顶栏高度内边距（避开固定 chrome）');
+    expect(page.contains('VideoControlSlot.topRight'), isTrue);
+    expect('_topBarLearningButtons('.allMatches(page).length,
+        greaterThanOrEqualTo(5),
+        reason: 'helper 定义 1 处 + 桌面/移动各注入 topLeft/topRight 共 4 处');
+    // 顶部两槽经 media_kit chrome 按钮渲染（吃主题色/尺寸/随控制条淡入淡出），且复用
+    // 所有 chip-renderable 项的统一激活路径（学习键 + transport/nav 键都不丢）。
+    expect(page.contains('_slotChipItems(slot)'), isTrue);
+    expect(
+        page.contains('_activateVideoControlItem(item, controller)'), isTrue);
+
+    // 旧的「固定顶栏下方浮动竖条」已删：浮动 Stack 只剩屏幕左 / 右两条
+    // （[left, right]，不再有 topLeft / topRight 两条浮条）。
+    expect(page.contains('children: <Widget>[left, right]'), isTrue,
+        reason: '浮动侧栏 Stack 应只剩屏幕左/右两条（顶部两条已移入顶栏行）');
+    // 顶部浮条专属的「让出固定顶栏高度」内边距随浮条一并删除（OSD 通知层用的
+    // Alignment.topLeft 与本浮条无关，故不据 Alignment 判删除）。
+    expect(page.contains('_videoButtonBarHeight + 8'), isFalse,
+        reason: '顶部浮条的「让出顶栏高度」内边距应随浮条一并删除');
   });
 
   test('i18n 顶部槽标签 key 完整（17 语言）', () {

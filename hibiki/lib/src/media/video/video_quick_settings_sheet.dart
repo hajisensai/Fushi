@@ -1151,7 +1151,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         children: <Widget>[
           _buildControlPalette(),
           const SizedBox(height: 12),
-          // 顶排：两条顶部浮动轨（左 / 右），贴播放器上沿、固定顶栏下方。
+          // 顶排（TODO-421 phase 1）：放进固定顶栏行**内**的左 / 右（与返回 / 标题 / 字幕轨
+          // 同处那条最顶部的控制条，不再是顶栏下方的浮动竖条）。
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[

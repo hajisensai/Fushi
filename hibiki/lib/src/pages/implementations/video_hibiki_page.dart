@@ -3435,6 +3435,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
+        // TODO-421 phase 1: user-placed top-bar-left buttons live INSIDE this
+        // fixed row (after back, before the title), not in a floating strip.
+        ..._topBarLearningButtons(
+          VideoControlSlot.topLeft,
+          controller,
+          desktop: true,
+        ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -3492,6 +3499,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // → [_activateVideoControlButton](settings) → 同一个 [_showPlayerSettings]）功能完全
         // 重复。统一交给可配置的 rightRail settings 按钮负责（默认就在 rightRail），用户也
         // 可经控制条自定义改放它处（TODO-274）。
+        // TODO-421 phase 1: user-placed top-bar-right buttons live INSIDE this
+        // fixed row (trailing the track chrome), not in a floating strip.
+        ..._topBarLearningButtons(
+          VideoControlSlot.topRight,
+          controller,
+          desktop: true,
+        ),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
@@ -3585,6 +3599,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
+        // TODO-421 phase 1: user-placed top-bar-left buttons live INSIDE this
+        // fixed row (after back, before the title), not in a floating strip.
+        ..._topBarLearningButtons(
+          VideoControlSlot.topLeft,
+          controller,
+          desktop: false,
+        ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -3624,6 +3645,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         // 设置入口（tune）不再写死在顶栏（BUG-248B）：与右侧 rail 的可配置 settings
         // 按钮功能完全重复，统一交给可配置的 rightRail settings 按钮负责（与桌面一致）。
+        // TODO-421 phase 1: user-placed top-bar-right buttons live INSIDE this
+        // fixed row (trailing the track chrome), not in a floating strip.
+        ..._topBarLearningButtons(
+          VideoControlSlot.topRight,
+          controller,
+          desktop: false,
+        ),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
@@ -3689,6 +3717,61 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return <VideoControlItem>[
       for (final VideoControlItem item in _controlLayout.itemsIn(slot))
         if (item.isChipRenderable) item,
+    ];
+  }
+
+  /// TODO-421 phase 1: render the buttons the user placed into the **top** slots
+  /// ([VideoControlSlot.topLeft] / [topRight]) as media_kit chrome buttons so
+  /// they live INSIDE the fixed top bar row (`topButtonBar`), not in a separate
+  /// floating strip below it. The user picked "Top bar (left/right)" expecting
+  /// the real top bar, so the buttons are injected into the same [topButtonBar]
+  /// array as the back / title / track-track chrome — they inherit the theme's
+  /// `buttonBarButtonColor` / `buttonBarButtonSize` and fade in / out with the
+  /// rest of the controls (a plain Hibiki [IconButton] would not).
+  ///
+  /// Renders **every** chip-renderable item in the slot ([_slotChipItems]), not
+  /// just the five learning keys: the customization editor's palette
+  /// ([VideoControlItem.customizableItems]) lets users drop transport / nav keys
+  /// (screenshot, audio track, seek, …) into the top slots too, so filtering to
+  /// learning keys here would silently drop those placements off the player after
+  /// the floating top rail is removed. The shared [_activateVideoControlItem]
+  /// dispatcher handles both learning and transport / nav activation.
+  ///
+  /// Each button is wrapped in [Flexible] so the fixed top bar (already carrying
+  /// back + Expanded title + episode nav + screenshot + subtitle / audio track)
+  /// degrades gracefully in narrow windows instead of throwing a RenderFlex
+  /// overflow: the Expanded title yields space first, and any residual squeeze
+  /// lets the injected buttons shrink rather than paint past the edge.
+  List<Widget> _topBarLearningButtons(
+    VideoControlSlot slot,
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    return <Widget>[
+      for (final VideoControlItem item in _slotChipItems(slot))
+        Flexible(
+          fit: FlexFit.loose,
+          child: Tooltip(
+            message: _videoControlItemTooltip(item),
+            child: desktop
+                ? MaterialDesktopCustomButton(
+                    icon: Icon(
+                      _videoControlItemIcon(item),
+                      size: _videoControlIconSize,
+                    ),
+                    onPressed: () =>
+                        _activateVideoControlItem(item, controller),
+                  )
+                : MaterialCustomButton(
+                    icon: Icon(
+                      _videoControlItemIcon(item),
+                      size: _videoControlIconSize,
+                    ),
+                    onPressed: () =>
+                        _activateVideoControlItem(item, controller),
+                  ),
+          ),
+        ),
     ];
   }
 
@@ -6048,17 +6131,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 浮动侧栏（TODO-274/312 phase 2 + TODO-388）：把 screenLeft / screenRight 两个屏幕
-  /// 侧槽（竖直居中浮条）与 topLeft / topRight 两个顶部槽（顶栏下方、贴上沿的竖条）的
-  /// 自定义学习按钮分别渲染。默认配置只用 screenRight（[subtitleList, favoriteSentence,
-  /// favoriteSentences, settings]，与 legacy rightRail 一致）；用户把按钮拖到其余三槽
-  /// （screenLeft / topLeft / topRight）后对应浮条才出现。四条共用同一可见性门控（沉浸
-  /// 锁 / 侧栏打开时都不显示）。
+  /// 浮动侧栏（TODO-274/312 phase 2）：把 screenLeft / screenRight 两个屏幕侧槽
+  /// （竖直居中浮条）的自定义学习按钮分别渲染。默认配置只用 screenRight（[subtitleList,
+  /// favoriteSentence, favoriteSentences, settings]，与 legacy rightRail 一致）；用户把
+  /// 按钮拖到 screenLeft 后左浮条才出现。两条共用同一可见性门控（沉浸锁 / 侧栏打开时都
+  /// 不显示）。
   ///
-  /// 顶部两槽贴上沿、留出固定顶栏高度的内边距（[_videoButtonBarHeight] + SafeArea）避免与
-  /// 返回 / 标题 / 截图 / 字幕 / 音轨等固定 chrome 重叠；其学习按钮经同一
-  /// [_buildVideoSideRailFor] 渲染（固定 chrome 是 transport/nav item、legacyButton==null，
-  /// 被 [_slotLearningButtons] 过滤掉，不会误渲染到顶部浮条里）。
+  /// TODO-421 phase 1：topLeft / topRight 两个顶部槽不再渲染成「固定顶栏下方的浮动竖条」
+  /// ——用户嫌它名不副实（选「Top bar (左/右)」却落在顶栏下方）。改为把这两槽的按钮注入
+  /// 固定顶栏行本身（[_topBarLearningButtons] → [_desktopControlsTheme] / [_mobileControlsTheme]
+  /// 的 `topButtonBar`），此处只剩屏幕左 / 右两条浮条。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
     final Widget right = _buildVideoSideRailFor(
       controller,
@@ -6071,20 +6153,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       VideoControlSlot.screenLeft,
       Alignment.centerLeft,
       const EdgeInsets.only(left: 12),
-    );
-    // 顶部两条：贴上沿，留出固定顶栏高度避免压住返回 / 标题 / 字幕等固定 chrome。
-    final double topInset = _videoButtonBarHeight + 8;
-    final Widget topRight = _buildVideoSideRailFor(
-      controller,
-      VideoControlSlot.topRight,
-      Alignment.topRight,
-      EdgeInsets.only(top: topInset, right: 12),
-    );
-    final Widget topLeft = _buildVideoSideRailFor(
-      controller,
-      VideoControlSlot.topLeft,
-      Alignment.topLeft,
-      EdgeInsets.only(top: topInset, left: 12),
     );
     return Positioned.fill(
       // rail 的显隐由「控制条可见」**或**「鼠标正悬在 rail 上」决定（BUG-283）：后者保证
@@ -6106,7 +6174,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             return const SizedBox.shrink();
           }
           return Stack(
-            children: <Widget>[left, right, topLeft, topRight],
+            children: <Widget>[left, right],
           );
         },
       ),
