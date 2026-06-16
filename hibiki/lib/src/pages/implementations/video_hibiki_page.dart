@@ -4183,24 +4183,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
+  /// 键盘音量键 / 滚轮调音量：交给 controller 的 [VideoPlayerController.adjustVolume]
+  /// 算（base = 静音时 0，否则当前有效音量），用其**返回的确定新音量**刷新 OSD/显示，
+  /// 不再自己 `controller.volume + delta`（[VideoPlayerController.volume] 读 libmpv
+  /// 异步滞后的 `state.volume`，这条歧义路径会让连续按键叠加在旧值上，TODO-433）。
   Future<void> _adjustVolume(double delta) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final double next = (controller.volume + delta).clamp(0.0, 100.0);
-    await controller.setVolume(next);
+    final double next = await controller.adjustVolume(delta);
     if (mounted) {
       _showVolumeOsd(next);
       _syncVolumeDisplay(next);
     }
   }
 
+  /// 静音切换：用 controller 的 [VideoPlayerController.toggleMute] **返回的确定目标音量**
+  /// 刷新 OSD/底栏图标/滑条——取消静音返回静音前音量、静音返回 0。不再读
+  /// [VideoPlayerController.volume]（取消静音那一帧 libmpv 的 `state.volume` 仍是 0，
+  /// 读它会让显示卡在 0、恢复不了音量，正是 TODO-433 bug2）。
   Future<void> _toggleMute() async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final bool muted = await controller.toggleMute();
+    final double next = await controller.toggleMute();
     if (mounted) {
-      _showVolumeOsd(muted ? 0 : controller.volume);
-      _syncVolumeDisplay(muted ? 0 : controller.volume);
+      _showVolumeOsd(next);
+      _syncVolumeDisplay(next);
     }
   }
 

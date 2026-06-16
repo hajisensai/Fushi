@@ -365,11 +365,14 @@ void main() {
       expect(c.volume, 42);
       expect(c.muted, isFalse);
 
-      expect(await c.toggleMute(), isTrue);
+      // toggleMute 返回确定的「切换后有效目标音量」：静音返回 0。
+      expect(await c.toggleMute(), 0);
       expect(c.muted, isTrue);
+      // 无 player 时 volume getter 回退 _lastVolume；静音不改音量目标，故仍 42。
       expect(c.volume, 42);
 
-      expect(await c.toggleMute(), isFalse);
+      // 取消静音返回静音前音量 42。
+      expect(await c.toggleMute(), 42);
       expect(c.muted, isFalse);
       expect(c.volume, 42);
     });
@@ -390,6 +393,66 @@ void main() {
       expect(await c.adjustVolume(5), 5,
           reason: 'volume-up from mute starts at audible zero');
       expect(c.muted, isFalse);
+    });
+
+    // TODO-433：静音真生效 + 独立「静音前音量」字段，根因修复
+    // ① 静音期间调音量不污染静音前音量 ② 取消静音恢复到静音前值
+    // ③ 静音期间加音量从 0 起、正确解除静音。
+    test('toggleMute restores the exact pre-mute volume (TODO-433 bug2)',
+        () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      await c.setVolume(73);
+      expect(await c.toggleMute(), 0, reason: '进入静音返回有效音量 0');
+      expect(c.muted, isTrue);
+      // 取消静音必须回到确定的静音前音量 73（不读异步滞后的播放器音量）。
+      expect(await c.toggleMute(), 73, reason: '取消静音恢复到静音前音量');
+      expect(c.muted, isFalse);
+      expect(c.volume, 73);
+    });
+
+    test(
+        'adjusting volume while muted does not corrupt the pre-mute volume '
+        '(TODO-433 bug1)', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      await c.setVolume(80);
+      await c.toggleMute();
+      expect(c.muted, isTrue);
+
+      // 静音期间「加音量」是合理的「从 0 起音」语义：解除静音并落到 delta。
+      expect(await c.adjustVolume(10), 10,
+          reason: '静音期间加音量从 0 起 → 正确解除静音并落到 delta');
+      expect(c.muted, isFalse, reason: '加非零音量解除静音');
+
+      // 关键：再次静音后取消，恢复值是「最近一次静音前的音量 10」，而非被污染的 80。
+      expect(await c.toggleMute(), 0);
+      expect(await c.toggleMute(), 10,
+          reason: '静音前音量字段独立，按进入静音那一刻的音量恢复，未被旧 80 污染');
+      expect(c.volume, 10);
+    });
+
+    test(
+        'setVolume during mute does not change the pre-mute restore value '
+        '(TODO-433 bug1)', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      await c.setVolume(55);
+      await c.toggleMute();
+      expect(c.muted, isTrue);
+
+      // 静音期间显式 setVolume(0) 不解除静音，也不该影响「静音前音量」恢复目标。
+      await c.setVolume(0);
+      expect(c.muted, isTrue, reason: 'setVolume(0) 不解除静音');
+
+      // 取消静音仍恢复到进入静音那一刻的 55（静音前音量字段未被 setVolume(0) 污染）。
+      expect(await c.toggleMute(), 55,
+          reason: '静音前音量只在进入静音那一刻写一次，setVolume 不碰它');
+      expect(c.muted, isFalse);
+      expect(c.volume, 55);
     });
 
     test('frameStep is a safe no-op before load', () async {

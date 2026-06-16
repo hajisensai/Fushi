@@ -216,7 +216,20 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
+
+  /// 最近一次 [setVolume] 请求的「可听音量」（0..100）；player 未实例化时供 [volume]
+  /// getter 回退。**这是音量目标的单一语义**：调音量就写它，与「静音前音量」无关。
   double _lastVolume = 100.0;
+
+  /// 进入静音那一刻捕获的「静音前音量」（0..100），取消静音时恢复到它。
+  ///
+  /// 与 [_lastVolume] 分离是 TODO-433 的根因修复：旧实现让 [_lastVolume] 同时承担
+  /// 「音量目标」和「静音前音量」两种语义——静音期间任何调音量都会改写它，导致
+  /// ① 静音被无意解除（[setVolume] 的 `if(_lastVolume>0)_muted=false`）、
+  /// ② 取消静音恢复到被污染后的值。本字段**只在进入静音那一刻写一次**，静音期间的
+  /// [setVolume] / [adjustVolume] 一律不碰它，确保取消静音必回到确定的静音前音量。
+  double _volumeBeforeMute = 100.0;
+
   bool _muted = false;
   bool _pauseAtSubtitleEnd = false;
   Future<void> Function()? _pauseAtSubtitleEndOverride;
@@ -1179,12 +1192,18 @@ class VideoPlayerController extends ChangeNotifier
     await _player?.setRate(rate);
   }
 
+  /// 设置可听音量（0..100）。写非零音量即解除静音（「从静音加音量 = 从 0 起音」
+  /// 的合理语义）。**只写音量目标 [_lastVolume]，绝不碰 [_volumeBeforeMute]**——
+  /// 静音期间调音量不污染「静音前音量」，取消静音仍回到确定值。
   Future<void> setVolume(double value) async {
     _lastVolume = value.clamp(0.0, 100.0).toDouble();
     if (_lastVolume > 0) _muted = false;
     await _player?.setVolume(_lastVolume);
   }
 
+  /// 在当前**有效输出音量**（静音时为 0，否则为 [volume]）基础上增减 [delta] 并
+  /// clamp 到 0..100，写穿 player，返回**确定的新音量**供 UI 直接刷新显示/OSD，
+  /// 不必再去读异步滞后的 [volume]。从静音态加音量会经 [setVolume] 解除静音、从 0 起音。
   Future<double> adjustVolume(double delta) async {
     final double base = _muted ? 0.0 : volume;
     final double next = (base + delta).clamp(0.0, 100.0).toDouble();
@@ -1192,10 +1211,29 @@ class VideoPlayerController extends ChangeNotifier
     return next;
   }
 
-  Future<bool> toggleMute() async {
-    _muted = !_muted;
-    await _player?.setVolume(_muted ? 0.0 : _lastVolume);
-    return _muted;
+  /// 切换静音，返回**取消静音后的有效目标音量**（静音返回 0，取消静音返回静音前音量），
+  /// 供 UI 直接据此刷新图标/滑条/OSD——不再读异步滞后的 [volume]（取消静音那一帧
+  /// libmpv 的 `state.volume` 仍是 0，读它会让显示停在 0，恢复不了，正是 TODO-433 bug2）。
+  ///
+  /// 进入静音：把当前真实可听音量快照进 [_volumeBeforeMute]（优先用 player 已生效的
+  /// `state.volume>0`，否则回退最近请求的 [_lastVolume]），置 [_muted]，把 player 音量
+  /// 压 0。**直接 `_player.setVolume(0)` 而非走 [setVolume(0)]**——后者会把音量目标
+  /// [_lastVolume] 也改成 0，污染取消静音的恢复值。
+  /// 取消静音：把 player 音量恢复到 [_volumeBeforeMute]，并经 [setVolume] 让音量目标
+  /// 与静音态一致回到该值。
+  Future<double> toggleMute() async {
+    if (_muted) {
+      // 取消静音：恢复到静音前音量（setVolume 内部会清 _muted）。
+      await setVolume(_volumeBeforeMute);
+      return _volumeBeforeMute;
+    }
+    // 进入静音：先快照当前可听音量，再压 0。
+    final double live = _player?.state.volume ?? _lastVolume;
+    _volumeBeforeMute =
+        (live > 0 ? live : _lastVolume).clamp(0.0, 100.0).toDouble();
+    _muted = true;
+    await _player?.setVolume(0.0);
+    return 0.0;
   }
 
   /// 句子跳转（上/下一句）的前导余量（毫秒）。
