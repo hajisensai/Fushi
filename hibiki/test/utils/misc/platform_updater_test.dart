@@ -213,6 +213,44 @@ void main() {
       expect(args, contains('/RESTARTAPPLICATIONS'));
       expect(args, contains('/NORESTART'));
     });
+
+    test('suppresses Inno action dialogs and records close diagnostics', () {
+      final List<String> args =
+          windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
+
+      expect(args, contains('/SUPPRESSMSGBOXES'));
+      expect(args, contains('/FORCECLOSEAPPLICATIONS'));
+      expect(args, contains('/LOGCLOSEAPPLICATIONS'));
+
+      final Iterable<String> logArgs =
+          args.where((String arg) => arg.startsWith('/LOG='));
+      expect(logArgs, hasLength(1));
+      expect(
+          logArgs.single, contains('hibiki-0.4.2-windows-setup.install.log'));
+    });
+
+    test('preflights installation directory write access before app exit', () {
+      final String source = File(
+        'lib/src/utils/misc/platform_updater.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('ensureWindowsInstallTargetWritable'));
+      expect(source, contains('administrator'));
+      expect(source, contains('user-writable'));
+    });
+  });
+
+  group('Windows installer script guards', () {
+    test('keeps Restart Manager coverage for exe and dll locks', () {
+      final String script = File(
+        'windows/installer/hibiki.iss',
+      ).readAsStringSync();
+
+      expect(script, contains('CloseApplications=yes'));
+      expect(script, contains('RestartApplications=yes'));
+      expect(script, contains('AppMutex=HibikiSingleInstanceMutex'));
+      expect(script, contains('CloseApplicationsFilter=*.exe,*.dll'));
+    });
   });
 
   group('isWindowsExecutableHeader', () {

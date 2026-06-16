@@ -267,15 +267,42 @@ class AndroidInstaller {
 /// - `/CLOSEAPPLICATIONS`：用 RestartManager 自动关闭正在运行的 Hibiki，
 ///   **不弹**「应用正在运行，需要关闭」的确认框（单靠 `/VERYSILENT` +
 ///   iss 里的 `CloseApplications=yes` 仍会弹该框）。
+/// - `/SUPPRESSMSGBOXES`：配合 `/VERYSILENT` 抑制 Inno 的错误/选择弹窗，避免
+///   `DeleteFile failed code 5` 把用户留在 Select action。
+/// - `/FORCECLOSEAPPLICATIONS` + `/LOGCLOSEAPPLICATIONS`：旧 Hibiki / libmpv 句柄
+///   没有及时释放时，让 RestartManager 尽力关闭并把关闭过程写进安装日志。
 /// - `/RESTARTAPPLICATIONS`：安装完成后让 RestartManager 自动重新拉起 Hibiki。
 /// - `/NORESTART`：禁止安装器重启**操作系统**（我们只想重启 app，不重启系统）。
 List<String> windowsInstallerArgs(String installerPath) => <String>[
       '/VERYSILENT',
       '/SP-',
+      '/SUPPRESSMSGBOXES',
       '/CLOSEAPPLICATIONS',
+      '/FORCECLOSEAPPLICATIONS',
+      '/LOGCLOSEAPPLICATIONS',
       '/RESTARTAPPLICATIONS',
       '/NORESTART',
+      '/LOG=${windowsInstallerLogPath(installerPath)}',
     ];
+
+String windowsInstallerLogPath(String installerPath) {
+  final int sep = _lastPathSeparatorIndex(installerPath);
+  final String dir = sep >= 0 ? installerPath.substring(0, sep) : '';
+  final String name =
+      sep >= 0 ? installerPath.substring(sep + 1) : installerPath;
+  final String stem = name.toLowerCase().endsWith('.exe')
+      ? name.substring(0, name.length - 4)
+      : name;
+  final String logName = '$stem.install.log';
+  if (dir.isEmpty) return logName;
+  return '$dir${Platform.pathSeparator}$logName';
+}
+
+int _lastPathSeparatorIndex(String path) {
+  final int slash = path.lastIndexOf('/');
+  final int backslash = path.lastIndexOf(r'\');
+  return slash > backslash ? slash : backslash;
+}
 
 /// Windows 安装器启动/校验失败。被 UpdateChecker 的下载流程 catch → SnackBar 优雅
 /// 降级，绝不让损坏下载或启动失败演化成「app 静默消失」式崩溃。
@@ -319,6 +346,11 @@ class WindowsInstaller {
       throw UpdateInstallerException(
           'downloaded file is not a Windows executable: $installerPath');
     }
+    if (Platform.isWindows) {
+      await ensureWindowsInstallTargetWritable(
+        File(Platform.resolvedExecutable).parent,
+      );
+    }
 
     try {
       await Process.start(
@@ -346,6 +378,28 @@ class WindowsInstaller {
       return await raf.read(2);
     } finally {
       await raf.close();
+    }
+  }
+}
+
+Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {
+  final File probe = File(
+    '${installDir.path}${Platform.pathSeparator}.hibiki-update-write-test',
+  );
+  try {
+    await installDir.create(recursive: true);
+    await probe.writeAsString('hibiki updater preflight', flush: true);
+  } catch (e) {
+    throw UpdateInstallerException(
+      'Cannot write to installation directory: ${installDir.path}. '
+      'Close Hibiki and run the installer as administrator, or reinstall '
+      'Hibiki to a user-writable folder. Details: $e',
+    );
+  } finally {
+    try {
+      if (await probe.exists()) await probe.delete();
+    } catch (_) {
+      // Best-effort cleanup; a failed cleanup should not hide the real result.
     }
   }
 }
