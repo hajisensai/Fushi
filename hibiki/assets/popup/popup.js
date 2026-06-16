@@ -2363,17 +2363,19 @@ window.updatePopupIncremental = function() {
 //
 // Take over 'wheel' (passive:false so preventDefault works), normalize the
 // delta across deltaMode (LINE/PAGE report in lines/pages, not px), apply a
-// fraction so a single notch travels a small, smooth distance, then divide the
-// layout-px scroll amount by the current zoom so the *visual* step is the same
-// regardless of zoom (a V-px visual move needs V/zoom layout px). behavior:auto
-// keeps it crisp (no smooth-scroll lag stacking up across rapid notches).
+// smaller fraction so a single notch travels a browser-like distance, cap one
+// unusually large device delta in visual pixels, then divide the layout-px
+// scroll amount by the current zoom so the *visual* step is the same regardless
+// of zoom (a V-px visual move needs V/zoom layout px). behavior:auto keeps it
+// crisp (no smooth-scroll lag stacking up across rapid notches).
 //
 // Inner vertically-scrollable containers (the description overlay, any glossary
 // element with its own y-overflow) keep native scroll until they hit a boundary,
 // so nested scroll regions are not stolen — only the main document scroll, which
 // is the coarse one, is refined.
-const POPUP_WHEEL_PIXEL_FACTOR = 0.35; // fraction of the raw px delta per notch
-const POPUP_WHEEL_LINE_HEIGHT = 16;    // px per line for deltaMode === LINE
+const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta
+const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
+const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
 function popupCurrentZoom() {
     const z = parseFloat(document.documentElement.style.zoom);
     return (Number.isFinite(z) && z > 0) ? z : 1;
@@ -2387,6 +2389,15 @@ function popupWheelDeltaToPixels(delta, deltaMode, pageExtent) {
         return delta * (pageExtent || POPUP_WHEEL_LINE_HEIGHT);
     }
     return delta; // DOM_DELTA_PIXEL
+}
+function popupClampWheelVisualStep(step) {
+    if (!Number.isFinite(step) || step === 0) {
+        return 0;
+    }
+    if (Math.abs(step) <= POPUP_WHEEL_MAX_VISUAL_STEP) {
+        return step;
+    }
+    return Math.sign(step) * POPUP_WHEEL_MAX_VISUAL_STEP;
 }
 // Walk up from the event target looking for an ancestor that can still consume
 // this vertical wheel natively (it scrolls on Y and is not yet at the boundary
@@ -2419,9 +2430,10 @@ document.addEventListener('wheel', (e) => {
     if (deltaPx === 0) return;
     if (popupAncestorAbsorbsVerticalWheel(e.target, deltaPx)) return;
     e.preventDefault();
-    // Divide by zoom so the on-screen step is zoom-independent; scale by the
-    // fraction so each notch is a small, smooth move.
-    const step = (deltaPx * POPUP_WHEEL_PIXEL_FACTOR) / popupCurrentZoom();
+    // Scale each notch down first, cap unusually large visual deltas, then
+    // divide by zoom so the on-screen step is zoom-independent.
+    const visualStep = popupClampWheelVisualStep(deltaPx * POPUP_WHEEL_PIXEL_FACTOR);
+    const step = visualStep / popupCurrentZoom();
     window.scrollBy({ top: step, behavior: 'auto' });
 }, { passive: false });
 
