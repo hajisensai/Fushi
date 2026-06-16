@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 class VideoControlLayoutEditOverlay extends StatefulWidget {
   const VideoControlLayoutEditOverlay({
@@ -199,10 +200,11 @@ class _VideoControlLayoutEditOverlayState
   Widget _buildPalette({double maxWidth = 420, double? maxHeight}) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Widget panel = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.surface.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: tokens.radii.chipRadius,
         border: Border.all(color: cs.outlineVariant),
       ),
       child: Padding(
@@ -272,6 +274,7 @@ class _VideoControlLayoutEditOverlayState
   Widget _buildSlotRegion(VideoControlSlot slot) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<VideoControlItem> items = <VideoControlItem>[
       for (final VideoControlItem item in _layout.itemsIn(slot))
         if (_isOnVideoDraggableItem(item)) item,
@@ -310,7 +313,7 @@ class _VideoControlLayoutEditOverlayState
             color: highlighted
                 ? cs.primaryContainer.withValues(alpha: 0.9)
                 : cs.surface.withValues(alpha: 0.86),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: tokens.radii.chipRadius,
             border: Border.all(
               color: borderColor,
               width: highlighted || rejecting ? 2 : 1,
@@ -387,10 +390,11 @@ class _VideoControlLayoutEditOverlayState
   Widget _controlChipBody(VideoControlItem item, {required bool dragging}) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Widget body = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.secondaryContainer,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: tokens.radii.controlRadius,
         boxShadow: dragging
             ? <BoxShadow>[
                 BoxShadow(
