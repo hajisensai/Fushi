@@ -10,38 +10,60 @@ List<Map<String, dynamic>> _assets(List<String> names) => names
         })
     .toList();
 
+Future<String?> _urlOf(Future<UpdateAsset?> selection) async =>
+    (await selection)?.url;
+
 void main() {
   group('WindowsUpdater.selectAsset', () {
     test('picks the -windows-setup.exe asset', () async {
       final WindowsUpdater u = WindowsUpdater();
-      final String? url = await u.selectAsset(_assets(<String>[
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
         'hibiki-0.4.2-arm64-v8a.apk',
         'hibiki-0.4.2-windows-setup.exe',
         'hibiki-0.4.2-linux-x86_64.AppImage',
-      ]));
+      ])));
       expect(url, 'https://example.com/hibiki-0.4.2-windows-setup.exe');
     });
 
     test('returns null when no windows asset present', () async {
       final WindowsUpdater u = WindowsUpdater();
-      final String? url =
+      final UpdateAsset? url =
           await u.selectAsset(_assets(<String>['hibiki-0.4.2-arm64-v8a.apk']));
       expect(url, isNull);
     });
 
     test('debug channel selects a debug Windows setup asset', () async {
       final WindowsUpdater u = WindowsUpdater();
-      final String? url = await u.selectAsset(
+      final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
           'hibiki-0.5.1-windows-setup.exe',
           'hibiki-0.5.1-debug.412-windows-setup.exe',
         ]),
         channel: UpdateChannel.debug,
-      );
+      ));
       expect(
         url,
         'https://example.com/hibiki-0.5.1-debug.412-windows-setup.exe',
       );
+    });
+
+    test('preserves release asset size and digest metadata', () async {
+      final WindowsUpdater u = WindowsUpdater();
+      const String digest =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final UpdateAsset? asset = await u.selectAsset(<Map<String, dynamic>>[
+        <String, dynamic>{
+          'name': 'hibiki-0.4.2-windows-setup.exe',
+          'browser_download_url':
+              'https://example.com/hibiki-0.4.2-windows-setup.exe',
+          'size': 12345,
+          'digest': 'sha256:$digest',
+        },
+      ]);
+
+      expect(asset?.url, 'https://example.com/hibiki-0.4.2-windows-setup.exe');
+      expect(asset?.sizeBytes, 12345);
+      expect(asset?.sha256Digest, digest);
     });
 
     test('stable and beta ignore debug Windows setup assets', () async {
@@ -72,11 +94,11 @@ void main() {
       final AndroidUpdater u = AndroidUpdater(
         abiProvider: () async => <String>['arm64-v8a'],
       );
-      final String? url = await u.selectAsset(_assets(<String>[
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
         'hibiki-0.4.2-armeabi-v7a.apk',
         'hibiki-0.4.2-arm64-v8a.apk',
         'hibiki-0.4.2-windows-setup.exe',
-      ]));
+      ])));
       expect(url, 'https://example.com/hibiki-0.4.2-arm64-v8a.apk');
     });
 
@@ -90,11 +112,11 @@ void main() {
       ]);
 
       expect(
-        await u.selectAsset(assets, channel: UpdateChannel.stable),
+        await _urlOf(u.selectAsset(assets, channel: UpdateChannel.stable)),
         'https://example.com/hibiki-0.5.1-arm64-v8a.apk',
       );
       expect(
-        await u.selectAsset(assets, channel: UpdateChannel.beta),
+        await _urlOf(u.selectAsset(assets, channel: UpdateChannel.beta)),
         'https://example.com/hibiki-0.5.1-arm64-v8a.apk',
       );
     });
@@ -105,13 +127,13 @@ void main() {
       );
 
       expect(
-        await u.selectAsset(
+        await _urlOf(u.selectAsset(
           _assets(<String>[
             'hibiki-0.5.1-arm64-v8a.apk',
             'hibiki-0.5.1-debug.412-abc1234-debug.apk',
           ]),
           channel: UpdateChannel.debug,
-        ),
+        )),
         'https://example.com/hibiki-0.5.1-debug.412-abc1234-debug.apk',
       );
       expect(
@@ -127,17 +149,17 @@ void main() {
       final AndroidUpdater u = AndroidUpdater(
         abiProvider: () async => <String>['x86_64'],
       );
-      final String? url = await u.selectAsset(_assets(<String>[
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
         'hibiki-0.4.2-armeabi-v7a.apk',
         'hibiki-0.4.2-arm64-v8a.apk',
-      ]));
+      ])));
       expect(url, 'https://example.com/hibiki-0.4.2-armeabi-v7a.apk');
     });
 
     test('returns null when no apk asset', () async {
       final AndroidUpdater u =
           AndroidUpdater(abiProvider: () async => <String>[]);
-      final String? url = await u
+      final UpdateAsset? url = await u
           .selectAsset(_assets(<String>['hibiki-0.4.2-windows-setup.exe']));
       expect(url, isNull);
     });

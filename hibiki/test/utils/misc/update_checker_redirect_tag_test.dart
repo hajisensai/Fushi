@@ -99,9 +99,9 @@ void main() {
       final Map<String, dynamic> release = buildStableReleaseFromTag('v0.4.1');
       final List<Map<String, dynamic>> assets =
           (release['assets'] as List<dynamic>).cast<Map<String, dynamic>>();
-      final String? url = await WindowsUpdater().selectAsset(assets);
+      final UpdateAsset? asset = await WindowsUpdater().selectAsset(assets);
       expect(
-        url,
+        asset?.url,
         'https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.4.1/hibiki-0.4.1-windows-setup.exe',
       );
     });
@@ -110,11 +110,11 @@ void main() {
       final Map<String, dynamic> release = buildStableReleaseFromTag('v0.4.1');
       final List<Map<String, dynamic>> assets =
           (release['assets'] as List<dynamic>).cast<Map<String, dynamic>>();
-      final String? url = await AndroidUpdater(
+      final UpdateAsset? asset = await AndroidUpdater(
         abiProvider: () async => <String>['arm64-v8a'],
       ).selectAsset(assets);
       expect(
-        url,
+        asset?.url,
         'https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.4.1/hibiki-0.4.1-arm64-v8a.apk',
       );
     });

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -246,15 +247,16 @@ class UpdateReleaseSelection {
     required this.release,
     required this.version,
     required this.releaseNotes,
-    required this.downloadUrl,
+    required this.asset,
   });
 
   final Map<String, dynamic> release;
   final String version;
   final String releaseNotes;
-  final String? downloadUrl;
+  final UpdateAsset? asset;
 
   String? get htmlUrl => release['html_url'] as String?;
+  String? get downloadUrl => asset?.url;
 }
 
 class UpdateChecker {
@@ -279,23 +281,21 @@ class UpdateChecker {
     });
   }
 
-  static Future<void> _cleanupOldApks(String currentVersion) async {
+  static Future<void> _cleanupOldApks(String _) async {
     try {
-      final cacheDir = await getTemporaryDirectory();
-      const prefix = 'hibiki-';
-      for (final f in cacheDir.listSync()) {
-        if (f is! File) continue;
-        final String name = f.uri.pathSegments.last;
-        if (!name.startsWith(prefix)) continue;
-        const List<String> exts = <String>['.apk', '.exe', '.AppImage', '.zip'];
-        final String ext =
-            exts.firstWhere((String e) => name.endsWith(e), orElse: () => '');
-        if (ext.isEmpty) continue;
-        final String fileVersion =
-            name.substring(prefix.length, name.length - ext.length);
-        if (!_isNewer(fileVersion, currentVersion)) {
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      if (!updatesDir.existsSync()) return;
+      final DateTime cutoff = DateTime.now().subtract(const Duration(days: 7));
+      for (final FileSystemEntity entity in updatesDir.listSync()) {
+        if (entity is! File) continue;
+        final String name = entity.uri.pathSegments.last;
+        final bool isTemporary =
+            name.endsWith('.part') || name.endsWith('.meta.json');
+        if (!isTemporary) continue;
+        final FileStat stat = entity.statSync();
+        if (stat.modified.isBefore(cutoff)) {
           try {
-            f.deleteSync();
+            entity.deleteSync();
           } catch (e) {
             debugPrint('[UpdateChecker] cleanup delete failed: $e');
           }
@@ -354,8 +354,9 @@ class UpdateChecker {
       final assets = json['assets'] as List<dynamic>? ?? [];
       final List<Map<String, dynamic>> assetMaps =
           assets.whereType<Map<String, dynamic>>().toList(growable: false);
-      final String? downloadUrl =
+      final UpdateAsset? asset =
           await updater.selectAsset(assetMaps, channel: channel);
+      final String? downloadUrl = asset?.url;
 
       // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 打开发布页。
       if (downloadUrl == null) {
@@ -367,9 +368,9 @@ class UpdateChecker {
       }
       if (!context.mounted) return;
       if (canInstall && autoInstall) {
-        _downloadAndInstall(context, downloadUrl, tagName, updater);
+        _downloadAndInstall(context, asset!, tagName, updater);
       } else if (canInstall) {
-        _showUpdateDialog(context, tagName, releaseBody, downloadUrl, updater);
+        _showUpdateDialog(context, tagName, releaseBody, asset!, updater);
       } else {
         // 能检查但不能自装（本期 iOS/mac/Linux）：弹「前往下载」打开发布页。
         final String? htmlUrl = json['html_url'] as String?;
@@ -551,14 +552,11 @@ class UpdateChecker {
     return attempt().timeout(_kPerAttemptTimeout);
   }
 
-  static bool _isNewer(String remote, String local) =>
-      isVersionNewer(remote, local);
-
   static void _showUpdateDialog(
     BuildContext context,
     String version,
     String releaseNotes,
-    String downloadUrl,
+    UpdateAsset asset,
     PlatformUpdater updater,
   ) {
     showAppDialog<void>(
@@ -569,7 +567,7 @@ class UpdateChecker {
         primaryLabel: t.update_download,
         onPrimary: () {
           Navigator.of(ctx).pop();
-          _downloadAndInstall(context, downloadUrl, version, updater);
+          _downloadAndInstall(context, asset, version, updater);
         },
       ),
     );
@@ -601,7 +599,7 @@ class UpdateChecker {
 
   static Future<void> _downloadAndInstall(
     BuildContext context,
-    String url,
+    UpdateAsset asset,
     String version,
     PlatformUpdater updater,
   ) async {
@@ -628,51 +626,38 @@ class UpdateChecker {
 
     HttpClient? client;
     try {
-      final cacheDir = await getTemporaryDirectory();
-      final String ext = _extOf(url);
-      final File outFile = File('${cacheDir.path}/hibiki-$version$ext');
-
       client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
       client.idleTimeout = const Duration(seconds: 60);
       // 下载同样走系统/环境代理（与检查一致）：直连/镜像不通时经用户代理出口下载。
       await applyUpdateProxy(client);
 
-      // 下载与检查共用同一组 GitHub 镜像候选（updateCheckUrls）：直连优先、各 gh
-      // 代理前缀兜底。下载的写盘/安装逻辑不变，只是镜像清单与检查保持同步（BUG-277）。
-      final List<String> urls = updateCheckUrls(url);
-      var downloaded = false;
-      for (final u in urls) {
-        try {
-          progress.value = 0;
-          final request = await client.getUrl(Uri.parse(u));
-          request.headers.set('User-Agent', 'Hibiki/$version');
-          final response = await request.close();
-          if (response.statusCode == 200) {
-            await _writeResponse(response, outFile, progress);
-            downloaded = true;
-            break;
-          }
-          await response.drain<void>();
-        } catch (e, stack) {
-          // 逐个下载源回退：网络类失败记 i18n 摘要、不带堆栈；其它异常带堆栈。
-          // 全部源失败时下面的 throw 仍会被外层 catch 统一记一条并弹 SnackBar。
-          if (isExpectedUpdateNetworkFailure(e)) {
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      final File outFile = await downloadUpdateAsset(
+        asset: asset,
+        version: version,
+        updatesDir: updatesDir,
+        candidateUrls: updateCheckUrls(asset.url),
+        openUrl: (Uri uri, Map<String, String> headers) =>
+            _openHttpDownload(client!, uri, headers, version),
+        onProgress: (double value) {
+          progress.value = value;
+        },
+        onSourceFailure: (String url, Object error, StackTrace stack) {
+          if (isExpectedUpdateNetworkFailure(error)) {
             ErrorLogService.instance.log(
                 'UpdateChecker.download',
                 t.update_network_failure(
-                  host: hostLabelForUpdateUrl(u),
-                  reason: describeUpdateNetworkFailureReason(e),
+                  host: hostLabelForUpdateUrl(url),
+                  reason: describeUpdateNetworkFailureReason(error),
                 ));
           } else {
-            ErrorLogService.instance.log('UpdateChecker.download', e, stack);
+            ErrorLogService.instance
+                .log('UpdateChecker.download', error, stack);
           }
-          debugPrint('[Hibiki] download source failed ($u): $e');
-        }
-      }
-      if (!downloaded) {
-        throw Exception('All download sources failed');
-      }
+          debugPrint('[Hibiki] download source failed ($url): $error');
+        },
+      );
 
       status.value = t.update_installing;
 
@@ -693,35 +678,572 @@ class UpdateChecker {
       overlayVisible.dispose();
     }
   }
+}
 
-  static Future<void> _writeResponse(
-    HttpClientResponse response,
-    File file,
-    ValueNotifier<double> progress,
-  ) async {
-    final contentLength = response.contentLength;
-    int received = 0;
-    final sink = file.openWrite();
+typedef UpdateDownloadOpen = Future<UpdateDownloadResponse> Function(
+  Uri uri,
+  Map<String, String> headers,
+);
 
-    await for (final chunk in response) {
+typedef UpdateDownloadSourceFailure = void Function(
+  String url,
+  Object error,
+  StackTrace stack,
+);
+
+@visibleForTesting
+class UpdateDownloadResponse {
+  const UpdateDownloadResponse({
+    required this.statusCode,
+    required this.headers,
+    required this.stream,
+  });
+
+  factory UpdateDownloadResponse.bytes({
+    required int statusCode,
+    required List<int> body,
+    Map<String, String> headers = const <String, String>{},
+  }) {
+    return UpdateDownloadResponse(
+      statusCode: statusCode,
+      headers: headers,
+      stream: Stream<List<int>>.value(body),
+    );
+  }
+
+  final int statusCode;
+  final Map<String, String> headers;
+  final Stream<List<int>> stream;
+
+  String? header(String name) => _headerValue(headers, name);
+}
+
+@visibleForTesting
+class UpdateDownloadPaths {
+  const UpdateDownloadPaths({
+    required this.file,
+    required this.partFile,
+    required this.metadataFile,
+  });
+
+  factory UpdateDownloadPaths.forAsset(
+      Directory updatesDir, UpdateAsset asset) {
+    final String fallbackName = _fileNameFromUrl(asset.url);
+    final String name = safeUpdateAssetFileName(
+      asset.name.isNotEmpty ? asset.name : fallbackName,
+    );
+    return UpdateDownloadPaths(
+      file: File('${updatesDir.path}${Platform.pathSeparator}$name'),
+      partFile: File('${updatesDir.path}${Platform.pathSeparator}$name.part'),
+      metadataFile:
+          File('${updatesDir.path}${Platform.pathSeparator}$name.meta.json'),
+    );
+  }
+
+  final File file;
+  final File partFile;
+  final File metadataFile;
+}
+
+@visibleForTesting
+String safeUpdateAssetFileName(String name) {
+  final String leaf = name.replaceAll(r'\', '/').split('/').last.trim();
+  final String sanitized = leaf
+      .replaceAll(RegExp(r'[<>:"/\\|?*]'), '-')
+      .replaceAll(RegExp(r'-{2,}'), '-')
+      .replaceAll(RegExp(r'^[. ]+|[. ]+$'), '');
+  return sanitized.isEmpty ? 'hibiki-update.bin' : sanitized;
+}
+
+@visibleForTesting
+Future<File> downloadUpdateAsset({
+  required UpdateAsset asset,
+  required String version,
+  required Directory updatesDir,
+  required List<String> candidateUrls,
+  required UpdateDownloadOpen openUrl,
+  void Function(double value)? onProgress,
+  UpdateDownloadSourceFailure? onSourceFailure,
+}) async {
+  await updatesDir.create(recursive: true);
+  final UpdateDownloadPaths paths =
+      UpdateDownloadPaths.forAsset(updatesDir, asset);
+  final _UpdateDownloadMetadata? metadata =
+      await _UpdateDownloadMetadata.read(paths.metadataFile);
+
+  if (await _isReusableCompleteDownload(
+    paths.file,
+    asset,
+    version,
+    metadata,
+  )) {
+    onProgress?.call(1);
+    return paths.file;
+  }
+
+  if (await paths.file.exists()) {
+    await _deleteFile(paths.file);
+  }
+
+  if (metadata == null || !metadata.matches(asset, version)) {
+    await _deleteFile(paths.partFile);
+    await _deleteFile(paths.metadataFile);
+  }
+
+  Object? lastError;
+  StackTrace? lastStack;
+  for (final String url in candidateUrls) {
+    try {
+      final _UpdateDownloadMetadata? currentMetadata =
+          await _UpdateDownloadMetadata.read(paths.metadataFile);
+      final File? promoted = await _promotePartIfComplete(
+        paths,
+        asset,
+        version,
+        currentMetadata,
+      );
+      if (promoted != null) {
+        onProgress?.call(1);
+        return promoted;
+      }
+      final int resumeOffset = await _resumeOffsetForPart(
+        paths,
+        asset,
+        version,
+        currentMetadata,
+      );
+      return await _downloadCandidate(
+        asset: asset,
+        version: version,
+        paths: paths,
+        url: url,
+        openUrl: openUrl,
+        metadata: currentMetadata,
+        resumeOffset: resumeOffset,
+        onProgress: onProgress,
+      );
+    } catch (e, stack) {
+      lastError = e;
+      lastStack = stack;
+      onSourceFailure?.call(url, e, stack);
+    }
+  }
+
+  Error.throwWithStackTrace(
+    lastError ?? Exception('All download sources failed'),
+    lastStack ?? StackTrace.current,
+  );
+}
+
+Future<File> _downloadCandidate({
+  required UpdateAsset asset,
+  required String version,
+  required UpdateDownloadPaths paths,
+  required String url,
+  required UpdateDownloadOpen openUrl,
+  required _UpdateDownloadMetadata? metadata,
+  required int resumeOffset,
+  void Function(double value)? onProgress,
+  bool restarted = false,
+}) async {
+  final Uri uri = Uri.parse(url);
+  final Map<String, String> headers = <String, String>{};
+  if (resumeOffset > 0) {
+    headers[HttpHeaders.rangeHeader] = 'bytes=$resumeOffset-';
+    final String? ifRange = metadata?.etag ?? metadata?.lastModified;
+    if (ifRange != null && ifRange.isNotEmpty) {
+      headers[HttpHeaders.ifRangeHeader] = ifRange;
+    }
+  }
+
+  final UpdateDownloadResponse response =
+      await openUrl(uri, headers).timeout(_kPerAttemptTimeout);
+  final bool requestedRange = resumeOffset > 0;
+  var writeOffset = resumeOffset;
+
+  if (requestedRange &&
+      response.statusCode == HttpStatus.requestedRangeNotSatisfiable &&
+      !restarted) {
+    await response.stream.drain<void>();
+    await _deleteFile(paths.partFile);
+    return _downloadCandidate(
+      asset: asset,
+      version: version,
+      paths: paths,
+      url: url,
+      openUrl: openUrl,
+      metadata: null,
+      resumeOffset: 0,
+      onProgress: onProgress,
+      restarted: true,
+    );
+  }
+
+  if (requestedRange && response.statusCode == HttpStatus.partialContent) {
+    final int? start =
+        _contentRangeStart(response.header(HttpHeaders.contentRangeHeader));
+    if (start != resumeOffset) {
+      await response.stream.drain<void>();
+      await _deleteFile(paths.partFile);
+      if (!restarted) {
+        return _downloadCandidate(
+          asset: asset,
+          version: version,
+          paths: paths,
+          url: url,
+          openUrl: openUrl,
+          metadata: null,
+          resumeOffset: 0,
+          onProgress: onProgress,
+          restarted: true,
+        );
+      }
+      throw HttpException('invalid content-range for resume: $url');
+    }
+  } else if (response.statusCode == HttpStatus.ok) {
+    if (requestedRange) {
+      await _deleteFile(paths.partFile);
+      writeOffset = 0;
+    }
+  } else {
+    await response.stream.drain<void>();
+    throw HttpException('download failed (${response.statusCode}): $url');
+  }
+
+  final int? responseTotal = _responseTotalSize(response, writeOffset);
+  final _UpdateDownloadMetadata nextMetadata = _UpdateDownloadMetadata(
+    version: version,
+    name: asset.name,
+    url: asset.url,
+    sizeBytes: asset.sizeBytes ?? responseTotal,
+    etag: response.header(HttpHeaders.etagHeader) ?? metadata?.etag,
+    lastModified: response.header(HttpHeaders.lastModifiedHeader) ??
+        metadata?.lastModified,
+    sha256Digest: asset.sha256Digest,
+  );
+  await nextMetadata.write(paths.metadataFile);
+
+  final IOSink sink = paths.partFile.openWrite(
+    mode: writeOffset > 0 ? FileMode.append : FileMode.write,
+  );
+  var received = writeOffset;
+  final int? total = nextMetadata.sizeBytes;
+  if (total != null && total > 0) {
+    onProgress?.call(received / total);
+  } else {
+    onProgress?.call(0);
+  }
+  try {
+    await for (final List<int> chunk in response.stream) {
       sink.add(chunk);
       received += chunk.length;
-      if (contentLength > 0) {
-        progress.value = received / contentLength;
+      if (total != null && total > 0) {
+        onProgress?.call(received / total);
       }
     }
-
     await sink.flush();
+  } finally {
     await sink.close();
+  }
+
+  final int actualSize = await paths.partFile.length();
+  final _UpdateDownloadMetadata completeMetadata = nextMetadata.copyWith(
+    sizeBytes: nextMetadata.sizeBytes ?? actualSize,
+  );
+  if (!await _isValidCompleteDownload(
+    paths.partFile,
+    asset,
+    completeMetadata,
+  )) {
+    await _deleteFile(paths.partFile);
+    throw Exception('download integrity check failed: ${asset.name}');
+  }
+
+  final File promoted = await _promoteCompleteDownload(
+    paths,
+    completeMetadata,
+  );
+  onProgress?.call(1);
+  return promoted;
+}
+
+Future<UpdateDownloadResponse> _openHttpDownload(
+  HttpClient client,
+  Uri uri,
+  Map<String, String> headers,
+  String version,
+) async {
+  final HttpClientRequest request = await client.getUrl(uri);
+  request.headers.set('User-Agent', 'Hibiki/$version');
+  for (final MapEntry<String, String> entry in headers.entries) {
+    request.headers.set(entry.key, entry.value);
+  }
+  final HttpClientResponse response = await request.close();
+  final Map<String, String> responseHeaders = <String, String>{};
+  response.headers.forEach((String name, List<String> values) {
+    if (values.isNotEmpty) responseHeaders[name] = values.join(',');
+  });
+  return UpdateDownloadResponse(
+    statusCode: response.statusCode,
+    headers: responseHeaders,
+    stream: response,
+  );
+}
+
+Future<Directory> _updatesDirectoryForCurrentPlatform() async {
+  if (Platform.isWindows) {
+    final Directory base = await getApplicationSupportDirectory();
+    return Directory('${base.path}${Platform.pathSeparator}updates');
+  }
+  return getTemporaryDirectory();
+}
+
+Future<File?> _promotePartIfComplete(
+  UpdateDownloadPaths paths,
+  UpdateAsset asset,
+  String version,
+  _UpdateDownloadMetadata? metadata,
+) async {
+  if (metadata == null || !metadata.matches(asset, version)) return null;
+  if (!await _isValidCompleteDownload(paths.partFile, asset, metadata)) {
+    return null;
+  }
+  return _promoteCompleteDownload(paths, metadata);
+}
+
+Future<int> _resumeOffsetForPart(
+  UpdateDownloadPaths paths,
+  UpdateAsset asset,
+  String version,
+  _UpdateDownloadMetadata? metadata,
+) async {
+  if (metadata == null || !metadata.matches(asset, version)) {
+    await _deleteFile(paths.partFile);
+    return 0;
+  }
+  if (!await paths.partFile.exists()) return 0;
+  final int length = await paths.partFile.length();
+  if (length <= 0) return 0;
+  final int? expectedSize = asset.sizeBytes ?? metadata.sizeBytes;
+  if (expectedSize != null && length >= expectedSize) {
+    await _deleteFile(paths.partFile);
+    return 0;
+  }
+  return length;
+}
+
+Future<File> _promoteCompleteDownload(
+  UpdateDownloadPaths paths,
+  _UpdateDownloadMetadata metadata,
+) async {
+  await paths.file.parent.create(recursive: true);
+  if (await paths.file.exists()) {
+    await _deleteFile(paths.file);
+  }
+  final File promoted = await paths.partFile.rename(paths.file.path);
+  await metadata.write(paths.metadataFile);
+  return promoted;
+}
+
+Future<bool> _isReusableCompleteDownload(
+  File file,
+  UpdateAsset asset,
+  String version,
+  _UpdateDownloadMetadata? metadata,
+) async {
+  if (metadata != null && !metadata.matches(asset, version)) return false;
+  if (metadata == null && asset.sha256Digest == null) return false;
+  return _isValidCompleteDownload(file, asset, metadata);
+}
+
+Future<bool> _isValidCompleteDownload(
+  File file,
+  UpdateAsset asset,
+  _UpdateDownloadMetadata? metadata,
+) async {
+  if (!await file.exists()) return false;
+  final int length = await file.length();
+  if (length <= 0) return false;
+  final int? expectedSize = asset.sizeBytes ?? metadata?.sizeBytes;
+  if (expectedSize != null && length != expectedSize) return false;
+  final String? expectedDigest = asset.sha256Digest ?? metadata?.sha256Digest;
+  if (expectedDigest != null) {
+    final String digest = await _sha256OfFile(file);
+    if (digest != expectedDigest) return false;
+  }
+  return true;
+}
+
+Future<String> _sha256OfFile(File file) async {
+  final Digest digest = await sha256.bind(file.openRead()).first;
+  return digest.toString();
+}
+
+int? _responseTotalSize(UpdateDownloadResponse response, int writeOffset) {
+  final int? contentRangeTotal =
+      _contentRangeTotal(response.header(HttpHeaders.contentRangeHeader));
+  if (contentRangeTotal != null) return contentRangeTotal;
+  final int? contentLength =
+      _parsePositiveInt(response.header(HttpHeaders.contentLengthHeader));
+  if (contentLength == null) return null;
+  return response.statusCode == HttpStatus.partialContent
+      ? writeOffset + contentLength
+      : contentLength;
+}
+
+int? _contentRangeStart(String? value) {
+  final RegExpMatch? match = _contentRangeMatch(value);
+  if (match == null) return null;
+  return int.tryParse(match.group(1)!);
+}
+
+int? _contentRangeTotal(String? value) {
+  final RegExpMatch? match = _contentRangeMatch(value);
+  if (match == null) return null;
+  final String total = match.group(3)!;
+  return total == '*' ? null : int.tryParse(total);
+}
+
+RegExpMatch? _contentRangeMatch(String? value) {
+  if (value == null) return null;
+  return RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$').firstMatch(value.trim());
+}
+
+String? _headerValue(Map<String, String> headers, String name) {
+  final String lowerName = name.toLowerCase();
+  for (final MapEntry<String, String> entry in headers.entries) {
+    if (entry.key.toLowerCase() == lowerName) return entry.value;
+  }
+  return null;
+}
+
+int? _parsePositiveInt(String? value) {
+  if (value == null) return null;
+  final int? parsed = int.tryParse(value.trim());
+  return parsed != null && parsed >= 0 ? parsed : null;
+}
+
+String _fileNameFromUrl(String url) {
+  try {
+    final Uri uri = Uri.parse(url);
+    if (uri.pathSegments.isNotEmpty) {
+      return uri.pathSegments.last;
+    }
+  } catch (_) {
+    // Fall through to the generic fallback.
+  }
+  return 'hibiki-update.bin';
+}
+
+Future<void> _deleteFile(File file) async {
+  try {
+    if (await file.exists()) await file.delete();
+  } catch (_) {
+    // Best-effort cleanup only.
   }
 }
 
-String _extOf(String url) {
-  final String path = Uri.parse(url).path;
-  final int slash = path.lastIndexOf('/');
-  final String name = slash >= 0 ? path.substring(slash + 1) : path;
-  final int dot = name.lastIndexOf('.');
-  return dot >= 0 ? name.substring(dot) : '';
+class _UpdateDownloadMetadata {
+  const _UpdateDownloadMetadata({
+    required this.version,
+    required this.name,
+    required this.url,
+    required this.sizeBytes,
+    required this.etag,
+    required this.lastModified,
+    required this.sha256Digest,
+  });
+
+  factory _UpdateDownloadMetadata.fromJson(Map<String, dynamic> json) {
+    return _UpdateDownloadMetadata(
+      version: json['version'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      sizeBytes: _jsonInt(json['sizeBytes']),
+      etag: json['etag'] as String?,
+      lastModified: json['lastModified'] as String?,
+      sha256Digest: _normalizeSha256(json['sha256Digest']),
+    );
+  }
+
+  final String version;
+  final String name;
+  final String url;
+  final int? sizeBytes;
+  final String? etag;
+  final String? lastModified;
+  final String? sha256Digest;
+
+  static Future<_UpdateDownloadMetadata?> read(File file) async {
+    try {
+      if (!await file.exists()) return null;
+      final Object? decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map<String, dynamic>) return null;
+      return _UpdateDownloadMetadata.fromJson(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool matches(UpdateAsset asset, String expectedVersion) {
+    if (version != expectedVersion) return false;
+    if (name != asset.name) return false;
+    if (url != asset.url) return false;
+    if (asset.sizeBytes != null && sizeBytes != asset.sizeBytes) return false;
+    if (asset.sha256Digest != null && sha256Digest != asset.sha256Digest) {
+      return false;
+    }
+    return true;
+  }
+
+  _UpdateDownloadMetadata copyWith({
+    int? sizeBytes,
+    String? etag,
+    String? lastModified,
+    String? sha256Digest,
+  }) {
+    return _UpdateDownloadMetadata(
+      version: version,
+      name: name,
+      url: url,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      etag: etag ?? this.etag,
+      lastModified: lastModified ?? this.lastModified,
+      sha256Digest: sha256Digest ?? this.sha256Digest,
+    );
+  }
+
+  Future<void> write(File file) async {
+    await file.parent.create(recursive: true);
+    await file.writeAsString(
+      jsonEncode(<String, Object?>{
+        'version': version,
+        'name': name,
+        'url': url,
+        'sizeBytes': sizeBytes,
+        'etag': etag,
+        'lastModified': lastModified,
+        'sha256Digest': sha256Digest,
+      }),
+      flush: true,
+    );
+  }
+}
+
+int? _jsonInt(Object? value) {
+  if (value is int && value >= 0) return value;
+  if (value is num && value >= 0) return value.toInt();
+  if (value is String) return _parsePositiveInt(value);
+  return null;
+}
+
+String? _normalizeSha256(Object? value) {
+  if (value is! String) return null;
+  final String normalized = value.trim().toLowerCase();
+  final String digest = normalized.startsWith('sha256:')
+      ? normalized.substring('sha256:'.length)
+      : normalized;
+  return RegExp(r'^[0-9a-f]{64}$').hasMatch(digest) ? digest : null;
 }
 
 /// 更新检查与下载都是 best-effort。网络类失败——连不上、连接超时、TLS 握手
@@ -892,15 +1414,15 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
         (release['assets'] as List<dynamic>? ?? <dynamic>[])
             .whereType<Map<String, dynamic>>()
             .toList(growable: false);
-    final String? downloadUrl =
+    final UpdateAsset? asset =
         await updater.selectAsset(assetMaps, channel: channel);
     final UpdateReleaseSelection selection = UpdateReleaseSelection(
       release: release,
       version: version,
       releaseNotes: release['body'] as String? ?? '',
-      downloadUrl: downloadUrl,
+      asset: asset,
     );
-    if (downloadUrl != null) return selection;
+    if (asset != null) return selection;
     // Self-installing platforms must ignore wrong-platform releases instead of
     // treating independent Android/Windows workflow run numbers as comparable.
     if (!updater.supportsInAppInstall) fallback ??= selection;
