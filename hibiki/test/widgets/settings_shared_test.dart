@@ -37,6 +37,17 @@ void main() {
     expect(source, isNot(contains('fontSize: 16')));
   });
 
+  test('settings sections can opt into putting the title inside the surface',
+      () {
+    final String source = File('lib/src/utils/components/settings_shared.dart')
+        .readAsStringSync();
+
+    expect(source, contains('class AdaptiveSettingsSurface'),
+        reason: 'shared settings surfaces should be reusable beyond row lists');
+    expect(source, contains('enum SettingsSectionTitlePlacement'));
+    expect(source, contains('SettingsSectionTitlePlacement.inside'));
+  });
+
   testWidgets('switch rows use Material switch on Android', (tester) async {
     await tester.pumpWidget(
       _buildHarness(
@@ -85,6 +96,44 @@ void main() {
 
     expect(find.byType(HibikiCard), findsOneWidget);
     expect(find.byType(Switch), findsOneWidget);
+  });
+
+  testWidgets('Material contained section title shares the row surface',
+      (tester) async {
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: Scaffold(
+          body: AdaptiveSettingsSection(
+            title: 'Behavior',
+            titlePlacement: SettingsSectionTitlePlacement.inside,
+            children: [
+              AdaptiveSettingsSwitchRow(
+                title: 'Highlight on tap',
+                value: true,
+                onChanged: (_) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(HibikiCard), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('Behavior'),
+        matching: find.byType(HibikiCard),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('Highlight on tap'),
+        matching: find.byType(HibikiCard),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Material setting leading icons use shared MD3 badge shell',

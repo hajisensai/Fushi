@@ -398,6 +398,30 @@ void main() {
     expect(source, contains('pushRoutes ? const Icon(Icons.chevron_right)'));
   });
 
+  test('settings lists and schema sections opt into contained surfaces', () {
+    final String shared =
+        readNormalizedSource('lib/src/utils/components/settings_shared.dart');
+    final String schema =
+        readNormalizedSource('lib/src/settings/settings_schema_widgets.dart');
+    final String material = readNormalizedSource(
+        'lib/src/settings/material_settings_renderer.dart');
+
+    expect(shared, contains('class AdaptiveSettingsSurface'),
+        reason: 'destination lists and non-row groups need the same surface');
+    expect(shared, contains('SettingsSectionTitlePlacement.inside'));
+    expect(schema,
+        contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
+        reason:
+            'schema detail section titles such as System must live inside the section surface');
+    expect(material, contains('AdaptiveSettingsSection('),
+        reason: 'Material destination list should be one grouped section');
+    expect(material, contains('surfaceColor: tokens.surfaces.card'),
+        reason:
+            'wide supporting-pane list needs a visible lightweight surface over its tonal pane');
+    expect(material, isNot(contains('ListView.separated(')),
+        reason: 'destination rows should not be a bare separated list');
+  });
+
   test('unified settings detail shell is the single page chrome (TODO-317)',
       () {
     // The shared shell delegates to the active platform renderer's

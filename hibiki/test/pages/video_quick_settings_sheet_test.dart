@@ -805,20 +805,47 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 顶部分类条（横向 SingleChildScrollView，含分类 chip）：水平 inset = page+gap=24，
-    // 顶部 card=16（不再贴死），底部留 gap/2=4 与详情之间的分隔线呼吸。
-    final SingleChildScrollView categoryBar =
-        tester.widget<SingleChildScrollView>(
+    // 顶部分类条外层 Padding：水平 inset = page+gap=24，顶部 card=16（不再贴死），
+    // 底部留 gap/2=4 与详情之间的分隔线呼吸。分类条内部还有 surface content padding，
+    // 不能把内部横向 scroll padding 误当成 TODO-344 的外层 page padding。
+    final Finder firstCategoryChip = find.byType(HibikiSelectableChip).first;
+    final Padding categoryFrame = tester
+        .widgetList<Padding>(
       find.ancestor(
-        of: find.byType(HibikiSelectableChip).first,
-        matching: find.byType(SingleChildScrollView),
+        of: firstCategoryChip,
+        matching: find.byType(Padding),
       ),
-    );
-    final EdgeInsets categoryPadding = categoryBar.padding! as EdgeInsets;
-    expect(categoryBar.scrollDirection, Axis.horizontal);
+    )
+        .firstWhere((Padding p) {
+      final EdgeInsets? insets = p.padding as EdgeInsets?;
+      return insets != null &&
+          insets.left == 24 &&
+          insets.right == 24 &&
+          insets.top == 16 &&
+          insets.bottom == 4;
+    });
+    final EdgeInsets categoryPadding = categoryFrame.padding as EdgeInsets;
     expect(categoryPadding.left, 24);
     expect(categoryPadding.right, 24);
     expect(categoryPadding.top, 16);
+    expect(categoryPadding.bottom, 4);
+
+    // 顶部分类条 surface 内部横向 scroll：只负责 chip 与 surface 边缘之间的 content inset，
+    // 使用设计 token gap=8；它不代表页面 roomy 外边距。
+    final SingleChildScrollView categoryBar =
+        tester.widget<SingleChildScrollView>(
+      find.ancestor(
+        of: firstCategoryChip,
+        matching: find.byType(SingleChildScrollView),
+      ),
+    );
+    final EdgeInsets categoryContentPadding =
+        categoryBar.padding! as EdgeInsets;
+    expect(categoryBar.scrollDirection, Axis.horizontal);
+    expect(categoryContentPadding.left, 8);
+    expect(categoryContentPadding.right, 8);
+    expect(categoryContentPadding.top, 8);
+    expect(categoryContentPadding.bottom, 8);
 
     // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 24、独占整宽。
     // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==24 的纵向

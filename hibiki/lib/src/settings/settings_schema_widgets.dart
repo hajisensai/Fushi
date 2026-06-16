@@ -54,7 +54,11 @@ class SettingsSchemaSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        AdaptiveSettingsSection(title: section.title, children: rows),
+        AdaptiveSettingsSection(
+          title: section.title,
+          titlePlacement: SettingsSectionTitlePlacement.inside,
+          children: rows,
+        ),
         if (section.footer != null && section.footer!.isNotEmpty)
           SettingsSectionFooter(section.footer!, style: footerStyle),
       ],

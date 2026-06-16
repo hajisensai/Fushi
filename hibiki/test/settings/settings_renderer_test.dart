@@ -19,6 +19,7 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_home_page.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -364,6 +365,58 @@ void main() {
       find.byIcon(Icons.palette_outlined),
     );
     expect(icon.color, customPrimary);
+  });
+
+  testWidgets(
+      'material master-detail destination list is one grouped surface with '
+      'pill selection', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext settingsContext) {
+          return MaterialSettingsRenderer().buildDestinationList(
+            settingsContext: settingsContext,
+            destinations: <SettingsDestination>[_fixtureDestination()],
+            selectedDestinationId: SettingsDestinationId.appearance,
+            onDestinationSelected: (_) {},
+            pushRoutes: false,
+          );
+        },
+      ),
+    );
+
+    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+    HibikiListItem item = tester.widget<HibikiListItem>(
+      find.widgetWithText(HibikiListItem, 'Appearance'),
+    );
+    expect(item.selected, isTrue);
+    expect(item.selectedShape, HibikiListItemSelectedShape.pill);
+    expect(item.trailing, isNull);
+  });
+
+  testWidgets('material push destination list keeps fill selection and chevron',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext settingsContext) {
+          return MaterialSettingsRenderer().buildDestinationList(
+            settingsContext: settingsContext,
+            destinations: <SettingsDestination>[_fixtureDestination()],
+            selectedDestinationId: SettingsDestinationId.appearance,
+            onDestinationSelected: (_) {},
+          );
+        },
+      ),
+    );
+
+    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+    final HibikiListItem item = tester.widget<HibikiListItem>(
+      find.widgetWithText(HibikiListItem, 'Appearance'),
+    );
+    expect(item.selected, isTrue);
+    expect(item.selectedShape, HibikiListItemSelectedShape.fill);
+    expect(item.trailing, isA<Icon>());
   });
 
   testWidgets('settings schema keeps icons on destinations',

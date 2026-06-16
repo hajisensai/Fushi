@@ -150,6 +150,81 @@ void main() {
     expect(source, isNot(contains('widget.onOpenMpvConfig')));
   });
 
+  test('video quick settings groups category and detail section surfaces', () {
+    final String source =
+        File('lib/src/media/video/video_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    expect(source, contains('AdaptiveSettingsSurface('),
+        reason:
+            'wide top category bar should sit inside the shared lightweight surface');
+    expect(source,
+        contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
+        reason:
+            'video detail section headings should be visually part of their group surface');
+    expect(
+        source,
+        isNot(contains(
+            'SettingsSectionHeader(t.video_setting_mpv_group_advanced)')),
+        reason:
+            'mpv advanced heading must not float outside its settings group');
+  });
+
+  test('embedded shader detail keeps section titles inside video surfaces', () {
+    final String quickSettingsSource =
+        File('lib/src/media/video/video_quick_settings_sheet.dart')
+            .readAsStringSync();
+    final String shaderDetail = _between(
+      quickSettingsSource,
+      '  Widget _buildShadersDetail() {',
+      '  Widget _buildMpvDetail() {',
+    );
+
+    expect(shaderDetail, contains('VideoShaderManagerView('),
+        reason: 'video settings should embed the shader manager detail');
+    expect(
+      shaderDetail,
+      contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
+      reason:
+          'embedded shader detail headings must be part of the video section surfaces',
+    );
+
+    final String shaderSource =
+        File('lib/src/pages/implementations/video_shader_dialog.dart')
+            .readAsStringSync();
+    final String managerWidget = _between(
+      shaderSource,
+      'class VideoShaderManagerView extends StatefulWidget {',
+      'class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {',
+    );
+    final String buildMethod = _between(
+      shaderSource,
+      '  @override\n  Widget build(BuildContext context) {',
+      'class _MpvShaderPickerDialog extends StatefulWidget {',
+    );
+    final int titledShaderSections =
+        RegExp(r'AdaptiveSettingsSection\(\s*title:')
+            .allMatches(buildMethod)
+            .length;
+    final int placementForwarders =
+        RegExp(r'titlePlacement:\s*widget\.titlePlacement')
+            .allMatches(buildMethod)
+            .length;
+
+    expect(managerWidget,
+        contains('this.titlePlacement = SettingsSectionTitlePlacement.outside'),
+        reason:
+            'standalone shader manager callers should keep the current outside-title default');
+    expect(managerWidget,
+        contains('final SettingsSectionTitlePlacement titlePlacement;'));
+    expect(titledShaderSections, 3,
+        reason:
+            'shader detail is expected to expose quality, advanced, and installed sections');
+    expect(placementForwarders, titledShaderSections,
+        reason:
+            'all titled shader sections must honor the caller-selected title placement');
+  });
+
   test('video settings side panel owns UI scale and hover lifetime', () {
     final String source =
         File('lib/src/pages/implementations/video_hibiki_page.dart')
