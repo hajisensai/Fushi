@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/utils.dart';
@@ -80,15 +81,26 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   final ScrollController _scrollController = ScrollController();
 
   int _lastScrolledIndex = -1;
+  int _lastControllerCueIndex = -1;
+  int? _scrollTargetRawIndex;
   int _hoveredIndex = -1;
   bool _autoScroll = true;
+  bool _scrollPostFrameScheduled = false;
   int _fontScaleIndex = 1;
   VideoSubtitleListFilter _filter = VideoSubtitleListFilter.all;
 
-  /// 每个可见行的 [GlobalKey]（按 visibleIndex），供自适应行高下用
-  /// [HibikiFocusScroll.ensureVisible] 滚到当前 cue（TODO-340：放弃固定 itemExtent 换行后，
-  /// 不能再按 `index * itemExtent` 算偏移）。每帧 build 重建。
+  /// 只给当前/待滚动目标行保留 [GlobalKey]，供自适应行高下精确
+  /// [HibikiFocusScroll.ensureVisible]。普通可见行走 [ValueKey]，避免长列表滚动后
+  /// [GlobalKey] map 按历史 visibleIndex 无限制增长。
   final Map<int, GlobalKey> _rowKeys = <int, GlobalKey>{};
+  List<AudioCue>? _cachedCues;
+  int _cachedCuesLength = -1;
+  VideoSubtitleListFilter? _cachedFilter;
+  List<int> _cachedVisibleIndexes = const <int>[];
+  Map<int, int> _cachedVisibleIndexByRawIndex = const <int, int>{};
+  List<AudioCue>? _cachedSelectedCues;
+  int _cachedSelectedCuesLength = -1;
+  int _cachedSelectedCount = 0;
 
   /// 单行估算高度（仅作目标行未挂载时的粗滚后备，TODO-340）。换行后实际行高可变，
   /// 故不再用作精确 itemExtent；当前 cue 行进入视口后由 ensureVisible 精确居中。
@@ -98,6 +110,40 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   double get _effectiveFontSize => widget.fontSize * _fontScaleSteps;
 
+  double _estimatedRowExtentForCue(AudioCue cue, double rowWidth) {
+    final double actionWidth = 3 * (_effectiveFontSize + 10);
+    final double selectionWidth = _hasCueSelectionControls ? 44 : 0;
+    final double textWidth =
+        rowWidth - 8 - 4 - selectionWidth - 52 - 8 - actionWidth;
+    final double safeTextWidth = textWidth < 48 ? 48 : textWidth;
+    final int charsPerLine = (safeTextWidth / (_effectiveFontSize * 0.95))
+        .floor()
+        .clamp(1, 10000)
+        .toInt();
+    int lineCount = 0;
+    for (final String line in cue.text.split('\n')) {
+      final int length = line.isEmpty ? 1 : line.length;
+      lineCount += (length / charsPerLine).ceil();
+    }
+    if (lineCount < 1) lineCount = 1;
+    final double textHeight = lineCount * _effectiveFontSize * 1.25;
+    final double estimated = 16 + textHeight + 2;
+    return estimated < _estimatedRowExtent ? _estimatedRowExtent : estimated;
+  }
+
+  double _estimatedScrollOffsetForVisibleIndex(
+    int visibleIndex,
+    List<int> visibleIndexes,
+    List<AudioCue> cues,
+    double rowWidth,
+  ) {
+    double offset = 0;
+    for (int i = 0; i < visibleIndex; i++) {
+      offset += _estimatedRowExtentForCue(cues[visibleIndexes[i]], rowWidth);
+    }
+    return offset;
+  }
+
   bool get _hasCueSelectionControls =>
       widget.isCueSelectedForCard != null &&
       widget.onToggleCueSelection != null;
@@ -105,7 +151,21 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   @override
   void initState() {
     super.initState();
+    _lastControllerCueIndex = widget.controller.currentCueIndex;
     widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoSubtitleJumpPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+      _lastControllerCueIndex = widget.controller.currentCueIndex;
+      _lastScrolledIndex = -1;
+      _rowKeys.clear();
+    }
+    _clearCueCaches();
   }
 
   @override
@@ -117,7 +177,24 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   void _onControllerChanged() {
     if (!mounted) return;
-    setState(_scrollToCurrentCueIfNeeded);
+    final int currentIndex = widget.controller.currentCueIndex;
+    if (currentIndex == _lastControllerCueIndex) return;
+    _lastControllerCueIndex = currentIndex;
+    setState(() {
+      _scrollTargetRawIndex = currentIndex >= 0 ? currentIndex : null;
+      _retainRowKeyFor(_scrollTargetRawIndex);
+    });
+    _scheduleScrollToCurrentCue();
+  }
+
+  void _scheduleScrollToCurrentCue() {
+    if (!_autoScroll) return;
+    if (_scrollPostFrameScheduled) return;
+    _scrollPostFrameScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollPostFrameScheduled = false;
+      if (mounted) _scrollToCurrentCueIfNeeded();
+    });
   }
 
   void _scrollToCurrentCueIfNeeded() {
@@ -125,32 +202,50 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final int currentIndex = widget.controller.currentCueIndex;
     final List<AudioCue> cues = widget.controller.cues;
     if (currentIndex < 0 || currentIndex >= cues.length) return;
-    final List<AudioCue> visibleCues = _visibleCues(cues);
-    final int visibleIndex = visibleCues.indexOf(cues[currentIndex]);
+    final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    final int visibleIndex =
+        _visibleIndexForRawIndex(currentIndex, visibleIndexes);
     if (visibleIndex < 0 || visibleIndex == _lastScrolledIndex) return;
     if (!_scrollController.hasClients) return;
     _lastScrolledIndex = visibleIndex;
+    _scrollTargetRawIndex = currentIndex;
+    _retainRowKeyFor(currentIndex);
     const Duration duration = Duration(milliseconds: 240);
     const Curve curve = Curves.easeOutCubic;
     // 可变行高下优先用 ensureVisible 把当前行精确居中（alignment 0.5）；目标行已挂载
     // 才有 RenderObject。未挂载（在远处视口外）时先按估算行高粗滚使其进入视口、下一帧
     // 再精确居中（TODO-340）。
-    final BuildContext? rowContext = _rowKeys[visibleIndex]?.currentContext;
+    final BuildContext? rowContext = _rowKeys[currentIndex]?.currentContext;
     if (rowContext != null) {
       HibikiFocusScroll.ensureVisible(rowContext, duration: duration);
       return;
     }
     final double viewport = _scrollController.position.viewportDimension;
-    final double target = (visibleIndex * _estimatedRowExtent) -
-        (viewport / 2) +
-        _estimatedRowExtent;
+    final double rowWidth = widget.width;
+    final double rowOffset = _estimatedScrollOffsetForVisibleIndex(
+      visibleIndex,
+      visibleIndexes,
+      cues,
+      rowWidth,
+    );
+    final double rowExtent = _estimatedRowExtentForCue(
+      cues[currentIndex],
+      rowWidth,
+    );
+    final double target = rowOffset - (viewport / 2) + (rowExtent / 2);
     final double clamped =
         target.clamp(0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.animateTo(clamped, duration: duration, curve: curve);
+    final double distance = (clamped - _scrollController.position.pixels).abs();
+    final bool farAway = distance > viewport * 3;
+    if (farAway) {
+      _scrollController.jumpTo(clamped);
+    } else {
+      _scrollController.animateTo(clamped, duration: duration, curve: curve);
+    }
     // 粗滚后下一帧目标行多半已挂载，再精确居中一次。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final BuildContext? settled = _rowKeys[visibleIndex]?.currentContext;
+      final BuildContext? settled = _rowKeys[currentIndex]?.currentContext;
       if (settled != null) {
         HibikiFocusScroll.ensureVisible(settled, duration: duration);
       }
@@ -163,9 +258,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       if (_autoScroll) _lastScrolledIndex = -1;
     });
     if (_autoScroll) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(_scrollToCurrentCueIfNeeded);
-      });
+      _scheduleScrollToCurrentCue();
     }
   }
 
@@ -179,6 +272,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       // 字号变 → 行高变，旧 visibleIndex→key 映射作废（TODO-340）。
       _rowKeys.clear();
     });
+    _scheduleScrollToCurrentCue();
   }
 
   void _setFilter(Set<VideoSubtitleListFilter> next) {
@@ -189,27 +283,85 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _lastScrolledIndex = -1;
       // 过滤集变 → visibleIndex 重排，旧 visibleIndex→key 映射作废（TODO-340）。
       _rowKeys.clear();
+      _clearCueCaches();
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(_scrollToCurrentCueIfNeeded);
-    });
+    _scheduleScrollToCurrentCue();
   }
 
   bool _isCueSelectedForCard(AudioCue cue) =>
       widget.isCueSelectedForCard?.call(cue) ?? false;
 
-  int _selectedCueCount(List<AudioCue> cues) =>
-      cues.where(_isCueSelectedForCard).length;
+  int _selectedCueCount(List<AudioCue> cues) {
+    if (!_hasCueSelectionControls) return 0;
+    if (identical(_cachedSelectedCues, cues) &&
+        _cachedSelectedCuesLength == cues.length) {
+      return _cachedSelectedCount;
+    }
+    int count = 0;
+    for (final AudioCue cue in cues) {
+      if (_isCueSelectedForCard(cue)) count++;
+    }
+    _cachedSelectedCues = cues;
+    _cachedSelectedCuesLength = cues.length;
+    _cachedSelectedCount = count;
+    return count;
+  }
 
-  List<AudioCue> _visibleCues(List<AudioCue> cues) {
+  List<int> _visibleCueIndexes(List<AudioCue> cues) {
+    if (identical(_cachedCues, cues) &&
+        _cachedCuesLength == cues.length &&
+        _cachedFilter == _filter) {
+      return _cachedVisibleIndexes;
+    }
+    late final List<int> indexes;
     switch (_filter) {
       case VideoSubtitleListFilter.all:
-        return cues;
+        indexes =
+            List<int>.generate(cues.length, (int i) => i, growable: false);
+        break;
       case VideoSubtitleListFilter.favorites:
-        return cues.where(widget.isCueFavorited).toList(growable: false);
+        indexes = <int>[
+          for (int i = 0; i < cues.length; i++)
+            if (widget.isCueFavorited(cues[i])) i,
+        ];
+        break;
       case VideoSubtitleListFilter.selected:
-        return cues.where(_isCueSelectedForCard).toList(growable: false);
+        indexes = <int>[
+          for (int i = 0; i < cues.length; i++)
+            if (_isCueSelectedForCard(cues[i])) i,
+        ];
+        break;
     }
+    _cachedCues = cues;
+    _cachedCuesLength = cues.length;
+    _cachedFilter = _filter;
+    _cachedVisibleIndexes = indexes;
+    _cachedVisibleIndexByRawIndex = <int, int>{
+      for (int i = 0; i < indexes.length; i++) indexes[i]: i,
+    };
+    return indexes;
+  }
+
+  int _visibleIndexForRawIndex(int rawIndex, List<int> visibleIndexes) {
+    if (_filter == VideoSubtitleListFilter.all) {
+      return rawIndex >= 0 && rawIndex < visibleIndexes.length ? rawIndex : -1;
+    }
+    return _cachedVisibleIndexByRawIndex[rawIndex] ?? -1;
+  }
+
+  void _clearCueCaches() {
+    _cachedCues = null;
+    _cachedCuesLength = -1;
+    _cachedFilter = null;
+    _cachedVisibleIndexes = const <int>[];
+    _cachedVisibleIndexByRawIndex = const <int, int>{};
+    _cachedSelectedCues = null;
+    _cachedSelectedCuesLength = -1;
+    _cachedSelectedCount = 0;
+  }
+
+  void _retainRowKeyFor(int? rawIndex) {
+    _rowKeys.removeWhere((int key, _) => key != rawIndex);
   }
 
   String _filterLabel(VideoSubtitleListFilter filter) {
@@ -227,8 +379,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   Widget build(BuildContext context) {
     final ColorScheme cs = widget.colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
-    final List<AudioCue> visibleCues = _visibleCues(cues);
+    final List<int> visibleIndexes = _visibleCueIndexes(cues);
     final int currentIndex = widget.controller.currentCueIndex;
+    _retainRowKeyFor(currentIndex >= 0 ? currentIndex : _scrollTargetRawIndex);
     return Material(
       type: MaterialType.transparency,
       child: Container(
@@ -240,24 +393,37 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             _buildHeader(cs, cues),
             const Divider(height: 1),
             Expanded(
-              child: cues.isEmpty || visibleCues.isEmpty
+              child: cues.isEmpty || visibleIndexes.isEmpty
                   ? _buildEmpty(cs)
                   // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
-                  // GlobalKey（存 _rowKeys，按 visibleIndex）供 ensureVisible 自动滚动。
+                  // GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
                   : ListView.builder(
                       controller: _scrollController,
-                      itemCount: visibleCues.length,
+                      itemExtentBuilder:
+                          (int i, SliverLayoutDimensions dimensions) {
+                        if (i < 0 || i >= visibleIndexes.length) return null;
+                        return _estimatedRowExtentForCue(
+                          cues[visibleIndexes[i]],
+                          dimensions.crossAxisExtent,
+                        );
+                      },
+                      itemCount: visibleIndexes.length,
                       itemBuilder: (BuildContext _, int i) {
-                        final AudioCue cue = visibleCues[i];
-                        final GlobalKey rowKey =
-                            _rowKeys.putIfAbsent(i, GlobalKey.new);
+                        final int rawIndex = visibleIndexes[i];
+                        final AudioCue cue = cues[rawIndex];
+                        final bool selected = rawIndex == currentIndex;
+                        final bool trackKey =
+                            selected || rawIndex == _scrollTargetRawIndex;
+                        final Key rowKey = trackKey
+                            ? _rowKeys.putIfAbsent(rawIndex, GlobalKey.new)
+                            : ValueKey<int>(rawIndex);
                         return KeyedSubtree(
                           key: rowKey,
                           child: _buildRow(
                             cs,
                             cue,
                             i,
-                            cues.indexOf(cue) == currentIndex,
+                            selected,
                           ),
                         );
                       },
@@ -454,8 +620,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                  child: _buildRowText(
-                      cs, cue, textColor, selected, selectedForCard)),
+                  child:
+                      _buildRowText(cue, textColor, selected, selectedForCard)),
               // 操作按钮（跳转 / 复制 / 收藏）常驻，不再仅 hover / 选中可见（BUG-265）：
               // 长文本由上面单行省略让出空间，按钮不会挤坏布局。
               _buildRowActions(cs, cue, selected, favorited),
@@ -467,13 +633,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   }
 
   /// 行的字幕文本。**允许换行显示完整字幕**（TODO-340：放开 BUG-266 的单行省略，固定
-  /// [_itemExtent] 也随之放弃改自适应行高），并在 [VideoSubtitleJumpPanel.onLookupCue]
-  /// 非 null 时把文本逐 grapheme 渲染成可命中的字符（[Wrap] 自然换行），整片 translucent
-  /// 的 tap 层 → 点击位置精确反查命中的字符 grapheme 从该位置起查词（复用页面层 `_lookupAt`
-  /// 链路：暂停 → 推查词浮层，与底部字幕逐字查词同范式，TODO-340）。[onLookupCue] 为 null
-  /// （无查词能力 / 部分测试）时退化成整段 [Text]（仍换行），行点击仍 seek（向后兼容）。
+  /// [_itemExtent] 也随之放弃改自适应行高）。[VideoSubtitleJumpPanel.onLookupCue] 非 null
+  /// 时仍只渲染单个 [RichText]，点击命中由同源 [TextPainter] 按 UTF-16 offset 反查
+  /// grapheme，避免长字幕为每个字符创建独立 widget。
   Widget _buildRowText(
-    ColorScheme cs,
     AudioCue cue,
     Color textColor,
     bool selected,
@@ -490,47 +653,142 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       // 无查词能力：整段文本（换行），不叠 tap 层，外层 InkWell 行点击仍 seek。
       return Text(cue.text, style: textStyle);
     }
-    // 逐 grapheme 渲染成独立 [Text] 并登记其 [BuildContext]（下标==grapheme 下标），
-    // 供按全局坐标反查命中的字符（与底部 [VideoSubtitleOverlay] 同范式）。整片
-    // translucent [GestureDetector] 的 onTapUp 反查命中 grapheme 再回调 onLookup。
-    final List<String> chars = cue.text.characters.toList(growable: false);
-    final List<BuildContext> charContexts = <BuildContext>[];
-    SubtitleListCharHit? hitAt(Offset globalPos) {
-      for (int i = 0; i < charContexts.length; i++) {
-        final RenderObject? ro = charContexts[i].findRenderObject();
-        if (ro is! RenderBox || !ro.hasSize) continue;
-        final Rect r = ro.localToGlobal(Offset.zero) & ro.size;
-        if (r.contains(globalPos)) {
-          return (graphemeIndex: i, charRect: r);
-        }
-      }
-      return null;
-    }
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final TextSpan textSpan = TextSpan(text: cue.text, style: textStyle);
+        final TextDirection textDirection = Directionality.of(context);
+        final TextScaler textScaler = MediaQuery.textScalerOf(context);
+        final double maxWidth = constraints.maxWidth;
 
-    return GestureDetector(
-      // translucent：tap 赢手势竞技场截断外层 InkWell（点文本 = 查词、非 seek），
-      // 但不独占 hover hit-test（与底部 overlay BUG-198 同范式）。
-      behavior: HitTestBehavior.translucent,
-      onTapUp: (TapUpDetails details) {
-        final SubtitleListCharHit? hit = hitAt(details.globalPosition);
-        if (hit != null) {
-          onLookup(cue, hit.graphemeIndex, hit.charRect);
-          return;
+        List<int> graphemeStartOffsets() {
+          final List<int> starts = <int>[];
+          int offset = 0;
+          for (final String grapheme in cue.text.characters) {
+            starts.add(offset);
+            offset += grapheme.length;
+          }
+          return starts;
         }
-        // 命中字符间空白 / 反查失败：保底从句首起查词（不丢交互），矩形退化成整行。
-        onLookup(cue, 0, Rect.zero);
+
+        List<int> graphemeEndOffsets(List<int> starts) {
+          final List<int> ends = <int>[];
+          int offset = 0;
+          int i = 0;
+          for (final String grapheme in cue.text.characters) {
+            offset += grapheme.length;
+            ends.add(offset);
+            i++;
+          }
+          assert(i == starts.length);
+          return ends;
+        }
+
+        int graphemeIndexForOffset(
+          int offset,
+          List<int> starts,
+          List<int> ends,
+        ) {
+          if (starts.isEmpty) return -1;
+          for (int i = 0; i < starts.length; i++) {
+            if (offset <= starts[i]) return i == 0 ? 0 : i - 1;
+            if (offset <= ends[i]) return i;
+          }
+          return starts.length - 1;
+        }
+
+        Rect unionBoxes(List<TextBox> boxes) {
+          if (boxes.isEmpty) return Rect.zero;
+          Rect rect = boxes.first.toRect();
+          for (final TextBox box in boxes.skip(1)) {
+            rect = rect.expandToInclude(box.toRect());
+          }
+          return rect;
+        }
+
+        SubtitleListCharHit? hitAt({
+          required Offset localPosition,
+          required Offset globalPosition,
+        }) {
+          final List<int> starts = graphemeStartOffsets();
+          final List<int> ends = graphemeEndOffsets(starts);
+          if (starts.isEmpty) return null;
+          final TextPainter painter = TextPainter(
+            text: textSpan,
+            textAlign: TextAlign.start,
+            textDirection: textDirection,
+            textScaler: textScaler,
+            maxLines: null,
+            ellipsis: null,
+          );
+          try {
+            painter.layout(maxWidth: maxWidth);
+            final int offset =
+                painter.getPositionForOffset(localPosition).offset;
+            final int graphemeIndex =
+                graphemeIndexForOffset(offset, starts, ends);
+            if (graphemeIndex < 0) return null;
+            final int start = starts[graphemeIndex];
+            final int end = ends[graphemeIndex];
+            Rect localRect = unionBoxes(
+              painter.getBoxesForSelection(
+                TextSelection(baseOffset: start, extentOffset: end),
+              ),
+            );
+            if (localRect.isEmpty) {
+              final Offset caretOffset = painter.getOffsetForCaret(
+                TextPosition(offset: start),
+                Rect.fromLTWH(0, 0, 1, painter.preferredLineHeight),
+              );
+              localRect = Rect.fromLTWH(
+                caretOffset.dx,
+                caretOffset.dy,
+                1,
+                painter.preferredLineHeight,
+              );
+            }
+            if (!localRect.contains(localPosition)) {
+              if (!localRect.inflate(1).contains(localPosition)) return null;
+              localRect = localRect.expandToInclude(
+                Rect.fromCenter(center: localPosition, width: 1, height: 1),
+              );
+            }
+            if (localRect.isEmpty) return null;
+            final Offset globalOrigin = globalPosition - localPosition;
+            return (
+              graphemeIndex: graphemeIndex,
+              charRect: localRect.shift(globalOrigin),
+            );
+          } finally {
+            painter.dispose();
+          }
+        }
+
+        return GestureDetector(
+          // translucent：tap 赢手势竞技场截断外层 InkWell（点文本 = 查词、非 seek），
+          // 但空白处手动回落到行 seek，保留“点字查词、点空白 seek”的语义。
+          behavior: HitTestBehavior.translucent,
+          onTapUp: (TapUpDetails details) {
+            final SubtitleListCharHit? hit = hitAt(
+              localPosition: details.localPosition,
+              globalPosition: details.globalPosition,
+            );
+            if (hit != null && hit.charRect.contains(details.globalPosition)) {
+              onLookup(cue, hit.graphemeIndex, hit.charRect);
+              return;
+            }
+            widget.onTapCue(cue);
+          },
+          child: RichText(
+            text: textSpan,
+            softWrap: true,
+            overflow: TextOverflow.clip,
+            maxLines: null,
+            textAlign: TextAlign.start,
+            textDirection: textDirection,
+            textScaler: textScaler,
+          ),
+        );
       },
-      child: Wrap(
-        children: <Widget>[
-          for (int i = 0; i < chars.length; i++)
-            Builder(
-              builder: (BuildContext charContext) {
-                charContexts.add(charContext);
-                return Text(chars[i], style: textStyle);
-              },
-            ),
-        ],
-      ),
     );
   }
 
