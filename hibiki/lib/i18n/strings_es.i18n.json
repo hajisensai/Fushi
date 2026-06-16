@@ -1673,5 +1673,6 @@
     "video_chapters_empty": "No chapters",
     "video_chapter_n": "Chapter $n",
     "shortcut_action_video_next_chapter": "Next chapter",
-    "shortcut_action_video_previous_chapter": "Previous chapter"
+    "shortcut_action_video_previous_chapter": "Previous chapter",
+    "video_control_edit_on_video": "Edit on video"
 }
