@@ -290,10 +290,30 @@ class UpdateChecker {
       if (!updatesDir.existsSync()) return;
       final DateTime cutoff = DateTime.now().subtract(const Duration(days: 7));
       for (final FileSystemEntity entity in updatesDir.listSync()) {
+        if (entity is Directory) {
+          final String name = entity.uri.pathSegments.last;
+          if (!name.endsWith('.staging')) continue;
+          for (final FileSystemEntity child in entity.listSync()) {
+            try {
+              if (child.statSync().modified.isBefore(cutoff)) {
+                child.deleteSync(recursive: true);
+              }
+            } catch (e) {
+              debugPrint('[UpdateChecker] cleanup staging failed: $e');
+            }
+          }
+          try {
+            if (entity.listSync().isEmpty) entity.deleteSync();
+          } catch (_) {
+            // The staging root can stay around until the next cleanup pass.
+          }
+          continue;
+        }
         if (entity is! File) continue;
         final String name = entity.uri.pathSegments.last;
-        final bool isTemporary =
-            name.endsWith('.part') || name.endsWith('.meta.json');
+        final bool isTemporary = name.endsWith('.part') ||
+            name.endsWith('.meta.json') ||
+            name.endsWith('.owner.json');
         if (!isTemporary) continue;
         final FileStat stat = entity.statSync();
         if (stat.modified.isBefore(cutoff)) {
@@ -607,26 +627,17 @@ class UpdateChecker {
     PlatformUpdater updater,
   ) async {
     final String flowKey = _updateFlowKey(asset, version, updater);
-    final Future<void>? activeFlow = _activeUpdateFlows[flowKey];
-    if (activeFlow != null) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.update_downloading)),
-        );
-      }
-      return activeFlow;
-    }
-
-    final Future<void> flow =
-        _runDownloadAndInstall(context, asset, version, updater);
-    _activeUpdateFlows[flowKey] = flow;
-    try {
-      await flow;
-    } finally {
-      if (identical(_activeUpdateFlows[flowKey], flow)) {
-        _activeUpdateFlows.remove(flowKey);
-      }
-    }
+    return _runExclusiveUpdateFlow(
+      flowKey,
+      () => _runDownloadAndInstall(context, asset, version, updater),
+      onAlreadyActive: () {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.update_downloading)),
+          );
+        }
+      },
+    );
   }
 
   static String _updateFlowKey(
@@ -635,6 +646,41 @@ class UpdateChecker {
     PlatformUpdater updater,
   ) =>
       '${updater.runtimeType}|$version|${asset.name}|${asset.url}';
+
+  @visibleForTesting
+  static Future<void> runExclusiveUpdateFlowForTest(
+    String key,
+    Future<void> Function() start, {
+    void Function()? onAlreadyActive,
+  }) {
+    return _runExclusiveUpdateFlow(
+      key,
+      start,
+      onAlreadyActive: onAlreadyActive,
+    );
+  }
+
+  static Future<void> _runExclusiveUpdateFlow(
+    String key,
+    Future<void> Function() start, {
+    void Function()? onAlreadyActive,
+  }) async {
+    final Future<void>? activeFlow = _activeUpdateFlows[key];
+    if (activeFlow != null) {
+      onAlreadyActive?.call();
+      return activeFlow;
+    }
+
+    final Future<void> flow = Future<void>.sync(start);
+    _activeUpdateFlows[key] = flow;
+    try {
+      await flow;
+    } finally {
+      if (identical(_activeUpdateFlows[key], flow)) {
+        _activeUpdateFlows.remove(key);
+      }
+    }
+  }
 
   static Future<void> _runDownloadAndInstall(
     BuildContext context,
@@ -732,6 +778,7 @@ typedef UpdateDownloadSourceFailure = void Function(
 
 final Map<String, Future<File>> _activeUpdateDownloads =
     <String, Future<File>>{};
+var _downloadStagingCounter = 0;
 
 @visibleForTesting
 class UpdateDownloadResponse {
@@ -766,6 +813,8 @@ class UpdateDownloadPaths {
     required this.file,
     required this.partFile,
     required this.metadataFile,
+    required this.ownerFile,
+    required this.stagingRoot,
   });
 
   factory UpdateDownloadPaths.forAsset(
@@ -779,9 +828,30 @@ class UpdateDownloadPaths {
       partFile: File('${updatesDir.path}${Platform.pathSeparator}$name.part'),
       metadataFile:
           File('${updatesDir.path}${Platform.pathSeparator}$name.meta.json'),
+      ownerFile:
+          File('${updatesDir.path}${Platform.pathSeparator}$name.owner.json'),
+      stagingRoot: Directory(
+        '${updatesDir.path}${Platform.pathSeparator}.$name.staging',
+      ),
     );
   }
 
+  final File file;
+  final File partFile;
+  final File metadataFile;
+  final File ownerFile;
+  final Directory stagingRoot;
+}
+
+class _UpdateDownloadStagingPaths {
+  const _UpdateDownloadStagingPaths({
+    required this.directory,
+    required this.file,
+    required this.partFile,
+    required this.metadataFile,
+  });
+
+  final Directory directory;
   final File file;
   final File partFile;
   final File metadataFile;
@@ -871,14 +941,27 @@ Future<File> _downloadUpdateAssetUncoalesced({
     await _deleteFile(paths.metadataFile);
   }
 
+  final _UpdateDownloadStagingPaths stagingPaths =
+      await _resolveStagingPaths(paths, asset, version);
+  if (metadata != null && metadata.matches(asset, version)) {
+    await _seedStagingFromLegacyPart(
+      paths,
+      stagingPaths,
+      asset,
+      version,
+      metadata,
+    );
+  }
+
   Object? lastError;
   StackTrace? lastStack;
   for (final String url in candidateUrls) {
     try {
       final _UpdateDownloadMetadata? currentMetadata =
-          await _UpdateDownloadMetadata.read(paths.metadataFile);
+          await _UpdateDownloadMetadata.read(stagingPaths.metadataFile);
       final File? promoted = await _promotePartIfComplete(
         paths,
+        stagingPaths,
         asset,
         version,
         currentMetadata,
@@ -888,7 +971,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
         return promoted;
       }
       final int resumeOffset = await _resumeOffsetForPart(
-        paths,
+        stagingPaths.partFile,
         asset,
         version,
         currentMetadata,
@@ -897,6 +980,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
         asset: asset,
         version: version,
         paths: paths,
+        stagingPaths: stagingPaths,
         url: url,
         openUrl: openUrl,
         metadata: currentMetadata,
@@ -920,6 +1004,7 @@ Future<File> _downloadCandidate({
   required UpdateAsset asset,
   required String version,
   required UpdateDownloadPaths paths,
+  required _UpdateDownloadStagingPaths stagingPaths,
   required String url,
   required UpdateDownloadOpen openUrl,
   required _UpdateDownloadMetadata? metadata,
@@ -946,11 +1031,13 @@ Future<File> _downloadCandidate({
       response.statusCode == HttpStatus.requestedRangeNotSatisfiable &&
       !restarted) {
     await response.stream.drain<void>();
-    await _deleteFile(paths.partFile);
+    await _deleteFile(stagingPaths.partFile);
+    await _deleteFile(stagingPaths.metadataFile);
     return _downloadCandidate(
       asset: asset,
       version: version,
       paths: paths,
+      stagingPaths: stagingPaths,
       url: url,
       openUrl: openUrl,
       metadata: null,
@@ -965,12 +1052,14 @@ Future<File> _downloadCandidate({
         _contentRangeStart(response.header(HttpHeaders.contentRangeHeader));
     if (start != resumeOffset) {
       await response.stream.drain<void>();
-      await _deleteFile(paths.partFile);
+      await _deleteFile(stagingPaths.partFile);
+      await _deleteFile(stagingPaths.metadataFile);
       if (!restarted) {
         return _downloadCandidate(
           asset: asset,
           version: version,
           paths: paths,
+          stagingPaths: stagingPaths,
           url: url,
           openUrl: openUrl,
           metadata: null,
@@ -983,7 +1072,8 @@ Future<File> _downloadCandidate({
     }
   } else if (response.statusCode == HttpStatus.ok) {
     if (requestedRange) {
-      await _deleteFile(paths.partFile);
+      await _deleteFile(stagingPaths.partFile);
+      await _deleteFile(stagingPaths.metadataFile);
       writeOffset = 0;
     }
   } else {
@@ -1002,9 +1092,9 @@ Future<File> _downloadCandidate({
         metadata?.lastModified,
     sha256Digest: asset.sha256Digest,
   );
-  await nextMetadata.write(paths.metadataFile);
+  await nextMetadata.write(stagingPaths.metadataFile);
 
-  final IOSink sink = paths.partFile.openWrite(
+  final IOSink sink = stagingPaths.partFile.openWrite(
     mode: writeOffset > 0 ? FileMode.append : FileMode.write,
   );
   var received = writeOffset;
@@ -1052,21 +1142,22 @@ Future<File> _downloadCandidate({
   if (closeError != null) Error.throwWithStackTrace(closeError, closeStack!);
   if (doneError != null) Error.throwWithStackTrace(doneError, doneStack!);
 
-  final int actualSize = await paths.partFile.length();
+  final int actualSize = await stagingPaths.partFile.length();
   final _UpdateDownloadMetadata completeMetadata = nextMetadata.copyWith(
     sizeBytes: nextMetadata.sizeBytes ?? actualSize,
   );
   if (!await _isValidCompleteDownload(
-    paths.partFile,
+    stagingPaths.partFile,
     asset,
     completeMetadata,
   )) {
-    await _deleteFile(paths.partFile);
+    await _deleteFile(stagingPaths.partFile);
     throw Exception('download integrity check failed: ${asset.name}');
   }
 
   final File promoted = await _promoteCompleteDownload(
     paths,
+    stagingPaths,
     completeMetadata,
   );
   onProgress?.call(1);
@@ -1104,35 +1195,150 @@ Future<Directory> _updatesDirectoryForCurrentPlatform() async {
   return getTemporaryDirectory();
 }
 
+Future<_UpdateDownloadStagingPaths> _resolveStagingPaths(
+  UpdateDownloadPaths paths,
+  UpdateAsset asset,
+  String version,
+) async {
+  final _UpdateDownloadOwner? owner =
+      await _UpdateDownloadOwner.read(paths.ownerFile);
+  if (owner != null &&
+      owner.matches(asset, version) &&
+      _isStagingDirectoryUnderRoot(paths, owner.directoryPath)) {
+    final _UpdateDownloadStagingPaths owned =
+        _stagingPathsForDirectory(paths, Directory(owner.directoryPath));
+    if (await owned.directory.exists()) return owned;
+  }
+
+  final _UpdateDownloadStagingPaths stagingPaths =
+      await _createStagingPaths(paths);
+  await _writeStagingOwnerBestEffort(
+    paths,
+    _UpdateDownloadOwner(
+      version: version,
+      name: asset.name,
+      url: asset.url,
+      directoryPath: stagingPaths.directory.path,
+    ),
+  );
+  return stagingPaths;
+}
+
+Future<void> _writeStagingOwnerBestEffort(
+  UpdateDownloadPaths paths,
+  _UpdateDownloadOwner owner,
+) async {
+  try {
+    await owner.write(paths.ownerFile);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('UpdateChecker.writeDownloadOwner', e, stack);
+    debugPrint('[Hibiki] write update download owner failed: $e');
+  }
+}
+
+Future<_UpdateDownloadStagingPaths> _createStagingPaths(
+  UpdateDownloadPaths paths,
+) async {
+  final int counter = _downloadStagingCounter++;
+  final String id = '${DateTime.now().microsecondsSinceEpoch}-$pid-$counter';
+  final Directory directory = Directory(
+    '${paths.stagingRoot.path}${Platform.pathSeparator}$id',
+  );
+  await directory.create(recursive: true);
+  return _stagingPathsForDirectory(paths, directory);
+}
+
+_UpdateDownloadStagingPaths _stagingPathsForDirectory(
+  UpdateDownloadPaths paths,
+  Directory directory,
+) {
+  final String name = _leafName(paths.file.path);
+  return _UpdateDownloadStagingPaths(
+    directory: directory,
+    file: File('${directory.path}${Platform.pathSeparator}$name'),
+    partFile: File('${directory.path}${Platform.pathSeparator}$name.part'),
+    metadataFile:
+        File('${directory.path}${Platform.pathSeparator}$name.meta.json'),
+  );
+}
+
+bool _isStagingDirectoryUnderRoot(
+  UpdateDownloadPaths paths,
+  String directoryPath,
+) {
+  final String root = paths.stagingRoot.absolute.path;
+  final String directory = Directory(directoryPath).absolute.path;
+  final String normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
+  final String normalizedDirectory =
+      Platform.isWindows ? directory.toLowerCase() : directory;
+  return normalizedDirectory == normalizedRoot ||
+      normalizedDirectory.startsWith(
+        '$normalizedRoot${Platform.pathSeparator}',
+      );
+}
+
+Future<void> _seedStagingFromLegacyPart(
+  UpdateDownloadPaths paths,
+  _UpdateDownloadStagingPaths stagingPaths,
+  UpdateAsset asset,
+  String version,
+  _UpdateDownloadMetadata metadata,
+) async {
+  if (!metadata.matches(asset, version)) return;
+  try {
+    if (!await paths.partFile.exists()) return;
+    final int length = await paths.partFile.length();
+    if (length <= 0) return;
+    final int? expectedSize = asset.sizeBytes ?? metadata.sizeBytes;
+    if (expectedSize != null && length >= expectedSize) {
+      if (!await _isValidCompleteDownload(paths.partFile, asset, metadata)) {
+        return;
+      }
+    }
+    await stagingPaths.directory.create(recursive: true);
+    await paths.partFile.copy(stagingPaths.partFile.path);
+    await metadata.write(stagingPaths.metadataFile);
+  } catch (e, stack) {
+    ErrorLogService.instance
+        .log('UpdateChecker.seedLegacyDownloadPart', e, stack);
+    debugPrint('[Hibiki] seed legacy update part failed: $e');
+  }
+}
+
 Future<File?> _promotePartIfComplete(
   UpdateDownloadPaths paths,
+  _UpdateDownloadStagingPaths stagingPaths,
   UpdateAsset asset,
   String version,
   _UpdateDownloadMetadata? metadata,
 ) async {
   if (metadata == null || !metadata.matches(asset, version)) return null;
-  if (!await _isValidCompleteDownload(paths.partFile, asset, metadata)) {
+  if (!await _isValidCompleteDownload(
+    stagingPaths.partFile,
+    asset,
+    metadata,
+  )) {
     return null;
   }
-  return _promoteCompleteDownload(paths, metadata);
+  return _promoteCompleteDownload(paths, stagingPaths, metadata);
 }
 
 Future<int> _resumeOffsetForPart(
-  UpdateDownloadPaths paths,
+  File partFile,
   UpdateAsset asset,
   String version,
   _UpdateDownloadMetadata? metadata,
 ) async {
   if (metadata == null || !metadata.matches(asset, version)) {
-    await _deleteFile(paths.partFile);
+    await _deleteFile(partFile);
     return 0;
   }
-  if (!await paths.partFile.exists()) return 0;
-  final int length = await paths.partFile.length();
+  if (!await partFile.exists()) return 0;
+  final int length = await partFile.length();
   if (length <= 0) return 0;
   final int? expectedSize = asset.sizeBytes ?? metadata.sizeBytes;
   if (expectedSize != null && length >= expectedSize) {
-    await _deleteFile(paths.partFile);
+    await _deleteFile(partFile);
     return 0;
   }
   return length;
@@ -1140,15 +1346,36 @@ Future<int> _resumeOffsetForPart(
 
 Future<File> _promoteCompleteDownload(
   UpdateDownloadPaths paths,
+  _UpdateDownloadStagingPaths stagingPaths,
   _UpdateDownloadMetadata metadata,
 ) async {
-  await paths.file.parent.create(recursive: true);
-  if (await paths.file.exists()) {
-    await _deleteFile(paths.file);
+  await stagingPaths.file.parent.create(recursive: true);
+  if (await stagingPaths.file.exists()) {
+    await _deleteFile(stagingPaths.file);
   }
-  final File promoted = await paths.partFile.rename(paths.file.path);
-  await metadata.write(paths.metadataFile);
-  return promoted;
+  final File completed =
+      await stagingPaths.partFile.rename(stagingPaths.file.path);
+
+  await paths.file.parent.create(recursive: true);
+  try {
+    if (await paths.file.exists()) {
+      await paths.file.delete();
+    }
+    final File promoted = await completed.rename(paths.file.path);
+    await metadata.write(paths.metadataFile);
+    await _deleteFile(paths.partFile);
+    await _deleteFile(paths.ownerFile);
+    await _deleteFile(stagingPaths.metadataFile);
+    await _deleteDirectory(stagingPaths.directory);
+    return promoted;
+  } catch (e, stack) {
+    ErrorLogService.instance.log('UpdateChecker.promoteDownload', e, stack);
+    debugPrint('[Hibiki] promote update download failed: $e');
+    await metadata.write(stagingPaths.metadataFile);
+    await _deleteFile(paths.partFile);
+    await _deleteFile(paths.ownerFile);
+    return completed;
+  }
 }
 
 Future<bool> _isReusableCompleteDownload(
@@ -1241,11 +1468,79 @@ String _fileNameFromUrl(String url) {
   return 'hibiki-update.bin';
 }
 
+String _leafName(String path) => path.replaceAll(r'\', '/').split('/').last;
+
 Future<void> _deleteFile(File file) async {
   try {
     if (await file.exists()) await file.delete();
   } catch (_) {
     // Best-effort cleanup only.
+  }
+}
+
+Future<void> _deleteDirectory(Directory directory) async {
+  try {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  } catch (_) {
+    // Best-effort cleanup only.
+  }
+}
+
+class _UpdateDownloadOwner {
+  const _UpdateDownloadOwner({
+    required this.version,
+    required this.name,
+    required this.url,
+    required this.directoryPath,
+  });
+
+  final String version;
+  final String name;
+  final String url;
+  final String directoryPath;
+
+  bool matches(UpdateAsset asset, String version) {
+    return this.version == version && name == asset.name && url == asset.url;
+  }
+
+  static Future<_UpdateDownloadOwner?> read(File file) async {
+    try {
+      if (!await file.exists()) return null;
+      final Object? decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map<String, dynamic>) return null;
+      final Object? version = decoded['version'];
+      final Object? name = decoded['name'];
+      final Object? url = decoded['url'];
+      final Object? directoryPath = decoded['directoryPath'];
+      if (version is! String ||
+          name is! String ||
+          url is! String ||
+          directoryPath is! String ||
+          directoryPath.isEmpty) {
+        return null;
+      }
+      return _UpdateDownloadOwner(
+        version: version,
+        name: name,
+        url: url,
+        directoryPath: directoryPath,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> write(File file) async {
+    await file.parent.create(recursive: true);
+    await file.writeAsString(
+      jsonEncode(<String, Object?>{
+        'version': version,
+        'name': name,
+        'url': url,
+        'directoryPath': directoryPath,
+      }),
+      flush: true,
+    );
   }
 }
 

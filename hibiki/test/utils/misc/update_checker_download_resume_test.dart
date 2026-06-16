@@ -146,6 +146,135 @@ void main() {
       expect(await file.readAsBytes(), payload);
     });
 
+    test('uses unique staging when the previous final exe is locked', () async {
+      if (!Platform.isWindows) return;
+
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final UpdateDownloadPaths paths =
+          UpdateDownloadPaths.forAsset(updatesDir, asset);
+      await paths.file.writeAsBytes(<int>[0x4D, 0x5A, 99], flush: true);
+      await _writeMetadata(paths.metadataFile, asset,
+          sizeBytes: payload.length);
+      final RandomAccessFile lockedFinal =
+          await paths.file.open(mode: FileMode.read);
+      addTearDown(lockedFinal.close);
+
+      final List<Object> sourceFailures = <Object>[];
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        openUrl: (_, Map<String, String> headers) async {
+          expect(headers, isNot(contains(HttpHeaders.rangeHeader)));
+          return UpdateDownloadResponse.bytes(
+            statusCode: HttpStatus.ok,
+            body: payload,
+            headers: <String, String>{
+              HttpHeaders.contentLengthHeader: '${payload.length}',
+            },
+          );
+        },
+        onSourceFailure: (_, Object error, __) {
+          sourceFailures.add(error);
+        },
+      );
+
+      expect(file.path, isNot(paths.file.path));
+      expect(await file.readAsBytes(), payload);
+      expect(await paths.file.readAsBytes(), <int>[0x4D, 0x5A, 99]);
+      expect(sourceFailures, isEmpty);
+    });
+
+    test('ignores an unavailable legacy fixed part path and stages freshly',
+        () async {
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final UpdateDownloadPaths paths =
+          UpdateDownloadPaths.forAsset(updatesDir, asset);
+      await Directory(paths.partFile.path).create(recursive: true);
+      await _writeMetadata(paths.metadataFile, asset,
+          sizeBytes: payload.length);
+
+      final List<Map<String, String>> requests = <Map<String, String>>[];
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        openUrl: (_, Map<String, String> headers) async {
+          requests.add(headers);
+          return UpdateDownloadResponse.bytes(
+            statusCode: HttpStatus.ok,
+            body: payload,
+            headers: <String, String>{
+              HttpHeaders.contentLengthHeader: '${payload.length}',
+            },
+          );
+        },
+      );
+
+      expect(requests, hasLength(1));
+      expect(requests.single, isNot(contains(HttpHeaders.rangeHeader)));
+      expect(await file.readAsBytes(), payload);
+      expect(Directory(paths.partFile.path).existsSync(), isTrue);
+    });
+
+    test('resumes the same unique staging owner after a failed download',
+        () async {
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final Object networkLoss = Exception('network lost');
+
+      await expectLater(
+        downloadUpdateAsset(
+          asset: asset,
+          version: '1.2.0',
+          updatesDir: updatesDir,
+          candidateUrls: <String>[asset.url],
+          openUrl: (_, Map<String, String> headers) async {
+            expect(headers, isNot(contains(HttpHeaders.rangeHeader)));
+            return UpdateDownloadResponse(
+              statusCode: HttpStatus.ok,
+              headers: <String, String>{
+                HttpHeaders.contentLengthHeader: '${payload.length}',
+                HttpHeaders.etagHeader: '"payload-v1"',
+              },
+              stream: Stream<List<int>>.fromFutures(<Future<List<int>>>[
+                Future<List<int>>.value(payload.sublist(0, 4)),
+                Future<List<int>>.error(networkLoss),
+              ]),
+            );
+          },
+        ),
+        throwsA(same(networkLoss)),
+      );
+
+      final List<Map<String, String>> requests = <Map<String, String>>[];
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        openUrl: (_, Map<String, String> headers) async {
+          requests.add(headers);
+          return UpdateDownloadResponse.bytes(
+            statusCode: HttpStatus.partialContent,
+            body: payload.sublist(4),
+            headers: <String, String>{
+              HttpHeaders.contentRangeHeader: 'bytes 4-9/10',
+              HttpHeaders.etagHeader: '"payload-v1"',
+            },
+          );
+        },
+      );
+
+      expect(requests, hasLength(1));
+      expect(requests.single[HttpHeaders.rangeHeader], 'bytes=4-');
+      expect(await file.readAsBytes(), payload);
+    });
+
     test('coalesces concurrent downloads for the same asset and version',
         () async {
       final List<int> payload = _payload();
@@ -223,18 +352,48 @@ void main() {
       );
     });
 
-    test('downloadAndInstall owns one in-flight install flow per update', () {
-      final String source = File(
-        'lib/src/utils/misc/update_checker.dart',
-      ).readAsStringSync();
+    test('downloadAndInstall active flow shares one in-flight operation',
+        () async {
+      final Completer<void> releaseFirstFlow = Completer<void>();
+      var starts = 0;
+      var activeNotices = 0;
 
-      expect(
-        source,
-        contains('_activeUpdateFlows'),
-        reason:
-            'download coalescing alone is not enough; duplicate triggers must '
-            'not run updater.apply twice for the same asset/version',
+      final Future<void> first = UpdateChecker.runExclusiveUpdateFlowForTest(
+        'same-update',
+        () async {
+          starts += 1;
+          await releaseFirstFlow.future;
+        },
+        onAlreadyActive: () {
+          activeNotices += 1;
+        },
       );
+      await Future<void>.delayed(Duration.zero);
+
+      final Future<void> second = UpdateChecker.runExclusiveUpdateFlowForTest(
+        'same-update',
+        () async {
+          starts += 1;
+        },
+        onAlreadyActive: () {
+          activeNotices += 1;
+        },
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(starts, 1);
+      expect(activeNotices, 1);
+
+      releaseFirstFlow.complete();
+      await Future.wait(<Future<void>>[first, second]);
+
+      await UpdateChecker.runExclusiveUpdateFlowForTest(
+        'same-update',
+        () async {
+          starts += 1;
+        },
+      );
+      expect(starts, 2);
     });
   });
 }
