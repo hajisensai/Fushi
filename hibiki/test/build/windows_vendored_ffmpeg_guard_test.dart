@@ -8,7 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 // expires after 90 days and ffmpeg-min only ran manually, so the supply chain
 // silently broke and Windows packages shipped with NO ffmpeg -> missing video
 // covers/subtitles. These guards keep the vendored binary present and keep the
-// release workflow copying it instead of regressing to a cross-workflow fetch.
+// release workflow copying it and its runtime DLLs instead of regressing to a
+// cross-workflow fetch.
 void main() {
   String readWorkflow(String name) {
     final File file = File('../.github/workflows/$name');
@@ -48,7 +49,22 @@ void main() {
     expect(bytes[1], equals(0x5A), reason: 'expected PE "MZ" magic byte 1');
   });
 
-  test('release-desktop Windows job installs the vendored ffmpeg into bundle',
+  test('vendored Windows ffmpeg runtime DLLs are committed', () {
+    for (final String name in <String>[
+      'libwinpthread-1.dll',
+      'zlib1.dll',
+    ]) {
+      final File dll = File('../third_party/ffmpeg-min/windows/$name');
+      expect(dll.existsSync(), isTrue,
+          reason: 'vendored Windows ffmpeg runtime must exist at '
+              '${dll.absolute.path}; ffmpeg.exe imports this DLL');
+      expect(dll.lengthSync(), greaterThan(32 * 1024),
+          reason: 'vendored $name is suspiciously small');
+    }
+  });
+
+  test(
+      'release-desktop Windows job installs the vendored ffmpeg runtime into bundle',
       () {
     final String workflow = readWorkflow('release-desktop.yml');
     final String windowsJob = workflowJob(workflow, 'windows');
@@ -57,10 +73,18 @@ void main() {
     // Windows Release runner directory next to the app exe.
     expect(
       windowsJob,
-      contains(r'third_party\ffmpeg-min\windows\ffmpeg.exe'),
+      contains(r'third_party\ffmpeg-min\windows'),
       reason: 'Windows job must source ffmpeg from the vendored third_party '
           'path (TODO-416)',
     );
+    expect(windowsJob, contains('ffmpeg.exe'),
+        reason: 'the install step must copy ffmpeg.exe into the bundle');
+    expect(windowsJob, contains('libwinpthread-1.dll'),
+        reason: 'ffmpeg.exe imports libwinpthread-1.dll, so the installer '
+            'payload must include it next to ffmpeg.exe');
+    expect(windowsJob, contains('zlib1.dll'),
+        reason: 'ffmpeg.exe imports zlib1.dll, so the installer payload must '
+            'include it next to ffmpeg.exe');
     expect(
       windowsJob,
       contains(r'hibiki\build\windows\x64\runner\Release'),
@@ -75,8 +99,8 @@ void main() {
     // directory but before the installer is compiled, so it lands in the
     // installer payload.
     final int buildIndex = windowsJob.indexOf('Build Windows release');
-    final int installIndex =
-        windowsJob.indexOf('Install vendored ffmpeg-min into Windows bundle');
+    final int installIndex = windowsJob
+        .indexOf('Install vendored ffmpeg-min runtime into Windows bundle');
     final int innoIndex = windowsJob.indexOf('Compile installer (Inno Setup)');
     expect(buildIndex, isNonNegative);
     expect(installIndex, isNonNegative,

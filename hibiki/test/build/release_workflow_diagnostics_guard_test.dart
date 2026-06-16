@@ -226,9 +226,17 @@ void main() {
     );
     expect(
       smoke,
-      contains(r'FIXTURE_FFMPEG="$FFMPEG_MIN"'),
+      contains(
+          r'$fixtureFfmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source'),
+      reason: 'the full host ffmpeg must generate fixtures because the minimal '
+          'bundled ffmpeg intentionally does not include lavfi test sources',
+    );
+    expect(
+      smoke,
+      isNot(contains(r'FIXTURE_FFMPEG="$FFMPEG_MIN"')),
       reason:
-          'the smoke must not rely on a host PATH ffmpeg when generating fixtures',
+          'the minimal bundled ffmpeg must be tested for Hibiki operations, '
+          'not used to generate smoke-test fixtures',
     );
     expect(
       smoke,
@@ -238,7 +246,7 @@ void main() {
     );
     expectWorkflowOrder(
       workflow,
-      'Install vendored ffmpeg-min into Windows bundle',
+      'Install vendored ffmpeg-min runtime into Windows bundle',
       'Smoke test bundled ffmpeg in Windows bundle',
     );
     expectWorkflowOrder(

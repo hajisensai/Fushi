@@ -208,27 +208,36 @@ jobs:
           flutter build windows --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
-      # ffmpeg.exe is vendored at third_party/ffmpeg-min/windows/ffmpeg.exe
+      # ffmpeg.exe and its MinGW runtime DLLs are vendored at
+      # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
       # which silently broke whenever that artifact expired (90 days) or that
       # workflow had not run on this branch, shipping a Windows bundle with NO
       # ffmpeg -> missing video covers/subtitles. Copying the committed binary
-      # makes every release self-contained and removes the cross-workflow
-      # supply dependency.
-      - name: Install vendored ffmpeg-min into Windows bundle
+      # plus its runtime DLLs makes every release self-contained and removes the
+      # cross-workflow supply dependency.
+      - name: Install vendored ffmpeg-min runtime into Windows bundle
         shell: pwsh
         run: |
-          $source = Join-Path $PWD 'third_party\ffmpeg-min\windows\ffmpeg.exe'
+          $sourceDir = Join-Path $PWD 'third_party\ffmpeg-min\windows'
           $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release'
-          $target = Join-Path $targetDir 'ffmpeg.exe'
-          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-            throw "Missing vendored ffmpeg-min executable: $source"
-          }
           if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
             throw "Missing Windows release bundle directory: $targetDir"
           }
-          Copy-Item -LiteralPath $source -Destination $target -Force
-          Get-Item -LiteralPath $target | Select-Object FullName, Length
+          $runtimeFiles = @(
+            'ffmpeg.exe',
+            'libwinpthread-1.dll',
+            'zlib1.dll'
+          )
+          foreach ($file in $runtimeFiles) {
+            $source = Join-Path $sourceDir $file
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+              throw "Missing vendored ffmpeg-min runtime file: $source"
+            }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
+          }
+          Get-Item -LiteralPath ($runtimeFiles | ForEach-Object { Join-Path $targetDir $_ }) |
+            Select-Object FullName, Length
       - name: Smoke test bundled ffmpeg in Windows bundle
         shell: pwsh
         run: |
@@ -241,8 +250,10 @@ jobs:
             throw "Bundled ffmpeg failed -version with exit code $LASTEXITCODE"
           }
           $bash = (Get-Command bash -ErrorAction Stop).Source
+          $fixtureFfmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
           $env:FFMPEG_MIN = ($target -replace '\\', '/')
-          & $bash -c 'FIXTURE_FFMPEG="$FFMPEG_MIN" SELF_CONTAINED_FIXTURES=1 bash tool/ffmpeg-min/smoke-test.sh'
+          $env:FIXTURE_FFMPEG = ($fixtureFfmpeg -replace '\\', '/')
+          & $bash -c 'SELF_CONTAINED_FIXTURES=1 bash tool/ffmpeg-min/smoke-test.sh'
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |
