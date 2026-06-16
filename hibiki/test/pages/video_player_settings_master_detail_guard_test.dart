@@ -73,7 +73,9 @@ void main() {
         reason: '着色器改用内嵌 VideoShaderManagerView');
   });
 
-  test('VideoQuickSettingsSheet mirrors the reader master-detail skeleton', () {
+  test(
+      'VideoQuickSettingsSheet stacks top categories over the detail '
+      '(TODO-427-③ video-only top/bottom split)', () {
     final String source =
         File('lib/src/media/video/video_quick_settings_sheet.dart')
             .readAsStringSync();
@@ -82,35 +84,48 @@ void main() {
     // 与阅读器同源的「不套外层滚动 + 宽窗撑满有界高度」范式（BUG-096）。
     expect(source, contains('HibikiModalSheetFrame('));
     expect(source, contains('scrollable: false'));
-    expect(source, contains('MaterialSupportingPaneLayout('));
-    expect(source, contains('minSplitWidth: kHibikiSettingsWideThreshold'));
-    // 左父菜单收窄到视频专属常量（TODO-427-②：184，比共享的 208 更窄一档，
-    // 只动视频面板、不连坐阅读器）。
-    expect(source, contains('supportingWidth: _videoSupportingPaneWidth'));
-    expect(source, contains('_videoSupportingPaneWidth = 184.0'));
-    expect(source, contains('SupportingPaneSide.start'));
     expect(source, contains('height: constraints.maxHeight'));
     // 确定性几何判据：宽且高都 >= 共享常量阈值才进宽窗（与书籍设置同条件）。
     expect(source,
         contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
     expect(source,
         contains('constraints.maxHeight >= kHibikiSettingsWideMinHeight'));
+
+    // TODO-427-③：宽窗从左右 master-detail（窄左栏 + 右详情）改成顶部横向分类 chip 行 +
+    // 下方详情上下分栏，根治窄侧栏左右劈半把右详情挤窄、下拉抢宽裁标题。
+    // 旧的左右分栏符号必须删除（防回退）。
+    expect(source, isNot(contains('MaterialSupportingPaneLayout(')),
+        reason: 'TODO-427-③：视频面板宽窗不再用左右 master-detail');
+    expect(source, isNot(contains('_videoSupportingPaneWidth')),
+        reason: 'TODO-427-③：左栏没了，视频专属左栏宽度常量（427-②）作废，应删除引用');
+    expect(source, isNot(contains('_buildWidePane')),
+        reason: 'TODO-427-③：左 pane 构造器已删');
+    expect(source, isNot(contains('SupportingPaneSide.start')));
+    expect(source, isNot(contains('padding: wideSupportingPadding')));
+
+    // 新契约：顶部固定横向分类 chip 行（复用 HibikiSelectableChip 单选 pill）+ 下方
+    // 详情独占整宽并独立滚动（Column → Expanded → KeyedSubtree → SingleChildScrollView）。
+    expect(source, contains('_buildTopCategoryBar('),
+        reason: 'TODO-427-③：顶部横向分类条构造器');
+    expect(source, contains('HibikiSelectableChip('),
+        reason: '分类条复用书架同款单选 chip 组件');
+    expect(source, contains('scrollDirection: Axis.horizontal'),
+        reason: '分类条横向可滚（容纳放不下的分类）');
     // 旧的「post-frame 测内容溢出回退」已移除（会随内容高度发散 → 同设备两种表现）。
     expect(source, isNot(contains('_supportingOverflowsWide')));
     expect(source, isNot(contains('_supportingScrollController')));
-    expect(source, contains('padding: wideSupportingPadding'));
     expect(source, contains('padding: widePrimaryPadding'));
-    // 左父菜单单选高亮（pill），无 chevron 误导 push。
-    expect(source, contains('HibikiListItemSelectedShape.pill'));
-    // 右 pane 按选中 id KeyedSubtree，防 Element 复用副作用。
+    // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
     expect(source, contains("_subPage ?? 'playback'"));
-    // 四个分类齐全。
+    // 六个分类齐全（chip 行 + 窄窗导航行共用 _categories）。
     for (final String id in <String>[
       "id: 'playback'",
       "id: 'shaders'",
       "id: 'mpv'",
       "id: 'subtitle'",
+      "id: 'danmaku'",
+      "id: 'controls'",
     ]) {
       expect(source, contains(id), reason: 'missing category $id');
     }

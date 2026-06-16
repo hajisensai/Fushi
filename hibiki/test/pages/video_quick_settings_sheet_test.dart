@@ -258,55 +258,57 @@ void main() {
     expect(selectedHq, isTrue);
   });
 
-  testWidgets('video settings shows master-detail on wide windows',
-      (tester) async {
+  testWidgets(
+      'video settings stacks top categories over the detail on wide windows '
+      '(TODO-427-③)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 左 pane 四个分类都在；默认选中 playback → 右 pane 显示音画延迟 + 倍速。
+    // 顶部分类条六个分类都在；默认选中 playback → 下方详情显示音画延迟 + 倍速。
     expect(find.text(t.video_settings_cat_playback), findsWidgets);
     expect(find.text(t.video_settings_cat_shaders), findsOneWidget);
     expect(find.text(t.video_settings_cat_mpv), findsOneWidget);
     expect(find.text(t.video_settings_cat_subtitle), findsOneWidget);
     expect(find.text(t.video_setting_av_delay), findsOneWidget);
     expect(find.text(t.video_setting_speed), findsOneWidget);
-    // master-detail 无 push：无返回箭头。
+    // 上下分栏无 push：无返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
-    final Finder layout = find.byType(MaterialSupportingPaneLayout);
-    final Finder divider = find.descendant(
-      of: layout,
-      matching: find.byType(VerticalDivider),
-    );
-    // 左父菜单收窄到视频专属常量（TODO-427-②：184，比共享的 208 更窄一档）。
-    expect(
-      tester.getTopLeft(divider).dx - tester.getTopLeft(layout).dx,
-      184,
-    );
+    // TODO-427-③：不再是左右 master-detail（窄左栏挤裁右详情），改顶部 chip 行 + 下方
+    // 详情上下分栏。分类用单选 chip（HibikiSelectableChip → ChoiceChip）。
+    expect(find.byType(MaterialSupportingPaneLayout), findsNothing,
+        reason: '宽窗已从左右分栏改成上下分栏，不再用 MaterialSupportingPaneLayout');
+    expect(find.byType(HibikiSelectableChip), findsNWidgets(6),
+        reason: '顶部分类条是六个单选 chip（与分类一一对应）');
 
-    final List<SingleChildScrollView> paneScrollViews = tester
-        .widgetList<SingleChildScrollView>(
-          find.descendant(
-            of: layout,
-            matching: find.byType(SingleChildScrollView),
-          ),
-        )
-        .take(2)
-        .toList();
-    expect(paneScrollViews, hasLength(2));
-    final EdgeInsets supportingPadding =
-        paneScrollViews.first.padding! as EdgeInsets;
-    final EdgeInsets primaryPadding =
-        paneScrollViews.last.padding! as EdgeInsets;
-    // 左右各自水平对称。
-    expect(supportingPadding.left, supportingPadding.right);
-    expect(primaryPadding.left, primaryPadding.right);
-    // TODO-427-②：左栏水平 inset 收小到只 gap(8)，比右详情(page+gap=24)窄一档。
-    expect(supportingPadding.left, 8);
+    // 分类条在详情上方（dy 序）：取分类条里「字幕」chip 的 y < 详情里倍速行的 y。
+    final double categoryY = tester
+        .getTopLeft(find.widgetWithText(
+            HibikiSelectableChip, t.video_settings_cat_subtitle))
+        .dy;
+    final double detailY =
+        tester.getTopLeft(find.text(t.video_setting_speed)).dy;
+    expect(categoryY, lessThan(detailY), reason: '顶部分类条必须在下方详情之上');
+
+    // 详情独占整宽并独立滚动：详情 SingleChildScrollView 是上下分栏 Column → Expanded →
+    // KeyedSubtree 的直接子，含 page padding（左右 24）。picker 的离屏 dropdown 测量树里
+    // 也有无 padding 的 scroll，故按「padding.left==24 的纵向 scroll」精确定位详情那一个。
+    final Iterable<SingleChildScrollView> detailScrolls =
+        tester.widgetList<SingleChildScrollView>(
+      find.byType(SingleChildScrollView),
+    );
+    final SingleChildScrollView detailScroll = detailScrolls.firstWhere(
+      (SingleChildScrollView s) {
+        final EdgeInsets? p = s.padding as EdgeInsets?;
+        return s.scrollDirection == Axis.vertical && p != null && p.left == 24;
+      },
+    );
+    final EdgeInsets primaryPadding = detailScroll.padding! as EdgeInsets;
     expect(primaryPadding.left, 24);
+    expect(primaryPadding.right, 24);
 
-    // 选「字幕」→ 右 pane 切到字幕详情，仍无返回箭头。
+    // 选「字幕」→ 下方详情切到字幕详情，仍无返回箭头。
     await tester.tap(find.text(t.video_settings_cat_subtitle));
     await tester.pumpAndSettle();
     expect(find.text(t.video_setting_subtitle_blur), findsOneWidget);
@@ -347,27 +349,29 @@ void main() {
   });
 
   testWidgets(
-      'wide video settings keeps the left pane fixed while the right scrolls',
-      (tester) async {
-    // 高度取 500（>= kHibikiSettingsWideMinHeight=440 → 进宽窗），右详情行多仍可滚。
+      'wide video settings keeps the top category bar fixed while the detail '
+      'scrolls (TODO-427-③)', (tester) async {
+    // 高度取 500（>= kHibikiSettingsWideMinHeight=440 → 进宽窗），下方详情行多仍可滚。
     await tester.binding.setSurfaceSize(const Size(1000, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 字幕详情行多（开关 + 三滑条 + 重置）→ 必然超过 380 高、可独立滚动。
+    // 字幕详情行多（开关 + 三滑条 + 重置）→ 必然超过详情高、可独立滚动。
     await tester.tap(find.text(t.video_settings_cat_subtitle));
     await tester.pumpAndSettle();
 
-    final Finder leftAnchor = find.text(t.video_settings_cat_playback);
-    expect(leftAnchor, findsWidgets);
-    final Offset before = tester.getTopLeft(leftAnchor.first);
+    // 顶部分类条里的「播放」chip 是固定锚点（chip 行钉在顶部、随详情滚动不动）。
+    final Finder categoryAnchor = find.widgetWithText(
+        HibikiSelectableChip, t.video_settings_cat_playback);
+    expect(categoryAnchor, findsOneWidget);
+    final Offset before = tester.getTopLeft(categoryAnchor);
 
-    // 在右 pane 区域向上拖：只滚右详情，左父菜单必须纹丝不动（同 BUG-096）。
-    await tester.dragFrom(const Offset(850, 250), const Offset(0, -160));
+    // 在详情区域（垂直方向中下部）向上拖：只滚下方详情，顶部分类条必须纹丝不动。
+    await tester.dragFrom(const Offset(500, 350), const Offset(0, -160));
     await tester.pump();
 
-    final Offset after = tester.getTopLeft(leftAnchor.first);
-    expect(after, before, reason: '左父菜单必须固定，不能跟随右详情滚动');
+    final Offset after = tester.getTopLeft(categoryAnchor);
+    expect(after, before, reason: '顶部分类条必须固定，不能跟随下方详情滚动');
   });
 
   testWidgets(
@@ -655,6 +659,10 @@ void main() {
       of: find.widgetWithText(AdaptiveSettingsSliderRow, t.video_setting_speed),
       matching: find.byType(Slider),
     );
+    // TODO-427-③：上下分栏后详情整宽且更长，倍速行可能在详情滚动区下方；先滚入视口
+    // 再拖（模拟真实用户滚到该行）。
+    await tester.ensureVisible(speedSlider);
+    await tester.pumpAndSettle();
     await tester.drag(speedSlider, const Offset(500, 0));
     await tester.pumpAndSettle();
     expect(committed, 2.0);
@@ -792,36 +800,41 @@ void main() {
 
   testWidgets(
       'wide video settings uses roomy MD3 padding on all four edges '
-      '(TODO-344)', (tester) async {
+      '(TODO-344 / TODO-427-③)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    final Finder layout = find.byType(MaterialSupportingPaneLayout);
-    final List<SingleChildScrollView> paneScrollViews = tester
+    // 顶部分类条（横向 SingleChildScrollView，含分类 chip）：水平 inset = page+gap=24，
+    // 顶部 card=16（不再贴死），底部留 gap/2=4 与详情之间的分隔线呼吸。
+    final SingleChildScrollView categoryBar =
+        tester.widget<SingleChildScrollView>(
+      find.ancestor(
+        of: find.byType(HibikiSelectableChip).first,
+        matching: find.byType(SingleChildScrollView),
+      ),
+    );
+    final EdgeInsets categoryPadding = categoryBar.padding! as EdgeInsets;
+    expect(categoryBar.scrollDirection, Axis.horizontal);
+    expect(categoryPadding.left, 24);
+    expect(categoryPadding.right, 24);
+    expect(categoryPadding.top, 16);
+
+    // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 24、独占整宽。
+    // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==24 的纵向
+    // scroll」精确定位详情那一个。
+    final SingleChildScrollView detailScroll = tester
         .widgetList<SingleChildScrollView>(
-          find.descendant(
-            of: layout,
-            matching: find.byType(SingleChildScrollView),
-          ),
-        )
-        .take(2)
-        .toList();
-    final EdgeInsets supportingPadding =
-        paneScrollViews.first.padding! as EdgeInsets;
-    final EdgeInsets primaryPadding =
-        paneScrollViews.last.padding! as EdgeInsets;
-    // 四边都留出 MD3 级别的呼吸位（不再是顶部仅 4px 的「贴死」）。
-    // TODO-427-②：左栏已收窄，其水平 inset 收小到只 gap(8)；右详情仍 page+gap=24。
-    // 顶部两栏一致 = card(16)。
-    expect(supportingPadding.left, 8);
-    expect(supportingPadding.right, 8);
-    expect(supportingPadding.top, 16);
+      find.byType(SingleChildScrollView),
+    )
+        .firstWhere((SingleChildScrollView s) {
+      final EdgeInsets? p = s.padding as EdgeInsets?;
+      return s.scrollDirection == Axis.vertical && p != null && p.left == 24;
+    });
+    final EdgeInsets primaryPadding = detailScroll.padding! as EdgeInsets;
     expect(primaryPadding.left, 24);
     expect(primaryPadding.right, 24);
     expect(primaryPadding.top, 16);
-    // 顶部不再贴死（旧值仅 gap/2 = 4）。
-    expect(supportingPadding.top, greaterThanOrEqualTo(16));
   });
 
   testWidgets('narrow video settings uses roomy MD3 padding (TODO-344)',
@@ -842,9 +855,13 @@ void main() {
 
   // ── TODO-383：控制按钮自定义改为可视化拖动（拖 chip 到槽位，不再下拉选）─
   group('control button drag editor (TODO-383 / TODO-399)', () {
-    // 进入控制分类详情（宽窗 master-detail）。
+    // 进入控制分类详情（宽窗上下分栏顶部 chip 行）。「控制」是末位分类，在窄宽窗下
+    // 横向 chip 行里可能排到视口外（TODO-427-③），先横滑入视口再点（模拟真实用户横滑）。
     Future<void> openControls(WidgetTester tester) async {
-      await tester.tap(find.text(t.video_settings_cat_controls));
+      final Finder controlsCat = find.text(t.video_settings_cat_controls);
+      await tester.ensureVisible(controlsCat);
+      await tester.pumpAndSettle();
+      await tester.tap(controlsCat);
       await tester.pumpAndSettle();
     }
 

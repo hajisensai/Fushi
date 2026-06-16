@@ -14,10 +14,12 @@ import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/utils.dart';
 
-/// 视频播放设置面板：与阅读器 `ReaderQuickSettingsSheet` 同款 master-detail
-/// （宽窗左父菜单固定 + 右详情独立滚动；窄窗降级单列 push）。所有值都不是 schema
-/// 项（每项都要回调进 `VideoHibikiPage` 即时调 controller / 持久化 / 实时预览），
-/// 故全部用 bespoke 的 `AdaptiveSettings*` 行，不走 settings schema。
+/// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
+/// （TODO-427-③；详情独占整宽并独立滚动，分类条固定在顶部），窄窗降级单列 push。
+/// 旧的左右 master-detail（窄左栏 + 右详情）因窄侧栏左右劈半把右详情挤窄、下拉抢宽裁
+/// 标题而改成上下栏。所有值都不是 schema 项（每项都要回调进 `VideoHibikiPage` 即时调
+/// controller / 持久化 / 实时预览），故全部用 bespoke 的 `AdaptiveSettings*` 行，不走
+/// settings schema。
 ///
 /// 配色用标准浅色 MD3（与阅读器一致），由 `HibikiModalSheetFrame` 提供 sheet 外壳，
 /// 桌面经 `HibikiDialogFrame(maxWidth: 900)` 进入分栏、移动端走 bottom sheet。
@@ -166,11 +168,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// (2.0 - 0.5) / 0.1 = 15 档，保证滑条只落在旧档位值上。
   static const int _speedDivisions = 15;
 
-  /// 视频设置面板左父菜单宽度（TODO-427-②）：比阅读器/书籍共用的
-  /// [kHibikiSettingsSupportingPaneWidth]（208）更窄一档，给右详情留更多空间。
-  /// 只收窄视频面板，不动共享常量（阅读器面板不连坐）。
-  static const double _videoSupportingPaneWidth = 184.0;
-
   // 本地镜像：面板在独立的 dialog/bottom-sheet 路由里，父页面 setState 不会重建它，
   // 故乐观更新本地值（同旧 StatefulBuilder 的语义），再异步回调即时生效 + 落盘。
   late int _delayMs = widget.initialDelayMs;
@@ -276,42 +273,42 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               final Color dividerColor = isCupertinoPlatform(context)
                   ? CupertinoColors.separator.resolveFrom(context)
                   : tokens.surfaces.outline;
-              // 左父菜单已收窄到 [_videoSupportingPaneWidth]（TODO-427-②）：水平 inset
-              // 同步收小一档（page+gap=24 → 只 gap=8），把窄列宽度尽量让给分类项文字，
-              // 避免「列已窄、左右还各贴 24」把内容挤成两三字一行。
-              final double supportingHorizontalInset = tokens.spacing.gap;
-              final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
-                supportingHorizontalInset,
-                topInset,
-                supportingHorizontalInset,
-                bottomInset,
-              );
+              // TODO-427-③：宽窗从「窄左栏 + 右详情」左右分栏改成「顶部横向分类 chip 行
+              // + 下方详情」上下分栏。窄侧栏左右劈半会把右详情挤到 ~300px（硬解码等下拉
+              // 抢宽裁标题）；上下分栏后详情独占整宽（~512），根治截断/右栏丑。
               final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
                 horizontalInset,
                 topInset,
                 horizontalInset,
                 bottomInset,
               );
+              // 顶部分类条水平 inset 与详情对齐（page+gap=24），垂直只留 card(16) 上 +
+              // gap/2 下，紧贴 sheet header 下方且不贴死。
+              final EdgeInsets categoryBarPadding = EdgeInsets.fromLTRB(
+                horizontalInset,
+                topInset,
+                horizontalInset,
+                tokens.spacing.gap / 2,
+              );
               return SizedBox(
                 height: constraints.maxHeight,
-                child: MaterialSupportingPaneLayout(
-                  minSplitWidth: kHibikiSettingsWideThreshold,
-                  // TODO-427-②：视频面板左栏比共享常量（208）更窄一档（184），不连坐
-                  // 阅读器面板（仍用 kHibikiSettingsSupportingPaneWidth）。
-                  supportingWidth: _videoSupportingPaneWidth,
-                  supportingSide: SupportingPaneSide.start,
-                  dividerColor: dividerColor,
-                  supporting: SingleChildScrollView(
-                    padding: wideSupportingPadding,
-                    child: _buildWidePane(theme, selectedId),
-                  ),
-                  primary: KeyedSubtree(
-                    key: ValueKey<String>(selectedId),
-                    child: SingleChildScrollView(
-                      padding: widePrimaryPadding,
-                      child: _subPageContent(selectedId),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // 顶部固定不滚的横向单选分类 chip 行。
+                    _buildTopCategoryBar(selectedId, categoryBarPadding),
+                    Divider(height: 1, thickness: 1, color: dividerColor),
+                    // 下方详情独占整宽并独立滚动（KeyedSubtree 防 Element 复用副作用）。
+                    Expanded(
+                      child: KeyedSubtree(
+                        key: ValueKey<String>(selectedId),
+                        child: SingleChildScrollView(
+                          padding: widePrimaryPadding,
+                          child: _subPageContent(selectedId),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               );
             }
@@ -331,7 +328,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
-  /// 左父菜单的分类项（id 与 [_subPageContent] 的 case 对齐）。
+  /// 分类项（宽窗顶部 chip 行 + 窄窗导航行共用；id 与 [_subPageContent] 的 case 对齐）。
   List<({String id, IconData icon, String label})> _categories() {
     return <({String id, IconData icon, String label})>[
       (
@@ -363,23 +360,31 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     ];
   }
 
-  /// 宽窗 master-detail 左 pane：分类列表（单选高亮）。面板顶部 [VideoTranslucentSidePanel]
-  /// 已有「视频设置」统一标题，pane 内部不再重复一个 [SettingsSectionHeader]（TODO-427）。
-  Widget _buildWidePane(ThemeData theme, String selectedId) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        for (final ({String id, IconData icon, String label}) cat
-            in _categories())
-          HibikiListItem(
-            selected: cat.id == selectedId,
-            selectedShape: HibikiListItemSelectedShape.pill,
-            leading: Icon(cat.icon),
-            title: Text(cat.label),
-            onTap: () => setState(() => _subPage = cat.id),
-          ),
-      ],
+  /// 宽窗上下分栏的顶部分类条（TODO-427-③）：横向可滚的单选 chip 行（高亮当前分类），
+  /// 取代旧的左侧窄 pane。复用与书架标签筛选条同款的 [HibikiSelectableChip]（ChoiceChip，
+  /// 单选 pill 高亮 + leadingIcon），点选切 [_subPage]（与旧左 pane 同一 state）。chip 行
+  /// 自身固定不滚（由外层 [Column] 钉在顶部），仅内部横向滚动以容纳放不下的分类。
+  Widget _buildTopCategoryBar(String selectedId, EdgeInsets padding) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: padding,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final ({String id, IconData icon, String label}) cat
+              in _categories())
+            Padding(
+              padding: EdgeInsets.only(
+                  right: HibikiDesignTokens.of(context).spacing.gap),
+              child: HibikiSelectableChip(
+                label: cat.label,
+                leadingIcon: cat.icon,
+                selected: cat.id == selectedId,
+                onSelected: (_) => setState(() => _subPage = cat.id),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
