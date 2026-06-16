@@ -208,9 +208,20 @@ class AndroidInstaller {
   }
 }
 
-/// Inno Setup 静默安装参数：抑制向导、跳过初始提示；安装器脚本负责关旧实例 + 重启。
-List<String> windowsInstallerArgs(String installerPath) =>
-    <String>['/VERYSILENT', '/SP-'];
+/// Inno Setup 静默安装参数：
+/// - `/VERYSILENT` + `/SP-`：抑制整个向导、跳过初始「准备安装」提示。
+/// - `/CLOSEAPPLICATIONS`：用 RestartManager 自动关闭正在运行的 Hibiki，
+///   **不弹**「应用正在运行，需要关闭」的确认框（单靠 `/VERYSILENT` +
+///   iss 里的 `CloseApplications=yes` 仍会弹该框）。
+/// - `/RESTARTAPPLICATIONS`：安装完成后让 RestartManager 自动重新拉起 Hibiki。
+/// - `/NORESTART`：禁止安装器重启**操作系统**（我们只想重启 app，不重启系统）。
+List<String> windowsInstallerArgs(String installerPath) => <String>[
+      '/VERYSILENT',
+      '/SP-',
+      '/CLOSEAPPLICATIONS',
+      '/RESTARTAPPLICATIONS',
+      '/NORESTART',
+    ];
 
 /// Windows 安装器启动/校验失败。被 UpdateChecker 的下载流程 catch → SnackBar 优雅
 /// 降级，绝不让损坏下载或启动失败演化成「app 静默消失」式崩溃。
@@ -267,7 +278,10 @@ class WindowsInstaller {
     }
 
     // 安装器已成功启动（分离进程）。把当前进程让出文件锁：让出事件循环一拍，
-    // 随后退出，安装器（AppMutex + CloseApplications）即可替换 hibiki.exe 并重启。
+    // 随后退出。安装器靠 `/CLOSEAPPLICATIONS`（RestartManager 静默关旧实例，
+    // 不弹确认框）替换 hibiki.exe，再靠 `/RESTARTAPPLICATIONS` 自动重启 app。
+    // AppMutex 只用于安装器检测「app 仍在运行」，单凭它不会自动替换重启，必须
+    // 配合上面的安装参数（见 windowsInstallerArgs）。
     await Future<void>.delayed(Duration.zero);
     exit(0);
   }

@@ -177,6 +177,20 @@ void main() {
       expect(args, contains('/VERYSILENT'));
       expect(args, contains('/SP-'));
     });
+
+    test('silently closes and auto-restarts the app without a confirm dialog',
+        () {
+      // TODO-431: a bare /VERYSILENT still pops the "application is running,
+      // close it?" dialog because the .iss sets CloseApplications=yes. Passing
+      // /CLOSEAPPLICATIONS lets RestartManager close Hibiki silently, and
+      // /RESTARTAPPLICATIONS relaunches it once the install finishes; /NORESTART
+      // makes sure only the app (not the OS) is restarted.
+      final List<String> args =
+          windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
+      expect(args, contains('/CLOSEAPPLICATIONS'));
+      expect(args, contains('/RESTARTAPPLICATIONS'));
+      expect(args, contains('/NORESTART'));
+    });
   });
 
   group('isWindowsExecutableHeader', () {

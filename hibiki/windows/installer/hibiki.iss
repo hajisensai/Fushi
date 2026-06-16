@@ -25,7 +25,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
-RestartApplications=no
+RestartApplications=yes
 AppMutex=HibikiSingleInstanceMutex
 
 [Tasks]
