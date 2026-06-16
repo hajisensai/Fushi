@@ -244,6 +244,7 @@ enum VideoControlItem {
   volume('volume', isSpecialRender: true),
   fullscreen('fullscreen'),
   screenshot('screenshot'),
+  clipExport('clipExport'),
   subtitleTrack('subtitleTrack'),
   audioTrack('audioTrack'),
   episodeList('episodeList'),
@@ -419,6 +420,7 @@ class VideoControlLayout {
       VideoControlItem.subtitleTrack: VideoControlSlot.bottomRight,
       VideoControlItem.audioTrack: VideoControlSlot.bottomRight,
       VideoControlItem.screenshot: VideoControlSlot.bottomRight,
+      VideoControlItem.clipExport: VideoControlSlot.bottomRight,
       VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
       VideoControlItem.settings: VideoControlSlot.bottomRight,
       VideoControlItem.favoriteSentence: VideoControlSlot.bottomRight,
@@ -449,6 +451,7 @@ class VideoControlLayout {
       VideoControlItem.title: VideoControlSlot.topCenter,
       VideoControlItem.episodeList: VideoControlSlot.topRight,
       VideoControlItem.screenshot: VideoControlSlot.topRight,
+      VideoControlItem.clipExport: VideoControlSlot.topRight,
       VideoControlItem.subtitleTrack: VideoControlSlot.topRight,
       VideoControlItem.audioTrack: VideoControlSlot.topRight,
       // -- bottom-center transport cluster (play pinned geometric centre) --

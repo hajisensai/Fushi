@@ -17,6 +17,8 @@ void main() {
       File('lib/src/pages/implementations/home_video_page.dart');
   final File shelfSrc =
       File('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+  final File playerSrc =
+      File('lib/src/pages/implementations/video_hibiki_page.dart');
 
   /// 截取某文件中 [_buildPageHeader] 方法体内 `actions: <Widget>[ ... ]` 区间的源码，
   /// 顺序断言只在该区间内做，避免命中页面其它位置的同名 tooltip / 图标。
@@ -62,5 +64,40 @@ void main() {
         reason: 'TODO-162：视频导入按钮应在收藏夹之前（与书架一致）');
     expect(collectionsIdx, lessThan(statsIdx),
         reason: 'TODO-162：视频收藏夹按钮应在统计之前（与书架一致）');
+  });
+
+  test('播放器顶栏片段导出按钮紧挨截图按钮', () {
+    final String text = playerSrc.readAsStringSync();
+    final int desktopThemeIdx = text.indexOf(
+      'MaterialDesktopVideoControlsThemeData _desktopControlsTheme',
+    );
+    expect(desktopThemeIdx, greaterThanOrEqualTo(0), reason: '应有桌面视频控制条主题');
+    final int mobileThemeIdx = text.indexOf(
+      'MaterialVideoControlsThemeData _mobileControlsTheme',
+      desktopThemeIdx,
+    );
+    expect(mobileThemeIdx, greaterThan(desktopThemeIdx), reason: '桌面主题后应有移动主题');
+    final String desktopBlock = text.substring(desktopThemeIdx, mobileThemeIdx);
+    final int desktopScreenshot = desktopBlock.indexOf(
+      'Icons.photo_camera_outlined',
+    );
+    final int desktopClip = desktopBlock.indexOf('_toggleClipExport');
+    expect(desktopScreenshot, greaterThanOrEqualTo(0), reason: '桌面顶栏应保留截图按钮');
+    expect(desktopClip, greaterThanOrEqualTo(0), reason: '桌面顶栏应新增片段导出按钮');
+    expect(desktopClip, greaterThan(desktopScreenshot),
+        reason: '桌面片段导出必须放在截图按钮后面');
+
+    final int end =
+        text.indexOf('Widget _buildVideoControlButton', mobileThemeIdx);
+    expect(end, greaterThan(mobileThemeIdx));
+    final String mobileBlock = text.substring(mobileThemeIdx, end);
+    final int mobileScreenshot = mobileBlock.indexOf(
+      'Icons.photo_camera_outlined',
+    );
+    final int mobileClip = mobileBlock.indexOf('_toggleClipExport');
+    expect(mobileScreenshot, greaterThanOrEqualTo(0), reason: '移动顶栏应保留截图按钮');
+    expect(mobileClip, greaterThanOrEqualTo(0), reason: '移动顶栏应新增片段导出按钮');
+    expect(mobileClip, greaterThan(mobileScreenshot),
+        reason: '移动片段导出必须放在截图按钮后面');
   });
 }

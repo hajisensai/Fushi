@@ -101,5 +101,29 @@ void main() {
                 '"${zhStrings[key]}"');
       }
     });
+
+    test('TODO-434 clip export keys use Chinese clip wording', () {
+      const clipKeys = <String>[
+        'video_clip_export',
+        'video_clip_export_start',
+        'video_clip_export_stop',
+        'video_clip_exporting',
+        'video_clip_exported',
+        'video_clip_export_failed',
+        'video_clip_export_remote_download_required',
+        'video_clip_export_invalid_range',
+      ];
+      final String formerPixelCaptureTerm =
+          String.fromCharCodes(<int>[0x5f55, 0x5c4f]);
+      for (final key in clipKeys) {
+        expect(zhStrings.containsKey(key), isTrue,
+            reason: 'key "$key" 应存在于 zh-CN');
+        final String value = zhStrings[key]!;
+        expect(_cjk.hasMatch(value), isTrue,
+            reason: 'key "$key" 的 zh-CN 值应含中文字符，实际为："$value"');
+        expect(value.contains(formerPixelCaptureTerm), isFalse,
+            reason: 'TODO-434 片段导出文案应保持源片段语义：$key="$value"');
+      }
+    });
   });
 }
