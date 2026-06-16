@@ -1509,6 +1509,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         shaderPaths: shaderPaths,
         mpvConfig: mpvConfig,
         autoPlay: true,
+        onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
@@ -1598,6 +1599,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 恢复用户选过的音轨（含多集换集复用）：audioTracks 在 player open 后才填充，
     // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
     unawaited(_restoreAudioTrack(controller));
+  }
+
+  void _handleEmbeddedSubtitleAutoLoad(
+    DefaultEmbeddedSubtitleLoadResult result,
+  ) {
+    if (!mounted) return;
+    if (result.status == DefaultEmbeddedSubtitleLoadStatus.loaded) {
+      final SubtitleSource? source = result.source;
+      if (source != null) {
+        setState(() => _currentSubtitleSource = source.toPersistedValue());
+      }
+      return;
+    }
+    if (!result.shouldNotifyFailure) return;
+    final String label = result.source?.label ?? t.video_menu_subtitle_track;
+    _showOsd(t.video_subtitle_load_failed(label: label));
   }
 
   /// 位置持久化（controller 每秒至多一次回调）。

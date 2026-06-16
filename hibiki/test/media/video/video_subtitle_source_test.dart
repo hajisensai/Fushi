@@ -662,6 +662,188 @@ At least one output file must be specified
       expect(subtitleExtractTimeoutForBytes(twentySevenGb).inSeconds,
           greaterThan(200));
     });
+
+    test('诊断 API 区分枚举 timeout 与真无字幕', () async {
+      final File video = File(p.join(tempDir.path, 'timeout.mkv'))
+        ..writeAsBytesSync(<int>[0, 1, 2]);
+      setFfmpegBackendForTesting(
+        const _ProbeResultBackend(
+          FfmpegRunResult(returnCode: null, output: ''),
+        ),
+      );
+
+      final EmbeddedSubtitleTrackProbeResult timedOut =
+          await probeEmbeddedSubtitleTracks(video.path);
+
+      expect(timedOut.status, EmbeddedSubtitleTrackProbeStatus.timeout);
+      expect(timedOut.tracks, isEmpty);
+      expect(
+          timedOut.timeout, subtitleExtractTimeoutForBytes(video.lengthSync()));
+
+      setFfmpegBackendForTesting(
+        const _ProbeResultBackend(
+          FfmpegRunResult(
+            returnCode: 1,
+            output: '  Stream #0:0: Video: h264\n'
+                'At least one output file must be specified',
+          ),
+        ),
+      );
+
+      final EmbeddedSubtitleTrackProbeResult noSubtitles =
+          await probeEmbeddedSubtitleTracks(video.path);
+
+      expect(noSubtitles.status, EmbeddedSubtitleTrackProbeStatus.success);
+      expect(noSubtitles.tracks, isEmpty);
+    });
+  });
+
+  group('默认文本内封字幕加载（TODO-446）', () {
+    late Directory tempDir;
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('hibiki_vsub_default_');
+    });
+
+    tearDown(() {
+      setFfmpegBackendForTesting(null);
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+
+    test('跳过 PGS/DVD 图形轨，默认抽第一条可转 cue 的文本轨', () async {
+      final File video = File(p.join(tempDir.path, 'movie.mkv'))
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final _DefaultSubtitleFfmpegBackend backend =
+          _DefaultSubtitleFfmpegBackend();
+      setFfmpegBackendForTesting(backend);
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCues(
+        videoPath: video.path,
+        bookUid: 'video/book',
+      );
+
+      expect(result.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
+      expect(result.source?.streamIndex, 1,
+          reason: 'stream 0 is PGS and must stay out of searchable cues');
+      expect(result.cues.map((AudioCue c) => c.text), <String>['hello mov']);
+      expect(backend.extractedSubtitleIndices, <int>[1],
+          reason:
+              'default load should demux the first text-capable track only');
+    });
+
+    test('文本轨抽取为空时返回可提示的失败状态，不静默空屏', () async {
+      final File video = File(p.join(tempDir.path, 'bad-text.mkv'))
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+      setFfmpegBackendForTesting(
+        _DefaultSubtitleFfmpegBackend(writeOutputs: false),
+      );
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCues(
+        videoPath: video.path,
+        bookUid: 'video/book',
+      );
+
+      expect(result.status, DefaultEmbeddedSubtitleLoadStatus.emptyCues);
+      expect(result.source?.streamIndex, 1);
+      expect(result.cues, isEmpty);
+    });
+
+    test('真实 ffmpeg 合成 mkv+SRT 与 mp4 mov_text 都能默认显示文本内封', () async {
+      final String? ffmpeg = await _workingFfmpegExecutable();
+      if (ffmpeg == null) {
+        markTestSkipped('ffmpeg 不可用，跳过合成内封字幕自验');
+        return;
+      }
+      setFfmpegBackendForTesting(null);
+      final File srt = File(p.join(tempDir.path, 'sample.srt'))
+        ..writeAsStringSync('''
+1
+00:00:00,000 --> 00:00:01,000
+synthetic subtitle
+''');
+
+      final File mkv = File(p.join(tempDir.path, 'sample.mkv'));
+      final String? mkvError = await _runFfmpeg(
+        ffmpeg,
+        <String>[
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=black:s=16x16:d=2',
+          '-f',
+          'srt',
+          '-i',
+          srt.path,
+          '-map',
+          '0:v:0',
+          '-map',
+          '1:0',
+          '-c:v',
+          'mpeg4',
+          '-c:s',
+          'srt',
+          '-t',
+          '2',
+          mkv.path,
+        ],
+      );
+      if (mkvError != null) {
+        markTestSkipped('ffmpeg 无法合成 mkv+srt: $mkvError');
+        return;
+      }
+
+      final DefaultEmbeddedSubtitleLoadResult mkvResult =
+          await loadDefaultTextEmbeddedSubtitleCues(
+        videoPath: mkv.path,
+        bookUid: 'video/mkv',
+      );
+      expect(mkvResult.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
+      expect(mkvResult.source?.codec, 'subrip');
+      expect(mkvResult.cues.single.text, 'synthetic subtitle');
+
+      final File mp4 = File(p.join(tempDir.path, 'sample.mp4'));
+      final String? mp4Error = await _runFfmpeg(
+        ffmpeg,
+        <String>[
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=black:s=16x16:d=2',
+          '-f',
+          'srt',
+          '-i',
+          srt.path,
+          '-map',
+          '0:v:0',
+          '-map',
+          '1:0',
+          '-c:v',
+          'mpeg4',
+          '-c:s',
+          'mov_text',
+          '-t',
+          '2',
+          mp4.path,
+        ],
+      );
+      if (mp4Error != null) {
+        markTestSkipped('ffmpeg 无法合成 mp4 mov_text: $mp4Error');
+        return;
+      }
+
+      final DefaultEmbeddedSubtitleLoadResult mp4Result =
+          await loadDefaultTextEmbeddedSubtitleCues(
+        videoPath: mp4.path,
+        bookUid: 'video/mp4',
+      );
+      expect(mp4Result.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
+      expect(mp4Result.source?.codec, 'mov_text');
+      expect(mp4Result.cues.single.text, 'synthetic subtitle');
+    }, timeout: const Timeout(Duration(seconds: 60)));
   });
 }
 
@@ -761,5 +943,83 @@ class _TimeoutCapturingBackend implements FfmpegBackend {
       output: '  Stream #0:2(eng): Subtitle: ass (ssa) (default)\n'
           'At least one output file must be specified',
     );
+  }
+}
+
+class _ProbeResultBackend implements FfmpegBackend {
+  const _ProbeResultBackend(this.result);
+
+  final FfmpegRunResult result;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    return result;
+  }
+}
+
+class _DefaultSubtitleFfmpegBackend implements FfmpegBackend {
+  _DefaultSubtitleFfmpegBackend({this.writeOutputs = true});
+
+  final bool writeOutputs;
+  final List<int> extractedSubtitleIndices = <int>[];
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    if (args.contains('-hide_banner')) {
+      return const FfmpegRunResult(returnCode: 1, output: '''
+  Stream #0:0: Video: h264
+  Stream #0:1(jpn): Subtitle: hdmv_pgs_subtitle
+  Stream #0:2(jpn): Subtitle: mov_text (tx3g / 0x67337874) (default)
+  Stream #0:3(eng): Subtitle: dvd_subtitle
+''');
+    }
+
+    for (int i = 0; i < args.length - 2; i++) {
+      if (args[i] == '-map' && args[i + 1].startsWith('0:s:')) {
+        final int index = int.parse(args[i + 1].substring('0:s:'.length));
+        extractedSubtitleIndices.add(index);
+        if (writeOutputs) {
+          final File output = File(args[i + 2]);
+          output.parent.createSync(recursive: true);
+          output.writeAsStringSync('''
+1
+00:00:01,000 --> 00:00:02,000
+hello mov
+''');
+        }
+      }
+    }
+    return const FfmpegRunResult(returnCode: 0, output: '');
+  }
+}
+
+Future<String?> _workingFfmpegExecutable() async {
+  for (final String executable in <String>[
+    'ffmpeg',
+    p.normalize('../third_party/ffmpeg-min/windows/ffmpeg.exe'),
+  ]) {
+    try {
+      final ProcessResult result = await Process.run(
+        executable,
+        <String>['-hide_banner', '-version'],
+      ).timeout(const Duration(seconds: 10));
+      if (result.exitCode == 0) return executable;
+    } catch (_) {
+      // Try the next candidate.
+    }
+  }
+  return null;
+}
+
+Future<String?> _runFfmpeg(String executable, List<String> args) async {
+  try {
+    final ProcessResult result = await Process.run(
+      executable,
+      args,
+    ).timeout(const Duration(seconds: 20));
+    if (result.exitCode == 0) return null;
+    return '${result.exitCode}: ${result.stderr}'.trim();
+  } catch (e) {
+    return e.toString();
   }
 }

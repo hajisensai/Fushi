@@ -43,6 +43,30 @@ class EmbeddedSubtitleTrack {
   final String? title;
 }
 
+enum EmbeddedSubtitleTrackProbeStatus {
+  success,
+  missingFile,
+  timeout,
+  ffmpegUnavailable,
+  failed,
+}
+
+class EmbeddedSubtitleTrackProbeResult {
+  const EmbeddedSubtitleTrackProbeResult({
+    required this.tracks,
+    required this.status,
+    required this.timeout,
+    required this.sizeBytes,
+  });
+
+  final List<EmbeddedSubtitleTrack> tracks;
+  final EmbeddedSubtitleTrackProbeStatus status;
+  final Duration timeout;
+  final int sizeBytes;
+
+  bool get timedOut => status == EmbeddedSubtitleTrackProbeStatus.timeout;
+}
+
 /// 字幕文本格式（决定用哪个 parser）。
 enum SubtitleFormat { srt, ass, vtt }
 
@@ -287,6 +311,54 @@ class SubtitleSource {
       isEmbedded && subtitleFormatForCodec(codec ?? '') == null;
 }
 
+class SubtitleSourceListing {
+  const SubtitleSourceListing({
+    required this.sources,
+    required this.embeddedProbe,
+  });
+
+  final List<SubtitleSource> sources;
+  final EmbeddedSubtitleTrackProbeResult embeddedProbe;
+}
+
+enum DefaultEmbeddedSubtitleLoadStatus {
+  loaded,
+  missingFile,
+  enumerationTimeout,
+  enumerationFailed,
+  noEmbeddedTracks,
+  noTextTrack,
+  emptyCues,
+}
+
+class DefaultEmbeddedSubtitleLoadResult {
+  const DefaultEmbeddedSubtitleLoadResult({
+    required this.status,
+    required this.cues,
+    required this.embeddedProbe,
+    this.source,
+  });
+
+  final DefaultEmbeddedSubtitleLoadStatus status;
+  final List<AudioCue> cues;
+  final EmbeddedSubtitleTrackProbeResult embeddedProbe;
+  final SubtitleSource? source;
+
+  bool get shouldNotifyFailure {
+    switch (status) {
+      case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
+      case DefaultEmbeddedSubtitleLoadStatus.enumerationFailed:
+      case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
+        return true;
+      case DefaultEmbeddedSubtitleLoadStatus.loaded:
+      case DefaultEmbeddedSubtitleLoadStatus.missingFile:
+      case DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks:
+      case DefaultEmbeddedSubtitleLoadStatus.noTextTrack:
+        return false;
+    }
+  }
+}
+
 /// 跑 `ffmpeg -i <videoPath>` 并解析 stderr 得到所有内嵌字幕轨（IO 包装）。
 ///
 /// `ffmpeg -i` 无输出文件时退出码非 0，但 stderr 仍含完整流信息，属正常；故不看
@@ -303,35 +375,87 @@ class SubtitleSource {
 /// （字幕菜单「一个字幕没有」的真根因；离线单跑 ffmpeg 无争用故复现不出）。
 /// 抽取路径（[subtitleExtractTimeoutForBytes]，BUG-104）早已学到这一课，枚举路径
 /// 当时漏改；本修复让两条路径用同一条 size-scaled 超时，消除这类静默失败。
-Future<List<EmbeddedSubtitleTrack>> listEmbeddedSubtitleTracks(
+Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
   String videoPath,
 ) async {
-  if (!File(videoPath).existsSync()) return const <EmbeddedSubtitleTrack>[];
+  final int sizeBytes = _fileSizeOrZero(videoPath);
+  final Duration timeout = subtitleExtractTimeoutForBytes(sizeBytes);
+  if (!File(videoPath).existsSync()) {
+    return EmbeddedSubtitleTrackProbeResult(
+      tracks: const <EmbeddedSubtitleTrack>[],
+      status: EmbeddedSubtitleTrackProbeStatus.missingFile,
+      timeout: timeout,
+      sizeBytes: sizeBytes,
+    );
+  }
   try {
     // 经统一 FfmpegBackend 跑 `-i`（CLI 后端 = 旧 Process 路径；捆绑后端可在移动端
     // 工作），解析合并的 stderr 输出。`-i` 无输出文件时退出码非 0，但 stderr 仍含
     // 完整流信息，故只看 output 不看退出码。超时按容器字节数放大（见上）。
     final FfmpegRunResult result = await resolveFfmpegBackend().run(
       <String>['-hide_banner', '-i', videoPath],
-      subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath)),
+      timeout,
     );
-    // 真正失败（超时 SIGKILL → returnCode:null，且 ffmpeg 一旦跑起来 `-i` 必写 stderr，
-    // 故空输出 = 没真正探测到）必须留痕，否则「0 条字幕」与「真无字幕」无从区分，
-    // 整类静默失败不可调试。不吞，记一条诊断（不抛，保持优雅降级契约）。
-    if (result.returnCode == null && result.output.isEmpty) {
+    final List<EmbeddedSubtitleTrack> tracks =
+        parseSubtitleStreamsFromFfmpegLog(result.output);
+    // 真正失败（超时 SIGKILL → returnCode:null）必须留痕，否则「0 条字幕」与
+    // 「真无字幕」无从区分，整类静默失败不可调试。不抛，保持优雅降级契约。
+    if (result.returnCode == null) {
       debugPrint(
         '[VideoSubtitleSource] embedded enumeration timed out for "$videoPath" '
-        '(size=${_fileSizeOrZero(videoPath)} bytes) — menu will show no '
+        '(size=$sizeBytes bytes) — menu will show no '
         'embedded subtitles this time',
       );
+      return EmbeddedSubtitleTrackProbeResult(
+        tracks: tracks,
+        status: EmbeddedSubtitleTrackProbeStatus.timeout,
+        timeout: timeout,
+        sizeBytes: sizeBytes,
+      );
     }
-    return parseSubtitleStreamsFromFfmpegLog(result.output);
-  } on ProcessException {
+    if (result.returnCode != 0 && result.output.trim().isEmpty) {
+      debugPrint(
+        '[VideoSubtitleSource] embedded enumeration failed without ffmpeg '
+        'diagnostics for "$videoPath" (returnCode=${result.returnCode}, '
+        'size=$sizeBytes bytes)',
+      );
+      return EmbeddedSubtitleTrackProbeResult(
+        tracks: const <EmbeddedSubtitleTrack>[],
+        status: EmbeddedSubtitleTrackProbeStatus.failed,
+        timeout: timeout,
+        sizeBytes: sizeBytes,
+      );
+    }
+    return EmbeddedSubtitleTrackProbeResult(
+      tracks: tracks,
+      status: EmbeddedSubtitleTrackProbeStatus.success,
+      timeout: timeout,
+      sizeBytes: sizeBytes,
+    );
+  } on ProcessException catch (e) {
     // ffmpeg 未安装：优雅降级为无内嵌字幕。
-    return const <EmbeddedSubtitleTrack>[];
-  } catch (_) {
-    return const <EmbeddedSubtitleTrack>[];
+    debugPrint('[VideoSubtitleSource] ffmpeg unavailable: $e');
+    return EmbeddedSubtitleTrackProbeResult(
+      tracks: const <EmbeddedSubtitleTrack>[],
+      status: EmbeddedSubtitleTrackProbeStatus.ffmpegUnavailable,
+      timeout: timeout,
+      sizeBytes: sizeBytes,
+    );
+  } catch (e, stack) {
+    debugPrint('[VideoSubtitleSource] embedded enumeration failed: $e\n$stack');
+    return EmbeddedSubtitleTrackProbeResult(
+      tracks: const <EmbeddedSubtitleTrack>[],
+      status: EmbeddedSubtitleTrackProbeStatus.failed,
+      timeout: timeout,
+      sizeBytes: sizeBytes,
+    );
   }
+}
+
+Future<List<EmbeddedSubtitleTrack>> listEmbeddedSubtitleTracks(
+  String videoPath,
+) async {
+  return (await probeEmbeddedSubtitleTracks(videoPath)).tracks;
 }
 
 /// 视频同目录的外挂字幕扩展名（小写比较）。
@@ -436,16 +560,16 @@ String _externalSubtitleSuffix(String path) {
 /// srt/ass/ssa/vtt（含 `.ja.srt` 等带语言后缀），见 [pickSameNameSubs]——别集字幕
 /// 不列。[langCode] 是 app 学习语言代码，让带该语言标记的外挂字幕排在前。目录读取
 /// 失败时只返回内嵌部分。
-Future<List<SubtitleSource>> listAllSubtitleSources(
+Future<SubtitleSourceListing> listAllSubtitleSourcesWithDiagnostics(
   String videoPath, {
   required String langCode,
 }) async {
   final List<SubtitleSource> sources = <SubtitleSource>[];
 
   // ① 内嵌轨。
-  final List<EmbeddedSubtitleTrack> embedded =
-      await listEmbeddedSubtitleTracks(videoPath);
-  for (final EmbeddedSubtitleTrack track in embedded) {
+  final EmbeddedSubtitleTrackProbeResult embeddedProbe =
+      await probeEmbeddedSubtitleTracks(videoPath);
+  for (final EmbeddedSubtitleTrack track in embeddedProbe.tracks) {
     sources.add(SubtitleSource.embedded(
       streamIndex: track.streamIndex,
       language: track.language,
@@ -477,7 +601,21 @@ Future<List<SubtitleSource>> listAllSubtitleSources(
     }
   }
 
-  return sources;
+  return SubtitleSourceListing(
+    sources: sources,
+    embeddedProbe: embeddedProbe,
+  );
+}
+
+Future<List<SubtitleSource>> listAllSubtitleSources(
+  String videoPath, {
+  required String langCode,
+}) async {
+  return (await listAllSubtitleSourcesWithDiagnostics(
+    videoPath,
+    langCode: langCode,
+  ))
+      .sources;
 }
 
 typedef SubtitleCueLoader = Future<List<AudioCue>> Function(
@@ -549,6 +687,16 @@ bool sameExternalSubtitlePathForMenu(
       _subtitleMenuPathKey(currentSubtitleSource);
 }
 
+SubtitleSource? firstTextEmbeddedSubtitleSource(
+  Iterable<SubtitleSource> sources,
+) {
+  for (final SubtitleSource source in sources) {
+    if (!source.isEmbedded) continue;
+    if (subtitleFormatForCodec(source.codec ?? '') != null) return source;
+  }
+  return null;
+}
+
 String _subtitleMenuPathKey(String path) {
   final String key = p.canonicalize(path);
   return Platform.isWindows ? key.toLowerCase() : key;
@@ -583,6 +731,83 @@ Future<List<AudioCue>> loadCuesForSource(
     return _loadEmbeddedCues(source, videoPath, bookUid);
   }
   return _loadExternalCues(source, bookUid);
+}
+
+Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
+  required String videoPath,
+  required String bookUid,
+  String langCode = 'ja',
+}) async {
+  final SubtitleSourceListing listing =
+      await listAllSubtitleSourcesWithDiagnostics(
+    videoPath,
+    langCode: langCode,
+  );
+  final EmbeddedSubtitleTrackProbeResult probe = listing.embeddedProbe;
+  if (probe.status == EmbeddedSubtitleTrackProbeStatus.missingFile) {
+    return DefaultEmbeddedSubtitleLoadResult(
+      status: DefaultEmbeddedSubtitleLoadStatus.missingFile,
+      cues: const <AudioCue>[],
+      embeddedProbe: probe,
+    );
+  }
+  if (probe.status == EmbeddedSubtitleTrackProbeStatus.timeout &&
+      probe.tracks.isEmpty) {
+    return DefaultEmbeddedSubtitleLoadResult(
+      status: DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+      cues: const <AudioCue>[],
+      embeddedProbe: probe,
+    );
+  }
+  if ((probe.status == EmbeddedSubtitleTrackProbeStatus.failed ||
+          probe.status == EmbeddedSubtitleTrackProbeStatus.ffmpegUnavailable) &&
+      probe.tracks.isEmpty) {
+    return DefaultEmbeddedSubtitleLoadResult(
+      status: DefaultEmbeddedSubtitleLoadStatus.enumerationFailed,
+      cues: const <AudioCue>[],
+      embeddedProbe: probe,
+    );
+  }
+
+  final bool hasEmbedded =
+      listing.sources.any((SubtitleSource source) => source.isEmbedded);
+  if (!hasEmbedded) {
+    return DefaultEmbeddedSubtitleLoadResult(
+      status: DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks,
+      cues: const <AudioCue>[],
+      embeddedProbe: probe,
+    );
+  }
+
+  final SubtitleSource? chosen =
+      firstTextEmbeddedSubtitleSource(listing.sources);
+  if (chosen == null) {
+    return DefaultEmbeddedSubtitleLoadResult(
+      status: DefaultEmbeddedSubtitleLoadStatus.noTextTrack,
+      cues: const <AudioCue>[],
+      embeddedProbe: probe,
+    );
+  }
+
+  final List<AudioCue> cues = await loadCuesForSource(
+    chosen,
+    videoPath,
+    bookUid,
+  );
+  if (cues.isEmpty) {
+    return DefaultEmbeddedSubtitleLoadResult(
+      status: DefaultEmbeddedSubtitleLoadStatus.emptyCues,
+      source: chosen,
+      cues: const <AudioCue>[],
+      embeddedProbe: probe,
+    );
+  }
+  return DefaultEmbeddedSubtitleLoadResult(
+    status: DefaultEmbeddedSubtitleLoadStatus.loaded,
+    source: chosen,
+    cues: cues,
+    embeddedProbe: probe,
+  );
 }
 
 Future<List<AudioCue>> _loadEmbeddedCues(

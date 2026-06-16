@@ -192,4 +192,33 @@ void main() {
     expect(osd.contains('_osdNotifier'), isTrue,
         reason: 'OSD 监听 _osdNotifier 渲染当前消息');
   });
+
+  test('TODO-446: 自动文本内封字幕抽取失败必须走 OSD 提示', () {
+    final String applyLoad = region(
+      'Future<void> _applyLoad({',
+      '/// 位置持久化（controller 每秒至多一次回调）。',
+    );
+    expect(
+      applyLoad.contains('onEmbeddedSubtitleAutoLoad:'),
+      isTrue,
+      reason: 'load 后后台自动抽文本内封字幕；失败不能只 debugPrint，必须回调页面显示 OSD',
+    );
+    expect(
+      applyLoad.contains('_handleEmbeddedSubtitleAutoLoad'),
+      isTrue,
+      reason: '自动抽取结果应统一交给页面处理成功/失败提示',
+    );
+
+    final String handler = region(
+      'void _handleEmbeddedSubtitleAutoLoad(',
+      '/// 位置持久化（controller 每秒至多一次回调）。',
+    );
+    expect(
+        handler.contains('DefaultEmbeddedSubtitleLoadStatus.loaded'), isTrue);
+    expect(handler.contains('_currentSubtitleSource'), isTrue,
+        reason: '自动加载成功后菜单高亮应跟随默认内封文本轨');
+    expect(handler.contains('_showOsd('), isTrue, reason: '自动加载失败必须给用户可见反馈');
+    expect(handler.contains('t.video_subtitle_load_failed'), isTrue,
+        reason: '复用现有字幕加载失败 OSD 文案，避免静默空屏');
+  });
 }
