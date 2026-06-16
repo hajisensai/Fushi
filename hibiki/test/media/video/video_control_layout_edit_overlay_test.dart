@@ -117,6 +117,42 @@ void main() {
         contains(VideoControlItem.screenshot));
   });
 
+  testWidgets(
+      'onscreen overlay excludes fixed subtitle and audio chrome from dragging',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (_) async {},
+    );
+
+    expect(_paletteChip(VideoControlItem.speed), findsOneWidget);
+    expect(_paletteChip(VideoControlItem.screenshot), findsOneWidget);
+    expect(_paletteChip(VideoControlItem.subtitleTrack), findsNothing);
+    expect(_paletteChip(VideoControlItem.audioTrack), findsNothing);
+    expect(
+      _placedChip(VideoControlItem.subtitleTrack, VideoControlSlot.topRight),
+      findsNothing,
+    );
+    expect(
+      _placedChip(VideoControlItem.audioTrack, VideoControlSlot.topRight),
+      findsNothing,
+    );
+
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Draggable<VideoControlDragData> &&
+            (w.data?.item == VideoControlItem.subtitleTrack ||
+                w.data?.item == VideoControlItem.audioTrack),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('onscreen overlay close button exits edit mode',
       (WidgetTester tester) async {
     bool closed = false;

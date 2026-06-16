@@ -25,6 +25,26 @@ class VideoControlLayoutEditOverlay extends StatefulWidget {
 
 class _VideoControlLayoutEditOverlayState
     extends State<VideoControlLayoutEditOverlay> {
+  /// Buttons that TODO-440 allows users to directly rearrange on the video
+  /// surface. Keep this separate from [VideoControlItem.customizableItems]:
+  /// subtitle/audio track are native fixed top-bar chrome for this phase.
+  static const List<VideoControlItem> _onVideoDraggableItems =
+      <VideoControlItem>[
+    VideoControlItem.speed,
+    VideoControlItem.subtitleList,
+    VideoControlItem.favoriteSentence,
+    VideoControlItem.favoriteSentences,
+    VideoControlItem.settings,
+    VideoControlItem.playPause,
+    VideoControlItem.seekBackward,
+    VideoControlItem.seekForward,
+    VideoControlItem.previousCue,
+    VideoControlItem.nextCue,
+    VideoControlItem.fullscreen,
+    VideoControlItem.screenshot,
+    VideoControlItem.episodeList,
+  ];
+
   late VideoControlLayout _layout = widget.layout;
 
   @override
@@ -220,8 +240,7 @@ class _VideoControlLayoutEditOverlayState
               spacing: 6,
               runSpacing: 6,
               children: <Widget>[
-                for (final VideoControlItem item
-                    in VideoControlItem.customizableItems)
+                for (final VideoControlItem item in _onVideoDraggableItems)
                   _buildDraggableControlChip(item, sourceSlot: null),
               ],
             ),
@@ -254,13 +273,14 @@ class _VideoControlLayoutEditOverlayState
     final ColorScheme cs = theme.colorScheme;
     final List<VideoControlItem> items = <VideoControlItem>[
       for (final VideoControlItem item in _layout.itemsIn(slot))
-        if (item.isChipRenderable) item,
+        if (_isOnVideoDraggableItem(item)) item,
     ];
     return DragTarget<VideoControlDragData>(
       key: ValueKey<String>('video-control-edit-slot-${slot.storageValue}'),
       onWillAcceptWithDetails:
           (DragTargetDetails<VideoControlDragData> details) {
         final VideoControlItem item = details.data.item;
+        if (!_isOnVideoDraggableItem(item)) return false;
         if (item.pinnedRequired && slot == VideoControlSlot.hidden) {
           return false;
         }
@@ -359,6 +379,9 @@ class _VideoControlLayoutEditOverlayState
       child: chip,
     );
   }
+
+  bool _isOnVideoDraggableItem(VideoControlItem item) =>
+      _onVideoDraggableItems.contains(item);
 
   Widget _controlChipBody(VideoControlItem item, {required bool dragging}) {
     final ThemeData theme = Theme.of(context);
