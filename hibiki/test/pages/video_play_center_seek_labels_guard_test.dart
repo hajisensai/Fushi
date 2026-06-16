@@ -20,6 +20,7 @@ void main() {
 
   late String src;
   late String helper;
+  late String slotButtonBuilder;
   setUpAll(() {
     expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
     src = page.readAsStringSync();
@@ -29,6 +30,12 @@ void main() {
     final int end = src.indexOf('Widget _seekLabelButton(', start);
     expect(end, greaterThan(start));
     helper = src.substring(start, end);
+    final int slotStart = src.indexOf('Widget _buildBottomSlotButton(');
+    expect(slotStart, greaterThanOrEqualTo(0),
+        reason: '底栏 slot button builder 应承载具体 seek/cue 控件');
+    final int slotEnd = src.indexOf('Widget _plainSlotButton(', slotStart);
+    expect(slotEnd, greaterThan(slotStart));
+    slotButtonBuilder = src.substring(slotStart, slotEnd);
   });
 
   test('桌面 + 移动底栏共用同一居中 helper（不再各自 Spacer 平铺 5 键）', () {
@@ -60,9 +67,14 @@ void main() {
 
   test('seek 按钮带可见标注（±10s），不只有 tooltip', () {
     // ±10s 经 _seekLabelButton 带可见 label。
-    expect(helper.contains('label: t.video_bottom_seek_back_label'), isTrue,
+    expect(helper.contains('VideoControlSlot.bottomCenter'), isTrue,
+        reason: '居中 transport 应从 bottomCenter slot 渲染');
+    expect(slotButtonBuilder.contains('label: t.video_bottom_seek_back_label'),
+        isTrue,
         reason: '−10s 按钮应带可见标注');
-    expect(helper.contains('label: t.video_bottom_seek_forward_label'), isTrue,
+    expect(
+        slotButtonBuilder.contains('label: t.video_bottom_seek_forward_label'),
+        isTrue,
         reason: '+10s 按钮应带可见标注');
     expect(src.contains('Widget _seekLabelButton('), isTrue,
         reason: '应有带可见标注的 seek 按钮构造器');
@@ -74,17 +86,18 @@ void main() {
 
   test('上/下一句走动态 cue 导航（_asbConfig.seekSeconds），不写死 ±3s', () {
     // skip 键走 _skipCueAndPokeControls（内部用 _asbConfig.seekSeconds 对称回退/前进）。
-    // 桌面/移动两分支各一次 → 各出现 2 次。
     expect(
-      '_skipCueAndPokeControls(forward: false)'.allMatches(helper).length,
-      2,
-      reason: '上一句（桌面+移动两分支）应走 _skipCueAndPokeControls（动态 seekSeconds）',
+      slotButtonBuilder.contains('_skipCueAndPokeControls(forward: false)'),
+      isTrue,
+      reason: '上一句应走 _skipCueAndPokeControls（动态 seekSeconds）',
     );
     expect(
-      '_skipCueAndPokeControls(forward: true)'.allMatches(helper).length,
-      2,
-      reason: '下一句（桌面+移动两分支）应走 _skipCueAndPokeControls（动态 seekSeconds）',
+      slotButtonBuilder.contains('_skipCueAndPokeControls(forward: true)'),
+      isTrue,
+      reason: '下一句应走 _skipCueAndPokeControls（动态 seekSeconds）',
     );
+    expect(src.contains('seekSeconds: _asbConfig.seekSeconds'), isTrue,
+        reason: 'cue navigation 应读取动态 ASB seekSeconds');
     // 不在 skip 键上写死任何固定秒数（如 3000 / seekSeconds: 3）。
     expect(helper.contains('seekSeconds: 3'), isFalse,
         reason: '上/下一句不应写死 ±3s，必须跟随 _asbConfig.seekSeconds');

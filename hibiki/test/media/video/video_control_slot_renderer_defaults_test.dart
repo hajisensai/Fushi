@@ -20,9 +20,8 @@ import 'package:hibiki/src/media/video/video_control_customization.dart';
 /// video_single_top_bar / video_mobile_controls_static). Here we lock the
 /// data-layer mapping the renderer consumes.
 void main() {
-  /// Learning-key subset of a slot, in render order (mirrors the page's private
-  /// `_slotLearningButtons`: iterate the slot's ordered items, keep the ones
-  /// that map back to a legacy [VideoControlButton]).
+  /// Learning-key subset of a slot, in render order: iterate the slot's ordered
+  /// items and keep the ones that map back to a legacy [VideoControlButton].
   List<VideoControlButton> slotLearningButtons(
     VideoControlLayout layout,
     VideoControlSlot slot,
@@ -143,14 +142,16 @@ void main() {
               'VideoControlLayout.fromLegacy(_controlCustomization)')));
     });
 
-    test('all four customizable render points go through _slotLearningButtons',
-        () {
-      expect(src, contains('List<VideoControlButton> _slotLearningButtons('));
-      // bottom bar left/right + screen left/right rails all resolve from slots.
-      expect(
-          src, contains('_slotLearningButtons(VideoControlSlot.bottomLeft)'));
-      expect(
-          src, contains('_slotLearningButtons(VideoControlSlot.bottomRight)'));
+    test('customizable render points go through slot-driven item helpers', () {
+      expect(src, contains('List<VideoControlItem> _slotChipItems('));
+      // Top bar, bottom bar, and screen rails all resolve from slots.
+      expect(src, contains('_topBarSlotButtons(VideoControlSlot.topLeft'));
+      expect(src, contains('_topBarSlotButtons(VideoControlSlot.topRight'));
+      expect(src, contains('_bottomSlotButtons('));
+      expect(src, contains('VideoControlSlot.bottomLeft'));
+      expect(src, contains('VideoControlSlot.bottomRight'));
+      expect(src, contains('VideoControlSlot.bottomCenter'));
+      expect(src, contains('_buildVideoSideRailFor('));
       expect(src, contains('VideoControlSlot.screenLeft'));
       expect(src, contains('VideoControlSlot.screenRight'));
       // Legacy direct placement lookups removed from the render path.

@@ -441,20 +441,24 @@ class _VideoControlLayoutEditOverlayState
                 sourceIndex: sourceIndex,
                 maxWidth: 112,
               ),
-              IconButton(
-                tooltip: t.video_control_remove_from_slot,
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 28,
+              Theme(
+                data: theme.copyWith(
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                icon: Icon(
-                  Icons.close,
-                  size: 14,
-                  color: cs.onSecondaryContainer,
+                child: IconButton(
+                  tooltip: t.video_control_remove_from_slot,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
+                  icon: Icon(
+                    Icons.close,
+                    size: 14,
+                    color: cs.onSecondaryContainer,
+                  ),
+                  onPressed: () => _removeControlItem(item, sourceSlot),
                 ),
-                onPressed: () => _removeControlItem(item, sourceSlot),
               ),
             ],
           ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 
 /// BUG-134/147 follow-up source guard（随 TODO-274 + BUG-248B + BUG-257 刷新）。
 ///
@@ -24,11 +25,9 @@ void main() {
   }
 
   test('mobile top bar exposes actions directly without a more menu', () {
-    // TODO-274：themes 之后第一个成员是 _customBottomControlButtons，用它作为
-    // _mobileControlsTheme 方法体下界（旧 _showTrackMenu 已改名且前移）。
     final String body = region(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
-      'List<Widget> _customBottomControlButtons(',
+      'List<VideoControlItem> _slotChipItems(',
     );
     final String topBar = topButtonBarRegion(body);
     expect(topBar.contains('Icons.more_vert'), isFalse,
@@ -38,12 +37,20 @@ void main() {
     expect(topBar.contains('MediaQuery.of(context).size.width >= 600'), isFalse,
         reason:
             'top bar should not branch into narrow more menu / wide inline');
-    expect(topBar.contains('Icons.subtitles'), isTrue,
-        reason: 'subtitle source must be directly tappable in the top bar');
-    expect(topBar.contains('Icons.audiotrack'), isTrue,
-        reason: 'audio track must be directly tappable in the top bar');
-    expect(topBar.contains('Icons.photo_camera_outlined'), isTrue,
-        reason: 'screenshot action must remain directly tappable');
+    expect(
+        topBar.contains('_topBarSlotButtons(VideoControlSlot.topRight'), isTrue,
+        reason: 'top-right actions should be real top-bar slot buttons');
+    final List<VideoControlItem> topRightItems =
+        VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
+    expect(topRightItems.contains(VideoControlItem.subtitleTrack), isTrue,
+        reason: 'subtitle source must default into the real top-right slot');
+    expect(topRightItems.contains(VideoControlItem.audioTrack), isTrue,
+        reason: 'audio track must default into the real top-right slot');
+    expect(topRightItems.contains(VideoControlItem.screenshot), isTrue,
+        reason: 'screenshot action must default into the real top-right slot');
+    expect(src.contains('_showSubtitleSourceMenu(controller)'), isTrue);
+    expect(src.contains('_showAudioTrackMenu(controller)'), isTrue);
+    expect(src.contains('_saveScreenshot()'), isTrue);
     // BUG-248B：设置（tune）已从顶栏移出，改由可配置右侧 rail 承载（与桌面一致），
     // 故顶栏不再硬编码 tune 按钮；设置仍经数据化按钮模型可达。
     expect(topBar.contains('Icons.tune'), isFalse,
@@ -84,28 +91,28 @@ void main() {
       isTrue,
       reason: 'shared bottom bar should use the shared width predicate',
     );
-    expect(bar.contains('if (roomyBottomBar)'), isTrue,
+    expect(src.contains('if (roomyBottomBar)'), isTrue,
         reason:
             'shared bottom bar should hide 10s buttons only on narrow widths');
     expect(bar.contains('PositionIndicator'), isTrue);
-    expect(bar.contains('PlayOrPauseButton'), isTrue);
-    expect(bar.contains('_buildVolumeButton(controller'), isTrue,
+    expect(src.contains('PlayOrPauseButton'), isTrue);
+    expect(src.contains('_buildVolumeButton(controller'), isTrue,
         reason: 'bottom bar should expose a volume adjustment entry');
-    expect(bar.contains('_buildFullscreenButton('), isTrue,
+    expect(src.contains('_buildFullscreenButton('), isTrue,
         reason: 'bottom bar should use Hibiki neutralized fullscreen');
     // TODO-067: ±10s 按钮用左右对称的 fast_rewind/forward（取代显歪的 replay_10/forward_10），
     // 守卫意图仍是「宽屏保留 ±N 秒 seek 按钮」。BUG-257 合并后各只出现一次。
-    expect(bar.contains('Icons.fast_rewind_rounded'), isTrue,
+    expect(src.contains('Icons.fast_rewind_rounded'), isTrue,
         reason: 'shared bottom bar keeps -10s when width allows');
-    expect(bar.contains('Icons.fast_forward_rounded'), isTrue,
+    expect(src.contains('Icons.fast_forward_rounded'), isTrue,
         reason: 'shared bottom bar keeps +10s when width allows');
-    expect(bar.contains('Icons.replay_10'), isFalse,
+    expect(src.contains('Icons.replay_10'), isFalse,
         reason: 'lopsided replay_10 must stay replaced (TODO-067)');
-    expect(bar.contains('Icons.forward_10'), isFalse,
+    expect(src.contains('Icons.forward_10'), isFalse,
         reason: 'lopsided forward_10 must stay replaced (TODO-067)');
-    expect(bar.contains('Icons.skip_previous'), isTrue,
+    expect(src.contains('Icons.skip_previous'), isTrue,
         reason: 'shared bottom bar keeps previous subtitle cue');
-    expect(bar.contains('Icons.skip_next'), isTrue,
+    expect(src.contains('Icons.skip_next'), isTrue,
         reason: 'shared bottom bar keeps next subtitle cue');
   });
 }

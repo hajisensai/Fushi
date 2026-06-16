@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 
 /// 守卫（TODO-162）：视频页（HomeVideoPage）顶栏三个动作按钮的排列顺序，必须与
 /// 书架（ReaderHibikiHistoryPage）顶栏三个动作按钮的相对顺序完全一致——以书架为基准。
@@ -68,36 +69,24 @@ void main() {
 
   test('播放器顶栏片段导出按钮紧挨截图按钮', () {
     final String text = playerSrc.readAsStringSync();
-    final int desktopThemeIdx = text.indexOf(
-      'MaterialDesktopVideoControlsThemeData _desktopControlsTheme',
+    final List<VideoControlItem> topRightItems =
+        VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
+    final int screenshot = topRightItems.indexOf(VideoControlItem.screenshot);
+    final int clip = topRightItems.indexOf(VideoControlItem.clipExport);
+    expect(screenshot, greaterThanOrEqualTo(0), reason: '顶栏应保留截图按钮');
+    expect(clip, greaterThanOrEqualTo(0), reason: '顶栏应新增片段导出按钮');
+    expect(clip, greaterThan(screenshot), reason: '片段导出必须放在截图按钮后面');
+    expect(clip, screenshot + 1, reason: '片段导出必须紧挨截图按钮，中间不能插入其它按钮');
+    expect(
+      '_topBarSlotButtons(VideoControlSlot.topRight, controller'
+          .allMatches(text)
+          .length,
+      greaterThanOrEqualTo(2),
+      reason: '桌面与移动顶栏都应渲染 topRight slot',
     );
-    expect(desktopThemeIdx, greaterThanOrEqualTo(0), reason: '应有桌面视频控制条主题');
-    final int mobileThemeIdx = text.indexOf(
-      'MaterialVideoControlsThemeData _mobileControlsTheme',
-      desktopThemeIdx,
-    );
-    expect(mobileThemeIdx, greaterThan(desktopThemeIdx), reason: '桌面主题后应有移动主题');
-    final String desktopBlock = text.substring(desktopThemeIdx, mobileThemeIdx);
-    final int desktopScreenshot = desktopBlock.indexOf(
-      'Icons.photo_camera_outlined',
-    );
-    final int desktopClip = desktopBlock.indexOf('_toggleClipExport');
-    expect(desktopScreenshot, greaterThanOrEqualTo(0), reason: '桌面顶栏应保留截图按钮');
-    expect(desktopClip, greaterThanOrEqualTo(0), reason: '桌面顶栏应新增片段导出按钮');
-    expect(desktopClip, greaterThan(desktopScreenshot),
-        reason: '桌面片段导出必须放在截图按钮后面');
-
-    final int end =
-        text.indexOf('Widget _buildVideoControlButton', mobileThemeIdx);
-    expect(end, greaterThan(mobileThemeIdx));
-    final String mobileBlock = text.substring(mobileThemeIdx, end);
-    final int mobileScreenshot = mobileBlock.indexOf(
-      'Icons.photo_camera_outlined',
-    );
-    final int mobileClip = mobileBlock.indexOf('_toggleClipExport');
-    expect(mobileScreenshot, greaterThanOrEqualTo(0), reason: '移动顶栏应保留截图按钮');
-    expect(mobileClip, greaterThanOrEqualTo(0), reason: '移动顶栏应新增片段导出按钮');
-    expect(mobileClip, greaterThan(mobileScreenshot),
-        reason: '移动片段导出必须放在截图按钮后面');
+    expect(text.contains('case VideoControlItem.screenshot:'), isTrue);
+    expect(text.contains('_saveScreenshot()'), isTrue);
+    expect(text.contains('case VideoControlItem.clipExport:'), isTrue);
+    expect(text.contains('_toggleClipExport()'), isTrue);
   });
 }

@@ -758,12 +758,13 @@ class VideoControlLayout {
 
   /// Decode persisted string; auto-detects v1 (old placements) / v2 (new slots)
   /// and backfills missing buttons. Any unparseable input falls back to
-  /// [defaults] and never throws.
+  /// [currentChrome] and never throws, so upgrading users do not see the player
+  /// chrome move until they explicitly save a new visual layout.
   static VideoControlLayout decode(String json) {
-    if (json.trim().isEmpty) return defaults;
+    if (json.trim().isEmpty) return currentChrome;
     try {
       final Object? raw = jsonDecode(json);
-      if (raw is! Map<String, dynamic>) return defaults;
+      if (raw is! Map<String, dynamic>) return currentChrome;
       final Object? version = raw['version'];
       // v1: old 3-tier placements -> new slots (backward-compat iron rule).
       if (raw.containsKey('placements')) {
@@ -773,20 +774,20 @@ class VideoControlLayout {
       if (version == 2 && slotsRaw is Map<String, dynamic>) {
         return _decodeV2(slotsRaw);
       }
-      return defaults;
+      return currentChrome;
     } catch (_) {
-      return defaults;
+      return currentChrome;
     }
   }
 
   /// v1->v2 migration: bottom->bottomRight / rightRail->screenRight /
   /// settingsOnly->hidden. Old model only had 5 learning keys; transport keys
-  /// keep their v2 default slots (the old model never tracked them).
+  /// keep their current chrome slots (the old model never tracked them).
   static VideoControlLayout _migrateFromV1(Object? placementsRaw) {
     final Map<VideoControlItem, VideoControlSlot> assignments =
         <VideoControlItem, VideoControlSlot>{
       for (final VideoControlItem item in VideoControlItem.values)
-        item: defaults.slotOf(item),
+        item: currentChrome.slotOf(item),
     };
     if (placementsRaw is Map<String, dynamic>) {
       for (final MapEntry<String, dynamic> entry in placementsRaw.entries) {
@@ -836,7 +837,7 @@ class VideoControlLayout {
     final Map<VideoControlItem, VideoControlSlot> fallback =
         <VideoControlItem, VideoControlSlot>{
       for (final VideoControlItem item in VideoControlItem.values)
-        item: defaults.slotOf(item),
+        item: currentChrome.slotOf(item),
     };
     // fromSlots (not fromAssignments) so a button persisted into several slots
     // survives the round trip (TODO-399 one-button-many-positions).
@@ -881,7 +882,7 @@ class VideoControlLayout {
       case VideoControlItem.playPause:
         return VideoControlSlot.bottomCenter;
       case VideoControlItem.settings:
-        return VideoControlSlot.bottomRight;
+        return VideoControlSlot.screenRight;
       default:
         return VideoControlSlot.bottomRight;
     }

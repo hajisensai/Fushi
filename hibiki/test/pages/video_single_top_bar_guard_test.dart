@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 
 /// 源码守卫：视频播放页只保留**一条**顶栏（BUG-102）。
 ///
@@ -33,12 +34,22 @@ void main() {
   test('返回按钮进入视频内顶栏（桌面+移动两套主题各一）', () {
     // 删了 AppBar 自带的返回箭头后，返回必须改由视频内顶栏提供，且全屏可达。
     expect(
-      'onPressed: () => Navigator.of(context).maybePop()'
+      '_topBarSlotButtons(VideoControlSlot.topLeft, controller'
           .allMatches(src)
           .length,
       greaterThanOrEqualTo(2),
-      reason: '桌面与移动两套 controls 主题的顶栏都应有返回按钮',
+      reason: '桌面与移动两套 controls 主题的顶栏都应渲染 topLeft slot',
     );
+    expect(
+        VideoControlLayout.currentChrome
+            .itemsIn(VideoControlSlot.topLeft)
+            .contains(VideoControlItem.back),
+        isTrue,
+        reason: '默认 topLeft slot 应承载返回按钮');
+    expect(src.contains('case VideoControlItem.back:'), isTrue,
+        reason: '返回按钮应继续接入 item dispatcher');
+    expect(src.contains('_handleBackOrExit()'), isTrue,
+        reason: 'topLeft 返回按钮应走视频退出 / 返回处理器');
   });
 
   test('标题进入视频内顶栏（响应式，全屏可刷新）', () {

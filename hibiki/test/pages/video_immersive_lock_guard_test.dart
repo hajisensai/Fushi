@@ -129,8 +129,15 @@ void main() {
   });
 
   test('④ 沉浸态常驻解锁层移到视频左侧居中（_buildSideLockButton，挂在 controls Stack）', () {
-    expect(src.contains('_buildSideLockButton(),'), isTrue,
+    final int railIdx = src.indexOf('Widget _buildVideoSideActionRail(');
+    expect(railIdx, greaterThanOrEqualTo(0),
+        reason: 'controls Stack 应该挂载侧边 rail / 锁按钮层');
+    expect(src.indexOf('_buildSideLockButton()', railIdx), greaterThan(railIdx),
         reason: '侧边锁 / 解锁层未挂进 controls Stack（全屏将看不到解锁按钮）');
+    expect(src.contains('_slotChipItems(VideoControlSlot.screenLeft)'), isTrue,
+        reason: '沉浸锁应能放进可调整的左侧 rail');
+    expect(src.contains('_slotChipItems(VideoControlSlot.screenRight)'), isTrue,
+        reason: '沉浸锁被移到右侧 rail 后也应仍可发现');
     expect(src.contains('Widget _buildSideLockButton()'), isTrue,
         reason: '缺侧边锁 / 解锁层构建函数');
     // 解锁层点击退出锁定。

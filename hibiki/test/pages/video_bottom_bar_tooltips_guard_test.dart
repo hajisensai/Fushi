@@ -2,14 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫：视频底栏 5 键都有 Tooltip + i18n key 存在（BUG-247 / TODO-282）。
-///
-/// 根因：底栏 5 键用 media_kit 的 [MaterialDesktopCustomButton] /
-/// [MaterialCustomButton] / [MaterialDesktopPlayOrPauseButton] /
-/// [MaterialPlayOrPauseButton]，均无 tooltip 参数，悬停无提示。修复用 Flutter
-/// [Tooltip] 包裹这 5 键，文案诚实反映双重语义（上一句/下一句在无字幕段退化成相对 seek）。
-///
-/// media_kit controls 跑不了 headless，故锁源码结构 + i18n 不变量。
+/// Source guard: the shared video bottom transport buttons keep tooltips and
+/// i18n keys. media_kit controls are not stable in headless widget tests, so
+/// this pins the page structure instead.
 void main() {
   final File page = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
@@ -21,23 +16,31 @@ void main() {
   late String i18nSrc;
   late String genSrc;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    expect(baseI18n.existsSync(), isTrue, reason: 'i18n 基准文件应存在');
-    expect(generated.existsSync(), isTrue, reason: 'strings.g.dart 应存在');
+    expect(page.existsSync(), isTrue, reason: 'video page source must exist');
+    expect(baseI18n.existsSync(), isTrue, reason: 'base i18n file must exist');
+    expect(generated.existsSync(), isTrue, reason: 'strings.g.dart must exist');
     src = page.readAsStringSync();
     i18nSrc = baseI18n.readAsStringSync();
     genSrc = generated.readAsStringSync();
   });
 
-  /// 截共享底栏构造器 [_centeredBottomControlBar] 段（BUG-257 起底栏 5 键的 Tooltip
-  /// 与 seek 标注都收口到此 helper，桌面/移动主题各用一个 [Expanded] 调它）。
   String bottomBarHelper() {
     final int start = src.indexOf('Widget _centeredBottomControlBar(');
     expect(start, greaterThanOrEqualTo(0),
-        reason: '需有共享底栏构造器 _centeredBottomControlBar');
-    // helper 以 `_seekLabelButton` 方法定义起头处收尾。
+        reason: 'shared bottom bar helper must exist');
     final int end = src.indexOf('Widget _seekLabelButton(', start);
-    expect(end, greaterThan(start), reason: '_centeredBottomControlBar 应正常闭合');
+    expect(end, greaterThan(start),
+        reason: '_centeredBottomControlBar should close normally');
+    return src.substring(start, end);
+  }
+
+  String bottomSlotButtonBuilder() {
+    final int start = src.indexOf('Widget _buildBottomSlotButton(');
+    expect(start, greaterThanOrEqualTo(0),
+        reason: 'bottom slot button builder must exist');
+    final int end = src.indexOf('Widget _plainSlotButton(', start);
+    expect(end, greaterThan(start),
+        reason: '_buildBottomSlotButton should close normally');
     return src.substring(start, end);
   }
 
@@ -49,51 +52,61 @@ void main() {
     'video_bottom_seek_forward',
   ];
 
-  test('共享底栏 5 键有 Tooltip（桌面/移动同源 _centeredBottomControlBar）', () {
+  test('shared bottom transport buttons have tooltips', () {
     final String bar = bottomBarHelper();
-    // 上一句/play/下一句直接包 Tooltip(message:)，±10s 经 _seekLabelButton 的 tooltip 参数。
+    final String slotButtons = bottomSlotButtonBuilder();
+
     for (final String key in <String>[
       'video_bottom_prev_cue',
       'video_bottom_play_pause',
       'video_bottom_next_cue',
     ]) {
       expect(
-        bar.contains('Tooltip(') && bar.contains('message: t.$key'),
+        slotButtons.contains('Tooltip(') &&
+            slotButtons.contains('message: t.$key'),
         isTrue,
-        reason: '共享底栏应有 Tooltip(message: t.$key)',
+        reason: 'bottom transport should include Tooltip(message: t.$key)',
       );
     }
-    expect('Tooltip('.allMatches(bar).length, greaterThanOrEqualTo(3),
-        reason: '上一句/play/下一句各包一个 Tooltip');
-    expect('tooltip: t.video_bottom_seek_back'.allMatches(bar).length, 1,
-        reason: '−10s seek 按钮经 _seekLabelButton tooltip 透传');
-    expect('tooltip: t.video_bottom_seek_forward'.allMatches(bar).length, 1,
-        reason: '+10s seek 按钮经 _seekLabelButton tooltip 透传');
+    expect('Tooltip('.allMatches(slotButtons).length, greaterThanOrEqualTo(3),
+        reason: 'previous/play/next cue buttons each need a Tooltip');
+    expect(
+      'tooltip: t.video_bottom_seek_back'.allMatches(slotButtons).length,
+      1,
+      reason: '-10s seek button should pass tooltip into _seekLabelButton',
+    );
+    expect(
+      'tooltip: t.video_bottom_seek_forward'.allMatches(slotButtons).length,
+      1,
+      reason: '+10s seek button should pass tooltip into _seekLabelButton',
+    );
+    expect(bar.contains('VideoControlSlot.bottomCenter'), isTrue,
+        reason: 'shared bar should render transport buttons from bottomCenter');
   });
 
-  test('桌面 + 移动底栏都走共享 _centeredBottomControlBar（无分叉 5 键）', () {
+  test('desktop and mobile bottom bars both delegate to the shared helper', () {
     expect(
       'Expanded(\n          child: _centeredBottomControlBar(controller, desktop: true)'
           .allMatches(src)
           .length,
       1,
-      reason: '桌面底栏应走共享 helper',
+      reason: 'desktop bottom bar should use the shared helper',
     );
     expect(
       'Expanded(\n          child: _centeredBottomControlBar(controller, desktop: false)'
           .allMatches(src)
           .length,
       1,
-      reason: '移动底栏应走共享 helper',
+      reason: 'mobile bottom bar should use the shared helper',
     );
   });
 
-  test('5 个底栏 tooltip i18n key 在基准 + 生成文件都存在', () {
+  test('bottom tooltip i18n keys exist in base and generated files', () {
     for (final String key in tooltipKeys) {
       expect(i18nSrc.contains('"$key"'), isTrue,
-          reason: 'strings.i18n.json 缺 key $key');
+          reason: 'strings.i18n.json missing key $key');
       expect(genSrc.contains('String get $key'), isTrue,
-          reason: 'strings.g.dart 缺 getter $key');
+          reason: 'strings.g.dart missing getter $key');
     }
   });
 }

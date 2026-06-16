@@ -199,11 +199,14 @@ void main() {
       ]);
     });
 
-    test('bad / empty storage falls back to defaults without throwing', () {
-      expect(
-          VideoControlLayout.decode('{not json}'), VideoControlLayout.defaults);
-      expect(VideoControlLayout.decode(''), VideoControlLayout.defaults);
-      expect(VideoControlLayout.decode('[]'), VideoControlLayout.defaults);
+    test('bad / empty storage falls back to current chrome without throwing',
+        () {
+      expect(VideoControlLayout.decode('{not json}'),
+          VideoControlLayout.currentChrome,
+          reason: 'bad data must preserve the existing player chrome');
+      expect(VideoControlLayout.decode(''), VideoControlLayout.currentChrome,
+          reason: 'first-run users should not see controls move');
+      expect(VideoControlLayout.decode('[]'), VideoControlLayout.currentChrome);
     });
 
     test('decode backfills buttons missing from a partial v2 blob', () {
@@ -217,6 +220,12 @@ void main() {
       expect(layout.slotOf(VideoControlItem.speed), VideoControlSlot.topLeft);
       expect(layout.slotOf(VideoControlItem.playPause),
           VideoControlSlot.bottomCenter);
+      expect(
+          layout.slotOf(VideoControlItem.screenshot), VideoControlSlot.topRight,
+          reason: 'missing transport keys should backfill to current chrome');
+      expect(layout.slotOf(VideoControlItem.settings),
+          VideoControlSlot.screenRight,
+          reason: 'missing legacy keys should backfill to current chrome');
       final List<VideoControlItem> seen = <VideoControlItem>[];
       for (final VideoControlSlot slot in VideoControlSlot.values) {
         seen.addAll(layout.itemsIn(slot));
@@ -303,6 +312,10 @@ void main() {
           VideoControlSlot.bottomCenter);
       expect(
           migrated.slotOf(VideoControlItem.title), VideoControlSlot.topCenter);
+      expect(migrated.slotOf(VideoControlItem.clipExport),
+          VideoControlSlot.topRight,
+          reason:
+              'v1 migration should keep transport buttons in current chrome');
     });
 
     test('migration leaves every button placed (no orphan)', () {

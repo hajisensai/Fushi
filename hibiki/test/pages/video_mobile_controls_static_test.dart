@@ -82,10 +82,8 @@ void main() {
     );
     expect(start, greaterThanOrEqualTo(0),
         reason: '应能定位 _mobileControlsTheme 方法');
-    // TODO-274：轨道菜单 _showTrackMenu 改名 _showAudioTrackMenu 且移到 themes 之前，
-    // 方法体下界改用 themes 之后紧邻的 _customBottomControlButtons（仅在 themes 之后定义）。
     final int end = src.indexOf(
-      'List<Widget> _customBottomControlButtons(',
+      'List<VideoControlItem> _slotChipItems(',
       start,
     );
     expect(end, greaterThan(start), reason: '应能界定 _mobileControlsTheme 方法体范围');
@@ -93,14 +91,28 @@ void main() {
 
     expect(
       body,
-      contains('_showSubtitleSourceMenu(controller)'),
-      reason: '移动 controls 应有字幕源入口',
+      contains('_topBarSlotButtons(VideoControlSlot.topLeft, controller'),
+      reason: '移动 controls 应使用真实 topLeft slot 渲染顶栏按钮',
     );
     expect(
       body,
-      contains('_showAudioTrackMenu(controller)'),
-      reason: '移动 controls 应有音轨切换入口（经共享 _showAudioTrackMenu）',
+      contains('_topBarSlotButtons(VideoControlSlot.topRight, controller'),
+      reason: '移动 controls 应使用真实 topRight slot 渲染字幕/音轨/截图等入口',
     );
+    expect(body, contains('desktop: false'),
+        reason: '移动主题调用 slot renderer 时必须走 mobile 按钮分支');
+    expect(src.contains('case VideoControlItem.subtitleTrack:'), isTrue,
+        reason: '字幕轨入口应由数据化 VideoControlItem 承载');
+    expect(src.contains('_showSubtitleSourceMenu(controller)'), isTrue,
+        reason: '字幕轨入口激活后仍应打开字幕菜单');
+    expect(src.contains('case VideoControlItem.audioTrack:'), isTrue,
+        reason: '音轨入口应由数据化 VideoControlItem 承载');
+    expect(src.contains('_showAudioTrackMenu(controller)'), isTrue,
+        reason: '音轨入口激活后仍应打开音轨菜单');
+    expect(src.contains('case VideoControlItem.episodeList:'), isTrue,
+        reason: '剧集入口应由数据化 VideoControlItem 承载');
+    expect(src.contains('_showEpisodeList();'), isTrue,
+        reason: '剧集入口激活后仍应打开剧集列表');
     // BUG-248B / TODO-274：设置（tune）已从 topButtonBar 移出（与桌面一致），改由可配置
     // 的右侧 rail settings 按钮（VideoControlButton.settings → _activateVideoControlButton
     // → _showPlayerSettings）承载，全屏复用同一 builder 故仍可达。故此处不再断言
@@ -115,16 +127,9 @@ void main() {
       contains('_showPlayerSettings();'),
       reason: '可配置 settings 按钮激活时仍打开 _showPlayerSettings',
     );
-    expect(
-      body,
-      contains('onPressed: _showEpisodeList'),
-      reason: 'playlist 时剧集列表入口也应进 controls（全屏可达）',
-    );
-    // 用移动版自定义按钮组件 MaterialCustomButton（对应桌面的 MaterialDesktopCustomButton）。
-    expect(
-      body,
-      contains('MaterialCustomButton('),
-      reason: '移动端自定义按钮应用 MaterialCustomButton',
-    );
+    expect(src.contains('MaterialCustomButton('), isTrue,
+        reason: '移动端 slot 自定义按钮应用 MaterialCustomButton');
+    expect(body, contains('bottomButtonBar: <Widget>['),
+        reason: '移动 controls 应继续提供共享底栏');
   });
 }
