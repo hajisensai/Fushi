@@ -27,6 +27,7 @@ import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
+import 'package:hibiki/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
 import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
@@ -485,6 +486,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
   final ValueNotifier<_VideoSidePanelKind?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelKind?>(null);
+
+  /// 画面内控制布局编辑模式（TODO-440）。用 [ValueNotifier] 而非普通 setState：
+  /// 叠层渲染在 media_kit controls builder 里，全屏路由同样需要即时开关。
+  final ValueNotifier<bool> _videoControlEditMode = ValueNotifier<bool>(false);
+
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
 
@@ -909,6 +915,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _immersiveLocked.addListener(_applyControlsVisibilityFromMediaKit);
     _videoSidePanel.addListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
+    _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
@@ -1759,6 +1766,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (_videoSidePanel.value != null) {
         _hideVideoSidePanel();
       }
+      _hideVideoControlEditOverlay(revealControls: false);
       _subtitleListVisible.value = true;
       unawaited(_refreshFavoritedCueCache());
       _markControlsVisible(false);
@@ -1882,8 +1890,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _immersiveLocked.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoSidePanel.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
+    _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.dispose();
     _videoSidePanel.dispose();
+    _videoControlEditMode.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
@@ -1971,6 +1981,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // seek 仍照常生效，只是不再因此把 media_kit 控制条 / 右侧 rail 弹回来盖在面板
     // 后面。与沉浸锁同源门控（[_videoSidePanel] 是 ValueNotifier）。
     if (_videoSidePanel.value != null) return;
+    if (_videoControlEditMode.value) return;
     final BuildContext? ctx = _videoControlsContext;
     if (ctx == null || !ctx.mounted) return;
     final RenderObject? renderObject = ctx.findRenderObject();
@@ -2017,7 +2028,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 自动隐藏定时吃掉（用户要在 overlay 上操作）；纯沉浸锁（无 overlay）静止超时仍隐藏
   /// 画面光标（BUG-258）。
   bool get _hasVideoOverlay =>
-      _videoSidePanel.value != null || _subtitleListVisible.value;
+      _videoSidePanel.value != null ||
+      _subtitleListVisible.value ||
+      _videoControlEditMode.value;
 
   /// 控制条避让可见性的 **唯一派生 / 写入点**（TODO-364）。
   ///
@@ -2038,7 +2051,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (!mounted) return;
     final bool gated = _immersiveLocked.value ||
         _videoSidePanel.value != null ||
-        _subtitleListVisible.value;
+        _subtitleListVisible.value ||
+        _videoControlEditMode.value;
     final bool visible = !gated && _mediaKitControlsVisible.value;
     _videoControlsVisible.value = visible;
     // 音量控件随控制条整体显隐（一行式内联，无独立浮层需单独关闭，TODO-377）。
@@ -4439,6 +4453,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
+  void _showVideoControlEditOverlay() {
+    if (_videoSheetOpen) return;
+    if (_subtitleListVisible.value) {
+      _clearSelectedMiningCues();
+      _subtitleListVisible.value = false;
+    }
+    if (_videoSidePanel.value != null) {
+      _videoSidePanel.value = null;
+    }
+    _videoControlEditMode.value = true;
+    _markControlsVisible(false);
+    _refocusVideo();
+  }
+
+  void _hideVideoControlEditOverlay({bool revealControls = true}) {
+    if (!_videoControlEditMode.value) return;
+    _videoControlEditMode.value = false;
+    if (revealControls) _pokeControlsVisible();
+    _refocusVideo();
+  }
+
   Future<void> _clearWindowAspectRatioLock() async {
     if (!isDesktopPlatform || _appliedWindowAspectRatio == null) return;
     _appliedWindowAspectRatio = null;
@@ -4749,6 +4784,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               _applyShaderTier(highQuality, enabledNames),
       initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
+      onEditControlsOnscreen: _showVideoControlEditOverlay,
     );
   }
 
@@ -4758,6 +4794,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   void _showVideoSidePanel(_VideoSidePanelKind kind) {
     if (_videoSheetOpen) return;
+    _hideVideoControlEditOverlay(revealControls: false);
     _videoSidePanel.value = kind;
     // 与 push-aside 字幕列表互斥（TODO-314）：开任何浮层都先关字幕列表。
     if (_subtitleListVisible.value) {
@@ -6102,12 +6139,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             _immersiveLocked,
                             _videoSidePanel,
                             _subtitleListVisible,
+                            _videoControlEditMode,
                           ],
                         ),
                         builder: (BuildContext _, __) => IgnorePointer(
                           ignoring: _immersiveLocked.value ||
                               _videoSidePanel.value != null ||
-                              _subtitleListVisible.value,
+                              _subtitleListVisible.value ||
+                              _videoControlEditMode.value,
                           child: AdaptiveVideoControls(state),
                         ),
                       );
@@ -6171,6 +6210,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 _buildSideLockButton(),
                 _buildVideoSideActionRail(controller),
                 _buildVideoSidePanelOverlay(controller),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _videoControlEditMode,
+                  builder: (BuildContext _, bool editing, __) {
+                    if (!editing) return const SizedBox.shrink();
+                    return Positioned.fill(
+                      child: VideoControlLayoutEditOverlay(
+                        layout: _controlLayout,
+                        onLayoutChanged: _setVideoControlLayout,
+                        onClose: _hideVideoControlEditOverlay,
+                      ),
+                    );
+                  },
+                ),
                 // TODO-318：光标隐藏统一胜出层放 Stack 最顶（front-most），隐藏时其
                 // cursor:none 胜过下方所有 chrome 的 click cursor；桌面才挂（移动端无 OS 光标）。
                 if (_isDesktopVideoControls) _buildCursorOverlay(),

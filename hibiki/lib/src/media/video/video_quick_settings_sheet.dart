@@ -49,6 +49,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onImmersiveModeChanged,
     this.initialControlLayout,
     this.onControlLayoutChanged,
+    this.onEditControlsOnscreen,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
@@ -142,6 +143,9 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 用户在控制条编辑器里改变某按钮槽位 / 显隐后回调：持久化 v2 布局 + 实时生效。
   final Future<void> Function(VideoControlLayout layout)?
       onControlLayoutChanged;
+
+  /// 从设置页进入播放器画面内的拖拽编辑叠层（TODO-440）。
+  final VoidCallback? onEditControlsOnscreen;
 
   /// Actual app UI scale. Video routes neutralize [HibikiAppUiScale] so the
   /// inherited scale inside the sheet can be 1.0 even when the app setting is
@@ -1139,6 +1143,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           icon: Icons.dashboard_customize_outlined,
           showIcon: true,
         ),
+        if (widget.onEditControlsOnscreen != null)
+          AdaptiveSettingsRow(
+            title: t.video_control_edit_on_video,
+            icon: Icons.open_with_outlined,
+            showIcon: true,
+            onTap: widget.onEditControlsOnscreen,
+          ),
         _buildControlDragEditor(),
       ],
     );
@@ -1790,16 +1801,4 @@ class _VideoSettingsHeader extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Drag payload for the control-layout editor (TODO-399): the dragged
-/// [VideoControlItem] plus the slot it came from ([sourceSlot] == null means it
-/// was dragged from the "all buttons" palette, i.e. an add). The editor uses
-/// add-to-slot on drop regardless of source (a button may live in many slots),
-/// so [sourceSlot] is informational; removal goes through the chip delete button.
-class VideoControlDragData {
-  const VideoControlDragData({required this.item, required this.sourceSlot});
-
-  final VideoControlItem item;
-  final VideoControlSlot? sourceSlot;
 }

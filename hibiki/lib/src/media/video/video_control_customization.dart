@@ -758,3 +758,13 @@ class VideoControlLayout {
     ]);
   }
 }
+
+/// Drag payload for visual control-layout editors: the dragged
+/// [VideoControlItem] plus the slot it came from ([sourceSlot] == null means it
+/// was dragged from an "all buttons" palette, i.e. an add).
+class VideoControlDragData {
+  const VideoControlDragData({required this.item, required this.sourceSlot});
+
+  final VideoControlItem item;
+  final VideoControlSlot? sourceSlot;
+}

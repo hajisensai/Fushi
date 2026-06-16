@@ -50,6 +50,24 @@ void main() {
     expect(settings, contains('VideoControlSlot.hidden'));
   });
 
+  test('video page exposes an onscreen drag edit overlay entry', () {
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String settings =
+        read('lib/src/media/video/video_quick_settings_sheet.dart');
+
+    expect(page, contains('video_control_layout_edit_overlay.dart'));
+    expect(page, contains('ValueNotifier<bool> _videoControlEditMode'));
+    expect(page, contains('_showVideoControlEditOverlay'));
+    expect(page, contains('_hideVideoControlEditOverlay'));
+    expect(page, contains('VideoControlLayoutEditOverlay('));
+    expect(page, contains('onLayoutChanged: _setVideoControlLayout'));
+    expect(page, contains('_videoSidePanel.value != null'));
+
+    expect(settings, contains('onEditControlsOnscreen'));
+    expect(settings, contains('t.video_control_edit_on_video'));
+  });
+
   test('player chrome includes right rail, bottom custom buttons and fallbacks',
       () {
     final String page =
