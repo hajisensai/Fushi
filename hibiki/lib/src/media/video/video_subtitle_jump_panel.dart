@@ -42,6 +42,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.colorScheme,
     required this.title,
     required this.emptyHint,
+    this.loadingHint,
     this.isCueSelectedForCard,
     this.onToggleCueSelection,
     this.onClearCueSelection,
@@ -66,6 +67,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final ColorScheme colorScheme;
   final String title;
   final String emptyHint;
+  final String? loadingHint;
   final bool Function(AudioCue cue)? isCueSelectedForCard;
   final void Function(AudioCue cue)? onToggleCueSelection;
   final VoidCallback? onClearCueSelection;
@@ -229,6 +231,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final List<AudioCue> cues = widget.controller.cues;
     final List<AudioCue> visibleCues = _visibleCues(cues);
     final int currentIndex = widget.controller.currentCueIndex;
+    final bool showLoading =
+        cues.isEmpty && widget.controller.isSubtitleCuesLoading;
     return Material(
       type: MaterialType.transparency,
       child: Container(
@@ -240,28 +244,30 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             _buildHeader(cs, cues),
             const Divider(height: 1),
             Expanded(
-              child: cues.isEmpty || visibleCues.isEmpty
-                  ? _buildEmpty(cs)
-                  // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
-                  // GlobalKey（存 _rowKeys，按 visibleIndex）供 ensureVisible 自动滚动。
-                  : ListView.builder(
-                      controller: _scrollController,
-                      itemCount: visibleCues.length,
-                      itemBuilder: (BuildContext _, int i) {
-                        final AudioCue cue = visibleCues[i];
-                        final GlobalKey rowKey =
-                            _rowKeys.putIfAbsent(i, GlobalKey.new);
-                        return KeyedSubtree(
-                          key: rowKey,
-                          child: _buildRow(
-                            cs,
-                            cue,
-                            i,
-                            cues.indexOf(cue) == currentIndex,
-                          ),
-                        );
-                      },
-                    ),
+              child: showLoading
+                  ? _buildLoading(cs)
+                  : cues.isEmpty || visibleCues.isEmpty
+                      ? _buildEmpty(cs)
+                      // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
+                      // GlobalKey（存 _rowKeys，按 visibleIndex）供 ensureVisible 自动滚动。
+                      : ListView.builder(
+                          controller: _scrollController,
+                          itemCount: visibleCues.length,
+                          itemBuilder: (BuildContext _, int i) {
+                            final AudioCue cue = visibleCues[i];
+                            final GlobalKey rowKey =
+                                _rowKeys.putIfAbsent(i, GlobalKey.new);
+                            return KeyedSubtree(
+                              key: rowKey,
+                              child: _buildRow(
+                                cs,
+                                cue,
+                                i,
+                                cues.indexOf(cue) == currentIndex,
+                              ),
+                            );
+                          },
+                        ),
             ),
           ],
         ),
@@ -381,6 +387,29 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             color: cs.onSurfaceVariant,
             fontSize: _effectiveFontSize,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoading(ColorScheme cs) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              widget.loadingHint ?? widget.emptyHint,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
+                fontSize: _effectiveFontSize,
+              ),
+            ),
+          ],
         ),
       ),
     );

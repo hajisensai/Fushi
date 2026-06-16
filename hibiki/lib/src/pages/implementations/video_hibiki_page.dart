@@ -800,6 +800,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
 
+  bool _autoAdvanceInFlight = false;
+  String? _lastPrewarmedEpisodePath;
+
   /// 底部菜单（剧集/轨道/倍速/设置/字幕源）重入守卫：为真时已有一个 sheet 在开/在显，
   /// 快速重复点击不再叠开第二个。开 sheet 前置真，sheet 关闭（whenComplete）或异步早
   /// 返回时复位。修「点菜单/字幕点快了弹出两个」。
@@ -1474,6 +1477,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  void _handlePlaybackCompleted() {
+    if (_autoAdvanceInFlight) return;
+    if (!mounted) return;
+    final int? nextEpisode = nextPlaylistIndexAfterCompletion(
+      _episodes,
+      _currentEpisode,
+    );
+    if (nextEpisode == null) return;
+    _autoAdvanceInFlight = true;
+    unawaited(() async {
+      try {
+        if (!mounted) return;
+        await _switchEpisode(nextEpisode);
+      } catch (e, stack) {
+        debugPrint('[VideoHibikiPage] auto-advance failed: $e\n$stack');
+      } finally {
+        _autoAdvanceInFlight = false;
+      }
+    }());
+  }
+
   /// 共享 load 装配：复用或新建 controller，载入视频 + cue，挂位置持久化回调。
   Future<void> _applyLoad({
     required String? videoPath,
@@ -1496,6 +1520,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             decodeEnabledShaders(appModel.videoShadersEnabled),
           )
         : const <String>[];
+    controller.setOnCompleted(_handlePlaybackCompleted);
     try {
       await controller.load(
         bookUid: widget.bookUid,
@@ -1565,6 +1590,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     } else {
       unawaited(_loadDanmakuForVideo(null));
     }
+    _prewarmNextEpisodeSubtitleCache();
 
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
     if (!_isRemote && _watchTracker == null) {
@@ -1617,6 +1643,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 把当前 [_episodes] 序列化回 playlistJson（带各集 positionMs）。
   String _encodeEpisodes() =>
       jsonEncode(_episodes.map((PlaylistEntry e) => e.toJson()).toList());
+
+  void _prewarmNextEpisodeSubtitleCache() {
+    final String? path = nextPlaylistPathToPrewarm(
+      entries: _episodes,
+      currentIndex: _currentEpisode,
+      lastPrewarmedPath: _lastPrewarmedEpisodePath,
+    );
+    if (path == null) return;
+    _lastPrewarmedEpisodePath = path;
+    unawaited(prewarmEmbeddedSubtitleCache(path));
+  }
 
   String _safeFileName(String input) =>
       input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
@@ -1866,6 +1903,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _watchTracker = null;
     _controller?.removeListener(_syncWindowAspectRatioLock);
     _controller?.removeListener(_onControllerChaptersChanged);
+    _controller?.setOnCompleted(null);
     unawaited(_clearWindowAspectRatioLock());
     // TODO-057: 退出播放器还原屏幕亮度——把进页快照写回（iOS 系统级亮度），未
     // 取过快照时 Android 侧设回「跟随系统」(-1)。防止把用户系统亮度永久留在拖动后值。
@@ -6438,6 +6476,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       colorScheme: cs,
                       title: t.video_subtitle_list,
                       emptyHint: t.video_subtitle_list_empty,
+                      loadingHint: t.video_subtitle_list_loading,
                       fontSize: 14 * _videoUiScale,
                       width: panelWidth,
                     ),

@@ -567,6 +567,47 @@ TODO016 imported subtitle survives reopen.
       expect(cues, isNotEmpty);
     });
 
+    test(
+        'two playlist episode prewarms keep separate caches for later switches',
+        () async {
+      final File first = File(p.join(tempDir.path, 'episode1.mkv'))
+        ..writeAsStringSync('fake episode 1 bytes');
+      final File second = File(p.join(tempDir.path, 'episode2.mkv'))
+        ..writeAsStringSync('fake episode 2 bytes');
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend();
+      setFfmpegBackendForTesting(backend);
+
+      await prewarmEmbeddedSubtitleCache(first.path);
+      await prewarmEmbeddedSubtitleCache(second.path);
+
+      expect(backend.extractCount, 2);
+      expect(
+        File(p.join(embeddedSubtitleCacheDir(first.path).path, 'sub_0.srt'))
+            .existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(embeddedSubtitleCacheDir(second.path).path, 'sub_0.srt'))
+            .existsSync(),
+        isTrue,
+      );
+
+      final List<AudioCue> secondCues = await loadCuesForSource(
+        const SubtitleSource.embedded(
+          streamIndex: 0,
+          label: '内封 0: jpn / subrip',
+          language: 'jpn',
+          codec: 'subrip',
+        ),
+        second.path,
+        'video_book_x://book/episode2',
+      );
+
+      expect(secondCues, isNotEmpty);
+      expect(backend.extractCount, 2,
+          reason: 'manual switch for prewarmed next episode must hit cache');
+    });
+
     test('prewarm failures complete without affecting later manual fallback',
         () async {
       final File video = File(p.join(tempDir.path, 'broken.mkv'))

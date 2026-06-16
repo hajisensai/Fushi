@@ -250,6 +250,35 @@ void main() {
       expect(find.text('No subtitles loaded'), findsOneWidget);
     });
 
+    testWidgets('shows loading state instead of empty hint while cues load', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.debugSetSubtitleCuesLoadingForTesting(true);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'No subtitles loaded',
+        loadingHint: 'Loading subtitles...',
+      )));
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Loading subtitles...'), findsOneWidget);
+      expect(find.text('No subtitles loaded'), findsNothing);
+
+      controller.debugSetSubtitleCuesLoadingForTesting(false);
+      await tester.pump();
+      expect(find.text('No subtitles loaded'), findsOneWidget);
+    });
+
     testWidgets('no close X button (tap-outside closes, BUG-254)',
         (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();

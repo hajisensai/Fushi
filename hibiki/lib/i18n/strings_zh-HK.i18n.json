@@ -1673,5 +1673,6 @@
     "video_chapters_empty": "無章節",
     "video_chapter_n": "章節 $n",
     "shortcut_action_video_next_chapter": "下一章",
-    "shortcut_action_video_previous_chapter": "上一章"
+    "shortcut_action_video_previous_chapter": "上一章",
+    "video_subtitle_list_loading": "Loading subtitles..."
 }

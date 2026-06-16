@@ -70,6 +70,34 @@ List<PlaylistEntry> updateEntryPosition(
   return next;
 }
 
+/// 视频播到 EOF 后播放列表应切到的下一集；没有下一集时返回 null。
+///
+/// 单集列表 / 越界下标 / 最后一集都不推进，调用方据此保持当前位置。
+int? nextPlaylistIndexAfterCompletion(
+  List<PlaylistEntry> entries,
+  int currentIndex,
+) {
+  if (entries.length <= 1) return null;
+  if (currentIndex < 0 || currentIndex >= entries.length - 1) return null;
+  return currentIndex + 1;
+}
+
+/// 当前集 load 成功后可后台预热的下一集视频路径。
+///
+/// [lastPrewarmedPath] 是调用方保存的去重位：同一下一集已经预热过时返回 null，
+/// 避免每次 setState / reload 都重复触发整容器 ffmpeg 预抽。
+String? nextPlaylistPathToPrewarm({
+  required List<PlaylistEntry> entries,
+  required int currentIndex,
+  required String? lastPrewarmedPath,
+}) {
+  final int? nextIndex =
+      nextPlaylistIndexAfterCompletion(entries, currentIndex);
+  if (nextIndex == null) return null;
+  final String path = entries[nextIndex].path;
+  return path == lastPrewarmedPath ? null : path;
+}
+
 /// 解析扩展 M3U（m3u8）播放列表为 [PlaylistEntry] 列表（纯函数，无 IO）。
 ///
 /// 语义：
