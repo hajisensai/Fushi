@@ -84,9 +84,10 @@ void main() {
     expect(source, contains('scrollable: false'));
     expect(source, contains('MaterialSupportingPaneLayout('));
     expect(source, contains('minSplitWidth: kHibikiSettingsWideThreshold'));
-    // 左父菜单收窄到共享常量（旧硬编码 248）。
-    expect(source,
-        contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
+    // 左父菜单收窄到视频专属常量（TODO-427-②：184，比共享的 208 更窄一档，
+    // 只动视频面板、不连坐阅读器）。
+    expect(source, contains('supportingWidth: _videoSupportingPaneWidth'));
+    expect(source, contains('_videoSupportingPaneWidth = 184.0'));
     expect(source, contains('SupportingPaneSide.start'));
     expect(source, contains('height: constraints.maxHeight'));
     // 确定性几何判据：宽且高都 >= 共享常量阈值才进宽窗（与书籍设置同条件）。

@@ -279,10 +279,10 @@ void main() {
       of: layout,
       matching: find.byType(VerticalDivider),
     );
-    // 左父菜单收窄到共享常量（旧硬编码 248）。
+    // 左父菜单收窄到视频专属常量（TODO-427-②：184，比共享的 208 更窄一档）。
     expect(
       tester.getTopLeft(divider).dx - tester.getTopLeft(layout).dx,
-      kHibikiSettingsSupportingPaneWidth,
+      184,
     );
 
     final List<SingleChildScrollView> paneScrollViews = tester
@@ -299,9 +299,12 @@ void main() {
         paneScrollViews.first.padding! as EdgeInsets;
     final EdgeInsets primaryPadding =
         paneScrollViews.last.padding! as EdgeInsets;
+    // 左右各自水平对称。
     expect(supportingPadding.left, supportingPadding.right);
     expect(primaryPadding.left, primaryPadding.right);
-    expect(supportingPadding.left, primaryPadding.left);
+    // TODO-427-②：左栏水平 inset 收小到只 gap(8)，比右详情(page+gap=24)窄一档。
+    expect(supportingPadding.left, 8);
+    expect(primaryPadding.left, 24);
 
     // 选「字幕」→ 右 pane 切到字幕详情，仍无返回箭头。
     await tester.tap(find.text(t.video_settings_cat_subtitle));
@@ -809,9 +812,10 @@ void main() {
     final EdgeInsets primaryPadding =
         paneScrollViews.last.padding! as EdgeInsets;
     // 四边都留出 MD3 级别的呼吸位（不再是顶部仅 4px 的「贴死」）。
-    // 水平 = page(16) + gap(8) = 24；顶部 = card(16)。
-    expect(supportingPadding.left, 24);
-    expect(supportingPadding.right, 24);
+    // TODO-427-②：左栏已收窄，其水平 inset 收小到只 gap(8)；右详情仍 page+gap=24。
+    // 顶部两栏一致 = card(16)。
+    expect(supportingPadding.left, 8);
+    expect(supportingPadding.right, 8);
     expect(supportingPadding.top, 16);
     expect(primaryPadding.left, 24);
     expect(primaryPadding.right, 24);

@@ -166,6 +166,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// (2.0 - 0.5) / 0.1 = 15 档，保证滑条只落在旧档位值上。
   static const int _speedDivisions = 15;
 
+  /// 视频设置面板左父菜单宽度（TODO-427-②）：比阅读器/书籍共用的
+  /// [kHibikiSettingsSupportingPaneWidth]（208）更窄一档，给右详情留更多空间。
+  /// 只收窄视频面板，不动共享常量（阅读器面板不连坐）。
+  static const double _videoSupportingPaneWidth = 184.0;
+
   // 本地镜像：面板在独立的 dialog/bottom-sheet 路由里，父页面 setState 不会重建它，
   // 故乐观更新本地值（同旧 StatefulBuilder 的语义），再异步回调即时生效 + 落盘。
   late int _delayMs = widget.initialDelayMs;
@@ -271,10 +276,14 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               final Color dividerColor = isCupertinoPlatform(context)
                   ? CupertinoColors.separator.resolveFrom(context)
                   : tokens.surfaces.outline;
+              // 左父菜单已收窄到 [_videoSupportingPaneWidth]（TODO-427-②）：水平 inset
+              // 同步收小一档（page+gap=24 → 只 gap=8），把窄列宽度尽量让给分类项文字，
+              // 避免「列已窄、左右还各贴 24」把内容挤成两三字一行。
+              final double supportingHorizontalInset = tokens.spacing.gap;
               final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
-                horizontalInset,
+                supportingHorizontalInset,
                 topInset,
-                horizontalInset,
+                supportingHorizontalInset,
                 bottomInset,
               );
               final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
@@ -287,7 +296,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 height: constraints.maxHeight,
                 child: MaterialSupportingPaneLayout(
                   minSplitWidth: kHibikiSettingsWideThreshold,
-                  supportingWidth: kHibikiSettingsSupportingPaneWidth,
+                  // TODO-427-②：视频面板左栏比共享常量（208）更窄一档（184），不连坐
+                  // 阅读器面板（仍用 kHibikiSettingsSupportingPaneWidth）。
+                  supportingWidth: _videoSupportingPaneWidth,
                   supportingSide: SupportingPaneSide.start,
                   dividerColor: dividerColor,
                   supporting: SingleChildScrollView(
@@ -352,17 +363,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     ];
   }
 
-  /// 宽窗 master-detail 左 pane：标题 + 分类列表（单选高亮）。
+  /// 宽窗 master-detail 左 pane：分类列表（单选高亮）。面板顶部 [VideoTranslucentSidePanel]
+  /// 已有「视频设置」统一标题，pane 内部不再重复一个 [SettingsSectionHeader]（TODO-427）。
   Widget _buildWidePane(ThemeData theme, String selectedId) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        SettingsSectionHeader(
-          t.video_settings_title,
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        ),
         for (final ({String id, IconData icon, String label}) cat
             in _categories())
           HibikiListItem(
@@ -376,17 +383,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
-  /// 窄窗主页：标题 + 分类导航行（push 子页）。
+  /// 窄窗主页：分类导航行（push 子页）。面板顶部 [VideoTranslucentSidePanel] 已有
+  /// 「视频设置」统一标题，主页内部不再重复一个 [SettingsSectionHeader]（TODO-427）。
   Widget _buildMainPage(ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        SettingsSectionHeader(
-          t.video_settings_title,
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        ),
         AdaptiveSettingsSection(
           children: <Widget>[
             for (final ({String id, IconData icon, String label}) cat
@@ -902,6 +905,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             AdaptiveSettingsPickerRow<String>(
               title: t.video_setting_mpv_hwdec,
               icon: Icons.memory_outlined,
+              // 窄右详情 pane（~270-300px）里固定 220px 下拉会把 Expanded 标题挤到几乎 0
+              // → 裁成「硬件…」（TODO-425）。controlBelow 让标题独占一行、下拉移到下方整行
+              // 铺满（Material 端尊重，Cupertino 端仍走 inline）。
+              controlBelow: true,
               selected: c.hwdec,
               options: <AdaptiveSettingsPickerOption<String>>[
                 AdaptiveSettingsPickerOption<String>(
@@ -950,6 +957,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             AdaptiveSettingsPickerRow<int>(
               title: t.video_setting_mpv_rotate,
               icon: Icons.screen_rotation_outlined,
+              // 与 hwdec 同款：窄 pane 固定下拉抢宽度裁标题，统一 controlBelow 标题独占一行。
+              controlBelow: true,
               selected: c.videoRotate,
               options: const <AdaptiveSettingsPickerOption<int>>[
                 AdaptiveSettingsPickerOption<int>(value: 0, label: '0°'),
@@ -962,6 +971,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             AdaptiveSettingsPickerRow<String>(
               title: t.video_setting_mpv_aspect,
               icon: Icons.aspect_ratio_outlined,
+              // 与 hwdec 同款：窄 pane 固定下拉抢宽度裁标题，统一 controlBelow 标题独占一行。
+              controlBelow: true,
               selected: c.aspectOverride,
               options: <AdaptiveSettingsPickerOption<String>>[
                 AdaptiveSettingsPickerOption<String>(
@@ -1040,6 +1051,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             AdaptiveSettingsPickerRow<String>(
               title: t.video_setting_mpv_channels,
               icon: Icons.surround_sound_outlined,
+              // 与 hwdec 同款：窄 pane 固定下拉抢宽度裁标题，统一 controlBelow 标题独占一行。
+              controlBelow: true,
               selected: c.audioChannels,
               options: <AdaptiveSettingsPickerOption<String>>[
                 AdaptiveSettingsPickerOption<String>(
