@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,6 +22,87 @@ AudioCue _cue(int i, int s, int e, String text) => AudioCue()
 Widget _wrap(Widget child) => MaterialApp(
       home: Scaffold(body: Stack(children: <Widget>[child])),
     );
+
+String _sourceBetween(String source, String start, String end) {
+  final int startIndex = source.indexOf(start);
+  expect(startIndex, greaterThanOrEqualTo(0), reason: start);
+  final int endIndex = source.indexOf(end, startIndex);
+  expect(endIndex, greaterThan(startIndex), reason: end);
+  return source.substring(startIndex, endIndex);
+}
+
+Rect _unionRects(Iterable<Rect> rects) {
+  final Iterator<Rect> iterator = rects.iterator;
+  if (!iterator.moveNext()) {
+    return Rect.zero;
+  }
+  Rect union = iterator.current;
+  while (iterator.moveNext()) {
+    union = union.expandToInclude(iterator.current);
+  }
+  return union;
+}
+
+({Offset tapPoint, int graphemeIndex}) _tapPointForGrapheme(
+  WidgetTester tester,
+  String sentence,
+  String targetGrapheme,
+) {
+  final Finder textFinder = find.text(sentence, findRichText: true);
+  expect(textFinder, findsOneWidget);
+  final BuildContext context = tester.element(textFinder);
+  final RichText richText = tester.widget<RichText>(textFinder);
+  final RenderBox textBox = tester.renderObject<RenderBox>(textFinder);
+  final List<String> graphemes = sentence.characters.toList(growable: false);
+  final int targetIndex = graphemes.indexOf(targetGrapheme);
+  expect(targetIndex, greaterThanOrEqualTo(0), reason: targetGrapheme);
+  int startOffset = 0;
+  for (int i = 0; i < targetIndex; i++) {
+    startOffset += graphemes[i].length;
+  }
+  final int endOffset = startOffset + graphemes[targetIndex].length;
+  final TextPainter painter = TextPainter(
+    text: richText.text,
+    textAlign: TextAlign.start,
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: null,
+    ellipsis: null,
+  )..layout(maxWidth: textBox.size.width);
+  final Rect targetRect = _unionRects(
+    painter
+        .getBoxesForSelection(
+          TextSelection(baseOffset: startOffset, extentOffset: endOffset),
+        )
+        .map((TextBox box) => box.toRect()),
+  );
+  expect(targetRect, isNot(Rect.zero));
+  return (
+    tapPoint: textBox.localToGlobal(targetRect.center),
+    graphemeIndex: targetIndex,
+  );
+}
+
+int _builtCueTextWidgetCount(WidgetTester tester) {
+  return tester.allWidgets.where((Widget widget) {
+    if (widget is Text) {
+      return widget.data?.startsWith('cue ') ?? false;
+    }
+    if (widget is RichText) {
+      return widget.text.toPlainText().startsWith('cue ');
+    }
+    return false;
+  }).length;
+}
+
+String _repoEvidencePath(String relativePath) {
+  final Directory current = Directory.current;
+  final Directory root =
+      current.path.endsWith('${Platform.pathSeparator}hibiki')
+          ? current.parent
+          : current;
+  return '${root.path}${Platform.pathSeparator}$relativePath';
+}
 
 void main() {
   group('formatCueTimestamp', () {
@@ -402,21 +485,44 @@ void main() {
       expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
     });
 
+    test(
+        'TODO-444 phase1 source guard: lookup text is one paragraph hit layer, '
+        'not per-grapheme widgets', () {
+      final String source =
+          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+              .readAsStringSync();
+      final String body = _sourceBetween(
+        source,
+        'Widget _buildRowText(',
+        'Widget _buildSelectionCheckbox',
+      );
+
+      expect(body, isNot(contains('characters.toList')),
+          reason: 'lookup rows must not allocate a per-grapheme widget list');
+      expect(body, isNot(contains('Wrap(')),
+          reason: 'wrapping is owned by RichText/TextPainter, not Wrap');
+      expect(RegExp(r'^\s*Builder\(', multiLine: true).hasMatch(body), isFalse,
+          reason: 'per-character BuildContext capture must stay removed');
+      expect(body, contains('RichText('));
+      expect(body, contains('TextPainter('));
+      expect(body, contains('getPositionForOffset'));
+      expect(body, contains('getBoxesForSelection'));
+      expect(body, contains('MediaQuery.textScalerOf(context)'));
+      expect(body, contains('Directionality.of(context)'));
+      expect(body, contains('constraints.maxWidth'));
+    });
+
     testWidgets(
-        'TODO-340: row subtitle text wraps to full content '
-        '(no single-line ellipsis), rendered per-grapheme when lookable',
+        'TODO-444 phase1: lookable row text wraps as one RichText hit layer',
         (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
-      // Use distinct ascii letters (no repeats) so each grapheme is uniquely
-      // findable as its own Text widget.
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'abcdefg')]);
+      const String sentence = 'abcdefg';
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        // With onLookupCue the row text is rendered per-grapheme inside a Wrap
-        // (wraps + precise hit-test). Each grapheme is its own Text widget.
         onLookupCue: (AudioCue _, int __, Rect ___) {},
         onCopyCue: (_) {},
         onFavoriteCue: (_) async {},
@@ -428,16 +534,15 @@ void main() {
         width: 280,
       )));
 
-      // Per-grapheme rendering inside a Wrap → many single-char Text widgets,
-      // none clamped to a single elided line. Revert to single-line ellipsis
-      // (one Text, maxLines:1, softWrap:false) → no Wrap, no per-char → red.
-      expect(find.byType(Wrap), findsWidgets);
-      // Each distinct character renders as its own Text widget.
-      expect(find.text('c'), findsOneWidget);
-      final Text charText = tester.widget<Text>(find.text('c'));
-      expect(charText.maxLines, isNull,
-          reason: 'per-grapheme Text must not clamp to a single elided line');
-      expect(charText.overflow, isNot(TextOverflow.ellipsis));
+      expect(find.byType(Wrap), findsNothing);
+      expect(find.text(sentence, findRichText: true), findsOneWidget);
+      expect(find.text('c'), findsNothing,
+          reason: 'a long row must not render each grapheme as its own Text');
+      final RichText rowText =
+          tester.widget<RichText>(find.text(sentence, findRichText: true));
+      expect(rowText.maxLines, isNull,
+          reason: 'row text must wrap, not clamp to one elided line');
+      expect(rowText.overflow, TextOverflow.clip);
     });
 
     testWidgets(
@@ -472,15 +577,18 @@ void main() {
     });
 
     testWidgets(
-        'TODO-340: tapping a grapheme looks up from that position (NOT seek, '
-        'NOT always index 0)', (WidgetTester tester) async {
+        'TODO-444 phase1: tapping a middle multi-code-unit grapheme looks up '
+        'from that grapheme with a nonzero rect', (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'lookup')]);
+      const String sentence =
+          'long subtitle prefix keeps this in the middle 👩‍💻 suffix line';
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
       AudioCue? seeked;
       AudioCue? lookedUp;
       int? lookupIndex;
       Rect? lookupRect;
+      Offset? tapPoint;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
@@ -499,19 +607,129 @@ void main() {
         emptyHint: 'empty',
       )));
 
-      // Tap the 4th grapheme 'k' of "lookup" (index 3) → lookup must report
-      // graphemeIndex 3 with that char's real rect, NOT seek, NOT index 0.
-      await tester.tap(find.text('k'));
+      final ({int graphemeIndex, Offset tapPoint}) target =
+          _tapPointForGrapheme(tester, sentence, '👩‍💻');
+      tapPoint = target.tapPoint;
+      await tester.tapAt(tapPoint);
       await tester.pump();
 
       expect(lookedUp, isNotNull);
-      expect(lookedUp!.text, 'lookup');
-      expect(lookupIndex, 3,
-          reason:
-              'tap maps to the hit grapheme index, not always 0 (TODO-340)');
+      expect(lookedUp!.text, sentence);
+      expect(lookupIndex, target.graphemeIndex,
+          reason: 'tap maps through UTF-16 offsets back to grapheme clusters');
       expect(lookupRect, isNotNull);
       expect(lookupRect, isNot(Rect.zero));
+      expect(lookupRect!.contains(tapPoint), isTrue,
+          reason: 'returned global charRect must contain the actual tap point');
       expect(seeked, isNull, reason: 'tapping text must look up, not seek');
+    });
+
+    testWidgets(
+        'TODO-444 phase1: with lookup enabled, tapping text whitespace still seeks',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      const String sentence = 'short';
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+      AudioCue? seeked;
+      AudioCue? lookedUp;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (AudioCue c) => seeked = c,
+        onLookupCue: (AudioCue c, int _, Rect __) => lookedUp = c,
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 520,
+      )));
+
+      final Rect textRect =
+          tester.getRect(find.text(sentence, findRichText: true));
+      await tester.tapAt(textRect.centerRight - const Offset(4, 0));
+      await tester.pump();
+
+      expect(seeked, isNotNull);
+      expect(seeked!.text, sentence);
+      expect(lookedUp, isNull,
+          reason: 'blank space in the text column should seek, not lookup');
+    });
+
+    testWidgets(
+        'TODO-444 phase1: 20k cues build only viewport rows and auto-follow '
+        'to cue 19999 with evidence file', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      final List<AudioCue> cues = List<AudioCue>.generate(20000, (int i) {
+        final int start = i * 1000;
+        return _cue(
+          i,
+          start,
+          start + 500,
+          'cue ${i.toString().padLeft(5, '0')} text',
+        );
+      });
+      controller.setCues(cues);
+
+      final Stopwatch openWatch = Stopwatch()..start();
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 520,
+        height: 620,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onLookupCue: (AudioCue _, int __, Rect ___) {},
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 520,
+        ),
+      )));
+      await tester.pump();
+      openWatch.stop();
+
+      final int firstViewportCueWidgets = _builtCueTextWidgetCount(tester);
+      expect(firstViewportCueWidgets, greaterThan(0));
+      expect(firstViewportCueWidgets, lessThan(120),
+          reason: 'ListView must build viewport-near rows, not all 20000');
+
+      final Stopwatch followWatch = Stopwatch()..start();
+      controller.debugUpdateCueForPosition(19999050);
+      await tester.pump();
+      for (int i = 0; i < 24; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      followWatch.stop();
+
+      final int followedViewportCueWidgets = _builtCueTextWidgetCount(tester);
+      expect(find.text('cue 19999 text', findRichText: true), findsOneWidget);
+      expect(followedViewportCueWidgets, greaterThan(0));
+      expect(followedViewportCueWidgets, lessThan(160),
+          reason: 'auto-follow must not mount the whole 20k cue list');
+
+      final String evidencePath =
+          _repoEvidencePath('.codex-test/todo-444-phase1/subtitle-list-20k.md');
+      final File evidenceFile = File(evidencePath);
+      evidenceFile.parent.createSync(recursive: true);
+      evidenceFile.writeAsStringSync('''
+# TODO-444 Phase 1 Subtitle List 20k Evidence
+
+- cues: 20000
+- first pump elapsed: ${openWatch.elapsedMilliseconds} ms
+- first viewport cue text widgets: $firstViewportCueWidgets
+- auto-follow target: cue 19999
+- auto-follow settle elapsed: ${followWatch.elapsedMilliseconds} ms
+- followed viewport cue text widgets: $followedViewportCueWidgets
+- threshold: viewport cue text widgets stay under 160; target row mounted after auto-follow
+''');
     });
 
     testWidgets(
