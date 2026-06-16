@@ -791,24 +791,6 @@ SettingsDestination _readingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-          // TODO-407②：是否允许"水平滑动关闭查词弹窗"。Windows/Linux 默认关闭
-          // （鼠标框选正文与滑动手势同形易误触），其余平台默认开启；任何平台均可
-          // 用弹窗顶栏的 X 关闭。
-          SettingsSwitchItem(
-            id: 'reading_controls.enable_swipe_to_close',
-            title: t.enable_swipe_to_close,
-            icon: Icons.swipe_left_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 6,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.enableSwipeToClose,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setEnableSwipeToClose(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
           SettingsSliderItem(
             id: 'reading_controls.wheel_page_turn_interval',
             title: t.wheel_page_turn_interval,
@@ -1138,6 +1120,25 @@ SettingsDestination _lookupDestination() {
                 settingsContext.readerSource.pauseOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.readerSource.setPauseOnLookup(value: value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // TODO-436/407②：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗的手势行为，
+          // 归「查词」分组（与查词朗读/暂停/音量并列），同时出现在阅读器快捷设置的查词段。
+          // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
+          // 开启；任何平台均可用弹窗顶栏的 X 关闭。
+          SettingsSwitchItem(
+            id: 'reading_controls.enable_swipe_to_close',
+            title: t.enable_swipe_to_close,
+            icon: Icons.swipe_left_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 3,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.enableSwipeToClose,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setEnableSwipeToClose(value);
               notifyReaderSettingsChanged(settingsContext);
             },
           ),

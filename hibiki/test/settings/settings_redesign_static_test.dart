@@ -275,6 +275,16 @@ void main() {
     expect(pauseSource, contains('group: ReaderGroup.lookup'));
     expect(autoReadSource, isNot(contains('group: ReaderGroup.behavior')));
     expect(pauseSource, isNot(contains('group: ReaderGroup.behavior')));
+
+    // TODO-436：「滑动关闭弹窗」是查词弹窗手势行为，归查词分组（ReaderGroup.lookup），
+    // 不得回到阅读控制（ReaderGroup.behavior）。
+    final int swipeCloseStart =
+        schemaSource.indexOf("id: 'reading_controls.enable_swipe_to_close'");
+    expect(swipeCloseStart, isNonNegative);
+    final String swipeCloseSource =
+        schemaSource.substring(swipeCloseStart, swipeCloseStart + 360);
+    expect(swipeCloseSource, contains('group: ReaderGroup.lookup'));
+    expect(swipeCloseSource, isNot(contains('group: ReaderGroup.behavior')));
   });
 
   test('popup instant scroll is a global lookup display setting', () {
