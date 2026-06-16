@@ -2004,6 +2004,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// media_kit 控制条自动隐藏时长，与两端控制主题的 `controlsHoverDuration` 同源（2s）。
   static const Duration _videoControlsHoverDuration = Duration(seconds: 2);
 
+  /// 控制条 / 侧边锁按钮 / 浮动 rail 的显隐淡入淡出时长（TODO-435），单一真相源。
+  /// 与 media_kit 的 `controlsTransitionDuration` 默认对齐：桌面 150ms、移动 300ms。
+  /// [_desktopControlsTheme] / [_mobileControlsTheme] / [_buildSideLockButton] /
+  /// [_buildVideoSideActionRail] 都读它，将来调一处全部跟随，不再各写各的 200ms。
+  Duration get _videoControlsTransitionDuration => _isDesktopVideoControls
+      ? const Duration(milliseconds: 150)
+      : const Duration(milliseconds: 300);
+
   /// 当前是否有承载光标操作的 overlay 打开（设置 / 音轨等浮层 [_videoSidePanel]，或
   /// 字幕跳转列表 [_subtitleListVisible]，TODO-329）。有 overlay 时光标不该被沉浸 /
   /// 自动隐藏定时吃掉（用户要在 overlay 上操作）；纯沉浸锁（无 overlay）静止超时仍隐藏
@@ -3415,6 +3423,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
+      // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
+      // 桌面默认 150ms，显式写出后改一处全部跟随）。
+      controlsTransitionDuration: _videoControlsTransitionDuration,
       // TODO-364：media_kit 控制条把它**真实**的 `visible` 推进这个 notifier，字幕避让
       // 唯一消费它（见 [_mediaKitControlsVisible] / [_applyControlsVisibilityFromMediaKit]），
       // 不再另建镜像 + 第二个 Timer（旧实现两套计时相位反 = 本 BUG 根因）。
@@ -3549,6 +3561,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
+      // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
+      // 移动默认 300ms，显式写出后改一处全部跟随）。
+      controlsTransitionDuration: _videoControlsTransitionDuration,
       // TODO-364：移动控制条的真实 `visible`（含 onTap toggle）推进同一个 notifier，字幕避让
       // 唯一消费它，移动端不再用 Hibiki 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
@@ -6577,7 +6593,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     ignoring: !visible,
                     child: AnimatedOpacity(
                       opacity: visible ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 200),
+                      // TODO-435：与 media_kit 控制条同源的淡入淡出时长 + 曲线，
+                      // 让锁按钮与控制条一致地淡入淡出（旧实现 200ms + 默认 linear）。
+                      duration: _videoControlsTransitionDuration,
+                      curve: Curves.easeInOut,
                       child: Padding(
                         padding: const EdgeInsets.only(left: 8),
                         // hover 保活：鼠标进按钮置 [_lockButtonHovered]=true 顶住显示 +
