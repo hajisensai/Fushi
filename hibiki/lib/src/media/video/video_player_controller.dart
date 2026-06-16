@@ -567,6 +567,8 @@ class VideoPlayerController extends ChangeNotifier
     List<String> shaderPaths = const <String>[],
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
     bool autoPlay = false,
+    void Function(DefaultEmbeddedSubtitleLoadResult result)?
+        onEmbeddedSubtitleAutoLoad,
   }) async {
     assert(
       (videoFile == null) != (mediaUri == null),
@@ -699,7 +701,10 @@ class VideoPlayerController extends ChangeNotifier
     } else if ((externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&
         cues.isEmpty) {
       // 无外挂字幕且无 cue 时，桌面端后台抽内嵌文本字幕轨成可点击 cue（不阻塞首帧）。
-      unawaited(_loadEmbeddedSubtitleIfNeeded(bookUid: bookUid));
+      unawaited(_loadEmbeddedSubtitleIfNeeded(
+        bookUid: bookUid,
+        onResult: onEmbeddedSubtitleAutoLoad,
+      ));
     }
 
     // 内封章节（TODO-424）：open 后异步读 libmpv `chapter-list` 填充章节列表（不阻塞
@@ -724,44 +729,63 @@ class VideoPlayerController extends ChangeNotifier
   /// 抽字幕较慢（ffmpeg 跑几秒），故 [load] 用 `unawaited` 后台触发不阻塞播放；
   /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（[_videoPath]
   /// 变化）则丢弃旧结果，避免把上一段视频的字幕错挂到新视频。
-  Future<void> _loadEmbeddedSubtitleIfNeeded({required String bookUid}) async {
+  Future<void> _loadEmbeddedSubtitleIfNeeded({
+    required String bookUid,
+    void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
+  }) async {
     // 桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit（见 resolveFfmpegBackend），两端都能
     // 抽内封字幕，故不再按平台门控（早先「移动端无 ffmpeg」的限制已随捆绑解除）。
     // 真无 ffmpeg 时 listAllSubtitleSources 返回空、优雅降级，不会出错。
     final String? videoPath = _videoPath;
     if (videoPath == null) return;
 
-    final List<SubtitleSource> sources = await listAllSubtitleSources(
-      videoPath,
-      langCode: 'ja',
+    final DefaultEmbeddedSubtitleLoadResult result =
+        await loadDefaultTextEmbeddedSubtitleCues(
+      videoPath: videoPath,
+      bookUid: bookUid,
     );
-    if (_videoPath != videoPath) return; // 枚举期间换片：丢弃。
+    if (_videoPath != videoPath) return; // 枚举/加载期间换片：丢弃。
 
-    // 第一条「能转文本 cue」的内嵌轨（codec 映射非 null）；跳过图形轨。
-    SubtitleSource? chosen;
-    for (final SubtitleSource s in sources) {
-      if (s.isEmbedded && subtitleFormatForCodec(s.codec ?? '') != null) {
-        chosen = s;
-        break;
-      }
+    switch (result.status) {
+      case DefaultEmbeddedSubtitleLoadStatus.loaded:
+        debugPrint('[video-embedded-sub] extracted ${result.cues.length} cues');
+        setCues(result.cues);
+        onResult?.call(result);
+        return;
+      case DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks:
+        debugPrint('[video-embedded-sub] no embedded subtitle track');
+        onResult?.call(result);
+        return;
+      case DefaultEmbeddedSubtitleLoadStatus.noTextTrack:
+        debugPrint('[video-embedded-sub] no text-capable embedded track');
+        onResult?.call(result);
+        return;
+      case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
+        debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
+        onResult?.call(result);
+        return;
+      case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
+      case DefaultEmbeddedSubtitleLoadStatus.enumerationFailed:
+      case DefaultEmbeddedSubtitleLoadStatus.missingFile:
+        debugPrint(
+          '[video-embedded-sub] default load skipped: ${result.status}',
+        );
+        onResult?.call(result);
+        return;
     }
-    if (chosen == null) {
-      debugPrint('[video-embedded-sub] no text-capable embedded track');
-      return;
-    }
+  }
 
-    final List<AudioCue> cues = await loadCuesForSource(
-      chosen,
-      videoPath,
-      bookUid,
+  @visibleForTesting
+  Future<void> debugLoadEmbeddedSubtitleIfNeededForTesting({
+    required String videoPath,
+    required String bookUid,
+    void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
+  }) async {
+    _videoPath = videoPath;
+    await _loadEmbeddedSubtitleIfNeeded(
+      bookUid: bookUid,
+      onResult: onResult,
     );
-    if (_videoPath != videoPath) return; // 加载期间换片：丢弃。
-    if (cues.isEmpty) {
-      debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
-      return;
-    }
-    debugPrint('[video-embedded-sub] extracted ${cues.length} cues');
-    setCues(cues);
   }
 
   /// cue 同步核心：照搬有声书 `_updateCurrentCue` 语义。
