@@ -249,11 +249,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Bundled ffmpeg failed -version with exit code $LASTEXITCODE"
           }
+          $fixtureCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if ($null -eq $fixtureCommand) {
+            choco install ffmpeg -y --no-progress
+            $fixtureCommand = Get-Command ffmpeg -ErrorAction Stop
+          }
+          $fixtureFfmpeg = $fixtureCommand.Source
+          & $fixtureFfmpeg -version
+          if ($LASTEXITCODE -ne 0) {
+            throw "Fixture ffmpeg failed -version with exit code $LASTEXITCODE"
+          }
           $bash = (Get-Command bash -ErrorAction Stop).Source
-          $fixtureFfmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
           $env:FFMPEG_MIN = ($target -replace '\\', '/')
           $env:FIXTURE_FFMPEG = ($fixtureFfmpeg -replace '\\', '/')
-          & $bash -c 'SELF_CONTAINED_FIXTURES=1 bash tool/ffmpeg-min/smoke-test.sh'
+          & $bash -c 'bash tool/ffmpeg-min/smoke-test.sh'
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |

@@ -9,7 +9,6 @@ set -euo pipefail
 
 FFMPEG_MIN="${FFMPEG_MIN:?set FFMPEG_MIN to the minimal ffmpeg binary}"
 FIXTURE_FFMPEG="${FIXTURE_FFMPEG:-ffmpeg}"
-SELF_CONTAINED_FIXTURES="${SELF_CONTAINED_FIXTURES:-0}"
 WORK="${WORK:-$(mktemp -d)}"
 KEEP_WORK="${KEEP_WORK:-0}"
 
@@ -64,49 +63,26 @@ EOF
 
 echo "[ffmpeg-min-smoke] generating representative inputs in $WORK"
 
-if [ "$SELF_CONTAINED_FIXTURES" = "1" ]; then
-  # Final-package smoke runs on the copied bundle binary without trusting host
-  # PATH ffmpeg. Keep fixture generation to native LGPL codecs enabled in the
-  # minimal build so the check catches an invalid/missing bundled executable.
-  MP4_FIXTURE="$WORK/mpeg4-movtext.mp4"
-  MKV_FIXTURE="$WORK/mpeg4-ass.mkv"
-  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
-    -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
-    -f lavfi -i "sine=frequency=440:duration=2" \
-    -i "$WORK/sub.srt" \
-    -map 0:v -map 1:a -map 2:s \
-    -c:v mpeg4 -pix_fmt yuv420p \
-    -c:a aac -c:s mov_text -shortest "$MP4_FIXTURE"
+MP4_FIXTURE="$WORK/h264-movtext.mp4"
+MKV_FIXTURE="$WORK/h264-ass.mkv"
 
-  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
-    -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
-    -f lavfi -i "sine=frequency=660:duration=2" \
-    -i "$WORK/sub.ass" \
-    -map 0:v -map 1:a -map 2:s \
-    -c:v mpeg4 -pix_fmt yuv420p \
-    -c:a aac -c:s ass -shortest "$MKV_FIXTURE"
-else
-  MP4_FIXTURE="$WORK/h264-movtext.mp4"
-  MKV_FIXTURE="$WORK/h264-ass.mkv"
+# MP4: H.264 + AAC + mov_text, covering the most common video path.
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -i "$WORK/sub.srt" \
+  -map 0:v -map 1:a -map 2:s \
+  -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+  -c:a aac -c:s mov_text -shortest "$MP4_FIXTURE"
 
-  # MP4: H.264 + AAC + mov_text, covering the most common video path.
-  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
-    -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
-    -f lavfi -i "sine=frequency=440:duration=2" \
-    -i "$WORK/sub.srt" \
-    -map 0:v -map 1:a -map 2:s \
-    -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
-    -c:a aac -c:s mov_text -shortest "$MP4_FIXTURE"
-
-  # MKV: H.264 + Opus + ASS, covering Matroska and native subtitle extraction.
-  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
-    -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
-    -f lavfi -i "sine=frequency=660:duration=2" \
-    -i "$WORK/sub.ass" \
-    -map 0:v -map 1:a -map 2:s \
-    -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
-    -c:a libopus -c:s ass -shortest "$MKV_FIXTURE"
-fi
+# MKV: H.264 + Opus + ASS, covering Matroska and native subtitle extraction.
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
+  -f lavfi -i "sine=frequency=660:duration=2" \
+  -i "$WORK/sub.ass" \
+  -map 0:v -map 1:a -map 2:s \
+  -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+  -c:a libopus -c:s ass -shortest "$MKV_FIXTURE"
 
 # Raw and ASF audio formats explicitly accepted by AudiobookStorage.
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \

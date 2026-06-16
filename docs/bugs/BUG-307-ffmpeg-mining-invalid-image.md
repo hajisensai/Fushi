@@ -11,9 +11,10 @@
   明确识别 `STATUS_INVALID_IMAGE_FORMAT / 0xC000007B`。音频裁剪和 GIF 裁剪支持
   `onFailure` 回传诊断，视频/有声书制卡把失败原因写入日志、OSD/toast，避免静默缺失。
   复核退回后补强：Windows release workflow 在 Inno 打包前直接执行最终 bundle 里的
-  `hibiki\build\windows\x64\runner\Release\ffmpeg.exe -version`，并用该同一个二进制跑
-  `tool/ffmpeg-min/smoke-test.sh` 覆盖内封字幕、GIF、截图、封面与句子音频裁剪，防止普通用户
-  收到不可启动的 bundled ffmpeg。视频制卡路径改为在已请求句子音频且裁剪失败时中止本次制卡，
+  `hibiki\build\windows\x64\runner\Release\ffmpeg.exe -version`，并用该最终二进制作为
+  `FFMPEG_MIN` 跑 `tool/ffmpeg-min/smoke-test.sh` 覆盖内封字幕、GIF、截图、封面与句子音频裁剪；
+  MP4/MKV fixture 仍由 full ffmpeg 生成，避免为了 smoke 输入生成而扩最小构建的 encoders/muxers。
+  视频制卡路径改为在已请求句子音频且裁剪失败时中止本次制卡，
   不再继续创建 `{sasayaki-audio}` 为空的成功卡；阅读器/有声书原有阻断行为保持一致。
   提交：本任务分支 `codex/todo-458-ffmpeg-mining-audio`（最终哈希见 TODO-458 看板 solution）。
 - **[x] ② 已加自动化测试** — 覆盖 ffmpeg `-1073741701` 诊断、bundled fallback executable
