@@ -319,6 +319,8 @@ enum _VideoSidePanelKind {
   chapters,
 }
 
+enum _VideoControlPopoverKind { volume, speed }
+
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
@@ -337,13 +339,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 顶/底栏控制图标尺寸，随界面大小缩放（TODO-067）。与查词弹窗 ×appUiScale 同口径。
   double get _videoControlIconSize => _videoControlIconSizeBase * _videoUiScale;
-
-  /// 一行式音量横滑条的固定占位宽度基线（TODO-377）。占位宽度是常量（仅随界面缩放），
-  /// 与 hover 状态无关——这是「hover 零位移」的根：控件几何永不因鼠标进出而变化。
-  static const double _volumeSliderWidthBase = 72;
-
-  /// 一行式音量横滑条占位宽度，随界面大小缩放（与图标 / 其它控件同口径）。
-  double get _volumeSliderWidth => _volumeSliderWidthBase * _videoUiScale;
 
   /// 中央播放/暂停键尺寸，随界面大小缩放（TODO-067）。
   double get _videoPlayPauseIconSize =>
@@ -381,6 +376,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 移动控制条进度条轨道高度基线（TODO-157/BUG-218）。media_kit 默认 2.4；抬高让
   /// 轨道更醒目、更易滑。随界面缩放。
   static const double _videoSeekBarTrackHeightBase = 5;
+  static const double _videoControlPopoverGapBase = 8;
+  static const double _volumePopoverSliderHeightBase = 136;
 
   /// 进度条与按钮条竖直间距，随界面大小缩放（TODO-156）。
   double get _videoSeekBarButtonGap =>
@@ -486,6 +483,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
   final ValueNotifier<_VideoSidePanelKind?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelKind?>(null);
+  final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
+      ValueNotifier<_VideoControlPopoverKind?>(null);
+  final LayerLink _volumeControlPopoverLink = LayerLink();
+  final Map<String, LayerLink> _controlPopoverItemLinks = <String, LayerLink>{};
+  LayerLink? _activeControlPopoverLink;
+  bool _controlPopoverAnchorHovered = false;
+  bool _controlPopoverPanelHovered = false;
+  bool _controlPopoverPinned = false;
+  Timer? _controlPopoverHideTimer;
 
   /// 画面内控制布局编辑模式（TODO-440）。用 [ValueNotifier] 而非普通 setState：
   /// 叠层渲染在 media_kit controls builder 里，全屏路由同样需要即时开关。
@@ -811,18 +817,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 返回时复位。修「点菜单/字幕点快了弹出两个」。
   bool _videoSheetOpen = false;
 
-  /// 音量 popover（TODO-337）状态。桌面 hover 音量按钮就地弹紧凑竖向滑条 popover，
-  /// 触屏点击弹同款 popover（滑条 + 静音按钮），均非 modal——锚定到音量按钮，浮在
-  /// 音量控件显示真相源（0..100，静音时为 0）（TODO-377）。
+  /// 音量控件显示真相源（0..100，静音时为 0）（TODO-377 / TODO-438）。
   ///
-  /// 底栏音量控件是「图标 + 常驻横滑条」一行式（[_buildVolumeButton]），布局尺寸与
-  /// hover 无关、零位移；不再走旧的 hover 弹出竖向 popover（OverlayEntry + 锚点几何
-  /// 映射 + 多个 hover bool + 延迟关闭定时，TODO-337 的整套复杂度已删）。
+  /// 底栏音量控件在 TODO-438 后只保留固定尺寸图标锚点（[_buildVolumeButton]），hover /
+  /// click / tap 打开锚定按钮上方的紧凑浮层。底栏本身不内联滑条、不随 hover 改宽，仍保持
+  /// 零布局位移。
   ///
   /// [VideoPlayerController.setVolume] 不发 [ChangeNotifier] 通知，控制条也不监听
   /// controller 的音量变化重建，故用本 notifier 作显示真相源：所有改音量入口（滑条拖动 /
   /// 滚轮 / 键盘音量键 / 静音切换 / media_kit 移动端竖滑）统一经 [_syncVolumeDisplay]
-  /// 写它，[ValueListenableBuilder] 只重建音量控件子树（图标 + 滑条值），不重建整条。
+  /// 写它，[ValueListenableBuilder] 只重建音量图标 / 浮层子树，不重建整条。
   final ValueNotifier<double> _volumeDisplay = ValueNotifier<double>(100);
 
   /// 换集加载代际计数：每次 [_loadEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
@@ -914,6 +918,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _mediaKitControlsVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _immersiveLocked.addListener(_applyControlsVisibilityFromMediaKit);
     _videoSidePanel.addListener(_applyControlsVisibilityFromMediaKit);
+    _videoControlPopover.addListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
     WidgetsBinding.instance.addObserver(this);
@@ -1539,7 +1544,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     // 标题先推给响应式 notifier，让全屏路由顶栏（不随页面 setState 重建）也跟上（BUG-120）。
     _titleNotifier.value = title;
-    // 一行式音量控件显示真相源对齐 controller 实际音量（换集复用同一 controller，TODO-377）。
+    // 音量控件显示真相源对齐 controller 实际音量（换集复用同一 controller，TODO-377/438）。
     _syncVolumeDisplay(controller.volume);
     setState(() {
       _controller = controller;
@@ -1889,10 +1894,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         .removeListener(_applyControlsVisibilityFromMediaKit);
     _immersiveLocked.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoSidePanel.removeListener(_applyControlsVisibilityFromMediaKit);
+    _videoControlPopover.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.dispose();
     _videoSidePanel.dispose();
+    _controlPopoverHideTimer?.cancel();
+    _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
@@ -2029,6 +2037,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 画面光标（BUG-258）。
   bool get _hasVideoOverlay =>
       _videoSidePanel.value != null ||
+      _videoControlPopover.value != null ||
       _subtitleListVisible.value ||
       _videoControlEditMode.value;
 
@@ -2055,7 +2064,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _videoControlEditMode.value;
     final bool visible = !gated && _mediaKitControlsVisible.value;
     _videoControlsVisible.value = visible;
-    // 音量控件随控制条整体显隐（一行式内联，无独立浮层需单独关闭，TODO-377）。
+    if (!visible && _videoControlPopover.value != null) {
+      _hideControlPopover();
+    }
+    // 音量 / 倍速轻浮层随控制条整体显隐；控制条消失时锚点也消失，浮层立即关闭。
     // 光标：可见 → 显示；不可见但有 overlay（用户要在 overlay 上操作）→ 显示；不可见且
     // 无 overlay（纯沉浸 / 自动淡出）→ 隐藏（保 BUG-258 / 镜像 hideMouseOnControlsRemoval）。
     _setCursorHidden(!visible && !_hasVideoOverlay);
@@ -3333,77 +3345,359 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 底栏音量控件（TODO-377）：一行式「图标 + 常驻横滑条」，与控制条其它按钮同高对齐。
+  Widget _controlPopoverAnchor({
+    required _VideoControlPopoverKind kind,
+    required LayerLink link,
+    required bool desktop,
+    required Widget child,
+  }) {
+    Widget anchored = CompositedTransformTarget(link: link, child: child);
+    if (!desktop) return anchored;
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) {
+        _controlPopoverAnchorHovered = true;
+        _showControlPopover(kind, popoverLink: link);
+      },
+      onHover: (_) {
+        _controlPopoverAnchorHovered = true;
+        _pokeControlsVisible();
+      },
+      onExit: (_) {
+        _controlPopoverAnchorHovered = false;
+        _scheduleControlPopoverHide();
+      },
+      child: anchored,
+    );
+  }
+
+  /// 底栏音量入口（TODO-438）：底栏只保留图标锚点，hover/click/tap 打开上方轻浮层。
   ///
-  /// 旧实现是固定宽度图标按钮 + hover 弹出独立 [OverlayEntry] 竖向滑条 popover
-  /// （锚点几何映射 + 多个 hover bool + 延迟关闭定时 + Esc/门控关闭，TODO-337），既丑又
-  /// 是「鼠标放上去就弹一块浮层」。现改为滑条**常驻**在底栏内联渲染：
-  /// - 一行式：图标按钮（点击 = 静音切换）+ 紧凑横向 [Slider] 同处一个 [Row]。
-  /// - 零位移：控件占位尺寸（图标尺寸 + [_volumeSliderWidth]）是常量，与 hover 状态完全
-  ///   无关——hover 既不展开滑条、也不改任何 widget 尺寸，故自身与相邻全屏键的几何恒不变
-  ///   （根治 BUG-248A 那类「hover 撑宽挤走右邻」与 popover 弹出抖动）。
-  /// - 桌面悬停滑条区域时鼠标滚轮调音量（[_onVolumeWheel]），与旧语义一致。
-  ///
-  /// 滑条值经 [_volumeDisplay] 驱动（[ValueListenableBuilder] 只重建本子树），所有改音量
-  /// 入口统一经 [_syncVolumeDisplay] 写它，保持显示与 controller 单一真相同步。
+  /// 滑条值仍经 [_volumeDisplay] 驱动；所有改音量入口（浮层滑条 / 滚轮 / 键盘音量键 /
+  /// 静音切换 / media_kit 移动竖滑）统一经 [_syncVolumeDisplay] 写它，保持显示与 controller
+  /// 单一真相同步。按钮自身不含 [Slider]，故 hover 不会改变底栏几何。
   Widget _buildVolumeButton(
     VideoPlayerController controller, {
     required bool desktop,
   }) {
-    final double sliderWidth = _volumeSliderWidth;
-    final Widget volumeRow = ValueListenableBuilder<double>(
+    final Widget volumeButton = ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
-        final Widget iconButton = Tooltip(
+        return Tooltip(
           message: t.shortcut_action_video_toggle_mute,
           child: desktop
               ? MaterialDesktopCustomButton(
                   icon:
                       Icon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () => unawaited(_toggleMute()),
+                  onPressed: () => _toggleControlPopover(
+                    _VideoControlPopoverKind.volume,
+                    popoverLink: _volumeControlPopoverLink,
+                  ),
                 )
               : MaterialCustomButton(
                   icon:
                       Icon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () => unawaited(_toggleMute()),
+                  onPressed: () => _toggleControlPopover(
+                    _VideoControlPopoverKind.volume,
+                    popoverLink: _volumeControlPopoverLink,
+                  ),
                 ),
-        );
-        // 横滑条固定占位宽度（与 hover 无关），thumb / track 跟随界面缩放，紧凑无标签。
-        final Widget slider = SizedBox(
-          width: sliderWidth,
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2.0 * _videoUiScale,
-              thumbShape: RoundSliderThumbShape(
-                enabledThumbRadius: 6.0 * _videoUiScale,
-              ),
-              overlayShape: RoundSliderOverlayShape(
-                overlayRadius: 12.0 * _videoUiScale,
-              ),
-            ),
-            child: Slider(
-              value: value.clamp(0.0, 100.0).toDouble(),
-              min: 0,
-              max: 100,
-              onChanged: (double next) => _setVolumeFromSlider(next),
-            ),
-          ),
-        );
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[iconButton, slider],
         );
       },
     );
-    // 桌面：悬停整个控件时滚轮调音量（不改尺寸，零位移）。触屏无滚轮语义。
-    if (!desktop) return volumeRow;
+    final Widget anchored = _controlPopoverAnchor(
+      kind: _VideoControlPopoverKind.volume,
+      link: _volumeControlPopoverLink,
+      desktop: desktop,
+      child: volumeButton,
+    );
+    if (!desktop) return anchored;
     return Listener(
       onPointerSignal: (PointerSignalEvent event) {
         if (event is PointerScrollEvent) {
           _onVolumeWheel(controller, event.scrollDelta.dy);
         }
       },
-      child: volumeRow,
+      child: anchored,
+    );
+  }
+
+  LayerLink _controlPopoverLinkFor(
+    VideoControlSlot slot,
+    VideoControlItem item,
+  ) {
+    final String key = '${slot.storageValue}:${item.storageValue}';
+    return _controlPopoverItemLinks.putIfAbsent(key, LayerLink.new);
+  }
+
+  void _toggleControlPopover(
+    _VideoControlPopoverKind kind, {
+    required LayerLink popoverLink,
+  }) {
+    if (_videoControlPopover.value == kind && _controlPopoverPinned) {
+      _hideControlPopover();
+      return;
+    }
+    _showControlPopover(kind, popoverLink: popoverLink, pinned: true);
+  }
+
+  void _showControlPopover(
+    _VideoControlPopoverKind kind, {
+    required LayerLink popoverLink,
+    bool pinned = false,
+  }) {
+    if (!mounted || _videoSheetOpen) return;
+    _controlPopoverHideTimer?.cancel();
+    _activeControlPopoverLink = popoverLink;
+    if (_videoControlPopover.value != kind) {
+      _controlPopoverPinned = pinned;
+    } else if (pinned) {
+      _controlPopoverPinned = true;
+    }
+    _hideVideoControlEditOverlay(revealControls: false);
+    if (_subtitleListVisible.value) {
+      _clearSelectedMiningCues();
+      _subtitleListVisible.value = false;
+    }
+    if (_videoSidePanel.value != null) {
+      _videoSidePanel.value = null;
+    }
+    _videoControlPopover.value = kind;
+    _pokeControlsVisible();
+    _refocusVideo();
+  }
+
+  void _hideControlPopover() {
+    _controlPopoverHideTimer?.cancel();
+    _controlPopoverPinned = false;
+    _activeControlPopoverLink = null;
+    if (_videoControlPopover.value != null) {
+      _videoControlPopover.value = null;
+    }
+  }
+
+  void _scheduleControlPopoverHide() {
+    _controlPopoverHideTimer?.cancel();
+    if (_controlPopoverPinned) return;
+    _controlPopoverHideTimer = Timer(const Duration(milliseconds: 180), () {
+      if (_controlPopoverAnchorHovered || _controlPopoverPanelHovered) return;
+      _hideControlPopover();
+    });
+  }
+
+  Widget _controlPopoverHoverKeepAlive({required Widget child}) {
+    if (!_isDesktopVideoControls) return child;
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) {
+        _controlPopoverPanelHovered = true;
+        _pokeControlsVisible();
+      },
+      onHover: (_) {
+        _controlPopoverPanelHovered = true;
+        _pokeControlsVisible();
+      },
+      onExit: (_) {
+        _controlPopoverPanelHovered = false;
+        _scheduleControlPopoverHide();
+      },
+      child: child,
+    );
+  }
+
+  Widget _buildVideoControlPopoverOverlay(VideoPlayerController controller) {
+    return Positioned.fill(
+      child: ValueListenableBuilder<_VideoControlPopoverKind?>(
+        valueListenable: _videoControlPopover,
+        builder: (BuildContext context, _VideoControlPopoverKind? kind, _) {
+          if (kind == null) return const SizedBox.shrink();
+          final LayerLink? link = _activeControlPopoverLink;
+          if (link == null) return const SizedBox.shrink();
+          return Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _hideControlPopover,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              CompositedTransformFollower(
+                link: link,
+                showWhenUnlinked: false,
+                targetAnchor: Alignment.topCenter,
+                followerAnchor: Alignment.bottomCenter,
+                offset: Offset(
+                  0,
+                  -_videoControlPopoverGapBase * _videoUiScale,
+                ),
+                child: _controlPopoverHoverKeepAlive(
+                  child: _buildVideoControlPopoverContent(kind, controller),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildVideoControlPopoverContent(
+    _VideoControlPopoverKind kind,
+    VideoPlayerController controller,
+  ) {
+    switch (kind) {
+      case _VideoControlPopoverKind.volume:
+        return _buildVolumePopover();
+      case _VideoControlPopoverKind.speed:
+        return _buildSpeedPopover();
+    }
+  }
+
+  Widget _buildControlPopoverFrame({
+    required double width,
+    required Widget child,
+  }) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    return Material(
+      color: Colors.transparent,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: 0.28),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints.tightFor(width: width),
+          child: Padding(
+            padding: EdgeInsets.all(10 * _videoUiScale),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVolumePopover() {
+    return ValueListenableBuilder<double>(
+      valueListenable: _volumeDisplay,
+      builder: (BuildContext context, double value, Widget? child) {
+        final double clamped = value.clamp(0.0, 100.0).toDouble();
+        final ColorScheme cs = _videoChromeColorScheme(context);
+        return _buildControlPopoverFrame(
+          width: 76 * _videoUiScale,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Tooltip(
+                message: t.shortcut_action_video_toggle_mute,
+                child: IconButton(
+                  icon: Icon(_volumeIconFor(clamped)),
+                  color: cs.primary,
+                  onPressed: () => unawaited(_toggleMute()),
+                ),
+              ),
+              SizedBox(
+                height: _volumePopoverSliderHeightBase * _videoUiScale,
+                child: RotatedBox(
+                  quarterTurns: -1,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3.0 * _videoUiScale,
+                      thumbShape: RoundSliderThumbShape(
+                        enabledThumbRadius: 7.0 * _videoUiScale,
+                      ),
+                      overlayShape: RoundSliderOverlayShape(
+                        overlayRadius: 14.0 * _videoUiScale,
+                      ),
+                    ),
+                    child: Slider(
+                      value: clamped,
+                      min: 0,
+                      max: 100,
+                      onChanged: (double next) => _setVolumeFromSlider(next),
+                    ),
+                  ),
+                ),
+              ),
+              Text(
+                '${clamped.round()}%',
+                style: TextStyle(
+                  color: cs.onSurface,
+                  fontSize: 12 * _videoUiScale,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  double _nearestSpeedPreset(double value, List<double> presets) {
+    double nearest = presets.first;
+    double nearestDistance = (value - nearest).abs();
+    for (final double preset in presets.skip(1)) {
+      final double distance = (value - preset).abs();
+      if (distance < nearestDistance) {
+        nearest = preset;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }
+
+  Widget _buildSpeedPopover() {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final List<double> speedPresets = _speedMenuPresets();
+    final double sliderValue = _playbackSpeed.clamp(0.5, 2.0).toDouble();
+    return _buildControlPopoverFrame(
+      width: 220 * _videoUiScale,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.speed, color: cs.primary, size: 20 * _videoUiScale),
+              SizedBox(width: 8 * _videoUiScale),
+              Expanded(
+                child: Text(
+                  '${_playbackSpeed.toStringAsFixed(1)}x',
+                  style: TextStyle(
+                    color: cs.onSurface,
+                    fontSize: 14 * _videoUiScale,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => unawaited(_setSpeed(1.0)),
+                child: const Text('1.0x'),
+              ),
+            ],
+          ),
+          Slider(
+            value: sliderValue,
+            min: 0.5,
+            max: 2.0,
+            divisions: speedPresets.length > 1 ? speedPresets.length - 1 : null,
+            label: '${_playbackSpeed.toStringAsFixed(1)}x',
+            onChanged: (double value) {
+              final double next = _nearestSpeedPreset(value, speedPresets);
+              unawaited(_setSpeed(next));
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -3424,7 +3718,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(_adjustVolume(delta));
   }
 
-  /// 同步音量显示真相源（[_volumeDisplay]）→ 驱动一行式音量控件的图标与滑条重建。
+  /// 同步音量显示真相源（[_volumeDisplay]）→ 驱动音量图标与浮层滑条重建。
   /// 所有改音量入口（滑条 / 滚轮 / 键盘音量键 / 静音切换 / media_kit 移动竖滑）统一调它。
   void _syncVolumeDisplay(double volume) {
     _volumeDisplay.value = volume.clamp(0.0, 100.0).toDouble();
@@ -3707,7 +4001,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return <Widget>[
       for (final VideoControlButton button
           in _slotLearningButtons(VideoControlSlot.bottomRight))
-        _buildVideoControlButton(controller, button, desktop: desktop),
+        _buildVideoControlButton(
+          controller,
+          button,
+          desktop: desktop,
+          slot: VideoControlSlot.bottomRight,
+        ),
     ];
   }
 
@@ -3782,30 +4081,50 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller, {
     required bool desktop,
   }) {
+    Widget buttonFor(VideoControlItem item) {
+      final LayerLink? popoverLink = item == VideoControlItem.speed
+          ? _controlPopoverLinkFor(slot, item)
+          : null;
+      final Widget button = Tooltip(
+        message: _videoControlItemTooltip(item),
+        child: desktop
+            ? MaterialDesktopCustomButton(
+                icon: Icon(
+                  _videoControlItemIcon(item),
+                  size: _videoControlIconSize,
+                ),
+                onPressed: () => _activateVideoControlItem(
+                  item,
+                  controller,
+                  popoverLink: popoverLink,
+                ),
+              )
+            : MaterialCustomButton(
+                icon: Icon(
+                  _videoControlItemIcon(item),
+                  size: _videoControlIconSize,
+                ),
+                onPressed: () => _activateVideoControlItem(
+                  item,
+                  controller,
+                  popoverLink: popoverLink,
+                ),
+              ),
+      );
+      if (popoverLink == null) return button;
+      return _controlPopoverAnchor(
+        kind: _VideoControlPopoverKind.speed,
+        link: popoverLink,
+        desktop: desktop,
+        child: button,
+      );
+    }
+
     return <Widget>[
       for (final VideoControlItem item in _slotChipItems(slot))
         Flexible(
           fit: FlexFit.loose,
-          child: Tooltip(
-            message: _videoControlItemTooltip(item),
-            child: desktop
-                ? MaterialDesktopCustomButton(
-                    icon: Icon(
-                      _videoControlItemIcon(item),
-                      size: _videoControlIconSize,
-                    ),
-                    onPressed: () =>
-                        _activateVideoControlItem(item, controller),
-                  )
-                : MaterialCustomButton(
-                    icon: Icon(
-                      _videoControlItemIcon(item),
-                      size: _videoControlIconSize,
-                    ),
-                    onPressed: () =>
-                        _activateVideoControlItem(item, controller),
-                  ),
-          ),
+          child: buttonFor(item),
         ),
     ];
   }
@@ -3891,11 +4210,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// the user places the button.
   void _activateVideoControlItem(
     VideoControlItem item,
-    VideoPlayerController controller,
-  ) {
+    VideoPlayerController controller, {
+    LayerLink? popoverLink,
+  }) {
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) {
-      _activateVideoControlButton(legacy);
+      _activateVideoControlButton(legacy, popoverLink: popoverLink);
       return;
     }
     switch (item) {
@@ -4043,7 +4363,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       positionIndicator,
       for (final VideoControlButton button
           in _slotLearningButtons(VideoControlSlot.bottomLeft))
-        _buildVideoControlButton(controller, button, desktop: desktop),
+        _buildVideoControlButton(
+          controller,
+          button,
+          desktop: desktop,
+          slot: VideoControlSlot.bottomLeft,
+        ),
     ];
     return Stack(
       alignment: Alignment.center,
@@ -4115,20 +4440,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
     VideoControlButton button, {
     required bool desktop,
+    required VideoControlSlot slot,
   }) {
+    final LayerLink? popoverLink = button == VideoControlButton.speed
+        ? _controlPopoverLinkFor(slot, VideoControlItem.speed)
+        : null;
     final Widget icon = Icon(
       _videoControlButtonIcon(button),
       size: _videoControlIconSize,
     );
-    return desktop
+    final Widget controlButton = desktop
         ? MaterialDesktopCustomButton(
             icon: icon,
-            onPressed: () => _activateVideoControlButton(button),
+            onPressed: () =>
+                _activateVideoControlButton(button, popoverLink: popoverLink),
           )
         : MaterialCustomButton(
             icon: icon,
-            onPressed: () => _activateVideoControlButton(button),
+            onPressed: () =>
+                _activateVideoControlButton(button, popoverLink: popoverLink),
           );
+    if (popoverLink == null) return controlButton;
+    return _controlPopoverAnchor(
+      kind: _VideoControlPopoverKind.speed,
+      link: popoverLink,
+      desktop: desktop,
+      child: controlButton,
+    );
   }
 
   IconData _videoControlButtonIcon(VideoControlButton button) {
@@ -4161,10 +4499,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  void _activateVideoControlButton(VideoControlButton button) {
+  void _activateVideoControlButton(
+    VideoControlButton button, {
+    LayerLink? popoverLink,
+  }) {
     switch (button) {
       case VideoControlButton.speed:
-        _showSpeedMenu();
+        _showSpeedMenu(popoverLink: popoverLink);
         break;
       case VideoControlButton.subtitleList:
         _toggleSubtitleJumpList();
@@ -4678,13 +5019,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  /// 弹快捷倍速选择（底部小 sheet，复用 [_setSpeed] 与设置面板同档位）。
-  ///
-  /// 档位由 [_speedMenuPresets] 按 [_speedStep] 生成（默认 0.5..2.0 步进 0.1，约 16 项），
-  /// 横屏 / 小屏时整列可超过半屏高。故走 `isScrollControlled` + maxHeight 约束 +
-  /// 可滚动 [ListView]（参考 [_showEpisodeList]），底部档位不再被裁（TODO-127）。
-  void _showSpeedMenu() {
-    _showVideoSidePanel(_VideoSidePanelKind.speed);
+  /// 弹快捷倍速浮层（TODO-438）：有按钮触发源时锚定 speed 按钮上方，复用
+  /// [_speedMenuPresets] 与 [_setSpeed]。右键菜单没有稳定按钮锚点，退回可见 side panel，
+  /// 避免打开 showWhenUnlinked=false 的不可见 follower。
+  void _showSpeedMenu({LayerLink? popoverLink}) {
+    if (popoverLink == null) {
+      _showVideoSidePanel(_VideoSidePanelKind.speed);
+      return;
+    }
+    _toggleControlPopover(
+      _VideoControlPopoverKind.speed,
+      popoverLink: popoverLink,
+    );
   }
 
   List<double> _speedMenuPresets() {
@@ -4795,6 +5141,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _showVideoSidePanel(_VideoSidePanelKind kind) {
     if (_videoSheetOpen) return;
     _hideVideoControlEditOverlay(revealControls: false);
+    _hideControlPopover();
     _videoSidePanel.value = kind;
     // 与 push-aside 字幕列表互斥（TODO-314）：开任何浮层都先关字幕列表。
     if (_subtitleListVisible.value) {
@@ -6210,6 +6557,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 _buildSideLockButton(),
                 _buildVideoSideActionRail(controller),
                 _buildVideoSidePanelOverlay(controller),
+                _buildVideoControlPopoverOverlay(controller),
                 ValueListenableBuilder<bool>(
                   valueListenable: _videoControlEditMode,
                   builder: (BuildContext _, bool editing, __) {
@@ -6355,6 +6703,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final List<VideoControlItem> items = _slotChipItems(slot);
     if (items.isEmpty) return const SizedBox.shrink();
     final ColorScheme cs = _videoChromeColorScheme(context);
+
+    Widget buttonFor(VideoControlItem item) {
+      final LayerLink? popoverLink = item == VideoControlItem.speed
+          ? _controlPopoverLinkFor(slot, item)
+          : null;
+      final Widget button = Material(
+        color: cs.surface.withValues(alpha: 0.55),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: IconButton(
+          tooltip: _videoControlItemTooltip(item),
+          iconSize: _videoControlIconSize,
+          icon: Icon(_videoControlItemIcon(item)),
+          color: cs.onSurface,
+          onPressed: () => _activateVideoControlItem(
+            item,
+            controller,
+            popoverLink: popoverLink,
+          ),
+        ),
+      );
+      if (popoverLink == null) return button;
+      return _controlPopoverAnchor(
+        kind: _VideoControlPopoverKind.speed,
+        link: popoverLink,
+        desktop: _isDesktopVideoControls,
+        child: button,
+      );
+    }
+
     return Align(
       alignment: alignment,
       child: SafeArea(
@@ -6367,19 +6745,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 for (final VideoControlItem item in items) ...<Widget>[
-                  Material(
-                    color: cs.surface.withValues(alpha: 0.55),
-                    shape: const CircleBorder(),
-                    clipBehavior: Clip.antiAlias,
-                    child: IconButton(
-                      tooltip: _videoControlItemTooltip(item),
-                      iconSize: _videoControlIconSize,
-                      icon: Icon(_videoControlItemIcon(item)),
-                      color: cs.onSurface,
-                      onPressed: () =>
-                          _activateVideoControlItem(item, controller),
-                    ),
-                  ),
+                  buttonFor(item),
                   if (item != items.last) const SizedBox(height: 8),
                 ],
               ],

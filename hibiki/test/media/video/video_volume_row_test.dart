@@ -2,14 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（TODO-377）：视频底栏音量控件是「图标 + 常驻横滑条」一行式，且布局尺寸
-/// 与 hover 状态无关（零位移）。media_kit 控制条 headless 渲染不全，无法用纯 widget
+/// 源码守卫（TODO-438）：视频底栏音量控件是「图标锚点 + 上方紧凑浮层」，且布局尺寸
+/// 与 hover / tap 状态无关（零位移）。media_kit 控制条 headless 渲染不全，无法用纯 widget
 /// 测试拉起整条控制条，故在源码层钉死结构不变式：
 ///
-/// 1. 一行式：[_buildVolumeButton] 内是 `Row`（图标 + 横向 `Slider`），不再弹独立浮层。
-/// 2. 零位移：滑条占位宽度是常量 [_volumeSliderWidth]（仅随界面缩放），不随 hover 变化；
-///    旧的 hover 弹出竖向 popover（OverlayEntry + 锚点几何 + 多个 hover bool + 延迟关闭
-///    定时）整套已删——它是「鼠标放上去弹一块浮层 / 抖动」的根。
+/// 1. 底栏只保留图标按钮锚点：[_buildVolumeButton] 内不含 `Slider` / `Row` 横向占位。
+/// 2. 零位移：浮层通过 `CompositedTransformFollower` 锚定按钮上方，hover / click / tap
+///    只切换浮层，不改变底栏 widget 尺寸；旧的 hover 改宽 / OverlayEntry 几何测量实现不恢复。
 /// 3. 单一真相源：滑条 / 滚轮 / 键盘音量键 / 静音切换 / media_kit 移动竖滑都经
 ///    [_syncVolumeDisplay] 写 [_volumeDisplay]，并经 controller.setVolume 落到播放器。
 void main() {
@@ -26,7 +25,7 @@ void main() {
     return m.group(1)!;
   }
 
-  group('TODO-377 一行式音量控件结构', () {
+  group('TODO-438 紧凑音量入口结构', () {
     final String build = methodBody(
       page,
       RegExp(
@@ -36,33 +35,77 @@ void main() {
       '_buildVolumeButton',
     );
 
-    test('音量控件是图标 + 横向 Slider 同处一个 Row（一行式）', () {
-      expect(build, contains('Row('), reason: '一行式：图标与滑条须在同一个 Row');
-      expect(build, contains('Slider('), reason: '一行式须含横向 Slider（而非弹出浮层）');
-      expect(build, contains('mainAxisSize: MainAxisSize.min'),
-          reason: 'Row 用 min 紧凑占位，不撑满底栏');
+    test('音量控件是图标锚点，底栏不内联 Slider 或 Row', () {
+      expect(build, contains('_controlPopoverAnchor('),
+          reason: '底栏音量按钮必须是固定尺寸锚点，由锚点打开浮层');
+      expect(build, contains('_VideoControlPopoverKind.volume'),
+          reason: '音量入口必须打开 volume 浮层');
+      expect(build, contains('_volumeControlPopoverLink'),
+          reason: '音量浮层必须锚定音量按钮，而非参与底栏布局');
+      expect(build, isNot(contains('Slider(')),
+          reason: '底栏按钮内不得内联 Slider，避免占位随需求回退到横向滑条');
+      expect(build, isNot(contains('Row(')),
+          reason: '底栏音量入口只占图标空间，不再渲染图标 + 横滑条 Row');
     });
 
-    test('滑条占位是固定宽度（与 hover 无关 → 零位移）', () {
-      expect(build, contains('_volumeSliderWidth'),
-          reason: '滑条须用固定占位宽度常量（hover 零位移的根）');
-      expect(page, contains('static const double _volumeSliderWidthBase'),
-          reason: '占位宽度须是源码常量，不随运行时 hover 状态计算');
+    test('浮层锚定按钮上方，hover / tap 不改变底栏几何', () {
+      expect(page, contains('CompositedTransformFollower('),
+          reason: '浮层应通过固定锚点跟随按钮，而非插入底栏布局');
+      expect(page, contains('showWhenUnlinked: false'),
+          reason: '锚点消失时浮层必须自动不可见');
+      expect(page, contains('targetAnchor: Alignment.topCenter'),
+          reason: '浮层应锚定按钮上方');
+      expect(page, isNot(contains('_volumeSliderWidth')),
+          reason: 'TODO-438 不再保留底栏横滑条固定宽度占位');
+      expect(page, isNot(contains('MaterialDesktopVolumeButton')),
+          reason: '不得恢复旧 MaterialDesktopVolumeButton / hover 改宽实现');
     });
 
     test('桌面悬停滑条区域滚轮调音量，但不改任何尺寸', () {
       expect(build, contains('PointerScrollEvent'), reason: '桌面须保留滚轮调音量');
       expect(build, contains('_onVolumeWheel('), reason: '滚轮走 _onVolumeWheel');
-      // 一行式控件体内不应再有任何「随 hover 改尺寸 / 弹浮层」的痕迹。
+      // 控件体内不应再有任何「随 hover 改尺寸」的痕迹。
       expect(build.contains('AnimatedContainer'), isFalse,
           reason: 'hover 不得用 AnimatedContainer 撑宽（BUG-248A 原症状）');
-      expect(build.contains('OverlayEntry'), isFalse, reason: '不再弹独立浮层');
+      expect(build.contains('OverlayEntry'), isFalse,
+          reason: '浮层由 controls Stack 内固定 overlay 渲染，不用 OverlayEntry');
     });
 
-    test('点击图标 = 静音切换，滑条拖动经 controller + 显示真相源', () {
-      expect(build, contains('_toggleMute()'), reason: '点击音量图标 = 静音切换');
-      expect(build, contains('_setVolumeFromSlider('),
-          reason: '滑条拖动走 _setVolumeFromSlider');
+    test('点击图标打开浮层；浮层内保留静音与竖向滑条', () {
+      expect(build, contains('_toggleControlPopover('),
+          reason: '点击 / tap 图标应打开或固定音量浮层');
+      expect(build, isNot(contains('_toggleMute()')),
+          reason: '底栏图标现在是浮层入口，静音按钮保留在浮层内');
+
+      final String toggle = methodBody(
+        page,
+        RegExp(
+          r'void _toggleControlPopover\(\s*_VideoControlPopoverKind kind,\s*\{\s*required LayerLink popoverLink,\s*\}\s*\) \{(.*?)\n  \}',
+          dotAll: true,
+        ),
+        '_toggleControlPopover',
+      );
+      expect(toggle, contains('_controlPopoverPinned'),
+          reason: 'hover 已打开时点击应 pin；已 pin 时再点击才关闭');
+      expect(toggle, contains('popoverLink: popoverLink'),
+          reason: 'click / tap 应沿用触发按钮自己的 LayerLink 锚点');
+      expect(toggle, contains('pinned: true'), reason: 'click / tap 应打开并固定浮层');
+
+      final String popover = methodBody(
+        page,
+        RegExp(
+          r'Widget _buildVolumePopover\(\) \{(.*?)\n  \}',
+          dotAll: true,
+        ),
+        '_buildVolumePopover',
+      );
+      expect(popover, contains('_toggleMute()'), reason: '浮层内保留静音按钮');
+      expect(popover, contains('RotatedBox('), reason: '浮层内是竖向滑条');
+      expect(popover, contains('quarterTurns: -1'),
+          reason: '竖向音量滑条用 RotatedBox 转向');
+      expect(popover, contains('Slider('), reason: '浮层内保留可拖动 Slider');
+      expect(popover, contains('_setVolumeFromSlider('),
+          reason: '浮层滑条拖动走现有同步通道');
     });
   });
 
@@ -74,7 +117,7 @@ void main() {
         reason: '音量显示真相源是一个 ValueNotifier<double>',
       );
       expect(page, contains('ValueListenableBuilder<double>'),
-          reason: '音量控件经 ValueListenableBuilder 只重建自身子树');
+          reason: '音量图标与浮层经 ValueListenableBuilder 消费显示真相源');
     });
 
     test('_setVolumeFromSlider 即时写 controller + 同步显示真相源', () {
@@ -133,8 +176,8 @@ void main() {
     });
   });
 
-  group('TODO-377 旧 hover 弹出 popover 复杂度已删除', () {
-    test('页面不再含任何旧音量 popover 符号', () {
+  group('TODO-438 旧 hover 改宽 / OverlayEntry 复杂度不恢复', () {
+    test('页面不再含任何旧音量 OverlayEntry 实现符号', () {
       const List<String> banned = <String>[
         '_volumeOverlayEntry',
         '_volumeButtonKey',
@@ -147,7 +190,6 @@ void main() {
         '_dismissVolumePopover',
         '_syncVolumePopover',
         '_toggleVolumePopover',
-        '_buildVolumePopover',
         '_volumeAnchorRectInOverlay',
         '_onVolumeAnchorHover',
         '_scheduleVolumePopoverHoverClose',
@@ -158,7 +200,7 @@ void main() {
       }
     });
 
-    test('dispose 释放 _volumeDisplay notifier', () {
+    test('dispose 释放音量显示与浮层状态', () {
       final RegExpMatch? m = RegExp(
         r'void dispose\(\) \{(.*?)\n  \}',
         dotAll: true,
@@ -166,6 +208,10 @@ void main() {
       expect(m, isNotNull, reason: '找不到 dispose 方法体');
       expect(m!.group(1), contains('_volumeDisplay.dispose()'),
           reason: 'dispose 须释放 _volumeDisplay');
+      expect(m.group(1), contains('_controlPopoverHideTimer?.cancel()'),
+          reason: 'dispose 须取消浮层延迟关闭 timer');
+      expect(m.group(1), contains('_videoControlPopover.dispose()'),
+          reason: 'dispose 须释放浮层 ValueNotifier');
     });
   });
 }

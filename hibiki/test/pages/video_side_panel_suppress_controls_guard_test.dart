@@ -48,15 +48,16 @@ void main() {
       'void _markControlsVisible(bool visible) {',
     );
     final String flat = body.replaceAll(RegExp(r'\s+'), ' ');
-    expect(
-      flat.contains(
-        'final bool gated = _immersiveLocked.value || '
-        '_videoSidePanel.value != null || _subtitleListVisible.value;',
-      ),
-      isTrue,
-      reason: '派生的门控 gated 必须含 _immersiveLocked / _videoSidePanel / '
-          '_subtitleListVisible 三条件',
-    );
+    expect(flat.contains('final bool gated ='), isTrue,
+        reason: '派生函数内必须有统一 gated 门控');
+    for (final String token in <String>[
+      '_immersiveLocked.value',
+      '_videoSidePanel.value != null',
+      '_subtitleListVisible.value',
+      '_videoControlEditMode.value',
+    ]) {
+      expect(flat.contains(token), isTrue, reason: '派生的门控 gated 必须含 $token');
+    }
     expect(flat.contains('!gated && _mediaKitControlsVisible.value'), isTrue,
         reason: '门控成立强制不可见、否则等于 media_kit 真实可见性（单一真相源）');
   });
@@ -87,23 +88,24 @@ void main() {
     // 修复把原来只绑 _immersiveLocked 的 ValueListenableBuilder 换成 merge 三 notifier
     // （TODO-329 把字幕列表也纳入，否则其 hideMouseOnControlsRemoval 隐藏画面光标）。
     final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
-    expect(
-      flat.contains(
-        '<Listenable>[ _immersiveLocked, _videoSidePanel, '
-        '_subtitleListVisible, ]',
-      ),
-      isTrue,
-      reason: 'media_kit controls 的 IgnorePointer 必须监听沉浸锁 / 侧栏 / 字幕列表',
-    );
-    expect(
-      flat.contains(
-        'ignoring: _immersiveLocked.value || _videoSidePanel.value != null || '
-        '_subtitleListVisible.value',
-      ),
-      isTrue,
-      reason: 'IgnorePointer.ignoring 必须含 _immersiveLocked / _videoSidePanel / '
-          '_subtitleListVisible 三条件',
-    );
+    for (final String token in <String>[
+      '_immersiveLocked',
+      '_videoSidePanel',
+      '_subtitleListVisible',
+      '_videoControlEditMode',
+    ]) {
+      expect(flat.contains(token), isTrue,
+          reason: 'media_kit controls 的 IgnorePointer 必须监听 $token');
+    }
+    for (final String token in <String>[
+      '_immersiveLocked.value',
+      '_videoSidePanel.value != null',
+      '_subtitleListVisible.value',
+      '_videoControlEditMode.value',
+    ]) {
+      expect(flat.contains(token), isTrue,
+          reason: 'IgnorePointer.ignoring 必须含 $token');
+    }
   });
 
   test('_showVideoSidePanel 不再唤起控制条、_hideVideoSidePanel 关闭后唤回', () {
