@@ -1,6 +1,6 @@
 ## BUG-209 · 手机闪退实为Windows WGC FramePool teardown崩溃
 - **报告**：2026-06-12（用户报「又闪退了」，指认 Windows 桌面版 hibiki-windows-b1f960290）
-- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。**第十修重开（2026-06-14，TODO-305，「看有声书闪退」）**：第九修永久保活只覆盖 `StopInternal` 一条路径，漏了 `Start()` 重入覆盖 + `OnFrameArrived` resize `Recreate` 两条帧池丢弃/替换路径（详见文末「第十修」）。
+- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。**第十修重开（2026-06-14，TODO-305，「看有声书闪退」）**：第九修永久保活只覆盖 `StopInternal` 一条路径，漏了 `Start()` 重入覆盖 + `OnFrameArrived` resize `Recreate` 两条帧池丢弃/替换路径（详见文末「第十修」）。**第十二修重开（2026-06-16，TODO-439）**：v0.9.0.5025 仍崩同一 `GraphicsCapture.dll` `0xf0d5`，崩溃池对应 `create-pool` 后没有 `stop/retire/dtor`，说明保活还必须覆盖 active/running pool，而不能只覆盖 retire 后的 closed pool。
 
 ### dump 真实崩溃栈（决定性证据）
 两份 minidump（`hibiki.exe.8952.dmp` 6/12 0:11、`hibiki.exe.99916.dmp` 6/11 22:10）崩溃签名完全一致：
@@ -104,3 +104,15 @@ teardown 顺序：`session.Close()` -> `remove_FrameArrived(token)` -> `frame_po
 - **[x] ② 已加自动化测试** —— `hibiki/test/utils/wgc_capture_log_test.dart`（Dart 行为：路径定位 + 读后清滚动语义，host 可跑）+ `hibiki/test/widgets/wgc_capture_logging_guard_test.dart`（源码守卫：日志始终编译不被 NDEBUG 门控、关键生命周期点埋点、FrameArrived 成功路径不每帧写、crash dump handler 在 CoInitializeEx 前安装且链回前一个 filter、Dart 折入上传链路）。`flutter test` 两文件 10 例全绿；既有 `texture_bridge_stop_guard_test.dart` 仍绿（埋点未破坏第十修保活契约）。
 - **验证**：①Dart 侧 `flutter analyze --no-pub` 4 文件 0 issue + 上述测试全绿。②**原生 C++ 改动（wgc_log / crash_dump / texture_bridge 埋点 / 两个 CMakeLists）host 无法编译验证**——需 Windows `flutter build windows --release` 真机构建。③**真机取证待用户**：装新 Release 包，复现原始失败路径（看有声书 / 开 EPUB → 反复查词 / 开关弹窗 WebView → resize），崩溃后取 `%LOCALAPPDATA%\Hibiki\wgc_capture.log`（崩前帧池 create/retire/stop/recreate 时间线 + pool 指针）+ `%LOCALAPPDATA%\Hibiki\crashdumps\*.dmp`（cdb `!analyze -v` + `!vprot` 验崩溃帧池指针是否在 wgc_capture.log 的 retire 行出现过）。
 - **诚实标注**：本修**不修复崩溃本身**（第十修已逻辑闭合所有已知帧池裸释放窗口，逐行复核 `~TextureBridge`/`Start`-fail/`Recreate`-fail 三路径在第十修后都经 `RetireFramePoolLocked` 兜底退役保活，无新增 UAF），而是**为「若仍复发」提供决定性自证证据**：日志记录崩前帧池生命周期 + 崩溃帧池指针，minidump 记录精确崩点。若真机仍崩，可凭这两份证据立即判定「崩溃帧池是否走了退役保活」，定位是否还有第十修漏网的第四条帧池路径——终结「论证对了真机仍复发但拿不到证据」的循环。
+
+### 第十二修（active frame pool 从 create 起强保活，TODO-439，2026-06-16）
+
+**复发证据**：本机 `D:\APP\vs_claude_code\hibiki\.codex-test\todo-439-wgc-20260616\summary.md` 记录，`hibiki.exe 0.9.0.5025` 仍崩在同一签名：`GraphicsCapture.dll` `c0000005` offset `0xf0d5`，栈为 `Direct3D11CaptureFramePool::FirePresentEvent -> TypedEventHandler::operator()+0x15`，`rcx=0`。崩溃 pool `0x1ebe1f96148` 能与 captureLog 第二轮 `create-pool` 对应；dump 中该 pool 已 `MEM_FREE`，但日志没有该 pool 的 `stop` / `retire` / `dtor`，只有 `start running=1` 与 `recreate-skip-samesize`。
+
+**第十一修后的新结论**：第十修和第十一修已经把 Stop/Recreate/失败重入等退役路径打通，但进程级强引用仍只在 `RetireFramePoolLocked()` 后建立。TODO-439 的日志反证：崩溃池不是「已 retire 的 closed pool」，而是一个 active/running pool 在没有退役日志的情况下失去最后强引用或被裸释放。因此唯一不变量需要再上移：**任何即将注册 `FrameArrived` 的 pool，从 `CreateCaptureFramePool` 后立刻进入进程级 registry 强保活，直到进程退出都不会 `MEM_FREE`**。`RetireFramePoolLocked()` 仍负责 `remove_FrameArrived`、`Close` 帧池释放 GPU 资源、设置 closed-flag，并保留 closed pool 永久保活。
+
+**第十二修实现**：
+- **[x] ① 根因修复** —— `RetiredFramePoolRegistry` 新增 active retained 列表和 `RetainActive()`；`CreateAndStartFramePoolLocked()` 在 `create-pool` 后、`add_FrameArrived` 前立即 `RetainActive(frame_pool_)`，并写 `active-retain` 日志。这样 `start running=1` 早返回、同尺寸 `recreate-skip-samesize`、或未来发现的非 retire 裸释放路径，都不能让曾注册 `FrameArrived` 的 active pool 变成 `MEM_FREE`。Stop/Recreate 仍走 `RetireFramePoolLocked()` Close session/pool 释放 GPU 资源，不恢复 FreeThreaded，不恢复裸 `frame_pool_->Recreate(`。
+- **[x] ② 自动化测试** —— `hibiki/test/widgets/texture_bridge_stop_guard_test.dart` 加 TODO-439 守卫：建池后必须 `create-pool -> RetainActive -> active-retain -> add_FrameArrived`；registry 必须有 active retain 存储；Stop 必须写 `handler-release`，Retire 必须写 `retire-close`，析构必须写 `dtor-enter` / `dtor-exit`。先红后绿。
+
+**验证边界**：源码守卫和 Windows debug 插件目标构建能证明契约与本轮 native 插件编译成立；完整 `flutter build windows --debug` 本机卡在 CMake install prefix 指向 `C:/Program Files/hibiki` 的权限问题，非本轮 C++ 编译错误。WGC 延迟 UAF 的真正消失仍需 Windows Release/Debug 实机反复走原路径（看有声书 / EPUB -> 反复查词 / 弹窗开关 / resize）并结合 `%LOCALAPPDATA%\Hibiki\wgc_capture.log` 与 crash dump 收口。active registry 会让每个曾建池的 COM 壳保留到进程退出；active 状态下 GPU 资源本来就仍属当前池，Stop/Recreate 时仍显式 Close 释放 GPU 资源，残留是进程级小 COM 壳引用增长。

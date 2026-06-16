@@ -151,10 +151,16 @@ void main() {
         reason: 'StopInternal 必须先 Close capture session 停止产生新帧');
     // 第十修：帧池断源 + Close + 退役保活三步收敛进 RetireFramePoolLocked，
     // StopInternal 在 Close session 后调它（不再在 StopInternal 体内内联）。
-    final int siRetireCall = stopInternalBody.indexOf('RetireFramePoolLocked()');
+    final int siRetireCall =
+        stopInternalBody.indexOf('RetireFramePoolLocked()');
     expect(siRetireCall, greaterThan(siSessionClose),
         reason: 'StopInternal 必须在 Close session 后调 RetireFramePoolLocked '
             '退役保活帧池（断源 + Close + 永久保活的统一不变量）');
+    final int siHandlerRelease = stopInternalBody.indexOf(
+        'WgcLog::Write("handler-release"', siRetireCall);
+    expect(siHandlerRelease, greaterThan(siRetireCall),
+        reason: '释放 frame_arrived_handler_ 前必须写 handler-release 日志，'
+            '下一轮取证可区分 handler 已释放与 pool 未 retire 的路径');
 
     // RetireFramePoolLocked 体内必须按 dump 实证顺序执行三步根因防线。
     final int retireStart =
@@ -175,12 +181,16 @@ void main() {
         reason: 'RetireFramePoolLocked 必须在 remove_FrameArrived 之后显式 Close 帧池'
             '（IClosable）设 closed-flag：在途/迟到 deferred FirePresentEvent 据此'
             '早返回 no-op，不读 event 成员（dump 实证根因防线）');
-    expect(RegExp(r'pool_closable\s*->\s*Close\(\)').hasMatch(retireBody),
-        isTrue,
+    expect(
+        RegExp(r'pool_closable\s*->\s*Close\(\)').hasMatch(retireBody), isTrue,
         reason: 'RetireFramePoolLocked 必须对帧池 IClosable 调用 Close 设 closed-flag');
+    final int rCloseLog =
+        retireBody.indexOf('WgcLog::Write("retire-close"', rPoolClose);
+    expect(rCloseLog, greaterThan(rPoolClose),
+        reason: 'Close 帧池后必须写 retire-close 日志，明确 GPU 资源释放/closed-flag 已设置');
     final int rRetire = retireBody.indexOf(
         'RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_))');
-    expect(rRetire, greaterThan(rPoolClose),
+    expect(rRetire, greaterThan(rCloseLog),
         reason: 'RetireFramePoolLocked 必须在 Close 帧池后把帧池 ComPtr move 进 '
             'RetiredFramePoolRegistry 保活：帧池内存在所有在途 deferral 跑完前绝不释放');
     final int rPoolNull = retireBody.indexOf('frame_pool_ = nullptr', rRetire);
@@ -223,7 +233,8 @@ void main() {
         src.indexOf('void TextureBridge::RecreateFramePoolLocked()');
     expect(recreateStart, greaterThanOrEqualTo(0),
         reason: 'TextureBridge::RecreateFramePoolLocked 必须可审计');
-    final int recreateEnd = src.indexOf('void TextureBridge::', recreateStart + 1);
+    final int recreateEnd =
+        src.indexOf('void TextureBridge::', recreateStart + 1);
     expect(recreateEnd, greaterThan(recreateStart),
         reason: 'RecreateFramePoolLocked 之后应还有其它 TextureBridge 方法定义');
     final String recreateBody = src.substring(recreateStart, recreateEnd);
@@ -248,6 +259,59 @@ void main() {
     expect(src.contains('RetiredFramePoolRegistry'), isTrue,
         reason: '必须有进程级退役帧池注册表保活已 Close 的帧池');
 
+    // TODO-439：v0.9.0.5025 仍崩在 active/running 帧池。dump 中崩溃池能对应
+    // captureLog 第二轮 create-pool，但没有 stop/retire/dtor，只有 start running=1
+    // 与 recreate-skip-samesize；因此保活不能只发生在 RetireFramePoolLocked。任何
+    // 已经创建并会 add_FrameArrived 的 active pool，必须从 create 起进入进程级强保活，
+    // 让 running=1 早返回和同尺寸 skip 都不再是唯一生命周期边界。
+    final int createStart =
+        src.indexOf('bool TextureBridge::CreateAndStartFramePoolLocked()');
+    expect(createStart, greaterThanOrEqualTo(0),
+        reason: 'TextureBridge::CreateAndStartFramePoolLocked 必须可审计');
+    final int createEnd = src.indexOf(
+        'void TextureBridge::RecreateFramePoolLocked()', createStart);
+    expect(createEnd, greaterThan(createStart),
+        reason: 'CreateAndStartFramePoolLocked 后应接 RecreateFramePoolLocked');
+    final String createBody = src.substring(createStart, createEnd);
+    final int cCreatePool =
+        createBody.indexOf('graphics_context_->CreateCaptureFramePool(');
+    expect(cCreatePool, greaterThanOrEqualTo(0),
+        reason: 'CreateAndStartFramePoolLocked 必须创建 WGC frame pool');
+    final int cCreatePoolLog =
+        createBody.indexOf('WgcLog::Write("create-pool"', cCreatePool);
+    expect(cCreatePoolLog, greaterThan(cCreatePool),
+        reason: 'create-pool 日志必须记录新建 frame pool 指针，便于和 dump pool 对照');
+    final int cActiveRetain = createBody.indexOf(
+        'RetiredFramePoolRegistry::Instance().RetainActive(frame_pool_)',
+        cCreatePoolLog);
+    expect(cActiveRetain, greaterThan(cCreatePoolLog),
+        reason: 'TODO-439：create-pool 后必须立刻把 active frame_pool_ 放入进程级强保活；'
+            '只在 retire 时保活会漏掉 running=1 / same-size skip 期间被裸释放的 active pool');
+    final int cActiveRetainLog =
+        createBody.indexOf('WgcLog::Write("active-retain"', cActiveRetain);
+    expect(cActiveRetainLog, greaterThan(cActiveRetain),
+        reason: 'active retain 必须有独立日志点；下一轮不能再只能靠缺失 retire/dtor 推断');
+    final int cAddFrameArrived =
+        createBody.indexOf('add_FrameArrived', cActiveRetainLog);
+    expect(cAddFrameArrived, greaterThan(cActiveRetainLog),
+        reason: 'active retain 必须发生在 add_FrameArrived 之前或同时：一旦注册事件，'
+            '这个 pool 就可能已有在途 deferred FirePresentEvent，不能只靠 frame_pool_ 成员强引用');
+
+    final int destructorBridgeStart =
+        src.indexOf('TextureBridge::~TextureBridge()');
+    expect(destructorBridgeStart, greaterThanOrEqualTo(0),
+        reason: 'TextureBridge 析构路径必须可审计');
+    final int destructorBridgeEnd =
+        src.indexOf('bool TextureBridge::Start()', destructorBridgeStart);
+    expect(destructorBridgeEnd, greaterThan(destructorBridgeStart),
+        reason: 'TextureBridge 析构路径之后应为 Start 定义');
+    final String bridgeDestructorBody =
+        src.substring(destructorBridgeStart, destructorBridgeEnd);
+    expect(bridgeDestructorBody.contains('WgcLog::Write("dtor-enter"'), isTrue,
+        reason: '析构入口必须有 dtor-enter 日志，区分 bridge teardown 是否真的发生');
+    expect(bridgeDestructorBody.contains('WgcLog::Write("dtor-exit"'), isTrue,
+        reason: '析构出口必须有 dtor-exit 日志，下一轮可判断 StopInternal 是否完整跑完');
+
     // 第八修代际释放（kRetiredGenerationGap，2 代后释放老帧池）被 81504 dump 反证为
     // 会输的时机赌注。永久保活契约：退役注册表只 push、绝不主动释放，禁止任何代际/
     // 时机判断的释放逻辑回潮。
@@ -269,6 +333,10 @@ void main() {
             '内存永久有效使 closed-flag 永久=1，迟到 deferral 永久安全早返回');
     expect(registryBody.contains('push_back'), isTrue,
         reason: 'Retire 必须把帧池 push 进退役注册表保活');
+    expect(registryBody.contains('RetainActive('), isTrue,
+        reason: 'TODO-439：注册表必须提供 active retain 入口，覆盖尚未 retire 的 running pool');
+    expect(registryBody.contains('active_'), isTrue,
+        reason: 'TODO-439：active pool 从 create 起也必须被 registry 强持有到进程退出');
 
     final int destructorStart =
         platformViewSrc.indexOf('CustomPlatformView::~CustomPlatformView()');

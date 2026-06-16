@@ -19,7 +19,8 @@ namespace flutter_inappwebview_plugin
 
   namespace
   {
-    // BUG-209 退役帧池保活注册表（进程级，单 UI 线程访问）——「Close 后永久保活」。
+    // BUG-209/TODO-439 帧池保活注册表（进程级，单 UI 线程访问）——
+    // 「active 从 create 起强保活，Close 后永久保活」。
     //
     // dump 决定性证据：
     //   * hibiki.exe.8952.dmp（第七修包 b1f960290）/ .99916.dmp：崩点在
@@ -49,7 +50,14 @@ namespace flutter_inappwebview_plugin
     // 赌 deferral 强引用延后析构、代际 2 代后释放），dump 全部反证。WGC 不暴露任何
     // 「在途 deferral 已排空」的同步信号，故任何「在某个时机释放退役帧池」的方案都是赌注。
     //
-    // 唯一不依赖时机判断的因果不变量：**已 Close 的退役帧池永不主动释放**。
+    // 唯一不依赖时机判断的因果不变量：**任何曾 add_FrameArrived 的帧池永不主动释放**。
+    // TODO-439 新 dump（hibiki.exe 0.9.0.5025）证明只在 retire 时保活仍不够：崩溃 pool
+    // 对应 captureLog 第二轮 create-pool，没有 stop/retire/dtor，只有 start running=1 与
+    // recreate-skip-samesize；即这个 pool 是 active/running 状态下失去最后强引用或被裸释放。
+    // 因此 active pool 在创建后、注册 FrameArrived 前就必须进进程级强保活；retire 仍负责
+    // remove_FrameArrived + Close 释放 GPU 资源 + closed-flag。
+    //
+    // 对已 Close 的退役池：
     //   (1) Close 释放帧池全部 D3D/GPU 资源（CloseInternal -> ResetD3DResources，反汇编
     //       实证），退役帧池只剩一个小 COM 壳（几百字节），不占 GPU/服务端资源。
     //   (2) 帧池内存永久有效 -> closed-flag [pool+129h] 永久 = 1 -> 任何迟到的 deferred
@@ -69,6 +77,20 @@ namespace flutter_inappwebview_plugin
         return instance;
       }
 
+      // 把 active 帧池从 create 起放入进程级强保活：只 push，绝不释放。这样 running=1
+      // 早返回、同尺寸 recreate skip、或任何漏网的裸覆盖路径都不能让一个曾注册
+      // FrameArrived 的 pool 变成 MEM_FREE。
+      void RetainActive(
+        winrt::com_ptr<
+          ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool> pool)
+      {
+        if (!pool) {
+          return;
+        }
+        const std::lock_guard<std::mutex> lock(mutex_);
+        active_.push_back(std::move(pool));
+      }
+
       // 把一个已 Close 的帧池 ComPtr 移交永久保活：只 push，绝不释放。帧池内存因此
       // 永久有效 -> closed-flag 永久 = 1 -> 任何迟到 deferred FirePresentEvent 永久
       // 安全早返回。已 Close 帧池只剩小 COM 壳（GPU 资源随 Close 释放）。
@@ -86,6 +108,9 @@ namespace flutter_inappwebview_plugin
     private:
       RetiredFramePoolRegistry() = default;
       std::mutex mutex_;
+      std::vector<winrt::com_ptr<
+        ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool>>
+        active_;
       std::vector<winrt::com_ptr<
         ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool>>
         retired_;
@@ -123,13 +148,14 @@ namespace flutter_inappwebview_plugin
 
   TextureBridge::~TextureBridge()
   {
-    WgcLog::Write("dtor", this);
+    WgcLog::Write("dtor-enter", this);
     InvalidateFrameArrivedCallback();
     const std::lock_guard<std::mutex> lock(mutex_);
     StopInternal();
     if (capture_item_) {
       capture_item_->remove_Closed(on_closed_token_);
     }
+    WgcLog::Write("dtor-exit", this);
   }
 
   bool TextureBridge::Start()
@@ -186,6 +212,13 @@ namespace flutter_inappwebview_plugin
         kPixelFormat),
       kNumBuffers, size);
     assert(frame_pool_);
+    // TODO-439：active pool 也必须从 create 起进入进程级强保活。v0.9.0.5025 的复发
+    // dump 显示崩溃池对应 create-pool 后没有 stop/retire/dtor，只有 running=1 与
+    // same-size skip；因此保活不能等到 RetireFramePoolLocked 才发生。先 retain，再挂
+    // FrameArrived，保证任何曾注册事件的 pool 都不会 MEM_FREE。
+    WgcLog::Write("create-pool", frame_pool_.get());
+    RetiredFramePoolRegistry::Instance().RetainActive(frame_pool_);
+    WgcLog::Write("active-retain", frame_pool_.get());
 
     auto callback_state = std::make_shared<FrameArrivedCallbackState>();
     {
@@ -211,9 +244,8 @@ namespace flutter_inappwebview_plugin
         });
     frame_pool_->add_FrameArrived(frame_arrived_handler_.Get(),
       &on_frame_arrived_token_);
-    // 新池已 add_FrameArrived（自此挂在途 deferral 风险）——记录其指针，供崩溃
-    // 取证对照「崩溃帧池指针」是否能在本日志找到对应的 retire 退役行。
-    WgcLog::Write("create-pool", frame_pool_.get());
+    // 新池已 add_FrameArrived（自此挂在途 deferral 风险）。create-pool 与
+    // active-retain 已在注册前记录，供崩溃取证对照「崩溃帧池指针」是否从创建起被保活。
 
     if (FAILED(frame_pool_->CreateCaptureSession(capture_item_.get(),
       capture_session_.put()))) {
@@ -333,10 +365,14 @@ namespace flutter_inappwebview_plugin
     // RetireFramePoolLocked，让 StopInternal / Start 重入 / OnFrameArrived resize 三条
     // 会丢弃或替换帧池的路径走完全相同的不变量，消除「某条路径裸释放挂着在途 deferral
     // 的帧池」的窗口（第九修只在 StopInternal 走这套，漏了另两条）。
+    const void* pool_for_handler_release = frame_pool_.get();
     RetireFramePoolLocked();
 
     // 释放我们持有的 FrameArrived delegate ComPtr。frame_arrived_state_ 保留
     // （active 已被 InvalidateFrameArrivedCallback 置 false）。
+    if (frame_arrived_handler_) {
+      WgcLog::Write("handler-release", pool_for_handler_release);
+    }
     frame_arrived_handler_ = nullptr;
   }
 
@@ -383,6 +419,10 @@ namespace flutter_inappwebview_plugin
       frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
     if (pool_closable) {
       pool_closable->Close();
+      WgcLog::Write("retire-close", frame_pool_.get());
+    }
+    else {
+      WgcLog::Write("retire-close", frame_pool_.get(), "closable=0");
     }
     // 帧池强引用移交退役注册表永久保活（不在此释放，注册表也绝不主动释放），让其
     // 内存永久有效，使 closed-flag 永久 = 1，任何迟到 deferral 永久安全早返回。
