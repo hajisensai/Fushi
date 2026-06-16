@@ -7,6 +7,61 @@ import 'package:hibiki/utils.dart'; // ErrorLogService
 
 enum UpdateChannel { stable, beta, debug }
 
+class UpdateAsset {
+  const UpdateAsset({
+    required this.name,
+    required this.url,
+    this.sizeBytes,
+    this.sha256Digest,
+  });
+
+  factory UpdateAsset.fromReleaseAsset(Map<String, dynamic> asset) {
+    return UpdateAsset(
+      name: asset['name'] as String? ?? '',
+      url: asset['browser_download_url'] as String? ?? '',
+      sizeBytes: _assetSizeBytes(asset['size']),
+      sha256Digest: _assetSha256Digest(asset['digest'] ?? asset['sha256']),
+    );
+  }
+
+  final String name;
+  final String url;
+  final int? sizeBytes;
+  final String? sha256Digest;
+
+  UpdateAsset copyWith({
+    String? name,
+    String? url,
+    int? sizeBytes,
+    String? sha256Digest,
+  }) =>
+      UpdateAsset(
+        name: name ?? this.name,
+        url: url ?? this.url,
+        sizeBytes: sizeBytes ?? this.sizeBytes,
+        sha256Digest: sha256Digest ?? this.sha256Digest,
+      );
+}
+
+int? _assetSizeBytes(Object? raw) {
+  if (raw is int && raw >= 0) return raw;
+  if (raw is num && raw >= 0) return raw.toInt();
+  if (raw is String) {
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed != null && parsed >= 0) return parsed;
+  }
+  return null;
+}
+
+String? _assetSha256Digest(Object? raw) {
+  if (raw is! String) return null;
+  final String normalized = raw.trim().toLowerCase();
+  final String digest = normalized.startsWith('sha256:')
+      ? normalized.substring('sha256:'.length)
+      : normalized;
+  return RegExp(r'^[0-9a-f]{64}$').hasMatch(digest) ? digest : null;
+}
+
 /// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
 /// 共享的 GitHub 拉取/版本比较/下载浮层仍在 UpdateChecker。
 abstract class PlatformUpdater {
@@ -18,7 +73,7 @@ abstract class PlatformUpdater {
 
   /// 从 release 的 [assets]（每项含 name / browser_download_url）挑本平台可安装包的
   /// 下载 URL；null = 无适配包（上层回退打开发布页）。
-  Future<String?> selectAsset(
+  Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   });
@@ -73,13 +128,11 @@ PlatformUpdater updaterForCurrentPlatform() {
 }
 
 /// 从 asset map 安全取出可下载的 (name, url)。
-Iterable<(String, String)> _downloadable(
-    List<Map<String, dynamic>> assets) sync* {
+Iterable<UpdateAsset> _downloadable(List<Map<String, dynamic>> assets) sync* {
   for (final Map<String, dynamic> a in assets) {
-    final String name = a['name'] as String? ?? '';
-    final String? url = a['browser_download_url'] as String?;
-    if (name.isEmpty || url == null) continue;
-    yield (name, url);
+    final UpdateAsset asset = UpdateAsset.fromReleaseAsset(a);
+    if (asset.name.isEmpty || asset.url.isEmpty) continue;
+    yield asset;
   }
 }
 
@@ -130,18 +183,19 @@ class AndroidUpdater extends PlatformUpdater {
   bool get supportsInAppInstall => true;
 
   @override
-  Future<String?> selectAsset(
+  Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
     final List<String> abis = await _abiProvider();
     final List<String> abiTags =
         abis.map((String a) => a.replaceAll('_', '-')).toList();
-    String? fallback;
-    for (final (String name, String url) in _downloadable(assets)) {
+    UpdateAsset? fallback;
+    for (final UpdateAsset asset in _downloadable(assets)) {
+      final String name = asset.name;
       if (!_androidAssetMatchesChannel(name, channel)) continue;
-      if (abiTags.any(name.contains)) return url;
-      fallback ??= url;
+      if (abiTags.any(name.contains)) return asset;
+      fallback ??= asset;
     }
     return fallback;
   }
@@ -160,12 +214,12 @@ class WindowsUpdater extends PlatformUpdater {
   bool get supportsInAppInstall => true;
 
   @override
-  Future<String?> selectAsset(
+  Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
-    for (final (String name, String url) in _downloadable(assets)) {
-      if (_windowsAssetMatchesChannel(name, channel)) return url;
+    for (final UpdateAsset asset in _downloadable(assets)) {
+      if (_windowsAssetMatchesChannel(asset.name, channel)) return asset;
     }
     return null;
   }
@@ -185,7 +239,7 @@ class UnsupportedUpdater extends PlatformUpdater {
   bool get supportsInAppInstall => false;
 
   @override
-  Future<String?> selectAsset(
+  Future<UpdateAsset?> selectAsset(
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async =>
