@@ -18,6 +18,17 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// TODO-426：暂时砍掉查词弹窗的「上 N 句 / 下 N 句」句子上下文选择器（用户要求暂时移除，
+/// 后面想到好方案再弄回来）。整条后端链路（[MiningSentenceDraft]、reader/video 的
+/// `onSetSentenceContextToDraft`、`getSurroundingSentences`、制卡时 `composeText` /
+/// `composeAudioRange` 合并）原样保留，制卡照常工作——草稿恒空时合并退化为「只制当前句」
+/// （`composeText` 单句直接 trim 返回）。这里只切断 UI 入口：弹窗注入的
+/// `window.sentenceDraftEnabled` 在该常量为 false 时恒 false，popup.js 据此不渲染上下文
+/// 选择器与清空按钮（见 popup.js `if (window.sentenceDraftEnabled)`）。
+///
+/// 将来恢复：把本常量改回 true 即可——回调链、JS 处理器、i18n 注入都还在，零重连。
+const bool kSentenceContextPickerEnabled = false;
+
 /// TODO-270 D：制卡（mineEntry）回传给弹窗 JS 的结构化结果。
 ///
 /// [ankiConnect] 沿用旧的 `Future<bool>` 语义（true=AnkiConnect 同步刷新，
@@ -532,7 +543,9 @@ class DictionaryPopupWebViewState
       window.needsAudio = true;
       // TODO-393：宿主接受 setSentenceContext（书籍/有声书/视频）时才渲染弹窗「上 N 句
       // / 下 N 句」上下文选择器——纯查词页（首页词典）无句子上下文，恒 false 不显示。
-      window.sentenceDraftEnabled = ${widget.onSetSentenceContext != null};
+      // TODO-426：句子上下文选择器暂时砍掉（[kSentenceContextPickerEnabled]=false），故此处
+      // 恒 false，popup.js 不渲染选择器/清空按钮；后端草稿链路保留，制卡退化为只制当前句。
+      window.sentenceDraftEnabled = ${kSentenceContextPickerEnabled && widget.onSetSentenceContext != null};
       // TODO-382/393：注入「上 N 句 / 下 N 句」选择器的方向标签与「清空」tooltip
       // （popup.js 无自带 i18n 机制，按钮文字硬编码；文案走宿主 i18n 注入）。
       window.i18nAppendSentenceTooltip = ${jsonEncode(t.popup_append_sentence_tooltip)};

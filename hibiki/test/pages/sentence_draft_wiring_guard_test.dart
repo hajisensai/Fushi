@@ -20,14 +20,23 @@ void main() {
         'lib/src/pages/implementations/dictionary_popup_webview.dart');
     expect(src, contains("handlerName: 'setSentenceContext'"));
     expect(src, contains('onSetSentenceContext'));
-    // 选择器只在宿主接受 setSentenceContext 时渲染。
+    // TODO-426：选择器 UI 暂时砍掉——sentenceDraftEnabled 由 kSentenceContextPickerEnabled
+    // （恒 false）与宿主回调一起门控；常量为 false 时弹窗不渲染选择器。回调链 / handler /
+    // i18n 注入全保留，将来把常量改回 true 即恢复。
     expect(
         src,
         contains(
-            r'window.sentenceDraftEnabled = ${widget.onSetSentenceContext != null}'));
-    // 上下文方向标签从宿主 i18n 注入。
+            r'window.sentenceDraftEnabled = ${kSentenceContextPickerEnabled && widget.onSetSentenceContext != null}'));
+    // 上下文方向标签从宿主 i18n 注入（恢复用，保留）。
     expect(src, contains('window.i18nContextPrevLabel ='));
     expect(src, contains('window.i18nContextNextLabel ='));
+  });
+
+  test('sentence-context picker is temporarily disabled (TODO-426)', () {
+    final String src = readSource(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart');
+    // 用户要求暂时砍掉上下文选择器 UI；总开关常量恒 false，弹窗不渲染选择器。
+    expect(src, contains('const bool kSentenceContextPickerEnabled = false;'));
   });
 
   test('popup layer forwards onSetSentenceContext to the webview', () {
