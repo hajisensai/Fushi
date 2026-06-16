@@ -262,6 +262,9 @@ class UpdateReleaseSelection {
 class UpdateChecker {
   UpdateChecker._();
 
+  static final Map<String, Future<void>> _activeUpdateFlows =
+      <String, Future<void>>{};
+
   static void scheduleCheck(
     BuildContext context,
     String currentVersion, {
@@ -603,6 +606,42 @@ class UpdateChecker {
     String version,
     PlatformUpdater updater,
   ) async {
+    final String flowKey = _updateFlowKey(asset, version, updater);
+    final Future<void>? activeFlow = _activeUpdateFlows[flowKey];
+    if (activeFlow != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.update_downloading)),
+        );
+      }
+      return activeFlow;
+    }
+
+    final Future<void> flow =
+        _runDownloadAndInstall(context, asset, version, updater);
+    _activeUpdateFlows[flowKey] = flow;
+    try {
+      await flow;
+    } finally {
+      if (identical(_activeUpdateFlows[flowKey], flow)) {
+        _activeUpdateFlows.remove(flowKey);
+      }
+    }
+  }
+
+  static String _updateFlowKey(
+    UpdateAsset asset,
+    String version,
+    PlatformUpdater updater,
+  ) =>
+      '${updater.runtimeType}|$version|${asset.name}|${asset.url}';
+
+  static Future<void> _runDownloadAndInstall(
+    BuildContext context,
+    UpdateAsset asset,
+    String version,
+    PlatformUpdater updater,
+  ) async {
     final progress = ValueNotifier<double>(0);
     final status = ValueNotifier<String>(t.update_downloading);
     final overlayVisible = ValueNotifier<bool>(true);
@@ -691,6 +730,9 @@ typedef UpdateDownloadSourceFailure = void Function(
   StackTrace stack,
 );
 
+final Map<String, Future<File>> _activeUpdateDownloads =
+    <String, Future<File>>{};
+
 @visibleForTesting
 class UpdateDownloadResponse {
   const UpdateDownloadResponse({
@@ -757,6 +799,45 @@ String safeUpdateAssetFileName(String name) {
 
 @visibleForTesting
 Future<File> downloadUpdateAsset({
+  required UpdateAsset asset,
+  required String version,
+  required Directory updatesDir,
+  required List<String> candidateUrls,
+  required UpdateDownloadOpen openUrl,
+  void Function(double value)? onProgress,
+  UpdateDownloadSourceFailure? onSourceFailure,
+}) async {
+  final String activeKey = _activeDownloadKey(updatesDir, asset, version);
+  final Future<File>? activeDownload = _activeUpdateDownloads[activeKey];
+  if (activeDownload != null) return activeDownload;
+
+  final Future<File> download = _downloadUpdateAssetUncoalesced(
+    asset: asset,
+    version: version,
+    updatesDir: updatesDir,
+    candidateUrls: candidateUrls,
+    openUrl: openUrl,
+    onProgress: onProgress,
+    onSourceFailure: onSourceFailure,
+  );
+  _activeUpdateDownloads[activeKey] = download;
+  try {
+    return await download;
+  } finally {
+    if (identical(_activeUpdateDownloads[activeKey], download)) {
+      _activeUpdateDownloads.remove(activeKey);
+    }
+  }
+}
+
+String _activeDownloadKey(
+  Directory updatesDir,
+  UpdateAsset asset,
+  String version,
+) =>
+    '${updatesDir.absolute.path}|$version|${asset.name}|${asset.url}';
+
+Future<File> _downloadUpdateAssetUncoalesced({
   required UpdateAsset asset,
   required String version,
   required Directory updatesDir,
@@ -933,6 +1014,8 @@ Future<File> _downloadCandidate({
   } else {
     onProgress?.call(0);
   }
+  Object? bodyError;
+  StackTrace? bodyStack;
   try {
     await for (final List<int> chunk in response.stream) {
       sink.add(chunk);
@@ -942,9 +1025,32 @@ Future<File> _downloadCandidate({
       }
     }
     await sink.flush();
-  } finally {
-    await sink.close();
+  } catch (e, stack) {
+    bodyError = e;
+    bodyStack = stack;
   }
+
+  Object? closeError;
+  StackTrace? closeStack;
+  try {
+    await sink.close();
+  } catch (e, stack) {
+    closeError = e;
+    closeStack = stack;
+  }
+
+  Object? doneError;
+  StackTrace? doneStack;
+  try {
+    await sink.done;
+  } catch (e, stack) {
+    doneError = e;
+    doneStack = stack;
+  }
+
+  if (bodyError != null) Error.throwWithStackTrace(bodyError, bodyStack!);
+  if (closeError != null) Error.throwWithStackTrace(closeError, closeStack!);
+  if (doneError != null) Error.throwWithStackTrace(doneError, doneStack!);
 
   final int actualSize = await paths.partFile.length();
   final _UpdateDownloadMetadata completeMetadata = nextMetadata.copyWith(

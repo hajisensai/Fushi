@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,7 +17,7 @@ void main() {
 
     tearDown(() async {
       if (updatesDir.existsSync()) {
-        await updatesDir.delete(recursive: true);
+        await _deleteDirectoryWithRetry(updatesDir);
       }
     });
 
@@ -144,6 +145,97 @@ void main() {
       expect(requestCount, 1);
       expect(await file.readAsBytes(), payload);
     });
+
+    test('coalesces concurrent downloads for the same asset and version',
+        () async {
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final Completer<void> firstRequestStarted = Completer<void>();
+      final Completer<void> secondRequestStarted = Completer<void>();
+      final Completer<void> releaseResponse = Completer<void>();
+      var requestCount = 0;
+
+      Future<UpdateDownloadResponse> openUrl(
+        Uri _,
+        Map<String, String> __,
+      ) async {
+        requestCount += 1;
+        if (!firstRequestStarted.isCompleted) {
+          firstRequestStarted.complete();
+        } else if (!secondRequestStarted.isCompleted) {
+          secondRequestStarted.complete();
+        }
+        await releaseResponse.future;
+        return UpdateDownloadResponse.bytes(
+          statusCode: HttpStatus.ok,
+          body: payload,
+          headers: <String, String>{
+            HttpHeaders.contentLengthHeader: '${payload.length}',
+          },
+        );
+      }
+
+      final Future<File> first = downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        openUrl: openUrl,
+      );
+      await firstRequestStarted.future;
+
+      final Future<File> second = downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        openUrl: openUrl,
+      );
+      final bool secondRequestObserved = await Future.any(<Future<bool>>[
+        secondRequestStarted.future.then((_) => true),
+        Future<bool>.delayed(const Duration(milliseconds: 50), () => false),
+      ]);
+
+      expect(
+        secondRequestObserved,
+        isFalse,
+        reason: 'same-version update triggers must share one active download',
+      );
+      expect(requestCount, 1);
+
+      releaseResponse.complete();
+      final List<File> files = await Future.wait(<Future<File>>[first, second]);
+      expect(files[0].path, files[1].path);
+      expect(await files[0].readAsBytes(), payload);
+    });
+
+    test('awaits IOSink.done so open/write/close errors stay catchable', () {
+      final String source = File(
+        'lib/src/utils/misc/update_checker.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('await sink.done'),
+        reason:
+            'openWrite and IOSink close failures must remain in the awaited '
+            'download Future instead of escaping to UncaughtZone',
+      );
+    });
+
+    test('downloadAndInstall owns one in-flight install flow per update', () {
+      final String source = File(
+        'lib/src/utils/misc/update_checker.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('_activeUpdateFlows'),
+        reason:
+            'download coalescing alone is not enough; duplicate triggers must '
+            'not run updater.apply twice for the same asset/version',
+      );
+    });
   });
 }
 
@@ -177,3 +269,17 @@ Future<void> _writeMetadata(
 }
 
 String _sha256Hex(List<int> bytes) => sha256.convert(bytes).toString();
+
+Future<void> _deleteDirectoryWithRetry(Directory directory) async {
+  for (var attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      if (directory.existsSync()) {
+        await directory.delete(recursive: true);
+      }
+      return;
+    } on FileSystemException {
+      if (attempt == 4) rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+  }
+}

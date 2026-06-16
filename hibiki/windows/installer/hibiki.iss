@@ -25,6 +25,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=yes
 AppMutex=HibikiSingleInstanceMutex
 
