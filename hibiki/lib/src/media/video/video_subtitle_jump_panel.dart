@@ -80,7 +80,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
 }
 
 class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
-  final ScrollController _scrollController = ScrollController();
+  late final ScrollController _scrollController;
 
   int _lastScrolledIndex = -1;
   int _lastControllerCueIndex = -1;
@@ -156,7 +156,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     super.initState();
     _lastControllerCueIndex = widget.controller.currentCueIndex;
     _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
+    final int initialRawIndex = widget.controller.currentCueIndex;
+    _scrollTargetRawIndex =
+        _isCurrentCueVisible(initialRawIndex) ? initialRawIndex : null;
+    _retainRowKeyFor(_scrollTargetRawIndex);
+    _scrollController = ScrollController(
+      initialScrollOffset: _initialScrollOffsetForCurrentCue(),
+    );
     widget.controller.addListener(_onControllerChanged);
+    _scheduleScrollToCurrentCue();
   }
 
   @override
@@ -168,7 +176,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _lastControllerCueIndex = widget.controller.currentCueIndex;
       _lastSubtitleCuesLoading = widget.controller.isSubtitleCuesLoading;
       _lastScrolledIndex = -1;
+      _scrollTargetRawIndex =
+          _isCurrentCueVisible(widget.controller.currentCueIndex)
+              ? widget.controller.currentCueIndex
+              : null;
       _rowKeys.clear();
+      _retainRowKeyFor(_scrollTargetRawIndex);
+      _scheduleScrollToCurrentCue();
     }
     _clearCueCaches();
   }
@@ -356,6 +370,31 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       return rawIndex >= 0 && rawIndex < visibleIndexes.length ? rawIndex : -1;
     }
     return _cachedVisibleIndexByRawIndex[rawIndex] ?? -1;
+  }
+
+  bool _isCurrentCueVisible(int rawIndex) {
+    final List<AudioCue> cues = widget.controller.cues;
+    if (rawIndex < 0 || rawIndex >= cues.length) return false;
+    final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    return _visibleIndexForRawIndex(rawIndex, visibleIndexes) >= 0;
+  }
+
+  double _initialScrollOffsetForCurrentCue() {
+    final int currentIndex = widget.controller.currentCueIndex;
+    final List<AudioCue> cues = widget.controller.cues;
+    if (currentIndex < 0 || currentIndex >= cues.length) return 0;
+    final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    final int visibleIndex =
+        _visibleIndexForRawIndex(currentIndex, visibleIndexes);
+    if (visibleIndex < 0) return 0;
+    final int contextIndex =
+        (visibleIndex - 3).clamp(0, visibleIndexes.length - 1).toInt();
+    return _estimatedScrollOffsetForVisibleIndex(
+      contextIndex,
+      visibleIndexes,
+      cues,
+      widget.width,
+    );
   }
 
   void _clearCueCaches() {

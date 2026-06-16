@@ -95,6 +95,16 @@ int _builtCueTextWidgetCount(WidgetTester tester) {
   }).length;
 }
 
+List<AudioCue> _manyCues(int count) => List<AudioCue>.generate(count, (int i) {
+      final int start = i * 1000;
+      return _cue(
+        i,
+        start,
+        start + 500,
+        'cue ${i.toString().padLeft(5, '0')} text',
+      );
+    }, growable: false);
+
 String _repoEvidencePath(String relativePath) {
   final Directory current = Directory.current;
   final Directory root =
@@ -514,6 +524,123 @@ void main() {
       expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
     });
 
+    testWidgets(
+        'TODO-454 opens directly at current cue and highlights plain Text row',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(_manyCues(20000));
+      controller.debugUpdateCueForPosition(19999050);
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 520,
+        height: 620,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 520,
+        ),
+      )));
+
+      expect(find.text('cue 19999 text'), findsOneWidget);
+      expect(find.text('cue 00000 text'), findsNothing,
+          reason: 'the first frame must not flash the top of the transcript');
+      expect(_builtCueTextWidgetCount(tester), lessThan(160),
+          reason: 'initial positioning must keep TODO-444 virtualization');
+
+      final Text currentText = tester.widget<Text>(find.text('cue 19999 text'));
+      expect(currentText.style?.fontWeight, FontWeight.w600);
+    });
+
+    testWidgets(
+        'TODO-454 opens directly at current cue and highlights RichText row',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(_manyCues(20000));
+      controller.debugUpdateCueForPosition(12345050);
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 520,
+        height: 620,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onLookupCue: (AudioCue _, int __, Rect ___) {},
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 520,
+        ),
+      )));
+
+      final Finder target = find.text('cue 12345 text', findRichText: true);
+      expect(target, findsOneWidget);
+      expect(find.text('cue 00000 text', findRichText: true), findsNothing,
+          reason: 'lookup mode must also skip the transcript top on open');
+      expect(_builtCueTextWidgetCount(tester), lessThan(160),
+          reason: 'RichText lookup rows must keep TODO-444 virtualization');
+
+      final RichText currentText = tester.widget<RichText>(target);
+      expect(currentText.text.style?.fontWeight, FontWeight.w600);
+    });
+
+    testWidgets(
+        'TODO-454 auto-scroll off does not drag playback advances until re-enabled',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(_manyCues(200));
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 520,
+        height: 620,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 520,
+        ),
+      )));
+
+      await tester.tap(find.byIcon(Icons.vertical_align_center));
+      await tester.pump();
+      expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
+
+      controller.debugUpdateCueForPosition(150050);
+      await tester.pump();
+      for (int i = 0; i < 24; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(find.text('cue 00150 text'), findsNothing,
+          reason: 'disabled auto-scroll must not force-follow playback');
+
+      await tester.tap(find.byIcon(Icons.pause_circle_outline));
+      await tester.pump();
+      for (int i = 0; i < 24; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(find.text('cue 00150 text'), findsOneWidget,
+          reason: 're-enabled auto-scroll should resume following current cue');
+    });
+
     test(
         'TODO-444 phase1 source guard: lookup text is one paragraph hit layer, '
         'not per-grapheme widgets', () {
@@ -693,15 +820,7 @@ void main() {
         'to cue 19999 with evidence file', (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
-      final List<AudioCue> cues = List<AudioCue>.generate(20000, (int i) {
-        final int start = i * 1000;
-        return _cue(
-          i,
-          start,
-          start + 500,
-          'cue ${i.toString().padLeft(5, '0')} text',
-        );
-      });
+      final List<AudioCue> cues = _manyCues(20000);
       controller.setCues(cues);
 
       final Stopwatch openWatch = Stopwatch()..start();
