@@ -74,6 +74,34 @@ PointerButton _getButton(int value) {
 
 const MethodChannel _pluginChannel = IN_APP_WEBVIEW_STATIC_CHANNEL;
 
+/// setSize 去抖判定（TODO-428/420）。
+///
+/// 喂入 `_setSize` 的三条路径（`SizeChangedLayoutNotification` /
+/// `onPointerDown` / postFrame）会在尺寸根本没变时反复调用；每次下发都会经 native
+/// `setSurfaceSize` -> `NotifySurfaceSizeChanged` -> `needs_update_=true` ->
+/// `OnFrameArrived` 里 `RecreateFramePoolLocked` 退役并重建 WGC 帧池。布局尺寸在两个
+/// 值间抖（滚动条出现/消失、DPI 取整、动画）就每帧重建帧池 = 病态 churn，稳定帧出不来。
+///
+/// 在唯一汇聚点用本判定去重：首次（尚无记录）放行、尺寸真变放行，只拦「与上次下发
+/// 完全相等」的重复。纯状态机，便于单测。
+class SetSizeDedup {
+  double? _width;
+  double? _height;
+  double? _scaleFactor;
+
+  /// 返回是否应把本次 `(width, height, scaleFactor)` 下发给 native。
+  /// 应下发时同时把它记为「最近一次已下发」。
+  bool shouldDispatch(double width, double height, double scaleFactor) {
+    if (width == _width && height == _height && scaleFactor == _scaleFactor) {
+      return false;
+    }
+    _width = width;
+    _height = height;
+    _scaleFactor = scaleFactor;
+    return true;
+  }
+}
+
 class CustomFlutterViewControllerValue {
   const CustomFlutterViewControllerValue({
     required this.isInitialized,
@@ -110,6 +138,11 @@ class CustomPlatformViewController
 
   final StreamController<SystemMouseCursor> _cursorStreamController =
       StreamController<SystemMouseCursor>.broadcast();
+
+  // setSize 去抖（TODO-428/420）：在唯一汇聚点 _setSize 拦掉「与上次下发完全相等」的
+  // 重复，掐断三条喂入路径（SizeChangedLayoutNotification / onPointerDown / postFrame）
+  // 的无谓重复下发，避免 native 端每帧重建 WGC 帧池。判定逻辑见 SetSizeDedup。
+  final SetSizeDedup _setSizeDedup = SetSizeDedup();
 
   /// A stream reflecting the current cursor style.
   Stream<SystemMouseCursor> get _cursor => _cursorStreamController.stream;
@@ -217,6 +250,12 @@ class CustomPlatformViewController
       return;
     }
     assert(value.isInitialized);
+    // 尺寸去抖（TODO-428/420）：与上次真正下发的三元组完全相等则直接返回，不再
+    // invokeMethod，避免 native 端无谓地置 needs_update_ 并重建 WGC 帧池。首次
+    // （尚无记录）和尺寸真变都会被放行下发。
+    if (!_setSizeDedup.shouldDispatch(size.width, size.height, scaleFactor)) {
+      return;
+    }
     return _methodChannel
         .invokeMethod('setSize', [size.width, size.height, scaleFactor]);
   }

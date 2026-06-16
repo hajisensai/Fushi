@@ -75,6 +75,12 @@ namespace flutter_inappwebview_plugin
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession>
       capture_session_;
 
+    // TODO-428/420 兜底：当前帧池建池时用的 capture_item_ 尺寸（SizeInt32 整数，无
+    // 浮点抖动）。RecreateFramePoolLocked 据此短路——上层 setSize 风暴即便穿过 Dart
+    // 去抖到达这里（NotifySurfaceSizeChanged -> needs_update_=true），若 capture_item_
+    // 的实际尺寸与帧池现有尺寸相等就不重建，只消耗掉 needs_update_。仅 -1 视为「未建池」。
+    ABI::Windows::Graphics::SizeInt32 frame_pool_size_ = { -1, -1 };
+
     EventRegistrationToken on_closed_token_ = {};
     EventRegistrationToken on_frame_arrived_token_ = {};
     std::shared_ptr<FrameArrivedCallbackState> frame_arrived_state_;

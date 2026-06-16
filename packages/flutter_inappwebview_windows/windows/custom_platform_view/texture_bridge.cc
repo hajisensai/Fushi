@@ -171,6 +171,9 @@ namespace flutter_inappwebview_plugin
     // 进入前 frame_pool_ 必为空（调用方已 RetireFramePoolLocked 退役旧池）。
     ABI::Windows::Graphics::SizeInt32 size;
     capture_item_->get_Size(&size);
+    // TODO-428/420：记录本帧池建池时的实际尺寸，作为 RecreateFramePoolLocked
+    // 尺寸短路的基线（首帧 Start 与 resize 重建都经此 helper 建池）。
+    frame_pool_size_ = size;
 
     // BUG-163/BUG-209: 帧池必须用 CreateCaptureFramePool（UI 线程 DispatcherQueue
     // 派发，渲染管线线程模型与多年稳定版一致）。FreeThreaded 帧池（第四修）已实证
@@ -230,6 +233,21 @@ namespace flutter_inappwebview_plugin
 
   void TextureBridge::RecreateFramePoolLocked()
   {
+    // TODO-428/420 兜底（native 尺寸短路）：即便上层 setSize 风暴穿过 Dart 去抖到达
+    // 这里（NotifySurfaceSizeChanged -> needs_update_=true -> 本函数），只要 capture_item_
+    // 的实际尺寸与当前帧池建池尺寸完全相等，就没有任何理由重建帧池。SizeInt32 是整数
+    // （无浮点抖动），直接整数相等比较。相等则早返回：不退役、不重建（needs_update_ 已在
+    // 调用方 OnFrameArrived 清掉），从而即便上层仍抖也不每帧 churn 帧池。尺寸真变（width
+    // 或 height 任一不同）才走下面的退役 + 重建，保证 resize 后画面照常更新。
+    ABI::Windows::Graphics::SizeInt32 current_size = { 0, 0 };
+    if (capture_item_ && SUCCEEDED(capture_item_->get_Size(&current_size)) &&
+      frame_pool_ &&
+      current_size.Width == frame_pool_size_.Width &&
+      current_size.Height == frame_pool_size_.Height) {
+      WgcLog::Write("recreate-skip-samesize", frame_pool_.get());
+      return;
+    }
+
     WgcLog::Write("recreate", frame_pool_.get());
     // BUG-209 第十修（resize 路径替换 frame_pool_->Recreate）：调用方（OnFrameArrived）
     // 持 mutex_。原 Recreate 复用同一帧池只换 back buffer，但会拆掉旧池内部 present 基建，
