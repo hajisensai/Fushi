@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
+
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 
 /// VideoBooks 仓库：视频元数据 + 进度；字幕 cue 复用 audioCues 表。
 class VideoBookRepository {
@@ -52,6 +55,85 @@ class VideoBookRepository {
   /// 删，不全库 sweep，BUG-276）。
   Future<void> deleteVideoBook(String bookUid) => _db.deleteVideoBook(bookUid);
 
+  /// Deletes one video row and then reclaims the app-owned files that can be
+  /// proven safe to delete.
+  ///
+  /// The DB row is read first so cleanup can use the deleted row's `coverPath`,
+  /// `subtitleSource`, and `videoPath` after the row is gone. File cleanup and
+  /// DB compaction are best-effort and run outside the delete transaction.
+  Future<bool> deleteVideoBookAndReclaimAssets(
+    String bookUid, {
+    bool compactDatabase = true,
+  }) async {
+    final VideoBookRow? book = await getByBookUid(bookUid);
+    if (book == null) return false;
+
+    final String? deletedCoverPath = book.coverPath;
+    final String? deletedSubtitlePath = book.subtitleSource;
+    final String deletedVideoPath = book.videoPath;
+    await deleteVideoBook(bookUid);
+    await reclaimDeletedVideoBookAssets(
+      deletedBookUid: bookUid,
+      deletedCoverPath: deletedCoverPath,
+      deletedSubtitlePath: deletedSubtitlePath,
+      deletedVideoPath: deletedVideoPath,
+    );
+    if (compactDatabase) {
+      await compactAfterVideoDeleteBestEffort();
+    }
+    return true;
+  }
+
+  /// Reclaims app-owned video assets for a row that has already been deleted.
+  ///
+  /// Only the deleted row's own cover/subtitle paths are considered, and each
+  /// candidate must still live under Hibiki's app-owned video asset directory
+  /// and be unreferenced by all remaining videos. The embedded subtitle cache is
+  /// derived from [deletedVideoPath] and is skipped while another video still
+  /// points at the same original path.
+  Future<void> reclaimDeletedVideoBookAssets({
+    required String deletedBookUid,
+    required String? deletedCoverPath,
+    required String? deletedSubtitlePath,
+    required String deletedVideoPath,
+  }) async {
+    try {
+      final ({Set<String> covers, Set<String> subtitles}) refs =
+          await collectReferencedAssetPaths(excludeBookUid: deletedBookUid);
+      await VideoStorage.deleteBookAssets(
+        deletedCoverPath: deletedCoverPath,
+        deletedSubtitlePath: deletedSubtitlePath,
+        stillReferencedCoverPaths: refs.covers,
+        stillReferencedSubtitlePaths: refs.subtitles,
+      );
+      await VideoStorage.gcOrphanCovers(referencedCoverPaths: refs.covers);
+      if (!await isVideoPathReferenced(
+        deletedVideoPath,
+        excludeBookUid: deletedBookUid,
+      )) {
+        await VideoStorage.deleteEmbeddedSubtitleCacheForVideoPath(
+          deletedVideoPath,
+        );
+      }
+    } catch (e, stack) {
+      debugPrint('VideoBookRepository: video asset cleanup failed: $e\n$stack');
+    }
+  }
+
+  /// Best-effort SQLite space reclamation after video deletion. Keep this
+  /// outside delete transactions; callers doing batch deletes should call it
+  /// once after the batch, not once per row.
+  Future<void> compactAfterVideoDeleteBestEffort() async {
+    try {
+      await _db.customStatement('VACUUM');
+      await _db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, stack) {
+      debugPrint(
+        'VideoBookRepository: compact after video delete failed: $e\n$stack',
+      );
+    }
+  }
+
   /// 收集「当前 DB 仍引用的、app 拥有的视频副本路径」，供删除回收做护栏 / 封面历史
   /// GC 用作保留集。
   ///
@@ -78,6 +160,19 @@ class VideoBookRepository {
       if (sub != null && sub.isNotEmpty) subtitles.add(sub);
     }
     return (covers: covers, subtitles: subtitles);
+  }
+
+  Future<bool> isVideoPathReferenced(
+    String videoPath, {
+    String? excludeBookUid,
+  }) async {
+    if (videoPath.isEmpty) return false;
+    final List<VideoBookRow> all = await listAll();
+    for (final VideoBookRow row in all) {
+      if (excludeBookUid != null && row.bookUid == excludeBookUid) continue;
+      if (row.videoPath == videoPath) return true;
+    }
+    return false;
   }
 
   Future<void> saveCues({
