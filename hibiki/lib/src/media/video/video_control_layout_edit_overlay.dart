@@ -143,13 +143,17 @@ class _VideoControlLayoutEditOverlayState
     final double availableWidth = math.max(0, constraints.maxWidth - 24);
     final double tileWidth =
         availableWidth >= 440 ? (availableWidth - 8) / 2 : availableWidth;
+    final double paletteMaxHeight = math.min(
+      200,
+      math.max(0, constraints.maxHeight - 40),
+    );
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
         children: <Widget>[
-          _buildPalette(
+          _buildCompactPalette(
             maxWidth: availableWidth,
-            maxHeight: math.min(220, constraints.maxHeight * 0.6),
+            maxHeight: paletteMaxHeight,
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -174,10 +178,97 @@ class _VideoControlLayoutEditOverlayState
     );
   }
 
+  Widget _buildCompactPalette({
+    required double maxWidth,
+    required double maxHeight,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Widget chipList = Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: <Widget>[
+        for (final VideoControlItem item in _onVideoDraggableItems)
+          _buildDraggableControlChip(
+            item,
+            sourceSlot: null,
+            sourceIndex: null,
+          ),
+      ],
+    );
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
+      child: SizedBox(
+        height: maxHeight,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: 0.92),
+            borderRadius: tokens.radii.chipRadius,
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              children: <Widget>[
+                SizedBox(
+                  height: 48,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          Icons.dashboard_customize_outlined,
+                          size: 18,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        TextButton(
+                          onPressed: _cancelDraft,
+                          child: Text(t.dialog_cancel),
+                        ),
+                        const SizedBox(width: 2),
+                        FilledButton(
+                          onPressed: _saveDraft,
+                          child: Text(t.dialog_save),
+                        ),
+                        IconButton(
+                          tooltip: MaterialLocalizations.of(context)
+                              .closeButtonTooltip,
+                          icon: const Icon(Icons.close),
+                          onPressed: _cancelDraft,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          t.video_control_palette_title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: cs.onSurface,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(child: chipList),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPalette({double maxWidth = 420, double? maxHeight}) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool tightHeight = maxHeight != null && maxHeight < 220;
     final Widget chipList = Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -199,7 +290,7 @@ class _VideoControlLayoutEditOverlayState
       child: Padding(
         padding: const EdgeInsets.all(10),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: maxHeight == null ? MainAxisSize.min : MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Row(
@@ -231,41 +322,47 @@ class _VideoControlLayoutEditOverlayState
             if (maxHeight == null)
               chipList
             else
-              Flexible(
-                child: SingleChildScrollView(child: chipList),
-              ),
+              Expanded(child: SingleChildScrollView(child: chipList)),
             const SizedBox(height: 6),
-            Text(
-              t.video_control_palette_hint,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
+            if (!tightHeight) ...<Widget>[
+              Text(
+                t.video_control_palette_hint,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                TextButton(
-                  onPressed: _cancelDraft,
-                  child: Text(t.dialog_cancel),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _saveDraft,
-                  child: Text(t.dialog_save),
-                ),
-              ],
+              const SizedBox(height: 8),
+            ],
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: _cancelDraft,
+                    child: Text(t.dialog_cancel),
+                  ),
+                  FilledButton(
+                    onPressed: _saveDraft,
+                    child: Text(t.dialog_save),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
+    final Widget boundedPanel =
+        maxHeight == null ? panel : SizedBox(height: maxHeight, child: panel);
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: maxWidth,
         maxHeight: maxHeight ?? double.infinity,
       ),
-      child: panel,
+      child: boundedPanel,
     );
   }
 
