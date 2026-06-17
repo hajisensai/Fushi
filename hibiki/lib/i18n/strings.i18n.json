@@ -1688,5 +1688,12 @@
     "video_clip_export_ffmpeg_failed": "ffmpeg failed",
     "video_clip_export_output_missing": "No output file was created",
     "video_clip_export_input_missing": "Source video is unavailable",
-    "video_subtitle_list_loading": "Loading subtitles..."
+    "video_subtitle_list_loading": "Loading subtitles...",
+    "update_download_source": "Source: $source",
+    "update_download_size": "Downloaded: $received / $total",
+    "update_download_speed": "Speed: $speed",
+    "update_download_resume_status": "Resume: $status",
+    "update_download_resumed": "resumed",
+    "update_download_not_resumed": "not resumed",
+    "update_download_restarted_from_zero": "restarted from zero"
 }

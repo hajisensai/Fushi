@@ -18,6 +18,7 @@ const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
 /// 那一跳；某个镜像 TCP 连上却挂起不返回时，需要这个整体超时把它判死、回退到下一个，
 /// 否则一个坏镜像就能拖垮整轮检查（BUG-277）。
 const Duration _kPerAttemptTimeout = Duration(seconds: 15);
+const Duration _kDownloadDiagnosticsInterval = Duration(milliseconds: 500);
 
 /// GitHub 直连不通时（GFW 机器，且 app 运行时**不走**本机命令行代理）套在 GitHub
 /// 链接前的加速代理前缀。逐个尝试（见 [fetchFirstSuccessfulBody]），任一成功即返回，
@@ -234,6 +235,40 @@ String? _proxyForScheme(String proxyServer, String scheme) {
 /// 全局代理串（不含 `=`，形如 `127.0.0.1:7890`）原样返回；分协议串返回 null。
 String? _globalProxy(String proxyServer) =>
     proxyServer.contains('=') ? null : proxyServer.trim();
+
+@visibleForTesting
+String formatUpdateDownloadByteCount(int? bytes) {
+  if (bytes == null) return '—';
+  if (bytes.abs() < 1024) return '$bytes B';
+
+  const List<String> units = <String>['B', 'KB', 'MB', 'GB'];
+  var value = bytes.toDouble();
+  var unitIndex = 0;
+  while (value.abs() >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return '${value.toStringAsFixed(1)} ${units[unitIndex]}';
+}
+
+@visibleForTesting
+String formatUpdateDownloadSpeed(double? bytesPerSecond) {
+  if (bytesPerSecond == null || !bytesPerSecond.isFinite) return '—';
+  if (bytesPerSecond < 0) return '—';
+  return '${formatUpdateDownloadByteCount(bytesPerSecond.round())}/s';
+}
+
+@visibleForTesting
+double? updateDownloadBytesPerSecond({
+  required int startedBytes,
+  required int receivedBytes,
+  required Duration elapsed,
+}) {
+  if (elapsed <= Duration.zero) return null;
+  final int delta = receivedBytes - startedBytes;
+  if (delta <= 0) return 0;
+  return delta * Duration.microsecondsPerSecond / elapsed.inMicroseconds;
+}
 
 final RegExp _kBetaReleaseTagPattern = RegExp(r'^v\d+(?:\.\d+)*-beta\.\d+$');
 final RegExp _kDebugReleaseTagPattern =
@@ -690,6 +725,7 @@ class UpdateChecker {
   ) async {
     final progress = ValueNotifier<double>(0);
     final status = ValueNotifier<String>(t.update_downloading);
+    final diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(null);
     final overlayVisible = ValueNotifier<bool>(true);
     late final OverlayEntry overlay;
     overlay = OverlayEntry(
@@ -700,6 +736,7 @@ class UpdateChecker {
           return _DownloadOverlay(
             progress: progress,
             status: status,
+            diagnostics: diagnostics,
             onHide: () => overlayVisible.value = false,
           );
         },
@@ -727,6 +764,9 @@ class UpdateChecker {
             _openHttpDownload(client!, uri, headers, version),
         onProgress: (double value) {
           progress.value = value;
+        },
+        onDiagnostics: (UpdateDownloadDiagnostics value) {
+          diagnostics.value = value;
         },
         onSourceFailure: (String url, Object error, StackTrace stack) {
           if (isExpectedUpdateNetworkFailure(error)) {
@@ -760,6 +800,7 @@ class UpdateChecker {
       overlay.remove();
       progress.dispose();
       status.dispose();
+      diagnostics.dispose();
       overlayVisible.dispose();
     }
   }
@@ -775,6 +816,31 @@ typedef UpdateDownloadSourceFailure = void Function(
   Object error,
   StackTrace stack,
 );
+
+typedef UpdateDownloadDiagnosticsCallback = void Function(
+  UpdateDownloadDiagnostics diagnostics,
+);
+
+@visibleForTesting
+class UpdateDownloadDiagnostics {
+  const UpdateDownloadDiagnostics({
+    required this.sourceUrl,
+    required this.sourceHost,
+    required this.receivedBytes,
+    required this.totalBytes,
+    required this.bytesPerSecond,
+    required this.resumed,
+    required this.restartedFromZero,
+  });
+
+  final String sourceUrl;
+  final String sourceHost;
+  final int receivedBytes;
+  final int? totalBytes;
+  final double? bytesPerSecond;
+  final bool resumed;
+  final bool restartedFromZero;
+}
 
 final Map<String, Future<File>> _activeUpdateDownloads =
     <String, Future<File>>{};
@@ -875,6 +941,7 @@ Future<File> downloadUpdateAsset({
   required List<String> candidateUrls,
   required UpdateDownloadOpen openUrl,
   void Function(double value)? onProgress,
+  UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
 }) async {
   final String activeKey = _activeDownloadKey(updatesDir, asset, version);
@@ -888,6 +955,7 @@ Future<File> downloadUpdateAsset({
     candidateUrls: candidateUrls,
     openUrl: openUrl,
     onProgress: onProgress,
+    onDiagnostics: onDiagnostics,
     onSourceFailure: onSourceFailure,
   );
   _activeUpdateDownloads[activeKey] = download;
@@ -914,6 +982,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
   required List<String> candidateUrls,
   required UpdateDownloadOpen openUrl,
   void Function(double value)? onProgress,
+  UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
 }) async {
   await updatesDir.create(recursive: true);
@@ -986,6 +1055,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
         metadata: currentMetadata,
         resumeOffset: resumeOffset,
         onProgress: onProgress,
+        onDiagnostics: onDiagnostics,
       );
     } catch (e, stack) {
       lastError = e;
@@ -1010,9 +1080,56 @@ Future<File> _downloadCandidate({
   required _UpdateDownloadMetadata? metadata,
   required int resumeOffset,
   void Function(double value)? onProgress,
+  UpdateDownloadDiagnosticsCallback? onDiagnostics,
   bool restarted = false,
 }) async {
   final Uri uri = Uri.parse(url);
+  final String sourceHost = hostLabelForUpdateUrl(url);
+  final Stopwatch diagnosticsStopwatch = Stopwatch()..start();
+  var lastDiagnosticsElapsed = -_kDownloadDiagnosticsInterval.inMilliseconds;
+  var speedStartBytes = resumeOffset;
+  var resumed = false;
+  var restartedFromZero = restarted;
+
+  void reportDiagnostics({
+    required int receivedBytes,
+    required int? totalBytes,
+    required bool force,
+  }) {
+    final UpdateDownloadDiagnosticsCallback? callback = onDiagnostics;
+    if (callback == null) return;
+
+    final int elapsed = diagnosticsStopwatch.elapsedMilliseconds;
+    if (!force &&
+        elapsed - lastDiagnosticsElapsed <
+            _kDownloadDiagnosticsInterval.inMilliseconds) {
+      return;
+    }
+    lastDiagnosticsElapsed = elapsed;
+
+    callback(
+      UpdateDownloadDiagnostics(
+        sourceUrl: url,
+        sourceHost: sourceHost,
+        receivedBytes: receivedBytes,
+        totalBytes: totalBytes,
+        bytesPerSecond: updateDownloadBytesPerSecond(
+          startedBytes: speedStartBytes,
+          receivedBytes: receivedBytes,
+          elapsed: diagnosticsStopwatch.elapsed,
+        ),
+        resumed: resumed,
+        restartedFromZero: restartedFromZero,
+      ),
+    );
+  }
+
+  reportDiagnostics(
+    receivedBytes: resumeOffset,
+    totalBytes: asset.sizeBytes ?? metadata?.sizeBytes,
+    force: true,
+  );
+
   final Map<String, String> headers = <String, String>{};
   if (resumeOffset > 0) {
     headers[HttpHeaders.rangeHeader] = 'bytes=$resumeOffset-';
@@ -1043,6 +1160,7 @@ Future<File> _downloadCandidate({
       metadata: null,
       resumeOffset: 0,
       onProgress: onProgress,
+      onDiagnostics: onDiagnostics,
       restarted: true,
     );
   }
@@ -1065,16 +1183,20 @@ Future<File> _downloadCandidate({
           metadata: null,
           resumeOffset: 0,
           onProgress: onProgress,
+          onDiagnostics: onDiagnostics,
           restarted: true,
         );
       }
       throw HttpException('invalid content-range for resume: $url');
     }
+    resumed = true;
   } else if (response.statusCode == HttpStatus.ok) {
     if (requestedRange) {
       await _deleteFile(stagingPaths.partFile);
       await _deleteFile(stagingPaths.metadataFile);
       writeOffset = 0;
+      speedStartBytes = 0;
+      restartedFromZero = true;
     }
   } else {
     await response.stream.drain<void>();
@@ -1104,6 +1226,11 @@ Future<File> _downloadCandidate({
   } else {
     onProgress?.call(0);
   }
+  reportDiagnostics(
+    receivedBytes: received,
+    totalBytes: total,
+    force: true,
+  );
   Object? bodyError;
   StackTrace? bodyStack;
   try {
@@ -1113,8 +1240,18 @@ Future<File> _downloadCandidate({
       if (total != null && total > 0) {
         onProgress?.call(received / total);
       }
+      reportDiagnostics(
+        receivedBytes: received,
+        totalBytes: total,
+        force: false,
+      );
     }
     await sink.flush();
+    reportDiagnostics(
+      receivedBytes: received,
+      totalBytes: total,
+      force: true,
+    );
   } catch (e, stack) {
     bodyError = e;
     bodyStack = stack;
@@ -2066,14 +2203,31 @@ class UpdateAvailableDialog extends StatelessWidget {
   }
 }
 
+@visibleForTesting
+Widget buildUpdateDownloadOverlayForTest({
+  required ValueNotifier<double> progress,
+  required ValueNotifier<String> status,
+  required ValueNotifier<UpdateDownloadDiagnostics?> diagnostics,
+  required VoidCallback onHide,
+}) {
+  return _DownloadOverlay(
+    progress: progress,
+    status: status,
+    diagnostics: diagnostics,
+    onHide: onHide,
+  );
+}
+
 class _DownloadOverlay extends StatelessWidget {
   const _DownloadOverlay({
     required this.progress,
     required this.status,
+    required this.diagnostics,
     required this.onHide,
   });
   final ValueNotifier<double> progress;
   final ValueNotifier<String> status;
+  final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics;
   final VoidCallback onHide;
 
   @override
@@ -2083,41 +2237,123 @@ class _DownloadOverlay extends StatelessWidget {
       child: Material(
         color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.54),
         child: Center(
-          child: HibikiCard(
-            margin: const EdgeInsets.symmetric(horizontal: 48),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ValueListenableBuilder<String>(
-                  valueListenable: status,
-                  builder: (_, s, __) => Text(
-                    s,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.gap,
+              vertical: tokens.spacing.gap,
+            ),
+            child: HibikiCard(
+              margin: EdgeInsets.zero,
+              padding: EdgeInsets.all(tokens.spacing.card),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ValueListenableBuilder<String>(
+                      valueListenable: status,
+                      builder: (_, s, __) => Text(
+                        s,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    ValueListenableBuilder<double>(
+                      valueListenable: progress,
+                      builder: (_, p, __) => Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          LinearProgressIndicator(value: p > 0 ? p : null),
+                          SizedBox(height: tokens.spacing.gap / 2),
+                          Text('${(p * 100).toStringAsFixed(0)}%'),
+                        ],
+                      ),
+                    ),
+                    ValueListenableBuilder<UpdateDownloadDiagnostics?>(
+                      valueListenable: diagnostics,
+                      builder: (_, value, __) {
+                        if (value == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: EdgeInsets.only(top: tokens.spacing.gap),
+                          child: _DownloadDiagnosticsPanel(value: value),
+                        );
+                      },
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    TextButton(
+                      onPressed: onHide,
+                      child: Text(t.update_hide),
+                    ),
+                  ],
                 ),
-                SizedBox(height: tokens.spacing.card),
-                ValueListenableBuilder<double>(
-                  valueListenable: progress,
-                  builder: (_, p, __) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      LinearProgressIndicator(value: p > 0 ? p : null),
-                      SizedBox(height: tokens.spacing.gap),
-                      Text('${(p * 100).toStringAsFixed(0)}%'),
-                    ],
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.card),
-                TextButton(
-                  onPressed: onHide,
-                  child: Text(t.update_hide),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _DownloadDiagnosticsPanel extends StatelessWidget {
+  const _DownloadDiagnosticsPanel({required this.value});
+
+  final UpdateDownloadDiagnostics value;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final TextStyle? style = Theme.of(context).textTheme.bodySmall;
+    final String resumeStatus = value.restartedFromZero
+        ? t.update_download_restarted_from_zero
+        : value.resumed
+            ? t.update_download_resumed
+            : t.update_download_not_resumed;
+    return DefaultTextStyle.merge(
+      style: style,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _DiagnosticLine(
+            text: t.update_download_source(source: value.sourceHost),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          _DiagnosticLine(
+            text: t.update_download_size(
+              received: formatUpdateDownloadByteCount(value.receivedBytes),
+              total: formatUpdateDownloadByteCount(value.totalBytes),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          _DiagnosticLine(
+            text: t.update_download_speed(
+              speed: formatUpdateDownloadSpeed(value.bytesPerSecond),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          _DiagnosticLine(
+            text: t.update_download_resume_status(status: resumeStatus),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiagnosticLine extends StatelessWidget {
+  const _DiagnosticLine({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      softWrap: true,
     );
   }
 }
