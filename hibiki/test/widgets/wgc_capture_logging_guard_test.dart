@@ -85,19 +85,32 @@ void main() {
       'recreate',
       'createSession-fail',
       'startCapture-fail',
-      'retire-close-start',
-      'retire-remove-start',
-      'retire-remove',
+      'state-inactive',
+      'retire-defer-in-handler',
+      'remove-before-close-start',
+      'remove-before-close-done',
+      'remove-before-close-fail',
+      'remove-before-close-closed-unexpected',
+      'handler-release-start',
       'retire-register-start',
-      'retire-register',
+      'retire-register-done',
+      'session-close-start',
+      'session-close-done',
+      'pool-close-start',
+      'pool-close-done',
+      'registry-size',
       'handler-release-done',
     ]) {
       expect(src.contains('WgcLog::Write("$evt"'), isTrue,
           reason: 'texture_bridge.cc must log WgcLog at lifecycle point: $evt');
     }
 
+    expect(src.contains('WgcLog::Write("retire-remove-closed"'), isFalse,
+        reason:
+            'retire-remove-closed was the TODO-463/465 stopgap; normal WGC retire must remove before Close instead');
+
     final int retireStart =
-        src.indexOf('void TextureBridge::RetireFramePoolLocked()');
+        src.indexOf('void TextureBridge::RetireFramePoolLocked(');
     expect(retireStart, greaterThanOrEqualTo(0));
     final int retireEnd = src.indexOf('void TextureBridge::', retireStart + 1);
     final String retireBody = src.substring(retireStart, retireEnd);
@@ -105,7 +118,23 @@ void main() {
         reason:
             'RetireFramePoolLocked must log the retired frame pool pointer (crash forensics)');
 
-    final int ofaStart = src.indexOf('void TextureBridge::OnFrameArrived()');
+    final int removeDone =
+        src.indexOf('WgcLog::Write("remove-before-close-done"');
+    final int handlerReleaseDone =
+        src.indexOf('WgcLog::Write("handler-release-done"', removeDone);
+    final int poolCloseStart =
+        src.indexOf('WgcLog::Write("pool-close-start"', removeDone);
+    expect(removeDone, greaterThanOrEqualTo(0),
+        reason:
+            'successful revoke must be visible before closing the WGC pool');
+    expect(handlerReleaseDone, greaterThan(removeDone),
+        reason:
+            'handler-release-done must only happen after remove-before-close-done');
+    expect(poolCloseStart, greaterThan(handlerReleaseDone),
+        reason:
+            'pool-close-start must be logged after successful remove and handler release');
+
+    final int ofaStart = src.indexOf('void TextureBridge::OnFrameArrived(');
     expect(ofaStart, greaterThanOrEqualTo(0));
     final String ofaBody = src.substring(ofaStart);
     expect(ofaBody.contains('WgcLog::Write("frame-getfail"'), isTrue,

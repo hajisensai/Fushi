@@ -1,6 +1,6 @@
 ## BUG-209 · 手机闪退实为Windows WGC FramePool teardown崩溃
 - **报告**：2026-06-12（用户报「又闪退了」，指认 Windows 桌面版 hibiki-windows-b1f960290）
-- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。**第十修重开（2026-06-14，TODO-305，「看有声书闪退」）**：第九修永久保活只覆盖 `StopInternal` 一条路径，漏了 `Start()` 重入覆盖 + `OnFrameArrived` resize `Recreate` 两条帧池丢弃/替换路径（详见文末「第十修」）。**第十二修重开（2026-06-16，TODO-439）**：v0.9.0.5025 仍崩同一 `GraphicsCapture.dll` `0xf0d5`，崩溃池对应 `create-pool` 后没有 `stop/retire/dtor`，说明保活还必须覆盖 active/running pool，而不能只覆盖 retire 后的 closed pool。**第十三修重开（2026-06-17，TODO-453 作为 TODO-439 新证据）**：用户日志已包含 `active-retain`，前三轮 teardown 完整闭合，最后一轮停在 `retire` 后、`retire-close` 前，失败窗口缩到 `RetireFramePoolLocked()` 内部的 remove/Close/registry/handler release 收口段。
+- **真实性**：✅ 真 bug。根因 `packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:196`（`frame_pool_ = nullptr` 在 teardown 当下释放帧池唯一强引用）。**第十修重开（2026-06-14，TODO-305，「看有声书闪退」）**：第九修永久保活只覆盖 `StopInternal` 一条路径，漏了 `Start()` 重入覆盖 + `OnFrameArrived` resize `Recreate` 两条帧池丢弃/替换路径（详见文末「第十修」）。**第十二修重开（2026-06-16，TODO-439）**：v0.9.0.5025 仍崩同一 `GraphicsCapture.dll` `0xf0d5`，崩溃池对应 `create-pool` 后没有 `stop/retire/dtor`，说明保活还必须覆盖 active/running pool，而不能只覆盖 retire 后的 closed pool。**第十三修重开（2026-06-17，TODO-453 作为 TODO-439 新证据）**：用户日志已包含 `active-retain`，前三轮 teardown 完整闭合，最后一轮停在 `retire` 后、`retire-close` 前，失败窗口缩到 `RetireFramePoolLocked()` 内部的 remove/Close/registry/handler release 收口段。**第十四修重开（2026-06-17，TODO-463/TODO-465）**：0.9.15 日志停在 `retire-remove-start`，dump 显示 Close 后裸 `remove_FrameArrived` 在已关闭 pool 上抛 `RO_E_CLOSED/0x80000013` 未捕获，阻断 `retire-register` 与 `handler-release-done`。
 
 ### dump 真实崩溃栈（决定性证据）
 两份 minidump（`hibiki.exe.8952.dmp` 6/12 0:11、`hibiki.exe.99916.dmp` 6/11 22:10）崩溃签名完全一致：
@@ -128,3 +128,26 @@ teardown 顺序：`session.Close()` -> `remove_FrameArrived(token)` -> `frame_po
 - **[x] ② 自动化测试** —— `texture_bridge_stop_guard_test.dart` 改为要求 `retire-close-start -> Close -> retire-close/retire-close-fail -> retire-remove-start -> remove_FrameArrived -> retire-remove/retire-remove-fail -> retire-register-start -> Retire -> retire-register`；同时要求 `handler-release -> handler-release-done`。`wgc_capture_logging_guard_test.dart` 补守新日志事件。两项均先红后绿。
 
 **验证边界**：本轮仍未拿到 TODO-453 对应 crash dump；若用户再复发，新日志应能精确区分停在 `retire-close-start` 前、Close 内部、remove 内部、registry 移交或 handler release 前后。合格日志不只要求 active retain，还要求每个 pool 最终有 `retire-close`（或 `retire-close-fail`）、`retire-remove`（或 `retire-remove-fail`）、`retire-register`、`handler-release-done`、`dtor-exit`，并且 crash dump 不再出现 BUG-209 的 `GraphicsCapture.dll+0xf0d5` 签名。
+
+### 第十四修（Close 后 remove best effort，TODO-463/TODO-465，2026-06-17）
+
+**复发证据**：0.9.15 的三段 captureLog（TODO-463 两段、TODO-465 一段）均完整写到 `retire-close-start -> retire-close hr=0x00000000 -> retire-remove-start`，随后没有 `retire-remove`、`retire-register-start`、`retire-register`、`handler-release-done`。对应 dump（例如 `hibiki.exe.140208.dmp` / `hibiki.exe.100408.dmp`）显示 `GraphicsCapture!Direct3D11CaptureFramePool::CheckClosed` 在 `remove_FrameArrived` 内抛 `RO_E_CLOSED/0x80000013`，异常未被 native plugin 捕获后走 terminate/abort。第十三修先 Close 压住了旧的 remove/Close 窗口，但也暴露出新的 API 契约：已 Close 的 WGC frame pool 不能再裸 remove。
+
+**第十四修实现**：
+- **[x] ① 根因修复** —— `RetireFramePoolLocked()` 保持先 Close 设 closed-flag，再把 `remove_FrameArrived` 改成 best effort：返回 `S_OK` 记录 `retire-remove`，返回或抛 `0x80000013` 记录 `retire-remove-closed`，其它 HRESULT 记录 `retire-remove-fail`；没有 token 时记录 `retire-remove-skipped`。所有分支都清 token 并继续 `retire-register-start -> RetiredFramePoolRegistry::Retire(std::move(frame_pool_)) -> retire-register -> frame_pool_=nullptr`，随后 `StopInternal()` 继续 `handler-release -> handler-release-done`。
+- **[x] ② 自动化测试** —— `hibiki/test/widgets/texture_bridge_stop_guard_test.dart` 增加 Close 后 remove 必须受 `try/catch (const winrt::hresult_error&)` 保护、必须记录 `retire-remove-closed` / `retire-remove-skipped`、异常后仍继续 registry 保活；`hibiki/test/widgets/wgc_capture_logging_guard_test.dart` 增加新日志事件守卫。
+
+**验证边界**：源码守卫能证明 Close 后 remove 不再因 `winrt::hresult_error` 阻断退役流程，Windows release 构建能证明 native 编译通过。真正验收仍需用户或 PM 在 Windows 上走原始路径复测：若再次生成 `wgc_capture.log`，合格日志应在 `retire-remove-start` 之后继续出现 `retire-remove-closed`（或 success/fail/skip）、`retire-register`、`handler-release-done`，不应再停在 `retire-remove-start`。
+
+### 第十五修（TODO-468/TODO-472：remove-before-close 生命周期重构，2026-06-17）
+
+**第十四修为何只是止血**：TODO-463/TODO-465 的 `892a711` 能避免 Close 后 `remove_FrameArrived` 抛 `RO_E_CLOSED/0x80000013` 时直接 terminate，但它把 `retire-remove-closed` 当成可接受正常路径，成功释放 handler/token 之前已经 Close pool。用户明确不接受“崩溃和小泄漏二选一”：正常路径必须既不崩，也不长期 retained delegate。
+
+**第十五修实现**：
+- **[x] ① 根因修复** —— `texture_bridge.cc/.h` 把 `frame_pool`、`capture_session`、`FrameArrived` token、handler、callback state、size/generation、retiring/removed/closed 状态聚合为 `WgcFramePoolLifetime`。`TextureBridge` 只持当前 active lifetime；进程级 `FramePoolLifetimeRegistry` 用单一 `lifetimes_` 列表从 create 起保活对象，并用 lifetime 状态计算 `active=N retired=N`，不再用无语义 `active_`/`retired_` 双列表重复持有。
+- **[x] ② 正常退役顺序** —— `RetireFramePoolLocked(reason)` 先写 `state-inactive` 并断开 callback state，再在 frame pool 仍 open 时 `remove_FrameArrived(token)`；成功后清 token、释放 handler 并写 `handler-release-done`；随后 Close `capture_session`、Close `frame_pool`；最后 `MarkRetired(lifetime)`，写 `registry-size active=N retired=N` 与 `retire-register-done`。正常日志应看到 `remove-before-close-done` 早于 `pool-close-start`，不再出现 `retire-remove-closed`。
+- **[x] ③ handler 栈内退役** —— FrameArrived handler 进入时自持 lifetime 并设置 `in_handler`；如果 resize 或 stop 在该回调栈内触发退役，不直接 remove，而是写 `retire-defer-in-handler` 并把 finalize 投递到创建该 pool 时记录的同一 `DispatcherQueue` 下一拍，避免 event 迭代重入。
+- **[x] ④ fail closed** —— `remove` 失败时写 `remove-before-close-fail` 或 `remove-before-close-closed-unexpected`，保留 token/handler/pool 作为异常证据，不假装释放；随后仍关闭 session/pool 并把 lifetime 标为 retired 保活，避免崩溃和半拆状态。
+- **[x] ⑤ 自动化测试** —— `texture_bridge_stop_guard_test.dart` 改为守住新顺序、handler 栈内 defer、单一 lifetime registry、禁止裸 `frame_pool_->Recreate(` / 裸 `frame_pool_ = nullptr` / `retire-remove-closed` 正常路径；`wgc_capture_logging_guard_test.dart` 改为要求 `remove-before-close-*`、`handler-release-*`、`session-close-*`、`pool-close-*`、`registry-size` 等日志，且断言 `remove-before-close-done -> handler-release-done -> pool-close-start`。
+
+**验证边界**：源码守卫和 Windows native `ALL_BUILD` 已证明本轮 C++ 编译链接通过；`flutter build windows --release` 仍在 `INSTALL.vcxproj` 阶段因安装前缀权限失败，非本轮 native 编译错误。真正用户级验收仍需 Windows 上反复走原始路径（视频退出、WebView 弹窗/阅读器 resize），检查 `%LOCALAPPDATA%\Hibiki\wgc_capture.log`：正常退役应有 `remove-before-close-done`、`handler-release-done`、`pool-close-done`、`registry-size active=... retired=...`，不得出现 `retire-remove-closed` 或 `remove-before-close-fail`；同时不应再产生 `GraphicsCapture` `c0000409/RO_E_CLOSED` dump。
