@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
+import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 
 /// 给定窗口聚焦态，剪贴板自动监听是否应触发查词。
 ///
@@ -107,6 +108,7 @@ class DesktopLookupService extends ChangeNotifier
 
   Future<void> _setAlwaysOnTop(bool value) async {
     if (!isDesktop) return;
+    if (DesktopForegroundGuard.isHiddenWindowsRunner) return;
     try {
       await windowManager.setAlwaysOnTop(value);
     } on MissingPluginException {
@@ -131,7 +133,8 @@ class DesktopLookupService extends ChangeNotifier
 
   Future<void> _handleClipboardChange() async {
     // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
-    if (!shouldTriggerOnClipboard(_focused)) return;
+    final bool foreground = _focused || await _isHibikiForeground();
+    if (!shouldTriggerOnClipboard(foreground)) return;
     final String? text = await _readClipboardText();
     if (text == null || text.trim().isEmpty) return;
     submitText(text);
@@ -203,9 +206,10 @@ class DesktopLookupService extends ChangeNotifier
   /// 置顶，行为不变。
   Future<void> bringPendingLookupToFront() async {
     if (!isDesktop) return;
+    if (DesktopForegroundGuard.isHiddenWindowsRunner) return;
     // 已在前台无需（也不该）做任何唤起/置顶动作：对前台窗口调
     // SetForegroundWindow 会被 Windows 前台锁定退化成任务栏 flash（TODO-341）。
-    if (await _isWindowFocused()) return;
+    if (await _isHibikiForeground()) return;
     try {
       await windowManager.show();
       await windowManager.focus();
@@ -217,6 +221,17 @@ class DesktopLookupService extends ChangeNotifier
     if (_windowMode != DesktopClipboardWindowMode.normal) {
       await _setAlwaysOnTop(true);
     }
+  }
+
+  /// 判断 Hibiki 是否已经占据前台。Windows 上不能只信
+  /// [windowManager.isFocused]：词典 WebView/原生子窗口拿焦点时，插件可能报告
+  /// 主窗未聚焦，但 `GetForegroundWindow` 仍属于当前 Hibiki 进程。此时继续
+  /// show/focus 主窗会触发任务栏请求注意态。
+  Future<bool> _isHibikiForeground() async {
+    if (DesktopForegroundGuard.isForegroundOwnedByCurrentProcess()) {
+      return true;
+    }
+    return _isWindowFocused();
   }
 
   /// 查询主窗口是否已在前台。插件缺失（widget 测试）或平台调用失败时保守返回
