@@ -1,4 +1,5 @@
 #include <objbase.h>
+#include <windows.h>
 #include <WebView2EnvironmentOptions.h>
 #include <wil/wrl.h>
 
@@ -10,6 +11,24 @@
 namespace flutter_inappwebview_plugin
 {
   using namespace Microsoft::WRL;
+
+  namespace
+  {
+    std::wstring OptionalEnvWide(const wchar_t* name)
+    {
+      const DWORD len = GetEnvironmentVariableW(name, nullptr, 0);
+      if (len == 0) {
+        return std::wstring();
+      }
+      std::wstring value(len, L'\0');
+      const DWORD written = GetEnvironmentVariableW(name, value.data(), len);
+      if (written == 0 || written >= len) {
+        return std::wstring();
+      }
+      value.resize(written);
+      return value;
+    }
+  }
 
   WebViewEnvironment::WebViewEnvironment(const FlutterInappwebviewWindowsPlugin* plugin, const std::string& id)
     : plugin(plugin), id(id),
@@ -61,9 +80,25 @@ namespace flutter_inappwebview_plugin
     // thread; media_kit/libmpv (audiobook playback) can tear it down, yielding
     // CO_E_NOTINITIALIZED here. Idempotent, refcounted — restore the precondition.
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const std::wstring browserExecutableFolder =
+      settings && settings->browserExecutableFolder.has_value()
+        ? utf8_to_wide(settings->browserExecutableFolder.value())
+        : std::wstring();
+    const std::wstring configuredUserDataFolder =
+      settings && settings->userDataFolder.has_value()
+        ? utf8_to_wide(settings->userDataFolder.value())
+        : std::wstring();
+    const std::wstring testUserDataFolder =
+      configuredUserDataFolder.empty()
+        ? OptionalEnvWide(L"HIBIKI_WEBVIEW2_USER_DATA_FOLDER")
+        : std::wstring();
+    const std::wstring& userDataFolder =
+      configuredUserDataFolder.empty()
+        ? testUserDataFolder
+        : configuredUserDataFolder;
     auto hr = CreateCoreWebView2EnvironmentWithOptions(
-      settings && settings->browserExecutableFolder.has_value() ? utf8_to_wide(settings->browserExecutableFolder.value()).c_str() : nullptr,
-      settings && settings->userDataFolder.has_value() ? utf8_to_wide(settings->userDataFolder.value()).c_str() : nullptr,
+      browserExecutableFolder.empty() ? nullptr : browserExecutableFolder.c_str(),
+      userDataFolder.empty() ? nullptr : userDataFolder.c_str(),
       options.Get(),
       Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
         [this, hwnd, completionHandler](HRESULT result, wil::com_ptr<ICoreWebView2Environment> environment) -> HRESULT

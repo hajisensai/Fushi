@@ -57,9 +57,28 @@ void main() {
     // ValueListenableBuilder 监听 _titleNotifier，全屏独立路由不随页面 setState 重建
     // 时也能刷新（BUG-120）；桌面 + 移动两套主题各一处。
     expect(
-      'valueListenable: _titleNotifier'.allMatches(src).length,
+      '_topBarTitle()'.allMatches(src).length,
       greaterThanOrEqualTo(2),
-      reason: '桌面与移动顶栏都应用 ValueListenableBuilder 显示响应式标题（BUG-120）',
+      reason: '桌面与移动顶栏都应调用同一标题 helper（内部监听 _titleNotifier）',
     );
+    expect(src.contains('valueListenable: _titleNotifier'), isTrue,
+        reason: '标题 helper 内部仍应监听 _titleNotifier（BUG-120）');
+  });
+
+  test('标题使用稳定 helper，不靠右侧空槽占位维持位置（TODO-491）', () {
+    expect(src.contains('Widget _topBarTitle('), isTrue,
+        reason: '标题应集中到 helper，桌面/移动共用同一稳定布局');
+    expect('_topBarTitle()'.allMatches(src).length, greaterThanOrEqualTo(2),
+        reason: '桌面与移动顶栏都应使用同一标题 helper');
+
+    final int groupStart = src.indexOf('Widget _topBarSlotGroup(');
+    expect(groupStart, greaterThanOrEqualTo(0));
+    final int groupEnd =
+        src.indexOf('String get _clipExportTooltip', groupStart);
+    expect(groupEnd, greaterThan(groupStart));
+    final String group = src.substring(groupStart, groupEnd);
+    expect(group.contains('if (items.isEmpty) return const SizedBox.shrink();'),
+        isTrue,
+        reason: '清空 topRight 时不能留下右侧空白占位挤歪标题');
   });
 }

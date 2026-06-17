@@ -189,6 +189,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       normalizeVideoDanmakuMaxActive(widget.initialDanmakuMaxActive);
   late VideoControlLayout _controlLayout =
       widget.initialControlLayout ?? VideoControlLayout.currentChrome;
+  String? _controlMoveRejectionMessage;
 
   /// mpv 配置（内嵌详情即改即生效，本地权威 + 回调持久化/实时应用）。
   late VideoMpvConfig _mpvConfig = widget.initialMpvConfig;
@@ -1183,6 +1184,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   Widget _buildControlDragEditor() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return _settingsSection(
       children: <Widget>[
         Padding(
@@ -1191,6 +1193,16 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _buildControlStagePreview(),
+              if (_controlMoveRejectionMessage != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                Text(
+                  _controlMoveRejectionMessage!,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: cs.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
               SizedBox(height: tokens.spacing.gap),
               _buildHiddenSlotTray(),
             ],
@@ -1206,104 +1218,111 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double maxPreviewHeight = math.min(
+        final double stageWidth = math.max(560, constraints.maxWidth);
+        final double stageHeight = math.min(
           420,
-          math.max(220, constraints.maxWidth * 9 / 16),
+          math.max(260, stageWidth * 9 / 16),
         );
-        return ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxPreviewHeight),
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: DecoratedBox(
-              key: const ValueKey<String>('video-control-editor-preview'),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                borderRadius: tokens.radii.controlRadius,
-                border: Border.all(color: cs.outlineVariant),
-              ),
-              child: ClipRRect(
-                borderRadius: tokens.radii.controlRadius,
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints preview) {
-                    final double sideWidth =
-                        math.min(224, math.max(120, preview.maxWidth * 0.32));
-                    final double centerWidth =
-                        math.min(236, math.max(128, preview.maxWidth * 0.30));
-                    const double inset = 10;
-                    return Stack(
-                      children: <Widget>[
-                        Positioned.fill(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: <Color>[
-                                  cs.surfaceContainerHigh,
-                                  cs.surfaceContainerHighest,
-                                ],
+        return SizedBox(
+          height: stageHeight,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: stageWidth,
+              height: stageHeight,
+              child: DecoratedBox(
+                key: const ValueKey<String>('video-control-editor-preview'),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: tokens.radii.controlRadius,
+                  border: Border.all(color: cs.outlineVariant),
+                ),
+                child: ClipRRect(
+                  borderRadius: tokens.radii.controlRadius,
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints preview) {
+                      final double sideWidth =
+                          math.min(224, math.max(128, preview.maxWidth * 0.24));
+                      final double centerWidth =
+                          math.min(236, math.max(128, preview.maxWidth * 0.22));
+                      const double inset = 10;
+                      return Stack(
+                        children: <Widget>[
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: <Color>[
+                                    cs.surfaceContainerHigh,
+                                    cs.surfaceContainerHighest,
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          top: inset,
-                          left: inset,
-                          width: sideWidth,
-                          child: _buildSlotRegion(VideoControlSlot.topLeft),
-                        ),
-                        Positioned(
-                          top: inset,
-                          right: inset,
-                          width: sideWidth,
-                          child: _buildSlotRegion(VideoControlSlot.topRight),
-                        ),
-                        Positioned(
-                          left: inset,
-                          top: 0,
-                          bottom: 0,
-                          width: sideWidth,
-                          child: Center(
-                            child:
-                                _buildSlotRegion(VideoControlSlot.screenLeft),
+                          Positioned(
+                            top: inset,
+                            left: inset,
+                            width: sideWidth,
+                            child: _buildSlotRegion(VideoControlSlot.topLeft),
                           ),
-                        ),
-                        Positioned(
-                          right: inset,
-                          top: 0,
-                          bottom: 0,
-                          width: sideWidth,
-                          child: Center(
-                            child:
-                                _buildSlotRegion(VideoControlSlot.screenRight),
+                          Positioned(
+                            top: inset,
+                            right: inset,
+                            width: sideWidth,
+                            child: _buildSlotRegion(VideoControlSlot.topRight),
                           ),
-                        ),
-                        Positioned(
-                          left: inset,
-                          bottom: inset,
-                          width: sideWidth,
-                          child: _buildSlotRegion(VideoControlSlot.bottomLeft),
-                        ),
-                        Align(
-                          alignment: Alignment.bottomCenter,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: inset),
-                            child: SizedBox(
-                              width: centerWidth,
-                              child: _buildSlotRegion(
-                                  VideoControlSlot.bottomCenter),
+                          Positioned(
+                            left: inset,
+                            top: 0,
+                            bottom: 0,
+                            width: sideWidth,
+                            child: Center(
+                              child:
+                                  _buildSlotRegion(VideoControlSlot.screenLeft),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          right: inset,
-                          bottom: inset,
-                          width: sideWidth,
-                          child: _buildSlotRegion(VideoControlSlot.bottomRight),
-                        ),
-                      ],
-                    );
-                  },
+                          Positioned(
+                            right: inset,
+                            top: 0,
+                            bottom: 0,
+                            width: sideWidth,
+                            child: Center(
+                              child: _buildSlotRegion(
+                                  VideoControlSlot.screenRight),
+                            ),
+                          ),
+                          Positioned(
+                            left: inset,
+                            bottom: inset,
+                            width: sideWidth,
+                            child:
+                                _buildSlotRegion(VideoControlSlot.bottomLeft),
+                          ),
+                          Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: inset),
+                              child: SizedBox(
+                                width: centerWidth,
+                                child: _buildSlotRegion(
+                                    VideoControlSlot.bottomCenter),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            right: inset,
+                            bottom: inset,
+                            width: sideWidth,
+                            child:
+                                _buildSlotRegion(VideoControlSlot.bottomRight),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -1327,7 +1346,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       key: ValueKey<String>('video-control-edit-slot-${slot.storageValue}'),
       onWillAcceptWithDetails:
           (DragTargetDetails<VideoControlDragData> details) =>
-              _canAcceptControlPayload(details.data, slot),
+              _handleControlDragWillAccept(details.data, slot),
       onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
         _moveControlItem(
           details.data,
@@ -1342,6 +1361,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       ) {
         final bool highlighted = candidate.isNotEmpty;
         final bool rejecting = rejected.isNotEmpty;
+        final String? rejectionMessage =
+            rejecting ? _controlMoveRejectionMessage : null;
         final Color borderColor = rejecting
             ? cs.error
             : highlighted
@@ -1378,6 +1399,18 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              if (rejectionMessage != null) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  rejectionMessage,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: cs.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               const SizedBox(height: 6),
               if (entries.isEmpty)
                 SizedBox(
@@ -1395,20 +1428,22 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 )
               else
                 Flexible(
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: <Widget>[
-                      for (final ({
-                        VideoControlItem item,
-                        int sourceIndex
-                      }) entry in entries)
-                        _buildPlacedControlChip(
-                          entry.item,
-                          sourceSlot: slot,
-                          sourceIndex: entry.sourceIndex,
-                        ),
-                    ],
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: <Widget>[
+                        for (final ({
+                          VideoControlItem item,
+                          int sourceIndex
+                        }) entry in entries)
+                          _buildPlacedControlChip(
+                            entry.item,
+                            sourceSlot: slot,
+                            sourceIndex: entry.sourceIndex,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
             ],
@@ -1437,7 +1472,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     return DragTarget<VideoControlDragData>(
       onWillAcceptWithDetails:
           (DragTargetDetails<VideoControlDragData> details) =>
-              _canAcceptControlPayload(details.data, sourceSlot),
+              _handleControlDragWillAccept(details.data, sourceSlot),
       onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
         _moveControlItem(
           details.data,
@@ -1491,8 +1526,18 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: chip),
+      onDraggableCanceled: (_, __) => _handleControlDragCanceled(item),
       child: chip,
     );
+  }
+
+  void _handleControlDragCanceled(VideoControlItem item) {
+    final String? message = switch (item) {
+      VideoControlItem.volume => t.video_control_reject_volume_bottom,
+      _ => _controlMoveRejectionMessage,
+    };
+    if (message == null || _controlMoveRejectionMessage == message) return;
+    setState(() => _controlMoveRejectionMessage = message);
   }
 
   Widget _controlChipBody(
@@ -1562,9 +1607,36 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   ) {
     final VideoControlItem item = payload.item;
     if (!item.isChipRenderable) return false;
-    if (item.pinnedRequired && target == VideoControlSlot.hidden) return false;
+    if (!item.canMoveToSlot(target)) return false;
     if (payload.sourceSlot == target) return true;
     return !_controlLayout.itemsIn(target).contains(item);
+  }
+
+  bool _handleControlDragWillAccept(
+    VideoControlDragData payload,
+    VideoControlSlot target,
+  ) {
+    final bool accepted = _canAcceptControlPayload(payload, target);
+    final String? message =
+        accepted ? null : _controlRejectionMessage(payload.item, target);
+    if (_controlMoveRejectionMessage != message) {
+      setState(() => _controlMoveRejectionMessage = message);
+    }
+    return accepted;
+  }
+
+  String? _controlRejectionMessage(
+    VideoControlItem item,
+    VideoControlSlot target,
+  ) {
+    if (item == VideoControlItem.volume && !item.canMoveToSlot(target)) {
+      return t.video_control_reject_volume_bottom;
+    }
+    if (item.pinnedRequired && target == VideoControlSlot.hidden) {
+      return t.video_control_reject_required;
+    }
+    if (!item.canMoveToSlot(target)) return t.video_control_reject_unavailable;
+    return null;
   }
 
   void _moveControlItem(
@@ -1578,7 +1650,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       targetIndex: targetIndex,
     );
     if (next == _controlLayout) return;
-    setState(() => _controlLayout = next);
+    setState(() {
+      _controlLayout = next;
+      _controlMoveRejectionMessage = null;
+    });
     final Future<void> Function(VideoControlLayout layout)? callback =
         widget.onControlLayoutChanged;
     if (callback != null) {
@@ -1650,6 +1725,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       case VideoControlItem.chapterList:
         return t.video_chapters;
       case VideoControlItem.volume:
+        return t.video_control_volume;
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
       case VideoControlItem.speed:
@@ -1702,6 +1778,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       case VideoControlItem.chapterList:
         return Icons.format_list_numbered;
       case VideoControlItem.volume:
+        return Icons.volume_up_outlined;
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
       case VideoControlItem.speed:

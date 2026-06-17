@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/startup/test_environment.dart';
 import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:path_provider/path_provider.dart';
@@ -49,7 +50,8 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   File? _breadcrumbFile;
 
   Future<void> init() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = hibikiTestDirectory('app-documents') ??
+        await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/error_log.txt');
     _breadcrumbFile = File('${dir.path}/import_crash_breadcrumb.txt');
     try {
