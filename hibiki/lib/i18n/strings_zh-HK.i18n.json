@@ -1695,5 +1695,7 @@
     "update_download_resume_status": "Resume: $status",
     "update_download_resumed": "resumed",
     "update_download_not_resumed": "not resumed",
-    "update_download_restarted_from_zero": "restarted from zero"
+    "update_download_restarted_from_zero": "restarted from zero",
+    "video_setting_subtitle_no_background": "No background",
+    "video_setting_subtitle_no_background_hint": "Make the subtitle background transparent."
 }

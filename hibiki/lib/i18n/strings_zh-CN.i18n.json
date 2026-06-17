@@ -1695,5 +1695,7 @@
     "update_download_resume_status": "续传：$status",
     "update_download_resumed": "已续传",
     "update_download_not_resumed": "未续传",
-    "update_download_restarted_from_zero": "已从零重下"
+    "update_download_restarted_from_zero": "已从零重下",
+    "video_setting_subtitle_no_background": "无背景",
+    "video_setting_subtitle_no_background_hint": "让字幕背景透明，不显示底色。"
 }

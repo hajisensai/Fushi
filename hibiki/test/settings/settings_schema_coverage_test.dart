@@ -111,6 +111,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_font_consistency_test.dart',
   'video/Shadow': 'test/media/video/video_subtitle_style_test.dart',
   'video/Background opacity': 'test/media/video/video_subtitle_style_test.dart',
+  'video/No background':
+      'test/pages/video_quick_settings_sheet_test.dart + test/pages/video_settings_schema_guard_test.dart',
   'video/Vertical position':
       'test/media/video/video_subtitle_style_test.dart + test/pages/video_subtitle_push_up_guard_test.dart',
   'video/Show danmaku':

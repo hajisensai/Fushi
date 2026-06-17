@@ -1267,6 +1267,15 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               onChangeEnd: (double v) => widget
                   .onSubtitleStyleCommit(_style.copyWith(backgroundOpacity: v)),
             ),
+            AdaptiveSettingsRow(
+              title: t.video_setting_subtitle_no_background,
+              subtitle: t.video_setting_subtitle_no_background_hint,
+              icon: Icons.format_color_reset_outlined,
+              showIcon: true,
+              onTap: () => _applySubtitleStyle(
+                _style.copyWith(backgroundOpacity: 0),
+              ),
+            ),
             AdaptiveSettingsSliderRow(
               title: t.video_setting_subtitle_position,
               icon: Icons.height_outlined,
@@ -1284,9 +1293,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               icon: Icons.restart_alt_outlined,
               showIcon: true,
               onTap: () {
-                setState(() => _style = VideoSubtitleStyle.defaults);
-                widget.onSubtitleStylePreview(VideoSubtitleStyle.defaults);
-                widget.onSubtitleStyleCommit(VideoSubtitleStyle.defaults);
+                _applySubtitleStyle(VideoSubtitleStyle.defaults);
               },
             ),
           ],
@@ -1299,6 +1306,14 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   void _previewStyle(VideoSubtitleStyle next) {
     setState(() => _style = next);
     widget.onSubtitleStylePreview(next);
+  }
+
+  /// 离散动作（重置 / 无背景）也要同步本地镜像，否则 sheet 内滑条会滞后一帧或
+  /// 一直显示旧值，直到父页面重建。
+  void _applySubtitleStyle(VideoSubtitleStyle next) {
+    setState(() => _style = next);
+    widget.onSubtitleStylePreview(next);
+    widget.onSubtitleStyleCommit(next);
   }
 
   Widget _buildDanmakuDetail() {

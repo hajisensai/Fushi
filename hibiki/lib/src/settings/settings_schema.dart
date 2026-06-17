@@ -1631,6 +1631,18 @@ SettingsDestination _videoDestination() {
             },
             onChanged: (SettingsContext settingsContext, double v) {},
           ),
+          SettingsActionItem(
+            id: 'video.subtitle.no_background',
+            title: t.video_setting_subtitle_no_background,
+            subtitle: t.video_setting_subtitle_no_background_hint,
+            icon: Icons.format_color_reset_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await _commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: 0),
+              );
+            },
+          ),
           SettingsSliderItem(
             id: 'video.subtitle.position',
             title: t.video_setting_subtitle_position,
