@@ -55,6 +55,22 @@ namespace flutter_inappwebview_plugin
       }
       return static_cast<size_t>(out);
     }
+
+    std::wstring TestLogFilePath()
+    {
+      wchar_t root[MAX_PATH];
+      const DWORD len =
+        GetEnvironmentVariableW(L"HIBIKI_TEST_ROOT", root, MAX_PATH);
+      if (len == 0 || len >= MAX_PATH) {
+        return std::wstring();
+      }
+      std::wstring logs(root);
+      logs += L"\\logs";
+      CreateDirectoryW(logs.c_str(), nullptr);
+      std::wstring native = logs + L"\\native";
+      CreateDirectoryW(native.c_str(), nullptr);
+      return native + L"\\wgc_capture.log";
+    }
   }  // namespace
 
   const std::wstring& WgcLog::LogFilePath()
@@ -62,6 +78,10 @@ namespace flutter_inappwebview_plugin
     // 惰性解析一次：%LOCALAPPDATA%\Hibiki\wgc_capture.log，确保 Hibiki 子目录存在。
     // 解析/建目录失败则缓存空串 -> 日志静默禁用，绝不影响 capture。
     static const std::wstring path = [] () -> std::wstring {
+      const std::wstring testPath = TestLogFilePath();
+      if (!testPath.empty()) {
+        return testPath;
+      }
       PWSTR local_app_data = nullptr;
       if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr,
         &local_app_data)) || local_app_data == nullptr) {

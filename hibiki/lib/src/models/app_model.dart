@@ -67,6 +67,7 @@ import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:hibiki/src/startup/test_environment.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 
@@ -1261,6 +1262,19 @@ class AppModel with ChangeNotifier {
   /// Prepare application data and state to be ready of use upon starting up
   /// the application. [AppModel] is initialised in the main function before
   /// [runApp] is executed.
+  Future<void> _prepareRuntimeDirectories() async {
+    final Directory? testTemp = hibikiTestDirectory('temp');
+    if (testTemp != null) {
+      _temporaryDirectory = testTemp;
+      _appDirectory = hibikiTestDirectory('app-documents')!;
+      _databaseDirectory = hibikiTestDirectory('app-support')!;
+      return;
+    }
+    _temporaryDirectory = await getTemporaryDirectory();
+    _appDirectory = await getApplicationDocumentsDirectory();
+    _databaseDirectory = await getApplicationSupportDirectory();
+  }
+
   Future<void> initialise() async {
     try {
       debugPrint('[Hibiki] init: PackageInfo + DeviceInfo');
@@ -1270,9 +1284,7 @@ class AppModel with ChangeNotifier {
       await platformServices.init();
 
       debugPrint('[Hibiki] init: directories (early, needed for DB)');
-      _temporaryDirectory = await getTemporaryDirectory();
-      _appDirectory = await getApplicationDocumentsDirectory();
-      _databaseDirectory = await getApplicationSupportDirectory();
+      await _prepareRuntimeDirectories();
 
       debugPrint('[Hibiki] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);
@@ -1505,9 +1517,7 @@ class AppModel with ChangeNotifier {
       await platformServices.init();
 
       debugPrint('[Hibiki-popup] init: directories');
-      _temporaryDirectory = await getTemporaryDirectory();
-      _appDirectory = await getApplicationDocumentsDirectory();
-      _databaseDirectory = await getApplicationSupportDirectory();
+      await _prepareRuntimeDirectories();
 
       debugPrint('[Hibiki-popup] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);

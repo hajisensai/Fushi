@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <objbase.h>
 #include <Shlwapi.h>
+#include <windows.h>
 #include <wil/wrl.h>
 
 #include "../custom_platform_view/util/composition.desktop.interop.h"
@@ -22,6 +23,24 @@
 namespace flutter_inappwebview_plugin
 {
   using namespace Microsoft::WRL;
+
+  namespace
+  {
+    std::wstring OptionalEnvWide(const wchar_t* name)
+    {
+      const DWORD len = GetEnvironmentVariableW(name, nullptr, 0);
+      if (len == 0) {
+        return std::wstring();
+      }
+      std::wstring value(len, L'\0');
+      const DWORD written = GetEnvironmentVariableW(name, value.data(), len);
+      if (written == 0 || written >= len) {
+        return std::wstring();
+      }
+      value.resize(written);
+      return value;
+    }
+  }
 
   InAppWebView::InAppWebView(const FlutterInappwebviewWindowsPlugin* plugin, const InAppWebViewCreationParams& params, const HWND parentWindow, wil::com_ptr<ICoreWebView2Environment> webViewEnv,
     wil::com_ptr<ICoreWebView2Controller> webViewController,
@@ -176,8 +195,10 @@ namespace flutter_inappwebview_plugin
       // on global COM state staying intact. The platform thread lives for the
       // app lifetime, so we intentionally do not pair a CoUninitialize.
       CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+      const std::wstring userDataFolder =
+        OptionalEnvWide(L"HIBIKI_WEBVIEW2_USER_DATA_FOLDER");
       hr = CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, nullptr, nullptr,
+        nullptr, userDataFolder.empty() ? nullptr : userDataFolder.c_str(), nullptr,
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(callback).Get());
     }
 
