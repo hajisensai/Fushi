@@ -88,8 +88,10 @@ void main() {
       'retire-close-start',
       'retire-remove-start',
       'retire-remove',
+      'retire-remove-closed',
       'retire-register-start',
       'retire-register',
+      'retire-remove-skipped',
       'handler-release-done',
     ]) {
       expect(src.contains('WgcLog::Write("$evt"'), isTrue,

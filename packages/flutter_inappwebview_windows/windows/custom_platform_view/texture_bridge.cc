@@ -1,6 +1,7 @@
 #include "texture_bridge.h"
 
 #include <windows.foundation.h>
+#include <winrt/base.h>
 
 #include <algorithm>
 #include <atomic>
@@ -26,6 +27,11 @@ namespace flutter_inappwebview_plugin
       std::snprintf(buffer, sizeof(buffer), "%s=0x%08lX", label,
         static_cast<unsigned long>(hr));
       return std::string(buffer);
+    }
+
+    bool IsClosedFramePoolHResult(HRESULT hr)
+    {
+      return static_cast<unsigned long>(hr) == 0x80000013UL;
     }
 
     // BUG-209/TODO-439 帧池保活注册表（进程级，单 UI 线程访问）——
@@ -402,13 +408,15 @@ namespace flutter_inappwebview_plugin
     //                            FirePresentEvent 仍指向被拆的内部状态），改为退役旧池 +
     //                            建全新池，让旧池内存 + closed-flag 永久存活。
     //
-    // 步骤（TODO-453 后调整顺序）：
+    // 步骤（TODO-453 后调整顺序，TODO-463/465 后把 Close 后 remove 改成 best effort）：
     //   1) Close 帧池（IClosable）：尽早同步设 closed-flag [pool+129h]=1。TODO-453 的
     //      最后一轮日志停在 retire 后、retire-close 前，说明 remove/Close 窗口仍可能在
     //      closed-flag 设置前崩溃或重入；先 Close 可让 remove 期间任何迟到
     //      deferred FirePresentEvent 在其开头 cmp/jne 早返回 no-op。
     //   2) remove_FrameArrived(token)：同步从 WGC 内部 event delegate 表摘掉本项（帧池
-    //      仍存活，只动有效表，不留野指针）。HRESULT 失败也记录并继续退役保活。
+    //      仍存活，只动有效表，不留野指针）。Direct3D11CaptureFramePool 已 Close 后，
+    //      WGC 可在 remove 内部抛 RO_E_CLOSED；该调用只作为 best effort，HRESULT 失败、
+    //      RO_E_CLOSED、或 winrt::hresult_error 都记录后继续退役保活。
     //   3) 帧池 ComPtr move 进进程级退役注册表**永久保活**，绝不主动释放 -> 帧池内存永久
     //      有效 -> closed-flag 永久 = 1 -> 任何迟到 deferral 永久安全早返回。
     //
@@ -444,21 +452,42 @@ namespace flutter_inappwebview_plugin
     }
 
     if (on_frame_arrived_token_.value != 0) {
-      // 同步 revoke：返回后 WGC 不再向本 token 投递新 FirePresentEvent。
-      // 帧池此刻仍存活且已 Close，移除只动有效 delegate 表；若 HRESULT 失败，
-      // 仍继续保活 pool，日志保留失败分支供下一轮取证。
+      // 同步 revoke best effort：返回后 WGC 不再向本 token 投递新 FirePresentEvent。
+      // 帧池此刻仍存活且已 Close；WGC 对已 Close pool 可能在 remove_FrameArrived
+      // 内部抛 RO_E_CLOSED（0x80000013），不能让它阻断 registry 保活和 handler
+      // release。无论返回 HRESULT 还是抛 winrt::hresult_error，记录后都继续。
       WgcLog::Write("retire-remove-start", pool_for_log);
-      const HRESULT remove_hr =
-        frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
+      try {
+        const HRESULT remove_hr =
+          frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
+        if (SUCCEEDED(remove_hr)) {
+          WgcLog::Write("retire-remove", pool_for_log,
+            HResultDetail("hr", remove_hr));
+        }
+        else if (IsClosedFramePoolHResult(remove_hr)) {
+          WgcLog::Write("retire-remove-closed", pool_for_log,
+            HResultDetail("hr", remove_hr));
+        }
+        else {
+          WgcLog::Write("retire-remove-fail", pool_for_log,
+            HResultDetail("hr", remove_hr));
+        }
+      }
+      catch (const winrt::hresult_error& error) {
+        const HRESULT remove_hr = error.code();
+        if (IsClosedFramePoolHResult(remove_hr)) {
+          WgcLog::Write("retire-remove-closed", pool_for_log,
+            HResultDetail("hr", remove_hr));
+        }
+        else {
+          WgcLog::Write("retire-remove-fail", pool_for_log,
+            HResultDetail("hr", remove_hr));
+        }
+      }
       on_frame_arrived_token_ = {};
-      if (SUCCEEDED(remove_hr)) {
-        WgcLog::Write("retire-remove", pool_for_log,
-          HResultDetail("hr", remove_hr));
-      }
-      else {
-        WgcLog::Write("retire-remove-fail", pool_for_log,
-          HResultDetail("hr", remove_hr));
-      }
+    }
+    else {
+      WgcLog::Write("retire-remove-skipped", pool_for_log, "token=0");
     }
 
     // 帧池强引用移交退役注册表永久保活（不在此释放，注册表也绝不主动释放），让其

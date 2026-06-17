@@ -202,16 +202,32 @@ void main() {
         retireBody.indexOf('WgcLog::Write("retire-remove-start"', rCloseLog);
     expect(rRevokeStart, greaterThan(rCloseLog),
         reason: 'remove_FrameArrived 前必须写 retire-remove-start，定位 revoke 内部崩溃');
+    final int rRevokeTry = retireBody.indexOf('try', rRevokeStart);
+    expect(rRevokeTry, greaterThan(rRevokeStart),
+        reason: 'Close 后 remove_FrameArrived 必须是 best effort：'
+            'Direct3D11CaptureFramePool 已关闭时 WGC 会抛 RO_E_CLOSED，'
+            '不能让异常阻断 registry 保活与 handler release');
     final int rRevoke =
         retireBody.indexOf('remove_FrameArrived(on_frame_arrived_token_)');
-    expect(rRevoke, greaterThan(rRevokeStart),
+    expect(rRevoke, greaterThan(rRevokeTry),
         reason: 'RetireFramePoolLocked 必须在 Close 帧池后同步 remove_FrameArrived 断源');
     final int rRevokeLog =
         retireBody.indexOf('WgcLog::Write("retire-remove"', rRevoke);
     expect(rRevokeLog, greaterThan(rRevoke),
         reason: 'remove_FrameArrived 返回后必须写 retire-remove 日志，HRESULT 失败也要可见');
-    final int rRetireStart =
-        retireBody.indexOf('WgcLog::Write("retire-register-start"', rRevokeLog);
+    final int rRevokeCatch =
+        retireBody.indexOf('catch (const winrt::hresult_error&', rRevoke);
+    expect(rRevokeCatch, greaterThan(rRevoke),
+        reason: 'remove_FrameArrived 可能在已 Close frame pool 上抛 '
+            'winrt::hresult_error(RO_E_CLOSED)，必须捕获并继续退役注册');
+    expect(retireBody.contains('WgcLog::Write("retire-remove-closed"'), isTrue,
+        reason: 'RO_E_CLOSED 必须记录为 retire-remove-closed，'
+            '下一轮日志可区分已关闭池与普通 remove HRESULT 失败');
+    expect(retireBody.contains('WgcLog::Write("retire-remove-skipped"'), isTrue,
+        reason: '没有有效 FrameArrived token 时必须记录 retire-remove-skipped，'
+            '跳过 remove 也要继续 retire-register-start/Retire/register');
+    final int rRetireStart = retireBody.indexOf(
+        'WgcLog::Write("retire-register-start"', rRevokeCatch);
     expect(rRetireStart, greaterThan(rRevokeLog),
         reason: '移交 RetiredFramePoolRegistry 前必须写 retire-register-start');
     final int rRetire = retireBody.indexOf(
