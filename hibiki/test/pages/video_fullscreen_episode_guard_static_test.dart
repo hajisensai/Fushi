@@ -42,14 +42,23 @@ void main() {
         reason: '标题需 ValueNotifier 承载，全屏路由才能监听刷新（BUG-120）');
     expect(pageSource, contains('_titleNotifier.value = title'),
         reason: '_applyLoad 必须把新标题推给 notifier');
-    expect(pageSource, contains('valueListenable: _titleNotifier'),
-        reason: '顶栏标题必须用 ValueListenableBuilder 监听 _titleNotifier');
     expect(pageSource, contains('_titleNotifier.dispose()'),
         reason: 'dispose 必须释放 _titleNotifier');
-    // 两套控制条主题（桌面 + 移动）都应走 ValueListenableBuilder，不再裸 Text(_title)。
-    expect('valueListenable: _titleNotifier'.allMatches(pageSource).length,
-        greaterThanOrEqualTo(2),
-        reason: '桌面与移动两套控制条主题的标题都要响应式');
+    // 两套控制条主题（桌面 + 移动）都应接入响应式标题 helper，不再裸 Text(_title)。
+    // TODO-491 把两处 ValueListenableBuilder 提炼为同一个稳定布局 helper，避免右侧
+    // 自定义 slot 清空时靠空白占位维持标题位置。
+    expect(
+        '_topBarTitle()'.allMatches(pageSource).length, greaterThanOrEqualTo(2),
+        reason: '桌面与移动两套控制条主题的标题都要接入响应式 helper');
+    final String titleHelper = _functionSource(
+      pageSource,
+      '  Widget _topBarTitle() {',
+      '  Widget _buildBottomSlotButton(',
+    );
+    expect(titleHelper, contains('valueListenable: _titleNotifier'),
+        reason: '标题 helper 必须用 ValueListenableBuilder 监听 _titleNotifier');
+    expect(titleHelper, contains('AlignmentDirectional.centerStart'),
+        reason: '标题 helper 应固定标题起点，避免 topRight 空槽挤歪标题');
   });
 }
 

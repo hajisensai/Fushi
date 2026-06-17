@@ -71,7 +71,7 @@ void main() {
           reason: '浮层由 controls Stack 内固定 overlay 渲染，不用 OverlayEntry');
     });
 
-    test('点击图标打开浮层；浮层内保留静音与竖向滑条', () {
+    test('点击图标打开浮层；浮层内保留静音与横向滑条', () {
       expect(build, contains('_toggleControlPopover('),
           reason: '点击 / tap 图标应打开或固定音量浮层');
       expect(build, isNot(contains('_toggleMute()')),
@@ -100,12 +100,41 @@ void main() {
         '_buildVolumePopover',
       );
       expect(popover, contains('_toggleMute()'), reason: '浮层内保留静音按钮');
-      expect(popover, contains('RotatedBox('), reason: '浮层内是竖向滑条');
-      expect(popover, contains('quarterTurns: -1'),
-          reason: '竖向音量滑条用 RotatedBox 转向');
+      expect(popover, contains('width: 220 * _videoUiScale'),
+          reason: '横向音量浮层应有稳定宽度，不改变底栏几何');
+      expect(popover, contains('Row('), reason: '浮层内是横向音量布局');
+      expect(popover, isNot(contains('RotatedBox(')),
+          reason: 'TODO-491/492/493 后音量浮层不再旋转成竖条');
       expect(popover, contains('Slider('), reason: '浮层内保留可拖动 Slider');
       expect(popover, contains('_setVolumeFromSlider('),
           reason: '浮层滑条拖动走现有同步通道');
+    });
+
+    test('可移动音量键只从底栏左右槽渲染完整音量按钮', () {
+      final String bottom = methodBody(
+        page,
+        RegExp(
+          r'List<Widget> _bottomSlotButtons\(\s*VideoControlSlot slot,\s*VideoPlayerController controller, \{\s*required bool desktop,\s*required bool roomyBottomBar,\s*\}\) \{(.*?)\n  \}',
+          dotAll: true,
+        ),
+        '_bottomSlotButtons',
+      );
+      expect(bottom, contains('rawItems.contains(VideoControlItem.volume)'),
+          reason: 'TODO-492：volume 可移动，但完整控件只在底栏左右槽渲染');
+      expect(
+          bottom, contains('_buildVolumeButton(controller, desktop: desktop)'),
+          reason: '底栏 volume slot 必须渲染同一个完整音量按钮入口');
+
+      final String chipItems = methodBody(
+        page,
+        RegExp(
+          r'List<VideoControlItem> _slotChipItems\(VideoControlSlot slot\) \{(.*?)\n  \}',
+          dotAll: true,
+        ),
+        '_slotChipItems',
+      );
+      expect(chipItems, contains('item != VideoControlItem.volume'),
+          reason: 'top bar / side rail 普通 chip 渲染路径必须过滤 volume');
     });
   });
 

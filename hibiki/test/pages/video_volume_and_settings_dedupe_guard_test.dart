@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 子A：桌面 [_buildVolumeButton] 曾用 media_kit 的 [MaterialDesktopVolumeButton]，
 ///      hover 时内部 AnimatedContainer 宽度 12→82px 实时挤走右邻全屏键（BUG-248A）。
 ///      TODO-438 起音量底栏只保留图标占位，hover/click/tap 打开锚定在按钮上方的紧凑
-///      浮层；滑条在浮层内竖向渲染，继续走 [_setVolumeFromSlider] / [_volumeDisplay]，
+///      浮层；滑条在浮层内横向渲染，继续走 [_setVolumeFromSlider] / [_volumeDisplay]，
 ///      点击静音仍走 [_toggleMute]。底栏按钮自身不含 Slider，几何不随 hover 改变。
 /// 子B：倍速按钮同样只占图标/短标签位，[_showSpeedMenu] 打开紧凑浮层而不是右侧 side
 ///      panel；浮层复用 [_speedMenuPresets] 与 [_setSpeed]，提供 0.5x 到 2.0x slider 和
