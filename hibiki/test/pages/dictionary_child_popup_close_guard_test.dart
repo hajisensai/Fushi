@@ -46,4 +46,22 @@ void main() {
     expect(popup, contains('onBack: isBase ? null : () => _popAt(index)'));
     expect(popup, contains('swipeDismissible: !isBase'));
   });
+
+  test('swipe dismiss keeps host layer routing separate from onBack', () {
+    final String base = read('lib/src/pages/base_source_page.dart');
+    final String mixin =
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+    final String popup =
+        read('lib/src/pages/implementations/popup_dictionary_page.dart');
+
+    expect(base, contains('onDismiss: () => _dismissPopupAt(index)'));
+    expect(base,
+        contains('onBack: index > 0 ? () => _dismissPopupAt(index) : null'));
+
+    expect(mixin, contains('onDismiss: () => onPop(index)'));
+    expect(mixin, contains('onBack: index > 0 ? () => onPop(index) : null'));
+
+    expect(popup, contains('onDismiss: isBase ? _close : () => _popAt(index)'));
+    expect(popup, contains('onBack: isBase ? null : () => _popAt(index)'));
+  });
 }
