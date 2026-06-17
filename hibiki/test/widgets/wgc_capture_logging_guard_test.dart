@@ -87,10 +87,11 @@ void main() {
       'startCapture-fail',
       'state-inactive',
       'retire-defer-in-handler',
+      'retire-defer-posted',
+      'retire-defer-keepalive',
       'remove-before-close-start',
       'remove-before-close-done',
-      'remove-before-close-fail',
-      'remove-before-close-closed-unexpected',
+      'remove-before-close-error',
       'handler-release-start',
       'retire-register-start',
       'retire-register-done',
@@ -108,6 +109,20 @@ void main() {
     expect(src.contains('WgcLog::Write("retire-remove-closed"'), isFalse,
         reason:
             'retire-remove-closed was the TODO-463/465 stopgap; normal WGC retire must remove before Close instead');
+    expect(src.contains('WgcLog::Write("retire-defer-fail"'), isFalse,
+        reason:
+            'TODO-479: handler-stack enqueue failure must keep the old lifetime alive, not log a terminal fail and continue teardown');
+    expect(src.contains('WgcLog::Write("remove-before-close-fail"'), isFalse,
+        reason:
+            'TODO-479: remove-before-close-fail is a negative acceptance event; source must not produce it');
+    expect(
+        src.contains('WgcLog::Write("remove-before-close-closed-unexpected"'),
+        isFalse,
+        reason:
+            'TODO-479: remove-before-close-closed-unexpected is a negative acceptance event; source must not produce it');
+    expect(src.contains('defer_enqueue=0'), isFalse,
+        reason:
+            'TODO-479: dispatch failure must not fall through into remove-before-close-fail defer_enqueue=0');
 
     final int retireStart =
         src.indexOf('void TextureBridge::RetireFramePoolLocked(');

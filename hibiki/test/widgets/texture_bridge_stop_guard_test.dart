@@ -206,10 +206,23 @@ void main() {
     final int rTryEnqueue = retireBody.indexOf('TryEnqueue', rDeferLog);
     expect(rTryEnqueue, greaterThan(rDeferLog),
         reason: 'handler 调用栈内不得直接 remove；必须投递到同一 DispatcherQueue 下一拍');
-    final int rFinalize =
-        retireBody.indexOf('FinalizeFramePoolLifetime', rTryEnqueue);
-    expect(rFinalize, greaterThan(rTryEnqueue),
-        reason: '只有 DispatcherQueue 回调或非 handler 路径才能进入 finalize');
+    final int rDeferredFinalize =
+        retireBody.indexOf('FinalizeFramePoolLifetime(lifetime)', rDeferLog);
+    expect(rDeferredFinalize, greaterThan(rDeferLog),
+        reason: 'DispatcherQueue 回调中才能 finalize handler 栈内退役');
+    expect(rDeferredFinalize, lessThan(rTryEnqueue),
+        reason: 'handler 栈内退役只能把 finalize 包进将要投递的 DispatcherQueue 回调');
+    final int rDeferPosted =
+        retireBody.indexOf('WgcLog::Write("retire-defer-posted"', rTryEnqueue);
+    expect(rDeferPosted, greaterThan(rTryEnqueue),
+        reason: 'TryEnqueue 成功后必须记录 retire-defer-posted');
+    final int rDeferKeepalive = retireBody.indexOf(
+        'WgcLog::Write("retire-defer-keepalive"', rTryEnqueue);
+    expect(rDeferKeepalive, greaterThan(rTryEnqueue),
+        reason: 'TryEnqueue 失败或不可用时必须保留旧 lifetime 存活并记录 keepalive');
+    expect(retireBody.contains('FinalizeFramePoolLifetime(lifetime, false)'),
+        isFalse,
+        reason: 'TODO-479：handler 栈内投递失败不得同步 finalize 旧 pool/session/handler');
 
     final int finalizeStart = src.indexOf('void FinalizeFramePoolLifetime(');
     expect(finalizeStart, greaterThanOrEqualTo(0),
@@ -257,14 +270,17 @@ void main() {
     expect(fPoolCloseStart, greaterThan(fSessionCloseStart),
         reason:
             'frame_pool Close 必须晚于 remove-before-close-done 和 session Close');
-    expect(finalizeBody.contains('WgcLog::Write("remove-before-close-fail"'),
+    expect(finalizeBody.contains('WgcLog::Write("remove-before-close-error"'),
         isTrue,
-        reason: 'remove 失败必须记录 fail，而不是崩溃或假装释放 token/handler');
+        reason: 'remove 异常必须记录 error，而不是崩溃或假装释放 token/handler');
+    expect(finalizeBody.contains('WgcLog::Write("remove-before-close-fail"'),
+        isFalse,
+        reason: 'TODO-479：remove-before-close-fail 是负向验收事件，不得再产出');
     expect(
         finalizeBody
             .contains('WgcLog::Write("remove-before-close-closed-unexpected"'),
-        isTrue,
-        reason: 'open pool 上 remove 若仍遇到 RO_E_CLOSED，必须标成异常而非正常路径');
+        isFalse,
+        reason: 'TODO-479：remove-before-close-closed-unexpected 是负向验收事件，不得再产出');
     expect(finalizeBody.contains('lifetime->remove_failed = true'), isTrue,
         reason: 'remove 失败路径必须保留失败状态，后续不得假装 handler/token 已释放');
     final int fRegisterStart = finalizeBody.indexOf(
