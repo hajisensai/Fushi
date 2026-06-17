@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -186,6 +187,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late bool _danmakuOnlineEnabled = widget.initialDanmakuOnlineEnabled;
   late int _danmakuMaxActive =
       normalizeVideoDanmakuMaxActive(widget.initialDanmakuMaxActive);
+  late VideoControlLayout _controlLayout =
+      widget.initialControlLayout ?? VideoControlLayout.currentChrome;
 
   /// mpv 配置（内嵌详情即改即生效，本地权威 + 回调持久化/实时应用）。
   late VideoMpvConfig _mpvConfig = widget.initialMpvConfig;
@@ -226,6 +229,15 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     _rawConfController.dispose();
     _delayController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(VideoQuickSettingsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialControlLayout != widget.initialControlLayout) {
+      _controlLayout =
+          widget.initialControlLayout ?? VideoControlLayout.currentChrome;
+    }
   }
 
   @override
@@ -1165,26 +1177,570 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
-  /// 控制条编辑入口（TODO-452）：旧设置页内拖拽编辑器已删除，只保留「在画面上编辑」。
-  /// 所有真实布局操作都在播放器画面 overlay 内完成，避免这里维护一套与画面位置脱节的
-  /// 列表/托盘。
   Widget _buildControlsDetail() {
+    return _buildControlDragEditor();
+  }
+
+  Widget _buildControlDragEditor() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return _settingsSection(
       children: <Widget>[
-        AdaptiveSettingsRow(
-          title: t.video_control_customize_hint,
-          icon: Icons.dashboard_customize_outlined,
-          showIcon: true,
-        ),
-        if (widget.onEditControlsOnscreen != null)
-          AdaptiveSettingsRow(
-            title: t.video_control_edit_on_video,
-            icon: Icons.open_with_outlined,
-            showIcon: true,
-            onTap: widget.onEditControlsOnscreen,
+        Padding(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _buildControlStagePreview(),
+              SizedBox(height: tokens.spacing.gap),
+              _buildHiddenSlotTray(),
+            ],
           ),
+        ),
       ],
     );
+  }
+
+  Widget _buildControlStagePreview() {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxPreviewHeight = math.min(
+          420,
+          math.max(220, constraints.maxWidth * 9 / 16),
+        );
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxPreviewHeight),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: DecoratedBox(
+              key: const ValueKey<String>('video-control-editor-preview'),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: tokens.radii.controlRadius,
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: ClipRRect(
+                borderRadius: tokens.radii.controlRadius,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints preview) {
+                    final double sideWidth =
+                        math.min(224, math.max(120, preview.maxWidth * 0.32));
+                    final double centerWidth =
+                        math.min(236, math.max(128, preview.maxWidth * 0.30));
+                    const double inset = 10;
+                    return Stack(
+                      children: <Widget>[
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: <Color>[
+                                  cs.surfaceContainerHigh,
+                                  cs.surfaceContainerHighest,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: inset,
+                          left: inset,
+                          width: sideWidth,
+                          child: _buildSlotRegion(VideoControlSlot.topLeft),
+                        ),
+                        Positioned(
+                          top: inset,
+                          right: inset,
+                          width: sideWidth,
+                          child: _buildSlotRegion(VideoControlSlot.topRight),
+                        ),
+                        Positioned(
+                          left: inset,
+                          top: 0,
+                          bottom: 0,
+                          width: sideWidth,
+                          child: Center(
+                            child:
+                                _buildSlotRegion(VideoControlSlot.screenLeft),
+                          ),
+                        ),
+                        Positioned(
+                          right: inset,
+                          top: 0,
+                          bottom: 0,
+                          width: sideWidth,
+                          child: Center(
+                            child:
+                                _buildSlotRegion(VideoControlSlot.screenRight),
+                          ),
+                        ),
+                        Positioned(
+                          left: inset,
+                          bottom: inset,
+                          width: sideWidth,
+                          child: _buildSlotRegion(VideoControlSlot.bottomLeft),
+                        ),
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: inset),
+                            child: SizedBox(
+                              width: centerWidth,
+                              child: _buildSlotRegion(
+                                  VideoControlSlot.bottomCenter),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: inset,
+                          bottom: inset,
+                          width: sideWidth,
+                          child: _buildSlotRegion(VideoControlSlot.bottomRight),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHiddenSlotTray() {
+    return _buildSlotRegion(VideoControlSlot.hidden, tray: true);
+  }
+
+  Widget _buildSlotRegion(VideoControlSlot slot, {bool tray = false}) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final List<({VideoControlItem item, int sourceIndex})> entries =
+        _slotChipEntries(slot);
+    return DragTarget<VideoControlDragData>(
+      key: ValueKey<String>('video-control-edit-slot-${slot.storageValue}'),
+      onWillAcceptWithDetails:
+          (DragTargetDetails<VideoControlDragData> details) =>
+              _canAcceptControlPayload(details.data, slot),
+      onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
+        _moveControlItem(
+          details.data,
+          slot,
+          targetIndex: _controlLayout.itemsIn(slot).length,
+        );
+      },
+      builder: (
+        BuildContext context,
+        List<VideoControlDragData?> candidate,
+        List<dynamic> rejected,
+      ) {
+        final bool highlighted = candidate.isNotEmpty;
+        final bool rejecting = rejected.isNotEmpty;
+        final Color borderColor = rejecting
+            ? cs.error
+            : highlighted
+                ? cs.primary
+                : cs.outlineVariant;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          constraints: BoxConstraints(
+            minHeight: tray ? 64 : 58,
+            maxHeight: tray ? 120 : 148,
+          ),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: highlighted
+                ? cs.primaryContainer.withValues(alpha: 0.88)
+                : cs.surface.withValues(alpha: tray ? 1 : 0.88),
+            borderRadius: tokens.radii.controlRadius,
+            border: Border.all(
+              color: borderColor,
+              width: highlighted || rejecting ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                _controlSlotLabel(slot),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color:
+                      highlighted ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (entries.isEmpty)
+                SizedBox(
+                  height: 32,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Icon(
+                      Icons.add_circle_outline,
+                      size: 18,
+                      color: highlighted
+                          ? cs.onPrimaryContainer
+                          : cs.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else
+                Flexible(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: <Widget>[
+                      for (final ({
+                        VideoControlItem item,
+                        int sourceIndex
+                      }) entry in entries)
+                        _buildPlacedControlChip(
+                          entry.item,
+                          sourceSlot: slot,
+                          sourceIndex: entry.sourceIndex,
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  List<({VideoControlItem item, int sourceIndex})> _slotChipEntries(
+    VideoControlSlot slot,
+  ) {
+    final List<VideoControlItem> items = _controlLayout.itemsIn(slot);
+    return <({VideoControlItem item, int sourceIndex})>[
+      for (int index = 0; index < items.length; index++)
+        if (items[index].isChipRenderable)
+          (item: items[index], sourceIndex: index),
+    ];
+  }
+
+  Widget _buildPlacedControlChip(
+    VideoControlItem item, {
+    required VideoControlSlot sourceSlot,
+    required int sourceIndex,
+  }) {
+    return DragTarget<VideoControlDragData>(
+      onWillAcceptWithDetails:
+          (DragTargetDetails<VideoControlDragData> details) =>
+              _canAcceptControlPayload(details.data, sourceSlot),
+      onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
+        _moveControlItem(
+          details.data,
+          sourceSlot,
+          targetIndex: sourceIndex,
+        );
+      },
+      builder: (
+        BuildContext context,
+        List<VideoControlDragData?> candidate,
+        List<dynamic> rejected,
+      ) {
+        return _buildDraggableControlChip(
+          item,
+          sourceSlot: sourceSlot,
+          sourceIndex: sourceIndex,
+          highlighted: candidate.isNotEmpty,
+        );
+      },
+    );
+  }
+
+  Widget _buildDraggableControlChip(
+    VideoControlItem item, {
+    required VideoControlSlot sourceSlot,
+    required int sourceIndex,
+    bool highlighted = false,
+  }) {
+    final Widget chip = _controlChipBody(
+      item,
+      sourceSlot: sourceSlot,
+      sourceIndex: sourceIndex,
+      dragging: false,
+      highlighted: highlighted,
+    );
+    return Draggable<VideoControlDragData>(
+      data: VideoControlDragData(
+        item: item,
+        sourceSlot: sourceSlot,
+        sourceIndex: sourceIndex,
+      ),
+      hitTestBehavior: HitTestBehavior.opaque,
+      feedback: Material(
+        color: Colors.transparent,
+        child: _controlChipBody(
+          item,
+          sourceSlot: sourceSlot,
+          sourceIndex: sourceIndex,
+          dragging: true,
+          highlighted: false,
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.3, child: chip),
+      child: chip,
+    );
+  }
+
+  Widget _controlChipBody(
+    VideoControlItem item, {
+    required VideoControlSlot sourceSlot,
+    required int sourceIndex,
+    required bool dragging,
+    required bool highlighted,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final String label = _controlItemLabel(item);
+    final Color background =
+        highlighted ? cs.primaryContainer : cs.secondaryContainer;
+    final Color foreground =
+        highlighted ? cs.onPrimaryContainer : cs.onSecondaryContainer;
+    final Widget body = SizedBox.square(
+      dimension: 36,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: tokens.radii.controlRadius,
+          border: Border.all(
+            color: highlighted ? cs.primary : cs.outlineVariant,
+            width: highlighted ? 1.5 : 1,
+          ),
+          boxShadow: dragging
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.24),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        child: Icon(_controlItemIcon(item), size: 18, color: foreground),
+      ),
+    );
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        key: dragging
+            ? null
+            : ValueKey<String>(
+                'video-control-chip-${item.storageValue}-${sourceSlot.storageValue}-$sourceIndex',
+              ),
+        label: label,
+        button: true,
+        container: true,
+        child: Listener(
+          key: dragging
+              ? null
+              : ValueKey<String>(
+                  'video-control-drag-chip-${item.storageValue}-${sourceSlot.storageValue}-$sourceIndex',
+                ),
+          behavior: HitTestBehavior.opaque,
+          child: ExcludeSemantics(child: body),
+        ),
+      ),
+    );
+  }
+
+  bool _canAcceptControlPayload(
+    VideoControlDragData payload,
+    VideoControlSlot target,
+  ) {
+    final VideoControlItem item = payload.item;
+    if (!item.isChipRenderable) return false;
+    if (item.pinnedRequired && target == VideoControlSlot.hidden) return false;
+    if (payload.sourceSlot == target) return true;
+    return !_controlLayout.itemsIn(target).contains(item);
+  }
+
+  void _moveControlItem(
+    VideoControlDragData payload,
+    VideoControlSlot target, {
+    int? targetIndex,
+  }) {
+    final VideoControlLayout next = _controlLayout.moveDraggedItem(
+      payload,
+      target,
+      targetIndex: targetIndex,
+    );
+    if (next == _controlLayout) return;
+    setState(() => _controlLayout = next);
+    final Future<void> Function(VideoControlLayout layout)? callback =
+        widget.onControlLayoutChanged;
+    if (callback != null) {
+      unawaited(callback(next));
+    }
+  }
+
+  String _controlSlotLabel(VideoControlSlot slot) {
+    switch (slot) {
+      case VideoControlSlot.topLeft:
+        return t.video_control_slot_top_left;
+      case VideoControlSlot.topRight:
+        return t.video_control_slot_top_right;
+      case VideoControlSlot.bottomLeft:
+        return t.video_control_slot_bottom_left;
+      case VideoControlSlot.bottomCenter:
+        return t.video_control_slot_bottom_center;
+      case VideoControlSlot.bottomRight:
+        return t.video_control_slot_bottom_right;
+      case VideoControlSlot.screenLeft:
+        return t.video_control_slot_screen_left;
+      case VideoControlSlot.screenRight:
+        return t.video_control_slot_screen_right;
+      case VideoControlSlot.hidden:
+        return t.video_control_slot_hidden;
+      case VideoControlSlot.topCenter:
+        return slot.storageValue;
+    }
+  }
+
+  String _controlItemLabel(VideoControlItem item) {
+    final VideoControlButton? legacy = item.legacyButton;
+    if (legacy != null) return _controlButtonLabel(legacy);
+    switch (item) {
+      case VideoControlItem.playPause:
+        return t.video_control_play_pause;
+      case VideoControlItem.back:
+        return MaterialLocalizations.of(context).backButtonTooltip;
+      case VideoControlItem.immersiveLock:
+        return t.video_menu_lock;
+      case VideoControlItem.seekBackward:
+        return t.video_control_seek_backward;
+      case VideoControlItem.seekForward:
+        return t.video_control_seek_forward;
+      case VideoControlItem.previousCue:
+        return t.video_control_previous_cue;
+      case VideoControlItem.nextCue:
+        return t.video_control_next_cue;
+      case VideoControlItem.fullscreen:
+        return t.video_control_fullscreen;
+      case VideoControlItem.screenshot:
+        return t.video_control_screenshot;
+      case VideoControlItem.clipExport:
+        return t.video_clip_export;
+      case VideoControlItem.subtitleTrack:
+        return t.video_control_subtitle_track;
+      case VideoControlItem.audioTrack:
+        return t.video_control_audio_track;
+      case VideoControlItem.previousEpisode:
+        return t.video_prev_episode;
+      case VideoControlItem.nextEpisode:
+        return t.video_next_episode;
+      case VideoControlItem.episodeList:
+        return t.video_control_episode_list;
+      case VideoControlItem.previousChapter:
+        return t.shortcut_action_video_previous_chapter;
+      case VideoControlItem.nextChapter:
+        return t.shortcut_action_video_next_chapter;
+      case VideoControlItem.chapterList:
+        return t.video_chapters;
+      case VideoControlItem.volume:
+      case VideoControlItem.title:
+      case VideoControlItem.positionIndicator:
+      case VideoControlItem.speed:
+      case VideoControlItem.subtitleList:
+      case VideoControlItem.favoriteSentence:
+      case VideoControlItem.favoriteSentences:
+      case VideoControlItem.settings:
+        return item.storageValue;
+    }
+  }
+
+  IconData _controlItemIcon(VideoControlItem item) {
+    final VideoControlButton? legacy = item.legacyButton;
+    if (legacy != null) return _controlButtonIcon(legacy);
+    switch (item) {
+      case VideoControlItem.playPause:
+        return Icons.play_arrow_rounded;
+      case VideoControlItem.back:
+        return Icons.arrow_back;
+      case VideoControlItem.immersiveLock:
+        return Icons.lock_outline;
+      case VideoControlItem.seekBackward:
+        return Icons.fast_rewind;
+      case VideoControlItem.seekForward:
+        return Icons.fast_forward;
+      case VideoControlItem.previousCue:
+        return Icons.skip_previous;
+      case VideoControlItem.nextCue:
+        return Icons.skip_next;
+      case VideoControlItem.fullscreen:
+        return Icons.fullscreen;
+      case VideoControlItem.screenshot:
+        return Icons.photo_camera_outlined;
+      case VideoControlItem.clipExport:
+        return Icons.movie_creation_outlined;
+      case VideoControlItem.subtitleTrack:
+        return Icons.subtitles;
+      case VideoControlItem.audioTrack:
+        return Icons.audiotrack;
+      case VideoControlItem.previousEpisode:
+        return Icons.skip_previous_outlined;
+      case VideoControlItem.nextEpisode:
+        return Icons.skip_next_outlined;
+      case VideoControlItem.episodeList:
+        return Icons.playlist_play;
+      case VideoControlItem.previousChapter:
+        return Icons.first_page;
+      case VideoControlItem.nextChapter:
+        return Icons.last_page;
+      case VideoControlItem.chapterList:
+        return Icons.format_list_numbered;
+      case VideoControlItem.volume:
+      case VideoControlItem.title:
+      case VideoControlItem.positionIndicator:
+      case VideoControlItem.speed:
+      case VideoControlItem.subtitleList:
+      case VideoControlItem.favoriteSentence:
+      case VideoControlItem.favoriteSentences:
+      case VideoControlItem.settings:
+        return Icons.tune;
+    }
+  }
+
+  String _controlButtonLabel(VideoControlButton button) {
+    switch (button) {
+      case VideoControlButton.speed:
+        return t.video_control_speed;
+      case VideoControlButton.subtitleList:
+        return t.video_control_subtitle_list;
+      case VideoControlButton.favoriteSentence:
+        return t.video_control_favorite_sentence;
+      case VideoControlButton.favoriteSentences:
+        return t.video_control_favorite_sentences;
+      case VideoControlButton.settings:
+        return t.video_control_settings;
+    }
+  }
+
+  IconData _controlButtonIcon(VideoControlButton button) {
+    switch (button) {
+      case VideoControlButton.speed:
+        return Icons.speed_outlined;
+      case VideoControlButton.subtitleList:
+        return Icons.format_list_bulleted;
+      case VideoControlButton.favoriteSentence:
+        return Icons.star_border_rounded;
+      case VideoControlButton.favoriteSentences:
+        return Icons.collections_bookmark_outlined;
+      case VideoControlButton.settings:
+        return Icons.tune;
+    }
   }
 
   // ── 字幕：模糊 + 外观（字号/背景不透明度/位置 + 重置）─────────────────

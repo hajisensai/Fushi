@@ -859,8 +859,8 @@ void main() {
     expect(padding.top, 16);
   });
 
-  // ── TODO-452：旧设置页拖拽编辑器删除，只保留「在画面上编辑」入口 ─
-  group('control button editor entry (TODO-452)', () {
+  // ── TODO-470：设置页内控制按钮编辑器使用播放器方位预览舞台 ─
+  group('control button editor stage (TODO-470)', () {
     // 进入控制分类详情（宽窗上下分栏顶部 chip 行）。「控制」是末位分类，在窄宽窗下
     // 横向 chip 行里可能排到视口外（TODO-427-③），先横滑入视口再点（模拟真实用户横滑）。
     Future<void> openControls(WidgetTester tester) async {
@@ -871,42 +871,162 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('controls category shows only the on-video editor entry',
+    Finder slotFinder(VideoControlSlot slot) => find.byKey(
+        ValueKey<String>('video-control-edit-slot-${slot.storageValue}'));
+
+    Finder chipFinder(
+      VideoControlItem item,
+      VideoControlSlot slot,
+      int sourceIndex,
+    ) =>
+        find.byKey(ValueKey<String>(
+            'video-control-chip-${item.storageValue}-${slot.storageValue}-$sourceIndex'));
+
+    Finder dragChipFinder(
+      VideoControlItem item,
+      VideoControlSlot slot,
+      int sourceIndex,
+    ) =>
+        find.byKey(ValueKey<String>(
+            'video-control-drag-chip-${item.storageValue}-${slot.storageValue}-$sourceIndex'));
+
+    Future<void> dragChipTo(
+      WidgetTester tester,
+      Finder chip,
+      Finder target,
+    ) async {
+      await tester.ensureVisible(chip);
+      await tester.pumpAndSettle();
+      await tester.drag(
+        chip,
+        tester.getCenter(target) - tester.getCenter(chip),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+        'chips default to icons while semantics and tooltip expose names',
         (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      final SemanticsHandle semantics = tester.ensureSemantics();
+
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      bool opened = false;
+      await _pump(tester, _sheet());
+      await openControls(tester);
+
+      final Finder settingsChip = chipFinder(
+        VideoControlItem.settings,
+        VideoControlSlot.screenRight,
+        3,
+      );
+      expect(settingsChip, findsOneWidget);
+      expect(find.text(t.video_control_settings), findsNothing);
+      expect(
+        tester.getSemantics(settingsChip),
+        matchesSemantics(label: t.video_control_settings, isButton: true),
+      );
+
+      await tester.longPress(settingsChip);
+      await tester.pumpAndSettle();
+      expect(find.text(t.video_control_settings), findsOneWidget);
+      Tooltip.dismissAllToolTips();
+      await tester.pumpAndSettle();
+      semantics.dispose();
+    });
+
+    testWidgets('preview places slots at player-like positions',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 950));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+      await openControls(tester);
+
+      final Rect preview = tester.getRect(find.byKey(
+        const ValueKey<String>('video-control-editor-preview'),
+      ));
+      final Rect topLeft = tester.getRect(slotFinder(VideoControlSlot.topLeft));
+      final Rect topRight =
+          tester.getRect(slotFinder(VideoControlSlot.topRight));
+      final Rect screenLeft =
+          tester.getRect(slotFinder(VideoControlSlot.screenLeft));
+      final Rect screenRight =
+          tester.getRect(slotFinder(VideoControlSlot.screenRight));
+      final Rect bottomLeft =
+          tester.getRect(slotFinder(VideoControlSlot.bottomLeft));
+      final Rect bottomRight =
+          tester.getRect(slotFinder(VideoControlSlot.bottomRight));
+      final Rect hidden = tester.getRect(slotFinder(VideoControlSlot.hidden));
+
+      expect(topLeft.center.dx, lessThan(preview.center.dx));
+      expect(topLeft.center.dy, lessThan(preview.center.dy));
+      expect(topRight.center.dx, greaterThan(preview.center.dx));
+      expect(topRight.center.dy, lessThan(preview.center.dy));
+      expect(screenLeft.center.dx, lessThan(preview.center.dx));
+      expect(screenLeft.center.dy, closeTo(preview.center.dy, 80));
+      expect(screenRight.center.dx, greaterThan(preview.center.dx));
+      expect(screenRight.center.dy, closeTo(preview.center.dy, 80));
+      expect(bottomLeft.center.dx, lessThan(preview.center.dx));
+      expect(bottomLeft.center.dy, greaterThan(preview.center.dy));
+      expect(bottomRight.center.dx, greaterThan(preview.center.dx));
+      expect(bottomRight.center.dy, greaterThan(preview.center.dy));
+      expect(hidden.top, greaterThanOrEqualTo(preview.bottom));
+    });
+
+    testWidgets('dragging controls still updates bottomLeft and hidden slots',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 950));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? latest;
       await _pump(
         tester,
-        _sheet(
-          onEditControlsOnscreen: () => opened = true,
-        ),
+        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        }),
       );
       await openControls(tester);
 
-      expect(
-        find.byType(AdaptiveSettingsPickerRow<VideoControlSlot>),
-        findsNothing,
-        reason: '旧下拉编辑器不应保留',
+      await dragChipTo(
+        tester,
+        dragChipFinder(VideoControlItem.speed, VideoControlSlot.bottomRight, 2),
+        slotFinder(VideoControlSlot.bottomLeft),
       );
+      expect(latest, isNotNull);
       expect(
-        find.byType(Draggable<VideoControlDragData>),
-        findsNothing,
-        reason: '旧 quick settings 内拖拽编辑器已删除',
+        latest!.itemsIn(VideoControlSlot.bottomLeft),
+        contains(VideoControlItem.speed),
       );
-      expect(
-        find.byType(DragTarget<VideoControlDragData>),
-        findsNothing,
-        reason: '槽位编辑只能出现在画面上 overlay',
-      );
-      expect(find.text(t.video_control_palette_title), findsNothing);
-      expect(find.text(t.video_control_slot_hidden), findsNothing);
 
-      final Finder entry = find.text(t.video_control_edit_on_video);
-      expect(entry, findsOneWidget);
-      await tester.tap(entry);
-      await tester.pumpAndSettle();
-      expect(opened, isTrue);
+      await dragChipTo(
+        tester,
+        dragChipFinder(
+            VideoControlItem.subtitleList, VideoControlSlot.screenRight, 0),
+        slotFinder(VideoControlSlot.hidden),
+      );
+      expect(
+        latest!.itemsIn(VideoControlSlot.hidden),
+        contains(VideoControlItem.subtitleList),
+      );
+    });
+
+    testWidgets('required settings button cannot be hidden', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 950));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? latest;
+      await _pump(
+        tester,
+        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        }),
+      );
+      await openControls(tester);
+
+      await dragChipTo(
+        tester,
+        dragChipFinder(
+            VideoControlItem.settings, VideoControlSlot.screenRight, 3),
+        slotFinder(VideoControlSlot.hidden),
+      );
+      expect(latest, isNull);
     });
   });
 }
