@@ -13,20 +13,36 @@ String _between(String source, String start, String end) {
   return source.substring(s, e);
 }
 
+String _member(String source, String start) {
+  final int s = source.indexOf(start);
+  expect(s, isNonNegative, reason: 'missing marker: $start');
+  final List<int> ends = <int>[
+    source.indexOf('\n  Widget ', s + start.length),
+    source.indexOf('\n  Future', s + start.length),
+    source.indexOf('\n  void ', s + start.length),
+    source.indexOf('\n  Alignment ', s + start.length),
+    source.indexOf('\n  String ', s + start.length),
+    source.indexOf('\n  bool ', s + start.length),
+  ].where((int i) => i > s).toList();
+  final int e = ends.isEmpty
+      ? source.length
+      : ends.reduce((int a, int b) => a < b ? a : b);
+  return source.substring(s, e);
+}
+
 void main() {
   test('video player settings uses the shared master-detail sheet', () {
     final String source =
         File('lib/src/pages/implementations/video_hibiki_page.dart')
             .readAsStringSync();
-    final String showMethod = _between(
+    final String showMethod = _member(
       source,
-      'void _showPlayerSettings() {',
-      'void _showVideoSidePanel(_VideoSidePanelKind kind) {',
+      'void _showPlayerSettings(',
     );
     final String buildMethod = _between(
       source,
       'Widget _buildVideoQuickSettingsSheet() {',
-      'void _showPlayerSettings() {',
+      'void _showPlayerSettings(',
     );
     final String panelChildMethod = _between(
       source,
@@ -35,8 +51,8 @@ void main() {
     );
 
     // 用统一半透明侧栏承载共享面板；面板内部仍按宽度决定 master-detail / push。
-    expect(showMethod,
-        contains('_showVideoSidePanel(_VideoSidePanelKind.settings)'));
+    expect(showMethod, contains('_VideoSidePanelKind.settings'));
+    expect(showMethod, contains('sourceSlot: sourceSlot'));
     expect(source, contains('VideoTranslucentSidePanel('));
     expect(panelChildMethod, contains('case _VideoSidePanelKind.settings:'));
     expect(

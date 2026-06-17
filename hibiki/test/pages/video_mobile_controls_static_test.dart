@@ -128,7 +128,7 @@ void main() {
     );
     expect(
       src,
-      contains('_showPlayerSettings();'),
+      contains('_showPlayerSettings(sourceSlot: sourceSlot)'),
       reason: '可配置 settings 按钮激活时仍打开 _showPlayerSettings',
     );
     expect(src.contains('MaterialCustomButton('), isTrue,
