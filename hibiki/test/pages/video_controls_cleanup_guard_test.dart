@@ -80,12 +80,11 @@ void main() {
     }
 
     test('音轨菜单是可滚动 ListView side panel（_buildAudioTracksSidePanel）', () {
-      expect(src.contains('void _showAudioTrackMenu('), isTrue,
-          reason: '音轨菜单方法保留');
-      expect(
-          src.contains('_showVideoSidePanel(_VideoSidePanelKind.audioTracks)'),
-          isTrue,
+      final String show = sourceMember(src, 'void _showAudioTrackMenu(');
+      expect(show, contains('_VideoSidePanelKind.audioTracks'),
           reason: '音轨菜单走 side panel');
+      expect(show, contains('sourceSlot: sourceSlot'),
+          reason: '音轨菜单应把触发 slot 传给 side panel');
       final String body =
           panelBody('Widget _buildAudioTracksSidePanel(VideoPlayerController');
       expect(body.contains('ListView.builder('), isTrue,
@@ -94,8 +93,8 @@ void main() {
 
     test('字幕源菜单是可滚动 side panel（_buildSubtitleSourcesSidePanel）', () {
       expect(
-          src.contains(
-              '_showVideoSidePanel(_VideoSidePanelKind.subtitleSources)'),
+          RegExp(r'_showVideoSidePanel\(\s*_VideoSidePanelKind\.subtitleSources')
+              .hasMatch(src),
           isTrue,
           reason: '字幕源菜单走 side panel');
       final String body = panelBody(
@@ -120,7 +119,9 @@ void main() {
           reason: 'TODO-438：带触发源的倍速入口应打开或固定锚点轻浮层');
       expect(show.contains('if (popoverLink == null)'), isTrue,
           reason: '右键菜单等无锚点入口不能触发不可见 follower');
-      expect(show.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
+      expect(
+          RegExp(r'_showVideoSidePanel\(\s*_VideoSidePanelKind\.speed')
+              .hasMatch(show),
           isTrue,
           reason: '无触发源入口应保留可见 fallback，而不是打开无锚点浮层');
       expect(

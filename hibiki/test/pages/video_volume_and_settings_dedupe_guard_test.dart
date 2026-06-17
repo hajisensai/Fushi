@@ -107,7 +107,9 @@ void main() {
           reason: '有锚点的倍速入口应打开或固定紧凑锚点浮层');
       expect(show.contains('if (popoverLink == null)'), isTrue,
           reason: '无按钮锚点的入口（如右键菜单）必须走可见 fallback，不能打开 unlinked 浮层');
-      expect(show.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
+      expect(
+          RegExp(r'_showVideoSidePanel\(\s*_VideoSidePanelKind\.speed')
+              .hasMatch(show),
           isTrue,
           reason: '无 source link 的倍速入口应退回可见 speed side panel');
 
@@ -189,7 +191,7 @@ void main() {
     });
 
     test('_showPlayerSettings 方法 + rightRail settings 接线保留（设置仍可打开）', () {
-      expect(src.contains('void _showPlayerSettings() {'), isTrue,
+      expect(src.contains('void _showPlayerSettings('), isTrue,
           reason: '_showPlayerSettings 方法必须保留（rightRail settings 按钮引用）');
       // _activateVideoControlButton 的 settings 分支调 _showPlayerSettings。
       final int actStart = src.indexOf('void _activateVideoControlButton(');
@@ -200,7 +202,8 @@ void main() {
       final String actBody = src.substring(actStart, actEnd);
       expect(
           actBody.contains('case VideoControlButton.settings:') &&
-              actBody.contains('_showPlayerSettings();'),
+              RegExp(r'_showPlayerSettings\(\s*(?:sourceSlot:\s*sourceSlot,?\s*)?\)')
+                  .hasMatch(actBody),
           isTrue,
           reason:
               'rightRail settings 按钮经 _activateVideoControlButton 仍打开 _showPlayerSettings');

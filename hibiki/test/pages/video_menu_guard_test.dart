@@ -27,6 +27,10 @@ void main() {
     // 门控，不会与 modal sheet 叠开。音量/倍速走 [_videoControlPopover] 单一轻浮层，
     // 同时只用 [_pokeControlsVisible] 续命控制条。
     test('菜单入口分别有 modal/side-panel/popover 的互斥门控', () {
+      bool opensSidePanel(String kind) =>
+          RegExp('_showVideoSidePanel\\(\\s*_VideoSidePanelKind\\.$kind')
+              .hasMatch(src);
+
       // 剧集 modal sheet + side panel 调度入口 [_showVideoSidePanel] + 字幕源入口
       // [_showSubtitleSourceMenu] 都要先过 `if (_videoSheetOpen) return;`。
       final int enter =
@@ -74,19 +78,12 @@ void main() {
           reason: '倍速菜单必须能接收触发源 link');
       expect(src.contains('if (popoverLink == null)'), isTrue,
           reason: '右键菜单等无触发源入口不能打开无锚点浮层');
-      expect(src.contains('_showVideoSidePanel(_VideoSidePanelKind.speed)'),
-          isTrue,
+      expect(opensSidePanel('speed'), isTrue,
           reason: '无触发源入口应回退到可见 side panel');
-      expect(
-          src.contains('_showVideoSidePanel(_VideoSidePanelKind.audioTracks)'),
-          isTrue,
-          reason: '音轨菜单走 side panel');
-      expect(
-          src.contains(
-              '_showVideoSidePanel(_VideoSidePanelKind.subtitleSources)'),
-          isTrue,
+      expect(opensSidePanel('audioTracks'), isTrue, reason: '音轨菜单走 side panel');
+      expect(opensSidePanel('subtitleSources'), isTrue,
           reason: '字幕源菜单走 side panel');
-      expect(src, contains('_showVideoSidePanel(_VideoSidePanelKind.settings)'),
+      expect(opensSidePanel('settings'), isTrue,
           reason: '设置面板走 side panel（master-detail VideoQuickSettingsSheet）');
       expect(src, contains('VideoQuickSettingsSheet('),
           reason: '设置面板内容仍是 master-detail VideoQuickSettingsSheet');

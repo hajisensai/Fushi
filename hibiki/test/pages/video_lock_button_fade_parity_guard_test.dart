@@ -166,8 +166,8 @@ void main() {
 
     final Map<String, String> enterHooks = <String, String>{
       'void _toggleSubtitleJumpList()': '_subtitleListVisible.value = true',
-      'void _showVideoSidePanel(_VideoSidePanelKind kind)':
-          '_videoSidePanel.value = kind',
+      'void _showVideoSidePanel(':
+          '_videoSidePanel.value = _VideoSidePanelState',
       'void _showVideoControlEditOverlay()':
           '_videoControlEditMode.value = true',
       'void _toggleImmersiveLock()': 'if (next)',

@@ -108,7 +108,7 @@ void main() {
 
   test('_showVideoSidePanel 不再唤起控制条、_hideVideoSidePanel 关闭后唤回', () {
     final String show = methodBody(
-      'void _showVideoSidePanel(_VideoSidePanelKind kind) {',
+      'void _showVideoSidePanel(',
       'void _hideVideoSidePanel()',
     );
     // 打开面板时不再 poke（会点亮背景控制条），改为显式收起镜像。
