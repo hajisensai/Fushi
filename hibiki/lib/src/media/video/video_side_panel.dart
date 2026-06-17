@@ -27,6 +27,9 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     final double minPanelWidth = maxPanelWidth < 280.0 ? maxPanelWidth : 280.0;
     final double panelWidth =
         width.clamp(minPanelWidth, maxPanelWidth).toDouble();
+    final BorderRadiusDirectional borderRadius = alignment.x < 0
+        ? const BorderRadiusDirectional.horizontal(end: Radius.circular(8))
+        : const BorderRadiusDirectional.horizontal(start: Radius.circular(8));
 
     return Align(
       alignment: alignment,
@@ -42,9 +45,7 @@ class VideoTranslucentSidePanel extends StatelessWidget {
               color: colorScheme.surface.withValues(alpha: 0.78),
               elevation: 8,
               clipBehavior: Clip.antiAlias,
-              borderRadius: const BorderRadiusDirectional.horizontal(
-                start: Radius.circular(8),
-              ),
+              borderRadius: borderRadius,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[

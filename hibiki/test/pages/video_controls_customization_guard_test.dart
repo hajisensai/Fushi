@@ -206,6 +206,93 @@ void main() {
     expect(subtitleLoading, isNot(contains('Navigator.of')));
   });
 
+  test('TODO-476 side panel launchers preserve the source slot side', () {
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+
+    String body(String start, String end) {
+      final int startIndex = page.indexOf(start);
+      expect(startIndex, greaterThanOrEqualTo(0), reason: start);
+      final int endIndex = page.indexOf(end, startIndex);
+      expect(endIndex, greaterThan(startIndex), reason: end);
+      return page.substring(startIndex, endIndex);
+    }
+
+    expect(page, contains('class _VideoSidePanelState'));
+    expect(page, contains('final _VideoSidePanelKind kind;'));
+    expect(page, contains('final Alignment alignment;'));
+    expect(
+        page, contains('ValueNotifier<_VideoSidePanelState?> _videoSidePanel'));
+    expect(page, contains('_sidePanelAlignmentForSlot(sourceSlot)'));
+
+    final String bottomButton = body(
+      'Widget _buildBottomSlotButton(',
+      'Widget _plainSlotButton(',
+    );
+    expect(
+      bottomButton,
+      contains(
+          '_plainSlotButton(item, controller, desktop: desktop, slot: slot)'),
+      reason: 'bottom left/right/center slots must preserve their source slot',
+    );
+
+    final String plainSlot = body(
+      'Widget _plainSlotButton(',
+      'bool _shouldRenderControlItem',
+    );
+    expect(plainSlot, contains('required VideoControlSlot slot'));
+    expect(plainSlot, contains('sourceSlot: slot'));
+
+    final String topSlot = body(
+      'Widget _topBarSlotGroup(',
+      'String get _clipExportTooltip',
+    );
+    expect(topSlot, contains('sourceSlot: slot'),
+        reason: 'topLeft/topRight buttons must open panels on their own side');
+
+    final String legacyButton = body(
+      'Widget _buildVideoControlButton(',
+      'IconData _videoControlButtonIcon',
+    );
+    expect(legacyButton, contains('required VideoControlSlot slot'));
+    expect(legacyButton, contains('sourceSlot: slot'),
+        reason: 'legacy learning buttons must not drop the slot');
+
+    final String activateItem = body(
+      'void _activateVideoControlItem(',
+      '/// 底栏传输组',
+    );
+    expect(activateItem, contains('VideoControlSlot? sourceSlot'));
+    expect(activateItem, contains('sourceSlot: sourceSlot'));
+    expect(activateItem,
+        contains('_showAudioTrackMenu(controller, sourceSlot: sourceSlot)'));
+    expect(activateItem,
+        contains('_showChapterPanel(controller, sourceSlot: sourceSlot)'));
+
+    final String activateLegacy = body(
+      'void _activateVideoControlButton(',
+      'bool _hasRoomyVideoBottomBar',
+    );
+    expect(activateLegacy, contains('VideoControlSlot? sourceSlot'));
+    expect(activateLegacy,
+        contains('_showFavoriteSentencesPanel(sourceSlot: sourceSlot)'));
+    expect(activateLegacy,
+        contains('_showPlayerSettings(sourceSlot: sourceSlot)'));
+
+    final String sideRail = body(
+      'Widget _buildVideoSideRailFor(',
+      '/// 把 [video]',
+    );
+    expect(sideRail, contains('sourceSlot: slot'),
+        reason: 'screenLeft/screenRight rail buttons must preserve side');
+
+    final String content = body(
+      'Widget _buildVideoSidePanelContent(',
+      'Widget _buildSubtitleSourcesSidePanel',
+    );
+    expect(content, contains('alignment: panelState.alignment'));
+  });
+
   test('video shortcuts reach real favorite and replay actions', () {
     final String actions = read('lib/src/shortcuts/shortcut_action.dart');
     final String defaults = read('lib/src/shortcuts/shortcut_defaults.dart');

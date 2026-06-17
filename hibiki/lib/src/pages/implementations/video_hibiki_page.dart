@@ -320,6 +320,16 @@ enum _VideoSidePanelKind {
   chapters,
 }
 
+class _VideoSidePanelState {
+  const _VideoSidePanelState({
+    required this.kind,
+    required this.alignment,
+  });
+
+  final _VideoSidePanelKind kind;
+  final Alignment alignment;
+}
+
 enum _VideoControlPopoverKind { volume, speed }
 
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
@@ -482,8 +492,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 本页 setState 重建（与标题 [_titleNotifier] 同源，BUG-120）。监听 notifier 才能
   /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
-  final ValueNotifier<_VideoSidePanelKind?> _videoSidePanel =
-      ValueNotifier<_VideoSidePanelKind?>(null);
+  final ValueNotifier<_VideoSidePanelState?> _videoSidePanel =
+      ValueNotifier<_VideoSidePanelState?>(null);
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
   final LayerLink _volumeControlPopoverLink = LayerLink();
@@ -3104,8 +3114,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 弹音轨菜单（顶栏 ♪ 按钮共用）。
-  void _showAudioTrackMenu(VideoPlayerController _) {
-    _showVideoSidePanel(_VideoSidePanelKind.audioTracks);
+  void _showAudioTrackMenu(
+    VideoPlayerController _, {
+    VideoControlSlot? sourceSlot,
+  }) {
+    _showVideoSidePanel(
+      _VideoSidePanelKind.audioTracks,
+      sourceSlot: sourceSlot,
+    );
   }
 
   /// 退出/返回汇聚点：浮层栈有可见层先关栈（一层层退），否则 await 落库后真正
@@ -4187,7 +4203,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => _seekRelative(-10000),
           );
         }
-        return _plainSlotButton(item, controller, desktop: desktop);
+        return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
       case VideoControlItem.seekForward:
         if (roomyBottomBar) {
           return _seekLabelButton(
@@ -4198,7 +4214,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => _seekRelative(10000),
           );
         }
-        return _plainSlotButton(item, controller, desktop: desktop);
+        return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
       case VideoControlItem.fullscreen:
         return _buildFullscreenButton(desktop: desktop);
       case VideoControlItem.back:
@@ -4213,7 +4229,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.previousChapter:
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
-        return _plainSlotButton(item, controller, desktop: desktop);
+        return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
@@ -4230,6 +4246,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoControlItem item,
     VideoPlayerController controller, {
     required bool desktop,
+    required VideoControlSlot slot,
   }) {
     final Widget icon = Icon(
       _videoControlItemIcon(item),
@@ -4240,11 +4257,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: desktop
           ? MaterialDesktopCustomButton(
               icon: icon,
-              onPressed: () => _activateVideoControlItem(item, controller),
+              onPressed: () => _activateVideoControlItem(
+                item,
+                controller,
+                sourceSlot: slot,
+              ),
             )
           : MaterialCustomButton(
               icon: icon,
-              onPressed: () => _activateVideoControlItem(item, controller),
+              onPressed: () => _activateVideoControlItem(
+                item,
+                controller,
+                sourceSlot: slot,
+              ),
             ),
     );
   }
@@ -4335,6 +4360,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   item,
                   controller,
                   popoverLink: popoverLink,
+                  sourceSlot: slot,
                 ),
               )
             : MaterialCustomButton(
@@ -4346,6 +4372,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   item,
                   controller,
                   popoverLink: popoverLink,
+                  sourceSlot: slot,
                 ),
               ),
       );
@@ -4512,10 +4539,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoControlItem item,
     VideoPlayerController controller, {
     LayerLink? popoverLink,
+    VideoControlSlot? sourceSlot,
   }) {
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) {
-      _activateVideoControlButton(legacy, popoverLink: popoverLink);
+      _activateVideoControlButton(
+        legacy,
+        popoverLink: popoverLink,
+        sourceSlot: sourceSlot,
+      );
       return;
     }
     switch (item) {
@@ -4559,10 +4591,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         unawaited(_toggleClipExport());
         break;
       case VideoControlItem.subtitleTrack:
-        unawaited(_showSubtitleSourceMenu(controller));
+        unawaited(
+          _showSubtitleSourceMenu(controller, sourceSlot: sourceSlot),
+        );
         break;
       case VideoControlItem.audioTrack:
-        _showAudioTrackMenu(controller);
+        _showAudioTrackMenu(controller, sourceSlot: sourceSlot);
         break;
       case VideoControlItem.previousEpisode:
         if (_isPlaylist && _currentEpisode > 0) {
@@ -4586,7 +4620,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         unawaited(controller.nextChapter());
         break;
       case VideoControlItem.chapterList:
-        _showChapterPanel(controller);
+        _showChapterPanel(controller, sourceSlot: sourceSlot);
         break;
       // Non-chip / handled-by-legacy items never reach here.
       case VideoControlItem.volume:
@@ -4744,13 +4778,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final Widget controlButton = desktop
         ? MaterialDesktopCustomButton(
             icon: icon,
-            onPressed: () =>
-                _activateVideoControlButton(button, popoverLink: popoverLink),
+            onPressed: () => _activateVideoControlButton(
+              button,
+              popoverLink: popoverLink,
+              sourceSlot: slot,
+            ),
           )
         : MaterialCustomButton(
             icon: icon,
-            onPressed: () =>
-                _activateVideoControlButton(button, popoverLink: popoverLink),
+            onPressed: () => _activateVideoControlButton(
+              button,
+              popoverLink: popoverLink,
+              sourceSlot: slot,
+            ),
           );
     if (popoverLink == null) return controlButton;
     return _controlPopoverAnchor(
@@ -4794,6 +4834,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _activateVideoControlButton(
     VideoControlButton button, {
     LayerLink? popoverLink,
+    VideoControlSlot? sourceSlot,
   }) {
     switch (button) {
       case VideoControlButton.speed:
@@ -4806,10 +4847,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         unawaited(_toggleFavoriteCurrentCue());
         break;
       case VideoControlButton.favoriteSentences:
-        _showFavoriteSentencesPanel();
+        _showFavoriteSentencesPanel(sourceSlot: sourceSlot);
         break;
       case VideoControlButton.settings:
-        _showPlayerSettings();
+        _showPlayerSettings(sourceSlot: sourceSlot);
         break;
     }
   }
@@ -5596,16 +5637,42 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  void _showPlayerSettings() {
-    _showVideoSidePanel(_VideoSidePanelKind.settings);
+  void _showPlayerSettings({VideoControlSlot? sourceSlot}) {
+    _showVideoSidePanel(
+      _VideoSidePanelKind.settings,
+      sourceSlot: sourceSlot,
+    );
   }
 
-  void _showVideoSidePanel(_VideoSidePanelKind kind) {
+  Alignment _sidePanelAlignmentForSlot(VideoControlSlot? sourceSlot) {
+    switch (sourceSlot) {
+      case VideoControlSlot.topLeft:
+      case VideoControlSlot.bottomLeft:
+      case VideoControlSlot.screenLeft:
+        return Alignment.centerLeft;
+      case VideoControlSlot.topRight:
+      case VideoControlSlot.bottomRight:
+      case VideoControlSlot.screenRight:
+      case VideoControlSlot.bottomCenter:
+      case VideoControlSlot.topCenter:
+      case VideoControlSlot.hidden:
+      case null:
+        return Alignment.centerRight;
+    }
+  }
+
+  void _showVideoSidePanel(
+    _VideoSidePanelKind kind, {
+    VideoControlSlot? sourceSlot,
+  }) {
     if (_videoSheetOpen) return;
     _clearRailHover();
     _hideVideoControlEditOverlay(revealControls: false);
     _hideControlPopover();
-    _videoSidePanel.value = kind;
+    _videoSidePanel.value = _VideoSidePanelState(
+      kind: kind,
+      alignment: _sidePanelAlignmentForSlot(sourceSlot),
+    );
     // 与 push-aside 字幕列表互斥（TODO-314）：开任何浮层都先关字幕列表。
     if (_subtitleListVisible.value) {
       _clearSelectedMiningCues();
@@ -5679,12 +5746,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {
     return Positioned.fill(
-      child: ValueListenableBuilder<_VideoSidePanelKind?>(
+      child: ValueListenableBuilder<_VideoSidePanelState?>(
         valueListenable: _videoSidePanel,
-        builder: (BuildContext context, _VideoSidePanelKind? kind, __) {
-          if (kind == null) return const SizedBox.shrink();
+        builder: (
+          BuildContext context,
+          _VideoSidePanelState? panelState,
+          __,
+        ) {
+          if (panelState == null) return const SizedBox.shrink();
           final Widget panelContent = _buildVideoSidePanelContent(
-            kind,
+            panelState,
             controller,
           );
           // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
@@ -5711,12 +5782,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 单纯构造侧栏面板的「内容 + 定位」部分（不含 BUG-254 的点外关闭 barrier）。
   /// 字幕跳转列表已改 push-aside（TODO-314），不再经此 overlay 路径。
   Widget _buildVideoSidePanelContent(
-    _VideoSidePanelKind kind,
+    _VideoSidePanelState panelState,
     VideoPlayerController controller,
   ) {
+    final _VideoSidePanelKind kind = panelState.kind;
     final Widget panel = VideoTranslucentSidePanel(
       title: _videoSidePanelTitle(kind),
       width: _videoSidePanelWidth(kind),
+      alignment: panelState.alignment,
       onClose: _hideVideoSidePanel,
       child: _buildVideoSidePanelChild(kind, controller),
     );
@@ -5961,8 +6034,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 打开章节面板（控制条章节按钮 / 快捷键共用）。
-  void _showChapterPanel(VideoPlayerController _) {
-    _showVideoSidePanel(_VideoSidePanelKind.chapters);
+  void _showChapterPanel(
+    VideoPlayerController _, {
+    VideoControlSlot? sourceSlot,
+  }) {
+    _showVideoSidePanel(
+      _VideoSidePanelKind.chapters,
+      sourceSlot: sourceSlot,
+    );
   }
 
   Widget _buildFavoriteSentencesSidePanel() {
@@ -5990,22 +6069,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  void _showFavoriteSentencesPanel() {
-    _showVideoSidePanel(_VideoSidePanelKind.favoriteSentences);
+  void _showFavoriteSentencesPanel({VideoControlSlot? sourceSlot}) {
+    _showVideoSidePanel(
+      _VideoSidePanelKind.favoriteSentences,
+      sourceSlot: sourceSlot,
+    );
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
   /// 顶部「关闭字幕」项。选某源 → 解析成 cue → 切 overlay + 持久化 + SnackBar。
   ///
   /// 这是运行时覆盖；默认 load 行为（自动 sidecar 优先 + 内嵌兜底）不变。
-  Future<void> _showSubtitleSourceMenu(VideoPlayerController controller) async {
+  Future<void> _showSubtitleSourceMenu(
+    VideoPlayerController controller, {
+    VideoControlSlot? sourceSlot,
+  }) async {
     if (_videoSheetOpen) return;
     if (_isRemote) {
       setState(() {
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
       });
-      _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
+      _showVideoSidePanel(
+        _VideoSidePanelKind.subtitleSources,
+        sourceSlot: sourceSlot,
+      );
       return;
     }
     final String? videoPath = _currentVideoPath;
@@ -6014,7 +6102,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
       });
-      _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
+      _showVideoSidePanel(
+        _VideoSidePanelKind.subtitleSources,
+        sourceSlot: sourceSlot,
+      );
       return;
     }
 
@@ -6022,7 +6113,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _subtitleMenuSources = const <SubtitleSource>[];
       _subtitleMenuLoading = true;
     });
-    _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
+    _showVideoSidePanel(
+      _VideoSidePanelKind.subtitleSources,
+      sourceSlot: sourceSlot,
+    );
     final List<SubtitleSource> sources;
     try {
       sources = await _subtitleSourcesForMenu(
@@ -6282,7 +6376,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _showSubtitleLoadingOverlay() {
     if (_subtitleLoadingShown || !mounted) return;
     setState(() => _subtitleLoadingShown = true);
-    if (_videoSidePanel.value != _VideoSidePanelKind.subtitleSources) {
+    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.subtitleSources) {
       _showVideoSidePanel(_VideoSidePanelKind.subtitleSources);
     }
   }
@@ -7248,6 +7342,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             item,
             controller,
             popoverLink: popoverLink,
+            sourceSlot: slot,
           ),
         ),
       );
