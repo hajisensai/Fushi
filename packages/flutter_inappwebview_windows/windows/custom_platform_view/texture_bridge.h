@@ -5,6 +5,7 @@
 #include <windows.system.h>
 #include <wrl.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -16,6 +17,13 @@
 
 namespace flutter_inappwebview_plugin
 {
+  using WgcFrameArrivedHandler = ABI::Windows::Foundation::ITypedEventHandler<
+    ABI::Windows::Graphics::Capture::Direct3D11CaptureFramePool*,
+    IInspectable*>;
+
+  struct WgcFrameArrivedCallbackState;
+  struct WgcFramePoolLifetime;
+
   typedef struct {
     size_t width;
     size_t height;
@@ -48,11 +56,7 @@ namespace flutter_inappwebview_plugin
     void SetFpsLimit(std::optional<int> max_fps);
 
   protected:
-    typedef ABI::Windows::Foundation::ITypedEventHandler<
-      ABI::Windows::Graphics::Capture::Direct3D11CaptureFramePool*,
-      IInspectable*> FrameArrivedHandler;
-
-    struct FrameArrivedCallbackState;
+    typedef WgcFrameArrivedHandler FrameArrivedHandler;
 
     bool is_running_ = false;
 
@@ -69,39 +73,30 @@ namespace flutter_inappwebview_plugin
 
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureItem>
       capture_item_;
-    Microsoft::WRL::ComPtr<FrameArrivedHandler> frame_arrived_handler_;
-    winrt::com_ptr<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool>
-      frame_pool_;
-    winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession>
-      capture_session_;
-
-    // TODO-428/420 兜底：当前帧池建池时用的 capture_item_ 尺寸（SizeInt32 整数，无
-    // 浮点抖动）。RecreateFramePoolLocked 据此短路——上层 setSize 风暴即便穿过 Dart
-    // 去抖到达这里（NotifySurfaceSizeChanged -> needs_update_=true），若 capture_item_
-    // 的实际尺寸与帧池现有尺寸相等就不重建，只消耗掉 needs_update_。仅 -1 视为「未建池」。
-    ABI::Windows::Graphics::SizeInt32 frame_pool_size_ = { -1, -1 };
+    std::shared_ptr<WgcFramePoolLifetime> frame_pool_lifetime_;
+    uint64_t frame_pool_generation_ = 0;
 
     EventRegistrationToken on_closed_token_ = {};
-    EventRegistrationToken on_frame_arrived_token_ = {};
-    std::shared_ptr<FrameArrivedCallbackState> frame_arrived_state_;
 
-    void InvalidateFrameArrivedCallback();
+    void InvalidateFrameArrivedCallback(
+      const std::shared_ptr<WgcFramePoolLifetime>& lifetime = nullptr);
     virtual void StopInternal();
     // BUG-209/TODO-439：所有「丢弃/替换 frame_pool_」的路径（StopInternal teardown、
     // Start 重入覆盖、OnFrameArrived resize）统一走这套退役保活不变量——
-    // Close 设 closed-flag -> best-effort remove_FrameArrived 断源（Close 后
-    // RO_E_CLOSED 不阻断）-> 移交退役注册表永久保活。
-    // active pool 也已从 create 起被 registry 强保活；retire 负责先释放 GPU 资源并
-    // 压住 remove 期间的迟到 FirePresentEvent，再断源。
+    // inactive/retiring -> open pool remove_FrameArrived -> release handler ->
+    // Close session/pool -> 同一个 lifetime 从 active registry 标成 retired。
+    // handler 回调栈内退役必须投递到同一 DispatcherQueue 下一拍 finalize，避免 event
+    // 迭代重入；remove 失败 fail closed，保留 token/handler/pool 作异常证据。
     // 绝不裸释放任何曾经 add_FrameArrived 的帧池。调用方须持 mutex_。
-    void RetireFramePoolLocked();
+    void RetireFramePoolLocked(const char* reason);
     // 创建帧池 + 挂 FrameArrived + 建 CaptureSession + StartCapture，Start 与
     // RecreateFramePoolLocked 共用；返回是否 StartCapture 成功。调用方须持 mutex_。
     bool CreateAndStartFramePoolLocked();
     // resize 时退役旧池 + 重建会话 + 建全新池，取代 frame_pool_->Recreate（其会拆掉旧池
     // 内部 present 基建而在途 deferral 仍指向旧状态 -> UAF）。调用方须持 mutex_。
     void RecreateFramePoolLocked();
-    void OnFrameArrived();
+    void OnFrameArrived(
+      const std::shared_ptr<WgcFramePoolLifetime>& lifetime);
     bool ShouldDropFrame();
 
     // corresponds to DXGI_FORMAT_B8G8R8A8_UNORM

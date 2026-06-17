@@ -113,25 +113,35 @@ void main() {
             '[this](ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool*'),
         isFalse,
         reason: 'FrameArrived lambda 不能捕获裸 this；teardown 后迟到事件会 UAF');
-    expect(header.contains('frame_arrived_handler_'), isTrue,
-        reason: 'TextureBridge 必须持有 FrameArrived delegate COM 对象本体');
-    expect(src.contains('frame_arrived_handler_ = Microsoft::WRL::Callback'),
+    expect(
+        header.contains(
+            'std::shared_ptr<WgcFramePoolLifetime> frame_pool_lifetime_'),
+        isTrue,
+        reason:
+            'TextureBridge 只持当前 frame-pool lifetime，具体 COM 对象由 lifetime 聚合');
+    expect(
+        src.contains(
+            'Microsoft::WRL::ComPtr<WgcFrameArrivedHandler> frame_arrived_handler'),
+        isTrue,
+        reason: 'FrameArrived delegate COM 对象本体必须属于 WgcFramePoolLifetime');
+    expect(
+        src.contains(
+            'lifetime->frame_arrived_handler = Microsoft::WRL::Callback'),
         isTrue,
         reason: 'FrameArrived delegate 不能只用 add_FrameArrived 里的临时 Callback');
-    expect(src.contains('frame_arrived_handler_.Get()'), isTrue,
-        reason: 'add_FrameArrived 必须注册由 TextureBridge 成员持有的 delegate');
+    expect(src.contains('lifetime->frame_arrived_handler.Get()'), isTrue,
+        reason: 'add_FrameArrived 必须注册由 lifetime 持有的 delegate');
     expect(
       RegExp(r'add_FrameArrived\s*\(\s*Microsoft::WRL::Callback', dotAll: true)
           .hasMatch(src),
       isFalse,
       reason: '禁止恢复成临时 add_FrameArrived Callback delegate',
     );
-    final int handlerIndex = header.indexOf('frame_arrived_handler_');
-    final int framePoolIndex = header.indexOf('frame_pool_');
-    expect(handlerIndex, greaterThanOrEqualTo(0));
-    expect(framePoolIndex, greaterThanOrEqualTo(0));
-    expect(handlerIndex, lessThan(framePoolIndex),
-        reason: '成员析构逆序执行；delegate 成员必须声明在 frame_pool_ 前');
+    expect(header.contains('frame_arrived_handler_'), isFalse,
+        reason:
+            'TextureBridge 不应再直接持有 handler；handler/token/session/pool 必须聚合进 lifetime');
+    expect(RegExp(r'\bframe_pool_\s*;').hasMatch(header), isFalse,
+        reason: 'TextureBridge 不应再直接持有裸 frame_pool_；禁止裸覆盖/释放');
 
     expect(src.contains('CreateFreeThreadedCaptureFramePool'), isFalse,
         reason: '禁止 FreeThreaded 帧池回潮：Release 下 WebView 纹理全空（书籍无字）');
@@ -149,31 +159,24 @@ void main() {
     final String stopInternalBody =
         src.substring(stopInternalStart, stopInternalEnd);
 
-    final int siSessionClose =
-        stopInternalBody.indexOf('session_closable->Close()');
-    expect(siSessionClose, greaterThanOrEqualTo(0),
-        reason: 'StopInternal 必须先 Close capture session 停止产生新帧');
-    // 第十修：帧池断源 + Close + 退役保活三步收敛进 RetireFramePoolLocked，
-    // StopInternal 在 Close session 后调它（不再在 StopInternal 体内内联）。
-    final int siRetireCall =
-        stopInternalBody.indexOf('RetireFramePoolLocked()');
-    expect(siRetireCall, greaterThan(siSessionClose),
-        reason: 'StopInternal 必须在 Close session 后调 RetireFramePoolLocked '
-            '退役保活帧池（断源 + Close + 永久保活的统一不变量）');
-    final int siHandlerRelease = stopInternalBody.indexOf(
-        'WgcLog::Write("handler-release"', siRetireCall);
-    expect(siHandlerRelease, greaterThan(siRetireCall),
-        reason: '释放 frame_arrived_handler_ 前必须写 handler-release 日志，'
-            '下一轮取证可区分 handler 已释放与 pool 未 retire 的路径');
-    final int siHandlerReleaseDone = stopInternalBody.indexOf(
-        'WgcLog::Write("handler-release-done"', siHandlerRelease);
-    expect(siHandlerReleaseDone, greaterThan(siHandlerRelease),
-        reason: '释放 frame_arrived_handler_ 后必须写 handler-release-done 日志，'
-            '下一轮取证可区分 release 前崩溃与 release 已完成');
+    expect(stopInternalBody.contains('session_closable->Close()'), isFalse,
+        reason: 'TODO-468：StopInternal 不能先 Close capture session；'
+            '正常路径必须先在 open frame pool 上 remove event token，'
+            '成功释放 handler 后再由 lifetime finalize 关闭 session/pool');
+    // 第十五修：帧池 token/handler/session/close/registry 收敛进 RetireFramePoolLocked
+    // 和 lifetime finalize；StopInternal 只请求退役，不内联拆资源。
+    final int siRetireCall = stopInternalBody.indexOf('RetireFramePoolLocked(');
+    expect(siRetireCall, greaterThanOrEqualTo(0),
+        reason: 'StopInternal 必须请求 RetireFramePoolLocked 退役保活帧池，'
+            'remove/handler release/session close/pool close 由 lifetime finalize 统一排序');
+    expect(
+        stopInternalBody.contains('frame_arrived_handler_ = nullptr'), isFalse,
+        reason: 'handler 释放必须由 frame-pool lifetime finalize 在成功 remove 后完成；'
+            'StopInternal 不能在不知道 remove 结果时裸释放 handler');
 
     // RetireFramePoolLocked 体内必须按 dump 实证顺序执行三步根因防线。
     final int retireStart =
-        src.indexOf('void TextureBridge::RetireFramePoolLocked()');
+        src.indexOf('void TextureBridge::RetireFramePoolLocked(');
     expect(retireStart, greaterThanOrEqualTo(0),
         reason: 'TextureBridge::RetireFramePoolLocked 必须可审计');
     final int retireEnd = src.indexOf('void TextureBridge::', retireStart + 1);
@@ -181,70 +184,100 @@ void main() {
         reason: 'RetireFramePoolLocked 之后应还有其它 TextureBridge 方法定义');
     final String retireBody = src.substring(retireStart, retireEnd);
 
-    final int rCloseStart =
-        retireBody.indexOf('WgcLog::Write("retire-close-start"');
-    expect(rCloseStart, greaterThanOrEqualTo(0),
-        reason: 'RetireFramePoolLocked 必须在调用 IClosable::Close 前写 '
-            'retire-close-start，定位 Close 内部崩溃/卡死');
-    final int rPoolClose = retireBody.indexOf('pool_closable');
-    expect(rPoolClose, greaterThan(rCloseStart),
-        reason: 'RetireFramePoolLocked 必须先显式 Close 帧池（IClosable）设 '
-            'closed-flag，再 remove_FrameArrived；TODO-453 的缺口在 retire 后，'
-            '提前 Close 可让 remove 期间任何重入/迟到 FirePresentEvent 先 no-op');
+    final int rInactive = retireBody.indexOf('WgcLog::Write("state-inactive"');
+    expect(rInactive, greaterThanOrEqualTo(0),
+        reason: '退役入口必须先把 callback_state 标成 inactive/retiring，迟到回调 no-op');
+    final int rDetachState =
+        retireBody.indexOf('InvalidateFrameArrivedCallback', rInactive);
+    expect(rDetachState, greaterThan(rInactive),
+        reason:
+            '写 state-inactive 后必须断开 bridge/callback state，保护迟到 FrameArrived');
+    final int rCurrentClear =
+        retireBody.indexOf('frame_pool_lifetime_ = nullptr', rDetachState);
+    expect(rCurrentClear, greaterThan(rDetachState),
+        reason: 'active lifetime 退役后 TextureBridge 只清当前指针；pool 由 registry 保活');
+    final int rInHandler = retireBody.indexOf('in_handler', rCurrentClear);
+    expect(rInHandler, greaterThan(rCurrentClear),
+        reason: 'RetireFramePoolLocked 必须检测当前是否位于 FrameArrived handler 调用栈');
+    final int rDeferLog = retireBody.indexOf(
+        'WgcLog::Write("retire-defer-in-handler"', rInHandler);
+    expect(rDeferLog, greaterThan(rInHandler),
+        reason: 'handler 调用栈内退役必须记录 retire-defer-in-handler');
+    final int rTryEnqueue = retireBody.indexOf('TryEnqueue', rDeferLog);
+    expect(rTryEnqueue, greaterThan(rDeferLog),
+        reason: 'handler 调用栈内不得直接 remove；必须投递到同一 DispatcherQueue 下一拍');
+    final int rFinalize =
+        retireBody.indexOf('FinalizeFramePoolLifetime', rTryEnqueue);
+    expect(rFinalize, greaterThan(rTryEnqueue),
+        reason: '只有 DispatcherQueue 回调或非 handler 路径才能进入 finalize');
+
+    final int finalizeStart = src.indexOf('void FinalizeFramePoolLifetime(');
+    expect(finalizeStart, greaterThanOrEqualTo(0),
+        reason: 'frame pool/session/token/handler 聚合对象必须有集中 finalize 逻辑');
+    final int finalizeEnd =
+        src.indexOf('void TextureBridge::OnFrameArrived', finalizeStart);
+    expect(finalizeEnd, greaterThan(finalizeStart),
+        reason: 'FinalizeFramePoolLifetime 后应接 TextureBridge 方法定义');
+    final String finalizeBody = src.substring(finalizeStart, finalizeEnd);
+
+    final int fRemoveStart =
+        finalizeBody.indexOf('WgcLog::Write("remove-before-close-start"');
+    expect(fRemoveStart, greaterThanOrEqualTo(0),
+        reason: '正常退役必须在 frame pool open 时先 remove event token');
+    final int fRemove = finalizeBody
+        .indexOf('remove_FrameArrived(lifetime->on_frame_arrived_token)');
+    expect(fRemove, greaterThan(fRemoveStart),
+        reason: 'remove-before-close-start 后必须同步 remove_FrameArrived');
+    final int fRemoveDone = finalizeBody.indexOf(
+        'WgcLog::Write("remove-before-close-done"', fRemove);
+    expect(fRemoveDone, greaterThan(fRemove),
+        reason: 'remove 成功后必须记录 remove-before-close-done');
+    final int fTokenClear = finalizeBody.indexOf(
+        'lifetime->on_frame_arrived_token = {}', fRemoveDone);
+    expect(fTokenClear, greaterThan(fRemoveDone),
+        reason: '只有 remove 成功后才能清 token，remove 失败要保留异常证据');
+    final int fHandlerRelease = finalizeBody.indexOf(
+        'WgcLog::Write("handler-release-start"', fTokenClear);
+    expect(fHandlerRelease, greaterThan(fTokenClear),
+        reason: '只有 remove 成功后才能释放 handler');
+    final int fHandlerNull = finalizeBody.indexOf(
+        'lifetime->frame_arrived_handler = nullptr', fHandlerRelease);
+    expect(fHandlerNull, greaterThan(fHandlerRelease),
+        reason: 'handler release 必须发生在 remove-before-close-done 后');
+    final int fHandlerDone = finalizeBody.indexOf(
+        'WgcLog::Write("handler-release-done"', fHandlerNull);
+    expect(fHandlerDone, greaterThan(fHandlerNull),
+        reason: 'handler release 完成必须有 handler-release-done 日志');
+    final int fSessionCloseStart = finalizeBody.indexOf(
+        'WgcLog::Write("session-close-start"', fHandlerDone);
+    expect(fSessionCloseStart, greaterThan(fHandlerDone),
+        reason: 'capture_session Close 必须在成功 remove + handler release 之后');
+    final int fPoolCloseStart = finalizeBody.indexOf(
+        'WgcLog::Write("pool-close-start"', fSessionCloseStart);
+    expect(fPoolCloseStart, greaterThan(fSessionCloseStart),
+        reason:
+            'frame_pool Close 必须晚于 remove-before-close-done 和 session Close');
+    expect(finalizeBody.contains('WgcLog::Write("remove-before-close-fail"'),
+        isTrue,
+        reason: 'remove 失败必须记录 fail，而不是崩溃或假装释放 token/handler');
     expect(
-        RegExp(r'pool_closable\s*->\s*Close\(\)').hasMatch(retireBody), isTrue,
-        reason: 'RetireFramePoolLocked 必须对帧池 IClosable 调用 Close 设 closed-flag');
-    final int rCloseLog =
-        retireBody.indexOf('WgcLog::Write("retire-close"', rPoolClose);
-    expect(rCloseLog, greaterThan(rPoolClose),
-        reason: 'Close 帧池后必须写 retire-close 日志，明确 GPU 资源释放/closed-flag 已设置');
-    final int rRevokeStart =
-        retireBody.indexOf('WgcLog::Write("retire-remove-start"', rCloseLog);
-    expect(rRevokeStart, greaterThan(rCloseLog),
-        reason: 'remove_FrameArrived 前必须写 retire-remove-start，定位 revoke 内部崩溃');
-    final int rRevokeTry = retireBody.indexOf('try', rRevokeStart);
-    expect(rRevokeTry, greaterThan(rRevokeStart),
-        reason: 'Close 后 remove_FrameArrived 必须是 best effort：'
-            'Direct3D11CaptureFramePool 已关闭时 WGC 会抛 RO_E_CLOSED，'
-            '不能让异常阻断 registry 保活与 handler release');
-    final int rRevoke =
-        retireBody.indexOf('remove_FrameArrived(on_frame_arrived_token_)');
-    expect(rRevoke, greaterThan(rRevokeTry),
-        reason: 'RetireFramePoolLocked 必须在 Close 帧池后同步 remove_FrameArrived 断源');
-    final int rRevokeLog =
-        retireBody.indexOf('WgcLog::Write("retire-remove"', rRevoke);
-    expect(rRevokeLog, greaterThan(rRevoke),
-        reason: 'remove_FrameArrived 返回后必须写 retire-remove 日志，HRESULT 失败也要可见');
-    final int rRevokeCatch =
-        retireBody.indexOf('catch (const winrt::hresult_error&', rRevoke);
-    expect(rRevokeCatch, greaterThan(rRevoke),
-        reason: 'remove_FrameArrived 可能在已 Close frame pool 上抛 '
-            'winrt::hresult_error(RO_E_CLOSED)，必须捕获并继续退役注册');
-    expect(retireBody.contains('WgcLog::Write("retire-remove-closed"'), isTrue,
-        reason: 'RO_E_CLOSED 必须记录为 retire-remove-closed，'
-            '下一轮日志可区分已关闭池与普通 remove HRESULT 失败');
-    expect(retireBody.contains('WgcLog::Write("retire-remove-skipped"'), isTrue,
-        reason: '没有有效 FrameArrived token 时必须记录 retire-remove-skipped，'
-            '跳过 remove 也要继续 retire-register-start/Retire/register');
-    final int rRetireStart = retireBody.indexOf(
-        'WgcLog::Write("retire-register-start"', rRevokeCatch);
-    expect(rRetireStart, greaterThan(rRevokeLog),
-        reason: '移交 RetiredFramePoolRegistry 前必须写 retire-register-start');
-    final int rRetire = retireBody.indexOf(
-        'RetiredFramePoolRegistry::Instance().Retire(std::move(frame_pool_))');
-    expect(rRetire, greaterThan(rRetireStart),
-        reason: 'RetireFramePoolLocked 必须在 Close 帧池后把帧池 ComPtr move 进 '
-            'RetiredFramePoolRegistry 保活：帧池内存在所有在途 deferral 跑完前绝不释放');
-    final int rRetireLog =
-        retireBody.indexOf('WgcLog::Write("retire-register"', rRetire);
-    expect(rRetireLog, greaterThan(rRetire),
-        reason: 'RetiredFramePoolRegistry::Retire 返回后必须写 retire-register 日志，'
-            '定位 registry 移交是否完成');
-    final int rPoolNull =
-        retireBody.indexOf('frame_pool_ = nullptr', rRetireLog);
-    expect(rPoolNull, greaterThan(rRetireLog),
-        reason: 'frame_pool_ 必须先 move 进退役注册表再置空：不得在任何路径裸释放'
-            '帧池最后强引用（第七修赌注已被 dump 反证）');
+        finalizeBody
+            .contains('WgcLog::Write("remove-before-close-closed-unexpected"'),
+        isTrue,
+        reason: 'open pool 上 remove 若仍遇到 RO_E_CLOSED，必须标成异常而非正常路径');
+    expect(finalizeBody.contains('lifetime->remove_failed = true'), isTrue,
+        reason: 'remove 失败路径必须保留失败状态，后续不得假装 handler/token 已释放');
+    final int fRegisterStart = finalizeBody.indexOf(
+        'WgcLog::Write("retire-register-start"', fPoolCloseStart);
+    final int fMarkRetired = finalizeBody.indexOf(
+        'FramePoolLifetimeRegistry::Instance().MarkRetired(lifetime)',
+        fRegisterStart);
+    expect(fMarkRetired, greaterThan(fRegisterStart),
+        reason: 'Close 完成后必须把同一个 lifetime 从 active 计入 retired registry');
+    expect(src.contains('WgcLog::Write("retire-remove-closed"'), isFalse,
+        reason: 'retire-remove-closed 是 Close 后 remove 的止血日志，不得作为正常路径保留');
+    expect(src.contains('frame_pool_ = nullptr'), isFalse,
+        reason: '禁止裸释放/覆盖 frame_pool_；当前指针应是聚合 lifetime，而非裸 pool 成员');
 
     // 第十修核心：扩展保活到所有「丢弃/替换帧池」的路径。
     // (A) Start() 重入覆盖 frame_pool_ 前必须先退役保活旧池——dump 81504 崩溃池
@@ -256,7 +289,7 @@ void main() {
     expect(startEnd, greaterThan(startStart),
         reason: 'Start 之后应还有 CreateAndStartFramePoolLocked 定义');
     final String startBody = src.substring(startStart, startEnd);
-    expect(startBody.contains('RetireFramePoolLocked()'), isTrue,
+    expect(startBody.contains('RetireFramePoolLocked('), isTrue,
         reason: 'Start() 在覆盖 frame_pool_ 前必须先 RetireFramePoolLocked 退役旧池：'
             'setSize 每次都调 Start()，CreateCaptureSession/StartCapture 失败后早返回会'
             '留下已 add_FrameArrived 的旧池，下一次 Start 越过 is_running_ 守卫裸覆盖它');
@@ -268,7 +301,7 @@ void main() {
             '其在途 deferred FirePresentEvent 仍指向被拆状态 -> 同一 0xf0d5 null-delegate '
             'UAF。必须改走 RecreateFramePoolLocked（退役旧池保活 + 建全新池）');
     final int onFrameArrivedStart =
-        src.indexOf('void TextureBridge::OnFrameArrived()');
+        src.indexOf('void TextureBridge::OnFrameArrived(');
     expect(onFrameArrivedStart, greaterThanOrEqualTo(0),
         reason: 'TextureBridge::OnFrameArrived 必须可审计');
     final String onFrameArrivedBody = src.substring(onFrameArrivedStart);
@@ -286,7 +319,7 @@ void main() {
     expect(recreateEnd, greaterThan(recreateStart),
         reason: 'RecreateFramePoolLocked 之后应还有其它 TextureBridge 方法定义');
     final String recreateBody = src.substring(recreateStart, recreateEnd);
-    final int recRetire = recreateBody.indexOf('RetireFramePoolLocked()');
+    final int recRetire = recreateBody.indexOf('RetireFramePoolLocked(');
     final int recCreate =
         recreateBody.indexOf('CreateAndStartFramePoolLocked()');
     expect(recRetire, greaterThanOrEqualTo(0),
@@ -304,8 +337,11 @@ void main() {
         reason: 'drain-hop 延迟 Close 押注已被 Close + 退役保活取代');
     expect(src.contains('PendingCaptureTeardown'), isFalse,
         reason: '不再用延迟销毁 holder 判排空：Close 设 closed-flag + 退役注册表永久保活');
-    expect(src.contains('RetiredFramePoolRegistry'), isTrue,
-        reason: '必须有进程级退役帧池注册表保活已 Close 的帧池');
+    expect(src.contains('FramePoolLifetimeRegistry'), isTrue,
+        reason: '必须有进程级 lifetime 注册表保活 active/retired WGC 帧池对象');
+    expect(src.contains('WgcFramePoolLifetime'), isTrue,
+        reason:
+            'frame pool/session/event token/handler/callback_state 必须聚合进清晰 lifetime');
 
     // TODO-439：v0.9.0.5025 仍崩在 active/running 帧池。dump 中崩溃池能对应
     // captureLog 第二轮 create-pool，但没有 stop/retire/dtor，只有 start running=1
@@ -330,7 +366,7 @@ void main() {
     expect(cCreatePoolLog, greaterThan(cCreatePool),
         reason: 'create-pool 日志必须记录新建 frame pool 指针，便于和 dump pool 对照');
     final int cActiveRetain = createBody.indexOf(
-        'RetiredFramePoolRegistry::Instance().RetainActive(frame_pool_)',
+        'FramePoolLifetimeRegistry::Instance().Retain(lifetime)',
         cCreatePoolLog);
     expect(cActiveRetain, greaterThan(cCreatePoolLog),
         reason: 'TODO-439：create-pool 后必须立刻把 active frame_pool_ 放入进程级强保活；'
@@ -370,9 +406,9 @@ void main() {
         reason: '退役注册表永久保活，不需要代际计数器');
     expect(src.contains('std::remove_if'), isFalse,
         reason: '退役注册表不得用 remove_if 释放任何退役帧池（永久保活，只 push）');
-    final int registryStart = src.indexOf('class RetiredFramePoolRegistry');
+    final int registryStart = src.indexOf('class FramePoolLifetimeRegistry');
     expect(registryStart, greaterThanOrEqualTo(0),
-        reason: 'RetiredFramePoolRegistry 必须可审计');
+        reason: 'FramePoolLifetimeRegistry 必须可审计');
     final int registryEnd = src.indexOf('};', registryStart);
     expect(registryEnd, greaterThan(registryStart));
     final String registryBody = src.substring(registryStart, registryEnd);
@@ -381,10 +417,18 @@ void main() {
             '内存永久有效使 closed-flag 永久=1，迟到 deferral 永久安全早返回');
     expect(registryBody.contains('push_back'), isTrue,
         reason: 'Retire 必须把帧池 push 进退役注册表保活');
-    expect(registryBody.contains('RetainActive('), isTrue,
+    expect(registryBody.contains('Retain('), isTrue,
         reason: 'TODO-439：注册表必须提供 active retain 入口，覆盖尚未 retire 的 running pool');
-    expect(registryBody.contains('active_'), isTrue,
-        reason: 'TODO-439：active pool 从 create 起也必须被 registry 强持有到进程退出');
+    expect(registryBody.contains('MarkRetired('), isTrue,
+        reason: 'TODO-468：退役时必须把同一个 lifetime 从 active 计数转为 retired 计数');
+    expect(registryBody.contains('lifetimes_'), isTrue,
+        reason: 'registry 应用单一 lifetime 列表保活对象，避免 active_/retired_ 双重堆引用');
+    expect(registryBody.contains('active_'), isFalse,
+        reason: '不要用无语义 active_ 堆列表重复持有同一 pool；active 应从 lifetime 状态计算');
+    expect(registryBody.contains('retired_'), isFalse,
+        reason: '不要用无语义 retired_ 堆列表重复持有同一 pool；retired 应从 lifetime 状态计算');
+    expect(registryBody.contains('RegistryCountsDetail'), isTrue,
+        reason: 'registry active/retired 计数必须可写入 registry-size 日志');
 
     final int destructorStart =
         platformViewSrc.indexOf('CustomPlatformView::~CustomPlatformView()');
