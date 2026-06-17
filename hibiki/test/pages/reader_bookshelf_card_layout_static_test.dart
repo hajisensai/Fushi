@@ -81,6 +81,38 @@ void main() {
         reason: 'metadata (progress bar) must be pinned to the cover bottom');
   });
 
+  test('book cover artwork fills the card across all shelf sources', () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String remoteCover =
+        _functionSource(source, 'Widget _buildRemoteBookCover(');
+    final String videoCover =
+        _functionSource(source, 'Widget _buildVideoCover(');
+    final String srtCover = _functionSource(source, 'Widget _buildSrtCover(');
+    final String epubCover =
+        _functionSource(source, 'Widget buildMediaItemContent(');
+
+    expect(
+      source,
+      contains('BoxFit get _bookCardCoverFit => BoxFit.cover;'),
+      reason: 'book card artwork should share a single cover-fill fit helper',
+    );
+    expect(
+      source,
+      isNot(contains('fit: BoxFit.fitHeight')),
+      reason: 'fitHeight leaves horizontal gutters instead of filling the card',
+    );
+    expect(
+      RegExp(r'fit: _bookCardCoverFit').allMatches(remoteCover).length,
+      2,
+      reason: 'remote cached and network covers must both fill the card',
+    );
+    expect(videoCover, contains('fit: _bookCardCoverFit'));
+    expect(srtCover, contains('fit: _bookCardCoverFit'));
+    expect(epubCover, contains('fit: _bookCardCoverFit'));
+  });
+
   test('visual card frame wraps only the cover, while interactions wrap all',
       () {
     final String source =

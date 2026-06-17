@@ -77,6 +77,9 @@ int adaptiveTagSlots({
 /// 用顶层常量 + 测试可见，便于 widget 守卫断言渲染尺寸，防止再次漂移。
 const double kShelfCoverBadgeDimension = 8.0 * 2;
 
+/// 书架封面图统一填满卡片封面区域；允许裁切边缘，避免 fitHeight 留白。
+BoxFit get _bookCardCoverFit => BoxFit.cover;
+
 /// Stable below-cover title footer height for reader shelf cards.
 ///
 /// The cover and title areas must not resize when a title wraps to two lines;
@@ -869,7 +872,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         placeholder: MemoryImage(kTransparentImage),
         image: FileImage(File(coverPath)),
         alignment: Alignment.topCenter,
-        fit: BoxFit.fitHeight,
+        fit: _bookCardCoverFit,
       );
     }
     final String? coverUrl = book.coverUrl;
@@ -879,7 +882,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         key: ValueKey<String>('remote_book_cover_$safeKey'),
         headers: remoteCoverHeadersFor(_remoteBookClient),
         alignment: Alignment.topCenter,
-        fit: BoxFit.fitHeight,
+        fit: _bookCardCoverFit,
         errorBuilder: (_, __, ___) =>
             _coverPlaceholderIcon(Icons.menu_book_outlined),
       );
@@ -1029,7 +1032,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         placeholder: MemoryImage(kTransparentImage),
         image: FileImage(File(cover)),
         alignment: Alignment.topCenter,
-        fit: BoxFit.fitHeight,
+        fit: _bookCardCoverFit,
       );
     }
     return _coverPlaceholderIcon(Icons.movie_outlined);
@@ -1323,7 +1326,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         placeholder: MemoryImage(kTransparentImage),
         image: FileImage(File(book.coverPath!)),
         alignment: Alignment.topCenter,
-        fit: BoxFit.fitHeight,
+        fit: _bookCardCoverFit,
       );
     }
     return _coverPlaceholderIcon(Icons.subtitles_outlined);
@@ -1910,7 +1913,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           item: item,
         ),
         alignment: Alignment.topCenter,
-        fit: BoxFit.fitHeight,
+        fit: _bookCardCoverFit,
       ),
       tagLabels: tagWidget,
       coverBadge: hasAudiobook
