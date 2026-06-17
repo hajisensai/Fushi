@@ -422,6 +422,23 @@ void main() {
         reason: 'destination rows should not be a bare separated list');
   });
 
+  test('settings Material polish keeps surfaces outlined and actions aligned',
+      () {
+    final String shared =
+        readNormalizedSource('lib/src/utils/components/settings_shared.dart');
+
+    expect(shared, contains('color ?? tokens.surfaces.card'),
+        reason:
+            'right-pane sections should read as card surfaces, not page fill');
+    expect(shared, contains('borderColor: tokens.surfaces.outline'),
+        reason: 'settings section surfaces need a lightweight MD3 outline');
+    expect(shared, contains('endIndent:'));
+    expect(shared, contains('tokens.spacing.rowHorizontal'),
+        reason: 'row dividers should respect the section content density');
+    expect(shared, contains('Alignment.centerRight'),
+        reason: 'inline trailing actions must be visually right-aligned');
+  });
+
   test('unified settings detail shell is the single page chrome (TODO-317)',
       () {
     // The shared shell delegates to the active platform renderer's

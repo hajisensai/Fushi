@@ -154,7 +154,8 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     return HibikiCard(
       padding: EdgeInsets.zero,
       borderRadius: tokens.radii.groupRadius,
-      color: color ?? tokens.surfaces.group,
+      color: color ?? tokens.surfaces.card,
+      borderColor: tokens.surfaces.outline,
       child: content,
     );
   }
@@ -246,6 +247,7 @@ class AdaptiveSettingsSection extends StatelessWidget {
 
   List<Widget> _withDividers(BuildContext context, List<Widget> rows) {
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color dividerColor = cupertino
         ? CupertinoColors.separator.resolveFrom(context)
         : Theme.of(context).colorScheme.outlineVariant;
@@ -255,7 +257,8 @@ class AdaptiveSettingsSection extends StatelessWidget {
         result.add(Divider(
           height: 1,
           thickness: 0.5,
-          indent: cupertino ? 16 : 0,
+          indent: cupertino ? 16 : tokens.spacing.rowHorizontal,
+          endIndent: cupertino ? 0 : tokens.spacing.rowHorizontal,
           color: dividerColor,
         ));
       }
@@ -308,10 +311,12 @@ class AdaptiveSettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Widget content = Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: cupertino ? 16 : 12,
-        vertical: controlBelow ? 10 : 8,
+        horizontal: cupertino ? 16 : tokens.spacing.rowHorizontal,
+        vertical:
+            controlBelow ? tokens.spacing.rowVertical : tokens.spacing.gap,
       ),
       child:
           controlBelow ? _buildColumnLayout(context) : _buildRowLayout(context),
@@ -352,35 +357,47 @@ class AdaptiveSettingsRow extends StatelessWidget {
   }
 
   Widget _buildRowLayout(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
-        minHeight: isCupertinoPlatform(context) ? 46 : 48,
+        minHeight:
+            isCupertinoPlatform(context) ? 46 : tokens.density.controlHeight,
       ),
       child: Row(
         children: [
           if (showIcon && icon != null) ...[
             _SettingsIcon(icon: icon!),
-            const SizedBox(width: 12),
+            SizedBox(width: tokens.spacing.gap + 4),
           ],
           Expanded(child: _SettingsLabel(title: title, subtitle: subtitle)),
           if (trailing != null) ...[
-            const SizedBox(width: 12),
+            SizedBox(width: tokens.spacing.gap + 4),
             // A flexible trailing receives bounded width so an inner horizontal
             // scroll view scrolls instead of overflowing (see [trailingFlexible]).
-            if (trailingFlexible)
-              Flexible(fit: FlexFit.loose, child: trailing!)
-            else
-              trailing!,
+            _buildInlineTrailing(trailing!, flexible: trailingFlexible),
           ],
         ],
       ),
     );
   }
 
+  Widget _buildInlineTrailing(Widget child, {required bool flexible}) {
+    final Widget aligned = Align(
+      alignment: Alignment.centerRight,
+      widthFactor: flexible ? null : 1,
+      child: child,
+    );
+    if (!flexible) return aligned;
+    return Flexible(fit: FlexFit.loose, child: aligned);
+  }
+
   Widget _buildColumnLayout(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
-        minHeight: isCupertinoPlatform(context) ? 58 : 60,
+        minHeight: isCupertinoPlatform(context)
+            ? 58
+            : tokens.density.controlHeight + tokens.spacing.gap + 4,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -389,13 +406,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
             children: [
               if (showIcon && icon != null) ...[
                 _SettingsIcon(icon: icon!),
-                const SizedBox(width: 12),
+                SizedBox(width: tokens.spacing.gap + 4),
               ],
               Expanded(child: _SettingsLabel(title: title, subtitle: subtitle)),
             ],
           ),
           if (trailing != null) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             Align(alignment: Alignment.centerLeft, child: trailing!),
           ],
         ],

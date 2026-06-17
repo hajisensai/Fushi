@@ -1474,6 +1474,23 @@ void main() {
     }
   });
 
+  test('selected list items use primary foreground and a subtle outline', () {
+    final String components = File(
+      'lib/src/utils/components/hibiki_material_components.dart',
+    ).readAsStringSync();
+    final String listItem = _sectionSource(
+      components,
+      'class HibikiListItem',
+      'class HibikiSearchField',
+    );
+
+    expect(listItem, contains('selectedForeground'));
+    expect(listItem, contains('tokens.surfaces.primary'));
+    expect(listItem, contains('FontWeight.w700'));
+    expect(listItem, contains('Border.all('));
+    expect(listItem, contains('withValues(alpha: 0.20)'));
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
