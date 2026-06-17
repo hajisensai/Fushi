@@ -67,10 +67,11 @@ void main() {
       reason: '开 push-aside 字幕列表前应关掉打开的浮层',
     );
     // _showVideoSidePanel 开浮层时关 push-aside 列表。
-    final int showStart =
-        src.indexOf('void _showVideoSidePanel(_VideoSidePanelKind kind) {');
+    final int showStart = src.indexOf('void _showVideoSidePanel(');
     expect(showStart, greaterThan(-1));
-    final int showEnd = src.indexOf('\n  }', showStart);
+    final int showEnd =
+        src.indexOf('\n  void _hideVideoSidePanel()', showStart);
+    expect(showEnd, greaterThan(showStart));
     final String showBody = src.substring(showStart, showEnd);
     expect(
       showBody.contains('_subtitleListVisible.value = false'),
