@@ -116,6 +116,42 @@ void main() {
   });
 
   testWidgets(
+    'TODO-485: nested back button remains available when swipe is disabled',
+    (WidgetTester tester) async {
+      bool backed = false;
+      await tester.pumpWidget(
+        buildTestApp(
+          Center(
+            child: SizedBox(
+              width: 320,
+              height: 360,
+              child: DictionaryPopupLayer(
+                result: null,
+                isSearching: false,
+                webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+                enableSwipeToClose: false,
+                swipeDismissible: true,
+                onBack: () => backed = true,
+                onDismiss: () {},
+                onTextSelected: (text, rect) {},
+                onLinkClick: (query, rect) {},
+                onMineEntry: (fields) async => const MinePopupResult(),
+                onDuplicateCheck: (expression, reading) async => false,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(SwipeDismissWrapper), findsNothing);
+      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.arrow_back));
+      await tester.pump();
+      expect(backed, isTrue, reason: '子层返回按钮必须独立于滑动关闭开关可用');
+    },
+  );
+
+  testWidgets(
     'TODO-407②: enableSwipeToClose=false drops the SwipeDismissWrapper on the '
     'top bar',
     (WidgetTester tester) async {
