@@ -25,6 +25,12 @@ class WindowsUpdateHandoffRecord {
     required this.startedAt,
     this.installerLaunchSucceeded,
     this.installerLaunchedAt,
+    this.installerPid,
+    this.postLaunchObservedAt,
+    this.installerProcessRunning,
+    this.innoLogExists,
+    this.innoLogSizeBytes,
+    this.postLaunchObservationError,
     this.installerLaunchFailedAt,
     this.launchError,
     this.lastPromptedAppVersion,
@@ -39,6 +45,12 @@ class WindowsUpdateHandoffRecord {
       startedAt: _dateTime(json['startedAt']) ?? DateTime.now().toUtc(),
       installerLaunchSucceeded: json['installerLaunchSucceeded'] as bool?,
       installerLaunchedAt: _dateTime(json['installerLaunchedAt']),
+      installerPid: _int(json['installerPid']),
+      postLaunchObservedAt: _dateTime(json['postLaunchObservedAt']),
+      installerProcessRunning: json['installerProcessRunning'] as bool?,
+      innoLogExists: json['innoLogExists'] as bool?,
+      innoLogSizeBytes: _int(json['innoLogSizeBytes']),
+      postLaunchObservationError: json['postLaunchObservationError'] as String?,
       installerLaunchFailedAt: _dateTime(json['installerLaunchFailedAt']),
       launchError: json['launchError'] as String?,
       lastPromptedAppVersion: json['lastPromptedAppVersion'] as String?,
@@ -52,6 +64,12 @@ class WindowsUpdateHandoffRecord {
   final DateTime startedAt;
   final bool? installerLaunchSucceeded;
   final DateTime? installerLaunchedAt;
+  final int? installerPid;
+  final DateTime? postLaunchObservedAt;
+  final bool? installerProcessRunning;
+  final bool? innoLogExists;
+  final int? innoLogSizeBytes;
+  final String? postLaunchObservationError;
   final DateTime? installerLaunchFailedAt;
   final String? launchError;
   final String? lastPromptedAppVersion;
@@ -66,6 +84,16 @@ class WindowsUpdateHandoffRecord {
           'installerLaunchSucceeded': installerLaunchSucceeded,
         if (installerLaunchedAt != null)
           'installerLaunchedAt': installerLaunchedAt!.toUtc().toIso8601String(),
+        if (installerPid != null) 'installerPid': installerPid,
+        if (postLaunchObservedAt != null)
+          'postLaunchObservedAt':
+              postLaunchObservedAt!.toUtc().toIso8601String(),
+        if (installerProcessRunning != null)
+          'installerProcessRunning': installerProcessRunning,
+        if (innoLogExists != null) 'innoLogExists': innoLogExists,
+        if (innoLogSizeBytes != null) 'innoLogSizeBytes': innoLogSizeBytes,
+        if (postLaunchObservationError != null)
+          'postLaunchObservationError': postLaunchObservationError,
         if (installerLaunchFailedAt != null)
           'installerLaunchFailedAt':
               installerLaunchFailedAt!.toUtc().toIso8601String(),
@@ -83,6 +111,12 @@ class WindowsUpdateHandoffRecord {
     DateTime? startedAt,
     bool? installerLaunchSucceeded,
     DateTime? installerLaunchedAt,
+    int? installerPid,
+    DateTime? postLaunchObservedAt,
+    bool? installerProcessRunning,
+    bool? innoLogExists,
+    int? innoLogSizeBytes,
+    String? postLaunchObservationError,
     DateTime? installerLaunchFailedAt,
     String? launchError,
     String? lastPromptedAppVersion,
@@ -97,6 +131,14 @@ class WindowsUpdateHandoffRecord {
       installerLaunchSucceeded:
           installerLaunchSucceeded ?? this.installerLaunchSucceeded,
       installerLaunchedAt: installerLaunchedAt ?? this.installerLaunchedAt,
+      installerPid: installerPid ?? this.installerPid,
+      postLaunchObservedAt: postLaunchObservedAt ?? this.postLaunchObservedAt,
+      installerProcessRunning:
+          installerProcessRunning ?? this.installerProcessRunning,
+      innoLogExists: innoLogExists ?? this.innoLogExists,
+      innoLogSizeBytes: innoLogSizeBytes ?? this.innoLogSizeBytes,
+      postLaunchObservationError:
+          postLaunchObservationError ?? this.postLaunchObservationError,
       installerLaunchFailedAt: clearLaunchFailure
           ? null
           : installerLaunchFailedAt ?? this.installerLaunchFailedAt,
@@ -154,6 +196,7 @@ abstract final class WindowsUpdateHandoff {
   static Future<void> markLaunchSucceeded({
     required File markerFile,
     required DateTime launchedAt,
+    int? installerPid,
   }) async {
     final WindowsUpdateHandoffRecord? record = await read(markerFile);
     if (record == null) return;
@@ -162,7 +205,30 @@ abstract final class WindowsUpdateHandoff {
       record.copyWith(
         installerLaunchSucceeded: true,
         installerLaunchedAt: launchedAt,
+        installerPid: installerPid,
         clearLaunchFailure: true,
+      ),
+    );
+  }
+
+  static Future<void> markPostLaunchObserved({
+    required File markerFile,
+    required DateTime observedAt,
+    bool? installerProcessRunning,
+    required bool innoLogExists,
+    int? innoLogSizeBytes,
+    String? observationError,
+  }) async {
+    final WindowsUpdateHandoffRecord? record = await read(markerFile);
+    if (record == null) return;
+    await _write(
+      markerFile,
+      record.copyWith(
+        postLaunchObservedAt: observedAt,
+        installerProcessRunning: installerProcessRunning,
+        innoLogExists: innoLogExists,
+        innoLogSizeBytes: innoLogSizeBytes,
+        postLaunchObservationError: observationError,
       ),
     );
   }
@@ -233,6 +299,13 @@ abstract final class WindowsUpdateHandoff {
 DateTime? _dateTime(Object? raw) {
   if (raw is! String || raw.trim().isEmpty) return null;
   return DateTime.tryParse(raw);
+}
+
+int? _int(Object? raw) {
+  if (raw is int) return raw;
+  if (raw is num) return raw.toInt();
+  if (raw is String) return int.tryParse(raw.trim());
+  return null;
 }
 
 bool _isVersionAtLeast(String current, String target) {
