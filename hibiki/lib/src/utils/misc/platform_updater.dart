@@ -331,16 +331,39 @@ class UpdateInstallerException implements Exception {
 bool isWindowsExecutableHeader(List<int> header) =>
     header.length >= 2 && header[0] == 0x4D && header[1] == 0x5A;
 
+class WindowsInstallerStartedProcess {
+  const WindowsInstallerStartedProcess({required this.pid});
+
+  final int? pid;
+}
+
+class WindowsInstallerPostLaunchObservation {
+  const WindowsInstallerPostLaunchObservation({
+    required this.observedAt,
+    required this.installerProcessRunning,
+    required this.innoLogExists,
+    this.innoLogSizeBytes,
+    this.error,
+  });
+
+  final DateTime observedAt;
+  final bool? installerProcessRunning;
+  final bool innoLogExists;
+  final int? innoLogSizeBytes;
+  final String? error;
+}
+
 class WindowsInstaller {
-  static Future<void> _startDetachedInstallerProcess(
+  static Future<WindowsInstallerStartedProcess> _startDetachedInstallerProcess(
     String executable,
     List<String> args,
   ) async {
-    await Process.start(
+    final Process process = await Process.start(
       executable,
       args,
       mode: ProcessStartMode.detached,
     );
+    return WindowsInstallerStartedProcess(pid: process.pid);
   }
 
   /// 启动安装器（分离进程）后退出本进程，让安装器替换运行中的 exe 并重启 app。
@@ -356,7 +379,14 @@ class WindowsInstaller {
     String? targetVersion,
     File? handoffMarkerFile,
     DateTime Function()? now,
-    Future<void> Function(String executable, List<String> args)? startProcess,
+    Future<WindowsInstallerStartedProcess> Function(
+      String executable,
+      List<String> args,
+    )? startProcess,
+    Future<WindowsInstallerPostLaunchObservation> Function(
+      int? installerPid,
+      String innoLogPath,
+    )? observePostLaunch,
     void Function(int code)? exitProcess,
   }) async {
     final DateTime Function() clock = now ?? DateTime.now;
@@ -403,9 +433,11 @@ class WindowsInstaller {
         'WindowsInstaller.launch',
         'Launching Windows installer: $installerPath ${args.join(' ')}',
       );
-      final Future<void> Function(String executable, List<String> args) start =
-          startProcess ?? _startDetachedInstallerProcess;
-      await start(
+      final Future<WindowsInstallerStartedProcess> Function(
+        String executable,
+        List<String> args,
+      ) start = startProcess ?? _startDetachedInstallerProcess;
+      final WindowsInstallerStartedProcess started = await start(
         installerPath,
         args,
       );
@@ -413,12 +445,32 @@ class WindowsInstaller {
         await WindowsUpdateHandoff.markLaunchSucceeded(
           markerFile: handoffMarkerFile,
           launchedAt: clock(),
+          installerPid: started.pid,
+        );
+      }
+      final WindowsInstallerPostLaunchObservation observation =
+          await _observeInstallerPostLaunch(
+        installerPid: started.pid,
+        innoLogPath: innoLogPath,
+        observePostLaunch: observePostLaunch,
+      );
+      if (targetVersion != null && handoffMarkerFile != null) {
+        await WindowsUpdateHandoff.markPostLaunchObserved(
+          markerFile: handoffMarkerFile,
+          observedAt: observation.observedAt,
+          installerProcessRunning: observation.installerProcessRunning,
+          innoLogExists: observation.innoLogExists,
+          innoLogSizeBytes: observation.innoLogSizeBytes,
+          observationError: observation.error,
         );
       }
       ErrorLogService.instance.log(
         'WindowsInstaller.launch',
         'Windows installer launched: target=${targetVersion ?? 'unknown'}, '
-            'log=$innoLogPath',
+            'pid=${started.pid ?? 'unknown'}, log=$innoLogPath, '
+            'processRunning=${observation.installerProcessRunning}, '
+            'logExists=${observation.innoLogExists}, '
+            'logBytes=${observation.innoLogSizeBytes ?? 'unknown'}',
       );
     } on ProcessException catch (e) {
       final exception =
@@ -450,6 +502,78 @@ class WindowsInstaller {
       return await raf.read(2);
     } finally {
       await raf.close();
+    }
+  }
+
+  static Future<WindowsInstallerPostLaunchObservation>
+      _observeInstallerPostLaunch({
+    required int? installerPid,
+    required String innoLogPath,
+    required Future<WindowsInstallerPostLaunchObservation> Function(
+      int? installerPid,
+      String innoLogPath,
+    )? observePostLaunch,
+  }) async {
+    if (observePostLaunch != null) {
+      try {
+        return await observePostLaunch(installerPid, innoLogPath);
+      } catch (e) {
+        return WindowsInstallerPostLaunchObservation(
+          observedAt: DateTime.now(),
+          installerProcessRunning: null,
+          innoLogExists: await File(innoLogPath).exists(),
+          error: e.toString(),
+        );
+      }
+    }
+
+    const Duration interval = Duration(milliseconds: 200);
+    final DateTime deadline =
+        DateTime.now().add(const Duration(milliseconds: 1200));
+    bool? installerProcessRunning;
+    bool innoLogExists = false;
+    int? innoLogSizeBytes;
+    String? error;
+
+    do {
+      try {
+        if (installerPid != null) {
+          installerProcessRunning =
+              await _isWindowsProcessRunning(installerPid);
+        }
+        final File innoLog = File(innoLogPath);
+        innoLogExists = await innoLog.exists();
+        innoLogSizeBytes = innoLogExists ? await innoLog.length() : null;
+        if (installerProcessRunning == true || innoLogExists) break;
+      } catch (e) {
+        error = e.toString();
+      }
+      if (DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(interval);
+      }
+    } while (DateTime.now().isBefore(deadline));
+
+    return WindowsInstallerPostLaunchObservation(
+      observedAt: DateTime.now(),
+      installerProcessRunning: installerProcessRunning,
+      innoLogExists: innoLogExists,
+      innoLogSizeBytes: innoLogSizeBytes,
+      error: error,
+    );
+  }
+
+  static Future<bool?> _isWindowsProcessRunning(int pid) async {
+    if (!Platform.isWindows) return null;
+    try {
+      final ProcessResult result = await Process.run(
+        'tasklist',
+        <String>['/FI', 'PID eq $pid', '/NH'],
+      );
+      if (result.exitCode != 0) return null;
+      final String output = '${result.stdout}\n${result.stderr}';
+      return RegExp('(^|\\s)$pid(\\s|\$)').hasMatch(output);
+    } catch (_) {
+      return null;
     }
   }
 
