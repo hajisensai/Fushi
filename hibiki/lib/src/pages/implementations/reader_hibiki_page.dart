@@ -2058,7 +2058,94 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   var imageLongPressTimer = null;
   var imageLongPressConsumed = false;
   var imageLongPressStartX = 0, imageLongPressStartY = 0;
+  var _hoshiReaderMouseDragActive = false;
+  var _hoshiReaderMouseDragClaimed = false;
+  var _hoshiReaderMouseNativeTextStart = false;
+  var _hoshiReaderMouseDragLastX = 0, _hoshiReaderMouseDragLastY = 0;
+  var _hoshiReaderMouseDragPointerId = null;
+  var _hoshiReaderMouseDragPageDirection = null;
+  var _hoshiReaderMouseDragSwipeSent = false;
   function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  function _hoshiReaderCaretRangeAtPoint(x, y) {
+    try {
+      var range = null;
+      if (document.caretPositionFromPoint) {
+        var pos = document.caretPositionFromPoint(x, y);
+        if (pos) {
+          range = document.createRange();
+          range.setStart(pos.offsetNode, pos.offset);
+          range.collapse(true);
+        }
+      } else if (document.caretRangeFromPoint) {
+        range = document.caretRangeFromPoint(x, y);
+      }
+      if (!range || !range.startContainer) return null;
+      return range.startContainer.nodeType === Node.TEXT_NODE ? range : null;
+    } catch (err) {
+      return null;
+    }
+  }
+  function _hoshiReaderMouseDragStartAllowed(e) {
+    if (!e || e.pointerType !== 'mouse' || e.button !== 0) return false;
+    var target = e.target || document.elementFromPoint(e.clientX, e.clientY);
+    if (target && target.closest) {
+      if (target.closest('a[href], ruby, rt, rp')) return false;
+      if (target.closest('input, textarea, select, button, [contenteditable="true"], [data-hoshi-clk], #hoshi-caret-ring')) return false;
+    }
+    var selected = window.getSelection && window.getSelection();
+    if (selected && !selected.isCollapsed) return false;
+    if (window.hoshiSelection &&
+        window.hoshiSelection.getCharacterAtPoint &&
+        window.hoshiSelection.getCharacterAtPoint(e.clientX, e.clientY)) {
+      return false;
+    }
+    return !_hoshiReaderCaretRangeAtPoint(e.clientX, e.clientY);
+  }
+  function _hoshiReaderMouseDragScrollBy(dx, dy) {
+    var r = window.hoshiReader;
+    var vertical = !!(r && r.isVertical && r.isVertical());
+    var writingMode = window.getComputedStyle(document.body).writingMode;
+    if (vertical) {
+      var sign = (writingMode === 'vertical-rl') ? -1 : 1;
+      window.scrollBy({left: -dx * sign, top: 0, behavior: 'auto'});
+    } else {
+      window.scrollBy({left: 0, top: -dy, behavior: 'auto'});
+    }
+  }
+  function _hoshiReaderMouseDragResolvePageDirection(x, y) {
+    var dx = x - startX;
+    var dy = y - startY;
+    var elapsed = Date.now() - startTime;
+    var absDx = Math.abs(dx);
+    var absDy = Math.abs(dy);
+    var velocity = absDx / Math.max(1, elapsed) * 1000;
+    var horizontalEnough = absDx > absDy;
+    var distanceEnough =
+        absDx >= $swipeDistThreshold ||
+        (absDx >= $swipeFastDistThreshold && velocity >= 900);
+    if (horizontalEnough && distanceEnough) {
+      return dx < 0 ? 'left' : 'right';
+    }
+    return null;
+  }
+  function _finishHoshiReaderMouseDrag(e) {
+    var claimed = _hoshiReaderMouseDragClaimed;
+    var direction = _hoshiReaderMouseDragPageDirection;
+    _hoshiReaderMouseDragActive = false;
+    _hoshiReaderMouseDragClaimed = false;
+    _hoshiReaderMouseNativeTextStart = false;
+    _hoshiReaderMouseDragPointerId = null;
+    _hoshiReaderMouseDragPageDirection = null;
+    hasStart = false;
+    if (!claimed) return false;
+    if (e && e.preventDefault) e.preventDefault();
+    if (!hoshiContinuousMode && direction) {
+      if (_hoshiReaderMouseDragSwipeSent) return true;
+      _hoshiReaderMouseDragSwipeSent = true;
+      window.flutter_inappwebview.callHandler('onSwipe', direction);
+    }
+    return true;
+  }
   // Resolve a block illustration under the tap to an absolute image URL, or
   // null when the tap isn't on one. Handles both raster <img> covers/figures
   // and fixed-layout EPUB <svg><image> covers (which are not IMG elements, so
@@ -2191,12 +2278,88 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }, {passive: true});
   document.addEventListener('pointerdown', function(e) {
     if (e.pointerType === 'touch' || e.button !== 0) return;
+    _hoshiReaderMouseDragActive = _hoshiReaderMouseDragStartAllowed(e);
+    _hoshiReaderMouseDragClaimed = false;
+    _hoshiReaderMouseNativeTextStart = !_hoshiReaderMouseDragActive;
+    _hoshiReaderMouseDragLastX = e.clientX;
+    _hoshiReaderMouseDragLastY = e.clientY;
+    _hoshiReaderMouseDragPointerId = e.pointerId;
+    _hoshiReaderMouseDragPageDirection = null;
+    _hoshiReaderMouseDragSwipeSent = false;
     _gestureStart(e.clientX, e.clientY);
   }, {passive: true});
+  document.addEventListener('pointermove', function(e) {
+    if (e.pointerType === 'touch') return;
+    if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
+    if ((e.buttons & 1) !== 1 || !hasStart) return;
+    var totalDx = e.clientX - startX;
+    var totalDy = e.clientY - startY;
+    var totalDistSq = totalDx * totalDx + totalDy * totalDy;
+    if (_hoshiReaderMouseNativeTextStart) {
+      if (totalDistSq > 36) hasStart = false;
+      return;
+    }
+    if (!_hoshiReaderMouseDragActive) return;
+    if (!_hoshiReaderMouseDragClaimed) {
+      if (totalDistSq < 36) return;
+      _hoshiReaderMouseDragClaimed = true;
+      if (e.target && e.target.setPointerCapture) {
+        try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+    }
+    var dx = e.clientX - _hoshiReaderMouseDragLastX;
+    var dy = e.clientY - _hoshiReaderMouseDragLastY;
+    _hoshiReaderMouseDragLastX = e.clientX;
+    _hoshiReaderMouseDragLastY = e.clientY;
+    if (hoshiContinuousMode) {
+      _hoshiReaderMouseDragScrollBy(dx, dy);
+    } else {
+      _hoshiReaderMouseDragPageDirection =
+          _hoshiReaderMouseDragResolvePageDirection(e.clientX, e.clientY);
+    }
+    e.preventDefault();
+  }, {passive: false});
   document.addEventListener('pointerup', function(e) {
     if (e.pointerType === 'touch' || e.button !== 0) return;
+    if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
+    if (_hoshiReaderMouseDragClaimed) {
+      if (!hoshiContinuousMode && !_hoshiReaderMouseDragPageDirection) {
+        _hoshiReaderMouseDragPageDirection =
+            _hoshiReaderMouseDragResolvePageDirection(e.clientX, e.clientY);
+      }
+      _finishHoshiReaderMouseDrag(e);
+      return;
+    }
+    if (_hoshiReaderMouseNativeTextStart) {
+      var nativeDx = e.clientX - startX;
+      var nativeDy = e.clientY - startY;
+      var nativeMoved = (nativeDx * nativeDx + nativeDy * nativeDy) > 36;
+      var nativeSelection = window.getSelection && window.getSelection();
+      var hasNativeSelection = nativeSelection && !nativeSelection.isCollapsed;
+      _hoshiReaderMouseNativeTextStart = false;
+      _hoshiReaderMouseDragActive = false;
+      _hoshiReaderMouseDragPointerId = null;
+      _hoshiReaderMouseDragPageDirection = null;
+      if (nativeMoved || hasNativeSelection) {
+        hasStart = false;
+        return;
+      }
+    } else {
+      _hoshiReaderMouseDragActive = false;
+      _hoshiReaderMouseDragPointerId = null;
+      _hoshiReaderMouseDragPageDirection = null;
+    }
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
+  document.addEventListener('pointercancel', function(e) {
+    if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
+    _hoshiReaderMouseDragActive = false;
+    _hoshiReaderMouseDragClaimed = false;
+    _hoshiReaderMouseNativeTextStart = false;
+    _hoshiReaderMouseDragPointerId = null;
+    _hoshiReaderMouseDragPageDirection = null;
+    hasStart = false;
+  }, {passive: true});
   // 非左键（中键/侧键）：上报 Dart，由 resolveMouse 判定是否绑定「seek 到点击句」。
   // mousedown 一定触发，preventDefault 压掉中键自动滚动。触屏合成事件 button 恒 0，
   // 被首行排除，不干扰触摸手势。
@@ -2209,7 +2372,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     window.flutter_inappwebview.callHandler('onPointerSeek', e.button, e.clientX, e.clientY);
   }, {passive: false});
   document.addEventListener('selectstart', function(e) {
-    if (hasStart && (Date.now() - startTime) < 400) e.preventDefault();
+    if (hasStart && !_hoshiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
   var _wheelTimer = null;
   document.addEventListener('wheel', function(e) {
