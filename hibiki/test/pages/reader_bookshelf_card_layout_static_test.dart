@@ -90,6 +90,7 @@ void main() {
     final String videoCover =
         _functionSource(source, 'Widget _buildVideoCover(');
     final String srtCover = _functionSource(source, 'Widget _buildSrtCover(');
+    final String fileCover = _functionSource(source, 'Widget _buildFileCover(');
     final String epubCover =
         _functionSource(source, 'Widget buildMediaItemContent(');
 
@@ -109,8 +110,43 @@ void main() {
       reason: 'remote cached and network covers must both fill the card',
     );
     expect(videoCover, contains('fit: _bookCardCoverFit'));
-    expect(srtCover, contains('fit: _bookCardCoverFit'));
+    expect(srtCover, contains('_buildFileCover'));
+    expect(fileCover, contains('fit: _bookCardCoverFit'));
     expect(epubCover, contains('fit: _bookCardCoverFit'));
+  });
+
+  test('linked SRT cards fall back to the EPUB cover before placeholder', () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String body =
+        _functionSource(source, 'Widget _buildBodyWithSrtBooks(');
+    final String srtCard = _functionSource(source, 'Widget _buildSrtCard(');
+    final String srtCover = _functionSource(source, 'Widget _buildSrtCover(');
+
+    expect(
+      body,
+      contains('epubCoverUrisByBookKey'),
+      reason:
+          'SRT entries with bookKey replace their EPUB card, so the pre-filter '
+          'EPUB cover map must survive for fallback rendering.',
+    );
+    expect(
+      srtCard,
+      contains('epubCoverUri'),
+      reason: 'the linked EPUB cover URI must be passed into the SRT card',
+    );
+    expect(
+      srtCover,
+      contains('book.bookKey'),
+      reason:
+          'standalone SRT keeps its own cover, linked SRT must inspect bookKey',
+    );
+    expect(
+      srtCover,
+      contains('_buildCoverFromUri'),
+      reason: 'linked SRT fallback should reuse the EPUB cover URI provider',
+    );
   });
 
   test('visual card frame wraps only the cover, while interactions wrap all',
