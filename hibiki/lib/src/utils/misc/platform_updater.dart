@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/utils.dart'; // ErrorLogService
 
 enum UpdateChannel { stable, beta, debug }
@@ -226,7 +227,11 @@ class WindowsUpdater extends PlatformUpdater {
 
   @override
   Future<void> apply(File file, String version) async {
-    await WindowsInstaller.runAndExit(file.path);
+    await WindowsInstaller.runAndExit(
+      file.path,
+      targetVersion: version,
+      handoffMarkerFile: WindowsUpdateHandoff.markerFile(file.parent),
+    );
   }
 }
 
@@ -273,7 +278,11 @@ class AndroidInstaller {
 ///   没有及时释放时，让 RestartManager 尽力关闭并把关闭过程写进安装日志。
 /// - `/RESTARTAPPLICATIONS`：安装完成后让 RestartManager 自动重新拉起 Hibiki。
 /// - `/NORESTART`：禁止安装器重启**操作系统**（我们只想重启 app，不重启系统）。
-List<String> windowsInstallerArgs(String installerPath) => <String>[
+List<String> windowsInstallerArgs(
+  String installerPath, {
+  String? logPath,
+}) =>
+    <String>[
       '/VERYSILENT',
       '/SP-',
       '/SUPPRESSMSGBOXES',
@@ -282,7 +291,7 @@ List<String> windowsInstallerArgs(String installerPath) => <String>[
       '/LOGCLOSEAPPLICATIONS',
       '/RESTARTAPPLICATIONS',
       '/NORESTART',
-      '/LOG=${windowsInstallerLogPath(installerPath)}',
+      '/LOG=${logPath ?? windowsInstallerLogPath(installerPath)}',
     ];
 
 String windowsInstallerLogPath(String installerPath) {
@@ -323,6 +332,17 @@ bool isWindowsExecutableHeader(List<int> header) =>
     header.length >= 2 && header[0] == 0x4D && header[1] == 0x5A;
 
 class WindowsInstaller {
+  static Future<void> _startDetachedInstallerProcess(
+    String executable,
+    List<String> args,
+  ) async {
+    await Process.start(
+      executable,
+      args,
+      mode: ProcessStartMode.detached,
+    );
+  }
+
   /// 启动安装器（分离进程）后退出本进程，让安装器替换运行中的 exe 并重启 app。
   ///
   /// 根因修复（Windows 点自动更新崩溃）：
@@ -331,36 +351,88 @@ class WindowsInstaller {
   /// 2. 仅当安装器进程**确实启动成功**后才 `exit(0)`；启动失败抛
   ///    [UpdateInstallerException]（上层 catch → SnackBar），绝不让本进程在没有
   ///    接班者的情况下静默消失（用户视角即「崩溃」）。
-  static Future<void> runAndExit(String installerPath) async {
-    final File installer = File(installerPath);
-    if (!installer.existsSync()) {
-      throw UpdateInstallerException('installer not found: $installerPath');
-    }
-    final List<int> header = await _readHeaderBytes(installer);
-    if (!isWindowsExecutableHeader(header)) {
-      // 下载的不是真正的安装器（多半是代理返回的 HTML/损坏文件）：删掉脏文件，
-      // 抛错让上层提示「更新失败」并保留 app 存活，而不是硬启动一个坏 exe。
-      try {
-        installer.deleteSync();
-      } catch (_) {/* best-effort cleanup */}
-      throw UpdateInstallerException(
-          'downloaded file is not a Windows executable: $installerPath');
-    }
-    if (Platform.isWindows) {
-      await ensureWindowsInstallTargetWritable(
-        File(Platform.resolvedExecutable).parent,
+  static Future<void> runAndExit(
+    String installerPath, {
+    String? targetVersion,
+    File? handoffMarkerFile,
+    DateTime Function()? now,
+    Future<void> Function(String executable, List<String> args)? startProcess,
+    void Function(int code)? exitProcess,
+  }) async {
+    final DateTime Function() clock = now ?? DateTime.now;
+    final String innoLogPath = windowsInstallerLogPath(installerPath);
+    if (targetVersion != null && handoffMarkerFile != null) {
+      await WindowsUpdateHandoff.writePending(
+        markerFile: handoffMarkerFile,
+        targetVersion: targetVersion,
+        installerPath: installerPath,
+        innoLogPath: innoLogPath,
+        startedAt: clock(),
+      );
+      ErrorLogService.instance.log(
+        'WindowsInstaller.handoff',
+        'Prepared Windows update handoff: target=$targetVersion, '
+            'installer=$installerPath, log=$innoLogPath',
       );
     }
 
+    final File installer = File(installerPath);
     try {
-      await Process.start(
+      if (!installer.existsSync()) {
+        throw UpdateInstallerException('installer not found: $installerPath');
+      }
+      final List<int> header = await _readHeaderBytes(installer);
+      if (!isWindowsExecutableHeader(header)) {
+        // 下载的不是真正的安装器（多半是代理返回的 HTML/损坏文件）：删掉脏文件，
+        // 抛错让上层提示「更新失败」并保留 app 存活，而不是硬启动一个坏 exe。
+        try {
+          installer.deleteSync();
+        } catch (_) {/* best-effort cleanup */}
+        throw UpdateInstallerException(
+            'downloaded file is not a Windows executable: $installerPath');
+      }
+      if (Platform.isWindows) {
+        await ensureWindowsInstallTargetWritable(
+          File(Platform.resolvedExecutable).parent,
+        );
+      }
+
+      final List<String> args =
+          windowsInstallerArgs(installerPath, logPath: innoLogPath);
+      ErrorLogService.instance.log(
+        'WindowsInstaller.launch',
+        'Launching Windows installer: $installerPath ${args.join(' ')}',
+      );
+      final Future<void> Function(String executable, List<String> args) start =
+          startProcess ?? _startDetachedInstallerProcess;
+      await start(
         installerPath,
-        windowsInstallerArgs(installerPath),
-        mode: ProcessStartMode.detached,
+        args,
+      );
+      if (targetVersion != null && handoffMarkerFile != null) {
+        await WindowsUpdateHandoff.markLaunchSucceeded(
+          markerFile: handoffMarkerFile,
+          launchedAt: clock(),
+        );
+      }
+      ErrorLogService.instance.log(
+        'WindowsInstaller.launch',
+        'Windows installer launched: target=${targetVersion ?? 'unknown'}, '
+            'log=$innoLogPath',
       );
     } on ProcessException catch (e) {
-      throw UpdateInstallerException(
-          'failed to launch installer: ${e.message}');
+      final exception =
+          UpdateInstallerException('failed to launch installer: ${e.message}');
+      await _markLaunchFailed(
+        handoffMarkerFile,
+        exception,
+        clock(),
+        StackTrace.current,
+      );
+      throw exception;
+    } catch (e, stack) {
+      await _markLaunchFailed(handoffMarkerFile, e, clock(), stack);
+      rethrow;
     }
 
     // 安装器已成功启动（分离进程）。把当前进程让出文件锁：让出事件循环一拍，
@@ -369,7 +441,7 @@ class WindowsInstaller {
     // AppMutex 只用于安装器检测「app 仍在运行」，单凭它不会自动替换重启，必须
     // 配合上面的安装参数（见 windowsInstallerArgs）。
     await Future<void>.delayed(Duration.zero);
-    exit(0);
+    (exitProcess ?? exit)(0);
   }
 
   static Future<List<int>> _readHeaderBytes(File file) async {
@@ -378,6 +450,29 @@ class WindowsInstaller {
       return await raf.read(2);
     } finally {
       await raf.close();
+    }
+  }
+
+  static Future<void> _markLaunchFailed(
+    File? handoffMarkerFile,
+    Object error,
+    DateTime failedAt,
+    StackTrace stack,
+  ) async {
+    ErrorLogService.instance.log('WindowsInstaller.launchFailed', error, stack);
+    if (handoffMarkerFile == null) return;
+    try {
+      await WindowsUpdateHandoff.markLaunchFailed(
+        markerFile: handoffMarkerFile,
+        error: error.toString(),
+        failedAt: failedAt,
+      );
+    } catch (e, s) {
+      ErrorLogService.instance.log(
+        'WindowsInstaller.markLaunchFailed',
+        e,
+        s,
+      );
     }
   }
 }

@@ -352,6 +352,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
 
+  /// 守卫：Windows 安装器 handoff marker 只在初始化完成后的首帧 reconcile 一次。
+  bool _windowsUpdateHandoffChecked = false;
+
   static bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -611,6 +614,19 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     );
   }
 
+  void _scheduleWindowsUpdateHandoffReconcile(BuildContext context) {
+    if (_windowsUpdateHandoffChecked) return;
+    _windowsUpdateHandoffChecked = true;
+    final String currentVersion = appModel.packageInfo.version;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !context.mounted) return;
+      unawaited(UpdateChecker.reconcilePendingWindowsInstallerHandoff(
+        context,
+        currentVersion,
+      ));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // Fields like locales/targetLanguage/theme are late and only available
@@ -801,6 +817,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         // This is responsible for the initialising the global spacing across
         // the entire project, making use of the [spaces] package.
         builder: (context, child) {
+          _scheduleWindowsUpdateHandoffReconcile(context);
           final cs = Theme.of(context).colorScheme;
           // Keep the native Windows title bar in sync with the live app theme
           // (surface background + onSurface text). No-op on other platforms.
