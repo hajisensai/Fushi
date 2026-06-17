@@ -389,7 +389,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 轨道更醒目、更易滑。随界面缩放。
   static const double _videoSeekBarTrackHeightBase = 5;
   static const double _videoControlPopoverGapBase = 8;
-  static const double _volumePopoverSliderHeightBase = 136;
 
   /// 进度条与按钮条竖直间距，随界面大小缩放（TODO-156）。
   double get _videoSeekBarButtonGap =>
@@ -3754,8 +3753,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         final double clamped = value.clamp(0.0, 100.0).toDouble();
         final ColorScheme cs = _videoChromeColorScheme(context);
         return _buildControlPopoverFrame(
-          width: 76 * _videoUiScale,
-          child: Column(
+          width: 220 * _videoUiScale,
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Tooltip(
@@ -3766,29 +3765,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   onPressed: () => unawaited(_toggleMute()),
                 ),
               ),
-              SizedBox(
-                height: _volumePopoverSliderHeightBase * _videoUiScale,
-                child: RotatedBox(
-                  quarterTurns: -1,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 3.0 * _videoUiScale,
-                      thumbShape: RoundSliderThumbShape(
-                        enabledThumbRadius: 7.0 * _videoUiScale,
-                      ),
-                      overlayShape: RoundSliderOverlayShape(
-                        overlayRadius: 14.0 * _videoUiScale,
-                      ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 3.0 * _videoUiScale,
+                    thumbShape: RoundSliderThumbShape(
+                      enabledThumbRadius: 7.0 * _videoUiScale,
                     ),
-                    child: Slider(
-                      value: clamped,
-                      min: 0,
-                      max: 100,
-                      onChanged: (double next) => _setVolumeFromSlider(next),
+                    overlayShape: RoundSliderOverlayShape(
+                      overlayRadius: 14.0 * _videoUiScale,
                     ),
+                  ),
+                  child: Slider(
+                    value: clamped,
+                    min: 0,
+                    max: 100,
+                    onChanged: (double next) => _setVolumeFromSlider(next),
                   ),
                 ),
               ),
+              SizedBox(width: 6 * _videoUiScale),
               Text(
                 '${clamped.round()}%',
                 style: TextStyle(
@@ -3958,19 +3954,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           layout: layout,
           desktop: true,
         ),
-        Expanded(
-          // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
-          // 监听 _titleNotifier 才能在全屏换集后刷新标题。
-          child: ValueListenableBuilder<String?>(
-            valueListenable: _titleNotifier,
-            builder: (BuildContext _, String? title, __) => Text(
-              title ?? '',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
-            ),
-          ),
-        ),
+        _topBarTitle(),
         _topBarSlotGroup(
           VideoControlSlot.topRight,
           controller,
@@ -4081,19 +4065,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           layout: layout,
           desktop: false,
         ),
-        Expanded(
-          // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
-          // 监听 _titleNotifier 才能在全屏换集后刷新标题。
-          child: ValueListenableBuilder<String?>(
-            valueListenable: _titleNotifier,
-            builder: (BuildContext _, String? title, __) => Text(
-              title ?? '',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
-            ),
-          ),
-        ),
+        _topBarTitle(),
         _topBarSlotGroup(
           VideoControlSlot.topRight,
           controller,
@@ -4121,7 +4093,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   List<VideoControlItem> _slotChipItems(VideoControlSlot slot) {
     return <VideoControlItem>[
       for (final VideoControlItem item in _controlLayout.itemsIn(slot))
-        if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
+        if (item.isChipRenderable &&
+            item != VideoControlItem.volume &&
+            _shouldRenderControlItem(item))
+          item,
     ];
   }
 
@@ -4144,6 +4119,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (rawItems.contains(VideoControlItem.volume))
         _buildVolumeButton(controller, desktop: desktop),
     ];
+  }
+
+  Widget _topBarTitle() {
+    return Expanded(
+      // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
+      // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
+      // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有 Row 顺序。
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: ValueListenableBuilder<String?>(
+          valueListenable: _titleNotifier,
+          builder: (BuildContext _, String? title, __) => Text(
+            title ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildBottomSlotButton(

@@ -84,6 +84,67 @@ void main() {
     });
   });
 
+  group('TODO-492 volume placement constraints', () {
+    test('volume is editor-visible but only allowed on bottom left or right',
+        () {
+      expect(VideoControlItem.volume.isChipRenderable, isTrue);
+      expect(VideoControlItem.customizableItems,
+          contains(VideoControlItem.volume));
+
+      final VideoControlLayout base = VideoControlLayout.currentChrome;
+      expect(
+          base.slotOf(VideoControlItem.volume), VideoControlSlot.bottomRight);
+
+      final VideoControlLayout onLeft =
+          base.moveItem(VideoControlItem.volume, VideoControlSlot.bottomLeft);
+      expect(
+          onLeft.slotOf(VideoControlItem.volume), VideoControlSlot.bottomLeft);
+
+      for (final VideoControlSlot forbidden in <VideoControlSlot>[
+        VideoControlSlot.topLeft,
+        VideoControlSlot.topRight,
+        VideoControlSlot.screenLeft,
+        VideoControlSlot.screenRight,
+        VideoControlSlot.hidden,
+      ]) {
+        expect(
+          onLeft.moveItem(VideoControlItem.volume, forbidden),
+          onLeft,
+          reason: 'volume must reject ${forbidden.name} instead of moving',
+        );
+      }
+    });
+
+    test(
+        'decode normalizes invalid or duplicated volume back to one bottom slot',
+        () {
+      final String invalidOnly = jsonEncode(<String, Object>{
+        'version': 2,
+        'slots': <String, List<String>>{
+          'topRight': <String>['volume'],
+          'screenRight': <String>['volume'],
+          'hidden': <String>['volume'],
+        },
+      });
+      final VideoControlLayout recovered =
+          VideoControlLayout.decode(invalidOnly);
+      expect(recovered.slotsOf(VideoControlItem.volume),
+          <VideoControlSlot>[VideoControlSlot.bottomRight]);
+
+      final String duplicated = jsonEncode(<String, Object>{
+        'version': 2,
+        'slots': <String, List<String>>{
+          'bottomLeft': <String>['volume'],
+          'bottomRight': <String>['volume'],
+          'topLeft': <String>['volume'],
+        },
+      });
+      final VideoControlLayout deduped = VideoControlLayout.decode(duplicated);
+      expect(deduped.slotsOf(VideoControlItem.volume),
+          <VideoControlSlot>[VideoControlSlot.bottomLeft]);
+    });
+  });
+
   group('VideoControlLayout per-slot ordered model', () {
     test('defaults: favorite buttons land in bottomRight (user decision)', () {
       final VideoControlLayout d = VideoControlLayout.defaults;
@@ -504,13 +565,13 @@ void main() {
       }
     });
 
-    test(
-        'special-render items (volume/title/position) stay out of the chip set',
+    test('non-icon special renders (title/position) stay out of the chip set',
         () {
-      // These have bespoke widgets (slider / text) the simple icon-chip editor
-      // cannot represent, so they are not user-draggable.
+      // Volume has a bespoke player widget, but the editor can represent its
+      // bottom-left/right placement with an icon chip. Title and position are
+      // not single icon controls, so they stay out.
       final List<VideoControlItem> items = VideoControlItem.customizableItems;
-      expect(items, isNot(contains(VideoControlItem.volume)));
+      expect(items, contains(VideoControlItem.volume));
       expect(items, isNot(contains(VideoControlItem.title)));
       expect(items, isNot(contains(VideoControlItem.positionIndicator)));
     });

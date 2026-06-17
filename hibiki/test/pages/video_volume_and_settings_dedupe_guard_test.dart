@@ -85,16 +85,38 @@ void main() {
           reason: '桌面悬停音量控件时滚轮应调音量（_onVolumeWheel）');
     });
 
-    test('音量浮层保留静音按钮和竖向滑条，滑条仍走现有音量同步通道', () {
+    test('音量浮层保留静音按钮和横向滑条，滑条仍走现有音量同步通道', () {
       final String body = methodBody('Widget _buildVolumePopover(');
-      expect(body.contains('RotatedBox('), isTrue,
-          reason: '音量浮层应使用竖向滑条形态（B站式紧凑竖条）');
+      expect(body.contains('RotatedBox('), isFalse,
+          reason: '本轮音量浮层保持横向 Slider，不再旋转成竖条');
       expect(body.contains('Slider('), isTrue, reason: '音量浮层内必须有 Slider');
       expect(body.contains('_toggleMute()'), isTrue, reason: '浮层内保留静音按钮');
       expect(body.contains('_setVolumeFromSlider('), isTrue,
           reason: '浮层滑条拖动继续走 _setVolumeFromSlider');
       expect(body.contains('_volumeDisplay'), isTrue,
           reason: '浮层显示值应读 _volumeDisplay，与滚轮/键盘/移动竖滑共用同步通道');
+    });
+
+    test('音量完整按钮只从底栏左右槽渲染一次，不进入 top bar / side rail', () {
+      final String bottom = methodBody('List<Widget> _bottomSlotButtons(');
+      expect(
+          bottom.contains('rawItems.contains(VideoControlItem.volume)'), isTrue,
+          reason: '底栏左右槽应按真实 slot 渲染完整 _buildVolumeButton');
+      expect(
+          bottom.contains('_buildVolumeButton(controller, desktop: desktop)'),
+          isTrue);
+
+      final String top = methodBody('Widget _topBarSlotGroup(');
+      expect(top.contains('_buildVolumeButton'), isFalse,
+          reason: 'topLeft/topRight 不得渲染音量完整控件');
+      expect(top.contains('VideoControlItem.volume'), isFalse,
+          reason: 'top bar 普通 chip 渲染路径应过滤 volume');
+
+      final String rails = methodBody('Widget _buildVideoSideRailFor(');
+      expect(rails.contains('_buildVolumeButton'), isFalse,
+          reason: 'screenLeft/screenRight rail 不得渲染音量完整控件');
+      expect(rails.contains('VideoControlItem.volume'), isFalse,
+          reason: 'side rail 普通 chip 渲染路径应过滤 volume');
     });
 
     test('倍速按钮打开紧凑浮层，复用 presets / _setSpeed / 1.0x 复位', () {

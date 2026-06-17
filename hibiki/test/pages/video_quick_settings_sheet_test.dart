@@ -1025,6 +1025,44 @@ void main() {
       expect(hidden.top, greaterThanOrEqualTo(preview.bottom));
     });
 
+    testWidgets('narrow preview keeps stage slots separated and scrollable',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 950));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+      await openControls(tester);
+
+      final Rect topLeft = tester.getRect(slotFinder(VideoControlSlot.topLeft));
+      final Rect topRight =
+          tester.getRect(slotFinder(VideoControlSlot.topRight));
+      final Rect bottomLeft =
+          tester.getRect(slotFinder(VideoControlSlot.bottomLeft));
+      final Rect bottomCenter =
+          tester.getRect(slotFinder(VideoControlSlot.bottomCenter));
+      final Rect bottomRight =
+          tester.getRect(slotFinder(VideoControlSlot.bottomRight));
+
+      expect(topLeft.right <= topRight.left, isTrue,
+          reason: 'top slots should not overlap in the narrow editor stage');
+      expect(bottomLeft.right <= bottomCenter.left, isTrue,
+          reason: 'bottom-left and bottom-center slots should not overlap');
+      expect(bottomCenter.right <= bottomRight.left, isTrue,
+          reason: 'bottom-center and bottom-right slots should not overlap');
+
+      final SingleChildScrollView previewScroll =
+          tester.widget<SingleChildScrollView>(
+        find
+            .ancestor(
+              of: slotFinder(VideoControlSlot.topRight),
+              matching: find.byType(SingleChildScrollView),
+            )
+            .first,
+      );
+      expect(previewScroll.scrollDirection, Axis.horizontal,
+          reason:
+              'narrow stages should scroll horizontally instead of crushing slots');
+    });
+
     testWidgets('dragging controls still updates bottomLeft and hidden slots',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
@@ -1080,6 +1118,62 @@ void main() {
         slotFinder(VideoControlSlot.hidden),
       );
       expect(latest, isNull);
+      expect(find.text('Required controls must stay on the player.'),
+          findsOneWidget);
+    });
+
+    testWidgets('volume chip moves only between bottom bar slots',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 950));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? latest;
+      await _pump(
+        tester,
+        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        }),
+      );
+      await openControls(tester);
+
+      await dragChipTo(
+        tester,
+        dragChipFinder(
+            VideoControlItem.volume, VideoControlSlot.bottomRight, 0),
+        slotFinder(VideoControlSlot.bottomLeft),
+      );
+      expect(latest, isNotNull);
+      expect(latest!.slotsOf(VideoControlItem.volume),
+          <VideoControlSlot>[VideoControlSlot.bottomLeft]);
+
+      await dragChipTo(
+        tester,
+        dragChipFinder(VideoControlItem.volume, VideoControlSlot.bottomLeft, 1),
+        slotFinder(VideoControlSlot.topRight),
+      );
+      expect(latest!.slotsOf(VideoControlItem.volume),
+          <VideoControlSlot>[VideoControlSlot.bottomLeft]);
+      expect(
+          find.text('Volume can only sit on the bottom bar.'), findsOneWidget);
+    });
+
+    test('removed controls wording uses out-of-player semantics', () {
+      expect(t.video_control_slot_hidden, 'Removed from player');
+      expect(t.video_control_remove_from_slot, 'Move out');
+      expect(t.video_control_customize_hint, contains('move it out'));
+    });
+
+    test('source guard: crowded slot chips can scroll instead of clipping', () {
+      final String src =
+          File('lib/src/media/video/video_quick_settings_sheet.dart')
+              .readAsStringSync();
+      final int start = src.indexOf('Widget _buildSlotRegion(');
+      expect(start, greaterThanOrEqualTo(0));
+      final int end = src.indexOf('Widget _buildPlacedControlChip', start);
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+      expect(body, contains('SingleChildScrollView('),
+          reason:
+              'slot chip Wrap must be scrollable when many buttons are present');
     });
   });
 }
