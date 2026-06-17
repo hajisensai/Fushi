@@ -9,8 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. 底栏只保留图标按钮锚点：[_buildVolumeButton] 内不含 `Slider` / `Row` 横向占位。
 /// 2. 零位移：浮层通过 `CompositedTransformFollower` 锚定按钮上方，hover / click / tap
 ///    只切换浮层，不改变底栏 widget 尺寸；旧的 hover 改宽 / OverlayEntry 几何测量实现不恢复。
-/// 3. 单一真相源：滑条 / 滚轮 / 键盘音量键 / 静音切换 / media_kit 移动竖滑都经
-///    [_syncVolumeDisplay] 写 [_volumeDisplay]，并经 controller.setVolume 落到播放器。
+/// 3. 单一真相源：滑条 / 滚轮 / 键盘音量键 / 静音切换 / media_kit 移动竖滑都经统一
+///    音量 helper 写 [_volumeDisplay]，并经 controller.setVolume 落到播放器。
 void main() {
   String read(String relPath) => File(relPath).readAsStringSync();
 
@@ -120,16 +120,26 @@ void main() {
           reason: '音量图标与浮层经 ValueListenableBuilder 消费显示真相源');
     });
 
-    test('_setVolumeFromSlider 即时写 controller + 同步显示真相源', () {
+    test('_setVolumeFromSlider 经统一 helper 写 controller + 同步显示真相源', () {
       final String body = methodBody(
         page,
         RegExp(r'void _setVolumeFromSlider\(double value\) \{(.*?)\n  \}',
             dotAll: true),
         '_setVolumeFromSlider',
       );
-      expect(body, contains('controller.setVolume('),
-          reason: '滑条拖动须真写穿 controller.setVolume');
-      expect(body, contains('_syncVolumeDisplay('), reason: '滑条拖动须同步显示真相源');
+      expect(body, contains('_applyUserVideoVolume(next)'),
+          reason: '滑条拖动须走统一真实音量 helper');
+      final String helper = methodBody(
+        page,
+        RegExp(
+            r'Future<void> _applyUserVideoVolume\(\s*double volume, \{\s*bool persist = true,\s*bool applyToController = true,\s*\}\) async \{(.*?)\n  \}',
+            dotAll: true),
+        '_applyUserVideoVolume',
+      );
+      expect(helper, contains('controller.setVolume(clamped)'),
+          reason: '统一 helper 须真写穿 controller.setVolume');
+      expect(helper, contains('_syncVolumeDisplay(clamped)'),
+          reason: '统一 helper 须同步显示真相源');
     });
 
     test('_syncVolumeDisplay 写 _volumeDisplay.value 并 clamp 到 0..100', () {
@@ -144,7 +154,7 @@ void main() {
       expect(body, contains('clamp(0.0, 100.0)'), reason: '音量须 clamp 到 0..100');
     });
 
-    test('键盘音量键 / 静音切换 / media_kit 移动竖滑都同步显示真相源', () {
+    test('键盘音量键 / 静音切换 / media_kit 移动竖滑都走统一显示 helper', () {
       final String adjust = methodBody(
         page,
         RegExp(
@@ -152,22 +162,26 @@ void main() {
             dotAll: true),
         '_adjustVolume',
       );
-      expect(adjust, contains('_syncVolumeDisplay('), reason: '键盘音量键调音量须同步显示');
+      expect(adjust, contains('_applyUserVideoVolume(next)'),
+          reason: '键盘音量键调音量须经统一 helper 同步显示');
       final String mute = methodBody(
         page,
         RegExp(r'Future<void> _toggleMute\(\) async \{(.*?)\n  \}',
             dotAll: true),
         '_toggleMute',
       );
-      expect(mute, contains('_syncVolumeDisplay('), reason: '静音切换须同步显示');
+      expect(mute, contains('persist: false'),
+          reason: '静音切换须经统一 helper 同步显示，但不持久化');
+      expect(mute, contains('applyToController: false'),
+          reason: '静音切换已由 controller.toggleMute 写播放器，不能再 setVolume(0)');
       final String mk = methodBody(
         page,
         RegExp(r'void _onMediaKitVolumeChanged\(double value\) \{(.*?)\n  \}',
             dotAll: true),
         '_onMediaKitVolumeChanged',
       );
-      expect(mk, contains('_syncVolumeDisplay('),
-          reason: 'media_kit 移动端竖滑调音量须同步显示');
+      expect(mk, contains('_applyUserVideoVolume(pct)'),
+          reason: 'media_kit 移动端竖滑调音量须经统一 helper 同步显示');
     });
 
     test('换集 / 加载后用 controller 实际音量初始化显示真相源', () {

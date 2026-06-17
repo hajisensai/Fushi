@@ -40,14 +40,29 @@ void main() {
       'Future<void> _adjustVolume(double delta) async {',
       'Future<void> _toggleMute() async {',
     );
-    expect(adjust.contains('_showVolumeOsd(next)'), isTrue);
+    expect(adjust.contains('_applyUserVideoVolume(next)'), isTrue);
 
     final String mute = region(
       'Future<void> _toggleMute() async {',
       'void _showVolumeOsd(double volume) {',
     );
-    expect(mute.contains('_showVolumeOsd('), isTrue,
-        reason: 'Mute/unmute should use the same volume visual language.');
+    expect(mute.contains('_applyUserVideoVolume('), isTrue,
+        reason:
+            'Mute/unmute should use the same volume visual language without persistence.');
+    expect(mute.contains('persist: false'), isTrue,
+        reason:
+            'Mute/unmute should use the same volume visual language without persistence.');
+    expect(mute.contains('applyToController: false'), isTrue,
+        reason:
+            'Mute/unmute should use the same volume visual language without persistence.');
+
+    final String helper = region(
+      'Future<void> _applyUserVideoVolume(',
+      'void _queuePersistVideoVolume(double volume) {',
+    );
+    expect(helper.contains('_showVolumeOsd(clamped)'), isTrue,
+        reason:
+            'All real volume paths should drive the right-side HUD helper.');
 
     final String volumeHud = region(
       'void _showVolumeOsd(double volume) {',

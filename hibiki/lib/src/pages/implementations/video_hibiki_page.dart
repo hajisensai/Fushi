@@ -840,6 +840,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 写它，[ValueListenableBuilder] 只重建音量图标 / 浮层子树，不重建整条。
   final ValueNotifier<double> _volumeDisplay = ValueNotifier<double>(100);
 
+  /// 当前 video book 的可听音量记忆（0..100）。播放列表按整张 video book 共享；
+  /// 每集仍只独立保存播放进度。
+  double _playbackVolume = 100.0;
+  double? _pendingVolumePersist;
+  Timer? _volumePersistDebounce;
+
   /// 换集加载代际计数：每次 [_loadEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
   /// 枚举字幕源 + 解析 cue）跑完后若序号已被后续切集取代，则放弃应用，避免「播放中
   /// 途快速切集时旧的慢加载落地后覆盖新集字幕/视频」（用户报：切到第4集字幕/音画
@@ -967,11 +973,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // inactive 仅瞬态过渡（通知栏下拉 / 多任务切换）：落库即可，不停观看计时
         // （频繁误停丢真实时长）；clamp（[isContinuousWatchGap]）兜底任何残留异常间隔。
         unawaited(_controller?.flushPosition());
+        unawaited(_flushPersistedVideoVolume());
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
         // 真后台 / 熄屏：落库 + 暂停观看计时器，避免把后台时长计入。stop() 内部先 flush
         // 退出瞬间的部分窗口（≤60s）再 cancel，不丢已观看时长。
         unawaited(_controller?.flushPosition());
+        unawaited(_flushPersistedVideoVolume());
         _watchTracker?.stop();
       case AppLifecycleState.resumed:
         // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
@@ -994,6 +1002,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 瞬间的部分观看窗口落库。两步都 await，退出路径据此保证统计/进度在 exit(0)
   /// 前提交。未 load（无 controller / tracker）时 no-op 安全。
   Future<void> _flushAllForProcessExit() async {
+    await _flushPersistedVideoVolume();
     await _controller?.flushPosition();
     await _watchTracker?.stop();
   }
@@ -1015,6 +1024,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _currentAudioTrackId = row.audioTrackId;
     _delayMs = row.delayMs;
     _playbackSpeed = _readPersistedSpeed();
+    _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayout = appModel.videoControlLayout;
@@ -1058,6 +1068,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _currentAudioTrackId = null;
     _delayMs = 0;
     _playbackSpeed = _readPersistedSpeed();
+    _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayout = appModel.videoControlLayout;
@@ -1099,12 +1110,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
   String get _speedPrefKey => 'video_speed_${widget.bookUid}';
 
+  /// per-book 播放音量偏好 key（音量记忆，播放列表按整张 video book 共享）。
+  String get _volumePrefKey => 'video_volume_${widget.bookUid}';
+
   /// 读 per-book 持久化倍速（无则 1.0）。
   double _readPersistedSpeed() {
     final double v =
         (appModel.prefsRepo.getPref(_speedPrefKey, defaultValue: 1.0) as num)
             .toDouble();
     return v.clamp(0.25, 4.0);
+  }
+
+  /// 读 per-book 持久化音量（无则 100）。
+  double _readPersistedVolume() {
+    final Object? raw =
+        appModel.prefsRepo.getPref(_volumePrefKey, defaultValue: 100.0);
+    final double v = raw is num
+        ? raw.toDouble()
+        : double.tryParse(raw?.toString() ?? '') ?? 100.0;
+    return v.clamp(0.0, 100.0).toDouble();
   }
 
   /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
@@ -1556,6 +1580,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         cues: cues,
         initialPositionMs: initialPositionMs,
         initialSpeed: _playbackSpeed,
+        initialVolume: _playbackVolume,
         externalSubtitlePath: externalSubtitlePath,
         renderGraphicStreamIndex: renderGraphicStreamIndex,
         shaderPaths: shaderPaths,
@@ -1569,6 +1594,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (mounted) setState(() => _failed = true);
       return;
     }
+    _syncVolumeDisplay(controller.volume);
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
@@ -1937,6 +1963,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ExitFlushRegistry.instance.unregister(exitFlush);
       _exitFlushCallback = null;
     }
+    _volumePersistDebounce?.cancel();
+    unawaited(_flushPersistedVideoVolume());
     // 先把根 Overlay 浮层 entry 摘除/释放，再 clear 浮层栈：entry 一旦移除就不会再被
     // 根 Overlay 重建 _buildPopupOverlay，杜绝销毁期用失效 State 重建浮层（退视频红屏）。
     final OverlayEntry? entry = _popupOverlayEntry;
@@ -3807,12 +3835,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 滑条拖动写音量：即时写 controller + OSD + 同步显示真相源（TODO-377）。
   void _setVolumeFromSlider(double value) {
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
     final double next = value.clamp(0.0, 100.0).toDouble();
-    unawaited(controller.setVolume(next));
-    _syncVolumeDisplay(next);
-    if (mounted) _showVolumeOsd(next);
+    unawaited(_applyUserVideoVolume(next));
   }
 
   /// 桌面：悬停音量控件时滚轮调音量（向上滚增、向下滚减，[_volumeStep] 步进）。滚轮
@@ -3826,6 +3850,43 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 所有改音量入口（滑条 / 滚轮 / 键盘音量键 / 静音切换 / media_kit 移动竖滑）统一调它。
   void _syncVolumeDisplay(double volume) {
     _volumeDisplay.value = volume.clamp(0.0, 100.0).toDouble();
+  }
+
+  /// 应用一次用户真实音量变化。默认持久化；M 静音传 [persist]=false，只更新显示和 HUD。
+  Future<void> _applyUserVideoVolume(
+    double volume, {
+    bool persist = true,
+    bool applyToController = true,
+  }) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final double clamped = volume.clamp(0.0, 100.0).toDouble();
+    if (applyToController) {
+      await controller.setVolume(clamped);
+    }
+    if (persist) {
+      _playbackVolume = clamped;
+      _queuePersistVideoVolume(clamped);
+    }
+    _syncVolumeDisplay(clamped);
+    if (mounted) _showVolumeOsd(clamped);
+  }
+
+  void _queuePersistVideoVolume(double volume) {
+    _pendingVolumePersist = volume.clamp(0.0, 100.0).toDouble();
+    _volumePersistDebounce?.cancel();
+    _volumePersistDebounce = Timer(const Duration(milliseconds: 350), () {
+      unawaited(_flushPersistedVideoVolume());
+    });
+  }
+
+  Future<void> _flushPersistedVideoVolume() async {
+    final double? pending = _pendingVolumePersist;
+    if (pending == null) return;
+    _volumePersistDebounce?.cancel();
+    _volumePersistDebounce = null;
+    _pendingVolumePersist = null;
+    await appModel.prefsRepo.setPref(_volumePrefKey, pending);
   }
 
   MaterialDesktopVideoControlsThemeData _desktopControlsTheme(
@@ -4747,10 +4808,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final double next = await controller.adjustVolume(delta);
-    if (mounted) {
-      _showVolumeOsd(next);
-      _syncVolumeDisplay(next);
-    }
+    await _applyUserVideoVolume(next);
   }
 
   /// 静音切换：用 controller 的 [VideoPlayerController.toggleMute] **返回的确定目标音量**
@@ -4761,10 +4819,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final double next = await controller.toggleMute();
-    if (mounted) {
-      _showVolumeOsd(next);
-      _syncVolumeDisplay(next);
-    }
+    await _applyUserVideoVolume(
+      next,
+      persist: false,
+      applyToController: false,
+    );
   }
 
   void _showVolumeOsd(double volume) {
@@ -4787,8 +4846,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final double pct = (value.clamp(0.0, 1.0) * 100.0).toDouble();
-    unawaited(controller.setVolume(pct));
-    _syncVolumeDisplay(pct);
+    unawaited(_applyUserVideoVolume(pct));
   }
 
   /// media_kit 移动控制条的「左半区竖滑调屏幕亮度」回调（TODO-057）。[value] 为

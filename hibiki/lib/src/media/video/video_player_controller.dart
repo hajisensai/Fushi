@@ -575,6 +575,7 @@ class VideoPlayerController extends ChangeNotifier
     required List<AudioCue> cues,
     int initialPositionMs = 0,
     double initialSpeed = 1.0,
+    double initialVolume = 100.0,
     String? externalSubtitlePath,
     int? renderGraphicStreamIndex,
     List<String> shaderPaths = const <String>[],
@@ -668,6 +669,11 @@ class VideoPlayerController extends ChangeNotifier
     // 应用 mpv 画质/解码配置（五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op）。
     _mpvConfig = mpvConfig;
     await applyMpvConfigToPlayer(player, _mpvConfig);
+
+    initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
+    _lastVolume = initialVolume;
+    if (initialVolume > 0) _muted = false;
+    await player.setVolume(initialVolume);
 
     _lastSpeed = initialSpeed;
     await player.setRate(initialSpeed);

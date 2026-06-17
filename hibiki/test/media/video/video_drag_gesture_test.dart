@@ -44,11 +44,12 @@ void main() {
     });
 
     test('volume callback reuses the existing 0..100 volume channel', () {
-      // 不另开第二套音量状态：经 _onMediaKitVolumeChanged → controller.setVolume，
-      // 与 TODO-044 方向键音量同一 setter。
+      // 不另开第二套音量状态：经 _onMediaKitVolumeChanged → _applyUserVideoVolume，
+      // 与 TODO-044 方向键音量同一 setter / 持久化 helper。
       expect(videoPage.contains('onVolumeChanged: _onMediaKitVolumeChanged'),
           isTrue);
-      expect(videoPage.contains('controller.setVolume(pct)'), isTrue);
+      expect(videoPage.contains('_applyUserVideoVolume(pct)'), isTrue);
+      expect(videoPage.contains('controller.setVolume(clamped)'), isTrue);
     });
 
     test('right-side volume drag uses the shared Hibiki indicator builder', () {
