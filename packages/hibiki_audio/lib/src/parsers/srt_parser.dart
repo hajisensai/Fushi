@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -20,6 +21,14 @@ import 'text_file_io.dart';
 /// ```
 class SrtParser {
   static const int largeContentComputeThreshold = 1024 * 1024;
+
+  static int utf8ContentByteLength(String content) {
+    return utf8.encode(content).length;
+  }
+
+  static bool shouldParseInIsolate(String content) {
+    return utf8ContentByteLength(content) > largeContentComputeThreshold;
+  }
 
   /// SRT 独立书籍使用的固定章节标识。
   static const String defaultChapter = 'srt://default';
@@ -55,7 +64,7 @@ class SrtParser {
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
-    if (content.length > largeContentComputeThreshold) {
+    if (shouldParseInIsolate(content)) {
       return compute(_parseStringIsolate, <String, dynamic>{
         'content': content,
         'bookKey': bookKey,

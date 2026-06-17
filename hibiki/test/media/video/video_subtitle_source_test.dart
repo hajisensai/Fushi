@@ -270,6 +270,21 @@ hello async vtt
       expect(cues.last.text, startsWith('large async cue 4999'));
     });
 
+    test('large-content threshold counts UTF-8 bytes, not Dart characters', () {
+      final String cjkSubtitle =
+          '字幕' * ((SrtParser.largeContentComputeThreshold ~/ 6) + 1);
+
+      expect(cjkSubtitle.length, lessThan(1024 * 1024),
+          reason: 'CJK files can be byte-large while char-count-small.');
+      expect(
+        SrtParser.utf8ContentByteLength(cjkSubtitle),
+        greaterThan(SrtParser.largeContentComputeThreshold),
+      );
+      expect(SrtParser.shouldParseInIsolate(cjkSubtitle), isTrue);
+      expect(AssParser.shouldParseInIsolate(cjkSubtitle), isTrue);
+      expect(VttParser.shouldParseInIsolate(cjkSubtitle), isTrue);
+    });
+
     test('video subtitle load paths await the async parser entry point', () {
       final String source = File(
         p.join(

@@ -30,6 +30,11 @@ import 'text_file_io.dart';
 class VttParser {
   static const int largeContentComputeThreshold = 1024 * 1024;
 
+  static bool shouldParseInIsolate(String content) {
+    return SrtParser.utf8ContentByteLength(content) >
+        largeContentComputeThreshold;
+  }
+
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
 
@@ -58,7 +63,7 @@ class VttParser {
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
-    if (content.length > largeContentComputeThreshold) {
+    if (shouldParseInIsolate(content)) {
       return compute(_parseStringIsolate, <String, dynamic>{
         'content': content,
         'bookKey': bookKey,

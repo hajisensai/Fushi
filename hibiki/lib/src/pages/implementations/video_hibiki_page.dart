@@ -1394,7 +1394,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       final SubtitleFormat? format = subtitleFormatForPath(sidecarPath);
       if (format == null) return null;
       final String text = await readTextWithEncoding(File(sidecarPath));
-      final List<AudioCue> cues = parseSubtitleContent(
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
         format,
         content: text,
         bookUid: bookUid,
@@ -1529,7 +1529,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       final SubtitleFormat? format = subtitleFormatForPath(path);
       if (format == null) return const <AudioCue>[];
       final String text = await readTextWithEncoding(File(path));
-      return parseSubtitleContent(format, content: text, bookUid: bookUid);
+      return await parseSubtitleContentAsync(
+        format,
+        content: text,
+        bookUid: bookUid,
+      );
     } catch (e) {
       debugPrint('[VideoHibikiPage] external subtitle parse failed: $e');
       return const <AudioCue>[];

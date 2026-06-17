@@ -76,7 +76,7 @@ void main() {
     expect(body.contains('widget.repo.updateSubtitleSource'), isFalse);
   });
 
-  test('远端/外挂字幕解析统一按扩展名路由 parser', () {
+  test('sidecar 和外挂字幕加载按扩展名路由到 async parser', () {
     final int detectStart = src.indexOf(
       'Future<({String path, List<AudioCue> cues})?> _detectSidecar(',
     );
@@ -88,7 +88,9 @@ void main() {
     expect(detectEnd, greaterThan(detectStart));
     final String detectBody = src.substring(detectStart, detectEnd);
     expect(detectBody.contains('subtitleFormatForPath(sidecarPath)'), isTrue);
-    expect(detectBody.contains('parseSubtitleContent('), isTrue);
+    expect(detectBody.contains('await parseSubtitleContentAsync('), isTrue);
+    expect(detectBody.contains('parseSubtitleContent('), isFalse,
+        reason: 'sidecar auto-detect must not synchronously parse large files');
     expect(detectBody.contains("endsWith('.ass')"), isFalse);
 
     final int loadStart =
@@ -98,7 +100,10 @@ void main() {
     expect(loadEnd, greaterThan(loadStart));
     final String loadBody = src.substring(loadStart, loadEnd);
     expect(loadBody.contains('subtitleFormatForPath(path)'), isTrue);
-    expect(loadBody.contains('parseSubtitleContent('), isTrue);
+    expect(loadBody.contains('await parseSubtitleContentAsync('), isTrue);
+    expect(loadBody.contains('parseSubtitleContent('), isFalse,
+        reason:
+            'external subtitle load must not synchronously parse large files');
     expect(loadBody.contains("endsWith('.ass')"), isFalse);
   });
 }
