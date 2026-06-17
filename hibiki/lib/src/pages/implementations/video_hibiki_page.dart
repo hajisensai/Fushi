@@ -498,6 +498,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 叠层渲染在 media_kit controls builder 里，全屏路由同样需要即时开关。
   final ValueNotifier<bool> _videoControlEditMode = ValueNotifier<bool>(false);
 
+  /// 当前 9 槽控制按钮布局的响应式来源（TODO-466）。
+  ///
+  /// 保存「画面上编辑」草稿后，窗口页 setState 能刷新普通页面树，但全屏路由和
+  /// media_kit controls builder 是独立子树；只改字段/落偏好会让当前控制层继续用旧
+  /// theme 快照。用 notifier 推进当前布局，并在 controls builder 内重建控制主题，
+  /// 窗口与全屏都能立即反映新槽位。
+  final ValueNotifier<VideoControlLayout> _controlLayoutNotifier =
+      ValueNotifier<VideoControlLayout>(VideoControlLayout.currentChrome);
+
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
 
@@ -893,13 +902,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
   VideoAsbplayerConfig _asbConfig = VideoAsbplayerConfig.defaults;
 
-  /// Live 9-slot control button layout (TODO-274/312 phase 2). This is now the
-  /// **persisted source of truth** (loaded from / saved to
-  /// [AppModel.videoControlLayout], which shares the legacy pref key and
-  /// auto-migrates any old v1 blob via [VideoControlLayout.decode]). The control
-  /// bar renders data-driven over the slots; the quick-settings editor writes
-  /// here via [_setVideoControlLayout]. Default config = current chrome.
-  VideoControlLayout _controlLayout = VideoControlLayout.currentChrome;
+  /// Live 9-slot control button layout (TODO-274/312 phase 2). This is loaded
+  /// from / saved to [AppModel.videoControlLayout], which shares the legacy pref
+  /// key and auto-migrates old v1 blobs via [VideoControlLayout.decode]. The
+  /// getter reads [_controlLayoutNotifier] so the current controls builder can
+  /// rebuild immediately after [_setVideoControlLayout].
+  VideoControlLayout get _controlLayout => _controlLayoutNotifier.value;
 
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
   /// 初始 false 与偏好默认对齐（回归修复）：偏好快照在 init 赋值前不主动锁窗口，
@@ -1027,7 +1035,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
-    _controlLayout = appModel.videoControlLayout;
+    _controlLayoutNotifier.value = appModel.videoControlLayout;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
 
@@ -1071,7 +1079,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _playbackVolume = _readPersistedVolume();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
-    _controlLayout = appModel.videoControlLayout;
+    _controlLayoutNotifier.value = appModel.videoControlLayout;
 
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
@@ -2005,6 +2013,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controlPopoverHideTimer?.cancel();
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
+    _controlLayoutNotifier.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
@@ -3891,6 +3900,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   MaterialDesktopVideoControlsThemeData _desktopControlsTheme(
     VideoPlayerController controller,
+    VideoControlLayout layout,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return MaterialDesktopVideoControlsThemeData(
@@ -3921,8 +3931,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮均从用户布局
       // slot 渲染，标题固定在 topCenter。
       topButtonBar: <Widget>[
-        ..._topBarSlotButtons(VideoControlSlot.topLeft, controller,
-            desktop: true),
+        _topBarSlotGroup(
+          VideoControlSlot.topLeft,
+          controller,
+          layout: layout,
+          desktop: true,
+        ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -3936,8 +3950,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
           ),
         ),
-        ..._topBarSlotButtons(VideoControlSlot.topRight, controller,
-            desktop: true),
+        _topBarSlotGroup(
+          VideoControlSlot.topRight,
+          controller,
+          layout: layout,
+          desktop: true,
+        ),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
@@ -3960,6 +3978,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 小目标；底栏窄屏时隐藏 10 秒跳转，宽屏/横屏/平板仍保留。
   MaterialVideoControlsThemeData _mobileControlsTheme(
     VideoPlayerController controller,
+    VideoControlLayout layout,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     // 进度条 / 底部按钮条的底部留白（BUG-184）：基线 + 系统导航栏/手势栏 inset，
@@ -4033,8 +4052,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮均从用户布局
       // slot 渲染，标题固定在 topCenter。
       topButtonBar: <Widget>[
-        ..._topBarSlotButtons(VideoControlSlot.topLeft, controller,
-            desktop: false),
+        _topBarSlotGroup(
+          VideoControlSlot.topLeft,
+          controller,
+          layout: layout,
+          desktop: false,
+        ),
         Expanded(
           // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
           // 监听 _titleNotifier 才能在全屏换集后刷新标题。
@@ -4048,8 +4071,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
           ),
         ),
-        ..._topBarSlotButtons(VideoControlSlot.topRight, controller,
-            desktop: false),
+        _topBarSlotGroup(
+          VideoControlSlot.topRight,
+          controller,
+          layout: layout,
+          desktop: false,
+        ),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
@@ -4272,16 +4299,24 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// the floating top rail is removed. The shared [_activateVideoControlItem]
   /// dispatcher handles both learning and transport / nav activation.
   ///
-  /// Each button is wrapped in [Flexible] so the fixed top bar (already carrying
-  /// back + Expanded title + episode nav + screenshot + subtitle / audio track)
-  /// degrades gracefully in narrow windows instead of throwing a RenderFlex
-  /// overflow: the Expanded title yields space first, and any residual squeeze
-  /// lets the injected buttons shrink rather than paint past the edge.
-  List<Widget> _topBarSlotButtons(
+  /// The whole slot is one flex child of the fixed top bar. In particular,
+  /// [VideoControlSlot.topRight] must stay a single right-aligned button group:
+  /// if every button is injected as its own [Flexible] child of the outer row,
+  /// Flutter spreads the right-side buttons toward the title/middle on narrow
+  /// windows. The group scrolls horizontally when squeezed, so buttons remain
+  /// reachable without painting past the edge.
+  Widget _topBarSlotGroup(
     VideoControlSlot slot,
     VideoPlayerController controller, {
+    required VideoControlLayout layout,
     required bool desktop,
   }) {
+    final List<VideoControlItem> items = <VideoControlItem>[
+      for (final VideoControlItem item in layout.itemsIn(slot))
+        if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+
     Widget buttonFor(VideoControlItem item) {
       final LayerLink? popoverLink = item == VideoControlItem.speed
           ? _controlPopoverLinkFor(slot, item)
@@ -4321,13 +4356,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
     }
 
-    return <Widget>[
-      for (final VideoControlItem item in _slotChipItems(slot))
-        Flexible(
-          fit: FlexFit.loose,
-          child: buttonFor(item),
+    return Flexible(
+      fit: FlexFit.loose,
+      child: Align(
+        alignment: slot == VideoControlSlot.topRight
+            ? Alignment.centerRight
+            : Alignment.centerLeft,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          reverse: slot == VideoControlSlot.topRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: slot == VideoControlSlot.topRight
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            children: <Widget>[
+              for (final VideoControlItem item in items) buttonFor(item),
+            ],
+          ),
         ),
-    ];
+      ),
+    );
   }
 
   String get _clipExportTooltip {
@@ -5030,7 +5079,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// the v2 layout (same pref key, auto-migrating old v1 blobs) and rebuilds so
   /// the data-driven control bar picks up the new slots immediately.
   Future<void> _setVideoControlLayout(VideoControlLayout layout) async {
-    _controlLayout = layout;
+    _controlLayoutNotifier.value = layout;
     await appModel.setVideoControlLayout(layout);
     if (mounted) setState(() {});
   }
@@ -6706,10 +6755,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoController videoController,
   ) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
-    final MaterialVideoControlsThemeData mobileControlsTheme =
-        _mobileControlsTheme(controller);
-    final MaterialDesktopVideoControlsThemeData desktopControlsTheme =
-        _desktopControlsTheme(controller);
+    final ({
+      MaterialVideoControlsThemeData mobile,
+      MaterialDesktopVideoControlsThemeData desktop,
+    }) controlsTheme = _currentVideoControlsTheme(
+      controller,
+      _controlLayout,
+    );
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
@@ -6718,8 +6770,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // CallbackShortcuts；press-edge-only（includeRepeats:false）由
     // buildVideoPlayerShortcutsFromRegistry 对该 action 保留。
     return VideoControlsThemePair(
-      mobile: mobileControlsTheme,
-      desktop: desktopControlsTheme,
+      mobile: controlsTheme.mobile,
+      desktop: controlsTheme.desktop,
       // 字幕跳转列表「真 push-aside」（TODO-121）：面板可见时把 Video 包进
       // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
       child: _videoWithSubtitlePanel(
@@ -6804,6 +6856,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  ({
+    MaterialVideoControlsThemeData mobile,
+    MaterialDesktopVideoControlsThemeData desktop,
+  }) _currentVideoControlsTheme(
+    VideoPlayerController controller,
+    VideoControlLayout layout,
+  ) {
+    return (
+      mobile: _mobileControlsTheme(controller, layout),
+      desktop: _desktopControlsTheme(controller, layout),
+    );
+  }
+
   /// 桌面 hover 追踪层（TODO-129）：覆盖整个视频控制区，镜像 media_kit 自己的
   /// `MouseRegion.onEnter/onHover/onExit` 翻 [_videoControlsVisible]，让字幕动态避让进度
   /// 条。`opaque:false`：不阻断 hover hit-test 继续下探到 media_kit 的 `MouseRegion`，
@@ -6852,150 +6917,169 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoState state,
     VideoPlayerController controller,
   ) {
-    return _videoControlsHoverWrap(
-      child: HibikiFileDropTarget(
-        onDrop: (List<String> paths, Offset _) {
-          _handlePlaybackDrop(controller, paths);
-        },
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerUp: _handleVideoPointerUp,
-          // 桌面右键 = 视频上下文菜单（TODO-048c）。GestureDetector 只接管次按钮
-          // （右键）的 tap，左键双击全屏仍走外层 Listener.onPointerUp（两路指针语义互不
-          // 干扰）。onSecondaryTapUp 提供右键松手处的 globalPosition 作 showMenu 锚点。
-          // 移动端无次按钮、永不触发，但 [_handleSecondaryTap] 内再门控一次（双保险）。
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onSecondaryTapUp: (TapUpDetails details) =>
-                _handleSecondaryTap(details.globalPosition),
-            onLongPressStart: _handleVideoLongPressStart,
-            onLongPressMoveUpdate: _handleVideoLongPressMoveUpdate,
-            onLongPressEnd: _handleVideoLongPressEnd,
-            child: Stack(
-              children: <Widget>[
-                // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
-                // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
-                // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
-                // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
-                Positioned.fill(
-                  child: Builder(
-                    builder: (BuildContext controlsContext) {
-                      _videoControlsContext = controlsContext;
-                      // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
-                      // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
-                      // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
-                      // 过滤指针，不影响键盘：media_kit 的 CallbackShortcuts + Focus 是
-                      // MouseRegion 的祖先（见 media_kit material_desktop.dart），快捷键照常
-                      // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
-                      // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
-                      // 让全屏路由也响应（BUG-120 同源）。
-                      //
-                      // 侧栏 / 字幕列表打开时也一并 gate（BUG-253 / TODO-329）：overlay 盖在
-                      // 控制条上，但 media_kit 自己的 MouseRegion 仍会在鼠标移过透明背景区时
-                      // 把控制条弹回到 overlay 后面，且其 `hideMouseOnControlsRemoval` 会在
-                      // 控制条 2s 自动收起后隐藏视频区光标（用户报「沉浸/锁屏下鼠标放字幕被
-                      // 隐藏」的画面区分支）。把 [IgnorePointer] 同时绑 [_videoSidePanel] 与
-                      // [_subtitleListVisible]，overlay 期间 media_kit 收不到 hover → 背景控制条
-                      // 不再冒出来、其 cursor:none 也不接管光标。键盘仍不受影响（同上）。
-                      return ListenableBuilder(
-                        listenable: Listenable.merge(
-                          <Listenable>[
-                            _immersiveLocked,
-                            _videoSidePanel,
-                            _subtitleListVisible,
-                            _videoControlEditMode,
-                          ],
+    return ValueListenableBuilder<VideoControlLayout>(
+      valueListenable: _controlLayoutNotifier,
+      builder: (BuildContext context, VideoControlLayout layout, _) {
+        final ({
+          MaterialVideoControlsThemeData mobile,
+          MaterialDesktopVideoControlsThemeData desktop,
+        }) controlsTheme = _currentVideoControlsTheme(controller, layout);
+        return VideoControlsThemePair(
+          mobile: controlsTheme.mobile,
+          desktop: controlsTheme.desktop,
+          child: _videoControlsHoverWrap(
+            child: HibikiFileDropTarget(
+              onDrop: (List<String> paths, Offset _) {
+                _handlePlaybackDrop(controller, paths);
+              },
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerUp: _handleVideoPointerUp,
+                // 桌面右键 = 视频上下文菜单（TODO-048c）。GestureDetector 只接管次按钮
+                // （右键）的 tap，左键双击全屏仍走外层 Listener.onPointerUp（两路指针语义互不
+                // 干扰）。onSecondaryTapUp 提供右键松手处的 globalPosition 作 showMenu 锚点。
+                // 移动端无次按钮、永不触发，但 [_handleSecondaryTap] 内再门控一次（双保险）。
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onSecondaryTapUp: (TapUpDetails details) =>
+                      _handleSecondaryTap(details.globalPosition),
+                  onLongPressStart: _handleVideoLongPressStart,
+                  onLongPressMoveUpdate: _handleVideoLongPressMoveUpdate,
+                  onLongPressEnd: _handleVideoLongPressEnd,
+                  child: Stack(
+                    children: <Widget>[
+                      // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
+                      // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
+                      // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
+                      // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
+                      Positioned.fill(
+                        child: Builder(
+                          builder: (BuildContext controlsContext) {
+                            _videoControlsContext = controlsContext;
+                            // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
+                            // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
+                            // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
+                            // 过滤指针，不影响键盘：media_kit 的 CallbackShortcuts + Focus 是
+                            // MouseRegion 的祖先（见 media_kit material_desktop.dart），快捷键照常
+                            // 收键；字幕逐字查词由更上层 [VideoSubtitleOverlay] 承载（在本 Stack
+                            // AdaptiveVideoControls 之上），点字幕仍能查词。可见性走 ValueNotifier
+                            // 让全屏路由也响应（BUG-120 同源）。
+                            //
+                            // 侧栏 / 字幕列表打开时也一并 gate（BUG-253 / TODO-329）：overlay 盖在
+                            // 控制条上，但 media_kit 自己的 MouseRegion 仍会在鼠标移过透明背景区时
+                            // 把控制条弹回到 overlay 后面，且其 `hideMouseOnControlsRemoval` 会在
+                            // 控制条 2s 自动收起后隐藏视频区光标（用户报「沉浸/锁屏下鼠标放字幕被
+                            // 隐藏」的画面区分支）。把 [IgnorePointer] 同时绑 [_videoSidePanel] 与
+                            // [_subtitleListVisible]，overlay 期间 media_kit 收不到 hover → 背景控制条
+                            // 不再冒出来、其 cursor:none 也不接管光标。键盘仍不受影响（同上）。
+                            return ListenableBuilder(
+                              listenable: Listenable.merge(
+                                <Listenable>[
+                                  _immersiveLocked,
+                                  _videoSidePanel,
+                                  _subtitleListVisible,
+                                  _videoControlEditMode,
+                                ],
+                              ),
+                              builder: (BuildContext _, __) => IgnorePointer(
+                                ignoring: _immersiveLocked.value ||
+                                    _videoSidePanel.value != null ||
+                                    _subtitleListVisible.value ||
+                                    _videoControlEditMode.value,
+                                child: AdaptiveVideoControls(state),
+                              ),
+                            );
+                          },
                         ),
-                        builder: (BuildContext _, __) => IgnorePointer(
-                          ignoring: _immersiveLocked.value ||
-                              _videoSidePanel.value != null ||
-                              _subtitleListVisible.value ||
-                              _videoControlEditMode.value,
-                          child: AdaptiveVideoControls(state),
+                      ),
+                      // 进度条章节刻度层（TODO-432）：叠在 seek bar 同一几何上画每章一条竖线。
+                      // IgnorePointer 纯视觉、不拦 seek bar 拖动；随控制条显隐、仅有章节时画。
+                      _buildChapterMarkersOverlay(controller),
+                      Positioned.fill(
+                        child: VideoDanmakuOverlay(
+                          items: _danmakuItems,
+                          enabled: appModel.videoDanmakuEnabled,
+                          maxActive: appModel.videoDanmakuMaxActive,
+                          positionMs: () => controller.positionMs ?? 0,
                         ),
-                      );
-                    },
-                  ),
-                ),
-                // 进度条章节刻度层（TODO-432）：叠在 seek bar 同一几何上画每章一条竖线。
-                // IgnorePointer 纯视觉、不拦 seek bar 拖动；随控制条显隐、仅有章节时画。
-                _buildChapterMarkersOverlay(controller),
-                Positioned.fill(
-                  child: VideoDanmakuOverlay(
-                    items: _danmakuItems,
-                    enabled: appModel.videoDanmakuEnabled,
-                    maxActive: appModel.videoDanmakuMaxActive,
-                    positionMs: () => controller.positionMs ?? 0,
-                  ),
-                ),
-                Positioned.fill(
-                  child: VideoSubtitleOverlay(
-                    controller: controller,
-                    onCharTap: _handleSubtitleLookupTap,
-                    onHoverChanged: _handleSubtitleHover,
-                    hitTester: _subtitleHitTester,
-                    // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
-                    // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
-                    // 后 setState 触发本 builder 重建，标记即时更新。
-                    isCueFavorited: _isCueFavorited,
-                    blurEnabled: appModel.videoSubtitleBlur,
-                    fontSize: _subtitleStyle.fontSize,
-                    textColor: _subtitleStyle.resolveTextColor(
-                      _subtitleTextColor(_videoChromeColorScheme(context)),
-                    ),
-                    fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
-                    shadowColor: _subtitleStyle.resolveShadowColor(
-                      _subtitleShadowColor(_videoChromeColorScheme(context)),
-                    ),
-                    shadowThickness: _subtitleStyle.resolveShadowThickness(
-                      _videoUiScale,
-                    ),
-                    backgroundColor: _subtitleStyle.resolveBackgroundColor(
-                      _subtitleBackgroundColor(
-                        _videoChromeColorScheme(context),
                       ),
-                    ),
-                    backgroundOpacity: _subtitleStyle.backgroundOpacity,
-                    bottomPadding: _subtitleStyle.bottomPadding,
-                    // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕底缘对
-                    // 进度条上缘取下限（max，非加法——BUG-226 防顶飞）、隐藏落回。全屏
-                    // 复用同一 builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
-                    controlsVisible: _videoControlsVisible,
-                    // 进度条上缘距视频底边的真实高度（按平台控制条几何加总 + 随界面
-                    // 缩放，BUG-238）。旧默认常量 56 既不随缩放、又低于默认基线 75 →
-                    // 移动端 `max(75, 56)=75` 把字幕留在被抬高的进度条下面被遮（用户报
-                    // 「只动一点点」）。显式传入真实几何，移动端 reserve ≈ 140×缩放 >
-                    // 75 才真正抬升盖过进度条；桌面仍只让一个按钮行高（保 BUG-228 观感）。
-                    controlsBottomReserve: _subtitleControlsBottomReserve(),
-                    fontFamily: appModel.appFontFamily,
+                      Positioned.fill(
+                        child: VideoSubtitleOverlay(
+                          controller: controller,
+                          onCharTap: _handleSubtitleLookupTap,
+                          onHoverChanged: _handleSubtitleHover,
+                          hitTester: _subtitleHitTester,
+                          // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
+                          // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
+                          // 后 setState 触发本 builder 重建，标记即时更新。
+                          isCueFavorited: _isCueFavorited,
+                          blurEnabled: appModel.videoSubtitleBlur,
+                          fontSize: _subtitleStyle.fontSize,
+                          textColor: _subtitleStyle.resolveTextColor(
+                            _subtitleTextColor(
+                                _videoChromeColorScheme(context)),
+                          ),
+                          fontWeight:
+                              _subtitleStyle.resolveFontWeight(_videoUiScale),
+                          shadowColor: _subtitleStyle.resolveShadowColor(
+                            _subtitleShadowColor(
+                                _videoChromeColorScheme(context)),
+                          ),
+                          shadowThickness:
+                              _subtitleStyle.resolveShadowThickness(
+                            _videoUiScale,
+                          ),
+                          backgroundColor:
+                              _subtitleStyle.resolveBackgroundColor(
+                            _subtitleBackgroundColor(
+                              _videoChromeColorScheme(context),
+                            ),
+                          ),
+                          backgroundOpacity: _subtitleStyle.backgroundOpacity,
+                          bottomPadding: _subtitleStyle.bottomPadding,
+                          // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕底缘对
+                          // 进度条上缘取下限（max，非加法——BUG-226 防顶飞）、隐藏落回。全屏
+                          // 复用同一 builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
+                          controlsVisible: _videoControlsVisible,
+                          // 进度条上缘距视频底边的真实高度（按平台控制条几何加总 + 随界面
+                          // 缩放，BUG-238）。旧默认常量 56 既不随缩放、又低于默认基线 75 →
+                          // 移动端 `max(75, 56)=75` 把字幕留在被抬高的进度条下面被遮（用户报
+                          // 「只动一点点」）。显式传入真实几何，移动端 reserve ≈ 140×缩放 >
+                          // 75 才真正抬升盖过进度条；桌面仍只让一个按钮行高（保 BUG-228 观感）。
+                          controlsBottomReserve:
+                              _subtitleControlsBottomReserve(),
+                          fontFamily: appModel.appFontFamily,
+                        ),
+                      ),
+                      _buildOsdOverlay(),
+                      _buildVolumeHudOverlay(),
+                      _buildVideoSideActionRail(controller),
+                      _buildVideoSidePanelOverlay(controller),
+                      _buildVideoControlPopoverOverlay(controller),
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _videoControlEditMode,
+                        builder: (BuildContext _, bool editing, __) {
+                          if (!editing) return const SizedBox.shrink();
+                          return Positioned.fill(
+                            child: VideoControlLayoutEditOverlay(
+                              layout: layout,
+                              onLayoutChanged: _setVideoControlLayout,
+                              onClose: _hideVideoControlEditOverlay,
+                            ),
+                          );
+                        },
+                      ),
+                      // TODO-318：光标隐藏统一胜出层放 Stack 最顶（front-most），隐藏时其
+                      // cursor:none 胜过下方所有 chrome 的 click cursor；桌面才挂（移动端无 OS 光标）。
+                      if (_isDesktopVideoControls) _buildCursorOverlay(),
+                    ],
                   ),
                 ),
-                _buildOsdOverlay(),
-                _buildVolumeHudOverlay(),
-                _buildVideoSideActionRail(controller),
-                _buildVideoSidePanelOverlay(controller),
-                _buildVideoControlPopoverOverlay(controller),
-                ValueListenableBuilder<bool>(
-                  valueListenable: _videoControlEditMode,
-                  builder: (BuildContext _, bool editing, __) {
-                    if (!editing) return const SizedBox.shrink();
-                    return Positioned.fill(
-                      child: VideoControlLayoutEditOverlay(
-                        layout: _controlLayout,
-                        onLayoutChanged: _setVideoControlLayout,
-                        onClose: _hideVideoControlEditOverlay,
-                      ),
-                    );
-                  },
-                ),
-                // TODO-318：光标隐藏统一胜出层放 Stack 最顶（front-most），隐藏时其
-                // cursor:none 胜过下方所有 chrome 的 click cursor；桌面才挂（移动端无 OS 光标）。
-                if (_isDesktopVideoControls) _buildCursorOverlay(),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -7054,7 +7138,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ///
   /// TODO-421 phase 1：topLeft / topRight 两个顶部槽不再渲染成「固定顶栏下方的浮动竖条」
   /// ——用户嫌它名不副实（选「Top bar (左/右)」却落在顶栏下方）。改为把这两槽的按钮注入
-  /// 固定顶栏行本身（[_topBarSlotButtons] → [_desktopControlsTheme] / [_mobileControlsTheme]
+  /// 固定顶栏行本身（[_topBarSlotGroup] → [_desktopControlsTheme] / [_mobileControlsTheme]
   /// 的 `topButtonBar`），此处只剩屏幕左 / 右两条浮条。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
     Widget right({bool immersiveOnly = false}) => _buildVideoSideRailFor(

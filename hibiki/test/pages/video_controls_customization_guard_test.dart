@@ -14,7 +14,9 @@ void main() {
     final String appModel = read('lib/src/models/app_model.dart');
     final String prefs = read('lib/src/models/preferences_repository.dart');
 
-    expect(page, contains('VideoControlLayout _controlLayout'));
+    expect(page,
+        contains('ValueNotifier<VideoControlLayout> _controlLayoutNotifier'));
+    expect(page, contains('VideoControlLayout get _controlLayout'));
     expect(page, contains('appModel.videoControlLayout'));
     expect(page, contains('_setVideoControlLayout'));
     expect(appModel, contains('videoControlLayout'));
@@ -57,6 +59,44 @@ void main() {
 
     expect(settings, contains('onEditControlsOnscreen'));
     expect(settings, contains('t.video_control_edit_on_video'));
+  });
+
+  test('saved on-video layout notifies the active controls builder immediately',
+      () {
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final int setStart = page.indexOf('Future<void> _setVideoControlLayout');
+    expect(setStart, greaterThanOrEqualTo(0));
+    final int setEnd =
+        page.indexOf('void _showVideoControlEditOverlay', setStart);
+    expect(setEnd, greaterThan(setStart));
+    final String setBody = page.substring(setStart, setEnd);
+
+    expect(
+      page,
+      contains('ValueNotifier<VideoControlLayout> _controlLayoutNotifier'),
+      reason: '全屏/controls builder 不能只靠页面 setState，必须监听当前布局 notifier',
+    );
+    expect(
+      setBody,
+      contains('_controlLayoutNotifier.value = layout;'),
+      reason: '保存草稿后要先推进当前 controls builder 的监听源',
+    );
+    expect(
+      page,
+      contains('valueListenable: _controlLayoutNotifier'),
+      reason: '当前控制层需要 ValueListenableBuilder 直接订阅布局变化',
+    );
+    expect(
+      page,
+      contains('_currentVideoControlsTheme(controller, layout)'),
+      reason: 'controls builder 内要按最新 layout 重新提供 media_kit 控制主题',
+    );
+    expect(
+      page,
+      contains('layout: layout,'),
+      reason: '画面上编辑 overlay 也应消费 notifier 的最新 layout',
+    );
   });
 
   test(

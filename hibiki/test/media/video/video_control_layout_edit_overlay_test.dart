@@ -10,10 +10,18 @@ Future<void> _pumpOverlay(
   required VideoControlLayout layout,
   required Future<void> Function(VideoControlLayout layout) onLayoutChanged,
   VoidCallback? onClose,
+  TextScaler? textScaler,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData(useMaterial3: true),
+      builder: (BuildContext context, Widget? child) {
+        if (textScaler == null) return child!;
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        );
+      },
       home: Scaffold(
         body: SizedBox.expand(
           child: VideoControlLayoutEditOverlay(
@@ -217,5 +225,32 @@ void main() {
 
     expect(find.byType(VideoControlLayoutEditOverlay), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'onscreen overlay keeps save controls visible on low height with large text',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 260));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (_) async {},
+      textScaler: const TextScaler.linear(1.6),
+    );
+
+    expect(tester.takeException(), isNull);
+    for (final Finder finder in <Finder>[
+      find.text(t.dialog_save),
+      find.text(t.dialog_cancel),
+      find.byIcon(Icons.close).first,
+    ]) {
+      final Rect rect = tester.getRect(finder);
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(360));
+      expect(rect.bottom, lessThanOrEqualTo(260));
+    }
   });
 }
