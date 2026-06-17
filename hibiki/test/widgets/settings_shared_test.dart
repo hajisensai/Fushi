@@ -94,7 +94,12 @@ void main() {
       ),
     );
 
-    expect(find.byType(HibikiCard), findsOneWidget);
+    final ColorScheme scheme = Theme.of(
+      tester.element(find.byType(AdaptiveSettingsSection)),
+    ).colorScheme;
+    final HibikiCard card = tester.widget<HibikiCard>(find.byType(HibikiCard));
+    expect(card.color, scheme.surfaceContainer);
+    expect(card.borderColor, scheme.outlineVariant);
     expect(find.byType(Switch), findsOneWidget);
   });
 
@@ -261,6 +266,7 @@ void main() {
 
     expect(find.byType(CupertinoSwitch), findsOneWidget);
     expect(find.byType(Switch), findsNothing);
+    expect(find.byType(HibikiCard), findsNothing);
     expect(find.byType(CupertinoPageScaffold), findsOneWidget);
     expect(find.byType(CupertinoSliverNavigationBar), findsOneWidget);
     expect(find.byType(Scaffold), findsNothing);

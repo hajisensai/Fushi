@@ -166,6 +166,27 @@ class _HibikiListItemState extends State<HibikiListItem> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color color =
         widget.selected ? tokens.surfaces.selected : Colors.transparent;
+    final Color selectedForeground = tokens.surfaces.primary;
+    final Color primaryForeground =
+        widget.selected ? selectedForeground : tokens.surfaces.onSurface;
+    final Color secondaryForeground =
+        widget.selected ? selectedForeground : tokens.surfaces.onVariant;
+    final TextStyle titleStyle = tokens.type.listTitle.copyWith(
+      color: primaryForeground,
+      fontWeight:
+          widget.selected ? FontWeight.w700 : tokens.type.listTitle.fontWeight,
+    );
+    final TextStyle subtitleStyle = tokens.type.listSubtitle.copyWith(
+      color: secondaryForeground,
+      fontWeight: widget.selected
+          ? FontWeight.w600
+          : tokens.type.listSubtitle.fontWeight,
+    );
+    final TextStyle metadataStyle = tokens.type.metadata.copyWith(
+      color: secondaryForeground,
+      fontWeight:
+          widget.selected ? FontWeight.w700 : tokens.type.metadata.fontWeight,
+    );
     final double resolvedMinHeight = widget.minHeight ??
         switch (widget.density) {
           HibikiListDensity.standard => tokens.density.listMinHeight,
@@ -183,7 +204,7 @@ class _HibikiListItemState extends State<HibikiListItem> {
           children: <Widget>[
             if (widget.leading != null) ...<Widget>[
               IconTheme.merge(
-                data: IconThemeData(color: tokens.surfaces.onVariant),
+                data: IconThemeData(color: secondaryForeground),
                 child: widget.leading!,
               ),
               SizedBox(width: tokens.spacing.gap + 4),
@@ -194,7 +215,7 @@ class _HibikiListItemState extends State<HibikiListItem> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
                   DefaultTextStyle.merge(
-                    style: tokens.type.listTitle,
+                    style: titleStyle,
                     maxLines: widget.titleMaxLines,
                     overflow: TextOverflow.ellipsis,
                     child: widget.title,
@@ -203,7 +224,7 @@ class _HibikiListItemState extends State<HibikiListItem> {
                     Padding(
                       padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
                       child: DefaultTextStyle.merge(
-                        style: tokens.type.listSubtitle,
+                        style: subtitleStyle,
                         maxLines: widget.subtitleMaxLines,
                         overflow: TextOverflow.ellipsis,
                         child: widget.subtitle!,
@@ -215,9 +236,9 @@ class _HibikiListItemState extends State<HibikiListItem> {
             if (widget.trailing != null) ...<Widget>[
               SizedBox(width: tokens.spacing.gap + 4),
               DefaultTextStyle.merge(
-                style: tokens.type.metadata,
+                style: metadataStyle,
                 child: IconTheme.merge(
-                  data: IconThemeData(color: tokens.surfaces.onVariant),
+                  data: IconThemeData(color: secondaryForeground),
                   child: widget.trailing!,
                 ),
               ),
@@ -230,6 +251,11 @@ class _HibikiListItemState extends State<HibikiListItem> {
     final bool pill = widget.selectedShape == HibikiListItemSelectedShape.pill;
     final BorderRadius? highlightRadius =
         pill ? tokens.radii.groupRadius : null;
+    final BoxBorder? pillBorder = widget.selected
+        ? Border.all(
+            color: tokens.surfaces.primary.withValues(alpha: 0.20),
+          )
+        : null;
     final Widget material = AnimatedContainer(
       duration: hibikiMd3StateDuration,
       curve: hibikiMd3StateCurve,
@@ -238,7 +264,11 @@ class _HibikiListItemState extends State<HibikiListItem> {
           : EdgeInsets.zero,
       color: pill ? null : color,
       decoration: pill
-          ? BoxDecoration(color: color, borderRadius: highlightRadius)
+          ? BoxDecoration(
+              color: color,
+              borderRadius: highlightRadius,
+              border: pillBorder,
+            )
           : null,
       child: Material(
         type: MaterialType.transparency,
