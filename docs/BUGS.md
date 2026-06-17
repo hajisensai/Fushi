@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 301 条。点号进各自文件。
+> 共 302 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-308](bugs/BUG-308-todo-478-0-9-15-install-residual.md) | ✅ | ✅ | TODO-478: 0.9.15 installer can leave old running build installed |
 | [BUG-307](bugs/BUG-307-ffmpeg-mining-invalid-image.md) | ✅ | ✅ | Windows ffmpeg invalid-image breaks mining audio and GIF extraction (TODO-458) |
 | [BUG-306](bugs/BUG-306-ankiconnect-addnote-unknown-commit.md) | ✅ | ✅ | AnkiConnect addNote 响应断开后 popup 先失败再后验成功 |
 | [BUG-305](bugs/BUG-305-video-playlist-autoplay-subtitle-loading.md) | ✅ | ✅ | 播放列表不会自动连播且下一集字幕列表初始空 |
