@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
@@ -55,13 +56,70 @@ void main() {
   }
 
   // 默认灵敏度 0.6 → 阈值 ≈ 94px；水平拖 240px 必越阈值。
-  Future<void> dragHorizontally(WidgetTester tester, Offset start) async {
-    final TestGesture gesture = await tester.startGesture(start);
-    for (int i = 0; i < 12; i++) {
-      await gesture.moveBy(const Offset(20, 0));
+  Widget childPopup({
+    required VoidCallback onDismiss,
+    required VoidCallback onBack,
+    bool enableSwipeToClose = true,
+  }) {
+    return buildTestApp(
+      Center(
+        child: SizedBox(
+          width: 320,
+          height: 360,
+          child: DictionaryPopupLayer(
+            result: null,
+            isSearching: false,
+            webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+            enableSwipeToClose: enableSwipeToClose,
+            swipeDismissible: true,
+            onBack: onBack,
+            onDismiss: onDismiss,
+            onTextSelected: (text, rect) {},
+            onLinkClick: (query, rect) {},
+            onMineEntry: (fields) async => const MinePopupResult(),
+            onDuplicateCheck: (expression, reading) async => false,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> dragHorizontally(
+    WidgetTester tester,
+    Offset start, {
+    double distance = 240,
+    PointerDeviceKind kind = PointerDeviceKind.touch,
+  }) async {
+    final TestGesture gesture = await tester.startGesture(start, kind: kind);
+    const int steps = 12;
+    final double step = distance / steps;
+    for (int i = 0; i < steps; i++) {
+      await gesture.moveBy(Offset(step, 0));
       await tester.pump();
     }
     await gesture.up();
+    await tester.pump();
+  }
+
+  Future<void> panZoomHorizontally(
+    WidgetTester tester,
+    Offset start, {
+    double distance = 240,
+  }) async {
+    final TestPointer pointer = TestPointer(486, PointerDeviceKind.trackpad);
+    tester.binding.handlePointerEvent(pointer.panZoomStart(start));
+    await tester.pump();
+    const int steps = 12;
+    final double step = distance / steps;
+    double pan = 0;
+    for (int i = 0; i < steps; i++) {
+      pan += step;
+      tester.binding.handlePointerEvent(
+        pointer.panZoomUpdate(start, pan: Offset(pan, 0)),
+      );
+      await tester.pump();
+    }
+    tester.binding.handlePointerEvent(pointer.panZoomEnd());
     await tester.pump();
   }
 
@@ -88,7 +146,27 @@ void main() {
   );
 
   testWidgets(
-    'TODO-406: horizontal drag on the header DOES dismiss (swipe preserved)',
+    'TODO-486: horizontal drag below threshold does NOT dismiss',
+    (WidgetTester tester) async {
+      bool dismissed = false;
+      await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
+
+      final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
+      await dragHorizontally(
+        tester,
+        headerCenter,
+        distance: 40,
+        kind: PointerDeviceKind.mouse,
+      );
+
+      expect(dismissed, isFalse,
+          reason:
+              'desktop drag below the configured threshold must spring back');
+    },
+  );
+
+  testWidgets(
+    'TODO-486: touch drag over threshold on the header dismisses',
     (WidgetTester tester) async {
       bool dismissed = false;
       await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
@@ -97,6 +175,52 @@ void main() {
       await dragHorizontally(tester, headerCenter);
 
       expect(dismissed, isTrue, reason: 'header（可拖区）的水平滑动应保留滑动关闭');
+    },
+  );
+
+  testWidgets(
+    'TODO-486: desktop mouse drag on child top bar dismisses without onBack',
+    (WidgetTester tester) async {
+      bool dismissed = false;
+      bool backed = false;
+      await tester.pumpWidget(
+        childPopup(
+          onDismiss: () => dismissed = true,
+          onBack: () => backed = true,
+        ),
+      );
+
+      final Rect swipeRect = tester.getRect(find.byType(SwipeDismissWrapper));
+      final Offset blankTopBarPoint = swipeRect.center;
+      final Rect backIconRect = tester.getRect(find.byIcon(Icons.arrow_back));
+      expect(backIconRect.contains(blankTopBarPoint), isFalse,
+          reason:
+              'the drag starts from blank child top-bar space, not the icon');
+
+      await dragHorizontally(
+        tester,
+        blankTopBarPoint,
+        kind: PointerDeviceKind.mouse,
+      );
+
+      expect(dismissed, isTrue,
+          reason: 'child swipe should close only the current child layer');
+      expect(backed, isFalse,
+          reason: 'swipe must not be implemented by invoking TODO-485 onBack');
+    },
+  );
+
+  testWidgets(
+    'TODO-486: trackpad pan zoom on the header dismisses',
+    (WidgetTester tester) async {
+      bool dismissed = false;
+      await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
+
+      final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
+      await panZoomHorizontally(tester, headerCenter);
+
+      expect(dismissed, isTrue,
+          reason: 'trackpad PointerPanZoom sequences must drive swipe close');
     },
   );
 
