@@ -303,18 +303,32 @@ enum VideoControlItem {
       ];
 
   /// Whether the visual icon-chip editor can represent this button as a single
-  /// draggable chip. The only items it cannot are the multi-widget special
-  /// renders that are NOT a single icon button: [volume] (a slider), [title]
-  /// (text), [positionIndicator] (time text). [playPause] is special-render but
-  /// still a single button, so it is chip-renderable (TODO-399 decision 2).
+  /// draggable chip. [volume] is a dedicated player widget, but the editor can
+  /// still represent its placement with a volume icon chip. The only items it
+  /// cannot show as chips are [title] (text) and [positionIndicator] (time
+  /// text). [playPause] is special-render but still a single button, so it is
+  /// chip-renderable (TODO-399 decision 2).
   bool get isChipRenderable =>
-      this != VideoControlItem.volume &&
       this != VideoControlItem.title &&
       this != VideoControlItem.positionIndicator;
 
+  /// Whether the item may be placed in [target] by the model/editor.
+  ///
+  /// [volume] is intentionally limited to the bottom bar in this round: its
+  /// dedicated render branch is a full button + popover anchor that must never
+  /// enter top bars, side rails, or the removed tray.
+  bool canMoveToSlot(VideoControlSlot target) {
+    if (this == VideoControlItem.volume) {
+      return target == VideoControlSlot.bottomLeft ||
+          target == VideoControlSlot.bottomRight;
+    }
+    if (pinnedRequired && target == VideoControlSlot.hidden) return false;
+    return true;
+  }
+
   /// TODO-399 decision 3b: the full set of buttons the visual editor lets users
   /// freely place / duplicate / hide. This is every modeled button that is
-  /// [isChipRenderable] -- i.e. all the learning keys plus the transport / nav
+  /// [isChipRenderable] -- i.e. all the learning keys plus volume and transport / nav
   /// keys (play/pause, seek +/-, cue nav, screenshot, subtitle / audio track,
   /// episode list, fullscreen). The non-chip special renders (volume slider,
   /// title text, position indicator) keep their dedicated branch and stay out.
@@ -623,8 +637,8 @@ class VideoControlLayout {
     VideoControlSlot target, {
     int? index,
   }) {
-    if (item.pinnedRequired && target == VideoControlSlot.hidden) {
-      return this; // pinned guard: refuse to hide a required key.
+    if (!item.canMoveToSlot(target)) {
+      return this;
     }
     final Map<VideoControlSlot, List<VideoControlItem>> next =
         <VideoControlSlot, List<VideoControlItem>>{
@@ -660,8 +674,8 @@ class VideoControlLayout {
     VideoControlSlot target, {
     int? index,
   }) {
-    if (item.pinnedRequired && target == VideoControlSlot.hidden) {
-      return this; // pinned guard: never park a required key in hidden.
+    if (!item.canMoveToSlot(target)) {
+      return this;
     }
     if (_slots[target]!.contains(item)) return this; // already here, no-op.
     final Map<VideoControlSlot, List<VideoControlItem>> next =
@@ -691,7 +705,7 @@ class VideoControlLayout {
     if (payload.sourceSlot == null) {
       return addItemToSlot(item, target, index: targetIndex);
     }
-    if (item.pinnedRequired && target == VideoControlSlot.hidden) {
+    if (!item.canMoveToSlot(target)) {
       return this;
     }
 
@@ -872,7 +886,35 @@ class VideoControlLayout {
       hidden.removeWhere((VideoControlItem i) => i == item);
       slots[_defaultSlotForPinned(item)]!.add(item);
     }
+    _normalizeVolume(slots);
     return slots;
+  }
+
+  static void _normalizeVolume(
+    Map<VideoControlSlot, List<VideoControlItem>> slots,
+  ) {
+    VideoControlSlot? target;
+    int targetIndex = 0;
+    for (final VideoControlSlot slot in const <VideoControlSlot>[
+      VideoControlSlot.bottomLeft,
+      VideoControlSlot.bottomRight,
+    ]) {
+      final int index = slots[slot]!.indexOf(VideoControlItem.volume);
+      if (index < 0) continue;
+      target = slot;
+      targetIndex = index;
+      break;
+    }
+
+    for (final VideoControlSlot slot in VideoControlSlot.values) {
+      slots[slot]!.removeWhere(
+        (VideoControlItem item) => item == VideoControlItem.volume,
+      );
+    }
+
+    final VideoControlSlot resolved = target ?? VideoControlSlot.bottomRight;
+    final List<VideoControlItem> list = slots[resolved]!;
+    list.insert(targetIndex.clamp(0, list.length), VideoControlItem.volume);
   }
 
   /// Recovery slot for a required button wrongly placed in hidden (does not
