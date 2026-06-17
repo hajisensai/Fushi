@@ -62,6 +62,7 @@ void main() {
       'video.subtitle.font_weight',
       'video.subtitle.shadow',
       'video.subtitle.bg_opacity',
+      'video.subtitle.no_background',
       'video.subtitle.position',
       // Danmaku
       'video.danmaku.enabled',

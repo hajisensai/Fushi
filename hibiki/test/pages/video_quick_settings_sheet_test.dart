@@ -28,17 +28,22 @@ VideoQuickSettingsSheet _sheet({
   VideoControlLayout? initialControlLayout,
   double uiScale = 1.0,
   int initialDelayMs = 0,
+  VideoSubtitleStyle? initialSubtitleStyle,
+  void Function(VideoSubtitleStyle)? onSubtitleStylePreview,
+  void Function(VideoSubtitleStyle)? onSubtitleStyleCommit,
 }) {
   return VideoQuickSettingsSheet(
     initialDelayMs: initialDelayMs,
     initialSpeed: 1.0,
     initialSubtitleBlur: false,
-    initialSubtitleStyle: VideoSubtitleStyle.defaults,
+    initialSubtitleStyle: initialSubtitleStyle ?? VideoSubtitleStyle.defaults,
     onSetDelay: (int v) async => onSetDelay?.call(v),
     onSetSpeed: (double v) async => onSetSpeed?.call(v),
     onToggleSubtitleBlur: () async {},
-    onSubtitleStylePreview: (_) {},
-    onSubtitleStyleCommit: (_) async {},
+    onSubtitleStylePreview: (VideoSubtitleStyle style) =>
+        onSubtitleStylePreview?.call(style),
+    onSubtitleStyleCommit: (VideoSubtitleStyle style) async =>
+        onSubtitleStyleCommit?.call(style),
     initialAsbConfig: VideoAsbplayerConfig.defaults,
     onAsbConfigChanged: (_) async {},
     initialShadersEnabled: const <String>[],
@@ -325,6 +330,54 @@ void main() {
     );
     // 默认阴影粗细 TODO-051 加大到 5px；UI scale 2.0 下预览 = 5 * 2 = 10。
     expect(shadowRow.value, 10);
+  });
+
+  testWidgets(
+      'subtitle no-background shortcut previews commits and updates slider',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final List<VideoSubtitleStyle> previews = <VideoSubtitleStyle>[];
+    final List<VideoSubtitleStyle> commits = <VideoSubtitleStyle>[];
+    await _pump(
+      tester,
+      _sheet(
+        initialSubtitleStyle: VideoSubtitleStyle.defaults.copyWith(
+          backgroundOpacity: 0.75,
+        ),
+        onSubtitleStylePreview: previews.add,
+        onSubtitleStyleCommit: commits.add,
+      ),
+    );
+
+    await tester.tap(find.text(t.video_settings_cat_subtitle));
+    await tester.pumpAndSettle();
+
+    final Finder backgroundOpacityRow = find.widgetWithText(
+      AdaptiveSettingsSliderRow,
+      t.video_setting_subtitle_bg_opacity,
+    );
+    expect(
+      tester.widget<AdaptiveSettingsSliderRow>(backgroundOpacityRow).value,
+      0.75,
+    );
+
+    final Finder noBackgroundRow = find.widgetWithText(
+      AdaptiveSettingsRow,
+      t.video_setting_subtitle_no_background,
+    );
+    await tester.ensureVisible(noBackgroundRow);
+    await tester.pumpAndSettle();
+    await tester.tap(noBackgroundRow);
+    await tester.pump();
+
+    expect(previews.map((s) => s.backgroundOpacity), <double>[0]);
+    expect(commits.map((s) => s.backgroundOpacity), <double>[0]);
+    expect(
+      tester.widget<AdaptiveSettingsSliderRow>(backgroundOpacityRow).value,
+      0,
+      reason: '快捷项必须同步本地 _style，避免背景不透明度滑条显示滞后',
+    );
   });
 
   testWidgets(
