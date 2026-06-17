@@ -27,38 +27,31 @@ void main() {
     expect(prefs, contains('setVideoControlLayout'));
   });
 
-  test('quick settings only exposes the on-video control editor entry', () {
+  test('quick settings owns the staged control drag editor', () {
     final String settings =
         read('lib/src/media/video/video_quick_settings_sheet.dart');
 
     expect(settings, contains('initialControlLayout'));
     expect(settings, contains('onControlLayoutChanged'));
-    expect(settings, contains('onEditControlsOnscreen'));
-    expect(settings, contains('t.video_control_edit_on_video'));
 
-    expect(settings, isNot(contains('_buildControlDragEditor')));
-    expect(settings, isNot(contains('DragTarget<VideoControlDragData>')));
-    expect(settings, isNot(contains('Draggable<VideoControlDragData>')));
-    expect(settings, isNot(contains('VideoControlSlot.hidden')));
+    expect(settings, contains('_buildControlDragEditor'));
+    expect(settings, contains('_buildControlStagePreview'));
+    expect(settings, contains('DragTarget<VideoControlDragData>'));
+    expect(settings, contains('Draggable<VideoControlDragData>'));
+    expect(settings, contains('VideoControlSlot.hidden'));
+    expect(settings, contains('Tooltip('));
+    expect(settings, contains('Semantics('));
     expect(settings, isNot(contains('Icons.drag_indicator')));
   });
 
-  test('video page exposes an onscreen drag edit overlay entry', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+  test('quick settings editor does not depend on the onscreen overlay file',
+      () {
     final String settings =
         read('lib/src/media/video/video_quick_settings_sheet.dart');
 
-    expect(page, contains('video_control_layout_edit_overlay.dart'));
-    expect(page, contains('ValueNotifier<bool> _videoControlEditMode'));
-    expect(page, contains('_showVideoControlEditOverlay'));
-    expect(page, contains('_hideVideoControlEditOverlay'));
-    expect(page, contains('VideoControlLayoutEditOverlay('));
-    expect(page, contains('onLayoutChanged: _setVideoControlLayout'));
-    expect(page, contains('_videoSidePanel.value != null'));
-
-    expect(settings, contains('onEditControlsOnscreen'));
-    expect(settings, contains('t.video_control_edit_on_video'));
+    expect(settings, isNot(contains('video_control_layout_edit_overlay.dart')));
+    expect(settings, isNot(contains('VideoControlLayoutEditOverlay')));
+    expect(settings, isNot(contains('t.video_control_edit_on_video')));
   });
 
   test('saved on-video layout notifies the active controls builder immediately',
