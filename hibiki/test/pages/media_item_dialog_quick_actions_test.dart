@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -128,6 +130,28 @@ void main() {
     expect(tapped, 1);
     expect(tester.takeException(), isNull);
   });
+
+  test('quick, list, and danger action groups keep explicit vertical rhythm',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/media_item_dialog_page.dart')
+            .readAsStringSync();
+    final int frameStart = source.indexOf('class MediaItemDialogFrame');
+    expect(frameStart, isNonNegative);
+    final String build = _methodSource(
+      source.substring(frameStart),
+      '  @override\n  Widget build(BuildContext context) {',
+    );
+
+    expect(build, contains('leading: Icon(action.icon)'));
+    expect(
+      RegExp(r'SizedBox\(height: tokens\.spacing\.gap\)')
+          .allMatches(build)
+          .length,
+      greaterThanOrEqualTo(2),
+      reason: 'quick/list/danger groups need clear MD3 spacing',
+    );
+  });
 }
 
 /// Width of the chip wrapping the given label (the OutlinedButton ancestor).
@@ -138,4 +162,19 @@ double _chipWidth(WidgetTester tester, String label) {
   );
   expect(button, findsOneWidget, reason: 'chip for "$label" not found');
   return tester.getSize(button).width;
+}
+
+String _methodSource(String source, String signature) {
+  final int start = source.indexOf(signature);
+  expect(start, isNonNegative, reason: 'missing $signature');
+  int depth = 0;
+  final int bodyStart = source.indexOf('{', start);
+  for (int i = bodyStart; i < source.length; i++) {
+    if (source[i] == '{') depth++;
+    if (source[i] == '}') {
+      depth--;
+      if (depth == 0) return source.substring(start, i + 1);
+    }
+  }
+  throw StateError('unterminated method: $signature');
 }

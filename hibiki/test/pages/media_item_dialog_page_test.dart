@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -26,9 +28,35 @@ void main() {
       ];
 
   List<DialogListAction> list() => <DialogListAction>[
-        DialogListAction(label: 'Book Profile', onPressed: () {}),
-        DialogListAction(label: 'Edit CSS', onPressed: () {}),
+        DialogListAction(
+          label: 'Book Profile',
+          icon: Icons.account_circle_outlined,
+          onPressed: () {},
+        ),
+        DialogListAction(
+          label: 'Edit CSS',
+          icon: Icons.code_outlined,
+          onPressed: () {},
+        ),
       ];
+
+  test('book dialogs request a contained, lighter cover background', () {
+    final String source =
+        File('lib/src/pages/implementations/media_item_dialog_page.dart')
+            .readAsStringSync();
+
+    expect(source, contains('const double kBookDialogCoverBackgroundOpacity'));
+    expect(source, contains('coverBackgroundFit: BoxFit.contain'));
+    expect(
+        source,
+        contains('coverBackgroundOpacity: '
+            'kBookDialogCoverBackgroundOpacity'));
+    expect(
+      source,
+      isNot(contains('const double kBookDialogCoverBackgroundOpacity = 0.34')),
+      reason: 'book long-press cover background must be lighter than before',
+    );
+  });
 
   testWidgets('a full-width launch button reads the book below the cover',
       (WidgetTester tester) async {
@@ -107,6 +135,57 @@ void main() {
     expect(find.text('Audiobook'), findsOneWidget);
     expect(find.text('Book Profile'), findsOneWidget);
     expect(find.text('Edit CSS'), findsOneWidget);
+  });
+
+  testWidgets('list actions render their icons as leading affordances',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        MediaItemDialogFrame(
+          cover: const SizedBox(width: 260, height: 100),
+          title: 'Test title',
+          listActions: list(),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.account_circle_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.code_outlined), findsOneWidget);
+    expect(
+      tester.getCenter(find.byIcon(Icons.account_circle_outlined)).dx,
+      lessThan(tester.getCenter(find.text('Book Profile')).dx),
+      reason: 'list-action icons should lead the label, not disappear',
+    );
+  });
+
+  testWidgets('cover background fit and opacity can be tuned for books',
+      (WidgetTester tester) async {
+    const Key coverKey = ValueKey<String>('contained-cover');
+    await tester.pumpWidget(
+      buildApp(
+        MediaItemDialogFrame(
+          cover: const SizedBox(key: coverKey, width: 260, height: 100),
+          title: 'Test title',
+          coverBackgroundFit: BoxFit.contain,
+          coverBackgroundOpacity: 0.24,
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    final Finder fitted = find.ancestor(
+      of: find.byKey(coverKey),
+      matching: find.byType(FittedBox),
+    );
+    final Finder opacity = find.ancestor(
+      of: find.byKey(coverKey),
+      matching: find.byType(Opacity),
+    );
+    expect(fitted, findsOneWidget);
+    expect(tester.widget<FittedBox>(fitted).fit, BoxFit.contain);
+    expect(opacity, findsOneWidget);
+    expect(tester.widget<Opacity>(opacity).opacity, 0.24);
   });
 
   testWidgets('destructive actions render as visible (muted) buttons',
