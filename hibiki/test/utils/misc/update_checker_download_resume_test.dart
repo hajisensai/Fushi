@@ -80,6 +80,158 @@ void main() {
       expect(paths.metadataFile.existsSync(), isTrue);
     });
 
+    test('reports diagnostics for source switch and chunk progress', () async {
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final String failedUrl =
+          'https://bad.example/releases/download/v1.2.0/${asset.name}';
+      final List<UpdateDownloadDiagnostics> diagnostics =
+          <UpdateDownloadDiagnostics>[];
+      final List<String> sourceFailures = <String>[];
+
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[failedUrl, asset.url],
+        openUrl: (Uri uri, Map<String, String> headers) async {
+          if (uri.host == 'bad.example') {
+            throw const SocketException('offline');
+          }
+          expect(headers, isNot(contains(HttpHeaders.rangeHeader)));
+          return UpdateDownloadResponse(
+            statusCode: HttpStatus.ok,
+            headers: <String, String>{
+              HttpHeaders.contentLengthHeader: '${payload.length}',
+            },
+            stream: Stream<List<int>>.fromIterable(<List<int>>[
+              payload.sublist(0, 4),
+              payload.sublist(4),
+            ]),
+          );
+        },
+        onDiagnostics: diagnostics.add,
+        onSourceFailure: (String url, Object _, StackTrace __) {
+          sourceFailures.add(url);
+        },
+      );
+
+      expect(await file.readAsBytes(), payload);
+      expect(sourceFailures, <String>[failedUrl]);
+      expect(
+        diagnostics.where((UpdateDownloadDiagnostics d) {
+          return d.receivedBytes == 0;
+        }).map((UpdateDownloadDiagnostics d) => d.sourceUrl),
+        containsAllInOrder(<String>[failedUrl, asset.url]),
+      );
+
+      final UpdateDownloadDiagnostics last = diagnostics.last;
+      expect(last.sourceUrl, asset.url);
+      expect(last.sourceHost, hostLabelForUpdateUrl(asset.url));
+      expect(last.receivedBytes, payload.length);
+      expect(last.totalBytes, payload.length);
+      expect(last.bytesPerSecond, isNotNull);
+      expect(last.resumed, isFalse);
+      expect(last.restartedFromZero, isFalse);
+    });
+
+    test('reports diagnostics for accepted resume and restart-from-zero',
+        () async {
+      final List<int> payload = _payload();
+      final UpdateAsset asset = _asset(payload);
+      final UpdateDownloadPaths resumePaths =
+          UpdateDownloadPaths.forAsset(updatesDir, asset);
+      await resumePaths.partFile
+          .writeAsBytes(payload.sublist(0, 4), flush: true);
+      await _writeMetadata(resumePaths.metadataFile, asset,
+          sizeBytes: payload.length);
+
+      final List<UpdateDownloadDiagnostics> resumedDiagnostics =
+          <UpdateDownloadDiagnostics>[];
+      await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        openUrl: (_, Map<String, String> headers) async {
+          expect(headers[HttpHeaders.rangeHeader], 'bytes=4-');
+          return UpdateDownloadResponse.bytes(
+            statusCode: HttpStatus.partialContent,
+            body: payload.sublist(4),
+            headers: <String, String>{
+              HttpHeaders.contentRangeHeader: 'bytes 4-9/10',
+              HttpHeaders.etagHeader: '"payload-v1"',
+            },
+          );
+        },
+        onDiagnostics: resumedDiagnostics.add,
+      );
+
+      expect(
+        resumedDiagnostics
+            .lastWhere(
+              (UpdateDownloadDiagnostics d) =>
+                  d.receivedBytes == payload.length,
+            )
+            .resumed,
+        isTrue,
+      );
+      expect(resumedDiagnostics.last.restartedFromZero, isFalse);
+
+      final Directory restartDir =
+          await Directory.systemTemp.createTemp('hibiki-update-restart');
+      addTearDown(() => _deleteDirectoryWithRetry(restartDir));
+      final UpdateDownloadPaths restartPaths =
+          UpdateDownloadPaths.forAsset(restartDir, asset);
+      await restartPaths.partFile
+          .writeAsBytes(<int>[99, 98, 97, 96], flush: true);
+      await _writeMetadata(restartPaths.metadataFile, asset,
+          sizeBytes: payload.length);
+
+      final List<UpdateDownloadDiagnostics> restartDiagnostics =
+          <UpdateDownloadDiagnostics>[];
+      await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: restartDir,
+        candidateUrls: <String>[asset.url],
+        openUrl: (_, Map<String, String> headers) async {
+          expect(headers[HttpHeaders.rangeHeader], 'bytes=4-');
+          return UpdateDownloadResponse.bytes(
+            statusCode: HttpStatus.ok,
+            body: payload,
+            headers: <String, String>{
+              HttpHeaders.contentLengthHeader: '${payload.length}',
+            },
+          );
+        },
+        onDiagnostics: restartDiagnostics.add,
+      );
+
+      final UpdateDownloadDiagnostics restartLast = restartDiagnostics.last;
+      expect(restartLast.receivedBytes, payload.length);
+      expect(restartLast.totalBytes, payload.length);
+      expect(restartLast.resumed, isFalse);
+      expect(restartLast.restartedFromZero, isTrue);
+    });
+
+    test('formats diagnostic byte sizes, speeds, and speed samples', () {
+      expect(formatUpdateDownloadByteCount(null), '—');
+      expect(formatUpdateDownloadByteCount(0), '0 B');
+      expect(formatUpdateDownloadByteCount(1536), '1.5 KB');
+      expect(formatUpdateDownloadByteCount(5 * 1024 * 1024), '5.0 MB');
+      expect(formatUpdateDownloadSpeed(null), '—');
+      expect(formatUpdateDownloadSpeed(1536), '1.5 KB/s');
+      expect(
+        updateDownloadBytesPerSecond(
+          startedBytes: 4,
+          receivedBytes: 10,
+          elapsed: const Duration(seconds: 3),
+        ),
+        2,
+      );
+    });
+
     test('restarts from zero when server ignores Range with HTTP 200',
         () async {
       final List<int> payload = _payload();

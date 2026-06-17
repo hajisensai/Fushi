@@ -1688,5 +1688,12 @@
     "video_clip_export_ffmpeg_failed": "ffmpeg 执行失败",
     "video_clip_export_output_missing": "没有生成导出文件",
     "video_clip_export_input_missing": "源视频不可用",
-    "video_subtitle_list_loading": "正在加载字幕…"
+    "video_subtitle_list_loading": "正在加载字幕…",
+    "update_download_source": "来源：$source",
+    "update_download_size": "已下载：$received / $total",
+    "update_download_speed": "速度：$speed",
+    "update_download_resume_status": "续传：$status",
+    "update_download_resumed": "已续传",
+    "update_download_not_resumed": "未续传",
+    "update_download_restarted_from_zero": "已从零重下"
 }
