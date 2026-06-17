@@ -190,4 +190,116 @@ void main() {
     expect(guardIdx, lessThan(firstNullIdx),
         reason: '幂等早返回必须在真正释放（compositor_ = nullptr）之前');
   });
+
+  test(
+      'TODO-489: exit(0) paths run an idempotent native pre-exit hook before '
+      'CRT atexit can release dcomp compositor', () {
+    File? firstExisting(List<String> candidates) => candidates
+        .map(File.new)
+        .cast<File?>()
+        .firstWhere((File? file) => file != null && file.existsSync(),
+            orElse: () => null);
+
+    final File? nativePreExit = firstExisting(<String>[
+      'hibiki/lib/src/platform/desktop/windows_native_pre_exit.dart',
+      'lib/src/platform/desktop/windows_native_pre_exit.dart',
+    ]);
+    final File? lifecycle = firstExisting(<String>[
+      'hibiki/lib/src/platform/desktop/desktop_lifecycle_service.dart',
+      'lib/src/platform/desktop/desktop_lifecycle_service.dart',
+    ]);
+    final File? updater = firstExisting(<String>[
+      'hibiki/lib/src/utils/misc/platform_updater.dart',
+      'lib/src/utils/misc/platform_updater.dart',
+    ]);
+    final File? managerSource = firstExisting(<String>[
+      'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+      '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+    ]);
+    final File? managerHeader = firstExisting(<String>[
+      'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.h',
+      '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.h',
+    ]);
+
+    expect(nativePreExit, isNotNull,
+        reason: 'Dart desktop exit paths need a shared native pre-exit hook.');
+    expect(lifecycle, isNotNull);
+    expect(updater, isNotNull);
+    expect(managerSource, isNotNull);
+    expect(managerHeader, isNotNull);
+
+    final String preExitSrc = nativePreExit!.readAsStringSync();
+    final String lifecycleSrc = lifecycle!.readAsStringSync();
+    final String updaterSrc = updater!.readAsStringSync();
+    final String managerSrc = managerSource!.readAsStringSync();
+    final String managerHdr = managerHeader!.readAsStringSync();
+
+    expect(preExitSrc.contains('WindowsNativePreExit'), isTrue);
+    expect(
+        preExitSrc.contains(
+            "MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager')"),
+        isTrue,
+        reason:
+            'The hook must target the native WebView manager that owns dcomp.');
+    expect(preExitSrc.contains("'prepareForProcessExit'"), isTrue,
+        reason: 'The Dart hook must call the native pre-exit method.');
+    expect(preExitSrc.contains('static bool _prepared = false'), isTrue,
+        reason:
+            'The Dart hook must be idempotent before exitApp/update handoff.');
+    expect(preExitSrc.contains('if (_prepared) return;'), isTrue,
+        reason:
+            'Repeated close/update paths must not release native state twice.');
+    expect(preExitSrc.contains('_prepared = true'), isTrue,
+        reason:
+            'The idempotent guard must be set before invoking the native hook.');
+
+    final int lifecycleHook =
+        lifecycleSrc.indexOf('WindowsNativePreExit.prepareForExit()');
+    final int lifecycleExit = lifecycleSrc.indexOf('exit(0)');
+    expect(lifecycleHook, greaterThanOrEqualTo(0),
+        reason:
+            'DesktopLifecycleService.exitApp must call the native pre-exit hook.');
+    expect(lifecycleExit, greaterThanOrEqualTo(0));
+    expect(lifecycleHook, lessThan(lifecycleExit),
+        reason:
+            'Native pre-exit must run before DesktopLifecycleService calls exit(0).');
+
+    final int updaterHook =
+        updaterSrc.indexOf('WindowsNativePreExit.prepareForExit()');
+    final int updaterExit = updaterSrc.indexOf('(exitProcess ?? exit)(0)');
+    expect(updaterHook, greaterThanOrEqualTo(0),
+        reason:
+            'WindowsInstaller.runAndExit must share the same native pre-exit hook.');
+    expect(updaterExit, greaterThanOrEqualTo(0));
+    expect(updaterHook, lessThan(updaterExit),
+        reason:
+            'Update handoff must release native dcomp/WebView/WGC state before exit(0).');
+
+    expect(managerHdr.contains('prepareForProcessExit'), isTrue,
+        reason:
+            'The native WebView manager must expose a pre-exit teardown entrypoint.');
+    expect(managerSrc.contains('"prepareForProcessExit"'), isTrue,
+        reason: 'The native method channel must accept prepareForProcessExit.');
+    final int nativeMethod = managerSrc.indexOf(
+      'void InAppWebViewManager::prepareForProcessExit()',
+    );
+    expect(nativeMethod, greaterThanOrEqualTo(0),
+        reason: 'Native pre-exit teardown must be auditable.');
+    final int nativeMethodEnd =
+        managerSrc.indexOf('void InAppWebViewManager::', nativeMethod + 1);
+    final String nativeBody = managerSrc.substring(
+      nativeMethod,
+      nativeMethodEnd > nativeMethod ? nativeMethodEnd : managerSrc.length,
+    );
+    expect(nativeBody.contains('webViews.clear()'), isTrue,
+        reason:
+            'Pre-exit must release active WebView platform views before dcomp.');
+    expect(nativeBody.contains('keepAliveWebViews.clear()'), isTrue,
+        reason: 'Pre-exit must release keep-alive WebViews before dcomp.');
+    expect(nativeBody.contains('windowWebViews.clear()'), isTrue,
+        reason: 'Pre-exit must release pending popup WebViews before dcomp.');
+    expect(nativeBody.contains('releaseSharedCompositionResources()'), isTrue,
+        reason:
+            'Pre-exit must release shared DirectComposition/WinRT resources.');
+  });
 }

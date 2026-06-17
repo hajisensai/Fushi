@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 
+import 'package:hibiki/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/utils.dart'; // ErrorLogService
@@ -493,6 +494,7 @@ class WindowsInstaller {
     // AppMutex 只用于安装器检测「app 仍在运行」，单凭它不会自动替换重启，必须
     // 配合上面的安装参数（见 windowsInstallerArgs）。
     await Future<void>.delayed(Duration.zero);
+    await WindowsNativePreExit.prepareForExit();
     (exitProcess ?? exit)(0);
   }
 

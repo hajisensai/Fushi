@@ -234,6 +234,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             ? Colors.transparent
             : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
         onDismiss: isBase ? _close : () => _popAt(index),
+        onClose: null,
+        // TODO-485：基础层已有搜索栏/外层关闭入口；子层在禁用滑动时仍显示返回。
+        onBack: isBase ? null : () => _popAt(index),
         onTapOutside: isBase ? _close : () => _popAt(index),
         onScrolledToBottom: entry.allLoaded
             ? null

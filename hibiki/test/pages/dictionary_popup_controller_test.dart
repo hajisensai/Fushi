@@ -149,6 +149,36 @@ void main() {
     expect(c.entries.first.visible, true);
   });
 
+  test('TODO-485: child back keeps parent; top close keeps existing semantics',
+      () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final parent = c.beginTop(
+        term: 'parent',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    c.fillResult(parent, result: null, allLoaded: true);
+    c.pushChild(
+        term: 'child',
+        rect: const Rect.fromLTWH(1, 1, 1, 1),
+        parentIndex: 0,
+        visible: true);
+
+    c.dismissAt(1);
+    expect(c.entries, hasLength(1),
+        reason: 'closing a child layer must return to the parent layer');
+    expect(c.entries.single.searchTerm, 'parent');
+    expect(c.entries.single.visible, isTrue);
+
+    c.dismissAt(0);
+    expect(c.entries, hasLength(1),
+        reason:
+            'top close still preserves the hidden warm slot in normal mode');
+    expect(c.entries.single.isWarmSlot, isTrue);
+    expect(c.entries.single.visible, isFalse);
+  });
+
   // ── TODO-058：嵌套（第二个）冷层挂起到渲染完成才显示，消除白屏一瞬 ──────────
   test('markPendingReveal 挂起：fillResult 后先不显示，等 revealRendered', () {
     final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();

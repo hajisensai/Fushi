@@ -415,9 +415,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onDismiss: () => _dismissPopupAt(index),
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
         enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
-        // TODO-407①：仅顶层弹窗渲染"X 关闭"，走既有关闭汇聚点 [_dismissPopupAt]
-        // （不破坏 BUG-072 续播 / 清句 / 清栈）。嵌套层为 null（靠点窗外 / B / Esc）。
+        // TODO-407①：顶层仍渲染"X 关闭"并走既有关闭汇聚点 [_dismissPopupAt(0)]
+        // （不破坏 BUG-072 续播 / 清句 / 清栈）。
         onClose: index == 0 ? () => _dismissPopupAt(0) : null,
+        // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
+        onBack: index > 0 ? () => _dismissPopupAt(index) : null,
         onTapOutside: clearDictionaryResult,
         onRendered: () => _onPopupLayerRendered(index, item),
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败

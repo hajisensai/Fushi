@@ -104,6 +104,10 @@ namespace flutter_inappwebview_plugin
       disposeKeepAlive(keepAliveId);
       result->Success();
     }
+    else if (string_equals(methodName, "prepareForProcessExit")) {
+      prepareForProcessExit();
+      result->Success();
+    }
     else {
       result->NotImplemented();
     }
@@ -226,6 +230,15 @@ namespace flutter_inappwebview_plugin
       }
       keepAliveWebViews.erase(keepAliveId);
     }
+  }
+
+  void InAppWebViewManager::prepareForProcessExit()
+  {
+    debugLog("prepareForProcessExit InAppWebViewManager");
+    webViews.clear();
+    keepAliveWebViews.clear();
+    windowWebViews.clear();
+    releaseSharedCompositionResources();
   }
 
   bool InAppWebViewManager::isGraphicsCaptureSessionSupported()
