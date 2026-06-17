@@ -19,6 +19,8 @@ import 'text_file_io.dart';
 /// 名前はまだない。
 /// ```
 class SrtParser {
+  static const int largeContentComputeThreshold = 1024 * 1024;
+
   /// SRT 独立书籍使用的固定章节标识。
   static const String defaultChapter = 'srt://default';
 
@@ -39,7 +41,21 @@ class SrtParser {
     int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(srtFile);
-    if (content.length > 1024 * 1024) {
+    return parseStringAsync(
+      content: content,
+      bookKey: bookKey,
+      chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
+    );
+  }
+
+  static Future<List<AudioCue>> parseStringAsync({
+    required String content,
+    required String bookKey,
+    String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
+  }) {
+    if (content.length > largeContentComputeThreshold) {
       return compute(_parseStringIsolate, <String, dynamic>{
         'content': content,
         'bookKey': bookKey,
@@ -47,12 +63,12 @@ class SrtParser {
         'audioFileIndex': audioFileIndex,
       });
     }
-    return parseString(
+    return Future<List<AudioCue>>.value(parseString(
       content: content,
       bookKey: bookKey,
       chapterHref: chapterHref,
       audioFileIndex: audioFileIndex,
-    );
+    ));
   }
 
   static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {
