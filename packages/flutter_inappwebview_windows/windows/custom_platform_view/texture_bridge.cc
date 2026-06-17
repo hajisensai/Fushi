@@ -154,8 +154,7 @@ namespace flutter_inappwebview_plugin
     };
 
     void FinalizeFramePoolLifetime(
-      const std::shared_ptr<WgcFramePoolLifetime>& lifetime,
-      bool allow_remove);
+      const std::shared_ptr<WgcFramePoolLifetime>& lifetime);
   }  // namespace
 
   TextureBridge::TextureBridge(GraphicsContext* graphics_context,
@@ -402,7 +401,7 @@ namespace flutter_inappwebview_plugin
     // 当前退役顺序集中在 WgcFramePoolLifetime finalize：
     //   1) inactive/retiring：迟到回调只读 callback_state 并 no-op。
     //   2) remove_FrameArrived(token)：在 frame pool 仍 open 时同步摘掉 event token。
-    //   3) remove 成功后释放 handler；失败则保留 token/handler/pool 作异常证据。
+    //   3) remove 成功后释放 handler；remove 异常则保留 token/handler/pool 作异常证据。
     //   4) Close capture session，再 Close frame pool。
     //   5) 同一个 lifetime 在 registry 中从 active 计数转为 retired 计数并永久保活。
     //
@@ -436,12 +435,11 @@ namespace flutter_inappwebview_plugin
       WgcLog::Write("retire-defer-in-handler", lifetime->PoolForLog(),
         GenerationDetail(lifetime->generation));
       if (lifetime->dispatcher_queue && !lifetime->finalize_posted) {
-        lifetime->finalize_posted = true;
         auto finalize_handler =
           Microsoft::WRL::Callback<ABI::Windows::System::IDispatcherQueueHandler>(
             [lifetime]() -> HRESULT
             {
-              FinalizeFramePoolLifetime(lifetime, true);
+              FinalizeFramePoolLifetime(lifetime);
               return S_OK;
             });
         boolean enqueued = false;
@@ -449,23 +447,27 @@ namespace flutter_inappwebview_plugin
           lifetime->dispatcher_queue->TryEnqueue(finalize_handler.Get(),
             &enqueued);
         if (SUCCEEDED(enqueue_hr) && enqueued) {
+          lifetime->finalize_posted = true;
+          WgcLog::Write("retire-defer-posted", lifetime->PoolForLog(),
+            GenerationDetail(lifetime->generation));
           return;
         }
-        WgcLog::Write("retire-defer-fail", lifetime->PoolForLog(),
+        WgcLog::Write("retire-defer-keepalive", lifetime->PoolForLog(),
           HResultDetail("hr", enqueue_hr));
+        return;
       }
-      FinalizeFramePoolLifetime(lifetime, false);
+      WgcLog::Write("retire-defer-keepalive", lifetime->PoolForLog(),
+        lifetime->dispatcher_queue ? "finalize_posted=1" : "dispatcher_queue=0");
       return;
     }
 
-    FinalizeFramePoolLifetime(lifetime, true);
+    FinalizeFramePoolLifetime(lifetime);
   }
 
   namespace
   {
     void FinalizeFramePoolLifetime(
-      const std::shared_ptr<WgcFramePoolLifetime>& lifetime,
-      bool allow_remove)
+      const std::shared_ptr<WgcFramePoolLifetime>& lifetime)
     {
       if (!lifetime || lifetime->registry_retired) {
         return;
@@ -473,7 +475,7 @@ namespace flutter_inappwebview_plugin
 
       const void* pool_for_log = lifetime->PoolForLog();
       bool remove_succeeded = false;
-      if (allow_remove && lifetime->frame_pool &&
+      if (lifetime->frame_pool &&
         lifetime->on_frame_arrived_token.value != 0) {
         WgcLog::Write("remove-before-close-start", pool_for_log,
           GenerationDetail(lifetime->generation));
@@ -489,23 +491,20 @@ namespace flutter_inappwebview_plugin
           }
           else if (IsClosedFramePoolHResult(remove_hr)) {
             lifetime->remove_failed = true;
-            WgcLog::Write("remove-before-close-closed-unexpected", pool_for_log,
+            WgcLog::Write("remove-before-close-error", pool_for_log,
               HResultDetail("hr", remove_hr));
           }
           else {
             lifetime->remove_failed = true;
-            WgcLog::Write("remove-before-close-fail", pool_for_log,
+            WgcLog::Write("remove-before-close-error", pool_for_log,
               HResultDetail("hr", remove_hr));
           }
         }
         catch (const winrt::hresult_error& error) {
           const HRESULT remove_hr = error.code();
           lifetime->remove_failed = true;
-          WgcLog::Write(
-            IsClosedFramePoolHResult(remove_hr)
-              ? "remove-before-close-closed-unexpected"
-              : "remove-before-close-fail",
-            pool_for_log, HResultDetail("hr", remove_hr));
+          WgcLog::Write("remove-before-close-error", pool_for_log,
+            HResultDetail("hr", remove_hr));
         }
       }
       else if (lifetime->on_frame_arrived_token.value == 0) {
@@ -513,8 +512,7 @@ namespace flutter_inappwebview_plugin
       }
       else {
         lifetime->remove_failed = true;
-        WgcLog::Write("remove-before-close-fail", pool_for_log,
-          allow_remove ? "pool=0" : "defer_enqueue=0");
+        WgcLog::Write("remove-before-close-error", pool_for_log, "pool=0");
       }
 
       if (remove_succeeded && lifetime->frame_arrived_handler) {
