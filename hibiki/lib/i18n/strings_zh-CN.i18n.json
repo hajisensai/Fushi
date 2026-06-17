@@ -1697,5 +1697,8 @@
     "update_download_not_resumed": "未续传",
     "update_download_restarted_from_zero": "已从零重下",
     "video_setting_subtitle_no_background": "无背景",
-    "video_setting_subtitle_no_background_hint": "让字幕背景透明，不显示底色。"
+    "video_setting_subtitle_no_background_hint": "让字幕背景透明，不显示底色。",
+    "video_screenshot_saved_to": "截图已保存：${path}",
+    "video_screenshot_ready": "截图已准备好：${file}",
+    "video_screenshot_failed_reason": "截图失败：${reason}"
 }

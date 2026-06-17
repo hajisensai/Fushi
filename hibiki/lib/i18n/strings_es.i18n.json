@@ -1697,5 +1697,8 @@
     "update_download_not_resumed": "not resumed",
     "update_download_restarted_from_zero": "restarted from zero",
     "video_setting_subtitle_no_background": "No background",
-    "video_setting_subtitle_no_background_hint": "Make the subtitle background transparent."
+    "video_setting_subtitle_no_background_hint": "Make the subtitle background transparent.",
+    "video_screenshot_saved_to": "Screenshot saved: ${path}",
+    "video_screenshot_ready": "Screenshot ready: ${file}",
+    "video_screenshot_failed_reason": "Screenshot failed: ${reason}"
 }
