@@ -550,10 +550,12 @@ void main() {
       final String fileSource = File(entry.key).readAsStringSync();
       final String source =
           entry.key.endsWith('reader_hibiki_history_page.dart')
-              ? _functionSource(
-                  fileSource,
-                  'Widget _bookCardShell({',
-                  'Widget _cardBadge({',
+              ? _withoutTransparentInkHosts(
+                  _functionSource(
+                    fileSource,
+                    'Widget _bookCardShell({',
+                    'Widget _cardBadge({',
+                  ),
                 )
               : entry.key.endsWith('dictionary_dialog_page.dart')
                   ? _functionSource(
@@ -2302,6 +2304,17 @@ String _withoutSharedComponentNames(String source) {
       .replaceAll('HibikiOverflowMenu(', 'HibikiSharedOverflow(')
       .replaceAll('HibikiTransientScaffold(', 'HibikiSharedTransient(')
       .replaceAll('HibikiOverlayScaffold(', 'HibikiSharedOverlay(');
+}
+
+String _withoutTransparentInkHosts(String source) {
+  // A transparent Material directly hosting InkWell is an ink layer, not a
+  // local visual primitive. Other Material usages remain visible to the guard.
+  return source.replaceAll(
+    RegExp(
+      r'Material\(\s*type:\s*MaterialType\.transparency,\s*child:\s*InkWell\(',
+    ),
+    'TransparentInkHost(child: InkWell(',
+  );
 }
 
 List<String> _forbiddenChromeHits(String source, List<String> forbidden) {

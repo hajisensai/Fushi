@@ -58,15 +58,17 @@ void main() {
       reason: 'helper 必须保留 MaterialDesktopVideoControlsTheme（桌面端 controls 读取）',
     );
     // 移动主题的 normal/fullscreen 都用 _mobileControlsTheme（全屏丢 AppBar 也可达）。
+    expect(src, contains('_currentVideoControlsTheme('),
+        reason: '页面应通过同一个 helper 产出移动/桌面 controls 主题');
     expect(
       src,
-      contains('mobile: mobileControlsTheme'),
-      reason: '页面应把 _mobileControlsTheme 产物传给 VideoControlsThemePair',
+      contains('mobile: controlsTheme.mobile'),
+      reason: '页面应把当前 layout 产出的 mobile controls 主题传给 VideoControlsThemePair',
     );
     expect(
       src,
-      contains('desktop: desktopControlsTheme'),
-      reason: '页面应把 _desktopControlsTheme 产物传给 VideoControlsThemePair',
+      contains('desktop: controlsTheme.desktop'),
+      reason: '页面应把当前 layout 产出的 desktop controls 主题传给 VideoControlsThemePair',
     );
     expect(
       themePairSrc,
@@ -90,13 +92,15 @@ void main() {
     final String body = src.substring(start, end);
 
     expect(
-      body,
-      contains('_topBarSlotButtons(VideoControlSlot.topLeft, controller'),
+      RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft[\s\S]*?desktop:\s*false')
+          .hasMatch(body),
+      isTrue,
       reason: '移动 controls 应使用真实 topLeft slot 渲染顶栏按钮',
     );
     expect(
-      body,
-      contains('_topBarSlotButtons(VideoControlSlot.topRight, controller'),
+      RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight[\s\S]*?desktop:\s*false')
+          .hasMatch(body),
+      isTrue,
       reason: '移动 controls 应使用真实 topRight slot 渲染字幕/音轨/截图等入口',
     );
     expect(body, contains('desktop: false'),

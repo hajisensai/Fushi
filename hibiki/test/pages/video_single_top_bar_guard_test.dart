@@ -34,7 +34,7 @@ void main() {
   test('返回按钮进入视频内顶栏（桌面+移动两套主题各一）', () {
     // 删了 AppBar 自带的返回箭头后，返回必须改由视频内顶栏提供，且全屏可达。
     expect(
-      '_topBarSlotButtons(VideoControlSlot.topLeft, controller'
+      RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft')
           .allMatches(src)
           .length,
       greaterThanOrEqualTo(2),

@@ -38,8 +38,25 @@ void main() {
         reason:
             'top bar should not branch into narrow more menu / wide inline');
     expect(
-        topBar.contains('_topBarSlotButtons(VideoControlSlot.topRight'), isTrue,
-        reason: 'top-right actions should be real top-bar slot buttons');
+        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
+            .hasMatch(topBar),
+        isTrue,
+        reason:
+            'top-right actions should be rendered by the real top-bar slot group');
+    final String group = region(
+      'Widget _topBarSlotGroup(',
+      'String get _clipExportTooltip',
+    );
+    expect(group.contains('Alignment.centerRight'), isTrue,
+        reason: 'topRight must stay aligned as one group at the right edge');
+    expect(group.contains('SingleChildScrollView('), isTrue,
+        reason:
+            'topRight group must scroll horizontally instead of overflowing');
+    expect(group.contains('reverse: slot == VideoControlSlot.topRight'), isTrue,
+        reason: 'topRight scroll origin should keep the end buttons reachable');
+    expect(group.contains('MainAxisAlignment.end'), isTrue,
+        reason:
+            'topRight buttons should align to the group end, not spread as individual flex children');
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     expect(topRightItems.contains(VideoControlItem.subtitleTrack), isTrue,

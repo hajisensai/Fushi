@@ -99,8 +99,10 @@ void main() {
     // 根因守卫：overlay 默认 controlsBottomReserve = 常量 56，既不随缩放、又 < 默认基线
     // 75，移动端 max(75,56)=75 把字幕留在被抬高的进度条下面被遮（用户报「只动一点点」）。
     // 视频页必须显式传入按真实控制条几何加总的 reserve（移动 ≈140×缩放 > 75）才真正抬升。
-    expect(src,
-        contains('controlsBottomReserve: _subtitleControlsBottomReserve()'),
+    expect(
+        RegExp(r'controlsBottomReserve:\s*_subtitleControlsBottomReserve\(\)')
+            .hasMatch(src),
+        isTrue,
         reason: 'overlay 必须接上视频页计算的真实几何 reserve，否则回退裸常量 56 被遮');
     // 计算函数由真实控制条 getter 加总（均已 ×_videoUiScale），故随界面缩放。
     final int fn = src.indexOf('double _subtitleControlsBottomReserve()');

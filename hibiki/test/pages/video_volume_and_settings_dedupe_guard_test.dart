@@ -130,7 +130,7 @@ void main() {
       expect(src.contains('LayerLink? popoverLink'), isTrue,
           reason: '_activateVideoControlItem / _showSpeedMenu 必须传递触发源 link');
 
-      final String top = methodBody('List<Widget> _topBarSlotButtons(');
+      final String top = methodBody('Widget _topBarSlotGroup(');
       expect(top.contains('_controlPopoverLinkFor(slot, item)'), isTrue,
           reason: 'top bar speed 来自 _slotChipItems(slot)，必须使用该 slot 的锚点');
       expect(top.contains('_controlPopoverAnchor('), isTrue,
@@ -221,6 +221,8 @@ String methodBody(String startSig) {
     src.indexOf('\n  Future', start + startSig.length),
     src.indexOf('\n  List<', start + startSig.length),
     src.indexOf('\n  Material', start + startSig.length),
+    src.indexOf('\n  String get ', start + startSig.length),
+    src.indexOf('\n  IconData get ', start + startSig.length),
   ].where((int i) => i > start).toList();
   final int end =
       ends.isEmpty ? src.length : ends.reduce((int a, int b) => a < b ? a : b);

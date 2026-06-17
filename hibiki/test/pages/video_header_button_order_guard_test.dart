@@ -78,7 +78,7 @@ void main() {
     expect(clip, greaterThan(screenshot), reason: '片段导出必须放在截图按钮后面');
     expect(clip, screenshot + 1, reason: '片段导出必须紧挨截图按钮，中间不能插入其它按钮');
     expect(
-      '_topBarSlotButtons(VideoControlSlot.topRight, controller'
+      RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
           .allMatches(text)
           .length,
       greaterThanOrEqualTo(2),

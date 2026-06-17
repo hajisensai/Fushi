@@ -132,8 +132,19 @@ void main() {
       // Phase 2: _controlLayout is now a persisted field (the v2 source of
       // truth), loaded from AppModel.videoControlLayout, not derived read-only
       // from the legacy customization.
-      expect(src, contains('VideoControlLayout _controlLayout'));
-      expect(src, contains('_controlLayout = appModel.videoControlLayout'));
+      expect(src,
+          contains('ValueNotifier<VideoControlLayout> _controlLayoutNotifier'));
+      expect(
+          src,
+          contains(
+              'VideoControlLayout get _controlLayout => _controlLayoutNotifier.value'));
+      expect(
+          src,
+          contains(
+              '_controlLayoutNotifier.value = appModel.videoControlLayout'));
+      expect(src, contains('ValueListenableBuilder<VideoControlLayout>'));
+      expect(src, contains('valueListenable: _controlLayoutNotifier'));
+      expect(src, contains('_currentVideoControlsTheme(controller, layout)'));
       expect(src, contains('appModel.setVideoControlLayout(layout)'));
       // The phase-1 read-only derivation is gone.
       expect(
@@ -145,8 +156,15 @@ void main() {
     test('customizable render points go through slot-driven item helpers', () {
       expect(src, contains('List<VideoControlItem> _slotChipItems('));
       // Top bar, bottom bar, and screen rails all resolve from slots.
-      expect(src, contains('_topBarSlotButtons(VideoControlSlot.topLeft'));
-      expect(src, contains('_topBarSlotButtons(VideoControlSlot.topRight'));
+      expect(
+          RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft')
+              .hasMatch(src),
+          isTrue);
+      expect(
+          RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
+              .hasMatch(src),
+          isTrue);
+      expect(src, isNot(contains('_topBarSlotButtons(')));
       expect(src, contains('_bottomSlotButtons('));
       expect(src, contains('VideoControlSlot.bottomLeft'));
       expect(src, contains('VideoControlSlot.bottomRight'));
