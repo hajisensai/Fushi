@@ -1697,5 +1697,12 @@
     "update_download_not_resumed": "not resumed",
     "update_download_restarted_from_zero": "restarted from zero",
     "video_setting_subtitle_no_background": "No background",
-    "video_setting_subtitle_no_background_hint": "Make the subtitle background transparent."
+    "video_setting_subtitle_no_background_hint": "Make the subtitle background transparent.",
+    "update_install_success_title": "Update installed",
+    "update_install_success_message": "Hibiki was updated to version $version.",
+    "update_install_incomplete_title": "Update did not finish",
+    "update_install_incomplete_message": "The installer started, but Hibiki is still on the previous version. Check the installer log below.",
+    "update_install_launch_failed_title": "Update installer did not start",
+    "update_install_launch_failed_message": "Hibiki could not start the installer for version $version. Check the log path below.",
+    "update_install_log_path": "Installer log: $path"
 }

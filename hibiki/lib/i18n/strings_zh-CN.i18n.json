@@ -1697,5 +1697,12 @@
     "update_download_not_resumed": "未续传",
     "update_download_restarted_from_zero": "已从零重下",
     "video_setting_subtitle_no_background": "无背景",
-    "video_setting_subtitle_no_background_hint": "让字幕背景透明，不显示底色。"
+    "video_setting_subtitle_no_background_hint": "让字幕背景透明，不显示底色。",
+    "update_install_success_title": "更新已安装",
+    "update_install_success_message": "Hibiki 已更新到 $version 版本。",
+    "update_install_incomplete_title": "更新未完成",
+    "update_install_incomplete_message": "安装器已启动，但 Hibiki 仍是旧版本。请查看下方安装日志。",
+    "update_install_launch_failed_title": "更新安装器未启动",
+    "update_install_launch_failed_message": "Hibiki 未能启动 $version 版本安装器。请查看下方日志路径。",
+    "update_install_log_path": "安装日志：$path"
 }

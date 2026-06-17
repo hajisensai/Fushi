@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
+import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/utils.dart';
 
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
@@ -802,6 +803,43 @@ class UpdateChecker {
       status.dispose();
       diagnostics.dispose();
       overlayVisible.dispose();
+    }
+  }
+
+  static Future<void> reconcilePendingWindowsInstallerHandoff(
+    BuildContext context,
+    String currentVersion,
+  ) async {
+    if (!Platform.isWindows) return;
+    try {
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      final WindowsUpdateHandoffResult? result =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: WindowsUpdateHandoff.markerFile(updatesDir),
+        currentVersion: currentVersion,
+      );
+      if (result == null) return;
+
+      ErrorLogService.instance.log(
+        'UpdateChecker.windowsHandoff',
+        'status=${result.status.name}, target=${result.record.targetVersion}, '
+            'current=$currentVersion, installer=${result.record.installerPath}, '
+            'log=${result.record.innoLogPath}',
+      );
+      if (!context.mounted) return;
+      await showAppDialog<void>(
+        context: context,
+        barrierDismissible:
+            result.status == WindowsUpdateHandoffStatus.installed,
+        builder: (_) => WindowsUpdateHandoffResultDialog(result: result),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'UpdateChecker.windowsHandoff',
+        e,
+        stack,
+      );
+      debugPrint('[Hibiki] windows update handoff reconcile failed: $e');
     }
   }
 }
@@ -2195,6 +2233,102 @@ class UpdateAvailableDialog extends StatelessWidget {
               isDefaultAction: true,
               onPressed: onPrimary,
               child: Text(primaryLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class WindowsUpdateHandoffResultDialog extends StatelessWidget {
+  const WindowsUpdateHandoffResultDialog({
+    required this.result,
+    super.key,
+  });
+
+  final WindowsUpdateHandoffResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final WindowsUpdateHandoffRecord record = result.record;
+    final String title = switch (result.status) {
+      WindowsUpdateHandoffStatus.installed => t.update_install_success_title,
+      WindowsUpdateHandoffStatus.incomplete =>
+        t.update_install_incomplete_title,
+      WindowsUpdateHandoffStatus.launchFailed =>
+        t.update_install_launch_failed_title,
+    };
+    final String message = switch (result.status) {
+      WindowsUpdateHandoffStatus.installed =>
+        t.update_install_success_message(version: record.targetVersion),
+      WindowsUpdateHandoffStatus.incomplete =>
+        t.update_install_incomplete_message,
+      WindowsUpdateHandoffStatus.launchFailed =>
+        t.update_install_launch_failed_message(version: record.targetVersion),
+    };
+    final IconData icon = switch (result.status) {
+      WindowsUpdateHandoffStatus.installed => Icons.check_circle_outline,
+      WindowsUpdateHandoffStatus.incomplete => Icons.error_outline,
+      WindowsUpdateHandoffStatus.launchFailed => Icons.warning_amber_outlined,
+    };
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.9,
+      scrollable: false,
+      insetPadding: EdgeInsets.all(tokens.spacing.gap),
+      child: HibikiModalSheetFrame(
+        title: title,
+        leadingIcon: icon,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              message,
+              style: tokens.type.listSubtitle,
+            ),
+            if (result.status != WindowsUpdateHandoffStatus.installed) ...[
+              SizedBox(height: tokens.spacing.gap),
+              SelectableText(
+                t.update_install_log_path(path: record.innoLogPath),
+                style: tokens.type.listSubtitle,
+              ),
+              if (record.launchError != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  record.launchError!,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ],
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(t.dialog_ok),
             ),
           ],
         ),

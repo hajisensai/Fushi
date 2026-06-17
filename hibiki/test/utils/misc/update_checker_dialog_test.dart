@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/src/utils/misc/update_checker.dart';
 
 void main() {
@@ -87,5 +88,64 @@ void main() {
     expect(find.textContaining('1.2 MB'), findsOneWidget);
     expect(find.textContaining('120.6 KB/s'), findsOneWidget);
     expect(find.textContaining(t.update_download_not_resumed), findsOneWidget);
+  });
+
+  testWidgets('installer handoff success dialog shows the target version', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 260);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        WindowsUpdateHandoffResultDialog(
+          result: WindowsUpdateHandoffResult(
+            status: WindowsUpdateHandoffStatus.installed,
+            record: WindowsUpdateHandoffRecord(
+              targetVersion: '9.9.9',
+              installerPath: r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
+              innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
+              startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+              installerLaunchSucceeded: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.update_install_success_title), findsOneWidget);
+    expect(find.textContaining('9.9.9'), findsOneWidget);
+  });
+
+  testWidgets('installer handoff failure dialog keeps the Inno log visible', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 260);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        WindowsUpdateHandoffResultDialog(
+          result: WindowsUpdateHandoffResult(
+            status: WindowsUpdateHandoffStatus.incomplete,
+            record: WindowsUpdateHandoffRecord(
+              targetVersion: '9.9.9',
+              installerPath: r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
+              innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
+              startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+              installerLaunchSucceeded: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.update_install_incomplete_title), findsOneWidget);
+    expect(find.textContaining(r'C:\tmp\hibiki-9.9.9.install.log'),
+        findsOneWidget);
   });
 }
