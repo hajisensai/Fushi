@@ -1,13 +1,20 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() => DesktopLookupService.instance.debugReset());
+  setUp(() {
+    DesktopLookupService.instance.debugReset();
+    DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
+    DesktopForegroundGuard.debugHiddenWindowsRunner = false;
+  });
   tearDown(() {
+    DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
+    DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -142,6 +149,34 @@ void main() {
     expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
   });
 
+  testWidgets('clipboard change inside foreground process is ignored',
+      (WidgetTester tester) async {
+    final List<String> platformCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = true;
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      platformCalls.add(call.method);
+      if (call.method == 'Clipboard.getData') {
+        return <String, Object?>{'text': '  見る  '};
+      }
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+    svc.onWindowBlur(); // WebView/native child can make window_manager blur.
+
+    await tester.runAsync(() async {
+      svc.onClipboardChanged();
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    expect(svc.pendingText, isNull);
+    expect(platformCalls, isNot(contains('Clipboard.getData')));
+  });
+
   testWidgets('window mode controls always-on-top timing',
       (WidgetTester tester) async {
     final List<MethodCall> windowCalls = <MethodCall>[];
@@ -233,6 +268,54 @@ void main() {
     expect(windowCalls, isNot(contains('show')));
     expect(windowCalls, isNot(contains('focus')));
     expect(windowCalls, isNot(contains('setAlwaysOnTop')));
+  });
+
+  testWidgets(
+      'foreground owned by current process: bringPendingLookupToFront is no-op',
+      (WidgetTester tester) async {
+    final List<String> windowCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = true;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call.method);
+      if (call.method == 'isFocused') return false;
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await svc.configureWindowMode(DesktopClipboardWindowMode.lookup);
+    windowCalls.clear();
+    await svc.bringPendingLookupToFront();
+
+    expect(windowCalls, isNot(contains('show')));
+    expect(windowCalls, isNot(contains('focus')));
+    expect(windowCalls, isNot(contains('setAlwaysOnTop')));
+  });
+
+  testWidgets('hidden Windows runner never performs window attention calls',
+      (WidgetTester tester) async {
+    final List<String> windowCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    DesktopForegroundGuard.debugHiddenWindowsRunner = true;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call.method);
+      if (call.method == 'isFocused') return false;
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await svc.configureWindowMode(DesktopClipboardWindowMode.lookup);
+    await svc.bringPendingLookupToFront();
+
+    expect(windowCalls, isEmpty);
   });
 
   // A host/channel where window_manager.isFocused() resolves to null (incomplete
