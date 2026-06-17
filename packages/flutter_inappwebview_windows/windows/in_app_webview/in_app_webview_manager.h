@@ -52,6 +52,8 @@ namespace flutter_inappwebview_plugin
     void createInAppWebView(const flutter::EncodableMap* arguments, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void disposeKeepAlive(const std::string& keepAliveId);
   private:
+    void prepareForProcessExit();
+
     // BUG-255 / TODO-313 Family B（进程退出时 dcomp Compositor::CleanupSession FailFast）：
     // 下面这组 inline static 成员是进程级共享单例（DirectComposition Compositor、
     // GraphicsContext、WinRT DispatcherQueueController、RoHelper），由首个
