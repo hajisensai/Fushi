@@ -1,0 +1,6 @@
+## BUG-309 · TODO-488: linked SRT shelf card loses EPUB cover fallback
+- **报告**：2026-06-18（用户：TODO-488「TODO-416 你确定原因没错？之前还有封面，现在没了」）
+- **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart:587-599` / `:1336-1348`：有关联 `bookKey` 的 SRT 会把对应 EPUB 从书架 EPUB 分区中过滤掉（SRT 卡替代 EPUB 卡），但 `_buildSrtCover` 只检查 `SrtBook.coverPath`；当 SRT 没有手选封面、但关联 EPUB 本身有内封或 `cover.jpg/jpeg/png` 时，已解析好的 EPUB `MediaItem.imageUrl` 被丢弃，书架只能显示 SRT 占位。远端 EPUB/video/备份路径已有各自 resolver 和守卫，本轮未发现 TODO-480 的 `BoxFit.cover` 缺失。
+- **[x] ① 已修复** — 本提交：在书架 build 中保留过滤前的 `bookKey -> EPUB cover URI` 映射；SRT 卡片先用自身存在的 `coverPath`，缺失且 `bookKey` 非空时 fallback 到关联 EPUB cover URI；SRT 的打开/长按对话框 `MediaItem.imageUrl` 也复用同一 fallback。共享 `_buildFileCover` 继续使用 `_bookCardCoverFit`，保持 TODO-480「有图填满卡片，允许裁切」。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_bookshelf_card_layout_static_test.dart` 新增「linked SRT cards fall back to the EPUB cover before placeholder」，并把既有 cover-fit 守卫调整为检查 SRT 共享 `_buildFileCover` 仍用 `_bookCardCoverFit`。
+- **备注**：已跑目标验证：书架静态守卫、远端 cover resolver/host service、sync asset package、video storage、Windows vendored ffmpeg workflow guard、backup rebase/full export/import preserve、`flutter analyze`。按导入/阅读器设备验证纪律，真实 Windows/Android UI 端到端肉眼复测仍待用户在原素材上确认。

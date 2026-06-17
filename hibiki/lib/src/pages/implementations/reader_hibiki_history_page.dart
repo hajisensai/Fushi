@@ -153,6 +153,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   final Set<String> _selectedKeys = {};
   List<MediaItem> _visibleEpubBooks = const [];
   List<SrtBook> _visibleSrtBooks = const [];
+  Map<String, String> _epubCoverUrisByBookKey = const {};
 
   // 视频书单独分区：无 Riverpod provider，按需载入 state 并在导入后刷新。
   List<VideoBookRow> _videoBooks = const [];
@@ -584,6 +585,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Map<String, String> epubCoverUrisByBookKey = {};
+    for (final MediaItem item in books) {
+      final String? key = _parseBookKey(item.mediaIdentifier);
+      final String? imageUrl = item.imageUrl;
+      if (key != null && imageUrl != null && imageUrl.isNotEmpty) {
+        epubCoverUrisByBookKey[key] = imageUrl;
+      }
+    }
     final Set<String> srtBookKeys = {
       for (final b in allSrtBooks)
         if (b.bookKey.isNotEmpty) b.bookKey,
@@ -622,6 +631,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
+    _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     final _RemoteBookState? remoteState = remoteSnapshot?.data;
     final bool showRemoteBooks = remoteState != null &&
         (remoteState.failed || remoteState.books.isNotEmpty);
@@ -664,7 +674,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                       childAspectRatio: mediaSource.aspectRatio,
                     ),
                     itemCount: srtBooks.length,
-                    itemBuilder: (_, i) => _buildSrtCard(srtBooks[i]),
+                    itemBuilder: (_, i) => _buildSrtCard(
+                      srtBooks[i],
+                      epubCoverUri: epubCoverUrisByBookKey[srtBooks[i].bookKey],
+                    ),
                   ),
                 ),
               ],
@@ -713,7 +726,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                     childAspectRatio: mediaSource.aspectRatio,
                   ),
                   itemCount: srtBooks.length,
-                  itemBuilder: (_, i) => _buildSrtCard(srtBooks[i]),
+                  itemBuilder: (_, i) => _buildSrtCard(
+                    srtBooks[i],
+                    epubCoverUri: epubCoverUrisByBookKey[srtBooks[i].bookKey],
+                  ),
                 ),
               ),
             ],
@@ -970,7 +986,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         srtBookId,
       );
 
-  Widget _buildSrtCard(SrtBook book) {
+  Widget _buildSrtCard(SrtBook book, {String? epubCoverUri}) {
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -985,7 +1001,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onLongPress: () => _showSrtBookDialog(book),
       child: _bookCardLayout(
         title: book.title,
-        cover: _buildSrtCover(book),
+        cover: _buildSrtCover(book, epubCoverUri: epubCoverUri),
         tagLabels: tagWidget,
         coverBadge: _cardBadge(
           icon: Icons.subtitles_outlined,
@@ -1317,19 +1333,58 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  Widget _buildSrtCover(SrtBook book) {
-    if (book.coverPath != null && File(book.coverPath!).existsSync()) {
-      return FadeInImage(
-        imageErrorBuilder: (_, __, ___) => _coverPlaceholderIcon(
-          Icons.subtitles_outlined,
-        ),
-        placeholder: MemoryImage(kTransparentImage),
-        image: FileImage(File(book.coverPath!)),
-        alignment: Alignment.topCenter,
-        fit: _bookCardCoverFit,
+  Widget _buildSrtCover(SrtBook book, {String? epubCoverUri}) {
+    final String? ownCoverPath = _existingCoverFilePath(book.coverPath);
+    if (ownCoverPath != null) {
+      return _buildFileCover(ownCoverPath, Icons.subtitles_outlined);
+    }
+    if (book.bookKey.isNotEmpty) {
+      final Widget? linkedCover = _buildCoverFromUri(
+        epubCoverUri,
+        Icons.subtitles_outlined,
       );
+      if (linkedCover != null) return linkedCover;
     }
     return _coverPlaceholderIcon(Icons.subtitles_outlined);
+  }
+
+  String? _existingCoverFilePath(String? coverPath) {
+    if (coverPath == null || coverPath.isEmpty) return null;
+    try {
+      return File(coverPath).existsSync() ? coverPath : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget? _buildCoverFromUri(String? coverUri, IconData placeholderIcon) {
+    if (coverUri == null || coverUri.isEmpty) return null;
+    String? coverPath;
+    if (coverUri.startsWith('file://')) {
+      try {
+        coverPath = Uri.parse(coverUri).toFilePath();
+      } catch (_) {
+        coverPath = null;
+      }
+    } else if (p.isAbsolute(coverUri)) {
+      coverPath = coverUri;
+    }
+    final String? existingPath = _existingCoverFilePath(coverPath);
+    return existingPath == null
+        ? null
+        : _buildFileCover(existingPath, placeholderIcon);
+  }
+
+  Widget _buildFileCover(String coverPath, IconData placeholderIcon) {
+    return FadeInImage(
+      imageErrorBuilder: (_, __, ___) => _coverPlaceholderIcon(
+        placeholderIcon,
+      ),
+      placeholder: MemoryImage(kTransparentImage),
+      image: FileImage(File(coverPath)),
+      alignment: Alignment.topCenter,
+      fit: _bookCardCoverFit,
+    );
   }
 
   Widget _coverPlaceholderIcon(IconData icon) {
@@ -1579,6 +1634,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   MediaItem _srtBookMediaItem(SrtBook book) {
+    final String? ownCoverPath = _existingCoverFilePath(book.coverPath);
+    final String? imageUrl = ownCoverPath != null
+        ? Uri.file(ownCoverPath).toString()
+        : _epubCoverUrisByBookKey[book.bookKey];
     return MediaItem(
       mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(book.bookKey),
       title: book.title,
@@ -1588,8 +1647,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       duration: 1,
       canDelete: false,
       canEdit: true,
-      imageUrl:
-          book.coverPath != null ? Uri.file(book.coverPath!).toString() : null,
+      imageUrl: imageUrl,
     );
   }
 
