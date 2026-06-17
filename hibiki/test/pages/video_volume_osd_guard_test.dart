@@ -2,12 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Source guard for mpv/asbplayer-style volume feedback.
+/// Source guard for mpv/asbplayer-style volume and brightness feedback.
 ///
 /// The real volume keys are owned by media_kit and platform input, so this
 /// locks the video page invariant: volume changes must use a right-side HUD
-/// with a recognizable volume icon and percentage progress. Non-volume OSDs
-/// stay on the legacy top-left mpv-style channel.
+/// with a recognizable volume icon and percentage progress. Brightness gesture
+/// feedback uses a matching left-side HUD. Non-volume/brightness OSDs stay on
+/// the legacy top-left mpv-style channel.
 void main() {
   final File page =
       File('lib/src/pages/implementations/video_hibiki_page.dart');
@@ -101,6 +102,23 @@ void main() {
     expect(overlay.contains('ValueListenableBuilder<double?>'), isTrue);
     expect(overlay.contains('valueListenable: _volumeHudNotifier'), isTrue);
     expect(overlay.contains('_buildRightVolumeIndicator(volume)'), isTrue);
+  });
+
+  test('left brightness HUD is screen-left and pointer transparent', () {
+    final String indicator = region(
+      'Widget _buildLeftBrightnessIndicator(double brightness) {',
+      'Widget _buildVolumeHudOverlay() {',
+    );
+    expect(indicator.contains('IgnorePointer'), isTrue,
+        reason: 'Brightness HUD must never capture video pointers.');
+    expect(indicator.contains('Alignment.centerLeft'), isTrue,
+        reason: 'Brightness feedback belongs on the screen left.');
+    expect(indicator.contains('_brightnessIconFor(clamped)'), isTrue);
+    expect(indicator.contains('LinearProgressIndicator'), isTrue,
+        reason:
+            'Brightness HUD should expose a percentage bar like a player OSD.');
+    expect(indicator.contains("Text('\${clamped.round()}%')"), isTrue,
+        reason: 'Brightness HUD should show an explicit percentage.');
   });
 
   test('generic OSD stays top-left and does not render volume HUD', () {

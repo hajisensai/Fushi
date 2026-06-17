@@ -425,8 +425,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   static const double _videoVerticalGestureSensitivity = 320.0;
 
   // TODO-057: 视频左半区竖滑调屏幕亮度、右半区竖滑调音量。手势 + 指示器复用
-  // media_kit 移动控制条内建实现（见 [_mobileControlsTheme] 的 volumeGesture/
-  // brightnessGesture + 回调）；亮度落设备背光经此 controller，桌面诚实门控。
+  // media_kit 移动控制条竖滑手势接线见 [_mobileControlsTheme]；亮度落设备背光经
+  // 此 controller 且诚实门控，音量是播放器能力，不跟随亮度能力门控。
   final ScreenBrightnessController _brightness =
       ScreenBrightnessController.instance;
 
@@ -4003,15 +4003,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 唯一消费它，移动端不再用 Hibiki 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
-      // 调音量」手势（含内建亮度/音量指示器）。仅移动端有此控制条；桌面走
+      // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。不开
       // seekGesture（横滑 seek 超范围，且与既有 seek 键 085/090 / 双击全屏语义重叠）。
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
-      volumeGesture: _brightness.canControl,
+      volumeGesture: true,
       volumeIndicatorBuilder: (BuildContext _, double value) =>
           _buildRightVolumeIndicator(value * 100.0),
       brightnessGesture: _brightness.canControl,
+      brightnessIndicatorBuilder: (BuildContext _, double value) =>
+          _buildLeftBrightnessIndicator(value * 100.0),
       // 竖滑灵敏度降到约 1/3（TODO-172/BUG-230）：media_kit 默认 100 太敏感，轻划即
       // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
       verticalGestureSensitivity: _videoVerticalGestureSensitivity,
@@ -7475,6 +7477,88 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  Widget _buildLeftBrightnessIndicator(double brightness) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final double clamped = brightness.clamp(0.0, 100.0).toDouble();
+    final Color textColor = _osdTextColor(cs);
+    final double scale = _videoUiScale;
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SafeArea(
+          minimum: EdgeInsets.only(
+            left: 76 * scale,
+            top: 16,
+            right: 16,
+            bottom: 16,
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _osdSurfaceColor(cs),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: textColor.withValues(alpha: 0.12),
+              ),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.22),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: 14 * scale,
+                vertical: 12 * scale,
+              ),
+              child: SizedBox(
+                width: 120 * scale,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          _brightnessIconFor(clamped),
+                          color: textColor,
+                          size: 22 * scale,
+                        ),
+                        SizedBox(width: 10 * scale),
+                        Expanded(
+                          child: DefaultTextStyle.merge(
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 17 * scale,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            child: Text('${clamped.round()}%'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 10 * scale),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: clamped / 100.0,
+                        minHeight: 4 * scale,
+                        backgroundColor: textColor.withValues(alpha: 0.24),
+                        valueColor: AlwaysStoppedAnimation<Color>(textColor),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVolumeHudOverlay() {
     return Positioned.fill(
       child: IgnorePointer(
@@ -7684,5 +7768,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (volume <= 0) return Icons.volume_off;
     if (volume < 50) return Icons.volume_down;
     return Icons.volume_up;
+  }
+
+  IconData _brightnessIconFor(double brightness) {
+    if (brightness < 33) return Icons.brightness_low;
+    if (brightness < 67) return Icons.brightness_medium;
+    return Icons.brightness_high;
   }
 }

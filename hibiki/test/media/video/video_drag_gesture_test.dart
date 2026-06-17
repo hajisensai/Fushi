@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-057 守卫：视频画面「左半区竖滑调屏幕亮度 / 右半区竖滑调音量 + 指示条」。
 ///
-/// 实现复用 media_kit 移动控制条内建的 volumeGesture/brightnessGesture（含内建
-/// 音量/亮度指示器），亮度落设备背光经 [ScreenBrightnessController]（移动端真生效、
-/// 桌面诚实门控）。没有可在宿主里跑的真手势/真亮度，故走源码扫描守卫；撤掉接线转红。
+/// 实现复用 media_kit 移动控制条内建的 volumeGesture/brightnessGesture，但 HUD
+/// 由 Hibiki 自己接管：右侧音量、左侧亮度，均显示 0..100%。亮度落设备背光经
+/// [ScreenBrightnessController]（移动端真生效、桌面诚实门控）；音量不依赖亮度能力。
+/// 没有可在宿主里跑的真手势/真亮度，故走源码扫描守卫；撤掉接线转红。
 void main() {
   final String videoPage = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
@@ -28,10 +29,14 @@ void main() {
   }
 
   group('TODO-057 video drag brightness/volume guards', () {
-    test('enables media_kit built-in volume + brightness drag gestures', () {
-      // 复用 media_kit 控制条手势而不是自造一套（避免与其内建手势冲突、白拿指示器）。
+    test('enables independent volume gesture and brightness-gated drag gesture',
+        () {
+      // 复用 media_kit 控制条手势而不是自造一套；音量是播放器能力，不应跟随亮度能力门控。
+      expect(videoPage.contains('volumeGesture: true'), isTrue);
       expect(
-          videoPage.contains('volumeGesture: _brightness.canControl'), isTrue);
+        videoPage.contains('volumeGesture: _brightness.canControl'),
+        isFalse,
+      );
       expect(
         videoPage.contains('brightnessGesture: _brightness.canControl'),
         isTrue,
@@ -60,6 +65,20 @@ void main() {
       expect(body.contains('_buildRightVolumeIndicator(value * 100.0)'), isTrue,
           reason:
               'media_kit passes 0..1; Hibiki HUD uses the same 0..100 volume scale.');
+    });
+
+    test('left-side brightness drag uses the shared Hibiki indicator builder',
+        () {
+      final String body = mobileThemeBody();
+      expect(body.contains('brightnessIndicatorBuilder:'), isTrue,
+          reason:
+              'Left-half vertical brightness drag should render the same Hibiki HUD language.');
+      expect(
+        body.contains('_buildLeftBrightnessIndicator(value * 100.0)'),
+        isTrue,
+        reason:
+            'media_kit passes 0..1; Hibiki brightness HUD must show 0..100 percent.',
+      );
     });
 
     test('brightness callback goes through ScreenBrightnessController', () {
