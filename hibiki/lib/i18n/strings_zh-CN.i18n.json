@@ -1704,5 +1704,8 @@
     "update_install_incomplete_message": "安装器已启动，但 Hibiki 仍是旧版本。请查看下方安装日志。",
     "update_install_launch_failed_title": "更新安装器未启动",
     "update_install_launch_failed_message": "Hibiki 未能启动 $version 版本安装器。请查看下方日志路径。",
-    "update_install_log_path": "安装日志：$path"
+    "update_install_log_path": "安装日志：$path",
+    "video_screenshot_saved_to": "截图已保存：${path}",
+    "video_screenshot_ready": "截图已准备好：${file}",
+    "video_screenshot_failed_reason": "截图失败：${reason}"
 }

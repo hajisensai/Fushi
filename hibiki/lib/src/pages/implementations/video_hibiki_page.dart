@@ -38,6 +38,7 @@ import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/media/video/video_screenshot_filename.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
@@ -5438,38 +5439,49 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
   /// 的平台分流）。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
   Future<void> _saveScreenshot() async {
-    final Uint8List? bytes = await _controller?.screenshot();
+    final VideoPlayerController? controller = _controller;
+    final Uint8List? bytes = await controller?.screenshot();
     if (bytes == null) {
-      _showOsd(t.video_screenshot_failed);
+      _showScreenshotFailure('no frame available');
       return;
     }
-    final String name =
-        'hibiki_${p.basenameWithoutExtension(_currentVideoPath ?? 'video')}.jpg';
     File? tmp;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     try {
+      final String defaultScreenshotName = videoScreenshotBaseName(
+        sourcePathOrTitle: _screenshotSourcePathOrTitle(),
+        positionMs: controller?.positionMs ?? 0,
+        capturedAt: DateTime.now(),
+      );
       final Directory tmpDir = await getTemporaryDirectory();
-      tmp = File(p.join(tmpDir.path, name));
+      final String screenshotName = uniqueVideoScreenshotBaseName(
+        defaultScreenshotName,
+        exists: (String name) => File(p.join(tmpDir.path, name)).existsSync(),
+      );
+      tmp = File(p.join(tmpDir.path, screenshotName));
       await tmp.writeAsBytes(bytes);
       if (isDesktop) {
         final String? savePath = await FilePicker.platform.saveFile(
           dialogTitle: t.video_screenshot,
-          fileName: name,
+          fileName: screenshotName,
           type: FileType.custom,
           allowedExtensions: <String>['jpg'],
         );
         if (savePath != null) {
-          await tmp.copy(savePath);
-          _showOsd(t.video_screenshot_saved);
+          final String finalPath = _uniqueScreenshotSavePath(savePath);
+          await tmp.copy(finalPath);
+          _showOsd(t.video_screenshot_saved_to(path: finalPath));
         }
       } else {
         await Share.shareXFiles(<XFile>[
           XFile(tmp.path, mimeType: 'image/jpeg'),
-        ], subject: name);
+        ], subject: screenshotName);
+        _showOsd(t.video_screenshot_ready(file: screenshotName));
       }
-    } catch (_) {
-      _showOsd(t.video_screenshot_failed);
+    } catch (e, stack) {
+      debugPrint('[VideoHibikiPage] screenshot save failed: $e\n$stack');
+      _showScreenshotFailure(e);
     } finally {
       // 桌面端清理临时文件；移动端分享需保留供系统面板异步读取。
       if (isDesktop && tmp != null) {
@@ -5479,6 +5491,34 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }
       _refocusVideo();
     }
+  }
+
+  String _screenshotSourcePathOrTitle() {
+    final String? currentVideoPath = _currentVideoPath;
+    if (currentVideoPath != null && currentVideoPath.trim().isNotEmpty) {
+      return currentVideoPath;
+    }
+    final String? title = _title ?? widget.remoteInfo?.title;
+    if (title != null && title.trim().isNotEmpty) return title;
+    return 'video';
+  }
+
+  String _uniqueScreenshotSavePath(String savePath) {
+    final String desiredPath =
+        p.extension(savePath).isEmpty ? '$savePath.jpg' : savePath;
+    return uniqueVideoScreenshotPath(
+      desiredPath,
+      exists: (String path) => File(path).existsSync(),
+    );
+  }
+
+  void _showScreenshotFailure(Object reason) {
+    final String text = reason.toString().trim();
+    _showOsd(
+      t.video_screenshot_failed_reason(
+        reason: text.isEmpty ? 'unknown error' : text,
+      ),
+    );
   }
 
   /// 弹快捷倍速浮层（TODO-438）：有按钮触发源时锚定 speed 按钮上方，复用
