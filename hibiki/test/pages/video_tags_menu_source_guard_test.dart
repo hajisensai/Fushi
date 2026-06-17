@@ -98,6 +98,29 @@ void main() {
       expect(menuBody.contains('dialog_read'), isFalse);
     });
 
+    test('字幕动作文案不展示格式限定词，但 picker 仍保留白名单', () {
+      final String menuBody = _methodBody(
+        src,
+        'void _showVideoMenu(VideoBookRow book)',
+      );
+      final String pickerBody = _methodBody(
+        src,
+        'Future<void> _pickSubtitle(VideoBookRow book)',
+      );
+      final String i18n = _read('lib/i18n/strings.i18n.json');
+
+      expect(menuBody.contains('label: t.video_import_pick_subtitle'), isTrue);
+      expect(
+        pickerBody.contains(
+            "allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa']"),
+        isTrue,
+        reason: 'label polish must not relax the actual subtitle file picker',
+      );
+      expect(i18n.contains('"video_import_pick_subtitle": "Pick subtitle"'),
+          isTrue);
+      expect(i18n.contains('Pick subtitle (srt/vtt/ass)'), isFalse);
+    });
+
     test('编辑标签进入共享 TagPickerPage（videoBookUid 分支）', () {
       expect(src.contains('TagPickerPage(videoBookUid: book.bookUid)'), isTrue);
     });
@@ -153,6 +176,19 @@ void main() {
       expect(dialogBody.contains('_openVideoBook(book)'), isFalse,
           reason: '播放仍由卡片点击负责，长按面板不放播放按钮');
       expect(dialogBody.contains('dialog_read'), isFalse);
+    });
+
+    test('书架视频字幕 picker 保留 srt/vtt/ass/ssa 白名单', () {
+      final String pickerBody = _methodBody(
+        src,
+        'Future<void> _pickVideoSubtitle(VideoBookRow book)',
+      );
+
+      expect(
+        pickerBody.contains(
+            "allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa']"),
+        isTrue,
+      );
     });
 
     test('视频筛选改为按命中 bookUid 过滤（不再整组隐藏）', () {

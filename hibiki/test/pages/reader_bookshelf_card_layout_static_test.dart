@@ -81,6 +81,36 @@ void main() {
         reason: 'metadata (progress bar) must be pinned to the cover bottom');
   });
 
+  test('visual card frame wraps only the cover, while interactions wrap all',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+            .readAsStringSync();
+    final String shell = _functionSource(source, 'Widget _bookCardShell({');
+    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+
+    expect(
+      shell,
+      isNot(contains('HibikiCard(')),
+      reason:
+          'the whole touch target may not draw the visual card around the footer',
+    );
+    expect(shell, contains('InkWell('),
+        reason: 'tap/long-press/right-click must still cover the whole card');
+    expect(
+        shell, contains('onSecondaryTap: _selectionMode ? null : onLongPress'));
+    expect(shell, contains('HibikiFocusTarget('),
+        reason: 'keyboard/gamepad activation must stay on the full card');
+
+    final int coverStack = layout.indexOf('Stack(');
+    final int coverFrame = layout.indexOf('_bookCardCoverFrame(');
+    final int footer = layout.indexOf('_bookCardFooter(title)');
+    expect(coverStack, greaterThan(coverFrame),
+        reason: 'the visual frame should wrap the cover stack');
+    expect(coverFrame, lessThan(footer),
+        reason: 'the title footer must remain outside the visual frame');
+  });
+
   test('book card footer clamps long titles without resizing the grid', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')

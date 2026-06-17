@@ -33,6 +33,7 @@ import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart'
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
@@ -1355,73 +1356,93 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final double selectionInset = tokens.spacing.gap / 2;
     final double selectionPadding = tokens.spacing.gap / 4;
     final double selectionIconSize = tokens.spacing.gap * 1.75;
+    final VoidCallback effectiveTap = _selectionMode && selectionKey != null
+        ? () => _toggleSelection(selectionKey)
+        : onTap;
+    Widget interactiveCard = Padding(
+      key: cardKey,
+      padding: EdgeInsets.all(tokens.spacing.rowVertical),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          canRequestFocus: false,
+          borderRadius: tokens.radii.cardRadius,
+          onTap: effectiveTap,
+          onLongPress: _selectionMode ? null : onLongPress,
+          // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。
+          onSecondaryTap: _selectionMode ? null : onLongPress,
+          child: AspectRatio(
+            aspectRatio: mediaSource.aspectRatio,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                child,
+                if (_selectionMode && selectionKey != null)
+                  Positioned(
+                    top: selectionInset,
+                    left: selectionInset,
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? selectionColor
+                              : tokens.surfaces.page.withValues(alpha: 0.7),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: selected
+                                ? selectionColor
+                                : tokens.surfaces.outline,
+                            width: 1.5,
+                          ),
+                        ),
+                        padding: EdgeInsets.all(selectionPadding),
+                        child: Icon(
+                          Icons.check,
+                          size: selectionIconSize,
+                          color: selected
+                              ? theme.colorScheme.onPrimary
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (selected)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color:
+                              tokens.surfaces.primary.withValues(alpha: 0.12),
+                          borderRadius: tokens.radii.cardRadius,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (focusId != null && HibikiFocusRoot.maybeControllerOf(context) != null) {
+      interactiveCard = Actions(
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              effectiveTap();
+              return null;
+            },
+          ),
+        },
+        child: HibikiFocusTarget(id: focusId, child: interactiveCard),
+      );
+    }
     // Gamepad long-press (hold A) on the focused card invokes the same
     // onLongPress as the mouse (book details / actions). In selection mode the
     // long-press is disabled (tap toggles selection), so it's a pass-through.
     final Widget card = GamepadLongPressActions(
       onLongPress: _selectionMode ? null : onLongPress,
-      child: HibikiCard(
-        key: cardKey,
-        focusId: focusId,
-        padding: EdgeInsets.zero,
-        margin: EdgeInsets.all(tokens.spacing.rowVertical),
-        selected: selected,
-        onTap: _selectionMode && selectionKey != null
-            ? () => _toggleSelection(selectionKey)
-            : onTap,
-        onLongPress: _selectionMode ? null : onLongPress,
-        // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。
-        onSecondaryTap: _selectionMode ? null : onLongPress,
-        child: AspectRatio(
-          aspectRatio: mediaSource.aspectRatio,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              child,
-              if (_selectionMode && selectionKey != null)
-                Positioned(
-                  top: selectionInset,
-                  left: selectionInset,
-                  child: IgnorePointer(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? selectionColor
-                            : tokens.surfaces.page.withValues(alpha: 0.7),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: selected
-                              ? selectionColor
-                              : tokens.surfaces.outline,
-                          width: 1.5,
-                        ),
-                      ),
-                      padding: EdgeInsets.all(selectionPadding),
-                      child: Icon(
-                        Icons.check,
-                        size: selectionIconSize,
-                        color: selected
-                            ? theme.colorScheme.onPrimary
-                            : Colors.transparent,
-                      ),
-                    ),
-                  ),
-                ),
-              if (selected)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: tokens.surfaces.primary.withValues(alpha: 0.12),
-                        borderRadius: tokens.radii.cardRadius,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+      child: interactiveCard,
     );
     if (dragBookId == null || onTagDropped == null || _selectionMode) {
       return card;
@@ -1448,43 +1469,45 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRect(child: cover),
-              if (metadata != null)
-                PositionedDirectional(
-                  start: 0,
-                  end: 0,
-                  bottom: 0,
-                  child: metadata,
-                ),
-              if (coverBadge != null)
-                PositionedDirectional(
-                  end: overlayInset,
-                  top: overlayInset,
-                  // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361）。徽章内在尺寸
-                  // 是 22px（HibikiBadge: icon 14 + padding gap）。早期徽章夹在封面下方的
-                  // footer 文字行里，紧贴小号书名，视觉上读作约「半个」封面元素；TODO-355 把
-                  // 徽章挪到封面图上后，旧的 `SizedBox.square(gap*5=40) + scaleDown` 永远不会
-                  // 缩小 22px 的徽章，于是在封面图上读起来比原来「大了一圈」。这里改成
-                  // `gap*2=16` 的方框 + `BoxFit.contain`，把徽章等比缩到约 16px，恢复书架
-                  // 原来那种克制的小角标观感（≈用户记忆里的 0.5 显示）。
-                  child: SizedBox.square(
-                    dimension: kShelfCoverBadgeDimension,
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: coverBadge,
+          child: _bookCardCoverFrame(
+            Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRect(child: cover),
+                if (metadata != null)
+                  PositionedDirectional(
+                    start: 0,
+                    end: 0,
+                    bottom: 0,
+                    child: metadata,
+                  ),
+                if (coverBadge != null)
+                  PositionedDirectional(
+                    end: overlayInset,
+                    top: overlayInset,
+                    // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361）。徽章内在尺寸
+                    // 是 22px（HibikiBadge: icon 14 + padding gap）。早期徽章夹在封面下方的
+                    // footer 文字行里，紧贴小号书名，视觉上读作约「半个」封面元素；TODO-355 把
+                    // 徽章挪到封面图上后，旧的 `SizedBox.square(gap*5=40) + scaleDown` 永远不会
+                    // 缩小 22px 的徽章，于是在封面图上读起来比原来「大了一圈」。这里改成
+                    // `gap*2=16` 的方框 + `BoxFit.contain`，把徽章等比缩到约 16px，恢复书架
+                    // 原来那种克制的小角标观感（≈用户记忆里的 0.5 显示）。
+                    child: SizedBox.square(
+                      dimension: kShelfCoverBadgeDimension,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: coverBadge,
+                      ),
                     ),
                   ),
-                ),
-              if (tagLabels != null)
-                PositionedDirectional(
-                  start: overlayInset,
-                  top: overlayInset,
-                  child: _bookCardTagArea(tagLabels),
-                ),
-            ],
+                if (tagLabels != null)
+                  PositionedDirectional(
+                    start: overlayInset,
+                    top: overlayInset,
+                    child: _bookCardTagArea(tagLabels),
+                  ),
+              ],
+            ),
           ),
         ),
         SizedBox(
@@ -1492,6 +1515,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           child: _bookCardFooter(title),
         ),
       ],
+    );
+  }
+
+  Widget _bookCardCoverFrame(Widget child) {
+    return HibikiCard(
+      padding: EdgeInsets.zero,
+      margin: EdgeInsets.zero,
+      child: child,
     );
   }
 

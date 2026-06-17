@@ -4,6 +4,8 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
+const double kBookDialogCoverBackgroundOpacity = 0.24;
+
 // ---------------------------------------------------------------------------
 // Action data model
 // ---------------------------------------------------------------------------
@@ -155,6 +157,8 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       showLaunchAction: widget.showLaunchAction,
       launchLabel: t.dialog_read,
       onLaunch: _executeLaunch,
+      coverBackgroundFit: BoxFit.contain,
+      coverBackgroundOpacity: kBookDialogCoverBackgroundOpacity,
       quickActions: _quickActions,
       listActions: _listActions,
       dangerActions: _dangerActions,
@@ -207,6 +211,8 @@ class MediaItemDialogFrame extends StatelessWidget {
     this.showLaunchAction = true,
     this.launchLabel,
     this.onLaunch,
+    this.coverBackgroundFit = BoxFit.cover,
+    this.coverBackgroundOpacity = 0.34,
     this.quickActions = const [],
     this.listActions = const [],
     this.dangerActions = const [],
@@ -219,6 +225,8 @@ class MediaItemDialogFrame extends StatelessWidget {
   final bool showLaunchAction;
   final String? launchLabel;
   final VoidCallback? onLaunch;
+  final BoxFit coverBackgroundFit;
+  final double coverBackgroundOpacity;
   final List<DialogQuickAction> quickActions;
   final List<DialogListAction> listActions;
   final List<DialogDangerAction> dangerActions;
@@ -283,12 +291,13 @@ class MediaItemDialogFrame extends StatelessWidget {
                 ],
                 if (quickActions.isNotEmpty) _buildQuickActions(tokens),
                 if (listActions.isNotEmpty) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap / 2),
+                  SizedBox(height: tokens.spacing.gap),
                   const HibikiDivider(),
                   for (final DialogListAction action in listActions)
                     HibikiListItem(
                       minHeight: 44,
                       padding: EdgeInsets.zero,
+                      leading: Icon(action.icon),
                       title: Text(action.label),
                       trailing: Icon(
                         Icons.chevron_right,
@@ -298,6 +307,7 @@ class MediaItemDialogFrame extends StatelessWidget {
                     ),
                 ],
                 if (dangerActions.isNotEmpty) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
                   const HibikiDivider(),
                   SizedBox(height: tokens.spacing.gap / 2),
                   for (final DialogDangerAction action in dangerActions)
@@ -343,9 +353,9 @@ class MediaItemDialogFrame extends StatelessWidget {
     return ColoredBox(
       color: tokens.surfaces.overlay,
       child: Opacity(
-        opacity: 0.34,
+        opacity: coverBackgroundOpacity,
         child: FittedBox(
-          fit: BoxFit.cover,
+          fit: coverBackgroundFit,
           child: SizedBox.fromSize(
             size: _backgroundCoverSize,
             child: cover!,

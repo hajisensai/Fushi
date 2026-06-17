@@ -1246,7 +1246,7 @@
     "sync_progress_audiobooks": "同步有声书",
     "video_import_title": "导入视频",
     "video_import_pick_video": "选择视频文件",
-    "video_import_pick_subtitle": "选择字幕(srt/vtt/ass)",
+    "video_import_pick_subtitle": "选择字幕",
     "video_import_confirm": "导入",
     "shelf_video_section": "视频",
     "video_import_action": "导入视频",

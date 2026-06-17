@@ -1246,7 +1246,7 @@
     "sync_progress_audiobooks": "Syncing audiobooks",
     "video_import_title": "Import Video",
     "video_import_pick_video": "Pick video file",
-    "video_import_pick_subtitle": "Pick subtitle (srt/vtt/ass)",
+    "video_import_pick_subtitle": "Pick subtitle",
     "video_import_confirm": "Import",
     "shelf_video_section": "Videos",
     "video_import_action": "Import video",
