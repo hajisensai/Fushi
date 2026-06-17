@@ -306,6 +306,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.swipeDismissible = true,
     this.enableSwipeToClose = true,
     this.onClose,
+    this.onBack,
     super.key,
   });
 
@@ -367,11 +368,13 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 平台/偏好是否允许滑关"（Windows/Linux 默认 false）。
   final bool enableSwipeToClose;
 
-  /// TODO-407①：顶栏右端"X 关闭"按钮的回调。非空时弹窗顶栏渲染一个始终可关的 X
-  /// （任何平台、即便滑关被禁用也能关）。点 X 走的就是各表面既有的关闭汇聚点
-  /// （reader `_dismissPopupAt(0)` / video·首页 `onPop(0)`），不另开关闭路径——
-  /// 不破坏 BUG-072 续播 / 清句 / 清栈。仅顶层（index==0）传入；嵌套层为 null。
+  /// TODO-407①：顶层右端"X 关闭"按钮的回调。非空时弹窗顶栏渲染一个始终可关的 X
+  /// （任何平台、即便滑关被禁用也能关）。点 X 走各表面既有的关闭汇聚点。
   final VoidCallback? onClose;
+
+  /// TODO-485：嵌套层左端"返回"按钮的回调。非空时弹窗顶栏渲染一个不依赖滑动
+  /// 的返回入口，语义是关闭当前子层并回到父层。
+  final VoidCallback? onBack;
 
   /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
@@ -425,31 +428,50 @@ class DictionaryPopupLayer extends StatelessWidget {
     );
   }
 
-  /// TODO-407①：顶栏 = 可选的 [headerWidget]（reader 音频控制 / video 句子收藏星标）
-  /// 叠加右端"X 关闭"按钮（[onClose] 非空时）。两者都空时返回 null（弹窗不画顶栏，
-  /// 也就没有可拖区——靠点窗外 / 返回键 / Esc 关闭）。X 用 [Stack] 叠在 header 右端，
-  /// 不改 header 自身（居中、缩放）布局。
+  /// 顶栏 = 可选的 [headerWidget]（reader 音频控制 / video 句子收藏星标）叠加
+  /// 左端返回按钮（[onBack]）/ 右端关闭按钮（[onClose]）。三者都空时返回 null。
   Widget? _buildTopBar(BuildContext context) {
-    if (headerWidget == null && onClose == null) return null;
-    if (onClose == null) return headerWidget;
+    if (headerWidget == null && onClose == null && onBack == null) {
+      return null;
+    }
 
-    final Widget closeButton = Align(
-      alignment: Alignment.centerRight,
-      child: HibikiIconButton(
-        icon: Icons.close,
-        size: 18,
-        tooltip: t.dialog_close,
-        onTap: onClose,
-      ),
-    );
+    final String backTooltip =
+        MaterialLocalizations.of(context).backButtonTooltip;
+    final List<Widget> actions = <Widget>[
+      if (onBack != null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: HibikiIconButton(
+            icon: Icons.arrow_back,
+            size: 18,
+            tooltip: backTooltip,
+            onTap: onBack,
+          ),
+        ),
+      if (onClose != null)
+        Align(
+          alignment: Alignment.centerRight,
+          child: HibikiIconButton(
+            icon: Icons.close,
+            size: 18,
+            tooltip: t.dialog_close,
+            onTap: onClose,
+          ),
+        ),
+    ];
 
-    if (headerWidget == null) return closeButton;
+    if (headerWidget == null) {
+      return SizedBox(
+        height: 40,
+        child: Stack(children: actions),
+      );
+    }
 
     return Stack(
       alignment: Alignment.center,
       children: <Widget>[
         headerWidget!,
-        Positioned.fill(child: closeButton),
+        Positioned.fill(child: Stack(children: actions)),
       ],
     );
   }
