@@ -31,6 +31,13 @@ import 'text_file_io.dart';
 /// - 软换行符 `\N`、`\n`、`\h` 转为空格
 /// - textFragmentId 格式为 `[data-cue-id="<sentenceIndex>"]`，供 AudiobookBridge CSS selector 定位
 class AssParser {
+  static const int largeContentComputeThreshold = 1024 * 1024;
+
+  static bool shouldParseInIsolate(String content) {
+    return SrtParser.utf8ContentByteLength(content) >
+        largeContentComputeThreshold;
+  }
+
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
 
@@ -44,7 +51,21 @@ class AssParser {
     int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(assFile);
-    if (content.length > 1024 * 1024) {
+    return parseStringAsync(
+      content: content,
+      bookKey: bookKey,
+      chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
+    );
+  }
+
+  static Future<List<AudioCue>> parseStringAsync({
+    required String content,
+    required String bookKey,
+    String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
+  }) {
+    if (shouldParseInIsolate(content)) {
       return compute(_parseStringIsolate, <String, dynamic>{
         'content': content,
         'bookKey': bookKey,
@@ -52,12 +73,12 @@ class AssParser {
         'audioFileIndex': audioFileIndex,
       });
     }
-    return parseString(
+    return Future<List<AudioCue>>.value(parseString(
       content: content,
       bookKey: bookKey,
       chapterHref: chapterHref,
       audioFileIndex: audioFileIndex,
-    );
+    ));
   }
 
   static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {

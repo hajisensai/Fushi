@@ -46,7 +46,7 @@ class SubtitleAttachResult {
 /// 这是**主页拖字幕到视频卡**的核心，复刻播放页 `_importExternalSubtitle` 的
 /// 「拷盘 -> 解析 -> [VideoBookRepository.saveSubtitleSelection] 原子写源指针+cue」链路，
 /// 但不进播放页（拖卡时没有 VideoPlayerController）。与播放页共用：
-/// - [subtitleFormatForPath] / [parseSubtitleContent]（同一套格式路由 + parser）；
+/// - [subtitleFormatForPath] / [parseSubtitleContentAsync]（同一套格式路由 + parser）；
 /// - 持久目录 `<appDocs>/video_subtitles/<basename>`（与导入/Jimaku 下载同处，BUG-132
 ///   恢复捷径据此按路径直接加载）；
 /// - [SubtitleSource.external] 的持久化值（绝对路径）= `subtitleSource` 列。
@@ -102,7 +102,7 @@ Future<SubtitleAttachResult> attachSubtitleToVideoBook({
   final Future<String> Function(File) read =
       contentReader ?? readTextWithEncoding;
   final String content = await read(File(dest));
-  final List<AudioCue> cues = parseSubtitleContent(
+  final List<AudioCue> cues = await parseSubtitleContentAsync(
     format,
     content: content,
     bookUid: book.bookUid,

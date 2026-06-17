@@ -249,6 +249,23 @@ List<AudioCue> parseSubtitleContent(
   }
 }
 
+Future<List<AudioCue>> parseSubtitleContentAsync(
+  SubtitleFormat format, {
+  required String content,
+  required String bookUid,
+}) {
+  // AudioCue is keyed by `bookKey` (name-PK rename); a video book's owner key
+  // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
+  switch (format) {
+    case SubtitleFormat.srt:
+      return SrtParser.parseStringAsync(content: content, bookKey: bookUid);
+    case SubtitleFormat.ass:
+      return AssParser.parseStringAsync(content: content, bookKey: bookUid);
+    case SubtitleFormat.vtt:
+      return VttParser.parseStringAsync(content: content, bookKey: bookUid);
+  }
+}
+
 /// 统一字幕源：内嵌轨或外挂文件二选一。
 ///
 /// 持久化到 `VideoBooks.subtitleSource`：外挂源存绝对路径；内嵌源存约定字符串
@@ -835,7 +852,11 @@ Future<List<AudioCue>> _loadEmbeddedCues(
   }
   try {
     final String text = await readTextWithEncoding(cached);
-    return parseSubtitleContent(format, content: text, bookUid: bookUid);
+    return await parseSubtitleContentAsync(
+      format,
+      content: text,
+      bookUid: bookUid,
+    );
   } catch (_) {
     return const <AudioCue>[];
   }
@@ -1002,7 +1023,11 @@ Future<List<AudioCue>> _loadExternalCues(
   if (format == null) return const <AudioCue>[];
   try {
     final String text = await readTextWithEncoding(File(path));
-    return parseSubtitleContent(format, content: text, bookUid: bookUid);
+    return await parseSubtitleContentAsync(
+      format,
+      content: text,
+      bookUid: bookUid,
+    );
   } catch (_) {
     return const <AudioCue>[];
   }

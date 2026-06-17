@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../audiobook/audiobook_model.dart';
 import 'srt_parser.dart';
 import 'subtitle_markup.dart';
@@ -26,6 +28,13 @@ import 'text_file_io.dart';
 /// - 剥离 HTML/VTT 行内标签（`<b>`、`<ruby>`、`<c.class>` 等）
 /// - textFragmentId 格式为 `[data-cue-id="<sentenceIndex>"]`，供 AudiobookBridge CSS selector 定位
 class VttParser {
+  static const int largeContentComputeThreshold = 1024 * 1024;
+
+  static bool shouldParseInIsolate(String content) {
+    return SrtParser.utf8ContentByteLength(content) >
+        largeContentComputeThreshold;
+  }
+
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
 
@@ -39,7 +48,7 @@ class VttParser {
     int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(vttFile);
-    return parseString(
+    return parseStringAsync(
       content: content,
       bookKey: bookKey,
       chapterHref: chapterHref,
@@ -48,6 +57,37 @@ class VttParser {
   }
 
   /// 解析 VTT 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
+  static Future<List<AudioCue>> parseStringAsync({
+    required String content,
+    required String bookKey,
+    String chapterHref = defaultChapter,
+    int audioFileIndex = 0,
+  }) {
+    if (shouldParseInIsolate(content)) {
+      return compute(_parseStringIsolate, <String, dynamic>{
+        'content': content,
+        'bookKey': bookKey,
+        'chapterHref': chapterHref,
+        'audioFileIndex': audioFileIndex,
+      });
+    }
+    return Future<List<AudioCue>>.value(parseString(
+      content: content,
+      bookKey: bookKey,
+      chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
+    ));
+  }
+
+  static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {
+    return parseString(
+      content: args['content'] as String,
+      bookKey: args['bookKey'] as String,
+      chapterHref: args['chapterHref'] as String,
+      audioFileIndex: args['audioFileIndex'] as int,
+    );
+  }
+
   static List<AudioCue> parseString({
     required String content,
     required String bookKey,

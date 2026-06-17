@@ -11,6 +11,9 @@ void main() {
   final File page = File(
     'lib/src/pages/implementations/home_video_page.dart',
   );
+  final File attachHelper = File(
+    'lib/src/media/video/video_subtitle_attach.dart',
+  );
 
   test('home_video_page wires attachToVideoCard to the direct attach path', () {
     final String src = page.readAsStringSync();
@@ -42,5 +45,14 @@ void main() {
       reason: 'attachToVideoCard must not re-import (creates duplicate video '
           'entry, TODO-079 root cause)',
     );
+  });
+
+  test('attachSubtitleToVideoBook parses through async subtitle route', () {
+    final String src = attachHelper.readAsStringSync();
+
+    expect(src.contains('await parseSubtitleContentAsync('), isTrue,
+        reason: 'drag-attach must not synchronously parse large subtitles');
+    expect(src.contains('parseSubtitleContent('), isFalse,
+        reason: 'the video-card attach path must not call the sync parser');
   });
 }

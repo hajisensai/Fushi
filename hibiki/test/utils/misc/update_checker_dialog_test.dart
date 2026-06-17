@@ -108,6 +108,10 @@ void main() {
               innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
               startedAt: DateTime.utc(2026, 6, 17, 10, 30),
               installerLaunchSucceeded: true,
+              installerPid: 4242,
+              postLaunchObservedAt: DateTime.utc(2026, 6, 17, 10, 30, 2),
+              installerProcessRunning: false,
+              innoLogExists: false,
             ),
           ),
         ),
@@ -137,6 +141,10 @@ void main() {
               innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
               startedAt: DateTime.utc(2026, 6, 17, 10, 30),
               installerLaunchSucceeded: true,
+              installerPid: 4242,
+              postLaunchObservedAt: DateTime.utc(2026, 6, 17, 10, 30, 2),
+              installerProcessRunning: false,
+              innoLogExists: false,
             ),
           ),
         ),
@@ -147,5 +155,9 @@ void main() {
     expect(find.text(t.update_install_incomplete_title), findsOneWidget);
     expect(find.textContaining(r'C:\tmp\hibiki-9.9.9.install.log'),
         findsOneWidget);
+    expect(
+        find.text(t.update_install_installer_pid(pid: 4242)), findsOneWidget);
+    expect(find.text(t.update_install_process_not_observed), findsOneWidget);
+    expect(find.text(t.update_install_log_not_observed), findsOneWidget);
   });
 }

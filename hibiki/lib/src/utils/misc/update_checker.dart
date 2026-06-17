@@ -824,7 +824,10 @@ class UpdateChecker {
         'UpdateChecker.windowsHandoff',
         'status=${result.status.name}, target=${result.record.targetVersion}, '
             'current=$currentVersion, installer=${result.record.installerPath}, '
-            'log=${result.record.innoLogPath}',
+            'pid=${result.record.installerPid ?? 'unknown'}, '
+            'processRunning=${result.record.installerProcessRunning}, '
+            'log=${result.record.innoLogPath}, '
+            'logExists=${result.record.innoLogExists}',
       );
       if (!context.mounted) return;
       await showAppDialog<void>(
@@ -2309,6 +2312,38 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                 t.update_install_log_path(path: record.innoLogPath),
                 style: tokens.type.listSubtitle,
               ),
+              if (record.installerPid != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_installer_pid(pid: record.installerPid!),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              if (record.installerProcessRunning != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  record.installerProcessRunning!
+                      ? t.update_install_process_observed
+                      : t.update_install_process_not_observed,
+                  style: tokens.type.metadata,
+                ),
+              ],
+              if (record.innoLogExists != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  record.innoLogExists!
+                      ? t.update_install_log_observed
+                      : t.update_install_log_not_observed,
+                  style: tokens.type.metadata,
+                ),
+              ],
+              if (record.postLaunchObservationError != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  record.postLaunchObservationError!,
+                  style: tokens.type.metadata,
+                ),
+              ],
               if (record.launchError != null) ...[
                 SizedBox(height: tokens.spacing.gap / 2),
                 SelectableText(

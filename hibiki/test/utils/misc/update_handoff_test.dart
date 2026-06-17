@@ -15,8 +15,9 @@ Future<File> _markerFile() async {
 
 void main() {
   group('WindowsUpdateHandoff marker', () {
-    test('writes the target version, installer, Inno log, and launch result',
-        () async {
+    test(
+        'writes the target version, installer, Inno log, launch result, '
+        'and post-launch observation', () async {
       final File marker = await _markerFile();
       final DateTime startedAt = DateTime.utc(2026, 6, 17, 10, 30);
 
@@ -29,7 +30,15 @@ void main() {
       );
       await WindowsUpdateHandoff.markLaunchSucceeded(
         markerFile: marker,
+        installerPid: 4242,
         launchedAt: startedAt.add(const Duration(seconds: 1)),
+      );
+      await WindowsUpdateHandoff.markPostLaunchObserved(
+        markerFile: marker,
+        observedAt: startedAt.add(const Duration(seconds: 2)),
+        installerProcessRunning: false,
+        innoLogExists: false,
+        innoLogSizeBytes: null,
       );
 
       final WindowsUpdateHandoffRecord? record =
@@ -42,6 +51,12 @@ void main() {
       expect(record.installerLaunchSucceeded, isTrue);
       expect(record.installerLaunchedAt,
           startedAt.add(const Duration(seconds: 1)));
+      expect(record.installerPid, 4242);
+      expect(record.postLaunchObservedAt,
+          startedAt.add(const Duration(seconds: 2)));
+      expect(record.installerProcessRunning, isFalse);
+      expect(record.innoLogExists, isFalse);
+      expect(record.innoLogSizeBytes, isNull);
     });
 
     test('installer args use the exact log path persisted in the marker', () {
@@ -68,7 +83,15 @@ void main() {
       );
       await WindowsUpdateHandoff.markLaunchSucceeded(
         markerFile: marker,
+        installerPid: 4242,
         launchedAt: DateTime.utc(2026, 6, 17, 10, 31),
+      );
+      await WindowsUpdateHandoff.markPostLaunchObserved(
+        markerFile: marker,
+        observedAt: DateTime.utc(2026, 6, 17, 10, 31, 1),
+        installerProcessRunning: false,
+        innoLogExists: false,
+        innoLogSizeBytes: null,
       );
 
       final WindowsUpdateHandoffResult? result =
@@ -95,7 +118,15 @@ void main() {
       );
       await WindowsUpdateHandoff.markLaunchSucceeded(
         markerFile: marker,
+        installerPid: 4242,
         launchedAt: DateTime.utc(2026, 6, 17, 10, 31),
+      );
+      await WindowsUpdateHandoff.markPostLaunchObserved(
+        markerFile: marker,
+        observedAt: DateTime.utc(2026, 6, 17, 10, 31, 1),
+        installerProcessRunning: false,
+        innoLogExists: false,
+        innoLogSizeBytes: null,
       );
 
       final WindowsUpdateHandoffResult? first =
@@ -115,6 +146,9 @@ void main() {
 
       expect(first?.status, WindowsUpdateHandoffStatus.incomplete);
       expect(first?.record.innoLogPath, r'C:\tmp\hibiki-1.2.3.install.log');
+      expect(first?.record.installerPid, 4242);
+      expect(first?.record.installerProcessRunning, isFalse);
+      expect(first?.record.innoLogExists, isFalse);
       expect(second, isNull, reason: 'do not pop on every startup');
       expect(retained, isNotNull);
       expect(retained!.lastPromptedAppVersion, '1.2.2');
@@ -166,6 +200,16 @@ void main() {
         now: () => DateTime.utc(2026, 6, 17, 10, 30),
         startProcess: (String executable, List<String> args) async {
           startedArgs = args;
+          return const WindowsInstallerStartedProcess(pid: 4242);
+        },
+        observePostLaunch: (int? installerPid, String innoLogPath) async {
+          expect(installerPid, 4242);
+          return WindowsInstallerPostLaunchObservation(
+            observedAt: DateTime.utc(2026, 6, 17, 10, 30, 2),
+            installerProcessRunning: false,
+            innoLogExists: false,
+            innoLogSizeBytes: null,
+          );
         },
         exitProcess: (int code) {
           exitCode = code;
@@ -176,6 +220,11 @@ void main() {
           await WindowsUpdateHandoff.read(marker);
       expect(record?.installerLaunchSucceeded, isTrue);
       expect(record?.targetVersion, '1.2.3');
+      expect(record?.installerPid, 4242);
+      expect(
+          record?.postLaunchObservedAt, DateTime.utc(2026, 6, 17, 10, 30, 2));
+      expect(record?.installerProcessRunning, isFalse);
+      expect(record?.innoLogExists, isFalse);
       expect(startedArgs, contains('/LOG=${record!.innoLogPath}'));
       expect(exitCode, 0);
     });

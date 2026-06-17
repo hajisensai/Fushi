@@ -199,6 +199,115 @@ WEBVTT
     });
   });
 
+  group('parseSubtitleContentAsync (TODO-475 async parser route)', () {
+    const String bookUid = 'video_book_x://book/async';
+
+    test('routes small vtt content through the async parser entry point',
+        () async {
+      const String vtt = '''
+WEBVTT
+
+00:00:01.000 --> 00:00:03.000
+hello async vtt
+''';
+
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.vtt,
+        content: vtt,
+        bookUid: bookUid,
+      );
+
+      expect(cues, hasLength(1));
+      expect(cues.single.bookKey, bookUid);
+      expect(cues.single.text, 'hello async vtt');
+    });
+
+    test('parses large srt content through the async entry point', () async {
+      final String srt = _largeSrt(cueCount: 5000);
+      expect(srt.length, greaterThan(1024 * 1024),
+          reason: 'The large-content path should be exercised.');
+
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.srt,
+        content: srt,
+        bookUid: bookUid,
+      );
+
+      expect(cues, hasLength(5000));
+      expect(cues.first.text, startsWith('large async srt cue 0'));
+      expect(cues.last.text, startsWith('large async srt cue 4999'));
+    });
+
+    test('parses large ass content through the async entry point', () async {
+      final String ass = _largeAss(cueCount: 5000);
+      expect(ass.length, greaterThan(1024 * 1024),
+          reason: 'The large-content path should be exercised.');
+
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.ass,
+        content: ass,
+        bookUid: bookUid,
+      );
+
+      expect(cues, hasLength(5000));
+      expect(cues.first.text, startsWith('large async ass cue 0'));
+      expect(cues.last.text, startsWith('large async ass cue 4999'));
+    });
+
+    test('parses large vtt content through the async entry point', () async {
+      final String vtt = _largeVtt(cueCount: 5000);
+      expect(vtt.length, greaterThan(1024 * 1024),
+          reason: 'The large-content path should be exercised.');
+
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.vtt,
+        content: vtt,
+        bookUid: bookUid,
+      );
+
+      expect(cues, hasLength(5000));
+      expect(cues.first.text, startsWith('large async cue 0'));
+      expect(cues.last.text, startsWith('large async cue 4999'));
+    });
+
+    test('large-content threshold counts UTF-8 bytes, not Dart characters', () {
+      final String cjkSubtitle =
+          '字幕' * ((SrtParser.largeContentComputeThreshold ~/ 6) + 1);
+
+      expect(cjkSubtitle.length, lessThan(1024 * 1024),
+          reason: 'CJK files can be byte-large while char-count-small.');
+      expect(
+        SrtParser.utf8ContentByteLength(cjkSubtitle),
+        greaterThan(SrtParser.largeContentComputeThreshold),
+      );
+      expect(SrtParser.shouldParseInIsolate(cjkSubtitle), isTrue);
+      expect(AssParser.shouldParseInIsolate(cjkSubtitle), isTrue);
+      expect(VttParser.shouldParseInIsolate(cjkSubtitle), isTrue);
+    });
+
+    test('video subtitle load paths await the async parser entry point', () {
+      final String source = File(
+        p.join(
+          Directory.current.path,
+          'lib',
+          'src',
+          'media',
+          'video',
+          'video_subtitle_source.dart',
+        ),
+      ).readAsStringSync();
+
+      expect(
+        _functionBody(source, 'Future<List<AudioCue>> _loadEmbeddedCues'),
+        contains('await parseSubtitleContentAsync('),
+      );
+      expect(
+        _functionBody(source, 'Future<List<AudioCue>> _loadExternalCues'),
+        contains('await parseSubtitleContentAsync('),
+      );
+    });
+  });
+
   group('SubtitleSource', () {
     test('内嵌源序列化为 embedded:<n>，外挂源序列化为 path', () {
       const SubtitleSource embedded = SubtitleSource.embedded(
@@ -898,6 +1007,105 @@ AudioCue _cue(String bookKey, String text) {
     ..startMs = 0
     ..endMs = 1000
     ..audioFileIndex = 0;
+}
+
+String _largeSrt({required int cueCount}) {
+  final String filler = List<String>.filled(240, 'x').join();
+  final StringBuffer buffer = StringBuffer();
+  for (int i = 0; i < cueCount; i++) {
+    final int startMs = i * 1000;
+    buffer
+      ..writeln(i + 1)
+      ..writeln('${_srtTimestamp(startMs)} --> '
+          '${_srtTimestamp(startMs + 750)}')
+      ..writeln('<i>large async srt cue $i</i> $filler')
+      ..writeln();
+  }
+  return buffer.toString();
+}
+
+String _largeAss({required int cueCount}) {
+  final String filler = List<String>.filled(240, 'y').join();
+  final StringBuffer buffer = StringBuffer('''
+[Script Info]
+PlayResX: 1920
+PlayResY: 1080
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+''');
+  for (int i = 0; i < cueCount; i++) {
+    final int startMs = i * 1000;
+    buffer.writeln('Dialogue: 0,${_assTimestamp(startMs)},'
+        '${_assTimestamp(startMs + 750)},Default,,0,0,0,,'
+        '{\\an8}large async ass cue $i $filler');
+  }
+  return buffer.toString();
+}
+
+String _largeVtt({required int cueCount}) {
+  final String filler = List<String>.filled(240, 'x').join();
+  final StringBuffer buffer = StringBuffer('WEBVTT\n\n');
+  for (int i = 0; i < cueCount; i++) {
+    final int startMs = i * 1000;
+    buffer
+      ..writeln(i)
+      ..writeln('${_vttTimestamp(startMs)} --> '
+          '${_vttTimestamp(startMs + 750)}')
+      ..writeln('large async cue $i $filler')
+      ..writeln();
+  }
+  return buffer.toString();
+}
+
+String _srtTimestamp(int millis) {
+  return _subtitleTimestamp(millis, millisecondSeparator: ',');
+}
+
+String _vttTimestamp(int millis) {
+  return _subtitleTimestamp(millis, millisecondSeparator: '.');
+}
+
+String _subtitleTimestamp(
+  int millis, {
+  required String millisecondSeparator,
+}) {
+  final int hours = millis ~/ 3600000;
+  final int minutes = (millis ~/ 60000) % 60;
+  final int seconds = (millis ~/ 1000) % 60;
+  final int ms = millis % 1000;
+  return '${hours.toString().padLeft(2, '0')}:'
+      '${minutes.toString().padLeft(2, '0')}:'
+      '${seconds.toString().padLeft(2, '0')}$millisecondSeparator'
+      '${ms.toString().padLeft(3, '0')}';
+}
+
+String _assTimestamp(int millis) {
+  final int hours = millis ~/ 3600000;
+  final int minutes = (millis ~/ 60000) % 60;
+  final int seconds = (millis ~/ 1000) % 60;
+  final int centiseconds = (millis % 1000) ~/ 10;
+  return '$hours:${minutes.toString().padLeft(2, '0')}:'
+      '${seconds.toString().padLeft(2, '0')}.'
+      '${centiseconds.toString().padLeft(2, '0')}';
+}
+
+String _functionBody(String source, String signature) {
+  final int start = source.indexOf(signature);
+  if (start < 0) return '';
+  final int open = source.indexOf('{', start);
+  if (open < 0) return '';
+  int depth = 0;
+  for (int i = open; i < source.length; i++) {
+    final String char = source[i];
+    if (char == '{') {
+      depth++;
+    } else if (char == '}') {
+      depth--;
+      if (depth == 0) return source.substring(open, i + 1);
+    }
+  }
+  return source.substring(open);
 }
 
 class _FakeFfmpegBackend implements FfmpegBackend {
