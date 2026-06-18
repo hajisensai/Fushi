@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late String textStyleSource;
   late String appLocaleGetterSource;
+  late String primaryMaterialAppSource;
 
   setUpAll(() {
     final String source =
@@ -41,6 +42,11 @@ void main() {
       mainSource,
       'Locale get locale',
       '}\n\n/// 按实验开关',
+    );
+    primaryMaterialAppSource = _functionSource(
+      mainSource,
+      'return TranslationProvider(\n      child: MaterialApp(',
+      '\n  }\n\n  /// Responsible for managing global app-wide state.',
     );
   });
 
@@ -98,6 +104,27 @@ void main() {
 
   test('MaterialApp.locale follows display language for system back labels',
       () {
+    expect(
+      primaryMaterialAppSource,
+      contains('locale: locale,'),
+      reason:
+          'the primary MaterialApp constructor must route localizations through '
+          'the locale getter instead of bypassing it',
+    );
+    expect(
+      primaryMaterialAppSource,
+      isNot(contains('targetLanguage.locale')),
+      reason:
+          'MaterialApp.locale must not use the pinned Japanese reading language',
+    );
+    expect(
+      RegExp(r'locale:\s*[^,\n]*targetLanguage\.locale')
+          .hasMatch(primaryMaterialAppSource),
+      isFalse,
+      reason:
+          'changing MaterialApp to locale: appModel.targetLanguage.locale must '
+          'fail this guard',
+    );
     expect(
       appLocaleGetterSource,
       contains('appModel.appLocale'),
