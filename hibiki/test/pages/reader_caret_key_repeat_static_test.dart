@@ -29,7 +29,7 @@ void main() {
         .indexOf('_focusNavEnabled && _caretActive && event is KeyRepeatEvent');
     final int keyDownGateIdx = reader.indexOf(
       'if (event is! KeyDownEvent) return KeyEventResult.ignored;',
-      reader.indexOf('Char-level reading cursor') - 600,
+      repeatIdx,
     );
     expect(repeatIdx, isNonNegative);
     expect(keyDownGateIdx, isNonNegative);

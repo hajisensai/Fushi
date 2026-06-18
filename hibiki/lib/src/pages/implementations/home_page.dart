@@ -243,7 +243,7 @@ class _HomePageState extends BasePageState<HomePage>
         );
 
     if (action == null) {
-      final gamepad = GamepadButton.fromLogicalKey(event.logicalKey);
+      final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
       if (gamepad != null) {
         action = appModel.shortcutRegistry.resolveGamepad(
               gamepad,

@@ -1523,7 +1523,7 @@
     "anki_tag_include_hibiki_hint": "Mark every card mined by Hibiki",
     "anki_tag_include_category": "Add source category tag",
     "anki_tag_include_category_hint": "Books get \"book\", videos get \"video\"",
-    "reverse_arrow_page_turn": "反轉方向鍵翻頁方向",
+    "reverse_arrow_page_turn": "反轉鍵盤左右鍵翻頁方向",
     "shortcut_scope_video": "Video",
     "shortcut_action_video_toggle_play_pause": "Play / Pause",
     "shortcut_action_video_play": "Play",
@@ -1727,5 +1727,6 @@
     "update_install_manual_close_retry": "Close Hibiki from the listed PID/path, then retry the update or run the installer again.",
     "update_install_restart_windows_hint": "If the listed processes are closed but libmpv-2.dll is still locked, restart Windows and install again.",
     "video_control_slot_top_center": "Top bar (center)",
-    "video_control_title": "Video title"
+    "video_control_title": "Video title",
+    "shortcut_conflict_replace_confirm": "該快捷鍵已被「$s」佔用。要移到目前動作嗎？"
 }

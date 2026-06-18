@@ -210,6 +210,8 @@ void main() {
       }
       expect(seen[GamepadButton.rb], ShortcutAction.readerPageForward);
       expect(seen[GamepadButton.lb], ShortcutAction.readerPageBackward);
+      expect(seen[GamepadButton.dpadRight], ShortcutAction.readerPageForward);
+      expect(seen[GamepadButton.dpadLeft], ShortcutAction.readerPageBackward);
     });
 
     test('home tab prev/next cycle on LT/RT and focus-search on Y', () {

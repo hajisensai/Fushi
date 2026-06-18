@@ -86,6 +86,63 @@ void main() {
       expect(oldResult, isNull);
     });
 
+    test(
+        'updateBindingWithReassignments moves keyboard binding from old action',
+        () {
+      const binding = InputBinding(key: LogicalKeyboardKey.escape);
+      expect(
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.escape,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
+        ShortcutAction.readerDismissDict,
+      );
+
+      registry.updateBindingWithReassignments(
+        ShortcutAction.readerToggleBookmark,
+        const ShortcutBindingSet(keyboardBindings: <InputBinding>[binding]),
+        removeKeyboardConflicts: <InputBinding>[binding],
+      );
+
+      expect(
+        registry.bindingsFor(ShortcutAction.readerDismissDict).keyboardBindings,
+        isNot(contains(binding)),
+      );
+      expect(
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.escape,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
+        ShortcutAction.readerToggleBookmark,
+      );
+    });
+
+    test('updateBindingWithReassignments moves gamepad binding from old action',
+        () {
+      const binding = GamepadBinding(GamepadButton.rb);
+      expect(
+        registry.resolveGamepad(GamepadButton.rb, scope: ShortcutScope.reader),
+        ShortcutAction.readerPageForward,
+      );
+
+      registry.updateBindingWithReassignments(
+        ShortcutAction.readerToggleBookmark,
+        const ShortcutBindingSet(gamepadBindings: <GamepadBinding>[binding]),
+        removeGamepadConflicts: <GamepadBinding>[binding],
+      );
+
+      expect(
+        registry.bindingsFor(ShortcutAction.readerPageForward).gamepadBindings,
+        isNot(contains(binding)),
+      );
+      expect(
+        registry.resolveGamepad(GamepadButton.rb, scope: ShortcutScope.reader),
+        ShortcutAction.readerToggleBookmark,
+      );
+    });
+
     test('hasKeyboardConflict detects conflict in same scope', () {
       final binding = InputBinding(key: LogicalKeyboardKey.pageDown);
       final conflict = registry.hasKeyboardConflict(

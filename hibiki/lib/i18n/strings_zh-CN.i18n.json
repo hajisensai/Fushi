@@ -1523,7 +1523,7 @@
     "anki_tag_include_hibiki_hint": "为每张 Hibiki 制出的卡片打上标记",
     "anki_tag_include_category": "添加来源分类标签",
     "anki_tag_include_category_hint": "书籍标「book」、视频标「video」",
-    "reverse_arrow_page_turn": "反转方向键翻页方向",
+    "reverse_arrow_page_turn": "反转键盘左右键翻页方向",
     "shortcut_scope_video": "视频",
     "shortcut_action_video_toggle_play_pause": "播放/暂停",
     "shortcut_action_video_play": "播放",
@@ -1727,5 +1727,6 @@
     "update_install_manual_close_retry": "请按上方 PID/路径手动关闭 Hibiki，然后重试更新或重新运行安装器。",
     "update_install_restart_windows_hint": "如果上方进程已关闭但 libmpv-2.dll 仍被占用，请重启 Windows 后再安装。",
     "video_control_slot_top_center": "顶栏（中间）",
-    "video_control_title": "视频名称"
+    "video_control_title": "视频名称",
+    "shortcut_conflict_replace_confirm": "该快捷键已被“$s”占用。要移到当前动作吗？"
 }

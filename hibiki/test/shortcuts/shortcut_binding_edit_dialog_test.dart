@@ -7,6 +7,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 
 void main() {
   setUp(() {
@@ -43,6 +44,46 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> pumpDialogHost(
+    WidgetTester tester,
+    HibikiShortcutRegistry registry, {
+    ShortcutAction action = ShortcutAction.readerToggleBookmark,
+  }) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext context) => ElevatedButton(
+                onPressed: () async {
+                  final ShortcutBindingEditResult? result =
+                      await showAppDialog<ShortcutBindingEditResult>(
+                    context: context,
+                    builder: (BuildContext ctx) => ShortcutBindingEditDialog(
+                      action: action,
+                      registry: registry,
+                      initial: const ShortcutBindingSet(),
+                    ),
+                  );
+                  if (result == null) return;
+                  registry.updateBindingWithReassignments(
+                    action,
+                    result.bindings,
+                    removeKeyboardConflicts: result.keyboardReassignments,
+                    removeGamepadConflicts: result.gamepadReassignments,
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('Tab is captured as a binding instead of moving focus',
       (WidgetTester tester) async {
     await pumpDialog(tester, buildRegistry());
@@ -74,11 +115,12 @@ void main() {
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
 
-  testWidgets('capturing a key already bound in scope shows a conflict warning',
+  testWidgets(
+      'capturing a key already bound in scope warns and cancel keeps draft unchanged',
       (WidgetTester tester) async {
     // Escape is a reader-scope default (the reader "back" key = dismiss dict /
-    // exit book), so trying to bind it to another reader action must be
-    // rejected.
+    // exit book), so trying to bind it to another reader action must ask before
+    // moving ownership.
     await pumpDialog(tester, buildRegistry(),
         action: ShortcutAction.readerToggleBookmark);
     await startCapture(tester);
@@ -86,10 +128,130 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
+    expect(
+      find.text(t.shortcut_conflict_replace_confirm(
+        s: t.shortcut_action_reader_dismiss_dict,
+      )),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(t.dialog_cancel).last);
+    await tester.pumpAndSettle();
+
     expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsNothing);
     expect(
       find.text(t.shortcut_conflict(s: t.shortcut_action_reader_dismiss_dict)),
       findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'conflict confirmation reassigns from old action to new action on OK',
+      (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    await pumpDialogHost(
+      tester,
+      registry,
+      action: ShortcutAction.readerToggleBookmark,
+    );
+    await startCapture(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsOneWidget);
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    const InputBinding escape = InputBinding(key: LogicalKeyboardKey.escape);
+    expect(
+      registry.bindingsFor(ShortcutAction.readerDismissDict).keyboardBindings,
+      isNot(contains(escape)),
+    );
+    expect(
+      registry
+          .bindingsFor(ShortcutAction.readerToggleBookmark)
+          .keyboardBindings,
+      contains(escape),
+    );
+  });
+
+  testWidgets(
+      'deleting a confirmed keyboard conflict chip keeps the old action binding',
+      (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    await pumpDialogHost(
+      tester,
+      registry,
+      action: ShortcutAction.readerToggleBookmark,
+    );
+    await startCapture(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    final Finder escapeChip = find.widgetWithText(HibikiTagChip, 'Escape');
+    expect(escapeChip, findsOneWidget);
+    await tester.tap(find.descendant(
+      of: escapeChip,
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    const InputBinding escape = InputBinding(key: LogicalKeyboardKey.escape);
+    expect(
+      registry.bindingsFor(ShortcutAction.readerDismissDict).keyboardBindings,
+      contains(escape),
+    );
+    expect(
+      registry
+          .bindingsFor(ShortcutAction.readerToggleBookmark)
+          .keyboardBindings,
+      isNot(contains(escape)),
+    );
+  });
+
+  testWidgets(
+      'deleting a confirmed gamepad conflict chip keeps the old action binding',
+      (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    await pumpDialogHost(
+      tester,
+      registry,
+      action: ShortcutAction.readerToggleBookmark,
+    );
+
+    await tester.tap(find.text(t.shortcut_gamepad).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(GamepadButton.dpadRight.label).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    final Finder dpadChip =
+        find.widgetWithText(HibikiTagChip, GamepadButton.dpadRight.label);
+    expect(dpadChip, findsOneWidget);
+    await tester.tap(find.descendant(
+      of: dpadChip,
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    const GamepadBinding dpadRight = GamepadBinding(GamepadButton.dpadRight);
+    expect(
+      registry.bindingsFor(ShortcutAction.readerPageForward).gamepadBindings,
+      contains(dpadRight),
+    );
+    expect(
+      registry.bindingsFor(ShortcutAction.readerToggleBookmark).gamepadBindings,
+      isNot(contains(dpadRight)),
     );
   });
 

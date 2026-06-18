@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -264,17 +266,51 @@ enum GamepadButton {
   const GamepadButton(this.label);
   final String label;
 
-  // D-Pad buttons share LogicalKeyboardKey with the arrow keys, so this reverse
-  // map intentionally includes them. Resolution is sequential (keyboard first,
-  // gamepad fallback), so a keyboard arrow binding always wins over a D-Pad
-  // gamepad binding for the same key — no ambiguity. Including D-Pad here is
-  // what makes a standalone D-Pad gamepad binding actually resolve.
+  bool get isDpad {
+    switch (this) {
+      case dpadUp:
+      case dpadDown:
+      case dpadLeft:
+      case dpadRight:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // D-Pad buttons share LogicalKeyboardKey with keyboard arrows, so raw key
+  // event handling must use [fromKeyEvent] instead of this helper. This map is
+  // still useful for persistence, labels, and tests that explicitly translate a
+  // logical gamepad key.
   static final Map<LogicalKeyboardKey, GamepadButton> _byLogicalKey = {
     for (final b in values) b.logicalKey: b,
   };
 
   static GamepadButton? fromLogicalKey(LogicalKeyboardKey key) =>
       _byLogicalKey[key];
+
+  static bool isGamepadLikeDevice(ui.KeyEventDeviceType deviceType) {
+    switch (deviceType) {
+      case ui.KeyEventDeviceType.directionalPad:
+      case ui.KeyEventDeviceType.gamepad:
+      case ui.KeyEventDeviceType.joystick:
+        return true;
+      case ui.KeyEventDeviceType.keyboard:
+      case ui.KeyEventDeviceType.hdmi:
+        return false;
+    }
+  }
+
+  /// Converts a Flutter key event into a gamepad button only when the event
+  /// source really is a controller-like device. The exception is Flutter's
+  /// `gameButton*` logical keys: those are gamepad-only keys and older tests /
+  /// engines may still label them as keyboard events.
+  static GamepadButton? fromKeyEvent(KeyEvent event) {
+    final GamepadButton? button = fromLogicalKey(event.logicalKey);
+    if (button == null) return null;
+    if (!button.isDpad) return button;
+    return isGamepadLikeDevice(event.deviceType) ? button : null;
+  }
 
   static GamepadButton? fromLabel(String label) {
     for (final button in values) {
