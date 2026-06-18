@@ -1716,5 +1716,14 @@
     "video_control_reject_required": "必选控制必须保留在播放器上。",
     "video_control_reject_volume_bottom": "音量只能放在底栏。",
     "video_control_reject_unavailable": "此控制不能放在这里。",
-    "video_control_volume": "音量"
+    "video_control_volume": "音量",
+    "update_install_current_executable": "当前运行程序：$path",
+    "update_install_target_dir": "安装目标：$path",
+    "update_install_detected_location": "检测到的安装位置（$source）：$path",
+    "update_install_path_mismatch": "安装目录不一致：$warning",
+    "update_install_running_process": "仍在运行的 Hibiki 进程：PID $pid - $path",
+    "update_install_libmpv_holder": "libmpv 持有进程：PID $pid - $path",
+    "update_install_deletefile_failure": "安装器无法替换 $path（代码 $code）",
+    "update_install_manual_close_retry": "请按上方 PID/路径手动关闭 Hibiki，然后重试更新或重新运行安装器。",
+    "update_install_restart_windows_hint": "如果上方进程已关闭但 libmpv-2.dll 仍被占用，请重启 Windows 后再安装。"
 }

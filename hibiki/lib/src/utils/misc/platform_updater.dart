@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
@@ -6,6 +7,13 @@ import 'package:hibiki/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/utils.dart'; // ErrorLogService
+
+export 'update_handoff.dart'
+    show
+        WindowsDetectedInstallLocation,
+        WindowsInnoDeleteFileFailure,
+        WindowsInstallerDiagnostics,
+        WindowsProcessInfo;
 
 enum UpdateChannel { stable, beta, debug }
 
@@ -270,28 +278,28 @@ class AndroidInstaller {
 
 /// Inno Setup 静默安装参数：
 /// - `/VERYSILENT` + `/SP-`：抑制整个向导、跳过初始「准备安装」提示。
-/// - `/CLOSEAPPLICATIONS`：用 RestartManager 自动关闭正在运行的 Hibiki，
-///   **不弹**「应用正在运行，需要关闭」的确认框（单靠 `/VERYSILENT` +
-///   iss 里的 `CloseApplications=yes` 仍会弹该框）。
 /// - `/SUPPRESSMSGBOXES`：配合 `/VERYSILENT` 抑制 Inno 的错误/选择弹窗，避免
 ///   `DeleteFile failed code 5` 把用户留在 Select action。
-/// - `/FORCECLOSEAPPLICATIONS` + `/LOGCLOSEAPPLICATIONS`：旧 Hibiki / libmpv 句柄
-///   没有及时释放时，让 RestartManager 尽力关闭并把关闭过程写进安装日志。
-/// - `/RESTARTAPPLICATIONS`：安装完成后让 RestartManager 自动重新拉起 Hibiki。
+/// - `/NOCLOSEAPPLICATIONS` + `/NOFORCECLOSEAPPLICATIONS`：禁止 Inno /
+///   RestartManager 自动关闭或强制结束任何残留 Hibiki / libmpv 持有进程。
+/// - `/NORESTARTAPPLICATIONS`：不让 RestartManager 自动拉起被它管理的应用。
 /// - `/NORESTART`：禁止安装器重启**操作系统**（我们只想重启 app，不重启系统）。
+/// - `/DIR=`：应用内更新只写当前运行 `hibiki.exe` 所在目录，不追随注册表或历史路径。
 List<String> windowsInstallerArgs(
   String installerPath, {
   String? logPath,
+  String? targetInstallDir,
 }) =>
     <String>[
       '/VERYSILENT',
       '/SP-',
       '/SUPPRESSMSGBOXES',
-      '/CLOSEAPPLICATIONS',
-      '/FORCECLOSEAPPLICATIONS',
-      '/LOGCLOSEAPPLICATIONS',
-      '/RESTARTAPPLICATIONS',
+      '/NOCLOSEAPPLICATIONS',
+      '/NOFORCECLOSEAPPLICATIONS',
+      '/NORESTARTAPPLICATIONS',
       '/NORESTART',
+      if (targetInstallDir != null && targetInstallDir.trim().isNotEmpty)
+        '/DIR=$targetInstallDir',
       '/LOG=${logPath ?? windowsInstallerLogPath(installerPath)}',
     ];
 
@@ -344,6 +352,7 @@ class WindowsInstallerPostLaunchObservation {
     required this.installerProcessRunning,
     required this.innoLogExists,
     this.innoLogSizeBytes,
+    this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.error,
   });
 
@@ -351,6 +360,7 @@ class WindowsInstallerPostLaunchObservation {
   final bool? installerProcessRunning;
   final bool innoLogExists;
   final int? innoLogSizeBytes;
+  final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? error;
 }
 
@@ -380,6 +390,8 @@ class WindowsInstaller {
     String? targetVersion,
     File? handoffMarkerFile,
     DateTime Function()? now,
+    String? currentExecutablePath,
+    Future<WindowsInstallerDiagnostics> Function()? collectDiagnostics,
     Future<WindowsInstallerStartedProcess> Function(
       String executable,
       List<String> args,
@@ -392,6 +404,35 @@ class WindowsInstaller {
   }) async {
     final DateTime Function() clock = now ?? DateTime.now;
     final String innoLogPath = windowsInstallerLogPath(installerPath);
+    final String resolvedExecutablePath =
+        currentExecutablePath ?? Platform.resolvedExecutable;
+    final Directory currentInstallDir = File(resolvedExecutablePath).parent;
+    final WindowsInstallerDiagnostics rawDiagnostics = Platform.isWindows
+        ? await (collectDiagnostics ??
+            () => collectWindowsInstallerDiagnostics(
+                  currentExecutablePath: resolvedExecutablePath,
+                  currentProcessId: pid,
+                ))()
+        : WindowsInstallerDiagnostics(
+            currentExecutablePath: resolvedExecutablePath,
+            currentInstallDir: currentInstallDir.path,
+            targetInstallDir: currentInstallDir.path,
+            detectedInstallLocations: <WindowsDetectedInstallLocation>[
+              WindowsDetectedInstallLocation(
+                source: 'current',
+                path: currentInstallDir.path,
+              ),
+            ],
+          );
+    final String targetInstallDir =
+        rawDiagnostics.targetInstallDir ?? currentInstallDir.path;
+    final WindowsInstallerDiagnostics diagnostics = rawDiagnostics.copyWith(
+      currentExecutablePath:
+          rawDiagnostics.currentExecutablePath ?? resolvedExecutablePath,
+      currentInstallDir:
+          rawDiagnostics.currentInstallDir ?? currentInstallDir.path,
+      targetInstallDir: targetInstallDir,
+    );
     if (targetVersion != null && handoffMarkerFile != null) {
       await WindowsUpdateHandoff.writePending(
         markerFile: handoffMarkerFile,
@@ -399,11 +440,13 @@ class WindowsInstaller {
         installerPath: installerPath,
         innoLogPath: innoLogPath,
         startedAt: clock(),
+        diagnostics: diagnostics,
       );
       ErrorLogService.instance.log(
         'WindowsInstaller.handoff',
         'Prepared Windows update handoff: target=$targetVersion, '
-            'installer=$installerPath, log=$innoLogPath',
+            'installer=$installerPath, targetDir=$targetInstallDir, '
+            'log=$innoLogPath',
       );
     }
 
@@ -423,13 +466,15 @@ class WindowsInstaller {
             'downloaded file is not a Windows executable: $installerPath');
       }
       if (Platform.isWindows) {
-        await ensureWindowsInstallTargetWritable(
-          File(Platform.resolvedExecutable).parent,
-        );
+        await ensureWindowsInstallTargetWritable(Directory(targetInstallDir));
+        _throwIfWindowsInstallBlocked(diagnostics, innoLogPath);
       }
 
-      final List<String> args =
-          windowsInstallerArgs(installerPath, logPath: innoLogPath);
+      final List<String> args = windowsInstallerArgs(
+        installerPath,
+        logPath: innoLogPath,
+        targetInstallDir: Platform.isWindows ? targetInstallDir : null,
+      );
       ErrorLogService.instance.log(
         'WindowsInstaller.launch',
         'Launching Windows installer: $installerPath ${args.join(' ')}',
@@ -462,6 +507,7 @@ class WindowsInstaller {
           installerProcessRunning: observation.installerProcessRunning,
           innoLogExists: observation.innoLogExists,
           innoLogSizeBytes: observation.innoLogSizeBytes,
+          innoLogDeleteFileFailures: observation.innoLogDeleteFileFailures,
           observationError: observation.error,
         );
       }
@@ -471,7 +517,9 @@ class WindowsInstaller {
             'pid=${started.pid ?? 'unknown'}, log=$innoLogPath, '
             'processRunning=${observation.installerProcessRunning}, '
             'logExists=${observation.innoLogExists}, '
-            'logBytes=${observation.innoLogSizeBytes ?? 'unknown'}',
+            'logBytes=${observation.innoLogSizeBytes ?? 'unknown'}, '
+            'deleteFileFailures='
+            '${observation.innoLogDeleteFileFailures.length}',
       );
     } on ProcessException catch (e) {
       final exception =
@@ -488,11 +536,9 @@ class WindowsInstaller {
       rethrow;
     }
 
-    // 安装器已成功启动（分离进程）。把当前进程让出文件锁：让出事件循环一拍，
-    // 随后退出。安装器靠 `/CLOSEAPPLICATIONS`（RestartManager 静默关旧实例，
-    // 不弹确认框）替换 hibiki.exe，再靠 `/RESTARTAPPLICATIONS` 自动重启 app。
-    // AppMutex 只用于安装器检测「app 仍在运行」，单凭它不会自动替换重启，必须
-    // 配合上面的安装参数（见 windowsInstallerArgs）。
+    // 安装器已成功启动（分离进程）。当前实例只让出自己的 hibiki.exe 文件锁；
+    // 其他 Hibiki/libmpv 持有进程已经在 preflight 被列出并要求用户手动关闭，
+    // 这里绝不委托 Inno/RestartManager 自动关闭或强制结束残留进程。
     await Future<void>.delayed(Duration.zero);
     await WindowsNativePreExit.prepareForExit();
     (exitProcess ?? exit)(0);
@@ -524,6 +570,8 @@ class WindowsInstaller {
           observedAt: DateTime.now(),
           installerProcessRunning: null,
           innoLogExists: await File(innoLogPath).exists(),
+          innoLogDeleteFileFailures:
+              await _readWindowsInnoDeleteFileFailures(innoLogPath),
           error: e.toString(),
         );
       }
@@ -535,6 +583,8 @@ class WindowsInstaller {
     bool? installerProcessRunning;
     bool innoLogExists = false;
     int? innoLogSizeBytes;
+    List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures =
+        const <WindowsInnoDeleteFileFailure>[];
     String? error;
 
     do {
@@ -546,6 +596,9 @@ class WindowsInstaller {
         final File innoLog = File(innoLogPath);
         innoLogExists = await innoLog.exists();
         innoLogSizeBytes = innoLogExists ? await innoLog.length() : null;
+        innoLogDeleteFileFailures = innoLogExists
+            ? parseWindowsInnoDeleteFileFailures(await innoLog.readAsString())
+            : const <WindowsInnoDeleteFileFailure>[];
         if (installerProcessRunning == true || innoLogExists) break;
       } catch (e) {
         error = e.toString();
@@ -560,6 +613,7 @@ class WindowsInstaller {
       installerProcessRunning: installerProcessRunning,
       innoLogExists: innoLogExists,
       innoLogSizeBytes: innoLogSizeBytes,
+      innoLogDeleteFileFailures: innoLogDeleteFileFailures,
       error: error,
     );
   }
@@ -577,6 +631,70 @@ class WindowsInstaller {
     } catch (_) {
       return null;
     }
+  }
+
+  static void _throwIfWindowsInstallBlocked(
+    WindowsInstallerDiagnostics diagnostics,
+    String innoLogPath,
+  ) {
+    final List<WindowsProcessInfo> blockers =
+        _blockingWindowsInstallProcesses(diagnostics);
+    if (blockers.isEmpty) return;
+
+    final String target = diagnostics.targetInstallDir ?? 'unknown';
+    final String holderSummary = blockers
+        .map(
+          (WindowsProcessInfo process) =>
+              'PID ${process.pid}: ${process.path ?? process.name ?? 'unknown'}',
+        )
+        .join('; ');
+    throw UpdateInstallerException(
+      'Hibiki cannot install while another Hibiki/libmpv process is using '
+      'the target directory. Target: $target. Holders: $holderSummary. '
+      'Close the listed process manually, then retry the installer. '
+      'Installer log: $innoLogPath',
+    );
+  }
+
+  static List<WindowsProcessInfo> _blockingWindowsInstallProcesses(
+    WindowsInstallerDiagnostics diagnostics,
+  ) {
+    final String? targetInstallDir = diagnostics.targetInstallDir;
+    final Map<int, WindowsProcessInfo> blockers = <int, WindowsProcessInfo>{};
+    for (final WindowsProcessInfo process
+        in diagnostics.runningHibikiProcesses) {
+      if (_processIsInTargetInstallDir(process, targetInstallDir)) {
+        blockers[process.pid] = process;
+      }
+    }
+    for (final WindowsProcessInfo process in diagnostics.libmpvModuleHolders) {
+      if (_processIsInTargetInstallDir(process, targetInstallDir) ||
+          (process.name ?? '').toLowerCase() == 'hibiki.exe') {
+        blockers[process.pid] = process;
+      }
+    }
+    return blockers.values.toList(growable: false);
+  }
+
+  static bool _processIsInTargetInstallDir(
+    WindowsProcessInfo process,
+    String? targetInstallDir,
+  ) {
+    final String? processPath = process.path;
+    if (targetInstallDir == null ||
+        targetInstallDir.isEmpty ||
+        processPath == null ||
+        processPath.isEmpty) {
+      return false;
+    }
+    return _windowsPathEquals(File(processPath).parent.path, targetInstallDir);
+  }
+
+  static Future<List<WindowsInnoDeleteFileFailure>>
+      _readWindowsInnoDeleteFileFailures(String innoLogPath) async {
+    final File log = File(innoLogPath);
+    if (!await log.exists()) return const <WindowsInnoDeleteFileFailure>[];
+    return parseWindowsInnoDeleteFileFailures(await log.readAsString());
   }
 
   static Future<void> _markLaunchFailed(
@@ -601,6 +719,388 @@ class WindowsInstaller {
       );
     }
   }
+}
+
+Future<WindowsInstallerDiagnostics> collectWindowsInstallerDiagnostics({
+  required String currentExecutablePath,
+  int? currentProcessId,
+}) async {
+  final String currentInstallDir = File(currentExecutablePath).parent.path;
+  final String targetInstallDir = currentInstallDir;
+  final List<WindowsDetectedInstallLocation> detectedInstallLocations =
+      <WindowsDetectedInstallLocation>[
+    WindowsDetectedInstallLocation(
+      source: 'current',
+      path: currentInstallDir,
+    ),
+    ...await queryWindowsRegisteredInstallLocations(),
+    ...detectWindowsHistoricalInstallLocations(),
+  ];
+  final List<WindowsProcessInfo> runningHibikiProcesses =
+      (await queryWindowsHibikiProcesses())
+          .where((WindowsProcessInfo process) =>
+              currentProcessId == null || process.pid != currentProcessId)
+          .toList(growable: false);
+  final List<WindowsProcessInfo> libmpvModuleHolders =
+      (await queryWindowsLibmpvModuleHolders())
+          .where((WindowsProcessInfo process) =>
+              currentProcessId == null || process.pid != currentProcessId)
+          .toList(growable: false);
+
+  return WindowsInstallerDiagnostics(
+    currentExecutablePath: currentExecutablePath,
+    currentInstallDir: currentInstallDir,
+    targetInstallDir: targetInstallDir,
+    detectedInstallLocations: detectedInstallLocations,
+    runningHibikiProcesses: runningHibikiProcesses,
+    libmpvModuleHolders: libmpvModuleHolders,
+    pathMismatchWarning: windowsInstallPathMismatchWarning(
+      targetInstallDir: targetInstallDir,
+      locations: detectedInstallLocations,
+    ),
+  );
+}
+
+Future<List<WindowsDetectedInstallLocation>>
+    queryWindowsRegisteredInstallLocations() async {
+  if (!Platform.isWindows) return const <WindowsDetectedInstallLocation>[];
+  const String appId = r'{8F2C1A3E-7B4D-4E9A-9C21-0A1B2C3D4E5F}_is1';
+  const List<String> keys = <String>[
+    r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId,
+    r'HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + appId,
+  ];
+  final List<WindowsDetectedInstallLocation> result =
+      <WindowsDetectedInstallLocation>[];
+  for (final String key in keys) {
+    try {
+      final ProcessResult query = await Process.run(
+        'reg',
+        <String>['query', key],
+      );
+      if (query.exitCode != 0) continue;
+      result.addAll(
+        parseWindowsRegistryInstallLocations(
+          query.stdout is String ? query.stdout as String : '',
+        ),
+      );
+    } catch (_) {
+      // Registry diagnostics are best-effort; absence should not block update.
+    }
+  }
+  return _dedupeInstallLocations(result);
+}
+
+List<WindowsDetectedInstallLocation> parseWindowsRegistryInstallLocations(
+  String output,
+) {
+  final List<WindowsDetectedInstallLocation> result =
+      <WindowsDetectedInstallLocation>[];
+  final String? installLocation =
+      _registryValueAfterType(output, 'InstallLocation') ??
+          _registryValueAfterType(output, 'Inno Setup: App Path');
+  if (installLocation != null && installLocation.isNotEmpty) {
+    result.add(
+      WindowsDetectedInstallLocation(
+        source: 'registered',
+        path: installLocation,
+      ),
+    );
+  }
+
+  final String? displayIcon = _registryValueAfterType(output, 'DisplayIcon');
+  if (displayIcon != null && displayIcon.isNotEmpty) {
+    final String path = _stripDisplayIconSuffix(displayIcon);
+    if (path.toLowerCase().endsWith(r'\hibiki.exe') ||
+        path.toLowerCase().endsWith('/hibiki.exe')) {
+      result.add(
+        WindowsDetectedInstallLocation(
+          source: 'registered',
+          path: File(path).parent.path,
+        ),
+      );
+    }
+  }
+  return _dedupeInstallLocations(result);
+}
+
+List<WindowsDetectedInstallLocation> detectWindowsHistoricalInstallLocations() {
+  if (!Platform.isWindows) return const <WindowsDetectedInstallLocation>[];
+  final List<String> candidates = <String>[
+    r'D:\Program\Hibiki',
+    r'D:\APP\Hibiki',
+    if ((Platform.environment['LOCALAPPDATA'] ?? '').isNotEmpty)
+      '${Platform.environment['LOCALAPPDATA']}\\Hibiki',
+  ];
+  return _dedupeInstallLocations(
+    <WindowsDetectedInstallLocation>[
+      for (final String path in candidates)
+        if (Directory(path).existsSync())
+          WindowsDetectedInstallLocation(source: 'historical', path: path),
+    ],
+  );
+}
+
+String? windowsInstallPathMismatchWarning({
+  required String targetInstallDir,
+  required List<WindowsDetectedInstallLocation> locations,
+}) {
+  final List<WindowsDetectedInstallLocation> mismatches = locations
+      .where((WindowsDetectedInstallLocation location) =>
+          location.path.isNotEmpty &&
+          !_windowsPathEquals(location.path, targetInstallDir))
+      .toList(growable: false);
+  if (mismatches.isEmpty) return null;
+  final String details = mismatches
+      .map((WindowsDetectedInstallLocation location) =>
+          '${location.source}: ${location.path}')
+      .join('; ');
+  return 'Install locations differ from the running Hibiki directory '
+      '$targetInstallDir. This update will install only to the running '
+      'directory. Other locations are left untouched; remove old shortcuts or '
+      'old install folders manually if they are no longer needed. Detected: '
+      '$details';
+}
+
+Future<List<WindowsProcessInfo>> queryWindowsHibikiProcesses() async {
+  if (!Platform.isWindows) return const <WindowsProcessInfo>[];
+  const String command =
+      "Get-CimInstance Win32_Process -Filter \"Name = 'hibiki.exe'\" | "
+      'Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress';
+  try {
+    final ProcessResult result = await Process.run(
+      'powershell',
+      <String>['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    );
+    if (result.exitCode != 0) return const <WindowsProcessInfo>[];
+    return parseWindowsProcessJson(
+      result.stdout is String ? result.stdout as String : '',
+    );
+  } catch (_) {
+    return const <WindowsProcessInfo>[];
+  }
+}
+
+Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders() async {
+  if (!Platform.isWindows) return const <WindowsProcessInfo>[];
+  try {
+    final ProcessResult result = await Process.run(
+      'tasklist',
+      <String>['/M', 'libmpv-2.dll', '/FO', 'CSV', '/NH'],
+    );
+    if (result.exitCode != 0) return const <WindowsProcessInfo>[];
+    final List<WindowsProcessInfo> holders = parseWindowsTasklistModuleHolders(
+      result.stdout is String ? result.stdout as String : '',
+    );
+    final Map<int, WindowsProcessInfo> hydrated =
+        await queryWindowsProcessInfoForPids(
+      holders.map((WindowsProcessInfo process) => process.pid),
+    );
+    return holders.map((WindowsProcessInfo process) {
+      final WindowsProcessInfo? info = hydrated[process.pid];
+      return process.copyWith(
+        name: info?.name,
+        path: info?.path,
+      );
+    }).toList(growable: false);
+  } catch (_) {
+    return const <WindowsProcessInfo>[];
+  }
+}
+
+Future<Map<int, WindowsProcessInfo>> queryWindowsProcessInfoForPids(
+  Iterable<int> pids,
+) async {
+  final List<int> uniquePids = pids.toSet().where((int pid) => pid > 0).toList()
+    ..sort();
+  if (!Platform.isWindows || uniquePids.isEmpty) {
+    return const <int, WindowsProcessInfo>{};
+  }
+  final String filter =
+      uniquePids.map((int pid) => 'ProcessId = $pid').join(' OR ');
+  final String command = 'Get-CimInstance Win32_Process -Filter "$filter" | '
+      'Select-Object ProcessId,Name,ExecutablePath | ConvertTo-Json -Compress';
+  try {
+    final ProcessResult result = await Process.run(
+      'powershell',
+      <String>['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    );
+    if (result.exitCode != 0) return const <int, WindowsProcessInfo>{};
+    final List<WindowsProcessInfo> processes = parseWindowsProcessJson(
+      result.stdout is String ? result.stdout as String : '',
+    );
+    return <int, WindowsProcessInfo>{
+      for (final WindowsProcessInfo process in processes) process.pid: process,
+    };
+  } catch (_) {
+    return const <int, WindowsProcessInfo>{};
+  }
+}
+
+List<WindowsProcessInfo> parseWindowsProcessJson(String output) {
+  if (output.trim().isEmpty) return const <WindowsProcessInfo>[];
+  try {
+    final Object? decoded = jsonDecode(output);
+    final List<dynamic> rows = decoded is List
+        ? decoded
+        : decoded is Map<String, dynamic>
+            ? <dynamic>[decoded]
+            : const <dynamic>[];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map((Map<String, dynamic> row) {
+          return WindowsProcessInfo(
+            pid: _objectToInt(row['ProcessId']) ?? 0,
+            name: row['Name'] as String?,
+            path: row['ExecutablePath'] as String?,
+          );
+        })
+        .where((WindowsProcessInfo process) => process.pid > 0)
+        .toList(growable: false);
+  } catch (_) {
+    return const <WindowsProcessInfo>[];
+  }
+}
+
+List<WindowsProcessInfo> parseWindowsTasklistModuleHolders(String output) {
+  final List<WindowsProcessInfo> holders = <WindowsProcessInfo>[];
+  for (final String rawLine in const LineSplitter().convert(output)) {
+    final String line = rawLine.trim();
+    if (line.isEmpty || line.startsWith('INFO:')) continue;
+    final List<String> fields = _parseCsvLine(line);
+    if (fields.length < 2) continue;
+    final int? parsedPid = int.tryParse(fields[1].replaceAll(',', '').trim());
+    if (parsedPid == null) continue;
+    holders.add(
+      WindowsProcessInfo(
+        pid: parsedPid,
+        name: fields[0].trim(),
+      ),
+    );
+  }
+  return holders;
+}
+
+List<WindowsInnoDeleteFileFailure> parseWindowsInnoDeleteFileFailures(
+  String output,
+) {
+  final List<String> lines = const LineSplitter().convert(output);
+  final List<WindowsInnoDeleteFileFailure> failures =
+      <WindowsInnoDeleteFileFailure>[];
+  String? previousPath;
+  for (int i = 0; i < lines.length; i++) {
+    final String line = lines[i];
+    final String? pathOnLine = _extractWindowsPath(line);
+    if (pathOnLine != null) previousPath = pathOnLine;
+
+    final RegExpMatch? codeMatch = RegExp(
+      r'DeleteFile failed[^0-9]*code\s+([0-9]+)',
+      caseSensitive: false,
+    ).firstMatch(line);
+    if (codeMatch == null) continue;
+
+    final int? code = int.tryParse(codeMatch.group(1)!);
+    if (code == null) continue;
+    final String? nextPath =
+        i + 1 < lines.length ? _extractWindowsPath(lines[i + 1]) : null;
+    final String path = pathOnLine ?? previousPath ?? nextPath ?? '';
+    failures.add(
+      WindowsInnoDeleteFileFailure(
+        path: path,
+        code: code,
+        message: line.trim(),
+      ),
+    );
+  }
+  return failures
+      .where((WindowsInnoDeleteFileFailure failure) => failure.path.isNotEmpty)
+      .toList(growable: false);
+}
+
+List<WindowsDetectedInstallLocation> _dedupeInstallLocations(
+  Iterable<WindowsDetectedInstallLocation> locations,
+) {
+  final Set<String> seen = <String>{};
+  final List<WindowsDetectedInstallLocation> result =
+      <WindowsDetectedInstallLocation>[];
+  for (final WindowsDetectedInstallLocation location in locations) {
+    if (location.path.trim().isEmpty) continue;
+    final String key = _normalizeWindowsPath(location.path);
+    if (!seen.add(key)) continue;
+    result.add(location);
+  }
+  return result;
+}
+
+String? _registryValueAfterType(String output, String valueName) {
+  for (final String rawLine in const LineSplitter().convert(output)) {
+    final String line = rawLine.trim();
+    if (!line.startsWith(valueName)) continue;
+    final RegExpMatch? match =
+        RegExp(r'^' + RegExp.escape(valueName) + r'\s+REG_\w+\s+(.+)$')
+            .firstMatch(line);
+    if (match != null) return match.group(1)!.trim();
+  }
+  return null;
+}
+
+String _stripDisplayIconSuffix(String value) {
+  String path = value.trim();
+  if (path.startsWith('"')) {
+    final int closing = path.indexOf('"', 1);
+    if (closing > 0) path = path.substring(1, closing);
+  }
+  return path.replaceFirst(RegExp(r',\d+$'), '').trim();
+}
+
+List<String> _parseCsvLine(String line) {
+  final List<String> fields = <String>[];
+  final StringBuffer current = StringBuffer();
+  bool inQuotes = false;
+  for (int i = 0; i < line.length; i++) {
+    final String char = line[i];
+    if (char == '"') {
+      if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+        current.write('"');
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char == ',' && !inQuotes) {
+      fields.add(current.toString());
+      current.clear();
+      continue;
+    }
+    current.write(char);
+  }
+  fields.add(current.toString());
+  return fields;
+}
+
+String? _extractWindowsPath(String line) {
+  final RegExpMatch? match = RegExp(r'[A-Za-z]:\\[^"\r\n]+').firstMatch(line);
+  if (match == null) return null;
+  return match.group(0)!.replaceFirst(RegExp(r'[\s.;,]+$'), '').trim();
+}
+
+bool _windowsPathEquals(String a, String b) {
+  return _normalizeWindowsPath(a) == _normalizeWindowsPath(b);
+}
+
+String _normalizeWindowsPath(String path) {
+  return path
+      .trim()
+      .replaceAll('/', r'\')
+      .replaceFirst(RegExp(r'\\+$'), '')
+      .toLowerCase();
+}
+
+int? _objectToInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value.trim());
+  return null;
 }
 
 Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {

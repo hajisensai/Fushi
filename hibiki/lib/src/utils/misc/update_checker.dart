@@ -2312,6 +2312,92 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                 t.update_install_log_path(path: record.innoLogPath),
                 style: tokens.type.listSubtitle,
               ),
+              if (record.currentExecutablePath != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_current_executable(
+                    path: record.currentExecutablePath!,
+                  ),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              if (record.targetInstallDir != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_target_dir(path: record.targetInstallDir!),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              for (final WindowsDetectedInstallLocation location
+                  in record.detectedInstallLocations)
+                if (location.path.isNotEmpty) ...[
+                  SizedBox(height: tokens.spacing.gap / 2),
+                  SelectableText(
+                    t.update_install_detected_location(
+                      source: location.source,
+                      path: location.path,
+                    ),
+                    style: tokens.type.metadata,
+                  ),
+                ],
+              if (record.pathMismatchWarning != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_path_mismatch(
+                    warning: record.pathMismatchWarning!,
+                  ),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              for (final WindowsProcessInfo process
+                  in record.runningHibikiProcesses) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_running_process(
+                    pid: process.pid,
+                    path: _windowsProcessPathLabel(process),
+                  ),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              for (final WindowsProcessInfo process
+                  in record.libmpvModuleHolders) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_libmpv_holder(
+                    pid: process.pid,
+                    path: _windowsProcessPathLabel(process),
+                  ),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              for (final WindowsInnoDeleteFileFailure failure
+                  in record.innoLogDeleteFileFailures) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_deletefile_failure(
+                    path: failure.path,
+                    code: failure.code,
+                  ),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              if (record.runningHibikiProcesses.isNotEmpty ||
+                  record.libmpvModuleHolders.isNotEmpty ||
+                  record.innoLogDeleteFileFailures.isNotEmpty) ...[
+                SizedBox(height: tokens.spacing.gap),
+                Text(
+                  t.update_install_manual_close_retry,
+                  style: tokens.type.listSubtitle,
+                ),
+              ],
+              if (record.diagnostics.hasLockEvidence) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.update_install_restart_windows_hint,
+                  style: tokens.type.listSubtitle,
+                ),
+              ],
               if (record.installerPid != null) ...[
                 SizedBox(height: tokens.spacing.gap / 2),
                 SelectableText(
@@ -2370,6 +2456,10 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+String _windowsProcessPathLabel(WindowsProcessInfo process) {
+  return process.path ?? process.name ?? 'unknown';
 }
 
 @visibleForTesting

@@ -200,33 +200,40 @@ void main() {
       expect(args, contains('/SP-'));
     });
 
-    test('silently closes and auto-restarts the app without a confirm dialog',
+    test('does not ask Inno to close, force-close, or restart applications',
         () {
-      // TODO-431: a bare /VERYSILENT still pops the "application is running,
-      // close it?" dialog because the .iss sets CloseApplications=yes. Passing
-      // /CLOSEAPPLICATIONS lets RestartManager close Hibiki silently, and
-      // /RESTARTAPPLICATIONS relaunches it once the install finishes; /NORESTART
-      // makes sure only the app (not the OS) is restarted.
       final List<String> args =
           windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
-      expect(args, contains('/CLOSEAPPLICATIONS'));
-      expect(args, contains('/RESTARTAPPLICATIONS'));
+
+      expect(args, isNot(contains('/CLOSEAPPLICATIONS')));
+      expect(args, isNot(contains('/FORCECLOSEAPPLICATIONS')));
+      expect(args, isNot(contains('/RESTARTAPPLICATIONS')));
+      expect(args, contains('/NOCLOSEAPPLICATIONS'));
+      expect(args, contains('/NOFORCECLOSEAPPLICATIONS'));
+      expect(args, contains('/NORESTARTAPPLICATIONS'));
       expect(args, contains('/NORESTART'));
     });
 
-    test('suppresses Inno action dialogs and records close diagnostics', () {
+    test('suppresses Inno action dialogs and writes one install log', () {
       final List<String> args =
           windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
 
       expect(args, contains('/SUPPRESSMSGBOXES'));
-      expect(args, contains('/FORCECLOSEAPPLICATIONS'));
-      expect(args, contains('/LOGCLOSEAPPLICATIONS'));
 
       final Iterable<String> logArgs =
           args.where((String arg) => arg.startsWith('/LOG='));
       expect(logArgs, hasLength(1));
       expect(
           logArgs.single, contains('hibiki-0.4.2-windows-setup.install.log'));
+    });
+
+    test('pins the installer target to the current executable directory', () {
+      final List<String> args = windowsInstallerArgs(
+        r'C:\tmp\hibiki-0.4.2-windows-setup.exe',
+        targetInstallDir: r'D:\Portable\Hibiki',
+      );
+
+      expect(args, contains(r'/DIR=D:\Portable\Hibiki'));
     });
 
     test('preflights installation directory write access before app exit', () {
@@ -241,13 +248,13 @@ void main() {
   });
 
   group('Windows installer script guards', () {
-    test('keeps Restart Manager coverage for exe and dll locks', () {
+    test('does not let Inno auto-close or auto-restart applications', () {
       final String script = File(
         'windows/installer/hibiki.iss',
       ).readAsStringSync();
 
-      expect(script, contains('CloseApplications=yes'));
-      expect(script, contains('RestartApplications=yes'));
+      expect(script, contains('CloseApplications=no'));
+      expect(script, contains('RestartApplications=no'));
       expect(script, contains('AppMutex=HibikiSingleInstanceMutex'));
       expect(script, contains('CloseApplicationsFilter=*.exe,*.dll'));
     });
@@ -302,6 +309,39 @@ void main() {
         WindowsInstaller.runAndExit('Z:/nope/does-not-exist-installer.exe'),
         throwsA(isA<UpdateInstallerException>()),
       );
+    });
+  });
+
+  group('Windows installer diagnostics parsers', () {
+    test('parses Inno DeleteFile code 5 failures from installer logs', () {
+      final List<WindowsInnoDeleteFileFailure> failures =
+          parseWindowsInnoDeleteFileFailures(
+        [
+          r'2026-06-18 10:00:00.000   DeleteFile failed; code 5.',
+          r'2026-06-18 10:00:00.001   C:\Program Files\Hibiki\libmpv-2.dll',
+        ].join('\n'),
+      );
+
+      expect(failures, hasLength(1));
+      expect(failures.single.code, 5);
+      expect(failures.single.path, r'C:\Program Files\Hibiki\libmpv-2.dll');
+    });
+
+    test('parses tasklist module holders without terminating them', () {
+      final List<WindowsProcessInfo> holders =
+          parseWindowsTasklistModuleHolders(
+        [
+          '"hibiki.exe","4321","Console","1","120,000 K"',
+          '"mpv-helper.exe","8765","Console","1","80,000 K"',
+        ].join('\n'),
+      );
+
+      expect(holders.map((WindowsProcessInfo p) => p.pid), <int>[4321, 8765]);
+      final String source =
+          File('lib/src/utils/misc/platform_updater.dart').readAsStringSync();
+      expect(source, isNot(contains('kill')));
+      expect(source, isNot(contains('taskkill')));
+      expect(source, isNot(contains('TerminateProcess')));
     });
   });
 }

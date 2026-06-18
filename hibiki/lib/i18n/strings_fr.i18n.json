@@ -1716,5 +1716,14 @@
     "video_control_reject_required": "Required controls must stay on the player.",
     "video_control_reject_volume_bottom": "Volume can only sit on the bottom bar.",
     "video_control_reject_unavailable": "This control cannot be placed there.",
-    "video_control_volume": "Volume"
+    "video_control_volume": "Volume",
+    "update_install_current_executable": "Running executable: $path",
+    "update_install_target_dir": "Install target: $path",
+    "update_install_detected_location": "Detected install location ($source): $path",
+    "update_install_path_mismatch": "Install directory mismatch: $warning",
+    "update_install_running_process": "Running Hibiki process: PID $pid - $path",
+    "update_install_libmpv_holder": "libmpv holder: PID $pid - $path",
+    "update_install_deletefile_failure": "Installer failed to replace $path (code $code)",
+    "update_install_manual_close_retry": "Close Hibiki from the listed PID/path, then retry the update or run the installer again.",
+    "update_install_restart_windows_hint": "If the listed processes are closed but libmpv-2.dll is still locked, restart Windows and install again."
 }

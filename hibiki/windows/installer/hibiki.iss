@@ -24,9 +24,9 @@ OutputBaseFilename=hibiki-{#AppVersion}-windows-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-CloseApplications=yes
+CloseApplications=no
 CloseApplicationsFilter=*.exe,*.dll
-RestartApplications=yes
+RestartApplications=no
 AppMutex=HibikiSingleInstanceMutex
 
 [Tasks]

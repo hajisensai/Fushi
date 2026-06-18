@@ -160,4 +160,110 @@ void main() {
     expect(find.text(t.update_install_process_not_observed), findsOneWidget);
     expect(find.text(t.update_install_log_not_observed), findsOneWidget);
   });
+
+  testWidgets(
+      'installer handoff failure dialog shows holder diagnostics and restart '
+      'only with lock evidence', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 360);
+    addTearDown(tester.view.reset);
+
+    final WindowsUpdateHandoffRecord record =
+        WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
+      'targetVersion': '9.9.9',
+      'installerPath': r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
+      'innoLogPath': r'C:\tmp\hibiki-9.9.9.install.log',
+      'startedAt': '2026-06-17T10:30:00Z',
+      'installerLaunchSucceeded': true,
+      'installerPid': 4242,
+      'postLaunchObservedAt': '2026-06-17T10:30:02Z',
+      'installerProcessRunning': false,
+      'innoLogExists': true,
+      'currentExecutablePath': r'D:\Portable\Hibiki\hibiki.exe',
+      'currentInstallDir': r'D:\Portable\Hibiki',
+      'targetInstallDir': r'D:\Portable\Hibiki',
+      'detectedInstallLocations': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'source': 'registered',
+          'path': r'D:\Program\Hibiki',
+        },
+        <String, dynamic>{
+          'source': 'legacy',
+          'path': r'D:\APP\Hibiki',
+        },
+      ],
+      'pathMismatchWarning':
+          r'Registered install location D:\Program\Hibiki differs from current D:\Portable\Hibiki. Do not delete it automatically; clean old shortcuts manually if needed.',
+      'runningHibikiProcesses': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'pid': 5678,
+          'path': r'D:\Portable\Hibiki\hibiki.exe',
+        },
+      ],
+      'libmpvModuleHolders': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'pid': 5678,
+          'path': r'D:\Portable\Hibiki\hibiki.exe',
+        },
+      ],
+      'innoLogDeleteFileFailures': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'path': r'D:\Portable\Hibiki\libmpv-2.dll',
+          'code': 5,
+        },
+      ],
+    });
+
+    await tester.pumpWidget(
+      buildApp(
+        WindowsUpdateHandoffResultDialog(
+          result: WindowsUpdateHandoffResult(
+            status: WindowsUpdateHandoffStatus.incomplete,
+            record: record,
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining(r'D:\Portable\Hibiki'), findsWidgets);
+    expect(find.textContaining(r'D:\Program\Hibiki'), findsWidgets);
+    expect(find.textContaining(r'D:\APP\Hibiki'), findsWidgets);
+    expect(find.textContaining('5678'), findsWidgets);
+    expect(find.textContaining('libmpv-2.dll'), findsWidgets);
+    expect(find.textContaining('code 5'), findsWidgets);
+    expect(find.textContaining('Close Hibiki'), findsOneWidget);
+    expect(find.textContaining('retry'), findsOneWidget);
+    expect(find.textContaining('restart Windows'), findsOneWidget);
+  });
+
+  testWidgets(
+      'installer handoff launch failure does not suggest reboot without lock '
+      'evidence', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 320);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        WindowsUpdateHandoffResultDialog(
+          result: WindowsUpdateHandoffResult(
+            status: WindowsUpdateHandoffStatus.launchFailed,
+            record: WindowsUpdateHandoffRecord(
+              targetVersion: '9.9.9',
+              installerPath: r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
+              innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
+              startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+              installerLaunchSucceeded: false,
+              launchError: 'access denied',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('access denied'), findsOneWidget);
+    expect(find.textContaining('restart Windows'), findsNothing);
+  });
 }
