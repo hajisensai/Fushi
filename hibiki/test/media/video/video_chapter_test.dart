@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 
@@ -175,6 +177,56 @@ void main() {
       await c.seekToChapter(-1); // 负 no-op
       await c.nextChapter();
       await c.previousChapter();
+    });
+  });
+
+  group('chapter first-load readiness guards (TODO-521)', () {
+    final String src = File('lib/src/media/video/video_player_controller.dart')
+        .readAsStringSync();
+
+    test('load waits for real duration readiness instead of fixed delay', () {
+      final int loadStart = src.indexOf('Future<void> load({');
+      expect(loadStart, greaterThanOrEqualTo(0));
+      final int loadEnd =
+          src.indexOf('void _handleCompletedChanged', loadStart);
+      expect(loadEnd, greaterThan(loadStart));
+      final String loadBody = src.substring(loadStart, loadEnd);
+
+      expect(loadBody,
+          contains('_refreshChaptersWhenDurationReady(player, loadToken)'));
+      expect(loadBody, isNot(contains('unawaited(refreshChapters())')),
+          reason: 'open() 后立刻读 chapter-list 会复现首次读空竞态');
+      expect(loadBody, isNot(contains('Future.delayed')),
+          reason: '章节就绪必须由 duration 信号驱动，不能靠固定延迟掩盖竞态');
+    });
+
+    test(
+        'duration subscription has initial-state path and lifecycle cancellation',
+        () {
+      expect(src, contains('StreamSubscription<Duration>? _durationReadySub'));
+      expect(src, contains('player.state.duration'));
+      expect(src, contains('player.stream.duration.listen'));
+      expect(src, contains('await _durationReadySub?.cancel()'),
+          reason: '换片 load 前必须取消上一片 duration 订阅');
+      expect(src, contains('unawaited(_durationReadySub?.cancel())'),
+          reason: 'dispose 必须取消 duration 订阅');
+    });
+
+    test(
+        'chapter refresh results are guarded by player identity and load token',
+        () {
+      expect(src, contains('int _loadToken = 0'));
+      expect(src, contains('final int loadToken = ++_loadToken'));
+      expect(
+          src, contains('bool _isCurrentLoad(Player player, int loadToken)'));
+      expect(src, contains('_refreshChaptersForLoad(player, loadToken)'));
+      expect(src, contains('if (!_isCurrentLoad(player, loadToken)) return;'));
+    });
+
+    test('new loads clear stale chapters before opening the next media', () {
+      expect(src, contains('_clearChaptersForNewLoad();'));
+      expect(src, contains('_chapters = const <VideoChapter>[];'));
+      expect(src, contains('notifyListeners();'));
     });
   });
 }

@@ -256,6 +256,14 @@ class VideoPlayerController extends ChangeNotifier
   StreamSubscription<int?>? _widthSub;
   StreamSubscription<int?>? _heightSub;
 
+  /// 媒体时长首次就绪订阅：duration > 0 是 media_kit/libmpv 已解析媒体头的真实信号。
+  /// 章节读取和进度条章节刻度都依赖这个信号，而不是 open() 返回后的时间猜测。
+  StreamSubscription<Duration>? _durationReadySub;
+
+  /// 每次 [load] 递增。复用同一个 [Player] 换片时，单靠 player identity 无法区分
+  /// 旧媒体的异步章节读取结果；token 让旧 load 的结果可被丢弃。
+  int _loadToken = 0;
+
   String? _bookUid;
 
   /// 视频文件绝对路径；制卡时按 cue 时间裁字幕音频片段用。
@@ -590,11 +598,13 @@ class VideoPlayerController extends ChangeNotifier
       (videoFile == null) != (mediaUri == null),
       'Provide exactly one of videoFile or mediaUri.',
     );
+    final int loadToken = ++_loadToken;
     _bookUid = bookUid;
     _videoPath = videoFile?.path;
     final String sourceUri = mediaUri ?? mediaUriForVideoPath(videoFile!.path);
     debugPrint('[video-load] cues=${cues.length} uri=$sourceUri');
     setCues(cues);
+    _clearChaptersForNewLoad();
     // 换片（复用 player）复位图形字幕标志：新片默认非图形轨，仅当下面
     // [renderGraphicStreamIndex] 触发的 [selectEmbeddedGraphicTrack] 成功才重新置 true。
     // 这样复用 player 时上一段视频的图形轨 `sub-delay` 不会残留到新片（BUG-301）。
@@ -618,6 +628,8 @@ class VideoPlayerController extends ChangeNotifier
     _widthSub = null;
     await _heightSub?.cancel();
     _heightSub = null;
+    await _durationReadySub?.cancel();
+    _durationReadySub = null;
     _setSubtitleCuesLoading(false);
 
     // 裸 `Player()`：**必须保持 `PlayerConfiguration.pitch == false`（media_kit 默认）**
@@ -692,7 +704,7 @@ class VideoPlayerController extends ChangeNotifier
     );
     if (resolvedStartMs > 0) {
       await _waitUntilSeekable(player);
-      if (_player != player) return; // 等待期间换片：放弃这次恢复
+      if (!_isCurrentLoad(player, loadToken)) return; // 等待期间换片：放弃这次恢复
       resolvedStartMs = resolveEpisodeStart(
         startIntent,
         requestedStartMs,
@@ -747,10 +759,38 @@ class VideoPlayerController extends ChangeNotifier
       ));
     }
 
-    // 内封章节（TODO-424）：open 后异步读 libmpv `chapter-list` 填充章节列表（不阻塞
-    // 首帧；无章节时优雅降级成空列表，章节入口按钮据此隐藏）。换集复用同一 player
-    // 时也重读，刷新成新片的章节。
-    unawaited(refreshChapters());
+    // 内封章节（TODO-424 / TODO-521）：等 duration 首次就绪后再读 libmpv
+    // `chapter-list`。open() 返回时媒体头/章节元数据可能尚未解析完；duration > 0
+    // 是真实 ready 信号。换集复用同一 player 时用 loadToken 丢弃旧媒体迟到结果。
+    _refreshChaptersWhenDurationReady(player, loadToken);
+  }
+
+  bool _isCurrentLoad(Player player, int loadToken) =>
+      _player == player && _loadToken == loadToken;
+
+  void _clearChaptersForNewLoad() {
+    if (_chapters.isEmpty) return;
+    _chapters = const <VideoChapter>[];
+    notifyListeners();
+  }
+
+  void _refreshChaptersWhenDurationReady(Player player, int loadToken) {
+    if (!_isCurrentLoad(player, loadToken)) return;
+    final Duration currentDuration = player.state.duration;
+    if (currentDuration > Duration.zero) {
+      notifyListeners();
+      unawaited(_refreshChaptersForLoad(player, loadToken));
+      return;
+    }
+    _durationReadySub = player.stream.duration.listen((Duration duration) {
+      if (!_isCurrentLoad(player, loadToken)) return;
+      notifyListeners();
+      if (duration <= Duration.zero) return;
+      final StreamSubscription<Duration>? sub = _durationReadySub;
+      _durationReadySub = null;
+      unawaited(sub?.cancel());
+      unawaited(_refreshChaptersForLoad(player, loadToken));
+    });
   }
 
   void _handleCompletedChanged(bool completed) {
@@ -1147,8 +1187,13 @@ class VideoPlayerController extends ChangeNotifier
       }
       return;
     }
+    await _refreshChaptersForLoad(player, _loadToken);
+  }
+
+  Future<void> _refreshChaptersForLoad(Player player, int loadToken) async {
+    if (!_isCurrentLoad(player, loadToken)) return;
     final String countRaw = await _getMpvProperty('chapter-list/count');
-    if (_player != player) return; // 读取期间换片 / 销毁：丢弃。
+    if (!_isCurrentLoad(player, loadToken)) return; // 读取期间换片 / 销毁：丢弃。
     final int total = int.tryParse(countRaw.trim()) ?? 0;
     if (total <= 0) {
       if (_chapters.isNotEmpty) {
@@ -1163,7 +1208,7 @@ class VideoPlayerController extends ChangeNotifier
     for (int i = 0; i < total; i++) {
       final String title = await _getMpvProperty('chapter-list/$i/title');
       final String time = await _getMpvProperty('chapter-list/$i/time');
-      if (_player != player) return; // 逐条读取期间换片：丢弃。
+      if (!_isCurrentLoad(player, loadToken)) return; // 逐条读取期间换片：丢弃。
       final double seconds = double.tryParse(time.trim()) ?? 0.0;
       final int ms = (seconds * 1000).round();
       chapters.add(VideoChapter(
@@ -1633,6 +1678,7 @@ class VideoPlayerController extends ChangeNotifier
 
   @override
   void dispose() {
+    _loadToken++;
     // 退出前强制记录当前位置：周期保存的整秒节流会吞掉退出瞬间同一整秒内的最后
     // 几百毫秒进度。这里在 [_player] 仍存活时同步读位置并 fire-and-forget 写一次
     // （绕过节流），保证「退出再进恢复到上次位置」。可 await 的可靠落库由
@@ -1649,6 +1695,8 @@ class VideoPlayerController extends ChangeNotifier
     _widthSub = null;
     unawaited(_heightSub?.cancel());
     _heightSub = null;
+    unawaited(_durationReadySub?.cancel());
+    _durationReadySub = null;
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
