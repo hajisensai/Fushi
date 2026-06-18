@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/main.dart' as app;
@@ -18,6 +19,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart'
 import 'package:hibiki/src/shortcuts/reader_space_override.dart'
     show resolveReaderArrowPageTurn;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/startup/test_environment.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
@@ -46,15 +48,19 @@ void main() {
     (WidgetTester tester) async {
       final List<FlutterErrorDetails> errors = [];
       final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+      ComputerUseEvidence? evidence;
       FlutterError.onError = (FlutterErrorDetails details) {
         errors.add(details);
         debugPrint('[CU] FlutterError: ${details.exceptionAsString()}');
       };
 
       try {
+        evidence = ComputerUseEvidence.forTask('reader_computer_use_flow');
         app.main();
         expect(await waitForHome(tester), isTrue, reason: 'Home must render');
         await tester.pump(const Duration(seconds: 2));
+        await evidence.captureWidgetTree(tester, 'home-ready');
+        await evidence.recordScreenshot(binding, 'reader_cu_home_ready');
 
         final FocusDriver driver = FocusDriver(tester);
         final AppModel appModel = await readyAppModel(tester);
@@ -65,17 +71,30 @@ void main() {
           tester,
           fileName: 'todo519_computer_use.epub',
         );
+        evidence.recordCheck(
+          'fixture_book_seeded',
+          passed: true,
+          details: <String, Object?>{
+            'bookKey': bookKey,
+            'source': 'generated EPUB fixture',
+          },
+        );
         await _openSeededBook(tester, driver, bookKey);
 
         final Future<dynamic> Function(String source) eval =
-            await _waitForReaderReady(tester);
+            await _waitForReaderReady(tester, binding, evidence);
         _focusReaderSurface(tester);
 
         _assertPageShortcutBindings(appModel);
-        await _runPageTurnStress(tester, eval);
-        await _runRepeatedLookupStress(tester, eval);
+        await _runPageTurnStress(tester, eval, binding, evidence);
+        await _runRepeatedLookupStress(tester, eval, binding, evidence);
 
-        await takeScreenshot(binding, 'reader_computer_use_flow_verified');
+        await evidence.recordScreenshot(
+          binding,
+          'reader_computer_use_flow_verified',
+        );
+        await evidence.captureWidgetTree(tester, 'flow-verified');
+        await evidence.flush();
 
         final NavigatorState nav =
             Navigator.of(tester.element(find.byType(Scaffold).first));
@@ -86,6 +105,7 @@ void main() {
         assertStrictErrors(errors);
         debugPrint('[CU] === COMPUTER USE READER FLOW PASSED ===');
       } finally {
+        await evidence?.flush();
         FlutterError.onError = oldHandler;
       }
     },
@@ -200,12 +220,25 @@ Future<void> _openSeededBook(
 
 Future<Future<dynamic> Function(String source)> _waitForReaderReady(
   WidgetTester tester,
+  IntegrationTestWidgetsFlutterBinding binding,
+  ComputerUseEvidence evidence,
 ) async {
   const Key webViewKey = ValueKey<String>('hoshi_webview');
   for (int i = 0; i < 80 && find.byKey(webViewKey).evaluate().isEmpty; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
   expect(find.byKey(webViewKey), findsOneWidget, reason: 'WebView must mount');
+  final Rect webViewBounds = tester.getRect(find.byKey(webViewKey));
+  evidence.recordCheck(
+    'reader_webview_mounted_with_bounds',
+    passed: webViewBounds.width > 0 && webViewBounds.height > 0,
+    details: <String, Object?>{
+      'left': webViewBounds.left,
+      'top': webViewBounds.top,
+      'width': webViewBounds.width,
+      'height': webViewBounds.height,
+    },
+  );
 
   const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
   for (int i = 0;
@@ -220,7 +253,19 @@ Future<Future<dynamic> Function(String source)> _waitForReaderReady(
   final eval = ReaderHibikiPage.debugEvaluateJavascript;
   expect(eval, isNotNull,
       reason: 'Reader debug JS hook must be available in integration runs');
-  return eval!;
+  final ReaderPageSnapshot readyState = await _readPageState(eval!);
+  evidence.recordPageSnapshot('reader-ready', readyState);
+  evidence.recordCheck(
+    'reader_content_ready_not_blank',
+    passed: readyState.ready && readyState.bodyTextLength > 0,
+    details: readyState.toJson(),
+  );
+  expect(readyState.ready, isTrue, reason: 'reader JS state must be ready');
+  expect(readyState.bodyTextLength, greaterThan(0),
+      reason: 'reader body text must be non-empty after content_ready');
+  await evidence.captureWidgetTree(tester, 'reader-ready');
+  await evidence.recordScreenshot(binding, 'reader_cu_content_ready');
+  return eval;
 }
 
 void _focusReaderSurface(WidgetTester tester) {
@@ -325,9 +370,14 @@ void _assertPageShortcutBindings(AppModel appModel) {
 Future<void> _runPageTurnStress(
   WidgetTester tester,
   Future<dynamic> Function(String source) eval,
+  IntegrationTestWidgetsFlutterBinding binding,
+  ComputerUseEvidence evidence,
 ) async {
   ReaderPageSnapshot state = await _readPageState(eval);
+  evidence.recordPageSnapshot('page-start', state);
   expect(state.ready, isTrue, reason: 'window.hoshiReader must be ready');
+  expect(state.bodyTextLength, greaterThan(0),
+      reason: 'reader must not be blank before page stress');
   if (state.currentPage != null && state.totalPages != null) {
     expect(state.totalPages! - state.currentPage!, greaterThanOrEqualTo(25),
         reason: 'fixture chapter must have enough pages for 20 forward + '
@@ -346,6 +396,7 @@ Future<void> _runPageTurnStress(
     );
   }
   final ReaderPageSnapshot afterForward = state;
+  evidence.recordPageSnapshot('page-after-20-forward', afterForward);
   debugPrint('[CU] page after 20 forward turns: $afterForward');
 
   for (int i = 0; i < 5; i++) {
@@ -358,11 +409,24 @@ Future<void> _runPageTurnStress(
       label: 'backward ${i + 1}/5',
     );
   }
+  evidence.recordPageSnapshot('page-after-5-backward', state);
   debugPrint('[CU] page after 5 backward turns: $state');
 
   expect(state.isBefore(afterForward), isTrue,
       reason: 'five readerPageBackward key presses must move back from the '
           '20-forward point');
+  evidence.recordCheck(
+    'continuous_page_turns_stable',
+    passed: state.isBefore(afterForward) && state.bodyTextLength > 0,
+    details: <String, Object?>{
+      'forwardTurns': 20,
+      'backwardTurns': 5,
+      'afterForward': afterForward.toJson(),
+      'afterBackward': state.toJson(),
+    },
+  );
+  await evidence.captureWidgetTree(tester, 'after-page-turns');
+  await evidence.recordScreenshot(binding, 'reader_cu_after_page_turns');
 }
 
 Future<ReaderPageSnapshot> _sendPageTurnAndWait(
@@ -468,7 +532,13 @@ JSON.stringify((function() {
     firstVisibleCharOffset: r.getFirstVisibleCharOffset ?
         r.getFirstVisibleCharOffset() : null,
     progress: r.calculateProgress ? r.calculateProgress() : null,
-    vertical: ctx ? !!ctx.vertical : null
+    vertical: ctx ? !!ctx.vertical : null,
+    bodyTextLength: (document.body && document.body.innerText ?
+        document.body.innerText.trim().length : 0),
+    bodySample: (document.body && document.body.innerText ?
+        document.body.innerText.trim().substring(0, 120) : ''),
+    viewportWidth: window.innerWidth || 0,
+    viewportHeight: window.innerHeight || 0
   };
 })())
 ''';
@@ -481,6 +551,8 @@ JSON.stringify((function() {
 Future<void> _runRepeatedLookupStress(
   WidgetTester tester,
   Future<dynamic> Function(String source) eval,
+  IntegrationTestWidgetsFlutterBinding binding,
+  ComputerUseEvidence evidence,
 ) async {
   await tester.sendKeyEvent(LogicalKeyboardKey.enter);
   await _waitForReaderCaret(tester, eval);
@@ -510,14 +582,38 @@ Future<void> _runRepeatedLookupStress(
       expectedTerm: round.term,
       expectedGloss: round.gloss,
     );
+    evidence.recordPopupRound(
+      round: i + 1,
+      term: round.term,
+      caret: caret,
+      popup: popup,
+      reusedPreviousSignature: popup.signature == previousSignature,
+    );
     debugPrint('[CU] lookup round ${i + 1}: popup=$popup');
 
     expect(popup.signature == previousSignature, isFalse,
         reason: 'lookup round ${i + 1} must not reuse previous popup result');
     previousSignature = popup.signature;
+    if (i == 0 || i == rounds.length - 1) {
+      await evidence.captureWidgetTree(tester, 'popup-round-${i + 1}');
+      await evidence.recordScreenshot(
+          binding, 'reader_cu_popup_round_${i + 1}');
+    }
 
-    await _closePopupAndReturnToReader(tester);
+    await _closePopupAndReturnToReader(
+      tester,
+      evidence: evidence,
+      round: i + 1,
+    );
   }
+  evidence.recordCheck(
+    'repeated_lookup_no_stale_popup',
+    passed: true,
+    details: <String, Object?>{
+      'rounds': rounds.length,
+      'terms': rounds.map((round) => round.term).toList(growable: false),
+    },
+  );
 }
 
 Future<CaretSnapshot> _waitForReaderCaret(
@@ -602,6 +698,7 @@ Future<PopupSnapshot> _waitForPopupResult(
       jsonDecode(raw as String) as Map<String, dynamic>,
     );
     if (latest.webViewLoaded &&
+        latest.hasVisibleContent &&
         latest.containsTerm(expectedTerm) &&
         latest.containsGloss(expectedGloss)) {
       return latest;
@@ -614,13 +711,19 @@ Future<PopupSnapshot> _waitForPopupResult(
 const String _popupSnapshotJs = r'''
 JSON.stringify((function() {
   var entries = Array.isArray(window.lookupEntries) ? window.lookupEntries : [];
+  var container = document.getElementById('entries-container');
+  var rect = container ? container.getBoundingClientRect() : null;
+  var bodyText = document.body ? document.body.innerText : '';
   return {
     readyState: document.readyState,
     renderType: typeof window.renderPopup,
     caretType: typeof window.hoshiCaret,
-    hasContainer: !!document.getElementById('entries-container'),
+    hasContainer: !!container,
+    containerWidth: rect ? Math.round(rect.width) : 0,
+    containerHeight: rect ? Math.round(rect.height) : 0,
+    bodyTextLength: bodyText ? bodyText.trim().length : 0,
     glossaryCount: document.querySelectorAll('.glossary-content').length,
-    body: document.body ? document.body.innerText : '',
+    body: bodyText || '',
     entries: entries.map(function(e) {
       return {
         expression: e.expression || '',
@@ -633,7 +736,11 @@ JSON.stringify((function() {
 })())
 ''';
 
-Future<void> _closePopupAndReturnToReader(WidgetTester tester) async {
+Future<void> _closePopupAndReturnToReader(
+  WidgetTester tester, {
+  required ComputerUseEvidence evidence,
+  required int round,
+}) async {
   bool popupGone = false;
   for (int attempt = 0; attempt < 6; attempt++) {
     if (!popupGone) {
@@ -645,7 +752,18 @@ Future<void> _closePopupAndReturnToReader(WidgetTester tester) async {
         popupGone = true;
         final String surface =
             ReaderHibikiPage.debugCaretSurface?.call() ?? 'unknown';
-        if (surface == 'reader') return;
+        if (surface == 'reader') {
+          evidence.recordCheck(
+            'escape_returns_reader_caret_round_$round',
+            passed: true,
+            details: <String, Object?>{
+              'round': round,
+              'popupGone': popupGone,
+              'surface': surface,
+            },
+          );
+          return;
+        }
       }
     }
     if (popupGone) break;
@@ -676,6 +794,10 @@ class ReaderPageSnapshot {
     required this.firstVisibleCharOffset,
     required this.progress,
     required this.vertical,
+    required this.bodyTextLength,
+    required this.bodySample,
+    required this.viewportWidth,
+    required this.viewportHeight,
   });
 
   factory ReaderPageSnapshot.fromJson(Map<String, dynamic> json) {
@@ -690,6 +812,10 @@ class ReaderPageSnapshot {
       firstVisibleCharOffset: (json['firstVisibleCharOffset'] as num?)?.toInt(),
       progress: json['progress'],
       vertical: json['vertical'] == true,
+      bodyTextLength: (json['bodyTextLength'] as num?)?.toInt() ?? 0,
+      bodySample: json['bodySample']?.toString() ?? '',
+      viewportWidth: (json['viewportWidth'] as num?)?.toInt() ?? 0,
+      viewportHeight: (json['viewportHeight'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -703,6 +829,10 @@ class ReaderPageSnapshot {
   final int? firstVisibleCharOffset;
   final Object? progress;
   final bool vertical;
+  final int bodyTextLength;
+  final String bodySample;
+  final int viewportWidth;
+  final int viewportHeight;
 
   bool isAfter(ReaderPageSnapshot other) {
     if (currentPage != null && other.currentPage != null) {
@@ -724,11 +854,30 @@ class ReaderPageSnapshot {
         firstVisibleCharOffset == other.firstVisibleCharOffset;
   }
 
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'ready': ready,
+      'scroll': scroll,
+      'columnPitch': columnPitch,
+      'maxScroll': maxScroll,
+      'minScroll': minScroll,
+      'currentPage': currentPage,
+      'totalPages': totalPages,
+      'firstVisibleCharOffset': firstVisibleCharOffset,
+      'progress': progress,
+      'vertical': vertical,
+      'bodyTextLength': bodyTextLength,
+      'bodySample': bodySample,
+      'viewportWidth': viewportWidth,
+      'viewportHeight': viewportHeight,
+    };
+  }
+
   @override
   String toString() {
     return 'ReaderPageSnapshot(page=$currentPage/$totalPages, scroll=$scroll, '
         'pitch=$columnPitch, max=$maxScroll, first=$firstVisibleCharOffset, '
-        'vertical=$vertical)';
+        'vertical=$vertical, bodyTextLength=$bodyTextLength)';
   }
 }
 
@@ -773,6 +922,17 @@ class CaretSnapshot {
     return false;
   }
 
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'surface': surface,
+      'active': active,
+      'offset': offset,
+      'textLength': text.length,
+      'character': character,
+      'around': around,
+    };
+  }
+
   @override
   String toString() {
     return 'CaretSnapshot(surface=$surface, active=$active, offset=$offset, '
@@ -786,6 +946,9 @@ class PopupSnapshot {
     required this.renderType,
     required this.caretType,
     required this.hasContainer,
+    required this.containerWidth,
+    required this.containerHeight,
+    required this.bodyTextLength,
     required this.glossaryCount,
     required this.body,
     required this.entries,
@@ -798,6 +961,9 @@ class PopupSnapshot {
       renderType: json['renderType']?.toString() ?? '',
       caretType: json['caretType']?.toString() ?? '',
       hasContainer: json['hasContainer'] == true,
+      containerWidth: (json['containerWidth'] as num?)?.toInt() ?? 0,
+      containerHeight: (json['containerHeight'] as num?)?.toInt() ?? 0,
+      bodyTextLength: (json['bodyTextLength'] as num?)?.toInt() ?? 0,
       glossaryCount: (json['glossaryCount'] as num?)?.toInt() ?? 0,
       body: json['body']?.toString() ?? '',
       entries: rawEntries
@@ -810,6 +976,9 @@ class PopupSnapshot {
   final String renderType;
   final String caretType;
   final bool hasContainer;
+  final int containerWidth;
+  final int containerHeight;
+  final int bodyTextLength;
   final int glossaryCount;
   final String body;
   final List<Map<String, dynamic>> entries;
@@ -818,6 +987,13 @@ class PopupSnapshot {
       hasContainer &&
       (readyState == 'interactive' || readyState == 'complete') &&
       caretType == 'object';
+
+  bool get hasVisibleContent =>
+      webViewLoaded &&
+      containerWidth > 0 &&
+      containerHeight > 0 &&
+      bodyTextLength > 0 &&
+      glossaryCount > 0;
 
   String get payload => jsonEncode(entries);
 
@@ -839,11 +1015,186 @@ class PopupSnapshot {
   bool containsGloss(String gloss) =>
       body.contains(gloss) || payload.contains(gloss);
 
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'readyState': readyState,
+      'renderType': renderType,
+      'caretType': caretType,
+      'hasContainer': hasContainer,
+      'containerWidth': containerWidth,
+      'containerHeight': containerHeight,
+      'bodyTextLength': bodyTextLength,
+      'glossaryCount': glossaryCount,
+      'entries': entries,
+    };
+  }
+
   @override
   String toString() {
     final expressions =
         entries.map((entry) => entry['expression']?.toString()).join(',');
     return 'PopupSnapshot(ready=$readyState, render=$renderType, '
-        'caret=$caretType, entries=$expressions, glossaryCount=$glossaryCount)';
+        'caret=$caretType, entries=$expressions, glossaryCount=$glossaryCount, '
+        'container=${containerWidth}x$containerHeight)';
+  }
+}
+
+class ComputerUseEvidence {
+  ComputerUseEvidence._(this.directory) {
+    if (directory != null) {
+      debugPrint('[CU] evidence dir: ${directory!.path}');
+    } else {
+      debugPrint('[CU] evidence dir disabled: HIBIKI_TEST_ROOT is not set');
+    }
+  }
+
+  factory ComputerUseEvidence.forTask(String taskName) {
+    final String? rootPath = hibikiTestRootPath();
+    if (rootPath == null) {
+      return ComputerUseEvidence._(null);
+    }
+    Directory base = Directory(rootPath);
+    if (p.basename(base.path) == 'isolated-root') {
+      base = base.parent;
+    }
+    final Directory directory =
+        Directory(p.join(base.path, 'computer-use', taskName));
+    directory.createSync(recursive: true);
+    return ComputerUseEvidence._(directory);
+  }
+
+  final Directory? directory;
+  final List<Map<String, Object?>> checks = <Map<String, Object?>>[];
+  final List<Map<String, Object?>> pageSnapshots = <Map<String, Object?>>[];
+  final List<Map<String, Object?>> popupRounds = <Map<String, Object?>>[];
+  final List<Map<String, Object?>> screenshots = <Map<String, Object?>>[];
+  bool _flushed = false;
+
+  void recordCheck(
+    String id, {
+    required bool passed,
+    required Map<String, Object?> details,
+  }) {
+    checks.add(<String, Object?>{
+      'id': id,
+      'passed': passed,
+      'details': details,
+    });
+    debugPrint('[CU] check ${passed ? "PASS" : "FAIL"} $id');
+  }
+
+  void recordPageSnapshot(String stage, ReaderPageSnapshot snapshot) {
+    pageSnapshots.add(<String, Object?>{
+      'stage': stage,
+      'snapshot': snapshot.toJson(),
+    });
+  }
+
+  void recordPopupRound({
+    required int round,
+    required String term,
+    required CaretSnapshot caret,
+    required PopupSnapshot popup,
+    required bool reusedPreviousSignature,
+  }) {
+    popupRounds.add(<String, Object?>{
+      'round': round,
+      'term': term,
+      'caret': caret.toJson(),
+      'popup': popup.toJson(),
+      'reusedPreviousSignature': reusedPreviousSignature,
+    });
+    recordCheck(
+      'popup_round_${round}_visible_for_$term',
+      passed: popup.hasVisibleContent && !reusedPreviousSignature,
+      details: <String, Object?>{
+        'round': round,
+        'term': term,
+        'popup': popup.toJson(),
+        'reusedPreviousSignature': reusedPreviousSignature,
+      },
+    );
+  }
+
+  Future<void> recordScreenshot(
+    IntegrationTestWidgetsFlutterBinding binding,
+    String name,
+  ) async {
+    final int saved = await takeScreenshot(binding, name);
+    screenshots.add(<String, Object?>{
+      'name': name,
+      'saved': saved == 1,
+    });
+  }
+
+  Future<void> captureWidgetTree(WidgetTester tester, String stage) async {
+    if (directory == null) return;
+    final Iterable<Element> roots = find.byType(MaterialApp).evaluate();
+    if (roots.isEmpty) return;
+    final File file = File(
+      p.join(directory!.path, 'flutter-ui-tree-$stage.txt'),
+    );
+    await file.writeAsString(
+      roots.first.toStringDeep(minLevel: DiagnosticLevel.info),
+      flush: true,
+    );
+    debugPrint('[CU] widget tree saved: ${file.path}');
+  }
+
+  Future<void> flush() async {
+    if (_flushed) return;
+    _flushed = true;
+
+    final Map<String, Object?> summary = <String, Object?>{
+      'generatedAt': DateTime.now().toIso8601String(),
+      'runId': hibikiTestRunId(),
+      'checks': checks,
+      'pageSnapshots': pageSnapshots,
+      'popupRounds': popupRounds,
+      'screenshots': screenshots,
+    };
+    if (directory == null) {
+      debugPrint('[CU] evidence summary: ${jsonEncode(summary)}');
+      return;
+    }
+
+    final File jsonFile = File(p.join(directory!.path, 'function-matrix.json'));
+    await jsonFile.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(summary),
+      flush: true,
+    );
+
+    final File mdFile = File(p.join(directory!.path, 'function-matrix.md'));
+    await mdFile.writeAsString(_matrixMarkdown(), flush: true);
+    debugPrint('[CU] function matrix saved: ${jsonFile.path}');
+    debugPrint('[CU] function matrix saved: ${mdFile.path}');
+  }
+
+  String _matrixMarkdown() {
+    final StringBuffer buffer = StringBuffer()
+      ..writeln('# reader_computer_use_flow function matrix')
+      ..writeln()
+      ..writeln('| Check | Result | Evidence |')
+      ..writeln('|---|---|---|');
+    for (final Map<String, Object?> check in checks) {
+      final String id = check['id']?.toString() ?? '';
+      final bool passed = check['passed'] == true;
+      final String details = jsonEncode(check['details'])
+          .replaceAll('|', r'\|')
+          .replaceAll('\n', ' ');
+      buffer.writeln('| `$id` | ${passed ? 'PASS' : 'FAIL'} | `$details` |');
+    }
+    buffer
+      ..writeln()
+      ..writeln('## Screenshots')
+      ..writeln()
+      ..writeln('| Name | Saved |')
+      ..writeln('|---|---|');
+    for (final Map<String, Object?> screenshot in screenshots) {
+      buffer.writeln(
+        '| `${screenshot['name']}` | ${screenshot['saved'] == true} |',
+      );
+    }
+    return buffer.toString();
   }
 }
