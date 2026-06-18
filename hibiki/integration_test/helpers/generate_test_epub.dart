@@ -24,6 +24,8 @@ void main() {
 }
 
 class EpubGenerator {
+  static const _lookupLead = 'testword 猫 testword 猫 testword 猫。';
+
   static const _jpTexts = [
     '桜の花が咲き始めた頃、少年は初めてその図書館を訪れた。古い木の扉を押し開けると、埃の匂いと紙の香りが混ざり合った空気が流れ出てきた。',
     '窓から差し込む午後の光が、本棚の間を縫うように伸びていた。少年は息を殺して、その光の道を辿った。',
@@ -60,9 +62,9 @@ class EpubGenerator {
     files['OEBPS/content.opf'] = _utf8(_buildOpf());
     files['OEBPS/toc.ncx'] = _utf8(_buildNcx());
 
-    // Chapter 1: Standard Japanese paragraphs (200 markers)
+    // Chapter 1: Standard Japanese paragraphs (420 markers)
     files['OEBPS/chapter_01_standard.xhtml'] =
-        _utf8(_buildChapter('第一章　標準テスト', _generateStandard(200)));
+        _utf8(_buildChapter('第一章　標準テスト', _generateStandard(420)));
 
     // Chapter 2: Very short (5 markers, tests 1-2 page scenarios)
     files['OEBPS/chapter_02_short.xhtml'] =
@@ -96,7 +98,7 @@ class EpubGenerator {
     for (int i = 1; i <= count; i++) {
       final id = i.toString().padLeft(3, '0');
       final text = _jpTexts[(i - 1) % _jpTexts.length];
-      buf.writeln('  <p id="m$id">【M$id】$text</p>');
+      buf.writeln('  <p id="m$id">【M$id】$_lookupLead$text</p>');
     }
     return buf.toString();
   }

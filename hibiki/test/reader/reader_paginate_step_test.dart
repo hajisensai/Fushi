@@ -50,6 +50,26 @@ void main() {
     });
   });
 
+  group('sub-pixel page-boundary drift (Windows WebView)', () {
+    test('backward from just past an aligned page retreats one full page', () {
+      final ReaderPageStep step = stepBackward(2000.33);
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, 1000);
+    });
+
+    test('backward from just before an aligned page still retreats', () {
+      final ReaderPageStep step = stepBackward(1999.4);
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, 1000);
+    });
+
+    test('forward from near an aligned page advances one full page', () {
+      final ReaderPageStep step = stepForward(2000.33);
+      expect(step.scrolled, isTrue);
+      expect(step.targetScroll, 3000);
+    });
+  });
+
   group('misaligned scroll never skips a page (BUG-169 regression)', () {
     test('forward from just-past-mid does NOT jump two pages', () {
       // 视觉上停在第 2 页内（2000..3000 之间，偏后 0.6 页）；旧实现 round(2.6)=3
