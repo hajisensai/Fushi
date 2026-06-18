@@ -474,7 +474,6 @@ class DictionaryPopupWebViewState
 
   void _pushResults() {
     if (_controller == null || !_ready) return;
-    if (widget.result.entries.isEmpty) return;
 
     final bool isLoadMore = _lastSearchTerm == widget.result.searchTerm &&
         widget.result.entries.length > _lastEntryCount;
@@ -567,6 +566,7 @@ class DictionaryPopupWebViewState
       window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
       window.i18nContextPrevLabel = ${jsonEncode(t.popup_sentence_context_prev_label)};
       window.i18nContextNextLabel = ${jsonEncode(t.popup_sentence_context_next_label)};
+      window._noResultsMessage = ${jsonEncode(t.no_search_results)};
       // 启用制卡时词典媒体（gaiji 外字）嵌入：popup.js 据此把外字渲染成
       // <img src="hoshi_dict_N.ext"> 并登记到 dictionaryMedia 负载，制卡处理器
       // (mineEntry handler) 再 writeDictionaryMediaCache 落盘供 repo 嵌进卡片。

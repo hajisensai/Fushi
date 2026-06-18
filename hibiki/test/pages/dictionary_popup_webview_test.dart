@@ -75,6 +75,39 @@ void main() {
     });
   });
 
+  group('dictionary popup empty-result rendering', () {
+    test('empty and kanji-only results are still injected into renderPopup',
+        () {
+      final source = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        isNot(contains('if (widget.result.entries.isEmpty) return;')),
+        reason: 'A warm popup WebView must not keep a blank/stale DOM when the '
+            'lookup has zero term entries. Empty and kanji-only results must '
+            'still reach popup.js renderPopup(), which renders no-results or '
+            'the kanji card and emits popupRendered.',
+      );
+
+      final int pushStart = source.indexOf('void _pushResults()');
+      expect(pushStart, greaterThanOrEqualTo(0));
+      final String pushBody = source.substring(pushStart);
+
+      final int entriesAt = pushBody.indexOf('window.lookupEntries =');
+      final int kanjiAt = pushBody.indexOf('window.kanjiResults =');
+      final int noResultsAt = pushBody.indexOf('window._noResultsMessage =');
+      final int beforeRenderAt = pushBody.indexOf(r'$beforeRenderJs');
+
+      expect(entriesAt, greaterThanOrEqualTo(0));
+      expect(kanjiAt, greaterThan(entriesAt));
+      expect(beforeRenderAt, greaterThan(kanjiAt));
+      expect(beforeRenderAt, greaterThan(noResultsAt));
+      expect(pushBody, contains('window.renderPopup();'));
+    });
+  });
+
   group('DictionaryPopupWebViewState.buildLookupEntriesJson', () {
     test('merges frequency and pitch metadata across grouped entries', () {
       final result = DictionarySearchResult(
