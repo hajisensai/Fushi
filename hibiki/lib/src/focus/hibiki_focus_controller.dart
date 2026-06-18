@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 
@@ -72,6 +73,7 @@ class HibikiFocusController extends ChangeNotifier {
   HibikiFocusId? _activeId;
   bool _attached = false;
   bool _repairScheduled = false;
+  bool _repairMicrotaskScheduled = false;
 
   BuildContext? get activeContext {
     final HibikiFocusTargetEntry? active = _currentEntry();
@@ -136,9 +138,12 @@ class HibikiFocusController extends ChangeNotifier {
     _rootContext = null;
   }
 
-  void register(HibikiFocusTargetEntry entry) {
+  void register(
+    HibikiFocusTargetEntry entry, {
+    bool repairBeforeNextFrame = false,
+  }) {
     _entries[entry.id] = entry;
-    // Recording the entry is the only synchronous work. Recomputing the active
+    // By default, recording the entry is the only synchronous work. Recomputing
     // focus is deferred to the post-frame repair: register() runs inside
     // didChangeDependencies, which for a lazily-built SliverList child fires
     // during a layout callback. Doing _handleFocusChange() here would call
@@ -147,6 +152,14 @@ class HibikiFocusController extends ChangeNotifier {
     // yet unregistered) in the same pass. scheduleRepair() → ensureFocus() does
     // the same recomputation safely after the frame, and the FocusManager
     // listener handles every later focus change.
+    // Anchor-ready registrations already run in a post-frame callback. Coalesce
+    // them into one microtask repair so all same-frame anchors are registered
+    // before read-order selection runs, while still re-homing fallback focus
+    // before the next frame.
+    if (repairBeforeNextFrame) {
+      scheduleRepairBeforeNextFrame();
+      return;
+    }
     scheduleRepair();
   }
 
@@ -221,7 +234,7 @@ class HibikiFocusController extends ChangeNotifier {
       return;
     }
 
-    final List<HibikiFocusTargetEntry> targets = _focusableEntries();
+    final List<HibikiFocusTargetEntry> targets = _focusableEntriesInReadOrder();
     if (targets.isNotEmpty) {
       targets.first.focusNode.requestFocus();
       _activeId = targets.first.id;
@@ -269,6 +282,17 @@ class HibikiFocusController extends ChangeNotifier {
     });
   }
 
+  void scheduleRepairBeforeNextFrame() {
+    if (_repairMicrotaskScheduled) return;
+    _repairMicrotaskScheduled = true;
+    scheduleMicrotask(() {
+      _repairMicrotaskScheduled = false;
+      if (_attached) {
+        ensureFocus();
+      }
+    });
+  }
+
   HibikiFocusTargetEntry? _currentEntry() {
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     for (final HibikiFocusTargetEntry entry in _entries.values) {
@@ -287,6 +311,30 @@ class HibikiFocusController extends ChangeNotifier {
     return _entries.values
         .where((HibikiFocusTargetEntry entry) => _entryCanFocus(entry))
         .toList(growable: false);
+  }
+
+  List<HibikiFocusTargetEntry> _focusableEntriesInReadOrder() {
+    final List<HibikiFocusTargetEntry> targets = _focusableEntries();
+    targets.sort(_compareEntriesByReadOrder);
+    return targets;
+  }
+
+  int _compareEntriesByReadOrder(
+    HibikiFocusTargetEntry a,
+    HibikiFocusTargetEntry b,
+  ) {
+    final Rect? aRect = globalRectOfContext(a.context);
+    final Rect? bRect = globalRectOfContext(b.context);
+    if (aRect == null || bRect == null) {
+      if (aRect == null && bRect == null) return 0;
+      return aRect == null ? 1 : -1;
+    }
+    const double epsilon = 2;
+    final double topDelta = aRect.top - bRect.top;
+    if (topDelta.abs() > epsilon) return topDelta.sign.toInt();
+    final double leftDelta = aRect.left - bRect.left;
+    if (leftDelta.abs() > epsilon) return leftDelta.sign.toInt();
+    return 0;
   }
 
   bool _isUsablePrimary(FocusNode? primary) {

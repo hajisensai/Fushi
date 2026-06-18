@@ -360,6 +360,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             // 窄窗（含全部手机 bottom sheet）：维持现有 push 行为，外观仍内联。
             // body 自带滚动视口（padding 含键盘 inset 也随内容一起滚动）。
             return SingleChildScrollView(
+              key: ValueKey<String>(_subPage ?? 'main'),
               padding: bodyPadding,
               child: AnimatedSize(
                 duration: const Duration(milliseconds: 200),

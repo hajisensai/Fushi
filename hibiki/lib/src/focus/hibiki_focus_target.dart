@@ -44,6 +44,7 @@ class HibikiFocusRegistration extends StatefulWidget {
 class _HibikiFocusRegistrationState extends State<HibikiFocusRegistration> {
   late final Object _owner = Object();
   HibikiFocusController? _controller;
+  BuildContext? _targetContext;
 
   @override
   void didChangeDependencies() {
@@ -72,21 +73,29 @@ class _HibikiFocusRegistrationState extends State<HibikiFocusRegistration> {
   @override
   Widget build(BuildContext context) {
     return _HibikiFocusTargetAnchor(
-      onReady: (BuildContext targetContext) => _register(targetContext),
+      onReady: (BuildContext targetContext) {
+        _targetContext = targetContext;
+        _register(repairBeforeNextFrame: true);
+      },
       child: widget.child,
     );
   }
 
-  void _register([BuildContext? targetContext]) {
+  void _register({bool repairBeforeNextFrame = false}) {
     final HibikiFocusController? controller = _controller;
     if (controller == null) return;
-    controller.register(HibikiFocusTargetEntry(
-      id: widget.id,
-      focusNode: widget.focusNode,
-      context: targetContext ?? context,
-      enabled: widget.enabled,
-      owner: _owner,
-    ));
+    final BuildContext? targetContext = _targetContext;
+    if (targetContext == null) return;
+    controller.register(
+      HibikiFocusTargetEntry(
+        id: widget.id,
+        focusNode: widget.focusNode,
+        context: targetContext,
+        enabled: widget.enabled,
+        owner: _owner,
+      ),
+      repairBeforeNextFrame: repairBeforeNextFrame,
+    );
   }
 
   void _unregister(HibikiFocusId id, FocusNode node) {
@@ -99,6 +108,7 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
   late final Object _owner = Object();
   HibikiFocusController? _controller;
   FocusNode? _registeredNode;
+  BuildContext? _targetContext;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedNode;
 
@@ -141,23 +151,31 @@ class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
       canRequestFocus: widget.enabled,
       skipTraversal: !widget.enabled,
       child: _HibikiFocusTargetAnchor(
-        onReady: (BuildContext targetContext) => _register(targetContext),
+        onReady: (BuildContext targetContext) {
+          _targetContext = targetContext;
+          _register(repairBeforeNextFrame: true);
+        },
         child: widget.child,
       ),
     );
   }
 
-  void _register([BuildContext? targetContext]) {
+  void _register({bool repairBeforeNextFrame = false}) {
     final HibikiFocusController? controller = _controller;
     if (controller == null) return;
+    final BuildContext? targetContext = _targetContext;
+    if (targetContext == null) return;
     _registeredNode = _focusNode;
-    controller.register(HibikiFocusTargetEntry(
-      id: widget.id,
-      focusNode: _focusNode,
-      context: targetContext ?? context,
-      enabled: widget.enabled,
-      owner: _owner,
-    ));
+    controller.register(
+      HibikiFocusTargetEntry(
+        id: widget.id,
+        focusNode: _focusNode,
+        context: targetContext,
+        enabled: widget.enabled,
+        owner: _owner,
+      ),
+      repairBeforeNextFrame: repairBeforeNextFrame,
+    );
   }
 
   void _unregister(HibikiFocusId id, FocusNode node) {
