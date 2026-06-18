@@ -658,6 +658,15 @@ void main() {
               'size (content), defaults mirror the allowlisted overlay caption.',
       'lib/src/media/video/video_danmaku_overlay.dart':
           'Danmaku overlay renders timed video content text, not app chrome.',
+      'lib/src/media/video/video_volume_overlays.dart':
+          'TODO-517 split out the compact video volume popover and '
+              'volume/brightness HUD to keep visible slider/HUD layers from '
+              'occupying the full screen; the barrier may be full-screen, '
+              'but these visible layers are video-subsystem transient overlays, '
+              'not ordinary page chrome. Their size, color, and type are '
+              'measured against appUiScale and video overlay contrast needs, '
+              'same reviewed exception class as video subtitle/jump/chapter/'
+              'quick-settings overlays.',
       'lib/src/media/video/video_quick_settings_sheet.dart':
           'Video quick settings sheet (media-page chrome like reader/audiobook) '
               'drives the user-configurable subtitle caption font size '
