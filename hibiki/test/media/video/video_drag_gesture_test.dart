@@ -57,28 +57,32 @@ void main() {
       expect(videoPage.contains('controller.setVolume(clamped)'), isTrue);
     });
 
-    test('right-side volume drag uses the shared Hibiki indicator builder', () {
+    test('right-side volume drag hides media_kit indicator and uses page HUD',
+        () {
       final String body = mobileThemeBody();
       expect(body.contains('volumeIndicatorBuilder:'), isTrue,
           reason:
-              'Right-half vertical volume drag should render the same right-side HUD.');
-      expect(body.contains('_buildRightVolumeIndicator(value * 100.0)'), isTrue,
-          reason:
-              'media_kit passes 0..1; Hibiki HUD uses the same 0..100 volume scale.');
+              'Right-half vertical volume drag should explicitly suppress media_kit HUD.');
+      expect(body.contains('const SizedBox.shrink()'), isTrue,
+          reason: 'Hibiki page-level HUD owns the visible volume feedback.');
+      expect(videoPage.contains('_showVolumeOsd(clamped)'), isTrue,
+          reason: 'onVolumeChanged must feed the sustained page HUD.');
     });
 
-    test('left-side brightness drag uses the shared Hibiki indicator builder',
+    test(
+        'left-side brightness drag hides media_kit indicator and uses page HUD',
         () {
       final String body = mobileThemeBody();
       expect(body.contains('brightnessIndicatorBuilder:'), isTrue,
           reason:
-              'Left-half vertical brightness drag should render the same Hibiki HUD language.');
+              'Left-half vertical brightness drag should explicitly suppress media_kit HUD.');
       expect(
-        body.contains('_buildLeftBrightnessIndicator(value * 100.0)'),
+        body.contains('const SizedBox.shrink()'),
         isTrue,
-        reason:
-            'media_kit passes 0..1; Hibiki brightness HUD must show 0..100 percent.',
+        reason: 'Hibiki page-level HUD owns the visible brightness feedback.',
       );
+      expect(videoPage.contains('_showBrightnessOsd(clamped * 100.0)'), isTrue,
+          reason: 'onBrightnessChanged must feed the sustained page HUD.');
     });
 
     test('brightness callback goes through ScreenBrightnessController', () {
@@ -88,6 +92,7 @@ void main() {
       );
       expect(videoPage.contains('ScreenBrightnessController.instance'), isTrue);
       expect(videoPage.contains('_brightness.setBrightness('), isTrue);
+      expect(videoPage.contains('_showBrightnessOsd('), isTrue);
     });
 
     test('brightness is restored on exit (no permanent system change)', () {

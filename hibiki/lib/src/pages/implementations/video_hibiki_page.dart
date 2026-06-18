@@ -298,6 +298,15 @@ class _VideoOsdMessage {
   final double? progress;
 }
 
+enum _VideoLevelHudKind { leftBrightness, rightVolume }
+
+class _VideoLevelHudState {
+  const _VideoLevelHudState({required this.kind, required this.value});
+
+  final _VideoLevelHudKind kind;
+  final double value;
+}
+
 /// 集成测试钩子（仅测试用）：对当前 [VideoHibikiPage] 的 [State] 读播放位置 /
 /// 驱动真实播放，验证「退出→再进续播」链路而不暴露页面私有字段。State 以
 /// [VideoHibikiTestHooks] 形式按接口暴露，测试经 `tester.state` 拿到后 `as` 转型。
@@ -548,12 +557,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
 
-  /// Right-side volume HUD value (0..100). Null means hidden.
-  final ValueNotifier<double?> _volumeHudNotifier =
-      ValueNotifier<double?>(null);
+  /// Page-level level HUD value (0..100). Null means hidden.
+  final ValueNotifier<_VideoLevelHudState?> _levelHudNotifier =
+      ValueNotifier<_VideoLevelHudState?>(null);
 
-  /// Auto-hide timer for the right-side volume HUD.
-  Timer? _volumeHudTimer;
+  /// Auto-hide timer for the page-level level HUD.
+  Timer? _levelHudTimer;
 
   /// media_kit 底部控制条 **真实** 可见性（TODO-364）——单一真相源，由 media_kit 自己的
   /// 控制条 State 在每次 `visible` 变化时推进来。
@@ -864,6 +873,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   double _playbackVolume = 100.0;
   double? _pendingVolumePersist;
   Timer? _volumePersistDebounce;
+  double? _pendingSpeedPersist;
+  Timer? _speedPersistDebounce;
 
   /// 换集加载代际计数：每次 [_loadEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
   /// 枚举字幕源 + 解析 cue）跑完后若序号已被后续切集取代，则放弃应用，避免「播放中
@@ -991,12 +1002,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // inactive 仅瞬态过渡（通知栏下拉 / 多任务切换）：落库即可，不停观看计时
         // （频繁误停丢真实时长）；clamp（[isContinuousWatchGap]）兜底任何残留异常间隔。
         unawaited(_controller?.flushPosition());
+        unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
         // 真后台 / 熄屏：落库 + 暂停观看计时器，避免把后台时长计入。stop() 内部先 flush
         // 退出瞬间的部分窗口（≤60s）再 cancel，不丢已观看时长。
         unawaited(_controller?.flushPosition());
+        unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
         _watchTracker?.stop();
       case AppLifecycleState.resumed:
@@ -1020,6 +1033,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 瞬间的部分观看窗口落库。两步都 await，退出路径据此保证统计/进度在 exit(0)
   /// 前提交。未 load（无 controller / tracker）时 no-op 安全。
   Future<void> _flushAllForProcessExit() async {
+    await _flushPersistedVideoSpeed();
     await _flushPersistedVideoVolume();
     await _controller?.flushPosition();
     await _watchTracker?.stop();
@@ -1987,6 +2001,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     _volumePersistDebounce?.cancel();
     unawaited(_flushPersistedVideoVolume());
+    _speedPersistDebounce?.cancel();
+    unawaited(_flushPersistedVideoSpeed());
     // 先把根 Overlay 浮层 entry 摘除/释放，再 clear 浮层栈：entry 一旦移除就不会再被
     // 根 Overlay 重建 _buildPopupOverlay，杜绝销毁期用失效 State 重建浮层（退视频红屏）。
     final OverlayEntry? entry = _popupOverlayEntry;
@@ -2034,8 +2050,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
-    _volumeHudTimer?.cancel();
-    _volumeHudNotifier.dispose();
+    _levelHudTimer?.cancel();
+    _levelHudNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _videoControlsVisible.dispose();
     _railHovered.dispose();
@@ -3887,6 +3903,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final double clamped = volume.clamp(0.0, 100.0).toDouble();
+    _syncVolumeDisplay(clamped);
+    if (mounted) _showVolumeOsd(clamped);
     if (applyToController) {
       await controller.setVolume(clamped);
     }
@@ -3894,8 +3912,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _playbackVolume = clamped;
       _queuePersistVideoVolume(clamped);
     }
-    _syncVolumeDisplay(clamped);
-    if (mounted) _showVolumeOsd(clamped);
   }
 
   void _queuePersistVideoVolume(double volume) {
@@ -4014,11 +4030,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
       volumeGesture: true,
-      volumeIndicatorBuilder: (BuildContext _, double value) =>
-          _buildRightVolumeIndicator(value * 100.0),
+      volumeIndicatorBuilder: (BuildContext _, double __) =>
+          const SizedBox.shrink(),
       brightnessGesture: _brightness.canControl,
-      brightnessIndicatorBuilder: (BuildContext _, double value) =>
-          _buildLeftBrightnessIndicator(value * 100.0),
+      brightnessIndicatorBuilder: (BuildContext _, double __) =>
+          const SizedBox.shrink(),
       // 竖滑灵敏度降到约 1/3（TODO-172/BUG-230）：media_kit 默认 100 太敏感，轻划即
       // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
       verticalGestureSensitivity: _videoVerticalGestureSensitivity,
@@ -4918,22 +4934,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  void _showVolumeOsd(double volume) {
+  void _showLevelHud(_VideoLevelHudKind kind, double value) {
     if (!mounted) return;
-    final double clamped = volume.clamp(0.0, 100.0).toDouble();
-    _volumeHudNotifier.value = clamped;
-    _volumeHudTimer?.cancel();
-    _volumeHudTimer = Timer(const Duration(milliseconds: 1600), () {
+    final double clamped = value.clamp(0.0, 100.0).toDouble();
+    _levelHudNotifier.value = _VideoLevelHudState(
+      kind: kind,
+      value: clamped,
+    );
+    _levelHudTimer?.cancel();
+    _levelHudTimer = Timer(const Duration(milliseconds: 1600), () {
       if (!mounted) return;
-      _volumeHudNotifier.value = null;
+      _levelHudNotifier.value = null;
     });
+  }
+
+  void _showVolumeOsd(double volume) {
+    _showLevelHud(_VideoLevelHudKind.rightVolume, volume);
+  }
+
+  void _showBrightnessOsd(double brightness) {
+    _showLevelHud(_VideoLevelHudKind.leftBrightness, brightness);
   }
 
   /// media_kit 移动控制条的「右半区竖滑调音量」回调（TODO-057）。media_kit
   /// 已做好区域判定、逐帧累积与 clamp，传入 [value] 为 0..1。我们只把它转成现有
   /// 音量通道的 0..100 并复用 [VideoPlayerController.setVolume]——与 TODO-044 方向键
-  /// 音量、音量条 UI 同一条 setter，不另开并行状态。竖滑指示器通过
-  /// [MaterialVideoControlsThemeData.volumeIndicatorBuilder] 复用 Hibiki 右侧 HUD 样式。
+  /// 音量、音量条 UI 同一条 setter，不另开并行状态。可见反馈由页面级 level HUD 接管；
+  /// media_kit 内部 indicator builder 仅返回空占位，避免 200ms 内部动画与页面 HUD 叠影。
   void _onMediaKitVolumeChanged(double value) {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
@@ -4947,7 +4974,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 桌面控制条启用该手势，见 [_desktopControlsTheme] 不传回调），诚实降级。
   void _onMediaKitBrightnessChanged(double value) {
     if (!_brightness.canControl) return;
-    unawaited(_brightness.setBrightness(value));
+    final double clamped = value.clamp(0.0, 1.0).toDouble();
+    _showBrightnessOsd(clamped * 100.0);
+    unawaited(_brightness.setBrightness(clamped));
   }
 
   /// 进入视频时取一次系统屏幕亮度快照（移动端）作为亮度手势初值与退出还原值；
@@ -5047,16 +5076,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     ]);
   }
 
-  /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。
+  /// 设置播放倍速：先乐观刷新 UI，再下发 controller；只有持久化走 trailing debounce。
   Future<void> _setSpeed(double speed, {bool persist = true}) async {
     final double clamped = speed.clamp(0.25, 4.0).toDouble();
-    if ((clamped - _playbackSpeed).abs() < 0.001) return;
-    _playbackSpeed = clamped;
-    await _controller?.setSpeed(clamped);
-    if (persist) {
-      await appModel.prefsRepo.setPref(_speedPrefKey, clamped);
+    final bool changed = (clamped - _playbackSpeed).abs() >= 0.001;
+    if (!changed && !persist) return;
+    if (changed) {
+      _playbackSpeed = clamped;
+      if (mounted) setState(() {});
+      await _controller?.setSpeed(clamped);
     }
-    if (mounted) setState(() {});
+    if (persist) {
+      _queuePersistVideoSpeed(clamped);
+    }
+  }
+
+  void _queuePersistVideoSpeed(double speed) {
+    _pendingSpeedPersist = speed.clamp(0.25, 4.0).toDouble();
+    _speedPersistDebounce?.cancel();
+    _speedPersistDebounce = Timer(const Duration(milliseconds: 350), () {
+      unawaited(_flushPersistedVideoSpeed());
+    });
+  }
+
+  Future<void> _flushPersistedVideoSpeed() async {
+    final double? pending = _pendingSpeedPersist;
+    if (pending == null) return;
+    _speedPersistDebounce?.cancel();
+    _speedPersistDebounce = null;
+    _pendingSpeedPersist = null;
+    await appModel.prefsRepo.setPref(_speedPrefKey, pending);
   }
 
   void _handleVideoLongPressStart(LongPressStartDetails details) {
@@ -5617,6 +5666,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       uiScale: _videoUiScale,
       initialAsbConfig: _asbConfig,
       onSetDelay: _setDelayMs,
+      onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onToggleSubtitleBlur: _toggleSubtitleBlur,
       onAsbConfigChanged: _setAsbConfig,
@@ -7187,7 +7237,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                         ),
                       ),
                       _buildOsdOverlay(),
-                      _buildVolumeHudOverlay(),
+                      _buildLevelHudOverlay(),
                       _buildVideoSideActionRail(controller),
                       _buildVideoSidePanelOverlay(controller),
                       _buildVideoControlPopoverOverlay(controller),
@@ -7693,17 +7743,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  Widget _buildVolumeHudOverlay() {
+  Widget _buildLevelHudOverlay() {
     return Positioned.fill(
       child: IgnorePointer(
-        child: ValueListenableBuilder<double?>(
-          valueListenable: _volumeHudNotifier,
-          builder: (BuildContext _, double? volume, __) {
+        child: ValueListenableBuilder<_VideoLevelHudState?>(
+          valueListenable: _levelHudNotifier,
+          builder: (BuildContext _, _VideoLevelHudState? hud, __) {
             return AnimatedSwitcher(
               duration: const Duration(milliseconds: 160),
-              child: volume == null
+              child: hud == null
                   ? const SizedBox.shrink()
-                  : _buildRightVolumeIndicator(volume),
+                  : switch (hud.kind) {
+                      _VideoLevelHudKind.leftBrightness =>
+                        _buildLeftBrightnessIndicator(hud.value),
+                      _VideoLevelHudKind.rightVolume =>
+                        _buildRightVolumeIndicator(hud.value),
+                    },
             );
           },
         ),

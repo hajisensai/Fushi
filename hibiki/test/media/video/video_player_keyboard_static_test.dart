@@ -269,10 +269,11 @@ void main() {
       final String volumeHud = region(
         page,
         'void _showVolumeOsd(double volume) {',
-        'void _onMediaKitVolumeChanged(double value) {',
+        'void _showBrightnessOsd(double brightness) {',
       );
-      expect(volumeHud.contains('_volumeHudNotifier.value'), isTrue,
-          reason: 'Keyboard volume keys must show the right-side volume HUD.');
+      expect(volumeHud.contains('_showLevelHud('), isTrue,
+          reason:
+              'Keyboard volume keys must show the right-side page-level HUD.');
       expect(volumeHud.contains('_showOsd('), isFalse,
           reason:
               'Keyboard volume keys must not display volume in the top-left OSD.');

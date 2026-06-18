@@ -18,6 +18,7 @@ import 'package:hibiki/utils.dart';
 
 VideoQuickSettingsSheet _sheet({
   void Function(int)? onSetDelay,
+  void Function(double)? onPreviewSpeed,
   void Function(double)? onSetSpeed,
   void Function(VideoMpvConfig)? onMpvConfigChanged,
   void Function(VideoShaderTier tier, bool highQuality)? onSelectShaderTier,
@@ -38,6 +39,7 @@ VideoQuickSettingsSheet _sheet({
     initialSubtitleBlur: false,
     initialSubtitleStyle: initialSubtitleStyle ?? VideoSubtitleStyle.defaults,
     onSetDelay: (int v) async => onSetDelay?.call(v),
+    onPreviewSpeed: (double v) async => onPreviewSpeed?.call(v),
     onSetSpeed: (double v) async => onSetSpeed?.call(v),
     onToggleSubtitleBlur: () async {},
     onSubtitleStylePreview: (VideoSubtitleStyle style) =>
@@ -697,6 +699,44 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(speedSlider, const Offset(500, 0));
     await tester.pumpAndSettle();
+    expect(committed, 2.0);
+  });
+
+  testWidgets('dragging the speed slider previews before final commit',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final List<double> previewed = <double>[];
+    double? committed;
+    await _pump(
+      tester,
+      _sheet(
+        onPreviewSpeed: previewed.add,
+        onSetSpeed: (double v) => committed = v,
+      ),
+    );
+
+    final Finder speedSlider = find.descendant(
+      of: find.widgetWithText(AdaptiveSettingsSliderRow, t.video_setting_speed),
+      matching: find.byType(Slider),
+    );
+    await tester.ensureVisible(speedSlider);
+    await tester.pumpAndSettle();
+
+    final Offset start = tester.getCenter(speedSlider);
+    final TestGesture gesture = await tester.startGesture(start);
+    await gesture.moveBy(const Offset(500, 0));
+    await tester.pump();
+
+    expect(previewed, isNotEmpty,
+        reason: 'drag ticks must preview real playback speed before release');
+    expect(previewed.last, 2.0);
+    expect(committed, isNull,
+        reason: 'drag preview must not persist before onChangeEnd');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
     expect(committed, 2.0);
   });
 

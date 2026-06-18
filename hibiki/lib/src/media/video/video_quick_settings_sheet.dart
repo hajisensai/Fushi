@@ -31,6 +31,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.initialSubtitleBlur,
     required this.initialSubtitleStyle,
     required this.onSetDelay,
+    required this.onPreviewSpeed,
     required this.onSetSpeed,
     required this.onToggleSubtitleBlur,
     required this.onSubtitleStylePreview,
@@ -77,6 +78,9 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 设音画延迟（绝对值），即时生效 + 持久化由调用方负责。
   final Future<void> Function(int delayMs) onSetDelay;
+
+  /// 拖动倍速滑条时的实时预览（下发真实播放倍速，不落盘）。
+  final Future<void> Function(double speed) onPreviewSpeed;
 
   /// 设播放倍速。
   final Future<void> Function(double speed) onSetSpeed;
@@ -749,7 +753,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       divisions: _speedDivisions,
       value: value,
       label: '${value.toStringAsFixed(1)}x',
-      onChanged: (double v) => setState(() => _speed = _snapSpeed(v)),
+      onChanged: (double v) {
+        final double snapped = _snapSpeed(v);
+        setState(() => _speed = snapped);
+        unawaited(widget.onPreviewSpeed(snapped));
+      },
       onChangeEnd: (double v) async {
         final double snapped = _snapSpeed(v);
         setState(() => _speed = snapped);

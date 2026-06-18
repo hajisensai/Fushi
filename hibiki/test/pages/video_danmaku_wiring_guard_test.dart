@@ -22,6 +22,7 @@ VideoQuickSettingsSheet _sheet({
     initialSubtitleBlur: false,
     initialSubtitleStyle: VideoSubtitleStyle.defaults,
     onSetDelay: (_) async {},
+    onPreviewSpeed: (_) async {},
     onSetSpeed: (_) async {},
     onToggleSubtitleBlur: () async {},
     onSubtitleStylePreview: (_) {},
