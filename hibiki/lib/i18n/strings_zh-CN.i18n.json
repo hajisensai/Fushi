@@ -1728,5 +1728,9 @@
     "update_install_restart_windows_hint": "如果上方进程已关闭但 libmpv-2.dll 仍被占用，请重启 Windows 后再安装。",
     "video_control_slot_top_center": "顶栏（中间）",
     "video_control_title": "视频名称",
-    "shortcut_conflict_replace_confirm": "该快捷键已被“$s”占用。要移到当前动作吗？"
+    "shortcut_conflict_replace_confirm": "该快捷键已被“$s”占用。要移到当前动作吗？",
+    "update_install_parent_exit_observed": "启动安装器前已确认 Hibiki 退出。",
+    "update_install_parent_exit_not_observed": "更新启动器未确认 Hibiki 已在安装器启动前退出。",
+    "update_install_failure_summary": "原因：$summary",
+    "update_install_launcher_pid": "更新启动器 PID：$pid"
 }

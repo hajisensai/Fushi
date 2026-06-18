@@ -236,6 +236,38 @@ void main() {
       expect(args, contains(r'/DIR=D:\Portable\Hibiki'));
     });
 
+    test('builds structured launcher argv without shell command strings', () {
+      final List<String> installerArgs = windowsInstallerArgs(
+        r'C:\Users\wrds\Downloads\new "folder"&x\hibiki setup.exe',
+        logPath: r'C:\Users\wrds\Downloads\logs & notes\install "1".log',
+        targetInstallDir: r'D:\APP\Hibiki & Tools',
+      );
+      final List<String> launcherArgs = windowsUpdateLauncherArgs(
+        markerPath: r'C:\Users\wrds\Downloads\marker & one.json',
+        parentProcessId: 1234,
+        installerPath:
+            r'C:\Users\wrds\Downloads\new "folder"&x\hibiki setup.exe',
+        installerArgs: installerArgs,
+      );
+
+      expect(
+        launcherArgs,
+        <String>[
+          '--marker',
+          r'C:\Users\wrds\Downloads\marker & one.json',
+          '--parent-pid',
+          '1234',
+          '--installer',
+          r'C:\Users\wrds\Downloads\new "folder"&x\hibiki setup.exe',
+          '--',
+          ...installerArgs,
+        ],
+      );
+      expect(launcherArgs.join(' '), isNot(contains('powershell')));
+      expect(launcherArgs.join(' '), isNot(contains('cmd.exe')));
+      expect(launcherArgs.join(' '), isNot(contains('/c ')));
+    });
+
     test('preflights installation directory write access before app exit', () {
       final String source = File(
         'lib/src/utils/misc/platform_updater.dart',
@@ -257,6 +289,34 @@ void main() {
       expect(script, contains('RestartApplications=no'));
       expect(script, contains('AppMutex=HibikiSingleInstanceMutex'));
       expect(script, contains('CloseApplicationsFilter=*.exe,*.dll'));
+      expect(script, contains('hibiki_update_launcher.exe'));
+    });
+
+    test('update launcher is not the Flutter runner and does not take mutex',
+        () {
+      final String main = File('windows/runner/main.cpp').readAsStringSync();
+      final String launcher =
+          File('windows/runner/update_launcher.cpp').readAsStringSync();
+      final String cmake =
+          File('windows/runner/CMakeLists.txt').readAsStringSync();
+      final String rootCmake =
+          File('windows/CMakeLists.txt').readAsStringSync();
+
+      expect(main, contains('HibikiSingleInstanceMutex'));
+      expect(main, contains('CreateMutexW'));
+      expect(launcher, isNot(contains('HibikiSingleInstanceMutex')));
+      expect(launcher, isNot(contains('CreateMutex')));
+      expect(cmake, contains('add_executable(hibiki_update_launcher WIN32'));
+      expect(cmake, contains('"update_launcher.cpp"'));
+      expect(
+        cmake,
+        isNot(contains('hibiki_update_launcher WIN32\n  "main.cpp"')),
+      );
+      expect(
+          cmake,
+          contains('target_link_libraries(hibiki_update_launcher '
+              'PRIVATE shell32)'));
+      expect(rootCmake, contains('hibiki_update_launcher'));
     });
   });
 

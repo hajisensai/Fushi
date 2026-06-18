@@ -1728,5 +1728,9 @@
     "update_install_restart_windows_hint": "If the listed processes are closed but libmpv-2.dll is still locked, restart Windows and install again.",
     "video_control_slot_top_center": "Top bar (center)",
     "video_control_title": "Video title",
-    "shortcut_conflict_replace_confirm": "This shortcut is already used by $s. Move it to this action?"
+    "shortcut_conflict_replace_confirm": "This shortcut is already used by $s. Move it to this action?",
+    "update_install_parent_exit_observed": "Hibiki exited before the installer was launched.",
+    "update_install_parent_exit_not_observed": "The update launcher did not observe Hibiki exiting before the installer launch.",
+    "update_install_failure_summary": "Reason: $summary",
+    "update_install_launcher_pid": "Update launcher PID: $pid"
 }

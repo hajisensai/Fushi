@@ -103,6 +103,16 @@ class WindowsInnoDeleteFileFailure {
       };
 }
 
+class WindowsInstallerFailureSummary {
+  const WindowsInstallerFailureSummary({
+    required this.type,
+    required this.message,
+  });
+
+  final String type;
+  final String message;
+}
+
 class WindowsInstallerDiagnostics {
   const WindowsInstallerDiagnostics({
     this.currentExecutablePath,
@@ -174,6 +184,11 @@ class WindowsUpdateHandoffRecord {
     this.libmpvModuleHolders = const <WindowsProcessInfo>[],
     this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.pathMismatchWarning,
+    this.launcherStartedAt,
+    this.launcherPid,
+    this.parentProcessId,
+    this.parentExitObserved,
+    this.parentExitObservedAt,
     this.installerLaunchSucceeded,
     this.installerLaunchedAt,
     this.installerPid,
@@ -181,10 +196,15 @@ class WindowsUpdateHandoffRecord {
     this.installerProcessRunning,
     this.innoLogExists,
     this.innoLogSizeBytes,
+    this.innoLogModifiedAt,
+    this.installerFailureType,
+    this.installerFailureSummary,
     this.postLaunchObservationError,
     this.installerLaunchFailedAt,
     this.launchError,
+    this.failureFingerprint,
     this.lastPromptedAppVersion,
+    this.lastPromptedFailureFingerprint,
     this.lastPromptedAt,
   });
 
@@ -216,6 +236,11 @@ class WindowsUpdateHandoffRecord {
           )
           .toList(growable: false),
       pathMismatchWarning: json['pathMismatchWarning'] as String?,
+      launcherStartedAt: _dateTime(json['launcherStartedAt']),
+      launcherPid: _int(json['launcherPid']),
+      parentProcessId: _int(json['parentProcessId']),
+      parentExitObserved: json['parentExitObserved'] as bool?,
+      parentExitObservedAt: _dateTime(json['parentExitObservedAt']),
       installerLaunchSucceeded: json['installerLaunchSucceeded'] as bool?,
       installerLaunchedAt: _dateTime(json['installerLaunchedAt']),
       installerPid: _int(json['installerPid']),
@@ -223,10 +248,16 @@ class WindowsUpdateHandoffRecord {
       installerProcessRunning: json['installerProcessRunning'] as bool?,
       innoLogExists: json['innoLogExists'] as bool?,
       innoLogSizeBytes: _int(json['innoLogSizeBytes']),
+      innoLogModifiedAt: _dateTime(json['innoLogModifiedAt']),
+      installerFailureType: json['installerFailureType'] as String?,
+      installerFailureSummary: json['installerFailureSummary'] as String?,
       postLaunchObservationError: json['postLaunchObservationError'] as String?,
       installerLaunchFailedAt: _dateTime(json['installerLaunchFailedAt']),
       launchError: json['launchError'] as String?,
+      failureFingerprint: json['failureFingerprint'] as String?,
       lastPromptedAppVersion: json['lastPromptedAppVersion'] as String?,
+      lastPromptedFailureFingerprint:
+          json['lastPromptedFailureFingerprint'] as String?,
       lastPromptedAt: _dateTime(json['lastPromptedAt']),
     );
   }
@@ -243,6 +274,11 @@ class WindowsUpdateHandoffRecord {
   final List<WindowsProcessInfo> libmpvModuleHolders;
   final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? pathMismatchWarning;
+  final DateTime? launcherStartedAt;
+  final int? launcherPid;
+  final int? parentProcessId;
+  final bool? parentExitObserved;
+  final DateTime? parentExitObservedAt;
   final bool? installerLaunchSucceeded;
   final DateTime? installerLaunchedAt;
   final int? installerPid;
@@ -250,10 +286,15 @@ class WindowsUpdateHandoffRecord {
   final bool? installerProcessRunning;
   final bool? innoLogExists;
   final int? innoLogSizeBytes;
+  final DateTime? innoLogModifiedAt;
+  final String? installerFailureType;
+  final String? installerFailureSummary;
   final String? postLaunchObservationError;
   final DateTime? installerLaunchFailedAt;
   final String? launchError;
+  final String? failureFingerprint;
   final String? lastPromptedAppVersion;
+  final String? lastPromptedFailureFingerprint;
   final DateTime? lastPromptedAt;
 
   WindowsInstallerDiagnostics get diagnostics => WindowsInstallerDiagnostics(
@@ -295,6 +336,15 @@ class WindowsUpdateHandoffRecord {
               .toList(growable: false),
         if (pathMismatchWarning != null)
           'pathMismatchWarning': pathMismatchWarning,
+        if (launcherStartedAt != null)
+          'launcherStartedAt': launcherStartedAt!.toUtc().toIso8601String(),
+        if (launcherPid != null) 'launcherPid': launcherPid,
+        if (parentProcessId != null) 'parentProcessId': parentProcessId,
+        if (parentExitObserved != null)
+          'parentExitObserved': parentExitObserved,
+        if (parentExitObservedAt != null)
+          'parentExitObservedAt':
+              parentExitObservedAt!.toUtc().toIso8601String(),
         if (installerLaunchSucceeded != null)
           'installerLaunchSucceeded': installerLaunchSucceeded,
         if (installerLaunchedAt != null)
@@ -307,14 +357,24 @@ class WindowsUpdateHandoffRecord {
           'installerProcessRunning': installerProcessRunning,
         if (innoLogExists != null) 'innoLogExists': innoLogExists,
         if (innoLogSizeBytes != null) 'innoLogSizeBytes': innoLogSizeBytes,
+        if (innoLogModifiedAt != null)
+          'innoLogModifiedAt': innoLogModifiedAt!.toUtc().toIso8601String(),
+        if (installerFailureType != null)
+          'installerFailureType': installerFailureType,
+        if (installerFailureSummary != null)
+          'installerFailureSummary': installerFailureSummary,
         if (postLaunchObservationError != null)
           'postLaunchObservationError': postLaunchObservationError,
         if (installerLaunchFailedAt != null)
           'installerLaunchFailedAt':
               installerLaunchFailedAt!.toUtc().toIso8601String(),
         if (launchError != null) 'launchError': launchError,
+        if (failureFingerprint != null)
+          'failureFingerprint': failureFingerprint,
         if (lastPromptedAppVersion != null)
           'lastPromptedAppVersion': lastPromptedAppVersion,
+        if (lastPromptedFailureFingerprint != null)
+          'lastPromptedFailureFingerprint': lastPromptedFailureFingerprint,
         if (lastPromptedAt != null)
           'lastPromptedAt': lastPromptedAt!.toUtc().toIso8601String(),
       };
@@ -332,6 +392,11 @@ class WindowsUpdateHandoffRecord {
     List<WindowsProcessInfo>? libmpvModuleHolders,
     List<WindowsInnoDeleteFileFailure>? innoLogDeleteFileFailures,
     String? pathMismatchWarning,
+    DateTime? launcherStartedAt,
+    int? launcherPid,
+    int? parentProcessId,
+    bool? parentExitObserved,
+    DateTime? parentExitObservedAt,
     bool? installerLaunchSucceeded,
     DateTime? installerLaunchedAt,
     int? installerPid,
@@ -339,10 +404,15 @@ class WindowsUpdateHandoffRecord {
     bool? installerProcessRunning,
     bool? innoLogExists,
     int? innoLogSizeBytes,
+    DateTime? innoLogModifiedAt,
+    String? installerFailureType,
+    String? installerFailureSummary,
     String? postLaunchObservationError,
     DateTime? installerLaunchFailedAt,
     String? launchError,
+    String? failureFingerprint,
     String? lastPromptedAppVersion,
+    String? lastPromptedFailureFingerprint,
     DateTime? lastPromptedAt,
     bool clearLaunchFailure = false,
   }) {
@@ -363,6 +433,11 @@ class WindowsUpdateHandoffRecord {
       innoLogDeleteFileFailures:
           innoLogDeleteFileFailures ?? this.innoLogDeleteFileFailures,
       pathMismatchWarning: pathMismatchWarning ?? this.pathMismatchWarning,
+      launcherStartedAt: launcherStartedAt ?? this.launcherStartedAt,
+      launcherPid: launcherPid ?? this.launcherPid,
+      parentProcessId: parentProcessId ?? this.parentProcessId,
+      parentExitObserved: parentExitObserved ?? this.parentExitObserved,
+      parentExitObservedAt: parentExitObservedAt ?? this.parentExitObservedAt,
       installerLaunchSucceeded:
           installerLaunchSucceeded ?? this.installerLaunchSucceeded,
       installerLaunchedAt: installerLaunchedAt ?? this.installerLaunchedAt,
@@ -372,14 +447,21 @@ class WindowsUpdateHandoffRecord {
           installerProcessRunning ?? this.installerProcessRunning,
       innoLogExists: innoLogExists ?? this.innoLogExists,
       innoLogSizeBytes: innoLogSizeBytes ?? this.innoLogSizeBytes,
+      innoLogModifiedAt: innoLogModifiedAt ?? this.innoLogModifiedAt,
+      installerFailureType: installerFailureType ?? this.installerFailureType,
+      installerFailureSummary:
+          installerFailureSummary ?? this.installerFailureSummary,
       postLaunchObservationError:
           postLaunchObservationError ?? this.postLaunchObservationError,
       installerLaunchFailedAt: clearLaunchFailure
           ? null
           : installerLaunchFailedAt ?? this.installerLaunchFailedAt,
       launchError: clearLaunchFailure ? null : launchError ?? this.launchError,
+      failureFingerprint: failureFingerprint ?? this.failureFingerprint,
       lastPromptedAppVersion:
           lastPromptedAppVersion ?? this.lastPromptedAppVersion,
+      lastPromptedFailureFingerprint:
+          lastPromptedFailureFingerprint ?? this.lastPromptedFailureFingerprint,
       lastPromptedAt: lastPromptedAt ?? this.lastPromptedAt,
     );
   }
@@ -456,6 +538,40 @@ abstract final class WindowsUpdateHandoff {
     );
   }
 
+  static Future<void> markLauncherStarted({
+    required File markerFile,
+    required DateTime startedAt,
+    required int parentProcessId,
+    int? launcherPid,
+  }) async {
+    final WindowsUpdateHandoffRecord? record = await read(markerFile);
+    if (record == null) return;
+    await _write(
+      markerFile,
+      record.copyWith(
+        launcherStartedAt: startedAt,
+        launcherPid: launcherPid,
+        parentProcessId: parentProcessId,
+      ),
+    );
+  }
+
+  static Future<void> markParentExitObserved({
+    required File markerFile,
+    required DateTime observedAt,
+    required bool observed,
+  }) async {
+    final WindowsUpdateHandoffRecord? record = await read(markerFile);
+    if (record == null) return;
+    await _write(
+      markerFile,
+      record.copyWith(
+        parentExitObserved: observed,
+        parentExitObservedAt: observedAt,
+      ),
+    );
+  }
+
   static Future<void> markPostLaunchObserved({
     required File markerFile,
     required DateTime observedAt,
@@ -519,18 +635,82 @@ abstract final class WindowsUpdateHandoff {
       );
     }
 
-    if (record.lastPromptedAppVersion == currentVersion) return null;
-    final WindowsUpdateHandoffRecord prompted = record.copyWith(
+    final WindowsUpdateHandoffRecord enriched =
+        await _enrichFailureDiagnostics(record);
+    if (enriched.lastPromptedAppVersion == currentVersion &&
+        enriched.lastPromptedFailureFingerprint ==
+            enriched.failureFingerprint) {
+      return null;
+    }
+    final WindowsUpdateHandoffRecord prompted = enriched.copyWith(
       lastPromptedAppVersion: currentVersion,
+      lastPromptedFailureFingerprint: enriched.failureFingerprint,
       lastPromptedAt: now ?? DateTime.now(),
     );
     await _write(markerFile, prompted);
     return WindowsUpdateHandoffResult(
-      status: record.installerLaunchSucceeded == false
+      status: prompted.installerLaunchSucceeded == false
           ? WindowsUpdateHandoffStatus.launchFailed
           : WindowsUpdateHandoffStatus.incomplete,
       record: prompted,
     );
+  }
+
+  static Future<WindowsUpdateHandoffRecord> _enrichFailureDiagnostics(
+    WindowsUpdateHandoffRecord record,
+  ) async {
+    final _WindowsInnoLogSnapshot log = await _readInnoLog(record.innoLogPath);
+    final List<WindowsInnoDeleteFileFailure> deleteFailures =
+        log.contents == null
+            ? record.innoLogDeleteFileFailures
+            : parseWindowsInnoDeleteFileFailures(log.contents!);
+    final WindowsInstallerFailureSummary summary =
+        summarizeWindowsInstallerFailure(
+      record: record.copyWith(
+        innoLogDeleteFileFailures: deleteFailures,
+        innoLogExists: log.exists,
+        innoLogSizeBytes: log.sizeBytes,
+        innoLogModifiedAt: log.modifiedAt,
+      ),
+      innoLogContents: log.contents,
+    );
+    final String fingerprint = windowsInstallerFailureFingerprint(
+      record: record.copyWith(
+        innoLogDeleteFileFailures: deleteFailures,
+        innoLogExists: log.exists,
+        innoLogSizeBytes: log.sizeBytes,
+        innoLogModifiedAt: log.modifiedAt,
+        installerFailureType: summary.type,
+        installerFailureSummary: summary.message,
+      ),
+    );
+    return record.copyWith(
+      innoLogDeleteFileFailures: deleteFailures,
+      innoLogExists: log.exists,
+      innoLogSizeBytes: log.sizeBytes,
+      innoLogModifiedAt: log.modifiedAt,
+      installerFailureType: summary.type,
+      installerFailureSummary: summary.message,
+      failureFingerprint: fingerprint,
+    );
+  }
+
+  static Future<_WindowsInnoLogSnapshot> _readInnoLog(String path) async {
+    try {
+      final File log = File(path);
+      if (!await log.exists()) {
+        return const _WindowsInnoLogSnapshot(exists: false);
+      }
+      final FileStat stat = await log.stat();
+      return _WindowsInnoLogSnapshot(
+        exists: true,
+        sizeBytes: stat.size,
+        modifiedAt: stat.modified,
+        contents: await log.readAsString(),
+      );
+    } catch (_) {
+      return const _WindowsInnoLogSnapshot(exists: false);
+    }
   }
 
   static Future<void> _write(
@@ -544,6 +724,165 @@ abstract final class WindowsUpdateHandoff {
       flush: true,
     );
   }
+}
+
+class _WindowsInnoLogSnapshot {
+  const _WindowsInnoLogSnapshot({
+    required this.exists,
+    this.sizeBytes,
+    this.modifiedAt,
+    this.contents,
+  });
+
+  final bool exists;
+  final int? sizeBytes;
+  final DateTime? modifiedAt;
+  final String? contents;
+}
+
+WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
+  required WindowsUpdateHandoffRecord record,
+  String? innoLogContents,
+}) {
+  final String? launchError = record.launchError;
+  if (launchError != null && launchError.trim().isNotEmpty) {
+    return WindowsInstallerFailureSummary(
+      type: 'launch_error',
+      message: 'The update launcher could not start the installer: '
+          '${launchError.trim()}',
+    );
+  }
+
+  final List<WindowsInnoDeleteFileFailure> deleteFailures =
+      record.innoLogDeleteFileFailures;
+  WindowsInnoDeleteFileFailure? code5;
+  for (final WindowsInnoDeleteFileFailure failure in deleteFailures) {
+    if (failure.code == 5) {
+      code5 = failure;
+      break;
+    }
+  }
+  if (code5 != null) {
+    return WindowsInstallerFailureSummary(
+      type: 'deletefile_code_5',
+      message: 'The installer could not replace ${code5.path} because Windows '
+          'reported access denied (DeleteFile code 5). Close Hibiki and any '
+          'process using that file, then run the installer again.',
+    );
+  }
+
+  if (deleteFailures.isNotEmpty) {
+    final WindowsInnoDeleteFileFailure failure = deleteFailures.first;
+    return WindowsInstallerFailureSummary(
+      type: 'deletefile_failed',
+      message: 'The installer could not replace ${failure.path} '
+          '(DeleteFile code ${failure.code}).',
+    );
+  }
+
+  final String? log = innoLogContents;
+  if (log == null || record.innoLogExists == false) {
+    return const WindowsInstallerFailureSummary(
+      type: 'missing_log',
+      message: 'The installer log was not created, so Hibiki could not confirm '
+          'that Inno Setup started. This usually means the handoff launcher '
+          'failed before the installer began.',
+    );
+  }
+
+  final String lower = log.toLowerCase();
+  final bool mentionsRunningApp = lower.contains('currently running') ||
+      lower.contains('is running') ||
+      lower.contains('appmutex') ||
+      lower.contains('mutex') ||
+      lower.contains('another instance');
+  final bool hasEAbort = lower.contains('eabort');
+  final bool looksCanceled = lower.contains('cancel') ||
+      lower.contains('aborted') ||
+      lower.contains('abort');
+  if (mentionsRunningApp) {
+    return WindowsInstallerFailureSummary(
+      type: 'app_mutex_running',
+      message: 'Inno Setup reported that Hibiki was still running. The '
+          'installer is guarded by HibikiSingleInstanceMutex, so every active '
+          'hibiki.exe process must be closed before the silent installer can '
+          'continue.',
+    );
+  }
+  if (hasEAbort || looksCanceled) {
+    return const WindowsInstallerFailureSummary(
+      type: 'silent_cancel',
+      message: 'Inno Setup canceled in silent mode. With /VERYSILENT and '
+          '/SUPPRESSMSGBOXES, a blocked prompt becomes a cancel instead of an '
+          'interactive dialog.',
+    );
+  }
+
+  return const WindowsInstallerFailureSummary(
+    type: 'installer_incomplete',
+    message: 'The installer ran, but Hibiki restarted with the previous '
+        'version. Check the installer log for the full Inno Setup details.',
+  );
+}
+
+String windowsInstallerFailureFingerprint({
+  required WindowsUpdateHandoffRecord record,
+}) {
+  final List<String> parts = <String>[
+    record.targetVersion,
+    record.installerPath,
+    record.innoLogPath,
+    record.installerFailureType ?? 'unknown',
+    record.launchError ?? '',
+    '${record.innoLogSizeBytes ?? -1}',
+    record.innoLogModifiedAt?.toUtc().toIso8601String() ?? '',
+  ];
+  return parts.map(_fingerprintPart).join('|');
+}
+
+List<WindowsInnoDeleteFileFailure> parseWindowsInnoDeleteFileFailures(
+  String output,
+) {
+  final List<String> lines = const LineSplitter().convert(output);
+  final List<WindowsInnoDeleteFileFailure> failures =
+      <WindowsInnoDeleteFileFailure>[];
+  String? previousPath;
+  for (int i = 0; i < lines.length; i++) {
+    final String line = lines[i];
+    final String? pathOnLine = _extractWindowsPath(line);
+    if (pathOnLine != null) previousPath = pathOnLine;
+
+    final RegExpMatch? codeMatch = RegExp(
+      r'DeleteFile failed[^0-9]*code\s+([0-9]+)',
+      caseSensitive: false,
+    ).firstMatch(line);
+    if (codeMatch == null) continue;
+
+    final int? code = int.tryParse(codeMatch.group(1)!);
+    if (code == null) continue;
+    final String? nextPath =
+        i + 1 < lines.length ? _extractWindowsPath(lines[i + 1]) : null;
+    final String path = pathOnLine ?? previousPath ?? nextPath ?? '';
+    failures.add(
+      WindowsInnoDeleteFileFailure(
+        path: path,
+        code: code,
+        message: line.trim(),
+      ),
+    );
+  }
+  return failures
+      .where((WindowsInnoDeleteFileFailure failure) => failure.path.isNotEmpty)
+      .toList(growable: false);
+}
+
+String _fingerprintPart(String value) =>
+    base64Url.encode(utf8.encode(value)).replaceAll('=', '');
+
+String? _extractWindowsPath(String line) {
+  final RegExpMatch? match = RegExp(r'[A-Za-z]:\\[^"\r\n]+').firstMatch(line);
+  if (match == null) return null;
+  return match.group(0)!.replaceFirst(RegExp(r'[\s.;,]+$'), '').trim();
 }
 
 DateTime? _dateTime(Object? raw) {

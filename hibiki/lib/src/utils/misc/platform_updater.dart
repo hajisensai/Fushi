@@ -13,7 +13,8 @@ export 'update_handoff.dart'
         WindowsDetectedInstallLocation,
         WindowsInnoDeleteFileFailure,
         WindowsInstallerDiagnostics,
-        WindowsProcessInfo;
+        WindowsProcessInfo,
+        parseWindowsInnoDeleteFileFailures;
 
 enum UpdateChannel { stable, beta, debug }
 
@@ -303,6 +304,34 @@ List<String> windowsInstallerArgs(
       '/LOG=${logPath ?? windowsInstallerLogPath(installerPath)}',
     ];
 
+const String kWindowsUpdateLauncherExecutable = 'hibiki_update_launcher.exe';
+
+String windowsUpdateLauncherPath({String? currentExecutablePath}) {
+  final String executablePath =
+      currentExecutablePath ?? Platform.resolvedExecutable;
+  final int sep = _lastPathSeparatorIndex(executablePath);
+  if (sep < 0) return kWindowsUpdateLauncherExecutable;
+  return '${executablePath.substring(0, sep)}'
+      '${Platform.pathSeparator}$kWindowsUpdateLauncherExecutable';
+}
+
+List<String> windowsUpdateLauncherArgs({
+  required String markerPath,
+  required int parentProcessId,
+  required String installerPath,
+  required List<String> installerArgs,
+}) =>
+    <String>[
+      '--marker',
+      markerPath,
+      '--parent-pid',
+      '$parentProcessId',
+      '--installer',
+      installerPath,
+      '--',
+      ...installerArgs,
+    ];
+
 String windowsInstallerLogPath(String installerPath) {
   final int sep = _lastPathSeparatorIndex(installerPath);
   final String dir = sep >= 0 ? installerPath.substring(0, sep) : '';
@@ -346,26 +375,8 @@ class WindowsInstallerStartedProcess {
   final int? pid;
 }
 
-class WindowsInstallerPostLaunchObservation {
-  const WindowsInstallerPostLaunchObservation({
-    required this.observedAt,
-    required this.installerProcessRunning,
-    required this.innoLogExists,
-    this.innoLogSizeBytes,
-    this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
-    this.error,
-  });
-
-  final DateTime observedAt;
-  final bool? installerProcessRunning;
-  final bool innoLogExists;
-  final int? innoLogSizeBytes;
-  final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
-  final String? error;
-}
-
 class WindowsInstaller {
-  static Future<WindowsInstallerStartedProcess> _startDetachedInstallerProcess(
+  static Future<WindowsInstallerStartedProcess> _startDetachedLauncherProcess(
     String executable,
     List<String> args,
   ) async {
@@ -377,12 +388,13 @@ class WindowsInstaller {
     return WindowsInstallerStartedProcess(pid: process.pid);
   }
 
-  /// 启动安装器（分离进程）后退出本进程，让安装器替换运行中的 exe 并重启 app。
+  /// 启动延迟 launcher（分离进程）后退出本进程。launcher 等当前 PID 退出后
+  /// 再启动 Inno，让安装器看到 AppMutex 已释放。
   ///
   /// 根因修复（Windows 点自动更新崩溃）：
   /// 1. 先校验下载产物确实是 PE 可执行文件，避免把代理 HTML/截断文件喂给
   ///    `Process.start`（曾导致行为不可控）。
-  /// 2. 仅当安装器进程**确实启动成功**后才 `exit(0)`；启动失败抛
+  /// 2. 仅当 launcher 进程**确实启动成功**后才 `exit(0)`；启动失败抛
   ///    [UpdateInstallerException]（上层 catch → SnackBar），绝不让本进程在没有
   ///    接班者的情况下静默消失（用户视角即「崩溃」）。
   static Future<void> runAndExit(
@@ -396,10 +408,6 @@ class WindowsInstaller {
       String executable,
       List<String> args,
     )? startProcess,
-    Future<WindowsInstallerPostLaunchObservation> Function(
-      int? installerPid,
-      String innoLogPath,
-    )? observePostLaunch,
     void Function(int code)? exitProcess,
   }) async {
     final DateTime Function() clock = now ?? DateTime.now;
@@ -480,55 +488,55 @@ class WindowsInstaller {
         logPath: innoLogPath,
         targetInstallDir: Platform.isWindows ? targetInstallDir : null,
       );
+      final bool useDelayedLauncher = handoffMarkerFile != null;
+      final String executable = useDelayedLauncher
+          ? windowsUpdateLauncherPath(
+              currentExecutablePath: resolvedExecutablePath,
+            )
+          : installerPath;
+      final List<String> launchArgs = useDelayedLauncher
+          ? windowsUpdateLauncherArgs(
+              markerPath: handoffMarkerFile.path,
+              parentProcessId: pid,
+              installerPath: installerPath,
+              installerArgs: args,
+            )
+          : args;
+      if (useDelayedLauncher &&
+          startProcess == null &&
+          Platform.isWindows &&
+          !File(executable).existsSync()) {
+        throw UpdateInstallerException(
+            'update launcher not found: $executable');
+      }
       ErrorLogService.instance.log(
         'WindowsInstaller.launch',
-        'Launching Windows installer: $installerPath ${args.join(' ')}',
+        useDelayedLauncher
+            ? 'Launching Windows update launcher: $executable '
+                'parent=$pid installer=$installerPath'
+            : 'Launching Windows installer: $installerPath',
       );
       final Future<WindowsInstallerStartedProcess> Function(
         String executable,
         List<String> args,
-      ) start = startProcess ?? _startDetachedInstallerProcess;
+      ) start = startProcess ?? _startDetachedLauncherProcess;
       final WindowsInstallerStartedProcess started = await start(
-        installerPath,
-        args,
+        executable,
+        launchArgs,
       );
-      if (targetVersion != null && handoffMarkerFile != null) {
-        await WindowsUpdateHandoff.markLaunchSucceeded(
-          markerFile: handoffMarkerFile,
-          launchedAt: clock(),
-          installerPid: started.pid,
-        );
-      }
-      final WindowsInstallerPostLaunchObservation observation =
-          await _observeInstallerPostLaunch(
-        installerPid: started.pid,
-        innoLogPath: innoLogPath,
-        observePostLaunch: observePostLaunch,
-      );
-      if (targetVersion != null && handoffMarkerFile != null) {
-        await WindowsUpdateHandoff.markPostLaunchObserved(
-          markerFile: handoffMarkerFile,
-          observedAt: observation.observedAt,
-          installerProcessRunning: observation.installerProcessRunning,
-          innoLogExists: observation.innoLogExists,
-          innoLogSizeBytes: observation.innoLogSizeBytes,
-          innoLogDeleteFileFailures: observation.innoLogDeleteFileFailures,
-          observationError: observation.error,
-        );
-      }
       ErrorLogService.instance.log(
         'WindowsInstaller.launch',
-        'Windows installer launched: target=${targetVersion ?? 'unknown'}, '
-            'pid=${started.pid ?? 'unknown'}, log=$innoLogPath, '
-            'processRunning=${observation.installerProcessRunning}, '
-            'logExists=${observation.innoLogExists}, '
-            'logBytes=${observation.innoLogSizeBytes ?? 'unknown'}, '
-            'deleteFileFailures='
-            '${observation.innoLogDeleteFileFailures.length}',
+        useDelayedLauncher
+            ? 'Windows update launcher launched: '
+                'target=${targetVersion ?? 'unknown'}, '
+                'launcherPid=${started.pid ?? 'unknown'}, log=$innoLogPath'
+            : 'Windows installer launched: target=${targetVersion ?? 'unknown'}, '
+                'pid=${started.pid ?? 'unknown'}, log=$innoLogPath',
       );
     } on ProcessException catch (e) {
-      final exception =
-          UpdateInstallerException('failed to launch installer: ${e.message}');
+      final exception = UpdateInstallerException(
+        'failed to launch update installer handoff: ${e.message}',
+      );
       await _markLaunchFailed(
         handoffMarkerFile,
         exception,
@@ -541,7 +549,7 @@ class WindowsInstaller {
       rethrow;
     }
 
-    // 安装器已成功启动（分离进程）。当前实例只让出自己的 hibiki.exe 文件锁；
+    // launcher 已成功启动（分离进程）。当前实例只让出自己的 AppMutex / exe 锁；
     // 其他 Hibiki/libmpv 持有进程已经在 preflight 被列出并要求用户手动关闭，
     // 这里绝不委托 Inno/RestartManager 自动关闭或强制结束残留进程。
     await Future<void>.delayed(Duration.zero);
@@ -555,86 +563,6 @@ class WindowsInstaller {
       return await raf.read(2);
     } finally {
       await raf.close();
-    }
-  }
-
-  static Future<WindowsInstallerPostLaunchObservation>
-      _observeInstallerPostLaunch({
-    required int? installerPid,
-    required String innoLogPath,
-    required Future<WindowsInstallerPostLaunchObservation> Function(
-      int? installerPid,
-      String innoLogPath,
-    )? observePostLaunch,
-  }) async {
-    if (observePostLaunch != null) {
-      try {
-        return await observePostLaunch(installerPid, innoLogPath);
-      } catch (e) {
-        return WindowsInstallerPostLaunchObservation(
-          observedAt: DateTime.now(),
-          installerProcessRunning: null,
-          innoLogExists: await File(innoLogPath).exists(),
-          innoLogDeleteFileFailures:
-              await _readWindowsInnoDeleteFileFailures(innoLogPath),
-          error: e.toString(),
-        );
-      }
-    }
-
-    const Duration interval = Duration(milliseconds: 200);
-    final DateTime deadline =
-        DateTime.now().add(const Duration(milliseconds: 1200));
-    bool? installerProcessRunning;
-    bool innoLogExists = false;
-    int? innoLogSizeBytes;
-    List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures =
-        const <WindowsInnoDeleteFileFailure>[];
-    String? error;
-
-    do {
-      try {
-        if (installerPid != null) {
-          installerProcessRunning =
-              await _isWindowsProcessRunning(installerPid);
-        }
-        final File innoLog = File(innoLogPath);
-        innoLogExists = await innoLog.exists();
-        innoLogSizeBytes = innoLogExists ? await innoLog.length() : null;
-        innoLogDeleteFileFailures = innoLogExists
-            ? parseWindowsInnoDeleteFileFailures(await innoLog.readAsString())
-            : const <WindowsInnoDeleteFileFailure>[];
-        if (installerProcessRunning == true || innoLogExists) break;
-      } catch (e) {
-        error = e.toString();
-      }
-      if (DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(interval);
-      }
-    } while (DateTime.now().isBefore(deadline));
-
-    return WindowsInstallerPostLaunchObservation(
-      observedAt: DateTime.now(),
-      installerProcessRunning: installerProcessRunning,
-      innoLogExists: innoLogExists,
-      innoLogSizeBytes: innoLogSizeBytes,
-      innoLogDeleteFileFailures: innoLogDeleteFileFailures,
-      error: error,
-    );
-  }
-
-  static Future<bool?> _isWindowsProcessRunning(int pid) async {
-    if (!Platform.isWindows) return null;
-    try {
-      final ProcessResult result = await Process.run(
-        'tasklist',
-        <String>['/FI', 'PID eq $pid', '/NH'],
-      );
-      if (result.exitCode != 0) return null;
-      final String output = '${result.stdout}\n${result.stderr}';
-      return RegExp('(^|\\s)$pid(\\s|\$)').hasMatch(output);
-    } catch (_) {
-      return null;
     }
   }
 
@@ -654,8 +582,9 @@ class WindowsInstaller {
         )
         .join('; ');
     throw UpdateInstallerException(
-      'Hibiki cannot install while another Hibiki/libmpv process is using '
-      'the target directory. Target: $target. Holders: $holderSummary. '
+      'Hibiki cannot install while another hibiki.exe process is holding the '
+      'global HibikiSingleInstanceMutex, or a process is using libmpv in the '
+      'target directory. Target: $target. Holders: $holderSummary. '
       'Close the listed process manually, then retry the installer. '
       'Installer log: $innoLogPath',
     );
@@ -668,9 +597,7 @@ class WindowsInstaller {
     final Map<int, WindowsProcessInfo> blockers = <int, WindowsProcessInfo>{};
     for (final WindowsProcessInfo process
         in diagnostics.runningHibikiProcesses) {
-      if (_processIsInTargetInstallDir(process, targetInstallDir)) {
-        blockers[process.pid] = process;
-      }
+      blockers[process.pid] = process;
     }
     for (final WindowsProcessInfo process in diagnostics.libmpvModuleHolders) {
       if (_processIsInTargetInstallDir(process, targetInstallDir) ||
@@ -693,13 +620,6 @@ class WindowsInstaller {
       return false;
     }
     return _windowsPathEquals(File(processPath).parent.path, targetInstallDir);
-  }
-
-  static Future<List<WindowsInnoDeleteFileFailure>>
-      _readWindowsInnoDeleteFileFailures(String innoLogPath) async {
-    final File log = File(innoLogPath);
-    if (!await log.exists()) return const <WindowsInnoDeleteFileFailure>[];
-    return parseWindowsInnoDeleteFileFailures(await log.readAsString());
   }
 
   static Future<void> _markLaunchFailed(
@@ -985,42 +905,6 @@ List<WindowsProcessInfo> parseWindowsTasklistModuleHolders(String output) {
   return holders;
 }
 
-List<WindowsInnoDeleteFileFailure> parseWindowsInnoDeleteFileFailures(
-  String output,
-) {
-  final List<String> lines = const LineSplitter().convert(output);
-  final List<WindowsInnoDeleteFileFailure> failures =
-      <WindowsInnoDeleteFileFailure>[];
-  String? previousPath;
-  for (int i = 0; i < lines.length; i++) {
-    final String line = lines[i];
-    final String? pathOnLine = _extractWindowsPath(line);
-    if (pathOnLine != null) previousPath = pathOnLine;
-
-    final RegExpMatch? codeMatch = RegExp(
-      r'DeleteFile failed[^0-9]*code\s+([0-9]+)',
-      caseSensitive: false,
-    ).firstMatch(line);
-    if (codeMatch == null) continue;
-
-    final int? code = int.tryParse(codeMatch.group(1)!);
-    if (code == null) continue;
-    final String? nextPath =
-        i + 1 < lines.length ? _extractWindowsPath(lines[i + 1]) : null;
-    final String path = pathOnLine ?? previousPath ?? nextPath ?? '';
-    failures.add(
-      WindowsInnoDeleteFileFailure(
-        path: path,
-        code: code,
-        message: line.trim(),
-      ),
-    );
-  }
-  return failures
-      .where((WindowsInnoDeleteFileFailure failure) => failure.path.isNotEmpty)
-      .toList(growable: false);
-}
-
 List<WindowsDetectedInstallLocation> _dedupeInstallLocations(
   Iterable<WindowsDetectedInstallLocation> locations,
 ) {
@@ -1081,12 +965,6 @@ List<String> _parseCsvLine(String line) {
   }
   fields.add(current.toString());
   return fields;
-}
-
-String? _extractWindowsPath(String line) {
-  final RegExpMatch? match = RegExp(r'[A-Za-z]:\\[^"\r\n]+').firstMatch(line);
-  if (match == null) return null;
-  return match.group(0)!.replaceFirst(RegExp(r'[\s.;,]+$'), '').trim();
 }
 
 bool _windowsPathEquals(String a, String b) {

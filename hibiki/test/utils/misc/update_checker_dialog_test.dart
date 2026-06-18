@@ -95,7 +95,7 @@ void main() {
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(360, 260);
+    tester.view.physicalSize = const Size(420, 520);
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
@@ -109,10 +109,6 @@ void main() {
               innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
               startedAt: DateTime.utc(2026, 6, 17, 10, 30),
               installerLaunchSucceeded: true,
-              installerPid: 4242,
-              postLaunchObservedAt: DateTime.utc(2026, 6, 17, 10, 30, 2),
-              installerProcessRunning: false,
-              innoLogExists: false,
             ),
           ),
         ),
@@ -202,6 +198,10 @@ void main() {
               innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
               startedAt: DateTime.utc(2026, 6, 17, 10, 30),
               installerLaunchSucceeded: true,
+              launcherPid: 3131,
+              parentExitObserved: true,
+              installerFailureSummary:
+                  'Inno Setup reported that Hibiki was still running.',
               installerPid: 4242,
               postLaunchObservedAt: DateTime.utc(2026, 6, 17, 10, 30, 2),
               installerProcessRunning: false,
@@ -216,6 +216,26 @@ void main() {
     expect(find.text(t.update_install_incomplete_title), findsOneWidget);
     expect(find.textContaining(r'C:\tmp\hibiki-9.9.9.install.log'),
         findsOneWidget);
+    expect(
+      find.text(
+        t.update_install_launcher_pid(pid: 3131),
+        findRichText: true,
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.update_install_parent_exit_observed, skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Inno Setup reported that Hibiki was still running',
+        findRichText: true,
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
     expect(
         find.text(t.update_install_installer_pid(pid: 4242)), findsOneWidget);
     expect(find.text(t.update_install_process_not_observed), findsOneWidget);
