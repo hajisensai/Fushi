@@ -22,11 +22,17 @@ void main() {
   final File page = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
   );
+  final File overlays = File(
+    'lib/src/media/video/video_volume_overlays.dart',
+  );
 
   late String src;
+  late String overlaySrc;
   setUpAll(() {
     expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
+    expect(overlays.existsSync(), isTrue, reason: '音量可见层 helper 应存在');
     src = page.readAsStringSync();
+    overlaySrc = overlays.readAsStringSync();
   });
 
   String volumeButtonBody() {
@@ -96,12 +102,20 @@ void main() {
       final String body = methodBody('Widget _buildVolumePopover(');
       expect(body.contains('RotatedBox('), isFalse,
           reason: '本轮音量浮层保持横向 Slider，不再旋转成竖条');
-      expect(body.contains('Slider('), isTrue, reason: '音量浮层内必须有 Slider');
+      expect(body.contains('VideoVolumePopoverCard('), isTrue,
+          reason: '音量浮层应调用可渲染测试的紧凑 helper widget');
+      expect(overlaySrc.contains('Slider('), isTrue, reason: '音量浮层内必须有 Slider');
       expect(body.contains('_toggleMute()'), isTrue, reason: '浮层内保留静音按钮');
-      expect(body.contains('_setVolumeFromSlider('), isTrue,
+      expect(body.contains('onChanged: _setVolumeFromSlider'), isTrue,
           reason: '浮层滑条拖动继续走 _setVolumeFromSlider');
       expect(body.contains('_volumeDisplay'), isTrue,
           reason: '浮层显示值应读 _volumeDisplay，与滚轮/键盘/移动竖滑共用同步通道');
+      expect(overlaySrc.contains('Row('), isTrue,
+          reason: 'helper 内的可见浮层必须是横向布局');
+      expect(overlaySrc.contains('videoVolumePopoverFrameKey'), isTrue,
+          reason: 'helper 必须暴露可见 frame key 供真实尺寸断言量测');
+      expect(overlaySrc.contains('videoVolumePopoverSliderKey'), isTrue,
+          reason: 'helper 必须暴露 Slider key 供真实尺寸断言量测');
     });
 
     test('音量完整按钮只从底栏左右槽渲染一次，不进入 top bar / side rail', () {

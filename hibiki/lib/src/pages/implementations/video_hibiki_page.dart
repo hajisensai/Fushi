@@ -58,6 +58,7 @@ import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_selection.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
+import 'package:hibiki/src/media/video/video_volume_overlays.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
@@ -3958,49 +3959,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       builder: (BuildContext context, double value, Widget? child) {
         final double clamped = value.clamp(0.0, 100.0).toDouble();
         final ColorScheme cs = _videoChromeColorScheme(context);
-        return _buildControlPopoverFrame(
+        return VideoVolumePopoverCard(
           width: width,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Tooltip(
-                message: t.shortcut_action_video_toggle_mute,
-                child: IconButton(
-                  icon: Icon(_volumeIconFor(clamped)),
-                  color: cs.primary,
-                  onPressed: () => unawaited(_toggleMute()),
-                ),
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3.0 * _videoUiScale,
-                    thumbShape: RoundSliderThumbShape(
-                      enabledThumbRadius: 7.0 * _videoUiScale,
-                    ),
-                    overlayShape: RoundSliderOverlayShape(
-                      overlayRadius: 14.0 * _videoUiScale,
-                    ),
-                  ),
-                  child: Slider(
-                    value: clamped,
-                    min: 0,
-                    max: 100,
-                    onChanged: (double next) => _setVolumeFromSlider(next),
-                  ),
-                ),
-              ),
-              SizedBox(width: 6 * _videoUiScale),
-              Text(
-                '${clamped.round()}%',
-                style: TextStyle(
-                  color: cs.onSurface,
-                  fontSize: 12 * _videoUiScale,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          value: clamped,
+          uiScale: _videoUiScale,
+          colorScheme: cs,
+          icon: _volumeIconFor(clamped),
+          tooltip: t.shortcut_action_video_toggle_mute,
+          onToggleMute: () => unawaited(_toggleMute()),
+          onChanged: _setVolumeFromSlider,
         );
       },
     );
@@ -7811,78 +7778,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final Color textColor = _osdTextColor(cs);
     final double scale = _videoUiScale;
     return IgnorePointer(
-      child: Align(
+      child: VideoLevelHudCard(
+        value: clamped,
+        uiScale: scale,
+        icon: _volumeIconFor(clamped),
         alignment: Alignment.centerRight,
-        child: SafeArea(
-          minimum: EdgeInsets.only(
-            left: 16,
-            top: 16,
-            right: 76 * scale,
-            bottom: 16,
-          ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: _osdSurfaceColor(cs),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: textColor.withValues(alpha: 0.12),
-              ),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.22),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: 14 * scale,
-                vertical: 12 * scale,
-              ),
-              child: SizedBox(
-                width: 120 * scale,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(
-                          _volumeIconFor(clamped),
-                          color: textColor,
-                          size: 22 * scale,
-                        ),
-                        SizedBox(width: 10 * scale),
-                        Expanded(
-                          child: DefaultTextStyle.merge(
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: 17 * scale,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            child: Text('${clamped.round()}%'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 10 * scale),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: clamped / 100.0,
-                        minHeight: 4 * scale,
-                        backgroundColor: textColor.withValues(alpha: 0.24),
-                        valueColor: AlwaysStoppedAnimation<Color>(textColor),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+        minimum: EdgeInsets.only(
+          left: 16,
+          top: 16,
+          right: 76 * scale,
+          bottom: 16,
         ),
+        surfaceColor: _osdSurfaceColor(cs),
+        textColor: textColor,
+        shadowColor: cs.shadow,
+        frameKey: videoVolumeHudFrameKey,
+        progressKey: videoVolumeHudProgressKey,
       ),
     );
   }
@@ -7893,78 +7804,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final Color textColor = _osdTextColor(cs);
     final double scale = _videoUiScale;
     return IgnorePointer(
-      child: Align(
+      child: VideoLevelHudCard(
+        value: clamped,
+        uiScale: scale,
+        icon: _brightnessIconFor(clamped),
         alignment: Alignment.centerLeft,
-        child: SafeArea(
-          minimum: EdgeInsets.only(
-            left: 76 * scale,
-            top: 16,
-            right: 16,
-            bottom: 16,
-          ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: _osdSurfaceColor(cs),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: textColor.withValues(alpha: 0.12),
-              ),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.22),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: 14 * scale,
-                vertical: 12 * scale,
-              ),
-              child: SizedBox(
-                width: 120 * scale,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(
-                          _brightnessIconFor(clamped),
-                          color: textColor,
-                          size: 22 * scale,
-                        ),
-                        SizedBox(width: 10 * scale),
-                        Expanded(
-                          child: DefaultTextStyle.merge(
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: 17 * scale,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            child: Text('${clamped.round()}%'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 10 * scale),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: clamped / 100.0,
-                        minHeight: 4 * scale,
-                        backgroundColor: textColor.withValues(alpha: 0.24),
-                        valueColor: AlwaysStoppedAnimation<Color>(textColor),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+        minimum: EdgeInsets.only(
+          left: 76 * scale,
+          top: 16,
+          right: 16,
+          bottom: 16,
         ),
+        surfaceColor: _osdSurfaceColor(cs),
+        textColor: textColor,
+        shadowColor: cs.shadow,
+        frameKey: videoBrightnessHudFrameKey,
+        progressKey: videoBrightnessHudProgressKey,
       ),
     );
   }
