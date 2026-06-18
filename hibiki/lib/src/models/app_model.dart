@@ -1957,14 +1957,18 @@ class AppModel with ChangeNotifier {
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
-  Future<void> showDictionaryMenu() async {
+  Future<void> showDictionaryMenu({
+    List<String> initialImportPaths = const <String>[],
+  }) async {
     final ctx = _ctx;
     if (ctx == null) return;
     await Navigator.push(
       ctx,
       adaptivePageRoute(
         context: ctx,
-        builder: (context) => const DictionaryDialogPage(),
+        builder: (context) => DictionaryDialogPage(
+          initialImportPaths: initialImportPaths,
+        ),
       ),
     );
 

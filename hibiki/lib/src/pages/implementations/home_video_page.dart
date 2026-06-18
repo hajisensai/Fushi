@@ -301,19 +301,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
   ///
-  /// [localPosition] 为相对 [HibikiFileDropTarget] 的局部坐标，需经本页 RenderBox
-  /// 转屏幕坐标后再交给注册表命中（注册表存的是屏幕坐标矩形）。
-  void _handleVideoDrop(List<String> paths, Offset localPosition) {
+  /// [globalPosition] 为 [HibikiFileDropTarget] 透出的 Flutter global/view 坐标，
+  /// 可直接交给卡片注册表命中（注册表存的是同一坐标系的屏幕矩形）。
+  void _handleVideoDrop(List<String> paths, Offset globalPosition) {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
 
     final DroppedFiles files = classifyDroppedFiles(paths);
-    final RenderObject? ro = context.findRenderObject();
-    Offset global = localPosition;
-    if (ro is RenderBox && ro.attached) {
-      global = ro.localToGlobal(localPosition);
-    }
-    final VideoBookRow? hit = _cardDropRegistry.hitTest(global);
+    debugPrint(
+      '[hibiki-drop] [home-video] classified '
+      'videos=${files.videos.length} playlists=${files.playlists.length} '
+      'subtitles=${files.subtitles.length} books=${files.books.length} '
+      'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
+      'global=$globalPosition',
+    );
+    final VideoBookRow? hit = _cardDropRegistry.hitTest(globalPosition);
     final DropIntent intent = decideDropIntent(
       surface: DropSurface.video,
       files: files,
@@ -337,6 +339,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       case DropIntent.needCardTarget:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
+        );
+      case DropIntent.unsupportedSurface:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.drag_drop_unsupported_on_video)),
         );
       case DropIntent.importNewBook:
       case DropIntent.attachToBookCard:
@@ -801,6 +807,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         if (_selectionMode) _exitSelectionMode();
       },
       child: HibikiFileDropTarget(
+        debugLabel: 'home-video',
         onDrop: _handleVideoDrop,
         child: CardDropScope<VideoBookRow>(
           registry: _cardDropRegistry,

@@ -6,6 +6,8 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
@@ -205,17 +207,37 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           _clearSearch();
         }
       },
-      child: DesktopContentLayout(
-        kind: DesktopContentKind.dictionary,
-        child: Column(
-          children: [
-            if (!isCupertinoPlatform(context)) _buildPageHeader(),
-            _buildSearchHeader(),
-            Expanded(child: _buildBody()),
-          ],
+      child: HibikiFileDropTarget(
+        debugLabel: 'home-dictionary',
+        onDrop: _handleDictionaryHomeDrop,
+        child: DesktopContentLayout(
+          kind: DesktopContentKind.dictionary,
+          child: Column(
+            children: [
+              if (!isCupertinoPlatform(context)) _buildPageHeader(),
+              _buildSearchHeader(),
+              Expanded(child: _buildBody()),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _handleDictionaryHomeDrop(List<String> paths, Offset globalPosition) {
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+
+    final List<String> importPaths = classifyDroppedFilesForDictionary(paths);
+    debugPrint(
+      '[hibiki-drop] [home-dictionary] importPaths=${importPaths.length} '
+      'paths=${paths.length} global=$globalPosition',
+    );
+    if (importPaths.isEmpty) {
+      HibikiToast.show(msg: t.drag_drop_unsupported_on_dictionary);
+      return;
+    }
+    unawaited(appModel.showDictionaryMenu(initialImportPaths: importPaths));
   }
 
   Widget _buildPageHeader() {

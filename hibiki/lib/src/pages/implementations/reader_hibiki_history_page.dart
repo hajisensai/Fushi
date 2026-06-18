@@ -284,6 +284,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         if (_selectionMode) _exitSelectionMode();
       },
       child: HibikiFileDropTarget(
+        debugLabel: 'reader-shelf',
         onDrop: _handleShelfDrop,
         child: CardDropScope<String>(
           registry: _cardDropRegistry,
@@ -2219,19 +2220,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // ── 拖拽导入（books 表面） ──────────────────────────────────────────────────
 
   /// 文件拖入书架后的路由：分类 → 命中测试 → 决策 → 打开对应对话框/提示。
-  /// [localPosition] 为相对 [HibikiFileDropTarget] 的局部坐标，需转屏幕坐标
-  /// 后才能与卡片登记表（用屏幕矩形）命中测试。
-  void _handleShelfDrop(List<String> paths, Offset localPosition) {
+  /// [globalPosition] 为 [HibikiFileDropTarget] 透出的 Flutter global/view 坐标，
+  /// 可直接与卡片登记表（同坐标系屏幕矩形）命中测试。
+  void _handleShelfDrop(List<String> paths, Offset globalPosition) {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
 
     final DroppedFiles files = classifyDroppedFiles(paths);
-    final RenderObject? ro = context.findRenderObject();
-    Offset global = localPosition;
-    if (ro is RenderBox && ro.attached) {
-      global = ro.localToGlobal(localPosition);
-    }
-    final String? hitBookKey = _cardDropRegistry.hitTest(global);
+    debugPrint(
+      '[hibiki-drop] [reader-shelf] classified '
+      'books=${files.books.length} subtitles=${files.subtitles.length} '
+      'audios=${files.audios.length} videos=${files.videos.length} '
+      'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
+      'global=$globalPosition',
+    );
+    final String? hitBookKey = _cardDropRegistry.hitTest(globalPosition);
     final DropIntent intent = decideDropIntent(
       surface: DropSurface.books,
       files: files,
@@ -2254,6 +2257,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       case DropIntent.needCardTarget:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
+        );
+      case DropIntent.unsupportedSurface:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );
       case DropIntent.importNewVideo:
       case DropIntent.importNewPlaylist:

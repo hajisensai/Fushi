@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -17,7 +18,14 @@ import 'package:hibiki/utils.dart';
 /// Page used for managing installed dictionaries.
 class DictionaryDialogPage extends BasePage {
   /// Create an instance of this page.
-  const DictionaryDialogPage({super.key});
+  const DictionaryDialogPage({
+    super.key,
+    this.initialImportPaths = const <String>[],
+  });
+
+  /// Dictionary package paths to import as soon as the page is visible. CSS
+  /// attachment paths may be included after at least one dictionary package.
+  final List<String> initialImportPaths;
 
   @override
   BasePageState createState() => _DictionaryDialogPageState();
@@ -28,12 +36,27 @@ class _DictionaryDialogPageState extends BasePageState {
   bool _isDownloading = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget is DictionaryDialogPage) {
+      final List<String> paths =
+          (widget as DictionaryDialogPage).initialImportPaths;
+      if (paths.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_importDictionaryPaths(paths));
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // 桌面三端：整页包一层文件拖放区，把拖入的词典包接到与「导入词典」按钮同源的
     // 导入路径（TODO-059）。移动端 HibikiFileDropTarget 直接透传 child，零开销。
     return HibikiFileDropTarget(
+      debugLabel: 'dictionary-dialog',
       onDrop: _handleDictionaryDrop,
       child: AdaptiveSettingsScaffold(
         title: Text(t.dictionaries),
@@ -408,14 +431,21 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 桌面拖放落地处理：把拖入文件按扩展名分类，取出词典包（`.zip`/`.dsl`/`.mdx`）+
   /// 同批拖入的 `.css` 样式附件，交给与「导入词典」按钮同源的 [_importDictionaryPaths]。
-  /// 没有词典包则忽略（不打扰用户）；移动端无桌面拖放，[HibikiFileDropTarget] 已直接
+  /// 没有词典包时给用户明确反馈；移动端无桌面拖放，[HibikiFileDropTarget] 已直接
   /// 透传 child，本回调在移动端永不触发。纯分类逻辑见 [classifyDroppedFilesForDictionary]。
-  void _handleDictionaryDrop(List<String> paths, Offset _) {
+  void _handleDictionaryDrop(List<String> paths, Offset globalPosition) {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
 
     final List<String> importPaths = classifyDroppedFilesForDictionary(paths);
-    if (importPaths.isEmpty) return;
+    debugPrint(
+      '[hibiki-drop] [dictionary-dialog] importPaths=${importPaths.length} '
+      'paths=${paths.length} global=$globalPosition',
+    );
+    if (importPaths.isEmpty) {
+      HibikiToast.show(msg: t.drag_drop_unsupported_on_dictionary);
+      return;
+    }
     _importDictionaryPaths(importPaths);
   }
 

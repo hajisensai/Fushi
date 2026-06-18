@@ -11,6 +11,7 @@ enum DropIntent {
   attachToBookCard,
   attachToVideoCard,
   needCardTarget,
+  unsupportedSurface,
   ignore,
 }
 
@@ -35,6 +36,7 @@ DropIntent decideDropIntent({
             ? DropIntent.attachToBookCard
             : DropIntent.needCardTarget;
       }
+      if (files.hasAny) return DropIntent.unsupportedSurface;
       return DropIntent.ignore;
     case DropSurface.video:
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
@@ -44,6 +46,7 @@ DropIntent decideDropIntent({
             ? DropIntent.attachToVideoCard
             : DropIntent.needCardTarget;
       }
+      if (files.hasAny) return DropIntent.unsupportedSurface;
       return DropIntent.ignore;
   }
 }

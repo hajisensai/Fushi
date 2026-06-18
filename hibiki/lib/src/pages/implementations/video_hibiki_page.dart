@@ -6681,6 +6681,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     List<String> paths,
   ) {
     final DroppedFiles files = classifyDroppedFiles(paths);
+    debugPrint(
+      '[hibiki-drop] [video-playback] classified '
+      'subtitles=${files.subtitles.length} audios=${files.audios.length} '
+      'videos=${files.videos.length} books=${files.books.length} '
+      'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length}',
+    );
     final String? sub = firstSubtitlePath(paths);
     if (sub != null) {
       unawaited(_importExternalSubtitle(controller, sub));
@@ -6692,6 +6698,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     if (files.audios.isNotEmpty && files.videos.isEmpty) {
       _showOsd(t.video_drop_audio_unsupported);
+      return;
+    }
+    if (files.hasAny) {
+      _showOsd(t.video_drop_subtitle_only);
     }
   }
 
@@ -6909,6 +6919,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 只剩内层生效，不会双触发。
   Widget _pageDropTarget(VideoPlayerController controller, Widget child) {
     return HibikiFileDropTarget(
+      debugLabel: 'video-playback-page',
       onDrop: (List<String> paths, Offset _) {
         _handlePlaybackDrop(controller, paths);
       },
@@ -7382,6 +7393,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           desktop: controlsTheme.desktop,
           child: _videoControlsHoverWrap(
             child: HibikiFileDropTarget(
+              debugLabel: 'video-playback-controls',
               onDrop: (List<String> paths, Offset _) {
                 _handlePlaybackDrop(controller, paths);
               },

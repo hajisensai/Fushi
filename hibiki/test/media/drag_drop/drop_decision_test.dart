@@ -57,11 +57,28 @@ void main() {
         DropIntent.importNewBook,
       );
     });
-    test('nothing relevant -> ignore', () {
+    test('recognized video on books surface -> unsupportedSurface', () {
       expect(
         decideDropIntent(
             surface: DropSurface.books,
             files: _files(videos: ['/a.mkv']),
+            cardHit: false),
+        DropIntent.unsupportedSurface,
+      );
+    });
+
+    test('unknown-only input -> ignore', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: const DroppedFiles(
+                books: [],
+                videos: [],
+                subtitles: [],
+                audios: [],
+                playlists: [],
+                dictionaries: [],
+                unknown: ['/a.bin']),
             cardHit: false),
         DropIntent.ignore,
       );
@@ -96,15 +113,13 @@ void main() {
         DropIntent.needCardTarget,
       );
     });
-    test(
-        'audio-only on video surface -> ignore (video cards do not take audio)',
-        () {
+    test('audio-only on video surface -> unsupportedSurface', () {
       expect(
         decideDropIntent(
             surface: DropSurface.video,
             files: _files(audios: ['/a.mp3']),
             cardHit: true),
-        DropIntent.ignore,
+        DropIntent.unsupportedSurface,
       );
     });
     test('m3u8 playlist -> importNewPlaylist', () {
@@ -128,13 +143,15 @@ void main() {
   });
 
   group('decideDropIntent — playlist on books surface', () {
-    test('m3u8 on books surface -> ignore (playlists are video-only)', () {
+    test(
+        'm3u8 on books surface -> unsupportedSurface (playlists are video-only)',
+        () {
       expect(
         decideDropIntent(
             surface: DropSurface.books,
             files: _files(playlists: ['/a.m3u8']),
             cardHit: false),
-        DropIntent.ignore,
+        DropIntent.unsupportedSurface,
       );
     });
   });
