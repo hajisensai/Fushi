@@ -20,6 +20,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// Japanese pin.
 void main() {
   late String textStyleSource;
+  late String appLocaleGetterSource;
+  late String primaryMaterialAppSource;
 
   setUpAll(() {
     final String source =
@@ -32,6 +34,19 @@ void main() {
       'get textStyle',
       // The next member after textStyle / its helper.
       'TextTheme get textTheme',
+    );
+
+    final String mainSource =
+        File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n');
+    appLocaleGetterSource = _functionSource(
+      mainSource,
+      'Locale get locale',
+      '}\n\n/// 按实验开关',
+    );
+    primaryMaterialAppSource = _functionSource(
+      mainSource,
+      'return TranslationProvider(\n      child: MaterialApp(',
+      '\n  }\n\n  /// Responsible for managing global app-wide state.',
     );
   });
 
@@ -84,6 +99,45 @@ void main() {
       textStyleSource,
       isNot(contains('targetLanguage.textBaseline')),
       reason: 'baseline must follow the UI locale, not the reading language',
+    );
+  });
+
+  test('MaterialApp.locale follows display language for system back labels',
+      () {
+    expect(
+      primaryMaterialAppSource,
+      contains('locale: locale,'),
+      reason:
+          'the primary MaterialApp constructor must route localizations through '
+          'the locale getter instead of bypassing it',
+    );
+    expect(
+      primaryMaterialAppSource,
+      isNot(contains('targetLanguage.locale')),
+      reason:
+          'MaterialApp.locale must not use the pinned Japanese reading language',
+    );
+    expect(
+      RegExp(r'locale:\s*[^,\n]*targetLanguage\.locale')
+          .hasMatch(primaryMaterialAppSource),
+      isFalse,
+      reason:
+          'changing MaterialApp to locale: appModel.targetLanguage.locale must '
+          'fail this guard',
+    );
+    expect(
+      appLocaleGetterSource,
+      contains('appModel.appLocale'),
+      reason:
+          'Material/Cupertino localizations must use the display language so '
+          'zh-CN back tooltips read 返回 instead of Japanese 戻る',
+    );
+    expect(
+      appLocaleGetterSource,
+      isNot(contains('targetLanguage.locale')),
+      reason:
+          'targetLanguage is the pinned Japanese reading/dictionary language, '
+          'not the app chrome locale',
     );
   });
 }
