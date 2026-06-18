@@ -93,10 +93,20 @@ void main() {
           reason: 'initialPositionMs 是 load 合成的恢复目标，不是真实 player tick，不能走持久化路径');
       expect(
         b,
+        contains('resolvedStartMs = resolveEpisodeStart('),
+        reason: 'load 必须先按 start intent 和 duration 决定真实起播点',
+      );
+      expect(
+        b,
+        contains('player.state.duration.inMilliseconds'),
+        reason: '恢复前要用真实 duration 判定近片尾保存位置',
+      );
+      expect(
+        b,
         contains(
-          '_syncCueForPosition(initialPositionMs, persistPosition: false)',
+          '_syncCueForPosition(resolvedStartMs, persistPosition: false)',
         ),
-        reason: 'load 仍要用 initialPositionMs 初始化字幕，但必须跳过位置持久化',
+        reason: 'load 仍要用解析后的实际起播点初始化字幕，但必须跳过位置持久化',
       );
     });
   });

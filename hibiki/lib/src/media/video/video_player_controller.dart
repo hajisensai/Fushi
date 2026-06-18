@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_playback_source.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
@@ -574,6 +575,7 @@ class VideoPlayerController extends ChangeNotifier
     String? mediaUri,
     required List<AudioCue> cues,
     int initialPositionMs = 0,
+    required EpisodeStartIntent startIntent,
     double initialSpeed = 1.0,
     double initialVolume = 100.0,
     String? externalSubtitlePath,
@@ -679,19 +681,33 @@ class VideoPlayerController extends ChangeNotifier
     await player.setRate(initialSpeed);
     // 恢复上次位置。media_kit 在 open(play:false) 后 player 未必立即可 seek（内部
     // position 仍 0），此时 seek 会被丢弃，随后 tick 读到 0 会把真实进度覆盖成 0。
-    // 故：① 设 _restoreTargetMs 守护，seek 落地前禁止任何写入点用过渡期小值覆盖；
-    //     ② 等 player 可 seek（duration ready）再 seek，让恢复真正生效。
-    if (initialPositionMs > 0) {
-      _restoreTargetMs = initialPositionMs;
-      _restoreGuardTicksLeft = _restoreGuardGraceTicks;
+    // 故：① 等 player 可 seek（duration ready），用真实 duration 按入口 intent
+    //     决定目标集是否应从头开始；② 设 _restoreTargetMs 守护，seek 落地前禁止
+    //     任何写入点用过渡期小值覆盖真实进度。
+    final int requestedStartMs = initialPositionMs < 0 ? 0 : initialPositionMs;
+    int resolvedStartMs = resolveEpisodeStart(
+      startIntent,
+      requestedStartMs,
+      null,
+    );
+    if (resolvedStartMs > 0) {
       await _waitUntilSeekable(player);
       if (_player != player) return; // 等待期间换片：放弃这次恢复
-      await player.seek(Duration(milliseconds: initialPositionMs));
+      resolvedStartMs = resolveEpisodeStart(
+        startIntent,
+        requestedStartMs,
+        player.state.duration.inMilliseconds,
+      );
+    }
+    if (resolvedStartMs > 0) {
+      _restoreTargetMs = resolvedStartMs;
+      _restoreGuardTicksLeft = _restoreGuardGraceTicks;
+      await player.seek(Duration(milliseconds: resolvedStartMs));
     } else {
       _restoreTargetMs = null;
       _restoreGuardTicksLeft = 0;
     }
-    _syncCueForPosition(initialPositionMs, persistPosition: false);
+    _syncCueForPosition(resolvedStartMs, persistPosition: false);
 
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
     _playingSub = player.stream.playing.listen((_) {

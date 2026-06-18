@@ -38,9 +38,57 @@ void main() {
     expect(fn, contains('if (!mounted) return'));
     expect(fn, contains('nextPlaylistIndexAfterCompletion('));
     expect(fn, contains('if (nextEpisode == null) return'));
-    expect(fn, contains('await _switchEpisode(nextEpisode)'),
+    expect(fn, contains('intent: EpisodeStartIntent.autoAdvance'),
         reason:
-            'non-last EOF must reuse existing switch flow and saved positions');
+            'non-last EOF must carry autoAdvance intent instead of reusing saved near-end positions');
+  });
+
+  test('episode switches require explicit start intents at every call site',
+      () {
+    final String fn = _functionSource(
+      pageSource,
+      '  Future<void> _switchEpisode(',
+      '  void _showEpisodeList() {',
+    );
+
+    expect(fn, contains('required EpisodeStartIntent intent'));
+    expect(fn, contains('startIntent: intent'));
+
+    final String pageWithoutDefinition = pageSource.replaceFirst(fn, '');
+    final Iterable<String> calls = RegExp(r'_switchEpisode\([\s\S]*?\);')
+        .allMatches(pageWithoutDefinition)
+        .map((RegExpMatch m) => m.group(0)!);
+    expect(calls, isNotEmpty);
+    for (final String call in calls) {
+      expect(
+        call,
+        contains('intent: EpisodeStartIntent.'),
+        reason: 'episode switching must not fall back to an implicit resume',
+      );
+    }
+
+    expect(pageSource, contains('EpisodeStartIntent.manualPrevious'));
+    expect(pageSource, contains('EpisodeStartIntent.manualNext'));
+    expect(pageSource, contains('EpisodeStartIntent.listSelect'));
+    expect(pageSource, contains('EpisodeStartIntent.autoAdvance'));
+  });
+
+  test('initial open uses explicit start policy before autoplay', () {
+    final String initFn = _functionSource(
+      pageSource,
+      '  Future<void> _init() async {',
+      '  Future<void> _initRemote() async {',
+    );
+    final String loadFn = _functionSource(
+      pageSource,
+      '  Future<void> _applyLoad({',
+      '  /// 位置持久化',
+    );
+
+    expect(initFn, contains('EpisodeStartIntent.initialOpen'));
+    expect(initFn, contains('EpisodeStartIntent.explicitCue'),
+        reason: 'favorite/cue opens are not saved-position resumes');
+    expect(loadFn, contains('startIntent: startIntent'));
   });
 
   test('_applyLoad prewarms current video and then next playlist episode', () {

@@ -24,6 +24,7 @@ import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -1101,6 +1102,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         idx,
         initialPositionMs:
             widget.initialCueStartMs ?? _episodes[idx].positionMs,
+        startIntent: widget.initialCueStartMs == null
+            ? EpisodeStartIntent.initialOpen
+            : EpisodeStartIntent.explicitCue,
         subtitleSource: row.subtitleSource,
       );
       return;
@@ -1148,6 +1152,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         cues: cues,
         title: info.title,
         initialPositionMs: 0,
+        startIntent: EpisodeStartIntent.initialOpen,
         externalSubtitlePath: externalSub,
       );
     } catch (e, stack) {
@@ -1220,6 +1225,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       cues: cues,
       title: row.title,
       initialPositionMs: widget.initialCueStartMs ?? row.lastPositionMs,
+      startIntent: widget.initialCueStartMs == null
+          ? EpisodeStartIntent.initialOpen
+          : EpisodeStartIntent.explicitCue,
       externalSubtitlePath: externalSub,
       renderGraphicStreamIndex: graphicStreamIndex,
     );
@@ -1351,6 +1359,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _loadEpisode(
     int index, {
     int initialPositionMs = 0,
+    required EpisodeStartIntent startIntent,
     String? subtitleSource,
   }) async {
     if (index < 0 || index >= _episodes.length) return;
@@ -1413,6 +1422,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       cues: cues,
       title: episode.title,
       initialPositionMs: initialPositionMs,
+      startIntent: startIntent,
       externalSubtitlePath: externalSub,
       renderGraphicStreamIndex: graphicStreamIndex,
     );
@@ -1593,7 +1603,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     unawaited(() async {
       try {
         if (!mounted) return;
-        await _switchEpisode(nextEpisode);
+        await _switchEpisode(
+          nextEpisode,
+          intent: EpisodeStartIntent.autoAdvance,
+        );
       } catch (e, stack) {
         debugPrint('[VideoHibikiPage] auto-advance failed: $e\n$stack');
       } finally {
@@ -1609,6 +1622,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required List<AudioCue> cues,
     required String title,
     required int initialPositionMs,
+    required EpisodeStartIntent startIntent,
     String? externalSubtitlePath,
     int? renderGraphicStreamIndex,
   }) async {
@@ -1632,6 +1646,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         mediaUri: mediaUri,
         cues: cues,
         initialPositionMs: initialPositionMs,
+        startIntent: startIntent,
         initialSpeed: _playbackSpeed,
         initialVolume: _playbackVolume,
         externalSubtitlePath: externalSubtitlePath,
@@ -1831,13 +1846,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 切到第 [index] 集：保存当前集进度 → 持久化 currentEpisode → 用**目标集自己
-  /// 保存的进度**作为起播位置（不再归零）+ 重新 load 新集字幕。
+  /// 切到第 [index] 集：保存当前集进度 → 持久化 currentEpisode → 按 [intent]
+  /// 决定目标集保存位置是否恢复 + 重新 load 新集字幕。
   ///
   /// 当前集进度由 125ms tick 经 [_persistPosition] 已实时记进 `_episodes[当前集]`
   /// 并落库；切集前再补记一次当前播放位置（覆盖 tick 整秒节流的尾差），确保下次
   /// 回到本集精确续播。
-  Future<void> _switchEpisode(int index) async {
+  Future<void> _switchEpisode(
+    int index, {
+    required EpisodeStartIntent intent,
+  }) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisode) return;
 
@@ -1855,6 +1873,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await _loadEpisode(
       index,
       initialPositionMs: _episodes[index].positionMs,
+      startIntent: intent,
       subtitleSource: _currentSubtitleSource,
     );
   }
@@ -1894,7 +1913,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _switchEpisode(i);
+                  _switchEpisode(i, intent: EpisodeStartIntent.listSelect);
                 },
               );
             },
@@ -4809,12 +4828,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         break;
       case VideoControlItem.previousEpisode:
         if (_isPlaylist && _currentEpisode > 0) {
-          _switchEpisode(_currentEpisode - 1);
+          _switchEpisode(
+            _currentEpisode - 1,
+            intent: EpisodeStartIntent.manualPrevious,
+          );
         }
         break;
       case VideoControlItem.nextEpisode:
         if (_isPlaylist && _currentEpisode < _episodes.length - 1) {
-          _switchEpisode(_currentEpisode + 1);
+          _switchEpisode(
+            _currentEpisode + 1,
+            intent: EpisodeStartIntent.manualNext,
+          );
         }
         break;
       case VideoControlItem.episodeList:
