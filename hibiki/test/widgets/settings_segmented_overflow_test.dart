@@ -124,4 +124,60 @@ void main() {
           reason: 'the last segment is within the (un-scrolled) strip bounds');
     },
   );
+
+  testWidgets(
+    'default segmented row scrolls long CJK labels at 2x scale without overflow',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        buildTestApp(
+          Builder(
+            builder: (BuildContext context) {
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: const TextScaler.linear(2),
+                ),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    width: 300,
+                    child: AdaptiveSettingsSegmentedRow<String>(
+                      title: '閱讀方向和表示モード',
+                      subtitle: '長い選択肢でも下段に逃がして横スクロールする',
+                      segments: const <ButtonSegment<String>>[
+                        ButtonSegment<String>(
+                          value: 'auto',
+                          label: Text('自動判定'),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'vertical',
+                          label: Text('縦書き優先'),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'spread',
+                          label: Text('見開きページ表示'),
+                        ),
+                      ],
+                      selected: 'auto',
+                      onChanged: (_) {},
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'long segmented labels at 2x must scroll, not overflow',
+      );
+      expect(maxScrollOf(tester), greaterThan(0.0));
+    },
+  );
 }

@@ -12,6 +12,7 @@ import 'package:hibiki/src/utils/components/settings_shared.dart';
 Widget _buildHarness({
   required TargetPlatform platform,
   required Widget child,
+  TextScaler? textScaler,
 }) {
   return MaterialApp(
     theme: ThemeData(
@@ -19,7 +20,16 @@ Widget _buildHarness({
       platform: platform,
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
     ),
-    home: child,
+    home: textScaler == null
+        ? child
+        : Builder(
+            builder: (BuildContext context) {
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: child,
+              );
+            },
+          ),
   );
 }
 
@@ -385,6 +395,100 @@ void main() {
 
     expect(find.byType(DropdownMenu<int>), findsOneWidget);
     expect(find.byType(CupertinoButton), findsNothing);
+  });
+
+  testWidgets(
+      'CJK long labels at 2x scale keep switch segmented slider and picker rows '
+      'inside the settings surface', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        textScaler: const TextScaler.linear(2),
+        child: Scaffold(
+          body: ListView(
+            children: [
+              Center(
+                child: SizedBox(
+                  width: 320,
+                  child: AdaptiveSettingsSection(
+                    title: '表示と操作',
+                    children: [
+                      AdaptiveSettingsSwitchRow(
+                        title: '辞書ポップアップを開いたときに現在の単語を自動的に読み上げる',
+                        subtitle: '長い日本語の説明文でもタイトルと副題は決めた行数で収まり、右端のスイッチを押し出さない',
+                        value: true,
+                        onChanged: (_) {},
+                      ),
+                      AdaptiveSettingsSegmentedRow<String>(
+                        title: '閱讀方向和雙頁顯示模式',
+                        subtitle: '選項文字很長時預設下置，必要時水平捲動',
+                        segments: const [
+                          ButtonSegment<String>(
+                            value: 'auto',
+                            label: Text('自動判定'),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'vertical',
+                            label: Text('縦書き優先'),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'spread',
+                            label: Text('見開きページ'),
+                          ),
+                        ],
+                        selected: 'auto',
+                        onChanged: (_) {},
+                      ),
+                      AdaptiveSettingsSliderRow(
+                        title: 'インターフェイスの表示倍率',
+                        subtitle: '大きい文字でもスライダーは下段で全幅を使う',
+                        value: 1.2,
+                        min: 0.5,
+                        max: 2,
+                        divisions: 15,
+                        label: '120%',
+                        onChanged: (_) {},
+                      ),
+                      AdaptiveSettingsPickerRow<String>(
+                        title: '既定の単語帳',
+                        subtitle: '短い選択肢は行内ドロップダウンのまま親幅に合わせて縮む',
+                        selected: 'deck_a',
+                        options: const [
+                          AdaptiveSettingsPickerOption<String>(
+                            value: 'deck_a',
+                            label: '日本語学習・長文カード',
+                          ),
+                          AdaptiveSettingsPickerOption<String>(
+                            value: 'deck_b',
+                            label: '読書メモ',
+                          ),
+                        ],
+                        onChanged: (_) {},
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.takeException(),
+      isNull,
+      reason:
+          'settings rows must not throw RenderFlex overflow with CJK text at 2x',
+    );
+    expect(find.byType(Switch), findsOneWidget);
+    expect(find.byType(SegmentedButton<String>), findsOneWidget);
+    expect(find.byType(Slider), findsOneWidget);
+    expect(find.byType(DropdownMenu<int>), findsOneWidget);
   });
 
   testWidgets('picker rows use Cupertino action sheet on iOS', (tester) async {
