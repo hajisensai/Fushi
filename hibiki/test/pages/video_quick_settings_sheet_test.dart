@@ -81,6 +81,29 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pump();
 }
 
+Future<void> _pumpScaled(
+  WidgetTester tester,
+  Widget child, {
+  required double scale,
+}) {
+  return _pump(
+    tester,
+    HibikiAppUiScale(
+      scale: scale,
+      child: child,
+    ),
+  );
+}
+
+void _expectNoFlutterErrors(WidgetTester tester) {
+  final List<Object> exceptions = <Object>[];
+  Object? exception;
+  while ((exception = tester.takeException()) != null) {
+    exceptions.add(exception!);
+  }
+  expect(exceptions, isEmpty);
+}
+
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -608,6 +631,48 @@ void main() {
     expect(delay! % 50, 0, reason: '滑条按 50ms 一档');
   });
 
+  testWidgets('subtitle sync controls wrap at narrow width and large UI scale',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int? delay;
+    await _pumpScaled(
+      tester,
+      _sheet(
+        uiScale: 2.0,
+        onSetDelay: (int v) => delay = v,
+      ),
+      scale: 2.0,
+    );
+    await tester.tap(find.text(t.video_settings_cat_playback));
+    await tester.pumpAndSettle();
+
+    final Finder delayRow = find.widgetWithText(
+      AdaptiveSettingsRow,
+      t.video_setting_av_delay,
+    );
+    expect(delayRow, findsOneWidget);
+    expect(
+      find.descendant(of: delayRow, matching: find.byType(Slider)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: delayRow, matching: find.byType(TextField)),
+      findsOneWidget,
+    );
+
+    final Finder plusButton = find.descendant(
+      of: delayRow,
+      matching: find.byIcon(Icons.chevron_right),
+    );
+    await tester.ensureVisible(plusButton);
+    await tester.pumpAndSettle();
+    await tester.tap(plusButton);
+    await tester.pump();
+    expect(delay, 50);
+    _expectNoFlutterErrors(tester);
+  });
+
   // ── TODO-060：删 mpv「音频延迟」入口（与字幕调轴对用户重复混淆） ─────────
 
   testWidgets('mpv 音频区不再有「音频延迟」滑条入口', (tester) async {
@@ -990,20 +1055,20 @@ void main() {
     ) async {
       await tester.ensureVisible(chip);
       await tester.pumpAndSettle();
-      await tester.drag(
-        chip,
-        tester.getCenter(target) - tester.getCenter(chip),
-      );
+      final Offset start = tester.getCenter(chip);
+      final Offset end = tester.getCenter(target);
+      final TestGesture gesture = await tester.startGesture(start);
+      for (int step = 1; step <= 8; step++) {
+        await gesture.moveTo(Offset.lerp(start, end, step / 8)!);
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      await gesture.up();
       await tester.pumpAndSettle();
     }
 
     Finder paletteChipFinder(VideoControlItem item) {
-      return find.byWidgetPredicate(
-        (Widget w) =>
-            w is Draggable<VideoControlDragData> &&
-            w.data?.item == item &&
-            w.data?.sourceSlot == null,
-      );
+      return find.byKey(ValueKey<String>(
+          'video-control-drag-chip-${item.storageValue}-palette-palette'));
     }
 
     Draggable<VideoControlDragData> draggableFor(
@@ -1125,42 +1190,133 @@ void main() {
       expect(hidden.top, greaterThanOrEqualTo(preview.bottom));
     });
 
-    testWidgets('narrow preview keeps stage slots separated and scrollable',
+    testWidgets(
+        'narrow preview uses a compact slot grid without horizontal tail',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(tester, _sheet());
       await openControls(tester);
 
-      final Rect topLeft = tester.getRect(slotFinder(VideoControlSlot.topLeft));
-      final Rect topRight =
-          tester.getRect(slotFinder(VideoControlSlot.topRight));
-      final Rect bottomLeft =
-          tester.getRect(slotFinder(VideoControlSlot.bottomLeft));
-      final Rect bottomCenter =
-          tester.getRect(slotFinder(VideoControlSlot.bottomCenter));
-      final Rect bottomRight =
-          tester.getRect(slotFinder(VideoControlSlot.bottomRight));
+      final List<VideoControlSlot> compactSlots = <VideoControlSlot>[
+        VideoControlSlot.topLeft,
+        VideoControlSlot.topCenter,
+        VideoControlSlot.topRight,
+        VideoControlSlot.screenLeft,
+        VideoControlSlot.screenRight,
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomCenter,
+        VideoControlSlot.bottomRight,
+      ];
+      for (int i = 0; i < compactSlots.length; i++) {
+        for (int j = i + 1; j < compactSlots.length; j++) {
+          final Rect a = tester.getRect(slotFinder(compactSlots[i]));
+          final Rect b = tester.getRect(slotFinder(compactSlots[j]));
+          expect(a.overlaps(b), isFalse,
+              reason: '${compactSlots[i]} and ${compactSlots[j]} overlap');
+        }
+      }
 
-      expect(topLeft.right <= topRight.left, isTrue,
-          reason: 'top slots should not overlap in the narrow editor stage');
-      expect(bottomLeft.right <= bottomCenter.left, isTrue,
-          reason: 'bottom-left and bottom-center slots should not overlap');
-      expect(bottomCenter.right <= bottomRight.left, isTrue,
-          reason: 'bottom-center and bottom-right slots should not overlap');
-
-      final SingleChildScrollView previewScroll =
-          tester.widget<SingleChildScrollView>(
-        find
-            .ancestor(
-              of: slotFinder(VideoControlSlot.topRight),
-              matching: find.byType(SingleChildScrollView),
-            )
-            .first,
+      final Iterable<SingleChildScrollView> ancestorScrolls =
+          tester.widgetList<SingleChildScrollView>(
+        find.ancestor(
+          of: slotFinder(VideoControlSlot.topRight),
+          matching: find.byType(SingleChildScrollView),
+        ),
       );
-      expect(previewScroll.scrollDirection, Axis.horizontal,
-          reason:
-              'narrow stages should scroll horizontally instead of crushing slots');
+      expect(
+        ancestorScrolls.where(
+            (SingleChildScrollView s) => s.scrollDirection == Axis.horizontal),
+        isEmpty,
+        reason:
+            'compact controls page should reveal slots without horizontal scroll',
+      );
+      _expectNoFlutterErrors(tester);
+    });
+
+    for (final ({double width, double scale}) sizeCase
+        in <({double width, double scale})>[
+      (width: 320, scale: 1.5),
+      (width: 320, scale: 2.0),
+      (width: 360, scale: 1.5),
+      (width: 360, scale: 2.0),
+      (width: 420, scale: 1.5),
+      (width: 420, scale: 2.0),
+      (width: 560, scale: 2.0),
+    ]) {
+      testWidgets(
+          'controls page has no overflow at ${sizeCase.width.round()}px '
+          'and UI scale ${sizeCase.scale}', (tester) async {
+        await tester.binding.setSurfaceSize(Size(sizeCase.width, 1200));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await _pumpScaled(
+          tester,
+          _sheet(uiScale: sizeCase.scale),
+          scale: sizeCase.scale,
+        );
+        await openControls(tester);
+
+        expect(
+          find.byKey(
+            const ValueKey<String>('video-control-editor-preview'),
+          ),
+          findsOneWidget,
+        );
+        await tester.ensureVisible(find.text(t.video_control_palette_title));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(slotFinder(VideoControlSlot.hidden));
+        await tester.pumpAndSettle();
+        _expectNoFlutterErrors(tester);
+      });
+    }
+
+    testWidgets('narrow controls support real drag after scrolling',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? latest;
+      await _pumpScaled(
+        tester,
+        _sheet(
+          uiScale: 2.0,
+          onControlLayoutChanged: (VideoControlLayout layout) {
+            latest = layout;
+          },
+        ),
+        scale: 2.0,
+      );
+      await openControls(tester);
+
+      await dragChipTo(
+        tester,
+        paletteChipFinder(VideoControlItem.volume),
+        slotFinder(VideoControlSlot.bottomLeft),
+      );
+      expect(latest, isNotNull);
+      expect(latest!.slotsOf(VideoControlItem.volume), <VideoControlSlot>[
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomRight,
+      ]);
+
+      await tester.drag(
+        find.byType(SingleChildScrollView).first,
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+      await dragChipTo(
+        tester,
+        dragChipFinder(
+          VideoControlItem.speed,
+          VideoControlSlot.bottomRight,
+          2,
+        ),
+        slotFinder(VideoControlSlot.hidden),
+      );
+      expect(
+        latest!.itemsIn(VideoControlSlot.hidden),
+        contains(VideoControlItem.speed),
+      );
+      _expectNoFlutterErrors(tester);
     });
 
     testWidgets('dragging controls still updates bottomLeft and hidden slots',
@@ -1348,6 +1504,19 @@ void main() {
       final String src =
           File('lib/src/media/video/video_quick_settings_sheet.dart')
               .readAsStringSync();
+      expect(src, isNot(contains('math.max(560')),
+          reason: 'control editor must size from current constraints');
+      expect(src, contains('Widget _buildCompactSlotGrid('),
+          reason: 'narrow controls page needs a true compact slot layout');
+      final int paletteStart = src.indexOf('Widget _buildControlPalette(');
+      expect(paletteStart, greaterThanOrEqualTo(0));
+      final int paletteEnd =
+          src.indexOf('Widget _buildHiddenSlotTray', paletteStart);
+      expect(paletteEnd, greaterThan(paletteStart));
+      final String paletteBody = src.substring(paletteStart, paletteEnd);
+      expect(paletteBody, contains('Wrap('),
+          reason:
+              'palette chips should wrap instead of hiding in a horizontal tail');
       final int start = src.indexOf('Widget _buildSlotRegion(');
       expect(start, greaterThanOrEqualTo(0));
       final int end = src.indexOf('Widget _buildPlacedControlChip', start);

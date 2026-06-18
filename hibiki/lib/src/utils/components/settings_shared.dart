@@ -317,14 +317,23 @@ class AdaptiveSettingsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Widget content = Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: cupertino ? 16 : tokens.spacing.rowHorizontal,
-        vertical:
-            controlBelow ? tokens.spacing.rowVertical : tokens.spacing.gap,
-      ),
-      child:
-          controlBelow ? _buildColumnLayout(context) : _buildRowLayout(context),
+    final Widget content = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool stackControls = controlBelow ||
+            (trailing != null &&
+                !trailingFlexible &&
+                constraints.maxWidth < 360);
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: cupertino ? 16 : tokens.spacing.rowHorizontal,
+            vertical:
+                stackControls ? tokens.spacing.rowVertical : tokens.spacing.gap,
+          ),
+          child: stackControls
+              ? _buildColumnLayout(context)
+              : _buildRowLayout(context),
+        );
+      },
     );
 
     if (onTap == null) return content;
@@ -1181,8 +1190,11 @@ class _KeyboardStepper extends StatelessWidget {
         onIncrease: value < max ? _increment : null,
         onDecrease: value > min ? _decrement : null,
         excludeSemantics: true,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 4,
+          runSpacing: 4,
           children: [
             _SettingsStepButton(
               icon: Icons.remove,
