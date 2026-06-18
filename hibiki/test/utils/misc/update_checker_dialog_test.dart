@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/src/utils/misc/update_checker.dart';
 
@@ -121,6 +122,66 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text(t.update_install_success_title), findsOneWidget);
     expect(find.textContaining('9.9.9'), findsOneWidget);
+  });
+
+  testWidgets('installer handoff dialog opens from navigatorKey context', (
+    WidgetTester tester,
+  ) async {
+    final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+    BuildContext? builderContext;
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          home: const Scaffold(body: Text('home')),
+          builder: (BuildContext context, Widget? child) {
+            builderContext = context;
+            return child!;
+          },
+        ),
+      ),
+    );
+
+    expect(builderContext, isNotNull);
+    expect(
+      UpdateChecker.canShowDialogFromContext(builderContext!),
+      isFalse,
+      reason: 'MaterialApp.builder context is above the Navigator.',
+    );
+
+    final BuildContext? navigatorContext = navigatorKey.currentContext;
+    expect(navigatorContext, isNotNull);
+    expect(
+      UpdateChecker.canShowDialogFromContext(navigatorContext!),
+      isTrue,
+      reason: 'Startup handoff must use the Navigator-backed app context.',
+    );
+
+    final Future<void> dialogFuture = showAppDialog<void>(
+      context: navigatorContext,
+      builder: (_) => WindowsUpdateHandoffResultDialog(
+        result: WindowsUpdateHandoffResult(
+          status: WindowsUpdateHandoffStatus.installed,
+          record: WindowsUpdateHandoffRecord(
+            targetVersion: '9.9.9',
+            installerPath: r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
+            innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
+            startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+            installerLaunchSucceeded: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.update_install_success_title), findsOneWidget);
+    expect(find.textContaining('9.9.9'), findsOneWidget);
+
+    Navigator.of(navigatorContext, rootNavigator: true).pop();
+    await tester.pumpAndSettle();
+    await dialogFuture;
   });
 
   testWidgets('installer handoff failure dialog keeps the Inno log visible', (

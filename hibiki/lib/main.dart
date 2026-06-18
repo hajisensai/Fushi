@@ -352,7 +352,10 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
 
-  /// 守卫：Windows 安装器 handoff marker 只在初始化完成后的首帧 reconcile 一次。
+  /// 守卫：Windows 安装器 handoff reconcile 的 post-frame 调度只挂一个。
+  bool _windowsUpdateHandoffScheduled = false;
+
+  /// 守卫：Windows 安装器 handoff marker 只在拿到真实 Navigator 后 reconcile 一次。
   bool _windowsUpdateHandoffChecked = false;
 
   static bool get _isDesktop =>
@@ -614,14 +617,28 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     );
   }
 
-  void _scheduleWindowsUpdateHandoffReconcile(BuildContext context) {
-    if (_windowsUpdateHandoffChecked) return;
-    _windowsUpdateHandoffChecked = true;
+  void _scheduleWindowsUpdateHandoffReconcile() {
+    if (_windowsUpdateHandoffScheduled || _windowsUpdateHandoffChecked) {
+      return;
+    }
+    _windowsUpdateHandoffScheduled = true;
     final String currentVersion = appModel.packageInfo.version;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !context.mounted) return;
+      _windowsUpdateHandoffScheduled = false;
+      if (!mounted || _windowsUpdateHandoffChecked) return;
+      final BuildContext? navigatorContext =
+          appModel.navigatorKey.currentContext;
+      if (navigatorContext == null ||
+          !UpdateChecker.canShowDialogFromContext(navigatorContext)) {
+        debugPrint(
+          '[Hibiki] windows update handoff reconcile deferred: '
+          'navigator context unavailable',
+        );
+        return;
+      }
+      _windowsUpdateHandoffChecked = true;
       unawaited(UpdateChecker.reconcilePendingWindowsInstallerHandoff(
-        context,
+        navigatorContext,
         currentVersion,
       ));
     });
@@ -817,7 +834,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         // This is responsible for the initialising the global spacing across
         // the entire project, making use of the [spaces] package.
         builder: (context, child) {
-          _scheduleWindowsUpdateHandoffReconcile(context);
+          _scheduleWindowsUpdateHandoffReconcile();
           final cs = Theme.of(context).colorScheme;
           // Keep the native Windows title bar in sync with the live app theme
           // (surface background + onSurface text). No-op on other platforms.
