@@ -6693,14 +6693,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
     if (files.subtitles.isNotEmpty) {
+      debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSubtitle');
       _showOsd(t.video_subtitle_import_unsupported);
       return;
     }
     if (files.audios.isNotEmpty && files.videos.isEmpty) {
+      debugPrint('[hibiki-drop] [video-playback] intent=unsupportedAudio');
       _showOsd(t.video_drop_audio_unsupported);
       return;
     }
     if (files.hasAny) {
+      debugPrint('[hibiki-drop] [video-playback] intent=unsupportedSurface');
       _showOsd(t.video_drop_subtitle_only);
     }
   }
@@ -6733,6 +6736,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       label: p.basename(dest),
     );
     await _selectSubtitleSource(controller, source);
+    debugPrint(
+      '[hibiki-drop] [video-playback] externalSubtitle imported '
+      'path=$dest',
+    );
   }
 
   /// 字幕抽取/解析当前是否在进行。状态显示在右侧半透明字幕源面板里，画面仍可见；

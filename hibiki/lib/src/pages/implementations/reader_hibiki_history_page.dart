@@ -2255,10 +2255,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               files.subtitles.isNotEmpty ? files.subtitles.first : null,
         );
       case DropIntent.needCardTarget:
+        debugPrint('[hibiki-drop] [reader-shelf] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
         );
       case DropIntent.unsupportedSurface:
+        debugPrint('[hibiki-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );

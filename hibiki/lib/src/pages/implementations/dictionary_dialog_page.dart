@@ -43,6 +43,9 @@ class _DictionaryDialogPageState extends BasePageState {
           (widget as DictionaryDialogPage).initialImportPaths;
       if (paths.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          debugPrint(
+            '[hibiki-drop] [dictionary-dialog] initialImportPaths=${paths.length}',
+          );
           if (mounted) unawaited(_importDictionaryPaths(paths));
         });
       }
@@ -443,6 +446,7 @@ class _DictionaryDialogPageState extends BasePageState {
       'paths=${paths.length} global=$globalPosition',
     );
     if (importPaths.isEmpty) {
+      debugPrint('[hibiki-drop] [dictionary-dialog] intent=unsupportedSurface');
       HibikiToast.show(msg: t.drag_drop_unsupported_on_dictionary);
       return;
     }

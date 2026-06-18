@@ -337,10 +337,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         // 字幕没挂到原视频（TODO-079 根因）。
         _attachSubtitleToVideoCard(hit!, files.subtitles.first);
       case DropIntent.needCardTarget:
+        debugPrint('[hibiki-drop] [home-video] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
         );
       case DropIntent.unsupportedSurface:
+        debugPrint('[hibiki-drop] [home-video] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_unsupported_on_video)),
         );
@@ -409,15 +411,35 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           title: book.title,
           count: result.cueCount,
         );
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=attached '
+          'bookUid=${book.bookUid} cues=${result.cueCount}',
+        );
         _refresh();
       case SubtitleAttachOutcome.playlistNeedsPlayer:
         message = t.video_subtitle_attach_playlist_hint;
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=playlistNeedsPlayer '
+          'bookUid=${book.bookUid}',
+        );
       case SubtitleAttachOutcome.unsupported:
         message = t.video_subtitle_import_unsupported;
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=unsupported '
+          'bookUid=${book.bookUid}',
+        );
       case SubtitleAttachOutcome.copyFailed:
         message = t.video_subtitle_import_failed;
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=copyFailed '
+          'bookUid=${book.bookUid}',
+        );
       case SubtitleAttachOutcome.emptyCues:
         message = t.video_subtitle_load_failed(label: result.label);
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=emptyCues '
+          'bookUid=${book.bookUid} label=${result.label}',
+        );
     }
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
