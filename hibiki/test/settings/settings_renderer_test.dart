@@ -120,6 +120,7 @@ SettingsDestination _fixtureDestination() {
 Widget _buildHome(
   CupertinoThemeData? cupertinoTheme,
   Widget Function(SettingsContext) builder,
+  TextScaler? textScaler,
 ) {
   Widget child = Consumer(
     builder: (BuildContext context, WidgetRef ref, _) {
@@ -134,6 +135,15 @@ Widget _buildHome(
       );
     },
   );
+  if (textScaler != null) {
+    final Widget inner = child;
+    child = Builder(
+      builder: (BuildContext context) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: inner,
+      ),
+    );
+  }
   if (cupertinoTheme != null) {
     child = CupertinoTheme(data: cupertinoTheme, child: child);
   }
@@ -148,6 +158,7 @@ Widget _harness({
   AppModel? appModel,
   HibikiDatabase? database,
   Map<String, String> extraThemePrefs = const <String, String>{},
+  TextScaler? textScaler,
 }) {
   final HibikiDatabase db = database ?? _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -178,7 +189,7 @@ Widget _harness({
           HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
         ],
       ),
-      home: _buildHome(cupertinoTheme, builder),
+      home: _buildHome(cupertinoTheme, builder, textScaler),
     ),
   );
 }
@@ -254,6 +265,115 @@ void main() {
     expect(find.text('Stepper'), findsOneWidget);
     expect(find.text('Custom builder content'), findsOneWidget);
     expect(find.byType(CupertinoPageScaffold), findsNothing);
+  });
+
+  testWidgets(
+      'material renderer keeps long CJK settings rows bounded at 2x text scale',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final SettingsDestination narrowDestination = SettingsDestination(
+      id: SettingsDestinationId.appearance,
+      title: '表示',
+      icon: Icons.palette_outlined,
+      sections: <SettingsSection>[
+        SettingsSection(
+          title: '表示と操作',
+          items: <SettingsItem>[
+            SettingsSwitchItem(
+              id: 'long_toggle',
+              title: '辞書ポップアップを開いたときに現在の単語を自動的に読み上げる',
+              subtitle: '長い日本語の説明文でも右端のスイッチを押し出さない',
+              value: (_) => true,
+              onChanged: (_, __) {},
+            ),
+            SettingsSegmentedItem<String>(
+              id: 'long_segmented',
+              title: '閱讀方向和雙頁顯示模式',
+              subtitle: '選項文字很長時預設下置，必要時水平捲動',
+              options: const <SettingsSegmentOption<String>>[
+                SettingsSegmentOption<String>(
+                  value: 'auto',
+                  label: '自動判定',
+                ),
+                SettingsSegmentOption<String>(
+                  value: 'vertical',
+                  label: '縦書き優先',
+                ),
+                SettingsSegmentOption<String>(
+                  value: 'spread',
+                  label: '見開きページ表示',
+                ),
+              ],
+              selected: (_) => 'auto',
+              onChanged: (_, __) {},
+            ),
+            SettingsSliderItem(
+              id: 'long_slider',
+              title: 'インターフェイスの表示倍率',
+              subtitle: '大きい文字でもスライダーは下段で全幅を使う',
+              value: (_) => 1.2,
+              min: 0.5,
+              max: 2,
+              divisions: 15,
+              label: (_) => '120%',
+              onChanged: (_, __) {},
+            ),
+            SettingsCustomItem(
+              id: 'long_picker',
+              title: '既定の単語帳',
+              builder: (_) => AdaptiveSettingsPickerRow<String>(
+                title: '既定の単語帳',
+                subtitle: '短い選択肢は行内ドロップダウンのまま親幅に合わせて縮む',
+                selected: 'deck_a',
+                options: const <AdaptiveSettingsPickerOption<String>>[
+                  AdaptiveSettingsPickerOption<String>(
+                    value: 'deck_a',
+                    label: '日本語学習・長文カード',
+                  ),
+                  AdaptiveSettingsPickerOption<String>(
+                    value: 'deck_b',
+                    label: '読書メモ',
+                  ),
+                ],
+                onChanged: (_) {},
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        textScaler: const TextScaler.linear(2),
+        builder: (SettingsContext settingsContext) {
+          return SizedBox(
+            width: 320,
+            child: MaterialSettingsRenderer().buildDetailContent(
+              settingsContext: settingsContext,
+              destination: narrowDestination,
+            ),
+          );
+        },
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'renderer output must not overflow narrow 2x-text settings panes',
+    );
+    expect(find.byType(Switch), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
+      findsOneWidget,
+    );
+    expect(find.byType(Slider), findsOneWidget);
+    expect(find.byType(DropdownMenu<int>), findsOneWidget);
   });
 
   testWidgets('cupertino renderer maps schema to Cupertino controls',

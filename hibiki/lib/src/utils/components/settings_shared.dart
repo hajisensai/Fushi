@@ -36,6 +36,11 @@ const kSettingsSegmentedStyle = ButtonStyle(
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
 );
 
+const int kSettingsRowTitleMaxLines = 2;
+const int kSettingsRowSubtitleMaxLines = 3;
+const double kSettingsPickerDefaultWidth = 220;
+const double kSettingsPickerMinInlineWidth = 120;
+
 /// An [AdaptiveSettingsPickerRow] with more options than this renders as a
 /// chevron navigation row that pushes a bounded full-page selector instead of
 /// an inline overlay dropdown / action sheet — the overlay's anchored height
@@ -746,6 +751,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
       subtitle: subtitle,
       icon: icon,
       controlBelow: cupertino ? false : controlBelow,
+      trailingFlexible: !cupertino && !controlBelow,
       trailing: cupertino
           ? _buildCupertinoTrailing(context)
           : _buildMaterialDropdown(context),
@@ -788,7 +794,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
     // (a polled gamepad's D-pad is focus-traversal, not arrow keys, so it can't
     // enter a stock DropdownMenu's menu). Index-keyed so the Android path stays
     // DropdownMenu<int> — entries map option index → label.
-    Widget buildDropdown(double width) {
+    Widget buildDropdown(double? width) {
       return GamepadMenuDropdown<int>(
         width: width,
         label: title,
@@ -802,19 +808,26 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
       );
     }
 
-    if (controlBelow || materialWidth == double.infinity) {
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final double requestedWidth =
-              materialWidth == null || materialWidth == double.infinity
-                  ? constraints.maxWidth
-                  : materialWidth!;
-          return buildDropdown(requestedWidth.isFinite ? requestedWidth : 240);
-        },
-      );
-    }
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxWidth = constraints.maxWidth;
+        if (controlBelow || materialWidth == double.infinity) {
+          return buildDropdown(
+            maxWidth.isFinite ? maxWidth : kSettingsPickerDefaultWidth,
+          );
+        }
 
-    return buildDropdown(materialWidth ?? 220);
+        final double requestedWidth =
+            materialWidth ?? kSettingsPickerDefaultWidth;
+        if (!maxWidth.isFinite) return buildDropdown(requestedWidth);
+        final double minWidth = maxWidth < kSettingsPickerMinInlineWidth
+            ? maxWidth
+            : kSettingsPickerMinInlineWidth;
+        return buildDropdown(
+          requestedWidth.clamp(minWidth, maxWidth).toDouble(),
+        );
+      },
+    );
   }
 
   Widget _buildCupertinoTrailing(BuildContext context) {
@@ -1403,7 +1416,12 @@ class _SettingsLabel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(title, style: titleStyle, overflow: TextOverflow.ellipsis),
+        Text(
+          title,
+          style: titleStyle,
+          overflow: TextOverflow.ellipsis,
+          maxLines: kSettingsRowTitleMaxLines,
+        ),
         if (subtitle != null && subtitle!.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 2),
@@ -1414,7 +1432,7 @@ class _SettingsLabel extends StatelessWidget {
                   .bodySmall
                   ?.copyWith(color: subtitleColor),
               overflow: TextOverflow.ellipsis,
-              maxLines: 2,
+              maxLines: kSettingsRowSubtitleMaxLines,
             ),
           ),
       ],

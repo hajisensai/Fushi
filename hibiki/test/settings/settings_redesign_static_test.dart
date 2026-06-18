@@ -439,6 +439,37 @@ void main() {
         reason: 'inline trailing actions must be visually right-aligned');
   });
 
+  test('settings rows bound long text and inline controls for MD3 density', () {
+    final String shared =
+        readNormalizedSource('lib/src/utils/components/settings_shared.dart');
+    final String destination =
+        readNormalizedSource('lib/src/settings/settings_destination.dart');
+
+    expect(shared, contains('kSettingsRowTitleMaxLines'));
+    expect(shared, contains('kSettingsRowSubtitleMaxLines'));
+    expect(shared, contains('maxLines: kSettingsRowTitleMaxLines'));
+    expect(shared, contains('maxLines: kSettingsRowSubtitleMaxLines'));
+    expect(shared, contains('kSettingsPickerDefaultWidth'));
+    expect(shared, contains('kSettingsPickerMinInlineWidth'));
+    expect(shared, contains('trailingFlexible: !cupertino && !controlBelow'));
+    expect(shared, contains('LayoutBuilder('),
+        reason:
+            'inline picker controls must be bounded by the settings row width');
+    expect(destination, contains('this.controlBelow = true'),
+        reason:
+            'schema segmented rows default to the readable below-label form');
+    for (final String banned in <String>[
+      'ListTile(',
+      'SwitchListTile(',
+      'ExpansionTile(',
+    ]) {
+      expect(shared, isNot(contains(banned)),
+          reason: 'settings_shared.dart must keep the shared MD3 row system');
+    }
+    expect(shared, isNot(contains('return Card(')),
+        reason: 'settings_shared.dart must not use a bare Material Card');
+  });
+
   test('unified settings detail shell is the single page chrome (TODO-317)',
       () {
     // The shared shell delegates to the active platform renderer's
