@@ -26,7 +26,14 @@ Windows 离屏补充：
 .\hibiki\tool\run_windows_itest.ps1 integration_test/reader_computer_use_flow_test.dart
 ```
 
-日志固定落在 `.codex-test/itest-logs/reader_computer_use_flow.log`。可见巡检截图、录屏、UI hierarchy、logcat 和临时说明统一放 `.codex-test/computer-use/<task>/`，例如 `.codex-test/computer-use/todo-519/reader-popup-after-lookup.png`。
+Android 编排日志固定落在 `.codex-test/itest-logs/reader_computer_use_flow.log`。Windows runner 会为每次运行创建 `.codex-test/windows-itest/<run-id>/`，其中固定包含：
+
+- `command.log` / `exit-code.txt` / `paths.json` / `process-before.json` / `process-after.json`
+- `computer-use/reader_computer_use_flow/function-matrix.json`
+- `computer-use/reader_computer_use_flow/function-matrix.md`
+- `computer-use/reader_computer_use_flow/flutter-ui-tree-*.txt`
+
+这些产物记录 reader ready 后正文非空、连续翻页后的页面状态、连续查词每轮 popup 可见内容、Escape 关闭后焦点回到 reader caret，以及截图是否由当前平台实际保存。额外的可见巡检截图、录屏、UI hierarchy、logcat 和临时说明统一放 `.codex-test/computer-use/<task>/`，例如 `.codex-test/computer-use/todo-528/reader-popup-after-lookup.png`。
 
 ## 何时用人工截图
 
@@ -37,7 +44,8 @@ Windows 离屏补充：
 - app 目标：Android 模拟器 / Windows 离屏 / Mac 远程。
 - 命令和日志路径。
 - 测试素材来源：合成 EPUB / 生成词典 / 外部文件。
-- 截图或录屏路径。
+- 截图、录屏或 `computer-use/.../flutter-ui-tree-*.txt` 路径。
+- 功能矩阵路径；Windows runner 优先引用 `computer-use/reader_computer_use_flow/function-matrix.md`。
 - 如果阻塞，写明是设备、WebView、构建、权限还是 fixture 问题。
 
 ## 禁止事项

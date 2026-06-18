@@ -54,6 +54,13 @@ flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/inte
 .\tool\run_mac_itest.ps1 integration_test/<t>_test.dart
 ```
 
+`reader_computer_use_flow` 在 Windows runner 下还会把可见验收证据写入
+`.codex-test/windows-itest/<run-id>/computer-use/reader_computer_use_flow/`：
+`function-matrix.md/json` 汇总 reader 非白屏、连续翻页、连续查词、
+popup 可见内容和 Escape 回 reader caret；`flutter-ui-tree-*.txt` 记录关键
+阶段的 Flutter widget tree。截图是否保存以矩阵里的 `Screenshots` 为准，
+Windows 平台截图能力不可用时不能把截图缺失误判为功能失败。
+
 ## 一键运行（全自动，仅模拟器）
 
 集成测试的唯一入口是 `ci/integration-test.sh`：自动选/启一台模拟器（物理真机会被忽略），构建一次 debug APK，自动 provision 所有前置（AnkiDroid 安装+建 collection+授权、字典 zip 推 `/sdcard`），再遍历全部 `integration_test/*_test.dart` 目标逐个 `flutter drive`，最后打印分类 PASS/SKIP/FAIL 汇总（任一失败退出非零）。
