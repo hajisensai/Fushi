@@ -805,7 +805,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     });
   }
 
-  void _updateCurrentCue(int posMs) {
+  void _updateCurrentCue(int posMs, {bool forceNotify = false}) {
     // 显式 seek（skipToCue/playCueOnce）加载期：抑制瞬态 tick 驱动位置保存 /
     // cue 推进 / 跨章 / reveal，直到真实位置到达目标（BUG-061）。落定的那一
     // tick 清旗后继续往下按正常逻辑处理。
@@ -887,6 +887,9 @@ class AudiobookPlayerController extends ChangeNotifier {
       // 暂停态不补检查，避免覆盖用户手动翻页。
       if (_player.playing && _stopAtPositionMs == null) {
         _maybeEmitCrossChapter(cue, quiet: true);
+      }
+      if (forceNotify) {
+        notifyListeners();
       }
       return;
     }
@@ -1008,7 +1011,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _chapterTransition = false;
     // 章节恢复完成是上下文边界：复位显式 seek 抑制窗，避免旧旗挡住重算（W-2）。
     _explicitSeekInFlight = false;
-    _updateCurrentCue(_player.position.inMilliseconds);
+    _updateCurrentCue(_player.position.inMilliseconds, forceNotify: success);
   }
 
   /// 用户手动翻章时清 `_chapterTransition` 守卫，防止旧跨章逻辑卡死。

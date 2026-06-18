@@ -2065,6 +2065,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   var _hoshiReaderMouseDragPointerId = null;
   var _hoshiReaderMouseDragPageDirection = null;
   var _hoshiReaderMouseDragSwipeSent = false;
+  var _hoshiReaderMouseDragIgnoreTouchEnd = false;
   function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
   function _hoshiReaderCaretRangeAtPoint(x, y) {
     try {
@@ -2091,8 +2092,27 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (selected && !selected.isCollapsed) selected.removeAllRanges();
     } catch (err) {}
   }
+  function _hoshiReaderPointerPrimaryButton(e) {
+    return e && (e.pointerType === 'touch' || e.button === 0);
+  }
+  function _hoshiReaderPointerStillDown(e) {
+    return e && (e.pointerType === 'touch' || (e.buttons & 1) === 1);
+  }
+  function _hoshiReaderPointerNoSelect(enabled) {
+    try {
+      var id = 'hoshi-reader-pointer-drag-style';
+      var style = document.getElementById(id);
+      if (!style) {
+        style = document.createElement('style');
+        style.id = id;
+        style.textContent = '.hoshi-reader-pointer-dragging, .hoshi-reader-pointer-dragging *{-webkit-user-select:none!important;user-select:none!important;}';
+        document.head.appendChild(style);
+      }
+      document.documentElement.classList.toggle('hoshi-reader-pointer-dragging', !!enabled);
+    } catch (err) {}
+  }
   function _hoshiReaderMouseDragStartAllowed(e) {
-    if (!e || e.pointerType !== 'mouse' || e.button !== 0) return false;
+    if (!_hoshiReaderPointerPrimaryButton(e)) return false;
     var target = e.target || document.elementFromPoint(e.clientX, e.clientY);
     if (target && target.closest) {
       if (target.closest('a[href], ruby, rt, rp')) return false;
@@ -2143,6 +2163,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _hoshiReaderMouseNativeTextStart = false;
     _hoshiReaderMouseDragPointerId = null;
     _hoshiReaderMouseDragPageDirection = null;
+    _hoshiReaderPointerNoSelect(false);
     hasStart = false;
     if (!claimed) return false;
     if (e && e.preventDefault) e.preventDefault();
@@ -2276,15 +2297,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if ((dx * dx + dy * dy) > 144) clearImageLongPressTimer();
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
+    if (_hoshiReaderMouseDragIgnoreTouchEnd) {
+      _hoshiReaderMouseDragIgnoreTouchEnd = false;
+      if (e && e.preventDefault) e.preventDefault();
+      return;
+    }
     var t = e.changedTouches[0]; _gestureEnd(t.clientX, t.clientY, e);
   }, {passive: false});
   document.addEventListener('touchcancel', function(e) {
     clearImageLongPressTimer();
     imageLongPressConsumed = false;
+    _hoshiReaderMouseDragIgnoreTouchEnd = false;
     hasStart = false;
   }, {passive: true});
   document.addEventListener('pointerdown', function(e) {
-    if (e.pointerType === 'touch' || e.button !== 0) return;
+    if (!_hoshiReaderPointerPrimaryButton(e)) return;
     _hoshiReaderMouseDragActive = _hoshiReaderMouseDragStartAllowed(e);
     _hoshiReaderMouseDragClaimed = false;
     _hoshiReaderMouseNativeTextStart = !_hoshiReaderMouseDragActive;
@@ -2296,9 +2323,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _gestureStart(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e) {
-    if (e.pointerType === 'touch') return;
     if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
-    if ((e.buttons & 1) !== 1 || !hasStart) return;
+    if (!_hoshiReaderPointerStillDown(e) || !hasStart) return;
     var totalDx = e.clientX - startX;
     var totalDy = e.clientY - startY;
     var totalDistSq = totalDx * totalDx + totalDy * totalDy;
@@ -2310,6 +2336,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!_hoshiReaderMouseDragClaimed) {
       if (totalDistSq < 36) return;
       _hoshiReaderMouseDragClaimed = true;
+      if (e.pointerType === 'touch') _hoshiReaderMouseDragIgnoreTouchEnd = true;
+      _hoshiReaderPointerNoSelect(true);
       _hoshiReaderClearMouseSelection();
       if (e.target && e.target.setPointerCapture) {
         try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
@@ -2328,7 +2356,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     e.preventDefault();
   }, {passive: false});
   document.addEventListener('pointerup', function(e) {
-    if (e.pointerType === 'touch' || e.button !== 0) return;
+    if (!_hoshiReaderPointerPrimaryButton(e)) return;
     if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
     if (_hoshiReaderMouseDragClaimed) {
       if (!hoshiContinuousMode && !_hoshiReaderMouseDragPageDirection) {
@@ -2348,6 +2376,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _hoshiReaderMouseDragActive = false;
       _hoshiReaderMouseDragPointerId = null;
       _hoshiReaderMouseDragPageDirection = null;
+      _hoshiReaderPointerNoSelect(false);
       if (nativeMoved || hasNativeSelection) {
         hasStart = false;
         return;
@@ -2356,6 +2385,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _hoshiReaderMouseDragActive = false;
       _hoshiReaderMouseDragPointerId = null;
       _hoshiReaderMouseDragPageDirection = null;
+      _hoshiReaderPointerNoSelect(false);
     }
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
@@ -2366,6 +2396,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _hoshiReaderMouseNativeTextStart = false;
     _hoshiReaderMouseDragPointerId = null;
     _hoshiReaderMouseDragPageDirection = null;
+    _hoshiReaderPointerNoSelect(false);
     hasStart = false;
   }, {passive: true});
   // 非左键（中键/侧键）：上报 Dart，由 resolveMouse 判定是否绑定「seek 到点击句」。
