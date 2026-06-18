@@ -647,9 +647,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
         .toDouble();
 
-    final Widget buttons = Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
+    final Widget buttons = Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: tokens.spacing.gap / 2,
+      runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
         HibikiIconButton(
           icon: Icons.keyboard_double_arrow_left,
@@ -665,11 +667,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         HibikiFocusable(
           onTap: shownMs == 0 ? null : () => _commitDelay(0),
-          child: SizedBox(
-            width: 84,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 84, maxWidth: 140),
             child: Text(
               label,
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyLarge?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: shownMs == 0
@@ -1228,127 +1232,177 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double stageWidth = math.max(560, constraints.maxWidth);
+        final bool compact = constraints.maxWidth < 480;
+        if (compact) {
+          return DecoratedBox(
+            key: const ValueKey<String>('video-control-editor-preview'),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: tokens.radii.controlRadius,
+              border: Border.all(color: cs.outlineVariant),
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(tokens.spacing.gap),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _buildCompactSlotGrid(<VideoControlSlot>[
+                    VideoControlSlot.topLeft,
+                    VideoControlSlot.topCenter,
+                    VideoControlSlot.topRight,
+                  ]),
+                  SizedBox(height: tokens.spacing.gap),
+                  _buildCompactSlotGrid(<VideoControlSlot>[
+                    VideoControlSlot.screenLeft,
+                    VideoControlSlot.screenRight,
+                  ]),
+                  SizedBox(height: tokens.spacing.gap),
+                  _buildCompactSlotGrid(<VideoControlSlot>[
+                    VideoControlSlot.bottomLeft,
+                    VideoControlSlot.bottomCenter,
+                    VideoControlSlot.bottomRight,
+                  ]),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final double stageWidth = constraints.maxWidth;
         final double stageHeight = math.min(
           420,
           math.max(260, stageWidth * 9 / 16),
         );
         return SizedBox(
+          width: stageWidth,
           height: stageHeight,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: stageWidth,
-              height: stageHeight,
-              child: DecoratedBox(
-                key: const ValueKey<String>('video-control-editor-preview'),
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest,
-                  borderRadius: tokens.radii.controlRadius,
-                  border: Border.all(color: cs.outlineVariant),
-                ),
-                child: ClipRRect(
-                  borderRadius: tokens.radii.controlRadius,
-                  child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints preview) {
-                      final double sideWidth =
-                          math.min(224, math.max(128, preview.maxWidth * 0.24));
-                      final double centerWidth =
-                          math.min(236, math.max(128, preview.maxWidth * 0.22));
-                      const double inset = 10;
-                      return Stack(
-                        children: <Widget>[
-                          Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: <Color>[
-                                    cs.surfaceContainerHigh,
-                                    cs.surfaceContainerHighest,
-                                  ],
-                                ),
-                              ),
+          child: DecoratedBox(
+            key: const ValueKey<String>('video-control-editor-preview'),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: tokens.radii.controlRadius,
+              border: Border.all(color: cs.outlineVariant),
+            ),
+            child: ClipRRect(
+              borderRadius: tokens.radii.controlRadius,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints preview) {
+                  final double sideWidth =
+                      math.min(224, math.max(128, preview.maxWidth * 0.24));
+                  final double centerWidth =
+                      math.min(236, math.max(128, preview.maxWidth * 0.22));
+                  const double inset = 10;
+                  return Stack(
+                    children: <Widget>[
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: <Color>[
+                                cs.surfaceContainerHigh,
+                                cs.surfaceContainerHighest,
+                              ],
                             ),
                           ),
-                          Positioned(
-                            top: inset,
-                            left: inset,
-                            width: sideWidth,
-                            child: _buildSlotRegion(VideoControlSlot.topLeft),
-                          ),
-                          Positioned(
-                            top: inset,
-                            right: inset,
-                            width: sideWidth,
-                            child: _buildSlotRegion(VideoControlSlot.topRight),
-                          ),
-                          Align(
-                            alignment: Alignment.topCenter,
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: inset),
-                              child: SizedBox(
-                                width: centerWidth,
-                                child: _buildSlotRegion(
-                                  VideoControlSlot.topCenter,
-                                ),
-                              ),
+                        ),
+                      ),
+                      Positioned(
+                        top: inset,
+                        left: inset,
+                        width: sideWidth,
+                        child: _buildSlotRegion(VideoControlSlot.topLeft),
+                      ),
+                      Positioned(
+                        top: inset,
+                        right: inset,
+                        width: sideWidth,
+                        child: _buildSlotRegion(VideoControlSlot.topRight),
+                      ),
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: inset),
+                          child: SizedBox(
+                            width: centerWidth,
+                            child: _buildSlotRegion(
+                              VideoControlSlot.topCenter,
                             ),
                           ),
-                          Positioned(
-                            left: inset,
-                            top: 0,
-                            bottom: 0,
-                            width: sideWidth,
-                            child: Center(
-                              child:
-                                  _buildSlotRegion(VideoControlSlot.screenLeft),
+                        ),
+                      ),
+                      Positioned(
+                        left: inset,
+                        top: 0,
+                        bottom: 0,
+                        width: sideWidth,
+                        child: Center(
+                          child: _buildSlotRegion(VideoControlSlot.screenLeft),
+                        ),
+                      ),
+                      Positioned(
+                        right: inset,
+                        top: 0,
+                        bottom: 0,
+                        width: sideWidth,
+                        child: Center(
+                          child: _buildSlotRegion(VideoControlSlot.screenRight),
+                        ),
+                      ),
+                      Positioned(
+                        left: inset,
+                        bottom: inset,
+                        width: sideWidth,
+                        child: _buildSlotRegion(VideoControlSlot.bottomLeft),
+                      ),
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: inset),
+                          child: SizedBox(
+                            width: centerWidth,
+                            child: _buildSlotRegion(
+                              VideoControlSlot.bottomCenter,
                             ),
                           ),
-                          Positioned(
-                            right: inset,
-                            top: 0,
-                            bottom: 0,
-                            width: sideWidth,
-                            child: Center(
-                              child: _buildSlotRegion(
-                                  VideoControlSlot.screenRight),
-                            ),
-                          ),
-                          Positioned(
-                            left: inset,
-                            bottom: inset,
-                            width: sideWidth,
-                            child:
-                                _buildSlotRegion(VideoControlSlot.bottomLeft),
-                          ),
-                          Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: inset),
-                              child: SizedBox(
-                                width: centerWidth,
-                                child: _buildSlotRegion(
-                                    VideoControlSlot.bottomCenter),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            right: inset,
-                            bottom: inset,
-                            width: sideWidth,
-                            child:
-                                _buildSlotRegion(VideoControlSlot.bottomRight),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
+                        ),
+                      ),
+                      Positioned(
+                        right: inset,
+                        bottom: inset,
+                        width: sideWidth,
+                        child: _buildSlotRegion(VideoControlSlot.bottomRight),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCompactSlotGrid(List<VideoControlSlot> slots) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+        final double gap = tokens.spacing.gap;
+        final double itemWidth = constraints.maxWidth < 260
+            ? constraints.maxWidth
+            : (constraints.maxWidth - gap) / 2;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: <Widget>[
+            for (final VideoControlSlot slot in slots)
+              SizedBox(
+                width: itemWidth,
+                child: _buildSlotRegion(slot, growToContent: true),
+              ),
+          ],
         );
       },
     );
@@ -1382,22 +1436,18 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           ],
         ),
         const SizedBox(height: 8),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final VideoControlItem item
-                  in VideoControlItem.customizableItems) ...<Widget>[
-                _buildDraggableControlChip(
-                  item,
-                  sourceSlot: null,
-                  sourceIndex: null,
-                ),
-                const SizedBox(width: 6),
-              ],
-            ],
-          ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: <Widget>[
+            for (final VideoControlItem item
+                in VideoControlItem.customizableItems)
+              _buildDraggableControlChip(
+                item,
+                sourceSlot: null,
+                sourceIndex: null,
+              ),
+          ],
         ),
       ],
     );
@@ -1407,7 +1457,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     return _buildSlotRegion(VideoControlSlot.hidden, tray: true);
   }
 
-  Widget _buildSlotRegion(VideoControlSlot slot, {bool tray = false}) {
+  Widget _buildSlotRegion(
+    VideoControlSlot slot, {
+    bool tray = false,
+    bool growToContent = false,
+  }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -1439,12 +1493,42 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             : highlighted
                 ? cs.primary
                 : cs.outlineVariant;
+        final Widget chipArea = entries.isEmpty
+            ? SizedBox(
+                height: 32,
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Icon(
+                    Icons.add_circle_outline,
+                    size: 18,
+                    color: highlighted
+                        ? cs.onPrimaryContainer
+                        : cs.onSurfaceVariant,
+                  ),
+                ),
+              )
+            : Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final ({VideoControlItem item, int sourceIndex}) entry
+                      in entries)
+                    _buildPlacedControlChip(
+                      entry.item,
+                      sourceSlot: slot,
+                      sourceIndex: entry.sourceIndex,
+                    ),
+                ],
+              );
+        final BoxConstraints containerConstraints = growToContent
+            ? BoxConstraints(minHeight: tray ? 64 : 58)
+            : BoxConstraints(
+                minHeight: tray ? 64 : 58,
+                maxHeight: tray ? 160 : 148,
+              );
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          constraints: BoxConstraints(
-            minHeight: tray ? 64 : 58,
-            maxHeight: tray ? 120 : 148,
-          ),
+          constraints: containerConstraints,
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: highlighted
@@ -1483,38 +1567,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 ),
               ],
               const SizedBox(height: 6),
-              if (entries.isEmpty)
-                SizedBox(
-                  height: 32,
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Icon(
-                      Icons.add_circle_outline,
-                      size: 18,
-                      color: highlighted
-                          ? cs.onPrimaryContainer
-                          : cs.onSurfaceVariant,
-                    ),
-                  ),
-                )
+              if (growToContent)
+                chipArea
               else
                 Flexible(
                   child: SingleChildScrollView(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: <Widget>[
-                        for (final ({
-                          VideoControlItem item,
-                          int sourceIndex
-                        }) entry in entries)
-                          _buildPlacedControlChip(
-                            entry.item,
-                            sourceSlot: slot,
-                            sourceIndex: entry.sourceIndex,
-                          ),
-                      ],
-                    ),
+                    child: chipArea,
                   ),
                 ),
             ],

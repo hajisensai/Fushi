@@ -23,6 +23,12 @@ Widget _buildHarness({
   );
 }
 
+void _noopString(String value) {}
+
+void _noopDouble(double value) {}
+
+String _formatNumber(double value) => value.round().toString();
+
 void main() {
   test('settings shared chrome uses design token radii and typography', () {
     final String source = File('lib/src/utils/components/settings_shared.dart')
@@ -385,6 +391,62 @@ void main() {
 
     expect(find.byType(DropdownMenu<int>), findsOneWidget);
     expect(find.byType(CupertinoButton), findsNothing);
+  });
+
+  testWidgets('narrow non-flex trailing rows stack without overflow',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: MediaQuery(
+          data: const MediaQueryData(
+            textScaler: TextScaler.linear(2),
+          ),
+          child: const Scaffold(
+            body: SizedBox(
+              width: 320,
+              child: AdaptiveSettingsSection(
+                children: [
+                  AdaptiveSettingsPickerRow<String>(
+                    title: 'Picture fit',
+                    selected: 'cover',
+                    options: [
+                      AdaptiveSettingsPickerOption(
+                        value: 'cover',
+                        label: 'Cover',
+                      ),
+                      AdaptiveSettingsPickerOption(
+                        value: 'contain',
+                        label: 'Contain',
+                      ),
+                    ],
+                    onChanged: _noopString,
+                  ),
+                  AdaptiveSettingsStepperRow(
+                    title: 'Maximum active comments',
+                    value: 30,
+                    step: 10,
+                    min: 10,
+                    max: 100,
+                    format: _formatNumber,
+                    onChanged: _noopDouble,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final Rect label = tester.getRect(find.text('Picture fit').first);
+    final Rect dropdown = tester.getRect(find.byType(DropdownMenu<int>));
+    expect(dropdown.top, greaterThanOrEqualTo(label.bottom - 0.5),
+        reason: 'narrow picker trailing should move below the label');
   });
 
   testWidgets('picker rows use Cupertino action sheet on iOS', (tester) async {
