@@ -326,6 +326,10 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       ));
 
       if (!mounted) return;
+      debugPrint(
+        '[hibiki-drop] [video-import] importedPlaylist bookUid=$bookUid '
+        'playlist=${p.basename(m3u8Path)}',
+      );
       Navigator.pop(context, bookUid);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -465,6 +469,10 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       }
 
       if (!mounted) return;
+      debugPrint(
+        '[hibiki-drop] [video-import] imported bookUid=$bookUid '
+        'video=${p.basename(videoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
+      );
       Navigator.pop(context, bookUid);
     } finally {
       if (mounted) setState(() => _busy = false);

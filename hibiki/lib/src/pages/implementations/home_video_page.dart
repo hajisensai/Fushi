@@ -301,19 +301,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
   ///
-  /// [localPosition] 为相对 [HibikiFileDropTarget] 的局部坐标，需经本页 RenderBox
-  /// 转屏幕坐标后再交给注册表命中（注册表存的是屏幕坐标矩形）。
-  void _handleVideoDrop(List<String> paths, Offset localPosition) {
+  /// [globalPosition] 为 [HibikiFileDropTarget] 透出的 Flutter global/view 坐标，
+  /// 可直接交给卡片注册表命中（注册表存的是同一坐标系的屏幕矩形）。
+  void _handleVideoDrop(List<String> paths, Offset globalPosition) {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
 
     final DroppedFiles files = classifyDroppedFiles(paths);
-    final RenderObject? ro = context.findRenderObject();
-    Offset global = localPosition;
-    if (ro is RenderBox && ro.attached) {
-      global = ro.localToGlobal(localPosition);
-    }
-    final VideoBookRow? hit = _cardDropRegistry.hitTest(global);
+    debugPrint(
+      '[hibiki-drop] [home-video] classified '
+      'videos=${files.videos.length} playlists=${files.playlists.length} '
+      'subtitles=${files.subtitles.length} books=${files.books.length} '
+      'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
+      'global=$globalPosition',
+    );
+    final VideoBookRow? hit = _cardDropRegistry.hitTest(globalPosition);
     final DropIntent intent = decideDropIntent(
       surface: DropSurface.video,
       files: files,
@@ -335,8 +337,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         // 字幕没挂到原视频（TODO-079 根因）。
         _attachSubtitleToVideoCard(hit!, files.subtitles.first);
       case DropIntent.needCardTarget:
+        debugPrint('[hibiki-drop] [home-video] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
+        );
+      case DropIntent.unsupportedSurface:
+        debugPrint('[hibiki-drop] [home-video] intent=unsupportedSurface');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.drag_drop_unsupported_on_video)),
         );
       case DropIntent.importNewBook:
       case DropIntent.attachToBookCard:
@@ -403,15 +411,35 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           title: book.title,
           count: result.cueCount,
         );
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=attached '
+          'bookUid=${book.bookUid} cues=${result.cueCount}',
+        );
         _refresh();
       case SubtitleAttachOutcome.playlistNeedsPlayer:
         message = t.video_subtitle_attach_playlist_hint;
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=playlistNeedsPlayer '
+          'bookUid=${book.bookUid}',
+        );
       case SubtitleAttachOutcome.unsupported:
         message = t.video_subtitle_import_unsupported;
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=unsupported '
+          'bookUid=${book.bookUid}',
+        );
       case SubtitleAttachOutcome.copyFailed:
         message = t.video_subtitle_import_failed;
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=copyFailed '
+          'bookUid=${book.bookUid}',
+        );
       case SubtitleAttachOutcome.emptyCues:
         message = t.video_subtitle_load_failed(label: result.label);
+        debugPrint(
+          '[hibiki-drop] [home-video] attachSubtitle outcome=emptyCues '
+          'bookUid=${book.bookUid} label=${result.label}',
+        );
     }
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
@@ -801,6 +829,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         if (_selectionMode) _exitSelectionMode();
       },
       child: HibikiFileDropTarget(
+        debugLabel: 'home-video',
         onDrop: _handleVideoDrop,
         child: CardDropScope<VideoBookRow>(
           registry: _cardDropRegistry,

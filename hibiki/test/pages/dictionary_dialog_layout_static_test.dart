@@ -228,6 +228,34 @@ void main() {
     expect(source, contains('appModel.importDictionary('));
   });
 
+  test('dictionary drag-drop can enter from lookup home with initial paths',
+      () {
+    final String dialog =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+    final String home =
+        File('lib/src/pages/implementations/home_dictionary_page.dart')
+            .readAsStringSync();
+    final String model =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+
+    expect(dialog, contains('this.initialImportPaths = const <String>[]'));
+    expect(dialog, contains('unawaited(_importDictionaryPaths(paths))'),
+        reason: 'DictionaryDialogPage should consume initial import paths');
+    expect(dialog, contains('t.drag_drop_unsupported_on_dictionary'),
+        reason: 'bad dictionary drops must be visible to the user');
+
+    expect(home, contains('HibikiFileDropTarget('));
+    expect(home, contains('onDrop: _handleDictionaryHomeDrop'));
+    expect(home, contains('classifyDroppedFilesForDictionary(paths)'));
+    expect(
+        home, contains('showDictionaryMenu(initialImportPaths: importPaths)'));
+
+    expect(model, contains('List<String> initialImportPaths'));
+    expect(model, contains('DictionaryDialogPage('));
+    expect(model, contains('initialImportPaths: initialImportPaths'));
+  });
+
   // TODO-091/TODO-381：每本词典的「折叠/展开」状态必须在列表行内可一览 + 一键
   // 切换，且按用户诉求放到行**最左**（leading），从拥挤的右侧控件串里拿出来。
   // 守卫：

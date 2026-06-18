@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 308 条。点号进各自文件。
+> 共 309 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-315](bugs/BUG-315-todo-522-526-video-control-settings-layout.md) | ✅ | ✅ | TODO-522/523/525/526: video controls removal persisted removed buttons and video settings text was clipped |
+| [BUG-314](bugs/BUG-314-todo-524-windows-drag-drop-import.md) | ✅ | ✅ | TODO-524: Windows desktop drag-drop import can miss targets or fail silently |
 | [BUG-313](bugs/BUG-313-todo-521-video-chapters-first-load.md) | ✅ | ✅ | TODO-521: 视频章节首次加载缺失 |
 | [BUG-312](bugs/BUG-312-todo-520-lookup-window-no-text.md) | ✅ | ✅ | TODO-520: 0.9.24-debug.5191 查词窗口没文字 |
 | [BUG-311](bugs/BUG-311-video-episode-start-intent-near-end.md) | ✅ | ✅ | TODO-518: video episode switch resumes near end then immediately auto-advances |
