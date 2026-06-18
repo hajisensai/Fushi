@@ -882,8 +882,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 
   ThemeMode get themeMode => appModel.themeMode;
 
-  /// The current locale, dependent on the active target language.
-  Locale get locale => appModel.targetLanguage.locale;
+  /// The current app chrome locale, dependent on the display language.
+  Locale get locale => appModel.appLocale;
 }
 
 /// 按实验开关决定是否包裹自定义焦点导航层（[HibikiFocusRoot] 焦点控制器 +

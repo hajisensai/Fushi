@@ -20,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Japanese pin.
 void main() {
   late String textStyleSource;
+  late String appLocaleGetterSource;
 
   setUpAll(() {
     final String source =
@@ -32,6 +33,14 @@ void main() {
       'get textStyle',
       // The next member after textStyle / its helper.
       'TextTheme get textTheme',
+    );
+
+    final String mainSource =
+        File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n');
+    appLocaleGetterSource = _functionSource(
+      mainSource,
+      'Locale get locale',
+      '}\n\n/// 按实验开关',
     );
   });
 
@@ -84,6 +93,24 @@ void main() {
       textStyleSource,
       isNot(contains('targetLanguage.textBaseline')),
       reason: 'baseline must follow the UI locale, not the reading language',
+    );
+  });
+
+  test('MaterialApp.locale follows display language for system back labels',
+      () {
+    expect(
+      appLocaleGetterSource,
+      contains('appModel.appLocale'),
+      reason:
+          'Material/Cupertino localizations must use the display language so '
+          'zh-CN back tooltips read 返回 instead of Japanese 戻る',
+    );
+    expect(
+      appLocaleGetterSource,
+      isNot(contains('targetLanguage.locale')),
+      reason:
+          'targetLanguage is the pinned Japanese reading/dictionary language, '
+          'not the app chrome locale',
     );
   });
 }
