@@ -24,4 +24,19 @@ void main() {
           'before HomePage converts arrows into page-level focus movement.',
     );
   });
+
+  test('HomePage gamepad fallback is source-aware', () {
+    final String source = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('GamepadButton.fromKeyEvent(event)'));
+    expect(
+      source,
+      isNot(contains('GamepadButton.fromLogicalKey(event.logicalKey)')),
+      reason:
+          'Keyboard arrows share logical keys with D-pad; HomePage must not '
+          'resolve them as gamepad bindings without checking event.deviceType.',
+    );
+  });
 }

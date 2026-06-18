@@ -177,6 +177,84 @@ void main() {
     );
   });
 
+  testWidgets(
+      'deleting a confirmed keyboard conflict chip keeps the old action binding',
+      (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    await pumpDialogHost(
+      tester,
+      registry,
+      action: ShortcutAction.readerToggleBookmark,
+    );
+    await startCapture(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    final Finder escapeChip = find.widgetWithText(HibikiTagChip, 'Escape');
+    expect(escapeChip, findsOneWidget);
+    await tester.tap(find.descendant(
+      of: escapeChip,
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    const InputBinding escape = InputBinding(key: LogicalKeyboardKey.escape);
+    expect(
+      registry.bindingsFor(ShortcutAction.readerDismissDict).keyboardBindings,
+      contains(escape),
+    );
+    expect(
+      registry
+          .bindingsFor(ShortcutAction.readerToggleBookmark)
+          .keyboardBindings,
+      isNot(contains(escape)),
+    );
+  });
+
+  testWidgets(
+      'deleting a confirmed gamepad conflict chip keeps the old action binding',
+      (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    await pumpDialogHost(
+      tester,
+      registry,
+      action: ShortcutAction.readerToggleBookmark,
+    );
+
+    await tester.tap(find.text(t.shortcut_gamepad).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(GamepadButton.dpadRight.label).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    final Finder dpadChip =
+        find.widgetWithText(HibikiTagChip, GamepadButton.dpadRight.label);
+    expect(dpadChip, findsOneWidget);
+    await tester.tap(find.descendant(
+      of: dpadChip,
+      matching: find.byIcon(Icons.close),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+
+    const GamepadBinding dpadRight = GamepadBinding(GamepadButton.dpadRight);
+    expect(
+      registry.bindingsFor(ShortcutAction.readerPageForward).gamepadBindings,
+      contains(dpadRight),
+    );
+    expect(
+      registry.bindingsFor(ShortcutAction.readerToggleBookmark).gamepadBindings,
+      isNot(contains(dpadRight)),
+    );
+  });
+
   testWidgets('Ctrl modifier is captured with the key',
       (WidgetTester tester) async {
     await pumpDialog(tester, buildRegistry());

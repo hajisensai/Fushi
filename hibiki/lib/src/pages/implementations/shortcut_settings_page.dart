@@ -400,14 +400,20 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
 
   void _removeKeyboard(int index) {
     setState(() {
-      _keyboard.removeAt(index);
+      final InputBinding removed = _keyboard.removeAt(index);
+      _keyboardReassignments.removeWhere(
+        (InputBinding binding) => binding == removed,
+      );
       _conflictWarning = null;
     });
   }
 
   void _removeGamepad(int index) {
     setState(() {
-      _gamepad.removeAt(index);
+      final GamepadBinding removed = _gamepad.removeAt(index);
+      _gamepadReassignments.removeWhere(
+        (GamepadBinding binding) => binding == removed,
+      );
       _conflictWarning = null;
     });
   }
