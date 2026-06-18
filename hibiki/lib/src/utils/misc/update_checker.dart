@@ -854,7 +854,6 @@ class UpdateChecker {
     }
   }
 
-  @visibleForTesting
   static bool canShowDialogFromContext(BuildContext context) {
     if (!context.mounted) return false;
     final NavigatorState? navigator =

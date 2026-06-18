@@ -431,6 +431,25 @@ void main() {
       );
     });
 
+    test('source guard: dialog context validator is production-callable', () {
+      final String source =
+          File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+      final int helper = source.indexOf(
+        'static bool canShowDialogFromContext(BuildContext context)',
+      );
+      final int previousAnnotation =
+          source.lastIndexOf('@visibleForTesting', helper);
+      final int previousMember = source.lastIndexOf('\n  static ', helper - 1);
+
+      expect(helper, isNonNegative);
+      expect(
+        previousAnnotation,
+        lessThan(previousMember),
+        reason: 'main.dart calls this helper in production startup code, so it '
+            'must not be marked visibleForTesting.',
+      );
+    });
+
     test(
         'source guard: injected installer diagnostics are not hidden behind '
         'Platform.isWindows', () {
