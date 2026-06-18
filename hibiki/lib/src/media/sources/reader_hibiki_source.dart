@@ -578,19 +578,12 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
-  double get dismissSwipeSensitivity =>
-      readerSettings?.dismissSwipeSensitivity ??
-      getPreference<double>(
+  double get dismissSwipeSensitivity => getPreference<double>(
         key: 'dismiss_swipe_sensitivity',
         defaultValue: 0.6,
       );
 
   Future<void> setDismissSwipeSensitivity(double value) async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setDismissSwipeSensitivity(value);
-      return;
-    }
     await setPreference<double>(
       key: 'dismiss_swipe_sensitivity',
       value: value,
@@ -601,19 +594,12 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// 双源模式：优先读 reader profile 快照（[ReaderSettings.enableSwipeToClose]），
   /// 否则落全局偏好。未持久化时回退到 [ReaderSettings.defaultSwipeToClose]（桌面
   /// Windows/Linux 默认 false，触摸平台 true）。
-  bool get enableSwipeToClose =>
-      readerSettings?.enableSwipeToClose ??
-      getPreference<bool>(
+  bool get enableSwipeToClose => getPreference<bool>(
         key: 'enable_swipe_to_close',
         defaultValue: ReaderSettings.defaultSwipeToClose(defaultTargetPlatform),
       );
 
   Future<void> setEnableSwipeToClose(bool value) async {
-    final ReaderSettings? settings = readerSettings;
-    if (settings != null) {
-      await settings.setEnableSwipeToClose(value);
-      return;
-    }
     await setPreference<bool>(
       key: 'enable_swipe_to_close',
       value: value,

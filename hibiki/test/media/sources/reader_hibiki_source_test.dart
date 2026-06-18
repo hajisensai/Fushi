@@ -268,6 +268,45 @@ void main() {
     });
   });
 
+  group('popup swipe-to-close is profile-aware (TODO-496)', () {
+    setUp(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+    tearDown(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+
+    test(
+        'source enableSwipeToClose follows current DB/cache even when '
+        'readerSettings snapshot is stale', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+      await source.setPreference<bool>(
+        key: 'enable_swipe_to_close',
+        value: true,
+      );
+
+      final ReaderSettings staleReaderSnapshot = ReaderSettings(db);
+      await staleReaderSnapshot.refreshFromDb();
+      if (staleReaderSnapshot.enableSwipeToClose) {
+        await staleReaderSnapshot.setEnableSwipeToClose(false);
+      }
+      ReaderHibikiSource.readerSettings = staleReaderSnapshot;
+
+      expect(
+        source.enableSwipeToClose,
+        isTrue,
+        reason:
+            'popup surfaces must read the live source cache/current profile, '
+            'not a stale reader-page snapshot.',
+      );
+    });
+  });
+
   group('ReaderHibikiSource author editing (BUG-220 子3)', () {
     EpubBooksCompanion bookWithAuthor(String key, {String? author}) {
       return EpubBooksCompanion.insert(

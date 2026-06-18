@@ -10,10 +10,12 @@ void main() {
   setUp(() {
     DesktopLookupService.instance.debugReset();
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
+    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
   });
   tearDown(() {
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
+    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = null;
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
@@ -27,6 +29,17 @@ void main() {
     DesktopLookupService.instance.addListener(l);
     DesktopLookupService.instance.submitText('  見る ');
     expect(DesktopLookupService.instance.pendingText, '見る');
+    expect(DesktopLookupService.instance.pendingRequest?.text, '見る');
+    expect(
+      DesktopLookupService.instance.pendingRequest?.origin,
+      DesktopLookupOrigin.clipboard,
+    );
+    expect(
+      DesktopLookupService.instance.pendingRequest?.foregroundPolicy,
+      DesktopLookupForegroundPolicy.bringToFront,
+    );
+    expect(
+        DesktopLookupService.instance.pendingRequest?.showSourcePanel, isTrue);
     expect(n, 1);
     DesktopLookupService.instance.submitText('見る');
     expect(n, 1);
@@ -52,6 +65,12 @@ void main() {
 
     DesktopLookupService.instance.triggerLookup('  良い ');
     expect(DesktopLookupService.instance.pendingText, '良い');
+    expect(
+      DesktopLookupService.instance.pendingRequest?.origin,
+      DesktopLookupOrigin.explicit,
+    );
+    expect(
+        DesktopLookupService.instance.pendingRequest?.showSourcePanel, isTrue);
     expect(n, 1);
 
     // 显式再查同一个词：必须越过去重再次排队（剪贴板被动 submitText 会去重，
@@ -175,6 +194,64 @@ void main() {
 
     expect(svc.pendingText, isNull);
     expect(platformCalls, isNot(contains('Clipboard.getData')));
+  });
+
+  testWidgets('clipboard change inside Hibiki app-family foreground is ignored',
+      (WidgetTester tester) async {
+    final List<String> platformCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
+    DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = true;
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      platformCalls.add(call.method);
+      if (call.method == 'Clipboard.getData') {
+        return <String, Object?>{'text': '  見る  '};
+      }
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+    svc.onWindowBlur(); // foreground can be another Hibiki process/window.
+
+    await tester.runAsync(() async {
+      svc.onClipboardChanged();
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    expect(svc.pendingRequest, isNull);
+    expect(platformCalls, isNot(contains('Clipboard.getData')));
+  });
+
+  testWidgets(
+      'hotkey queues a hotkey-origin request without foregrounding early',
+      (WidgetTester tester) async {
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      if (call.method == 'Clipboard.getData') {
+        return <String, Object?>{'text': '  早い  '};
+      }
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await tester.runAsync(() async {
+      await svc.debugTriggerHotKey();
+    });
+
+    expect(svc.pendingText, '早い');
+    expect(svc.pendingRequest?.origin, DesktopLookupOrigin.hotkey);
+    expect(
+      svc.pendingRequest?.foregroundPolicy,
+      DesktopLookupForegroundPolicy.bringToFront,
+    );
+    expect(svc.pendingRequest?.showSourcePanel, isTrue);
   });
 
   testWidgets('window mode controls always-on-top timing',

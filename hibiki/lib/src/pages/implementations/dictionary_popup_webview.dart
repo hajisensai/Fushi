@@ -150,6 +150,20 @@ class DictionaryPopupWebViewState
   /// the popup is open — see [didChangeDependencies].
   String? _lastThemeVarsJs;
 
+  Future<T> _guardJsBridge<T>(
+    String logTag,
+    T fallback,
+    ErrorLogService errorLogService,
+    FutureOr<T> Function() callback,
+  ) async {
+    try {
+      return await callback();
+    } catch (e, stack) {
+      errorLogService.log(logTag, e, stack);
+      return fallback;
+    }
+  }
+
   /// 划词弹窗内容缩放的字号基准。CSS 写死的 px 字号对应「词典字号=16」的视觉，
   /// 故 zoom = appUiScale × (dictionaryFontSize / 16)：默认(16, 100%)时 zoom=1，
   /// 与改动前观感一致；调大词典字号或界面大小时按比例放大。CSS zoom 会按放大尺寸
@@ -764,28 +778,60 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'tapOutside',
           callback: (_) {
-            widget.onTapOutside?.call();
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.tapOutside',
+              null,
+              ErrorLogService.instance,
+              () {
+                widget.onTapOutside?.call();
+                return null;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'scrolledToBottom',
           callback: (_) {
-            widget.onScrolledToBottom?.call();
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.scrolledToBottom',
+              null,
+              ErrorLogService.instance,
+              () {
+                widget.onScrolledToBottom?.call();
+                return null;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'topPullReleased',
           callback: (_) {
-            widget.onTopPullReleased?.call();
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.topPullReleased',
+              null,
+              ErrorLogService.instance,
+              () {
+                widget.onTopPullReleased?.call();
+                return null;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'popupRendered',
           callback: (_) {
-            widget.onRendered?.call();
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupRendered',
+              null,
+              ErrorLogService.instance,
+              () {
+                widget.onRendered?.call();
+                return null;
+              },
+            );
           },
         );
 
@@ -869,49 +915,70 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'duplicateCheck',
           callback: (args) async {
-            if (args.isNotEmpty &&
-                args[0] is Map &&
-                widget.onDuplicateCheck != null) {
-              final data = args[0] as Map;
-              final expression = data['expression']?.toString() ?? '';
-              final reading = data['reading']?.toString() ?? '';
-              if (expression.isEmpty) return false;
-              return widget.onDuplicateCheck!(expression, reading);
-            }
-            return false;
+            return _guardJsBridge<bool>(
+              'DictPopupWebview.duplicateCheck',
+              false,
+              ErrorLogService.instance,
+              () async {
+                if (args.isNotEmpty &&
+                    args[0] is Map &&
+                    widget.onDuplicateCheck != null) {
+                  final data = args[0] as Map;
+                  final expression = data['expression']?.toString() ?? '';
+                  final reading = data['reading']?.toString() ?? '';
+                  if (expression.isEmpty) return false;
+                  return widget.onDuplicateCheck!(expression, reading);
+                }
+                return false;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'favoriteEntry',
           callback: (args) async {
-            if (args.isNotEmpty &&
-                args[0] is Map &&
-                widget.onFavoriteEntry != null) {
-              final fields = Map<String, String>.from(
-                (args[0] as Map)
-                    .map((k, v) => MapEntry(k.toString(), v.toString())),
-              );
-              if ((fields['expression'] ?? '').isEmpty) return false;
-              return widget.onFavoriteEntry!(fields);
-            }
-            return false;
+            return _guardJsBridge<bool>(
+              'DictPopupWebview.favoriteEntry',
+              false,
+              ErrorLogService.instance,
+              () async {
+                if (args.isNotEmpty &&
+                    args[0] is Map &&
+                    widget.onFavoriteEntry != null) {
+                  final fields = Map<String, String>.from(
+                    (args[0] as Map)
+                        .map((k, v) => MapEntry(k.toString(), v.toString())),
+                  );
+                  if ((fields['expression'] ?? '').isEmpty) return false;
+                  return widget.onFavoriteEntry!(fields);
+                }
+                return false;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'favoriteCheck',
           callback: (args) async {
-            if (args.isNotEmpty &&
-                args[0] is Map &&
-                widget.onFavoriteCheck != null) {
-              final data = args[0] as Map;
-              final expression = data['expression']?.toString() ?? '';
-              final reading = data['reading']?.toString() ?? '';
-              if (expression.isEmpty) return false;
-              return widget.onFavoriteCheck!(expression, reading);
-            }
-            return false;
+            return _guardJsBridge<bool>(
+              'DictPopupWebview.favoriteCheck',
+              false,
+              ErrorLogService.instance,
+              () async {
+                if (args.isNotEmpty &&
+                    args[0] is Map &&
+                    widget.onFavoriteCheck != null) {
+                  final data = args[0] as Map;
+                  final expression = data['expression']?.toString() ?? '';
+                  final reading = data['reading']?.toString() ?? '';
+                  if (expression.isEmpty) return false;
+                  return widget.onFavoriteCheck!(expression, reading);
+                }
+                return false;
+              },
+            );
           },
         );
 
@@ -923,10 +990,17 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'appendSentence',
           callback: (_) async {
-            if (widget.onAppendSentence != null) {
-              return widget.onAppendSentence!();
-            }
-            return 0;
+            return _guardJsBridge<int>(
+              'DictPopupWebview.appendSentence',
+              0,
+              ErrorLogService.instance,
+              () async {
+                if (widget.onAppendSentence != null) {
+                  return widget.onAppendSentence!();
+                }
+                return 0;
+              },
+            );
           },
         );
 
@@ -935,15 +1009,22 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'setSentenceContext',
           callback: (args) async {
-            if (widget.onSetSentenceContext == null) return 0;
-            int prevCount = 0;
-            int nextCount = 0;
-            if (args.isNotEmpty && args[0] is Map) {
-              final Map<dynamic, dynamic> data = args[0] as Map;
-              prevCount = (data['prev'] as num?)?.toInt() ?? 0;
-              nextCount = (data['next'] as num?)?.toInt() ?? 0;
-            }
-            return widget.onSetSentenceContext!(prevCount, nextCount);
+            return _guardJsBridge<int>(
+              'DictPopupWebview.setSentenceContext',
+              0,
+              ErrorLogService.instance,
+              () async {
+                if (widget.onSetSentenceContext == null) return 0;
+                int prevCount = 0;
+                int nextCount = 0;
+                if (args.isNotEmpty && args[0] is Map) {
+                  final Map<dynamic, dynamic> data = args[0] as Map;
+                  prevCount = (data['prev'] as num?)?.toInt() ?? 0;
+                  nextCount = (data['next'] as num?)?.toInt() ?? 0;
+                }
+                return widget.onSetSentenceContext!(prevCount, nextCount);
+              },
+            );
           },
         );
 
@@ -952,109 +1033,162 @@ class DictionaryPopupWebViewState
         controller.addJavaScriptHandler(
           handlerName: 'clearSentenceDraft',
           callback: (_) async {
-            if (widget.onClearSentenceDraft != null) {
-              return widget.onClearSentenceDraft!();
-            }
-            return 0;
+            return _guardJsBridge<int>(
+              'DictPopupWebview.clearSentenceDraft',
+              0,
+              ErrorLogService.instance,
+              () async {
+                if (widget.onClearSentenceDraft != null) {
+                  return widget.onClearSentenceDraft!();
+                }
+                return 0;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'textSelected',
           callback: (args) async {
-            if (args.isNotEmpty && args[0] is String) {
-              final text = args[0] as String;
-              if (text.isNotEmpty) {
-                Rect localRect = Rect.zero;
-                if (args.length > 1 && args[1] is Map) {
-                  final r = args[1] as Map;
-                  localRect = Rect.fromLTWH(
-                    (r['x'] as num?)?.toDouble() ?? 0,
-                    (r['y'] as num?)?.toDouble() ?? 0,
-                    (r['width'] as num?)?.toDouble() ?? 1,
-                    (r['height'] as num?)?.toDouble() ?? 1,
-                  );
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.textSelected',
+              null,
+              ErrorLogService.instance,
+              () {
+                if (args.isNotEmpty && args[0] is String) {
+                  final text = args[0] as String;
+                  if (text.isNotEmpty) {
+                    Rect localRect = Rect.zero;
+                    if (args.length > 1 && args[1] is Map) {
+                      final r = args[1] as Map;
+                      localRect = Rect.fromLTWH(
+                        (r['x'] as num?)?.toDouble() ?? 0,
+                        (r['y'] as num?)?.toDouble() ?? 0,
+                        (r['width'] as num?)?.toDouble() ?? 1,
+                        (r['height'] as num?)?.toDouble() ?? 1,
+                      );
+                    }
+                    widget.onTextSelected?.call(text, localRect);
+                  }
                 }
-                widget.onTextSelected?.call(text, localRect);
-              }
-            }
+                return null;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'openLink',
           callback: (args) async {
-            if (args.isNotEmpty) {
-              await _openExternalLink(args[0].toString());
-            }
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.openLink',
+              null,
+              ErrorLogService.instance,
+              () async {
+                if (args.isNotEmpty) {
+                  await _openExternalLink(args[0].toString());
+                }
+                return null;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'onLinkClick',
-          callback: (args) {
-            if (args.isNotEmpty) {
-              final text = args[0].toString();
-              if (text.isNotEmpty) {
-                Rect localRect = Rect.zero;
-                if (args.length > 1 && args[1] is Map) {
-                  final r = args[1] as Map;
-                  localRect = Rect.fromLTWH(
-                    (r['x'] as num?)?.toDouble() ?? 0,
-                    (r['y'] as num?)?.toDouble() ?? 0,
-                    (r['width'] as num?)?.toDouble() ?? 1,
-                    (r['height'] as num?)?.toDouble() ?? 1,
-                  );
+          callback: (args) async {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.onLinkClick',
+              null,
+              ErrorLogService.instance,
+              () {
+                if (args.isNotEmpty) {
+                  final text = args[0].toString();
+                  if (text.isNotEmpty) {
+                    Rect localRect = Rect.zero;
+                    if (args.length > 1 && args[1] is Map) {
+                      final r = args[1] as Map;
+                      localRect = Rect.fromLTWH(
+                        (r['x'] as num?)?.toDouble() ?? 0,
+                        (r['y'] as num?)?.toDouble() ?? 0,
+                        (r['width'] as num?)?.toDouble() ?? 1,
+                        (r['height'] as num?)?.toDouble() ?? 1,
+                      );
+                    }
+                    widget.onLinkClick?.call(text, localRect);
+                  }
                 }
-                widget.onLinkClick?.call(text, localRect);
-              }
-            }
+                return null;
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'queryLocalAudio',
           callback: (args) async {
-            if (args.isEmpty || args[0] is! Map) return null;
-            final data = args[0] as Map;
-            final expression = data['expression']?.toString() ?? '';
-            final reading = data['reading']?.toString() ?? '';
-            if (expression.isEmpty) return null;
-            return _resolveWordAudio(expression, reading);
+            return _guardJsBridge<String?>(
+              'DictPopupWebview.queryLocalAudio',
+              null,
+              ErrorLogService.instance,
+              () async {
+                if (args.isEmpty || args[0] is! Map) return null;
+                final data = args[0] as Map;
+                final expression = data['expression']?.toString() ?? '';
+                final reading = data['reading']?.toString() ?? '';
+                if (expression.isEmpty) return null;
+                return _resolveWordAudio(expression, reading);
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'resolveWordAudio',
           callback: (args) async {
-            if (args.isEmpty || args[0] is! Map) return null;
-            final data = args[0] as Map;
-            final expression = data['expression']?.toString() ?? '';
-            final reading = data['reading']?.toString() ?? '';
-            if (expression.isEmpty) return null;
-            return _resolveWordAudio(expression, reading);
+            return _guardJsBridge<String?>(
+              'DictPopupWebview.resolveWordAudio',
+              null,
+              ErrorLogService.instance,
+              () async {
+                if (args.isEmpty || args[0] is! Map) return null;
+                final data = args[0] as Map;
+                final expression = data['expression']?.toString() ?? '';
+                final reading = data['reading']?.toString() ?? '';
+                if (expression.isEmpty) return null;
+                return _resolveWordAudio(expression, reading);
+              },
+            );
           },
         );
 
         controller.addJavaScriptHandler(
           handlerName: 'playWordAudio',
           callback: (args) async {
-            String url = '';
-            if (args.isNotEmpty && args[0] is Map) {
-              final data = args[0] as Map;
-              url = data['url']?.toString() ?? '';
-            }
-            // Plays remote URLs and local file paths uniformly, including
-            // Windows drive-letter paths (BUG-046).
-            return TtsChannel.instance.playAudioRef(
-              url,
-              volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+            return _guardJsBridge<bool>(
+              'DictPopupWebview.playWordAudio',
+              false,
+              ErrorLogService.instance,
+              () async {
+                String url = '';
+                if (args.isNotEmpty && args[0] is Map) {
+                  final data = args[0] as Map;
+                  url = data['url']?.toString() ?? '';
+                }
+                // Plays remote URLs and local file paths uniformly, including
+                // Windows drive-letter paths (BUG-046).
+                return TtsChannel.instance.playAudioRef(
+                  url,
+                  volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+                );
+              },
             );
           },
         );
       },
       onLoadStop: (controller, url) {
         _ready = true;
+        debugPrint('[popup-perf] webview loadStop $url');
         // Inject the same char caret as the reader (selection.js, a head script,
         // has already defined window.hoshiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.

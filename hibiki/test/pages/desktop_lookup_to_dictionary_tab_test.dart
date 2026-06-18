@@ -63,6 +63,8 @@ void main() {
         reason: '剪贴板/热键查词路径必须显式 autoRead: false，不自动发音');
     expect(src.contains('bringPendingLookupToFront'), isTrue,
         reason: '只有查词页实际消费外部查询、准备搜索时才可唤窗口前台');
+    expect(src.contains('pendingRequest'), isTrue,
+        reason: '查词页必须消费带来源/前台策略的请求，而不是裸 pendingText');
     // autoRead 默认仍沿用 autoReadOnLookup（不破坏正常输入查词的朗读行为）。
     expect(
         src.contains(
@@ -162,7 +164,7 @@ void main() {
     final String hotKeyBody = src.substring(hotKeyStart, readStart);
     expect(clipboardBody.contains('submitText(text)'), isTrue,
         reason: '剪贴板命中仍要排队查词请求');
-    expect(hotKeyBody.contains('submitText(text)'), isTrue,
+    expect(hotKeyBody.contains('_queueLookupRequest'), isTrue,
         reason: '热键命中仍要排队查词请求');
     expect(clipboardBody.contains('bringPendingLookupToFront'), isFalse,
         reason: '剪贴板变化不能在 UI 尚未消费/搜索前抢前台');

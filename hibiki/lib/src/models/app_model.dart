@@ -1577,12 +1577,14 @@ class AppModel with ChangeNotifier {
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
       populateMediaTypes();
+      MediaSource.setDatabase(_database);
       populateMediaSources();
       populateDictionaryFormats();
       populateEnhancements();
 
       await Future.wait(<Future<void>>[
         targetLanguage.initialise(),
+        ReaderHibikiSource.instance.initialise(),
         Future.wait(<Future<void>>[
           for (Field field in globalFields)
             for (Enhancement enhancement in enhancements[field]!.values)

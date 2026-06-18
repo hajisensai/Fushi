@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
+import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/utils/spacing.dart';
@@ -339,5 +341,57 @@ void main() {
     );
 
     expect(layer.swipeDismissible, isFalse);
+  });
+
+  testWidgets('renders a generic source text panel outside the WebView stack', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = PopupTestAppModel();
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'abcdef',
+          closeInApp: () {},
+          autoSearchOnOpen: false,
+        ),
+      ),
+    );
+
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+    expect(find.textContaining('Clipboard'), findsNothing);
+    expect(find.textContaining('剪贴板'), findsNothing);
+
+    await tester.tap(find.text('c'));
+    await tester.pump();
+
+    final PopupDictionarySearchBar searchBar = tester.widget(
+      find.byType(PopupDictionarySearchBar),
+    );
+    expect(searchBar.controller.text, 'cdef');
+  });
+
+  test('source guard: popup dictionary consumes layer visibility and logs perf',
+      () {
+    final String popup =
+        File('lib/src/pages/implementations/popup_dictionary_page.dart')
+            .readAsStringSync();
+    final String model =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+
+    expect(popup, contains('SourceLookupTextPanel'),
+        reason: 'non-clipboard popup queries need the same clickable source '
+            'text panel outside the WebView.');
+    expect(popup, contains('visible: entry.visible'),
+        reason: 'external popup layers must honor controller visibility before '
+            'any hidden/preload state can be safe.');
+    expect(popup, contains('[popup-perf]'),
+        reason: 'Windows popup first lookup needs startup/search/render timing '
+            'breadcrumbs.');
+    expect(model, contains('MediaSource.setDatabase(_database)'),
+        reason: 'popup init must attach MediaSource prefs to the popup DB.');
+    expect(model, contains('ReaderHibikiSource.instance.initialise()'),
+        reason: 'popup init must hydrate ReaderHibikiSource preferences.');
   });
 }

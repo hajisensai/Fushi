@@ -18,6 +18,24 @@ import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 /// 纯函数，便于单测（见 desktop_lookup_service_test.dart）。
 bool shouldTriggerOnClipboard(bool focused) => !focused;
 
+enum DesktopLookupOrigin { clipboard, hotkey, explicit }
+
+enum DesktopLookupForegroundPolicy { none, bringToFront }
+
+class DesktopLookupRequest {
+  const DesktopLookupRequest({
+    required this.text,
+    required this.origin,
+    this.foregroundPolicy = DesktopLookupForegroundPolicy.bringToFront,
+    this.showSourcePanel = true,
+  });
+
+  final String text;
+  final DesktopLookupOrigin origin;
+  final DesktopLookupForegroundPolicy foregroundPolicy;
+  final bool showSourcePanel;
+}
+
 /// 桌面剪贴板 + 全局热键查词触发器。单例 ChangeNotifier（仿 TexthookerService）。
 /// 监听系统剪贴板变化与全局热键 → 去重 → 设 pendingText。
 ///
@@ -35,8 +53,9 @@ class DesktopLookupService extends ChangeNotifier
   static bool get isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
-  String? _pendingText;
-  String? get pendingText => _pendingText;
+  DesktopLookupRequest? _pendingRequest;
+  DesktopLookupRequest? get pendingRequest => _pendingRequest;
+  String? get pendingText => _pendingRequest?.text;
   String? _lastText;
   bool _running = false;
   DesktopClipboardWindowMode _windowMode = DesktopClipboardWindowMode.normal;
@@ -46,21 +65,53 @@ class DesktopLookupService extends ChangeNotifier
   bool get isRunning => _running;
 
   void submitText(String raw) {
+    _queueLookupRequest(
+      raw,
+      origin: DesktopLookupOrigin.clipboard,
+    );
+  }
+
+  void _queueLookupRequest(
+    String raw, {
+    required DesktopLookupOrigin origin,
+    DesktopLookupForegroundPolicy foregroundPolicy =
+        DesktopLookupForegroundPolicy.bringToFront,
+    bool showSourcePanel = true,
+    bool dedupe = true,
+  }) {
+    if (!dedupe) {
+      final String trimmed = raw.trim();
+      if (trimmed.isEmpty) return;
+      _lastText = trimmed;
+      _pendingRequest = DesktopLookupRequest(
+        text: trimmed,
+        origin: origin,
+        foregroundPolicy: foregroundPolicy,
+        showSourcePanel: showSourcePanel,
+      );
+      notifyListeners();
+      return;
+    }
     final String? deduped = dedupeClipboard(raw, _lastText);
     if (deduped == null) return;
     _lastText = deduped;
-    _pendingText = deduped;
+    _pendingRequest = DesktopLookupRequest(
+      text: deduped,
+      origin: origin,
+      foregroundPolicy: foregroundPolicy,
+      showSourcePanel: showSourcePanel,
+    );
     notifyListeners();
   }
 
   void clearPending() {
-    _pendingText = null;
+    _pendingRequest = null;
     notifyListeners();
   }
 
   @visibleForTesting
   void debugReset() {
-    _pendingText = null;
+    _pendingRequest = null;
     _lastText = null;
   }
 
@@ -144,8 +195,15 @@ class DesktopLookupService extends ChangeNotifier
     final String? text = await _readClipboardText();
     if (text == null || text.trim().isEmpty) return;
     _lastText = null; // 热键强制查（即便与上次相同）
-    submitText(text);
+    _queueLookupRequest(
+      text,
+      origin: DesktopLookupOrigin.hotkey,
+      dedupe: false,
+    );
   }
+
+  @visibleForTesting
+  Future<void> debugTriggerHotKey() => _onHotKey();
 
   /// BUG-114：Windows 剪贴板是全局独占资源——刚复制的进程可能仍持有句柄，
   /// 此刻 `OpenClipboard` 会失败（errno 5 / "Unable to open clipboard"），
@@ -184,6 +242,15 @@ class DesktopLookupService extends ChangeNotifier
   void triggerLookup(String text) {
     final String trimmed = text.trim();
     if (trimmed.isEmpty) return;
+    if (trimmed.isNotEmpty) {
+      _lastText = null;
+      _queueLookupRequest(
+        trimmed,
+        origin: DesktopLookupOrigin.explicit,
+        dedupe: false,
+      );
+      return;
+    }
     _lastText = null; // 显式查词：越过去重，即便与上次相同也再查。
     submitText(trimmed);
   }
@@ -229,6 +296,9 @@ class DesktopLookupService extends ChangeNotifier
   /// show/focus 主窗会触发任务栏请求注意态。
   Future<bool> _isHibikiForeground() async {
     if (DesktopForegroundGuard.isForegroundOwnedByCurrentProcess()) {
+      return true;
+    }
+    if (DesktopForegroundGuard.isForegroundOwnedByHibikiAppFamily()) {
       return true;
     }
     return _isWindowFocused();

@@ -50,6 +50,9 @@ void main() {
       reason: 'Foreground guard must run before show/focus.',
     );
     expect(service.contains('isForegroundOwnedByCurrentProcess()'), isTrue);
+    expect(service.contains('isForegroundOwnedByHibikiAppFamily()'), isTrue,
+        reason: 'Foreground guard must also treat Hibiki popup/app-family '
+            'windows as internal copies.');
   });
 
   test('hidden Windows runner is toolwindow/noactivate and off-screen', () {

@@ -168,6 +168,24 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
       return _focusable(context, button);
     }
 
+    Widget touchTarget = ColoredBox(
+      color: widget.backgroundColor ?? Colors.transparent,
+      child: Padding(
+        padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
+        child: Icon(
+          widget.icon,
+          size: widget.size,
+          color: enabled ? enabledColor : disabledColor,
+        ),
+      ),
+    );
+    if (widget.constraints != null) {
+      touchTarget = ConstrainedBox(
+        constraints: widget.constraints!,
+        child: Center(child: touchTarget),
+      );
+    }
+
     final Semantics button = Semantics(
       label: widget.tooltip,
       button: true,
@@ -176,17 +194,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
         customBorder: widget.shapeBorder,
         onTap: enabled ? _handleTap : null,
         onTapDown: widget.onTapDown,
-        child: ColoredBox(
-          color: widget.backgroundColor ?? Colors.transparent,
-          child: Padding(
-            padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
-            child: Icon(
-              widget.icon,
-              size: widget.size,
-              color: enabled ? enabledColor : disabledColor,
-            ),
-          ),
-        ),
+        child: touchTarget,
       ),
     );
     return _focusable(context, button);

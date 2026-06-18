@@ -23,6 +23,20 @@ void main() {
     );
   }
 
+  Widget buildGenericSubject({
+    required String text,
+    required void Function(String query, Rect rect) onLookup,
+  }) {
+    return MaterialApp(
+      home: Scaffold(
+        body: SourceLookupTextPanel(
+          text: text,
+          onLookup: onLookup,
+        ),
+      ),
+    );
+  }
+
   testWidgets('tapping a character looks up the suffix from that character',
       (WidgetTester tester) async {
     String? query;
@@ -136,6 +150,29 @@ void main() {
 
     expect(find.byType(ClipboardLookupTextPanel), findsOneWidget);
     expect(find.byType(HibikiCard), findsNothing);
+  });
+
+  testWidgets('generic source lookup panel has no clipboard-only identity',
+      (WidgetTester tester) async {
+    String? query;
+
+    await tester.pumpWidget(
+      buildGenericSubject(
+        text: 'abcdef',
+        onLookup: (String value, Rect _) {
+          query = value;
+        },
+      ),
+    );
+
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+    expect(find.byType(ClipboardLookupTextPanel), findsNothing);
+    expect(find.textContaining('Clipboard'), findsNothing);
+    expect(find.textContaining('剪贴板'), findsNothing);
+
+    await tester.tap(find.text('d'));
+
+    expect(query, 'def');
   });
 
   // BUG-175 / TODO-222：剪贴板查词标题必须和词典弹窗 headword 标题同级，

@@ -294,9 +294,9 @@ mixin DictionaryPageMixin {
         enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
         // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。
-        onClose: index == 0 ? () => onPop(0) : null,
+        onClose: () => onPop(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
-        onBack: index > 0 ? () => onPop(index) : null,
+        onBack: null,
         onTapOutside: () => onPop(0),
         // TODO-058：该层 WebView 渲染完成 → 翻可见挂起的冷层（消除白屏一瞬）。
         // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。

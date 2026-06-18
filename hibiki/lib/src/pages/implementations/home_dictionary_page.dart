@@ -46,7 +46,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   String _lastQuery = '';
   bool _allLoaded = false;
   Timer? _debounceTimer;
-  String _externalLookupText = '';
+  String _sourceLookupText = '';
 
   bool _historyWritten = false;
 
@@ -92,23 +92,27 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   void _onDesktopLookupPending() {
-    final String? text = DesktopLookupService.instance.pendingText;
-    if (text == null) return;
+    final DesktopLookupRequest? request =
+        DesktopLookupService.instance.pendingRequest;
+    if (request == null) return;
     DesktopLookupService.instance.clearPending();
-    _externalLookupText = text;
+    _sourceLookupText = request.showSourcePanel ? request.text : '';
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
-      _runDesktopLookup(text);
+      _runDesktopLookup(request);
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _runDesktopLookup(text);
+        _runDesktopLookup(request);
       });
     }
   }
 
-  void _runDesktopLookup(String text) {
+  void _runDesktopLookup(DesktopLookupRequest request) {
     if (!mounted) return;
-    unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
-    if (mounted) _search(text, autoRead: false);
+    if (request.foregroundPolicy ==
+        DesktopLookupForegroundPolicy.bringToFront) {
+      unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
+    }
+    if (mounted) _search(request.text, autoRead: false);
   }
 
   void _onFocusChanged() {
@@ -170,7 +174,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _isSearching = false;
     _lastQuery = '';
     _allLoaded = false;
-    _externalLookupText = '';
+    _sourceLookupText = '';
     _searchFocusNode.unfocus();
     setState(() {});
   }
@@ -415,8 +419,12 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
+    final bool replaceSourceLookupText = overrideMaximumTerms == null;
 
     if (_lastQuery == trimmed && overrideMaximumTerms == null) {
+      if (_sourceLookupText != trimmed && mounted) {
+        setState(() => _sourceLookupText = trimmed);
+      }
       if (writeHistory &&
           !_historyWritten &&
           _result != null &&
@@ -441,8 +449,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     if (mounted) {
       setState(() {
         _isSearching = true;
+        if (replaceSourceLookupText) _sourceLookupText = trimmed;
         _popup.clear();
       });
+    } else if (replaceSourceLookupText) {
+      _sourceLookupText = trimmed;
     }
 
     try {
@@ -501,9 +512,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   Widget _buildSearchResultBody() {
     return Column(
       children: [
-        if (_externalLookupText.trim().isNotEmpty)
-          ClipboardLookupTextPanel(
-            text: _externalLookupText,
+        if (_sourceLookupText.trim().isNotEmpty)
+          SourceLookupTextPanel(
+            text: _sourceLookupText,
             coordinateSpaceKey: _resultStackKey,
             dictionaryHeadwordScale: appModel.dictionaryFontSize /
                 appModel.defaultDictionaryFontSize,

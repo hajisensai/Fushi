@@ -380,6 +380,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
   bool get _swipeActive => swipeDismissible && enableSwipeToClose;
 
+  static const BoxConstraints _topActionConstraints =
+      BoxConstraints.tightFor(width: 36, height: 36);
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -443,8 +446,10 @@ class DictionaryPopupLayer extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: HibikiIconButton(
             icon: Icons.arrow_back,
-            size: 18,
+            size: 20,
             tooltip: backTooltip,
+            constraints: _topActionConstraints,
+            padding: EdgeInsets.zero,
             onTap: onBack,
           ),
         ),
@@ -453,8 +458,10 @@ class DictionaryPopupLayer extends StatelessWidget {
           alignment: Alignment.centerRight,
           child: HibikiIconButton(
             icon: Icons.close,
-            size: 18,
+            size: 20,
             tooltip: t.dialog_close,
+            constraints: _topActionConstraints,
+            padding: EdgeInsets.zero,
             onTap: onClose,
           ),
         ),

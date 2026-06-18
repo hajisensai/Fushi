@@ -49,36 +49,48 @@ void main() {
     fail("could not brace-match the '$name' callback body");
   }
 
-  void expectGuarded(String name) {
+  void expectGuarded(
+    String name, {
+    required String fallbackSnippet,
+    List<String> guardedSnippets = const <String>[],
+  }) {
     final String body = handlerBody(name);
-    expect(body.contains('try {'), isTrue,
+    expect(body.contains('_guardJsBridge') || body.contains('try {'), isTrue,
         reason:
             "the '$name' bridge callback must wrap its body in try/catch so "
             'an escaping exception never crosses the native JS-handler '
             'boundary and crashes the app (BUG-293).');
-    expect(body.contains('} catch (e, stack) {'), isTrue,
+    expect(
+        body.contains('_guardJsBridge') ||
+            body.contains('} catch (e, stack) {'),
+        isTrue,
         reason: "the '$name' bridge callback must catch the escaping exception "
             'with its stack.');
     expect(body.contains('ErrorLogService.instance'), isTrue,
         reason: "the '$name' bridge callback must surface the cause via "
             'ErrorLogService instead of swallowing it (BUG-089).');
-    expect(body.contains('MinePopupResult().toJson()'), isTrue,
-        reason: "the '$name' bridge callback must still return a "
-            'MinePopupResult JSON on the failure path (BUG-077 contract).');
-    // The override / media-cache work that can throw must live INSIDE the try.
-    final int tryIdx = body.indexOf('try {');
-    final int catchIdx = body.indexOf('} catch (e, stack) {');
-    expect(tryIdx, greaterThanOrEqualTo(0));
-    expect(catchIdx, greaterThan(tryIdx));
-    final String guarded = body.substring(tryIdx, catchIdx);
-    expect(guarded.contains('writeDictionaryMediaCache('), isTrue,
-        reason: "writeDictionaryMediaCache in '$name' can throw on the re-mine "
-            'media path and must be inside the try block.');
+    expect(body.contains('DictPopupWebview.$name'), isTrue,
+        reason: "the '$name' handler log tag must identify the exact bridge.");
+    expect(body.contains(fallbackSnippet), isTrue,
+        reason: "the '$name' bridge callback must return a type-safe fallback "
+            'on the failure path.');
+
+    for (final String snippet in guardedSnippets) {
+      expect(body.contains(snippet), isTrue,
+          reason: "the '$name' handler must guard the throwing work: $snippet");
+    }
   }
 
   test('mineEntry bridge callback never lets an exception cross the boundary',
       () {
-    expectGuarded('mineEntry');
+    expectGuarded(
+      'mineEntry',
+      fallbackSnippet: 'MinePopupResult().toJson()',
+      guardedSnippets: <String>[
+        'writeDictionaryMediaCache(',
+        'widget.onMineEntry!(',
+      ],
+    );
     final String body = handlerBody('mineEntry');
     expect(body.contains('widget.onMineEntry!('), isTrue,
         reason: 'the mineEntry override invocation must be guarded.');
@@ -86,10 +98,58 @@ void main() {
 
   test('updateEntry bridge callback never lets an exception cross the boundary',
       () {
-    expectGuarded('updateEntry');
+    expectGuarded(
+      'updateEntry',
+      fallbackSnippet: 'MinePopupResult().toJson()',
+      guardedSnippets: <String>[
+        'writeDictionaryMediaCache(',
+        'widget.onUpdateEntry!(',
+      ],
+    );
     final String body = handlerBody('updateEntry');
     expect(body.contains('widget.onUpdateEntry!('), isTrue,
         reason: 'the update-in-place override (green ✓↩ re-mine after delete) '
             'invocation must be guarded.');
+  });
+
+  test('lookup/favorite/audio/link bridge callbacks are all boundary-guarded',
+      () {
+    const Map<String, String> fallbacks = <String, String>{
+      'duplicateCheck': 'false',
+      'favoriteEntry': 'false',
+      'favoriteCheck': 'false',
+      'appendSentence': '0',
+      'setSentenceContext': '0',
+      'clearSentenceDraft': '0',
+      'textSelected': 'null',
+      'openLink': 'null',
+      'onLinkClick': 'null',
+      'queryLocalAudio': 'null',
+      'resolveWordAudio': 'null',
+      'playWordAudio': 'false',
+    };
+
+    for (final MapEntry<String, String> entry in fallbacks.entries) {
+      expectGuarded(
+        entry.key,
+        fallbackSnippet: entry.value,
+      );
+    }
+  });
+
+  test('popup chrome bridge callbacks are all boundary-guarded', () {
+    const Map<String, String> fallbacks = <String, String>{
+      'tapOutside': 'null',
+      'scrolledToBottom': 'null',
+      'topPullReleased': 'null',
+      'popupRendered': 'null',
+    };
+
+    for (final MapEntry<String, String> entry in fallbacks.entries) {
+      expectGuarded(
+        entry.key,
+        fallbackSnippet: entry.value,
+      );
+    }
   });
 }

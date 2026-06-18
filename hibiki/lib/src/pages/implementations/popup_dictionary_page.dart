@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
@@ -32,7 +33,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     with DictionaryPageMixin {
   final DictionaryPopupController _popup =
       DictionaryPopupController(lowMemory: false);
+  final GlobalKey _resultStackKey = GlobalKey();
+  final Stopwatch _startupStopwatch = Stopwatch()..start();
   bool _isClosing = false;
+  String _sourceLookupText = '';
 
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
@@ -45,10 +49,20 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   ThemeData get mixinTheme => Theme.of(context);
 
+  double get _dictionaryHeadwordScale {
+    try {
+      return appModel.dictionaryFontSize / appModel.defaultDictionaryFontSize;
+    } on Object {
+      return 1.0;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.searchTerm);
+    _sourceLookupText = widget.searchTerm.trim();
+    debugPrint('[popup-perf] init search="${widget.searchTerm}"');
     if (widget.autoSearchOnOpen && appModel.isInitialised) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -66,9 +80,20 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     super.dispose();
   }
 
-  Future<void> _pushSearch(String query, Rect selectionRect) {
-    return pushNestedPopup(
-      query: query,
+  Future<void> _pushSearch(String query, Rect selectionRect) async {
+    final String trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    debugPrint('[popup-perf] search start "$trimmed" '
+        '${_startupStopwatch.elapsedMilliseconds}ms');
+    if (_searchController.text != trimmed) {
+      _searchController.text = trimmed;
+      _searchController.selection = TextSelection.collapsed(
+        offset: trimmed.length,
+      );
+    }
+    if (mounted) setState(() => _sourceLookupText = trimmed);
+    await pushNestedPopup(
+      query: trimmed,
       selectionRect: selectionRect,
       controller: _popup,
       autoRead: true,
@@ -76,6 +101,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
     );
+    debugPrint('[popup-perf] ffi done "$trimmed" '
+        '${_startupStopwatch.elapsedMilliseconds}ms');
   }
 
   void _popAt(int index) {
@@ -168,8 +195,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       color: appModel.overrideDictionaryColor ?? tokens.surfaces.page,
       child: Column(
         children: [
-          _buildSearchBar(),
+          _buildSwipeChrome(_buildSearchBar()),
           Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+          if (_sourceLookupText.trim().isNotEmpty)
+            SourceLookupTextPanel(
+              text: _sourceLookupText,
+              coordinateSpaceKey: _resultStackKey,
+              dictionaryHeadwordScale: _dictionaryHeadwordScale,
+              onLookup: _pushSearch,
+            ),
           Expanded(child: _buildStack(context)),
         ],
       ),
@@ -180,14 +214,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 嵌套层各自持有横滑（仅返回上一层），故此处只在基础层套外层横滑。
     // TODO-407②：平台/偏好禁用滑动关闭时（Windows/Linux 默认）整卡也不挂横滑，
     // 用搜索栏的关闭按钮兜底。
+    return card;
+  }
+
+  Widget _buildSwipeChrome(Widget child) {
     if (_popup.entries.length > 1 ||
         !ReaderHibikiSource.instance.enableSwipeToClose) {
-      return card;
+      return child;
     }
     return SwipeDismissWrapper(
       sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
       onDismiss: _close,
-      child: card,
+      child: child,
     );
   }
 
@@ -195,7 +233,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     return PopupDictionarySearchBar(
       controller: _searchController,
       focusNode: _searchFocusNode,
-      onClose: widget.closeInApp == null ? null : _close,
+      onClose: _close,
       onSubmit: _onSearchSubmit,
     );
   }
@@ -204,6 +242,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     if (_popup.entries.isEmpty) return const SizedBox.shrink();
 
     return Stack(
+      key: _resultStackKey,
       children: [
         for (int i = 0; i < _popup.entries.length; i++) _buildLayer(context, i),
       ],
@@ -222,40 +261,51 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
     return Positioned.fill(
-      child: DictionaryPopupLayer(
-        result: entry.result,
-        isSearching: entry.isSearching,
-        webViewKey: entry.webViewKey,
-        isDark: isDark,
-        showBorder: false,
-        swipeDismissible: !isBase,
-        enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
-        overrideFillColor: isBase
-            ? Colors.transparent
-            : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
-        onDismiss: isBase ? _close : () => _popAt(index),
-        onClose: null,
-        // TODO-485：基础层已有搜索栏/外层关闭入口；子层在禁用滑动时仍显示返回。
-        onBack: isBase ? null : () => _popAt(index),
-        onTapOutside: isBase ? _close : () => _popAt(index),
-        onScrolledToBottom: entry.allLoaded
-            ? null
-            : () => loadMoreForEntry(entry: entry, controller: _popup),
-        onTextSelected: (text, localRect) {
-          if (_popup.entries.length > index + 1) {
-            setState(() => _popup.truncateTo(index + 1));
-          }
-          _pushSearch(text, localRect);
-        },
-        onLinkClick: (query, localRect) {
-          if (_popup.entries.length > index + 1) {
-            setState(() => _popup.truncateTo(index + 1));
-          }
-          _pushSearch(query, localRect);
-        },
-        onMineEntry: onMineEntry,
-        onUpdateEntry: onUpdateEntry,
-        onDuplicateCheck: checkDuplicate,
+      child: Visibility(
+        visible: entry.visible,
+        maintainState: true,
+        maintainAnimation: true,
+        maintainSize: true,
+        child: DictionaryPopupLayer(
+          result: entry.result,
+          isSearching: entry.isSearching,
+          webViewKey: entry.webViewKey,
+          isDark: isDark,
+          showBorder: false,
+          swipeDismissible: !isBase,
+          enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+          overrideFillColor: isBase
+              ? Colors.transparent
+              : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
+          onDismiss: isBase ? _close : () => _popAt(index),
+          onClose: isBase ? null : () => _popAt(index),
+          onBack: null,
+          onRendered: () {
+            debugPrint('[popup-perf] render "${entry.searchTerm}" '
+                '${_startupStopwatch.elapsedMilliseconds}ms');
+            if (_popup.revealRendered(entry) && mounted) setState(() {});
+          },
+          // TODO-485：基础层已有搜索栏/外层关闭入口；子层在禁用滑动时仍显示返回。
+          onTapOutside: isBase ? _close : () => _popAt(index),
+          onScrolledToBottom: entry.allLoaded
+              ? null
+              : () => loadMoreForEntry(entry: entry, controller: _popup),
+          onTextSelected: (text, localRect) {
+            if (_popup.entries.length > index + 1) {
+              setState(() => _popup.truncateTo(index + 1));
+            }
+            _pushSearch(text, localRect);
+          },
+          onLinkClick: (query, localRect) {
+            if (_popup.entries.length > index + 1) {
+              setState(() => _popup.truncateTo(index + 1));
+            }
+            _pushSearch(query, localRect);
+          },
+          onMineEntry: onMineEntry,
+          onUpdateEntry: onUpdateEntry,
+          onDuplicateCheck: checkDuplicate,
+        ),
       ),
     );
   }

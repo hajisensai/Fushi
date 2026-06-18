@@ -5,8 +5,8 @@ import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 const double _dictionaryHeadwordBaseFontSize = 26.0;
 
-class ClipboardLookupTextPanel extends StatefulWidget {
-  const ClipboardLookupTextPanel({
+class SourceLookupTextPanel extends StatefulWidget {
+  const SourceLookupTextPanel({
     required this.text,
     required this.onLookup,
     super.key,
@@ -20,11 +20,20 @@ class ClipboardLookupTextPanel extends StatefulWidget {
   final double dictionaryHeadwordScale;
 
   @override
-  State<ClipboardLookupTextPanel> createState() =>
-      _ClipboardLookupTextPanelState();
+  State<SourceLookupTextPanel> createState() => _SourceLookupTextPanelState();
 }
 
-class _ClipboardLookupTextPanelState extends State<ClipboardLookupTextPanel> {
+class ClipboardLookupTextPanel extends SourceLookupTextPanel {
+  const ClipboardLookupTextPanel({
+    required super.text,
+    required super.onLookup,
+    super.key,
+    super.coordinateSpaceKey,
+    super.dictionaryHeadwordScale,
+  });
+}
+
+class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
   int? _lastShiftHoverIndex;
 
   @override

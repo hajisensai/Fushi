@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 
 import '../widgets/widget_test_helpers.dart';
@@ -58,7 +59,7 @@ void main() {
   // 默认灵敏度 0.6 → 阈值 ≈ 94px；水平拖 240px 必越阈值。
   Widget childPopup({
     required VoidCallback onDismiss,
-    required VoidCallback onBack,
+    required VoidCallback onClose,
     bool enableSwipeToClose = true,
   }) {
     return buildTestApp(
@@ -72,7 +73,7 @@ void main() {
             webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
             enableSwipeToClose: enableSwipeToClose,
             swipeDismissible: true,
-            onBack: onBack,
+            onClose: onClose,
             onDismiss: onDismiss,
             onTextSelected: (text, rect) {},
             onLinkClick: (query, rect) {},
@@ -179,21 +180,21 @@ void main() {
   );
 
   testWidgets(
-    'TODO-486: desktop mouse drag on child top bar dismisses without onBack',
+    'TODO-486: desktop mouse drag on child top bar dismisses without onClose',
     (WidgetTester tester) async {
       bool dismissed = false;
-      bool backed = false;
+      bool closed = false;
       await tester.pumpWidget(
         childPopup(
           onDismiss: () => dismissed = true,
-          onBack: () => backed = true,
+          onClose: () => closed = true,
         ),
       );
 
       final Rect swipeRect = tester.getRect(find.byType(SwipeDismissWrapper));
       final Offset blankTopBarPoint = swipeRect.center;
-      final Rect backIconRect = tester.getRect(find.byIcon(Icons.arrow_back));
-      expect(backIconRect.contains(blankTopBarPoint), isFalse,
+      final Rect closeIconRect = tester.getRect(find.byIcon(Icons.close));
+      expect(closeIconRect.contains(blankTopBarPoint), isFalse,
           reason:
               'the drag starts from blank child top-bar space, not the icon');
 
@@ -205,8 +206,8 @@ void main() {
 
       expect(dismissed, isTrue,
           reason: 'child swipe should close only the current child layer');
-      expect(backed, isFalse,
-          reason: 'swipe must not be implemented by invoking TODO-485 onBack');
+      expect(closed, isFalse,
+          reason: 'swipe must not be implemented by invoking the child X');
     },
   );
 
@@ -240,9 +241,9 @@ void main() {
   });
 
   testWidgets(
-    'TODO-485: nested back button remains available when swipe is disabled',
+    'TODO-501: nested close button remains available when swipe is disabled',
     (WidgetTester tester) async {
-      bool backed = false;
+      bool closed = false;
       await tester.pumpWidget(
         buildTestApp(
           Center(
@@ -255,7 +256,7 @@ void main() {
                 webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
                 enableSwipeToClose: false,
                 swipeDismissible: true,
-                onBack: () => backed = true,
+                onClose: () => closed = true,
                 onDismiss: () {},
                 onTextSelected: (text, rect) {},
                 onLinkClick: (query, rect) {},
@@ -268,12 +269,49 @@ void main() {
       );
 
       expect(find.byType(SwipeDismissWrapper), findsNothing);
-      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.arrow_back));
+      expect(find.byIcon(Icons.arrow_back), findsNothing);
+      expect(find.byIcon(Icons.close), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.close));
       await tester.pump();
-      expect(backed, isTrue, reason: '子层返回按钮必须独立于滑动关闭开关可用');
+      expect(closed, isTrue, reason: '子层 X 必须独立于滑动关闭开关可用');
     },
   );
+
+  testWidgets('TODO-501: top-bar action buttons are 36 boxes with 20px icons',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildTestApp(
+        Center(
+          child: SizedBox(
+            width: 320,
+            height: 360,
+            child: DictionaryPopupLayer(
+              result: null,
+              isSearching: false,
+              webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+              enableSwipeToClose: false,
+              onClose: () {},
+              onDismiss: () {},
+              onTextSelected: (text, rect) {},
+              onLinkClick: (query, rect) {},
+              onMineEntry: (fields) async => const MinePopupResult(),
+              onDuplicateCheck: (expression, reading) async => false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final HibikiIconButton button = tester.widget<HibikiIconButton>(
+      find.widgetWithIcon(HibikiIconButton, Icons.close),
+    );
+    expect(button.size, 20);
+    expect(
+      button.constraints,
+      const BoxConstraints.tightFor(width: 36, height: 36),
+    );
+    expect(button.padding, EdgeInsets.zero);
+  });
 
   testWidgets(
     'TODO-407②: enableSwipeToClose=false drops the SwipeDismissWrapper on the '
