@@ -29,3 +29,10 @@ target_link_libraries(${BINARY_NAME} PRIVATE dwmapi)
 target_link_libraries(${BINARY_NAME} PRIVATE d2d1 dwrite)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+add_executable(hibiki_update_launcher WIN32
+  "update_launcher.cpp"
+)
+apply_standard_settings(hibiki_update_launcher)
+target_compile_definitions(hibiki_update_launcher PRIVATE "NOMINMAX")
+target_link_libraries(hibiki_update_launcher PRIVATE shell32)

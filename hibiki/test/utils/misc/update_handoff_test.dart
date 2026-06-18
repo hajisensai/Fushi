@@ -234,16 +234,123 @@ void main() {
       expect(result?.record.launchError, contains('access denied'));
       expect(await marker.exists(), isTrue);
     });
+
+    test('reports the same app version again when failure fingerprint changes',
+        () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File log = File('${dir.path}${Platform.pathSeparator}inno.log');
+      await log.writeAsString('Got EAbort exception.');
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.2.3',
+        installerPath: r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
+        innoLogPath: log.path,
+        startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+      );
+      await WindowsUpdateHandoff.markLaunchSucceeded(
+        markerFile: marker,
+        installerPid: 4242,
+        launchedAt: DateTime.utc(2026, 6, 17, 10, 31),
+      );
+
+      final WindowsUpdateHandoffResult? first =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: marker,
+        currentVersion: '1.2.2',
+        now: DateTime.utc(2026, 6, 17, 10, 32),
+      );
+      final WindowsUpdateHandoffResult? second =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: marker,
+        currentVersion: '1.2.2',
+        now: DateTime.utc(2026, 6, 17, 10, 33),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await log.writeAsString(
+        [
+          r'2026-06-18 10:00:00.000   DeleteFile failed; code 5.',
+          r'2026-06-18 10:00:00.001   C:\Program Files\Hibiki\libmpv-2.dll',
+        ].join('\n'),
+      );
+      final WindowsUpdateHandoffResult? third =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: marker,
+        currentVersion: '1.2.2',
+        now: DateTime.utc(2026, 6, 17, 10, 34),
+      );
+
+      expect(first?.record.installerFailureType, 'silent_cancel');
+      expect(second, isNull);
+      expect(third?.record.installerFailureType, 'deletefile_code_5');
+      expect(
+        third?.record.failureFingerprint,
+        isNot(equals(first?.record.failureFingerprint)),
+      );
+    });
+
+    test('debug versions reconcile as installed when current debug is newer',
+        () async {
+      final File marker = await _markerFile();
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '0.5.1-debug.19',
+        installerPath: r'C:\tmp\hibiki-0.5.1-debug.19-windows-setup.exe',
+        innoLogPath: r'C:\tmp\hibiki-debug.install.log',
+        startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+      );
+
+      final WindowsUpdateHandoffResult? result =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: marker,
+        currentVersion: '0.5.1-debug.20',
+      );
+
+      expect(result?.status, WindowsUpdateHandoffStatus.installed);
+      expect(await marker.exists(), isFalse);
+    });
+
+    test('summarizes Inno currently-running and missing-log failures', () {
+      final WindowsInstallerFailureSummary running =
+          summarizeWindowsInstallerFailure(
+        record: WindowsUpdateHandoffRecord(
+          targetVersion: '1.2.3',
+          installerPath: r'C:\tmp\setup.exe',
+          innoLogPath: r'C:\tmp\setup.log',
+          startedAt: DateTime.utc(2026, 6, 17),
+          innoLogExists: true,
+        ),
+        innoLogContents: 'Setup detected that Hibiki is currently running.\n'
+            'Got EAbort exception.',
+      );
+      final WindowsInstallerFailureSummary missing =
+          summarizeWindowsInstallerFailure(
+        record: WindowsUpdateHandoffRecord(
+          targetVersion: '1.2.3',
+          installerPath: r'C:\tmp\setup.exe',
+          innoLogPath: r'C:\tmp\missing.log',
+          startedAt: DateTime.utc(2026, 6, 17),
+          innoLogExists: false,
+        ),
+      );
+
+      expect(running.type, 'app_mutex_running');
+      expect(running.message, contains('HibikiSingleInstanceMutex'));
+      expect(missing.type, 'missing_log');
+    });
   });
 
   group('WindowsInstaller.runAndExit handoff', () {
-    test('writes marker, starts with marker log path, then exits', () async {
+    test(
+        'writes marker, starts delayed launcher with marker log path, then exits',
+        () async {
       final File marker = await _markerFile();
       final Directory dir = marker.parent;
       final File installer = File(
           '${dir.path}${Platform.pathSeparator}hibiki-1.2.3-windows-setup.exe');
       await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
 
+      String? startedExecutable;
       List<String>? startedArgs;
       int? exitCode;
       await WindowsInstaller.runAndExit(
@@ -258,17 +365,9 @@ void main() {
           targetInstallDir: dir.path,
         ),
         startProcess: (String executable, List<String> args) async {
+          startedExecutable = executable;
           startedArgs = args;
           return const WindowsInstallerStartedProcess(pid: 4242);
-        },
-        observePostLaunch: (int? installerPid, String innoLogPath) async {
-          expect(installerPid, 4242);
-          return WindowsInstallerPostLaunchObservation(
-            observedAt: DateTime.utc(2026, 6, 17, 10, 30, 2),
-            installerProcessRunning: false,
-            innoLogExists: false,
-            innoLogSizeBytes: null,
-          );
         },
         exitProcess: (int code) {
           exitCode = code;
@@ -277,13 +376,22 @@ void main() {
 
       final WindowsUpdateHandoffRecord? record =
           await WindowsUpdateHandoff.read(marker);
-      expect(record?.installerLaunchSucceeded, isTrue);
       expect(record?.targetVersion, '1.2.3');
-      expect(record?.installerPid, 4242);
+      expect(record?.installerLaunchSucceeded, isNull,
+          reason:
+              'the helper writes installer launch outcome after parent exit');
+      expect(startedExecutable, endsWith('hibiki_update_launcher.exe'));
       expect(
-          record?.postLaunchObservedAt, DateTime.utc(2026, 6, 17, 10, 30, 2));
-      expect(record?.installerProcessRunning, isFalse);
-      expect(record?.innoLogExists, isFalse);
+          startedArgs,
+          containsAllInOrder(<String>[
+            '--marker',
+            marker.path,
+            '--parent-pid',
+            '$pid',
+            '--installer',
+            installer.path,
+            '--',
+          ]));
       expect(startedArgs, contains('/LOG=${record!.innoLogPath}'));
       expect(exitCode, 0);
     });
@@ -308,7 +416,11 @@ void main() {
             targetInstallDir: dir.path,
           ),
           startProcess: (String executable, List<String> args) async {
-            throw const ProcessException('setup.exe', <String>[], 'boom');
+            throw const ProcessException(
+              'hibiki_update_launcher.exe',
+              <String>[],
+              'boom',
+            );
           },
           exitProcess: (_) {},
         ),
@@ -370,6 +482,92 @@ void main() {
       expect(record?.libmpvModuleHolders.single.pid, 5678);
       expect(
           record?.launchError, contains('Close the listed process manually'));
+    });
+
+    test('blocks any active hibiki.exe even outside the target directory',
+        () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}hibiki-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await expectLater(
+        WindowsInstaller.runAndExit(
+          installer.path,
+          targetVersion: '1.2.3',
+          handoffMarkerFile: marker,
+          collectDiagnostics: () async => WindowsInstallerDiagnostics(
+            currentExecutablePath:
+                '${dir.path}${Platform.pathSeparator}hibiki.exe',
+            currentInstallDir: dir.path,
+            targetInstallDir: dir.path,
+            runningHibikiProcesses: const <WindowsProcessInfo>[
+              WindowsProcessInfo(
+                pid: 6789,
+                name: 'hibiki.exe',
+                path: r'C:\Users\wrds\AppData\Local\Hibiki\hibiki.exe',
+              ),
+            ],
+          ),
+          startProcess: (String executable, List<String> args) async {
+            startCalled = true;
+            return const WindowsInstallerStartedProcess(pid: 4242);
+          },
+          exitProcess: (_) {},
+        ),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(startCalled, isFalse);
+      expect(record?.installerLaunchSucceeded, isFalse);
+      expect(record?.runningHibikiProcesses.single.pid, 6789);
+      expect(record?.launchError, contains('HibikiSingleInstanceMutex'));
+    });
+
+    test('does not block on historical install locations without a process',
+        () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}hibiki-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await WindowsInstaller.runAndExit(
+        installer.path,
+        targetVersion: '1.2.3',
+        handoffMarkerFile: marker,
+        collectDiagnostics: () async => WindowsInstallerDiagnostics(
+          currentExecutablePath:
+              '${dir.path}${Platform.pathSeparator}hibiki.exe',
+          currentInstallDir: dir.path,
+          targetInstallDir: dir.path,
+          detectedInstallLocations: const <WindowsDetectedInstallLocation>[
+            WindowsDetectedInstallLocation(
+                source: 'current', path: r'D:\APP\Hibiki'),
+            WindowsDetectedInstallLocation(
+              source: 'historical',
+              path: r'C:\Users\wrds\AppData\Local\Hibiki',
+            ),
+          ],
+          pathMismatchWarning: 'historical location differs',
+        ),
+        startProcess: (String executable, List<String> args) async {
+          startCalled = true;
+          return const WindowsInstallerStartedProcess(pid: 4242);
+        },
+        exitProcess: (_) {},
+      );
+
+      expect(startCalled, isTrue);
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record?.pathMismatchWarning, contains('historical'));
+      expect(record?.installerLaunchSucceeded, isNull);
     });
   });
 

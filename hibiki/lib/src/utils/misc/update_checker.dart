@@ -832,10 +832,12 @@ class UpdateChecker {
         'UpdateChecker.windowsHandoff',
         'status=${result.status.name}, target=${result.record.targetVersion}, '
             'current=$currentVersion, installer=${result.record.installerPath}, '
+            'launcherPid=${result.record.launcherPid ?? 'unknown'}, '
             'pid=${result.record.installerPid ?? 'unknown'}, '
             'processRunning=${result.record.installerProcessRunning}, '
             'log=${result.record.innoLogPath}, '
-            'logExists=${result.record.innoLogExists}',
+            'logExists=${result.record.innoLogExists}, '
+            'failureType=${result.record.installerFailureType ?? 'unknown'}',
       );
       if (!context.mounted) return;
       await showAppDialog<void>(
@@ -2322,6 +2324,15 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
               style: tokens.type.listSubtitle,
             ),
             if (result.status != WindowsUpdateHandoffStatus.installed) ...[
+              if (record.installerFailureSummary != null) ...[
+                SizedBox(height: tokens.spacing.gap),
+                SelectableText(
+                  t.update_install_failure_summary(
+                    summary: record.installerFailureSummary!,
+                  ),
+                  style: tokens.type.listSubtitle,
+                ),
+              ],
               SizedBox(height: tokens.spacing.gap),
               SelectableText(
                 t.update_install_log_path(path: record.innoLogPath),
@@ -2411,6 +2422,22 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                 Text(
                   t.update_install_restart_windows_hint,
                   style: tokens.type.listSubtitle,
+                ),
+              ],
+              if (record.launcherPid != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_launcher_pid(pid: record.launcherPid!),
+                  style: tokens.type.metadata,
+                ),
+              ],
+              if (record.parentExitObserved != null) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  record.parentExitObserved!
+                      ? t.update_install_parent_exit_observed
+                      : t.update_install_parent_exit_not_observed,
+                  style: tokens.type.metadata,
                 ),
               ],
               if (record.installerPid != null) ...[

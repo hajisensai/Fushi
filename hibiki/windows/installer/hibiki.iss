@@ -35,6 +35,7 @@ AppMutex=HibikiSingleInstanceMutex
 Name: "videoassoc"; Description: "将 Hibiki 加入视频文件的「打开方式」（mkv / mp4 等）"; GroupDescription: "文件关联："
 
 [Files]
+; 包含 hibiki_update_launcher.exe：应用内更新用它等待当前 hibiki.exe 退出后再启动 Inno。
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
