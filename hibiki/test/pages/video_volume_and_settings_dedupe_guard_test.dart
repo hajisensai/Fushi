@@ -68,6 +68,13 @@ void main() {
           reason: '音量按钮 click/tap 应打开或固定锚点音量浮层');
       expect(body.contains('_controlPopoverAnchor('), isTrue,
           reason: '音量按钮应包固定锚点 helper，桌面 hover 逻辑在 helper 内复用');
+      expect(
+          body.contains(
+              '_controlPopoverLinkFor(slot, VideoControlItem.volume)'),
+          isTrue,
+          reason: '音量按钮必须按 slot/item 获取独立 LayerLink');
+      expect(body.contains('_volumeControlPopoverLink'), isFalse,
+          reason: '不得继续使用单个全局音量 LayerLink');
       final String anchor = methodBody('Widget _controlPopoverAnchor({');
       expect(anchor.contains('MouseRegion('), isTrue,
           reason: '桌面 hover 应由 MouseRegion 打开音量 / 倍速浮层');
@@ -103,7 +110,8 @@ void main() {
           bottom.contains('rawItems.contains(VideoControlItem.volume)'), isTrue,
           reason: '底栏左右槽应按真实 slot 渲染完整 _buildVolumeButton');
       expect(
-          bottom.contains('_buildVolumeButton(controller, desktop: desktop)'),
+          bottom.contains('_buildVolumeButton(') &&
+              bottom.contains('slot: slot'),
           isTrue);
 
       final String top = methodBody('Widget _topBarSlotGroup(');

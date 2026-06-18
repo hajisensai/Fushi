@@ -75,6 +75,19 @@ Future<void> _drag(WidgetTester tester, Finder source, Finder target) async {
   await tester.pumpAndSettle();
 }
 
+bool _willAccept(WidgetTester tester, Finder source, Finder target) {
+  final Draggable<VideoControlDragData> draggable =
+      tester.widget<Draggable<VideoControlDragData>>(source);
+  final DragTarget<VideoControlDragData> dragTarget =
+      tester.widget<DragTarget<VideoControlDragData>>(target);
+  return dragTarget.onWillAcceptWithDetails!(
+    DragTargetDetails<VideoControlDragData>(
+      data: draggable.data!,
+      offset: tester.getCenter(target),
+    ),
+  );
+}
+
 void main() {
   testWidgets('onscreen overlay edits a draft and saves explicitly',
       (WidgetTester tester) async {
@@ -172,6 +185,93 @@ void main() {
   });
 
   testWidgets(
+      'onscreen overlay copies palette volume to the other bottom slot only',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    VideoControlLayout? committed;
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (VideoControlLayout layout) async => committed = layout,
+    );
+
+    final Finder source = _paletteChip(VideoControlItem.volume);
+    final Finder bottomLeft = _slotRegion(VideoControlSlot.bottomLeft);
+    final Finder topRight = _slotRegion(VideoControlSlot.topRight);
+    expect(source, findsOneWidget);
+    expect(bottomLeft, findsOneWidget);
+    expect(topRight, findsOneWidget);
+    expect(_willAccept(tester, source, topRight), isFalse);
+
+    await _drag(tester, source, bottomLeft);
+    expect(_willAccept(tester, source, bottomLeft), isFalse);
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(committed, isNotNull);
+    expect(committed!.slotsOf(VideoControlItem.volume), <VideoControlSlot>[
+      VideoControlSlot.bottomLeft,
+      VideoControlSlot.bottomRight,
+    ]);
+    expect(
+      committed!
+          .itemsIn(VideoControlSlot.bottomLeft)
+          .where((VideoControlItem i) => i == VideoControlItem.volume),
+      hasLength(1),
+    );
+  });
+
+  testWidgets('onscreen overlay moves, removes, and restores title',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    VideoControlLayout? committed;
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (VideoControlLayout layout) async => committed = layout,
+    );
+
+    final Finder topCenter = _slotRegion(VideoControlSlot.topCenter);
+    final Finder topLeft = _slotRegion(VideoControlSlot.topLeft);
+    final Finder topRight = _slotRegion(VideoControlSlot.topRight);
+    final Finder hidden = _slotRegion(VideoControlSlot.hidden);
+    expect(topCenter, findsOneWidget);
+    expect(hidden, findsOneWidget);
+
+    final Finder titleAtCenter =
+        _placedChip(VideoControlItem.title, VideoControlSlot.topCenter);
+    expect(titleAtCenter, findsOneWidget);
+    expect(_willAccept(tester, _paletteChip(VideoControlItem.speed), topCenter),
+        isFalse);
+
+    await _drag(tester, titleAtCenter, topLeft);
+    expect(_placedChip(VideoControlItem.title, VideoControlSlot.topCenter),
+        findsNothing);
+    expect(_placedChip(VideoControlItem.title, VideoControlSlot.topLeft),
+        findsOneWidget);
+
+    await _drag(
+      tester,
+      _placedChip(VideoControlItem.title, VideoControlSlot.topLeft),
+      hidden,
+    );
+    expect(_placedChip(VideoControlItem.title, VideoControlSlot.hidden),
+        findsOneWidget);
+
+    await _drag(tester, _paletteChip(VideoControlItem.title), topRight);
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(committed, isNotNull);
+    expect(committed!.slotsOf(VideoControlItem.title),
+        <VideoControlSlot>[VideoControlSlot.topRight]);
+  });
+
+  testWidgets(
       'onscreen overlay includes subtitle and audio chrome in editable controls',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(900, 600));
@@ -209,7 +309,7 @@ void main() {
     expect(find.text(t.dialog_cancel), findsOneWidget);
     expect(find.byIcon(Icons.close), findsWidgets);
     expect(find.byIcon(Icons.drag_indicator), findsNothing);
-    expect(find.text(t.video_control_slot_hidden), findsNothing);
+    expect(find.text(t.video_control_slot_hidden), findsOneWidget);
   });
 
   testWidgets('onscreen overlay stays bounded on narrow video surfaces',

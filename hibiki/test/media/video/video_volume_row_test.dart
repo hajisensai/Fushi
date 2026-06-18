@@ -29,7 +29,7 @@ void main() {
     final String build = methodBody(
       page,
       RegExp(
-        r'Widget _buildVolumeButton\(\s*VideoPlayerController controller, \{\s*required bool desktop,\s*\}\) \{(.*?)\n  \}',
+        r'Widget _buildVolumeButton\(\s*VideoPlayerController controller, \{\s*required bool desktop,\s*required VideoControlSlot slot,\s*\}\) \{(.*?)\n  \}',
         dotAll: true,
       ),
       '_buildVolumeButton',
@@ -40,8 +40,11 @@ void main() {
           reason: '底栏音量按钮必须是固定尺寸锚点，由锚点打开浮层');
       expect(build, contains('_VideoControlPopoverKind.volume'),
           reason: '音量入口必须打开 volume 浮层');
-      expect(build, contains('_volumeControlPopoverLink'),
-          reason: '音量浮层必须锚定音量按钮，而非参与底栏布局');
+      expect(build,
+          contains('_controlPopoverLinkFor(slot, VideoControlItem.volume)'),
+          reason: '音量浮层必须按所在 slot 取得独立锚点，不能共用全局 link');
+      expect(build, isNot(contains('_volumeControlPopoverLink')),
+          reason: 'volume 不得继续使用单个全局 LayerLink');
       expect(build, isNot(contains('Slider(')),
           reason: '底栏按钮内不得内联 Slider，避免占位随需求回退到横向滑条');
       expect(build, isNot(contains('Row(')),
@@ -53,8 +56,8 @@ void main() {
           reason: '浮层应通过固定锚点跟随按钮，而非插入底栏布局');
       expect(page, contains('showWhenUnlinked: false'),
           reason: '锚点消失时浮层必须自动不可见');
-      expect(page, contains('targetAnchor: Alignment.topCenter'),
-          reason: '浮层应锚定按钮上方');
+      expect(page, contains('_activeControlPopoverPlacement'),
+          reason: '浮层应根据播放器边界和来源 slot 计算锚点/宽度');
       expect(page, isNot(contains('_volumeSliderWidth')),
           reason: 'TODO-438 不再保留底栏横滑条固定宽度占位');
       expect(page, isNot(contains('MaterialDesktopVolumeButton')),
@@ -80,7 +83,7 @@ void main() {
       final String toggle = methodBody(
         page,
         RegExp(
-          r'void _toggleControlPopover\(\s*_VideoControlPopoverKind kind,\s*\{\s*required LayerLink popoverLink,\s*\}\s*\) \{(.*?)\n  \}',
+          r'void _toggleControlPopover\(\s*_VideoControlPopoverKind kind,\s*\{\s*required LayerLink popoverLink,\s*VideoControlSlot\? sourceSlot,\s*VideoControlItem\? sourceItem,\s*\}\s*\) \{(.*?)\n  \}',
           dotAll: true,
         ),
         '_toggleControlPopover',
@@ -94,14 +97,14 @@ void main() {
       final String popover = methodBody(
         page,
         RegExp(
-          r'Widget _buildVolumePopover\(\) \{(.*?)\n  \}',
+          r'Widget _buildVolumePopover\(\{required double width\}\) \{(.*?)\n  \}',
           dotAll: true,
         ),
         '_buildVolumePopover',
       );
       expect(popover, contains('_toggleMute()'), reason: '浮层内保留静音按钮');
-      expect(popover, contains('width: 220 * _videoUiScale'),
-          reason: '横向音量浮层应有稳定宽度，不改变底栏几何');
+      expect(popover, contains('width: width'),
+          reason: '横向音量浮层宽度应由 placement helper clamp 后传入');
       expect(popover, contains('Row('), reason: '浮层内是横向音量布局');
       expect(popover, isNot(contains('RotatedBox(')),
           reason: 'TODO-491/492/493 后音量浮层不再旋转成竖条');
@@ -121,9 +124,10 @@ void main() {
       );
       expect(bottom, contains('rawItems.contains(VideoControlItem.volume)'),
           reason: 'TODO-492：volume 可移动，但完整控件只在底栏左右槽渲染');
-      expect(
-          bottom, contains('_buildVolumeButton(controller, desktop: desktop)'),
-          reason: '底栏 volume slot 必须渲染同一个完整音量按钮入口');
+      expect(bottom, contains('_buildVolumeButton('),
+          reason: '底栏 volume slot 必须渲染完整音量按钮入口');
+      expect(bottom, contains('slot: slot'),
+          reason: '音量按钮必须接收 slot，以使用按槽位区分的锚点和几何避让');
 
       final String chipItems = methodBody(
         page,

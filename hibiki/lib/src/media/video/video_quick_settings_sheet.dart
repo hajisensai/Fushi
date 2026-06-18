@@ -1212,6 +1212,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 ),
               ],
               SizedBox(height: tokens.spacing.gap),
+              _buildControlPalette(),
+              SizedBox(height: tokens.spacing.gap),
               _buildHiddenSlotTray(),
             ],
           ),
@@ -1282,6 +1284,18 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                             width: sideWidth,
                             child: _buildSlotRegion(VideoControlSlot.topRight),
                           ),
+                          Align(
+                            alignment: Alignment.topCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: inset),
+                              child: SizedBox(
+                                width: centerWidth,
+                                child: _buildSlotRegion(
+                                  VideoControlSlot.topCenter,
+                                ),
+                              ),
+                            ),
+                          ),
                           Positioned(
                             left: inset,
                             top: 0,
@@ -1337,6 +1351,55 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildControlPalette() {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Icon(
+              Icons.dashboard_customize_outlined,
+              size: 18,
+              color: cs.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                t.video_control_palette_title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final VideoControlItem item
+                  in VideoControlItem.customizableItems) ...<Widget>[
+                _buildDraggableControlChip(
+                  item,
+                  sourceSlot: null,
+                  sourceIndex: null,
+                ),
+                const SizedBox(width: 6),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1505,8 +1568,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   Widget _buildDraggableControlChip(
     VideoControlItem item, {
-    required VideoControlSlot sourceSlot,
-    required int sourceIndex,
+    required VideoControlSlot? sourceSlot,
+    required int? sourceIndex,
     bool highlighted = false,
   }) {
     final Widget chip = _controlChipBody(
@@ -1550,8 +1613,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   Widget _controlChipBody(
     VideoControlItem item, {
-    required VideoControlSlot sourceSlot,
-    required int sourceIndex,
+    required VideoControlSlot? sourceSlot,
+    required int? sourceIndex,
     required bool dragging,
     required bool highlighted,
   }) {
@@ -1562,6 +1625,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         highlighted ? cs.primaryContainer : cs.secondaryContainer;
     final Color foreground =
         highlighted ? cs.onPrimaryContainer : cs.onSecondaryContainer;
+    final String sourceSlotKey = sourceSlot?.storageValue ?? 'palette';
+    final String sourceIndexKey = sourceIndex?.toString() ?? 'palette';
     final Widget body = SizedBox.square(
       dimension: 36,
       child: DecoratedBox(
@@ -1591,7 +1656,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         key: dragging
             ? null
             : ValueKey<String>(
-                'video-control-chip-${item.storageValue}-${sourceSlot.storageValue}-$sourceIndex',
+                'video-control-chip-${item.storageValue}-$sourceSlotKey-$sourceIndexKey',
               ),
         label: label,
         button: true,
@@ -1600,7 +1665,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           key: dragging
               ? null
               : ValueKey<String>(
-                  'video-control-drag-chip-${item.storageValue}-${sourceSlot.storageValue}-$sourceIndex',
+                  'video-control-drag-chip-${item.storageValue}-$sourceSlotKey-$sourceIndexKey',
                 ),
           behavior: HitTestBehavior.opaque,
           child: ExcludeSemantics(child: body),
@@ -1688,7 +1753,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       case VideoControlSlot.hidden:
         return t.video_control_slot_hidden;
       case VideoControlSlot.topCenter:
-        return slot.storageValue;
+        return t.video_control_slot_top_center;
     }
   }
 
@@ -1735,6 +1800,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       case VideoControlItem.volume:
         return t.video_control_volume;
       case VideoControlItem.title:
+        return t.video_control_title;
       case VideoControlItem.positionIndicator:
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
@@ -1788,6 +1854,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       case VideoControlItem.volume:
         return Icons.volume_up_outlined;
       case VideoControlItem.title:
+        return Icons.title;
       case VideoControlItem.positionIndicator:
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:

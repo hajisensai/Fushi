@@ -305,12 +305,16 @@ enum VideoControlItem {
   /// Whether the visual icon-chip editor can represent this button as a single
   /// draggable chip. [volume] is a dedicated player widget, but the editor can
   /// still represent its placement with a volume icon chip. The only items it
-  /// cannot show as chips are [title] (text) and [positionIndicator] (time
-  /// text). [playPause] is special-render but still a single button, so it is
+  /// cannot show as a chip is [positionIndicator] (time text). [title] is a
+  /// special text chip in the editor: it keeps a dedicated player render path,
+  /// but users can move it among top slots or move it out of the player.
+  /// [playPause] is special-render but still a single button, so it is
   /// chip-renderable (TODO-399 decision 2).
-  bool get isChipRenderable =>
-      this != VideoControlItem.title &&
-      this != VideoControlItem.positionIndicator;
+  bool get isChipRenderable => this != VideoControlItem.positionIndicator;
+
+  /// Whether the item should be moved as a single instance rather than copied
+  /// from the palette. Most controls may sit in several slots; title is unique.
+  bool get isSingleInstance => this == VideoControlItem.title;
 
   /// Whether the item may be placed in [target] by the model/editor.
   ///
@@ -322,6 +326,13 @@ enum VideoControlItem {
       return target == VideoControlSlot.bottomLeft ||
           target == VideoControlSlot.bottomRight;
     }
+    if (this == VideoControlItem.title) {
+      return target == VideoControlSlot.topLeft ||
+          target == VideoControlSlot.topCenter ||
+          target == VideoControlSlot.topRight ||
+          target == VideoControlSlot.hidden;
+    }
+    if (target == VideoControlSlot.topCenter) return false;
     if (pinnedRequired && target == VideoControlSlot.hidden) return false;
     return true;
   }
@@ -677,6 +688,9 @@ class VideoControlLayout {
     if (!item.canMoveToSlot(target)) {
       return this;
     }
+    if (item.isSingleInstance) {
+      return moveItem(item, target, index: index);
+    }
     if (_slots[target]!.contains(item)) return this; // already here, no-op.
     final Map<VideoControlSlot, List<VideoControlItem>> next =
         <VideoControlSlot, List<VideoControlItem>>{
@@ -707,6 +721,9 @@ class VideoControlLayout {
     }
     if (!item.canMoveToSlot(target)) {
       return this;
+    }
+    if (item.isSingleInstance) {
+      return moveItem(item, target, index: targetIndex);
     }
 
     final VideoControlSlot source = payload.sourceSlot!;
@@ -754,6 +771,14 @@ class VideoControlLayout {
         s: List<VideoControlItem>.from(_slots[s]!),
     };
     next[slot]!.removeWhere((VideoControlItem i) => i == item);
+    if (item == VideoControlItem.title) {
+      final bool stillPlaced = VideoControlSlot.values.any(
+        (VideoControlSlot s) => next[s]!.contains(VideoControlItem.title),
+      );
+      if (!stillPlaced) {
+        next[VideoControlSlot.hidden]!.add(VideoControlItem.title);
+      }
+    }
     return VideoControlLayout._(_normalize(next));
   }
 
@@ -868,12 +893,19 @@ class VideoControlLayout {
   static Map<VideoControlSlot, List<VideoControlItem>> _normalize(
     Map<VideoControlSlot, List<VideoControlItem>> slots,
   ) {
+    slots[VideoControlSlot.topCenter]!.removeWhere(
+      (VideoControlItem item) => item != VideoControlItem.title,
+    );
+    _dedupeWithinSlots(slots);
     final Set<VideoControlItem> present = <VideoControlItem>{
       for (final List<VideoControlItem> list in slots.values) ...list,
     };
     for (final VideoControlItem item in VideoControlItem.values) {
       if (!present.contains(item)) {
-        slots[VideoControlSlot.hidden]!.add(item);
+        final VideoControlSlot slot = item == VideoControlItem.title
+            ? VideoControlSlot.topCenter
+            : VideoControlSlot.hidden;
+        slots[slot]!.add(item);
       }
     }
     final List<VideoControlItem> hidden = slots[VideoControlSlot.hidden]!;
@@ -887,34 +919,75 @@ class VideoControlLayout {
       slots[_defaultSlotForPinned(item)]!.add(item);
     }
     _normalizeVolume(slots);
+    _normalizeTitle(slots);
     return slots;
+  }
+
+  static void _dedupeWithinSlots(
+    Map<VideoControlSlot, List<VideoControlItem>> slots,
+  ) {
+    for (final VideoControlSlot slot in VideoControlSlot.values) {
+      final Set<VideoControlItem> seen = <VideoControlItem>{};
+      slots[slot]!.removeWhere((VideoControlItem item) => !seen.add(item));
+    }
   }
 
   static void _normalizeVolume(
     Map<VideoControlSlot, List<VideoControlItem>> slots,
   ) {
-    VideoControlSlot? target;
-    int targetIndex = 0;
+    bool hasBottomVolume = false;
     for (final VideoControlSlot slot in const <VideoControlSlot>[
       VideoControlSlot.bottomLeft,
       VideoControlSlot.bottomRight,
     ]) {
-      final int index = slots[slot]!.indexOf(VideoControlItem.volume);
-      if (index < 0) continue;
-      target = slot;
-      targetIndex = index;
-      break;
+      hasBottomVolume =
+          hasBottomVolume || slots[slot]!.contains(VideoControlItem.volume);
     }
 
     for (final VideoControlSlot slot in VideoControlSlot.values) {
+      if (slot == VideoControlSlot.bottomLeft ||
+          slot == VideoControlSlot.bottomRight) {
+        continue;
+      }
       slots[slot]!.removeWhere(
         (VideoControlItem item) => item == VideoControlItem.volume,
       );
     }
 
-    final VideoControlSlot resolved = target ?? VideoControlSlot.bottomRight;
+    if (!hasBottomVolume) {
+      slots[VideoControlSlot.bottomRight]!.insert(
+        0,
+        VideoControlItem.volume,
+      );
+    }
+  }
+
+  static void _normalizeTitle(
+    Map<VideoControlSlot, List<VideoControlItem>> slots,
+  ) {
+    VideoControlSlot? target;
+    int targetIndex = 0;
+    for (final VideoControlSlot slot in const <VideoControlSlot>[
+      VideoControlSlot.topLeft,
+      VideoControlSlot.topCenter,
+      VideoControlSlot.topRight,
+      VideoControlSlot.hidden,
+    ]) {
+      final int index = slots[slot]!.indexOf(VideoControlItem.title);
+      if (index < 0) continue;
+      target ??= slot;
+      if (target == slot) targetIndex = index;
+    }
+
+    for (final VideoControlSlot slot in VideoControlSlot.values) {
+      slots[slot]!.removeWhere(
+        (VideoControlItem item) => item == VideoControlItem.title,
+      );
+    }
+
+    final VideoControlSlot resolved = target ?? VideoControlSlot.topCenter;
     final List<VideoControlItem> list = slots[resolved]!;
-    list.insert(targetIndex.clamp(0, list.length), VideoControlItem.volume);
+    list.insert(targetIndex.clamp(0, list.length), VideoControlItem.title);
   }
 
   /// Recovery slot for a required button wrongly placed in hidden (does not

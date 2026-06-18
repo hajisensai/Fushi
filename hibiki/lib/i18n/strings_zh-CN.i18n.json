@@ -1725,5 +1725,7 @@
     "update_install_libmpv_holder": "libmpv 持有进程：PID $pid - $path",
     "update_install_deletefile_failure": "安装器无法替换 $path（代码 $code）",
     "update_install_manual_close_retry": "请按上方 PID/路径手动关闭 Hibiki，然后重试更新或重新运行安装器。",
-    "update_install_restart_windows_hint": "如果上方进程已关闭但 libmpv-2.dll 仍被占用，请重启 Windows 后再安装。"
+    "update_install_restart_windows_hint": "如果上方进程已关闭但 libmpv-2.dll 仍被占用，请重启 Windows 后再安装。",
+    "video_control_slot_top_center": "顶栏（中间）",
+    "video_control_title": "视频名称"
 }

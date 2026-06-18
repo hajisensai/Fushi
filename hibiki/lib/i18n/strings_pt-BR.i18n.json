@@ -1725,5 +1725,7 @@
     "update_install_libmpv_holder": "libmpv holder: PID $pid - $path",
     "update_install_deletefile_failure": "Installer failed to replace $path (code $code)",
     "update_install_manual_close_retry": "Close Hibiki from the listed PID/path, then retry the update or run the installer again.",
-    "update_install_restart_windows_hint": "If the listed processes are closed but libmpv-2.dll is still locked, restart Windows and install again."
+    "update_install_restart_windows_hint": "If the listed processes are closed but libmpv-2.dll is still locked, restart Windows and install again.",
+    "video_control_slot_top_center": "Top bar (center)",
+    "video_control_title": "Video title"
 }

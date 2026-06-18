@@ -997,6 +997,66 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    Finder paletteChipFinder(VideoControlItem item) {
+      return find.byWidgetPredicate(
+        (Widget w) =>
+            w is Draggable<VideoControlDragData> &&
+            w.data?.item == item &&
+            w.data?.sourceSlot == null,
+      );
+    }
+
+    Draggable<VideoControlDragData> draggableFor(
+      WidgetTester tester,
+      Finder source,
+    ) {
+      final Widget direct = tester.widget(source);
+      if (direct is Draggable<VideoControlDragData>) return direct;
+      final Finder ancestor = find.ancestor(
+        of: source,
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is Draggable<VideoControlDragData>,
+        ),
+      );
+      return tester.widget<Draggable<VideoControlDragData>>(ancestor.first);
+    }
+
+    bool willAcceptDrag(
+      WidgetTester tester,
+      Finder source,
+      Finder target,
+    ) {
+      final Draggable<VideoControlDragData> draggable =
+          draggableFor(tester, source);
+      final DragTarget<VideoControlDragData> dragTarget =
+          tester.widget<DragTarget<VideoControlDragData>>(target);
+      return dragTarget.onWillAcceptWithDetails!(
+        DragTargetDetails<VideoControlDragData>(
+          data: draggable.data!,
+          offset: tester.getCenter(target),
+        ),
+      );
+    }
+
+    Future<void> acceptDrag(
+      WidgetTester tester,
+      Finder source,
+      Finder target,
+    ) async {
+      final Draggable<VideoControlDragData> draggable =
+          draggableFor(tester, source);
+      final DragTarget<VideoControlDragData> dragTarget =
+          tester.widget<DragTarget<VideoControlDragData>>(target);
+      final DragTargetDetails<VideoControlDragData> details =
+          DragTargetDetails<VideoControlDragData>(
+        data: draggable.data!,
+        offset: tester.getCenter(target),
+      );
+      expect(dragTarget.onWillAcceptWithDetails!(details), isTrue);
+      dragTarget.onAcceptWithDetails!(details);
+      await tester.pumpAndSettle();
+    }
+
     testWidgets(
         'chips default to icons while semantics and tooltip expose names',
         (tester) async {
@@ -1194,6 +1254,88 @@ void main() {
           <VideoControlSlot>[VideoControlSlot.bottomLeft]);
       expect(
           find.text('Volume can only sit on the bottom bar.'), findsOneWidget);
+    });
+
+    testWidgets('all-controls palette copies volume into the other bottom slot',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      VideoControlLayout? latest;
+      await _pump(
+        tester,
+        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        }),
+      );
+      await openControls(tester);
+
+      final Finder source = paletteChipFinder(VideoControlItem.volume);
+      final Finder bottomLeft = slotFinder(VideoControlSlot.bottomLeft);
+      final Finder topRight = slotFinder(VideoControlSlot.topRight);
+      expect(find.text(t.video_control_palette_title), findsOneWidget);
+      expect(source, findsOneWidget);
+      expect(willAcceptDrag(tester, source, topRight), isFalse);
+
+      await acceptDrag(tester, source, bottomLeft);
+      expect(willAcceptDrag(tester, source, bottomLeft), isFalse);
+
+      expect(latest, isNotNull);
+      expect(latest!.slotsOf(VideoControlItem.volume), <VideoControlSlot>[
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomRight,
+      ]);
+      expect(
+        latest!
+            .itemsIn(VideoControlSlot.bottomLeft)
+            .where((VideoControlItem i) => i == VideoControlItem.volume),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('title can be removed and restored from quick settings',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      VideoControlLayout? latest;
+      await _pump(
+        tester,
+        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        }),
+      );
+      await openControls(tester);
+
+      final Finder topCenter = slotFinder(VideoControlSlot.topCenter);
+      final Finder topRight = slotFinder(VideoControlSlot.topRight);
+      final Finder hidden = slotFinder(VideoControlSlot.hidden);
+      expect(topCenter, findsOneWidget);
+      expect(hidden, findsOneWidget);
+      expect(
+        willAcceptDrag(
+          tester,
+          paletteChipFinder(VideoControlItem.speed),
+          topCenter,
+        ),
+        isFalse,
+      );
+
+      await acceptDrag(
+        tester,
+        dragChipFinder(VideoControlItem.title, VideoControlSlot.topCenter, 0),
+        hidden,
+      );
+      expect(latest!.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.hidden]);
+
+      await acceptDrag(
+        tester,
+        paletteChipFinder(VideoControlItem.title),
+        topRight,
+      );
+      expect(latest!.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.topRight]);
     });
 
     test('removed controls wording uses out-of-player semantics', () {

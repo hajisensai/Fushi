@@ -115,8 +115,7 @@ void main() {
       }
     });
 
-    test(
-        'decode normalizes invalid or duplicated volume back to one bottom slot',
+    test('decode drops invalid volume slots and restores one bottom fallback',
         () {
       final String invalidOnly = jsonEncode(<String, Object>{
         'version': 2,
@@ -130,18 +129,29 @@ void main() {
           VideoControlLayout.decode(invalidOnly);
       expect(recovered.slotsOf(VideoControlItem.volume),
           <VideoControlSlot>[VideoControlSlot.bottomRight]);
+    });
 
+    test('decode preserves volume on both bottom slots but dedupes one slot',
+        () {
       final String duplicated = jsonEncode(<String, Object>{
         'version': 2,
         'slots': <String, List<String>>{
-          'bottomLeft': <String>['volume'],
+          'bottomLeft': <String>['volume', 'volume'],
           'bottomRight': <String>['volume'],
           'topLeft': <String>['volume'],
         },
       });
-      final VideoControlLayout deduped = VideoControlLayout.decode(duplicated);
-      expect(deduped.slotsOf(VideoControlItem.volume),
-          <VideoControlSlot>[VideoControlSlot.bottomLeft]);
+      final VideoControlLayout decoded = VideoControlLayout.decode(duplicated);
+      expect(decoded.slotsOf(VideoControlItem.volume), <VideoControlSlot>[
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomRight,
+      ]);
+      expect(
+        decoded
+            .itemsIn(VideoControlSlot.bottomLeft)
+            .where((VideoControlItem i) => i == VideoControlItem.volume),
+        hasLength(1),
+      );
     });
   });
 
@@ -565,15 +575,120 @@ void main() {
       }
     });
 
-    test('non-icon special renders (title/position) stay out of the chip set',
-        () {
+    test('title is editable as a text chip while position stays out', () {
       // Volume has a bespoke player widget, but the editor can represent its
-      // bottom-left/right placement with an icon chip. Title and position are
-      // not single icon controls, so they stay out.
+      // bottom-left/right placement with an icon chip. Title is a single
+      // movable/removable text control, but position stays a dedicated readout.
       final List<VideoControlItem> items = VideoControlItem.customizableItems;
       expect(items, contains(VideoControlItem.volume));
-      expect(items, isNot(contains(VideoControlItem.title)));
+      expect(items, contains(VideoControlItem.title));
       expect(items, isNot(contains(VideoControlItem.positionIndicator)));
+    });
+  });
+
+  group('TODO-504/505 title placement and deletion semantics', () {
+    test('title only moves among top title slots or hidden', () {
+      expect(VideoControlItem.title.isChipRenderable, isTrue);
+      expect(
+          VideoControlItem.customizableItems, contains(VideoControlItem.title));
+
+      for (final VideoControlSlot allowed in <VideoControlSlot>[
+        VideoControlSlot.topLeft,
+        VideoControlSlot.topCenter,
+        VideoControlSlot.topRight,
+        VideoControlSlot.hidden,
+      ]) {
+        expect(VideoControlItem.title.canMoveToSlot(allowed), isTrue,
+            reason: 'title should accept ${allowed.name}');
+      }
+
+      for (final VideoControlSlot forbidden in <VideoControlSlot>[
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomCenter,
+        VideoControlSlot.bottomRight,
+        VideoControlSlot.screenLeft,
+        VideoControlSlot.screenRight,
+      ]) {
+        expect(VideoControlItem.title.canMoveToSlot(forbidden), isFalse,
+            reason: 'title should reject ${forbidden.name}');
+      }
+
+      expect(VideoControlItem.speed.canMoveToSlot(VideoControlSlot.topCenter),
+          isFalse,
+          reason: 'topCenter is title-only, not a generic button slot');
+    });
+
+    test('title moves as one instance, can hide, and can be restored', () {
+      final VideoControlLayout left = VideoControlLayout.currentChrome.moveItem(
+        VideoControlItem.title,
+        VideoControlSlot.topLeft,
+      );
+      expect(left.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.topLeft]);
+      expect(left.itemsIn(VideoControlSlot.topCenter),
+          isNot(contains(VideoControlItem.title)));
+
+      final VideoControlLayout hidden =
+          left.moveItem(VideoControlItem.title, VideoControlSlot.hidden);
+      expect(hidden.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.hidden]);
+      expect(hidden.isOnPlayer(VideoControlItem.title), isFalse);
+
+      final VideoControlLayout restored = hidden.addItemToSlot(
+          VideoControlItem.title, VideoControlSlot.topRight);
+      expect(restored.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.topRight]);
+      expect(restored.itemsIn(VideoControlSlot.hidden),
+          isNot(contains(VideoControlItem.title)));
+    });
+
+    test('decode keeps explicit hidden title but restores missing title', () {
+      final VideoControlLayout hidden = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 2,
+          'slots': <String, List<String>>{
+            'hidden': <String>['title'],
+          },
+        }),
+      );
+      expect(hidden.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.hidden]);
+
+      final VideoControlLayout missing = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 2,
+          'slots': <String, List<String>>{
+            'topLeft': <String>['speed'],
+          },
+        }),
+      );
+      expect(missing.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.topCenter]);
+    });
+
+    test('decode normalizes invalid or duplicated title to one valid slot', () {
+      final VideoControlLayout invalid = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 2,
+          'slots': <String, List<String>>{
+            'bottomLeft': <String>['title'],
+          },
+        }),
+      );
+      expect(invalid.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.topCenter]);
+
+      final VideoControlLayout duplicated = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 2,
+          'slots': <String, List<String>>{
+            'topLeft': <String>['title'],
+            'topRight': <String>['title'],
+          },
+        }),
+      );
+      expect(duplicated.slotsOf(VideoControlItem.title),
+          <VideoControlSlot>[VideoControlSlot.topLeft]);
     });
   });
 

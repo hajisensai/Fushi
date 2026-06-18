@@ -29,6 +29,18 @@ class _VideoControlLayoutEditOverlayState
   static List<VideoControlItem> get _onVideoDraggableItems =>
       VideoControlItem.customizableItems;
 
+  static const List<VideoControlSlot> _editorSlots = <VideoControlSlot>[
+    VideoControlSlot.topLeft,
+    VideoControlSlot.topCenter,
+    VideoControlSlot.topRight,
+    VideoControlSlot.bottomLeft,
+    VideoControlSlot.bottomCenter,
+    VideoControlSlot.bottomRight,
+    VideoControlSlot.screenLeft,
+    VideoControlSlot.screenRight,
+    VideoControlSlot.hidden,
+  ];
+
   late VideoControlLayout _layout = widget.layout;
   bool _dirty = false;
 
@@ -70,6 +82,12 @@ class _VideoControlLayoutEditOverlayState
       420,
       math.max(260, constraints.maxWidth - sideWidth * 2 - 72),
     );
+    final double centerLeft = (constraints.maxWidth - centerWidth) / 2;
+    final double paletteLeft = (constraints.maxWidth - paletteWidth) / 2;
+    final double paletteHeight = math.min(
+      160,
+      math.max(96, constraints.maxHeight - 340),
+    );
 
     return Stack(
       children: <Widget>[
@@ -85,14 +103,28 @@ class _VideoControlLayoutEditOverlayState
           width: sideWidth,
           child: _buildSlotRegion(VideoControlSlot.topRight),
         ),
-        Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: _buildPalette(
-              maxWidth: paletteWidth,
-              maxHeight: math.min(280, constraints.maxHeight - 32),
-            ),
+        Positioned(
+          top: 12,
+          left: centerLeft,
+          width: centerWidth,
+          child: _buildSlotRegion(VideoControlSlot.topCenter),
+        ),
+        Positioned(
+          top: 108,
+          left: paletteLeft,
+          width: paletteWidth,
+          child: _buildPalette(
+            maxWidth: paletteWidth,
+            maxHeight: paletteHeight,
+          ),
+        ),
+        Positioned(
+          left: paletteLeft,
+          right: paletteLeft,
+          bottom: 108,
+          child: _buildSlotRegion(
+            VideoControlSlot.hidden,
+            tray: true,
           ),
         ),
         Positioned(
@@ -162,13 +194,14 @@ class _VideoControlLayoutEditOverlayState
                 spacing: 8,
                 runSpacing: 8,
                 children: <Widget>[
-                  for (final VideoControlSlot slot
-                      in VideoControlSlot.editableSlots)
-                    if (slot.isOnPlayer)
-                      SizedBox(
-                        width: tileWidth,
-                        child: _buildSlotRegion(slot),
+                  for (final VideoControlSlot slot in _editorSlots)
+                    SizedBox(
+                      width: tileWidth,
+                      child: _buildSlotRegion(
+                        slot,
+                        tray: slot == VideoControlSlot.hidden,
                       ),
+                    ),
                 ],
               ),
             ),
@@ -366,7 +399,7 @@ class _VideoControlLayoutEditOverlayState
     );
   }
 
-  Widget _buildSlotRegion(VideoControlSlot slot) {
+  Widget _buildSlotRegion(VideoControlSlot slot, {bool tray = false}) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -380,9 +413,6 @@ class _VideoControlLayoutEditOverlayState
           (DragTargetDetails<VideoControlDragData> details) {
         final VideoControlItem item = details.data.item;
         if (!_isOnVideoDraggableItem(item)) return false;
-        if (item.pinnedRequired && slot == VideoControlSlot.hidden) {
-          return false;
-        }
         return _canAcceptPayload(details.data, slot);
       },
       onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
@@ -402,7 +432,10 @@ class _VideoControlLayoutEditOverlayState
                 : cs.outlineVariant;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          constraints: const BoxConstraints(minHeight: 84, maxHeight: 176),
+          constraints: BoxConstraints(
+            minHeight: tray ? 64 : 84,
+            maxHeight: tray ? 120 : 176,
+          ),
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: highlighted
@@ -626,7 +659,7 @@ class _VideoControlLayoutEditOverlayState
   ) {
     final VideoControlItem item = payload.item;
     if (!_isOnVideoDraggableItem(item)) return false;
-    if (item.pinnedRequired && target == VideoControlSlot.hidden) return false;
+    if (!item.canMoveToSlot(target)) return false;
     final List<VideoControlItem> targetItems = _layout.itemsIn(target);
     if (payload.sourceSlot == target) return true;
     return !targetItems.contains(item);
@@ -687,7 +720,7 @@ class _VideoControlLayoutEditOverlayState
       case VideoControlSlot.hidden:
         return t.video_control_slot_hidden;
       case VideoControlSlot.topCenter:
-        return slot.storageValue;
+        return t.video_control_slot_top_center;
     }
   }
 
@@ -732,7 +765,9 @@ class _VideoControlLayoutEditOverlayState
       case VideoControlItem.chapterList:
         return t.video_chapters;
       case VideoControlItem.volume:
+        return t.video_control_volume;
       case VideoControlItem.title:
+        return t.video_control_title;
       case VideoControlItem.positionIndicator:
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
@@ -784,7 +819,9 @@ class _VideoControlLayoutEditOverlayState
       case VideoControlItem.chapterList:
         return Icons.format_list_numbered;
       case VideoControlItem.volume:
+        return Icons.volume_up_outlined;
       case VideoControlItem.title:
+        return Icons.title;
       case VideoControlItem.positionIndicator:
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:

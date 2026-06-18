@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
@@ -28,6 +29,7 @@ import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_control_layout_edit_overlay.dart';
+import 'package:hibiki/src/media/video/video_control_popover_placement.dart';
 import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
 import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
@@ -342,6 +344,16 @@ class _VideoSidePanelState {
 
 enum _VideoControlPopoverKind { volume, speed }
 
+class _VideoControlPopoverPlacement {
+  const _VideoControlPopoverPlacement({
+    required this.targetAnchor,
+    required this.followerAnchor,
+  });
+
+  final Alignment targetAnchor;
+  final Alignment followerAnchor;
+}
+
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
@@ -505,9 +517,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ValueNotifier<_VideoSidePanelState?>(null);
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
-  final LayerLink _volumeControlPopoverLink = LayerLink();
   final Map<String, LayerLink> _controlPopoverItemLinks = <String, LayerLink>{};
+  final Map<String, GlobalKey> _controlPopoverTargetKeys =
+      <String, GlobalKey>{};
   LayerLink? _activeControlPopoverLink;
+  _VideoControlPopoverPlacement? _activeControlPopoverPlacement;
+  VideoControlSlot? _activeControlPopoverSourceSlot;
+  VideoControlItem? _activeControlPopoverSourceItem;
   bool _controlPopoverAnchorHovered = false;
   bool _controlPopoverPanelHovered = false;
   bool _controlPopoverPinned = false;
@@ -3527,14 +3543,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required LayerLink link,
     required bool desktop,
     required Widget child,
+    VideoControlSlot? sourceSlot,
+    VideoControlItem? sourceItem,
   }) {
-    Widget anchored = CompositedTransformTarget(link: link, child: child);
+    final GlobalKey? targetKey = sourceSlot == null || sourceItem == null
+        ? null
+        : _controlPopoverTargetKeyFor(sourceSlot, sourceItem);
+    Widget anchored = CompositedTransformTarget(
+      key: targetKey,
+      link: link,
+      child: child,
+    );
     if (!desktop) return anchored;
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
         _controlPopoverAnchorHovered = true;
-        _showControlPopover(kind, popoverLink: link);
+        _showControlPopover(
+          kind,
+          popoverLink: link,
+          sourceSlot: sourceSlot,
+          sourceItem: sourceItem,
+        );
       },
       onHover: (_) {
         _controlPopoverAnchorHovered = true;
@@ -3556,7 +3586,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Widget _buildVolumeButton(
     VideoPlayerController controller, {
     required bool desktop,
+    required VideoControlSlot slot,
   }) {
+    final LayerLink popoverLink =
+        _controlPopoverLinkFor(slot, VideoControlItem.volume);
     final Widget volumeButton = ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
@@ -3568,7 +3601,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       Icon(_volumeIconFor(value), size: _videoControlIconSize),
                   onPressed: () => _toggleControlPopover(
                     _VideoControlPopoverKind.volume,
-                    popoverLink: _volumeControlPopoverLink,
+                    popoverLink: popoverLink,
+                    sourceSlot: slot,
+                    sourceItem: VideoControlItem.volume,
                   ),
                 )
               : MaterialCustomButton(
@@ -3576,7 +3611,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       Icon(_volumeIconFor(value), size: _videoControlIconSize),
                   onPressed: () => _toggleControlPopover(
                     _VideoControlPopoverKind.volume,
-                    popoverLink: _volumeControlPopoverLink,
+                    popoverLink: popoverLink,
+                    sourceSlot: slot,
+                    sourceItem: VideoControlItem.volume,
                   ),
                 ),
         );
@@ -3584,8 +3621,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     final Widget anchored = _controlPopoverAnchor(
       kind: _VideoControlPopoverKind.volume,
-      link: _volumeControlPopoverLink,
+      link: popoverLink,
       desktop: desktop,
+      sourceSlot: slot,
+      sourceItem: VideoControlItem.volume,
       child: volumeButton,
     );
     if (!desktop) return anchored;
@@ -3603,29 +3642,137 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoControlSlot slot,
     VideoControlItem item,
   ) {
-    final String key = '${slot.storageValue}:${item.storageValue}';
+    final String key = _controlPopoverKeyFor(slot, item);
     return _controlPopoverItemLinks.putIfAbsent(key, LayerLink.new);
+  }
+
+  GlobalKey _controlPopoverTargetKeyFor(
+    VideoControlSlot slot,
+    VideoControlItem item,
+  ) {
+    final String key = _controlPopoverKeyFor(slot, item);
+    return _controlPopoverTargetKeys.putIfAbsent(
+      key,
+      () => GlobalKey(debugLabel: 'video-control-popover-target-$key'),
+    );
+  }
+
+  String _controlPopoverKeyFor(VideoControlSlot slot, VideoControlItem item) =>
+      '${slot.storageValue}:${item.storageValue}';
+
+  _VideoControlPopoverPlacement _controlPopoverPlacementFor(
+    _VideoControlPopoverKind kind,
+    VideoControlSlot? sourceSlot,
+  ) {
+    if (kind == _VideoControlPopoverKind.volume) {
+      return switch (sourceSlot) {
+        VideoControlSlot.bottomLeft => const _VideoControlPopoverPlacement(
+            targetAnchor: Alignment.topLeft,
+            followerAnchor: Alignment.bottomLeft,
+          ),
+        VideoControlSlot.bottomRight => const _VideoControlPopoverPlacement(
+            targetAnchor: Alignment.topRight,
+            followerAnchor: Alignment.bottomRight,
+          ),
+        _ => const _VideoControlPopoverPlacement(
+            targetAnchor: Alignment.topCenter,
+            followerAnchor: Alignment.bottomCenter,
+          ),
+      };
+    }
+    return const _VideoControlPopoverPlacement(
+      targetAnchor: Alignment.topCenter,
+      followerAnchor: Alignment.bottomCenter,
+    );
+  }
+
+  double _controlPopoverPreferredWidthFor(_VideoControlPopoverKind kind) {
+    return switch (kind) {
+      _VideoControlPopoverKind.volume => 220 * _videoUiScale,
+      _VideoControlPopoverKind.speed => 220 * _videoUiScale,
+    };
+  }
+
+  double _controlPopoverWidthFor(
+    _VideoControlPopoverKind kind,
+    double maxWidth,
+  ) {
+    final double boundedMax = math.max(0, maxWidth);
+    if (boundedMax == 0) return 0;
+    final double preferred = _controlPopoverPreferredWidthFor(kind);
+    final double minimum = math.min(160 * _videoUiScale, boundedMax);
+    return preferred.clamp(minimum, boundedMax).toDouble();
+  }
+
+  Rect? _activeControlPopoverTargetRect(BuildContext overlayContext) {
+    final VideoControlSlot? slot = _activeControlPopoverSourceSlot;
+    final VideoControlItem? item = _activeControlPopoverSourceItem;
+    if (slot == null || item == null) return null;
+
+    final BuildContext? targetContext =
+        _controlPopoverTargetKeys[_controlPopoverKeyFor(slot, item)]
+            ?.currentContext;
+    final RenderObject? targetObject = targetContext?.findRenderObject();
+    final RenderObject? overlayObject = overlayContext.findRenderObject();
+    if (targetObject is! RenderBox || overlayObject is! RenderBox) {
+      return null;
+    }
+    if (!targetObject.attached ||
+        !overlayObject.attached ||
+        !targetObject.hasSize) {
+      return null;
+    }
+
+    final Offset topLeft = overlayObject.globalToLocal(
+      targetObject.localToGlobal(Offset.zero),
+    );
+    return topLeft & targetObject.size;
+  }
+
+  double _controlPopoverAnchoredLeft({
+    required Rect targetRect,
+    required double width,
+    required _VideoControlPopoverPlacement placement,
+  }) {
+    final double targetFraction = (placement.targetAnchor.x + 1) / 2;
+    final double followerFraction = (placement.followerAnchor.x + 1) / 2;
+    final double targetX = targetRect.left + targetRect.width * targetFraction;
+    return targetX - width * followerFraction;
   }
 
   void _toggleControlPopover(
     _VideoControlPopoverKind kind, {
     required LayerLink popoverLink,
+    VideoControlSlot? sourceSlot,
+    VideoControlItem? sourceItem,
   }) {
     if (_videoControlPopover.value == kind && _controlPopoverPinned) {
       _hideControlPopover();
       return;
     }
-    _showControlPopover(kind, popoverLink: popoverLink, pinned: true);
+    _showControlPopover(
+      kind,
+      popoverLink: popoverLink,
+      pinned: true,
+      sourceSlot: sourceSlot,
+      sourceItem: sourceItem,
+    );
   }
 
   void _showControlPopover(
     _VideoControlPopoverKind kind, {
     required LayerLink popoverLink,
     bool pinned = false,
+    VideoControlSlot? sourceSlot,
+    VideoControlItem? sourceItem,
   }) {
     if (!mounted || _videoSheetOpen) return;
     _controlPopoverHideTimer?.cancel();
     _activeControlPopoverLink = popoverLink;
+    _activeControlPopoverPlacement =
+        _controlPopoverPlacementFor(kind, sourceSlot);
+    _activeControlPopoverSourceSlot = sourceSlot;
+    _activeControlPopoverSourceItem = sourceItem;
     if (_videoControlPopover.value != kind) {
       _controlPopoverPinned = pinned;
     } else if (pinned) {
@@ -3648,6 +3795,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controlPopoverHideTimer?.cancel();
     _controlPopoverPinned = false;
     _activeControlPopoverLink = null;
+    _activeControlPopoverPlacement = null;
+    _activeControlPopoverSourceSlot = null;
+    _activeControlPopoverSourceItem = null;
     if (_videoControlPopover.value != null) {
       _videoControlPopover.value = null;
     }
@@ -3690,29 +3840,68 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           if (kind == null) return const SizedBox.shrink();
           final LayerLink? link = _activeControlPopoverLink;
           if (link == null) return const SizedBox.shrink();
-          return Stack(
-            children: <Widget>[
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: _hideControlPopover,
-                  child: const SizedBox.expand(),
-                ),
-              ),
-              CompositedTransformFollower(
-                link: link,
-                showWhenUnlinked: false,
-                targetAnchor: Alignment.topCenter,
-                followerAnchor: Alignment.bottomCenter,
-                offset: Offset(
-                  0,
-                  -_videoControlPopoverGapBase * _videoUiScale,
-                ),
-                child: _controlPopoverHoverKeepAlive(
-                  child: _buildVideoControlPopoverContent(kind, controller),
-                ),
-              ),
-            ],
+          return LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final _VideoControlPopoverPlacement placement =
+                  _activeControlPopoverPlacement ??
+                      _controlPopoverPlacementFor(kind, null);
+              final double gap = _videoControlPopoverGapBase * _videoUiScale;
+              final Rect? targetRect = _activeControlPopoverTargetRect(context);
+              final VideoControlSlot? sourceSlot =
+                  _activeControlPopoverSourceSlot;
+              final VideoControlPopoverPlacement? resolved = kind ==
+                          _VideoControlPopoverKind.volume &&
+                      sourceSlot != null &&
+                      targetRect != null
+                  ? resolveVideoControlPopoverPlacement(
+                      playerBounds: Offset.zero &
+                          Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          ),
+                      targetRect: targetRect,
+                      preferredWidth: _controlPopoverPreferredWidthFor(kind),
+                      sourceSlot: sourceSlot,
+                      gap: gap,
+                      minWidth: 160 * _videoUiScale,
+                    )
+                  : null;
+              final double width = resolved?.width ??
+                  _controlPopoverWidthFor(kind, constraints.maxWidth);
+              final double dx = resolved == null || targetRect == null
+                  ? 0
+                  : resolved.left -
+                      _controlPopoverAnchoredLeft(
+                        targetRect: targetRect,
+                        width: width,
+                        placement: placement,
+                      );
+              return Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: _hideControlPopover,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  CompositedTransformFollower(
+                    link: link,
+                    showWhenUnlinked: false,
+                    targetAnchor: placement.targetAnchor,
+                    followerAnchor: placement.followerAnchor,
+                    offset: Offset(dx, -gap),
+                    child: _controlPopoverHoverKeepAlive(
+                      child: _buildVideoControlPopoverContent(
+                        kind,
+                        controller,
+                        width: width,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
@@ -3721,13 +3910,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   Widget _buildVideoControlPopoverContent(
     _VideoControlPopoverKind kind,
-    VideoPlayerController controller,
-  ) {
+    VideoPlayerController controller, {
+    required double width,
+  }) {
     switch (kind) {
       case _VideoControlPopoverKind.volume:
-        return _buildVolumePopover();
+        return _buildVolumePopover(width: width);
       case _VideoControlPopoverKind.speed:
-        return _buildSpeedPopover();
+        return _buildSpeedPopover(width: width);
     }
   }
 
@@ -3762,14 +3952,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  Widget _buildVolumePopover() {
+  Widget _buildVolumePopover({required double width}) {
     return ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
         final double clamped = value.clamp(0.0, 100.0).toDouble();
         final ColorScheme cs = _videoChromeColorScheme(context);
         return _buildControlPopoverFrame(
-          width: 220 * _videoUiScale,
+          width: width,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -3829,12 +4019,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return nearest;
   }
 
-  Widget _buildSpeedPopover() {
+  Widget _buildSpeedPopover({required double width}) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final List<double> speedPresets = _speedMenuPresets();
     final double sliderValue = _playbackSpeed.clamp(0.5, 2.0).toDouble();
     return _buildControlPopoverFrame(
-      width: 220 * _videoUiScale,
+      width: width,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3961,8 +4151,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       buttonBarButtonSize: _videoControlIconSize,
       keyboardShortcuts: _videoKeyboardShortcuts(controller),
       primaryButtonBar: const <Widget>[],
-      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮均从用户布局
-      // slot 渲染，标题固定在 topCenter。
+      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
+      // slot 渲染；标题仍监听 _titleNotifier。
       topButtonBar: <Widget>[
         _topBarSlotGroup(
           VideoControlSlot.topLeft,
@@ -3970,7 +4160,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           layout: layout,
           desktop: true,
         ),
-        _topBarTitle(),
+        _topBarTitle(layout),
         _topBarSlotGroup(
           VideoControlSlot.topRight,
           controller,
@@ -4072,8 +4262,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       buttonBarHeight: _videoButtonBarHeight,
       buttonBarButtonSize: _videoControlIconSize,
       primaryButtonBar: const <Widget>[],
-      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮均从用户布局
-      // slot 渲染，标题固定在 topCenter。
+      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
+      // slot 渲染；标题仍监听 _titleNotifier。
       topButtonBar: <Widget>[
         _topBarSlotGroup(
           VideoControlSlot.topLeft,
@@ -4081,7 +4271,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           layout: layout,
           desktop: false,
         ),
-        _topBarTitle(),
+        _topBarTitle(layout),
         _topBarSlotGroup(
           VideoControlSlot.topRight,
           controller,
@@ -4133,25 +4323,54 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           roomyBottomBar: roomyBottomBar,
         ),
       if (rawItems.contains(VideoControlItem.volume))
-        _buildVolumeButton(controller, desktop: desktop),
+        _buildVolumeButton(controller, desktop: desktop, slot: slot),
     ];
   }
 
-  Widget _topBarTitle() {
+  Widget _topBarTitle(VideoControlLayout layout) {
+    if (!layout.itemsIn(VideoControlSlot.topCenter).contains(
+          VideoControlItem.title,
+        )) {
+      return const Spacer();
+    }
     return Expanded(
       // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
       // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
       // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有 Row 顺序。
-      child: Align(
+      child: _topBarTitleText(
         alignment: AlignmentDirectional.centerStart,
-        child: ValueListenableBuilder<String?>(
-          valueListenable: _titleNotifier,
-          builder: (BuildContext _, String? title, __) => Text(
-            title ?? '',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
-          ),
+      ),
+    );
+  }
+
+  Widget _topBarInlineTitle(VideoControlSlot slot) {
+    final bool alignEnd = slot == VideoControlSlot.topRight;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 8 * _videoUiScale),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 220 * _videoUiScale),
+        child: _topBarTitleText(
+          alignment: alignEnd
+              ? AlignmentDirectional.centerEnd
+              : AlignmentDirectional.centerStart,
+        ),
+      ),
+    );
+  }
+
+  Widget _topBarTitleText({required AlignmentGeometry alignment}) {
+    return Align(
+      alignment: alignment,
+      child: ValueListenableBuilder<String?>(
+        valueListenable: _titleNotifier,
+        builder: (BuildContext _, String? title, __) => Text(
+          title ?? '',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: alignment == AlignmentDirectional.centerEnd
+              ? TextAlign.end
+              : TextAlign.start,
+          style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
         ),
       ),
     );
@@ -4354,11 +4573,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required VideoControlLayout layout,
     required bool desktop,
   }) {
+    final List<VideoControlItem> rawItems = layout.itemsIn(slot);
+    final bool hasTitle = rawItems.contains(VideoControlItem.title);
     final List<VideoControlItem> items = <VideoControlItem>[
-      for (final VideoControlItem item in layout.itemsIn(slot))
+      for (final VideoControlItem item in rawItems)
         if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
     ];
-    if (items.isEmpty) return const SizedBox.shrink();
+    if (items.isEmpty && !hasTitle) return const SizedBox.shrink();
 
     Widget buttonFor(VideoControlItem item) {
       final LayerLink? popoverLink = item == VideoControlItem.speed
@@ -4416,7 +4637,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ? MainAxisAlignment.end
                 : MainAxisAlignment.start,
             children: <Widget>[
+              if (slot == VideoControlSlot.topLeft && hasTitle)
+                _topBarInlineTitle(slot),
               for (final VideoControlItem item in items) buttonFor(item),
+              if (slot == VideoControlSlot.topRight && hasTitle)
+                _topBarInlineTitle(slot),
             ],
           ),
         ),
