@@ -17,7 +17,7 @@ void main() {
     );
   });
 
-  test('continuous mouse drag captures reader body text; paged protects it',
+  test('continuous pointer drag captures reader body text; paged protects it',
       () {
     final String guard = _functionSource(
       setupScript,
@@ -25,11 +25,16 @@ void main() {
       'function _hoshiReaderMouseDragScrollBy(dx, dy)',
     );
 
-    expect(guard, contains("e.pointerType !== 'mouse'"));
-    expect(guard, contains('e.button !== 0'));
+    expect(guard, contains('_hoshiReaderPointerPrimaryButton(e)'));
+    expect(guard, isNot(contains("e.pointerType !== 'mouse'")),
+        reason: 'touch and mouse must share the same drag state machine');
     expect(guard, contains("closest('a[href], ruby, rt, rp')"),
         reason:
             'links and ruby text must keep native selection/click behavior');
+    expect(guard, contains('input, textarea, select, button'),
+        reason: 'form controls must keep native editing and selection');
+    expect(guard, contains('[contenteditable="true"]'),
+        reason: 'editable islands must not be grabbed for reader scrolling');
     expect(guard, contains('window.getSelection'),
         reason: 'an existing text selection must not be grabbed for dragging');
     final int continuousModeIndex =
@@ -46,12 +51,15 @@ void main() {
         reason: 'caret-range text hits must only protect paged mode');
 
     final String pointerDown = _listenerBlock(setupScript, 'pointerdown');
+    expect(pointerDown, isNot(contains("e.pointerType === 'touch' ||")),
+        reason: 'touch must not be filtered out of pointer drag startup');
     final int guardIndex =
         pointerDown.indexOf('_hoshiReaderMouseDragStartAllowed(e)');
     final int startIndex = pointerDown.indexOf('_gestureStart', guardIndex);
     expect(guardIndex, isNonNegative);
     expect(startIndex, greaterThan(guardIndex),
-        reason: 'left mouse gesture start must be gated before _gestureStart');
+        reason:
+            'primary pointer gesture start must be gated before _gestureStart');
   });
 
   test(
@@ -70,22 +78,34 @@ void main() {
         reason: 'text hit testing must not cancel native drag selection');
   });
 
-  test('claimed desktop mouse drag suppresses pointerup tap or swipe fallback',
+  test(
+      'claimed pointer drag suppresses pointerup/touchend tap or swipe fallback',
       () {
     final String pointerMove = _listenerBlock(setupScript, 'pointermove');
+    expect(pointerMove, isNot(contains("e.pointerType === 'touch') return")),
+        reason: 'touch moves must be able to claim reader scrolling');
+    expect(pointerMove, contains('_hoshiReaderPointerStillDown(e)'));
     expect(pointerMove, contains('_hoshiReaderMouseDragClaimed = true'));
+    expect(pointerMove, contains('_hoshiReaderMouseDragIgnoreTouchEnd = true'),
+        reason:
+            'claimed touch drags must suppress the following legacy touchend');
     expect(pointerMove, contains('e.preventDefault()'));
     expect(pointerMove, contains('_hoshiReaderClearMouseSelection()'),
         reason: 'claimed text drags must clear browser native selection');
+    expect(pointerMove, contains('_hoshiReaderPointerNoSelect(true)'),
+        reason:
+            'claimed drags temporarily disable native selection only while active');
     final String clearSelection = _functionSource(
       setupScript,
       'function _hoshiReaderClearMouseSelection()',
-      'function _hoshiReaderMouseDragStartAllowed(e)',
+      'function _hoshiReaderPointerPrimaryButton(e)',
     );
     expect(clearSelection, contains('window.getSelection'));
     expect(clearSelection, contains('removeAllRanges'));
 
     final String pointerUp = _listenerBlock(setupScript, 'pointerup');
+    expect(pointerUp, isNot(contains("e.pointerType === 'touch' ||")),
+        reason: 'touch pointerup must finish the same claimed-drag path');
     final int finishIndex = pointerUp.indexOf('_finishHoshiReaderMouseDrag(e)');
     final int gestureEndIndex = pointerUp.indexOf('_gestureEnd');
     expect(finishIndex, isNonNegative);
@@ -93,9 +113,22 @@ void main() {
     expect(finishIndex, lessThan(gestureEndIndex),
         reason: 'claimed drags must finish before the legacy _gestureEnd path');
     expect(pointerUp, contains('if (_hoshiReaderMouseDragClaimed)'));
+    expect(pointerUp, contains('_hoshiReaderPointerNoSelect(false)'));
+
+    final String touchEnd = _listenerBlock(setupScript, 'touchend');
+    final int ignoreIndex =
+        touchEnd.indexOf('_hoshiReaderMouseDragIgnoreTouchEnd');
+    final int legacyEndIndex = touchEnd.indexOf('_gestureEnd');
+    expect(ignoreIndex, isNonNegative);
+    expect(legacyEndIndex, isNonNegative);
+    expect(ignoreIndex, lessThan(legacyEndIndex),
+        reason:
+            'claimed touch drags must not replay tap/selection on touchend');
+    expect(touchEnd, contains('e.preventDefault()'));
   });
 
-  test('continuous desktop mouse drag scrolls along the writing axis', () {
+  test('continuous pointer drag scrolls along horizontal and vertical axes',
+      () {
     final String scrollFn = _functionSource(
       setupScript,
       'function _hoshiReaderMouseDragScrollBy(dx, dy)',
@@ -110,7 +143,7 @@ void main() {
     final String pointerMove = _listenerBlock(setupScript, 'pointermove');
     expect(pointerMove, contains('if (hoshiContinuousMode)'));
     expect(pointerMove, isNot(contains("callHandler('onSwipe'")),
-        reason: 'continuous mouse drag should scroll, not page-turn');
+        reason: 'continuous pointer drag should scroll, not page-turn');
   });
 
   test('paged desktop mouse drag emits at most one onSwipe on release', () {
