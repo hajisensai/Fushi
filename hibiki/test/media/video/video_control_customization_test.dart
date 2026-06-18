@@ -23,7 +23,7 @@ void main() {
       );
     });
 
-    test('moving a button to settings keeps a settings fallback', () {
+    test('legacy settingsOnly keeps a button off the player', () {
       final VideoControlCustomization customization =
           VideoControlCustomization.defaults.copyWithPlacement(
         VideoControlButton.speed,

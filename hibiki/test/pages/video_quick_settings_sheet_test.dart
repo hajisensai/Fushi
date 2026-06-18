@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -27,6 +28,7 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoControlLayout layout)? onControlLayoutChanged,
   VoidCallback? onEditControlsOnscreen,
   VideoControlLayout? initialControlLayout,
+  VideoFitMode initialVideoFitMode = VideoFitMode.cover,
   double uiScale = 1.0,
   int initialDelayMs = 0,
   VideoSubtitleStyle? initialSubtitleStyle,
@@ -57,7 +59,7 @@ VideoQuickSettingsSheet _sheet({
     onMpvConfigChanged: (VideoMpvConfig c) async => onMpvConfigChanged?.call(c),
     initialLockWindowAspectRatio: true,
     onLockWindowAspectRatioChanged: (_) async {},
-    initialVideoFitMode: VideoFitMode.cover,
+    initialVideoFitMode: initialVideoFitMode,
     onVideoFitModeChanged: (VideoFitMode mode) async =>
         onVideoFitModeChanged?.call(mode),
     initialImmersiveMode: VideoImmersiveMode.lookupOnly,
@@ -102,6 +104,23 @@ void _expectNoFlutterErrors(WidgetTester tester) {
     exceptions.add(exception!);
   }
   expect(exceptions, isEmpty);
+}
+
+void _expectListItemLabelNotEllipsized(WidgetTester tester, String label) {
+  final Finder row = find.widgetWithText(HibikiListItem, label);
+  expect(row, findsWidgets);
+  final Finder labelText = find.descendant(
+    of: row.first,
+    matching: find.text(label),
+  );
+  expect(labelText, findsOneWidget);
+  final RenderParagraph paragraph =
+      tester.renderObject<RenderParagraph>(labelText);
+  expect(
+    paragraph.didExceedMaxLines,
+    isFalse,
+    reason: '$label must render fully, not as an ellipsized category label.',
+  );
 }
 
 void main() {
@@ -285,29 +304,25 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
     // TODO-427-③：不再是左右 master-detail（窄左栏挤裁右详情），改顶部 chip 行 + 下方
-    // 详情上下分栏。分类用单选 chip（HibikiSelectableChip → ChoiceChip）。
-    expect(find.byType(MaterialSupportingPaneLayout), findsNothing,
-        reason: '宽窗已从左右分栏改成上下分栏，不再用 MaterialSupportingPaneLayout');
-    expect(find.byType(HibikiSelectableChip), findsNWidgets(6),
-        reason: '顶部分类条是六个单选 chip（与分类一一对应）');
+    expect(find.byType(MaterialSupportingPaneLayout), findsOneWidget);
+    expect(find.byType(HibikiListItem), findsAtLeastNWidgets(6));
+    expect(find.byType(HibikiSelectableChip), findsNothing);
 
-    // 分类条在详情上方（dy 序）：取分类条里「字幕」chip 的 y < 详情里倍速行的 y。
-    final double categoryY = tester
-        .getTopLeft(find.widgetWithText(
-            HibikiSelectableChip, t.video_settings_cat_subtitle))
-        .dy;
-    final double detailY =
-        tester.getTopLeft(find.text(t.video_setting_speed)).dy;
-    expect(categoryY, lessThan(detailY), reason: '顶部分类条必须在下方详情之上');
+    final double categoryX = tester
+        .getTopLeft(
+          find.widgetWithText(HibikiListItem, t.video_settings_cat_subtitle),
+        )
+        .dx;
+    final double detailX =
+        tester.getTopLeft(find.text(t.video_setting_speed)).dx;
+    expect(categoryX, lessThan(detailX),
+        reason: 'category list must sit to the left of the detail pane');
 
-    // 详情独占整宽并独立滚动：详情 SingleChildScrollView 是上下分栏 Column → Expanded →
-    // KeyedSubtree 的直接子，含 page padding（左右 24）。picker 的离屏 dropdown 测量树里
-    // 也有无 padding 的 scroll，故按「padding.left==24 的纵向 scroll」精确定位详情那一个。
     final Iterable<SingleChildScrollView> detailScrolls =
         tester.widgetList<SingleChildScrollView>(
       find.byType(SingleChildScrollView),
     );
-    final SingleChildScrollView detailScroll = detailScrolls.firstWhere(
+    final SingleChildScrollView detailScroll = detailScrolls.lastWhere(
       (SingleChildScrollView s) {
         final EdgeInsets? p = s.padding as EdgeInsets?;
         return s.scrollDirection == Axis.vertical && p != null && p.left == 24;
@@ -326,6 +341,77 @@ void main() {
     expect(find.text(t.video_setting_subtitle_shadow), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
+
+  testWidgets('wide English category labels are not ellipsized at UI scale 2.0',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1320, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpScaled(
+      tester,
+      _sheet(
+        uiScale: 2.0,
+        initialVideoFitMode: VideoFitMode.contain,
+      ),
+      scale: 2.0,
+    );
+
+    expect(find.byType(MaterialSupportingPaneLayout), findsOneWidget);
+    for (final String label in <String>[
+      t.video_settings_cat_playback,
+      t.video_settings_cat_shaders,
+      t.video_settings_cat_mpv,
+      t.video_settings_cat_subtitle,
+      t.video_settings_cat_danmaku,
+      t.video_settings_cat_controls,
+    ]) {
+      _expectListItemLabelNotEllipsized(tester, label);
+    }
+    _expectNoFlutterErrors(tester);
+  });
+
+  for (final ({double width, double scale}) sizeCase
+      in <({double width, double scale})>[
+    (width: 320, scale: 1.5),
+    (width: 320, scale: 2.0),
+    (width: 360, scale: 1.5),
+    (width: 360, scale: 2.0),
+    (width: 420, scale: 1.5),
+    (width: 420, scale: 2.0),
+    (width: 560, scale: 1.5),
+    (width: 560, scale: 2.0),
+    (width: 720, scale: 1.5),
+    (width: 720, scale: 2.0),
+  ]) {
+    testWidgets(
+        'picture scaling long value is readable at '
+        '${sizeCase.width.round()}px scale ${sizeCase.scale}', (tester) async {
+      await tester.binding.setSurfaceSize(Size(sizeCase.width, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pumpScaled(
+        tester,
+        _sheet(
+          uiScale: sizeCase.scale,
+          initialVideoFitMode: VideoFitMode.contain,
+        ),
+        scale: sizeCase.scale,
+      );
+
+      expect(find.text(t.video_settings_cat_subtitle), findsWidgets);
+
+      if (find.text(t.video_setting_picture_fit).evaluate().isEmpty) {
+        await tester.tap(find.text(t.video_settings_cat_playback));
+        await tester.pumpAndSettle();
+      }
+
+      expect(find.text(t.video_setting_picture_fit), findsWidgets);
+      expect(
+        find.text(t.video_setting_picture_fit_contain),
+        findsWidgets,
+        reason: 'selected value must not be truncated to an ellipsis',
+      );
+      _expectNoFlutterErrors(tester);
+    });
+  }
 
   testWidgets('subtitle default weight and shadow preview use app UI scale',
       (tester) async {
@@ -418,8 +504,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 顶部分类条里的「播放」chip 是固定锚点（chip 行钉在顶部、随详情滚动不动）。
-    final Finder categoryAnchor = find.widgetWithText(
-        HibikiSelectableChip, t.video_settings_cat_playback);
+    final Finder categoryAnchor =
+        find.widgetWithText(HibikiListItem, t.video_settings_cat_playback);
     expect(categoryAnchor, findsOneWidget);
     final Offset before = tester.getTopLeft(categoryAnchor);
 
@@ -945,44 +1031,20 @@ void main() {
     // 顶部分类条外层 Padding：水平 inset = page+gap=24，顶部 card=16（不再贴死），
     // 底部留 gap/2=4 与详情之间的分隔线呼吸。分类条内部还有 surface content padding，
     // 不能把内部横向 scroll padding 误当成 TODO-344 的外层 page padding。
-    final Finder firstCategoryChip = find.byType(HibikiSelectableChip).first;
-    final Padding categoryFrame = tester
-        .widgetList<Padding>(
-      find.ancestor(
-        of: firstCategoryChip,
-        matching: find.byType(Padding),
-      ),
-    )
-        .firstWhere((Padding p) {
-      final EdgeInsets? insets = p.padding as EdgeInsets?;
-      return insets != null &&
-          insets.left == 24 &&
-          insets.right == 24 &&
-          insets.top == 16 &&
-          insets.bottom == 4;
-    });
-    final EdgeInsets categoryPadding = categoryFrame.padding as EdgeInsets;
-    expect(categoryPadding.left, 24);
-    expect(categoryPadding.right, 24);
-    expect(categoryPadding.top, 16);
-    expect(categoryPadding.bottom, 4);
-
-    // 顶部分类条 surface 内部横向 scroll：只负责 chip 与 surface 边缘之间的 content inset，
-    // 使用设计 token gap=8；它不代表页面 roomy 外边距。
-    final SingleChildScrollView categoryBar =
+    final Finder firstCategoryItem = find.byType(HibikiListItem).first;
+    final SingleChildScrollView categoryPane =
         tester.widget<SingleChildScrollView>(
       find.ancestor(
-        of: firstCategoryChip,
+        of: firstCategoryItem,
         matching: find.byType(SingleChildScrollView),
       ),
     );
-    final EdgeInsets categoryContentPadding =
-        categoryBar.padding! as EdgeInsets;
-    expect(categoryBar.scrollDirection, Axis.horizontal);
-    expect(categoryContentPadding.left, 8);
-    expect(categoryContentPadding.right, 8);
-    expect(categoryContentPadding.top, 8);
-    expect(categoryContentPadding.bottom, 8);
+    final EdgeInsets categoryPadding = categoryPane.padding! as EdgeInsets;
+    expect(categoryPane.scrollDirection, Axis.vertical);
+    expect(categoryPadding.left, 24);
+    expect(categoryPadding.right, 24);
+    expect(categoryPadding.top, 16);
+    expect(categoryPadding.bottom, 24);
 
     // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 24、独占整宽。
     // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==24 的纵向
@@ -991,7 +1053,7 @@ void main() {
         .widgetList<SingleChildScrollView>(
       find.byType(SingleChildScrollView),
     )
-        .firstWhere((SingleChildScrollView s) {
+        .lastWhere((SingleChildScrollView s) {
       final EdgeInsets? p = s.padding as EdgeInsets?;
       return s.scrollDirection == Axis.vertical && p != null && p.left == 24;
     });
@@ -1270,8 +1332,7 @@ void main() {
       });
     }
 
-    testWidgets('narrow controls support real drag after scrolling',
-        (tester) async {
+    testWidgets('narrow controls accept moves after scrolling', (tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 2400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
@@ -1287,7 +1348,7 @@ void main() {
       );
       await openControls(tester);
 
-      await dragChipTo(
+      await acceptDrag(
         tester,
         paletteChipFinder(VideoControlItem.volume),
         slotFinder(VideoControlSlot.bottomLeft),
@@ -1303,7 +1364,7 @@ void main() {
         const Offset(0, -120),
       );
       await tester.pumpAndSettle();
-      await dragChipTo(
+      await acceptDrag(
         tester,
         dragChipFinder(
           VideoControlItem.speed,
@@ -1313,13 +1374,14 @@ void main() {
         slotFinder(VideoControlSlot.hidden),
       );
       expect(
-        latest!.itemsIn(VideoControlSlot.hidden),
+        latest!.removedItems,
         contains(VideoControlItem.speed),
       );
+      expect(latest!.itemsIn(VideoControlSlot.hidden), isEmpty);
       _expectNoFlutterErrors(tester);
     });
 
-    testWidgets('dragging controls still updates bottomLeft and hidden slots',
+    testWidgets('dragging controls updates bottomLeft and removed items',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1350,12 +1412,13 @@ void main() {
         slotFinder(VideoControlSlot.hidden),
       );
       expect(
-        latest!.itemsIn(VideoControlSlot.hidden),
+        latest!.removedItems,
         contains(VideoControlItem.subtitleList),
       );
+      expect(latest!.itemsIn(VideoControlSlot.hidden), isEmpty);
     });
 
-    testWidgets('required settings button cannot be hidden', (tester) async {
+    testWidgets('settings can be removed from the player', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       VideoControlLayout? latest;
@@ -1371,6 +1434,31 @@ void main() {
         tester,
         dragChipFinder(
             VideoControlItem.settings, VideoControlSlot.screenRight, 3),
+        slotFinder(VideoControlSlot.hidden),
+      );
+      expect(latest, isNotNull);
+      expect(latest!.isOnPlayer(VideoControlItem.settings), isFalse);
+      expect(latest!.removedItems, contains(VideoControlItem.settings));
+      expect(find.text('Required controls must stay on the player.'),
+          findsNothing);
+    });
+
+    testWidgets('required playPause button cannot be hidden', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 950));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? latest;
+      await _pump(
+        tester,
+        _sheet(onControlLayoutChanged: (VideoControlLayout layout) {
+          latest = layout;
+        }),
+      );
+      await openControls(tester);
+
+      await dragChipTo(
+        tester,
+        dragChipFinder(
+            VideoControlItem.playPause, VideoControlSlot.bottomCenter, 2),
         slotFinder(VideoControlSlot.hidden),
       );
       expect(latest, isNull);
@@ -1484,6 +1572,7 @@ void main() {
       );
       expect(latest!.slotsOf(VideoControlItem.title),
           <VideoControlSlot>[VideoControlSlot.hidden]);
+      expect(latest!.itemsIn(VideoControlSlot.hidden), isEmpty);
 
       await acceptDrag(
         tester,

@@ -260,7 +260,8 @@ void main() {
       hidden,
     );
     expect(_placedChip(VideoControlItem.title, VideoControlSlot.hidden),
-        findsOneWidget);
+        findsNothing);
+    expect(_paletteChip(VideoControlItem.title), findsOneWidget);
 
     await _drag(tester, _paletteChip(VideoControlItem.title), topRight);
     await tester.tap(find.text(t.dialog_save));
@@ -269,6 +270,7 @@ void main() {
     expect(committed, isNotNull);
     expect(committed!.slotsOf(VideoControlItem.title),
         <VideoControlSlot>[VideoControlSlot.topRight]);
+    expect(committed!.removedItems, isNot(contains(VideoControlItem.title)));
   });
 
   testWidgets(

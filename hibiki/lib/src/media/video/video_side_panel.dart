@@ -23,7 +23,7 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     const double horizontalMargin = 10.0;
     final double availableWidth =
         (screen.width - horizontalMargin * 2).clamp(0.0, double.infinity);
-    final double maxPanelWidth = availableWidth * 0.88;
+    final double maxPanelWidth = availableWidth * 0.94;
     final double minPanelWidth = maxPanelWidth < 280.0 ? maxPanelWidth : 280.0;
     final double panelWidth =
         width.clamp(minPanelWidth, maxPanelWidth).toDouble();
@@ -57,8 +57,8 @@ class VideoTranslucentSidePanel extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
                     child: Text(
                       title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                      softWrap: true,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),

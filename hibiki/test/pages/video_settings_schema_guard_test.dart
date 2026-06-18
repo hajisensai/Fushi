@@ -103,4 +103,20 @@ void main() {
     expect(body.contains('VideoMpvConfig.decode'), isTrue);
     expect(body.contains('VideoSubtitleStyle.decode'), isTrue);
   });
+
+  test('TODO-522: global video settings can reset player button layout', () {
+    final int start =
+        schemaSrc.indexOf('SettingsDestination _videoDestination()');
+    final int end = schemaSrc.indexOf(
+      'Future<void> _commitVideoAsbConfig(',
+      start,
+    );
+    final String body = schemaSrc.substring(start, end);
+
+    expect(body.contains("id: 'video.controls.reset_layout'"), isTrue);
+    expect(body.contains('t.video_control_reset_layout'), isTrue);
+    expect(body.contains('t.video_control_reset_layout_hint'), isTrue);
+    expect(body.contains('setVideoControlLayout('), isTrue);
+    expect(body.contains('VideoControlLayout.currentChrome'), isTrue);
+  });
 }

@@ -207,13 +207,13 @@ enum VideoControlSlot {
   ];
 }
 
-/// Full button library: transport keys + learning keys. Phase 0 only models it.
+/// Full button library: transport keys + learning keys.
 /// [isSpecialRender] transport keys (play/volume/title/position) get dedicated
-/// render branches in phase 1; everything else renders as a plain icon button.
+/// render branches; everything else renders as a plain icon button.
 ///
-/// - [pinnedRequired]: required buttons ([settings] / [playPause]) cannot be
-///   moved into [VideoControlSlot.hidden] (enforced at the model layer), so the
-///   player always keeps a settings entry and a play/pause control.
+/// - [pinnedRequired]: required buttons cannot be moved into
+///   [VideoControlSlot.hidden] (enforced at the model layer), so the player
+///   always keeps a play/pause control.
 /// - [legacyButton]: mapping to the legacy [VideoControlButton] used by the
 ///   v1->v2 migration to translate old placements into new slots; transport
 ///   keys have no legacy peer (they were hardcoded in the media_kit theme).
@@ -232,11 +232,7 @@ enum VideoControlItem {
     'favoriteSentences',
     legacyButton: VideoControlButton.favoriteSentences,
   ),
-  settings(
-    'settings',
-    legacyButton: VideoControlButton.settings,
-    pinnedRequired: true,
-  ),
+  settings('settings', legacyButton: VideoControlButton.settings),
 
   // -- transport keys (hardcoded in the media_kit theme; phase 0 only catalogs) --
   playPause('playPause', isSpecialRender: true, pinnedRequired: true),
@@ -337,6 +333,8 @@ enum VideoControlItem {
     return true;
   }
 
+  bool get canBeRemovedFromPlayer => canMoveToSlot(VideoControlSlot.hidden);
+
   /// TODO-399 decision 3b: the full set of buttons the visual editor lets users
   /// freely place / duplicate / hide. This is every modeled button that is
   /// [isChipRenderable] -- i.e. all the learning keys plus volume and transport / nav
@@ -349,18 +347,34 @@ enum VideoControlItem {
       ];
 }
 
-/// Per-slot ordered full control button layout (v2). Each [VideoControlSlot]
+class _NormalizedVideoControlLayoutData {
+  const _NormalizedVideoControlLayoutData({
+    required this.slots,
+    required this.removed,
+  });
+
+  final Map<VideoControlSlot, List<VideoControlItem>> slots;
+  final Set<VideoControlItem> removed;
+}
+
+/// Per-slot ordered full control button layout. Each [VideoControlSlot]
 /// holds an ordered List<VideoControlItem> (drag reorder = reorder that list).
-/// A button lives in exactly one slot.
+/// A button may live in several visible slots. Moving a removable button into
+/// [VideoControlSlot.hidden] removes it from the player and records it in the
+/// explicit removed set; hidden is not a restore surface.
 ///
 /// Invariants (kept by the normalizing constructor + the pinned guard):
-///   - each [VideoControlItem] appears at most once (deduped in enum order);
-///   - missing buttons fall into [VideoControlSlot.hidden] (except required keys);
-///   - required buttons ([VideoControlItem.pinnedRequired]) never sit in
-///     [VideoControlSlot.hidden]: if the source data puts one there, it is
-///     bounced back to its default slot.
+///   - each [VideoControlItem] appears at most once per visible slot;
+///   - missing buttons can be backfilled by decode fallback assignments;
+///   - removed buttons are absent from all visible slots and are not listed in
+///     [VideoControlSlot.hidden] for rendering;
+///   - required buttons ([VideoControlItem.pinnedRequired], currently
+///     [VideoControlItem.playPause]) cannot be removed.
 class VideoControlLayout {
-  VideoControlLayout._(this._slots);
+  VideoControlLayout._(
+    this._slots,
+    Set<VideoControlItem> removed,
+  ) : _removed = Set<VideoControlItem>.unmodifiable(removed);
 
   /// Build from a flat button->slot map; normalizes into slot->ordered list.
   /// [explicitOrder] controls within-slot ordering (preserves user drag order).
@@ -368,50 +382,53 @@ class VideoControlLayout {
     Map<VideoControlItem, VideoControlSlot> assignments, {
     Map<VideoControlSlot, List<VideoControlItem>>? explicitOrder,
   }) {
-    final Map<VideoControlSlot, List<VideoControlItem>> slots =
-        <VideoControlSlot, List<VideoControlItem>>{
-      for (final VideoControlSlot slot in VideoControlSlot.values)
-        slot: <VideoControlItem>[],
-    };
+    final Map<VideoControlSlot, List<VideoControlItem>> slots = _emptySlotMap();
+    final Set<VideoControlItem> removed = <VideoControlItem>{};
 
     if (explicitOrder != null) {
       final Set<VideoControlItem> placed = <VideoControlItem>{};
       for (final VideoControlSlot slot in VideoControlSlot.values) {
         for (final VideoControlItem item
             in explicitOrder[slot] ?? const <VideoControlItem>[]) {
-          if (placed.add(item)) slots[slot]!.add(item);
+          if (placed.add(item)) {
+            _placeRawItem(slots, removed, item, slot);
+          }
         }
       }
       for (final VideoControlItem item in VideoControlItem.values) {
         if (placed.contains(item)) continue;
         final VideoControlSlot slot =
             assignments[item] ?? VideoControlSlot.hidden;
-        slots[slot]!.add(item);
+        _placeRawItem(slots, removed, item, slot);
       }
     } else {
       for (final VideoControlItem item in VideoControlItem.values) {
         final VideoControlSlot slot =
             assignments[item] ?? VideoControlSlot.hidden;
-        slots[slot]!.add(item);
+        _placeRawItem(slots, removed, item, slot);
       }
     }
 
-    return VideoControlLayout._(_normalize(slots));
+    return _fromRaw(
+      slots,
+      removedItems: removed,
+      fallbackAssignments: assignments,
+    );
   }
 
   /// Build directly from a slot->ordered-items map **without de-duplicating**:
   /// the same [VideoControlItem] may appear in more than one slot (TODO-399:
-  /// one button in multiple positions). Any button absent from every slot is
-  /// backfilled into [assignments] (or [VideoControlSlot.hidden]); the pinned
-  /// guard still keeps required keys on the player.
+  /// one button in multiple positions). Any button absent from every visible
+  /// slot is backfilled into [assignments] unless it is in [removedItems]; the
+  /// pinned guard still keeps required keys on the player.
   factory VideoControlLayout.fromSlots(
     Map<VideoControlSlot, List<VideoControlItem>> slotItems, {
     Map<VideoControlItem, VideoControlSlot>? assignments,
+    Set<VideoControlItem>? removedItems,
   }) {
-    final Map<VideoControlSlot, List<VideoControlItem>> slots =
-        <VideoControlSlot, List<VideoControlItem>>{
-      for (final VideoControlSlot slot in VideoControlSlot.values)
-        slot: <VideoControlItem>[],
+    final Map<VideoControlSlot, List<VideoControlItem>> slots = _emptySlotMap();
+    final Set<VideoControlItem> removed = <VideoControlItem>{
+      ...?removedItems,
     };
     final Set<VideoControlItem> seen = <VideoControlItem>{};
     for (final VideoControlSlot slot in VideoControlSlot.values) {
@@ -419,21 +436,64 @@ class VideoControlLayout {
           in slotItems[slot] ?? const <VideoControlItem>[]) {
         // De-dupe only WITHIN a slot; the same item across slots is allowed.
         if (slots[slot]!.contains(item)) continue;
-        slots[slot]!.add(item);
-        seen.add(item);
+        final bool placed = _placeRawItem(slots, removed, item, slot);
+        if (placed) seen.add(item);
       }
     }
-    // Backfill any button that ended up in no slot at all.
+    // Backfill any button that ended up in no visible slot and was not
+    // explicitly removed.
     for (final VideoControlItem item in VideoControlItem.values) {
       if (seen.contains(item)) continue;
+      if (removed.contains(item) && item.canBeRemovedFromPlayer) continue;
       final VideoControlSlot slot =
           assignments?[item] ?? VideoControlSlot.hidden;
-      slots[slot]!.add(item);
+      _placeRawItem(slots, removed, item, slot);
     }
-    return VideoControlLayout._(_normalize(slots));
+    return _fromRaw(
+      slots,
+      removedItems: removed,
+      fallbackAssignments: assignments,
+    );
   }
 
-  /// v2 default layout: transport keys at traditional positions + learning keys
+  static Map<VideoControlSlot, List<VideoControlItem>> _emptySlotMap() =>
+      <VideoControlSlot, List<VideoControlItem>>{
+        for (final VideoControlSlot slot in VideoControlSlot.values)
+          slot: <VideoControlItem>[],
+      };
+
+  static bool _placeRawItem(
+    Map<VideoControlSlot, List<VideoControlItem>> slots,
+    Set<VideoControlItem> removed,
+    VideoControlItem item,
+    VideoControlSlot slot,
+  ) {
+    if (slot == VideoControlSlot.hidden) {
+      if (item.canBeRemovedFromPlayer) {
+        removed.add(item);
+      }
+      return false;
+    }
+    if (!item.canMoveToSlot(slot)) return false;
+    slots[slot]!.add(item);
+    removed.remove(item);
+    return true;
+  }
+
+  static VideoControlLayout _fromRaw(
+    Map<VideoControlSlot, List<VideoControlItem>> slots, {
+    Set<VideoControlItem> removedItems = const <VideoControlItem>{},
+    Map<VideoControlItem, VideoControlSlot>? fallbackAssignments,
+  }) {
+    final _NormalizedVideoControlLayoutData data = _normalize(
+      slots,
+      removedItems: removedItems,
+      fallbackAssignments: fallbackAssignments,
+    );
+    return VideoControlLayout._(data.slots, data.removed);
+  }
+
+  /// Default layout: transport keys at traditional positions + learning keys
   /// per the user decision (favorite buttons default to bottomRight).
   ///
   /// This is the new model's own default and does NOT touch the legacy
@@ -620,6 +680,7 @@ class VideoControlLayout {
   }
 
   final Map<VideoControlSlot, List<VideoControlItem>> _slots;
+  final Set<VideoControlItem> _removed;
 
   /// Ordered buttons in a slot (unmodifiable copy).
   List<VideoControlItem> itemsIn(VideoControlSlot slot) =>
@@ -638,7 +699,16 @@ class VideoControlLayout {
   /// Whether the button is visible on the player (non-hidden slot).
   bool isOnPlayer(VideoControlItem item) => slotOf(item).isOnPlayer;
 
-  /// Hidden (settings-fallback) buttons in enum order.
+  /// Items explicitly removed from the player, in enum order.
+  List<VideoControlItem> get removedItems => <VideoControlItem>[
+        for (final VideoControlItem item in VideoControlItem.values)
+          if (_removed.contains(item)) item,
+      ];
+
+  /// Hidden slot entries are no longer persisted as recoverable buttons. Kept
+  /// for old callers and tests that inspect the slot directly; removed items
+  /// are exposed via
+  /// [removedItems] and restored from the palette/default reset.
   List<VideoControlItem> get hiddenItems => itemsIn(VideoControlSlot.hidden);
 
   /// Move [item] into [target] at [index] (the core drag-reorder write op).
@@ -657,11 +727,17 @@ class VideoControlLayout {
         slot: List<VideoControlItem>.from(_slots[slot]!)
           ..removeWhere((VideoControlItem i) => i == item),
     };
+    final Set<VideoControlItem> removed = <VideoControlItem>{..._removed};
+    if (target == VideoControlSlot.hidden) {
+      removed.add(item);
+      return _fromRaw(next, removedItems: removed);
+    }
+    removed.remove(item);
     final List<VideoControlItem> targetList = next[target]!;
     final int insertAt =
         (index == null) ? targetList.length : index.clamp(0, targetList.length);
     targetList.insert(insertAt, item);
-    return VideoControlLayout._(_normalize(next));
+    return _fromRaw(next, removedItems: removed);
   }
 
   /// All slots [item] currently lives in, in [VideoControlSlot.values] order
@@ -672,9 +748,10 @@ class VideoControlLayout {
       for (final VideoControlSlot slot in VideoControlSlot.values)
         if (_slots[slot]!.contains(item)) slot,
     ];
-    return hits.isEmpty
+    if (hits.isNotEmpty) return hits;
+    return _removed.contains(item)
         ? const <VideoControlSlot>[VideoControlSlot.hidden]
-        : hits;
+        : const <VideoControlSlot>[];
   }
 
   /// Add a copy of [item] into [target] WITHOUT removing it from other slots
@@ -691,17 +768,22 @@ class VideoControlLayout {
     if (item.isSingleInstance) {
       return moveItem(item, target, index: index);
     }
+    if (target == VideoControlSlot.hidden) {
+      return moveItem(item, target, index: index);
+    }
     if (_slots[target]!.contains(item)) return this; // already here, no-op.
     final Map<VideoControlSlot, List<VideoControlItem>> next =
         <VideoControlSlot, List<VideoControlItem>>{
       for (final VideoControlSlot slot in VideoControlSlot.values)
         slot: List<VideoControlItem>.from(_slots[slot]!),
     };
+    final Set<VideoControlItem> removed = <VideoControlItem>{..._removed}
+      ..remove(item);
     final List<VideoControlItem> targetList = next[target]!;
     final int insertAt =
         (index == null) ? targetList.length : index.clamp(0, targetList.length);
     targetList.insert(insertAt, item);
-    return VideoControlLayout._(_normalize(next));
+    return _fromRaw(next, removedItems: removed);
   }
 
   /// Move the exact dragged copy represented by [payload] into [target].
@@ -742,6 +824,16 @@ class VideoControlLayout {
       return this;
     }
 
+    final Set<VideoControlItem> removed = <VideoControlItem>{..._removed};
+    if (target == VideoControlSlot.hidden) {
+      sourceList.removeAt(sourceIndex);
+      final bool stillVisible = VideoControlSlot.values.any(
+        (VideoControlSlot s) => s.isOnPlayer && next[s]!.contains(item),
+      );
+      if (!stillVisible) removed.add(item);
+      return _fromRaw(next, removedItems: removed);
+    }
+    removed.remove(item);
     final List<VideoControlItem> targetList = next[target]!;
     if (source != target && targetList.contains(item)) {
       return this;
@@ -754,11 +846,11 @@ class VideoControlLayout {
     }
     insertAt = insertAt.clamp(0, targetList.length);
     targetList.insert(insertAt, item);
-    return VideoControlLayout._(_normalize(next));
+    return _fromRaw(next, removedItems: removed);
   }
 
   /// Remove the copy of [item] sitting in [slot] (TODO-399 delete / un-place).
-  /// If that was its last copy the normalizer drops it to hidden; a required
+  /// If that was its last visible copy, the button is marked removed. A required
   /// key whose last visible copy is removed is bounced back to a default slot.
   VideoControlLayout removeItemFromSlot(
     VideoControlItem item,
@@ -771,18 +863,37 @@ class VideoControlLayout {
         s: List<VideoControlItem>.from(_slots[s]!),
     };
     next[slot]!.removeWhere((VideoControlItem i) => i == item);
-    if (item == VideoControlItem.title) {
-      final bool stillPlaced = VideoControlSlot.values.any(
-        (VideoControlSlot s) => next[s]!.contains(VideoControlItem.title),
-      );
-      if (!stillPlaced) {
-        next[VideoControlSlot.hidden]!.add(VideoControlItem.title);
-      }
+    final Set<VideoControlItem> removed = <VideoControlItem>{..._removed};
+    final bool stillVisible = VideoControlSlot.values.any(
+      (VideoControlSlot s) => s.isOnPlayer && next[s]!.contains(item),
+    );
+    if (!stillVisible) {
+      if (!item.canBeRemovedFromPlayer) return this;
+      removed.add(item);
     }
-    return VideoControlLayout._(_normalize(next));
+    return _fromRaw(next, removedItems: removed);
   }
 
   String encode() {
+    return jsonEncode(<String, Object>{
+      'version': 3,
+      'slots': <String, List<String>>{
+        for (final VideoControlSlot slot in VideoControlSlot.values)
+          if (slot != VideoControlSlot.hidden)
+            slot.storageValue: <String>[
+              for (final VideoControlItem item in _slots[slot]!)
+                item.storageValue,
+            ],
+      },
+      if (_removed.isNotEmpty)
+        'removed': <String>[
+          for (final VideoControlItem item in VideoControlItem.values)
+            if (_removed.contains(item)) item.storageValue,
+        ],
+    });
+  }
+
+  String encodeV2ForTests() {
     return jsonEncode(<String, Object>{
       'version': 2,
       'slots': <String, List<String>>{
@@ -795,8 +906,10 @@ class VideoControlLayout {
     });
   }
 
-  /// Decode persisted string; auto-detects v1 (old placements) / v2 (new slots)
-  /// and backfills missing buttons. Any unparseable input falls back to
+  /// Decode persisted string; auto-detects v1 (old placements), v2 (slots where
+  /// hidden entries migrate to removed items), and v3 (slots + explicit removed).
+  /// Missing buttons in old/partial payloads are backfilled from current chrome.
+  /// Any unparseable input falls back to
   /// [currentChrome] and never throws, so upgrading users do not see the player
   /// chrome move until they explicitly save a new visual layout.
   static VideoControlLayout decode(String json) {
@@ -810,8 +923,11 @@ class VideoControlLayout {
         return _migrateFromV1(raw['placements']);
       }
       final Object? slotsRaw = raw['slots'];
-      if (version == 2 && slotsRaw is Map<String, dynamic>) {
-        return _decodeV2(slotsRaw);
+      if ((version == 2 || version == 3) && slotsRaw is Map<String, dynamic>) {
+        return _decodeSlots(
+          slotsRaw,
+          removedRaw: version == 3 ? raw['removed'] : null,
+        );
       }
       return currentChrome;
     } catch (_) {
@@ -819,8 +935,8 @@ class VideoControlLayout {
     }
   }
 
-  /// v1->v2 migration: bottom->bottomRight / rightRail->screenRight /
-  /// settingsOnly->hidden. Old model only had 5 learning keys; transport keys
+  /// v1 migration: bottom->bottomRight / rightRail->screenRight /
+  /// settingsOnly->removed. Old model only had 5 learning keys; transport keys
   /// keep their current chrome slots (the old model never tracked them).
   static VideoControlLayout _migrateFromV1(Object? placementsRaw) {
     final Map<VideoControlItem, VideoControlSlot> assignments =
@@ -844,7 +960,8 @@ class VideoControlLayout {
     return VideoControlLayout.fromAssignments(assignments);
   }
 
-  /// Old placement -> new slot lossless mapping (single source of truth).
+  /// Old placement -> new slot lossless mapping. The hidden target is consumed
+  /// by [fromAssignments] as "removed from player", not as a visible tray item.
   static VideoControlSlot _slotForLegacyPlacement(
     VideoControlPlacement placement,
   ) {
@@ -858,9 +975,23 @@ class VideoControlLayout {
     }
   }
 
-  static VideoControlLayout _decodeV2(Map<String, dynamic> slotsRaw) {
+  static VideoControlLayout _decodeSlots(
+    Map<String, dynamic> slotsRaw, {
+    Object? removedRaw,
+  }) {
     final Map<VideoControlSlot, List<VideoControlItem>> explicitOrder =
         <VideoControlSlot, List<VideoControlItem>>{};
+    final Set<VideoControlItem> removed = <VideoControlItem>{};
+    if (removedRaw is List) {
+      for (final Object? rawItem in removedRaw) {
+        if (rawItem is! String) continue;
+        final VideoControlItem? item = VideoControlItem.fromStorage(rawItem);
+        if (item != null && item.canBeRemovedFromPlayer) {
+          removed.add(item);
+        }
+      }
+    }
+    int visibleItemCount = 0;
     for (final MapEntry<String, dynamic> entry in slotsRaw.entries) {
       final VideoControlSlot? slot = VideoControlSlot.fromStorage(entry.key);
       final Object? listRaw = entry.value;
@@ -869,9 +1000,19 @@ class VideoControlLayout {
       for (final Object? rawItem in listRaw) {
         if (rawItem is! String) continue;
         final VideoControlItem? item = VideoControlItem.fromStorage(rawItem);
-        if (item != null) items.add(item);
+        if (item == null) continue;
+        if (slot == VideoControlSlot.hidden) {
+          if (item.canBeRemovedFromPlayer) removed.add(item);
+          continue;
+        }
+        if (!item.canMoveToSlot(slot)) continue;
+        items.add(item);
       }
+      if (slot.isOnPlayer) visibleItemCount += items.length;
       explicitOrder[slot] = items;
+    }
+    if (visibleItemCount == 0 && removed.isEmpty) {
+      return currentChrome;
     }
     final Map<VideoControlItem, VideoControlSlot> fallback =
         <VideoControlItem, VideoControlSlot>{
@@ -880,47 +1021,80 @@ class VideoControlLayout {
     };
     // fromSlots (not fromAssignments) so a button persisted into several slots
     // survives the round trip (TODO-399 one-button-many-positions).
-    return VideoControlLayout.fromSlots(explicitOrder, assignments: fallback);
+    return VideoControlLayout.fromSlots(
+      explicitOrder,
+      assignments: fallback,
+      removedItems: removed,
+    );
   }
 
-  /// Normalizing invariant keeper (TODO-399, multi-slot aware):
-  ///   1. every button appears in at least one slot (absent maps to hidden);
-  ///   2. a required button ([pinnedRequired]) never lives ONLY in hidden
-  ///      (with no visible copy): its hidden copy is bounced to a default
-  ///      visible slot. A required button that still has a visible copy
-  ///      elsewhere may keep being listed in hidden too (harmless, never
-  ///      rendered), and a required button may sit in several visible slots.
-  static Map<VideoControlSlot, List<VideoControlItem>> _normalize(
-    Map<VideoControlSlot, List<VideoControlItem>> slots,
-  ) {
-    slots[VideoControlSlot.topCenter]!.removeWhere(
-      (VideoControlItem item) => item != VideoControlItem.title,
-    );
-    _dedupeWithinSlots(slots);
-    final Set<VideoControlItem> present = <VideoControlItem>{
-      for (final List<VideoControlItem> list in slots.values) ...list,
+  /// Normalizing invariant keeper:
+  ///   1. a button appears at most once per visible slot;
+  ///   2. a button can be absent from the player only when explicitly removed;
+  ///   3. old/partial payloads can still backfill missing buttons from
+  ///      [fallbackAssignments];
+  ///   4. required buttons cannot be removed.
+  static _NormalizedVideoControlLayoutData _normalize(
+    Map<VideoControlSlot, List<VideoControlItem>> rawSlots, {
+    Set<VideoControlItem> removedItems = const <VideoControlItem>{},
+    Map<VideoControlItem, VideoControlSlot>? fallbackAssignments,
+  }) {
+    final Map<VideoControlSlot, List<VideoControlItem>> slots = _emptySlotMap();
+    final Set<VideoControlItem> removed = <VideoControlItem>{
+      for (final VideoControlItem item in removedItems)
+        if (item.canBeRemovedFromPlayer) item,
     };
-    for (final VideoControlItem item in VideoControlItem.values) {
-      if (!present.contains(item)) {
-        final VideoControlSlot slot = item == VideoControlItem.title
-            ? VideoControlSlot.topCenter
-            : VideoControlSlot.hidden;
-        slots[slot]!.add(item);
+    for (final VideoControlSlot slot in VideoControlSlot.values) {
+      for (final VideoControlItem item
+          in rawSlots[slot] ?? const <VideoControlItem>[]) {
+        _placeRawItem(slots, removed, item, slot);
       }
     }
-    final List<VideoControlItem> hidden = slots[VideoControlSlot.hidden]!;
-    for (final VideoControlItem item in <VideoControlItem>[...hidden]) {
-      if (!item.pinnedRequired) continue;
-      final bool hasVisibleCopy = VideoControlSlot.values.any(
-        (VideoControlSlot s) => s.isOnPlayer && slots[s]!.contains(item),
-      );
-      if (hasVisibleCopy) continue;
-      hidden.removeWhere((VideoControlItem i) => i == item);
-      slots[_defaultSlotForPinned(item)]!.add(item);
+    _dedupeWithinSlots(slots);
+
+    final Set<VideoControlItem> visible = <VideoControlItem>{
+      for (final VideoControlSlot slot in VideoControlSlot.values)
+        if (slot.isOnPlayer) ...slots[slot]!,
+    };
+    removed.removeWhere(
+      (VideoControlItem item) =>
+          visible.contains(item) || !item.canBeRemovedFromPlayer,
+    );
+
+    for (final VideoControlItem item in VideoControlItem.values) {
+      if (visible.contains(item)) continue;
+      if (removed.contains(item)) continue;
+      final VideoControlSlot? fallback = fallbackAssignments?[item];
+      if (fallback != null) {
+        final bool placed = _placeRawItem(slots, removed, item, fallback);
+        if (placed) {
+          visible.add(item);
+          continue;
+        }
+        if (removed.contains(item)) continue;
+      }
+      if (item.canBeRemovedFromPlayer) {
+        removed.add(item);
+      } else {
+        _placeRawItem(slots, removed, item, _defaultSlotForRequired(item));
+        visible.add(item);
+      }
     }
-    _normalizeVolume(slots);
-    _normalizeTitle(slots);
-    return slots;
+    _normalizeVolume(slots, removed);
+    _normalizeTitle(slots, removed);
+    removed.removeWhere(
+      (VideoControlItem item) =>
+          !item.canBeRemovedFromPlayer ||
+          VideoControlSlot.values.any(
+            (VideoControlSlot slot) =>
+                slot.isOnPlayer && slots[slot]!.contains(item),
+          ),
+    );
+    slots[VideoControlSlot.hidden]!.clear();
+    return _NormalizedVideoControlLayoutData(
+      slots: slots,
+      removed: removed,
+    );
   }
 
   static void _dedupeWithinSlots(
@@ -934,6 +1108,7 @@ class VideoControlLayout {
 
   static void _normalizeVolume(
     Map<VideoControlSlot, List<VideoControlItem>> slots,
+    Set<VideoControlItem> removed,
   ) {
     bool hasBottomVolume = false;
     for (final VideoControlSlot slot in const <VideoControlSlot>[
@@ -960,10 +1135,12 @@ class VideoControlLayout {
         VideoControlItem.volume,
       );
     }
+    removed.remove(VideoControlItem.volume);
   }
 
   static void _normalizeTitle(
     Map<VideoControlSlot, List<VideoControlItem>> slots,
+    Set<VideoControlItem> removed,
   ) {
     VideoControlSlot? target;
     int targetIndex = 0;
@@ -971,7 +1148,6 @@ class VideoControlLayout {
       VideoControlSlot.topLeft,
       VideoControlSlot.topCenter,
       VideoControlSlot.topRight,
-      VideoControlSlot.hidden,
     ]) {
       final int index = slots[slot]!.indexOf(VideoControlItem.title);
       if (index < 0) continue;
@@ -985,19 +1161,21 @@ class VideoControlLayout {
       );
     }
 
+    if (target == null && removed.contains(VideoControlItem.title)) {
+      return;
+    }
     final VideoControlSlot resolved = target ?? VideoControlSlot.topCenter;
     final List<VideoControlItem> list = slots[resolved]!;
     list.insert(targetIndex.clamp(0, list.length), VideoControlItem.title);
+    removed.remove(VideoControlItem.title);
   }
 
-  /// Recovery slot for a required button wrongly placed in hidden (does not
+  /// Recovery slot for a required button wrongly removed (does not
   /// depend on [defaults] to avoid an init cycle).
-  static VideoControlSlot _defaultSlotForPinned(VideoControlItem item) {
+  static VideoControlSlot _defaultSlotForRequired(VideoControlItem item) {
     switch (item) {
       case VideoControlItem.playPause:
         return VideoControlSlot.bottomCenter;
-      case VideoControlItem.settings:
-        return VideoControlSlot.screenRight;
       default:
         return VideoControlSlot.bottomRight;
     }
@@ -1015,7 +1193,8 @@ class VideoControlLayout {
         if (a[i] != b[i]) return false;
       }
     }
-    return true;
+    if (_removed.length != other._removed.length) return false;
+    return _removed.containsAll(other._removed);
   }
 
   @override
@@ -1025,6 +1204,9 @@ class VideoControlLayout {
         slot,
         ..._slots[slot]!,
       ],
+      'removed',
+      for (final VideoControlItem item in VideoControlItem.values)
+        if (_removed.contains(item)) item,
     ]);
   }
 }

@@ -1,0 +1,16 @@
+## BUG-315 · TODO-522/523/525/526: video controls removal persisted removed buttons and video settings text was clipped
+- **报告**：2026-06-18（用户：TODO-522/523/525/526；附图显示英文/中文视频设置中 Subtitle 顶栏裁切、Picture scaling 长值被截成省略号、多个设置项文字和值不完整）
+- **真实性**：✅ 真 bug。根因：
+  - 模型层：`hibiki/lib/src/media/video/video_control_customization.dart:915` 旧 decode/fromSlots/normalize 语义会把缺失按钮补回 `hidden`，`hibiki/lib/src/media/video/video_control_customization.dart:877` encode 又持久化 hidden，导致“移出播放器”变成可恢复托盘项而不是真正移出。
+  - 即时生效链路：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:5392` 必须先更新 `_controlLayoutNotifier` 再持久化，否则 quick settings 和播放器浮层保存后控制层不会立即按新布局重建。
+  - 布局层：`hibiki/lib/src/media/video/video_quick_settings_sheet.dart:379` 原视频设置宽屏分类/详情边界不足，窄宽度、高 UI scale、低高度下分类和详情文字易裁切；`hibiki/lib/src/media/video/video_quick_settings_sheet.dart:541` 的 Picture scaling 长选中值原来在右侧窄控件里单行省略。
+- **[x] ① 已修复** —
+  - `VideoControlLayout` 改为 v3：普通按钮移出后进入显式 `removedItems`，不再展示或持久化为 hidden slot；旧 v2 hidden entries 迁移为 removed，旧 v1 settingsOnly 兼容迁移，缺字段才按 currentChrome 补默认，非法/空布局回落默认；`playPause` 仍不可移出，`settings` 可移出。
+  - quick settings 控制页、播放器浮层和全局视频设置都提供恢复默认/从 palette 恢复链路；右键菜单继续能打开视频设置；`_setVideoControlLayout` 保持 notifier-first 以保证即时生效。
+  - 视频设置参考书籍设置改为有界 master-detail：左侧分类和右侧详情独立滚动，分类项两行显示；Picture scaling 改为下方全宽控件，共享 `HibikiDropdown` 的 MenuAnchor 触发值和菜单值均支持两行长文本。
+  - 删除旧“设置页托盘/移出后仍从设置找回”提示 i18n/source 入口，新增 `video_control_reset_layout` / `video_control_reset_layout_hint` 并通过 `tool/i18n_sync.dart` + `dart run slang` 生成。
+- **[x] ② 已加自动化测试** —
+  - 模型：`hibiki/test/media/video/video_control_layout_test.dart:309` 覆盖移出后 encode/decode 不补 hidden、palette 恢复、旧 v2 hidden 迁移、旧 v1 settingsOnly 迁移、playPause 不可移出、settings 可移出并恢复。
+  - UI：`hibiki/test/pages/video_quick_settings_sheet_test.dart:341` 覆盖 320/360/420/560/720 宽度与 1.5/2.0 UI scale 下 Picture scaling 长值可读；`hibiki/test/pages/video_quick_settings_sheet_test.dart:1376` 覆盖 settings 可移出；`hibiki/test/media/video/video_control_layout_edit_overlay_test.dart` 覆盖播放器浮层移出/恢复/保存。
+  - 恢复链路和共享组件：`hibiki/test/pages/video_settings_schema_guard_test.dart:107` 守卫全局视频设置恢复默认入口；`hibiki/test/pages/video_context_menu_test.dart` 守卫桌面右键菜单设置入口；`hibiki/test/widgets/hibiki_dropdown_test.dart:137` 覆盖共享 dropdown 长标签换行。
+- **备注**：编号冲突处理：主 develop 已占用 BUG-313，TODO-524 已指定 BUG-314，本任务固定使用 BUG-315；已运行 `dart run tool/bug.dart reindex` 和 `dart run tool/bug.dart check`。Windows 真 app 截图与行为验证证据待最终施工报告补齐。

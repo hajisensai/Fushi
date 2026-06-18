@@ -70,7 +70,6 @@ void main() {
         VideoControlItem.positionIndicator,
       };
       const Set<VideoControlItem> pinned = <VideoControlItem>{
-        VideoControlItem.settings,
         VideoControlItem.playPause,
       };
       for (final VideoControlItem item in VideoControlItem.values) {
@@ -216,22 +215,24 @@ void main() {
           isNot(contains(VideoControlItem.speed)));
     });
 
-    test('moveItem to hidden hides a non-required button', () {
+    test('moveItem to hidden removes a non-required button from the player',
+        () {
       final VideoControlLayout layout = VideoControlLayout.defaults
           .moveItem(VideoControlItem.speed, VideoControlSlot.hidden);
       expect(layout.isOnPlayer(VideoControlItem.speed), isFalse);
-      expect(layout.hiddenItems, contains(VideoControlItem.speed));
+      expect(layout.removedItems, contains(VideoControlItem.speed));
+      expect(layout.itemsIn(VideoControlSlot.hidden),
+          isNot(contains(VideoControlItem.speed)));
     });
   });
 
-  group('required-button guard (settings / playPause cannot hide)', () {
-    test('moveItem refuses to hide settings or playPause', () {
+  group('required-button guard (playPause cannot be removed)', () {
+    test('moveItem refuses to hide playPause but allows settings removal', () {
       final VideoControlLayout base = VideoControlLayout.defaults;
       final VideoControlLayout afterSettings =
           base.moveItem(VideoControlItem.settings, VideoControlSlot.hidden);
-      expect(afterSettings.isOnPlayer(VideoControlItem.settings), isTrue);
-      expect(afterSettings.hiddenItems,
-          isNot(contains(VideoControlItem.settings)));
+      expect(afterSettings.isOnPlayer(VideoControlItem.settings), isFalse);
+      expect(afterSettings.removedItems, contains(VideoControlItem.settings));
 
       final VideoControlLayout afterPlay =
           base.moveItem(VideoControlItem.playPause, VideoControlSlot.hidden);
@@ -248,19 +249,20 @@ void main() {
         },
       });
       final VideoControlLayout layout = VideoControlLayout.decode(blob);
-      expect(layout.isOnPlayer(VideoControlItem.settings), isTrue);
+      expect(layout.isOnPlayer(VideoControlItem.settings), isFalse);
+      expect(layout.removedItems, contains(VideoControlItem.settings));
       expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
     });
   });
 
-  group('encode/decode round-trip (v2)', () {
+  group('encode/decode round-trip (v3)', () {
     test('preserves per-slot order through a round trip', () {
       final VideoControlLayout layout = VideoControlLayout.defaults
           .moveItem(VideoControlItem.speed, VideoControlSlot.topLeft, index: 0)
           .moveItem(VideoControlItem.fullscreen, VideoControlSlot.topLeft,
               index: 0);
       final String encoded = layout.encode();
-      expect(encoded, contains('version'));
+      expect(jsonDecode(encoded), containsPair('version', 3));
       final VideoControlLayout decoded = VideoControlLayout.decode(encoded);
       expect(decoded, layout);
       expect(decoded.itemsIn(VideoControlSlot.topLeft), <VideoControlItem>[
@@ -303,6 +305,56 @@ void main() {
       }
       expect(seen.toSet(), VideoControlItem.values.toSet());
     });
+
+    test('removed buttons encode outside slots and decode without hidden items',
+        () {
+      final VideoControlLayout layout = VideoControlLayout.currentChrome
+          .moveItem(VideoControlItem.speed, VideoControlSlot.hidden);
+      final Map<String, dynamic> encoded =
+          jsonDecode(layout.encode()) as Map<String, dynamic>;
+      expect(encoded['version'], 3);
+      expect(encoded['removed'], contains('speed'));
+      final Map<String, dynamic> slots =
+          encoded['slots'] as Map<String, dynamic>;
+      expect(slots.containsKey('hidden'), isFalse);
+      expect(
+        slots.values.expand((Object? raw) => raw as List<dynamic>),
+        isNot(contains('speed')),
+      );
+
+      final VideoControlLayout decoded =
+          VideoControlLayout.decode(jsonEncode(encoded));
+      expect(decoded.isOnPlayer(VideoControlItem.speed), isFalse);
+      expect(decoded.removedItems, contains(VideoControlItem.speed));
+      expect(decoded.itemsIn(VideoControlSlot.hidden), isEmpty);
+    });
+
+    test('palette restore removes the item from removed set', () {
+      final VideoControlLayout removed = VideoControlLayout.currentChrome
+          .moveItem(VideoControlItem.speed, VideoControlSlot.hidden);
+      final VideoControlLayout restored = removed.addItemToSlot(
+        VideoControlItem.speed,
+        VideoControlSlot.bottomRight,
+      );
+      expect(restored.isOnPlayer(VideoControlItem.speed), isTrue);
+      expect(restored.removedItems, isNot(contains(VideoControlItem.speed)));
+      expect(restored.itemsIn(VideoControlSlot.bottomRight),
+          contains(VideoControlItem.speed));
+    });
+
+    test('old v2 hidden entries migrate to removed items', () {
+      final String blob = jsonEncode(<String, Object>{
+        'version': 2,
+        'slots': <String, List<String>>{
+          'hidden': <String>['speed'],
+        },
+      });
+      final VideoControlLayout layout = VideoControlLayout.decode(blob);
+      expect(layout.isOnPlayer(VideoControlItem.speed), isFalse);
+      expect(layout.removedItems, contains(VideoControlItem.speed));
+      expect(layout.itemsIn(VideoControlSlot.hidden), isEmpty);
+      expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
+    });
   });
 
   group('v1 -> v2 migration (backward compatibility iron rule)', () {
@@ -334,7 +386,7 @@ void main() {
           VideoControlSlot.screenRight);
     });
 
-    test('legacy settingsOnly maps to hidden', () {
+    test('legacy settingsOnly maps to removed', () {
       final VideoControlLayout migrated = VideoControlLayout.decode(
         legacyV1(<VideoControlButton, VideoControlPlacement>{
           VideoControlButton.speed: VideoControlPlacement.settingsOnly,
@@ -342,6 +394,8 @@ void main() {
       );
       expect(migrated.slotOf(VideoControlItem.speed), VideoControlSlot.hidden);
       expect(migrated.isOnPlayer(VideoControlItem.speed), isFalse);
+      expect(migrated.removedItems, contains(VideoControlItem.speed));
+      expect(migrated.itemsIn(VideoControlSlot.hidden), isEmpty);
     });
 
     test('full legacy default config migrates every learning key correctly',
@@ -375,6 +429,7 @@ void main() {
           VideoControlSlot.screenRight);
       expect(migrated.slotOf(VideoControlItem.subtitleList),
           VideoControlSlot.hidden);
+      expect(migrated.removedItems, contains(VideoControlItem.subtitleList));
       expect(migrated.slotOf(VideoControlItem.favoriteSentence),
           VideoControlSlot.bottomRight);
       expect(migrated.slotOf(VideoControlItem.settings),
@@ -457,36 +512,51 @@ void main() {
           reason: 'the other copy survives');
     });
 
-    test('removing the last visible copy lands the button in hidden', () {
-      // speed only sits in bottomRight by default; remove it -> falls to hidden.
+    test('removing the last visible copy marks the button removed', () {
+      // speed only sits in bottomRight by default; remove it -> removed set.
       final VideoControlLayout layout = VideoControlLayout.defaults
           .removeItemFromSlot(
               VideoControlItem.speed, VideoControlSlot.bottomRight);
       expect(layout.isOnPlayer(VideoControlItem.speed), isFalse);
-      expect(layout.hiddenItems, contains(VideoControlItem.speed));
+      expect(layout.removedItems, contains(VideoControlItem.speed));
+      expect(layout.itemsIn(VideoControlSlot.hidden), isEmpty);
     });
 
     test('removeItemFromSlot refuses to remove the last copy of a required key',
         () {
-      // settings is pinnedRequired: removing its only copy must bounce it back
-      // (never leaves the player with no settings entry).
+      // playPause is pinnedRequired: removing its only copy must be rejected.
       final VideoControlSlot home =
-          VideoControlLayout.defaults.slotOf(VideoControlItem.settings);
+          VideoControlLayout.defaults.slotOf(VideoControlItem.playPause);
       final VideoControlLayout layout = VideoControlLayout.defaults
-          .removeItemFromSlot(VideoControlItem.settings, home);
-      expect(layout.isOnPlayer(VideoControlItem.settings), isTrue);
+          .removeItemFromSlot(VideoControlItem.playPause, home);
+      expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
+      expect(layout.slotOf(VideoControlItem.playPause), home);
     });
 
     test('a required key with two copies can still drop one copy', () {
       final VideoControlSlot home =
-          VideoControlLayout.defaults.slotOf(VideoControlItem.settings);
+          VideoControlLayout.defaults.slotOf(VideoControlItem.playPause);
       final VideoControlLayout layout = VideoControlLayout.defaults
-          .addItemToSlot(VideoControlItem.settings, VideoControlSlot.topLeft)
+          .addItemToSlot(VideoControlItem.playPause, VideoControlSlot.topLeft)
           .removeItemFromSlot(
-              VideoControlItem.settings, VideoControlSlot.topLeft);
+              VideoControlItem.playPause, VideoControlSlot.topLeft);
       expect(
-          layout.slotsOf(VideoControlItem.settings), <VideoControlSlot>[home]);
-      expect(layout.isOnPlayer(VideoControlItem.settings), isTrue);
+          layout.slotsOf(VideoControlItem.playPause), <VideoControlSlot>[home]);
+      expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
+    });
+
+    test('settings can be removed and restored through the palette', () {
+      final VideoControlLayout removed = VideoControlLayout.defaults
+          .moveItem(VideoControlItem.settings, VideoControlSlot.hidden);
+      expect(removed.isOnPlayer(VideoControlItem.settings), isFalse);
+      expect(removed.removedItems, contains(VideoControlItem.settings));
+
+      final VideoControlLayout restored = removed.addItemToSlot(
+        VideoControlItem.settings,
+        VideoControlSlot.screenRight,
+      );
+      expect(restored.isOnPlayer(VideoControlItem.settings), isTrue);
+      expect(restored.removedItems, isNot(contains(VideoControlItem.settings)));
     });
 
     test('encode/decode preserves a button placed in multiple slots', () {
@@ -520,11 +590,12 @@ void main() {
           contains(VideoControlItem.speed));
     });
 
-    test('slotsOf returns hidden-only for a hidden button', () {
+    test('slotsOf returns hidden-only for a removed button', () {
       final VideoControlLayout layout = VideoControlLayout.defaults
           .moveItem(VideoControlItem.speed, VideoControlSlot.hidden);
       expect(layout.slotsOf(VideoControlItem.speed),
           <VideoControlSlot>[VideoControlSlot.hidden]);
+      expect(layout.itemsIn(VideoControlSlot.hidden), isEmpty);
     });
   });
 
@@ -633,6 +704,7 @@ void main() {
       expect(hidden.slotsOf(VideoControlItem.title),
           <VideoControlSlot>[VideoControlSlot.hidden]);
       expect(hidden.isOnPlayer(VideoControlItem.title), isFalse);
+      expect(hidden.itemsIn(VideoControlSlot.hidden), isEmpty);
 
       final VideoControlLayout restored = hidden.addItemToSlot(
           VideoControlItem.title, VideoControlSlot.topRight);
@@ -653,6 +725,7 @@ void main() {
       );
       expect(hidden.slotsOf(VideoControlItem.title),
           <VideoControlSlot>[VideoControlSlot.hidden]);
+      expect(hidden.itemsIn(VideoControlSlot.hidden), isEmpty);
 
       final VideoControlLayout missing = VideoControlLayout.decode(
         jsonEncode(<String, Object>{
@@ -737,21 +810,14 @@ void main() {
       expect(learning, isNot(contains(VideoControlItem.volume)));
     });
 
-    test(
-        'moving a learning key to every editable slot is honored (except '
-        'hiding the required settings key)', () {
+    test('moving a learning key to every editable slot is honored', () {
       for (final VideoControlItem item
           in VideoControlItem.customizableLearning) {
         for (final VideoControlSlot slot in VideoControlSlot.editableSlots) {
           final VideoControlLayout moved =
               VideoControlLayout.defaults.moveItem(item, slot);
-          if (item.pinnedRequired && slot == VideoControlSlot.hidden) {
-            // required keys bounce back — never end up hidden.
-            expect(moved.isOnPlayer(item), isTrue);
-          } else {
-            expect(moved.slotOf(item), slot,
-                reason: '${item.name} should move into ${slot.name}');
-          }
+          expect(moved.slotOf(item), slot,
+              reason: '${item.name} should move into ${slot.name}');
         }
       }
     });

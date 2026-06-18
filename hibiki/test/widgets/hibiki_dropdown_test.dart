@@ -134,6 +134,44 @@ void main() {
       expect(find.byType(DropdownMenu<String>), findsOneWidget);
     });
 
+    testWidgets('MenuAnchor long labels can wrap in trigger and menu',
+        (tester) async {
+      const String longLabel = 'Fit keep ratio add black bars';
+      await tester.pumpWidget(
+        buildTestApp(
+          Center(
+            child: SizedBox(
+              width: 240,
+              child: HibikiDropdown<String>(
+                options: const <String>[longLabel, 'Stretch'],
+                initialOption: longLabel,
+                generateLabel: (String v) => v,
+                onChanged: (_) {},
+              ),
+            ),
+          ),
+          theme: ThemeData.light(useMaterial3: true).copyWith(
+            platform: TargetPlatform.windows,
+          ),
+        ),
+      );
+
+      Text selected = tester.widget<Text>(find.text(longLabel));
+      expect(selected.maxLines, 2);
+      expect(selected.softWrap, isTrue);
+
+      await tester.tap(find.byType(OutlinedButton));
+      await tester.pumpAndSettle();
+
+      final Iterable<Text> longTexts =
+          tester.widgetList<Text>(find.text(longLabel));
+      expect(longTexts, hasLength(2));
+      for (final Text text in longTexts) {
+        expect(text.maxLines, 2);
+        expect(text.softWrap, isTrue);
+      }
+    });
+
     testWidgets(
         'Android stock DropdownMenu caps menuHeight to the screen '
         '(no off-screen overflow with many options)', (tester) async {
