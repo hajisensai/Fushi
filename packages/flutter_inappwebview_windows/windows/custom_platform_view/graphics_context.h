@@ -44,10 +44,8 @@ namespace flutter_inappwebview_plugin
         ABI::Windows::Graphics::DirectX::DirectXPixelFormat pixelFormat,
         INT32 numberOfBuffers, ABI::Windows::Graphics::SizeInt32 size) const;
 
-    // BUG-163: 取当前线程的 Windows.System.DispatcherQueue。
-    // CreateCaptureFramePool 创建的帧池把 FrameArrived/FirePresentEvent 作为
-    // deferred call 排进创建线程的这个队列；teardown 的保序销毁 hop 必须排进
-    // 同一个队列才能保证已排队事件先于资源释放执行。
+    // Returns the UI thread's Windows.System.DispatcherQueue. TextureBridge uses
+    // it to create the polling DispatcherQueueTimer for UI-thread WGC capture.
     winrt::com_ptr<ABI::Windows::System::IDispatcherQueue>
       GetDispatcherQueueForCurrentThread() const;
 
