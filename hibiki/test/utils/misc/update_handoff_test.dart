@@ -388,5 +388,38 @@ void main() {
         contains('WidgetsBinding.instance.addPostFrameCallback'),
       );
     });
+
+    test(
+        'source guard: injected installer diagnostics are not hidden behind '
+        'Platform.isWindows', () {
+      final String source =
+          File('lib/src/utils/misc/platform_updater.dart').readAsStringSync();
+      final int injectedFlag = source.indexOf(
+          'final bool hasInjectedDiagnostics = collectDiagnostics != null;');
+      final int injectedDiagnostics = source.indexOf(
+          'collectDiagnostics != null\n            ? await collectDiagnostics()');
+      final int platformFallback =
+          source.indexOf('Platform.isWindows\n                ? await '
+              'collectWindowsInstallerDiagnostics');
+      final int injectedBlockerCheck =
+          source.indexOf('if (Platform.isWindows || hasInjectedDiagnostics) {\n'
+              '        _throwIfWindowsInstallBlocked');
+
+      expect(injectedFlag, isNonNegative);
+      expect(injectedDiagnostics, isNonNegative);
+      expect(platformFallback, isNonNegative);
+      expect(
+        injectedDiagnostics,
+        lessThan(platformFallback),
+        reason: 'CI runs these tests on Linux; explicit diagnostics must be '
+            'honored before the real-platform fallback.',
+      );
+      expect(
+        injectedBlockerCheck,
+        isNonNegative,
+        reason: 'Injected diagnostics must still exercise the held-libmpv '
+            'blocker path on non-Windows hosts.',
+      );
+    });
   });
 }

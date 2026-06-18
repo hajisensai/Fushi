@@ -407,23 +407,26 @@ class WindowsInstaller {
     final String resolvedExecutablePath =
         currentExecutablePath ?? Platform.resolvedExecutable;
     final Directory currentInstallDir = File(resolvedExecutablePath).parent;
-    final WindowsInstallerDiagnostics rawDiagnostics = Platform.isWindows
-        ? await (collectDiagnostics ??
-            () => collectWindowsInstallerDiagnostics(
-                  currentExecutablePath: resolvedExecutablePath,
-                  currentProcessId: pid,
-                ))()
-        : WindowsInstallerDiagnostics(
-            currentExecutablePath: resolvedExecutablePath,
-            currentInstallDir: currentInstallDir.path,
-            targetInstallDir: currentInstallDir.path,
-            detectedInstallLocations: <WindowsDetectedInstallLocation>[
-              WindowsDetectedInstallLocation(
-                source: 'current',
-                path: currentInstallDir.path,
-              ),
-            ],
-          );
+    final bool hasInjectedDiagnostics = collectDiagnostics != null;
+    final WindowsInstallerDiagnostics rawDiagnostics =
+        collectDiagnostics != null
+            ? await collectDiagnostics()
+            : Platform.isWindows
+                ? await collectWindowsInstallerDiagnostics(
+                    currentExecutablePath: resolvedExecutablePath,
+                    currentProcessId: pid,
+                  )
+                : WindowsInstallerDiagnostics(
+                    currentExecutablePath: resolvedExecutablePath,
+                    currentInstallDir: currentInstallDir.path,
+                    targetInstallDir: currentInstallDir.path,
+                    detectedInstallLocations: <WindowsDetectedInstallLocation>[
+                      WindowsDetectedInstallLocation(
+                        source: 'current',
+                        path: currentInstallDir.path,
+                      ),
+                    ],
+                  );
     final String targetInstallDir =
         rawDiagnostics.targetInstallDir ?? currentInstallDir.path;
     final WindowsInstallerDiagnostics diagnostics = rawDiagnostics.copyWith(
@@ -467,6 +470,8 @@ class WindowsInstaller {
       }
       if (Platform.isWindows) {
         await ensureWindowsInstallTargetWritable(Directory(targetInstallDir));
+      }
+      if (Platform.isWindows || hasInjectedDiagnostics) {
         _throwIfWindowsInstallBlocked(diagnostics, innoLogPath);
       }
 
