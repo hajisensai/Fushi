@@ -98,4 +98,40 @@ void main() {
           'not as a general result-body gesture catcher.',
     );
   });
+
+  test('home dictionary search field exposes a focused clear affordance', () {
+    final String src =
+        read('lib/src/pages/implementations/home_dictionary_page.dart');
+
+    final int searchHeaderStart = src.indexOf('Widget _buildSearchHeader()');
+    final int bodyStart = src.indexOf('Widget _buildBody()');
+    expect(searchHeaderStart, isNonNegative);
+    expect(bodyStart, greaterThan(searchHeaderStart));
+    final String searchHeader = src.substring(searchHeaderStart, bodyStart);
+
+    expect(
+      searchHeader,
+      contains("'home_dictionary_search_clear_button'"),
+      reason: 'TODO-510 needs a stable X clear button on the home dictionary '
+          'search field when text is present.',
+    );
+    expect(searchHeader, contains('onClear: _clearSearch'));
+
+    final int clearSearchStart = src.indexOf('void _clearSearch()');
+    final int pullClearStart = src.indexOf('void _clearSearchFromResultPull()');
+    expect(clearSearchStart, isNonNegative);
+    expect(pullClearStart, greaterThan(clearSearchStart));
+    final String clearSearch = src.substring(clearSearchStart, pullClearStart);
+
+    expect(clearSearch, contains('_debounceTimer?.cancel();'));
+    expect(clearSearch, contains('_controller.clear();'));
+    expect(clearSearch, contains('_result = null;'));
+    expect(clearSearch, contains('_searchFocusNode.requestFocus();'));
+    expect(
+      clearSearch,
+      isNot(contains('_searchFocusNode.unfocus()')),
+      reason: 'Clearing text is still input mode; focus should stay in the '
+          'search box where possible.',
+    );
+  });
 }

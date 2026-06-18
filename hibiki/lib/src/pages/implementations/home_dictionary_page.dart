@@ -168,6 +168,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
 
   void _clearSearch() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
     _controller.clear();
     _popup.clear();
     _result = null;
@@ -175,8 +177,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _lastQuery = '';
     _allLoaded = false;
     _sourceLookupText = '';
-    _searchFocusNode.unfocus();
+    _historyWritten = false;
     setState(() {});
+    if (_searchFocusNode.canRequestFocus) {
+      _searchFocusNode.requestFocus();
+    }
   }
 
   void _clearSearchFromResultPull() {
@@ -242,10 +247,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           Expanded(
             child: HibikiSearchField(
               fieldKey: const ValueKey<String>('home_dictionary_search_field'),
+              clearButtonKey: const ValueKey<String>(
+                'home_dictionary_search_clear_button',
+              ),
               controller: _controller,
               focusNode: _searchFocusNode,
               hintText: t.search_ellipsis,
               onChanged: _onQueryChanged,
+              onClear: _clearSearch,
               onSubmitted: _search,
             ),
           ),
