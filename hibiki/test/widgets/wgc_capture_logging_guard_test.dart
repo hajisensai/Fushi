@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// BUG-209 / TODO-398 source guard: Windows WGC structured native logging +
 /// minidump install contract. Host cannot run WGC (Windows-only API), so we use
 /// source-scan guards to pin invariants that cannot be behavior-tested on host:
-/// log always-compiled, key lifecycle points instrumented, FrameArrived success
+/// log always-compiled, key lifecycle points instrumented, timer pump success
 /// path not per-frame logged, crash dump handler installed and chained.
 String _read(List<String> candidates, String name) {
   final File? f = candidates
@@ -71,7 +71,7 @@ void main() {
   });
 
   test(
-      'texture_bridge.cc instruments key WGC lifecycle points; FrameArrived success path not per-frame logged',
+      'texture_bridge.cc instruments key WGC lifecycle points; timer pump success path not per-frame logged',
       () {
     final String src = _read(<String>[
       'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
@@ -99,17 +99,16 @@ void main() {
       'createSession-fail',
       'startCapture-fail',
       'state-inactive',
-      'late-handler-noop',
+      'pump-start',
+      'pump-stop-start',
+      'pump-stop-timer-done',
+      'pump-remove-tick-done',
+      'pump-stop-done',
+      'pump-late-noop',
       'frame-noop',
+      'frame-getfail',
       'frame-first-success',
       'frame-needs-update',
-      'retire-defer-in-handler',
-      'retire-defer-posted',
-      'retire-defer-keepalive',
-      'remove-before-close-start',
-      'remove-before-close-done',
-      'remove-before-close-error',
-      'handler-release-start',
       'retire-register-start',
       'retire-register-done',
       'session-close-start',
@@ -117,7 +116,6 @@ void main() {
       'pool-close-start',
       'pool-close-done',
       'registry-size',
-      'handler-release-done',
     ]) {
       expect(src.contains('WgcLog::Write("$evt"'), isTrue,
           reason: 'texture_bridge.cc must log WgcLog at lifecycle point: $evt');
@@ -155,21 +153,22 @@ void main() {
 
     expect(src.contains('WgcLog::Write("retire-remove-closed"'), isFalse,
         reason:
-            'retire-remove-closed was the TODO-463/465 stopgap; normal WGC retire must remove before Close instead');
+            'retire-remove-closed was an old FrameArrived stopgap; default WGC retire no longer subscribes');
     expect(src.contains('WgcLog::Write("retire-defer-fail"'), isFalse,
-        reason:
-            'TODO-479: handler-stack enqueue failure must keep the old lifetime alive, not log a terminal fail and continue teardown');
+        reason: 'TODO-508 removes handler-stack defer from the default path');
     expect(src.contains('WgcLog::Write("remove-before-close-fail"'), isFalse,
-        reason:
-            'TODO-479: remove-before-close-fail is a negative acceptance event; source must not produce it');
+        reason: 'default WGC retire no longer removes FrameArrived');
     expect(
         src.contains('WgcLog::Write("remove-before-close-closed-unexpected"'),
         isFalse,
-        reason:
-            'TODO-479: remove-before-close-closed-unexpected is a negative acceptance event; source must not produce it');
+        reason: 'default WGC retire no longer removes FrameArrived');
     expect(src.contains('defer_enqueue=0'), isFalse,
+        reason: 'timer pump path must not use handler-stack enqueue fallback');
+    expect(src.contains('add_FrameArrived'), isFalse,
+        reason: 'default WGC path must not subscribe to FrameArrived');
+    expect(src.contains('remove_FrameArrived'), isFalse,
         reason:
-            'TODO-479: dispatch failure must not fall through into remove-before-close-fail defer_enqueue=0');
+            'default WGC path must not remove an event it never registered');
 
     final int retireStart =
         src.indexOf('void TextureBridge::RetireFramePoolLocked(');
@@ -180,32 +179,37 @@ void main() {
         reason:
             'RetireFramePoolLocked must log the retired frame pool pointer (crash forensics)');
 
-    final int removeDone =
-        src.indexOf('WgcLog::Write("remove-before-close-done"');
-    final int handlerReleaseDone =
-        src.indexOf('WgcLog::Write("handler-release-done"', removeDone);
+    final int pumpStop = src.indexOf('WgcLog::Write("pump-stop-start"');
+    final int removeTick =
+        src.indexOf('WgcLog::Write("pump-remove-tick-done"', pumpStop);
+    final int sessionCloseStart =
+        src.indexOf('WgcLog::Write("session-close-start"', removeTick);
     final int poolCloseStart =
-        src.indexOf('WgcLog::Write("pool-close-start"', removeDone);
-    expect(removeDone, greaterThanOrEqualTo(0),
-        reason:
-            'successful revoke must be visible before closing the WGC pool');
-    expect(handlerReleaseDone, greaterThan(removeDone),
-        reason:
-            'handler-release-done must only happen after remove-before-close-done');
-    expect(poolCloseStart, greaterThan(handlerReleaseDone),
-        reason:
-            'pool-close-start must be logged after successful remove and handler release');
+        src.indexOf('WgcLog::Write("pool-close-start"', sessionCloseStart);
+    expect(pumpStop, greaterThanOrEqualTo(0),
+        reason: 'retire must log timer pump stop before closing WGC resources');
+    expect(removeTick, greaterThan(pumpStop),
+        reason: 'Tick removal must be visible before session/pool close');
+    expect(sessionCloseStart, greaterThan(removeTick),
+        reason: 'session close must happen after timer Tick removal');
+    expect(poolCloseStart, greaterThan(sessionCloseStart),
+        reason: 'pool close must be logged after session close starts');
 
-    final int ofaStart = src.indexOf('void TextureBridge::OnFrameArrived(');
-    expect(ofaStart, greaterThanOrEqualTo(0));
-    final int ofaEnd = src.indexOf('bool TextureBridge::ShouldDropFrame()');
-    expect(ofaEnd, greaterThan(ofaStart));
-    final String ofaBody = src.substring(ofaStart, ofaEnd);
-    expect(ofaBody.contains('WgcLog::Write("frame-getfail"'), isTrue,
-        reason: 'OnFrameArrived TryGetNextFrame failure should be observable');
-    final int frameAvailIdx = ofaBody.indexOf('frame_available_()');
+    final int pumpStart = src.indexOf('void TextureBridge::PumpFrameLocked(');
+    expect(pumpStart, greaterThanOrEqualTo(0));
+    final int pumpEnd = src.indexOf('bool TextureBridge::ShouldDropFrame()');
+    expect(pumpEnd, greaterThan(pumpStart));
+    final String pumpBody = src.substring(pumpStart, pumpEnd);
+    expect(pumpBody.contains('WgcLog::Write("frame-getfail"'), isTrue,
+        reason: 'timer pump TryGetNextFrame failure should be observable');
+    final int needsUpdateIdx = pumpBody.indexOf('if (needs_update_)');
+    final int tryGetIdx = pumpBody.indexOf('TryGetNextFrame');
+    expect(needsUpdateIdx, greaterThanOrEqualTo(0));
+    expect(tryGetIdx, greaterThan(needsUpdateIdx),
+        reason: 'resize must be handled before trying to take a frame');
+    final int frameAvailIdx = pumpBody.indexOf('frame_available_()');
     expect(frameAvailIdx, greaterThanOrEqualTo(0));
-    final String afterDeliver = ofaBody.substring(frameAvailIdx);
+    final String afterDeliver = pumpBody.substring(frameAvailIdx);
     expect(afterDeliver.contains('WgcLog::Write'), isFalse,
         reason:
             'No WgcLog after successful frame delivery (per-frame fire would flood disk)');

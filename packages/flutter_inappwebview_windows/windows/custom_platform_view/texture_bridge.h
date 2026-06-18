@@ -17,11 +17,12 @@
 
 namespace flutter_inappwebview_plugin
 {
-  using WgcFrameArrivedHandler = ABI::Windows::Foundation::ITypedEventHandler<
-    ABI::Windows::Graphics::Capture::Direct3D11CaptureFramePool*,
-    IInspectable*>;
+  using WgcPumpTickHandler = ABI::Windows::Foundation::ITypedEventHandler<
+    ABI::Windows::System::DispatcherQueueTimer*, IInspectable*>;
+  using WgcCaptureItemClosedHandler = ABI::Windows::Foundation::ITypedEventHandler<
+    ABI::Windows::Graphics::Capture::GraphicsCaptureItem*, IInspectable*>;
 
-  struct WgcFrameArrivedCallbackState;
+  struct WgcPumpCallbackState;
   struct WgcFramePoolLifetime;
 
   typedef struct {
@@ -56,7 +57,8 @@ namespace flutter_inappwebview_plugin
     void SetFpsLimit(std::optional<int> max_fps);
 
   protected:
-    typedef WgcFrameArrivedHandler FrameArrivedHandler;
+    typedef WgcPumpTickHandler PumpTickHandler;
+    typedef WgcCaptureItemClosedHandler CaptureItemClosedHandler;
 
     bool is_running_ = false;
 
@@ -73,31 +75,26 @@ namespace flutter_inappwebview_plugin
 
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureItem>
       capture_item_;
+    Microsoft::WRL::ComPtr<CaptureItemClosedHandler>
+      capture_item_closed_handler_;
     std::shared_ptr<WgcFramePoolLifetime> frame_pool_lifetime_;
     uint64_t frame_pool_generation_ = 0;
 
     EventRegistrationToken on_closed_token_ = {};
 
-    void InvalidateFrameArrivedCallback(
+    void InvalidatePumpCallback(
       const std::shared_ptr<WgcFramePoolLifetime>& lifetime = nullptr);
     virtual void StopInternal();
-    // BUG-209/TODO-439：所有「丢弃/替换 frame_pool_」的路径（StopInternal teardown、
-    // Start 重入覆盖、OnFrameArrived resize）统一走这套退役保活不变量——
-    // inactive/retiring -> open pool remove_FrameArrived -> release handler ->
-    // Close session/pool -> 同一个 lifetime 从 active registry 标成 retired。
-    // handler 回调栈内退役只标记/投递到同一 DispatcherQueue 下一拍 finalize，避免 event
-    // 迭代重入；若投递失败则保留 token/handler/session/pool 存活作异常证据，不伪造闭合。
-    // remove 异常同样保留 token/handler/pool 作证据。
-    // 绝不裸释放任何曾经 add_FrameArrived 的帧池。调用方须持 mutex_。
+    // Default WGC capture does not subscribe to FrameArrived. Every path that
+    // drops/replaces a pool first stops the UI timer pump, removes Tick, clears
+    // callback state, then closes the session/pool and retires the lifetime.
     void RetireFramePoolLocked(const char* reason);
-    // 创建帧池 + 挂 FrameArrived + 建 CaptureSession + StartCapture，Start 与
-    // RecreateFramePoolLocked 共用；返回是否 StartCapture 成功。调用方须持 mutex_。
     bool CreateAndStartFramePoolLocked();
-    // resize 时退役旧池 + 重建会话 + 建全新池，取代 frame_pool_->Recreate（其会拆掉旧池
-    // 内部 present 基建而在途 deferral 仍指向旧状态 -> UAF）。调用方须持 mutex_。
     void RecreateFramePoolLocked();
-    void OnFrameArrived(
-      const std::shared_ptr<WgcFramePoolLifetime>& lifetime);
+    bool StartPumpLocked(const std::shared_ptr<WgcFramePoolLifetime>& lifetime);
+    void StopPumpLocked(const std::shared_ptr<WgcFramePoolLifetime>& lifetime,
+      const char* reason);
+    void PumpFrameLocked(const std::shared_ptr<WgcFramePoolLifetime>& lifetime);
     bool ShouldDropFrame();
 
     // corresponds to DXGI_FORMAT_B8G8R8A8_UNORM

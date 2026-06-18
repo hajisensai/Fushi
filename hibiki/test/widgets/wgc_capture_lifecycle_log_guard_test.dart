@@ -32,11 +32,15 @@ const Set<String> _bannedLifecycleEvents = <String>{
   'remove-before-close-fail',
   'remove-before-close-closed-unexpected',
   'retire-remove-closed',
+  'remove-before-close-start',
+  'remove-before-close-done',
+  'handler-release-done',
 };
 
 const List<String> _requiredClosureEvents = <String>[
-  'remove-before-close-done',
-  'handler-release-done',
+  'pump-stop-start',
+  'pump-remove-tick-done',
+  'pump-stop-done',
   'session-close-done',
   'pool-close-done',
   'retire-register-done',
@@ -111,6 +115,10 @@ void main() {
       'frame-first-success',
       'frame-needs-update',
       'frame-noop',
+      'pump-start',
+      'pump-stop-start',
+      'pump-remove-tick-done',
+      'pump-stop-done',
       'recreate-skip-samesize',
     ]) {
       expect(src.contains('WgcLog::Write("$event"'), isTrue,
@@ -148,12 +156,12 @@ void main() {
             'recreate-skip-samesize must log existing frame-pool lifetime size');
 
     final String frameBody = src.substring(
-      src.indexOf('void TextureBridge::OnFrameArrived('),
+      src.indexOf('void TextureBridge::PumpFrameLocked('),
       src.indexOf('bool TextureBridge::ShouldDropFrame()'),
     );
     expect(frameBody.contains('FrameHandlerDetail'), isTrue,
         reason:
-            'OnFrameArrived must use the shared frame attribution detail builder');
+            'PumpFrameLocked must use the shared frame attribution detail builder');
     for (final String field in <String>[
       'GenerationDetail',
       'in_handler',
@@ -162,12 +170,11 @@ void main() {
       'needs_update',
     ]) {
       expect(src.contains(field), isTrue,
-          reason: 'OnFrameArrived low-frequency logs must include $field');
+          reason: 'PumpFrameLocked low-frequency logs must include $field');
     }
   });
 
-  test(
-      'handler-stack WGC retire never finalizes synchronously on defer failure',
+  test('timer-pump WGC retire removes Tick before closing capture resources',
       () {
     final String src = _readTextureBridgeSource();
     final String retireBody = _methodBody(
@@ -176,31 +183,26 @@ void main() {
       'void FinalizeFramePoolLifetime(',
     );
 
-    expect(
-        retireBody.contains('WgcLog::Write("retire-defer-in-handler"'), isTrue,
-        reason: 'handler-stack retire must remain observable');
-    expect(retireBody.contains('TryEnqueue'), isTrue,
+    expect(retireBody.contains('StopPumpLocked(lifetime, reason)'), isTrue,
+        reason: 'retire must stop/remove the timer pump before finalizing');
+    expect(retireBody.contains('TryEnqueue'), isFalse,
         reason:
-            'handler-stack retire must leave the current handler before finalizing');
-    expect(retireBody.contains('FinalizeFramePoolLifetime(lifetime, false)'),
-        isFalse,
-        reason:
-            'defer enqueue failure must keep pool/session/handler alive instead of pretending closure');
+            'FrameArrived handler-stack defer is not part of the default timer pump path');
+    expect(src.contains('add_FrameArrived'), isFalse,
+        reason: 'default WGC path must not subscribe to FrameArrived');
     expect(src.contains('WgcLog::Write("retire-defer-fail"'), isFalse,
-        reason:
-            'retire-defer-fail is a terminal negative event; new code should retain the old lifetime instead');
+        reason: 'retire-defer-fail belongs to the removed handler-stack path');
     expect(src.contains('defer_enqueue=0'), isFalse,
-        reason:
-            'remove-before-close-fail defer_enqueue=0 is the TODO-479 invalid user log');
+        reason: 'timer pump path must not use handler-stack enqueue fallback');
   });
 
-  test('WGC lifecycle log fixture rejects TODO-479 negative events', () {
+  test('WGC lifecycle log fixture rejects old event-driven negative events',
+      () {
     const String userFailureLog = '''
 2026-06-17T11:00:00.000Z tid=42 evt=create-pool pool=0xABC generation=9
 2026-06-17T11:00:00.100Z tid=42 evt=retire pool=0xABC reason=recreate
-2026-06-17T11:00:00.101Z tid=42 evt=retire-defer-in-handler pool=0xABC generation=9
-2026-06-17T11:00:00.102Z tid=42 evt=retire-defer-fail pool=0xABC hr=0x8000001C
-2026-06-17T11:00:00.103Z tid=42 evt=remove-before-close-fail pool=0xABC defer_enqueue=0
+2026-06-17T11:00:00.101Z tid=42 evt=remove-before-close-start pool=0xABC generation=9
+2026-06-17T11:00:00.102Z tid=42 evt=handler-release-done pool=0xABC generation=9
 2026-06-17T11:00:00.104Z tid=42 evt=session-close-done pool=0xABC generation=9
 2026-06-17T11:00:00.105Z tid=42 evt=pool-close-done pool=0xABC generation=9
 2026-06-17T11:00:00.106Z tid=42 evt=retire-register-done pool=0xABC generation=9
@@ -213,9 +215,9 @@ void main() {
     const String successLog = '''
 2026-06-17T11:00:00.000Z tid=42 evt=create-pool pool=0xABC generation=9
 2026-06-17T11:00:00.100Z tid=42 evt=retire pool=0xABC reason=recreate
-2026-06-17T11:00:00.101Z tid=42 evt=remove-before-close-start pool=0xABC generation=9
-2026-06-17T11:00:00.102Z tid=42 evt=remove-before-close-done pool=0xABC generation=9 hr=0x00000000
-2026-06-17T11:00:00.103Z tid=42 evt=handler-release-done pool=0xABC generation=9
+2026-06-17T11:00:00.101Z tid=42 evt=pump-stop-start pool=0xABC generation=9
+2026-06-17T11:00:00.102Z tid=42 evt=pump-remove-tick-done pool=0xABC generation=9 hr=0x00000000
+2026-06-17T11:00:00.103Z tid=42 evt=pump-stop-done pool=0xABC generation=9
 2026-06-17T11:00:00.104Z tid=42 evt=session-close-done pool=0xABC generation=9 hr=0x00000000
 2026-06-17T11:00:00.105Z tid=42 evt=pool-close-done pool=0xABC generation=9 hr=0x00000000
 2026-06-17T11:00:00.106Z tid=42 evt=retire-register-done pool=0xABC generation=9

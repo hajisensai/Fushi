@@ -3,7 +3,6 @@
 #include <windows.foundation.h>
 #include <winrt/base.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstdio>
@@ -20,8 +19,10 @@
 namespace flutter_inappwebview_plugin
 {
   const int kNumBuffers = 1;
+  const int kMaxFramesPerPump = 4;
+  const int64_t kPumpInterval100ns = 166667; // ~60Hz
 
-  struct WgcFrameArrivedCallbackState {
+  struct WgcPumpCallbackState {
     std::mutex mutex;
     TextureBridge* bridge = nullptr;
     std::weak_ptr<WgcFramePoolLifetime> lifetime;
@@ -38,18 +39,17 @@ namespace flutter_inappwebview_plugin
       frame_pool;
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession>
       capture_session;
-    Microsoft::WRL::ComPtr<WgcFrameArrivedHandler> frame_arrived_handler;
-    EventRegistrationToken on_frame_arrived_token = {};
-    std::shared_ptr<WgcFrameArrivedCallbackState> callback_state;
     winrt::com_ptr<ABI::Windows::System::IDispatcherQueue> dispatcher_queue;
+    winrt::com_ptr<ABI::Windows::System::IDispatcherQueueTimer> pump_timer;
+    Microsoft::WRL::ComPtr<WgcPumpTickHandler> pump_tick_handler;
+    EventRegistrationToken on_tick_token = {};
+    std::shared_ptr<WgcPumpCallbackState> pump_state;
     ABI::Windows::Graphics::SizeInt32 size = { -1, -1 };
     bool registry_retired = false;
     bool inactive = false;
     bool retiring = false;
-    bool finalize_posted = false;
-    bool remove_done = false;
-    bool remove_failed = false;
-    bool handler_released = false;
+    bool tick_removed = false;
+    bool pump_stopped = false;
     bool session_closed = false;
     bool pool_closed = false;
     bool first_frame_logged = false;
@@ -176,11 +176,6 @@ namespace flutter_inappwebview_plugin
       return std::string("reason=") + (reason ? reason : "unknown");
     }
 
-    bool IsClosedFramePoolHResult(HRESULT hr)
-    {
-      return static_cast<unsigned long>(hr) == 0x80000013UL;
-    }
-
     std::string RegistryCountsDetail(size_t active_count, size_t retired_count)
     {
       char buffer[96];
@@ -260,30 +255,29 @@ namespace flutter_inappwebview_plugin
       graphics_context_->CreateGraphicsCaptureItemFromVisual(visual);
     assert(capture_item_);
 
-    capture_item_->add_Closed(
-      Microsoft::WRL::Callback<ABI::Windows::Foundation::ITypedEventHandler<
-      ABI::Windows::Graphics::Capture::GraphicsCaptureItem*,
-      IInspectable*>>(
+    capture_item_closed_handler_ =
+      Microsoft::WRL::Callback<CaptureItemClosedHandler>(
         [](ABI::Windows::Graphics::Capture::IGraphicsCaptureItem* item,
           IInspectable* args) -> HRESULT
         {
           std::cerr << "Capture item was closed." << std::endl;
           return S_OK;
-        })
-      .Get(),
-          &on_closed_token_);
+        });
+    capture_item_->add_Closed(capture_item_closed_handler_.Get(),
+      &on_closed_token_);
     WgcLog::Write("create-bridge", this);
   }
 
   TextureBridge::~TextureBridge()
   {
     WgcLog::Write("dtor-enter", this);
-    InvalidateFrameArrivedCallback();
+    InvalidatePumpCallback();
     const std::lock_guard<std::mutex> lock(mutex_);
     StopInternal();
     if (capture_item_) {
       capture_item_->remove_Closed(on_closed_token_);
     }
+    capture_item_closed_handler_ = nullptr;
     WgcLog::Write("dtor-exit", this);
   }
 
@@ -311,34 +305,17 @@ namespace flutter_inappwebview_plugin
       BridgeStateDetail(this, lifetime, capture_item_size, is_running_,
         needs_update));
 
-    // BUG-209 第十修（扩展保活到 Start 重入路径）：CustomPlatformView::HandleMethodCall
-    // 的 setSize 每次都调 texture_bridge_->Start()（custom_platform_view.cc:323），不止
-    // 首帧。is_running_ 守卫只挡「已成功 StartCapture 后的重入」；但若上一轮 Start 在
-    // CreateCaptureSession 失败（:179-183 return，不设 is_running_）或 StartCapture 失败
-    // （:190 return，不设 is_running_）后早返回，frame_pool_ 已被赋值且已 add_FrameArrived
-    // 注册了句柄，is_running_ 仍为 false。下一次 setSize -> Start 越过 is_running_ 守卫，
-    // 直接在 :147 用新池**覆盖** frame_pool_ ComPtr——旧池最后强引用归零、内存 free，
-    // 但旧池仍挂着已注册的 FrameArrived，其在途 deferred FirePresentEvent 在旧池 free 后
-    // 才 fire -> 读 free 内存的 event 成员 -> null delegate -> 同一 0xf0d5 崩点。第九修的
-    // 永久保活只覆盖 StopInternal，这条 Start 覆盖路径是它漏掉的池销毁路径之一（dump
-    // 81504 的崩溃池 MEM_FREE 且不在 retired-list，正是非 StopInternal 路径释放的池）。
-    // 修：覆盖前用与 StopInternal 同一个 RetireFramePoolLocked 不变量先 Close + 退役保活，
-    // 绝不让任何挂着在途 deferral 的旧池被裸覆盖释放。
     RetireFramePoolLocked("start");
 
     if (!CreateAndStartFramePoolLocked()) {
+      is_running_ = false;
       return false;
     }
-    is_running_ = true;
     return true;
   }
 
   bool TextureBridge::CreateAndStartFramePoolLocked()
   {
-    // BUG-209：帧池的创建 + FrameArrived 挂载 + CaptureSession 建立 + StartCapture 收敛进
-    // 单一 helper（调用方持 mutex_），供首帧 Start() 与 resize 时的 RecreateFramePoolLocked()
-    // 共用——两条路径用完全相同的 WGC 线程模型 / delegate 注册，resize 不再走 Recreate。
-    // 进入前 frame_pool_lifetime_ 必为空（调用方已 RetireFramePoolLocked 退役旧池）。
     ABI::Windows::Graphics::SizeInt32 size;
     capture_item_->get_Size(&size);
     auto lifetime = std::make_shared<WgcFramePoolLifetime>();
@@ -347,103 +324,27 @@ namespace flutter_inappwebview_plugin
     lifetime->dispatcher_queue =
       graphics_context_->GetDispatcherQueueForCurrentThread();
 
-    // BUG-163/BUG-209: 帧池必须用 CreateCaptureFramePool（UI 线程 DispatcherQueue
-    // 派发，渲染管线线程模型与多年稳定版一致）。FreeThreaded 帧池（第四修）已实证
-    // 在 Release 构建下纹理不更新（书籍文字全空，2026-06-10 用户验证 v1 无字 /
-    // v2 revert 有字），禁止回潮。teardown 崩溃改由 RetireFramePoolLocked 的
-    // 「open pool remove -> handler release -> Close -> lifetime registry」解决。
     lifetime->frame_pool = graphics_context_->CreateCaptureFramePool(
       graphics_context_->device(),
       static_cast<ABI::Windows::Graphics::DirectX::DirectXPixelFormat>(
         kPixelFormat),
       kNumBuffers, size);
     assert(lifetime->frame_pool);
-    // TODO-439：active pool 也必须从 create 起进入进程级强保活。v0.9.0.5025 的复发
-    // dump 显示崩溃池对应 create-pool 后没有 stop/retire/dtor，只有 running=1 与
-    // same-size skip；因此保活不能等到 RetireFramePoolLocked 才发生。先 retain，再挂
-    // FrameArrived，保证任何曾注册事件的 pool 都不会 MEM_FREE。
+
     WgcLog::Write("create-pool", lifetime->PoolForLog(),
       GenerationDetail(lifetime->generation));
     FramePoolLifetimeRegistry::Instance().Retain(lifetime);
     WgcLog::Write("active-retain", lifetime->PoolForLog(),
       GenerationDetail(lifetime->generation));
 
-    auto callback_state = std::make_shared<WgcFrameArrivedCallbackState>();
-    {
-      const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
-      callback_state->bridge = this;
-      callback_state->lifetime = lifetime;
-      callback_state->generation = lifetime->generation;
-      callback_state->active = true;
-    }
-    lifetime->callback_state = callback_state;
-
-    lifetime->frame_arrived_handler = Microsoft::WRL::Callback<FrameArrivedHandler>(
-        [callback_state](ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool*
-          pool,
-          IInspectable* args) -> HRESULT
-        {
-          TextureBridge* bridge = nullptr;
-          std::shared_ptr<WgcFramePoolLifetime> lifetime;
-          bool log_late_noop = false;
-          uint64_t noop_generation = 0;
-          bool noop_active = false;
-          bool noop_retiring = false;
-          bool noop_in_handler = false;
-          const void* noop_bridge = nullptr;
-          {
-            const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
-            lifetime = callback_state->lifetime.lock();
-            if (callback_state->active && !callback_state->retiring &&
-              callback_state->bridge && lifetime) {
-              callback_state->in_handler = true;
-              bridge = callback_state->bridge;
-            }
-            else if (!callback_state->late_noop_logged) {
-              callback_state->late_noop_logged = true;
-              log_late_noop = true;
-              noop_generation = callback_state->generation;
-              noop_active = callback_state->active;
-              noop_retiring = callback_state->retiring;
-              noop_in_handler = callback_state->in_handler;
-              noop_bridge = callback_state->bridge;
-            }
-          }
-          if (log_late_noop) {
-            WgcLog::Write("late-handler-noop",
-              lifetime ? lifetime->PoolForLog() : nullptr,
-              JoinDetails({
-                GenerationDetail(noop_generation),
-                BoolDetail("active", noop_active),
-                BoolDetail("in_handler", noop_in_handler),
-                BoolDetail("retiring", noop_retiring),
-                BoolDetail("has_frame", false),
-                PointerDetail("bridge", noop_bridge),
-              }));
-          }
-          if (bridge && lifetime) {
-            bridge->OnFrameArrived(lifetime);
-          }
-          {
-            const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
-            callback_state->in_handler = false;
-          }
-          return S_OK;
-        });
-    lifetime->frame_pool->add_FrameArrived(lifetime->frame_arrived_handler.Get(),
-      &lifetime->on_frame_arrived_token);
-    // 新池已 add_FrameArrived（自此挂在途 deferral 风险）。create-pool 与
-    // active-retain 已在注册前记录，供崩溃取证对照「崩溃帧池指针」是否从创建起被保活。
-
     frame_pool_lifetime_ = lifetime;
 
     if (FAILED(lifetime->frame_pool->CreateCaptureSession(capture_item_.get(),
       lifetime->capture_session.put()))) {
       std::cerr << "Creating capture session failed." << std::endl;
-      // 静默早返回点（不设 is_running_，frame_pool_ 已赋值且已 add_FrameArrived）：
-      // 记录可观测，下一次 Start() 入口的 RetireFramePoolLocked 会退役保活此残留池。
       WgcLog::Write("createSession-fail", lifetime->PoolForLog(),
         GenerationDetail(lifetime->generation));
+      RetireFramePoolLocked("createSession-fail");
       return false;
     }
 
@@ -451,18 +352,21 @@ namespace flutter_inappwebview_plugin
     if (!started) {
       WgcLog::Write("startCapture-fail", lifetime->PoolForLog(),
         GenerationDetail(lifetime->generation));
+      RetireFramePoolLocked("startCapture-fail");
+      return false;
     }
-    return started;
+
+    is_running_ = true;
+    if (!StartPumpLocked(lifetime)) {
+      RetireFramePoolLocked("pump-start-fail");
+      is_running_ = false;
+      return false;
+    }
+    return true;
   }
 
   void TextureBridge::RecreateFramePoolLocked()
   {
-    // TODO-428/420 兜底（native 尺寸短路）：即便上层 setSize 风暴穿过 Dart 去抖到达
-    // 这里（NotifySurfaceSizeChanged -> needs_update_=true -> 本函数），只要 capture_item_
-    // 的实际尺寸与当前帧池建池尺寸完全相等，就没有任何理由重建帧池。SizeInt32 是整数
-    // （无浮点抖动），直接整数相等比较。相等则早返回：不退役、不重建（needs_update_ 已在
-    // 调用方 OnFrameArrived 清掉），从而即便上层仍抖也不每帧 churn 帧池。尺寸真变（width
-    // 或 height 任一不同）才走下面的退役 + 重建，保证 resize 后画面照常更新。
     ABI::Windows::Graphics::SizeInt32 current_size = { 0, 0 };
     const auto lifetime = frame_pool_lifetime_;
     if (capture_item_ && SUCCEEDED(capture_item_->get_Size(&current_size)) &&
@@ -483,39 +387,203 @@ namespace flutter_inappwebview_plugin
         GenerationDetail(lifetime->generation),
         SizeDetail("lifetime_size", lifetime->size),
       }) : std::string());
-    // BUG-209 第十修（resize 路径替换 frame_pool_->Recreate）：调用方（OnFrameArrived）
-    // 持 mutex_。原 Recreate 复用同一帧池只换 back buffer，但会拆掉旧池内部 present 基建，
-    // 其在途 deferral 仍指向被拆状态 -> UAF。改为：退役保活旧池（先 remove，再 Close）+
-    // 建全新池。旧 CaptureSession 绑在旧池上，随旧池 lifetime finalize 一并 Close。
-    RetireFramePoolLocked("recreate");
 
-    // 建新池并 StartCapture。失败则保持 frame_pool_ 为空（已退役旧池），下一次 setSize ->
-    // Start() 会再尝试；与旧 Recreate 失败时同样不致崩（OnFrameArrived 开头读 frame_pool_
-    // 前已无新帧投递）。注意：CreateAndStartFramePoolLocked 内部若 CreateCaptureSession
-    // 失败会留下 frame_pool_ 非空但未启动——由下一次 Start() 入口的 RetireFramePoolLocked
-    // 兜底退役保活，不裸释放。
-    CreateAndStartFramePoolLocked();
+    RetireFramePoolLocked("recreate");
+    if (!CreateAndStartFramePoolLocked()) {
+      is_running_ = false;
+    }
+  }
+
+  bool TextureBridge::StartPumpLocked(
+    const std::shared_ptr<WgcFramePoolLifetime>& lifetime)
+  {
+    if (!lifetime || !lifetime->dispatcher_queue) {
+      WgcLog::Write("pump-start-fail",
+        lifetime ? lifetime->PoolForLog() : nullptr,
+        lifetime ? "dispatcher_queue=0" : "lifetime=0");
+      return false;
+    }
+
+    HRESULT timer_hr =
+      lifetime->dispatcher_queue->CreateTimer(lifetime->pump_timer.put());
+    if (FAILED(timer_hr) || !lifetime->pump_timer) {
+      WgcLog::Write("pump-start-fail", lifetime->PoolForLog(),
+        HResultDetail("hr", timer_hr));
+      return false;
+    }
+
+    ABI::Windows::Foundation::TimeSpan interval = {};
+    interval.Duration = kPumpInterval100ns;
+    lifetime->pump_timer->put_Interval(interval);
+    lifetime->pump_timer->put_IsRepeating(true);
+
+    auto pump_state = std::make_shared<WgcPumpCallbackState>();
+    {
+      const std::lock_guard<std::mutex> state_lock(pump_state->mutex);
+      pump_state->bridge = this;
+      pump_state->lifetime = lifetime;
+      pump_state->generation = lifetime->generation;
+      pump_state->active = true;
+    }
+    lifetime->pump_state = pump_state;
+
+    lifetime->pump_tick_handler = Microsoft::WRL::Callback<PumpTickHandler>(
+      [pump_state](ABI::Windows::System::IDispatcherQueueTimer* timer,
+        IInspectable* args) -> HRESULT
+      {
+        TextureBridge* bridge = nullptr;
+        std::shared_ptr<WgcFramePoolLifetime> lifetime;
+        bool log_late_noop = false;
+        uint64_t noop_generation = 0;
+        bool noop_active = false;
+        bool noop_retiring = false;
+        bool noop_in_handler = false;
+        const void* noop_bridge = nullptr;
+        {
+          const std::lock_guard<std::mutex> state_lock(pump_state->mutex);
+          lifetime = pump_state->lifetime.lock();
+          if (pump_state->active && !pump_state->retiring &&
+            pump_state->bridge && lifetime) {
+            pump_state->in_handler = true;
+            bridge = pump_state->bridge;
+          }
+          else if (!pump_state->late_noop_logged) {
+            pump_state->late_noop_logged = true;
+            log_late_noop = true;
+            noop_generation = pump_state->generation;
+            noop_active = pump_state->active;
+            noop_retiring = pump_state->retiring;
+            noop_in_handler = pump_state->in_handler;
+            noop_bridge = pump_state->bridge;
+          }
+        }
+        if (log_late_noop) {
+          WgcLog::Write("pump-late-noop",
+            lifetime ? lifetime->PoolForLog() : nullptr,
+            JoinDetails({
+              GenerationDetail(noop_generation),
+              BoolDetail("active", noop_active),
+              BoolDetail("in_handler", noop_in_handler),
+              BoolDetail("retiring", noop_retiring),
+              BoolDetail("has_frame", false),
+              PointerDetail("bridge", noop_bridge),
+            }));
+        }
+        if (bridge && lifetime) {
+          bridge->PumpFrameLocked(lifetime);
+        }
+        {
+          const std::lock_guard<std::mutex> state_lock(pump_state->mutex);
+          pump_state->in_handler = false;
+        }
+        return S_OK;
+      });
+
+    HRESULT tick_hr = lifetime->pump_timer->add_Tick(
+      lifetime->pump_tick_handler.Get(), &lifetime->on_tick_token);
+    if (FAILED(tick_hr)) {
+      WgcLog::Write("pump-start-fail", lifetime->PoolForLog(),
+        HResultDetail("add_tick_hr", tick_hr));
+      lifetime->pump_tick_handler = nullptr;
+      lifetime->pump_state = nullptr;
+      lifetime->pump_timer = nullptr;
+      return false;
+    }
+
+    HRESULT start_hr = lifetime->pump_timer->Start();
+    if (FAILED(start_hr)) {
+      WgcLog::Write("pump-start-fail", lifetime->PoolForLog(),
+        HResultDetail("start_hr", start_hr));
+      lifetime->pump_timer->remove_Tick(lifetime->on_tick_token);
+      lifetime->on_tick_token = {};
+      lifetime->pump_tick_handler = nullptr;
+      lifetime->pump_state = nullptr;
+      lifetime->pump_timer = nullptr;
+      return false;
+    }
+
+    WgcLog::Write("pump-start", lifetime->PoolForLog(),
+      GenerationDetail(lifetime->generation));
+    return true;
+  }
+
+  void TextureBridge::StopPumpLocked(
+    const std::shared_ptr<WgcFramePoolLifetime>& lifetime,
+    const char* reason)
+  {
+    if (!lifetime) {
+      return;
+    }
+
+    WgcLog::Write("pump-stop-start", lifetime->PoolForLog(),
+      JoinDetails({ GenerationDetail(lifetime->generation), ReasonDetail(reason) }));
+    InvalidatePumpCallback(lifetime);
+
+    if (lifetime->pump_timer) {
+      HRESULT stop_hr = lifetime->pump_timer->Stop();
+      lifetime->pump_stopped = SUCCEEDED(stop_hr);
+      if (SUCCEEDED(stop_hr)) {
+        WgcLog::Write("pump-stop-timer-done", lifetime->PoolForLog(),
+          HResultDetail("hr", stop_hr));
+      }
+      else {
+        WgcLog::Write("pump-stop-timer-fail", lifetime->PoolForLog(),
+          HResultDetail("hr", stop_hr));
+      }
+    }
+
+    if (lifetime->pump_timer && lifetime->on_tick_token.value != 0) {
+      HRESULT remove_hr =
+        lifetime->pump_timer->remove_Tick(lifetime->on_tick_token);
+      lifetime->tick_removed = SUCCEEDED(remove_hr);
+      if (SUCCEEDED(remove_hr)) {
+        WgcLog::Write("pump-remove-tick-done", lifetime->PoolForLog(),
+          HResultDetail("hr", remove_hr));
+      }
+      else {
+        WgcLog::Write("pump-remove-tick-fail", lifetime->PoolForLog(),
+          HResultDetail("hr", remove_hr));
+      }
+      if (SUCCEEDED(remove_hr)) {
+        lifetime->on_tick_token = {};
+      }
+    }
+    else if (lifetime->on_tick_token.value == 0) {
+      WgcLog::Write("pump-remove-tick-skipped", lifetime->PoolForLog(),
+        "token=0");
+    }
+    else {
+      WgcLog::Write("pump-remove-tick-fail", lifetime->PoolForLog(),
+        "timer=0");
+    }
+
+    lifetime->pump_tick_handler = nullptr;
+    lifetime->pump_state = nullptr;
+    lifetime->pump_timer = nullptr;
+    WgcLog::Write("pump-stop-done", lifetime->PoolForLog(),
+      GenerationDetail(lifetime->generation));
   }
 
   void TextureBridge::Stop()
   {
-    InvalidateFrameArrivedCallback();
+    InvalidatePumpCallback();
     const std::lock_guard<std::mutex> lock(mutex_);
     StopInternal();
   }
 
-  void TextureBridge::InvalidateFrameArrivedCallback(
+  void TextureBridge::InvalidatePumpCallback(
     const std::shared_ptr<WgcFramePoolLifetime>& lifetime)
   {
     auto target = lifetime ? lifetime : frame_pool_lifetime_;
-    if (!target || !target->callback_state) {
+    if (!target || !target->pump_state) {
       return;
     }
-    auto callback_state = target->callback_state;
-    const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
-    callback_state->active = false;
-    callback_state->retiring = true;
-    callback_state->bridge = nullptr;
+    auto pump_state = target->pump_state;
+    const std::lock_guard<std::mutex> state_lock(pump_state->mutex);
+    pump_state->active = false;
+    pump_state->retiring = true;
+    pump_state->bridge = nullptr;
+    pump_state->generation = 0;
     target->inactive = true;
     target->retiring = true;
   }
@@ -525,24 +593,6 @@ namespace flutter_inappwebview_plugin
     auto lifetime = frame_pool_lifetime_;
     WgcLog::Write("stop", lifetime ? lifetime->PoolForLog() : nullptr);
     is_running_ = false;
-
-    // BUG-209（退役帧池永久保活）：dump 决定性根因——已排进 UI 线程
-    // CoreMessaging DispatcherQueue 的 deferred FirePresentEvent 不持帧池强引用，
-    // 在帧池被释放后才 fire；GraphicsCapture.dll 内部 event::operator() 读已释放的
-    // 帧池 event 成员（[framepool+0x60] 的 m_targets）-> 野 delegate 数组 -> null
-    // TypedEventHandler -> c0000005（崩在我们 lambda 之前，前七修的 callback_state/
-    // ComPtr-release/drain-hop 防线全部够不着；第八修代际释放也被 81504 dump 反证。
-    //
-    // 当前退役顺序集中在 WgcFramePoolLifetime finalize：
-    //   1) inactive/retiring：迟到回调只读 callback_state 并 no-op。
-    //   2) remove_FrameArrived(token)：在 frame pool 仍 open 时同步摘掉 event token。
-    //   3) remove 成功后释放 handler；remove 异常则保留 token/handler/pool 作异常证据。
-    //   4) Close capture session，再 Close frame pool。
-    //   5) 同一个 lifetime 在 registry 中从 active 计数转为 retired 计数并永久保活。
-    //
-    // 因果不变量：任何曾 add_FrameArrived 的帧池都由 registry 保活到进程退出；正常路径
-    // 不再 Close 后 remove，因此不再把 RO_E_CLOSED 当作常态；异常路径 fail closed 并留证。
-    // StopInternal / Start 重入 / OnFrameArrived resize 三条丢弃/替换路径都走同一套不变量。
     RetireFramePoolLocked("stop");
   }
 
@@ -554,48 +604,10 @@ namespace flutter_inappwebview_plugin
     }
 
     WgcLog::Write("retire", lifetime->PoolForLog(), ReasonDetail(reason));
+    StopPumpLocked(lifetime, reason);
     WgcLog::Write("state-inactive", lifetime->PoolForLog(),
       GenerationDetail(lifetime->generation));
-    InvalidateFrameArrivedCallback(lifetime);
     frame_pool_lifetime_ = nullptr;
-
-    bool in_handler = false;
-    if (lifetime->callback_state) {
-      const std::lock_guard<std::mutex> state_lock(
-        lifetime->callback_state->mutex);
-      in_handler = lifetime->callback_state->in_handler;
-    }
-
-    if (in_handler) {
-      WgcLog::Write("retire-defer-in-handler", lifetime->PoolForLog(),
-        GenerationDetail(lifetime->generation));
-      if (lifetime->dispatcher_queue && !lifetime->finalize_posted) {
-        auto finalize_handler =
-          Microsoft::WRL::Callback<ABI::Windows::System::IDispatcherQueueHandler>(
-            [lifetime]() -> HRESULT
-            {
-              FinalizeFramePoolLifetime(lifetime);
-              return S_OK;
-            });
-        boolean enqueued = false;
-        const HRESULT enqueue_hr =
-          lifetime->dispatcher_queue->TryEnqueue(finalize_handler.Get(),
-            &enqueued);
-        if (SUCCEEDED(enqueue_hr) && enqueued) {
-          lifetime->finalize_posted = true;
-          WgcLog::Write("retire-defer-posted", lifetime->PoolForLog(),
-            GenerationDetail(lifetime->generation));
-          return;
-        }
-        WgcLog::Write("retire-defer-keepalive", lifetime->PoolForLog(),
-          HResultDetail("hr", enqueue_hr));
-        return;
-      }
-      WgcLog::Write("retire-defer-keepalive", lifetime->PoolForLog(),
-        lifetime->dispatcher_queue ? "finalize_posted=1" : "dispatcher_queue=0");
-      return;
-    }
-
     FinalizeFramePoolLifetime(lifetime);
   }
 
@@ -609,55 +621,6 @@ namespace flutter_inappwebview_plugin
       }
 
       const void* pool_for_log = lifetime->PoolForLog();
-      bool remove_succeeded = false;
-      if (lifetime->frame_pool &&
-        lifetime->on_frame_arrived_token.value != 0) {
-        WgcLog::Write("remove-before-close-start", pool_for_log,
-          GenerationDetail(lifetime->generation));
-        try {
-          const HRESULT remove_hr =
-            lifetime->frame_pool->remove_FrameArrived(lifetime->on_frame_arrived_token);
-          if (SUCCEEDED(remove_hr)) {
-            lifetime->remove_done = true;
-            remove_succeeded = true;
-            WgcLog::Write("remove-before-close-done", pool_for_log,
-              HResultDetail("hr", remove_hr));
-            lifetime->on_frame_arrived_token = {};
-          }
-          else if (IsClosedFramePoolHResult(remove_hr)) {
-            lifetime->remove_failed = true;
-            WgcLog::Write("remove-before-close-error", pool_for_log,
-              HResultDetail("hr", remove_hr));
-          }
-          else {
-            lifetime->remove_failed = true;
-            WgcLog::Write("remove-before-close-error", pool_for_log,
-              HResultDetail("hr", remove_hr));
-          }
-        }
-        catch (const winrt::hresult_error& error) {
-          const HRESULT remove_hr = error.code();
-          lifetime->remove_failed = true;
-          WgcLog::Write("remove-before-close-error", pool_for_log,
-            HResultDetail("hr", remove_hr));
-        }
-      }
-      else if (lifetime->on_frame_arrived_token.value == 0) {
-        WgcLog::Write("remove-before-close-skipped", pool_for_log, "token=0");
-      }
-      else {
-        lifetime->remove_failed = true;
-        WgcLog::Write("remove-before-close-error", pool_for_log, "pool=0");
-      }
-
-      if (remove_succeeded && lifetime->frame_arrived_handler) {
-        WgcLog::Write("handler-release-start", pool_for_log,
-          GenerationDetail(lifetime->generation));
-        lifetime->frame_arrived_handler = nullptr;
-        lifetime->handler_released = true;
-        WgcLog::Write("handler-release-done", pool_for_log,
-          GenerationDetail(lifetime->generation));
-      }
 
       if (lifetime->capture_session) {
         WgcLog::Write("session-close-start", pool_for_log,
@@ -702,7 +665,7 @@ namespace flutter_inappwebview_plugin
     }
   }  // namespace
 
-  void TextureBridge::OnFrameArrived(
+  void TextureBridge::PumpFrameLocked(
     const std::shared_ptr<WgcFramePoolLifetime>& lifetime)
   {
     const std::lock_guard<std::mutex> lock(mutex_);
@@ -718,30 +681,41 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
-    bool has_frame = false;
-
-    winrt::com_ptr<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFrame>
-      frame;
-    auto hr = lifetime->frame_pool->TryGetNextFrame(frame.put());
-    if (FAILED(hr)) {
-      // 仅失败时写（成功路径每帧 fire，禁止每帧刷盘）：取帧失败可能预示帧池
-      // 状态异常，是观测帧池生命周期的低噪声信号。
-      WgcLog::Write("frame-getfail", lifetime->PoolForLog(),
-        JoinDetails({
-          HResultDetail("hr", hr),
-          FrameHandlerDetail(lifetime, true, lifetime->retiring, false,
-            needs_update_.load()),
-        }));
+    if (needs_update_) {
+      WgcLog::Write("frame-needs-update", lifetime->PoolForLog(),
+        FrameHandlerDetail(lifetime, true, lifetime->retiring, false, true));
+      needs_update_ = false;
+      RecreateFramePoolLocked();
+      return;
     }
-    if (SUCCEEDED(hr) && frame) {
+
+    bool has_frame = false;
+    for (int i = 0; i < kMaxFramesPerPump; ++i) {
+      winrt::com_ptr<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFrame>
+        frame;
+      auto hr = lifetime->frame_pool->TryGetNextFrame(frame.put());
+      if (FAILED(hr)) {
+        WgcLog::Write("frame-getfail", lifetime->PoolForLog(),
+          JoinDetails({
+            HResultDetail("hr", hr),
+            FrameHandlerDetail(lifetime, true, lifetime->retiring, false,
+              needs_update_.load()),
+          }));
+        break;
+      }
+      if (!frame) {
+        break;
+      }
+
       winrt::com_ptr<
         ABI::Windows::Graphics::DirectX::Direct3D11::IDirect3DSurface>
         frame_surface;
-
       if (SUCCEEDED(frame->get_Surface(frame_surface.put()))) {
         last_frame_ =
           TryGetDXGIInterfaceFromObject<ID3D11Texture2D>(frame_surface);
-        has_frame = !ShouldDropFrame();
+        if (!ShouldDropFrame()) {
+          has_frame = true;
+        }
       }
     }
 
@@ -750,24 +724,6 @@ namespace flutter_inappwebview_plugin
       WgcLog::Write("frame-first-success", lifetime->PoolForLog(),
         FrameHandlerDetail(lifetime, true, lifetime->retiring, has_frame,
           needs_update_.load()));
-    }
-
-    if (needs_update_) {
-      WgcLog::Write("frame-needs-update", lifetime->PoolForLog(),
-        FrameHandlerDetail(lifetime, true, lifetime->retiring, has_frame, true));
-      // BUG-209 第十修（覆盖 resize 这条之前漏的帧池替换路径）：原先用帧池的 Recreate
-      // 方法在 surface resize 时复用同一帧池 COM 对象、只换内部 back buffer。问题是
-      // Recreate 会同步拆掉旧池的内部 present 基建（旧的 swap-chain / present 子对象），
-      // 而此前已排进 UI 线程 CoreMessaging 队列、尚未 fire 的 deferred FirePresentEvent
-      // 仍指向被拆的旧内部状态——它之后 fire 时读已释放的 event 成员 -> null delegate ->
-      // 同一 0xf0d5 崩点。该方法不走退役保活，是 dump 81504 之外另一条
-      // 「帧池（内部状态）被释放而在途 deferral 仍在途」的窗口。
-      //
-      // 改为：把旧帧池 lifetime 标成 inactive/retiring，在 open pool 上 remove token，
-      // 成功后释放 handler，再 Close session/pool 并把同一个 lifetime 标成 retired 保活；
-      // 如果当前就在 FrameArrived handler 栈内，finalize 投递到同一 DispatcherQueue 下一拍。
-      needs_update_ = false;
-      RecreateFramePoolLocked();
     }
 
     if (has_frame && frame_available_) {
