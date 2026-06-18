@@ -374,18 +374,60 @@ void main() {
   });
 
   group('startup reconcile guard', () {
-    test('main triggers the Windows update handoff reconcile once after init',
+    test('main schedules Windows update handoff through navigatorKey context',
         () {
       final String source = File('lib/main.dart').readAsStringSync();
+      final int navigatorContext =
+          source.indexOf('appModel.navigatorKey.currentContext');
+      final int contextGuard =
+          source.indexOf('UpdateChecker.canShowDialogFromContext');
+      final int reconcile = source
+          .indexOf('UpdateChecker.reconcilePendingWindowsInstallerHandoff');
 
       expect(source, contains('_windowsUpdateHandoffChecked'));
+      expect(source, contains('_windowsUpdateHandoffScheduled'));
+      expect(source, contains('_scheduleWindowsUpdateHandoffReconcile();'));
       expect(
         source,
-        contains('UpdateChecker.reconcilePendingWindowsInstallerHandoff'),
+        isNot(contains('_scheduleWindowsUpdateHandoffReconcile(context)')),
+      );
+      expect(navigatorContext, isNonNegative);
+      expect(contextGuard, isNonNegative);
+      expect(reconcile, isNonNegative);
+      expect(
+        navigatorContext,
+        lessThan(reconcile),
+        reason: 'Do not pass MaterialApp.builder context into handoff '
+            'reconcile; it is outside the Navigator host.',
       );
       expect(
-        source,
-        contains('WidgetsBinding.instance.addPostFrameCallback'),
+        contextGuard,
+        lessThan(reconcile),
+        reason: 'The handoff marker must not be read or consumed until a real '
+            'Navigator context is available.',
+      );
+    });
+
+    test(
+        'source guard: UpdateChecker validates Navigator before handoff '
+        'marker reconcile', () {
+      final String source =
+          File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+      final int method = source.indexOf(
+          'static Future<void> reconcilePendingWindowsInstallerHandoff');
+      final int guard =
+          source.indexOf('canShowDialogFromContext(context)', method);
+      final int markerRead =
+          source.indexOf('WindowsUpdateHandoff.reconcile', method);
+
+      expect(method, isNonNegative);
+      expect(guard, isNonNegative);
+      expect(markerRead, isNonNegative);
+      expect(
+        guard,
+        lessThan(markerRead),
+        reason: 'A bad startup BuildContext must not consume the handoff '
+            'marker before a later Navigator-backed retry can show the dialog.',
       );
     });
 

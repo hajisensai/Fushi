@@ -811,6 +811,14 @@ class UpdateChecker {
     String currentVersion,
   ) async {
     if (!Platform.isWindows) return;
+    if (!canShowDialogFromContext(context)) {
+      const String message =
+          'dialog navigator unavailable before handoff marker reconcile';
+      ErrorLogService.instance.log('UpdateChecker.windowsHandoff', message);
+      debugPrint(
+          '[Hibiki] windows update handoff reconcile deferred: $message');
+      return;
+    }
     try {
       final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
       final WindowsUpdateHandoffResult? result =
@@ -844,6 +852,14 @@ class UpdateChecker {
       );
       debugPrint('[Hibiki] windows update handoff reconcile failed: $e');
     }
+  }
+
+  @visibleForTesting
+  static bool canShowDialogFromContext(BuildContext context) {
+    if (!context.mounted) return false;
+    final NavigatorState? navigator =
+        Navigator.maybeOf(context, rootNavigator: true);
+    return navigator != null && navigator.mounted;
   }
 }
 
