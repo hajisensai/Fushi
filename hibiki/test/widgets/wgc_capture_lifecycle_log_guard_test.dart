@@ -101,6 +101,72 @@ bool _isValidWgcLifecycleLog(String log) {
 
 void main() {
   test(
+      'TODO-506 active WGC pool logs carry enough attribution to explain skips',
+      () {
+    final String src = _readTextureBridgeSource();
+
+    for (final String event in <String>[
+      'start-skip-running',
+      'surface-size-changed',
+      'frame-first-success',
+      'frame-needs-update',
+      'frame-noop',
+      'recreate-skip-samesize',
+    ]) {
+      expect(src.contains('WgcLog::Write("$event"'), isTrue,
+          reason: 'TODO-506 must make $event visible in WGC.captureLog');
+    }
+
+    final String startBody = _methodBody(
+      src,
+      'bool TextureBridge::Start()',
+      'bool TextureBridge::CreateAndStartFramePoolLocked()',
+    );
+    expect(startBody.contains('BridgeStateDetail'), isTrue,
+        reason:
+            'start/start-skip-running must use the shared attribution detail builder');
+    for (final String field in <String>[
+      'GenerationDetail',
+      'pool_size',
+      'capture_item_size',
+      'needs_update',
+      'bridge',
+    ]) {
+      expect(src.contains(field), isTrue,
+          reason: 'start/start-skip-running log must include $field');
+    }
+
+    final String recreateBody = _methodBody(
+      src,
+      'void TextureBridge::RecreateFramePoolLocked()',
+      'void TextureBridge::Stop()',
+    );
+    expect(recreateBody.contains('current_size'), isTrue,
+        reason: 'recreate-skip-samesize must log current capture item size');
+    expect(recreateBody.contains('lifetime_size'), isTrue,
+        reason:
+            'recreate-skip-samesize must log existing frame-pool lifetime size');
+
+    final String frameBody = src.substring(
+      src.indexOf('void TextureBridge::OnFrameArrived('),
+      src.indexOf('bool TextureBridge::ShouldDropFrame()'),
+    );
+    expect(frameBody.contains('FrameHandlerDetail'), isTrue,
+        reason:
+            'OnFrameArrived must use the shared frame attribution detail builder');
+    for (final String field in <String>[
+      'GenerationDetail',
+      'in_handler',
+      'retiring',
+      'has_frame',
+      'needs_update',
+    ]) {
+      expect(src.contains(field), isTrue,
+          reason: 'OnFrameArrived low-frequency logs must include $field');
+    }
+  });
+
+  test(
       'handler-stack WGC retire never finalizes synchronously on defer failure',
       () {
     final String src = _readTextureBridgeSource();

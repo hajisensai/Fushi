@@ -1,8 +1,12 @@
 #include "../utils/log.h"
+#include "../utils/wgc_log.h"
 #include "custom_platform_view.h"
 
 #include <flutter/event_stream_handler_functions.h>
 #include <flutter/method_result_functions.h>
+
+#include <cstdio>
+#include <string>
 
 #ifdef HAVE_FLUTTER_D3D_TEXTURE
 #include "texture_bridge_gpu.h"
@@ -24,6 +28,40 @@ namespace flutter_inappwebview_plugin
 
   constexpr auto kEventType = "type";
   constexpr auto kEventValue = "value";
+
+  namespace
+  {
+    std::string CpvDetail(int64_t texture_id, const void* bridge)
+    {
+      char buffer[192];
+      std::snprintf(buffer, sizeof(buffer), "texture_id=%lld bridge=0x%llx",
+        static_cast<long long>(texture_id),
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(bridge)));
+      return std::string(buffer);
+    }
+
+    std::string SetSizeDetail(double width, double height, double scale_factor,
+      int64_t texture_id, const void* bridge)
+    {
+      char buffer[256];
+      std::snprintf(buffer, sizeof(buffer),
+        "width=%.3f height=%.3f scale=%.3f texture_id=%lld bridge=0x%llx",
+        width, height, scale_factor, static_cast<long long>(texture_id),
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(bridge)));
+      return std::string(buffer);
+    }
+
+    std::string SurfaceSizeDetail(size_t width, size_t height, int64_t texture_id,
+      const void* bridge)
+    {
+      char buffer[256];
+      std::snprintf(buffer, sizeof(buffer),
+        "width=%zu height=%zu texture_id=%lld bridge=0x%llx", width, height,
+        static_cast<long long>(texture_id),
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(bridge)));
+      return std::string(buffer);
+    }
+  }  // namespace
 
   static const std::optional<std::pair<double, double>> GetPointFromArgs(
     const flutter::EncodableValue* args)
@@ -199,6 +237,8 @@ namespace flutter_inappwebview_plugin
   CustomPlatformView::~CustomPlatformView()
   {
     debugLog("dealloc CustomPlatformView");
+    WgcLog::Write("cpv-dtor-enter", nullptr,
+      CpvDetail(texture_id_, texture_bridge_.get()));
     event_sink_ = nullptr;
     // BUG-163/TODO-061：teardown 第一步同步切断「WGC 生产者 -> Flutter texture
     // registrar 消费者」这条边。frame_available_ 捕获 texture_registrar_ 裸指针 +
@@ -212,9 +252,19 @@ namespace flutter_inappwebview_plugin
     // 注销 texture——三步单调缩小 teardown 竞态窗口。
     if (texture_bridge_) {
       texture_bridge_->SetOnFrameAvailable(nullptr);
+      WgcLog::Write("stop-start", nullptr,
+        CpvDetail(texture_id_, texture_bridge_.get()));
       texture_bridge_->Stop();
+      WgcLog::Write("stop-done", nullptr,
+        CpvDetail(texture_id_, texture_bridge_.get()));
     }
+    WgcLog::Write("unregister-start", nullptr,
+      CpvDetail(texture_id_, texture_bridge_.get()));
     texture_registrar_->UnregisterTexture(texture_id_, nullptr);
+    WgcLog::Write("unregister-done", nullptr,
+      CpvDetail(texture_id_, texture_bridge_.get()));
+    WgcLog::Write("cpv-dtor-exit", nullptr,
+      CpvDetail(texture_id_, texture_bridge_.get()));
   }
 
   void CustomPlatformView::RegisterEventHandlers()
@@ -225,7 +275,9 @@ namespace flutter_inappwebview_plugin
 
     view->onSurfaceSizeChanged([this](size_t width, size_t height)
       {
-        texture_bridge_->NotifySurfaceSizeChanged();
+        WgcLog::Write("surface-size-changed", nullptr,
+          SurfaceSizeDetail(width, height, texture_id_, texture_bridge_.get()));
+        texture_bridge_->NotifySurfaceSizeChanged(width, height);
       });
 
     view->onCursorChanged([this](const HCURSOR cursor)
@@ -316,6 +368,9 @@ namespace flutter_inappwebview_plugin
       if (size && view) {
         const auto [width, height, scale_factor] = size.value();
 
+        WgcLog::Write("set-size", nullptr,
+          SetSizeDetail(width, height, scale_factor, texture_id_,
+            texture_bridge_.get()));
         view->setSurfaceSize(static_cast<size_t>(width),
           static_cast<size_t>(height),
           static_cast<float>(scale_factor));

@@ -63,6 +63,9 @@ void main() {
             r'no single-backslash path literal allowed -- MSVC C4129 drops the separator');
     expect(logSrc.contains('GetCurrentThreadId'), isTrue,
         reason: 'log line must carry thread id');
+    expect(logSrc.contains('GetCurrentProcessId'), isTrue,
+        reason:
+            'log line must carry process id so uploaded WGC logs can be attributed to the crashed Hibiki process');
     expect(logSrc.contains('GetSystemTime'), isTrue,
         reason: 'log line must carry timestamp');
   });
@@ -74,18 +77,32 @@ void main() {
       'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
       '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
     ], 'texture_bridge.cc');
+    final String platformViewSrc = _read(<String>[
+      'packages/flutter_inappwebview_windows/windows/custom_platform_view/custom_platform_view.cc',
+      '../packages/flutter_inappwebview_windows/windows/custom_platform_view/custom_platform_view.cc',
+    ], 'custom_platform_view.cc');
 
     expect(src.contains('#include "../utils/wgc_log.h"'), isTrue,
         reason: 'texture_bridge.cc must include wgc_log.h');
+    expect(platformViewSrc.contains('#include "../utils/wgc_log.h"'), isTrue,
+        reason:
+            'custom_platform_view.cc must include wgc_log.h for CPV boundary attribution');
 
     for (final String evt in <String>[
       'create-pool',
+      'start',
+      'start-skip-running',
       'retire',
       'stop',
       'recreate',
+      'recreate-skip-samesize',
       'createSession-fail',
       'startCapture-fail',
       'state-inactive',
+      'late-handler-noop',
+      'frame-noop',
+      'frame-first-success',
+      'frame-needs-update',
       'retire-defer-in-handler',
       'retire-defer-posted',
       'retire-defer-keepalive',
@@ -104,6 +121,36 @@ void main() {
     ]) {
       expect(src.contains('WgcLog::Write("$evt"'), isTrue,
           reason: 'texture_bridge.cc must log WgcLog at lifecycle point: $evt');
+    }
+
+    for (final String evt in <String>[
+      'set-size',
+      'surface-size-changed',
+      'cpv-dtor-enter',
+      'stop-start',
+      'stop-done',
+      'unregister-start',
+      'unregister-done',
+    ]) {
+      expect(platformViewSrc.contains('WgcLog::Write("$evt"'), isTrue,
+          reason:
+              'custom_platform_view.cc must log WgcLog at CPV boundary point: $evt');
+    }
+
+    for (final String detail in <String>[
+      'GenerationDetail',
+      'pool_size',
+      'capture_item_size',
+      'current_size',
+      'lifetime_size',
+      'needs_update',
+      'needs_update_before',
+      'bridge=',
+      'has_frame',
+    ]) {
+      expect(src.contains(detail) || platformViewSrc.contains(detail), isTrue,
+          reason:
+              'TODO-506 WGC lifecycle logs must carry attribution field: $detail');
     }
 
     expect(src.contains('WgcLog::Write("retire-remove-closed"'), isFalse,
@@ -151,7 +198,9 @@ void main() {
 
     final int ofaStart = src.indexOf('void TextureBridge::OnFrameArrived(');
     expect(ofaStart, greaterThanOrEqualTo(0));
-    final String ofaBody = src.substring(ofaStart);
+    final int ofaEnd = src.indexOf('bool TextureBridge::ShouldDropFrame()');
+    expect(ofaEnd, greaterThan(ofaStart));
+    final String ofaBody = src.substring(ofaStart, ofaEnd);
     expect(ofaBody.contains('WgcLog::Write("frame-getfail"'), isTrue,
         reason: 'OnFrameArrived TryGetNextFrame failure should be observable');
     final int frameAvailIdx = ofaBody.indexOf('frame_available_()');

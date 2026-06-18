@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -51,6 +52,8 @@ namespace flutter_inappwebview_plugin
     bool handler_released = false;
     bool session_closed = false;
     bool pool_closed = false;
+    bool first_frame_logged = false;
+    bool noop_logged = false;
 
     const void* PoolForLog() const
     {
@@ -74,6 +77,98 @@ namespace flutter_inappwebview_plugin
       std::snprintf(buffer, sizeof(buffer), "generation=%llu",
         static_cast<unsigned long long>(generation));
       return std::string(buffer);
+    }
+
+    std::string PointerDetail(const char* label, const void* pointer)
+    {
+      char buffer[96];
+      std::snprintf(buffer, sizeof(buffer), "%s=0x%llx", label,
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(pointer)));
+      return std::string(buffer);
+    }
+
+    std::string BoolDetail(const char* label, bool value)
+    {
+      return std::string(label) + (value ? "=1" : "=0");
+    }
+
+    std::string SizeDetail(const char* label,
+      ABI::Windows::Graphics::SizeInt32 size)
+    {
+      char buffer[96];
+      std::snprintf(buffer, sizeof(buffer), "%s=%dx%d", label,
+        static_cast<int>(size.Width), static_cast<int>(size.Height));
+      return std::string(buffer);
+    }
+
+    std::string SizeDetail(const char* label, size_t width, size_t height)
+    {
+      char buffer[96];
+      std::snprintf(buffer, sizeof(buffer), "%s=%zux%zu", label, width, height);
+      return std::string(buffer);
+    }
+
+    std::string JoinDetails(std::initializer_list<std::string> parts)
+    {
+      std::string detail;
+      for (const auto& part : parts) {
+        if (part.empty()) {
+          continue;
+        }
+        if (!detail.empty()) {
+          detail += ' ';
+        }
+        detail += part;
+      }
+      return detail;
+    }
+
+    ABI::Windows::Graphics::SizeInt32 CaptureItemSize(
+      ABI::Windows::Graphics::Capture::IGraphicsCaptureItem* capture_item)
+    {
+      ABI::Windows::Graphics::SizeInt32 size = { -1, -1 };
+      if (capture_item) {
+        capture_item->get_Size(&size);
+      }
+      return size;
+    }
+
+    std::string BridgeStateDetail(const TextureBridge* bridge,
+      const std::shared_ptr<WgcFramePoolLifetime>& lifetime,
+      ABI::Windows::Graphics::SizeInt32 capture_item_size,
+      bool is_running,
+      bool needs_update)
+    {
+      const uint64_t generation = lifetime ? lifetime->generation : 0;
+      ABI::Windows::Graphics::SizeInt32 pool_size = { -1, -1 };
+      if (lifetime) {
+        pool_size = lifetime->size;
+      }
+      return JoinDetails({
+        GenerationDetail(generation),
+        SizeDetail("pool_size", pool_size),
+        SizeDetail("capture_item_size", capture_item_size),
+        BoolDetail("running", is_running),
+        BoolDetail("needs_update", needs_update),
+        PointerDetail("bridge", bridge),
+      });
+    }
+
+    std::string FrameHandlerDetail(
+      const std::shared_ptr<WgcFramePoolLifetime>& lifetime,
+      bool in_handler,
+      bool retiring,
+      bool has_frame,
+      bool needs_update)
+    {
+      const uint64_t generation = lifetime ? lifetime->generation : 0;
+      return JoinDetails({
+        GenerationDetail(generation),
+        BoolDetail("in_handler", in_handler),
+        BoolDetail("retiring", retiring),
+        BoolDetail("has_frame", has_frame),
+        BoolDetail("needs_update", needs_update),
+      });
     }
 
     std::string ReasonDetail(const char* reason)
@@ -195,12 +290,26 @@ namespace flutter_inappwebview_plugin
   bool TextureBridge::Start()
   {
     const std::lock_guard<std::mutex> lock(mutex_);
-    WgcLog::Write("start",
-      frame_pool_lifetime_ ? frame_pool_lifetime_->PoolForLog() : nullptr,
-      is_running_ ? "running=1" : "running=0");
-    if (is_running_ || !capture_item_) {
+    const auto lifetime = frame_pool_lifetime_;
+    const auto capture_item_size = CaptureItemSize(capture_item_.get());
+    const bool needs_update = needs_update_.load();
+    if (is_running_) {
+      WgcLog::Write("start-skip-running",
+        lifetime ? lifetime->PoolForLog() : nullptr,
+        BridgeStateDetail(this, lifetime, capture_item_size, is_running_,
+          needs_update));
       return false;
     }
+    if (!capture_item_) {
+      WgcLog::Write("start-skip-noitem", nullptr,
+        BridgeStateDetail(this, lifetime, capture_item_size, is_running_,
+          needs_update));
+      return false;
+    }
+    WgcLog::Write("start",
+      lifetime ? lifetime->PoolForLog() : nullptr,
+      BridgeStateDetail(this, lifetime, capture_item_size, is_running_,
+        needs_update));
 
     // BUG-209 第十修（扩展保活到 Start 重入路径）：CustomPlatformView::HandleMethodCall
     // 的 setSize 每次都调 texture_bridge_->Start()（custom_platform_view.cc:323），不止
@@ -277,6 +386,11 @@ namespace flutter_inappwebview_plugin
           TextureBridge* bridge = nullptr;
           std::shared_ptr<WgcFramePoolLifetime> lifetime;
           bool log_late_noop = false;
+          uint64_t noop_generation = 0;
+          bool noop_active = false;
+          bool noop_retiring = false;
+          bool noop_in_handler = false;
+          const void* noop_bridge = nullptr;
           {
             const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
             lifetime = callback_state->lifetime.lock();
@@ -288,11 +402,24 @@ namespace flutter_inappwebview_plugin
             else if (!callback_state->late_noop_logged) {
               callback_state->late_noop_logged = true;
               log_late_noop = true;
+              noop_generation = callback_state->generation;
+              noop_active = callback_state->active;
+              noop_retiring = callback_state->retiring;
+              noop_in_handler = callback_state->in_handler;
+              noop_bridge = callback_state->bridge;
             }
           }
-          if (log_late_noop && lifetime) {
-            WgcLog::Write("late-handler-noop", lifetime->PoolForLog(),
-              GenerationDetail(lifetime->generation));
+          if (log_late_noop) {
+            WgcLog::Write("late-handler-noop",
+              lifetime ? lifetime->PoolForLog() : nullptr,
+              JoinDetails({
+                GenerationDetail(noop_generation),
+                BoolDetail("active", noop_active),
+                BoolDetail("in_handler", noop_in_handler),
+                BoolDetail("retiring", noop_retiring),
+                BoolDetail("has_frame", false),
+                PointerDetail("bridge", noop_bridge),
+              }));
           }
           if (bridge && lifetime) {
             bridge->OnFrameArrived(lifetime);
@@ -343,11 +470,19 @@ namespace flutter_inappwebview_plugin
       current_size.Width == lifetime->size.Width &&
       current_size.Height == lifetime->size.Height) {
       WgcLog::Write("recreate-skip-samesize", lifetime->PoolForLog(),
-        GenerationDetail(lifetime->generation));
+        JoinDetails({
+          GenerationDetail(lifetime->generation),
+          SizeDetail("current_size", current_size),
+          SizeDetail("lifetime_size", lifetime->size),
+        }));
       return;
     }
 
-    WgcLog::Write("recreate", lifetime ? lifetime->PoolForLog() : nullptr);
+    WgcLog::Write("recreate", lifetime ? lifetime->PoolForLog() : nullptr,
+      lifetime ? JoinDetails({
+        GenerationDetail(lifetime->generation),
+        SizeDetail("lifetime_size", lifetime->size),
+      }) : std::string());
     // BUG-209 第十修（resize 路径替换 frame_pool_->Recreate）：调用方（OnFrameArrived）
     // 持 mutex_。原 Recreate 复用同一帧池只换 back buffer，但会拆掉旧池内部 present 基建，
     // 其在途 deferral 仍指向被拆状态 -> UAF。改为：退役保活旧池（先 remove，再 Close）+
@@ -574,6 +709,12 @@ namespace flutter_inappwebview_plugin
     if (!is_running_ || !lifetime || lifetime != frame_pool_lifetime_ ||
       lifetime->generation != frame_pool_generation_ || lifetime->retiring ||
       !lifetime->frame_pool) {
+      if (lifetime && !lifetime->noop_logged) {
+        lifetime->noop_logged = true;
+        WgcLog::Write("frame-noop", lifetime->PoolForLog(),
+          FrameHandlerDetail(lifetime, false, lifetime->retiring, false,
+            needs_update_.load()));
+      }
       return;
     }
 
@@ -586,7 +727,11 @@ namespace flutter_inappwebview_plugin
       // 仅失败时写（成功路径每帧 fire，禁止每帧刷盘）：取帧失败可能预示帧池
       // 状态异常，是观测帧池生命周期的低噪声信号。
       WgcLog::Write("frame-getfail", lifetime->PoolForLog(),
-        HResultDetail("hr", hr));
+        JoinDetails({
+          HResultDetail("hr", hr),
+          FrameHandlerDetail(lifetime, true, lifetime->retiring, false,
+            needs_update_.load()),
+        }));
     }
     if (SUCCEEDED(hr) && frame) {
       winrt::com_ptr<
@@ -600,7 +745,16 @@ namespace flutter_inappwebview_plugin
       }
     }
 
+    if (has_frame && !lifetime->first_frame_logged) {
+      lifetime->first_frame_logged = true;
+      WgcLog::Write("frame-first-success", lifetime->PoolForLog(),
+        FrameHandlerDetail(lifetime, true, lifetime->retiring, has_frame,
+          needs_update_.load()));
+    }
+
     if (needs_update_) {
+      WgcLog::Write("frame-needs-update", lifetime->PoolForLog(),
+        FrameHandlerDetail(lifetime, true, lifetime->retiring, has_frame, true));
       // BUG-209 第十修（覆盖 resize 这条之前漏的帧池替换路径）：原先用帧池的 Recreate
       // 方法在 surface resize 时复用同一帧池 COM 对象、只换内部 back buffer。问题是
       // Recreate 会同步拆掉旧池的内部 present 基建（旧的 swap-chain / present 子对象），
@@ -641,10 +795,22 @@ namespace flutter_inappwebview_plugin
     return should_drop_frame;
   }
 
-  void TextureBridge::NotifySurfaceSizeChanged()
+  void TextureBridge::NotifySurfaceSizeChanged(size_t width, size_t height)
   {
     const std::lock_guard<std::mutex> lock(mutex_);
+    const bool before = needs_update_.load();
     needs_update_ = true;
+    const auto lifetime = frame_pool_lifetime_;
+    WgcLog::Write("surface-size-changed",
+      lifetime ? lifetime->PoolForLog() : nullptr,
+      JoinDetails({
+        lifetime ? GenerationDetail(lifetime->generation) : GenerationDetail(0),
+        SizeDetail("new_size", width, height),
+        lifetime ? SizeDetail("pool_size", lifetime->size) : std::string(),
+        BoolDetail("needs_update_before", before),
+        BoolDetail("needs_update_after", true),
+        PointerDetail("bridge", this),
+      }));
   }
 
   void TextureBridge::SetFpsLimit(std::optional<int> max_fps)

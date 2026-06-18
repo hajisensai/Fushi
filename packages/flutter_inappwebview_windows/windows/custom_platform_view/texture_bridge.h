@@ -52,7 +52,7 @@ namespace flutter_inappwebview_plugin
       surface_size_changed_ = std::move(callback);
     }
 
-    void NotifySurfaceSizeChanged();
+    void NotifySurfaceSizeChanged(size_t width, size_t height);
     void SetFpsLimit(std::optional<int> max_fps);
 
   protected:

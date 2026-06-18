@@ -456,6 +456,16 @@ void main() {
         reason: 'CustomPlatformView 析构路径必须可审计');
     final String destructorBody =
         platformViewSrc.substring(destructorStart, nextMethodStart);
+    expect(destructorBody.contains('WgcLog::Write("cpv-dtor-enter"'), isTrue,
+        reason: 'TODO-506: CPV 析构入口必须可观测，区分没 teardown 与日志没写完');
+    expect(destructorBody.contains('WgcLog::Write("stop-start"'), isTrue,
+        reason: 'TODO-506: Stop 前必须有边界日志');
+    expect(destructorBody.contains('WgcLog::Write("stop-done"'), isTrue,
+        reason: 'TODO-506: Stop 后必须有边界日志，证明 StopInternal 返回');
+    expect(destructorBody.contains('WgcLog::Write("unregister-start"'), isTrue,
+        reason: 'TODO-506: Flutter texture 注销前必须有边界日志');
+    expect(destructorBody.contains('WgcLog::Write("unregister-done"'), isTrue,
+        reason: 'TODO-506: Flutter texture 注销后必须有边界日志');
     final int stopIndex = destructorBody.indexOf('texture_bridge_->Stop()');
     final int unregisterIndex =
         destructorBody.indexOf('texture_registrar_->UnregisterTexture');
@@ -471,6 +481,21 @@ void main() {
         reason: '析构必须切断 frame_available_：置空后迟到帧不再打进正在拆除的 registrar');
     expect(severIndex, lessThan(stopIndex),
         reason: 'SetOnFrameAvailable(nullptr) 必须在 texture_bridge_->Stop() 之前');
+    final int stopStartLog =
+        destructorBody.indexOf('WgcLog::Write("stop-start"');
+    final int stopDoneLog = destructorBody.indexOf('WgcLog::Write("stop-done"');
+    final int unregisterStartLog =
+        destructorBody.indexOf('WgcLog::Write("unregister-start"');
+    final int unregisterDoneLog =
+        destructorBody.indexOf('WgcLog::Write("unregister-done"');
+    expect(stopStartLog, lessThan(stopIndex),
+        reason: 'stop-start 日志必须发生在实际 Stop 前');
+    expect(stopDoneLog, greaterThan(stopIndex),
+        reason: 'stop-done 日志必须发生在实际 Stop 后');
+    expect(unregisterStartLog, lessThan(unregisterIndex),
+        reason: 'unregister-start 日志必须发生在实际 UnregisterTexture 前');
+    expect(unregisterDoneLog, greaterThan(unregisterIndex),
+        reason: 'unregister-done 日志必须发生在实际 UnregisterTexture 后');
     final int textureBridgeMemberIndex =
         platformViewHeader.indexOf('texture_bridge_');
     final int flutterTextureMemberIndex =

@@ -175,6 +175,10 @@ namespace flutter_inappwebview_plugin
     for (const char* p = kTid; *p; ++p) line[pos++] = *p;
     pos += AppendDec(line + pos, GetCurrentThreadId(), 1);
 
+    const char* kPid = " pid=";
+    for (const char* p = kPid; *p; ++p) line[pos++] = *p;
+    pos += AppendDec(line + pos, GetCurrentProcessId(), 1);
+
     const char* kEvt = " evt=";
     for (const char* p = kEvt; *p; ++p) line[pos++] = *p;
     for (const char* p = event; p && *p && pos < sizeof(line) - 64; ++p) {
