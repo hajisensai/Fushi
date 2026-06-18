@@ -15,6 +15,22 @@ import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/utils.dart';
 
+const double _videoSettingsSupportingPaneReadableWidth = 312.0;
+const double _videoSettingsPrimaryMinWidth = 320.0;
+
+double _videoSettingsSupportingPaneWidth(double availableWidth) {
+  final double maxSupportingWidth = math
+      .max(
+        kHibikiSettingsSupportingPaneWidth,
+        availableWidth - _videoSettingsPrimaryMinWidth,
+      )
+      .toDouble();
+  return math.min(
+    _videoSettingsSupportingPaneReadableWidth,
+    maxSupportingWidth,
+  );
+}
+
 /// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
 /// （TODO-427-③；详情独占整宽并独立滚动，分类条固定在顶部），窄窗降级单列 push。
 /// 旧的左右 master-detail（窄左栏 + 右详情）因窄侧栏左右劈半把右详情挤窄、下拉抢宽裁
@@ -308,9 +324,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 height: constraints.maxHeight,
                 child: MaterialSupportingPaneLayout(
                   minSplitWidth: kHibikiSettingsWideThreshold,
-                  supportingWidth: math.max(
-                    kHibikiSettingsSupportingPaneWidth,
-                    232,
+                  supportingWidth: _videoSettingsSupportingPaneWidth(
+                    constraints.maxWidth,
                   ),
                   supportingSide: SupportingPaneSide.start,
                   dividerColor: dividerColor,
@@ -377,6 +392,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   }
 
   Widget _buildWidePane(String selectedId) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AdaptiveSettingsSurface(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -388,7 +404,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               selectedShape: HibikiListItemSelectedShape.pill,
               leading: Icon(cat.icon),
               title: Text(cat.label),
-              titleMaxLines: 2,
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.gap + 2,
+                vertical: tokens.spacing.gap,
+              ),
+              titleMaxLines: 3,
               onTap: () => setState(() => _subPage = cat.id),
             ),
         ],

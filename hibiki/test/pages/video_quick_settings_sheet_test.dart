@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -103,6 +104,23 @@ void _expectNoFlutterErrors(WidgetTester tester) {
     exceptions.add(exception!);
   }
   expect(exceptions, isEmpty);
+}
+
+void _expectListItemLabelNotEllipsized(WidgetTester tester, String label) {
+  final Finder row = find.widgetWithText(HibikiListItem, label);
+  expect(row, findsWidgets);
+  final Finder labelText = find.descendant(
+    of: row.first,
+    matching: find.text(label),
+  );
+  expect(labelText, findsOneWidget);
+  final RenderParagraph paragraph =
+      tester.renderObject<RenderParagraph>(labelText);
+  expect(
+    paragraph.didExceedMaxLines,
+    isFalse,
+    reason: '$label must render fully, not as an ellipsized category label.',
+  );
 }
 
 void main() {
@@ -322,6 +340,33 @@ void main() {
     expect(find.text(t.video_setting_subtitle_font_weight), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_shadow), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsNothing);
+  });
+
+  testWidgets('wide English category labels are not ellipsized at UI scale 2.0',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1320, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpScaled(
+      tester,
+      _sheet(
+        uiScale: 2.0,
+        initialVideoFitMode: VideoFitMode.contain,
+      ),
+      scale: 2.0,
+    );
+
+    expect(find.byType(MaterialSupportingPaneLayout), findsOneWidget);
+    for (final String label in <String>[
+      t.video_settings_cat_playback,
+      t.video_settings_cat_shaders,
+      t.video_settings_cat_mpv,
+      t.video_settings_cat_subtitle,
+      t.video_settings_cat_danmaku,
+      t.video_settings_cat_controls,
+    ]) {
+      _expectListItemLabelNotEllipsized(tester, label);
+    }
+    _expectNoFlutterErrors(tester);
   });
 
   for (final ({double width, double scale}) sizeCase

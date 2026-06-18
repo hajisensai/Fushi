@@ -118,12 +118,17 @@ void main() {
             'video-specific supporting width constants should stay removed');
     expect(source, contains('_buildWidePane'));
     expect(source, contains('SupportingPaneSide.start'));
+    expect(source, contains('_videoSettingsSupportingPaneReadableWidth'));
+    expect(source, contains('_videoSettingsPrimaryMinWidth'));
+    expect(source, contains('_videoSettingsSupportingPaneWidth('));
+    expect(source, isNot(contains('232,')),
+        reason: 'video settings must not regress to the fixed 232px pane');
     expect(source, contains('padding: wideSupportingPadding'));
     expect(source, isNot(contains('_buildTopCategoryBar(')));
     expect(source, isNot(contains('HibikiSelectableChip(')));
     expect(source, isNot(contains('scrollDirection: Axis.horizontal')));
     expect(source, contains('HibikiListItem('));
-    expect(source, contains('titleMaxLines: 2'));
+    expect(source, contains('titleMaxLines: 3'));
     expect(source, isNot(contains('_supportingOverflowsWide')));
     expect(source, isNot(contains('_supportingScrollController')));
     expect(source, contains('padding: widePrimaryPadding'));
