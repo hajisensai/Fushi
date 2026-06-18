@@ -4160,7 +4160,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           layout: layout,
           desktop: true,
         ),
-        _topBarTitle(layout),
+        _topBarTitle(),
         _topBarSlotGroup(
           VideoControlSlot.topRight,
           controller,
@@ -4271,7 +4271,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           layout: layout,
           desktop: false,
         ),
-        _topBarTitle(layout),
+        _topBarTitle(),
         _topBarSlotGroup(
           VideoControlSlot.topRight,
           controller,
@@ -4327,8 +4327,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     ];
   }
 
-  Widget _topBarTitle(VideoControlLayout layout) {
-    if (!layout.itemsIn(VideoControlSlot.topCenter).contains(
+  Widget _topBarTitle() {
+    if (!_controlLayout.itemsIn(VideoControlSlot.topCenter).contains(
           VideoControlItem.title,
         )) {
       return const Spacer();
@@ -4574,12 +4574,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required bool desktop,
   }) {
     final List<VideoControlItem> rawItems = layout.itemsIn(slot);
-    final bool hasTitle = rawItems.contains(VideoControlItem.title);
     final List<VideoControlItem> items = <VideoControlItem>[
       for (final VideoControlItem item in rawItems)
-        if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
+        if (item == VideoControlItem.title ||
+            (item.isChipRenderable && _shouldRenderControlItem(item)))
+          item,
     ];
-    if (items.isEmpty && !hasTitle) return const SizedBox.shrink();
+    if (items.isEmpty) return const SizedBox.shrink();
 
     Widget buttonFor(VideoControlItem item) {
       final LayerLink? popoverLink = item == VideoControlItem.speed
@@ -4637,11 +4638,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ? MainAxisAlignment.end
                 : MainAxisAlignment.start,
             children: <Widget>[
-              if (slot == VideoControlSlot.topLeft && hasTitle)
-                _topBarInlineTitle(slot),
-              for (final VideoControlItem item in items) buttonFor(item),
-              if (slot == VideoControlSlot.topRight && hasTitle)
-                _topBarInlineTitle(slot),
+              for (final VideoControlItem item in items)
+                if (item == VideoControlItem.title)
+                  _topBarInlineTitle(slot)
+                else
+                  buttonFor(item),
             ],
           ),
         ),
