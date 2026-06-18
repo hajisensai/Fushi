@@ -292,42 +292,39 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               final Color dividerColor = isCupertinoPlatform(context)
                   ? CupertinoColors.separator.resolveFrom(context)
                   : tokens.surfaces.outline;
-              // TODO-427-③：宽窗从「窄左栏 + 右详情」左右分栏改成「顶部横向分类 chip 行
-              // + 下方详情」上下分栏。窄侧栏左右劈半会把右详情挤到 ~300px（硬解码等下拉
-              // 抢宽裁标题）；上下分栏后详情独占整宽（~512），根治截断/右栏丑。
+              final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
+                horizontalInset,
+                topInset,
+                horizontalInset,
+                bottomInset,
+              );
               final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
                 horizontalInset,
                 topInset,
                 horizontalInset,
                 bottomInset,
               );
-              // 顶部分类条水平 inset 与详情对齐（page+gap=24），垂直只留 card(16) 上 +
-              // gap/2 下，紧贴 sheet header 下方且不贴死。
-              final EdgeInsets categoryBarPadding = EdgeInsets.fromLTRB(
-                horizontalInset,
-                topInset,
-                horizontalInset,
-                tokens.spacing.gap / 2,
-              );
               return SizedBox(
                 height: constraints.maxHeight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    // 顶部固定不滚的横向单选分类 chip 行。
-                    _buildTopCategoryBar(selectedId, categoryBarPadding),
-                    Divider(height: 1, thickness: 1, color: dividerColor),
-                    // 下方详情独占整宽并独立滚动（KeyedSubtree 防 Element 复用副作用）。
-                    Expanded(
-                      child: KeyedSubtree(
-                        key: ValueKey<String>(selectedId),
-                        child: SingleChildScrollView(
-                          padding: widePrimaryPadding,
-                          child: _subPageContent(selectedId),
-                        ),
-                      ),
+                child: MaterialSupportingPaneLayout(
+                  minSplitWidth: kHibikiSettingsWideThreshold,
+                  supportingWidth: math.max(
+                    kHibikiSettingsSupportingPaneWidth,
+                    232,
+                  ),
+                  supportingSide: SupportingPaneSide.start,
+                  dividerColor: dividerColor,
+                  supporting: SingleChildScrollView(
+                    padding: wideSupportingPadding,
+                    child: _buildWidePane(selectedId),
+                  ),
+                  primary: KeyedSubtree(
+                    key: ValueKey<String>(selectedId),
+                    child: SingleChildScrollView(
+                      padding: widePrimaryPadding,
+                      child: _subPageContent(selectedId),
                     ),
-                  ],
+                  ),
                 ),
               );
             }
@@ -379,36 +376,22 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     ];
   }
 
-  /// 宽窗上下分栏的顶部分类条（TODO-427-③）：横向可滚的单选 chip 行（高亮当前分类），
-  /// 取代旧的左侧窄 pane。复用与书架标签筛选条同款的 [HibikiSelectableChip]（ChoiceChip，
-  /// 单选 pill 高亮 + leadingIcon），点选切 [_subPage]（与旧左 pane 同一 state）。chip 行
-  /// 自身固定不滚（由外层 [Column] 钉在顶部），仅内部横向滚动以容纳放不下的分类。
-  Widget _buildTopCategoryBar(String selectedId, EdgeInsets padding) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Padding(
-      padding: padding,
-      child: AdaptiveSettingsSurface(
-        color: tokens.surfaces.card,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.all(tokens.spacing.gap),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final ({String id, IconData icon, String label}) cat
-                  in _categories())
-                Padding(
-                  padding: EdgeInsets.only(right: tokens.spacing.gap),
-                  child: HibikiSelectableChip(
-                    label: cat.label,
-                    leadingIcon: cat.icon,
-                    selected: cat.id == selectedId,
-                    onSelected: (_) => setState(() => _subPage = cat.id),
-                  ),
-                ),
-            ],
-          ),
-        ),
+  Widget _buildWidePane(String selectedId) {
+    return AdaptiveSettingsSurface(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final ({String id, IconData icon, String label}) cat
+              in _categories())
+            HibikiListItem(
+              selected: cat.id == selectedId,
+              selectedShape: HibikiListItemSelectedShape.pill,
+              leading: Icon(cat.icon),
+              title: Text(cat.label),
+              titleMaxLines: 2,
+              onTap: () => setState(() => _subPage = cat.id),
+            ),
+        ],
       ),
     );
   }
@@ -561,6 +544,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       subtitle: t.video_setting_picture_fit_hint,
       icon: Icons.fit_screen_outlined,
       selected: _videoFitMode,
+      controlBelow: true,
+      materialWidth: double.infinity,
       options: <AdaptiveSettingsPickerOption<VideoFitMode>>[
         AdaptiveSettingsPickerOption<VideoFitMode>(
           value: VideoFitMode.cover,
@@ -1222,6 +1207,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             ],
           ),
         ),
+        AdaptiveSettingsNavigationRow(
+          title: t.video_control_reset_layout,
+          subtitle: t.video_control_reset_layout_hint,
+          icon: Icons.restart_alt_outlined,
+          onTap: _resetControlLayout,
+        ),
       ],
     );
   }
@@ -1467,6 +1458,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<({VideoControlItem item, int sourceIndex})> entries =
         _slotChipEntries(slot);
+    final bool removalSlot = slot == VideoControlSlot.hidden;
     return DragTarget<VideoControlDragData>(
       key: ValueKey<String>('video-control-edit-slot-${slot.storageValue}'),
       onWillAcceptWithDetails:
@@ -1499,7 +1491,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 child: Align(
                   alignment: AlignmentDirectional.centerStart,
                   child: Icon(
-                    Icons.add_circle_outline,
+                    removalSlot
+                        ? Icons.remove_circle_outline
+                        : Icons.add_circle_outline,
                     size: 18,
                     color: highlighted
                         ? cs.onPrimaryContainer
@@ -1780,6 +1774,20 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       target,
       targetIndex: targetIndex,
     );
+    if (next == _controlLayout) return;
+    setState(() {
+      _controlLayout = next;
+      _controlMoveRejectionMessage = null;
+    });
+    final Future<void> Function(VideoControlLayout layout)? callback =
+        widget.onControlLayoutChanged;
+    if (callback != null) {
+      unawaited(callback(next));
+    }
+  }
+
+  void _resetControlLayout() {
+    final VideoControlLayout next = VideoControlLayout.currentChrome;
     if (next == _controlLayout) return;
     setState(() {
       _controlLayout = next;

@@ -244,7 +244,8 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
               Expanded(
                 child: Text(
                   _selectedLabel ?? widget.hintText ?? widget.label ?? '',
-                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                  softWrap: true,
                   style: tokens.type.listTitle,
                 ),
               ),
@@ -275,7 +276,8 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
         selected ? tokens.surfaces.primary : tokens.surfaces.onSurface;
     final Widget text = Text(
       entry.label,
-      overflow: TextOverflow.ellipsis,
+      maxLines: 2,
+      softWrap: true,
       style: tokens.type.listTitle.copyWith(
         color: foreground,
         fontWeight: selected ? FontWeight.w600 : FontWeight.w500,

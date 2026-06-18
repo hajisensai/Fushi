@@ -5386,8 +5386,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// Persist + apply a new 9-slot control button layout (TODO-274/312 phase 2).
   /// This is the single write path the quick-settings editor calls; it stores
-  /// the v2 layout (same pref key, auto-migrating old v1 blobs) and rebuilds so
-  /// the data-driven control bar picks up the new slots immediately.
+  /// the v3 layout (same pref key, auto-migrating old v1/v2 blobs). Keep the
+  /// notifier update before persistence so the active controls rebuild
+  /// immediately after quick settings or the on-player editor saves.
   Future<void> _setVideoControlLayout(VideoControlLayout layout) async {
     _controlLayoutNotifier.value = layout;
     await appModel.setVideoControlLayout(layout);

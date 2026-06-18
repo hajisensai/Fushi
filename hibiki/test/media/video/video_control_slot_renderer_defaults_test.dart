@@ -95,7 +95,6 @@ void main() {
           in <VideoControlSlot, VideoControlPlacement>{
         VideoControlSlot.bottomRight: VideoControlPlacement.bottom,
         VideoControlSlot.screenRight: VideoControlPlacement.rightRail,
-        VideoControlSlot.hidden: VideoControlPlacement.settingsOnly,
       }.entries) {
         expect(
           slotLearningButtons(layout, pair.key),
@@ -112,8 +111,9 @@ void main() {
       );
       expect(
         slotLearningButtons(layout, VideoControlSlot.hidden),
-        contains(VideoControlButton.favoriteSentence),
+        isEmpty,
       );
+      expect(layout.removedItems, contains(VideoControlItem.favoriteSentence));
     });
   });
 

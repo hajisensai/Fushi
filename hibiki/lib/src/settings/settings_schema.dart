@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
+import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -1447,6 +1448,22 @@ SettingsDestination _videoDestination() {
                 settingsContext,
                 (VideoAsbplayerConfig c) =>
                     c.copyWith(pauseAtSubtitleEnd: value),
+              );
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.video_settings_cat_controls,
+        items: <SettingsItem>[
+          SettingsActionItem(
+            id: 'video.controls.reset_layout',
+            title: t.video_control_reset_layout,
+            subtitle: t.video_control_reset_layout_hint,
+            icon: Icons.restart_alt_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await settingsContext.appModel.setVideoControlLayout(
+                VideoControlLayout.currentChrome,
               );
             },
           ),

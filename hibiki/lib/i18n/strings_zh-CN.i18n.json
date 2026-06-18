@@ -1588,13 +1588,11 @@
     "video_settings_cat_controls": "控制按钮",
     "video_control_placement_bottom": "底栏",
     "video_control_placement_right": "右侧",
-    "video_control_placement_settings": "仅设置",
     "video_control_speed": "倍速",
     "video_control_subtitle_list": "字幕列表",
     "video_control_favorite_sentence": "收藏当前句",
     "video_control_favorite_sentences": "本集收藏",
     "video_control_settings": "播放器设置",
-    "video_control_settings_required_hint": "移出播放器后仍可从设置和右键菜单进入。",
     "video_setting_long_press_speed": "长按倍速",
     "video_setting_long_press_speed_hint": "按住画面时临时使用这个倍速。",
     "video_favorite_sentences": "本集收藏句子",
@@ -1728,5 +1726,7 @@
     "update_install_restart_windows_hint": "如果上方进程已关闭但 libmpv-2.dll 仍被占用，请重启 Windows 后再安装。",
     "video_control_slot_top_center": "顶栏（中间）",
     "video_control_title": "视频名称",
-    "shortcut_conflict_replace_confirm": "该快捷键已被“$s”占用。要移到当前动作吗？"
+    "shortcut_conflict_replace_confirm": "该快捷键已被“$s”占用。要移到当前动作吗？",
+    "video_control_reset_layout": "恢复默认播放器按钮布局",
+    "video_control_reset_layout_hint": "把移动和移出的按钮恢复为默认播放器布局。"
 }

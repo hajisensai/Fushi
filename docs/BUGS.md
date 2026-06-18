@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 306 条。点号进各自文件。
+> 共 307 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-315](bugs/BUG-315-todo-522-526-video-control-settings-layout.md) | ✅ | ✅ | TODO-522/523/525/526: video controls removal persisted removed buttons and video settings text was clipped |
 | [BUG-312](bugs/BUG-312-todo-520-lookup-window-no-text.md) | ✅ | ✅ | TODO-520: 0.9.24-debug.5191 查词窗口没文字 |
 | [BUG-311](bugs/BUG-311-video-episode-start-intent-near-end.md) | ✅ | ✅ | TODO-518: video episode switch resumes near end then immediately auto-advances |
 | [BUG-310](bugs/BUG-310-todo-495-498-reader-drag-scroll.md) | ✅ | ✅ | TODO-495/TODO-498: 连续模式正文文字处鼠标拖拽被原生选区接管 |

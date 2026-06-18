@@ -1588,13 +1588,11 @@
     "video_settings_cat_controls": "Controls",
     "video_control_placement_bottom": "Bottom bar",
     "video_control_placement_right": "Right side",
-    "video_control_placement_settings": "Settings only",
     "video_control_speed": "Speed",
     "video_control_subtitle_list": "Subtitle list",
     "video_control_favorite_sentence": "Favorite current sentence",
     "video_control_favorite_sentences": "Episode favorites",
     "video_control_settings": "Player settings",
-    "video_control_settings_required_hint": "Removed buttons stay reachable from Settings and the right-click menu.",
     "video_setting_long_press_speed": "Long-press speed",
     "video_setting_long_press_speed_hint": "Temporarily use this speed while holding the video.",
     "video_favorite_sentences": "Episode favorites",
@@ -1728,5 +1726,7 @@
     "update_install_restart_windows_hint": "If the listed processes are closed but libmpv-2.dll is still locked, restart Windows and install again.",
     "video_control_slot_top_center": "Top bar (center)",
     "video_control_title": "Video title",
-    "shortcut_conflict_replace_confirm": "該快捷鍵已被「$s」佔用。要移到目前動作嗎？"
+    "shortcut_conflict_replace_confirm": "該快捷鍵已被「$s」佔用。要移到目前動作嗎？",
+    "video_control_reset_layout": "Reset player button layout",
+    "video_control_reset_layout_hint": "Restore moved and removed buttons to the default player layout."
 }
