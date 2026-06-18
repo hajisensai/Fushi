@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 303 条。点号进各自文件。
+> 共 304 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-310](bugs/BUG-310-todo-495-498-reader-drag-scroll.md) | ✅ | ✅ | TODO-495/TODO-498: 连续模式正文文字处鼠标拖拽被原生选区接管 |
 | [BUG-309](bugs/BUG-309-todo-488-cover-regression.md) | ✅ | ✅ | TODO-488: linked SRT shelf card loses EPUB cover fallback |
 | [BUG-308](bugs/BUG-308-todo-478-0-9-15-install-residual.md) | ✅ | ✅ | TODO-478: 0.9.15 installer can leave old running build installed |
 | [BUG-307](bugs/BUG-307-ffmpeg-mining-invalid-image.md) | ✅ | ✅ | Windows ffmpeg invalid-image breaks mining audio and GIF extraction (TODO-458) |

@@ -17,8 +17,7 @@ void main() {
     );
   });
 
-  test(
-      'desktop left mouse drag starts only from non-text or blank reader areas',
+  test('continuous mouse drag captures reader body text; paged protects it',
       () {
     final String guard = _functionSource(
       setupScript,
@@ -33,10 +32,18 @@ void main() {
             'links and ruby text must keep native selection/click behavior');
     expect(guard, contains('window.getSelection'),
         reason: 'an existing text selection must not be grabbed for dragging');
-    expect(guard, contains('_hoshiReaderCaretRangeAtPoint'),
-        reason: 'caret-range text hits must remain selectable');
-    expect(guard, contains('window.hoshiSelection.getCharacterAtPoint'),
-        reason: 'actual reader text hits must be protected from drag capture');
+    final int continuousModeIndex =
+        guard.indexOf('if (hoshiContinuousMode) return true;');
+    final int readerTextHitIndex =
+        guard.indexOf('window.hoshiSelection.getCharacterAtPoint');
+    final int caretHitIndex =
+        guard.indexOf('return !_hoshiReaderCaretRangeAtPoint');
+    expect(continuousModeIndex, isNonNegative,
+        reason: 'continuous mode must capture body-text drags for scrolling');
+    expect(readerTextHitIndex, greaterThan(continuousModeIndex),
+        reason: 'reader text hit testing must only protect paged mode');
+    expect(caretHitIndex, greaterThan(continuousModeIndex),
+        reason: 'caret-range text hits must only protect paged mode');
 
     final String pointerDown = _listenerBlock(setupScript, 'pointerdown');
     final int guardIndex =
@@ -68,6 +75,15 @@ void main() {
     final String pointerMove = _listenerBlock(setupScript, 'pointermove');
     expect(pointerMove, contains('_hoshiReaderMouseDragClaimed = true'));
     expect(pointerMove, contains('e.preventDefault()'));
+    expect(pointerMove, contains('_hoshiReaderClearMouseSelection()'),
+        reason: 'claimed text drags must clear browser native selection');
+    final String clearSelection = _functionSource(
+      setupScript,
+      'function _hoshiReaderClearMouseSelection()',
+      'function _hoshiReaderMouseDragStartAllowed(e)',
+    );
+    expect(clearSelection, contains('window.getSelection'));
+    expect(clearSelection, contains('removeAllRanges'));
 
     final String pointerUp = _listenerBlock(setupScript, 'pointerup');
     final int finishIndex = pointerUp.indexOf('_finishHoshiReaderMouseDrag(e)');

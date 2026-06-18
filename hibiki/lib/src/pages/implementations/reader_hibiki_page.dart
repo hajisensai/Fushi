@@ -2085,6 +2085,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return null;
     }
   }
+  function _hoshiReaderClearMouseSelection() {
+    try {
+      var selected = window.getSelection && window.getSelection();
+      if (selected && !selected.isCollapsed) selected.removeAllRanges();
+    } catch (err) {}
+  }
   function _hoshiReaderMouseDragStartAllowed(e) {
     if (!e || e.pointerType !== 'mouse' || e.button !== 0) return false;
     var target = e.target || document.elementFromPoint(e.clientX, e.clientY);
@@ -2094,6 +2100,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     var selected = window.getSelection && window.getSelection();
     if (selected && !selected.isCollapsed) return false;
+    if (hoshiContinuousMode) return true;
     if (window.hoshiSelection &&
         window.hoshiSelection.getCharacterAtPoint &&
         window.hoshiSelection.getCharacterAtPoint(e.clientX, e.clientY)) {
@@ -2303,6 +2310,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!_hoshiReaderMouseDragClaimed) {
       if (totalDistSq < 36) return;
       _hoshiReaderMouseDragClaimed = true;
+      _hoshiReaderClearMouseSelection();
       if (e.target && e.target.setPointerCapture) {
         try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
       }
