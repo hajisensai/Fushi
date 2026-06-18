@@ -76,6 +76,10 @@ void main() {
       expect(crossBackward(3000, metricsMin: 0), isFalse);
     });
 
+    test('sub-pixel drift just past a page boundary does not cross', () {
+      expect(crossBackward(1000.33, metricsMin: 0), isFalse);
+    });
+
     test('clamped to metricsMin: at min already → cross', () {
       expect(crossBackward(1000, metricsMin: 1000), isTrue);
     });

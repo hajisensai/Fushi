@@ -129,22 +129,24 @@ class ReaderPaginationScripts {
     if (columnPitch <= 0) {
       return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
     }
-    // 先算出「严格相邻整页边界」再 clamp 到 [min,max]；是否真的翻了一页由 clamp 后
+    // 先把 1px 内的 WebView sub-pixel 漂移视为已落到整页边界，再算出「严格相邻
+    // 整页边界」并 clamp 到 [min,max]；是否真的翻了一页由 clamp 后
     // 的目标与当前位置比较得出。这样首/末页判定与步长计算共用同一个 target，不再有
     // 「currentScroll 错位 → guard 用 cur±pitch 误判已到边界 / round 跳 2 页」的特例。
+    final double stepScroll = _pageStepPosition(currentScroll, columnPitch);
     final double target;
     if (direction == ReaderNavigationDirection.forward) {
-      final int basePage = (currentScroll / columnPitch).floor();
+      final int basePage = (stepScroll / columnPitch).floor();
       target = _clampDouble(
           (basePage + 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
       // 已对齐在末页时 target == currentScroll（差值 <=1px 视为同页）→ 无下一页。
-      final bool scrolled = target > currentScroll + 1;
+      final bool scrolled = target > stepScroll + 1;
       return ReaderPageStep(scrolled: scrolled, targetScroll: target);
     } else {
-      final int basePage = (currentScroll / columnPitch).ceil();
+      final int basePage = (stepScroll / columnPitch).ceil();
       target = _clampDouble(
           (basePage - 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
-      final bool scrolled = target < currentScroll - 1;
+      final bool scrolled = target < stepScroll - 1;
       return ReaderPageStep(scrolled: scrolled, targetScroll: target);
     }
   }
@@ -175,24 +177,34 @@ class ReaderPaginationScripts {
     required double trueMaxScroll,
   }) {
     if (columnPitch <= 0) return true;
+    final double stepScroll = _pageStepPosition(currentScroll, columnPitch);
     if (direction == ReaderNavigationDirection.forward) {
       final double trueMaxAligned =
           (trueMaxScroll / columnPitch).floor() * columnPitch;
       final double ceiling =
           metricsMaxScroll > trueMaxAligned ? metricsMaxScroll : trueMaxAligned;
       double target =
-          (currentScroll / columnPitch).floor() * columnPitch + columnPitch;
+          (stepScroll / columnPitch).floor() * columnPitch + columnPitch;
       if (target > ceiling) target = ceiling;
       if (target < metricsMinScroll) target = metricsMinScroll;
       // 还有 >1px 的整页可前进 ⇒ 不跨章。
-      return target <= currentScroll + 1;
+      return target <= stepScroll + 1;
     } else {
       double target =
-          (currentScroll / columnPitch).ceil() * columnPitch - columnPitch;
+          (stepScroll / columnPitch).ceil() * columnPitch - columnPitch;
       if (target < metricsMinScroll) target = metricsMinScroll;
       if (target > metricsMaxScroll) target = metricsMaxScroll;
-      return target >= currentScroll - 1;
+      return target >= stepScroll - 1;
     }
+  }
+
+  static double _pageStepPosition(double currentScroll, double columnPitch) {
+    if (columnPitch <= 0) return currentScroll;
+    final double nearestPage =
+        (currentScroll / columnPitch).round() * columnPitch;
+    return (currentScroll - nearestPage).abs() <= 1
+        ? nearestPage
+        : currentScroll;
   }
 
   static double _clampDouble(double v, double lo, double hi) =>
@@ -1025,6 +1037,11 @@ $_sharedJs
     }
     return this.alignToPage(context, safeOffset);
   },
+  pageStepPosition: function(currentScroll, pitch) {
+    if (pitch <= 0) return currentScroll;
+    var nearestPage = Math.round(currentScroll / pitch) * pitch;
+    return Math.abs(currentScroll - nearestPage) <= 1 ? nearestPage : currentScroll;
+  },
   scrollToRange: function(range) {
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return false;
@@ -1223,25 +1240,26 @@ $_sharedJs
     var metrics = this.buildPaginationMetrics();
     var pitch = context.columnPitch;
     var currentScroll = this.getPagePosition(context);
+    var stepScroll = this.pageStepPosition(currentScroll, pitch);
     // 真末页/真首页：用实时 maxScroll 派生整页边界，metrics.maxScroll 取两者较大者，
     // 抵消末列内容边缘被低估导致的 metrics.maxScroll 偏小。trueMaxAligned 含末尾占位
     // 空白页 → 只作 forward 复核的容差上界，不作落点（落点仍用 metrics.maxScroll）。
     var trueMaxAligned = Math.floor(context.maxScroll / pitch) * pitch;
     if (direction === "forward") {
       var maxF = Math.max(metrics.maxScroll, trueMaxAligned);
-      var targetF = (Math.floor(currentScroll / pitch) + 1) * pitch;
+      var targetF = (Math.floor(stepScroll / pitch) + 1) * pitch;
       if (targetF > maxF) targetF = maxF;
       if (targetF < metrics.minScroll) targetF = metrics.minScroll;
-      if (targetF <= currentScroll + 1) return "limit";
+      if (targetF <= stepScroll + 1) return "limit";
       // 落点仍 clamp 到内容末页，不停在末尾空白占位页。
       var dest = Math.min(targetF, Math.max(metrics.maxScroll, currentScroll));
       this.setPagePosition(context, dest);
       return "scrolled";
     } else {
-      var targetB = (Math.ceil(currentScroll / pitch) - 1) * pitch;
+      var targetB = (Math.ceil(stepScroll / pitch) - 1) * pitch;
       if (targetB < metrics.minScroll) targetB = metrics.minScroll;
       if (targetB > metrics.maxScroll) targetB = metrics.maxScroll;
-      if (targetB >= currentScroll - 1) return "limit";
+      if (targetB >= stepScroll - 1) return "limit";
       this.setPagePosition(context, targetB);
       return "scrolled";
     }
@@ -1254,19 +1272,22 @@ $_sharedJs
     var minAlignedScroll = metrics.minScroll;
     var maxAlignedScroll = metrics.maxScroll;
     var pitch = context.columnPitch;
+    var stepScroll = this.pageStepPosition(currentScroll, pitch);
     // BUG-169：从可能未对齐的 currentScroll 出发先算「严格相邻整页边界」再 clamp，
     // 是否真翻页由 clamp 后的 target 与当前位置比较得出（共用同一 target，首/末页
     // 判定与步长计算一致）。旧实现 forward 用 round((cur+pitch)/pitch)（= round(cur/
     // pitch)+1），cur 落在两页之间时 round 把当前页算成下一页 → 实际跳 2 页；且 guard
     // 用 cur+pitch 在末页前一页且 cur 错位时会误判已到边界。floor+1 / ceil-1 在对齐时
-    // 与旧实现等价、错位时永远只走一页。与 Dart 影子 resolvePaginateStepForTesting 同算法。
+    // 与旧实现等价、错位时永远只走一页。1px 内的 WebView sub-pixel 漂移先归一化
+    // 到最近整页，避免连续 backward 把 17955.33 → 17955 误判成 limit。
+    // 与 Dart 影子 resolvePaginateStepForTesting 同算法。
     if (direction === "forward") {
-      var targetForward = (Math.floor(currentScroll / pitch) + 1) * pitch;
+      var targetForward = (Math.floor(stepScroll / pitch) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       // BUG-240：陈旧/低估的 metrics 让这一步看似翻不动时，重建 metrics + 实时 maxScroll
       // 复核后再定夺是否真到末页，避免提前跨章。
-      if (targetForward <= currentScroll + 1) return this._stepWithFreshMetrics(context, "forward");
+      if (targetForward <= stepScroll + 1) return this._stepWithFreshMetrics(context, "forward");
       this.setPagePosition(context, targetForward);
       var afterScrollF = this.getPagePosition(context);
       console.log('[HoshiPagination] paginate FORWARD: before=' + currentScroll
@@ -1275,11 +1296,11 @@ $_sharedJs
         + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
       return "scrolled";
     } else {
-      var targetBack = (Math.ceil(currentScroll / pitch) - 1) * pitch;
+      var targetBack = (Math.ceil(stepScroll / pitch) - 1) * pitch;
       if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       // BUG-240：backward 同理用 settle 后的 metrics 复核，避免低估 minScroll 提前回上一章。
-      if (targetBack >= currentScroll - 1) return this._stepWithFreshMetrics(context, "backward");
+      if (targetBack >= stepScroll - 1) return this._stepWithFreshMetrics(context, "backward");
       this.setPagePosition(context, targetBack);
       var afterScrollB = this.getPagePosition(context);
       console.log('[HoshiPagination] paginate BACKWARD: before=' + currentScroll

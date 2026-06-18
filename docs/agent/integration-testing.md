@@ -44,7 +44,7 @@
 
 **为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `HIBIKI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
 
-**三端跑同一份焦点驱动测试**：
+**三端跑同一份焦点驱动测试**（可见应用巡检和截图取证流程见 [computer-use-testing.md](computer-use-testing.md)）：
 ```bash
 # 模拟器（Android，gameButtonA 可合成）
 flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/integration-test.sh
@@ -67,9 +67,9 @@ bash ci/integration-test.sh --avd=hoshi_test_api35
 
 每个目标的日志落在 `.codex-test/itest-logs/<target>.log`。
 
-当前 `integration_test/` 下共 **18** 个 `*_test.dart` 目标：`anki_integration`、`app_smoke`、`comprehensive_imports`、`comprehensive_reader_lookup`、`comprehensive_settings`、`feature_flows`、`gamepad_navigation`、`home_keyboard`、`navigation_stability`、`popup_dictionary`、`reader_caret`、`reader_dictionary`、`reader_keyboard`、`reader_pagination`、`reader_popup_caret`、`regression`、`settings_validation`、`user_path`。
+当前 `ci/integration-test.sh` 的静态 `ALL_TARGETS` 共 **20** 个目标：`anki_integration`、`app_smoke`、`comprehensive_imports`、`comprehensive_reader_lookup`、`comprehensive_settings`、`feature_flows`、`gamepad_navigation`、`home_keyboard`、`image_pause_detection`、`navigation_stability`、`popup_dictionary`、`reader_caret`、`reader_computer_use_flow`、`reader_dictionary`、`reader_keyboard`、`reader_pagination`、`reader_popup_caret`、`regression`、`settings_validation`、`user_path`。runner 不自动 glob，新增目标必须同时加入该列表。
 
-书库依赖类测试（`reader_dictionary` / `reader_keyboard` / `regression`）通过 `integration_test/helpers/library_fixture.dart` 在测试内自带 fixture：`seedReaderBook` 用 `EpubGenerator`+`EpubImporter` 程序化导入合成 EPUB，`seedDictionary` 导入 runner 推到 `/sdcard/Download/test_dict.zip` 的字典。因此在全新安装上也无需手动导入。
+书库依赖类测试（`reader_dictionary` / `reader_keyboard` / `reader_computer_use_flow` / `regression`）通过 `integration_test/helpers/library_fixture.dart` 在测试内自带 fixture：`seedReaderBook` 用 `EpubGenerator`+`EpubImporter` 程序化导入合成 EPUB，`seedDictionary` 导入 runner 推到 `/sdcard/Download/test_dict.zip` 的字典；没有外部字典时会生成 `testword` / `猫` 的最小词典。因此在全新安装上也无需手动导入。
 
 ## AnkiDroid 集成测试
 
@@ -115,7 +115,7 @@ SELECT name FROM profiles;              -- Profile 列表
 
 ## 测试素材
 
-自动化集成测试**不依赖任何外部素材**：库依赖类测试（`reader_dictionary` / `reader_keyboard` / `regression`）由 `integration_test/helpers/library_fixture.dart` 自带 fixture —— `seedReaderBook` 用 `EpubGenerator`+`EpubImporter` 程序化导入合成 EPUB，`seedDictionary` 导入 runner 推送的字典。全新安装也能跑，无需准备任何文件。
+自动化集成测试**不依赖任何外部素材**：库依赖类测试（`reader_dictionary` / `reader_keyboard` / `reader_computer_use_flow` / `regression`）由 `integration_test/helpers/library_fixture.dart` 自带 fixture —— `seedReaderBook` 用 `EpubGenerator`+`EpubImporter` 程序化导入合成 EPUB，`seedDictionary` 导入 runner 推送的字典或生成最小测试字典。全新安装也能跑，无需准备任何文件。
 
 需要用真实素材做手动/额外测试时（各人路径不同，不写死）：
 

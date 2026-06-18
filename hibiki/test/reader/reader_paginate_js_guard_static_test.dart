@@ -28,20 +28,27 @@ void main() {
     );
   });
 
-  test('forward steps to floor(currentScroll/pitch)+1, not round(cur+pitch)',
-      () {
+  test('forward steps to floor(stepScroll/pitch)+1, not round(cur+pitch)', () {
     expect(
       paginate,
-      contains('Math.floor(currentScroll / pitch) + 1'),
+      contains('Math.floor(stepScroll / pitch) + 1'),
       reason: 'forward 必须用 floor+1 整页步进',
     );
   });
 
-  test('backward steps to ceil(currentScroll/pitch)-1', () {
+  test('backward steps to ceil(stepScroll/pitch)-1', () {
     expect(
       paginate,
-      contains('Math.ceil(currentScroll / pitch) - 1'),
+      contains('Math.ceil(stepScroll / pitch) - 1'),
       reason: 'backward 必须用 ceil-1 整页步进',
+    );
+  });
+
+  test('sub-pixel drift is normalized before stepping', () {
+    expect(
+      paginate.contains('this.pageStepPosition(currentScroll, pitch)'),
+      isTrue,
+      reason: '1px 内页边界漂移必须先归一化，避免连续 backward 误判 limit',
     );
   });
 

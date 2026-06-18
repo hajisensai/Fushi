@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:hibiki/src/startup/test_environment.dart';
+
 /// Manages on-disk storage of extracted EPUB content.
 ///
 /// Layout: `<appDocDir>/hoshi_books/<bookKey>/`
@@ -20,7 +22,8 @@ class EpubStorage {
   /// Base directory for all extracted books.
   static Future<String> baseDirectory() async {
     if (_cachedBaseDir != null) return _cachedBaseDir!;
-    final Directory appDir = await getApplicationDocumentsDirectory();
+    final Directory appDir = hibikiTestDirectory('app-documents') ??
+        await getApplicationDocumentsDirectory();
     _cachedBaseDir = p.join(appDir.path, 'hoshi_books');
     return _cachedBaseDir!;
   }
