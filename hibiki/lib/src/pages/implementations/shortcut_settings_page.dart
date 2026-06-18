@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
@@ -208,7 +210,8 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   }
 
   Future<void> _editBinding(ShortcutAction action) async {
-    final ShortcutBindingSet? result = await showAppDialog<ShortcutBindingSet>(
+    final ShortcutBindingEditResult? result =
+        await showAppDialog<ShortcutBindingEditResult>(
       context: context,
       builder: (BuildContext ctx) => ShortcutBindingEditDialog(
         action: action,
@@ -217,7 +220,12 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       ),
     );
     if (result == null || !mounted) return;
-    _registry.updateBinding(action, result);
+    _registry.updateBindingWithReassignments(
+      action,
+      result.bindings,
+      removeKeyboardConflicts: result.keyboardReassignments,
+      removeGamepadConflicts: result.gamepadReassignments,
+    );
     await _save();
     setState(() {});
   }
@@ -355,9 +363,24 @@ class ShortcutBindingEditDialog extends StatefulWidget {
       _ShortcutBindingEditDialogState();
 }
 
+@immutable
+class ShortcutBindingEditResult {
+  const ShortcutBindingEditResult({
+    required this.bindings,
+    this.keyboardReassignments = const <InputBinding>[],
+    this.gamepadReassignments = const <GamepadBinding>[],
+  });
+
+  final ShortcutBindingSet bindings;
+  final List<InputBinding> keyboardReassignments;
+  final List<GamepadBinding> gamepadReassignments;
+}
+
 class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   late List<InputBinding> _keyboard;
   late List<GamepadBinding> _gamepad;
+  final List<InputBinding> _keyboardReassignments = <InputBinding>[];
+  final List<GamepadBinding> _gamepadReassignments = <GamepadBinding>[];
   String? _conflictWarning;
   bool _capturing = false;
   final FocusNode _captureFocusNode = FocusNode();
@@ -393,6 +416,8 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     setState(() {
       _keyboard.clear();
       _gamepad.clear();
+      _keyboardReassignments.clear();
+      _gamepadReassignments.clear();
       _conflictWarning = null;
     });
   }
@@ -454,10 +479,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     );
 
     if (conflict != null) {
-      setState(() {
-        _capturing = false;
-        _conflictWarning = t.shortcut_conflict(s: _actionLabel(conflict));
-      });
+      unawaited(_confirmKeyboardReassignment(binding, conflict));
       return KeyEventResult.handled;
     }
 
@@ -469,7 +491,84 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     return KeyEventResult.handled;
   }
 
-  void _addGamepad(GamepadButton button) {
+  Future<void> _confirmKeyboardReassignment(
+    InputBinding binding,
+    ShortcutAction conflict,
+  ) async {
+    setState(() {
+      _capturing = false;
+      _conflictWarning = t.shortcut_conflict(s: _actionLabel(conflict));
+    });
+    final bool confirmed = await _showConflictReassignmentDialog(conflict);
+    if (!confirmed || !mounted) return;
+    if (_keyboard.contains(binding)) return;
+    setState(() {
+      _keyboard.add(binding);
+      if (!_keyboardReassignments.contains(binding)) {
+        _keyboardReassignments.add(binding);
+      }
+      _conflictWarning = null;
+    });
+  }
+
+  Future<bool> _showConflictReassignmentDialog(
+    ShortcutAction conflict,
+  ) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 420,
+          maxHeightFactor: 0.78,
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: t.shortcut_conflict(s: _actionLabel(conflict)),
+            leadingIcon: Icons.warning_amber_outlined,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Text(
+              t.shortcut_conflict_replace_confirm(
+                s: _actionLabel(conflict),
+              ),
+            ),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _addGamepad(GamepadButton button) async {
     final GamepadBinding binding = GamepadBinding(button);
     if (_gamepad.contains(binding)) return;
 
@@ -482,6 +581,16 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     if (conflict != null) {
       setState(() {
         _conflictWarning = t.shortcut_conflict(s: _actionLabel(conflict));
+      });
+      final bool confirmed = await _showConflictReassignmentDialog(conflict);
+      if (!confirmed || !mounted) return;
+      if (_gamepad.contains(binding)) return;
+      setState(() {
+        _gamepad.add(binding);
+        if (!_gamepadReassignments.contains(binding)) {
+          _gamepadReassignments.add(binding);
+        }
+        _conflictWarning = null;
       });
       return;
     }
@@ -608,7 +717,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             ),
             SizedBox(height: tokens.spacing.gap),
             HibikiOverflowMenu<GamepadButton>(
-              onSelected: _addGamepad,
+              onSelected: (GamepadButton button) {
+                unawaited(_addGamepad(button));
+              },
               items: <PopupMenuEntry<GamepadButton>>[
                 for (final GamepadButton btn in GamepadButton.values)
                   HibikiPopupMenuItem<GamepadButton>(
@@ -669,9 +780,18 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               isDefaultAction: true,
               onPressed: () => Navigator.pop(
                 context,
-                ShortcutBindingSet(
-                  keyboardBindings: List<InputBinding>.unmodifiable(_keyboard),
-                  gamepadBindings: List<GamepadBinding>.unmodifiable(_gamepad),
+                ShortcutBindingEditResult(
+                  bindings: ShortcutBindingSet(
+                    keyboardBindings:
+                        List<InputBinding>.unmodifiable(_keyboard),
+                    gamepadBindings:
+                        List<GamepadBinding>.unmodifiable(_gamepad),
+                    mouseBindings: widget.initial.mouseBindings,
+                  ),
+                  keyboardReassignments:
+                      List<InputBinding>.unmodifiable(_keyboardReassignments),
+                  gamepadReassignments:
+                      List<GamepadBinding>.unmodifiable(_gamepadReassignments),
                 ),
               ),
               child: Text(MaterialLocalizations.of(context).okButtonLabel),

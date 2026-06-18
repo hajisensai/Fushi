@@ -22,20 +22,21 @@ ShortcutAction? resolveReaderSpaceOverride({
   return ShortcutAction.audiobookPlayPause;
 }
 
-/// 翻页方向键必须跟随阅读方向（BUG-098）：
+/// 键盘裸左右键翻页必须跟随阅读方向（BUG-098）：
 /// - 竖排 RTL（`vertical-rl`，日文默认）：从右往左读，「下一页」在左 → 左箭头前进、
 ///   右箭头后退。
 /// - 横排 LTR（`horizontal-tb`）：从左往右读，「下一页」在右 → 右箭头前进、
 ///   左箭头后退。
 ///
-/// 默认绑定把「右箭头=前进」写死，对 RTL 书方向恰好相反。本函数在注册表解析前
-/// 介入，仅处理「无修饰的裸左/右箭头」；其它键（上/下箭头、PageUp/PageDown、
-/// Space，以及 Ctrl+方向键的有声书句子导航）一律返回 null，交回默认解析不受影响。
+/// 默认键盘绑定把「右箭头=前进」写死，对 RTL 书方向恰好相反。本函数在注册表解析前
+/// 介入，仅处理**键盘**「无修饰的裸左/右箭头」；其它键（上/下箭头、PageUp/PageDown、
+/// Space、字母键，以及 Ctrl+方向键的有声书句子导航）一律返回 null，交回默认解析不受影响。
+/// D-pad / gamepad / joystick 事件必须先走 gamepad registry，不进入这个 helper。
 ///
 /// [reverse]（TODO-120 用户开关 `reverse_arrow_page_turn`，默认 false）只对**最终
 /// 方向**整体取反：先按阅读方向（[rtl]）算出前进/后退，再在开关打开时把前进/后退对调。
-/// 这样无论 LTR 还是 RTL，开关都把当前行为整体反过来（左↔右互换），与 RTL 自动判定
-/// 正交叠加，不引入特殊分支。
+/// 这样无论 LTR 还是 RTL，开关都只把键盘左右键当前行为整体反过来（左↔右互换），
+/// 与 RTL 自动判定正交叠加，不影响手柄映射、字母快捷键或滑动手势。
 ShortcutAction? resolveReaderArrowPageTurn({
   required LogicalKeyboardKey key,
   required Set<ModifierKey> modifiers,

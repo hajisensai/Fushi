@@ -63,7 +63,7 @@ bool dispatchGamepadButtonIntent(
 /// ignored here so existing global-back shortcuts remain the fallback owner.
 KeyEventResult dispatchNativeGamepadButtonIntent(KeyEvent event) {
   if (event is! KeyDownEvent) return KeyEventResult.ignored;
-  final GamepadButton? button = GamepadButton.fromLogicalKey(event.logicalKey);
+  final GamepadButton? button = GamepadButton.fromKeyEvent(event);
   if (button == null || button == GamepadButton.b) {
     return KeyEventResult.ignored;
   }

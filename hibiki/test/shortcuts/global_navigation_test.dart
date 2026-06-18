@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +8,17 @@ import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 
 void main() {
+  KeyDownEvent keyDown(
+    LogicalKeyboardKey key,
+    ui.KeyEventDeviceType deviceType,
+  ) =>
+      KeyDownEvent(
+        physicalKey: const PhysicalKeyboardKey(0),
+        logicalKey: key,
+        timeStamp: Duration.zero,
+        deviceType: deviceType,
+      );
+
   testWidgets('gameButtonB pops the top route', (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(MaterialApp(
@@ -207,5 +220,89 @@ void main() {
     await tester.pump();
 
     expect(received, GamepadButton.x);
+  });
+
+  testWidgets('keyboard arrows are not dispatched as native D-pad',
+      (WidgetTester tester) async {
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    GamepadButton? received;
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navKey,
+      home: Scaffold(
+        body: Actions(
+          actions: <Type, Action<Intent>>{
+            GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+              onInvoke: (GamepadButtonIntent intent) {
+                received = intent.button;
+                return true;
+              },
+            ),
+          },
+          child: const Focus(
+            autofocus: true,
+            child: Text('target'),
+          ),
+        ),
+      ),
+      builder: (context, child) =>
+          wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+    ));
+    await tester.pump();
+
+    final KeyEventResult result = dispatchNativeGamepadButtonIntent(
+      keyDown(LogicalKeyboardKey.arrowRight, ui.KeyEventDeviceType.keyboard),
+    );
+
+    expect(result, KeyEventResult.ignored);
+    expect(received, isNull);
+  });
+
+  testWidgets('directionalPad and gamepad arrows dispatch native D-pad',
+      (WidgetTester tester) async {
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    final List<GamepadButton> received = <GamepadButton>[];
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navKey,
+      home: Scaffold(
+        body: Actions(
+          actions: <Type, Action<Intent>>{
+            GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+              onInvoke: (GamepadButtonIntent intent) {
+                received.add(intent.button);
+                return true;
+              },
+            ),
+          },
+          child: const Focus(
+            autofocus: true,
+            child: Text('target'),
+          ),
+        ),
+      ),
+      builder: (context, child) =>
+          wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+    ));
+    await tester.pump();
+
+    expect(
+      dispatchNativeGamepadButtonIntent(
+        keyDown(
+          LogicalKeyboardKey.arrowLeft,
+          ui.KeyEventDeviceType.directionalPad,
+        ),
+      ),
+      KeyEventResult.handled,
+    );
+    expect(
+      dispatchNativeGamepadButtonIntent(
+        keyDown(LogicalKeyboardKey.arrowRight, ui.KeyEventDeviceType.gamepad),
+      ),
+      KeyEventResult.handled,
+    );
+
+    expect(received, <GamepadButton>[
+      GamepadButton.dpadLeft,
+      GamepadButton.dpadRight,
+    ]);
   });
 }

@@ -70,6 +70,44 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateBindingWithReassignments(
+    ShortcutAction action,
+    ShortcutBindingSet bindings, {
+    Iterable<InputBinding> removeKeyboardConflicts = const <InputBinding>[],
+    Iterable<GamepadBinding> removeGamepadConflicts = const <GamepadBinding>[],
+  }) {
+    final Set<InputBinding> keyboardToRemove =
+        Set<InputBinding>.of(removeKeyboardConflicts);
+    final Set<GamepadBinding> gamepadToRemove =
+        Set<GamepadBinding>.of(removeGamepadConflicts);
+
+    if (keyboardToRemove.isNotEmpty || gamepadToRemove.isNotEmpty) {
+      for (final ShortcutScope scope in action.scope.coactiveScopes) {
+        for (final ShortcutAction oldAction
+            in ShortcutAction.actionsForScope(scope)) {
+          if (oldAction == action) continue;
+          final ShortcutBindingSet oldBindings = bindingsFor(oldAction);
+          final List<InputBinding> keyboard = oldBindings.keyboardBindings
+              .where((InputBinding b) => !keyboardToRemove.contains(b))
+              .toList(growable: false);
+          final List<GamepadBinding> gamepad = oldBindings.gamepadBindings
+              .where((GamepadBinding b) => !gamepadToRemove.contains(b))
+              .toList(growable: false);
+          if (keyboard.length != oldBindings.keyboardBindings.length ||
+              gamepad.length != oldBindings.gamepadBindings.length) {
+            _bindings[oldAction] = oldBindings.copyWith(
+              keyboardBindings: keyboard,
+              gamepadBindings: gamepad,
+            );
+          }
+        }
+      }
+    }
+
+    _bindings[action] = bindings;
+    notifyListeners();
+  }
+
   void resetToDefaults(TargetPlatform platform) {
     loadDefaults(platform);
     notifyListeners();

@@ -4988,6 +4988,17 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     final Set<ModifierKey> modifiers = _activeModifiers();
 
+    // Android/native controller events can surface as KeyEvents. D-pad arrows
+    // share logical keys with keyboard arrows, so controller-like sources must
+    // enter the gamepad registry before keyboard arrow reversal runs.
+    final GamepadButton? nativeGamepadButton =
+        GamepadButton.fromKeyEvent(event);
+    if (nativeGamepadButton != null) {
+      return _handleGamepadButton(nativeGamepadButton)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
+
     final ShortcutAction? directReaderAction =
         appModel.shortcutRegistry.resolveKeyboard(
       event.logicalKey,
@@ -5004,33 +5015,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
           directReaderAction!,
           keyboardTriggerKey: event.logicalKey,
         );
-      }
-      // LB/RB flip a whole page on the cursor surface, mirroring the polled
-      // gamepad branch in _handleGamepadButton. Android gamepads deliver the
-      // shoulders here as gameButton key events, mapped back via fromLogicalKey;
-      // these logical keys are gamepad-only, so a desktop keyboard never hits it.
-      final GamepadButton? shoulder =
-          GamepadButton.fromLogicalKey(event.logicalKey);
-      if (shoulder == GamepadButton.rb) {
-        unawaited(_caretScrollPage(true));
-        return KeyEventResult.handled;
-      }
-      if (shoulder == GamepadButton.lb) {
-        unawaited(_caretScrollPage(false));
-        return KeyEventResult.handled;
-      }
-      // LT/RT (Android delivers gamepad triggers as gameButton key events) jump
-      // to the previous/next dictionary section on the popup. Routed through the
-      // gamepad map (the keyboard `[`/`]` path is handled below by
-      // decideKeyboard); these trigger logical keys are gamepad-only, so a
-      // desktop keyboard never reaches here.
-      if (shoulder == GamepadButton.lt || shoulder == GamepadButton.rt) {
-        final CaretAction? triggerAction =
-            ReaderCaretRouter.decideGamepad(shoulder!);
-        if (triggerAction != null) {
-          unawaited(_runCaretAction(triggerAction));
-          return KeyEventResult.handled;
-        }
       }
       final CaretAction? caretAction = ReaderCaretRouter.decideKeyboard(
         event.logicalKey,
@@ -5096,20 +5080,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
           modifiers: modifiers,
           scope: ShortcutScope.audiobook,
         );
-
-    if (action == null) {
-      final gamepad = GamepadButton.fromLogicalKey(event.logicalKey);
-      if (gamepad != null) {
-        action = appModel.shortcutRegistry.resolveGamepad(
-              gamepad,
-              scope: ShortcutScope.reader,
-            ) ??
-            appModel.shortcutRegistry.resolveGamepad(
-              gamepad,
-              scope: ShortcutScope.audiobook,
-            );
-      }
-    }
 
     if (action == null) return KeyEventResult.ignored;
     return _executeShortcutAction(

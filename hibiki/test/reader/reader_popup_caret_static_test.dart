@@ -41,13 +41,12 @@ void main() {
     expect(source, contains('case CaretAction.jumpDictPrev:'));
     expect(source, contains('await _caretJumpDict(true);'));
     expect(source, contains('await _caretJumpDict(false);'));
-    // The Android-native gamepad key path routes LT/RT triggers through the
-    // gamepad map (the polled path already calls decideGamepad).
-    expect(
-        source,
-        contains(
-            'shoulder == GamepadButton.lt || shoulder == GamepadButton.rt'));
-    expect(source, contains('ReaderCaretRouter.decideGamepad(shoulder!)'));
+    // Android/native controller KeyEvents are converted by source guard and
+    // enter the same gamepad branch as the polled path; LT/RT then route through
+    // the gamepad caret map there.
+    expect(source, contains('GamepadButton.fromKeyEvent(event)'));
+    expect(source, contains('_handleGamepadButton(nativeGamepadButton)'));
+    expect(source, contains('ReaderCaretRouter.decideGamepad(button)'));
     // Jump is popup-only — it must not fall through to the reader/lyrics caret.
     expect(
         source, contains('if (_caretSurface != CaretSurface.popup) return;'));

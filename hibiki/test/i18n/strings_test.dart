@@ -13,6 +13,12 @@ void main() {
         '',
       );
     });
+
+    test('makes arrow reverse keyboard-specific', () {
+      final strings = AppLocale.zhCn.translations;
+
+      expect(strings.reverse_arrow_page_turn, '反转键盘左右键翻页方向');
+    });
   });
 
   group('Chinese video clip export labels', () {

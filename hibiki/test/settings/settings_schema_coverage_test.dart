@@ -63,6 +63,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',
   'reading/Swipe dismiss sensitivity':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
+  'reading/Reverse keyboard left/right page-turn direction':
+      'test/reader/reader_space_pause_test.dart + test/shortcuts/global_navigation_test.dart',
   // TODO-436/407②：查词弹窗"滑动关闭"开关。归「查词」分组（destId=lookup）。生效点
   // 在 DictionaryPopupLayer 的 swipe 边界（仅顶栏可滑）+ 平台默认纯函数
   // ReaderSettings.defaultSwipeToClose，由专项 widget 行为 + 纯函数真值表测试覆盖
@@ -200,6 +202,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
 /// 比 flutter drive 跑 app.main 更确定、更快、无 live-app 后台噪音；逐设置校验
 /// 平台无关。整 app 流程的真机/桌面验证由 app_smoke 等承担（Phase 2-4）。
 void main() {
+  test('reverse arrow setting keeps schema title wired to i18n', () {
+    final String source =
+        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+
+    expect(
+      source,
+      contains("id: 'reading_controls.reverse_arrow_page_turn'"),
+    );
+    expect(source, contains('title: t.reverse_arrow_page_turn'));
+  });
+
   testWidgets(
       'all settings destinations: focus-driven, change persists and takes effect',
       (WidgetTester tester) async {

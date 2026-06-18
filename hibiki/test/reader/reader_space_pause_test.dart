@@ -1,10 +1,23 @@
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'dart:ui' as ui;
+
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/reader_space_override.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 void main() {
+  KeyDownEvent keyDown(
+    LogicalKeyboardKey key,
+    ui.KeyEventDeviceType deviceType,
+  ) =>
+      KeyDownEvent(
+        physicalKey: const PhysicalKeyboardKey(0),
+        logicalKey: key,
+        timeStamp: Duration.zero,
+        deviceType: deviceType,
+      );
+
   group('resolveReaderSpaceOverride', () {
     test('有声书激活 + 无修饰 Space → 播放/暂停', () {
       expect(
@@ -259,6 +272,58 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('reverse 只服务键盘裸左右键，D-pad/gamepad 先识别为手柄', () {
+      expect(
+        GamepadButton.fromKeyEvent(
+          keyDown(LogicalKeyboardKey.arrowLeft, ui.KeyEventDeviceType.keyboard),
+        ),
+        isNull,
+      );
+      expect(
+        GamepadButton.fromKeyEvent(
+          keyDown(
+            LogicalKeyboardKey.arrowLeft,
+            ui.KeyEventDeviceType.directionalPad,
+          ),
+        ),
+        GamepadButton.dpadLeft,
+      );
+      expect(
+        GamepadButton.fromKeyEvent(
+          keyDown(LogicalKeyboardKey.arrowRight, ui.KeyEventDeviceType.gamepad),
+        ),
+        GamepadButton.dpadRight,
+      );
+      expect(
+        GamepadButton.fromKeyEvent(
+          keyDown(
+            LogicalKeyboardKey.arrowRight,
+            ui.KeyEventDeviceType.joystick,
+          ),
+        ),
+        GamepadButton.dpadRight,
+      );
+    });
+
+    test('PageUp/PageDown/Space/字母键不受 reverse arrow helper 影响', () {
+      for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+        LogicalKeyboardKey.pageUp,
+        LogicalKeyboardKey.pageDown,
+        LogicalKeyboardKey.space,
+        LogicalKeyboardKey.keyA,
+      ]) {
+        expect(
+          resolveReaderArrowPageTurn(
+            key: key,
+            modifiers: const <ModifierKey>{},
+            rtl: false,
+            reverse: true,
+          ),
+          isNull,
+        );
+      }
     });
   });
 }
