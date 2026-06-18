@@ -312,41 +312,67 @@ class HibikiSearchField extends StatelessWidget {
     required this.onSubmitted,
     super.key,
     this.fieldKey,
+    this.clearButtonKey,
     this.focusId,
+    this.onClear,
   });
 
   final Key? fieldKey;
+  final Key? clearButtonKey;
   final HibikiFocusId? focusId;
   final TextEditingController controller;
   final FocusNode focusNode;
   final String hintText;
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
+  final VoidCallback? onClear;
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Widget? trailing = _hibikiTextFieldInputSuffix(
-      context: context,
-      controller: controller,
-      onChanged: onChanged,
-    );
-    final SearchBar searchBar = SearchBar(
-      key: fieldKey,
-      controller: controller,
-      focusNode: focusNode,
-      hintText: hintText,
-      leading: const Icon(Icons.search),
-      trailing: trailing == null ? null : <Widget>[trailing],
-      elevation: const WidgetStatePropertyAll<double>(0),
-      backgroundColor: WidgetStatePropertyAll<Color>(tokens.surfaces.search),
-      shape: WidgetStatePropertyAll<OutlinedBorder>(
-        RoundedRectangleBorder(borderRadius: tokens.radii.controlRadius),
-      ),
-      textStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listTitle),
-      hintStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listSubtitle),
-      onChanged: onChanged,
-      onSubmitted: onSubmitted,
+    final Widget searchBar = ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
+          context: context,
+          controller: controller,
+          onChanged: onChanged,
+        );
+        final List<Widget> trailing = <Widget>[
+          if (onClear != null && value.text.isNotEmpty)
+            HibikiIconButton(
+              key: clearButtonKey,
+              icon: Icons.close,
+              tooltip: t.clear,
+              onTap: () {
+                onClear?.call();
+                if (focusNode.canRequestFocus) {
+                  focusNode.requestFocus();
+                }
+              },
+            ),
+          if (inputSuffix != null) inputSuffix,
+        ];
+        return SearchBar(
+          key: fieldKey,
+          controller: controller,
+          focusNode: focusNode,
+          hintText: hintText,
+          leading: const Icon(Icons.search),
+          trailing: trailing.isEmpty ? null : trailing,
+          elevation: const WidgetStatePropertyAll<double>(0),
+          backgroundColor:
+              WidgetStatePropertyAll<Color>(tokens.surfaces.search),
+          shape: WidgetStatePropertyAll<OutlinedBorder>(
+            RoundedRectangleBorder(borderRadius: tokens.radii.controlRadius),
+          ),
+          textStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listTitle),
+          hintStyle:
+              WidgetStatePropertyAll<TextStyle>(tokens.type.listSubtitle),
+          onChanged: onChanged,
+          onSubmitted: onSubmitted,
+        );
+      },
     );
     if (focusId == null) return searchBar;
     if (HibikiFocusRoot.maybeControllerOf(context) == null) return searchBar;

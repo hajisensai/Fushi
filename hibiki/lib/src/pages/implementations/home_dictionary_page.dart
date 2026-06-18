@@ -47,6 +47,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   bool _allLoaded = false;
   Timer? _debounceTimer;
   String _sourceLookupText = '';
+  int _searchGeneration = 0;
 
   bool _historyWritten = false;
 
@@ -168,6 +169,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
 
   void _clearSearch() {
+    _searchGeneration++;
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
     _controller.clear();
     _popup.clear();
     _result = null;
@@ -175,8 +179,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _lastQuery = '';
     _allLoaded = false;
     _sourceLookupText = '';
-    _searchFocusNode.unfocus();
+    _historyWritten = false;
     setState(() {});
+    if (_searchFocusNode.canRequestFocus) {
+      _searchFocusNode.requestFocus();
+    }
   }
 
   void _clearSearchFromResultPull() {
@@ -242,10 +249,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           Expanded(
             child: HibikiSearchField(
               fieldKey: const ValueKey<String>('home_dictionary_search_field'),
+              clearButtonKey: const ValueKey<String>(
+                'home_dictionary_search_clear_button',
+              ),
               controller: _controller,
               focusNode: _searchFocusNode,
               hintText: t.search_ellipsis,
               onChanged: _onQueryChanged,
+              onClear: _clearSearch,
               onSubmitted: _search,
             ),
           ),
@@ -416,7 +427,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     int? overrideMaximumTerms,
     bool writeHistory = true,
     bool? autoRead,
-  }) async {
+  }) {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
     final bool replaceSourceLookupText = overrideMaximumTerms == null;
@@ -447,49 +458,65 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     }
 
     if (mounted) {
+      final int searchGeneration = ++_searchGeneration;
       setState(() {
         _isSearching = true;
         if (replaceSourceLookupText) _sourceLookupText = trimmed;
         _popup.clear();
       });
+      unawaited(_searchWithGeneration(
+        trimmed: trimmed,
+        overrideMaximumTerms: overrideMaximumTerms,
+        writeHistory: writeHistory,
+        autoRead: autoRead,
+        searchGeneration: searchGeneration,
+      ));
     } else if (replaceSourceLookupText) {
       _sourceLookupText = trimmed;
     }
+  }
 
-    try {
-      _result = await appModel.searchDictionary(
+  Future<void> _searchWithGeneration({
+    required String trimmed,
+    required int overrideMaximumTerms,
+    required bool writeHistory,
+    required bool? autoRead,
+    required int searchGeneration,
+  }) async {
+    final DictionarySearchResult result = await appModel.searchDictionary(
+      searchTerm: trimmed,
+      searchWithWildcards: true,
+      overrideMaximumTerms: overrideMaximumTerms,
+    );
+    if (!mounted ||
+        searchGeneration != _searchGeneration ||
+        trimmed != _controller.text) {
+      return;
+    }
+
+    _result = result;
+    final bool allLoaded = result.entries.length < overrideMaximumTerms;
+    setState(() {
+      _isSearching = false;
+      _allLoaded = allLoaded;
+    });
+
+    if (writeHistory) {
+      _historyWritten = true;
+      appModel.addToSearchHistory(
+        historyKey: mediaType.uniqueKey,
         searchTerm: trimmed,
-        searchWithWildcards: true,
-        overrideMaximumTerms: overrideMaximumTerms,
       );
-    } finally {
-      if (_result != null && trimmed == _controller.text) {
-        final bool allLoaded = _result!.entries.length < overrideMaximumTerms;
-        if (mounted) {
-          setState(() {
-            _isSearching = false;
-            _allLoaded = allLoaded;
-          });
-        }
-
-        if (writeHistory) {
-          _historyWritten = true;
-          appModel.addToSearchHistory(
-            historyKey: mediaType.uniqueKey,
-            searchTerm: trimmed,
-          );
-          if (_result!.entries.isNotEmpty) {
-            appModel.addToDictionaryHistory(result: _result!);
-            // autoRead 覆盖：null 沿用全局 autoReadOnLookup（正常输入查词不变），
-            // 桌面剪贴板/热键路径显式传 false 抑制朗读。
-            final bool shouldAutoRead =
-                autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup;
-            if (shouldAutoRead) {
-              final entry = _result!.entries.first;
-              if (entry.word.isNotEmpty) {
-                autoReadWord(entry.word, entry.reading);
-              }
-            }
+      if (result.entries.isNotEmpty) {
+        appModel.addToDictionaryHistory(result: result);
+        // autoRead 覆盖：null 沿用全局 autoReadOnLookup（正常输入查词不变），
+        // 桌面剪贴板/热键路径显式传 false 抑制朗读。
+        final bool shouldAutoRead =
+            autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup;
+        if (shouldAutoRead) {
+          final entry = result.entries.first;
+          if (entry.word.isNotEmpty) {
+            autoReadWord(entry.word, entry.reading);
           }
         }
       }

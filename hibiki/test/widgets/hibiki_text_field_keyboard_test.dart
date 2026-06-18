@@ -143,6 +143,48 @@ void main() {
       expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
     });
 
+    testWidgets('optional clear button clears text and keeps search focus',
+        (WidgetTester tester) async {
+      final TextEditingController c = TextEditingController(text: 'term');
+      final FocusNode focusNode = FocusNode();
+      final List<String> clears = <String>[];
+      addTearDown(c.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(buildTestApp(
+        HibikiSearchField(
+          controller: c,
+          focusNode: focusNode,
+          hintText: 'Search',
+          clearButtonKey: const ValueKey<String>('search-clear'),
+          onChanged: (_) {},
+          onClear: () {
+            c.clear();
+            clears.add(c.text);
+          },
+          onSubmitted: (_) {},
+        ),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
+      ));
+      await tester.pump();
+      focusNode.requestFocus();
+      await tester.pump();
+
+      expect(
+          find.byKey(const ValueKey<String>('search-clear')), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+      expect(focusNode.hasFocus, isTrue);
+
+      await tester.tap(find.byKey(const ValueKey<String>('search-clear')));
+      await tester.pump();
+
+      expect(c.text, isEmpty);
+      expect(clears, <String>['']);
+      expect(focusNode.hasFocus, isTrue);
+      expect(find.byKey(const ValueKey<String>('search-clear')), findsNothing);
+      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+    });
+
     testWidgets('desktop compact search row shows the ⌨ button',
         (WidgetTester tester) async {
       final TextEditingController c = TextEditingController();
