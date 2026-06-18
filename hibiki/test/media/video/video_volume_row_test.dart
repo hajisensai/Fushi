@@ -16,6 +16,8 @@ void main() {
 
   final String page =
       read('lib/src/pages/implementations/video_hibiki_page.dart');
+  final String volumeOverlays =
+      read('lib/src/media/video/video_volume_overlays.dart');
 
   String methodBody(String src, RegExp re, String label) {
     final RegExpMatch? m = re.firstMatch(src);
@@ -102,15 +104,21 @@ void main() {
         ),
         '_buildVolumePopover',
       );
+      expect(popover, contains('VideoVolumePopoverCard('),
+          reason: '可见音量浮层内容应由可渲染测试的 helper widget 承载');
       expect(popover, contains('_toggleMute()'), reason: '浮层内保留静音按钮');
       expect(popover, contains('width: width'),
           reason: '横向音量浮层宽度应由 placement helper clamp 后传入');
-      expect(popover, contains('Row('), reason: '浮层内是横向音量布局');
+      expect(volumeOverlays, contains('Row('), reason: '浮层内是横向音量布局');
       expect(popover, isNot(contains('RotatedBox(')),
           reason: 'TODO-491/492/493 后音量浮层不再旋转成竖条');
-      expect(popover, contains('Slider('), reason: '浮层内保留可拖动 Slider');
-      expect(popover, contains('_setVolumeFromSlider('),
+      expect(volumeOverlays, contains('Slider('), reason: '浮层内保留可拖动 Slider');
+      expect(popover, contains('onChanged: _setVolumeFromSlider'),
           reason: '浮层滑条拖动走现有同步通道');
+      expect(volumeOverlays, contains('videoVolumePopoverFrameKey'),
+          reason: '真实渲染测试必须能量测可见 popover frame，而不是全屏 barrier');
+      expect(volumeOverlays, contains('videoVolumePopoverSliderKey'),
+          reason: '真实渲染测试必须能量测可见 Slider 高度');
     });
 
     test('可移动音量键只从底栏左右槽渲染完整音量按钮', () {

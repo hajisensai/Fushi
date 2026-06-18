@@ -11,11 +11,15 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final File page =
       File('lib/src/pages/implementations/video_hibiki_page.dart');
+  final File overlays = File('lib/src/media/video/video_volume_overlays.dart');
 
   late String src;
+  late String overlaySrc;
   setUpAll(() {
     expect(page.existsSync(), isTrue);
+    expect(overlays.existsSync(), isTrue);
     src = page.readAsStringSync();
+    overlaySrc = overlays.readAsStringSync();
   });
 
   String region(String startSig, String endSig) {
@@ -103,9 +107,14 @@ void main() {
     expect(indicator.contains('Alignment.centerRight'), isTrue,
         reason: 'Volume feedback belongs on the screen right.');
     expect(indicator.contains('_volumeIconFor(clamped)'), isTrue);
-    expect(indicator.contains('LinearProgressIndicator'), isTrue,
+    expect(indicator.contains('VideoLevelHudCard'), isTrue,
+        reason: 'Volume HUD visible card should use the measurable helper.');
+    expect(indicator.contains('frameKey: videoVolumeHudFrameKey'), isTrue,
+        reason:
+            'Volume HUD frame must be directly measurable in widget tests.');
+    expect(overlaySrc.contains('LinearProgressIndicator'), isTrue,
         reason: 'Volume HUD should expose a percentage bar like a player OSD.');
-    expect(indicator.contains("Text('\${clamped.round()}%')"), isTrue,
+    expect(overlaySrc.contains("'\${clamped.round()}%'"), isTrue,
         reason: 'Volume HUD should show an explicit percentage.');
 
     final String overlay = region(
@@ -132,10 +141,16 @@ void main() {
     expect(indicator.contains('Alignment.centerLeft'), isTrue,
         reason: 'Brightness feedback belongs on the screen left.');
     expect(indicator.contains('_brightnessIconFor(clamped)'), isTrue);
-    expect(indicator.contains('LinearProgressIndicator'), isTrue,
+    expect(indicator.contains('VideoLevelHudCard'), isTrue,
+        reason:
+            'Brightness HUD visible card should use the measurable helper.');
+    expect(indicator.contains('frameKey: videoBrightnessHudFrameKey'), isTrue,
+        reason:
+            'Brightness HUD frame must stay separate from the volume HUD frame.');
+    expect(overlaySrc.contains('LinearProgressIndicator'), isTrue,
         reason:
             'Brightness HUD should expose a percentage bar like a player OSD.');
-    expect(indicator.contains("Text('\${clamped.round()}%')"), isTrue,
+    expect(overlaySrc.contains("'\${clamped.round()}%'"), isTrue,
         reason: 'Brightness HUD should show an explicit percentage.');
 
     final String overlay = region(
