@@ -318,6 +318,15 @@ abstract class VideoHibikiTestHooks {
   /// 当前播放位置（毫秒）；未就绪为 null。
   int? get debugPositionMs;
 
+  /// 当前 controller 读到的内封章节数量。
+  int get debugChapterCount;
+
+  /// 当前 controller 读到的媒体时长（毫秒）；未就绪为 null/0。
+  int? get debugDurationMs;
+
+  /// 测试直接打开章节侧栏，避免用坐标/私有控件路径模拟点击。
+  void debugShowChapterPanel();
+
   /// 开始真实播放（驱动 libmpv），让位置自然前进。
   Future<void> debugPlay();
 }
@@ -493,9 +502,24 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   int? get debugPositionMs => _controller?.positionMs;
 
   @override
+  int get debugChapterCount => _controller?.chapters.length ?? 0;
+
+  @override
+  int? get debugDurationMs => _controller?.durationMs;
+
+  @override
+  void debugShowChapterPanel() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    _showChapterPanel(controller);
+  }
+
+  @override
   Future<void> debugPlay() async => _controller?.play();
 
   VideoPlayerController? _controller;
+  VideoPlayerController? _chapterListenerController;
+  VoidCallback? _chapterListener;
   bool _failed = false;
   String? _title;
   List<VideoDanmakuItem> _danmakuItems = const <VideoDanmakuItem>[];
@@ -1652,16 +1676,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
     controller.onPositionWrite = _isRemote ? null : _persistPosition;
-    controller.removeListener(_syncWindowAspectRatioLock);
-    controller.addListener(_syncWindowAspectRatioLock);
-    controller.removeListener(_onControllerChaptersChanged);
-    controller.addListener(_onControllerChaptersChanged);
-    // 换集复用同一 controller：先按当前章节态对齐缓存（旧片有章节、新片刷新前先隐藏）。
-    _hasChapters = controller.chapters.isNotEmpty;
     if (!mounted) {
       if (_controller == null) controller.dispose();
       return;
     }
+    controller.removeListener(_syncWindowAspectRatioLock);
+    controller.addListener(_syncWindowAspectRatioLock);
+    _attachControllerChapterListener(controller);
     // 标题先推给响应式 notifier，让全屏路由顶栏（不随页面 setState 重建）也跟上（BUG-120）。
     _titleNotifier.value = title;
     // 音量控件显示真相源对齐 controller 实际音量（换集复用同一 controller，TODO-377/438）。
@@ -1670,6 +1691,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     setState(() {
       if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;
+      _hasChapters = controller.chapters.isNotEmpty;
       _title = title;
       _failed = false;
       _currentVideoPath = videoPath;
@@ -1677,6 +1699,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 当前选中由 _currentSubtitleSource 保留（菜单切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
+    _syncControllerChapterAvailability(controller);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refocusVideo();
     });
@@ -2034,7 +2057,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _watchTracker?.dispose();
     _watchTracker = null;
     _controller?.removeListener(_syncWindowAspectRatioLock);
-    _controller?.removeListener(_onControllerChaptersChanged);
+    _detachControllerChapterListener();
     _controller?.setOnCompleted(null);
     unawaited(_clearWindowAspectRatioLock());
     // TODO-057: 退出播放器还原屏幕亮度——把进页快照写回（iOS 系统级亮度），未
@@ -5431,12 +5454,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  void _attachControllerChapterListener(VideoPlayerController controller) {
+    if (_chapterListenerController == controller && _chapterListener != null) {
+      return;
+    }
+    _detachControllerChapterListener();
+    void listener() => _onControllerChaptersChanged(controller);
+    _chapterListenerController = controller;
+    _chapterListener = listener;
+    controller.addListener(listener);
+  }
+
+  void _detachControllerChapterListener() {
+    final VideoPlayerController? controller = _chapterListenerController;
+    final VoidCallback? listener = _chapterListener;
+    if (controller != null && listener != null) {
+      controller.removeListener(listener);
+    }
+    _chapterListenerController = null;
+    _chapterListener = null;
+  }
+
   /// controller 通知监听（TODO-424）：章节是 open 后异步填充的，就绪后翻转
   /// [_hasChapters] 触发一次 setState，让控制条章节入口按钮出现 / 消失（换集换成无章节
   /// 的片时也跟着隐藏）。只在「有无章节」真变化时 setState，避免 cue 同步等高频通知抖动。
-  void _onControllerChaptersChanged() {
+  void _onControllerChaptersChanged(VideoPlayerController controller) {
+    _syncControllerChapterAvailability(controller);
+  }
+
+  void _syncControllerChapterAvailability(VideoPlayerController controller) {
     if (!mounted) return;
-    final bool hasChapters = _controller?.chapters.isNotEmpty ?? false;
+    if (_controller != controller) return;
+    final bool hasChapters = controller.chapters.isNotEmpty;
     if (hasChapters == _hasChapters) return;
     setState(() => _hasChapters = hasChapters);
   }
