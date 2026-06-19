@@ -355,6 +355,71 @@ void main() {
       expect(layout.itemsIn(VideoControlSlot.hidden), isEmpty);
       expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
     });
+
+    // TODO-598 / BUG-338 regression guard: the v2 layout had a single `hidden`
+    // slot listing EVERY button the user had taken off the player. v3 dropped
+    // that slot for an explicit `removed` set. The v2->v3 migration must carry
+    // ALL of those hidden keys across as removed (still restorable from the
+    // palette), never silently dropping any one of them on upgrade -- a hidden
+    // key that vanishes from both the player AND the removed tray is data loss
+    // the user can never recover. Pins the multi-key path
+    // (`_migrateV2HiddenKeysAsRemoved` in decode), not just a single key.
+    test('TODO-598: every v2 hidden key survives migration as a removed key',
+        () {
+      // All five learning keys hidden at once (the realistic worst case for an
+      // upgrading user who customized the v2 controls heavily). `settings` is
+      // pinnedOnTouch but still removable cross-platform, so it must survive.
+      const List<VideoControlItem> hiddenInV2 = <VideoControlItem>[
+        VideoControlItem.speed,
+        VideoControlItem.subtitleList,
+        VideoControlItem.favoriteSentence,
+        VideoControlItem.favoriteSentences,
+        VideoControlItem.settings,
+      ];
+      final String blob = jsonEncode(<String, Object>{
+        'version': 2,
+        'slots': <String, List<String>>{
+          'hidden': <String>[
+            for (final VideoControlItem item in hiddenInV2) item.storageValue,
+          ],
+        },
+      });
+
+      final VideoControlLayout layout = VideoControlLayout.decode(blob);
+
+      for (final VideoControlItem item in hiddenInV2) {
+        expect(layout.isOnPlayer(item), isFalse,
+            reason: '${item.name} was hidden in v2 and must stay off-player');
+        expect(layout.removedItems, contains(item),
+            reason: '${item.name} must land in the removed tray, not vanish');
+      }
+      // None of the hidden keys leak into the legacy hidden slot (v3 stops
+      // persisting it) and they are all recoverable from the removed set.
+      expect(layout.itemsIn(VideoControlSlot.hidden), isEmpty);
+      // The required transport key stays on the player regardless.
+      expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
+    });
+
+    test(
+        'TODO-598: a v2-hidden key stays removed after a full v3 encode round '
+        'trip', () {
+      // Decode an old v2 blob, re-encode to v3, decode again: the hidden key
+      // must remain removed through the upgrade write-back so it does not
+      // reappear on the player the next time the layout is loaded.
+      final String v2Blob = jsonEncode(<String, Object>{
+        'version': 2,
+        'slots': <String, List<String>>{
+          'hidden': <String>['subtitleList'],
+        },
+      });
+      final VideoControlLayout migrated = VideoControlLayout.decode(v2Blob);
+      final VideoControlLayout reloaded =
+          VideoControlLayout.decode(migrated.encode());
+
+      expect(reloaded, migrated, reason: 'migration must be a stable fixpoint');
+      expect(reloaded.isOnPlayer(VideoControlItem.subtitleList), isFalse);
+      expect(reloaded.removedItems, contains(VideoControlItem.subtitleList));
+    });
   });
 
   group('v1 -> v2 migration (backward compatibility iron rule)', () {
