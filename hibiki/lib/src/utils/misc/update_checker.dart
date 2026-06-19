@@ -834,7 +834,6 @@ class UpdateChecker {
             'current=$currentVersion, installer=${result.record.installerPath}, '
             'launcherPid=${result.record.launcherPid ?? 'unknown'}, '
             'pid=${result.record.installerPid ?? 'unknown'}, '
-            'processRunning=${result.record.installerProcessRunning}, '
             'log=${result.record.innoLogPath}, '
             'logExists=${result.record.innoLogExists}, '
             'failureType=${result.record.installerFailureType ?? 'unknown'}',
@@ -2447,28 +2446,12 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                   style: tokens.type.metadata,
                 ),
               ],
-              if (record.installerProcessRunning != null) ...[
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  record.installerProcessRunning!
-                      ? t.update_install_process_observed
-                      : t.update_install_process_not_observed,
-                  style: tokens.type.metadata,
-                ),
-              ],
               if (record.innoLogExists != null) ...[
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
                   record.innoLogExists!
                       ? t.update_install_log_observed
                       : t.update_install_log_not_observed,
-                  style: tokens.type.metadata,
-                ),
-              ],
-              if (record.postLaunchObservationError != null) ...[
-                SizedBox(height: tokens.spacing.gap / 2),
-                SelectableText(
-                  record.postLaunchObservationError!,
                   style: tokens.type.metadata,
                 ),
               ],

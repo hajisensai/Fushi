@@ -10,6 +10,16 @@
 namespace {
 
 constexpr DWORD kParentExitTimeoutMs = 120000;
+// After the parent PID exits we still poll the single-instance mutex until
+// it is truly released. WaitForSingleObject on the parent handle returns as
+// soon as that one PID dies, but a second hibiki.exe (or a lingering
+// WebView2 child) can keep HibikiSingleInstanceMutex held; launching Inno
+// then still trips the AppMutex "is currently running" abort. This closes
+// the "only waited on the parent PID" blind spot. The .iss [Code]
+// InitializeSetup layer is the primary guard; this is belt-and-suspenders.
+constexpr wchar_t kHibikiSingleInstanceMutex[] = L"HibikiSingleInstanceMutex";
+constexpr DWORD kMutexReleaseTimeoutMs = 10000;
+constexpr DWORD kMutexPollIntervalMs = 250;
 
 std::string ToUtf8(const std::wstring& value) {
   if (value.empty()) {
@@ -323,6 +333,26 @@ bool WaitForParentExit(const ParsedArgs& args) {
   return observed;
 }
 
+// Returns true once HibikiSingleInstanceMutex is no longer present, or false
+// if it is still held after kMutexReleaseTimeoutMs. OpenMutexW succeeds (and
+// must then be closed) only while some process still holds the named mutex;
+// ERROR_FILE_NOT_FOUND means it is gone. We never create the mutex here, so
+// probing cannot itself keep the app "running".
+bool WaitForMutexReleased() {
+  const DWORD deadline = ::GetTickCount() + kMutexReleaseTimeoutMs;
+  for (;;) {
+    HANDLE mutex = ::OpenMutexW(SYNCHRONIZE, FALSE, kHibikiSingleInstanceMutex);
+    if (mutex == nullptr) {
+      return true;  // Mutex released (or never existed): safe to launch Inno.
+    }
+    ::CloseHandle(mutex);
+    if (static_cast<LONG>(deadline - ::GetTickCount()) <= 0) {
+      return false;  // Still held after the timeout; fall through anyway.
+    }
+    ::Sleep(kMutexPollIntervalMs);
+  }
+}
+
 bool LaunchInstaller(const ParsedArgs& args, DWORD* installer_pid) {
   std::wstring command_line =
       BuildCommandLine(args.installer_path, args.installer_args);
@@ -367,6 +397,15 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
   if (!WaitForParentExit(args)) {
     return 3;
   }
+
+  // Close the "only waited on the parent PID" blind spot: a second hibiki.exe
+  // or a leftover WebView2 child can still hold the mutex after the parent
+  // dies. Wait (bounded) for it to be released before launching Inno.
+  const bool mutex_released = WaitForMutexReleased();
+  AppendMarkerFields(
+      args.marker_path,
+      {{"launcherMutexReleased", mutex_released ? "true" : "false"},
+       {"launcherMutexCheckedAt", JsonString(NowIsoUtc())}});
 
   DWORD installer_pid = 0;
   if (!LaunchInstaller(args, &installer_pid)) {

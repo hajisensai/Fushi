@@ -156,7 +156,7 @@ Map<String, dynamic> _readJson(File file) {
 }
 
 void _writeJson(File file, Map<String, dynamic> json) {
-  const JsonEncoder encoder = JsonEncoder.withIndent('    ');
+  const JsonEncoder encoder = JsonEncoder.withIndent('  ');
   file.writeAsStringSync('${encoder.convert(json)}\n');
 }
 

@@ -15,9 +15,8 @@ Future<File> _markerFile() async {
 
 void main() {
   group('WindowsUpdateHandoff marker', () {
-    test(
-        'writes the target version, installer, Inno log, launch result, '
-        'and post-launch observation', () async {
+    test('writes the target version, installer, Inno log, and launch result',
+        () async {
       final File marker = await _markerFile();
       final DateTime startedAt = DateTime.utc(2026, 6, 17, 10, 30);
 
@@ -33,13 +32,6 @@ void main() {
         installerPid: 4242,
         launchedAt: startedAt.add(const Duration(seconds: 1)),
       );
-      await WindowsUpdateHandoff.markPostLaunchObserved(
-        markerFile: marker,
-        observedAt: startedAt.add(const Duration(seconds: 2)),
-        installerProcessRunning: false,
-        innoLogExists: false,
-        innoLogSizeBytes: null,
-      );
 
       final WindowsUpdateHandoffRecord? record =
           await WindowsUpdateHandoff.read(marker);
@@ -52,11 +44,53 @@ void main() {
       expect(record.installerLaunchedAt,
           startedAt.add(const Duration(seconds: 1)));
       expect(record.installerPid, 4242);
-      expect(record.postLaunchObservedAt,
-          startedAt.add(const Duration(seconds: 2)));
-      expect(record.installerProcessRunning, isFalse);
-      expect(record.innoLogExists, isFalse);
-      expect(record.innoLogSizeBytes, isNull);
+    });
+
+    test(
+        'writePending starts a fresh marker so a previous launch attempt '
+        'does not leak into the next', () async {
+      final File marker = await _markerFile();
+
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '1.0.0',
+        installerPath: r'C:\tmp\hibiki-1.0.0-windows-setup.exe',
+        innoLogPath: r'C:\tmp\hibiki-1.0.0.install.log',
+        startedAt: DateTime.utc(2026, 6, 17, 10, 0),
+      );
+      await WindowsUpdateHandoff.markLauncherStarted(
+        markerFile: marker,
+        startedAt: DateTime.utc(2026, 6, 17, 10, 0, 1),
+        parentProcessId: 1111,
+        launcherPid: 2222,
+      );
+      await WindowsUpdateHandoff.markParentExitObserved(
+        markerFile: marker,
+        observedAt: DateTime.utc(2026, 6, 17, 10, 0, 2),
+        observed: true,
+      );
+      await WindowsUpdateHandoff.markLaunchSucceeded(
+        markerFile: marker,
+        installerPid: 3333,
+        launchedAt: DateTime.utc(2026, 6, 17, 10, 0, 3),
+      );
+
+      await WindowsUpdateHandoff.writePending(
+        markerFile: marker,
+        targetVersion: '2.0.0',
+        installerPath: r'C:\tmp\hibiki-2.0.0-windows-setup.exe',
+        innoLogPath: r'C:\tmp\hibiki-2.0.0.install.log',
+        startedAt: DateTime.utc(2026, 6, 17, 11, 0),
+      );
+
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      expect(record!.targetVersion, '2.0.0');
+      expect(record.launcherPid, isNull);
+      expect(record.parentProcessId, isNull);
+      expect(record.parentExitObserved, isNull);
+      expect(record.installerPid, isNull);
+      expect(record.installerLaunchSucceeded, isNull);
     });
 
     test('installer args use the exact log path persisted in the marker', () {
@@ -139,13 +173,6 @@ void main() {
         installerPid: 4242,
         launchedAt: DateTime.utc(2026, 6, 17, 10, 31),
       );
-      await WindowsUpdateHandoff.markPostLaunchObserved(
-        markerFile: marker,
-        observedAt: DateTime.utc(2026, 6, 17, 10, 31, 1),
-        installerProcessRunning: false,
-        innoLogExists: false,
-        innoLogSizeBytes: null,
-      );
 
       final WindowsUpdateHandoffResult? result =
           await WindowsUpdateHandoff.reconcile(
@@ -174,13 +201,6 @@ void main() {
         installerPid: 4242,
         launchedAt: DateTime.utc(2026, 6, 17, 10, 31),
       );
-      await WindowsUpdateHandoff.markPostLaunchObserved(
-        markerFile: marker,
-        observedAt: DateTime.utc(2026, 6, 17, 10, 31, 1),
-        installerProcessRunning: false,
-        innoLogExists: false,
-        innoLogSizeBytes: null,
-      );
 
       final WindowsUpdateHandoffResult? first =
           await WindowsUpdateHandoff.reconcile(
@@ -200,8 +220,6 @@ void main() {
       expect(first?.status, WindowsUpdateHandoffStatus.incomplete);
       expect(first?.record.innoLogPath, r'C:\tmp\hibiki-1.2.3.install.log');
       expect(first?.record.installerPid, 4242);
-      expect(first?.record.installerProcessRunning, isFalse);
-      expect(first?.record.innoLogExists, isFalse);
       expect(second, isNull, reason: 'do not pop on every startup');
       expect(retained, isNotNull);
       expect(retained!.lastPromptedAppVersion, '1.2.2');

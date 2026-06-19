@@ -292,6 +292,32 @@ void main() {
       expect(script, contains('hibiki_update_launcher.exe'));
     });
 
+    test(
+        '[Code] InitializeSetup kills Hibiki and polls the mutex before '
+        'Inno does its AppMutex check', () {
+      // TODO-549 root-cause layer. Inno runs the [Code] InitializeSetup
+      // event BEFORE the built-in AppMutex CheckForMutexes loop (see Inno
+      // source Setup.MainFunc.pas), so this is the only layer that can
+      // clear the mutex before the "is currently running" abort fires.
+      final String script = File(
+        'windows/installer/hibiki.iss',
+      ).readAsStringSync();
+
+      expect(script, contains('[Code]'));
+      expect(script, contains('function InitializeSetup(): Boolean'));
+      // Probes the single-instance mutex via OpenMutexW (not CreateMutex).
+      expect(script, contains('OpenMutexW'));
+      expect(script, contains('@kernel32.dll stdcall'));
+      expect(script, contains('HibikiSingleInstanceMutex'));
+      // Terminates hibiki.exe and its WebView2 child tree before the check.
+      expect(script, contains('taskkill'));
+      expect(script, contains('hibiki.exe'));
+      expect(script, contains('msedgewebview2.exe'));
+      // Bounded poll until the mutex is actually released (no infinite wait).
+      expect(script, contains('MutexReleasePollAttempts'));
+      expect(script, contains('Sleep(MutexReleasePollIntervalMs)'));
+    });
+
     test('update launcher is not the Flutter runner and does not take mutex',
         () {
       final String main = File('windows/runner/main.cpp').readAsStringSync();
@@ -304,8 +330,14 @@ void main() {
 
       expect(main, contains('HibikiSingleInstanceMutex'));
       expect(main, contains('CreateMutexW'));
-      expect(launcher, isNot(contains('HibikiSingleInstanceMutex')));
+      // The launcher never CREATES or holds the single-instance mutex (that is
+      // the Flutter runner's job). It MAY probe it read-only via OpenMutexW to
+      // wait (bounded) for the mutex to be released after the parent PID exits,
+      // closing the "only waited on the parent PID" blind spot (TODO-549).
       expect(launcher, isNot(contains('CreateMutex')));
+      expect(launcher, contains('OpenMutexW'));
+      expect(launcher, contains('HibikiSingleInstanceMutex'));
+      expect(launcher, contains('WaitForMutexReleased'));
       expect(cmake, contains('add_executable(hibiki_update_launcher WIN32'));
       expect(cmake, contains('"update_launcher.cpp"'));
       expect(
