@@ -995,6 +995,258 @@ synthetic subtitle
       expect(mp4Result.cues.single.text, 'synthetic subtitle');
     }, timeout: const Timeout(Duration(seconds: 60)));
   });
+
+  group('首开瞬态争用重试（TODO-572）', () {
+    DefaultEmbeddedSubtitleLoadResult resultFor(
+      DefaultEmbeddedSubtitleLoadStatus status, {
+      List<AudioCue> cues = const <AudioCue>[],
+    }) {
+      return DefaultEmbeddedSubtitleLoadResult(
+        status: status,
+        cues: cues,
+        embeddedProbe: const EmbeddedSubtitleTrackProbeResult(
+          tracks: <EmbeddedSubtitleTrack>[],
+          status: EmbeddedSubtitleTrackProbeStatus.success,
+          timeout: Duration(seconds: 60),
+          sizeBytes: 0,
+        ),
+      );
+    }
+
+    test('isTransientDefaultEmbeddedSubtitleLoad 只对枚举超时/失败/空cue为真', () {
+      expect(
+        isTransientDefaultEmbeddedSubtitleLoad(
+          DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+        ),
+        isTrue,
+      );
+      expect(
+        isTransientDefaultEmbeddedSubtitleLoad(
+          DefaultEmbeddedSubtitleLoadStatus.enumerationFailed,
+        ),
+        isTrue,
+      );
+      expect(
+        isTransientDefaultEmbeddedSubtitleLoad(
+          DefaultEmbeddedSubtitleLoadStatus.emptyCues,
+        ),
+        isTrue,
+      );
+      expect(
+        isTransientDefaultEmbeddedSubtitleLoad(
+          DefaultEmbeddedSubtitleLoadStatus.loaded,
+        ),
+        isFalse,
+      );
+      expect(
+        isTransientDefaultEmbeddedSubtitleLoad(
+          DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks,
+        ),
+        isFalse,
+      );
+      expect(
+        isTransientDefaultEmbeddedSubtitleLoad(
+          DefaultEmbeddedSubtitleLoadStatus.noTextTrack,
+        ),
+        isFalse,
+      );
+      expect(
+        isTransientDefaultEmbeddedSubtitleLoad(
+          DefaultEmbeddedSubtitleLoadStatus.missingFile,
+        ),
+        isFalse,
+      );
+    });
+
+    test('首次枚举超时(瞬态空)→等就绪后重试一次→第二次拿到 cue', () async {
+      int loadCalls = 0;
+      bool readinessWaited = false;
+      final List<AudioCue> cues = <AudioCue>[_cue('video/todo572', 'second')];
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+        videoPath: '/tmp/movie.mkv',
+        bookUid: 'video/todo572',
+        waitForReady: () async {
+          readinessWaited = true;
+        },
+        isStillCurrent: () => true,
+        loadOnce: ({
+          required String videoPath,
+          required String bookUid,
+          String langCode = 'ja',
+        }) async {
+          loadCalls++;
+          if (loadCalls == 1) {
+            return resultFor(
+              DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+            );
+          }
+          return resultFor(
+            DefaultEmbeddedSubtitleLoadStatus.loaded,
+            cues: cues,
+          );
+        },
+      );
+
+      expect(loadCalls, 2, reason: '瞬态失败必须触发恰好一次重试');
+      expect(readinessWaited, isTrue, reason: '重试前必须等就绪信号，而非固定延迟');
+      expect(result.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
+      expect(result.cues, cues);
+    });
+
+    test('首次即 loaded：不等就绪、不重试', () async {
+      int loadCalls = 0;
+      bool readinessWaited = false;
+      final List<AudioCue> cues = <AudioCue>[_cue('video/todo572', 'first')];
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+        videoPath: '/tmp/movie.mkv',
+        bookUid: 'video/todo572',
+        waitForReady: () async {
+          readinessWaited = true;
+        },
+        isStillCurrent: () => true,
+        loadOnce: ({
+          required String videoPath,
+          required String bookUid,
+          String langCode = 'ja',
+        }) async {
+          loadCalls++;
+          return resultFor(
+            DefaultEmbeddedSubtitleLoadStatus.loaded,
+            cues: cues,
+          );
+        },
+      );
+
+      expect(loadCalls, 1);
+      expect(readinessWaited, isFalse);
+      expect(result.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
+    });
+
+    test('终态 noEmbeddedTracks：不重试（真无字幕，重试无意义）', () async {
+      int loadCalls = 0;
+      bool readinessWaited = false;
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+        videoPath: '/tmp/movie.mkv',
+        bookUid: 'video/todo572',
+        waitForReady: () async {
+          readinessWaited = true;
+        },
+        isStillCurrent: () => true,
+        loadOnce: ({
+          required String videoPath,
+          required String bookUid,
+          String langCode = 'ja',
+        }) async {
+          loadCalls++;
+          return resultFor(
+            DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks,
+          );
+        },
+      );
+
+      expect(loadCalls, 1, reason: '终态不应重试');
+      expect(readinessWaited, isFalse);
+      expect(result.status, DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks);
+    });
+
+    test('重试后仍瞬态空：只重试一次（不无限重试），返回末次结果', () async {
+      int loadCalls = 0;
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+        videoPath: '/tmp/movie.mkv',
+        bookUid: 'video/todo572',
+        waitForReady: () async {},
+        isStillCurrent: () => true,
+        loadOnce: ({
+          required String videoPath,
+          required String bookUid,
+          String langCode = 'ja',
+        }) async {
+          loadCalls++;
+          return resultFor(
+            DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+          );
+        },
+      );
+
+      expect(loadCalls, 2, reason: '有界重试：最多一次重试');
+      expect(
+        result.status,
+        DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+      );
+    });
+
+    test('等就绪期间换片(isStillCurrent变假)：不重试、丢弃旧结果', () async {
+      int loadCalls = 0;
+      bool current = true;
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+        videoPath: '/tmp/old.mkv',
+        bookUid: 'video/old',
+        waitForReady: () async {
+          current = false;
+        },
+        isStillCurrent: () => current,
+        loadOnce: ({
+          required String videoPath,
+          required String bookUid,
+          String langCode = 'ja',
+        }) async {
+          loadCalls++;
+          return resultFor(
+            DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+          );
+        },
+      );
+
+      expect(loadCalls, 1, reason: '换片后不得用旧 videoPath 再枚举');
+      expect(
+        result.status,
+        DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+        reason: '返回首次结果，调用方据 isStillCurrent 丢弃，不应用到新片',
+      );
+    });
+
+    test('首次加载后即换片：不重试（双判据在第一个 await 边界丢弃）', () async {
+      int loadCalls = 0;
+      bool readinessWaited = false;
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+        videoPath: '/tmp/old.mkv',
+        bookUid: 'video/old',
+        waitForReady: () async {
+          readinessWaited = true;
+        },
+        isStillCurrent: () => false,
+        loadOnce: ({
+          required String videoPath,
+          required String bookUid,
+          String langCode = 'ja',
+        }) async {
+          loadCalls++;
+          return resultFor(
+            DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+          );
+        },
+      );
+
+      expect(loadCalls, 1);
+      expect(readinessWaited, isFalse, reason: '非当前 load 不应再等就绪/重试');
+      expect(
+        result.status,
+        DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+      );
+    });
+  });
 }
 
 AudioCue _cue(String bookKey, String text) {

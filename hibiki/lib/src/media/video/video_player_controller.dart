@@ -806,6 +806,8 @@ class VideoPlayerController extends ChangeNotifier
         cues.isEmpty) {
       // 无外挂字幕且无 cue 时，桌面端后台抽内嵌文本字幕轨成可点击 cue（不阻塞首帧）。
       unawaited(_loadEmbeddedSubtitleIfNeeded(
+        player: player,
+        loadToken: loadToken,
         bookUid: bookUid,
         onResult: onEmbeddedSubtitleAutoLoad,
       ));
@@ -872,9 +874,21 @@ class VideoPlayerController extends ChangeNotifier
   /// 轨故传固定值。
   ///
   /// 抽字幕较慢（ffmpeg 跑几秒），故 [load] 用 `unawaited` 后台触发不阻塞播放；
-  /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（[_videoPath]
-  /// 变化）则丢弃旧结果，避免把上一段视频的字幕错挂到新视频。
+  /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（player /
+  /// [loadToken] 变化）则丢弃旧结果，避免把上一段视频的字幕错挂到新视频。
+  ///
+  /// **首开瞬态争用重试（TODO-572）**：首次打开大容器（冷页缓存）时，本枚举
+  /// （`ffmpeg -i`）与 [prewarmEmbeddedSubtitleCache] 的整轨抽取（`ffmpeg -map`）
+  /// 及 libmpv 正在 demux 播放三方争用磁盘 IO，[probeEmbeddedSubtitleTracks] 可能
+  /// 超时返回 0 轨 → `enumerationTimeout`，整条链路当「无内封字幕」处理，用户必须
+  /// 退出重开（此时缓存命中 / 争用消退）才出字幕。BUG-303 仅放宽超时窗口未消除
+  /// 时序，故此处对**瞬态失败**（枚举超时 / 失败 / 抽出空 cue——即「本该有字幕但
+  /// 这次没拿到」）等 libmpv 字幕轨真实就绪信号（说明容器字幕区已 demux 进页缓存、
+  /// 三方争用已消退）后**重试一次**，与 BUG-313 章节首载「等就绪信号重读」同构。
+  /// 终态（无内封轨 / 无文本轨 / 文件缺失 / 已加载）不重试。
   Future<void> _loadEmbeddedSubtitleIfNeeded({
+    required Player player,
+    required int loadToken,
     required String bookUid,
     void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
   }) async {
@@ -886,12 +900,17 @@ class VideoPlayerController extends ChangeNotifier
 
     _setSubtitleCuesLoading(true);
     try {
+      // 首开瞬态争用重试（TODO-572）：协调器先枚举加载一次，瞬态失败（枚举超时 /
+      // 失败 / 空 cue）时等 libmpv 字幕轨真实就绪后重试一次。换片（含复用同一
+      // player）期间用 player identity + loadToken 双判据丢弃旧结果。
       final DefaultEmbeddedSubtitleLoadResult result =
-          await loadDefaultTextEmbeddedSubtitleCues(
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
         videoPath: videoPath,
         bookUid: bookUid,
+        waitForReady: () => _waitUntilSubtitleTracksReady(player),
+        isStillCurrent: () => _isCurrentLoad(player, loadToken),
       );
-      if (_videoPath != videoPath) return; // 枚举/加载期间换片：丢弃。
+      if (!_isCurrentLoad(player, loadToken)) return;
 
       switch (result.status) {
         case DefaultEmbeddedSubtitleLoadStatus.loaded:
@@ -922,7 +941,7 @@ class VideoPlayerController extends ChangeNotifier
           return;
       }
     } finally {
-      if (_videoPath == videoPath) {
+      if (_isCurrentLoad(player, loadToken)) {
         _setSubtitleCuesLoading(false);
       }
     }
@@ -930,12 +949,16 @@ class VideoPlayerController extends ChangeNotifier
 
   @visibleForTesting
   Future<void> debugLoadEmbeddedSubtitleIfNeededForTesting({
+    required Player player,
+    required int loadToken,
     required String videoPath,
     required String bookUid,
     void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
   }) async {
     _videoPath = videoPath;
     await _loadEmbeddedSubtitleIfNeeded(
+      player: player,
+      loadToken: loadToken,
       bookUid: bookUid,
       onResult: onResult,
     );
