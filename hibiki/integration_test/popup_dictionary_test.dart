@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/models.dart';
 
+import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
 
 /// Integration test for popup dictionary path fix verification.
@@ -44,6 +45,8 @@ void main() {
       final bool homeReady = await waitForHome(tester);
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
+
+      final FocusDriver driver = FocusDriver(tester);
 
       await takeScreenshot(binding, 'popup_test_home');
 
@@ -121,7 +124,10 @@ void main() {
       expect(navTargets.length, greaterThanOrEqualTo(2),
           reason: 'Navigation must have at least 2 targets (Books, Dicts)');
 
-      await tester.tap(navTargets[1]);
+      final bool focusedDict = await driver.focusWidget(navTargets[1]);
+      expect(focusedDict, isTrue,
+          reason: 'Dictionary tab must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       await takeScreenshot(binding, 'popup_test_dict_tab');

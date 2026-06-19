@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
 
 void main() {
@@ -38,15 +39,23 @@ void main() {
       expect(rendered, isTrue,
           reason: 'App should render at least one Scaffold within 90 seconds');
 
+      final FocusDriver driver = FocusDriver(tester);
+
       final List<Finder> navTargets = findPrimaryNavigationTargets();
 
       if (navTargets.length >= 2) {
-        await tester.tap(navTargets[1]);
+        final bool focusedTab1 = await driver.focusWidget(navTargets[1]);
+        expect(focusedTab1, isTrue,
+            reason: 'Second nav tab must be reachable by focus');
+        await driver.activate();
         await tester.pump(const Duration(seconds: 3));
       }
 
       if (navTargets.isNotEmpty) {
-        await tester.tap(navTargets[0]);
+        final bool focusedTab0 = await driver.focusWidget(navTargets[0]);
+        expect(focusedTab0, isTrue,
+            reason: 'First nav tab must be reachable by focus');
+        await driver.activate();
         await tester.pump(const Duration(seconds: 3));
       }
 

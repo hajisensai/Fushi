@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
@@ -50,6 +51,8 @@ void main() {
     expect(homeReady, isTrue, reason: 'Home must render');
     await tester.pump(const Duration(seconds: 2));
 
+    final FocusDriver driver = FocusDriver(tester);
+
     Finder books = findBookEntries();
     if (books.evaluate().isEmpty) {
       // Self-provision the synthetic marker EPUB so the test is hermetic on a
@@ -59,7 +62,9 @@ void main() {
     }
     expect(books, findsWidgets,
         reason: 'A book must be on the shelf after seeding the fixture');
-    await tester.tap(books.first);
+    final bool focusedBook = await driver.focusWidget(books.first);
+    expect(focusedBook, isTrue, reason: 'Book card must be reachable by focus');
+    await driver.activate();
     await tester.pump(const Duration(seconds: 3));
 
     const Key webViewKey = ValueKey<String>('hoshi_webview');
@@ -101,7 +106,8 @@ void main() {
             '(baseline). p0=$p0 p1=$p1');
 
     // ── Phase B: tap into the WebView content, then page forward again ──
-    await tester.tap(find.byKey(webViewKey));
+    await tester.tap(find.byKey(
+        webViewKey)); // itest-tap-allow: taps the platform WebView on purpose to prove it does not steal keyboard focus (HBK #1)
     await tester.pump(const Duration(seconds: 1));
     screenshots += await takeScreenshot(binding, 'kbd_after_webview_tap');
 

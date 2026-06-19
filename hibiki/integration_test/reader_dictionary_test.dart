@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
@@ -41,6 +42,8 @@ void main() {
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
 
+      final FocusDriver driver = FocusDriver(tester);
+
       screenshotCount += await takeScreenshot(binding, 'reader_test_home');
 
       // Self-provision the synthetic book + the dictionary the runner pushed to
@@ -65,7 +68,10 @@ void main() {
       debugPrint(
           '[reader] Found ${bookEntries.evaluate().length} book(s) on shelf');
 
-      await tester.tap(bookEntries.first);
+      final bool focusedBook = await driver.focusWidget(bookEntries.first);
+      expect(focusedBook, isTrue,
+          reason: 'Book card must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       screenshotCount += await takeScreenshot(binding, 'reader_opening');
@@ -151,7 +157,10 @@ void main() {
       final List<Finder> navTargets = findPrimaryNavigationTargets();
       expect(navTargets.length, greaterThanOrEqualTo(2),
           reason: 'Dictionary tab navigation target must be present');
-      await tester.tap(navTargets[1]);
+      final bool focusedTab = await driver.focusWidget(navTargets[1]);
+      expect(focusedTab, isTrue,
+          reason: 'Dictionary tab must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       // Verify search field exists.

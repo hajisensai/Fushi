@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
@@ -37,6 +38,8 @@ void main() {
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
 
+      final FocusDriver driver = FocusDriver(tester);
+
       screenshotCount += await takeScreenshot(binding, 'reg001_home');
 
       // Find a book entry (self-provision the synthetic EPUB if the shelf is
@@ -51,7 +54,10 @@ void main() {
           reason: 'A book must be on the shelf after seeding the fixture');
 
       // Open the first book.
-      await tester.tap(bookEntries.first);
+      final bool focusedBook = await driver.focusWidget(bookEntries.first);
+      expect(focusedBook, isTrue,
+          reason: 'Book card must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       // Wait for Hoshi WebView.

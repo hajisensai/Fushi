@@ -18,6 +18,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
+import 'helpers/focus_driver.dart';
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'test_helpers.dart';
 
@@ -58,6 +59,8 @@ void main() {
       expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
       await tester.pump(const Duration(seconds: 2));
 
+      final FocusDriver driver = FocusDriver(tester);
+
       final ProviderContainer container = ProviderScope.containerOf(
         tester.element(find.byType(MaterialApp).first),
       );
@@ -86,7 +89,10 @@ void main() {
       final String bookKey = await _seedTestBook(tester, appModel);
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
-        await tester.tap(navTargets.first);
+        final bool focusedTab = await driver.focusWidget(navTargets.first);
+        expect(focusedTab, isTrue,
+            reason: 'Books tab must be reachable by focus');
+        await driver.activate();
         await tester.pumpAndSettle();
       }
       final String seededKey =
@@ -97,7 +103,10 @@ void main() {
       }
       expect(seededEntry, findsOneWidget,
           reason: 'freshly seeded paginated book must appear on the shelf');
-      await tester.tap(seededEntry);
+      final bool focusedBook = await driver.focusWidget(seededEntry);
+      expect(focusedBook, isTrue,
+          reason: 'Book card must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');

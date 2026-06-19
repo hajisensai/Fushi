@@ -8,6 +8,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'helpers/pagination_test_harness.dart';
 import 'test_helpers.dart';
@@ -31,13 +32,18 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       expect(await seedDictionary(tester), isTrue);
 
+      final FocusDriver driver = FocusDriver(tester);
+
       Finder bookEntries = findBookEntries();
       if (bookEntries.evaluate().isEmpty) {
         await seedReaderBook(tester);
         bookEntries = findBookEntries();
       }
       expect(bookEntries, findsWidgets);
-      await tester.tap(bookEntries.first);
+      final bool focusedBook = await driver.focusWidget(bookEntries.first);
+      expect(focusedBook, isTrue,
+          reason: 'Book card must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       const Key webViewKey = ValueKey<String>('hoshi_webview');
@@ -71,7 +77,10 @@ void main() {
 
       final List<Finder> navTargets = findPrimaryNavigationTargets();
       expect(navTargets.length, greaterThanOrEqualTo(2));
-      await tester.tap(navTargets[1]);
+      final bool focusedDict = await driver.focusWidget(navTargets[1]);
+      expect(focusedDict, isTrue,
+          reason: 'Dictionary tab must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 2));
       await tester.enterText(findSearchField(), 'testword');
       await tester.pump(const Duration(seconds: 5));
