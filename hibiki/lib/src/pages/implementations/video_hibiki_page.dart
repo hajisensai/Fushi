@@ -3539,6 +3539,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           // 字幕跳转列表「真 push-aside」（TODO-121）：全屏路由自建的
                           // Video 同样包进 Row[Expanded(Video), 面板列]，面板可见时全屏
                           // 画面真挤窄、不被遮（与窗口侧 [_buildVideoBody] 同一 helper）。
+                          //
+                          // 音量/亮度 HUD 与 mpv 式 OSD 不在这里重挂：全屏 Video 设
+                          // `controls: params.controls`（共享窗口侧同一 controls builder
+                          // [_buildVideoControls]），其内 [_buildVideoControlsInner] 已
+                          // 无门控挂载 [_buildLevelHudOverlay] / [_buildOsdOverlay]，且
+                          // [VideoControlsFocusGate] 只在窗口侧（`!inFullscreenRoute`）
+                          // 卸载 controls、全屏侧返回 child 照常渲染。故全屏 HUD 由共享
+                          // controls 提供，勿在此重复挂一层（TODO-563 复核：重挂会双叠）。
                           if (playerController == null) return fullscreenVideo;
                           return _videoWithSubtitlePanel(
                             playerController,
@@ -5929,7 +5937,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       final String defaultScreenshotName = videoScreenshotBaseName(
         sourcePathOrTitle: _screenshotSourcePathOrTitle(),
         positionMs: controller?.positionMs ?? 0,
-        capturedAt: DateTime.now(),
       );
       final Directory tmpDir = await getTemporaryDirectory();
       final String screenshotName = uniqueVideoScreenshotBaseName(

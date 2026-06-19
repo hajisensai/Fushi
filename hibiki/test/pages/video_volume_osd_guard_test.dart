@@ -191,4 +191,48 @@ void main() {
     expect(osd.contains('_levelHudNotifier'), isFalse,
         reason: 'Generic OSD and level HUD must stay separate.');
   });
+
+  // TODO-563 (复核更正): the volume/brightness level HUD and mpv-style OSD are
+  // rendered by the shared controls builder, not by the page Stack alone. The
+  // fullscreen Video sets `controls: params.controls`, which routes through
+  // _buildVideoControls -> VideoControlsFocusGate -> _buildVideoControlsInner;
+  // that inner builder mounts _buildLevelHudOverlay()/_buildOsdOverlay() with no
+  // fullscreen gating, and VideoControlsFocusGate only unmounts on the WINDOW
+  // side (`fullscreenRouteActive && !inFullscreenRoute`). So fullscreen already
+  // renders the HUD via the shared controls — the fullscreen route must NOT
+  // re-mount the overlays itself, or they double-stack. Lock that invariant.
+  test('fullscreen route does not re-mount the page-level HUD overlays', () {
+    expect(
+      src.contains('_fullscreenContentWithOverlays'),
+      isFalse,
+      reason:
+          'Fullscreen HUD comes from the shared controls builder; a fullscreen '
+          'overlay re-mount helper would double-stack the level HUD / OSD.',
+    );
+
+    // The fullscreen route builder returns the bare video/subtitle-panel content
+    // without stacking _buildLevelHudOverlay()/_buildOsdOverlay() a second time.
+    final String route = region(
+      'Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {',
+      'void _onVideoFullscreenRouteClosed() {',
+    );
+    expect(route.contains('_buildLevelHudOverlay()'), isFalse,
+        reason: 'Fullscreen route must not re-mount the level HUD; the shared '
+            'controls builder already renders it on the fullscreen side.');
+    expect(route.contains('_buildOsdOverlay()'), isFalse,
+        reason:
+            'Fullscreen route must not re-mount the OSD; the shared controls '
+            'builder already renders it on the fullscreen side.');
+
+    // The shared controls inner builder is the single owner that mounts both
+    // overlays with no fullscreen gating (window + fullscreen both render them).
+    final String inner = region(
+      'Widget _buildVideoControlsInner(',
+      'Widget _buildLevelHudOverlay() {',
+    );
+    expect(inner.contains('_buildLevelHudOverlay()'), isTrue,
+        reason: 'Shared controls inner builder owns the level HUD mount.');
+    expect(inner.contains('_buildOsdOverlay()'), isTrue,
+        reason: 'Shared controls inner builder owns the OSD mount.');
+  });
 }
