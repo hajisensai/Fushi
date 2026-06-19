@@ -317,12 +317,27 @@ class AdaptiveSettingsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // Auto-stack a non-flex trailing under the label only when the row is
+    // genuinely too narrow to host both side by side — NOT on every typical
+    // phone. The label is already `Expanded` and the trailing is self-sizing,
+    // so the inline Row never overflows down to fairly small widths; the column
+    // layout is only an improvement when there is no horizontal room left.
+    //
+    // The threshold must follow text scale: at 1x a label + a switch/stepper
+    // fit comfortably well below any real phone row width (≈320–380dp), so a
+    // fixed 360 wrongly stacked nearly every row — worse at high UI scale, where
+    // the app shrinks the logical width and pushed `maxWidth` under 360. Scaling
+    // the threshold with the effective text scale keeps it tiny at 1x (so normal
+    // rows stay horizontal) while still stacking when large text genuinely needs
+    // the extra room. Capped so absurd scales don't demand an impossible width.
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
+    final double stackThreshold = (180.0 * textScale).clamp(180.0, 420.0);
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool stackControls = controlBelow ||
             (trailing != null &&
                 !trailingFlexible &&
-                constraints.maxWidth < 360);
+                constraints.maxWidth < stackThreshold);
         return Padding(
           padding: EdgeInsets.symmetric(
             horizontal: cupertino ? 16 : tokens.spacing.rowHorizontal,
