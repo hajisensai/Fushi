@@ -4,11 +4,25 @@
 // machine (the pointerdown gate changed from `e.pointerType !== 'mouse'` to
 // `_hoshiReaderPointerPrimaryButton(e)`, which returns true for touch). In PAGED
 // mode that routed touch into the native-text-start suppression path: a >6px
-// pointermove cleared `hasStart`, and touchend was swallowed, so `onSwipe` never
-// fired and the page never turned. This test EXECUTES the real reader event
-// handlers (extracted verbatim from reader_hibiki_page.dart) against a fake DOM
-// and asserts a paged-mode horizontal touch drag emits onSwipe. Reverting the
-// TODO-553 fix turns this red.
+// pointermove cleared `hasStart`, and touchend was swallowed, so the
+// touchstart/touchend -> _gestureEnd -> onSwipe page-turn never fired. This test
+// EXECUTES the real reader event handlers (extracted verbatim from
+// reader_hibiki_page.dart) against a fake DOM and asserts that a paged-mode
+// horizontal touch drag emits onSwipe FROM the touchend path, while pointerup
+// stays silent. Reverting the TODO-553 fix turns this red.
+//
+// Source-of-truth detail (the previous false-green): every onSwipe is tagged
+// `<direction>@<dispatch event>`. The fake document exposes caretRangeFromPoint
+// returning a TEXT_NODE range, so the finger is a real "text hit". In PAGED mode
+// _hoshiReaderMouseDragStartAllowed then evaluates
+// `return !_hoshiReaderCaretRangeAtPoint(...)` = `return !range` = FALSE -- the
+// native-text-suppression path -- so the fix keeps touch OUT of the pointer drag
+// machine and the swipe MUST come from touchend (`left@touchend`). The
+// regression drives the pointer machine and (when it fires) emits from pointerup
+// (`left@pointerup`); under this body-text caret it loses the swipe entirely
+// (`[]`). Without the caret the helper returned null, `!null` = true, and BOTH
+// versions emitted a bare `left`, so an assertion that ignored the source went
+// green either way -- that was the masked regression.
 //
 // Run: node hibiki/test/reader/reader_paged_touch_swipe_behavior_test.js
 // (also driven from reader_paged_touch_swipe_behavior_test.dart so it executes
@@ -37,8 +51,15 @@ const rawSlice = source.substring(sliceStart, sliceEnd);
 
 function makeHarness(continuousMode) {
   const handlers = {};
+  // Each onSwipe is recorded as `<direction>@<dispatch event type>` so the test
+  // can prove WHICH path fired it. In paged mode the finger lands on body text,
+  // so the fixed reader emits the swipe from touchend -> _gestureEnd (recorded
+  // `left@touchend`) and pointerup stays silent. The 890378f19 regression
+  // instead drives the pointer drag machine and would emit from pointerup
+  // (`left@pointerup`) -- distinguishing the source is what catches the bug.
   const swipes = [];
   const taps = [];
+  let currentDispatch = null;
 
   const body = { writingMode: 'horizontal-tb' };
   const fakeElement = {
@@ -53,6 +74,19 @@ function makeHarness(continuousMode) {
     toggle(name, on) { if (on) { this._set.add(name); } else { this._set.delete(name); } },
   };
 
+  // A range whose startContainer is a real TEXT_NODE: models the finger landing
+  // on actual reader body text. _hoshiReaderCaretRangeAtPoint returns it, so in
+  // PAGED mode _hoshiReaderMouseDragStartAllowed evaluates
+  // `return !_hoshiReaderCaretRangeAtPoint(...)` = `return !range` = FALSE
+  // (the native-text-suppression path) -- exactly like real reader body text,
+  // so paged-mode touch stays OUT of the pointer drag machine. WITHOUT this
+  // caret the helper would return null, `!null` = true, and the 890378f19
+  // regression would wrongly drive the pointer machine yet still emit a swipe
+  // from pointerup, masking the bug (the original false-green).
+  const bodyTextRange = {
+    startContainer: { nodeType: 3 /* Node.TEXT_NODE */ },
+  };
+
   const documentObj = {
     documentElement: { classList: documentElementClassList },
     head: { appendChild() {} },
@@ -61,9 +95,10 @@ function makeHarness(continuousMode) {
     createElement() { return { id: '', textContent: '', appendChild() {} }; },
     elementFromPoint() { return fakeElement; },
     addEventListener(name, fn) { (handlers[name] = handlers[name] || []).push(fn); },
-    // No caretRangeFromPoint / caretPositionFromPoint: the body text under the
-    // finger is a "text hit", so in paged mode _hoshiReaderMouseDragStartAllowed
-    // returns false (native-text path), exactly like real plain reader text.
+    // The finger is on body text: browser hit testing resolves a caret range on
+    // a TEXT_NODE. Provide caretRangeFromPoint (caretPositionFromPoint left
+    // undefined so the helper takes this branch) returning that text range.
+    caretRangeFromPoint() { return bodyTextRange; },
   };
 
   const windowObj = {
@@ -74,7 +109,9 @@ function makeHarness(continuousMode) {
     scrollBy() {},
     flutter_inappwebview: {
       callHandler(name, a1) {
-        if (name === 'onSwipe') { swipes.push(a1); }
+        // Tag every swipe with the event currently being dispatched so the test
+        // can assert touchend (fix) vs pointerup (regression) as the source.
+        if (name === 'onSwipe') { swipes.push(a1 + '@' + (currentDispatch || 'unknown')); }
         if (name === 'onTap') { taps.push(a1); }
       },
     },
@@ -101,7 +138,12 @@ function makeHarness(continuousMode) {
 
   function dispatch(name, evt) {
     const list = handlers[name] || [];
-    for (const fn of list) { fn(evt); }
+    currentDispatch = name;
+    try {
+      for (const fn of list) { fn(evt); }
+    } finally {
+      currentDispatch = null;
+    }
   }
 
   return { dispatch, swipes, taps };
@@ -125,7 +167,9 @@ function touchEvt(x, y) {
   return { touches: [t], changedTouches: [t], target: null, preventDefault() {} };
 }
 
-// Test 1: PAGED mode, leftward horizontal touch swipe -> onSwipe('left').
+// Test 1: PAGED mode, leftward horizontal touch swipe over body text -> the
+// page turn must come from touchend (the fixed path); pointerup must stay
+// silent. Reverting the TODO-553 fix turns this red.
 (function () {
   const h = makeHarness(false);
   h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
@@ -134,14 +178,17 @@ function touchEvt(x, y) {
   h.dispatch('pointermove', pointerEvt('touch', 80, 300, -1, 1));
   h.dispatch('touchend', touchEvt(80, 300)); // dx = -120 (> 72)
   h.dispatch('pointerup', pointerEvt('touch', 80, 300, 0, 0));
+  // The page turn must come from the touchend path; pointerup must stay silent.
+  // Reverting the fix makes touchend emit nothing (swipe lost to the pointer
+  // machine's swallowed touchend), so this yields [] and turns red.
   assert.deepStrictEqual(
-    h.swipes, ['left'],
-    'paged-mode horizontal touch drag must emit one onSwipe("left"); got '
-      + JSON.stringify(h.swipes),
+    h.swipes, ['left@touchend'],
+    'paged-mode horizontal touch drag must emit exactly one onSwipe("left") '
+      + 'from the touchend path (not pointerup); got ' + JSON.stringify(h.swipes),
   );
 })();
 
-// Test 2: PAGED mode, rightward touch swipe -> onSwipe('right').
+// Test 2: PAGED mode, rightward touch swipe -> onSwipe('right') from touchend.
 (function () {
   const h = makeHarness(false);
   h.dispatch('pointerdown', pointerEvt('touch', 80, 300, 0, 1));
@@ -150,9 +197,9 @@ function touchEvt(x, y) {
   h.dispatch('touchend', touchEvt(220, 300)); // dx = +140
   h.dispatch('pointerup', pointerEvt('touch', 220, 300, 0, 0));
   assert.deepStrictEqual(
-    h.swipes, ['right'],
-    'paged-mode rightward touch drag must emit onSwipe("right"); got '
-      + JSON.stringify(h.swipes),
+    h.swipes, ['right@touchend'],
+    'paged-mode rightward touch drag must emit onSwipe("right") from touchend; '
+      + 'got ' + JSON.stringify(h.swipes),
   );
 })();
 

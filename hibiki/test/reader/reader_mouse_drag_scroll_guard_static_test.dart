@@ -205,6 +205,12 @@ void main() {
     final String pointerUp = _listenerBlock(setupScript, 'pointerup');
     expect(pointerUp, contains('_hoshiReaderPointerEngages(e)'),
         reason: 'paged-mode touch pointerup must not run the native-text path');
+
+    final String pointerCancel = _listenerBlock(setupScript, 'pointercancel');
+    expect(pointerCancel,
+        contains("e.pointerType === 'touch' && !hoshiContinuousMode"),
+        reason: 'paged-mode touch pointercancel must bail before resetting the '
+            'drag machine, mirroring the pointermove exclusion');
   });
 }
 
