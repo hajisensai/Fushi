@@ -73,8 +73,11 @@ void main() {
           reason: '音量浮层仍经 _volumeDisplay 同步显示');
 
       // 3 个 side panel 菜单经统一调度，靠单 ValueNotifier 互斥（一次只一个）。
+      // TODO-560/BUG-325：倍速入口签名扩成 `{LayerLink? popoverLink,
+      // VideoControlSlot? sourceSlot}`（浮层跟随触发按钮 slot），守卫只锁方法头前缀
+      // 含 popoverLink 触发源形参，对未来追加形参鲁棒。
       expect(
-          src.contains('void _showSpeedMenu({LayerLink? popoverLink})'), isTrue,
+          src.contains('void _showSpeedMenu({LayerLink? popoverLink'), isTrue,
           reason: '倍速菜单必须能接收触发源 link');
       expect(src.contains('if (popoverLink == null)'), isTrue,
           reason: '右键菜单等无触发源入口不能打开无锚点浮层');

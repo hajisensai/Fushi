@@ -107,11 +107,19 @@ void main() {
 
   group('③ 倍速入口是紧凑浮层；无触发源时必须有可见 fallback', () {
     test('_showSpeedMenu 方法保留（右键菜单 / 可配置按钮引用）并按触发源选择可见路径', () {
-      expect(
-          src.contains('void _showSpeedMenu({LayerLink? popoverLink})'), isTrue,
+      // TODO-560/BUG-325 起倍速入口要跟随触发按钮所在 slot，签名扩成
+      // `{LayerLink? popoverLink, VideoControlSlot? sourceSlot}`；守卫只锁方法头前缀
+      // （含 popoverLink 触发源形参），对未来追加形参鲁棒，不再硬编码闭合签名。
+      const String speedMenuSig = 'void _showSpeedMenu({LayerLink? popoverLink';
+      expect(src.contains(speedMenuSig), isTrue,
           reason: '_showSpeedMenu 方法必须保留（右键菜单 / 可配置按钮仍引用）');
-      final String show =
-          sourceMember(src, 'void _showSpeedMenu({LayerLink? popoverLink})');
+      expect(
+          RegExp(r'void _showSpeedMenu\(\{LayerLink\? popoverLink, '
+                  r'VideoControlSlot\? sourceSlot\}\)')
+              .hasMatch(src),
+          isTrue,
+          reason: 'BUG-325：倍速入口须接收触发 slot（sourceSlot）以让浮层跟随按钮');
+      final String show = sourceMember(src, speedMenuSig);
       expect(
           RegExp(r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed')
               .hasMatch(show),
