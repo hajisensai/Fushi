@@ -23,6 +23,6 @@
 - **stop 抢占语义**（防未来 dismiss-stop 回归）：`stop()` 先同步 `_activation.preempt()` 自增代际，再排队真正的 `_player.stop()`；`_play` 的 run 体在提交时捕获 `submittedGeneration`，在每个 yield 点（stop 后、load 后）重检 `_activation.generation != submittedGeneration`，被 stop 超越则提前 `return false`，不再启动新激活去和 incoming stop 抢同一 id。
 - **鲁棒源码守卫**：守卫把源码 `\s+` 折叠后用分段 `contains` + 正则匹配（`await _player.play()` 存在、`unawaited(_player.play())` 不存在、`_activation.preempt()` 存在、`_activation.generation != submittedGeneration` 正则），防 dart format 折行脆断。
 
-- **[x] ① 已修复** — `hibiki/lib/src/utils/misc/desktop_audio_playback.dart`（`AudioActivationQueue` 串行化 stop/load/**play** + preempt 代际；`_play` 内 `await _player.play()` + 代际重检；`stop()` 先 preempt 后排队）。提交：`c295ca623`。
+- **[x] ① 已修复** — `hibiki/lib/src/utils/misc/desktop_audio_playback.dart`（`AudioActivationQueue` 串行化 stop/load/**play** + preempt 代际；`_play` 内 `await _player.play()` + 代际重检；`stop()` 先 preempt 后排队）。提交：`dfed67ebb`。
 - **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/desktop_audio_playback_serial_guard_test.dart`（11 条）：严格串行不交错 / 失败不卡链 / caller 观察自身结果 / **play 逸出竞态**（建模「run 体外仍有未完成异步操作时下一 run 体已开始」→ 断言逸出会交错、awaited 不交错）/ stop 抢占代际 / 鲁棒源码守卫（含「play 必须 awaited 在体内、禁止 fire-and-forget」断言）。
 - **备注**：media_kit 不能 headless，真机复测（Windows 快速连点发音不再 `already exists`、不再静音）待用户。`flutter analyze` 0；`flutter test test/utils/misc/` 235 条全绿（并行模式偶发的 `update_checker_mirror_fallback_test` 失败为计时/网络相关，与本改动无关，`--concurrency=1` 全绿）。
