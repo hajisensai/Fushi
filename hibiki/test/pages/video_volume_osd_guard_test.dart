@@ -192,37 +192,47 @@ void main() {
         reason: 'Generic OSD and level HUD must stay separate.');
   });
 
-  // TODO-563: the HUD lives in the window-side _buildVideoBody Stack, but
-  // fullscreen is a separate PageRoute. Desktop users (wheel / keyboard volume
-  // keys) and fullscreen viewers had no volume HUD because the route never
-  // mounted it. Lock that the fullscreen route now re-mounts the same page-level
-  // overlays so window and fullscreen feedback match on every platform.
-  test('fullscreen route mounts the same page-level volume/brightness HUD', () {
+  // TODO-563 (复核更正): the volume/brightness level HUD and mpv-style OSD are
+  // rendered by the shared controls builder, not by the page Stack alone. The
+  // fullscreen Video sets `controls: params.controls`, which routes through
+  // _buildVideoControls -> VideoControlsFocusGate -> _buildVideoControlsInner;
+  // that inner builder mounts _buildLevelHudOverlay()/_buildOsdOverlay() with no
+  // fullscreen gating, and VideoControlsFocusGate only unmounts on the WINDOW
+  // side (`fullscreenRouteActive && !inFullscreenRoute`). So fullscreen already
+  // renders the HUD via the shared controls — the fullscreen route must NOT
+  // re-mount the overlays itself, or they double-stack. Lock that invariant.
+  test('fullscreen route does not re-mount the page-level HUD overlays', () {
     expect(
-      src.contains('Widget _fullscreenContentWithOverlays(Widget content) {'),
-      isTrue,
+      src.contains('_fullscreenContentWithOverlays'),
+      isFalse,
       reason:
-          'Fullscreen must reuse a helper that stacks the page-level overlays.',
+          'Fullscreen HUD comes from the shared controls builder; a fullscreen '
+          'overlay re-mount helper would double-stack the level HUD / OSD.',
     );
 
-    final String helper = region(
-      'Widget _fullscreenContentWithOverlays(Widget content) {',
-      'Widget _buildRightVolumeIndicator(double volume) {',
-    );
-    expect(helper.contains('_buildLevelHudOverlay()'), isTrue,
-        reason:
-            'Fullscreen overlays must include the volume/brightness level HUD.');
-    expect(helper.contains('_buildOsdOverlay()'), isTrue,
-        reason: 'Fullscreen overlays must include the mpv-style OSD too.');
-
-    // The fullscreen route builder must route its content through the helper,
-    // so the HUD is not silently dropped on fullscreen.
+    // The fullscreen route builder returns the bare video/subtitle-panel content
+    // without stacking _buildLevelHudOverlay()/_buildOsdOverlay() a second time.
     final String route = region(
       'Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {',
       'void _onVideoFullscreenRouteClosed() {',
     );
-    expect(route.contains('_fullscreenContentWithOverlays('), isTrue,
+    expect(route.contains('_buildLevelHudOverlay()'), isFalse,
+        reason: 'Fullscreen route must not re-mount the level HUD; the shared '
+            'controls builder already renders it on the fullscreen side.');
+    expect(route.contains('_buildOsdOverlay()'), isFalse,
         reason:
-            'Fullscreen page builder must wrap its content with the HUD overlays.');
+            'Fullscreen route must not re-mount the OSD; the shared controls '
+            'builder already renders it on the fullscreen side.');
+
+    // The shared controls inner builder is the single owner that mounts both
+    // overlays with no fullscreen gating (window + fullscreen both render them).
+    final String inner = region(
+      'Widget _buildVideoControlsInner(',
+      'Widget _buildLevelHudOverlay() {',
+    );
+    expect(inner.contains('_buildLevelHudOverlay()'), isTrue,
+        reason: 'Shared controls inner builder owns the level HUD mount.');
+    expect(inner.contains('_buildOsdOverlay()'), isTrue,
+        reason: 'Shared controls inner builder owns the OSD mount.');
   });
 }
