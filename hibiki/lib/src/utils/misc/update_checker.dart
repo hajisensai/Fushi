@@ -21,6 +21,20 @@ const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
 const Duration _kPerAttemptTimeout = Duration(seconds: 15);
 const Duration _kDownloadDiagnosticsInterval = Duration(milliseconds: 500);
 
+/// 多线程分片下载默认并发连接数（TODO-596）。clamp 1..[_kMaxDownloadConnections]。
+/// 镜像/GitHub 对象存储共享出口 IP 易触发 429/403 限流，4 是经验上「加速明显但不易被
+/// 限流」的折中；首版硬编码不暴露设置（YAGNI）。
+const int _kDefaultDownloadConnections = 4;
+const int _kMaxDownloadConnections = 8;
+
+/// 单个分片的最小字节数（默认 4 MiB）。文件 < 2*minSegment 时多线程无收益、反而多付
+/// 握手开销，门控退化单连接（见 [planDownloadSegments]）。
+const int _kDefaultMinSegmentBytes = 4 * 1024 * 1024;
+
+/// 单个分片最终下载失败前的有界重试次数（指数退避）。耗尽仍失败 → orchestrator 抛出，
+/// 由 [_downloadCandidate] 整体退回单线程路径（绝不半成品 promote）。
+const int _kSegmentMaxAttempts = 3;
+
 /// GitHub 直连不通时（GFW 机器，且 app 运行时**不走**本机命令行代理）套在 GitHub
 /// 链接前的加速代理前缀。逐个尝试（见 [fetchFirstSuccessfulBody]），任一成功即返回，
 /// 全部失败才优雅放弃。这些公共镜像会不定期轮换/下线（`mirror.ghproxy.com` 已下线
@@ -997,6 +1011,8 @@ Future<File> downloadUpdateAsset({
   required Directory updatesDir,
   required List<String> candidateUrls,
   required UpdateDownloadOpen openUrl,
+  int connectionCount = _kDefaultDownloadConnections,
+  int minSegmentBytes = _kDefaultMinSegmentBytes,
   void Function(double value)? onProgress,
   UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
@@ -1011,6 +1027,8 @@ Future<File> downloadUpdateAsset({
     updatesDir: updatesDir,
     candidateUrls: candidateUrls,
     openUrl: openUrl,
+    connectionCount: connectionCount,
+    minSegmentBytes: minSegmentBytes,
     onProgress: onProgress,
     onDiagnostics: onDiagnostics,
     onSourceFailure: onSourceFailure,
@@ -1038,6 +1056,8 @@ Future<File> _downloadUpdateAssetUncoalesced({
   required Directory updatesDir,
   required List<String> candidateUrls,
   required UpdateDownloadOpen openUrl,
+  int connectionCount = 1,
+  int minSegmentBytes = _kDefaultMinSegmentBytes,
   void Function(double value)? onProgress,
   UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
@@ -1111,6 +1131,8 @@ Future<File> _downloadUpdateAssetUncoalesced({
         openUrl: openUrl,
         metadata: currentMetadata,
         resumeOffset: resumeOffset,
+        connectionCount: connectionCount,
+        minSegmentBytes: minSegmentBytes,
         onProgress: onProgress,
         onDiagnostics: onDiagnostics,
       );
@@ -1127,7 +1149,141 @@ Future<File> _downloadUpdateAssetUncoalesced({
   );
 }
 
+/// **纯函数**：一个分片的闭区间字节范围 `[start, end]`。[end] 为 null 表示「到文件末尾」
+/// （未知总大小时的单段开放区间，等价单线程整体下载）。
+@visibleForTesting
+class DownloadSegment {
+  const DownloadSegment(this.start, this.end);
+
+  /// 分片起始字节偏移（含）。
+  final int start;
+
+  /// 分片结束字节偏移（含）；null = 文件末尾（开放区间）。
+  final int? end;
+
+  /// 该段已知长度（end 非 null 时），未知返回 null。
+  int? get length => end == null ? null : end! - start + 1;
+}
+
+/// **纯函数（TODO-596）**：把一个已知 [totalBytes] 的下载切成 N 个互不重叠、首尾相接、
+/// 覆盖整文件的闭区间分片，供多线程 Range 并发下载。
+///
+/// **门控（消除特殊情况，任一命中 → 返回单段 = 退化单线程）**：
+///   1. [totalBytes] == null（无 Content-Length / asset.sizeBytes）→ 单段开放区间
+///      `[0, null]`，调用方按现有单连接体顺序下载。
+///   2. clamp 后连接数 <= 1 → 单段闭区间 `[0, total-1]`。
+///   3. [totalBytes] < 2*[minSegmentBytes]（小文件多线程无收益）→ 单段闭区间。
+///
+/// 否则按 `segments = clamp(connectionCount, 1, max)`，但再受 [minSegmentBytes] 约束
+/// （`total / minSegmentBytes` 上限），保证不切出比 minSegment 还小的段。每段大小
+/// `total ~/ segments`，末段吸收余数。这是「能切就切、不能切就退」的叠加层，不引入特例
+/// 分支到调用方——单段返回值让多线程与单线程走同一聚合逻辑。
+@visibleForTesting
+List<DownloadSegment> planDownloadSegments({
+  required int? totalBytes,
+  int connectionCount = _kDefaultDownloadConnections,
+  int minSegmentBytes = _kDefaultMinSegmentBytes,
+}) {
+  if (totalBytes == null || totalBytes <= 0) {
+    return const <DownloadSegment>[DownloadSegment(0, null)];
+  }
+  final int safeMinSegment = minSegmentBytes < 1 ? 1 : minSegmentBytes;
+  int connections = connectionCount;
+  if (connections < 1) connections = 1;
+  if (connections > _kMaxDownloadConnections) {
+    connections = _kMaxDownloadConnections;
+  }
+  // 小文件 / 单连接 / 切完比 minSegment 还小 → 退化单段闭区间。
+  if (connections <= 1 || totalBytes < 2 * safeMinSegment) {
+    return <DownloadSegment>[DownloadSegment(0, totalBytes - 1)];
+  }
+  final int maxByMinSegment = totalBytes ~/ safeMinSegment;
+  final int segmentCount =
+      connections < maxByMinSegment ? connections : maxByMinSegment;
+  if (segmentCount <= 1) {
+    return <DownloadSegment>[DownloadSegment(0, totalBytes - 1)];
+  }
+  final int baseSize = totalBytes ~/ segmentCount;
+  final List<DownloadSegment> segments = <DownloadSegment>[];
+  int start = 0;
+  for (int i = 0; i < segmentCount; i++) {
+    final bool isLast = i == segmentCount - 1;
+    final int end = isLast ? totalBytes - 1 : start + baseSize - 1;
+    segments.add(DownloadSegment(start, end));
+    start = end + 1;
+  }
+  return segments;
+}
+
 Future<File> _downloadCandidate({
+  required UpdateAsset asset,
+  required String version,
+  required UpdateDownloadPaths paths,
+  required _UpdateDownloadStagingPaths stagingPaths,
+  required String url,
+  required UpdateDownloadOpen openUrl,
+  required _UpdateDownloadMetadata? metadata,
+  required int resumeOffset,
+  int connectionCount = 1,
+  int minSegmentBytes = _kDefaultMinSegmentBytes,
+  void Function(double value)? onProgress,
+  UpdateDownloadDiagnosticsCallback? onDiagnostics,
+  bool restarted = false,
+}) async {
+  // 多线程分片入口（TODO-596）：仅当请求并发 > 1、且不是从断点续传/重启路径进来时，
+  // 先尝试对**当前 url** 分段并发。任一门控不满足或分段失败 → 返回 null，落到下方现有
+  // 单连接体（restarted/resumeOffset 的精密逻辑完全不动）。源回退仍由外层
+  // _downloadUpdateAssetUncoalesced 的 candidateUrls 循环负责，此处不重做源选择。
+  //
+  // **已知 size 预门控**：size（asset / 续传 metadata）已知且切不出多段（小文件）时，
+  // 根本不进 orchestrator、不发探针——保证小文件单线程路径零额外请求（不破坏现有
+  // 单线程行为与续传测试）。size 未知（纯 GFW 302 无 Content-Length）才让探针去拿
+  // 总大小。
+  final int? knownSize = asset.sizeBytes ?? metadata?.sizeBytes;
+  final bool sizePermitsSegmentation = knownSize == null ||
+      planDownloadSegments(
+            totalBytes: knownSize,
+            connectionCount: connectionCount,
+            minSegmentBytes: minSegmentBytes,
+          ).length >
+          1;
+  if (connectionCount > 1 &&
+      resumeOffset == 0 &&
+      !restarted &&
+      sizePermitsSegmentation) {
+    final File? segmented = await _downloadSegmented(
+      asset: asset,
+      version: version,
+      paths: paths,
+      stagingPaths: stagingPaths,
+      url: url,
+      openUrl: openUrl,
+      metadata: metadata,
+      connectionCount: connectionCount,
+      minSegmentBytes: minSegmentBytes,
+      onProgress: onProgress,
+      onDiagnostics: onDiagnostics,
+    );
+    if (segmented != null) return segmented;
+    // null = 门控退化或并发失败：清理可能残留的分段文件，落单线程整体重下。
+    await _cleanupSegmentFiles(stagingPaths);
+  }
+  return _downloadCandidateSingle(
+    asset: asset,
+    version: version,
+    paths: paths,
+    stagingPaths: stagingPaths,
+    url: url,
+    openUrl: openUrl,
+    metadata: metadata,
+    resumeOffset: resumeOffset,
+    onProgress: onProgress,
+    onDiagnostics: onDiagnostics,
+    restarted: restarted,
+  );
+}
+
+Future<File> _downloadCandidateSingle({
   required UpdateAsset asset,
   required String version,
   required UpdateDownloadPaths paths,
@@ -1207,7 +1363,7 @@ Future<File> _downloadCandidate({
     await response.stream.drain<void>();
     await _deleteFile(stagingPaths.partFile);
     await _deleteFile(stagingPaths.metadataFile);
-    return _downloadCandidate(
+    return _downloadCandidateSingle(
       asset: asset,
       version: version,
       paths: paths,
@@ -1230,7 +1386,7 @@ Future<File> _downloadCandidate({
       await _deleteFile(stagingPaths.partFile);
       await _deleteFile(stagingPaths.metadataFile);
       if (!restarted) {
-        return _downloadCandidate(
+        return _downloadCandidateSingle(
           asset: asset,
           version: version,
           paths: paths,
@@ -1356,6 +1512,333 @@ Future<File> _downloadCandidate({
   );
   onProgress?.call(1);
   return promoted;
+}
+
+/// 一段并发分片下载的临时文件 `partFile.<i>`。
+File _segmentPartFile(_UpdateDownloadStagingPaths stagingPaths, int index) =>
+    File('${stagingPaths.partFile.path}.$index');
+
+/// 删除某次分段尝试可能残留的 `partFile.<i>`（退化单线程 / 重试前的清理）。
+/// best-effort：扫 staging 目录里所有 `*.part.<n>` 文件，不依赖记住段数。
+Future<void> _cleanupSegmentFiles(
+  _UpdateDownloadStagingPaths stagingPaths,
+) async {
+  try {
+    if (!await stagingPaths.directory.exists()) return;
+    final RegExp pattern = RegExp(r'\.part\.\d+$');
+    await for (final FileSystemEntity entity in stagingPaths.directory.list()) {
+      if (entity is File && pattern.hasMatch(entity.path)) {
+        await _deleteFile(entity);
+      }
+    }
+  } catch (e, stack) {
+    ErrorLogService.instance.log('UpdateChecker.cleanupSegments', e, stack);
+    debugPrint('[Hibiki] cleanup segment files failed: $e');
+  }
+}
+
+/// **多线程分片下载 orchestrator（TODO-596）**。只对**当前 [url]** 展开并发分片，
+/// 不重做源选择——整体多源回退仍由外层 [_downloadUpdateAssetUncoalesced] 的
+/// candidateUrls 循环负责（调用方拿到 null 时回退到单线程体；单线程体抛错时外层换源）。
+///
+/// 流程：
+/// 1. **探针**：对 [url] 发 `Range: bytes=0-`（带 If-Range，若 [metadata] 有 etag/
+///    lastModified），读其 Content-Range 总大小与 ETag。
+///    - 返 200（源忽略 Range）/ 无总大小 / 切分后只剩单段（小文件、门控）→ 返回 null，
+///      由调用方退回单线程（不在这里硬塞特例分支）。
+/// 2. **切分**：[planDownloadSegments] 按 total + [connectionCount] + [minSegmentBytes]
+///    切成 N>1 个闭区间分片。
+/// 3. **并发**：每段独立请求 `Range: bytes=start-end` + 同一 `If-Range`（探针 ETag/
+///    lastModified），写各自 `partFile.<i>`。每段带 [_kPerAttemptTimeout] 整体超时
+///    （各段独立计时）+ [_kSegmentMaxAttempts] 有界指数退避重试。
+///    - **ETag 一致性**：任一段返回 200 而非 206（If-Range 不匹配 = 镜像共享出口 IP
+///      轮换到 ETag 不同的后端）→ 整体放弃分片，返回 null 退单线程，避免 concat 后
+///      sha256 失败（复核要求）。
+/// 4. **合并**：全段完成 → 按序 [RandomAccessFile] 流式 concat 进
+///    [stagingPaths.partFile]（不整文件进内存）→ 复用 [_isValidCompleteDownload]
+///    （size+sha256）→ [_promoteCompleteDownload] 原子 rename。
+///
+/// 任一段重试耗尽仍失败、ETag 不一致、或门控不满足 → 返回 null（绝不 promote 半成品），
+/// 由调用方走单线程整体重下。
+Future<File?> _downloadSegmented({
+  required UpdateAsset asset,
+  required String version,
+  required UpdateDownloadPaths paths,
+  required _UpdateDownloadStagingPaths stagingPaths,
+  required String url,
+  required UpdateDownloadOpen openUrl,
+  required _UpdateDownloadMetadata? metadata,
+  required int connectionCount,
+  required int minSegmentBytes,
+  void Function(double value)? onProgress,
+  UpdateDownloadDiagnosticsCallback? onDiagnostics,
+}) async {
+  final Uri uri = Uri.parse(url);
+  final String? ifRange = metadata?.etag ?? metadata?.lastModified;
+
+  // ---- 1. 探针：拿总大小 + 该后端的 ETag（用作 If-Range 一致性验证器）----
+  final Map<String, String> probeHeaders = <String, String>{
+    HttpHeaders.rangeHeader: 'bytes=0-',
+    if (ifRange != null && ifRange.isNotEmpty)
+      HttpHeaders.ifRangeHeader: ifRange,
+  };
+  final UpdateDownloadResponse probe;
+  try {
+    probe = await openUrl(uri, probeHeaders).timeout(_kPerAttemptTimeout);
+  } catch (_) {
+    // 探针失败：让调用方走单线程（其错误处理/换源更完整），不在此吞掉换源职责。
+    return null;
+  }
+  if (probe.statusCode != HttpStatus.partialContent) {
+    await probe.stream.drain<void>();
+    return null; // 源不支持 Range（200/其它）→ 退单线程。
+  }
+  final int? total =
+      _contentRangeTotal(probe.header(HttpHeaders.contentRangeHeader)) ??
+          asset.sizeBytes ??
+          metadata?.sizeBytes;
+  await probe.stream.drain<void>(); // 探针 body 丢弃；正式分段统一闭区间重取。
+  // 验证器：优先探针返回的 ETag/Last-Modified，回退已有 metadata 的，让所有段 If-Range 一致。
+  final String? validator = probe.header(HttpHeaders.etagHeader) ??
+      probe.header(HttpHeaders.lastModifiedHeader) ??
+      ifRange;
+
+  final List<DownloadSegment> segments = planDownloadSegments(
+    totalBytes: total,
+    connectionCount: connectionCount,
+    minSegmentBytes: minSegmentBytes,
+  );
+  if (total == null || segments.length <= 1) {
+    return null; // 门控：未知大小 / 小文件 / 不值得切 → 退单线程。
+  }
+
+  // ---- 2. 写分段 metadata（保留校验所需的 size/etag/digest）----
+  final _UpdateDownloadMetadata segMetadata = _UpdateDownloadMetadata(
+    version: version,
+    name: asset.name,
+    url: asset.url,
+    sizeBytes: asset.sizeBytes ?? total,
+    etag: probe.header(HttpHeaders.etagHeader) ?? metadata?.etag,
+    lastModified:
+        probe.header(HttpHeaders.lastModifiedHeader) ?? metadata?.lastModified,
+    sha256Digest: asset.sha256Digest,
+  );
+
+  // ---- 3. 并发下载各段 ----
+  await _cleanupSegmentFiles(stagingPaths); // 清掉上一轮可能残留的分段文件。
+  final String sourceHost = hostLabelForUpdateUrl(url);
+  final Stopwatch stopwatch = Stopwatch()..start();
+  var lastDiagnosticsMs = -_kDownloadDiagnosticsInterval.inMilliseconds;
+  var receivedTotal = 0; // 单 isolate 累加，无需锁。
+  var etagMismatch = false; // 任一段返回 200（If-Range 不匹配）→ 整体退化。
+
+  void reportProgress({bool force = false}) {
+    if (total > 0) onProgress?.call(receivedTotal / total);
+    final UpdateDownloadDiagnosticsCallback? callback = onDiagnostics;
+    if (callback == null) return;
+    final int elapsed = stopwatch.elapsedMilliseconds;
+    if (!force &&
+        elapsed - lastDiagnosticsMs <
+            _kDownloadDiagnosticsInterval.inMilliseconds) {
+      return;
+    }
+    lastDiagnosticsMs = elapsed;
+    callback(
+      UpdateDownloadDiagnostics(
+        sourceUrl: url,
+        sourceHost: sourceHost,
+        receivedBytes: receivedTotal,
+        totalBytes: total,
+        bytesPerSecond: updateDownloadBytesPerSecond(
+          startedBytes: 0,
+          receivedBytes: receivedTotal,
+          elapsed: stopwatch.elapsed,
+        ),
+        resumed: false,
+        restartedFromZero: false,
+      ),
+    );
+  }
+
+  reportProgress(force: true);
+
+  /// 下载单个分片到 `partFile.<index>`，有界重试。返回该段最终写入字节数；
+  /// 抛 [_SegmentRangeUnsupported] 表示 If-Range 不匹配（200，需整体退化，不重试）。
+  Future<int> downloadOneSegment(int index, DownloadSegment segment) async {
+    final File segFile = _segmentPartFile(stagingPaths, index);
+    Object? lastError;
+    StackTrace? lastStack;
+    for (var attempt = 0; attempt < _kSegmentMaxAttempts; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(
+          Duration(milliseconds: 200 * (1 << (attempt - 1))),
+        );
+      }
+      // 分段级续传：该段已写 L 字节则从 start+L 续（沿用 If-Range 验证器）。
+      var segWritten = 0;
+      if (await segFile.exists()) {
+        segWritten = await segFile.length();
+        final int? segLen = segment.length;
+        if (segLen != null && segWritten >= segLen) return segWritten; // 段满。
+      }
+      final int reqStart = segment.start + segWritten;
+      final Map<String, String> headers = <String, String>{
+        HttpHeaders.rangeHeader:
+            'bytes=$reqStart-${segment.end != null ? '${segment.end}' : ''}',
+        if (validator != null && validator.isNotEmpty)
+          HttpHeaders.ifRangeHeader: validator,
+      };
+      try {
+        final int written = await _runSegmentRequest(
+          openUrl: openUrl,
+          uri: uri,
+          headers: headers,
+          segFile: segFile,
+          appendOffset: segWritten,
+          onChunk: (int delta) {
+            receivedTotal += delta;
+            reportProgress();
+          },
+        ).timeout(_kPerAttemptTimeout);
+        return written;
+      } on _SegmentRangeUnsupported {
+        rethrow; // 200/If-Range 不匹配：重试同后端无意义，交上层整体退化。
+      } catch (e, stack) {
+        lastError = e;
+        lastStack = stack;
+        // 重试前回退该段已记进度（删半截文件下次从头）。
+        receivedTotal -= segWritten;
+        await _deleteFile(segFile);
+      }
+    }
+    Error.throwWithStackTrace(
+      lastError ?? Exception('segment $index failed'),
+      lastStack ?? StackTrace.current,
+    );
+  }
+
+  final List<Future<int>> futures = <Future<int>>[
+    for (int i = 0; i < segments.length; i++)
+      downloadOneSegment(i, segments[i]),
+  ];
+  try {
+    await Future.wait(futures);
+  } on _SegmentRangeUnsupported {
+    etagMismatch = true;
+  } catch (e, stack) {
+    // 某段重试耗尽：整体退化单线程（清理分段，调用方重下）。
+    ErrorLogService.instance.log('UpdateChecker.segmentFailed', e, stack);
+    debugPrint('[Hibiki] segmented download failed, fall back single: $e');
+    await _cleanupSegmentFiles(stagingPaths);
+    return null;
+  }
+  if (etagMismatch) {
+    // ETag 不一致（镜像共享 IP 轮换后端）→ 放弃分段，退单线程整体重下。
+    debugPrint('[Hibiki] segment ETag/If-Range mismatch, fall back single');
+    await _cleanupSegmentFiles(stagingPaths);
+    return null;
+  }
+
+  // ---- 4. 按序 concat → 校验 → promote ----
+  try {
+    await _concatSegments(stagingPaths, segments.length);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('UpdateChecker.concatSegments', e, stack);
+    debugPrint('[Hibiki] concat segments failed, fall back single: $e');
+    await _cleanupSegmentFiles(stagingPaths);
+    await _deleteFile(stagingPaths.partFile);
+    return null;
+  }
+  await _cleanupSegmentFiles(stagingPaths);
+
+  final int actualSize = await stagingPaths.partFile.length();
+  final _UpdateDownloadMetadata completeMetadata = segMetadata.copyWith(
+    sizeBytes: segMetadata.sizeBytes ?? actualSize,
+  );
+  await completeMetadata.write(stagingPaths.metadataFile);
+  if (!await _isValidCompleteDownload(
+    stagingPaths.partFile,
+    asset,
+    completeMetadata,
+  )) {
+    await _deleteFile(stagingPaths.partFile);
+    throw Exception('download integrity check failed: ${asset.name}');
+  }
+
+  final File promoted = await _promoteCompleteDownload(
+    paths,
+    stagingPaths,
+    completeMetadata,
+  );
+  receivedTotal = total;
+  reportProgress(force: true);
+  onProgress?.call(1);
+  return promoted;
+}
+
+/// 内部哨兵异常：分片请求返回 200（服务器忽略 Range 或 If-Range 不匹配），需整体退化。
+class _SegmentRangeUnsupported implements Exception {
+  const _SegmentRangeUnsupported();
+}
+
+/// 发一次分片请求并把 body 流式追加写入 [segFile]（[appendOffset] > 0 时 append）。
+/// 返回本次写入后该段总字节数。206 正常；200（含 If-Range 不匹配）抛
+/// [_SegmentRangeUnsupported]；其它状态码抛 [HttpException]。
+Future<int> _runSegmentRequest({
+  required UpdateDownloadOpen openUrl,
+  required Uri uri,
+  required Map<String, String> headers,
+  required File segFile,
+  required int appendOffset,
+  required void Function(int delta) onChunk,
+}) async {
+  final UpdateDownloadResponse response = await openUrl(uri, headers);
+  if (response.statusCode == HttpStatus.ok) {
+    await response.stream.drain<void>();
+    throw const _SegmentRangeUnsupported();
+  }
+  if (response.statusCode != HttpStatus.partialContent) {
+    await response.stream.drain<void>();
+    throw HttpException(
+        'segment request failed (${response.statusCode}): $uri');
+  }
+  final IOSink sink = segFile.openWrite(
+    mode: appendOffset > 0 ? FileMode.append : FileMode.write,
+  );
+  var written = appendOffset;
+  try {
+    await for (final List<int> chunk in response.stream) {
+      sink.add(chunk);
+      written += chunk.length;
+      onChunk(chunk.length);
+    }
+    await sink.flush();
+  } finally {
+    await sink.close();
+  }
+  return written;
+}
+
+/// 按序把 `partFile.0..N-1` 流式 concat 进 [stagingPaths.partFile]（不整文件进内存）。
+/// 缺段或某段空 → 抛异常，交调用方退化。
+Future<void> _concatSegments(
+  _UpdateDownloadStagingPaths stagingPaths,
+  int segmentCount,
+) async {
+  await _deleteFile(stagingPaths.partFile);
+  final IOSink sink = stagingPaths.partFile.openWrite(mode: FileMode.write);
+  try {
+    for (int i = 0; i < segmentCount; i++) {
+      final File segFile = _segmentPartFile(stagingPaths, i);
+      if (!await segFile.exists()) {
+        throw FileSystemException('missing segment part', segFile.path);
+      }
+      await sink.addStream(segFile.openRead());
+    }
+    await sink.flush();
+  } finally {
+    await sink.close();
+  }
 }
 
 Future<UpdateDownloadResponse> _openHttpDownload(
