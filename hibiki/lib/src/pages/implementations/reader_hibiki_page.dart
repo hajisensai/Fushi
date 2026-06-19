@@ -2098,6 +2098,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   function _hoshiReaderPointerStillDown(e) {
     return e && (e.pointerType === 'touch' || (e.buttons & 1) === 1);
   }
+  // TODO-553: 触摸只在「连续模式」走 pointer 拖动状态机（8f095de78 的触摸拖滚）；
+  // 分页模式下触摸交还给 touchstart/touchend → _gestureEnd → onSwipe 的滑动翻页路径
+  // （890378f19 前的行为）。鼠标左键在两种模式都走 pointer 机（拖选/划词/拖动翻页）。
+  function _hoshiReaderPointerEngages(e) {
+    if (!_hoshiReaderPointerPrimaryButton(e)) return false;
+    if (e.pointerType === 'touch') return hoshiContinuousMode;
+    return true;
+  }
   function _hoshiReaderPointerNoSelect(enabled) {
     try {
       var id = 'hoshi-reader-pointer-drag-style';
@@ -2311,7 +2319,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     hasStart = false;
   }, {passive: true});
   document.addEventListener('pointerdown', function(e) {
-    if (!_hoshiReaderPointerPrimaryButton(e)) return;
+    if (!_hoshiReaderPointerEngages(e)) return;
     _hoshiReaderMouseDragActive = _hoshiReaderMouseDragStartAllowed(e);
     _hoshiReaderMouseDragClaimed = false;
     _hoshiReaderMouseNativeTextStart = !_hoshiReaderMouseDragActive;
@@ -2323,6 +2331,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _gestureStart(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e) {
+    // TODO-553: pointermove 的 button 恒 -1，不能用 _hoshiReaderPointerEngages
+    // （它查 button===0）；分页模式触摸只需在此直接放行回 touch swipe 路径。
+    if (e.pointerType === 'touch' && !hoshiContinuousMode) return;
     if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
     if (!_hoshiReaderPointerStillDown(e) || !hasStart) return;
     var totalDx = e.clientX - startX;
@@ -2356,7 +2367,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     e.preventDefault();
   }, {passive: false});
   document.addEventListener('pointerup', function(e) {
-    if (!_hoshiReaderPointerPrimaryButton(e)) return;
+    if (!_hoshiReaderPointerEngages(e)) return;
     if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
     if (_hoshiReaderMouseDragClaimed) {
       if (!hoshiContinuousMode && !_hoshiReaderMouseDragPageDirection) {
@@ -2390,6 +2401,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
   document.addEventListener('pointercancel', function(e) {
+    if (e.pointerType === 'touch' && !hoshiContinuousMode) return;
     if (_hoshiReaderMouseDragPointerId !== null && e.pointerId !== _hoshiReaderMouseDragPointerId) return;
     _hoshiReaderMouseDragActive = false;
     _hoshiReaderMouseDragClaimed = false;

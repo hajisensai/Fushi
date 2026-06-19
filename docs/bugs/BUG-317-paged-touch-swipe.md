@@ -1,0 +1,16 @@
+## BUG-317 · TODO-553: 分页模式触摸滑动无法翻页（890378f19 回归）
+- **报告**：2026-06-19（用户：TODO-553；竖排日文阅读分页模式下触摸滑动不再翻页，核心交互失效）
+- **真实性**：✅ 真 bug。根因（`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart` 的 reader 注入 JS）：
+  - commit `890378f19` 把 touch 纳入 pointer 拖动状态机：`pointerdown` 门控从 `e.pointerType !== 'mouse'`（旧：touch 直接 return）改成 `_hoshiReaderPointerPrimaryButton(e)`（touch 返 true），并删掉 `pointermove` 的 `if (e.pointerType === 'touch') return`。
+  - 链路：`pointerdown(touch)` 命中正文 → `_hoshiReaderMouseDragStartAllowed` 在分页模式对正文恒 false（caret/字符命中保护）→ `_hoshiReaderMouseNativeTextStart=true`；`pointermove(touch)` 移动 >6px 命中 `if(totalDistSq>36) hasStart=false; return`；`touchend` 因 `!hasStart` 在 `_gestureEnd` 首行裸 return → `onSwipe` 从不触发 → 翻页失效。
+  - 8f095de78 加的「连续模式触摸拖滚」是合理需求，必须保留；问题只在分页模式不该让 touch 接管 pointer 拖动。
+- **[x] ① 已修复** — `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`
+  - 新增纯谓词 `_hoshiReaderPointerEngages(e)`：鼠标左键两种模式都走 pointer 机；touch 只在 `hoshiContinuousMode` 走 pointer 机，分页模式不进。
+  - `pointerdown` / `pointerup` 门控改用 `_hoshiReaderPointerEngages(e)`（这两处有真实 `e.button`）。
+  - `pointermove` / `pointercancel` 的 `e.button` 恒 -1，不能用查 `button===0` 的谓词，改用等价的 touch-only 分页排除 `if (e.pointerType === 'touch' && !hoshiContinuousMode) return;`（放行 touch 回到 touchstart/touchend → `_gestureEnd` → `onSwipe` 的旧翻页路径）。
+  - 分页触摸滑动恢复（竖排/横排都靠 `_gestureEnd` 的轴判定 + `onSwipe(left/right)` → Dart 上一页/下一页，与书写方向无关）；连续模式触摸拖滚、鼠标拖选/划词、鼠标拖动翻页均不受影响。
+- **[x] ② 已加自动化测试** —
+  - 行为层（真执行 JS）：`hibiki/test/reader/reader_paged_touch_swipe_behavior_test.js` 用 Node `vm` + 伪 DOM 真跑从 reader 抽取的事件处理器，派发 `pointerdown/touchstart/pointermove/touchend/pointerup` 序列，断言分页模式横滑触发 `onSwipe`（撤掉修复 → `onSwipe` 得 `[]` 转红，已实测）；并覆盖右滑、小幅 tap（onTap 不翻页）、连续模式拖滚不翻页。
+  - `flutter test` 驱动：`hibiki/test/reader/reader_paged_touch_swipe_behavior_test.dart` 通过 `Process.run('node', ...)` 在 `flutter test` 内执行上面的 JS 行为测试（无 node 环境自动 skip）。
+  - 静态守卫补强（无 node 兜底）：`hibiki/test/reader/reader_mouse_drag_scroll_guard_static_test.dart` 新增「touch only engages the pointer drag machine in continuous mode」断言 `_hoshiReaderPointerEngages` 的分页排除与各 listener 门控。
+- **备注**：编号冲突处理——`tool/bug.dart new` 按 develop 最大号取了 316，但并发分支 `codex/todo-549-win-update-mutex` 已占 316（遍历所有 worktree 分支 ls-tree 取并集所得），故手动改为 317。验证：`flutter analyze` 0 issues；`flutter test test/reader/` 453 全绿（含本回归行为测试 + 静态守卫）。真机/模拟器待验：真实触摸翻页手感与竖排日文实机滑动（无头伪 DOM 只能证逻辑链路，证不了手势识别阈值在真 WebView2/Android WebView 上的体感）。
