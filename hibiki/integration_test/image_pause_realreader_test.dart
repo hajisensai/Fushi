@@ -8,6 +8,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'helpers/pagination_test_harness.dart';
 import 'test_helpers.dart';
@@ -37,10 +38,15 @@ void main() {
     expect(await waitForHome(tester), isTrue, reason: 'Home must render');
     await tester.pump(const Duration(seconds: 2));
 
+    final FocusDriver driver = FocusDriver(tester);
+
     // ── 打开（必要时自种）测试书 ──────────────────────────────────────────
     final List<Finder> nav = findPrimaryNavigationTargets();
     if (nav.isNotEmpty) {
-      await tester.tap(nav.first);
+      final bool focusedTab = await driver.focusWidget(nav.first);
+      expect(focusedTab, isTrue,
+          reason: 'Books tab must be reachable by focus');
+      await driver.activate();
       await tester.pumpAndSettle();
     }
     Finder entries = findBookEntries();
@@ -51,7 +57,10 @@ void main() {
     if (entries.evaluate().isEmpty) {
       await seedReaderBook(tester);
       if (nav.isNotEmpty) {
-        await tester.tap(nav.first);
+        final bool focusedTab = await driver.focusWidget(nav.first);
+        expect(focusedTab, isTrue,
+            reason: 'Books tab must be reachable by focus');
+        await driver.activate();
         await tester.pumpAndSettle();
       }
       entries = findBookEntries();
@@ -62,7 +71,9 @@ void main() {
     }
     expect(entries.evaluate(), isNotEmpty, reason: 'need a book on the shelf');
 
-    await tester.tap(entries.first);
+    final bool focusedBook = await driver.focusWidget(entries.first);
+    expect(focusedBook, isTrue, reason: 'Book card must be reachable by focus');
+    await driver.activate();
     await tester.pump(const Duration(seconds: 3));
 
     const Key webViewKey = ValueKey<String>('hoshi_webview');

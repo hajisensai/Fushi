@@ -10,6 +10,7 @@ import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
@@ -31,6 +32,8 @@ void main() {
       app.main();
       expect(await waitForHome(tester), isTrue);
       await tester.pump(const Duration(seconds: 2));
+
+      final FocusDriver driver = FocusDriver(tester);
 
       final bool dictSeeded = await seedDictionary(tester);
       expect(dictSeeded, isTrue, reason: 'dictionary fixture must import');
@@ -67,7 +70,10 @@ void main() {
 
       final List<Finder> navTargets = findPrimaryNavigationTargets();
       expect(navTargets.length, greaterThanOrEqualTo(2));
-      await tester.tap(navTargets[1]);
+      final bool focusedDict = await driver.focusWidget(navTargets[1]);
+      expect(focusedDict, isTrue,
+          reason: 'Dictionary tab must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 2));
       await tester.enterText(findSearchField(), 'testword');
       await tester.pump(const Duration(seconds: 5));

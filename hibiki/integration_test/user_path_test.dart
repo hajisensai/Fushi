@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
 
 void main() {
@@ -27,6 +28,7 @@ void main() {
 
       screenshotCount += await _takeScreenshotSafe(binding, 'home_books_tab');
 
+      final FocusDriver driver = FocusDriver(tester);
       final List<Finder> navIcons = findPrimaryNavigationTargets();
       final int tabCount = navIcons.length;
       debugPrint('[test] Found $tabCount navigation icons');
@@ -34,7 +36,9 @@ void main() {
           reason: 'App should have at least 2 navigation icons');
 
       // --- Tab 1: Dictionary ---
-      await tester.tap(navIcons[1]);
+      expect(await driver.focusWidget(navIcons[1]), isTrue,
+          reason: 'Dictionary tab must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       expect(find.byType(Scaffold), findsWidgets,
@@ -49,7 +53,9 @@ void main() {
 
       // --- Tab 2: Settings ---
       if (tabCount >= 3) {
-        await tester.tap(navIcons[2]);
+        expect(await driver.focusWidget(navIcons[2]), isTrue,
+            reason: 'Settings tab must be reachable by focus');
+        await driver.activate();
         await tester.pump(const Duration(seconds: 3));
 
         expect(find.byType(Scaffold), findsWidgets,
@@ -70,7 +76,9 @@ void main() {
       }
 
       // --- Return to first tab ---
-      await tester.tap(navIcons[0]);
+      expect(await driver.focusWidget(navIcons[0]), isTrue,
+          reason: 'Books tab must be reachable by focus');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       expect(find.byType(Scaffold), findsWidgets,
@@ -88,20 +96,28 @@ void main() {
           skippedTaps++;
           continue;
         }
-        await tester.tap(target);
+        // Focus-driven switch: a tab unreachable by focus counts as a skip,
+        // preserving the original skip-budget assertion below.
+        if (await driver.focusWidget(target)) {
+          await driver.activate();
+        } else {
+          skippedTaps++;
+        }
         await tester.pump(const Duration(milliseconds: 200));
       }
 
       await tester.pump(const Duration(seconds: 2));
 
       expect(skippedTaps, lessThan(5),
-          reason: 'Most tab taps should find their target');
+          reason: 'Most tab switches should find their target');
       expect(find.byType(Scaffold), findsWidgets,
           reason: 'App should survive rapid tab switching');
 
       // After rapid switching, verify the app is still interactive:
-      // tap the first tab and verify it has content.
-      await tester.tap(navIcons[0]);
+      // focus the first tab and verify it has content.
+      expect(await driver.focusWidget(navIcons[0]), isTrue,
+          reason: 'Books tab must be reachable by focus after rapid switching');
+      await driver.activate();
       await tester.pump(const Duration(seconds: 2));
       expect(find.byIcon(Icons.menu_book), findsWidgets,
           reason: 'Books tab icon must be present after rapid switching');

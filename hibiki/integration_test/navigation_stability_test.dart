@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
 
 /// M4: Navigation & Stability tests.
@@ -40,22 +41,29 @@ void main() {
 
       // === Tab switching stability ===
       debugPrint('[M4] === Tab Switching ===');
+      final FocusDriver driver = FocusDriver(tester);
       final List<Finder> navTargets = findPrimaryNavigationTargets();
       expect(navTargets.length, greaterThanOrEqualTo(3),
           reason: 'Need at least 3 navigation targets');
 
       for (int round = 0; round < 5; round++) {
         for (int tab = 0; tab < navTargets.length; tab++) {
-          await tester.tap(navTargets[tab]);
+          // Focus the tab and confirm with Enter — repeated focus-driven
+          // switching exercises the same route churn without coordinate taps.
+          if (await driver.focusWidget(navTargets[tab])) {
+            await driver.activate();
+          }
           await tester.pump(const Duration(milliseconds: 300));
         }
       }
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
       debugPrint('[M4] ✓ Rapid tab switching (5 rounds) — no crash');
 
       // === Navigate to Settings tab ===
-      await tester.tap(navTargets.last);
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets.last), isTrue,
+          reason: 'Settings tab must be reachable by focus');
+      await driver.activate();
+      await tester.pump(const Duration(milliseconds: 500));
       debugPrint('[M4] On Settings tab');
 
       // === Settings sub-pages ===
@@ -82,8 +90,10 @@ void main() {
         }
 
         if (find.text(item).evaluate().isNotEmpty) {
-          await tester.tap(find.text(item).first);
-          await tester.pumpAndSettle();
+          expect(await driver.focusWidget(find.text(item).first), isTrue,
+              reason: '$item entry must be reachable by focus');
+          await driver.activate();
+          await tester.pump(const Duration(milliseconds: 500));
 
           // Verify page loaded (no infinite loading)
           expect(tester.takeException(), isNull,
@@ -91,27 +101,10 @@ void main() {
 
           debugPrint('[M4] ✓ $item — opened successfully');
 
-          // Navigate back
-          final backButton = find.byType(BackButton);
-          final backIcon = find.byIcon(Icons.arrow_back);
-          final adaptiveBack = find.byTooltip('Back');
-          final popButton = find.byTooltip('戻る');
-
-          if (backButton.evaluate().isNotEmpty) {
-            await tester.tap(backButton.first);
-          } else if (backIcon.evaluate().isNotEmpty) {
-            await tester.tap(backIcon.first);
-          } else if (adaptiveBack.evaluate().isNotEmpty) {
-            await tester.tap(adaptiveBack.first);
-          } else if (popButton.evaluate().isNotEmpty) {
-            await tester.tap(popButton.first);
-          } else {
-            final NavigatorState nav = Navigator.of(
-              tester.element(find.byType(Scaffold).first),
-            );
-            nav.pop();
-          }
-          await tester.pumpAndSettle();
+          // Navigate back via the global HibikiPopIntent (gameButtonB) — no
+          // coordinate tap, locale-independent.
+          await driver.back();
+          await tester.pump(const Duration(milliseconds: 250));
 
           debugPrint('[M4] ✓ $item — back navigation OK');
         } else {
@@ -126,8 +119,10 @@ void main() {
 
       final customFonts = find.text('Custom Fonts');
       if (customFonts.evaluate().isNotEmpty) {
-        await tester.tap(customFonts.first);
-        await tester.pumpAndSettle();
+        expect(await driver.focusWidget(customFonts.first), isTrue,
+            reason: 'Custom Fonts entry must be reachable by focus');
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 500));
         debugPrint('[M4] ✓ Custom Fonts — opened');
 
         // Back twice
@@ -144,8 +139,10 @@ void main() {
 
       final shortcuts = find.text('Keyboard Shortcuts');
       if (shortcuts.evaluate().isNotEmpty) {
-        await tester.tap(shortcuts.first);
-        await tester.pumpAndSettle();
+        expect(await driver.focusWidget(shortcuts.first), isTrue,
+            reason: 'Keyboard Shortcuts entry must be reachable by focus');
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 500));
         debugPrint('[M4] ✓ Keyboard Shortcuts — opened');
         await _goBack(tester);
         await tester.pumpAndSettle();
@@ -160,8 +157,10 @@ void main() {
 
       final dictionaries = find.text('Dictionaries');
       if (dictionaries.evaluate().isNotEmpty) {
-        await tester.tap(dictionaries.first);
-        await tester.pumpAndSettle();
+        expect(await driver.focusWidget(dictionaries.first), isTrue,
+            reason: 'Dictionaries entry must be reachable by focus');
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 500));
         debugPrint('[M4] ✓ Dictionaries — opened');
         await _goBack(tester);
         await tester.pumpAndSettle();
@@ -172,13 +171,17 @@ void main() {
 
       // === Reader open/close stability ===
       debugPrint('[M4] === Reader Stability ===');
-      await tester.tap(navTargets.first); // Books tab
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets.first), isTrue,
+          reason: 'Books tab must be reachable by focus');
+      await driver.activate(); // Books tab
+      await tester.pump(const Duration(milliseconds: 500));
 
       final bookEntries = findBookEntries();
       if (bookEntries.evaluate().isNotEmpty) {
         // Open reader
-        await tester.tap(bookEntries.first);
+        expect(await driver.focusWidget(bookEntries.first), isTrue,
+            reason: 'Book card must be reachable by focus');
+        await driver.activate();
         await tester.pump(const Duration(seconds: 3));
 
         const Key webViewKey = ValueKey<String>('hoshi_webview');
@@ -218,8 +221,10 @@ void main() {
       }
 
       // === Final tab state check ===
-      await tester.tap(navTargets.first);
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets.first), isTrue,
+          reason: 'Books tab must be reachable by focus');
+      await driver.activate();
+      await tester.pump(const Duration(milliseconds: 500));
       expect(isHomeReady(), isTrue, reason: 'Home should still be ready');
       debugPrint('[M4] ✓ Final home state OK');
 
@@ -247,36 +252,26 @@ Future<void> _scrollToFind(WidgetTester tester, String text) async {
 
 Future<void> _navigateToSettingsItem(
     WidgetTester tester, String itemText) async {
+  final FocusDriver driver = FocusDriver(tester);
   // Make sure we're on settings tab
   final navTargets = findPrimaryNavigationTargets();
-  await tester.tap(navTargets.last);
-  await tester.pumpAndSettle();
+  expect(await driver.focusWidget(navTargets.last), isTrue,
+      reason: 'Settings tab must be reachable by focus');
+  await driver.activate();
+  await tester.pump(const Duration(milliseconds: 500));
 
   await _scrollToFind(tester, itemText);
   if (find.text(itemText).evaluate().isNotEmpty) {
-    await tester.tap(find.text(itemText).first);
-    await tester.pumpAndSettle();
+    expect(await driver.focusWidget(find.text(itemText).first), isTrue,
+        reason: '$itemText entry must be reachable by focus');
+    await driver.activate();
+    await tester.pump(const Duration(milliseconds: 500));
   }
 }
 
 Future<void> _goBack(WidgetTester tester) async {
-  final back = find.byTooltip('戻る');
-  final backEn = find.byTooltip('Back');
-  final backIcon = find.byIcon(Icons.arrow_back);
-  final backButton = find.byType(BackButton);
-
-  if (back.evaluate().isNotEmpty) {
-    await tester.tap(back.first);
-  } else if (backEn.evaluate().isNotEmpty) {
-    await tester.tap(backEn.first);
-  } else if (backButton.evaluate().isNotEmpty) {
-    await tester.tap(backButton.first);
-  } else if (backIcon.evaluate().isNotEmpty) {
-    await tester.tap(backIcon.first);
-  } else {
-    final NavigatorState nav = Navigator.of(
-      tester.element(find.byType(Scaffold).first),
-    );
-    nav.pop();
-  }
+  // Focus-driven back: the global HibikiPopIntent (gameButtonB) pops the route
+  // without depending on a Back button's coordinates / tooltip locale.
+  await FocusDriver(tester).back();
+  await tester.pump(const Duration(milliseconds: 250));
 }

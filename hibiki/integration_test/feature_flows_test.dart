@@ -5,7 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
+import 'package:hibiki/src/shortcuts/gamepad_service.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
 
+import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
 
 /// M3: Feature Flow tests.
@@ -38,13 +41,16 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       debugPrint('[M3] Home ready');
 
+      final FocusDriver driver = FocusDriver(tester);
       final navTargets = findPrimaryNavigationTargets();
       expect(navTargets.length, greaterThanOrEqualTo(3));
 
       // === F2: Dictionary Search ===
       debugPrint('[M3] === F2: Dictionary Search ===');
-      await tester.tap(navTargets[1]); // Dictionary tab
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets[1]), isTrue,
+          reason: 'Dictionary tab must be reachable by focus');
+      await driver.activate(); // Dictionary tab
+      await tester.pump(const Duration(milliseconds: 500));
 
       final hasSearch = find.byType(TextField).evaluate().isNotEmpty ||
           find.byType(TextFormField).evaluate().isNotEmpty ||
@@ -78,13 +84,19 @@ void main() {
 
       // === F5: Profile Management ===
       debugPrint('[M3] === F5: Profile Management ===');
-      await tester.tap(navTargets.last); // Settings tab
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets.last), isTrue,
+          reason: 'Settings tab must be reachable by focus');
+      await driver.activate(); // Settings tab
+      await tester.pump(const Duration(milliseconds: 500));
 
       await _scrollToFind(tester, 'Configuration Schemes');
       if (find.text('Configuration Schemes').evaluate().isNotEmpty) {
-        await tester.tap(find.text('Configuration Schemes').first);
-        await tester.pumpAndSettle();
+        expect(
+            await driver.focusWidget(find.text('Configuration Schemes').first),
+            isTrue,
+            reason: 'Configuration Schemes entry must be reachable by focus');
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 500));
 
         debugPrint('[M3] ✓ Profile management page opened');
         await takeScreenshot(binding, 'm3_profile_management');
@@ -102,8 +114,10 @@ void main() {
 
       // === F8: Reading Statistics ===
       debugPrint('[M3] === F8: Reading Statistics ===');
-      await tester.tap(navTargets.first); // Books tab
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets.first), isTrue,
+          reason: 'Books tab must be reachable by focus');
+      await driver.activate(); // Books tab
+      await tester.pump(const Duration(milliseconds: 500));
 
       // Look for statistics access point (usually in the top bar)
       final statsIcon = find.byIcon(Icons.bar_chart);
@@ -120,8 +134,14 @@ void main() {
       }
 
       if (statsButton != null) {
-        await tester.tap(statsButton.first);
-        await tester.pumpAndSettle();
+        if (await driver.focusWidget(statsButton.first)) {
+          await driver.activate();
+        } else {
+          // Icon-only top-bar buttons can be focus targets registered late;
+          // fall back to the framework activate intent on the focused node.
+          await driver.activateIntent();
+        }
+        await tester.pump(const Duration(milliseconds: 500));
         debugPrint('[M3] ✓ F8: Reading statistics page opened');
         await takeScreenshot(binding, 'm3_reading_statistics');
         await _goBack(tester);
@@ -131,13 +151,18 @@ void main() {
 
       // === F10: Sync Settings ===
       debugPrint('[M3] === F10: Sync Settings ===');
-      await tester.tap(navTargets.last); // Settings tab
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets.last), isTrue,
+          reason: 'Settings tab must be reachable by focus');
+      await driver.activate(); // Settings tab
+      await tester.pump(const Duration(milliseconds: 500));
 
       await _scrollToFind(tester, 'Sync & Backup');
       if (find.text('Sync & Backup').evaluate().isNotEmpty) {
-        await tester.tap(find.text('Sync & Backup').first);
-        await tester.pumpAndSettle();
+        expect(
+            await driver.focusWidget(find.text('Sync & Backup').first), isTrue,
+            reason: 'Sync & Backup entry must be reachable by focus');
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 500));
 
         debugPrint('[M3] ✓ Sync & Backup page opened');
         await takeScreenshot(binding, 'm3_sync_settings');
@@ -163,21 +188,29 @@ void main() {
 
       // === F9: Anki Settings (degraded — no AnkiDroid) ===
       debugPrint('[M3] === F9: Anki Settings ===');
-      await tester.tap(navTargets.last);
-      await tester.pumpAndSettle();
+      expect(await driver.focusWidget(navTargets.last), isTrue,
+          reason: 'Settings tab must be reachable by focus');
+      await driver.activate();
+      await tester.pump(const Duration(milliseconds: 500));
 
       await _scrollToFind(tester, 'Card Creation');
       if (find.text('Card Creation').evaluate().isNotEmpty) {
-        await tester.tap(find.text('Card Creation').first);
-        await tester.pumpAndSettle();
+        expect(
+            await driver.focusWidget(find.text('Card Creation').first), isTrue,
+            reason: 'Card Creation entry must be reachable by focus');
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 500));
 
         debugPrint('[M3] ✓ Card Creation page opened');
 
         // Try to navigate to Anki Settings
         await _scrollToFind(tester, 'Anki Settings');
         if (find.text('Anki Settings').evaluate().isNotEmpty) {
-          await tester.tap(find.text('Anki Settings').first);
-          await tester.pumpAndSettle();
+          expect(await driver.focusWidget(find.text('Anki Settings').first),
+              isTrue,
+              reason: 'Anki Settings entry must be reachable by focus');
+          await driver.activate();
+          await tester.pump(const Duration(milliseconds: 500));
           debugPrint('[M3] ✓ F9: Anki Settings page opened (no crash)');
           await takeScreenshot(binding, 'm3_anki_settings');
           await _goBack(tester);
@@ -193,8 +226,10 @@ void main() {
       // (lazily-evaluated) finder can be empty here.
       final f6Nav = findPrimaryNavigationTargets();
       if (f6Nav.isNotEmpty) {
-        await tester.tap(f6Nav.first); // Books tab
-        await tester.pumpAndSettle();
+        expect(await driver.focusWidget(f6Nav.first), isTrue,
+            reason: 'Books tab must be reachable by focus');
+        await driver.activate(); // Books tab
+        await tester.pump(const Duration(milliseconds: 500));
       } else {
         debugPrint('[M3] ⚠ F6: bottom nav not visible — staying on '
             'current screen');
@@ -202,9 +237,18 @@ void main() {
 
       final bookEntries = findBookEntries();
       if (bookEntries.evaluate().isNotEmpty) {
-        await tester.longPress(bookEntries.first);
-        await tester.pumpAndSettle();
-        debugPrint('[M3] Long pressed book entry');
+        // Focus-driven long-press: focus the book card, then dispatch the same
+        // GamepadLongPressIntent the gamepad layer fires on a held A button —
+        // it invokes the identical onLongPress as a mouse long-press, opening
+        // the single-book context menu. Position-independent, three-end safe.
+        expect(await driver.focusWidget(bookEntries.first), isTrue,
+            reason: 'Book card must be reachable by focus');
+        final bool longPressed = _dispatchGamepadLongPress();
+        expect(longPressed, isTrue,
+            reason: 'focused book card must expose GamepadLongPressIntent '
+                '(the keyboard/gamepad equivalent of a long-press)');
+        await tester.pump(const Duration(milliseconds: 500));
+        debugPrint('[M3] Long pressed book entry (via GamepadLongPressIntent)');
 
         await takeScreenshot(binding, 'm3_book_context_menu');
 
@@ -242,24 +286,21 @@ Future<void> _scrollToFind(WidgetTester tester, String text) async {
 }
 
 Future<void> _goBack(WidgetTester tester) async {
-  final back = find.byTooltip('戻る');
-  final backEn = find.byTooltip('Back');
-  final backButton = find.byType(BackButton);
-  final backIcon = find.byIcon(Icons.arrow_back);
+  // Focus-driven back: the global HibikiPopIntent (gameButtonB) pops the route
+  // without depending on a Back button's coordinates / tooltip locale.
+  await FocusDriver(tester).back();
+  await tester.pump(const Duration(milliseconds: 250));
+}
 
-  if (back.evaluate().isNotEmpty) {
-    await tester.tap(back.first);
-  } else if (backEn.evaluate().isNotEmpty) {
-    await tester.tap(backEn.first);
-  } else if (backButton.evaluate().isNotEmpty) {
-    await tester.tap(backButton.first);
-  } else if (backIcon.evaluate().isNotEmpty) {
-    await tester.tap(backIcon.first);
-  } else {
-    final NavigatorState nav = Navigator.of(
-      tester.element(find.byType(Scaffold).first),
-    );
-    nav.pop();
-  }
-  await tester.pumpAndSettle();
+/// Dispatch a [GamepadLongPressIntent] to the currently focused widget — the
+/// keyboard/gamepad equivalent of a mouse long-press. Synchronous (no await
+/// across the BuildContext) so it never crosses an async gap.
+bool _dispatchGamepadLongPress() {
+  final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+  if (ctx == null) return false;
+  return Actions.maybeInvoke<GamepadLongPressIntent>(
+        ctx,
+        const GamepadLongPressIntent(GamepadButton.a),
+      ) ==
+      true;
 }

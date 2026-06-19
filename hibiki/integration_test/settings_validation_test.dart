@@ -7,6 +7,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/models/app_model.dart';
 
+import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
 
 /// M2: Settings Validation tests.
@@ -119,6 +120,7 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
     WidgetTester tester, String page) async {
   await _scrollToTop(tester);
 
+  final FocusDriver driver = FocusDriver(tester);
   int toggled = 0;
   int failed = 0;
   final int count = find.byType(Switch).evaluate().length;
@@ -132,7 +134,7 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
       await tester.ensureVisible(sw);
       await tester.pumpAndSettle();
     } catch (_) {
-      // ensureVisible can fail if not under a Scrollable; tap anyway.
+      // ensureVisible can fail if not under a Scrollable; focus-drive anyway.
     }
 
     final Switch before = tester.widget<Switch>(sw);
@@ -142,8 +144,12 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
     }
     final bool v0 = before.value;
 
-    await tester.tap(sw, warnIfMissed: false);
-    await tester.pumpAndSettle();
+    // Focus the switch row and confirm with Enter (no coordinate tap).
+    if (!await _focusActivateSwitch(driver, sw)) {
+      debugPrint('[M2] ✗ switch[$i] not reachable by focus');
+      failed++;
+      continue;
+    }
 
     final bool v1 = tester.widget<Switch>(find.byType(Switch).at(i)).value;
     if (v1 == v0) {
@@ -153,8 +159,11 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
     }
 
     // Restore.
-    await tester.tap(find.byType(Switch).at(i), warnIfMissed: false);
-    await tester.pumpAndSettle();
+    if (!await _focusActivateSwitch(driver, find.byType(Switch).at(i))) {
+      debugPrint('[M2] ✗ switch[$i] not reachable by focus to restore');
+      failed++;
+      continue;
+    }
     final bool v2 = tester.widget<Switch>(find.byType(Switch).at(i)).value;
     if (v2 != v0) {
       debugPrint('[M2] ✗ switch[$i] did not restore (want $v0, got $v2)');
@@ -165,6 +174,15 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
     toggled++;
   }
   return (toggled: toggled, failed: failed);
+}
+
+/// Move focus onto [sw]'s row and activate it with Enter. Returns false if the
+/// row is not focus-reachable (a real bug — do not fall back to a tap).
+Future<bool> _focusActivateSwitch(FocusDriver driver, Finder sw) async {
+  if (!await driver.focusWidget(sw)) return false;
+  await driver.activate();
+  await driver.tester.pump(const Duration(milliseconds: 250));
+  return true;
 }
 
 enum _Persist { verified, failed, skipped }
@@ -197,10 +215,10 @@ Future<_Persist> _verifyPersistence(WidgetTester tester, String page) async {
     prefs.prefsSnapshot,
   );
 
+  final FocusDriver driver = FocusDriver(tester);
   await tester.ensureVisible(find.byType(Switch).at(idx));
   await tester.pumpAndSettle();
-  await tester.tap(find.byType(Switch).at(idx), warnIfMissed: false);
-  await tester.pumpAndSettle();
+  await _focusActivateSwitch(driver, find.byType(Switch).at(idx));
   // Give the async setPref write time to commit before reading the DB back.
   await tester.pump(const Duration(milliseconds: 500));
 
@@ -212,8 +230,7 @@ Future<_Persist> _verifyPersistence(WidgetTester tester, String page) async {
   final bool changed = !_mapsEqual(before, after);
 
   // Restore the switch to its original value.
-  await tester.tap(find.byType(Switch).at(idx), warnIfMissed: false);
-  await tester.pumpAndSettle();
+  await _focusActivateSwitch(driver, find.byType(Switch).at(idx));
   await tester.pump(const Duration(milliseconds: 500));
 
   return changed ? _Persist.verified : _Persist.failed;
@@ -238,15 +255,23 @@ Future<int> _countSegmentedButtons(WidgetTester tester) async {
 /// Navigate to the Settings tab and open the named sub-page.
 /// Returns false if the entry can't be found.
 Future<bool> _openSettingsPage(WidgetTester tester, String text) async {
+  final FocusDriver driver = FocusDriver(tester);
   final navTargets = findPrimaryNavigationTargets();
   if (navTargets.isEmpty) return false;
-  await tester.tap(navTargets.last);
-  await tester.pumpAndSettle();
+  final bool focusedSettings = await driver.focusWidget(navTargets.last);
+  expect(focusedSettings, isTrue,
+      reason: 'Settings tab must be reachable by focus');
+  await driver.activate();
+  await tester.pump(const Duration(milliseconds: 500));
 
   await _scrollToFind(tester, text);
-  if (find.text(text).evaluate().isEmpty) return false;
-  await tester.tap(find.text(text).first);
-  await tester.pumpAndSettle();
+  final Finder entry = find.text(text).first;
+  if (entry.evaluate().isEmpty) return false;
+  final bool focusedEntry = await driver.focusWidget(entry);
+  expect(focusedEntry, isTrue,
+      reason: 'Settings sub-page entry "$text" must be reachable by focus');
+  await driver.activate();
+  await tester.pump(const Duration(milliseconds: 500));
   return true;
 }
 
@@ -270,24 +295,8 @@ Future<void> _scrollToFind(WidgetTester tester, String text) async {
 }
 
 Future<void> _goBack(WidgetTester tester) async {
-  final back = find.byTooltip('戻る');
-  final backEn = find.byTooltip('Back');
-  final backButton = find.byType(BackButton);
-  final backIcon = find.byIcon(Icons.arrow_back);
-
-  if (back.evaluate().isNotEmpty) {
-    await tester.tap(back.first);
-  } else if (backEn.evaluate().isNotEmpty) {
-    await tester.tap(backEn.first);
-  } else if (backButton.evaluate().isNotEmpty) {
-    await tester.tap(backButton.first);
-  } else if (backIcon.evaluate().isNotEmpty) {
-    await tester.tap(backIcon.first);
-  } else {
-    final NavigatorState nav = Navigator.of(
-      tester.element(find.byType(Scaffold).first),
-    );
-    nav.pop();
-  }
-  await tester.pumpAndSettle();
+  // Focus-driven back: the global HibikiPopIntent (gameButtonB) pops the route
+  // without depending on a Back button's coordinates / tooltip locale.
+  await FocusDriver(tester).back();
+  await tester.pump(const Duration(milliseconds: 250));
 }
