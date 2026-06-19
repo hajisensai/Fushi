@@ -203,8 +203,6 @@ void main() {
               installerFailureSummary:
                   'Inno Setup reported that Hibiki was still running.',
               installerPid: 4242,
-              postLaunchObservedAt: DateTime.utc(2026, 6, 17, 10, 30, 2),
-              installerProcessRunning: false,
               innoLogExists: false,
             ),
           ),
@@ -238,7 +236,6 @@ void main() {
     );
     expect(
         find.text(t.update_install_installer_pid(pid: 4242)), findsOneWidget);
-    expect(find.text(t.update_install_process_not_observed), findsOneWidget);
     expect(find.text(t.update_install_log_not_observed), findsOneWidget);
   });
 
@@ -257,8 +254,6 @@ void main() {
       'startedAt': '2026-06-17T10:30:00Z',
       'installerLaunchSucceeded': true,
       'installerPid': 4242,
-      'postLaunchObservedAt': '2026-06-17T10:30:02Z',
-      'installerProcessRunning': false,
       'innoLogExists': true,
       'currentExecutablePath': r'D:\Portable\Hibiki\hibiki.exe',
       'currentInstallDir': r'D:\Portable\Hibiki',
