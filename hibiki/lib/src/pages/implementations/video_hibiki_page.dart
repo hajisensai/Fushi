@@ -1175,7 +1175,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         mediaUri: urls.streamUrl,
         cues: cues,
         title: info.title,
-        initialPositionMs: 0,
+        // TODO-559: 远端断点恢复——读 per-book prefs 存的上次位置（无则 0 从头）。
+        initialPositionMs: _readPersistedRemotePosition(),
         startIntent: EpisodeStartIntent.initialOpen,
         externalSubtitlePath: externalSub,
       );
@@ -1208,6 +1209,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         : double.tryParse(raw?.toString() ?? '') ?? 100.0;
     return v.clamp(0.0, 100.0).toDouble();
   }
+
+  /// per-book 远端视频断点位置偏好 key（TODO-559）。
+  ///
+  /// 在线远端视频（[_isRemote]）在 client 本地 DB 没有 VideoBooks 行（书架不收录
+  /// 远端在线视频，[home_video_page._openRemote] 直接 push 播放页不 upsert），因此
+  /// 本地视频走 `VideoBooks.lastPositionMs` 的进度链路对远端不可用。沿用 speed/volume
+  /// 同款 per-book prefs 范式（落 Drift `preferences` 表，跨重启保留），key 用稳定的
+  /// `widget.bookUid`（= 远端 `RemoteVideoInfo.id` = host 端文件名派生的 bookUid，
+  /// 每次列举不变，见 app_model_library_host_service `RemoteVideoInfo.id = row.bookUid`），
+  /// 避免为远端在线视频建 VideoBooks 行污染书架 / 触发资产 GC / 同步逻辑。
+  String get _remotePositionPrefKey =>
+      'video_remote_position_${widget.bookUid}';
+
+  /// 读 per-book 远端断点位置（无则 0，从头）。
+  int _readPersistedRemotePosition() {
+    final Object? raw =
+        appModel.prefsRepo.getPref(_remotePositionPrefKey, defaultValue: 0);
+    final int v =
+        raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
+    return v < 0 ? 0 : v;
+  }
+
+  /// 远端视频断点位置持久化（controller 每秒至多一次回调 / flush / dispose）。
+  ///
+  /// 与本地 [_persistPosition] 对应：远端无播放列表（[_episodes] 恒空）也无 DB 行，
+  /// 按稳定 bookUid 落 prefs。controller 用 `widget.bookUid` 调 [onPositionWrite]，
+  /// 故回调 [uid] 即构造 [_remotePositionPrefKey] 用的同一 bookUid。
+  Future<void> _persistRemotePosition(String uid, int posMs) =>
+      appModel.prefsRepo.setPref('video_remote_position_$uid', posMs);
 
   /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
   /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。
@@ -1690,7 +1720,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
-    controller.onPositionWrite = _isRemote ? null : _persistPosition;
+    // TODO-559: 远端断点保存——远端无 DB 行，按 bookUid 落 prefs（原为 null 不存）。
+    controller.onPositionWrite =
+        _isRemote ? _persistRemotePosition : _persistPosition;
     if (!mounted) {
       if (_controller == null) controller.dispose();
       return;
