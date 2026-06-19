@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 314 条。点号进各自文件。
+> 共 315 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-321](bugs/BUG-321-remote-video-resume.md) | ✅ | ✅ | 远端视频断点恢复失效每次从0开始 |
 | [BUG-320](bugs/BUG-320-shelf-card-cover-badge.md) | ✅ | ✅ | TODO-552 书架卡片封面变形+有声书徽章过小 |
 | [BUG-319](bugs/BUG-319-longpress-dialog-cover.md) | ✅ | ✅ | TODO-557 长按书卡对话框封面消失 |
 | [BUG-318](bugs/BUG-318-todo-562-video-f12-fullscreen.md) | ✅ | ✅ | TODO-562: 视频按 F12 切全屏无反应（老用户快捷键快照覆盖新增默认键） |

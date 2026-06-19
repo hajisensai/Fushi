@@ -1,0 +1,13 @@
+## BUG-321 · 远端视频断点恢复失效每次从0开始
+- **报告**：2026-06-19（用户：B02 验收第 3 条「没有，至少远端视频没有，还是从零开始」）
+- **真实性**：✅ 真 bug。远端（互通在线流）视频每次重新打开都从 0 播，上次位置既没存也没恢复。本地视频不受影响。根因双向未接线，自远端功能诞生（commit `a1b4dc67f feat(sync): add interconnect remote video entrypoint`）即如此，**非 TODO-518/521 回归**（git blame 实证 TODO-518 `a5e653ed8` 只加了 `startIntent`，未动 `initialPositionMs: 0`）。
+  - 恢复漏点：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:1178`（修复前）`_initRemote` 硬编码 `initialPositionMs: 0`，全程不读任何存储。
+  - 保存漏点：`video_hibiki_page.dart:1693`（修复前）`controller.onPositionWrite = _isRemote ? null : _persistPosition;`——远端为 `null`，每秒节流写 / `flushPosition` / dispose 强制落库全部静默 no-op。
+  - 结构性障碍：远端在线视频在 client 本地 DB **没有 VideoBooks 行**（`home_video_page._openRemote:475` 直接 push 播放页，不 `upsertVideoBook`），本地用的 `VideoBooks.lastPositionMs` 链路对远端无可写/可读的行。远端 bookUid（`RemoteVideoInfo.id` = host 端文件名派生的 bookUid，`app_model_library_host_service.dart:529`）本身**稳定**，不是 key 不匹配。
+- **[x] ① 已修复** — commit `a90c87474`。采用与 speed/volume 同款 per-book prefs 范式（落 Drift `preferences` 表，跨重启保留），按稳定 bookUid 存取远端断点，不为远端在线视频建 VideoBooks 行（避免污染 client 书架 / 触发资产 GC / 同步逻辑），零 schema 变更。改动 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart`：
+  - 新增 key getter `_remotePositionPrefKey`（`video_remote_position_<bookUid>`）+ 读 `_readPersistedRemotePosition()`（无则 0，负数 clamp 0）+ 写 `_persistRemotePosition(uid, posMs)`（`video_hibiki_page.dart:1212-1240`）。
+  - 恢复侧 `_initRemote` 改 `initialPositionMs: _readPersistedRemotePosition()`（`:1179`）。
+  - 保存侧 `controller.onPositionWrite = _isRemote ? _persistRemotePosition : _persistPosition;`（`:1724-1725`）。
+  - 本地路径完全不动（`_isRemote` 分支隔离），换集 TODO-518 起播策略对远端无害（远端无播放列表 `_episodes` 恒空，`startIntent: initialOpen` 保持）。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_remote_resume_guard_test.dart`（5 用例，全绿）。两层：①行为往返——真 `PreferencesRepository` + 内存 DB 验「保存远端位置 73210ms → 跨实例 reload 读回 73210 而非 0」+ 双远端按 bookUid 独立；②源码守卫——断言 `_initRemote` 读 prefs 非硬编码 0、`onPositionWrite` 远端走 `_persistRemotePosition` 非 null、key 用稳定 bookUid。**撤修复实测转红**（两个源码守卫精确 `[E]`），守卫有效。
+- **备注**：真机验待用户——真远端（互通）视频播放中途退出再重进，应回到上次位置而非 0；本地视频 + 换集从头播行为不变。`dart format` + `flutter analyze`（0 issue）+ `flutter test test/pages/ test/media/video/`（1862 通过 / 0 失败）已绿。
