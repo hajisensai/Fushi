@@ -350,6 +350,54 @@ void main() {
               'PRIVATE shell32)'));
       expect(rootCmake, contains('hibiki_update_launcher'));
     });
+
+    test(
+        'update launcher never abandons the install on an OpenProcess(parent) '
+        'failure (TODO-600)', () {
+      // Root cause (TODO-600, 551 audit): WaitForParentExit only tolerated
+      // ERROR_INVALID_PARAMETER and treated every other OpenProcess failure as
+      // fatal (MarkLaunchFailed + return false -> wWinMain return 3), so a
+      // recoverable failure (access denied / transient / already-exited)
+      // silently abandoned an already-downloaded update. OpenProcess here only
+      // provides a wait handle; the launcher is detached and its exit code is
+      // unread, so the install must proceed regardless and let the downstream
+      // mutex-release poll + AppMutex-guarded installer be the real gate.
+      final String launcher =
+          File('windows/runner/update_launcher.cpp').readAsStringSync();
+
+      // The failure-classification policy is a named, pure function.
+      expect(
+        launcher.contains('ParentOpenFailureProvesExit') ||
+            launcher.contains('ClassifyParentOpenFailure'),
+        isTrue,
+      );
+      // ERROR_INVALID_PARAMETER remains the one code that PROVES prior exit.
+      expect(launcher, contains('ERROR_INVALID_PARAMETER'));
+
+      // WaitForParentExit no longer reports a fatal outcome: it returns void and
+      // the call site no longer abandons the install (no `return 3`). The only
+      // genuinely fatal path left is CreateProcess Inno failing to start.
+      expect(launcher, contains('void WaitForParentExit'));
+      expect(launcher, isNot(contains('return 3;')));
+      expect(launcher, isNot(contains('if (!WaitForParentExit')));
+
+      // MarkLaunchFailed is no longer wired into the parent-wait path; it stays
+      // only for the real fatal failure (the installer refusing to spawn).
+      expect(
+        launcher,
+        contains('MarkLaunchFailed(args.marker_path, '
+            'LastErrorMessage("CreateProcess Inno"))'),
+      );
+      expect(
+        launcher,
+        isNot(contains('MarkLaunchFailed(args.marker_path, '
+            'LastErrorMessage("OpenProcess parent"))')),
+      );
+
+      // Non-fatal failures are recorded as diagnostics, not as a launch failure.
+      expect(launcher, contains('parentOpenFailed'));
+      expect(launcher, contains('parentExitTimedOut'));
+    });
   });
 
   group('isWindowsExecutableHeader', () {

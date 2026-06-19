@@ -100,8 +100,7 @@ std::string NowIsoUtc() {
   return std::string(buffer);
 }
 
-std::string LastErrorMessage(const std::string& action) {
-  const DWORD error = ::GetLastError();
+std::string FormatErrorMessage(DWORD error, const std::string& action) {
   LPWSTR raw = nullptr;
   const DWORD length = ::FormatMessageW(
       FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
@@ -121,6 +120,10 @@ std::string LastErrorMessage(const std::string& action) {
   }
   return action + " failed (" + std::to_string(error) + "): " +
          ToUtf8(message);
+}
+
+std::string LastErrorMessage(const std::string& action) {
+  return FormatErrorMessage(::GetLastError(), action);
 }
 
 bool ReadTextFile(const std::wstring& path, std::string* output) {
@@ -304,20 +307,58 @@ void MarkLaunchFailed(const std::wstring& marker_path,
                       {"launchError", JsonString(error)}});
 }
 
-bool WaitForParentExit(const ParsedArgs& args) {
+// Decides what to record (and that we keep going) when OpenProcess for the
+// parent PID returns nullptr.
+//
+// OpenProcess(SYNCHRONIZE) here exists ONLY to obtain a wait handle so we can
+// block on the old hibiki.exe exiting before launching Inno. A failure to open
+// that handle is never proof that the old process is still running, and this
+// launcher is a detached process whose exit code nobody reads -- so abandoning
+// the install on such a failure silently strands an already-downloaded update
+// with no recovery path. We therefore ALWAYS continue:
+//   * ERROR_INVALID_PARAMETER (87) -- the PID no longer maps to a live process,
+//     which additionally PROVES the parent has already exited; record
+//     parentExitObserved=true.
+//   * Any other code (e.g. ERROR_ACCESS_DENIED 5, transient errors) -- we could
+//     not prove the parent is alive and could not arrange a wait, so record
+//     parentExitObserved=false plus the diagnostic error, but still fall through
+//     to WaitForMutexReleased (the downstream bounded safety wait) and the
+//     AppMutex-guarded installer instead of failing.
+struct ParentOpenFailureOutcome {
+  bool parent_exit_proven;  // Only ERROR_INVALID_PARAMETER proves prior exit.
+};
+
+ParentOpenFailureOutcome ClassifyParentOpenFailure(DWORD error) {
+  return ParentOpenFailureOutcome{
+      /*parent_exit_proven=*/error == ERROR_INVALID_PARAMETER};
+}
+
+// Waits (bounded) for the old hibiki.exe parent to exit, recording the outcome
+// in the marker. This step is best-effort and NEVER abandons the install: see
+// ClassifyParentOpenFailure for why an OpenProcess failure is not a fatal error.
+// On a genuine wait timeout we still proceed -- the downstream mutex-release
+// poll and the installer's own AppMutex check are the real gate.
+void WaitForParentExit(const ParsedArgs& args) {
   HANDLE parent = ::OpenProcess(SYNCHRONIZE, FALSE, args.parent_pid);
   if (parent == nullptr) {
-    if (::GetLastError() == ERROR_INVALID_PARAMETER) {
+    const DWORD error = ::GetLastError();
+    const ParentOpenFailureOutcome outcome = ClassifyParentOpenFailure(error);
+    if (outcome.parent_exit_proven) {
       AppendMarkerFields(args.marker_path,
                          {{"parentExitObserved", "true"},
                           {"parentExitObservedAt", JsonString(NowIsoUtc())}});
-      return true;
+    } else {
+      // Could not open or wait on the parent, but never abandon the install:
+      // record the diagnostic and proceed to the mutex-release wait + installer.
+      AppendMarkerFields(
+          args.marker_path,
+          {{"parentExitObserved", "false"},
+           {"parentExitObservedAt", JsonString(NowIsoUtc())},
+           {"parentOpenFailed", "true"},
+           {"parentOpenError",
+            JsonString(FormatErrorMessage(error, "OpenProcess parent"))}});
     }
-    AppendMarkerFields(args.marker_path,
-                       {{"parentExitObserved", "false"},
-                        {"parentExitObservedAt", JsonString(NowIsoUtc())}});
-    MarkLaunchFailed(args.marker_path, LastErrorMessage("OpenProcess parent"));
-    return false;
+    return;
   }
 
   const DWORD wait = ::WaitForSingleObject(parent, kParentExitTimeoutMs);
@@ -327,10 +368,18 @@ bool WaitForParentExit(const ParsedArgs& args) {
                      {{"parentExitObserved", observed ? "true" : "false"},
                       {"parentExitObservedAt", JsonString(NowIsoUtc())}});
   if (!observed) {
-    MarkLaunchFailed(args.marker_path,
-                     "Timed out waiting for the Hibiki parent process to exit");
+    // The wait genuinely timed out: the old process is still alive after the
+    // full timeout. Record it for diagnostics, but still proceed -- the
+    // mutex-release poll and the installer's own AppMutex check remain the
+    // gate, and abandoning here would strand the downloaded update for no gain.
+    AppendMarkerFields(
+        args.marker_path,
+        {{"parentExitTimedOut", "true"},
+         {"parentExitTimedOutAt", JsonString(NowIsoUtc())},
+         {"parentExitTimedOutError",
+          JsonString(
+              "Timed out waiting for the Hibiki parent process to exit")}});
   }
-  return observed;
 }
 
 // Returns true once HibikiSingleInstanceMutex is no longer present, or false
@@ -394,9 +443,10 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
                        std::to_string(::GetCurrentProcessId())},
                       {"parentProcessId", std::to_string(args.parent_pid)}});
 
-  if (!WaitForParentExit(args)) {
-    return 3;
-  }
+  // Best-effort, bounded wait for the old parent to exit. This never aborts the
+  // install (an OpenProcess failure or wait timeout is recorded but not fatal),
+  // because the launcher is detached and the installer is AppMutex-guarded.
+  WaitForParentExit(args);
 
   // Close the "only waited on the parent PID" blind spot: a second hibiki.exe
   // or a leftover WebView2 child can still hold the mutex after the parent
