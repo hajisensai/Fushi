@@ -1,8 +1,8 @@
 ## BUG-316 · Windows 自更新 AppMutex 死结：新安装器被旧 app mutex 阻止替换文件
 - **Reported**: 2026-06-19 (board TODO-549; regression source TODO-431)
 - **Real?**: YES, confirmed by a real Inno install log.
-- **[x] (1) Fixed** — commit cc7fd75e3
-- **[x] (2) Automated test added** — commit cc7fd75e3
+- **[x] (1) Fixed** — commit b19e8a469
+- **[x] (2) Automated test added** — commit b19e8a469
 
 ### Root cause
 App-internal self-update: the old app downloads the new Inno installer and, via
