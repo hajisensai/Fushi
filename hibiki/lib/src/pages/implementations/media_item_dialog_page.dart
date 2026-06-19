@@ -4,8 +4,6 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
-const double kBookDialogCoverBackgroundOpacity = 0.24;
-
 // ---------------------------------------------------------------------------
 // Action data model
 // ---------------------------------------------------------------------------
@@ -157,8 +155,6 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       showLaunchAction: widget.showLaunchAction,
       launchLabel: t.dialog_read,
       onLaunch: _executeLaunch,
-      coverBackgroundFit: BoxFit.contain,
-      coverBackgroundOpacity: kBookDialogCoverBackgroundOpacity,
       quickActions: _quickActions,
       listActions: _listActions,
       dangerActions: _dangerActions,
@@ -211,8 +207,6 @@ class MediaItemDialogFrame extends StatelessWidget {
     this.showLaunchAction = true,
     this.launchLabel,
     this.onLaunch,
-    this.coverBackgroundFit = BoxFit.cover,
-    this.coverBackgroundOpacity = 0.34,
     this.quickActions = const [],
     this.listActions = const [],
     this.dangerActions = const [],
@@ -225,27 +219,44 @@ class MediaItemDialogFrame extends StatelessWidget {
   final bool showLaunchAction;
   final String? launchLabel;
   final VoidCallback? onLaunch;
-  final BoxFit coverBackgroundFit;
-  final double coverBackgroundOpacity;
   final List<DialogQuickAction> quickActions;
   final List<DialogListAction> listActions;
   final List<DialogDangerAction> dangerActions;
 
-  /// Stable virtual size for the background cover. The user's original cover
-  /// widget may already contain its own fit behavior, so we place it in this
-  /// box and let the outer [FittedBox] cover the dialog frame.
-  static const Size _backgroundCoverSize = Size(280, 420);
+  /// Cover height cap as a fraction of screen height. With the cover rendered at
+  /// the top of the dialog (BoxFit.contain inside [_buildCover]) the whole cover
+  /// stays visible (no hard crop) while the dialog never grows taller than the
+  /// screen.
+  ///
+  /// TODO-455 had turned the cover into a dimmed background behind a heavy
+  /// readability scrim, which made the cover effectively invisible (~7% opacity);
+  /// TODO-557 restores the cover as a visible top-of-dialog block.
+  static const double _coverHeightFactor = 0.34;
 
   @override
   Widget build(BuildContext context) {
+    final double screenHeight = MediaQuery.sizeOf(context).height;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
     return HibikiDialogFrame(
-      child: Stack(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Positioned.fill(child: _coverBackground(tokens, colors)),
-          Positioned.fill(child: _readabilityScrim(colors)),
+          // Visible cover block at the top of the dialog (TODO-557). The cover
+          // widget itself uses BoxFit.contain, so the whole artwork stays
+          // visible and is never cropped; the ColoredBox letterboxes it.
+          if (cover != null)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: screenHeight * _coverHeightFactor,
+              ),
+              child: ColoredBox(
+                color: tokens.surfaces.overlay,
+                child: cover!,
+              ),
+            ),
           Padding(
             padding: EdgeInsets.all(tokens.spacing.card),
             child: Column(
@@ -331,52 +342,6 @@ class MediaItemDialogFrame extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _coverBackground(HibikiDesignTokens tokens, ColorScheme colors) {
-    if (cover == null) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[
-              tokens.surfaces.overlay,
-              tokens.surfaces.card,
-            ],
-          ),
-        ),
-      );
-    }
-    return ColoredBox(
-      color: tokens.surfaces.overlay,
-      child: Opacity(
-        opacity: coverBackgroundOpacity,
-        child: FittedBox(
-          fit: coverBackgroundFit,
-          child: SizedBox.fromSize(
-            size: _backgroundCoverSize,
-            child: cover!,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _readabilityScrim(ColorScheme colors) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[
-            colors.surface.withValues(alpha: 0.88),
-            colors.surface.withValues(alpha: 0.72),
-            colors.surface.withValues(alpha: 0.94),
-          ],
-        ),
       ),
     );
   }

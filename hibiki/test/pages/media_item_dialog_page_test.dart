@@ -40,21 +40,34 @@ void main() {
         ),
       ];
 
-  test('book dialogs request a contained, lighter cover background', () {
+  test('long-press dialog renders the cover as a visible top block (TODO-557)',
+      () {
     final String source =
         File('lib/src/pages/implementations/media_item_dialog_page.dart')
             .readAsStringSync();
 
-    expect(source, contains('const double kBookDialogCoverBackgroundOpacity'));
-    expect(source, contains('coverBackgroundFit: BoxFit.contain'));
-    expect(
-        source,
-        contains('coverBackgroundOpacity: '
-            'kBookDialogCoverBackgroundOpacity'));
+    // The cover must be a visible, height-capped block at the top of the dialog
+    // (BoxFit.contain inside _buildCover keeps the whole artwork visible), not a
+    // dimmed background hidden behind a readability scrim (TODO-557 regression).
     expect(
       source,
-      isNot(contains('const double kBookDialogCoverBackgroundOpacity = 0.34')),
-      reason: 'book long-press cover background must be lighter than before',
+      contains('maxHeight: screenHeight * _coverHeightFactor'),
+      reason: 'the cover must be a height-capped top block, not a background',
+    );
+    expect(
+      source,
+      contains('child: cover!,'),
+      reason: 'the cover widget must render directly in the foreground',
+    );
+    expect(
+      source,
+      isNot(contains('_readabilityScrim')),
+      reason: 'the heavy readability scrim that hid the cover must be gone',
+    );
+    expect(
+      source,
+      isNot(contains('coverBackgroundOpacity')),
+      reason: 'the dimmed background-cover path must be removed',
     );
   });
 
@@ -159,33 +172,38 @@ void main() {
     );
   });
 
-  testWidgets('cover background fit and opacity can be tuned for books',
+  testWidgets(
+      'the cover is a visible top block, not a dimmed background (TODO-557)',
       (WidgetTester tester) async {
-    const Key coverKey = ValueKey<String>('contained-cover');
+    const Key coverKey = ValueKey<String>('top-cover');
     await tester.pumpWidget(
       buildApp(
-        MediaItemDialogFrame(
-          cover: const SizedBox(key: coverKey, width: 260, height: 100),
+        const MediaItemDialogFrame(
+          cover: SizedBox(key: coverKey, width: 260, height: 100),
           title: 'Test title',
-          coverBackgroundFit: BoxFit.contain,
-          coverBackgroundOpacity: 0.24,
         ),
       ),
     );
 
     expect(tester.takeException(), isNull);
-    final Finder fitted = find.ancestor(
-      of: find.byKey(coverKey),
-      matching: find.byType(FittedBox),
-    );
-    final Finder opacity = find.ancestor(
+    expect(find.byKey(coverKey), findsOneWidget);
+    // The cover must NOT sit inside an Opacity wrapper (the regression dimmed it
+    // to ~24% as a background). It is now a full-opacity visible top block.
+    final Finder opacityAncestor = find.ancestor(
       of: find.byKey(coverKey),
       matching: find.byType(Opacity),
     );
-    expect(fitted, findsOneWidget);
-    expect(tester.widget<FittedBox>(fitted).fit, BoxFit.contain);
-    expect(opacity, findsOneWidget);
-    expect(tester.widget<Opacity>(opacity).opacity, 0.24);
+    expect(opacityAncestor, findsNothing,
+        reason: 'the cover must be visible, not a dimmed background layer');
+    // The cover is height-capped by a ConstrainedBox so the dialog never grows
+    // taller than the screen.
+    final Finder constrained = find.ancestor(
+      of: find.byKey(coverKey),
+      matching: find.byType(ConstrainedBox),
+    );
+    expect(constrained, findsWidgets,
+        reason:
+            'the cover block must be height-capped at the top of the dialog');
   });
 
   testWidgets('destructive actions render as visible (muted) buttons',

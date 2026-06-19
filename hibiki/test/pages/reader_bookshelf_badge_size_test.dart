@@ -4,15 +4,15 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart
     show kShelfCoverBadgeDimension;
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
-/// 书架书卡封面右上角类型徽章尺寸守卫（TODO-361）。
+/// 书架书卡封面右上角类型徽章尺寸守卫（TODO-361 / TODO-552）。
 ///
-/// 徽章内在尺寸是 22px（HibikiBadge：icon 14 + padding gap 8）。早期它夹在封面下方
-/// footer 里读作小角标；TODO-355 移到封面图后旧的 `gap*5(=40) + BoxFit.scaleDown`
-/// 永远不缩小 22px 徽章，于是封面上显得「大了一圈」。修复把方框收到
-/// [kShelfCoverBadgeDimension]=16 并改 `BoxFit.contain`，让徽章等比缩到 16px。
+/// 徽章内在尺寸是 22px（HibikiBadge：icon 14 + padding gap 8）。TODO-361 曾把方框收到
+/// 16px + `BoxFit.contain`，把徽章硬缩到 16px，结果「太小看不清」（TODO-552 报回归）。
+/// 修复把方框设为徽章内在尺寸 [kShelfCoverBadgeDimension]=22，配合 `BoxFit.contain`
+/// 既不放大也不缩小，徽章按 22px 满尺寸（正常大小）渲染。
 ///
 /// 这里用与生产代码同一个常量和同一种 FittedBox 配置渲染徽章，断言**视觉绘制尺寸**
-/// （含 FittedBox 的 Transform.scale）确实是 16px，防止常量 / fit 被改回后悄悄漂大。
+/// （含 FittedBox 的 Transform.scale）确实是 22px，防止常量 / fit 被改回后悄悄缩小。
 Size _visualSizeOf(WidgetTester tester, GlobalKey key) {
   final Size layoutSize = tester.getSize(find.byKey(key));
   final RenderBox box = key.currentContext!.findRenderObject()! as RenderBox;
@@ -30,15 +30,14 @@ Size _visualSizeOf(WidgetTester tester, GlobalKey key) {
 
 void main() {
   testWidgets(
-      'cover badge dimension constant is smaller than the badge intrinsic size',
+      'cover badge dimension constant equals the badge intrinsic size (22px)',
       (tester) async {
-    // If the box were >= 22, BoxFit.contain would never shrink the badge and we
-    // would be back to the oversized cover badge.
-    expect(kShelfCoverBadgeDimension, equals(16.0));
-    expect(kShelfCoverBadgeDimension, lessThan(22.0));
+    // The box equals the badge intrinsic size so BoxFit.contain renders the
+    // badge at its full, normal size instead of shrinking it (TODO-552).
+    expect(kShelfCoverBadgeDimension, equals(22.0));
   });
 
-  testWidgets('cover type badge paints at the restored 16px corner size',
+  testWidgets('cover type badge paints at its normal intrinsic 22px size',
       (tester) async {
     final GlobalKey badgeKey = GlobalKey();
     await tester.pumpWidget(
@@ -61,11 +60,11 @@ void main() {
       ),
     );
 
-    // The badge still lays out at its intrinsic 22px, but FittedBox.contain
-    // visually scales it down to fill the 16px box.
+    // The badge lays out at its intrinsic 22px and FittedBox.contain neither
+    // enlarges nor shrinks it, so the visual size stays at the normal 22px.
     expect(tester.getSize(find.byKey(badgeKey)), const Size(22.0, 22.0));
     final Size visual = _visualSizeOf(tester, badgeKey);
-    expect(visual.width, moreOrLessEquals(16.0, epsilon: 0.01));
-    expect(visual.height, moreOrLessEquals(16.0, epsilon: 0.01));
+    expect(visual.width, moreOrLessEquals(22.0, epsilon: 0.01));
+    expect(visual.height, moreOrLessEquals(22.0, epsilon: 0.01));
   });
 }

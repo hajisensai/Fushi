@@ -70,15 +70,22 @@ int adaptiveTagSlots({
 ///
 /// 历史：早期徽章夹在封面下方的 footer 文字行里、紧贴小号书名，读作一个克制的小角标。
 /// TODO-355 把徽章移到封面图上后，旧布局用 `SizedBox.square(gap*5=40) + BoxFit.scaleDown`
-/// 包住内在 22px（HibikiBadge：icon 14 + padding gap 8）的徽章——`scaleDown` 永不放大也
-/// 永不缩小已小于 40px 的徽章，于是徽章仍按 22px 满尺寸压在封面图上，比原来「大了一圈」。
-/// 这里把方框收到设计 token 基准 `gap * 2 = 16` 并改用 `BoxFit.contain`，让 22px 徽章等比
-/// 缩到 16px，恢复书架原来那种约「半个」大小（用户记忆里的 0.5 显示）的小角标观感。
+/// 包住内在 22px（HibikiBadge：icon 14 + padding gap 8）的徽章，徽章按 22px 满尺寸渲染。
+/// TODO-361 误把方框收到 `gap*2=16` + `BoxFit.contain`，把 22px 徽章硬缩到 16px，
+/// 反而「太小看不清」（TODO-552 用户报回归）。这里恢复书架徽章的正常大小：方框等于徽章
+/// 内在尺寸 22px，配合 `BoxFit.contain` 既不放大也不缩小，徽章按 22px 满尺寸渲染。
 /// 用顶层常量 + 测试可见，便于 widget 守卫断言渲染尺寸，防止再次漂移。
-const double kShelfCoverBadgeDimension = 8.0 * 2;
+const double kShelfCoverBadgeDimension = 22.0;
 
-/// 书架封面图统一填满卡片封面区域；允许裁切边缘，避免 fitHeight 留白。
-BoxFit get _bookCardCoverFit => BoxFit.cover;
+/// 书架封面图按高度等比缩放、保持封面原始比例（永不变形）。
+///
+/// TODO-480 曾把这里从 [BoxFit.fitHeight] 改成 [BoxFit.cover] 以「占满卡片、消除
+/// 留白」，但封面区域宽高比在 TODO-455 把书名移到下方 40px footer 后已经不再等于
+/// 封面图比例（封面区被压扁成更宽矮的形状），`cover` 会放大裁切，封面构图被截掉
+/// 上/下，肉眼读作「封面被压缩变形」。书架封面诉求是按比例正常显示（TODO-552），
+/// 故改回 `fitHeight`：按封面区高度等比缩放、保持比例，两侧溢出由外层 `ClipRect`
+/// 裁掉，封面竖向全貌完整不变形。
+BoxFit get _bookCardCoverFit => BoxFit.fitHeight;
 
 /// Stable below-cover title footer height for reader shelf cards.
 ///
@@ -1544,13 +1551,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   PositionedDirectional(
                     end: overlayInset,
                     top: overlayInset,
-                    // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361）。徽章内在尺寸
-                    // 是 22px（HibikiBadge: icon 14 + padding gap）。早期徽章夹在封面下方的
-                    // footer 文字行里，紧贴小号书名，视觉上读作约「半个」封面元素；TODO-355 把
-                    // 徽章挪到封面图上后，旧的 `SizedBox.square(gap*5=40) + scaleDown` 永远不会
-                    // 缩小 22px 的徽章，于是在封面图上读起来比原来「大了一圈」。这里改成
-                    // `gap*2=16` 的方框 + `BoxFit.contain`，把徽章等比缩到约 16px，恢复书架
-                    // 原来那种克制的小角标观感（≈用户记忆里的 0.5 显示）。
+                    // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361 / TODO-552）。
+                    // 徽章内在尺寸是 22px（HibikiBadge: icon 14 + padding gap）。方框等于
+                    // 徽章内在尺寸 kShelfCoverBadgeDimension=22，配合 `BoxFit.contain` 既不
+                    // 放大也不缩小，徽章按 22px 满尺寸渲染——TODO-361 曾把方框收到 16px 把徽章
+                    // 缩得太小看不清，TODO-552 恢复正常大小。
                     child: SizedBox.square(
                       dimension: kShelfCoverBadgeDimension,
                       child: FittedBox(

@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 312 条。点号进各自文件。
+> 共 314 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-320](bugs/BUG-320-shelf-card-cover-badge.md) | ✅ | ✅ | TODO-552 书架卡片封面变形+有声书徽章过小 |
+| [BUG-319](bugs/BUG-319-longpress-dialog-cover.md) | ✅ | ✅ | TODO-557 长按书卡对话框封面消失 |
 | [BUG-318](bugs/BUG-318-todo-562-video-f12-fullscreen.md) | ✅ | ✅ | TODO-562: 视频按 F12 切全屏无反应（老用户快捷键快照覆盖新增默认键） |
 | [BUG-317](bugs/BUG-317-paged-touch-swipe.md) | ✅ | ✅ | TODO-553: 分页模式触摸滑动无法翻页（890378f19 回归） |
 | [BUG-316](bugs/BUG-316-todo-549-win-update-mutex-deadlock.md) | — | — | Windows 自更新 AppMutex 死结：新安装器被旧 app mutex 阻止替换文件 |
