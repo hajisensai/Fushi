@@ -136,7 +136,6 @@ void main() {
     );
 
     expect(scrollFn, contains('r.isVertical'));
-    expect(scrollFn, contains('writingMode'));
     expect(scrollFn, contains('window.scrollBy({left:'));
     expect(scrollFn, contains('window.scrollBy({left: 0, top:'));
 
@@ -144,6 +143,34 @@ void main() {
     expect(pointerMove, contains('if (hoshiContinuousMode)'));
     expect(pointerMove, isNot(contains("callHandler('onSwipe'")),
         reason: 'continuous pointer drag should scroll, not page-turn');
+  });
+
+  // BUG-338 (TODO-597): drag-to-pan must follow the pointer regardless of
+  // writing-mode. Mouse-right (dx>0) → content right → scrollLeft down →
+  // scrollBy({left: -dx}); mouse-up (dy<0) → content up → scrollTop up →
+  // scrollBy({top: -dy}). The old vertical-rl `sign = -1` produced
+  // scrollBy({left: dx}) and reversed the drag direction. Removing the sign
+  // is the fix; this guard turns red if the writing-mode sign flip returns.
+  test('continuous vertical drag follows the pointer without a sign flip', () {
+    final String scrollFn = _functionSource(
+      setupScript,
+      'function _hoshiReaderMouseDragScrollBy(dx, dy)',
+      'function _finishHoshiReaderMouseDrag(e)',
+    );
+
+    // Vertical axis: content follows the pointer with plain `-dx` (no sign).
+    expect(scrollFn, contains('window.scrollBy({left: -dx, top: 0'),
+        reason: 'vertical drag must pan with scrollBy({left: -dx}) so the '
+            'content follows the pointer (mouse-right → content-right)');
+    // Horizontal axis stays finger-following on the vertical pointer axis.
+    expect(scrollFn, contains('window.scrollBy({left: 0, top: -dy'),
+        reason: 'horizontal-writing drag must pan with scrollBy({top: -dy})');
+    // The writing-mode-dependent sign flip that reversed vertical-rl is gone.
+    expect(scrollFn, isNot(contains('-dx * sign')),
+        reason:
+            'BUG-338: the writing-mode sign flip reversed vertical-rl drag');
+    expect(scrollFn, isNot(contains("=== 'vertical-rl') ? -1")),
+        reason: 'BUG-338: drag pan direction must not depend on writing-mode');
   });
 
   test('paged desktop mouse drag emits at most one onSwipe on release', () {
