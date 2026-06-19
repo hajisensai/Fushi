@@ -108,11 +108,11 @@ void _expectNoFlutterErrors(WidgetTester tester) {
   expect(exceptions, isEmpty);
 }
 
-void _expectListItemLabelNotEllipsized(WidgetTester tester, String label) {
-  final Finder row = find.widgetWithText(HibikiListItem, label);
-  expect(row, findsWidgets);
+void _expectCategoryChipLabelNotEllipsized(WidgetTester tester, String label) {
+  final Finder chip = find.widgetWithText(HibikiSelectableChip, label);
+  expect(chip, findsWidgets);
   final Finder labelText = find.descendant(
-    of: row.first,
+    of: chip.first,
     matching: find.text(label),
   );
   expect(labelText, findsOneWidget);
@@ -289,13 +289,13 @@ void main() {
   });
 
   testWidgets(
-      'video settings stacks top categories over the detail on wide windows '
-      '(TODO-427-③)', (tester) async {
+      'video settings stacks top category chips over the detail on wide windows '
+      '(TODO-556)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 顶部分类条六个分类都在；默认选中 playback → 下方详情显示音画延迟 + 倍速。
+    // 顶部分类 chip 条六个分类都在；默认选中 playback → 下方详情显示音画延迟 + 倍速。
     expect(find.text(t.video_settings_cat_playback), findsWidgets);
     expect(find.text(t.video_settings_cat_shaders), findsOneWidget);
     expect(find.text(t.video_settings_cat_mpv), findsOneWidget);
@@ -305,20 +305,26 @@ void main() {
     // 上下分栏无 push：无返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
-    // TODO-427-③：不再是左右 master-detail（窄左栏挤裁右详情），改顶部 chip 行 + 下方
-    expect(find.byType(MaterialSupportingPaneLayout), findsOneWidget);
-    expect(find.byType(HibikiListItem), findsAtLeastNWidgets(6));
-    expect(find.byType(HibikiSelectableChip), findsNothing);
+    // TODO-556：大分类从左栏 master-detail 改成顶部横滑 chip 行（入口置顶）。
+    // 不再有左右 master-detail（无 MaterialSupportingPaneLayout / 左栏 HibikiListItem）。
+    expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
+    expect(find.byType(HibikiListItem), findsNothing);
+    // 每个分类一个 HibikiSelectableChip（六分类 → 至少 6 个）。
+    expect(find.byType(HibikiSelectableChip), findsAtLeastNWidgets(6));
 
-    final double categoryX = tester
+    // 分类 chip 在上、详情在下（顶栏）：分类条的 dy 必须小于详情的 dy。
+    final double categoryY = tester
         .getTopLeft(
-          find.widgetWithText(HibikiListItem, t.video_settings_cat_subtitle),
+          find.widgetWithText(
+            HibikiSelectableChip,
+            t.video_settings_cat_subtitle,
+          ),
         )
-        .dx;
-    final double detailX =
-        tester.getTopLeft(find.text(t.video_setting_speed)).dx;
-    expect(categoryX, lessThan(detailX),
-        reason: 'category list must sit to the left of the detail pane');
+        .dy;
+    final double detailY =
+        tester.getTopLeft(find.text(t.video_setting_speed)).dy;
+    expect(categoryY, lessThan(detailY),
+        reason: 'category chip bar must sit above the detail pane (top bar)');
 
     final Iterable<SingleChildScrollView> detailScrolls =
         tester.widgetList<SingleChildScrollView>(
@@ -357,7 +363,9 @@ void main() {
       scale: 2.0,
     );
 
-    expect(find.byType(MaterialSupportingPaneLayout), findsOneWidget);
+    // TODO-556：顶栏横滑 chip（无左右 master-detail）。横滑条放得下全文，每个分类
+    // chip 的标签都不被省略号截断。
+    expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
     for (final String label in <String>[
       t.video_settings_cat_playback,
       t.video_settings_cat_shaders,
@@ -366,7 +374,7 @@ void main() {
       t.video_settings_cat_danmaku,
       t.video_settings_cat_controls,
     ]) {
-      _expectListItemLabelNotEllipsized(tester, label);
+      _expectCategoryChipLabelNotEllipsized(tester, label);
     }
     _expectNoFlutterErrors(tester);
   });
@@ -495,7 +503,7 @@ void main() {
 
   testWidgets(
       'wide video settings keeps the top category bar fixed while the detail '
-      'scrolls (TODO-427-③)', (tester) async {
+      'scrolls (TODO-556)', (tester) async {
     // 高度取 500（>= kHibikiSettingsWideMinHeight=440 → 进宽窗），下方详情行多仍可滚。
     await tester.binding.setSurfaceSize(const Size(1000, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -506,8 +514,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 顶部分类条里的「播放」chip 是固定锚点（chip 行钉在顶部、随详情滚动不动）。
-    final Finder categoryAnchor =
-        find.widgetWithText(HibikiListItem, t.video_settings_cat_playback);
+    final Finder categoryAnchor = find.widgetWithText(
+        HibikiSelectableChip, t.video_settings_cat_playback);
     expect(categoryAnchor, findsOneWidget);
     final Offset before = tester.getTopLeft(categoryAnchor);
 
@@ -1101,28 +1109,30 @@ void main() {
 
   testWidgets(
       'wide video settings uses roomy MD3 padding on all four edges '
-      '(TODO-344 / TODO-427-③)', (tester) async {
+      '(TODO-344 / TODO-556)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 顶部分类条外层 Padding：水平 inset = page+gap=24，顶部 card=16（不再贴死），
-    // 底部留 gap/2=4 与详情之间的分隔线呼吸。分类条内部还有 surface content padding，
-    // 不能把内部横向 scroll padding 误当成 TODO-344 的外层 page padding。
-    final Finder firstCategoryItem = find.byType(HibikiListItem).first;
-    final SingleChildScrollView categoryPane =
-        tester.widget<SingleChildScrollView>(
+    // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=24，顶部 card=16（不再贴死），
+    // 底部留 gap/2=4 与下方分隔线呼吸。chip 条本身是横向 scroll（无 padding 属性），
+    // 故 padding 落在它外层那个 Padding widget 上，按值精确定位。
+    final Finder firstCategoryChip = find.byType(HibikiSelectableChip).first;
+    final Iterable<Padding> categoryPads = tester.widgetList<Padding>(
       find.ancestor(
-        of: firstCategoryItem,
-        matching: find.byType(SingleChildScrollView),
+        of: firstCategoryChip,
+        matching: find.byType(Padding),
       ),
     );
-    final EdgeInsets categoryPadding = categoryPane.padding! as EdgeInsets;
-    expect(categoryPane.scrollDirection, Axis.vertical);
+    final Padding categoryOuterPad = categoryPads.firstWhere((Padding p) {
+      final EdgeInsets? e = p.padding as EdgeInsets?;
+      return e != null && e.left == 24 && e.top == 16 && e.bottom == 4;
+    });
+    final EdgeInsets categoryPadding = categoryOuterPad.padding as EdgeInsets;
     expect(categoryPadding.left, 24);
     expect(categoryPadding.right, 24);
     expect(categoryPadding.top, 16);
-    expect(categoryPadding.bottom, 24);
+    expect(categoryPadding.bottom, 4);
 
     // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 24、独占整宽。
     // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==24 的纵向
@@ -1723,6 +1733,68 @@ void main() {
       expect(body, contains('SingleChildScrollView('),
           reason:
               'slot chip Wrap must be scrollable when many buttons are present');
+    });
+  });
+
+  // ── TODO-556：视频设置大分类置顶（顶部横滑 chip 行 + 下方全宽详情） ───────
+  group('TODO-556 video settings categories live in a top bar', () {
+    testWidgets('selecting a top-bar category switches the detail below it',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+
+      // 大分类一律渲染成顶栏 chip（无左右 master-detail、无左栏列表项）。
+      expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
+      expect(find.byType(HibikiListItem), findsNothing);
+      for (final String label in <String>[
+        t.video_settings_cat_playback,
+        t.video_settings_cat_shaders,
+        t.video_settings_cat_mpv,
+        t.video_settings_cat_subtitle,
+        t.video_settings_cat_danmaku,
+        t.video_settings_cat_controls,
+      ]) {
+        expect(find.widgetWithText(HibikiSelectableChip, label), findsOneWidget,
+            reason: '$label must be a top-bar category chip');
+      }
+
+      // 选「mpv」分类（顶栏 chip）→ 下方详情切到 mpv 详情，无 push 返回箭头。
+      await tester.tap(
+        find.widgetWithText(HibikiSelectableChip, t.video_settings_cat_mpv),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.video_setting_mpv_deband), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back), findsNothing);
+
+      // 被选 chip 的 dy 仍在 mpv 详情之上（顶栏不动、详情在下方）。
+      final double chipY = tester
+          .getTopLeft(
+            find.widgetWithText(HibikiSelectableChip, t.video_settings_cat_mpv),
+          )
+          .dy;
+      final double detailY =
+          tester.getTopLeft(find.text(t.video_setting_mpv_deband)).dy;
+      expect(chipY, lessThan(detailY),
+          reason: 'top category bar must stay above the detail pane');
+    });
+
+    test(
+        'source guard: wide branch builds the top category bar, not a left '
+        'master-detail pane', () {
+      final String src =
+          File('lib/src/media/video/video_quick_settings_sheet.dart')
+              .readAsStringSync();
+      // 宽窗大分类置顶：必须有顶栏构建器，且不再用左右 master-detail 容器/侧栏。
+      expect(src, contains('_buildTopCategoryBar('),
+          reason: '宽窗分类须经顶栏横滑 chip 构建器渲染');
+      expect(src, isNot(contains('MaterialSupportingPaneLayout(')),
+          reason: '视频设置宽窗不得再回退到左右 master-detail（书籍设置才用它）');
+      expect(src, isNot(contains('_buildWidePane(')),
+          reason: '旧左栏构建器 _buildWidePane 必须删除');
+      // 顶栏 chip 标签必须完整可读（allowLabelOverflow）而非省略号截断。
+      expect(src, contains('allowLabelOverflow: true'),
+          reason: '顶栏分类 chip 标签须完整可读，不走省略号');
     });
   });
 }

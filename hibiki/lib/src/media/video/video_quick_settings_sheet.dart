@@ -15,26 +15,12 @@ import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/utils.dart';
 
-const double _videoSettingsSupportingPaneReadableWidth = 312.0;
-const double _videoSettingsPrimaryMinWidth = 320.0;
-
-double _videoSettingsSupportingPaneWidth(double availableWidth) {
-  final double maxSupportingWidth = math
-      .max(
-        kHibikiSettingsSupportingPaneWidth,
-        availableWidth - _videoSettingsPrimaryMinWidth,
-      )
-      .toDouble();
-  return math.min(
-    _videoSettingsSupportingPaneReadableWidth,
-    maxSupportingWidth,
-  );
-}
-
 /// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
-/// （TODO-427-③；详情独占整宽并独立滚动，分类条固定在顶部），窄窗降级单列 push。
+/// （TODO-556：大分类从左栏移到顶栏横向 chip；详情独占整宽并独立滚动，分类条固定在
+/// 顶部），窄窗降级单列 push。书籍设置面板仍保持左右 master-detail，互不影响。
 /// 旧的左右 master-detail（窄左栏 + 右详情）因窄侧栏左右劈半把右详情挤窄、下拉抢宽裁
-/// 标题而改成上下栏。所有值都不是 schema 项（每项都要回调进 `VideoHibikiPage` 即时调
+/// 标题，且用户要求大分类置顶，故改成上下栏。所有值都不是 schema 项（每项都要回调进
+/// `VideoHibikiPage` 即时调
 /// controller / 持久化 / 实时预览），故全部用 bespoke 的 `AdaptiveSettings*` 行，不走
 /// settings schema。
 ///
@@ -314,11 +300,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               final Color dividerColor = isCupertinoPlatform(context)
                   ? CupertinoColors.separator.resolveFrom(context)
                   : tokens.surfaces.outline;
-              final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
+              // 顶部分类条 padding：水平 + 顶部按 token 留白，底部留 gap/2 与下方
+              // 分隔线呼吸（不吃 bottomInset，键盘 inset 留给详情区）。
+              final EdgeInsets wideCategoryPadding = EdgeInsets.fromLTRB(
                 horizontalInset,
                 topInset,
                 horizontalInset,
-                bottomInset,
+                tokens.spacing.gap / 2,
               );
               final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
                 horizontalInset,
@@ -326,26 +314,30 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 horizontalInset,
                 bottomInset,
               );
+              // TODO-556：大分类从左栏 master-detail 改成「顶部横向分类 chip 行（固定）
+              // + 下方全宽详情（独立滚动）」。顶部 chip 行钉在 sheet 顶部、随详情滚动
+              // 不动；详情独占整宽、单独纵向滚动。书籍设置仍保持左右 master-detail。
               return SizedBox(
                 height: constraints.maxHeight,
-                child: MaterialSupportingPaneLayout(
-                  minSplitWidth: kHibikiSettingsWideThreshold,
-                  supportingWidth: _videoSettingsSupportingPaneWidth(
-                    constraints.maxWidth,
-                  ),
-                  supportingSide: SupportingPaneSide.start,
-                  dividerColor: dividerColor,
-                  supporting: SingleChildScrollView(
-                    padding: wideSupportingPadding,
-                    child: _buildWidePane(selectedId),
-                  ),
-                  primary: KeyedSubtree(
-                    key: ValueKey<String>(selectedId),
-                    child: SingleChildScrollView(
-                      padding: widePrimaryPadding,
-                      child: _subPageContent(selectedId),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Padding(
+                      padding: wideCategoryPadding,
+                      child: _buildTopCategoryBar(selectedId),
                     ),
-                  ),
+                    Divider(height: 1, thickness: 1, color: dividerColor),
+                    Expanded(
+                      child: KeyedSubtree(
+                        key: ValueKey<String>(selectedId),
+                        child: SingleChildScrollView(
+                          padding: widePrimaryPadding,
+                          child: _subPageContent(selectedId),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               );
             }
@@ -397,25 +389,29 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     ];
   }
 
-  Widget _buildWidePane(String selectedId) {
+  /// 宽窗顶部横向分类条（TODO-556）：大分类用横滑 chip 行，固定在 sheet 顶部、
+  /// 不随下方详情滚动；放不下时横向滚动（与窄窗 push 的导航行、宽窗左栏不同）。
+  /// 选中 chip 高亮，点击切下方详情。每个 chip 用 [HibikiSelectableChip]（带分类
+  /// 图标），与书架/视频标签筛选条同款外观。
+  Widget _buildTopCategoryBar(String selectedId) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return AdaptiveSettingsSurface(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
         children: <Widget>[
           for (final ({String id, IconData icon, String label}) cat
               in _categories())
-            HibikiListItem(
-              selected: cat.id == selectedId,
-              selectedShape: HibikiListItemSelectedShape.pill,
-              leading: Icon(cat.icon),
-              title: Text(cat.label),
-              padding: EdgeInsets.symmetric(
-                horizontal: tokens.spacing.gap + 2,
-                vertical: tokens.spacing.gap,
+            Padding(
+              padding: EdgeInsets.only(right: tokens.spacing.gap),
+              child: HibikiSelectableChip(
+                label: cat.label,
+                leadingIcon: cat.icon,
+                selected: cat.id == selectedId,
+                // 顶栏横滑空间充裕，分类标签必须完整可读（含 UI scale 2.0 的长英文
+                // 标签如 "Image enhancement"），不走省略号。
+                allowLabelOverflow: true,
+                onSelected: (_) => setState(() => _subPage = cat.id),
               ),
-              titleMaxLines: 3,
-              onTap: () => setState(() => _subPage = cat.id),
             ),
         ],
       ),
