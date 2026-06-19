@@ -2137,12 +2137,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return !_hoshiReaderCaretRangeAtPoint(e.clientX, e.clientY);
   }
   function _hoshiReaderMouseDragScrollBy(dx, dy) {
+    // drag-to-pan「内容跟手」的方向与 writing-mode 无关：鼠标往右拖(dx>0)→内容往右移
+    // →scrollLeft 减小→scrollBy({left: -dx})；鼠标往上拖(dy<0)→内容往上→scrollTop 增大
+    // →scrollBy({top: -dy})。BUG-338: 旧实现给竖排加了 (vertical-rl ? -1 : 1) 的 sign
+    // 翻符号，把 vertical-rl 写成 scrollBy({left: dx}) 致拖动方向反了；删掉该特殊情况。
     var r = window.hoshiReader;
     var vertical = !!(r && r.isVertical && r.isVertical());
-    var writingMode = window.getComputedStyle(document.body).writingMode;
     if (vertical) {
-      var sign = (writingMode === 'vertical-rl') ? -1 : 1;
-      window.scrollBy({left: -dx * sign, top: 0, behavior: 'auto'});
+      window.scrollBy({left: -dx, top: 0, behavior: 'auto'});
     } else {
       window.scrollBy({left: 0, top: -dy, behavior: 'auto'});
     }
