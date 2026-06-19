@@ -7888,7 +7888,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           tooltip: _videoControlItemTooltip(item),
           iconSize: _videoControlIconSize,
           icon: Icon(_videoControlItemIcon(item)),
-          color: cs.onSurface,
+          // TODO-604：图标用主题强调色 cs.primary，与底栏 / 顶栏按钮的
+          // buttonBarButtonColor 同源；此前用 cs.onSurface（中性前景）导致左 / 右侧
+          // 浮条按钮看上去「没吃到主题配色」、与底 / 顶栏不一致。
+          color: cs.primary,
           onPressed: () => _activateVideoControlItem(
             item,
             controller,
@@ -8282,7 +8285,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                                   ? t.video_immersive_unlock
                                   : t.video_menu_lock,
                               iconSize: iconSize,
-                              color: cs.onSurface,
+                              // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题
+                              // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
+                              color: cs.primary,
                               // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
                               icon: Icon(
                                 locked
