@@ -26,10 +26,6 @@ export 'src/utils/components/hibiki_material_components.dart';
 export 'src/utils/components/settings_shared.dart';
 export 'src/utils/app_ui_scale.dart';
 
-export 'src/utils/converters/immutable_string_map_converter.dart';
-export 'src/utils/converters/quick_actions_converter.dart';
-export 'src/utils/converters/enhancements_converter.dart';
-
 export 'src/utils/player/blur_options.dart';
 
 export 'src/utils/misc/hibiki_color.dart';

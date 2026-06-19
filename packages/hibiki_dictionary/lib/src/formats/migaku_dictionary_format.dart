@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -6,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
 import 'package:path/path.dart' as path;
 
-import '../models/dictionary_entry.dart';
 import '../models/dictionary_operations_params.dart';
 import 'dictionary_format.dart';
 
@@ -57,47 +55,4 @@ void _prepareEntriesMigakuStub({
   required dynamic database,
 }) {
   // No-op: hoshidicts only supports Yomitan format
-}
-
-/// Top-level function for use in compute. See [DictionaryFormat] for details.
-void prepareEntriesMigakuFormat({
-  required PrepareDictionaryParams params,
-  required dynamic isar,
-}) async {
-  final List<FileSystemEntity> entities = params.resourceDirectory.listSync();
-  final Iterable<File> files = entities
-      .whereType<File>()
-      .where((f) => f.path.toLowerCase().endsWith('.json'));
-
-  int count = 0;
-
-  for (File file in files) {
-    List<dynamic> items = List.from(jsonDecode(file.readAsStringSync()));
-
-    for (dynamic item in items) {
-      Map<String, dynamic> map = Map<String, dynamic>.from(item);
-
-      String term = (map['term'] as String).trim();
-      String definition = map['definition'] as String;
-      String reading = map['pronunciation'] ?? '';
-
-      definition = definition
-          .replaceAll('<br>', '\n')
-          .replaceAll(RegExp('<[^<]+?>'), '');
-
-      DictionaryEntry entry = DictionaryEntry(
-        dictionaryName: params.dictionary.name,
-        word: term,
-        reading: reading,
-        meaning: definition,
-      );
-
-      isar.dictionaryEntrys.putSync(entry);
-
-      count++;
-      params.send('Found $count entries');
-    }
-  }
-
-  params.send('Found $count entries');
 }
