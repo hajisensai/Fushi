@@ -39,6 +39,11 @@ import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+/// 远端互联视频 section 在视频库本体里最多占据的高度比例（剩余留给本地网格的
+/// Expanded）。section 内部网格自带垂直滚动消化超出部分，保证远端视频再多也不
+/// 撑爆 Column、本地网格始终拿到 >0 高度（TODO-593 复核回归守卫）。
+const double _kRemoteSectionMaxHeightFraction = 0.45;
+
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
@@ -881,11 +886,28 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             final Widget remote =
                 _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
             if (remote is SizedBox && remote.height == 0) return local;
-            return Column(
-              children: <Widget>[
-                remote,
-                Expanded(child: local),
-              ],
+            // 远端 section 在非 Expanded 槽位，且内部网格高度随视频数量增长。
+            // 用 LayoutBuilder 拿到本体可用高度，给远端套 maxHeight 上限（最多占
+            // 可用高度的 [_kRemoteSectionMaxHeightFraction]），超出由远端网格自身
+            // 的垂直滚动消化（见 [_buildRemoteVideoSection] 的 GridView，不再
+            // shrinkWrap）。这样远端视频再多也不会撑爆 Column 造成 RenderFlex 溢出，
+            // 下方 Expanded(本地网格) 始终拿到 >0 的剩余高度（TODO-593 复核）。
+            return LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double remoteMaxHeight = constraints.maxHeight.isFinite &&
+                        constraints.maxHeight > 0
+                    ? constraints.maxHeight * _kRemoteSectionMaxHeightFraction
+                    : double.infinity;
+                return Column(
+                  children: <Widget>[
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: remoteMaxHeight),
+                      child: remote,
+                    ),
+                    Expanded(child: local),
+                  ],
+                );
+              },
             );
           },
         );
@@ -921,17 +943,27 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               Icon(Icons.devices_other_outlined,
                   size: 18, color: colors.primary),
               const SizedBox(width: 8),
-              Text(
-                t.remote_video_interconnect,
-                style: Theme.of(context).textTheme.titleSmall,
+              // 标题/副标题用 Flexible + 省略号，窄屏（手机）两段文字不再撑爆
+              // Row 造成右侧溢出（TODO-593）。
+              Flexible(
+                child: Text(
+                  t.remote_video_interconnect,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
               ),
               const SizedBox(width: 10),
-              Text(
-                t.remote_video_paired_device,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.onSurfaceVariant),
+              Flexible(
+                child: Text(
+                  t.remote_video_paired_device,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: colors.onSurfaceVariant),
+                ),
               ),
             ],
           ),
@@ -948,12 +980,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             )
           else if (videos.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),
-            SizedBox(
-              height: 200,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
+            // 远端视频与本地视频用同一套响应式网格（[_buildGrid] 的
+            // SliverGridDelegateWithMaxCrossAxisExtent），手机窄屏会自动减成
+            // 1~2 列网格，而不再是固定高 200 的横向单行滚动条（TODO-593）。
+            // 远端 section 由 [_buildVideoLibraryBody] 用 ConstrainedBox 限高（最多
+            // 占本体可用高度的一部分），所以这里把网格放进 Expanded 占满该有界高度并
+            // 自带垂直滚动（不再 shrinkWrap）：远端视频再多也只在 section 内滚动，不会
+            // 无界撑高 Column 把本地网格挤没（TODO-593 复核回归）。
+            Expanded(
+              child: GridView.builder(
+                padding: EdgeInsets.zero,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 280,
+                  mainAxisExtent: 200,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
                 itemCount: videos.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
                 itemBuilder: (BuildContext context, int index) =>
                     _buildRemoteVideoCard(videos[index]),
               ),
@@ -966,75 +1009,74 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   Widget _buildRemoteVideoCard(RemoteVideoInfo video) {
     final String safeKey = _safeRemoteKey(video.id);
-    return SizedBox(
-      width: 260,
-      child: HibikiCard(
-        key: ValueKey<String>('remote_video_card_$safeKey'),
-        focusId: HibikiFocusId('home-video-remote-$safeKey'),
-        padding: EdgeInsets.zero,
-        onTap: () => _openRemote(video),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _buildRemoteVideoCover(video),
+    // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
+    // 响应式网格决定（TODO-593）。
+    return HibikiCard(
+      key: ValueKey<String>('remote_video_card_$safeKey'),
+      focusId: HibikiFocusId('home-video-remote-$safeKey'),
+      padding: EdgeInsets.zero,
+      onTap: () => _openRemote(video),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                _buildRemoteVideoCover(video),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: _downloadingVideos.containsKey(video.id)
+                      ? RemoteDownloadProgressBadge(
+                          key: ValueKey<String>(
+                              'remote_video_downloading_$safeKey'),
+                          progress: _downloadingVideos[video.id],
+                          tooltip: t.remote_video_downloading,
+                        )
+                      : IconButton.filledTonal(
+                          key: ValueKey<String>(
+                              'remote_video_download_$safeKey'),
+                          tooltip: t.remote_video_download,
+                          iconSize: 18,
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.download_outlined),
+                          onPressed: () => _downloadRemote(video),
+                        ),
+                ),
+                if (video.hasSubtitle)
                   Positioned(
                     top: 6,
-                    right: 6,
-                    child: _downloadingVideos.containsKey(video.id)
-                        ? RemoteDownloadProgressBadge(
-                            key: ValueKey<String>(
-                                'remote_video_downloading_$safeKey'),
-                            progress: _downloadingVideos[video.id],
-                            tooltip: t.remote_video_downloading,
-                          )
-                        : IconButton.filledTonal(
-                            key: ValueKey<String>(
-                                'remote_video_download_$safeKey'),
-                            tooltip: t.remote_video_download,
-                            iconSize: 18,
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.download_outlined),
-                            onPressed: () => _downloadRemote(video),
-                          ),
-                  ),
-                  if (video.hasSubtitle)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.62),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.subtitles_outlined,
-                          size: 14,
-                          color: Colors.white,
-                        ),
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.subtitles_outlined,
+                        size: 14,
+                        color: Colors.white,
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Text(
-                video.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Text(
+              video.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 328 条。点号进各自文件。
+> 共 329 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-335](bugs/BUG-335-remote-video-grid.md) | ✅ | ✅ | 手机远端视频显示成横条应改网格 |
 | [BUG-334](bugs/BUG-334-todo-572-embedded-subtitle-first-load.md) | ✅ | ✅ | TODO-572: 视频内封字幕首次打开常加载不出来，需重开一次 |
 | [BUG-333](bugs/BUG-333-floating-lyric-bg-opacity.md) | ✅ | ✅ | 悬浮歌词/字幕条背景不透明度太高挡视野，应可调并降低默认值 (TODO-576) |
 | [BUG-332](bugs/BUG-332-video-cue-skip-overshoot.md) | ✅ | ✅ | 视频上一句/下一句跳转跳过头（TODO-571） |
