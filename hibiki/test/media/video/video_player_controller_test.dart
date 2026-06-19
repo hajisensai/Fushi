@@ -1450,5 +1450,62 @@ void main() {
           reason: '宽限耗尽：放弃保护、清快照（seek 落地失败兜底）');
       expect(c.currentCueIndex, 0, reason: '退回纯位置推导，高亮真实位置 cue0');
     });
+
+    // TODO-565 复核退回的必修项：点字幕行 N（skipToCue 置目标 N + 在途 seek 宽限）后，
+    // 落地前用户经收藏句 / 章节跳转 / 相对 seek（都汇到 seekMs）跳到更早句 M（M<N）。
+    // 这些入口绕开 skipToCue 但经 seekMs；旧实现 seekMs 不清快照 → 下个 tick 读到 M
+    // （远早于 N 的引导窗口、宽限未耗尽）→ _applySeekTargetSnap 情形 2 误 snap 回 N，
+    // 高亮被钉在旧目标行 N 约 2 秒。修复：seekMs 开头统一清「主动跳转目标」快照。
+    // 撤掉 seekMs 里的 _clearSeekTargetSnap() 此测试转红：tick 喂 M 时仍被误 snap 回 N。
+    test('skipToCue 宽限未耗尽时经 seekMs 跳更早句：快照被清，高亮真实位置 M（不误 snap 回 N）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      // 句间隔 > preRoll，让各句区间清晰；M=300 落 cue0、目标 N=2 起点 5000。
+      c.setCues([
+        _cue(0, 0, 1000),
+        _cue(1, 3000, 4000),
+        _cue(2, 5000, 6000),
+      ]);
+
+      // 点第 3 行（index 2，startMs=5000）：skipToCue 置目标 2 + 满宽限（无 player 时
+      // seek no-op，但快照与宽限已设）。
+      await c.skipToCue(c.cues[2]);
+      expect(c.debugSeekTargetCueIndex, 2,
+          reason: 'skipToCue 后快照应指向点击的目标句 N（顺序调整不破坏自身快照）');
+
+      // 落地前用户经 seekMs 跳到更早位置 M=300（模拟收藏句 / 章节 / 相对 seek 入口）。
+      // 宽限此刻仍满（未消耗），M=300 远早于目标 N 的引导窗口 [4820,5000)。
+      await c.seekMs(300);
+      expect(c.debugSeekTargetCueIndex, isNull,
+          reason: 'seekMs 统一清除点：手动跳更早句必须作废旧主动跳转快照');
+
+      // 下个 tick 读到 M：纯位置推导高亮 cue0，绝不被旧目标 2 误 snap。
+      c.debugUpdateCueForPosition(300);
+      expect(c.currentCueIndex, 0,
+          reason: '快照已清，按真实位置 M 高亮 cue0（非误 snap 回旧目标 N=2）');
+    });
+
+    // 守卫 skipToCue 的顺序调整（先 seekMs 发 seek，再置快照+宽限）没把自己的快照清掉：
+    // seekMs 是统一清除点，若 skipToCue 仍「先置快照再 seekMs」会被自清成 off-by-one。
+    // 撤掉顺序调整（把置快照搬回 seekMs 之前）此测试转红：skipToCue 后快照为 null。
+    test('skipToCue 顺序保证：seekMs 在前置快照在后，自身快照不被统一清除点自清', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([
+        _cue(0, 0, 1900),
+        _cue(1, 2000, 3000),
+        _cue(2, 3100, 4000),
+      ]);
+
+      await c.skipToCue(c.cues[1]);
+      // skipToCue 内部经 seekMs（统一清除点）后才置目标——快照必须存活、宽限满。
+      expect(c.debugSeekTargetCueIndex, 1,
+          reason: 'skipToCue 自己的快照不得被它内部的 seekMs 清除点自清');
+
+      // 前两轮情形 3 保护仍生效：preRoll 落点处 snap 回目标句 N（非 N-1）。
+      c.debugUpdateCueForPosition(1820); // 2000-180，落 cue0 区间但应 snap 回 1
+      expect(c.currentCueIndex, 1,
+          reason: 'preRoll 引导窗口内仍 snap 回点击的目标句（前两轮保护不破坏）');
+    });
   });
 }

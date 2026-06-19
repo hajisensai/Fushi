@@ -194,6 +194,18 @@ class MaterialDesktopVideoControlsThemeData {
   /// See third_party/media_kit_video/PATCHES.md.
   final ValueNotifier<bool>? visibilityNotifier;
 
+  // SEEK START (Hibiki patch)
+
+  /// Optional callback fired the moment the user starts dragging / tapping the
+  /// seek bar. The seek bar drives `player.seek` directly inside media_kit and
+  /// exposes no host-level seek hook, so Hibiki uses this to invalidate its
+  /// "active jump target" snapshot (TODO-565): without it, dragging the bar to
+  /// an earlier cue during the brief in-flight grace window of a list tap would
+  /// be mis-detected as the in-flight seek and snap the highlight back to the
+  /// stale target. Null (upstream default) = no callback, behaviour identical to
+  /// pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final void Function()? onSeekStart;
+
   /// {@macro material_desktop_video_controls_theme_data}
   const MaterialDesktopVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -244,6 +256,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.volumeBarTransitionDuration = const Duration(milliseconds: 150),
     this.shiftSubtitlesOnControlsVisibilityChange = true,
     this.visibilityNotifier,
+    this.onSeekStart,
   });
 
   /// Creates a copy of this [MaterialDesktopVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -286,6 +299,7 @@ class MaterialDesktopVideoControlsThemeData {
     Duration? volumeBarTransitionDuration,
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
+    void Function()? onSeekStart,
   }) {
     return MaterialDesktopVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -341,6 +355,7 @@ class MaterialDesktopVideoControlsThemeData {
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
+      onSeekStart: onSeekStart ?? this.onSeekStart,
     );
   }
 }
@@ -819,6 +834,9 @@ class _MaterialDesktopVideoControlsState
                                               : Offset.zero,
                                           child: MaterialDesktopSeekBar(
                                             onSeekStart: () {
+                                              _theme(context)
+                                                  .onSeekStart
+                                                  ?.call();
                                               _timer?.cancel();
                                             },
                                             onSeekEnd: () {
