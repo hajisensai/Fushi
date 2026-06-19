@@ -427,7 +427,19 @@ namespace flutter_inappwebview_plugin
     }
     lifetime->pump_state = pump_state;
 
-    lifetime->pump_tick_handler = Microsoft::WRL::Callback<PumpTickHandler>(
+    // DispatcherQueueTimer is MarshalingBehavior=Agile, so add_Tick rejects
+    // any non-agile delegate with RO_E_MUST_BE_AGILE (0x8000001C). A plain
+    // Microsoft::WRL::Callback<PumpTickHandler>(...) produces a non-agile
+    // delegate (it only implements the typed-event interface), which made the
+    // whole timer pump fail to start (pump-start-fail -> RetireFramePoolLocked
+    // -> the WebView texture stayed empty: blank reader, empty lookup popup).
+    // Aggregate FtmBase so the delegate is free-threaded (agile) and add_Tick
+    // accepts it. The old FrameArrived event accepted a non-agile delegate;
+    // the timer Tick event does not (the registration APIs are asymmetric).
+    lifetime->pump_tick_handler = Microsoft::WRL::Callback<
+      Microsoft::WRL::Implements<
+        Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+        PumpTickHandler, Microsoft::WRL::FtmBase>>(
       [pump_state](ABI::Windows::System::IDispatcherQueueTimer* timer,
         IInspectable* args) -> HRESULT
       {
