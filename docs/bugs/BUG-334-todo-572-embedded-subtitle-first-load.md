@@ -1,4 +1,4 @@
-## BUG-330 · TODO-572: 视频内封字幕首次打开常加载不出来，需重开一次
+## BUG-334 · TODO-572: 视频内封字幕首次打开常加载不出来，需重开一次
 
 - **报告**：2026-06-19（用户 B03 验收第 10 条：`这个加载很怪，总会有没加载出来的情况，需要重新打开一次才行`）——内封字幕（视频容器里的字幕轨）首次打开视频时经常没出来，退出重开一次才加载出来。
 - **真实性**：✅ 真 bug，时序竞态。根因在 `hibiki/lib/src/media/video/video_player_controller.dart`：`load()` 在 `player.open()` 之后立即 `unawaited(_loadEmbeddedSubtitleIfNeeded(...))`（原 `:808`）后台抽内封文本字幕成 cue，但它**只跑一次、且过期判据是弱的 `_videoPath != videoPath`**。文本内封字幕的枚举不读 libmpv 轨道，而是走 ffmpeg 旁路 `ffmpeg -i`（`probeEmbeddedSubtitleTracks` `video_subtitle_source.dart:395`）。首次打开大容器（冷页缓存）时，该枚举与 `_applyLoad` 里同时 fire 的 `prewarmEmbeddedSubtitleCache`（`video_hibiki_page.dart:1773`）整轨抽取（`ffmpeg -map`）以及 libmpv 正在 demux 播放**三方争用磁盘 IO**，`ffmpeg -i` 探测可能超时（`returnCode==null`）→ 返回 0 轨 → `enumerationTimeout` → 整条链路当「无内封字幕」终态处理。这是个**瞬态争用失败被当终态**：退出重开时抽取缓存已命中、OS 页缓存让枚举瞬时、cue 可能已落库，三重冗余让字幕出来。BUG-303（TODO-412）只放宽了枚举超时窗口，未消除时序，自己备注「若真机仍空看 `embedded enumeration timed out` 日志」——本单即放宽超时后真机首开仍偶发空的续单。与 BUG-313（TODO-521 章节首载竞态）同构，但章节用 libmpv duration-ready 信号重读，文本字幕走 ffmpeg 旁路没有等价的「争用消退后重枚举」。

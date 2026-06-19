@@ -1,4 +1,4 @@
-## BUG-329 · 视频上一句/下一句跳转跳过头（TODO-571）
+## BUG-332 · 视频上一句/下一句跳转跳过头（TODO-571）
 - **报告**：2026-06-19（用户：B03 验收第 9 条「感觉跳过头了？」）
 - **真实性**：✅ 真 bug（**真过头，非听感**）。根因 `hibiki/lib/src/media/video/video_player_controller.dart:1788`（`nextCueIndexFor`）/ `:1811`（`prevCueIndexFor`）/ `:1851`（`prevSeekDecisionFor`）按偏前物理 position 反推当前句，与 `skipToCue`（`:1596`）的 preRoll 偏前 seek 落点（`kCueSeekPreRollMs=180`，`:1589`；落点算法 `cueSeekTargetMs` `:1668`）语义错配。
   - 复现链（cue 间有小 gap，真实 SRT/ASS 常见）：用户在 cueN 句中按「上一句」→ 目标 cue(N-1)，但 `skipToCue` 为吸收 media_kit 关键帧吸附（BUG-259 听感）故意把 seek 落点偏到 `cue(N-1).startMs - 180`。该偏前落点**退进了 cue(N-2) 的时间窗**。再按「上一句」时，`prevCueIndexFor` 用这个偏前 position 经 `findCueIndex` 命中 cue(N-2) → `hit-1` = cue(N-3) → **跳过头（跳到 N-2 而非相邻 N-1）**。
