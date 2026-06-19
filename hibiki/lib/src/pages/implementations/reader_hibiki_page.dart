@@ -6032,11 +6032,16 @@ window.flutter_inappwebview.callHandler('spreadReady');
         : Theme.of(context).colorScheme.primary;
     final int textOpacity = appModel.floatingLyricTextOpacity;
     final int buttonBgOpacity = appModel.floatingLyricButtonBgOpacity;
+    final int bgOpacity = appModel.floatingLyricBgOpacity;
     return FloatingLyricStyle(
       fontSize: fontSize ?? appModel.floatingLyricFontSize,
       // TODO-370: 文字 / 按钮底色透明度按设置缩放 alpha（默认 100=保持原观感）。
       textColor: FloatingLyricStyle.scaleAlpha(fg.value, textOpacity),
-      bgColor: bg.withAlpha(dark ? 230 : 220).value,
+      // TODO-576: 条背景透明度按设置缩放 alpha（默认 70=更不挡视野）。
+      bgColor: FloatingLyricStyle.scaleAlpha(
+        bg.withAlpha(dark ? 230 : 220).value,
+        bgOpacity,
+      ),
       buttonTextColor: fg.value,
       buttonBgColor: FloatingLyricStyle.scaleAlpha(
         (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,

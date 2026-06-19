@@ -172,6 +172,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip text alpha',
   'listening/Floating subtitle button background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip button alpha',
+  // TODO-576: 条背景透明度（默认 70=更不挡视野）作用于条背景 ARGB alpha；缩放由
+  // scaleAlpha 纯函数测试覆盖，落到原生悬浮窗的实际像素需真机。
+  'listening/Floating subtitle background opacity':
+      'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + test/settings/floating_lyric_bg_opacity_test.dart + DEVICE: native strip bg alpha',
   'listening/Tap floating subtitle to look up':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
   'listening/Volume Key Sentence Navigation':

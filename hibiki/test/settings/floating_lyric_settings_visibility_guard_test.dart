@@ -28,6 +28,8 @@ void main() {
     const List<String> floatingIds = <String>[
       'listening.floating_lyric',
       'listening.floating_lyric_font_size',
+      // TODO-576: 背景透明度滑杆也要跟字号一样在 Windows 桌面可见。
+      'listening.floating_lyric_bg_opacity',
       'listening.floating_lyric_click_lookup',
     ];
 

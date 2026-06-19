@@ -893,6 +893,21 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-576: 悬浮字幕/歌词条「背景透明度」自定义（0..100 百分比），作用于条本身的
+  // 背景 ARGB alpha 通道。用户反馈默认背景太不透明、挡视野，故默认下调到 70（≈背景
+  // 230/220 alpha ×0.7），既明显更透又保持可读；调小更透，调大更实。
+  int get floatingLyricBgOpacity => normalizeFloatingLyricOpacity(
+        getPref('floating_lyric_bg_opacity', defaultValue: 70) as int,
+      );
+
+  Future<void> setFloatingLyricBgOpacity(int value) async {
+    await setPref(
+      'floating_lyric_bg_opacity',
+      normalizeFloatingLyricOpacity(value),
+    );
+    notifyListeners();
+  }
+
   bool get showFloatingDict =>
       getPref('show_floating_dict', defaultValue: false) as bool;
 

@@ -1,0 +1,16 @@
+## BUG-329 · 悬浮歌词/字幕条背景不透明度太高挡视野，应可调并降低默认值 (TODO-576)
+- **报告**：2026-06-19（用户：B03 验收第 15 条①「不透明度应该降一点，有点太挡视野了」）
+- **真实性**：✅ 真改进缺口（非崩溃 bug）。历史 TODO-370 只让「文字 alpha」和「按钮底色 alpha」可调，唯独**没动悬浮条本身的背景**。条背景在两处构造点硬编码 `bg.withAlpha(dark ? 230 : 220).value`（dark≈90% / light≈86% 不透明），无任何偏好/滑杆。这正是「太挡视野」的根因。
+  - app 级样式：`hibiki/lib/src/models/app_model.dart:2873`（`_appLevelFloatingLyricStyle`）。
+  - reader 级样式：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:6039`（`_readerFloatingLyricStyle`）。
+  - TODO-370 的 `scaleAlpha` 纯函数已存在：`hibiki/lib/src/media/audiobook/audiobook_session.dart:602`，但只作用于 `textColor` / `buttonBgColor`，没包 `bgColor`。
+  - 歌词模式（reader WebView 内整页 `LyricsModeHtml`）与原生悬浮条是两套独立组件，本任务只针对原生悬浮条（Android `FloatingLyricService` / Windows runner 悬浮窗），该条才是用户看到的「悬浮歌词/字幕条」。
+- **[x] ① 已修复** — 新增偏好 `floating_lyric_bg_opacity`（0..100%），复用 TODO-370 的 `FloatingLyricStyle.scaleAlpha` 缩放两处 `bgColor` 的 alpha；**默认值定为 70**（230×0.7≈161 / 220×0.7≈154，即从 ≈90%/86% 降到 ≈63%/60% 不透明），默认就更不挡视野，用户仍可经滑杆 10~100% 继续微调。设置滑杆加在「收听」分组 `listening.floating_lyric_bg_opacity`，改值即调 `applyFloatingLyricStyle()` 立即重绘；仅 Android/Windows 可见（有原生悬浮窗后端）。
+  - 偏好 getter/setter（默认 70）：`hibiki/lib/src/models/preferences_repository.dart`（`floatingLyricBgOpacity`）。
+  - app_model 转发 + bgColor 缩放：`hibiki/lib/src/models/app_model.dart`。
+  - reader bgColor 缩放：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`。
+  - 设置滑杆：`hibiki/lib/src/settings/settings_schema.dart`（`listening.floating_lyric_bg_opacity`）。
+  - i18n 两 key：`floating_lyric_bg_opacity` / `_hint`（17 语言，非英文继承英文占位待译）。
+  - 提交哈希：见 git log（codex/todo-576-floating-lyric-opacity 分支）。
+- **[x] ② 已加自动化测试** — `hibiki/test/settings/floating_lyric_bg_opacity_test.dart`：默认值=70（< 100 防回退）、set/get round-trip + 重载持久、clamp 0..100、scaleAlpha 70% 使背景 alpha 明显小于 230/220（更透）、源码守卫两处构造点 `bgColor` 经 `scaleAlpha(bgOpacity)` 缩放（否则设置不吃）、设置 schema 暴露滑杆并接 `applyFloatingLyricStyle`。另把 `floating_lyric_bg_opacity` 纳入 `floating_lyric_settings_visibility_guard_test.dart` 的 Windows 可见守卫，并在 `settings_schema_coverage_test.dart` 的 `kCoveredElsewhere` 登记新滑杆（避免 stillUnaccounted 缺口）。
+- **备注**：原生悬浮窗（Android service / Windows runner Win32 窗口）落到的实际像素 alpha 需真机/桌面验证（settings 改值 → 悬浮条变透）；本环境（host）无原生悬浮窗后端，已由 scaleAlpha 纯函数 + 源码守卫 + 偏好 round-trip 覆盖，真机验证留给用户。develop 基线预存红 `md3_design_system_static_test`「book long-press frame uses cover background」与本任务无关（TODO-557 改 `MediaItemDialogFrame` 后守卫未更新，主 checkout 同样红）。

@@ -2866,11 +2866,16 @@ class AppModel with ChangeNotifier {
     final Color accent = scheme.primary;
     final int textOpacity = floatingLyricTextOpacity;
     final int buttonBgOpacity = floatingLyricButtonBgOpacity;
+    final int bgOpacity = floatingLyricBgOpacity;
     return FloatingLyricStyle(
       fontSize: floatingLyricFontSize,
       // TODO-370: 文字 / 按钮底色透明度按设置缩放 alpha（默认 100=保持原观感）。
       textColor: FloatingLyricStyle.scaleAlpha(fg.value, textOpacity),
-      bgColor: bg.withAlpha(dark ? 230 : 220).value,
+      // TODO-576: 条背景透明度按设置缩放 alpha（默认 70=更不挡视野）。
+      bgColor: FloatingLyricStyle.scaleAlpha(
+        bg.withAlpha(dark ? 230 : 220).value,
+        bgOpacity,
+      ),
       buttonTextColor: fg.value,
       buttonBgColor: FloatingLyricStyle.scaleAlpha(
         (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
@@ -3426,6 +3431,11 @@ class AppModel with ChangeNotifier {
   int get floatingLyricTextOpacity => prefsRepo.floatingLyricTextOpacity;
   Future<void> setFloatingLyricTextOpacity(int value) =>
       prefsRepo.setFloatingLyricTextOpacity(value);
+
+  // TODO-576: 悬浮字幕/歌词条背景透明度（0..100 百分比），默认 70=更不挡视野。
+  int get floatingLyricBgOpacity => prefsRepo.floatingLyricBgOpacity;
+  Future<void> setFloatingLyricBgOpacity(int value) =>
+      prefsRepo.setFloatingLyricBgOpacity(value);
 
   bool get showFloatingDict => prefsRepo.showFloatingDict;
 
