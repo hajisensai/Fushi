@@ -1,0 +1,12 @@
+## BUG-324 · 远端视频字幕轨菜单里「自动获取字幕(Jimaku)」入口消失
+- **报告**：2026-06-19（用户：B03 验收第 14 条 / TODO-573）。用户原话「字幕轨里面没有自动获取字幕的选项了，因为远端视频的原因吗？」
+- **真实性**：✅ 真 bug，且用户的怀疑正确——就是远端视频路径导致入口被门控隐藏。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:6210`（字幕源侧栏 `_buildSubtitleSourcesSidePanel`）的入口门控 `if (!_isRemote && _currentVideoPath != null)`：「自动获取字幕(Jimaku)」ListTile 只在本地视频（`!_isRemote`）显示，远端视频（`_isRemote`，`_currentVideoPath` 恒 null）整条入口消失。
+  - 历史：Jimaku 入口诞生（`b8a1c8f77` 2026-06-05）时是裸 ListTile 无门控；远端视频 + `_isRemote` 引入（`a1b4dc67f` 2026-06-09）时用「两套独立字幕菜单」把远端导向一个不含 Jimaku 的菜单；字幕菜单合并重构（`77bce2075` 2026-06-13）把两套菜单折叠成单一侧栏面板，这条门控被定型为现在的内联 `!_isRemote && _currentVideoPath != null`。
+  - 「远端不该有 Jimaku」其实不是技术限制：Jimaku 只需要一个番名 query + 一个本地落盘目录。远端流虽没有本地视频文件名，但有 host 下发的标题 `_title ?? remoteInfo.title`（= host 库 `VideoBookRow.title`，本身就是番名/系列名，`app_model_library_host_service.dart:530`）可作 query；下载的 srt 落本地后，远端早有 `_applyRemoteSubtitle(path)`（`:6610`，与远端「本地导入字幕」`_pickAndImportRemoteSubtitle` 同链路）能内存应用任意本地字幕文件，不写本地 DB。所以远端完全能支持，门控是重构折叠旧设计的副作用，不是能力缺失。
+- **[x] ① 已修复** — `hibiki/lib/src/pages/implementations/video_hibiki_page.dart`：
+  - 入口门控 `:6210` 由 `!_isRemote && _currentVideoPath != null` 改为 `_jimakuQuery() != null`（消除「本地/远端」特殊分支，统一按「能否算出非空番名 query」判定）。
+  - 新增纯查询 helper `String? _jimakuQuery()`：本地用 `parseVideoFilename(basename(_currentVideoPath)).series`；远端用 `_title ?? remoteInfo.title` 再过 `parseVideoFilename` 收敛 series（标题带集数/扩展名也能收敛）；都算不出非空 query 时返回 null（入口隐藏）。
+  - `_openJimakuDialog` query 改用 `_jimakuQuery()`；下载完成后按 `_isRemote` 分流——远端走 `_applyRemoteSubtitle(controller, downloaded)`（内存应用，不写本地 DB，符合远端契约），本地仍走 `_selectSubtitleSource`（持久化外挂源）。对话框 `JimakuSubtitleDialog` 本身不变（它只接 query/key/saveDir，与本地/远端无关）。
+  - 提交 `e5b033ac8`。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_subtitle_fixes_guard_test.dart` 新增两个 TODO-573 源码守卫（media_kit 无法 headless，按本文件既有 region 切片范式锁调用点不变量）：①「入口对本地和远端都显示」断言门控用 `_jimakuQuery() != null` 且不含旧 `!_isRemote && _currentVideoPath != null`；②「远端 query 取 host 标题，下载后内存应用」断言 `_jimakuQuery` 远端回退到 `remoteInfo?.title`、`_openJimakuDialog` 远端早返回走 `_applyRemoteSubtitle`、本地走 `_selectSubtitleSource`。`flutter test` 该文件 12 绿 + jimaku 三件套 15 绿；`flutter analyze` 0 issue。
+- **待澄清（需用户/PM 定）**：本修复按「远端应该支持 Jimaku」推进（技术可行、与远端本地导入字幕语义一致）。若 PM 决定远端**不**该提供联网搜字幕（如带宽/隐私/host 策略考虑），则保留 `_jimakuQuery()` 但把入口门控改回仅本地。真机验证待用户：需有效 Jimaku API key + 联网，在远端视频字幕轨菜单点「自动获取字幕」→ 用 host 标题搜到字幕 → 下载 → 内存应用到远端流。

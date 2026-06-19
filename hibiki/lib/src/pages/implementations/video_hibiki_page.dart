@@ -6207,7 +6207,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final String? hostSub = _remoteSubtitlePath;
     final List<Widget> rows = <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
-      if (!_isRemote && _currentVideoPath != null)
+      // TODO-573：「自动获取字幕(Jimaku)」对本地和远端视频都显示。Jimaku 只需要一个
+      // 番名 query + 一个本地落盘目录；远端流没有本地视频文件（_currentVideoPath 恒
+      // null），但有 host 下发的标题（_title / remoteInfo.title）可作 query，下载的
+      // srt 文件经 _applyRemoteSubtitle 内存应用即可（与远端「本地导入字幕」同链路）。
+      // 唯一前提是能算出非空 query，见 _jimakuQuery()。
+      if (_jimakuQuery() != null)
         ListTile(
           leading: const Icon(Icons.cloud_download_outlined),
           title: Text(t.video_jimaku_fetch),
@@ -6538,15 +6543,42 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     });
   }
 
-  /// 打开「自动获取字幕（Jimaku）」对话框：用番名（文件名解析）搜 → 下载到
-  /// `<appDocs>/video_subtitles/` → 构造外挂 [SubtitleSource] 复用既有 cue 加载/切换/
-  /// 持久化链路应用。真实拉取需有效 Jimaku API key + 联网（验证待用户）。
-  Future<void> _openJimakuDialog(VideoPlayerController controller) async {
+  /// Jimaku 搜索用的番名 query。能算出非空 query 时返回它，否则返回 null
+  /// （= 字幕菜单不显示「自动获取字幕」入口）。
+  ///
+  /// - 本地视频（[_currentVideoPath] 非空）：用文件名解析出的 series（番名）。
+  /// - 远端视频（[_isRemote]，无本地文件名）：用 host 下发的标题
+  ///   `_title ?? remoteInfo.title`（= host 库里的 VideoBook.title，本身就是番名/
+  ///   系列名）。再过一道 [parseVideoFilename]，标题里带集数/扩展名时也能收敛成 series。
+  String? _jimakuQuery() {
     final String? videoPath = _currentVideoPath;
-    if (videoPath == null) return;
+    if (videoPath != null && videoPath.trim().isNotEmpty) {
+      final String series =
+          parseVideoFilename(p.basename(videoPath)).series.trim();
+      return series.isEmpty ? null : series;
+    }
+    if (_isRemote) {
+      final String title = (_title ?? widget.remoteInfo?.title ?? '').trim();
+      if (title.isEmpty) return null;
+      final String series = parseVideoFilename(title).series.trim();
+      return series.isEmpty ? title : series;
+    }
+    return null;
+  }
+
+  /// 打开「自动获取字幕（Jimaku）」对话框：用番名（[_jimakuQuery]）搜 → 下载到
+  /// `<appDocs>/video_subtitles/` → 应用。
+  ///
+  /// - 本地视频：构造外挂 [SubtitleSource] 经 [_selectSubtitleSource] 持久化链路应用。
+  /// - 远端视频（[_isRemote]）：没有本地 DB 行，按远端契约只在内存里应用，经
+  ///   [_applyRemoteSubtitle]（与远端「本地导入字幕」同一不落 DB 的链路）。
+  ///
+  /// 真实拉取需有效 Jimaku API key + 联网（验证待用户）。
+  Future<void> _openJimakuDialog(VideoPlayerController controller) async {
+    final String? query = _jimakuQuery();
+    if (query == null) return;
     final Directory docs = await getApplicationDocumentsDirectory();
     final String saveDir = p.join(docs.path, 'video_subtitles');
-    final String query = parseVideoFilename(p.basename(videoPath)).series;
     if (!context.mounted) return;
     final String? downloaded = await showDialog<String>(
       context: context,
@@ -6560,6 +6592,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // Jimaku 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _refocusVideo();
     if (downloaded == null || !context.mounted) return;
+    if (_isRemote) {
+      // 远端：内存应用，不写本地 DB（_applyRemoteSubtitle 自带 cue 为空时的失败提示
+      // + 成功 OSD），不叠加额外提示。
+      await _applyRemoteSubtitle(controller, downloaded);
+      return;
+    }
     final SubtitleSource source = SubtitleSource.external(
       externalPath: downloaded,
       label: p.basename(downloaded),
