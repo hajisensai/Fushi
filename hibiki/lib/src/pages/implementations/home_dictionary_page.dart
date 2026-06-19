@@ -15,6 +15,24 @@ import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/utils.dart';
 
+/// 测试可见的查词状态探针：让 widget 行为测试直接断言「查词后 _isSearching 已复位」
+/// 与「_loadMore 不再被永久阻塞」，从而钉住 [TODO-555] 的回归不变量
+/// （searchDictionary 抛异常时不得卡住转圈 / 加载更多）。
+@visibleForTesting
+abstract class HomeDictionarySearchDebug {
+  /// 当前是否处于查词中（true 时 query body 显示转圈、_loadMore 被阻塞）。
+  bool get debugIsSearching;
+
+  /// 触发一次「加载更多」（等价于滚动到底），返回派发的 future（被卡死时为
+  /// 已完成 future，调用本身被 _isSearching 守卫吞掉）。
+  Future<void> debugLoadMore();
+
+  /// 直接发起一次查词（等价于在搜索框提交 [term]），返回内部派发的 future
+  /// 以便测试 await 失败路径，避免依赖 UI 文本输入的异步链。[writeHistory] 默认
+  /// false 以隔离历史写入 / autoRead 等副作用，只验证查词状态机。
+  Future<void> debugSearch(String term, {bool writeHistory});
+}
+
 /// The body content for the Dictionary tab in the main menu.
 class HomeDictionaryPage extends BaseTabPage {
   const HomeDictionaryPage({super.key, this.focusSignal});
@@ -26,7 +44,8 @@ class HomeDictionaryPage extends BaseTabPage {
 }
 
 class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
-    with DictionaryPageMixin {
+    with DictionaryPageMixin
+    implements HomeDictionarySearchDebug {
   @override
   AppModel get mixinAppModel => appModel;
 
@@ -52,6 +71,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   int _searchGeneration = 0;
 
   bool _historyWritten = false;
+
+  /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
+  /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
+  Future<void>? _lastDispatchedSearch;
 
   @override
   void initState() {
@@ -487,13 +510,15 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         if (replaceSourceLookupText) _sourceLookupText = trimmed;
         _popup.clear();
       });
-      unawaited(_searchWithGeneration(
+      final Future<void> dispatched = _searchWithGeneration(
         trimmed: trimmed,
         overrideMaximumTerms: overrideMaximumTerms,
         writeHistory: writeHistory,
         autoRead: autoRead,
         searchGeneration: searchGeneration,
-      ));
+      );
+      _lastDispatchedSearch = dispatched;
+      unawaited(dispatched);
     } else if (replaceSourceLookupText) {
       _sourceLookupText = trimmed;
     }
@@ -506,42 +531,52 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     required bool? autoRead,
     required int searchGeneration,
   }) async {
-    final DictionarySearchResult result = await appModel.searchDictionary(
-      searchTerm: trimmed,
-      searchWithWildcards: true,
-      overrideMaximumTerms: overrideMaximumTerms,
-    );
-    if (!mounted ||
-        searchGeneration != _searchGeneration ||
-        trimmed != _controller.text) {
-      return;
-    }
-
-    _result = result;
-    final bool allLoaded = result.entries.length < overrideMaximumTerms;
-    setState(() {
-      _isSearching = false;
-      _allLoaded = allLoaded;
-    });
-
-    if (writeHistory) {
-      _historyWritten = true;
-      appModel.addToSearchHistory(
-        historyKey: mediaType.uniqueKey,
+    // 用 try/finally 守卫整条失败路径：searchDictionary 走远程网络查询 +
+    // hoshidicts C++ FFI，任一环节抛异常都不能让 _isSearching 永久为 true
+    // （否则 _buildQueryBody 永久转圈、_loadMore 永久阻塞）。finally 始终复位，
+    // 但只对仍是当前 generation 的请求 setState，避免污染已被新请求覆盖的状态。
+    try {
+      final DictionarySearchResult result = await appModel.searchDictionary(
         searchTerm: trimmed,
+        searchWithWildcards: true,
+        overrideMaximumTerms: overrideMaximumTerms,
       );
-      if (result.entries.isNotEmpty) {
-        appModel.addToDictionaryHistory(result: result);
-        // autoRead 覆盖：null 沿用全局 autoReadOnLookup（正常输入查词不变），
-        // 桌面剪贴板/热键路径显式传 false 抑制朗读。
-        final bool shouldAutoRead =
-            autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup;
-        if (shouldAutoRead) {
-          final entry = result.entries.first;
-          if (entry.word.isNotEmpty) {
-            autoReadWord(entry.word, entry.reading);
+      if (!mounted ||
+          searchGeneration != _searchGeneration ||
+          trimmed != _controller.text) {
+        return;
+      }
+
+      _result = result;
+      _allLoaded = result.entries.length < overrideMaximumTerms;
+
+      if (writeHistory) {
+        _historyWritten = true;
+        appModel.addToSearchHistory(
+          historyKey: mediaType.uniqueKey,
+          searchTerm: trimmed,
+        );
+        if (result.entries.isNotEmpty) {
+          appModel.addToDictionaryHistory(result: result);
+          // autoRead 覆盖：null 沿用全局 autoReadOnLookup（正常输入查词不变），
+          // 桌面剪贴板/热键路径显式传 false 抑制朗读。
+          final bool shouldAutoRead =
+              autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup;
+          if (shouldAutoRead) {
+            final entry = result.entries.first;
+            if (entry.word.isNotEmpty) {
+              autoReadWord(entry.word, entry.reading);
+            }
           }
         }
+      }
+    } finally {
+      // 仅当本请求仍是最新 generation 时复位（保留过期守卫，避免对已被新请求
+      // 覆盖的状态 setState）。异常 / 正常 / 命中 stale 守卫的 return 都会执行此处。
+      if (mounted && searchGeneration == _searchGeneration) {
+        setState(() {
+          _isSearching = false;
+        });
       }
     }
   }
@@ -555,6 +590,23 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       overrideMaximumTerms: current + appModel.maximumTerms,
       writeHistory: false,
     );
+  }
+
+  @override
+  bool get debugIsSearching => _isSearching;
+
+  @override
+  Future<void> debugLoadMore() {
+    _lastDispatchedSearch = null;
+    _loadMore();
+    return _lastDispatchedSearch ?? Future<void>.value();
+  }
+
+  @override
+  Future<void> debugSearch(String term, {bool writeHistory = false}) {
+    _lastDispatchedSearch = null;
+    _search(term, writeHistory: writeHistory);
+    return _lastDispatchedSearch ?? Future<void>.value();
   }
 
   // ── search results with nested popups ──────────────────────────────
