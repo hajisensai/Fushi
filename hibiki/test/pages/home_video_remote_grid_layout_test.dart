@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -146,6 +147,72 @@ void main() {
     );
   });
 
+  testWidgets('远端视频很多 + 手机窄屏：远端 section 限高内滚不溢出，本地视频区高度 > 0',
+      (WidgetTester tester) async {
+    // 复核退回的必修回归：TODO-593 把远端横条换成 shrinkWrap GridView 后，远端
+    // section 在非 Expanded 槽位、高度随视频数量无界增长；远端视频多时整条
+    // DesktopContentLayout→Column→Expanded→Column 链没有垂直滚动容器，会
+    // RenderFlex 溢出且把 Expanded(本地网格) 挤到高度 0。本守卫用 12 个远端视频 +
+    // 360x640 窄屏复现「无界撑高」，断言：① 无任何渲染异常（RenderFlex 溢出会经
+    // FlutterError 上报，被 takeException 捕获）；② 本地视频区（home_video_* 卡片）
+    // 仍可见且渲染高度 > 0（没被远端挤没）。
+    remoteClient = _GridFakeRemoteVideoClient(
+      coverPath: remoteVideoCover.path,
+      videoCount: 12,
+    );
+    // 插入若干本地视频：验证「本地视频区高度 > 0」必须真有本地网格可量。
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('local/video-1'),
+      title: Value('Local Episode 1'),
+      videoPath: Value('/abs/local-1.mp4'),
+    ));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('local/video-2'),
+      title: Value('Local Episode 2'),
+      videoPath: Value('/abs/local-2.mp4'),
+    ));
+
+    const Size phone = Size(360, 640);
+    tester.view.physicalSize = phone;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(buildApp(size: phone));
+    await tester.pumpAndSettle();
+
+    // ① 无 RenderFlex 溢出（撤掉限高/shrinkWrap 修复后此处会捕获 overflow 异常）。
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '远端视频很多时窄屏不得 RenderFlex 溢出（远端 section 须限高内滚）',
+    );
+
+    // 远端数据确实加载（第 1 张在视口内可见）；远端卡片须在 GridView 内。注意
+    // 限高内滚后，靠后的远端卡片在滚动视口外会被 GridView.builder 懒加载（不在
+    // widget 树里），这本身就是「限高 + 内部滚动消化超出」生效的体现，故只断言
+    // 首张可见即可，不要求第 12 张同时挂载。
+    final Finder firstRemote =
+        find.byKey(const ValueKey<String>('remote_video_card_remote_video-1'));
+    expect(firstRemote, findsOneWidget, reason: '12 个远端视频时首张应在网格内可见（数据已加载）');
+    expect(
+      find.ancestor(of: firstRemote, matching: find.byType(GridView)),
+      findsWidgets,
+      reason: '远端视频很多时仍须是 GridView 网格（窄屏不退回横条）',
+    );
+
+    // ② 本地视频区高度 > 0：本地网格卡片可见且有正高度，没被远端挤没。
+    final Finder localCard =
+        find.byKey(const ValueKey<String>('home_video_local/video-1'));
+    expect(localCard, findsOneWidget, reason: '本地视频卡片应可见（本地区未被远端挤到高度 0）');
+    final Size localSize = tester.getSize(localCard);
+    expect(
+      localSize.height,
+      greaterThan(0),
+      reason: '本地视频区必须有 > 0 的高度（不被无界远端网格挤没）',
+    );
+  });
+
   test('源码守卫：远端 section 复用本地网格 delegate、无横向 ListView/固定宽卡片', () {
     final String src =
         File('lib/src/pages/implementations/home_video_page.dart')
@@ -168,31 +235,60 @@ void main() {
       isFalse,
       reason: '远端卡片应填满网格 cell，不再固定 260 宽',
     );
+    // 复核退回的必修：远端 section 不得再无界撑高。范围限定在
+    // [_buildRemoteVideoSection] 方法体内检查，避免误命中页面别处合法的
+    // shrinkWrap（如批量标签操作 sheet 的 ListView）。
+    final int sectionStart = src.indexOf('Widget _buildRemoteVideoSection(');
+    final int sectionEnd = src.indexOf('Widget _buildRemoteVideoCard(');
+    expect(sectionStart >= 0 && sectionEnd > sectionStart, isTrue,
+        reason: '应能定位 _buildRemoteVideoSection 方法体');
+    final String remoteSection = src.substring(sectionStart, sectionEnd);
+    // 远端网格不得 shrinkWrap（会随视频数量无界撑高致 RenderFlex 溢出）。
+    expect(
+      remoteSection.contains('shrinkWrap: true'),
+      isFalse,
+      reason: '远端 GridView 不得 shrinkWrap（会随视频数量无界撑高致 RenderFlex 溢出）',
+    );
+    // 远端网格须自带垂直滚动消化超出高度，不能 NeverScrollable。
+    expect(
+      remoteSection.contains('NeverScrollableScrollPhysics'),
+      isFalse,
+      reason: '远端 GridView 须自带垂直滚动（不能 NeverScrollable），靠内滚消化超出高度',
+    );
+    // 远端 section 须被 LayoutBuilder 拿可用高度 + ConstrainedBox 按
+    // _kRemoteSectionMaxHeightFraction 限高（限高逻辑在 _buildVideoLibraryBody）。
+    expect(
+      src.contains('LayoutBuilder') &&
+          src.contains('ConstrainedBox(') &&
+          src.contains('_kRemoteSectionMaxHeightFraction'),
+      isTrue,
+      reason: '远端 section 须用 LayoutBuilder 拿可用高度 + ConstrainedBox 按 '
+          '_kRemoteSectionMaxHeightFraction 限高',
+    );
   });
 }
 
 class _GridFakeRemoteVideoClient implements RemoteVideoClient {
-  _GridFakeRemoteVideoClient({required this.coverPath});
+  _GridFakeRemoteVideoClient({required this.coverPath, this.videoCount = 2});
 
   final String coverPath;
 
+  /// 远端视频条数。默认 2（网格化守卫只需两张区分换行/横排）；溢出守卫传更大值
+  /// （如 12）模拟「远端视频很多」把非 Expanded 槽位撑爆的场景。
+  final int videoCount;
+
   @override
-  Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
-        RemoteVideoInfo.fromJson(<String, Object?>{
-          'id': 'remote/video-1',
-          'title': 'Remote Episode 1',
-          'sizeBytes': 1024,
-          'hasSubtitle': true,
+  Future<List<RemoteVideoInfo>> listRemoteVideos() async =>
+      List<RemoteVideoInfo>.generate(
+        videoCount,
+        (int i) => RemoteVideoInfo.fromJson(<String, Object?>{
+          'id': 'remote/video-${i + 1}',
+          'title': 'Remote Episode ${i + 1}',
+          'sizeBytes': 1024 * (i + 1),
+          'hasSubtitle': i.isEven,
           'coverPath': coverPath,
         }),
-        RemoteVideoInfo.fromJson(<String, Object?>{
-          'id': 'remote/video-2',
-          'title': 'Remote Episode 2',
-          'sizeBytes': 2048,
-          'hasSubtitle': false,
-          'coverPath': coverPath,
-        }),
-      ];
+      );
 
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async =>

@@ -39,6 +39,11 @@ import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+/// 远端互联视频 section 在视频库本体里最多占据的高度比例（剩余留给本地网格的
+/// Expanded）。section 内部网格自带垂直滚动消化超出部分，保证远端视频再多也不
+/// 撑爆 Column、本地网格始终拿到 >0 高度（TODO-593 复核回归守卫）。
+const double _kRemoteSectionMaxHeightFraction = 0.45;
+
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
@@ -881,11 +886,28 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             final Widget remote =
                 _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
             if (remote is SizedBox && remote.height == 0) return local;
-            return Column(
-              children: <Widget>[
-                remote,
-                Expanded(child: local),
-              ],
+            // 远端 section 在非 Expanded 槽位，且内部网格高度随视频数量增长。
+            // 用 LayoutBuilder 拿到本体可用高度，给远端套 maxHeight 上限（最多占
+            // 可用高度的 [_kRemoteSectionMaxHeightFraction]），超出由远端网格自身
+            // 的垂直滚动消化（见 [_buildRemoteVideoSection] 的 GridView，不再
+            // shrinkWrap）。这样远端视频再多也不会撑爆 Column 造成 RenderFlex 溢出，
+            // 下方 Expanded(本地网格) 始终拿到 >0 的剩余高度（TODO-593 复核）。
+            return LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double remoteMaxHeight = constraints.maxHeight.isFinite &&
+                        constraints.maxHeight > 0
+                    ? constraints.maxHeight * _kRemoteSectionMaxHeightFraction
+                    : double.infinity;
+                return Column(
+                  children: <Widget>[
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: remoteMaxHeight),
+                      child: remote,
+                    ),
+                    Expanded(child: local),
+                  ],
+                );
+              },
             );
           },
         );
@@ -961,21 +983,23 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             // 远端视频与本地视频用同一套响应式网格（[_buildGrid] 的
             // SliverGridDelegateWithMaxCrossAxisExtent），手机窄屏会自动减成
             // 1~2 列网格，而不再是固定高 200 的横向单行滚动条（TODO-593）。
-            // 远端 section 嵌在非 Expanded 的 Column 里（上半固定、下半本地网格占
-            // Expanded），所以这里 shrinkWrap 随行数自然撑高、不自带内部滚动。
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 280,
-                mainAxisExtent: 200,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
+            // 远端 section 由 [_buildVideoLibraryBody] 用 ConstrainedBox 限高（最多
+            // 占本体可用高度的一部分），所以这里把网格放进 Expanded 占满该有界高度并
+            // 自带垂直滚动（不再 shrinkWrap）：远端视频再多也只在 section 内滚动，不会
+            // 无界撑高 Column 把本地网格挤没（TODO-593 复核回归）。
+            Expanded(
+              child: GridView.builder(
+                padding: EdgeInsets.zero,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 280,
+                  mainAxisExtent: 200,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                itemCount: videos.length,
+                itemBuilder: (BuildContext context, int index) =>
+                    _buildRemoteVideoCard(videos[index]),
               ),
-              itemCount: videos.length,
-              itemBuilder: (BuildContext context, int index) =>
-                  _buildRemoteVideoCard(videos[index]),
             ),
           ],
         ],
