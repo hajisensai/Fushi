@@ -11,12 +11,18 @@ class VideoControlLayoutEditOverlay extends StatefulWidget {
     required this.layout,
     required this.onLayoutChanged,
     required this.onClose,
+    this.isTouchControls = false,
     super.key,
   });
 
   final VideoControlLayout layout;
   final Future<void> Function(VideoControlLayout layout) onLayoutChanged;
   final VoidCallback onClose;
+
+  /// Touch surface (no right-click context menu fallback): forbids removing the
+  /// sole in-player settings entry so the user cannot soft-lock the controls
+  /// editor out of reach (TODO-554).
+  final bool isTouchControls;
 
   @override
   State<VideoControlLayoutEditOverlay> createState() =>
@@ -571,25 +577,31 @@ class _VideoControlLayoutEditOverlayState
                 sourceIndex: sourceIndex,
                 maxWidth: 112,
               ),
-              Theme(
-                data: theme.copyWith(
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: IconButton(
-                  tooltip: t.video_control_remove_from_slot,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 28,
+              // TODO-554: hide the remove "x" when the item cannot be removed on
+              // this surface (touch keeps the settings entry pinned), so the UI
+              // never offers a tap that would be silently rejected.
+              if (item.canRemoveFromPlayer(
+                isTouchControls: widget.isTouchControls,
+              ))
+                Theme(
+                  data: theme.copyWith(
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  icon: Icon(
-                    Icons.close,
-                    size: 14,
-                    color: cs.onSecondaryContainer,
+                  child: IconButton(
+                    tooltip: t.video_control_remove_from_slot,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 28,
+                    ),
+                    icon: Icon(
+                      Icons.close,
+                      size: 14,
+                      color: cs.onSecondaryContainer,
+                    ),
+                    onPressed: () => _removeControlItem(item, sourceSlot),
                   ),
-                  onPressed: () => _removeControlItem(item, sourceSlot),
                 ),
-              ),
             ],
           ),
         );
@@ -659,7 +671,12 @@ class _VideoControlLayoutEditOverlayState
   ) {
     final VideoControlItem item = payload.item;
     if (!_isOnVideoDraggableItem(item)) return false;
-    if (!item.canMoveToSlot(target)) return false;
+    if (!item.canMoveToSlot(
+      target,
+      isTouchControls: widget.isTouchControls,
+    )) {
+      return false;
+    }
     final List<VideoControlItem> targetItems = _layout.itemsIn(target);
     if (payload.sourceSlot == target) return true;
     return !targetItems.contains(item);
@@ -683,6 +700,12 @@ class _VideoControlLayoutEditOverlayState
   }
 
   void _removeControlItem(VideoControlItem item, VideoControlSlot slot) {
+    // TODO-554: on touch the settings button is the sole in-player entry to this
+    // very editor, so removing it would soft-lock the user out. Reject it here
+    // (the chip's remove "x" path) the same way the drag-to-hidden path is.
+    if (!item.canRemoveFromPlayer(isTouchControls: widget.isTouchControls)) {
+      return;
+    }
     final VideoControlLayout next = _layout.removeItemFromSlot(item, slot);
     if (next == _layout) return;
     setState(() {

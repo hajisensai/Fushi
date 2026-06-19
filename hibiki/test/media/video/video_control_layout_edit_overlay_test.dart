@@ -11,6 +11,7 @@ Future<void> _pumpOverlay(
   required Future<void> Function(VideoControlLayout layout) onLayoutChanged,
   VoidCallback? onClose,
   TextScaler? textScaler,
+  bool isTouchControls = false,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -28,12 +29,27 @@ Future<void> _pumpOverlay(
             layout: layout,
             onLayoutChanged: onLayoutChanged,
             onClose: onClose ?? () {},
+            isTouchControls: isTouchControls,
           ),
         ),
       ),
     ),
   );
   await tester.pump();
+}
+
+/// Finds the inline "x" remove button rendered next to a placed [item] chip in
+/// [slot] (TODO-554: gated off on touch for pinnedOnTouch settings).
+Finder _removeButtonFor(VideoControlItem item, VideoControlSlot slot) {
+  return find.descendant(
+    of: find
+        .ancestor(
+          of: _placedChip(item, slot),
+          matching: find.byType(Row),
+        )
+        .first,
+    matching: find.byIcon(Icons.close),
+  );
 }
 
 Finder _paletteChip(VideoControlItem item) {
@@ -354,5 +370,89 @@ void main() {
       expect(rect.right, lessThanOrEqualTo(360));
       expect(rect.bottom, lessThanOrEqualTo(260));
     }
+  });
+
+  testWidgets('TODO-554: desktop controls allow dragging settings into hidden',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    VideoControlLayout? committed;
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (VideoControlLayout layout) async => committed = layout,
+    );
+    final Finder settings =
+        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+    final Finder hidden = _slotRegion(VideoControlSlot.hidden);
+    expect(settings, findsOneWidget);
+    expect(_willAccept(tester, settings, hidden), isTrue);
+    await _drag(tester, settings, hidden);
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+    expect(committed, isNotNull);
+    expect(committed!.isOnPlayer(VideoControlItem.settings), isFalse);
+  });
+
+  testWidgets('TODO-554: touch controls reject dragging settings into hidden',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    // The same drag a desktop user can do is refused on touch, so the sole
+    // in-player settings entry can never be hidden (no soft-lock; TODO-554).
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (_) async {},
+      isTouchControls: true,
+    );
+    final Finder settings =
+        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+    final Finder hidden = _slotRegion(VideoControlSlot.hidden);
+    expect(settings, findsOneWidget);
+    expect(
+      _willAccept(tester, settings, hidden),
+      isFalse,
+      reason: 'touch must keep the sole in-player settings entry reachable',
+    );
+  });
+
+  testWidgets(
+      'TODO-554: touch controls hide the settings remove "x", desktop shows it',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    // Desktop: settings chip carries a remove "x".
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (_) async {},
+    );
+    expect(
+      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.screenRight),
+      findsOneWidget,
+    );
+
+    // Touch: the settings chip has no remove "x" (it cannot be removed there),
+    // but a freely-removable key like subtitleList still does.
+    await _pumpOverlay(
+      tester,
+      layout: VideoControlLayout.currentChrome,
+      onLayoutChanged: (_) async {},
+      isTouchControls: true,
+    );
+    expect(
+      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.screenRight),
+      findsNothing,
+      reason: 'no rejected tap target for the pinned settings entry on touch',
+    );
+    expect(
+      _removeButtonFor(
+          VideoControlItem.subtitleList, VideoControlSlot.screenRight),
+      findsOneWidget,
+    );
   });
 }

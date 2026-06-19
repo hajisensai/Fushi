@@ -68,6 +68,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     this.initialControlLayout,
     this.onControlLayoutChanged,
     this.onEditControlsOnscreen,
+    this.isTouchControls = false,
     this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
@@ -167,6 +168,11 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 从设置页进入播放器画面内的拖拽编辑叠层（TODO-440）。
   final VoidCallback? onEditControlsOnscreen;
+
+  /// 触屏控件（无右键菜单兜底）。为 true 时，控件布局编辑区禁止把「设置」按钮
+  /// （玩家内进入设置/控件编辑器的唯一入口）拖入 hidden 移除，避免触屏用户把
+  /// 自己锁死在玩家外（TODO-554）。桌面（false）保留可移除 + 右键恢复。
+  final bool isTouchControls;
 
   /// Actual app UI scale. Video routes neutralize [HibikiAppUiScale] so the
   /// inherited scale inside the sheet can be 1.0 even when the app setting is
@@ -1752,7 +1758,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   ) {
     final VideoControlItem item = payload.item;
     if (!item.isChipRenderable) return false;
-    if (!item.canMoveToSlot(target)) return false;
+    if (!item.canMoveToSlot(
+      target,
+      isTouchControls: widget.isTouchControls,
+    )) {
+      return false;
+    }
     if (payload.sourceSlot == target) return true;
     return !_controlLayout.itemsIn(target).contains(item);
   }
@@ -1777,10 +1788,17 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     if (item == VideoControlItem.volume && !item.canMoveToSlot(target)) {
       return t.video_control_reject_volume_bottom;
     }
-    if (item.pinnedRequired && target == VideoControlSlot.hidden) {
+    if ((item.pinnedRequired ||
+            (widget.isTouchControls && item.pinnedOnTouch)) &&
+        target == VideoControlSlot.hidden) {
       return t.video_control_reject_required;
     }
-    if (!item.canMoveToSlot(target)) return t.video_control_reject_unavailable;
+    if (!item.canMoveToSlot(
+      target,
+      isTouchControls: widget.isTouchControls,
+    )) {
+      return t.video_control_reject_unavailable;
+    }
     return null;
   }
 

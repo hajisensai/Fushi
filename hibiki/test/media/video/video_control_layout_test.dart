@@ -822,4 +822,106 @@ void main() {
       }
     });
   });
+
+  group('TODO-554 settings stays reachable on touch controls', () {
+    test(
+        'settings is pinnedOnTouch but not pinnedRequired (desktop can remove)',
+        () {
+      // pinnedRequired = removable on no platform (playPause).
+      // pinnedOnTouch  = removable on desktop only (settings).
+      expect(VideoControlItem.settings.pinnedRequired, isFalse);
+      expect(VideoControlItem.settings.pinnedOnTouch, isTrue);
+      expect(VideoControlItem.playPause.pinnedRequired, isTrue);
+      expect(VideoControlItem.playPause.pinnedOnTouch, isFalse);
+    });
+
+    test('canMoveToSlot forbids hiding settings only on touch controls', () {
+      // Desktop default (isTouchControls: false) keeps settings removable so the
+      // right-click `Icons.tune` menu can restore it.
+      expect(
+        VideoControlItem.settings.canMoveToSlot(VideoControlSlot.hidden),
+        isTrue,
+      );
+      // Touch controls forbid it: settings is the sole in-player settings entry,
+      // and there is no right-click fallback, so hiding it would soft-lock the
+      // user out of the panel / on-screen editor (the regression dd988f477 let
+      // this through after dropping settings' pinnedRequired flag).
+      expect(
+        VideoControlItem.settings.canMoveToSlot(
+          VideoControlSlot.hidden,
+          isTouchControls: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRemoveFromPlayer mirrors the touch gate for settings', () {
+      expect(VideoControlItem.settings.canRemoveFromPlayer(), isTrue);
+      expect(
+        VideoControlItem.settings.canRemoveFromPlayer(isTouchControls: true),
+        isFalse,
+      );
+    });
+
+    test('touch gate only affects the hidden target, not visible slots', () {
+      // settings can still be dragged to any visible slot on touch controls.
+      for (final VideoControlSlot slot in <VideoControlSlot>[
+        VideoControlSlot.topLeft,
+        VideoControlSlot.topRight,
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomCenter,
+        VideoControlSlot.bottomRight,
+        VideoControlSlot.screenLeft,
+        VideoControlSlot.screenRight,
+      ]) {
+        expect(
+          VideoControlItem.settings.canMoveToSlot(slot, isTouchControls: true),
+          isTrue,
+          reason: 'settings should still reach ${slot.name} on touch',
+        );
+      }
+    });
+
+    test('touch gate does not loosen other items (non-pinnedOnTouch removable)',
+        () {
+      // A plain learning key stays removable on both surfaces.
+      expect(VideoControlItem.speed.canMoveToSlot(VideoControlSlot.hidden),
+          isTrue);
+      expect(
+        VideoControlItem.speed.canMoveToSlot(
+          VideoControlSlot.hidden,
+          isTouchControls: true,
+        ),
+        isTrue,
+      );
+      // playPause stays non-removable on both surfaces (model-layer pin).
+      expect(VideoControlItem.playPause.canMoveToSlot(VideoControlSlot.hidden),
+          isFalse);
+      expect(
+        VideoControlItem.playPause.canMoveToSlot(
+          VideoControlSlot.hidden,
+          isTouchControls: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('persisted model stays cross-platform identical (decode unaffected)',
+        () {
+      // Decoding a saved layout that removed settings must NOT depend on the
+      // current platform: the pure model still removes it (the UI gate, not the
+      // model, keeps it on the player for touch users).
+      final VideoControlLayout decoded = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 3,
+          'slots': <String, List<String>>{
+            'bottomRight': <String>['speed'],
+          },
+          'removed': <String>['settings'],
+        }),
+      );
+      expect(decoded.isOnPlayer(VideoControlItem.settings), isFalse);
+      expect(decoded.removedItems, contains(VideoControlItem.settings));
+    });
+  });
 }

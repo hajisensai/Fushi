@@ -28,6 +28,7 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoControlLayout layout)? onControlLayoutChanged,
   VoidCallback? onEditControlsOnscreen,
   VideoControlLayout? initialControlLayout,
+  bool isTouchControls = false,
   VideoFitMode initialVideoFitMode = VideoFitMode.cover,
   double uiScale = 1.0,
   int initialDelayMs = 0,
@@ -69,6 +70,7 @@ VideoQuickSettingsSheet _sheet({
     onControlLayoutChanged: (VideoControlLayout layout) async =>
         onControlLayoutChanged?.call(layout),
     onEditControlsOnscreen: onEditControlsOnscreen,
+    isTouchControls: isTouchControls,
     uiScale: uiScale,
   );
 }
@@ -1441,6 +1443,37 @@ void main() {
       expect(latest!.removedItems, contains(VideoControlItem.settings));
       expect(find.text('Required controls must stay on the player.'),
           findsNothing);
+    });
+
+    testWidgets(
+        'TODO-554: touch controls keep settings on the player (cannot hide it)',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 950));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      VideoControlLayout? latest;
+      await _pump(
+        tester,
+        _sheet(
+          isTouchControls: true,
+          onControlLayoutChanged: (VideoControlLayout layout) {
+            latest = layout;
+          },
+        ),
+      );
+      await openControls(tester);
+
+      // On touch the settings button is the sole in-player entry to this very
+      // editor; hiding it would soft-lock the user out (regression dd988f477).
+      await dragChipTo(
+        tester,
+        dragChipFinder(
+            VideoControlItem.settings, VideoControlSlot.screenRight, 3),
+        slotFinder(VideoControlSlot.hidden),
+      );
+      expect(latest, isNull,
+          reason: 'touch must refuse hiding the settings entry');
+      expect(find.text('Required controls must stay on the player.'),
+          findsOneWidget);
     });
 
     testWidgets('required playPause button cannot be hidden', (tester) async {
