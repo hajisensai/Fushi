@@ -822,7 +822,13 @@ void main() {
     expect(cardLayout, isNot(contains('left: 6,')));
   });
 
-  test('book long-press frame uses cover background and MD3 action layout', () {
+  test('book long-press frame uses visible cover block and MD3 action layout',
+      () {
+    // TODO-557 把长按对话框封面从「Stack/Positioned.fill + LinearGradient scrim
+    // 背景」（TODO-455 引入、让封面几乎不可见）改回「Column 顶部可见封面块」：
+    // ConstrainedBox 限高 + ColoredBox letterbox + 传入的封面 widget（其内部
+    // BoxFit.contain，整幅可见不裁切）。本守卫断言这一可见封面结构，并反向锁定
+    // 旧 scrim 背景结构不回归。
     final String source = File(
       'lib/src/pages/implementations/media_item_dialog_page.dart',
     ).readAsStringSync();
@@ -832,11 +838,12 @@ void main() {
       source.length,
     );
 
+    // 共享 MD3 对话框框 + 顶部可见封面块（限高 + letterbox 背景）。
     expect(frame, contains('HibikiDialogFrame('));
-    expect(frame, contains('Stack('));
-    expect(frame, contains('Positioned.fill'));
-    expect(frame, contains('BoxFit.cover'));
-    expect(frame, contains('LinearGradient('));
+    expect(frame, contains('ConstrainedBox('));
+    expect(frame, contains('ColoredBox('));
+    expect(frame, contains('tokens.surfaces.overlay'));
+    // MD3 action layout：快捷动作 chip 网格 + 列表动作 + 危险文字按钮。
     expect(frame, contains('Wrap('));
     expect(frame, contains('HibikiActionChip('));
     expect(frame, contains('HibikiListItem('));
@@ -848,6 +855,9 @@ void main() {
     expect(frame, isNot(contains('SingleChildScrollView(')));
     expect(frame, isNot(contains('ListTile(')));
     expect(frame, isNot(contains('OutlinedButton.icon(')));
+    // 旧 scrim 背景结构（封面铺底 + 渐变遮罩）不得回归。
+    expect(frame, isNot(contains('Positioned.fill')));
+    expect(frame, isNot(contains('LinearGradient(')));
   });
 
   test('settings renderer rows use shared MD3 row primitives', () {
