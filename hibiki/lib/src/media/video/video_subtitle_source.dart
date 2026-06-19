@@ -376,6 +376,82 @@ class DefaultEmbeddedSubtitleLoadResult {
   }
 }
 
+/// **Pure**: whether a default embedded-subtitle load result is a *transient*
+/// failure worth retrying once after a readiness signal.
+///
+/// First-open of a large container (cold page cache) makes the `ffmpeg -i`
+/// enumeration race the prewarm extraction (`ffmpeg -map`) and libmpv demuxing
+/// for disk IO; the probe can time out and return zero tracks even though the
+/// container *does* carry text subtitles. Those statuses ("should have had a
+/// subtitle but this attempt did not get one") can succeed on a retry once the
+/// contention has subsided / the cache is warm. Terminal statuses (no embedded
+/// track / no text track / missing file / already loaded) never benefit from a
+/// retry. Mirrors TODO-521's "re-read once the readiness signal arrives".
+bool isTransientDefaultEmbeddedSubtitleLoad(
+  DefaultEmbeddedSubtitleLoadStatus status,
+) {
+  switch (status) {
+    case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
+    case DefaultEmbeddedSubtitleLoadStatus.enumerationFailed:
+    case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
+      return true;
+    case DefaultEmbeddedSubtitleLoadStatus.loaded:
+    case DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks:
+    case DefaultEmbeddedSubtitleLoadStatus.noTextTrack:
+    case DefaultEmbeddedSubtitleLoadStatus.missingFile:
+      return false;
+  }
+}
+
+/// Loads default text embedded subtitle cues, retrying **once** after a
+/// readiness signal when the first attempt is a transient IO-contention failure
+/// (TODO-572). Player-agnostic: callers inject [waitForReady] (e.g. wait for
+/// libmpv subtitle tracks) and [isStillCurrent] (player identity + load token)
+/// so this stays unit-testable without a real Player.
+///
+/// Order: first load → if [isStillCurrent] is false at any await boundary,
+/// returns the latest result without applying side effects (caller drops it);
+/// transient failure → [waitForReady] → re-check current → second load.
+/// Non-transient (terminal/loaded) results are returned immediately without a
+/// retry. Returns the final [DefaultEmbeddedSubtitleLoadResult]; the caller
+/// decides whether to apply cues / notify, also gated on [isStillCurrent].
+Future<DefaultEmbeddedSubtitleLoadResult>
+    loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
+  required String videoPath,
+  required String bookUid,
+  required Future<void> Function() waitForReady,
+  required bool Function() isStillCurrent,
+  String langCode = 'ja',
+  Future<DefaultEmbeddedSubtitleLoadResult> Function({
+    required String videoPath,
+    required String bookUid,
+    String langCode,
+  })? loadOnce,
+}) async {
+  final Future<DefaultEmbeddedSubtitleLoadResult> Function({
+    required String videoPath,
+    required String bookUid,
+    String langCode,
+  }) load = loadOnce ?? loadDefaultTextEmbeddedSubtitleCues;
+
+  DefaultEmbeddedSubtitleLoadResult result = await load(
+    videoPath: videoPath,
+    bookUid: bookUid,
+    langCode: langCode,
+  );
+  if (!isStillCurrent()) return result;
+  if (!isTransientDefaultEmbeddedSubtitleLoad(result.status)) return result;
+
+  await waitForReady();
+  if (!isStillCurrent()) return result;
+  result = await load(
+    videoPath: videoPath,
+    bookUid: bookUid,
+    langCode: langCode,
+  );
+  return result;
+}
+
 /// 跑 `ffmpeg -i <videoPath>` 并解析 stderr 得到所有内嵌字幕轨（IO 包装）。
 ///
 /// `ffmpeg -i` 无输出文件时退出码非 0，但 stderr 仍含完整流信息，属正常；故不看
