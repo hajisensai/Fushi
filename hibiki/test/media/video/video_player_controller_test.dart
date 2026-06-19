@@ -1027,6 +1027,149 @@ void main() {
     });
   });
 
+  // TODO-571 / BUG-329：视频「上一句/下一句」字幕跳转跳过头（上一句跳到 N-2）/ 原地
+  // 不动（下一句卡在刚跳到的那句）。
+  //
+  // 根因：skipToCue 的 seek 落点因前导余量 kCueSeekPreRollMs(=180) **故意**偏到目标句
+  // startMs 之前（cueSeekTargetMs，吸收 media_kit 关键帧吸附 BUG-259 / 听感）。连续按
+  // 跳句时，第二次读到的实时 position 正是这个偏前落点：
+  //   - 上一句：偏前落点退进「目标句的上一句」时间窗，findCueIndex 命中上一句 → hit-1
+  //     跳到上上句 → 跳过头（N-2，正是用户报「感觉跳过头了」）。
+  //   - 下一句：偏前落点还没到目标句 startMs，_floorCueIndexByPosition 据 startMs<=pos
+  //     反推当前句成目标句的上一句 → +1 又指回刚跳到的目标句 → 原地不动。
+  //
+  // 修复：nextCueIndexFor / prevCueIndexFor / prevSeekDecisionFor 接受 anchorIndex
+  // （= 上次主动跳转目标 _seekTargetCueIndex，565 已在 preRoll 引导窗口内维护其生命周期）。
+  // 锚存活时严格 anchor±1，绕过按偏前 position 反推 floor/命中。
+  group('TODO-571 锚定上次主动跳转目标：连续跳句不跳过头 / 不原地', () {
+    // cue 间有小 gap（真实 SRT/ASS 字幕常见），startMs 间隔 1000ms，preRoll=180。
+    final spaced = <AudioCue>[
+      _cue(0, 1000, 1900),
+      _cue(1, 2000, 2900),
+      _cue(2, 3000, 3900),
+      _cue(3, 4000, 4900),
+    ];
+
+    test('下一句：anchor=1 时严格取 cue2，不被偏前落点拖回 cue1（原地）', () {
+      // 模拟刚跳到 cue1：seek 落点 = 2000-180 = 1820（< cue1.startMs，落 cue0 时间窗）。
+      // 不带 anchor：floor(1820 by startMs)=0 → next=1（=刚跳到的 cue1，原地不动，错）。
+      expect(
+        VideoPlayerController.nextCueIndexFor(cues: spaced, positionMs: 1820),
+        1,
+        reason: '无 anchor 时偏前落点把当前句反推成 cue0，下一句又指回 cue1（原地）',
+      );
+      // 带 anchor=1（_seekTargetCueIndex）：严格 anchor+1 = cue2（真前进）。
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: spaced, positionMs: 1820, anchorIndex: 1),
+        2,
+        reason: '锚定刚跳到的 cue1，下一句必须是 cue2，不受 preRoll 偏前落点干扰',
+      );
+    });
+
+    test('上一句：anchor=2 时严格取 cue1，不跳过头到 cue0（N-2）', () {
+      // 模拟刚跳到 cue2：seek 落点 = 3000-180 = 2820（落 cue1[2000,2900] 时间窗内）。
+      // 不带 anchor：findCueIndex(2820)=cue1 → prev=0（cue0，跳过 cue1，跳过头，错）。
+      expect(
+        VideoPlayerController.prevCueIndexFor(cues: spaced, positionMs: 2820),
+        0,
+        reason: '无 anchor 时偏前落点退进 cue1 时间窗，上一句跳到 cue0（跳过头 N-2）',
+      );
+      // 带 anchor=2（_seekTargetCueIndex）：严格 anchor-1 = cue1（相邻 N-1）。
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+            cues: spaced, positionMs: 2820, anchorIndex: 2),
+        1,
+        reason: '锚定刚跳到的 cue2，上一句必须是相邻的 cue1，绝不跳过头到 cue0',
+      );
+    });
+
+    test('连续下一句逐句前进：anchor 链 1→2→3', () {
+      // 模拟链：每次跳完 _seekTargetCueIndex = 上次目标，position 落偏前落点。
+      // anchor=1, pos=1820（cue2 偏前前一步的落点不影响，anchor 主导）→ next=2
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: spaced, positionMs: 1820, anchorIndex: 1),
+        2,
+      );
+      // anchor=2, pos=2820 → next=3
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: spaced, positionMs: 2820, anchorIndex: 2),
+        3,
+      );
+      // anchor=3（末句）, pos=3820 → null（无下一句，no-op）
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: spaced, positionMs: 3820, anchorIndex: 3),
+        isNull,
+        reason: 'anchor 已是末句：下一句越界返回 null（保持末句 no-op 边界）',
+      );
+    });
+
+    test('连续上一句逐句后退：anchor 链 2→1→0→null', () {
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+            cues: spaced, positionMs: 2820, anchorIndex: 2),
+        1,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+            cues: spaced, positionMs: 1820, anchorIndex: 1),
+        0,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+            cues: spaced, positionMs: 820, anchorIndex: 0),
+        isNull,
+        reason: 'anchor 已是首句：上一句越界返回 null（保持首句 no-op 边界）',
+      );
+    });
+
+    test('anchor 越界（脏快照）时退回纯位置推导，不崩', () {
+      // anchorIndex 超出范围 → 走原 position 逻辑（防御：快照与 cues 不同步时不应锚错）。
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: spaced, positionMs: 1500, anchorIndex: 99),
+        1,
+        reason: '越界 anchor 忽略，按 position(1500=cue0 后 gap) floor 取下一句 cue1',
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+            cues: spaced, positionMs: 3500, anchorIndex: -5),
+        1,
+        reason: '负 anchor 忽略，按 position(3500=cue1 后 gap) 回退到 cue1',
+      );
+    });
+
+    test('anchorIndex==null（首次从自然播放跳）时行为不变（向后兼容）', () {
+      // 无快照：与现有 TODO-410 行为完全一致（按 position 反推）。
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: spaced, positionMs: 2500, anchorIndex: null),
+        VideoPlayerController.nextCueIndexFor(cues: spaced, positionMs: 2500),
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+            cues: spaced, positionMs: 2500, anchorIndex: null),
+        VideoPlayerController.prevCueIndexFor(cues: spaced, positionMs: 2500),
+      );
+    });
+
+    test('prevSeekDecisionFor 锚定：anchor=2 取相邻 cue1（不跳过头），距离仍按真实 position', () {
+      // pos=2820（偏前落点）, anchor=2, seekSeconds=3。相邻上一句 cue1.startMs=2000，
+      // gap = 2820-2000 = 820ms <= 3000ms → 跳句到 cue1（不退化、不跳过头）。
+      final d = VideoPlayerController.prevSeekDecisionFor(
+        cues: spaced,
+        positionMs: 2820,
+        seekSeconds: 3,
+        anchorIndex: 2,
+      );
+      expect(d, const PrevSeekDecision.cue(1),
+          reason: '锚定 cue2 → 上一句 cue1（相邻），距离 820ms 未超阈值，跳句不退化');
+    });
+  });
+
   // TODO-073: 视频 OP（片头）段没有字幕时，按「下一句字幕」按钮跳回开头。
   //
   // 用户复现：OP 歌词没有字幕（首条 cue 在 OP 之后，如真实龙女仆 S01E01 首条 cue

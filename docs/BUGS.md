@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-329](bugs/BUG-329-mobile-subtitle-reserve-pushup.md) | ✅ | ✅ | 手机端字幕条被顶飞 / 位置不对·reserve 误用进度条触摸热区全高（TODO-568） |
+| [BUG-329](bugs/BUG-329-video-cue-skip-overshoot.md) | ✅ | ✅ | 视频上一句/下一句跳转跳过头（TODO-571） |
 | [BUG-328](bugs/BUG-328-video-subtitle-list-favorite-star-slow.md) | ✅ | ✅ | 视频字幕列表已收藏句星标加载慢（要等一会才出现） |
 | [BUG-327](bugs/BUG-327-video-subtitle-list-timestamp-overflow.md) | ✅ | ✅ | 视频字幕列表左侧时间戳被下一条字幕遮挡 / 溢出 |
 | [BUG-326](bugs/BUG-326-video-folder-drag-import.md) | ✅ | ✅ | 视频拖放扩展名不全 + 书架拖入视频不自动切视频导入 |
