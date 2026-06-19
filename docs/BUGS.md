@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 335 条。点号进各自文件。
+> 共 336 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-342](bugs/BUG-342-desktop-audio-player-already-exists.md) | ✅ | ✅ | Windows 桌面本地音频/查词自动发音偶发没声 Player already exists |
 | [BUG-341](bugs/BUG-341-video-speed-menu-guard-red.md) | ✅ | ✅ | develop 倍速菜单守卫陈旧致预存红 (TODO-601) |
 | [BUG-340](bugs/BUG-340-settings-row-stack-breakpoint.md) | ✅ | ✅ | 设置行 <360 竖排堆叠断点过宽（全 App 设置行观感退化） |
 | [BUG-339](bugs/BUG-339-video-v2-hidden-key-migration.md) | ✅ | ✅ | 视频控制v2迁移隐藏键静默移除 |
