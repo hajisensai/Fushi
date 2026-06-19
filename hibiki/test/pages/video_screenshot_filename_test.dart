@@ -5,44 +5,55 @@ import 'package:hibiki/src/media/video/video_screenshot_filename.dart';
 
 void main() {
   group('videoScreenshotBaseName', () {
-    test('源名、播放时间、当前时间一起入名，并保留 Unicode 标题', () {
+    test(
+        'TODO-564: 文件名 = 视频名 + 播放时刻(HH-MM-SS)，去掉 hibiki_ 前缀与毫秒/墙钟戳，保留 Unicode 标题',
+        () {
       final String name = videoScreenshotBaseName(
         sourcePathOrTitle: r'D:\video\響け！ユーフォニアム 第1話?.mkv',
         positionMs: 65234,
-        capturedAt: DateTime(2026, 6, 17, 23, 12, 5, 987),
       );
 
-      expect(
-        name,
-        'hibiki_響け！ユーフォニアム 第1話_at_00h01m05s234_20260617_231205_987.jpg',
-      );
+      // 旧名形如 hibiki_<标题>_at_00h01m05s234_20260617_231205_987.jpg，
+      // 新名只保留语义化的「视频名 + 播放时刻」。
+      expect(name, '響け！ユーフォニアム 第1話_00-01-05.jpg');
     });
 
-    test('同一视频同一播放位置的多次截图因当前时间不同而不重名', () {
+    test('TODO-564: 文件名不再含旧前缀/毫秒/墙钟时间戳段', () {
+      final String name = videoScreenshotBaseName(
+        sourcePathOrTitle: '/videos/episode 01.mp4',
+        positionMs: 90000,
+      );
+
+      expect(name, 'episode 01_00-01-30.jpg');
+      expect(name.startsWith('hibiki_'), isFalse);
+      expect(name.contains('_at_'), isFalse);
+      // 无 9 位以上的连续墙钟时间戳数字串（旧的 YYYYMMDD/毫秒）。
+      expect(RegExp(r'\d{8,}').hasMatch(name), isFalse);
+    });
+
+    test('TODO-564: 同一视频同一播放秒得到同名，唯一性交给去重层兜底', () {
       final String first = videoScreenshotBaseName(
         sourcePathOrTitle: '/videos/episode 01.mp4',
         positionMs: 90000,
-        capturedAt: DateTime(2026, 6, 17, 23, 12, 5, 1),
       );
       final String second = videoScreenshotBaseName(
         sourcePathOrTitle: '/videos/episode 01.mp4',
-        positionMs: 90000,
-        capturedAt: DateTime(2026, 6, 17, 23, 12, 5, 2),
+        positionMs: 90120,
       );
 
-      expect(first, isNot(second));
-      expect(first, contains('episode 01_at_00h01m30s000'));
-      expect(second, contains('episode 01_at_00h01m30s000'));
+      // 同一秒（90000ms 与 90120ms 都落在 00:01:30）→ 名字相同，
+      // 由 uniqueVideoScreenshotBaseName 的 (n) 后缀保证不撞名。
+      expect(first, second);
+      expect(first, 'episode 01_00-01-30.jpg');
     });
   });
 
   group('uniqueVideoScreenshotBaseName', () {
-    test('已存在同名时追加递增计数后缀', () {
-      const String desired =
-          'hibiki_episode 01_at_00h01m30s000_20260617_231205_001.jpg';
+    test('已存在同名时追加递增计数后缀（同一视频同一播放秒连点截图靠这层兜唯一）', () {
+      const String desired = 'episode 01_00-01-30.jpg';
       final Set<String> existing = <String>{
         desired,
-        'hibiki_episode 01_at_00h01m30s000_20260617_231205_001 (2).jpg',
+        'episode 01_00-01-30 (2).jpg',
       };
 
       expect(
@@ -50,7 +61,7 @@ void main() {
           desired,
           exists: existing.contains,
         ),
-        'hibiki_episode 01_at_00h01m30s000_20260617_231205_001 (3).jpg',
+        'episode 01_00-01-30 (3).jpg',
       );
     });
   });

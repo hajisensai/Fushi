@@ -191,4 +191,38 @@ void main() {
     expect(osd.contains('_levelHudNotifier'), isFalse,
         reason: 'Generic OSD and level HUD must stay separate.');
   });
+
+  // TODO-563: the HUD lives in the window-side _buildVideoBody Stack, but
+  // fullscreen is a separate PageRoute. Desktop users (wheel / keyboard volume
+  // keys) and fullscreen viewers had no volume HUD because the route never
+  // mounted it. Lock that the fullscreen route now re-mounts the same page-level
+  // overlays so window and fullscreen feedback match on every platform.
+  test('fullscreen route mounts the same page-level volume/brightness HUD', () {
+    expect(
+      src.contains('Widget _fullscreenContentWithOverlays(Widget content) {'),
+      isTrue,
+      reason:
+          'Fullscreen must reuse a helper that stacks the page-level overlays.',
+    );
+
+    final String helper = region(
+      'Widget _fullscreenContentWithOverlays(Widget content) {',
+      'Widget _buildRightVolumeIndicator(double volume) {',
+    );
+    expect(helper.contains('_buildLevelHudOverlay()'), isTrue,
+        reason:
+            'Fullscreen overlays must include the volume/brightness level HUD.');
+    expect(helper.contains('_buildOsdOverlay()'), isTrue,
+        reason: 'Fullscreen overlays must include the mpv-style OSD too.');
+
+    // The fullscreen route builder must route its content through the helper,
+    // so the HUD is not silently dropped on fullscreen.
+    final String route = region(
+      'Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {',
+      'void _onVideoFullscreenRouteClosed() {',
+    );
+    expect(route.contains('_fullscreenContentWithOverlays('), isTrue,
+        reason:
+            'Fullscreen page builder must wrap its content with the HUD overlays.');
+  });
 }

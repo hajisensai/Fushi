@@ -3539,10 +3539,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           // 字幕跳转列表「真 push-aside」（TODO-121）：全屏路由自建的
                           // Video 同样包进 Row[Expanded(Video), 面板列]，面板可见时全屏
                           // 画面真挤窄、不被遮（与窗口侧 [_buildVideoBody] 同一 helper）。
-                          if (playerController == null) return fullscreenVideo;
-                          return _videoWithSubtitlePanel(
-                            playerController,
-                            fullscreenVideo,
+                          final Widget fullscreenContent =
+                              playerController == null
+                                  ? fullscreenVideo
+                                  : _videoWithSubtitlePanel(
+                                      playerController,
+                                      fullscreenVideo,
+                                    );
+                          // TODO-563：全屏路由是独立 [PageRoute]，不在窗口侧 [_buildVideoBody]
+                          // 的 Stack 里，原本没挂音量/亮度百分比 HUD 与 mpv 式 OSD →
+                          // 桌面/移动全屏时调音量（滚轮 / 键盘音量键 / 竖滑）看不到反馈。
+                          // 这里把同一对页面级 overlay（读同一 _levelHudNotifier /
+                          // _osdNotifier 真相源，IgnorePointer 不抢手势）叠到全屏内容上，
+                          // 让全屏与窗口反馈一致（亮度桌面仍诚实 no-op，仅移动出现）。
+                          return _fullscreenContentWithOverlays(
+                            fullscreenContent,
                           );
                         },
                       ),
@@ -5929,7 +5940,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       final String defaultScreenshotName = videoScreenshotBaseName(
         sourcePathOrTitle: _screenshotSourcePathOrTitle(),
         positionMs: controller?.positionMs ?? 0,
-        capturedAt: DateTime.now(),
       );
       final Directory tmpDir = await getTemporaryDirectory();
       final String screenshotName = uniqueVideoScreenshotBaseName(
@@ -7978,6 +7988,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ],
         );
       },
+    );
+  }
+
+  /// TODO-563：把页面级音量/亮度 HUD 与 mpv 式 OSD 叠到全屏内容上。
+  ///
+  /// 全屏走独立 [PageRoute]（[_pushNeutralizedVideoFullscreen]），不在窗口侧
+  /// [_buildVideoBody] 的 Stack 里，故这两层 overlay 需在全屏路由的 widget 树里
+  /// 单独重挂一次。两者都读窗口侧同一真相源 notifier（[_levelHudNotifier] /
+  /// [_osdNotifier]）且为 [IgnorePointer] 全屏覆盖层，不抢字幕 / 控制条手势。
+  Widget _fullscreenContentWithOverlays(Widget content) {
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        content,
+        _buildOsdOverlay(),
+        _buildLevelHudOverlay(),
+      ],
     );
   }
 

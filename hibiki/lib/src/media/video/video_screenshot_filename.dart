@@ -4,16 +4,24 @@ const int _maxScreenshotSourceRunes = 80;
 
 /// Builds the default JPEG basename for a video screenshot.
 ///
+/// TODO-564: 旧名 `hibiki_<视频名>_at_<HHhMMmSSsmmm>_<YYYYMMDD_HHMMSS_mmm>.jpg`
+/// 三段时间戳叠加（播放位置毫秒 + 截图墙钟日期/时分秒/毫秒）冗长难读。改成
+/// 「视频名 + 播放时刻」更语义化：`<视频名>_<HH-MM-SS>.jpg`，时间取这一帧在视频里
+/// 的播放位置（截图记录的本就是「视频的哪一刻」，比截图墙钟时间更有意义）。去掉
+/// `hibiki_` 前缀（文件已落在用户选的目录 / 分享面板里，前缀只占长度无信息）。
+///
+/// 去重契约：同一视频同一播放秒连续两次截图会得到同名 → 完全由
+/// [uniqueVideoScreenshotBaseName] / [uniqueVideoScreenshotPath] 的 ` (n)` 计数后缀
+/// 保证唯一（临时目录 existsSync + 桌面保存路径两处都过这层），与旧实现一致。
+///
 /// The source segment keeps Unicode titles readable while replacing characters
 /// that are invalid in common desktop file systems.
 String videoScreenshotBaseName({
   required String? sourcePathOrTitle,
   required int positionMs,
-  required DateTime capturedAt,
 }) {
   final String source = _safeScreenshotSourceStem(sourcePathOrTitle);
-  return 'hibiki_${source}_at_${_playbackTimeToken(positionMs)}_'
-      '${_captureTimeToken(capturedAt)}.jpg';
+  return '${source}_${_playbackTimeToken(positionMs)}.jpg';
 }
 
 /// Returns [desiredName] or appends ` (n)` before the extension until it is new.
@@ -102,17 +110,7 @@ String _playbackTimeToken(int positionMs) {
       (safeMs % Duration.millisecondsPerHour) ~/ Duration.millisecondsPerMinute;
   final int seconds = (safeMs % Duration.millisecondsPerMinute) ~/
       Duration.millisecondsPerSecond;
-  final int millis = safeMs % Duration.millisecondsPerSecond;
-  return '${_two(hours)}h${_two(minutes)}m${_two(seconds)}s${_three(millis)}';
-}
-
-String _captureTimeToken(DateTime capturedAt) {
-  final DateTime local = capturedAt.toLocal();
-  return '${_four(local.year)}${_two(local.month)}${_two(local.day)}_'
-      '${_two(local.hour)}${_two(local.minute)}${_two(local.second)}_'
-      '${_three(local.millisecond)}';
+  return '${_two(hours)}-${_two(minutes)}-${_two(seconds)}';
 }
 
 String _two(int value) => value.toString().padLeft(2, '0');
-String _three(int value) => value.toString().padLeft(3, '0');
-String _four(int value) => value.toString().padLeft(4, '0');

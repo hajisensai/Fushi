@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 328 条。点号进各自文件。
+> 共 330 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-337](bugs/BUG-337-todo-563-fullscreen-volume-hud.md) | ✅ | ✅ | TODO-563 滑动手势音量/亮度 HUD 桌面与全屏也应显示（不止手机窗口） |
+| [BUG-336](bugs/BUG-336-todo-564-screenshot-filename.md) | ✅ | ✅ | TODO-564 视频截图文件名太长，改成视频名+播放时刻更语义化 |
 | [BUG-334](bugs/BUG-334-todo-572-embedded-subtitle-first-load.md) | ✅ | ✅ | TODO-572: 视频内封字幕首次打开常加载不出来，需重开一次 |
 | [BUG-333](bugs/BUG-333-floating-lyric-bg-opacity.md) | ✅ | ✅ | 悬浮歌词/字幕条背景不透明度太高挡视野，应可调并降低默认值 (TODO-576) |
 | [BUG-332](bugs/BUG-332-video-cue-skip-overshoot.md) | ✅ | ✅ | 视频上一句/下一句跳转跳过头（TODO-571） |
