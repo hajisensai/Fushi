@@ -28,11 +28,19 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pump();
 }
 
-/// 收集当前句每个字符 [Text] 的有效 [TextStyle]，验证整段字幕的字体回退链一致。
+/// 取某字符的**填充层** [Text]（BUG-323 / TODO-569 起每字渲染成 stroke+fill 双层；
+/// 填充层 = `style.foreground == null` 的那个，描边层用 foreground 画笔）。回退链/字体
+/// 一致性断言只看填充层即可（描边层从填充层 copyWith 同源派生，几何属性一致）。
+Text _fillTextOf(WidgetTester tester, String ch) {
+  final List<Text> all = tester.widgetList<Text>(find.text(ch)).toList();
+  return all.firstWhere((Text t) => t.style?.foreground == null);
+}
+
+/// 收集当前句每个字符**填充层** [Text] 的有效 [TextStyle]，验证整段字幕的字体回退链一致。
 List<TextStyle> _charStyles(WidgetTester tester, String sentence) {
   final List<TextStyle> styles = <TextStyle>[];
   for (final String ch in sentence.characters) {
-    final Text txt = tester.widget<Text>(find.text(ch));
+    final Text txt = _fillTextOf(tester, ch);
     expect(txt.style, isNotNull, reason: '字符「$ch」的 Text 缺 style');
     styles.add(txt.style!);
   }
@@ -71,7 +79,7 @@ void main() {
       final VideoPlayerController c = _controllerWithCue('の');
       await _pump(tester, VideoSubtitleOverlay(controller: c));
 
-      final Text txt = tester.widget<Text>(find.text('の'));
+      final Text txt = _fillTextOf(tester, 'の');
       final List<String> fallback = txt.style!.fontFamilyFallback!;
       // 至少要含覆盖各平台的若干日文系统字体名（引擎按平台忽略不存在的项）。
       // 不强求精确清单，但必须含 Win 与 Apple 平台的代表字体，否则该平台仍走默认 fallback。
@@ -107,7 +115,7 @@ void main() {
       // fontFamilyFallback 会沿用 base 的——验证 span 覆盖后回退链不丢。
       final VideoPlayerController c = _controllerWithCue('の');
       await _pump(tester, VideoSubtitleOverlay(controller: c));
-      final Text txt = tester.widget<Text>(find.text('の'));
+      final Text txt = _fillTextOf(tester, 'の');
       expect(txt.style!.fontFamilyFallback, isNotEmpty);
     });
   });

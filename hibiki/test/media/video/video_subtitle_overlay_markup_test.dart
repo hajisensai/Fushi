@@ -46,11 +46,12 @@ void main() {
 
     // 顶部锚点：字幕盒落在 overlay 上半部。
     final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
-    final Offset boxCenter = tester.getCenter(find.text('プ'));
+    // BUG-323/TODO-569：每字渲染为 stroke+fill 双层，取 .first（两层同位置）。
+    final Offset boxCenter = tester.getCenter(find.text('プ').first);
     expect(boxCenter.dy, lessThan(overlayRect.center.dy));
 
     // 逐字查词仍传纯文本 + 正确 grapheme 索引。
-    await tester.tap(find.text('ト'));
+    await tester.tap(find.text('ト').first);
     expect(tappedSentence, 'トップ');
     expect(tappedIndex, 0);
   });
@@ -62,8 +63,13 @@ void main() {
       home: Scaffold(body: VideoSubtitleOverlay(controller: c)),
     ));
     await tester.pump();
-    final Text a = tester.widget<Text>(find.text('A'));
-    final Text b = tester.widget<Text>(find.text('B'));
+    // BUG-323/TODO-569：每字 stroke+fill 双层，取填充层（foreground==null）断言样式。
+    final Text a = tester
+        .widgetList<Text>(find.text('A'))
+        .firstWhere((Text t) => t.style?.foreground == null);
+    final Text b = tester
+        .widgetList<Text>(find.text('B'))
+        .firstWhere((Text t) => t.style?.foreground == null);
     expect(a.style?.fontStyle, FontStyle.italic);
     expect(b.style?.fontStyle, isNot(FontStyle.italic));
   });
@@ -85,7 +91,8 @@ void main() {
     ));
     await tester.pump();
     final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
-    final Offset boxCenter = tester.getCenter(find.text('そ'));
+    // 双层重叠，取 .first（BUG-323/TODO-569）。
+    final Offset boxCenter = tester.getCenter(find.text('そ').first);
     expect(boxCenter.dy, greaterThan(overlayRect.center.dy)); // 底部
   });
 }
