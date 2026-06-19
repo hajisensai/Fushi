@@ -1,4 +1,4 @@
-## BUG-338 · develop 倍速菜单守卫陈旧致预存红 (TODO-601)
+## BUG-341 · develop 倍速菜单守卫陈旧致预存红 (TODO-601)
 - **报告**：2026-06-19（CI 实证：Build Release APK 步骤 `dart run tool/flutter_test_failures.dart --exclude-tags golden` 红）
 - **真实性**：✅ 真 bug（陈旧守卫，非功能回归）。根因 = 两个源码扫描守卫硬编码的 `_showSpeedMenu` 精确签名串过时：
   - `hibiki/test/pages/video_controls_cleanup_guard_test.dart:111`（旧）断言 `src.contains('void _showSpeedMenu({LayerLink? popoverLink})')` → false

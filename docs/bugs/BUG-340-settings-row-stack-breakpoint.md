@@ -1,4 +1,4 @@
-## BUG-338 · 设置行 <360 竖排堆叠断点过宽（全 App 设置行观感退化）
+## BUG-340 · 设置行 <360 竖排堆叠断点过宽（全 App 设置行观感退化）
 - **报告**：2026-06-19（用户：TODO-599 / 551 审计发现的低危回归）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/utils/components/settings_shared.dart:325`（d95923c6c 引入）
 - **[x] ① 已修复** — commit `2cc1823c6`

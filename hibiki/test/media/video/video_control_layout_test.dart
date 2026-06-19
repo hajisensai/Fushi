@@ -356,7 +356,7 @@ void main() {
       expect(layout.isOnPlayer(VideoControlItem.playPause), isTrue);
     });
 
-    // TODO-598 / BUG-338 regression guard: the v2 layout had a single `hidden`
+    // TODO-598 / BUG-339 regression guard: the v2 layout had a single `hidden`
     // slot listing EVERY button the user had taken off the player. v3 dropped
     // that slot for an explicit `removed` set. The v2->v3 migration must carry
     // ALL of those hidden keys across as removed (still restorable from the

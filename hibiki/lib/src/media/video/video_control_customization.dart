@@ -1040,7 +1040,7 @@ class VideoControlLayout {
       final VideoControlSlot? slot = VideoControlSlot.fromStorage(entry.key);
       final Object? listRaw = entry.value;
       if (slot == null || listRaw is! List) continue;
-      // TODO-598 / BUG-338: the v2 layout persisted everything the user took off
+      // TODO-598 / BUG-339: the v2 layout persisted everything the user took off
       // the player inside a single `hidden` slot. v3 replaced that slot with an
       // explicit `removed` set, so on upgrade every v2 hidden key must be carried
       // across as removed (still restorable from the palette) -- never silently
@@ -1078,14 +1078,14 @@ class VideoControlLayout {
     );
   }
 
-  /// TODO-598 / BUG-338: carry every key from a v2 `hidden` slot into the v3
+  /// TODO-598 / BUG-339: carry every key from a v2 `hidden` slot into the v3
   /// [removed] set so an upgrading user keeps exactly the buttons they had taken
   /// off the player (still restorable from the palette), with no silent loss.
   ///
   /// A key that is no longer removable (only [VideoControlItem.playPause] today)
   /// is intentionally skipped here: [_normalize] backfills it onto the player,
   /// because a required transport key can never be hidden. Every other v2 hidden
-  /// key must reach [removed]; this is pinned by the BUG-338 guard test.
+  /// key must reach [removed]; this is pinned by the BUG-339 guard test.
   static void _migrateV2HiddenKeysAsRemoved(
     List<dynamic> hiddenRaw,
     Set<VideoControlItem> removed,

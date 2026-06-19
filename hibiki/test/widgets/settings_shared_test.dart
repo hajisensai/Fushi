@@ -558,7 +558,7 @@ void main() {
   testWidgets(
       'normal-width switch rows stay horizontal at 1x scale (no spurious stack)',
       (tester) async {
-    // Regression guard (TODO-599 / BUG-338): a fixed `maxWidth < 360` auto-stack
+    // Regression guard (TODO-599 / BUG-340): a fixed `maxWidth < 360` auto-stack
     // wrongly pushed the trailing control below the label on nearly every phone
     // row at default text scale. At 1x a label + switch must stay side by side
     // for common settings-row widths (360 and 400).

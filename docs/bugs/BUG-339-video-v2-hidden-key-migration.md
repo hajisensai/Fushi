@@ -1,4 +1,4 @@
-## BUG-338 · 视频控制v2迁移隐藏键静默移除
+## BUG-339 · 视频控制v2迁移隐藏键静默移除
 - **报告**：2026-06-19（用户：TODO-598 / 551 审计·中危回归）
 - **真实性**：✅ 迁移逻辑本身**无丢失**（验真后定为「数据不丢，但迁移意图隐式」）。根因路径 `hibiki/lib/src/media/video/video_control_customization.dart:1048-1057`（`_decodeSlots`）。
   - 沿真实代码路径验证：v2 布局把用户从播放器移走的全部按钮塞进单个 `hidden` 槽（`encodeV2ForTests`）；v3 改用显式 `removed` 集合，不再持久化 `hidden` 槽（`encode` 第 926 行 `if (slot != VideoControlSlot.hidden)`）。
