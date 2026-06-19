@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 322 条。点号进各自文件。
+> 共 323 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-331](bugs/BUG-331-video-settings-categories-topbar.md) | — | — | video settings big categories shown in the left pane, not a top bar |
 | [BUG-328](bugs/BUG-328-video-subtitle-list-favorite-star-slow.md) | ✅ | ✅ | 视频字幕列表已收藏句星标加载慢（要等一会才出现） |
 | [BUG-327](bugs/BUG-327-video-subtitle-list-timestamp-overflow.md) | ✅ | ✅ | 视频字幕列表左侧时间戳被下一条字幕遮挡 / 溢出 |
 | [BUG-326](bugs/BUG-326-video-folder-drag-import.md) | ✅ | ✅ | 视频拖放扩展名不全 + 书架拖入视频不自动切视频导入 |

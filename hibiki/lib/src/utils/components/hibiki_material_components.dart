@@ -558,6 +558,7 @@ class HibikiSelectableChip extends StatelessWidget {
     this.leadingIcon,
     this.tooltip,
     this.focusId,
+    this.allowLabelOverflow = false,
   });
 
   final String label;
@@ -567,6 +568,13 @@ class HibikiSelectableChip extends StatelessWidget {
   final IconData? leadingIcon;
   final String? tooltip;
   final HibikiFocusId? focusId;
+
+  /// 默认 false：标签单行 + 省略号（标签筛选条等密集横排，宽度受限时优先省略）。
+  /// 置 true：标签不省略、按固有宽度完整渲染（横滑分类条等空间充裕、标签必须可读的
+  /// 场景，如视频设置顶部分类条 TODO-556）。Material [ChoiceChip] 给 label 的约束
+  /// 上界由 chip 自身布局推导（即便在横向无界滚动里也是有限值），故单纯靠无界宽度无法
+  /// 避免省略；改 [Text.overflow] 为 visible + softWrap:false 才能让 chip 随固有宽度撑开。
+  final bool allowLabelOverflow;
 
   @override
   Widget build(BuildContext context) {
@@ -581,7 +589,9 @@ class HibikiSelectableChip extends StatelessWidget {
       label: Text(
         label,
         maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        softWrap: !allowLabelOverflow,
+        overflow:
+            allowLabelOverflow ? TextOverflow.visible : TextOverflow.ellipsis,
       ),
       selected: selected,
       showCheckmark: false,

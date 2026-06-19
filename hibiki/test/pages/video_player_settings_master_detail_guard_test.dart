@@ -90,8 +90,8 @@ void main() {
   });
 
   test(
-      'VideoQuickSettingsSheet stacks top categories over the detail '
-      '(TODO-427-③ video-only top/bottom split)', () {
+      'VideoQuickSettingsSheet stacks top category chips over the detail '
+      '(TODO-556 video-only top bar)', () {
     final String source =
         File('lib/src/media/video/video_quick_settings_sheet.dart')
             .readAsStringSync();
@@ -110,27 +110,32 @@ void main() {
     // TODO-427-③：宽窗从左右 master-detail（窄左栏 + 右详情）改成顶部横向分类 chip 行 +
     // 下方详情上下分栏，根治窄侧栏左右劈半把右详情挤窄、下拉抢宽裁标题。
     // 旧的左右分栏符号必须删除（防回退）。
-    expect(source, contains('MaterialSupportingPaneLayout('),
+    expect(source, isNot(contains('MaterialSupportingPaneLayout(')),
         reason:
-            'video settings wide layout uses bounded category/detail panes');
+            'video settings wide layout must not regress to left master-detail');
     expect(source, isNot(contains('_videoSupportingPaneWidth')),
         reason:
             'video-specific supporting width constants should stay removed');
-    expect(source, contains('_buildWidePane'));
-    expect(source, contains('SupportingPaneSide.start'));
-    expect(source, contains('_videoSettingsSupportingPaneReadableWidth'));
-    expect(source, contains('_videoSettingsPrimaryMinWidth'));
-    expect(source, contains('_videoSettingsSupportingPaneWidth('));
+    expect(source, isNot(contains('_buildWidePane')),
+        reason: 'old left-pane builder _buildWidePane must be removed');
+    expect(source, isNot(contains('SupportingPaneSide.start')),
+        reason: 'video settings must not use a supporting (left) pane anymore');
+    expect(source, isNot(contains('_videoSettingsSupportingPaneReadableWidth')),
+        reason: 'left supporting-pane width constants must stay removed');
+    expect(source, isNot(contains('_videoSettingsSupportingPaneWidth(')),
+        reason: 'left supporting-pane width helper must stay removed');
     expect(source, isNot(contains('232,')),
         reason: 'video settings must not regress to the fixed 232px pane');
-    expect(source, contains('padding: wideSupportingPadding'));
-    expect(source, isNot(contains('_buildTopCategoryBar(')));
-    expect(source, isNot(contains('HibikiSelectableChip(')));
-    expect(source, isNot(contains('scrollDirection: Axis.horizontal')));
-    expect(source, contains('HibikiListItem('));
-    expect(source, contains('titleMaxLines: 3'));
-    expect(source, isNot(contains('_supportingOverflowsWide')));
-    expect(source, isNot(contains('_supportingScrollController')));
+    expect(source, isNot(contains('HibikiListItem(')),
+        reason: 'wide categories must not render as a left list anymore');
+    expect(source, contains('_buildTopCategoryBar('),
+        reason: 'wide categories must render in a top horizontal chip bar');
+    expect(source, contains('HibikiSelectableChip('),
+        reason: 'each top-bar category is a selectable chip');
+    expect(source, contains('allowLabelOverflow: true'),
+        reason: 'top-bar chip labels must stay fully readable, not ellipsized');
+    expect(source, contains('scrollDirection: Axis.horizontal'),
+        reason: 'the top category bar scrolls horizontally when it overflows');
     expect(source, contains('padding: widePrimaryPadding'));
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
@@ -172,9 +177,8 @@ void main() {
         File('lib/src/media/video/video_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    expect(source, contains('AdaptiveSettingsSurface('),
-        reason:
-            'wide top category bar should sit inside the shared lightweight surface');
+    expect(source, contains('Widget _buildTopCategoryBar('),
+        reason: 'wide categories render in a top horizontal chip bar');
     expect(source,
         contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
         reason:
