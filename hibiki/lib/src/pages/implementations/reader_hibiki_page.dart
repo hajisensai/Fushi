@@ -362,6 +362,79 @@ List<int>? charCountsFromChaptersJson(
   return counts;
 }
 
+/// TODO-575 批1: 把 reader 里散落的 5 处 `rgba(...)` 生成统一成一个纯函数。
+///
+/// 契约对齐（零行为变化）：通道一律 `(channel * 255.0).round().clamp(0, 255)`
+/// （`Color.r/g/b` 在 [0,1]，clamp 仅作安全网，对合法颜色与旧的歌词闭包/caret
+/// 不 clamp 版逐字符等价）；alpha 默认用 `c.a.toStringAsFixed(2)`，调用方可经
+/// [alphaOverride] 钉死成硬编码值（caret 焦点环 0.98、custom 高亮 0.34）。
+String readerColorToCssRgba(Color c, {double? alphaOverride}) {
+  final int r = (c.r * 255.0).round().clamp(0, 255);
+  final int g = (c.g * 255.0).round().clamp(0, 255);
+  final int b = (c.b * 255.0).round().clamp(0, 255);
+  final double alpha = alphaOverride ?? c.a;
+  return 'rgba($r,$g,$b,${alpha.toStringAsFixed(2)})';
+}
+
+/// TODO-575 批1: 自定义字体文件头魔数校验（从 [_ReaderHibikiPageState._isValidFontData]
+/// 凿出的纯逻辑）。读前 4 字节大端拼成签名，命中字体容器魔数表才放行。
+///
+/// 命中表（与旧内联实现逐项一致）：TrueType `0x00010000` / OpenType-CFF `OTTO`
+/// (`0x4F54544F`) / WOFF `wOFF` (`0x774F4646`) / WOFF2 `wOF2` (`0x774F4632`) /
+/// TTC `ttcf` (`0x74746366`)。少于 4 字节直接拒。
+bool isValidFontData(Uint8List data) {
+  if (data.length < 4) return false;
+  final int sig = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+  return sig == 0x00010000 || // TrueType
+      sig == 0x4F54544F || // OpenType CFF ("OTTO")
+      sig == 0x774F4646 || // WOFF ("wOFF")
+      sig == 0x774F4632 || // WOFF2 ("wOF2")
+      sig == 0x74746366; // TTC ("ttcf")
+}
+
+/// TODO-575 批1: 全局字符偏移 → (章节索引, 章内进度) 的纯查表核心，从
+/// [_ReaderHibikiPageState._jumpToGlobalCharOffset] 凿出（原函数保留 navigate/JS
+/// IO 壳调它，不整体上移）。
+///
+/// - [cumulativeChars]：每章起始的累积字符数（`_chapterCumulativeChars`）。
+/// - [charCounts]：每章字符数（`_chapterCharCounts`）。
+/// - 找最后一个起始累积 `<= globalOffset` 的章作为目标章；用 `(offset - 章起始)
+///   / 章长` 得章内进度，章长为 0 时进度 0；进度 clamp 到 [0,1]。
+/// 与旧内联实现逐字节一致：空表返回 (0, 0)（调用壳另行处理空表早退）。
+ChapterProgressTarget resolveChapterProgressForGlobalOffset(
+  List<int> cumulativeChars,
+  List<int> charCounts,
+  int globalOffset,
+) {
+  if (cumulativeChars.isEmpty) {
+    return const ChapterProgressTarget(chapter: 0, progress: 0.0);
+  }
+  int targetChapter = 0;
+  for (int i = 0; i < cumulativeChars.length; i++) {
+    if (cumulativeChars[i] <= globalOffset) {
+      targetChapter = i;
+    } else {
+      break;
+    }
+  }
+  final int chapterStart = cumulativeChars[targetChapter];
+  final int chapterLen = charCounts[targetChapter];
+  final double progress =
+      chapterLen > 0 ? (globalOffset - chapterStart) / chapterLen : 0;
+  return ChapterProgressTarget(
+    chapter: targetChapter,
+    progress: progress.clamp(0.0, 1.0),
+  );
+}
+
+/// [resolveChapterProgressForGlobalOffset] 的结果：目标章节索引 + 已 clamp 到
+/// [0,1] 的章内进度。
+class ChapterProgressTarget {
+  const ChapterProgressTarget({required this.chapter, required this.progress});
+  final int chapter;
+  final double progress;
+}
+
 /// TODO-131: 书本磁盘定位结果。`_locateBookOnDisk` 与 profile/settings 链并行返回，
 /// `bookRow` 携带 chaptersJson（供 DB 计数复用）；`exists` 为 false 时调用方提示
 /// 文件丢失并退出。
@@ -1955,16 +2028,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (mounted) setState(() {});
   }
 
-  static bool _isValidFontData(Uint8List data) {
-    if (data.length < 4) return false;
-    final int sig =
-        (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
-    return sig == 0x00010000 || // TrueType
-        sig == 0x4F54544F || // OpenType CFF ("OTTO")
-        sig == 0x774F4646 || // WOFF ("wOFF")
-        sig == 0x774F4632 || // WOFF2 ("wOF2")
-        sig == 0x74746366; // TTC ("ttcf")
-  }
+  static bool _isValidFontData(Uint8List data) => isValidFontData(data);
 
   static String _buildFuriganaJs(String mode) {
     switch (mode) {
@@ -3271,8 +3335,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
 
-    String colorToCss(Color c) =>
-        'rgba(${(c.r * 255).round()},${(c.g * 255).round()},${(c.b * 255).round()},${c.a.toStringAsFixed(2)})';
+    String colorToCss(Color c) => readerColorToCssRgba(c);
 
     final String html = LyricsModeHtml.generate(
       cues: _lyricsCueList,
@@ -3312,8 +3375,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         : Theme.of(context).colorScheme.primary;
     final double fontSize = ReaderHibikiSource.instance.lyricsFontSize;
 
-    String colorToCss(Color c) =>
-        'rgba(${(c.r * 255).round()},${(c.g * 255).round()},${(c.b * 255).round()},${c.a.toStringAsFixed(2)})';
+    String colorToCss(Color c) => readerColorToCssRgba(c);
 
     final String bgCss = colorToCss(bg);
     final String fgCss = colorToCss(fg);
@@ -4858,30 +4920,22 @@ window.flutter_inappwebview.callHandler('spreadReady');
   Future<void> _jumpToGlobalCharOffset(int globalOffset) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
 
-    int targetChapter = 0;
-    for (int i = 0; i < _chapterCumulativeChars.length; i++) {
-      if (_chapterCumulativeChars[i] <= globalOffset) {
-        targetChapter = i;
-      } else {
-        break;
-      }
-    }
+    final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
+      _chapterCumulativeChars,
+      _chapterCharCounts,
+      globalOffset,
+    );
 
-    final int chapterStart = _chapterCumulativeChars[targetChapter];
-    final int chapterLen = _chapterCharCounts[targetChapter];
-    final double progress =
-        chapterLen > 0 ? (globalOffset - chapterStart) / chapterLen : 0;
-
-    if (targetChapter != _currentChapter) {
+    if (target.chapter != _currentChapter) {
       _navigateToChapter(
-        targetChapter,
-        progress: progress.clamp(0.0, 1.0),
+        target.chapter,
+        progress: target.progress,
         manual: true,
       );
     } else {
       await _controller!.evaluateJavascript(
         source:
-            'window.hoshiReader && window.hoshiReader.restoreProgress(${progress.clamp(0.0, 1.0)});',
+            'window.hoshiReader && window.hoshiReader.restoreProgress(${target.progress});',
       );
     }
   }
@@ -5412,8 +5466,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final Color accent = _isReaderThemeDark
         ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
-    return 'rgba(${(accent.r * 255).round()},${(accent.g * 255).round()},'
-        '${(accent.b * 255).round()},0.98)';
+    return readerColorToCssRgba(accent, alphaOverride: 0.98);
   }
 
   /// Enter the cursor on the READER content (A/Enter in the book with no cursor,
@@ -6898,20 +6951,14 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   static String? _colorToCssRgba(Color? c) {
     if (c == null) return null;
-    final int r = (c.r * 255.0).round().clamp(0, 255);
-    final int g = (c.g * 255.0).round().clamp(0, 255);
-    final int b = (c.b * 255.0).round().clamp(0, 255);
-    return 'rgba($r,$g,$b,${c.a.toStringAsFixed(2)})';
+    return readerColorToCssRgba(c);
   }
 
   String? get _customHighlightCss {
     if (appModel.appThemeKey != 'custom-theme') return null;
     final Color? c = appModel.customThemePrimaryColor;
     if (c == null) return null;
-    final int r = (c.r * 255.0).round().clamp(0, 255);
-    final int g = (c.g * 255.0).round().clamp(0, 255);
-    final int b = (c.b * 255.0).round().clamp(0, 255);
-    return 'rgba($r,$g,$b,0.34)';
+    return readerColorToCssRgba(c, alphaOverride: 0.34);
   }
 
   Future<void> _onThemeChanged() async {
