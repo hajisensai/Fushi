@@ -1734,5 +1734,7 @@
   "update_install_failure_summary": "原因：$summary",
   "update_install_launcher_pid": "更新启动器 PID：$pid",
   "video_control_reset_layout": "恢复默认播放器按钮布局",
-  "video_control_reset_layout_hint": "把移动和移出的按钮恢复为默认播放器布局。"
+  "video_control_reset_layout_hint": "把移动和移出的按钮恢复为默认播放器布局。",
+  "floating_lyric_bg_opacity": "悬浮字幕背景不透明度",
+  "floating_lyric_bg_opacity_hint": "调低让悬浮字幕条更透明、更不挡视野"
 }

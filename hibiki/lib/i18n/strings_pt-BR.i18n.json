@@ -1734,5 +1734,7 @@
   "update_install_failure_summary": "Reason: $summary",
   "update_install_launcher_pid": "Update launcher PID: $pid",
   "video_control_reset_layout": "Reset player button layout",
-  "video_control_reset_layout_hint": "Restore moved and removed buttons to the default player layout."
+  "video_control_reset_layout_hint": "Restore moved and removed buttons to the default player layout.",
+  "floating_lyric_bg_opacity": "Floating subtitle background opacity",
+  "floating_lyric_bg_opacity_hint": "Lower this to make the floating subtitle bar more transparent so it blocks less of your view"
 }

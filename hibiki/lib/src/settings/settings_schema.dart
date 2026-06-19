@@ -1958,6 +1958,28 @@ SettingsDestination _listeningDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-576: 悬浮字幕/歌词条「背景透明度」自定义（0..100%，默认 70=更不挡
+          // 视野）。同样仅 Android/Windows 可见（有原生悬浮窗后端）。
+          SettingsStepperItem(
+            id: 'listening.floating_lyric_bg_opacity',
+            title: t.floating_lyric_bg_opacity,
+            subtitle: t.floating_lyric_bg_opacity_hint,
+            icon: Icons.gradient_outlined,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            min: 0,
+            max: 100,
+            step: 5,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.floatingLyricBgOpacity.toDouble(),
+            format: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel
+                  .setFloatingLyricBgOpacity(value.round());
+              await settingsContext.appModel.audiobookSession
+                  .applyFloatingLyricStyle();
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'listening.floating_lyric_click_lookup',
             title: t.floating_lyric_click_lookup,
