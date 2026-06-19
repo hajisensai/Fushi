@@ -5,7 +5,7 @@
   - 根因 1（写死向上）：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_controlPopoverPlacementFor`——`speed` 分支无视 `sourceSlot` 恒返回 `targetAnchor: topCenter / followerAnchor: bottomCenter`（向上弹），且 `volume` 分支也只覆盖 `bottomLeft/bottomRight/默认`，未覆盖 `top*/screen*`。
   - 根因 2（slot 信息断链）：`_showSpeedMenu` / `_activateVideoControlButton`(speed) / 三处 `_controlPopoverAnchor(kind: speed)` 都没把 `sourceSlot`（与 `sourceItem`）传下去 → `_showControlPopover` 拿到 `sourceSlot == null` → placement 即使支持自适应也无 slot 可用。
   - 根因 3（横向 clamp 只给音量）：渲染块的 `resolveVideoControlPopoverPlacement` 旧门控 `kind == volume && ...`，倍速完全不走横向越界修正。
-- **[x] ① 已修复** — commit 2459ee127
+- **[x] ① 已修复** — commit 471602782
   - 新增纯函数 `videoControlPopoverDirectionForSlot(slot)`（`hibiki/lib/src/media/video/video_control_popover_placement.dart`）：底栏→上、顶栏→下、左侧栏→右、右侧栏→左，未知/隐藏/null→上（不引入回归）。
   - `_controlPopoverPlacementFor` 改为按方向纯函数映射 target/follower `Alignment` + 新增 `gapDirection`，音量与倍速共用同一套方向逻辑，覆盖全部槽位。
   - `CompositedTransformFollower` 的 `offset` 由写死 `Offset(dx, -gap)` 改为 `placement.gapDirection * gap + Offset(dx, 0)`（横向 `dx` 修正只在竖向弹时叠加，侧栏弹时横向由 gap 提供）。
