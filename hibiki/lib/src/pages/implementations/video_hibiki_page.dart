@@ -2004,7 +2004,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (_videoSidePanel.value != null) {
         _hideVideoSidePanel();
       }
-      unawaited(_refreshFavoritedCueCache());
+      // TODO-566：打开字幕列表时不再异步整表重查收藏 DB。收藏缓存
+      // _favoritedVideoSentences 是单一真相源：视频 load 时由收藏缓存刷新方法预填
+      // 一次，之后列表行 toggle / 查词浮层 toggle 都增量维护它。原先打开面板时再异步
+      // 刷新一次，让面板先以旧缓存渲染、DB 往返后才 setState 重建，已收藏行的实心星标
+      // 要「等一会」才出现。改为纯读已填充缓存 → 星标随面板同帧 O(1) 渲染，无异步延迟。
       _markControlsVisible(false);
       _refocusVideo();
     } else {

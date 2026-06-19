@@ -982,6 +982,141 @@ void main() {
       expect(fontOf('sized'), greaterThan(before),
           reason: 'A+ enlarges row font (local transient step)');
     });
+
+    testWidgets(
+        'TODO-567: timestamp column is single-line and never overflows into '
+        'the subtitle text column', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      // An hour-plus cue (1:02:09) is the widest timestamp; with a long
+      // subtitle next to it this is exactly the regression case where the time
+      // used to be covered/pushed by the following text.
+      controller.setCues(<AudioCue>[
+        _cue(0, 3729000, 3731000,
+            'a very long subtitle line that wants the whole row width'),
+      ]);
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 320,
+        height: 400,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 320,
+        ),
+      )));
+
+      // The hour-plus timestamp must be rendered.
+      final Finder tsFinder = find.text('1:02:09');
+      expect(tsFinder, findsOneWidget);
+
+      // The timestamp Text is single-line, non-wrapping, ellipsis on overflow:
+      // it can never wrap/overflow its column and bleed into the text column.
+      final Text tsText = tester.widget<Text>(tsFinder);
+      expect(tsText.maxLines, 1,
+          reason: 'timestamp must stay on one line (no wrap into text column)');
+      expect(tsText.softWrap, isFalse);
+      expect(tsText.overflow, TextOverflow.ellipsis);
+
+      // Geometry guard: the timestamp box must end at-or-before the start of
+      // the subtitle text box (no horizontal overlap = time not covered by the
+      // next subtitle, TODO-567).
+      final Rect tsRect = tester.getRect(tsFinder);
+      final Finder textFinder = find.textContaining('very long subtitle');
+      expect(textFinder, findsOneWidget);
+      final Rect textRect = tester.getRect(textFinder);
+      expect(tsRect.right, lessThanOrEqualTo(textRect.left + 0.5),
+          reason: 'timestamp column must not horizontally overlap the text '
+              'column (TODO-567: time covered by next subtitle)');
+    });
+
+    testWidgets(
+        'TODO-567: timestamp column widens with the larger-font step so wider '
+        'timestamps keep fitting', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 3729000, 3731000, 'row')]);
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 360,
+        height: 400,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: (_) => false,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 360,
+        ),
+      )));
+
+      double tsColumnWidth() {
+        final RenderBox box = tester.renderObject<RenderBox>(
+          find
+              .ancestor(
+                of: find.text('1:02:09'),
+                matching: find.byType(SizedBox),
+              )
+              .first,
+        );
+        return box.size.width;
+      }
+
+      final double before = tsColumnWidth();
+      // Step the font up twice (to the largest 1.3x step) and the timestamp
+      // column must grow so 'h:mm:ss' keeps fitting instead of overflowing.
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pump();
+      expect(tsColumnWidth(), greaterThan(before),
+          reason: 'larger font must widen the timestamp column (TODO-567)');
+    });
+
+    testWidgets(
+        'TODO-566: favorited cue shows a filled star on the very first frame '
+        '(no async wait)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'plain'),
+        _cue(1, 2000, 3000, 'already favorited'),
+      ]);
+
+      // isCueFavorited is a synchronous O(1) read of the page's pre-filled
+      // favorite cache. The list must reflect it on the FIRST pump, with no
+      // pumpAndSettle / async DB round-trip needed — that is the TODO-566 fix
+      // (panel-open no longer re-queries the DB and makes stars appear late).
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (AudioCue c) => c.text == 'already favorited',
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      // No pumpAndSettle: exactly one filled star (the favorited row) and one
+      // hollow star (the plain row) must already be present.
+      expect(find.byIcon(Icons.star), findsOneWidget,
+          reason: 'favorited row must show a filled star on the first frame');
+      expect(find.byIcon(Icons.star_border), findsOneWidget,
+          reason: 'non-favorited row keeps a hollow star');
+    });
   });
 
   // Source guard: inline tooltips wire to existing i18n keys; copy toast reuses

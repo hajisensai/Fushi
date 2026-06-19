@@ -79,4 +79,28 @@ void main() {
       );
     });
   });
+
+  group('TODO-566 favorite star shows instantly when opening the list', () {
+    test('opening the subtitle list does NOT re-query the favorite DB', () {
+      // The fix removes the redundant async DB re-query when opening the panel.
+      // The cache ([_favoritedVideoSentences]) is the single source of truth:
+      // filled once on video open, then kept in sync by row / popup favorite
+      // toggles. Re-querying it on panel open made the list render first with
+      // hollow stars and only fill the filled stars after the async DB
+      // round-trip -- the "star loads slowly" symptom (TODO-566).
+      final RegExp openBranch = RegExp(
+        r'_subtitleListVisible\.value = true;[\s\S]*?_refocusVideo\(\);',
+      );
+      final Match? match = openBranch.firstMatch(src);
+      expect(match, isNotNull,
+          reason: 'must find the open branch of _toggleSubtitleJumpList');
+      expect(
+        match!.group(0)!.contains('_refreshFavoritedCueCache'),
+        isFalse,
+        reason: 'opening the subtitle list must read the already-filled '
+            'favorite cache (O(1) instant stars), not trigger another async '
+            'DB round-trip that delays the filled stars (TODO-566)',
+      );
+    });
+  });
 }

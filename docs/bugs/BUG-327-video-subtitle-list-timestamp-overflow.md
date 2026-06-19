@@ -1,0 +1,8 @@
+## BUG-327 · 视频字幕列表左侧时间戳被下一条字幕遮挡 / 溢出
+- **报告**：2026-06-19（用户：B03 验收第 4 条 / TODO-567）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/video_subtitle_jump_panel.dart` `_buildRow` 时间戳列：`SizedBox(width: 52)` 硬固定宽度 + 时间戳 `Text` 无 `maxLines` / `softWrap` / `overflow` 约束。
+  - 数据流：每行 `Row[选择框?, 时间戳 SizedBox(width:52), 间距, Expanded(文本), 操作按钮]`。时间戳 `Text(formatCueTimestamp(startMs), fontSize: _effectiveFontSize - 1)`。字号步进放大（`_kFontScaleSteps` 最大 1.3 → 基础 14 时 `_effectiveFontSize` 18.2、时间戳 17.2px）或小时级时间戳（`1:23:45`，7 字符 tabular figures）下，时间戳渲染宽度超过固定 52px。`Text` 默认无单行约束 → 在固定宽 `SizedBox` 内换行/溢出绘制，画到右侧字幕文本列，视觉上「时间被下一条字幕挡住 / 时间那部分溢出」。
+  - 本质：固定 52px 不随字号缩放（与正文 `_effectiveFontSize`、行高估算脱节），且时间戳文本无「单行不换行不溢出」护栏。
+- **[x] ① 已修复** — `hibiki/lib/src/media/video/video_subtitle_jump_panel.dart`：① 新增 `double get _timestampColumnWidth`：随字号估宽（`(_effectiveFontSize - 1) * 4.6`，覆盖 `h:mm:ss` 7 字符 tabular figures + 余量），下界 52 保证窄字号下不变窄；时间戳 `SizedBox.width` 与行高估算 `_estimatedRowExtentForCue`（原硬编码 `- 52`）统一改用它。② 时间戳 `Text` 加 `maxLines: 1` + `softWrap: false` + `overflow: TextOverflow.ellipsis`，列内容单行、超宽省略，绝不溢出到右侧文本列。不动 565 的点击高亮 / seek 逻辑，不动列表虚拟化（`itemExtentBuilder` 仍用 `_estimatedRowExtentForCue`）。提交 `<COMMIT>`。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_jump_panel_test.dart` 新增两 widget 行为测试：① 「timestamp column is single-line and never overflows into the subtitle text column」：小时级 cue（1:02:09）+ 长字幕同行，断言时间戳 `Text` 是 `maxLines==1` / `softWrap==false` / `overflow==ellipsis`，并几何断言时间戳框 `right <= 文本框 left`（无水平重叠 = 时间不被下条字幕盖住）。② 「timestamp column widens with the larger-font step」：点两次 A+ 到最大字号步，断言时间戳列（`SizedBox`）宽度变大，保证 `h:mm:ss` 在放大字号下仍放得下不溢出。
+- **备注**：纯 widget 布局/约束修复，widget 行为 + 几何测试已覆盖原始失败路径。真机仍建议用户在视频播放页打开字幕列表、放大字号 + 含小时级时间戳的字幕肉眼复测（CLAUDE.md 布局类设备复测纪律）。

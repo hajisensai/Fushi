@@ -113,11 +113,27 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   double get _effectiveFontSize => widget.fontSize * _fontScaleSteps;
 
+  /// 时间戳列宽度（TODO-567）。固定 52px 在放大字号 + 小时级时间戳（`1:23:45`，7
+  /// 字符 tabular figures）下放不下，时间戳文本溢出 [SizedBox] 边界画到右侧字幕文本
+  /// 区，看起来像「时间被下一条字幕挡住 / 溢出」。改为随字号缩放估宽：tabular figures
+  /// 下每个 `h:mm:ss` 字位约 0.6em，7 字符 + 余量 → `字号 × 4.6`，并设下界 52 保证窄字
+  /// 号下不变窄。配合时间戳 Text 单行不换行（`maxLines:1` / `softWrap:false`），列内
+  /// 容永不溢出到文本列。
+  double get _timestampColumnWidth {
+    final double scaled = (_effectiveFontSize - 1) * 4.6;
+    return scaled < 52 ? 52 : scaled;
+  }
+
   double _estimatedRowExtentForCue(AudioCue cue, double rowWidth) {
     final double actionWidth = 3 * (_effectiveFontSize + 10);
     final double selectionWidth = _hasCueSelectionControls ? 44 : 0;
-    final double textWidth =
-        rowWidth - 8 - 4 - selectionWidth - 52 - 8 - actionWidth;
+    final double textWidth = rowWidth -
+        8 -
+        4 -
+        selectionWidth -
+        _timestampColumnWidth -
+        8 -
+        actionWidth;
     final double safeTextWidth = textWidth < 48 ? 48 : textWidth;
     final int charsPerLine = (safeTextWidth / (_effectiveFontSize * 0.95))
         .floor()
@@ -683,9 +699,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 const SizedBox(width: 4),
               ],
               SizedBox(
-                width: 52,
+                // TODO-567：列宽随字号缩放（[_timestampColumnWidth]），且时间戳单行
+                // 不换行、超宽省略，绝不溢出到右侧字幕文本列（修「时间被下一条字幕
+                // 挡住 / 溢出」）。
+                width: _timestampColumnWidth,
                 child: Text(
                   formatCueTimestamp(cue.startMs),
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: tsColor,
                     fontSize: _effectiveFontSize - 1,

@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 320 条。点号进各自文件。
+> 共 322 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-328](bugs/BUG-328-video-subtitle-list-favorite-star-slow.md) | ✅ | ✅ | 视频字幕列表已收藏句星标加载慢（要等一会才出现） |
+| [BUG-327](bugs/BUG-327-video-subtitle-list-timestamp-overflow.md) | ✅ | ✅ | 视频字幕列表左侧时间戳被下一条字幕遮挡 / 溢出 |
 | [BUG-326](bugs/BUG-326-video-folder-drag-import.md) | ✅ | ✅ | 视频拖放扩展名不全 + 书架拖入视频不自动切视频导入 |
 | [BUG-325](bugs/BUG-325-video-speed-popover-slot-position.md) | ✅ | ✅ | 视频倍速浮层在顶栏/侧栏时仍往上弹（位置与按钮脱节） |
 | [BUG-324](bugs/BUG-324-remote-video-jimaku-fetch-missing.md) | ✅ | ✅ | 远端视频字幕轨菜单里「自动获取字幕(Jimaku)」入口消失 |
