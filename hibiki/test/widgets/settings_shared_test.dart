@@ -555,6 +555,97 @@ void main() {
     );
   });
 
+  testWidgets(
+      'normal-width switch rows stay horizontal at 1x scale (no spurious stack)',
+      (tester) async {
+    // Regression guard (TODO-599 / BUG-338): a fixed `maxWidth < 360` auto-stack
+    // wrongly pushed the trailing control below the label on nearly every phone
+    // row at default text scale. At 1x a label + switch must stay side by side
+    // for common settings-row widths (360 and 400).
+    for (final double width in <double>[360, 400]) {
+      await tester.binding.setSurfaceSize(Size(width, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        _buildHarness(
+          platform: TargetPlatform.android,
+          child: Scaffold(
+            body: SizedBox(
+              width: width,
+              child: AdaptiveSettingsSection(
+                children: [
+                  AdaptiveSettingsSwitchRow(
+                    title: 'Highlight on tap',
+                    value: true,
+                    onChanged: (_) {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final Rect label = tester.getRect(find.text('Highlight on tap'));
+      final Rect control = tester.getRect(find.byType(Switch));
+      expect(
+        control.left,
+        greaterThanOrEqualTo(label.right - 0.5),
+        reason:
+            'at width=$width / 1x the switch should sit to the RIGHT of the '
+            'label (horizontal row), not stacked below it',
+      );
+      expect(
+        control.top,
+        lessThan(label.bottom),
+        reason: 'at width=$width / 1x the switch must share the label row '
+            '(vertically overlapping), not be pushed onto a new line',
+      );
+    }
+  });
+
+  testWidgets('truly narrow switch rows stack the control below the label',
+      (tester) async {
+    // The fix must STILL stack when the row is genuinely too narrow to host the
+    // label and control side by side (Never break userspace: the responsive
+    // stacking that motivated d95923c6c must keep working at extreme widths).
+    await tester.binding.setSurfaceSize(const Size(280, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        textScaler: const TextScaler.linear(2),
+        child: const Scaffold(
+          body: SizedBox(
+            width: 280,
+            child: AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsSwitchRow(
+                  title: 'Highlight on tap',
+                  value: true,
+                  onChanged: null,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final Rect label = tester.getRect(find.text('Highlight on tap'));
+    final Rect control = tester.getRect(find.byType(Switch));
+    expect(
+      control.top,
+      greaterThanOrEqualTo(label.bottom - 0.5),
+      reason: 'at width=280 / 2x the switch should stack below the label',
+    );
+  });
+
   testWidgets('picker rows use Cupertino action sheet on iOS', (tester) async {
     String selected = 'default';
 
