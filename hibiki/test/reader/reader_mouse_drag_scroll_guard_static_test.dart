@@ -176,6 +176,42 @@ void main() {
     expect(mouseDown, contains('e.button === 2 && _hoshiBlockImageUrl'));
     expect(mouseDown, contains("callHandler('onPointerSeek'"));
   });
+
+  // TODO-553: paged-mode touch must fall back to the touchstart/touchend swipe
+  // path; only continuous mode lets touch drive the pointer drag machine. The
+  // executable proof lives in reader_paged_touch_swipe_behavior_test.{js,dart};
+  // this is the node-less static tripwire for the gates.
+  test('touch only engages the pointer drag machine in continuous mode', () {
+    final String engages = _functionSource(
+      setupScript,
+      'function _hoshiReaderPointerEngages(e)',
+      'function _hoshiReaderPointerNoSelect(enabled)',
+    );
+    expect(engages, contains('_hoshiReaderPointerPrimaryButton(e)'));
+    expect(engages, contains("e.pointerType === 'touch'"));
+    expect(engages, contains('return hoshiContinuousMode'),
+        reason: 'paged-mode touch must not enter the pointer drag machine');
+
+    final String pointerDown = _listenerBlock(setupScript, 'pointerdown');
+    expect(pointerDown, contains('_hoshiReaderPointerEngages(e)'),
+        reason: 'pointerdown must gate touch through the engage predicate');
+
+    final String pointerMove = _listenerBlock(setupScript, 'pointermove');
+    expect(pointerMove,
+        contains("e.pointerType === 'touch' && !hoshiContinuousMode"),
+        reason: 'paged-mode touch moves must return before claiming a drag, '
+            'leaving touchend -> _gestureEnd -> onSwipe to turn the page');
+
+    final String pointerUp = _listenerBlock(setupScript, 'pointerup');
+    expect(pointerUp, contains('_hoshiReaderPointerEngages(e)'),
+        reason: 'paged-mode touch pointerup must not run the native-text path');
+
+    final String pointerCancel = _listenerBlock(setupScript, 'pointercancel');
+    expect(pointerCancel,
+        contains("e.pointerType === 'touch' && !hoshiContinuousMode"),
+        reason: 'paged-mode touch pointercancel must bail before resetting the '
+            'drag machine, mirroring the pointermove exclusion');
+  });
 }
 
 String _between(String source, String start, String end) {
