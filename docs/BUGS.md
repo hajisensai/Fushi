@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 318 条。点号进各自文件。
+> 共 319 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-325](bugs/BUG-325-video-speed-popover-slot-position.md) | ✅ | ✅ | 视频倍速浮层在顶栏/侧栏时仍往上弹（位置与按钮脱节） |
 | [BUG-324](bugs/BUG-324-remote-video-jimaku-fetch-missing.md) | ✅ | ✅ | 远端视频字幕轨菜单里「自动获取字幕(Jimaku)」入口消失 |
 | [BUG-323](bugs/BUG-323-video-subtitle-stroke-residual.md) | ✅ | ✅ | TODO-569 视频字幕描边/残留黑字「一点没修好」（8 层模糊 Shadow glyph 拷贝伪描边） |
 | [BUG-322](bugs/BUG-322-subtitle-list-click-highlight-offbyone.md) | ✅ | ✅ | 视频字幕列表点击高亮 off-by-one（点第N行高亮N-1） |

@@ -359,10 +359,16 @@ class _VideoControlPopoverPlacement {
   const _VideoControlPopoverPlacement({
     required this.targetAnchor,
     required this.followerAnchor,
+    required this.gapDirection,
   });
 
   final Alignment targetAnchor;
   final Alignment followerAnchor;
+
+  /// 浮层相对按钮锚点的「让位」方向单位向量（TODO-560）：向上弹为 (0,-1)、向下弹为
+  /// (0,1)、向左弹为 (-1,0)、向右弹为 (1,0)。渲染时乘以 gap 得到 [CompositedTransformFollower]
+  /// 的 offset，使浮层始终朝画面内侧离开按钮（旧实现只会 (0,-gap) 恒向上）。
+  final Offset gapDirection;
 }
 
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
@@ -3735,30 +3741,74 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   String _controlPopoverKeyFor(VideoControlSlot slot, VideoControlItem item) =>
       '${slot.storageValue}:${item.storageValue}';
 
+  /// 计算音量 / 倍速轻浮层相对触发按钮的锚定（TODO-560）。
+  ///
+  /// 弹出**方向**由按钮所在槽位决定（[videoControlPopoverDirectionForSlot]），音量与
+  /// 倍速共用同一套方向逻辑：底栏向上、顶栏向下、左 / 右侧栏向右 / 左。旧实现对倍速恒
+  /// 返回「向上居中」，导致按钮被放进顶栏 / 侧栏后浮层仍往上弹、与按钮脱节。
+  ///
+  /// 方向决定 [CompositedTransformFollower] 的 target/follower [Alignment]（让浮层贴在
+  /// 按钮的内侧边）与 [gapDirection]（offset 的让位方向）。横向 / 纵向对齐沿弹出轴取按钮
+  /// 同侧（左槽左对齐、右槽右对齐），跨轴取按钮中心，再由
+  /// [resolveVideoControlPopoverPlacement] 做越界 clamp。
   _VideoControlPopoverPlacement _controlPopoverPlacementFor(
     _VideoControlPopoverKind kind,
     VideoControlSlot? sourceSlot,
   ) {
-    if (kind == _VideoControlPopoverKind.volume) {
-      return switch (sourceSlot) {
-        VideoControlSlot.bottomLeft => const _VideoControlPopoverPlacement(
-            targetAnchor: Alignment.topLeft,
-            followerAnchor: Alignment.bottomLeft,
-          ),
-        VideoControlSlot.bottomRight => const _VideoControlPopoverPlacement(
-            targetAnchor: Alignment.topRight,
-            followerAnchor: Alignment.bottomRight,
-          ),
-        _ => const _VideoControlPopoverPlacement(
-            targetAnchor: Alignment.topCenter,
-            followerAnchor: Alignment.bottomCenter,
-          ),
-      };
+    final VideoControlPopoverDirection direction =
+        videoControlPopoverDirectionForSlot(sourceSlot);
+    switch (direction) {
+      case VideoControlPopoverDirection.up:
+        // 浮层底边贴按钮顶边；横向取按钮同侧（左/右/中）对齐。
+        final (Alignment target, Alignment follower) = switch (sourceSlot) {
+          VideoControlSlot.bottomLeft => (
+              Alignment.topLeft,
+              Alignment.bottomLeft,
+            ),
+          VideoControlSlot.bottomRight => (
+              Alignment.topRight,
+              Alignment.bottomRight,
+            ),
+          _ => (Alignment.topCenter, Alignment.bottomCenter),
+        };
+        return _VideoControlPopoverPlacement(
+          targetAnchor: target,
+          followerAnchor: follower,
+          gapDirection: const Offset(0, -1),
+        );
+      case VideoControlPopoverDirection.down:
+        // 浮层顶边贴按钮底边；横向取按钮同侧对齐。
+        final (Alignment target, Alignment follower) = switch (sourceSlot) {
+          VideoControlSlot.topLeft => (
+              Alignment.bottomLeft,
+              Alignment.topLeft,
+            ),
+          VideoControlSlot.topRight => (
+              Alignment.bottomRight,
+              Alignment.topRight,
+            ),
+          _ => (Alignment.bottomCenter, Alignment.topCenter),
+        };
+        return _VideoControlPopoverPlacement(
+          targetAnchor: target,
+          followerAnchor: follower,
+          gapDirection: const Offset(0, 1),
+        );
+      case VideoControlPopoverDirection.right:
+        // 左侧栏：浮层左边贴按钮右边，竖向居中。
+        return const _VideoControlPopoverPlacement(
+          targetAnchor: Alignment.centerRight,
+          followerAnchor: Alignment.centerLeft,
+          gapDirection: Offset(1, 0),
+        );
+      case VideoControlPopoverDirection.left:
+        // 右侧栏：浮层右边贴按钮左边，竖向居中。
+        return const _VideoControlPopoverPlacement(
+          targetAnchor: Alignment.centerLeft,
+          followerAnchor: Alignment.centerRight,
+          gapDirection: Offset(-1, 0),
+        );
     }
-    return const _VideoControlPopoverPlacement(
-      targetAnchor: Alignment.topCenter,
-      followerAnchor: Alignment.bottomCenter,
-    );
   }
 
   double _controlPopoverPreferredWidthFor(_VideoControlPopoverKind kind) {
@@ -3924,33 +3974,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               final Rect? targetRect = _activeControlPopoverTargetRect(context);
               final VideoControlSlot? sourceSlot =
                   _activeControlPopoverSourceSlot;
-              final VideoControlPopoverPlacement? resolved = kind ==
-                          _VideoControlPopoverKind.volume &&
-                      sourceSlot != null &&
-                      targetRect != null
-                  ? resolveVideoControlPopoverPlacement(
-                      playerBounds: Offset.zero &
-                          Size(
-                            constraints.maxWidth,
-                            constraints.maxHeight,
-                          ),
-                      targetRect: targetRect,
-                      preferredWidth: _controlPopoverPreferredWidthFor(kind),
-                      sourceSlot: sourceSlot,
-                      gap: gap,
-                      minWidth: 160 * _videoUiScale,
-                    )
-                  : null;
+              // 横向越界 clamp 对音量与倍速同样适用（TODO-560）：倍速浮层此前完全不走
+              // resolve，放进顶/侧栏后既不换方向也不修横向。
+              final VideoControlPopoverPlacement? resolved =
+                  sourceSlot != null && targetRect != null
+                      ? resolveVideoControlPopoverPlacement(
+                          playerBounds: Offset.zero &
+                              Size(
+                                constraints.maxWidth,
+                                constraints.maxHeight,
+                              ),
+                          targetRect: targetRect,
+                          preferredWidth:
+                              _controlPopoverPreferredWidthFor(kind),
+                          sourceSlot: sourceSlot,
+                          gap: gap,
+                          minWidth: 160 * _videoUiScale,
+                        )
+                      : null;
               final double width = resolved?.width ??
                   _controlPopoverWidthFor(kind, constraints.maxWidth);
-              final double dx = resolved == null || targetRect == null
-                  ? 0
-                  : resolved.left -
-                      _controlPopoverAnchoredLeft(
-                        targetRect: targetRect,
-                        width: width,
-                        placement: placement,
-                      );
+              // 仅竖向弹（顶/底栏）需要横向修正把宽浮层拉回画面内；侧栏弹时横向由
+              // gapDirection 的 gap 提供，不叠加 dx（否则与 gap 双重位移）。
+              final bool verticalPopover = placement.gapDirection.dx == 0;
+              final double dx =
+                  !verticalPopover || resolved == null || targetRect == null
+                      ? 0
+                      : resolved.left -
+                          _controlPopoverAnchoredLeft(
+                            targetRect: targetRect,
+                            width: width,
+                            placement: placement,
+                          );
               return Stack(
                 children: <Widget>[
                   Positioned.fill(
@@ -3965,7 +4020,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     showWhenUnlinked: false,
                     targetAnchor: placement.targetAnchor,
                     followerAnchor: placement.followerAnchor,
-                    offset: Offset(dx, -gap),
+                    // 让位方向随槽位变（TODO-560）：底栏 (0,-gap) 向上、顶栏 (0,gap) 向下、
+                    // 侧栏 (±gap,0) 向左/右；竖向弹时再叠加 dx 横向修正。
+                    offset: placement.gapDirection * gap + Offset(dx, 0),
                     child: _controlPopoverHoverKeepAlive(
                       child: _buildVideoControlPopoverContent(
                         kind,
@@ -4670,6 +4727,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         kind: _VideoControlPopoverKind.speed,
         link: popoverLink,
         desktop: desktop,
+        sourceSlot: slot,
+        sourceItem: VideoControlItem.speed,
         child: button,
       );
     }
@@ -5096,6 +5155,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       kind: _VideoControlPopoverKind.speed,
       link: popoverLink,
       desktop: desktop,
+      sourceSlot: slot,
+      sourceItem: VideoControlItem.speed,
       child: controlButton,
     );
   }
@@ -5137,7 +5198,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) {
     switch (button) {
       case VideoControlButton.speed:
-        _showSpeedMenu(popoverLink: popoverLink);
+        _showSpeedMenu(popoverLink: popoverLink, sourceSlot: sourceSlot);
         break;
       case VideoControlButton.subtitleList:
         _toggleSubtitleJumpList();
@@ -5920,10 +5981,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 弹快捷倍速浮层（TODO-438）：有按钮触发源时锚定 speed 按钮上方，复用
-  /// [_speedMenuPresets] 与 [_setSpeed]。右键菜单没有稳定按钮锚点，退回可见 side panel，
-  /// 避免打开 showWhenUnlinked=false 的不可见 follower。
-  void _showSpeedMenu({LayerLink? popoverLink}) {
+  /// 弹快捷倍速浮层（TODO-438）：有按钮触发源时锚定 speed 按钮、按其槽位自适应方向
+  /// （TODO-560：[sourceSlot] 决定上/下/左/右弹），复用 [_speedMenuPresets] 与
+  /// [_setSpeed]。右键菜单没有稳定按钮锚点，退回可见 side panel，避免打开
+  /// showWhenUnlinked=false 的不可见 follower。
+  void _showSpeedMenu({LayerLink? popoverLink, VideoControlSlot? sourceSlot}) {
     if (popoverLink == null) {
       _showVideoSidePanel(_VideoSidePanelKind.speed);
       return;
@@ -5931,6 +5993,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _toggleControlPopover(
       _VideoControlPopoverKind.speed,
       popoverLink: popoverLink,
+      sourceSlot: sourceSlot,
+      sourceItem: VideoControlItem.speed,
     );
   }
 
@@ -7812,6 +7876,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         kind: _VideoControlPopoverKind.speed,
         link: popoverLink,
         desktop: _isDesktopVideoControls,
+        sourceSlot: slot,
+        sourceItem: VideoControlItem.speed,
         child: button,
       );
     }
