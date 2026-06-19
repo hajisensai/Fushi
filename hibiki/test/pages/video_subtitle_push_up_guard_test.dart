@@ -115,7 +115,10 @@ void main() {
     for (final String getter in <String>[
       '_videoButtonBarHeight',
       '_videoSeekBarButtonGap',
-      '_videoSeekBarContainerHeight',
+      // TODO-568：移动 reserve 抬到「可见轨道上缘 + 呼吸间距」（不再用整段触摸热区高
+      // _videoSeekBarContainerHeight，那会顶飞 ~47×缩放 透明命中区空白）。
+      '_videoSeekBarTrackHeight',
+      '_videoSubtitleSeekBarBreathingGap',
       '_videoBottomChromeBaseline',
       '_videoBottomSystemInset()',
     ]) {
@@ -124,6 +127,11 @@ void main() {
     }
     expect(body, contains('_isDesktopVideoControls'),
         reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条上缘）');
+    // TODO-568 防回退：reserve 计算不应再用整段触摸热区高（顶飞根因）。撤回成
+    // `seekBarContainerHeight: _videoSeekBarContainerHeight` → 本条红。
+    expect(body, isNot(contains('_videoSeekBarContainerHeight')),
+        reason: 'reserve 不应再用整段触摸热区高 _videoSeekBarContainerHeight'
+            '（字幕被顶飞 ~47×缩放 空白，TODO-568 改用可见轨道高 + 呼吸间距）');
   });
 
   test('桌面 hover 包裹层 non-opaque 下探 media_kit 自己的 MouseRegion（TODO-364）', () {

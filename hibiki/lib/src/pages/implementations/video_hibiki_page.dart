@@ -426,6 +426,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 移动控制条进度条轨道高度基线（TODO-157/BUG-218）。media_kit 默认 2.4；抬高让
   /// 轨道更醒目、更易滑。随界面缩放。
   static const double _videoSeekBarTrackHeightBase = 5;
+
+  /// 字幕避让骑在可见进度条**轨道上缘**之上的呼吸间距基线（TODO-568）。media_kit 的
+  /// 可见进度条轨道贴在触摸热区容器底缘（`bottomCenter`），轨道上方是大片透明命中区；
+  /// reserve 抬到「轨道上缘 + 本间距」让字幕底缘恰骑进度条上方一点点（不被遮、也不像
+  /// 旧版用整段热区高那样顶飞 ~47×缩放 的空白）。随界面缩放。
+  static const double _videoSubtitleSeekBarBreathingBase = 8;
   static const double _videoControlPopoverGapBase = 8;
 
   /// 进度条与按钮条竖直间距，随界面大小缩放（TODO-156）。
@@ -443,6 +449,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 进度条轨道高度，随界面大小缩放（TODO-157）。
   double get _videoSeekBarTrackHeight =>
       _videoSeekBarTrackHeightBase * _videoUiScale;
+
+  /// 字幕避让骑在进度条轨道上缘之上的呼吸间距，随界面大小缩放（TODO-568）。
+  double get _videoSubtitleSeekBarBreathingGap =>
+      _videoSubtitleSeekBarBreathingBase * _videoUiScale;
 
   static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
   static const double _videoDoubleClickSlop = 48;
@@ -5239,7 +5249,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       isDesktop: _isDesktopVideoControls,
       buttonBarHeight: _videoButtonBarHeight,
       seekBarButtonGap: _videoSeekBarButtonGap,
-      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      // TODO-568：用**可见轨道高** + 呼吸间距（而非整段触摸热区高），字幕底缘骑在可见
+      // 进度条上方一点点、不顶飞那 ~47×缩放 的透明命中区空白。
+      seekBarTrackHeight: _videoSeekBarTrackHeight,
+      subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
       bottomChromeBaseline: _videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
     );
@@ -7667,8 +7680,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           // 进度条上缘距视频底边的真实高度（按平台控制条几何加总 + 随界面
                           // 缩放，BUG-238）。旧默认常量 56 既不随缩放、又低于默认基线 75 →
                           // 移动端 `max(75, 56)=75` 把字幕留在被抬高的进度条下面被遮（用户报
-                          // 「只动一点点」）。显式传入真实几何，移动端 reserve ≈ 140×缩放 >
-                          // 75 才真正抬升盖过进度条；桌面仍只让一个按钮行高（保 BUG-228 观感）。
+                          // 「只动一点点」）。显式传入真实几何让移动端真正抬升盖过进度条；
+                          // 桌面仍只让一个按钮行高（保 BUG-228 观感）。TODO-568：移动端改抬到
+                          // **可见轨道上缘 + 呼吸间距**（≈101×缩放，而非旧的整段热区高 140），
+                          // 字幕骑进度条上方一点点、不顶飞 ~47×缩放 的透明命中区空白。
                           controlsBottomReserve:
                               _subtitleControlsBottomReserve(),
                           fontFamily: appModel.appFontFamily,
