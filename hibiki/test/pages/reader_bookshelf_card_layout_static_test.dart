@@ -81,7 +81,9 @@ void main() {
         reason: 'metadata (progress bar) must be pinned to the cover bottom');
   });
 
-  test('book cover artwork fills the card across all shelf sources', () {
+  test(
+      'book cover artwork scales by height (no distortion) across all shelf '
+      'sources (TODO-552)', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();
@@ -96,13 +98,14 @@ void main() {
 
     expect(
       source,
-      contains('BoxFit get _bookCardCoverFit => BoxFit.cover;'),
-      reason: 'book card artwork should share a single cover-fill fit helper',
+      contains('BoxFit get _bookCardCoverFit => BoxFit.fitHeight;'),
+      reason: 'book card artwork must scale by height to keep aspect ratio; '
+          'BoxFit.cover crops and distorts the cover (TODO-552)',
     );
     expect(
       source,
-      isNot(contains('fit: BoxFit.fitHeight')),
-      reason: 'fitHeight leaves horizontal gutters instead of filling the card',
+      isNot(contains('BoxFit get _bookCardCoverFit => BoxFit.cover;')),
+      reason: 'BoxFit.cover distorts/crops the cover under the footer layout',
     );
     expect(
       RegExp(r'fit: _bookCardCoverFit').allMatches(remoteCover).length,
@@ -216,40 +219,42 @@ void main() {
         reason: 'the cover badge must render in the top-right slot');
   });
 
-  test(
-      'cover type badge is shrunk to the restored small-corner size (TODO-361)',
-      () {
+  test('cover type badge renders at its normal intrinsic size (TODO-552)', () {
     final String source =
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
 
-    // The badge box is the centralized small-corner dimension, scaled with
-    // BoxFit.contain so the 22px HibikiBadge is shrunk down (not left at full
-    // size like the old gap*5 + scaleDown box did on the cover art).
+    // The badge box equals the badge intrinsic size (22px). With BoxFit.contain
+    // the 22px HibikiBadge is neither enlarged nor shrunk, so it renders at its
+    // normal size. TODO-361 had wrongly shrunk it to 16px ("too small").
     expect(
       layout,
       contains('dimension: kShelfCoverBadgeDimension'),
-      reason: 'the cover badge must use the centralized small-corner dimension',
+      reason: 'the cover badge must use the centralized badge dimension',
     );
     expect(
       layout,
       contains('fit: BoxFit.contain'),
-      reason: 'BoxFit.contain shrinks the badge into the small box; '
-          'BoxFit.scaleDown would leave the 22px badge at full size',
+      reason: 'the badge fits its same-size box without distortion',
     );
     expect(
       layout,
       isNot(contains('dimension: tokens.spacing.gap * 5')),
-      reason: 'the oversized gap*5 cover badge box must be gone',
+      reason: 'the oversized gap*5 cover badge box must stay gone',
     );
 
-    // The constant must stay smaller than the badge intrinsic size (22px),
-    // otherwise BoxFit.contain would not shrink anything.
+    // The constant must equal the badge intrinsic size (22px) so BoxFit.contain
+    // renders it at full, normal size (not shrunk down to 16px).
     expect(
       source,
-      contains('const double kShelfCoverBadgeDimension = 8.0 * 2;'),
-      reason: 'the cover badge dimension must be the restored 16px small size',
+      contains('const double kShelfCoverBadgeDimension = 22.0;'),
+      reason: 'the cover badge dimension must be the normal 22px badge size',
+    );
+    expect(
+      source,
+      isNot(contains('const double kShelfCoverBadgeDimension = 8.0 * 2;')),
+      reason: 'the shrunk 16px badge dimension must be gone (TODO-552)',
     );
   });
 
