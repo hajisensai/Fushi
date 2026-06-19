@@ -1,0 +1,19 @@
+## BUG-318 · TODO-562: 视频按 F12 切全屏无反应（老用户快捷键快照覆盖新增默认键）
+- **报告**：2026-06-19（用户：B02 验收第 10 条「桌面按 F12 可切换全屏」与现象「F12 没反应」直接冲突 → 明确回归）
+- **真实性**：✅ 真 bug（限「在 F12 默认加入前保存过快捷键设置」的老用户；全新用户走 `resetToDefaults`，默认链含 F12，正常）。
+  - 时间线：`f60edcffc`（2026-06-14 00:43 `feat(video): add F12 as fullscreen toggle shortcut`）给 `ShortcutAction.videoToggleFullscreen` 的**默认**绑定从「仅 F」加成「F+F12」（`hibiki/lib/src/shortcuts/shortcut_defaults.dart:226-229`）。该 commit 只改 defaults + 测试，video 页处理链（F12 → `videoToggleFullscreen` action → `actions.toggleFullscreen` 回调 → `_toggleVideoFullscreen`）完整无误。
+  - 根因在持久化覆盖语义（`hibiki/lib/src/shortcuts/shortcut_registry.dart` `loadFromJson` 原第 43 行 `_bindings.addAll(parsedBindings)`）：`loadFromJsonString` 先 `loadDefaults`（填 F+F12）再用持久化 JSON **整体覆盖**被显式声明的 action。任何在 6/14 之前打开过快捷键设置并保存过的用户，其快照里 `video_toggle_fullscreen` 是「那个版本的完整默认 = 仅 F」，覆盖后 F12 被顶掉、永久丢失 → 「按 F12 没反应」。
+  - 这是 schema 演进缺陷，不是 F12 commit 本身的错：codebase 持久化无版本号、无「给已存在 action 新增默认键时补全老快照」的迁移机制，故**任何**给老 action 加默认键都会对老用户失效（F12 只是首个暴露的实例）。
+  - 排除项：① 沉浸锁定 gate `_runWhenImmersiveAllowsFullControls`（`video_hibiki_page.dart:2048`）只在「沉浸锁定 + 非 full 模式」拦截，非用户常规 F12 场景，且 6/12 加入早于 F12；② media_kit `keyboardShortcuts`/焦点链未变（`shortcut_defaults_test.dart:281-299` 既有测试证默认 F12 存在且通过 = 默认链完整）。
+- **[x] ① 已修复** — `hibiki/lib/src/shortcuts/shortcut_registry.dart`
+  - 引入持久化 schema 版本：常量 `kShortcutSchemaVersion=1` + 保留 key `kShortcutSchemaVersionKey='__schema_version__'`；`toJson` 现在打版本戳。
+  - `loadFromJsonString` 改走带平台的内部 `_loadFromJson(decoded, platform:)`；解析时读出快照版本（老快照无该 key → 视为 v0）。
+  - 老快照（版本 < 当前）走 `_migratePersistedDefaults`：声明式登记每步「给老 action 新增默认键」。v0→v1 登记 `videoToggleFullscreen`「旧默认仅 F」。
+  - `_restoreDefaultIfUntouched`：仅当快照里该 action 的键盘绑定集**恰等于旧默认全集（仅 F）**——证明用户从没动过它——才用当前默认（F+F12）整体替换，把 F12 补回；用户主动改/删过（键集 ≠ 仅 F）则原样保留，零误伤。`InputBinding` 有值相等（`input_binding.dart:234/241`）保证集合判据可靠。
+  - 公开 `loadFromJson(json)` 保持旧契约（platform=null → 跳过迁移），不破坏既有直接调用与测试。
+- **[x] ② 已加自动化测试** — `hibiki/test/shortcuts/video_shortcut_registry_test.dart` 新增 group「old snapshots get newly-added default keys back (BUG-318 / TODO-562)」：
+  - 复现：老快照（仅 F、无版本号）`loadFromJsonString` 后，F12 必须解析回 `videoToggleFullscreen`，且 `buildVideoPlayerShortcutsFromRegistry` 生成的 activator 真触发 `toggleFullscreen`。**撤迁移（还原 addAll 覆盖）后 F12 解析为 null、activator 缺失 → 转红**。
+  - 反例守卫一：用户把全屏改成 G 的老快照，迁移不得强塞 F12（F12 仍 null、G 保留）。
+  - 反例守卫二：带当前版本号的快照（用户主动只留 F、删了 F12）不再迁移（F12 保持 null，尊重用户最终选择）。
+  - `toJson` 打版本戳断言。
+- **备注**：采番——遍历所有 worktree 分支 + 本地分支 `ls-tree` 取并集，最大占用号为 317（316=todo-549、317=todo-553），故取 318，无撞号。验证：`flutter analyze` 0 issues；`flutter test test/shortcuts/`。真机待验：真实桌面 app 里用「6/14 前保存过快捷键」的旧 DB 冷启后按 F12 实际切全屏（host 测试证逻辑链路与迁移判据，证不了真 WebView/窗口全屏的端到端体感）。

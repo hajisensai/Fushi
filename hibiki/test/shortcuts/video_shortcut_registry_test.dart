@@ -259,4 +259,122 @@ void main() {
     final String encoded = jsonEncode(json);
     expect(encoded.contains('video_screenshot'), isTrue);
   });
+
+  group(
+      'old snapshots get newly-added default keys back (BUG-318 / TODO-562: '
+      'F12 fullscreen regressed for users who saved shortcuts before F12 '
+      'was added to defaults)', () {
+    // A pre-F12 persisted snapshot: video_toggle_fullscreen held ONLY the old
+    // default key F (no F12), and the old app never wrote a schema version key.
+    // The fullscreen entry is the "complete old default", which is exactly the
+    // signal the user never touched it.
+    String legacyFullscreenJson(
+        {List<String> fullscreenKeyboard = const ['KeyF']}) {
+      return jsonEncode(<String, dynamic>{
+        // No __schema_version__ key (legacy writer).
+        ShortcutAction.videoToggleFullscreen.key: <String, dynamic>{
+          'keyboard': fullscreenKeyboard,
+          'gamepad': <String>[],
+          'mouse': <String>[],
+        },
+      });
+    }
+
+    test(
+        'legacy snapshot (only F, no schema version) regains F12 after load '
+        '— this is the F12-no-response fix; reverting the migration makes F12 '
+        'resolve to null', () {
+      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+        ..loadFromJsonString(legacyFullscreenJson(), TargetPlatform.windows);
+
+      // F (the user's preserved key) still works.
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.keyF,
+            modifiers: const <ModifierKey>{}, scope: ShortcutScope.video),
+        ShortcutAction.videoToggleFullscreen,
+        reason: 'the existing F key must survive the migration',
+      );
+      // F12 (the newly-added default) is restored — the regression fix.
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.f12,
+            modifiers: const <ModifierKey>{}, scope: ShortcutScope.video),
+        ShortcutAction.videoToggleFullscreen,
+        reason: 'F12 must be re-added to fullscreen for the untouched snapshot',
+      );
+
+      // And the player activator map actually fires fullscreen on F12.
+      final List<String> log = <String>[];
+      final Map<ShortcutActivator, VoidCallback> activators =
+          buildVideoPlayerShortcutsFromRegistry(
+              registry, _recordingActions(log));
+      final MapEntry<SingleActivator, VoidCallback>? f12Entry =
+          _findSingleActivator(activators, LogicalKeyboardKey.f12);
+      expect(f12Entry, isNotNull,
+          reason: 'F12 must be a live fullscreen player activator');
+      f12Entry!.value();
+      expect(log, <String>['toggleFullscreen']);
+    });
+
+    test(
+        'a snapshot the user actually rebound (fullscreen on G, not F) is NOT '
+        'force-fed F12 — migration only touches untouched actions', () {
+      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+        ..loadFromJsonString(
+          legacyFullscreenJson(fullscreenKeyboard: <String>['KeyG']),
+          TargetPlatform.windows,
+        );
+
+      // The user's chosen G is honoured.
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.keyG,
+            modifiers: const <ModifierKey>{}, scope: ShortcutScope.video),
+        ShortcutAction.videoToggleFullscreen,
+      );
+      // F12 must NOT be auto-injected over a binding the user deliberately set.
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.f12,
+            modifiers: const <ModifierKey>{}, scope: ShortcutScope.video),
+        isNull,
+        reason: 'migration must not override a user-customised fullscreen key',
+      );
+    });
+
+    test(
+        'a current snapshot (schema version present) is not migrated again — '
+        'no double-add, user choices are final', () {
+      // User on the new version deliberately set fullscreen to ONLY F (dropped
+      // F12). The snapshot carries the current schema version, so migration is
+      // skipped and F stays the sole key.
+      final String currentJson = jsonEncode(<String, dynamic>{
+        kShortcutSchemaVersionKey: kShortcutSchemaVersion,
+        ShortcutAction.videoToggleFullscreen.key: <String, dynamic>{
+          'keyboard': <String>['KeyF'],
+          'gamepad': <String>[],
+          'mouse': <String>[],
+        },
+      });
+      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+        ..loadFromJsonString(currentJson, TargetPlatform.windows);
+
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.f12,
+            modifiers: const <ModifierKey>{}, scope: ShortcutScope.video),
+        isNull,
+        reason:
+            'a same-version snapshot must be taken verbatim (no re-migration)',
+      );
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.keyF,
+            modifiers: const <ModifierKey>{}, scope: ShortcutScope.video),
+        ShortcutAction.videoToggleFullscreen,
+      );
+    });
+
+    test('toJson now stamps the current schema version', () {
+      final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+        ..loadDefaults(TargetPlatform.windows);
+      final Map<String, dynamic> json = registry.toJson();
+      expect(json[kShortcutSchemaVersionKey], kShortcutSchemaVersion);
+    });
+  });
 }

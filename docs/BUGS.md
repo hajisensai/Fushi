@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 311 条。点号进各自文件。
+> 共 312 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-318](bugs/BUG-318-todo-562-video-f12-fullscreen.md) | ✅ | ✅ | TODO-562: 视频按 F12 切全屏无反应（老用户快捷键快照覆盖新增默认键） |
 | [BUG-317](bugs/BUG-317-paged-touch-swipe.md) | ✅ | ✅ | TODO-553: 分页模式触摸滑动无法翻页（890378f19 回归） |
 | [BUG-316](bugs/BUG-316-todo-549-win-update-mutex-deadlock.md) | — | — | Windows 自更新 AppMutex 死结：新安装器被旧 app mutex 阻止替换文件 |
 | [BUG-315](bugs/BUG-315-todo-522-526-video-control-settings-layout.md) | ✅ | ✅ | TODO-522/523/525/526: video controls removal persisted removed buttons and video settings text was clipped |
