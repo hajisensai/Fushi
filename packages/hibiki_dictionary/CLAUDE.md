@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-词典引擎模块：通过 C++ FFI (`hoshidicts`) 实现高性能词典查询，支持 Yomichan/Yomitan、ABBYY Lingvo、Migaku、MDict 等多种词典格式的导入和解析。同时提供多语言（日语、英语、中文）的语言处理工具。
+词典引擎模块：通过 C++ FFI (`hoshidicts`) 实现高性能词典查询，支持 Yomichan/Yomitan、ABBYY Lingvo、Migaku、MDict 等多种词典格式的导入和解析。同时提供日语（去屈折/振假名/音高）的语言处理工具。
 
 ## 入口与启动
 
@@ -20,7 +20,7 @@
 - `DictionaryUtils` -- 词典工具函数。
 - `DictionaryFormat` + 各格式实现 -- 词典格式解析注册。
 - `DictionaryDownloader` -- 在线词典下载支持。
-- `Language` / `JapaneseLanguage` / `EnglishLanguage` / `ChineseLanguage` -- 语言处理抽象与实现。
+- `Language`（abstract）/ `JapaneseLanguage` -- 语言处理抽象与实现（当前 `targetLanguage` 钉死日语，`EnglishLanguage` / `ChineseLanguage` 子类已移除）。
 - `LanguageUtils` -- 通用语言工具（kana 检测、分词等）。
 - `DictionaryEntry` / `DictionarySearchResult` / `StructuredContent` -- 查询结果数据模型。
 - `DictionaryOperationsParams` -- 词典操作参数。

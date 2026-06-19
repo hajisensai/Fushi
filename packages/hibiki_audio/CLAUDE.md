@@ -45,10 +45,10 @@
 
 ## 数据模型
 
-- `Audiobook` -- 有声书实体（bookUid / audioRoot / alignmentFormat / healthKind 等）。
+- `Audiobook` -- 有声书实体（bookKey / audioRoot / alignmentFormat / healthKindRaw 等）。
 - `AudioCue` -- 音频 cue（chapterHref / sentenceIndex / textFragmentId / startMs / endMs）。
 - `SrtBook` -- 字幕书（uid / title / audioRoot / srtPath）。
-- `ReaderPosition` -- 阅读位置（ttuBookId / sectionIndex / normCharOffset）。
+- `ReaderPosition` -- 阅读位置（bookKey / sectionIndex / normCharOffset）。
 - `ReadingStatistic` -- 阅读统计（title / dateKey / charactersRead / readingTimeMs）。
 
 ## 测试与质量
@@ -60,7 +60,7 @@
 ## 相关文件清单
 
 - `lib/hibiki_audio.dart` -- 库入口
-- `lib/src/parsers/` -- 字幕解析器（7 个）
+- `lib/src/parsers/` -- 字幕解析器（8 个）
 - `lib/src/audiobook/` -- 有声书核心（控制器/仓库/模型，14 个文件）
 - `lib/src/matching/` -- 匹配与对齐（6 个文件）
 
