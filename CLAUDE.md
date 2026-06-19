@@ -24,12 +24,12 @@
 ## 仓库地图
 
 - 仓库根：`D:\APP\vs_claude_code\hibiki`（Melos workspace，名 `hibiki_workspace`）。Flutter app：`hibiki/`；Android 工程：`hibiki/android/`。
-- 阅读器页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`（`ReaderHibikiPage`，~5300 行：WebView 拦截 + JS 分页 + 有声书同步）。
+- 阅读器页面：`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`（`ReaderHibikiPage`，~7300 行：WebView 拦截 + JS 分页 + 有声书同步）。
 - 书架页面：`hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart`。
 - reader source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`（`ReaderHibikiSource`）。
 - 阅读器 JS/CSS：`hibiki/lib/src/reader/`（`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。
-- 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~2900 行，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v14，21 张表，WAL）。
+- 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~3600 行，初始化流程 + 子系统委托核心，改前先理解）。
+- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v24，28 张表，WAL）。
 - 词典 FFI：`packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart`。
 - 有声书：`packages/hibiki_audio/` + `hibiki/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
 - i18n 同步脚本：`hibiki/tool/i18n_sync.dart`。
@@ -39,7 +39,7 @@
 
 - Flutter `3.44.0` / Dart `3.12.0`（stable），Dart SDK 约束 `>=3.5.0 <4.0.0`；最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.x。
-- 主存储是 Drift SQLite（`HibikiDatabase`，schema v14），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
+- 主存储是 Drift SQLite（`HibikiDatabase`，schema v24），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_hibiki 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttuBookId` 列、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_hibiki 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
@@ -83,7 +83,7 @@
 | 模块 | 语言 | 职责 | 模块文档 |
 |---|---|---|---|
 | `hibiki/` | Dart | Flutter 主应用：UI/阅读器/导入/设置 | [hibiki/CLAUDE.md](hibiki/CLAUDE.md) |
-| `packages/hibiki_core/` | Dart | DB schema（21 表）/偏好/语言配置 | [CLAUDE.md](packages/hibiki_core/CLAUDE.md) |
+| `packages/hibiki_core/` | Dart | DB schema（28 表）/偏好/语言配置 | [CLAUDE.md](packages/hibiki_core/CLAUDE.md) |
 | `packages/hibiki_dictionary/` | Dart+C++ | 词典引擎/FFI/多格式导入 | [CLAUDE.md](packages/hibiki_dictionary/CLAUDE.md) |
 | `packages/hibiki_anki/` | Dart | Anki 集成（AnkiDroid + AnkiConnect） | [CLAUDE.md](packages/hibiki_anki/CLAUDE.md) |
 | `packages/hibiki_audio/` | Dart | 字幕解析/有声书播放/音频匹配 | [CLAUDE.md](packages/hibiki_audio/CLAUDE.md) |
