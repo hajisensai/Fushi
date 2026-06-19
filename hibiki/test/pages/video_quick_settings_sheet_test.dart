@@ -590,6 +590,82 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
+  // ── TODO-561：mpv 高级「额外 mpv 选项」标题文本显示不全 ─────────────────
+  // 原来标题挂在 InputDecoration.labelText（Material 浮动 label 恒单行 + ellipsis），
+  // 在窄右 pane / 高 UI scale 下被截断。修复后标题是 TextField 上方独立、可换行、
+  // 完整显示的 Text；输入框不再走单行浮动 label。
+  Future<void> openMpvAdvanced(WidgetTester tester) async {
+    await tester.tap(find.text(t.video_settings_cat_mpv));
+    await tester.pumpAndSettle();
+    // mpv 详情右 pane 是 SingleChildScrollView，会一次性 build 全部分组（含底部
+    // 「高级」段），离屏 widget 仍完成 layout，故无需滚动即可命中并测量标题。
+  }
+
+  testWidgets(
+      'mpv extra-options title is an independent text, not a single-line '
+      'floating label', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+    await openMpvAdvanced(tester);
+
+    final Finder title = find.text(t.video_setting_mpv_raw);
+    expect(title, findsOneWidget, reason: '「额外 mpv 选项」标题必须可见');
+
+    // 标题不能是某个 InputDecorator 内部（labelText 浮动 label）的后代——
+    // 那条路径恒单行 + ellipsis，是显示不全的根因。
+    expect(
+      find.descendant(of: find.byType(InputDecorator), matching: title),
+      findsNothing,
+      reason: '标题不应作为 InputDecoration.labelText 渲染（浮动 label 单行会截断），'
+          '应是输入框上方的独立完整 Text',
+    );
+
+    // 标题整段完整渲染，不被省略号截断。
+    final RenderParagraph paragraph =
+        tester.renderObject<RenderParagraph>(title);
+    expect(paragraph.didExceedMaxLines, isFalse,
+        reason: '「额外 mpv 选项」标题必须完整显示，不能被截断成省略号');
+    _expectNoFlutterErrors(tester);
+  });
+
+  for (final ({double width, double scale}) sizeCase
+      in <({double width, double scale})>[
+    (width: 320, scale: 1.5),
+    (width: 360, scale: 2.0),
+    (width: 420, scale: 2.0),
+  ]) {
+    testWidgets(
+        'mpv extra-options title is fully readable at '
+        '${sizeCase.width.round()}px scale ${sizeCase.scale}', (tester) async {
+      await tester.binding.setSurfaceSize(Size(sizeCase.width, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pumpScaled(
+        tester,
+        _sheet(uiScale: sizeCase.scale),
+        scale: sizeCase.scale,
+      );
+      await openMpvAdvanced(tester);
+
+      final Finder title = find.text(t.video_setting_mpv_raw);
+      expect(title, findsOneWidget, reason: '窄 pane / 高缩放下「额外 mpv 选项」标题仍须可见');
+      final RenderParagraph paragraph =
+          tester.renderObject<RenderParagraph>(title);
+      expect(paragraph.didExceedMaxLines, isFalse,
+          reason: '窄 pane / 高缩放下标题不能被截断（TODO-561）');
+      _expectNoFlutterErrors(tester);
+    });
+  }
+
+  test('源码守卫：mpv 高级标题不挂 labelText 浮动单行 label（TODO-561 防回潮）', () {
+    final String src =
+        File('lib/src/media/video/video_quick_settings_sheet.dart')
+            .readAsStringSync();
+    expect(src, isNot(contains('labelText: t.video_setting_mpv_raw')),
+        reason: '「额外 mpv 选项」标题不能再走 InputDecoration.labelText（浮动 label 恒单行 '
+            '+ ellipsis，窄 pane 截断）；须是输入框上方独立可换行 Text');
+  });
+
   testWidgets('mpv category renders the config inline (no sub-dialog)',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));

@@ -1166,20 +1166,33 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         ),
         SizedBox(height: gap),
         // 高级：原始 mpv.conf（多行逃生口，AdaptiveSettingsTextField 不支持多行故用原生）
+        // TODO-561：标题原来挂在 InputDecoration.labelText（Material 浮动 label 恒单行
+        // + ellipsis），「额外 mpv 选项（每行 key=value）」浮起后在窄右 pane / 高 UI scale
+        // 下被截断显示不全。改成 TextField 上方独立、可换行、完整显示的标题 Text，
+        // 输入框去掉 labelText 不再走单行浮动 label；helperText 已 maxLines=4 不截断。
         _textFieldSection(
           title: t.video_setting_mpv_group_advanced,
-          child: TextField(
-            controller: _rawConfController,
-            minLines: 3,
-            maxLines: 8,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-            decoration: InputDecoration(
-              labelText: t.video_setting_mpv_raw,
-              helperText: t.video_setting_mpv_raw_hint,
-              helperMaxLines: 4,
-              border: const OutlineInputBorder(),
-            ),
-            onChanged: (String v) => _commitMpv(c.copyWith(rawConf: v)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                t.video_setting_mpv_raw,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              TextField(
+                controller: _rawConfController,
+                minLines: 3,
+                maxLines: 8,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: InputDecoration(
+                  helperText: t.video_setting_mpv_raw_hint,
+                  helperMaxLines: 4,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (String v) => _commitMpv(c.copyWith(rawConf: v)),
+              ),
+            ],
           ),
         ),
         SizedBox(height: gap),
