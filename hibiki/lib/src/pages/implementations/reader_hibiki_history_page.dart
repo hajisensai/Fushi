@@ -2264,17 +2264,57 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
         );
+      case DropIntent.importNewVideo:
+        // 书架拖入视频 → 自动切到视频导入流程，带上文件（不再只提示让用户手动切，
+        // TODO-558）。视频卡与书卡同页渲染，无需跨 tab 通信。
+        _openVideoImportPrefilled(
+          videoPath: files.videos.first,
+          subtitlePath:
+              files.subtitles.isNotEmpty ? files.subtitles.first : null,
+        );
+      case DropIntent.importNewPlaylist:
+        _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
       case DropIntent.unsupportedSurface:
         debugPrint('[hibiki-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );
-      case DropIntent.importNewVideo:
-      case DropIntent.importNewPlaylist:
       case DropIntent.attachToVideoCard:
       case DropIntent.ignore:
         break;
     }
+  }
+
+  /// 书架拖入视频 → 打开 [VideoImportDialog] 预填视频/字幕路径（自动切到视频导入，
+  /// 带上拖入文件，用户无需重选）。复用 [_openVideoImport] 的 repo/刷新范式。
+  Future<void> _openVideoImportPrefilled({
+    required String videoPath,
+    required String? subtitlePath,
+  }) async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(
+        repo: _videoRepo,
+        initialVideoPath: videoPath,
+        initialSubtitlePath: subtitlePath,
+      ),
+    );
+    if (bookUid != null && mounted) _refreshVideoBooks();
+  }
+
+  /// 书架拖入 m3u8/m3u 播放列表 → 打开 [VideoImportDialog] 预填 playlist 路径，
+  /// 对话框自动解析多集落库（与视频 tab 同一路径），关闭后刷新视频列表。
+  Future<void> _openPlaylistImportPrefilled({
+    required String playlistPath,
+  }) async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(
+        repo: _videoRepo,
+        initialPlaylistPath: playlistPath,
+      ),
+    );
+    if (bookUid != null && mounted) _refreshVideoBooks();
   }
 
   /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。

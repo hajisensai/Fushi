@@ -57,13 +57,34 @@ void main() {
         DropIntent.importNewBook,
       );
     });
-    test('recognized video on books surface -> unsupportedSurface', () {
+    // TODO-558 / BUG-326: 书架拖入视频 → 自动切到视频导入（不再 unsupportedSurface 只提示）。
+    test('video on books surface -> importNewVideo (auto-switch)', () {
       expect(
         decideDropIntent(
             surface: DropSurface.books,
             files: _files(videos: ['/a.mkv']),
             cardHit: false),
-        DropIntent.unsupportedSurface,
+        DropIntent.importNewVideo,
+      );
+    });
+    // .mp4 既是 video 又是 audio：拖到书卡时仍优先挂音频（保留原行为），不误判成新建视频。
+    test('mp4 on a book card -> attachToBookCard (audio, not new video)', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(videos: ['/a.mp4'], audios: ['/a.mp4']),
+            cardHit: true),
+        DropIntent.attachToBookCard,
+      );
+    });
+    // .mp4 拖到书架空白处（非命中卡）→ 当作视频自动切到视频导入。
+    test('mp4 on books surface blank area -> importNewVideo', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(videos: ['/a.mp4'], audios: ['/a.mp4']),
+            cardHit: false),
+        DropIntent.importNewVideo,
       );
     });
 
@@ -143,15 +164,24 @@ void main() {
   });
 
   group('decideDropIntent — playlist on books surface', () {
-    test(
-        'm3u8 on books surface -> unsupportedSurface (playlists are video-only)',
-        () {
+    // TODO-558 / BUG-326: 书架拖入 m3u8 → 自动切到视频导入（解析多集），不再只提示。
+    test('m3u8 on books surface -> importNewPlaylist (auto-switch)', () {
       expect(
         decideDropIntent(
             surface: DropSurface.books,
             files: _files(playlists: ['/a.m3u8']),
             cardHit: false),
-        DropIntent.unsupportedSurface,
+        DropIntent.importNewPlaylist,
+      );
+    });
+    // 播放列表比单视频更具体：两者同拖时优先播放列表（与 video 表面对称）。
+    test('playlist wins over video on books surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
+            cardHit: false),
+        DropIntent.importNewPlaylist,
       );
     });
   });
