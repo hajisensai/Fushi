@@ -1695,6 +1695,7 @@ class VideoPlayerController extends ChangeNotifier
     final int? next = nextCueIndexFor(
       cues: _cues,
       positionMs: _effectivePositionMs,
+      anchorIndex: _seekTargetCueIndex,
     );
     if (next == null) return;
     await skipToCue(_cues[next]);
@@ -1713,6 +1714,7 @@ class VideoPlayerController extends ChangeNotifier
     final int? prev = prevCueIndexFor(
       cues: _cues,
       positionMs: _effectivePositionMs,
+      anchorIndex: _seekTargetCueIndex,
     );
     if (prev == null) return;
     await skipToCue(_cues[prev]);
@@ -1733,6 +1735,7 @@ class VideoPlayerController extends ChangeNotifier
       cues: _cues,
       positionMs: _effectivePositionMs,
       seekSeconds: seekSeconds,
+      anchorIndex: _seekTargetCueIndex,
     );
     if (decision.cueIndex != null) {
       await skipToCue(_cues[decision.cueIndex!]);
@@ -1764,6 +1767,7 @@ class VideoPlayerController extends ChangeNotifier
     final int? next = nextCueIndexFor(
       cues: _cues,
       positionMs: _effectivePositionMs,
+      anchorIndex: _seekTargetCueIndex,
     );
     // next == null：已在末句之后，无下一句 → 保持 no-op（不前进越过片尾，避免误跳到结尾）。
     if (next == null) return;
@@ -1785,11 +1789,26 @@ class VideoPlayerController extends ChangeNotifier
   /// 注意**不能**用 [JsonAlignmentParser.findCueIndex] 求 floor ——它在 gap 内（含
   /// 「末句之后」与「首句之前」）一律返回 -1，无法区分「早于首句」与「某句之后的
   /// gap」，会把后者也误当首句之前。这里需要 floor 语义而非命中语义。
+  ///
+  /// [anchorIndex]（TODO-571）：上一次主动跳转（[skipToCue]）落定的目标句下标，由
+  /// 调用方传 [_seekTargetCueIndex]。非空且在范围内时，**直接 `anchor + 1`**，绕过按
+  /// `positionMs` 反推 floor。根因：[skipToCue] 的 seek 落点因 [kCueSeekPreRollMs]
+  /// 前导余量故意偏到目标句**之前** `startMs - preRoll`（BUG-259 听感）。连续按「下一
+  /// 句」时，第二次读到的 `positionMs` 正是这个偏前落点，[_floorCueIndexByPosition]
+  /// 据 `startMs <= pos` 把当前句反推成**目标句的上一句**，`+1` 又指回刚跳到的目标句
+  /// → 表现为「下一句按了不动 / 原地」（与「上一句跳过头」对称）。锚定权威的「刚跳到
+  /// 哪句」消除这层偏移。`anchor + 1` 越界（已是末句）返回 null，保持末句 no-op 边界。
   static int? nextCueIndexFor({
     required List<AudioCue> cues,
     required int? positionMs,
+    int? anchorIndex,
   }) {
     if (cues.isEmpty) return null;
+    if (anchorIndex != null && anchorIndex >= 0 && anchorIndex < cues.length) {
+      // 锚定「上次主动跳到的目标句」：下一句严格 = anchor+1，不被 preRoll 偏前落点干扰。
+      final int next = anchorIndex + 1;
+      return next >= cues.length ? null : next;
+    }
     final int floor = _floorCueIndexByPosition(cues, positionMs ?? 0);
     if (floor < 0) return 0; // 早于首句：下一句 = 首句。
     if (floor + 1 >= cues.length) return null; // floor 已是末句：无下一句。
@@ -1808,11 +1827,26 @@ class VideoPlayerController extends ChangeNotifier
   /// - **gap / 早于首句**（findCueIndex 返回 -1）：此刻没有正在播放的句子，「上一句」=
   ///   gap 之前刚播完那条（最近一条起点 < 位置的 cue）；早于全部 cue 时落首句（索引 0）。
   ///   这保留了 TODO-085/119 转场 gap 回退决策赖以计算「上一句距当前多远」的参照。
+  ///
+  /// [anchorIndex]（TODO-571）：上一次主动跳转（[skipToCue]）落定的目标句下标，由
+  /// 调用方传 [_seekTargetCueIndex]。非空且在范围内时，**直接 `anchor - 1`**，绕过按
+  /// `positionMs` 反推。根因（与 [nextCueIndexFor] 对称）：[skipToCue] 落点因前导余量
+  /// [kCueSeekPreRollMs] 偏到目标句**之前** `startMs - preRoll`（BUG-259 听感）。连续按
+  /// 「上一句」时，第二次读到的 `positionMs` 是这个偏前落点，[JsonAlignmentParser.findCueIndex]
+  /// 反推命中**目标句的上一句**（落点已退进上一句时间窗），`hit - 1` 于是跳到上上句
+  /// → **跳过头**（跳到 N-2 而非相邻 N-1，正是用户报「感觉跳过头了」）。锚定权威的
+  /// 「刚跳到哪句」消除偏移。`anchor - 1 < 0`（已在首句）返回 null，保持首句 no-op 边界。
   static int? prevCueIndexFor({
     required List<AudioCue> cues,
     required int? positionMs,
+    int? anchorIndex,
   }) {
     if (cues.isEmpty) return null;
+    if (anchorIndex != null && anchorIndex >= 0 && anchorIndex < cues.length) {
+      // 锚定「上次主动跳到的目标句」：上一句严格 = anchor-1，不被 preRoll 偏前落点干扰。
+      final int prev = anchorIndex - 1;
+      return prev < 0 ? null : prev;
+    }
     final int pos = positionMs ?? 0;
     // 句中（命中某句时间窗，含句首）：当前句 = hit，上一句 = hit-1，排除当前句。
     final int hit =
@@ -1852,10 +1886,12 @@ class VideoPlayerController extends ChangeNotifier
     required List<AudioCue> cues,
     required int? positionMs,
     required int seekSeconds,
+    int? anchorIndex,
   }) {
     final int? prev = prevCueIndexFor(
       cues: cues,
       positionMs: positionMs,
+      anchorIndex: anchorIndex,
     );
     if (prev == null) return PrevSeekDecision.none;
     if (seekSeconds <= 0) return PrevSeekDecision.cue(prev);
