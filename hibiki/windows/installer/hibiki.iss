@@ -73,28 +73,28 @@ Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: string; V
 Filename: "{app}\hibiki.exe"; Description: "启动 Hibiki"; Flags: nowait postinstall
 
 [Code]
-; -- TODO-549: app-internal self-update "AppMutex deadlock" root-cause layer --
-; Regression source: TODO-431.
-;
-; The old app launches the new installer; Inno does its AppMutex check early
-; (CheckForMutexes; per Inno source Setup.MainFunc.pas the InitializeSetup call
-; runs BEFORE the CheckForMutexes loop) and finds some hibiki.exe / leftover
-; process still holding HibikiSingleInstanceMutex, so it pops "Setup has
-; detected that Hibiki is currently running". Under /VERYSILENT +
-; /SUPPRESSMSGBOXES that OK/Cancel box defaults to Cancel -> Got EAbort ->
-; immediate exit with no files replaced (real log:
-; hibiki-*-windows-setup.install.log).
-;
-; Inno's CloseApplications / /CLOSEAPPLICATIONS go through RestartManager (by
-; file usage) and are completely independent from the AppMutex check
-; (CheckForMutexes), so they cannot suppress the mutex abort. The only layer
-; that runs BEFORE the AppMutex check and can own the timing is this
-; InitializeSetup: it actively terminates the running hibiki.exe and its
-; WebView2 child processes, then bounded-polls until the mutex is truly
-; released, then returns True; by the time Inno runs CheckForMutexes the mutex
-; is gone, so it passes quietly -- no box, no abort. The [Setup] AppMutex= is
-; kept as a fallback (if the poll times out with the mutex still held it
-; degrades to the original prompt behaviour).
+// -- TODO-549: app-internal self-update "AppMutex deadlock" root-cause layer --
+// Regression source: TODO-431.
+//
+// The old app launches the new installer; Inno does its AppMutex check early
+// (CheckForMutexes; per Inno source Setup.MainFunc.pas the InitializeSetup call
+// runs BEFORE the CheckForMutexes loop) and finds some hibiki.exe / leftover
+// process still holding HibikiSingleInstanceMutex, so it pops "Setup has
+// detected that Hibiki is currently running". Under /VERYSILENT +
+// /SUPPRESSMSGBOXES that OK/Cancel box defaults to Cancel -> Got EAbort ->
+// immediate exit with no files replaced (real log:
+// hibiki-*-windows-setup.install.log).
+//
+// Inno's CloseApplications / /CLOSEAPPLICATIONS go through RestartManager (by
+// file usage) and are completely independent from the AppMutex check
+// (CheckForMutexes), so they cannot suppress the mutex abort. The only layer
+// that runs BEFORE the AppMutex check and can own the timing is this
+// InitializeSetup: it actively terminates the running hibiki.exe and its
+// WebView2 child processes, then bounded-polls until the mutex is truly
+// released, then returns True; by the time Inno runs CheckForMutexes the mutex
+// is gone, so it passes quietly -- no box, no abort. The [Setup] AppMutex= is
+// kept as a fallback (if the poll times out with the mutex still held it
+// degrades to the original prompt behaviour).
 
 const
   HibikiAppMutexName = 'HibikiSingleInstanceMutex';
