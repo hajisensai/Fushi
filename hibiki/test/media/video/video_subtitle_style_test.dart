@@ -342,4 +342,36 @@ void main() {
       expect(hasDir(0, -1), isTrue); // 上（旧实现完全没有的方向）
     });
   });
+
+  group('buildSubtitleStrokePaint (BUG-321 / TODO-569 真描边取代伪描边)', () {
+    const Color c = Color(0xFF224466);
+
+    test('thickness<=0 无描边（返回 null，不渲染描边层）', () {
+      expect(buildSubtitleStrokePaint(c, 0), isNull);
+      expect(buildSubtitleStrokePaint(c, -3), isNull);
+    });
+
+    test('正粗细返回 stroke 画笔：宽度==thickness、色==描边色、轮廓圆滑', () {
+      final Paint? p = buildSubtitleStrokePaint(c, 6);
+      expect(p, isNotNull);
+      // 沿字形轮廓描边（PaintingStyle.stroke），不是填充——这是真描边的本质，
+      // 区别于旧 buildSubtitleShadows 的「整字 glyph 模糊拷贝偏移」（残留黑字源）。
+      expect(p!.style, PaintingStyle.stroke);
+      // 描边宽度 == thickness（用户/缩放控制的描边强度，语义与旧路径一致）。
+      expect(p.strokeWidth, 6);
+      // Paint.color round-trip 后实例不严格 ==（colorSpace/浮点表示），比 ARGB32。
+      expect(p.color.toARGB32(), c.toARGB32());
+      // 转角/端点圆滑，贴合 ASS/asbplayer outline 观感、无尖刺。
+      expect(p.strokeJoin, StrokeJoin.round);
+      expect(p.strokeCap, StrokeCap.round);
+      expect(p.isAntiAlias, isTrue);
+    });
+
+    test('strokeWidth 随 thickness 线性变化（缩放/横竖屏只改粗细、不产生残影）', () {
+      // 真描边的关键不变量：任何 thickness 都只是描边变粗变细的单层轮廓，
+      // 绝不像旧 8 层模糊 Shadow 那样在大 thickness 下外溢成第二个错位黑字。
+      expect(buildSubtitleStrokePaint(c, 2)!.strokeWidth, 2);
+      expect(buildSubtitleStrokePaint(c, 12)!.strokeWidth, 12);
+    });
+  });
 }

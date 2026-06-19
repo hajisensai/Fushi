@@ -247,10 +247,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
                       // tap 命中改由下方整片 translucent GestureDetector + 本登记表
                       // 反查承载。
                       _charContexts.add(charContext);
-                      return Text(
-                        chars[i],
-                        style: _styleForGrapheme(i, markup),
-                      );
+                      return _buildStrokedChar(chars[i], i, markup);
                     },
                   ),
               ],
@@ -394,7 +391,44 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     );
   }
 
-  /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式。
+  /// 渲染单个字幕字符为**真描边**：底层 stroke [Text]（[buildSubtitleStrokePaint] 沿
+  /// 字形轮廓描一圈）+ 上层 fill [Text]（正文填充色）精确重叠（BUG-321 / TODO-569）。
+  ///
+  /// 取代旧的「单层 [Text] + 8 个模糊 `Shadow` glyph 拷贝伪描边」：那套在大 thickness /
+  /// 横竖屏缩放下会让模糊黑字外溢成「残留黑字」（根因见 [buildSubtitleStrokePaint] 文档）。
+  ///
+  /// 两层用同一份几何样式（字号 / 字重 / 字体 / fallback / 行高 / 下划线删除线），仅描边
+  /// 层把 `color` 换成 `foreground=strokePaint`、fill 层保留 `color`——故两层字形逐像素
+  /// 对齐、Stack 尺寸 == 字符尺寸，不改变 hit-test 几何（[_charContexts] 登记的字符矩形
+  /// 仍精确）。thickness<=0（无描边）时 [buildSubtitleStrokePaint] 返回 null，直接渲染单层
+  /// fill [Text]（与历史无描边场景等价、零多余层）。
+  Widget _buildStrokedChar(String char, int i, SubtitleMarkup? markup) {
+    final TextStyle fillStyle = _styleForGrapheme(i, markup);
+    final Paint? strokePaint = buildSubtitleStrokePaint(
+      widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
+      widget.shadowThickness,
+    );
+    final Widget fill = Text(char, style: fillStyle);
+    if (strokePaint == null) return fill;
+    // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
+    // foreground 与 color 不可共存，故显式重建而非 copyWith——copyWith 无法把 color 清空）。
+    final TextStyle strokeStyle = fillStyle.copyWith(
+      color: null,
+      foreground: strokePaint,
+      // 描边层不画下划线/删除线，避免与 fill 层重叠加粗装饰线（fill 层已画）。
+      decoration: TextDecoration.none,
+    );
+    return Stack(
+      // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
+      children: <Widget>[
+        Text(char, style: strokeStyle),
+        fill,
+      ],
+    );
+  }
+
+  /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式（**填充层**，不含描边——描边由
+  /// [_buildStrokedChar] 的底层 stroke [Text] 单独承载，BUG-321 / TODO-569）。
   TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup) {
     final TextStyle base = TextStyle(
       color: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
@@ -407,12 +441,6 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
       fontFamilyFallback: _kSubtitleCjkFallback,
       fontWeight: _fontWeight(widget.fontWeight),
-      // 贴合文字四周的对称描边/光晕（BUG-222），而非单向下方的 drop shadow——
-      // 后者 thickness 越大阴影越往下「掉」，换句/移动时与字身分离像残留。
-      shadows: buildSubtitleShadows(
-        widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
-        widget.shadowThickness,
-      ),
     );
     SubtitleSpan? span;
     if (markup != null) {

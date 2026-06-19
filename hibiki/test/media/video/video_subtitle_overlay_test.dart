@@ -39,7 +39,8 @@ void main() {
     double gapFromBottom(WidgetTester tester) {
       final Rect overlayRect =
           tester.getRect(find.byType(VideoSubtitleOverlay));
-      final Rect charRect = tester.getRect(find.text('A'));
+      // BUG-321/TODO-569：每字 stroke+fill 双层，取 .first（两层同几何）。
+      final Rect charRect = tester.getRect(find.text('A').first);
       return overlayRect.bottom - charRect.bottom;
     }
 
@@ -341,7 +342,8 @@ void main() {
     final VideoPlayerController c = _controllerWithCue('テスト');
     await _pump(
         tester, VideoSubtitleOverlay(controller: c, blurEnabled: false));
-    expect(find.text('テ'), findsOneWidget);
+    // 双层：stroke + fill 两个 Text（BUG-321/TODO-569）。
+    expect(find.text('テ'), findsNWidgets(2));
     expect(find.byType(ImageFiltered), findsNothing);
   });
 
@@ -409,7 +411,10 @@ void main() {
       tester,
       VideoSubtitleOverlay(controller: c, fontSize: 40),
     );
-    final Text txt = tester.widget<Text>(find.text('A'));
+    // 取填充层（foreground==null）断言字号（BUG-321/TODO-569 双层）。
+    final Text txt = tester
+        .widgetList<Text>(find.text('A'))
+        .firstWhere((Text t) => t.style?.foreground == null);
     expect(txt.style?.fontSize, 40);
   });
 
@@ -419,7 +424,8 @@ void main() {
       final VideoSubtitleHitTester ht = VideoSubtitleHitTester();
       await _pump(tester, VideoSubtitleOverlay(controller: c, hitTester: ht));
 
-      final Offset center = tester.getCenter(find.text('ス')); // grapheme 1
+      final Offset center =
+          tester.getCenter(find.text('ス').first); // grapheme 1
       final SubtitleCharHit? hit = ht.hitTest(center);
       expect(hit, isNotNull);
       expect(hit!.sentence, 'テスト');
@@ -445,7 +451,7 @@ void main() {
         VideoSubtitleOverlay(controller: c, hitTester: ht, blurEnabled: true),
       );
 
-      final Offset center = tester.getCenter(find.text('ス'));
+      final Offset center = tester.getCenter(find.text('ス').first);
       expect(ht.hitTest(center), isNull);
     });
 
@@ -502,7 +508,7 @@ void main() {
           },
         ),
       );
-      await tester.tapAt(tester.getCenter(find.text('ス'))); // grapheme 1
+      await tester.tapAt(tester.getCenter(find.text('ス').first)); // grapheme 1
       await tester.pump();
       expect(tappedSentence, 'テスト');
       expect(tappedIndex, 1);
@@ -548,7 +554,7 @@ void main() {
       await tester.pump();
 
       // 移到字幕字符上 → onHoverChanged(true)。
-      await gesture.moveTo(tester.getCenter(find.text('A')));
+      await gesture.moveTo(tester.getCenter(find.text('A').first));
       await tester.pump();
       expect(events, contains(true),
           reason: '鼠标进字幕盒应回报 hover=true（页面据此唤回光标，BUG-284）');

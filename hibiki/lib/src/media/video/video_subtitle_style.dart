@@ -302,6 +302,39 @@ class VideoSubtitleStyle {
   }
 }
 
+/// 字幕**真**描边画笔（BUG-321 / TODO-569）：把粗细 [thickness] 渲染成沿字形轮廓的
+/// 单层描边，由底层 stroke [Text] 用本画笔描出、上层 fill [Text] 填正文（见
+/// [VideoSubtitleOverlay] 的双层渲染）。[thickness] <= 0 返回 null（无描边）。
+///
+/// 根因（为什么 BUG-222 的 [buildSubtitleShadows] 没修好、用户报「一点没修好、还是
+/// 残留黑字」）：那套方案用 8 个 `Shadow(blurRadius: thickness, offset: r)` 模拟描边。
+/// Flutter 的 `Shadow` 不是沿轮廓描边，而是把**整个字形 glyph 用阴影色重绘一遍**再做
+/// 高斯模糊 + 偏移。8 个方向 = 8 份模糊的黑色字形拷贝叠加。由于 `blurRadius`(=thickness)
+/// 大于偏移半径(=thickness/2)，这些模糊黑字大面积重叠并外溢到字身周围 → 白字下方/旁边
+/// 浮现一团能看清字形轮廓的黑色虚影 = 用户说的「残留在文字下方的黑字、双重/残影」。
+/// 横竖屏切换 / 切句是「重灾区 / 必现」是因为旋转后 `uiScale` 变化把 thickness 经
+/// [VideoSubtitleStyle.resolveShadowThickness] 放大（默认随缩放、clamp 到 12），thickness
+/// 越大模糊黑字拷贝越大越糊、残影越重——不是状态残留，是 8 层模糊 glyph 拷贝的固有产物。
+///
+/// 真描边修复：`Paint()..style = PaintingStyle.stroke` 沿字形外轮廓画**一圈**线，宽度
+/// [thickness]、`strokeJoin.round` 让转角圆滑（ASS/asbplayer outline 观感）。它精确贴合
+/// 字身、单层、无模糊、无偏移拷贝 → 任何 thickness / 缩放 / 横竖屏都只是描边变粗变细，
+/// 绝不产生第二个错位黑字。`strokeWidth = thickness`：描边线以轮廓为中线，向内外各占
+/// thickness/2，可视外缘厚度约 thickness/2，与旧 [buildSubtitleShadows] 偏移半径
+/// `thickness/2` 同量级，外观厚度延续、不需用户重设。
+///
+/// [color] 仍是用户/主题描边色（默认黑）。语义与旧路径一致：thickness=描边强度，0=无描边。
+Paint? buildSubtitleStrokePaint(Color color, double thickness) {
+  if (thickness <= 0) return null;
+  return Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = thickness
+    ..strokeJoin = StrokeJoin.round
+    ..strokeCap = StrokeCap.round
+    ..color = color
+    ..isAntiAlias = true;
+}
+
 /// 字幕描边阴影：把粗细 [thickness] 渲染成**贴合文字四周的对称描边/光晕**，而非
 /// 单向下方的投影（BUG-222）。
 ///
@@ -313,6 +346,11 @@ class VideoSubtitleStyle {
 /// （对角乘 ~0.707 归一成圆形描边），`blurRadius=thickness` 让描边软化成贴合字身的
 /// 光晕。八向对称 → 合成结果围绕文字、无单向「掉落」感。thickness 仍是用户/缩放控制的
 /// 描边强度（0 = 无描边），[color] 仍是用户/主题阴影色，语义不变。
+///
+/// 历史：字幕**正文**字符的描边已于 BUG-321 / TODO-569 改用 [buildSubtitleStrokePaint]
+/// 的真描边（双层 [Text]），因为本函数的 8 个模糊 `Shadow` glyph 拷贝在大 thickness /
+/// 缩放下会外溢成「残留黑字」。本函数仍保留给**收藏星角标**那枚 [Icon] 用——图标无文字
+/// 双层渲染的对应物，且尺寸小、不在用户报的字幕文字残影范围内，沿用四周阴影即可。
 ///
 /// [thickness] <= 0 返回空列表（无描边，与旧 `shadowThickness<=0` 分支等价）。
 List<Shadow> buildSubtitleShadows(Color color, double thickness) {
