@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
+import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
@@ -48,7 +49,8 @@ class BookImportDialog extends StatefulWidget {
   State<BookImportDialog> createState() => _BookImportDialogState();
 }
 
-class _BookImportDialogState extends State<BookImportDialog> {
+class _BookImportDialogState extends State<BookImportDialog>
+    with ImportDialogProgressMixin<BookImportDialog> {
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _authorCtrl = TextEditingController();
 
@@ -62,10 +64,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   String? _epubName;
   String? _subtitleName;
 
-  bool _importing = false;
   bool _pickerActive = false;
-  final ValueNotifier<double> _progress = ValueNotifier<double>(0);
-  final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
   bool _autoWindow = true;
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
@@ -101,8 +100,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
   void dispose() {
     _titleCtrl.dispose();
     _authorCtrl.dispose();
-    _progress.dispose();
-    _progressMsg.dispose();
+    // 进度 ValueNotifier 由 ImportDialogProgressMixin.dispose() 经 super 链释放。
     super.dispose();
   }
 
@@ -121,8 +119,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
         adaptiveDialogAction(
           context: context,
           isDefaultAction: true,
-          onPressed: _importing ? null : _doImport,
-          child: _importing
+          onPressed: importing ? null : _doImport,
+          child: importing
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -182,7 +180,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                 title: t.auto_select_search_window,
                 subtitle: t.auto_select_search_window_hint,
                 value: _autoWindow,
-                onChanged: _importing
+                onChanged: importing
                     ? null
                     : (bool value) => setState(() => _autoWindow = value),
               ),
@@ -201,21 +199,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
             ),
           ],
         ],
-        if (_importing) ...[
-          SizedBox(height: tokens.spacing.card),
-          ValueListenableBuilder<double>(
-            valueListenable: _progress,
-            builder: (_, value, __) => LinearProgressIndicator(value: value),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          ValueListenableBuilder<String>(
-            valueListenable: _progressMsg,
-            builder: (_, msg, __) => Text(
-              msg,
-              style: tokens.type.metadata,
-            ),
-          ),
-        ],
+        if (importing) ...buildProgressSection(context, tokens),
       ],
     );
   }
@@ -524,11 +508,6 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   // ── 导入 ────────────────────────────────────────────────────────────────
 
-  void _reportProgress(double value, String msg) {
-    _progress.value = value;
-    _progressMsg.value = msg;
-  }
-
   /// 同名书弹窗回调，喂给 [EpubImporter]。是→加后缀，否/关闭→取消这本书。
   Future<DuplicateTitleResolution> _onDuplicateTitle(
     String proposedTitle,
@@ -571,8 +550,8 @@ class _BookImportDialogState extends State<BookImportDialog> {
       return;
     }
 
-    setState(() => _importing = true);
-    _reportProgress(0, '');
+    setState(() => importing = true);
+    reportProgress(0, '');
 
     try {
       final String? authorText =
@@ -613,7 +592,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       }
     } finally {
       if (mounted) {
-        setState(() => _importing = false);
+        setState(() => importing = false);
       }
     }
   }
@@ -623,7 +602,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     required String? author,
   }) async {
     final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
-    _reportProgress(0.1, t.import_step_parsing);
+    reportProgress(0.1, t.import_step_parsing);
 
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
@@ -635,7 +614,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     String bookKey = '';
     if (cues.isNotEmpty) {
       try {
-        _reportProgress(0.3, t.import_step_building_epub);
+        reportProgress(0.3, t.import_step_building_epub);
         final Directory tmpDir = await getTemporaryDirectory();
         final String epubPath = p.join(tmpDir.path, 'cues_to_epub_$uid.epub');
         await CuesToEpub.convert(
@@ -644,7 +623,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
           outputPath: epubPath,
           author: author,
         );
-        _reportProgress(0.5, t.import_step_importing_epub);
+        reportProgress(0.5, t.import_step_importing_epub);
         bookKey = await EpubImporter.importFromPath(
           db: widget.db,
           filePath: epubPath,
@@ -662,13 +641,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
       }
     }
 
-    _reportProgress(0.7, t.import_step_persisting);
+    reportProgress(0.7, t.import_step_persisting);
     final Directory persistDir = await _ensurePersistDir(uid);
     final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
       File(_subtitlePath!),
       persistDir,
       onProgress: (int copied, int total) {
-        _reportProgress(
+        reportProgress(
             0.7, t.import_step_copying_file(name: p.basename(_subtitlePath!)));
       },
     );
@@ -681,14 +660,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
           File(src),
           persistDir,
           onProgress: (int copied, int total) {
-            _reportProgress(
+            reportProgress(
                 0.8, t.import_step_copying_file(name: p.basename(src)));
           },
         ),
       );
     }
 
-    _reportProgress(0.9, t.import_step_saving);
+    reportProgress(0.9, t.import_step_saving);
     final SrtBook book = SrtBook()
       ..uid = uid
       ..title = title
@@ -714,23 +693,23 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     await widget.repo.save(book);
     await widget.repo.saveCues(uid: uid, cues: cues);
-    _reportProgress(1, t.import_step_done);
+    reportProgress(1, t.import_step_done);
   }
 
   Future<void> _importEpubOnly({required String title}) async {
     final File file = File(_epubPath!);
 
-    _reportProgress(0.2, t.import_step_reading);
+    reportProgress(0.2, t.import_step_reading);
     final String ext = p.extension(_epubPath!).toLowerCase();
     final String bookKey;
     if (TextToEpub.isSupported(_epubPath!) ||
         (ext != '.epub' && ext != '.zip')) {
-      _reportProgress(0.3, t.import_step_converting_epub);
+      reportProgress(0.3, t.import_step_converting_epub);
       final Uint8List bytes =
           await TextToEpub.convert(file: file, title: title);
       final String filename =
           '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
-      _reportProgress(0.5, t.import_step_importing_epub);
+      reportProgress(0.5, t.import_step_importing_epub);
       bookKey = await EpubImporter.import(
         db: widget.db,
         bytes: bytes,
@@ -738,7 +717,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         onDuplicateTitle: _onDuplicateTitle,
       );
     } else {
-      _reportProgress(0.5, t.import_step_importing_epub);
+      reportProgress(0.5, t.import_step_importing_epub);
       bookKey = await EpubImporter.importFromPath(
         db: widget.db,
         filePath: _epubPath!,
@@ -748,7 +727,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     await _applyBestCoverToEpub(bookKey);
-    _reportProgress(1, t.import_step_done);
+    reportProgress(1, t.import_step_done);
   }
 
   Future<void> _applyBestCoverToEpub(String bookKey) async {
@@ -762,15 +741,15 @@ class _BookImportDialogState extends State<BookImportDialog> {
   Future<String?> _importEpubWithAlignment({required String title}) async {
     final File epubFile = File(_epubPath!);
 
-    _reportProgress(0.05, t.import_step_reading);
+    reportProgress(0.05, t.import_step_reading);
     final String bookKey;
     if (TextToEpub.isSupported(_epubPath!)) {
-      _reportProgress(0.1, t.import_step_converting_epub);
+      reportProgress(0.1, t.import_step_converting_epub);
       final Uint8List importBytes =
           await TextToEpub.convert(file: epubFile, title: title);
       final String importFilename =
           '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
-      _reportProgress(0.2, t.import_step_importing_epub);
+      reportProgress(0.2, t.import_step_importing_epub);
       bookKey = await EpubImporter.import(
         db: widget.db,
         bytes: importBytes,
@@ -778,7 +757,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         onDuplicateTitle: _onDuplicateTitle,
       );
     } else {
-      _reportProgress(0.2, t.import_step_importing_epub);
+      reportProgress(0.2, t.import_step_importing_epub);
       bookKey = await EpubImporter.importFromPath(
         db: widget.db,
         filePath: _epubPath!,
@@ -789,7 +768,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     await _applyBestCoverToEpub(bookKey);
 
-    _reportProgress(0.35, t.import_step_reading_idb);
+    reportProgress(0.35, t.import_step_reading_idb);
     List<EpubSection> sections = const <EpubSection>[];
     try {
       final EpubBookRow? bookRow = await widget.db.getEpubBook(bookKey);
@@ -807,7 +786,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ErrorLogService.instance.log('BookImportDialog.parseEpub', e, stack);
       debugPrint('[hibiki-import] parseFromExtracted failed: $e');
     }
-    _reportProgress(0.45, t.import_step_parsing);
+    reportProgress(0.45, t.import_step_parsing);
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
@@ -817,7 +796,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     AudiobookHealth health;
     final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
     if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
-      _reportProgress(0.55, t.import_step_matching);
+      reportProgress(0.55, t.import_step_matching);
       MatchResult? matchResult;
       int chosenWindow = _searchWindow;
       if (_autoWindow) {
@@ -855,13 +834,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     }
 
-    _reportProgress(0.8, t.import_step_persisting);
+    reportProgress(0.8, t.import_step_persisting);
     final Directory persistDir = await _ensurePersistDir(bookKey);
     final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
       File(_subtitlePath!),
       persistDir,
       onProgress: (int copied, int total) {
-        _reportProgress(
+        reportProgress(
             0.8, t.import_step_copying_file(name: p.basename(_subtitlePath!)));
       },
     );
@@ -874,14 +853,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
           File(src),
           persistDir,
           onProgress: (int copied, int total) {
-            _reportProgress(
+            reportProgress(
                 0.85, t.import_step_copying_file(name: p.basename(src)));
           },
         ),
       );
     }
 
-    _reportProgress(0.9, t.import_step_saving);
+    reportProgress(0.9, t.import_step_saving);
     final Audiobook audiobook = Audiobook()
       ..bookKey = bookKey
       ..alignmentFormat = ext
@@ -900,7 +879,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       bookKey: bookKey,
       health: health,
     );
-    _reportProgress(1, t.import_step_done);
+    reportProgress(1, t.import_step_done);
 
     return _summarizeHealth(health);
   }
