@@ -38,7 +38,7 @@ void main() {
     c.debugUpdateCueForPosition(500);
     await tester.pump();
     // 'hello' 拆成逐字符可点；每个字符现在渲染成**双层**（底层 stroke 描边 Text +
-    // 上层 fill Text，BUG-321 / TODO-569 真描边），故每个唯一字符出现 2 个 Text，
+    // 上层 fill Text，BUG-323 / TODO-569 真描边），故每个唯一字符出现 2 个 Text，
     // 重复字符 'l'（出现 2 次）共 4 个。默认 shadowThickness=5（非零）→ 描边层存在。
     expect(find.text('h'), findsNWidgets(2));
     expect(find.text('e'), findsNWidgets(2));
@@ -70,7 +70,7 @@ void main() {
   });
 
   testWidgets(
-      'renders real outline as double-layer stroke+fill Text, no shadow residue (BUG-321)',
+      'renders real outline as double-layer stroke+fill Text, no shadow residue (BUG-323)',
       (tester) async {
     final c = VideoPlayerController();
     addTearDown(c.dispose);
@@ -97,7 +97,7 @@ void main() {
     final BoxDecoration decoration = box.decoration as BoxDecoration;
     expect(decoration.color, Colors.transparent);
 
-    // BUG-321 / TODO-569 真描边：字符 'A' 渲染成**两层** Text（底层 stroke 描边 +
+    // BUG-323 / TODO-569 真描边：字符 'A' 渲染成**两层** Text（底层 stroke 描边 +
     // 上层 fill 正文），故 find.text('A') 命中 2 个。旧的「8 个模糊 Shadow glyph
     // 拷贝伪描边」会在大 thickness/横竖屏缩放下外溢成残留黑字，已彻底移除。
     final List<Text> texts = tester.widgetList<Text>(find.text('A')).toList();

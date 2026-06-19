@@ -343,7 +343,7 @@ void main() {
     });
   });
 
-  group('buildSubtitleStrokePaint (BUG-321 / TODO-569 真描边取代伪描边)', () {
+  group('buildSubtitleStrokePaint (BUG-323 / TODO-569 真描边取代伪描边)', () {
     const Color c = Color(0xFF224466);
 
     test('thickness<=0 无描边（返回 null，不渲染描边层）', () {

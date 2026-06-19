@@ -31,8 +31,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-323](bugs/BUG-323-video-subtitle-stroke-residual.md) | ✅ | ✅ | TODO-569 视频字幕描边/残留黑字「一点没修好」（8 层模糊 Shadow glyph 拷贝伪描边） |
 | [BUG-322](bugs/BUG-322-subtitle-list-click-highlight-offbyone.md) | ✅ | ✅ | 视频字幕列表点击高亮 off-by-one（点第N行高亮N-1） |
-| [BUG-321](bugs/BUG-321-video-subtitle-stroke-residual.md) | ✅ | ✅ | TODO-569 视频字幕描边/残留黑字「一点没修好」（8 层模糊 Shadow glyph 拷贝伪描边） |
 | [BUG-321](bugs/BUG-321-remote-video-resume.md) | ✅ | ✅ | 远端视频断点恢复失效每次从0开始 |
 | [BUG-320](bugs/BUG-320-shelf-card-cover-badge.md) | ✅ | ✅ | TODO-552 书架卡片封面变形+有声书徽章过小 |
 | [BUG-319](bugs/BUG-319-longpress-dialog-cover.md) | ✅ | ✅ | TODO-557 长按书卡对话框封面消失 |

@@ -39,7 +39,7 @@ void main() {
     double gapFromBottom(WidgetTester tester) {
       final Rect overlayRect =
           tester.getRect(find.byType(VideoSubtitleOverlay));
-      // BUG-321/TODO-569：每字 stroke+fill 双层，取 .first（两层同几何）。
+      // BUG-323/TODO-569：每字 stroke+fill 双层，取 .first（两层同几何）。
       final Rect charRect = tester.getRect(find.text('A').first);
       return overlayRect.bottom - charRect.bottom;
     }
@@ -342,7 +342,7 @@ void main() {
     final VideoPlayerController c = _controllerWithCue('テスト');
     await _pump(
         tester, VideoSubtitleOverlay(controller: c, blurEnabled: false));
-    // 双层：stroke + fill 两个 Text（BUG-321/TODO-569）。
+    // 双层：stroke + fill 两个 Text（BUG-323/TODO-569）。
     expect(find.text('テ'), findsNWidgets(2));
     expect(find.byType(ImageFiltered), findsNothing);
   });
@@ -411,7 +411,7 @@ void main() {
       tester,
       VideoSubtitleOverlay(controller: c, fontSize: 40),
     );
-    // 取填充层（foreground==null）断言字号（BUG-321/TODO-569 双层）。
+    // 取填充层（foreground==null）断言字号（BUG-323/TODO-569 双层）。
     final Text txt = tester
         .widgetList<Text>(find.text('A'))
         .firstWhere((Text t) => t.style?.foreground == null);

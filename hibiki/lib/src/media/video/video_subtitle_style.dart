@@ -302,7 +302,7 @@ class VideoSubtitleStyle {
   }
 }
 
-/// 字幕**真**描边画笔（BUG-321 / TODO-569）：把粗细 [thickness] 渲染成沿字形轮廓的
+/// 字幕**真**描边画笔（BUG-323 / TODO-569）：把粗细 [thickness] 渲染成沿字形轮廓的
 /// 单层描边，由底层 stroke [Text] 用本画笔描出、上层 fill [Text] 填正文（见
 /// [VideoSubtitleOverlay] 的双层渲染）。[thickness] <= 0 返回 null（无描边）。
 ///
@@ -347,7 +347,7 @@ Paint? buildSubtitleStrokePaint(Color color, double thickness) {
 /// 光晕。八向对称 → 合成结果围绕文字、无单向「掉落」感。thickness 仍是用户/缩放控制的
 /// 描边强度（0 = 无描边），[color] 仍是用户/主题阴影色，语义不变。
 ///
-/// 历史：字幕**正文**字符的描边已于 BUG-321 / TODO-569 改用 [buildSubtitleStrokePaint]
+/// 历史：字幕**正文**字符的描边已于 BUG-323 / TODO-569 改用 [buildSubtitleStrokePaint]
 /// 的真描边（双层 [Text]），因为本函数的 8 个模糊 `Shadow` glyph 拷贝在大 thickness /
 /// 缩放下会外溢成「残留黑字」。本函数仍保留给**收藏星角标**那枚 [Icon] 用——图标无文字
 /// 双层渲染的对应物，且尺寸小、不在用户报的字幕文字残影范围内，沿用四周阴影即可。

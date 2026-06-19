@@ -28,7 +28,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pump();
 }
 
-/// 取某字符的**填充层** [Text]（BUG-321 / TODO-569 起每字渲染成 stroke+fill 双层；
+/// 取某字符的**填充层** [Text]（BUG-323 / TODO-569 起每字渲染成 stroke+fill 双层；
 /// 填充层 = `style.foreground == null` 的那个，描边层用 foreground 画笔）。回退链/字体
 /// 一致性断言只看填充层即可（描边层从填充层 copyWith 同源派生，几何属性一致）。
 Text _fillTextOf(WidgetTester tester, String ch) {

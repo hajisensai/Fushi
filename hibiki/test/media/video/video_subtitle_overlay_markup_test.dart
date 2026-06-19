@@ -46,7 +46,7 @@ void main() {
 
     // 顶部锚点：字幕盒落在 overlay 上半部。
     final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
-    // BUG-321/TODO-569：每字渲染为 stroke+fill 双层，取 .first（两层同位置）。
+    // BUG-323/TODO-569：每字渲染为 stroke+fill 双层，取 .first（两层同位置）。
     final Offset boxCenter = tester.getCenter(find.text('プ').first);
     expect(boxCenter.dy, lessThan(overlayRect.center.dy));
 
@@ -63,7 +63,7 @@ void main() {
       home: Scaffold(body: VideoSubtitleOverlay(controller: c)),
     ));
     await tester.pump();
-    // BUG-321/TODO-569：每字 stroke+fill 双层，取填充层（foreground==null）断言样式。
+    // BUG-323/TODO-569：每字 stroke+fill 双层，取填充层（foreground==null）断言样式。
     final Text a = tester
         .widgetList<Text>(find.text('A'))
         .firstWhere((Text t) => t.style?.foreground == null);
@@ -91,7 +91,7 @@ void main() {
     ));
     await tester.pump();
     final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
-    // 双层重叠，取 .first（BUG-321/TODO-569）。
+    // 双层重叠，取 .first（BUG-323/TODO-569）。
     final Offset boxCenter = tester.getCenter(find.text('そ').first);
     expect(boxCenter.dy, greaterThan(overlayRect.center.dy)); // 底部
   });

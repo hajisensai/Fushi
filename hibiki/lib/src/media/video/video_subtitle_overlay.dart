@@ -392,7 +392,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   }
 
   /// 渲染单个字幕字符为**真描边**：底层 stroke [Text]（[buildSubtitleStrokePaint] 沿
-  /// 字形轮廓描一圈）+ 上层 fill [Text]（正文填充色）精确重叠（BUG-321 / TODO-569）。
+  /// 字形轮廓描一圈）+ 上层 fill [Text]（正文填充色）精确重叠（BUG-323 / TODO-569）。
   ///
   /// 取代旧的「单层 [Text] + 8 个模糊 `Shadow` glyph 拷贝伪描边」：那套在大 thickness /
   /// 横竖屏缩放下会让模糊黑字外溢成「残留黑字」（根因见 [buildSubtitleStrokePaint] 文档）。
@@ -428,7 +428,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   }
 
   /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式（**填充层**，不含描边——描边由
-  /// [_buildStrokedChar] 的底层 stroke [Text] 单独承载，BUG-321 / TODO-569）。
+  /// [_buildStrokedChar] 的底层 stroke [Text] 单独承载，BUG-323 / TODO-569）。
   TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup) {
     final TextStyle base = TextStyle(
       color: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
