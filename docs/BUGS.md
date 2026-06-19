@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 337 条。点号进各自文件。
+> 共 338 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-344](bugs/BUG-344-subtitle-import-native-crash.md) | ✅ | ✅ | 导入字幕原生崩溃 0xc0000005 flutter_windows.dll AV |
 | [BUG-343](bugs/BUG-343-desktop-audio-player-already-exists.md) | ✅ | ✅ | Windows 桌面本地音频/查词自动发音偶发没声 Player already exists |
 | [BUG-342](bugs/BUG-342-update-launcher-openprocess-fatal.md) | ✅ | ✅ | 自更新 launcher OpenProcess(parent) 非 INVALID_PARAMETER 失败被当致命错误放弃安装 |
 | [BUG-341](bugs/BUG-341-video-speed-menu-guard-red.md) | ✅ | ✅ | develop 倍速菜单守卫陈旧致预存红 (TODO-601) |

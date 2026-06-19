@@ -424,7 +424,10 @@ void main() {
 
     test('autoPlay calls player.play() after the restore seek', () {
       final int restore = controller.indexOf('await player.seek(');
-      final int auto = controller.indexOf('if (autoPlay && _player == player)');
+      // BUG-344: autoPlay 守卫用 _isCurrentLoad 双判据（换集复用同一 player 时单判
+      // `_player == player` 会误向被新 load 接管的 player 发 play()）。
+      final int auto = controller
+          .indexOf('if (autoPlay && _isCurrentLoad(player, loadToken))');
       final int play = controller.indexOf('await player.play();');
       expect(restore, greaterThanOrEqualTo(0));
       expect(auto, greaterThan(restore),

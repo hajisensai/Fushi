@@ -467,8 +467,17 @@ class VideoPlayerController extends ChangeNotifier
   Future<bool> selectEmbeddedGraphicTrack(int streamIndex) async {
     final Player? player = _player;
     if (player == null) return false;
+    // 图形轨就绪等待最长 5s（[_waitUntilSubtitleTracksReady]），其后还有 3 次连续
+    // 的原生下发（[setSubtitleTrack] + 两次 [applySubtitleMpvPropertiesToPlayer]）。
+    // 这段窗口里用户随时可能退出页面 / 换集，触发 [dispose]（`_loadToken++` +
+    // `unawaited(_player.dispose())` 异步释放底层 libmpv NativePlayer）。若仍用这里
+    // 捕获的局部 [player] 引用向已释放 handle 下发 setProperty/setSubtitleTrack，就是
+    // 原生 use-after-free（访问违例）。与本文件其它异步 mpv 路径
+    // （[load] / [_refreshChaptersForLoad] 等）一致，**每个 await 后都用
+    // [_isCurrentLoad] 双判据（player identity + loadToken）重校验**，过期立即放弃下发。
+    final int loadToken = _loadToken;
     await _waitUntilSubtitleTracksReady(player);
-    if (_player != player) return false; // 等待期间换片/销毁。
+    if (!_isCurrentLoad(player, loadToken)) return false; // 等待期间换片/销毁。
     final List<SubtitleTrack> real = player.state.tracks.subtitle
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
         .toList(growable: false);
@@ -476,6 +485,7 @@ class VideoPlayerController extends ChangeNotifier
     // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。
     setCues(const <AudioCue>[]);
     await player.setSubtitleTrack(real[streamIndex]);
+    if (!_isCurrentLoad(player, loadToken)) return false; // 选轨后换片/销毁。
     // 图形 PGS 轨是 BUG-190 字幕抑制（sub-visibility=no）的唯一例外：位图字幕没有文本
     // cue，只能靠 libmpv 画面渲染。显式打开 sub-visibility=yes 覆盖 load 时设的 no，
     // 否则用户选了图形字幕却看不到（回归 BUG-122）。sub-auto 仍保持 no（轨由这里显式
@@ -484,6 +494,7 @@ class VideoPlayerController extends ChangeNotifier
       player,
       buildGraphicSubtitleVisibilityProperties(),
     );
+    if (!_isCurrentLoad(player, loadToken)) return false; // 设可见性后换片/销毁。
     // 进入图形轨渲染：标记图形模式，并把当前字幕调轴（[_delayMs]）下发到 libmpv
     // `sub-delay`——否则图形字幕忽略 Dart 侧 cue 偏移，调轴滑条对它无效（BUG-301）。
     _graphicSubtitleActive = true;
@@ -702,18 +713,29 @@ class VideoPlayerController extends ChangeNotifier
       _videoController = VideoController(player);
     }
 
+    // 下面 8 处连续原生 FFI 下发（`open` / 网络缓存 / `setSubtitleTrack(no)` / 字幕抑制
+    // / 着色器 / mpv 配置 / 音量 / 速率）全用方法开头捕获的局部 [player]。这些 await 缺口
+    // 内用户随时可能退出页面 / 换集，触发 [dispose]（`_loadToken++` +
+    // `unawaited(_player.dispose())` 异步释放底层 libmpv NativePlayer + `_player=null`）。
+    // 恢复后若仍用捕获的 [player] 向已释放 handle 下发 = 原生 use-after-free（访问违例，
+    // 0xc0000005）。与本文件 [_refreshChaptersForLoad] / [selectEmbeddedGraphicTrack] 一致，
+    // **每个 await 后都用 [_isCurrentLoad] 双判据（player identity + loadToken）重校验**，
+    // 过期立即 `return` 干净放弃后续下发（不留半初始化——下面的订阅/tick 尚未挂起）。
     await player.open(Media(sourceUri), play: false);
+    if (!_isCurrentLoad(player, loadToken)) return; // open 后换片/销毁。
 
     // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
     // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
     // network-timeout=5 / demuxer-max-bytes=32MiB 对局域网 WiFi 流偏紧。
     await applyNetworkCachePropertiesToPlayer(player, sourceUri);
+    if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
 
     // 关闭 libmpv 画面字幕渲染——字幕统一走可点击 overlay（cue 同步 + 逐字查词）。
     // mkv 内嵌字幕会被 libmpv 默认渲染成画面像素（不可点）；用户点它会穿透到视频层
     // 触发暂停而非查词。故一律关 libmpv 字幕，由 overlay 承载所有字幕（外挂 sidecar
     // 与内嵌抽取的 cue 都走 overlay）。externalSubtitlePath 已在上层解析成 cues 传入。
     await player.setSubtitleTrack(SubtitleTrack.no());
+    if (!_isCurrentLoad(player, loadToken)) return; // 关字幕后换片/销毁。
     // 根除「字幕轨异步就绪后被 mpv 自动重选」竞态（TODO-080/092，BUG-190）：上面的
     // setSubtitleTrack(no()) 只在「调用那一刻」清掉选轨，但字幕轨是 open 后异步解析就绪
     // 的，mpv 默认 sub-auto=exact 会在轨就绪后自动重选内嵌字幕轨、覆盖掉 no()，再经
@@ -725,24 +747,29 @@ class VideoPlayerController extends ChangeNotifier
       player,
       buildSubtitleSuppressionProperties(),
     );
+    if (!_isCurrentLoad(player, loadToken)) return; // 字幕抑制后换片/销毁。
 
     // 应用启用的 mpv 着色器（Anime4K 等）。五平台 libmpv 后端均生效——移动端 media_kit
     // 走 vo=gpu 渲染路径，glsl-shaders 进管线（见 applyShadersToPlayer doc）；仅非 libmpv
     // 后端 no-op。
     _shaderPaths = List<String>.of(shaderPaths);
     await applyShadersToPlayer(player, _shaderPaths);
+    if (!_isCurrentLoad(player, loadToken)) return; // 着色器下发后换片/销毁。
 
     // 应用 mpv 画质/解码配置（五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op）。
     _mpvConfig = mpvConfig;
     await applyMpvConfigToPlayer(player, _mpvConfig);
+    if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
 
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
     _lastVolume = initialVolume;
     if (initialVolume > 0) _muted = false;
     await player.setVolume(initialVolume);
+    if (!_isCurrentLoad(player, loadToken)) return; // 设音量后换片/销毁。
 
     _lastSpeed = initialSpeed;
     await player.setRate(initialSpeed);
+    if (!_isCurrentLoad(player, loadToken)) return; // 设速率后换片/销毁。
     // 恢复上次位置。media_kit 在 open(play:false) 后 player 未必立即可 seek（内部
     // position 仍 0），此时 seek 会被丢弃，随后 tick 读到 0 会把真实进度覆盖成 0。
     // 故：① 等 player 可 seek（duration ready），用真实 duration 按入口 intent
@@ -792,8 +819,10 @@ class VideoPlayerController extends ChangeNotifier
 
     // 自动播放：进页面/换集后直接开播（用户偏好）。放在恢复 seek **之后**（否则
     // 先从 0 起播再跳到恢复位置，产生可见闪跳），且放在订阅播放态之后（让
-    // stream.playing 监听捕获到起播事件、即时刷新 UI）。换片守卫同上。
-    if (autoPlay && _player == player) {
+    // stream.playing 监听捕获到起播事件、即时刷新 UI）。换片守卫用 [_isCurrentLoad]
+    // 双判据：换集复用同一 player 实例时单判 `_player == player` 仍成立，会向已被新
+    // load 接管的 player 误发 play()；loadToken 才能区分本次 load 是否仍当前（BUG-344）。
+    if (autoPlay && _isCurrentLoad(player, loadToken)) {
       await player.play();
     }
 
