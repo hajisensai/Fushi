@@ -212,8 +212,15 @@ enum VideoControlSlot {
 /// render branches; everything else renders as a plain icon button.
 ///
 /// - [pinnedRequired]: required buttons cannot be moved into
-///   [VideoControlSlot.hidden] (enforced at the model layer), so the player
-///   always keeps a play/pause control.
+///   [VideoControlSlot.hidden] (enforced at the model layer, all platforms), so
+///   the player always keeps a play/pause control.
+/// - [pinnedOnTouch]: buttons that are the *only* in-player entry to recover
+///   controls on touch devices (no right-click context menu there). On touch
+///   controls they cannot be moved into [VideoControlSlot.hidden] -- enforced at
+///   the UI gate via [canMoveToSlot] (`isTouchControls: true`), NOT in the pure
+///   persisted model -- so a touch user can never soft-lock themselves out of
+///   the settings panel / on-screen editor (TODO-554). Desktop keeps the
+///   button removable (the right-click `Icons.tune` menu can restore it).
 /// - [legacyButton]: mapping to the legacy [VideoControlButton] used by the
 ///   v1->v2 migration to translate old placements into new slots; transport
 ///   keys have no legacy peer (they were hardcoded in the media_kit theme).
@@ -232,7 +239,11 @@ enum VideoControlItem {
     'favoriteSentences',
     legacyButton: VideoControlButton.favoriteSentences,
   ),
-  settings('settings', legacyButton: VideoControlButton.settings),
+  settings(
+    'settings',
+    legacyButton: VideoControlButton.settings,
+    pinnedOnTouch: true,
+  ),
 
   // -- transport keys (hardcoded in the media_kit theme; phase 0 only catalogs) --
   playPause('playPause', isSpecialRender: true, pinnedRequired: true),
@@ -259,6 +270,7 @@ enum VideoControlItem {
     this.storageValue, {
     this.isSpecialRender = false,
     this.pinnedRequired = false,
+    this.pinnedOnTouch = false,
     this.legacyButton,
   });
 
@@ -268,8 +280,15 @@ enum VideoControlItem {
   /// slider, title text, position indicator). Phase 0 only flags it.
   final bool isSpecialRender;
 
-  /// Required button: cannot be moved into [VideoControlSlot.hidden].
+  /// Required button: cannot be moved into [VideoControlSlot.hidden] on every
+  /// platform.
   final bool pinnedRequired;
+
+  /// Touch-only pinned button: the sole in-player entry to recover controls on
+  /// touch devices, so on touch controls it cannot be moved into
+  /// [VideoControlSlot.hidden] (TODO-554). Desktop is unaffected (it has a
+  /// right-click context-menu fallback to reopen settings / restore the button).
+  final bool pinnedOnTouch;
 
   /// Legacy [VideoControlButton] peer (learning keys only; transport keys null).
   final VideoControlButton? legacyButton;
@@ -317,7 +336,19 @@ enum VideoControlItem {
   /// [volume] is intentionally limited to the bottom bar in this round: its
   /// dedicated render branch is a full button + popover anchor that must never
   /// enter top bars, side rails, or the removed tray.
-  bool canMoveToSlot(VideoControlSlot target) {
+  ///
+  /// [isTouchControls] is the UI-gate hook (TODO-554): the pure persisted model
+  /// always calls this with the default `false` so a saved layout stays
+  /// cross-platform identical (decode/normalize never depend on the current
+  /// platform). Only the on-screen editor / quick-settings sheet pass `true` on
+  /// touch devices, which additionally forbids a [pinnedOnTouch] button (the
+  /// sole in-player settings entry) from being dragged into
+  /// [VideoControlSlot.hidden] -- desktop keeps it removable (right-click menu
+  /// restores it).
+  bool canMoveToSlot(
+    VideoControlSlot target, {
+    bool isTouchControls = false,
+  }) {
     if (this == VideoControlItem.volume) {
       return target == VideoControlSlot.bottomLeft ||
           target == VideoControlSlot.bottomRight;
@@ -330,10 +361,23 @@ enum VideoControlItem {
     }
     if (target == VideoControlSlot.topCenter) return false;
     if (pinnedRequired && target == VideoControlSlot.hidden) return false;
+    if (isTouchControls && pinnedOnTouch && target == VideoControlSlot.hidden) {
+      return false;
+    }
     return true;
   }
 
+  /// Whether the persisted model allows removing this button from the player
+  /// (cross-platform, no touch gate). Used by decode / normalize / backfill so a
+  /// saved layout round-trips identically on every platform.
   bool get canBeRemovedFromPlayer => canMoveToSlot(VideoControlSlot.hidden);
+
+  /// Whether the UI should let the user remove this button from the player on
+  /// the current surface. On touch controls a [pinnedOnTouch] button (the sole
+  /// in-player settings entry) is not removable, so the user can never soft-lock
+  /// themselves out of the controls editor (TODO-554).
+  bool canRemoveFromPlayer({bool isTouchControls = false}) =>
+      canMoveToSlot(VideoControlSlot.hidden, isTouchControls: isTouchControls);
 
   /// TODO-399 decision 3b: the full set of buttons the visual editor lets users
   /// freely place / duplicate / hide. This is every modeled button that is

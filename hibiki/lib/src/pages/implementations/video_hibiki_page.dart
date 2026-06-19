@@ -5991,6 +5991,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialControlLayout: _controlLayout,
       onControlLayoutChanged: _setVideoControlLayout,
       onEditControlsOnscreen: _showVideoControlEditOverlay,
+      // TODO-554：触屏无右键菜单兜底，禁止把「设置」按钮拖入 hidden 移除，
+      // 否则用户进不去设置/控件编辑器、无法加回，软锁死。
+      isTouchControls: !_isDesktopVideoControls,
     );
   }
 
@@ -7537,6 +7540,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                               layout: layout,
                               onLayoutChanged: _setVideoControlLayout,
                               onClose: _hideVideoControlEditOverlay,
+                              // TODO-554：触屏保留「设置」按钮入口不可移除。
+                              isTouchControls: !_isDesktopVideoControls,
                             ),
                           );
                         },
