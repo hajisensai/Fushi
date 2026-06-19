@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 316 条。点号进各自文件。
+> 共 318 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-327](bugs/BUG-327-video-subtitle-list-timestamp-overflow.md) | ✅ | ✅ | 视频字幕列表左侧时间戳被下一条字幕遮挡 / 溢出 |
+| [BUG-326](bugs/BUG-326-video-subtitle-list-favorite-star-slow.md) | ✅ | ✅ | 视频字幕列表已收藏句星标加载慢（要等一会才出现） |
 | [BUG-322](bugs/BUG-322-subtitle-list-click-highlight-offbyone.md) | ✅ | ✅ | 视频字幕列表点击高亮 off-by-one（点第N行高亮N-1） |
 | [BUG-321](bugs/BUG-321-remote-video-resume.md) | ✅ | ✅ | 远端视频断点恢复失效每次从0开始 |
 | [BUG-320](bugs/BUG-320-shelf-card-cover-badge.md) | ✅ | ✅ | TODO-552 书架卡片封面变形+有声书徽章过小 |
