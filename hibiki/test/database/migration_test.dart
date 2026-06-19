@@ -141,6 +141,98 @@ Future<HibikiDatabase> _openV22DbWithoutActivityTables() async {
   return db;
 }
 
+/// Opens a `user_version = 15` database with epub_books on the legacy
+/// autoincrement id PK and reader_positions / bookmarks keyed by the legacy int
+/// `ttu_book_id`. Opening it must drive the from<16 re-key (`_migrateBookKeyV16`)
+/// which rebuilds those relation tables under `book_key`. The legacy DDL mirrors
+/// `srt_cue_migration_test.dart` (_openV11DbWithSrtCues) so the columns the
+/// re-key JOINs through are byte-faithful — getting them wrong would false-green.
+///
+/// `bookKeyA` / `bookKeyB` are the sanitized keys the re-key derives from the
+/// seeded titles; for ASCII titles with no reserved chars the key equals the
+/// title verbatim, which the test asserts via getReaderPosition.
+Future<HibikiDatabase> _openV15DbWithReaderRowsKeyedByTtuId() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA foreign_keys = OFF');
+        rawDb.execute('''
+CREATE TABLE epub_books (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  author TEXT,
+  cover_path TEXT,
+  epub_path TEXT NOT NULL,
+  extract_dir TEXT NOT NULL,
+  chapter_count INTEGER NOT NULL,
+  chapters_json TEXT NOT NULL,
+  toc_json TEXT,
+  source_metadata TEXT,
+  imported_at INTEGER NOT NULL
+)
+''');
+        rawDb.execute('''
+CREATE TABLE reader_positions (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  ttu_book_id INTEGER NOT NULL UNIQUE,
+  section_index INTEGER NOT NULL,
+  norm_char_offset INTEGER NOT NULL,
+  ttu_char_offset INTEGER NOT NULL DEFAULT -1,
+  updated_at INTEGER NOT NULL
+)
+''');
+        rawDb.execute('''
+CREATE TABLE bookmarks (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  ttu_book_id INTEGER NOT NULL REFERENCES epub_books(id) ON DELETE CASCADE,
+  section_index INTEGER NOT NULL,
+  norm_char_offset INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  book_title TEXT,
+  page_in_chapter INTEGER,
+  total_pages_in_chapter INTEGER
+)
+''');
+        // Two ASCII-keyed books (keys sanitize verbatim).
+        rawDb.execute(
+          'INSERT INTO epub_books '
+          '(id, title, epub_path, extract_dir, chapter_count, chapters_json, '
+          ' imported_at) '
+          "VALUES (1, 'AlphaBook', '/abs/a.epub', '/abs/a', 1, '[]', 10)",
+        );
+        rawDb.execute(
+          'INSERT INTO epub_books '
+          '(id, title, epub_path, extract_dir, chapter_count, chapters_json, '
+          ' imported_at) '
+          "VALUES (2, 'BetaBook', '/abs/b.epub', '/abs/b', 1, '[]', 20)",
+        );
+        // reader_positions keyed by legacy ttu_book_id (= epub id).
+        rawDb.execute(
+          'INSERT INTO reader_positions '
+          '(ttu_book_id, section_index, norm_char_offset, ttu_char_offset, '
+          'updated_at) VALUES (1, 4, 1234, 555, 9001)',
+        );
+        rawDb.execute(
+          'INSERT INTO reader_positions '
+          '(ttu_book_id, section_index, norm_char_offset, ttu_char_offset, '
+          'updated_at) VALUES (2, 8, 5678, -1, 9002)',
+        );
+        // A bookmark on book 1.
+        rawDb.execute(
+          'INSERT INTO bookmarks '
+          '(ttu_book_id, section_index, norm_char_offset, label, created_at, '
+          'book_title) '
+          "VALUES (1, 4, 1234, 'Chapter 1', 9003, 'AlphaBook')",
+        );
+        rawDb.execute('PRAGMA user_version = 15');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
@@ -367,6 +459,62 @@ void main() {
       expect(mined, hasLength(1));
       expect(mined.single.count, 3);
       expect(await db.getMiningStatisticsBySource('book'), isEmpty);
+    });
+
+    test(
+        'real v15->v16 re-key preserves reader_positions + bookmarks ROW DATA '
+        'under book_key', () async {
+      // video_books_migration_v20_test only asserts epub_books ROWS survive the
+      // v16 re-key; it never checks the reader_positions / bookmarks row
+      // contents. This is the load-bearing "Never break userspace" check for a
+      // user's saved reading positions and bookmarks across the int->book_key
+      // migration.
+      final db = await _openV15DbWithReaderRowsKeyedByTtuId();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+
+      // epub_books re-keyed to book_key PK; both books survive.
+      final epubColNames =
+          (await db.customSelect("PRAGMA table_info('epub_books')").get())
+              .map((r) => r.data['name'] as String)
+              .toSet();
+      expect(epubColNames, contains('book_key'));
+      expect(epubColNames, isNot(contains('id')));
+
+      // reader_positions row-level preservation: both positions re-keyed from
+      // ttu_book_id -> book_key, every payload column intact, reachable via the
+      // typed getReaderPosition(bookKey). (ASCII titles sanitize verbatim.)
+      final posA = await db.getReaderPosition('AlphaBook');
+      expect(posA, isNotNull,
+          reason: 'book 1 reading position survived the re-key');
+      expect(posA!.sectionIndex, 4);
+      expect(posA.normCharOffset, 1234);
+      expect(posA.updatedAt, 9001);
+      final posB = await db.getReaderPosition('BetaBook');
+      expect(posB, isNotNull,
+          reason: 'book 2 reading position survived the re-key');
+      expect(posB!.sectionIndex, 8);
+      expect(posB.normCharOffset, 5678);
+      expect(posB.updatedAt, 9002);
+      // The standalone ttu offset column was dropped by v24; char_offset is the
+      // -1 fallback for carried-over rows.
+      expect(posA.charOffset, -1);
+      expect(posB.charOffset, -1);
+
+      // bookmarks row-level preservation: the seeded bookmark re-keyed to
+      // book_key with all payload fields intact.
+      final bm = await db
+          .customSelect('SELECT book_key, section_index, norm_char_offset, '
+              'label, created_at, book_title FROM bookmarks')
+          .get();
+      expect(bm, hasLength(1), reason: 'the bookmark survived the re-key');
+      expect(bm.single.read<String>('book_key'), 'AlphaBook');
+      expect(bm.single.read<int>('section_index'), 4);
+      expect(bm.single.read<int>('norm_char_offset'), 1234);
+      expect(bm.single.read<String>('label'), 'Chapter 1');
+      expect(bm.single.read<int>('created_at'), 9003);
+      expect(bm.single.read<String>('book_title'), 'AlphaBook');
     });
 
     test('video_book_tag_mappings references video_books and book_tags',
