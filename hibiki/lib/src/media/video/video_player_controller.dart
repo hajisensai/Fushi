@@ -219,6 +219,30 @@ class VideoPlayerController extends ChangeNotifier
   /// 之后恢复纯位置推导。只影响「点列表/上下句跳转后那一瞬」，不碰连续播放的自动跟随。
   int? _seekTargetCueIndex;
 
+  /// 「在途 seek 宽限」剩余 tick 配额（仅 [_seekTargetCueIndex] 非空时有意义）。
+  ///
+  /// **修 TODO-565 复核退回的真机时序漏洞。** [skipToCue] 置 [_seekTargetCueIndex] 后
+  /// `await seekMs(startMs-preRoll)` 是异步的，但 media_kit 的 `player.state.position`
+  /// 不随 seek 同步更新（见本类 1481-1484 行注释，与 [_restoreTargetMs] 守护同一个 lag）。
+  /// 125ms tick 在 seek 真落地前会先读到 **seek 之前的旧 position**：点靠后行时旧位置
+  /// 远早于引导窗口 → [cueSnapIndex] 情形 2「远离窗口」清快照；点靠前行时旧位置已过目标
+  /// 句首 → 情形 1 清快照。等真落点 `startMs-preRoll` 的 tick 到来，快照已被清 →
+  /// [JsonAlignmentParser.findCueIndex] 反推 N-1 → off-by-one 真机复发。
+  ///
+  /// 根因：[cueSnapIndex] 的「远离窗口 → 清快照」无法区分「用户手动 seek 拉走（该清）」
+  /// 与「[skipToCue] 自己的 seek 还在途、position 暂停在旧远处（不该清）」。
+  ///
+  /// 修法（沿用 [_restoreGuardTicksLeft] 有界宽限范式，**不碰** [cueSnapIndex] 几何）：
+  /// 仅 [skipToCue] 路径在置目标时把配额充满；position **首次进入引导窗口之前**，若
+  /// [cueSnapIndex] 判「远早于窗口」（情形 2）要清快照，先消耗一格宽限、改为保留快照并
+  /// snap 回目标句（让快照撑到 seek 落地）。position 一旦首次进入引导窗口（情形 3）或
+  /// 自然越过目标句首（情形 1）即作废宽限、恢复正常清除语义。配额耗尽（seek 永不落地，
+  /// 慢设备 / libmpv 丢弃，对齐 BUG-179）也放弃保护，绝不永久把高亮钉在旧目标上。
+  ///
+  /// 用户**主动** seek（[seekRelative] / 收藏句直接 [seekMs]）走的是别的入口、不置宽限，
+  /// 且 [seekRelative] 显式清宽限+快照——手动 seek 仍能立刻清快照，不被本保护误连坐。
+  int _seekSnapGraceTicksLeft = 0;
+
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
 
@@ -323,6 +347,15 @@ class VideoPlayerController extends ChangeNotifier
   /// 反映到 position 的余量；退出路径的 [flushPosition]/[_forceSavePositionSync] 也各
   /// 消耗一格，配额宽裕到不会因正常退出误判。
   static const int _restoreGuardGraceTicks = 80;
+
+  /// 「在途 seek 宽限」的 tick 配额上限（[_seekSnapGraceTicksLeft] 充值量）。
+  ///
+  /// 由 125ms tick（[updateCueForPosition]）消耗。配额需 ≥ media_kit `seek` 从请求到
+  /// position 真反映出来的滞后窗口：常见容器关键帧吸附几十~几百 ms，慢设备 / 软解更久。
+  /// 取 16 次 × 125ms = **2 秒**——足够覆盖绝大多数 seek 落地延迟，又远小于
+  /// [_restoreGuardGraceTicks]（10 秒）：保护只覆盖「这一次跳转的 seek 在途」短瞬，
+  /// 真落地后由「首次进入引导窗口」立即作废，不会拖到 2 秒。永不落地时 2 秒后放弃保护。
+  static const int _seekSnapGraceTicks = 16;
 
   /// 位置持久化回调：整秒变化时调用，由上层（repository）落库。
   Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
@@ -519,9 +552,9 @@ class VideoPlayerController extends ChangeNotifier
     if (cues.isNotEmpty) _graphicSubtitleActive = false;
     _currentCue = null;
     _currentCueIndex = -1;
-    // 换字幕/换片（[load] 经此）复位主动跳转目标快照：旧目标下标对新 _cues 已失效，
-    // 留着会让首个 tick 误 snap（TODO-565）。
-    _seekTargetCueIndex = null;
+    // 换字幕/换片（[load] 经此）复位主动跳转目标快照 + 在途 seek 宽限：旧目标下标对新
+    // _cues 已失效，留着会让首个 tick 误 snap（TODO-565）。
+    _clearSeekTargetSnap();
     notifyListeners();
   }
 
@@ -973,18 +1006,48 @@ class VideoPlayerController extends ChangeNotifier
     final int? target = _seekTargetCueIndex;
     if (target == null) return findCueIdx;
     if (target < 0 || target >= _cues.length) {
-      _seekTargetCueIndex = null;
+      _clearSeekTargetSnap();
       return findCueIdx;
     }
+    final int targetStartMs = _cues[target].startMs;
     final (int snappedIdx, bool keepSnapshot) = cueSnapIndex(
       findCueIndex: findCueIdx,
       effectiveMs: effectiveMs,
       targetIndex: target,
-      targetStartMs: _cues[target].startMs,
+      targetStartMs: targetStartMs,
       preRollMs: kCueSeekPreRollMs,
     );
-    if (!keepSnapshot) _seekTargetCueIndex = null;
+    if (keepSnapshot) {
+      // 情形 3：position 已进入 preRoll 引导窗口 [startMs-preRoll, startMs)，seek 真落地。
+      // 作废在途 seek 宽限——之后再「远离窗口」就是真离开（自然越过 / 手动 seek），该清。
+      _seekSnapGraceTicksLeft = 0;
+      return snappedIdx;
+    }
+    // keepSnapshot==false：cueSnapIndex 判「该清快照」。但要区分两种「远离窗口」：
+    // 1) effectiveMs >= targetStartMs（情形 1）：position 已自然越过目标句首，seek 已真
+    //    落地（或被手动 seek 越过），findCueIndex 已能正确命中——正常清快照。
+    // 2) effectiveMs < targetStartMs - preRoll（情形 2）：position 远在引导窗口之前。
+    //    这无法区分「用户手动 seek 拉走（该清）」与「skipToCue 自己的 seek 还在途、
+    //    position 暂停在旧远处（不该清）」。靠 [_seekSnapGraceTicksLeft] 有界宽限兜：
+    //    宽限未耗尽 → 视作在途 seek 未落地，消耗一格、保留快照、snap 回目标句（撑到落地）；
+    //    宽限耗尽 → 判定 seek 落地失败（或确属手动远离），放弃保护、正常清快照。
+    if (effectiveMs >= targetStartMs) {
+      _clearSeekTargetSnap();
+      return snappedIdx;
+    }
+    if (_seekSnapGraceTicksLeft > 0) {
+      _seekSnapGraceTicksLeft--;
+      return target;
+    }
+    _clearSeekTargetSnap();
     return snappedIdx;
+  }
+
+  /// 清「主动跳转目标」快照（[_seekTargetCueIndex]）及其在途 seek 宽限配额，
+  /// 退回纯位置推导。换字幕 / 换片 / 用户主动 seek / 自然越过目标句都汇到这里。
+  void _clearSeekTargetSnap() {
+    _seekTargetCueIndex = null;
+    _seekSnapGraceTicksLeft = 0;
   }
 
   /// 主动跳转目标 snap 的纯决策（TODO-565）。所有几何在 effective 字幕轴上。
@@ -1048,6 +1111,16 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试可见：恢复守护的宽限上限（断言用，避免测试硬编码数字与实现漂移）。
   @visibleForTesting
   static int get debugRestoreGuardGraceTicks => _restoreGuardGraceTicks;
+
+  /// 测试可见：当前「主动跳转目标」快照下标（[_seekTargetCueIndex]）；null 表示无快照。
+  /// 断言「在途 seek 的 stale tick 不清快照 / 宽限耗尽后清快照」用（TODO-565 时序）。
+  @visibleForTesting
+  int? get debugSeekTargetCueIndex => _seekTargetCueIndex;
+
+  /// 测试可见：在途 seek 宽限的 tick 配额上限（[_seekSnapGraceTicks]，断言用，
+  /// 避免测试硬编码数字与实现漂移）。
+  @visibleForTesting
+  static int get debugSeekSnapGraceTicks => _seekSnapGraceTicks;
 
   /// 测试可见：当前是否处于图形内封字幕（PGS 等）渲染模式（BUG-301）。
   @visibleForTesting
@@ -1410,6 +1483,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 相对当前位置 seek（±[deltaMs]，如 ±10 秒），clamp 到 [0, duration]。
   /// 未 load（无位置）时 no-op 安全。
   Future<void> seekRelative(int deltaMs) async {
+    // 用户主动相对 seek 是「离开当前跳转目标」的明确意图：立刻作废主动跳转快照 + 在途
+    // seek 宽限，让下个 tick 按真实位置纯推导高亮，不被旧 [skipToCue] 目标误 snap
+    // （TODO-565：手动 seek 与 skipToCue 不同路径，手动 seek 仍能清快照）。
+    _clearSeekTargetSnap();
     final int? pos = positionMs;
     if (pos == null) return;
     await seekMs(clampSeekTargetMs(pos, deltaMs, durationMs));
@@ -1500,6 +1577,11 @@ class VideoPlayerController extends ChangeNotifier
     // 把高亮 snap 回目标句，消除「点第 N 行高亮 N-1」。解析不到下标（cue 不在 _cues）时清空，
     // 退回纯位置推导。
     _seekTargetCueIndex = _resolveCueIndex(cue);
+    // 充满在途 seek 宽限（TODO-565 复核退回的真机时序）：异步 seek 落地前 tick 会先读到
+    // 旧 position，宽限让快照撑到落点，避免在途 stale tick 把快照提前清掉 → off-by-one。
+    // 目标解析不到（cue 不在 _cues，_seekTargetCueIndex==null）时无需宽限，留 0。
+    _seekSnapGraceTicksLeft =
+        _seekTargetCueIndex == null ? 0 : _seekSnapGraceTicks;
     await seekMs(cueSeekTargetMs(
       cueStartMs: cue.startMs,
       delayMs: _delayMs,

@@ -1372,7 +1372,68 @@ void main() {
       expect(c.currentCueIndex, 2, reason: '快照已清，自动跟随不被旧目标污染');
     });
 
-    test('skipToCue 后被手动 seek 拉到别处：快照失效，按真实位置推导（不误 snap）', () async {
+    test('skipToCue 后用户主动 seekRelative 拉到别处：快照作废，按真实位置推导（不误 snap）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([
+        _cue(0, 0, 1000),
+        _cue(1, 5000, 6000),
+      ]);
+      await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)，置在途 seek 宽限
+      // 用户主动 seekRelative（与 skipToCue 不同路径）作废宽限+清快照；下个 tick 读到
+      // 首句区间应高亮 0，绝不被旧目标 1 误 snap（手动 seek 仍能清快照）。
+      await c
+          .seekRelative(-100000); // 无 player 时 seek no-op，但 seekRelative 已清宽限
+      c.debugUpdateCueForPosition(500);
+      expect(c.currentCueIndex, 0, reason: '主动 seekRelative 已作废快照，按真实位置高亮');
+    });
+
+    // TODO-565 复核退回的真机时序漏洞：skipToCue 异步 seek 后，125ms tick 在 seek 落地
+    // 前先读到 seek 之前的旧 position（media_kit position 不随 seek 同步更新，
+    // video_player_controller.dart:208-214/1481-1484）。旧实现里这个 stale tick 落在
+    // 「远早于引导窗口」情形 → cueSnapIndex 返回 keep=false → 清掉 _seekTargetCueIndex
+    // 快照；等真落点 startMs-preRoll 的 tick 到来时快照已没了 → findCueIndex 反推 N-1 →
+    // off-by-one 真机复发。修复：skipToCue 置「在途 seek 宽限」，position 首次进入引导
+    // 窗口之前的若干 tick 内不因「远离窗口」清快照（撑到 seek 落地）。
+    // 撤掉宽限保护（_applySeekTargetSnap 里的 _seekSnapGraceTicksLeft 分支）此测试转红：
+    // stale tick 清了快照 → 落点 tick 反推 cue0（N-1）。
+    test('在途 seek 的 stale tick（旧远位置）先到：不清快照，真落点仍高亮目标句 N', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      // 密集对话：句间隔 < preRoll，落点会粘进上一句区间 → 无快照时高亮 N-1。
+      c.setCues([
+        _cue(0, 0, 1900),
+        _cue(1, 2000, 3000),
+        _cue(2, 3100, 4000),
+      ]);
+
+      // 点第 2 行（index 1，startMs=2000）。skipToCue 记录目标 + 置在途 seek 宽限
+      // （无 player 时 seek no-op，但快照与宽限已设）。
+      await c.skipToCue(c.cues[1]);
+
+      // ① stale tick：seek 尚未落地，tick 先读到 seek 之前的旧远位置 300
+      //    （300 < 2000-180=1820，落「远早于引导窗口」情形）。旧实现在此清快照。
+      c.debugUpdateCueForPosition(300);
+      expect(c.debugSeekTargetCueIndex, 1,
+          reason: '在途 seek 的 stale tick 不得清快照（宽限保护，撑到落点）');
+
+      // ② 真落点 tick：seek 落地，position 进入引导窗口 1820（落 cue0 区间 [0,1900]）。
+      //    快照仍在 → snap 回目标句 1，而不是按真实位置反推的 cue0（N-1）。
+      c.debugUpdateCueForPosition(1820);
+      expect(c.currentCueIndex, 1,
+          reason: 'stale tick 后快照仍在，真落点处 snap 回目标句 N（非上一句 N-1）');
+      expect(c.currentCue!.text, 'line1');
+
+      // ③ 播放自然进入目标句：宽限已作废、快照已清，纯位置推导接管。
+      c.debugUpdateCueForPosition(2100);
+      expect(c.currentCueIndex, 1);
+      c.debugUpdateCueForPosition(3200);
+      expect(c.currentCueIndex, 2, reason: '快照已清，自动跟随不被旧目标污染');
+    });
+
+    // 在途 seek 永不落地（慢设备 / libmpv 丢弃，对齐 BUG-179）：宽限有界，耗尽后放弃
+    // 保护、退回纯位置推导，绝不因永久保护把高亮永久钉在旧目标上。
+    test('在途 seek 宽限有界：连续 stale tick 耗尽配额后退回纯位置推导', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues([
@@ -1380,9 +1441,14 @@ void main() {
         _cue(1, 5000, 6000),
       ]);
       await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)
-      // 用户立刻手动 seek 到首句区间（远早于引导窗口）：高亮应是 0，不被旧目标 1 误 snap。
-      c.debugUpdateCueForPosition(500);
-      expect(c.currentCueIndex, 0, reason: '远离引导窗口，快照失效，按真实位置高亮');
+      // 喂「宽限格数 + 余量」次 stale tick（都在首句区间、远早于窗口）：耗尽宽限。
+      final int grace = VideoPlayerController.debugSeekSnapGraceTicks;
+      for (int i = 0; i <= grace; i++) {
+        c.debugUpdateCueForPosition(500);
+      }
+      expect(c.debugSeekTargetCueIndex, isNull,
+          reason: '宽限耗尽：放弃保护、清快照（seek 落地失败兜底）');
+      expect(c.currentCueIndex, 0, reason: '退回纯位置推导，高亮真实位置 cue0');
     });
   });
 }
