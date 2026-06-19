@@ -4178,6 +4178,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 唯一消费它（见 [_mediaKitControlsVisible] / [_applyControlsVisibilityFromMediaKit]），
       // 不再另建镜像 + 第二个 Timer（旧实现两套计时相位反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
+      // TODO-565：进度条（seek bar）经 media_kit 内部 player.seek 绕过 controller 的
+      // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
+      // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
+      // bar 把内部 onSeekStart 与本回调合并调用（third_party/media_kit_video）。
+      onSeekStart: () => controller.clearSeekTargetSnap(),
       // 控制条隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       hideMouseOnControlsRemoval: true,
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
@@ -4254,6 +4259,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // TODO-364：移动控制条的真实 `visible`（含 onTap toggle）推进同一个 notifier，字幕避让
       // 唯一消费它，移动端不再用 Hibiki 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
+      // TODO-565：进度条（seek bar）经 media_kit 内部 player.seek 绕过 controller 的
+      // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
+      // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
+      // bar 把内部 onSeekStart 与本回调合并调用（third_party/media_kit_video）。
+      onSeekStart: () => controller.clearSeekTargetSnap(),
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。不开

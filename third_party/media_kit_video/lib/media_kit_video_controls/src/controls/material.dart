@@ -300,6 +300,18 @@ class MaterialVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final ValueNotifier<bool>? visibilityNotifier;
 
+  // SEEK START (Hibiki patch)
+
+  /// Optional callback fired the moment the user starts dragging / tapping the
+  /// seek bar. The seek bar drives `player.seek` directly inside media_kit and
+  /// exposes no host-level seek hook, so Hibiki uses this to invalidate its
+  /// "active jump target" snapshot (TODO-565): without it, dragging the bar to
+  /// an earlier cue during the brief in-flight grace window of a list tap would
+  /// be mis-detected as the in-flight seek and snap the highlight back to the
+  /// stale target. Null (upstream default) = no callback, behaviour identical to
+  /// pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final void Function()? onSeekStart;
+
   /// {@macro material_video_controls_theme_data}
   const MaterialVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -365,6 +377,7 @@ class MaterialVideoControlsThemeData {
     this.seekBarAlignment = Alignment.bottomCenter,
     this.shiftSubtitlesOnControlsVisibilityChange = false,
     this.visibilityNotifier,
+    this.onSeekStart,
   });
 
   /// Creates a copy of this [MaterialVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -419,6 +432,7 @@ class MaterialVideoControlsThemeData {
     Alignment? seekBarAlignment,
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
+    void Function()? onSeekStart,
   }) {
     return MaterialVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -494,6 +508,7 @@ class MaterialVideoControlsThemeData {
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
+      onSeekStart: onSeekStart ?? this.onSeekStart,
     );
   }
 }
@@ -1067,6 +1082,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                   if (_theme(context).displaySeekBar)
                                     MaterialSeekBar(
                                       onSeekStart: () {
+                                        _theme(context).onSeekStart?.call();
                                         _timer?.cancel();
                                       },
                                       onSeekEnd: () {
