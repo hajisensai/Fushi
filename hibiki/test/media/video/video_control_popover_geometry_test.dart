@@ -79,6 +79,161 @@ void main() {
     });
   });
 
+  group('slot-adaptive popover direction (TODO-560)', () {
+    test('bottom slots pop up, top slots pop down, side rails pop sideways',
+        () {
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.bottomLeft),
+        VideoControlPopoverDirection.up,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.bottomCenter),
+        VideoControlPopoverDirection.up,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.bottomRight),
+        VideoControlPopoverDirection.up,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.topLeft),
+        VideoControlPopoverDirection.down,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.topCenter),
+        VideoControlPopoverDirection.down,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.topRight),
+        VideoControlPopoverDirection.down,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.screenLeft),
+        VideoControlPopoverDirection.right,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.screenRight),
+        VideoControlPopoverDirection.left,
+      );
+    });
+
+    test('null / hidden slot falls back to popping up (no regression)', () {
+      expect(
+        videoControlPopoverDirectionForSlot(null),
+        VideoControlPopoverDirection.up,
+      );
+      expect(
+        videoControlPopoverDirectionForSlot(VideoControlSlot.hidden),
+        VideoControlPopoverDirection.up,
+      );
+    });
+
+    const Rect player = Rect.fromLTWH(0, 0, 320, 180);
+    const double height = 56;
+
+    test('bottom button: popover top sits ABOVE the button', () {
+      final VideoControlPopoverPlacement placement =
+          resolveVideoControlPopoverPlacement(
+        playerBounds: player,
+        targetRect: const Rect.fromLTWH(276, 140, 36, 36),
+        preferredWidth: 220,
+        sourceSlot: VideoControlSlot.bottomRight,
+        height: height,
+      );
+      // Popover bottom edge (top + height) must clear the button top (140).
+      expect(placement.top + height, lessThanOrEqualTo(140 + 0.001));
+    });
+
+    test('top button: popover top sits BELOW the button (not above)', () {
+      const Rect target = Rect.fromLTWH(8, 4, 36, 36);
+      final VideoControlPopoverPlacement placement =
+          resolveVideoControlPopoverPlacement(
+        playerBounds: player,
+        targetRect: target,
+        preferredWidth: 220,
+        sourceSlot: VideoControlSlot.topLeft,
+        height: height,
+      );
+      // The whole point of TODO-560: a top-bar button must NOT pop above.
+      expect(placement.top, greaterThanOrEqualTo(target.bottom));
+      expect(placement.left, greaterThanOrEqualTo(player.left));
+      expect(placement.right, lessThanOrEqualTo(player.right));
+    });
+
+    test('left side rail: popover sits to the RIGHT of the button', () {
+      const Rect target = Rect.fromLTWH(4, 70, 36, 36);
+      final VideoControlPopoverPlacement placement =
+          resolveVideoControlPopoverPlacement(
+        playerBounds: player,
+        targetRect: target,
+        preferredWidth: 160,
+        sourceSlot: VideoControlSlot.screenLeft,
+        height: height,
+      );
+      expect(placement.left, greaterThanOrEqualTo(target.right));
+      expect(placement.right, lessThanOrEqualTo(player.right));
+    });
+
+    test('right side rail: popover sits to the LEFT of the button', () {
+      const Rect target = Rect.fromLTWH(280, 70, 36, 36);
+      final VideoControlPopoverPlacement placement =
+          resolveVideoControlPopoverPlacement(
+        playerBounds: player,
+        targetRect: target,
+        preferredWidth: 160,
+        sourceSlot: VideoControlSlot.screenRight,
+        height: height,
+      );
+      expect(placement.right, lessThanOrEqualTo(target.left));
+      expect(placement.left, greaterThanOrEqualTo(player.left));
+    });
+
+    test('top button popover stays inside the player vertically', () {
+      final VideoControlPopoverPlacement placement =
+          resolveVideoControlPopoverPlacement(
+        playerBounds: player,
+        targetRect: const Rect.fromLTWH(8, 4, 36, 36),
+        preferredWidth: 220,
+        sourceSlot: VideoControlSlot.topLeft,
+        height: height,
+      );
+      expect(placement.top, greaterThanOrEqualTo(player.top));
+      expect(placement.top + height, lessThanOrEqualTo(player.bottom + 0.001));
+    });
+
+    test(
+        'speed popover render path is slot-adaptive: threads sourceSlot and '
+        'uses gapDirection', () {
+      final String page = File(
+        'lib/src/pages/implementations/video_hibiki_page.dart',
+      ).readAsStringSync();
+
+      // The placement helper must derive direction from the slot for BOTH kinds
+      // (no hardcoded "speed always pops up" branch).
+      expect(page, contains('videoControlPopoverDirectionForSlot('));
+      expect(page, contains('final Offset gapDirection;'));
+      expect(page, contains('placement.gapDirection * gap'));
+      expect(page, isNot(contains('offset: Offset(dx, -gap)')));
+
+      // The speed click + hover paths must carry the slot so the popover can
+      // follow the button into top / side slots.
+      expect(
+        page,
+        contains(
+          'void _showSpeedMenu({LayerLink? popoverLink, '
+          'VideoControlSlot? sourceSlot})',
+        ),
+      );
+      expect(
+        page,
+        contains('_showSpeedMenu(popoverLink: popoverLink, '
+            'sourceSlot: sourceSlot)'),
+      );
+      // Horizontal clamp now also runs for the speed popover, not volume-only:
+      // the resolve gate keys off sourceSlot/targetRect, not the popover kind.
+      expect(page, contains('sourceSlot != null && targetRect != null'));
+    });
+  });
+
   group('visible volume overlays render compactly', () {
     const List<Size> viewports = <Size>[
       Size(360, 640),
