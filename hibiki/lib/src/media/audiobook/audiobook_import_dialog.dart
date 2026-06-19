@@ -6,6 +6,7 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
@@ -49,17 +50,15 @@ class AudiobookImportDialog extends StatefulWidget {
   State<AudiobookImportDialog> createState() => _AudiobookImportDialogState();
 }
 
-class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
+class _AudiobookImportDialogState extends State<AudiobookImportDialog>
+    with ImportDialogProgressMixin<AudiobookImportDialog> {
   // ── 音频来源 ── 两者互斥，最后选的那个生效 ─────────────────────────────────
   String? _audioDir; // folder 模式
   List<String>? _audioPaths; // files 模式
 
   String? _alignmentPath;
   String? _alignmentName;
-  bool _importing = false;
   bool _pickerActive = false;
-  final ValueNotifier<double> _progress = ValueNotifier<double>(0);
-  final ValueNotifier<String> _progressMsg = ValueNotifier<String>('');
 
   /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
   bool _patchingAudio = false;
@@ -112,12 +111,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     _initExisting();
   }
 
-  @override
-  void dispose() {
-    _progress.dispose();
-    _progressMsg.dispose();
-    super.dispose();
-  }
+  // 进度 ValueNotifier 由 ImportDialogProgressMixin.dispose() 释放（无本地 dispose
+  // override 时 mixin 的 dispose() 即生效）。
 
   Future<void> _initExisting() async {
     final Audiobook? existing = await widget.repo.findByBookKey(widget.bookKey);
@@ -193,8 +188,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               adaptiveDialogAction(
                 context: context,
                 isDefaultAction: true,
-                onPressed: _importing ? null : _doImport,
-                child: _importing
+                onPressed: importing ? null : _doImport,
+                child: importing
                     ? Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -279,7 +274,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: _importing ? null : () => _openReMatchSheet(ab),
+                  onPressed: importing ? null : () => _openReMatchSheet(ab),
                   icon: const Icon(Icons.tune_outlined, size: 18),
                   label: Text(t.rematch_adjust_window),
                 ),
@@ -382,21 +377,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             onChanged: (v) => setState(() => _similarityThreshold = v),
           ),
         ],
-        if (_importing) ...[
-          SizedBox(height: tokens.spacing.card),
-          ValueListenableBuilder<double>(
-            valueListenable: _progress,
-            builder: (_, value, __) => LinearProgressIndicator(value: value),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          ValueListenableBuilder<String>(
-            valueListenable: _progressMsg,
-            builder: (_, msg, __) => Text(
-              msg,
-              style: tokens.type.metadata,
-            ),
-          ),
-        ],
+        if (importing) ...buildProgressSection(context, tokens),
       ],
     );
   }
@@ -613,11 +594,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   // ── 导入 ─────────────────────────────────────────────────────────────────────
 
-  void _reportProgress(double value, String msg) {
-    _progress.value = value;
-    _progressMsg.value = msg;
-  }
-
   Future<void> _doImport() async {
     if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
       HibikiToast.show(msg: t.audiobook_import_error);
@@ -627,8 +603,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     debugPrint(
         '[hibiki-audiobook] doImport bookKey.len=${widget.bookKey.length} '
         'hash=${widget.bookKey.hashCode} key=${widget.bookKey}');
-    setState(() => _importing = true);
-    _reportProgress(0, '');
+    setState(() => importing = true);
+    reportProgress(0, '');
 
     int grandTotal = 0;
     try {
@@ -657,7 +633,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         // routes 1:1 to its parser (smil/json via the else/json branches).
         final String format = ext;
 
-        _reportProgress(0.05, t.import_step_persisting);
+        reportProgress(0.05, t.import_step_persisting);
         // HBK-AUDIT-068: keep the persisted path in a local instead of
         // mutating the stateful _alignmentPath, so a retry after a failure
         // re-reads the user-picked source rather than a stale persisted copy.
@@ -666,14 +642,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           persistDir,
         );
 
-        _reportProgress(0.1, t.import_step_parsing);
+        reportProgress(0.1, t.import_step_parsing);
         parsed = await _parseCues(
           format: format,
           alignmentFilePath: persistedAlignment,
         );
       }
 
-      _reportProgress(0.5, t.import_step_persisting);
+      reportProgress(0.5, t.import_step_persisting);
 
       // 收集需要复制的音频文件。
       // file mode: 用户选的文件列表。
@@ -719,7 +695,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               final double ratio = grandTotal > 0
                   ? (capturedGrandCopied + copied) / grandTotal
                   : 0.0;
-              _reportProgress(0.5 + ratio * 0.3,
+              reportProgress(0.5 + ratio * 0.3,
                   t.import_step_copying_file(name: p.basename(srcFile.path)));
             },
           ),
@@ -727,7 +703,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         grandCopied += fileLen;
       }
 
-      _reportProgress(0.8, t.import_step_saving);
+      reportProgress(0.8, t.import_step_saving);
       final Audiobook audiobook = Audiobook()..bookKey = widget.bookKey;
 
       if (persistedAlignment != null) {
@@ -756,7 +732,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           health: parsed.health,
         );
       }
-      _reportProgress(1, t.import_step_done);
+      reportProgress(1, t.import_step_done);
 
       if (mounted) {
         final String? tail =
@@ -796,7 +772,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
     } finally {
       if (mounted) {
-        setState(() => _importing = false);
+        setState(() => importing = false);
       }
     }
   }
@@ -815,7 +791,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       repo: widget.repo,
       extractDir: widget.extractDir!,
       onRunningChanged: (running) {
-        if (mounted) setState(() => _importing = running);
+        if (mounted) setState(() => importing = running);
       },
     );
     // 跑完无论成败都刷一次，让 healthRow 重新读 overlay。
@@ -840,7 +816,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       return AudiobookHealth.failed(reason: 'parser returned 0 cues');
     }
     try {
-      _reportProgress(0.2, t.import_step_reading_idb);
+      reportProgress(0.2, t.import_step_reading_idb);
       final String extractDir = widget.extractDir!;
       final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
       final List<EpubSection> sections = List<EpubSection>.generate(
@@ -856,7 +832,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           reason: 'EPUB has 0 chapters',
         );
       }
-      _reportProgress(0.3, t.import_step_matching);
+      reportProgress(0.3, t.import_step_matching);
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
       final MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
