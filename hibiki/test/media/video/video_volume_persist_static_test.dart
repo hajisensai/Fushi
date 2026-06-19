@@ -134,7 +134,9 @@ void main() {
       final int lastVolume = loadBody.indexOf('_lastVolume = initialVolume');
       final int setVolume =
           loadBody.indexOf('await player.setVolume(initialVolume)');
-      final int play = loadBody.indexOf('if (autoPlay && _player == player)');
+      // BUG-342: autoPlay 守卫升级为 _isCurrentLoad 双判据，锚点同步更新。
+      final int play = loadBody
+          .indexOf('if (autoPlay && _isCurrentLoad(player, loadToken))');
       expect(open, greaterThanOrEqualTo(0));
       expect(lastVolume, greaterThan(open),
           reason:

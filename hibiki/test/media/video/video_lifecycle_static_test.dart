@@ -166,6 +166,161 @@ void main() {
     });
   });
 
+  // BUG-342: video_player_controller 多处异步 mpv FFI 下发用方法开头捕获的局部
+  // `player` 引用；await 缺口内用户退出 / 换集触发 [dispose]（`_loadToken++` +
+  // `unawaited(_player.dispose())` 异步释放 libmpv NativePlayer + `_player=null`），
+  // 恢复后继续向已释放 native handle 下发 FFI = 原生 use-after-free（访问违例
+  // 0xc0000005）。既有不变量 [_isCurrentLoad]（`_player==player && _loadToken==loadToken`
+  // 双判据）必须在**每个 await 之后**重校验、过期放弃。无法纯单测（需真实 libmpv
+  // player），故源码层钉死这条时序不变式。分两条路径：
+  //   - A 层：[selectEmbeddedGraphicTrack]（选内嵌图形字幕轨，PGS/DVD 位图）3 处下发。
+  //   - load() 主路径：[load] 开头 8 处早期 await FFI 下发（更高频，与用户崩溃更贴合）
+  //     + autoPlay 的 play() 守卫用双判据。
+  group('VideoPlayerController guards against libmpv UAF on dispose (BUG-342)',
+      () {
+    final String src = read('lib/src/media/video/video_player_controller.dart');
+
+    String methodBody(String headerRegex, String trailerRegex) {
+      final RegExpMatch? m = RegExp(
+        headerRegex + r'(.*?)' + trailerRegex,
+        dotAll: true,
+      ).firstMatch(src);
+      expect(m, isNotNull,
+          reason: '找不到方法体: header=$headerRegex trailer=$trailerRegex');
+      return m!.group(1)!;
+    }
+
+    // ---- A 层：selectEmbeddedGraphicTrack ----
+    String graphicBody() => methodBody(
+          r'Future<bool> selectEmbeddedGraphicTrack\(int streamIndex\) async \{',
+          r'\n  \}',
+        );
+
+    test('A: selectEmbeddedGraphicTrack captures loadToken before first await',
+        () {
+      final String b = graphicBody();
+      final int tokenAt = b.indexOf('final int loadToken = _loadToken;');
+      final int firstAwaitAt =
+          b.indexOf('await _waitUntilSubtitleTracksReady(player);');
+      expect(tokenAt, greaterThanOrEqualTo(0),
+          reason: '必须在第一个 await 前捕获 loadToken 快照');
+      expect(firstAwaitAt, greaterThan(tokenAt),
+          reason: 'loadToken 必须在第一条 await 语句之前捕获');
+    });
+
+    test(
+        'A: selectEmbeddedGraphicTrack re-checks _isCurrentLoad after every '
+        'native await (>=3, no bare _player!=player)', () {
+      final String b = graphicBody();
+      final int rechecks =
+          RegExp(r'_isCurrentLoad\(player, loadToken\)').allMatches(b).length;
+      expect(rechecks, greaterThanOrEqualTo(3),
+          reason:
+              '三处原生下发（setSubtitleTrack + 两次 setProperty）后都必须重校验 _isCurrentLoad，'
+              '否则退出/换集期间向已释放 libmpv handle 下发 → 原生 UAF');
+      expect(b.contains('if (_player != player) return false;'), isFalse,
+          reason:
+              'BUG-342: 禁止回退到只比 _player!=player 的单次校验（漏 loadToken 且后续 await 不重校验）');
+    });
+
+    test(
+        'A: selectEmbeddedGraphicTrack inserts a recheck between each native '
+        'send', () {
+      final String b = graphicBody();
+      final int setTrackAt = b.indexOf('await player.setSubtitleTrack(real[');
+      final int firstApplyAt =
+          b.indexOf('await applySubtitleMpvPropertiesToPlayer(');
+      final int secondApplyAt = b.indexOf(
+          'await applySubtitleMpvPropertiesToPlayer(', firstApplyAt + 1);
+      expect(setTrackAt, greaterThanOrEqualTo(0));
+      expect(firstApplyAt, greaterThan(setTrackAt));
+      expect(secondApplyAt, greaterThan(firstApplyAt));
+      final int recheckAfterSetTrack =
+          b.indexOf('_isCurrentLoad(player, loadToken)', setTrackAt);
+      expect(recheckAfterSetTrack, greaterThan(setTrackAt));
+      expect(recheckAfterSetTrack, lessThan(firstApplyAt),
+          reason: 'setSubtitleTrack 后、下一次原生下发前必须重校验');
+      final int recheckAfterFirstApply =
+          b.indexOf('_isCurrentLoad(player, loadToken)', firstApplyAt);
+      expect(recheckAfterFirstApply, greaterThan(firstApplyAt));
+      expect(recheckAfterFirstApply, lessThan(secondApplyAt),
+          reason: '第一次 setProperty 后、第二次原生下发前必须重校验');
+    });
+
+    // ---- load() 主路径（本轮核心）----
+    // load() 紧跟着 `bool _isCurrentLoad(...)` getter，用它锚定方法体结束（方法体内
+    // 含多处 4/6 空格缩进的 `}`，非贪婪到 `\n  }\n\n  bool _isCurrentLoad` 精确收口）。
+    String loadBody() => methodBody(
+          r'Future<void> load\(\{',
+          r'\n  \}\n\n  bool _isCurrentLoad',
+        );
+
+    test('load() captures loadToken before the first native FFI send', () {
+      final String b = loadBody();
+      final int tokenAt = b.indexOf('final int loadToken = ++_loadToken;');
+      final int firstOpenAt = b.indexOf('await player.open(Media(sourceUri)');
+      expect(tokenAt, greaterThanOrEqualTo(0),
+          reason: 'load 必须在第一处原生下发前捕获 loadToken（开头 ++_loadToken）');
+      expect(firstOpenAt, greaterThan(tokenAt),
+          reason: 'player.open 必须在 loadToken 捕获之后');
+    });
+
+    test(
+        'load() re-checks _isCurrentLoad after every early native await '
+        '(open / network / setSubtitleTrack(no) / suppression / shaders / '
+        'mpvConfig / volume / rate)', () {
+      final String b = loadBody();
+      // 每个早期下发语句后，在下一个早期下发语句之前，必须出现一次
+      // `_isCurrentLoad(player, loadToken)` 重校验。按出现顺序成对断言。
+      const List<String> sends = <String>[
+        'await player.open(Media(sourceUri)',
+        'await applyNetworkCachePropertiesToPlayer(player, sourceUri);',
+        'await player.setSubtitleTrack(SubtitleTrack.no());',
+        // 字幕抑制（多行调用）：用其首行锚定。
+        'buildSubtitleSuppressionProperties(),',
+        'await applyShadersToPlayer(player, _shaderPaths);',
+        'await applyMpvConfigToPlayer(player, _mpvConfig);',
+        'await player.setVolume(initialVolume);',
+        'await player.setRate(initialSpeed);',
+      ];
+      for (int i = 0; i < sends.length; i++) {
+        final int sendAt = b.indexOf(sends[i]);
+        expect(sendAt, greaterThanOrEqualTo(0),
+            reason: '找不到早期原生下发语句: ${sends[i]}');
+        final int recheckAt =
+            b.indexOf('_isCurrentLoad(player, loadToken)', sendAt);
+        expect(recheckAt, greaterThan(sendAt),
+            reason: '「${sends[i]}」之后必须紧跟 _isCurrentLoad 重校验（BUG-342 主路径）');
+        // 重校验必须落在下一个早期下发语句之前（不能整段共用一处）。
+        if (i + 1 < sends.length) {
+          final int nextSendAt = b.indexOf(sends[i + 1], sendAt + 1);
+          expect(nextSendAt, greaterThan(sendAt));
+          expect(recheckAt, lessThan(nextSendAt),
+              reason:
+                  '「${sends[i]}」的重校验必须落在下一处下发「${sends[i + 1]}」之前——每个 await 独立守卫');
+        }
+      }
+      // 早期下发后的重校验过期一律 `return`（干净放弃，不留半初始化）。至少 8 处。
+      final int returnGuards = RegExp(
+        r'if \(!_isCurrentLoad\(player, loadToken\)\) return;',
+      ).allMatches(b).length;
+      expect(returnGuards, greaterThanOrEqualTo(8),
+          reason:
+              'load 主路径 8 处早期 await 后都要 `if (!_isCurrentLoad(...)) return;` 干净放弃');
+    });
+
+    test('load() autoPlay play() uses the dual predicate, not bare identity',
+        () {
+      final String b = loadBody();
+      expect(b.contains('if (autoPlay && _isCurrentLoad(player, loadToken))'),
+          isTrue,
+          reason: 'autoPlay 守卫必须用 _isCurrentLoad 双判据——换集复用同一 player 时单判 '
+              '`_player == player` 会误向被新 load 接管的 player 发 play()');
+      expect(b.contains('if (autoPlay && _player == player)'), isFalse,
+          reason: 'BUG-342: 禁止回退到 autoPlay 单判据 `_player == player`');
+    });
+  });
+
   // TODO-099: video page forces landscape on enter, restores on exit.
   // Mobile-only; desktop is no-op. Source-level guard (needs a real device
   // orientation system, cannot be exercised in a pure unit test).
