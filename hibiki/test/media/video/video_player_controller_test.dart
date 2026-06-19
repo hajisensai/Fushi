@@ -1245,4 +1245,144 @@ void main() {
           reason: '空 cue 不推断模式（图形轨与无字幕段都空，会误判）');
     });
   });
+
+  // TODO-565：点字幕列表第 N 行，高亮却落在第 N-1 句（off-by-one 回归）。
+  //
+  // 根因：BUG-259 的前导余量（kCueSeekPreRollMs=180）让 skipToCue 的 seek 落点偏到目标句
+  // 之前（cue.startMs - 180）。高亮真相源是「实时 position 经 findCueIndex 反推」，seek 刚
+  // 落地、position 还在 [startMs-preRoll, startMs) 引导窗口时，findCueIndex 据实际位置正确
+  // 地报上一句/ gap → 高亮先闪 N-1。修复：skipToCue 记录目标下标，_syncCueForPosition 在
+  // 引导窗口内把命中下标 snap 回目标句；自然进入后清快照退回纯推导。
+  group('TODO-565 字幕列表点击高亮不 off-by-one', () {
+    test('纯函数 cueSnapIndex：preRoll 引导窗口内 snap 回目标句、保留快照', () {
+      // 目标句 startMs=2000、preRoll=180：窗口 [1820, 2000)。落点 1850（< 2000）此刻
+      // findCueIndex 命中上一句 0，应 snap 到目标 1 并保留快照（keep=true）。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 0,
+          effectiveMs: 1850,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          preRollMs: 180,
+        ),
+        (1, true),
+      );
+      // gap 命中 -1 同样 snap 回目标。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: -1,
+          effectiveMs: 1900,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          preRollMs: 180,
+        ),
+        (1, true),
+      );
+    });
+
+    test('纯函数 cueSnapIndex：自然进入目标句后用原命中下标、清快照', () {
+      // position 已 >= 目标 startMs：findCueIndex 自己就命中目标，用原值、清快照（keep=false）。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 1,
+          effectiveMs: 2000,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          preRollMs: 180,
+        ),
+        (1, false),
+      );
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 2,
+          effectiveMs: 5000,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          preRollMs: 180,
+        ),
+        (2, false),
+      );
+    });
+
+    test('纯函数 cueSnapIndex：远早于引导窗口（被别的 seek 拉走）→ 用原命中、清快照', () {
+      // 1819 < 2000-180=1820：在窗口之外，跳转已失效，不 snap、清快照。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 0,
+          effectiveMs: 1819,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          preRollMs: 180,
+        ),
+        (0, false),
+      );
+    });
+
+    test('纯函数 cueSnapIndex：负 preRoll 当 0（窗口退化为空，绝不误 snap）', () {
+      // preRoll<=0 时窗口 [startMs, startMs) 为空：任意 effective<startMs 都落「远早于窗口」。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 0,
+          effectiveMs: 1999,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          preRollMs: 0,
+        ),
+        (0, false),
+      );
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 0,
+          effectiveMs: 1999,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          preRollMs: -50,
+        ),
+        (0, false),
+      );
+    });
+
+    // 回环守卫（最强）：复刻真实链路——点第 N 行 → skipToCue → seek 落点=startMs-preRoll
+    // → tick 用该落点 updateCueForPosition → 断言高亮 = N，不是 N-1。
+    // 撤掉 _syncCueForPosition 里的 snap 接入（idx = _applySeekTargetSnap(...)）即转红。
+    test('点第 N 行 skipToCue 后，preRoll 落点处高亮目标句 N（非上一句 N-1）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      // 密集对话：句间隔 < preRoll，落点会粘进上一句区间 → 旧实现高亮 N-1。
+      c.setCues([
+        _cue(0, 0, 1900),
+        _cue(1, 2000, 3000),
+        _cue(2, 3100, 4000),
+      ]);
+
+      // 点第 2 行（index 1）。skipToCue 记录目标下标（无 player 时 seek no-op，但快照已设）。
+      await c.skipToCue(c.cues[1]);
+
+      // tick 喂 preRoll 落点 = 2000-180 = 1820（落在 cue0 区间 [0,1900]，旧实现判 0）。
+      c.debugUpdateCueForPosition(1820);
+      expect(c.currentCueIndex, 1, reason: 'preRoll 引导窗口内应 snap 回点击的目标句');
+      expect(c.currentCue!.text, 'line1');
+
+      // 播放自然进入目标句区间：仍是目标句，快照已清，纯推导接管。
+      c.debugUpdateCueForPosition(2100);
+      expect(c.currentCueIndex, 1);
+
+      // 继续自然播放到下一句：不再被旧目标粘住，正常前进。
+      c.debugUpdateCueForPosition(3200);
+      expect(c.currentCueIndex, 2, reason: '快照已清，自动跟随不被旧目标污染');
+    });
+
+    test('skipToCue 后被手动 seek 拉到别处：快照失效，按真实位置推导（不误 snap）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([
+        _cue(0, 0, 1000),
+        _cue(1, 5000, 6000),
+      ]);
+      await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)
+      // 用户立刻手动 seek 到首句区间（远早于引导窗口）：高亮应是 0，不被旧目标 1 误 snap。
+      c.debugUpdateCueForPosition(500);
+      expect(c.currentCueIndex, 0, reason: '远离引导窗口，快照失效，按真实位置高亮');
+    });
+  });
 }

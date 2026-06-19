@@ -203,6 +203,22 @@ class VideoPlayerController extends ChangeNotifier
   AudioCue? _currentCue;
   int _currentCueIndex = -1;
 
+  /// 最近一次「主动跳转」([skipToCue]) 的目标 cue 下标；无主动跳转待落地时为 null。
+  ///
+  /// **修 TODO-565 字幕列表点击高亮 off-by-one。** 高亮真相源是「实时 position 经
+  /// [JsonAlignmentParser.findCueIndex] 反推」（TODO-410 无状态推导）。但 BUG-259 的
+  /// 前导余量（[kCueSeekPreRollMs]）故意把 [skipToCue] 的 seek 落点偏到目标句**之前**
+  /// （`cue.startMs - 180ms`）以吸收关键帧吸附——听感对，但 seek 刚落地、position 还停
+  /// 在 `[startMs-preRoll, startMs)` 这段 preRoll 引导窗口里时，[findCueIndex] 据实际
+  /// 位置正确地报「在上一句区间 / gap」，于是高亮先闪上一句（N-1）才在 ~180ms 后随播放
+  /// 自然进入目标句变 N，用户点第 N 行看到的就是「高亮上一句」。
+  ///
+  /// 修法不是绕过 preRoll（听感需要它），而是把「主动跳转目标」这个**已知事实**记下来：
+  /// 在 [_syncCueForPosition] 里，当 position 仍落在目标句的 preRoll 引导窗口内时，把命中
+  /// 下标 snap 回目标句；position 自然进入目标句、越过它、或被另一次跳转/seek 改写时清空，
+  /// 之后恢复纯位置推导。只影响「点列表/上下句跳转后那一瞬」，不碰连续播放的自动跟随。
+  int? _seekTargetCueIndex;
+
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
 
@@ -503,6 +519,9 @@ class VideoPlayerController extends ChangeNotifier
     if (cues.isNotEmpty) _graphicSubtitleActive = false;
     _currentCue = null;
     _currentCueIndex = -1;
+    // 换字幕/换片（[load] 经此）复位主动跳转目标快照：旧目标下标对新 _cues 已失效，
+    // 留着会让首个 tick 误 snap（TODO-565）。
+    _seekTargetCueIndex = null;
     notifyListeners();
   }
 
@@ -909,10 +928,15 @@ class VideoPlayerController extends ChangeNotifier
     }
     if (_cues.isEmpty) return;
     final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
-    final int idx = JsonAlignmentParser.findCueIndex(
+    int idx = JsonAlignmentParser.findCueIndex(
       cues: _cues,
       positionMs: effectiveMs,
     );
+    // TODO-565：主动跳转（[skipToCue]）的 seek 落点因 preRoll 偏到目标句之前，落地后那一瞬
+    // findCueIndex 据实际位置正确地报上一句/ gap。若仍在目标句的 preRoll 引导窗口内，把命中
+    // 下标 snap 回目标句（消除「点第 N 行高亮 N-1」）；离开窗口（自然进入目标句 / 远早于窗口）
+    // 时清快照、退回纯位置推导。
+    idx = _applySeekTargetSnap(idx, effectiveMs);
     _rearmSubtitleEndPauseIfNeeded(effectiveMs);
     if (_shouldHoldAtSubtitleEnd(idx, effectiveMs)) {
       final AudioCue cue = _cues[_currentCueIndex];
@@ -937,6 +961,57 @@ class VideoPlayerController extends ChangeNotifier
     _currentCue = _cues[idx];
     debugPrint('[video-cue] idx=$idx pos=${posMs}ms text="${_cues[idx].text}"');
     notifyListeners();
+  }
+
+  /// 应用「主动跳转目标」snap（TODO-565），并维护 [_seekTargetCueIndex] 生命周期。
+  ///
+  /// [findCueIdx] 是按实时位置反推的命中下标，[effectiveMs] 是 effective 字幕轴位置。
+  /// 委托纯函数 [cueSnapIndex] 决策：仍在目标句 preRoll 引导窗口内 → 返回目标下标且保留
+  /// 快照；已自然进入目标句 / 远早于窗口 / 无目标 → 返回原下标且清快照。无副作用部分全在
+  /// 纯函数里，这里只搬运结果并落 [_seekTargetCueIndex]。
+  int _applySeekTargetSnap(int findCueIdx, int effectiveMs) {
+    final int? target = _seekTargetCueIndex;
+    if (target == null) return findCueIdx;
+    if (target < 0 || target >= _cues.length) {
+      _seekTargetCueIndex = null;
+      return findCueIdx;
+    }
+    final (int snappedIdx, bool keepSnapshot) = cueSnapIndex(
+      findCueIndex: findCueIdx,
+      effectiveMs: effectiveMs,
+      targetIndex: target,
+      targetStartMs: _cues[target].startMs,
+      preRollMs: kCueSeekPreRollMs,
+    );
+    if (!keepSnapshot) _seekTargetCueIndex = null;
+    return snappedIdx;
+  }
+
+  /// 主动跳转目标 snap 的纯决策（TODO-565）。所有几何在 effective 字幕轴上。
+  ///
+  /// 三种情形：
+  /// 1. `effectiveMs >= targetStartMs`：position 已自然进入/越过目标句，[findCueIndex]
+  ///    已能正确命中——用原命中下标，**清快照**（`keep=false`）。
+  /// 2. `effectiveMs < targetStartMs - preRollMs`：position 远在 preRoll 引导窗口之前
+  ///    （被别的 seek 拉走 / 跳转未落地），主动跳转已失效——用原命中下标，**清快照**。
+  /// 3. 其余（`targetStartMs - preRollMs <= effectiveMs < targetStartMs`）：正处在 preRoll
+  ///    引导窗口内，命中下标此刻是目标句**之前**那条（或 gap 的 -1）——snap 回目标句，
+  ///    **保留快照**（`keep=true`）等下个 tick 自然进入后再清。
+  ///
+  /// preRollMs 取负时按 0 处理（与 [cueSeekTargetMs] 同防御），此时窗口退化为空区间，
+  /// 任意 position 都落情形 1/2，不会误 snap。
+  @visibleForTesting
+  static (int snappedIndex, bool keepSnapshot) cueSnapIndex({
+    required int findCueIndex,
+    required int effectiveMs,
+    required int targetIndex,
+    required int targetStartMs,
+    required int preRollMs,
+  }) {
+    final int preRoll = preRollMs < 0 ? 0 : preRollMs;
+    if (effectiveMs >= targetStartMs) return (findCueIndex, false);
+    if (effectiveMs < targetStartMs - preRoll) return (findCueIndex, false);
+    return (targetIndex, true);
   }
 
   @visibleForTesting
@@ -1420,12 +1495,36 @@ class VideoPlayerController extends ChangeNotifier
   /// 钳到「上一句起点」以免余量过大串回前一句。上一句起点经 [_prevCueStartMsBefore]
   /// 在升序 [_cues] 上二分求得（无上一句时为 null）。
   Future<void> skipToCue(AudioCue cue) async {
+    // 记录主动跳转目标下标（TODO-565）：seek 落点因 preRoll 偏到目标句之前，落地后那一瞬
+    // position 反推会判成上一句，靠这个快照让 [_syncCueForPosition] 在 preRoll 引导窗口内
+    // 把高亮 snap 回目标句，消除「点第 N 行高亮 N-1」。解析不到下标（cue 不在 _cues）时清空，
+    // 退回纯位置推导。
+    _seekTargetCueIndex = _resolveCueIndex(cue);
     await seekMs(cueSeekTargetMs(
       cueStartMs: cue.startMs,
       delayMs: _delayMs,
       preRollMs: kCueSeekPreRollMs,
       prevCueStartMs: _prevCueStartMsBefore(cue.startMs),
     ));
+  }
+
+  /// 求 [cue] 在升序 [_cues] 中的下标；优先按对象同一性（面板/导航传的就是 _cues 元素），
+  /// 退而按 `startMs` 二分（防御性，cue 是等价副本时）。找不到返回 null。
+  int? _resolveCueIndex(AudioCue cue) {
+    final int direct = _cues.indexOf(cue);
+    if (direct >= 0) return direct;
+    int lo = 0;
+    int hi = _cues.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (_cues[mid].startMs < cue.startMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    if (lo < _cues.length && _cues[lo].startMs == cue.startMs) return lo;
+    return null;
   }
 
   /// 在升序 [_cues] 上求「起点严格早于 [cueStartMs] 的最后一条」的起点（即上一句起点）；
