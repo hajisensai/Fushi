@@ -1040,15 +1040,21 @@ class VideoControlLayout {
       final VideoControlSlot? slot = VideoControlSlot.fromStorage(entry.key);
       final Object? listRaw = entry.value;
       if (slot == null || listRaw is! List) continue;
+      // TODO-598 / BUG-338: the v2 layout persisted everything the user took off
+      // the player inside a single `hidden` slot. v3 replaced that slot with an
+      // explicit `removed` set, so on upgrade every v2 hidden key must be carried
+      // across as removed (still restorable from the palette) -- never silently
+      // dropped from both the player and the tray. Handled by the dedicated
+      // migration helper so the intent is explicit, not an inline side effect.
+      if (slot == VideoControlSlot.hidden) {
+        _migrateV2HiddenKeysAsRemoved(listRaw, removed);
+        continue;
+      }
       final List<VideoControlItem> items = <VideoControlItem>[];
       for (final Object? rawItem in listRaw) {
         if (rawItem is! String) continue;
         final VideoControlItem? item = VideoControlItem.fromStorage(rawItem);
         if (item == null) continue;
-        if (slot == VideoControlSlot.hidden) {
-          if (item.canBeRemovedFromPlayer) removed.add(item);
-          continue;
-        }
         if (!item.canMoveToSlot(slot)) continue;
         items.add(item);
       }
@@ -1070,6 +1076,26 @@ class VideoControlLayout {
       assignments: fallback,
       removedItems: removed,
     );
+  }
+
+  /// TODO-598 / BUG-338: carry every key from a v2 `hidden` slot into the v3
+  /// [removed] set so an upgrading user keeps exactly the buttons they had taken
+  /// off the player (still restorable from the palette), with no silent loss.
+  ///
+  /// A key that is no longer removable (only [VideoControlItem.playPause] today)
+  /// is intentionally skipped here: [_normalize] backfills it onto the player,
+  /// because a required transport key can never be hidden. Every other v2 hidden
+  /// key must reach [removed]; this is pinned by the BUG-338 guard test.
+  static void _migrateV2HiddenKeysAsRemoved(
+    List<dynamic> hiddenRaw,
+    Set<VideoControlItem> removed,
+  ) {
+    for (final Object? rawItem in hiddenRaw) {
+      if (rawItem is! String) continue;
+      final VideoControlItem? item = VideoControlItem.fromStorage(rawItem);
+      if (item == null) continue;
+      if (item.canBeRemovedFromPlayer) removed.add(item);
+    }
   }
 
   /// Normalizing invariant keeper:

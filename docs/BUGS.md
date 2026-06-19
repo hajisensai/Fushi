@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 331 条。点号进各自文件。
+> 共 332 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-338](bugs/BUG-338-video-v2-hidden-key-migration.md) | ✅ | ✅ | 视频控制v2迁移隐藏键静默移除 |
 | [BUG-337](bugs/BUG-337-todo-563-fullscreen-volume-hud.md) | ✅ | ✅ | TODO-563 滑动手势音量/亮度 HUD 桌面与全屏也应显示（不止手机窗口） |
 | [BUG-336](bugs/BUG-336-todo-564-screenshot-filename.md) | ✅ | ✅ | TODO-564 视频截图文件名太长，改成视频名+播放时刻更语义化 |
 | [BUG-335](bugs/BUG-335-remote-video-grid.md) | ✅ | ✅ | 手机远端视频显示成横条应改网格 |
