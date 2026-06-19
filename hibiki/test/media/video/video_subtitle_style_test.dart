@@ -213,18 +213,23 @@ void main() {
     });
   });
 
-  group('videoSubtitleControlsReserve 按平台真实几何 + 随缩放（BUG-238）', () {
+  group('videoSubtitleControlsReserve 按平台真实几何 + 随缩放（BUG-238 / TODO-568）', () {
     // 视频页控制条几何基线（×1.0）：与 video_hibiki_page.dart 同名常量保持一致。
     const double buttonBarBase = 56;
     const double seekGapBase = 8;
-    const double seekContainerBase = 52;
+    // TODO-568：移动 reserve 抬到「可见轨道上缘 + 呼吸间距」（而非整段触摸热区高 52），
+    // 字幕骑进度条上方一点点、不顶飞。
+    const double seekTrackBase = 5; // 可见轨道高（_videoSeekBarTrackHeightBase）。
+    const double breathingBase =
+        8; // 字幕呼吸间距（_videoSubtitleSeekBarBreathingBase）。
     const double chromeBaseline = 24; // 不随缩放的离底基线常量。
 
     double mobileReserve(double scale) => videoSubtitleControlsReserve(
           isDesktop: false,
           buttonBarHeight: buttonBarBase * scale,
           seekBarButtonGap: seekGapBase * scale,
-          seekBarContainerHeight: seekContainerBase * scale,
+          seekBarTrackHeight: seekTrackBase * scale,
+          subtitleBreathingGap: breathingBase * scale,
           bottomChromeBaseline: chromeBaseline,
           bottomSystemInset: 0,
         );
@@ -232,46 +237,52 @@ void main() {
           isDesktop: true,
           buttonBarHeight: buttonBarBase * scale,
           seekBarButtonGap: seekGapBase * scale,
-          seekBarContainerHeight: seekContainerBase * scale,
+          seekBarTrackHeight: seekTrackBase * scale,
+          subtitleBreathingGap: breathingBase * scale,
           bottomChromeBaseline: chromeBaseline,
           bottomSystemInset: 0,
         );
 
-    test('移动端 reserve = 进度条上缘高度（基线 + 按钮行 + 间距 + 热区）且 > 默认基线 75', () {
+    test('移动端 reserve = 可见进度条轨道上缘 + 呼吸间距 且 > 默认基线 75（TODO-568 不顶飞）', () {
       // 旧常量 56 < 默认基线 75 → max(75,56)=75 把字幕留在被抬高的移动进度条下面被遮
       // （用户报「只动一点点」=实际 0）。真实几何 reserve 必须盖过进度条上缘且 > 75，
       // 取下限 max(75, reserve) 才真正抬升字幕盖过进度条。
-      // scale=1.0：24 + 56 + 8 + 52 = 140。
-      expect(mobileReserve(1.0), closeTo(140, 0.001));
+      // TODO-568：reserve 抬到**可见轨道上缘 + 呼吸间距**（不再用整段触摸热区高 52，
+      // 那会顶飞 ~47×缩放 空白）。scale=1.0：24 + 56 + 8 + 5 + 8 = 101。
+      expect(mobileReserve(1.0), closeTo(101, 0.001));
       expect(mobileReserve(1.0),
           greaterThan(VideoSubtitleStyle.defaults.bottomPadding),
           reason: '移动 reserve 必须 > 默认基线 75，否则 max 不抬升、字幕被进度条遮（根因）');
       // 防回退：撤回成旧常量 56 → 本条红（56 < 75）。
       expect(mobileReserve(1.0), greaterThan(kVideoControlsBottomReserve),
           reason: '真实几何 reserve 应远大于旧的常量 56');
+      // TODO-568 防回退：撤回成旧的「整段触摸热区高 52」(=140) → 本条红（顶飞）。
+      expect(mobileReserve(1.0), lessThan(140),
+          reason: '移动 reserve 不应再用整段热区高（140 会把字幕顶飞 ~47px 空白，TODO-568）');
     });
 
     test('系统底部 inset 计入移动 reserve（导航条唤回时进度条随之上移）', () {
       // 唤回手势导航条时进度条整体上移，字幕避让也要跟着抬高。
-      expect(mobileReserve(1.0) + 48, closeTo(140 + 48, 0.001));
+      expect(mobileReserve(1.0) + 48, closeTo(101 + 48, 0.001));
       final double withInset = videoSubtitleControlsReserve(
         isDesktop: false,
         buttonBarHeight: buttonBarBase,
         seekBarButtonGap: seekGapBase,
-        seekBarContainerHeight: seekContainerBase,
+        seekBarTrackHeight: seekTrackBase,
+        subtitleBreathingGap: breathingBase,
         bottomChromeBaseline: chromeBaseline,
         bottomSystemInset: 48,
       );
-      expect(withInset, closeTo(140 + 48, 0.001));
+      expect(withInset, closeTo(101 + 48, 0.001));
     });
 
     test('reserve 随界面缩放放大（缩放敏感几何项 ×scale）', () {
       // 旧常量 56 恒定不随缩放，放大界面后控制条变高、reserve 不变 → 盖不住（根因之二）。
-      // 缩放敏感项（按钮行/间距/热区）随 scale 放大；离底基线常量不随缩放。
+      // 缩放敏感项（按钮行/间距/轨道/呼吸）随 scale 放大；离底基线常量不随缩放。
       expect(mobileReserve(2.0), greaterThan(mobileReserve(1.0)),
           reason: 'reserve 必须随界面缩放变大，否则放大界面后盖不住进度条');
-      // scale=2.0：24 + (56+8+52)*2 = 24 + 232 = 256。
-      expect(mobileReserve(2.0), closeTo(256, 0.001));
+      // scale=2.0：24 + (56+8+5+8)*2 = 24 + 154 = 178。
+      expect(mobileReserve(2.0), closeTo(178, 0.001));
       // 桌面也随缩放：一个按钮行高 ×scale。
       expect(desktopReserve(2.0), greaterThan(desktopReserve(1.0)));
       expect(desktopReserve(2.0), closeTo(112, 0.001)); // 56 * 2.0

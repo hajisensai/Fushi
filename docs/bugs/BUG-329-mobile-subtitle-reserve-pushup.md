@@ -1,0 +1,16 @@
+## BUG-329 · 手机端字幕条被顶飞 / 位置不对·reserve 误用进度条触摸热区全高（TODO-568）
+- **报告**：2026-06-19（用户 B03 验收第 6 条「手机上不正常，7 一样」：手机端播放时控制条/进度条出现，底部字幕条被顶飞 / 位置不对，没有「恰骑进度条上方一点点」。第 7 条是字幕描边，已另修 TODO-569）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/video_subtitle_style.dart:54-72`（`videoSubtitleControlsReserve` 移动分支）。
+  - 字幕动态避让用 `max(bottomPadding, controlsBottomReserve)`（`video_subtitle_overlay.dart:521-534` `_paddingFor`），控制条可见时字幕底缘抬到 reserve（=进度条上缘距视频底边的高度）。模型本身正确（取下限不顶飞高位字幕，BUG-226）。
+  - **reserve 几何算错**：BUG-238 当初移动分支把 reserve 累加了 **`seekBarContainerHeight`（进度条触摸热区**全高 ≈52×缩放）。但 media_kit `MaterialSeekBar`（`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material.dart:1714-1791`）把**可见轨道**放在容器底缘（容器 `alignment: seekBarAlignment = bottomCenter`，内层 `Stack(alignment: bottomCenter)`），可见轨道只占 `seekBarHeight`（≈5×缩放），容器其余 ~47×缩放 全是轨道**上方**的透明命中区。
+  - 后果（scale=1.0、inset=0）：可见进度条轨道上缘 ≈ `chromeBaseline(24)+buttonBar(56)+gap(8)+track(5)` = **93**，但 reserve = `24+56+8+container(52)` = **140**，字幕底缘被抬到热区**顶缘** 140，比可见进度条上缘高出 ~**47px×缩放** 的透明空白 → 手机端字幕悬空「顶飞」、位置不对。桌面分支 reserve=一个按钮行高（进度条骑按钮行上沿），不受影响，故只手机端异常（与用户「手机上不正常」吻合）。
+  - 这正是 BUG-238 备注里预留的「真机微调项（dev=True）：移动 reserve ≈140 是否偏高需真机量像素，若偏高调几何项组合」的兑现。
+- **[x] ① 根因修复** — 提交 `6d765d969`：
+  - `video_subtitle_style.dart`：`videoSubtitleControlsReserve` 移动分支改抬到**可见轨道上缘 + 小呼吸间距**，签名 `seekBarContainerHeight` → `seekBarTrackHeight` + 新增 `subtitleBreathingGap`，移动 reserve = `bottomChromeBaseline + bottomSystemInset + buttonBarHeight + seekBarButtonGap + seekBarTrackHeight + subtitleBreathingGap`（scale=1.0 = 24+56+8+5+8 = **101**，仍 > 默认基线 75 不被遮，且 < 旧 140 不顶飞）。桌面分支不变（保 BUG-228）。保留 BUG-226 取下限语义（高位用户不被改写）、BUG-238 随缩放与「移动 reserve > 桌面」语义。
+  - `video_hibiki_page.dart`：新增 `_videoSubtitleSeekBarBreathingBase = 8` 常量 + `_videoSubtitleSeekBarBreathingGap` getter（×`_videoUiScale`）；`_subtitleControlsBottomReserve()` 改传 `seekBarTrackHeight: _videoSeekBarTrackHeight` + `subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap`（替换 `_videoSeekBarContainerHeight`）。
+- **[x] ② 自动化测试** —
+  - `hibiki/test/media/video/video_subtitle_style_test.dart`：BUG-238 组改用新签名，移动 reserve(1x) 断言 = **101**（撤回成旧 140/整段热区高即红）、`lessThan(140)` 防回退顶飞、随缩放 reserve(2x) = **178**、系统 inset 计入、桌面 < 移动不变。
+  - `hibiki/test/media/video/video_subtitle_overlay_test.dart`：BUG-238 组模拟视频页传入 reserve 改 140/256 → **101/178**，仍断言 `max(75, reserve)` 抬升盖过进度条、隐藏落回基线、随缩放抬更高。
+  - `hibiki/test/pages/video_subtitle_push_up_guard_test.dart`：源码守卫 getter 列表改为含 `_videoSeekBarTrackHeight` + `_videoSubtitleSeekBarBreathingGap`，并新增防回退断言 `isNot(contains('_videoSeekBarContainerHeight'))`（撤回成整段热区高即红）。
+  - 验证：`flutter test test/media/video/video_subtitle_style_test.dart test/media/video/video_subtitle_overlay_test.dart test/pages/video_subtitle_push_up_guard_test.dart` 全绿（61 例）；`flutter analyze`（5 改动文件）No issues found。
+- **备注**：**手机端定位观感为主，host widget/纯函数测试只锁定几何与避让行为结构，真机必须用户复测**（横竖屏 + 控制条显隐切换：控制条出现时字幕应恰骑进度条上方一点点、不顶飞不被遮，控制条隐藏落回基线）。呼吸间距 8×缩放 是观感标定值，若真机仍偏高/偏低，集中调 `_videoSubtitleSeekBarBreathingBase` 或纯函数项即可。系统手势导航条唤回时 `bottomSystemInset` 转非零、reserve 随之增大已计入。**采番**：遍历本 checkout 及所有 worktree 分支 `git ls-tree` 取 BUG 号并集（最高 328），并避开用户告知的 323-328 占用 + 并发 561/571，取 329。

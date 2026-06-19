@@ -44,8 +44,19 @@ const double kVideoControlsBottomReserve = _kButtonBarHeight;
 /// - 桌面：进度条骑按钮行上沿 → reserve = 一个按钮行高（[buttonBarHeight]），保持
 ///   BUG-228「只让出进度条那一条、不抬过整条按钮行」的桌面观感，但现在随缩放变化；
 /// - 移动：进度条整体被抬到按钮行上方 → reserve = [bottomChromeBaseline] + 系统底部
-///   inset + [buttonBarHeight] + [seekBarButtonGap] + [seekBarContainerHeight]（=进度条
-///   热区上缘距视频底边），盖过被抬高的移动进度条。
+///   inset + [buttonBarHeight] + [seekBarButtonGap] + **可见轨道高** [seekBarTrackHeight]
+///   + 字幕呼吸间距 [subtitleBreathingGap]（= 可见进度条**轨道上缘** + 一点点呼吸距离，
+///   字幕底缘恰骑其上方）。
+///
+/// TODO-568（手机端字幕被顶飞 / 位置不对）：BUG-238 当初移动分支加的是
+/// **`seekBarContainerHeight`（进度条触摸热区全高 ≈52×缩放）**，但 media_kit
+/// `MaterialSeekBar` 把**可见轨道**放在容器底缘（`Alignment.bottomCenter`，
+/// `third_party/media_kit_video/.../material.dart` 的 `seekBarAlignment` + 内层 Stack），
+/// 可见轨道只占 `seekBarHeight`（≈5×缩放），容器其余 ~47×缩放 全是轨道**上方**的透明
+/// 命中区。用整段热区高当 reserve → 字幕底缘被抬到热区**顶缘**，比可见进度条上缘还高出
+/// ~47×缩放 的空白，字幕悬空「顶飞」（BUG-238 备注里预留的「真机微调项」，现兑现）。修正：
+/// 改用**可见轨道高** [seekBarTrackHeight] + 小呼吸间距 [subtitleBreathingGap]，让字幕
+/// 底缘骑在可见进度条上方一点点（不被遮、也不顶飞）。
 ///
 /// 几何项均来自 `video_hibiki_page.dart` 的同名控制条 getter（已 ×uiScale）；本函数不再
 /// 二次乘 uiScale，由调用方传入已缩放值，避免双重缩放。[bottomChromeBaseline] 是不随
@@ -55,7 +66,8 @@ double videoSubtitleControlsReserve({
   required bool isDesktop,
   required double buttonBarHeight,
   required double seekBarButtonGap,
-  required double seekBarContainerHeight,
+  required double seekBarTrackHeight,
+  required double subtitleBreathingGap,
   required double bottomChromeBaseline,
   required double bottomSystemInset,
 }) {
@@ -63,12 +75,14 @@ double videoSubtitleControlsReserve({
     // 桌面进度条骑按钮行上沿：让出一个（已缩放的）按钮行高即可（BUG-228）。
     return buttonBarHeight;
   }
-  // 移动进度条上缘 = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距 + 进度条热区高。
+  // 移动可见进度条**轨道上缘** = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距 +
+  // 可见轨道高；再加字幕呼吸间距让字幕底缘骑在其上方一点点（不顶飞、不被遮，TODO-568）。
   return bottomChromeBaseline +
       bottomSystemInset +
       buttonBarHeight +
       seekBarButtonGap +
-      seekBarContainerHeight;
+      seekBarTrackHeight +
+      subtitleBreathingGap;
 }
 
 /// seek bar 章节刻度层（TODO-432）相对**控制条区域底边**的竖直锚定：返回紧贴轨道的刻度带

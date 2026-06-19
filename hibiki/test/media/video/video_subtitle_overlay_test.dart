@@ -260,8 +260,9 @@ void main() {
       // ×缩放），远大于默认基线 75。旧默认常量 56 < 75 → max(75,56)=75 把字幕留在进度条
       // 下面被遮（用户报「只动一点点」=实际 0）。本组用「显式大 reserve」复刻视频页接线，
       // 断言字幕真正被抬过进度条；并验证 reserve 越大（界面放大）抬得越高。
-      const double mobileReserveAt1x = 140; // 24 + 56 + 8 + 52（与页面几何一致）。
-      const double mobileReserveAt2x = 256; // 24 + (56+8+52)*2。
+      // TODO-568：移动 reserve = 可见轨道上缘 + 呼吸间距（不再用整段触摸热区高）。
+      const double mobileReserveAt1x = 101; // 24 + 56 + 8 + 5 + 8（与页面几何一致）。
+      const double mobileReserveAt2x = 178; // 24 + (56+8+5+8)*2。
 
       testWidgets(
           'controls visible + 真实 reserve(140) > 默认基线 75：字幕抬到 reserve（盖过进度条）',
