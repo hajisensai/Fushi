@@ -27,7 +27,9 @@ const Set<String> kDragSubtitleExtensions = <String>{
   'lrc',
 };
 
-/// 视频扩展名（不带点，小写）。
+/// 视频扩展名（不带点，小写）。镜像 [kVideoExtensions]（video_filename_parser.dart，
+/// 文件夹扫描用的权威列表），守卫测试钉死两者同步——否则拖入 .mts/.vob/.rmvb 等容器
+/// 格式的视频会被分到 unknown，识别不出（TODO-558 / BUG-326）。
 const Set<String> kDragVideoExtensions = <String>{
   'mp4',
   'mkv',
@@ -35,12 +37,17 @@ const Set<String> kDragVideoExtensions = <String>{
   'mov',
   'webm',
   'm4v',
-  'flv',
   'ts',
+  'm2ts',
+  'mts',
+  'flv',
   'wmv',
   'mpg',
   'mpeg',
-  'm2ts',
+  'ogv',
+  'rmvb',
+  'rm',
+  'vob',
 };
 
 /// 播放列表扩展名（不带点，小写）。扩展 M3U（m3u8/m3u）= 多集视频清单，语义不同于

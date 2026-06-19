@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
@@ -33,6 +34,13 @@ void main() {
       final r = classifyDroppedFiles(['/x/a.mkv']);
       expect(r.videos, ['/x/a.mkv']);
       expect(r.audios, isEmpty);
+    });
+
+    // TODO-558 / BUG-326: 蓝光/录播容器格式拖入也要识别成视频（曾漏 mts/vob/rmvb）。
+    test('mts / vob / rmvb container formats classify as video', () {
+      final r = classifyDroppedFiles(['/x/a.mts', '/x/b.vob', '/x/c.rmvb']);
+      expect(r.videos, ['/x/a.mts', '/x/b.vob', '/x/c.rmvb']);
+      expect(r.unknown, isEmpty);
     });
 
     test('mp3 is audio only', () {
@@ -92,6 +100,20 @@ void main() {
       expect(classifyDroppedFiles([]).hasAny, isFalse);
       expect(classifyDroppedFiles(['/x/a.epub']).hasAny, isTrue);
     });
+  });
+
+  test('kDragVideoExtensions stays in sync with kVideoExtensions (folder scan)',
+      () {
+    // 文件夹扫描用 kVideoExtensions（带点），拖放用 kDragVideoExtensions（不带点）。
+    // 两者漂移会导致「文件夹按钮能扫到、拖放却识别不出」同一个视频（TODO-558）。
+    final Set<String> scan =
+        kVideoExtensions.map((String e) => e.replaceFirst('.', '')).toSet();
+    expect(
+      kDragVideoExtensions,
+      equals(scan),
+      reason:
+          '视频扩展名漂移：更新 kDragVideoExtensions 与 kVideoExtensions（video_filename_parser.dart）保持一致',
+    );
   });
 
   test(
