@@ -149,6 +149,20 @@ jobs:
           }
           CPP
           "$CXX" -std=c++23 /tmp/hoshidicts_expected.cpp -o /tmp/hoshidicts_expected
+      # Native engine e2e/guard suite (TODO-578): build the real hoshidicts
+      # static lib via the unified CMake/ctest harness and run every native test
+      # (UAF dict-name, kanji round-trip, media import/query, freq+pitch, plus
+      # the pure-memory zip64/word-scan/text-processor guards). Self-contained
+      # in-memory zip fixtures, no emulator/external assets. Runs before the
+      # Flutter build so a native break fails fast and stays independent of Dart.
+      - name: Run hoshidicts native tests (ctest)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S native/hoshidicts/tests -B "$RUNNER_TEMP/hoshi-tests" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/hoshi-tests" --config Release
+          ctest --test-dir "$RUNNER_TEMP/hoshi-tests" --output-on-failure -C Release
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
