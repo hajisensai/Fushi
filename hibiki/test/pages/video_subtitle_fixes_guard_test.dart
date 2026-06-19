@@ -221,4 +221,62 @@ void main() {
     expect(handler.contains('t.video_subtitle_load_failed'), isTrue,
         reason: '复用现有字幕加载失败 OSD 文案，避免静默空屏');
   });
+
+  test('TODO-573: 「自动获取字幕(Jimaku)」入口对本地和远端视频都显示', () {
+    // 入口门控不再是 `!_isRemote`，否则远端视频整条 Jimaku 入口消失（用户报：
+    // 远端视频字幕轨里没有「自动获取字幕」）。改为只要能算出非空番名 query 就显示。
+    final String panel = region(
+      'Widget _buildSubtitleSourcesSidePanel(',
+      'Widget _buildAudioTracksSidePanel(',
+    );
+    expect(panel.contains('if (_jimakuQuery() != null)'), isTrue,
+        reason: 'Jimaku 入口门控必须按「能否算出番名 query」判定，不能用 !_isRemote '
+            '把远端视频整条入口隐藏（TODO-573）');
+    expect(panel.contains('if (!_isRemote && _currentVideoPath != null)'),
+        isFalse,
+        reason: '旧的 !_isRemote 门控会让远端视频看不到「自动获取字幕」，必须移除');
+    // 入口本体仍在（标题 + 打开对话框）。
+    expect(panel.contains('t.video_jimaku_fetch'), isTrue);
+    expect(panel.contains('_openJimakuDialog(controller)'), isTrue);
+  });
+
+  test('TODO-573: 远端 Jimaku query 取 host 标题，下载后走内存应用', () {
+    // _jimakuQuery：本地用文件名解析 series，远端用 host 下发的标题。
+    final String query = region(
+      'String? _jimakuQuery() {',
+      'Future<void> _openJimakuDialog(',
+    );
+    expect(query.contains('_currentVideoPath'), isTrue,
+        reason: '本地视频仍用 _currentVideoPath 的文件名解析 series');
+    expect(query.contains('parseVideoFilename('), isTrue,
+        reason: 'query 经 parseVideoFilename 收敛成番名 series');
+    expect(query.contains('widget.remoteInfo?.title'), isTrue,
+        reason: '远端无本地文件名，query 必须能回退到 host 下发的 remoteInfo.title');
+    expect(query.contains('_isRemote'), isTrue,
+        reason: '远端分支按 _isRemote 取标题作为 query 来源');
+
+    // _openJimakuDialog：远端下载后内存应用（_applyRemoteSubtitle，不写本地 DB），
+    // 本地仍走 _selectSubtitleSource 持久化。
+    final String dialog = region(
+      'Future<void> _openJimakuDialog(',
+      'Future<void> _pickAndImportSubtitle(',
+    );
+    expect(dialog.contains('_jimakuQuery()'), isTrue,
+        reason: '对话框 query 复用 _jimakuQuery，不再直接读 _currentVideoPath');
+    expect(dialog.contains('if (_isRemote)'), isTrue,
+        reason: '远端必须按 _isRemote 分流：没有本地 DB 行，不能走持久化链路');
+    expect(dialog.contains('_applyRemoteSubtitle(controller, downloaded)'),
+        isTrue,
+        reason: '远端下载的字幕只能内存应用（_applyRemoteSubtitle），与远端「本地导入字幕」'
+            '同一不落 DB 的链路（TODO-573）');
+    expect(dialog.contains('_selectSubtitleSource(controller, source)'), isTrue,
+        reason: '本地视频仍走 _selectSubtitleSource 持久化外挂字幕源');
+    // 远端分支必须早返回，不要再落到本地持久化分支。
+    final int remoteApply =
+        dialog.indexOf('_applyRemoteSubtitle(controller, downloaded)');
+    final int localSelect =
+        dialog.indexOf('_selectSubtitleSource(controller, source)');
+    expect(remoteApply, lessThan(localSelect),
+        reason: '远端分支应在本地持久化分支之前并早返回');
+  });
 }
