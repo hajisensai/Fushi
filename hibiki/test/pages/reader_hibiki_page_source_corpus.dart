@@ -13,6 +13,7 @@ const List<String> _readerHibikiPageFiles = <String>[
   'lib/src/pages/implementations/reader_hibiki_page.dart',
   'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart',
   'lib/src/pages/implementations/reader_hibiki/mining.part.dart',
+  'lib/src/pages/implementations/reader_hibiki/lookup.part.dart',
 ];
 
 /// 读「阅读器页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。
