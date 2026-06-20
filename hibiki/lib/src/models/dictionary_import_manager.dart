@@ -196,7 +196,8 @@ class DictionaryImportManager {
         if (decision == UpdateDecision.replaceOldVersion ||
             decision == UpdateDecision.replaceExact) {
           final Dictionary existing = decision == UpdateDecision.replaceExact
-              ? _dictRepo.dictionaries.firstWhere((Dictionary d) => d.name == name)
+              ? _dictRepo.dictionaries
+                  .firstWhere((Dictionary d) => d.name == name)
               : _dictRepo.findUpdatable(name)!;
           order = existing.order;
           preservedSettings = existing;
@@ -318,7 +319,8 @@ class DictionaryImportManager {
       if (decision == UpdateDecision.replaceOldVersion ||
           decision == UpdateDecision.replaceExact) {
         final Dictionary existing = decision == UpdateDecision.replaceExact
-            ? _dictRepo.dictionaries.firstWhere((Dictionary d) => d.name == name)
+            ? _dictRepo.dictionaries
+                .firstWhere((Dictionary d) => d.name == name)
             : _dictRepo.findUpdatable(name)!;
         order = existing.order;
         preservedSettings = existing;
