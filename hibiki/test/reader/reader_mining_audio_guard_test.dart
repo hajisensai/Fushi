@@ -23,12 +23,24 @@ void main() {
             'The value passed to AnkiMiningContext.sentenceOffset must come '
             'from ReaderSelectionData.sentenceOffset.',
       );
+      // TODO-644 / BUG-357：sentenceOffset 现在经 await 前快照局部值传入（消除并发
+      // 查词在 extractAudioSegment 的 await 处改写 _cachedSentenceOffset 的 race）。
+      // 快照仍源自 JS 的 _cachedSentenceOffset，语义不变。
       expect(
         source,
-        contains('sentenceOffset: _cachedSentenceOffset'),
+        contains('final int? snapshotSentenceOffset = _cachedSentenceOffset'),
+        reason:
+            'AnkiMiningContext.sentenceOffset must be snapshotted from the JS '
+            '_cachedSentenceOffset BEFORE the extractAudioSegment await, so a '
+            'concurrent lookup cannot overwrite it mid-prepare.',
+      );
+      expect(
+        source,
+        contains('sentenceOffset: snapshotSentenceOffset'),
         reason:
             'AnkiMiningContext.sentenceOffset is consumed as a sentence-local '
-            'character offset when bolding the mined expression.',
+            'character offset; it must read the pre-await snapshot, not the '
+            'shared mutable member.',
       );
       expect(
         source,

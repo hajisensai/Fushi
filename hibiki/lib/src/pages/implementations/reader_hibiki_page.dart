@@ -55,6 +55,7 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/debug_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
+import 'package:hibiki/src/utils/misc/serial_task_queue.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -3596,6 +3597,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 同一 reader 页 / currentSentence 链路，区别只在裁句子音频。
   final MiningSentenceDraft _miningDraft = MiningSentenceDraft();
 
+  /// TODO-644 / BUG-357：制卡串行化队列。`onMineFromPopup` / `onUpdateFromPopup` 都把
+  /// 自己的 prepare→mine 工作经 [SerialTaskQueue.enqueue] 挂到队列尾，保证同一时刻只跑
+  /// 一张卡的制卡序列。快速连制两张卡（来自两个 mine button，popup.js 的 per-button
+  /// guard 互不影响）时，第二张排队等第一张完成后再跑，杜绝两次 prepare 在
+  /// `extractAudioSegment` 的 await 处交错改写共享成员。配合 [_prepareMiningContext] 的
+  /// await 前快照，双保险：快照消除单次错配，串行化消除连制交错。
+  final SerialTaskQueue _miningQueue = SerialTaskQueue();
+
   /// reader（书籍/有声书）支持「+句」累积草稿。
   @override
   bool get supportsSentenceDraft => true;
@@ -3826,6 +3835,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (coverFile.existsSync()) coverPath = coverFile.path;
     }
 
+    // TODO-644 / BUG-357：在第一个 await（句子音频裁剪，可让出事件循环数百 ms）之前，
+    // 把所有「制卡上下文要用」的共享可变成员快照成局部 final。否则在 await 悬挂期间，
+    // 第二次查词（`_handleTextSelected` 在其首个 await 前同步改写 currentCueSentence /
+    // _cachedSentenceOffset）会把这些成员改成第二个词的值，导致第一张卡的 cue 句 / 加粗
+    // 偏移与第二个词错配（或第二次中途清空时丢失）。await 之后一律只读这些局部值，消除
+    // 「await 后读可变成员」整类时序漏洞。
+    final String snapshotCueSentence =
+        appModel.currentMediaSource?.currentCueSentence.text ?? '';
+    final int? snapshotSentenceOffset = _cachedSentenceOffset;
+
     String? sasayakiAudioPath;
     Directory? sasayakiTempDir;
     bool requestedSentenceAudioClip = false;
@@ -3907,16 +3926,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return (context: null, cleanup: cleanupSasayakiTempDir);
     }
 
-    final String cueSentence =
-        appModel.currentMediaSource?.currentCueSentence.text ?? '';
-
+    // TODO-644 / BUG-357：用 await 前的快照值构造上下文（cue 句 / 加粗偏移），不再
+    // 读 currentCueSentence / _cachedSentenceOffset 这两个会被并发查词改写的可变成员。
     final AnkiMiningContext miningContext = AnkiMiningContext(
       sentence: sentence,
-      cueSentence: cueSentence.isNotEmpty ? cueSentence : null,
+      cueSentence: snapshotCueSentence.isNotEmpty ? snapshotCueSentence : null,
       documentTitle: _book?.title,
       coverPath: coverPath,
       sasayakiAudioPath: sasayakiAudioPath,
-      sentenceOffset: _cachedSentenceOffset,
+      sentenceOffset: snapshotSentenceOffset,
       // TODO-115: 书籍来源 → 卡片追加 `book` 分类标签（reader 不走 DictionaryPageMixin）。
       source: AnkiMiningSource.book,
     );
@@ -3925,7 +3943,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   @override
-  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) {
+    // TODO-644 / BUG-357：经制卡串行队列执行，杜绝快速连制两张卡时两次 prepare→mine
+    // 在 extractAudioSegment 的 await 处交错。第二张排队等第一张完成（不丢弃请求）。
+    return _miningQueue.enqueue(() => _onMineFromPopupInner(fields));
+  }
+
+  Future<MinePopupResult> _onMineFromPopupInner(
+      Map<String, String> fields) async {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final prepared = await _prepareMiningContext();
     final AnkiMiningContext? miningContext = prepared.context;
@@ -3967,6 +3992,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   Future<MinePopupResult> onUpdateFromPopup(
+    int noteId,
+    Map<String, String> fields,
+  ) {
+    // TODO-644 / BUG-357：覆盖同样经制卡串行队列，与制卡共用同一条队列尾（两者都读
+    // 同一组共享成员），避免「连制 + 覆盖」交错。
+    return _miningQueue.enqueue(() => _onUpdateFromPopupInner(noteId, fields));
+  }
+
+  Future<MinePopupResult> _onUpdateFromPopupInner(
     int noteId,
     Map<String, String> fields,
   ) async {

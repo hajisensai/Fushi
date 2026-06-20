@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 350 条。点号进各自文件。
+> 共 351 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-357](bugs/BUG-357-mining-race.md) | ✅ | ✅ | 制卡并发race媒体/句子错配 |
 | [BUG-356](bugs/BUG-356-picture-subtitle-lookup-blocked-by-list-barrier.md) | ✅ | ✅ | 画面字幕在字幕列表开启时查不了词（barrier 遮挡） |
 | [BUG-355](bugs/BUG-355-dict-reorder-cache.md) | ✅ | ✅ | 词典重排后查词顺序不即时生效（重启才正常） |
 | [BUG-354](bugs/BUG-354-home-popup-fullwindow.md) | ✅ | ✅ | 首页查词弹窗被结果子区域clamp跳不出搜索框/页边距(嵌套层坐标系不一致偏移) |
