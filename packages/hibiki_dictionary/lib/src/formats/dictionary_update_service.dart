@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
+
 import 'package:path/path.dart' as path;
 
 /// TODO-609：在线 revision 比对手动更新词典——纯 Dart 层（零 C++/FFI/schema）。
@@ -52,4 +54,55 @@ Map<String, String> readSourceMetadataFromIndex(Directory finalDir) {
 /// TODO-609：在线更新检查——拉远端 index.json 比 revision。
 class DictionaryUpdateService {
   const DictionaryUpdateService();
+
+  /// 本地 [localRevision] 与远端 [remoteRevision] 比对：远端非空且与本地不同 →
+  /// 需更新。远端为 null（拉取失败）或空串（远端无 revision）→ 保守返回 false，
+  /// 绝不误报「有更新」。
+  static bool needsUpdate(String localRevision, String? remoteRevision) {
+    if (remoteRevision == null || remoteRevision.isEmpty) return false;
+    return remoteRevision != localRevision;
+  }
+
+  /// 从远端 index.json 文本里取 revision。坏 JSON / 顶层非对象 / 无 revision /
+  /// revision 非字符串或空 → null（纯函数，不抛）。
+  static String? parseRevisionFromIndexJson(String body) {
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } catch (_) {
+      return null;
+    }
+    if (decoded is! Map) return null;
+    final dynamic rev = decoded['revision'];
+    if (rev is! String) return null;
+    final String trimmed = rev.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// 拉取 [indexUrl] 处的远端 index.json 并取其 revision。任何网络/解析失败一律
+  /// 返回 null（不崩、不误报有更新）。[dio] 可注入便于测试。
+  static Future<String?> fetchRemoteIndex(
+    String indexUrl, {
+    Dio? dio,
+  }) async {
+    if (indexUrl.isEmpty) return null;
+    final Dio client = dio ?? Dio();
+    try {
+      final Response<String> resp = await client.get<String>(
+        indexUrl,
+        options: Options(
+          responseType: ResponseType.plain,
+          followRedirects: true,
+          maxRedirects: 5,
+        ),
+      );
+      final String? body = resp.data;
+      if (body == null || body.isEmpty) return null;
+      return parseRevisionFromIndexJson(body);
+    } catch (_) {
+      return null;
+    } finally {
+      if (dio == null) client.close();
+    }
+  }
 }
