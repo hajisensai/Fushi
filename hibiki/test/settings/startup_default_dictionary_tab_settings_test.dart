@@ -7,7 +7,8 @@ void main() {
       'startup default dictionary tab setting is wired through schema and i18n',
       () {
     final String schema =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+        File('lib/src/settings/settings_schema_appearance.dart')
+            .readAsStringSync();
     expect(schema, contains("id: 'appearance.startup_default_dictionary_tab'"));
     expect(schema, contains('t.startup_default_dictionary_tab'));
     expect(schema, contains('t.startup_default_dictionary_tab_hint'));

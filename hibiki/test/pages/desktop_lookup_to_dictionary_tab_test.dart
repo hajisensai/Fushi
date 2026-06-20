@@ -74,7 +74,7 @@ void main() {
   });
 
   test('settings expose three desktop window modes with updated copy', () {
-    final String schema = read('lib/src/settings/settings_schema.dart');
+    final String schema = read('lib/src/settings/settings_schema_lookup.dart');
     final String en = read('lib/i18n/strings.i18n.json');
     final String zh = read('lib/i18n/strings_zh-CN.i18n.json');
 

@@ -95,7 +95,7 @@ void main() {
 
     // 自定义 CSS 编辑仍可达：由设置 schema 的全局入口委托给 DictCssEditorDialog。
     final settingsSource =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+        File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
     expect(settingsSource, contains('DictCssEditorDialog('));
   });
 

@@ -150,7 +150,7 @@ void main() {
 
   test('shortcut settings entry is no longer commented out in schema source',
       () {
-    final String source = File('lib/src/settings/settings_schema.dart')
+    final String source = File('lib/src/settings/settings_schema_system.dart')
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
     // 入口的 onTap 推 ShortcutSettingsPage，且推它的那行不能是注释行

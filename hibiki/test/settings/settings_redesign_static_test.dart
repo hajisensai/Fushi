@@ -6,6 +6,26 @@ String readNormalizedSource(String path) {
   return File(path).readAsStringSync().replaceAll('\r\n', '\n');
 }
 
+/// TODO-586：settings_schema.dart 已按领域拆成 8 个 destination 文件 + 1 个共享
+/// fields 文件。把主文件与全部领域文件源拼成一份，让原本针对“单文件 schema”的
+/// 整体契约断言（destination id 齐全、无旧 id、无旧弹窗页类名等）继续成立。
+const List<String> kSettingsSchemaDomainFiles = <String>[
+  'lib/src/settings/settings_schema.dart',
+  'lib/src/settings/settings_schema_appearance.dart',
+  'lib/src/settings/settings_schema_profiles.dart',
+  'lib/src/settings/settings_schema_reading.dart',
+  'lib/src/settings/settings_schema_lookup.dart',
+  'lib/src/settings/settings_schema_card_creation.dart',
+  'lib/src/settings/settings_schema_video.dart',
+  'lib/src/settings/settings_schema_listening.dart',
+  'lib/src/settings/settings_schema_system.dart',
+  'lib/src/settings/settings_schema_fields.dart',
+];
+
+String readSettingsSchemaCombined() {
+  return kSettingsSchemaDomainFiles.map(readNormalizedSource).join('\n');
+}
+
 void main() {
   const Map<String, List<String>> requiredFiles = <String, List<String>>{
     'lib/src/settings/settings_context.dart': <String>[
@@ -22,17 +42,58 @@ void main() {
       'class SettingsStepperItem',
       'class SettingsCustomItem',
     ],
+    // TODO-586：settings_schema.dart 按领域拆成 8 个 destination 文件 + 1 个共享
+    // fields 文件（照搬 sync_settings_schema 独立 library 范式）。主文件只保留组装
+    // buildSettingsSchema（调用各 buildXxxDestination + buildSyncBackupDestination）
+    // 和 3 个 reader 投影 helper；各 destination id 字面量随函数体搬到对应领域文件。
     'lib/src/settings/settings_schema.dart': <String>[
       'List<SettingsDestination> buildSettingsSchema',
       'SettingsDestination buildReaderQuickSettingsDestination',
+      'buildAppearanceDestination()',
+      'buildProfilesDestination()',
+      'buildReadingDestination()',
+      'buildLookupDestination()',
+      'buildCardCreationDestination()',
+      'buildVideoDestination()',
+      'buildListeningDestination()',
+      'buildSyncBackupDestination()',
+      'buildSystemDestination()',
+    ],
+    'lib/src/settings/settings_schema_appearance.dart': <String>[
+      'SettingsDestination buildAppearanceDestination()',
       'SettingsDestinationId.appearance',
+    ],
+    'lib/src/settings/settings_schema_profiles.dart': <String>[
+      'SettingsDestination buildProfilesDestination()',
       'SettingsDestinationId.profiles',
+    ],
+    'lib/src/settings/settings_schema_reading.dart': <String>[
+      'SettingsDestination buildReadingDestination()',
       'SettingsDestinationId.reading',
+    ],
+    'lib/src/settings/settings_schema_lookup.dart': <String>[
+      'SettingsDestination buildLookupDestination()',
       'SettingsDestinationId.lookup',
+    ],
+    'lib/src/settings/settings_schema_card_creation.dart': <String>[
+      'SettingsDestination buildCardCreationDestination()',
       'SettingsDestinationId.cardCreation',
+    ],
+    'lib/src/settings/settings_schema_video.dart': <String>[
+      'SettingsDestination buildVideoDestination()',
+      'SettingsDestinationId.video',
+    ],
+    'lib/src/settings/settings_schema_listening.dart': <String>[
+      'SettingsDestination buildListeningDestination()',
       'SettingsDestinationId.listening',
-      'buildSyncBackupDestination',
+    ],
+    'lib/src/settings/settings_schema_system.dart': <String>[
+      'SettingsDestination buildSystemDestination()',
       'SettingsDestinationId.system',
+    ],
+    'lib/src/settings/settings_schema_fields.dart': <String>[
+      'class SettingsSecretField',
+      'class SettingsNumberField',
     ],
     'lib/src/sync/sync_settings_schema.dart': <String>[
       'SettingsDestination buildSyncBackupDestination',
@@ -113,8 +174,8 @@ void main() {
   test('settings shared actions use MD3 dialog chrome', () {
     final String actionsSource =
         readNormalizedSource('lib/src/settings/settings_actions.dart');
-    final String schemaSource =
-        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    // TODO-586：schema 拆成多领域文件，adaptiveAlertDialog 禁令要扫全部领域文件。
+    final String schemaSource = readSettingsSchemaCombined();
     final String syncSource =
         readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
     final String combined = '$actionsSource\n$schemaSource\n$syncSource';
@@ -184,8 +245,7 @@ void main() {
   test('settings schema uses task-oriented destinations', () {
     final String destinationSource =
         readNormalizedSource('lib/src/settings/settings_destination.dart');
-    final String schemaSource =
-        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    final String schemaSource = readSettingsSchemaCombined();
     final String syncSource =
         readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
     final String combined = '$destinationSource\n$schemaSource\n$syncSource';
@@ -210,26 +270,17 @@ void main() {
   });
 
   test('custom fonts are grouped with app appearance typography', () {
-    final String schemaSource =
-        readNormalizedSource('lib/src/settings/settings_schema.dart');
-    final int appearanceStart =
-        schemaSource.indexOf('SettingsDestination _appearanceDestination()');
-    final int profilesStart =
-        schemaSource.indexOf('SettingsDestination _profilesDestination()');
-    final int readingStart =
-        schemaSource.indexOf('SettingsDestination _readingDestination()');
-    final int lookupStart =
-        schemaSource.indexOf('SettingsDestination _lookupDestination()');
-
-    expect(appearanceStart, isNonNegative);
-    expect(profilesStart, isNonNegative);
-    expect(readingStart, isNonNegative);
-    expect(lookupStart, isNonNegative);
-
-    final String appearanceSource =
-        schemaSource.substring(appearanceStart, profilesStart);
+    // TODO-586：appearance/reading destination 各自独立成领域文件，整份文件即对应
+    // 域的源（不再靠同文件相对位置切片）。
+    final String appearanceSource = readNormalizedSource(
+        'lib/src/settings/settings_schema_appearance.dart');
     final String readingSource =
-        schemaSource.substring(readingStart, lookupStart);
+        readNormalizedSource('lib/src/settings/settings_schema_reading.dart');
+
+    expect(appearanceSource,
+        contains('SettingsDestination buildAppearanceDestination()'));
+    expect(readingSource,
+        contains('SettingsDestination buildReadingDestination()'));
 
     expect(appearanceSource, contains('CustomFontsPage'));
     expect(appearanceSource, contains("id: 'appearance.font_catalog'"));
@@ -244,8 +295,12 @@ void main() {
   });
 
   test('reader quick settings project from schema reader placements', () {
+    // TODO-586：reader 投影 helper（collectReaderItems / sectionFor）留主文件；
+    // 查词项的 ReaderPlacement 分组字面量随 _lookupDestination 搬到 lookup 领域文件。
     final String schemaSource =
         readNormalizedSource('lib/src/settings/settings_schema.dart');
+    final String lookupSource =
+        readNormalizedSource('lib/src/settings/settings_schema_lookup.dart');
     final String destinationSource =
         readNormalizedSource('lib/src/settings/settings_destination.dart');
     final String sheetSource = readNormalizedSource(
@@ -262,15 +317,15 @@ void main() {
     expect(sheetSource, contains('ReaderGroup.lookup'));
 
     final int autoReadStart =
-        schemaSource.indexOf("id: 'lookup.auto_read_on_lookup'");
-    final int pauseStart = schemaSource.indexOf("id: 'lookup.pause_on_lookup'");
+        lookupSource.indexOf("id: 'lookup.auto_read_on_lookup'");
+    final int pauseStart = lookupSource.indexOf("id: 'lookup.pause_on_lookup'");
     expect(autoReadStart, isNonNegative);
     expect(pauseStart, isNonNegative);
 
     final String autoReadSource =
-        schemaSource.substring(autoReadStart, pauseStart);
+        lookupSource.substring(autoReadStart, pauseStart);
     final String pauseSource =
-        schemaSource.substring(pauseStart, pauseStart + 520);
+        lookupSource.substring(pauseStart, pauseStart + 520);
     expect(autoReadSource, contains('group: ReaderGroup.lookup'));
     expect(pauseSource, contains('group: ReaderGroup.lookup'));
     expect(autoReadSource, isNot(contains('group: ReaderGroup.behavior')));
@@ -279,19 +334,19 @@ void main() {
     // TODO-436：「滑动关闭弹窗」是查词弹窗手势行为，归查词分组（ReaderGroup.lookup），
     // 不得回到阅读控制（ReaderGroup.behavior）。
     final int swipeCloseStart =
-        schemaSource.indexOf("id: 'reading_controls.enable_swipe_to_close'");
+        lookupSource.indexOf("id: 'reading_controls.enable_swipe_to_close'");
     expect(swipeCloseStart, isNonNegative);
     final String swipeCloseSource =
-        schemaSource.substring(swipeCloseStart, swipeCloseStart + 360);
+        lookupSource.substring(swipeCloseStart, swipeCloseStart + 360);
     expect(swipeCloseSource, contains('group: ReaderGroup.lookup'));
     expect(swipeCloseSource, isNot(contains('group: ReaderGroup.behavior')));
 
     // TODO-625：「滑动关闭灵敏度」与上面的开关配套，同属查词弹窗手势行为，
     // 归查词分组（ReaderGroup.lookup），不得滞留在阅读控制（ReaderGroup.behavior）。
-    final int swipeSensitivityStart = schemaSource
+    final int swipeSensitivityStart = lookupSource
         .indexOf("id: 'reading_controls.dismiss_swipe_sensitivity'");
     expect(swipeSensitivityStart, isNonNegative);
-    final String swipeSensitivitySource = schemaSource.substring(
+    final String swipeSensitivitySource = lookupSource.substring(
         swipeSensitivityStart, swipeSensitivityStart + 360);
     expect(swipeSensitivitySource, contains('group: ReaderGroup.lookup'));
     expect(
@@ -299,18 +354,20 @@ void main() {
   });
 
   test('popup instant scroll is a global lookup display setting', () {
-    final String schemaSource =
-        readNormalizedSource('lib/src/settings/settings_schema.dart');
-    final int displayStart = schemaSource.indexOf(
+    final String lookupSource =
+        readNormalizedSource('lib/src/settings/settings_schema_lookup.dart');
+    final int displayStart = lookupSource.indexOf(
       'title: t.settings_section_lookup_display',
     );
-    final int cardStart =
-        schemaSource.indexOf('SettingsDestination _cardCreationDestination()');
+    // lookup destination 函数体在 buildLookupDestination 内闭合，其后是查词字段 helper；
+    // 用第一个 helper 函数签名作为切片上界，覆盖整段 lookup_display section。
+    final int helperStart =
+        lookupSource.indexOf('Widget _buildYomitanApiKeyField(');
     expect(displayStart, isNonNegative);
-    expect(cardStart, greaterThan(displayStart));
+    expect(helperStart, greaterThan(displayStart));
 
     final String displaySource =
-        schemaSource.substring(displayStart, cardStart);
+        lookupSource.substring(displayStart, helperStart);
     expect(displaySource, contains("id: 'lookup.popup_instant_scroll'"));
     expect(displaySource, contains('t.popup_instant_scroll'));
     expect(displaySource, contains('popupInstantScroll'));
@@ -365,13 +422,14 @@ void main() {
   });
 
   test('profile destination uses one picker row for the active profile', () {
-    final String schemaSource =
-        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    // TODO-586：profiles destination 独立成领域文件。
+    final String profilesSource =
+        readNormalizedSource('lib/src/settings/settings_schema_profiles.dart');
     final String actionsSource =
         readNormalizedSource('lib/src/settings/settings_actions.dart');
 
-    expect(schemaSource, contains('buildProfilePickerRow'));
-    expect(schemaSource, isNot(contains('buildProfileSelectorRow')));
+    expect(profilesSource, contains('buildProfilePickerRow'));
+    expect(profilesSource, isNot(contains('buildProfileSelectorRow')));
     expect(actionsSource, contains('AdaptiveSettingsPickerRow<int>'));
   });
 

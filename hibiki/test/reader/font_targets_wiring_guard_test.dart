@@ -56,7 +56,8 @@ void main() {
   });
 
   test('settings exposes one font catalog entry with three row targets', () {
-    final String schema = read('lib/src/settings/settings_schema.dart');
+    final String schema =
+        read('lib/src/settings/settings_schema_appearance.dart');
     expect(schema.contains("'appearance.font_catalog'"), isTrue);
     expect(schema.contains('t.custom_fonts_catalog_title'), isTrue);
     expect(schema.contains("'appearance.fonts_app_ui'"), isFalse);

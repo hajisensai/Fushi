@@ -69,7 +69,7 @@ void main() {
 
   test('dictionary manager settings entry pushes a page route', () {
     final String schemaSource =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+        File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
     final int lookupDictionaries =
         schemaSource.indexOf("id: 'lookup.dictionaries'");
     final int lookupCustomCss = schemaSource.indexOf("id: 'lookup.custom_css'");

@@ -203,7 +203,8 @@ void main() {
       'AdaptiveSettingsTextField',
       'HibikiEditorPanel',
     ],
-    'lib/src/settings/settings_schema.dart': <String>[
+    // TODO-586：HibikiTextField 随 SettingsNumberField 搬到共享 fields 文件。
+    'lib/src/settings/settings_schema_fields.dart': <String>[
       'HibikiTextField',
     ],
     'lib/src/sync/sync_settings_schema.dart': <String>[
@@ -499,7 +500,9 @@ void main() {
       'lib/src/pages/implementations/websocket_dialog_page.dart': <String>[
         'TextField(',
       ],
-      'lib/src/settings/settings_schema.dart': <String>[
+      // TODO-586：SettingsSecretField/SettingsNumberField（含 AdaptiveSettingsTextField
+      // / HibikiTextField，子串带 'TextField('）搬到共享 fields 文件。
+      'lib/src/settings/settings_schema_fields.dart': <String>[
         'TextField(',
       ],
       'lib/src/sync/sync_settings_schema.dart': <String>[
@@ -694,11 +697,12 @@ void main() {
           'Video quick settings sheet (media-page chrome like reader/audiobook) '
               'drives the user-configurable subtitle caption font size '
               '(_style.copyWith(fontSize:)), which is content, not page chrome.',
-      'lib/src/settings/settings_schema.dart':
+      'lib/src/settings/settings_schema_video.dart':
           'Home video settings expose the same user-configurable subtitle '
               'caption font size (VideoSubtitleStyle.copyWith(fontSize:)) for '
               'parity with the in-player sheet (TODO-286); it is caption content, '
-              'not page chrome — same rationale as video_quick_settings_sheet.',
+              'not page chrome — same rationale as video_quick_settings_sheet. '
+              'TODO-586：随 video destination 拆到 settings_schema_video.dart。',
       'lib/src/pages/implementations/video_hibiki_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',

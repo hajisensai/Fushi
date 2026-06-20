@@ -207,8 +207,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
 /// 平台无关。整 app 流程的真机/桌面验证由 app_smoke 等承担（Phase 2-4）。
 void main() {
   test('reverse arrow setting keeps schema title wired to i18n', () {
-    final String source =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    // TODO-586：reverse_arrow 项随 reading destination 搬到 reading 领域文件。
+    final String source = File('lib/src/settings/settings_schema_reading.dart')
+        .readAsStringSync();
 
     expect(
       source,

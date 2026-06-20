@@ -108,7 +108,8 @@ void main() {
 
     test('settings schema exposes the bar background opacity stepper', () {
       final String schema =
-          File('lib/src/settings/settings_schema.dart').readAsStringSync();
+          File('lib/src/settings/settings_schema_listening.dart')
+              .readAsStringSync();
       expect(
         schema.contains("id: 'listening.floating_lyric_bg_opacity'"),
         isTrue,

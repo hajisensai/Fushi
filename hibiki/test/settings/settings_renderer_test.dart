@@ -623,7 +623,7 @@ void main() {
 
   test('system app version row is sourced from runtime PackageInfo', () {
     final String source =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
 
     expect(source, contains("id: 'system.app_version'"));
     expect(source, contains('settingsContext.appModel.packageInfo'));

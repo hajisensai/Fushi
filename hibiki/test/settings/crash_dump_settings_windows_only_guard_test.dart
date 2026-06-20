@@ -11,7 +11,8 @@ void main() {
   late String schema;
 
   setUp(() {
-    schema = File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    schema =
+        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
   });
 
   test('诊断区有崩溃转储项且 Windows-only 可见', () {

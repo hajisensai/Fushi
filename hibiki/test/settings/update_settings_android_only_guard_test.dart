@@ -9,10 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('update section gated by capability helper, not Platform.isAndroid', () {
     final String src =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
     final String systemDest = _functionSource(
       src,
-      'SettingsDestination _systemDestination() {',
+      'SettingsDestination buildSystemDestination() {',
       'String _selectedUpdateChannel(',
     );
     expect(

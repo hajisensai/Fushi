@@ -212,8 +212,8 @@ void main() {
 
   group('source guard (anti-regression)', () {
     test('schema keeps the fine-grained lookup volume contract', () {
-      final String source =
-          File('lib/src/settings/settings_schema.dart').readAsStringSync();
+      final String source = File('lib/src/settings/settings_schema_lookup.dart')
+          .readAsStringSync();
       final int start = source.indexOf("id: 'lookup.audio_volume'");
       expect(start, isNonNegative);
       final int end = source.indexOf("id: 'lookup.pause_on_lookup'", start);

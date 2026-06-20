@@ -21,7 +21,10 @@ String _read(String relative) {
 
 void main() {
   group('视频功能毕业：设置不再门控', () {
-    final String schemaSrc = _read('lib/src/settings/settings_schema.dart');
+    // TODO-586：实验视频开关若存在只会落在 video 或 system 领域文件，拼两份扫描。
+    final String schemaSrc =
+        _read('lib/src/settings/settings_schema_video.dart') +
+            _read('lib/src/settings/settings_schema_system.dart');
 
     test('设置 schema 不再有实验视频开关项', () {
       expect(schemaSrc.contains('system.experimental_video'), isFalse,

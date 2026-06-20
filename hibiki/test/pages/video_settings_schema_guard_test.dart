@@ -5,38 +5,43 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late String destinationSrc;
   late String schemaSrc;
+  late String videoSrc;
 
   setUpAll(() {
     destinationSrc =
         File('lib/src/settings/settings_destination.dart').readAsStringSync();
+    // TODO-586：buildSettingsSchema 组装留主文件（schemaSrc），video destination
+    // 函数体随 _videoDestination 搬到 settings_schema_video.dart（videoSrc）。
     schemaSrc =
         File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    videoSrc =
+        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
   });
 
   test('TODO-186: global settings has a dedicated video destination', () {
     expect(destinationSrc.contains('video,'), isTrue,
         reason: 'SettingsDestinationId must include a dedicated video tab');
-    expect(schemaSrc.contains('_videoDestination(),'), isTrue,
+    expect(schemaSrc.contains('buildVideoDestination(),'), isTrue,
         reason:
             'buildSettingsSchema must expose video settings as a top-level destination');
-    expect(schemaSrc.contains('id: SettingsDestinationId.video'), isTrue,
+    expect(videoSrc.contains('id: SettingsDestinationId.video'), isTrue,
         reason: 'missing concrete video SettingsDestination');
-    expect(schemaSrc.contains('title: t.settings_destination_video'), isTrue,
+    expect(videoSrc.contains('title: t.settings_destination_video'), isTrue,
         reason: 'video destination title must be i18n-backed');
   });
 
   test('TODO-286: video destination owns the pref-only in-player parity set',
       () {
     final int start =
-        schemaSrc.indexOf('SettingsDestination _videoDestination()');
+        videoSrc.indexOf('SettingsDestination buildVideoDestination()');
     expect(start, greaterThanOrEqualTo(0), reason: 'missing _videoDestination');
-    final int end = schemaSrc.indexOf(
+    final int end = videoSrc.indexOf(
       'Future<void> _commitVideoAsbConfig(',
       start,
     );
     expect(end, greaterThan(start),
         reason: 'video destination should sit before its commit helpers');
-    final String body = schemaSrc.substring(start, end);
+    final String body = videoSrc.substring(start, end);
 
     // TODO-286 parity list: every pref-only video setting that also lives in the
     // in-player VideoQuickSettingsSheet must be reachable from home settings.
@@ -76,12 +81,12 @@ void main() {
 
   test('TODO-286: home video settings stay pref-only (no live controller)', () {
     final int start =
-        schemaSrc.indexOf('SettingsDestination _videoDestination()');
-    final int end = schemaSrc.indexOf(
+        videoSrc.indexOf('SettingsDestination buildVideoDestination()');
+    final int end = videoSrc.indexOf(
       'Future<void> _commitVideoAsbConfig(',
       start,
     );
-    final String body = schemaSrc.substring(start, end);
+    final String body = videoSrc.substring(start, end);
 
     // The whole point of TODO-286 is that these settings work with no player
     // open: they only read/write appModel-backed prefs. If anyone wires a live
@@ -106,12 +111,12 @@ void main() {
 
   test('TODO-522: global video settings can reset player button layout', () {
     final int start =
-        schemaSrc.indexOf('SettingsDestination _videoDestination()');
-    final int end = schemaSrc.indexOf(
+        videoSrc.indexOf('SettingsDestination buildVideoDestination()');
+    final int end = videoSrc.indexOf(
       'Future<void> _commitVideoAsbConfig(',
       start,
     );
-    final String body = schemaSrc.substring(start, end);
+    final String body = videoSrc.substring(start, end);
 
     expect(body.contains("id: 'video.controls.reset_layout'"), isTrue);
     expect(body.contains('t.video_control_reset_layout'), isTrue);

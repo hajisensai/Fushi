@@ -12,7 +12,15 @@ void main() {
   late String schema;
 
   setUpAll(() {
-    schema = File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    // TODO-586　floating_lyric 四项搬到 listening 领域文件，app_icon 在 appearance
+    // 领域文件；itemBlock 只按 id 切片，把两份源拼接即可保持各 item 块独立可断言。
+    final String listeningSrc = File(
+      'lib/src/settings/settings_schema_listening.dart',
+    ).readAsStringSync();
+    final String appearanceSrc = File(
+      'lib/src/settings/settings_schema_appearance.dart',
+    ).readAsStringSync();
+    schema = '$listeningSrc\n$appearanceSrc';
   });
 
   /// Returns the slice of the schema for the settings item with [id], up to the
