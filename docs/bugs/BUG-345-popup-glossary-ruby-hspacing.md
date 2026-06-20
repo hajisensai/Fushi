@@ -1,0 +1,10 @@
+## BUG-345 · 查词弹窗释义逐字振假名横向字间距被撑开参差
+- **报告**：2026-06-20（用户：）
+- **真实性**：✅ 真 bug，根因 `hibiki/assets/popup/popup.css:544-550`（横向无紧凑约束）+ `hibiki/assets/popup/popup.js:2072-2082`（`postProcessRuby` 把基字裸文本换成无样式 `<span>`，但该 span 仍是 ruby base box）
+- **[x] ① 已修复** — 分支 `todo-620-popup-ruby-hspacing`（PM 合并 develop 后即落该提交）：`popup.css` glossary 表面 ruby 规则组（544 附近）补横向紧凑约束：`ruby{display:inline-block;position:relative}` + `rt{position:absolute;left:0;right:0;bottom:100%;text-align:center;white-space:nowrap;line-height:1}`（Yomitan structured-content 范式），让 rt 振假名脱离行内流、不再撑开基字盒，同时居中浮于基字正上方。**纯 CSS（方案 A），不动 `postProcessRuby`，保住 BUG-110/123/125/129 的划词选区不变量；不动 `line-height:2`（BUG-108 纵向），二者配套。** Windows 端 `dictionary_popup_webview.dart` 的 `_winCss` 读同一份 `popup.css` 内联，自动覆盖。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/popup_glossary_ruby_hspacing_guard_test.dart`：CSS 扫描守卫，断言 glossary 表面 ruby 规则组（① `ruby` 含 `display:inline-block` + `position:relative`，② `rt` 含 `position:absolute` + `bottom:100%`）存在，且仍保留 `line-height:2`（BUG-108 不回退）。
+- **备注**：
+  - **根因机理**：`postProcessRuby` 把每个 `<ruby>` 基字裸文本节点替换为无样式 `<span>`（上游 d5ff8395b 移植，目的让 ruby 文字可被划词选中 —— 必须保住）。但 `<span>` 仍作为 ruby base，Blink 原生横排把每个 ruby base box 宽度取 `max(基字宽, rt宽)`；配合 `rt{font-size:0.5em}`，当读音假名数 >=3 时 rt 比基字宽 -> 每个 ruby 各自撑开 -> 明鏡式逐字 ruby 释义整行参差。`popup.css:544-550` 之前只约束了纵向 `line-height`（BUG-108），横向无规则。**注：原生 `<ruby>`（不经 postProcessRuby）在 Blink 里本就有此 max(base,rt) 撑宽行为，span 化未改变几何 —— 真正缺口是 glossary ruby 缺横向紧凑约束。**
+  - **无头复现（与 WebView2 同 Blink 引擎的无头 Chromium）**：内联真实 `popup.css` + 真实 `postProcessRuby`，喂明鏡式逐字 ruby（base 窄 / rt 1·3·5·7 字宽）。修复前基字盒宽度 `[8, 11.25, 18.75, 26.25]px`（variance=49.79, spread=18.25px，读音越长撑越宽）；加修复 CSS 后收敛 `[8, 8, 8, 8]px`（variance=0, spread=0）。多行换行场景下 furigana 顶部正好贴上一行底部、不溢出（line-height:2 配套生效）、且 furigana 水平居中于基字（hOffset=0）。
+  - **候选对比**：`ruby-align:center` 无效（spread 不变）；`rt{width:0;overflow:visible}` 收敛宽度但 furigana 右偏 4px 且未纵向分离（视觉错）；选定的 Yomitan 范式 furigana 居中且正确浮于基字上方。
+  - **仍需真机验**：无头 Chromium 缺 Hiragino CJK 字体（单 CJK 字 fallback 宽度不稳定），复现用 Latin 等宽字符稳定触发 base窄/rt宽几何；真机用真实日文字体 + WebView2(Win)/系统 WebView 渲染明鏡逐字 ruby 释义，确认横排整齐、振假名居中不溢出、ruby 文字仍可划词查词（BUG-110/123 不回退）。
