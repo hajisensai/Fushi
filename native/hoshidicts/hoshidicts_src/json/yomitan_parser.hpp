@@ -19,7 +19,7 @@ struct Term {
   std::string_view reading;
   std::optional<std::string_view> definition_tags;
   std::string_view rules;
-  int score = 0;
+  double score = 0;
   glz::raw_json_view glossary;
   int64_t sequence = 0;
   std::string_view term_tags;

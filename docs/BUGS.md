@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 341 条。点号进各自文件。
+> 共 342 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-350](bugs/BUG-350-hoshidicts-upstream-batch1.md) | ✅ | ✅ | hoshidicts 上游同步批1（score double / freq 排序 / c++23 兼容） |
 | [BUG-347](bugs/BUG-347-todo-618-exit-hard-error-phase1.md) | ✅ | ✅ | 打开动画状态直接关 Hibiki 弹 Unknown Hard Error（TODO-618 相位1：fix1+fix3） |
 | [BUG-346](bugs/BUG-346-video-clip-export-audio-map.md) | ✅ | ✅ | 视频片段导出 ffmpeg 执行失败：音轨映射越界硬失败 + stderr 被吞 |
 | [BUG-345](bugs/BUG-345-popup-glossary-ruby-hspacing.md) | ✅ | ✅ | 查词弹窗释义逐字振假名横向字间距被撑开参差 |
