@@ -681,6 +681,11 @@ void main() {
               'timestamp rows as video-subsystem content; row font size scales '
               'with appUiScale, not ordinary page chrome (same content rationale '
               'as the allowlisted sibling subtitle jump panel).',
+      'lib/src/media/video/video_episode_panel.dart':
+          'Episode list panel (TODO-638) renders episode index + title rows '
+              'as video-subsystem content in a push-aside sidebar mirroring '
+              'the allowlisted sibling chapter panel; row font size scales '
+              'with appUiScale, not ordinary page chrome.',
       'lib/src/media/video/video_side_panel.dart':
           'Video translucent side-panel scaffold (favorite sentences list etc.) '
               'renders video-subsystem overlay chrome; lock toggle (TODO-611) '
