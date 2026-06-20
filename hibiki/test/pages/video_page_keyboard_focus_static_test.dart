@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：确保视频页修复「导入着色器后空格失灵」的接线不被回退。
 ///
@@ -10,13 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 并在每个覆盖层关闭后 [requestFocus]（_refocusVideo）。本测试静态扫描这些不变式，
 /// 因为焦点行为在 widget 测试里难稳定复现（依赖真实焦点遍历 / 平台文件选择器）。
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('State 持有专用 FocusNode 并在 dispose 释放', () {

@@ -1,11 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 void main() {
-  final String pageSource = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  ).readAsStringSync();
+  final String pageSource = readVideoHibikiSource();
 
   test('_applyLoad binds completed callback before controller.load', () {
     final String fn = _functionSource(
@@ -50,7 +48,7 @@ void main() {
     final String runFn = _functionSource(
       pageSource,
       '  void _runAutoAdvance(int targetEpisode) {',
-      '  /// 共享 load 装配',
+      '  /// 切到第 [index] 集',
     );
     expect(runFn, contains('if (_autoAdvanceInFlight) return'));
     expect(runFn, contains('if (!mounted) return'));
@@ -85,7 +83,7 @@ void main() {
     final String overlayFn = _functionSource(
       pageSource,
       '  Widget _buildAutoAdvanceOverlay() {',
-      '  /// 视频左侧锁',
+      '\n}',
     );
     expect(overlayFn, contains('t.video_auto_play_next_countdown('));
     expect(overlayFn, contains('onPressed: _cancelAutoAdvanceCountdown'));

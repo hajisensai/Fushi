@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：视频页两类「无法纯单测（需真实 libmpv player / 真实手势时序）」的不变式
 /// 钉在源码层。
@@ -15,9 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 2. **音轨恢复轮询**：`_restoreAudioTrack` 必须有界轮询等待 audioTracks 填充，
 ///    不能单次固定延时后一锤子匹配（列表此刻常仍空 → 音轨「退出重进丢失」）。
 void main() {
-  final String src = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  ).readAsStringSync();
+  final String src = readVideoHibikiSource();
 
   group('菜单重入守卫（双开）', () {
     // TODO-438 / TODO-638 互斥守卫：音轨 / 字幕源 / 设置三菜单走右侧 push-aside side

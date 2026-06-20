@@ -726,6 +726,14 @@ void main() {
       'lib/src/pages/implementations/video_hibiki_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',
+      // TODO-590: video_hibiki_page.dart 拆成主壳 + video_hibiki/*.part.dart；
+      // 同一份 video player page chrome 豁免随搬运延伸到含 chrome token 的 part 文件
+      // （零行为变化，逐字符抽出）。
+      'lib/src/pages/implementations/video_hibiki/episode.part.dart':
+          'Episode push-aside sidebar + auto-advance countdown overlay '
+              'chrome extracted verbatim from video_hibiki_page.dart '
+              '(TODO-590 batch4); same media-page rationale as the parent '
+              'video player page allowlist entry.',
       'lib/src/pages/implementations/home_video_page.dart':
           'Home video grid renders media content badges/download progress; '
               'long-press management actions use the shared media dialog frame, '
