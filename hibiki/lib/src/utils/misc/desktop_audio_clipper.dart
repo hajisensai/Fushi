@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:hibiki/src/media/video/video_clip_exporter.dart'
+    show resolveAudioMapIndex;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 // resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
@@ -70,9 +72,14 @@ List<String> buildFfmpegClipArgs({
   required int endMs,
   required String outputPath,
   int? audioStreamIndex,
+  int? audioStreamCount,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
+  final int? explicitAudio = resolveAudioMapIndex(
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+  );
   return <String>[
     '-y',
     '-ss',
@@ -82,9 +89,10 @@ List<String> buildFfmpegClipArgs({
     '-i',
     inputPath,
     '-vn',
-    if (audioStreamIndex != null && audioStreamIndex >= 0) ...<String>[
+    if (explicitAudio != null) ...<String>[
       '-map',
-      '0:a:$audioStreamIndex',
+      // 尾随 '?'：越界音轨映射降级回退默认轨而非硬失败（BUG-345）。
+      '0:a:$explicitAudio?',
     ],
     '-c:a',
     'aac',
@@ -579,6 +587,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   required int endMs,
   required String outputPath,
   int? audioStreamIndex,
+  int? audioStreamCount,
   FfmpegFailureReporter? onFailure,
 }) async {
   if (endMs <= startMs) return null;
@@ -596,6 +605,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         endMs: endMs,
         outputPath: outputPath,
         audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
       ),
       const Duration(seconds: 120),
     );

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 void main() {
   group('buildFfmpegVideoClipExportArgs', () {
@@ -30,7 +31,10 @@ void main() {
         '-map',
         '0:v:0',
         '-map',
-        '0:a:1',
+        // 尾随 '?'：当 0:a:1 在真实 ffmpeg 流里越界（mpv 轨序号 != ffmpeg 0:a:N，
+        // 挂外挂音频时常见），ffmpeg 不再 "Stream map matches no streams" 硬失败，
+        // 而是降级回退默认轨（BUG-345）。
+        '0:a:1?',
         '-sn',
         '-dn',
         '-c',
@@ -39,6 +43,19 @@ void main() {
         'make_zero',
         '/video/clip.mkv',
       ]);
+    });
+
+    test('audio map always carries the optional "?" suffix', () {
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/video/clip.mkv',
+        audioStreamIndex: 3,
+      );
+      // 守卫：任何拼出的 `-map 0:a:N` 都必须带 '?'，绝不会是裸 `0:a:N`。
+      expect(args, contains('0:a:3?'));
+      expect(args, isNot(contains('0:a:3')));
     });
 
     test('uses ffmpeg default audio selection when no explicit track is set',
@@ -56,6 +73,35 @@ void main() {
       expect(args, contains('-dn'));
       expect(args, isNot(contains('-filter_complex')));
       expect(args, isNot(contains('-vf')));
+    });
+
+    test('drops the audio map when the index is out of the known stream count',
+        () {
+      // audioStreamCount=2 → 合法下标只有 0/1；下标 2 越界（mpv 把外挂音频也算进
+      // tracks.audio，但 ffmpeg 容器里只有 2 条），不加 -map，回退默认轨。
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/video/clip.mkv',
+        audioStreamIndex: 2,
+        audioStreamCount: 2,
+      );
+      expect(args.contains('-map'), isFalse);
+      expect(args.any((String a) => a.startsWith('0:a:')), isFalse);
+    });
+
+    test('keeps the audio map when the index is within the known stream count',
+        () {
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/video/clip.mkv',
+        audioStreamIndex: 1,
+        audioStreamCount: 2,
+      );
+      expect(args, contains('0:a:1?'));
     });
   });
 
@@ -118,7 +164,7 @@ void main() {
             '-map',
             '0:v:0',
             '-map',
-            '0:a:2',
+            '0:a:2?',
             '-sn',
             '-dn',
             '-c',
@@ -152,6 +198,52 @@ void main() {
       expect(result.failure, VideoClipExportFailure.ffmpegFailed);
       expect(result.outputPath, isNull);
       expect(output.existsSync(), isFalse);
+    });
+
+    test('logs the ffmpeg stderr to ErrorLogService on failure (BUG-345)',
+        () async {
+      // C 修：ffmpeg 退出码非 0 时，真实 stderr 必须写进 ErrorLogService（设置
+      // → 错误日志页能看到），不再被吞成黑盒。
+      await ErrorLogService.instance.clear();
+      addTearDown(() => ErrorLogService.instance.clear());
+      final int before = ErrorLogService.instance.entries.length;
+
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_export_log');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mkv');
+      const String stderr =
+          "Stream map '0:a:3' matches no streams. To ignore this, "
+          "add a trailing '?' to the map.";
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) =>
+            const FfmpegRunResult(returnCode: 1, output: stderr),
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 1000,
+        outputPath: output.path,
+        audioStreamIndex: 3,
+        backend: backend,
+      );
+
+      expect(result.failure, VideoClipExportFailure.ffmpegFailed);
+      // detail 仍携真实 stderr（给调用方拼 OSD）。
+      expect(result.detail, contains('matches no streams'));
+      // 关键：失败被记进错误日志服务，且包含真实 stderr。
+      final List<ErrorLogEntry> added =
+          ErrorLogService.instance.entries.skip(before).toList();
+      expect(added, isNotEmpty);
+      final ErrorLogEntry logged = added.firstWhere(
+        (ErrorLogEntry e) => e.source == 'VideoClipExport',
+        orElse: () => throw StateError(
+            'no VideoClipExport entry logged: ${added.map((ErrorLogEntry e) => e.source).toList()}'),
+      );
+      expect(logged.error, contains('matches no streams'));
     });
   });
 }

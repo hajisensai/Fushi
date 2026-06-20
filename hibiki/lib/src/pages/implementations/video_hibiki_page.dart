@@ -964,6 +964,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   int? _clipExportStartMs;
   String? _clipExportStartPath;
   int? _clipExportStartAudioStreamIndex;
+  // 标记起点时快照的真实音轨条数，作 ffmpeg `-map 0:a:N` 的下标上界（BUG-345）。
+  int? _clipExportStartAudioStreamCount;
   int _clipExportGeneration = 0;
 
   /// 音画延迟（毫秒）：字幕 cue 同步偏移，跨重启保留；换集复用同一值。
@@ -3170,6 +3172,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         endMs: clipEndMs,
         outputPath: '${tmp.path}/video_mine_audio.aac',
         audioStreamIndex: controller.currentAudioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
         onFailure: (String summary) {
           audioFailure = summary;
         },
@@ -5777,6 +5780,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         _clipExportStartMs = positionMs;
         _clipExportStartPath = _currentVideoPath;
         _clipExportStartAudioStreamIndex = controller.currentAudioStreamIndex;
+        _clipExportStartAudioStreamCount = controller.realAudioStreamCount;
       });
       _showOsd(t.video_clip_export_start);
       return;
@@ -5801,6 +5805,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     final int generation = _clipExportGeneration;
     final int? audioStreamIndex = _clipExportStartAudioStreamIndex;
+    final int? audioStreamCount = _clipExportStartAudioStreamCount;
     final String outputPath = await _clipExportOutputPath(
       inputPath: startPath,
       startMs: startMs,
@@ -5827,6 +5832,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       endMs: endMs,
       outputPath: outputPath,
       audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
     );
 
     if (!mounted) {
@@ -5855,6 +5861,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _showOsd(t.video_clip_export_failed(
         reason: _clipExportFailureReason(result),
       ));
+      // C 修（BUG-345）：把 ffmpeg 真实 detail 截断追加到 OSD，给用户/真机一个可见
+      // 线索（完整 stderr 已由 exportVideoClipViaFfmpeg 写进错误日志页）。
+      final String? detail = result.detail?.trim();
+      if (detail != null && detail.isNotEmpty) {
+        _showOsd(detail.length > 160 ? '${detail.substring(0, 160)}…' : detail);
+      }
     }
     _refocusVideo();
   }
@@ -5866,6 +5878,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _clipExportStartMs = null;
     _clipExportStartPath = null;
     _clipExportStartAudioStreamIndex = null;
+    _clipExportStartAudioStreamCount = null;
   }
 
   Future<String> _clipExportOutputPath({

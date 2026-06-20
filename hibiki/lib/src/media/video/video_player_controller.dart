@@ -552,6 +552,20 @@ class VideoPlayerController extends ChangeNotifier
     return idx < 0 ? null : idx;
   }
 
+  /// 真实音轨（去掉 libmpv 的 auto/no 伪轨）条数；未 [load] 时为 0。
+  ///
+  /// 用作 ffmpeg `-map 0:a:N` 的下标上界（`N < count`）：mpv 把外挂音频也算进
+  /// `tracks.audio`，其轨序号未必与 ffmpeg 容器内 `0:a:N` 一致，越界会让
+  /// ffmpeg `Stream map matches no streams` 硬失败；裁剪前用此条数做边界校验，
+  /// 越界则不加 `-map` 回退默认轨（BUG-345）。
+  int get realAudioStreamCount {
+    final Player? player = _player;
+    if (player == null) return 0;
+    return player.state.tracks.audio
+        .where((AudioTrack t) => t.id != 'auto' && t.id != 'no')
+        .length;
+  }
+
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
   /// 要求升序），重置当前 cue 状态。
   void setCues(List<AudioCue> cues) {

@@ -80,11 +80,37 @@ void main() {
         '/a/in.mkv',
         '-vn',
         '-map',
-        '0:a:1',
+        // 尾随 '?'：越界时降级回退默认轨而非硬失败（BUG-345）。
+        '0:a:1?',
         '-c:a',
         'aac',
         '/a/out.aac',
       ]);
+    });
+
+    test('audio map always carries the optional "?" suffix', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+        audioStreamIndex: 2,
+      );
+      expect(args, contains('0:a:2?'));
+      expect(args, isNot(contains('0:a:2')));
+    });
+
+    test('drops the audio map when index is out of the known stream count', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+        audioStreamIndex: 3,
+        audioStreamCount: 2,
+      );
+      expect(args.contains('-map'), isFalse);
+      expect(args.any((String a) => a.startsWith('0:a:')), isFalse);
     });
   });
 
