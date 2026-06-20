@@ -12,12 +12,22 @@ class SourceLookupTextPanel extends StatefulWidget {
     super.key,
     this.coordinateSpaceKey,
     this.dictionaryHeadwordScale = 1.0,
+    this.globalCoordinates = false,
   });
 
   final String text;
   final void Function(String query, Rect localRect) onLookup;
   final GlobalKey? coordinateSpaceKey;
   final double dictionaryHeadwordScale;
+
+  /// TODO-617: [onLookup] reports the tapped char rect in **screen (global)**
+  /// coordinates instead of [coordinateSpaceKey]-local. The home dictionary tab
+  /// lifts its popup stack into the root Overlay (full window, net scale = 1), so
+  /// the source-text panel must feed selection rects in that same screen space or
+  /// the popup is offset by the result sub-area origin. Defaults to false to keep
+  /// the old panel-local semantics (the Android standalone lookup window
+  /// popup_dictionary_page keeps positioning via coordinateSpaceKey, unchanged).
+  final bool globalCoordinates;
 
   @override
   State<SourceLookupTextPanel> createState() => _SourceLookupTextPanelState();
@@ -133,14 +143,23 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
   }
 
   Rect _localRectOf(BuildContext panelContext, BuildContext charContext) {
+    final RenderObject? child = charContext.findRenderObject();
+    if (child is! RenderBox || !child.hasSize) return Rect.zero;
+    // TODO-617：globalCoordinates 时回报**屏幕（global）坐标**——两角各过 localToGlobal
+    // （位置与尺寸同被祖先变换缩放，等同 focus_geometry.globalRectOfBox），供首页根 Overlay
+    // 弹窗按真实屏幕空间定位。两角法而非 `localToGlobal(zero) & size`：缩放下后者把缩放后的
+    // 位置配未缩放局部尺寸会错。
+    if (widget.globalCoordinates) {
+      return Rect.fromPoints(
+        child.localToGlobal(Offset.zero),
+        child.localToGlobal(child.size.bottomRight(Offset.zero)),
+      );
+    }
     final RenderObject? panel =
         widget.coordinateSpaceKey?.currentContext?.findRenderObject() ??
             charContext.findAncestorRenderObjectOfType<RenderStack>() ??
             panelContext.findRenderObject();
-    final RenderObject? child = charContext.findRenderObject();
-    if (panel is! RenderBox || child is! RenderBox || !child.hasSize) {
-      return Rect.zero;
-    }
+    if (panel is! RenderBox) return Rect.zero;
     final Offset global = child.localToGlobal(Offset.zero);
     return panel.globalToLocal(global) & child.size;
   }

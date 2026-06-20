@@ -19,7 +19,9 @@ void main() {
     expect(src, contains('DesktopLookupService.instance.pendingRequest'));
     expect(src, contains('DesktopLookupService.instance.clearPending()'));
     expect(src, contains('_sourceLookupText = request.showSourcePanel'));
-    expect(src, contains('_pushNestedPopup(query, localRect'));
+    // TODO-617：源文本条点字仍走 _pushNestedPopup（replaceStack 顶层查词），但回报的是
+    // 屏幕（global）坐标（screenRect）而非旧的子区域局部 localRect——弹窗已提到根 Overlay。
+    expect(src, contains('_pushNestedPopup(query, screenRect'));
     expect(
       _withoutWhitespace(resultBody),
       contains(

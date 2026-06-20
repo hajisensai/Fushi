@@ -10,6 +10,7 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -64,6 +65,22 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     onLookupStackDepthChanged: recordLookupStackDepth,
   );
   final GlobalKey _resultStackKey = GlobalKey();
+
+  /// 结果区 [DictionaryPopupWebView] 的 key——顶层查词把 WebView 局部 localRect 经它的
+  /// render box `localToGlobal` 映成屏幕坐标（[popupWordScreenRect]），与提到根 Overlay
+  /// 后的弹窗坐标系（真实屏幕空间）统一（TODO-617）。
+  final GlobalKey<DictionaryPopupWebViewState> _resultWebViewKey =
+      GlobalKey<DictionaryPopupWebViewState>();
+
+  /// TODO-617：查词弹窗栈渲染在**根 Overlay**（全窗，跳出结果子区域 / DesktopContentLayout
+  /// 的限宽 + padding + 默认 hardEdge 裁剪），与 video 同范式。非空时 [_syncPopupOverlay]
+  /// 据当前栈插入 / 刷新 / 摘除。
+  OverlayEntry? _popupOverlayEntry;
+
+  /// 切 tab 销毁本页时的根 Overlay 兜底（照搬 video BUG-121）：本 State deactivate 后根
+  /// Overlay 仍可能同帧重建 [_buildPopupOverlay] → 读已失效 State 的 appModel/Theme 红屏；
+  /// 置位后 builder 一律空渲染。
+  bool _overlayInert = false;
 
   bool _isSearching = false;
   String _lastQuery = '';
@@ -188,9 +205,32 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _debounceTimer?.cancel();
     _searchFocusNode.dispose();
     _controller.dispose();
+    // TODO-617：先摘根 Overlay 浮层 entry 再 clear 栈——entry 一旦移除就不会再被根
+    // Overlay 重建 [_buildPopupOverlay]，杜绝销毁期用失效 State 重建浮层（照搬 video）。
+    final OverlayEntry? entry = _popupOverlayEntry;
+    if (entry != null) {
+      if (entry.mounted) entry.remove();
+      entry.dispose();
+      _popupOverlayEntry = null;
+    }
     // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
     _popup.dispose();
     super.dispose();
+  }
+
+  /// TODO-617：切 tab 销毁本页的根 Overlay 兜底（BUG-121 同范式）。本 State deactivate
+  /// 当帧根 Overlay 仍可能重建 entry → 读失效 State 红屏；置位让 builder 空渲染。
+  @override
+  void deactivate() {
+    _overlayInert = true;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    // GlobalKey 重挂等重新激活：恢复正常渲染，下次 build 的 _syncPopupOverlay 重建浮层。
+    _overlayInert = false;
   }
 
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
@@ -614,73 +654,152 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── search results with nested popups ──────────────────────────────
 
   Widget _buildSearchResultBody() {
+    // TODO-617：每次 build 后把查词弹窗栈同步到根 Overlay（栈非空插入 / 刷新，栈空摘除）。
+    // 弹窗 push/pop 都走 setState → 重 build → 本同步，使根 Overlay 总反映当前栈。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
     return Column(
       children: [
         if (_sourceLookupText.trim().isNotEmpty)
           SourceLookupTextPanel(
             text: _sourceLookupText,
-            coordinateSpaceKey: _resultStackKey,
+            // TODO-617：弹窗已提到根 Overlay（全窗、净缩放=1），源文本条点字必须回报屏幕
+            // （global）坐标与之同系；不再用结果子区域 [_resultStackKey] 局部坐标。
+            globalCoordinates: true,
             dictionaryHeadwordScale: appModel.dictionaryFontSize /
                 appModel.defaultDictionaryFontSize,
-            onLookup: (String query, Rect localRect) {
-              _pushNestedPopup(query, localRect, replaceStack: true);
+            onLookup: (String query, Rect screenRect) {
+              _pushNestedPopup(query, screenRect, replaceStack: true);
             },
           ),
-        // 根因修复（BUG-054）：查词结果区是 DictionaryPopupWebView + 同坐标系嵌套弹窗的
-        // Stack，必须整块在中和器下渲染（净缩放=1），否则被全局「界面大小」的 FittedBox
-        // 拉糊。剪贴板文本条是普通 app UI，留在中和器外以继续吃界面大小设置。
+        // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
+        // 「界面大小」FittedBox 拉糊。剪贴板文本条是普通 app UI，留在中和器外继续吃界面大小。
+        // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
+        // 限宽 + padding + 默认 hardEdge 裁住），改由 [_buildPopupOverlay] 渲染在根 Overlay。
         Expanded(
           child: HibikiAppUiScaleNeutralizer(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final Size screen =
-                    Size(constraints.maxWidth, constraints.maxHeight);
-                return Stack(
-                  key: _resultStackKey,
-                  children: [
-                    const SizedBox.shrink(
-                      key: ValueKey<String>('home_dictionary_result_evidence'),
-                    ),
-                    DictionaryPopupWebView(
-                      result: _result!,
-                      onTextSelected: (text, localRect) {
-                        _pushNestedPopup(text, localRect, replaceStack: true);
-                      },
-                      onLinkClick: (query, localRect) {
-                        _pushNestedPopup(query, localRect, replaceStack: true);
-                      },
-                      onMineEntry: onMineEntry,
-                      onUpdateEntry: onUpdateEntry,
-                      onDuplicateCheck: checkDuplicate,
-                      onOverwriteTargetNoteId: findOverwriteTargetNoteId,
-                      onScrolledToBottom: _allLoaded ? null : _loadMore,
-                      onTopPullReleased: _clearSearchFromResultPull,
-                    ),
-                    if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
-                      Positioned.fill(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: () => _popNestedPopupAt(0),
-                          child: Container(
-                            color: Colors.transparent,
-                          ),
-                        ),
-                      ),
-                    // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
-                    if (_popup.isSearchingUi && _popup.pendingRect != null)
-                      buildPopupLoadingPlaceholder(
-                        rect: _popup.pendingRect!,
-                        screen: screen,
-                      ),
-                    for (int i = 0; i < _popup.entries.length; i++)
-                      _buildNestedPopupLayer(i, screen),
-                  ],
-                );
-              },
+            child: Stack(
+              key: _resultStackKey,
+              children: [
+                const SizedBox.shrink(
+                  key: ValueKey<String>('home_dictionary_result_evidence'),
+                ),
+                DictionaryPopupWebView(
+                  key: _resultWebViewKey,
+                  result: _result!,
+                  // TODO-617：顶层查词把 WebView 局部 localRect 经结果 WebView 的 render box
+                  // localToGlobal 映成屏幕坐标（popupWordScreenRect），与根 Overlay 弹窗同系。
+                  // localRect==Zero 时直传 Zero，由 mixin fallbackSelectionRect 兜底。
+                  onTextSelected: (text, localRect) {
+                    _pushNestedPopup(
+                      text,
+                      _resultWordScreenRect(localRect),
+                      replaceStack: true,
+                    );
+                  },
+                  onLinkClick: (query, localRect) {
+                    _pushNestedPopup(
+                      query,
+                      _resultWordScreenRect(localRect),
+                      replaceStack: true,
+                    );
+                  },
+                  onMineEntry: onMineEntry,
+                  onUpdateEntry: onUpdateEntry,
+                  onDuplicateCheck: checkDuplicate,
+                  onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+                  onScrolledToBottom: _allLoaded ? null : _loadMore,
+                  onTopPullReleased: _clearSearchFromResultPull,
+                ),
+              ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  /// TODO-617：把结果区 WebView 报的局部 [localRect]（CSS px，原点=WebView 左上）映成屏幕
+  /// 坐标，供提到根 Overlay 的弹窗按真实屏幕空间定位。Zero（无 rect 的 textSelected）直传
+  /// Zero 让 mixin 兜底。
+  Rect _resultWordScreenRect(Rect localRect) {
+    if (localRect == Rect.zero) return Rect.zero;
+    return popupWordScreenRect(
+      webViewKey: _resultWebViewKey,
+      localRect: localRect,
+      fallback: localRect,
+    );
+  }
+
+  /// TODO-617：把查词弹窗栈同步到根 Overlay（与 video [_syncPopupOverlay] 同范式）。栈非空
+  /// 且未插入则插入、栈空则摘除、否则 markNeedsBuild 刷新。在 [_buildSearchResultBody] 的
+  /// post-frame 调，使根 Overlay 总反映当前栈。
+  void _syncPopupOverlay() {
+    if (!mounted) return;
+    if (_popup.entries.isEmpty) {
+      final OverlayEntry? entry = _popupOverlayEntry;
+      if (entry != null) {
+        if (entry.mounted) entry.remove();
+        entry.dispose();
+        _popupOverlayEntry = null;
+      }
+      return;
+    }
+    if (_popupOverlayEntry != null) {
+      _popupOverlayEntry!.markNeedsBuild();
+      return;
+    }
+    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
+    _popupOverlayEntry = entry;
+    overlay.insert(entry);
+  }
+
+  /// TODO-617：根 Overlay 里的查词弹窗栈内容——透明 dismiss 遮罩 + 搜索期加载占位卡 + 各层
+  /// [DictionaryPopupLayer]。根 Overlay 在 [HibikiAppUiScale] 的 FittedBox 之内（缩放后的
+  /// 小画布），WebView 在此栅格化再拉大会字糊（BUG-051）；[HibikiAppUiScaleNeutralizer] 把
+  /// 整棵子树中和回真实视口、净缩放=1（清晰），其坐标系即真实屏幕空间，与顶层 / 嵌套选区的
+  /// localToGlobal 屏幕 rect 同系，定位自洽。`Clip.none` 让飘出窗的弹窗 / 屏外热槽不被裁
+  /// （BUG-135）。`screen` = 中和后内层 LayoutBuilder 约束 = 整窗。
+  Widget _buildPopupOverlay(BuildContext overlayContext) {
+    // 切 tab 销毁本页当帧根 Overlay 仍会重建本 entry——彼时读失效 State 的 appModel/Theme
+    // 会红屏（BUG-121）。State 失效 / 销毁期标志置位则空渲染兜底；Theme 用 entry 自己的
+    // overlayContext（与本 entry 同寿命）而非更短命的 State context。
+    if (!mounted || _overlayInert) return const SizedBox.shrink();
+    return HibikiAppUiScaleNeutralizer(
+      child: Theme(
+        data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            if (!mounted || _overlayInert) return const SizedBox.shrink();
+            final Size screen =
+                Size(constraints.maxWidth, constraints.maxHeight);
+            return Stack(
+              // BUG-135：隐藏热槽停到屏幕右外侧（buildNestedPopupLayer），Clip.none 让它在
+              // 屏外照常预热又不被裁；飘出窗的弹窗同理不裁。
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () => _popNestedPopupAt(0),
+                      child: const ColoredBox(color: Colors.transparent),
+                    ),
+                  ),
+                // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
+                if (_popup.isSearchingUi && _popup.pendingRect != null)
+                  buildPopupLoadingPlaceholder(
+                    rect: _popup.pendingRect!,
+                    screen: screen,
+                  ),
+                for (int i = 0; i < _popup.entries.length; i++)
+                  _buildNestedPopupLayer(i, screen),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 
