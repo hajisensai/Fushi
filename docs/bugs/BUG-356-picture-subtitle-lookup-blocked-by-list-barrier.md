@@ -1,0 +1,7 @@
+## BUG-356 · 画面字幕在字幕列表开启时查不了词（barrier 遮挡）
+- **报告**：2026-06-20（用户：TODO-636 / TODO-637）
+- **真实性**：✅ 真 bug，根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:8043`（修前）
+- **根因**：字幕列表是 push-aside 非阻塞侧栏（`_videoWithSubtitlePanel`，`Row[Expanded(video), 面板列]`），但 BUG-256 为「点画面关列表」在画面区叠了一层 `Positioned.fill(GestureDetector(behavior: HitTestBehavior.opaque, onTap: 关列表))`。该 opaque barrier 罩在画面字幕 overlay（`VideoSubtitleOverlay`，查词手势在 `video_subtitle_overlay.dart:297-309` 的 translucent `GestureDetector.onTapUp`）之上，赢得 hit-test 并吃掉所有画面点击 → 列表开着时点画面字幕只会「关列表」、永远到不了查词手势（TODO-636 现象）。
+- **[x] ① 已修复** — 删除字幕列表的 opaque barrier，画面区恢复为裸 `video`，画面字幕 overlay 命中恢复、可查词；关列表统一走面板头部 × / Esc / 控制条字幕按钮（各自含 `_clearSelectedMiningCues` 清理）。同时删除随 barrier 失去意义的列表锁定（TODO-611 → TODO-634）。`video_hibiki_page.dart` `_videoWithSubtitlePanel`；提交见分支 `todo-637-subtitle-sidebar-x`。
+- **[x] ② 已加自动化测试** — 源码守卫 `hibiki/test/pages/video_subtitle_list_push_aside_guard_test.dart`（断言 `_videoWithSubtitlePanel` body 不再含 `HitTestBehavior.opaque`，red→green 实测：重新引入 barrier token → 红）；`hibiki/test/media/video/video_subtitle_list_wiring_guard_test.dart`（断言无 `onTap: locked ? null :` 形态、无 `_subtitleListLocked`）；widget 行为 `hibiki/test/media/video/video_subtitle_jump_panel_test.dart`（header 渲染 × 关闭按钮、点击调 onClose）。
+- **备注**：TODO-637 方案 A。仅反转字幕列表的 BUG-254/256（用户授意，因 barrier 破坏画面查词）；overlay 面板体系（`VideoTranslucentSidePanel` / `_buildVideoSidePanelOverlay` 的独立 barrier + `_sidePanelLocked`）保持 BUG-254 现状不动。画面字幕查词 / ×关闭 / 画面收窄需 media_kit 真机渲染验收（headless 跑不了），源码守卫 + widget 行为已覆盖结构与回调。

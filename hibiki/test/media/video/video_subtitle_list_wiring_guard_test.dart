@@ -105,15 +105,10 @@ void main() {
   });
 
   group('TODO-611 subtitle-list / favorite-panel lock wiring', () {
-    test('two independent lock notifiers exist and are disposed', () {
-      expect(
-        src.contains(
-          'final ValueNotifier<bool> _subtitleListLocked = '
-          'ValueNotifier<bool>(false);',
-        ),
-        isTrue,
-        reason: 'subtitle-list lock state notifier must exist (TODO-611)',
-      );
+    test('the favorite-panel lock notifier exists and is disposed', () {
+      // TODO-637: the subtitle-list lock (_subtitleListLocked) was removed with
+      // its barrier; only the overlay favorite-list lock (_sidePanelLocked)
+      // remains.
       expect(
         src.contains(
           'final ValueNotifier<bool> _sidePanelLocked = '
@@ -122,19 +117,22 @@ void main() {
         isTrue,
         reason: 'side-panel (favorite list) lock state notifier must exist',
       );
-      expect(src.contains('_subtitleListLocked.dispose();'), isTrue);
       expect(src.contains('_sidePanelLocked.dispose();'), isTrue);
+      // The subtitle-list lock is gone (TODO-634).
+      expect(src.contains('_subtitleListLocked'), isFalse,
+          reason: 'subtitle-list lock removed with its barrier (TODO-637/634)');
     });
 
-    test('subtitle-list tap-outside barrier is gated by the list lock', () {
-      // The push-aside barrier onTap must become a no-op when locked, so the
-      // list cannot be closed by tapping the video / outside (revert -> the
-      // barrier always closes -> red).
+    test('subtitle-list video area no longer has a tap-outside barrier', () {
+      // TODO-637/636: the subtitle list is a non-blocking sidebar; the video
+      // area carries no opaque "tap to close" barrier (it used to cover the
+      // picture-subtitle lookup gesture). The locked-gated `onTap: locked ?
+      // null :` form must be gone.
       expect(
         RegExp(r'onTap:\s*locked\s*\?\s*null\s*:').hasMatch(src),
-        isTrue,
-        reason:
-            'subtitle-list close barrier must no-op while locked (TODO-611)',
+        isFalse,
+        reason: 'subtitle-list close barrier removed (non-blocking sidebar, '
+            'TODO-637)',
       );
     });
 
@@ -162,21 +160,23 @@ void main() {
       );
     });
 
-    test('jump panel receives locked + onToggleLock from the page', () {
+    test('jump panel no longer receives a lock (X-close sidebar, TODO-637)',
+        () {
       expect(
-        RegExp(r'VideoSubtitleJumpPanel\([\s\S]*?locked: locked,'
-                r'[\s\S]*?onToggleLock: \(\) =>\s*'
-                r'_subtitleListLocked\.value\s*=\s*'
-                r'!_subtitleListLocked\.value')
-            .hasMatch(src),
-        isTrue,
-        reason: 'jump panel must be wired to the subtitle-list lock (TODO-611)',
+        RegExp(r'VideoSubtitleJumpPanel\([\s\S]*?onToggleLock:').hasMatch(src),
+        isFalse,
+        reason:
+            'jump panel no longer wires a lock; closing is via the header X / '
+            'Esc / subtitle button (TODO-637/634)',
       );
     });
 
-    test('lock state is reset (not persisted) when the list / panel hides', () {
-      expect(src.contains('_resetSubtitleListLockWhenHidden'), isTrue);
+    test('favorite-panel lock state is reset (not persisted) when it hides',
+        () {
+      // TODO-637: _resetSubtitleListLockWhenHidden was removed with the
+      // subtitle-list lock; only the favorite-panel reset remains.
       expect(src.contains('_resetSidePanelLockWhenHidden'), isTrue);
+      expect(src.contains('_resetSubtitleListLockWhenHidden'), isFalse);
     });
   });
 

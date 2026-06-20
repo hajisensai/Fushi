@@ -49,8 +49,6 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onClearCueSelection,
     this.initialAutoScroll = true,
     this.onAutoScrollChanged,
-    this.locked = false,
-    this.onToggleLock,
     this.fontSize = 14,
     this.width = 320,
   });
@@ -84,14 +82,6 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 用户在面板头部切换「自动滚动」时回调（TODO-613）。null 时仍可切换（纯本地），
   /// 但不通知外部持久化（部分调用方 / 测试不接落盘）。
   final ValueChanged<bool>? onAutoScrollChanged;
-
-  /// 列表锁定状态（TODO-611）。锁定时页面层的「点列表外关闭」barrier 被门控成 no-op，
-  /// 列表不会被点外部关闭（仅 Esc / 控制条字幕按钮可关）。
-  final bool locked;
-
-  /// 用户在面板头部点锁定图标时回调（TODO-611）。null 时不渲染锁定按钮（部分调用方
-  /// 不需要锁定能力，向后兼容）。
-  final VoidCallback? onToggleLock;
 
   final double fontSize;
   final double width;
@@ -579,26 +569,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 onPressed: _toggleAutoScroll,
                 visualDensity: VisualDensity.compact,
               ),
-              // TODO-611：列表锁定开关。锁定后页面层的「点列表外关闭」barrier 被门控成
-              // no-op（列表不会被点外部关闭，仅 Esc / 字幕按钮可关）。onToggleLock 为
-              // null 时不渲染（部分调用方不需要锁定能力）。
-              if (widget.onToggleLock != null)
-                IconButton(
-                  tooltip: widget.locked
-                      ? t.video_subtitle_list_unlock
-                      : t.video_subtitle_list_lock,
-                  icon: Icon(
-                    widget.locked ? Icons.lock : Icons.lock_open,
-                    size: iconSize,
-                  ),
-                  color: widget.locked ? cs.primary : cs.onSurfaceVariant,
-                  onPressed: widget.onToggleLock,
-                  visualDensity: VisualDensity.compact,
-                ),
-              // BUG-254：去掉右上角 X 关闭按钮，改为点击面板外的空白区域关闭（由页面层
-              // 全屏透明 barrier 承载）。关闭时的 onClearCueSelection 由页面层
-              // [_hideVideoSidePanel] 统一清理（字幕列表关闭即清挖词选择），故移除按钮不丢
-              // 该副作用。
+              // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
+              // 按钮（BUG-254 当初移除 ×、改点画面 barrier 关闭，但该 barrier 罩在画面
+              // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
+              // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
+              // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
+              IconButton(
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                icon: Icon(Icons.close, size: iconSize),
+                color: cs.onSurfaceVariant,
+                onPressed: widget.onClose,
+                visualDensity: VisualDensity.compact,
+              ),
             ],
           ),
           Row(

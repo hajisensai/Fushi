@@ -372,16 +372,17 @@ void main() {
       expect(find.text('No subtitles loaded'), findsOneWidget);
     });
 
-    testWidgets('no close X button (tap-outside closes, BUG-254)',
+    testWidgets('TODO-637: header renders an X close button that fires onClose',
         (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      int closes = 0;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
         controller: controller,
         onTapCue: (_) {},
-        onClose: () {},
+        onClose: () => closes++,
         onCopyCue: (_) {},
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
@@ -390,8 +391,12 @@ void main() {
         emptyHint: 'empty',
       )));
 
-      // BUG-254：右上角 X 关闭按钮已删除，关闭改由页面层全屏 barrier（点面板外）承载。
-      expect(find.byIcon(Icons.close), findsNothing);
+      // TODO-637: the X is back (BUG-256 tap-outside barrier removed because it
+      // ate the picture-subtitle lookup gesture, TODO-636). Tapping it closes.
+      expect(find.byIcon(Icons.close), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      expect(closes, 1, reason: 'tapping the X must invoke onClose (TODO-637)');
     });
 
     // TODO-152 sub-A: inline action buttons (jump/copy/favorite) + header toolbar.
@@ -1179,92 +1184,6 @@ void main() {
       await tester.pump();
       expect(changes, <bool>[false, true]);
     });
-
-    // ── TODO-611：列表锁定按钮 + 回调 ─────────────────────────────────────
-    testWidgets(
-        'TODO-611: onToggleLock present renders a lock icon; locked:true shows '
-        'the filled lock', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
-
-      VideoSubtitleJumpPanel panel({required bool locked}) =>
-          VideoSubtitleJumpPanel(
-            controller: controller,
-            onTapCue: (_) {},
-            onCopyCue: (_) {},
-            onFavoriteCue: (_) async {},
-            isCueFavorited: (_) => false,
-            onClose: () {},
-            locked: locked,
-            onToggleLock: () {},
-            colorScheme: const ColorScheme.dark(),
-            title: 'Subtitle list',
-            emptyHint: 'empty',
-          );
-
-      // Unlocked → open-lock icon.
-      await tester.pumpWidget(_wrap(panel(locked: false)));
-      expect(find.byIcon(Icons.lock_open), findsOneWidget);
-      expect(find.byIcon(Icons.lock), findsNothing);
-
-      // Locked → closed-lock icon.
-      await tester.pumpWidget(_wrap(panel(locked: true)));
-      expect(find.byIcon(Icons.lock), findsOneWidget);
-      expect(find.byIcon(Icons.lock_open), findsNothing);
-    });
-
-    testWidgets(
-        'TODO-611: no lock button when onToggleLock is null (backward '
-        'compatible)', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
-
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) {},
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        // onToggleLock omitted (null) → no lock affordance.
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
-
-      expect(find.byIcon(Icons.lock), findsNothing);
-      expect(find.byIcon(Icons.lock_open), findsNothing);
-    });
-
-    testWidgets('TODO-611: tapping the lock icon fires onToggleLock',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
-      int toggles = 0;
-
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) {},
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        locked: false,
-        onToggleLock: () => toggles++,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
-
-      await tester.tap(find.byIcon(Icons.lock_open));
-      await tester.pump();
-      expect(toggles, 1,
-          reason: 'tapping the lock toggle must notify the page to flip the '
-              'lock state (TODO-611)');
-    });
   });
 
   // Source guard: inline tooltips wire to existing i18n keys; copy toast reuses
@@ -1274,8 +1193,6 @@ void main() {
     expect(t.video_subtitle_list_font_smaller, isNotEmpty);
     expect(t.video_subtitle_list_font_larger, isNotEmpty);
     expect(t.video_subtitle_list_auto_scroll, isNotEmpty);
-    expect(t.video_subtitle_list_lock, isNotEmpty);
-    expect(t.video_subtitle_list_unlock, isNotEmpty);
     expect(t.copy, isNotEmpty);
     expect(t.collection_sentence, isNotEmpty);
   });

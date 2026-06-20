@@ -32,3 +32,10 @@
 
 - **真机待验**：host 跑不了 media_kit 渲染，需桌面 / 移动真机打开各侧栏面板，点左侧空白确认关闭、点面板内部确认不关闭、点空白不触发暂停 / 全屏。
 - 与 BUG-246（`_handleVideoPointerUp` 侧栏早返回）协调：barrier 现在先吃掉面板外点击，`_handleVideoPointerUp` 的侧栏早返回成为第二道保险（barrier 已拦住、不再冒泡进控制条 Listener），两者不冲突。
+
+### 后续（TODO-637 / BUG-356：字幕列表部分被反转）
+
+- 2026-06-20 TODO-637：用户针对**字幕列表**改主意——`VideoSubtitleJumpPanel`（push-aside 侧栏）改回「带 × 的非阻塞侧栏」。原因：BUG-256 为字幕列表在画面区叠的 opaque barrier 罩在画面字幕查词手势上，列表开着时画面字幕查不了词（BUG-356 / TODO-636）。
+- 反转范围**仅限字幕列表**：`VideoSubtitleJumpPanel._buildHeader` 带回右上角 `IconButton(Icons.close)`（onPressed `widget.onClose`），并删除字幕列表的 opaque barrier + 列表锁定（TODO-611/634）。
+- **overlay 面板体系不反转**：`VideoTranslucentSidePanel`（倍速/设置/收藏句子/字幕源/音轨/章节）保持本 BUG-254 现状——无 X、点面板外 barrier 关闭、收藏列表可锁定（`_sidePanelLocked`）。
+- 影响：字幕列表关闭路径现为 × / Esc / 控制条字幕按钮三选一（各含 `_clearSelectedMiningCues`）；不再依赖「点画面关列表」。详见 BUG-356 与分支 `todo-637-subtitle-sidebar-x`。

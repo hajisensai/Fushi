@@ -558,10 +558,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<_VideoSidePanelState?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelState?>(null);
 
-  /// 字幕列表锁定状态（TODO-611）。锁定后「点列表外关闭」barrier no-op，列表不会被
-  /// 点画面 / 外部关闭（仅 Esc / 控制条字幕按钮可关）。不持久化（关列表即复位为 false）。
-  final ValueNotifier<bool> _subtitleListLocked = ValueNotifier<bool>(false);
-
   /// 收藏句子等侧栏面板的锁定状态（TODO-611）。锁定后侧栏「点面板外关闭」barrier
   /// no-op（仅 favoriteSentences 这类列表面板显示锁定按钮）。不持久化（关面板即复位）。
   final ValueNotifier<bool> _sidePanelLocked = ValueNotifier<bool>(false);
@@ -1045,10 +1041,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlPopover.addListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
-    // TODO-611：锁定不持久化。列表 / 侧栏面板一关闭（任意路径：Esc / 字幕按钮 / 互斥
-    // 开浮层）就把对应锁复位为 false，下次重开默认未锁——锁生命周期绑定可见性，关闭
-    // 路径无需逐个复位。
-    _subtitleListVisible.addListener(_resetSubtitleListLockWhenHidden);
+    // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
+    // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     _videoSidePanel.addListener(_resetSidePanelLockWhenHidden);
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
@@ -2040,11 +2034,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _markControlsVisible(false);
       _refocusVideo();
     } else {
-      _clearSelectedMiningCues();
-      _subtitleListVisible.value = false;
-      _pokeControlsVisible();
-      _refocusVideo();
+      _closeSubtitleJumpList();
     }
+  }
+
+  /// 关闭 push-aside 字幕跳转列表（TODO-637）。**三条关闭路径的单一真相源**：
+  /// 面板头部 × 按钮（[onClose]）、Esc 键、控制条字幕按钮（后两者经
+  /// [_toggleSubtitleJumpList] 的关闭分支）都调它，避免「关闭副作用各写一份」分叉。
+  /// 关闭时必须：清挖词选择（[_clearSelectedMiningCues]）、隐藏列表
+  /// （[_subtitleListVisible]）、唤回控制条（[_pokeControlsVisible]）、把焦点归还视频
+  /// （[_refocusVideo]，否则键盘 / 手柄后续失焦）。
+  void _closeSubtitleJumpList() {
+    _clearSelectedMiningCues();
+    _subtitleListVisible.value = false;
+    _pokeControlsVisible();
+    _refocusVideo();
   }
 
   /// 点字幕跳转列表里某句：seek 到该 cue 起点（复用现成 [VideoPlayerController.skipToCue]）
@@ -2169,7 +2173,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.dispose();
     _videoSidePanel.dispose();
-    _subtitleListLocked.dispose();
     _sidePanelLocked.dispose();
     _controlPopoverHideTimer?.cancel();
     _videoControlPopover.dispose();
@@ -6206,13 +6209,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _refocusVideo();
   }
 
-  /// TODO-611：字幕列表隐藏时复位列表锁（锁不持久化、关掉就忘）。
-  void _resetSubtitleListLockWhenHidden() {
-    if (!_subtitleListVisible.value && _subtitleListLocked.value) {
-      _subtitleListLocked.value = false;
-    }
-  }
-
   /// TODO-611：侧栏面板关闭时复位面板锁（锁不持久化、关掉就忘）。
   void _resetSidePanelLockWhenHidden() {
     if (_videoSidePanel.value == null && _sidePanelLocked.value) {
@@ -8021,46 +8017,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return ValueListenableBuilder<bool>(
       valueListenable: _subtitleListVisible,
       builder: (BuildContext _, bool visible, __) {
-        // TODO-611：内层监听列表锁，锁状态翻转时 barrier 门控 + jump panel 锁图标都重建。
-        return ValueListenableBuilder<bool>(
-          valueListenable: _subtitleListLocked,
-          builder: (BuildContext _, bool locked, __) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Expanded(
-                  child: visible
-                      // BUG-256：push-aside 字幕列表开着时，在画面区叠一层不可见
-                      // barrier，点画面/外部 → 关列表（除控制条字幕按钮外的明确关闭入口）。
-                      // barrier 用 [HitTestBehavior.opaque] 吃掉点击、不冒泡到下方控制条
-                      // [Listener]，故点画面只关列表、不触发暂停/全屏（与 overlay 面板的
-                      // 点外关闭一致）。TODO-611：列表锁定时 barrier 改成 no-op（点画面
-                      // 不关列表），保留 Esc / 字幕按钮作唯一关闭逃生口。
-                      ? Stack(
-                          fit: StackFit.expand,
-                          children: <Widget>[
-                            video,
-                            Positioned.fill(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: locked
-                                    ? null
-                                    : () {
-                                        _clearSelectedMiningCues();
-                                        _subtitleListVisible.value = false;
-                                        _pokeControlsVisible();
-                                        _refocusVideo();
-                                      },
-                              ),
-                            ),
-                          ],
-                        )
-                      : video,
-                ),
-                _subtitleJumpSidePanel(controller, visible, locked),
-              ],
-            );
-          },
+        // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——画面区不再叠任何 barrier。此前
+        // BUG-256 在画面区叠一层不透明（opaque）的「点画面关列表」barrier，它罩在画面
+        // 字幕 overlay（[VideoSubtitleOverlay] 的查词手势）之上吃掉所有画面点击 → 列表
+        // 开着时画面字幕查不了词（TODO-636 根因）。删 barrier 后画面区是裸 [video]，画面
+        // 字幕命中恢复、可查词；关列表统一走 × / Esc / 控制条字幕按钮，三者都经
+        // [_closeSubtitleJumpList]（单一真相源：清挖词选择 + 隐藏列表 + 唤回控制条 +
+        // 归还焦点；见 _subtitleJumpSidePanel.onClose 与 _toggleSubtitleJumpList 的关闭
+        // 分支）。barrier 删除后列表锁定（TODO-611，原本
+        // 唯一作用是把 barrier 门控成 no-op）失去意义，一并移除（TODO-634）。
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(child: video),
+            _subtitleJumpSidePanel(controller, visible),
+          ],
         );
       },
     );
@@ -8073,7 +8044,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Widget _subtitleJumpSidePanel(
     VideoPlayerController controller,
     bool visible,
-    bool locked,
   ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
@@ -8108,15 +8078,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       onAutoScrollChanged: (bool value) => unawaited(
                         appModel.setVideoSubtitleListAutoScroll(value),
                       ),
-                      // TODO-611：列表锁定开关。锁定后页面层「点画面外关闭」barrier
-                      // no-op（见 [_videoWithSubtitlePanel]），仅 Esc / 字幕按钮可关。
-                      locked: locked,
-                      onToggleLock: () => _subtitleListLocked.value =
-                          !_subtitleListLocked.value,
-                      onClose: () {
-                        _clearSelectedMiningCues();
-                        _subtitleListVisible.value = false;
-                      },
+                      onClose: _closeSubtitleJumpList,
                       colorScheme: cs,
                       title: t.video_subtitle_list,
                       emptyHint: t.video_subtitle_list_empty,
