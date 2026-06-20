@@ -3,10 +3,10 @@
 - **真实性**：✅ 真 bug。两个独立根因：
   - **① 标题抢宽**：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_topBarTitle()`（顶栏 Row 三个 flex child 之一）用 `Expanded`（= `Flexible(fit: FlexFit.tight)`），强迫标题填满它分到的那段顶栏宽。左右按钮组（`_topBarSlotGroup` 返回 `Flexible(fit: FlexFit.loose)`）被挤进内部横向 `SingleChildScrollView`，右上角按钮被裁 / 要横滑才看得到。
   - **② 默认按钮过多**：`hibiki/lib/src/media/video/video_control_customization.dart` 的 `currentChrome`（首次运行默认 chrome，`decode('')` 回退到它）默认把 10 个按钮塞进 topRight（previousEpisode / nextEpisode / episodeList / screenshot / clipExport / subtitleTrack / audioTrack / chapterList / previousChapter / nextChapter），右上角拥挤。
-- **[x] ① 已修复** — 提交 `4af84aa7c`：
+- **[x] ① 已修复** — 提交 `a056ed96c`：
   - 标题改 `Flexible(fit: FlexFit.loose)`（`video_hibiki_page.dart` `_topBarTitle()`，约 :4574），剩余宽优先让给按钮组；标题已有 `maxLines:1`+`TextOverflow.ellipsis`，窄窗优雅截断。
   - 默认 topRight 精简为 6 个常用入口（episodeList / screenshot / clipExport / subtitleTrack / audioTrack / chapterList），移除 4 个 prev/next 导航键（previousEpisode / nextEpisode / previousChapter / nextChapter）：它们各有 episodeList / chapterList 入口 + 快捷键。移除 = 不在 `currentChrome` 的 assignments / explicitOrder 列出，默认落 `VideoControlSlot.hidden`（`removedItems` 集），**仍是可自定义项，用户可从编辑器面板拖回**，不是从模型删除。screenshot / clipExport 相邻顺序受守卫钉死，保持紧挨。
-- **[x] ② 已加自动化测试** — 提交 `4af84aa7c`：
+- **[x] ② 已加自动化测试** — 提交 `a056ed96c`：
   - `hibiki/test/pages/video_single_top_bar_guard_test.dart`：新增「标题用 Flexible(loose) 让宽给按钮，不用 Expanded」守卫（断言 `_topBarTitle()` 方法体含 `fit: FlexFit.loose`、不含 `return Expanded(`，标题文本仍 `maxLines:1`+`ellipsis`）。
   - `hibiki/test/pages/video_header_button_order_guard_test.dart`：新增「默认右上角顶栏精简为 6 个常用入口」守卫（断言 `currentChrome.itemsIn(topRight)` 恰为 6 项有序列表；4 个 prev/next 键 `isOnPlayer==false` 且在 `removedItems`，且 `canMoveToSlot(topRight)==true` 仍可拖回）。
   - `hibiki/test/media/video/video_control_layout_test.dart`：更新两处「无孤儿」完整性守卫（partial-blob backfill + v1 迁移），把完整性判据从「仅可见槽」改为「可见槽 ∪ removedItems 覆盖全集且互不重叠」——这是默认精简后的精确不变量，非放松（4 个键迁移到 removed 仍可恢复，不是数据丢失）。
