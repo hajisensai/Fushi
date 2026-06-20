@@ -27,12 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 346 条。点号进各自文件。
+> 共 347 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-353](bugs/BUG-353-taskbar-flash-foreground-residue.md) | ✅ | ✅ | TODO-615 剪贴板查词在主窗前台时误触任务栏高亮 |
 | [BUG-352](bugs/BUG-352-nested-lookup-crash-evidence.md) | ✅ | ✅ | 嵌套查词闪退后错误日志一片空白（无可上传证据） |
+| [BUG-351](bugs/BUG-351-reader-image-wheel-pagination.md) | ✅ | ✅ | PC阅读遇插画滚轮翻不了下一页 |
 | [BUG-350](bugs/BUG-350-hoshidicts-upstream-batch1.md) | ✅ | ✅ | hoshidicts 上游同步批1（score double / freq 排序 / c++23 兼容） |
 | [BUG-349](bugs/BUG-349-swipe-sensitivity-misclassified-reading.md) | ✅ | ✅ | TODO-625 滑动关闭灵敏度错置阅读分类应归查词 |
 | [BUG-348](bugs/BUG-348-mixed-dict-classify.md) | ✅ | ✅ | 混合词典误判kanji划词查词全失踪(detect_type kanji优先) |
