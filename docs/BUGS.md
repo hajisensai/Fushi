@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 353 条。点号进各自文件。
+> 共 354 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-360](bugs/BUG-360-download-progress-overflow.md) | ✅ | ✅ | 更新分片下载进度超100%加闪烁 |
 | [BUG-359](bugs/BUG-359-fav-cache-stale.md) | ✅ | ✅ | 收藏后字幕列表favorites档延迟 |
 | [BUG-358](bugs/BUG-358-dict-selection-oneshot.md) | ✅ | ✅ | 制卡词典选择粘连应一次性 |
 | [BUG-357](bugs/BUG-357-mining-race.md) | ✅ | ✅ | 制卡并发race媒体/句子错配 |

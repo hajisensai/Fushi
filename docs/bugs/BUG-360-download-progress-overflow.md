@@ -1,0 +1,6 @@
+## BUG-360 · 更新分片下载进度超100%加闪烁
+- **报告**：2026-06-20（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/utils/misc/update_checker_download.dart`（TODO-596 引入的多线程分片下载 `_downloadSegmented`）。分段重试时进度记账加减不对称：`onChunk:(delta){ receivedTotal += delta; }`（旧 :841-844）累加本次 attempt 收到的字节，失败回退 `receivedTotal -= segWritten;`（旧 :853）减的却是 attempt 开始前 segFile 已有字节。首次 attempt segWritten=0、已加 delta 不被抵消，删段后重试整段又加一遍 → 重复计 → `receivedTotal/total` > 1.0（实测 112.5%/125%，真实场景约 1/3 重复 ≈135%）；回退本身造成进度向下跳变 + 多段并发交错 = 闪烁回跳。整条链路（`reportProgress` → release `onProgress` → UI `LinearProgressIndicator` value / `(p*100)%`）全程无 clamp。单线程路径 `_downloadCandidateSingle` 局部单调不受影响。
+- **[x] ① 已修复** — commit `0939bd5b5`。根因修复（同文件）：进度改用 per-segment 已落盘字节数组 `segmentBytes` 求和作为唯一真相源（消除加减不对称这一整类特殊情况）：attempt 起始 `segmentBytes[index]=segWritten` 对齐真实落盘字节，`onChunk` 时 `segmentBytes[index]+=delta`，失败删段时 `segmentBytes[index]=0`；`reportProgress` 内 `clamp(0,1)` + `lastReported` 单调非减水位线；完成路径对齐各段到末偏移收尾 1.0。UI 兜底（`update_checker_ui.dart`）渲染前 `p.clamp(0,1)` 双层防线。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/update_checker_segmented_download_test.dart` 新增 group「分片下载进度记账（TODO-628/650）」：注入 openUrl mock 让某段「先吐部分字节→抛 SocketException→重试成功」，断言 onProgress 序列全程 ≤1.0、单调非减、末值==1.0；再加「多段各重试一次」断言永不 >1.0。red→green 实测：撤修复时溢出到 1.125/1.25（红），修复后全绿。
+- **备注**：对应 TODO-628 / TODO-650（同根因）。仅影响多线程分片下载路径（桌面/Android 更新下载）；真机下载进度条验证待用户。

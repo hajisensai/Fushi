@@ -410,14 +410,21 @@ class _DownloadOverlay extends StatelessWidget {
                     SizedBox(height: tokens.spacing.gap),
                     ValueListenableBuilder<double>(
                       valueListenable: progress,
-                      builder: (_, p, __) => Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          LinearProgressIndicator(value: p > 0 ? p : null),
-                          SizedBox(height: tokens.spacing.gap / 2),
-                          Text('${(p * 100).toStringAsFixed(0)}%'),
-                        ],
-                      ),
+                      builder: (_, p, __) {
+                        // 双层防线：渲染前 clamp(0,1)，防任何上游异常进度值
+                        // （>100% / 负值）穿透到进度条与百分比文字（TODO-628/650）。
+                        final double clamped = p.clamp(0.0, 1.0);
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            LinearProgressIndicator(
+                              value: clamped > 0 ? clamped : null,
+                            ),
+                            SizedBox(height: tokens.spacing.gap / 2),
+                            Text('${(clamped * 100).toStringAsFixed(0)}%'),
+                          ],
+                        );
+                      },
                     ),
                     ValueListenableBuilder<UpdateDownloadDiagnostics?>(
                       valueListenable: diagnostics,

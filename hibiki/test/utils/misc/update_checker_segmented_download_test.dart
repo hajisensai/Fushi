@@ -370,6 +370,126 @@ void main() {
       expect(requests.single, isNot(contains(HttpHeaders.rangeHeader)));
     });
   });
+
+  group('分片下载进度记账（TODO-628/650：重试不超 100%、不回跳）', () {
+    late Directory updatesDir;
+
+    setUp(() async {
+      updatesDir = await Directory.systemTemp.createTemp('hibiki-update-prog');
+    });
+
+    tearDown(() async {
+      if (updatesDir.existsSync()) {
+        await _deleteDirectoryWithRetry(updatesDir);
+      }
+    });
+
+    test('某段先吐部分字节再抛 SocketException 重试成功：onProgress 全程 ≤1.0 单调非减、末值==1.0',
+        () async {
+      // 直击 TODO-596 加减不对称：首次 attempt 已加 delta，回退却减 segWritten(=0)，
+      // 删段后重下整段又加一遍 → 重复计 → receivedTotal/total >1.0(135%) + 回跳闪烁。
+      final List<int> payload = _largePayload();
+      final UpdateAsset asset = _asset(payload);
+      final List<double> progressValues = <double>[];
+      // 每个非探针请求按 (起点) 计数，让「第二段第一次」中途抛错、第二次成功。
+      final Map<int, int> attemptByStart = <int, int>{};
+      var probeServed = false;
+
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        connectionCount: 4,
+        minSegmentBytes: _minSeg,
+        onProgress: progressValues.add,
+        openUrl: (Uri _, Map<String, String> headers) async {
+          final String? range = headers[HttpHeaders.rangeHeader];
+          if (range == null || !range.startsWith('bytes=')) {
+            return _rangeResponse(payload, range);
+          }
+          final RegExpMatch m = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
+          final int start = int.parse(m.group(1)!);
+          // 第一个 bytes=0- 是探针（drain 丢弃），放行真实 206。
+          if (start == 0 && !probeServed) {
+            probeServed = true;
+            return _rangeResponse(payload, range);
+          }
+          final int attempt = (attemptByStart[start] ?? 0) + 1;
+          attemptByStart[start] = attempt;
+          // 选一个非首段：首次 attempt 先吐若干字节，再抛 SocketException。
+          if (start > 0 && attempt == 1) {
+            return _failMidStreamResponse(payload, start, m.group(2)!);
+          }
+          // 其它（含重试的第二次）正常完整返回该段。
+          return _rangeResponse(payload, range);
+        },
+      );
+
+      expect(await file.readAsBytes(), payload, reason: '重试后仍还原整文件');
+      expect(progressValues, isNotEmpty);
+      // 核心断言 1：全程绝不 >1.0（直击 135% 溢出）。
+      for (final double p in progressValues) {
+        expect(p, lessThanOrEqualTo(1.0 + 1e-9),
+            reason: '进度永不超过 100%（TODO-628 溢出 135%）');
+        expect(p, greaterThanOrEqualTo(0.0));
+      }
+      // 核心断言 2：单调非减（直击重试回退导致的向下跳变闪烁）。
+      for (int i = 1; i < progressValues.length; i++) {
+        expect(progressValues[i], greaterThanOrEqualTo(progressValues[i - 1]),
+            reason: 'TODO-650：进度不应回跳（闪烁）');
+      }
+      // 核心断言 3：末值收尾到 1.0。
+      expect(progressValues.last, closeTo(1.0, 1e-9));
+    });
+
+    test('多段各重试一次：receivedTotal/total 永不 >1.0（直击 135%）', () async {
+      final List<int> payload = _largePayload();
+      final UpdateAsset asset = _asset(payload);
+      final List<double> progressValues = <double>[];
+      final Map<int, int> attemptByStart = <int, int>{};
+      var probeServed = false;
+
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[asset.url],
+        connectionCount: 4,
+        minSegmentBytes: _minSeg,
+        onProgress: progressValues.add,
+        openUrl: (Uri _, Map<String, String> headers) async {
+          final String? range = headers[HttpHeaders.rangeHeader];
+          if (range == null || !range.startsWith('bytes=')) {
+            return _rangeResponse(payload, range);
+          }
+          final RegExpMatch m = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
+          final int start = int.parse(m.group(1)!);
+          if (start == 0 && !probeServed) {
+            probeServed = true;
+            return _rangeResponse(payload, range);
+          }
+          final int attempt = (attemptByStart[start] ?? 0) + 1;
+          attemptByStart[start] = attempt;
+          // 每一段（含首段正式下载）第一次都中途失败一次，第二次成功。
+          if (attempt == 1) {
+            return _failMidStreamResponse(payload, start, m.group(2)!);
+          }
+          return _rangeResponse(payload, range);
+        },
+      );
+
+      expect(await file.readAsBytes(), payload);
+      expect(progressValues, isNotEmpty);
+      for (final double p in progressValues) {
+        expect(p, lessThanOrEqualTo(1.0 + 1e-9), reason: '多段各重试一次仍不溢出 100%');
+      }
+      for (int i = 1; i < progressValues.length; i++) {
+        expect(progressValues[i], greaterThanOrEqualTo(progressValues[i - 1]));
+      }
+      expect(progressValues.last, closeTo(1.0, 1e-9));
+    });
+  });
 }
 
 // minSegment 用很小的值，让小 payload 也能真正切成多段做测试。
@@ -434,4 +554,32 @@ Future<void> _deleteDirectoryWithRetry(Directory directory) async {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
+}
+
+/// 模拟「某段先吐若干字节再断流」的 206 响应：取该段一半字节后 addError，
+/// 触发 [_runSegmentRequest] 流抛错 → downloadOneSegment 重试。
+UpdateDownloadResponse _failMidStreamResponse(
+  List<int> payload,
+  int start,
+  String endGroup,
+) {
+  final int end = endGroup.isEmpty ? payload.length - 1 : int.parse(endGroup);
+  final List<int> slice = payload.sublist(start, end + 1);
+  final int half = slice.length > 1 ? slice.length ~/ 2 : 0;
+  final StreamController<List<int>> controller = StreamController<List<int>>();
+  // 先吐前半段（让 onChunk 累加进度），再断流抛错（让重试回退路径生效）。
+  scheduleMicrotask(() {
+    if (half > 0) controller.add(slice.sublist(0, half));
+    controller.addError(const SocketException('mid-stream reset'));
+    controller.close();
+  });
+  return UpdateDownloadResponse(
+    statusCode: HttpStatus.partialContent,
+    headers: <String, String>{
+      HttpHeaders.contentRangeHeader: 'bytes $start-$end/${payload.length}',
+      HttpHeaders.contentLengthHeader: '${slice.length}',
+      HttpHeaders.etagHeader: '"payload-v1"',
+    },
+    stream: controller.stream,
+  );
 }

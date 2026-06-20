@@ -772,11 +772,25 @@ Future<File?> _downloadSegmented({
   final String sourceHost = hostLabelForUpdateUrl(url);
   final Stopwatch stopwatch = Stopwatch()..start();
   var lastDiagnosticsMs = -_kDownloadDiagnosticsInterval.inMilliseconds;
-  var receivedTotal = 0; // 单 isolate 累加，无需锁。
+  // 进度唯一真相源：每段当前已落盘字节数（per-segment）。进度 = 各段之和，
+  // 不做「加 delta / 减 segWritten」的对称记账——重试删段时只把该段槽重置回真实
+  // 落盘字节（0），从根上消除 TODO-596 的加减不对称（重复计 → >100%/135% + 闪烁）。
+  // 单 isolate 顺序执行回调，写槽无需锁。
+  final List<int> segmentBytes = List<int>.filled(segments.length, 0);
   var etagMismatch = false; // 任一段返回 200（If-Range 不匹配）→ 整体退化。
+  var lastReported = 0.0; // 对外 onProgress 单调非减的水位线（消除回跳闪烁）。
+
+  int receivedTotalBytes() =>
+      segmentBytes.fold<int>(0, (int acc, int b) => acc + b);
 
   void reportProgress({bool force = false}) {
-    if (total > 0) onProgress?.call(receivedTotal / total);
+    final int receivedTotal = receivedTotalBytes();
+    if (total > 0) {
+      // 防御性 clamp(0,1) + 单调非减：即便上游记账异常也不会 >100% 或回跳。
+      final double clamped = (receivedTotal / total).clamp(0.0, 1.0);
+      if (clamped > lastReported) lastReported = clamped;
+      onProgress?.call(lastReported);
+    }
     final UpdateDownloadDiagnosticsCallback? callback = onDiagnostics;
     if (callback == null) return;
     final int elapsed = stopwatch.elapsedMilliseconds;
@@ -824,6 +838,8 @@ Future<File?> _downloadSegmented({
         final int? segLen = segment.length;
         if (segLen != null && segWritten >= segLen) return segWritten; // 段满。
       }
+      // 该段槽对齐到当前真实落盘字节（续传起点）；后续 onChunk 在此基础上累加。
+      segmentBytes[index] = segWritten;
       final int reqStart = segment.start + segWritten;
       final Map<String, String> headers = <String, String>{
         HttpHeaders.rangeHeader:
@@ -839,7 +855,7 @@ Future<File?> _downloadSegmented({
           segFile: segFile,
           appendOffset: segWritten,
           onChunk: (int delta) {
-            receivedTotal += delta;
+            segmentBytes[index] += delta;
             reportProgress();
           },
         ).timeout(_kPerAttemptTimeout);
@@ -849,8 +865,8 @@ Future<File?> _downloadSegmented({
       } catch (e, stack) {
         lastError = e;
         lastStack = stack;
-        // 重试前回退该段已记进度（删半截文件下次从头）。
-        receivedTotal -= segWritten;
+        // 删半截文件下次从头：段槽归零，反映该段真实落盘字节（重试不重复计）。
+        segmentBytes[index] = 0;
         await _deleteFile(segFile);
       }
     }
@@ -913,9 +929,14 @@ Future<File?> _downloadSegmented({
     stagingPaths,
     completeMetadata,
   );
-  receivedTotal = total;
+  // 全段成功 + 校验 + promote 完成：各段槽对齐到末偏移使进度收尾到 1.0
+  // （reportProgress 内 clamp+单调，水位线保持一致，不绕过防护层直接喂 1）。
+  for (int i = 0; i < segments.length; i++) {
+    final int? segLen = segments[i].length;
+    if (segLen != null) segmentBytes[i] = segLen;
+  }
+  lastReported = 1.0;
   reportProgress(force: true);
-  onProgress?.call(1);
   return promoted;
 }
 
