@@ -98,6 +98,15 @@ class DictionaryQuery {
 
   struct DictionaryData;
   struct Dictionary {
+    Dictionary();
+    ~Dictionary();
+
+    Dictionary(const Dictionary&) = delete;
+    Dictionary& operator=(const Dictionary&) = delete;
+
+    Dictionary(Dictionary&&) noexcept;
+    Dictionary& operator=(Dictionary&&) noexcept;
+
     std::string name;
     std::string styles;
     std::unique_ptr<DictionaryData> data;

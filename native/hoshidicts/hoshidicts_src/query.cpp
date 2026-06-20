@@ -82,6 +82,12 @@ DictionaryQuery::~DictionaryQuery() = default;
 DictionaryQuery::DictionaryQuery(DictionaryQuery&&) noexcept = default;
 DictionaryQuery& DictionaryQuery::operator=(DictionaryQuery&&) noexcept = default;
 
+DictionaryQuery::Dictionary::Dictionary() = default;
+DictionaryQuery::Dictionary::~Dictionary() = default;
+
+DictionaryQuery::Dictionary::Dictionary(Dictionary&&) noexcept = default;
+DictionaryQuery::Dictionary& DictionaryQuery::Dictionary::operator=(Dictionary&&) noexcept = default;
+
 void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   if (!std::filesystem::is_regular_file(hoshi::fs_path(path + "/.hoshidicts_1"))) {
     return;
