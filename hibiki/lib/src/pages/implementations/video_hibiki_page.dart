@@ -36,7 +36,6 @@ import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_danmaku_overlay.dart';
 import 'package:hibiki/src/media/video/video_danmaku_source.dart';
-import 'package:hibiki/src/media/video/video_favorite_sentences_panel.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -337,7 +336,6 @@ abstract class VideoHibikiTestHooks {
 enum _VideoSidePanelKind {
   speed,
   settings,
-  favoriteSentences,
   subtitleSources,
   audioTracks,
   chapters,
@@ -558,9 +556,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<_VideoSidePanelState?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelState?>(null);
 
-  /// 收藏句子等侧栏面板的锁定状态（TODO-611）。锁定后侧栏「点面板外关闭」barrier
-  /// no-op（仅 favoriteSentences 这类列表面板显示锁定按钮）。不持久化（关面板即复位）。
-  final ValueNotifier<bool> _sidePanelLocked = ValueNotifier<bool>(false);
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
   final Map<String, LayerLink> _controlPopoverItemLinks = <String, LayerLink>{};
@@ -1043,7 +1038,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
-    _videoSidePanel.addListener(_resetSidePanelLockWhenHidden);
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
@@ -2173,7 +2167,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.dispose();
     _videoSidePanel.dispose();
-    _sidePanelLocked.dispose();
     _controlPopoverHideTimer?.cancel();
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
@@ -3413,9 +3406,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         replayPreviousSubtitle: () => _runWhenImmersiveAllowsFullControls(
           () => unawaited(_replayPreviousCueAndPokeControls()),
         ),
-        showFavoriteSentences: () => _runWhenImmersiveAllowsFullControls(
-          _showFavoriteSentencesPanel,
-        ),
         // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
         // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
         previousChapter: () => _runWhenImmersiveAllowsFullControls(() {
@@ -4625,7 +4615,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
-      case VideoControlItem.favoriteSentences:
       case VideoControlItem.settings:
         return const SizedBox.shrink();
     }
@@ -4682,7 +4671,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
-      case VideoControlItem.favoriteSentences:
       case VideoControlItem.settings:
       case VideoControlItem.playPause:
       case VideoControlItem.seekBackward:
@@ -4868,7 +4856,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
-      case VideoControlItem.favoriteSentences:
       case VideoControlItem.settings:
         return Icons.tune;
     }
@@ -4923,7 +4910,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
-      case VideoControlItem.favoriteSentences:
       case VideoControlItem.settings:
         return '';
     }
@@ -5033,7 +5019,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
-      case VideoControlItem.favoriteSentences:
       case VideoControlItem.settings:
         break;
     }
@@ -5215,8 +5200,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return Icons.format_list_bulleted;
       case VideoControlButton.favoriteSentence:
         return Icons.star_border_rounded;
-      case VideoControlButton.favoriteSentences:
-        return Icons.collections_bookmark_outlined;
       case VideoControlButton.settings:
         return Icons.tune;
     }
@@ -5230,8 +5213,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_control_subtitle_list;
       case VideoControlButton.favoriteSentence:
         return t.video_control_favorite_sentence;
-      case VideoControlButton.favoriteSentences:
-        return t.video_control_favorite_sentences;
       case VideoControlButton.settings:
         return t.video_control_settings;
     }
@@ -5251,9 +5232,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         break;
       case VideoControlButton.favoriteSentence:
         unawaited(_toggleFavoriteCurrentCue());
-        break;
-      case VideoControlButton.favoriteSentences:
-        _showFavoriteSentencesPanel(sourceSlot: sourceSlot);
         break;
       case VideoControlButton.settings:
         _showPlayerSettings(sourceSlot: sourceSlot);
@@ -6209,13 +6187,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _refocusVideo();
   }
 
-  /// TODO-611：侧栏面板关闭时复位面板锁（锁不持久化、关掉就忘）。
-  void _resetSidePanelLockWhenHidden() {
-    if (_videoSidePanel.value == null && _sidePanelLocked.value) {
-      _sidePanelLocked.value = false;
-    }
-  }
-
   void _hideVideoSidePanel() {
     _videoSidePanel.value = null;
     // BUG-253：面板关闭后唤回一次控制条（poke 在 [_videoSidePanel] 复位为 null 之后才
@@ -6230,8 +6201,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return t.video_setting_speed;
       case _VideoSidePanelKind.settings:
         return t.video_settings_title;
-      case _VideoSidePanelKind.favoriteSentences:
-        return t.video_favorite_sentences;
       case _VideoSidePanelKind.subtitleSources:
         return t.video_menu_subtitle_track;
       case _VideoSidePanelKind.audioTracks:
@@ -6245,7 +6214,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     switch (kind) {
       case _VideoSidePanelKind.settings:
         return 560;
-      case _VideoSidePanelKind.favoriteSentences:
       case _VideoSidePanelKind.chapters:
         return 420;
       case _VideoSidePanelKind.subtitleSources:
@@ -6264,8 +6232,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         return _buildSpeedSidePanel();
       case _VideoSidePanelKind.settings:
         return _buildVideoQuickSettingsSheet();
-      case _VideoSidePanelKind.favoriteSentences:
-        return _buildFavoriteSentencesSidePanel();
       case _VideoSidePanelKind.subtitleSources:
         return _buildSubtitleSourcesSidePanel(controller);
       case _VideoSidePanelKind.audioTracks:
@@ -6285,38 +6251,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           __,
         ) {
           if (panelState == null) return const SizedBox.shrink();
-          // TODO-611：只有收藏句子列表面板可锁定（其它面板 _sidePanelLocked 不显示锁
-          // 按钮、也不响应）。监听 _sidePanelLocked 让锁定 / 解锁时 barrier 门控 + header
-          // 锁图标随之重建。
-          return ValueListenableBuilder<bool>(
-            valueListenable: _sidePanelLocked,
-            builder: (BuildContext _, bool locked, __) {
-              final bool lockable =
-                  panelState.kind == _VideoSidePanelKind.favoriteSentences;
-              final Widget panelContent = _buildVideoSidePanelContent(
-                panelState,
-                controller,
-                lockable: lockable,
-                locked: lockable && locked,
-              );
-              // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
-              // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用
-              // [HitTestBehavior.opaque] 吃掉点击，**不**冒泡到下方控制条 [Listener]，
-              // 因此点空白只关面板、不会触发暂停 / 全屏（与 [_handleVideoPointerUp] 的
-              // 侧栏早返回门控一致）。面板本体是不透明 Material、在 Stack 上层，点面板内
-              // 部命中面板自身、到不了 barrier，故只有点外部才关闭。TODO-611：收藏列表
-              // 锁定时 barrier 改成 no-op（点外不关），保留 Esc 作唯一关闭逃生口。
-              return Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: (lockable && locked) ? null : _hideVideoSidePanel,
-                  ),
-                  panelContent,
-                ],
-              );
-            },
+          final Widget panelContent = _buildVideoSidePanelContent(
+            panelState,
+            controller,
+          );
+          // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
+          // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用
+          // [HitTestBehavior.opaque] 吃掉点击，**不**冒泡到下方控制条 [Listener]，
+          // 因此点空白只关面板、不会触发暂停 / 全屏（与 [_handleVideoPointerUp] 的
+          // 侧栏早返回门控一致）。面板本体是不透明 Material、在 Stack 上层，点面板内
+          // 部命中面板自身、到不了 barrier，故只有点外部才关闭。
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _hideVideoSidePanel,
+              ),
+              panelContent,
+            ],
           );
         },
       ),
@@ -6327,21 +6280,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 字幕跳转列表已改 push-aside（TODO-314），不再经此 overlay 路径。
   Widget _buildVideoSidePanelContent(
     _VideoSidePanelState panelState,
-    VideoPlayerController controller, {
-    bool lockable = false,
-    bool locked = false,
-  }) {
+    VideoPlayerController controller,
+  ) {
     final _VideoSidePanelKind kind = panelState.kind;
     final Widget panel = VideoTranslucentSidePanel(
       title: _videoSidePanelTitle(kind),
       width: _videoSidePanelWidth(kind),
       alignment: panelState.alignment,
       onClose: _hideVideoSidePanel,
-      // TODO-611：仅收藏句子列表显示锁定按钮（lockable）；锁定后页面层 barrier no-op。
-      locked: locked,
-      onToggleLock: lockable
-          ? () => _sidePanelLocked.value = !_sidePanelLocked.value
-          : null,
       child: _buildVideoSidePanelChild(kind, controller),
     );
     if (kind != _VideoSidePanelKind.settings) return panel;
@@ -6596,38 +6542,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) {
     _showVideoSidePanel(
       _VideoSidePanelKind.chapters,
-      sourceSlot: sourceSlot,
-    );
-  }
-
-  Widget _buildFavoriteSentencesSidePanel() {
-    return FutureBuilder<List<FavoriteSentence>>(
-      future: FavoriteSentenceRepository(appModel.database).getAll(),
-      builder: (BuildContext context,
-          AsyncSnapshot<List<FavoriteSentence>> snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return VideoFavoriteSentencesPanel(
-          currentBookKey: widget.bookUid,
-          currentEpisode: _currentEpisode,
-          sentences: snapshot.data ?? const <FavoriteSentence>[],
-          emptyLabel: t.video_favorite_sentences_empty,
-          onTapSentence: (FavoriteSentence sentence) {
-            final int? startMs = sentence.normCharOffset;
-            if (startMs != null) {
-              _pokeControlsVisible();
-              unawaited(_controller?.seekMs(startMs));
-            }
-          },
-        );
-      },
-    );
-  }
-
-  void _showFavoriteSentencesPanel({VideoControlSlot? sourceSlot}) {
-    _showVideoSidePanel(
-      _VideoSidePanelKind.favoriteSentences,
       sourceSlot: sourceSlot,
     );
   }
@@ -7421,11 +7335,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         Icons.format_list_bulleted,
         t.video_subtitle_list,
         _toggleSubtitleJumpList,
-      ),
-      item(
-        Icons.collections_bookmark_outlined,
-        t.video_favorite_sentences,
-        _showFavoriteSentencesPanel,
       ),
       item(
         Icons.audiotrack,

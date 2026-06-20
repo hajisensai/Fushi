@@ -795,7 +795,6 @@ class _VideoControlLayoutEditOverlayState
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
-      case VideoControlItem.favoriteSentences:
       case VideoControlItem.settings:
         return item.storageValue;
     }
@@ -849,7 +848,6 @@ class _VideoControlLayoutEditOverlayState
       case VideoControlItem.speed:
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
-      case VideoControlItem.favoriteSentences:
       case VideoControlItem.settings:
         return Icons.tune;
     }
@@ -863,8 +861,6 @@ class _VideoControlLayoutEditOverlayState
         return t.video_control_subtitle_list;
       case VideoControlButton.favoriteSentence:
         return t.video_control_favorite_sentence;
-      case VideoControlButton.favoriteSentences:
-        return t.video_control_favorite_sentences;
       case VideoControlButton.settings:
         return t.video_control_settings;
     }
@@ -878,8 +874,6 @@ class _VideoControlLayoutEditOverlayState
         return Icons.format_list_bulleted;
       case VideoControlButton.favoriteSentence:
         return Icons.star_border_rounded;
-      case VideoControlButton.favoriteSentences:
-        return Icons.collections_bookmark_outlined;
       case VideoControlButton.settings:
         return Icons.tune;
     }

@@ -109,8 +109,6 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_video_replay_current_subtitle;
     case ShortcutAction.videoReplayPreviousSubtitle:
       return t.shortcut_action_video_replay_previous_subtitle;
-    case ShortcutAction.videoShowFavoriteSentences:
-      return t.shortcut_action_video_show_favorite_sentences;
     case ShortcutAction.videoPreviousChapter:
       return t.shortcut_action_video_previous_chapter;
     case ShortcutAction.videoNextChapter:

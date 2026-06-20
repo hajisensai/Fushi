@@ -48,7 +48,7 @@ void main() {
       expect(fromSlot, <VideoControlButton>[VideoControlButton.speed]);
     });
 
-    test('screenRight learning keys == legacy buttonsFor(rightRail) (4 keys)',
+    test('screenRight learning keys == legacy buttonsFor(rightRail) (3 keys)',
         () {
       final List<VideoControlButton> fromSlot =
           slotLearningButtons(layout, VideoControlSlot.screenRight);
@@ -59,7 +59,6 @@ void main() {
       expect(fromSlot, <VideoControlButton>[
         VideoControlButton.subtitleList,
         VideoControlButton.favoriteSentence,
-        VideoControlButton.favoriteSentences,
         VideoControlButton.settings,
       ]);
     });

@@ -29,7 +29,6 @@ class VideoPlayerShortcutActions {
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
     required this.replayPreviousSubtitle,
-    required this.showFavoriteSentences,
     required this.previousChapter,
     required this.nextChapter,
     required this.escape,
@@ -70,7 +69,6 @@ class VideoPlayerShortcutActions {
 
   /// 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，不退化回退。
   final VoidCallback replayPreviousSubtitle;
-  final VoidCallback showFavoriteSentences;
 
   /// 内封章节上/下一章（TODO-424）：seek 到相邻章起点，无章节时 no-op。
   final VoidCallback previousChapter;
@@ -111,7 +109,6 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
-    ShortcutAction.videoShowFavoriteSentences: actions.showFavoriteSentences,
     ShortcutAction.videoPreviousChapter: actions.previousChapter,
     ShortcutAction.videoNextChapter: actions.nextChapter,
     ShortcutAction.videoEscape: actions.escape,

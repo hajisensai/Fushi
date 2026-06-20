@@ -359,6 +359,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     return count;
   }
 
+  /// 收藏档可见条目数（TODO-631）。与 [VideoSubtitleListFilter.favorites] 档实际渲染的
+  /// 条目集合（[_visibleCueIndexes] 的 favorites 分支）一一对应——同一个 `isCueFavorited`
+  /// 谓词，故数量与列表完全一致。这是已删的「本集收藏」面板顶部计数 header 的归宿：收藏
+  /// 统计并入字幕列表收藏档。
+  int _favoriteCueCount(List<AudioCue> cues) {
+    int count = 0;
+    for (final AudioCue cue in cues) {
+      if (widget.isCueFavorited(cue)) count++;
+    }
+    return count;
+  }
+
   List<int> _visibleCueIndexes(List<AudioCue> cues) {
     if (identical(_cachedCues, cues) &&
         _cachedCuesLength == cues.length &&
@@ -610,6 +622,23 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   ),
                 ),
               ),
+              // TODO-631：收藏档收藏数。删了独立「本集收藏」面板后，其顶部「收藏 N」计数
+              // 并入字幕列表收藏档——只在 favorites 档显示，让用户切到收藏档时一眼看到本
+              // 视频已收藏多少句（与列表条目数一致，复用同一 isCueFavorited 谓词）。
+              if (_filter == VideoSubtitleListFilter.favorites)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 4),
+                  child: Text(
+                    t.video_favorite_count(count: _favoriteCueCount(cues)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: cs.primary,
+                      fontSize: widget.fontSize - 1,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               if (_hasCueSelectionControls && _selectedCueCount(cues) > 0)
                 Tooltip(
                   message: t.video_subtitle_list_clear_selection,

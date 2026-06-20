@@ -120,7 +120,6 @@ void main() {
       'speed',
       'settings',
       'favoriteSentence',
-      'favoriteSentences',
       'subtitleList',
     ]) {
       expect(enumBlock, contains('$item('), reason: '$item must be editable');
@@ -157,7 +156,6 @@ void main() {
     expect(page, contains('VideoControlButton.speed'));
     expect(page, contains('_showSpeedMenu'));
     expect(page, contains('_showPlayerSettings'));
-    expect(page, contains('_showFavoriteSentencesPanel'));
   });
 
   test('translucent side panel replaces blocking modal player menus', () {
@@ -268,8 +266,6 @@ void main() {
     );
     expect(activateLegacy, contains('VideoControlSlot? sourceSlot'));
     expect(activateLegacy,
-        contains('_showFavoriteSentencesPanel(sourceSlot: sourceSlot)'));
-    expect(activateLegacy,
         contains('_showPlayerSettings(sourceSlot: sourceSlot)'));
 
     final String sideRail = body(
@@ -299,7 +295,6 @@ void main() {
     for (final String action in <String>[
       'videoToggleFavoriteSentence',
       'videoReplayCurrentSubtitle',
-      'videoShowFavoriteSentences',
     ]) {
       expect(actions, contains(action));
       expect(defaults, contains(action));
@@ -322,7 +317,6 @@ void main() {
 
     expect(page, contains('_toggleFavoriteCurrentCue'));
     expect(page, contains('_replayCurrentCueAndPokeControls'));
-    expect(page, contains('_showFavoriteSentencesPanel'));
   });
 
   test('TODO-258 subtitle sidebar filters and checkbox selection are wired',

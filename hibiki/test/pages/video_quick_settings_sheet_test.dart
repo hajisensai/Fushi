@@ -1315,10 +1315,12 @@ void main() {
       await _pump(tester, _sheet());
       await openControls(tester);
 
+      // TODO-631: removing favoriteSentences from screenRight shifts settings
+      // from index 3 to index 2 (now [subtitleList, favoriteSentence, settings]).
       final Finder settingsChip = chipFinder(
         VideoControlItem.settings,
         VideoControlSlot.screenRight,
-        3,
+        2,
       );
       expect(settingsChip, findsOneWidget);
       expect(find.text(t.video_control_settings), findsNothing);
@@ -1554,7 +1556,7 @@ void main() {
       await dragChipTo(
         tester,
         dragChipFinder(
-            VideoControlItem.settings, VideoControlSlot.screenRight, 3),
+            VideoControlItem.settings, VideoControlSlot.screenRight, 2),
         slotFinder(VideoControlSlot.hidden),
       );
       expect(latest, isNotNull);
@@ -1586,7 +1588,7 @@ void main() {
       await dragChipTo(
         tester,
         dragChipFinder(
-            VideoControlItem.settings, VideoControlSlot.screenRight, 3),
+            VideoControlItem.settings, VideoControlSlot.screenRight, 2),
         slotFinder(VideoControlSlot.hidden),
       );
       expect(latest, isNull,

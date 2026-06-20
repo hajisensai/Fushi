@@ -4,7 +4,6 @@ enum VideoControlButton {
   speed('speed'),
   subtitleList('subtitleList'),
   favoriteSentence('favoriteSentence'),
-  favoriteSentences('favoriteSentences'),
   settings('settings');
 
   const VideoControlButton(this.storageValue);
@@ -46,7 +45,6 @@ class VideoControlCustomization {
       VideoControlButton.speed: VideoControlPlacement.bottom,
       VideoControlButton.subtitleList: VideoControlPlacement.rightRail,
       VideoControlButton.favoriteSentence: VideoControlPlacement.rightRail,
-      VideoControlButton.favoriteSentences: VideoControlPlacement.rightRail,
       VideoControlButton.settings: VideoControlPlacement.rightRail,
     },
   );
@@ -235,10 +233,6 @@ enum VideoControlItem {
     'favoriteSentence',
     legacyButton: VideoControlButton.favoriteSentence,
   ),
-  favoriteSentences(
-    'favoriteSentences',
-    legacyButton: VideoControlButton.favoriteSentences,
-  ),
   settings(
     'settings',
     legacyButton: VideoControlButton.settings,
@@ -308,10 +302,10 @@ enum VideoControlItem {
     return null;
   }
 
-  /// The learning-key items the phase-2 editor lets users place / hide (the five
+  /// The learning-key items the phase-2 editor lets users place / hide (the
   /// keys with a legacy peer: speed / subtitleList / favoriteSentence /
-  /// favoriteSentences / settings). Transport / nav keys stay fixed in the
-  /// chrome and are not user-customizable in this stage.
+  /// settings). Transport / nav keys stay fixed in the chrome and are not
+  /// user-customizable in this stage.
   static List<VideoControlItem> get customizableLearning => <VideoControlItem>[
         for (final VideoControlItem item in VideoControlItem.values)
           if (item.legacyButton != null) item,
@@ -568,7 +562,6 @@ class VideoControlLayout {
       VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
       VideoControlItem.settings: VideoControlSlot.bottomRight,
       VideoControlItem.favoriteSentence: VideoControlSlot.bottomRight,
-      VideoControlItem.favoriteSentences: VideoControlSlot.bottomRight,
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
     },
     explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
@@ -603,7 +596,6 @@ class VideoControlLayout {
         VideoControlItem.fullscreen,
         VideoControlItem.settings,
         VideoControlItem.favoriteSentence,
-        VideoControlItem.favoriteSentences,
       ],
       VideoControlSlot.screenRight: <VideoControlItem>[
         VideoControlItem.subtitleList,
@@ -657,7 +649,6 @@ class VideoControlLayout {
       VideoControlItem.speed: VideoControlSlot.bottomRight,
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
       VideoControlItem.favoriteSentence: VideoControlSlot.screenRight,
-      VideoControlItem.favoriteSentences: VideoControlSlot.screenRight,
       VideoControlItem.settings: VideoControlSlot.screenRight,
     },
     explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
@@ -697,7 +688,6 @@ class VideoControlLayout {
       VideoControlSlot.screenRight: <VideoControlItem>[
         VideoControlItem.subtitleList,
         VideoControlItem.favoriteSentence,
-        VideoControlItem.favoriteSentences,
         VideoControlItem.settings,
       ],
     },

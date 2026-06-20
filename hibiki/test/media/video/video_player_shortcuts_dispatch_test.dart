@@ -32,7 +32,6 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     toggleFavoriteSentence: () => record('toggleFavoriteSentence'),
     replayCurrentSubtitle: () => record('replayCurrentSubtitle'),
     replayPreviousSubtitle: () => record('replayPreviousSubtitle'),
-    showFavoriteSentences: () => record('showFavoriteSentences'),
     previousChapter: () => record('previousChapter'),
     nextChapter: () => record('nextChapter'),
     escape: () => record('escape'),
@@ -85,14 +84,12 @@ void main() {
     await _sendWithModifiers(tester, LogicalKeyboardKey.keyR);
     await _sendWithModifiers(tester, LogicalKeyboardKey.keyR, shift: true);
     await _sendWithModifiers(tester, LogicalKeyboardKey.keyL);
-    await _sendWithModifiers(tester, LogicalKeyboardKey.keyL, control: true);
 
     expect(log, <String>[
       'toggleFavoriteSentence',
       'replayCurrentSubtitle',
       'replayPreviousSubtitle',
       'toggleSubtitleList',
-      'showFavoriteSentences',
     ]);
   });
 }

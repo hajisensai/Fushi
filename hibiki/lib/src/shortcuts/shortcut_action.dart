@@ -99,8 +99,6 @@ enum ShortcutAction {
   // 语义不同，是两个独立功能；TODO-328 误当重复删掉，此处恢复。
   videoReplayPreviousSubtitle(
       ShortcutScope.video, 'video_replay_previous_subtitle'),
-  videoShowFavoriteSentences(
-      ShortcutScope.video, 'video_show_favorite_sentences'),
   // 内封章节上/下一章（TODO-424，默认 PageUp / PageDown）：seek 到相邻章起点，无章节
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),

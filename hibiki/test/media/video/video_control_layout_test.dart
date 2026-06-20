@@ -159,8 +159,6 @@ void main() {
       final VideoControlLayout d = VideoControlLayout.defaults;
       expect(d.slotOf(VideoControlItem.favoriteSentence),
           VideoControlSlot.bottomRight);
-      expect(d.slotOf(VideoControlItem.favoriteSentences),
-          VideoControlSlot.bottomRight);
       expect(
           d.slotOf(VideoControlItem.playPause), VideoControlSlot.bottomCenter);
       expect(d.slotOf(VideoControlItem.title), VideoControlSlot.topCenter);
@@ -366,14 +364,13 @@ void main() {
     // (`_migrateV2HiddenKeysAsRemoved` in decode), not just a single key.
     test('TODO-598: every v2 hidden key survives migration as a removed key',
         () {
-      // All five learning keys hidden at once (the realistic worst case for an
+      // All four learning keys hidden at once (the realistic worst case for an
       // upgrading user who customized the v2 controls heavily). `settings` is
       // pinnedOnTouch but still removable cross-platform, so it must survive.
       const List<VideoControlItem> hiddenInV2 = <VideoControlItem>[
         VideoControlItem.speed,
         VideoControlItem.subtitleList,
         VideoControlItem.favoriteSentence,
-        VideoControlItem.favoriteSentences,
         VideoControlItem.settings,
       ];
       final String blob = jsonEncode(<String, Object>{
@@ -472,7 +469,6 @@ void main() {
       for (final VideoControlItem item in <VideoControlItem>[
         VideoControlItem.subtitleList,
         VideoControlItem.favoriteSentence,
-        VideoControlItem.favoriteSentences,
         VideoControlItem.settings,
       ]) {
         expect(migrated.slotOf(item), VideoControlSlot.screenRight,
@@ -856,7 +852,7 @@ void main() {
     });
 
     test(
-        'customizableLearning == exactly the 5 learning keys (have a legacy peer)',
+        'customizableLearning == exactly the 4 learning keys (have a legacy peer)',
         () {
       final List<VideoControlItem> learning =
           VideoControlItem.customizableLearning;
@@ -864,7 +860,6 @@ void main() {
         VideoControlItem.speed,
         VideoControlItem.subtitleList,
         VideoControlItem.favoriteSentence,
-        VideoControlItem.favoriteSentences,
         VideoControlItem.settings,
       ]);
       for (final VideoControlItem item in learning) {

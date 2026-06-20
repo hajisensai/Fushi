@@ -221,36 +221,6 @@ void main() {
     });
   });
 
-  group('BUG-274 视频收藏面板按视频身份隔离（不跨集/跨视频污染）', () {
-    test('VideoFavoriteSentencesPanel 过滤同时含 bookKey 与 sectionIndex', () {
-      final String src = read(
-        'lib/src/media/video/video_favorite_sentences_panel.dart',
-      );
-      expect(
-        src,
-        contains('required this.currentBookKey'),
-        reason: '面板必须收当前视频身份键，单视频各自 sectionIndex==0 仅按集号无法隔离',
-      );
-      expect(
-        src,
-        contains('sentence.bookKey == currentBookKey'),
-        reason: 'BUG-274：面板过滤必须含 bookKey，否则别的视频收藏会混进本集面板',
-      );
-      expect(src, contains('sentence.sectionIndex == currentEpisode'));
-    });
-
-    test('视频页构建收藏面板时传入 currentBookKey = widget.bookUid', () {
-      final String src = read(
-        'lib/src/pages/implementations/video_hibiki_page.dart',
-      );
-      expect(
-        src,
-        contains('currentBookKey: widget.bookUid'),
-        reason: 'BUG-274：调用点必须把当前视频 bookUid 喂给面板做身份隔离',
-      );
-    });
-  });
-
   group('E 两统计页有「收藏语句」卡片', () {
     test('阅读统计页加收藏语句桶（非 video 来源）', () {
       final String src = read(

@@ -40,9 +40,11 @@ void main() {
         reason: 'overlay 应有点外关闭的 GestureDetector barrier');
     expect(flat.contains('behavior: HitTestBehavior.opaque'), isTrue,
         reason: 'barrier 必须 opaque 吃掉点击（不冒泡到控制条 Listener）');
-    expect(flat.contains('? null : _hideVideoSidePanel'), isTrue,
-        reason: 'barrier onTap 锁定时 no-op、否则关闭面板'
-            '（_hideVideoSidePanel，TODO-611 锁门控）');
+    // TODO-631：删收藏面板（唯一可锁面板）后，侧栏锁机制随之移除，barrier 无条件关闭。
+    expect(flat.contains('onTap: _hideVideoSidePanel,'), isTrue,
+        reason: 'barrier onTap 无条件关闭面板（_hideVideoSidePanel）；锁机制已随收藏面板删除');
+    expect(flat.contains('? null : _hideVideoSidePanel'), isFalse,
+        reason: '不再有锁门控的 no-op barrier（TODO-631）');
 
     // barrier 必须排在面板内容之前（在 Stack 下层），面板内容才在其上、点内部不关闭。
     // 用 children 列表里的 `panelContent,`（带逗号的使用处）锚定，避开顶部的声明语句。

@@ -1184,6 +1184,50 @@ void main() {
       await tester.pump();
       expect(changes, <bool>[false, true]);
     });
+
+    // ── TODO-631：删独立「本集收藏」面板后，其「收藏 N」计数并入字幕列表收藏档 ──
+    testWidgets(
+        'TODO-631: favorites filter shows a count, other filters do not',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      // 2 of 3 cues are favorited (text contains "fav").
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta fav'),
+        _cue(2, 4000, 5200, 'gamma fav'),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onClose: () {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (AudioCue cue) => cue.text.contains('fav'),
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+        width: 520,
+      )));
+
+      // 默认 all 档：不显示收藏计数。
+      expect(find.text(t.video_favorite_count(count: 2)), findsNothing);
+
+      // 切到收藏档：显示「收藏 2」计数（= 收藏档可见条目数）。
+      await tester.tap(find.text(t.video_subtitle_filter_favorites));
+      await tester.pumpAndSettle();
+      expect(find.text(t.video_favorite_count(count: 2)), findsOneWidget);
+      // 收藏档内确实只剩两条被收藏行。
+      expect(find.text('beta fav'), findsOneWidget);
+      expect(find.text('gamma fav'), findsOneWidget);
+      expect(find.text('alpha line'), findsNothing);
+
+      // 切回 all 档：计数消失。
+      await tester.tap(find.text(t.video_subtitle_filter_all));
+      await tester.pumpAndSettle();
+      expect(find.text(t.video_favorite_count(count: 2)), findsNothing);
+    });
   });
 
   // Source guard: inline tooltips wire to existing i18n keys; copy toast reuses
