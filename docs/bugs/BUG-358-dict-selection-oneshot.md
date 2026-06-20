@@ -1,0 +1,13 @@
+## BUG-358 · 制卡词典选择粘连应一次性
+- **报告**：2026-06-20（用户：TODO-645）
+- **真实性**：✅ 真 bug。根因 `hibiki/assets/popup/popup.js:45`（`const selectedDictionaries = {}` 模块级全局 `{[entryIdx]:{name,label}}`，记某词条长按选了哪本词典作 `{selected-glossary}` 字段）。该选择**只在用户长按同一词典取消时清**（`createGlossarySection().toggleSelection`，`popup.js:1958` 的 `delete selectedDictionaries[entryIdx]`），制卡成功分支（`popup.js:1819` mineEntry 之后）和换词重渲染（`window.renderPopup` / 宿主 `dictionary_popup_webview.dart:540` 换词注入）都不清。`buildMinePayload`（`popup.js:1110`）读 `selectedDictionaries[idx]?.name` 进 `selectedDictionary` 字段——于是换词复用常驻热槽 WebView（同 entryIdx）时残留选择粘到下一张卡，静默带上次选的词典。应像同文件「句子上下文镜像」一样一次性（其制卡成功 `popup.js:1824-1828` 清、换词由宿主调 `resetSentenceContextMirror` 清）。
+- **[x] ① 已修复** — 对齐句子上下文镜像的一次性生命周期：
+  - 新增 `clearSelectedDictionaryEntry(idx)` + `window.resetSelectedDictionariesForEntry(idx)`（单词条）+ `window.resetSelectedDictionaries()`（全部）于 `hibiki/assets/popup/popup.js:194-223`（紧挨 `resetSentenceContextMirror`），清除时同步移除存的 summary 上 `.selected` class 保持状态/UI 一致。
+  - 制卡成功分支 `hibiki/assets/popup/popup.js:1834` 调 `window.resetSelectedDictionariesForEntry(idx)`，只清被制词条（多词条弹窗各词条选择相互独立），且置于 `mineEntry` 调用之后——本张卡仍正确带选中词典，只清下一张。
+  - 宿主换词注入 `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart:554` 调 `window.resetSelectedDictionaries()`（紧挨已有 `resetSentenceContextMirror()`、在 `renderPopup()` 之前），换词复用热槽时整体归零回到无选中态。
+  - 提交：（见下「测试」同一提交）。
+- **[x] ② 已加自动化测试** —
+  - 行为级 node 测试 `hibiki/test/pages/popup_selected_dictionary_oneshot_test.js`：用 `vm` 真执行 popup.js 的 `buildMinePayload`（空 glossary 让 DOM 重活短路），断言「选词典→mine 成功清→再 buildMinePayload」`selectedDictionary===''`、「选词典→换词 reset→buildMinePayload」空、多词条独立（清 idx0 不动 idx1）。先红（reset 函数缺失）后绿。
+  - Dart 驱动+源码守卫 `hibiki/test/pages/popup_selected_dictionary_oneshot_test.dart`：`flutter test` 内经 `Process.run` 跑上面的 node 测试（无 node 自动 skip），并静态扫描 popup.js（reset 两入口存在 + 制卡成功路径含 `resetSelectedDictionariesForEntry(idx)` 且在 mineEntry 之后、refresh 闭包之前）与宿主（`resetSelectedDictionaries()` 在 `renderPopup()` 前）。
+  - 结果：node 测试绿、`flutter test test/pages/popup_selected_dictionary_oneshot_test.dart` 3 用例全绿，相邻 popup/anki 守卫 29 绿，`node --check` popup.js 语法 OK。提交：（见 git 历史）。
+- **备注**：纯 popup.js 一次性化，不破坏 `{selected-glossary}` 字段功能（选中时本张卡仍正确挑那本词典释义，只改「用完即清」）。多词条粒度：制卡只清被制 idx，换词全清。

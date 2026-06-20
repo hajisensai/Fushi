@@ -191,6 +191,37 @@ window.resetSentenceContextMirror = function() {
     sentenceDraftCount = 0;
 };
 
+// TODO-645 / BUG-358: the popup mining dictionary selection (selectedDictionaries[idx],
+// which fills the Anki {selected-glossary} field recording which dictionary an entry chose
+// as its preferred gloss) must be one-shot, matching the sentence-context mirror lifecycle
+// above: cleared for THIS entry after a successful mine, and cleared for ALL entries on a
+// word change / re-render. Otherwise, reusing the warm-slot WebView for the next lookup at
+// the same entryIdx leaves the stale pick in place and the next mined card silently carries
+// the previously selected dictionary.
+//
+// Two entry points: the mine-success branch calls resetSelectedDictionariesForEntry(idx) to
+// clear only the mined entry (per-entry selections are independent — mining one card must not
+// wipe a sibling card pick); the host word-change inject calls resetSelectedDictionaries() to
+// zero everything (renderPopup rebuilds the DOM, so the stored summary label refs go stale —
+// the whole map must reset back to the no-selection state). Clearing also strips the stored
+// summary .selected class so state and UI stay consistent while the DOM still exists.
+function clearSelectedDictionaryEntry(idx) {
+    const selected = selectedDictionaries[idx];
+    if (!selected) return;
+    selected.label?.classList?.remove('selected');
+    delete selectedDictionaries[idx];
+}
+
+window.resetSelectedDictionariesForEntry = function(idx) {
+    clearSelectedDictionaryEntry(idx || 0);
+};
+
+window.resetSelectedDictionaries = function() {
+    for (const idx of Object.keys(selectedDictionaries)) {
+        clearSelectedDictionaryEntry(idx);
+    }
+};
+
 // 构造一个句子上下文步进器：两行「上 [➖][N][➕]」+「下 [➖][N][➕]」。点➕该方向 n+=1、点
 // ➖该方向 max(0, n-1)，把该方向的上下文句数整组重发宿主。无 JS 硬上限——由宿主的段落/
 // cue 边界天然封顶（镜像可继续升、宿主合成时按真句封顶）。
@@ -1796,6 +1827,11 @@ function createEntryHeader(entry, idx) {
                     sentenceDraftCount = 0;
                     refreshAllSentenceContextPickers();
                 }
+                // TODO-645 / BUG-358: the dictionary pick is one-shot too — drop
+                // THIS entry selection so the next card mined from the same
+                // (reused warm-slot) entryIdx does not inherit it. Per-entry only:
+                // sibling entries keep their own picks.
+                window.resetSelectedDictionariesForEntry(idx);
                 const refreshFromAnki = async () => {
                     // Re-detect from Anki so the post-mine state is the real one.
                     const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });

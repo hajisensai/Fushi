@@ -547,6 +547,11 @@ class DictionaryPopupWebViewState
           // 归零，使 renderPopup() 重建的「上 N / 下 N」选择器回到 0/0 默认态、清空按钮隐藏，
           // 与已清的草稿一致——杜绝视觉显示「已选上 2 句」但实际只制当前句的串味。
           window.resetSentenceContextMirror();
+          // TODO-645 / BUG-358：词典选择（{selected-glossary}）同样一次性。换词复用热槽
+          // WebView 时 selectedDictionaries 不像页面刷新那样自动归零，renderPopup 重建 DOM 后
+          // 残留的 summary label 引用已失效，必须整体清空回到无选中态，否则下一张卡静默带上
+          // 一个词选的词典。
+          window.resetSelectedDictionaries();
           window.renderPopup();
         ''';
     final swInject = Stopwatch()..start();
