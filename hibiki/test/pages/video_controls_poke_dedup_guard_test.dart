@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（TODO-148/BUG-215 ②）：连按快进/跳句时控制条自动隐藏计时不续命。
 ///
@@ -17,8 +16,7 @@ void main() {
   late String src;
 
   setUpAll(() {
-    src = File('lib/src/pages/implementations/video_hibiki_page.dart')
-        .readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('存在 _pokeParity 抖动开关字段', () {

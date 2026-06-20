@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（BUG-284）：视频右 / 左浮动学习按钮 rail 在鼠标 hover 时不闪烁。
 ///
@@ -15,14 +14,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// _pokeControlsVisible 续命；出 rail 置 false）。media_kit controls 跑不了 headless，故锁
 /// 源码结构不变量。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('存在 rail hover 单一真相源 _railHovered（ValueNotifier）并在 dispose 释放', () {

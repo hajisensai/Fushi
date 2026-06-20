@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 守卫：视频播放设置面板已从 bespoke 深色单列 `showModalBottomSheet` 迁移到与阅读器
 /// 同款 master-detail（`VideoQuickSettingsSheet` + 桌面 `HibikiDialogFrame(900)` /
@@ -251,9 +252,7 @@ void main() {
   });
 
   test('video settings side panel owns UI scale and hover lifetime', () {
-    final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    final String source = readVideoHibikiSource();
     // TODO-314：字幕列表改 push-aside 后 overlay 版 _buildSubtitleListSidePanel 已删，
     // _buildVideoSidePanelContent 之后直接是 _buildSubtitleSourcesSidePanel。
     final String panelMethod = _between(
@@ -269,7 +268,7 @@ void main() {
     final String pokeMethod = _between(
       source,
       'void _pokeControlsVisible() {',
-      '/// media_kit 控制条自动隐藏时长',
+      'void _clearRailHover()',
     );
     final String hoverExitMethod = _between(
       source,
@@ -310,7 +309,8 @@ void main() {
 
     // TODO-364：poke 仍派合成 hover 驱动 media_kit 自己的可见性/Timer（单一真相源），
     // 但不再另翻 Hibiki 镜像（相位反根因）。
-    expect(pokeMethod, contains('device: _syntheticHoverDevice'));
+    expect(pokeMethod,
+        contains('device: _VideoHibikiPageState._syntheticHoverDevice'));
     expect(pokeMethod, isNot(contains('_markControlsVisible(true);')),
         reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收合成 hover 后推送，TODO-364）');
     // TODO-364：_markControlsVisible 收敛成仅门控收起（assert(!visible)）+ 重派生；
@@ -325,8 +325,10 @@ void main() {
     expect(
         hoverExitMethod, isNot(contains('_videoControlsVisible.value = false')),
         reason: '鼠标移出不应在 Hibiki 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）');
-    expect(syntheticHoverMethod,
-        contains('event.device == _syntheticHoverDevice'));
+    expect(
+        syntheticHoverMethod,
+        contains(
+            'event.device == _VideoHibikiPageState._syntheticHoverDevice'));
     expect(
         hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
     // TODO-364：真实 hover 不再乐观翻镜像（可见性由 media_kit onHover 推送）。

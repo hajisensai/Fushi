@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 String _section(String src, String startToken, String endToken) {
   final int start = src.indexOf(startToken);
@@ -28,8 +29,7 @@ void main() {
   late String shortcuts;
 
   setUpAll(() {
-    src = File('lib/src/pages/implementations/video_hibiki_page.dart')
-        .readAsStringSync();
+    src = readVideoHibikiSource();
     shortcuts = File('lib/src/media/video/video_player_shortcuts.dart')
         .readAsStringSync();
   });
@@ -225,7 +225,11 @@ void main() {
     // 退出仍可达：_pokeLockButton 不被锁 gate（与 _markControlsVisible 区分），故沉浸态
     // 解锁按钮淡出后仍能唤回；Esc / Shift+L 另有专门用例钉死。
     final int pokeIdx = src.indexOf('void _pokeLockButton()');
-    final int pokeEnd = src.indexOf('void ', pokeIdx + 1);
+    expect(pokeIdx, greaterThanOrEqualTo(0), reason: '缺侧边锁按钮唤回方法');
+    // _pokeLockButton 抽到 controls_visibility.part 后是该 extension 末个成员，
+    // 用方法自身的 2 空格闭合作段终点（不再依赖紧随的下一个 void 成员）。
+    final int pokeEnd = src.indexOf('\n  }', pokeIdx);
+    expect(pokeEnd, greaterThan(pokeIdx));
     final String pokeBody = src.substring(pokeIdx, pokeEnd);
     expect(pokeBody.contains('_immersiveLocked.value'), isFalse,
         reason: '_pokeLockButton 不得被锁 gate（否则沉浸态解锁按钮淡出后唤不回，失去退出口）');

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：字幕动态避让进度条（TODO-129，反转 TODO-089 的恒抬升）的接线不被回退，
 /// 且 TODO-364 的「单一真相源」修复不被退回旧镜像 + 第二个 Timer。
@@ -20,8 +21,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// 显隐时序依赖 media_kit 私有 State + 真实 hover/timer，widget 测试难稳定复现，故用
 /// 源码扫描守卫这些不变式；动态 padding 的几何与方向由 video_subtitle_overlay_test.dart 验。
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
   final File style = File('lib/src/media/video/video_subtitle_style.dart');
   final File overlay = File('lib/src/media/video/video_subtitle_overlay.dart');
 
@@ -29,10 +28,9 @@ void main() {
   late String styleSrc;
   late String overlaySrc;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
     expect(style.existsSync(), isTrue, reason: '字幕样式源文件应存在');
     expect(overlay.existsSync(), isTrue, reason: '字幕 overlay 源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
     styleSrc = style.readAsStringSync();
     overlaySrc = overlay.readAsStringSync();
   });
@@ -163,12 +161,9 @@ void main() {
   test('键盘/seek 唤起（_pokeControlsVisible）派合成 hover 给 media_kit、不乱翻镜像', () {
     final int poke = src.indexOf('void _pokeControlsVisible()');
     expect(poke, greaterThanOrEqualTo(0));
-    final int pokeEnd = src.indexOf(
-        '\n  static const Duration '
-        '_videoControlsHoverDuration',
-        poke);
+    final int pokeEnd = src.indexOf('\n  void _clearRailHover()', poke);
     expect(pokeEnd, greaterThan(poke),
-        reason: '_videoControlsHoverDuration 常量应紧随 poke 方法');
+        reason: '_clearRailHover 应紧随 poke 方法（TODO-590 batch3 抽出 part 后的相邻成员）');
     final String pokeBody = src.substring(poke, pokeEnd);
     // poke 仍派发合成 hover 命中 media_kit MouseRegion（其 onHover 翻 visible 并推送）。
     expect(pokeBody, contains('PointerHoverEvent('),

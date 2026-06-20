@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：剧集列表走 push-aside 侧栏（把画面挤窄到左侧、与字幕列表风格统一），
 /// 而非 `showModalBottomSheet`（底部弹层）（TODO-638）。
@@ -12,14 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// media_kit 在 headless test 跑不起真视频 widget，故断言源码层的可见性路由与结构
 /// （与 video_subtitle_list_push_aside_guard_test 同范式）。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('剧集列表不再用 showModalBottomSheet（已改 push-aside 侧栏）', () {

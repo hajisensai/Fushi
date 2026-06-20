@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 String _section(String src, String startToken, String endToken) {
   final int start = src.indexOf(startToken);
@@ -25,13 +24,9 @@ String _section(String src, String startToken, String endToken) {
 /// media_kit controls 跑不了 headless（[_buildSideLockButton] / 控制主题都需真 controller），
 /// 故锁源码结构不变量（与 [video_immersion_button_hover_guard_test] 同理）。
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('存在派生 getter _videoControlsTransitionDuration（桌面 150ms / 移动 300ms）', () {
