@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-576: 悬浮歌词/字幕条「背景透明度」可调，且默认下调到 70（≈更不挡视野）。
 ///
@@ -86,9 +87,7 @@ void main() {
       final String appModel =
           File('lib/src/models/app_model.dart').readAsStringSync();
       // reader 级样式：reader_hibiki_page._readerFloatingLyricStyle。
-      final String reader =
-          File('lib/src/pages/implementations/reader_hibiki_page.dart')
-              .readAsStringSync();
+      final String reader = readReaderPageSource();
 
       for (final String src in <String>[appModel, reader]) {
         // bgColor 不再裸用 `bg.withAlpha(...).value`，而是经 scaleAlpha 包一层

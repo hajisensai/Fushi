@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../pages/reader_history_source_corpus.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 import '../sync/sync_settings_schema_source_corpus.dart';
 
 void main() {
@@ -650,6 +651,13 @@ void main() {
           'Reader-shelf dialog/segment typography is content chrome.',
       'lib/src/pages/implementations/reader_hibiki_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
+      // TODO-589 batch1: reader_hibiki_page.dart 拆成主壳 + reader_hibiki/*.part.dart；
+      // 同一份「reader content / 悬浮歌词数据」豁免随搬运延伸到 part 文件（零行为变化）。
+      'lib/src/pages/implementations/reader_hibiki/lyrics.part.dart':
+          'Lyrics-mode HTML font size and FloatingLyricStyle font size are '
+              'user content passed to LyricsModeHtml / the platform overlay '
+              'channel, not page chrome — same rationale as the parent '
+              'reader_hibiki_page.dart allowlist (extracted verbatim).',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'Reader quick settings and audiobook chrome migrate under Task 8.',
       'lib/src/media/audiobook/audiobook_bridge.dart':
@@ -1045,9 +1053,7 @@ void main() {
   });
 
   test('reader page prompt dialogs use shared MD3 dialog chrome', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderPageSource();
     final String sentenceActionBar = _functionSource(
       source,
       'Widget buildRow(ThemeData theme)',

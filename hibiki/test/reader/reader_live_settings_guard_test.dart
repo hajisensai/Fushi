@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// reader live 设置 hook / eval 异步守卫的回归测试（源码扫描，沿用
 /// `settings_renderer_test.dart` 的静态断言模式：`File(...).readAsStringSync()`
@@ -23,9 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 确定性复现。故以结构守卫替代手动设备复测，CI 每次自动验证守卫在位 —— 任何一处
 /// 退回裸 fire-and-forget / 裸 eval，对应 ErrorLogService 日志 tag 消失，本测试红。
 void main() {
-  final String src = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String src = readReaderPageSource();
 
   test('reader live-settings hooks + eval sites stay async-guarded', () {
     // 每个 tag 只出现在对应的 catchError / try-catch 守卫块内；守卫被移除即消失。

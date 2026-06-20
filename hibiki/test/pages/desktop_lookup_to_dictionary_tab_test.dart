@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// 根因守卫：桌面剪贴板/热键查词不再 push 一个独立的全屏查词页（旧
 /// [DesktopLookupOverlay] 方案），而是统一为「唤前台 → 切到首页『查词』tab → 预填词
@@ -136,8 +137,7 @@ void main() {
   // 信号切 tab，而不是常驻监听 DesktopLookupService（后者由查词页生命周期独占）。
   test('floating-lyric tap routes via explicit home-dictionary-tab request',
       () {
-    final String reader =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String reader = readReaderPageSource();
     final String home = read('lib/src/pages/implementations/home_page.dart');
     final String model = read('lib/src/models/app_model.dart');
 

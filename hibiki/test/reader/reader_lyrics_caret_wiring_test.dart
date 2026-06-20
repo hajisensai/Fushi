@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// Source-scan guard: the lyrics-mode focus caret stays wired into the reader
 /// page. JS runtime behaviour is covered by device integration tests; this
@@ -10,9 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// that the reader re-exports it, while the lyrics-specific JS wiring stays in
 /// the reader page.
 void main() {
-  final String src = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String src = readReaderPageSource();
   final String controller = File(
     'lib/src/shortcuts/dictionary_caret_controller.dart',
   ).readAsStringSync();

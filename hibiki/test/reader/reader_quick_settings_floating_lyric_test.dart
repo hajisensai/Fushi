@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// Source-scan guards for the desktop floating-lyric strip. The native window
 /// and the `Platform.is*` gate cannot be exercised on the host, so these guards
@@ -24,9 +25,7 @@ void main() {
     });
 
     test('reader wires the lookup handler so taps reach the dictionary', () {
-      final String reader = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
-      ).readAsStringSync();
+      final String reader = readReaderPageSource();
       final String session = File(
         'lib/src/media/audiobook/audiobook_session.dart',
       ).readAsStringSync();
@@ -51,10 +50,7 @@ void main() {
 
     test('desktop failure shows the generic hint, not a false permission hint',
         () {
-      final File file = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
-      );
-      final String src = file.readAsStringSync();
+      final String src = readReaderPageSource();
       // Android failure = overlay permission; desktop failure = window
       // creation. Both branches must exist so desktop never shows the
       // misleading overlay-permission message.

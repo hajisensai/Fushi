@@ -1,12 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
   test('lyrics mode transition does not draw a full-screen scrim', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderPageSource();
     final String buildSource = _functionSource(
       source,
       '  Widget build(BuildContext context)',
