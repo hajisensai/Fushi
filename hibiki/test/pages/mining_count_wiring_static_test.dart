@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 /// 源码守卫：制卡成功必须计入 `mining_statistics`（统计页「制卡 N」卡片的数据源）。
 ///
 /// 历史 bug（TODO-047 part1）：唯一记账点是 [DictionaryPageMixin.recordMined]，但用户
@@ -21,9 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 真制卡又依赖真 Anki，端到端行为测试不可落地，故用结构化源码守卫。
 void main() {
   test('reader onMineFromPopup 成功分支把制卡计入书籍统计', () {
-    final String src =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String src = readReaderPageSource();
     // reader 经 describeMineOutcome 路由：record（== 成功）时调私有 _recordMined（不 mixin）。
     expect(src, contains('describeMineOutcome('),
         reason: 'reader 应经 describeMineOutcome 判定制卡结果');

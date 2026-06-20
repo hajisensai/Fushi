@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 /// 源码守卫（TODO-115）：制卡默认标签接线。
 ///
 /// 行为本体（`hibiki` + `book`/`video` 分类标签的拼装、两后端对称、去重保序）由
@@ -56,9 +58,7 @@ void main() {
   });
 
   test('reader 制卡入口指定 book 来源', () {
-    final String src =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String src = readReaderPageSource();
     expect(src, contains('source: AnkiMiningSource.book'),
         reason: 'reader 制卡应标记书籍来源 → book 分类标签');
   });

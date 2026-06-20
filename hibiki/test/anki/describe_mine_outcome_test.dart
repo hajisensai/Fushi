@@ -5,6 +5,8 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
+import '../pages/reader_hibiki_page_source_corpus.dart';
+
 /// describeMineOutcome 是制卡结果→(用户消息, 是否成功, 是否记账) 的单一真相。
 /// 此前该四分支 switch 在 5 个调用点（mixin/reader/video/app_model/floating）各
 /// 复制一份；本测试钉死映射，并用源码守卫确认各调用点都转调它、不再保留本地 switch。
@@ -45,7 +47,9 @@ void main() {
   });
 
   group('调用点都转调 describeMineOutcome（不再本地 switch 复制）', () {
-    String read(String p) => File(p).readAsStringSync();
+    String read(String p) => p.endsWith('reader_hibiki_page.dart')
+        ? readReaderPageSource()
+        : File(p).readAsStringSync();
     final sites = <String>[
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
       'lib/src/pages/implementations/reader_hibiki_page.dart',

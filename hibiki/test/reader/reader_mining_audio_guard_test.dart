@@ -1,13 +1,11 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 void main() {
   group('reader mining context guard', () {
     test('passes selection sentenceOffset to Anki sentence renderer', () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
-      ).readAsStringSync();
+      final String source = readReaderPageSource();
 
       expect(
         source,
@@ -52,9 +50,7 @@ void main() {
     });
 
     test('uses a unique temporary file for every sentence-audio clip', () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
-      ).readAsStringSync();
+      final String source = readReaderPageSource();
 
       expect(
         source,
@@ -72,9 +68,7 @@ void main() {
 
     test('exports complete sentence audio range instead of padding one cue',
         () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
-      ).readAsStringSync();
+      final String source = readReaderPageSource();
 
       expect(
         source,
@@ -114,9 +108,7 @@ void main() {
     });
 
     test('does not gate sentence audio on a non-null lookup cue (BUG-172)', () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
-      ).readAsStringSync();
+      final String source = readReaderPageSource();
 
       // Audiobook cue alignment leaves gaps: a word can fall in covered-but-
       // uncued text so _lookupCue is null while the sentence is still spanned by
@@ -146,9 +138,7 @@ void main() {
     });
 
     test('aborts mining when requested sentence-audio export fails', () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki_page.dart',
-      ).readAsStringSync();
+      final String source = readReaderPageSource();
 
       expect(
         source,

@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-644 / BUG-357 回归守卫：制卡并发 race（句子/cue 句 + 加粗偏移错配）。
 ///
@@ -27,17 +27,15 @@ void main() {
   late int extractAwaitIndex;
 
   setUpAll(() {
-    source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    source = readReaderPageSource();
 
     prepareStart = source.indexOf('_prepareMiningContext() async {');
     expect(prepareStart, greaterThanOrEqualTo(0),
         reason: '必须能定位 _prepareMiningContext。');
 
     // _prepareMiningContext 之后第一个出现的方法签名作为函数体的结束边界。
-    prepareEnd =
-        source.indexOf('Future<MinePopupResult> onMineFromPopup', prepareStart);
+    prepareEnd = source.indexOf(
+        'Future<MinePopupResult> _onMineFromPopupInner', prepareStart);
     expect(prepareEnd, greaterThan(prepareStart),
         reason: '必须能定位 _prepareMiningContext 的函数体结束边界。');
 

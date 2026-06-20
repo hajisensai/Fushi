@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 /// TODO-393「查词窗口句子上下文制卡」(取代 TODO-382 单按钮逐句追加)：宿主接线守卫。
 ///
 /// 弹窗「上 N 句 / 下 N 句」上下文选择器经 base_source_page → DictionaryPopupLayer →
@@ -67,8 +69,7 @@ void main() {
   test(
       'reader opts into drafts, sets directional context, and merges at mine time',
       () {
-    final String src =
-        readSource('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String src = readReaderPageSource();
     // Opts in.
     expect(src, contains('bool get supportsSentenceDraft => true;'));
     // Set-context fetches the surrounding sentences and sets the draft as a whole.
@@ -86,8 +87,7 @@ void main() {
 
   test('reader clears the draft on a new lookup, after mine, and on dismiss',
       () {
-    final String src =
-        readSource('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String src = readReaderPageSource();
     // >=3: new lookup (_handleTextSelected), mine success, onAllPopupsDismissed.
     expect(
         '_miningDraft.clear()'.allMatches(src).length, greaterThanOrEqualTo(3));
@@ -110,8 +110,7 @@ void main() {
   });
 
   test('reader and video override clear to empty their draft', () {
-    final String reader =
-        readSource('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String reader = readReaderPageSource();
     expect(reader, contains('Future<int> onClearSentenceDraftToDraft() async'));
     final String video =
         readSource('lib/src/pages/implementations/video_hibiki_page.dart');

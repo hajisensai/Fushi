@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 /// BUG-300 source guard：有声书文字跟随高亮在阅读器里不显示，根因是 reader 的
 /// `_prepareSasayakiCuesJson` 手写内联循环构造给 JS 的 sasayaki cue payload 时
 /// 漏了 cue 原文 `text` 字段 —— JS `collectSasayakiCueRanges`（BUG-060 改造）必须
@@ -14,9 +16,7 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 /// 不变量：① reader 路径复用 buildSasayakiPayload；② buildSasayakiPayload 必含
 /// `'text': cue.text`。撤修复（退回手写漏 text 的内联 payload）会让本守卫转红。
 void main() {
-  final String readerSrc =
-      File('lib/src/pages/implementations/reader_hibiki_page.dart')
-          .readAsStringSync();
+  final String readerSrc = readReaderPageSource();
   final String bridgeSrc =
       File('lib/src/media/audiobook/audiobook_bridge.dart').readAsStringSync();
 
