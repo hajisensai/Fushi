@@ -297,11 +297,14 @@ void main() {
       expect(layout.slotOf(VideoControlItem.settings),
           VideoControlSlot.screenRight,
           reason: 'missing legacy keys should backfill to current chrome');
-      final List<VideoControlItem> seen = <VideoControlItem>[];
-      for (final VideoControlSlot slot in VideoControlSlot.values) {
-        seen.addAll(layout.itemsIn(slot));
-      }
-      expect(seen.toSet(), VideoControlItem.values.toSet());
+      // TODO-642：每个按钮要么在可见槽、要么在 removedItems（默认精简右上角后，
+      // prev/next 4 个导航键 backfill 到 removed，仍可从编辑器拖回，不是孤儿）。
+      final List<VideoControlItem> placed = <VideoControlItem>[
+        for (final VideoControlSlot slot in VideoControlSlot.values)
+          ...layout.itemsIn(slot),
+        ...layout.removedItems,
+      ];
+      expect(placed.toSet(), VideoControlItem.values.toSet());
     });
 
     test('removed buttons encode outside slots and decode without hidden items',
@@ -508,12 +511,23 @@ void main() {
     test('migration leaves every button placed (no orphan)', () {
       final VideoControlLayout migrated = VideoControlLayout.decode(
           VideoControlCustomization.defaults.encode());
-      final List<VideoControlItem> seen = <VideoControlItem>[];
-      for (final VideoControlSlot slot in VideoControlSlot.values) {
-        seen.addAll(migrated.itemsIn(slot));
-      }
-      expect(seen.toSet(), VideoControlItem.values.toSet());
-      expect(seen, hasLength(VideoControlItem.values.length));
+      // TODO-642：「无孤儿」= 每个按钮要么在某可见槽、要么在 removedItems（默认精简
+      // 右上角后，prev/next 4 个导航键迁移落 removed，可恢复，不是数据丢失）。两者
+      // 互不重叠且并集覆盖全集才算无孤儿。
+      final List<VideoControlItem> visible = <VideoControlItem>[
+        for (final VideoControlSlot slot in VideoControlSlot.values)
+          ...migrated.itemsIn(slot),
+      ];
+      final List<VideoControlItem> removed = migrated.removedItems;
+      final List<VideoControlItem> placed = <VideoControlItem>[
+        ...visible,
+        ...removed,
+      ];
+      expect(placed.toSet(), VideoControlItem.values.toSet());
+      expect(visible.toSet().intersection(removed.toSet()), isEmpty,
+          reason: '一个按钮不能同时既可见又被移除');
+      expect(placed, hasLength(VideoControlItem.values.length),
+          reason: '可见槽 + removed 恰好覆盖全集，无重复无丢失');
     });
   });
 

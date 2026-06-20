@@ -625,16 +625,18 @@ class VideoControlLayout {
       VideoControlItem.back: VideoControlSlot.topLeft,
       VideoControlItem.immersiveLock: VideoControlSlot.screenLeft,
       VideoControlItem.title: VideoControlSlot.topCenter,
-      VideoControlItem.previousEpisode: VideoControlSlot.topRight,
-      VideoControlItem.nextEpisode: VideoControlSlot.topRight,
+      // TODO-642：默认精简右上角顶栏——只保留 episodeList / chapterList / screenshot /
+      // clipExport / subtitleTrack / audioTrack 六个常用入口；prev/next 集与
+      // prev/next 章 4 个导航键不再默认占顶栏（它们各有 episodeList / chapterList
+      // 入口 + 快捷键，挤进顶栏只会把按钮逼进横向滚动区、还压窄标题）。这 4 个键仍是
+      // 可自定义项，未在此 assignment / explicitOrder 列出 = 默认落 hidden（removed 集，
+      // 可从编辑器面板拖回），不是从模型里删掉。
       VideoControlItem.episodeList: VideoControlSlot.topRight,
       VideoControlItem.screenshot: VideoControlSlot.topRight,
       VideoControlItem.clipExport: VideoControlSlot.topRight,
       VideoControlItem.subtitleTrack: VideoControlSlot.topRight,
       VideoControlItem.audioTrack: VideoControlSlot.topRight,
       VideoControlItem.chapterList: VideoControlSlot.topRight,
-      VideoControlItem.previousChapter: VideoControlSlot.topRight,
-      VideoControlItem.nextChapter: VideoControlSlot.topRight,
       // -- bottom-center transport cluster (play pinned geometric centre) --
       VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
       VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
@@ -656,16 +658,14 @@ class VideoControlLayout {
         VideoControlItem.back,
       ],
       VideoControlSlot.topRight: <VideoControlItem>[
-        VideoControlItem.previousEpisode,
-        VideoControlItem.nextEpisode,
+        // TODO-642：默认右上角顺序去掉 4 个 prev/next 导航键（落 hidden，可自定义拖回）。
+        // screenshot / clipExport 相邻顺序受守卫钉死，保持紧挨。
         VideoControlItem.episodeList,
         VideoControlItem.screenshot,
         VideoControlItem.clipExport,
         VideoControlItem.subtitleTrack,
         VideoControlItem.audioTrack,
         VideoControlItem.chapterList,
-        VideoControlItem.previousChapter,
-        VideoControlItem.nextChapter,
       ],
       VideoControlSlot.screenLeft: <VideoControlItem>[
         VideoControlItem.immersiveLock,

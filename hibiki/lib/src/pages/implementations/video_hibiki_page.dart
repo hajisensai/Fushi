@@ -4571,7 +4571,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         )) {
       return const Spacer();
     }
-    return Expanded(
+    return Flexible(
+      // TODO-642：标题用 Flexible(loose) 而非 Expanded(=FlexFit.tight)。tight 会强迫
+      // 标题填满它分到的那 1/3 顶栏宽，把左右按钮组（同为 Flexible loose）挤进窄滚动
+      // 区，导致右上角按钮被裁/要横滑才看得到。loose 让标题只占自身需要的宽、把剩余
+      // 空间优先让给按钮组；标题已有 maxLines:1 + ellipsis，窄窗时优雅截断不溢出。
+      fit: FlexFit.loose,
       // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
       // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
       // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有 Row 顺序。

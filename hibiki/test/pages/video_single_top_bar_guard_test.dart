@@ -65,6 +65,34 @@ void main() {
         reason: '标题 helper 内部仍应监听 _titleNotifier（BUG-120）');
   });
 
+  test('标题用 Flexible(loose) 让宽给按钮，不用 Expanded 抢固定 1/3（TODO-642）', () {
+    // 根因：_topBarTitle() 曾用 Expanded（= Flexible(FlexFit.tight)），强迫标题填满
+    // 它分到的那段顶栏宽，把左右按钮组挤进窄横向滚动区（右上角按钮被裁 / 要横滑）。
+    // 修复改成 Flexible(fit: FlexFit.loose)：标题只占自身需要的宽、剩余空间优先让给
+    // 按钮组；标题已有 maxLines:1 + ellipsis，窄窗优雅截断。本守卫钉住该让位语义。
+    final int titleStart = src.indexOf('Widget _topBarTitle()');
+    expect(titleStart, greaterThanOrEqualTo(0),
+        reason: '应存在 _topBarTitle() helper');
+    final int titleEnd = src.indexOf('Widget _topBarInlineTitle(', titleStart);
+    expect(titleEnd, greaterThan(titleStart),
+        reason: '_topBarTitle() 方法体应正常闭合在 _topBarInlineTitle 之前');
+    final String titleBody = src.substring(titleStart, titleEnd);
+    expect(titleBody.contains('fit: FlexFit.loose'), isTrue,
+        reason: 'TODO-642：标题须用 Flexible(fit: FlexFit.loose) 把宽让给按钮');
+    expect(titleBody.contains('return Expanded('), isFalse,
+        reason: 'TODO-642：标题不能再用 Expanded（FlexFit.tight 会抢固定 1/3 顶栏宽）');
+    // 标题截断兜底仍在（窄窗让位后靠 ellipsis 优雅收尾）。
+    final int textStart = src.indexOf('Widget _topBarTitleText(');
+    expect(textStart, greaterThanOrEqualTo(0));
+    final int textEnd =
+        src.indexOf('Widget _buildBottomSlotButton(', textStart);
+    expect(textEnd, greaterThan(textStart));
+    final String textBody = src.substring(textStart, textEnd);
+    expect(textBody.contains('maxLines: 1'), isTrue, reason: '标题单行');
+    expect(textBody.contains('overflow: TextOverflow.ellipsis'), isTrue,
+        reason: '标题溢出省略号');
+  });
+
   test('标题使用稳定 helper，不靠右侧空槽占位维持位置（TODO-491）', () {
     expect(src.contains('Widget _topBarTitle('), isTrue,
         reason: '标题应集中到 helper，桌面/移动共用同一稳定布局');
