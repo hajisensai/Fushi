@@ -7941,24 +7941,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       final LayerLink? popoverLink = item == VideoControlItem.speed
           ? _controlPopoverLinkFor(slot, item)
           : null;
-      final Widget button = Material(
-        color: cs.surface.withValues(alpha: 0.55),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: IconButton(
-          tooltip: _videoControlItemTooltip(item),
-          iconSize: _videoControlIconSize,
-          icon: Icon(_videoControlItemIcon(item)),
-          // TODO-604：图标用主题强调色 cs.primary，与底栏 / 顶栏按钮的
-          // buttonBarButtonColor 同源；此前用 cs.onSurface（中性前景）导致左 / 右侧
-          // 浮条按钮看上去「没吃到主题配色」、与底 / 顶栏不一致。
-          color: cs.primary,
-          onPressed: () => _activateVideoControlItem(
-            item,
-            controller,
-            popoverLink: popoverLink,
-            sourceSlot: slot,
-          ),
+      // TODO-635：去掉 rail 按钮外层圆形半透明 `Material(surface@0.55)` 背景——
+      // 用户嫌左 / 右浮条按钮的圆底碍眼，要求只留裸图标浮在画面上。IconButton 自带
+      // InkWell 仍提供点击涟漪，故去掉 Material 容器不丢点击反馈。图标仍走主题强调色
+      // cs.primary + iconSize 走 _videoControlIconSize（吃 appUiScale，TODO-388/604 不变）。
+      final Widget button = IconButton(
+        tooltip: _videoControlItemTooltip(item),
+        iconSize: _videoControlIconSize,
+        icon: Icon(_videoControlItemIcon(item)),
+        // TODO-604：图标用主题强调色 cs.primary，与底栏 / 顶栏按钮的
+        // buttonBarButtonColor 同源；此前用 cs.onSurface（中性前景）导致左 / 右侧
+        // 浮条按钮看上去「没吃到主题配色」、与底 / 顶栏不一致。
+        color: cs.primary,
+        onPressed: () => _activateVideoControlItem(
+          item,
+          controller,
+          popoverLink: popoverLink,
+          sourceSlot: slot,
         ),
       );
       if (popoverLink == null) return button;
