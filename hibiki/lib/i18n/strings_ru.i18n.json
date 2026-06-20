@@ -1738,5 +1738,14 @@
   "floating_lyric_bg_opacity": "Floating subtitle background opacity",
   "floating_lyric_bg_opacity_hint": "Lower this to make the floating subtitle bar more transparent so it blocks less of your view",
   "video_subtitle_list_lock": "Lock list",
-  "video_subtitle_list_unlock": "Unlock list"
+  "video_subtitle_list_unlock": "Unlock list",
+  "dict_update_check": "Check for Updates",
+  "dict_update_tooltip": "Update dictionary",
+  "dict_update_checking": "Checking for updates…",
+  "dict_update_none": "All dictionaries are up to date.",
+  "dict_update_updating": "Updating $name…",
+  "dict_update_done": "$name updated.",
+  "dict_update_latest": "Already up to date.",
+  "dict_update_failed": "Update failed: $error",
+  "dict_update_summary": "$updated updated, $current up to date, $failed failed."
 }

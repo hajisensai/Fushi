@@ -1738,5 +1738,14 @@
   "floating_lyric_bg_opacity": "悬浮字幕背景不透明度",
   "floating_lyric_bg_opacity_hint": "调低让悬浮字幕条更透明、更不挡视野",
   "video_subtitle_list_lock": "锁定列表",
-  "video_subtitle_list_unlock": "解锁列表"
+  "video_subtitle_list_unlock": "解锁列表",
+  "dict_update_check": "检查更新",
+  "dict_update_tooltip": "更新词典",
+  "dict_update_checking": "正在检查更新…",
+  "dict_update_none": "所有词典均为最新。",
+  "dict_update_updating": "正在更新 $name…",
+  "dict_update_done": "$name 已更新。",
+  "dict_update_latest": "已是最新。",
+  "dict_update_failed": "更新失败：$error",
+  "dict_update_summary": "$updated 个已更新，$current 个最新，$failed 个失败。"
 }
