@@ -140,6 +140,13 @@ class DictionaryRepository {
     _dictionariesCache = [...others, ...newDictionaries]
       ..sort((a, b) => a.order.compareTo(b.order));
     _onCacheRebuild?.call();
+    // Reordering changes the effective merge order of search results, so any
+    // previously cached lookup would replay the stale order on the next
+    // (cache-hit) query. Drop the search caches here — single source of truth
+    // so no caller can forget — mirroring the delete/hidden paths (BUG-355,
+    // BUG-171/BUG-177). The native engine itself is already reloaded via the
+    // _onCacheRebuild callback above.
+    clearDictionaryResultsCache();
     for (final dictionary in newDictionaries) {
       await _db.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
     }

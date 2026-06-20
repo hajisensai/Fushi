@@ -1070,8 +1070,16 @@ class AppModel with ChangeNotifier {
     _currentMediaSource = mediaItem.getMediaSource(appModel: this);
   }
 
-  void updateDictionaryOrder(List<Dictionary> newDictionaries) =>
-      dictRepo.updateDictionaryOrder(newDictionaries);
+  void updateDictionaryOrder(List<Dictionary> newDictionaries) {
+    // dictRepo.updateDictionaryOrder persists the new order, fires
+    // _onCacheRebuild (_rebuildDictPathsCache → engine reload) and drops the
+    // search result caches so the next lookup re-merges in the new order. We
+    // still have to nudge any already-open lookup page to re-query — otherwise
+    // its current result keeps the old order until it is reopened or the app
+    // restarts. Mirrors the delete paths (BUG-355).
+    dictRepo.updateDictionaryOrder(newDictionaries);
+    dictionarySearchAgainNotifier.notifyListeners();
+  }
 
   /// Populate maps for languages at startup to optimise performance.
   void populateLanguages() {

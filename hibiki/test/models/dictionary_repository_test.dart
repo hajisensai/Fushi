@@ -209,6 +209,26 @@ void main() {
       expect(repo2.dictionaries.map((d) => d.name), ['B', 'A']);
       repo2.dispose();
     });
+
+    test('clears stale search caches so next lookup re-merges (BUG-355)', () {
+      // Reordering changes the effective merge order of lookup results, so a
+      // result cached under the old order must not survive — otherwise the next
+      // (cache-hit) query replays the stale order until the app restarts.
+      repo.persistDictionary(_dict(name: 'A', order: 0));
+      repo.persistDictionary(_dict(name: 'B', order: 1));
+      repo.cacheSearchResult('猫', _result(searchTerm: '猫'));
+      repo.cacheFfiLookup('猫', const []);
+      expect(repo.getCachedSearch('猫'), isNotNull);
+      expect(repo.getCachedFfiLookup('猫'), isNotNull);
+
+      repo.updateDictionaryOrder([
+        _dict(name: 'B', order: 0),
+        _dict(name: 'A', order: 1),
+      ]);
+
+      expect(repo.getCachedSearch('猫'), isNull);
+      expect(repo.getCachedFfiLookup('猫'), isNull);
+    });
   });
 
   // ── toggleDictionaryCollapsed / Hidden ───────────────────────────────

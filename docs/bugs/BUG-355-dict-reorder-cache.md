@@ -1,0 +1,11 @@
+## BUG-355 · 词典重排后查词顺序不即时生效（重启才正常）
+- **报告**：2026-06-20（用户：）TODO-641
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/models/app_model.dart:1073`（`updateDictionaryOrder` 是纯转发，缺清查词缓存 + 发重查通知）。
+- **[x] ① 已修复** — 分两层对齐既有 delete/hidden 路径契约：
+  - repo 层 `hibiki/lib/src/models/dictionary_repository.dart:updateDictionaryOrder` 持久化前补 `clearDictionaryResultsCache()`（清 `_dictionarySearchCache` + `_ffiLookupCache` 两个 LRU），作为单一真相源，任何调用方都不会忘记清缓存。否则重排后查同一词命中旧缓存，按旧合并顺序返回结果（`dictionary_repository.dart:211-214`）。
+  - AppModel 层 `hibiki/lib/src/models/app_model.dart:updateDictionaryOrder` 转发后补 `dictionarySearchAgainNotifier.notifyListeners()`，让**已打开**的查词页重建查询、立刻反映新顺序（仅清缓存只在下一次查询生效，屏幕上已有结果不会自动刷新）。镜像 `deleteDictionaries`(2200+)/`deleteDictionary`(2226+)/`toggleDictionaryHidden`(2190+) 路径。
+  - FFI 引擎重排时已正确重载（`_onCacheRebuild → _rebuildDictPathsCache → HoshiDicts.initializeTyped`），非 FFI 侧问题。重启正常=LRU 内存缓存清空 + `loadFromDb` 按 order 重建。
+- **[x] ② 已加自动化测试** —
+  - 行为测试 `hibiki/test/models/dictionary_repository_test.dart` `updateDictionaryOrder` group：预热 `cacheSearchResult`/`cacheFfiLookup` → `updateDictionaryOrder` → 断言两缓存均被清（撤 repo 层修复时此用例红）。
+  - 源码扫描守卫 `hibiki/test/models/dictionary_reorder_search_again_guard_test.dart`：断言 `AppModel.updateDictionaryOrder` 既委托 `dictRepo.updateDictionaryOrder(`，又调 `dictionarySearchAgainNotifier.notifyListeners()`（AppModel 方法接活 Drift+FFI，flutter_test 无法廉价构造，与 `dictionary_delete_engine_reload_guard_test.dart` 同范式；撤 AppModel 层修复时此守卫红）。
+- **备注**：BUG 采番 355 避让并发 worktree 分支已占的 354（采番前遍历所有 worktree 分支 `docs/bugs/` 取并集）。真机回归（重排词典后不重启直接查词验顺序）待用户/集成验证。提交：分支 todo-641-dict-reorder-cache HEAD（fix(dict): TODO-641/BUG-355）。

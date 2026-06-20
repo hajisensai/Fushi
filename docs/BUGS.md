@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 347 条。点号进各自文件。
+> 共 348 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-355](bugs/BUG-355-dict-reorder-cache.md) | ✅ | ✅ | 词典重排后查词顺序不即时生效（重启才正常） |
 | [BUG-353](bugs/BUG-353-taskbar-flash-foreground-residue.md) | ✅ | ✅ | TODO-615 剪贴板查词在主窗前台时误触任务栏高亮 |
 | [BUG-352](bugs/BUG-352-nested-lookup-crash-evidence.md) | ✅ | ✅ | 嵌套查词闪退后错误日志一片空白（无可上传证据） |
 | [BUG-351](bugs/BUG-351-reader-image-wheel-pagination.md) | ✅ | ✅ | PC阅读遇插画滚轮翻不了下一页 |
