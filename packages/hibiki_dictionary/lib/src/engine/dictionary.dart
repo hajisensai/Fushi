@@ -48,6 +48,24 @@ class Dictionary {
     return collapsedLanguages.contains(language.languageCode);
   }
 
+  /// TODO-609：在线来源词典的版本号（yomitan index.json 的 revision），导入时
+  /// 由 [readSourceMetadataFromIndex] 落进 [metadata]。本地/旧词典缺则空串。
+  String get revision => metadata['revision'] ?? '';
+
+  /// TODO-609：远端 index.json 的可访问 URL（yomidevs releases/latest 天然可更新）。
+  String get indexUrl => metadata['indexUrl'] ?? '';
+
+  /// TODO-609：词典包（zip）的下载 URL，更新时据此重新下载并强制重导。
+  String get downloadUrl => metadata['downloadUrl'] ?? '';
+
+  /// TODO-609：是否可在线检查更新（三条件与门）。必须 yomitan index 声明
+  /// `isUpdatable` 且远端 index URL + 下载 URL 都存在，缺一不可——旧词典 / 本地
+  /// 导入词典 metadata 为空 → 三条件全不满足 → false（不显示更新按钮、不崩）。
+  bool get isUpdatable =>
+      metadata['isUpdatable'] == 'true' &&
+      indexUrl.isNotEmpty &&
+      downloadUrl.isNotEmpty;
+
   String toJson() {
     return jsonEncode({
       'name': name,
