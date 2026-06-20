@@ -286,6 +286,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onLinkClick,
     required this.onMineEntry,
     required this.onDuplicateCheck,
+    this.onOverwriteTargetNoteId,
     this.onUpdateEntry,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
@@ -333,6 +334,12 @@ class DictionaryPopupLayer extends StatelessWidget {
       int noteId, Map<String, String> fields)? onUpdateEntry;
   final Future<bool> Function(String expression, String reading)
       onDuplicateCheck;
+
+  /// TODO-614：覆写范围=「全部」时按内容反查可覆写的已存在 note id（多张取最近），
+  /// 透传给 [DictionaryPopupWebView] 让更早的卡也能进「✓↩ 最新可改」态。null 时弹窗
+  /// 维持旧两态行为（默认 latest / AnkiDroid 降级）。
+  final Future<int?> Function(String expression, String reading)?
+      onOverwriteTargetNoteId;
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
   final Future<bool> Function(String expression, String reading)?
       onFavoriteCheck;
@@ -513,6 +520,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onMineEntry: onMineEntry,
             onUpdateEntry: onUpdateEntry,
             onDuplicateCheck: onDuplicateCheck,
+            onOverwriteTargetNoteId: onOverwriteTargetNoteId,
             onFavoriteEntry: onFavoriteEntry,
             onFavoriteCheck: onFavoriteCheck,
             onAppendSentence: onAppendSentence,

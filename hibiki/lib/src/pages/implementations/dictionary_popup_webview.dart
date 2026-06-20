@@ -63,6 +63,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onMineEntry,
     this.onUpdateEntry,
     this.onDuplicateCheck,
+    this.onOverwriteTargetNoteId,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
@@ -87,6 +88,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
       int noteId, Map<String, String> fields)? onUpdateEntry;
   final Future<bool> Function(String expression, String reading)?
       onDuplicateCheck;
+
+  /// TODO-614：覆写范围=「全部」时，按与查重同一条件反查一张可覆写的已存在 note id
+  /// （多张取最近一张），供 popup.js 把更早的卡也标成「最新可改」✓↩ 态。范围为默认
+  /// latest 或后端拿不到 id 时返回 `null` → 弹窗维持旧两态行为（Never break userspace）。
+  final Future<int?> Function(String expression, String reading)?
+      onOverwriteTargetNoteId;
 
   /// 切换收藏：返回切换后的新状态（true=已收藏）。供弹窗「☆/★」按钮回调。
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
@@ -930,6 +937,33 @@ class DictionaryPopupWebViewState
                   return widget.onDuplicateCheck!(expression, reading);
                 }
                 return false;
+              },
+            );
+          },
+        );
+
+        // TODO-614：覆写范围=「全部」时，popup.js 在 lookup-time 探测到已制卡且不是
+        // 本会话最近一张时调本处理器，按与查重同一条件反查一张可覆写的已存在 note id
+        // （多张取最近一张）。回 null（默认 latest / 无匹配 / 后端拿不到 id）时 popup.js
+        // 不改态，维持旧两态行为。
+        controller.addJavaScriptHandler(
+          handlerName: 'overwriteTargetNoteId',
+          callback: (args) async {
+            return _guardJsBridge<int?>(
+              'DictPopupWebview.overwriteTargetNoteId',
+              null,
+              ErrorLogService.instance,
+              () async {
+                if (args.isNotEmpty &&
+                    args[0] is Map &&
+                    widget.onOverwriteTargetNoteId != null) {
+                  final data = args[0] as Map;
+                  final expression = data['expression']?.toString() ?? '';
+                  final reading = data['reading']?.toString() ?? '';
+                  if (expression.isEmpty) return null;
+                  return widget.onOverwriteTargetNoteId!(expression, reading);
+                }
+                return null;
               },
             );
           },

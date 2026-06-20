@@ -48,6 +48,8 @@ void main() {
       expect(settings.allowDupes, isFalse);
       expect(settings.compactGlossaries, isFalse);
       expect(settings.embedMedia, isTrue);
+      // TODO-614: 覆写范围默认 latest（仅覆写本会话最近一张，等价旧行为）。
+      expect(settings.overwriteScope, AnkiOverwriteScope.latest);
     });
 
     test('fromJson handles complete payload', () {
@@ -71,6 +73,7 @@ void main() {
         'allowDupes': true,
         'compactGlossaries': true,
         'embedMedia': false,
+        'overwriteScope': 'all',
       };
 
       final settings = AnkiSettings.fromJson(json);
@@ -85,6 +88,7 @@ void main() {
       expect(settings.allowDupes, isTrue);
       expect(settings.compactGlossaries, isTrue);
       expect(settings.embedMedia, isFalse);
+      expect(settings.overwriteScope, AnkiOverwriteScope.all);
     });
 
     test('fromJson handles missing fields gracefully', () {
@@ -96,6 +100,8 @@ void main() {
       expect(settings.tags, '');
       expect(settings.embedMedia, isTrue);
       expect(settings.availableDecks, isEmpty);
+      // TODO-614: 缺字段（旧用户存档）容错回 latest = 现状不破。
+      expect(settings.overwriteScope, AnkiOverwriteScope.latest);
     });
 
     test('fromJson to toJson round-trip via jsonEncode/Decode', () {

@@ -652,6 +652,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                       onMineEntry: onMineEntry,
                       onUpdateEntry: onUpdateEntry,
                       onDuplicateCheck: checkDuplicate,
+                      onOverwriteTargetNoteId: findOverwriteTargetNoteId,
                       onScrolledToBottom: _allLoaded ? null : _loadMore,
                       onTopPullReleased: _clearSearchFromResultPull,
                     ),

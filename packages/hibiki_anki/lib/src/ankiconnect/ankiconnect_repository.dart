@@ -656,6 +656,43 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  // TODO-614：scope=all 时复用「与查重同一条件」（deck + 第一字段=expression）经
+  // findNotes 反查已存在卡的 note id，多张命中取**最近一张**（note id 最大 = Anki
+  // 创建时间戳最新）。scope=latest 直接回 null（不查 Anki，等价旧行为）。查询失败
+  // 静默降级为 null（与 isDuplicate 同样 fail-soft，绝不让覆写探测把制卡链路搞崩）。
+  @override
+  Future<int?> findOverwriteTargetNoteId(
+      String expression, String reading) async {
+    final settings = await loadSettings();
+    if (settings.overwriteScope != AnkiOverwriteScope.all) return null;
+    if (expression.isEmpty) return null;
+    final deck = settings.availableDecks
+            .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
+        (settings.selectedDeckName != null
+            ? settings.availableDecks
+                .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
+            : null);
+    final noteType = settings.selectedNoteType;
+    if (deck == null || noteType == null || noteType.fields.isEmpty) {
+      return null;
+    }
+    try {
+      final service = _serviceForSettings(settings);
+      final matches = await service.findNotesByField(
+        deckName: deck.name,
+        fieldName: noteType.fields.first,
+        fieldValue: expression,
+      );
+      if (matches.isEmpty) return null;
+      // 取最近一张：Anki note id 是创建时间戳（毫秒），越大越新。多张同条件命中
+      // 时不弹选（用户明确要求别复杂），直接覆写最近那张。
+      return matches.reduce((a, b) => a > b ? a : b);
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.findOverwriteTargetNoteId: $e\n$stack');
+      return null;
+    }
+  }
+
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
     final service = await _getService();

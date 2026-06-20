@@ -34,6 +34,37 @@ class AnkiNoteType {
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'fields': fields};
 }
 
+/// TODO-614：「给已制卡片开启覆写」的范围。
+///
+/// 用户痛点：弹窗里点绿色 ✓↩ 只能覆写**本会话刚制的最近一张**卡（`lastMinedNoteId`
+/// 内存态，换词/重查即丢）；想覆写「更早制的卡」时按钮只是普通 ✓，点了会按查重
+/// 拦下或新建。本枚举把覆写范围做成单选（**不是**多选）：
+///
+/// - [latest]（默认）：维持旧行为——只有本会话最近一张可改（Never break userspace）。
+/// - [all]：查词渲染时用**与查重同一条件**（第一字段=expression）反查 Anki 已存在的
+///   note id（多张取最近一张），灌进弹窗的「最新可改」态，使更早的卡也亮起 ✓↩、点它
+///   按 id 覆写。AnkiDroid 后端拿不到真实 note id（只回 bool）→ 仍优雅降级为不可覆写
+///   更早卡，与现状一致。
+enum AnkiOverwriteScope {
+  /// 仅覆写本会话最近制的一张卡（旧行为）。
+  latest,
+
+  /// 覆写任意同条件已存在的卡（多张命中取最近一张）。
+  all,
+}
+
+/// 把持久化字符串解析回 [AnkiOverwriteScope]；未知/缺失值容错回 [AnkiOverwriteScope.latest]
+/// （旧用户存档没有此字段 → 等价现状，Never break userspace）。
+AnkiOverwriteScope ankiOverwriteScopeFromName(String? name) {
+  switch (name) {
+    case 'all':
+      return AnkiOverwriteScope.all;
+    case 'latest':
+    default:
+      return AnkiOverwriteScope.latest;
+  }
+}
+
 class AnkiSettings {
   const AnkiSettings({
     this.selectedDeckId,
@@ -49,6 +80,7 @@ class AnkiSettings {
     this.allowDupes = false,
     this.compactGlossaries = false,
     this.embedMedia = true,
+    this.overwriteScope = AnkiOverwriteScope.latest,
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
     this.ankiConnectApiKey = '',
@@ -75,6 +107,8 @@ class AnkiSettings {
         allowDupes: json['allowDupes'] as bool? ?? false,
         compactGlossaries: json['compactGlossaries'] as bool? ?? false,
         embedMedia: json['embedMedia'] as bool? ?? true,
+        overwriteScope:
+            ankiOverwriteScopeFromName(json['overwriteScope'] as String?),
         ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
         ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
         ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
@@ -98,6 +132,9 @@ class AnkiSettings {
   final bool allowDupes;
   final bool compactGlossaries;
   final bool embedMedia;
+
+  /// TODO-614：覆写已制卡片的范围（默认 [AnkiOverwriteScope.latest] = 仅最近一张）。
+  final AnkiOverwriteScope overwriteScope;
   final String ankiConnectHost;
   final int ankiConnectPort;
   final String ankiConnectApiKey;
@@ -125,6 +162,7 @@ class AnkiSettings {
     bool? allowDupes,
     bool? compactGlossaries,
     bool? embedMedia,
+    AnkiOverwriteScope? overwriteScope,
     String? ankiConnectHost,
     int? ankiConnectPort,
     String? ankiConnectApiKey,
@@ -143,6 +181,7 @@ class AnkiSettings {
         allowDupes: allowDupes ?? this.allowDupes,
         compactGlossaries: compactGlossaries ?? this.compactGlossaries,
         embedMedia: embedMedia ?? this.embedMedia,
+        overwriteScope: overwriteScope ?? this.overwriteScope,
         ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
         ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
         ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
@@ -163,6 +202,7 @@ class AnkiSettings {
         'allowDupes': allowDupes,
         'compactGlossaries': compactGlossaries,
         'embedMedia': embedMedia,
+        'overwriteScope': overwriteScope.name,
         'ankiConnectHost': ankiConnectHost,
         'ankiConnectPort': ankiConnectPort,
         'ankiConnectApiKey': ankiConnectApiKey,

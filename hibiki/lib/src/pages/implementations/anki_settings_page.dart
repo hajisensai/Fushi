@@ -120,13 +120,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ),
           AdaptiveSettingsSection(
             children: [
-              _buildTagsInput(settings, vm),
               AdaptiveSettingsSwitchRow(
                 title: t.anki_allow_duplicates,
                 subtitle: t.anki_allow_duplicates_hint,
                 value: settings.allowDupes,
                 onChanged: vm.updateAllowDupes,
               ),
+              // TODO-614：「覆写已制卡片」范围单选——和「允许重复」并排（两者都关乎
+              // 「再点 ✓ 时改旧卡还是建新卡」）。latest=仅最近一张（默认=现状）；
+              // all=按同一查重条件覆写任意已存在卡（含更早制的）。
+              _buildOverwriteScopePicker(settings, vm),
               AdaptiveSettingsSwitchRow(
                 title: t.anki_compact_glossaries,
                 subtitle: t.anki_compact_glossaries_hint,
@@ -145,6 +148,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         AdaptiveSettingsSection(
           title: t.anki_tag_default_section,
           children: [
+            // TODO-614：自定义标签输入框归位到「默认标签」区最前——它和下面三个
+            // 「自动加什么标签」开关同属「这张卡带哪些标签」，放一起更自洽。随该区
+            // 无条件显示（未连 Anki 也露出，与同区两 tag 开关一致，取舍见上方注释）。
+            _buildTagsInput(settings, vm),
             AdaptiveSettingsSwitchRow(
               title: t.anki_tag_include_hibiki,
               subtitle: t.anki_tag_include_hibiki_hint,
@@ -329,6 +336,30 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         hintText: t.anki_tags_hint,
         onChanged: (v) => vm.updateTags(v),
       ),
+    );
+  }
+
+  /// TODO-614：「覆写已制卡片」范围单选。latest=仅本会话最近一张（默认=现状）；
+  /// all=按与查重同一条件（第一字段=expression）覆写任意已存在卡，使更早制的卡也
+  /// 能在弹窗里点绿 ✓↩ 覆写。AnkiDroid 拿不到 note id → 选 all 仍降级为不可覆写
+  /// 更早卡（与现状一致），不破坏现有行为。
+  Widget _buildOverwriteScopePicker(AnkiSettings settings, AnkiViewModel vm) {
+    return AdaptiveSettingsPickerRow<AnkiOverwriteScope>(
+      title: t.anki_overwrite_scope,
+      subtitle: t.anki_overwrite_scope_hint,
+      controlBelow: true,
+      selected: settings.overwriteScope,
+      options: [
+        AdaptiveSettingsPickerOption<AnkiOverwriteScope>(
+          value: AnkiOverwriteScope.latest,
+          label: t.anki_overwrite_scope_latest,
+        ),
+        AdaptiveSettingsPickerOption<AnkiOverwriteScope>(
+          value: AnkiOverwriteScope.all,
+          label: t.anki_overwrite_scope_all,
+        ),
+      ],
+      onChanged: (scope) => vm.updateOverwriteScope(scope),
     );
   }
 }

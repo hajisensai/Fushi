@@ -62,6 +62,20 @@ abstract class BaseAnkiRepository {
         'This Anki backend does not support overwriting a mined card.',
       );
 
+  /// TODO-614：按「与查重同一条件」反查一张可被覆写的**已存在** note id。
+  ///
+  /// 仅当用户把 [AnkiSettings.overwriteScope] 设为 [AnkiOverwriteScope.all] 时才真正
+  /// 查询；为 [AnkiOverwriteScope.latest]（默认）时一律返回 `null`——弹窗只覆写本会话
+  /// 最近一张（旧行为，Never break userspace）。返回非空 id 时，弹窗据此把更早的卡也
+  /// 标记为「最新可改」第三态、点 ✓↩ 走 [updateMinedNote] 按 id 覆写。
+  ///
+  /// **默认实现 = 优雅降级**：基类恒返回 `null`，表示该后端拿不到可覆写的 note id。
+  /// 只有能按内容反查真实 note id 的后端（[AnkiConnectRepository]）才覆写它。AnkiDroid
+  /// 后端（只回 bool）继承默认降级，scope=all 对它仍不可覆写更早卡，与现状一致。
+  Future<int?> findOverwriteTargetNoteId(
+          String expression, String reading) async =>
+      null;
+
   Future<bool> isDuplicate(String expression, String reading);
 
   /// Create [template] as a note type in the backend. Idempotent: returns

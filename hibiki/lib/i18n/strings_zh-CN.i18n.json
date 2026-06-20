@@ -1754,5 +1754,9 @@
   "crash_dump_share": "分享转储",
   "crash_dump_share_subject": "hibiki 崩溃转储",
   "crash_dump_privacy_notice": "崩溃转储文件（.dmp）含进程内存快照，可能包含你正在阅读的文本、查过的词或其它应用内数据。仅分享给你信任的开发者。",
-  "refresh": "刷新"
+  "refresh": "刷新",
+  "anki_overwrite_scope": "覆写范围",
+  "anki_overwrite_scope_hint": "绿色 ✓ 能覆写哪些已制卡片",
+  "anki_overwrite_scope_latest": "仅最近一张",
+  "anki_overwrite_scope_all": "全部匹配的卡片"
 }

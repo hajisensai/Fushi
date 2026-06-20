@@ -1072,6 +1072,68 @@ async function testNoNoteIdNeverBecomesEditableLatest() {
   assert.equal(updated.length, 0, 'without a note id, clicks never call updateEntry');
 }
 
+// ── TODO-614: overwrite-scope = all promotes an EARLIER card to ✓↩ ─────────
+// "现在只能覆写最近制的卡，我想给再之前的也能覆写。" With overwriteScope=all the
+// host's overwriteTargetNoteId handler returns a real note id for an already-mined
+// word the user never touched this session. The lookup-time render must promote
+// that button to the green ✓↩ (editable latest) so clicking it overwrites the
+// earlier card in place — WITHOUT the user having mined it in this popup session.
+async function testOverwriteScopeAllPromotesEarlierCardToEditable() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const updated = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true); // card in Anki
+    // scope=all: the host reaches into Anki and hands back the earlier card's id.
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(777);
+    if (name === 'updateEntry') {
+      updated.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: payload.noteId });
+    }
+    return Promise.resolve(true);
+  };
+
+  // The word was NEVER mined in this session — only the host's scope=all lookup
+  // makes it editable.
+  const mineButton = buildMineHeaderFor(context, '昨日');
+  await flush(); // lookup-time duplicateCheck + overwriteTargetNoteId resolve
+
+  assert.equal(mineButton.dataset.mined, '1', 'an existing card is detected as mined');
+  assert.equal(mineButton.dataset.latest, '1',
+    'scope=all promotes an earlier (never-this-session) card to the editable latest');
+  assert.equal(mineButton.textContent, '✓↩',
+    'a promoted earlier card shows the ✓ + undo glyph');
+
+  // Clicking it overwrites the earlier note in place (updateEntry, NOT a re-mine).
+  await mineButton.onclick();
+  await flush();
+  assert.equal(updated.length, 1, 'clicking ✓↩ overwrites the earlier card via updateEntry');
+  assert.equal(updated[0].noteId, 777, 'updateEntry targets the earlier card note id');
+}
+
+// scope=latest (default) / AnkiDroid (no id): overwriteTargetNoteId returns null,
+// so an earlier card stays an ordinary ✓ — the old two-state behaviour is intact
+// (Never break userspace). A click just re-verifies, never an in-place overwrite.
+async function testOverwriteScopeLatestKeepsEarlierCardOrdinary() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const updated = [];
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null); // latest scope
+    if (name === 'updateEntry') { updated.push(1); return Promise.resolve(true); }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeaderFor(context, '今日');
+  await flush();
+
+  assert.equal(mineButton.dataset.mined, '1', 'the existing card is still detected as mined');
+  assert.notEqual(mineButton.dataset.latest, '1',
+    'scope=latest must not promote an earlier card (old behaviour preserved)');
+  assert.equal(mineButton.textContent, '✓', 'an earlier card stays an ordinary ✓');
+}
+
 // ── TODO-094 S5: kanji dictionary card ─────────────────────────────────────
 // A single-character lookup carries per-character kanji-dictionary results
 // (onyomi / kunyomi / radical / strokes / meanings) on window.kanjiResults,
@@ -1299,6 +1361,16 @@ testMiningNextCardDowngradesPreviousFromEditable().catch((error) => {
 });
 
 testNoNoteIdNeverBecomesEditableLatest().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testOverwriteScopeAllPromotesEarlierCardToEditable().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testOverwriteScopeLatestKeepsEarlierCardOrdinary().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

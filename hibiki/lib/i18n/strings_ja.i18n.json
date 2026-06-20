@@ -1754,5 +1754,9 @@
   "crash_dump_share": "Share dump",
   "crash_dump_share_subject": "hibiki Crash Dump",
   "crash_dump_privacy_notice": "Crash dumps (.dmp) contain a snapshot of process memory and may include text you were reading, words you looked up, or other in-app data. Share them only with developers you trust.",
-  "refresh": "Refresh"
+  "refresh": "Refresh",
+  "anki_overwrite_scope": "Overwrite Range",
+  "anki_overwrite_scope_hint": "Which already-made cards the green ✓ can overwrite",
+  "anki_overwrite_scope_latest": "Latest card only",
+  "anki_overwrite_scope_all": "All matching cards"
 }

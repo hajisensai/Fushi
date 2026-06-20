@@ -466,6 +466,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           final repo = ref.read(ankiRepositoryProvider);
           return repo.isDuplicate(expression, reading);
         },
+        // TODO-614：覆写范围=「全部」时按内容反查可覆写的已存在 note id，让阅读器/
+        // 有声书/视频弹窗里更早制的卡也能点绿 ✓↩ 覆写（默认 latest / AnkiDroid 回 null）。
+        onOverwriteTargetNoteId: (expression, reading) async {
+          final repo = ref.read(ankiRepositoryProvider);
+          return repo.findOverwriteTargetNoteId(expression, reading);
+        },
         // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅支持草稿的表面（reader 覆写
         // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
         onAppendSentence:

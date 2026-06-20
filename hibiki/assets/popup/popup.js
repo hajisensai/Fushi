@@ -1828,7 +1828,29 @@ function createEntryHeader(entry, idx) {
     buttonsContainer.appendChild(mineButton);
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
-    window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(isDuplicate => {
+    //
+    // TODO-614 (overwrite scope = all): when the card already exists but is NOT
+    // this session's most-recently-mined word, ask the host for an overwrite
+    // target note id. The host only returns a real id when the user set the
+    // overwrite range to "all" (AnkiConnect can resolve the id); it returns null
+    // for the default "latest" range or AnkiDroid. A real id promotes this
+    // earlier card to the editable ✓↩ latest state so a single click overwrites
+    // it in place — no need to have mined it in this popup session. A null reply
+    // keeps the ordinary two-state behaviour (Never break userspace).
+    window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(async isDuplicate => {
+        if (isDuplicate && !isLatestEditable(expression, reading)) {
+            try {
+                const noteId = await window.flutter_inappwebview.callHandler(
+                    'overwriteTargetNoteId', { expression, reading });
+                if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+                    rememberLatestMined(expression, reading, noteId);
+                }
+            } catch (e) {
+                // A failed overwrite-target probe must never break the ✓/+ paint;
+                // fall back to the ordinary mined state below.
+                console.error('overwriteTargetNoteId probe failed', e);
+            }
+        }
         setMineState(isDuplicate);
     });
 

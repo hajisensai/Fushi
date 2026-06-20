@@ -138,6 +138,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// TODO-614：切换「覆写已制卡片」范围（latest=仅最近一张 / all=全部已存在卡）。
+  Future<void> updateOverwriteScope(AnkiOverwriteScope value) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(overwriteScope: value));
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> updateAnkiConnectHost(String host) async {
     final trimmed = host.trim();
     if (trimmed.isEmpty ||

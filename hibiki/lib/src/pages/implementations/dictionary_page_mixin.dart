@@ -202,6 +202,18 @@ mixin DictionaryPageMixin {
     return repo.isDuplicate(expression, reading);
   }
 
+  /// TODO-614：当用户把覆写范围设为「全部」（[AnkiOverwriteScope.all]）时，按与查重
+  /// 同一条件反查一张可覆写的已存在 note id（多张取最近），让弹窗把更早的卡也标成
+  /// 「最新可改」✓↩ 第三态、点它走 [onUpdateEntry] 按 id 覆写。范围为默认 latest 或
+  /// 后端（AnkiDroid）拿不到 id 时回 null → 弹窗维持旧的两态行为（Never break userspace）。
+  Future<int?> findOverwriteTargetNoteId(
+    String expression,
+    String reading,
+  ) async {
+    final repo = ref.read(ankiRepositoryProvider);
+    return repo.findOverwriteTargetNoteId(expression, reading);
+  }
+
   /// 把一次成功制卡计入统计（按 [dictionarySourceType]）。
   ///
   /// 视频页等覆写 [onMineEntry]、绕过基类成功分支的页面，在自己的成功路径上
@@ -337,6 +349,7 @@ mixin DictionaryPageMixin {
         onMineEntry: onMineEntry,
         onUpdateEntry: onUpdateEntry,
         onDuplicateCheck: checkDuplicate,
+        onOverwriteTargetNoteId: findOverwriteTargetNoteId,
         onFavoriteEntry: onFavoriteEntry,
         onFavoriteCheck: onFavoriteCheck,
         // TODO-270 E：支持草稿的表面（视频覆写 [onAppendSentenceToDraft] 返回非空）

@@ -307,6 +307,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           onMineEntry: onMineEntry,
           onUpdateEntry: onUpdateEntry,
           onDuplicateCheck: checkDuplicate,
+          onOverwriteTargetNoteId: findOverwriteTargetNoteId,
         ),
       ),
     );
