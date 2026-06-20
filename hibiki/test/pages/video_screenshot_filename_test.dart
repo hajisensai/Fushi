@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_screenshot_filename.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 void main() {
   group('videoScreenshotBaseName', () {
@@ -67,16 +67,15 @@ void main() {
   });
 
   group('_saveScreenshot 源码守卫', () {
-    final String page = File(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
-    ).readAsStringSync();
+    final String page = readVideoHibikiSource();
     final int start = page.indexOf('Future<void> _saveScreenshot()');
     late final String body;
 
     setUpAll(() {
       expect(start, greaterThanOrEqualTo(0),
           reason: '截图入口必须仍汇到 _saveScreenshot');
-      final int end = page.indexOf('void _showSpeedMenu', start);
+      final int end =
+          page.indexOf('String _screenshotSourcePathOrTitle()', start);
       expect(end, greaterThan(start), reason: '_saveScreenshot 后续方法边界应稳定可截取');
       body = page.substring(start, end);
     });

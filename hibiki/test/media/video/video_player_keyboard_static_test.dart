@@ -202,7 +202,7 @@ void main() {
       expect(helperAt, greaterThanOrEqualTo(0),
           reason: 'cannot find _skipCueAndPokeControls');
       final int helperEnd =
-          page.indexOf('Future<void> _saveScreenshot', helperAt);
+          page.indexOf('AudioCue? _currentCueForAction(', helperAt);
       expect(helperEnd, greaterThan(helperAt));
       final String body = page.substring(helperAt, helperEnd);
       expect(body.contains('skipToPrevCueOrSeekBack('), isTrue,
