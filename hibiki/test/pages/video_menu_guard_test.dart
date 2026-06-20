@@ -20,33 +20,32 @@ void main() {
   ).readAsStringSync();
 
   group('菜单重入守卫（双开）', () {
-    // TODO-274 / TODO-438 重入守卫：剧集仍走 [showModalBottomSheet] + [_videoSheetOpen]
-    // （开置 true、whenComplete 复位 false）；音轨 / 字幕源 / 设置三菜单迁到右侧
-    // push-aside side panel（[_showVideoSidePanel]），靠单个 [_videoSidePanel] ValueNotifier
-    // 做面板间互斥（一次只一个），且 [_showVideoSidePanel] 顶部也有 `if (_videoSheetOpen) return;`
-    // 门控，不会与 modal sheet 叠开。音量/倍速走 [_videoControlPopover] 单一轻浮层，
-    // 同时只用 [_pokeControlsVisible] 续命控制条。
-    test('菜单入口分别有 modal/side-panel/popover 的互斥门控', () {
+    // TODO-438 / TODO-638 互斥守卫：音轨 / 字幕源 / 设置三菜单走右侧 push-aside side
+    // panel（[_showVideoSidePanel]），靠单个 [_videoSidePanel] ValueNotifier 做面板间互斥
+    // （一次只一个）。剧集列表 TODO-638 改 push-aside 侧栏（[_episodeListVisible]），视频页
+    // 已无任何 modal bottom sheet，旧 [_videoSheetOpen] 重入守卫随之删除。音量/倍速走
+    // [_videoControlPopover] 单一轻浮层，同时只用 [_pokeControlsVisible] 续命控制条。
+    test('菜单入口分别有 side-panel/push-aside/popover 的互斥门控', () {
       bool opensSidePanel(String kind) =>
           RegExp('_showVideoSidePanel\\(\\s*_VideoSidePanelKind\\.$kind')
               .hasMatch(src);
 
-      // 剧集 modal sheet + side panel 调度入口 [_showVideoSidePanel] + 字幕源入口
-      // [_showSubtitleSourceMenu] 都要先过 `if (_videoSheetOpen) return;`。
-      final int enter =
-          RegExp(r'if \(_videoSheetOpen\) return;').allMatches(src).length;
-      expect(enter, greaterThanOrEqualTo(3),
-          reason: '剧集 / side panel 调度 / 字幕源入口都要 _videoSheetOpen 门控');
-
-      // 剧集 modal sheet 仍在（音量已改 popover、其余菜单迁 side panel），且置 true。
-      final int sheets =
-          RegExp(r'showModalBottomSheet<void>\(').allMatches(src).length;
-      expect(sheets, greaterThanOrEqualTo(1),
-          reason: '剧集仍走 modal bottom sheet');
-      final int setTrue =
-          RegExp(r'_videoSheetOpen = true;').allMatches(src).length;
-      expect(setTrue, greaterThanOrEqualTo(1),
-          reason: 'modal sheet 开启前要置 _videoSheetOpen = true');
+      // TODO-638：视频页已无 modal bottom sheet（剧集列表是最后一个，改 push-aside），
+      // 旧 [_videoSheetOpen] 重入守卫随之删除——不应再有任何残留。
+      expect(src.contains('_videoSheetOpen'), isFalse,
+          reason: '剧集列表改 push-aside 后 _videoSheetOpen 重入守卫应整体删除');
+      expect(
+        src.contains('showModalBottomSheet<') ||
+            src.contains('showModalBottomSheet('),
+        isFalse,
+        reason: '视频页已无任何 modal bottom sheet 调用（剧集列表改 push-aside）',
+      );
+      // 剧集列表改 push-aside：靠 [_episodeListVisible] ValueNotifier 与字幕列表互斥。
+      expect(
+        src.contains('final ValueNotifier<bool> _episodeListVisible'),
+        isTrue,
+        reason: '剧集列表 push-aside 可见性应由单个 _episodeListVisible notifier 管',
+      );
 
       // 音量 / 倍速改为同一套轻浮层：互斥、锚定、无 OverlayEntry 全局漂浮状态。
       expect(src.contains('_volumeOverlayEntry'), isFalse,
@@ -92,12 +91,17 @@ void main() {
           reason: '设置面板内容仍是 master-detail VideoQuickSettingsSheet');
     });
 
-    test('modal sheet 关闭后复位 _videoSheetOpen=false（whenComplete）', () {
-      expect(src, contains('_videoSheetOpen = false;'),
-          reason: 'whenComplete / 异步早返回必须复位守卫，否则守卫卡死再也开不了菜单');
-      // whenComplete 不再裸调 _refocusVideo（已并入复位回调）。
-      expect(src.contains('.whenComplete(_refocusVideo)'), isFalse,
-          reason: 'whenComplete 应改为同时复位守卫 + refocus 的回调');
+    test('剧集列表 push-aside 关闭归还焦点（_closeEpisodeList → _refocusVideo）', () {
+      // TODO-638：剧集列表改 push-aside 后，关闭走单一真相源 [_closeEpisodeList]，它必须
+      // 隐藏列表 + 唤回控制条 + 归还键盘焦点（与字幕列表 _closeSubtitleJumpList 同纪律）。
+      final int start = src.indexOf('void _closeEpisodeList() {');
+      expect(start, greaterThan(-1), reason: '应有 _closeEpisodeList 单一真相源');
+      final int end = src.indexOf('\n  }', start);
+      final String body = src.substring(start, end);
+      expect(body.contains('_episodeListVisible.value = false'), isTrue);
+      expect(body.contains('_pokeControlsVisible()'), isTrue);
+      expect(body.contains('_refocusVideo()'), isTrue,
+          reason: '剧集列表关闭后必须归还键盘焦点，否则空格冒泡到全局 DoNothingIntent');
     });
   });
 

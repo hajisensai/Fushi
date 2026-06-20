@@ -1756,5 +1756,6 @@
   "video_setting_auto_play_next": "Auto-play next episode",
   "video_setting_auto_play_next_hint": "Automatically play the next episode in a playlist when one finishes",
   "video_auto_play_next_cancel": "Cancel",
-  "video_auto_play_next_countdown": "Next episode in ${seconds}s"
+  "video_auto_play_next_countdown": "Next episode in ${seconds}s",
+  "video_episode_list_empty": "No episodes"
 }
