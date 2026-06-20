@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'sync_settings_schema_source_corpus.dart';
+
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 
 /// BUG-085: the Hibiki LAN sync server must be owned app-wide by AppModel, not
@@ -143,8 +145,10 @@ void main() {
 
   group('source guards: server lifecycle owned by AppModel (BUG-085)', () {
     test('the sync-settings page no longer owns or stops the server', () {
-      final String schema =
-          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，让 server-ownership
+      // 的负向（isNot）守卫覆盖全部 part——否则把 _server?.stop() 塞进某个 part
+      // 就能绕过守卫；正向 appModel.syncServerController 现住 interconnect.part.dart。
+      final String schema = readSyncSettingsSchemaSource();
       // Ownership moved out of the widget: it must not declare its own server /
       // broadcast fields, nor stop them (its dispose used to kill the host).
       expect(schema, isNot(contains('HibikiSyncServer? _server')),

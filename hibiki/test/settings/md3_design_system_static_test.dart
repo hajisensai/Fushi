@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../pages/reader_history_source_corpus.dart';
+import '../sync/sync_settings_schema_source_corpus.dart';
 
 void main() {
   const Map<String, List<String>> requiredComponentTokens =
@@ -269,7 +270,9 @@ void main() {
       final String source =
           entry.key.endsWith('reader_hibiki_history_page.dart')
               ? readReaderHistorySource()
-              : file.readAsStringSync();
+              : entry.key.endsWith('sync_settings_schema.dart')
+                  ? readSyncSettingsSchemaSource()
+                  : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
@@ -284,7 +287,9 @@ void main() {
       final String source =
           entry.key.endsWith('reader_hibiki_history_page.dart')
               ? readReaderHistorySource()
-              : file.readAsStringSync();
+              : entry.key.endsWith('sync_settings_schema.dart')
+                  ? readSyncSettingsSchemaSource()
+                  : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
@@ -560,7 +565,9 @@ void main() {
       final String fileSource =
           entry.key.endsWith('reader_hibiki_history_page.dart')
               ? readReaderHistorySource()
-              : File(entry.key).readAsStringSync();
+              : entry.key.endsWith('sync_settings_schema.dart')
+                  ? readSyncSettingsSchemaSource()
+                  : File(entry.key).readAsStringSync();
       final String source =
           entry.key.endsWith('reader_hibiki_history_page.dart')
               ? _withoutTransparentInkHosts(
@@ -1347,8 +1354,9 @@ void main() {
         File('lib/src/sync/sync_message_dialog.dart').readAsStringSync();
     final String compareSource =
         File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
-    final String settingsSource =
-        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+    // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，正向 showSyncMessage(
+    // 与负向 alert 禁令都覆盖全部 part。
+    final String settingsSource = readSyncSettingsSchemaSource();
     final String combined = '$messageSource\n$compareSource\n$settingsSource';
 
     expect(messageSource, contains('class SyncMessageDialog'));
@@ -1394,8 +1402,10 @@ void main() {
   });
 
   test('sync settings custom controls use shared MD3 rows', () {
-    final String source =
-        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+    // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，AdaptiveSettingsSwitchRow/
+    // PickerRow/HibikiListItem 正向断言与 Dropdown/SwitchListTile/ListTile 负向断言
+    // 都覆盖全部 part。
+    final String source = readSyncSettingsSchemaSource();
 
     expect(source, contains('AdaptiveSettingsSwitchRow('));
     expect(source, contains('AdaptiveSettingsPickerRow<SyncBackendType>('));

@@ -8,6 +8,8 @@ import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'sync_settings_schema_source_corpus.dart';
+
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 
 HibikiSyncServerController _controller(HibikiDatabase db) =>
@@ -162,8 +164,9 @@ void main() {
 
   group('source guards: discovery registers with the app-level controller', () {
     test('sync-settings discovery widget registers + unregisters', () {
-      final String schema =
-          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，负向/正向断言都
+      // 覆盖全部 part（discovery widget 现住 interconnect.part.dart）。
+      final String schema = readSyncSettingsSchemaSource();
       expect(schema.contains('syncServerController'), isTrue);
       expect(schema.contains('.registerDiscovery('), isTrue,
           reason: 'the discovery widget must register its browser so the exit '

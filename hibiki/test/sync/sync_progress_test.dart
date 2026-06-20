@@ -6,6 +6,8 @@ import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
+import 'sync_settings_schema_source_corpus.dart';
+
 /// Unit + wiring guard for the manual-sync inline progress bar.
 void main() {
   group('SyncProgress.fraction', () {
@@ -86,8 +88,9 @@ void main() {
     expect(autoTrigger.contains('syncProgress.value = null'), isTrue,
         reason: 'the global progress must reset when no sync is in flight');
 
-    final widget =
-        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+    // TODO-585: Sync-now widget 现住 sync_settings_schema/actions.part.dart；
+    // 读合并语料而不是单文件。
+    final widget = readSyncSettingsSchemaSource();
     // The Sync-now widget must render the inline determinate bar.
     expect(
         widget.contains('LinearProgressIndicator(value: p?.fraction)'), isTrue,

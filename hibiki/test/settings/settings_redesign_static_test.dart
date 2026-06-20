@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../sync/sync_settings_schema_source_corpus.dart';
+
 String readNormalizedSource(String path) {
   return File(path).readAsStringSync().replaceAll('\r\n', '\n');
 }
@@ -138,7 +140,11 @@ void main() {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
 
-      final String source = readNormalizedSource(entry.key);
+      // TODO-585: sync_settings_schema 拆成主库 + 5 个 part；该键读合并语料，
+      // 让 runManualFullSync 等搬进 part 的标记仍被命中。
+      final String source = entry.key.endsWith('sync_settings_schema.dart')
+          ? readSyncSettingsSchemaSource()
+          : readNormalizedSource(entry.key);
       for (final String token in entry.value) {
         expect(
           source,
@@ -176,8 +182,7 @@ void main() {
         readNormalizedSource('lib/src/settings/settings_actions.dart');
     // TODO-586：schema 拆成多领域文件，adaptiveAlertDialog 禁令要扫全部领域文件。
     final String schemaSource = readSettingsSchemaCombined();
-    final String syncSource =
-        readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
+    final String syncSource = readSyncSettingsSchemaSource();
     final String combined = '$actionsSource\n$schemaSource\n$syncSource';
 
     expect(actionsSource, contains('HibikiDialogFrame('));
@@ -246,8 +251,7 @@ void main() {
     final String destinationSource =
         readNormalizedSource('lib/src/settings/settings_destination.dart');
     final String schemaSource = readSettingsSchemaCombined();
-    final String syncSource =
-        readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
+    final String syncSource = readSyncSettingsSchemaSource();
     final String combined = '$destinationSource\n$schemaSource\n$syncSource';
 
     for (final String token in <String>[
@@ -394,8 +398,7 @@ void main() {
   });
 
   test('sync backup settings use standard schema rows for options', () {
-    final String source =
-        readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
+    final String source = readSyncSettingsSchemaSource();
 
     expect(
         source, contains("SettingsCustomItem(\n            id: 'sync.mode'"));

@@ -9,6 +9,8 @@ import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'sync_settings_schema_source_corpus.dart';
+
 /// TODO-106/TODO-249: the export dialog lets the user pick which sidecar trees
 /// travel in the backup. [BackupService.exportBackup]'s [categories] param
 /// is the contract: a null set packs everything (legacy all-in export); a
@@ -275,8 +277,9 @@ void main() {
   // (2) keeps existing categories selected but leaves videos opt-in because
   // they are usually huge, and (3) forward the chosen set to exportBackup.
   test('export UI wires the category picker with video opt-in default', () {
-    final File ui = File('lib/src/sync/sync_settings_schema.dart');
-    final String src = ui.readAsStringSync();
+    // TODO-585: 导出 widget 现住 sync_settings_schema/backup.part.dart；
+    // 读合并语料而不是单文件。
+    final String src = readSyncSettingsSchemaSource();
     expect(src.contains('_pickExportCategories()'), isTrue,
         reason: 'export must prompt for categories before running');
     expect(

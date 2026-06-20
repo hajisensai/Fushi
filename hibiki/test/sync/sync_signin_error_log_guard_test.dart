@@ -1,18 +1,18 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'sync_settings_schema_source_corpus.dart';
 
 /// TODO-045 (observability): a failed Google sign-in only showed a transient
 /// snackbar — the real cause (invalid_client 401, redirect mismatch, a blocked
 /// connection) vanished. The sign-in handler must persist the full diagnostic
 /// to ErrorLogService so it survives on the error-log page. This source guard
 /// fails if either catch arm of `_signIn` stops logging.
+///
+/// TODO-585: `_signIn` 现住在 sync_settings_schema/account.part.dart；读合并语料
+/// 而不是单文件，搬到哪个 part 都扫得到。
 void main() {
   test('_signIn logs both catch arms to ErrorLogService', () {
-    final File src = File('lib/src/sync/sync_settings_schema.dart');
-    expect(src.existsSync(), isTrue,
-        reason: 'run from the hibiki/ package root');
-    final String body = src.readAsStringSync();
+    final String body = readSyncSettingsSchemaSource();
 
     final int signInIdx = body.indexOf('Future<void> _signIn() async');
     expect(signInIdx, greaterThanOrEqualTo(0),
