@@ -1,4 +1,6 @@
 import 'package:flutter/services.dart';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
@@ -467,8 +469,10 @@ void main() {
     expect(windowCalls, isNot(contains('show')));
     expect(windowCalls, isNot(contains('focus')));
     expect(windowCalls, isNot(contains('setAlwaysOnTop')));
-    // 但主动熄灭残留任务栏高亮（TODO-615）。
-    expect(captionCalls, contains('clearTaskbarFlash'));
+    // 但主动熄灭残留任务栏高亮（TODO-615·clearTaskbarFlash 仅 Windows 下发 channel）。
+    if (Platform.isWindows) {
+      expect(captionCalls, contains('clearTaskbarFlash'));
+    }
   });
 
   // TODO-615：真正的外部复制/热键场景窗口不在前台 → 照常 show/focus/置顶，唤前台
@@ -504,8 +508,10 @@ void main() {
 
     expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
     expect(windowCalls.any(_setsAlwaysOnTop2), isTrue, reason: '置顶模式唤起后应置顶');
-    // 唤前台后清掉可能残留的任务栏高亮。
-    expect(captionCalls, contains('clearTaskbarFlash'));
+    // 唤前台后清掉可能残留的任务栏高亮（clearTaskbarFlash 仅 Windows 下发 channel）。
+    if (Platform.isWindows) {
+      expect(captionCalls, contains('clearTaskbarFlash'));
+    }
   });
 }
 
