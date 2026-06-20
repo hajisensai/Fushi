@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 357 条。点号进各自文件。
+> 共 358 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-364](bugs/BUG-364-vertical-scroll-smoothness.md) | ✅ | ✅ | 竖排连续(滚动)模式刷新率低/一格一格跳不顺 (TODO-629 ②) |
 | [BUG-363](bugs/BUG-363-popup-ruby-zoom-furigana.md) | ✅ | ✅ | 词典字号放大后释义振假名(ruby furigana)显示异常（飘高/与上行挤压） |
 | [BUG-362](bugs/BUG-362-video-topbar-title-buttons.md) | ✅ | ✅ | 视频顶栏标题挡按钮+按钮太多 |
 | [BUG-361](bugs/BUG-361-webview2-steals-drop.md) | ✅ | ✅ | WebView2抢占主窗口drop致拖放禁止光标 |

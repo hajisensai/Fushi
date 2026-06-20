@@ -2493,6 +2493,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (hasStart && !_hoshiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
   var _wheelTimer = null;
+  // TODO-629 ②: 竖排连续滚动 rAF 缓动状态——wheel 事件只累积目标 scrollLeft，由
+  // requestAnimationFrame 每帧指数逼近，消除逐事件 scrollBy 的离散颗粒感。
+  var _vScrollTarget = null;   // 累积目标 scrollLeft（null = 无进行中的缓动）
+  var _vScrollRaf = 0;         // 进行中的 rAF 句柄（0 = 无）
+  function _vScrollEaseStep() {
+    var root = document.scrollingElement || document.documentElement;
+    if (_vScrollTarget === null) { _vScrollRaf = 0; return; }
+    var current = root.scrollLeft;
+    var remaining = _vScrollTarget - current;
+    // 与纯函数 ReaderPaginationScripts.smoothScrollStep 同款常量（factor/snap）。
+    if (Math.abs(remaining) <= 0.5) {
+      root.scrollLeft = _vScrollTarget;
+      _vScrollTarget = null;
+      _vScrollRaf = 0;
+      return;
+    }
+    root.scrollLeft = current + remaining * 0.18;
+    _vScrollRaf = requestAnimationFrame(_vScrollEaseStep);
+  }
   document.addEventListener('wheel', function(e) {
     // BUG-239 / TODO-345 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴）。
     // 此处一旦在连续模式回传 onSwipe（90% 整屏跳页），就与原生滚动产生轴向冲突。
@@ -2536,12 +2555,29 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         e.preventDefault();
         return;
       }
-      // 未到底：横排放行原生滚动；竖排把主 delta 投影到横向 scrollBy（沿书写轴）。
+      // 未到底：横排放行原生滚动（轴 = 纵向，与 deltaY 同轴，浏览器原生平滑即可）。
       if (!vertical) return;
       if (wheelDelta === 0) return;
+      // 竖排：把主 delta 投影到横向内容轴并累积进 rAF 缓动目标 _vScrollTarget，
+      // 由 _vScrollEaseStep 每帧指数逼近——替代旧的逐事件 scrollBy(behavior:'auto')
+      // 离散跳（TODO-629 ②「刷新率低/一格一格跳」根因）。
+      // 缓动期只在 wheel 事件读一次 scrollLeft/scrollWidth（边界判定已在上方算过），
+      // rAF 每帧只写 scrollLeft，不再读 scrollWidth，避免每帧 reflow 风暴。
       var wm = window.getComputedStyle(document.body).writingMode;
       var sign = (wm === 'vertical-rl') ? -1 : 1;
-      window.scrollBy({left: wheelDelta * sign, top: 0, behavior: 'auto'});
+      // 缓动基线：已有进行中的缓动则在其目标上累积（快速连滚叠加位移），否则从当前
+      // 实际 scrollLeft 起步。clamp 到可滚区间，防越界后缓动空转。可滚极值随 sign：
+      // vertical-rl(sign=-1) 范围 [innerWidth-scrollWidth, 0]（forward 往负）；
+      // vertical-lr(sign=+1) 范围 [0, scrollWidth-innerWidth]（forward 往正）。
+      var base = (_vScrollTarget !== null) ? _vScrollTarget : root.scrollLeft;
+      var span = root.scrollWidth - window.innerWidth;
+      var lo = (sign < 0) ? -span : 0;
+      var hi = (sign < 0) ? 0 : span;
+      var target = base + wheelDelta * sign;
+      if (target < lo) target = lo;
+      if (target > hi) target = hi;
+      _vScrollTarget = target;
+      if (!_vScrollRaf) _vScrollRaf = requestAnimationFrame(_vScrollEaseStep);
       e.preventDefault();
       return;
     }

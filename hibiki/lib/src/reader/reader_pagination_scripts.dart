@@ -334,6 +334,40 @@ class ReaderPaginationScripts {
     return atStart ? ReaderNavigationDirection.backward.jsValue : null;
   }
 
+  /// TODO-629 ②：竖排连续（滚动）模式下，桌面鼠标滚轮的主 delta 投影到横向
+  /// （vertical-rl 内容轴 = 横向）滚动时，逐 wheel 事件 `scrollBy(behavior:'auto')`
+  /// 是瞬时离散跳，每个事件一次 deltaY 颗粒、丢弃浏览器原生平滑/惯性，看着像「刷新率
+  /// 低」「一格一格跳」。横排（轴 = 纵向，与 deltaY 同轴）放行原生滚动相对顺滑。
+  ///
+  /// 这里把逐事件离散 `scrollBy` 换成 rAF 缓动：wheel 事件只累积目标位置 [target]，
+  /// 由 `requestAnimationFrame` 每帧调用本步进函数从当前 [current] 指数逼近 [target]，
+  /// 消除颗粒感。指数缓动（每帧走剩余距离的 [factor]）保证单调收敛、永不超调：
+  /// - 剩余距离 `remaining = target - current`；
+  /// - 当 `|remaining| <= snap`（[snap] = 收尾吸附阈值，含 `factor` 折算后不足 1px 的
+  ///   尾巴）时直接吸附到 [target]，避免无限趋近留亚像素抖动；
+  /// - 否则走 `current + remaining * factor`，再 clamp 不越过 [target]（因 0<factor<1
+  ///   单调逼近，clamp 仅作浮点防御，理论恒不触发，保证不超调）。
+  ///
+  /// 纯函数，无副作用，轴向无关（[current]/[target] 为原始 scrollLeft，竖排为负值
+  /// 同样适用）。供单测锁定「逐帧逼近·单调·收敛不超调」，撤销缓动 → 测试转红。
+  ///
+  /// [factor] 取值 (0,1]，越大越快收敛（默认调用方传 0.18 ≈ 60fps 下 ~10 帧落定，
+  /// 顺滑且不拖沓）；[snap] 为收尾吸附阈值（默认 0.5px）。
+  @visibleForTesting
+  static double smoothScrollStep({
+    required double current,
+    required double target,
+    double factor = 0.18,
+    double snap = 0.5,
+  }) {
+    final double remaining = target - current;
+    if (remaining.abs() <= snap) return target;
+    final double next = current + remaining * factor;
+    // clamp 不越过 target（指数逼近本不会超调，仅防浮点意外）。
+    if (remaining > 0) return next > target ? target : next;
+    return next < target ? target : next;
+  }
+
   static String paginateInvocation(ReaderNavigationDirection direction) =>
       "window.hoshiReader && window.hoshiReader.paginate('${direction.jsValue}')";
 

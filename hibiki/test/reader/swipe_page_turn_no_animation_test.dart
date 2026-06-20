@@ -133,8 +133,19 @@ void main() {
     expect(continuousBranch, contains('isVertical'),
         reason: 'continuous-mode wheel must gate the explicit scroll on '
             'vertical writing (horizontal mode stays native pass-through)');
-    expect(continuousBranch, contains('scrollBy({left:'),
-        reason: 'vertical continuous mode must drive horizontal scrollBy so '
-            'the desktop wheel scrolls along the real (horizontal) axis');
+    // TODO-629 ②: 竖排投影从逐事件 scrollBy(behavior:'auto') 离散跳改为 rAF 缓动
+    // （累积 _vScrollTarget + requestAnimationFrame 每帧逼近 scrollLeft）。仍沿真实
+    // 横向书写轴滚动，只是消除颗粒感；这里钉住「竖排投影累积进 rAF 缓动目标」不变量。
+    expect(continuousBranch, contains('_vScrollTarget'),
+        reason: 'vertical continuous mode must accumulate the projected wheel '
+            'delta into the rAF easing target (not per-event scrollBy)');
+    expect(
+        continuousBranch, contains('requestAnimationFrame(_vScrollEaseStep)'),
+        reason: 'vertical continuous wheel must be driven by rAF easing so the '
+            'horizontal scroll along the writing axis is smooth, not discrete');
+    expect(continuousBranch, isNot(contains("behavior: 'auto'")),
+        reason:
+            'the old per-event discrete scrollBy(behavior: auto) projection '
+            'must be gone (TODO-629 ② 刷新率低/一格一格跳 根因)');
   });
 }
