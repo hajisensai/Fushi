@@ -11,6 +11,7 @@ export 'src/engine/hoshidicts.dart';
 // a relative path; only the safe HoshiDicts wrapper + Hoshi* data classes are public.
 export 'src/formats/dictionary_format.dart';
 export 'src/formats/dictionary_downloader.dart';
+export 'src/formats/dictionary_update_service.dart';
 export 'src/formats/yomichan_dictionary_format.dart';
 export 'src/formats/abbyy_lingvo_format.dart';
 export 'src/formats/migaku_dictionary_format.dart';
