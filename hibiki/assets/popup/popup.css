@@ -534,28 +534,36 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     padding: 0 8px;
 }
 
-/* Furigana inside dictionary glossary bodies (BUG-108). The compact
-   line-height (1.4) used for entries reserves no vertical room for a
-   <ruby>'s <rt> annotation, so the furigana overflows upward and overlaps
-   the kanji on the line above (e.g. 明鏡's related-word lists, where every
-   line carries ruby). Raising the line-height on the inline <ruby> grows
-   only the line boxes that actually contain ruby — plain non-ruby lines keep
-   the tight 1.4 spacing. The headword keeps its own .expression rt rule. */
-/* Horizontal compaction for glossary furigana (BUG-345 / TODO-620). popup.js's
-   postProcessRuby replaces each <ruby>'s base text node with a bare <span> so
-   the ruby text stays selectable (BUG-110/123/125/129), but that <span> is
-   still a ruby base box and Blink sizes every base box to max(base, rt). With
-   rt{font-size:0.5em} a >=3-kana reading is wider than its kanji, so each ruby
-   base is stretched to its own annotation width and 明鏡-style 逐字 ruby lines
-   go ragged. Taking the <rt> out of the inline flow (Yomitan structured-content
-   pattern) collapses every base box back to the kanji width while keeping the
-   furigana centred above it. The line-height:2 reserve (BUG-108) is what keeps
-   the absolutely positioned furigana clear of the line above, so both rules
-   must stay together. */
+/* Furigana inside dictionary glossary bodies. Two layout invariants live in
+   this rule pair and must stay together:
+     - Horizontal compaction (BUG-345 / TODO-620): popup.js's postProcessRuby
+       replaces each <ruby>'s base text node with a bare <span> so the ruby text
+       stays selectable (BUG-110/123/125/129), but that <span> is still a ruby
+       base box and Blink sizes every base box to max(base, rt). With
+       rt{font-size:0.5em} a >=3-kana reading is wider than its kanji, so each
+       ruby base would be stretched to its own annotation width and 明鏡-style
+       逐字 ruby lines go ragged. Keeping the <rt> out of the inline flow
+       (position:absolute) collapses every base box back to the kanji width
+       while centring the furigana above it.
+     - Vertical reserve, zoom-immune (BUG-108 + BUG-363 / TODO-643): the popup
+       scales its whole content with documentElement.style.zoom when the user
+       enlarges the dictionary font size or UI scale (dictionary_popup_webview
+       popupContentZoom). The old reserve borrowed the implicit line box's
+       half-leading via ruby{line-height:2} and anchored the <rt> with
+       bottom:100% — a percentage resolved against a per-fragment-rounded line
+       box that also depended on the PREVIOUS line's leading. Under zoom!=1 that
+       rounding (amplified by the zoom factor and real CJK line metrics) made the
+       furigana drift up and collide with the line above. The reserve is now
+       intrinsic to the ruby element and expressed purely in em: padding-top
+       reserves room for the <rt>, which anchors to the ruby's own top (top:0).
+       Reserve and annotation live on one element on one em chain, so they scale
+       together under any zoom and never depend on the neighbouring line. */
 :where(.glossary-group, .glossary-content) ruby {
-    line-height: 2;
     display: inline-block;
     position: relative;
+    line-height: 1;
+    padding-top: 0.55em;
+    vertical-align: baseline;
 }
 
 :where(.glossary-group, .glossary-content) rt {
@@ -563,7 +571,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 100%;
+    top: 0;
     text-align: center;
     white-space: nowrap;
     line-height: 1;

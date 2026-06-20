@@ -10,23 +10,21 @@ import 'package:flutter_test/flutter_test.dart';
 // ruby base box: Blink sizes every ruby base box to max(base, rt). With
 // rt{font-size:0.5em}, a reading of >=3 kana is wider than its 1em kanji, so
 // each ruby base is stretched to its own annotation width and the line goes
-// ragged. popup.css previously only constrained the vertical line-height
-// (BUG-108) — there was no horizontal rule.
+// ragged. The fix takes the <rt> out of the inline flow (position:absolute) so
+// it no longer widens the base box, while keeping the furigana centred above
+// the kanji.
 //
-// The fix (pure CSS, Yomitan structured-content pattern) takes the <rt> out of
-// the inline flow so it no longer widens the base box, while keeping the
-// furigana centred above the kanji:
-//   :where(.glossary-group, .glossary-content) ruby {
-//       display: inline-block; position: relative;
-//   }
-//   :where(.glossary-group, .glossary-content) rt {
-//       position: absolute; left:0; right:0; bottom:100%;
-//       text-align: center; white-space: nowrap; line-height: 1;
-//   }
+// BUG-363 / TODO-643 then made the vertical reserve zoom-immune: the old
+// reserve borrowed ruby{line-height:2} half-leading and anchored the <rt> with
+// bottom:100% (a percentage against a per-fragment-rounded, neighbour-dependent
+// line box), which drifted under the popup's content zoom. The reserve is now
+// an em-relative padding-top on the ruby element with the <rt> at top:0 — both
+// invariants live in the same rule pair and must stay together.
+//
 // Ruby geometry can't render headless in a WebView, so guard the CSS rules'
-// presence (the headless-Chromium repro proved spread 18.25px -> 0px). The
-// Windows popup inlines this same popup.css via _winCss, so one guard covers
-// all platforms.
+// presence (the headless-Chromium repro proved horizontal spread 18.25px -> 0px
+// and the zoom vertical overlap -22.5px -> 0.00px). The Windows popup inlines
+// this same popup.css via _winCss, so one guard covers all platforms.
 void main() {
   final String css = File('assets/popup/popup.css').readAsStringSync();
 
@@ -60,8 +58,8 @@ void main() {
   });
 
   test(
-      'glossary rt is taken out of the inline flow (absolute, above the base) '
-      'so it cannot widen the base box (BUG-345)', () {
+      'glossary rt is taken out of the inline flow (absolute, anchored to the '
+      'ruby top) so it cannot widen the base box (BUG-345 / BUG-363)', () {
     final RegExp rtRule = RegExp(
       r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*rt\s*\{([^}]*)\}',
     );
@@ -79,24 +77,29 @@ void main() {
           'flow and stops dictating the ruby base box width (BUG-345)',
     );
     expect(
-      RegExp(r'bottom\s*:\s*100%').hasMatch(body),
+      RegExp(r'top\s*:\s*0\b').hasMatch(body),
       isTrue,
-      reason: 'glossary <rt> must sit at bottom:100% (above its base), kept '
-          'clear of the previous line by the line-height:2 reserve (BUG-108)',
+      reason: 'glossary <rt> must anchor to the ruby top (top:0) inside the em '
+          'padding-top reserve, so its position scales cleanly with the popup '
+          'zoom instead of drifting (BUG-363)',
     );
   });
 
-  test('the BUG-108 vertical line-height reserve is preserved (no regression)',
-      () {
-    final RegExp rubyLineHeight = RegExp(
-      r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*ruby\s*\{[^}]*line-height\s*:\s*2',
+  test(
+      'the vertical furigana reserve is an em padding-top on the ruby, not the '
+      'old line-height:2 leading (BUG-108 reserve preserved, zoom-immune for '
+      'BUG-363)', () {
+    final RegExp rubyRule = RegExp(
+      r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*ruby\s*\{([^}]*)\}',
     );
+    final String body = rubyRule.firstMatch(css)!.group(1)!;
     expect(
-      rubyLineHeight.hasMatch(css),
+      RegExp(r'padding-top\s*:\s*[\d.]+em').hasMatch(body),
       isTrue,
-      reason: 'glossary <ruby> must keep line-height:2 — the absolutely '
-          'positioned furigana relies on that reserve to clear the line '
-          'above it (BUG-108 must not regress)',
+      reason: 'glossary <ruby> must reserve furigana room with an em-relative '
+          'padding-top — the absolutely positioned furigana relies on that '
+          'reserve to clear the line above, and the em unit keeps it correct '
+          'under any popup zoom (BUG-108 reserve + BUG-363 zoom-immunity)',
     );
   });
 }

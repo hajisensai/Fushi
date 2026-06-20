@@ -1,0 +1,18 @@
+## BUG-363 · 词典字号放大后释义振假名(ruby furigana)显示异常（飘高/与上行挤压）
+- **报告**：2026-06-21（用户：）／TODO-643
+- **真实性**：✅ 真 bug，根因 `hibiki/assets/popup/popup.css:555-570`（BUG-345/TODO-620 引入的释义体振假名 CSS）。词典字号 / 界面大小经 `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart:561` 注入 `documentElement.style.zoom`（系数见 `popupContentZoom` :183）整篇缩放。释义体 ruby 旧范式用 `ruby{line-height:2}` 的隐式行盒半行距(half-leading)作为振假名的纵向预留，`rt{position:absolute; bottom:100%; font-size:0.5em; line-height:1}` 把 `<rt>` 锚到 ruby 盒「顶」并向上溢出。该预留**寄生于行盒 leading、且依赖相邻行（上一行）的 leading 才不撞字**——`zoom≠1` 时 Blink 对每个行盒高度 / `bottom:100%` 的百分比按设备像素逐片舍入，累积误差被 zoom 倍率放大，加上真实 CJK 字体的行度量，振假名相对基字飘高、与上一行挤压。
+- **[x] ① 已修复** — 分支 `todo-643-popup-ruby-zoom`，提交见末尾。把释义体 ruby 的纵向预留从「寄生行盒 leading」改为「ruby 元素自身、纯 em 相对量、对全局 zoom 免疫」：
+  - `ruby{display:inline-block; position:relative; line-height:1; padding-top:0.55em; vertical-align:baseline}`：用 `padding-top:0.55em`（相对 ruby 自身 1em 字号）在 ruby 元素**内部**显式预留振假名空间，`line-height:1` 不再借行盒 leading。
+  - `rt{position:absolute; left:0; right:0; top:0; font-size:0.5em; text-align:center; white-space:nowrap; line-height:1}`：`<rt>` 改锚 `top:0`（ruby 自身顶，落在 padding-top 预留区里），不再 `bottom:100%`（百分比解析相邻舍入后的行盒高）。
+  - 预留量与 `<rt>` 都在**同一元素、同一 em 链**上，zoom 时一起整比缩放、不再依赖上一行 leading，故 zoom={1,1.5,3} 振假名相对基字几何稳定。
+  - **不动 `postProcessRuby`**（保住 BUG-110/123/125/129 划词选区不变量）；**保留 `position:absolute` 让 rt 脱离行内流不撑基字盒**（BUG-345 横向紧凑不回退）；竖排 ruby（BUG-110/123/125）由 `reader_pagination_scripts` 那套 `::highlight`/class 范式控制，与本词典弹窗释义体 CSS 互不相干，未触碰。Windows 端 `_winCss` 读同一份 popup.css 内联（dictionary_popup_webview.dart:672），一处覆盖全平台。
+- **[x] ② 已加自动化测试** — 更新两个既有 CSS 扫描守卫并未放松断言：
+  - `hibiki/test/pages/popup_glossary_ruby_lineheight_guard_test.dart`：断言改为「ruby 含 `padding-top:<em>` 的纵向预留 + `line-height:1`，rt 含 `top:0`」，把 BUG-108 的纵向预留契约从 `line-height:2` 迁到新的 zoom 免疫范式。
+  - `hibiki/test/pages/popup_glossary_ruby_hspacing_guard_test.dart`：保留 `display:inline-block`+`position:relative`+`rt{position:absolute}`（BUG-345 横向紧凑不回退）；纵向预留断言同步迁到 `padding-top`(em)+`top:0`，删除已不适用的 `bottom:100%`/`line-height:2` 断言。
+- **备注**：
+  - **无头复现（与 WebView2 同 Blink 引擎的无头 Chromium，CDP 测 getBoundingClientRect）**：内联真实范式，喂明鏡式逐字 ruby。
+    - 旧范式（current）：`rtTop - 上一行bottom = -7.5px(z1) / -11.25px(z1.5) / -22.5px(z3)`——**恒为负=振假名压在上一行上**，且绝对溢出量随 zoom 增大（z3 时 -22.5px 肉眼明显撞字）。
+    - 新范式（fixed）：`rtTop - 上一行bottom = 0.00px`（z1/z1.5/z3 全部），振假名正好落在预留区上沿、与上行零重叠；`baseW` 仍随读音收敛（横向紧凑保住）、`rtCx-baseCx=0`（居中）、`baseBottom` 与相邻纯字基线对齐(0.00)。
+    - 候选对比：`display:ruby`（native）rt 高度失控(0.5em→32px@z3)且仍 -6px 重叠，且会改 ruby base 选区语义有回退 BUG-110 风险，已弃。
+  - **无头局限**：无头 Chromium 缺 Hiragino CJK 字体，用 sans-serif 复现，纯 sans-serif 下 zoom 本身是整比缩放（旧范式也按比例），真正放大错位的是 CJK 行度量 + zoom 逐片舍入的叠加。新范式把预留收敛进单元素 em 链消除了对行盒/相邻行的依赖，从结构上免疫；**仍需真机用真实日文字体 + WebView2(Win)/系统 WebView 在词典字号调到大档（如 24/32px，zoom 1.5/2/3）下复测明鏡逐字 ruby 释义，确认振假名不飘高、不压上行、不裁切、横排仍整齐、ruby 文字仍可划词查词。**
+  - 采番：本支 bug.dart 取 362，但 362 已被并发 worktree `todo-642-video-topbar` 占用（BUG-362-video-topbar-title-buttons），故手动改 363（遍历所有分支并集取下一空号）。
