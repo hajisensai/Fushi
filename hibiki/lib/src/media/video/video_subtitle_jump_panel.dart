@@ -372,7 +372,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   }
 
   List<int> _visibleCueIndexes(List<AudioCue> cues) {
-    if (identical(_cachedCues, cues) &&
+    // 收藏档（[VideoSubtitleListFilter.favorites]）的成员集由 *实时* [isCueFavorited]
+    // 谓词决定，而该谓词可在 panel widget 身份不变（如页面层用稳定的 `_isCueFavorited`
+    // 方法 tear-off）的情况下变化——收藏 toggle 不触发 [didUpdateWidget] 的兜底
+    // `_clearCueCaches()`。若把收藏档也按 `(cues 身份, 长度, filter)` 缓存，收藏状态变
+    // 后这三者都没变 → 命中陈旧成员集 → 列表延迟（计数 chip 走未缓存的
+    // [_favoriteCueCount] 即时更新，列表却落后，TODO-632/BUG-359）。故收藏档**不缓存**：
+    // 每次重算（收藏档条目通常不多，成本可接受）。`all` / `selected` 仍按结构键缓存
+    // （`all` 纯结构；`selected` 经 onToggleCueSelection→页面 setState 触发 didUpdateWidget
+    // 清缓存，保留其缓存性能）。
+    final bool cacheable = _filter != VideoSubtitleListFilter.favorites;
+    if (cacheable &&
+        identical(_cachedCues, cues) &&
         _cachedCuesLength == cues.length &&
         _cachedFilter == _filter) {
       return _cachedVisibleIndexes;
@@ -396,6 +407,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ];
         break;
     }
+    // [_visibleIndexForRawIndex] 非 all 档读 [_cachedVisibleIndexByRawIndex]，故收藏档
+    // 即便不走 visibleIndexes 缓存，也必须每次同步刷新该 raw→visible 映射（用本次重算
+    // 的 indexes）；否则收藏档自动滚动定位会按陈旧映射。`_cachedCues` / `_cachedFilter`
+    // 仍记为收藏档，使任何后续非收藏档命中前都因 filter 不等而重算。
     _cachedCues = cues;
     _cachedCuesLength = cues.length;
     _cachedFilter = _filter;

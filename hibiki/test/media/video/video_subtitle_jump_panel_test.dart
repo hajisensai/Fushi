@@ -1228,6 +1228,77 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(t.video_favorite_count(count: 2)), findsNothing);
     });
+
+    // ── TODO-632/BUG-359：收藏档列表可见性随收藏状态即时失效 ──────────────────
+    // 复现：收藏集藏在一个稳定闭包谓词背后（页面层 `isCueFavorited: _isCueFavorited`
+    // 是同一个 State 方法 tear-off，跨页面重建身份不变），收藏 toggle 不改变 panel
+    // widget 身份、不触发 `didUpdateWidget` 的兜底 `_clearCueCaches()`。随后任一 panel
+    // 内部 `setState`（播放推进的控制器 tick）触发 `build`：计数 chip 走未缓存的
+    // `_favoriteCueCount`（实时谓词）即时更新，但列表走 `_visibleCueIndexes()` 命中
+    // 旧缓存（键只含 cues 身份 / 长度 / filter，不含收藏状态）→ 列表挂着陈旧成员集。
+    testWidgets(
+        'TODO-632/BUG-359: favorites list reflects favorite-set changes that '
+        'happen behind a stable predicate (count immediate, list must match)',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta line'),
+        _cue(2, 4000, 5200, 'gamma line'),
+      ]);
+      // 可变收藏集 + 稳定谓词闭包（模拟页面 _isCueFavorited 读 _favoritedVideoSentences）。
+      final Set<int> favorited = <int>{};
+      bool isFav(AudioCue cue) => favorited.contains(cue.startMs);
+
+      await tester.pumpWidget(_wrap(SizedBox(
+        width: 520,
+        height: 600,
+        child: VideoSubtitleJumpPanel(
+          controller: controller,
+          onTapCue: (_) {},
+          onClose: () {},
+          onCopyCue: (_) {},
+          onFavoriteCue: (_) async {},
+          isCueFavorited: isFav,
+          colorScheme: const ColorScheme.dark(),
+          title: 'Subtitle list',
+          emptyHint: 'empty',
+          width: 520,
+        ),
+      )));
+
+      // 切到收藏档（此刻空）→ 把空收藏集成员缓存进 _visibleCueIndexes。
+      await tester.tap(find.text(t.video_subtitle_filter_favorites));
+      await tester.pumpAndSettle();
+      expect(find.text('beta line'), findsNothing);
+      expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
+
+      // 收藏 beta（谓词背后变，widget 身份不变 → 不触发 didUpdateWidget 清缓存），
+      // 再用控制器 tick 驱动一次 panel 内部 setState 触发 build。
+      favorited.add(2000);
+      controller.debugUpdateCueForPosition(2500);
+      await tester.pump();
+
+      // 计数 chip 即时更新为 1（实时谓词，未缓存）。
+      expect(find.text(t.video_favorite_count(count: 1)), findsOneWidget,
+          reason: 'count chip reflects the new favorite immediately');
+      // 列表也必须即时含 beta（撤修复 → 命中陈旧缓存返回空成员集 → beta 不出现 → 红）。
+      expect(find.text('beta line'), findsOneWidget,
+          reason: 'favorites list visibility must invalidate with the favorite '
+              'set, not hold a stale cache snapshot taken before the toggle');
+      expect(find.text('alpha line'), findsNothing);
+
+      // 取消收藏 beta（同样谓词背后变）+ 一次「换当前句」的 tick（位置落到 cue0，
+      // currentCueIndex 真变 → 触发 panel 内部 setState 重建）→ 列表即时移除、计数回 0。
+      favorited.remove(2000);
+      controller.debugUpdateCueForPosition(500);
+      await tester.pump();
+      expect(find.text('beta line'), findsNothing,
+          reason: 'un-favoriting must drop the row immediately, not keep a '
+              'stale cached member');
+      expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
+    });
   });
 
   // Source guard: inline tooltips wire to existing i18n keys; copy toast reuses
