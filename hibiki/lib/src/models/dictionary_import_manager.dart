@@ -181,8 +181,8 @@ class DictionaryImportManager {
         final name = _sanitizeTitle(result.title);
         progressNotifier.value = t.import_name(name: name);
 
-        final _UpdateDecision decision = _decideUpdate(name);
-        if (decision == _UpdateDecision.alreadyUpToDate) {
+        final UpdateDecision decision = _decideUpdate(name, force: false);
+        if (decision == UpdateDecision.alreadyUpToDate) {
           progressNotifier.value = t.import_duplicate(name: name);
           await Future.delayed(const Duration(seconds: 2));
           if (tempOutputDir.existsSync()) {
@@ -193,8 +193,11 @@ class DictionaryImportManager {
 
         final int order;
         Dictionary? preservedSettings;
-        if (decision == _UpdateDecision.replaceOldVersion) {
-          final Dictionary existing = _dictRepo.findUpdatable(name)!;
+        if (decision == UpdateDecision.replaceOldVersion ||
+            decision == UpdateDecision.replaceExact) {
+          final Dictionary existing = decision == UpdateDecision.replaceExact
+              ? _dictRepo.dictionaries.firstWhere((Dictionary d) => d.name == name)
+              : _dictRepo.findUpdatable(name)!;
           order = existing.order;
           preservedSettings = existing;
           final oldDir =
@@ -225,11 +228,11 @@ class DictionaryImportManager {
           name: name,
           formatKey: 'yomichan',
           type: detectedType,
-          // TODO-622: a mixed dictionary classifies as term (word lookup is
-          // primary) but still carries kanji records. Record that so the bucket
-          // router also registers it as a kanji dict (add_term + add_kanji).
-          metadata:
-              result.kanjiCount > 0 ? const {'hasKanji': 'true'} : const {},
+          // TODO-609 来源 metadata + TODO-622 混合词典也进 kanji 桶(add_term+add_kanji)。
+          metadata: <String, String>{
+            ...readSourceMetadataFromIndex(finalDir),
+            if (result.kanjiCount > 0) 'hasKanji': 'true',
+          },
           hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
           collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
         ));
@@ -259,6 +262,13 @@ class DictionaryImportManager {
     List<File> cssFiles = const [],
     List<Directory> fontDirs = const [],
     VoidCallback? onMemoryError,
+    // TODO-609：强制重导（在线更新走这条）。true 时完全同名走 replaceExact 而非
+    // alreadyUpToDate 跳过；默认 false，普通拖入/导入同名仍跳过（现有语义不破）。
+    bool forceReplaceExisting = false,
+    // TODO-609：在线下载来源回填（catalog 的 url 当 downloadUrl/indexUrl）。导入后
+    // 与 readSourceMetadataFromIndex 合并落进 Dictionary.metadata；index.json 的
+    // 真值优先覆盖，缺失字段由本 override 补上。默认 null（本地导入不带来源）。
+    Map<String, String>? sourceOverride,
   }) async {
     _dictRepo.clearDictionaryResultsCache();
 
@@ -292,8 +302,9 @@ class DictionaryImportManager {
       final name = _sanitizeTitle(result.title);
       progressNotifier.value = t.import_name(name: name);
 
-      final _UpdateDecision decision = _decideUpdate(name);
-      if (decision == _UpdateDecision.alreadyUpToDate) {
+      final UpdateDecision decision =
+          _decideUpdate(name, force: forceReplaceExisting);
+      if (decision == UpdateDecision.alreadyUpToDate) {
         progressNotifier.value = t.import_duplicate(name: name);
         await Future.delayed(const Duration(seconds: 2));
         if (tempOutputDir.existsSync()) {
@@ -304,8 +315,11 @@ class DictionaryImportManager {
 
       final int order;
       Dictionary? preservedSettings;
-      if (decision == _UpdateDecision.replaceOldVersion) {
-        final Dictionary existing = _dictRepo.findUpdatable(name)!;
+      if (decision == UpdateDecision.replaceOldVersion ||
+          decision == UpdateDecision.replaceExact) {
+        final Dictionary existing = decision == UpdateDecision.replaceExact
+            ? _dictRepo.dictionaries.firstWhere((Dictionary d) => d.name == name)
+            : _dictRepo.findUpdatable(name)!;
         order = existing.order;
         preservedSettings = existing;
         final oldDir =
@@ -343,15 +357,22 @@ class DictionaryImportManager {
       }
 
       final detectedType = _parseType(result.detectedType);
+      // TODO-609：来源 = catalog 回填（sourceOverride，提供 indexUrl/downloadUrl）
+      // 叠加 index.json 真值（revision/isUpdatable 优先以本地导入的为准）。
+      final Map<String, String> metadata = <String, String>{
+        ...?sourceOverride,
+        ...readSourceMetadataFromIndex(finalDir),
+      };
       _dictRepo.persistDictionary(Dictionary(
         order: order,
         name: name,
         formatKey: 'yomichan',
         type: detectedType,
-        // TODO-622: a mixed dictionary classifies as term (word lookup is
-        // primary) but still carries kanji records. Record that so the bucket
-        // router also registers it as a kanji dict (add_term + add_kanji).
-        metadata: result.kanjiCount > 0 ? const {'hasKanji': 'true'} : const {},
+        // TODO-622: 混合词典也进 kanji 桶(叠加 609 的来源 metadata)。
+        metadata: <String, String>{
+          ...metadata,
+          if (result.kanjiCount > 0) 'hasKanji': 'true',
+        },
         hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
         collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
       ));
@@ -547,14 +568,33 @@ class DictionaryImportManager {
     return DictPublishMethod.renamed; // 不可达：循环内必返回或抛出
   }
 
-  _UpdateDecision _decideUpdate(String newName) {
-    if (_dictRepo.hasDictionaryNamed(newName)) {
-      return _UpdateDecision.alreadyUpToDate;
+  UpdateDecision _decideUpdate(String newName, {required bool force}) {
+    return decideUpdate(
+      hasExactName: _dictRepo.hasDictionaryNamed(newName),
+      hasUpdatableVersion: _dictRepo.findUpdatable(newName) != null,
+      force: force,
+    );
+  }
+
+  /// [_decideUpdate] 的纯逻辑核心（依赖全部入参注入，便于测试）。
+  ///
+  /// 完全同名优先：命中则按 [force] 区分 [UpdateDecision.replaceExact]（强制更新
+  /// 重导）/ [UpdateDecision.alreadyUpToDate]（普通导入跳过，TODO-609 前的现有语义）。
+  /// 否则若存在同 base 名的不同日期版本 → [UpdateDecision.replaceOldVersion]（与
+  /// [force] 无关，旧行为）。都不命中 → [UpdateDecision.newDictionary]。
+  @visibleForTesting
+  static UpdateDecision decideUpdate({
+    required bool hasExactName,
+    required bool hasUpdatableVersion,
+    required bool force,
+  }) {
+    if (hasExactName) {
+      return force
+          ? UpdateDecision.replaceExact
+          : UpdateDecision.alreadyUpToDate;
     }
-    if (_dictRepo.findUpdatable(newName) != null) {
-      return _UpdateDecision.replaceOldVersion;
-    }
-    return _UpdateDecision.newDictionary;
+    if (hasUpdatableVersion) return UpdateDecision.replaceOldVersion;
+    return UpdateDecision.newDictionary;
   }
 
   static bool _isMemoryError(Object e) {
@@ -573,7 +613,17 @@ class DictionaryImportManager {
   }
 }
 
-enum _UpdateDecision { newDictionary, alreadyUpToDate, replaceOldVersion }
+/// TODO-609：导入时对「同名/同 base 名词典已存在」的决策。
+/// - [newDictionary]：全新词典，正常追加。
+/// - [alreadyUpToDate]：完全同名且非强制 → 跳过（普通拖入同名的现有语义，不破）。
+/// - [replaceExact]：完全同名且强制更新 → 走 replaceOldVersion 链路重导带新 revision。
+/// - [replaceOldVersion]：不同日期版本（base 名同、全名不同）→ 删旧版重导。
+enum UpdateDecision {
+  newDictionary,
+  alreadyUpToDate,
+  replaceExact,
+  replaceOldVersion,
+}
 
 /// 单本词典导入失败时抛出的类型化异常，携带「是否内存不足」标志。
 ///

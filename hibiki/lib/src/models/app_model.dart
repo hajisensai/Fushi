@@ -2080,6 +2080,10 @@ class AppModel with ChangeNotifier {
     List<File> cssFiles = const [],
     List<Directory> fontDirs = const [],
     VoidCallback? onMemoryError,
+    // TODO-609：在线更新走 force=true（同名直接重导）+ sourceOverride（catalog 的
+    // 下载/index URL 回填来源）。默认 null/false，本地导入向后兼容、行为不变。
+    bool forceReplaceExisting = false,
+    Map<String, String>? sourceOverride,
   }) =>
       _dictImportManager.importFromFile(
         file: file,
@@ -2089,6 +2093,8 @@ class AppModel with ChangeNotifier {
         cssFiles: cssFiles,
         fontDirs: fontDirs,
         onMemoryError: onMemoryError,
+        forceReplaceExisting: forceReplaceExisting,
+        sourceOverride: sourceOverride,
       );
 
   void toggleDictionaryCollapsed(Dictionary dictionary) => dictRepo
