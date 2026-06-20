@@ -1117,6 +1117,154 @@ void main() {
       expect(find.byIcon(Icons.star_border), findsOneWidget,
           reason: 'non-favorited row keeps a hollow star');
     });
+
+    // ── TODO-613：自动滚动初始值来自外部 + 切换回调 ───────────────────────
+    testWidgets(
+        'TODO-613: initialAutoScroll:false renders the paused icon on first '
+        'frame (no async)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        // 外部持久值为「关」→ 面板首帧就是暂停态图标（不再每次硬重置成开）。
+        initialAutoScroll: false,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget,
+          reason:
+              'initialAutoScroll:false must start in the off (paused) state');
+      expect(find.byIcon(Icons.vertical_align_center), findsNothing);
+    });
+
+    testWidgets(
+        'TODO-613: toggling auto-scroll fires onAutoScrollChanged with the new '
+        'value', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      final List<bool> changes = <bool>[];
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialAutoScroll: true,
+        onAutoScrollChanged: changes.add,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      // Starts on → tap turns it off and reports false.
+      await tester.tap(find.byIcon(Icons.vertical_align_center));
+      await tester.pump();
+      expect(changes, <bool>[false],
+          reason: 'turning auto-scroll off must report false to persist');
+
+      // Tap again → on, reports true.
+      await tester.tap(find.byIcon(Icons.pause_circle_outline));
+      await tester.pump();
+      expect(changes, <bool>[false, true]);
+    });
+
+    // ── TODO-611：列表锁定按钮 + 回调 ─────────────────────────────────────
+    testWidgets(
+        'TODO-611: onToggleLock present renders a lock icon; locked:true shows '
+        'the filled lock', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+
+      VideoSubtitleJumpPanel panel({required bool locked}) =>
+          VideoSubtitleJumpPanel(
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (_) {},
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            onClose: () {},
+            locked: locked,
+            onToggleLock: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          );
+
+      // Unlocked → open-lock icon.
+      await tester.pumpWidget(_wrap(panel(locked: false)));
+      expect(find.byIcon(Icons.lock_open), findsOneWidget);
+      expect(find.byIcon(Icons.lock), findsNothing);
+
+      // Locked → closed-lock icon.
+      await tester.pumpWidget(_wrap(panel(locked: true)));
+      expect(find.byIcon(Icons.lock), findsOneWidget);
+      expect(find.byIcon(Icons.lock_open), findsNothing);
+    });
+
+    testWidgets(
+        'TODO-611: no lock button when onToggleLock is null (backward '
+        'compatible)', (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        // onToggleLock omitted (null) → no lock affordance.
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      expect(find.byIcon(Icons.lock), findsNothing);
+      expect(find.byIcon(Icons.lock_open), findsNothing);
+    });
+
+    testWidgets('TODO-611: tapping the lock icon fires onToggleLock',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      int toggles = 0;
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        locked: false,
+        onToggleLock: () => toggles++,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      await tester.tap(find.byIcon(Icons.lock_open));
+      await tester.pump();
+      expect(toggles, 1,
+          reason: 'tapping the lock toggle must notify the page to flip the '
+              'lock state (TODO-611)');
+    });
   });
 
   // Source guard: inline tooltips wire to existing i18n keys; copy toast reuses
@@ -1126,6 +1274,8 @@ void main() {
     expect(t.video_subtitle_list_font_smaller, isNotEmpty);
     expect(t.video_subtitle_list_font_larger, isNotEmpty);
     expect(t.video_subtitle_list_auto_scroll, isNotEmpty);
+    expect(t.video_subtitle_list_lock, isNotEmpty);
+    expect(t.video_subtitle_list_unlock, isNotEmpty);
     expect(t.copy, isNotEmpty);
     expect(t.collection_sentence, isNotEmpty);
   });

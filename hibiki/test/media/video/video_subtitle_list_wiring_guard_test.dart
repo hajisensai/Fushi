@@ -103,4 +103,104 @@ void main() {
       );
     });
   });
+
+  group('TODO-611 subtitle-list / favorite-panel lock wiring', () {
+    test('two independent lock notifiers exist and are disposed', () {
+      expect(
+        src.contains(
+          'final ValueNotifier<bool> _subtitleListLocked = '
+          'ValueNotifier<bool>(false);',
+        ),
+        isTrue,
+        reason: 'subtitle-list lock state notifier must exist (TODO-611)',
+      );
+      expect(
+        src.contains(
+          'final ValueNotifier<bool> _sidePanelLocked = '
+          'ValueNotifier<bool>(false);',
+        ),
+        isTrue,
+        reason: 'side-panel (favorite list) lock state notifier must exist',
+      );
+      expect(src.contains('_subtitleListLocked.dispose();'), isTrue);
+      expect(src.contains('_sidePanelLocked.dispose();'), isTrue);
+    });
+
+    test('subtitle-list tap-outside barrier is gated by the list lock', () {
+      // The push-aside barrier onTap must become a no-op when locked, so the
+      // list cannot be closed by tapping the video / outside (revert -> the
+      // barrier always closes -> red).
+      expect(
+        RegExp(r'onTap:\s*locked\s*\?\s*null\s*:').hasMatch(src),
+        isTrue,
+        reason:
+            'subtitle-list close barrier must no-op while locked (TODO-611)',
+      );
+    });
+
+    test('side-panel tap-outside barrier is gated by the favorite-list lock',
+        () {
+      // The overlay barrier onTap must no-op when the favorite list is locked.
+      expect(
+        src.contains(
+          'onTap: (lockable && locked) ? null : _hideVideoSidePanel,',
+        ),
+        isTrue,
+        reason:
+            'favorite-list close barrier must no-op while locked (TODO-611)',
+      );
+    });
+
+    test('only the favoriteSentences side panel is lockable', () {
+      expect(
+        src.contains(
+          'panelState.kind == _VideoSidePanelKind.favoriteSentences',
+        ),
+        isTrue,
+        reason:
+            'lock toggle must only show for the favorite-sentences list panel',
+      );
+    });
+
+    test('jump panel receives locked + onToggleLock from the page', () {
+      expect(
+        RegExp(r'VideoSubtitleJumpPanel\([\s\S]*?locked: locked,'
+                r'[\s\S]*?onToggleLock: \(\) =>\s*'
+                r'_subtitleListLocked\.value\s*=\s*'
+                r'!_subtitleListLocked\.value')
+            .hasMatch(src),
+        isTrue,
+        reason: 'jump panel must be wired to the subtitle-list lock (TODO-611)',
+      );
+    });
+
+    test('lock state is reset (not persisted) when the list / panel hides', () {
+      expect(src.contains('_resetSubtitleListLockWhenHidden'), isTrue);
+      expect(src.contains('_resetSidePanelLockWhenHidden'), isTrue);
+    });
+  });
+
+  group('TODO-613 subtitle-list auto-scroll persistence wiring', () {
+    test('jump panel reads the persisted auto-scroll value on open', () {
+      expect(
+        src.contains(
+          'initialAutoScroll: appModel.videoSubtitleListAutoScroll,',
+        ),
+        isTrue,
+        reason: 'auto-scroll initial state must come from Drift preferences '
+            '(TODO-613)',
+      );
+    });
+
+    test('toggling auto-scroll persists through appModel setter', () {
+      expect(
+        RegExp(r'onAutoScrollChanged:\s*\(bool value\) => unawaited\(\s*'
+                r'appModel\.setVideoSubtitleListAutoScroll\(value\)')
+            .hasMatch(src),
+        isTrue,
+        reason: 'auto-scroll toggle must be persisted via the appModel setter '
+            '(TODO-613)',
+      );
+    });
+  });
 }

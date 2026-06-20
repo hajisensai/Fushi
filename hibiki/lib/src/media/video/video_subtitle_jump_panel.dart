@@ -47,6 +47,10 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.isCueSelectedForCard,
     this.onToggleCueSelection,
     this.onClearCueSelection,
+    this.initialAutoScroll = true,
+    this.onAutoScrollChanged,
+    this.locked = false,
+    this.onToggleLock,
     this.fontSize = 14,
     this.width = 320,
   });
@@ -72,6 +76,23 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final bool Function(AudioCue cue)? isCueSelectedForCard;
   final void Function(AudioCue cue)? onToggleCueSelection;
   final VoidCallback? onClearCueSelection;
+
+  /// 自动滚动到当前播放句的初始开关（TODO-613）。面板内 [_autoScroll] 以此为初值，
+  /// 用户切换时回调 [onAutoScrollChanged] 通知页面层落盘（默认 true，向后兼容）。
+  final bool initialAutoScroll;
+
+  /// 用户在面板头部切换「自动滚动」时回调（TODO-613）。null 时仍可切换（纯本地），
+  /// 但不通知外部持久化（部分调用方 / 测试不接落盘）。
+  final ValueChanged<bool>? onAutoScrollChanged;
+
+  /// 列表锁定状态（TODO-611）。锁定时页面层的「点列表外关闭」barrier 被门控成 no-op，
+  /// 列表不会被点外部关闭（仅 Esc / 控制条字幕按钮可关）。
+  final bool locked;
+
+  /// 用户在面板头部点锁定图标时回调（TODO-611）。null 时不渲染锁定按钮（部分调用方
+  /// 不需要锁定能力，向后兼容）。
+  final VoidCallback? onToggleLock;
+
   final double fontSize;
   final double width;
 
@@ -87,7 +108,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   bool _lastSubtitleCuesLoading = false;
   int? _scrollTargetRawIndex;
   int _hoveredIndex = -1;
-  bool _autoScroll = true;
+  late bool _autoScroll = widget.initialAutoScroll;
   bool _scrollPostFrameScheduled = false;
   int _fontScaleIndex = 1;
   VideoSubtitleListFilter _filter = VideoSubtitleListFilter.all;
@@ -296,6 +317,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _autoScroll = !_autoScroll;
       if (_autoScroll) _lastScrolledIndex = -1;
     });
+    // TODO-613：通知页面层把新开关落 Drift preferences（null 时纯本地切换）。
+    widget.onAutoScrollChanged?.call(_autoScroll);
     if (_autoScroll) {
       _scheduleScrollToCurrentCue();
     }
@@ -556,6 +579,22 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 onPressed: _toggleAutoScroll,
                 visualDensity: VisualDensity.compact,
               ),
+              // TODO-611：列表锁定开关。锁定后页面层的「点列表外关闭」barrier 被门控成
+              // no-op（列表不会被点外部关闭，仅 Esc / 字幕按钮可关）。onToggleLock 为
+              // null 时不渲染（部分调用方不需要锁定能力）。
+              if (widget.onToggleLock != null)
+                IconButton(
+                  tooltip: widget.locked
+                      ? t.video_subtitle_list_unlock
+                      : t.video_subtitle_list_lock,
+                  icon: Icon(
+                    widget.locked ? Icons.lock : Icons.lock_open,
+                    size: iconSize,
+                  ),
+                  color: widget.locked ? cs.primary : cs.onSurfaceVariant,
+                  onPressed: widget.onToggleLock,
+                  visualDensity: VisualDensity.compact,
+                ),
               // BUG-254：去掉右上角 X 关闭按钮，改为点击面板外的空白区域关闭（由页面层
               // 全屏透明 barrier 承载）。关闭时的 onClearCueSelection 由页面层
               // [_hideVideoSidePanel] 统一清理（字幕列表关闭即清挖词选择），故移除按钮不丢

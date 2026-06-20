@@ -454,6 +454,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频字幕列表「自动滚动到当前播放句」开关（TODO-613）：默认开启，与
+  /// [VideoSubtitleJumpPanel] 头部自动滚动按钮一一对应。旧版本这是面板的纯内存状态、
+  /// 每次打开都重置成开；现在落 Drift `preferences`，用户关掉后跨开关 / 跨重启都记住。
+  /// getPref 仅在该 key 从未写过时返回默认 true，已切过开关的用户保留其存值。
+  bool get videoSubtitleListAutoScroll =>
+      getPref('video_subtitle_list_auto_scroll', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleListAutoScroll(bool value) async {
+    await setPref('video_subtitle_list_auto_scroll', value);
+    notifyListeners();
+  }
+
   /// 视频弹幕 overlay 开关：默认开启，只在有本地/在线弹幕源时显示。
   bool get videoDanmakuEnabled =>
       getPref('video_danmaku_enabled', defaultValue: true) as bool;

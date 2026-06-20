@@ -1736,5 +1736,7 @@
   "video_control_reset_layout": "Reset player button layout",
   "video_control_reset_layout_hint": "Restore moved and removed buttons to the default player layout.",
   "floating_lyric_bg_opacity": "Floating subtitle background opacity",
-  "floating_lyric_bg_opacity_hint": "Lower this to make the floating subtitle bar more transparent so it blocks less of your view"
+  "floating_lyric_bg_opacity_hint": "Lower this to make the floating subtitle bar more transparent so it blocks less of your view",
+  "video_subtitle_list_lock": "Lock list",
+  "video_subtitle_list_unlock": "Unlock list"
 }

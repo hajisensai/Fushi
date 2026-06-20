@@ -347,4 +347,80 @@ void main() {
       contains('episode'),
     );
   });
+
+  // ── TODO-611：侧栏面板锁定按钮（仅收藏列表传 onToggleLock）─────────────
+  testWidgets(
+      'VideoTranslucentSidePanel shows no lock button when onToggleLock is null '
+      '(non-lockable panels, TODO-611)', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: <Widget>[
+            const ColoredBox(color: Colors.green),
+            VideoTranslucentSidePanel(
+              title: 'Speed',
+              onClose: () {},
+              child: const Text('1.5x'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.lock), findsNothing);
+    expect(find.byIcon(Icons.lock_open), findsNothing);
+  });
+
+  testWidgets(
+      'VideoTranslucentSidePanel renders a lock toggle when onToggleLock is set '
+      'and reflects locked state (TODO-611)', (WidgetTester tester) async {
+    Widget panel({required bool locked}) => MaterialApp(
+          home: Stack(
+            children: <Widget>[
+              const ColoredBox(color: Colors.green),
+              VideoTranslucentSidePanel(
+                title: 'Favorites',
+                onClose: () {},
+                locked: locked,
+                onToggleLock: () {},
+                child: const Text('body'),
+              ),
+            ],
+          ),
+        );
+
+    await tester.pumpWidget(panel(locked: false));
+    expect(find.byIcon(Icons.lock_open), findsOneWidget);
+    expect(find.byIcon(Icons.lock), findsNothing);
+
+    await tester.pumpWidget(panel(locked: true));
+    expect(find.byIcon(Icons.lock), findsOneWidget);
+    expect(find.byIcon(Icons.lock_open), findsNothing);
+  });
+
+  testWidgets(
+      'VideoTranslucentSidePanel lock toggle fires onToggleLock (TODO-611)',
+      (WidgetTester tester) async {
+    int toggles = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: <Widget>[
+            const ColoredBox(color: Colors.green),
+            VideoTranslucentSidePanel(
+              title: 'Favorites',
+              onClose: () {},
+              locked: false,
+              onToggleLock: () => toggles++,
+              child: const Text('body'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.lock_open));
+    await tester.pump();
+    expect(toggles, 1);
+  });
 }

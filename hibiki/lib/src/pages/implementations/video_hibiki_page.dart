@@ -557,6 +557,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
   final ValueNotifier<_VideoSidePanelState?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelState?>(null);
+
+  /// 字幕列表锁定状态（TODO-611）。锁定后「点列表外关闭」barrier no-op，列表不会被
+  /// 点画面 / 外部关闭（仅 Esc / 控制条字幕按钮可关）。不持久化（关列表即复位为 false）。
+  final ValueNotifier<bool> _subtitleListLocked = ValueNotifier<bool>(false);
+
+  /// 收藏句子等侧栏面板的锁定状态（TODO-611）。锁定后侧栏「点面板外关闭」barrier
+  /// no-op（仅 favoriteSentences 这类列表面板显示锁定按钮）。不持久化（关面板即复位）。
+  final ValueNotifier<bool> _sidePanelLocked = ValueNotifier<bool>(false);
   final ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover =
       ValueNotifier<_VideoControlPopoverKind?>(null);
   final Map<String, LayerLink> _controlPopoverItemLinks = <String, LayerLink>{};
@@ -1034,6 +1042,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlPopover.addListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
+    // TODO-611：锁定不持久化。列表 / 侧栏面板一关闭（任意路径：Esc / 字幕按钮 / 互斥
+    // 开浮层）就把对应锁复位为 false，下次重开默认未锁——锁生命周期绑定可见性，关闭
+    // 路径无需逐个复位。
+    _subtitleListVisible.addListener(_resetSubtitleListLockWhenHidden);
+    _videoSidePanel.addListener(_resetSidePanelLockWhenHidden);
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
@@ -2153,6 +2166,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.dispose();
     _videoSidePanel.dispose();
+    _subtitleListLocked.dispose();
+    _sidePanelLocked.dispose();
     _controlPopoverHideTimer?.cancel();
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
@@ -6188,6 +6203,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _refocusVideo();
   }
 
+  /// TODO-611：字幕列表隐藏时复位列表锁（锁不持久化、关掉就忘）。
+  void _resetSubtitleListLockWhenHidden() {
+    if (!_subtitleListVisible.value && _subtitleListLocked.value) {
+      _subtitleListLocked.value = false;
+    }
+  }
+
+  /// TODO-611：侧栏面板关闭时复位面板锁（锁不持久化、关掉就忘）。
+  void _resetSidePanelLockWhenHidden() {
+    if (_videoSidePanel.value == null && _sidePanelLocked.value) {
+      _sidePanelLocked.value = false;
+    }
+  }
+
   void _hideVideoSidePanel() {
     _videoSidePanel.value = null;
     // BUG-253：面板关闭后唤回一次控制条（poke 在 [_videoSidePanel] 复位为 null 之后才
@@ -6257,25 +6286,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           __,
         ) {
           if (panelState == null) return const SizedBox.shrink();
-          final Widget panelContent = _buildVideoSidePanelContent(
-            panelState,
-            controller,
-          );
-          // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
-          // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用
-          // [HitTestBehavior.opaque] 吃掉点击，**不**冒泡到下方控制条 [Listener]，
-          // 因此点空白只关面板、不会触发暂停 / 全屏（与 [_handleVideoPointerUp] 的侧栏
-          // 早返回门控一致）。面板本体是不透明 Material、在 Stack 上层，点面板内部命中
-          // 面板自身、到不了 barrier，故只有点外部才关闭。
-          return Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _hideVideoSidePanel,
-              ),
-              panelContent,
-            ],
+          // TODO-611：只有收藏句子列表面板可锁定（其它面板 _sidePanelLocked 不显示锁
+          // 按钮、也不响应）。监听 _sidePanelLocked 让锁定 / 解锁时 barrier 门控 + header
+          // 锁图标随之重建。
+          return ValueListenableBuilder<bool>(
+            valueListenable: _sidePanelLocked,
+            builder: (BuildContext _, bool locked, __) {
+              final bool lockable =
+                  panelState.kind == _VideoSidePanelKind.favoriteSentences;
+              final Widget panelContent = _buildVideoSidePanelContent(
+                panelState,
+                controller,
+                lockable: lockable,
+                locked: lockable && locked,
+              );
+              // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
+              // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用
+              // [HitTestBehavior.opaque] 吃掉点击，**不**冒泡到下方控制条 [Listener]，
+              // 因此点空白只关面板、不会触发暂停 / 全屏（与 [_handleVideoPointerUp] 的
+              // 侧栏早返回门控一致）。面板本体是不透明 Material、在 Stack 上层，点面板内
+              // 部命中面板自身、到不了 barrier，故只有点外部才关闭。TODO-611：收藏列表
+              // 锁定时 barrier 改成 no-op（点外不关），保留 Esc 作唯一关闭逃生口。
+              return Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: (lockable && locked) ? null : _hideVideoSidePanel,
+                  ),
+                  panelContent,
+                ],
+              );
+            },
           );
         },
       ),
@@ -6286,14 +6328,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 字幕跳转列表已改 push-aside（TODO-314），不再经此 overlay 路径。
   Widget _buildVideoSidePanelContent(
     _VideoSidePanelState panelState,
-    VideoPlayerController controller,
-  ) {
+    VideoPlayerController controller, {
+    bool lockable = false,
+    bool locked = false,
+  }) {
     final _VideoSidePanelKind kind = panelState.kind;
     final Widget panel = VideoTranslucentSidePanel(
       title: _videoSidePanelTitle(kind),
       width: _videoSidePanelWidth(kind),
       alignment: panelState.alignment,
       onClose: _hideVideoSidePanel,
+      // TODO-611：仅收藏句子列表显示锁定按钮（lockable）；锁定后页面层 barrier no-op。
+      locked: locked,
+      onToggleLock: lockable
+          ? () => _sidePanelLocked.value = !_sidePanelLocked.value
+          : null,
       child: _buildVideoSidePanelChild(kind, controller),
     );
     if (kind != _VideoSidePanelKind.settings) return panel;
@@ -7969,36 +8018,46 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return ValueListenableBuilder<bool>(
       valueListenable: _subtitleListVisible,
       builder: (BuildContext _, bool visible, __) {
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(
-              child: visible
-                  // BUG-256：push-aside 字幕列表开着时，在画面区叠一层不可见 barrier，
-                  // 点画面/外部 → 关列表（除控制条字幕按钮外的明确关闭入口）。barrier 用
-                  // [HitTestBehavior.opaque] 吃掉点击、不冒泡到下方控制条 [Listener]，故点
-                  // 画面只关列表、不触发暂停/全屏（与 overlay 面板的点外关闭一致）。
-                  ? Stack(
-                      fit: StackFit.expand,
-                      children: <Widget>[
-                        video,
-                        Positioned.fill(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              _clearSelectedMiningCues();
-                              _subtitleListVisible.value = false;
-                              _pokeControlsVisible();
-                              _refocusVideo();
-                            },
-                          ),
-                        ),
-                      ],
-                    )
-                  : video,
-            ),
-            _subtitleJumpSidePanel(controller, visible),
-          ],
+        // TODO-611：内层监听列表锁，锁状态翻转时 barrier 门控 + jump panel 锁图标都重建。
+        return ValueListenableBuilder<bool>(
+          valueListenable: _subtitleListLocked,
+          builder: (BuildContext _, bool locked, __) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: visible
+                      // BUG-256：push-aside 字幕列表开着时，在画面区叠一层不可见
+                      // barrier，点画面/外部 → 关列表（除控制条字幕按钮外的明确关闭入口）。
+                      // barrier 用 [HitTestBehavior.opaque] 吃掉点击、不冒泡到下方控制条
+                      // [Listener]，故点画面只关列表、不触发暂停/全屏（与 overlay 面板的
+                      // 点外关闭一致）。TODO-611：列表锁定时 barrier 改成 no-op（点画面
+                      // 不关列表），保留 Esc / 字幕按钮作唯一关闭逃生口。
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: <Widget>[
+                            video,
+                            Positioned.fill(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: locked
+                                    ? null
+                                    : () {
+                                        _clearSelectedMiningCues();
+                                        _subtitleListVisible.value = false;
+                                        _pokeControlsVisible();
+                                        _refocusVideo();
+                                      },
+                              ),
+                            ),
+                          ],
+                        )
+                      : video,
+                ),
+                _subtitleJumpSidePanel(controller, visible, locked),
+              ],
+            );
+          },
         );
       },
     );
@@ -8011,6 +8070,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Widget _subtitleJumpSidePanel(
     VideoPlayerController controller,
     bool visible,
+    bool locked,
   ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
@@ -8040,6 +8100,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       isCueSelectedForCard: _isCueSelectedForCard,
                       onToggleCueSelection: _toggleCueSelectedForCard,
                       onClearCueSelection: _clearSelectedMiningCues,
+                      // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
+                      initialAutoScroll: appModel.videoSubtitleListAutoScroll,
+                      onAutoScrollChanged: (bool value) => unawaited(
+                        appModel.setVideoSubtitleListAutoScroll(value),
+                      ),
+                      // TODO-611：列表锁定开关。锁定后页面层「点画面外关闭」barrier
+                      // no-op（见 [_videoWithSubtitlePanel]），仅 Esc / 字幕按钮可关。
+                      locked: locked,
+                      onToggleLock: () => _subtitleListLocked.value =
+                          !_subtitleListLocked.value,
                       onClose: () {
                         _clearSelectedMiningCues();
                         _subtitleListVisible.value = false;

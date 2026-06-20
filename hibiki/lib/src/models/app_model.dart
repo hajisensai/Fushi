@@ -1868,6 +1868,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleBlur(bool value) =>
       prefsRepo.setVideoSubtitleBlur(value);
 
+  /// 视频字幕列表自动滚动开关（TODO-613，落 Drift preferences，默认开）。
+  bool get videoSubtitleListAutoScroll => prefsRepo.videoSubtitleListAutoScroll;
+
+  Future<void> setVideoSubtitleListAutoScroll(bool value) =>
+      prefsRepo.setVideoSubtitleListAutoScroll(value);
+
   bool get videoDanmakuEnabled => prefsRepo.videoDanmakuEnabled;
 
   Future<void> setVideoDanmakuEnabled(bool value) =>

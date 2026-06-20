@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/utils.dart';
+
 class VideoTranslucentSidePanel extends StatelessWidget {
   const VideoTranslucentSidePanel({
     required this.title,
@@ -7,6 +9,8 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     this.onClose,
     this.alignment = Alignment.centerRight,
     this.width = 400,
+    this.locked = false,
+    this.onToggleLock,
     super.key,
   });
 
@@ -15,6 +19,14 @@ class VideoTranslucentSidePanel extends StatelessWidget {
   final VoidCallback? onClose;
   final Alignment alignment;
   final double width;
+
+  /// 面板锁定状态（TODO-611）。锁定时页面层的「点面板外关闭」barrier 被门控成 no-op
+  /// （仅对收藏句子列表这类需要锁定的面板传入；其它面板 [onToggleLock] 为 null）。
+  final bool locked;
+
+  /// 用户点 header 锁定图标时回调（TODO-611）。null 时不渲染锁定按钮（只有收藏句子
+  /// 列表这类列表面板才传，其它面板不显示锁）。
+  final VoidCallback? onToggleLock;
 
   @override
   Widget build(BuildContext context) {
@@ -54,12 +66,40 @@ class VideoTranslucentSidePanel extends StatelessWidget {
                   // [_buildVideoSidePanelOverlay]）。[onClose] 仍保留供 barrier / 其他
                   // 调用方复用，header 不再渲染关闭按钮。
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-                    child: Text(
-                      title,
-                      maxLines: 2,
-                      softWrap: true,
-                      style: Theme.of(context).textTheme.titleMedium,
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      onToggleLock != null ? 4 : 10,
+                      onToggleLock != null ? 4 : 16,
+                      6,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 2,
+                            softWrap: true,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        // TODO-611：列表锁定开关。锁定后页面层「点面板外关闭」barrier
+                        // 被门控成 no-op（面板不会被点外部关闭，仅 Esc 可关）。
+                        // onToggleLock 为 null 时不渲染（只有收藏句子列表才传）。
+                        if (onToggleLock != null)
+                          IconButton(
+                            tooltip: locked
+                                ? t.video_subtitle_list_unlock
+                                : t.video_subtitle_list_lock,
+                            icon: Icon(
+                              locked ? Icons.lock : Icons.lock_open,
+                            ),
+                            color: locked
+                                ? colorScheme.primary
+                                : colorScheme.onSurfaceVariant,
+                            onPressed: onToggleLock,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                      ],
                     ),
                   ),
                   const Divider(height: 1),

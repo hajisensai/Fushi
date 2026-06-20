@@ -182,6 +182,11 @@ void main() {
     test('startupDefaultDictionaryTab defaults to false', () {
       expect(repo.startupDefaultDictionaryTab, false);
     });
+
+    test('videoSubtitleListAutoScroll defaults to true (TODO-613)', () {
+      // 字幕列表「自动滚动到当前播放句」默认开，与历史面板纯内存默认 true 一致。
+      expect(repo.videoSubtitleListAutoScroll, true);
+    });
   });
 
   // ── round-trip persistence ───────────────────────────────────────────
@@ -479,6 +484,27 @@ void main() {
       expect(repo.reverseNavigationBar, true);
       expect(repo.reverseReaderBottomBar, true,
           reason: 'the two prefs are decoupled');
+    });
+
+    test('setVideoSubtitleListAutoScroll round-trips through DB (TODO-613)',
+        () async {
+      // 默认 true；关掉后跨实例 reload 仍为 false（落 Drift preferences、记住设置）。
+      expect(repo.videoSubtitleListAutoScroll, true);
+      await repo.setVideoSubtitleListAutoScroll(false);
+      expect(repo.videoSubtitleListAutoScroll, false);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.videoSubtitleListAutoScroll, false,
+          reason: '自动滚动开关必须跨实例 reload 记住（TODO-613）');
+
+      // 再开回 true 也持久。
+      await repo.setVideoSubtitleListAutoScroll(true);
+      final PreferencesRepository repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      addTearDown(repo3.dispose);
+      expect(repo3.videoSubtitleListAutoScroll, true);
     });
   });
 
