@@ -334,7 +334,16 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                   key: ValueKey<String>(selectedId),
                   child: SingleChildScrollView(
                     padding: widePrimaryPadding,
-                    child: _subPageContent(selectedId),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        // TODO-640：顶栏改纯图标后，详情顶部用大标题标出当前分类。
+                        _buildWideDetailTitle(selectedId),
+                        SizedBox(height: topInset),
+                        _subPageContent(selectedId),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -377,10 +386,14 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     ];
   }
 
-  /// 宽窗顶部横向分类条（TODO-556）：大分类用横滑 chip 行，固定在 sheet 顶部、
-  /// 不随下方详情滚动；放不下时横向滚动（与窄窗 push 的导航行、宽窗左栏不同）。
-  /// 选中 chip 高亮，点击切下方详情。每个 chip 用 [HibikiSelectableChip]（带分类
-  /// 图标），与书架/视频标签筛选条同款外观。
+  /// 宽窗顶部横向分类条（TODO-556 / TODO-640）：大分类用横滑 chip 行，固定在 sheet
+  /// 顶部、不随下方详情滚动；放不下时横向滚动（与窄窗 push 的导航行、宽窗左栏不同）。
+  /// 选中 chip 高亮，点击切下方详情。
+  ///
+  /// TODO-640：原来 chip 是「图标 + 文字」，长英文标签（含 UI scale 2.0）把顶栏挤到
+  /// 显示不全。改成 **仅图标** chip（[HibikiSelectableChip.iconOnly]）+ hover / 长按
+  /// [Tooltip] 给文字说明，把顶栏压成密度更高的纯图标条；选中分类的标题改在下方详情
+  /// 区顶部用一行大标题呈现（[_buildWideDetailTitle]），用户点进图标后仍知道当前在哪。
   Widget _buildTopCategoryBar(String selectedId) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return SingleChildScrollView(
@@ -392,16 +405,32 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             Padding(
               padding: EdgeInsets.only(right: tokens.spacing.gap),
               child: HibikiSelectableChip(
+                // 稳定 key：纯图标 chip 无文字，测试 / 焦点驱动靠 id key 命中分类。
+                key: ValueKey<String>('video-settings-cat-${cat.id}'),
                 label: cat.label,
                 leadingIcon: cat.icon,
                 selected: cat.id == selectedId,
-                // 顶栏横滑空间充裕，分类标签必须完整可读（含 UI scale 2.0 的长英文
-                // 标签如 "Image enhancement"），不走省略号。
-                allowLabelOverflow: true,
+                // TODO-640：仅图标 chip——文字说明走 tooltip（hover / 长按），不再占顶栏
+                // 横向空间，根除「图标 + 长文字标签」挤不下 / 显示不全。
+                iconOnly: true,
+                tooltip: cat.label,
                 onSelected: (_) => setState(() => _subPage = cat.id),
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 宽窗详情区顶部的当前分类标题（TODO-640）：顶栏 chip 改纯图标后，靠这行大标题
+  /// 告诉用户「点进的是哪一项」。与窄窗 push 子页头 [HibikiSettingsSubPageHeader] /
+  /// 侧栏面板标题语义一致，但无返回箭头（宽窗顶栏不走 push）。
+  Widget _buildWideDetailTitle(String selectedId) {
+    final ThemeData theme = Theme.of(context);
+    return Text(
+      _subPageTitle(selectedId),
+      style: theme.textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w600,
       ),
     );
   }

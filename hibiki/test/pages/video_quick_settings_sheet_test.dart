@@ -108,21 +108,24 @@ void _expectNoFlutterErrors(WidgetTester tester) {
   expect(exceptions, isEmpty);
 }
 
-void _expectCategoryChipLabelNotEllipsized(WidgetTester tester, String label) {
-  final Finder chip = find.widgetWithText(HibikiSelectableChip, label);
-  expect(chip, findsWidgets);
-  final Finder labelText = find.descendant(
-    of: chip.first,
-    matching: find.text(label),
-  );
-  expect(labelText, findsOneWidget);
-  final RenderParagraph paragraph =
-      tester.renderObject<RenderParagraph>(labelText);
-  expect(
-    paragraph.didExceedMaxLines,
-    isFalse,
-    reason: '$label must render fully, not as an ellipsized category label.',
-  );
+/// 宽窗顶栏分类 chip 的稳定 key（与 video_quick_settings_sheet.dart 同步，TODO-640
+/// 起 chip 改纯图标无文字，测试 / 焦点驱动只能靠 id key 命中）。
+Finder _categoryChip(String id) =>
+    find.byKey(ValueKey<String>('video-settings-cat-$id'));
+
+/// 切换到某分类：宽窗点纯图标 chip（按 id key），窄窗点带文字的分类导航行（按 label）。
+/// 两端语义统一，调用方不必关心当前是宽 / 窄窗。
+Future<void> _tapCategory(
+  WidgetTester tester,
+  String id,
+  String label,
+) async {
+  final Finder chip = _categoryChip(id);
+  final Finder target = chip.evaluate().isNotEmpty ? chip : find.text(label);
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
+  await tester.tap(target);
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -191,8 +194,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    await tester.tap(find.text(t.video_settings_cat_shaders));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'shaders', t.video_settings_cat_shaders);
 
     // 顶部是五档单选器（无/低/中/高/极高）。
     expect(find.text(t.video_shader_quality_tier), findsOneWidget);
@@ -267,8 +269,7 @@ void main() {
       }),
     );
 
-    await tester.tap(find.text(t.video_settings_cat_shaders));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'shaders', t.video_settings_cat_shaders);
 
     // 初始默认（highQuality=true + 空启用集）已高亮「低」档；先点「无」（值变化触发回调）：
     // 「无」档零下载——关闭内置缩放 + 空启用集，直接经回调切档、不弹下载框。
@@ -295,11 +296,20 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    // 顶部分类 chip 条六个分类都在；默认选中 playback → 下方详情显示音画延迟 + 倍速。
-    expect(find.text(t.video_settings_cat_playback), findsWidgets);
-    expect(find.text(t.video_settings_cat_shaders), findsOneWidget);
-    expect(find.text(t.video_settings_cat_mpv), findsOneWidget);
-    expect(find.text(t.video_settings_cat_subtitle), findsOneWidget);
+    // TODO-640：顶栏 chip 改纯图标（无文字），六个分类按 id key 命中；默认选中
+    // playback → 下方详情顶部用大标题标出当前分类 + 显示音画延迟 + 倍速。
+    for (final String id in <String>[
+      'playback',
+      'shaders',
+      'mpv',
+      'subtitle',
+      'danmaku',
+      'controls',
+    ]) {
+      expect(_categoryChip(id), findsOneWidget, reason: '$id 必须是顶栏纯图标分类 chip');
+    }
+    // 选中分类（playback）的标题在详情区顶部呈现（纯图标 chip 无文字，靠它认当前项）。
+    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
     expect(find.text(t.video_setting_av_delay), findsOneWidget);
     expect(find.text(t.video_setting_speed), findsOneWidget);
     // 上下分栏无 push：无返回箭头。
@@ -313,14 +323,7 @@ void main() {
     expect(find.byType(HibikiSelectableChip), findsAtLeastNWidgets(6));
 
     // 分类 chip 在上、详情在下（顶栏）：分类条的 dy 必须小于详情的 dy。
-    final double categoryY = tester
-        .getTopLeft(
-          find.widgetWithText(
-            HibikiSelectableChip,
-            t.video_settings_cat_subtitle,
-          ),
-        )
-        .dy;
+    final double categoryY = tester.getTopLeft(_categoryChip('subtitle')).dy;
     final double detailY =
         tester.getTopLeft(find.text(t.video_setting_speed)).dy;
     expect(categoryY, lessThan(detailY),
@@ -341,8 +344,7 @@ void main() {
     expect(primaryPadding.right, 24);
 
     // 选「字幕」→ 下方详情切到字幕详情，仍无返回箭头。
-    await tester.tap(find.text(t.video_settings_cat_subtitle));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
     expect(find.text(t.video_setting_subtitle_blur), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_font_size), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_font_weight), findsOneWidget);
@@ -350,8 +352,9 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
-  testWidgets('wide English category labels are not ellipsized at UI scale 2.0',
-      (tester) async {
+  testWidgets(
+      'wide category bar is icon-only with tooltips (no inline label) even at '
+      'UI scale 2.0 (TODO-640)', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1320, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpScaled(
@@ -363,18 +366,57 @@ void main() {
       scale: 2.0,
     );
 
-    // TODO-556：顶栏横滑 chip（无左右 master-detail）。横滑条放得下全文，每个分类
-    // chip 的标签都不被省略号截断。
+    // TODO-640：顶栏 chip 改纯图标——长英文标签（含 UI scale 2.0）不再占顶栏空间，
+    // 根除「图标 + 文字」挤不下 / 显示不全。每个 chip 内无内联文字 label，只有图标。
     expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
-    for (final String label in <String>[
-      t.video_settings_cat_playback,
-      t.video_settings_cat_shaders,
-      t.video_settings_cat_mpv,
-      t.video_settings_cat_subtitle,
-      t.video_settings_cat_danmaku,
-      t.video_settings_cat_controls,
+    for (final ({String id, IconData icon, String label}) cat
+        in <({String id, IconData icon, String label})>[
+      (
+        id: 'playback',
+        icon: Icons.play_circle_outline,
+        label: t.video_settings_cat_playback
+      ),
+      (
+        id: 'shaders',
+        icon: Icons.auto_fix_high_outlined,
+        label: t.video_settings_cat_shaders
+      ),
+      (id: 'mpv', icon: Icons.tune, label: t.video_settings_cat_mpv),
+      (
+        id: 'subtitle',
+        icon: Icons.subtitles_outlined,
+        label: t.video_settings_cat_subtitle
+      ),
+      (
+        id: 'danmaku',
+        icon: Icons.forum_outlined,
+        label: t.video_settings_cat_danmaku
+      ),
+      (
+        id: 'controls',
+        icon: Icons.dashboard_customize_outlined,
+        label: t.video_settings_cat_controls
+      ),
     ]) {
-      _expectCategoryChipLabelNotEllipsized(tester, label);
+      final Finder chip = _categoryChip(cat.id);
+      expect(chip, findsOneWidget, reason: '${cat.id} 必须是纯图标分类 chip');
+      // chip 内有该分类图标。
+      expect(find.descendant(of: chip, matching: find.byIcon(cat.icon)),
+          findsOneWidget,
+          reason: '${cat.id} chip 须渲染分类图标');
+      // chip 内无内联文字 label（文字说明改走 tooltip）——
+      // 唯一例外是当前选中项的标题在详情区，不在 chip 内部。
+      expect(find.descendant(of: chip, matching: find.text(cat.label)),
+          findsNothing,
+          reason: '${cat.id} chip 不应再内联渲染文字标签（TODO-640 仅图标）');
+      // 文字说明经 tooltip 提供（hover / 长按）。
+      expect(find.descendant(of: chip, matching: find.byType(Tooltip)),
+          findsOneWidget,
+          reason: '${cat.id} chip 须用 tooltip 给文字说明');
+      final Tooltip tip = tester.widget<Tooltip>(
+          find.descendant(of: chip, matching: find.byType(Tooltip)));
+      expect(tip.message, cat.label,
+          reason: '${cat.id} chip 的 tooltip 文案应是分类标签');
     }
     _expectNoFlutterErrors(tester);
   });
@@ -406,11 +448,16 @@ void main() {
         scale: sizeCase.scale,
       );
 
-      expect(find.text(t.video_settings_cat_subtitle), findsWidgets);
+      // 分类入口可达：窄窗是带文字的导航行，宽窗是纯图标 chip（按 id key）。
+      expect(
+        find.text(t.video_settings_cat_subtitle).evaluate().isNotEmpty ||
+            _categoryChip('subtitle').evaluate().isNotEmpty,
+        isTrue,
+        reason: '字幕分类入口须可达（窄窗导航行文字 / 宽窗图标 chip）',
+      );
 
       if (find.text(t.video_setting_picture_fit).evaluate().isEmpty) {
-        await tester.tap(find.text(t.video_settings_cat_playback));
-        await tester.pumpAndSettle();
+        await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
       }
 
       expect(find.text(t.video_setting_picture_fit), findsWidgets);
@@ -429,8 +476,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet(uiScale: 2.0));
 
-    await tester.tap(find.text(t.video_settings_cat_subtitle));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     final AdaptiveSettingsStepperRow fontWeightRow =
         tester.widget<AdaptiveSettingsStepperRow>(
@@ -471,8 +517,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text(t.video_settings_cat_subtitle));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     final Finder backgroundOpacityRow = find.widgetWithText(
       AdaptiveSettingsSliderRow,
@@ -510,12 +555,11 @@ void main() {
     await _pump(tester, _sheet());
 
     // 字幕详情行多（开关 + 三滑条 + 重置）→ 必然超过详情高、可独立滚动。
-    await tester.tap(find.text(t.video_settings_cat_subtitle));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
 
     // 顶部分类条里的「播放」chip 是固定锚点（chip 行钉在顶部、随详情滚动不动）。
-    final Finder categoryAnchor = find.widgetWithText(
-        HibikiSelectableChip, t.video_settings_cat_playback);
+    // TODO-640：纯图标 chip 无文字，按 id key 命中。
+    final Finder categoryAnchor = _categoryChip('playback');
     expect(categoryAnchor, findsOneWidget);
     final Offset before = tester.getTopLeft(categoryAnchor);
 
@@ -545,8 +589,7 @@ void main() {
     expect(find.text(t.video_settings_cat_playback), findsOneWidget);
 
     // 点分类 → push 子页 + 返回箭头（证明走的是窄窗 push 语义）。
-    await tester.tap(find.text(t.video_settings_cat_playback));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
     expect(find.text(t.video_setting_av_delay), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
@@ -562,8 +605,7 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
     // push 进「播放」→ 详情 + 返回箭头；返回回主页。
-    await tester.tap(find.text(t.video_settings_cat_playback));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
     expect(find.text(t.video_setting_av_delay), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
 
@@ -590,8 +632,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text(t.video_settings_cat_playback), findsOneWidget);
 
-    await tester.tap(find.text(t.video_settings_cat_playback));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
 
     expect(tester.takeException(), isNull);
     expect(find.text(t.video_setting_av_delay), findsOneWidget);
@@ -603,8 +644,7 @@ void main() {
   // 在窄右 pane / 高 UI scale 下被截断。修复后标题是 TextField 上方独立、可换行、
   // 完整显示的 Text；输入框不再走单行浮动 label。
   Future<void> openMpvAdvanced(WidgetTester tester) async {
-    await tester.tap(find.text(t.video_settings_cat_mpv));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
     // mpv 详情右 pane 是 SingleChildScrollView，会一次性 build 全部分组（含底部
     // 「高级」段），离屏 widget 仍完成 layout，故无需滚动即可命中并测量标题。
   }
@@ -680,8 +720,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    await tester.tap(find.text(t.video_settings_cat_mpv));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
 
     // 解码/画质/色彩/重置都内嵌在右 pane（不是导航行 → pop → 二级对话框）。
     // hwdec 是 picker 行：DropdownButton 会为测宽离屏复刻一份标题，故 findsWidgets。
@@ -700,8 +739,7 @@ void main() {
     VideoMpvConfig? committed;
     await _pump(tester, _sheet(onMpvConfigChanged: (c) => committed = c));
 
-    await tester.tap(find.text(t.video_settings_cat_mpv));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
 
     // 切「去色带」开关 → 即改即生效回调（无保存按钮）。
     await tester.tap(find.byType(Switch).first);
@@ -816,8 +854,7 @@ void main() {
       ),
       scale: 2.0,
     );
-    await tester.tap(find.text(t.video_settings_cat_playback));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
 
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
@@ -852,8 +889,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
-    await tester.tap(find.text(t.video_settings_cat_mpv));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
 
     // 音频分组仍在（变速保持音高 / 声道 / 归一化），但不再有音频延迟行。
     expect(find.text(t.video_setting_mpv_group_audio), findsOneWidget);
@@ -902,8 +938,7 @@ void main() {
 
     // 切到「字幕」分类：字号滑条是 app 现有 MD3 滑条的基准。两者必须同宽
     // （同一全长滑条规范），防止倍速又缩回窄条/分段条。
-    await tester.tap(find.text(t.video_settings_cat_subtitle));
-    await tester.pumpAndSettle();
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
     final Finder fontSizeRow = find.widgetWithText(
       AdaptiveSettingsSliderRow,
       t.video_setting_subtitle_font_size,
@@ -1172,11 +1207,9 @@ void main() {
     // 进入控制分类详情（宽窗上下分栏顶部 chip 行）。「控制」是末位分类，在窄宽窗下
     // 横向 chip 行里可能排到视口外（TODO-427-③），先横滑入视口再点（模拟真实用户横滑）。
     Future<void> openControls(WidgetTester tester) async {
-      final Finder controlsCat = find.text(t.video_settings_cat_controls);
-      await tester.ensureVisible(controlsCat);
-      await tester.pumpAndSettle();
-      await tester.tap(controlsCat);
-      await tester.pumpAndSettle();
+      // TODO-640：纯图标分类 chip 无文字，经 id key 命中（_tapCategory 自动处理
+      // 宽窗 icon chip / 窄窗 push 导航行两端）。
+      await _tapCategory(tester, 'controls', t.video_settings_cat_controls);
     }
 
     Finder slotFinder(VideoControlSlot slot) => find.byKey(
@@ -1744,35 +1777,30 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(tester, _sheet());
 
-      // 大分类一律渲染成顶栏 chip（无左右 master-detail、无左栏列表项）。
+      // 大分类一律渲染成顶栏纯图标 chip（无左右 master-detail、无左栏列表项）。
+      // TODO-640：chip 无文字，按 id key 命中。
       expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
       expect(find.byType(HibikiListItem), findsNothing);
-      for (final String label in <String>[
-        t.video_settings_cat_playback,
-        t.video_settings_cat_shaders,
-        t.video_settings_cat_mpv,
-        t.video_settings_cat_subtitle,
-        t.video_settings_cat_danmaku,
-        t.video_settings_cat_controls,
+      for (final String id in <String>[
+        'playback',
+        'shaders',
+        'mpv',
+        'subtitle',
+        'danmaku',
+        'controls',
       ]) {
-        expect(find.widgetWithText(HibikiSelectableChip, label), findsOneWidget,
-            reason: '$label must be a top-bar category chip');
+        expect(_categoryChip(id), findsOneWidget,
+            reason: '$id must be a top-bar category chip');
       }
 
-      // 选「mpv」分类（顶栏 chip）→ 下方详情切到 mpv 详情，无 push 返回箭头。
-      await tester.tap(
-        find.widgetWithText(HibikiSelectableChip, t.video_settings_cat_mpv),
-      );
+      // 选「mpv」分类（顶栏纯图标 chip）→ 下方详情切到 mpv 详情，无 push 返回箭头。
+      await tester.tap(_categoryChip('mpv'));
       await tester.pumpAndSettle();
       expect(find.text(t.video_setting_mpv_deband), findsOneWidget);
       expect(find.byIcon(Icons.arrow_back), findsNothing);
 
       // 被选 chip 的 dy 仍在 mpv 详情之上（顶栏不动、详情在下方）。
-      final double chipY = tester
-          .getTopLeft(
-            find.widgetWithText(HibikiSelectableChip, t.video_settings_cat_mpv),
-          )
-          .dy;
+      final double chipY = tester.getTopLeft(_categoryChip('mpv')).dy;
       final double detailY =
           tester.getTopLeft(find.text(t.video_setting_mpv_deband)).dy;
       expect(chipY, lessThan(detailY),
@@ -1792,9 +1820,14 @@ void main() {
           reason: '视频设置宽窗不得再回退到左右 master-detail（书籍设置才用它）');
       expect(src, isNot(contains('_buildWidePane(')),
           reason: '旧左栏构建器 _buildWidePane 必须删除');
-      // 顶栏 chip 标签必须完整可读（allowLabelOverflow）而非省略号截断。
-      expect(src, contains('allowLabelOverflow: true'),
-          reason: '顶栏分类 chip 标签须完整可读，不走省略号');
+      // TODO-640：顶栏 chip 改纯图标 + tooltip（文字说明 hover / 长按），不再内联文字
+      // 标签；详情顶部用大标题标出当前分类。
+      expect(src, contains('iconOnly: true'),
+          reason: '顶栏分类 chip 须为仅图标模式（TODO-640，文字挤不下改 tooltip）');
+      expect(src, contains('tooltip: cat.label'),
+          reason: '纯图标 chip 须用分类标签作 tooltip（hover / 长按显示文字说明）');
+      expect(src, contains('_buildWideDetailTitle('),
+          reason: '宽窗详情顶部须渲染当前分类标题（纯图标顶栏后用户靠标题认当前项）');
     });
   });
 }

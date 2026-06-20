@@ -559,6 +559,7 @@ class HibikiSelectableChip extends StatelessWidget {
     this.tooltip,
     this.focusId,
     this.allowLabelOverflow = false,
+    this.iconOnly = false,
   });
 
   final String label;
@@ -569,6 +570,11 @@ class HibikiSelectableChip extends StatelessWidget {
   final String? tooltip;
   final HibikiFocusId? focusId;
 
+  /// 仅图标模式（TODO-640）：置 true 时 chip 只渲染 [leadingIcon]、不显示文字标签，
+  /// 把横排「图标 + 文字」压成紧凑「纯图标」（解决顶栏挤不下 / 显示不全）。文字说明
+  /// 通过 hover / 长按 [Tooltip] 呈现：未显式传 [tooltip] 时回退用 [label] 作 tooltip，
+  /// 保证图标语义可读。需要 [leadingIcon] 非空（否则退化为普通文字 chip）。
+
   /// 默认 false：标签单行 + 省略号（标签筛选条等密集横排，宽度受限时优先省略）。
   /// 置 true：标签不省略、按固有宽度完整渲染（横滑分类条等空间充裕、标签必须可读的
   /// 场景，如视频设置顶部分类条 TODO-556）。Material [ChoiceChip] 给 label 的约束
@@ -576,23 +582,37 @@ class HibikiSelectableChip extends StatelessWidget {
   /// 避免省略；改 [Text.overflow] 为 visible + softWrap:false 才能让 chip 随固有宽度撑开。
   final bool allowLabelOverflow;
 
+  /// 见构造器：仅图标模式（TODO-640），需 [leadingIcon] 非空才生效。
+  final bool iconOnly;
+
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Color foreground =
         selected ? colors.onPrimaryContainer : tokens.surfaces.onSurface;
-    final Widget? effectiveAvatar =
-        avatar ?? (leadingIcon == null ? null : Icon(leadingIcon, size: 18));
+    // 仅图标模式（TODO-640）：图标当作 chip 的 label（不再放进 avatar + 文字），
+    // chip 收成正方裸图标；需 leadingIcon 非空才生效，否则退化为普通文字 chip。
+    final bool effectiveIconOnly = iconOnly && leadingIcon != null;
+    final Widget? effectiveAvatar = effectiveIconOnly
+        ? null
+        : (avatar ??
+            (leadingIcon == null ? null : Icon(leadingIcon, size: 18)));
+    final Widget labelWidget = effectiveIconOnly
+        ? Icon(leadingIcon, size: 18, color: foreground)
+        : Text(
+            label,
+            maxLines: 1,
+            softWrap: !allowLabelOverflow,
+            overflow: allowLabelOverflow
+                ? TextOverflow.visible
+                : TextOverflow.ellipsis,
+          );
     final ChoiceChip chip = ChoiceChip(
       avatar: effectiveAvatar,
-      label: Text(
-        label,
-        maxLines: 1,
-        softWrap: !allowLabelOverflow,
-        overflow:
-            allowLabelOverflow ? TextOverflow.visible : TextOverflow.ellipsis,
-      ),
+      label: labelWidget,
+      // 仅图标模式下 label 是 Icon，去掉 ChoiceChip 默认 label padding 让图标居中收紧。
+      labelPadding: effectiveIconOnly ? EdgeInsets.zero : null,
       selected: selected,
       showCheckmark: false,
       selectedColor: colors.primaryContainer,
@@ -606,8 +626,13 @@ class HibikiSelectableChip extends StatelessWidget {
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onSelected: onSelected,
     );
-    final Widget withTooltip =
-        tooltip == null ? chip : Tooltip(message: tooltip!, child: chip);
+    // 仅图标模式默认用 label 作 tooltip（图标语义靠 hover / 长按文字说明），
+    // 显式 tooltip 优先。普通模式仍按传入 tooltip（null 则不包 Tooltip）。
+    final String? effectiveTooltip =
+        tooltip ?? (effectiveIconOnly ? label : null);
+    final Widget withTooltip = effectiveTooltip == null
+        ? chip
+        : Tooltip(message: effectiveTooltip, child: chip);
     if (focusId == null) return withTooltip;
     if (HibikiFocusRoot.maybeControllerOf(context) == null) return withTooltip;
     return Actions(

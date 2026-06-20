@@ -130,8 +130,14 @@ void main() {
         reason: 'wide categories must render in a top horizontal chip bar');
     expect(source, contains('HibikiSelectableChip('),
         reason: 'each top-bar category is a selectable chip');
-    expect(source, contains('allowLabelOverflow: true'),
-        reason: 'top-bar chip labels must stay fully readable, not ellipsized');
+    // TODO-640：顶栏 chip 改纯图标 + tooltip（文字挤不下改 hover / 长按文字说明），
+    // 当前分类标题改在详情区顶部呈现。
+    expect(source, contains('iconOnly: true'),
+        reason: 'top-bar category chips are icon-only (TODO-640)');
+    expect(source, contains('tooltip: cat.label'),
+        reason: 'icon-only chips expose the category name via tooltip');
+    expect(source, contains('_buildWideDetailTitle('),
+        reason: 'the selected category title renders atop the detail pane');
     expect(source, contains('scrollDirection: Axis.horizontal'),
         reason: 'the top category bar scrolls horizontally when it overflows');
     expect(source, contains('padding: widePrimaryPadding'));

@@ -81,7 +81,10 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text(t.video_settings_cat_danmaku));
+    // TODO-640：顶栏分类 chip 改纯图标（无文字），按稳定 id key 命中弹幕分类。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-settings-cat-danmaku')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.video_setting_danmaku_enabled), findsOneWidget);
