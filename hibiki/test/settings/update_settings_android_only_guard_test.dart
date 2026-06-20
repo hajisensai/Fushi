@@ -27,8 +27,8 @@ void main() {
   });
 
   test('UpdateChecker no longer hard-returns on non-Android', () {
-    final String src =
-        File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+    final String src = File('lib/src/utils/misc/update_checker_release.dart')
+        .readAsStringSync();
     expect(src.contains('if (!Platform.isAndroid) return;'), isFalse,
         reason: '检查流程已按 updater.supportsUpdateCheck 门控');
     expect(src, contains('updaterForCurrentPlatform()'));

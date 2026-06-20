@@ -120,7 +120,7 @@ void main() {
       'HibikiDialogFrame',
       'HibikiDesignTokens',
     ],
-    'lib/src/utils/misc/update_checker.dart': <String>[
+    'lib/src/utils/misc/update_checker_ui.dart': <String>[
       'HibikiCard',
     ],
     'lib/src/sync/sync_compare_dialog.dart': <String>[
@@ -364,7 +364,7 @@ void main() {
         '_QuickActionChip',
         'OutlinedButton.icon(',
       ],
-      'lib/src/utils/misc/update_checker.dart': <String>[
+      'lib/src/utils/misc/update_checker_ui.dart': <String>[
         'child: Card(',
       ],
       'lib/src/sync/sync_compare_dialog.dart': <String>[
@@ -706,7 +706,7 @@ void main() {
           'Legacy compatibility adapter wraps framework ListTile.',
       'lib/src/utils/components/hibiki_text_selection_controls.dart':
           'Shared text-selection toolbar owns its transient surface.',
-      'lib/src/utils/misc/update_checker.dart':
+      'lib/src/utils/misc/update_checker_ui.dart':
           'Update checker migrated card shell is already covered by local guard.',
       'lib/src/utils/misc/mokuro_payload.dart':
           'Debug payload string logs parsed reader font size.',
@@ -1298,20 +1298,25 @@ void main() {
   });
 
   test('update checker dialogs use shared MD3 dialog chrome', () {
-    final String source =
-        File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+    // TODO-584 拆分后: _showUpdateDialog/_showFallbackDialog 随 UpdateChecker
+    // 门面进 release part; UpdateAvailableDialog/_DownloadOverlay 进 ui part。
+    final String releaseSource =
+        File('lib/src/utils/misc/update_checker_release.dart')
+            .readAsStringSync();
+    final String uiSource =
+        File('lib/src/utils/misc/update_checker_ui.dart').readAsStringSync();
     final String updateFlow = _functionSource(
-      source,
+      releaseSource,
       'static void _showUpdateDialog(',
       '  /// Fallback dialog for when no APK asset exists',
     );
     final String fallbackFlow = _functionSource(
-      source,
+      releaseSource,
       'static void _showFallbackDialog(',
       '  static Future<void> _downloadAndInstall(',
     );
     final String dialogSource = _sectionSource(
-      source,
+      uiSource,
       'class UpdateAvailableDialog',
       'class _DownloadOverlay',
     );

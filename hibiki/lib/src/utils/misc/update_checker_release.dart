@@ -1,0 +1,845 @@
+part of 'update_checker.dart';
+
+const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
+
+final RegExp _kBetaReleaseTagPattern = RegExp(r'^v\d+(?:\.\d+)*-beta\.\d+$');
+final RegExp _kDebugReleaseTagPattern =
+    RegExp(r'^v\d+(?:\.\d+)*-debug\.\d+\+[0-9A-Fa-f]{7,40}$');
+final RegExp _kBetaVersionPattern = RegExp(r'^\d+(?:\.\d+)*-beta\.\d+$');
+final RegExp _kDebugVersionPattern = RegExp(r'^\d+(?:\.\d+)*-debug\.\d+$');
+
+@visibleForTesting
+class UpdateReleaseSelection {
+  const UpdateReleaseSelection({
+    required this.release,
+    required this.version,
+    required this.releaseNotes,
+    required this.asset,
+  });
+
+  final Map<String, dynamic> release;
+  final String version;
+  final String releaseNotes;
+  final UpdateAsset? asset;
+
+  String? get htmlUrl => release['html_url'] as String?;
+  String? get downloadUrl => asset?.url;
+}
+
+class UpdateChecker {
+  UpdateChecker._();
+
+  static final Map<String, Future<void>> _activeUpdateFlows =
+      <String, Future<void>>{};
+
+  static void scheduleCheck(
+    BuildContext context,
+    String currentVersion, {
+    bool neverRemind = false,
+    bool autoInstall = false,
+    bool betaChannel = false,
+    bool debugChannel = false,
+  }) {
+    final UpdateChannel channel = debugChannel
+        ? UpdateChannel.debug
+        : betaChannel
+            ? UpdateChannel.beta
+            : UpdateChannel.stable;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _check(context, currentVersion,
+          neverRemind: neverRemind, autoInstall: autoInstall, channel: channel);
+    });
+  }
+
+  static Future<void> _cleanupOldApks(String _) async {
+    try {
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      if (!updatesDir.existsSync()) return;
+      final DateTime cutoff = DateTime.now().subtract(const Duration(days: 7));
+      for (final FileSystemEntity entity in updatesDir.listSync()) {
+        if (entity is Directory) {
+          final String name = entity.uri.pathSegments.last;
+          if (!name.endsWith('.staging')) continue;
+          for (final FileSystemEntity child in entity.listSync()) {
+            try {
+              if (child.statSync().modified.isBefore(cutoff)) {
+                child.deleteSync(recursive: true);
+              }
+            } catch (e) {
+              debugPrint('[UpdateChecker] cleanup staging failed: $e');
+            }
+          }
+          try {
+            if (entity.listSync().isEmpty) entity.deleteSync();
+          } catch (_) {
+            // The staging root can stay around until the next cleanup pass.
+          }
+          continue;
+        }
+        if (entity is! File) continue;
+        final String name = entity.uri.pathSegments.last;
+        final bool isTemporary = name.endsWith('.part') ||
+            name.endsWith('.meta.json') ||
+            name.endsWith('.owner.json');
+        if (!isTemporary) continue;
+        final FileStat stat = entity.statSync();
+        if (stat.modified.isBefore(cutoff)) {
+          try {
+            entity.deleteSync();
+          } catch (e) {
+            debugPrint('[UpdateChecker] cleanup delete failed: $e');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UpdateChecker] cleanup scan failed: $e');
+    }
+  }
+
+  static Future<void> _check(
+    BuildContext context,
+    String currentVersion, {
+    bool neverRemind = false,
+    bool autoInstall = false,
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
+    final PlatformUpdater updater = updaterForCurrentPlatform();
+    if (!updater.supportsUpdateCheck) return;
+    final bool canInstall = updater.supportsInAppInstall;
+    // 不能自装的平台忽略 autoInstall（无意义），但仍可「检查→打开发布页」。
+    if (neverRemind && !(canInstall && autoInstall)) return;
+    HttpClient? client;
+    try {
+      await _cleanupOldApks(currentVersion);
+      client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 30);
+      // 走系统/环境代理：用户开着 clash/v2ray 时检查请求经其出口直连 api.github.com
+      // （纯 GFW 下唯一可成功路径，BUG-292）。无代理则等价直连，不破坏镜像回退。
+      await applyUpdateProxy(client);
+
+      final List<Map<String, dynamic>> releases =
+          await _fetchReleasesForChannel(client, channel);
+      final UpdateReleaseSelection? selection =
+          await selectUpdateReleaseForCurrentPlatform(
+        releases,
+        currentVersion: currentVersion,
+        channel: channel,
+        updater: updater,
+      );
+      if (selection == null) return;
+      final Map<String, dynamic> json = selection.release;
+
+      final String? tagName =
+          normalizeReleaseVersionTag(json['tag_name'] as String? ?? '');
+      if (tagName == null || tagName.isEmpty) {
+        return;
+      }
+
+      if (!isUpdateVersionNewer(tagName, currentVersion, channel)) {
+        return;
+      }
+
+      final releaseBody = json['body'] as String? ?? '';
+
+      final assets = json['assets'] as List<dynamic>? ?? [];
+      final List<Map<String, dynamic>> assetMaps =
+          assets.whereType<Map<String, dynamic>>().toList(growable: false);
+      final UpdateAsset? asset =
+          await updater.selectAsset(assetMaps, channel: channel);
+      final String? downloadUrl = asset?.url;
+
+      // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 打开发布页。
+      if (downloadUrl == null) {
+        final String? htmlUrl = json['html_url'] as String?;
+        if (htmlUrl != null && context.mounted) {
+          _showFallbackDialog(context, tagName, releaseBody, htmlUrl);
+        }
+        return;
+      }
+      if (!context.mounted) return;
+      if (canInstall && autoInstall) {
+        _downloadAndInstall(context, asset!, tagName, updater);
+      } else if (canInstall) {
+        _showUpdateDialog(context, tagName, releaseBody, asset!, updater);
+      } else {
+        // 能检查但不能自装（本期 iOS/mac/Linux）：弹「前往下载」打开发布页。
+        final String? htmlUrl = json['html_url'] as String?;
+        if (htmlUrl != null) {
+          _showFallbackDialog(context, tagName, releaseBody, htmlUrl);
+        }
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('UpdateChecker.check', e, stack);
+      debugPrint('[Hibiki] update check failed: $e');
+    } finally {
+      client?.close();
+    }
+  }
+
+  /// 多镜像回退的更新检查请求（BUG-277）。生成「直连 + 各 gh 代理前缀」候选列表
+  /// （[updateCheckUrls]），交给可注入核心 [fetchFirstSuccessfulBody] 逐个尝试：任一
+  /// 返回 HTTP 200 即整体成功，单点不可达/超时自动回退下一个，全失败才返回 null。
+  /// 每个候选带 [_kPerAttemptTimeout] 整体超时，避免坏镜像拖垮整轮检查。
+  static Future<String?> _httpGetString(
+    HttpClient client,
+    String url, {
+    Map<String, String> headers = const {},
+  }) {
+    return fetchFirstSuccessfulBody(
+      updateCheckUrls(url),
+      fetch: (String u) => _fetchOne(client, u, headers),
+      onFailure: (String host, Object? error) {
+        // 网络类失败（连不上/超时/TLS 握手）记一条可读的 i18n 摘要、不带堆栈，
+        // 让用户在日志里看到「连不上哪个源」而不被原始堆栈噪音淹没；其它异常
+        // （解析/逻辑错误）才是真问题，连堆栈一起记。
+        if (error == null || isExpectedUpdateNetworkFailure(error)) {
+          ErrorLogService.instance.log(
+              'UpdateChecker.httpGet',
+              t.update_network_failure(
+                host: host,
+                reason: describeUpdateNetworkFailureReason(error),
+              ));
+        } else {
+          ErrorLogService.instance.log('UpdateChecker.httpGet', error);
+        }
+        debugPrint('[Hibiki] update check failed ($host): $error');
+      },
+    );
+  }
+
+  /// 单个候选 URL 的一次抓取：HTTP 200 返回响应体，否则返回 null（让回退继续）。
+  /// 带 [_kPerAttemptTimeout] 整体超时——TCP 连上却挂起的镜像会被判死并回退。
+  static Future<String?> _fetchOne(
+    HttpClient client,
+    String url,
+    Map<String, String> headers,
+  ) async {
+    Future<String?> attempt() async {
+      final HttpClientRequest request = await client.getUrl(Uri.parse(url));
+      for (final MapEntry<String, String> e in headers.entries) {
+        request.headers.set(e.key, e.value);
+      }
+      final HttpClientResponse response = await request.close();
+      if (response.statusCode == 200) {
+        return response.transform(utf8.decoder).join();
+      }
+      await response.drain<void>();
+      return null;
+    }
+
+    return attempt().timeout(_kPerAttemptTimeout);
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchReleasesForChannel(
+    HttpClient client,
+    UpdateChannel channel,
+  ) async {
+    if (channel == UpdateChannel.stable) {
+      final Map<String, dynamic>? release = await _fetchStableRelease(client);
+      return release == null
+          ? const <Map<String, dynamic>>[]
+          : <Map<String, dynamic>>[release];
+    }
+
+    final body = await _httpGetString(
+      client,
+      'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=20',
+      headers: {'Accept': 'application/vnd.github+json'},
+    );
+    if (body == null) return const <Map<String, dynamic>>[];
+    final list = jsonDecode(body) as List<dynamic>;
+    return list
+        .whereType<Map<String, dynamic>>()
+        .where((Map<String, dynamic> release) {
+      return releaseMatchesUpdateChannel(release, channel);
+    }).toList(growable: false);
+  }
+
+  /// stable 通道检查（TODO-404 根因修复）：**优先**走 `github.com/.../releases/latest`
+  /// 的 302 网页跳转拿最新 tag（公共 gh 代理可透传，纯 GFW 无代理也能成功），据 tag +
+  /// 命名规则重建一个与 API 同构的 release map（[buildStableReleaseFromTag]）；**回退**到
+  /// 原 `api.github.com` 直连（有 VPN/系统代理时更权威、还带真实 assets/release notes）。
+  ///
+  /// 两条路返回值结构一致，对上层 [_fetchReleasesForChannel] /
+  /// [selectUpdateReleaseForCurrentPlatform] 完全透明——纯叠加，不破坏既有行为。
+  static Future<Map<String, dynamic>?> _fetchStableRelease(
+      HttpClient client) async {
+    final String? tag = await _fetchStableTagViaRedirect(client);
+    if (tag != null) {
+      final Map<String, dynamic> release = buildStableReleaseFromTag(tag);
+      if (releaseMatchesUpdateChannel(release, UpdateChannel.stable)) {
+        return release;
+      }
+    }
+    return _fetchStableReleaseViaApi(client);
+  }
+
+  /// 原 `api.github.com/.../releases/latest` 直连路径（保留作 302 失败后的回退）。
+  static Future<Map<String, dynamic>?> _fetchStableReleaseViaApi(
+      HttpClient client) async {
+    final body = await _httpGetString(
+      client,
+      'https://api.github.com/repos/$_kGitHubRepo/releases/latest',
+      headers: {'Accept': 'application/vnd.github+json'},
+    );
+    if (body == null) return null;
+    final Map<String, dynamic> release =
+        jsonDecode(body) as Map<String, dynamic>;
+    if (!releaseMatchesUpdateChannel(release, UpdateChannel.stable)) {
+      return null;
+    }
+    return release;
+  }
+
+  /// 逐候选（[updateCheckUrls]：直连优先 + 各 gh 代理前缀兜底）请求
+  /// `releases/latest`，**关重定向跟随**读 3xx 的 `Location` 头，解析出 stable
+  /// 最新 tag；任一候选拿到合法 tag 即整体成功，全失败返 null（TODO-404）。
+  ///
+  /// 复用 [fetchFirstSuccessfulBody] 保持「直连恒首位 / 逐镜像回退 / 任一成功即成功 /
+  /// 全失败才失败 / 失败记日志」不变式（与 [_httpGetString] 同一范式）。
+  static Future<String?> _fetchStableTagViaRedirect(HttpClient client) {
+    return fetchFirstSuccessfulBody(
+      updateCheckUrls(kStableReleasesLatestUrl),
+      fetch: (String u) => _fetchRedirectTagOne(client, u),
+      onFailure: (String host, Object? error) {
+        if (error == null || isExpectedUpdateNetworkFailure(error)) {
+          ErrorLogService.instance.log(
+              'UpdateChecker.redirectTag',
+              t.update_network_failure(
+                host: host,
+                reason: describeUpdateNetworkFailureReason(error),
+              ));
+        } else {
+          ErrorLogService.instance.log('UpdateChecker.redirectTag', error);
+        }
+        debugPrint('[Hibiki] update redirect-tag failed ($host): $error');
+      },
+    );
+  }
+
+  /// 单个候选 URL 的「读 302 → 解析 tag」一次尝试：关闭重定向跟随，3xx 且
+  /// `Location` 头能解析出合法 tag 才返回该 tag（非 null = 成功），否则返 null（让回退
+  /// 继续）。带 [_kPerAttemptTimeout] 整体超时——TCP 连上却挂起的镜像会被判死并回退。
+  static Future<String?> _fetchRedirectTagOne(
+    HttpClient client,
+    String url,
+  ) async {
+    Future<String?> attempt() async {
+      final HttpClientRequest request = await client.getUrl(Uri.parse(url));
+      // 关重定向跟随：我们要的是 302 本身的 Location，而非跟到目标网页拿一坨 HTML。
+      request.followRedirects = false;
+      final HttpClientResponse response = await request.close();
+      final int code = response.statusCode;
+      final String? location =
+          response.headers.value(HttpHeaders.locationHeader);
+      await response.drain<void>();
+      if (code >= 300 && code < 400) {
+        return parseLatestTagFromRedirectLocation(location);
+      }
+      return null;
+    }
+
+    return attempt().timeout(_kPerAttemptTimeout);
+  }
+
+  static void _showUpdateDialog(
+    BuildContext context,
+    String version,
+    String releaseNotes,
+    UpdateAsset asset,
+    PlatformUpdater updater,
+  ) {
+    showAppDialog<void>(
+      context: context,
+      builder: (ctx) => UpdateAvailableDialog(
+        version: version,
+        releaseNotes: releaseNotes,
+        primaryLabel: t.update_download,
+        onPrimary: () {
+          Navigator.of(ctx).pop();
+          _downloadAndInstall(context, asset, version, updater);
+        },
+      ),
+    );
+  }
+
+  /// Fallback dialog for when no APK asset exists — opens browser.
+  static void _showFallbackDialog(
+    BuildContext context,
+    String version,
+    String releaseNotes,
+    String htmlUrl,
+  ) {
+    showAppDialog<void>(
+      context: context,
+      builder: (ctx) => UpdateAvailableDialog(
+        version: version,
+        releaseNotes: releaseNotes,
+        primaryLabel: t.update_download,
+        onPrimary: () {
+          Navigator.of(ctx).pop();
+          launchUrl(
+            Uri.parse(htmlUrl),
+            mode: LaunchMode.externalApplication,
+          );
+        },
+      ),
+    );
+  }
+
+  static Future<void> _downloadAndInstall(
+    BuildContext context,
+    UpdateAsset asset,
+    String version,
+    PlatformUpdater updater,
+  ) async {
+    final String flowKey = _updateFlowKey(asset, version, updater);
+    return _runExclusiveUpdateFlow(
+      flowKey,
+      () => _runDownloadAndInstall(context, asset, version, updater),
+      onAlreadyActive: () {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.update_downloading)),
+          );
+        }
+      },
+    );
+  }
+
+  static String _updateFlowKey(
+    UpdateAsset asset,
+    String version,
+    PlatformUpdater updater,
+  ) =>
+      '${updater.runtimeType}|$version|${asset.name}|${asset.url}';
+
+  @visibleForTesting
+  static Future<void> runExclusiveUpdateFlowForTest(
+    String key,
+    Future<void> Function() start, {
+    void Function()? onAlreadyActive,
+  }) {
+    return _runExclusiveUpdateFlow(
+      key,
+      start,
+      onAlreadyActive: onAlreadyActive,
+    );
+  }
+
+  static Future<void> _runExclusiveUpdateFlow(
+    String key,
+    Future<void> Function() start, {
+    void Function()? onAlreadyActive,
+  }) async {
+    final Future<void>? activeFlow = _activeUpdateFlows[key];
+    if (activeFlow != null) {
+      onAlreadyActive?.call();
+      return activeFlow;
+    }
+
+    final Future<void> flow = Future<void>.sync(start);
+    _activeUpdateFlows[key] = flow;
+    try {
+      await flow;
+    } finally {
+      if (identical(_activeUpdateFlows[key], flow)) {
+        _activeUpdateFlows.remove(key);
+      }
+    }
+  }
+
+  static Future<void> _runDownloadAndInstall(
+    BuildContext context,
+    UpdateAsset asset,
+    String version,
+    PlatformUpdater updater,
+  ) async {
+    final progress = ValueNotifier<double>(0);
+    final status = ValueNotifier<String>(t.update_downloading);
+    final diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(null);
+    final overlayVisible = ValueNotifier<bool>(true);
+    late final OverlayEntry overlay;
+    overlay = OverlayEntry(
+      builder: (ctx) => ValueListenableBuilder<bool>(
+        valueListenable: overlayVisible,
+        builder: (_, visible, __) {
+          if (!visible) return const SizedBox.shrink();
+          return _DownloadOverlay(
+            progress: progress,
+            status: status,
+            diagnostics: diagnostics,
+            onHide: () => overlayVisible.value = false,
+          );
+        },
+      ),
+    );
+
+    final overlayState = Overlay.of(context);
+    overlayState.insert(overlay);
+
+    HttpClient? client;
+    try {
+      client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 30);
+      client.idleTimeout = const Duration(seconds: 60);
+      // 下载同样走系统/环境代理（与检查一致）：直连/镜像不通时经用户代理出口下载。
+      await applyUpdateProxy(client);
+
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      final File outFile = await downloadUpdateAsset(
+        asset: asset,
+        version: version,
+        updatesDir: updatesDir,
+        candidateUrls: updateCheckUrls(asset.url),
+        openUrl: (Uri uri, Map<String, String> headers) =>
+            _openHttpDownload(client!, uri, headers, version),
+        onProgress: (double value) {
+          progress.value = value;
+        },
+        onDiagnostics: (UpdateDownloadDiagnostics value) {
+          diagnostics.value = value;
+        },
+        onSourceFailure: (String url, Object error, StackTrace stack) {
+          if (isExpectedUpdateNetworkFailure(error)) {
+            ErrorLogService.instance.log(
+                'UpdateChecker.download',
+                t.update_network_failure(
+                  host: hostLabelForUpdateUrl(url),
+                  reason: describeUpdateNetworkFailureReason(error),
+                ));
+          } else {
+            ErrorLogService.instance
+                .log('UpdateChecker.download', error, stack);
+          }
+          debugPrint('[Hibiki] download source failed ($url): $error');
+        },
+      );
+
+      status.value = t.update_installing;
+
+      await updater.apply(outFile, version);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('UpdateChecker.downloadAndInstall', e, stack);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t.update_download_failed}: $e')),
+        );
+      }
+    } finally {
+      client?.close();
+      overlay.remove();
+      progress.dispose();
+      status.dispose();
+      diagnostics.dispose();
+      overlayVisible.dispose();
+    }
+  }
+
+  static Future<void> reconcilePendingWindowsInstallerHandoff(
+    BuildContext context,
+    String currentVersion,
+  ) async {
+    if (!Platform.isWindows) return;
+    if (!canShowDialogFromContext(context)) {
+      const String message =
+          'dialog navigator unavailable before handoff marker reconcile';
+      ErrorLogService.instance.log('UpdateChecker.windowsHandoff', message);
+      debugPrint(
+          '[Hibiki] windows update handoff reconcile deferred: $message');
+      return;
+    }
+    try {
+      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+      final WindowsUpdateHandoffResult? result =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: WindowsUpdateHandoff.markerFile(updatesDir),
+        currentVersion: currentVersion,
+      );
+      if (result == null) return;
+
+      ErrorLogService.instance.log(
+        'UpdateChecker.windowsHandoff',
+        'status=${result.status.name}, target=${result.record.targetVersion}, '
+            'current=$currentVersion, installer=${result.record.installerPath}, '
+            'launcherPid=${result.record.launcherPid ?? 'unknown'}, '
+            'pid=${result.record.installerPid ?? 'unknown'}, '
+            'log=${result.record.innoLogPath}, '
+            'logExists=${result.record.innoLogExists}, '
+            'failureType=${result.record.installerFailureType ?? 'unknown'}',
+      );
+      if (!context.mounted) return;
+      await showAppDialog<void>(
+        context: context,
+        barrierDismissible:
+            result.status == WindowsUpdateHandoffStatus.installed,
+        builder: (_) => WindowsUpdateHandoffResultDialog(result: result),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'UpdateChecker.windowsHandoff',
+        e,
+        stack,
+      );
+      debugPrint('[Hibiki] windows update handoff reconcile failed: $e');
+    }
+  }
+
+  static bool canShowDialogFromContext(BuildContext context) {
+    if (!context.mounted) return false;
+    final NavigatorState? navigator =
+        Navigator.maybeOf(context, rootNavigator: true);
+    return navigator != null && navigator.mounted;
+  }
+}
+
+/// stable 通道 release 列表页「最新版」入口。GitHub 对它返回 302 → 真实
+/// `.../releases/tag/<tag>` 网页（**不是** API），公共 gh 代理会原样透传这个 302
+/// （实测 ghfast.top 返回 302），所以纯 GFW 无代理用户也能从 `Location` 头解析出最新 tag
+/// （TODO-404 / BUG-292）。与 `_fetchReleasesForChannel` 打的 `api.github.com` 形成
+/// 对比：那个被镜像 403、检查注定失败。
+const String kStableReleasesLatestUrl =
+    'https://github.com/$_kGitHubRepo/releases/latest';
+
+/// release 资产下载基址（`releases/download/<tag>/<name>` 拼在其后）。下载阶段经
+/// [updateCheckUrls] 套镜像前缀；这些「下载」路径镜像真正可用（BUG-292）。
+const String _kReleaseDownloadBase =
+    'https://github.com/$_kGitHubRepo/releases/download';
+
+/// **纯函数**：从 `releases/latest` 的 302 `Location` 头解析最新 tag。
+///
+/// [location] 形如 `https://github.com/owner/repo/releases/tag/v0.4.1`，也可能被镜像
+/// 改写成 `https://ghfast.top/https://github.com/.../releases/tag/v0.4.1`、相对路径
+/// `/owner/repo/releases/tag/v0.4.1`、或带 `?`/`#` 查询片段。安全做法：**只认
+/// `releases/tag/<tag>` 这一段、丢弃域名**（防镜像把域名改写成钓鱼站后我们误信），用
+/// `normalizeReleaseVersionTag` 归一化校验（非版本串返 null）。无 `releases/tag/` 段、
+/// tag 段非合法版本、或入参为空 → 返 null（调用方回退 API 直连）。
+@visibleForTesting
+String? parseLatestTagFromRedirectLocation(String? location) {
+  if (location == null) return null;
+  final RegExpMatch? match =
+      RegExp(r'releases/tag/(v?[^/?#]+)').firstMatch(location);
+  if (match == null) return null;
+  final String rawTag = Uri.decodeComponent(match.group(1)!);
+  final String? normalized = normalizeReleaseVersionTag(rawTag);
+  if (normalized == null || normalized.isEmpty) return null;
+  // 把原始 tag 串保留下来交给下游（download URL 用原始 tag 段，含可能的前导 v），
+  // 但调用方拿到这里的 [normalized] 仅用于「是否更新」判断；tag 段单独由
+  // [buildStableReleaseFromTag] 处理。返回原始 tag 段（trim 后）以便拼下载 URL。
+  return rawTag.trim();
+}
+
+/// **纯函数**：把 302 解析出的 stable [tag] 重建成与 GitHub API release 同构的 map，
+/// 让它能直接喂给现有 [selectUpdateReleaseForCurrentPlatform] / `selectAsset` 整条链路，
+/// 不在更新流程里另搞一套特例分支（TODO-404）。
+///
+/// 302 网页跳转拿不到 API 的 `assets` 清单与 `body`（release notes），故：
+/// * `prerelease: false`、`draft: false`、`tag_name: <tag>` —— 让 stable 通道匹配通过。
+/// * `assets`：用 [synthesizeStableAssetNames] 按命名规则重建（Android 全 ABI + Windows
+///   setup），`browser_download_url` 拼 `releases/download/<tag>/<name>`，由 `selectAsset`
+///   按平台/设备 ABI 自行挑。
+/// * `body: ''`、`html_url`：notes 缺失时上层自然退化到「打开发布页」对话框。
+@visibleForTesting
+Map<String, dynamic> buildStableReleaseFromTag(String tag) {
+  final String trimmedTag = tag.trim();
+  final String version = normalizeReleaseVersionTag(trimmedTag) ?? '';
+  final List<Map<String, dynamic>> assets = <Map<String, dynamic>>[
+    for (final String name in synthesizeStableAssetNames(version))
+      <String, dynamic>{
+        'name': name,
+        'browser_download_url': '$_kReleaseDownloadBase/$trimmedTag/$name',
+      },
+  ];
+  return <String, dynamic>{
+    'tag_name': trimmedTag,
+    'prerelease': false,
+    'draft': false,
+    'body': '',
+    'html_url': '$_kStableReleasesHtmlUrl/tag/$trimmedTag',
+    'assets': assets,
+  };
+}
+
+/// stable release 网页基址（`tag/<tag>` 拼其后，作为 fallback「打开发布页」目标）。
+const String _kStableReleasesHtmlUrl =
+    'https://github.com/$_kGitHubRepo/releases';
+
+@visibleForTesting
+Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
+  List<Map<String, dynamic>> releases, {
+  required String currentVersion,
+  required UpdateChannel channel,
+  required PlatformUpdater updater,
+}) async {
+  UpdateReleaseSelection? fallback;
+  for (final Map<String, dynamic> release in releases) {
+    if (!releaseMatchesUpdateChannel(release, channel)) continue;
+    final String? version =
+        normalizeReleaseVersionTag(release['tag_name'] as String? ?? '');
+    if (version == null || version.isEmpty) continue;
+    if (!isUpdateVersionNewer(version, currentVersion, channel)) continue;
+
+    final List<Map<String, dynamic>> assetMaps =
+        (release['assets'] as List<dynamic>? ?? <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .toList(growable: false);
+    final UpdateAsset? asset =
+        await updater.selectAsset(assetMaps, channel: channel);
+    final UpdateReleaseSelection selection = UpdateReleaseSelection(
+      release: release,
+      version: version,
+      releaseNotes: release['body'] as String? ?? '',
+      asset: asset,
+    );
+    if (asset != null) return selection;
+    // Self-installing platforms must ignore wrong-platform releases instead of
+    // treating independent Android/Windows workflow run numbers as comparable.
+    if (!updater.supportsInAppInstall) fallback ??= selection;
+  }
+  return fallback;
+}
+
+@visibleForTesting
+String? normalizeReleaseVersionTag(String tag) {
+  final String normalized = tag.trim().replaceFirst(RegExp(r'^[vV]'), '');
+  if (!_looksLikeVersion(normalized)) return null;
+  return _stripBuildMetadata(normalized);
+}
+
+@visibleForTesting
+bool releaseMatchesUpdateChannel(
+  Map<String, dynamic> release,
+  UpdateChannel channel,
+) {
+  if (release['draft'] == true) return false;
+  final String tag = release['tag_name'] as String? ?? '';
+  final String? version = normalizeReleaseVersionTag(tag);
+  if (version == null) return false;
+  final bool prerelease = release['prerelease'] == true;
+  return switch (channel) {
+    UpdateChannel.stable => !prerelease && _prereleasePart(version) == null,
+    UpdateChannel.beta =>
+      prerelease && _releaseTagMatchesChannel(tag, UpdateChannel.beta),
+    UpdateChannel.debug =>
+      prerelease && _releaseTagMatchesChannel(tag, UpdateChannel.debug),
+  };
+}
+
+@visibleForTesting
+bool isUpdateVersionNewer(
+  String remote,
+  String local,
+  UpdateChannel channel,
+) {
+  if (channel == UpdateChannel.stable) return isVersionNewer(remote, local);
+
+  final String remoteVersion = _stripBuildMetadata(remote.trim());
+  final String localVersion = _stripBuildMetadata(local.trim());
+  if (!_versionBelongsToChannel(remoteVersion, channel)) return false;
+
+  final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
+  if (baseCompare != 0) return baseCompare > 0;
+
+  final String? localPrerelease = _prereleasePart(localVersion);
+  if (localPrerelease == null) return true;
+  if (!_prereleaseBelongsToChannel(localPrerelease, channel)) return true;
+
+  final String remotePrerelease = _prereleasePart(remoteVersion)!;
+  return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
+}
+
+bool isVersionNewer(String remote, String local) {
+  final String remoteVersion = _stripBuildMetadata(remote.trim());
+  final String localVersion = _stripBuildMetadata(local.trim());
+  final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
+  if (baseCompare != 0) return baseCompare > 0;
+
+  final String? remotePrerelease = _prereleasePart(remoteVersion);
+  final String? localPrerelease = _prereleasePart(localVersion);
+  if (remotePrerelease == null && localPrerelease != null) return true;
+  if (remotePrerelease == null || localPrerelease == null) return false;
+  return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
+}
+
+String _stripBuildMetadata(String version) => version.split('+').first;
+
+bool _looksLikeVersion(String version) => RegExp(
+      r'^\d+(?:\.\d+)*(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$',
+    ).hasMatch(version);
+
+String _basePart(String version) =>
+    _stripBuildMetadata(version).split('-').first;
+
+String? _prereleasePart(String version) {
+  final String stripped = _stripBuildMetadata(version);
+  final int hyphen = stripped.indexOf('-');
+  if (hyphen < 0 || hyphen == stripped.length - 1) return null;
+  return stripped.substring(hyphen + 1);
+}
+
+List<int> _baseSegments(String version) => _basePart(version)
+    .split('.')
+    .map((String part) => int.tryParse(part) ?? 0)
+    .toList(growable: false);
+
+int _compareBaseVersion(String remote, String local) {
+  final List<int> r = _baseSegments(remote);
+  final List<int> l = _baseSegments(local);
+  final int len = r.length > l.length ? r.length : l.length;
+  for (int i = 0; i < len; i++) {
+    final int rv = i < r.length ? r[i] : 0;
+    final int lv = i < l.length ? l[i] : 0;
+    if (rv != lv) return rv.compareTo(lv);
+  }
+  return 0;
+}
+
+bool _versionBelongsToChannel(String version, UpdateChannel channel) {
+  final String normalized = _stripBuildMetadata(version.trim());
+  return switch (channel) {
+    UpdateChannel.beta => _kBetaVersionPattern.hasMatch(normalized),
+    UpdateChannel.debug => _kDebugVersionPattern.hasMatch(normalized),
+    UpdateChannel.stable => false,
+  };
+}
+
+bool _releaseTagMatchesChannel(String tag, UpdateChannel channel) {
+  final String normalized = tag.trim();
+  return switch (channel) {
+    UpdateChannel.beta => _kBetaReleaseTagPattern.hasMatch(normalized),
+    UpdateChannel.debug => _kDebugReleaseTagPattern.hasMatch(normalized),
+    UpdateChannel.stable => false,
+  };
+}
+
+bool _prereleaseBelongsToChannel(String prerelease, UpdateChannel channel) {
+  final String normalized = prerelease.trim();
+  return switch (channel) {
+    UpdateChannel.beta => _kBetaVersionPattern.hasMatch('0.0.0-$normalized'),
+    UpdateChannel.debug => _kDebugVersionPattern.hasMatch('0.0.0-$normalized'),
+    UpdateChannel.stable => false,
+  };
+}
+
+int _comparePrerelease(String remote, String local) {
+  final List<String> r = remote.split('.');
+  final List<String> l = local.split('.');
+  final int len = r.length > l.length ? r.length : l.length;
+  for (int i = 0; i < len; i++) {
+    if (i >= r.length) return -1;
+    if (i >= l.length) return 1;
+    final int part = _comparePrereleasePart(r[i], l[i]);
+    if (part != 0) return part;
+  }
+  return 0;
+}
+
+int _comparePrereleasePart(String remote, String local) {
+  final int? ri = int.tryParse(remote);
+  final int? li = int.tryParse(local);
+  if (ri != null && li != null) return ri.compareTo(li);
+  if (ri != null) return -1;
+  if (li != null) return 1;
+  return remote.compareTo(local);
+}

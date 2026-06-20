@@ -628,7 +628,8 @@ void main() {
         'source guard: UpdateChecker validates Navigator before handoff '
         'marker reconcile', () {
       final String source =
-          File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+          File('lib/src/utils/misc/update_checker_release.dart')
+              .readAsStringSync();
       final int method = source.indexOf(
           'static Future<void> reconcilePendingWindowsInstallerHandoff');
       final int guard =
@@ -649,7 +650,8 @@ void main() {
 
     test('source guard: dialog context validator is production-callable', () {
       final String source =
-          File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+          File('lib/src/utils/misc/update_checker_release.dart')
+              .readAsStringSync();
       final int helper = source.indexOf(
         'static bool canShowDialogFromContext(BuildContext context)',
       );

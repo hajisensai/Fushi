@@ -492,7 +492,7 @@ void main() {
 
     test('awaits IOSink.done so open/write/close errors stay catchable', () {
       final String source = File(
-        'lib/src/utils/misc/update_checker.dart',
+        'lib/src/utils/misc/update_checker_download.dart',
       ).readAsStringSync();
 
       expect(
