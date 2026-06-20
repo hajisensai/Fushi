@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 339 条。点号进各自文件。
+> 共 341 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-347](bugs/BUG-347-todo-618-exit-hard-error-phase1.md) | ✅ | ✅ | 打开动画状态直接关 Hibiki 弹 Unknown Hard Error（TODO-618 相位1：fix1+fix3） |
+| [BUG-346](bugs/BUG-346-video-clip-export-audio-map.md) | ✅ | ✅ | 视频片段导出 ffmpeg 执行失败：音轨映射越界硬失败 + stderr 被吞 |
 | [BUG-345](bugs/BUG-345-popup-glossary-ruby-hspacing.md) | ✅ | ✅ | 查词弹窗释义逐字振假名横向字间距被撑开参差 |
 | [BUG-344](bugs/BUG-344-subtitle-import-native-crash.md) | ✅ | ✅ | 导入字幕原生崩溃 0xc0000005 flutter_windows.dll AV |
 | [BUG-343](bugs/BUG-343-desktop-audio-player-already-exists.md) | ✅ | ✅ | Windows 桌面本地音频/查词自动发音偶发没声 Player already exists |

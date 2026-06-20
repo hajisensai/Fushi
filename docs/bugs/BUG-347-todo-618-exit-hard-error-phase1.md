@@ -1,4 +1,4 @@
-## BUG-346 · 打开动画状态直接关 Hibiki 弹 Unknown Hard Error（TODO-618 相位1：fix1+fix3）
+## BUG-347 · 打开动画状态直接关 Hibiki 弹 Unknown Hard Error（TODO-618 相位1：fix1+fix3）
 - **报告**：2026-06-20（用户：）
 - **真实性**：✅ 真 bug（退出期 native teardown 落空）。根因 A1 坐实：`hibiki/lib/src/platform/desktop/windows_native_pre_exit.dart:10` 旧实现用单个静态 `_prepared` bool，被更新路径（`hibiki/lib/src/utils/misc/platform_updater.dart:556` `prepareForExit`）与关窗路径（`hibiki/lib/src/platform/desktop/desktop_lifecycle_service.dart:16`，经 `main.dart` 的 `exitApp` 间接）共享；`if (_prepared) return; _prepared = true` 在 `invokeMethod` 前置位且无回滚，所以走过更新预检后再关窗会静默跳过 native teardown（`webViews.clear` 系列落空）→ compositor/CustomPlatformView 下游对象拆解期仍有 WGC 帧推给引擎 → 退出期 `Unknown Hard Error`。0xc0000005 精确崩点未 dump 坐实（相位2/TODO-607-P0 待办）。
 - **[x] ① 已修复** —

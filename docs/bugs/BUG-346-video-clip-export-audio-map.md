@@ -1,4 +1,4 @@
-## BUG-345 · 视频片段导出 ffmpeg 执行失败：音轨映射越界硬失败 + stderr 被吞
+## BUG-346 · 视频片段导出 ffmpeg 执行失败：音轨映射越界硬失败 + stderr 被吞
 - **报告**：2026-06-20（用户：报「视频片段导出 ffmpeg 执行失败」）
 - **真实性**：✅ 真 bug。
   - **A 首要根因**：`buildFfmpegVideoClipExportArgs` 拼 `-map 0:a:$N` 无尾随 `?`
