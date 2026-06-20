@@ -653,6 +653,11 @@ void main() {
               'timestamp rows as video-subsystem content; row font size scales '
               'with appUiScale, not ordinary page chrome (same content rationale '
               'as the allowlisted sibling subtitle jump panel).',
+      'lib/src/media/video/video_side_panel.dart':
+          'Video translucent side-panel scaffold (favorite sentences list etc.) '
+              'renders video-subsystem overlay chrome; lock toggle (TODO-611) '
+              'uses a dense compact icon button consistent with the sibling '
+              'subtitle jump panel, not ordinary page chrome.',
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
               'size (content), defaults mirror the allowlisted overlay caption.',
