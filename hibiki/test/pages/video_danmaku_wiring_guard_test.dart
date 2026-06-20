@@ -10,6 +10,7 @@ import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/utils.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 VideoQuickSettingsSheet _sheet({
   void Function(bool)? onDanmakuEnabledChanged,
@@ -128,9 +129,7 @@ void main() {
   test(
       'source guard: danmaku layer is local-only, non-blocking and under subtitles',
       () {
-    final String page =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    final String page = readVideoHibikiSource();
     final String overlay =
         File('lib/src/media/video/video_danmaku_overlay.dart')
             .readAsStringSync();
@@ -161,9 +160,7 @@ void main() {
   });
 
   test('source guard: danmaku settings reload or clear the current video', () {
-    final String page =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    final String page = readVideoHibikiSource();
 
     expect(page, contains('Future<void> _setVideoDanmakuEnabled'));
     expect(page, contains('Future<void> _setVideoDanmakuOnlineEnabled'));
