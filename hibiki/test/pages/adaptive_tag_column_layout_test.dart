@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 
@@ -128,9 +127,7 @@ void main() {
 
   group('BUG-220 子2 源码守卫', () {
     test('_adaptiveTagColumn 走统一宽度列(IntrinsicWidth + stretch)而非裸 start 列', () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-      ).readAsStringSync();
+      final String source = readReaderHistorySource();
       // 统一宽度 helper 存在且用 IntrinsicWidth + stretch。
       expect(source, contains('Widget _uniformWidthTagColumn('));
       expect(source, contains('IntrinsicWidth('));

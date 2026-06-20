@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 
 /// Source guards for the 2026-06-08 video subtitle fix batch. media_kit cannot
 /// run headless and OS-level drag/focus can't be widget-tested, so each fix
@@ -18,9 +19,7 @@ void main() {
   final String homeVideoSrc =
       File('lib/src/pages/implementations/home_video_page.dart')
           .readAsStringSync();
-  final String shelfSrc =
-      File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-          .readAsStringSync();
+  final String shelfSrc = readReaderHistorySource();
 
   String region(String startSig, String endSig, {String? source}) {
     final String haystack = source ?? src;
@@ -232,8 +231,8 @@ void main() {
     expect(panel.contains('if (_jimakuQuery() != null)'), isTrue,
         reason: 'Jimaku 入口门控必须按「能否算出番名 query」判定，不能用 !_isRemote '
             '把远端视频整条入口隐藏（TODO-573）');
-    expect(panel.contains('if (!_isRemote && _currentVideoPath != null)'),
-        isFalse,
+    expect(
+        panel.contains('if (!_isRemote && _currentVideoPath != null)'), isFalse,
         reason: '旧的 !_isRemote 门控会让远端视频看不到「自动获取字幕」，必须移除');
     // 入口本体仍在（标题 + 打开对话框）。
     expect(panel.contains('t.video_jimaku_fetch'), isTrue);
@@ -265,8 +264,8 @@ void main() {
         reason: '对话框 query 复用 _jimakuQuery，不再直接读 _currentVideoPath');
     expect(dialog.contains('if (_isRemote)'), isTrue,
         reason: '远端必须按 _isRemote 分流：没有本地 DB 行，不能走持久化链路');
-    expect(dialog.contains('_applyRemoteSubtitle(controller, downloaded)'),
-        isTrue,
+    expect(
+        dialog.contains('_applyRemoteSubtitle(controller, downloaded)'), isTrue,
         reason: '远端下载的字幕只能内存应用（_applyRemoteSubtitle），与远端「本地导入字幕」'
             '同一不落 DB 的链路（TODO-573）');
     expect(dialog.contains('_selectSubtitleSource(controller, source)'), isTrue,
@@ -276,7 +275,6 @@ void main() {
         dialog.indexOf('_applyRemoteSubtitle(controller, downloaded)');
     final int localSelect =
         dialog.indexOf('_selectSubtitleSource(controller, source)');
-    expect(remoteApply, lessThan(localSelect),
-        reason: '远端分支应在本地持久化分支之前并早返回');
+    expect(remoteApply, lessThan(localSelect), reason: '远端分支应在本地持久化分支之前并早返回');
   });
 }

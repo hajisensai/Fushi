@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_history_source_corpus.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
@@ -63,11 +62,9 @@ void main() {
   });
 
   test('书架卡片外壳把 onSecondaryTap 配线到长按回调（源码守卫）', () {
-    final File source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    );
-    expect(source.existsSync(), isTrue, reason: '路径变更请同步更新本守卫');
-    final String text = source.readAsStringSync();
+    // TODO-587: reader_hibiki_history_page 拆成主壳 + reader_history/*.part.dart；
+    // _bookCardShell 现落在 card_widgets.part.dart，故读合并语料。
+    final String text = readReaderHistorySource();
     expect(
       text.contains('onSecondaryTap: _selectionMode ? null : onLongPress'),
       isTrue,

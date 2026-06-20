@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -143,9 +144,7 @@ void main() {
     // 下载必须接 onProgress 才能给进行中反馈。
     expect(video, contains('onProgress:'));
 
-    final String book =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String book = readReaderHistorySource();
     expect(book, contains('t.remote_book_unavailable'));
     expect(book, contains('onProgress:'));
   });

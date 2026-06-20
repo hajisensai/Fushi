@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -89,9 +88,7 @@ void main() {
   });
 
   test('源码守卫：三段不再用同款横杠且 remove 文字也染错误红', () {
-    final String src = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String src = readReaderHistorySource();
 
     final int rowStart = src.indexOf('class _BatchTagIntentRow');
     expect(rowStart, isNonNegative);

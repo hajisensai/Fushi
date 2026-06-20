@@ -1,13 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 
 void main() {
   test('bookshelf cards render the title below the cover, not as an overlay',
       () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
 
     expect(
       source,
@@ -48,9 +45,7 @@ void main() {
   });
 
   test('card layout exposes title footer, tags, badge, and metadata', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
 
     // Signature stays footer-era compatible so the four call sites need no edit.
@@ -84,9 +79,7 @@ void main() {
   test(
       'book cover artwork scales by height (no distortion) across all shelf '
       'sources (TODO-552)', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String remoteCover =
         _functionSource(source, 'Widget _buildRemoteBookCover(');
     final String videoCover =
@@ -119,9 +112,7 @@ void main() {
   });
 
   test('linked SRT cards fall back to the EPUB cover before placeholder', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String body =
         _functionSource(source, 'Widget _buildBodyWithSrtBooks(');
     final String srtCard = _functionSource(source, 'Widget _buildSrtCard(');
@@ -154,9 +145,7 @@ void main() {
 
   test('visual card frame wraps only the cover, while interactions wrap all',
       () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String shell = _functionSource(source, 'Widget _bookCardShell({');
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
 
@@ -183,9 +172,7 @@ void main() {
   });
 
   test('book card footer clamps long titles without resizing the grid', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String footer = _functionSource(source, 'Widget _bookCardFooter(');
 
     expect(source, contains('const double kShelfTitleFooterHeight ='));
@@ -196,9 +183,7 @@ void main() {
   });
 
   test('book type badge is pinned to the top-right corner of the cover', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
 
     // The badge must sit at the trailing top corner, not the bottom (TODO-284).
@@ -220,9 +205,7 @@ void main() {
   });
 
   test('cover type badge renders at its normal intrinsic size (TODO-552)', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String layout = _functionSource(source, 'Widget _bookCardLayout({');
 
     // The badge box equals the badge intrinsic size (22px). With BoxFit.contain
@@ -259,9 +242,7 @@ void main() {
   });
 
   test('long or multiple book tags are clipped in their own overlay area', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
-            .readAsStringSync();
+    final String source = readReaderHistorySource();
     final String tagArea = _functionSource(source, 'Widget _bookCardTagArea(');
 
     expect(tagArea, contains('ConstrainedBox('));

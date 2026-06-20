@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_history_source_corpus.dart';
 
 void main() {
   const Map<String, List<String>> requiredComponentTokens =
@@ -264,7 +265,10 @@ void main() {
         in requiredComponentTokens.entries) {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
-      final String source = file.readAsStringSync();
+      final String source =
+          entry.key.endsWith('reader_hibiki_history_page.dart')
+              ? readReaderHistorySource()
+              : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
@@ -276,7 +280,10 @@ void main() {
         in migratedSurfaces.entries) {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
-      final String source = file.readAsStringSync();
+      final String source =
+          entry.key.endsWith('reader_hibiki_history_page.dart')
+              ? readReaderHistorySource()
+              : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
@@ -547,7 +554,10 @@ void main() {
     };
 
     for (final MapEntry<String, List<String>> entry in bannedByFile.entries) {
-      final String fileSource = File(entry.key).readAsStringSync();
+      final String fileSource =
+          entry.key.endsWith('reader_hibiki_history_page.dart')
+              ? readReaderHistorySource()
+              : File(entry.key).readAsStringSync();
       final String source =
           entry.key.endsWith('reader_hibiki_history_page.dart')
               ? _withoutTransparentInkHosts(
@@ -620,6 +630,14 @@ void main() {
               'Surfaces still flow through HibikiDialogFrame + HibikiDesignTokens.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           'Book-cover overlays and drag affordances are reader-shelf content.',
+      // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
+      // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
+      'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
+          'Book-cover badges/progress are reader-shelf card content.',
+      'lib/src/pages/implementations/reader_history/remote.part.dart':
+          'Remote book download control density is reader-shelf content.',
+      'lib/src/pages/implementations/reader_history/dialogs.part.dart':
+          'Reader-shelf dialog/segment typography is content chrome.',
       'lib/src/pages/implementations/reader_hibiki_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
@@ -798,9 +816,7 @@ void main() {
   });
 
   test('reader history card layout uses shared MD3 spacing tokens', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderHistorySource();
     final String cardLayout = _functionSource(
       source,
       'Widget _bookCardLayout({',
@@ -888,9 +904,7 @@ void main() {
   });
 
   test('reader history selection chrome uses shared MD3 tokens', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderHistorySource();
     final String cardShell = _functionSource(
       source,
       'Widget _bookCardShell({',
@@ -911,9 +925,7 @@ void main() {
   });
 
   test('reader history batch actions use shared MD3 spacing tokens', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderHistorySource();
     final String batchActionBar = _functionSource(
       source,
       'Widget _buildBatchActionBar()',
@@ -955,9 +967,7 @@ void main() {
   });
 
   test('reader history title footer and drag target use shared MD3 tokens', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderHistorySource();
     final String titleFooter = _functionSource(
       source,
       'Widget _bookCardFooter(String title)',
@@ -996,9 +1006,7 @@ void main() {
   });
 
   test('reader history action dialogs use shared MD3 dialog chrome', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderHistorySource();
     final String deleteDialog = _sectionSource(
       source,
       'class ReaderHistoryDeleteDialog',

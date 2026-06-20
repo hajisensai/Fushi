@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 
 /// TODO-558 / BUG-326 源码守卫：书架（books 表面）拖入视频/播放列表时，必须**自动切到
 /// 视频导入流程**并带上拖入文件（[_openVideoImportPrefilled] / [_openPlaylistImportPrefilled]
@@ -10,12 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// 决策纯函数（books 表面视频→importNewVideo / importNewPlaylist）由
 /// drop_decision_test.dart 覆盖；本守卫钉死书架页 handler 对这两个意图的接线。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-  );
+  final String pageSrc = readReaderHistorySource();
 
   test('shelf drop wires importNewVideo to prefilled video import', () {
-    final String src = page.readAsStringSync();
+    final String src = pageSrc;
 
     expect(src.contains('case DropIntent.importNewVideo:'), isTrue,
         reason: 'importNewVideo case must be handled on the shelf');
@@ -37,7 +34,7 @@ void main() {
   });
 
   test('shelf drop wires importNewPlaylist to prefilled playlist import', () {
-    final String src = page.readAsStringSync();
+    final String src = pageSrc;
 
     expect(src.contains('case DropIntent.importNewPlaylist:'), isTrue,
         reason: 'importNewPlaylist case must be handled on the shelf');
@@ -54,7 +51,7 @@ void main() {
   });
 
   test('prefilled openers pass paths into VideoImportDialog', () {
-    final String src = page.readAsStringSync();
+    final String src = pageSrc;
 
     // 预填打开方法把拖入路径透传进 VideoImportDialog（initialVideoPath / initialPlaylistPath）。
     expect(src.contains('initialVideoPath: videoPath'), isTrue,

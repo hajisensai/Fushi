@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 
 /// 守卫（TODO-160子d / BUG-227 / TODO-291 阶段2）：书架长按 EPUB 书籍菜单的 extraActions
 /// 含悬浮字幕入口。TODO-291 阶段2 把该入口从「只切 setShowFloatingLyric 偏好」升级为
@@ -10,9 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late String src;
   setUpAll(() {
-    src = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    src = readReaderHistorySource();
   });
 
   test('extraActions 含悬浮字幕开关 label', () {
@@ -53,7 +50,7 @@ void main() {
     final String epubActions = _sectionSource(
       src,
       'List<DialogAction> extraActions(MediaItem item) {',
-      '  /// 该书当前是否就是活动后台听书会话。',
+      '  String? _parseBookKey(String mediaIdentifier) =>',
     );
     final String srtActions = _sectionSource(
       src,

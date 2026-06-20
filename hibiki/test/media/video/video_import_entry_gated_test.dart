@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../../pages/reader_history_source_corpus.dart';
 
 /// 源码守卫（Phase 3）：「新导入视频」入口必须门控在编译期常量
 /// `kVideoImportEnabled` 后，且默认 `false`——防回归把入口直接挂出来。
@@ -22,8 +23,7 @@ void main() {
   });
 
   test('书架页头的视频导入入口被 if (kVideoImportEnabled) 门控', () {
-    final String page =
-        read('lib/src/pages/implementations/reader_hibiki_history_page.dart');
+    final String page = readReaderHistorySource();
     // 门控条件出现，且其后紧跟视频导入入口（_openVideoImport）。
     final int gateAt = page.indexOf('if (kVideoImportEnabled)');
     expect(gateAt, greaterThanOrEqualTo(0),

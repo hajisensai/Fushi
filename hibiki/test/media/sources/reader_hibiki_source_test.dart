@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../pages/reader_history_source_corpus.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -14,9 +15,7 @@ void main() {
       final String source = File(
         'lib/src/media/sources/reader_hibiki_source.dart',
       ).readAsStringSync();
-      final String historySource = File(
-        'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-      ).readAsStringSync();
+      final String historySource = readReaderHistorySource();
 
       final int actionsStart = source.indexOf('List<Widget> getActions');
       final int importButtonStart =

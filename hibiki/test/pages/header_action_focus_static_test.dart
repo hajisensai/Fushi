@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_history_source_corpus.dart';
 
 void main() {
   test('desktop dictionary page actions use HibikiIconButton', () {
@@ -42,9 +43,7 @@ void main() {
   });
 
   test('reader history batch toolbar uses HibikiIconButton actions', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderHistorySource();
     final int barStart = source.indexOf('Widget _buildBatchActionBar()');
     final int deleteStart =
         source.indexOf('Future<void> _batchDeleteConfirm()');

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../../pages/reader_history_source_corpus.dart';
 
 void main() {
   final File wrapper = File(
@@ -54,9 +55,7 @@ void main() {
     final String video = File(
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
-    final String shelf = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
-    ).readAsStringSync();
+    final String shelf = readReaderHistorySource();
 
     String functionBody(String source, String start, String end) {
       final int startIndex = source.indexOf(start);
