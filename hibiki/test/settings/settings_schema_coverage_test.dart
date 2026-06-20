@@ -61,7 +61,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
   'system/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',
-  'reading/Swipe dismiss sensitivity':
+  'lookup/Swipe dismiss sensitivity':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
   'reading/Reverse keyboard left/right page-turn direction':
       'test/reader/reader_space_pause_test.dart + test/shortcuts/global_navigation_test.dart',

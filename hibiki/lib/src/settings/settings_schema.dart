@@ -773,26 +773,6 @@ SettingsDestination _readingDestination() {
             },
           ),
           SettingsSliderItem(
-            id: 'reading_controls.dismiss_swipe_sensitivity',
-            title: t.dismiss_swipe_sensitivity,
-            icon: Icons.swipe_down_outlined,
-            min: 0.1,
-            max: 1,
-            divisions: 9,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 5,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.dismissSwipeSensitivity,
-            label: (double value) => value.toStringAsFixed(1),
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.readerSource
-                  .setDismissSwipeSensitivity(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsSliderItem(
             id: 'reading_controls.wheel_page_turn_interval',
             title: t.wheel_page_turn_interval,
             icon: Icons.mouse_outlined,
@@ -1140,6 +1120,29 @@ SettingsDestination _lookupDestination() {
                 settingsContext.readerSource.enableSwipeToClose,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.readerSource.setEnableSwipeToClose(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // TODO-625：滑动关闭的灵敏度阈值，与上面的"允许水平滑动关闭查词弹窗"开关
+          // 配套，同属查词弹窗手势行为（ReaderGroup.lookup，紧邻开关），与开关相邻摆放。
+          // id/偏好 key 沿用 'reading_controls.' 前缀作向后兼容（持久化无关展示分类）。
+          SettingsSliderItem(
+            id: 'reading_controls.dismiss_swipe_sensitivity',
+            title: t.dismiss_swipe_sensitivity,
+            icon: Icons.swipe_down_outlined,
+            min: 0.1,
+            max: 1,
+            divisions: 9,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 4,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.dismissSwipeSensitivity,
+            label: (double value) => value.toStringAsFixed(1),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource
+                  .setDismissSwipeSensitivity(value);
               notifyReaderSettingsChanged(settingsContext);
             },
           ),

@@ -285,6 +285,17 @@ void main() {
         schemaSource.substring(swipeCloseStart, swipeCloseStart + 360);
     expect(swipeCloseSource, contains('group: ReaderGroup.lookup'));
     expect(swipeCloseSource, isNot(contains('group: ReaderGroup.behavior')));
+
+    // TODO-625：「滑动关闭灵敏度」与上面的开关配套，同属查词弹窗手势行为，
+    // 归查词分组（ReaderGroup.lookup），不得滞留在阅读控制（ReaderGroup.behavior）。
+    final int swipeSensitivityStart = schemaSource
+        .indexOf("id: 'reading_controls.dismiss_swipe_sensitivity'");
+    expect(swipeSensitivityStart, isNonNegative);
+    final String swipeSensitivitySource = schemaSource.substring(
+        swipeSensitivityStart, swipeSensitivityStart + 360);
+    expect(swipeSensitivitySource, contains('group: ReaderGroup.lookup'));
+    expect(
+        swipeSensitivitySource, isNot(contains('group: ReaderGroup.behavior')));
   });
 
   test('popup instant scroll is a global lookup display setting', () {
