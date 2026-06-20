@@ -12,6 +12,15 @@ void main() {
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = false;
     DesktopForegroundGuard.debugForegroundOwnedByHibikiAppFamily = false;
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
+    // TODO-615: bringPendingLookupToFront 现在会经 WindowCaptionChannel 下发
+    // clearTaskbarFlash 到 app.hibiki/window。在 Windows 测试宿主上，未 mock 的平台
+    // 通道 invokeMethod 永不完成（无平台实现应答）会让 await 挂死。默认应答该通道
+    // （返回 null = 立即完成）；想观察该调用的用例可各自再覆盖 handler 收集调用。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('app.hibiki/window'),
+      (MethodCall call) async => null,
+    );
   });
   tearDown(() {
     DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = null;
@@ -21,6 +30,9 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('app.hibiki/window'), null);
   });
 
   test('submitText sets pendingText and notifies, deduped', () {
@@ -419,7 +431,85 @@ void main() {
     await expectLater(svc.bringPendingLookupToFront(), completes);
     expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
   });
+
+  // TODO-615 方案A：剪贴板/热键查词在主窗已前台时仍误触 SetForegroundWindow 退化成
+  // 任务栏 flash（TODO-341）。判前台守卫在前台判据抖动时可能漏判而留下残留高亮，
+  // 升级为「已前台 early-return 前主动 clearTaskbarFlash 一次」幂等熄灭残留高亮。
+  // clearTaskbarFlash 只走 app.hibiki/window 单一封装（WindowCaptionChannel）。
+  testWidgets(
+      'focused window clears taskbar flash before no-op return (TODO-615)',
+      (WidgetTester tester) async {
+    final List<String> windowCalls = <String>[];
+    final List<String> captionCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call.method);
+      if (call.method == 'isMinimized') return false;
+      if (call.method == 'isFocused') return true; // 窗口已在前台
+      return null;
+    });
+    messenger.setMockMethodCallHandler(const MethodChannel('app.hibiki/window'),
+        (MethodCall call) async {
+      captionCalls.add(call.method);
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await svc.configureWindowMode(DesktopClipboardWindowMode.lookup);
+    windowCalls.clear();
+    await svc.bringPendingLookupToFront();
+
+    // 已前台仍 no-op 唤起/置顶（TODO-341 不回退）。
+    expect(windowCalls, isNot(contains('show')));
+    expect(windowCalls, isNot(contains('focus')));
+    expect(windowCalls, isNot(contains('setAlwaysOnTop')));
+    // 但主动熄灭残留任务栏高亮（TODO-615）。
+    expect(captionCalls, contains('clearTaskbarFlash'));
+  });
+
+  // TODO-615：真正的外部复制/热键场景窗口不在前台 → 照常 show/focus/置顶，唤前台
+  // 路径尾部也无论如何 clearTaskbarFlash 一次（覆盖 always-on-top 路径在某些
+  // Windows 版本仍引发任务栏请求注意态的残留）。
+  testWidgets(
+      'foreground path clears taskbar flash after show/focus (TODO-615)',
+      (WidgetTester tester) async {
+    final List<String> windowCalls = <String>[];
+    final List<String> captionCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call.method);
+      if (call.method == 'isMinimized') return false;
+      if (call.method == 'isFocused') return false; // 不在前台 → 走唤前台路径
+      return null;
+    });
+    messenger.setMockMethodCallHandler(const MethodChannel('app.hibiki/window'),
+        (MethodCall call) async {
+      captionCalls.add(call.method);
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await svc.configureWindowMode(DesktopClipboardWindowMode.lookup);
+    windowCalls.clear();
+    captionCalls.clear();
+    await svc.bringPendingLookupToFront();
+
+    expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
+    expect(windowCalls.any(_setsAlwaysOnTop2), isTrue, reason: '置顶模式唤起后应置顶');
+    // 唤前台后清掉可能残留的任务栏高亮。
+    expect(captionCalls, contains('clearTaskbarFlash'));
+  });
 }
+
+bool _setsAlwaysOnTop2(String method) => method == 'setAlwaysOnTop';
 
 bool _setsAlwaysOnTop(MethodCall call) {
   final Object? arguments = call.arguments;

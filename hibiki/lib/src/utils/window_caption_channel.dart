@@ -39,4 +39,28 @@ class WindowCaptionChannel {
       // 原生侧静默失败即可，标题栏维持系统默认绘制。
     }
   }
+
+  /// TODO-615：主动熄灭 Windows 任务栏的「请求注意」高亮（FlashWindowEx +
+  /// FLASHW_STOP）。
+  ///
+  /// `SetForegroundWindow`（`window_manager` 的 `show()`/`focus()`/
+  /// `setAlwaysOnTop()` 在前台锁定下会退化触发）会把 Hibiki 的任务栏按钮设为闪烁
+  /// 请求注意态，用户得点一下才能消掉（TODO-341 / TODO-615）。判前台守卫在前台
+  /// 判据抖动时仍可能漏判而留下残留高亮，所以唤前台路径无论如何在尾部主动 clear
+  /// 一次：FLASHW_STOP 对一个本就没有 flash 的窗口是 no-op，纯幂等清除。
+  ///
+  /// 仅 Windows 生效，其它平台直接 no-op。原生侧失败（旧主机/缺通道）静默吞掉，
+  /// 不让一次窗口装饰调用拖垮查词生命周期。
+  static Future<void> clearTaskbarFlash() async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>('clearTaskbarFlash');
+    } on PlatformException {
+      // 主机不实现该方法（旧 runner / 测试桩）时静默忽略。
+    } on MissingPluginException {
+      // 通道未注册（widget 测试 / 非 window runner 宿主）时静默忽略。
+    }
+  }
 }

@@ -1,0 +1,12 @@
+## BUG-348 · TODO-615 剪贴板查词在主窗前台时误触任务栏高亮
+- **报告**：2026-06-20（用户：项目负责人 / 看板 TODO-615 方案A）
+- **真实性**：✅ 真 bug。根因 = `hibiki/lib/src/sync/desktop_lookup_service.dart:274-291`（`bringPendingLookupToFront`）。剪贴板/热键查词唤前台靠 `window_manager` 的 `show()`/`focus()`/`setAlwaysOnTop()`，在 Windows 上都走 `SetForegroundWindow`；对一个**本就在前台**的窗口调用会被前台锁定规则拒绝并退化为「闪烁任务栏按钮请求注意」（MSDN）。TODO-341 加了「判前台就 no-op」守卫（`DesktopForegroundGuard` + early-return），但前台判据（`GetForegroundWindow` 归属 / `windowManager.isFocused`）在 WebView/原生子窗口切焦点时抖动，仍会漏判而留下**之前已经误触的残留任务栏高亮**——守卫只能阻止「再触发」，不能熄灭「已经亮起」的高亮；且 `setAlwaysOnTop` 路径本身在某些 Windows 版本也引发请求注意态，守卫未覆盖。
+- **[x] ① 已修复** — 方案A（消除特殊情况，给 Dart 主动熄灭高亮能力，而非继续堆 if 守卫）：
+  - 原生 `hibiki/windows/runner/flutter_window.cpp`（`app.hibiki/window` caption handler）新增 `clearTaskbarFlash` 分支，对主窗 `GetHandle()` 调 `FlashWindowEx(FLASHWINFO{dwFlags=FLASHW_STOP})`——`FLASHW_STOP` 对没有 flash 的窗口是 no-op，幂等清除。
+  - Dart `hibiki/lib/src/utils/window_caption_channel.dart` 新增 `static Future<void> clearTaskbarFlash()`（仅 Windows，经 `app.hibiki/window` 单一封装下发，吞 PlatformException/MissingPluginException）。
+  - `hibiki/lib/src/sync/desktop_lookup_service.dart` `bringPendingLookupToFront`：已前台 early-return 之前 clear 一次（熄灭前台判据抖动漏判残留），唤前台路径 `show/focus/setAlwaysOnTop` 尾部再 clear 一次（覆盖 always-on-top 路径）。TODO-341「已前台 no-op 唤起/置顶」契约不回退。
+  - 提交哈希：见本轮 commit。
+- **[x] ② 已加自动化测试** —
+  - 行为：`hibiki/test/sync/desktop_lookup_service_test.dart` 加两例——已前台时 no-op 唤起但 `clearTaskbarFlash` 被调；不在前台时 show/focus + 置顶后 `clearTaskbarFlash` 被调（mock `app.hibiki/window` 观察调用）。
+  - 源码扫描守卫：`hibiki/test/sync/desktop_lookup_foreground_guard_static_test.dart` 加 3 例——断言 `flutter_window.cpp` 含 `clearTaskbarFlash`+`FlashWindowEx`+`FLASHW_STOP` 且对 `GetHandle()` 操作；Dart `clearTaskbarFlash` 通道调用只允许出现在 `window_caption_channel.dart`（单一封装）；`bringPendingLookupToFront` 唤前台路径含两处 `WindowCaptionChannel.clearTaskbarFlash()`（show 前一处、show 后一处）。既有 4 个守卫不回退。
+- **备注**：native 改动本机无 MSVC 不编译，由 CI + `flutter build windows` 真编验证，源码扫描守卫保证正确性。真机待验：①主窗前台时词典页复制文本 20 次任务栏不再高亮；②主窗后台时热键查词仍能唤前台。BUG 号采番：本 worktree 基于 `origin/develop@754dbbff3` 不含 todo-620/610/618 未合并的 BUG-345/346/347，故跨所有 worktree 分支取并集后采 348（`tool/bug.dart` 在本树只见 345 故需手动改号）。

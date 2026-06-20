@@ -209,6 +209,25 @@ bool FlutterWindow::OnCreate() {
                                static_cast<uint32_t>(text_argb));
           }
           result->Success();
+        } else if (call.method_name() == "clearTaskbarFlash") {
+          // TODO-615: actively stop any taskbar "flash / request attention"
+          // state on the main window. SetForegroundWindow (window_manager's
+          // show()/focus()/setAlwaysOnTop() degrade into it under the foreground
+          // lock) flashes our taskbar button until the user clicks it. Dart's
+          // foreground guard can still miss-judge during focus jitter, so the
+          // foreground path asks us to clear unconditionally. FLASHW_STOP on a
+          // window that is not flashing is a no-op, so this is idempotent.
+          HWND hwnd = GetHandle();
+          if (hwnd != nullptr) {
+            FLASHWINFO flash_info;
+            flash_info.cbSize = sizeof(FLASHWINFO);
+            flash_info.hwnd = hwnd;
+            flash_info.dwFlags = FLASHW_STOP;
+            flash_info.uCount = 0;
+            flash_info.dwTimeout = 0;
+            FlashWindowEx(&flash_info);
+          }
+          result->Success();
         } else {
           result->NotImplemented();
         }

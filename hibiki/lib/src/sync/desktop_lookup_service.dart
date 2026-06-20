@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
+import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 
 /// 给定窗口聚焦态，剪贴板自动监听是否应触发查词。
@@ -276,7 +277,13 @@ class DesktopLookupService extends ChangeNotifier
     if (DesktopForegroundGuard.isHiddenWindowsRunner) return;
     // 已在前台无需（也不该）做任何唤起/置顶动作：对前台窗口调
     // SetForegroundWindow 会被 Windows 前台锁定退化成任务栏 flash（TODO-341）。
-    if (await _isHibikiForeground()) return;
+    // TODO-615：前台判据抖动时此守卫可能漏判，导致先前误触的任务栏 flash 仍残留；
+    // 已前台路径 early-return 前主动 clear 一次，把残留高亮幂等熄灭（FLASHW_STOP
+    // 对没有 flash 的窗口是 no-op）。
+    if (await _isHibikiForeground()) {
+      await WindowCaptionChannel.clearTaskbarFlash();
+      return;
+    }
     try {
       await windowManager.show();
       await windowManager.focus();
@@ -288,6 +295,10 @@ class DesktopLookupService extends ChangeNotifier
     if (_windowMode != DesktopClipboardWindowMode.normal) {
       await _setAlwaysOnTop(true);
     }
+    // TODO-615：show/focus/setAlwaysOnTop 在某些 Windows 版本上仍可能把任务栏按钮
+    // 置成请求注意态（即便窗口此刻确实被唤到前台）。唤前台路径尾部统一 clear 一次，
+    // 覆盖 always-on-top 路径，确保唤起后任务栏不残留高亮。
+    await WindowCaptionChannel.clearTaskbarFlash();
   }
 
   /// 判断 Hibiki 是否已经占据前台。Windows 上不能只信
