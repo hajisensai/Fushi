@@ -1,4 +1,4 @@
-## BUG-348 · TODO-615 剪贴板查词在主窗前台时误触任务栏高亮
+## BUG-353 · TODO-615 剪贴板查词在主窗前台时误触任务栏高亮
 - **报告**：2026-06-20（用户：项目负责人 / 看板 TODO-615 方案A）
 - **真实性**：✅ 真 bug。根因 = `hibiki/lib/src/sync/desktop_lookup_service.dart:274-291`（`bringPendingLookupToFront`）。剪贴板/热键查词唤前台靠 `window_manager` 的 `show()`/`focus()`/`setAlwaysOnTop()`，在 Windows 上都走 `SetForegroundWindow`；对一个**本就在前台**的窗口调用会被前台锁定规则拒绝并退化为「闪烁任务栏按钮请求注意」（MSDN）。TODO-341 加了「判前台就 no-op」守卫（`DesktopForegroundGuard` + early-return），但前台判据（`GetForegroundWindow` 归属 / `windowManager.isFocused`）在 WebView/原生子窗口切焦点时抖动，仍会漏判而留下**之前已经误触的残留任务栏高亮**——守卫只能阻止「再触发」，不能熄灭「已经亮起」的高亮；且 `setAlwaysOnTop` 路径本身在某些 Windows 版本也引发请求注意态，守卫未覆盖。
 - **[x] ① 已修复** — 方案A（消除特殊情况，给 Dart 主动熄灭高亮能力，而非继续堆 if 守卫）：
