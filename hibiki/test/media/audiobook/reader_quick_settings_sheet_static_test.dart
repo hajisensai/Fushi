@@ -62,8 +62,11 @@ void main() {
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    expect(source, contains('HibikiModalSheetFrame('));
-    expect(source, contains('maxHeightFactor: 0.80'));
+    // sheet 外壳骨架已抽到共享 HibikiMasterDetailSettingsSheet（TODO-583）：阅读器
+    // 经它进入 PopScope + HibikiModalSheetFrame + master-detail；frame / maxHeightFactor
+    // 的断言下沉到 master_detail_settings_sheet_test。这里只锁阅读器仍走共享外壳，
+    // 且没退回旧的 SafeArea / 2px 拖拽手柄 bespoke chrome。
+    expect(source, contains('HibikiMasterDetailSettingsSheet('));
     expect(source, isNot(contains('child: SafeArea(')));
     expect(source, isNot(contains('BorderRadius.circular(2)')));
   });
@@ -72,10 +75,14 @@ void main() {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
+    // 返回页头已抽到共享 HibikiSettingsSubPageHeader（TODO-583）：从共享文件读它。
+    final String sharedSheetSource =
+        File('lib/src/settings/master_detail_settings_sheet.dart')
+            .readAsStringSync();
     final String headerSource = _between(
-      source,
-      'class _InBookSettingsHeader',
-      'class _InBookTocRow',
+      sharedSheetSource,
+      'class HibikiSettingsSubPageHeader',
+      'class HibikiMasterDetailSettingsSheet',
     );
     final String favoriteActionSource = _between(
       source,
@@ -110,7 +117,7 @@ void main() {
     final String inBookSource = _between(
       source,
       '  Widget _buildSearchSection(ThemeData theme)',
-      'class _InBookSettingsHeader',
+      'class _InBookTocRow',
     );
     expect(inBookSource, contains('HibikiIconButton('));
     expect(inBookSource, isNot(contains('FilledButton.tonal(')));
@@ -173,12 +180,13 @@ void main() {
 
   test('in-book settings header uses theme typography without hardcoded size',
       () {
+    // 返回页头已抽到共享 HibikiSettingsSubPageHeader（TODO-583）：扫共享文件。
     final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+        File('lib/src/settings/master_detail_settings_sheet.dart')
             .readAsStringSync();
     final String headerSource = source.substring(
-      source.indexOf('class _InBookSettingsHeader'),
-      source.indexOf('class _InBookTocRow'),
+      source.indexOf('class HibikiSettingsSubPageHeader'),
+      source.indexOf('class HibikiMasterDetailSettingsSheet'),
     );
 
     expect(headerSource, contains('navTitleTextStyle'));
@@ -214,7 +222,7 @@ void main() {
     final String actionBtnSource = _between(
       source,
       '  Widget _actionBtn(',
-      'class _InBookSettingsHeader',
+      'class _InBookTocRow',
     );
     expect(actionBtnSource, contains('overflow: TextOverflow.ellipsis'));
     expect(actionBtnSource, contains('maxLines: 2'));
@@ -295,8 +303,10 @@ void main() {
     // 左父菜单收窄到共享常量（不再硬编码 248）。
     expect(source,
         contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
-    expect(source,
-        contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
+    // 宽窗判定（constraints.maxWidth >= 阈值）已下沉到共享外壳；阅读器经
+    // isWide / onWideChanged 与外壳交互（见 master_detail_settings_sheet_test）。
+    expect(source, contains('isWide: _isWide'));
+    expect(source, contains('onWideChanged:'));
     expect(source, contains('padding: wideSupportingPadding'));
     expect(source, contains('padding: widePrimaryPadding'));
     expect(source, contains('Widget _buildWidePane('));
@@ -315,8 +325,10 @@ void main() {
     // 窄窗（含手机 bottom sheet）保留原 push：< 640 仍走主页/子页。
     expect(source, contains('? _buildSubPage(context, theme)'));
     expect(source, contains(': _buildMainPage(context, theme)'));
-    // 宽窗下返回键直接关弹窗，不卡在「返回上一级」。
-    expect(source, contains('_subPage == null || _isWide'));
+    // 宽窗下返回键直接关弹窗，不卡在「返回上一级」：canPop 逻辑下沉到共享外壳，
+    // 阅读器把 subPageActive / onPopToParent / isWide 喂给它。
+    expect(source, contains('subPageActive: _subPage != null'));
+    expect(source, contains('onPopToParent:'));
   });
 
   test('reader quick settings uses a deterministic width+height gate', () {
@@ -328,12 +340,12 @@ void main() {
     expect(source,
         contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
 
-    // 确定性几何判据：宽且高都 >= 共享常量阈值才进宽窗（与视频设置同条件，同设备
-    // 同尺寸下书籍/视频必然一致）。
-    expect(source,
-        contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
-    expect(source,
-        contains('constraints.maxHeight >= kHibikiSettingsWideMinHeight'));
+    // 确定性几何判据（宽且高都 >= 共享阈值）已下沉到共享外壳
+    // HibikiMasterDetailSettingsSheet（master_detail_settings_sheet_test 守它）；阅读器
+    // 经 isWide / onWideChanged 与外壳交互，本文件只锁阅读器仍用共享外壳 + 没退回
+    // 旧的 post-frame 测内容溢出回退判据。
+    expect(source, contains('HibikiMasterDetailSettingsSheet('));
+    expect(source, contains('onWideChanged:'));
 
     // 旧的「post-frame 测左父菜单内容溢出回退」已移除（会随内容高度发散 → 同设备
     // 两种表现）。

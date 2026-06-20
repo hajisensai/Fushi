@@ -15,6 +15,7 @@ import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
+import 'package:hibiki/src/settings/master_detail_settings_sheet.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -253,130 +254,105 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return PopScope(
+    return HibikiMasterDetailSettingsSheet(
       // 宽窗 master-detail：选中态始终有值（默认 appearance），返回键应直接关
       // 弹窗而非退回「未选中」；窄窗 push 时保留原「先回主页」语义。
-      canPop: _subPage == null || _isWide,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
-          setState(() => _subPage = null);
-        }
+      subPageActive: _subPage != null,
+      onPopToParent: () => setState(() => _subPage = null),
+      isWide: _isWide,
+      onWideChanged: (bool wide) => _isWide = wide,
+      narrowKey: () => ValueKey<String>(_subPage ?? 'main'),
+      // 窄窗 padding：水平 page + gap/2，底部叠 card + gap + 键盘 inset（与视频不同，
+      // 视频用 page + gap，不可统一）。
+      narrowPadding: (BuildContext context, BoxConstraints constraints) {
+        final double viewInsetsBottom =
+            MediaQuery.of(context).viewInsets.bottom;
+        return EdgeInsets.fromLTRB(
+          tokens.spacing.page + tokens.spacing.gap / 2,
+          tokens.spacing.gap / 2,
+          tokens.spacing.page + tokens.spacing.gap / 2,
+          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+        );
       },
-      child: HibikiModalSheetFrame(
-        maxHeightFactor: 0.80,
-        // 宽窗 master-detail 绝不能套外层滚动：外层 SingleChildScrollView 会给
-        // supporting-pane 布局「无界高度」，MaterialSupportingPaneLayout 的
-        // Row(stretch) 拿到 h=Infinity → debug 直接 infinite-height 崩、release
-        // 不崩但两个 pane 都 shrink-wrap 成内容高，再被外层一块整体滚动（左父菜
-        // 单跟着右详情一起滚、永远不固定）——正是用户骂的「整个页面一块滚动 /
-        // 左边不固定」。主页设置（settings_home_page）把同一 pane 布局放进有界的
-        // Expanded、无外层滚动，所以左固定右独立滚。这里照此：frame 不滚，滚动策
-        // 略下放到 body 按宽/窄各自决定，bodyPadding 也随之移进 body。
-        scrollable: false,
-        body: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            // 确定性几何判据（与视频设置同一组常量）：宽且高都够才进宽窗
-            // master-detail，否则窄窗 push。不测内容高度 → 同设备同尺寸下书籍与
-            // 视频表现一致，且高度不足时直接 push 而非出滚动条。左父菜单已把阅读
-            // 进度并入右侧外观详情、只留分类导航 + 动作，足够矮放得下。
-            _isWide = constraints.maxWidth >= kHibikiSettingsWideThreshold &&
-                constraints.maxHeight >= kHibikiSettingsWideMinHeight;
-            final double viewInsetsBottom =
-                MediaQuery.of(context).viewInsets.bottom;
-            final EdgeInsets bodyPadding = EdgeInsets.fromLTRB(
-              tokens.spacing.page + tokens.spacing.gap / 2,
-              tokens.spacing.gap / 2,
-              tokens.spacing.page + tokens.spacing.gap / 2,
-              tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
-            );
-            if (_isWide) {
-              final String selectedId = _subPage ?? 'appearance';
-              final Color dividerColor = isCupertinoPlatform(context)
-                  ? CupertinoColors.separator.resolveFrom(context)
-                  : HibikiDesignTokens.of(context).surfaces.outline;
-              final double wideHorizontalInset =
-                  tokens.spacing.page + tokens.spacing.gap / 2;
-              final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
-                wideHorizontalInset,
-                tokens.spacing.gap / 2,
-                wideHorizontalInset,
-                tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
-              );
-              final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
-                wideHorizontalInset,
-                tokens.spacing.gap / 2,
-                wideHorizontalInset,
-                tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
-              );
-              // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
-              // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
-              // 两个 pane 紧约束 → 各自的 SingleChildScrollView 独立滚动、左父菜
-              // 单固定不跟随右详情滚动。maxHeightFactor 保证 maxHeight 有界。
-              return SizedBox(
-                height: constraints.maxHeight,
-                child: MaterialSupportingPaneLayout(
-                  minSplitWidth: kHibikiSettingsWideThreshold,
-                  supportingWidth: kHibikiSettingsSupportingPaneWidth,
-                  supportingSide: SupportingPaneSide.start,
-                  dividerColor: dividerColor,
-                  // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
-                  // 不再让「阅读进度」死贴顶端；内容超过 pane 高度时
-                  // ConstrainedBox 的 minHeight 被内容满足，照常滚动。
-                  supporting: LayoutBuilder(
-                    builder: (
-                      BuildContext context,
-                      BoxConstraints paneConstraints,
-                    ) {
-                      final double minContentHeight =
-                          paneConstraints.maxHeight >
-                                  wideSupportingPadding.vertical
-                              ? paneConstraints.maxHeight -
-                                  wideSupportingPadding.vertical
-                              : 0;
-                      return SingleChildScrollView(
-                        padding: wideSupportingPadding,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minHeight: minContentHeight,
-                          ),
-                          child: _buildWidePane(context, theme, selectedId),
-                        ),
-                      );
-                    },
-                  ),
-                  // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
-                  // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
-                  // / Segmented 滑动等复用副作用（同 settings_home_page）。
-                  primary: KeyedSubtree(
-                    key: ValueKey<String>(selectedId),
-                    child: SingleChildScrollView(
-                      padding: widePrimaryPadding,
-                      child: _buildWidePrimary(context, theme, selectedId),
+      // 窄窗（含全部手机 bottom sheet）：维持现有 push 行为，外观仍内联。
+      narrowChild: (BuildContext context, BoxConstraints constraints) {
+        return _subPage != null
+            ? _buildSubPage(context, theme)
+            : _buildMainPage(context, theme);
+      },
+      // 宽窗左右 master-detail（左父菜单 + 右详情）——视频走顶部分类条，两边发散，
+      // 故 MaterialSupportingPaneLayout / SupportingPaneSide 等符号留在此回调里。
+      wideBuilder: (BuildContext context, BoxConstraints constraints) {
+        final double viewInsetsBottom =
+            MediaQuery.of(context).viewInsets.bottom;
+        final String selectedId = _subPage ?? 'appearance';
+        final Color dividerColor = isCupertinoPlatform(context)
+            ? CupertinoColors.separator.resolveFrom(context)
+            : HibikiDesignTokens.of(context).surfaces.outline;
+        final double wideHorizontalInset =
+            tokens.spacing.page + tokens.spacing.gap / 2;
+        final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
+          wideHorizontalInset,
+          tokens.spacing.gap / 2,
+          wideHorizontalInset,
+          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+        );
+        final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
+          wideHorizontalInset,
+          tokens.spacing.gap / 2,
+          wideHorizontalInset,
+          tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+        );
+        // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
+        // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
+        // 两个 pane 紧约束 → 各自的 SingleChildScrollView 独立滚动、左父菜
+        // 单固定不跟随右详情滚动。maxHeightFactor 保证 maxHeight 有界。
+        return SizedBox(
+          height: constraints.maxHeight,
+          child: MaterialSupportingPaneLayout(
+            minSplitWidth: kHibikiSettingsWideThreshold,
+            supportingWidth: kHibikiSettingsSupportingPaneWidth,
+            supportingSide: SupportingPaneSide.start,
+            dividerColor: dividerColor,
+            // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
+            // 不再让「阅读进度」死贴顶端；内容超过 pane 高度时
+            // ConstrainedBox 的 minHeight 被内容满足，照常滚动。
+            supporting: LayoutBuilder(
+              builder: (
+                BuildContext context,
+                BoxConstraints paneConstraints,
+              ) {
+                final double minContentHeight = paneConstraints.maxHeight >
+                        wideSupportingPadding.vertical
+                    ? paneConstraints.maxHeight - wideSupportingPadding.vertical
+                    : 0;
+                return SingleChildScrollView(
+                  padding: wideSupportingPadding,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: minContentHeight,
                     ),
+                    child: _buildWidePane(context, theme, selectedId),
                   ),
-                ),
-              );
-            }
-            // 窄窗（含全部手机 bottom sheet）：维持现有 push 行为，外观仍内联。
-            // body 自带滚动视口（padding 含键盘 inset 也随内容一起滚动）。
-            return SingleChildScrollView(
-              key: ValueKey<String>(_subPage ?? 'main'),
-              padding: bodyPadding,
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.topCenter,
-                child: _subPage != null
-                    ? _buildSubPage(context, theme)
-                    : _buildMainPage(context, theme),
+                );
+              },
+            ),
+            // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
+            // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
+            // / Segmented 滑动等复用副作用（同 settings_home_page）。
+            primary: KeyedSubtree(
+              key: ValueKey<String>(selectedId),
+              child: SingleChildScrollView(
+                padding: widePrimaryPadding,
+                child: _buildWidePrimary(context, theme, selectedId),
               ),
-            );
-          },
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  /// 宽窗 master-detail 左 pane：进度 + 分类列表（含外观，单选高亮）+ 动作行。
   Widget _buildWidePane(
     BuildContext context,
     ThemeData theme,
@@ -523,7 +499,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _InBookSettingsHeader(
+        HibikiSettingsSubPageHeader(
           title: _subPageTitle(page),
           onBack: () => setState(() => _subPage = null),
         ),
@@ -1677,59 +1653,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       focusIdPrefix: 'reader-action',
       onTap: onTap,
       child: button,
-    );
-  }
-}
-
-class _InBookSettingsHeader extends StatelessWidget {
-  const _InBookSettingsHeader({
-    required this.title,
-    required this.onBack,
-  });
-
-  final String title;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final TextStyle? titleStyle = cupertino
-        ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
-        : Theme.of(context).textTheme.titleMedium;
-    final IconData icon =
-        cupertino ? CupertinoIcons.chevron_back : Icons.arrow_back;
-
-    return Row(
-      children: [
-        if (cupertino)
-          Semantics(
-            button: true,
-            label: t.back,
-            child: CupertinoButton(
-              padding: EdgeInsets.zero,
-              minSize: 36,
-              onPressed: onBack,
-              child: Icon(icon, size: 22),
-            ),
-          )
-        else
-          HibikiIconButton(
-            icon: icon,
-            tooltip: t.back,
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: onBack,
-          ),
-        SizedBox(width: tokens.spacing.gap / 2),
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: titleStyle,
-          ),
-        ),
-      ],
     );
   }
 }

@@ -13,6 +13,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
+import 'package:hibiki/src/settings/master_detail_settings_sheet.dart';
 import 'package:hibiki/utils.dart';
 
 /// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
@@ -258,102 +259,89 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return PopScope(
+    return HibikiMasterDetailSettingsSheet(
       // 宽窗 master-detail 选中态恒有值（默认 playback），返回键应直接关面板；
       // 窄窗 push 时保留「先回主页」语义。
-      canPop: _subPage == null || _isWide,
-      onPopInvokedWithResult: (bool didPop, _) {
-        if (!didPop) {
-          setState(() => _subPage = null);
-        }
+      subPageActive: _subPage != null,
+      onPopToParent: () => setState(() => _subPage = null),
+      isWide: _isWide,
+      onWideChanged: (bool wide) => _isWide = wide,
+      // 视频窄窗外层滚动视图不带 key（与阅读器不同：阅读器带 _subPage key）。
+      narrowKey: () => null,
+      // TODO-344：四边按 MD3 spacing 放宽，消除「上下左右贴死」。水平用
+      // page + gap（24），垂直顶部用 card（16）让内容离 sheet header / 分栏
+      // divider 留出呼吸位，底部叠 card + gap + 键盘 inset。全部走 token，无裸值。
+      narrowPadding: (BuildContext context, BoxConstraints constraints) {
+        final double viewInsetsBottom =
+            MediaQuery.of(context).viewInsets.bottom;
+        final double horizontalInset = tokens.spacing.page + tokens.spacing.gap;
+        final double topInset = tokens.spacing.card;
+        final double bottomInset =
+            tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom;
+        return EdgeInsets.fromLTRB(
+          horizontalInset,
+          topInset,
+          horizontalInset,
+          bottomInset,
+        );
       },
-      child: HibikiModalSheetFrame(
-        maxHeightFactor: 0.80,
-        // 与阅读器同源（BUG-096）：master-detail 绝不能套外层滚动，否则 supporting
-        // pane 拿无界高度 → 左右一块滚 / 左不固定。frame 不滚，滚动策略下放到 body。
-        scrollable: false,
-        body: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            // 确定性几何判据（与书籍设置同一组常量）：宽且高都够才进宽窗
-            // master-detail，否则窄窗 push。不测内容高度 → 同设备同尺寸下视频与
-            // 书籍表现一致，且高度不足时直接 push 而非出滚动条。
-            _isWide = constraints.maxWidth >= kHibikiSettingsWideThreshold &&
-                constraints.maxHeight >= kHibikiSettingsWideMinHeight;
-            final double viewInsetsBottom =
-                MediaQuery.of(context).viewInsets.bottom;
-            // TODO-344：四边按 MD3 spacing 放宽，消除「上下左右贴死」。水平用
-            // page + gap（24），垂直顶部用 card（16）让内容离 sheet header / 分栏
-            // divider 留出呼吸位，底部叠 card + gap + 键盘 inset。全部走 token，无裸值。
-            final double horizontalInset =
-                tokens.spacing.page + tokens.spacing.gap;
-            final double topInset = tokens.spacing.card;
-            final double bottomInset =
-                tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom;
-            final EdgeInsets bodyPadding = EdgeInsets.fromLTRB(
-              horizontalInset,
-              topInset,
-              horizontalInset,
-              bottomInset,
-            );
-            if (_isWide) {
-              final String selectedId = _subPage ?? 'playback';
-              final Color dividerColor = isCupertinoPlatform(context)
-                  ? CupertinoColors.separator.resolveFrom(context)
-                  : tokens.surfaces.outline;
-              // 顶部分类条 padding：水平 + 顶部按 token 留白，底部留 gap/2 与下方
-              // 分隔线呼吸（不吃 bottomInset，键盘 inset 留给详情区）。
-              final EdgeInsets wideCategoryPadding = EdgeInsets.fromLTRB(
-                horizontalInset,
-                topInset,
-                horizontalInset,
-                tokens.spacing.gap / 2,
-              );
-              final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
-                horizontalInset,
-                topInset,
-                horizontalInset,
-                bottomInset,
-              );
-              // TODO-556：大分类从左栏 master-detail 改成「顶部横向分类 chip 行（固定）
-              // + 下方全宽详情（独立滚动）」。顶部 chip 行钉在 sheet 顶部、随详情滚动
-              // 不动；详情独占整宽、单独纵向滚动。书籍设置仍保持左右 master-detail。
-              return SizedBox(
-                height: constraints.maxHeight,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Padding(
-                      padding: wideCategoryPadding,
-                      child: _buildTopCategoryBar(selectedId),
-                    ),
-                    Divider(height: 1, thickness: 1, color: dividerColor),
-                    Expanded(
-                      child: KeyedSubtree(
-                        key: ValueKey<String>(selectedId),
-                        child: SingleChildScrollView(
-                          padding: widePrimaryPadding,
-                          child: _subPageContent(selectedId),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-            return SingleChildScrollView(
-              padding: bodyPadding,
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.topCenter,
-                child: _subPage != null
-                    ? _buildSubPage(theme)
-                    : _buildMainPage(theme),
+      narrowChild: (BuildContext context, BoxConstraints constraints) {
+        return _subPage != null ? _buildSubPage(theme) : _buildMainPage(theme);
+      },
+      // 宽窗顶部横向分类条 + 下方详情上下分栏（TODO-556）——阅读器走左右
+      // master-detail，两边发散，故 Column / _buildTopCategoryBar 等留在此回调里。
+      wideBuilder: (BuildContext context, BoxConstraints constraints) {
+        final double viewInsetsBottom =
+            MediaQuery.of(context).viewInsets.bottom;
+        final double horizontalInset = tokens.spacing.page + tokens.spacing.gap;
+        final double topInset = tokens.spacing.card;
+        final double bottomInset =
+            tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom;
+        final String selectedId = _subPage ?? 'playback';
+        final Color dividerColor = isCupertinoPlatform(context)
+            ? CupertinoColors.separator.resolveFrom(context)
+            : tokens.surfaces.outline;
+        // 顶部分类条 padding：水平 + 顶部按 token 留白，底部留 gap/2 与下方
+        // 分隔线呼吸（不吃 bottomInset，键盘 inset 留给详情区）。
+        final EdgeInsets wideCategoryPadding = EdgeInsets.fromLTRB(
+          horizontalInset,
+          topInset,
+          horizontalInset,
+          tokens.spacing.gap / 2,
+        );
+        final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
+          horizontalInset,
+          topInset,
+          horizontalInset,
+          bottomInset,
+        );
+        // TODO-556：大分类从左栏 master-detail 改成「顶部横向分类 chip 行（固定）
+        // + 下方全宽详情（独立滚动）」。顶部 chip 行钉在 sheet 顶部、随详情滚动
+        // 不动；详情独占整宽、单独纵向滚动。书籍设置仍保持左右 master-detail。
+        return SizedBox(
+          height: constraints.maxHeight,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: wideCategoryPadding,
+                child: _buildTopCategoryBar(selectedId),
               ),
-            );
-          },
-        ),
-      ),
+              Divider(height: 1, thickness: 1, color: dividerColor),
+              Expanded(
+                child: KeyedSubtree(
+                  key: ValueKey<String>(selectedId),
+                  child: SingleChildScrollView(
+                    padding: widePrimaryPadding,
+                    child: _subPageContent(selectedId),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -481,7 +469,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _VideoSettingsHeader(
+        HibikiSettingsSubPageHeader(
           title: _subPageTitle(page),
           onBack: () => setState(() => _subPage = null),
         ),
@@ -2174,57 +2162,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             setState(() => _danmakuMaxActive = next);
             await widget.onDanmakuMaxActiveChanged?.call(next);
           },
-        ),
-      ],
-    );
-  }
-}
-
-/// 窄窗子页返回页头（与阅读器面板同款）。
-class _VideoSettingsHeader extends StatelessWidget {
-  const _VideoSettingsHeader({required this.title, required this.onBack});
-
-  final String title;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final TextStyle? titleStyle = cupertino
-        ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
-        : Theme.of(context).textTheme.titleMedium;
-    final IconData icon =
-        cupertino ? CupertinoIcons.chevron_back : Icons.arrow_back;
-
-    return Row(
-      children: <Widget>[
-        if (cupertino)
-          Semantics(
-            button: true,
-            label: t.back,
-            child: CupertinoButton(
-              padding: EdgeInsets.zero,
-              minSize: 36,
-              onPressed: onBack,
-              child: Icon(icon, size: 22),
-            ),
-          )
-        else
-          HibikiIconButton(
-            icon: icon,
-            tooltip: t.back,
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: onBack,
-          ),
-        SizedBox(width: tokens.spacing.gap / 2),
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: titleStyle,
-          ),
         ),
       ],
     );

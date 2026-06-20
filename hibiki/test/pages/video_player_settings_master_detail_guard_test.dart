@@ -97,15 +97,13 @@ void main() {
             .readAsStringSync();
 
     expect(source, contains('class VideoQuickSettingsSheet'));
-    // 与阅读器同源的「不套外层滚动 + 宽窗撑满有界高度」范式（BUG-096）。
-    expect(source, contains('HibikiModalSheetFrame('));
-    expect(source, contains('scrollable: false'));
+    // 与阅读器同源的「不套外层滚动 + 宽窗撑满有界高度」范式（BUG-096）：外壳骨架
+    // （PopScope + HibikiModalSheetFrame + scrollable:false + 几何判据）已抽到共享
+    // HibikiMasterDetailSettingsSheet（TODO-583），由 master_detail_settings_sheet_test
+    // 守它。这里只锁视频走共享外壳，且宽窗撑满有界高度的 height:constraints.maxHeight
+    // 仍在视频自己的 wideBuilder 回调里。
+    expect(source, contains('HibikiMasterDetailSettingsSheet('));
     expect(source, contains('height: constraints.maxHeight'));
-    // 确定性几何判据：宽且高都 >= 共享常量阈值才进宽窗（与书籍设置同条件）。
-    expect(source,
-        contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
-    expect(source,
-        contains('constraints.maxHeight >= kHibikiSettingsWideMinHeight'));
 
     // TODO-427-③：宽窗从左右 master-detail（窄左栏 + 右详情）改成顶部横向分类 chip 行 +
     // 下方详情上下分栏，根治窄侧栏左右劈半把右详情挤窄、下拉抢宽裁标题。
