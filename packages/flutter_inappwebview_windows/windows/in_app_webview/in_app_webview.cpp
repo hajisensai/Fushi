@@ -244,6 +244,30 @@ namespace flutter_inappwebview_plugin
       webViewController2->put_DefaultBackgroundColor({ alpha, 255, 255, 255 });
     }
 
+    // TODO-648 / BUG-361: disable WebView2's own OS drag-and-drop target.
+    //
+    // WebView2 defaults AllowExternalDrop=TRUE, which makes the runtime register
+    // its own IDropTarget on the HOST top-level HWND so files can be dropped INTO
+    // the web page. Hibiki only renders trusted EPUB/dictionary HTML in WebView,
+    // so dropping OS files into the page is never wanted. Worse, that registration
+    // fights desktop_drop, which calls RegisterDragDrop once for the whole window:
+    // WebView2 silently takes over the host HWND's drop target while a reader /
+    // lookup WebView is alive, and on teardown (~InAppWebView -> Close()) it
+    // RevokeDragDrop's its own target WITHOUT restoring desktop_drop's. The window
+    // is then left with no valid IDropTarget, so dropping a .epub onto the shelf
+    // shows the "forbidden" cursor app-wide (transient: only after a WebView has
+    // been opened; an app restart re-registers and recovers).
+    //
+    // Explicitly opting out keeps the host window's drop registration owned solely
+    // by desktop_drop for the whole app lifetime. AllowExternalDrop lives on
+    // ICoreWebView2Controller4 (added in WebView2 SDK 1.0.1108.44; this fork pins a
+    // newer SDK). QueryInterface can fail on an older installed Runtime, in which
+    // case we skip silently (no crash) -- those Runtimes predate the API entirely.
+    wil::com_ptr<ICoreWebView2Controller4> webViewController4;
+    if (SUCCEEDED(webViewController->QueryInterface(IID_PPV_ARGS(&webViewController4)))) {
+      failedLog(webViewController4->put_AllowExternalDrop(FALSE));
+    }
+
     // required to make Runtime events work
     failedLog(webView->CallDevToolsProtocolMethod(L"Runtime.enable", L"{}", Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
       [this](HRESULT errorCode, LPCWSTR returnObjectAsJson)

@@ -1,0 +1,12 @@
+## BUG-361 · WebView2抢占主窗口drop致拖放禁止光标
+- **报告**：2026-06-21（用户：）
+- **真实性**：✅ 真 bug — 根因 `packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp`（WebView2 控制器默认 `AllowExternalDrop=TRUE`，从未显式关闭；teardown 见 `:1949-1956`）。
+- **[x] ① 已修复** — commit `e246acb5d`：在 fork 的 WebView2 控制器初始化路径 `in_app_webview.cpp:266-269`（`InAppWebView::prepare`）QueryInterface 拿 `ICoreWebView2Controller4` 后显式 `put_AllowExternalDrop(FALSE)`。
+- **[x] ② 已加自动化测试（源码守卫）** — commit `e246acb5d`：`hibiki/test/widgets/webview2_disable_external_drop_guard_test.dart` 扫 fork C++ 源码，钉死控制器初始化路径含 `put_AllowExternalDrop(FALSE)` + `ICoreWebView2Controller4` QI，防回归再被默认 TRUE 咬。**真机复测（开 reader/查词 WebView 再关→回书架拖 .epub 无禁止光标）待用户**。
+- **备注**：
+  - **现象**：桌面端开过阅读器/查词（即用过 WebView2）后，回书架拖 `.epub` 进窗口显示「禁止」光标，拖放失效；重启 app 后恢复（瞬态）。app 内 5 处 desktop_drop DropTarget 全失效。
+  - **根因（已验真）**：WebView2 运行时默认 `AllowExternalDrop=TRUE`，fork 全仓 grep `AllowExternalDrop` **零命中**（从没设过）→ WebView2 在**宿主主窗口** HWND 上注册自己的 `IDropTarget`（让 OS 文件能拖进网页）。desktop_drop 是整窗单点注册（C++ `RegisterDragDrop` 一次），被 WebView2 抢占。WebView2 关闭时（`~InAppWebView` `in_app_webview.cpp:1952` `DestroyWindow` / `:1955` `Close()`）`RevokeDragDrop` 自己的 target 但**不恢复** desktop_drop 的 → 主 HWND 无有效 `IDropTarget` → OS 拖放显示禁止光标。
+  - **修复方向（A·最小·零功能损失）**：Hibiki 的 WebView 只渲染受信任的 EPUB/词典 HTML，本就不需要「从 OS 拖文件进网页」；拖文件入书架是 Flutter desktop_drop 的职责。显式关闭 `AllowExternalDrop` 后 WebView2 不再在宿主窗口注册 drop target，desktop_drop 主 HWND 注册全程不被抢占/破坏。
+  - **接口/容错**：`AllowExternalDrop` 在 `ICoreWebView2Controller4`（WebView2 SDK 1.0.1108.44 引入；fork 钉 `windows/CMakeLists.txt` `WEBVIEW_VERSION 1.0.2792.45` 远新于此）。QueryInterface 失败（老 Runtime 无 Controller4）则静默跳过不崩。`wil::com_ptr` RAII 自动 Release，无需手动配对。
+  - **未动 `CoInitializeEx`**：`:187-197` 注释明说不配对 `CoUninitialize` 是有意设计（per-thread 引用计数、平台线程活到 app 退出、`S_FALSE` 幂等）；与本 bug 无关，改动只会引入新风险，按任务指引不动。
+  - **C++ 编译/真机**：worktree 跑不动完整 `flutter build windows`（media_kit/inappwebview cmake 重依赖），C++ 编译靠 CI Build Desktop workflow 验证；禁止光标恢复需 Windows 真机复测原始失败路径，施工层做不到，标真机待验。
