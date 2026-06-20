@@ -13,7 +13,7 @@ class DesktopLifecycleService implements PlatformLifecycleService {
 
   @override
   Future<void> exitApp() async {
-    await WindowsNativePreExit.prepareForExit();
+    await WindowsNativePreExit.prepareForExit(WindowsExitReason.windowClose);
     exit(0);
   }
 

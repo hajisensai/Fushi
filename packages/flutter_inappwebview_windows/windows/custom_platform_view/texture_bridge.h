@@ -17,6 +17,18 @@
 
 namespace flutter_inappwebview_plugin
 {
+  // TODO-618 fix3: 进程级退出态总闸。
+  //
+  // 退出（prepareForProcessExit / 关窗）期间，先于 webViews.clear 把此闸置位；之后所有
+  // TextureBridge 的 WGC 帧上报回调（frame_available_）一律短路早返回，避免在 compositor /
+  // CustomPlatformView 下游对象已开始拆解时再把帧推给 Flutter 引擎，触发退出期
+  // Unknown Hard Error。纯防御早返回，不改既有 teardown 顺序。
+  //
+  // 声明在头文件（external linkage），供 in_app_webview_manager.cpp 在 prepareForProcessExit
+  // 入口调用 SetProcessExiting()；定义在 texture_bridge.cc。
+  void SetProcessExiting() noexcept;
+  bool IsProcessExiting() noexcept;
+
   using WgcPumpTickHandler = ABI::Windows::Foundation::ITypedEventHandler<
     ABI::Windows::System::DispatcherQueueTimer*, IInspectable*>;
   using WgcCaptureItemClosedHandler = ABI::Windows::Foundation::ITypedEventHandler<

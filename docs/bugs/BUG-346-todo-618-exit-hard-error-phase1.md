@@ -1,0 +1,13 @@
+## BUG-346 · 打开动画状态直接关 Hibiki 弹 Unknown Hard Error（TODO-618 相位1：fix1+fix3）
+- **报告**：2026-06-20（用户：）
+- **真实性**：✅ 真 bug（退出期 native teardown 落空）。根因 A1 坐实：`hibiki/lib/src/platform/desktop/windows_native_pre_exit.dart:10` 旧实现用单个静态 `_prepared` bool，被更新路径（`hibiki/lib/src/utils/misc/platform_updater.dart:556` `prepareForExit`）与关窗路径（`hibiki/lib/src/platform/desktop/desktop_lifecycle_service.dart:16`，经 `main.dart` 的 `exitApp` 间接）共享；`if (_prepared) return; _prepared = true` 在 `invokeMethod` 前置位且无回滚，所以走过更新预检后再关窗会静默跳过 native teardown（`webViews.clear` 系列落空）→ compositor/CustomPlatformView 下游对象拆解期仍有 WGC 帧推给引擎 → 退出期 `Unknown Hard Error`。0xc0000005 精确崩点未 dump 坐实（相位2/TODO-607-P0 待办）。
+- **[x] ① 已修复** —
+  - **fix1（Dart·解耦守卫）**：`windows_native_pre_exit.dart` 把单一静态 `_prepared` 改为 per-reason 一次性守卫 `Set<WindowsExitReason> _preparedReasons`；新增 `enum WindowsExitReason { update, windowClose }`；`prepareForExit(reason)` 仅短路「同一退出路径」重复触发（`_preparedReasons.add(reason)`），不同路径互不短路。两个调用点改为传 `WindowsExitReason.update`（`platform_updater.dart:556`）/ `WindowsExitReason.windowClose`（`desktop_lifecycle_service.dart:16`）。保证走过更新预检后关窗仍真正发出一次 `prepareForProcessExit` channel 调用，native teardown 必被触发。平台门提取为可注入 `isWindows` 钩子以便平台无关测试。
+  - **fix3（native·退出态总闸）**：`packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:27` 新增 `std::atomic<bool> g_process_exiting{false}` + `SetProcessExiting()/IsProcessExiting()`（头文件 `texture_bridge.h:29-30` external-linkage 声明）；`PumpFrameLocked` 帧上报回调 `frame_available_()`（约 cc:757-762）前加退出态短路早返回；`in_app_webview_manager.cpp:241` 在 `prepareForProcessExit` 入口、`webViews.clear()` 之前调 `SetProcessExiting()`（含 `texture_bridge.h` include）。纯增量早返回，不动既有 teardown 顺序。
+  - **fix2（相位2·本轮不做）**：`in_app_webview_manager.cpp` WM_DESTROY delegate 的 `webViews.clear` 重排留待 TODO-607-P0 实际 minidump + `!analyze` 坐实崩点在该路径再动。
+  - 提交：（见本分支 commit）
+- **[x] ② 已加自动化测试** —
+  - fix1 行为守卫 `hibiki/test/platform/windows_native_pre_exit_guard_test.dart`：mock channel 断言「更新路径置位守卫后关窗路径仍发出 prepareForProcessExit channel 调用」+ per-path 一次性 + 非 Windows no-op。
+  - fix3 源码扫描守卫 `hibiki/test/widgets/process_exit_gate_guard_test.dart`：断言 `g_process_exiting` atomic 定义、帧上报前 `IsProcessExiting()` 早返回（且 `frame_available_()` 未被删）、`prepareForProcessExit` 入口在 `webViews.clear()` 之前 `SetProcessExiting()`。
+  - 更新既有 `hibiki/test/widgets/dcomp_compositor_shutdown_guard_test.dart` 过时断言（旧 `_prepared` 单一守卫 → per-reason 解耦守卫；无参 `prepareForExit()` → 带 reason 调用），不回退。
+- **备注**：native fix3 本机无 MSVC 不能编译，由 CI 编译验证；源码扫描守卫保逻辑正确性。真机待验：开 App 打开动画态后直接关窗、以及走更新预检后关窗，均不再 `Unknown Hard Error`。

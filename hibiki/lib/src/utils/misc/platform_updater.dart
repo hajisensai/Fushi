@@ -553,7 +553,7 @@ class WindowsInstaller {
     // 其他 Hibiki/libmpv 持有进程已经在 preflight 被列出并要求用户手动关闭，
     // 这里绝不委托 Inno/RestartManager 自动关闭或强制结束残留进程。
     await Future<void>.delayed(Duration.zero);
-    await WindowsNativePreExit.prepareForExit();
+    await WindowsNativePreExit.prepareForExit(WindowsExitReason.update);
     (exitProcess ?? exit)(0);
   }
 

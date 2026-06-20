@@ -22,6 +22,20 @@ namespace flutter_inappwebview_plugin
   const int kMaxFramesPerPump = 4;
   const int64_t kPumpInterval100ns = 166667; // ~60Hz
 
+  // TODO-618 fix3: 进程级退出态总闸（详见 texture_bridge.h 声明处注释）。
+  // 进程退出期间置位后，所有 TextureBridge::PumpFrameLocked 的帧上报回调短路早返回。
+  std::atomic<bool> g_process_exiting{false};
+
+  void SetProcessExiting() noexcept
+  {
+    g_process_exiting.store(true, std::memory_order_release);
+  }
+
+  bool IsProcessExiting() noexcept
+  {
+    return g_process_exiting.load(std::memory_order_acquire);
+  }
+
   struct WgcPumpCallbackState {
     std::mutex mutex;
     TextureBridge* bridge = nullptr;
@@ -736,6 +750,12 @@ namespace flutter_inappwebview_plugin
       WgcLog::Write("frame-first-success", lifetime->PoolForLog(),
         FrameHandlerDetail(lifetime, true, lifetime->retiring, has_frame,
           needs_update_.load()));
+    }
+
+    // TODO-618 fix3: 退出态总闸——进程退出期间不再向 Flutter 引擎推送帧，避免在
+    // compositor/CustomPlatformView 下游对象拆解期触发 Unknown Hard Error。
+    if (IsProcessExiting()) {
+      return;
     }
 
     if (has_frame && frame_available_) {

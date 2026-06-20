@@ -243,18 +243,21 @@ void main() {
             'The hook must target the native WebView manager that owns dcomp.');
     expect(preExitSrc.contains("'prepareForProcessExit'"), isTrue,
         reason: 'The Dart hook must call the native pre-exit method.');
-    expect(preExitSrc.contains('static bool _prepared = false'), isTrue,
+    // TODO-618 fix1: 关窗路径与更新路径不再共享单一 `_prepared` 守卫（旧实现的根因 A1：
+    // 走过更新预检置位后关窗静默跳过 native teardown）。改为 per-reason 一次性守卫——同一
+    // 退出路径仍幂等，但两条路径互不短路。
+    expect(preExitSrc.contains('static bool _prepared = false'), isFalse,
         reason:
-            'The Dart hook must be idempotent before exitApp/update handoff.');
-    expect(preExitSrc.contains('if (_prepared) return;'), isTrue,
+            'TODO-618: close/update paths must not share a single one-shot guard.');
+    expect(preExitSrc.contains('enum WindowsExitReason'), isTrue,
         reason:
-            'Repeated close/update paths must not release native state twice.');
-    expect(preExitSrc.contains('_prepared = true'), isTrue,
+            'Exit reason is the per-path guard key (update vs windowClose).');
+    expect(preExitSrc.contains('_preparedReasons.add(reason)'), isTrue,
         reason:
-            'The idempotent guard must be set before invoking the native hook.');
+            'Each exit reason is one-shot via a per-reason guard set, not a shared bool.');
 
     final int lifecycleHook =
-        lifecycleSrc.indexOf('WindowsNativePreExit.prepareForExit()');
+        lifecycleSrc.indexOf('WindowsNativePreExit.prepareForExit(');
     final int lifecycleExit = lifecycleSrc.indexOf('exit(0)');
     expect(lifecycleHook, greaterThanOrEqualTo(0),
         reason:
@@ -265,7 +268,7 @@ void main() {
             'Native pre-exit must run before DesktopLifecycleService calls exit(0).');
 
     final int updaterHook =
-        updaterSrc.indexOf('WindowsNativePreExit.prepareForExit()');
+        updaterSrc.indexOf('WindowsNativePreExit.prepareForExit(');
     final int updaterExit = updaterSrc.indexOf('(exitProcess ?? exit)(0)');
     expect(updaterHook, greaterThanOrEqualTo(0),
         reason:

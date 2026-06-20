@@ -14,6 +14,7 @@
 #include "../utils/vector.h"
 #include "../webview_environment/webview_environment_manager.h"
 #include "in_app_webview_manager.h"
+#include "../custom_platform_view/texture_bridge.h"  // TODO-618 fix3: SetProcessExiting
 
 namespace flutter_inappwebview_plugin
 {
@@ -235,6 +236,9 @@ namespace flutter_inappwebview_plugin
   void InAppWebViewManager::prepareForProcessExit()
   {
     debugLog("prepareForProcessExit InAppWebViewManager");
+    // TODO-618 fix3: 先于任何 teardown 把进程级退出态总闸置位，让所有 TextureBridge 的
+    // WGC 帧上报回调即刻短路，避免在 webViews.clear / 共享合成资源释放期间还有帧推给引擎。
+    SetProcessExiting();
     webViews.clear();
     keepAliveWebViews.clear();
     windowWebViews.clear();
