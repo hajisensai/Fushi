@@ -2,14 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../pages/reader_hibiki_page_source_corpus.dart';
+
 void main() {
   late String readerSource;
   late String controllerSource;
 
   setUpAll(() {
-    readerSource = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    readerSource = readReaderPageSource();
     controllerSource = File(
       '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart',
     ).readAsStringSync();

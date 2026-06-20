@@ -47,7 +47,8 @@ void main() {
     final int recomputeIdx =
         src.indexOf('void _recomputeCharCountsInBackground()');
     expect(recomputeIdx, greaterThan(0));
-    final int nextMethodIdx = src.indexOf('void _setupVolumeKeyHandlers()');
+    final int nextMethodIdx =
+        src.indexOf('Future<EpubBook?> _buildBookFromDb(');
     final String body = src.substring(recomputeIdx, nextMethodIdx);
     expect(body.contains('_sessionMaxAbsoluteChars = _absoluteCharPosition('),
         isTrue,

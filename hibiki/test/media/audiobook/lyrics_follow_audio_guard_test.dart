@@ -1,8 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+
+import '../../pages/reader_hibiki_page_source_corpus.dart';
 
 /// BUG-019 回归守卫：歌词模式「自动音频跟随」开关必须真控制自动滚动。
 ///
@@ -51,9 +51,7 @@ void main() {
   });
 
   test('reader _onCueChanged passes followAudio into __lyricsSetCue', () {
-    final String src = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String src = readReaderPageSource();
 
     // 歌词分支必须把跟随开关透传进 JS（否则自动滚动永远发生）。拆成两个更小的
     // 不变片段，避免对跨行字符串拼接的换行位置脆敏（Info-5）。

@@ -1077,12 +1077,12 @@ void main() {
     final String pickerFlow = _functionSource(
       source,
       'Future<void> _openSrtBookAudioPicker() async',
-      '  int _tocHrefToChapterIndex(String? href)',
+      '  Future<void> _pickSrtAudioFiles(BuildContext dialogContext) async',
     );
     final String settingsBar = _functionSource(
       source,
       'Widget _buildSettingsBar()',
-      '  Future<void> _openAudioImportDialog() async',
+      '  int _tocHrefToChapterIndex(String? href)',
     );
 
     expect(lyricsFlow, contains('ReaderLyricsModeHintDialog('));
