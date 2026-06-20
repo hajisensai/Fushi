@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
   // BUG-285 (TODO-375) regression guard: _persistPosition must pass null (not a
@@ -13,9 +13,7 @@ void main() {
   test(
       'position save preserves the precise same-section anchor when the '
       'current char offset is unavailable (-1 → null, not raw -1)', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderPageSource();
 
     final String persist = _between(
       source,
@@ -40,9 +38,7 @@ void main() {
 
   test('continuous paginate refreshes progress after a successful JS scroll',
       () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderPageSource();
 
     final String paginate = _between(
       source,

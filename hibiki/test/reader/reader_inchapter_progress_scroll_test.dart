@@ -1,7 +1,8 @@
-import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
     show parseReaderStableProgressDetails, readerScrollProgressRefreshAllowed;
+
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// BUG-213：章内原生滚动进度不更新（用户：「章内滚动进度不会动，只有到下一章了
 /// 进度才会更新一次」）。
@@ -121,8 +122,7 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = File('lib/src/pages/implementations/reader_hibiki_page.dart')
-          .readAsStringSync();
+      src = readReaderPageSource();
     });
 
     test('setup 脚本注册 window+document scroll 监听并回传 onReaderScroll', () {

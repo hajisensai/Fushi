@@ -1,15 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：阅读器三个导航入口的「代际 token + restore completer + 初始锚点字段 +
 /// fragment + restoreInFlight + setState 清 ready + 启动超时」开场白，以及失败收尾，
 /// 只各有一份（[_beginNavigation] / [_failNavigation]），三方法都转调，不再逐字复制
 /// 14 行开场白（任一改动要三处同步，否则导航/恢复代际状态机漂移）。
 void main() {
-  final String src = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String src = readReaderPageSource();
 
   group('阅读器导航开场白/失败收尾单一真相', () {
     test('_beginNavigation / _failNavigation helper 定义存在', () {

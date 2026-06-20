@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../pages/reader_hibiki_page_source_corpus.dart';
+
 /// 源码守卫（BUG-032）：退到后台时必须**连同音频播放位置一起 flush**。
 ///
 /// dispose 经 `_audiobookController.dispose()` 会 force-save 音频位置，但硬杀
@@ -10,9 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 控制器初始化路径的 `onPositionWrite` 仍把写库 Future 交回去（用 `=>` 转发，
 /// 不是 `{ ... }` 吞掉返回值），否则 flushPosition 的 await 等不到真正落库。
 void main() {
-  final String src = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String src = readReaderPageSource();
 
   test('background sync-flush also flushes the audiobook playback position',
       () {

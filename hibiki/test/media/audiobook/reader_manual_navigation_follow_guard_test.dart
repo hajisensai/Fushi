@@ -2,14 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../pages/reader_hibiki_page_source_corpus.dart';
+
 void main() {
   test('manual reader chapter navigation suppresses same-cue auto-follow', () {
     final String controllerSource = File(
             '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart')
         .readAsStringSync();
-    final String readerSource =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String readerSource = readReaderPageSource();
 
     expect(
       controllerSource,

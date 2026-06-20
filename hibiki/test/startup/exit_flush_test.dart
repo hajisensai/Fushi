@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../pages/reader_hibiki_page_source_corpus.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
 
@@ -136,9 +138,7 @@ void main() {
 
   group('source guard: active pages register an exit flush', () {
     test('reader registers its exit flush in initState and unregisters', () {
-      final String reader =
-          File('lib/src/pages/implementations/reader_hibiki_page.dart')
-              .readAsStringSync();
+      final String reader = readReaderPageSource();
       expect(hasExitFlushRegistration(reader), isTrue,
           reason: '阅读器活跃时必须登记退出 flush，否则退出丢最后进度/统计');
       expect(reader.contains('ExitFlushRegistry.instance.unregister('), isTrue,

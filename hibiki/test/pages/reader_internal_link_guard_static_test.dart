@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
   // BUG-117: 书内跳转超链接点击「只加遮罩、不跳转」。根因（设备日志实证）=
@@ -10,9 +10,7 @@ void main() {
   // 把绝对 href 转发给 Dart 的 onInternalLink，再走既有 resolveInternalLink + 分页
   // 导航（每个平台一致，不依赖平台特定回调）。WebView/JS 真行为真机不可单测，这里用
   // 源码扫描守卫锁住关键接线，防止静默回归。
-  final String readerSource = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String readerSource = readReaderPageSource();
 
   test(
       'reader setup script intercepts <a> clicks and forwards to onInternalLink',

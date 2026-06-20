@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// BUG-111 守卫（源码扫描，沿用 reader_bottom_chrome_gate_static_test.dart 范式）。
 ///
@@ -18,9 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 3. 因此整文件不得再出现 `_lastSyncedWidth = screen.width` /
 ///    `_lastSyncedWidth = screenSync.width` 这类「当前 MQ 抹平」赋值。
 void main() {
-  final String src = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String src = readReaderPageSource();
 
   test(
       'setup script records the paginated viewport into _paginatedWidth/Height',

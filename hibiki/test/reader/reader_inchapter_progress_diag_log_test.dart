@@ -1,5 +1,6 @@
-import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-151 / TODO-164 / BUG-225：章内滚动进度链路三点诊断日志。
 ///
@@ -20,8 +21,7 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = File('lib/src/pages/implementations/reader_hibiki_page.dart')
-          .readAsStringSync();
+      src = readReaderPageSource();
     });
 
     test('文件 import 了 DebugLogService', () {
