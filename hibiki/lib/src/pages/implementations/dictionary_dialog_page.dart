@@ -98,6 +98,14 @@ class _DictionaryDialogPageState extends BasePageState {
             label: t.dict_download_browse,
             onTap: _showDownloadSelectionDialog,
           ),
+          // TODO-609：遍历所有可在线更新的词典逐个比对 revision，汇总结果。
+          if (appModel.dictionaries.any((Dictionary d) => d.isUpdatable))
+            _buildActionButton(
+              focusPrefix: 'dict-action-update',
+              icon: Icons.system_update_alt,
+              label: t.dict_update_check,
+              onTap: _checkForUpdates,
+            ),
           // Folder import is unavailable on iOS. This bar only renders on
           // Material, so the guard is a no-op on a normal iOS device (Cupertino
           // there); it stays live only for a forced Material design-system
@@ -781,10 +789,15 @@ class _DictionaryDialogPageState extends BasePageState {
           );
 
           progressNotifier.value = t.import_extract;
+          // TODO-609：在线下载即记来源——catalog 的 zip URL 当 downloadUrl 回填。
+          // 嵌入 index.json 若声明 isUpdatable/indexUrl/revision（如 yomidevs
+          // releases/latest）会在 readSourceMetadataFromIndex 里覆盖优先；这里只兜底
+          // 补 downloadUrl，使凡声明可更新的在线词典都能后续检查更新。
           await appModel.importDictionary(
             file: zipFile,
             progressNotifier: progressNotifier,
             onImportSuccess: () {},
+            sourceOverride: <String, String>{'downloadUrl': rec.url},
           );
           successCount++;
         } catch (e) {
@@ -1147,6 +1160,17 @@ class _DictionaryDialogPageState extends BasePageState {
               onTap: onMoveDown,
             ),
             _buildDictionaryVisibilityButton(dictionary, enabled),
+            // TODO-609：仅在线来源词典（isUpdatable 三条件满足）显示「更新」按钮——
+            // 旧词典 / 本地导入词典 metadata 为空 → 不显示，行布局不变。
+            if (dictionary.isUpdatable) ...<Widget>[
+              SizedBox(width: tokens.spacing.gap / 2),
+              HibikiIconButton(
+                icon: Icons.system_update_alt,
+                size: 20,
+                tooltip: t.dict_update_tooltip,
+                onTap: () => _updateSingleDictionary(dictionary),
+              ),
+            ],
             SizedBox(width: tokens.spacing.gap / 2),
             // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。
             HibikiIconButton(
@@ -1298,6 +1322,178 @@ class _DictionaryDialogPageState extends BasePageState {
       value: action,
       icon: icon,
       color: color,
+    );
+  }
+
+  // ── TODO-609：在线 revision 比对手动更新 ──────────────────────────────
+
+  /// 下载 [downloadUrl] 处的词典包并**强制重导**（force=true）替换同名旧版，保留
+  /// order/hidden/collapsed，落上新来源（[sourceOverride] 至少带回 downloadUrl）。
+  /// 复用现有下载进度 UI（[DictionaryDownloadProgressDialog]）。成功返 true。
+  Future<bool> _redownloadAndReimport({
+    required String name,
+    required String downloadUrl,
+    required ValueNotifier<String> progressNotifier,
+    required ValueNotifier<double> downloadProgress,
+    required Map<String, String> sourceOverride,
+  }) async {
+    final Directory tempDir = Directory(
+      path.join(appModel.dictionaryResourceDirectory.path, 'update_temp'),
+    );
+    try {
+      progressNotifier.value = t.dict_update_updating(name: name);
+      downloadProgress.value = 0;
+      final File zipFile = await DictionaryDownloader.download(
+        url: downloadUrl,
+        tempDir: tempDir,
+        progressNotifier: downloadProgress,
+      );
+      await appModel.importDictionary(
+        file: zipFile,
+        progressNotifier: progressNotifier,
+        onImportSuccess: () {},
+        forceReplaceExisting: true,
+        sourceOverride: sourceOverride,
+      );
+      return true;
+    } finally {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    }
+  }
+
+  /// 单本词典「更新」按钮：拉远端 index.json 比 revision，有新版才下载重导。无新版
+  /// 提示「已是最新」。任何失败提示 [t.dict_update_failed]，不崩。
+  Future<void> _updateSingleDictionary(Dictionary dictionary) async {
+    if (_isDownloading) return;
+    if (!dictionary.isUpdatable) return;
+    _isDownloading = true;
+
+    final ValueNotifier<String> progressNotifier =
+        ValueNotifier<String>(t.dict_update_checking);
+    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
+
+    showAppDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (ctx) => ValueListenableBuilder<String>(
+        valueListenable: progressNotifier,
+        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
+          message: msg,
+          progressListenable: downloadProgress,
+        ),
+      ),
+    );
+
+    String resultMsg = t.dict_update_latest;
+    try {
+      final String? remoteRevision =
+          await DictionaryUpdateService.fetchRemoteIndex(dictionary.indexUrl);
+      if (!DictionaryUpdateService.needsUpdate(
+          dictionary.revision, remoteRevision)) {
+        resultMsg = t.dict_update_latest;
+      } else {
+        await _redownloadAndReimport(
+          name: dictionary.name,
+          downloadUrl: dictionary.downloadUrl,
+          progressNotifier: progressNotifier,
+          downloadProgress: downloadProgress,
+          sourceOverride: <String, String>{
+            'downloadUrl': dictionary.downloadUrl,
+            'indexUrl': dictionary.indexUrl,
+          },
+        );
+        resultMsg = t.dict_update_done(name: dictionary.name);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictionaryDialog.updateSingle', e, stack);
+      resultMsg = t.dict_update_failed(error: '$e');
+    } finally {
+      progressNotifier.dispose();
+      downloadProgress.dispose();
+      _isDownloading = false;
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {});
+      }
+    }
+    HibikiToast.show(msg: resultMsg);
+  }
+
+  /// action bar「检查更新」：遍历所有可更新词典逐个比对，有新版的逐个下载重导，
+  /// 汇总 N 更新 / M 最新 / K 失败。复用现有下载进度 UI。
+  Future<void> _checkForUpdates() async {
+    if (_isDownloading) return;
+    final List<Dictionary> updatable =
+        appModel.dictionaries.where((Dictionary d) => d.isUpdatable).toList();
+    if (updatable.isEmpty) {
+      HibikiToast.show(msg: t.dict_update_none);
+      return;
+    }
+    _isDownloading = true;
+
+    final ValueNotifier<String> progressNotifier =
+        ValueNotifier<String>(t.dict_update_checking);
+    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
+
+    showAppDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (ctx) => ValueListenableBuilder<String>(
+        valueListenable: progressNotifier,
+        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
+          message: msg,
+          progressListenable: downloadProgress,
+        ),
+      ),
+    );
+
+    int updated = 0;
+    int current = 0;
+    int failed = 0;
+    try {
+      for (final Dictionary d in updatable) {
+        try {
+          progressNotifier.value = t.dict_update_updating(name: d.name);
+          final String? remoteRevision =
+              await DictionaryUpdateService.fetchRemoteIndex(d.indexUrl);
+          if (!DictionaryUpdateService.needsUpdate(
+              d.revision, remoteRevision)) {
+            current++;
+            continue;
+          }
+          await _redownloadAndReimport(
+            name: d.name,
+            downloadUrl: d.downloadUrl,
+            progressNotifier: progressNotifier,
+            downloadProgress: downloadProgress,
+            sourceOverride: <String, String>{
+              'downloadUrl': d.downloadUrl,
+              'indexUrl': d.indexUrl,
+            },
+          );
+          updated++;
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('DictionaryDialog.checkUpdates', e, stack);
+          failed++;
+        }
+      }
+    } finally {
+      progressNotifier.dispose();
+      downloadProgress.dispose();
+      _isDownloading = false;
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {});
+      }
+    }
+    HibikiToast.show(
+      msg: t.dict_update_summary(
+        updated: updated.toString(),
+        current: current.toString(),
+        failed: failed.toString(),
+      ),
+      toastLength: Toast.LENGTH_LONG,
     );
   }
 
