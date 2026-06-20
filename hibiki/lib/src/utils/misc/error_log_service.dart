@@ -49,11 +49,25 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   /// 把残留内容折进错误日志，即可定位是哪本词典把进程带崩的。
   File? _breadcrumbFile;
 
-  Future<void> init() async {
-    final dir = hibikiTestDirectory('app-documents') ??
+  /// 查词面包屑文件（TODO-607 P0-2，**独立**于导入面包屑 [_breadcrumbFile]）：
+  /// 在每次「查词弹窗栈层进出」（顶层查词 / 嵌套查词 push / 关栈裁层）时**同步**
+  /// 写入当前栈深度 + 顶层词。嵌套查词触发的 native 进程级闪退（跨线程 teardown
+  /// 竞态，文档推断同 603-B / BUG-344，待 dump 坐实）会绕过所有 Dart 错误捕获
+  /// （`FlutterError.onError` / `runZonedGuarded` / `PlatformDispatcher.onError`），
+  /// 异步日志缓冲来不及落盘；这个文件因为**同步**写入而能存活崩溃，下次启动折成
+  /// [_foldLookupBreadcrumb] 的 `Lookup.crashRecovered`，记下「上次嵌套查词把进程
+  /// 带崩 + 崩时第几层」。与导入面包屑分文件，互不覆盖。
+  File? _lookupBreadcrumbFile;
+
+  /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
+  /// path_provider）；生产不传，走 [hibikiTestDirectory] / 应用文档目录。
+  Future<void> init({Directory? directoryOverride}) async {
+    final dir = directoryOverride ??
+        hibikiTestDirectory('app-documents') ??
         await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/error_log.txt');
     _breadcrumbFile = File('${dir.path}/import_crash_breadcrumb.txt');
+    _lookupBreadcrumbFile = File('${dir.path}/lookup_crash_breadcrumb.txt');
     try {
       if (await _logFile!.exists()) {
         var content = await _logFile!.readAsString();
@@ -80,6 +94,21 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     } catch (e) {
       debugPrint('[ErrorLogService] breadcrumb recovery failed: $e');
     }
+    // 查词崩溃恢复（TODO-607 P0-2）：上次有**查词**面包屑残留 = 进程在某查词栈层
+    // 活跃时（最高频是嵌套查词）没退出就 native 崩了。独立文件、独立分支，折成
+    // `Lookup.crashRecovered`（日志 label，非 i18n key），记下崩时栈深度。
+    try {
+      final String? lookupCulprit =
+          readAndClearBreadcrumb(_lookupBreadcrumbFile!);
+      if (lookupCulprit != null) {
+        log(
+            'Lookup.crashRecovered',
+            '上次查词疑似让 app 崩溃（native 进程级，Dart 无法捕获；嵌套查词最高频，'
+                '文档推断同 603-B 跨线程 teardown 竞态，待 dump 坐实）：$lookupCulprit');
+      }
+    } catch (e) {
+      debugPrint('[ErrorLogService] lookup breadcrumb recovery failed: $e');
+    }
   }
 
   /// 在调用 native 词典导入 FFI 之前**同步**落盘一条面包屑。[detail] 应能唯一
@@ -104,6 +133,41 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
       if (f != null && f.existsSync()) f.deleteSync();
     } catch (e) {
       debugPrint('[ErrorLogService] markImportEnd failed: $e');
+    }
+  }
+
+  /// TODO-607 P0-2：查词弹窗栈层进出时**同步**写一条查词面包屑（[_lookupBreadcrumbFile]）。
+  /// [depth] 是当前**可见**查词栈深度（0=已无可见弹窗，1=顶层查词，>=2=嵌套查词第
+  /// `depth` 层）；[topTerm] 是栈顶在查的词（可空）。必须同步落盘，否则进程在异步
+  /// flush 前就已 native 崩溃。[depth]<=0 时改为清掉面包屑（栈已空，无活跃查词，
+  /// 此后再崩与查词无关——避免把「正常关弹窗后很久的崩溃」误报成查词崩）。
+  ///
+  /// 由 [DictionaryPopupController] 的栈进出方法经注入回调驱动（三查词表面共用一份
+  /// 栈原语，一处接通覆盖书内 / 视频 / 首页查词全部路径）。带时间戳：用户「正常强杀」
+  /// 恰好命中查词活跃期时下次启动会把残留报为崩溃，时间戳让人工读日志能判断残留新旧。
+  void markLookupStackDepth(int depth, {String? topTerm}) {
+    if (depth <= 0) {
+      clearLookupBreadcrumb();
+      return;
+    }
+    try {
+      final String term = (topTerm == null || topTerm.isEmpty) ? '?' : topTerm;
+      _lookupBreadcrumbFile?.writeAsStringSync(
+        '[${DateTime.now()}] 查词栈深度=$depth（>=2 为嵌套查词），栈顶词=「$term」',
+        flush: true,
+      );
+    } catch (e) {
+      debugPrint('[ErrorLogService] markLookupStackDepth failed: $e');
+    }
+  }
+
+  /// 查词栈清空（所有弹窗关闭）后删掉查词面包屑——此后崩溃与查词无关。
+  void clearLookupBreadcrumb() {
+    try {
+      final f = _lookupBreadcrumbFile;
+      if (f != null && f.existsSync()) f.deleteSync();
+    } catch (e) {
+      debugPrint('[ErrorLogService] clearLookupBreadcrumb failed: $e');
     }
   }
 
@@ -141,6 +205,35 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     _appendToFile(entry);
   }
 
+  /// TODO-607 P0-1：致命级错误（`FlutterError.onError` / `runZonedGuarded` 的
+  /// UncaughtZone / `PlatformDispatcher.onError`）的**同步**落盘版本。
+  ///
+  /// 致命错误后进程可能立刻被带崩（尤其 `PlatformDispatcher.onError` 接住的、
+  /// 来自 platform/原生回调的异常），常规 [log] 的异步 `_appendToFile` 来不及把
+  /// 缓冲 flush 到磁盘——错误日志页就空了。这里在内存登记之外，额外用
+  /// `writeAsStringSync(flush:true)` **同步**把这条 entry 追加进日志文件（复用
+  /// 导入/查词面包屑同一「同步落盘存活崩溃」范式），保证即便下一刻崩溃，这条致命
+  /// 错误也已在磁盘上，下次启动能读到。同步 IO 仅在罕见的致命路径触发，不影响热路径。
+  void logFatal(String source, Object error, [StackTrace? stack]) {
+    final entry = ErrorLogEntry(
+      timestamp: DateTime.now(),
+      source: source,
+      error: error.toString(),
+      stackTrace: stack?.toString(),
+    );
+    _entries.add(entry);
+    if (_entries.length > _maxEntries) {
+      _entries.removeAt(0);
+    }
+    notifyListenersFrameSafe();
+    try {
+      _logFile?.writeAsStringSync(entry.format(),
+          mode: FileMode.append, flush: true);
+    } catch (e) {
+      debugPrint('[ErrorLogService] logFatal sync append failed: $e');
+    }
+  }
+
   Future<void> _appendToFile(ErrorLogEntry entry) async {
     try {
       await _logFile?.writeAsString(entry.format(), mode: FileMode.append);
@@ -176,6 +269,14 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
       debugPrint('[ErrorLogService] clear failed: $e');
     }
   }
+}
+
+/// TODO-607 P0-2：查词栈深度变化的顶层回调（tear-off 友好），转调
+/// [ErrorLogService.instance.markLookupStackDepth]。各查词宿主把它注入
+/// [DictionaryPopupController.onLookupStackDepthChanged]，让 controller 保持纯逻辑
+/// （不直接依赖单例 / 文件 IO），同时一处接通查词崩溃面包屑覆盖所有查词表面。
+void recordLookupStackDepth(int depth, String? topTerm) {
+  ErrorLogService.instance.markLookupStackDepth(depth, topTerm: topTerm);
 }
 
 /// BUG-089：制卡失败的统一处理。在所有 `MineResult.error` 分支调用：

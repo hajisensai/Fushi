@@ -22,8 +22,10 @@ class TexthookerPage extends ConsumerStatefulWidget {
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
     with DictionaryPageMixin {
-  final DictionaryPopupController _popup =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController _popup = DictionaryPopupController(
+    lowMemory: false,
+    onLookupStackDepthChanged: recordLookupStackDepth,
+  );
   final ScrollController _scroll = ScrollController();
 
   /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性

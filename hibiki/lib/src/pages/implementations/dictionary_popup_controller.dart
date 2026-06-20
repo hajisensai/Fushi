@@ -52,7 +52,36 @@ class DictionaryPopupEntry {
 /// 加载盖板兜住），书内用 `visible:false`（就绪才 [show]，搜索期另画轻量占位）。两条
 /// 路径共用同一套原语，零行为变更。
 class DictionaryPopupController extends ChangeNotifier {
-  DictionaryPopupController({required this.lowMemory});
+  DictionaryPopupController({
+    required this.lowMemory,
+    this.onLookupStackDepthChanged,
+  });
+
+  /// TODO-607 P0-2：查词栈「可见深度」变化时的注入回调（书内 / 视频 / 首页 / 安卓独立
+  /// 查词窗各宿主在创建时注入 `ErrorLogService.instance.markLookupStackDepth`）。
+  /// 在此注入而非让 controller 直接调单例，是为了让 controller 保持纯逻辑可测
+  /// （现有 `dictionary_popup_controller_test.dart` 在非 Flutter 环境跑，不能触发
+  /// 文件 IO / path_provider）。回调同步执行，宿主据其同步写查词崩溃面包屑。
+  ///
+  /// 参数：当前**可见**查词栈深度（0=无可见弹窗→清面包屑，1=顶层，>=2=嵌套）+
+  /// 栈顶可见层在查的词（可空）。
+  final void Function(int depth, String? topTerm)? onLookupStackDepthChanged;
+
+  /// 通知注入回调：当前可见栈深度 + 栈顶可见层的词。在所有改变 [_entries] 内容
+  /// 或某层 [DictionaryPopupEntry.visible] 的栈操作尾部统一调用，使查词崩溃面包屑
+  /// 始终反映「崩时第几层 / 在查什么词」。回调缺省（纯逻辑测试）时直接返回。
+  void _notifyLookupStackDepth() {
+    final callback = onLookupStackDepthChanged;
+    if (callback == null) return;
+    int depth = 0;
+    String? topTerm;
+    for (final DictionaryPopupEntry e in _entries) {
+      if (!e.visible) continue;
+      depth++;
+      topTerm = e.searchTerm;
+    }
+    callback(depth, topTerm);
+  }
 
   /// 低内存模式不保留常驻热槽（关栈即清空，释放 WebView）。可变：宿主在 appModel
   /// 已初始化的安全时机（seed 前）设入真实值，避免在 State.initState 里过早读
@@ -120,6 +149,7 @@ class DictionaryPopupController extends ChangeNotifier {
       isWarmSlot: true,
     ));
     notifyListeners();
+    _notifyLookupStackDepth();
   }
 
   /// 顶层查词目标：能复用常驻热槽（首条且 isWarmSlot）就原地复用并丢弃子层；
@@ -158,6 +188,7 @@ class DictionaryPopupController extends ChangeNotifier {
       _entries.add(e);
     }
     notifyListeners();
+    _notifyLookupStackDepth();
     return e;
   }
 
@@ -176,6 +207,7 @@ class DictionaryPopupController extends ChangeNotifier {
     )..isSearching = true;
     _entries.add(e);
     notifyListeners();
+    _notifyLookupStackDepth();
     return e;
   }
 
@@ -186,6 +218,7 @@ class DictionaryPopupController extends ChangeNotifier {
       _cancelRevealTimers(_entries.sublist(length));
       _entries.removeRange(length, _entries.length);
       notifyListeners();
+      _notifyLookupStackDepth();
     }
   }
 
@@ -208,6 +241,7 @@ class DictionaryPopupController extends ChangeNotifier {
       _entries.clear();
     }
     notifyListeners();
+    _notifyLookupStackDepth();
   }
 
   /// 清空整个栈（宿主重置/销毁用；不保留热槽）。
@@ -216,6 +250,7 @@ class DictionaryPopupController extends ChangeNotifier {
     _cancelRevealTimers(_entries);
     _entries.clear();
     notifyListeners();
+    _notifyLookupStackDepth();
   }
 
   /// 把结果填进 [e]（不改 visible），供「就绪才显示」与「延迟显示」两条路径。
@@ -237,6 +272,7 @@ class DictionaryPopupController extends ChangeNotifier {
     e.visible = true;
     e.revealOnRender = false;
     notifyListeners();
+    _notifyLookupStackDepth();
   }
 
   /// TODO-058：结果已就绪但**先不显示**——挂起到该层 WebView 渲染完成。
@@ -264,9 +300,11 @@ class DictionaryPopupController extends ChangeNotifier {
       e.visible = true;
       e.revealOnRender = false;
       notifyListeners();
+      _notifyLookupStackDepth();
       onForcedReveal?.call();
     });
     notifyListeners();
+    _notifyLookupStackDepth();
   }
 
   /// 取消并移除 [e] 的兜底 Timer（离开挂起态的所有路径都要调，防回调/泄漏）。
@@ -291,6 +329,7 @@ class DictionaryPopupController extends ChangeNotifier {
     e.visible = true;
     e.revealOnRender = false;
     notifyListeners();
+    _notifyLookupStackDepth();
     return true;
   }
 
@@ -319,6 +358,7 @@ class DictionaryPopupController extends ChangeNotifier {
       _entries.removeRange(index, _entries.length);
     }
     notifyListeners();
+    _notifyLookupStackDepth();
   }
 
   @override

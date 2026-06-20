@@ -1747,5 +1747,12 @@
   "dict_update_done": "$name 已更新。",
   "dict_update_latest": "已是最新。",
   "dict_update_failed": "更新失败：$error",
-  "dict_update_summary": "$updated 个已更新，$current 个最新，$failed 个失败。"
+  "dict_update_summary": "$updated 个已更新，$current 个最新，$failed 个失败。",
+  "crash_dump_label": "崩溃转储 ($n)",
+  "crash_dump_empty": "暂无崩溃转储",
+  "crash_dump_open_folder": "打开转储文件夹",
+  "crash_dump_share": "分享转储",
+  "crash_dump_share_subject": "hibiki 崩溃转储",
+  "crash_dump_privacy_notice": "崩溃转储文件（.dmp）含进程内存快照，可能包含你正在阅读的文本、查过的词或其它应用内数据。仅分享给你信任的开发者。",
+  "refresh": "刷新"
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -307,18 +308,32 @@ void main([List<String> args = const <String>[]]) {
         return;
       }
       FlutterError.presentError(details);
-      ErrorLogService.instance.log(
+      // TODO-607 P0-1：FlutterError 是致命级，用同步 flush 落盘——若这条错误紧接着把
+      // 进程带崩（如 build/layout 期的 native 回调异常），异步 append 来不及写盘。
+      ErrorLogService.instance.logFatal(
         'FlutterError: ${details.context?.toString() ?? 'unknown'}',
         msg,
         details.stack,
       );
     };
+
+    /// TODO-607 P0-1：平台/引擎层未捕获的异步错误（platform message handler、
+    /// 原生回调、microtask 等）不经 [FlutterError.onError] 也不一定经
+    /// [runZonedGuarded] 的 onError——它们走 [PlatformDispatcher.onError]。此前没装
+    /// 这个钩子，这类错误对错误日志完全不可见（用户报「错误日志一片空白」的一类
+    /// 来源）。装上后用同步 flush 落盘（致命级），返回 true 标记「已处理」，避免
+    /// 引擎把它再当未处理崩溃上报。
+    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+      ErrorLogService.instance.logFatal('PlatformDispatcher', error, stack);
+      return true;
+    };
   }, (exception, stack) {
     /// Print error details to the console.
     final details = FlutterErrorDetails(exception: exception, stack: stack);
 
-    /// Log the error.
-    ErrorLogService.instance.log('UncaughtZone', exception, stack);
+    /// Log the error. UncaughtZone 是致命级（zone 顶层未捕获），同步 flush 落盘
+    /// （TODO-607 P0-1）——这条之后进程往往就终止了，异步 append 来不及写盘。
+    ErrorLogService.instance.logFatal('UncaughtZone', exception, stack);
     if (Platform.isAndroid || Platform.isIOS) {
       FlutterLogs.logError(
         'hoshi_reader',

@@ -1031,7 +1031,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
-    _popup = DictionaryPopupController(lowMemory: false);
+    _popup = DictionaryPopupController(
+      lowMemory: false,
+      onLookupStackDepthChanged: recordLookupStackDepth,
+    );
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
     // TODO-364 单一真相源：字幕避让可见性恒由 media_kit 真实可见性
     // （[_mediaKitControlsVisible]）+ 三个门控派生。订阅这四个输入，任一变化即重派生

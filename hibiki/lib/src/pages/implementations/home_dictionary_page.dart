@@ -59,8 +59,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   final FocusNode _searchFocusNode = FocusNode();
 
   DictionarySearchResult? _result;
-  final DictionaryPopupController _popup =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController _popup = DictionaryPopupController(
+    lowMemory: false,
+    onLookupStackDepthChanged: recordLookupStackDepth,
+  );
   final GlobalKey _resultStackKey = GlobalKey();
 
   bool _isSearching = false;

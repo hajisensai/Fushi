@@ -31,8 +31,10 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 
 class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     with DictionaryPageMixin {
-  final DictionaryPopupController _popup =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController _popup = DictionaryPopupController(
+    lowMemory: false,
+    onLookupStackDepthChanged: recordLookupStackDepth,
+  );
   final GlobalKey _resultStackKey = GlobalKey();
   final Stopwatch _startupStopwatch = Stopwatch()..start();
   bool _isClosing = false;

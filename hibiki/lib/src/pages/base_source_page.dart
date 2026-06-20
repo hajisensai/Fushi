@@ -116,8 +116,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Allows customisation of opacity of dictionary entries.
   double get dictionaryEntryOpacity => 1;
 
-  final DictionaryPopupController _popup =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController _popup = DictionaryPopupController(
+    lowMemory: false,
+    onLookupStackDepthChanged: recordLookupStackDepth,
+  );
 
   final ValueNotifier<bool> _isSearchingNotifier = ValueNotifier<bool>(false);
 

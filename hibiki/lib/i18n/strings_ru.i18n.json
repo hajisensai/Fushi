@@ -1747,5 +1747,12 @@
   "dict_update_done": "$name updated.",
   "dict_update_latest": "Already up to date.",
   "dict_update_failed": "Update failed: $error",
-  "dict_update_summary": "$updated updated, $current up to date, $failed failed."
+  "dict_update_summary": "$updated updated, $current up to date, $failed failed.",
+  "crash_dump_label": "Crash Dumps ($n)",
+  "crash_dump_empty": "No crash dumps",
+  "crash_dump_open_folder": "Open dump folder",
+  "crash_dump_share": "Share dump",
+  "crash_dump_share_subject": "hibiki Crash Dump",
+  "crash_dump_privacy_notice": "Crash dumps (.dmp) contain a snapshot of process memory and may include text you were reading, words you looked up, or other in-app data. Share them only with developers you trust.",
+  "refresh": "Refresh"
 }

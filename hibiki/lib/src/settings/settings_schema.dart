@@ -20,6 +20,7 @@ import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -2157,6 +2158,19 @@ SettingsDestination _systemDestination() {
                 t.error_log_label(n: ErrorLogService.instance.entries.length),
             icon: Icons.report_problem_outlined,
             builder: (_) => const ErrorLogPage(),
+          ),
+          // TODO-607 P0-3：崩溃转储（native minidump）。仅 Windows 显示——native
+          // 端只在 Windows runner 经 SetUnhandledExceptionFilter 写 .dmp，移动端无此
+          // 机制（仿 wgc_capture_log 的 isWindows 门控）。让纯 native 闪退（嵌套查词
+          // 把进程带崩等，错误日志里看不到）有可上传的二进制证据。
+          SettingsNavigationItem(
+            id: 'diagnostics.crash_dumps',
+            title: t.crash_dump_label(
+              n: CrashDumpLocator.listCurrentPlatformDumps().length,
+            ),
+            icon: Icons.bug_report_outlined,
+            visible: (_) => Platform.isWindows,
+            builder: (_) => const CrashDumpPage(),
           ),
           SettingsSwitchItem(
             id: 'diagnostics.debug_log_enabled',

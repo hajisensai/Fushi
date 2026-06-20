@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// 悬浮字幕「点词查词」的一次请求（文本 + 命中字符 index）。
 class FloatingLyricLookupRequest {
@@ -70,8 +71,10 @@ class FloatingLyricLookupHost extends ConsumerStatefulWidget {
 
 class _FloatingLyricLookupHostState
     extends ConsumerState<FloatingLyricLookupHost> with DictionaryPageMixin {
-  final DictionaryPopupController _popup =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController _popup = DictionaryPopupController(
+    lowMemory: false,
+    onLookupStackDepthChanged: recordLookupStackDepth,
+  );
 
   /// 缓存的 [AppModel] 引用（单例，实例不变）。在 [initState] 一次性读取：浮层在
   /// `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再 `ref.read` 会抛
