@@ -231,6 +231,102 @@ typedef DictPathEntry = ({
   return (term: term, freq: freq, pitch: pitch, kanji: kanji);
 }
 
+/// [normalizeSearchTerm] 的返回：清洗后的查询串 + 三步替换各自的微秒耗时，供
+/// `[dict-perf]` 打点逐字段读取（耗时本身是可观测性数据，不影响查询结果）。
+typedef NormalizedSearchTerm = ({
+  String term,
+  int emojiMicros,
+  int punctMicros,
+  int surrogateMicros,
+});
+
+/// 词典查询前的查询串清洗单一真相：换行折空格 → emoji 去除 → 首尾标点/符号剥离 →
+/// 孤立代理项替换。此前 4 步 replaceAll 散在 [AppModel.searchDictionary] 内、与多个
+/// Stopwatch 打点交织，无法单测（依赖整页 AppModel + FFI）。纯逻辑（输入→输出确定）
+/// 凿到这里，原调用处仍用 `swPreprocess` 包住总计时、用返回的子计时拼出逐字不变的
+/// `[dict-perf] preprocess` 打点。换行折叠是无条件首步（无独立计时），emoji/punct/
+/// surrogate 三步各自计时随结果返回。
+///
+/// 替换契约逐字不变（变=查询语义/缓存键漂移）：`\n`→`' '`、[emojiRegex]→`' '`、
+/// [punctuationRegex]→`''`、[loneSurrogateRegex]→`' '`，顺序固定。
+@visibleForTesting
+NormalizedSearchTerm normalizeSearchTerm(
+  String searchTerm, {
+  required RegExp emojiRegex,
+  required RegExp punctuationRegex,
+  required RegExp loneSurrogateRegex,
+}) {
+  searchTerm = searchTerm.replaceAll('\n', ' ');
+
+  final swEmoji = Stopwatch()..start();
+  searchTerm = searchTerm.replaceAll(emojiRegex, ' ');
+  swEmoji.stop();
+
+  final swPunct = Stopwatch()..start();
+  searchTerm = searchTerm.replaceAll(punctuationRegex, '');
+  swPunct.stop();
+
+  final swSurrogate = Stopwatch()..start();
+  searchTerm = searchTerm.replaceAll(loneSurrogateRegex, ' ');
+  swSurrogate.stop();
+
+  return (
+    term: searchTerm,
+    emojiMicros: swEmoji.elapsedMicroseconds,
+    punctMicros: swPunct.elapsedMicroseconds,
+    surrogateMicros: swSurrogate.elapsedMicroseconds,
+  );
+}
+
+/// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
+/// `<term.length>:<term>/<maxTerms>/<maxResults>`。此前是 [AppModel.searchDictionary]
+/// 内联插值，无法独立断言「键格式不漂移」。
+@visibleForTesting
+String buildSearchCacheKey({
+  required String term,
+  required int maxTerms,
+  required int maxResults,
+}) {
+  return '${term.length}:$term/$maxTerms/$maxResults';
+}
+
+/// 从 `blobs.bin` 头部字节解码词典实际类型（freq/pitch），供 term 词典的类型回填迁移。
+/// 此前解析与 `RandomAccessFile` 的分次读/定位深交织（[AppModel._migrateDictionaryTypes]），
+/// 无法单测（依赖真文件）。纯逻辑吃**已读入的字节**（调用方负责打开/读盘/关闭），按
+/// 相同偏移解析，返回检测到的类型；非 freq/pitch 或头部不合法返回 `null`（调用方
+/// `continue` 跳过该词典，保持 term 类型不动）。
+///
+/// 布局（与原 raf 逐次读逐字对齐）：
+/// - `bytes[0]` 必须是标志 `0x01`，否则 `null`；
+/// - `bytes[1] | (bytes[2] << 8)` 是 exprLen（小端 16 位）；
+/// - modeLen 在偏移 `3 + exprLen` 处单字节，越界或 `0` 返回 `null`；
+/// - mode 串是其后**至多** `modeLen` 字节（`String.fromCharCodes`）。原逻辑用
+///   `raf.readSync(modeLen)`：文件到末尾时只返回剩余字节、不报错，故这里同样截断到
+///   `bytes` 末尾（不因 modeLen 越界而提前返 `null`），逐字复刻原行为。
+///   `'freq'`→frequency、`'pitch'`→pitch，其余 `null`。
+@visibleForTesting
+DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
+  if (bytes.length < 4) return null;
+  if (bytes[0] != 0x01) return null;
+
+  final exprLen = bytes[1] | (bytes[2] << 8);
+  final modeLenIndex = 3 + exprLen;
+  if (modeLenIndex >= bytes.length) return null;
+  final modeLen = bytes[modeLenIndex];
+  if (modeLen == 0) return null;
+
+  // 与原 raf.readSync(modeLen) 的截断语义一致：文件不足 modeLen 时取剩余字节。
+  final modeStart = modeLenIndex + 1;
+  final int modeEnd = (modeStart + modeLen) <= bytes.length
+      ? (modeStart + modeLen)
+      : bytes.length;
+  final mode = String.fromCharCodes(bytes.sublist(modeStart, modeEnd));
+
+  if (mode == 'freq') return DictionaryType.frequency;
+  if (mode == 'pitch') return DictionaryType.pitch;
+  return null;
+}
+
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
@@ -704,27 +800,18 @@ class AppModel with ChangeNotifier {
 
       final raf = blobsFile.openSync();
       try {
-        if (raf.lengthSync() < 4) continue;
+        final int len = raf.lengthSync();
+        if (len < 4) continue;
+        // 读一个覆盖到 mode 串末尾的连续前缀（modeLen 单字节、上界 255，故 mode
+        // 最长 255），把逐次 raf 读换成「读足够前缀 + 纯函数按相同偏移解析」。先读
+        // 4 字节 header 拿 exprLen，再从头读到 modeEnd 上界，截断到文件长度。
         final header = raf.readSync(4);
-        if (header[0] != 0x01) continue;
-
         final exprLen = header[1] | (header[2] << 8);
-        raf.setPositionSync(3 + exprLen);
-        final modeLenBuf = raf.readSync(1);
-        if (modeLenBuf.isEmpty) continue;
-        final modeLen = modeLenBuf[0];
-        if (modeLen == 0) continue;
-        final modeBytes = raf.readSync(modeLen);
-        final mode = String.fromCharCodes(modeBytes);
-
-        DictionaryType detected;
-        if (mode == 'freq') {
-          detected = DictionaryType.frequency;
-        } else if (mode == 'pitch') {
-          detected = DictionaryType.pitch;
-        } else {
-          continue;
-        }
+        final int prefixLen = 3 + exprLen + 1 + 255;
+        raf.setPositionSync(0);
+        final List<int> head = raf.readSync(prefixLen < len ? prefixLen : len);
+        final DictionaryType? detected = decodeDictTypeFromBlobHeader(head);
+        if (detected == null) continue;
 
         final updated = Dictionary(
           name: d.name,
@@ -2242,25 +2329,19 @@ class AppModel with ChangeNotifier {
     final swTotal = Stopwatch()..start();
     final swPreprocess = Stopwatch()..start();
 
-    searchTerm = searchTerm.replaceAll('\n', ' ');
-
-    final swEmoji = Stopwatch()..start();
-    searchTerm = searchTerm.replaceAll(_emojiRegex, ' ');
-    swEmoji.stop();
-
-    final swPunct = Stopwatch()..start();
-    searchTerm = searchTerm.replaceAll(_punctuationRegex, '');
-    swPunct.stop();
-
-    final swSurrogate = Stopwatch()..start();
-    searchTerm = searchTerm.replaceAll(_loneSurrogateRegex, ' ');
-    swSurrogate.stop();
+    final NormalizedSearchTerm normalized = normalizeSearchTerm(
+      searchTerm,
+      emojiRegex: _emojiRegex,
+      punctuationRegex: _punctuationRegex,
+      loneSurrogateRegex: _loneSurrogateRegex,
+    );
+    searchTerm = normalized.term;
 
     swPreprocess.stop();
     debugPrint('[dict-perf] preprocess: ${swPreprocess.elapsedMilliseconds}ms '
-        '(emoji=${swEmoji.elapsedMicroseconds}µs '
-        'punct=${swPunct.elapsedMicroseconds}µs '
-        'surrogate=${swSurrogate.elapsedMicroseconds}µs) '
+        '(emoji=${normalized.emojiMicros}µs '
+        'punct=${normalized.punctMicros}µs '
+        'surrogate=${normalized.surrogateMicros}µs) '
         '"$searchTerm"');
 
     if (searchTerm.trim().isEmpty) {
@@ -2281,8 +2362,11 @@ class AppModel with ChangeNotifier {
       }
     }
 
-    final String cacheKey =
-        '${searchTerm.length}:$searchTerm/$effectiveMaxTerms/$maximumDictionarySearchResults';
+    final String cacheKey = buildSearchCacheKey(
+      term: searchTerm,
+      maxTerms: effectiveMaxTerms,
+      maxResults: maximumDictionarySearchResults,
+    );
 
     final cached = dictRepo.getCachedSearch(cacheKey);
     if (useCache && cached != null) {
