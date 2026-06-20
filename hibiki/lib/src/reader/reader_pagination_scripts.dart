@@ -198,6 +198,70 @@ class ReaderPaginationScripts {
     }
   }
 
+  /// TODO-627 / BUG-349 纯谓词：`_stepWithFreshMetrics` 的**落点**影子（不止判定
+  /// 跨章与不跨，还算出 settle 复核后真正应落到的整页边界）。`shouldCrossChapterOnLimit`
+  /// 只回答「翻不翻得动」；本函数回答「翻得动时落到哪」，专治插画页的「既不翻页也
+  /// 不跨章」卡死。
+  ///
+  /// 根因：图片晚 load 时 `buildPaginationMetrics` 枚举到的 `img` 还是 0×0（未 load
+  /// 完），`metrics.maxScroll = min(maxAlignedScroll, lastContentScroll)` 漏掉图片
+  /// 所占的列 → 偏小。`_stepWithFreshMetrics` 旧落点
+  /// `dest = min(targetF, max(metrics.maxScroll, currentScroll))` 在这种低估下：当
+  /// currentScroll 已停在被低估的「末页」（>= metrics.maxScroll），`max(...)` 取
+  /// currentScroll，`dest = min(targetF, currentScroll) == currentScroll` ⇒ 调用
+  /// `setPagePosition` 不动、却仍 `return "scrolled"` ⇒ Dart 侧 `_didScroll` 为真
+  /// （不跨章），但页面没翻 ⇒ 滚轮在插画页「卡住」。
+  ///
+  /// 修复：forward 落点上界用 `max(metrics.maxScroll, trueMaxAligned)`（与跨章复核
+  /// 同一容差上界），让落点能推进到 DOM 实时可滚的真实整页边界，而非被低估的
+  /// `metrics.maxScroll` clamp 回 currentScroll。只在「DOM 确有可滚整页、只是 content
+  /// edge 低估」的边缘多兑一道，不改 BUG-169 的 floor+1/ceil-1 步长公式，也不动正常
+  /// 路径（metrics 准时 trueMaxAligned <= metrics.maxScroll，落点与旧实现等价）。
+  ///
+  /// 入参均为 settle/重建后的实时几何，语义同 [shouldCrossChapterOnLimit]。返回
+  /// [ReaderPageStep]：`scrolled` 为是否真翻了一整页（false ⇒ 调用方走 limit/跨章），
+  /// `targetScroll` 为应落到的整页滚动量（已 clamp，未翻时等于 currentScroll）。
+  @visibleForTesting
+  static ReaderPageStep resolveFreshStepForTesting({
+    required ReaderNavigationDirection direction,
+    required double currentScroll,
+    required double columnPitch,
+    required double metricsMaxScroll,
+    required double metricsMinScroll,
+    required double trueMaxScroll,
+  }) {
+    if (columnPitch <= 0) {
+      return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
+    }
+    final double stepScroll = _pageStepPosition(currentScroll, columnPitch);
+    final double trueMaxAligned =
+        (trueMaxScroll / columnPitch).floor() * columnPitch;
+    if (direction == ReaderNavigationDirection.forward) {
+      final double maxF =
+          metricsMaxScroll > trueMaxAligned ? metricsMaxScroll : trueMaxAligned;
+      double targetF =
+          (stepScroll / columnPitch).floor() * columnPitch + columnPitch;
+      if (targetF > maxF) targetF = maxF;
+      if (targetF < metricsMinScroll) targetF = metricsMinScroll;
+      if (targetF <= stepScroll + 1) {
+        return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
+      }
+      // 落点上界用 maxF（含 trueMaxAligned），消除低估时被 clamp 回 currentScroll
+      // 的卡死；仍不超过真实可滚整页边界，不会停到末尾空白占位页之外。
+      final double dest = targetF < maxF ? targetF : maxF;
+      return ReaderPageStep(scrolled: true, targetScroll: dest);
+    } else {
+      double targetB =
+          (stepScroll / columnPitch).ceil() * columnPitch - columnPitch;
+      if (targetB < metricsMinScroll) targetB = metricsMinScroll;
+      if (targetB > metricsMaxScroll) targetB = metricsMaxScroll;
+      if (targetB >= stepScroll - 1) {
+        return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
+      }
+      return ReaderPageStep(scrolled: true, targetScroll: targetB);
+    }
+  }
+
   static double _pageStepPosition(double currentScroll, double columnPitch) {
     if (columnPitch <= 0) return currentScroll;
     final double nearestPage =
@@ -233,6 +297,41 @@ class ReaderPaginationScripts {
   }) {
     if (continuousMode) return false;
     return absDx > absDy;
+  }
+
+  /// TODO-627 / BUG-349 纯谓词：连续/滚动模式下桌面鼠标**滚轮**到达内容轴尽头时，
+  /// 应回传哪个 `onBoundarySwipe` 方向跨章（null ⇒ 不在边界，放行原生滚动，不打断
+  /// 正常滚动）。连续模式靠原生滚动翻屏，章间切换原本只有触摸/指针的边界手势 IIFE
+  /// 走 `onBoundarySwipe`，滚轮无此通道 → 滚到章末/章首再滚没反应。本函数补齐滚轮
+  /// 通道，复用边界 IIFE 同款 atStart/atEnd 判定，只在「到底」才发，统一三种输入。
+  ///
+  /// 轴向（与 wheel 监听器、`scrollToTarget`、`_gestureEnd` 边界 IIFE 同约定）：
+  /// - **横排**（[vertical] == false）：滚动轴 = 纵向。`deltaY > 0`（向下滚）= forward；
+  ///   到底（`atBottom`）才发 forward，到顶（`atTop`）才发 backward。
+  /// - **竖排**（[vertical] == true，vertical-rl）：滚动轴 = 横向，浏览器把垂直滚轮
+  ///   投影到横向（见 wheel 监听器 scrollBy）。forward = 沿书写轴前进 = scrollLeft
+  ///   减小（vertical-rl，对齐 paginate 的 forwardSign=-1）。投影后的主 delta `delta`
+  ///   > 0 表示用户「向前滚」；到达 forward 尽头（`atEnd`，scrollLeft 最负）发 forward，
+  ///   到达起点（`atStart`，scrollLeft≈0）发 backward。
+  ///
+  /// 入参（实时几何，单位 px）：[delta] 为投影到内容轴的主滚轮位移（横排取 deltaY，
+  /// 竖排取 wheel 监听器投影后的主 delta）；[atStart]/[atEnd] 为原生滚动是否已到该轴
+  /// 起点/尽头（由调用方按同款公式算好传入）。返回 jsValue 字符串或 null。
+  @visibleForTesting
+  static String? continuousWheelBoundaryDirection({
+    required bool vertical,
+    required double delta,
+    required bool atStart,
+    required bool atEnd,
+  }) {
+    if (delta == 0) return null;
+    // 横排向下(delta>0)与竖排投影向前(delta>0)都映射为 forward；方向语义已在调用方
+    // 把竖排的横向投影归一化成「>0=前进」，故两模式判定同形。
+    final bool forward = delta > 0;
+    if (forward) {
+      return atEnd ? ReaderNavigationDirection.forward.jsValue : null;
+    }
+    return atStart ? ReaderNavigationDirection.backward.jsValue : null;
   }
 
   static String paginateInvocation(ReaderNavigationDirection direction) =>
@@ -1251,8 +1350,13 @@ $_sharedJs
       if (targetF > maxF) targetF = maxF;
       if (targetF < metrics.minScroll) targetF = metrics.minScroll;
       if (targetF <= stepScroll + 1) return "limit";
-      // 落点仍 clamp 到内容末页，不停在末尾空白占位页。
-      var dest = Math.min(targetF, Math.max(metrics.maxScroll, currentScroll));
+      // TODO-627：落点上界用 maxF（含 trueMaxAligned），而非旧的
+      // max(metrics.maxScroll, currentScroll)。后者在图片晚 load 致 metrics.maxScroll
+      // 被低估、且 currentScroll 已停在被低估的「末页」时，会把 dest clamp 回
+      // currentScroll → setPagePosition 不动却仍返回 "scrolled"（插画页滚轮卡死：
+      // 既不翻页也不跨章）。改用 maxF 让落点推进到 DOM 实时可滚的真实整页边界；
+      // targetF 已 clamp 到 maxF，dest 不会越过真末页停到末尾空白占位页之外。
+      var dest = Math.min(targetF, maxF);
       this.setPagePosition(context, dest);
       return "scrolled";
     } else {
@@ -1456,6 +1560,15 @@ $initImages
   document.body.appendChild(spacer);
   Promise.all(imagePromises).then(function() {
     window.hoshiReader.buildNodeOffsets();
+    // TODO-627：图片可能在初次分页 metrics 建好之后才 decode 完。此前
+    // buildPaginationMetrics 枚举到的 <img> 还是 0x0（getBoundingClientRect 全 0），
+    // metrics.maxScroll 漏掉图片所占的列 → 偏小 → paginate 在图片页前就误判到末页
+    // → _handlePageTurnLimit 跳过插画页跨章。图片 decode 完成后必须失效缓存的
+    // paginationMetrics，强制下次 paginate 用纳入图片真实尺寸的几何重建（与
+    // updatePageSize / reanchorAfterStyleChange 的 metrics 失效一致）。
+    if (window.hoshiReader.paginationMetrics !== undefined) {
+      window.hoshiReader.paginationMetrics = null;
+    }
     $sasayakiInit
     $initialRestoreScript
   });
@@ -1794,6 +1907,15 @@ $_sharedInitViewport
 $initImages
   Promise.all(imagePromises).then(function() {
     window.hoshiReader.buildNodeOffsets();
+    // TODO-627：图片可能在初次分页 metrics 建好之后才 decode 完。此前
+    // buildPaginationMetrics 枚举到的 <img> 还是 0x0（getBoundingClientRect 全 0），
+    // metrics.maxScroll 漏掉图片所占的列 → 偏小 → paginate 在图片页前就误判到末页
+    // → _handlePageTurnLimit 跳过插画页跨章。图片 decode 完成后必须失效缓存的
+    // paginationMetrics，强制下次 paginate 用纳入图片真实尺寸的几何重建（与
+    // updatePageSize / reanchorAfterStyleChange 的 metrics 失效一致）。
+    if (window.hoshiReader.paginationMetrics !== undefined) {
+      window.hoshiReader.paginationMetrics = null;
+    }
     $sasayakiInit
     $initialRestoreScript
   });

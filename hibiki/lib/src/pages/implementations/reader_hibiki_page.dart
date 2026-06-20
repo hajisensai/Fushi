@@ -2502,14 +2502,45 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // overflow-y:hidden），但桌面鼠标滚轮只产生 deltaY、不产生 deltaX，浏览器
       // 不会把垂直滚轮可靠地映射到横向可滚轴 → 竖排连续模式滚轮滚不动。故竖排
       // 显式把滚轮的主 delta 投影到横向 scrollBy（沿真实书写轴），方向与
-      // hoshiReader.paginate 一致（vertical-rl forward 往左 = scrollLeft 减小），
-      // 并 preventDefault 防止浏览器把它误吞到不可滚的纵轴；横排放行原生滚动不变。
-      if (!r || !r.isVertical || !r.isVertical()) return;
-      var delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-      if (delta === 0) return;
+      // hoshiReader.paginate 一致（vertical-rl forward 往左 = scrollLeft 减小）。
+      // TODO-627: 连续模式滚轮原本只放行/投影原生滚动，到章末/章首滚不出去（边界
+      // 跨章原本只有触摸/指针的边界 IIFE 走 onBoundarySwipe，滚轮无此通道）。这里
+      // 补滚轮的跨章通道：仅当原生滚动已到该内容轴尽头才回传 onBoundarySwipe，复用
+      // 边界 IIFE 同款 atStart/atEnd 判定与 _handlePageTurnLimit；未到底仍放行/投影
+      // 正常滚动，不打断滚动手感。统一手势纯谓词 continuousWheelBoundaryDirection。
+      var root = document.scrollingElement || document.documentElement;
+      var vertical = r && r.isVertical && r.isVertical();
+      // delta>0 一律归一化为「沿书写轴前进」：横排向下(deltaY>0)、竖排投影向前都为
+      // forward（见纯函数注释）。
+      var wheelDelta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      var atStart, atEnd;
+      if (vertical) {
+        // 竖排：内容轴 = 横向 scrollLeft（vertical-rl forward = scrollLeft 减小）。
+        atStart = Math.abs(root.scrollLeft) <= 2;
+        atEnd = Math.abs(root.scrollLeft) + window.innerWidth >= root.scrollWidth - 2;
+      } else {
+        atStart = root.scrollTop <= 2;
+        atEnd = root.scrollTop + window.innerHeight >= root.scrollHeight - 2;
+      }
+      var boundaryDir = null;
+      if (wheelDelta !== 0) {
+        if (wheelDelta > 0) boundaryDir = atEnd ? 'forward' : null;
+        else boundaryDir = atStart ? 'backward' : null;
+      }
+      if (boundaryDir) {
+        // 到底了：节流后回传跨章（复用分页模式同款 _wheelTimer 防一次滚轮连发）。
+        if (_wheelTimer) { e.preventDefault(); return; }
+        _wheelTimer = setTimeout(function() { _wheelTimer = null; }, ${s.wheelPageTurnInterval});
+        window.flutter_inappwebview.callHandler('onBoundarySwipe', boundaryDir);
+        e.preventDefault();
+        return;
+      }
+      // 未到底：横排放行原生滚动；竖排把主 delta 投影到横向 scrollBy（沿书写轴）。
+      if (!vertical) return;
+      if (wheelDelta === 0) return;
       var wm = window.getComputedStyle(document.body).writingMode;
       var sign = (wm === 'vertical-rl') ? -1 : 1;
-      window.scrollBy({left: delta * sign, top: 0, behavior: 'auto'});
+      window.scrollBy({left: wheelDelta * sign, top: 0, behavior: 'auto'});
       e.preventDefault();
       return;
     }
