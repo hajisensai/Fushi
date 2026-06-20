@@ -5,6 +5,7 @@ import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/obfuscating_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -122,20 +123,26 @@ abstract class SyncBackend implements SyncAssetStore {
 // instead of inside the concrete GoogleDrive backend, so no single concrete
 // backend is forced to import all of its siblings.
 SyncBackend resolveSyncBackend(SyncBackendType type) {
+  final SyncBackend raw;
   switch (type) {
     case SyncBackendType.googleDrive:
-      return GoogleDriveSyncBackend.instance;
+      raw = GoogleDriveSyncBackend.instance;
     case SyncBackendType.webDav:
-      return WebDavSyncBackend.instance;
+      raw = WebDavSyncBackend.instance;
     case SyncBackendType.hibikiServer:
+      // 局域网双端（hibiki 自有 server）不是「防扫盘」场景：两端都是用户自己的
+      // 设备/服务，混淆只会徒增开销并破坏 hibiki client/server 的字节协议契约，
+      // 所以 hibikiServer 直接返回裸后端，不包 ObfuscatingSyncBackend（TODO-623 A1）。
       return HibikiClientSyncBackend.instance;
     case SyncBackendType.oneDrive:
-      return OneDriveSyncBackend.instance;
+      raw = OneDriveSyncBackend.instance;
     case SyncBackendType.dropbox:
-      return DropboxSyncBackend.instance;
+      raw = DropboxSyncBackend.instance;
     case SyncBackendType.ftp:
-      return FtpSyncBackend.instance;
+      raw = FtpSyncBackend.instance;
     case SyncBackendType.sftp:
-      return SftpSyncBackend.instance;
+      raw = SftpSyncBackend.instance;
   }
+  // 其余均为云端/第三方存储：包一层字节混淆装饰器防扫盘看到明文内容（TODO-623 A1）。
+  return ObfuscatingSyncBackend(raw);
 }
