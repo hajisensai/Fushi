@@ -86,11 +86,19 @@ Files get_files(const Zip& zip) {
 }
 
 std::string detect_type(const Files& files, const Zip& zip) {
-  if (!files.kanji_banks.empty()) {
-    return "kanji";
-  }
+  // A mixed dictionary that ships both term_bank_*.json and kanji_bank_*.json
+  // (e.g. a JA-JA 国語辞典 with an embedded kanji appendix) is fundamentally a
+  // term dictionary: its 80k+ entries are looked up by word. Classifying it as
+  // "kanji" sent the whole thing into the kanji bucket only, so word lookup
+  // returned nothing. Term wins whenever a term_bank exists; only a pure
+  // kanji_bank-only dictionary (KANJIDIC) stays "kanji". The mixed dictionary's
+  // kanji_bank is still written to blobs.bin and surfaced by routing the
+  // dictionary into BOTH buckets at the Dart layer (metadata['hasKanji']='true').
   if (!files.term_banks.empty()) {
     return "term";
+  }
+  if (!files.kanji_banks.empty()) {
+    return "kanji";
   }
   if (!files.meta_banks.empty()) {
     std::string content = zip.read(files.meta_banks[0]);

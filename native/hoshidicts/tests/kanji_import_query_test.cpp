@@ -204,6 +204,10 @@ int main() {
             expect_eq_str("A.meaning1", k.meanings[1], "sun");
           }
         }
+
+        // TODO-622: probe a pure-kanji dictionary -> bit1 (hasKanji) only.
+        int mask = probe_dict_content(out_dir + "/" + r.title);
+        expect_eq_int("A.probe_mask", mask, 0x2);
       }
     }
   }
@@ -225,6 +229,11 @@ int main() {
                      r.errors.empty() ? "(no error)" : r.errors.front().c_str());
         ++g_fail;
       } else {
+        // A mixed term+kanji dictionary must classify as "term" (word lookup is
+        // primary); its kanji bank is still written and reachable via the
+        // kanji bucket. Before TODO-622 detect_type returned "kanji" here and
+        // the whole dictionary vanished from word lookup.
+        expect_eq_str("B.detected_type", r.detected_type, "term");
         // Both banks must be written; kanji must not be dropped.
         expect_eq_int("B.term_count", static_cast<int>(r.term_count), 1);
         expect_eq_int("B.kanji_count", static_cast<int>(r.kanji_count), 1);
@@ -258,6 +267,35 @@ int main() {
             expect_eq_str("B.kanji.meaning0", kanji.front().meanings[0], "water");
           }
         }
+
+        // TODO-622: a mixed dictionary's blobs.bin contains BOTH term (type 0)
+        // and kanji (type 2) records, so the probe must report bit0|bit1 = 0x3.
+        // This is the native single source of truth used to re-bucket and
+        // self-heal mixed dictionaries the Dart layer cannot classify from the
+        // opaque blob alone.
+        int mask = probe_dict_content(dict_path);
+        expect_eq_int("B.probe_mask", mask, 0x3);
+      }
+    }
+  }
+
+  // ----- Case C: pure term dictionary (probe -> hasTerm only) -----
+  {
+    std::vector<ZipFile> files = {
+        {"index.json", index_json("TermOnly")},
+        {"term_bank_1.json", term_bank_nihon()},
+    };
+    std::string zip_path = write_zip("term", files);
+    if (zip_path.empty()) {
+      fail("C: could not write fixture zip");
+    } else {
+      ImportResult r = dictionary_importer::import(zip_path, out_dir);
+      if (!r.success) {
+        fail("C: import failed");
+      } else {
+        expect_eq_str("C.detected_type", r.detected_type, "term");
+        int mask = probe_dict_content(out_dir + "/" + r.title);
+        expect_eq_int("C.probe_mask", mask, 0x1);
       }
     }
   }

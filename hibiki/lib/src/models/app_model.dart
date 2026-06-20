@@ -187,6 +187,10 @@ typedef DictPathEntry = ({
   String path,
   bool exists,
   bool hidden,
+  // TODO-622: a term dictionary that also contains kanji records (a mixed
+  // JA-JA 国語辞典) carries metadata['hasKanji']=='true'. Such an entry is
+  // routed into the kanji bucket too, so add_kanji_dict sees it.
+  bool hasKanji,
 });
 
 /// 把词典分桶成 FFI 引擎要的四组 path（term/freq/pitch/kanji）的单一真相。
@@ -213,6 +217,15 @@ typedef DictPathEntry = ({
         if (!e.hidden) freq.add(e.path);
       case DictionaryType.pitch:
         if (!e.hidden) pitch.add(e.path);
+    }
+    // TODO-622: a mixed dictionary (type==term but containing kanji records)
+    // must be registered in BOTH the term and kanji buckets so word lookup and
+    // single-character kanji lookup both hit. query_kanji has a type+char double
+    // guard (query.cpp), so a pure term dict (hasKanji==false) is never added
+    // here and a registered mixed dict produces zero false kanji hits. Honor
+    // hidden like the kanji case (kanji bucket has no render-time hide filter).
+    if (e.type == DictionaryType.term && e.hasKanji && !e.hidden) {
+      kanji.add(e.path);
     }
   }
   return (term: term, freq: freq, pitch: pitch, kanji: kanji);
@@ -640,6 +653,49 @@ class AppModel with ChangeNotifier {
     _dictTypesMigrated = true;
     final dicts = dictRepo.dictionaries;
     for (final d in dicts) {
+      // TODO-622 self-heal: a mixed JA-JA dictionary (term + embedded kanji
+      // appendix) was misclassified as 'kanji' by the old detect_type, so its
+      // 80k+ term entries only ever reached the kanji bucket and word lookup
+      // returned nothing. Re-probe such dictionaries' on-disk blobs.bin via the
+      // native single source of truth: if it actually contains term records,
+      // demote it back to 'term' and tag metadata['hasKanji'] so the bucket
+      // router also registers it as a kanji dict. A genuine KANJIDIC (kanji
+      // records only, no term) keeps type 'kanji' and is left untouched.
+      if (d.type == DictionaryType.kanji) {
+        try {
+          final dir = path.join(dictionaryResourceDirectory.path, d.name);
+          if (!Directory(dir).existsSync()) continue;
+          final int mask = HoshiDicts.probeDictContent(dir);
+          const int hasTerm = 0x1;
+          const int hasKanji = 0x2;
+          if (mask & hasTerm == 0) continue; // pure kanji dict, nothing to fix
+
+          final Map<String, String> meta = Map<String, String>.from(d.metadata);
+          if (mask & hasKanji != 0) {
+            meta['hasKanji'] = 'true';
+          } else {
+            meta.remove('hasKanji');
+          }
+          final updated = Dictionary(
+            name: d.name,
+            formatKey: d.formatKey,
+            order: d.order,
+            type: DictionaryType.term,
+            metadata: meta,
+            hiddenLanguages: d.hiddenLanguages,
+            collapsedLanguages: d.collapsedLanguages,
+          );
+          dictRepo.persistDictionary(updated);
+          debugPrint(
+              '[Hibiki] reclassified kanji→term (mixed dict): ${d.name}');
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('AppModel.dictKanjiReclassify', e, stack);
+          debugPrint('[Hibiki] kanji reclassify error for ${d.name}: $e');
+        }
+        continue;
+      }
+
       if (d.type != DictionaryType.term) continue;
 
       final blobsFile = File(
@@ -703,6 +759,7 @@ class AppModel with ChangeNotifier {
         path: p,
         exists: Directory(p).existsSync(),
         hidden: d.isHidden(targetLanguage),
+        hasKanji: d.metadata['hasKanji'] == 'true',
       ));
     }
     final b = bucketDictPaths(entries);
@@ -731,6 +788,7 @@ class AppModel with ChangeNotifier {
           path: paths[i],
           exists: existsResults[i],
           hidden: dictList[i].isHidden(targetLanguage),
+          hasKanji: dictList[i].metadata['hasKanji'] == 'true',
         ),
     ];
     final b = bucketDictPaths(entries);

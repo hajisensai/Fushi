@@ -63,6 +63,14 @@ struct KanjiResult {
   std::string dict_name;
 };
 
+// Probe a written dictionary directory's blobs.bin/hash.table to discover which
+// record types it actually contains, independent of its declared classification.
+// Returns a bitmask: bit0 (0x1) = has term records (type byte 0),
+// bit1 (0x2) = has kanji records (type byte 2). Returns 0 on any read failure.
+// Single source of truth for re-classifying a mixed dictionary that detect_type
+// may have mislabeled, and for self-healing already-imported dictionaries.
+int probe_dict_content(const std::string& dir);
+
 class DictionaryQuery {
  public:
   DictionaryQuery();

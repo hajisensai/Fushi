@@ -94,6 +94,8 @@ final class FfiImportResult extends Struct {
   external int pitchCount;
   @Int32()
   external int mediaCount;
+  @Int32()
+  external int kanjiCount;
   external Pointer<Utf8> detectedType;
   external Pointer<Utf8> error;
 }
@@ -138,6 +140,9 @@ final class FfiKanjiResults extends Struct {
 
 typedef _ImportDart = FfiImportResult Function(
     Pointer<Utf8> zipPath, Pointer<Utf8> outputDir);
+
+typedef _ProbeDictContentNative = Int32 Function(Pointer<Utf8> dir);
+typedef _ProbeDictContentDart = int Function(Pointer<Utf8> dir);
 
 typedef _FreeImportResultDart = void Function(Pointer<FfiImportResult> r);
 
@@ -190,6 +195,9 @@ class HoshidictsFfiBindings {
     import_ = _lib.lookupFunction<
         FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>),
         _ImportDart>('hoshidicts_import');
+    probeDictContent =
+        _lib.lookupFunction<_ProbeDictContentNative, _ProbeDictContentDart>(
+            'hoshidicts_probe_dict_content');
     freeImportResult = _lib.lookupFunction<
         Void Function(Pointer<FfiImportResult>),
         _FreeImportResultDart>('hoshidicts_free_import_result');
@@ -246,6 +254,7 @@ class HoshidictsFfiBindings {
   late final DynamicLibrary _lib;
 
   late final _ImportDart import_;
+  late final _ProbeDictContentDart probeDictContent;
   late final _FreeImportResultDart freeImportResult;
   late final _CreateDart create;
   late final _DestroyDart destroy;

@@ -580,3 +580,75 @@ std::vector<DictionaryStyle> DictionaryQuery::get_styles() const {
 std::vector<std::string> DictionaryQuery::get_freq_dict_order() const {
   return freq_dicts_ | std::views::transform([](const auto& d) { return d.name; }) | std::ranges::to<std::vector>();
 }
+
+// ── dictionary content probe (TODO-622) ─────────────────────────────
+// Walk hash.table buckets -> offset-index -> record type byte. The on-disk
+// format is stable and identical to what query()/query_kanji() consume:
+//   hash.table : [u32 capacity][ slot{u64 hash, u64 offset} x capacity ]
+//                empty slot == hash 0; offset points into the offset-index
+//                region of blobs.bin.
+//   offset-idx : [u32 count][u64 record_offset x count]
+//   record     : first byte = type (0=term, 1=meta, 2=kanji)
+// All little-endian (write_val/BlobReader use memcpy). We cannot sequentially
+// scan the record region (no boundary metadata, glossary blobs interleaved),
+// so we must go through the hash table. bloom.filter is not needed here.
+int probe_dict_content(const std::string& dir) {
+  memory::mapped_file hash_table = memory::map_rd(dir + "/hash.table");
+  if (!hash_table || hash_table.size < sizeof(uint32_t)) {
+    memory::unmap(hash_table);
+    return 0;
+  }
+  memory::mapped_file blobs = memory::map_rd(dir + "/blobs.bin");
+  if (!blobs) {
+    memory::unmap(hash_table);
+    return 0;
+  }
+
+  int mask = 0;
+  uint32_t capacity = 0;
+  std::memcpy(&capacity, hash_table.data, sizeof(uint32_t));
+
+  // Bound the slot array to what the file actually holds.
+  const size_t slot_size = sizeof(uint64_t) * 2;  // {hash, offset}
+  const size_t max_slots = (hash_table.size - sizeof(uint32_t)) / slot_size;
+  if (capacity > max_slots) {
+    capacity = static_cast<uint32_t>(max_slots);
+  }
+  const uint8_t* slots = hash_table.data + sizeof(uint32_t);
+
+  for (uint32_t i = 0; i < capacity && mask != 0x3; i++) {
+    const uint8_t* slot = slots + static_cast<size_t>(i) * slot_size;
+    uint64_t slot_hash = 0;
+    uint64_t bucket = 0;
+    std::memcpy(&slot_hash, slot, sizeof(uint64_t));
+    if (slot_hash == 0) {
+      continue;  // empty slot
+    }
+    std::memcpy(&bucket, slot + sizeof(uint64_t), sizeof(uint64_t));
+
+    if (bucket + sizeof(uint32_t) > blobs.size) {
+      continue;
+    }
+    BlobReader idx(blobs.data + bucket, blobs.size - bucket);
+    uint32_t count = idx.read<uint32_t>();
+    for (uint32_t k = 0; k < count && mask != 0x3; k++) {
+      if (!idx.has(sizeof(uint64_t))) {
+        break;
+      }
+      uint64_t rec = idx.read<uint64_t>();
+      if (rec + 1 > blobs.size) {
+        continue;
+      }
+      uint8_t type = blobs.data[rec];
+      if (type == 0) {
+        mask |= 0x1;  // has term
+      } else if (type == 2) {
+        mask |= 0x2;  // has kanji
+      }
+    }
+  }
+
+  memory::unmap(blobs);
+  memory::unmap(hash_table);
+  return mask;
+}

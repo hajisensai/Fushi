@@ -225,6 +225,11 @@ class DictionaryImportManager {
           name: name,
           formatKey: 'yomichan',
           type: detectedType,
+          // TODO-622: a mixed dictionary classifies as term (word lookup is
+          // primary) but still carries kanji records. Record that so the bucket
+          // router also registers it as a kanji dict (add_term + add_kanji).
+          metadata:
+              result.kanjiCount > 0 ? const {'hasKanji': 'true'} : const {},
           hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
           collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
         ));
@@ -343,6 +348,10 @@ class DictionaryImportManager {
         name: name,
         formatKey: 'yomichan',
         type: detectedType,
+        // TODO-622: a mixed dictionary classifies as term (word lookup is
+        // primary) but still carries kanji records. Record that so the bucket
+        // router also registers it as a kanji dict (add_term + add_kanji).
+        metadata: result.kanjiCount > 0 ? const {'hasKanji': 'true'} : const {},
         hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
         collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
       ));

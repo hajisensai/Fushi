@@ -89,6 +89,7 @@ class HoshiImportResult {
     required this.freqCount,
     required this.pitchCount,
     required this.mediaCount,
+    required this.kanjiCount,
     required this.detectedType,
     required this.error,
   });
@@ -99,6 +100,7 @@ class HoshiImportResult {
   final int freqCount;
   final int pitchCount;
   final int mediaCount;
+  final int kanjiCount;
   final String detectedType;
   final String error;
 }
@@ -411,6 +413,24 @@ class HoshiDicts {
     }
   }
 
+  /// Probe a written dictionary directory's on-disk content (single source of
+  /// truth, independent of its declared classification). Returns a bitmask:
+  /// bit0 (0x1) = has term records, bit1 (0x2) = has kanji records, 0 on
+  /// failure. Used to route mixed dictionaries into both buckets and to
+  /// self-heal already-imported dictionaries that detect_type mislabeled.
+  ///
+  /// Static (handle-free): only reads blobs.bin/hash.table on disk, so it can
+  /// run during type migration before any query handle exists.
+  static int probeDictContent(String dir) {
+    _bindings ??= HoshidictsFfiBindings();
+    final p = dir.toNativeUtf8(allocator: calloc);
+    try {
+      return _bindings!.probeDictContent(p);
+    } finally {
+      calloc.free(p);
+    }
+  }
+
   void loadTransforms(String json) {
     final p = json.toNativeUtf8(allocator: calloc);
     try {
@@ -446,6 +466,7 @@ class HoshiDicts {
             freqCount: r.freqCount,
             pitchCount: r.pitchCount,
             mediaCount: r.mediaCount,
+            kanjiCount: r.kanjiCount,
             detectedType: _utf8OrEmpty(r.detectedType),
             error: _utf8OrEmpty(r.error),
           );

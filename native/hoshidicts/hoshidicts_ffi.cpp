@@ -83,6 +83,7 @@ struct FfiImportResult {
   int32_t freq_count;
   int32_t pitch_count;
   int32_t media_count;
+  int32_t kanji_count;
   char* detected_type;
   char* error;
 };
@@ -207,6 +208,7 @@ static void* import_thread_fn(void* arg) {
     a->result.freq_count = static_cast<int32_t>(result.freq_count);
     a->result.pitch_count = static_cast<int32_t>(result.pitch_count);
     a->result.media_count = static_cast<int32_t>(result.media_count);
+    a->result.kanji_count = static_cast<int32_t>(result.kanji_count);
     a->result.detected_type = dup(result.detected_type);
     std::string err;
     for (auto& e : result.errors) {
@@ -254,6 +256,12 @@ void hoshidicts_free_import_result(FfiImportResult* r) {
   free(r->title);
   free(r->detected_type);
   free(r->error);
+}
+
+HOSHI_EXPORT
+int32_t hoshidicts_probe_dict_content(const char* dir) {
+  if (!dir) return 0;
+  return static_cast<int32_t>(probe_dict_content(std::string(dir)));
 }
 
 // ── query handle ────────────────────────────────────────────────────
