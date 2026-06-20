@@ -83,4 +83,63 @@ void main() {
       );
     });
   });
+
+  group('DictionaryImportManager.mergeSourceMetadata (W-2)', () {
+    test('revision 永远取 index.json（override 的 revision 被忽略）', () {
+      final Map<String, String> m = DictionaryImportManager.mergeSourceMetadata(
+        <String, String>{'revision': 'pkg-2026-06-20'},
+        <String, String>{'revision': 'stale-override', 'downloadUrl': 'u'},
+      );
+      expect(m['revision'], 'pkg-2026-06-20');
+      expect(m['downloadUrl'], 'u');
+    });
+
+    test('override 的 isUpdatable 压过包内 index.json 的 false（修复二次更新缺口）', () {
+      // 包内 index.json 不声明 isUpdatable → glaze 写回 false；更新链路传 'true'
+      // 的 override 必须胜出，否则更新一次后丢失可更新性。
+      final Map<String, String> m = DictionaryImportManager.mergeSourceMetadata(
+        <String, String>{'revision': 'r2', 'isUpdatable': 'false'},
+        <String, String>{
+          'isUpdatable': 'true',
+          'indexUrl': 'https://x/index.json',
+          'downloadUrl': 'https://x/d.zip',
+        },
+      );
+      expect(m['isUpdatable'], 'true');
+      expect(m['indexUrl'], 'https://x/index.json');
+      expect(m['downloadUrl'], 'https://x/d.zip');
+      expect(m['revision'], 'r2');
+    });
+
+    test('override 缺某字段时回退包内 index.json', () {
+      final Map<String, String> m = DictionaryImportManager.mergeSourceMetadata(
+        <String, String>{
+          'revision': 'r3',
+          'isUpdatable': 'true',
+          'indexUrl': 'pkg-index',
+        },
+        <String, String>{'downloadUrl': 'override-dl'},
+      );
+      // 包内声明的 isUpdatable/indexUrl 在 override 没覆盖时保留。
+      expect(m['isUpdatable'], 'true');
+      expect(m['indexUrl'], 'pkg-index');
+      expect(m['downloadUrl'], 'override-dl');
+    });
+
+    test('sourceOverride 为 null → 等同包内 index.json', () {
+      final Map<String, String> m = DictionaryImportManager.mergeSourceMetadata(
+        <String, String>{'revision': 'r4', 'isUpdatable': 'true'},
+        null,
+      );
+      expect(m, <String, String>{'revision': 'r4', 'isUpdatable': 'true'});
+    });
+
+    test('两者都空 → 空 Map（旧词典向后兼容）', () {
+      expect(
+        DictionaryImportManager.mergeSourceMetadata(
+            const <String, String>{}, null),
+        isEmpty,
+      );
+    });
+  });
 }

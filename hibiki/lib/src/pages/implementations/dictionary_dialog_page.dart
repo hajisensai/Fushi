@@ -1397,7 +1397,10 @@ class _DictionaryDialogPageState extends BasePageState {
           downloadUrl: dictionary.downloadUrl,
           progressNotifier: progressNotifier,
           downloadProgress: downloadProgress,
+          // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+          // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
           sourceOverride: <String, String>{
+            'isUpdatable': 'true',
             'downloadUrl': dictionary.downloadUrl,
             'indexUrl': dictionary.indexUrl,
           },
@@ -1453,7 +1456,10 @@ class _DictionaryDialogPageState extends BasePageState {
     try {
       for (final Dictionary d in updatable) {
         try {
-          progressNotifier.value = t.dict_update_updating(name: d.name);
+          // W-1：每本检查前归零进度条，避免上一本下载完的满格残留在「检查 revision」
+          // 阶段误显 100%。
+          downloadProgress.value = 0;
+          progressNotifier.value = t.dict_update_checking;
           final String? remoteRevision =
               await DictionaryUpdateService.fetchRemoteIndex(d.indexUrl);
           if (!DictionaryUpdateService.needsUpdate(
@@ -1467,6 +1473,7 @@ class _DictionaryDialogPageState extends BasePageState {
             progressNotifier: progressNotifier,
             downloadProgress: downloadProgress,
             sourceOverride: <String, String>{
+              'isUpdatable': 'true',
               'downloadUrl': d.downloadUrl,
               'indexUrl': d.indexUrl,
             },

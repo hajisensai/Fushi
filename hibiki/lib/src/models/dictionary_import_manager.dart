@@ -359,12 +359,17 @@ class DictionaryImportManager {
       }
 
       final detectedType = _parseType(result.detectedType);
-      // TODO-609：来源 = catalog 回填（sourceOverride，提供 indexUrl/downloadUrl）
-      // 叠加 index.json 真值（revision/isUpdatable 优先以本地导入的为准）。
-      final Map<String, String> metadata = <String, String>{
-        ...?sourceOverride,
-        ...readSourceMetadataFromIndex(finalDir),
-      };
+      // TODO-609：合并来源。revision **永远**取自本地导入包的 index.json（实际装的
+      // 是哪个版本，才是后续比对的本地基准）；来源身份字段（isUpdatable/indexUrl/
+      // downloadUrl）则优先用 [sourceOverride]——它是我们从在线 catalog / 更新链路
+      // 拿到的权威来源，胜过包内 index.json 的字段。这修掉「包内 index.json 不声明
+      // isUpdatable（很多 yomitan 包不带）→ 写回成 false → 更新一次后丢失可更新性、
+      // 按钮消失无法二次更新」的缺口（W-2）：sourceOverride 带 isUpdatable:'true' 时
+      // 它必须压过包内的 false。sourceOverride 不携带 revision（强制以本地包为准）。
+      final Map<String, String> metadata = mergeSourceMetadata(
+        readSourceMetadataFromIndex(finalDir),
+        sourceOverride,
+      );
       _dictRepo.persistDictionary(Dictionary(
         order: order,
         name: name,
@@ -597,6 +602,30 @@ class DictionaryImportManager {
     }
     if (hasUpdatableVersion) return UpdateDecision.replaceOldVersion;
     return UpdateDecision.newDictionary;
+  }
+
+  /// TODO-609 / W-2：合并词典来源元数据。[fromIndex] 是导入包内 index.json 提取的
+  /// 真值（[readSourceMetadataFromIndex]），[sourceOverride] 是在线 catalog / 更新
+  /// 链路提供的权威来源身份。
+  ///
+  /// 规则：
+  /// - `revision` **永远**取 [fromIndex]（实际装的是哪个版本，才是本地比对基准）；
+  ///   [sourceOverride] 携带的 revision 一律忽略。
+  /// - 来源身份字段（`isUpdatable`/`indexUrl`/`downloadUrl`）优先 [sourceOverride]
+  ///   （它压过包内字段），缺失时回退包内 [fromIndex]。
+  ///
+  /// 这修掉「包内 index.json 不声明 isUpdatable（很多 yomitan 包不带）→ glaze 写回
+  /// 成 false → 更新一次后丢失可更新性、按钮消失无法二次更新」的缺口：更新链路传
+  /// `isUpdatable:'true'` 的 override 必须压过包内的 false。
+  @visibleForTesting
+  static Map<String, String> mergeSourceMetadata(
+    Map<String, String> fromIndex,
+    Map<String, String>? sourceOverride,
+  ) {
+    final Map<String, String> override =
+        Map<String, String>.from(sourceOverride ?? const <String, String>{})
+          ..remove('revision');
+    return <String, String>{...fromIndex, ...override};
   }
 
   static bool _isMemoryError(Object e) {
