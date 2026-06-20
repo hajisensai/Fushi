@@ -81,6 +81,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // TODO-212: video destination items are behavior-heavy; schema coverage proves
   // focus/change/persist/restore here, while these narrower probes guard their
   // runtime consumption or the desktop/device seam.
+  // TODO-639: auto-play-next is a behavior-only pref (it gates the EOF episode
+  // advance, no render-tree effect). Schema coverage proves focus/change/persist/
+  // restore through the DB; the runtime gate is covered by the pure-predicate +
+  // wiring guards below.
+  'video/Auto-play next episode':
+      'test/media/video/video_episode_start_policy_test.dart + test/pages/video_playlist_auto_advance_guard_static_test.dart',
   'video/Immersive mode':
       'test/pages/video_immersive_mode_levels_guard_test.dart + test/pages/video_statusbar_immersive_guard_test.dart',
   'video/Picture scaling':

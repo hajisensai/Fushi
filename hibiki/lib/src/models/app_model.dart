@@ -2027,6 +2027,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleListAutoScroll(bool value) =>
       prefsRepo.setVideoSubtitleListAutoScroll(value);
 
+  /// 播放列表自动连播开关（TODO-639，落 Drift preferences，默认开）。
+  bool get videoAutoPlayNext => prefsRepo.videoAutoPlayNext;
+
+  Future<void> setVideoAutoPlayNext(bool value) =>
+      prefsRepo.setVideoAutoPlayNext(value);
+
   bool get videoDanmakuEnabled => prefsRepo.videoDanmakuEnabled;
 
   Future<void> setVideoDanmakuEnabled(bool value) =>

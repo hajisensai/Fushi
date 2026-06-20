@@ -1752,5 +1752,9 @@
   "anki_overwrite_scope_hint": "绿色 ✓ 能覆写哪些已制卡片",
   "anki_overwrite_scope_latest": "仅最近一张",
   "anki_overwrite_scope_all": "全部匹配的卡片",
-  "video_favorite_count": "收藏 $count 句"
+  "video_favorite_count": "收藏 $count 句",
+  "video_auto_play_next_countdown": "${seconds} 秒后播放下一集",
+  "video_setting_auto_play_next": "自动连播下一集",
+  "video_setting_auto_play_next_hint": "播放列表里一集播完后自动播放下一集",
+  "video_auto_play_next_cancel": "取消"
 }

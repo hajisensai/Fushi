@@ -1752,5 +1752,9 @@
   "anki_overwrite_scope_hint": "Which already-made cards the green ✓ can overwrite",
   "anki_overwrite_scope_latest": "Latest card only",
   "anki_overwrite_scope_all": "All matching cards",
-  "video_favorite_count": "$count favorites"
+  "video_favorite_count": "$count favorites",
+  "video_setting_auto_play_next": "Auto-play next episode",
+  "video_setting_auto_play_next_hint": "Automatically play the next episode in a playlist when one finishes",
+  "video_auto_play_next_cancel": "Cancel",
+  "video_auto_play_next_countdown": "Next episode in ${seconds}s"
 }

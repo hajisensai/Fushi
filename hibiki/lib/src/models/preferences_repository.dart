@@ -466,6 +466,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 播放列表自动连播开关（TODO-639）：默认开启。一集播完后，开则倒计时自动进下一集
+  /// （倒计时期间可点「取消」按钮停在本集），关则停在本集结束不自动推进。
+  /// getPref 仅在该 key 从未写过时返回默认 true，已切过开关的用户保留其存值。
+  bool get videoAutoPlayNext =>
+      getPref('video_auto_play_next', defaultValue: true) as bool;
+
+  Future<void> setVideoAutoPlayNext(bool value) async {
+    await setPref('video_auto_play_next', value);
+    notifyListeners();
+  }
+
   /// 视频弹幕 overlay 开关：默认开启，只在有本地/在线弹幕源时显示。
   bool get videoDanmakuEnabled =>
       getPref('video_danmaku_enabled', defaultValue: true) as bool;

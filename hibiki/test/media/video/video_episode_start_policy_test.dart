@@ -108,4 +108,56 @@ void main() {
       );
     });
   });
+
+  group('shouldAutoPlayNextOnCompletion (TODO-639)', () {
+    test('all three gates satisfied -> auto-play next', () {
+      expect(
+        shouldAutoPlayNextOnCompletion(
+          autoPlayNextEnabled: true,
+          hasNextEpisode: true,
+          alreadyAdvancing: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('toggle off -> never auto-play next (the core opt-out)', () {
+      expect(
+        shouldAutoPlayNextOnCompletion(
+          autoPlayNextEnabled: false,
+          hasNextEpisode: true,
+          alreadyAdvancing: false,
+        ),
+        isFalse,
+        reason: '关掉自动连播开关后，一集播完必须停在本集、不进下一集',
+      );
+    });
+
+    test('no next episode (last/single) -> do not advance', () {
+      expect(
+        shouldAutoPlayNextOnCompletion(
+          autoPlayNextEnabled: true,
+          hasNextEpisode: false,
+          alreadyAdvancing: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('already advancing -> reentrancy guard blocks a second advance', () {
+      expect(
+        shouldAutoPlayNextOnCompletion(
+          autoPlayNextEnabled: true,
+          hasNextEpisode: true,
+          alreadyAdvancing: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('countdown seconds constant is a small positive number', () {
+      expect(kAutoPlayNextCountdownSeconds, greaterThan(0));
+      expect(kAutoPlayNextCountdownSeconds, lessThanOrEqualTo(10));
+    });
+  });
 }

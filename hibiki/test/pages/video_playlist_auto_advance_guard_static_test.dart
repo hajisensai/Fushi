@@ -25,22 +25,73 @@ void main() {
   });
 
   test(
-      'completed handler has reentry, mounted, playlist, and last-episode guards',
-      () {
+      'completed handler gates on the auto-play-next toggle + playlist '
+      'and reentry guards (TODO-639)', () {
     expect(pageSource, contains('bool _autoAdvanceInFlight = false'));
     final String fn = _functionSource(
       pageSource,
       '  void _handlePlaybackCompleted() {',
-      '  /// 共享 load 装配',
+      '  /// 启动自动连播倒计时',
     );
 
-    expect(fn, contains('if (_autoAdvanceInFlight) return'));
     expect(fn, contains('if (!mounted) return'));
     expect(fn, contains('nextPlaylistIndexAfterCompletion('));
-    expect(fn, contains('if (nextEpisode == null) return'));
-    expect(fn, contains('intent: EpisodeStartIntent.autoAdvance'),
+    // TODO-639: the advance decision is the pure predicate gating on the
+    // user's auto-play-next preference, next-episode existence, and reentry.
+    expect(fn, contains('shouldAutoPlayNextOnCompletion('));
+    expect(fn, contains('autoPlayNextEnabled: appModel.videoAutoPlayNext'),
+        reason: 'EOF advance must honour the auto-play-next toggle');
+    expect(fn, contains('hasNextEpisode: nextEpisode != null'));
+    expect(fn, contains('alreadyAdvancing: _autoAdvanceInFlight'));
+    // EOF no longer advances immediately; it starts a cancelable countdown.
+    expect(fn, contains('_startAutoAdvanceCountdown('));
+
+    // The real advance keeps the reentry guard + autoAdvance intent.
+    final String runFn = _functionSource(
+      pageSource,
+      '  void _runAutoAdvance(int targetEpisode) {',
+      '  /// 共享 load 装配',
+    );
+    expect(runFn, contains('if (_autoAdvanceInFlight) return'));
+    expect(runFn, contains('if (!mounted) return'));
+    expect(runFn, contains('intent: EpisodeStartIntent.autoAdvance'),
         reason:
             'non-last EOF must carry autoAdvance intent instead of reusing saved near-end positions');
+  });
+
+  test('the cancel-next countdown overlay + cancel button are wired (TODO-639)',
+      () {
+    // Countdown state + lifecycle.
+    expect(pageSource,
+        contains('ValueNotifier<int?> _autoAdvanceCountdownNotifier'));
+    expect(pageSource, contains('void _cancelAutoAdvanceCountdown()'));
+    expect(pageSource, contains('Timer.periodic('));
+    expect(pageSource, contains('_autoAdvanceCountdownTimer?.cancel();'),
+        reason: 'countdown timer must be cancelable / disposed');
+    // A manual episode switch cancels any pending countdown.
+    expect(
+      _functionSource(
+        pageSource,
+        '  Future<void> _switchEpisode(',
+        '  void _showEpisodeList() {',
+      ),
+      contains('_cancelAutoAdvanceCountdown();'),
+      reason: 'switching episodes mid-countdown must clear the pending advance',
+    );
+    // The interactive cancel overlay is built + mounted (not under IgnorePointer).
+    expect(pageSource, contains('Widget _buildAutoAdvanceOverlay()'));
+    expect(pageSource, contains('_buildAutoAdvanceOverlay(),'),
+        reason: 'overlay must be mounted in the controls stack');
+    final String overlayFn = _functionSource(
+      pageSource,
+      '  Widget _buildAutoAdvanceOverlay() {',
+      '  /// 视频左侧锁',
+    );
+    expect(overlayFn, contains('t.video_auto_play_next_countdown('));
+    expect(overlayFn, contains('onPressed: _cancelAutoAdvanceCountdown'));
+    expect(overlayFn, contains('t.video_auto_play_next_cancel'));
+    expect(overlayFn, isNot(contains('IgnorePointer')),
+        reason: 'the cancel button must be tappable (no IgnorePointer)');
   });
 
   test('episode switches require explicit start intents at every call site',

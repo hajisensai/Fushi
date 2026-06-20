@@ -614,6 +614,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
 
+  /// 自动连播倒计时剩余秒数（TODO-639）。null=没有倒计时；非空时画面右下角显示
+  /// 「N 秒后播放下一集 · 取消」可点 overlay，归零后进下一集。与 [_osdNotifier] 分开：
+  /// 这个 overlay 必须可点（取消按钮），不能套 [IgnorePointer]。
+  final ValueNotifier<int?> _autoAdvanceCountdownNotifier =
+      ValueNotifier<int?>(null);
+
+  /// 自动连播倒计时定时器（每秒 -1，归零触发进下一集）。
+  Timer? _autoAdvanceCountdownTimer;
+
+  /// 倒计时进入的目标集索引（[_cancelAutoAdvanceCountdown] / 归零推进时用）。
+  int? _autoAdvanceCountdownTarget;
+
   /// Page-level level HUD value (0..100). Null means hidden.
   final ValueNotifier<_VideoLevelHudState?> _levelHudNotifier =
       ValueNotifier<_VideoLevelHudState?>(null);
@@ -1668,19 +1680,66 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _handlePlaybackCompleted() {
-    if (_autoAdvanceInFlight) return;
     if (!mounted) return;
     final int? nextEpisode = nextPlaylistIndexAfterCompletion(
       _episodes,
       _currentEpisode,
     );
-    if (nextEpisode == null) return;
+    // TODO-639　三门控(自动连播开关/有下一集/未在换集)任一不满足都停在本集结束。
+    if (!shouldAutoPlayNextOnCompletion(
+      autoPlayNextEnabled: appModel.videoAutoPlayNext,
+      hasNextEpisode: nextEpisode != null,
+      alreadyAdvancing: _autoAdvanceInFlight,
+    )) {
+      return;
+    }
+    // 不直接进下一集，先弹一个可取消的倒计时 OSD(「N 秒后播放下一集 · 取消」)。
+    // 倒计时归零→进下一集；用户点取消→停在本集([_cancelAutoAdvanceCountdown])。
+    _startAutoAdvanceCountdown(nextEpisode!);
+  }
+
+  /// 启动自动连播倒计时(TODO-639)。每秒 -1，归零调 [_runAutoAdvance] 进下一集。
+  void _startAutoAdvanceCountdown(int targetEpisode) {
+    _autoAdvanceCountdownTimer?.cancel();
+    _autoAdvanceCountdownTarget = targetEpisode;
+    _autoAdvanceCountdownNotifier.value = kAutoPlayNextCountdownSeconds;
+    _autoAdvanceCountdownTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        if (!mounted) {
+          _cancelAutoAdvanceCountdown();
+          return;
+        }
+        final int remaining = (_autoAdvanceCountdownNotifier.value ?? 0) - 1;
+        if (remaining <= 0) {
+          final int? target = _autoAdvanceCountdownTarget;
+          _cancelAutoAdvanceCountdown();
+          if (target != null) _runAutoAdvance(target);
+        } else {
+          _autoAdvanceCountdownNotifier.value = remaining;
+        }
+      },
+    );
+  }
+
+  /// 取消 / 清掉自动连播倒计时(用户点「取消」、倒计时归零推进前、或页面销毁时)。
+  void _cancelAutoAdvanceCountdown() {
+    _autoAdvanceCountdownTimer?.cancel();
+    _autoAdvanceCountdownTimer = null;
+    _autoAdvanceCountdownTarget = null;
+    _autoAdvanceCountdownNotifier.value = null;
+  }
+
+  /// 真正进下一集(倒计时归零后调用)。重入由 [_autoAdvanceInFlight] 守。
+  void _runAutoAdvance(int targetEpisode) {
+    if (_autoAdvanceInFlight) return;
+    if (!mounted) return;
     _autoAdvanceInFlight = true;
     unawaited(() async {
       try {
         if (!mounted) return;
         await _switchEpisode(
-          nextEpisode,
+          targetEpisode,
           intent: EpisodeStartIntent.autoAdvance,
         );
       } catch (e, stack) {
@@ -1935,6 +1994,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisode) return;
+    // TODO-639：任何换集（手动上/下一集、列表选集、倒计时推进）都先清掉挂着的自动连播
+    // 倒计时 overlay，避免它停在旧目标上。
+    _cancelAutoAdvanceCountdown();
 
     // 切前补记当前集精确位置（tick 只整秒写，补这一下避免丢尾部几百 ms）。
     final int? curPos = _controller?.positionMs;
@@ -2177,6 +2239,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
+    _autoAdvanceCountdownTimer?.cancel();
+    _autoAdvanceCountdownNotifier.dispose();
     _levelHudTimer?.cancel();
     _levelHudNotifier.dispose();
     _mediaKitControlsVisible.dispose();
@@ -7667,6 +7731,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                         ),
                       ),
                       _buildOsdOverlay(),
+                      _buildAutoAdvanceOverlay(),
                       _buildLevelHudOverlay(),
                       _buildVideoSideActionRail(controller),
                       _buildVideoSidePanelOverlay(controller),
@@ -8166,6 +8231,67 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 },
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 自动连播倒计时 overlay（TODO-639）。一集播完且自动连播开关开着时，画面右下角弹出
+  /// 「N 秒后播放下一集」+「取消」可点按钮；点取消调 [_cancelAutoAdvanceCountdown] 停在
+  /// 本集。**不**套 [IgnorePointer]（取消按钮必须可点），与纯展示的 [_buildOsdOverlay]
+  /// 区分；非倒计时态渲染零尺寸、不拦截画面手势。窗口 / 全屏复用（挂在同一 controls
+  /// Stack，与 OSD 同源）。
+  Widget _buildAutoAdvanceOverlay() {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    return Positioned(
+      right: 0,
+      bottom: 0,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(right: 16, bottom: 88),
+          child: ValueListenableBuilder<int?>(
+            valueListenable: _autoAdvanceCountdownNotifier,
+            builder: (BuildContext _, int? seconds, __) {
+              if (seconds == null) return const SizedBox.shrink();
+              return Material(
+                color: _osdSurfaceColor(cs),
+                borderRadius: BorderRadius.circular(8),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        Icons.playlist_play_outlined,
+                        size: 18,
+                        color: _osdTextColor(cs),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        t.video_auto_play_next_countdown(seconds: seconds),
+                        style: TextStyle(
+                          color: _osdTextColor(cs),
+                          fontSize: 14,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: _cancelAutoAdvanceCountdown,
+                        style: TextButton.styleFrom(
+                          foregroundColor: _osdTextColor(cs),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        child: Text(t.video_auto_play_next_cancel),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

@@ -81,4 +81,33 @@ void main() {
       expect(DandanplayConfig.current, DandanplayConfig.defaults);
     });
   });
+
+  group('PreferencesRepository video auto-play-next pref (TODO-639)', () {
+    late HibikiDatabase db;
+    late PreferencesRepository repo;
+
+    setUp(() async {
+      db = _testDb();
+      repo = PreferencesRepository(db);
+      await repo.loadFromDb();
+    });
+
+    tearDown(() async {
+      repo.dispose();
+      await db.close();
+    });
+
+    test('defaults to ON (auto-play next enabled by default)', () {
+      expect(repo.videoAutoPlayNext, isTrue);
+    });
+
+    test('persists the opt-out across reload', () async {
+      await repo.setVideoAutoPlayNext(false);
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.videoAutoPlayNext, isFalse,
+          reason: '用户关掉自动连播后，跨重启必须记住其选择');
+      reloaded.dispose();
+    });
+  });
 }

@@ -22,6 +22,20 @@ SettingsDestination buildVideoDestination() {
       SettingsSection(
         title: t.section_video_playback,
         items: <SettingsItem>[
+          // 自动连播开关（TODO-639）：纯 pref（appModel 直接读写 prefsRepo），默认开。
+          // 关掉后一集播完停在本集结束、不自动进下一集；开则倒计时自动进下一集（倒计时
+          // 期间画面会出现「取消」按钮，点了本次不进下一集）。
+          SettingsSwitchItem(
+            id: 'video.playback.auto_play_next',
+            title: t.video_setting_auto_play_next,
+            subtitle: t.video_setting_auto_play_next_hint,
+            icon: Icons.playlist_play_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoAutoPlayNext,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoAutoPlayNext(value);
+            },
+          ),
           SettingsSegmentedItem<VideoImmersiveMode>(
             id: 'video.playback.immersive_mode',
             title: t.video_setting_immersive_mode,

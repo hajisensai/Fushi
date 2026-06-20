@@ -49,6 +49,7 @@ void main() {
     // intentionally stay in-player only and are NOT listed here.
     for (final String id in <String>[
       // Playback
+      'video.playback.auto_play_next', // TODO-639 auto-play-next toggle
       'video.playback.immersive_mode',
       'video.playback.picture_fit',
       'video.playback.double_tap',
