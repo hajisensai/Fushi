@@ -1,0 +1,11 @@
+## BUG-369 · 滚动模式向上滚未到章首就提前切上一章
+- **报告**：2026-06-21（用户：滚动模式往上拉，还没到章节开头就跳到上一章）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart` 滚动模式滚轮监听器（`wheel`，~2208/~2235）：
+  - 跨章边界判定 `atStart = root.scrollTop <= 2`（竖排 `Math.abs(root.scrollLeft) <= 2`）是**单次瞬时**几何读数，命中即 `onBoundarySwipe('backward')` → `_handlePageTurnLimit('backward')`（`navigation.part.dart` ~501）→ `_navigateToChapter(prev, progress:0.99)`，Dart 端只透传不复核。
+  - 向上快速回滚时，浏览器原生惯性（横排放行原生滚动）/ 竖排 rAF 缓动（TODO-629 的 `_vScrollTarget`/`_vScrollEaseStep`）把 scrollTop/scrollLeft **异步**滑向 0；连发的 wheel 事件会在「内容尚未真正贴住章首、仍在滑动」的某一帧擦到 `<=2` → 提前误判到顶 → 还没到章首就切上一章。
+  - 不对称根因（向下正常）：`atEnd = scrollTop+innerHeight >= scrollHeight-2` 是**位置相对**判定，要滚满整章才命中，惯性几像素抖动可忽略；`atStart` 是**绝对零点**判定，而 0 恰是惯性/缓动的天然收敛终点，回滚必经并反复擦过 → 只有向上提前触发。
+- **[x] ① 已修复** — 跨章边界改 **arm-then-fire 二次确认**（对齐分页模式 BUG-240「重建后仍翻不动才回 limit」范式）：`reader_hibiki_page.dart` wheel 监听器新增 `_wheelBoundaryArmed` 状态——同方向第一次到边界只「武装」不跨章（吸收惯性/缓动擦边的单次瞬态，仍 `preventDefault` 压住越界滚动不打断手感），同方向第二次到边界才真正 `onBoundarySwipe` 跨章；未到边界 / 方向反转即解除/改写武装。用户「滚到章首后再滚一下」才跨章（与移动端心智一致）。提交于分支 `todo-629-656-reader-flip`（合并后取并入 develop 的实际哈希）。
+- **[x] ② 已加自动化测试** —
+  - 纯函数 `ReaderPaginationScripts.continuousWheelBoundaryEmit`（`reader_pagination_scripts.dart`）+ 单测 `hibiki/test/reader/continuous_wheel_boundary_confirm_test.dart`（首次只武装、二次才跨章、未到边界解武装、方向反转改武装、**惯性单帧擦边永不跨章**回归场景）。
+  - 源码守卫 `hibiki/test/reader/reader_mouse_paging_boundary_guard_static_test.dart`（wheel 监听器须经 `_wheelBoundaryArmed` 武装态、二次确认才 `onBoundarySwipe`、atStart/atEnd 几何不变）。红→绿已验（撤修复 → 守卫红 + 立即跨章）。
+- **备注**：本修复**只动滚轮路径**（race 实际所在）。触摸/指针边界 IIFE（`reader_pagination_scripts.dart` `_bEnd` ~2167 `atTop = scrollTop<=2`）是离散 swipe，`touchend` 读已 settle 的位置、无惯性同步读穿，故未改（改它会改动已发布的 touch swipe-to-cross 手势）。UX 影响：**向下到底跨下一章现在也需「到底后再滚一下」二次确认**（对称化、消除特例），属轻微行为变化，若 PM 认为向下应保持单次即跨章可改为只对 backward 二次确认。**需真机复测**：滚动模式横排+竖排向上回滚到章首不提前跨章、到章首后再滚能跨上一章、向下到底跨下一章。

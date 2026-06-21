@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 361 条。点号进各自文件。
+> 共 363 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-369](bugs/BUG-369-scroll-mode-early-prev-chapter.md) | ✅ | ✅ | 滚动模式向上滚未到章首就提前切上一章 |
+| [BUG-368](bugs/BUG-368-paged-mouse-paging.md) | ✅ | ✅ | 分页模式鼠标正文横向拖动无法翻页(桌面) |
 | [BUG-367](bugs/BUG-367-remote-book-card.md) | ✅ | ✅ | 远端书卡缺类型徽章+尺寸变小 |
 | [BUG-366](bugs/BUG-366-audiobook-sasayaki-highlight-jsfold.md) | ✅ | ✅ | 有声书正文逐句高亮完全不显示（JS 归一化未折叠 + 缺观测日志） |
 | [BUG-365](bugs/BUG-365-ci-android-emulator-flake.md) | ✅ | ✅ | CI android 模拟器集成 job boot flake 致整 workflow 恒红 |

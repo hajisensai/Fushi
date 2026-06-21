@@ -2073,6 +2073,33 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     var totalDy = e.clientY - startY;
     var totalDistSq = totalDx * totalDx + totalDy * totalDy;
     if (_hoshiReaderMouseNativeTextStart) {
+      // BUG-368: 分页模式下，鼠标在正文上横向拖动应像手机端的「触摸横滑」一样翻页。
+      // 旧实现里鼠标拖动起点落在正文（caret range 命中）时一律当作原生选词起点
+      // （_hoshiReaderMouseNativeTextStart），移动 >6px 就放弃手势交还原生选区，
+      // 永不回传 onSwipe → 桌面鼠标在分页模式根本「翻不了页」（只有空白边距能拖、
+      // 或全靠滚轮）。触摸路径（touchend→_gestureEnd）早已能在正文上横滑翻页，鼠标
+      // 却被这道闸门挡住，造成「鼠标 ≠ 手机」的不对称。这里在仍是分页模式时，先判
+      // 定这次拖动是否已构成一次明确的横向翻页手势（横向位移占优且达滑动阈值，与
+      // _hoshiReaderMouseDragResolvePageDirection / _gestureEnd 同款判据）：是→把
+      // 本次手势从「原生选词」转换为「拖动翻页」（清掉已起的选区、接管 pointer、
+      // 后续走 _finishHoshiReaderMouseDrag 回传 onSwipe）；否→保持原行为（竖向/短拖
+      // 交还原生选区，仍可正常划词查词）。
+      var ntDir = (!hoshiContinuousMode)
+          ? _hoshiReaderMouseDragResolvePageDirection(e.clientX, e.clientY)
+          : null;
+      if (ntDir) {
+        _hoshiReaderMouseNativeTextStart = false;
+        _hoshiReaderMouseDragActive = true;
+        _hoshiReaderMouseDragClaimed = true;
+        _hoshiReaderMouseDragPageDirection = ntDir;
+        _hoshiReaderPointerNoSelect(true);
+        _hoshiReaderClearMouseSelection();
+        if (e.target && e.target.setPointerCapture) {
+          try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+        }
+        e.preventDefault();
+        return;
+      }
       if (totalDistSq > 36) hasStart = false;
       return;
     }
@@ -2159,6 +2186,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (hasStart && !_hoshiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
   var _wheelTimer = null;
+  // BUG-369: 滚动模式滚轮跨章的「arm-then-fire 二次确认」状态——记上一次已武装
+  // 的边界方向（null=未武装）。惯性/竖排缓动擦边的单次瞬态只武装、不跨章；同方向
+  // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
+  // ReaderPaginationScripts.continuousWheelBoundaryEmit 同款语义。
+  var _wheelBoundaryArmed = null;
   // TODO-629 ②: 竖排连续滚动 rAF 缓动状态——wheel 事件只累积目标 scrollLeft，由
   // requestAnimationFrame 每帧指数逼近，消除逐事件 scrollBy 的离散颗粒感。
   var _vScrollTarget = null;   // 累积目标 scrollLeft（null = 无进行中的缓动）
@@ -2213,11 +2245,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         if (wheelDelta > 0) boundaryDir = atEnd ? 'forward' : null;
         else boundaryDir = atStart ? 'backward' : null;
       }
-      if (boundaryDir) {
-        // 到底了：节流后回传跨章（复用分页模式同款 _wheelTimer 防一次滚轮连发）。
+      // BUG-369: 到边界不再「立刻跨章」，改 arm-then-fire 二次确认。未到边界
+      // （boundaryDir==null）解除武装。同方向第一次到边界只武装（吸收惯性/竖排
+      // 缓动擦边的瞬态，仍 preventDefault 压住越界滚动、不打断手感），同方向第二
+      // 次到边界才真正跨章。判定逻辑与纯函数 continuousWheelBoundaryEmit 同形。
+      if (!boundaryDir) {
+        _wheelBoundaryArmed = null;
+      } else if (_wheelBoundaryArmed === boundaryDir) {
+        // 二次确认：节流后回传跨章（复用同款 _wheelTimer 防一次滚轮连发）。
         if (_wheelTimer) { e.preventDefault(); return; }
         _wheelTimer = setTimeout(function() { _wheelTimer = null; }, ${s.wheelPageTurnInterval});
+        _wheelBoundaryArmed = null;
         window.flutter_inappwebview.callHandler('onBoundarySwipe', boundaryDir);
+        e.preventDefault();
+        return;
+      } else {
+        // 首次到边界 / 方向反转：仅武装本方向，不跨章；压住越界滚动避免视觉抖动。
+        _wheelBoundaryArmed = boundaryDir;
         e.preventDefault();
         return;
       }

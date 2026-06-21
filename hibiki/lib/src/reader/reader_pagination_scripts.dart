@@ -417,6 +417,44 @@ class ReaderPaginationScripts {
     return atStart ? ReaderNavigationDirection.backward.jsValue : null;
   }
 
+  /// BUG-369 纯谓词：滚动（连续）模式下，到达内容轴边界的滚轮事件是否应「立即跨章」。
+  ///
+  /// 旧实现里 [continuousWheelBoundaryDirection] 一旦在某次 wheel 事件读到
+  /// `atStart`/`atEnd` 就立刻回传 `onBoundarySwipe` 跨章。但 `atStart`（`scrollTop<=2`
+  /// 或竖排 `|scrollLeft|<=2`）是单次**瞬时**几何读数：向上快速回滚时，浏览器原生惯性
+  /// / 竖排 rAF 缓动会把 scrollTop 异步滑向 0，连发的 wheel 事件会在「内容尚未真正贴住
+  /// 章首、仍在滑动」的某一帧擦到 `<=2` → 提前误判到顶 → 还没到章节开头就切到上一章。
+  /// 向下（`atEnd = scrollTop+innerHeight >= scrollHeight-2`）是位置相对判定，要滚满整章
+  /// 才命中，惯性几像素抖动可忽略，故只有向上提前触发——这是「向上提前换章、向下正常」
+  /// 不对称的根因。
+  ///
+  /// 修法（对齐分页模式 BUG-240「重建后仍翻不动才回 limit」的确认范式）：边界跨章改为
+  /// **arm-then-fire 二次确认**——同一方向第一次到边界只「武装」(arm) 不跨章（此时内容
+  /// 已贴边、惯性/缓动那一帧的瞬态被吸收）；只有在仍处该边界时再来一次同方向滚轮才真正
+  /// 跨章。任何「未到边界」或「方向反转」的滚轮事件都会解除武装。这样惯性/缓动擦边的单次
+  /// 瞬态永远只停在「武装」态、不会跨章，用户「滚到章首后再滚一下」才跨章（与移动端心智
+  /// 一致）。纯函数、无副作用，供单测锁定。
+  ///
+  /// 入参：[boundaryDir] = 本次 wheel 几何判定出的边界方向（[continuousWheelBoundaryDirection]
+  /// 的返回值，`null`=未到边界）；[armedDir] = 上一次已武装的边界方向（`null`=未武装）。
+  /// 返回：`emit` = 是否本次真正跨章；`nextArmedDir` = 跨章/解武装后应保存的新武装态。
+  @visibleForTesting
+  static ({bool emit, String? nextArmedDir}) continuousWheelBoundaryEmit({
+    required String? boundaryDir,
+    required String? armedDir,
+  }) {
+    if (boundaryDir == null) {
+      // 未到边界（含中途滚动、方向反转后未及边界）：解除武装，不跨章。
+      return (emit: false, nextArmedDir: null);
+    }
+    if (armedDir == boundaryDir) {
+      // 同方向二次确认：真正跨章。跨章后清武装（跨章会重锚到新章，旧边界态无意义）。
+      return (emit: true, nextArmedDir: null);
+    }
+    // 首次到边界或方向变化：仅武装本方向，吸收惯性/缓动擦边的单次瞬态。
+    return (emit: false, nextArmedDir: boundaryDir);
+  }
+
   /// TODO-629 ②：竖排连续（滚动）模式下，桌面鼠标滚轮的主 delta 投影到横向
   /// （vertical-rl 内容轴 = 横向）滚动时，逐 wheel 事件 `scrollBy(behavior:'auto')`
   /// 是瞬时离散跳，每个事件一次 deltaY 颗粒、丢弃浏览器原生平滑/惯性，看着像「刷新率
