@@ -333,6 +333,7 @@ class AnkiMiningContext {
     this.sasayakiAudioPath,
     this.sentenceOffset,
     this.source,
+    this.bookTitleTag,
   });
   final String sentence;
   final String? cueSentence;
@@ -343,6 +344,16 @@ class AnkiMiningContext {
 
   /// 制卡来源类别；决定追加哪个分类标签（见 [AnkiMiningSource]）。`null` 时不追加分类标签。
   final AnkiMiningSource? source;
+
+  /// TODO-681 / BUG-393：「自动添加书名到标签」开关开启时，调用方（reader / video）
+  /// 算好的**已清洗书名/番名标签**（空格/Tab→下划线，单个 Anki tag 字面量）；开关关闭
+  /// 或无标题时为 `null`，[BaseAnkiRepository.buildNoteTags] 不追加。
+  ///
+  /// 为什么放 context 而非 [AnkiSettings]：开关真值源是主 app 的
+  /// `PreferencesRepository.autoAddBookNameToTags`，而 hibiki_anki 是独立包不能依赖主
+  /// app；标题来源也按来源不同（书=书名 / 视频=番名）。故由调用方读开关 + 取标题 + 清洗后
+  /// 注入，本包只负责按既有 [buildNoteTags] 去重规则追加，与 `book`/`video` 分类标签同构。
+  final String? bookTitleTag;
 }
 
 class AnkiHandlebarRenderer {

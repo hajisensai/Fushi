@@ -162,6 +162,8 @@ abstract class BaseAnkiRepository {
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。
   /// - 两个开关默认 `true`，等价 TODO-115/062 的固定行为（Never break userspace）。
+  /// - [titleTag]（TODO-681 开关，「自动添加书名到标签」）非空时追加**已清洗的书名/番名
+  ///   标签**（去重后），书籍/视频同语义。
   /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
   @protected
   List<String> buildNoteTags(
@@ -169,6 +171,7 @@ abstract class BaseAnkiRepository {
     AnkiMiningSource? source,
     bool includeHibiki = true,
     bool includeCategory = true,
+    String? titleTag,
   }) {
     final seen = <String>{};
     final result = <String>[];
@@ -181,7 +184,24 @@ abstract class BaseAnkiRepository {
       final categoryTag = _categoryTagForSource(source);
       if (categoryTag != null && seen.add(categoryTag)) result.add(categoryTag);
     }
+    // TODO-681 / BUG-393：「自动添加书名到标签」开启时调用方注入已清洗书名/番名标签
+    // （书籍/视频同语义）。去重 [seen] 保证：经卡片创建器 `TagsField` 走 [userTags] 已带过
+    // 同一标题标签时不会重复追加（两处清洗规则同源故字面量相同）。
+    final clean = sanitizeTitleTag(titleTag);
+    if (clean != null && seen.add(clean)) result.add(clean);
     return result;
+  }
+
+  /// 把任意标题字符串清洗成**单个合法 Anki tag**：Anki tag 以空白分隔，故空格 / Tab
+  /// 全替换成下划线（与卡片创建器 `TagsField` 的清洗规则一致，保证两条路径产出同一字面量，
+  /// 从而被 [buildNoteTags] 的去重正确合并、不重复追加）。空/全空白返回 `null`。
+  static String? sanitizeTitleTag(String? title) {
+    if (title == null) return null;
+    // 先 trim 再替换内部空白：纯空白标题 → 空 → null（不产出 `___` 之类垃圾标签）；
+    // 标题内部空格/Tab → 下划线，整体当一个 Anki tag。
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) return null;
+    return trimmed.replaceAll(' ', '_').replaceAll('	', '_');
   }
 
   // ── 词典媒体（gaiji 外字）嵌入：两 backend 共用，杜绝两份实现漂移 ──────────────

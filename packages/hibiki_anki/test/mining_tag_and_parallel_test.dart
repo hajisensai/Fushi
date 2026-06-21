@@ -364,6 +364,134 @@ void main() {
     });
   });
 
+  group(
+      'TODO-681 / BUG-393: bookTitleTag appends title (book + video), de-duped, sanitised',
+      () {
+    Future<List<String>> tagsForConnect(
+      String configured, {
+      AnkiMiningSource? source,
+      String? bookTitleTag,
+    }) async {
+      final service = _RecordingAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settingsWithTags(configured),
+      );
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: AnkiMiningContext(
+          sentence: '',
+          source: source,
+          bookTitleTag: bookTitleTag,
+        ),
+      );
+      expect(outcome.result, MineResult.success);
+      return service.addedTags.single;
+    }
+
+    Future<List<String>> tagsForDroid(
+      String configured, {
+      AnkiMiningSource? source,
+      String? bookTitleTag,
+    }) async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      final List<List<String>> addedTags = <List<String>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        switch (call.method) {
+          case 'checkForDuplicates':
+            return false;
+          case 'addNote':
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            addedTags.add(List<String>.from(args['tags'] as List));
+            return true;
+          default:
+            fail('Unexpected AnkiDroid channel call: ${call.method}');
+        }
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+      final repo = _ConfiguredAnkiRepository(_settingsWithTags(configured));
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: AnkiMiningContext(
+          sentence: '',
+          source: source,
+          bookTitleTag: bookTitleTag,
+        ),
+      );
+      expect(outcome.result, MineResult.success);
+      return addedTags.single;
+    }
+
+    test('video source appends the title tag at the end (the TODO-681 gap)',
+        () async {
+      // 撤掉 buildNoteTags 的 titleTag 追加（或 video 调用方不传）此处转红 = 守卫成立。
+      expect(
+        await tagsForConnect('',
+            source: AnkiMiningSource.video, bookTitleTag: 'My_Anime'),
+        <String>['hibiki', 'video', 'My_Anime'],
+      );
+      expect(
+        await tagsForDroid('',
+            source: AnkiMiningSource.video, bookTitleTag: 'My_Anime'),
+        <String>['hibiki', 'video', 'My_Anime'],
+      );
+    });
+
+    test('book source appends the title tag identically (same semantics)',
+        () async {
+      expect(
+        await tagsForConnect('jp',
+            source: AnkiMiningSource.book, bookTitleTag: 'My_Book'),
+        <String>['jp', 'hibiki', 'book', 'My_Book'],
+      );
+    });
+
+    test('null / empty title tag appends nothing (switch off = unchanged)',
+        () async {
+      expect(
+        await tagsForConnect('jp', source: AnkiMiningSource.video),
+        <String>['jp', 'hibiki', 'video'],
+      );
+      expect(
+        await tagsForConnect('jp',
+            source: AnkiMiningSource.video, bookTitleTag: ''),
+        <String>['jp', 'hibiki', 'video'],
+      );
+    });
+
+    test('title tag is de-duped vs an identical user/creator tag', () async {
+      // 卡片创建器 TagsField 把同一标题塞进 settings.tags 时，共享层不再重复追加。
+      expect(
+        await tagsForConnect('My_Book',
+            source: AnkiMiningSource.book, bookTitleTag: 'My_Book'),
+        <String>['My_Book', 'hibiki', 'book'],
+      );
+    });
+
+    test('spaces / tabs in title are sanitised to underscores (single tag)',
+        () async {
+      // sanitizeTitleTag 与 TagsField 同源：空格/Tab → 下划线，整体当一个 tag。
+      expect(
+        BaseAnkiRepository.sanitizeTitleTag('Title With Spaces'),
+        'Title_With_Spaces',
+      );
+      expect(BaseAnkiRepository.sanitizeTitleTag('a	b'), 'a_b');
+      expect(BaseAnkiRepository.sanitizeTitleTag('   '), isNull);
+      expect(BaseAnkiRepository.sanitizeTitleTag(null), isNull);
+      // 端到端：含空格标题经 sanitize 后是单 tag。
+      expect(
+        await tagsForConnect('',
+            source: AnkiMiningSource.video, bookTitleTag: 'Title With Spaces'),
+        <String>['hibiki', 'video', 'Title_With_Spaces'],
+      );
+    });
+  });
+
   group('media uploads run in parallel (timing proof for the 6s fix)', () {
     late Directory dir;
 

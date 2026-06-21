@@ -134,6 +134,12 @@ extension _ReaderMining on _ReaderHibikiPageState {
       sentenceOffset: snapshotSentenceOffset,
       // TODO-115: 书籍来源 → 卡片追加 `book` 分类标签（reader 不走 DictionaryPageMixin）。
       source: AnkiMiningSource.book,
+      // TODO-681 / BUG-393：「自动添加书名到标签」开启时追加书名标签。reader 弹窗制卡
+      // 此前不走卡片创建器 TagsField，故标题没被加进 tag；与视频同走共享 buildNoteTags
+      // 注入（经创建器再走 fields 已带同一标签时由 buildNoteTags 去重，不重复）。
+      bookTitleTag: appModel.autoAddBookNameToTags
+          ? BaseAnkiRepository.sanitizeTitleTag(_book?.title)
+          : null,
     );
 
     return (context: miningContext, cleanup: cleanupSasayakiTempDir);

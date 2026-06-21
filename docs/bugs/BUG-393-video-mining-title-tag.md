@@ -1,0 +1,14 @@
+## BUG-393 · 「自动添加书名到标签」配置视频制卡未生效
+- **报告**：2026-06-21（用户：「自动添加书名到标签 这个配置项改一下，视频也应该吃，不止书籍」 / TODO-681）
+- **真实性**：✅ 真 bug（功能差异）。
+  - 开关真值源 `auto_add_book_name_to_tags`：`hibiki/lib/src/models/preferences_repository.dart:682`，委托 `app_model.dart:3263`，UI `anki_settings_page.dart:167`。
+  - 该开关此前**唯一**实现点是卡片创建器 `hibiki/lib/src/creator/fields/tags_field.dart:42-55`：把 `appModel.getCurrentMediaItem().title` 拼进 Tags 字段文本（仅 in-app Card Creator 路径）。
+  - 视频制卡走独立的 `_mineVideoCard`（`video_hibiki_page.dart:2844`），整页覆写 `onMineEntry` 绕过创建器/mixin；其 tags 仅由共享 `BaseAnkiRepository.buildNoteTags(settings.tags, source, ...)` 生成（`base_anki_repository.dart:166`），**从不含标题**。视频页又是直接 push 路由、不经 `AppModel.openMedia`，`getCurrentMediaItem()` 也拿不到视频标题。故视频卡永远没标题标签。
+  - reader 弹窗制卡（`reader_hibiki/mining.part.dart:128`）同样不走 TagsField，此前也没标题标签（仅 in-app 创建器有）——一并统一。
+- **[x] ① 已修复** — 在**共享层**接入，书籍/视频同语义、避免两路径双加：
+  - `AnkiMiningContext` 新增 `bookTitleTag`（调用方算好的已清洗标题标签，`packages/hibiki_anki/lib/src/anki_models.dart`）。
+  - `BaseAnkiRepository.buildNoteTags` 新增 `titleTag` 形参，按既有 `seen` 去重规则追加；新增 `static sanitizeTitleTag`（先 trim 再把空格/Tab→下划线，纯空白→null，与 TagsField 同源字面量保证去重命中）。
+  - 两后端调用点透传 `titleTag: context.bookTitleTag`（`ankiconnect_repository.dart` / `ankidroid/anki_repository.dart`）。
+  - 视频 `_mineVideoCard` 与 reader 弹窗 mining 各按 `appModel.autoAddBookNameToTags` 注入 `bookTitleTag: BaseAnkiRepository.sanitizeTitleTag(标题)`（视频用 `_title` 番名 / 书籍用 `_book.title`）。in-app 创建器路径已把同一标题塞进 settings.tags → buildNoteTags 去重不重复加。BUG-118 媒体裸化契约（`buildDictionaryMediaTags`/`buildMinedFields`）是另一条链路，不受影响。
+- **[x] ② 已加自动化测试** — `packages/hibiki_anki/test/mining_tag_and_parallel_test.dart` 新增 group `TODO-681 / BUG-393`：视频/书籍经完整 mineEntry 路径追加标题标签（两后端）/ null·空标题不加 / 与用户同名标签去重 / 含空格 Tab 清洗成单 tag（含 `sanitizeTitleTag` 纯函数断言）。撤掉追加即转红。
+- **备注**：开关默认 true；标题清洗规则与 `tags_field.dart` 一致，且更稳（纯空白标题不再产出 `___` 垃圾标签）。

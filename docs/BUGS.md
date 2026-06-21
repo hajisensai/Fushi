@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 378 条。点号进各自文件。
+> 共 380 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-393](bugs/BUG-393-video-mining-title-tag.md) | ✅ | ✅ | 「自动添加书名到标签」配置视频制卡未生效 |
+| [BUG-392](bugs/BUG-392-video-mining-subtitle-delay.md) | ✅ | ✅ | 视频制卡未应用字幕调轴(delay)到音频/封面裁剪时间 |
 | [BUG-391](bugs/BUG-391-subtitle-list-cursor-hidden.md) | ✅ | ✅ | 视频字幕列表侧栏鼠标光标消失 |
 | [BUG-390](bugs/BUG-390-reader-lookup-eval-missingplugin.md) | ✅ | ✅ | 阅读器查词高亮 evaluateJavascript 在半销毁 WebView 上抛 MissingPluginException 崩溃 |
 | [BUG-383](bugs/BUG-383-video-seekbar-siderail-insets.md) | ✅ | ✅ | 手势导航/圆角手机视频进度条偏高+底栏侧边大留白(viewPadding不归零·SafeArea双重内缩) |
