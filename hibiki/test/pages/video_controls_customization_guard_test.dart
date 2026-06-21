@@ -273,11 +273,12 @@ void main() {
     expect(sideRail, contains('sourceSlot: slot'),
         reason: 'screenLeft/screenRight rail buttons must preserve side');
 
-    // TODO-590 batch9：_buildAudioTracksSidePanel 已抽到 audio_track.part.dart；改用
-    // _buildVideoSidePanelContent 在主壳里的真实紧邻后继 _handlePlaybackDrop 作终点。
+    // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_hibiki/side_panel.part.dart
+    // 并是该 part 的末方法；旧的 _handlePlaybackDrop 终点失效（它在主壳前段，排在搬出后的
+    // content 之前）。改用 part 顶格 extension 闭合 `\n}` 作终点（content 体内无顶格 `}`）。
     final String content = body(
       'Widget _buildVideoSidePanelContent(',
-      'void _handlePlaybackDrop(',
+      '\n}',
     );
     expect(content, contains('alignment: panelState.alignment'));
   });

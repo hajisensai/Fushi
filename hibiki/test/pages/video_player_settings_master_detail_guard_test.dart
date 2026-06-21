@@ -33,9 +33,11 @@ String _member(String source, String start) {
 
 void main() {
   test('video player settings uses the shared master-detail sheet', () {
-    final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // TODO-590 batch10：side-panel 域（_buildVideoSidePanelChild /
+    // _buildVideoSidePanelOverlay / VideoTranslucentSidePanel 构造）已抽到
+    // video_hibiki/side_panel.part.dart，改读合并语料才能命中这些 marker；
+    // _showPlayerSettings / _buildVideoQuickSettingsSheet 仍在主壳（合并语料含主壳）。
+    final String source = readVideoHibikiSource();
     final String showMethod = _member(
       source,
       'void _showPlayerSettings(',
@@ -254,15 +256,17 @@ void main() {
   test('video settings side panel owns UI scale and hover lifetime', () {
     final String source = readVideoHibikiSource();
     // TODO-314：字幕列表改 push-aside 后 overlay 版 _buildSubtitleListSidePanel 已删。
-    // TODO-590 batch5：_buildSubtitleSourcesSidePanel 已抽到 video_hibiki/subtitle.part.dart
-    // （合并语料末段）；TODO-590 batch9：_buildAudioTracksSidePanel 又抽到
-    // video_hibiki/audio_track.part.dart，两者都不能再当 _buildVideoSidePanelOverlay 之后
-    // 的紧邻终点；改用 _buildVideoSidePanelContent 在主壳里的真实紧邻后继 _handlePlaybackDrop
-    // 作终点（多带的 _subtitleImportsInFlight 字段与断言无关）。
+    // TODO-590 batch10：整个 side-panel 域（_buildVideoSidePanelOverlay /
+    // _buildVideoSidePanelContent）已抽到 video_hibiki/side_panel.part.dart。该 part 在合并
+    // 语料末尾，_buildVideoSidePanelContent 是它的末方法（下方断言要的
+    // `kind != settings` / `HibikiAppUiScale` / `scale: _videoUiScale` 都落在 content 体里），
+    // 其紧邻后继是 part 顶格 extension 闭合 `\n}`；overlay→content 之间无顶格 `}`，故用
+    // `\n}` 作终点恰好涵盖 overlay+content 两个方法（旧的 _handlePlaybackDrop 终点已失效——
+    // 它在主壳前段，排在搬出后的 overlay 之前）。
     final String panelMethod = _between(
       source,
       'Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {',
-      'void _handlePlaybackDrop(',
+      '\n}',
     );
     final String visibilityMethod = _between(
       source,

@@ -58,9 +58,13 @@ void main() {
   test('字幕列表已无 overlay 路径（不再走 _buildVideoSidePanelContent 的 subtitleList 分支）',
       () {
     // overlay 内容构造器不应再对 subtitleList 单独分支（该 kind 已删）。
+    // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_hibiki/side_panel.part.dart
+    // 并是该 part 末方法；旧的 _buildAudioTracksSidePanel 终点失效（它在 audio_track.part，
+    // 排在合并语料里 side_panel.part 之前，即在搬出后的 content 之前）。改用 part 顶格
+    // extension 闭合 `\n}` 作终点（content 体内无顶格 `}`）。
     final int start = src.indexOf('Widget _buildVideoSidePanelContent(');
     expect(start, greaterThanOrEqualTo(0));
-    final int end = src.indexOf('Widget _buildAudioTracksSidePanel(', start);
+    final int end = src.indexOf('\n}', start);
     expect(end, greaterThan(start));
     final String contentBody = src.substring(start, end);
     expect(
