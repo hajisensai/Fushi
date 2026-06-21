@@ -238,6 +238,22 @@ jobs:
           }
           Get-Item -LiteralPath ($runtimeFiles | ForEach-Object { Join-Path $targetDir $_ }) |
             Select-Object FullName, Length
+      # The bundled ffmpeg -version check below is the hard gate: it proves the
+      # exact binary we ship in the installer payload executes. The fuller
+      # smoke-test.sh comparison additionally needs a *fixture* full ffmpeg to
+      # author representative MP4/MKV inputs (the minimal bundled binary
+      # deliberately lacks lavfi/muxers - see windows_vendored_ffmpeg_guard).
+      # GitHub windows runners do not preinstall ffmpeg, so the fixture comes
+      # from `choco install ffmpeg`, whose source community.chocolatey.org
+      # intermittently returns 504 Gateway Timeout (runs +130/+132). That is an
+      # external-service flake on a *reference* generator, not a defect in the
+      # shipped artifact, yet it was failing the whole Desktop release workflow
+      # and blocking the installer. Fix (mirrors the TODO-624 emulator
+      # non-blocking precedent): retry the choco install a few times to absorb
+      # transient 504s, and if the fixture still cannot be obtained, emit a loud
+      # ::warning:: and skip only the comparison smoke (the bundled -version gate
+      # already ran). External-platform limitation: re-evaluate once a more
+      # reliable fixture ffmpeg source is vendored/cached (TODO-652).
       - name: Smoke test bundled ffmpeg in Windows bundle
         shell: pwsh
         run: |
@@ -251,8 +267,22 @@ jobs:
           }
           $fixtureCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
           if ($null -eq $fixtureCommand) {
-            choco install ffmpeg -y --no-progress
-            $fixtureCommand = Get-Command ffmpeg -ErrorAction Stop
+            # External dependency: tolerate transient chocolatey 504s with a
+            # bounded retry instead of failing on the first flake.
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              Write-Host "Installing fixture ffmpeg from chocolatey (attempt $attempt/3)"
+              choco install ffmpeg -y --no-progress
+              $fixtureCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
+              if ($null -ne $fixtureCommand) { break }
+              if ($attempt -lt 3) {
+                Write-Host "Fixture ffmpeg not available yet; retrying in 30s..."
+                Start-Sleep -Seconds 30
+              }
+            }
+          }
+          if ($null -eq $fixtureCommand) {
+            Write-Host "::warning title=Fixture ffmpeg unavailable::Could not obtain a full fixture ffmpeg (chocolatey likely flaking, e.g. 504). The bundled ffmpeg -version gate already passed; skipping the fixture comparison smoke test. This is an external-service flake on a reference generator, not a defect in the shipped binary (TODO-652)."
+            exit 0
           }
           $fixtureFfmpeg = $fixtureCommand.Source
           & $fixtureFfmpeg -version

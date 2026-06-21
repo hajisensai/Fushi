@@ -273,6 +273,54 @@ void main() {
     );
   });
 
+  test(
+      'TODO-652: Windows ffmpeg smoke tolerates external chocolatey flake '
+      'without failing the desktop release', () {
+    final String workflow = readReleaseDesktopWorkflow();
+    final String smoke = workflowStep(
+      workflow,
+      'Smoke test bundled ffmpeg in Windows bundle',
+    );
+
+    // The bundled binary -version check stays a hard gate (it is the shipped
+    // deliverable, no external dependency): it must still throw on failure.
+    expect(
+      smoke,
+      contains(r'throw "Bundled ffmpeg failed -version'),
+      reason: 'the bundled ffmpeg -version gate must remain a hard failure; '
+          'it verifies the exact binary we ship',
+    );
+
+    // The fixture ffmpeg is only a reference generator fetched from chocolatey,
+    // whose source intermittently returns 504. Its acquisition must be retried
+    // and, on persistent failure, skipped with a loud warning - never throw and
+    // fail the whole Desktop release (TODO-652, mirrors TODO-624 precedent).
+    expect(
+      smoke,
+      contains(r'for ($attempt = 1; $attempt -le 3; $attempt++)'),
+      reason: 'choco install ffmpeg must be retried to absorb transient 504s',
+    );
+    expect(
+      smoke,
+      isNot(contains(r'Get-Command ffmpeg -ErrorAction Stop')),
+      reason:
+          'fixture ffmpeg lookup must not hard-throw when chocolatey flakes; '
+          'that regressed the whole Desktop workflow on runs +130/+132',
+    );
+    expect(
+      smoke,
+      contains('::warning title=Fixture ffmpeg unavailable'),
+      reason: 'a persistent fixture-ffmpeg outage must surface a visible '
+          'warning, not a silent pass',
+    );
+    expect(
+      smoke,
+      contains('exit 0'),
+      reason: 'when only the reference fixture is unavailable the step skips '
+          'the comparison smoke and exits 0 instead of failing the release',
+    );
+  });
+
   test('ffmpeg smoke fixture generation does not require the minimal binary',
       () {
     final String smoke = readRepositoryTool('ffmpeg-min/smoke-test.sh');
