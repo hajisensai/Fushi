@@ -9,12 +9,26 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     if (injected != null) return injected();
 
     final SyncRepository syncRepo = SyncRepository(appModel.database);
-    if (await syncRepo.getBackendType() != SyncBackendType.hibikiServer) {
-      return null;
+    final SyncBackendType type = await syncRepo.getBackendType();
+
+    // 局域网互联（hibiki 自有 server）：仍走裸 HibikiClientSyncBackend（含 live 库
+    // API 的 listRemoteBooks/getRemoteBook），不变。
+    if (type == SyncBackendType.hibikiServer) {
+      final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+      if (!await backend.restoreAuth(syncRepo)) return null;
+      return backend;
     }
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+
+    // 云盘备份后端（Google Drive 等）：经 resolveSyncBackend 得带解混淆装饰层的
+    // 后端，鉴权恢复成功后用 CloudRemoteBookClient 把远端书库适配成可下载条目
+    // （TODO-665 阶段1）。鉴权失败返 null（书架不显示远端区）。
+    final SyncBackend backend = resolveSyncBackend(type);
     if (!await backend.restoreAuth(syncRepo)) return null;
-    return backend;
+    final String rootFolderId = await backend.findOrCreateRootFolder();
+    return CloudRemoteBookClient(
+      backend: backend,
+      rootFolderId: rootFolderId,
+    );
   }
 
   Future<_RemoteBookState?> _loadRemoteBooks() async {
