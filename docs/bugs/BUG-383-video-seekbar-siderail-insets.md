@@ -1,0 +1,18 @@
+## BUG-383 · 手势导航/圆角手机视频进度条偏高+底栏侧边大留白(viewPadding不归零·SafeArea双重内缩)
+- **报告**：2026-06-21（用户：手机看远端视频，进度条位置太高 + 底栏离屏幕左右侧边有大留白）。TODO-658 的根因修复（BUG-370 当初只重申 immersiveSticky 是治标，进度条仍偏高）。
+- **真实性**：✅ 真 bug（两处独立根因）。
+  - **① 进度条偏高根因**：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart` 的 `_videoBottomSystemInset()` 原直接返回 `MediaQuery.viewPadding.bottom`，作为加项进进度条 / 字幕避让 / 章节刻度带几何（`_mobileControlsTheme` 的 `seekBarBottom`、`videoSubtitleControlsReserve` 移动分支、`videoSeekBarTrackBand`）。在 **targetSdk 35 强制 edge-to-edge + 手势导航**手机上，即便视频走 `immersiveSticky` 隐藏导航栏，`viewPadding.bottom`（与 `padding.bottom` **同源**，仅差键盘——见下）也**恒上报手势条物理高度不归零**：Flutter 引擎 `FlutterView.java` API 30+ 路径用 `getInsets(WindowInsets.Type.systemBars())` 喂 `viewPaddingBottom`，手势导航下该值即便栏「逻辑隐藏」仍含手势条高度（Flutter #170640）。于是这段恒非零 inset 永久叠进几何，进度条被顶到屏幕中上部。
+    - **为何换 `padding.bottom` 无效**：引擎只算一个 `viewPaddingBottom`；framework `padding = max(0, viewPadding − viewInsets)`，`viewInsets` 只含键盘。无键盘时 `padding.bottom == viewPadding.bottom`，换字段零行为差异（有键盘时反而更小、更错）。这是 BUG-370 当初没根治的原因。
+  - **② 底栏侧边大留白根因**：`android/app/src/main/res/values/styles.xml`（及 v31/night 共 4 处）设 `windowLayoutInDisplayCutoutMode=shortEdges`，画面画进圆角 / 刘海 → `viewPadding.left/right` 非零。侧栏 `_buildVideoSideRailFor`（`video_hibiki_page.dart`）原用 `SafeArea`（按 viewPadding 内缩四边）**外套** `Padding(left/right:12)` 的控件自有 margin = 两段**相加**双重内缩，把左 / 右浮条按钮推离侧边形成对称大留白。
+- **[x] ① 已修复** —
+  - 问题①：`_videoBottomSystemInset()` 改为由系统栏**真实可见性**门控——新增 `bool _systemBarsVisible`（默认 false，视频进入即隐栏）由 `SystemChrome.setSystemUIChangeCallback` 回写（`_registerSystemBarsVisibilityCallback`，仅移动端，`initState` 注册、`dispose` 置 null），helper 返回 `_systemBarsVisible ? viewPadding.bottom : 0`。隐栏（沉浸常态）→ inset 归零、进度条回到惯例 `基线+按钮条+间距`；导航栏真显示（三键导航 / 上划临时唤出）→ 计入 inset 避让（**保 BUG-184「导航栏可见时进度条上移避让」本意**，未回归）。`setState` 触发进度条/字幕/刻度带（均 build 期读 helper）重建。桌面 `_systemBarsVisible` 恒 false、不注册回调 → 始终 0（桌面无系统栏，符合预期）。
+  - 问题②：`_buildVideoSideRailFor` 去掉 `SafeArea`，改用新 helper `_mergeRailSafeAreaPadding(railMargin)` 逐边 `math.max(控件 margin, viewPadding)`：既不被圆角裁掉（≥ 安全区），又不在安全区已够大时再叠 12（结果 = max，不再额外加）。
+  - 提交：caef05c58
+- **[x] ② 已加自动化测试** —
+  - 更新 `hibiki/test/pages/video_mobile_controls_margin_test.dart`：把陈腐的「`_videoBottomSystemInset` 读 viewPadding.bottom」断言改为「由 `_systemBarsVisible` 三元门控（隐栏归零、可见才取 viewPadding.bottom）」+ 新增「回调注册 / dispose 摘除 / 默认 false」守卫。
+  - 新增 `hibiki/test/pages/video_side_rail_safe_area_guard_test.dart`：断言 rail 不再用 `SafeArea`、改走 `_mergeRailSafeAreaPadding` 且 helper 四边 `math.max(margin, safe)`（不相加）。
+  - 几何依赖 host 平台分流 + VideoController + 真实 MediaQuery.viewPadding/系统栏可见性时序，headless widget 测试难稳定复现，故用源码扫描守卫钉死 inset 门控源与 SafeArea 合并方式。
+- **备注**：
+  - **需真机复测**两类设备：①**手势导航机**（确认沉浸态进度条回惯例位、上划唤回导航栏时进度条上移避让）；②**圆角 / 刘海机**（确认左 / 右浮条贴边、无对称大留白、且按钮不被圆角裁切）。geometry 类肉眼验证纪律（CLAUDE.md）。
+  - **同根因未改项**：侧边锁按钮 `_buildSideLockButton`（同样 `SafeArea` 外套 `Padding(left:8)`）与章节刻度带 overlay 也用 `SafeArea`，但本轮只修用户报的浮动侧栏（锁按钮仅锁定态出现、margin 仅 8px）；剧集 / 字幕 push-aside 面板的系统栏处理另属其它 TODO。是否一并改属 PM 决策。
+  - 字幕「字体 / 阴影偏大」（BUG-370 ②）仍属设计取舍待 PM，本轮不动。

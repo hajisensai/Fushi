@@ -78,9 +78,12 @@ void main() {
     );
   });
 
-  test('_videoBottomSystemInset 读 viewPadding.bottom（反映物理安全区）', () {
-    // 用 viewPadding 而非 padding：immersiveSticky 隐栏后 padding 被抹平为 0，
-    // viewPadding 仍反映物理导航条高度；且 viewPadding 不受软键盘弹出影响。
+  test('_videoBottomSystemInset 由系统栏真实可见性门控（TODO-658/BUG-383）', () {
+    // TODO-658/BUG-383：targetSdk 35 强制 edge-to-edge + 手势导航下，viewPadding.bottom
+    // （与 padding.bottom 同源，仅差键盘）即便 immersiveSticky 隐栏仍恒上报手势条高度
+    // （引擎 getInsets(systemBars()) 照单全收，Flutter #170640）→ 单读 inset 会把进度条
+    // 永久顶高（BUG-370）。故 helper 必须先判 _systemBarsVisible：隐栏归零、可见才取
+    // viewPadding.bottom 避让（保 BUG-184「导航栏可见时上移」本意）。
     expect(
       src,
       contains('double _videoBottomSystemInset() =>'),
@@ -91,8 +94,50 @@ void main() {
     final String helperBody = src.substring(hs, he);
     expect(
       helperBody,
+      contains('_systemBarsVisible'),
+      reason: '底部系统 inset 必须先判系统栏真实可见性（隐栏归零，根治手势导航顶高）',
+    );
+    expect(
+      helperBody,
       contains('viewPadding.bottom'),
-      reason: '底部系统 inset 应读 MediaQuery.viewPadding.bottom',
+      reason: '系统栏可见时仍取 MediaQuery.viewPadding.bottom 避让',
+    );
+    expect(
+      helperBody,
+      allOf(contains('?'), contains(': 0')),
+      reason: 'helper 应是「可见 ? viewPadding.bottom : 0」的三元门控',
+    );
+  });
+
+  test('系统栏可见性回调注册 + dispose 摘除（TODO-658/BUG-383）', () {
+    // 真实可见性由 SystemChrome.setSystemUIChangeCallback 喂入：immersiveSticky 隐栏 →
+    // false（inset 归零）、上划临时唤回 / 三键导航显示 → true（计入避让）。回调是全局
+    // 单例，dispose 必须置 null 避免回调已释放 State。
+    expect(
+      src,
+      contains('void _registerSystemBarsVisibilityCallback()'),
+      reason: '应有注册系统栏可见性回调的 helper',
+    );
+    expect(
+      src,
+      contains('SystemChrome.setSystemUIChangeCallback('),
+      reason: '应经 setSystemUIChangeCallback 监听系统栏真实可见性',
+    );
+    expect(
+      src,
+      contains('_registerSystemBarsVisibilityCallback();'),
+      reason: 'initState 应注册回调',
+    );
+    expect(
+      src,
+      contains('SystemChrome.setSystemUIChangeCallback(null)'),
+      reason: 'dispose 应摘除全局回调（避免回调已释放 State）',
+    );
+    // _systemBarsVisible 默认 false：视频页进入即沉浸隐栏，inset 起步归零。
+    expect(
+      src,
+      contains('bool _systemBarsVisible = false;'),
+      reason: '_systemBarsVisible 应默认 false（进入即隐栏）',
     );
   });
 
