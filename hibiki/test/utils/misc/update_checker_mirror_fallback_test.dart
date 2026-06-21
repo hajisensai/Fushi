@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/misc/update_checker.dart';
 
@@ -33,6 +35,20 @@ void main() {
         updateCheckProxyPrefixes.every((String p) => p.endsWith('/')),
         isTrue,
         reason: '前缀必须以 / 结尾才能直接拼接 URL',
+      );
+    });
+
+    test(
+        '已 DNS 失效的死域名 ghproxy.homeboyc.cn 不得再出现在镜像清单里'
+        '（TODO-666：用户真机 Failed host lookup errno=7）', () {
+      // 守卫：该公共 gh 代理域名已不再解析（用户日志 errno=7），留着只会在
+      // 下载全失败时贡献误导性 host-lookup 报错。任何复活它的改动都应红。
+      expect(
+        updateCheckProxyPrefixes.any(
+          (String p) => p.contains('ghproxy.homeboyc.cn'),
+        ),
+        isFalse,
+        reason: 'ghproxy.homeboyc.cn DNS 已失效，必须保持移除',
       );
     });
 
@@ -137,6 +153,66 @@ void main() {
       );
       expect(body, 'ok');
       expect(failedHosts, <String>[hostLabelForUpdateUrl('a')]);
+    });
+  });
+
+  group('selectRepresentativeDownloadFailure (全失败时抛哪个错，纯函数 TODO-666)', () {
+    UpdateDownloadAttemptFailure failure(String url, Object error) =>
+        UpdateDownloadAttemptFailure(
+          url: url,
+          error: error,
+          stack: StackTrace.current,
+        );
+
+    test('全失败时优先返回直连(首候选)的错误，而非列表末尾的死镜像错误', () {
+      const String direct =
+          'https://github.com/x/y/releases/download/v1/app.apk';
+      final Object directError = Exception('direct github unreachable');
+      const Object deadMirrorError = SocketException(
+        "Failed host lookup: 'ghproxy.homeboyc.cn'",
+      );
+      final List<UpdateDownloadAttemptFailure> failures =
+          <UpdateDownloadAttemptFailure>[
+        failure(direct, directError),
+        failure('https://ghfast.top/$direct', Exception('mirror timeout')),
+        // 列表末尾恰是已失效死镜像：原实现会把它当整轮失败原因展示（误导）。
+        failure('https://ghproxy.homeboyc.cn/$direct', deadMirrorError),
+      ];
+      final UpdateDownloadAttemptFailure? chosen =
+          selectRepresentativeDownloadFailure(failures, directUrl: direct);
+      expect(chosen, isNotNull);
+      expect(
+        chosen!.error,
+        same(directError),
+        reason: '应锚定直连失败（真问题=需代理），不取末尾死镜像 host-lookup 失败',
+      );
+    });
+
+    test('没有直连候选失败记录时，回退到首个失败（仍不取末尾死镜像）', () {
+      const String direct =
+          'https://github.com/x/y/releases/download/v1/app.apk';
+      final Object firstMirrorError = Exception('first mirror failed');
+      final List<UpdateDownloadAttemptFailure> failures =
+          <UpdateDownloadAttemptFailure>[
+        failure('https://ghfast.top/$direct', firstMirrorError),
+        failure(
+          'https://ghproxy.homeboyc.cn/$direct',
+          const SocketException("Failed host lookup: 'ghproxy.homeboyc.cn'"),
+        ),
+      ];
+      final UpdateDownloadAttemptFailure? chosen =
+          selectRepresentativeDownloadFailure(failures, directUrl: direct);
+      expect(chosen, isNotNull);
+      expect(chosen!.error, same(firstMirrorError));
+    });
+
+    test('无任何失败记录返回 null（调用方用通用兜底文案）', () {
+      final UpdateDownloadAttemptFailure? chosen =
+          selectRepresentativeDownloadFailure(
+        const <UpdateDownloadAttemptFailure>[],
+        directUrl: 'https://github.com/x/y/z',
+      );
+      expect(chosen, isNull);
     });
   });
 }

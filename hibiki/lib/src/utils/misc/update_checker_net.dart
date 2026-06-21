@@ -2,9 +2,15 @@ part of 'update_checker.dart';
 
 /// GitHub 直连不通时（GFW 机器，且 app 运行时**不走**本机命令行代理）套在 GitHub
 /// 链接前的加速代理前缀。逐个尝试（见 [fetchFirstSuccessfulBody]），任一成功即返回，
-/// 全部失败才优雅放弃。这些公共镜像会不定期轮换/下线（`mirror.ghproxy.com` 已下线
-/// 移除），具体哪个通取决于用户机器与时段，故多备几个（BUG-277：单点不可达不该让
-/// 整轮检查失败）。
+/// 全部失败才优雅放弃。这些公共镜像会不定期轮换/下线（`mirror.ghproxy.com`、
+/// `ghproxy.homeboyc.cn` 均因 DNS 不再解析下线移除——后者见用户真机日志
+/// `Failed host lookup: 'ghproxy.homeboyc.cn' (errno = 7)`，TODO-666），具体哪个通取
+/// 决于用户机器与时段，故多备几个（BUG-277：单点不可达不该让整轮检查失败）。
+///
+/// **结构性根治（TODO-666）**：删一个死域名只是治标——公共 gh 代理本就会轮换下线。
+/// 真正会坑用户的是「下载全失败时把碰巧排列表最后的死镜像错误当成整轮失败原因展示」，
+/// 那个误导性报错由 [_downloadUpdateAssetUncoalesced] 的失败错误选择逻辑根治：全失败时
+/// 优先抛**直连**（首候选）的错误，而不是列表末尾镜像的 host-lookup 失败。
 ///
 /// **重要结构性事实（BUG-292，2026-06-15 实测）**：这些公共 gh 代理**只代理
 /// `raw.githubusercontent.com` / release 资源「下载」**，对 `api.github.com` JSON
@@ -26,7 +32,6 @@ const List<String> updateCheckProxyPrefixes = <String>[
   'https://ghproxy.net/',
   'https://ghproxy.cc/',
   'https://gh.llkk.cc/',
-  'https://ghproxy.homeboyc.cn/',
 ];
 
 /// **纯函数**：为一个 GitHub API / 直链 [url] 生成按优先级排序的候选 URL 列表。
@@ -292,4 +297,44 @@ String hostLabelForUpdateUrl(String url) {
   } catch (_) {
     return url;
   }
+}
+
+/// 一次失败的下载候选记录：哪个 [url]、抛了什么 [error]、堆栈 [stack]。下载阶段
+/// （[downloadUpdateAsset]）逐候选尝试，把每个失败的候选收进列表，全失败时交
+/// [selectRepresentativeDownloadFailure] 选出要抛给用户的代表性错误。
+@visibleForTesting
+class UpdateDownloadAttemptFailure {
+  const UpdateDownloadAttemptFailure({
+    required this.url,
+    required this.error,
+    required this.stack,
+  });
+
+  final String url;
+  final Object error;
+  final StackTrace stack;
+}
+
+/// **纯函数（TODO-666）**：从所有失败的下载候选里挑出最该展示给用户的「整轮失败原因」。
+///
+/// 下载候选顺序是「直连 [directUrl] → 各 gh 代理前缀套直连」（见 [updateCheckUrls]）。
+/// 全失败时**不该**用列表里碰巧排最后的候选错误代表整轮失败——那通常是某个公共 gh 代理
+/// （会轮换/下线，DNS 失效时给出 `Failed host lookup` 这种误导性报错，让用户以为是镜像
+/// 域名的问题，正是 TODO-666 的 `ghproxy.homeboyc.cn` 现象）。真正有诊断价值的是**直连
+/// GitHub** 的失败：直连不通才说明用户需要代理/VPN。
+///
+/// 选择优先级：
+///   1. 候选 url == [directUrl]（直连本身，host 是 github.com）的失败 → 优先返回。
+///   2. 否则回退到**首个**失败候选（保持「列表靠前 = 更权威」的直觉，仍不取末尾死镜像）。
+///   3. [failures] 为空 → null（调用方用通用「全部源失败」兜底）。
+@visibleForTesting
+UpdateDownloadAttemptFailure? selectRepresentativeDownloadFailure(
+  List<UpdateDownloadAttemptFailure> failures, {
+  required String directUrl,
+}) {
+  if (failures.isEmpty) return null;
+  for (final UpdateDownloadAttemptFailure failure in failures) {
+    if (failure.url == directUrl) return failure;
+  }
+  return failures.first;
 }

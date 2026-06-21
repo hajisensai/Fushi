@@ -1,0 +1,13 @@
+## BUG-375 · 手机自动更新 Failed host lookup ghproxy.homeboyc.cn
+- **报告**：2026-06-21（用户：手机点自动更新报错 `下载失败: SocketException: Failed host lookup: 'ghproxy.homeboyc.cn' (OS Error: No address associated with hostname, errno = 7)`，TODO-666）
+- **真实性**：✅ 真 bug。根因两层：
+  - **死域名**：`ghproxy.homeboyc.cn` 是 BUG-277 加入 `updateCheckProxyPrefixes` 的公共 gh 加速代理（`hibiki/lib/src/utils/misc/update_checker_net.dart:29`），该域名现已 DNS 不再解析（用户真机 errno=7），且排在镜像清单**最后**。
+  - **误导性报错（真正坑用户的结构问题）**：下载阶段走 `updateCheckUrls(asset.url)` 候选列表（直连 GitHub 首位 → 6 个 gh 代理前缀）逐个尝试；全部失败时 `_downloadUpdateAssetUncoalesced` 抛出的是 `lastError`——即**列表里碰巧排最后的候选**（恰是死域名 `ghproxy.homeboyc.cn`）的 `SocketException`（`hibiki/lib/src/utils/misc/update_checker_download.dart:289-292` 原实现）。这个 host-lookup 失败冒泡到 `update_checker_release.dart:527` 的 `下载失败: $e` 展示给用户，让用户误以为是某个镜像域名的问题，而真相是「直连 GitHub + 所有镜像都不通，需要开代理/VPN」。
+- **[x] ① 已修复** — 提交 `<COMMIT>`：
+  - 治标：删 `update_checker_net.dart` 死域名 `ghproxy.homeboyc.cn`（清单 6→5），更新注释记录其因 DNS 失效下线（沿用 `mirror.ghproxy.com` 移除范式）。
+  - 治本：`update_checker_download.dart` 全失败时不再抛列表末尾候选的 `lastError`，改用新纯函数 `selectRepresentativeDownloadFailure(failures, directUrl: asset.url)`（连同 `UpdateDownloadAttemptFailure` 落在 `update_checker_net.dart`，与其它网络失败 helper 同族） 优先锚定**直连**（首候选 = asset.url 本身）的失败错误抛出；无直连失败记录时回退到首个失败（仍不取末尾死镜像）。这样任何镜像将来再 DNS 失效，用户报错都锚定直连 GitHub，不再被列表末尾任意死镜像污染。
+  - 注：着色器下载 `video_shader_downloader.dart::_kGhProxyPrefixes` 不含该死域名、且把官方直连放末尾兜底，无同问题，不动（范围聚焦更新检查/下载）。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/update_checker_mirror_fallback_test.dart`：
+  - 源码守卫：`ghproxy.homeboyc.cn` 不得再出现在 `updateCheckProxyPrefixes`（复活则红）。
+  - 纯函数测试 `selectRepresentativeDownloadFailure`：① 直连+镜像+末尾死镜像全失败 → 返回直连错误（不取末尾 host-lookup 失败）；② 无直连失败记录 → 回退首个失败；③ 空列表 → null（调用方用通用兜底文案）。
+- **备注**：纯逻辑/源码守卫层修复，`flutter test test/utils/misc/` 验证。真机复测项：中国网络真机点自动更新，确认（a）全失败时报错不再出现 `ghproxy.homeboyc.cn`、改为指向直连 GitHub；（b）开代理后下载/安装链路正常。

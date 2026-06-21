@@ -242,8 +242,8 @@ Future<File> _downloadUpdateAssetUncoalesced({
     );
   }
 
-  Object? lastError;
-  StackTrace? lastStack;
+  final List<UpdateDownloadAttemptFailure> failures =
+      <UpdateDownloadAttemptFailure>[];
   for (final String url in candidateUrls) {
     try {
       final _UpdateDownloadMetadata? currentMetadata =
@@ -280,15 +280,23 @@ Future<File> _downloadUpdateAssetUncoalesced({
         onDiagnostics: onDiagnostics,
       );
     } catch (e, stack) {
-      lastError = e;
-      lastStack = stack;
+      failures
+          .add(UpdateDownloadAttemptFailure(url: url, error: e, stack: stack));
       onSourceFailure?.call(url, e, stack);
     }
   }
 
+  // 全候选失败：抛出**最具诊断价值**的那个错误（TODO-666）。原实现抛
+  // `lastError`（列表里碰巧排最后的候选——通常是某个公共 gh 代理），用户因此看到的是
+  // 「Failed host lookup: 'ghproxy.homeboyc.cn'」这种死镜像 DNS 失败，误以为是某个镜像
+  // 的问题，而真相是「直连 GitHub + 所有镜像都不通，需开代理」。改用
+  // [selectRepresentativeDownloadFailure] 优先锚定**直连**（首候选 = asset.url 本身）的
+  // 失败，让报错指向真问题，且不再被列表末尾任意死镜像污染（删一个域名治标，这才治本）。
+  final UpdateDownloadAttemptFailure? representative =
+      selectRepresentativeDownloadFailure(failures, directUrl: asset.url);
   Error.throwWithStackTrace(
-    lastError ?? Exception('All download sources failed'),
-    lastStack ?? StackTrace.current,
+    representative?.error ?? Exception('All download sources failed'),
+    representative?.stack ?? StackTrace.current,
   );
 }
 
