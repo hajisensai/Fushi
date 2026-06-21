@@ -210,7 +210,10 @@ void main() {
     // Listenable.merge([_lockButtonVisible, _lockButtonHovered])，判据
     // `_lockButtonVisible.value || _lockButtonHovered.value`——自动淡出仍由
     // _lockButtonVisible 驱动（hover 期间由 _lockButtonHovered 顶住，根除 hover 即消失）。
-    final int sideEnd = src.indexOf('IconData _volumeIconFor(', sideIdx);
+    // _buildSideLockButton 拆到 layout.part 后是该 extension（也是整份合并语料）的最末
+    // 个成员，原来的「下一个方法 IconData _volumeIconFor( 作截断锚点」在合并语料里落在它
+    // 之前 → indexOf 返 -1。改用方法自身的 2 空格闭合作段终点（与下方 _pokeLockButton 同款）。
+    final int sideEnd = src.indexOf('\n  }', sideIdx);
     expect(sideEnd, greaterThan(sideIdx));
     final String sideBody = src.substring(sideIdx, sideEnd);
     expect(sideBody.contains('_lockButtonVisible.value'), isTrue,

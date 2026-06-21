@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 void main() {
   late String modeSrc;
   late String prefsSrc;
@@ -18,8 +20,11 @@ void main() {
     modeSrc = readOrEmpty('lib/src/media/video/video_immersive_mode.dart');
     prefsSrc = readOrEmpty('lib/src/models/preferences_repository.dart');
     appModelSrc = File('lib/src/models/app_model.dart').readAsStringSync();
-    pageSrc = File('lib/src/pages/implementations/video_hibiki_page.dart')
-        .readAsStringSync();
+    // TODO-590 batch16: `onCharTap: _handleSubtitleLookupTap,` 在 _buildVideoControlsInner
+    // 已搬到 video_hibiki/layout.part.dart，故读「主壳 + 全部 part」合并语料；本测试其余
+    // pageSrc 断言（_videoImmersiveMode 等 getter、_handleVideoPointerUp / _handleSecondaryTap
+    // 方法体）都还在主壳、在合并语料里照旧连续，methodBody 大括号匹配不受影响。
+    pageSrc = readVideoHibikiSource();
     sheetSrc = File('lib/src/media/video/video_quick_settings_sheet.dart')
         .readAsStringSync();
   });

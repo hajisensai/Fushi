@@ -225,9 +225,15 @@ void main() {
 
     // The shared controls inner builder is the single owner that mounts both
     // overlays with no fullscreen gating (window + fullscreen both render them).
+    // TODO-590 batch16: _buildVideoControlsInner moved to video_hibiki/layout.part
+    // (appended last in the corpus) while _buildLevelHudOverlay lives in the
+    // earlier volume_osd.part — so the old `_buildLevelHudOverlay {` end anchor now
+    // sorts *before* the start and yields -1. Use the next method in layout.part
+    // (_railHoverKeepAlive) as the end anchor; the inner builder still contains
+    // both HUD/OSD mounts, so the slice's assertions are unchanged.
     final String inner = region(
       'Widget _buildVideoControlsInner(',
-      'Widget _buildLevelHudOverlay() {',
+      'Widget _railHoverKeepAlive({required Widget child}) {',
     );
     expect(inner.contains('_buildLevelHudOverlay()'), isTrue,
         reason: 'Shared controls inner builder owns the level HUD mount.');

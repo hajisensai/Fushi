@@ -1,14 +1,15 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：桌面右键上下文菜单（TODO-048c）。整页 widget 测试依赖真实 libmpv
 /// player（测试宿主无 libmpv，`load()` / `Player` 构造即抛），故按既有视频守卫范式
 /// （见 video_player_keyboard_static_test.dart）在源码层钉死结构不变量。
 void main() {
-  final String page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  ).readAsStringSync();
+  // TODO-590 batch16: 右键触发点 onSecondaryTapUp 在 _buildVideoControlsInner、
+  // 截断锚点 _buildVideoBody 都已搬到 video_hibiki/layout.part.dart，故改读「主壳 + 全部
+  // part」合并语料；_handleSecondaryTap / _buildVideoContextMenuItems 仍在主壳，切片照旧。
+  final String page = readVideoHibikiSource();
 
   group('右键菜单触发与门控', () {
     test('视频控制层挂 onSecondaryTapUp（右键触发）', () {
@@ -82,11 +83,13 @@ void main() {
     late final String items;
     setUpAll(() {
       expect(idx, greaterThan(0), reason: '必须有 _buildVideoContextMenuItems');
-      // 截到下一个顶层方法（_buildVideoBody）前，覆盖整个菜单项列表——用真实方法
-      // 边界而非固定字符数，避免新增菜单项 / 注释把尾项挤出固定窗口（TODO-389）。
-      final int end = page.indexOf('Widget _buildVideoBody(', idx);
+      // TODO-590 batch16: _buildVideoContextMenuItems 现是主壳最末个方法（其后的
+      // _buildVideoBody 已搬到 layout.part，在合并语料里反而排在它之后），故改用方法自身
+      // 的 2 空格闭合作截断终点（菜单项列表内的 `}` 都缩进更深，不会误命中），仍覆盖整个
+      // 菜单项列表、不被新增菜单项 / 注释挤出（TODO-389）。
+      final int end = page.indexOf('\n  }', idx);
       expect(end, greaterThan(idx),
-          reason: '_buildVideoContextMenuItems 之后须有 _buildVideoBody 作截断锚点');
+          reason: '_buildVideoContextMenuItems 须有 2 空格闭合作截断终点');
       items = page.substring(idx, end);
     });
 

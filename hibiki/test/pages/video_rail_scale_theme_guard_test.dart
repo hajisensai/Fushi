@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（TODO-388 / TODO-604 / TODO-635）：屏幕左 / 右浮动 rail 按钮吃「界面大小」+「主题」，
 /// 与其它控件一致。
@@ -18,13 +18,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// 顶栏按钮的 `buttonBarButtonColor: cs.primary` 同源——此前侧浮条按钮看上去「没吃到主题
 /// 配色」、与底 / 顶栏不一致。
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
-
+  // TODO-590 batch16: _buildVideoSideRailFor / _videoWithSubtitlePanel 都已搬到
+  // video_hibiki/layout.part.dart，故读「主壳 + 全部 part」合并语料；两锚点在 part 内相邻
+  // （中间仅夹 _mergeRailSafeAreaPadding），合并语料保持原顺序，rail 体切片范围不变。
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   String railForBody() {

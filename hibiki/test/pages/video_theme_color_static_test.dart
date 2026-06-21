@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 剥掉 `_buildVideoSideActionRail` 方法体（TODO-274 右侧悬浮操作 rail）：浮在视频画面
 /// 上的圆形操作按钮按播放器惯例用「半透明黑底 + 白图标」做高对比悬浮 chrome（与
@@ -19,10 +19,11 @@ String _withoutVideoSideActionRail(String source) {
 
 void main() {
   test('video subtitles and chrome derive visible colors from ColorScheme', () {
-    final String source = _withoutVideoSideActionRail(
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync(),
-    );
+    // TODO-590 batch16: 字幕/chrome 取色断言（_subtitleStyle.resolveTextColor 等）与
+    // _buildVideoSideActionRail 都已搬到 video_hibiki/layout.part.dart，故读「主壳 + 全部
+    // part」合并语料；strip 锚点（rail 起点 + _videoWithSubtitlePanel doc）在 part 内相邻、
+    // 合并语料保持原顺序，剥离范围与原单文件等价。
+    final String source = _withoutVideoSideActionRail(readVideoHibikiSource());
 
     expect(source, contains('_subtitleTextColor(ColorScheme'));
     expect(source, contains('_videoChromeColorScheme'));
@@ -45,9 +46,9 @@ void main() {
   });
 
   test('video letterbox/pillarbox fill is solid black (TODO-053)', () {
-    final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // TODO-590 batch16: letterbox 的 `fill: Colors.black,` 在 _buildVideoBody 已搬到
+    // video_hibiki/layout.part.dart，故读「主壳 + 全部 part」合并语料。
+    final String source = readVideoHibikiSource();
 
     // 播放器画面外围（letterbox/pillarbox）按播放器惯例固定纯黑，不跟随主题 surface。
     expect(source, contains('fill: Colors.black,'));
