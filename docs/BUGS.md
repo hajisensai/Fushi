@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 376 条。点号进各自文件。
+> 共 377 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-390](bugs/BUG-390-reader-lookup-eval-missingplugin.md) | ✅ | ✅ | 阅读器查词高亮 evaluateJavascript 在半销毁 WebView 上抛 MissingPluginException 崩溃 |
 | [BUG-383](bugs/BUG-383-video-seekbar-siderail-insets.md) | ✅ | ✅ | 手势导航/圆角手机视频进度条偏高+底栏侧边大留白(viewPadding不归零·SafeArea双重内缩) |
 | [BUG-382](bugs/BUG-382-jimaku-result-truncated-episode.md) | ✅ | ✅ | Jimaku 自动获取字幕结果项文件名单行截断，集数被省略号吃掉看不见 |
 | [BUG-381](bugs/BUG-381-image-copy-menu-uiscale.md) | ✅ | ✅ | 书籍图片右键复制图片菜单位置不跟界面缩放(坐标未经Overlay变换链映射) |

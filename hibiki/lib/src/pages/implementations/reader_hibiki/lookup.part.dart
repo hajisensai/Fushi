@@ -20,9 +20,17 @@ extension _ReaderLookup on _ReaderHibikiPageState {
   Future<void> _selectTextAt(double cssX, double cssY) async {
     if (_controller == null) return;
     const int maxLength = 400;
-    await _controller!.evaluateJavascript(
-      source: ReaderSelectionScripts.selectInvocation(cssX, cssY, maxLength),
-    );
+    try {
+      await _controller!.evaluateJavascript(
+        source: ReaderSelectionScripts.selectInvocation(cssX, cssY, maxLength),
+      );
+    } catch (e, stack) {
+      // TODO-678（BUG-005 同根因）：onTap / onShiftHover / onDismissBarrierHover
+      // 都 fire-and-forget 调本方法（不 await、不 catch），半销毁 WebView 上
+      // evaluateJavascript 抛 MissingPluginException 会无主逃当前 zone。`_controller
+      // != null` 防不了通道已废，必须就地兜底；选词失败 no-op，不影响后续手势。
+      ErrorLogService.instance.log('ReaderHibiki.selectTextAt.eval', e, stack);
+    }
   }
 
   /// Reclaim Flutter keyboard focus for the reading content after a reader
@@ -49,9 +57,25 @@ extension _ReaderLookup on _ReaderHibikiPageState {
       _pausedForLookup = false;
       _audiobookController?.play();
     }
-    _controller?.evaluateJavascript(
-      source: ReaderSelectionScripts.clearInvocation(),
-    );
+    // TODO-678（BUG-005 同根因）：本方法被 onAllPopupsDismissed fire-and-forget
+    // 调用（不 await），半销毁 WebView 上 evaluateJavascript 抛 MissingPluginException
+    // 会逃当前 zone。把 eval 收进 _clearSelectionJs() 的 try/catch，对齐
+    // onSettingsChangedLive / onLayoutReloadLive 成例（清选区失败 no-op）。
+    unawaited(_clearSelectionJs());
+  }
+
+  /// 清除 WebView 内的选区高亮（[ReaderSelectionScripts.clearInvocation]）。
+  /// 半销毁 WebView 上 evaluateJavascript 抛 MissingPluginException，就地吞掉并
+  /// 记日志：调用方 [_clearLookupState] 是 fire-and-forget，异常否则会逃 zone。
+  Future<void> _clearSelectionJs() async {
+    try {
+      await _controller?.evaluateJavascript(
+        source: ReaderSelectionScripts.clearInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.clearLookupState.eval', e, stack);
+    }
   }
 
   Future<void> _highlightAndShowPopup(
@@ -72,6 +96,14 @@ extension _ReaderLookup on _ReaderHibikiPageState {
           if (rect != null) finalRect = rect;
         }
       }
+    } catch (e, stack) {
+      // BUG-005 同根因（TODO-678）：WebView 半销毁（页面 teardown / 设置 reload
+      // 重建瞬态）时其 per-instance method channel 的 setMethodCallHandler(null)
+      // 已摘除，evaluateJavascript 抛 MissingPluginException。`_controller != null`
+      // 守卫只防 null，防不了通道已废 —— 必须 try/catch 兜底。高亮失败退回
+      // fallbackRect，finally 仍照常 showDeferredPopup（查词弹窗不中断）。
+      ErrorLogService.instance
+          .log('ReaderHibiki.highlightAndShowPopup.eval', e, stack);
     } finally {
       showDeferredPopup(selectionRect: finalRect);
     }
@@ -117,11 +149,15 @@ extension _ReaderLookup on _ReaderHibikiPageState {
 
     if (_lyricsMode) {
       _lookupCue = null;
-      final Object? ctxRaw = await _controller?.evaluateJavascript(
-        source: 'JSON.stringify(window.__lyricsCueContext || null)',
-      );
-      if (ctxRaw is String && ctxRaw != 'null') {
-        try {
+      try {
+        // TODO-678（BUG-005 同根因）：把歌词 cue context 的 evaluateJavascript 纳入
+        // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外
+        // 会让整个歌词查词分支（含 _runLookupAndHighlight）被打断、弹窗不显示。纳入后
+        // 失败则 _lookupCue 退回 currentCue fallback，查词照常继续。
+        final Object? ctxRaw = await _controller?.evaluateJavascript(
+          source: 'JSON.stringify(window.__lyricsCueContext || null)',
+        );
+        if (ctxRaw is String && ctxRaw != 'null') {
           final Map<String, dynamic> ctx =
               jsonDecode(ctxRaw) as Map<String, dynamic>;
           final String? fragId = ctx['textFragmentId'] as String?;
@@ -143,10 +179,9 @@ extension _ReaderLookup on _ReaderHibikiPageState {
           if (cueIdx != null && cueIdx >= 0 && cueIdx < _lyricsCueList.length) {
             _lookupCue = _lyricsCueList[cueIdx];
           }
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('ReaderHibiki.lyricsCueContext', e, stack);
         }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('ReaderHibiki.lyricsCueContext', e, stack);
       }
       _lookupCue ??= _audiobookController?.currentCue;
       _syncCueSentence();
