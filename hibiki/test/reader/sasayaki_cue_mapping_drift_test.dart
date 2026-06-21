@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// BUG-060：高亮坐标改由实时 DOM 权威定位。验证搜索逻辑三不变量：
 /// ① 上游 N 字漂移自愈（用 cue 原文在 DOM 就近重定位，不用死的偏移）；
@@ -126,8 +127,9 @@ void main() {
       expect(src.contains('for (var u = 0; u < ch.length'), isTrue,
           reason: 'map 必须按码元粒度建，与 full(码元串) 同空间');
       // 用 cue 原文 needle 在全文里搜索（而非按 start 死偏移数 cursor）。
-      expect(src.contains('this.normalizeText(cue.text'), isTrue,
-          reason: 'needle 必须来自 cue 原文，靠 DOM 文本自校正');
+      // TODO-630/BUG-366：needle 现经 foldNormalize（剥+值折叠），仍来自 cue 原文。
+      expect(src.contains('this.foldNormalize(cue.text'), isTrue,
+          reason: 'needle 必须来自 cue 原文（经 foldNormalize），靠 DOM 文本自校正');
       expect(src.contains('full.indexOf(needle'), isTrue,
           reason: '在 DOM 归一化全文里搜索 cue 原文');
       // 提示仅作 hint（就近 + 有界窗口），不再是权威坐标。
@@ -166,6 +168,135 @@ void main() {
         isFalse,
         reason: '回落不得推进游标，否则越过后续可命中句重新引入累积漂移（BUG-282）',
       );
+    });
+  });
+
+  // ── TODO-630 / BUG-366：JS sasayaki 归一化「值折叠」与 Dart 匹配坐标系对齐 ──
+  //
+  // 真回归（hypothesis C）：commit cf990a444 / b524c8102 给 Dart AudioTextNormalizer
+  // 加了值折叠（片假名→平假名 / 大小写 / 全角→ASCII / 半角片假名→全角片假名），但运行
+  // 期 JS normalizeText 只剥不折。BUG-060 之后 JS 在运行期对 cue.text 做
+  // `full.indexOf(needle)` 实时文本比较 —— 折叠类书（SRT 片假名 vs EPUB 平假名、全角
+  // vs 半角）的 needle（未折叠）在 full（未折叠）里 indexOf 落空 → 回落 hint → 高亮看似
+  // 「不显示/错位」。修复让 JS foldNormalize 与 Dart 值口径一致。
+  group('foldNormalize parity with AudioTextNormalizer (TODO-630/BUG-366)', () {
+    void expectParity(String input) {
+      expect(
+        ReaderPaginationScripts.foldNormalizeForTesting(input),
+        AudioTextNormalizer.normalize(input),
+        reason: 'JS 折叠口径必须与 Dart 匹配坐标系一致：「$input」',
+      );
+    }
+
+    test('片假名折叠成平假名（与平假名书同形）', () {
+      expect(
+        ReaderPaginationScripts.foldNormalizeForTesting('カタカナ'),
+        'かたかな',
+      );
+      expectParity('カタカナ');
+    });
+
+    test('全角字母数字折叠成 ASCII', () {
+      expect(ReaderPaginationScripts.foldNormalizeForTesting('Ａ１ｂ'), 'a1b');
+      expectParity('Ａ１ｂ');
+    });
+
+    test('半角片假名折叠成平假名', () {
+      expect(ReaderPaginationScripts.foldNormalizeForTesting('ｶﾀｶﾅ'), 'かたかな');
+      expectParity('ｶﾀｶﾅ');
+    });
+
+    test('剥标点/空白/emoji 与折叠混合', () {
+      expectParity('第１話「カタカナ」です！🐱');
+      expectParity('Helloｗorld　世界');
+      expectParity('コーヒーを飲む');
+    });
+
+    test('星平面汉字（代理对）不折叠、保留', () {
+      // CJK 扩展 B 𠀋（U+2000B），白名单保留且不折叠。
+      const String ext = '\u{2000B}漢';
+      expect(ReaderPaginationScripts.foldNormalizeForTesting(ext), ext);
+      expectParity(ext);
+    });
+  });
+
+  // 折叠类书的运行期重定位：needle（folded）必须在 full（folded）里命中（而非回落 hint）。
+  // 复现真 bug：DOM 全文是平假名「かたかな」，SRT cue.text 是片假名「カタカナ」。
+  // 修复前 JS needle 只剥不折 = 「カタカナ」，在平假名 full 里 indexOf 落空 → 回落 hint。
+  // 修复后 needle 折叠成「かたかな」→ 命中真实位置。
+  group(
+      'folding-class cue relocation hits via folded needle (TODO-630/BUG-366)',
+      () {
+    test('片假名 cue 在平假名 DOM 全文里命中（折叠后 indexOf 不落空）', () {
+      // full 由 DOM 折叠产生（平假名）：あ0 い1 う2 え3 お4 か5 た6 か7 な8 ...
+      const String full = 'あいうえおかたかなさしすせそ';
+      // cue 原文是片假名「カタカナ」，先折叠成 needle「かたかな」（运行期 foldNormalize）。
+      final String needle =
+          ReaderPaginationScripts.foldNormalizeForTesting('カタカナ');
+      final out = _resolve(full, <SasayakiCueHint>[
+        // hint 故意给 0（不准），靠 DOM 文本就近重定位到真实位置 5。
+        SasayakiCueHint(needle: needle, hint: 0, length: 4),
+      ]);
+      expect(out.single, 5, reason: '折叠后 needle 必须命中真实位置 5，而非回落 hint=0');
+    });
+
+    test('未折叠的片假名 needle 在平假名全文里落空（证伪：这正是修复前症状）', () {
+      const String full = 'あいうえおかたかなさしすせそ';
+      // 不经折叠（模拟旧 JS：normalizeText 只剥），片假名 needle 在平假名全文里搜不到。
+      final out = _resolve(full, const <SasayakiCueHint>[
+        SasayakiCueHint(needle: 'カタカナ', hint: 0, length: 4),
+      ]);
+      expect(out.single, 0, reason: '未折叠时 indexOf 落空 → 回落 hint=0（这是被修复的错误行为）');
+    });
+  });
+
+  // 源码守卫：JS 运行期归一化必须做值折叠并用于 needle + full（防回归删回「只剥不折」）。
+  group('JS sasayaki value-folding wiring guard (TODO-630/BUG-366)', () {
+    final String src = File(
+      'lib/src/reader/reader_pagination_scripts.dart',
+    ).readAsStringSync();
+
+    test('JS 定义 foldCodePoint / foldNormalize 值折叠函数', () {
+      expect(src.contains('foldCodePoint: function'), isTrue,
+          reason: '需 JS 值折叠码点函数（片假名→平假名/大小写/全角→ASCII）');
+      expect(src.contains('foldNormalize: function'), isTrue,
+          reason: '需 JS 剥+折叠组合函数供 needle 用');
+    });
+
+    test('needle 经 foldNormalize（而非只剥的 normalizeText）', () {
+      expect(src.contains('this.foldNormalize(cue.text'), isTrue,
+          reason: 'needle 必须折叠，否则折叠类书 indexOf 落空');
+    });
+
+    test('full 索引也折叠（与 needle 同坐标系）', () {
+      expect(src.contains('this.foldCodePoint(text.codePointAt(i))'), isTrue,
+          reason: 'buildSasayakiNormIndex 的 full 也须折叠，否则 needle/full 坐标系分叉');
+    });
+  });
+
+  // 源码守卫：观测日志（解定位僵局）必须存在于关键节点（防回归删）。
+  group('JS sasayaki highlight observability guard (TODO-630)', () {
+    final String src = File(
+      'lib/src/reader/reader_pagination_scripts.dart',
+    ).readAsStringSync();
+
+    test('applySasayakiCues 打 payload cue 数 + 一次性诊断（cssHighlights/背景色）', () {
+      expect(
+          src.contains('[sasayaki-hl] applySasayakiCues payloadCues='), isTrue);
+      expect(
+          src.contains('[sasayaki-hl] diag cssHighlightsSupported='), isTrue);
+      expect(src.contains('--hoshi-sasayaki-background-color'), isTrue,
+          reason: '一次性诊断须读 sasayaki 背景色变量（透明/缺失也是「看不见」原因）');
+    });
+
+    test('collectSasayakiCueRanges 打 cue 数 + 空 range 计数', () {
+      expect(src.contains('[sasayaki-hl] collectRanges cues='), isTrue);
+      expect(src.contains('emptyRanges'), isTrue);
+    });
+
+    test('highlightSasayakiCue 打 range/ruby 数（或为何 return null）', () {
+      expect(src.contains('[sasayaki-hl] highlightCue ranges='), isTrue);
+      expect(src.contains('RETURN_NULL_no_segments'), isTrue);
     });
   });
 }

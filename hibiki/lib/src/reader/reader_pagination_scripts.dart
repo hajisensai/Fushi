@@ -277,6 +277,89 @@ class ReaderPaginationScripts {
   static int _clampInt(int v, int lo, int hi) =>
       v < lo ? lo : (v > hi ? hi : v);
 
+  // ── TODO-630 / BUG-366：JS sasayaki 归一化「值折叠」的纯 Dart 影子 ────────
+  // 运行期 JS `foldNormalize`（reader 脚本字符串里）必须与 `AudioTextNormalizer.
+  // normalize` **值口径一致**（不仅剥非白名单，还要片假名→平假名 / 大小写 / 全角→
+  // ASCII / 半角片假名→全角片假名），否则折叠类书（SRT 片假名 vs EPUB 平假名、
+  // 全角 vs 半角）的 cue needle 在实时 DOM 归一化全文里 `indexOf` 落空 → 高亮回落
+  // hint（看似「不显示/错位」）。本影子逐字镜像 JS 的剥+折叠算法，单测断言它对
+  // 折叠类输入与 `AudioTextNormalizer.normalize` 输出一致，并守卫 JS 折叠口径不被
+  // 回归删除。所有折叠都是单 BMP 码元→单 BMP 码元（1:1），不改 buildSasayakiNormIndex
+  // 的逐码元 map 粒度（代理对仍 push 两条）。
+  @visibleForTesting
+  static String foldNormalizeForTesting(String text) {
+    final StringBuffer buf = StringBuffer();
+    for (final int cp in text.runes) {
+      if (!_jsIsMatchableCodePoint(cp)) {
+        continue;
+      }
+      buf.writeCharCode(_jsFoldCodePoint(cp));
+    }
+    return buf.toString();
+  }
+
+  // JS `isMatchableChar`（白名单正则）的 Dart 影子：与 `AudioTextNormalizer.
+  // _isKeepable` 同集合。
+  static bool _jsIsMatchableCodePoint(int c) {
+    return (c >= 0x30 && c <= 0x39) ||
+        (c >= 0x41 && c <= 0x5A) ||
+        (c >= 0x61 && c <= 0x7A) ||
+        c == 0x3005 ||
+        c == 0x3006 ||
+        c == 0x3007 ||
+        (c >= 0x3041 && c <= 0x3096) ||
+        (c >= 0x309D && c <= 0x309F) ||
+        (c >= 0x30A1 && c <= 0x30FA) ||
+        (c >= 0x30FC && c <= 0x30FF) ||
+        (c >= 0x3400 && c <= 0x4DBF) ||
+        (c >= 0x4E00 && c <= 0x9FFF) ||
+        c == 0x25CB ||
+        c == 0x25EF ||
+        c == 0x303B ||
+        (c >= 0x2E80 && c <= 0x2EFF) ||
+        (c >= 0x2F00 && c <= 0x2FDF) ||
+        (c >= 0xF900 && c <= 0xFAFF) ||
+        (c >= 0x20000 && c <= 0x2A6DF) ||
+        (c >= 0x2A700 && c <= 0x2EBE0) ||
+        (c >= 0x2F800 && c <= 0x2FA1F) ||
+        (c >= 0x30000 && c <= 0x323AF) ||
+        (c >= 0xFF10 && c <= 0xFF19) ||
+        (c >= 0xFF21 && c <= 0xFF3A) ||
+        (c >= 0xFF41 && c <= 0xFF5A) ||
+        (c >= 0xFF66 && c <= 0xFF9D);
+  }
+
+  // JS `foldCodePoint` 的 Dart 影子：与 `AudioTextNormalizer.appendNormalized`
+  // 的值转换同口径。
+  static int _jsFoldCodePoint(int cp) {
+    int out = cp;
+    if (cp >= 0x41 && cp <= 0x5A) {
+      out = cp + 0x20;
+    } else if (cp >= 0xFF21 && cp <= 0xFF3A) {
+      out = cp - 0xFEC0;
+    } else if (cp >= 0xFF41 && cp <= 0xFF5A) {
+      out = cp - 0xFEE0;
+    } else if (cp >= 0xFF10 && cp <= 0xFF19) {
+      out = cp - 0xFEE0;
+    } else if (cp >= 0xFF66 && cp <= 0xFF9D) {
+      out = _jsHwKataToFw[cp - 0xFF66];
+    }
+    if (out >= 0x30A1 && out <= 0x30F6) {
+      out -= 0x60;
+    }
+    return out;
+  }
+
+  static const List<int> _jsHwKataToFw = <int>[
+    0x30F2, 0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30E3, 0x30E5, //
+    0x30E7, 0x30C3, 0x30FC, 0x30A2, 0x30A4, 0x30A6, 0x30A8, 0x30AA, //
+    0x30AB, 0x30AD, 0x30AF, 0x30B1, 0x30B3, 0x30B5, 0x30B7, 0x30B9, //
+    0x30BB, 0x30BD, 0x30BF, 0x30C1, 0x30C4, 0x30C6, 0x30C8, 0x30CA, //
+    0x30CB, 0x30CC, 0x30CD, 0x30CE, 0x30CF, 0x30D2, 0x30D5, 0x30D8, //
+    0x30DB, 0x30DE, 0x30DF, 0x30E0, 0x30E1, 0x30E2, 0x30E4, 0x30E6, //
+    0x30E8, 0x30E9, 0x30EA, 0x30EB, 0x30EC, 0x30ED, 0x30EF, 0x30F3, //
+  ];
+
   /// BUG-239 纯谓词：阅读器统一手势 `_gestureEnd` 检测到一次滑动后，是否应当
   /// 回传 `onSwipe`（→ 90% 整屏翻页）。
   ///
@@ -520,6 +603,38 @@ class ReaderPaginationScripts {
   isMatchableChar: function(char) {
     return this.ttuRegex.test(char || '');
   },
+  // TODO-630 / BUG-366：sasayaki 高亮运行期把 cue 原文 needle 在实时 DOM 归一化全文
+  // full 里做 full.indexOf(needle) 重定位（BUG-060）。匹配坐标系（Dart
+  // AudioTextNormalizer.normalize）除剥非白名单字符外还做**值折叠**（片假名→平假名 /
+  // 大小写折叠 / 全角→ASCII / 半角片假名→全角片假名）；JS 这边过去只剥不折，于是
+  // 折叠类书（SRT 片假名 vs EPUB 平假名、全角 vs 半角）needle 在 full 里 indexOf 落空
+  // → 回落 hint → 高亮看似「不显示/错位」。下面 foldCodePoint 与 AudioTextNormalizer
+  // 的值转换严格同口径。所有折叠都是单 BMP 码元→单 BMP 码元（1:1 码元），因此
+  // buildSasayakiNormIndex 的逐码元 map 粒度（代理对 push 两条）保持不变。
+  hwKataToFwBase: 0xFF66,
+  hwKataToFw: [0x30F2,0x30A1,0x30A3,0x30A5,0x30A7,0x30A9,0x30E3,0x30E5,0x30E7,0x30C3,0x30FC,0x30A2,0x30A4,0x30A6,0x30A8,0x30AA,0x30AB,0x30AD,0x30AF,0x30B1,0x30B3,0x30B5,0x30B7,0x30B9,0x30BB,0x30BD,0x30BF,0x30C1,0x30C4,0x30C6,0x30C8,0x30CA,0x30CB,0x30CC,0x30CD,0x30CE,0x30CF,0x30D2,0x30D5,0x30D8,0x30DB,0x30DE,0x30DF,0x30E0,0x30E1,0x30E2,0x30E4,0x30E6,0x30E8,0x30E9,0x30EA,0x30EB,0x30EC,0x30ED,0x30EF,0x30F3],
+  foldCodePoint: function(cp) {
+    var out = cp;
+    if (cp >= 0x41 && cp <= 0x5A) out = cp + 0x20;            // ASCII A-Z -> a-z
+    else if (cp >= 0xFF21 && cp <= 0xFF3A) out = cp - 0xFEC0; // fullwidth A-Z -> a-z
+    else if (cp >= 0xFF41 && cp <= 0xFF5A) out = cp - 0xFEE0; // fullwidth a-z -> a-z
+    else if (cp >= 0xFF10 && cp <= 0xFF19) out = cp - 0xFEE0; // fullwidth 0-9 -> 0-9
+    else if (cp >= 0xFF66 && cp <= 0xFF9D) out = this.hwKataToFw[cp - this.hwKataToFwBase]; // halfwidth kana -> fullwidth kana
+    if (out >= 0x30A1 && out <= 0x30F6) out -= 0x60;          // katakana -> hiragana
+    return out;
+  },
+  foldNormalize: function(text) {
+    var stripped = this.normalizeText(text);
+    var folded = '';
+    var i = 0;
+    while (i < stripped.length) {
+      var cp = stripped.codePointAt(i);
+      var ch = String.fromCodePoint(cp);
+      folded += String.fromCodePoint(this.foldCodePoint(cp));
+      i += ch.length;
+    }
+    return folded;
+  },
   scrollToProgressContinuous: function(progress) {
     var targetNode = this.findNodeAtProgress(progress);
     if (targetNode && targetNode.parentElement) {
@@ -602,7 +717,8 @@ class ReaderPaginationScripts {
     // 一次性遍历 DOM 文本节点（createWalker 跳过振假名 rt/rp），构建归一化
     // 全文 full 与反查表 map：map[k] = {node,start,end}（第 k 个归一化字符在其
     // 文本节点内的原始 UTF-16 偏移区间）。归一化口径 = isMatchableChar，与
-    // normalizeText 完全一致（白名单：假名/汉字/字母数字）。
+    // normalizeText 同口径（白名单：假名/汉字/字母数字），再经 foldCodePoint
+    // 做值折叠（片假名→平假名/大小写/全角→ASCII），与 Dart AudioTextNormalizer 对齐（TODO-630）。
     var walker = this.createWalker();
     var node;
     var map = [];
@@ -621,7 +737,9 @@ class ReaderPaginationScripts {
           for (var u = 0; u < ch.length; u++) {
             map.push({ node: node, start: i, end: next });
           }
-          chunk += ch;
+          // TODO-630/BUG-366：折叠入 full，与 cue needle(foldNormalize) 同口径。
+          // 折叠是 1:1 码元，上面 map 的 ch.length 粒度不变。
+          chunk += String.fromCodePoint(this.foldCodePoint(text.codePointAt(i)));
         }
         i = next;
       }
@@ -665,7 +783,9 @@ class ReaderPaginationScripts {
     var cursor = 0;
     for (var ci = 0; ci < cues.length; ci++) {
       var cue = cues[ci];
-      var needle = this.normalizeText(cue.text || '');
+      // TODO-630/BUG-366：needle 用 foldNormalize（剥+折叠），与 full(已折叠)、
+      // 与 Dart matcher 的折叠坐标系对齐，折叠类书才能 indexOf 命中。
+      var needle = this.foldNormalize(cue.text || '');
       var hint = (typeof cue.start === 'number') ? cue.start : cursor;
       var len = (typeof cue.length === 'number') ? cue.length : 0;
       var normLen = needle.length;
@@ -699,11 +819,29 @@ class ReaderPaginationScripts {
       }
       out.push({ id: cue.id, ranges: this.rangesForNormSpan(map, spanStart, spanLen) });
     }
+    // TODO-630/BUG-366 observability：full 长度 + 多少 cue 算出空 range（全空=路径/折叠未命中）。
+    var emptyRanges = 0;
+    for (var oi = 0; oi < out.length; oi++) { if (!out[oi].ranges.length) emptyRanges++; }
+    try { console.log('[sasayaki-hl] collectRanges cues=' + cues.length + ' fullLen=' + full.length +
+      ' emptyRanges=' + emptyRanges + (out.length ? ' firstNeedleLen=' + (this.foldNormalize(cues[0].text || '').length) : '')); } catch (e) {}
     return out;
   },
   applySasayakiCues: function(cues) {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
     this.resetSasayakiCues();
+    // TODO-630/BUG-366 observability：payload 是否带 cue、CSS highlights 支持与否、
+    // sasayaki 背景色变量值（透明/缺失 → 即使 range 命中也看不见）。一次性诊断只打一行。
+    try {
+      var n = cues && cues.length ? cues.length : 0;
+      if (!this.__sasayakiDiagLogged) {
+        this.__sasayakiDiagLogged = true;
+        var bg = '';
+        try { bg = getComputedStyle(document.documentElement).getPropertyValue('--hoshi-sasayaki-background-color'); } catch (e) {}
+        console.log('[sasayaki-hl] diag cssHighlightsSupported=' + (!!window.__hoshiCssHighlightsSupported) +
+          ' sasayakiBg="' + (bg || '').trim() + '"');
+      }
+      console.log('[sasayaki-hl] applySasayakiCues payloadCues=' + n);
+    } catch (e) {}
     var cueSegments = this.collectSasayakiCueRanges(cues);
     if (window.__hoshiCssHighlightsSupported) {
       // BUG-110：在 <ruby> 内的节点不放进 ::highlight range（竖排下 ::highlight 会把
@@ -763,6 +901,9 @@ class ReaderPaginationScripts {
     if (window.__hoshiCssHighlightsSupported) {
       var ranges = this.cueRangesMap.get(cueId) || [];
       var rubyElements = this.cueRubyElements.get(cueId) || [];
+      // TODO-630/BUG-366 observability：本 cue 拿到几个 range/ruby；0+0 → 直接 return null（不高亮）。
+      try { console.log('[sasayaki-hl] highlightCue ranges=' + ranges.length + ' ruby=' + rubyElements.length +
+        (!ranges.length && !rubyElements.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
       if (!ranges.length && !rubyElements.length) return null;
       this.activeCueId = cueId;
       if (ranges.length) CSS.highlights.set('hoshi-sasayaki', new Highlight(...ranges));

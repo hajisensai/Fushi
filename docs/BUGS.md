@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 359 条。点号进各自文件。
+> 共 360 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-366](bugs/BUG-366-audiobook-sasayaki-highlight-jsfold.md) | ✅ | ✅ | 有声书正文逐句高亮完全不显示（JS 归一化未折叠 + 缺观测日志） |
 | [BUG-365](bugs/BUG-365-ci-android-emulator-flake.md) | ✅ | ✅ | CI android 模拟器集成 job boot flake 致整 workflow 恒红 |
 | [BUG-364](bugs/BUG-364-vertical-scroll-smoothness.md) | ✅ | ✅ | 竖排连续(滚动)模式刷新率低/一格一格跳不顺 (TODO-629 ②) |
 | [BUG-363](bugs/BUG-363-popup-ruby-zoom-furigana.md) | ✅ | ✅ | 词典字号放大后释义振假名(ruby furigana)显示异常（飘高/与上行挤压） |
