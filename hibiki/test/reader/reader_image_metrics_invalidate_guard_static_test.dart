@@ -81,12 +81,21 @@ void main() {
       );
     });
 
-    test('boundary direction uses atStart/atEnd like the boundary IIFE', () {
+    test(
+        'boundary direction uses no-movement stuck, not atStart/atEnd (TODO-656)',
+        () {
+      // TODO-656：跨章「到边界」判据从瞬时 atStart/atEnd 几何改为「内容真滚不动」
+      // （stuck：横排相邻拍 scrollTop 无变化 / 竖排缓动 target 被 clamp 卡死）。
       expect(
-        pageSource.contains('boundaryDir = atEnd') &&
-            pageSource.contains('boundaryDir = atStart'),
+        pageSource.contains('boundaryDir = (wheelDir && stuck)'),
         isTrue,
-        reason: '滚轮跨章必须复用 atStart/atEnd 边界判定，只在到底才发',
+        reason: '滚轮跨章方向由 stuck（内容真滚不动）判定，只在真到底才发',
+      );
+      expect(
+        pageSource.contains('boundaryDir = atEnd') ||
+            pageSource.contains('boundaryDir = atStart'),
+        isFalse,
+        reason: '不得再用瞬时 atStart/atEnd 几何判边界（短章误翻/边界卡顿根因）',
       );
     });
 

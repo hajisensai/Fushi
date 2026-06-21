@@ -78,14 +78,18 @@ void main() {
       expect(handlerCall, lessThan(armBranch), reason: '首次武装分支（不跨章）必须排在确认分支之后');
     });
 
-    test('wheel arming uses the same atStart/atEnd geometry, unchanged', () {
+    test(
+        'wheel boundary uses no-movement / clamp-deadlock, not scrollTop<=2 (TODO-656)',
+        () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
-      // 边界几何判定本身不变（atStart/atEnd），只是改成确认后才跨章。
-      expect(wheel, contains('atStart = root.scrollTop <= 2'));
-      expect(
-          wheel,
-          contains(
-              'atEnd = root.scrollTop + window.innerHeight >= root.scrollHeight - 2'));
+      // TODO-656：跨章判据从瞬时坐标几何（scrollTop<=2）改为「内容真的滚不动」——
+      // 横排相邻拍 scrollTop 无变化 / 竖排缓动 target 被 clamp 卡死。消除短章节
+      // （atStart&atEnd 同真）/ 图片未撑开 / momentum 擦边的非真实边界误判。
+      expect(wheel, contains('_wheelLastScrollPos'),
+          reason: '横排须用相邻拍 scrollTop 无变化判卡边界');
+      expect(wheel, contains('stuck'), reason: '滚轮跨章须经 stuck（内容真滚不动）判据');
+      expect(wheel, isNot(contains('atStart = root.scrollTop <= 2')),
+          reason: '不得再用瞬时 scrollTop<=2 几何判边界（短章误翻/边界卡顿根因）');
     });
   });
 }

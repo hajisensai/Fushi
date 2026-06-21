@@ -760,6 +760,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
   // ReaderPaginationScripts.continuousWheelBoundaryEmit 同款语义。
   var _wheelBoundaryArmed = null;
+  // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
+  // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
+  var _wheelLastScrollPos = -1;
   // TODO-629 ②: 竖排连续滚动 rAF 缓动状态——wheel 事件只累积目标 scrollLeft，由
   // requestAnimationFrame 每帧指数逼近，消除逐事件 scrollBy 的离散颗粒感。
   var _vScrollTarget = null;   // 累积目标 scrollLeft（null = 无进行中的缓动）
@@ -800,74 +803,66 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       // delta>0 一律归一化为「沿书写轴前进」：横排向下(deltaY>0)、竖排投影向前都为
       // forward（见纯函数注释）。
       var wheelDelta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-      var atStart, atEnd;
+      // TODO-656 根治：跨章判据从「瞬时 scrollTop<=2 几何」改为「内容真的滚不动」。
+      // wheelDir 仅由滚轮方向定，是否到边界交给 stuck：横排放行原生滚动 → 相邻 wheel
+      // 事件 scrollTop 无变化（原生卡边界）；竖排 rAF 缓动 → 投影 target 被 clamp 卡死。
+      // 消除短章节（atStart&atEnd 同真）/ 图片未撑开 scrollHeight 偏小 / momentum 擦边
+      // 的非真实边界误判，与纯函数 wheelBoundaryStuckDir 同形。
+      var wheelDir = wheelDelta > 0 ? 'forward' : (wheelDelta < 0 ? 'backward' : null);
+      // 竖排先算缓动投影 target（clamp 到可滚区间），既用于 stuck 判定又用于 rAF。
+      // vertical-rl(sign=-1) 范围 [innerWidth-scrollWidth, 0]；lr(sign=+1) [0, scrollWidth-innerWidth]。
+      var vTarget = 0, vBase = 0;
+      var stuck = false;
       if (vertical) {
-        // 竖排：内容轴 = 横向 scrollLeft（vertical-rl forward = scrollLeft 减小）。
-        atStart = Math.abs(root.scrollLeft) <= 2;
-        atEnd = Math.abs(root.scrollLeft) + window.innerWidth >= root.scrollWidth - 2;
+        var wm = window.getComputedStyle(document.body).writingMode;
+        var sign = (wm === 'vertical-rl') ? -1 : 1;
+        vBase = (_vScrollTarget !== null) ? _vScrollTarget : root.scrollLeft;
+        var span = root.scrollWidth - window.innerWidth;
+        var lo = (sign < 0) ? -span : 0;
+        var hi = (sign < 0) ? 0 : span;
+        vTarget = vBase + wheelDelta * sign;
+        if (vTarget < lo) vTarget = lo;
+        if (vTarget > hi) vTarget = hi;
+        // clamp 后 target 与 base 无差 = 缓动到边界推不动 = 卡边界。
+        stuck = !!wheelDir && Math.abs(vTarget - vBase) <= 1;
       } else {
-        atStart = root.scrollTop <= 2;
-        atEnd = root.scrollTop + window.innerHeight >= root.scrollHeight - 2;
+        // 横排放行原生滚动：相邻 wheel 事件 scrollTop 无变化 = 原生卡边界滚不动。
+        var curPos = root.scrollTop;
+        stuck = !!wheelDir && Math.abs(curPos - _wheelLastScrollPos) <= 1;
+        _wheelLastScrollPos = curPos;
       }
-      var boundaryDir = null;
-      if (wheelDelta !== 0) {
-        if (wheelDelta > 0) boundaryDir = atEnd ? 'forward' : null;
-        else boundaryDir = atStart ? 'backward' : null;
-      }
-      // BUG-369/TODO-656 诊断（对照组）：仅边界附近打印滚轮跨章判定的几何与
-      // arm-then-fire 武装态。真机误跨章/滚不动时若此行不打印而 [xchapter]
-      // bEnd 打印，即证明走触摸路径而非滚轮；若此行打印且 atStart/atEnd 在非
-      // 真实边界为真，则坐实短章节/scrollHeight 瞬态几何误判。
-      if (atStart || atEnd) {
+      var boundaryDir = (wheelDir && stuck) ? wheelDir : null;
+      // BUG-369/TODO-656 诊断：仅边界相关（卡住或已武装）时打印，避免正常滚动刷屏。
+      if (wheelDir && (stuck || _wheelBoundaryArmed)) {
         console.log('[xchapter] wheel vertical=' + (vertical ? 1 : 0)
           + ' wheelDelta=' + Math.round(wheelDelta)
           + ' scrollTop=' + root.scrollTop + ' scrollLeft=' + root.scrollLeft
-          + ' innerH=' + window.innerHeight + ' scrollH=' + root.scrollHeight
-          + ' atStart=' + (atStart ? 1 : 0) + ' atEnd=' + (atEnd ? 1 : 0)
+          + ' scrollH=' + root.scrollHeight + ' scrollW=' + root.scrollWidth
+          + ' wheelDir=' + wheelDir + ' stuck=' + (stuck ? 1 : 0)
           + ' armed=' + _wheelBoundaryArmed + ' boundaryDir=' + boundaryDir);
       }
-      // BUG-369: 到边界不再「立刻跨章」，改 arm-then-fire 二次确认。未到边界
-      // （boundaryDir==null）解除武装。同方向第一次到边界只武装（吸收惯性/竖排
-      // 缓动擦边的瞬态，仍 preventDefault 压住越界滚动、不打断手感），同方向第二
-      // 次到边界才真正跨章。判定逻辑与纯函数 continuousWheelBoundaryEmit 同形。
+      // arm-then-fire 二次确认（与纯函数 continuousWheelBoundaryEmit 同形）：卡边界第一
+      // 次只武装、同向第二次才跨章；还能滚（boundaryDir==null）即解武装。仅在卡边界时
+      // preventDefault，正常滚动放行（横排）/ 走 rAF（竖排），不打断手感。
       if (!boundaryDir) {
         _wheelBoundaryArmed = null;
       } else if (_wheelBoundaryArmed === boundaryDir) {
-        // 二次确认：节流后回传跨章（复用同款 _wheelTimer 防一次滚轮连发）。
         if (_wheelTimer) { e.preventDefault(); return; }
         _wheelTimer = setTimeout(function() { _wheelTimer = null; }, ${s.wheelPageTurnInterval});
         _wheelBoundaryArmed = null;
+        _wheelLastScrollPos = -1;
         window.flutter_inappwebview.callHandler('onBoundarySwipe', boundaryDir);
         e.preventDefault();
         return;
       } else {
-        // 首次到边界 / 方向反转：仅武装本方向，不跨章；压住越界滚动避免视觉抖动。
         _wheelBoundaryArmed = boundaryDir;
         e.preventDefault();
         return;
       }
-      // 未到底：横排放行原生滚动（轴 = 纵向，与 deltaY 同轴，浏览器原生平滑即可）。
+      // 未卡边界：横排放行原生滚动（轴=纵向，浏览器原生平滑），竖排走 rAF 缓动。
       if (!vertical) return;
       if (wheelDelta === 0) return;
-      // 竖排：把主 delta 投影到横向内容轴并累积进 rAF 缓动目标 _vScrollTarget，
-      // 由 _vScrollEaseStep 每帧指数逼近——替代旧的逐事件 scrollBy(behavior:'auto')
-      // 离散跳（TODO-629 ②「刷新率低/一格一格跳」根因）。
-      // 缓动期只在 wheel 事件读一次 scrollLeft/scrollWidth（边界判定已在上方算过），
-      // rAF 每帧只写 scrollLeft，不再读 scrollWidth，避免每帧 reflow 风暴。
-      var wm = window.getComputedStyle(document.body).writingMode;
-      var sign = (wm === 'vertical-rl') ? -1 : 1;
-      // 缓动基线：已有进行中的缓动则在其目标上累积（快速连滚叠加位移），否则从当前
-      // 实际 scrollLeft 起步。clamp 到可滚区间，防越界后缓动空转。可滚极值随 sign：
-      // vertical-rl(sign=-1) 范围 [innerWidth-scrollWidth, 0]（forward 往负）；
-      // vertical-lr(sign=+1) 范围 [0, scrollWidth-innerWidth]（forward 往正）。
-      var base = (_vScrollTarget !== null) ? _vScrollTarget : root.scrollLeft;
-      var span = root.scrollWidth - window.innerWidth;
-      var lo = (sign < 0) ? -span : 0;
-      var hi = (sign < 0) ? 0 : span;
-      var target = base + wheelDelta * sign;
-      if (target < lo) target = lo;
-      if (target > hi) target = hi;
-      _vScrollTarget = target;
+      _vScrollTarget = vTarget;
       if (!_vScrollRaf) _vScrollRaf = requestAnimationFrame(_vScrollEaseStep);
       e.preventDefault();
       return;

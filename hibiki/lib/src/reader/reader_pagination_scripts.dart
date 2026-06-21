@@ -455,6 +455,50 @@ class ReaderPaginationScripts {
     return (emit: false, nextArmedDir: boundaryDir);
   }
 
+  /// TODO-656 根治：触摸/指针边界手势跨章判据，替代 `_bEnd` 旧的瞬时 `scrollTop<=2`。
+  ///
+  /// 旧判据在 touchend 那一帧读 `scrollTop<=2`：用户从章中向上滚，momentum/回弹把
+  /// scrollPos 滑到边界的瞬态被误当「跨章意图」→ 没到章首就切上一章。新判据只看
+  /// **手势起点**（touchstart 时刻）是否已停在边界——从章中滚到边界的那一下起点不在
+  /// 边界，不跨章；只有「一开始就贴着章首/章末再发同向手势」才跨章（与移动端到边界
+  /// 再拉一下翻页的心智一致）。纯函数、无副作用，供单测。
+  ///
+  /// [gestureDir] 手势方向（`'forward'`/`'backward'`，由 swipe 位移符号定）；
+  /// [downScrollPos] touchstart 时沿内容轴的滚动量（横排 scrollTop、竖排 |scrollLeft|）；
+  /// [scrollMax] 该轴最大可滚量（横排 scrollHeight-innerHeight、竖排 scrollWidth-innerWidth）。
+  @visibleForTesting
+  static String? touchBoundaryCrossDir({
+    required String gestureDir,
+    required num downScrollPos,
+    required num scrollMax,
+  }) {
+    final bool downAtStart = downScrollPos <= 2;
+    final bool downAtEnd = downScrollPos >= scrollMax - 2;
+    if (gestureDir == 'backward' && downAtStart) return 'backward';
+    if (gestureDir == 'forward' && downAtEnd) return 'forward';
+    return null;
+  }
+
+  /// TODO-656 根治：滚轮跨章的「到边界」判据，替代 `atStart/atEnd` 瞬时几何。
+  ///
+  /// 旧判据用 `scrollTop<=2`/`atEnd` 瞬时坐标：短章节（内容≤一屏）`atStart` 与 `atEnd`
+  /// 同真、图片未撑开 `scrollHeight` 偏小 → 非真实边界误判 → 一滚就翻页/卡顿。新判据
+  /// 看「内容是否真的滚不动」：横排放行原生滚动 → 相邻 wheel 事件 scrollTop 无变化
+  /// （[scrollFrom]=上一拍、[scrollTo]=这一拍）；竖排 rAF 缓动 → 投影 target 被 clamp
+  /// 卡死（[scrollFrom]=base、[scrollTo]=clamp 后 target）。两轴同形：位移≤1px 即卡边界，
+  /// 返回卡住的越界方向（交给 [continuousWheelBoundaryEmit] arm-then-fire 二次确认），
+  /// 还能滚（位移>1px）则返回 null。纯函数、无副作用，供单测。
+  @visibleForTesting
+  static String? wheelBoundaryStuckDir({
+    required String? wheelDir,
+    required num scrollFrom,
+    required num scrollTo,
+  }) {
+    if (wheelDir == null) return null;
+    final bool stuck = (scrollTo - scrollFrom).abs() <= 1;
+    return stuck ? wheelDir : null;
+  }
+
   /// TODO-629 ②：竖排连续（滚动）模式下，桌面鼠标滚轮的主 delta 投影到横向
   /// （vertical-rl 内容轴 = 横向）滚动时，逐 wheel 事件 `scrollBy(behavior:'auto')`
   /// 是瞬时离散跳，每个事件一次 deltaY 颗粒、丢弃浏览器原生平滑/惯性，看着像「刷新率
@@ -2183,38 +2227,48 @@ window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
 (function() {
   var TAP_SLOP = 12;
   var SWIPE_THRESHOLD = 20;
-  var downX = 0, downY = 0, hasDown = false;
-  function _bStart(x, y) { hasDown = true; downX = x; downY = y; }
+  var downX = 0, downY = 0, downSPos = 0, downSMax = 1, hasDown = false;
+  function _bStart(x, y) {
+    hasDown = true; downX = x; downY = y;
+    // TODO-656：记手势起点(touchstart)沿内容轴的滚动量 + 最大可滚量，跨章只看
+    // 起点是否已在边界（见 _bEnd / 纯函数 touchBoundaryCrossDir）。
+    var root = document.scrollingElement || document.documentElement;
+    var vertical = window.hoshiReader && window.hoshiReader.isVertical();
+    if (vertical) {
+      downSPos = Math.abs(root.scrollLeft);
+      downSMax = Math.max(1, root.scrollWidth - window.innerWidth);
+    } else {
+      downSPos = root.scrollTop;
+      downSMax = Math.max(1, root.scrollHeight - window.innerHeight);
+    }
+  }
   function _bEnd(x, y, src) {
     if (!hasDown) return;
     hasDown = false;
     var dx = x - downX;
     var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
-    var root = document.scrollingElement || document.documentElement;
     var vertical = window.hoshiReader && window.hoshiReader.isVertical();
-    var dir = null;
+    var gestureDir = null;
     if (vertical) {
       if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
-      var atStart = root.scrollLeft >= -2 && root.scrollLeft <= 2;
-      var atEnd = Math.abs(root.scrollLeft) + window.innerWidth >= root.scrollWidth - 2;
-      if (dx > 0 && atEnd) dir = 'forward';
-      else if (dx < 0 && atStart) dir = 'backward';
+      gestureDir = dx > 0 ? 'forward' : 'backward';
     } else {
       if (Math.abs(dy) < SWIPE_THRESHOLD || Math.abs(dy) < Math.abs(dx)) return;
-      var atTop = root.scrollTop <= 2;
-      var atBottom = root.scrollTop + window.innerHeight >= root.scrollHeight - 2;
-      if (dy < 0 && atBottom) dir = 'forward';
-      else if (dy > 0 && atTop) dir = 'backward';
+      gestureDir = dy < 0 ? 'forward' : 'backward';
     }
-    // BUG-369/TODO-656 诊断：触摸/指针边界手势跨章只在此单次瞬时读 scrollTop<=2，
-    // 无滚轮路径的 arm-then-fire 二次确认。打印走的是哪条输入（src=touch/pointer）
-    // 及触发时刻的真实几何，供真机定位「没到章首就跨章」到底是哪条路径、什么 scrollTop。
+    // TODO-656 根治：跨章只看手势起点(touchstart 记的 downSPos)是否已停在边界，不再用
+    // touchend 瞬时 scrollTop<=2。从章中滚到边界的那一下起点不在边界 → 不跨章；到边界后
+    // 再发同向手势才跨（与纯函数 touchBoundaryCrossDir 同形）。消除「没到章首就跨章」。
+    var downAtStart = downSPos <= 2;
+    var downAtEnd = downSPos >= downSMax - 2;
+    var dir = null;
+    if (gestureDir === 'backward' && downAtStart) dir = 'backward';
+    else if (gestureDir === 'forward' && downAtEnd) dir = 'forward';
     console.log('[xchapter] bEnd src=' + src + ' vertical=' + (vertical ? 1 : 0)
-      + ' dx=' + Math.round(dx) + ' dy=' + Math.round(dy)
-      + ' scrollTop=' + root.scrollTop + ' scrollLeft=' + root.scrollLeft
-      + ' innerH=' + window.innerHeight + ' innerW=' + window.innerWidth
-      + ' scrollH=' + root.scrollHeight + ' scrollW=' + root.scrollWidth
+      + ' gestureDir=' + gestureDir + ' downSPos=' + Math.round(downSPos)
+      + ' downSMax=' + Math.round(downSMax)
+      + ' downAtStart=' + (downAtStart ? 1 : 0) + ' downAtEnd=' + (downAtEnd ? 1 : 0)
       + ' dir=' + dir);
     if (dir && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onBoundarySwipe', dir);
