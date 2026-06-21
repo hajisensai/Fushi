@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "kanji_standardization_data.h"
+
 namespace {
 struct TextProcessor {
   std::vector<int> options;
@@ -254,6 +256,30 @@ std::u32string alphanumeric_to_fullwidth(const std::u32string& text) {
   return result;
 }
 
+// 上游 e7dfdea：异体字（異体字）-> 親字 标准化（来源 yomidevs/kanji-processor，MIT）。
+// 上游用 C++23 #embed 嵌 full_list.json + 运行时 glaze 解析建 map；这里换成离线预生成
+// 的 char32_t->char32_t 表（kanji_standardization_data.{h,cpp}），运行时零 JSON 解析，
+// 且不依赖 MSVC/AppleClang 未必支持的 #embed。逐码点替换：命中变体则换親字，否则原样。
+std::u32string standardize_kanji(const std::u32string& text) {
+  static const auto map = [] {
+    std::unordered_map<char32_t, char32_t> m;
+    m.reserve(kanji_standardization::kVariantToParentCount);
+    for (std::size_t i = 0; i < kanji_standardization::kVariantToParentCount; ++i) {
+      const auto& entry = kanji_standardization::kVariantToParent[i];
+      m[entry.variant] = entry.parent;
+    }
+    return m;
+  }();
+
+  std::u32string result;
+  result.reserve(text.size());
+  for (char32_t c : text) {
+    auto it = map.find(c);
+    result += it != map.end() ? it->second : c;
+  }
+  return result;
+}
+
 // TODO: implement rest of preprocessors
 std::vector<TextProcessor> get_japanese_processors() {
   return {
@@ -274,8 +300,14 @@ std::vector<TextProcessor> get_japanese_processors() {
       // 全角 Ａ 先经 NFKC 折成半角 A，再被 to_lowercase 小写成 a。顺序关键。
       {.options = {0, 1},
        .process = [](const std::u32string& text, int opt) -> std::u32string { return opt == 1 ? nfkc(text) : text; }},
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+      {.options = {0, 1},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? alphanumeric_to_fullwidth(text) : text;
+       }},
+      // 上游 e7dfdea：异体字标准化处理器，追加到链尾（独立于 NFKC，顺序无关）。
+      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? standardize_kanji(text) : text;
        }}};
 }
 }

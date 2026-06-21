@@ -58,6 +58,15 @@ int main() {
   // alphanumeric_to_fullwidth：半角 abc -> 全角 ａｂｃ(U+FF41..43)。
   expect("ascii-to-fullwidth", "abc", "\xEF\xBD\x81\xEF\xBD\x82\xEF\xBD\x83");
 
+  // standardize_kanji（上游 e7dfdea，异体字 -> 親字，来源 kanji-processor MIT）。
+  // 方向（README "Convert 異体字 to 親字"）：itaiji 變體 -> oyaji 親字。非恒真。
+  // 國(U+570B itaiji) -> 国(U+56FD oyaji)。
+  expect("kanji-kuni-itaiji", "\xE5\x9C\x8B", "\xE5\x9B\xBD");
+  // 學(U+5B78 itaiji) -> 学(U+5B66 oyaji)。
+  expect("kanji-gaku-itaiji", "\xE5\xAD\xB8", "\xE5\xAD\xA6");
+  // 體(U+9AD4 itaiji) -> 体(U+4F53 oyaji)。
+  expect("kanji-tai-itaiji", "\xE9\xAB\x94", "\xE4\xBD\x93");
+
   if (g_fail) {
     std::fprintf(stderr, "%d FAIL\n", g_fail);
     return 1;
