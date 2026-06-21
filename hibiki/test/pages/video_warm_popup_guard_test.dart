@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// BUG-094 source guard: VideoHibikiPage seeds one persistent hidden warm popup
 /// slot and reuses it for every lookup, so the popup WebView is never cold-loaded
@@ -13,10 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// now live in the controller (behaviourally covered by
 /// dictionary_popup_controller_test.dart + dictionary_page_mixin_warm_slot_test.dart).
 void main() {
-  const String path = 'lib/src/pages/implementations/video_hibiki_page.dart';
-
+  // TODO-590 batch13: `_lookupAt`（含 `reuseWarmSlot: true`）已搬进
+  // lookup_favorite.part.dart，改读合并语料。
   test('video seeds and reuses a persistent warm popup slot', () {
-    final String src = File(path).readAsStringSync();
+    final String src = readVideoHibikiSource();
 
     // A persistent hidden warm slot is seeded once the video loads successfully
     // via the shared controller (skipped in low memory inside the controller).
@@ -38,7 +38,7 @@ void main() {
 
   test('closing hides-and-keeps the warm slot; resume/back key off visibility',
       () {
-    final String src = File(path).readAsStringSync();
+    final String src = readVideoHibikiSource();
 
     // Close delegates to the controller, which hides-and-keeps the warm slot
     // (rather than clearing it). The video also clears the warm WebView's text

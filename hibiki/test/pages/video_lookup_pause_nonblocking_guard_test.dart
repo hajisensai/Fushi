@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// Perf guard (查词弹窗弹出慢): in [_lookupAt] the lookup popup must not be
 /// blocked on `controller.pause()`. media_kit/libmpv `pause()` has an IPC
@@ -10,10 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// VideoHibikiPage drives media_kit and can't be widget-tested headlessly, so a
 /// source guard locks the ordering.
 void main() {
-  const String path = 'lib/src/pages/implementations/video_hibiki_page.dart';
-
   test('lookup pause is fire-and-forget, never awaited before the popup', () {
-    final String src = File(path).readAsStringSync();
+    // TODO-590 batch13: `_lookupAt` 已搬进 lookup_favorite.part.dart，改读合并语料。
+    final String src = readVideoHibikiSource();
 
     final int start = src.indexOf('Future<void> _lookupAt(');
     expect(start, greaterThanOrEqualTo(0), reason: '_lookupAt not found');

@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 视频查词暂停后「关浮层不自动续播」修复（BUG-072）的守卫。
 ///
@@ -53,15 +53,17 @@ void main() {
   });
 
   group('源码接线守卫', () {
-    final String page = File(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
-    ).readAsStringSync();
+    // TODO-590 batch13: `_lookupAt` 已搬进 lookup_favorite.part.dart，改读合并语料；
+    // 其 end marker 由留主壳的 `_popNestedPopupAt` 改成同被搬走、在 part 里紧跟
+    // `_lookupAt` 的 `_refreshVideoSentenceFavorite`（合并语料把 part 拼在末尾，旧
+    // end marker 在 start 前会切片失败）。`_popNestedPopupAt` 仍在主壳，test2 不变。
+    final String page = readVideoHibikiSource();
 
     test('_lookupAt 仅在 isPlaying 时暂停并置位 _pausedForLookup', () {
       final String lookup = _functionSource(
         page,
         'Future<void> _lookupAt(',
-        'void _popNestedPopupAt(',
+        'Future<void> _refreshVideoSentenceFavorite(',
       );
       // 暂停被 isPlaying 门控（不再无条件 pause）。
       expect(

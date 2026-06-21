@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// TODO-393「查词窗口句子上下文制卡」(视频车道) 接线守卫。
 ///
 /// 视频页用 [DictionaryPageMixin]（非 reader 的 base_source_page），其查词浮层在 mixin
@@ -29,9 +31,14 @@ void main() {
   });
 
   group('video_hibiki_page', () {
+    // TODO-590 batch13: `_lookupAt`（含 `_lastLookupSentence = sentence;` /
+    // `_miningDraft.clear();` / `await pushNestedPopup(`）已搬进
+    // lookup_favorite.part.dart，改读合并语料；其余 region 锚的方法
+    // （`_cueRange` / `_setSentenceContextToDraft` / `_resolveVideoMiningRange` /
+    // `onMineEntry` / `_popNestedPopupAt`）仍在主壳，切片顺序不变。
     late String src;
     setUpAll(() {
-      src = readSource('lib/src/pages/implementations/video_hibiki_page.dart');
+      src = readVideoHibikiSource();
     });
 
     String region(String startSig, String endSig) {

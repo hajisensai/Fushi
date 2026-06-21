@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// TODO-047 part2/3/4 守卫：句子收藏扩展接线不得回归。
 /// B=视频端收藏句子按钮（且为句子星标、非 BUG-123 删的单词☆）
 /// C=视频页头收藏夹入口 + 图标顺序统一
@@ -11,9 +13,10 @@ void main() {
   String read(String rel) => File(rel).readAsStringSync();
 
   group('B 视频端收藏句子按钮', () {
-    final String src = read(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
-    );
+    // TODO-590 batch13: `_toggleFavoriteSentenceForVideo` / `_matchingVideoFavorites`
+    // 等收藏方法已搬进 lookup_favorite.part.dart，改读合并语料（header 的
+    // `buildPopupHeaderFor` 仍在主壳，合并语料含主壳，断言不受影响）。
+    final String src = readVideoHibikiSource();
 
     test('视频查词浮层 header 渲染句子收藏星标（star/star_border）', () {
       expect(

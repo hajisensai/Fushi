@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// Source guard for video mining context.
 ///
@@ -9,13 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// then may spend time in the dictionary popup before pressing mine. The audio
 /// clip and GIF must use that lookup cue, not whatever cue is current later.
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
-
+  // TODO-590 batch13: `_lookupAt` 已搬进 lookup_favorite.part.dart，改读合并语料。
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue);
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   String region(String startSig, String endSig) {
@@ -31,9 +28,13 @@ void main() {
         reason:
             'Video mining needs the subtitle cue from the original lookup.');
 
+    // TODO-590 batch13: `_lookupAt` 与 `_refreshVideoSentenceFavorite` 同搬进
+    // lookup_favorite.part.dart 且相邻；end marker 由留主壳的 `_onDismissBarrierTap`
+    // 改成 part 里紧跟 `_lookupAt` 的 `_refreshVideoSentenceFavorite`，精确夹住
+    // `_lookupAt` 体（合并语料把 part 拼末尾，旧 marker 在 start 前会切片失败）。
     final String lookup = region(
       'Future<void> _lookupAt(',
-      'void _onDismissBarrierTap(',
+      'Future<void> _refreshVideoSentenceFavorite(',
     );
     // 点字幕字符时仍快照当前 cue……
     expect(lookup.contains('_lastLookupCue = controller.currentCue'), isTrue,
