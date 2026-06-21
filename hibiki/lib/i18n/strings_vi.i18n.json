@@ -1774,5 +1774,7 @@
   "stat_overview": "Overview",
   "stat_sort_by_speed": "By Speed",
   "stat_sort_by_time": "By Time",
-  "stat_sort_by_chars": "By Characters"
+  "stat_sort_by_chars": "By Characters",
+  "collection_mined": "Mined",
+  "collection_mined_clear_confirm": "Clear all mined-sentence history?"
 }

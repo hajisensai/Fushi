@@ -1774,5 +1774,7 @@
   "stat_overview": "总览",
   "stat_sort_by_speed": "按速度",
   "stat_sort_by_time": "按时长",
-  "stat_sort_by_chars": "按字数"
+  "stat_sort_by_chars": "按字数",
+  "collection_mined": "制卡句",
+  "collection_mined_clear_confirm": "清空全部制卡历史？"
 }
