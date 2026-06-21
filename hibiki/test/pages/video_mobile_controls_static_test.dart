@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// 源码守卫：确保「移动端视频播放页有字幕/音轨/设置（剧集）按钮」的接线不被回退。
 ///
 /// 根因：字幕/音轨切换按钮原本只配在 [MaterialDesktopVideoControlsThemeData] 的
@@ -28,7 +30,9 @@ void main() {
     expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
     expect(themePair.existsSync(), isTrue,
         reason: '视频 controls 主题配对 helper 应存在');
-    src = page.readAsStringSync();
+    // TODO-590 batch11：_mobileControlsTheme 已搬到 controls_theme.part.dart，读「合并语料」
+    // （主壳 + 全部 part）；其余断言命中的 VideoControlItem/VideoControlButton 分支与接线仍在主壳。
+    src = readVideoHibikiSource();
     themePairSrc = themePair.readAsStringSync();
   });
 
@@ -79,15 +83,14 @@ void main() {
 
   test('移动 controls 主题含字幕/音轨入口；设置经可配置右侧 rail', () {
     // 截取 _mobileControlsTheme 方法体，断言入口都在其中，避免误把桌面主题命中算进来。
+    // 搬出后它是 controls_theme.part 的末方法，原下界 _slotChipItems 在主壳、排到了它
+    // 之前（合并语料 part 整体追加在主壳后），故改用 part 顶格 extension 闭合 `\n}` 作下界。
     final int start = src.indexOf(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
     );
     expect(start, greaterThanOrEqualTo(0),
         reason: '应能定位 _mobileControlsTheme 方法');
-    final int end = src.indexOf(
-      'List<VideoControlItem> _slotChipItems(',
-      start,
-    );
+    final int end = src.indexOf('\n}', start);
     expect(end, greaterThan(start), reason: '应能界定 _mobileControlsTheme 方法体范围');
     final String body = src.substring(start, end);
 

@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../pages/video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：视频播放器 chrome 必须吃主题色——无法用纯单测覆盖（控制条由 media_kit
 /// 在真实 libmpv player 上渲染），故在源码层钉死：
@@ -10,9 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 2. 弹出菜单/底部 sheet（音轨/字幕/倍速/剧集）不得硬编码 `Colors.black87` 背景，
 ///    必须跟随 M3 主题表面色（浅色主题下才不会是死黑）。
 void main() {
-  final String page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync();
+  // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，读「合并语料」
+  // （主壳 + 全部 part）才能数到两处 buttonBarButtonColor: cs.primary。
+  final String page = readVideoHibikiSource();
 
   group('视频控制条按钮吃主题色', () {
     test('两套控制条主题都用 cs.primary 作为 buttonBarButtonColor', () {

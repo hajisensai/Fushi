@@ -19,15 +19,18 @@ import 'video_hibiki_page_source_corpus.dart';
 void main() {
   final String src = readVideoHibikiSource();
 
-  /// 桌面 + 移动两套 controls 主题方法体。TODO-274 把轨道菜单 `_showTrackMenu` 改名
-  /// `_showAudioTrackMenu` 且移到 themes 之前，故控制条段终点改用 themes 之后紧邻的
-  /// `_buildVideoControlButton`（仍夹住两套 controls 主题 + 其 topButtonBar/bottomBar）。
+  /// 桌面 + 移动两套 controls 主题方法体。TODO-590 batch11：两套主题已搬到
+  /// controls_theme.part.dart（合并语料末段，_desktopControlsTheme 紧接 _mobileControlsTheme）。
+  /// 起点用桌面主题**完整签名**（避免命中主壳里 `MaterialDesktopVideoControlsThemeData` 的
+  /// 注释 / 类型引用），终点用 part 顶格 extension 闭合 `\n}`——它紧随末方法 _mobileControlsTheme，
+  /// 恰夹住两套 controls 主题 + 其 topButtonBar/bottomBar。
   String controlsThemes() {
-    final int start = src.indexOf('MaterialDesktopVideoControlsThemeData');
-    final int end = src.indexOf('Widget _buildVideoControlButton(');
+    final int start = src.indexOf(
+        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
+    final int end = src.indexOf('\n}', start);
     expect(start, greaterThanOrEqualTo(0), reason: '需有桌面 controls 主题起点');
     expect(end, greaterThan(start),
-        reason: '需有 _buildVideoControlButton 作为 controls 段终点');
+        reason: '需有 part 顶格 extension 闭合作为 controls 段终点');
     return src.substring(start, end);
   }
 

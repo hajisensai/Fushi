@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 
+import '../../pages/video_hibiki_page_source_corpus.dart';
+
 /// TODO-274 / TODO-312 phase 1: the control bar renderer is now data-driven over
 /// the 9-slot [VideoControlLayout] (derived from the persisted legacy
 /// [VideoControlCustomization] via [VideoControlLayout.fromLegacy]) instead of
@@ -124,7 +126,9 @@ void main() {
     late String src;
     setUpAll(() {
       expect(page.existsSync(), isTrue);
-      src = page.readAsStringSync();
+      // TODO-590 batch11：_topBarSlotGroup(VideoControlSlot.topLeft/topRight 的调用随两套
+      // controls 主题搬到 controls_theme.part.dart，读「合并语料」（主壳 + 全部 part）才能命中。
+      src = readVideoHibikiSource();
     });
 
     test('control bar reads the persisted VideoControlLayout (phase 2)', () {

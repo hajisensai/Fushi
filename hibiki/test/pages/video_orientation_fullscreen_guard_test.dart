@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫 (TODO-149 / BUG-221): 删除视频竖屏模式 + 双击暂停 + 返回手势直接退出。
 ///
@@ -20,8 +20,12 @@ void main() {
   late String src;
 
   setUpAll(() {
-    src = File('lib/src/pages/implementations/video_hibiki_page.dart')
-        .readAsStringSync();
+    // TODO-590 batch11：桌面主题的 `toggleFullscreenOnDoublePress: false` 随
+    // 两套 controls 主题搬到 controls_theme.part.dart，故改读合并语料；其余被守卫的
+    // 方法（_handleVideoPointerUp / _enterVideoNativeFullscreen / _toggleVideoFullscreen
+    // / _buildFullscreenButton / _handleBackOrExit）仍在主壳（语料最前段），
+    // methodBody 大括号配对与字符串断言均不受影响。
+    src = readVideoHibikiSource();
   });
 
   /// 取一个方法体 (含起始签名行到匹配的收尾大括号), 用大括号配对避免误截嵌套闭包。

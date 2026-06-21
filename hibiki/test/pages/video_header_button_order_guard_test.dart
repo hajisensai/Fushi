@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// 守卫（TODO-162）：视频页（HomeVideoPage）顶栏三个动作按钮的排列顺序，必须与
 /// 书架（ReaderHibikiHistoryPage）顶栏三个动作按钮的相对顺序完全一致——以书架为基准。
 ///
@@ -18,8 +20,6 @@ void main() {
       File('lib/src/pages/implementations/home_video_page.dart');
   final File shelfSrc =
       File('lib/src/pages/implementations/reader_hibiki_history_page.dart');
-  final File playerSrc =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
 
   /// 截取某文件中 [_buildPageHeader] 方法体内 `actions: <Widget>[ ... ]` 区间的源码，
   /// 顺序断言只在该区间内做，避免命中页面其它位置的同名 tooltip / 图标。
@@ -68,7 +68,9 @@ void main() {
   });
 
   test('播放器顶栏片段导出按钮紧挨截图按钮', () {
-    final String text = playerSrc.readAsStringSync();
+    // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，改读合并语料
+    // （+端点 `\n}`）；topRight slot 渲染的两处调用现落在 part 末段，须读主壳+全部 part。
+    final String text = readVideoHibikiSource();
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     final int screenshot = topRightItems.indexOf(VideoControlItem.screenshot);

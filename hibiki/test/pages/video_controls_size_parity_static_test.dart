@@ -1,19 +1,22 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 void main() {
   test('desktop and mobile controls use shared normal/fullscreen sizing', () {
-    final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // TODO-590 batch11：两套 controls 主题已搬到 video_hibiki/controls_theme.part.dart，
+    // 读「合并语料」（主壳 + 全部 part）才能命中它们 + 全文计数仍覆盖主题体内的引用。
+    final String source = readVideoHibikiSource();
 
     // 两套 media_kit controls 主题方法体区间（桌面 + 移动），用于把「主题构造器参数」类
     // 计数限定在主题里——BUG-238 让 _subtitleControlsBottomReserve 也用了同名命名参数
     // `buttonBarHeight:`，全文件裸计数会被它污染（2→3），故 theme 参数按区间内计数。
     final int themesStart = source.indexOf(
         'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
-    final int themesEnd = source.indexOf('Widget _buildVideoControlButton(');
+    // 搬出后主题是 controls_theme.part 的末两方法，原终点 _buildVideoControlButton 在主壳、
+    // 排到了它们之前（合并语料里 part 整体追加在主壳后），故改用 part 顶格 extension 闭合
+    // `\n}` 作终点——它紧随末方法 _mobileControlsTheme，恰涵盖桌面 + 移动两套主题。
+    final int themesEnd = source.indexOf('\n}', themesStart);
     expect(themesStart, greaterThanOrEqualTo(0));
     expect(themesEnd, greaterThan(themesStart));
     final String themes = source.substring(themesStart, themesEnd);
@@ -134,9 +137,9 @@ void main() {
 
   test('fullscreen video route is neutralized like the windowed video page',
       () {
-    final String source =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // _pushNeutralizedVideoFullscreen / _buildFullscreenButton 仍在主壳（合并语料前段），
+    // 此切片相对顺序不变；统一读合并语料即可。
+    final String source = readVideoHibikiSource();
 
     expect(source, contains('Future<void> _pushNeutralizedVideoFullscreen('),
         reason:

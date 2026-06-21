@@ -22,9 +22,12 @@ void main() {
     );
     expect(start, greaterThanOrEqualTo(0),
         reason: 'missing _mobileControlsTheme');
-    final int end = videoPage.indexOf('Future<void> _setDelayMs', start);
+    // TODO-590 batch11：_mobileControlsTheme 已搬到 controls_theme.part.dart，是合并语料
+    // 末方法。原下界 _setDelayMs 在主壳、现排到了它之前，故改用 part 顶格 extension 闭合
+    // `\n}` 作下界——它紧随末方法 _mobileControlsTheme。
+    final int end = videoPage.indexOf('\n}', start);
     expect(end, greaterThan(start),
-        reason: 'missing _setDelayMs after mobile theme');
+        reason: 'missing part-extension close after mobile theme');
     return videoPage.substring(start, end);
   }
 

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// 源码守卫：移动端视频控制条的进度条 / 按钮条几何不变量，覆盖三个修复：
 ///
 /// 【BUG-184】进度条 / 底部按钮条必须留出底部空间，不落回 media_kit 构造器默认的
@@ -28,15 +30,19 @@ void main() {
   late String mobileThemeBody;
   setUpAll(() {
     expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    // TODO-590 batch11：_mobileControlsTheme 已搬到 controls_theme.part.dart，读「合并语料」
+    // （主壳 + 全部 part）；针对的 _videoBottomSystemInset / 常量 / getter 仍在主壳故照样命中。
+    src = readVideoHibikiSource();
 
-    // 截取 _mobileControlsTheme 方法体（以紧随其后的 _hasRoomyVideoBottomBar 为下界）。
+    // 截取 _mobileControlsTheme 方法体。搬出后它是 controls_theme.part 的末方法，原下界
+    // _hasRoomyVideoBottomBar 在主壳、排到了它之前（合并语料 part 整体追加在主壳后），
+    // 故改用 part 顶格 extension 闭合 `\n}` 作下界——它紧随末方法 _mobileControlsTheme。
     final int start = src.indexOf(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
     );
     expect(start, greaterThanOrEqualTo(0),
         reason: '应能定位 _mobileControlsTheme 方法');
-    final int end = src.indexOf('bool _hasRoomyVideoBottomBar()', start);
+    final int end = src.indexOf('\n}', start);
     expect(end, greaterThan(start), reason: '应能界定 _mobileControlsTheme 方法体范围');
     mobileThemeBody = src.substring(start, end);
   });

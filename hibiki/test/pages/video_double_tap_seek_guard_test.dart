@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// 源码守卫 (TODO-172/BUG-230 + TODO-173/BUG-231)。
 ///
 /// media_kit 控制条 / 竖滑手势 / 双击分区都跑不了 headless（与
@@ -16,11 +18,16 @@ import 'package:flutter_test/flutter_test.dart';
 ///      本地 dx + 调既有 seek/跳句原语；设置面板有「双击快进步长」行。
 void main() {
   late String pageSrc;
+  // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，针对主题方法体
+  // 的断言改读「合并语料」（主壳 + 全部 part）；仍在主壳的 _handleVideoPointerUp /
+  // _handleDoubleTapSeek / 静态常量断言继续读单文件 pageSrc。
+  late String pageCorpus;
   late String sheetSrc;
 
   setUpAll(() {
     pageSrc = File('lib/src/pages/implementations/video_hibiki_page.dart')
         .readAsStringSync();
+    pageCorpus = readVideoHibikiSource();
     sheetSrc = File('lib/src/media/video/video_quick_settings_sheet.dart')
         .readAsStringSync();
   });
@@ -72,17 +79,22 @@ void main() {
 
     test('_mobileControlsTheme 把该常量传给 MaterialVideoControlsThemeData', () {
       final String body = methodBodyByName(
-          pageSrc, 'MaterialVideoControlsThemeData _mobileControlsTheme(');
+          pageCorpus, 'MaterialVideoControlsThemeData _mobileControlsTheme(');
+      // TODO-590 batch11：搬进 controls_theme.part 后，static const 引用全限定为
+      // `_VideoHibikiPageState._videoVerticalGestureSensitivity`（extension 不能裸名解析
+      // host class 的 static 成员）；全限定后超 80 列被 dart format 折成两行，故分段断言
+      // `verticalGestureSensitivity:` 命名参数 + 其取值是该全限定 static const。
       expect(
-        body.contains(
-            'verticalGestureSensitivity: _videoVerticalGestureSensitivity,'),
+        body.contains('verticalGestureSensitivity:') &&
+            body.contains(
+                '_VideoHibikiPageState._videoVerticalGestureSensitivity,'),
         isTrue,
         reason: '移动控制条主题必须设 verticalGestureSensitivity（TODO-172）',
       );
     });
 
     test('桌面 _desktopControlsTheme 不设竖滑灵敏度（无此手势，诚实降级）', () {
-      final String body = methodBodyByName(pageSrc,
+      final String body = methodBodyByName(pageCorpus,
           'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
       expect(body.contains('verticalGestureSensitivity'), isFalse,
           reason: '桌面控制条无竖滑亮度/音量手势，不应设 verticalGestureSensitivity');

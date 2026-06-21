@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：视频播放页只保留**一条**顶栏（BUG-102）。
 ///
@@ -13,14 +13,11 @@ import 'package:hibiki/src/media/video/video_control_customization.dart';
 /// 静态扫描守卫：按平台分流的真实 controls 渲染在 widget 测试里依赖 host 平台、
 /// 难稳定复现移动/全屏分支（与 [video_mobile_controls_static_test] 同理）。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
-
+  // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，改读合并语料
+  // （主壳在前 + 全部 part 追加，端点保序）；顶栏 slot/title 的调用现落在 part 末段。
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('Scaffold 不再配 AppBar（删掉外层顶栏）', () {

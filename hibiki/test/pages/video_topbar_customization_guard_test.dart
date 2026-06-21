@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// 源码守卫（TODO-388 → TODO-421 phase 1）：可自定义学习按钮的可放置区域含「顶部」两槽
 /// （topLeft / topRight），既在数据模型 [VideoControlSlot.editableSlots] 暴露、在拖动编辑器
 /// 里呈现，也在播放器上真正落地——所见即所得，避免编辑器给出一个渲染端不存在的「空槽」。
@@ -44,8 +46,10 @@ void main() {
   });
 
   test('播放器把顶部两槽注入固定顶栏行本身（TODO-421 phase 1）', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，读「合并语料」
+    // （主壳 + 全部 part）；下方针对主题体 / _topBarSlotGroup→_clipExportTooltip 的切片相对
+    // 顺序在合并语料里仍保持（主题对在 part、helper 与 tooltip 同在主壳）。
+    final String page = readVideoHibikiSource();
     // 顶部两槽经 _topBarSlotGroup 注入 topButtonBar（不再是浮动竖条）。
     expect(
       page.contains('Widget _topBarSlotGroup('),
@@ -73,8 +77,7 @@ void main() {
   });
 
   test('顶栏右侧按钮来自 topRight slot 的同一横排，不再硬编码第二套', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
     final int desktopStart = page
         .indexOf('MaterialDesktopVideoControlsThemeData _desktopControlsTheme');
     final int desktopEnd =
@@ -107,8 +110,7 @@ void main() {
   });
 
   test('topRight 作为整体右侧按钮组对齐，不让按钮逐个参与顶栏 flex 分配', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
     final int desktopStart = page
         .indexOf('MaterialDesktopVideoControlsThemeData _desktopControlsTheme');
     final int desktopEnd =

@@ -23,9 +23,12 @@ void main() {
   }
 
   test('mobile top bar exposes actions directly without a more menu', () {
+    // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，改读合并语料 /
+    // 端点 `\n}`。`_mobileControlsTheme` 是 part 末方法，主壳里的 `_slotChipItems` 现排在它
+    // 之前，不能再当下界；改用 part 顶格闭合 `\n}` 精确覆盖到方法体末（含完整 top/bottom 按钮条）。
     final String body = region(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
-      'List<VideoControlItem> _slotChipItems(',
+      '\n}',
     );
     final String topBar = topButtonBarRegion(body);
     expect(topBar.contains('Icons.more_vert'), isFalse,

@@ -6,6 +6,8 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// B（缺效果预览/对比）source guard: 视频页接「着色器对比原画」——经 `C` 快捷键切换
 /// controller 的旁路态（保留启用集）。
 ///
@@ -15,22 +17,26 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 /// 进入。`_toggleShaderCompare` 逻辑与 `C` 快捷键接线保留——控制条与右键菜单都不再含
 /// 该按钮 / 项。
 void main() {
-  final String pageSrc =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync();
+  // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，读「合并语料」
+  // （主壳 + 全部 part）才能命中它们；整页级断言命中的 _toggleShaderCompare / 右键菜单 /
+  // 快捷键接线仍在主壳，合并语料仍覆盖。
+  final String pageSrc = readVideoHibikiSource();
   final String shortcutsSrc =
       File('lib/src/media/video/video_player_shortcuts.dart')
           .readAsStringSync();
 
   /// 截出两套 controls 主题方法体（桌面 + 移动），用于断言「控制条里没有对比按钮」。
   String controlsThemes() {
-    final int start = pageSrc.indexOf('MaterialDesktopVideoControlsThemeData');
-    // TODO-274：旧终点 `_showTrackMenu` 改名且移到 themes 之前；改用 themes 之后紧邻
-    // 的 `_buildVideoControlButton` 作为控制条段终点（仍夹住两套 controls 主题）。
-    final int end = pageSrc.indexOf('Widget _buildVideoControlButton(');
+    // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart（合并语料末段，
+    // _desktopControlsTheme 紧接 _mobileControlsTheme）。起点用桌面主题**完整签名**（避免命中
+    // 主壳里 `MaterialDesktopVideoControlsThemeData` 的注释 / 类型引用），终点用 part 顶格
+    // extension 闭合 `\n}`——它紧随末方法 _mobileControlsTheme，恰夹住两套 controls 主题。
+    final int start = pageSrc.indexOf(
+        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
+    final int end = pageSrc.indexOf('\n}', start);
     expect(start, greaterThanOrEqualTo(0), reason: '需有桌面 controls 主题');
     expect(end, greaterThan(start),
-        reason: '需有 _buildVideoControlButton 作为 controls 段终点');
+        reason: '需有 part 顶格 extension 闭合作为 controls 段终点');
     return pageSrc.substring(start, end);
   }
 
