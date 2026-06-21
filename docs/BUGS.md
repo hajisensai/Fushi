@@ -27,10 +27,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 363 条。点号进各自文件。
+> 共 367 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-374](bugs/BUG-374-button-edge-tap-pause-passthrough.md) | ✅ | ✅ | 点视频控制按钮边缘穿透到底层 tap 误暂停/播放 |
+| [BUG-373](bugs/BUG-373-subtitle-delay-no-instant-feedback.md) | ✅ | ✅ | 字幕调整（音画延迟）没有即时反馈 |
+| [BUG-371](bugs/BUG-371-subtitle-list-hides-side-controls.md) | ✅ | ✅ | 打开字幕列表侧边栏时左侧控制按钮全部消失 |
+| [BUG-370](bugs/BUG-370-remote-video-subtitle-seekbar-position.md) | ✅ | ✅ | 手机看远端视频字幕字体/阴影偏大、进度条位置偏高 |
 | [BUG-369](bugs/BUG-369-scroll-mode-early-prev-chapter.md) | ✅ | ✅ | 滚动模式向上滚未到章首就提前切上一章 |
 | [BUG-368](bugs/BUG-368-paged-mouse-paging.md) | ✅ | ✅ | 分页模式鼠标正文横向拖动无法翻页(桌面) |
 | [BUG-367](bugs/BUG-367-remote-book-card.md) | ✅ | ✅ | 远端书卡缺类型徽章+尺寸变小 |

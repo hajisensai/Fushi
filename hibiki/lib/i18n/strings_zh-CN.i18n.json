@@ -1757,5 +1757,6 @@
   "video_setting_auto_play_next": "自动连播下一集",
   "video_setting_auto_play_next_hint": "播放列表里一集播完后自动播放下一集",
   "video_auto_play_next_cancel": "取消",
-  "video_episode_list_empty": "无剧集"
+  "video_episode_list_empty": "无剧集",
+  "video_subtitle_delay_osd": "字幕同步：$ms ms"
 }

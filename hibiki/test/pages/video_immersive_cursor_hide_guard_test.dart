@@ -97,44 +97,46 @@ void main() {
         reason: '解锁沉浸应立即唤回光标（即时反馈）');
   });
 
-  test('TODO-329: 字幕列表打开时光标纳入「有 overlay 即可见」门控', () {
-    // TODO-364：派生函数 _applyControlsVisibilityFromMediaKit 的门控 gated 含
-    // _subtitleListVisible（字幕列表打开强制控制条不可见），且光标语义按 _hasVideoOverlay
-    // 分叉（有 overlay 即可见，纯沉浸才隐藏，保 BUG-258）。
+  test('字幕列表打开时光标纳入「有 overlay 即可见」门控（光标语义，BUG-371）', () {
+    // 光标语义按 _hasVideoOverlay 分叉（有 overlay 即可见，纯沉浸才隐藏，保 BUG-258）。
+    // BUG-371：字幕列表是 push-aside 侧栏，不再纳入控制条可见性派生门控 gated
+    // （控制条在被挤窄的画面上仍可用），但**光标**仍要在字幕列表打开时保持可见——靠
+    // _hasVideoOverlay（含 _subtitleListVisible）+ 前置胜出层光标覆盖，而非靠 gated。
     final int markIdx =
         src.indexOf('void _applyControlsVisibilityFromMediaKit() {');
     final int markEnd =
         src.indexOf('void _markControlsVisible(bool visible) {', markIdx);
     final String mark = src.substring(markIdx, markEnd);
-    expect(mark.contains('_subtitleListVisible.value'), isTrue,
-        reason: '字幕列表打开应纳入派生门控 gated（TODO-329/364）');
     expect(mark.contains('_setCursorHidden(!visible && !_hasVideoOverlay)'),
         isTrue,
         reason: '有 overlay（侧栏 / 字幕列表）时光标可见，纯沉浸锁才隐藏（保 BUG-258）');
 
-    // _hasVideoOverlay getter 把侧栏与字幕列表统一为「有 overlay」单一判据。
+    // _hasVideoOverlay getter 把侧栏与字幕列表统一为「有 overlay」单一判据——
+    // 字幕列表打开时光标仍由它保活（即使控制条门控 gated 已不含字幕列表，BUG-371）。
     expect(
       RegExp(r'bool get _hasVideoOverlay =>[\s\S]*?_videoSidePanel\.value '
               r'!= null \|\|[\s\S]*?_subtitleListVisible\.value')
           .hasMatch(src),
       isTrue,
-      reason: '_hasVideoOverlay 应同时覆盖侧栏与字幕列表（TODO-329）',
+      reason: '_hasVideoOverlay 应同时覆盖侧栏与字幕列表（光标保活，BUG-371 保留）',
     );
   });
 
-  test('TODO-329: 字幕列表打开时 IgnorePointer 也 gate 掉 media_kit 控制条', () {
-    // 字幕列表打开时 media_kit 的 hideMouseOnControlsRemoval 会在控制条收起后隐藏
-    // 画面区光标 → 必须把 IgnorePointer 也绑 _subtitleListVisible，让 media_kit 收不到
-    // hover、其 cursor:none 不接管光标。
-    expect(
-      RegExp(r'IgnorePointer\(\s*ignoring: _immersiveLocked\.value \|\|'
-              r'[\s\S]*?_videoSidePanel\.value != null \|\|'
-              r'[\s\S]*?_subtitleListVisible\.value'
-              r'[\s\S]*?,')
-          .hasMatch(src),
-      isTrue,
-      reason: 'IgnorePointer 的 ignoring 条件应包含 _subtitleListVisible（TODO-329）',
-    );
+  test('字幕列表打开时 IgnorePointer 不再 gate media_kit 控制条（BUG-371）', () {
+    // BUG-371：字幕列表是 push-aside 侧栏（画面挤窄、不遮控制条），开列表时 media_kit
+    // 顶 / 底栏按钮应继续可点（左侧按钮可用），故 IgnorePointer **不**绑 _subtitleListVisible。
+    // 字幕列表打开时画面光标仍可见——靠前置胜出层光标覆盖 + _hasVideoOverlay（上一个 test），
+    // 不再靠把 media_kit 整层 IgnorePointer 掉。
+    final int start = src.indexOf('return ListenableBuilder(');
+    expect(start, greaterThanOrEqualTo(0),
+        reason: '需有 media_kit controls 的 ListenableBuilder');
+    final int end = src.indexOf('child: AdaptiveVideoControls(state),', start);
+    expect(end, greaterThan(start),
+        reason: 'IgnorePointer 块应闭合到 AdaptiveVideoControls');
+    final String block = src.substring(start, end);
+    expect(block.contains('_subtitleListVisible'), isFalse,
+        reason:
+            'BUG-371：IgnorePointer 不应再绑 _subtitleListVisible（字幕列表 push-aside 不遮控制条）');
   });
 
   test('不 per-overlay 加 opaque MouseRegion（防 BUG-198 hover 穿透）', () {

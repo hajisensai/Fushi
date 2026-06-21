@@ -1662,6 +1662,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refocusVideo();
     });
+    // BUG-370：视频就绪后重申沉浸隐藏系统栏（移动端）。沉浸模式在 initState 只申一次，
+    // 而**远端视频**要先 await 网络流地址 + 下字幕才 load，controller 就绪得晚——若
+    // immersiveSticky 在等待期被系统 / 用户触屏临时唤回导航栏，首个带进度条的帧会读到
+    // 非零 MediaQuery.viewPadding.bottom（[_videoBottomSystemInset]），把进度条 / 字幕
+    // 整体抬高（用户报「远端进度条偏高、字幕被顶高显大」；本地 load 快、过了这个窗口故
+    // 正常）。在 controller 就绪即重隐导航栏，让 inset 回零、几何归位。对称惠及本地远端、
+    // 不碰 BUG-184 的 inset 几何（导航栏真可见时进度条仍正确避让）。桌面 no-op。
+    unawaited(_applyVideoImmersiveMode());
     _syncWindowAspectRatioLock();
 
     // 视频就绪后预热查词浮层（BUG-094）：seed 一个常驻隐藏热 WebView，全程复用，
@@ -2008,11 +2016,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _episodeListVisible.value ||
       _videoControlEditMode.value;
 
+  // BUG-371：字幕跳转列表是 **push-aside** 侧栏（[_videoWithSubtitlePanel] 的
+  // `Row[Expanded(video), 面板列]`，TODO-314），把画面挤窄到左侧、**不遮挡**叠在画面上
+  // 的左 / 右浮动操作 rail。故强压制门控**不含**字幕列表显隐——开字幕列表时左 / 右控制
+  // 按钮应继续可见可用（用户：「字幕列表只是侧边栏，左边的按钮应该还可以换出」）。仅真正盖在
+  // 控制条之上的 overlay（[_videoSidePanel] 设置 / 音轨 / 倍速等）和编辑态才压制。
   bool get _videoSideActionRailStronglySuppressed =>
-      _videoSidePanel.value != null ||
-      _subtitleListVisible.value ||
-      _episodeListVisible.value ||
-      _videoControlEditMode.value;
+      _videoSidePanel.value != null || _videoControlEditMode.value;
 
   /// 是否当前用 media_kit 桌面控制条（仅桌面三端有 hover 自动隐藏语义）。
   bool get _isDesktopVideoControls {
@@ -4329,13 +4339,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化
-  /// 到 VideoBook.delayMs（换集复用、跨重启保留）+ 刷新面板显示。
+  /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效，BUG-373：
+  /// controller 侧 [VideoPlayerController.setDelayMs] 已立即重算当前 cue + notify）+
+  /// 持久化到 VideoBook.delayMs（换集复用、跨重启保留）+ 刷新面板显示 + 左上角 OSD
+  /// 即时反馈（BUG-373：与调速 [Icons.speed] 同范式，让快速设置面板外也看得到调整生效）。
   Future<void> _setDelayMs(int delayMs) async {
     final int clamped = delayMs.clamp(-600000, 600000);
     if (clamped == _delayMs) return;
     _delayMs = clamped;
     _controller?.setDelayMs(clamped);
+    // BUG-373：左上角 OSD 即时反馈。带显式正负号（与面板内 +N ms 回显一致），
+    // 让用户在不打开快速设置面板时也能看到字幕同步已调整、调多少。
+    final String signed = clamped >= 0 ? '+$clamped' : '$clamped';
+    _showOsd(
+      t.video_subtitle_delay_osd(ms: signed),
+      icon: Icons.sync_outlined,
+    );
     await widget.repo.updateDelayMs(widget.bookUid, clamped);
     if (mounted) setState(() {});
   }
@@ -5862,12 +5881,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             // 隐藏」的画面区分支）。把 [IgnorePointer] 同时绑 [_videoSidePanel] 与
                             // [_subtitleListVisible]，overlay 期间 media_kit 收不到 hover → 背景控制条
                             // 不再冒出来、其 cursor:none 也不接管光标。键盘仍不受影响（同上）。
+                            // BUG-371：[_subtitleListVisible] 不再 gate media_kit
+                            // controls 指针——字幕跳转列表是 push-aside 侧栏（画面挤窄、
+                            // 不遮控制条），开列表时 media_kit 顶 / 底栏按钮应继续可点
+                            // （左侧按钮可用）；仅沉浸锁 / 真 overlay 面板 / 剧集列表 /
+                            // 编辑态拦截指针。
                             return ListenableBuilder(
                               listenable: Listenable.merge(
                                 <Listenable>[
                                   _immersiveLocked,
                                   _videoSidePanel,
-                                  _subtitleListVisible,
                                   _episodeListVisible,
                                   _videoControlEditMode,
                                 ],
@@ -5875,7 +5898,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                               builder: (BuildContext _, __) => IgnorePointer(
                                 ignoring: _immersiveLocked.value ||
                                     _videoSidePanel.value != null ||
-                                    _subtitleListVisible.value ||
                                     _episodeListVisible.value ||
                                     _videoControlEditMode.value,
                                 child: AdaptiveVideoControls(state),

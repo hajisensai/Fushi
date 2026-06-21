@@ -417,6 +417,19 @@ class _MaterialDesktopVideoControlsState
 
   DateTime last = DateTime.now();
 
+  // BUG-374 (Hibiki vendored patch): whether the pointer-down that started the
+  // current tap landed in the play/pause-eligible region (above the bottom seek
+  // bar). Recorded in onTapDown, consumed in onTap. Play/pause is now executed in
+  // `onTap` (which only fires when THIS GestureDetector WINS the gesture arena)
+  // instead of `onTapDown` (which fires immediately on pointer-down regardless of
+  // arena resolution). Firing on onTapDown made the edge/padding of overlaid
+  // control buttons leak through to play/pause: the parent onTapDown ran before
+  // the child button's tap recognizer could claim the arena, so a button-edge tap
+  // both pressed the button AND toggled play/pause. onTap defers to the winner, so
+  // a button (or any descendant tap recognizer) claiming the tap suppresses the
+  // spurious play/pause.
+  bool _playPauseTapEligible = false;
+
   final List<StreamSubscription> subscriptions = [];
 
   double get subtitleVerticalShiftOffset =>
@@ -671,6 +684,13 @@ class _MaterialDesktopVideoControlsState
                       }
                     : null,
                 child: GestureDetector(
+                  // BUG-374 (Hibiki vendored patch): record whether this tap is
+                  // eligible for play/pause (outside the bottom seek bar region),
+                  // but DO NOT toggle here. onTapDown fires on pointer-down before
+                  // the gesture arena resolves, so toggling here makes the edge of
+                  // overlaid control buttons leak through to play/pause. The actual
+                  // toggle runs in `onTap`, which only fires when this detector wins
+                  // the arena (no descendant button claimed the tap).
                   onTapDown: !_theme(context).playAndPauseOnTap
                       ? null
                       : (TapDownDetails details) {
@@ -679,15 +699,21 @@ class _MaterialDesktopVideoControlsState
                           final Offset localPosition =
                               box.globalToLocal(details.globalPosition);
                           const double tapPadding = 10.0;
-                          if (!mount ||
+                          // Only play and pause when the bottom seek bar is visible
+                          // and when clicking outside of the bottom seek bar region.
+                          _playPauseTapEligible = !mount ||
                               localPosition.dy <
                                   box.size.height -
                                       subtitleVerticalShiftOffset -
-                                      tapPadding) {
-                            // Only play and pause when the bottom seek bar is visible
-                            // and when clicking outside of the bottom seek bar region
+                                      tapPadding;
+                        },
+                  onTap: !_theme(context).playAndPauseOnTap
+                      ? null
+                      : () {
+                          if (_playPauseTapEligible) {
                             controller(context).player.playOrPause();
                           }
+                          _playPauseTapEligible = false;
                         },
                   onTapUp: !_theme(context).toggleFullscreenOnDoublePress
                       ? null

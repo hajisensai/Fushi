@@ -97,3 +97,25 @@ themes (`_desktopControlsTheme` / `_mobileControlsTheme` in
 snapshot just like every other seek entry point.
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
+
+## BUG-374: play/pause on `onTap` (arena-respecting), not `onTapDown`
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart`,
+the central play/pause `GestureDetector` and the side-rail buttons.
+
+Upstream binds `controller(context).player.playOrPause()` to `onTapDown`, which
+fires the instant a pointer goes down — *before* the gesture arena resolves. In
+Hibiki the video surface sits under ancestor gesture detectors and overlay
+buttons; tapping the *edge* of a control button let the ancestor's `onTapDown`
+fire play/pause too, so users hit a button edge and the video paused/played
+underneath (TODO-663).
+
+The patch moves `playOrPause()` to `onTap` (which only fires for the detector
+that wins the gesture arena, so a button that claims the tap suppresses the
+pass-through), and degrades `onTapDown` to only record a `_playPauseTapEligible`
+flag (preserving the seek-bar-region geometry checks). The same change is applied
+to the side-rail play/pause buttons on both `material_desktop.dart` and
+`material.dart`. Normal "tap the video area to pause" still works — it just waits
+one arena resolution (imperceptible).
+
+Source-guard test: `hibiki/test/pages/video_play_pause_tap_arena_guard_test.dart`.

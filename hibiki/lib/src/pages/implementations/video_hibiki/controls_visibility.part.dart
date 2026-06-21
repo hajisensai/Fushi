@@ -86,9 +86,12 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
   ///   移动经 [_handleVideoControlsHover] 仍随时唤回光标，不被本派生压制。
   void _applyControlsVisibilityFromMediaKit() {
     if (!mounted) return;
+    // BUG-371：[_subtitleListVisible] 不再纳入门控——字幕跳转列表是 push-aside 侧栏
+    // （把画面挤窄到左侧、不遮控制条），开列表时控制条应继续在被挤窄的画面上可见可用，
+    // 不像真 overlay（[_videoSidePanel]）那样盖住控制条需强制隐藏。仅沉浸锁 / 真 overlay
+    // 面板 / 剧集列表（其 push-aside 但仍占右栏）/ 编辑态压制。
     final bool gated = _immersiveLocked.value ||
         _videoSidePanel.value != null ||
-        _subtitleListVisible.value ||
         _episodeListVisible.value ||
         _videoControlEditMode.value;
     final bool visible = !gated && _mediaKitControlsVisible.value;

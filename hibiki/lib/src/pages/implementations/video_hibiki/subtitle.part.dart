@@ -50,7 +50,11 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       // 一次，之后列表行 toggle / 查词浮层 toggle 都增量维护它。原先打开面板时再异步
       // 刷新一次，让面板先以旧缓存渲染、DB 往返后才 setState 重建，已收藏行的实心星标
       // 要「等一会」才出现。改为纯读已填充缓存 → 星标随面板同帧 O(1) 渲染，无异步延迟。
-      _markControlsVisible(false);
+      //
+      // BUG-371：不再 _markControlsVisible(false)。字幕跳转列表是 push-aside 侧栏（画面
+      // 挤窄到左侧、不遮控制条），开列表时控制条 / 左右浮动 rail 应继续在被挤窄的画面上
+      // 可见可用（与 [_videoSidePanel] 真 overlay 不同，后者盖控制条故仍收起）。控制条本
+      // 由 media_kit 真实可见性驱动（[_pokeControlsVisible] / hover），不在此强制收起。
       _refocusVideo();
     } else {
       _closeSubtitleJumpList();

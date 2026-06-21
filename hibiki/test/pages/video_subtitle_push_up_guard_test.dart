@@ -184,7 +184,7 @@ void main() {
             '移动端点画面不应再走 Hibiki 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）');
   });
 
-  test('锁定 / 沉浸 / 侧栏 / 字幕列表门控下派生强制不可见（字幕不避让）', () {
+  test('锁定 / 沉浸 / 真 overlay 侧栏门控下派生强制不可见，但字幕列表不门控（BUG-371）', () {
     final int fn = src.indexOf('void _applyControlsVisibilityFromMediaKit()');
     expect(fn, greaterThanOrEqualTo(0), reason: '应有唯一派生函数');
     final int fnEnd = src.indexOf('\n  }', fn);
@@ -192,10 +192,13 @@ void main() {
     for (final String gate in <String>[
       '_immersiveLocked.value',
       '_videoSidePanel.value != null',
-      '_subtitleListVisible.value',
     ]) {
       expect(body, contains(gate), reason: '派生的门控必须含 $gate（门控成立时强制不可见、字幕不避让）');
     }
+    // BUG-371：字幕跳转列表是 push-aside 侧栏（画面挤窄、不遮控制条），开列表时控制条
+    // 应继续在被挤窄的画面上可见可用，故派生门控 gated **不含** _subtitleListVisible。
+    expect(body, isNot(contains('_subtitleListVisible.value')),
+        reason: 'BUG-371：字幕列表 push-aside 不遮控制条，派生门控不应含 _subtitleListVisible');
   });
 
   test('避让对控制条高度取下限（max），不是 bottomPadding + reserve 加法（TODO-161）', () {

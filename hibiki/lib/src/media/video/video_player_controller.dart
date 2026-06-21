@@ -589,6 +589,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 位置，无需碰 libmpv；图形内封字幕（PGS 等，[_graphicSubtitleActive]）由 libmpv
   /// 画面渲染，必须把延迟下发到 `sub-delay` 才生效（BUG-301）。非图形模式显式写
   /// `sub-delay=0` 复位，防上一段图形轨残留的 `sub-delay` 错位后续文本/无字幕渲染。
+  ///
+  /// BUG-373：文本字幕调延迟后**立即按当前位置重算当前 cue 并 [notifyListeners]**，
+  /// 而非等下一个 125ms tick。否则暂停定格看一句字幕微调时，调整完要等 tick 才生效
+  /// （暂停态连 tick 都不推进，更明显），表现为「调了没反馈」。重算用 [_syncCueForPosition]
+  /// 且 `persistPosition: false`（调延迟不该触发位置持久化）。图形字幕走 libmpv `sub-delay`
+  /// 即时渲染，不需要 Dart 侧重算。
   void setDelayMs(int delayMs) {
     _delayMs = delayMs.clamp(-600000, 600000);
     final Player? player = _player;
@@ -597,6 +603,28 @@ class VideoPlayerController extends ChangeNotifier
       player,
       buildSubtitleDelayProperty(_subtitleDelayMpvMs),
     ));
+    _resyncTextSubtitleAfterDelayChange(positionMs);
+  }
+
+  /// BUG-373：调延迟后对**文本字幕**立即按 [positionMs] 重算当前 cue 并 [notifyListeners]，
+  /// 让正显示的字幕同帧按新偏移刷新，而非等下一个 125ms tick。图形字幕（libmpv `sub-delay`）
+  /// 即时渲染、无需 Dart 侧重算，故 [_graphicSubtitleActive] 时跳过；[positionMs] 为 null
+  /// （未 load）时无可重算位置，跳过。`persistPosition: false`：调延迟不应触发位置持久化。
+  /// 是 [setDelayMs] 与单测 [debugSetDelayMsForTesting] 的共享重算真相源（DRY）。
+  void _resyncTextSubtitleAfterDelayChange(int? positionMs) {
+    if (_graphicSubtitleActive) return;
+    if (positionMs == null) return;
+    _syncCueForPosition(positionMs, persistPosition: false);
+  }
+
+  /// 测试钩子（BUG-373）：在**不实例化 [Player]**（宿主无 libmpv，[positionMs] 读不到）
+  /// 的前提下，模拟真实 [setDelayMs] 改延迟后的文本字幕即时重算——设 [_delayMs] 后按显式
+  /// 传入的 [positionMs] 跑与 [setDelayMs] **完全同一条** [_resyncTextSubtitleAfterDelayChange]
+  /// 路径，供单测断言「暂停定格调延迟，当前 cue 立即按新偏移变化」。
+  @visibleForTesting
+  void debugSetDelayMsForTesting(int delayMs, {required int positionMs}) {
+    _delayMs = delayMs.clamp(-600000, 600000);
+    _resyncTextSubtitleAfterDelayChange(positionMs);
   }
 
   /// 下发到 libmpv `sub-delay` 的延迟（毫秒）。图形内封字幕走 libmpv 画面渲染，用
