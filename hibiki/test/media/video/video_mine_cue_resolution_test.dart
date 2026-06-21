@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
@@ -170,6 +171,39 @@ void main() {
           resolveMiningCueForPosition(cues: cues, positionMs: 2500, delayMs: 0);
       expect(idx, greaterThanOrEqualTo(0));
       expect(identical(cue, cues[idx]), isTrue);
+    });
+  });
+
+  group('miningClipTimeMs (TODO-680 / BUG-392：字幕调轴应用到制卡裁剪时间)', () {
+    test('delay=0 时不动（裁的就是字幕原始时间窗）', () {
+      expect(miningClipTimeMs(10000, 0), 10000);
+      expect(miningClipTimeMs(12000, 0), 12000);
+    });
+
+    test('正 delay：字幕坐标 + delay = 播放器轴（用户实际听到的更晚位置）', () {
+      // 字幕整体延后 600ms 才对上画面：字幕文件 [10000,12000] 对应播放轴 [10600,12600]。
+      // 撤掉 `+ delayMs` 会让此处转红 = 守卫成立（裁早了 600ms，串上一句尾巴）。
+      expect(miningClipTimeMs(10000, 600), 10600);
+      expect(miningClipTimeMs(12000, 600), 12600);
+    });
+
+    test('负 delay：字幕提前，裁剪点相应前移', () {
+      expect(miningClipTimeMs(10000, -600), 9400);
+    });
+
+    test('下界 clamp 到 0（负 delay 把早期 cue 压到负数时不为负）', () {
+      expect(miningClipTimeMs(100, -600), 0);
+    });
+
+    test('与 effectiveSubtitlePositionMs 互为逆变换（往返还原）', () {
+      // effective = playerPos - delay（选句用）；miningClip = subtitleTime + delay（裁剪用）。
+      // 二者方向相反：把一个播放位置换成字幕坐标再换回去，得回原播放位置（避开 clamp 区）。
+      const int playerPos = 12345;
+      for (final int delay in <int>[0, 600, -600, 2500]) {
+        final int subtitle = effectiveSubtitlePositionMs(playerPos, delay);
+        expect(miningClipTimeMs(subtitle, delay), playerPos,
+            reason: 'delay=$delay 往返应还原');
+      }
     });
   });
 }

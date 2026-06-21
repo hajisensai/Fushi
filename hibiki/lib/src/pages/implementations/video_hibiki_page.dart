@@ -179,6 +179,21 @@ int resolveMiningCueIndexForPosition({
   return lo - 1;
 }
 
+/// TODO-680 / BUG-392：把 cue 时间轴上的制卡区间反算回**播放器时间轴**。
+///
+/// cue 命中走 [effectiveSubtitlePositionMs]：`effective = playerPos - delayMs`，即
+/// 文本字幕 cue 的 `startMs`/`endMs` 都是**字幕文件原始坐标**，制卡选句时用减法把
+/// 播放位置换算到字幕坐标后再匹配（[resolveMiningCueIndexForPosition]）。但裁句子音频 /
+/// 导出封面 GIF 是按**播放器时间轴**对视频文件抽取的——必须做与 [effectiveSubtitlePositionMs]
+/// 相反方向的逆变换 `playerPos = subtitleTime + delayMs`，否则 `delayMs != 0` 时裁出来的
+/// 音频/封面整体偏移 `delayMs`（裁的是字幕原始窗而非用户实际听到/看到的播放窗）。
+///
+/// 与 [VideoPlayerController.cueSeekTargetMs]（句子 seek 的逆变换）同一方向、同一真相源，
+/// 只是这里作用于制卡裁剪区间。下界 clamp 到 0（播放时间不为负）。
+@visibleForTesting
+int miningClipTimeMs(int subtitleTimeMs, int delayMs) =>
+    (subtitleTimeMs + delayMs).clamp(0, 1 << 30);
+
 @visibleForTesting
 String videoFavoriteCacheKey({
   required String text,
@@ -2685,9 +2700,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final AudioCue? selectedCue = _selectedMiningCueForCard(controller);
     if (selectedCue != null) {
       // 字幕列表多选（独立入口）：单段区间就是合成 cue 的时间窗，文本即其 join。
+      // TODO-680 / BUG-392：cue 时间是字幕文件坐标，裁音频/封面前逆变换回播放器轴
+      // （+ delayMs），否则字幕调轴后裁的位置整体偏移 delayMs。
       return (
-        clipStartMs: selectedCue.startMs,
-        clipEndMs: selectedCue.endMs,
+        clipStartMs: miningClipTimeMs(selectedCue.startMs, controller.delayMs),
+        clipEndMs: miningClipTimeMs(selectedCue.endMs, controller.delayMs),
         sentence: selectedCue.text,
         cueSentence: selectedCue.text,
         usedSelectedCue: true,
@@ -2714,9 +2731,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               endMs: cue.endMs,
             ),
     );
+    // TODO-680 / BUG-392：mergedRange / cue 的 startMs/endMs 都是字幕文件坐标，裁
+    // 音频/封面前逆变换回播放器轴（+ delayMs），与字幕显示用的 effectiveSubtitlePositionMs
+    // 方向相反，保证裁的就是用户实际听到/看到的那段。
     return (
-      clipStartMs: mergedRange?.startMs ?? cue?.startMs ?? 0,
-      clipEndMs: mergedRange?.endMs ?? cue?.endMs ?? 0,
+      clipStartMs: miningClipTimeMs(
+          mergedRange?.startMs ?? cue?.startMs ?? 0, controller.delayMs),
+      clipEndMs: miningClipTimeMs(
+          mergedRange?.endMs ?? cue?.endMs ?? 0, controller.delayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
       cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
       sentence: mergedSentence,
@@ -2941,6 +2963,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // TODO-115: 视频来源 → 卡片追加 `video` 分类标签（本页覆写了 onMineEntry，
       // 绕过 DictionaryPageMixin 的 source 注入，故在此显式指定）。
       source: AnkiMiningSource.video,
+      // TODO-681 / BUG-393：「自动添加书名到标签」开关原只对书籍生效，现视频同样吃——
+      // 视频的「书名」= 番名/标题（_title）。开关关闭或无标题时传 null，不追加。
+      bookTitleTag: appModel.autoAddBookNameToTags
+          ? BaseAnkiRepository.sanitizeTitleTag(_title)
+          : null,
     );
     final MineOutcome outcome = updateNoteId == null
         ? await repo.mineEntry(
