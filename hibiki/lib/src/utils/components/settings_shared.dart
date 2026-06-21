@@ -607,6 +607,53 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
   }
 }
 
+/// Per-segment horizontal chrome (padding + border) baked into a Material
+/// [SegmentedButton] segment under [kSettingsSegmentedStyle] (compact density,
+/// shrink-wrap tap target). Deliberately on the generous side: when estimating
+/// whether a strip fits, over-estimating the width makes us fall back to the
+/// (non-clipping) horizontal scroll instead of forcing a too-tight full-width
+/// layout — i.e. errors land on the safe, BUG-008-preserving side.
+const double _kSegmentHorizontalChrome = 28.0;
+
+/// Width reserved for a segment that carries no text label (icon-only segments
+/// such as the 深色模式 light/system/dark strip), in logical pixels.
+const double _kSegmentIconOnlyWidth = 44.0;
+
+/// Average advance width of one label glyph relative to the font size. CJK
+/// glyphs are ~1em wide and Latin ~0.55em; we use a single CJK-leaning factor so
+/// the estimate stays conservative (wide) for the worst realistic case.
+const double _kSegmentGlyphWidthFactor = 1.0;
+
+/// Estimates the intrinsic width (logical pixels) a Material segmented strip
+/// would occupy if laid out at its natural size, WITHOUT actually building it.
+///
+/// Used by [AdaptiveSettingsSegmentedRow] to decide, inside a [LayoutBuilder],
+/// whether the strip fits its full-width row (→ stretch to fill, every segment
+/// equally sized) or must fall back to a horizontal scroll view (→ narrow pane,
+/// keep every segment reachable per BUG-008). It does not need to be exact —
+/// only conservative: a slight over-estimate prefers the safe scrolling path.
+///
+/// [segmentLabels] is one entry per segment: the label's text, or `null` for an
+/// icon-only segment. [fontSize] is the segment label font size and
+/// [textScaleFactor] the active text scaler — both widen the estimate so large
+/// text or high UI scale correctly falls back to scrolling.
+double estimateSegmentedStripWidth({
+  required List<String?> segmentLabels,
+  required double fontSize,
+  required double textScaleFactor,
+}) {
+  if (segmentLabels.isEmpty) return 0.0;
+  final double scaledFont = fontSize * textScaleFactor;
+  double total = 0.0;
+  for (final String? label in segmentLabels) {
+    final double content = (label == null || label.isEmpty)
+        ? _kSegmentIconOnlyWidth
+        : label.characters.length * scaledFont * _kSegmentGlyphWidthFactor;
+    total += content + _kSegmentHorizontalChrome;
+  }
+  return total;
+}
+
 class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
   const AdaptiveSettingsSegmentedRow({
     required this.title,
@@ -655,6 +702,25 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       if (value != selected) onChanged(value);
     }
 
+    // Extract each segment's label text (null for icon-only segments) so the
+    // pure-function width estimate can decide whether the strip fits full-width.
+    final List<String?> segmentLabels =
+        segments.map<String?>((ButtonSegment<T> s) {
+      final Widget? label = s.label;
+      return label is Text ? label.data : null;
+    }).toList(growable: false);
+
+    final Widget strip = adaptiveSegmentedButton<T>(
+      context: context,
+      segments: segments,
+      selected: <T>{selected},
+      onSelectionChanged: (Set<T> values) {
+        if (values.isEmpty) return;
+        onChanged(values.first);
+      },
+      style: kSettingsSegmentedStyle,
+    );
+
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
@@ -668,20 +734,74 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
         focusIdPrefix: 'settings-segmented',
         onIncrement: () => selectAt(currentIndex + 1),
         onDecrement: () => selectAt(currentIndex - 1),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: adaptiveSegmentedButton<T>(
-            context: context,
-            segments: segments,
-            selected: <T>{selected},
-            onSelectionChanged: (Set<T> values) {
-              if (values.isEmpty) return;
-              onChanged(values.first);
-            },
-            style: kSettingsSegmentedStyle,
-          ),
+        child: _SegmentedStripHost(
+          controlBelow: controlBelow,
+          segmentLabels: segmentLabels,
+          strip: strip,
         ),
       ),
+    );
+  }
+}
+
+/// Hosts the segmented [strip] either FULL-WIDTH (every segment equally sized,
+/// no scroll) when it fits, or in a horizontal scroll view when it would not.
+///
+/// A segmented strip in a config row is intrinsically wide. When the strip owns
+/// its own full-width row ([controlBelow] true) and there is room, stretching it
+/// to fill the pane (Material [SegmentedButton] under a `double.infinity` width
+/// divides the space equally between segments) reads as a deliberate, balanced
+/// control. Only when the strip cannot fit — a narrow pane and/or many/long
+/// segments — do we fall back to the horizontal scroll view that keeps every
+/// segment reachable (BUG-008: never clip trailing segments off the edge).
+///
+/// When hosted inline ([controlBelow] false) the strip shares the row with the
+/// label and must stay scroll-only, exactly as before, so it never steals the
+/// label's width.
+class _SegmentedStripHost extends StatelessWidget {
+  const _SegmentedStripHost({
+    required this.controlBelow,
+    required this.segmentLabels,
+    required this.strip,
+  });
+
+  final bool controlBelow;
+  final List<String?> segmentLabels;
+  final Widget strip;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget scrolling = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: strip,
+    );
+
+    // Inline strips never stretch (they would crowd the label); keep the old
+    // shrink-and-scroll behaviour untouched.
+    if (!controlBelow) return scrolling;
+
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available = constraints.maxWidth;
+        final double estimated = estimateSegmentedStripWidth(
+          segmentLabels: segmentLabels,
+          fontSize: fontSize,
+          textScaleFactor: textScale,
+        );
+        // Fits -> stretch to fill the row (equal-width segments, no scroll).
+        // The width must be bounded for the scroll-free full-width layout, so
+        // guard against an unbounded LayoutBuilder (defensive: the full-width
+        // column row is always bounded in practice).
+        if (available.isFinite && estimated <= available) {
+          return SizedBox(width: double.infinity, child: strip);
+        }
+        // Does not fit -> horizontal scroll, every segment stays reachable.
+        return scrolling;
+      },
     );
   }
 }

@@ -100,7 +100,9 @@ void main() {
           reason: 'inline split squeezes the strip below its width → scrolls');
 
       // Default (controlBelow:true): same pane, but the strip owns a full-width
-      // row below the label, so it fits and does NOT scroll.
+      // row below the label, so it fits and STRETCHES to fill the row (no
+      // scroll). The strip fitting means it is no longer wrapped in a scroll
+      // view at all (TODO-647 full-width-when-it-fits).
       await tester
           .pumpWidget(buildTestApp(row(width: pane, controlBelow: null)));
       await tester.pump();
@@ -115,13 +117,16 @@ void main() {
       expect(strip.top, greaterThanOrEqualTo(label.bottom - 0.5),
           reason: 'the segmented strip sits below the label (controlBelow)');
 
-      // Symptom guard: the full strip — including the last "iOS" segment — fits,
-      // so nothing is clipped and the strip does not scroll.
-      expect(maxScrollOf(tester), 0.0,
-          reason: 'a full-width row fits the strip, so it does not scroll');
+      // TODO-647: a fitting strip is laid out full-width, so it is NOT wrapped
+      // in a horizontal scroll view (no Scrollable at all here).
+      expect(find.byType(SingleChildScrollView), findsNothing,
+          reason: 'a fitting strip stretches full-width, not scroll-hosted');
+
+      // Symptom guard: the full strip — including the last "iOS" segment — fits
+      // and nothing is clipped.
       final Rect lastSegment = tester.getRect(find.text('iOS (Cupertino)'));
       expect(lastSegment.right, lessThanOrEqualTo(strip.right + 0.5),
-          reason: 'the last segment is within the (un-scrolled) strip bounds');
+          reason: 'the last segment is within the strip bounds');
     },
   );
 
@@ -178,6 +183,105 @@ void main() {
         reason: 'long segmented labels at 2x must scroll, not overflow',
       );
       expect(maxScrollOf(tester), greaterThan(0.0));
+    },
+  );
+  testWidgets(
+    'TODO-647: a fitting default strip stretches full-width with equal segments',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(900, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // A 3-segment strip with short labels in a roomy pane: it fits, so it must
+      // stretch to fill the row (not shrink to its natural width on the left).
+      const List<ButtonSegment<String>> shortSegments = <ButtonSegment<String>>[
+        ButtonSegment<String>(value: 'off', label: Text('Off')),
+        ButtonSegment<String>(value: 'on', label: Text('On')),
+        ButtonSegment<String>(value: 'auto', label: Text('Auto')),
+      ];
+
+      const double pane = 600;
+      await tester.pumpWidget(
+        buildTestApp(
+          Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: pane,
+              child: AdaptiveSettingsSegmentedRow<String>(
+                title: 'Spread mode',
+                subtitle: 'Choose page spread',
+                segments: shortSegments,
+                selected: 'auto',
+                onChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      // Fits → no scroll host at all.
+      expect(find.byType(SingleChildScrollView), findsNothing,
+          reason: 'a fitting strip is laid out full-width, not scroll-hosted');
+
+      // The strip stretches to (almost) the full row width — well beyond the
+      // natural width of three short labels (~200px). Allow for row padding.
+      final Rect strip = tester.getRect(find.byType(SegmentedButton<String>));
+      expect(strip.width, greaterThan(pane - 40),
+          reason: 'a fitting strip stretches to fill its full-width row');
+
+      // Equal-width segments: the three labels are roughly evenly spaced across
+      // the stretched strip, so the centre label sits near the strip centre.
+      final double onCentre = tester.getCenter(find.text('On')).dx;
+      expect((onCentre - strip.center.dx).abs(), lessThan(strip.width / 6),
+          reason: 'segments share the stretched width equally');
+    },
+  );
+
+  testWidgets(
+    'TODO-647: a narrow pane with many/long segments falls back to scroll '
+    '(BUG-008 segments stay reachable)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // Five verbose segments in a narrow pane: cannot fit full-width, so the
+      // host must fall back to the horizontal scroll view so every segment
+      // (including the last) stays reachable.
+      const List<ButtonSegment<String>> manySegments = <ButtonSegment<String>>[
+        ButtonSegment<String>(value: 'a', label: Text('Automatic detect')),
+        ButtonSegment<String>(value: 'b', label: Text('Vertical writing')),
+        ButtonSegment<String>(value: 'c', label: Text('Horizontal writing')),
+        ButtonSegment<String>(value: 'd', label: Text('Two-page spread')),
+        ButtonSegment<String>(value: 'e', label: Text('Continuous scroll')),
+      ];
+
+      await tester.pumpWidget(
+        buildTestApp(
+          Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: 300,
+              child: AdaptiveSettingsSegmentedRow<String>(
+                title: 'Reading layout',
+                subtitle: 'Pick a layout',
+                segments: manySegments,
+                selected: 'a',
+                onChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull,
+          reason: 'a too-wide strip must scroll, not overflow');
+
+      // Fell back to the scroll view, and it genuinely scrolls (the strip is
+      // wider than the pane), so trailing segments are reachable.
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(maxScrollOf(tester), greaterThan(0.0),
+          reason: 'narrow pane → strip scrolls, last segment reachable');
     },
   );
 }
