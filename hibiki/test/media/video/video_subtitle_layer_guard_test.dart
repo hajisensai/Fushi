@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../pages/video_hibiki_page_source_corpus.dart';
+
 /// BUG-190 source guard（TODO-080/092）：字幕在 Hibiki 一律走可点
 /// [VideoSubtitleOverlay]（cue 同步 + 逐字查词），libmpv / media_kit 不该自己渲染
 /// 任何字幕。本守卫锁定三处调用点不变量——它们都无法在无头 libmpv 下驱动真实
@@ -41,9 +43,9 @@ void main() {
   );
 
   group('video_hibiki_page disables media_kit built-in SubtitleView', () {
-    final String src =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // TODO-590 batch15：全屏路由侧 Video（含 visible:false）随 fullscreen 域搬到
+    // fullscreen.part.dart，故改读合并语料；窗口侧 Video 仍在主壳（语料最前段）。
+    final String src = readVideoHibikiSource();
 
     test('both Video widgets set subtitleViewConfiguration visible:false', () {
       // 两处 Video（窗口侧 + 全屏路由侧）都必须显式禁用内置 SubtitleView。

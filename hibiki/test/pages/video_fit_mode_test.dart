@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/models/preferences_repository.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(
@@ -88,9 +88,9 @@ void main() {
   // derive their fit from the single _videoFitMode preference via
   // videoFitModeToBoxFit, never the old hard-coded BoxFit.cover / params.fit.
   test('source guard: video page fit follows the videoFitMode preference', () {
-    final String src =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // TODO-590 batch15：全屏路由侧 Video（含 fit: videoFitModeToBoxFit(_videoFitMode)）
+    // 随 fullscreen 域搬到 fullscreen.part.dart，故改读合并语料；窗口侧 Video 仍在主壳。
+    final String src = readVideoHibikiSource();
     // Windowed + fullscreen both go through the mapping helper.
     final int mappedFitCount =
         'fit: videoFitModeToBoxFit(_videoFitMode)'.allMatches(src).length;

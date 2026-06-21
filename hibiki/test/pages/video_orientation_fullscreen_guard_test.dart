@@ -21,10 +21,12 @@ void main() {
 
   setUpAll(() {
     // TODO-590 batch11：桌面主题的 `toggleFullscreenOnDoublePress: false` 随
-    // 两套 controls 主题搬到 controls_theme.part.dart，故改读合并语料；其余被守卫的
-    // 方法（_handleVideoPointerUp / _enterVideoNativeFullscreen / _toggleVideoFullscreen
-    // / _buildFullscreenButton / _handleBackOrExit）仍在主壳（语料最前段），
-    // methodBody 大括号配对与字符串断言均不受影响。
+    // 两套 controls 主题搬到 controls_theme.part.dart，故改读合并语料。
+    // batch15：fullscreen 域（_toggleVideoFullscreen / _enterVideoNativeFullscreen /
+    // _exitVideoNativeFullscreen / _buildFullscreenButton 等）已搬到
+    // fullscreen.part.dart，仍在合并语料内（part 段）；_handleVideoPointerUp /
+    // _handleBackOrExit 仍在主壳（语料最前段）。methodBody 大括号配对与字符串断言
+    // 用方法签名定位，均不受搬迁影响。
     src = readVideoHibikiSource();
   });
 
