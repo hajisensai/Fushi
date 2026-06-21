@@ -1090,12 +1090,14 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 应用「主动跳转目标」snap（TODO-565），并维护 [_seekTargetCueIndex] 生命周期。
+  /// 应用「主动跳转目标」snap（TODO-565 / BUG-378），并维护 [_seekTargetCueIndex] 生命周期。
   ///
   /// [findCueIdx] 是按实时位置反推的命中下标，[effectiveMs] 是 effective 字幕轴位置。
-  /// 委托纯函数 [cueSnapIndex] 决策：仍在目标句 preRoll 引导窗口内 → 返回目标下标且保留
-  /// 快照；已自然进入目标句 / 远早于窗口 / 无目标 → 返回原下标且清快照。无副作用部分全在
-  /// 纯函数里，这里只搬运结果并落 [_seekTargetCueIndex]。
+  /// 委托纯函数 [cueSnapIndex] 决策几何：落在 preRoll 引导窗口或目标句区间 `[startMs-preRoll,
+  /// endMs]` 内 → 返回目标下标且保留快照（`keep=true`）；越过句尾 / 远早于窗口 → `keep=false`。
+  /// 本方法再叠加**在途 seek 宽限**（[_seekSnapGraceTicksLeft]）这一时间维度：position 首次
+  /// 真正落入目标句前，无论瞬态在目标句之前还是之后，都消耗宽限、保留快照、snap 回目标句
+  /// （撑到 seek 真落地），落定后才按几何清快照。无副作用几何全在纯函数里。
   int _applySeekTargetSnap(int findCueIdx, int effectiveMs) {
     final int? target = _seekTargetCueIndex;
     if (target == null) return findCueIdx;
@@ -1104,31 +1106,39 @@ class VideoPlayerController extends ChangeNotifier
       return findCueIdx;
     }
     final int targetStartMs = _cues[target].startMs;
+    final int targetEndMs = _cues[target].endMs;
     final (int snappedIdx, bool keepSnapshot) = cueSnapIndex(
       findCueIndex: findCueIdx,
       effectiveMs: effectiveMs,
       targetIndex: target,
       targetStartMs: targetStartMs,
+      targetEndMs: targetEndMs,
       preRollMs: kCueSeekPreRollMs,
     );
     if (keepSnapshot) {
-      // 情形 3：position 已进入 preRoll 引导窗口 [startMs-preRoll, startMs)，seek 真落地。
-      // 作废在途 seek 宽限——之后再「远离窗口」就是真离开（自然越过 / 手动 seek），该清。
+      // 情形 3：position 落在 preRoll 引导窗口 [startMs-preRoll, startMs) 或目标句区间
+      // [startMs, endMs] 内，seek 已落到目标句（含因关键帧吸附越句首落在句内）。作废在途
+      // seek 宽限——之后再「远离窗口」就是真离开（越过句尾 / 手动 seek），该清。
       _seekSnapGraceTicksLeft = 0;
       return snappedIdx;
     }
-    // keepSnapshot==false：cueSnapIndex 判「该清快照」。但要区分两种「远离窗口」：
-    // 1) effectiveMs >= targetStartMs（情形 1）：position 已自然越过目标句首，seek 已真
-    //    落地（或被手动 seek 越过），findCueIndex 已能正确命中——正常清快照。
-    // 2) effectiveMs < targetStartMs - preRoll（情形 2）：position 远在引导窗口之前。
-    //    这无法区分「用户手动 seek 拉走（该清）」与「skipToCue 自己的 seek 还在途、
-    //    position 暂停在旧远处（不该清）」。靠 [_seekSnapGraceTicksLeft] 有界宽限兜：
-    //    宽限未耗尽 → 视作在途 seek 未落地，消耗一格、保留快照、snap 回目标句（撑到落地）；
-    //    宽限耗尽 → 判定 seek 落地失败（或确属手动远离），放弃保护、正常清快照。
-    if (effectiveMs >= targetStartMs) {
-      _clearSeekTargetSnap();
-      return snappedIdx;
-    }
+    // keepSnapshot==false：cueSnapIndex 判 position 已离开目标句区间（情形 1 越句尾 / 情形 2
+    // 远早于窗口）。但 **position 是否真正进入过目标句一次**（[_seekSnapGraceTicksLeft] 已被
+    // 情形 3 清 0 = 进过；仍 > 0 = 在途、从未进过）决定该不该清快照：
+    // - **在途（宽限 > 0，position 从未首次落入目标句）**：seek 尚未真落地，本 tick 读到的
+    //   是 seek 在途的瞬态位置——可能在目标句**之前**（情形 2，旧 position）也可能在目标句
+    //   **之后**（情形 1 越句尾：短句关键帧吸附越过整句 / media_kit seek 吐的中间高位置 /
+    //   播放态点靠前句时旧 position 本就在更后的句）。两个方向都是「seek 还没落到目标句」，
+    //   一律消耗一格宽限、保留快照、snap 回目标句（撑到 seek 真落地），不被瞬态顶到别的句 →
+    //   消除「点第 N 句因 seek 在途瞬态高亮 N±k」的多跳/错位（BUG-378，对齐有声书
+    //   [AudiobookPlayerController] 的 _explicitSeekInFlight 抑制范式）。
+    // - **已落定（宽限 == 0，position 进过目标句后又越过句尾，情形 1）**：这是正常自然播放
+    //   越过目标句，按 findCueIndex 命中下一句、清快照退回纯推导。
+    // - **宽限耗尽**（连续在途 tick 用满配额仍没落定，慢设备 / libmpv 丢弃，对齐 BUG-179）：
+    //   判定 seek 落地失败，放弃保护、清快照，绝不永久把高亮钉在旧目标上。
+    // 注：情形 2 在途经 seekMs 的统一清除点（[_clearSeekTargetSnap]，宽限同时清 0）已先把
+    // 「用户手动 seek 拉走」与「skipToCue 在途」分开——手动 seek 清快照后 target==null 提前
+    // 返回，走不到这里，故这里的宽限保护只作用于 skipToCue 自己的在途 seek。
     if (_seekSnapGraceTicksLeft > 0) {
       _seekSnapGraceTicksLeft--;
       return target;
@@ -1154,29 +1164,38 @@ class VideoPlayerController extends ChangeNotifier
     _clearSeekTargetSnap();
   }
 
-  /// 主动跳转目标 snap 的纯决策（TODO-565）。所有几何在 effective 字幕轴上。
+  /// 主动跳转目标 snap 的纯决策（TODO-565，越界判据 BUG-378 收紧到 endMs）。所有几何在
+  /// effective 字幕轴上。落地判据用「越过目标句**尾** [targetEndMs]」而非「越过句**首**
+  /// [targetStartMs]」——media_kit 关键帧吸附可能把 seek 落点推到目标句首之后；当目标句
+  /// 很短、吸附幅度大于句长时，落点会越过整个目标句进入下一句（`eff > targetEndMs`），
+  /// 此刻 [findCueIndex] 命中下一句（或 gap 的 -1）。旧判据 `eff >= targetStartMs` 把这种
+  /// 「越过整句进了下一句」误当成「自然进入目标句、可信」而清快照，导致点第 N 句高亮 N+1
+  /// （多跳一句）。收紧到 endMs 后，落点在 `[startMs-preRoll, endMs]` 区间（preRoll 引导窗口
+  /// 内 **或** 目标句区间内）一律 snap 回目标句，只有真正越过句尾才清。
   ///
   /// 三种情形：
-  /// 1. `effectiveMs >= targetStartMs`：position 已自然进入/越过目标句，[findCueIndex]
-  ///    已能正确命中——用原命中下标，**清快照**（`keep=false`）。
+  /// 1. `effectiveMs > targetEndMs`：position 已自然越过目标句**尾**，[findCueIndex] 命中
+  ///    下一句（或更后），主动跳转已落定/失效——用原命中下标，**清快照**（`keep=false`）。
   /// 2. `effectiveMs < targetStartMs - preRollMs`：position 远在 preRoll 引导窗口之前
   ///    （被别的 seek 拉走 / 跳转未落地），主动跳转已失效——用原命中下标，**清快照**。
-  /// 3. 其余（`targetStartMs - preRollMs <= effectiveMs < targetStartMs`）：正处在 preRoll
-  ///    引导窗口内，命中下标此刻是目标句**之前**那条（或 gap 的 -1）——snap 回目标句，
-  ///    **保留快照**（`keep=true`）等下个 tick 自然进入后再清。
+  /// 3. 其余（`targetStartMs - preRollMs <= effectiveMs <= targetEndMs`）：落在 preRoll
+  ///    引导窗口内、或目标句区间内，命中下标此刻可能是目标句之前那条 / gap 的 -1 / 因吸附
+  ///    越句而成的下一句——一律 snap 回目标句，**保留快照**（`keep=true`）等 position 真正
+  ///    越过句尾后再清。
   ///
-  /// preRollMs 取负时按 0 处理（与 [cueSeekTargetMs] 同防御），此时窗口退化为空区间，
-  /// 任意 position 都落情形 1/2，不会误 snap。
+  /// preRollMs 取负时按 0 处理（与 [cueSeekTargetMs] 同防御）。[targetEndMs] 退化为
+  /// < `targetStartMs - preRoll` 的异常输入时窗口为空，任意 position 落情形 1/2 不误 snap。
   @visibleForTesting
   static (int snappedIndex, bool keepSnapshot) cueSnapIndex({
     required int findCueIndex,
     required int effectiveMs,
     required int targetIndex,
     required int targetStartMs,
+    required int targetEndMs,
     required int preRollMs,
   }) {
     final int preRoll = preRollMs < 0 ? 0 : preRollMs;
-    if (effectiveMs >= targetStartMs) return (findCueIndex, false);
+    if (effectiveMs > targetEndMs) return (findCueIndex, false);
     if (effectiveMs < targetStartMs - preRoll) return (findCueIndex, false);
     return (targetIndex, true);
   }

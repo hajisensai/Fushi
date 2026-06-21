@@ -1398,14 +1398,15 @@ void main() {
   // 引导窗口内把命中下标 snap 回目标句；自然进入后清快照退回纯推导。
   group('TODO-565 字幕列表点击高亮不 off-by-one', () {
     test('纯函数 cueSnapIndex：preRoll 引导窗口内 snap 回目标句、保留快照', () {
-      // 目标句 startMs=2000、preRoll=180：窗口 [1820, 2000)。落点 1850（< 2000）此刻
-      // findCueIndex 命中上一句 0，应 snap 到目标 1 并保留快照（keep=true）。
+      // 目标句 [startMs=2000, endMs=3000]、preRoll=180：snap 窗口 [1820, 3000]。落点 1850
+      // 此刻 findCueIndex 命中上一句 0，应 snap 到目标 1 并保留快照（keep=true）。
       expect(
         VideoPlayerController.cueSnapIndex(
           findCueIndex: 0,
           effectiveMs: 1850,
           targetIndex: 1,
           targetStartMs: 2000,
+          targetEndMs: 3000,
           preRollMs: 180,
         ),
         (1, true),
@@ -1417,23 +1418,65 @@ void main() {
           effectiveMs: 1900,
           targetIndex: 1,
           targetStartMs: 2000,
+          targetEndMs: 3000,
           preRollMs: 180,
         ),
         (1, true),
       );
     });
 
-    test('纯函数 cueSnapIndex：自然进入目标句后用原命中下标、清快照', () {
-      // position 已 >= 目标 startMs：findCueIndex 自己就命中目标，用原值、清快照（keep=false）。
+    test('纯函数 cueSnapIndex：落点在目标句区间内（含吸附越句首）→ snap 回目标、保留快照（BUG-378）', () {
+      // BUG-378 核心：position 已 >= startMs 但 <= endMs（落在目标句内）。旧判据
+      // `eff >= startMs` 会清快照并用原命中下标；新判据收紧到 endMs，落在句内一律
+      // snap 回目标句、保留快照——这样目标句很短、关键帧吸附把落点推进句内时不丢目标。
       expect(
         VideoPlayerController.cueSnapIndex(
           findCueIndex: 1,
-          effectiveMs: 2000,
+          effectiveMs: 2000, // 恰在 startMs
           targetIndex: 1,
           targetStartMs: 2000,
+          targetEndMs: 3000,
           preRollMs: 180,
         ),
-        (1, false),
+        (1, true),
+      );
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 1,
+          effectiveMs: 2500, // 句中
+          targetIndex: 1,
+          targetStartMs: 2000,
+          targetEndMs: 3000,
+          preRollMs: 180,
+        ),
+        (1, true),
+      );
+      // endMs 边界（闭区间）仍属目标句内 → snap 回目标。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 1,
+          effectiveMs: 3000,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          targetEndMs: 3000,
+          preRollMs: 180,
+        ),
+        (1, true),
+      );
+    });
+
+    test('纯函数 cueSnapIndex：自然越过目标句尾后用原命中下标、清快照', () {
+      // position 已 > 目标 endMs：findCueIndex 命中下一句/gap，用原值、清快照（keep=false）。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 2,
+          effectiveMs: 3001, // 刚越过 endMs=3000
+          targetIndex: 1,
+          targetStartMs: 2000,
+          targetEndMs: 3000,
+          preRollMs: 180,
+        ),
+        (2, false),
       );
       expect(
         VideoPlayerController.cueSnapIndex(
@@ -1441,6 +1484,50 @@ void main() {
           effectiveMs: 5000,
           targetIndex: 1,
           targetStartMs: 2000,
+          targetEndMs: 3000,
+          preRollMs: 180,
+        ),
+        (2, false),
+      );
+    });
+
+    test('纯函数 cueSnapIndex：短目标句吸附落点越过其 endMs 进下一句 → 仍 snap 回目标（BUG-378 真因）',
+        () {
+      // 极短目标句 cue1=[1050,1100]（仅 50ms），preRoll=180：snap 窗口 [870, 1100]。
+      // 关键帧吸附把落点推到 1080（在 [1050,1100] 句内）→ findCueIndex 此刻可能因吸附
+      // 命中下一句的边界，但 1080<=endMs(1100)，应 snap 回目标 1（不取 findCueIndex 的 2）。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 2, // 反推命中下一句（吸附边界 / gap 模糊）
+          effectiveMs: 1080,
+          targetIndex: 1,
+          targetStartMs: 1050,
+          targetEndMs: 1100,
+          preRollMs: 180,
+        ),
+        (1, true),
+        reason: '落点仍在短目标句区间内，必须 snap 回目标句而非多跳到下一句',
+      );
+      // 落点 1099（endMs 内最后 1ms）仍 snap 回目标。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 2,
+          effectiveMs: 1099,
+          targetIndex: 1,
+          targetStartMs: 1050,
+          targetEndMs: 1100,
+          preRollMs: 180,
+        ),
+        (1, true),
+      );
+      // 真正越过 endMs（1101）才认定落定、用原命中、清快照。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 2,
+          effectiveMs: 1101,
+          targetIndex: 1,
+          targetStartMs: 1050,
+          targetEndMs: 1100,
           preRollMs: 180,
         ),
         (2, false),
@@ -1448,27 +1535,30 @@ void main() {
     });
 
     test('纯函数 cueSnapIndex：远早于引导窗口（被别的 seek 拉走）→ 用原命中、清快照', () {
-      // 1819 < 2000-180=1820：在窗口之外，跳转已失效，不 snap、清快照。
+      // 869 < 1050-180=870：在 snap 窗口之外（更早），跳转已失效，不 snap、清快照。
       expect(
         VideoPlayerController.cueSnapIndex(
           findCueIndex: 0,
-          effectiveMs: 1819,
+          effectiveMs: 869,
           targetIndex: 1,
-          targetStartMs: 2000,
+          targetStartMs: 1050,
+          targetEndMs: 1100,
           preRollMs: 180,
         ),
         (0, false),
       );
     });
 
-    test('纯函数 cueSnapIndex：负 preRoll 当 0（窗口退化为空，绝不误 snap）', () {
-      // preRoll<=0 时窗口 [startMs, startMs) 为空：任意 effective<startMs 都落「远早于窗口」。
+    test('纯函数 cueSnapIndex：负 preRoll 当 0（preRoll 窗口退化，仍 snap 句区间内）', () {
+      // preRoll<=0 时下界退化为 startMs：effective<startMs（句首之前）落「远早于窗口」清快照，
+      // 但 startMs<=effective<=endMs（句内）仍 snap 回目标（endMs 判据不受 preRoll 影响）。
       expect(
         VideoPlayerController.cueSnapIndex(
           findCueIndex: 0,
-          effectiveMs: 1999,
+          effectiveMs: 1999, // < startMs=2000，preRoll=0 窗口空 → 清快照
           targetIndex: 1,
           targetStartMs: 2000,
+          targetEndMs: 3000,
           preRollMs: 0,
         ),
         (0, false),
@@ -1479,9 +1569,22 @@ void main() {
           effectiveMs: 1999,
           targetIndex: 1,
           targetStartMs: 2000,
+          targetEndMs: 3000,
           preRollMs: -50,
         ),
         (0, false),
+      );
+      // 句内（2500）即使 preRoll=0 仍 snap 回目标。
+      expect(
+        VideoPlayerController.cueSnapIndex(
+          findCueIndex: 1,
+          effectiveMs: 2500,
+          targetIndex: 1,
+          targetStartMs: 2000,
+          targetEndMs: 3000,
+          preRollMs: 0,
+        ),
+        (1, true),
       );
     });
 
@@ -1649,6 +1752,73 @@ void main() {
       c.debugUpdateCueForPosition(1820); // 2000-180，落 cue0 区间但应 snap 回 1
       expect(c.currentCueIndex, 1,
           reason: 'preRoll 引导窗口内仍 snap 回点击的目标句（前两轮保护不破坏）');
+    });
+
+    // BUG-378：点字幕列表里某句（短句 / 间隔密），skipToCue 的 seek 在途瞬态 tick 读到一个
+    // **越过目标句尾**的位置（短句关键帧吸附越过整句 / media_kit seek 吐的中间高位置），
+    // 旧实现情形 1（eff>=startMs 旧判据，或 eff>endMs 但无在途宽限保护）会立即清快照、采用
+    // findCueIndex 命中的下一句 → 点第 N 句高亮 N+1（多跳一句）。修复：position 首次真正落入
+    // 目标句前的在途瞬态，无论在目标句之前还是之后，都受在途 seek 宽限保护、snap 回目标句。
+    // 撤掉「越句尾在途也消耗宽限」保护（把 if(eff>targetEndMs) 提前清快照搬回宽限分支之前）
+    // 此测试转红：在途越句尾瞬态 → 高亮多跳到下一句。
+    test('BUG-378：skipToCue 在途瞬态越过短目标句尾 → 不多跳，snap 回目标句 N（非 N+1）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      // 短目标句 cue1=[1050,1100]（50ms），下一句 cue2=[1120,2000]。
+      c.setCues([
+        _cue(0, 0, 1000),
+        _cue(1, 1050, 1100),
+        _cue(2, 1120, 2000),
+      ]);
+
+      // 点第 2 行（index 1）。skipToCue 置目标 1 + 满在途宽限（无 player 时 seek no-op）。
+      await c.skipToCue(c.cues[1]);
+      expect(c.debugSeekTargetCueIndex, 1);
+
+      // ① 在途瞬态 tick：seek 尚未落到目标句，但读到一个越过 cue1 句尾的位置 1150
+      //    （落在下一句 cue2 区间 [1120,2000]）。findCueIndex(1150)=2，旧实现据此多跳 cue2。
+      //    在途宽限保护下应 snap 回目标句 1（撑到 seek 真落到 cue1）。
+      c.debugUpdateCueForPosition(1150);
+      expect(c.currentCueIndex, 1, reason: '在途越句尾瞬态不得把高亮顶到下一句（BUG-378 多跳）');
+      expect(c.debugSeekTargetCueIndex, 1, reason: '在途宽限未作废，快照仍在');
+
+      // ② seek 真落到目标句内 1080（preRoll 落点经关键帧吸附进 cue1 区间）：高亮目标句 1，
+      //    并作废在途宽限（position 已首次真正落入目标句）。
+      c.debugUpdateCueForPosition(1080);
+      expect(c.currentCueIndex, 1);
+      expect(c.currentCue!.text, 'line1');
+
+      // ③ 落定后正常自然播放越过 cue1 句尾进 cue2：宽限已作废，按真实位置前进，不再钉住。
+      c.debugUpdateCueForPosition(1150);
+      expect(c.currentCueIndex, 2, reason: '落定后自然越句尾，正常跟随到下一句');
+    });
+
+    // BUG-378 对称：播放态点**靠前**的句（当前 position 在更后的句），skipToCue 的 seek 在途，
+    // stale tick 先读到旧的（更后的）position——它越过目标句尾。旧实现情形 1 立即清快照、
+    // 采用 findCueIndex 命中的旧句 → 高亮停在旧句（点了没反应 / 跳错）。在途宽限保护下应
+    // snap 回点击的靠前目标句，撑到 seek 落地。
+    test('BUG-378：点靠前句时 stale tick（旧远位置在目标句之后）→ snap 回目标句，不停旧句', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([
+        _cue(0, 0, 1000),
+        _cue(1, 3000, 4000),
+        _cue(2, 6000, 7000),
+      ]);
+
+      // 当前在 cue2 播放，点第 1 行（index 0，靠前句）。skipToCue 置目标 0 + 满宽限。
+      await c.skipToCue(c.cues[0]);
+      expect(c.debugSeekTargetCueIndex, 0);
+
+      // ① stale tick：seek 尚未落地，读到旧的（更后的）position 6500（在 cue2 区间，
+      //    远在目标句 0 的句尾 1000 之后）。findCueIndex(6500)=2。在途宽限保护下 snap 回 0。
+      c.debugUpdateCueForPosition(6500);
+      expect(c.currentCueIndex, 0, reason: '点靠前句的 stale 旧高位置不得把高亮停在旧句（在途宽限保护）');
+
+      // ② seek 落到目标句首 0：高亮目标句 0，作废宽限。
+      c.debugUpdateCueForPosition(0);
+      expect(c.currentCueIndex, 0);
+      expect(c.currentCue!.text, 'line0');
     });
   });
 }
