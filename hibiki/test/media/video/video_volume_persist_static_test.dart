@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../pages/video_hibiki_page_source_corpus.dart';
+
 /// TODO-451 guard: video volume is remembered per video bookUid.
 ///
 /// media_kit Player cannot be constructed in the host unit-test environment, so
@@ -12,9 +14,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// - real volume changes persist, but temporary M mute does not;
 /// - pending writes debounce and flush on lifecycle / dispose / process exit.
 void main() {
-  final File pageFile = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
   final File controllerFile = File(
     'lib/src/media/video/video_player_controller.dart',
   );
@@ -23,9 +22,8 @@ void main() {
   late String controller;
 
   setUpAll(() {
-    expect(pageFile.existsSync(), isTrue);
     expect(controllerFile.existsSync(), isTrue);
-    page = pageFile.readAsStringSync();
+    page = readVideoHibikiSource();
     controller = controllerFile.readAsStringSync();
   });
 

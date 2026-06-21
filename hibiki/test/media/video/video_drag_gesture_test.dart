@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../pages/video_hibiki_page_source_corpus.dart';
+
 /// TODO-057 守卫：视频画面「左半区竖滑调屏幕亮度 / 右半区竖滑调音量 + 指示条」。
 ///
 /// 实现复用 media_kit 移动控制条内建的 volumeGesture/brightnessGesture，但 HUD
@@ -9,9 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// [ScreenBrightnessController]（移动端真生效、桌面诚实门控）；音量不依赖亮度能力。
 /// 没有可在宿主里跑的真手势/真亮度，故走源码扫描守卫；撤掉接线转红。
 void main() {
-  final String videoPage = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  ).readAsStringSync();
+  final String videoPage = readVideoHibikiSource();
   final String brightnessCtrl = File(
     'lib/src/platform/screen_brightness_controller.dart',
   ).readAsStringSync();

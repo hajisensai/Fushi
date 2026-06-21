@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// Source guard for mpv/asbplayer-style volume and brightness feedback.
 ///
 /// The real volume keys are owned by media_kit and platform input, so this
@@ -9,16 +11,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// Hibiki page-level level HUD for about 1.6s. Non-volume/brightness OSDs stay
 /// on the legacy top-left mpv-style channel.
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
   final File overlays = File('lib/src/media/video/video_volume_overlays.dart');
 
   late String src;
   late String overlaySrc;
   setUpAll(() {
-    expect(page.existsSync(), isTrue);
     expect(overlays.existsSync(), isTrue);
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
     overlaySrc = overlays.readAsStringSync();
   });
 
@@ -183,7 +182,7 @@ void main() {
   test('generic OSD stays top-left and does not render volume HUD', () {
     final String osd = region(
       'Widget _buildOsdOverlay() {',
-      'Widget _buildSideLockButton() {',
+      'IconData _volumeIconFor(double volume) {',
     );
     expect(osd.contains('Alignment.topLeft'), isTrue,
         reason: 'Non-volume mpv-style OSD remains top-left.');

@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（TODO-388 / BUG-295）：视频侧边锁 / 解锁（沉浸）按钮在鼠标 hover 时不消失。
 ///
@@ -13,13 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 可见性判据改为 `_lockButtonVisible.value || _lockButtonHovered.value`。media_kit controls
 /// 跑不了 headless，故锁源码结构不变量（与 [video_rail_hover_flicker_guard_test] 同理）。
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('存在 _lockButtonHovered 单一真相源（ValueNotifier）并在 dispose 释放', () {
@@ -67,7 +63,7 @@ void main() {
   test('keep-alive 真正包住锁按钮本体（_buildSideLockButton 内调用）', () {
     final int start = src.indexOf('Widget _buildSideLockButton()');
     expect(start, greaterThan(0));
-    final int end = src.indexOf('IconData _volumeIconFor(', start);
+    final int end = src.indexOf('onPressed: _toggleImmersiveLock,', start);
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
     expect(body.contains('_lockButtonHoverKeepAlive('), isTrue,

@@ -53,7 +53,7 @@ void main() {
       () {
     final int start = src.indexOf('Widget _buildSideLockButton()');
     expect(start, greaterThan(0), reason: '应有 _buildSideLockButton 构造器');
-    final int end = src.indexOf('IconData _volumeIconFor(', start);
+    final int end = src.indexOf('onPressed: _toggleImmersiveLock,', start);
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
 

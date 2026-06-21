@@ -6,6 +6,8 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
+import '../../pages/video_hibiki_page_source_corpus.dart';
+
 /// Source guard: video keyboard interaction + autoplay both need a real libmpv
 /// player (the host has none; load()/Player construction throws), so structure
 /// is pinned at the source level.
@@ -45,8 +47,7 @@ void main() {
   }
 
   group('video page Escape overrides media_kit default', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     test('desktop controls theme overrides keyboardShortcuts', () {
       expect(
@@ -109,8 +110,7 @@ void main() {
   });
 
   group('asbplayer-style playback shortcuts', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
     final String shortcuts =
         read('lib/src/media/video/video_player_shortcuts.dart');
 
@@ -359,8 +359,7 @@ void main() {
   });
 
   group('lookup popup re-tap on same sentence: switch word, keep paused', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     test('dismiss barrier uses onTapUp -> _onDismissBarrierTap (coord check)',
         () {
@@ -414,8 +413,7 @@ void main() {
   group('autoplay on enter page / episode switch', () {
     final String controller =
         read('lib/src/media/video/video_player_controller.dart');
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     test('load supports the autoPlay parameter', () {
       expect(controller.contains('bool autoPlay = false'), isTrue,

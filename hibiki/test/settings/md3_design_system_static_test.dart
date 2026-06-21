@@ -768,6 +768,15 @@ void main() {
               'speed-label typography scales with appUiScale and is the same '
               'reviewed media-page exception class as the parent video player '
               'page allowlist entry.',
+      'lib/src/pages/implementations/video_hibiki/volume_osd.part.dart':
+          'Volume + OSD / level-HUD / brightness overlay chrome '
+              '(left-top OSD notification card with BorderRadius/fontSize, '
+              'volume & brightness level HUD indicators) extracted verbatim '
+              'from video_hibiki_page.dart (TODO-590 batch7); these are '
+              'video-subsystem transient overlays whose size/color/typography '
+              'scale with appUiScale, the same reviewed media-page exception '
+              'class as the parent video player page allowlist entry and the '
+              'sibling video_volume_overlays.dart HUD entry.',
       'lib/src/pages/implementations/home_video_page.dart':
           'Home video grid renders media content badges/download progress; '
               'long-press management actions use the shared media dialog frame, '
