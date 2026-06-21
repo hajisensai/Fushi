@@ -35,6 +35,9 @@ final class FfiPitch extends Struct {
   external Pointer<Int32> positions;
   @Int32()
   external int count;
+  external Pointer<Pointer<Utf8>> transcriptions;
+  @Int32()
+  external int transcriptionCount;
 }
 
 final class FfiTermResult extends Struct {

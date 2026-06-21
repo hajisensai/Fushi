@@ -64,6 +64,7 @@ struct ParsedFrequency {
 struct ParsedPitch {
   std::string_view reading;
   std::vector<int> pitches;
+  std::vector<std::string_view> transcriptions;
 };
 
 namespace yomitan_parser {
@@ -73,5 +74,6 @@ bool parse_meta_bank(std::string_view content, std::vector<Meta>& out);
 bool parse_tag_bank(std::string_view content, std::vector<Tag>& out);
 bool parse_frequency(std::string_view content, ParsedFrequency& out);
 bool parse_pitch(std::string_view content, ParsedPitch& out);
+bool parse_ipa(std::string_view content, ParsedPitch& out);
 bool parse_kanji_bank(std::string_view content, std::vector<Kanji>& out);
 };

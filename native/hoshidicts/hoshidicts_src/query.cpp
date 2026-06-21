@@ -416,6 +416,7 @@ void DictionaryQuery::query_pitch(std::vector<TermResult>& terms) const {
       auto count = idx.read<uint32_t>();
 
       std::vector<int> pitch_positions;
+      std::vector<std::string> transcriptions;
       for (uint32_t i = 0; i < count; i++) {
         if (!idx.has(sizeof(uint64_t))) {
           break;
@@ -439,23 +440,41 @@ void DictionaryQuery::query_pitch(std::vector<TermResult>& terms) const {
 
         auto mode_len = blob.read<uint8_t>();
         std::string_view mode = blob.read_str(mode_len);
-        if (mode != "pitch") {
-          continue;
-        }
 
-        auto pitch_data_size = blob.read<uint32_t>();
-        std::string_view pitch_data = blob.read_str(pitch_data_size);
-
+        // Both pitch-accent ("pitch") and IPA transcription ("ipa") meta records
+        // share this PITCH dict bucket / storage layout (upstream 918744d). The
+        // data blob differs only in how the JSON is shaped; parse with the
+        // matching parser and accumulate into the right vector. Anything else is
+        // skipped.
         ParsedPitch parsed;
-        if (yomitan_parser::parse_pitch(pitch_data, parsed)) {
-          if (!parsed.reading.empty() && parsed.reading != term.reading) {
-            continue;
+        if (mode == "pitch") {
+          auto pitch_data_size = blob.read<uint32_t>();
+          std::string_view pitch_data = blob.read_str(pitch_data_size);
+          if (yomitan_parser::parse_pitch(pitch_data, parsed)) {
+            if (!parsed.reading.empty() && parsed.reading != term.reading) {
+              continue;
+            }
+            pitch_positions.insert(pitch_positions.end(), parsed.pitches.begin(), parsed.pitches.end());
           }
-          pitch_positions.insert(pitch_positions.end(), parsed.pitches.begin(), parsed.pitches.end());
+        } else if (mode == "ipa") {
+          auto transcriptions_data_size = blob.read<uint32_t>();
+          std::string_view transcriptions_data = blob.read_str(transcriptions_data_size);
+          if (yomitan_parser::parse_ipa(transcriptions_data, parsed)) {
+            if (!parsed.reading.empty() && parsed.reading != term.reading) {
+              continue;
+            }
+            for (std::string_view transcription : parsed.transcriptions) {
+              transcriptions.emplace_back(transcription);
+            }
+          }
         }
       }
-      if (!pitch_positions.empty()) {
-        term.pitches.emplace_back(PitchEntry{.dict_name = name, .pitch_positions = std::move(pitch_positions)});
+      if (!pitch_positions.empty() || !transcriptions.empty()) {
+        term.pitches.emplace_back(PitchEntry{
+            .dict_name = name,
+            .pitch_positions = std::move(pitch_positions),
+            .transcriptions = std::move(transcriptions),
+        });
       }
     }
   }

@@ -68,6 +68,7 @@ add_hoshi_test(dict_name_uaf_e2e_test dict_name_uaf_e2e_test.cpp)
 add_hoshi_test(media_import_query_test media_import_query_test.cpp)
 add_hoshi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_hoshi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
+add_hoshi_test(ipa_import_query_test ipa_import_query_test.cpp)
 
 # win_utf8_import_test and dict_name_lifetime_test take external dictionary
 # directories / pre-built zips on argv (no self-contained fixture), so they are

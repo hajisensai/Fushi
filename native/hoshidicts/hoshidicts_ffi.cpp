@@ -37,6 +37,8 @@ struct FfiPitch {
   char* dict_name;
   int32_t* positions;
   int32_t count;
+  char** transcriptions;
+  int32_t transcription_count;
 };
 
 struct FfiTermResult {
@@ -154,6 +156,14 @@ static FfiTermResult convert_term(const TermResult& t) {
     for (int j = 0; j < r.pitches[i].count; j++) {
       r.pitches[i].positions[j] = t.pitches[i].pitch_positions[j];
     }
+    // transcriptions: char** array of IPA strings, mirroring frequency
+    // display_values (malloc the pointer array, then dup each element).
+    r.pitches[i].transcription_count = static_cast<int32_t>(t.pitches[i].transcriptions.size());
+    r.pitches[i].transcriptions =
+        static_cast<char**>(malloc(sizeof(char*) * r.pitches[i].transcription_count));
+    for (int j = 0; j < r.pitches[i].transcription_count; j++) {
+      r.pitches[i].transcriptions[j] = dup(t.pitches[i].transcriptions[j]);
+    }
   }
   return r;
 }
@@ -181,6 +191,12 @@ static void free_term(FfiTermResult& r) {
   for (int i = 0; i < r.pitch_count; i++) {
     free(r.pitches[i].dict_name);
     free(r.pitches[i].positions);
+    // double free: each transcription string, then the pointer array (mirrors
+    // the frequency display_values free).
+    for (int j = 0; j < r.pitches[i].transcription_count; j++) {
+      free(r.pitches[i].transcriptions[j]);
+    }
+    free(r.pitches[i].transcriptions);
   }
   free(r.pitches);
 }

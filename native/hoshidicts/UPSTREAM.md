@@ -36,8 +36,21 @@
 |---|---|---|---|
 | `2d4f2a2` | add normalization processors（NFKC 全角归一化） | 需 vendor `utf8proc` 进 `hoshidicts_external/` + 改 `CMakeLists.txt` + 把处理器追加到 Hibiki 自研处理链链尾（与 P1/P2/P3 共存，非替换） | 批2 |
 | `e7dfdea` | add kanji standardization（异体字标准化） | **不能照搬**：上游用 C++23 `#embed` 嵌入数据表，Windows MSVC / Apple Clang 不支持，需改 CMake 生成 C 数组头。逻辑本身无害、与 Hibiki 自研 kanji 导入（`importer.cpp`）零冲突（落在 `text_processor.cpp`，非 importer/S0 二进制 contract） | 批3（慎，需 CMake 改写） |
-| `918744d` | basic support for ipa dicts (#12) | 新增 IPA `transcriptions` 字段，需 Dart/FFI 侧消费才有意义 | 按需，独立 TODO |
 | `1198201` | fix swift build | 仅 SwiftPM，Hibiki 不用 SwiftPM 构建 | skip |
+
+## TODO-687 批3 移植的上游 commit（IPA 音标支持）
+
+| 上游 commit | 标题 | 落到 Hibiki 的文件 | 移植方式 |
+|---|---|---|---|
+| `918744d` | basic support for ipa dicts (#12) | `query.hpp`（`PitchEntry::transcriptions`）+ `importer.cpp` + `yomitan_parser.{hpp,cpp}`（`parse_ipa` + `RawIPA`/`TranscriptionsArray` glaze）+ `query.cpp`（pitch/ipa 二分支）+ `popup_json.cpp`（自有，序列化 transcriptions + 并入 pkey）+ FFI/Dart 透传 | **非直抄**，见下 |
+
+> 移植偏差（上游 diff 不能直接 patch）：
+> - **`query.cpp` 按 Hibiki BlobReader 重实现**：上游用自由函数 `read_val/read_str(blob_addr)`，Hibiki 已重构为 `BlobReader.read<>()/read_str(len)`，故 pitch/ipa 二分支按 BlobReader 风格重写，逐字段对照上游（reading 过滤、`if(!pitch_positions.empty()||!transcriptions.empty())` 空集守卫）。
+> - **`detect_type` 也加 `||ipa`**（上游 diff 没碰）：上游只改了 `process_meta_bank` 的 count 分支；但 Hibiki 多一层分类（C++ `detect_type` + Dart `decodeDictTypeFromBlobHeader`），纯 IPA 词典若不归入 "pitch" 就落 "term"、永不注册成 pitch 词典、数据查不出来。故 `importer.cpp detect_type` 与 `app_model.dart decodeDictTypeFromBlobHeader` 同步加 ipa→pitch。
+> - **`popup_json.cpp` 去重 pkey 并入 transcriptions**（Hibiki 自有文件，上游无）：IPA 项 pitch_positions 为空，仅按 positions 建 key 会把同 dict 多 IPA 折叠成 `dict:` 被吞，故把 transcriptions 折进 key。Dart 侧 `buildPopupJsonFromLookup` / fallback `buildLookupEntryExtra`+`_convertPitches` 同步对齐。
+> - **FFI ABI 变更**（native+Dart 同 commit）：`FfiPitch` 加 `char** transcriptions; int32_t transcription_count`，convert 照 `display_values`（malloc 数组 + 逐元素 dup），free **双层**（先逐元素再数组）。Dart binding `FfiPitch` 镜像 `FfiFrequency.displayValues`。
+> - **UI 渲染未做**（用户决策 ③A）：本批只到 native+FFI+Dart 数据贯通 + parity，JS 弹窗渲染 IPA 作后续 TODO。
+> - 守卫：`tests/ipa_import_query_test.cpp`（import→query→`PitchEntry.transcriptions` e2e，红绿实证）+ `dictionary_popup_webview_test.dart` parity 手加 transcriptions 断言。
 
 ## Hibiki 本地改动清单（上游没有 / 已分叉）
 

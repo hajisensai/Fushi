@@ -37,9 +37,18 @@ class HoshiFrequencyEntry {
 }
 
 class HoshiPitchEntry {
-  const HoshiPitchEntry({required this.dictName, required this.pitchPositions});
+  const HoshiPitchEntry({
+    required this.dictName,
+    required this.pitchPositions,
+    this.transcriptions = const <String>[],
+  });
   final String dictName;
   final List<int> pitchPositions;
+
+  /// IPA transcriptions for this dict's entry (Yomitan `ipa` meta mode). Empty
+  /// for plain pitch-accent dicts. Carried alongside pitchPositions because both
+  /// share the native PITCH bucket / query path (TODO-687 block3).
+  final List<String> transcriptions;
 }
 
 class HoshiTermResult {
@@ -220,9 +229,16 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
       for (int j = 0; j < p.count; j++) {
         positions.add(p.positions[j]);
       }
+      final transcriptions = <String>[];
+      if (p.transcriptionCount > 0 && p.transcriptions != nullptr) {
+        for (int j = 0; j < p.transcriptionCount; j++) {
+          transcriptions.add(_utf8OrEmpty(p.transcriptions[j]));
+        }
+      }
       pitches.add(HoshiPitchEntry(
         dictName: _utf8OrEmpty(p.dictName),
         pitchPositions: positions,
+        transcriptions: transcriptions,
       ));
     }
   }

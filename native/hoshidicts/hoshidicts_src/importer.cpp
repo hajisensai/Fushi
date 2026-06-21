@@ -106,7 +106,13 @@ std::string detect_type(const Files& files, const Zip& zip) {
       std::vector<Meta> metas;
       if (yomitan_parser::parse_meta_bank(content, metas) && !metas.empty()) {
         if (metas[0].mode == "freq") return "frequency";
-        if (metas[0].mode == "pitch") return "pitch";
+        // IPA transcription dicts (mode "ipa") share the pitch storage/query
+        // path (query_pitch reads both pitch + ipa meta records), so a pure-IPA
+        // dictionary must classify as "pitch" — otherwise it falls through to
+        // "term" and is never registered as a pitch dict, leaving its data
+        // unreachable. Upstream 918744d only widened the count branch and missed
+        // this; Hibiki must widen detect_type too (TODO-687 block3).
+        if (metas[0].mode == "pitch" || metas[0].mode == "ipa") return "pitch";
       }
     }
   }
@@ -349,7 +355,7 @@ ProcessedFile process_meta_bank(const std::string& content) {
     processed.count++;
     if (mode == "freq") {
       processed.freq_count++;
-    } else if (mode == "pitch") {
+    } else if (mode == "pitch" || mode == "ipa") {
       processed.pitch_count++;
     }
   }

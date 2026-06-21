@@ -303,7 +303,7 @@ String buildSearchCacheKey({
 /// - mode 串是其后**至多** `modeLen` 字节（`String.fromCharCodes`）。原逻辑用
 ///   `raf.readSync(modeLen)`：文件到末尾时只返回剩余字节、不报错，故这里同样截断到
 ///   `bytes` 末尾（不因 modeLen 越界而提前返 `null`），逐字复刻原行为。
-///   `'freq'`→frequency、`'pitch'`→pitch，其余 `null`。
+///   `'freq'`→frequency、`'pitch'`/`'ipa'`→pitch，其余 `null`。
 @visibleForTesting
 DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   if (bytes.length < 4) return null;
@@ -323,7 +323,10 @@ DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   final mode = String.fromCharCodes(bytes.sublist(modeStart, modeEnd));
 
   if (mode == 'freq') return DictionaryType.frequency;
-  if (mode == 'pitch') return DictionaryType.pitch;
+  // 'ipa' 音标词典与 'pitch' 共用 pitch 存储/查询通道（native query_pitch 同时读
+  // pitch + ipa meta 记录），故归入 pitch 桶，否则迁移期判不出类型、不会被注册成
+  // pitch 词典，IPA 数据查不出来（TODO-687 块3）。
+  if (mode == 'pitch' || mode == 'ipa') return DictionaryType.pitch;
   return null;
 }
 

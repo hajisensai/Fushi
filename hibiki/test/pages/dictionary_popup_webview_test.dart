@@ -160,6 +160,9 @@ void main() {
         {
           'dictionary': 'NHK',
           'pitchPositions': [2],
+          // TODO-687 block3: pitch entries now always carry a transcriptions
+          // list (empty for plain pitch-accent dicts, populated for IPA dicts).
+          'transcriptions': <String>[],
         },
       ]);
     });
@@ -256,6 +259,13 @@ void main() {
             ],
             pitches: [
               HoshiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              // IPA transcription dict: no pitch positions, only transcriptions.
+              // Exercises the TODO-687 block3 passthrough end to end.
+              HoshiPitchEntry(
+                dictName: 'IPA',
+                pitchPositions: [],
+                transcriptions: ['taꜜbeɾɯ', 'tabeɾu'],
+              ),
             ],
           ),
         ),
@@ -286,6 +296,11 @@ void main() {
             ],
             pitches: [
               HoshiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              HoshiPitchEntry(
+                dictName: 'IPA',
+                pitchPositions: [],
+                transcriptions: ['taꜜbeɾɯ', 'tabeɾu'],
+              ),
             ],
           ),
         ),
@@ -345,6 +360,10 @@ void main() {
         for (var j = 0; j < nPitches.length; j++) {
           expect(nPitches[j]['dictionary'], oPitches[j]['dictionary']);
           expect(nPitches[j]['pitchPositions'], oPitches[j]['pitchPositions']);
+          // TODO-687 block3: transcriptions must survive both paths identically
+          // (parity is field-level — adding a field never auto-fails, so this
+          // assertion is hand-added together with the IPA fixture data above).
+          expect(nPitches[j]['transcriptions'], oPitches[j]['transcriptions']);
         }
       }
     });

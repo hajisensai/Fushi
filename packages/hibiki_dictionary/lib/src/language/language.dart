@@ -450,6 +450,7 @@ String buildLookupEntryExtra(HoshiLookupResult r, HoshiGlossaryEntry g) {
         .map((p) => {
               'dictName': p.dictName,
               'positions': p.pitchPositions,
+              'transcriptions': p.transcriptions,
             })
         .toList(),
   });
@@ -547,7 +548,11 @@ String buildPopupJsonFromLookup({
         }
       }
       for (final p in r.term.pitches) {
-        final pKey = '${p.dictName}:${p.pitchPositions.join(',')}';
+        // Fold transcriptions into the dedup key (mirrors native popup_json):
+        // IPA entries have no pitch positions, so positions-only keys would
+        // collapse distinct IPA records of one dict and drop all but the first.
+        final pKey = '${p.dictName}:${p.pitchPositions.join(',')}'
+            '|${p.transcriptions.join(',')}';
         if (seenPitches[key]!.add(pKey)) {
           groupPitches[key]!.add(p);
         }
@@ -555,9 +560,7 @@ String buildPopupJsonFromLookup({
 
       final String m = g.glossary;
       final String contentJson =
-          (m.isNotEmpty && (m[0] == '[' || m[0] == '{'))
-              ? m
-              : jsonEncode(m);
+          (m.isNotEmpty && (m[0] == '[' || m[0] == '{')) ? m : jsonEncode(m);
       groupGlossaries[key]!.add((
         dictionary: g.dictName,
         contentJson: contentJson,
@@ -627,6 +630,8 @@ String buildPopupJsonFromLookup({
       sb.write(jsonEncode(pitches[pi].dictName));
       sb.write(',"pitchPositions":');
       sb.write(jsonEncode(pitches[pi].pitchPositions));
+      sb.write(',"transcriptions":');
+      sb.write(jsonEncode(pitches[pi].transcriptions));
       sb.write('}');
     }
     sb.write(']}');

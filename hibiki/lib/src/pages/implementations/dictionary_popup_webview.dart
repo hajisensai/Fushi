@@ -1461,6 +1461,7 @@ class DictionaryPopupWebViewState
       return {
         'dictionary': p['dictName'] ?? '',
         'pitchPositions': p['positions'] ?? [],
+        'transcriptions': p['transcriptions'] ?? [],
       };
     }).toList();
   }

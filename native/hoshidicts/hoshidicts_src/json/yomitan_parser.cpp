@@ -66,6 +66,15 @@ struct RawPitch {
   std::string_view reading;
   std::vector<PitchesArray> pitches;
 };
+
+struct TranscriptionsArray {
+  std::string_view ipa;
+};
+
+struct RawIPA {
+  std::string_view reading;
+  std::vector<TranscriptionsArray> transcriptions;
+};
 };
 
 template <>
@@ -96,6 +105,19 @@ template <>
 struct glz::meta<internal::RawPitch> {
   using T = internal::RawPitch;
   static constexpr auto value = object("reading", glz::raw_string<&T::reading>, "pitches", &T::pitches);
+};
+
+template <>
+struct glz::meta<internal::TranscriptionsArray> {
+  using T = internal::TranscriptionsArray;
+  static constexpr auto value = object("ipa", glz::raw_string<&T::ipa>);
+};
+
+template <>
+struct glz::meta<internal::RawIPA> {
+  using T = internal::RawIPA;
+  static constexpr auto value =
+      object("reading", glz::raw_string<&T::reading>, "transcriptions", &T::transcriptions);
 };
 
 bool yomitan_parser::parse_index(std::string_view content, Index& out) {
@@ -172,5 +194,18 @@ bool yomitan_parser::parse_pitch(std::string_view content, ParsedPitch& out) {
   out.reading = parsed.reading;
   out.pitches =
       parsed.pitches | std::views::transform(&internal::PitchesArray::position) | std::ranges::to<std::vector>();
+  return true;
+}
+
+bool yomitan_parser::parse_ipa(std::string_view content, ParsedPitch& out) {
+  internal::RawIPA parsed;
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(parsed, content);
+  if (error) {
+    return false;
+  }
+
+  out.reading = parsed.reading;
+  out.transcriptions = parsed.transcriptions | std::views::transform(&internal::TranscriptionsArray::ipa) |
+                       std::ranges::to<std::vector>();
   return true;
 }

@@ -96,6 +96,15 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
           if (i > 0) pkey += ",";
           pkey += std::to_string(p.pitch_positions[i]);
         }
+        // IPA entries carry no pitch positions, so a dedup key built only from
+        // positions collapses every IPA record of one dict to "dict:" and the
+        // set drops all but the first. Fold the transcriptions into the key so
+        // distinct IPA strings survive (TODO-687 block3).
+        pkey += "|";
+        for (size_t i = 0; i < p.transcriptions.size(); i++) {
+          if (i > 0) pkey += ",";
+          pkey += p.transcriptions[i];
+        }
         if (gd.seen_pitches.insert(pkey).second) {
           gd.pitches.push_back(p);
         }
@@ -179,6 +188,11 @@ done:
       for (size_t k = 0; k < gd.pitches[pi].pitch_positions.size(); k++) {
         if (k > 0) os << ',';
         os << gd.pitches[pi].pitch_positions[k];
+      }
+      os << R"(],"transcriptions":[)";
+      for (size_t k = 0; k < gd.pitches[pi].transcriptions.size(); k++) {
+        if (k > 0) os << ',';
+        json_escape(os, gd.pitches[pi].transcriptions[k]);
       }
       os << "]}";
     }
