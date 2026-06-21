@@ -1,0 +1,6 @@
+## BUG-379 · 歌词模式进度条跑进底栏(歌词WebView全屏无底栏预留,CSS滚动条钻进底栏)
+- **报告**：2026-06-21（用户：歌词模式进度条跑到底栏里了）
+- **真实性**：✅ 真 bug。用户看到的「进度条」是 `LyricsModeHtml` 的主题化 CSS 滚动条（沿屏幕右侧的细条，指示在整本歌词中的滚动位置）。根因：歌词页是独立 HTML，**没有 `window.hoshiReader`**，`_applyChromeInsets` 对它整体 early-return（`hibiki/lib/src/pages/implementations/reader_hibiki/chrome.part.dart:259`），即使不 return，`setChromeInsets` 也依赖 `hoshiReader` 短路成 no-op（`reader_pagination_scripts.dart:555`）。于是歌词 WebView 仍 `Positioned.fill` 铺满全屏（`reader_hibiki_page.dart:1285`），底栏 `_buildAudiobookBar`（`bottom:0`，`chrome.part.dart:301`）盖在其上，歌词文档级 CSS 滚动条（`lyrics_mode_html.dart:53-73`）沿整屏高度绘制，底部一段被绘制进底栏区域 → 看上去像进度条跑进底栏。正文模式滚动条被原生关闭（`webview.part.dart:1004`）且 body 经 setChromeInsets 推离底栏，故不暴露此问题。
+- **[x] ① 已修复** — `_buildBody`（`hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:1355`）在歌词模式且底栏可见（`_lyricsMode && _hasEverLoaded && _showChrome`，与 `_buildBottomChrome`/`popupBottomReserve` 同门控）时给 WebView 套底部 `Padding(EdgeInsets.only(bottom: _readerBottomReserve))`，把视口收缩到底栏之上，CSS 滚动条只画在歌词区域内。`_showChrome` 切换会触发 `_rebuild` 重建本树。
+- **[x] ② 已加自动化测试** — 源码扫描守卫 `hibiki/test/pages/reader_lyrics_progress_bottom_reserve_static_test.dart`（钉死歌词模式 `_buildBody` 留 `_readerBottomReserve` 底部空间；撤销修复 → 转红，已验证 red→green）。
+- **备注**：reader 含真实 InAppWebView 平台视图，widget 测试无法挂载整页观测 CSS 滚动条几何，故以源码守卫兜底。**待真机肉眼复测**：有声书歌词模式下确认进度条/滚动条不再钻进底栏（Windows + 移动端）。

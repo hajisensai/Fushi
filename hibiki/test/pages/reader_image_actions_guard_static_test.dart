@@ -108,11 +108,25 @@ void main() {
       isTrue,
     );
 
-    // The JS/WebView point is converted once to global coordinates; scaling the
-    // menu must not also scale or rebase the mouse anchor.
+    // The menu anchor must be mapped through the Overlay RenderBox so the global
+    // HibikiAppUiScale FittedBox transform is absorbed; scaling the menu must not
+    // also scale or rebase the anchor (BUG-381 — same fix family as BUG-129/261).
     expect(menu, contains('Rect.fromLTWH('));
-    expect(menu, contains('globalPosition.dx'));
-    expect(menu, contains('globalPosition.dy'));
+    // Anchor is mapped from real screen coords into the menu host Overlay's local
+    // space via globalToLocal; the Rect must use the mapped `anchor`, not the raw
+    // global position (which would offset the menu by factor≈scale when ui scale
+    // ≠ 100%).
+    expect(menu, contains('overlay.globalToLocal(globalPosition)'));
+    expect(
+      RegExp(r'Rect\.fromLTWH\(\s*anchor\.dx,\s*anchor\.dy').hasMatch(menu),
+      isTrue,
+      reason: 'menu Rect must anchor on overlay-local coords, not raw global',
+    );
+    // The anchor mapping must NOT read/scale by menuScale (content scale only).
+    expect(menu, isNot(contains('anchor.dx * menuScale')));
+    expect(menu, isNot(contains('anchor.dy * menuScale')));
+    expect(menu, isNot(contains('globalPosition.dx * menuScale')));
+    expect(menu, isNot(contains('globalPosition.dy * menuScale')));
     expect(menu, isNot(contains('webViewOffset *')));
     expect(menu, isNot(contains('webViewOffset.dx * menuScale')));
     expect(menu, isNot(contains('webViewOffset.dy * menuScale')));

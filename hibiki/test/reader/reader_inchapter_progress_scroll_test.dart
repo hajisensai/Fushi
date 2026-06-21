@@ -10,8 +10,9 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 根因：章内进度 UI 字段只在 `_refreshProgress()` 里写，而原生滚动（连续模式 window
 /// 滚动 / 分页模式触摸·trackpad·键盘箭头落 body 的原生滚动）此前没有任何刷新通道，要
 /// 等 10s 轮询或翻章才更新一次。修复给两模式共享的 setup 脚本挂一条统一 scroll → Dart
-/// 通道（`onReaderScroll`），rAF + 200ms debounce 后回传，Dart 侧经纯函数门控调
-/// `_refreshProgress()`。
+/// 通道（`onReaderScroll`）；BUG-380 后改为 rAF 节流（边滑边回传）+ 尾沿补一发，
+/// Dart 侧经纯函数门控走 `_refreshProgressFromScroll()` 的 coalesce 守卫调
+/// `_refreshProgress()`，进度边滑边实时更新而不是只在滑停后跳一下。
 ///
 /// reader_hibiki_page.dart 太重（WebView + DB + provider）不便整页 mount，门控逻辑
 /// 抽成 [readerScrollProgressRefreshAllowed] 纯函数在此锁定真值表；JS 通道与 Dart
@@ -143,33 +144,62 @@ void main() {
       );
     });
 
-    test('回传通道带 rAF + debounce 去抖，且抑制重锚瞬态', () {
+    test('BUG-380：回传通道是 rAF 节流（边滑边回传）+ 尾沿补一发，且抑制重锚瞬态', () {
       expect(src.contains('requestAnimationFrame'), isTrue);
-      // debounce：用 200ms setTimeout 抑制高频滚动抖动（不绑死精确空白，避免 format
-      // 重排折行误伤；只锁住「有 timer 变量 + 200ms + clearTimeout」这三个不变量）。
-      expect(src.contains('_progressScrollTimer'), isTrue,
-          reason: 'scroll 回传必须有 debounce timer 变量');
-      expect(src.contains('}, 200);'), isTrue,
-          reason: 'scroll 回传必须 200ms debounce，避免每帧 setState');
-      expect(src.contains('clearTimeout(_progressScrollTimer)'), isTrue,
-          reason: '新滚动须取消上一次未触发的 debounce timer');
+      // rAF 节流：滑动中每个动画帧最多回传一次（合并同帧多次 scroll 事件），进度边滑
+      // 边实时跟随。锁住「rAF 在飞时不再排新 rAF」这个节流不变量——若回退成纯尾沿
+      // 去抖（每次都 clearTimeout 推后定时器、滑动期间不回传），下面的断言会转红。
+      final int idx = src.indexOf('function _onReaderScrollEvent()');
+      expect(idx, greaterThan(0), reason: '_onReaderScrollEvent 必须存在');
+      final String handler = src.substring(idx, idx + 700);
+      expect(handler.contains('if (!_progressScrollRaf) {'), isTrue,
+          reason: 'rAF 节流：在飞期不再排新 rAF，滑动中按帧回传（不是纯尾沿去抖）');
+      expect(handler.contains('_reportReaderScroll();'), isTrue,
+          reason: 'rAF 回调里必须直接回传，让进度边滑边更新');
+      // 尾沿补一发：滑停后短延时再回传一次最终位置（rAF 节流不保证捕捉到静止帧）。
+      expect(handler.contains('_progressScrollTimer'), isTrue,
+          reason: '尾沿补发必须有 timer 变量');
+      expect(handler.contains('}, 120);'), isTrue,
+          reason: '尾沿补发延时（120ms）回传最终静止位置');
+      expect(handler.contains('clearTimeout(_progressScrollTimer)'), isTrue,
+          reason: '新滚动须重置尾沿补发 timer');
+      // 防回归：滑动期间不得只靠尾沿（旧 bug 是 rAF 内再套 setTimeout 200ms 纯去抖）。
+      expect(handler.contains('}, 200);'), isFalse,
+          reason: 'BUG-380：不得回退成「rAF 内套 200ms 纯尾沿去抖」(滑动中不回传)');
       expect(src.contains('r._reanchorPending === true) return'), isTrue,
           reason: '程序化重锚期（_reanchorPending）必须跳过回传，避免恢复/重排瞬态误触发');
     });
 
-    test('Dart 注册 onReaderScroll handler 并走纯函数门控后 _refreshProgress', () {
+    test('Dart 注册 onReaderScroll handler 并走纯函数门控后 coalesce 刷新', () {
       expect(src.contains("handlerName: 'onReaderScroll'"), isTrue,
           reason: '必须注册 onReaderScroll JS handler');
       expect(src.contains('=> _handleReaderScroll()'), isTrue);
       final int idx = src.indexOf('void _handleReaderScroll()');
       expect(idx, greaterThan(0), reason: '_handleReaderScroll 必须存在');
       // 窗口放宽到 1100：TODO-151/164(BUG-225) 在该函数内插入了诊断日志块，函数体加长，
-      // 600 字符窗口会切断在诊断块中间漏掉末尾 _refreshProgress();（旧窗口会误转红）。
+      // 600 字符窗口会切断在诊断块中间漏掉末尾分发（旧窗口会误转红）。
       final String body = src.substring(idx, idx + 1100);
       expect(body.contains('readerScrollProgressRefreshAllowed('), isTrue,
           reason: '门控必须走纯函数 readerScrollProgressRefreshAllowed');
-      expect(body.contains('_refreshProgress();'), isTrue,
-          reason: '门控通过后必须调 _refreshProgress 刷新章内进度');
+      // BUG-380：门控通过后走 coalesce 守卫（高频滚动不堆积 evaluateJavascript），
+      // 而不是裸调 _refreshProgress()。
+      expect(body.contains('_refreshProgressFromScroll();'), isTrue,
+          reason: '滚动路径门控通过后必须走 _refreshProgressFromScroll coalesce 守卫');
+    });
+
+    test('BUG-380：_refreshProgressFromScroll 是「在飞 + 待重跑」coalesce 守卫', () {
+      final int idx = src.indexOf('void _refreshProgressFromScroll()');
+      expect(idx, greaterThan(0), reason: '_refreshProgressFromScroll 必须存在');
+      final String body = src.substring(idx, idx + 700);
+      // 在飞时再来的滚动只置 pending，不并发跑第二次 evaluateJavascript。
+      expect(body.contains('if (_scrollProgressInFlight) {'), isTrue,
+          reason: '在飞期必须只置 pending，避免 hoshiProgressDetails 调用堆积');
+      expect(body.contains('_scrollProgressPending = true;'), isTrue);
+      // 飞完后若有 pending 补跑一次，保证最终静止位置一定被刷到。
+      expect(body.contains('whenComplete('), isTrue,
+          reason: '必须在刷新完成后清在飞标记并按 pending 补跑（coalesce）');
+      expect(body.contains('_refreshProgress()'), isTrue,
+          reason: 'coalesce 守卫最终仍调既有 _refreshProgress 重算进度');
     });
 
     test('刷新进度必须走 stableProgressInvocation，避免恢复/重锚瞬态 0 落库', () {

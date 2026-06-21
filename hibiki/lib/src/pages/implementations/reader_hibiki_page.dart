@@ -618,6 +618,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 的阅读位置/统计在 exit(0) 前落库。
   ExitFlushCallback? _exitFlushCallback;
   Timer? _progressPollTimer;
+  // BUG-380: 滚动进度刷新的「在飞 + 待重跑」守卫。rAF 节流后滚动回传可能高频到来，
+  // 每次 _refreshProgress 都 evaluateJavascript 跑较重的 hoshiProgressDetails（遍历全章
+  // TextNode + caretRangeFromPoint），未加守卫会让多次调用堆积。_scrollProgressInFlight
+  // 标记当前是否有一次滚动触发的刷新在途；在途时再来的滚动回传只置 _scrollProgressPending，
+  // 飞完后补跑一次（coalesce），既不堆积又不丢最终位置。仅作用于滚动路径，不影响 10s 轮询
+  // 与翻章恢复直接调 _refreshProgress。
+  bool _scrollProgressInFlight = false;
+  bool _scrollProgressPending = false;
   Timer? _contentReadyTimer;
   Timer? _gamepadAHoldTimer;
   // HBK-AUDIT-120: volume-key throttle uses a last-fire timestamp instead of an
@@ -1356,7 +1364,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!_audioSlotResolved || _book == null || _extractDir == null) {
       return Center(child: adaptiveIndicator(context: context));
     }
-    return _buildWebView();
+    final Widget webView = _buildWebView();
+    // BUG-379: 歌词模式（LyricsModeHtml）是独立 HTML，没有 window.hoshiReader，
+    // _applyChromeInsets 对它整体 early-return，正文那套「告诉 WebView 底栏预留高度」
+    // 的机制对歌词页完全失效。于是歌词 WebView 仍 Positioned.fill 铺满全屏，底栏
+    // （_buildAudiobookBar，bottom:0）盖在其上，歌词文档级 CSS 滚动条（主题化的细条）
+    // 沿整屏高度绘制，底部一段被绘制进底栏区域，看上去像「进度条跑进底栏里」。
+    //
+    // 正文模式滚动条被原生关闭（verticalScrollBarEnabled:false）且 body 经 setChromeInsets
+    // 推离底栏，所以不暴露此问题；唯独歌词页两条都不成立。这里在 Flutter 侧把歌词 WebView
+    // 收缩到底栏之上（底栏可见时留 _readerBottomReserve），视口本身不再与底栏重叠，
+    // CSS 滚动条自然只画在歌词区域内。底栏可见条件与 _buildBottomChrome / popupBottomReserve
+    // 保持一致（_hasEverLoaded && _showChrome），_showChrome 切换会触发 _rebuild 重建本树。
+    if (_lyricsMode && _hasEverLoaded && _showChrome) {
+      return Padding(
+        padding: EdgeInsets.only(bottom: _readerBottomReserve),
+        child: webView,
+      );
+    }
+    return webView;
   }
 
   bool get _isCustomTheme => appModel.appThemeKey == 'custom-theme';

@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 371 条。点号进各自文件。
+> 共 374 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-381](bugs/BUG-381-image-copy-menu-uiscale.md) | ✅ | ✅ | 书籍图片右键复制图片菜单位置不跟界面缩放(坐标未经Overlay变换链映射) |
+| [BUG-380](bugs/BUG-380-scroll-progress-only-on-settle.md) | ✅ | ✅ | 滚动模式阅读进度只在滑动停下才更新(JS纯尾沿200ms去抖) |
+| [BUG-379](bugs/BUG-379-lyrics-progress-bar-in-footer.md) | ✅ | ✅ | 歌词模式进度条跑进底栏(歌词WebView全屏无底栏预留,CSS滚动条钻进底栏) |
 | [BUG-378](bugs/BUG-378-subtitle-list-jump-skip.md) | ✅ | ✅ | 字幕列表点句多跳一句(skipToCue seek 在途瞬态越过目标句被采纳) |
 | [BUG-377](bugs/BUG-377-mobile-remote-book-download.md) | ✅ | ✅ | 手机无法下载对端配对设备书籍(Android明文HTTP被network_security_config拦截) |
 | [BUG-376](bugs/BUG-376-mobile-shelf-top-gap.md) | ✅ | ✅ | 手机首页页头顶距过大(标题离顶部空一行) |

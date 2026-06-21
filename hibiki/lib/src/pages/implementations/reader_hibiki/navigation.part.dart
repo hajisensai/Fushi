@@ -101,10 +101,13 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     );
   }
 
-  /// BUG-213：setup 脚本的 scroll reporter 在章内原生滚动稳定后（rAF + 200ms
-  /// debounce）回传到此。门控通过则复用既有 `_refreshProgress()` 重算章内进度
-  /// （high-water-mark 计字不重复累计、`_debouncedSavePosition` 自带 500ms 去抖，
-  /// 不改字数累加路径）。恢复期/歌词/未就绪由纯函数统一抑制。
+  /// BUG-213：setup 脚本的 scroll reporter 在章内原生滚动时（BUG-380 后改为 rAF 节流
+  /// 边滑边回传 + 尾沿补一发）回传到此。门控通过则重算章内进度（high-water-mark 计字
+  /// 不重复累计、`_debouncedSavePosition` 自带 500ms 去抖，不改字数累加路径）。恢复期/
+  /// 歌词/未就绪由纯函数统一抑制。
+  ///
+  /// BUG-380：rAF 节流后回传可能高频到来，走 [_refreshProgressFromScroll] 的「在飞 +
+  /// 待重跑」coalesce 守卫，避免较重的 hoshiProgressDetails 调用堆积。
   void _handleReaderScroll() {
     final bool allowed = readerScrollProgressRefreshAllowed(
       readerContentReady: _readerContentReady,
@@ -126,7 +129,26 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     if (!allowed) {
       return;
     }
-    _refreshProgress();
+    _refreshProgressFromScroll();
+  }
+
+  /// BUG-380：滚动触发的进度刷新走「在飞 + 待重跑」coalesce 守卫。一次刷新在途时，
+  /// 再来的滚动回传只置 [_scrollProgressPending]，待当前 [_refreshProgress] 完成后补跑
+  /// 一次，确保最终静止位置一定被刷到，又不让 evaluateJavascript 堆积。轮询/恢复路径
+  /// 仍直接调 [_refreshProgress]，不受此守卫影响。
+  void _refreshProgressFromScroll() {
+    if (_scrollProgressInFlight) {
+      _scrollProgressPending = true;
+      return;
+    }
+    _scrollProgressInFlight = true;
+    _refreshProgress().whenComplete(() {
+      _scrollProgressInFlight = false;
+      if (_scrollProgressPending && mounted) {
+        _scrollProgressPending = false;
+        _refreshProgressFromScroll();
+      }
+    });
   }
 
   // ── Chapter Navigation ────────────────────────────────────────────

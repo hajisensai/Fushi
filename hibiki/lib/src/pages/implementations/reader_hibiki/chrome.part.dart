@@ -113,10 +113,23 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final RenderBox overlay =
         Overlay.of(effectiveContext).context.findRenderObject()! as RenderBox;
     final double menuScale = _readerImageMenuScale;
+    // BUG-381: [globalPosition] 是真实屏幕坐标（右键路径来自阅读器 State 的 RenderBox
+    // localToGlobal，放大图路径来自 details.globalPosition；两者都在「净缩放=1 的真实
+    // 视口空间」——阅读器被 HibikiAppUiScaleNeutralizer 中和回 1.0）。但 showMenu 的
+    // RelativeRect 落在它路由 Overlay 的坐标系，而该 Overlay 在全局 HibikiAppUiScale 的
+    // FittedBox 之内（缩放后的画布空间）。直接把真实屏幕坐标当画布坐标喂给 showMenu，
+    // 界面大小≠100% 时菜单会偏离图片 factor≈scale（BUG-261 同型，视频右键已修）。
+    //
+    // 修法与 BUG-129/261 同范式：不读 scale 数值逆算（自动模式下生效 scale ≠
+    // appModel.appUiScale），而用 Overlay 的 RenderBox 把锚点从真实屏幕坐标沿真实渲染
+    // 变换链映射到 Overlay 本地坐标系——其间的 FittedBox 缩放被 render transform 自动
+    // 吸收，对任意 scale（含自动模式）自洽无残差；scale=1 时变换为单位阵，逐像素等价
+    // （向后兼容）。菜单内容缩放（menuScale）是另一回事，保持不动。
+    final Offset anchor = overlay.globalToLocal(globalPosition);
     final String? action = await showMenu<String>(
       context: effectiveContext,
       position: RelativeRect.fromRect(
-        Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 1, 1),
+        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
         Offset.zero & overlay.size,
       ),
       constraints: BoxConstraints(

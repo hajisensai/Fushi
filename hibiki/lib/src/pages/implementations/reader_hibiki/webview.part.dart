@@ -898,9 +898,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸/trackpad/键盘箭头
   // 落 body 的原生滚动）没有进度回传通道，进度条要等 10s 轮询或翻章才更新。这里给
   // 两模式共享的 setup 脚本挂一条统一 scroll → Dart 通道：capture 阶段监听让 window
-  // 与 body 内部滚动都进来，rAF 合一帧 + 200ms debounce 抑制高频抖动后回传一次；
-  // 程序化重锚期（_reanchorPending）跳过，避免恢复/重排瞬态误触发（恢复期的
-  // _restoreInFlight / 歌词模式由 Dart 侧 onReaderScroll 再门控一道）。
+  // 与 body 内部滚动都进来；程序化重锚期（_reanchorPending）跳过，避免恢复/重排瞬态
+  // 误触发（恢复期的 _restoreInFlight / 歌词模式由 Dart 侧 onReaderScroll 再门控一道）。
+  //
+  // BUG-380: 原实现是「纯尾沿去抖」——每个 scroll 事件都 clearTimeout 把 200ms 定时器
+  // 推后，滑动期间永不上报，只在滑动停下 200ms 后才回传一次，进度条/百分比要等滑动
+  // settle 才跳一下，不跟手。改成「rAF 节流 + 尾沿补一发」：滑动中每个动画帧最多回传
+  // 一次（约 16ms/次，跟随刷新率，肉眼连续），滑停后短尾沿再补发一次最终位置，确保
+  // 落点精确。Dart 侧 _refreshProgress 自带 in-flight 守卫（一次 evaluateJavascript
+  // 未返回不再发起下一次），避免高频上报把较重的 hoshiProgressDetails 调用堆积。
   (function() {
     var _progressScrollRaf = 0;
     var _progressScrollTimer = null;
@@ -921,15 +927,21 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       }
     }
     function _onReaderScrollEvent() {
-      if (_progressScrollRaf) cancelAnimationFrame(_progressScrollRaf);
-      _progressScrollRaf = requestAnimationFrame(function() {
-        _progressScrollRaf = 0;
-        if (_progressScrollTimer) clearTimeout(_progressScrollTimer);
-        _progressScrollTimer = setTimeout(function() {
-          _progressScrollTimer = null;
+      // rAF 节流：滑动中每个动画帧最多回传一次（合并同帧内多次 scroll 事件），
+      // 让进度边滑边实时跟随而不是每个事件都打桥（BUG-380）。
+      if (!_progressScrollRaf) {
+        _progressScrollRaf = requestAnimationFrame(function() {
+          _progressScrollRaf = 0;
           _reportReaderScroll();
-        }, 200);
-      });
+        });
+      }
+      // 尾沿补一发：滑停 120ms 后再回传一次最终位置，确保 rAF 节流可能漏掉的「最后
+      // 一帧之后的停止位置」被精确落点（rAF 节流自身不保证捕捉到最终静止帧）。
+      if (_progressScrollTimer) clearTimeout(_progressScrollTimer);
+      _progressScrollTimer = setTimeout(function() {
+        _progressScrollTimer = null;
+        _reportReaderScroll();
+      }, 120);
     }
     window.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
     document.addEventListener('scroll', _onReaderScrollEvent, { passive: true, capture: true });
