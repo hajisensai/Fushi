@@ -5,11 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 void main() {
-  final String src =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync();
+  final String src = readVideoHibikiSource();
   final String shortcuts =
       File('lib/src/media/video/video_player_shortcuts.dart')
           .readAsStringSync();

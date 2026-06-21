@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：切换内嵌字幕时，抽取期间必须有加载遮罩（BUG-104）。
 ///
@@ -14,14 +15,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// [video_lookup_resume_static_test] / [video_mobile_controls_static_test] 同理），
 /// 故断言源码层的遮罩配对与 try/finally 包裹结构。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('定义了配对的加载遮罩 show/hide 方法', () {

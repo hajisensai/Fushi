@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：PGS 等**图形内封字幕**的处理（BUG-122）。
 ///
@@ -64,8 +65,7 @@ void main() {
   });
 
   test('视频页：图形轨标注 + 走画面渲染分支（不走加载遮罩）', () {
-    final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String src = readVideoHibikiSource();
     // 菜单对图形轨标注。
     expect(src.contains('source.isGraphicEmbedded'), isTrue);
     expect(src.contains('t.video_subtitle_graphic_hint'), isTrue,
@@ -80,8 +80,7 @@ void main() {
   });
 
   test('图形分支在加载遮罩之前 return，不弹遮罩（瞬时切轨）', () {
-    final String src =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String src = readVideoHibikiSource();
     final int start = src.indexOf('Future<bool> _selectSubtitleSource(');
     expect(start, greaterThan(-1));
     final int graphicAt = src.indexOf('if (source.isGraphicEmbedded)', start);

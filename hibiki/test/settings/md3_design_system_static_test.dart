@@ -734,6 +734,13 @@ void main() {
               'chrome extracted verbatim from video_hibiki_page.dart '
               '(TODO-590 batch4); same media-page rationale as the parent '
               'video player page allowlist entry.',
+      'lib/src/pages/implementations/video_hibiki/subtitle.part.dart':
+          'Subtitle source menu / import / loading-overlay / subtitle jump-list '
+              'side panel chrome extracted verbatim from video_hibiki_page.dart '
+              '(TODO-590 batch5); the fontSize:/ListTile chrome (jump panel + '
+              'source side panel rows, caption font scales with appUiScale) is '
+              'the same reviewed media-page exception class as the parent '
+              'video player page allowlist entry.',
       'lib/src/pages/implementations/home_video_page.dart':
           'Home video grid renders media content badges/download progress; '
               'long-press management actions use the shared media dialog frame, '

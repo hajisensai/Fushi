@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：字幕跳转列表走 push-aside（把画面挤窄到左侧），而非 overlay 浮层遮挡
 /// （TODO-314 / BUG-256）。
@@ -19,14 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// media_kit 在 headless test 跑不起真视频 widget，故断言源码层的可见性路由与结构。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   test('字幕列表枚举已从 overlay side-panel 系统移除（subtitleList 不再是 _VideoSidePanelKind）',

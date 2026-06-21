@@ -253,12 +253,14 @@ void main() {
 
   test('video settings side panel owns UI scale and hover lifetime', () {
     final String source = readVideoHibikiSource();
-    // TODO-314：字幕列表改 push-aside 后 overlay 版 _buildSubtitleListSidePanel 已删，
-    // _buildVideoSidePanelContent 之后直接是 _buildSubtitleSourcesSidePanel。
+    // TODO-314：字幕列表改 push-aside 后 overlay 版 _buildSubtitleListSidePanel 已删。
+    // TODO-590 batch5：_buildSubtitleSourcesSidePanel 已抽到 video_hibiki/subtitle.part.dart
+    // （合并语料末段），不能再当 _buildVideoSidePanelOverlay 之后的紧邻终点；改用主壳里
+    // _buildVideoSidePanelContent 的真实紧邻后继 _buildAudioTracksSidePanel 作终点。
     final String panelMethod = _between(
       source,
       'Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {',
-      'Widget _buildSubtitleSourcesSidePanel(VideoPlayerController controller) {',
+      'Widget _buildAudioTracksSidePanel(VideoPlayerController controller) {',
     );
     final String visibilityMethod = _between(
       source,

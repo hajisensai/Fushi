@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 void main() {
   String read(String rel) => File(rel).readAsStringSync();
@@ -9,8 +10,7 @@ void main() {
   // VideoControlCustomization to the 9-slot VideoControlLayout. The legacy pref
   // key is reused (auto-migrating old v1 blobs), so old configs upgrade losslessly.
   test('video page wires the persisted 9-slot control layout', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
     final String appModel = read('lib/src/models/app_model.dart');
     final String prefs = read('lib/src/models/preferences_repository.dart');
 
@@ -56,8 +56,7 @@ void main() {
 
   test('saved on-video layout notifies the active controls builder immediately',
       () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
     final int setStart = page.indexOf('Future<void> _setVideoControlLayout');
     expect(setStart, greaterThanOrEqualTo(0));
     final int setEnd =
@@ -145,8 +144,7 @@ void main() {
 
   test('player chrome includes right rail, bottom custom buttons and fallbacks',
       () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     expect(page, contains('_buildVideoSideActionRail(controller)'));
     expect(page, contains('Alignment.centerRight'));
@@ -159,8 +157,7 @@ void main() {
   });
 
   test('translucent side panel replaces blocking modal player menus', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     expect(page, contains('video_side_panel.dart'));
     expect(page, contains('VideoTranslucentSidePanel'));
@@ -198,8 +195,7 @@ void main() {
   });
 
   test('TODO-476 side panel launchers preserve the source slot side', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     String body(String start, String end) {
       final int startIndex = page.indexOf(start);
@@ -277,7 +273,7 @@ void main() {
 
     final String content = body(
       'Widget _buildVideoSidePanelContent(',
-      'Widget _buildSubtitleSourcesSidePanel',
+      'Widget _buildAudioTracksSidePanel(',
     );
     expect(content, contains('alignment: panelState.alignment'));
   });
@@ -289,8 +285,7 @@ void main() {
         read('lib/src/media/video/video_player_shortcuts.dart');
     final String settings =
         read('lib/src/pages/implementations/shortcut_settings_page.dart');
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     for (final String action in <String>[
       'videoToggleFavoriteSentence',
@@ -323,8 +318,7 @@ void main() {
       () {
     final String panel =
         read('lib/src/media/video/video_subtitle_jump_panel.dart');
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     expect(panel, contains('enum VideoSubtitleListFilter'));
     expect(panel, contains('VideoSubtitleListFilter.all'));
@@ -340,8 +334,7 @@ void main() {
   });
 
   test('TODO-258 selected subtitles only override next card media context', () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     expect(page, contains('_selectedMiningCueStarts'));
     expect(page, contains('_selectedMiningCueForCard'));
@@ -372,8 +365,7 @@ void main() {
       () {
     final String panel =
         read('lib/src/media/video/video_subtitle_jump_panel.dart');
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
 
     expect(panel, contains('SegmentedButton<VideoSubtitleListFilter>'));
     expect(panel, contains('VideoSubtitleListFilter.all'));
@@ -396,8 +388,7 @@ void main() {
   test(
       'TODO-266 playback preview and auto-read do not gate Anki sentence audio',
       () {
-    final String page =
-        read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String page = readVideoHibikiSource();
     final int mineStart =
         page.indexOf('Future<MinePopupResult> _mineVideoCard');
     final int mineEnd = page.indexOf('void _showAudioTrackMenu', mineStart);

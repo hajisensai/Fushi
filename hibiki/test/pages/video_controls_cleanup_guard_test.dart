@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// TODO-127 视频控制条清理源码守卫（随 TODO-274 控制条数据化重构刷新）。
 ///
@@ -18,9 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （`VideoControlButton` 数据模型 + `_activateVideoControlButton`）承载，topButtonBar
 /// 不再硬编码这两枚按钮，故该结构断言已删（详见 video_mobile_controls_static_test）。
 void main() {
-  final String src =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync();
+  final String src = readVideoHibikiSource();
 
   /// 桌面 + 移动两套 controls 主题方法体。TODO-274 把轨道菜单 `_showTrackMenu` 改名
   /// `_showAudioTrackMenu` 且移到 themes 之前，故控制条段终点改用 themes 之后紧邻的

@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import '../../pages/video_hibiki_page_source_corpus.dart';
 
 /// Source guard for the video subtitle-list panel wiring (TODO-278 / TODO-301 /
 /// TODO-309, BUG-266 / BUG-267 / BUG-268). The page-level wiring lives in the
@@ -16,9 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 3. The favorite cache refresh is wired right after the warm-popup seed on the
 ///    successful open path.
 void main() {
-  final String src =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync();
+  final String src = readVideoHibikiSource();
 
   group('TODO-278/BUG-266 list-row word lookup wiring', () {
     test('VideoSubtitleJumpPanel is given onLookupCue', () {

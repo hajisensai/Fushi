@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫：视频字幕列表只保留**一条**标题（BUG-245 / TODO-280；TODO-314 改 push-aside 后续守）。
 ///
@@ -15,23 +14,35 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// media_kit controls 跑不了 headless，故锁源码结构不变量（与既有 video 守卫范式一致）。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
-
   late String src;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-    src = page.readAsStringSync();
+    src = readVideoHibikiSource();
   });
 
   /// 截取 push-aside 字幕面板列构造器 [_subtitleJumpSidePanel] 方法体。
+  ///
+  /// TODO-590 batch5：`_subtitleJumpSidePanel` 已抽到 `video_hibiki/subtitle.part.dart`
+  /// 并成为合并语料里的最后一个方法（其后只剩 extension 闭合 `}`），不再有「下一个顶层
+  /// 方法签名」可作结束端点，故改用花括号配对截取方法体。
   String pushAsidePanelBody() {
     final int start = src.indexOf('Widget _subtitleJumpSidePanel(');
     expect(start, greaterThanOrEqualTo(0),
         reason: '需有 push-aside 字幕面板列 _subtitleJumpSidePanel');
-    // 到下一个顶层方法定义为止（OSD overlay 构造器）。
-    final int end = src.indexOf('Widget _buildOsdOverlay() {', start);
+    final int open = src.indexOf('{', start);
+    expect(open, greaterThan(start), reason: '_subtitleJumpSidePanel 应有方法体');
+    int depth = 0;
+    int end = src.length;
+    for (int i = open; i < src.length; i++) {
+      if (src[i] == '{') {
+        depth++;
+      } else if (src[i] == '}') {
+        depth--;
+        if (depth == 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
     expect(end, greaterThan(start), reason: '_subtitleJumpSidePanel 应正常闭合');
     return src.substring(start, end);
   }
@@ -49,8 +60,7 @@ void main() {
     // overlay 内容构造器不应再对 subtitleList 单独分支（该 kind 已删）。
     final int start = src.indexOf('Widget _buildVideoSidePanelContent(');
     expect(start, greaterThanOrEqualTo(0));
-    final int end =
-        src.indexOf('Widget _buildSubtitleSourcesSidePanel(', start);
+    final int end = src.indexOf('Widget _buildAudioTracksSidePanel(', start);
     expect(end, greaterThan(start));
     final String contentBody = src.substring(start, end);
     expect(

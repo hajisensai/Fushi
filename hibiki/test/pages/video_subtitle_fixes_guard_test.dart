@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'reader_history_source_corpus.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// Source guards for the 2026-06-08 video subtitle fix batch. media_kit cannot
 /// run headless and OS-level drag/focus can't be widget-tested, so each fix
@@ -13,9 +14,7 @@ import 'reader_history_source_corpus.dart';
 /// - BUG-132: 退出后导入字幕丢（播放列表恢复不按路径加载 app 文档目录里的导入文件）。
 /// - BUG-133: 视频画面拖入字幕无反应（窗口模式缺页级拖放目标）。
 void main() {
-  final String src =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync();
+  final String src = readVideoHibikiSource();
   final String homeVideoSrc =
       File('lib/src/pages/implementations/home_video_page.dart')
           .readAsStringSync();
@@ -139,7 +138,7 @@ void main() {
   test('视频播放页拖放提示使用当前视频语义', () {
     final String playbackDrop = region(
       'void _handlePlaybackDrop(',
-      'Future<void> _importExternalSubtitleInner(',
+      'String _trackLabel(',
     );
     final String pageDrop = region(
       'Widget _pageDropTarget(',
@@ -226,7 +225,7 @@ void main() {
     // 远端视频字幕轨里没有「自动获取字幕」）。改为只要能算出非空番名 query 就显示。
     final String panel = region(
       'Widget _buildSubtitleSourcesSidePanel(',
-      'Widget _buildAudioTracksSidePanel(',
+      'Future<void> _showSubtitleSourceMenu(',
     );
     expect(panel.contains('if (_jimakuQuery() != null)'), isTrue,
         reason: 'Jimaku 入口门控必须按「能否算出番名 query」判定，不能用 !_isRemote '
