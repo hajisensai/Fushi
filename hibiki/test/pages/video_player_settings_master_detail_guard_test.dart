@@ -255,12 +255,14 @@ void main() {
     final String source = readVideoHibikiSource();
     // TODO-314：字幕列表改 push-aside 后 overlay 版 _buildSubtitleListSidePanel 已删。
     // TODO-590 batch5：_buildSubtitleSourcesSidePanel 已抽到 video_hibiki/subtitle.part.dart
-    // （合并语料末段），不能再当 _buildVideoSidePanelOverlay 之后的紧邻终点；改用主壳里
-    // _buildVideoSidePanelContent 的真实紧邻后继 _buildAudioTracksSidePanel 作终点。
+    // （合并语料末段）；TODO-590 batch9：_buildAudioTracksSidePanel 又抽到
+    // video_hibiki/audio_track.part.dart，两者都不能再当 _buildVideoSidePanelOverlay 之后
+    // 的紧邻终点；改用 _buildVideoSidePanelContent 在主壳里的真实紧邻后继 _handlePlaybackDrop
+    // 作终点（多带的 _subtitleImportsInFlight 字段与断言无关）。
     final String panelMethod = _between(
       source,
       'Widget _buildVideoSidePanelOverlay(VideoPlayerController controller) {',
-      'Widget _buildAudioTracksSidePanel(VideoPlayerController controller) {',
+      'void _handlePlaybackDrop(',
     );
     final String visibilityMethod = _between(
       source,

@@ -87,6 +87,7 @@ part 'video_hibiki/subtitle.part.dart';
 part 'video_hibiki/controls_popover.part.dart';
 part 'video_hibiki/volume_osd.part.dart';
 part 'video_hibiki/chapter.part.dart';
+part 'video_hibiki/audio_track.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -1861,44 +1862,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return 'hibiki_remote_$safeStem${p.extension(baseName)}';
   }
 
-  /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
-  /// 按 id 匹配并切换，恢复用户上次选的音轨（退出重进 / 换集复用）。
-  ///
-  /// audioTracks 在 libmpv `open` 后才**逐步**填充，时机随设备/首帧不定。旧实现固定
-  /// 等 300ms 后**单次**匹配，列表此刻常仍为空 → 匹配不到、且不重试 → 用户报「音频
-  /// 切换退出重进又得重新弄」。改为**有界轮询**：每 200ms 重试，最多 ~4s，直到列表里
-  /// 出现目标轨再切；期间换片/卸载（`_controller != controller`）即放弃。
-  Future<void> _restoreAudioTrack(VideoPlayerController controller) async {
-    final String? wantId = _currentAudioTrackId;
-    if (wantId == null || wantId.isEmpty) return;
-    for (int attempt = 0; attempt < 20; attempt++) {
-      if (!mounted || _controller != controller) return;
-      for (final AudioTrack track in controller.audioTracks) {
-        if (track.id == wantId) {
-          await controller.selectAudioTrack(track);
-          return;
-        }
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    }
-  }
-
-  /// 选中某音轨：切轨 + 持久化 id（换集复用）+ SnackBar。
-  Future<void> _selectAudioTrack(
-    VideoPlayerController controller,
-    AudioTrack track,
-  ) async {
-    await controller.selectAudioTrack(track);
-    await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
-    if (!mounted) return;
-    setState(() => _currentAudioTrackId = track.id);
-    _showOsd(
-      t.video_audio_track_switched(
-        label: _trackLabel(track.title, track.language, track.id),
-      ),
-    );
-  }
-
   /// 翻转锁定 / 沉浸模式（TODO-101；锁屏按钮 / Shift+L 快捷键 / 常驻解锁按钮共用）。
   ///
   /// 进入：抑制 media_kit 控制条对鼠标 hover / 点击的响应（[_buildVideoControlsInner]
@@ -2999,17 +2962,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (described.record) unawaited(recordMined());
     _showOsd(described.message);
     return result;
-  }
-
-  /// 弹音轨菜单（顶栏 ♪ 按钮共用）。
-  void _showAudioTrackMenu(
-    VideoPlayerController _, {
-    VideoControlSlot? sourceSlot,
-  }) {
-    _showVideoSidePanel(
-      _VideoSidePanelKind.audioTracks,
-      sourceSlot: sourceSlot,
-    );
   }
 
   /// 退出/返回汇聚点：浮层栈有可见层先关栈（一层层退），否则 await 落库后真正
@@ -5088,44 +5040,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  Widget _buildAudioTracksSidePanel(VideoPlayerController controller) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    final List<AudioTrack> tracks = controller.audioTracks;
-    if (tracks.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.video_audio_track,
-            style: TextStyle(color: cs.onSurfaceVariant),
-          ),
-        ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: tracks.length,
-      itemBuilder: (BuildContext _, int i) {
-        final AudioTrack track = tracks[i];
-        final String label = _trackLabel(
-          track.title,
-          track.language,
-          track.id,
-        );
-        final bool selected = _currentAudioTrackId == track.id;
-        return ListTile(
-          dense: true,
-          leading: const Icon(Icons.audiotrack),
-          title: Text(label),
-          selected: selected,
-          selectedColor: cs.primary,
-          trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
-          onTap: () => unawaited(_selectAudioTrack(controller, track)),
-        );
-      },
-    );
-  }
-
   /// 把用户挑选/拖入的外部字幕文件 [srcPath] 拷到持久化
   /// `<appDocs>/video_subtitles/`（与 Jimaku 下载同目录），构造外挂
   /// [SubtitleSource] 后经 [_selectSubtitleSource] 应用（复用 cue 解析/切换/
@@ -5178,12 +5092,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 字幕抽取/解析当前是否在进行。状态显示在右侧半透明字幕源面板里，画面仍可见；
   /// 底层 ffmpeg/文件解析 Future 目前没有取消契约，关闭面板只是不再打断观看。
   bool _subtitleLoadingShown = false;
-
-  String _trackLabel(String? title, String? language, String id) {
-    if ((title ?? '').isNotEmpty) return title!;
-    if ((language ?? '').isNotEmpty) return language!;
-    return id;
-  }
 
   @override
   Widget build(BuildContext context) {

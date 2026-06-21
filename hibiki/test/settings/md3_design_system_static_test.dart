@@ -777,6 +777,12 @@ void main() {
               'scale with appUiScale, the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling video_volume_overlays.dart HUD entry.',
+      'lib/src/pages/implementations/video_hibiki/audio_track.part.dart':
+          'Audio-track side panel chrome (track-list ListTile rows) extracted '
+              'verbatim from video_hibiki_page.dart (TODO-590 batch9); the '
+              'ListTile track rows are the same reviewed media-page exception '
+              'class as the parent video player page allowlist entry and the '
+              'sibling subtitle/chapter side panels.',
       'lib/src/pages/implementations/home_video_page.dart':
           'Home video grid renders media content badges/download progress; '
               'long-press management actions use the shared media dialog frame, '

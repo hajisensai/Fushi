@@ -179,9 +179,11 @@ void main() {
       'Future<void> _showSubtitleSourceMenu',
       'Future<void> _openJimakuDialog',
     );
+    // TODO-590 batch9：_showAudioTrackMenu 已抽到 video_hibiki/audio_track.part.dart
+    // （合并语料末段），其紧邻后继在 part 内是 _buildAudioTracksSidePanel，改用它作终点。
     final String audioMenu = body(
       'void _showAudioTrackMenu',
-      'Future<void> _handleBackOrExit',
+      'Widget _buildAudioTracksSidePanel(',
     );
     final String subtitleLoading = body(
       'void _showSubtitleLoadingOverlay',
@@ -271,9 +273,11 @@ void main() {
     expect(sideRail, contains('sourceSlot: slot'),
         reason: 'screenLeft/screenRight rail buttons must preserve side');
 
+    // TODO-590 batch9：_buildAudioTracksSidePanel 已抽到 audio_track.part.dart；改用
+    // _buildVideoSidePanelContent 在主壳里的真实紧邻后继 _handlePlaybackDrop 作终点。
     final String content = body(
       'Widget _buildVideoSidePanelContent(',
-      'Widget _buildAudioTracksSidePanel(',
+      'void _handlePlaybackDrop(',
     );
     expect(content, contains('alignment: panelState.alignment'));
   });
@@ -348,8 +352,10 @@ void main() {
     // 优先（独立分支，不掺查词草稿），用其单段区间 + join 文本覆盖下一张卡上下文。
     expect(page, contains('if (selectedCue != null) {'),
         reason: '字幕列表多选优先覆盖制卡上下文（独立入口，不掺草稿）。');
-    expect(page, contains('clipStartMs: selectedCue.startMs'));
-    expect(page, contains('clipEndMs: selectedCue.endMs'));
+    // TODO-680/BUG-392：选中 cue 的时间在裁音频/封面前经 miningClipTimeMs(...delayMs)
+    // 逆变换回播放器轴，故守卫断言随源同步收紧（仍锁「选中 cue 驱动制卡区间」语义）。
+    expect(page, contains('clipStartMs: miningClipTimeMs(selectedCue.startMs'));
+    expect(page, contains('clipEndMs: miningClipTimeMs(selectedCue.endMs'));
     expect(page, contains('usedSelectedCue: true'));
     expect(page, contains('_lastLookupCue ??'));
     expect(page, contains('_mineVideoCard('));
@@ -391,7 +397,10 @@ void main() {
     final String page = readVideoHibikiSource();
     final int mineStart =
         page.indexOf('Future<MinePopupResult> _mineVideoCard');
-    final int mineEnd = page.indexOf('void _showAudioTrackMenu', mineStart);
+    // TODO-590 batch9：_showAudioTrackMenu 已抽到 audio_track.part.dart（合并语料末段），
+    // 不能再当 _mineVideoCard 之后的紧邻终点；改用主壳里真实后继 _handleBackOrExit。
+    final int mineEnd =
+        page.indexOf('Future<void> _handleBackOrExit', mineStart);
     expect(mineStart, greaterThanOrEqualTo(0));
     expect(mineEnd, greaterThan(mineStart));
     final String mineBody = page.substring(mineStart, mineEnd);

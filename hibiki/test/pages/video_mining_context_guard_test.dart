@@ -93,7 +93,7 @@ void main() {
     // TODO-270 D：返回类型改为 Future<MinePopupResult>（成功带回 note id）。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
-      'void _showAudioTrackMenu(',
+      'Future<void> _handleBackOrExit(',
     );
     expect(mineCard, contains('startMs: clipStartMs'),
         reason: '区间音频/封面起点必须是传入的 clipStartMs。');
@@ -112,7 +112,7 @@ void main() {
     // 可追踪日志 + OSD 提示，并中止本次制卡，不能落一张成功但无句子音频的卡。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
-      'void _showAudioTrackMenu(',
+      'Future<void> _handleBackOrExit(',
     );
     expect(mineCard, contains('if (audioPath == null) {'),
         reason: '抽段失败（audioPath==null）须被显式处理，而非静默落空。');
