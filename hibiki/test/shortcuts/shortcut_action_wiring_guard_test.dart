@@ -41,6 +41,7 @@ void main() {
     // 在此登记；任何 action 若在这些文件里都没出现，即「配了不执行」的死项。
     const List<String> executorFiles = <String>[
       'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/pages/implementations/reader_hibiki/caret.part.dart',
       'lib/src/pages/implementations/home_page.dart',
       'lib/src/media/video/video_player_shortcuts.dart',
       'lib/src/media/audiobook/pointer_seek.dart',

@@ -2,15 +2,15 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../pages/reader_hibiki_page_source_corpus.dart';
+
 /// TODO-387: the popup-surface caret state machine (transfer to top popup,
 /// resume after a touch->hardware-nav flip) moved into the shared
 /// [DictionaryCaretController]. This guard now splits its assertions: the
 /// transition *algorithm* is asserted against the controller, while the reader
 /// is asserted to delegate to it and to keep its popup-only jump dispatch.
 void main() {
-  final String reader = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String reader = readReaderPageSource();
   final String controller = File(
     'lib/src/shortcuts/dictionary_caret_controller.dart',
   ).readAsStringSync();

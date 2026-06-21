@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// 查词弹窗焦点系统守卫。
 ///
@@ -9,9 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 弹窗 header 工具栏按钮必须注册进 HibikiFocusRoot，不能再用裸 IconButton；
 /// - reader/popup 的 WebView 字级 caret 属于焦点导航，必须跟随全局焦点导航开关。
 void main() {
-  final File file =
-      File('lib/src/pages/implementations/reader_hibiki_page.dart');
-  final String source = file.readAsStringSync();
+  final String source = readReaderPageSource();
   final String code = _collapse(_stripDartLineComments(source));
 
   test('popup header toolbar uses Hibiki focus-aware icon buttons', () {

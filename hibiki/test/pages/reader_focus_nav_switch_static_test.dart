@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 /// BUG-161 — 书籍阅读器的键盘/手柄焦点导航不跟随全局「键盘/手柄焦点导航」开关。
 ///
 /// 全局开关 `AppModel.experimentalFocusNavigationEnabled`（默认关闭）原本只在
@@ -25,7 +27,7 @@ void main() {
         File('lib/src/pages/implementations/reader_hibiki_page.dart');
     // 去 `//` 行注释（避免匹配记录守卫的散文）+ 折叠空白，便于跨行匹配。
     final String code =
-        _collapse(_stripDartLineComments(file.readAsStringSync()));
+        _collapse(_stripDartLineComments(readReaderPageSource()));
 
     test('阅读器页面源文件存在', () {
       expect(file.existsSync(), isTrue);

@@ -6,6 +6,8 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/reader_space_override.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
+import '../pages/reader_hibiki_page_source_corpus.dart';
+
 /// BUG-204：焦点落在阅读器底栏控件（_chromeFocusScope）时，裸 Space 仍应
 /// 播放/暂停有声书，而不是被吞成 ignored、冒泡到全局导航被中和成
 /// DoNothingIntent。底栏焦点路径与正文焦点路径（BUG-062）共用同一
@@ -65,9 +67,7 @@ void main() {
   });
 
   group('BUG-204 源码守卫：chrome-focus 分支把 Space 路由到 audiobook 覆写', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderPageSource();
 
     String chromeBranch() {
       const String start = 'if (_chromeFocusScope.hasFocus) {';

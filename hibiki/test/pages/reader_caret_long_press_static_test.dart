@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 void main() {
   test('reader consumes gamepad hold-A as caret long-press', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String source = readReaderPageSource();
 
     expect(source, contains('GamepadLongPressIntent'));
     expect(source, contains('_handleGamepadLongPress'));
@@ -16,9 +16,7 @@ void main() {
   });
 
   test('Android gameButtonA key path defers activate until release', () {
-    final String source =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String source = readReaderPageSource();
 
     expect(source, contains('Timer? _gamepadAHoldTimer'));
     expect(source, contains('_handleGamepadAKeyEvent'));

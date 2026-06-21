@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// TODO-066 源码守卫：阅读器字符光标在按住方向键时随 OS 自动重复
 /// ([KeyRepeatEvent]) 连续逐字移动，而激活 / 退出不随重复连发。
@@ -12,9 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   ② 只放行移动类 [CaretAction]（`_isRepeatableCaretMove`），activate/dismissOrExit
 ///      仍一次一按（按住 Enter 不连发查词、按住 Esc 不连发退出）。
 void main() {
-  late final String reader = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  late final String reader = readReaderPageSource();
 
   test(
       'caret repeat-step branch is gated on the focus-nav switch + active caret',
