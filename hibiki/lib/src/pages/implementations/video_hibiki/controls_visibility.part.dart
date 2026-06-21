@@ -160,6 +160,28 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     _pokeControlsVisible();
   }
 
+  /// 给字幕跳转列表侧栏内容包一层「光标唤回」[MouseRegion]（BUG-391）。
+  ///
+  /// 根因：字幕列表是 push-aside 侧栏（[_videoWithSubtitlePanel] 的 Row 兄弟列），几何上
+  /// 不在视频区 controls 的 cursor:none 胜出层内；但鼠标从画面区（控制条 2s 淡出后
+  /// media_kit `hideMouseOnControlsRemoval` + 顶层 [_buildCursorOverlay] 把 OS 光标置
+  /// none）移进侧栏时，侧栏没有任何 region 主动唤回光标 / 续命 media_kit 控制条 → 桌面
+  /// OS 光标残留隐藏态（与画面字幕盒 BUG-283 同根：cursor:none 胜出 + 缺 hover 唤回）。
+  ///
+  /// 复用字幕盒同款救场 [_handleSubtitleHover]：鼠标进 / 移动在侧栏上即唤回光标 + 续命
+  /// 控制条。`opaque:false`：本层只收 hover、不阻断指针下探（cue 行点击 / 查词 / 滚动
+  /// 照常命中下层 [VideoSubtitleJumpPanel]）。仅桌面有 OS 光标语义才挂（移动端透传 child，
+  /// 像素级不变、零开销）；[_handleSubtitleHover] 内部也各自桌面门控（双保险）。
+  Widget _withSubtitleListCursorReveal(Widget child) {
+    if (!_isDesktopVideoControls) return child;
+    return MouseRegion(
+      opaque: false,
+      onEnter: (PointerEvent _) => _handleSubtitleHover(true),
+      onHover: (PointerEvent _) => _handleSubtitleHover(true),
+      child: child,
+    );
+  }
+
   /// 唤回视频左侧锁 / 解锁按钮并重置 2s 自动淡出（TODO-126）。鼠标移动（hover）/ 触屏点画面
   /// 时调用。**不被锁 gate**（与 [_markControlsVisible] 不同）——沉浸态解锁按钮要能淡出后再
   /// 被唤回，否则用户失去可见退出口。Esc / Shift+L 始终另有退出路径，不依赖此可见性。

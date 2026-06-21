@@ -646,31 +646,45 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                   alignment: Alignment.centerLeft,
                   minWidth: panelWidth,
                   maxWidth: panelWidth,
-                  child: SafeArea(
-                    left: false,
-                    child: VideoSubtitleJumpPanel(
-                      key: const ValueKey<String>('video-subtitle-jump-panel'),
-                      controller: controller,
-                      onTapCue: _handleSubtitleJumpTap,
-                      onLookupCue: _handleSubtitleListLookup,
-                      onCopyCue: _copyCueText,
-                      onFavoriteCue: _toggleFavoriteCueForVideo,
-                      isCueFavorited: _isCueFavorited,
-                      isCueSelectedForCard: _isCueSelectedForCard,
-                      onToggleCueSelection: _toggleCueSelectedForCard,
-                      onClearCueSelection: _clearSelectedMiningCues,
-                      // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
-                      initialAutoScroll: appModel.videoSubtitleListAutoScroll,
-                      onAutoScrollChanged: (bool value) => unawaited(
-                        appModel.setVideoSubtitleListAutoScroll(value),
+                  // BUG-391：字幕列表是 push-aside 侧栏（[_videoWithSubtitlePanel] 的
+                  // Row 兄弟列），不在视频区 controls 的 cursor:none 胜出层几何内。但鼠标
+                  // 从画面区（控制条 2s 淡出后 media_kit `hideMouseOnControlsRemoval` +
+                  // 顶层 [_buildCursorOverlay] 把光标置 none）移进侧栏时，侧栏没有任何
+                  // region 主动唤回光标 / 续命 media_kit 控制条 → 桌面 OS 光标残留隐藏态
+                  // （与画面字幕盒 BUG-283 同根：cursor:none 胜出 + 缺 hover 唤回）。这里
+                  // 复用字幕盒同款救场 [_handleSubtitleHover]：鼠标进 / 移动在侧栏上即
+                  // [_setCursorHidden]false 让顶层胜出层让位 + [_pokeControlsVisible] 续命
+                  // 控制条（避免 media_kit `mount=false` 让其自己的 cursor 置 none），使光标
+                  // 在字幕列表上可见。`opaque:false` 不阻断指针下探（cue 行点击 / 查词 /
+                  // 滚动照常）；仅桌面有 OS 光标语义才挂（移动端透传，零开销）。
+                  child: _withSubtitleListCursorReveal(
+                    SafeArea(
+                      left: false,
+                      child: VideoSubtitleJumpPanel(
+                        key:
+                            const ValueKey<String>('video-subtitle-jump-panel'),
+                        controller: controller,
+                        onTapCue: _handleSubtitleJumpTap,
+                        onLookupCue: _handleSubtitleListLookup,
+                        onCopyCue: _copyCueText,
+                        onFavoriteCue: _toggleFavoriteCueForVideo,
+                        isCueFavorited: _isCueFavorited,
+                        isCueSelectedForCard: _isCueSelectedForCard,
+                        onToggleCueSelection: _toggleCueSelectedForCard,
+                        onClearCueSelection: _clearSelectedMiningCues,
+                        // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
+                        initialAutoScroll: appModel.videoSubtitleListAutoScroll,
+                        onAutoScrollChanged: (bool value) => unawaited(
+                          appModel.setVideoSubtitleListAutoScroll(value),
+                        ),
+                        onClose: _closeSubtitleJumpList,
+                        colorScheme: cs,
+                        title: t.video_subtitle_list,
+                        emptyHint: t.video_subtitle_list_empty,
+                        loadingHint: t.video_subtitle_list_loading,
+                        fontSize: 14 * _videoUiScale,
+                        width: panelWidth,
                       ),
-                      onClose: _closeSubtitleJumpList,
-                      colorScheme: cs,
-                      title: t.video_subtitle_list,
-                      emptyHint: t.video_subtitle_list_empty,
-                      loadingHint: t.video_subtitle_list_loading,
-                      fontSize: 14 * _videoUiScale,
-                      width: panelWidth,
                     ),
                   ),
                 ),
