@@ -33,9 +33,13 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+// TODO-589 batch8: reader setup script (_buildReaderSetupScript, which owns
+// the full handler slice below) was extracted verbatim to
+// reader_hibiki/webview.part.dart. The slice markers are unchanged, so the
+// harness now reads the part file (the slice lives entirely inside it).
 const readerPath = path.resolve(
   __dirname,
-  '../../lib/src/pages/implementations/reader_hibiki_page.dart',
+  '../../lib/src/pages/implementations/reader_hibiki/webview.part.dart',
 );
 const source = fs.readFileSync(readerPath, 'utf8');
 

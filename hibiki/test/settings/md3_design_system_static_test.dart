@@ -666,6 +666,17 @@ void main() {
               'image context-menu font size are reader content / chrome, '
               'same rationale as the parent reader_hibiki_page.dart allowlist '
               '(extracted verbatim).',
+      // TODO-589 batch8: reader webview 域(EPUB WebView 构建 / hoshi.local 资源拦截
+      // + 净化 / 单 IIFE setup 脚本)拆到 reader_hibiki/webview.part.dart；同一份
+      // 「reader content / WebView 注入」豁免随搬运延伸到该 part（零行为变化，逐字符
+      // 自父文件搬出，含 _buildReaderSetupScript 整段内联 JS 的字节级等价）。
+      'lib/src/pages/implementations/reader_hibiki/webview.part.dart':
+          'Reader pagination shell script receives the content font size '
+              '(fontSize: s.fontSize.round() passed to '
+              'ReaderPaginationScripts.shellScript) and the WebView injects '
+              'reader content styling, not ordinary page chrome — same '
+              'rationale as the parent reader_hibiki_page.dart allowlist '
+              '(extracted verbatim).',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'Reader quick settings and audiobook chrome migrate under Task 8.',
       'lib/src/media/audiobook/audiobook_bridge.dart':

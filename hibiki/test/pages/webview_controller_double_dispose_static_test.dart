@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// Codebase-wide invariant guard (all platforms).
 ///
@@ -37,7 +38,15 @@ void main() {
           reason: 'guarded file moved or renamed: $relativePath — update this '
               'test to keep covering every InAppWebView widget site');
 
-      final String code = _stripLineComments(file.readAsStringSync());
+      // TODO-589 batch8: reader_hibiki_page.dart 的 InAppWebView 构建(_buildWebView)
+      // 已搬到 reader_hibiki/webview.part.dart。该站点改读「主壳 + 全部 part」合并
+      // 语料，使 InAppWebView( 哨兵与 _controller.dispose() 负向检查都覆盖 part；
+      // 其余 widget 站点仍逐文件读取。
+      final String rawSource = relativePath ==
+              'lib/src/pages/implementations/reader_hibiki_page.dart'
+          ? readReaderPageSource()
+          : file.readAsStringSync();
+      final String code = _stripLineComments(rawSource);
 
       // Sanity: confirm this really is an InAppWebView widget site, so the test
       // fails loudly (rather than silently passing) if a file stops using it.

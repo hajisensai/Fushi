@@ -1,15 +1,14 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 void main() {
   late String source;
   late String setupScript;
 
   setUpAll(() {
-    source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    // TODO-589 batch8: setup 脚本(鼠标拖动状态机)已搬到
+    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    source = readReaderPageSource();
     setupScript = _between(
       source,
       r'var hoshiContinuousMode = $continuousMode;',

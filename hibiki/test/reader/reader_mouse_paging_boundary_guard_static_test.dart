@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（headless WebView 不可用，锁注入 JS 行为）：
 /// - BUG-368：分页模式鼠标在正文上横向拖动必须像触摸横滑一样翻页（pointermove 里把
@@ -12,9 +11,9 @@ void main() {
   late String setupScript;
 
   setUpAll(() {
-    source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    // TODO-589 batch8: setup 脚本(pointermove/wheel 边界)已搬到
+    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    source = readReaderPageSource();
     setupScript = _between(
       source,
       r'var hoshiContinuousMode = $continuousMode;',

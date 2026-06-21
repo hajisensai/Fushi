@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
@@ -72,9 +71,9 @@ void main() {
 
   test('BUG-025 tap handler resolves <svg><image> covers to a zoomable URL',
       () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    // TODO-589 batch8: _hoshiBlockImageUrl/onImageTap 在 setup 脚本/handler，
+    // 已搬到 reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    final String source = readReaderPageSource();
 
     expect(
       source,

@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_hibiki_page_source_corpus.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
 /// BUG-136 — 翻页（手势/滚轮）后 ESC 不退出书籍。
@@ -61,12 +60,14 @@ void main() {
   });
 
   group('BUG-136 · 源码守卫：每个指针手势回调都夺回焦点', () {
-    final File file =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart');
-    final String code = _stripDartLineComments(file.readAsStringSync());
+    // TODO-589 batch8: 指针手势 handler(onSwipe/onBoundarySwipe/onTap/onTapEmpty)
+    // 已搬到 reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    final String code = _stripDartLineComments(readReaderPageSource());
 
-    test('阅读器页面源文件存在', () {
-      expect(file.existsSync(), isTrue);
+    test('阅读器页面合并语料含 WebView 注入', () {
+      // 合并语料(主壳 + part)必须真正含 reader WebView 构建点，否则下面的
+      // handler 守卫会静默空跑（reader_hibiki_page.dart 已拆主壳 + part）。
+      expect(code.contains('InAppWebView('), isTrue);
     });
 
     // 每个纯指针手势 JS 回调（用户触摸 WebView 触发 → WebView 抢焦点）都必须在

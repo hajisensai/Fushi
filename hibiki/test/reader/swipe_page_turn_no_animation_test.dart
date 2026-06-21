@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../pages/reader_hibiki_page_source_corpus.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
@@ -64,10 +63,9 @@ void main() {
     // Source-scan guard: the swipe-detection branch must read the
     // sensitivity-scaled $swipeDistThreshold, not the old literal threshold.
     // If someone reverts to `absDx >= 72`, this fails.
-    final File page = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    );
-    final String src = page.readAsStringSync();
+    // TODO-589 batch8: swipe 阈值/连续模式 wheel(setup 脚本)已搬到
+    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    final String src = readReaderPageSource();
 
     expect(
       src,
@@ -104,10 +102,9 @@ void main() {
     // 这里钉住：(1) 连续分支必须先于分页的 onSwipe 翻页通道；(2) 连续分支内必须
     // 有「仅竖排（isVertical）才显式 scrollBy({left: ...}) 横向滚动」；(3) 横排
     // 连续仍是早返回（不触发 onSwipe / preventDefault）。
-    final File page = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    );
-    final String src = page.readAsStringSync();
+    // TODO-589 batch8: swipe 阈值/连续模式 wheel(setup 脚本)已搬到
+    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    final String src = readReaderPageSource();
 
     // 定位 wheel 监听块（从 addEventListener('wheel' 到其闭合 `}, {passive`)。
     final int wheelStart = src.indexOf("addEventListener('wheel'");

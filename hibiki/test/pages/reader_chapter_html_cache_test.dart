@@ -1,8 +1,9 @@
 import 'dart:collection';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// BUG-270 (TODO-296 B) 守卫：锁定跨章 sanitize-HTML LRU 缓存 + 下一章预取的接线。
 ///
@@ -14,8 +15,11 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = File('lib/src/pages/implementations/reader_hibiki_page.dart')
-          .readAsStringSync();
+      // TODO-589 batch8: _interceptRequest / _chapterHtmlBytes /
+      // _putChapterHtml / _buildSanitizedChapterHtmlBytes /
+      // _prefetchAdjacentChapter / _onChapterLoadComplete 已搬到
+      // reader_hibiki/webview.part.dart，故改读「主壳 + 全部 part」合并语料。
+      src = readReaderPageSource();
     });
 
     test('HTML 缓存是有界 LRU（LinkedHashMap + 容量上限）', () {
@@ -30,7 +34,9 @@ void main() {
     test('_interceptRequest 的 HTML 分支经缓存提供，而非每次原地重建', () {
       final int interceptIdx =
           src.indexOf('Future<WebResourceResponse?> _interceptRequest(');
-      final int isCustomIdx = src.indexOf('bool get _isCustomTheme =>');
+      // _isCustomTheme 仍在主壳（样式域），在合并语料里位于已搬到 part 的
+      // _interceptRequest 之前，故用 part 内紧随其后的 _chapterHtmlBytes 作下界。
+      final int isCustomIdx = src.indexOf('Uint8List _chapterHtmlBytes(');
       expect(interceptIdx, greaterThan(0));
       expect(isCustomIdx, greaterThan(interceptIdx));
       final String interceptBody = src.substring(interceptIdx, isCustomIdx);
@@ -77,17 +83,18 @@ void main() {
       expect(src.contains('void _prefetchAdjacentChapter('), isTrue);
       // 预取必须挂在章节加载完成之后
       final int loadIdx = src.indexOf('Future<void> _onChapterLoadComplete(');
-      final int favIdx = src.indexOf('void _invalidateFavoriteSentenceCache()');
       expect(loadIdx, greaterThan(0));
-      expect(favIdx, greaterThan(loadIdx));
-      final String loadBody = src.substring(loadIdx, favIdx);
+      // _onChapterLoadComplete 是 webview part 的最后一个方法（合并语料末尾），
+      // _invalidateFavoriteSentenceCache 仍在主壳（更早），故切到语料尾部。
+      final String loadBody = src.substring(loadIdx);
       expect(loadBody.contains('_prefetchAdjacentChapter(chapterSnapshot + 1)'),
           isTrue,
           reason: '加载完一章后预取下一章（前进翻章方向）');
 
       final int prefIdx = src.indexOf('void _prefetchAdjacentChapter(');
-      final int prefEnd =
-          src.indexOf('void _invalidateFavoriteSentenceCache()', prefIdx);
+      // _prefetchAdjacentChapter 之后在 part 内紧跟 static _isValidFontData。
+      final int prefEnd = src.indexOf('static bool _isValidFontData(', prefIdx);
+      expect(prefEnd, greaterThan(prefIdx));
       final String prefBody = src.substring(prefIdx, prefEnd);
       expect(prefBody.contains('_prefetchingHtmlPath'), isTrue,
           reason: '在途预取要去重，避免与落地导航重复读盘');

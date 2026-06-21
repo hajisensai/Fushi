@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// BUG-239 源码守卫：阅读器统一手势 `_gestureEnd` 的 onSwipe 回传必须被连续模式
 /// 门控（连续模式不发跨轴 onSwipe）。headless WebView 不可用，门控数值正确性由
@@ -9,9 +8,9 @@ void main() {
   late String source;
 
   setUpAll(() {
-    source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    // TODO-589 batch8: setup 脚本(_buildReaderSetupScript)已搬到
+    // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
+    source = readReaderPageSource();
   });
 
   test('setup script injects the continuousMode flag from settings', () {
