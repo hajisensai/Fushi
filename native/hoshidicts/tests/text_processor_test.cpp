@@ -48,6 +48,16 @@ int main() {
   // 身份不变：纯日语原文必须始终作为变体存在（option-0 恒等，不被处理器破坏）
   expect("ja-identity", "\xE6\x97\xA5\xE6\x9C\xAC", "\xE6\x97\xA5\xE6\x9C\xAC");
 
+  // NFKC：全角拉丁 Ａ(U+FF21) 折半角 -> A。验 utf8proc 接进链路（非恒真）。
+  expect("nfkc-fullwidth-A", "\xEF\xBC\xA1", "A");
+  // 顺序关键：全角大写 Ａ 先经 NFKC 折成 A，再被 to_lowercase 小写成 a。
+  // 若 NFKC 排在 to_lowercase 之后，则永远产不出 'a' 这个变体。
+  expect("nfkc-then-lower", "\xEF\xBC\xA1", "a");
+  // NFKC 串：ＡＢＣ(全角) -> abc（折半角 + 小写组合变体）。
+  expect("nfkc-fullwidth-abc", "\xEF\xBC\xA1\xEF\xBC\xA2\xEF\xBC\xA3", "abc");
+  // alphanumeric_to_fullwidth：半角 abc -> 全角 ａｂｃ(U+FF41..43)。
+  expect("ascii-to-fullwidth", "abc", "\xEF\xBD\x81\xEF\xBD\x82\xEF\xBD\x83");
+
   if (g_fail) {
     std::fprintf(stderr, "%d FAIL\n", g_fail);
     return 1;

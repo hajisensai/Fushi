@@ -1,6 +1,7 @@
 #include "text_processor.hpp"
 
 #include <utf8.h>
+#include <utf8proc.h>
 
 #include <cstdint>
 #include <functional>
@@ -222,19 +223,59 @@ std::vector<TextProcessor> get_english_processors() {
   };
 }
 
+// NFKC 兼容分解 + 正则合成（utf8proc）：折叠全角拉丁/数字、合字、上下标等
+// 兼容字符到规范形（全角 Ａ -> 半角 A）。失败时回退原文。
+std::u32string nfkc(const std::u32string& text) {
+  std::string utf8 = utf8::utf32to8(text);
+  utf8proc_uint8_t* out = utf8proc_NFKC(reinterpret_cast<const utf8proc_uint8_t*>(utf8.c_str()));
+  if (!out) {
+    return text;
+  }
+  std::string result(reinterpret_cast<char*>(out));
+  utf8proc_free(out);
+  return utf8::utf8to32(result);
+}
+
+// https://github.com/yomidevs/yomitan/blob/3440451aecb23a43f308857969c890a55ce34a91/ext/js/language/ja/japanese.js#L489
+// ASCII 字母数字 -> 全角等价（纯码点位移，无依赖）。与 NFKC 互补，覆盖词典里
+// 以全角字母数字收录的条目。
+std::u32string alphanumeric_to_fullwidth(const std::u32string& text) {
+  std::u32string result;
+  for (char32_t c : text) {
+    if (is_in_range(c, U'0', U'9')) {
+      c = static_cast<char32_t>(c + (0xff10 - 0x30));
+    } else if (is_in_range(c, U'A', U'Z')) {
+      c = static_cast<char32_t>(c + (0xff21 - 0x41));
+    } else if (is_in_range(c, U'a', U'z')) {
+      c = static_cast<char32_t>(c + (0xff41 - 0x61));
+    }
+    result += c;
+  }
+  return result;
+}
+
 // TODO: implement rest of preprocessors
 std::vector<TextProcessor> get_japanese_processors() {
   return {
       // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese-text-preprocessors.js#L66
-      {.options = {0, 1, 2}, .process = [](const std::u32string& text, int opt) -> std::u32string {
-         switch (opt) {
-           case 1:
-             return katakana_to_hiragana(text);
-           case 2:
-             return hiragana_to_katakana(text);
-           default:
-             return text;
-         }
+      {.options = {0, 1, 2},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+             switch (opt) {
+               case 1:
+                 return katakana_to_hiragana(text);
+               case 2:
+                 return hiragana_to_katakana(text);
+               default:
+                 return text;
+             }
+           }},
+      // NFKC 在 english 的 to_lowercase 之前跑（japanese 链先于 english 链）：
+      // 全角 Ａ 先经 NFKC 折成半角 A，再被 to_lowercase 小写成 a。顺序关键。
+      {.options = {0, 1},
+       .process = [](const std::u32string& text, int opt) -> std::u32string { return opt == 1 ? nfkc(text) : text; }},
+      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? alphanumeric_to_fullwidth(text) : text;
        }}};
 }
 }

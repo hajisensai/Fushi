@@ -49,10 +49,17 @@ set(ZSTD_BUILD_STATIC ON CACHE BOOL "")
 set(LIBDEFLATE_BUILD_SHARED_LIB OFF CACHE BOOL "")
 set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "")
 
+# utf8proc: vendored static (commit 26dbf597, v2.11.3) for NFKC normalization in
+# text_processor. Suppress its install rules so they don't pollute our tree; it
+# builds static (BUILD_SHARED_LIBS unset here) and defines UTF8PROC_STATIC PUBLIC
+# itself, so consumers link against the static archive without DLL import attrs.
+set(UTF8PROC_INSTALL OFF CACHE BOOL "")
+
 add_subdirectory(hoshidicts_external/glaze EXCLUDE_FROM_ALL)
 add_subdirectory(hoshidicts_external/zstd EXCLUDE_FROM_ALL)
 add_subdirectory(hoshidicts_external/unordered_dense EXCLUDE_FROM_ALL)
 add_subdirectory(hoshidicts_external/libdeflate EXCLUDE_FROM_ALL)
+add_subdirectory(hoshidicts_external/utf8proc EXCLUDE_FROM_ALL)
 
 add_library(hoshidicts STATIC
     hoshidicts_src/hash/hash.cpp
@@ -92,6 +99,7 @@ target_link_libraries(hoshidicts PRIVATE
     libzstd_static
     libdeflate_static
     unordered_dense
+    utf8proc::utf8proc
     ${HOSHIDICTS_PLATFORM_LIBS}
 )
 
