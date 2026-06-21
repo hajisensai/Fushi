@@ -1,8 +1,8 @@
 ## BUG-377 · 手机无法下载对端配对设备书籍(Android明文HTTP被network_security_config拦截)
 - **报告**：2026-06-21（用户：TODO-668）
 - **真实性**：✅ 真 bug（平台边界配置错误·确定性·非不可控网络环境）。根因 `hibiki/android/app/src/main/res/xml/network_security_config.xml:3`
-- **[x] ① 已修复** — `network_security_config.xml`：放开 `base-config cleartextTrafficPermitted="true"`（允许局域网配对设备 + 用户自配明文 WebDAV/FTP 后端），并显式 `domain-config` 把日志上传域名 `logs.wrds.xyz` 钉死 https-only 防回归。提交 8aa009760
-- **[x] ② 已加自动化测试** — `hibiki/test/android/network_security_config_guard_test.dart`（源码扫描守卫：断言 cleartext 已放开 + 敏感公网域名仍禁明文 + manifest 引用了该 config）。提交 8aa009760
+- **[x] ① 已修复** — `network_security_config.xml`：放开 `base-config cleartextTrafficPermitted="true"`（允许局域网配对设备 + 用户自配明文 WebDAV/FTP 后端），并显式 `domain-config` 把日志上传域名 `logs.wrds.xyz` 钉死 https-only 防回归。提交 6948bb87a
+- **[x] ② 已加自动化测试** — `hibiki/test/android/network_security_config_guard_test.dart`（源码扫描守卫：断言 cleartext 已放开 + 敏感公网域名仍禁明文 + manifest 引用了该 config）。提交 6948bb87a
 - **备注**：
 
 ### 根因（沿真实代码路径验真）
