@@ -90,6 +90,7 @@ part 'video_hibiki/chapter.part.dart';
 part 'video_hibiki/audio_track.part.dart';
 part 'video_hibiki/side_panel.part.dart';
 part 'video_hibiki/controls_theme.part.dart';
+part 'video_hibiki/speed.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -4303,78 +4304,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-  }
-
-  /// 设置播放倍速：先乐观刷新 UI，再下发 controller；只有持久化走 trailing debounce。
-  Future<void> _setSpeed(double speed, {bool persist = true}) async {
-    final double clamped = speed.clamp(0.25, 4.0).toDouble();
-    final bool changed = (clamped - _playbackSpeed).abs() >= 0.001;
-    if (!changed && !persist) return;
-    if (changed) {
-      _playbackSpeed = clamped;
-      if (mounted) setState(() {});
-      await _controller?.setSpeed(clamped);
-    }
-    if (persist) {
-      _queuePersistVideoSpeed(clamped);
-    }
-  }
-
-  void _queuePersistVideoSpeed(double speed) {
-    _pendingSpeedPersist = speed.clamp(0.25, 4.0).toDouble();
-    _speedPersistDebounce?.cancel();
-    _speedPersistDebounce = Timer(const Duration(milliseconds: 350), () {
-      unawaited(_flushPersistedVideoSpeed());
-    });
-  }
-
-  Future<void> _flushPersistedVideoSpeed() async {
-    final double? pending = _pendingSpeedPersist;
-    if (pending == null) return;
-    _speedPersistDebounce?.cancel();
-    _speedPersistDebounce = null;
-    _pendingSpeedPersist = null;
-    await appModel.prefsRepo.setPref(_speedPrefKey, pending);
-  }
-
-  void _handleVideoLongPressStart(LongPressStartDetails details) {
-    if (_longPressPreviousSpeed != null) return;
-    _longPressPreviousSpeed = _playbackSpeed;
-    final double speed = _asbConfig.longPressSpeed;
-    // 长按拖动以固定加速速为基准（TODO-338）：拖动位移在此基础上连续加减。
-    _longPressDragBaseSpeed = speed;
-    unawaited(_setSpeed(speed, persist: false));
-    _showOsd('${speed.toStringAsFixed(1)}x', icon: Icons.speed);
-  }
-
-  /// 长按后横向拖动连续调速（TODO-338）：向右拖加速、向左减速，以长按固定加速速
-  /// [_longPressDragBaseSpeed] 为基准，按 [_kLongPressDragSpeedPerPixel] 线性映射横向
-  /// 位移，clamp 到 [_kLongPressDragMinSpeed]..[_kLongPressDragMaxSpeed]，松手恢复原速
-  /// （[_handleVideoLongPressEnd]）。位移用相对长按起点的 [localOffsetFromOrigin]。
-  void _handleVideoLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
-    final double? base = _longPressDragBaseSpeed;
-    if (base == null) return;
-    // 0.1x 步进（避免每像素抖动；_setSpeed 内另有 0.001 去重）。
-    final double snapped = VideoHibikiPage.longPressDragSpeedFor(
-      base,
-      details.localOffsetFromOrigin.dx,
-    );
-    if ((snapped - _playbackSpeed).abs() < 0.001) return;
-    unawaited(_setSpeed(snapped, persist: false));
-    _showOsd('${snapped.toStringAsFixed(1)}x', icon: Icons.speed);
-  }
-
-  void _handleVideoLongPressEnd(LongPressEndDetails details) {
-    final double? previous = _longPressPreviousSpeed;
-    _longPressPreviousSpeed = null;
-    _longPressDragBaseSpeed = null;
-    if (previous == null) return;
-    unawaited(_setSpeed(previous, persist: false));
-  }
-
-  Future<void> _adjustSpeed(double delta) async {
-    final double next = ((_playbackSpeed + delta) * 10).round() / 10;
-    await _setSpeed(next);
   }
 
   Future<void> _setLockWindowAspectRatio(bool value) async {

@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 长按倍速可顺滑横向拖动连续调速（TODO-338）的守卫。
 ///
@@ -18,6 +18,11 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 /// media_kit/libmpv 在测试宿主不可用，无法纯单测真实拖动手势，故守两层：
 /// 1. 纯函数 [VideoHibikiPage.longPressDragSpeedFor] 的映射 / clamp / snap 逻辑；
 /// 2. 源码守卫：手势绑了 onLongPressMoveUpdate、handler 以基准速连续调速、松手清基准。
+///
+/// TODO-590 batch12：长按倍速三段 handler ([_handleVideoLongPressStart] /
+/// [_handleVideoLongPressMoveUpdate] / [_handleVideoLongPressEnd]) 随 speed 域
+/// 抽到 video_hibiki/speed.part.dart，故源码守卫改读合并语料（主壳 + part）；手势
+/// 绑定点仍在主壳的 build 体里，`_functionSource` 切片落在 part 里的方法体。
 void main() {
   group('longPressDragSpeedFor — 横向位移→倍速映射', () {
     const double base = 2.0; // 长按固定加速速。
@@ -54,9 +59,7 @@ void main() {
   });
 
   group('源码接线守卫', () {
-    final String page = File(
-      'lib/src/pages/implementations/video_hibiki_page.dart',
-    ).readAsStringSync();
+    final String page = readVideoHibikiSource();
 
     test('手势绑了 onLongPressMoveUpdate（与 start/end 同处）', () {
       expect(

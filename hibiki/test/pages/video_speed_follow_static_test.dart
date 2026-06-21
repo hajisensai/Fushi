@@ -2,14 +2,22 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// Source guards for TODO-502: video speed changes must feel immediate.
 ///
 /// UI state updates optimistically, controller speed is sent immediately, and
 /// only durable preference writes are trailing-debounced/flushed with the same
 /// lifecycle coverage as video volume.
+///
+/// TODO-590 batch12: the speed methods (_setSpeed / persistence pair /
+/// long-press trio / _adjustSpeed) were extracted to
+/// video_hibiki/speed.part.dart, so the page source is read through the merged
+/// corpus (main shell + parts). The lone _setSpeed `setState(() {})` rebuild is
+/// now routed through the shell `_rebuild(() {})` forwarder (extensions cannot
+/// call @protected State.setState) — behaviour-identical, so the assertion
+/// tracks the new form.
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_hibiki_page.dart');
   final File sheet =
       File('lib/src/media/video/video_quick_settings_sheet.dart');
 
@@ -17,9 +25,8 @@ void main() {
   late String sheetSrc;
 
   setUpAll(() {
-    expect(page.existsSync(), isTrue);
     expect(sheet.existsSync(), isTrue);
-    pageSrc = page.readAsStringSync();
+    pageSrc = readVideoHibikiSource();
     sheetSrc = sheet.readAsStringSync();
   });
 
@@ -77,14 +84,14 @@ void main() {
             '_setSpeed needs to distinguish same-value durable commit from no-op preview');
     expect(body.contains('if (!changed && !persist) return;'), isTrue);
     expect(body.contains('_playbackSpeed = clamped;'), isTrue);
-    expect(body.contains('if (mounted) setState(() {});'), isTrue);
+    expect(body.contains('if (mounted) _rebuild(() {});'), isTrue);
     expect(body.contains('await _controller?.setSpeed(clamped);'), isTrue);
     expect(body.contains('_queuePersistVideoSpeed(clamped);'), isTrue);
     expect(body.contains('appModel.prefsRepo.setPref(_speedPrefKey, clamped)'),
         isFalse,
         reason: '_setSpeed must not synchronously wait for DB persistence');
 
-    final int stateIndex = body.indexOf('if (mounted) setState(() {});');
+    final int stateIndex = body.indexOf('if (mounted) _rebuild(() {});');
     final int controllerIndex =
         body.indexOf('await _controller?.setSpeed(clamped);');
     final int queueIndex = body.indexOf('_queuePersistVideoSpeed(clamped);');
