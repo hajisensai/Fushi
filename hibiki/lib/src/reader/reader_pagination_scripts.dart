@@ -2185,7 +2185,7 @@ window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
   var SWIPE_THRESHOLD = 20;
   var downX = 0, downY = 0, hasDown = false;
   function _bStart(x, y) { hasDown = true; downX = x; downY = y; }
-  function _bEnd(x, y) {
+  function _bEnd(x, y, src) {
     if (!hasDown) return;
     hasDown = false;
     var dx = x - downX;
@@ -2207,6 +2207,15 @@ window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
       if (dy < 0 && atBottom) dir = 'forward';
       else if (dy > 0 && atTop) dir = 'backward';
     }
+    // BUG-369/TODO-656 诊断：触摸/指针边界手势跨章只在此单次瞬时读 scrollTop<=2，
+    // 无滚轮路径的 arm-then-fire 二次确认。打印走的是哪条输入（src=touch/pointer）
+    // 及触发时刻的真实几何，供真机定位「没到章首就跨章」到底是哪条路径、什么 scrollTop。
+    console.log('[xchapter] bEnd src=' + src + ' vertical=' + (vertical ? 1 : 0)
+      + ' dx=' + Math.round(dx) + ' dy=' + Math.round(dy)
+      + ' scrollTop=' + root.scrollTop + ' scrollLeft=' + root.scrollLeft
+      + ' innerH=' + window.innerHeight + ' innerW=' + window.innerWidth
+      + ' scrollH=' + root.scrollHeight + ' scrollW=' + root.scrollWidth
+      + ' dir=' + dir);
     if (dir && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onBoundarySwipe', dir);
     }
@@ -2217,7 +2226,7 @@ window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
     if (!e.changedTouches.length) return;
-    _bEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    _bEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY, 'touch');
   }, {passive: true});
   document.addEventListener('pointerdown', function(e) {
     if (e.pointerType === 'touch' || e.button !== 0) return;
@@ -2225,7 +2234,7 @@ window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
   }, {passive: true});
   document.addEventListener('pointerup', function(e) {
     if (e.pointerType === 'touch' || e.button !== 0) return;
-    _bEnd(e.clientX, e.clientY);
+    _bEnd(e.clientX, e.clientY, 'pointer');
   }, {passive: true});
 })();
 $_sharedInitBoot

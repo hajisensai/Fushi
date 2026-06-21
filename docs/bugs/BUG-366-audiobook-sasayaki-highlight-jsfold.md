@@ -27,3 +27,21 @@
     - `collectRanges emptyRanges == cues`（全空）→ 折叠/路径仍未命中（hypothesis E）；部分空 → 个别 cue。
     - `highlightCue ranges=0 ruby=0 RETURN_NULL_no_segments` → 该 cue 没拿到 range（apply 阶段没收到该 id 的 segment）。
   - 验证：`flutter analyze` 0 issues；`flutter test test/reader/ test/media/audiobook/ -j 1` 947 通过 0 失败（并行跑时 `audiobook_session_test.dart` 偶发 isolate loading flake，单跑 8/8 绿，与本改动无关）。
+
+## 复发与真根因修正（2026-06-21 第二轮，用户：有声书仍完全没高亮，mode 无关）
+
+- **上次 JS 折叠修复未命中真根因**：只改了 `collectSasayakiCueRanges` 的值折叠（sasayaki 链路**下游**）。但用户的书走 `_srtBookUid` 分支，`mining.part.dart:283` 直接 `return null`，`applySasayakiCues` **从不被调用** → 改的那段 JS 在这条路径上**一次都跑不到** → 对用户的书无效（与横竖排无关，正合用户判断）。
+- **真根因（hypothesis A 坐实）= 路径分叉，纯 SRT 书两端都绕开 sasayaki 系统**：
+  - setup 期：`mining.part.dart` `_prepareSasayakiCuesJson` 在 `_srtBookUid != null` 时直接 `return null` → `applySasayakiCues` 永不被调用 → `cueRangesMap` 空。
+  - 播放期：SRT cue 的 `textFragmentId = '[data-cue-id="<idx>"]'`（`srt_parser.dart:148`，非 `sasayaki://` 格式）→ `audiobook_bridge.dart:335` `SasayakiMatchCodec.tryDecode` 返 null → `highlight` 走普通 `__hoshiHighlight`（`:344`）而非 `__hoshiHighlightSasayakiCueById` → 永不激活 `::highlight(hoshi-sasayaki)`。
+  - **现有 JS `[sasayaki-hl]` 三处日志全在 `applySasayakiCues` 内部，SRT 路径下永不触发 = 致命盲区**（用户日志里看不到任何 sasayaki 行，恰是 SRT 路径指纹，但无日志能区分「没调 apply」vs「apply 调了 payload=0」）。
+- **本轮只加 Dart 端诊断日志（`[sasayaki-hl]`，零行为变化）补盲区**：
+  - `mining.part.dart` 三处早返回：`path=SRT` / `path=NONE` / `path=AUDIOBOOK`（无 sasayaki）/ `path=AUDIOBOOK-SASAYAKI payloadLen=N`。
+  - `audiobook_bridge.dart` 播放期：`highlight raw=... frag=NULL->__hoshiHighlight / sasayaki`；`applySasayakiCues ... EMPTY payload`。
+  - 守卫 `hibiki/test/reader/diagnostic_logging_guard_test.dart`。
+- **真机取证指引**：播放有声书看日志：
+  - 出现 `[sasayaki-hl] prepareCues path=SRT ... SKIPPED` → 坐实用户书是纯 SRT 路径，sasayaki 从未启用。
+  - `highlight ... frag=NULL->__hoshiHighlight` 反复刷 → 坐实播放期走普通高亮路径。
+  - `path=AUDIOBOOK-SASAYAKI payloadLen=0` → 当前章无命中 cue（匹配问题，非路径问题）。
+- **根本修法（待真机日志定书类型后实施）**：若坐实是纯 SRT 书，需让 SRT 字幕书也走逐句高亮——要么导入时给 SRT cue 也算 sasayaki 偏移（编进 `sasayaki://` textFragmentId），要么让 `__hoshiHighlight('[data-cue-id=...]')` 路径在正文里真能命中并上色（取决于 SRT 书正文 DOM 有无 `data-cue-id` 锚点，需日志 + DOM 实查确认）。
+- **575/627/644 与本链路无关**：分别是 reader god-file 重构（TODO-575）/ 插图页滚轮翻页（TODO-627/BUG-351）/ 制卡 race 快照（TODO-644/BUG-357），均不碰 sasayaki 高亮，是版本号混淆。

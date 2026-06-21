@@ -814,6 +814,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         if (wheelDelta > 0) boundaryDir = atEnd ? 'forward' : null;
         else boundaryDir = atStart ? 'backward' : null;
       }
+      // BUG-369/TODO-656 诊断（对照组）：仅边界附近打印滚轮跨章判定的几何与
+      // arm-then-fire 武装态。真机误跨章/滚不动时若此行不打印而 [xchapter]
+      // bEnd 打印，即证明走触摸路径而非滚轮；若此行打印且 atStart/atEnd 在非
+      // 真实边界为真，则坐实短章节/scrollHeight 瞬态几何误判。
+      if (atStart || atEnd) {
+        console.log('[xchapter] wheel vertical=' + (vertical ? 1 : 0)
+          + ' wheelDelta=' + Math.round(wheelDelta)
+          + ' scrollTop=' + root.scrollTop + ' scrollLeft=' + root.scrollLeft
+          + ' innerH=' + window.innerHeight + ' scrollH=' + root.scrollHeight
+          + ' atStart=' + (atStart ? 1 : 0) + ' atEnd=' + (atEnd ? 1 : 0)
+          + ' armed=' + _wheelBoundaryArmed + ' boundaryDir=' + boundaryDir);
+      }
       // BUG-369: 到边界不再「立刻跨章」，改 arm-then-fire 二次确认。未到边界
       // （boundaryDir==null）解除武装。同方向第一次到边界只武装（吸收惯性/竖排
       // 缓动擦边的瞬态，仍 preventDefault 压住越界滚动、不打断手感），同方向第二
@@ -1182,6 +1194,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _reclaimReaderFocusAfterGesture();
             final String dir = args[0] as String;
+            // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
+            debugPrint('[xchapter] onBoundarySwipe dir=$dir '
+                'chapter=$_currentChapter');
             if (dir == 'forward') {
               _handlePageTurnLimit('forward');
             } else if (dir == 'backward') {

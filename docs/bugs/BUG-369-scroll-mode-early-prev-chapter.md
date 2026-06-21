@@ -9,3 +9,15 @@
   - 纯函数 `ReaderPaginationScripts.continuousWheelBoundaryEmit`（`reader_pagination_scripts.dart`）+ 单测 `hibiki/test/reader/continuous_wheel_boundary_confirm_test.dart`（首次只武装、二次才跨章、未到边界解武装、方向反转改武装、**惯性单帧擦边永不跨章**回归场景）。
   - 源码守卫 `hibiki/test/reader/reader_mouse_paging_boundary_guard_static_test.dart`（wheel 监听器须经 `_wheelBoundaryArmed` 武装态、二次确认才 `onBoundarySwipe`、atStart/atEnd 几何不变）。红→绿已验（撤修复 → 守卫红 + 立即跨章）。
 - **备注**：本修复**只动滚轮路径**（race 实际所在）。触摸/指针边界 IIFE（`reader_pagination_scripts.dart` `_bEnd` ~2167 `atTop = scrollTop<=2`）是离散 swipe，`touchend` 读已 settle 的位置、无惯性同步读穿，故未改（改它会改动已发布的 touch swipe-to-cross 手势）。UX 影响：**向下到底跨下一章现在也需「到底后再滚一下」二次确认**（对称化、消除特例），属轻微行为变化，若 PM 认为向下应保持单次即跨章可改为只对 backward 二次确认。**需真机复测**：滚动模式横排+竖排向上回滚到章首不提前跨章、到章首后再滚能跨上一章、向下到底跨下一章。
+
+## 复发与真根因修正（2026-06-21 第二轮，用户：触摸仍提前跨章 + 滚轮又滚不动）
+
+- **上次 arm-then-fire 未命中真根因**：二次确认只加在**滚轮路径**（`webview.part.dart` wheel 监听器）。用户是 Android 真机，跨章实际走**触摸路径** `_bEnd`（`reader_pagination_scripts.dart` 边界手势 IIFE，touchend/pointerup 都调它），该路径**一行没改**，仍单次瞬时 `atTop = scrollTop<=2` 命中即 `onBoundarySwipe('backward')`，无任何二次确认 → 对用户原始的「没到章首就跨章」根本无效。
+- **arm-then-fire 自身引入回归（用户报「滚轮又滚不动」）**：经对抗式验证，它**不压中部滚动**（中部 `boundaryDir` 恒 null，必放行原生滚动），但到真实章末/章首时「第一格滚轮只武装 + `preventDefault`、既不滚也不翻」会被感知为「滚了没反应」；**向下到章末也对称卡一格**。
+- **结构性根因更早（TODO-627 `64244e88f`）**：给滚轮加跨章通道时用**瞬时几何 `scrollTop<=2` / `scrollHeight` 读数**判「到边界」。短章节（内容≤一屏，`scrollHeight≈innerHeight`）时 `atStart` 与 `atEnd` 同时为真、图片未撑开时 `scrollHeight` 偏小 → 在**非真实边界**误判到边界 → 一滚就翻页/推不动。arm-then-fire 是其缓解者（两格才翻），非元凶；**回退它会复活本 BUG-369（向上提前换章 + 丢失阅读位置），净负，不回退**。
+- **本轮只加诊断日志（`[xchapter]`，零行为变化）**，供真机一次复现锁定到底走哪条路径、什么几何值触发：
+  - JS `_bEnd`：加 `src`（touch/pointer）入参 + 打印 dx/dy/scrollTop/scrollLeft/innerH/scrollH/dir（`reader_pagination_scripts.dart`）。
+  - JS wheel：仅边界附近打印几何 + armed 状态（对照组，`webview.part.dart`）。
+  - Dart `onBoundarySwipe` handler + `_handlePageTurnLimit`：打印 dir + chapter（`webview.part.dart` / `navigation.part.dart`）。
+  - 守卫 `hibiki/test/reader/diagnostic_logging_guard_test.dart` 锁这些埋点不被回归删。
+- **根本修法（待真机取证 + 用户确认后实施）**：跨章判定的真正特例是「用瞬时坐标阈值 `<=2` 判到边界」。正解换成「**先按滚动量试着滚，真的滚不动（位移≈0）才跨章**」——复用键盘翻页 `paginate`（`reader_pagination_scripts.dart` ~1973，先 `scrollBy` 再比较 before/after 的 `moved?"scrolled":"limit"`）已验证的范式，**滚轮/触摸/键盘三路径统一**：还能滚就绝不跨章（根除短章误翻 + 图片未撑开误判 + 触摸瞬时误判），到真边界自然跨章（去掉 arm-then-fire 的卡顿），且不复活本 BUG。唯一实现摩擦是竖排 rAF 缓动要与「试滚」协调，必须真机验证。

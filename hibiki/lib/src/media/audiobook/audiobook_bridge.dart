@@ -333,6 +333,12 @@ window.__hoshiAnnotate = function(chapterHref) {
     }
     final String raw = cue.textFragmentId;
     final SasayakiFragment? frag = SasayakiMatchCodec.tryDecode(raw);
+    // BUG-366/TODO-630 诊断：播放期逐句高亮的路径分叉。frag==null（如纯 SRT cue
+    // 的 textFragmentId='[data-cue-id=...]'）走普通 __hoshiHighlight，完全不碰
+    // sasayaki 高亮系统——即使 setup 期建了 range 也不会激活 ::highlight。
+    debugPrint('[sasayaki-hl] highlight raw="$raw" '
+        'frag=${frag == null ? "NULL->__hoshiHighlight(non-sasayaki)" : "sasayaki"} '
+        'reveal=$reveal');
     if (frag != null) {
       await controller.evaluateJavascript(
         source: 'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
@@ -402,6 +408,9 @@ window.__hoshiAnnotate = function(chapterHref) {
     final List<Map<String, dynamic>> payload =
         buildSasayakiPayload(cues, sectionIndex);
     if (payload.isEmpty) {
+      // BUG-366/TODO-630 诊断：payload 空 → JS __hoshiApplySasayakiCues 不被调用。
+      debugPrint('[sasayaki-hl] applySasayakiCues section=$sectionIndex '
+          'EMPTY payload (cues=${cues.length}) -> JS not invoked');
       return;
     }
     final String json = jsonEncode(payload);

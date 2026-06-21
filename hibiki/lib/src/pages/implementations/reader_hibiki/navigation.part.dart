@@ -499,6 +499,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (_book == null) {
       return;
     }
+    // BUG-369/TODO-656 诊断：跨章真正落子前记录方向与当前章号，便于对照「跳早了」。
+    debugPrint('[xchapter] handlePageTurnLimit dir=$direction '
+        'chapter=$_currentChapter spread=${_spreadMap != null}');
     _audiobookController?.noteManualReaderNavigation();
 
     if (_spreadMap != null && _settings?.spreadMode != 'off') {

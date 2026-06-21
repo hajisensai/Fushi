@@ -286,9 +286,19 @@ extension _ReaderMining on _ReaderHibikiPageState {
       final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
       final List<AudioCue> cues = await srtRepo.cuesFor(_srtBookUid!);
       _cachedAllCues = cues;
+      // BUG-366/TODO-630 诊断：纯 SRT 字幕书走此分支直接 return null，
+      // applySasayakiCues 永不被调用（sasayaki 逐句高亮从未启用）——这是
+      // 「有声书没有高亮」最可能的真因。JS 端 [sasayaki-hl] 日志在此路径下
+      // 永不触发，故必须在 Dart 端记录。
+      debugPrint('[sasayaki-hl] prepareCues path=SRT srtUid=$_srtBookUid '
+          'cues=${cues.length} -> applySasayakiCues SKIPPED (early return)');
       return null;
     }
-    if (_audiobookBookKey == null) return null;
+    if (_audiobookBookKey == null) {
+      debugPrint('[sasayaki-hl] prepareCues path=NONE '
+          '(srtUid=null, audiobookKey=null) -> return null');
+      return null;
+    }
 
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
     final List<AudioCue> allCues = await repo.cuesForBook(_audiobookBookKey!);
@@ -297,7 +307,14 @@ extension _ReaderMining on _ReaderHibikiPageState {
       (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
     );
 
-    if (!_cachedSasayaki) return null;
+    if (!_cachedSasayaki) {
+      // BUG-366/TODO-630 诊断：有声书但无任何 sasayaki cue（匹配未跑/全失败），
+      // 同样不启用逐句高亮。
+      debugPrint('[sasayaki-hl] prepareCues path=AUDIOBOOK '
+          'audiobookKey=$_audiobookBookKey allCues=${allCues.length} '
+          'cachedSasayaki=false -> return null (no sasayaki cues)');
+      return null;
+    }
 
     // BUG-405：直接复用 AudiobookBridge.buildSasayakiPayload，与有声书桥接路径
     // 共用同一份 payload 契约（必含 cue 原文 text）。此前 reader 这里手写的内联
@@ -307,6 +324,11 @@ extension _ReaderMining on _ReaderHibikiPageState {
     // 纯函数后两条路径不会再各自漂移（BUG-060 的实时 DOM 重定位对 reader 生效）。
     final List<Map<String, dynamic>> payload =
         AudiobookBridge.buildSasayakiPayload(allCues, _currentChapter);
+    // BUG-366/TODO-630 诊断：sasayaki 书最终送进 WebView 的 payload 条数。
+    // payloadLen=0 表示当前章无命中 cue（applySasayakiCues 不会被调用）。
+    debugPrint('[sasayaki-hl] prepareCues path=AUDIOBOOK-SASAYAKI '
+        'chapter=$_currentChapter allCues=${allCues.length} '
+        'payloadLen=${payload.length}');
     if (payload.isEmpty) return null;
     return jsonEncode(payload);
   }
