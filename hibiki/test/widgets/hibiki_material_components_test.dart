@@ -360,6 +360,71 @@ void main() {
     expect(statisticsTop, importTop);
   });
 
+  // TODO-667: 手机竖排 / 窄窗（compact 尺寸类，宽 < 600）下页头顶距应收到 `page`
+  // (16)，而桌面 / 平板（>= 600）保持 `page + 8`(24)。验证三档行为，并守住手机首页
+  // 书架标题不再离顶部多空一行。
+  Future<double> measureHeaderTop(
+    WidgetTester tester, {
+    required double width,
+    bool compact = false,
+  }) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        ),
+        home: MediaQuery(
+          data: MediaQueryData(size: Size(width, 800)),
+          child: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: HibikiPageHeader(
+                  title: '书架',
+                  compact: compact,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final double headerTop =
+        tester.getTopLeft(find.byType(HibikiPageHeader)).dy;
+    final double titleTop = tester.getTopLeft(find.text('书架')).dy;
+    return titleTop - headerTop;
+  }
+
+  testWidgets('HibikiPageHeader trims top gap to page on compact (phone) width',
+      (WidgetTester tester) async {
+    final double phoneTop = await measureHeaderTop(tester, width: 360);
+    // page = 16；不再是 page + 8 = 24。
+    expect(phoneTop, moreOrLessEquals(16, epsilon: 0.5));
+  });
+
+  testWidgets('HibikiPageHeader keeps page + 8 top gap on desktop/tablet width',
+      (WidgetTester tester) async {
+    final double tabletTop = await measureHeaderTop(tester, width: 700);
+    final double desktopTop = await measureHeaderTop(tester, width: 1000);
+    // page + 8 = 24，桌面 / 平板不变。
+    expect(tabletTop, moreOrLessEquals(24, epsilon: 0.5));
+    expect(desktopTop, moreOrLessEquals(24, epsilon: 0.5));
+  });
+
+  testWidgets(
+      'HibikiPageHeader compact mode uses the smallest gap regardless '
+      'of window width', (WidgetTester tester) async {
+    final double phoneCompact =
+        await measureHeaderTop(tester, width: 360, compact: true);
+    final double desktopCompact =
+        await measureHeaderTop(tester, width: 1000, compact: true);
+    // gap = 8，compact（上方有 AppBar）顶距最小，且不受窗口尺寸类影响。
+    expect(phoneCompact, moreOrLessEquals(8, epsilon: 0.5));
+    expect(desktopCompact, moreOrLessEquals(8, epsilon: 0.5));
+  });
+
   testWidgets('HibikiBadge uses the shared compact radius',
       (WidgetTester tester) async {
     await tester.pumpWidget(

@@ -13,6 +13,7 @@ import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 class HibikiCard extends StatefulWidget {
   const HibikiCard({
@@ -1577,10 +1578,24 @@ class HibikiPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // TODO-667: 顶部留白分三档。
+    // - [compact] 模式（上方已有 AppBar，由 [HibikiPageScaffold] 传入）顶距最小，
+    //   只留一个 gap，标题紧贴 AppBar 下沿。
+    // - 非 compact 但窗口是手机竖屏 / 窄窗（[WindowSizeClass.compact]，宽 < 600）：
+    //   页头本身就是顶部锚点，外层 [SafeArea] 已让出状态栏 / 刘海，再叠
+    //   `page + 8 = 24` 会让标题离顶部空出一行（用户反馈「和摄像头差一行」）。
+    //   收到普通 `page = 16`，保留必要呼吸又不顶到摄像头。
+    // - 非 compact 的中 / 宽窗（桌面 / 平板，宽 >= 600）：窗口顶部无系统栏遮挡、
+    //   内容区另有左右留白，`page + 8 = 24` 的标题区呼吸感合适，保持不变。
+    final bool narrowWindow =
+        windowSizeClassFromContext(context) == WindowSizeClass.compact;
+    final double resolvedTop = compact
+        ? tokens.spacing.gap
+        : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
     final EdgeInsetsGeometry resolvedPadding = padding ??
         EdgeInsets.fromLTRB(
           tokens.spacing.page,
-          compact ? tokens.spacing.gap : tokens.spacing.page + 8,
+          resolvedTop,
           tokens.spacing.page,
           bottom == null ? tokens.spacing.gap + 4 : tokens.spacing.gap,
         );
