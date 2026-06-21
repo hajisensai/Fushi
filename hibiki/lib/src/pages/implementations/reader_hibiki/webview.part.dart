@@ -428,7 +428,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
     var selected = window.getSelection && window.getSelection();
     if (selected && !selected.isCollapsed) return false;
-    if (hoshiContinuousMode) return true;
+    // 砍掉 PC 鼠标左键拖动平移（连续模式）：鼠标左键回归原生选字/划词查词，连续模式
+    // 桌面滚动改用滚轮。原来 return true 会让鼠标左键走 JS scrollBy 模拟平移——这是
+    // 卡顿（每次 move 触发全文 progress 重算）+「鼠标拖动没到章首就跨章」的来源。
+    // 分页模式仍走下方逻辑（鼠标拖动转翻页 BUG-368 不受影响）。
+    if (hoshiContinuousMode) return false;
     if (window.hoshiSelection &&
         window.hoshiSelection.getCharacterAtPoint &&
         window.hoshiSelection.getCharacterAtPoint(e.clientX, e.clientY)) {

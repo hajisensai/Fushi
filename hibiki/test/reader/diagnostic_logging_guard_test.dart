@@ -32,9 +32,11 @@ void main() {
       expect(paginationScripts, contains('[xchapter] bEnd src='),
           reason: '触摸/指针跨章判定处必须打印 src + scrollTop 几何');
       expect(paginationScripts, contains("clientY, 'touch')"),
-          reason: 'touchend 必须以 src=touch 调用 _bEnd');
-      expect(paginationScripts, contains("e.clientY, 'pointer')"),
-          reason: 'pointerup 必须以 src=pointer 调用 _bEnd');
+          reason: 'touchend 必须以 src=touch 调用 _bEnd（手机触摸边界手势保留）');
+      expect(paginationScripts,
+          isNot(contains("_bEnd(e.clientX, e.clientY, 'pointer')")),
+          reason: '已砍掉 PC 鼠标(pointer)边界手势跨章：鼠标左键回归原生选字，'
+              'PC 桌面跨章只走滚轮，鼠标拖动不再误跨章');
     });
 
     test('滚轮边界判定与 Dart 汇合点都有诊断', () {

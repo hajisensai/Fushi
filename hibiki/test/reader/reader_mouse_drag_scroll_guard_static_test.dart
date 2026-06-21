@@ -36,14 +36,19 @@ void main() {
         reason: 'editable islands must not be grabbed for reader scrolling');
     expect(guard, contains('window.getSelection'),
         reason: 'an existing text selection must not be grabbed for dragging');
+    // 砍掉 PC 鼠标左键拖动平移：连续模式 _hoshiReaderMouseDragStartAllowed 返 false，
+    // 鼠标左键回归原生选字/划词；不再捕获正文做 JS scrollBy 平移（卡顿 + 鼠标拖动提前
+    // 跨章的来源）。分页模式仍走下方 caret 命中逻辑（拖动转翻页 BUG-368 不受影响）。
+    expect(guard, contains('if (hoshiContinuousMode) return false;'),
+        reason: '连续模式鼠标左键回归原生选字/划词，不再捕获正文拖动平移（已砍）');
+    expect(guard, isNot(contains('if (hoshiContinuousMode) return true;')),
+        reason: '旧的「连续模式捕获正文拖动平移」已砍，防回归');
     final int continuousModeIndex =
-        guard.indexOf('if (hoshiContinuousMode) return true;');
+        guard.indexOf('if (hoshiContinuousMode) return false;');
     final int readerTextHitIndex =
         guard.indexOf('window.hoshiSelection.getCharacterAtPoint');
     final int caretHitIndex =
         guard.indexOf('return !_hoshiReaderCaretRangeAtPoint');
-    expect(continuousModeIndex, isNonNegative,
-        reason: 'continuous mode must capture body-text drags for scrolling');
     expect(readerTextHitIndex, greaterThan(continuousModeIndex),
         reason: 'reader text hit testing must only protect paged mode');
     expect(caretHitIndex, greaterThan(continuousModeIndex),

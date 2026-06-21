@@ -2282,14 +2282,9 @@ window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
     if (!e.changedTouches.length) return;
     _bEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY, 'touch');
   }, {passive: true});
-  document.addEventListener('pointerdown', function(e) {
-    if (e.pointerType === 'touch' || e.button !== 0) return;
-    _bStart(e.clientX, e.clientY);
-  }, {passive: true});
-  document.addEventListener('pointerup', function(e) {
-    if (e.pointerType === 'touch' || e.button !== 0) return;
-    _bEnd(e.clientX, e.clientY, 'pointer');
-  }, {passive: true});
+  // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
+  // （见 _hoshiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
+  // 边界手势只保留触摸(touchstart/touchend)给手机。鼠标拖动选词到边界不再误跨章。
 })();
 $_sharedInitBoot
 </script>''';

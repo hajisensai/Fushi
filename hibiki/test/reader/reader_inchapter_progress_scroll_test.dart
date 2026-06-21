@@ -187,10 +187,11 @@ void main() {
           reason: '滚动路径门控通过后必须走 _refreshProgressFromScroll coalesce 守卫');
     });
 
-    test('BUG-380：_refreshProgressFromScroll 是「在飞 + 待重跑」coalesce 守卫', () {
+    test('BUG-380/卡死：_refreshProgressFromScroll 是 coalesce 守卫 + 50ms 节流', () {
       final int idx = src.indexOf('void _refreshProgressFromScroll()');
       expect(idx, greaterThan(0), reason: '_refreshProgressFromScroll 必须存在');
-      final String body = src.substring(idx, idx + 700);
+      // 窗口放宽到 1400：卡死修复在此函数内插入了时间节流块，函数体加长。
+      final String body = src.substring(idx, idx + 1400);
       // 在飞时再来的滚动只置 pending，不并发跑第二次 evaluateJavascript。
       expect(body.contains('if (_scrollProgressInFlight) {'), isTrue,
           reason: '在飞期必须只置 pending，避免 hoshiProgressDetails 调用堆积');
@@ -200,6 +201,13 @@ void main() {
           reason: '必须在刷新完成后清在飞标记并按 pending 补跑（coalesce）');
       expect(body.contains('_refreshProgress()'), isTrue,
           reason: 'coalesce 守卫最终仍调既有 _refreshProgress 重算进度');
+      // 卡死修复：时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS=50ms）。原本只有
+      // coalesce、一完成就背靠背补跑 calculateProgress 全文重算 → 鼠标拖动/连续滚动把 WebView
+      // JS 线程占满卡死。节流后滑动中最多每 50ms 一次 + 尾沿补发最终位置。
+      expect(body.contains('throttleMs'), isTrue,
+          reason: '滚动进度重算必须时间节流，否则背靠背全文重算 → JS 卡死（对齐 hoshi 安卓 50ms）');
+      expect(body.contains('_scrollProgressThrottleTimer'), isTrue,
+          reason: '节流尾沿 timer 必须存在（保证停止后最终位置被刷到）');
     });
 
     test('刷新进度必须走 stableProgressInvocation，避免恢复/重锚瞬态 0 落库', () {
