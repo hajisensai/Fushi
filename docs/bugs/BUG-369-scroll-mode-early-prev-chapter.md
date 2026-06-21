@@ -21,3 +21,9 @@
   - Dart `onBoundarySwipe` handler + `_handlePageTurnLimit`：打印 dir + chapter（`webview.part.dart` / `navigation.part.dart`）。
   - 守卫 `hibiki/test/reader/diagnostic_logging_guard_test.dart` 锁这些埋点不被回归删。
 - **根本修法（待真机取证 + 用户确认后实施）**：跨章判定的真正特例是「用瞬时坐标阈值 `<=2` 判到边界」。正解换成「**先按滚动量试着滚，真的滚不动（位移≈0）才跨章**」——复用键盘翻页 `paginate`（`reader_pagination_scripts.dart` ~1973，先 `scrollBy` 再比较 before/after 的 `moved?"scrolled":"limit"`）已验证的范式，**滚轮/触摸/键盘三路径统一**：还能滚就绝不跨章（根除短章误翻 + 图片未撑开误判 + 触摸瞬时误判），到真边界自然跨章（去掉 arm-then-fire 的卡顿），且不复活本 BUG。唯一实现摩擦是竖排 rAF 缓动要与「试滚」协调，必须真机验证。
+- **[x] 根本修法已落地（commit `5c6dc689f`，build +146，未真机验证）**：跨章判据全面改为「内容真的滚不动」——
+  - 触摸/指针 `_bEnd`：记 touchstart 手势起点 `downSPos`，跨章要求**手势起点已在边界**（纯函数 `touchBoundaryCrossDir`），消除从章中滚到边界的瞬态误跨。
+  - 滚轮 wheel：arm/cross 改判「内容真滚不动」——横排相邻 wheel 事件 scrollTop 无变化、竖排 rAF 投影 `target` 被 clamp 卡死（纯函数 `wheelBoundaryStuckDir` + 既有 arm-then-fire 二次确认），删 `atStart/atEnd` 瞬时几何，消除短章误翻 + 边界卡顿。
+  - 键盘 `paginate` 已是试滚范式，不动。
+  - 测试：`hibiki/test/reader/scroll_cross_chapter_try_scroll_test.dart`（纯函数 + JS 接线守卫）+ 更新 `reader_mouse_paging_boundary_guard_static_test.dart` / `reader_image_metrics_invalidate_guard_static_test.dart`。analyze 0、test/reader 562 绿、test/pages 1165 绿。
+  - **待真机验证**：竖排 rAF 协调 + 横排 trackpad 高频 momentum 的 stuck 采样时机（见 `docs/superpowers/plans/2026-06-21-scroll-cross-chapter-try-scroll.md` 风险项）。横排普通鼠标滚轮（离散 notch）已逻辑稳健。
