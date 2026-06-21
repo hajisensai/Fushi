@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 374 条。点号进各自文件。
+> 共 375 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-382](bugs/BUG-382-jimaku-result-truncated-episode.md) | ✅ | ✅ | Jimaku 自动获取字幕结果项文件名单行截断，集数被省略号吃掉看不见 |
 | [BUG-381](bugs/BUG-381-image-copy-menu-uiscale.md) | ✅ | ✅ | 书籍图片右键复制图片菜单位置不跟界面缩放(坐标未经Overlay变换链映射) |
 | [BUG-380](bugs/BUG-380-scroll-progress-only-on-settle.md) | ✅ | ✅ | 滚动模式阅读进度只在滑动停下才更新(JS纯尾沿200ms去抖) |
 | [BUG-379](bugs/BUG-379-lyrics-progress-bar-in-footer.md) | ✅ | ✅ | 歌词模式进度条跑进底栏(歌词WebView全屏无底栏预留,CSS滚动条钻进底栏) |

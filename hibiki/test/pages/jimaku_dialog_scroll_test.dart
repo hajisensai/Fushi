@@ -183,4 +183,67 @@ void main() {
     expect(find.text(t.video_jimaku_api_key_set), findsNothing,
         reason: '点「修改」后应展开输入区，摘要消失');
   });
+
+  // TODO-673：番名都一样、只有集数（第01話/E01...）不同的真实场景下，结果项文件名
+  // 若单行 ellipsis 截断就把区分集数的部分吃掉，用户分不清是第几集。修后文件名标题
+  // 允许换行（maxLines>1 + softWrap），完整文件名（含集数）可渲染、可见。
+  List<JimakuCandidate> makeSameSeriesEpisodes() {
+    const String longSeries = 'デッドデッドデーモンズデデデデデストラクション';
+    return <JimakuCandidate>[
+      JimakuCandidate(
+        entryName: 'Dead Dead Demons Dededede Destruction',
+        file: JimakuFile(
+            name: '$longSeries 第01話 [WEBRip 1080p].ja.srt', url: 'https://x/1'),
+      ),
+      JimakuCandidate(
+        entryName: 'Dead Dead Demons Dededede Destruction',
+        file: JimakuFile(
+            name: '$longSeries 第02話 [WEBRip 1080p].ja.srt', url: 'https://x/2'),
+      ),
+    ];
+  }
+
+  testWidgets(
+      'TODO-673: result title wraps (maxLines>1 + softWrap), episode visible',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            child: JimakuCandidateList(
+              candidates: makeSameSeriesEpisodes(),
+              filter: '',
+              busyName: null,
+              onDownload: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 标题 Text（文件名）必须换行：maxLines>1 且 softWrap，且不再用 ellipsis 截断
+    // （否则集数被吃掉）。
+    final Iterable<Text> titles = tester.widgetList<Text>(
+      find.textContaining('第01話'),
+    );
+    expect(titles, isNotEmpty, reason: '含集数(第01話)的完整文件名应作为标题被渲染');
+    final Text title = titles.first;
+    expect(title.maxLines, isNotNull, reason: '标题应设置 maxLines（多行而非默认单行截断）');
+    expect(title.maxLines!, greaterThan(1),
+        reason: '标题 maxLines 应 >1 才能换行显示完整文件名');
+    expect(title.softWrap, isTrue, reason: '标题应 softWrap 才能换行');
+    expect(title.overflow, isNot(TextOverflow.ellipsis),
+        reason: '标题不应再用 ellipsis 截断（会吃掉区分集数的部分）');
+
+    // 第二集的集数同样可见——两集番名相同，唯一区分点（第02話）必须渲染出来。
+    expect(find.textContaining('第02話'), findsOneWidget,
+        reason: '第二集的集数(第02話)也应完整可见');
+    expect(tester.takeException(), isNull);
+  });
 }

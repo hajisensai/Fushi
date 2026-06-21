@@ -334,12 +334,25 @@ class JimakuCandidateList extends StatelessWidget {
       itemBuilder: (BuildContext context, int i) {
         final JimakuCandidate c = shown[i];
         final bool busy = busyName == c.file.name;
+        // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
+        // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
+        // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
         return ListTile(
-          contentPadding: EdgeInsets.zero,
-          dense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          isThreeLine: true,
           leading: const Icon(Icons.subtitles_outlined),
-          title: Text(c.file.name, overflow: TextOverflow.ellipsis),
-          subtitle: Text(c.entryName, overflow: TextOverflow.ellipsis),
+          title: Text(
+            c.file.name,
+            maxLines: 3,
+            softWrap: true,
+            overflow: TextOverflow.fade,
+          ),
+          subtitle: Text(
+            c.entryName,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.fade,
+          ),
           trailing: busy
               ? const SizedBox(
                   width: 18,
