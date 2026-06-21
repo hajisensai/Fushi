@@ -233,12 +233,28 @@ CREATE TABLE bookmarks (
   return db;
 }
 
+/// Opens a `user_version = 24` database lacking mined_sentences, forcing the real
+/// `if (from < 25)` onUpgrade branch (create the table) to run. The mined-sentence
+/// history migration is self-contained (only creates one table), so a bare v24 DB is
+/// enough to exercise it without seeding other v24 baseline tables.
+Future<HibikiDatabase> _openV24DbWithoutMinedSentences() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA user_version = 24');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 24);
+      expect(version.data['user_version'], 25);
     });
 
     test('all expected tables exist', () async {
@@ -276,6 +292,7 @@ void main() {
           'video_hourly_logs',
           'favorite_words',
           'mining_statistics',
+          'mined_sentences',
         ]),
       );
     });
@@ -297,7 +314,7 @@ void main() {
       // The upgrade ladder bumped the schema to the current version (a v14 DB
       // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 24);
+      expect(version.read<int>('user_version'), 25);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -315,7 +332,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 24);
+      expect(version.read<int>('user_version'), 25);
 
       // The table carries the full v17 column set (no stepwise add-column
       // ladder remains).
@@ -358,7 +375,7 @@ void main() {
       final db = await _openV20DbWithoutVideoTagMappings();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 24);
+      expect(version.read<int>('user_version'), 25);
 
       // The new mapping table exists and shares the BookTags pool: tag the
       // seeded video book and read it back.
@@ -377,7 +394,7 @@ void main() {
       final db = await _openV21DbWithoutVideoStats();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 24);
+      expect(version.read<int>('user_version'), 25);
 
       // The pre-existing video_books row survived the migration, with the new
       // completed_at column defaulting to null (lossless add-column).
@@ -418,7 +435,7 @@ void main() {
       final db = await _openV22DbWithoutActivityTables();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 24);
+      expect(version.read<int>('user_version'), 25);
 
       // 收藏：新增→已存在判定→取消，全链可用。
       final added = await db.addFavoriteWord(
@@ -459,6 +476,61 @@ void main() {
       expect(mined, hasLength(1));
       expect(mined.single.count, 3);
       expect(await db.getMiningStatisticsBySource('book'), isEmpty);
+    });
+
+    test('real v24->v25 upgrade creates a usable mined_sentences table',
+        () async {
+      // A v24 DB lacks mined_sentences; opening it must drive the from<25
+      // onUpgrade branch (createTable) rather than onCreate.
+      final db = await _openV24DbWithoutMinedSentences();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), 25);
+
+      // The migrated table is usable: record two mined sentences (history is a
+      // flow, not deduplicated) then read them back newest-first.
+      await db.addMinedSentence(
+        source: 'book',
+        dateKey: '2026-06-21',
+        expression: '猫',
+        reading: 'ねこ',
+        glossary: 'cat',
+        sentence: '猫が好きです。',
+        documentTitle: 'AlphaBook',
+        bookKey: 'AlphaBook',
+        sectionIndex: 2,
+        normCharOffset: 1234,
+      );
+      await db.addMinedSentence(
+        source: 'video',
+        dateKey: '2026-06-21',
+        expression: '犬',
+        reading: 'いぬ',
+        sentence: '犬も好きです。',
+        documentTitle: 'Clip',
+        bookKey: 'video/clip',
+        sectionIndex: 0,
+        normCharOffset: 5000,
+        normCharLength: 2000,
+        noteId: 4242,
+      );
+
+      final all = await db.getAllMinedSentences();
+      expect(all, hasLength(2));
+      // newest (video) first.
+      expect(all.first.expression, '犬');
+      expect(all.first.source, 'video');
+      expect(all.first.bookKey, 'video/clip');
+      expect(all.first.normCharLength, 2000);
+      expect(all.first.noteId, 4242);
+      expect(all.last.expression, '猫');
+      expect(all.last.sentence, '猫が好きです。');
+
+      // Delete one by id; clear empties the rest.
+      await db.removeMinedSentence(all.first.id);
+      expect(await db.getAllMinedSentences(), hasLength(1));
+      await db.clearMinedSentences();
+      expect(await db.getAllMinedSentences(), isEmpty);
     });
 
     test(

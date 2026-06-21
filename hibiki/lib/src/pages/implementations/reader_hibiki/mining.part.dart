@@ -167,6 +167,11 @@ extension _ReaderMining on _ReaderHibikiPageState {
     // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，不
     // mixin DictionaryPageMixin，故直接 addMiningCount，来源固定 book）。失败吞掉记日志。
     if (described.record) unawaited(_recordMined());
+    // TODO-633: success also lands one mined-sentence history row (sentence +
+    // locator anchors to jump back), complementing the per-day count above.
+    if (described.record) {
+      unawaited(_recordMinedSentence(fields, miningContext, outcome.noteId));
+    }
     HibikiToast.show(msg: described.message);
     if (described.success) {
       // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
@@ -228,6 +233,42 @@ extension _ReaderMining on _ReaderHibikiPageState {
       );
     } catch (e, st) {
       debugPrint('[hibiki-stats] reader addMiningCount failed: $e\n$st');
+    }
+  }
+
+  /// TODO-633: record mined sentence history (book source); locator anchors
+  /// match favorite-sentence so collections page reuses _openBook to jump.
+  Future<void> _recordMinedSentence(
+    Map<String, String> fields,
+    AnkiMiningContext context,
+    int? noteId,
+  ) async {
+    try {
+      final int section = _lookupSectionIndex;
+      final sentenceRange = _cachedSentenceRange ??
+          (_cachedSelectionRange != null
+              ? (
+                  offset: _cachedSelectionRange!.offset,
+                  length: _cachedSelectionRange!.length
+                )
+              : null);
+      await appModel.database.addMinedSentence(
+        source: kStatSourceBook,
+        dateKey: statTodayKey(),
+        expression: fields['expression'] ?? '',
+        reading: fields['reading'] ?? '',
+        glossary: fields['glossary'] ?? '',
+        sentence: context.sentence,
+        documentTitle: context.documentTitle ?? _book?.title,
+        chapterLabel: _currentChapterLabelFor(section),
+        bookKey: widget.bookKey,
+        sectionIndex: section,
+        normCharOffset: sentenceRange?.offset,
+        normCharLength: sentenceRange?.length,
+        noteId: noteId,
+      );
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] reader addMinedSentence failed: $e\n$st');
     }
   }
 

@@ -433,3 +433,45 @@ class MiningStatistics extends Table {
         {sourceType, dateKey},
       ];
 }
+
+// ── mined_sentences ──────────────────────────────────────────────────
+/// 制卡历史：每成功制一张卡，落一条逐条记录（与 [MiningStatistics] 的按日计数互补——
+/// 计数供统计页画图，本表供「收藏夹」页跨媒体全局查看每一次制卡的句子并跳回原文）。
+///
+/// **不存图/音频副本**：制卡用的封面 GIF / 句子音频是临时缓存（会清），这里只存定位
+/// 锚点（[bookKey]/[sectionIndex]/[normCharOffset]/[normCharLength]）。展示侧据
+/// [source] 分流（书内 → 阅读器、视频 → 视频页），跳转锚点与收藏句完全同构，故
+/// collections_page 可零改复用 `_openBook` / `_openVideoSentence`。
+///
+/// [noteId] 仅 AnkiConnect（桌面）成功制卡时非空，AnkiDroid 恒 null（优雅降级），故可空。
+/// 书内/视频制卡才有定位锚点；独立查词页 / 首页词典制卡无书无章，定位列存 null（展示为
+/// 不可跳转条目，与收藏夹现有非视频纯查词条目一致）。
+@DataClassName('MinedSentenceRow')
+class MinedSentences extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get expression => text().withDefault(const Constant(''))();
+  TextColumn get reading => text().withDefault(const Constant(''))();
+  TextColumn get glossary => text().withDefault(const Constant(''))();
+  TextColumn get sentence => text().withDefault(const Constant(''))();
+
+  /// 跳转/分流来源标识，与 `kFavoriteSentenceSourceBook` / `Video` 等同值（'book' |
+  /// 'video' | 'audiobook' | 'lyrics'）。统计语义（book/video 桶）也由它派生。
+  TextColumn get source => text()();
+  TextColumn get documentTitle => text().nullable()();
+  TextColumn get chapterLabel => text().nullable()();
+
+  /// 定位锚点（与收藏句同构）：书内是 bookKey，视频是 bookUid。
+  TextColumn get bookKey => text().nullable()();
+  IntColumn get sectionIndex => integer().nullable()();
+
+  /// 书内是归一化字符偏移；视频来源里复用为 cue 起点 ms（与收藏句一致）。
+  IntColumn get normCharOffset => integer().nullable()();
+
+  /// 视频来源里复用为 cue 时长 ms（书内为选区长度）。
+  IntColumn get normCharLength => integer().nullable()();
+
+  /// AnkiConnect 成功制卡带回的 note id；AnkiDroid 恒 null。
+  IntColumn get noteId => integer().nullable()();
+  TextColumn get dateKey => text()();
+  IntColumn get createdAt => integer()();
+}

@@ -1758,5 +1758,7 @@
   "video_auto_play_next_cancel": "Cancel",
   "video_auto_play_next_countdown": "Next episode in ${seconds}s",
   "video_episode_list_empty": "No episodes",
-  "video_subtitle_delay_osd": "Subtitle sync: $ms ms"
+  "video_subtitle_delay_osd": "Subtitle sync: $ms ms",
+  "collection_mined": "Mined",
+  "collection_mined_clear_confirm": "Clear all mined-sentence history?"
 }

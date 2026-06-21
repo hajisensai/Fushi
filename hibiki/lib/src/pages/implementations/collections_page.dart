@@ -17,7 +17,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 
-enum _CollectionType { bookmark, sentence }
+enum _CollectionType { bookmark, sentence, mined }
 
 @visibleForTesting
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
@@ -116,6 +116,7 @@ class _CollectionItem {
     this.normCharLength,
     this.bookmarkId,
     this.favoriteId,
+    this.minedId,
     this.source = kFavoriteSentenceSourceBook,
   });
 
@@ -131,6 +132,9 @@ class _CollectionItem {
   final int? normCharLength;
   final int? bookmarkId;
   final String? favoriteId;
+
+  /// 制卡历史行 id（TODO-633，[_CollectionType.mined] 专用，供删除一条用）。
+  final int? minedId;
 
   /// 收藏句子来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。书签恒
   /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子的 [bookKey] 是视频
@@ -177,6 +181,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final allBookmarks = await bookmarkRepo.getAllBookmarks();
     final allFavorites = await favoriteRepo.getAll();
+    final allMined = await db.getAllMinedSentences();
 
     final srtBooks = await srtBookRepo.listAll();
     final bookTitleMap = <String, String>{};
@@ -222,6 +227,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       );
     }
 
+    // TODO-633 制卡历史：与收藏句同结构落 _CollectionItem，复用 _openBook /
+    // _openVideoSentence 跳回原文（来源 book/video 由 row.source 区分）。
+    for (final m in allMined) {
+      items.add(
+        _CollectionItem(
+          type: _CollectionType.mined,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(m.createdAt),
+          bookTitle: m.documentTitle,
+          bookKey: m.bookKey,
+          text: m.sentence.isNotEmpty ? m.sentence : m.expression,
+          chapterLabel: m.chapterLabel,
+          sectionIndex: m.sectionIndex,
+          normCharOffset: m.normCharOffset,
+          normCharLength: m.normCharLength,
+          minedId: m.id,
+          source: m.source,
+        ),
+      );
+    }
+
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     final allBookKeys = <String>{};
@@ -235,6 +260,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         allBookKeys.add(fav.bookKey!);
       }
     }
+    for (final m in allMined) {
+      if (m.source != kFavoriteSentenceSourceVideo &&
+          m.bookKey != null &&
+          m.bookKey!.isNotEmpty) {
+        allBookKeys.add(m.bookKey!);
+      }
+    }
 
     // 视频来源收藏句的 bookUid（按需查 VideoBooks 表）。视频句的 bookKey 是视频
     // bookUid，既不在 SrtBooks 也不在 Audiobooks 里，故单独解析。
@@ -244,6 +276,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           fav.bookKey != null &&
           fav.bookKey!.isNotEmpty) {
         videoBookUids.add(fav.bookKey!);
+      }
+    }
+    for (final m in allMined) {
+      if (m.source == kFavoriteSentenceSourceVideo &&
+          m.bookKey != null &&
+          m.bookKey!.isNotEmpty) {
+        videoBookUids.add(m.bookKey!);
       }
     }
     final videoRepo = VideoBookRepository(db);
@@ -553,6 +592,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           createdAt: item.createdAt,
         );
       }
+    } else if (item.type == _CollectionType.mined) {
+      // TODO-633：制卡历史按行 id 删一条。
+      final minedId = item.minedId;
+      if (minedId == null) return;
+      await db.removeMinedSentence(minedId);
     } else {
       final id = item.favoriteId;
       if (id == null) return;
@@ -672,10 +716,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Widget _buildItem(_CollectionItem item) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final isBookmark = item.type == _CollectionType.bookmark;
-    final icon =
-        isBookmark ? Icons.bookmark_outline : Icons.format_quote_outlined;
-    final typeLabel =
-        isBookmark ? t.collection_bookmark : t.collection_sentence;
+    final bool isMined = item.type == _CollectionType.mined;
+    final IconData icon = isBookmark
+        ? Icons.bookmark_outline
+        : isMined
+            ? Icons.style_outlined
+            : Icons.format_quote_outlined;
+    final String typeLabel = isBookmark
+        ? t.collection_bookmark
+        : isMined
+            ? t.collection_mined
+            : t.collection_sentence;
 
     final String title;
     final String? subtitle;
@@ -700,7 +751,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final key = isBookmark
         ? 'bm_${item.bookKey}_${item.createdAt.microsecondsSinceEpoch}'
-        : 'fav_${item.favoriteId}';
+        : isMined
+            ? 'mined_${item.minedId}'
+            : 'fav_${item.favoriteId}';
 
     return Dismissible(
       key: Key(key),

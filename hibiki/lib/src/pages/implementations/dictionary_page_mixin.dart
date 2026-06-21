@@ -144,6 +144,12 @@ mixin DictionaryPageMixin {
     final described = describeMineOutcome(outcome, deckName: deckName);
     // 制卡成功计入统计（按来源 book/video）。失败不影响制卡结果，吞掉并记日志。
     if (described.record) unawaited(recordMined());
+    // TODO-633: also land a mined-sentence history row. This mixin path serves
+    // standalone/home lookup (no book context), so locator anchors stay null
+    // (shown as non-navigable in collections, same as existing lookup-only).
+    if (described.record) {
+      unawaited(recordMinedSentence(fields, outcome.noteId));
+    }
     HibikiToast.show(msg: described.message);
     if (described.success) {
       // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
@@ -228,6 +234,28 @@ mixin DictionaryPageMixin {
       );
     } catch (e, st) {
       debugPrint('[hibiki-stats] addMiningCount failed: $e\n$st');
+    }
+  }
+
+  /// TODO-633: land one mined-sentence history row (no book locator here —
+  /// home/standalone lookup). Best-effort; failure is swallowed + logged.
+  @protected
+  Future<void> recordMinedSentence(
+    Map<String, String> fields,
+    int? noteId,
+  ) async {
+    try {
+      await mixinAppModel.database.addMinedSentence(
+        source: dictionarySourceType,
+        dateKey: _statTodayKey(),
+        expression: fields['expression'] ?? '',
+        reading: fields['reading'] ?? '',
+        glossary: fields['glossary'] ?? '',
+        sentence: fields['sentence'] ?? '',
+        noteId: noteId,
+      );
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] addMinedSentence failed: $e\n$st');
     }
   }
 

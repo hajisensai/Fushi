@@ -107,7 +107,7 @@ void _seedThreeBooks(dynamic rawDb) {
 Future<void> _expectUnifiedV20(HibikiDatabase db,
     {int expectedBooks = 3}) async {
   final version = await db.customSelect('PRAGMA user_version').getSingle();
-  expect(version.read<int>('user_version'), 24);
+  expect(version.read<int>('user_version'), db.schemaVersion);
 
   // epub_books name-PK: book_key present, legacy id gone, book_key is the PK.
   final epubCols =

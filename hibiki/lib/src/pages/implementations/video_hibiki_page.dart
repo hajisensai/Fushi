@@ -2668,6 +2668,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // result.ankiConnect 是「制卡成功」信号（两后端成功时都置 true；noteId 仅
     // AnkiConnect 非空，故清选中句不能以 noteId 为判据，否则 AnkiDroid 成功也不清）。
     if (result.ankiConnect) {
+      // TODO-633: success also lands one mined-sentence history row with the
+      // video locator (bookUid + episode + cue time window), mirroring the
+      // favorite-sentence anchors so collections can jump back via the video page.
+      unawaited(
+          _recordMinedSentenceForVideo(fields, range.sentence, result.noteId));
       if (range.usedSelectedCue) {
         _clearSelectedMiningCues();
       } else {
@@ -2677,6 +2682,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }
     }
     return result;
+  }
+
+  /// TODO-633: land one mined-sentence history row for a video card. Locator
+  /// anchors mirror _toggleFavoriteSentenceForVideo (bookUid + episode +
+  /// cue.startMs/duration) so collections reuses _openVideoSentence to jump back.
+  /// Best-effort; failure is swallowed + logged (does not break mining).
+  Future<void> _recordMinedSentenceForVideo(
+    Map<String, String> fields,
+    String sentence,
+    int? noteId,
+  ) async {
+    try {
+      final AudioCue? cue = _lastLookupCue;
+      await appModel.database.addMinedSentence(
+        source: kStatSourceVideo,
+        dateKey: statTodayKey(),
+        expression: fields['expression'] ?? '',
+        reading: fields['reading'] ?? '',
+        glossary: fields['glossary'] ?? '',
+        sentence: sentence,
+        documentTitle: _title ?? widget.bookUid,
+        bookKey: widget.bookUid,
+        sectionIndex: _episodes.isEmpty ? null : _currentEpisode,
+        normCharOffset: cue?.startMs,
+        normCharLength: cue == null
+            ? null
+            : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
+        noteId: noteId,
+      );
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] video addMinedSentence failed: $e\n$st');
+    }
   }
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）。视频页覆写了 [onMineEntry] 绕过

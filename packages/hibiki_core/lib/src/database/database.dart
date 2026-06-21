@@ -78,13 +78,14 @@ LazyDatabase _openDb(String dbDirectory) {
   VideoHourlyLogs,
   FavoriteWords,
   MiningStatistics,
+  MinedSentences,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 24;
+  int get schemaVersion => 25;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -373,6 +374,13 @@ class HibikiDatabase extends _$HibikiDatabase {
                   'ALTER TABLE reader_positions DROP COLUMN ttu_char_offset',
                 );
               }
+            }
+          }
+          if (from < 25) {
+            // 制卡历史：逐条制卡记录（句子 + 跳回原文的定位锚点），供收藏夹页全局查看。
+            // fresh DB 已由 onCreate 的 createAll 建好，用 _tableExists 守卫避免重复创建。
+            if (!await _tableExists('mined_sentences')) {
+              await m.createTable(minedSentences);
             }
           }
         },
@@ -1220,6 +1228,76 @@ class HibikiDatabase extends _$HibikiDatabase {
           String sourceType) =>
       (select(miningStatistics)..where((t) => t.sourceType.equals(sourceType)))
           .get();
+
+  // ── mined sentences ──────────────────────────────────────────────
+  /// 上限：保留最近 [kMinedSentenceHistoryLimit] 条制卡历史，避免无限增长。
+  static const int kMinedSentenceHistoryLimit = 1000;
+
+  /// 记录一次成功制卡：插入一条历史，并在事务内 trim 掉超额的最旧行。
+  /// 定位列（[bookKey]/[sectionIndex]/[normCharOffset]/[normCharLength]）按来源可空——
+  /// 独立查词页 / 首页词典制卡无书无章，传 null（展示为不可跳转条目）。
+  Future<void> addMinedSentence({
+    required String source,
+    required String dateKey,
+    String expression = '',
+    String reading = '',
+    String glossary = '',
+    String sentence = '',
+    String? documentTitle,
+    String? chapterLabel,
+    String? bookKey,
+    int? sectionIndex,
+    int? normCharOffset,
+    int? normCharLength,
+    int? noteId,
+  }) =>
+      transaction(() async {
+        await into(minedSentences).insert(
+          MinedSentencesCompanion.insert(
+            source: source,
+            dateKey: dateKey,
+            expression: Value(expression),
+            reading: Value(reading),
+            glossary: Value(glossary),
+            sentence: Value(sentence),
+            documentTitle: Value(documentTitle),
+            chapterLabel: Value(chapterLabel),
+            bookKey: Value(bookKey),
+            sectionIndex: Value(sectionIndex),
+            normCharOffset: Value(normCharOffset),
+            normCharLength: Value(normCharLength),
+            noteId: Value(noteId),
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        await _trimMinedSentences();
+      });
+
+  /// 取全部制卡历史，按 createdAt 倒序（最近在前），供收藏夹页展示。
+  Future<List<MinedSentenceRow>> getAllMinedSentences() =>
+      (select(minedSentences)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .get();
+
+  /// 删除一条制卡历史（按 id）。返回删除的行数。
+  Future<int> removeMinedSentence(int id) =>
+      (delete(minedSentences)..where((t) => t.id.equals(id))).go();
+
+  /// 清空全部制卡历史。返回删除的行数。
+  Future<int> clearMinedSentences() => delete(minedSentences).go();
+
+  /// 事务内 trim：超过 [kMinedSentenceHistoryLimit] 时按 id 升序删除最旧的超额行。
+  Future<void> _trimMinedSentences() async {
+    final int total = await minedSentences.count().getSingle();
+    final int excess = total - kMinedSentenceHistoryLimit;
+    if (excess <= 0) return;
+    final List<MinedSentenceRow> oldest = await (select(minedSentences)
+          ..orderBy([(t) => OrderingTerm.asc(t.id)])
+          ..limit(excess))
+        .get();
+    final List<int> ids = oldest.map((r) => r.id).toList(growable: false);
+    if (ids.isEmpty) return;
+    await (delete(minedSentences)..where((t) => t.id.isIn(ids))).go();
+  }
 
   // ── dictionary metadata ─────────────────────────────────────────
   Future<List<DictionaryMetaRow>> getAllDictionaryMetadata() =>

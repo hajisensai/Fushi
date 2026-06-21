@@ -10471,6 +10471,745 @@ class MiningStatisticsCompanion extends UpdateCompanion<MiningStatisticRow> {
   }
 }
 
+class $MinedSentencesTable extends MinedSentences
+    with TableInfo<$MinedSentencesTable, MinedSentenceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MinedSentencesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _expressionMeta =
+      const VerificationMeta('expression');
+  @override
+  late final GeneratedColumn<String> expression = GeneratedColumn<String>(
+      'expression', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _readingMeta =
+      const VerificationMeta('reading');
+  @override
+  late final GeneratedColumn<String> reading = GeneratedColumn<String>(
+      'reading', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _glossaryMeta =
+      const VerificationMeta('glossary');
+  @override
+  late final GeneratedColumn<String> glossary = GeneratedColumn<String>(
+      'glossary', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _sentenceMeta =
+      const VerificationMeta('sentence');
+  @override
+  late final GeneratedColumn<String> sentence = GeneratedColumn<String>(
+      'sentence', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+      'source', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _documentTitleMeta =
+      const VerificationMeta('documentTitle');
+  @override
+  late final GeneratedColumn<String> documentTitle = GeneratedColumn<String>(
+      'document_title', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _chapterLabelMeta =
+      const VerificationMeta('chapterLabel');
+  @override
+  late final GeneratedColumn<String> chapterLabel = GeneratedColumn<String>(
+      'chapter_label', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sectionIndexMeta =
+      const VerificationMeta('sectionIndex');
+  @override
+  late final GeneratedColumn<int> sectionIndex = GeneratedColumn<int>(
+      'section_index', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _normCharOffsetMeta =
+      const VerificationMeta('normCharOffset');
+  @override
+  late final GeneratedColumn<int> normCharOffset = GeneratedColumn<int>(
+      'norm_char_offset', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _normCharLengthMeta =
+      const VerificationMeta('normCharLength');
+  @override
+  late final GeneratedColumn<int> normCharLength = GeneratedColumn<int>(
+      'norm_char_length', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _noteIdMeta = const VerificationMeta('noteId');
+  @override
+  late final GeneratedColumn<int> noteId = GeneratedColumn<int>(
+      'note_id', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        expression,
+        reading,
+        glossary,
+        sentence,
+        source,
+        documentTitle,
+        chapterLabel,
+        bookKey,
+        sectionIndex,
+        normCharOffset,
+        normCharLength,
+        noteId,
+        dateKey,
+        createdAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'mined_sentences';
+  @override
+  VerificationContext validateIntegrity(Insertable<MinedSentenceRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('expression')) {
+      context.handle(
+          _expressionMeta,
+          expression.isAcceptableOrUnknown(
+              data['expression']!, _expressionMeta));
+    }
+    if (data.containsKey('reading')) {
+      context.handle(_readingMeta,
+          reading.isAcceptableOrUnknown(data['reading']!, _readingMeta));
+    }
+    if (data.containsKey('glossary')) {
+      context.handle(_glossaryMeta,
+          glossary.isAcceptableOrUnknown(data['glossary']!, _glossaryMeta));
+    }
+    if (data.containsKey('sentence')) {
+      context.handle(_sentenceMeta,
+          sentence.isAcceptableOrUnknown(data['sentence']!, _sentenceMeta));
+    }
+    if (data.containsKey('source')) {
+      context.handle(_sourceMeta,
+          source.isAcceptableOrUnknown(data['source']!, _sourceMeta));
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('document_title')) {
+      context.handle(
+          _documentTitleMeta,
+          documentTitle.isAcceptableOrUnknown(
+              data['document_title']!, _documentTitleMeta));
+    }
+    if (data.containsKey('chapter_label')) {
+      context.handle(
+          _chapterLabelMeta,
+          chapterLabel.isAcceptableOrUnknown(
+              data['chapter_label']!, _chapterLabelMeta));
+    }
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    }
+    if (data.containsKey('section_index')) {
+      context.handle(
+          _sectionIndexMeta,
+          sectionIndex.isAcceptableOrUnknown(
+              data['section_index']!, _sectionIndexMeta));
+    }
+    if (data.containsKey('norm_char_offset')) {
+      context.handle(
+          _normCharOffsetMeta,
+          normCharOffset.isAcceptableOrUnknown(
+              data['norm_char_offset']!, _normCharOffsetMeta));
+    }
+    if (data.containsKey('norm_char_length')) {
+      context.handle(
+          _normCharLengthMeta,
+          normCharLength.isAcceptableOrUnknown(
+              data['norm_char_length']!, _normCharLengthMeta));
+    }
+    if (data.containsKey('note_id')) {
+      context.handle(_noteIdMeta,
+          noteId.isAcceptableOrUnknown(data['note_id']!, _noteIdMeta));
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MinedSentenceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MinedSentenceRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      expression: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}expression'])!,
+      reading: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}reading'])!,
+      glossary: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}glossary'])!,
+      sentence: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}sentence'])!,
+      source: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source'])!,
+      documentTitle: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}document_title']),
+      chapterLabel: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}chapter_label']),
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key']),
+      sectionIndex: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}section_index']),
+      normCharOffset: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}norm_char_offset']),
+      normCharLength: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}norm_char_length']),
+      noteId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}note_id']),
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $MinedSentencesTable createAlias(String alias) {
+    return $MinedSentencesTable(attachedDatabase, alias);
+  }
+}
+
+class MinedSentenceRow extends DataClass
+    implements Insertable<MinedSentenceRow> {
+  final int id;
+  final String expression;
+  final String reading;
+  final String glossary;
+  final String sentence;
+
+  /// 跳转/分流来源标识，与 `kFavoriteSentenceSourceBook` / `Video` 等同值（'book' |
+  /// 'video' | 'audiobook' | 'lyrics'）。统计语义（book/video 桶）也由它派生。
+  final String source;
+  final String? documentTitle;
+  final String? chapterLabel;
+
+  /// 定位锚点（与收藏句同构）：书内是 bookKey，视频是 bookUid。
+  final String? bookKey;
+  final int? sectionIndex;
+
+  /// 书内是归一化字符偏移；视频来源里复用为 cue 起点 ms（与收藏句一致）。
+  final int? normCharOffset;
+
+  /// 视频来源里复用为 cue 时长 ms（书内为选区长度）。
+  final int? normCharLength;
+
+  /// AnkiConnect 成功制卡带回的 note id；AnkiDroid 恒 null。
+  final int? noteId;
+  final String dateKey;
+  final int createdAt;
+  const MinedSentenceRow(
+      {required this.id,
+      required this.expression,
+      required this.reading,
+      required this.glossary,
+      required this.sentence,
+      required this.source,
+      this.documentTitle,
+      this.chapterLabel,
+      this.bookKey,
+      this.sectionIndex,
+      this.normCharOffset,
+      this.normCharLength,
+      this.noteId,
+      required this.dateKey,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['expression'] = Variable<String>(expression);
+    map['reading'] = Variable<String>(reading);
+    map['glossary'] = Variable<String>(glossary);
+    map['sentence'] = Variable<String>(sentence);
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || documentTitle != null) {
+      map['document_title'] = Variable<String>(documentTitle);
+    }
+    if (!nullToAbsent || chapterLabel != null) {
+      map['chapter_label'] = Variable<String>(chapterLabel);
+    }
+    if (!nullToAbsent || bookKey != null) {
+      map['book_key'] = Variable<String>(bookKey);
+    }
+    if (!nullToAbsent || sectionIndex != null) {
+      map['section_index'] = Variable<int>(sectionIndex);
+    }
+    if (!nullToAbsent || normCharOffset != null) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset);
+    }
+    if (!nullToAbsent || normCharLength != null) {
+      map['norm_char_length'] = Variable<int>(normCharLength);
+    }
+    if (!nullToAbsent || noteId != null) {
+      map['note_id'] = Variable<int>(noteId);
+    }
+    map['date_key'] = Variable<String>(dateKey);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  MinedSentencesCompanion toCompanion(bool nullToAbsent) {
+    return MinedSentencesCompanion(
+      id: Value(id),
+      expression: Value(expression),
+      reading: Value(reading),
+      glossary: Value(glossary),
+      sentence: Value(sentence),
+      source: Value(source),
+      documentTitle: documentTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(documentTitle),
+      chapterLabel: chapterLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(chapterLabel),
+      bookKey: bookKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookKey),
+      sectionIndex: sectionIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sectionIndex),
+      normCharOffset: normCharOffset == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharOffset),
+      normCharLength: normCharLength == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharLength),
+      noteId:
+          noteId == null && nullToAbsent ? const Value.absent() : Value(noteId),
+      dateKey: Value(dateKey),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory MinedSentenceRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MinedSentenceRow(
+      id: serializer.fromJson<int>(json['id']),
+      expression: serializer.fromJson<String>(json['expression']),
+      reading: serializer.fromJson<String>(json['reading']),
+      glossary: serializer.fromJson<String>(json['glossary']),
+      sentence: serializer.fromJson<String>(json['sentence']),
+      source: serializer.fromJson<String>(json['source']),
+      documentTitle: serializer.fromJson<String?>(json['documentTitle']),
+      chapterLabel: serializer.fromJson<String?>(json['chapterLabel']),
+      bookKey: serializer.fromJson<String?>(json['bookKey']),
+      sectionIndex: serializer.fromJson<int?>(json['sectionIndex']),
+      normCharOffset: serializer.fromJson<int?>(json['normCharOffset']),
+      normCharLength: serializer.fromJson<int?>(json['normCharLength']),
+      noteId: serializer.fromJson<int?>(json['noteId']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'expression': serializer.toJson<String>(expression),
+      'reading': serializer.toJson<String>(reading),
+      'glossary': serializer.toJson<String>(glossary),
+      'sentence': serializer.toJson<String>(sentence),
+      'source': serializer.toJson<String>(source),
+      'documentTitle': serializer.toJson<String?>(documentTitle),
+      'chapterLabel': serializer.toJson<String?>(chapterLabel),
+      'bookKey': serializer.toJson<String?>(bookKey),
+      'sectionIndex': serializer.toJson<int?>(sectionIndex),
+      'normCharOffset': serializer.toJson<int?>(normCharOffset),
+      'normCharLength': serializer.toJson<int?>(normCharLength),
+      'noteId': serializer.toJson<int?>(noteId),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  MinedSentenceRow copyWith(
+          {int? id,
+          String? expression,
+          String? reading,
+          String? glossary,
+          String? sentence,
+          String? source,
+          Value<String?> documentTitle = const Value.absent(),
+          Value<String?> chapterLabel = const Value.absent(),
+          Value<String?> bookKey = const Value.absent(),
+          Value<int?> sectionIndex = const Value.absent(),
+          Value<int?> normCharOffset = const Value.absent(),
+          Value<int?> normCharLength = const Value.absent(),
+          Value<int?> noteId = const Value.absent(),
+          String? dateKey,
+          int? createdAt}) =>
+      MinedSentenceRow(
+        id: id ?? this.id,
+        expression: expression ?? this.expression,
+        reading: reading ?? this.reading,
+        glossary: glossary ?? this.glossary,
+        sentence: sentence ?? this.sentence,
+        source: source ?? this.source,
+        documentTitle:
+            documentTitle.present ? documentTitle.value : this.documentTitle,
+        chapterLabel:
+            chapterLabel.present ? chapterLabel.value : this.chapterLabel,
+        bookKey: bookKey.present ? bookKey.value : this.bookKey,
+        sectionIndex:
+            sectionIndex.present ? sectionIndex.value : this.sectionIndex,
+        normCharOffset:
+            normCharOffset.present ? normCharOffset.value : this.normCharOffset,
+        normCharLength:
+            normCharLength.present ? normCharLength.value : this.normCharLength,
+        noteId: noteId.present ? noteId.value : this.noteId,
+        dateKey: dateKey ?? this.dateKey,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  MinedSentenceRow copyWithCompanion(MinedSentencesCompanion data) {
+    return MinedSentenceRow(
+      id: data.id.present ? data.id.value : this.id,
+      expression:
+          data.expression.present ? data.expression.value : this.expression,
+      reading: data.reading.present ? data.reading.value : this.reading,
+      glossary: data.glossary.present ? data.glossary.value : this.glossary,
+      sentence: data.sentence.present ? data.sentence.value : this.sentence,
+      source: data.source.present ? data.source.value : this.source,
+      documentTitle: data.documentTitle.present
+          ? data.documentTitle.value
+          : this.documentTitle,
+      chapterLabel: data.chapterLabel.present
+          ? data.chapterLabel.value
+          : this.chapterLabel,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      sectionIndex: data.sectionIndex.present
+          ? data.sectionIndex.value
+          : this.sectionIndex,
+      normCharOffset: data.normCharOffset.present
+          ? data.normCharOffset.value
+          : this.normCharOffset,
+      normCharLength: data.normCharLength.present
+          ? data.normCharLength.value
+          : this.normCharLength,
+      noteId: data.noteId.present ? data.noteId.value : this.noteId,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MinedSentenceRow(')
+          ..write('id: $id, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('glossary: $glossary, ')
+          ..write('sentence: $sentence, ')
+          ..write('source: $source, ')
+          ..write('documentTitle: $documentTitle, ')
+          ..write('chapterLabel: $chapterLabel, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength, ')
+          ..write('noteId: $noteId, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      expression,
+      reading,
+      glossary,
+      sentence,
+      source,
+      documentTitle,
+      chapterLabel,
+      bookKey,
+      sectionIndex,
+      normCharOffset,
+      normCharLength,
+      noteId,
+      dateKey,
+      createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MinedSentenceRow &&
+          other.id == this.id &&
+          other.expression == this.expression &&
+          other.reading == this.reading &&
+          other.glossary == this.glossary &&
+          other.sentence == this.sentence &&
+          other.source == this.source &&
+          other.documentTitle == this.documentTitle &&
+          other.chapterLabel == this.chapterLabel &&
+          other.bookKey == this.bookKey &&
+          other.sectionIndex == this.sectionIndex &&
+          other.normCharOffset == this.normCharOffset &&
+          other.normCharLength == this.normCharLength &&
+          other.noteId == this.noteId &&
+          other.dateKey == this.dateKey &&
+          other.createdAt == this.createdAt);
+}
+
+class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
+  final Value<int> id;
+  final Value<String> expression;
+  final Value<String> reading;
+  final Value<String> glossary;
+  final Value<String> sentence;
+  final Value<String> source;
+  final Value<String?> documentTitle;
+  final Value<String?> chapterLabel;
+  final Value<String?> bookKey;
+  final Value<int?> sectionIndex;
+  final Value<int?> normCharOffset;
+  final Value<int?> normCharLength;
+  final Value<int?> noteId;
+  final Value<String> dateKey;
+  final Value<int> createdAt;
+  const MinedSentencesCompanion({
+    this.id = const Value.absent(),
+    this.expression = const Value.absent(),
+    this.reading = const Value.absent(),
+    this.glossary = const Value.absent(),
+    this.sentence = const Value.absent(),
+    this.source = const Value.absent(),
+    this.documentTitle = const Value.absent(),
+    this.chapterLabel = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
+    this.noteId = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  MinedSentencesCompanion.insert({
+    this.id = const Value.absent(),
+    this.expression = const Value.absent(),
+    this.reading = const Value.absent(),
+    this.glossary = const Value.absent(),
+    this.sentence = const Value.absent(),
+    required String source,
+    this.documentTitle = const Value.absent(),
+    this.chapterLabel = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
+    this.noteId = const Value.absent(),
+    required String dateKey,
+    required int createdAt,
+  })  : source = Value(source),
+        dateKey = Value(dateKey),
+        createdAt = Value(createdAt);
+  static Insertable<MinedSentenceRow> custom({
+    Expression<int>? id,
+    Expression<String>? expression,
+    Expression<String>? reading,
+    Expression<String>? glossary,
+    Expression<String>? sentence,
+    Expression<String>? source,
+    Expression<String>? documentTitle,
+    Expression<String>? chapterLabel,
+    Expression<String>? bookKey,
+    Expression<int>? sectionIndex,
+    Expression<int>? normCharOffset,
+    Expression<int>? normCharLength,
+    Expression<int>? noteId,
+    Expression<String>? dateKey,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (expression != null) 'expression': expression,
+      if (reading != null) 'reading': reading,
+      if (glossary != null) 'glossary': glossary,
+      if (sentence != null) 'sentence': sentence,
+      if (source != null) 'source': source,
+      if (documentTitle != null) 'document_title': documentTitle,
+      if (chapterLabel != null) 'chapter_label': chapterLabel,
+      if (bookKey != null) 'book_key': bookKey,
+      if (sectionIndex != null) 'section_index': sectionIndex,
+      if (normCharOffset != null) 'norm_char_offset': normCharOffset,
+      if (normCharLength != null) 'norm_char_length': normCharLength,
+      if (noteId != null) 'note_id': noteId,
+      if (dateKey != null) 'date_key': dateKey,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  MinedSentencesCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? expression,
+      Value<String>? reading,
+      Value<String>? glossary,
+      Value<String>? sentence,
+      Value<String>? source,
+      Value<String?>? documentTitle,
+      Value<String?>? chapterLabel,
+      Value<String?>? bookKey,
+      Value<int?>? sectionIndex,
+      Value<int?>? normCharOffset,
+      Value<int?>? normCharLength,
+      Value<int?>? noteId,
+      Value<String>? dateKey,
+      Value<int>? createdAt}) {
+    return MinedSentencesCompanion(
+      id: id ?? this.id,
+      expression: expression ?? this.expression,
+      reading: reading ?? this.reading,
+      glossary: glossary ?? this.glossary,
+      sentence: sentence ?? this.sentence,
+      source: source ?? this.source,
+      documentTitle: documentTitle ?? this.documentTitle,
+      chapterLabel: chapterLabel ?? this.chapterLabel,
+      bookKey: bookKey ?? this.bookKey,
+      sectionIndex: sectionIndex ?? this.sectionIndex,
+      normCharOffset: normCharOffset ?? this.normCharOffset,
+      normCharLength: normCharLength ?? this.normCharLength,
+      noteId: noteId ?? this.noteId,
+      dateKey: dateKey ?? this.dateKey,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (expression.present) {
+      map['expression'] = Variable<String>(expression.value);
+    }
+    if (reading.present) {
+      map['reading'] = Variable<String>(reading.value);
+    }
+    if (glossary.present) {
+      map['glossary'] = Variable<String>(glossary.value);
+    }
+    if (sentence.present) {
+      map['sentence'] = Variable<String>(sentence.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (documentTitle.present) {
+      map['document_title'] = Variable<String>(documentTitle.value);
+    }
+    if (chapterLabel.present) {
+      map['chapter_label'] = Variable<String>(chapterLabel.value);
+    }
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (sectionIndex.present) {
+      map['section_index'] = Variable<int>(sectionIndex.value);
+    }
+    if (normCharOffset.present) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset.value);
+    }
+    if (normCharLength.present) {
+      map['norm_char_length'] = Variable<int>(normCharLength.value);
+    }
+    if (noteId.present) {
+      map['note_id'] = Variable<int>(noteId.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MinedSentencesCompanion(')
+          ..write('id: $id, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('glossary: $glossary, ')
+          ..write('sentence: $sentence, ')
+          ..write('source: $source, ')
+          ..write('documentTitle: $documentTitle, ')
+          ..write('chapterLabel: $chapterLabel, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength, ')
+          ..write('noteId: $noteId, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -10516,6 +11255,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $FavoriteWordsTable favoriteWords = $FavoriteWordsTable(this);
   late final $MiningStatisticsTable miningStatistics =
       $MiningStatisticsTable(this);
+  late final $MinedSentencesTable minedSentences = $MinedSentencesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -10548,7 +11288,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         videoWatchStatistics,
         videoHourlyLogs,
         favoriteWords,
-        miningStatistics
+        miningStatistics,
+        minedSentences
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -11998,8 +12739,7 @@ final class $$SrtBooksTableReferences
       List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
           _$HibikiDatabase db) =>
       MultiTypedResultKey.fromTable(db.srtBookTagMappings,
-          aliasName: $_aliasNameGenerator(
-              db.srtBooks.id, db.srtBookTagMappings.srtBookId));
+          aliasName: 'srt_books__id__srt_book_tag_mappings__srt_book_id');
 
   $$SrtBookTagMappingsTableProcessedTableManager get srtBookTagMappingsRefs {
     final manager =
@@ -12513,10 +13253,9 @@ final class $$EpubBooksTableReferences
   $$EpubBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$BookmarksTable, List<BookmarkRow>>
-      _bookmarksRefsTable(_$HibikiDatabase db) => MultiTypedResultKey.fromTable(
-          db.bookmarks,
-          aliasName:
-              $_aliasNameGenerator(db.epubBooks.bookKey, db.bookmarks.bookKey));
+      _bookmarksRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.bookmarks,
+              aliasName: 'epub_books__book_key__bookmarks__book_key');
 
   $$BookmarksTableProcessedTableManager get bookmarksRefs {
     final manager = $$BookmarksTableTableManager($_db, $_db.bookmarks).filter(
@@ -12530,8 +13269,7 @@ final class $$EpubBooksTableReferences
   static MultiTypedResultKey<$BookTagMappingsTable, List<BookTagMappingRow>>
       _bookTagMappingsRefsTable(_$HibikiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookTagMappings,
-              aliasName: $_aliasNameGenerator(
-                  db.epubBooks.bookKey, db.bookTagMappings.bookKey));
+              aliasName: 'epub_books__book_key__book_tag_mappings__book_key');
 
   $$BookTagMappingsTableProcessedTableManager get bookTagMappingsRefs {
     final manager =
@@ -12931,8 +13669,7 @@ final class $$BookmarksTableReferences
   $$BookmarksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) =>
-      db.epubBooks.createAlias(
-          $_aliasNameGenerator(db.bookmarks.bookKey, db.epubBooks.bookKey));
+      db.epubBooks.createAlias('bookmarks__book_key__epub_books__book_key');
 
   $$EpubBooksTableProcessedTableManager get bookKey {
     final $_column = $_itemColumn<String>('book_key')!;
@@ -14087,8 +14824,7 @@ final class $$BookTagsTableReferences
   static MultiTypedResultKey<$BookTagMappingsTable, List<BookTagMappingRow>>
       _bookTagMappingsRefsTable(_$HibikiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookTagMappings,
-              aliasName: $_aliasNameGenerator(
-                  db.bookTags.id, db.bookTagMappings.tagId));
+              aliasName: 'book_tags__id__book_tag_mappings__tag_id');
 
   $$BookTagMappingsTableProcessedTableManager get bookTagMappingsRefs {
     final manager =
@@ -14105,8 +14841,7 @@ final class $$BookTagsTableReferences
       List<SrtBookTagMappingRow>> _srtBookTagMappingsRefsTable(
           _$HibikiDatabase db) =>
       MultiTypedResultKey.fromTable(db.srtBookTagMappings,
-          aliasName: $_aliasNameGenerator(
-              db.bookTags.id, db.srtBookTagMappings.tagId));
+          aliasName: 'book_tags__id__srt_book_tag_mappings__tag_id');
 
   $$SrtBookTagMappingsTableProcessedTableManager get srtBookTagMappingsRefs {
     final manager =
@@ -14123,8 +14858,7 @@ final class $$BookTagsTableReferences
       List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
           _$HibikiDatabase db) =>
       MultiTypedResultKey.fromTable(db.videoBookTagMappings,
-          aliasName: $_aliasNameGenerator(
-              db.bookTags.id, db.videoBookTagMappings.tagId));
+          aliasName: 'book_tags__id__video_book_tag_mappings__tag_id');
 
   $$VideoBookTagMappingsTableProcessedTableManager
       get videoBookTagMappingsRefs {
@@ -14494,9 +15228,8 @@ final class $$BookTagMappingsTableReferences extends BaseReferences<
   $$BookTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) =>
-      db.epubBooks.createAlias($_aliasNameGenerator(
-          db.bookTagMappings.bookKey, db.epubBooks.bookKey));
+  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) => db.epubBooks
+      .createAlias('book_tag_mappings__book_key__epub_books__book_key');
 
   $$EpubBooksTableProcessedTableManager get bookKey {
     final $_column = $_itemColumn<String>('book_key')!;
@@ -14510,8 +15243,7 @@ final class $$BookTagMappingsTableReferences extends BaseReferences<
   }
 
   static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
-      db.bookTags.createAlias(
-          $_aliasNameGenerator(db.bookTagMappings.tagId, db.bookTags.id));
+      db.bookTags.createAlias('book_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
     final $_column = $_itemColumn<int>('tag_id')!;
@@ -14812,9 +15544,8 @@ final class $$SrtBookTagMappingsTableReferences extends BaseReferences<
   $$SrtBookTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $SrtBooksTable _srtBookIdTable(_$HibikiDatabase db) =>
-      db.srtBooks.createAlias($_aliasNameGenerator(
-          db.srtBookTagMappings.srtBookId, db.srtBooks.id));
+  static $SrtBooksTable _srtBookIdTable(_$HibikiDatabase db) => db.srtBooks
+      .createAlias('srt_book_tag_mappings__srt_book_id__srt_books__id');
 
   $$SrtBooksTableProcessedTableManager get srtBookId {
     final $_column = $_itemColumn<int>('srt_book_id')!;
@@ -14828,8 +15559,7 @@ final class $$SrtBookTagMappingsTableReferences extends BaseReferences<
   }
 
   static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
-      db.bookTags.createAlias(
-          $_aliasNameGenerator(db.srtBookTagMappings.tagId, db.bookTags.id));
+      db.bookTags.createAlias('srt_book_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
     final $_column = $_itemColumn<int>('tag_id')!;
@@ -15133,8 +15863,7 @@ final class $$ProfilesTableReferences
   static MultiTypedResultKey<$ProfileSettingsTable, List<ProfileSettingRow>>
       _profileSettingsRefsTable(_$HibikiDatabase db) =>
           MultiTypedResultKey.fromTable(db.profileSettings,
-              aliasName: $_aliasNameGenerator(
-                  db.profiles.id, db.profileSettings.profileId));
+              aliasName: 'profiles__id__profile_settings__profile_id');
 
   $$ProfileSettingsTableProcessedTableManager get profileSettingsRefs {
     final manager =
@@ -15150,8 +15879,7 @@ final class $$ProfilesTableReferences
   static MultiTypedResultKey<$MediaTypeProfilesTable, List<MediaTypeProfileRow>>
       _mediaTypeProfilesRefsTable(_$HibikiDatabase db) =>
           MultiTypedResultKey.fromTable(db.mediaTypeProfiles,
-              aliasName: $_aliasNameGenerator(
-                  db.profiles.id, db.mediaTypeProfiles.profileId));
+              aliasName: 'profiles__id__media_type_profiles__profile_id');
 
   $$MediaTypeProfilesTableProcessedTableManager get mediaTypeProfilesRefs {
     final manager =
@@ -15167,8 +15895,7 @@ final class $$ProfilesTableReferences
   static MultiTypedResultKey<$BookProfilesTable, List<BookProfileRow>>
       _bookProfilesRefsTable(_$HibikiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookProfiles,
-              aliasName: $_aliasNameGenerator(
-                  db.profiles.id, db.bookProfiles.profileId));
+              aliasName: 'profiles__id__book_profiles__profile_id');
 
   $$BookProfilesTableProcessedTableManager get bookProfilesRefs {
     final manager = $$BookProfilesTableTableManager($_db, $_db.bookProfiles)
@@ -15524,8 +16251,7 @@ final class $$ProfileSettingsTableReferences extends BaseReferences<
       super.$_db, super.$_table, super.$_typedResult);
 
   static $ProfilesTable _profileIdTable(_$HibikiDatabase db) =>
-      db.profiles.createAlias(
-          $_aliasNameGenerator(db.profileSettings.profileId, db.profiles.id));
+      db.profiles.createAlias('profile_settings__profile_id__profiles__id');
 
   $$ProfilesTableProcessedTableManager get profileId {
     final $_column = $_itemColumn<int>('profile_id')!;
@@ -15791,8 +16517,7 @@ final class $$MediaTypeProfilesTableReferences extends BaseReferences<
       super.$_db, super.$_table, super.$_typedResult);
 
   static $ProfilesTable _profileIdTable(_$HibikiDatabase db) =>
-      db.profiles.createAlias(
-          $_aliasNameGenerator(db.mediaTypeProfiles.profileId, db.profiles.id));
+      db.profiles.createAlias('media_type_profiles__profile_id__profiles__id');
 
   $$ProfilesTableProcessedTableManager get profileId {
     final $_column = $_itemColumn<int>('profile_id')!;
@@ -16024,8 +16749,7 @@ final class $$BookProfilesTableReferences extends BaseReferences<
   $$BookProfilesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $ProfilesTable _profileIdTable(_$HibikiDatabase db) =>
-      db.profiles.createAlias(
-          $_aliasNameGenerator(db.bookProfiles.profileId, db.profiles.id));
+      db.profiles.createAlias('book_profiles__profile_id__profiles__id');
 
   $$ProfilesTableProcessedTableManager get profileId {
     final $_column = $_itemColumn<int>('profile_id')!;
@@ -16423,8 +17147,8 @@ final class $$VideoBooksTableReferences
       List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
           _$HibikiDatabase db) =>
       MultiTypedResultKey.fromTable(db.videoBookTagMappings,
-          aliasName: $_aliasNameGenerator(
-              db.videoBooks.bookUid, db.videoBookTagMappings.videoBookUid));
+          aliasName:
+              'video_books__book_uid__video_book_tag_mappings__video_book_uid');
 
   $$VideoBookTagMappingsTableProcessedTableManager
       get videoBookTagMappingsRefs {
@@ -16809,8 +17533,8 @@ final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
       super.$_db, super.$_table, super.$_typedResult);
 
   static $VideoBooksTable _videoBookUidTable(_$HibikiDatabase db) =>
-      db.videoBooks.createAlias($_aliasNameGenerator(
-          db.videoBookTagMappings.videoBookUid, db.videoBooks.bookUid));
+      db.videoBooks.createAlias(
+          'video_book_tag_mappings__video_book_uid__video_books__book_uid');
 
   $$VideoBooksTableProcessedTableManager get videoBookUid {
     final $_column = $_itemColumn<String>('video_book_uid')!;
@@ -16824,8 +17548,7 @@ final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
   }
 
   static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
-      db.bookTags.createAlias(
-          $_aliasNameGenerator(db.videoBookTagMappings.tagId, db.bookTags.id));
+      db.bookTags.createAlias('video_book_tag_mappings__tag_id__book_tags__id');
 
   $$BookTagsTableProcessedTableManager get tagId {
     final $_column = $_itemColumn<int>('tag_id')!;
@@ -17808,6 +18531,331 @@ typedef $$MiningStatisticsTableProcessedTableManager = ProcessedTableManager<
     ),
     MiningStatisticRow,
     PrefetchHooks Function()>;
+typedef $$MinedSentencesTableCreateCompanionBuilder = MinedSentencesCompanion
+    Function({
+  Value<int> id,
+  Value<String> expression,
+  Value<String> reading,
+  Value<String> glossary,
+  Value<String> sentence,
+  required String source,
+  Value<String?> documentTitle,
+  Value<String?> chapterLabel,
+  Value<String?> bookKey,
+  Value<int?> sectionIndex,
+  Value<int?> normCharOffset,
+  Value<int?> normCharLength,
+  Value<int?> noteId,
+  required String dateKey,
+  required int createdAt,
+});
+typedef $$MinedSentencesTableUpdateCompanionBuilder = MinedSentencesCompanion
+    Function({
+  Value<int> id,
+  Value<String> expression,
+  Value<String> reading,
+  Value<String> glossary,
+  Value<String> sentence,
+  Value<String> source,
+  Value<String?> documentTitle,
+  Value<String?> chapterLabel,
+  Value<String?> bookKey,
+  Value<int?> sectionIndex,
+  Value<int?> normCharOffset,
+  Value<int?> normCharLength,
+  Value<int?> noteId,
+  Value<String> dateKey,
+  Value<int> createdAt,
+});
+
+class $$MinedSentencesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MinedSentencesTable> {
+  $$MinedSentencesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get expression => $composableBuilder(
+      column: $table.expression, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get reading => $composableBuilder(
+      column: $table.reading, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get glossary => $composableBuilder(
+      column: $table.glossary, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sentence => $composableBuilder(
+      column: $table.sentence, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get documentTitle => $composableBuilder(
+      column: $table.documentTitle, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get chapterLabel => $composableBuilder(
+      column: $table.chapterLabel, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sectionIndex => $composableBuilder(
+      column: $table.sectionIndex, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get normCharOffset => $composableBuilder(
+      column: $table.normCharOffset,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get normCharLength => $composableBuilder(
+      column: $table.normCharLength,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get noteId => $composableBuilder(
+      column: $table.noteId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$MinedSentencesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MinedSentencesTable> {
+  $$MinedSentencesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get expression => $composableBuilder(
+      column: $table.expression, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get reading => $composableBuilder(
+      column: $table.reading, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get glossary => $composableBuilder(
+      column: $table.glossary, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sentence => $composableBuilder(
+      column: $table.sentence, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get documentTitle => $composableBuilder(
+      column: $table.documentTitle,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get chapterLabel => $composableBuilder(
+      column: $table.chapterLabel,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sectionIndex => $composableBuilder(
+      column: $table.sectionIndex,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get normCharOffset => $composableBuilder(
+      column: $table.normCharOffset,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get normCharLength => $composableBuilder(
+      column: $table.normCharLength,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get noteId => $composableBuilder(
+      column: $table.noteId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MinedSentencesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MinedSentencesTable> {
+  $$MinedSentencesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get expression => $composableBuilder(
+      column: $table.expression, builder: (column) => column);
+
+  GeneratedColumn<String> get reading =>
+      $composableBuilder(column: $table.reading, builder: (column) => column);
+
+  GeneratedColumn<String> get glossary =>
+      $composableBuilder(column: $table.glossary, builder: (column) => column);
+
+  GeneratedColumn<String> get sentence =>
+      $composableBuilder(column: $table.sentence, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get documentTitle => $composableBuilder(
+      column: $table.documentTitle, builder: (column) => column);
+
+  GeneratedColumn<String> get chapterLabel => $composableBuilder(
+      column: $table.chapterLabel, builder: (column) => column);
+
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<int> get sectionIndex => $composableBuilder(
+      column: $table.sectionIndex, builder: (column) => column);
+
+  GeneratedColumn<int> get normCharOffset => $composableBuilder(
+      column: $table.normCharOffset, builder: (column) => column);
+
+  GeneratedColumn<int> get normCharLength => $composableBuilder(
+      column: $table.normCharLength, builder: (column) => column);
+
+  GeneratedColumn<int> get noteId =>
+      $composableBuilder(column: $table.noteId, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$MinedSentencesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MinedSentencesTable,
+    MinedSentenceRow,
+    $$MinedSentencesTableFilterComposer,
+    $$MinedSentencesTableOrderingComposer,
+    $$MinedSentencesTableAnnotationComposer,
+    $$MinedSentencesTableCreateCompanionBuilder,
+    $$MinedSentencesTableUpdateCompanionBuilder,
+    (
+      MinedSentenceRow,
+      BaseReferences<_$HibikiDatabase, $MinedSentencesTable, MinedSentenceRow>
+    ),
+    MinedSentenceRow,
+    PrefetchHooks Function()> {
+  $$MinedSentencesTableTableManager(
+      _$HibikiDatabase db, $MinedSentencesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MinedSentencesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MinedSentencesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MinedSentencesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> expression = const Value.absent(),
+            Value<String> reading = const Value.absent(),
+            Value<String> glossary = const Value.absent(),
+            Value<String> sentence = const Value.absent(),
+            Value<String> source = const Value.absent(),
+            Value<String?> documentTitle = const Value.absent(),
+            Value<String?> chapterLabel = const Value.absent(),
+            Value<String?> bookKey = const Value.absent(),
+            Value<int?> sectionIndex = const Value.absent(),
+            Value<int?> normCharOffset = const Value.absent(),
+            Value<int?> normCharLength = const Value.absent(),
+            Value<int?> noteId = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              MinedSentencesCompanion(
+            id: id,
+            expression: expression,
+            reading: reading,
+            glossary: glossary,
+            sentence: sentence,
+            source: source,
+            documentTitle: documentTitle,
+            chapterLabel: chapterLabel,
+            bookKey: bookKey,
+            sectionIndex: sectionIndex,
+            normCharOffset: normCharOffset,
+            normCharLength: normCharLength,
+            noteId: noteId,
+            dateKey: dateKey,
+            createdAt: createdAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> expression = const Value.absent(),
+            Value<String> reading = const Value.absent(),
+            Value<String> glossary = const Value.absent(),
+            Value<String> sentence = const Value.absent(),
+            required String source,
+            Value<String?> documentTitle = const Value.absent(),
+            Value<String?> chapterLabel = const Value.absent(),
+            Value<String?> bookKey = const Value.absent(),
+            Value<int?> sectionIndex = const Value.absent(),
+            Value<int?> normCharOffset = const Value.absent(),
+            Value<int?> normCharLength = const Value.absent(),
+            Value<int?> noteId = const Value.absent(),
+            required String dateKey,
+            required int createdAt,
+          }) =>
+              MinedSentencesCompanion.insert(
+            id: id,
+            expression: expression,
+            reading: reading,
+            glossary: glossary,
+            sentence: sentence,
+            source: source,
+            documentTitle: documentTitle,
+            chapterLabel: chapterLabel,
+            bookKey: bookKey,
+            sectionIndex: sectionIndex,
+            normCharOffset: normCharOffset,
+            normCharLength: normCharLength,
+            noteId: noteId,
+            dateKey: dateKey,
+            createdAt: createdAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MinedSentencesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MinedSentencesTable,
+    MinedSentenceRow,
+    $$MinedSentencesTableFilterComposer,
+    $$MinedSentencesTableOrderingComposer,
+    $$MinedSentencesTableAnnotationComposer,
+    $$MinedSentencesTableCreateCompanionBuilder,
+    $$MinedSentencesTableUpdateCompanionBuilder,
+    (
+      MinedSentenceRow,
+      BaseReferences<_$HibikiDatabase, $MinedSentencesTable, MinedSentenceRow>
+    ),
+    MinedSentenceRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -17868,4 +18916,6 @@ class $HibikiDatabaseManager {
       $$FavoriteWordsTableTableManager(_db, _db.favoriteWords);
   $$MiningStatisticsTableTableManager get miningStatistics =>
       $$MiningStatisticsTableTableManager(_db, _db.miningStatistics);
+  $$MinedSentencesTableTableManager get minedSentences =>
+      $$MinedSentencesTableTableManager(_db, _db.minedSentences);
 }
