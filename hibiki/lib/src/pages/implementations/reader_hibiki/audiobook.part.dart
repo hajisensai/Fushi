@@ -248,7 +248,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       controller.setChapterCues(cues);
       controller.setAllBookCues(cues);
       _cachedAllCues = cues;
-      _cachedSasayaki = false;
+      // BUG-395：SRT 书可被 matcher 匹配进真 EPUB（cue 为 sasayaki://），此处不能
+      // 硬编码 false——与 _prepareSasayakiCuesJson 的判据保持一致，按 cue 内容计算。
+      _cachedSasayaki = cues.any(
+        (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
+      );
       final (Map<int, int> m, List<(int, int)> r) = _buildSrtChapterMap(cues);
       _srtCueChapterMap = m;
       _srtChapterRanges = r;

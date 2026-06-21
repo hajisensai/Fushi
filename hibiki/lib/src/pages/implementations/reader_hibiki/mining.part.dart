@@ -282,55 +282,62 @@ extension _ReaderMining on _ReaderHibikiPageState {
     _cachedAllCues = null;
     _cachedSasayaki = false;
 
-    if (_srtBookUid != null) {
-      final SrtBookRepository srtRepo = SrtBookRepository(appModel.database);
-      final List<AudioCue> cues = await srtRepo.cuesFor(_srtBookUid!);
-      _cachedAllCues = cues;
-      // BUG-366/TODO-630 诊断：纯 SRT 字幕书走此分支直接 return null，
-      // applySasayakiCues 永不被调用（sasayaki 逐句高亮从未启用）——这是
-      // 「有声书没有高亮」最可能的真因。JS 端 [sasayaki-hl] 日志在此路径下
-      // 永不触发，故必须在 Dart 端记录。
-      debugPrint('[sasayaki-hl] prepareCues path=SRT srtUid=$_srtBookUid '
-          'cues=${cues.length} -> applySasayakiCues SKIPPED (early return)');
-      return null;
-    }
-    if (_audiobookBookKey == null) {
+    // BUG-395：逐句高亮策略判据归一到「cue 是否 sasayaki 编码」（与 playback 端
+    // SasayakiMatchCodec.tryDecode 同一判据），不再用 _srtBookUid（音频格式=srt）
+    // 当代理。旧代码在 _srtBookUid!=null 时**无条件 return null**：但「普通 EPUB +
+    // SRT 音频」被 matcher 匹配进真 EPUB 后 cue 是 sasayaki://，playback 走 sasayaki
+    // 高亮却取不到 range（setup 早退 → applySasayakiCues 永不调用 → cueRangesMap
+    // 恒空）→ 每次 highlightSasayakiCue 都 RETURN_NULL_no_segments，正文无任何跟随
+    // 高亮（章节级跟随仍正常，因其走 cue 解码的 sectionIndex，不依赖 DOM range）。
+    // SRT 与普通有声书两源在 _loadHighlightCues 之后判据完全一致。
+    final List<AudioCue>? allCues = await _loadHighlightCues();
+    if (allCues == null) {
       debugPrint('[sasayaki-hl] prepareCues path=NONE '
           '(srtUid=null, audiobookKey=null) -> return null');
       return null;
     }
-
-    final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    final List<AudioCue> allCues = await repo.cuesForBook(_audiobookBookKey!);
     _cachedAllCues = allCues;
     _cachedSasayaki = allCues.any(
       (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
     );
 
+    final String pathTag = _srtBookUid != null ? 'SRT' : 'AUDIOBOOK';
     if (!_cachedSasayaki) {
-      // BUG-366/TODO-630 诊断：有声书但无任何 sasayaki cue（匹配未跑/全失败），
-      // 同样不启用逐句高亮。
-      debugPrint('[sasayaki-hl] prepareCues path=AUDIOBOOK '
-          'audiobookKey=$_audiobookBookKey allCues=${allCues.length} '
-          'cachedSasayaki=false -> return null (no sasayaki cues)');
+      // 真正非 sasayaki 的书：纯 [data-cue-id] 字幕（合成书走 __hoshiHighlight 选择器）
+      // 或 matcher 全失败（无锚点）。逐句高亮不走 sasayaki range，保持早退。
+      debugPrint('[sasayaki-hl] prepareCues path=$pathTag '
+          'srtUid=$_srtBookUid audiobookKey=$_audiobookBookKey '
+          'allCues=${allCues.length} cachedSasayaki=false '
+          '-> SKIPPED (no sasayaki cues)');
       return null;
     }
 
-    // BUG-405：直接复用 AudiobookBridge.buildSasayakiPayload，与有声书桥接路径
-    // 共用同一份 payload 契约（必含 cue 原文 text）。此前 reader 这里手写的内联
-    // 循环漏了 text 字段：JS collectSasayakiCueRanges 拿到空 needle → 跳过实时
-    // DOM 就近重定位 → 只按「匹配坐标系」的 start 提示回落，而该提示在「渲染
-    // 坐标系」实时 DOM 里错位 → 高亮落空，正文看不到任何有声书跟随高亮。复用
-    // 纯函数后两条路径不会再各自漂移（BUG-060 的实时 DOM 重定位对 reader 生效）。
+    // BUG-405：复用 AudiobookBridge.buildSasayakiPayload，与 playback 桥接路径共用
+    // 同一份必含 cue 原文 text 的 payload 契约 —— JS collectSasayakiCueRanges 靠
+    // cue.text 在实时 DOM 就近重定位高亮（BUG-060/300），缺 text 会落空。
     final List<Map<String, dynamic>> payload =
         AudiobookBridge.buildSasayakiPayload(allCues, _currentChapter);
     // BUG-366/TODO-630 诊断：sasayaki 书最终送进 WebView 的 payload 条数。
     // payloadLen=0 表示当前章无命中 cue（applySasayakiCues 不会被调用）。
-    debugPrint('[sasayaki-hl] prepareCues path=AUDIOBOOK-SASAYAKI '
-        'chapter=$_currentChapter allCues=${allCues.length} '
-        'payloadLen=${payload.length}');
+    debugPrint('[sasayaki-hl] prepareCues path=$pathTag-SASAYAKI '
+        'srtUid=$_srtBookUid chapter=$_currentChapter '
+        'allCues=${allCues.length} payloadLen=${payload.length}');
     if (payload.isEmpty) return null;
     return jsonEncode(payload);
+  }
+
+  /// reader 逐句高亮的全书 cue 来源。SRT 字幕书走 [SrtBookRepository]、普通有声书走
+  /// [AudiobookRepository]；两源加载后 sasayaki 判据完全一致（BUG-395），setup 不再
+  /// 按书源分叉出不同的高亮策略。返回 null = 本书无任何音频 cue 源。
+  Future<List<AudioCue>?> _loadHighlightCues() async {
+    if (_srtBookUid != null) {
+      return SrtBookRepository(appModel.database).cuesFor(_srtBookUid!);
+    }
+    if (_audiobookBookKey != null) {
+      return AudiobookRepository(appModel.database)
+          .cuesForBook(_audiobookBookKey!);
+    }
+    return null;
   }
 
   Future<void> _injectAudiobookBridge() async {

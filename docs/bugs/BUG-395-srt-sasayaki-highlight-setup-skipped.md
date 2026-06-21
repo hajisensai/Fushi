@@ -1,0 +1,14 @@
+## BUG-395 · SRT书匹配EPUB后逐句高亮不显示(setup早退跳过applySasayakiCues)
+- **报告**：2026-06-21（用户：有声书高亮不显示，章节级跟随正常，收藏高亮正常，「坏了好久」）
+- **真实性**：✅ 真 bug。真机 `[sasayaki-hl]` 日志实证：
+  - `prepareCues path=SRT srtUid=謎解きはディナーのあとで cues=9436 -> applySasayakiCues SKIPPED (early return)`
+  - 同时 playback `highlight raw="sasayaki://s=26&ns=84&ne=111" frag=sasayaki` → `highlightCue ranges=0 ruby=0 RETURN_NULL_no_segments`
+- **根因**：setup 与 playback 用**两套互相矛盾的「这是什么书」判据**。
+  - setup `hibiki/lib/src/pages/implementations/reader_hibiki/mining.part.dart:285`（旧）：`_srtBookUid != null` 即 `return null` → `applySasayakiCues` 永不调用 → JS `cueRangesMap` 恒空。
+  - playback `hibiki/lib/src/media/audiobook/audiobook_bridge.dart:335`：按 `SasayakiMatchCodec.tryDecode(textFragmentId)!=null` 路由到 sasayaki 高亮，去空的 `cueRangesMap` 取 range → 每次 `RETURN_NULL`（`reader_pagination_scripts.dart:989`）。
+  - 「普通 EPUB + SRT 音频」被 `epub_srt_matcher` 匹配进真 EPUB 后 cue 是 `sasayaki://`（`SrtBookRepository` 里），但 `_srtBookUid != null`（`alignmentFormat=='srt'`，`audiobook.part.dart:221`），于是 setup 当它是「SRT 书」跳过、playback 当它是「sasayaki 书」上色 → 谁也没画。章节级跟随正常，因其走 cue 解码的 `frag.sectionIndex`（`audiobook.part.dart:410`），不依赖 DOM range。
+  - 旁证：`audiobook.part.dart:251`（旧）prime 路径把 `_cachedSasayaki` 硬编码 `false`，同一判据二次走偏。
+- **为什么坏了好久 / 前几次没修中**：前修都在「匹配 EPUB / sasayaki 折叠」下游链打转（BUG-300/TODO-395 补 cue.text、BUG-366/a7cd8a132 折叠归一化），而本书 setup 早退使下游一行都跑不到。既有 sasayaki 测试全是纯函数 + 源码字符串守卫、**零端到端接线断言**，从不验证「`applySasayakiCues` 是否在某书型被真正调用」，故「SRT 早退」类接线缺陷天然测不到。
+- **[x] ① 已修复** — 判据归一到「cue 是否 sasayaki 编码」（与 playback 同判据）：`mining.part.dart:_prepareSasayakiCuesJson` 不再按 `_srtBookUid` 早退，SRT/Audiobook 两源经新 `_loadHighlightCues()` 取全书 cue 后走同一 `buildSasayakiPayload` 判据；`audiobook.part.dart:251` 的 `_cachedSasayaki=false` 改为按 cue 内容计算。真 SRT 字幕书（cue 为 `[data-cue-id]`，`_cachedSasayaki=false`）保留早退 → 零回归。提交：`5a1083dbf`（code-review 🟢，0 Critical/Warning）
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_srt_sasayaki_highlight_wiring_guard_test.dart`（BUG-395 接线守卫：撤修复→`_loadHighlightCues` 缺失 / 旧 SRT 早退串复现 → 转红）；并更新 `hibiki/test/reader/diagnostic_logging_guard_test.dart` 至归一后的诊断。既有 `reader_sasayaki_payload_source_guard_test.dart` / `audiobook_bridge_payload_test.dart` 不回退。
+- **备注**：headless 无真 InAppWebView，逐句上色须真机复验（看修复后 `[sasayaki-hl] prepareCues path=SRT-SASAYAKI ... payloadLen>0` 且 `highlightCue ranges>0`）。后续若 `applySasayakiCues` 跑了但 `emptyRanges>0`，属下游折叠/匹配层（已健康），非本 bug。

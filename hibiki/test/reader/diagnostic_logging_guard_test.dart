@@ -12,9 +12,11 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// 根因修复的证据来源，删掉就又会抓瞎：
 /// - `[xchapter]`：连续模式跨章三路径（滚轮/触摸/指针）+ Dart 汇合点，定位
 ///   「没到章首就跨章」到底走哪条输入、什么几何值触发。
-/// - `[sasayaki-hl]`：有声书逐句高亮在 Dart 端的路径分叉（SRT 书绕开 sasayaki
-///   系统），定位「完全没高亮」的真因。JS 端原有 `[sasayaki-hl]` 日志在 SRT
-///   路径下永不触发，故 Dart 端这几处是关键盲区补全。
+/// - `[sasayaki-hl]`：有声书逐句高亮在 Dart 端的 prepareCues 决策留痕。BUG-395
+///   前 SRT 书在 `_srtBookUid!=null` 时无条件 return null（绕开 sasayaki 系统），
+///   正是这条日志暴露了「SRT 书被匹配进真 EPUB 后 cue 是 sasayaki:// 却建不了
+///   range」的真因；BUG-395 已把 SRT/Audiobook 两源判据归一，诊断保留（标明书源 +
+///   cachedSasayaki + payloadLen），仍是「完全没高亮」真机定位的证据来源。
 void main() {
   group('TODO-656 跨章诊断埋点 [xchapter]', () {
     late String corpus;
@@ -59,11 +61,14 @@ void main() {
           .replaceAll('\r\n', '\n');
     });
 
-    test('Dart 端 prepareCues 路径分叉有日志（SRT 绕开 sasayaki 的盲区）', () {
-      expect(corpus, contains('[sasayaki-hl] prepareCues path=SRT'),
-          reason: '纯 SRT 书直接 return null（applySasayakiCues 永不调用）必须留痕');
-      expect(corpus, contains('[sasayaki-hl] prepareCues path=AUDIOBOOK'),
-          reason: '有声书无 sasayaki cue 的早返回必须留痕');
+    test('Dart 端 prepareCues 决策有日志（书源 + cachedSasayaki + payloadLen 留痕）', () {
+      expect(corpus, contains('[sasayaki-hl] prepareCues path='),
+          reason: 'prepareCues 的高亮决策（书源/是否 sasayaki/payload 条数）必须留痕，'
+              '是「完全没高亮」真机定位的证据来源（BUG-395）');
+      expect(corpus, contains(r'path=$pathTag'),
+          reason: 'BUG-395：SRT 与 Audiobook 两源判据归一后，pathTag 仍标明书源以便定位');
+      expect(corpus, contains(r'path=$pathTag-SASAYAKI'),
+          reason: 'sasayaki 书建 payload 的分支必须留痕（含 payloadLen）');
     });
 
     test('Dart 端 highlight/apply 路径分叉有日志', () {
