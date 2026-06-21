@@ -605,6 +605,34 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     setState(() => _items.remove(item));
   }
 
+  /// 当前列表中是否存在制卡历史条目（TODO-633 W1）。AppBar 的「清空制卡历史」按钮
+  /// 仅在为真时显示——没有制卡句时不渲染该按钮（避免对空集合提供清空入口）。
+  bool get _hasMinedItems =>
+      _items.any((item) => item.type == _CollectionType.mined);
+
+  /// 清空全部制卡历史（TODO-633 W1）：弹 adaptive 确认对话框（复用 [CollectionDeleteDialog]
+  /// 的销毁确认范式，message 用 [Translations] 的 `collection_mined_clear_confirm`），
+  /// 确认后调 [HibikiDatabase.clearMinedSentences] 一次性删表，再本地移除所有
+  /// [_CollectionType.mined] 项刷新列表（与单条 [_deleteItem] 同样走本地 setState，
+  /// 不重跑昂贵的 [_load] 音频解析）。仅清空制卡句，不触碰书签 / 收藏句。
+  Future<void> _clearMinedHistory() async {
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (ctx) => CollectionDeleteDialog(
+            message: t.collection_mined_clear_confirm,
+            onConfirm: () => Navigator.pop(ctx, true),
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    await appModel.database.clearMinedSentences();
+    if (!mounted) return;
+    setState(() {
+      _items.removeWhere((item) => item.type == _CollectionType.mined);
+    });
+  }
+
   bool _hasAudio(_CollectionItem item) {
     // 视频来源句：有该视频的 row 且收藏自带可用 cue 时间窗即可抽音（不进 _cueMap）。
     if (item.source == kFavoriteSentenceSourceVideo) {
@@ -697,6 +725,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Widget build(BuildContext context) {
     return HibikiPageScaffold(
       title: t.collections,
+      actions: <Widget>[
+        // TODO-633 W1: 仅当存在制卡句条目时显示「清空制卡历史」。
+        if (!_loading && _hasMinedItems)
+          HibikiIconButton(
+            tooltip: t.dialog_clear,
+            icon: Icons.delete_sweep_outlined,
+            onTap: _clearMinedHistory,
+          ),
+      ],
       body: _loading
           ? Center(child: adaptiveIndicator(context: context))
           : _items.isEmpty
