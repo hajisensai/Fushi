@@ -531,6 +531,9 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     }
 
     final String? coverPath = _existingFilePath(row.coverPath);
+    // TODO-653: 把 host 端记录的播放断点带进清单条目，供 client 跨设备恢复。
+    final ({int positionMs, int updatedAtMs}) progress =
+        await getVideoPosition(row.bookUid);
     return RemoteVideoInfo(
       id: row.bookUid,
       title: row.title,
@@ -541,6 +544,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       // durationMs: 暂为 null，DB 无此列（后续接线任务填充）
       hasCover: coverPath != null,
       coverPath: coverPath,
+      positionMs: progress.positionMs,
+      positionUpdatedAtMs: progress.updatedAtMs,
     );
   }
 
@@ -595,5 +600,47 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     if (subPath == null) return null;
     final File f = File(subPath);
     return f.existsSync() ? f : null;
+  }
+
+  /// 读 host 端 [id] 视频的播放断点（TODO-653）。落 host 自己的
+  /// `video_remote_position_<bookUid>` + `video_remote_position_at_<bookUid>` prefs
+  /// （与 host 本地播放该视频时同一键空间）；无记录返回 (0, 0)。
+  @override
+  Future<({int positionMs, int updatedAtMs})> getVideoPosition(
+    String id,
+  ) async {
+    final int positionMs =
+        await _db.getPrefTyped<int>(videoRemotePositionPrefKey(id), 0);
+    final int updatedAtMs =
+        await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(id), 0);
+    return (positionMs: positionMs, updatedAtMs: updatedAtMs);
+  }
+
+  /// 把 client 上报的 [id] 视频断点写入 host（TODO-653）。
+  ///
+  /// 冲突解决「取较新时间戳」（[resolveVideoPositionSync]）：仅当 [updatedAtMs] 严格
+  /// 新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。负位置 clamp 0。
+  @override
+  Future<void> putVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    final ({int positionMs, int updatedAtMs}) current =
+        await getVideoPosition(id);
+    final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
+      localPositionMs: current.positionMs,
+      localUpdatedAtMs: current.updatedAtMs,
+      remotePositionMs: positionMs < 0 ? 0 : positionMs,
+      remoteUpdatedAtMs: updatedAtMs,
+    );
+    if (winner.updatedAtMs == current.updatedAtMs &&
+        winner.positionMs == current.positionMs) {
+      return; // host 已存更新或相等，no-op。
+    }
+    await _db.setPrefTyped<int>(
+        videoRemotePositionPrefKey(id), winner.positionMs);
+    await _db.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey(id), winner.updatedAtMs);
   }
 }

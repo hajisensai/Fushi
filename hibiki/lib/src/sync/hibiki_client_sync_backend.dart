@@ -925,6 +925,53 @@ class HibikiClientSyncBackend extends SyncBackend
     );
   }
 
+  /// 读 host 端视频 [id] 的播放断点（TODO-653）。host 返回 404（视频不存在）或网络
+  /// 异常时返回 (0, 0)，让调用方退回本地 prefs（离线/旧 host 不致崩溃）。
+  @override
+  Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
+    String id,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position',
+    );
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return (positionMs: 0, updatedAtMs: 0);
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/position');
+    final String body = await res.transform(utf8.decoder).join();
+    final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+    return (
+      positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+      updatedAtMs: (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 向 host 上报视频 [id] 的本端播放断点（TODO-653）。host 端取较新时间戳决定覆盖。
+  @override
+  Future<void> putRemoteVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position',
+    );
+    req.headers.set('Content-Type', 'application/json');
+    req.write(jsonEncode(<String, Object?>{
+      'positionMs': positionMs,
+      'positionUpdatedAtMs': updatedAtMs,
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
+  }
+
   static String _encodeVideoId(String id) =>
       id.split('/').map(Uri.encodeComponent).join('/');
 

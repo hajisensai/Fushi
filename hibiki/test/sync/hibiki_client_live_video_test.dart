@@ -30,14 +30,20 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   late final File subtitleFile;
 
   @override
-  Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[
-        const RemoteVideoInfo(
-          id: videoId,
-          title: 'Sample Video',
-          sizeBytes: 16,
-          hasSubtitle: true,
-        ),
-      ];
+  Future<List<RemoteVideoInfo>> listVideos() async {
+    final ({int positionMs, int updatedAtMs}) p =
+        await getVideoPosition(videoId);
+    return <RemoteVideoInfo>[
+      RemoteVideoInfo(
+        id: videoId,
+        title: 'Sample Video',
+        sizeBytes: 16,
+        hasSubtitle: true,
+        positionMs: p.positionMs,
+        positionUpdatedAtMs: p.updatedAtMs,
+      ),
+    ];
+  }
 
   @override
   Future<File?> resolveVideoFile(String id) async =>
@@ -103,6 +109,31 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
+
+  final Map<String, ({int positionMs, int updatedAtMs})> videoPositions =
+      <String, ({int positionMs, int updatedAtMs})>{};
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getVideoPosition(
+    String id,
+  ) async =>
+      videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    final ({int positionMs, int updatedAtMs}) current =
+        videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
+    videoPositions[id] = resolveVideoPositionSync(
+      localPositionMs: current.positionMs,
+      localUpdatedAtMs: current.updatedAtMs,
+      remotePositionMs: positionMs < 0 ? 0 : positionMs,
+      remoteUpdatedAtMs: updatedAtMs,
+    );
+  }
 }
 
 HibikiDatabase _testDb() =>
@@ -271,6 +302,39 @@ void main() {
       backend.listRemoteVideos(),
       throwsA(isA<SyncAuthError>()),
     );
+  });
+
+  test('putRemoteVideoPosition uploads then remoteVideoPosition reads it back',
+      () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    await backend.putRemoteVideoPosition(
+      _FakeLibraryService.videoId,
+      600000,
+      1700000000000,
+    );
+
+    final ({int positionMs, int updatedAtMs}) read =
+        await backend.remoteVideoPosition(_FakeLibraryService.videoId);
+    expect(read.positionMs, 600000);
+    expect(read.updatedAtMs, 1700000000000);
+
+    // 进度也随清单条目带回（client 据此跨设备恢复）。
+    final List<RemoteVideoInfo> list = await backend.listRemoteVideos();
+    expect(list.single.positionMs, 600000);
+    expect(list.single.positionUpdatedAtMs, 1700000000000);
+  });
+
+  test('remoteVideoPosition for unknown id returns 0/0 (host 404, no throw)',
+      () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    final ({int positionMs, int updatedAtMs}) read =
+        await backend.remoteVideoPosition('video/does-not-exist');
+    expect(read.positionMs, 0);
+    expect(read.updatedAtMs, 0);
   });
 }
 

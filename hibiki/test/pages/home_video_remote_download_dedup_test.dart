@@ -177,6 +177,19 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   }) async {
     await dest.writeAsBytes(<int>[1]);
   }
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
+    String id,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putRemoteVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
 }
 
 class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
@@ -208,4 +221,17 @@ class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
     onProgress?.call(0.3);
     await completer.future;
   }
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
+    String id,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putRemoteVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
 }

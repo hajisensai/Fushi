@@ -1212,8 +1212,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         mediaUri: urls.streamUrl,
         cues: cues,
         title: info.title,
-        // TODO-559: 远端断点恢复——读 per-book prefs 存的上次位置（无则 0 从头）。
-        initialPositionMs: _readPersistedRemotePosition(),
+        // TODO-559/653: 远端断点恢复——在 host 真相（随清单带回的 info.positionMs）
+        // 与本地 prefs 之间取较新者（跨设备同步：A 设备看到第 10 分钟，B 设备恢复到
+        // 第 10 分钟）。host 无记录 / 旧 host 时退回本地（离线可用）。
+        initialPositionMs: _resolveRemoteInitialPositionMs(info),
         startIntent: EpisodeStartIntent.initialOpen,
         externalSubtitlePath: externalSub,
       );
@@ -1257,7 +1259,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 每次列举不变，见 app_model_library_host_service `RemoteVideoInfo.id = row.bookUid`），
   /// 避免为远端在线视频建 VideoBooks 行污染书架 / 触发资产 GC / 同步逻辑。
   String get _remotePositionPrefKey =>
-      'video_remote_position_${widget.bookUid}';
+      videoRemotePositionPrefKey(widget.bookUid);
+
+  /// [_remotePositionPrefKey] 对应的「最后更新时间」key（epoch 毫秒，TODO-653 冲突解决）。
+  String get _remotePositionAtPrefKey =>
+      videoRemotePositionAtPrefKey(widget.bookUid);
 
   /// 读 per-book 远端断点位置（无则 0，从头）。
   int _readPersistedRemotePosition() {
@@ -1268,13 +1274,49 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return v < 0 ? 0 : v;
   }
 
+  /// 读 per-book 远端断点的本地「最后更新时间」（无则 0）。TODO-653 冲突解决用。
+  int _readPersistedRemotePositionAt() {
+    final Object? raw =
+        appModel.prefsRepo.getPref(_remotePositionAtPrefKey, defaultValue: 0);
+    final int v =
+        raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
+    return v < 0 ? 0 : v;
+  }
+
+  /// 远端视频开播位置（TODO-653）：在 host 真相（[info] 随清单带回的 positionMs）与
+  /// 本地 prefs 之间「取较新时间戳」（[resolveVideoPositionSync]）。host 进度新于本地
+  /// 时跨设备恢复；本地新于 host（如本端刚看、上报尚未列举刷新）时不被旧 host 回退。
+  int _resolveRemoteInitialPositionMs(RemoteVideoInfo info) {
+    final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
+      localPositionMs: _readPersistedRemotePosition(),
+      localUpdatedAtMs: _readPersistedRemotePositionAt(),
+      remotePositionMs: info.positionMs,
+      remoteUpdatedAtMs: info.positionUpdatedAtMs,
+    );
+    return winner.positionMs < 0 ? 0 : winner.positionMs;
+  }
+
   /// 远端视频断点位置持久化（controller 每秒至多一次回调 / flush / dispose）。
   ///
   /// 与本地 [_persistPosition] 对应：远端无播放列表（[_episodes] 恒空）也无 DB 行，
-  /// 按稳定 bookUid 落 prefs。controller 用 `widget.bookUid` 调 [onPositionWrite]，
-  /// 故回调 [uid] 即构造 [_remotePositionPrefKey] 用的同一 bookUid。
-  Future<void> _persistRemotePosition(String uid, int posMs) =>
-      appModel.prefsRepo.setPref('video_remote_position_$uid', posMs);
+  /// 按稳定 bookUid 落 prefs（离线时仍可恢复）。controller 用 `widget.bookUid` 调
+  /// [onPositionWrite]，故回调 [uid] 即构造 [_remotePositionPrefKey] 用的同一 bookUid。
+  ///
+  /// TODO-653：同时把进度 best-effort 上报到 host（跨设备同步真相源）。上报失败
+  /// （离线 / 旧 host 无端点）只记日志不抛——本地 prefs 已写，不阻塞播放也不丢进度。
+  Future<void> _persistRemotePosition(String uid, int posMs) async {
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    await appModel.prefsRepo
+        .setPref(videoRemotePositionPrefKey(uid), posMs < 0 ? 0 : posMs);
+    await appModel.prefsRepo.setPref(videoRemotePositionAtPrefKey(uid), nowMs);
+    final RemoteVideoClient? client = widget.remoteClient;
+    if (client == null) return;
+    try {
+      await client.putRemoteVideoPosition(uid, posMs < 0 ? 0 : posMs, nowMs);
+    } catch (e) {
+      debugPrint('[VideoHibikiPage] remote position upload failed: $e');
+    }
+  }
 
   /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
   /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。

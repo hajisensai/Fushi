@@ -43,15 +43,22 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   static const String videoId = 'video/sample';
 
   @override
-  Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[
-        RemoteVideoInfo.fromJson(<String, Object?>{
-          'id': videoId,
-          'title': 'Sample Video',
-          'sizeBytes': 16,
-          'hasSubtitle': true,
-          'coverPath': coverFile.path,
-        }),
-      ];
+  Future<List<RemoteVideoInfo>> listVideos() async {
+    // 镜像生产 _videoInfoFromRow：清单条目带上 host 记录的播放进度（TODO-653）。
+    final ({int positionMs, int updatedAtMs}) p =
+        await getVideoPosition(videoId);
+    return <RemoteVideoInfo>[
+      RemoteVideoInfo.fromJson(<String, Object?>{
+        'id': videoId,
+        'title': 'Sample Video',
+        'sizeBytes': 16,
+        'hasSubtitle': true,
+        'coverPath': coverFile.path,
+        'positionMs': p.positionMs,
+        'positionUpdatedAtMs': p.updatedAtMs,
+      }),
+    ];
+  }
 
   @override
   Future<File?> resolveVideoFile(String id) async {
@@ -125,6 +132,32 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
+
+  // ── video position（真实内存实现，TODO-653 端点往返测试用）──────────────────
+  final Map<String, ({int positionMs, int updatedAtMs})> videoPositions =
+      <String, ({int positionMs, int updatedAtMs})>{};
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getVideoPosition(
+    String id,
+  ) async =>
+      videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {
+    final ({int positionMs, int updatedAtMs}) current =
+        videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
+    videoPositions[id] = resolveVideoPositionSync(
+      localPositionMs: current.positionMs,
+      localUpdatedAtMs: current.updatedAtMs,
+      remotePositionMs: positionMs < 0 ? 0 : positionMs,
+      remoteUpdatedAtMs: updatedAtMs,
+    );
+  }
 }
 
 void main() {
@@ -525,6 +558,100 @@ void main() {
 
     c.close();
     await bare.stop();
+  });
+
+  // ── video position（TODO-653 跨设备进度同步端点往返）──────────────────────────
+
+  Future<int> putPosition(int positionMs, int updatedAtMs) async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req = await c.putUrl(
+      Uri.parse('$base/api/library/videos/video%2Fsample/position'),
+    );
+    req.headers.set('authorization', authHeader());
+    req.headers.set('content-type', 'application/json');
+    req.write(jsonEncode(<String, Object?>{
+      'positionMs': positionMs,
+      'positionUpdatedAtMs': updatedAtMs,
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    c.close();
+    return res.statusCode;
+  }
+
+  Future<Map<String, dynamic>> getPosition() async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos/video%2Fsample/position'),
+    );
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 200);
+    final Map<String, dynamic> json =
+        jsonDecode(await res.transform(utf8.decoder).join())
+            as Map<String, dynamic>;
+    c.close();
+    return json;
+  }
+
+  test('GET position 初始无记录返回 0/0', () async {
+    final Map<String, dynamic> json = await getPosition();
+    expect(json['positionMs'], 0);
+    expect(json['positionUpdatedAtMs'], 0);
+  });
+
+  test('PUT 进度 → GET 读回同值（跨设备往返）', () async {
+    expect(await putPosition(600000, 1700000000000), 200);
+    final Map<String, dynamic> json = await getPosition();
+    expect(json['positionMs'], 600000, reason: 'A 设备写入的进度应在 host 落定');
+    expect(json['positionUpdatedAtMs'], 1700000000000);
+  });
+
+  test('PUT 较新时间戳覆盖；较旧时间戳被拒（取较新者）', () async {
+    expect(await putPosition(600000, 1700000000000), 200);
+    // 较新上报覆盖。
+    expect(await putPosition(900000, 1700000005000), 200);
+    Map<String, dynamic> json = await getPosition();
+    expect(json['positionMs'], 900000);
+    expect(json['positionUpdatedAtMs'], 1700000005000);
+    // 较旧的滞后上报（来自落后设备）不得回退已存的新进度。
+    expect(await putPosition(120000, 1699999990000), 200);
+    json = await getPosition();
+    expect(json['positionMs'], 900000, reason: '旧时间戳不应回退新进度');
+    expect(json['positionUpdatedAtMs'], 1700000005000);
+  });
+
+  test('PUT 未知视频 id 返回 404（不写脏 prefs）', () async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req = await c.putUrl(
+      Uri.parse('$base/api/library/videos/video%2Fmissing/position'),
+    );
+    req.headers.set('authorization', authHeader());
+    req.headers.set('content-type', 'application/json');
+    req.write(jsonEncode(<String, Object?>{
+      'positionMs': 1000,
+      'positionUpdatedAtMs': 1700000000000,
+    }));
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 404, reason: '未知视频 id 应被拒绝');
+    await res.drain<void>();
+    c.close();
+  });
+
+  test('listVideos 带回 host 进度，供 client 跨设备恢复', () async {
+    expect(await putPosition(420000, 1700000000000), 200);
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req =
+        await c.getUrl(Uri.parse('$base/api/library/videos'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 200);
+    final List<dynamic> json =
+        jsonDecode(await res.transform(utf8.decoder).join()) as List<dynamic>;
+    final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
+    expect(first['positionMs'], 420000, reason: 'host 进度应随清单条目带回，client 据此恢复');
+    expect(first['positionUpdatedAtMs'], 1700000000000);
+    c.close();
   });
 }
 

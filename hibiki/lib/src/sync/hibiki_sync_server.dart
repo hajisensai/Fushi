@@ -1074,6 +1074,39 @@ class HibikiSyncServer {
       );
     }
 
+    // GET/PUT /api/library/videos/<id>/position — 跨设备播放断点（TODO-653）
+    // GET 让 client 拉取 host 真相源进度；PUT 让 client 上报本端进度（host 取较新者）。
+    final String? positionId = _extractVideoId(reqPath, 'position');
+    if (positionId != null) {
+      // 先确认该视频 id 在 host DB 真实存在，防止任意 id 写脏 prefs。
+      final File? file = await svc.resolveVideoFile(positionId);
+      if (file == null) return shelf.Response.notFound('Video not found');
+      switch (method) {
+        case 'GET':
+          final ({int positionMs, int updatedAtMs}) p =
+              await svc.getVideoPosition(positionId);
+          return _jsonResponse(<String, dynamic>{
+            'positionMs': p.positionMs,
+            'positionUpdatedAtMs': p.updatedAtMs,
+          });
+        case 'PUT':
+          final String body = await request.readAsString();
+          Map<String, dynamic> json;
+          try {
+            json = jsonDecode(body) as Map<String, dynamic>;
+          } catch (_) {
+            return shelf.Response(400, body: 'Invalid JSON');
+          }
+          final int posMs = (json['positionMs'] as num?)?.toInt() ?? 0;
+          final int updatedAtMs =
+              (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0;
+          await svc.putVideoPosition(positionId, posMs, updatedAtMs);
+          return shelf.Response(200);
+        default:
+          return shelf.Response(405);
+      }
+    }
+
     return shelf.Response.notFound('Not found');
   }
 

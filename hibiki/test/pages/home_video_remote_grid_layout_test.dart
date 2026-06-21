@@ -365,6 +365,19 @@ class _GridFakeRemoteVideoClient implements RemoteVideoClient {
     File dest, {
     void Function(double progress)? onProgress,
   }) async {}
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
+    String id,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putRemoteVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
 }
 
 final List<int> _tinyPngBytes =

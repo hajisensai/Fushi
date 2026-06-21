@@ -239,6 +239,19 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
     await dest.writeAsBytes(<int>[1, 2, 3]);
     onProgress?.call(1);
   }
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
+    String id,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putRemoteVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
 }
 
 final List<int> _tinyPngBytes =

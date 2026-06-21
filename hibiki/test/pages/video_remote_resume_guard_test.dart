@@ -108,16 +108,20 @@ void main() {
       return src.substring(start, end);
     }
 
-    test('_initRemote restores from persisted prefs, not hardcoded 0', () {
+    test('_initRemote restores from persisted/synced position, not hardcoded 0',
+        () {
       final String initRemote = region(
         'Future<void> _initRemote() async {',
         'String get _speedPrefKey',
       );
+      // TODO-653：恢复改走 _resolveRemoteInitialPositionMs(info)——它在 host 真相
+      // （info.positionMs，随清单带回）与本地 prefs 之间取较新者（跨设备同步），仍
+      // 绝不硬编码 0（TODO-559 回归守卫保留）。
       expect(
         initRemote
-            .contains('initialPositionMs: _readPersistedRemotePosition()'),
+            .contains('initialPositionMs: _resolveRemoteInitialPositionMs('),
         isTrue,
-        reason: 'remote restore must read the persisted position',
+        reason: 'remote restore must resolve persisted vs host-synced position',
       );
       expect(
         initRemote.contains('initialPositionMs: 0'),
@@ -146,19 +150,39 @@ void main() {
     });
 
     test('remote position helpers use the stable bookUid key', () {
-      // 读侧 key getter（dart format 可能把 `=>` 后折行，故用跨行成立的两个子串断言）。
+      // 读侧 key getter（TODO-653：改用单一真相源函数 videoRemotePositionPrefKey，
+      // 与 host service / 测试共用同一公式，消除散落的字面量漂移）。
       expect(src.contains('String get _remotePositionPrefKey'), isTrue);
       expect(
-        src.contains("'video_remote_position_\${widget.bookUid}'"),
+        src.contains('videoRemotePositionPrefKey(widget.bookUid)'),
         isTrue,
         reason: 'read-side key must derive from the stable bookUid',
       );
       // 写侧（_persistRemotePosition）用回调透传的同一 bookUid 构造 key。
       expect(
-        src.contains(
-            "appModel.prefsRepo.setPref('video_remote_position_\$uid', posMs)"),
+        src.contains('videoRemotePositionPrefKey(uid)'),
         isTrue,
         reason: 'write-side key must use the same bookUid passed by controller',
+      );
+    });
+
+    test('TODO-653: remote position is uploaded to host for cross-device sync',
+        () {
+      final String persist = region(
+        'Future<void> _persistRemotePosition(String uid, int posMs) async {',
+        'Future<void> _persistPosition',
+      );
+      // 写侧仍落本地 prefs（离线可用）。
+      expect(
+        persist.contains('videoRemotePositionPrefKey(uid)'),
+        isTrue,
+        reason: 'must still persist locally for offline restore',
+      );
+      // 且 best-effort 上报到 host（跨设备真相源），失败不抛。
+      expect(
+        persist.contains('client.putRemoteVideoPosition('),
+        isTrue,
+        reason: 'remote position must be uploaded to host (TODO-653)',
       );
     });
   });

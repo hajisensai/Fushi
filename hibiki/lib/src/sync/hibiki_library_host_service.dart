@@ -323,6 +323,46 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 
 // ── 视频 ──────────────────────────────────────────────────────────────────────
 
+/// 视频远端断点位置 prefs key（TODO-559/653）——单一真相源，host service 与
+/// video_hibiki_page `_remotePositionPrefKey` 共用同一公式。
+///
+/// 在线远端视频在 client/host 本地都按稳定 bookUid（= `RemoteVideoInfo.id`）落
+/// Drift `preferences` 表。host 自己播放该视频时也用同一 key，故 host 上的这条 prefs
+/// 即跨设备进度的真相源。
+String videoRemotePositionPrefKey(String bookUid) =>
+    'video_remote_position_$bookUid';
+
+/// [videoRemotePositionPrefKey] 对应的「最后更新时间」prefs key（epoch 毫秒）。
+/// 冲突解决「取较新时间戳」需要它（见 [resolveVideoPositionSync]）。
+String videoRemotePositionAtPrefKey(String bookUid) =>
+    'video_remote_position_at_$bookUid';
+
+/// 视频播放进度跨设备冲突解决（TODO-653）——「取较新时间戳」last-write-wins。
+///
+/// 纯函数，与有声书进度的 `SyncManager._determineSyncDirection` 同范式（取较新者；
+/// 时间戳相等时取较大位置，"读得更远者胜"）。host 收到 client 上报时用它决定是否覆盖
+/// 已存进度，client 恢复时用它在 host 真相与本地 prefs 之间选较新者。
+///
+/// [localPositionMs]/[localUpdatedAtMs] 一侧；[remotePositionMs]/[remoteUpdatedAtMs]
+/// 另一侧。返回胜出的 (位置, 更新时间)。两侧时间戳均为 0（都无记录）时返回较大位置。
+({int positionMs, int updatedAtMs}) resolveVideoPositionSync({
+  required int localPositionMs,
+  required int localUpdatedAtMs,
+  required int remotePositionMs,
+  required int remoteUpdatedAtMs,
+}) {
+  if (remoteUpdatedAtMs > localUpdatedAtMs) {
+    return (positionMs: remotePositionMs, updatedAtMs: remoteUpdatedAtMs);
+  }
+  if (localUpdatedAtMs > remoteUpdatedAtMs) {
+    return (positionMs: localPositionMs, updatedAtMs: localUpdatedAtMs);
+  }
+  // 时间戳相等（含都为 0）：取较大位置（看得更远者胜），保留该时间戳。
+  final int winnerPos =
+      localPositionMs >= remotePositionMs ? localPositionMs : remotePositionMs;
+  return (positionMs: winnerPos, updatedAtMs: localUpdatedAtMs);
+}
+
 /// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
 ///
 /// [id] 即 `VideoBooks.bookUid`，从文件名派生的稳定字符串（如 `video/my_film`
@@ -407,6 +447,8 @@ class RemoteVideoInfo {
     this.hasCover = false,
     this.coverUrl,
     this.coverPath,
+    this.positionMs = 0,
+    this.positionUpdatedAtMs = 0,
   });
 
   final String id;
@@ -419,6 +461,19 @@ class RemoteVideoInfo {
   final bool hasCover;
   final String? coverUrl;
   final String? coverPath;
+
+  /// host 端记录的该视频上次播放断点（毫秒，TODO-653 跨设备视频进度同步）。
+  ///
+  /// 视频远端是 host/client 模型——client 不存视频、只从 host 流式播放——故进度的
+  /// 唯一真相源是 host，落 host 自己的 `video_remote_position_<bookUid>` prefs（与
+  /// host 本地播放该视频时同一键空间，见 video_hibiki_page `_remotePositionPrefKey`）。
+  /// 0 表示无记录（从头）。
+  final int positionMs;
+
+  /// [positionMs] 的最后更新时间（epoch 毫秒）。跨设备冲突解决用「取较新时间戳」
+  /// （last-write-wins by timestamp），与有声书进度的 `_determineSyncDirection`
+  /// 同范式。0 表示无记录。
+  final int positionUpdatedAtMs;
 
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
@@ -438,6 +493,8 @@ class RemoteVideoInfo {
         if (durationMs != null) 'durationMs': durationMs,
         if (hasDisplayCover) 'hasCover': true,
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
+        if (positionMs > 0) 'positionMs': positionMs,
+        if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
       };
 
   RemoteVideoInfo copyWith({
@@ -446,6 +503,8 @@ class RemoteVideoInfo {
     String? coverPath,
     String? subtitleFileName,
     List<RemoteVideoEmbeddedSubtitleTrack>? embeddedSubtitleTracks,
+    int? positionMs,
+    int? positionUpdatedAtMs,
   }) =>
       RemoteVideoInfo(
         id: id,
@@ -459,6 +518,8 @@ class RemoteVideoInfo {
         hasCover: hasCover ?? this.hasCover,
         coverUrl: coverUrl ?? this.coverUrl,
         coverPath: coverPath ?? this.coverPath,
+        positionMs: positionMs ?? this.positionMs,
+        positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
       );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -480,6 +541,8 @@ class RemoteVideoInfo {
           _isNonEmpty(coverPath),
       coverUrl: coverUrl,
       coverPath: coverPath,
+      positionMs: _jsonInt(json['positionMs']) ?? 0,
+      positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
     );
   }
 }
@@ -655,4 +718,14 @@ abstract class HibikiLibraryHostService {
   /// 用 [langCode] 优先匹配带语言标记的字幕（如 `.ja.srt`）；内封字幕不在此列。
   /// 找不到外挂字幕或视频未知时返回 null。
   Future<File?> resolveVideoSubtitle(String id, {String langCode = ''});
+
+  /// 读 host 端记录的视频 [id] 播放断点（TODO-653）。返回 (位置毫秒, 更新时间毫秒)；
+  /// 无记录时返回 (0, 0)。
+  Future<({int positionMs, int updatedAtMs})> getVideoPosition(String id);
+
+  /// 把 client 上报的视频 [id] 播放断点写入 host（TODO-653）。
+  ///
+  /// 冲突解决「取较新时间戳」（见 [resolveVideoPositionSync]）：仅当 [updatedAtMs]
+  /// 严格新于 host 已存时间戳才覆盖，避免旧设备的滞后上报回退新进度。
+  Future<void> putVideoPosition(String id, int positionMs, int updatedAtMs);
 }

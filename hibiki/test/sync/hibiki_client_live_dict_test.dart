@@ -93,6 +93,19 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   Future<File?> resolveVideoSubtitle(String id,
           {String langCode = 'ja'}) async =>
       null;
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> getVideoPosition(
+    String id,
+  ) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs,
+  ) async {}
 }
 
 // ── helper: 建 SyncRepository + 配置 backend ─────────────────────────────
