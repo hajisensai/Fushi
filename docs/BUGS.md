@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-376](bugs/BUG-376-mobile-shelf-top-gap.md) | ✅ | ✅ | 手机首页页头顶距过大(标题离顶部空一行) |
+| [BUG-377](bugs/BUG-377-mobile-remote-book-download.md) | ✅ | ✅ | 手机无法下载对端配对设备书籍(Android明文HTTP被network_security_config拦截) |
 | [BUG-374](bugs/BUG-374-button-edge-tap-pause-passthrough.md) | ✅ | ✅ | 点视频控制按钮边缘穿透到底层 tap 误暂停/播放 |
 | [BUG-373](bugs/BUG-373-subtitle-delay-no-instant-feedback.md) | ✅ | ✅ | 字幕调整（音画延迟）没有即时反馈 |
 | [BUG-371](bugs/BUG-371-subtitle-list-hides-side-controls.md) | ✅ | ✅ | 打开字幕列表侧边栏时左侧控制按钮全部消失 |

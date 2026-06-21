@@ -1,8 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hibiki 网络安全配置（BUG-377）。
+
+  配对设备同步（Hibiki sync server / 用户自配 WebDAV/FTP）走局域网明文 HTTP +
+  Basic auth：对端地址是 mDNS 发现或手动输入的 http://192.168.x.x:port（见
+  lan_discovery_service.dart:22 / interconnect.part.dart:148）。host 文件头已声明
+  这套明文协议仅在可信局域网可接受，且 server 仅在用户开启 hosting 时绑 0.0.0.0。
+
+  因此 base-config 必须允许 cleartext，否则 Android 平台层会在 client 连任何
+  http://IP 对端时直接拒绝（cleartext not permitted），导致手机端配对设备的列出/
+  下载/同步全部失败（桌面端无此门控，故只有手机受影响）。
+
+  app 自有的公网端点（云盘 OAuth/同步、日志上传）本就走 https，scheme 不变；这里
+  额外用 domain-config 把日志上传域名钉死为 https-only，防止未来回归把它降级。
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">127.0.0.1</domain>
+    <base-config cleartextTrafficPermitted="true" />
+    <!-- app 自有敏感公网端点：强制 https，明文降级会被这里拦住（防回归）。 -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">logs.wrds.xyz</domain>
     </domain-config>
 </network-security-config>
