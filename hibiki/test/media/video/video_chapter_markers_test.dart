@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../pages/video_hibiki_page_source_corpus.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
@@ -232,9 +232,9 @@ void main() {
   // media_kit 的 seek bar 无法在无头 libmpv 下驱动真实渲染，故页面层「刻度叠在 seek bar
   // 同一几何上」的接线用源码守卫锁定不变量（几何纯函数由上面的 widget/单元测试覆盖）。
   group('video_hibiki_page wires chapter markers onto seek bar (TODO-432)', () {
-    final String src =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // 章节刻度层 builder 已搬进 video_hibiki/chapter.part.dart（TODO-590 batch8），
+    // 读「主壳 + 全部 part」合并语料才能切到 builder 定义体。
+    final String src = readVideoHibikiSource();
 
     test('controls Stack 挂了 _buildChapterMarkersOverlay 层', () {
       expect(src.contains('_buildChapterMarkersOverlay(controller)'), isTrue,
