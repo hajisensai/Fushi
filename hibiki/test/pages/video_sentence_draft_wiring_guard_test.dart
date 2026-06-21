@@ -33,9 +33,13 @@ void main() {
   group('video_hibiki_page', () {
     // TODO-590 batch13: `_lookupAt`（含 `_lastLookupSentence = sentence;` /
     // `_miningDraft.clear();` / `await pushNestedPopup(`）已搬进
-    // lookup_favorite.part.dart，改读合并语料；其余 region 锚的方法
-    // （`_cueRange` / `_setSentenceContextToDraft` / `_resolveVideoMiningRange` /
-    // `onMineEntry` / `_popNestedPopupAt`）仍在主壳，切片顺序不变。
+    // lookup_favorite.part.dart，改读合并语料。
+    // TODO-590 batch14: `_cueRange` / `_setSentenceContextToDraft` /
+    // `_resolveVideoMiningRange` / `onMineEntry` 体（→ `_onMineEntryImpl`）已搬进
+    // lookup_mining.part.dart；合并语料把主壳排在 part 前，凡 end marker 原指向「仍在
+    // 主壳的字段/方法」（`bool _pausedForLookup` / `onMineEntry` 瘦转发器 /
+    // `TODO-270 D：覆盖` 文案）现位于 start 之前会切片失败，改用 part 内紧随其后的
+    // 方法签名作 end marker。`_popNestedPopupAt` / `_lookupAt` 切片不受影响。
     late String src;
     setUpAll(() {
       src = readVideoHibikiSource();
@@ -69,7 +73,7 @@ void main() {
     test('set-context takes prev/next cues around the lookup cue', () {
       final String set = region(
         'Future<int> _setSentenceContextToDraft(int prevCount, int nextCount) async {',
-        'bool _pausedForLookup',
+        'Future<int> _clearSentenceDraft(',
       );
       expect(set, contains('_lastLookupCue'));
       expect(set, contains('controller.cues'));
@@ -86,7 +90,7 @@ void main() {
     test('mining merges draft + current for both text and range', () {
       final String resolve = region(
         '_resolveVideoMiningRange(VideoPlayerController controller) {',
-        'Future<MinePopupResult> onMineEntry(',
+        'Future<MinePopupResult> _onMineEntryImpl(',
       );
       // 文本合并：草稿上下文句 + 当前查词句。
       expect(
@@ -101,8 +105,8 @@ void main() {
 
     test('mining clears the draft only on success of the draft path', () {
       final String mine = region(
-        'Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {',
-        'TODO-270 D：覆盖',
+        'Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {',
+        'Future<MinePopupResult> _onUpdateEntryImpl(',
       );
       // 成功且非多选路径 → 清草稿（与 popup.js 同事件归零）。
       expect(mine, contains('_miningDraft.clear();'));

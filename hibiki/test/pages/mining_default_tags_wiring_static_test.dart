@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 import 'reader_hibiki_page_source_corpus.dart';
+import 'video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（TODO-115）：制卡默认标签接线。
 ///
@@ -64,9 +65,9 @@ void main() {
   });
 
   test('video 制卡入口指定 video 来源', () {
-    final String src =
-        File('lib/src/pages/implementations/video_hibiki_page.dart')
-            .readAsStringSync();
+    // TODO-590 batch14: `_mineVideoCard`（含 source: AnkiMiningSource.video）已搬进
+    // lookup_mining.part.dart，读合并语料才能命中。
+    final String src = readVideoHibikiSource();
     expect(src, contains('source: AnkiMiningSource.video'),
         reason: 'video 制卡应标记视频来源 → video 分类标签');
   });

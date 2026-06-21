@@ -398,10 +398,11 @@ void main() {
     final String page = readVideoHibikiSource();
     final int mineStart =
         page.indexOf('Future<MinePopupResult> _mineVideoCard');
-    // TODO-590 batch9：_showAudioTrackMenu 已抽到 audio_track.part.dart（合并语料末段），
-    // 不能再当 _mineVideoCard 之后的紧邻终点；改用主壳里真实后继 _handleBackOrExit。
+    // TODO-590 batch14：_mineVideoCard 已随制卡域抽到 lookup_mining.part.dart（合并语料
+    // 末段），其后紧邻 _recordMinedSentenceForVideo；主壳的 _handleBackOrExit 现排在
+    // part 之前会切片失败，改用 part 内真实后继 _recordMinedSentenceForVideo 作终点。
     final int mineEnd =
-        page.indexOf('Future<void> _handleBackOrExit', mineStart);
+        page.indexOf('Future<void> _recordMinedSentenceForVideo', mineStart);
     expect(mineStart, greaterThanOrEqualTo(0));
     expect(mineEnd, greaterThan(mineStart));
     final String mineBody = page.substring(mineStart, mineEnd);

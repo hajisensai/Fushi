@@ -6,6 +6,7 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
+import '../pages/video_hibiki_page_source_corpus.dart';
 
 // BUG-089: a card-mining failure used to vanish — backends returned a bare
 // `MineResult.error` and only `debugPrint`-ed the cause (which goes nowhere
@@ -99,11 +100,14 @@ void main() {
       test('$path routes mine outcome through describeMineOutcome', () {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: 'missing call site: $path');
-        // TODO-589 batch2: reader 制卡方法已搬进 reader_hibiki/mining.part.dart，
+        // TODO-589 batch2 / TODO-590 batch14: reader 与 video 的制卡方法分别搬进
+        // reader_hibiki/mining.part.dart 与 video_hibiki/lookup_mining.part.dart，
         // 读合并语料（主壳 + 全部 part）才能命中搬出去的 mineEntry / describeMineOutcome。
         final String src = path.endsWith('reader_hibiki_page.dart')
             ? readReaderPageSource()
-            : f.readAsStringSync();
+            : path.endsWith('video_hibiki_page.dart')
+                ? readVideoHibikiSource()
+                : f.readAsStringSync();
         // Only inspect files that actually mine entries.
         expect(src.contains('mineEntry'), isTrue,
             reason: '$path no longer calls mineEntry — update this guard');

@@ -54,9 +54,13 @@ void main() {
     // TODO-270 E：制卡 cue / 区间 / 文本解析收口到 _resolveVideoMiningRange（onMineEntry
     // 与 onUpdateEntry 共用，避免两份漂移），守卫锚点随之搬到该 helper。语义不变：选中句
     // 优先（字幕列表多选，独立入口）→ 否则查词草稿合并，当前 cue 走 lookup 缓存兜底。
+    // TODO-590 batch14: `_resolveVideoMiningRange` / `onMineEntry` 体 / `_mineVideoCard`
+    // 等制卡方法已搬进 lookup_mining.part.dart；合并语料把主壳排在 part 前，所以
+    // end marker 必须用 part 内紧跟 `_resolveVideoMiningRange` 的 `_onMineEntryImpl`
+    // 签名（旧 `onMineEntry(` 已变主壳里的瘦转发器、位于 start 之前会切片失败）。
     final String resolve = region(
       '_resolveVideoMiningRange(VideoPlayerController controller) {',
-      'Future<MinePopupResult> onMineEntry(',
+      'Future<MinePopupResult> _onMineEntryImpl(',
     );
     // 字幕列表多选（TODO-102）优先：合成 cue 单段区间 + join 文本，不掺草稿。
     expect(resolve, contains('if (selectedCue != null) {'),
@@ -78,9 +82,12 @@ void main() {
         reason: '制卡音频/封面区间终点 = 合并区间终点（单句即该 cue 的 endMs）。');
 
     // onMineEntry 把解析结果喂给落卡链路 _mineVideoCard（单句/多句同一出口）。
+    // TODO-590 batch14: onMineEntry 体搬进 part 的 `_onMineEntryImpl`；end marker
+    // 改用 part 内紧随其后的 `_onUpdateEntryImpl` 签名（旧 `TODO-270 D：覆盖` 文案
+    // 跟着 onUpdateEntry 瘦转发器留在主壳，位于 start 之前会切片失败）。
     final String mine = region(
-      'Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {',
-      'TODO-270 D：覆盖',
+      'Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {',
+      'Future<MinePopupResult> _onUpdateEntryImpl(',
     );
     expect(mine, contains('_resolveVideoMiningRange(controller)'));
     expect(mine, contains('clipStartMs: range.clipStartMs'));
@@ -92,9 +99,12 @@ void main() {
   test('_mineVideoCard extracts the passed [clipStartMs, clipEndMs] range', () {
     // 落卡链路把区间端点喂给真实的 ffmpeg 抽取器（单句 = cue 时间窗）。
     // TODO-270 D：返回类型改为 Future<MinePopupResult>（成功带回 note id）。
+    // TODO-590 batch14: `_mineVideoCard` 搬进 lookup_mining.part.dart，部内紧随其后
+    // 的是 `_recordMinedSentenceForVideo`；end marker 改用它（`_handleBackOrExit` 留主壳、
+    // 在合并语料里排在 part 之前，会切片失败）。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
-      'Future<void> _handleBackOrExit(',
+      'Future<void> _recordMinedSentenceForVideo(',
     );
     expect(mineCard, contains('startMs: clipStartMs'),
         reason: '区间音频/封面起点必须是传入的 clipStartMs。');
@@ -111,9 +121,12 @@ void main() {
     // 完全静默丢弃——用户看到「制卡成功」却没句子音频，无从诊断（正是反复报
     // 「ひびき 卡组没句子音频」却定位不到的盲区）。落卡链路必须把这条丢弃变为
     // 可追踪日志 + OSD 提示，并中止本次制卡，不能落一张成功但无句子音频的卡。
+    // TODO-590 batch14: `_mineVideoCard` 搬进 lookup_mining.part.dart，部内紧随其后
+    // 的是 `_recordMinedSentenceForVideo`；end marker 改用它（`_handleBackOrExit` 留主壳、
+    // 在合并语料里排在 part 之前，会切片失败）。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
-      'Future<void> _handleBackOrExit(',
+      'Future<void> _recordMinedSentenceForVideo(',
     );
     expect(mineCard, contains('if (audioPath == null) {'),
         reason: '抽段失败（audioPath==null）须被显式处理，而非静默落空。');
