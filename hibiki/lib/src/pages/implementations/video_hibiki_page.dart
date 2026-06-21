@@ -747,6 +747,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _cursorHidden.value = hidden;
   }
 
+  /// 系统栏（状态/导航/手势栏）**当前是否真正可见**（TODO-658/BUG-383）。视频页进入即
+  /// [SystemUiMode.immersiveSticky] 隐藏系统栏，故默认 `false`。由 [SystemChrome.
+  /// setSystemUIChangeCallback] 在系统栏可见性变化时回写（仅移动端注册）。
+  ///
+  /// 这是 [_videoBottomSystemInset] 是否计入底部系统 inset 的**唯一权威开关**：
+  /// `MediaQuery.viewPadding.bottom` / `padding.bottom` 在 targetSdk 35 强制 edge-to-edge
+  /// + **手势导航**下，即便 immersiveSticky 已隐藏导航栏，仍上报手势条物理高度（引擎
+  /// `getInsets(systemBars())` 在手势导航下照单全收，见 Flutter #170640，且 padding 与
+  /// viewPadding 在无键盘时同源 = 换字段不解决问题）→ 旧实现把这段恒非零的 inset 永久
+  /// 叠进进度条/字幕/刻度带几何，进度条被顶高到屏幕中上部（BUG-370 当初只重申
+  /// immersiveSticky 是治标，inset 仍非零）。改读系统栏**真实可见性**：隐栏（沉浸态，
+  /// 常态）→ inset=0，进度条回到惯例 `基线+按钮条+间距`；导航栏真显示（三键导航 / 手势条
+  /// 临时唤出）→ 计入 inset 避开它（保 BUG-184「导航栏可见时进度条上移避让」本意）。
+  bool _systemBarsVisible = false;
+
+  /// 注册系统栏可见性回调（仅移动端）。immersiveSticky 隐栏 → `false`；上划临时唤回 /
+  /// 三键导航显示 → `true`。回写 [_systemBarsVisible] 并 `setState` 重建进度条/字幕/刻度
+  /// 几何（[_mobileControlsTheme] / [_subtitleControlsBottomReserve] / 章节刻度带均在
+  /// build 期读 [_videoBottomSystemInset]）。桌面无系统栏语义，不注册。
+  void _registerSystemBarsVisibilityCallback() {
+    if (!isMobilePlatform) return;
+    SystemChrome.setSystemUIChangeCallback(
+      (bool systemOverlaysAreVisible) async {
+        if (!mounted) return;
+        if (_systemBarsVisible == systemOverlaysAreVisible) return;
+        setState(() => _systemBarsVisible = systemOverlaysAreVisible);
+      },
+    );
+  }
+
   /// media_kit [Video] 的键盘焦点节点。media_kit 的 `Video` 自带 FocusNode + 内置
   /// 快捷键（空格=播放/暂停、方向键=快进/快退/音量等）。本页把这个节点提到 State 持有，
   /// 是为了在任何**会夺走窗口键盘焦点的覆盖层**（对话框 / bottom sheet / 系统文件选择器）
@@ -1067,6 +1097,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出由
     // [AppModel.closeMedia] 的 setHomeShellSystemUiMode 还原；桌面 no-op。
     unawaited(_applyVideoImmersiveMode());
+    // TODO-658/BUG-383: 监听系统栏真实可见性，喂 [_videoBottomSystemInset] 的门控
+    // （隐栏归零、可见才避让），根治手势导航下进度条被恒非零 viewPadding 顶高。
+    _registerSystemBarsVisibilityCallback();
     _init();
   }
 
@@ -1861,6 +1894,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
+    if (isMobilePlatform) {
+      unawaited(SystemChrome.setSystemUIChangeCallback(null));
+    }
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
       ExitFlushRegistry.instance.unregister(exitFlush);
@@ -4284,12 +4321,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   bool _hasRoomyVideoBottomBar() => MediaQuery.of(context).size.width >= 600;
 
-  /// 系统底部安全区 inset（BUG-184）：Android 手势导航条 / 物理导航栏的高度，用来把
-  /// 进度条与底部按钮条抬离系统栏。视频打开后走 immersiveSticky 隐藏导航栏，多数情况下
-  /// 这个值是 0（基线 [_videoBottomChromeBaseline] 仍保证进度条不贴最底）；从屏幕底缘
-  /// 滑出唤回导航条时它转为非零，进度条随之上移避开。读 [MediaQuery.viewPadding]（物理
-  /// 安全区）而非 `padding`（会被 immersive 模式抹平），且不受软键盘弹出影响。
-  double _videoBottomSystemInset() => MediaQuery.of(context).viewPadding.bottom;
+  /// 系统底部安全区 inset（BUG-184 / TODO-658·BUG-383）：导航栏 / 手势条**真正可见时**
+  /// 的物理高度，用来把进度条与底部按钮条抬离系统栏。视频打开后走 immersiveSticky 隐藏
+  /// 导航栏，常态下系统栏不可见 → 返回 0（基线 [_videoBottomChromeBaseline] 仍保证进度条
+  /// 不贴最底）；导航栏真显示（三键导航 / 上划临时唤出）时返回 `viewPadding.bottom`，进度
+  /// 条随之上移避开（保 BUG-184 本意）。
+  ///
+  /// **为何先判 [_systemBarsVisible] 而非直接读 inset**（TODO-658 根因）：targetSdk 35
+  /// 强制 edge-to-edge + 手势导航下，`viewPadding.bottom`（与 `padding.bottom` 同源，仅
+  /// 差键盘）即便 immersiveSticky 已隐栏仍恒上报手势条高度，单读 inset 会把进度条永久顶高
+  /// （BUG-370）。故用 [SystemChrome.setSystemUIChangeCallback] 喂的真实可见性当门控：隐栏
+  /// 时直接归零，可见时才取物理 inset。桌面 [_systemBarsVisible] 恒 false（不注册回调）→
+  /// 始终 0，桌面无系统栏，符合预期。
+  double _videoBottomSystemInset() =>
+      _systemBarsVisible ? MediaQuery.of(context).viewPadding.bottom : 0.0;
 
   /// 字幕动态避让的「进度条上缘」高度（BUG-238）：控制条可见时字幕底缘对它取下限
   /// （`max(bottomPadding, reserve)`，见 [VideoSubtitleOverlay]）。由当前平台真实控制条
@@ -6074,24 +6119,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     return Align(
       alignment: alignment,
-      child: SafeArea(
-        child: Padding(
-          padding: padding,
-          // 只在真正的按钮列上挂 keep-alive hover（不是整片 Positioned.fill）——否则鼠标
-          // 在画面任意处都会被当成「悬在 rail 上」、rail 永不淡出（BUG-283）。
-          child: _railHoverKeepAlive(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                for (final VideoControlItem item in items) ...<Widget>[
-                  buttonFor(item),
-                  if (item != items.last) const SizedBox(height: 8),
-                ],
+      // TODO-658/BUG-383: 圆角 / 刘海手机（styles.xml `shortEdges` 把画面画进 cutout 区，
+      // 故 `viewPadding.left/right` 非零）上，旧实现 `SafeArea`（按 viewPadding 内缩四边）
+      // **外套** `Padding(只 left/right:12)` 的控件自有 margin = 两段**相加**双重内缩，把
+      // 左 / 右浮条推离侧边形成对称大留白。改为**逐边取 max**（控件 margin 与系统安全区取
+      // 较大者，而非叠加）：既不被圆角真正裁掉（仍 ≥ 安全区），又消除多余留白（安全区 ≥
+      // 12 时控件正贴安全区内缘、不再额外 +12）。竖直方向同理 max 兜底横屏顶 / 底 cutout。
+      child: Padding(
+        padding: _mergeRailSafeAreaPadding(padding),
+        // 只在真正的按钮列上挂 keep-alive hover（不是整片 Positioned.fill）——否则鼠标
+        // 在画面任意处都会被当成「悬在 rail 上」、rail 永不淡出（BUG-283）。
+        child: _railHoverKeepAlive(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final VideoControlItem item in items) ...<Widget>[
+                buttonFor(item),
+                if (item != items.last) const SizedBox(height: 8),
               ],
-            ),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 浮动侧栏内缩：把控件自有 margin [railMargin] 与系统安全区（[MediaQuery.viewPadding]，
+  /// 含圆角 / 刘海 cutout）**逐边取 max** 合并（TODO-658/BUG-383）。
+  ///
+  /// 取 max 而非旧 `SafeArea`(安全区) + `Padding`(margin) 的**相加**：相加在 `shortEdges`
+  /// cutout 手机上让左 / 右浮条被双重内缩、推离侧边留大白边；逐边取 max 保证控件既不被圆角
+  /// 裁掉（结果 ≥ 安全区），又不在安全区已够大时再叠 margin（结果 = max，不再额外加 12）。
+  EdgeInsets _mergeRailSafeAreaPadding(EdgeInsetsGeometry railMargin) {
+    final EdgeInsets margin = railMargin.resolve(Directionality.of(context));
+    final EdgeInsets safe = MediaQuery.of(context).viewPadding;
+    return EdgeInsets.fromLTRB(
+      math.max(margin.left, safe.left),
+      math.max(margin.top, safe.top),
+      math.max(margin.right, safe.right),
+      math.max(margin.bottom, safe.bottom),
     );
   }
 
