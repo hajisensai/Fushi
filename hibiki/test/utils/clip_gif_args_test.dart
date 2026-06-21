@@ -22,8 +22,9 @@ void main() {
       final filter = args[args.indexOf('-filter_complex') + 1];
       expect(filter, contains('palettegen'));
       expect(filter, contains('paletteuse'));
-      expect(filter, contains('fps=12'));
-      expect(filter, contains('scale=480:-2'));
+      // TODO-646 近无损压缩：cue 封面动图收紧到 320px / 8fps（原 480 / 12）。
+      expect(filter, contains('fps=8'));
+      expect(filter, contains('scale=320:-2'));
       expect(args[args.indexOf('-loop') + 1], '0');
       expect(args.last, '/tmp/clip.gif');
     });

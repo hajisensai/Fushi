@@ -36,8 +36,32 @@ void main() {
         '-vn',
         '-c:a',
         'aac',
+        // TODO-646 近无损压缩：单声道 64k AAC。
+        '-ac',
+        '1',
+        '-b:a',
+        '64k',
         '/a/out.aac',
       ]);
+    });
+
+    test('TODO-646: mono 64k AAC for near-lossless sentence audio', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.m4b',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+      );
+      // 单声道下混 + 64k 比特率（人声短片段听感近透明、省一半以上体积）。
+      final int acIndex = args.indexOf('-ac');
+      expect(acIndex, greaterThanOrEqualTo(0));
+      expect(args[acIndex + 1], '1');
+      final int brIndex = args.indexOf('-b:a');
+      expect(brIndex, greaterThanOrEqualTo(0));
+      expect(args[brIndex + 1], '64k');
+      // 比特率/声道必须在编码器之后（对输出流生效，而非输入）。
+      expect(args.indexOf('-c:a') < acIndex, isTrue);
+      expect(args.indexOf('-c:a') < brIndex, isTrue);
     });
 
     test('no -map when audioStreamIndex is null (default audio selection)', () {
@@ -84,6 +108,11 @@ void main() {
         '0:a:1?',
         '-c:a',
         'aac',
+        // TODO-646 近无损压缩：单声道 64k AAC。
+        '-ac',
+        '1',
+        '-b:a',
+        '64k',
         '/a/out.aac',
       ]);
     });

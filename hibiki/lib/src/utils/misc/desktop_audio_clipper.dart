@@ -96,6 +96,14 @@ List<String> buildFfmpegClipArgs({
     ],
     '-c:a',
     'aac',
+    // TODO-646 近无损压缩：句子音频是人声短片段，单声道 64k AAC 听感接近透明，
+    // 比默认（立体声 ~128k）省一半以上体积。`-ac 1` 下混单声道、`-b:a 64k` 钉比特率。
+    // 桌面句子音频与视频 cue 音频共用本函数，两条链路同时受益；Android 原生
+    // AacAdtsCueAudioRewriter 是无损 re-mux（跟源、不重编码），不经此路径、不受影响。
+    '-ac',
+    '1',
+    '-b:a',
+    '64k',
     outputPath,
   ];
 }
@@ -332,8 +340,10 @@ List<String> buildFfmpegClipGifArgs({
   required int startMs,
   required int endMs,
   required String outputPath,
-  int fps = 12,
-  int width = 480,
+  // TODO-646 近无损压缩：cue 封面动图收紧到 320px/8fps（原 480/12），体积省 40-60%，
+  // 移动端小图肉眼基本无差。仍走 palettegen/paletteuse 双遍避免抖动。
+  int fps = 8,
+  int width = 320,
   int maxDurationMs = 10000,
 }) {
   final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;

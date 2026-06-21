@@ -70,6 +70,7 @@ import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
@@ -2760,8 +2761,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }
       final Uint8List? shot = await controller.screenshot();
       if (shot != null && shot.isNotEmpty) {
+        // TODO-646 近无损压缩：截图按原始解码帧分辨率输出（1080p/4K），降采样到
+        // 长边 1000px（卡面 + 灯箱放大都不糊）再写盘，省媒体库体积。解码失败/已不
+        // 超限时原样返回，不破坏制卡。
+        final Uint8List cover = downsampleCardScreenshot(shot);
         final File f = File('${tmp.path}/video_mine_shot.jpg');
-        await f.writeAsBytes(shot);
+        await f.writeAsBytes(cover);
         coverPath = f.path;
       }
     }
