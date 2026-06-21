@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-584 结构守卫：update_checker.dart 已拆成 barrel library + 4 个 part 文件
+/// TODO-584 结构守卫：update_checker.dart 已拆成 barrel library + 5 个 part 文件
 /// （`part of 'update_checker.dart';`）。这套守卫固化拆分后的不变式，防止后续改动
 /// 把巨石文件重新塞回单文件、或把符号错放 part（破坏「按职责分文件 + 零行为变化」）。
 ///
-/// 用 `part`/`part of`（而非独立 import/export）的核心收益：4 个 part 共享同一 library
+/// 用 `part`/`part of`（而非独立 import/export）的核心收益：各 part 共享同一 library
 /// 的私有作用域，私有符号（如 `_DownloadOverlay`）跨 part 互相可见，对外 API、
 /// `@visibleForTesting` 导出、`package:...update_checker.dart` import 路径全部零变化。
 void main() {
@@ -14,14 +14,15 @@ void main() {
   const String barrel = '$dir/update_checker.dart';
   const String net = '$dir/update_checker_net.dart';
   const String download = '$dir/update_checker_download.dart';
+  const String race = '$dir/update_checker_race.dart';
   const String release = '$dir/update_checker_release.dart';
   const String ui = '$dir/update_checker_ui.dart';
-  const List<String> parts = <String>[net, download, release, ui];
+  const List<String> parts = <String>[net, download, race, release, ui];
 
   String read(String path) => File(path).readAsStringSync();
   int lineCount(String path) => File(path).readAsLinesSync().length;
 
-  test('barrel + 4 part files all exist', () {
+  test('barrel + 5 part files all exist', () {
     for (final String path in <String>[barrel, ...parts]) {
       expect(File(path).existsSync(), isTrue, reason: '$path must exist');
     }
@@ -82,6 +83,16 @@ void main() {
     // 整族不可切断：orchestrator + segment + staging + metadata 同进 download part。
     expect(source, contains('_concatSegments('));
     expect(source, contains('_resolveStagingPaths('));
+  });
+
+  test('race part owns the concurrent-probe race + first-byte timeout', () {
+    final String source = read(race);
+    expect(source, contains('raceSelectFastestCandidate('));
+    expect(source, contains('String? selectRaceWinnerUrl('));
+    expect(source, contains('List<String> reorderCandidatesByRaceWinner('));
+    expect(source, contains('class UpdateProbeOutcome'));
+    expect(source, contains('class UpdateDownloadStatusController'));
+    expect(source, contains('_kFirstByteTimeout'));
   });
 
   test('release part owns the UpdateChecker facade + version logic', () {

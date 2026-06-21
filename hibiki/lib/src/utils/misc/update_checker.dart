@@ -6,6 +6,7 @@
 /// `package:hibiki/src/utils/misc/update_checker.dart` import 路径全部零变化）：
 ///   * [update_checker_net.dart]     —— URL 候选 / 多镜像回退 / 系统代理 / 网络失败分类（纯网络层）。
 ///   * [update_checker_download.dart] —— 下载引擎：多线程分片 / 续传 / 校验 / staging / 元数据（最大整族）。
+///   * [update_checker_race.dart]     —— 候选并发探针竞速选源 + 首字节超时（TODO-683，从下载 part 拆出避免越线）。
 ///   * [update_checker_release.dart]  —— [UpdateChecker] 门面 + release 检查 / 版本比较 / 通道匹配。
 ///   * [update_checker_ui.dart]       —— 对话框（[UpdateAvailableDialog] 等）+ 下载进度遮罩 + 字节/速度格式化。
 library;
@@ -27,5 +28,6 @@ import 'package:hibiki/utils.dart';
 
 part 'update_checker_net.dart';
 part 'update_checker_download.dart';
+part 'update_checker_race.dart';
 part 'update_checker_release.dart';
 part 'update_checker_ui.dart';

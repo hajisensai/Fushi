@@ -242,9 +242,20 @@ Future<File> _downloadUpdateAssetUncoalesced({
     );
   }
 
+  // 候选并发竞速选源（TODO-683，实现 + 门控见 race part orderedCandidatesAfterRace）。
+  final List<String> orderedCandidates = await orderedCandidatesAfterRace(
+    candidateUrls: candidateUrls,
+    asset: asset,
+    stagingPaths: stagingPaths,
+    connectionCount: connectionCount,
+    minSegmentBytes: minSegmentBytes,
+    metadata: metadata,
+    openUrl: openUrl,
+  );
+
   final List<UpdateDownloadAttemptFailure> failures =
       <UpdateDownloadAttemptFailure>[];
-  for (final String url in candidateUrls) {
+  for (final String url in orderedCandidates) {
     try {
       final _UpdateDownloadMetadata? currentMetadata =
           await _UpdateDownloadMetadata.read(stagingPaths.metadataFile);
@@ -286,12 +297,8 @@ Future<File> _downloadUpdateAssetUncoalesced({
     }
   }
 
-  // 全候选失败：抛出**最具诊断价值**的那个错误（TODO-666）。原实现抛
-  // `lastError`（列表里碰巧排最后的候选——通常是某个公共 gh 代理），用户因此看到的是
-  // 「Failed host lookup: 'ghproxy.homeboyc.cn'」这种死镜像 DNS 失败，误以为是某个镜像
-  // 的问题，而真相是「直连 GitHub + 所有镜像都不通，需开代理」。改用
-  // [selectRepresentativeDownloadFailure] 优先锚定**直连**（首候选 = asset.url 本身）的
-  // 失败，让报错指向真问题，且不再被列表末尾任意死镜像污染（删一个域名治标，这才治本）。
+  // 全候选失败：抛出**最具诊断价值**的那个错误——[selectRepresentativeDownloadFailure]
+  // 优先锚定直连失败（真问题=需代理），不被列表末尾死镜像 host-lookup 污染（详见其 doc）。
   final UpdateDownloadAttemptFailure? representative =
       selectRepresentativeDownloadFailure(failures, directUrl: asset.url);
   Error.throwWithStackTrace(
@@ -688,29 +695,19 @@ Future<void> _cleanupSegmentFiles(
   }
 }
 
-/// **多线程分片下载 orchestrator（TODO-596）**。只对**当前 [url]** 展开并发分片，
-/// 不重做源选择——整体多源回退仍由外层 [_downloadUpdateAssetUncoalesced] 的
-/// candidateUrls 循环负责（调用方拿到 null 时回退到单线程体；单线程体抛错时外层换源）。
+/// **多线程分片下载 orchestrator（TODO-596）**。只对**当前 [url]** 展开并发分片，不重做
+/// 源选择——整体多源回退仍由外层 [_downloadUpdateAssetUncoalesced] 的 candidateUrls 循环
+/// 负责（拿到 null 退单线程体；单线程体抛错时外层换源）。
 ///
-/// 流程：
-/// 1. **探针**：对 [url] 发 `Range: bytes=0-`（带 If-Range，若 [metadata] 有 etag/
-///    lastModified），读其 Content-Range 总大小与 ETag。
-///    - 返 200（源忽略 Range）/ 无总大小 / 切分后只剩单段（小文件、门控）→ 返回 null，
-///      由调用方退回单线程（不在这里硬塞特例分支）。
-/// 2. **切分**：[planDownloadSegments] 按 total + [connectionCount] + [minSegmentBytes]
-///    切成 N>1 个闭区间分片。
-/// 3. **并发**：每段独立请求 `Range: bytes=start-end` + 同一 `If-Range`（探针 ETag/
-///    lastModified），写各自 `partFile.<i>`。每段带 [_kPerAttemptTimeout] 整体超时
-///    （各段独立计时）+ [_kSegmentMaxAttempts] 有界指数退避重试。
-///    - **ETag 一致性**：任一段返回 200 而非 206（If-Range 不匹配 = 镜像共享出口 IP
-///      轮换到 ETag 不同的后端）→ 整体放弃分片，返回 null 退单线程，避免 concat 后
-///      sha256 失败（复核要求）。
-/// 4. **合并**：全段完成 → 按序 [RandomAccessFile] 流式 concat 进
-///    [stagingPaths.partFile]（不整文件进内存）→ 复用 [_isValidCompleteDownload]
-///    （size+sha256）→ [_promoteCompleteDownload] 原子 rename。
+/// 流程：① 探针 `Range: bytes=0-`（带 If-Range）读 Content-Range 总大小 + ETag；返 200 /
+/// 无总大小 / 切完只剩单段 → null 退单线程。② [planDownloadSegments] 按 total +
+/// [connectionCount] + [minSegmentBytes] 切 N>1 个闭区间。③ 各段独立 `Range: start-end`
+/// + 同一 If-Range 并发写 `partFile.<i>`，每段 [_kPerAttemptTimeout] 超时 +
+/// [_kSegmentMaxAttempts] 退避重试；任一段返 200（If-Range 不匹配=镜像换后端）→ 整体放弃
+/// 退单线程，避免 concat 后 sha256 失败。④ 全段完成 → 流式 concat 进 [stagingPaths.partFile]
+/// → [_isValidCompleteDownload]（size+sha256）→ [_promoteCompleteDownload] 原子 rename。
 ///
-/// 任一段重试耗尽仍失败、ETag 不一致、或门控不满足 → 返回 null（绝不 promote 半成品），
-/// 由调用方走单线程整体重下。
+/// 任一段重试耗尽、ETag 不一致、门控不满足 → null（绝不 promote 半成品），调用方退单线程。
 Future<File?> _downloadSegmented({
   required UpdateAsset asset,
   required String version,

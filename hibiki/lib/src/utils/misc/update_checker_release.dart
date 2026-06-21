@@ -456,7 +456,10 @@ class UpdateChecker {
     PlatformUpdater updater,
   ) async {
     final progress = ValueNotifier<double>(0);
-    final status = ValueNotifier<String>(t.update_downloading);
+    // 体感快修（TODO-683）：进下载前显「正在连接更新源…」，首个进度/诊断信号到达再翻
+    // 「正在下载更新…」。GFW 下坏候选累积超时期间不再让用户盯着「下载中 0%」误以为卡死。
+    final status = ValueNotifier<String>(t.update_connecting);
+    final statusController = UpdateDownloadStatusController(status);
     final diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(null);
     final overlayVisible = ValueNotifier<bool>(true);
     late final OverlayEntry overlay;
@@ -495,9 +498,15 @@ class UpdateChecker {
         openUrl: (Uri uri, Map<String, String> headers) =>
             _openHttpDownload(client!, uri, headers, version),
         onProgress: (double value) {
+          // 首个真实进度（>0 = 已有字节落盘）才翻「下载中」；onProgress(0) 是请求前的
+          // 初始占位，不能据它过早翻、否则 connecting 几乎不可见（失去体感意义）。
+          if (value > 0) statusController.onFirstByte();
           progress.value = value;
         },
         onDiagnostics: (UpdateDownloadDiagnostics value) {
+          // 诊断里 receivedBytes>0 同样表示已有字节到达，作为翻「下载中」的等价信号
+          // （某些路径 diagnostics 比 onProgress 先携带非零字节，如续传起点）。
+          if (value.receivedBytes > 0) statusController.onFirstByte();
           diagnostics.value = value;
         },
         onSourceFailure: (String url, Object error, StackTrace stack) {
