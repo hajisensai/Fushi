@@ -212,6 +212,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
   }
 
+  /// 当前排序维度下该书的度量值（字数 / 时长ms / 速度cph）。
+  /// 进度条填充用它，使填充维度始终与 [_bookSort] 一致（W1）。
+  double _sortMetric(_BookData b) {
+    switch (_bookSort) {
+      case _BookSort.chars:
+        return b.chars.toDouble();
+      case _BookSort.time:
+        return b.ms.toDouble();
+      case _BookSort.speed:
+        return b.cph;
+    }
+  }
+
   static String _dateKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -680,9 +693,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildBookTile(_BookData book) {
-    final maxChars =
-        _bookData.isEmpty ? 1 : _bookData.first.chars.clamp(1, 1 << 50);
-    final fraction = book.chars / maxChars;
+    // 进度条填充维度 = 当前排序维度（W1）：first 是当前排序下第一名（最大值）。
+    final double topMetric =
+        _bookData.isEmpty ? 0 : _sortMetric(_bookData.first);
+    final double fraction = bookProgressFraction(_sortMetric(book), topMetric);
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
 

@@ -177,4 +177,31 @@ void main() {
           detectAnomalies(<double>[0, 0, 0, 0]).every((bool b) => !b), isTrue);
     });
   });
+
+  group('bookProgressFraction', () {
+    test('fills proportionally by the active sort metric', () {
+      // 排序维度可为字数/时长/速度；纯函数只看传入的 metric 与 topMetric。
+      expect(bookProgressFraction(50, 100), closeTo(0.5, 1e-9));
+      expect(bookProgressFraction(100, 100), closeTo(1.0, 1e-9));
+      expect(bookProgressFraction(0, 100), 0);
+    });
+
+    test('time metric (ms) and speed metric (cph) use same ratio rule', () {
+      // 时长维度：30 分钟 / 60 分钟。
+      expect(bookProgressFraction(1800000, 3600000), closeTo(0.5, 1e-9));
+      // 速度维度：150 cph / 300 cph。
+      expect(bookProgressFraction(150, 300), closeTo(0.5, 1e-9));
+    });
+
+    test('zero topMetric yields 0 (no div-by-zero when sort metric is 0)', () {
+      // 例如按速度排序但第一名也无有效时长 -> topMetric 0。
+      expect(bookProgressFraction(0, 0), 0);
+      expect(bookProgressFraction(5, 0), 0);
+    });
+
+    test('clamps to [0, 1]', () {
+      expect(bookProgressFraction(150, 100), 1);
+      expect(bookProgressFraction(-10, 100), 0);
+    });
+  });
 }
