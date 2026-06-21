@@ -1,13 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 
-void main() {
-  final File reader =
-      File('lib/src/pages/implementations/reader_hibiki_page.dart');
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
+void main() {
   test('top reading progress follows the reader theme text color', () {
-    final String src = reader.readAsStringSync();
+    final String src = readReaderPageSource();
     final String topProgress = _functionSource(
       src,
       '  Widget _buildTopProgressBar()',

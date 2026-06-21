@@ -1,5 +1,6 @@
-import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 // 守卫：阅读器两种底栏（有声书播放条 / 设置条）必须绑定独立的
 // reverseReaderBottomBar，而不是首页导航栏的 reverseNavigationBar。
@@ -7,9 +8,7 @@ void main() {
   test(
       'reader bottom bars bind reverseReaderBottomBar, not reverseNavigationBar',
       () {
-    final String src = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String src = readReaderPageSource();
 
     // 有声书播放条 reversed: 与设置条 reversed 局部变量都应来自新键。
     expect(src.contains('appModel.reverseReaderBottomBar'), isTrue,

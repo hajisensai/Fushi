@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 /// 阅读器切章/spread 冷开时底栏(bottom chrome)闪烁/延迟出现的回归守卫（源码扫描，
 /// 沿用 reader_paginate_lyrics_guard_static_test.dart 的 `_functionSource` 范式）。
@@ -15,9 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 任一门控退回，对应断言红。
 void main() {
-  final String src = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String src = readReaderPageSource();
 
   test('bottom chrome visibility is gated on set-once _hasEverLoaded', () {
     final String chrome = _functionSource(

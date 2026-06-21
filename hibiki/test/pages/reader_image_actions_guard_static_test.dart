@@ -2,13 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
   test('reader JavaScript routes image context menu and long press to Dart',
       () {
-    final String source =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String source = readReaderPageSource();
     final String js = _functionSource(
       source,
       'function _hoshiBlockImageUrl(target)',
@@ -27,8 +28,7 @@ void main() {
   });
 
   test('reader resolves hoshi.local image URLs to files before actions', () {
-    final String source =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String source = readReaderPageSource();
 
     expect(source, contains('File? _readerImageFileForUrl(String imgUrl)'));
     final String helper = _functionSource(
@@ -52,8 +52,7 @@ void main() {
   });
 
   test('reader exposes desktop copy and mobile share image handlers', () {
-    final String source =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String source = readReaderPageSource();
 
     expect(source, contains("handlerName: 'onImageContextMenu'"));
     expect(source, contains("handlerName: 'onImageLongPress'"));
@@ -69,8 +68,7 @@ void main() {
   });
 
   test('reader image context menu scales with reader chrome only', () {
-    final String source =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String source = readReaderPageSource();
 
     expect(source, contains('double get _readerImageMenuScale'));
     final String menu = _functionSource(
@@ -122,8 +120,7 @@ void main() {
 
   test('expanded reader image viewer exposes Windows right-click copy menu',
       () {
-    final String source =
-        read('lib/src/pages/implementations/reader_hibiki_page.dart');
+    final String source = readReaderPageSource();
     final String viewer = _functionSource(
       source,
       'void _openImageViewer(String imgUrl)',

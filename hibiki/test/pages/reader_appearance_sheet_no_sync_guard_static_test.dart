@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
   // BUG-021: 阅读器底栏「调整」面板打开慢半拍。
@@ -18,9 +18,7 @@ void main() {
   // ReaderHibikiSource.instance.ttu* 实时读写同一对象，无需任何同步）。
   // 本守卫防止它们被重新引入。reader/WebView 类无法 widget 测真实 InAppWebView，
   // 源码扫描守卫为最强可落地层。
-  final String source = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String source = readReaderPageSource();
   final String stripped = _stripLineComments(source);
 
   test(

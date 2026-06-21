@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../pages/reader_hibiki_page_source_corpus.dart';
+
 void main() {
   test('reader quick settings owns the in-book settings hierarchy', () {
     final String source =
@@ -229,9 +231,7 @@ void main() {
   });
 
   test('reader page opens the reader quick settings sheet', () {
-    final String readerSource =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String readerSource = readReaderPageSource();
     final String playBarSource =
         File('lib/src/media/audiobook/audiobook_play_bar.dart')
             .readAsStringSync();
@@ -263,17 +263,13 @@ void main() {
     expect(progressSource, contains('hasChapter'));
 
     // 阅读器页面把当前章节名喂给 sheet。
-    final String readerSource =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String readerSource = readReaderPageSource();
     expect(readerSource, contains('chapterLabel: _currentChapterLabel()'));
   });
 
   test('reader page uses shared MD3 dialog frame for desktop quick settings',
       () {
-    final String readerSource =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart')
-            .readAsStringSync();
+    final String readerSource = readReaderPageSource();
 
     final int desktopBranch = readerSource.indexOf('if (isDesktopPlatform)');
     final int mobileBranch =

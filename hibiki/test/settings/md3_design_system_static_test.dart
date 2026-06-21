@@ -658,6 +658,14 @@ void main() {
               'user content passed to LyricsModeHtml / the platform overlay '
               'channel, not page chrome — same rationale as the parent '
               'reader_hibiki_page.dart allowlist (extracted verbatim).',
+      // TODO-589 batch7: reader chrome 域(底栏/设置 sheet/进度条/主题/收藏句/图片查看)
+      // 拆到 reader_hibiki/chrome.part.dart；同一份「reader content / 阅读器 chrome」
+      // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
+      'lib/src/pages/implementations/reader_hibiki/chrome.part.dart':
+          'Top reading-progress text size (_infoFontSize) and the Windows '
+              'image context-menu font size are reader content / chrome, '
+              'same rationale as the parent reader_hibiki_page.dart allowlist '
+              '(extracted verbatim).',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'Reader quick settings and audiobook chrome migrate under Task 8.',
       'lib/src/media/audiobook/audiobook_bridge.dart':

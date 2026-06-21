@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
   // Regression: in lyrics mode the WebView holds LyricsModeHtml, which has no
@@ -11,9 +11,7 @@ void main() {
   // must bail on _lyricsMode before touching the paginator — the single choke
   // point the swipe handlers (onSwipe/onBoundarySwipe) already guard.
   test('_paginate bails in lyrics mode before invoking the paginator', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_page.dart',
-    ).readAsStringSync();
+    final String source = readReaderPageSource();
 
     final String paginate = _functionSource(
       source,

@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'reader_hibiki_page_source_corpus.dart';
 
 void main() {
   // BUG-026: 快速连点底栏「调整」会弹出两个面板。
@@ -14,9 +14,7 @@ void main() {
   // 在第一个 await 之前（否则窗口仍在），并用 try/finally 在面板关闭后复位（异常也
   // 复位，避免标志卡死导致面板再也打不开）。本守卫锁定该结构。reader 页含真实
   // InAppWebView 平台视图无法 widget 挂载，源码扫描守卫为最强可落地层。
-  final String source = File(
-    'lib/src/pages/implementations/reader_hibiki_page.dart',
-  ).readAsStringSync();
+  final String source = readReaderPageSource();
   final String stripped = _stripLineComments(source);
   final String sheet = _functionSource(
     stripped,

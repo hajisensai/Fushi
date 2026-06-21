@@ -17,6 +17,7 @@ const List<String> _readerHibikiPageFiles = <String>[
   'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
   'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
   'lib/src/pages/implementations/reader_hibiki/caret.part.dart',
+  'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
 ];
 
 /// 读「阅读器页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。

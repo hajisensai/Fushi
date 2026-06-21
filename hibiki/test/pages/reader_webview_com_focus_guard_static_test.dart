@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'reader_hibiki_page_source_corpus.dart';
+
 /// Source-level guards for two reader-open crashes that can only be reproduced
 /// with a live WebView2 native layer / real focus tree, so we lock the contracts
 /// at the source level (strongest feasible layer — see docs/BUGS.md).
@@ -57,11 +59,10 @@ void main() {
   });
 
   test('BUG-020 · every chrome-scope nextFocus() is context-guarded', () {
-    final File file =
-        File('lib/src/pages/implementations/reader_hibiki_page.dart');
-    expect(file.existsSync(), isTrue);
-
-    final String code = _stripDartLineComments(file.readAsStringSync());
+    // The chrome-scope traversal sites live across the reader shell + its
+    // extracted part files (TODO-589), so read the merged corpus to keep
+    // covering every `_chromeFocusScope.nextFocus()` site, not just the shell.
+    final String code = _stripDartLineComments(readReaderPageSource());
 
     final int nextFocusCount =
         _countOccurrences(code, '_chromeFocusScope.nextFocus()');

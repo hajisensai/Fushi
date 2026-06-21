@@ -1,5 +1,6 @@
-import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../pages/reader_hibiki_page_source_corpus.dart';
 
 /// TODO-131 守卫：锁定「打开书籍白屏优化」的开书路径接线，防回归。
 /// reader_hibiki_page.dart 太重（WebView + DB + profile providers）不便在 host
@@ -9,8 +10,7 @@ void main() {
   late String src;
 
   setUpAll(() {
-    src = File('lib/src/pages/implementations/reader_hibiki_page.dart')
-        .readAsStringSync();
+    src = readReaderPageSource();
   });
 
   test('_initBook 并行起跑 profile/settings 链与书本定位/解析链', () {
@@ -105,14 +105,15 @@ void main() {
     final int settingsIdx = src.indexOf('Future<void> _showAppearanceSheet()');
     final int progressIdx = src.indexOf('Widget _buildTopProgressBar()');
     final int toggleIdx = src.indexOf('Future<void> _toggleFavoriteSentence()');
-    final int popupIdx = src.indexOf('Widget? buildPopupAudioControls()');
     expect(settingsIdx, greaterThan(0));
     expect(progressIdx, greaterThan(settingsIdx));
     expect(toggleIdx, greaterThan(progressIdx));
-    expect(popupIdx, greaterThan(toggleIdx));
-
+    // TODO-589 batch7: these methods moved into reader_hibiki/chrome.part.dart
+    // (last in the merged corpus); `buildPopupAudioControls` is an @override that
+    // stays in the shell (earlier in the corpus), so it is no longer a valid end
+    // marker — `_toggleFavoriteSentence` is the final member, slice to EOF.
     final String settingsBody = src.substring(settingsIdx, progressIdx);
-    final String toggleBody = src.substring(toggleIdx, popupIdx);
+    final String toggleBody = src.substring(toggleIdx);
     expect(
         settingsBody,
         contains(
