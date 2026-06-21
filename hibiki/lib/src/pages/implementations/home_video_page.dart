@@ -39,11 +39,6 @@ import 'package:hibiki/utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// 远端互联视频 section 在视频库本体里最多占据的高度比例（剩余留给本地网格的
-/// Expanded）。section 内部网格自带垂直滚动消化超出部分，保证远端视频再多也不
-/// 撑爆 Column、本地网格始终拿到 >0 高度（TODO-593 复核回归守卫）。
-const double _kRemoteSectionMaxHeightFraction = 0.45;
-
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
@@ -878,41 +873,48 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           future: _remoteFuture,
           builder: (BuildContext context,
               AsyncSnapshot<_RemoteVideoState?> remoteSnap) {
-            final Widget local = all.isEmpty
-                ? _buildEmpty()
-                : books.isEmpty
-                    ? _buildFilteredEmpty()
-                    : _buildGrid(books);
-            final Widget remote =
+            // TODO-654：远端（互通）视频区与本地视频区改为「同一个 CustomScrollView
+            // 一起滚动」，对齐书架（reader_hibiki_history_page）的远端书籍区范式：
+            // 远端 section 完全撑开（shrinkWrap，不限高、不内滚），随主滚动自然延展
+            // 排在本地视频上方；本地视频区是真正的 SliverGrid。此前用
+            // LayoutBuilder + ConstrainedBox 把远端限到可用高度的 0.45 内滚（既挤本地
+            // 又把远端关进一个小内滚条），手机上观感差——用户要「远端区完全撑开、和
+            // 书籍一样」。整页只有一个垂直滚动容器，远端再多也只是把页面拉长由主滚动
+            // 消化，不会撑爆 Column（CustomScrollView 的 sliver 本就懒加载、无界高合法）。
+            final Widget remoteSection =
                 _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
-            if (remote is SizedBox && remote.height == 0) return local;
-            // 远端 section 在非 Expanded 槽位，且内部网格高度随视频数量增长。
-            // 用 LayoutBuilder 拿到本体可用高度，给远端套 maxHeight 上限（最多占
-            // 可用高度的 [_kRemoteSectionMaxHeightFraction]），超出由远端网格自身
-            // 的垂直滚动消化（见 [_buildRemoteVideoSection] 的 GridView，不再
-            // shrinkWrap）。这样远端视频再多也不会撑爆 Column 造成 RenderFlex 溢出，
-            // 下方 Expanded(本地网格) 始终拿到 >0 的剩余高度（TODO-593 复核）。
-            return LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final double remoteMaxHeight = constraints.maxHeight.isFinite &&
-                        constraints.maxHeight > 0
-                    ? constraints.maxHeight * _kRemoteSectionMaxHeightFraction
-                    : double.infinity;
-                return Column(
-                  children: <Widget>[
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: remoteMaxHeight),
-                      child: remote,
-                    ),
-                    Expanded(child: local),
-                  ],
-                );
-              },
+            final bool hasRemoteSection =
+                !(remoteSection is SizedBox && remoteSection.height == 0);
+            return CustomScrollView(
+              slivers: <Widget>[
+                if (hasRemoteSection) SliverToBoxAdapter(child: remoteSection),
+                ..._buildLocalVideoSlivers(all, books),
+              ],
             );
           },
         );
       },
     );
+  }
+
+  /// 本地视频区的 sliver 列表：有视频时是 [SliverGrid]（响应式网格，随主滚动），
+  /// 空库 / 筛选无结果时是占满剩余空间并垂直居中的提示（[SliverFillRemaining]，
+  /// 远端 section 在其上方时仍能撑开整页）。
+  List<Widget> _buildLocalVideoSlivers(
+    List<VideoBookRow> all,
+    List<VideoBookRow> books,
+  ) {
+    if (all.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
+      ];
+    }
+    if (books.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
+      ];
+    }
+    return <Widget>[_buildLocalVideoGridSliver(books)];
   }
 
   Widget _buildRemoteVideoSection(
@@ -980,26 +982,27 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             )
           else if (videos.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),
-            // 远端视频与本地视频用同一套响应式网格（[_buildGrid] 的
+            // 远端视频与本地视频用同一套响应式网格（与 [_buildLocalVideoGridSliver] 同的
             // SliverGridDelegateWithMaxCrossAxisExtent），手机窄屏会自动减成
             // 1~2 列网格，而不再是固定高 200 的横向单行滚动条（TODO-593）。
-            // 远端 section 由 [_buildVideoLibraryBody] 用 ConstrainedBox 限高（最多
-            // 占本体可用高度的一部分），所以这里把网格放进 Expanded 占满该有界高度并
-            // 自带垂直滚动（不再 shrinkWrap）：远端视频再多也只在 section 内滚动，不会
-            // 无界撑高 Column 把本地网格挤没（TODO-593 复核回归）。
-            Expanded(
-              child: GridView.builder(
-                padding: EdgeInsets.zero,
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 280,
-                  mainAxisExtent: 200,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                itemCount: videos.length,
-                itemBuilder: (BuildContext context, int index) =>
-                    _buildRemoteVideoCard(videos[index]),
+            // TODO-654：完全撑开——shrinkWrap + NeverScrollable，网格高度 = 全部
+            // 远端卡片的实际高度，整段交给外层 CustomScrollView 一起滚动（不再用
+            // Expanded 占有界高度 + 内部独立垂直滚动）。这样远端区「和书籍一样」自然
+            // 铺开、随页面滚动，再多也只是把页面拉长，由主滚动消化（对齐书架的
+            // _buildRemoteBookSection 范式）。
+            GridView.builder(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 280,
+                mainAxisExtent: 200,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
               ),
+              itemCount: videos.length,
+              itemBuilder: (BuildContext context, int index) =>
+                  _buildRemoteVideoCard(videos[index]),
             ),
           ],
         ],
@@ -1221,18 +1224,24 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  Widget _buildGrid(List<VideoBookRow> books) {
+  /// 本地视频网格作为 [SliverGrid]（TODO-654）：随主 [CustomScrollView] 一起滚动，
+  /// 排在远端 section 下方。此前是独立的 GridView.builder（自带滚动），与远端区两
+  /// 个滚动容器并存；现在合并为单一垂直滚动，整页观感与书架一致。网格 delegate
+  /// 不变（与远端区同的 SliverGridDelegateWithMaxCrossAxisExtent）。
+  Widget _buildLocalVideoGridSliver(List<VideoBookRow> books) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return GridView.builder(
+    return SliverPadding(
       padding: EdgeInsets.all(tokens.spacing.card),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 280,
-        mainAxisExtent: 200,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+      sliver: SliverGrid.builder(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 280,
+          mainAxisExtent: 200,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: books.length,
+        itemBuilder: (BuildContext context, int i) => _buildCard(books[i]),
       ),
-      itemCount: books.length,
-      itemBuilder: (BuildContext context, int i) => _buildCard(books[i]),
     );
   }
 
