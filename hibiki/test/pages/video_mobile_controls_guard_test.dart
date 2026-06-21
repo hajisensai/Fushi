@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
+
+import 'video_hibiki_page_source_corpus.dart';
 
 /// BUG-134/147 follow-up source guard（随 TODO-274 + BUG-248B + BUG-257 刷新）。
 ///
@@ -12,9 +12,7 @@ import 'package:hibiki/src/media/video/video_control_customization.dart';
 ///   [_centeredBottomControlBar]（BUG-257：底栏从两套主题各写一遍合并为单一 helper，
 ///   按 `desktop:` 参数择按钮组件），故进度/播放/seek 各图标只出现一次。
 void main() {
-  final String src =
-      File('lib/src/pages/implementations/video_hibiki_page.dart')
-          .readAsStringSync();
+  final String src = readVideoHibikiSource();
 
   String region(String startSig, String endSig) {
     final int start = src.indexOf(startSig);

@@ -17,6 +17,7 @@ const List<String> _videoHibikiPageFiles = <String>[
   'lib/src/pages/implementations/video_hibiki/controls_visibility.part.dart',
   'lib/src/pages/implementations/video_hibiki/episode.part.dart',
   'lib/src/pages/implementations/video_hibiki/subtitle.part.dart',
+  'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart',
 ];
 
 /// 读「视频页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。

@@ -619,6 +619,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     _rebuild(() => _currentSubtitleSource = null);
   }
 
+  /// [_videoWithSubtitlePanel] 的右侧面板列。用 [AnimatedSize] 让列宽在 0 ↔ panelWidth
+  /// 之间平滑伸缩（画面被挤窄/还原也跟着动），可见时渲染 [VideoSubtitleJumpPanel]，隐藏
+  /// 时宽度收成 0（[ClipRect] 裁掉收缩中溢出的内容，避免动画期文字越界）。[OverflowBox]
+  /// 把面板内容固定在 panelWidth、不随收缩中的列宽被挤压，故伸缩动画里文字布局稳定。
   Widget _subtitleJumpSidePanel(
     VideoPlayerController controller,
     bool visible,

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'video_hibiki_page_source_corpus.dart';
+
 /// 源码守卫：桌面音量 / 倍速改为固定锚点轻浮层 + 顶栏设置入口去重（TODO-438）。
 ///
 /// 子A：桌面 [_buildVolumeButton] 曾用 media_kit 的 [MaterialDesktopVolumeButton]，
@@ -19,19 +21,14 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// media_kit controls 跑不了 headless，故锁源码结构不变量。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
   final File overlays = File(
     'lib/src/media/video/video_volume_overlays.dart',
   );
 
-  late String src;
+  final String src = readVideoHibikiSource();
   late String overlaySrc;
   setUpAll(() {
-    expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
     expect(overlays.existsSync(), isTrue, reason: '音量可见层 helper 应存在');
-    src = page.readAsStringSync();
     overlaySrc = overlays.readAsStringSync();
   });
 
@@ -256,10 +253,7 @@ void main() {
 }
 
 String methodBody(String startSig) {
-  final File page = File(
-    'lib/src/pages/implementations/video_hibiki_page.dart',
-  );
-  final String src = page.readAsStringSync();
+  final String src = readVideoHibikiSource();
   final int start = src.indexOf(startSig);
   expect(start, greaterThanOrEqualTo(0), reason: '需有 $startSig');
   final List<int> ends = <int>[

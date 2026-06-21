@@ -749,6 +749,14 @@ void main() {
               'source side panel rows, caption font scales with appUiScale) is '
               'the same reviewed media-page exception class as the parent '
               'video player page allowlist entry.',
+      'lib/src/pages/implementations/video_hibiki/controls_popover.part.dart':
+          'Volume / playback-speed compact control popover chrome '
+              '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
+              'label, VideoVolumePopoverCard) extracted verbatim from '
+              'video_hibiki_page.dart (TODO-590 batch6); the popover frame + '
+              'speed-label typography scales with appUiScale and is the same '
+              'reviewed media-page exception class as the parent video player '
+              'page allowlist entry.',
       'lib/src/pages/implementations/home_video_page.dart':
           'Home video grid renders media content badges/download progress; '
               'long-press management actions use the shared media dialog frame, '
