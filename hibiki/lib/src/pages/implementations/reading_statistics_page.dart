@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
+import 'package:hibiki/src/pages/implementations/stat_trends.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+
+/// 「按书」列表的排序键：字数 / 时长 / 阅读速度（cph）。
+enum _BookSort { chars, time, speed }
 
 class ReadingStatisticsPage extends BasePage {
   const ReadingStatisticsPage({super.key});
@@ -43,6 +47,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   // 按书聚合
   List<_BookData> _bookData = [];
+
+  // 总览：总书数 / 活跃天数 / 日期范围（min/max dateKey，可空表示无数据）。
+  int _totalBooks = 0;
+  int _activeDays = 0;
+  String? _firstDateKey;
+  String? _lastDateKey;
+
+  // 速度趋势折线图的聚合粒度（日 / 周 / 月）。
+  StatTrendGranularity _trendGranularity = StatTrendGranularity.daily;
+
+  // 「按书」列表的排序键。
+  _BookSort _bookSort = _BookSort.chars;
 
   @override
   void initState() {
@@ -164,8 +180,36 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _dailyData.add(dailyMap[key] ?? StatDayData(dateKey: key));
     }
 
-    _bookData = bookMap.values.toList()
-      ..sort((a, b) => b.chars.compareTo(a.chars));
+    // 总览：总书数 = distinct title；活跃天数 = distinct dateKey；
+    // 日期范围 = min/max dateKey（dateKey 零填充可字典序比较）。
+    _totalBooks = bookMap.length;
+    final Set<String> activeDayKeys =
+        _allStats.map((ReadingStatisticRow s) => s.dateKey).toSet();
+    _activeDays = activeDayKeys.length;
+    if (activeDayKeys.isEmpty) {
+      _firstDateKey = null;
+      _lastDateKey = null;
+    } else {
+      final List<String> sortedKeys = activeDayKeys.toList()..sort();
+      _firstDateKey = sortedKeys.first;
+      _lastDateKey = sortedKeys.last;
+    }
+
+    _bookData = bookMap.values.toList();
+    _sortBookData();
+  }
+
+  /// 按当前排序键给 [_bookData] 重排（不重新查 DB）。
+  void _sortBookData() {
+    switch (_bookSort) {
+      case _BookSort.chars:
+        _bookData
+            .sort((_BookData a, _BookData b) => b.chars.compareTo(a.chars));
+      case _BookSort.time:
+        _bookData.sort((_BookData a, _BookData b) => b.ms.compareTo(a.ms));
+      case _BookSort.speed:
+        _bookData.sort((_BookData a, _BookData b) => b.cph.compareTo(a.cph));
+    }
   }
 
   static String _dateKey(DateTime d) =>
@@ -184,6 +228,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
     }
     return t.stat_format_chars(n: chars);
+  }
+
+  /// 阅读速度展示：四舍五入到整数字/小时，套 i18n 单位。
+  static String _formatCph(double cph) =>
+      t.stat_speed_cph(n: cph.round().toString());
+
+  /// 日期范围展示：`首日 ~ 末日`；无数据回退占位符。
+  String _formatDateRange() {
+    final String? first = _firstDateKey;
+    final String? last = _lastDateKey;
+    if (first == null || last == null) return '-';
+    if (first == last) return first;
+    return '$first ~ $last';
   }
 
   @override
@@ -219,8 +276,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
+        SliverToBoxAdapter(child: _buildOverviewPanel()),
         SliverToBoxAdapter(child: _buildHourlyChart()),
         SliverToBoxAdapter(child: _buildDailyChart()),
+        SliverToBoxAdapter(child: _buildSpeedTrendChart()),
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
@@ -229,8 +288,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               tokens.spacing.card,
               tokens.spacing.gap,
             ),
-            child: Text(t.stat_by_book,
-                style: Theme.of(context).textTheme.titleMedium),
+            child: _buildByBookHeader(),
           ),
         ),
         SliverList(
@@ -396,6 +454,231 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
+  /// overview card: total books / active days / avg speed (cph) / date range.
+  Widget _buildOverviewPanel() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double avgCph = computeCph(_allChars, _allMs);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+      child: HibikiCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(t.stat_overview,
+                style: Theme.of(context).textTheme.titleMedium),
+            SizedBox(height: tokens.spacing.gap),
+            Row(
+              children: <Widget>[
+                Expanded(
+                    child: _overviewMetric(
+                        t.stat_total_books, _totalBooks.toString())),
+                Expanded(
+                    child: _overviewMetric(
+                        t.stat_active_days, _activeDays.toString())),
+                Expanded(
+                    child: _overviewMetric(
+                        t.stat_reading_speed, _formatCph(avgCph))),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            _overviewMetric(t.stat_date_range, _formatDateRange()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _overviewMetric(String label, String value) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                )),
+        SizedBox(height: tokens.spacing.gap / 2),
+        Text(value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                )),
+      ],
+    );
+  }
+
+  Widget _buildSpeedTrendChart() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+
+    final List<StatTrendPoint> points =
+        aggregateTrend(_dailyData, _trendGranularity);
+    final List<double> cphValues =
+        points.map((StatTrendPoint p) => p.cph).toList();
+    final int window = _trendGranularity == StatTrendGranularity.daily ? 7 : 3;
+    final List<double> avgValues = movingAverage(cphValues, window);
+    final List<bool> anomalies = detectAnomalies(cphValues);
+    final List<String> xLabels =
+        points.map((StatTrendPoint p) => p.label).toList();
+    final int labelEvery =
+        _trendGranularity == StatTrendGranularity.daily ? 5 : 1;
+
+    final TextStyle labelStyle = tokens.type.metadata.copyWith(
+      color: colorScheme.onSurfaceVariant,
+    );
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
+          Text(t.stat_speed_trend,
+              style: Theme.of(context).textTheme.titleMedium),
+          SizedBox(height: tokens.spacing.gap),
+          _trendGranularityChips(),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+          SizedBox(
+            height: 180,
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: StatLineChartPainter(
+                series: <StatLineSeries>[
+                  StatLineSeries(
+                    values: cphValues,
+                    color: colorScheme.primary,
+                  ),
+                  StatLineSeries(
+                    values: avgValues,
+                    color: colorScheme.tertiary,
+                    strokeWidth: 1.5,
+                    dashed: true,
+                  ),
+                ],
+                xLabels: xLabels,
+                anomalies: anomalies,
+                anomalyColor: colorScheme.error,
+                labelColor: colorScheme.onSurfaceVariant,
+                labelStyle: labelStyle,
+                labelFormatter: _cphAxisLabel,
+                labelEvery: labelEvery,
+              ),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          _trendLegend(),
+        ],
+      ),
+    );
+  }
+
+  String _cphAxisLabel(double v) => v.round().toString();
+
+  Widget _trendGranularityChips() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Wrap(
+      spacing: tokens.spacing.gap,
+      children: <Widget>[
+        HibikiSelectableChip(
+          label: t.stat_trend_daily,
+          selected: _trendGranularity == StatTrendGranularity.daily,
+          onSelected: (_) =>
+              setState(() => _trendGranularity = StatTrendGranularity.daily),
+        ),
+        HibikiSelectableChip(
+          label: t.stat_trend_weekly,
+          selected: _trendGranularity == StatTrendGranularity.weekly,
+          onSelected: (_) =>
+              setState(() => _trendGranularity = StatTrendGranularity.weekly),
+        ),
+        HibikiSelectableChip(
+          label: t.stat_trend_monthly,
+          selected: _trendGranularity == StatTrendGranularity.monthly,
+          onSelected: (_) =>
+              setState(() => _trendGranularity = StatTrendGranularity.monthly),
+        ),
+      ],
+    );
+  }
+
+  Widget _trendLegend() {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final TextStyle? style = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        );
+    return Wrap(
+      spacing: tokens.spacing.card,
+      runSpacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        _legendItem(colorScheme.primary, t.stat_reading_speed, style),
+        _legendItem(colorScheme.tertiary, t.stat_speed_avg, style),
+        _legendItem(colorScheme.error, t.stat_speed_anomaly, style),
+      ],
+    );
+  }
+
+  Widget _legendItem(Color color, String label, TextStyle? style) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: tokens.radii.chipRadius,
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap / 2),
+        Text(label, style: style),
+      ],
+    );
+  }
+
+  Widget _buildByBookHeader() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(t.stat_by_book, style: Theme.of(context).textTheme.titleMedium),
+        SizedBox(height: tokens.spacing.gap),
+        Wrap(
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            HibikiSelectableChip(
+              label: t.stat_sort_by_chars,
+              selected: _bookSort == _BookSort.chars,
+              onSelected: (_) => _changeBookSort(_BookSort.chars),
+            ),
+            HibikiSelectableChip(
+              label: t.stat_sort_by_time,
+              selected: _bookSort == _BookSort.time,
+              onSelected: (_) => _changeBookSort(_BookSort.time),
+            ),
+            HibikiSelectableChip(
+              label: t.stat_sort_by_speed,
+              selected: _bookSort == _BookSort.speed,
+              onSelected: (_) => _changeBookSort(_BookSort.speed),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _changeBookSort(_BookSort sort) {
+    if (_bookSort == sort) return;
+    setState(() {
+      _bookSort = sort;
+      _sortBookData();
+    });
+  }
+
   Widget _buildBookTile(_BookData book) {
     final maxChars =
         _bookData.isEmpty ? 1 : _bookData.first.chars.clamp(1, 1 << 50);
@@ -452,4 +735,7 @@ class _BookData {
   final String title;
   int chars = 0;
   int ms = 0;
+
+  /// 该书阅读速度（字/小时）。复用统一口径的 [computeCph]。
+  double get cph => computeCph(chars, ms);
 }

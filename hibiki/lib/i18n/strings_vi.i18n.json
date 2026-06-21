@@ -1759,6 +1759,20 @@
   "video_auto_play_next_countdown": "Next episode in ${seconds}s",
   "video_episode_list_empty": "No episodes",
   "video_subtitle_delay_osd": "Subtitle sync: $ms ms",
-  "collection_mined": "Mined",
-  "collection_mined_clear_confirm": "Clear all mined-sentence history?"
+  "stat_reading_speed": "Reading Speed",
+  "stat_speed_cph": "$n chars/hr",
+  "stat_trend": "Trend",
+  "stat_trend_daily": "Daily",
+  "stat_trend_weekly": "Weekly",
+  "stat_trend_monthly": "Monthly",
+  "stat_speed_trend": "Reading Speed Trend",
+  "stat_speed_avg": "Moving Average",
+  "stat_speed_anomaly": "Anomaly",
+  "stat_total_books": "Books",
+  "stat_active_days": "Active Days",
+  "stat_date_range": "Date Range",
+  "stat_overview": "Overview",
+  "stat_sort_by_speed": "By Speed",
+  "stat_sort_by_time": "By Time",
+  "stat_sort_by_chars": "By Characters"
 }

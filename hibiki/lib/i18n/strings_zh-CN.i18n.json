@@ -1759,6 +1759,20 @@
   "video_auto_play_next_cancel": "取消",
   "video_episode_list_empty": "无剧集",
   "video_subtitle_delay_osd": "字幕同步：$ms ms",
-  "collection_mined": "制卡句",
-  "collection_mined_clear_confirm": "清空全部制卡历史？"
+  "stat_reading_speed": "阅读速度",
+  "stat_speed_cph": "$n 字/时",
+  "stat_trend": "趋势",
+  "stat_trend_daily": "日",
+  "stat_trend_weekly": "周",
+  "stat_trend_monthly": "月",
+  "stat_speed_trend": "阅读速度趋势",
+  "stat_speed_avg": "移动平均",
+  "stat_speed_anomaly": "异常日",
+  "stat_total_books": "书籍数",
+  "stat_active_days": "活跃天数",
+  "stat_date_range": "日期范围",
+  "stat_overview": "总览",
+  "stat_sort_by_speed": "按速度",
+  "stat_sort_by_time": "按时长",
+  "stat_sort_by_chars": "按字数"
 }
