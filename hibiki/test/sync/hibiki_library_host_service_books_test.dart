@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
@@ -146,6 +148,22 @@ void main() {
       final RemoteBookInfo info = RemoteBookInfo.fromJson(<String, Object?>{});
       expect(info.title, '');
       expect(info.hasContent, isFalse);
+      expect(info.hasAudiobook, isFalse);
+    });
+
+    test('hasAudiobook 经 JSON round-trip 透传（TODO-655a）', () {
+      const RemoteBookInfo info = RemoteBookInfo(
+        title: '夏目漱石',
+        hasContent: true,
+        hasAudiobook: true,
+      );
+      final RemoteBookInfo decoded = RemoteBookInfo.fromJson(info.toJson());
+      expect(decoded.hasAudiobook, isTrue);
+
+      const RemoteBookInfo plain =
+          RemoteBookInfo(title: 'NoAudio', hasContent: true);
+      expect(plain.toJson()['hasAudiobook'], isNot(true));
+      expect(RemoteBookInfo.fromJson(plain.toJson()).hasAudiobook, isFalse);
     });
   });
 
@@ -179,6 +197,46 @@ void main() {
       expect(list, hasLength(1));
       expect(list.first.title, 'MyBook');
       expect(list.first.hasContent, isTrue);
+    });
+
+    test('listBooks 对有有声书的书填 hasAudiobook==true，无的填 false（TODO-655a）',
+        () async {
+      final String audioExtract = p.join(tmp.path, 'AudioBook');
+      final String audioKey = await _insertBookWithExtractDir(
+        db: db,
+        title: 'AudioBook',
+        extractDir: audioExtract,
+      );
+      final String plainExtract = p.join(tmp.path, 'PlainBook');
+      await _insertBookWithExtractDir(
+        db: db,
+        title: 'PlainBook',
+        extractDir: plainExtract,
+      );
+      // 给 AudioBook 这本书注册一条 Audiobooks 行（与本地书卡 hasAudiobook 同源：
+      // bookKey 出现在 getAllAudiobooks）。
+      final Directory audioDir = Directory(p.join(tmp.path, 'audio'))
+        ..createSync(recursive: true);
+      final File track = File(p.join(audioDir.path, 'track.m4b'))
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final File align = File(p.join(audioDir.path, 'align.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
+      await db.upsertAudiobook(AudiobooksCompanion.insert(
+        bookKey: audioKey,
+        audioRoot: Value(audioDir.path),
+        audioPathsJson: Value(jsonEncode(<String>[track.path])),
+        alignmentFormat: 'srt',
+        alignmentPath: align.path,
+      ));
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+      final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
+        for (final RemoteBookInfo b in list) b.title: b,
+      };
+
+      expect(byTitle['AudioBook']!.hasAudiobook, isTrue);
+      expect(byTitle['PlainBook']!.hasAudiobook, isFalse);
     });
 
     test('#4 listBooks 把 EPUB 内部相对 href 封面解析成可服务的绝对路径', () async {

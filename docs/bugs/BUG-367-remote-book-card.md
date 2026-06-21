@@ -1,0 +1,15 @@
+## BUG-367 · 远端书卡缺类型徽章+尺寸变小
+- **报告**：2026-06-21（用户：）
+- **真实性**：✅ 真 bug（两层）
+  - **655a 类型徽章缺失（两层）**：
+    - 数据层 `hibiki/lib/src/sync/app_model_library_host_service.dart:201` `listBooks()` 只读 `EpubBooks` 表构造 `RemoteBookInfo`，从不交叉判定该书是否有有声书；`RemoteBookInfo`（`hibiki/lib/src/sync/hibiki_library_host_service.dart:149`）无 `hasAudiobook` 字段，`toJson`/`fromJson` 无法透传该信息。
+    - UI 层 `hibiki/lib/src/pages/implementations/reader_history/remote.part.dart:123` `_buildRemoteBookCard` 的 `coverBadge` 槽（封面右上角，`_bookCardLayout` `card_widgets.part.dart:310`）被下载按钮/进度徽章占用，从不渲染本地书卡的类型徽章（耳机 `_audiobookBadge` / 书本 `_cardBadge`，对照本地 `buildMediaItemContent` `reader_hibiki_history_page.dart:705-711`）。
+  - **655b 卡片变小**：远端书 section `_buildRemoteBookSection`（`remote.part.dart:55`）把 header + GridView 一起包进外层 `Container`，带左右 `tokens.spacing.rowHorizontal*0.75` 水平 padding（`remote.part.dart:63-68`）；而本地书 `SliverGrid`（`reader_hibiki_history_page.dart:596`）直接挂 `CustomScrollView` 无水平 padding（全宽）。但远端 GridView 的 `maxCrossAxisExtent = _gridExtent(context, constraints)` 用未扣 padding 的 `constraints.maxWidth` 计算（`remote.part.dart:108`），实际可用宽 = 全宽 - 2*padding，导致同 `maxCrossAxisExtent` 阈值下远端 cell 宽 = 较窄可用宽 / 同列数 < 本地 cell 宽 → 远端书卡变小。视频卡用固定 `maxCrossAxisExtent:280` 不受影响。
+- **[x] ① 已修复** — commit `<填提交哈希>`
+  - 655a 数据层：`RemoteBookInfo` 加 `hasAudiobook` 字段（`hibiki_library_host_service.dart`），经 `toJson`/`fromJson`/`copyWith` 透传；host `listBooks()` 用 `getAllAudiobooks()` 的 bookKey 集合交叉判定填值（与本地 `_getAudiobookInfo` 语义一致）。
+  - 655a UI 层：`_buildRemoteBookCard` 把下载按钮/进度徽章保持右上角，类型徽章（`_audiobookBadge` 耳机 / `_cardBadge` 书本）放封面**左上角**（新增 `_bookCardLayout` 的可选 `leadingBadge` 槽位 Positioned，不破坏 `tagLabels`）。
+  - 655b：`_buildRemoteBookSection` 去掉外层 `Container` 的水平 padding，header 自带 `rowHorizontal*0.75` padding（对齐 `_buildSectionHeader`），GridView 全宽 → 与本地 sliver grid 同宽基准。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/pages/reader_remote_interconnect_test.dart`：远端书卡按 `hasAudiobook` 渲染类型徽章（耳机/书本）；远端 grid cell 宽与本地 sliver grid 同宽基准。
+  - `hibiki/test/sync/hibiki_library_host_service_books_test.dart`：`RemoteBookInfo` `toJson`/`fromJson` 含 `hasAudiobook` 往返；host `listBooks()` 对有/无有声书的书填正确 `hasAudiobook`。
+- **备注**：TODO-655。真机待验（远端书卡类型徽章 + 尺寸；需配对设备跑 sync）。

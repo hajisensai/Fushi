@@ -154,6 +154,7 @@ class RemoteBookInfo {
     this.hasCover = false,
     this.coverUrl,
     this.coverPath,
+    this.hasAudiobook = false,
   });
 
   final String title;
@@ -162,6 +163,10 @@ class RemoteBookInfo {
   final bool hasCover;
   final String? coverUrl;
   final String? coverPath;
+
+  /// 该书在 host 端是否已配有有声书（bookKey 出现在 Audiobooks 表）。远端书卡据此
+  /// 渲染类型徽章（耳机 / 书本），与本地书卡 `_getAudiobookInfo` 同源（TODO-655a）。
+  final bool hasAudiobook;
 
   String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
@@ -174,6 +179,7 @@ class RemoteBookInfo {
         'hasContent': hasContent,
         if (hasDisplayCover) 'hasCover': true,
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
+        if (hasAudiobook) 'hasAudiobook': true,
       };
 
   RemoteBookInfo copyWith({
@@ -181,6 +187,7 @@ class RemoteBookInfo {
     bool? hasCover,
     String? coverUrl,
     String? coverPath,
+    bool? hasAudiobook,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -189,6 +196,7 @@ class RemoteBookInfo {
         hasCover: hasCover ?? this.hasCover,
         coverUrl: coverUrl ?? this.coverUrl,
         coverPath: coverPath ?? this.coverPath,
+        hasAudiobook: hasAudiobook ?? this.hasAudiobook,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -203,6 +211,7 @@ class RemoteBookInfo {
           _isNonEmpty(coverPath),
       coverUrl: coverUrl,
       coverPath: coverPath,
+      hasAudiobook: json['hasAudiobook'] == true,
     );
   }
 }

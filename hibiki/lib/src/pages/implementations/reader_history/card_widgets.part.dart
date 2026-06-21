@@ -285,6 +285,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     required Widget cover,
     Widget? tagLabels,
     Widget? coverBadge,
+    Widget? leadingBadge,
     Widget? metadata,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -321,6 +322,22 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
                       child: FittedBox(
                         fit: BoxFit.contain,
                         child: coverBadge,
+                      ),
+                    ),
+                  ),
+                if (leadingBadge != null)
+                  PositionedDirectional(
+                    start: overlayInset,
+                    top: overlayInset,
+                    // 封面左上角类型徽章（TODO-655a）：远端书卡右上角被下载按钮 /
+                    // 进度徽章占用，类型徽章（有声书耳机 / 普通书本）放左上角，与
+                    // coverBadge 同尺寸渲染。本地书卡用 tagLabels 占左上角而不传
+                    // leadingBadge，二者不会共存。
+                    child: SizedBox.square(
+                      dimension: kShelfCoverBadgeDimension,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: leadingBadge,
                       ),
                     ),
                   ),

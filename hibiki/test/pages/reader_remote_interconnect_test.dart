@@ -174,6 +174,88 @@ void main() {
     );
   });
 
+  testWidgets(
+      'remote book renders normal-book type badge by default '
+      '(TODO-655a)', (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('remote_book_card_Remote_Book'),
+    );
+    expect(card, findsOneWidget);
+    final Finder badge = find.descendant(
+      of: card,
+      matching: find.byKey(
+        const ValueKey<String>('remote_book_type_badge_Remote_Book'),
+      ),
+    );
+    expect(badge, findsOneWidget,
+        reason: 'remote book card must show a type badge like local books');
+    // Normal book → book icon, never the headphones (audiobook) icon.
+    expect(
+      find.descendant(
+          of: badge, matching: find.byIcon(Icons.headphones_outlined)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+          of: badge, matching: find.byIcon(Icons.menu_book_outlined)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('remote audiobook renders headphones type badge (TODO-655a)',
+      (WidgetTester tester) async {
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      hasAudiobook: true,
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder badge = find.byKey(
+      const ValueKey<String>('remote_book_type_badge_Remote_Book'),
+    );
+    expect(badge, findsOneWidget);
+    expect(
+      find.descendant(
+          of: badge, matching: find.byIcon(Icons.headphones_outlined)),
+      findsOneWidget,
+      reason: 'a remote book with an audiobook must show the headphones badge',
+    );
+  });
+
+  testWidgets(
+      'remote book grid spans full shelf width like local books '
+      '(TODO-655b)', (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    // The remote grid shares the local sliver-grid full-width baseline: its
+    // GridView must span the same width as the enclosing scroll viewport, so
+    // cell width matches local book cards (no shrinking from section padding).
+    final Finder grid = find.descendant(
+      of: find.byType(ReaderHibikiHistoryPage),
+      matching: find.byType(GridView),
+    );
+    expect(grid, findsOneWidget);
+    final Finder viewport = find
+        .ancestor(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(LayoutBuilder),
+        )
+        .first;
+    final double gridWidth = tester.getSize(grid).width;
+    final double shelfWidth = tester.getSize(viewport).width;
+    expect(
+      gridWidth,
+      closeTo(shelfWidth, 0.5),
+      reason: 'remote grid must span the full shelf width (no section padding '
+          'shrinking the cards below the local baseline)',
+    );
+  });
+
   testWidgets('remote book download action pulls epub and imports locally',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
@@ -229,11 +311,13 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     required this.coverPath,
     this.title = 'Remote Book',
     this.bookKey,
+    this.hasAudiobook = false,
   });
 
   final String coverPath;
   final String title;
   final String? bookKey;
+  final bool hasAudiobook;
   final List<String> downloadedTitles = <String>[];
 
   @override
@@ -243,6 +327,7 @@ class _FakeRemoteBookClient implements RemoteBookClient {
           if (bookKey != null) 'bookKey': bookKey,
           'hasContent': true,
           'coverPath': coverPath,
+          if (hasAudiobook) 'hasAudiobook': true,
         }),
       ];
 

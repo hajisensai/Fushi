@@ -200,6 +200,11 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   @override
   Future<List<RemoteBookInfo>> listBooks() async {
     final List<EpubBookRow> rows = await _db.getAllEpubBooks();
+    // 该书是否已配有声书：bookKey 出现在 Audiobooks 表（与本地书卡
+    // `_getAudiobookInfo` / `AudiobookRepository.buildBookKeyMap` 同源，TODO-655a）。
+    final Set<String> audiobookKeys = <String>{
+      for (final AudiobookRow a in await _db.getAllAudiobooks()) a.bookKey,
+    };
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -213,6 +218,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
         hasCover: coverPath != null,
         coverPath: coverPath,
+        hasAudiobook: audiobookKeys.contains(r.bookKey),
       );
     }).toList();
   }

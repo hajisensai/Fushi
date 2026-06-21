@@ -52,7 +52,11 @@ void main() {
     expect(layout, contains('Widget? tagLabels'));
     expect(layout, contains('Widget? coverBadge'));
     expect(layout, contains('Widget? metadata'));
-    expect(layout, isNot(contains('Widget? leading')));
+    // TODO-655a: remote cards add a top-left `leadingBadge` type-badge slot
+    // (download button keeps the top-right `coverBadge`). The forbidden API is
+    // still the generic bare `leading`/`trailing` slot, not `leadingBadge`.
+    expect(layout, contains('Widget? leadingBadge'));
+    expect(layout, isNot(contains('Widget? leading,')));
     expect(layout, isNot(contains('Widget? trailing')));
     expect(source, isNot(contains('leading: tagWidget')));
 

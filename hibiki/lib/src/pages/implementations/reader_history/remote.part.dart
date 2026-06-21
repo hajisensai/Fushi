@@ -58,41 +58,54 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = theme.colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsetsDirectional.fromSTEB(
-        tokens.spacing.rowHorizontal * 0.75,
-        tokens.spacing.gap,
-        tokens.spacing.rowHorizontal * 0.75,
-        tokens.spacing.card,
-      ),
+    // TODO-655b: 本地书 SliverGrid 直接挂 CustomScrollView 全宽布局；远端 section
+    // 不能再用一个带左右 padding 的 Container 包住 GridView（否则 GridView 的实际
+    // 可用宽 = 全宽 - 2*padding，而 maxCrossAxisExtent 仍按全宽算 → 远端 cell 比本地
+    // 窄、卡片变小）。改为：只 header 自带水平 padding（对齐 _buildSectionHeader），
+    // GridView 不裹水平 padding，与本地 sliver grid 同宽基准。
+    final double headerPadding = tokens.spacing.rowHorizontal * 0.75;
+    return DecoratedBox(
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: colors.outlineVariant)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(
-                Icons.devices_other_outlined,
-                size: 18,
-                color: colors.primary,
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              Text(t.remote_book_interconnect, style: tokens.type.sectionLabel),
-              SizedBox(width: tokens.spacing.gap),
-              Text(
-                t.remote_book_paired_device,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
+          Padding(
+            padding: EdgeInsetsDirectional.fromSTEB(
+              headerPadding,
+              tokens.spacing.gap,
+              headerPadding,
+              0,
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.devices_other_outlined,
+                  size: 18,
+                  color: colors.primary,
                 ),
-              ),
-            ],
+                SizedBox(width: tokens.spacing.gap),
+                Text(t.remote_book_interconnect,
+                    style: tokens.type.sectionLabel),
+                SizedBox(width: tokens.spacing.gap),
+                Text(
+                  t.remote_book_paired_device,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
           if (state.failed)
             Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.gap),
+              padding: EdgeInsetsDirectional.fromSTEB(
+                headerPadding,
+                tokens.spacing.gap,
+                headerPadding,
+                tokens.spacing.card,
+              ),
               child: Text(
                 t.remote_book_load_failed,
                 style: textTheme.bodySmall?.copyWith(color: colors.error),
@@ -100,19 +113,22 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
             )
           else if (state.books.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            GridView.builder(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: _gridExtent(context, constraints),
-                childAspectRatio: mediaSource.aspectRatio,
-                crossAxisSpacing: tokens.spacing.gap,
-                mainAxisSpacing: tokens.spacing.gap,
+            Padding(
+              padding: EdgeInsetsDirectional.only(bottom: tokens.spacing.card),
+              child: GridView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: _gridExtent(context, constraints),
+                  childAspectRatio: mediaSource.aspectRatio,
+                  crossAxisSpacing: tokens.spacing.gap,
+                  mainAxisSpacing: tokens.spacing.gap,
+                ),
+                itemCount: state.books.length,
+                itemBuilder: (BuildContext context, int index) =>
+                    _buildRemoteBookCard(state.books[index]),
               ),
-              itemCount: state.books.length,
-              itemBuilder: (BuildContext context, int index) =>
-                  _buildRemoteBookCard(state.books[index]),
             ),
           ],
         ],
@@ -130,6 +146,9 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       child: _bookCardLayout(
         title: book.title,
         cover: _buildRemoteBookCover(book),
+        // TODO-655a：远端书卡右上角是下载按钮 / 下载进度，类型徽章（有声书耳机 /
+        // 普通书本）放左上角，与本地书卡（buildMediaItemContent）的类型语义一致。
+        leadingBadge: _buildRemoteBookTypeBadge(book, safeKey),
         coverBadge: _downloadingBooks.containsKey(book.title)
             ? RemoteDownloadProgressBadge(
                 key: ValueKey<String>('remote_book_downloading_$safeKey'),
@@ -145,6 +164,28 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
                 onPressed: () => _downloadRemoteBook(book),
               ),
       ),
+    );
+  }
+
+  /// 远端书卡左上角类型徽章：有有声书 → 耳机徽章（与本地 _audiobookBadge 同色，
+  /// 远端无健康度信息，用默认 secondaryContainer），否则普通书本徽章（与本地
+  /// _cardBadge 一致）。带稳定 key 供 widget 测试定位（TODO-655a）。
+  Widget _buildRemoteBookTypeBadge(RemoteBookInfo book, String safeKey) {
+    final ColorScheme cs = theme.colorScheme;
+    final Widget badge = book.hasAudiobook
+        ? _cardBadge(
+            icon: Icons.headphones_outlined,
+            background: cs.secondaryContainer,
+            foreground: cs.onSecondaryContainer,
+          )
+        : _cardBadge(
+            icon: Icons.menu_book_outlined,
+            background: cs.surfaceContainerHighest,
+            foreground: cs.onSurfaceVariant,
+          );
+    return KeyedSubtree(
+      key: ValueKey<String>('remote_book_type_badge_$safeKey'),
+      child: badge,
     );
   }
 
