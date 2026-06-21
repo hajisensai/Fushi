@@ -1506,19 +1506,41 @@ function createPitchHtml(reading, pitchValue) {
     return container;
 }
 
+// TODO-688: IPA transcriptions ship in popup JSON per pitch GROUP (alongside
+// `pitchPositions`, populated only for Yomitan `ipa`-mode dicts; empty for plain
+// pitch-accent dicts). They are phonetic notation — same nature as pitch — so we
+// render them inside the pitch group, as small `[ipa]` tags after the accent
+// list. An empty/absent transcriptions array renders nothing (plain pitch dicts
+// and dicts without IPA are untouched).
+function createTranscriptionsHtml(transcriptions) {
+    if (!transcriptions?.length) return null;
+    const list = el('ul', { className: 'pitch-transcriptions' });
+    transcriptions.forEach((ipa) => {
+        const li = el('li', { className: 'pitch-transcription' });
+        li.appendChild(el('span', { className: 'pitch-transcription-tag', textContent: `[${ipa}]` }));
+        list.appendChild(li);
+    });
+    return list;
+}
+
 function createPitchGroup(pitchData, reading) {
     const container = el('div', { className: 'pitch-group', 'data-details': pitchData.dictionary });
     container.appendChild(el('span', { className: 'pitch-dict-label', textContent: pitchData.dictionary }));
-    
+
     const list = el('ul', { className: 'pitch-entries' });
-    pitchData.pitchPositions.forEach((pitch) => {
+    (pitchData.pitchPositions || []).forEach((pitch) => {
         const li = el('li');
         li.appendChild(createPitchHtml(reading, pitch));
         li.appendChild(document.createTextNode(` [${pitch}]`));
         list.appendChild(li);
     });
     container.appendChild(list);
-    
+
+    const transcriptions = createTranscriptionsHtml(pitchData.transcriptions);
+    if (transcriptions) {
+        container.appendChild(transcriptions);
+    }
+
     return container;
 }
 
@@ -1579,10 +1601,16 @@ function createPitchSection(pitches, reading) {
     if (window.deduplicatePitchAccents) {
         const seen = new Set();
         pitches.forEach(pitch => {
-            const unique = pitch.pitchPositions.filter(pos => !seen.has(pos));
-            if (unique.length > 0) {
+            const unique = (pitch.pitchPositions || []).filter(pos => !seen.has(pos));
+            // TODO-688: a group with no unique pitch positions but with IPA
+            // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
+            // must still render, or the transcriptions are silently dropped.
+            const hasTranscriptions = pitch.transcriptions?.length;
+            if (unique.length > 0 || hasTranscriptions) {
                 unique.forEach(pos => seen.add(pos));
-                pitchContainer.appendChild(createPitchGroup({ dictionary: pitch.dictionary, pitchPositions: unique }, reading));
+                pitchContainer.appendChild(createPitchGroup(
+                    { dictionary: pitch.dictionary, pitchPositions: unique, transcriptions: pitch.transcriptions },
+                    reading));
             }
         });
     } else {

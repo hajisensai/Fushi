@@ -673,6 +673,31 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     padding: 0;
 }
 
+/* TODO-688: IPA transcriptions rendered inside the pitch group, as small inline
+   tags after the accent list. Phonetic notation is the same nature as pitch. */
+.pitch-transcriptions {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+}
+
+.pitch-transcription {
+    display: inline-flex;
+}
+
+.pitch-transcription-tag {
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 0 4px;
+    border-radius: 4px;
+    background-color: rgba(127, 127, 127, 0.16);
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
 /* https://github.com/yomidevs/yomitan/blob/master/ext/css/display-pronunciation.css */
 .pronunciation-mora {
     position: relative;
