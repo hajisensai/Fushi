@@ -141,6 +141,28 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       _scrollProgressPending = true;
       return;
     }
+    // 卡死修复：时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS=50ms）。距上次刷新
+    // 不足节流窗口时，只安排一个尾沿刷新合并高频滚动回传，不背靠背全文重算 calculateProgress
+    // （遍历整章 15 万字 DOM）。尾沿保证停止后的最终位置一定被刷到。
+    const int throttleMs = 50;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastScrollProgressAt;
+    if (last != null) {
+      final int sinceMs = now.difference(last).inMilliseconds;
+      if (sinceMs < throttleMs) {
+        _scrollProgressThrottleTimer ??= Timer(
+          Duration(milliseconds: throttleMs - sinceMs),
+          () {
+            _scrollProgressThrottleTimer = null;
+            if (mounted) _refreshProgressFromScroll();
+          },
+        );
+        return;
+      }
+    }
+    _scrollProgressThrottleTimer?.cancel();
+    _scrollProgressThrottleTimer = null;
+    _lastScrollProgressAt = now;
     _scrollProgressInFlight = true;
     _refreshProgress().whenComplete(() {
       _scrollProgressInFlight = false;

@@ -626,6 +626,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 与翻章恢复直接调 _refreshProgress。
   bool _scrollProgressInFlight = false;
   bool _scrollProgressPending = false;
+  // 卡死修复：滚动触发的进度重算加时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS
+  // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
+  // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
+  DateTime? _lastScrollProgressAt;
+  Timer? _scrollProgressThrottleTimer;
   Timer? _contentReadyTimer;
   Timer? _gamepadAHoldTimer;
   // HBK-AUDIT-120: volume-key throttle uses a last-fire timestamp instead of an
@@ -1078,6 +1083,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
+    _scrollProgressThrottleTimer?.cancel();
     _contentReadyTimer?.cancel();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
