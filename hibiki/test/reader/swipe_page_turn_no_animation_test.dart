@@ -125,24 +125,24 @@ void main() {
     expect(swipeIdx, greaterThan(guardIdx),
         reason: 'continuous-mode branch must precede the onSwipe page-turn');
 
-    // 连续分支内：竖排显式横向滚动（沿真实书写轴），桌面垂直滚轮才滚得动。
+    // TODO-656 真试滚：连续分支里横排 scrollBy 纵向、竖排把 deltaY 投影到横向 scrollBy，
+    // 再读实际位移 moved 判到没到边界（横排误翻 / 竖排滚不动的根治）。注意：真试滚是逐
+    // 事件 scrollBy，TODO-629 ② 的 rAF 缓动平滑在此让位给正确性（竖排回到逐 notch 步进；
+    // 手感若需要，后续可在「能滚」分支再叠 rAF，不影响边界判定）。
     final String continuousBranch = wheelBlock.substring(guardIdx, swipeIdx);
-    expect(continuousBranch, contains('isVertical'),
-        reason: 'continuous-mode wheel must gate the explicit scroll on '
-            'vertical writing (horizontal mode stays native pass-through)');
-    // TODO-629 ②: 竖排投影从逐事件 scrollBy(behavior:'auto') 离散跳改为 rAF 缓动
-    // （累积 _vScrollTarget + requestAnimationFrame 每帧逼近 scrollLeft）。仍沿真实
-    // 横向书写轴滚动，只是消除颗粒感；这里钉住「竖排投影累积进 rAF 缓动目标」不变量。
-    expect(continuousBranch, contains('_vScrollTarget'),
-        reason: 'vertical continuous mode must accumulate the projected wheel '
-            'delta into the rAF easing target (not per-event scrollBy)');
-    expect(
-        continuousBranch, contains('requestAnimationFrame(_vScrollEaseStep)'),
-        reason: 'vertical continuous wheel must be driven by rAF easing so the '
-            'horizontal scroll along the writing axis is smooth, not discrete');
-    expect(continuousBranch, isNot(contains("behavior: 'auto'")),
+    expect(continuousBranch, contains('root.scrollBy(0, wheelDelta)'),
         reason:
-            'the old per-event discrete scrollBy(behavior: auto) projection '
-            'must be gone (TODO-629 ② 刷新率低/一格一格跳 根因)');
+            'horizontal continuous wheel does a real scrollBy along scrollTop');
+    expect(continuousBranch, contains('root.scrollBy(wheelDelta * sign, 0)'),
+        reason:
+            'vertical continuous wheel projects deltaY to a real horizontal '
+            'scrollBy (browser will not map vertical wheel to the horizontal axis)');
+    expect(
+        continuousBranch, contains('var moved = Math.abs(after - before) > 1'),
+        reason:
+            'edge is decided by measured real movement, not geometry/clamp');
+    // 连续分支不得回传 onSwipe（90% 整屏跳页与原生滚动轴向冲突）；跨章走 onBoundarySwipe。
+    expect(continuousBranch, isNot(contains("callHandler('onSwipe'")),
+        reason: 'continuous wheel must not page-turn via onSwipe (BUG-239)');
   });
 }

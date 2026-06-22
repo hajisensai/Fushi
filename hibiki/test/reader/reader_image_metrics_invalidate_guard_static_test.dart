@@ -75,28 +75,25 @@ void main() {
     test('continuous wheel branch calls onBoundarySwipe', () {
       // 连续模式 wheel 监听器到底必须回传 onBoundarySwipe（复用边界跨章通道）。
       expect(
-        pageSource.contains("callHandler('onBoundarySwipe', boundaryDir)"),
+        pageSource.contains("callHandler('onBoundarySwipe', wheelDir)"),
         isTrue,
         reason: '连续模式滚轮到内容轴尽头必须跨章，否则插画/章末滚轮无反应',
       );
     });
 
-    test(
-        'boundary direction uses no-movement stuck, not atStart/atEnd (TODO-656)',
+    test('boundary uses real try-scroll (scrollBy + measured moved) (TODO-656)',
         () {
-      // TODO-656：跨章「到边界」判据从瞬时 atStart/atEnd 几何改为「内容真滚不动」
-      // （stuck：横排相邻拍 scrollTop 无变化 / 竖排缓动 target 被 clamp 卡死）。
-      expect(
-        pageSource.contains('boundaryDir = (wheelDir && stuck)'),
-        isTrue,
-        reason: '滚轮跨章方向由 stuck（内容真滚不动）判定，只在真到底才发',
-      );
-      expect(
-        pageSource.contains('boundaryDir = atEnd') ||
-            pageSource.contains('boundaryDir = atStart'),
-        isFalse,
-        reason: '不得再用瞬时 atStart/atEnd 几何判边界（短章误翻/边界卡顿根因）',
-      );
+      // TODO-656：跨章「到边界」判据改为「真试滚」——真的 scrollBy 一步、读实际位移 moved；
+      // 滚动了不跨章，真滚不动才跨章。权威、同步，不靠 scrollWidth/相邻拍推算。
+      expect(pageSource.contains('root.scrollBy(0, wheelDelta)'), isTrue,
+          reason: '横排滚轮真试滚：scrollBy 纵向后读实际位移');
+      expect(pageSource.contains('root.scrollBy(wheelDelta * sign, 0)'), isTrue,
+          reason: '竖排滚轮真试滚：把 deltaY 投影到横向 scrollBy 后读实际位移');
+      expect(pageSource.contains('var moved = Math.abs(after - before) > 1'),
+          isTrue,
+          reason: '靠实际位移 moved 判到没到边界');
+      expect(pageSource.contains('boundaryDir = (wheelDir && stuck)'), isFalse,
+          reason: '不得再用 stuck 推算判边界（横排误翻 / 竖排滚不动根因）');
     });
 
     test('Dart shadow continuousWheelBoundaryDirection exists', () {

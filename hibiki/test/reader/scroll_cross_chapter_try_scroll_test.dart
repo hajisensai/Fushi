@@ -127,16 +127,19 @@ void main() {
           paginationScripts, isNot(contains('var atTop = root.scrollTop <= 2')),
           reason: '_bEnd 不得再用 touchend 瞬时 scrollTop<=2 判跨章（提前跨章根因）');
     });
-    test('滚轮用「位置无变化/clamp 卡死」judge stuck，不再用 atStart 瞬时几何', () {
+    test('滚轮跨章用真试滚（scrollBy + moved），不再用 stuck 推算/瞬时几何', () {
       final String wheel = _wheelBlock(corpus);
-      expect(wheel, contains('_wheelLastScrollPos'),
-          reason: '横排须用相邻拍 scrollTop 无变化判卡边界');
-      expect(wheel, contains('stuck'), reason: '滚轮跨章须经 stuck（内容真滚不动）判据');
+      expect(wheel, contains('var moved = Math.abs(after - before) > 1'),
+          reason: '滚轮跨章须靠真试滚的实际位移判边界');
+      expect(wheel, contains('root.scrollBy'),
+          reason: '横排/竖排都真的 scrollBy 一步再读位移');
       expect(wheel, isNot(contains('atStart = root.scrollTop <= 2')),
-          reason: '滚轮不得再用瞬时 scrollTop<=2 几何判边界（短章误翻根因）');
+          reason: '不得再用瞬时 scrollTop<=2 几何');
+      expect(wheel, isNot(contains('_wheelLastScrollPos')),
+          reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
       // arm-then-fire 二次确认仍在。
       expect(wheel, contains('_wheelBoundaryArmed'),
-          reason: '保留 arm-then-fire 二次确认吸收单帧抖动');
+          reason: '保留 arm-then-fire 二次确认吸收单帧擦边');
     });
   });
 }

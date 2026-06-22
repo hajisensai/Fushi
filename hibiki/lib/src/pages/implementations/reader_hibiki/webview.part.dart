@@ -807,68 +807,46 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       // delta>0 一律归一化为「沿书写轴前进」：横排向下(deltaY>0)、竖排投影向前都为
       // forward（见纯函数注释）。
       var wheelDelta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-      // TODO-656 根治：跨章判据从「瞬时 scrollTop<=2 几何」改为「内容真的滚不动」。
-      // wheelDir 仅由滚轮方向定，是否到边界交给 stuck：横排放行原生滚动 → 相邻 wheel
-      // 事件 scrollTop 无变化（原生卡边界）；竖排 rAF 缓动 → 投影 target 被 clamp 卡死。
-      // 消除短章节（atStart&atEnd 同真）/ 图片未撑开 scrollHeight 偏小 / momentum 擦边
-      // 的非真实边界误判，与纯函数 wheelBoundaryStuckDir 同形。
-      var wheelDir = wheelDelta > 0 ? 'forward' : (wheelDelta < 0 ? 'backward' : null);
-      // 竖排先算缓动投影 target（clamp 到可滚区间），既用于 stuck 判定又用于 rAF。
-      // vertical-rl(sign=-1) 范围 [innerWidth-scrollWidth, 0]；lr(sign=+1) [0, scrollWidth-innerWidth]。
-      var vTarget = 0, vBase = 0;
-      var stuck = false;
-      if (vertical) {
-        var wm = window.getComputedStyle(document.body).writingMode;
-        var sign = (wm === 'vertical-rl') ? -1 : 1;
-        vBase = (_vScrollTarget !== null) ? _vScrollTarget : root.scrollLeft;
-        var span = root.scrollWidth - window.innerWidth;
-        var lo = (sign < 0) ? -span : 0;
-        var hi = (sign < 0) ? 0 : span;
-        vTarget = vBase + wheelDelta * sign;
-        if (vTarget < lo) vTarget = lo;
-        if (vTarget > hi) vTarget = hi;
-        // clamp 后 target 与 base 无差 = 缓动到边界推不动 = 卡边界。
-        stuck = !!wheelDir && Math.abs(vTarget - vBase) <= 1;
-      } else {
-        // 横排放行原生滚动：相邻 wheel 事件 scrollTop 无变化 = 原生卡边界滚不动。
-        var curPos = root.scrollTop;
-        stuck = !!wheelDir && Math.abs(curPos - _wheelLastScrollPos) <= 1;
-        _wheelLastScrollPos = curPos;
-      }
-      var boundaryDir = (wheelDir && stuck) ? wheelDir : null;
-      // BUG-369/TODO-656 诊断：仅边界相关（卡住或已武装）时打印，避免正常滚动刷屏。
-      if (wheelDir && (stuck || _wheelBoundaryArmed)) {
+      // TODO-656 真试滚：不再推算「到没到边界」，而是真的朝书写轴 scrollBy 一步、读实际
+      // 位移——滚动了就是没到边界（不跨章），真的滚不动了才跨章。横排 scrollBy 纵向
+      // (scrollTop)，竖排把 deltaY 投影到横向 scrollLeft（浏览器不会把垂直滚轮自动映射到
+      // 横向可滚轴）。同步、权威，不靠 scrollTop<=2 / scrollWidth 几何推算（那套在快速滚 /
+      // 图片未撑开 / 竖排负 scrollLeft 下误判 → 横排中部误翻、竖排滚不动）。
+      if (wheelDelta === 0) return;
+      e.preventDefault();
+      var wheelDir = wheelDelta > 0 ? 'forward' : 'backward';
+      var sign = vertical
+        ? ((window.getComputedStyle(document.body).writingMode === 'vertical-rl') ? -1 : 1)
+        : 1;
+      var before = vertical ? root.scrollLeft : root.scrollTop;
+      if (vertical) { root.scrollBy(wheelDelta * sign, 0); }
+      else { root.scrollBy(0, wheelDelta); }
+      var after = vertical ? root.scrollLeft : root.scrollTop;
+      var moved = Math.abs(after - before) > 1;
+      // 诊断：仅在「滚不动」或「已武装」时打印（正常滚动不刷屏），供真机定位竖排为何不动
+      // （before==after 且 scrollW<=innerW → 投影轴没内容/容器不对）。
+      if (!moved || _wheelBoundaryArmed) {
         console.log('[xchapter] wheel vertical=' + (vertical ? 1 : 0)
-          + ' wheelDelta=' + Math.round(wheelDelta)
-          + ' scrollTop=' + root.scrollTop + ' scrollLeft=' + root.scrollLeft
-          + ' scrollH=' + root.scrollHeight + ' scrollW=' + root.scrollWidth
-          + ' wheelDir=' + wheelDir + ' stuck=' + (stuck ? 1 : 0)
-          + ' armed=' + _wheelBoundaryArmed + ' boundaryDir=' + boundaryDir);
+          + ' wheelDelta=' + Math.round(wheelDelta) + ' wheelDir=' + wheelDir
+          + ' before=' + Math.round(before) + ' after=' + Math.round(after)
+          + ' moved=' + (moved ? 1 : 0) + ' armed=' + _wheelBoundaryArmed
+          + ' scrollW=' + root.scrollWidth + ' scrollH=' + root.scrollHeight
+          + ' innerW=' + window.innerWidth + ' innerH=' + window.innerHeight);
       }
-      // arm-then-fire 二次确认（与纯函数 continuousWheelBoundaryEmit 同形）：卡边界第一
-      // 次只武装、同向第二次才跨章；还能滚（boundaryDir==null）即解武装。仅在卡边界时
-      // preventDefault，正常滚动放行（横排）/ 走 rAF（竖排），不打断手感。
-      if (!boundaryDir) {
+      if (moved) {
+        // 真的滚动了 = 没到边界，不跨章；解武装。
         _wheelBoundaryArmed = null;
-      } else if (_wheelBoundaryArmed === boundaryDir) {
-        if (_wheelTimer) { e.preventDefault(); return; }
+        return;
+      }
+      // 真的滚不动了 = 到边界 → arm-then-fire 二次确认（吸收单次擦边）才跨章。
+      if (_wheelBoundaryArmed === wheelDir) {
+        if (_wheelTimer) return;
         _wheelTimer = setTimeout(function() { _wheelTimer = null; }, ${s.wheelPageTurnInterval});
         _wheelBoundaryArmed = null;
-        _wheelLastScrollPos = -1;
-        window.flutter_inappwebview.callHandler('onBoundarySwipe', boundaryDir);
-        e.preventDefault();
-        return;
+        window.flutter_inappwebview.callHandler('onBoundarySwipe', wheelDir);
       } else {
-        _wheelBoundaryArmed = boundaryDir;
-        e.preventDefault();
-        return;
+        _wheelBoundaryArmed = wheelDir;
       }
-      // 未卡边界：横排放行原生滚动（轴=纵向，浏览器原生平滑），竖排走 rAF 缓动。
-      if (!vertical) return;
-      if (wheelDelta === 0) return;
-      _vScrollTarget = vTarget;
-      if (!_vScrollRaf) _vScrollRaf = requestAnimationFrame(_vScrollEaseStep);
-      e.preventDefault();
       return;
     }
     if (_wheelTimer) return;

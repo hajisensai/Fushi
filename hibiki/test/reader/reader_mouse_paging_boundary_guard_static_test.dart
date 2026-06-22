@@ -58,38 +58,39 @@ void main() {
     test('wheel listener no longer crosses on the first boundary tick', () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
       expect(wheel, contains('_wheelBoundaryArmed'),
-          reason: '滚轮跨章必须经 arm-then-fire 武装态，禁止单次瞬时 atStart 直接跨章');
+          reason: '滚轮跨章必须经 arm-then-fire 武装态，禁止真滚不动后一次就跨章');
       // 同方向二次确认才 callHandler；首次到边界只武装。
-      expect(wheel, contains('_wheelBoundaryArmed === boundaryDir'),
+      expect(wheel, contains('_wheelBoundaryArmed === wheelDir'),
           reason: '只有同方向二次到边界才跨章');
-      expect(wheel, contains('_wheelBoundaryArmed = boundaryDir'),
+      expect(wheel, contains('_wheelBoundaryArmed = wheelDir'),
           reason: '首次到边界仅武装本方向');
       expect(wheel, contains('_wheelBoundaryArmed = null'),
-          reason: '未到边界 / 跨章后必须解除武装');
+          reason: '真的滚动了（moved）必须解除武装');
       // 跨章回传仍走 onBoundarySwipe，且在二次确认分支内。
       final int confirmBranch =
-          wheel.indexOf('_wheelBoundaryArmed === boundaryDir');
+          wheel.indexOf('_wheelBoundaryArmed === wheelDir');
       final int handlerCall =
           wheel.indexOf("callHandler('onBoundarySwipe'", confirmBranch);
-      final int armBranch = wheel.indexOf('_wheelBoundaryArmed = boundaryDir');
+      final int armBranch = wheel.indexOf('_wheelBoundaryArmed = wheelDir');
       expect(handlerCall, isNonNegative);
       expect(handlerCall, greaterThan(confirmBranch),
           reason: 'onBoundarySwipe 必须在「同方向二次确认」分支内回传');
       expect(handlerCall, lessThan(armBranch), reason: '首次武装分支（不跨章）必须排在确认分支之后');
     });
 
-    test(
-        'wheel boundary uses no-movement / clamp-deadlock, not scrollTop<=2 (TODO-656)',
+    test('wheel boundary uses real try-scroll (scrollBy + moved) (TODO-656)',
         () {
       final String wheel = _listenerBlock(setupScript, 'wheel');
-      // TODO-656：跨章判据从瞬时坐标几何（scrollTop<=2）改为「内容真的滚不动」——
-      // 横排相邻拍 scrollTop 无变化 / 竖排缓动 target 被 clamp 卡死。消除短章节
-      // （atStart&atEnd 同真）/ 图片未撑开 / momentum 擦边的非真实边界误判。
-      expect(wheel, contains('_wheelLastScrollPos'),
-          reason: '横排须用相邻拍 scrollTop 无变化判卡边界');
-      expect(wheel, contains('stuck'), reason: '滚轮跨章须经 stuck（内容真滚不动）判据');
+      // TODO-656：跨章判据改为「真试滚」——真的 scrollBy 一步、读实际位移 moved。滚动了不
+      // 跨章，真滚不动才跨章。彻底弃用 scrollTop<=2 / 相邻拍 / clamp 推算（横排误翻/竖排滚不动）。
+      expect(wheel, contains('var moved = Math.abs(after - before) > 1'),
+          reason: '滚轮跨章须靠真试滚的实际位移判边界');
+      expect(wheel, contains('root.scrollBy'),
+          reason: '横排/竖排都真的 scrollBy 一步再读位移');
       expect(wheel, isNot(contains('atStart = root.scrollTop <= 2')),
-          reason: '不得再用瞬时 scrollTop<=2 几何判边界（短章误翻/边界卡顿根因）');
+          reason: '不得再用瞬时 scrollTop<=2 几何');
+      expect(wheel, isNot(contains('_wheelLastScrollPos')),
+          reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
     });
   });
 }
