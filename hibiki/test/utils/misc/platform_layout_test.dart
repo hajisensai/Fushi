@@ -24,6 +24,58 @@ void main() {
     });
   });
 
+  group('windowSizeClassReal (BUG-401)', () {
+    // Breakpoints must classify on the REAL physical viewport width, not the
+    // virtually-inflated logical width handed down inside HibikiAppUiScale.
+    // realW = logicalWidth * appUiScale.
+    test('scale=1 is identity across all bands (regression guard)', () {
+      expect(windowSizeClassReal(599, 1.0), WindowSizeClass.compact);
+      expect(windowSizeClassReal(600, 1.0), WindowSizeClass.medium);
+      expect(windowSizeClassReal(839, 1.0), WindowSizeClass.medium);
+      expect(windowSizeClassReal(840, 1.0), WindowSizeClass.expanded);
+    });
+
+    test(
+        'a logical 960 canvas at scale 0.88 is no longer expanded once it '
+        'shrinks (real width drives the class)', () {
+      // The desktop auto-scale floor is 0.88. With the window minimum width
+      // relaxed, dragging the real window narrow lowers the LOGICAL canvas
+      // width (canvas = realViewport / scale). A 600-logical canvas at 0.88
+      // is really ~528px -> compact. The old code read the logical 600 and
+      // mislabeled it medium, keeping the phone layout unreachable.
+      expect(windowSizeClassReal(600, 0.88), WindowSizeClass.compact);
+      // 960 logical at 0.88 = 844.8 real -> expanded (a genuinely wide one).
+      expect(windowSizeClassReal(960, 0.88), WindowSizeClass.expanded);
+    });
+
+    test('logical 480 at scale 1.0 is compact', () {
+      expect(windowSizeClassReal(480, 1.0), WindowSizeClass.compact);
+    });
+
+    test('desktop >=1280 real width stays expanded at scale ~1.0', () {
+      expect(windowSizeClassReal(1280, 1.0), WindowSizeClass.expanded);
+    });
+
+    test('tablet ~800 real width stays medium at scale 1.05', () {
+      // logical 762 * 1.05 = 800.1 -> medium (>=600, <840)
+      expect(windowSizeClassReal(762, 1.05), WindowSizeClass.medium);
+      expect(windowSizeClassReal(800, 1.0), WindowSizeClass.medium);
+    });
+
+    test('windowSizeClassForWidth holds the single threshold definition', () {
+      expect(windowSizeClassForWidth(599), WindowSizeClass.compact);
+      expect(windowSizeClassForWidth(600), WindowSizeClass.medium);
+      expect(windowSizeClassForWidth(839), WindowSizeClass.medium);
+      expect(windowSizeClassForWidth(840), WindowSizeClass.expanded);
+    });
+
+    test('non-finite / non-positive scale degrades to identity', () {
+      expect(windowSizeClassReal(700, double.nan), WindowSizeClass.medium);
+      expect(windowSizeClassReal(700, 0), WindowSizeClass.medium);
+      expect(windowSizeClassReal(700, -1), WindowSizeClass.medium);
+    });
+  });
+
   group('desktop layout metrics', () {
     const ValueKey<String> childKey = ValueKey<String>('content-child');
     const ValueKey<String> primaryKey = ValueKey<String>('primary-pane');

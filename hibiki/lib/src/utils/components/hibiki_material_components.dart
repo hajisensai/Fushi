@@ -8,6 +8,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/focus/page_scroll_registry.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_gamepad_keyboard.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
@@ -1587,8 +1588,15 @@ class HibikiPageHeader extends StatelessWidget {
     //   收到普通 `page = 16`，保留必要呼吸又不顶到摄像头。
     // - 非 compact 的中 / 宽窗（桌面 / 平板，宽 >= 600）：窗口顶部无系统栏遮挡、
     //   内容区另有左右留白，`page + 8 = 24` 的标题区呼吸感合适，保持不变。
-    final bool narrowWindow =
-        windowSizeClassFromContext(context) == WindowSizeClass.compact;
+    // BUG-401: classify on the real physical width. HibikiPageHeader renders
+    // inside HibikiAppUiScale, so MediaQuery.sizeOf here is the inflated
+    // logical width; multiply by the net app UI scale to recover the real
+    // viewport width before applying the compact breakpoint.
+    final bool narrowWindow = windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          HibikiAppUiScale.of(context),
+        ) ==
+        WindowSizeClass.compact;
     final double resolvedTop = compact
         ? tokens.spacing.gap
         : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);

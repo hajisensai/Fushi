@@ -16,7 +16,12 @@ import 'package:window_manager/window_manager.dart';
 class DesktopWindowPlacement {
   DesktopWindowPlacement._();
 
-  static const Size minimumSize = Size(960, 640);
+  // BUG-401: the desktop minimum window WIDTH was 960, so the window could
+  // never be dragged narrow enough for the real-width breakpoint to fall
+  // into the compact (phone / bottom-bar) layout. Relaxed to 480 so users
+  // who want the phone layout on desktop can resize down to it. Height kept
+  // at 640 (vertical real estate is not the constraint for the layout class).
+  static const Size minimumSize = Size(480, 640);
   static const Size _maximumDefaultSize = Size(1440, 960);
   static const double _defaultWidthFraction = 0.82;
   static const double _defaultHeightFraction = 0.86;

@@ -21,8 +21,13 @@ void main() {
         workArea: const Rect.fromLTWH(0, 0, 800, 560),
       );
 
-      expect(bounds.size, const Size(800, 560));
-      expect(bounds.left, 0);
+      // BUG-401: minimum window width relaxed 960 -> 480. The first-run
+      // default is 82% of the work-area width (656 on an 800-wide screen);
+      // previously the 960-wide minimum clamped that up to the full 800.
+      // Height still fills the short 560 work area (86% = 481.6 floored by
+      // the 560 effective minimum). The window stays centered horizontally.
+      expect(bounds.size, const Size(656, 560));
+      expect(bounds.left, 72);
       expect(bounds.top, 0);
     });
 
@@ -53,7 +58,11 @@ void main() {
         const Rect.fromLTWH(0, 0, 700, 500),
       );
 
-      expect(minimum, const Size(700, 500));
+      // BUG-401: minimum window width relaxed 960 -> 480. On a 700-wide work
+      // area the effective minimum width is now the literal 480 (no longer
+      // clamped up to the work-area width); the height is still shrunk to the
+      // 500 work area (< the 640 minimum height).
+      expect(minimum, const Size(480, 500));
     });
 
     test('selects the work area containing the current window center', () {
