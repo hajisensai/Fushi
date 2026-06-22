@@ -524,7 +524,7 @@ JSON.stringify((function() {
   return {
     ready: true,
     scroll: Math.round(scroll || 0),
-    columnPitch: Math.round((ctx && ctx.columnPitch) || 0),
+    columnPitch: Math.round((ctx && ctx.pageSize) || 0),
     maxScroll: Math.round((metrics && metrics.maxScroll) || 0),
     minScroll: Math.round((metrics && metrics.minScroll) || 0),
     currentPage: info ? info.currentPage : null,

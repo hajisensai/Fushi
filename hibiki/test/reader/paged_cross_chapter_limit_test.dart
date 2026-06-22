@@ -1,103 +1,141 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
-/// BUG-240：分页 `paginate()` 在「这一步翻不动」时不应立刻跨章——必须用 settle 后
-/// 重建的 metrics + DOM 实时 `maxScroll` 复核确认真到章节首/末页才跨章，避免陈旧/
-/// 低估的 metrics.maxScroll 提前触发 `_handlePageTurnLimit` → `_navigateToChapter`。
+/// TODO-729「翻页翻一半跳章节」回归：方案A 把分页收敛成单一量纲——
+/// 列周期(column-width + column-gap) == pageStep == 对齐量 == maxScroll 减项。
 ///
-/// 这是 JS `window.hoshiReader._stepWithFreshMetrics` 的纯 Dart 影子（headless WebView
-/// 不可用，按项目测试范式：纯函数单测 + 源码守卫 reader_paginate_js_guard_static_test）。
+/// 旧实现（双量纲）：对齐/步进用 columnPitch = pageSize + gap，maxScroll 却用
+/// totalSize − clientSize（clientSize 含 padding）。两者相差 (padding − gap)。当竖排把
+/// chrome inset / 字号 / margin 塞进 column-gap 使 pitch ≠ 真实列周期、且 maxScroll
+/// 减项与对齐量不同源时，倒数第二页算出的「下一整页」越过被低估/错位的末页边界被
+/// clamp 回当前位置 → paginate 误判 limit → `_handlePageTurnLimit` 提前跨章
+/// （用户「翻一半跳章」）。
+///
+/// 单一量纲后 `maxAlignedScroll` 由 `floor(maxScroll/pageStep)*pageStep` 派生、与
+/// pageStep 严格同源，倒数第二页 forward 必 scrolled=true，只有真末页 forward 才
+/// scrolled=false（→ paginate return "limit" → 跨章）。本测试用纯函数影子
+/// `resolvePaginateStepForTesting`（JS `paginate` 的同算法 Dart 镜像，headless WebView
+/// 不可用）锁住「整页对齐到真末列才跨章」不变式。
 void main() {
-  const double pitch = 1000.0;
-
-  bool crossForward(
+  ReaderPageStep forward(
     double current, {
-    double metricsMax = 9000,
-    double metricsMin = 0,
-    double trueMax = 9000,
+    required double pitch,
+    double min = 0,
+    required double max,
   }) =>
-      ReaderPaginationScripts.shouldCrossChapterOnLimit(
+      ReaderPaginationScripts.resolvePaginateStepForTesting(
         direction: ReaderNavigationDirection.forward,
         currentScroll: current,
         columnPitch: pitch,
-        metricsMaxScroll: metricsMax,
-        metricsMinScroll: metricsMin,
-        trueMaxScroll: trueMax,
+        minAlignedScroll: min,
+        maxAlignedScroll: max,
       );
 
-  bool crossBackward(
+  ReaderPageStep backward(
     double current, {
-    double metricsMax = 9000,
-    double metricsMin = 0,
-    double trueMax = 9000,
+    required double pitch,
+    required double min,
+    double max = double.infinity,
   }) =>
-      ReaderPaginationScripts.shouldCrossChapterOnLimit(
+      ReaderPaginationScripts.resolvePaginateStepForTesting(
         direction: ReaderNavigationDirection.backward,
         currentScroll: current,
         columnPitch: pitch,
-        metricsMaxScroll: metricsMax,
-        metricsMinScroll: metricsMin,
-        trueMaxScroll: trueMax,
+        minAlignedScroll: min,
+        maxAlignedScroll: max,
       );
 
-  group('forward: do not cross chapter while content remains (BUG-240)', () {
-    test('genuinely at the last content page → cross', () {
-      // currentScroll == metricsMax == trueMax aligned → no next page.
-      expect(crossForward(9000, metricsMax: 9000, trueMax: 9000), isTrue);
+  // 模拟单一量纲下 buildPaginationMetrics 的 maxAlignedScroll 派生：
+  // maxScroll = totalSize − pageStep；maxAligned = floor(maxScroll/pageStep)*pageStep。
+  double alignedMax(double totalSize, double pageStep) {
+    final double maxScroll =
+        (totalSize - pageStep) < 0 ? 0 : totalSize - pageStep;
+    return (maxScroll / pageStep).floorToDouble() * pageStep;
+  }
+
+  group('整页对齐才跨章：单一量纲下倒数第二页必前进、仅真末页跨章', () {
+    test('竖排 notch：pageStep 含 inset 仍与 maxScroll 同源 → 倒数第二页前进', () {
+      // 竖排某设备：content-box 高 = 视口 − 上下 padding(margin+fontSize+notch+chrome)。
+      // 例：pageStep = 812（content-box 790 + gap 22）。共 5 整页，totalSize 含一末列。
+      const double pitch = 812;
+      const double total = pitch * 4 + 600; // 末列只有 600px 内容（< pitch）
+      final double max =
+          alignedMax(total, pitch); // = floor((total-pitch)/pitch)*pitch
+      // 倒数第二页（max − pitch）forward 必须真翻到对齐末页边界。
+      final ReaderPageStep s = forward(max - pitch, pitch: pitch, max: max);
+      expect(s.scrolled, isTrue, reason: '倒数第二页还有整页可翻，绝不能误判 limit 提前跨章（翻一半跳章）');
+      expect(s.targetScroll, max);
     });
 
-    test(
-        'stale/under-measured metricsMax must NOT cross when DOM still scrolls',
-        () {
-      // metrics 低估了末页（说 maxScroll=7000），但 DOM 实时可滚到 9000，且当前停在
-      // 第 8 页（7000）。旧实现：targetForward=8000 > metricsMax(7000) → clamp 7000 →
-      // 7000 <= 7000+1 → limit → 跨章（跳过 7000..9000 的内容）。修复后：用 trueMax
-      // 派生的 9000 作容差上界 → 还能前进 → 不跨章。
-      expect(crossForward(7000, metricsMax: 7000, trueMax: 9000), isFalse);
+    test('真末页 forward 才不翻（→ paginate return limit → 跨章）', () {
+      const double pitch = 812;
+      const double total = pitch * 4 + 600;
+      final double max = alignedMax(total, pitch);
+      final ReaderPageStep s = forward(max, pitch: pitch, max: max);
+      expect(s.scrolled, isFalse, reason: '只有真正对齐到末列后才允许跨章');
     });
 
-    test('mid-chapter never crosses', () {
-      expect(crossForward(3000, metricsMax: 9000, trueMax: 9000), isFalse);
-    });
-
-    test('sub-pixel under-measure of last content edge does not cross', () {
-      // metricsMax 比真末页少 1px（8999），currentScroll 在末页前一页（8000）。
-      // 仍应翻到末页而不是跨章。
-      expect(crossForward(8000, metricsMax: 8999, trueMax: 9000), isFalse);
+    test('横排：pageStep = content-box宽 + 22 与 maxScroll 同源', () {
+      const double pitch = 1058; // 内容宽 1036 + gap 22
+      const double total = pitch * 6 + 300;
+      final double max = alignedMax(total, pitch);
+      // 倒数第二页（max − pitch）forward 必前进到末页。
+      final ReaderPageStep s = forward(max - pitch, pitch: pitch, max: max);
+      expect(s.scrolled, isTrue);
+      expect(s.targetScroll, max);
+      // 末页不前进。
+      expect(forward(max, pitch: pitch, max: max).scrolled, isFalse);
     });
   });
 
-  group('backward: symmetric guard', () {
-    test('at the first content page → cross to previous chapter', () {
-      expect(crossBackward(0, metricsMin: 0), isTrue);
+  group('padding/pitch 失配回归：减项与对齐量必须同源', () {
+    test('同源减项下，整章每一页都能逐页前进直到真末页', () {
+      const double pitch = 740;
+      const double total = pitch * 8 + 123;
+      final double max = alignedMax(total, pitch);
+      // 逐页前进，每一步都应 scrolled=true，直到落到 max。
+      double cur = 0;
+      int guard = 0;
+      while (cur < max && guard < 100) {
+        final ReaderPageStep s = forward(cur, pitch: pitch, max: max);
+        expect(s.scrolled, isTrue,
+            reason: 'scroll=$cur 还未到末页(max=$max)，必须能前进，'
+                '不得在 padding≠gap 失配下提前误判 limit');
+        expect(s.targetScroll, greaterThan(cur));
+        cur = s.targetScroll;
+        guard++;
+      }
+      expect(cur, max, reason: '应恰好逐页落到对齐末页');
+      expect(forward(max, pitch: pitch, max: max).scrolled, isFalse,
+          reason: '到达对齐末页后才停（跨章）');
     });
 
-    test('mid-chapter backward never crosses', () {
-      expect(crossBackward(3000, metricsMin: 0), isFalse);
-    });
-
-    test('sub-pixel drift just past a page boundary does not cross', () {
-      expect(crossBackward(1000.33, metricsMin: 0), isFalse);
-    });
-
-    test('clamped to metricsMin: at min already → cross', () {
-      expect(crossBackward(1000, metricsMin: 1000), isTrue);
+    test('1px sub-pixel 漂移在末页前一页不被误判 limit（WebView 漂移）', () {
+      const double pitch = 812;
+      const double total = pitch * 4 + 600;
+      final double max = alignedMax(total, pitch);
+      // 倒数第二页带 0.4px 漂移，仍须前进到末页。
+      final ReaderPageStep s =
+          forward(max - pitch + 0.4, pitch: pitch, max: max);
+      expect(s.scrolled, isTrue);
+      expect(s.targetScroll, max);
     });
   });
 
-  group('degenerate geometry', () {
-    test('zero or negative pitch crosses (cannot paginate)', () {
-      expect(
-        ReaderPaginationScripts.shouldCrossChapterOnLimit(
-          direction: ReaderNavigationDirection.forward,
-          currentScroll: 1000,
-          columnPitch: 0,
-          metricsMaxScroll: 9000,
-          metricsMinScroll: 0,
-          trueMaxScroll: 9000,
-        ),
-        isTrue,
-      );
+  group('backward 对称：仅章首才跨章', () {
+    test('第二页 backward 退回首页（不跨章）', () {
+      const double pitch = 812;
+      expect(backward(2 * pitch, pitch: pitch, min: 0).scrolled, isTrue);
+    });
+
+    test('章首 backward 不动（→ limit → 回上一章）', () {
+      const double pitch = 812;
+      expect(backward(0, pitch: pitch, min: 0).scrolled, isFalse);
+    });
+
+    test('章首带 0.33px 漂移 backward 不误判可翻', () {
+      const double pitch = 812;
+      expect(backward(0.33, pitch: pitch, min: 0).scrolled, isFalse);
     });
   });
 }

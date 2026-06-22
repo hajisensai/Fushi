@@ -10,10 +10,11 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// A-1 图片晚 load 后失效分页 metrics：两处 `Promise.all(imagePromises).then` 块内
 ///     `buildNodeOffsets()` 后必须把 `paginationMetrics` 置 null，否则下次 paginate
 ///     沿用图片未 load 时的低估 metrics（maxScroll 漏图片列）提前跨章。
-/// A-2 `_stepWithFreshMetrics` forward 落点用 maxF（含 trueMaxAligned）容差上界，而非
-///     旧的 `Math.max(metrics.maxScroll, currentScroll)`——后者低估时把落点 clamp 回
-///     currentScroll，插画页滚轮卡死（既不翻页也不跨章）。
 /// B   连续模式 wheel 到内容轴尽头回传 `onBoundarySwipe` 跨章（滚轮原本无此通道）。
+///
+/// TODO-729：A-2（`_stepWithFreshMetrics` 的 maxF 落点）已随单一量纲收敛删除——双量纲
+///     下 maxScroll 被低估才需该补救，根因消除后 paginate 直接 return "limit"。A-1
+///     图片晚 load 失效 metrics 的缓存仍保留（与量纲无关，是几何缓存失效）。
 void main() {
   late String scriptsSource;
   late String pageSource;
@@ -44,29 +45,12 @@ void main() {
     });
   });
 
-  group('A-2: _stepWithFreshMetrics forward landing uses maxF ceiling', () {
-    test(
-        'forward dest clamps to maxF, not max(metrics.maxScroll, currentScroll)',
-        () {
+  group('A-2: _stepWithFreshMetrics removed (TODO-729 single量纲)', () {
+    test('源文件已无 _stepWithFreshMetrics（双量纲补救删除）', () {
       expect(
-        scriptsSource.contains('var dest = Math.min(targetF, maxF);'),
-        isTrue,
-        reason: 'forward 落点上界必须是 maxF（含 trueMaxAligned），消除低估卡死',
-      );
-      expect(
-        scriptsSource.contains(
-            'Math.min(targetF, Math.max(metrics.maxScroll, currentScroll))'),
+        scriptsSource.contains('_stepWithFreshMetrics'),
         isFalse,
-        reason: '旧落点会在 metrics 低估时把 dest clamp 回 currentScroll，必须移除',
-      );
-    });
-
-    test('maxF still derives from trueMaxAligned (live DOM scroll edge)', () {
-      expect(
-        scriptsSource.contains(
-            'var maxF = Math.max(metrics.maxScroll, trueMaxAligned);'),
-        isTrue,
-        reason: 'maxF 必须取 metrics.maxScroll 与实时 DOM trueMaxAligned 的较大者',
+        reason: 'TODO-729：单一量纲后 settle 复核落点函数已删，不得复活',
       );
     });
   });

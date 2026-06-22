@@ -372,22 +372,36 @@ void main() {
               'padding-bottom: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
     });
 
-    // Regression: in vertical writing mode the page-turn axis is scrollTop, so
-    // the column-gap (the inter-page period) must reserve the chrome insets too.
-    // Otherwise the column pitch (pageSize + gap) is shorter than the viewport
-    // by (chromeTop + chromeBottom) and the previous page's tail bleeds into the
-    // top notch strip of the current page.
-    test('vertical paginated column-gap includes both chrome insets', () async {
+    // TODO-729：单一量纲。column-gap 固定为常量（22px），inset/margin/fontSize 不再
+    // 塞进 gap——它们由 column-width(content-box) 与 padding 承载。竖排 turn 轴=scrollTop，
+    // content-box 高 = page-height 扣上下 padding(margin + fontSize + 两 chrome inset)，
+    // 使列周期(column-width + 22px gap) == JS pageStep，maxScroll 与对齐量同源，杜绝
+    // 「翻一半跳章」（旧实现把 inset 塞进 gap 致 pitch 随 inset 漂移失配）。
+    test('vertical paginated column-gap is a fixed constant (no insets)',
+        () async {
       final ReaderSettings settings = await _defaultSettings();
       // Default writing-mode is vertical-rl.
       final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('column-gap: 22px !important;'));
+      // gap 绝不再含 inset/margin/fontSize 的 calc。
+      expect(css, isNot(contains('column-gap: calc(')));
+    });
+
+    test(
+        'vertical paginated column-width is content-box carrying turn-axis insets',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      // 竖排 content-box 高 = page-height − 上下 padding（margin + fontSize + chrome insets），
+      // 与 padding-top/padding-bottom 逐项镜像。
       expect(
           css,
           contains(
-              'column-gap: calc(${settings.marginTop}vh + ${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-top-inset, 0px) + var(--chrome-bottom-inset, 0px))'));
+              'column-width: calc(var(--page-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
     });
 
-    test('horizontal paginated column-gap excludes chrome insets', () async {
+    test('horizontal paginated column-gap is the same fixed constant',
+        () async {
       final HibikiDatabase db =
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -396,16 +410,40 @@ void main() {
       await settings.setWritingMode('horizontal-tb');
 
       final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('column-gap: 22px !important;'));
+      expect(css, isNot(contains('column-gap: calc(')));
+      // 横排 turn 轴=scrollLeft；content-box 宽 = page-width 扣左右 padding(margin)，
+      // perpendicular 的 padding-top/bottom(含 chrome inset)不入列宽。
       expect(
           css,
           contains(
-              'column-gap: calc(${settings.marginLeft}vw + ${settings.marginRight}vw + ${settings.fontSize.round()}px)'));
-      // The horizontal page-turn axis is scrollLeft; chrome insets live in
-      // padding-top/bottom (perpendicular), so they must not enter the gap.
+              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw)'));
+    });
+
+    // TODO-729 双页 spread：pageColumns>0 → column-count:N。CSS 层守住单一量纲不变式
+    // （gap 仍固定 22px、column-width 仍 content-box）；列宽是否仍 = 一屏滚动量由 N
+    // 主导还是 column-width 主导，是 headless WebView 无法验证的几何点（decision #2），
+    // 留真机双页翻到章尾兜底。这里只锁 CSS 结构不回退。
+    test(
+        'double-page spread emits column-count but keeps fixed gap + content-box width',
+        () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setPageColumns(2);
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('column-count: 2 !important;'),
+          reason: '双页 spread 必须发 column-count');
+      // 单一量纲不变式：gap 仍固定常量、column-width 仍 content-box（不被 spread 破坏）。
+      expect(css, contains('column-gap: 22px !important;'));
       expect(
           css,
-          isNot(contains(
-              'column-gap: calc(${settings.marginLeft}vw + ${settings.marginRight}vw + ${settings.fontSize.round()}px + var(--chrome-top-inset')));
+          contains(
+              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw)'));
     });
   });
 
@@ -519,8 +557,11 @@ void main() {
       expect(css, isNot(contains('padding: -')));
       expect(css, isNot(contains('padding-top: calc(-')));
       expect(css, isNot(contains('padding-bottom: calc(-')));
-      // Column-gap must not go negative either (0vh + 0vh + fontSize for vertical)
-      expect(css, contains('calc(0.0vh + 0.0vh'));
+      // TODO-729：column-gap 现在是固定常量，天然不可能为负。
+      expect(css, contains('column-gap: 22px !important;'));
+      // column-width(content-box) 也不得出现负 padding 项（margin 已 clamp 到 0）。
+      expect(css,
+          isNot(contains('column-width: calc(var(--page-height, 100vh) - -')));
     });
 
     test('overflow-wrap: anywhere is present in body', () async {
@@ -602,12 +643,15 @@ void main() {
           css,
           contains(
               'padding-bottom: calc(${settings.marginBottom}vh + 128px + var(--chrome-bottom-inset, 0px))'));
-      // 竖排 column-gap（翻页步距）也跟随字号。
+      // TODO-729：字号缩放从 column-gap 移到 column-width(content-box)——gap 固定 22px。
+      // 竖排 content-box 高扣掉 fontSize(128px) 一项，列周期随字号变。
       expect(
           css,
           contains(
-              'column-gap: calc(${settings.marginTop}vh + ${settings.marginBottom}vh + 128px + var(--chrome-top-inset, 0px) + var(--chrome-bottom-inset, 0px))'));
-      // 防回归：底部预留绝不能退化成 22px（旧 bottomOverlapPx 常量）。
+              'column-width: calc(var(--page-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
+      // column-gap 固定常量，不再把 fontSize 塞进去。
+      expect(css, contains('column-gap: 22px !important;'));
+      // 防回归：底部预留(padding-bottom)绝不能退化成 22px（旧 bottomOverlapPx 常量）。
       expect(css, isNot(contains('+ 22px + var(--chrome-bottom-inset')));
     });
 

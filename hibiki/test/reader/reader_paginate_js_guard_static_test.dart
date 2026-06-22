@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// 数值正确性由 reader_paginate_step_test.dart 的纯函数影子覆盖，这里只锁 JS 公式不回退。
 void main() {
   late String paginate;
-  late String stepWithFreshMetrics;
 
   setUpAll(() {
     final String source = File(
@@ -19,12 +18,6 @@ void main() {
       source,
       '  paginate: function(direction) {',
       '\n  getFirstVisibleCharOffset:',
-    );
-    // BUG-240：跨章 limit 的 settle 复核函数。
-    stepWithFreshMetrics = _functionSource(
-      source,
-      '  _stepWithFreshMetrics: function(context, direction) {',
-      '\n  paginate: function(direction) {',
     );
   });
 
@@ -65,40 +58,60 @@ void main() {
     );
   });
 
-  group('BUG-240: cross-chapter limit must be settle-rechecked', () {
-    test('paginate forward limit defers to _stepWithFreshMetrics', () {
+  group('TODO-729: single量纲下 paginate 翻不动即直接 return limit（删 settle 复核）', () {
+    test('forward 翻不动时直接 return "limit"，不再走 _stepWithFreshMetrics', () {
       expect(
         paginate
-            .contains('return this._stepWithFreshMetrics(context, "forward")'),
+            .contains('if (targetForward <= stepScroll + 1) return "limit"'),
         isTrue,
-        reason: 'forward 翻不动时必须先重建 metrics 复核，不能直接返回 limit 跨章',
+        reason: 'forward 末页应直接 return "limit"（安卓式），单一量纲下 metrics 与对齐量'
+            '同源、永不低估，无需二次 settle 复核',
       );
     });
 
-    test('paginate backward limit defers to _stepWithFreshMetrics', () {
+    test('backward 翻不动时直接 return "limit"', () {
       expect(
-        paginate
-            .contains('return this._stepWithFreshMetrics(context, "backward")'),
+        paginate.contains('if (targetBack >= stepScroll - 1) return "limit"'),
         isTrue,
-        reason: 'backward 翻不动时同样必须 settle 复核',
+        reason: 'backward 章首应直接 return "limit"',
       );
     });
 
-    test('_stepWithFreshMetrics rebuilds metrics fresh', () {
+    test('paginate 不再调用 _stepWithFreshMetrics', () {
       expect(
-        stepWithFreshMetrics.contains('this.buildPaginationMetrics()'),
-        isTrue,
-        reason: 'limit 复核必须重建 metrics，消除陈旧 max/min/pitch 误判',
+        paginate.contains('_stepWithFreshMetrics'),
+        isFalse,
+        reason: '双量纲补救函数已删，paginate 不得再引用它',
       );
     });
 
-    test('_stepWithFreshMetrics rechecks against the live context.maxScroll',
-        () {
+    test('源文件已无 _stepWithFreshMetrics 定义', () {
+      final String source = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
       expect(
-        stepWithFreshMetrics.contains('context.maxScroll'),
-        isTrue,
-        reason: '末页复核必须锚到 DOM 实时滚动上限（永不陈旧），给测量噪声留容差',
+        source.contains('_stepWithFreshMetrics: function'),
+        isFalse,
+        reason: 'TODO-729：单一量纲后 settle 复核函数必须删除，不得复活',
       );
+    });
+
+    test('getScrollContext 已收敛单量纲：无 columnPitch、maxScroll 减 pageStep', () {
+      final String source = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
+      final String ctx = _functionSource(
+        source,
+        '  getScrollContext: function() {',
+        '\n  getPagePosition:',
+      );
+      expect(ctx.contains('columnPitch'), isFalse,
+          reason: 'columnPitch 双量纲已废，只保留单一 pageStep');
+      expect(ctx.contains('var pageStep = contentBox + gap;'), isTrue,
+          reason: 'pageStep = content-box + gap 是唯一步进量纲');
+      expect(ctx.contains('totalSize - pageStep'), isTrue,
+          reason: 'maxScroll 减项必须是 pageStep（与对齐量同源），不是 clientSize');
+      expect(ctx.contains('clientSize'), isFalse, reason: 'clientSize 双量纲减项已删');
     });
   });
 }

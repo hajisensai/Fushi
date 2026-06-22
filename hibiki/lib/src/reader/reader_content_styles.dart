@@ -9,6 +9,14 @@ class ReaderLayoutDefaults {
   static const int bottomOverlapPx = fontSizePx;
   static const double imageWidthViewportRatio = 0.95;
 
+  // TODO-729：分页列间距固定为常量（对齐安卓 ReaderContentStyles.kt
+  // columnGapCss = "calc(0vh + 22px)"）。column-gap 是「列周期 = column-width +
+  // column-gap」里恒定的一项，**不得**再把 margin / fontSize / chrome inset 塞进它
+  // —— 那些 inset 唯一由 padding 承载（见 css() 的 padding-top/bottom）。gap 固定后，
+  // JS getScrollContext 的 pageStep(=content-box + gap) 恒等于浏览器真实列周期，
+  // maxScroll = totalSize - pageStep 与对齐量同源，杜绝「翻一半跳章」（pitch≠列周期失配）。
+  static const int columnGapPx = fontSizePx;
+
   // TODO-362（PR#3 响应式页边距）：默认左右各 2vw（= ReaderSettings 默认左右 2%），
   // 上下 0。运行时实际 padding 由 marginTop/Bottom/Left/Right 动态算（见 css()），
   // 此常量是文档化的默认快照。
@@ -91,19 +99,26 @@ class ReaderContentStyles {
     final double mr = math.max(0, settings.marginRight);
 
     final String paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw';
-    // The column-gap is the inter-page period along the page-turn axis. In
-    // vertical writing mode pages turn along scrollTop, so the gap must reserve
-    // the chrome insets (notch top + chrome bottom) on top of the margins/font;
-    // otherwise the column pitch (pageSize + gap = pageHeight - chromeTop -
-    // chromeBottom) falls short of the full viewport height and the previous
-    // page's tail bleeds into the current page's top notch strip. Including the
-    // insets makes pitch == pageHeight so consecutive pages tile exactly.
-    // Horizontal mode turns along scrollLeft, where the chrome insets live in
-    // padding-top/bottom (perpendicular to the turn axis) and must stay out of
-    // the gap.
-    final String columnGapCss = isVertical
-        ? 'calc(${mt}vh + ${mb}vh + ${settings.fontSize.round()}px + var(--chrome-top-inset, 0px) + var(--chrome-bottom-inset, 0px))'
-        : 'calc(${ml}vw + ${mr}vw + ${settings.fontSize.round()}px)';
+    // TODO-729：column-gap 固定为常量（= 安卓 calc(0vh + 22px)）。它只是相邻列之间
+    // 的恒定空隙，**不再**承载 margin / fontSize / chrome inset —— 那些 inset 全部由
+    // padding 承载（横排在 padding 左右 + perpendicular 的 padding-top/bottom；竖排在
+    // padding-top/bottom 的 turn 轴）。固定 gap 让 JS pageStep(=content-box + gap)
+    // 恒等于浏览器真实列周期 column-width + column-gap，maxScroll 与对齐量同源，杜绝
+    // 「翻一半跳章」（旧实现把 inset 塞进 gap，使列周期随 inset/字号/竖排 notch 漂移，
+    // pageStep 与真实列周期失配 → 倒数第二页越界被 clamp 误判 limit 提前跨章）。
+    const String columnGapCss = '${ReaderLayoutDefaults.columnGapPx}px';
+
+    // TODO-729 必补(a)：column-width 必须等于 content-box（扣掉 turn 轴方向的 padding），
+    // 而非无条件整视口。只有 column-width == content-box 时，浏览器真实列周期
+    // (column-width + column-gap) 才恒等于 JS pageStep(content-box + gap)，maxScroll
+    // 与对齐量同源。两轴的 content-box 与下方 padding 表达式严格镜像：
+    //  - 横排：宽 = page-width − 左右 padding(${ml}vw + ${mr}vw)。perpendicular 的
+    //    padding-top/bottom(含 chrome inset)不影响横向列宽。
+    //  - 竖排：高 = page-height − 上下 padding(${mt}vh + ${mb}vh + fontSize + chrome
+    //    top/bottom inset)，与 padding-top/padding-bottom 逐项对应。
+    final String columnWidthCss = isVertical
+        ? 'calc(var(--page-height, 100vh) - ${mt}vh - ${mb}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'
+        : 'calc(var(--page-width, 100vw) - ${ml}vw - ${mr}vw)';
 
     final String textSpacingCss =
         'line-height: ${settings.lineHeight} !important;';
@@ -172,6 +187,7 @@ p {
             textSpacingCss: textSpacingCss,
             paddingCss: paddingCss,
             columnGapCss: columnGapCss,
+            columnWidthCss: columnWidthCss,
             gridCss: gridCss,
             textIndentCss: textIndentCss,
             vertKerningCss: vertKerningCss,
@@ -387,6 +403,7 @@ a {
     required String textSpacingCss,
     required String paddingCss,
     required String columnGapCss,
+    required String columnWidthCss,
     required String gridCss,
     required String textIndentCss,
     required String vertKerningCss,
@@ -420,7 +437,7 @@ body {
   overflow-wrap: anywhere !important;
   $textSpacingCss
   box-sizing: border-box !important;
-  column-width: var(--page-width, 100vw) !important;
+  column-width: $columnWidthCss !important;
   column-gap: $columnGapCss !important;
   padding: $paddingCss !important;
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;

@@ -64,7 +64,9 @@ const String paginationHarnessJs = r'''
       var scroll = hoshiReader.getPagePosition(ctx);
       return JSON.stringify({
         scroll: Math.round(scroll),
-        columnPitch: Math.round(ctx.columnPitch),
+        // TODO-729：单一量纲后 ctx.pageSize 即唯一步进量(=旧 columnPitch=pageStep)；
+        // ctx.columnPitch 已删。Dart 侧字段名沿用 columnPitch（语义=整页步距）。
+        columnPitch: Math.round(ctx.pageSize),
         pageSize: Math.round(ctx.pageSize),
         maxScroll: Math.round(metrics.maxScroll),
         minScroll: Math.round(metrics.minScroll),

@@ -151,117 +151,6 @@ class ReaderPaginationScripts {
     }
   }
 
-  /// BUG-240 纯谓词：分页 `paginate()` 在「这一步翻不动」时，是否应当真的跨章
-  /// （而不是被陈旧/低估的 metrics 误判成已到章节边界）。JS `_stepWithFreshMetrics`
-  /// 的 Dart 影子——给定 **settle 后重建** 的几何，判定还有没有真实可滚动整页。
-  ///
-  /// 入参（均为 settle/重建后的实时几何）：
-  /// - [currentScroll]：当前对齐滚动量；
-  /// - [columnPitch]：当前 settle 后的整页步距；
-  /// - [metricsMaxScroll] / [metricsMinScroll]：重建后 `buildPaginationMetrics`
-  ///   的内容末/首页（`min(maxAlignedScroll, lastContentScroll)` 派生，可能因末列
-  ///   内容边缘低估而偏小）；
-  /// - [trueMaxScroll]：`getScrollContext().maxScroll`（DOM 实时滚动上限，含末尾
-  ///   占位空白，永不陈旧）。
-  ///
-  /// 返回 true ⇒ 真到章节首/末页，调用方可放心跨章；false ⇒ 还有整页可翻，
-  /// 不该跨章（消除「翻不动 == 到边界」的特例混淆）。forward 复核用
-  /// `max(metricsMaxScroll, trueMaxAligned)` 作容差上界，抵消内容边缘低估。
-  @visibleForTesting
-  static bool shouldCrossChapterOnLimit({
-    required ReaderNavigationDirection direction,
-    required double currentScroll,
-    required double columnPitch,
-    required double metricsMaxScroll,
-    required double metricsMinScroll,
-    required double trueMaxScroll,
-  }) {
-    if (columnPitch <= 0) return true;
-    final double stepScroll = _pageStepPosition(currentScroll, columnPitch);
-    if (direction == ReaderNavigationDirection.forward) {
-      final double trueMaxAligned =
-          (trueMaxScroll / columnPitch).floor() * columnPitch;
-      final double ceiling =
-          metricsMaxScroll > trueMaxAligned ? metricsMaxScroll : trueMaxAligned;
-      double target =
-          (stepScroll / columnPitch).floor() * columnPitch + columnPitch;
-      if (target > ceiling) target = ceiling;
-      if (target < metricsMinScroll) target = metricsMinScroll;
-      // 还有 >1px 的整页可前进 ⇒ 不跨章。
-      return target <= stepScroll + 1;
-    } else {
-      double target =
-          (stepScroll / columnPitch).ceil() * columnPitch - columnPitch;
-      if (target < metricsMinScroll) target = metricsMinScroll;
-      if (target > metricsMaxScroll) target = metricsMaxScroll;
-      return target >= stepScroll - 1;
-    }
-  }
-
-  /// TODO-627 / BUG-349 纯谓词：`_stepWithFreshMetrics` 的**落点**影子（不止判定
-  /// 跨章与不跨，还算出 settle 复核后真正应落到的整页边界）。`shouldCrossChapterOnLimit`
-  /// 只回答「翻不翻得动」；本函数回答「翻得动时落到哪」，专治插画页的「既不翻页也
-  /// 不跨章」卡死。
-  ///
-  /// 根因：图片晚 load 时 `buildPaginationMetrics` 枚举到的 `img` 还是 0×0（未 load
-  /// 完），`metrics.maxScroll = min(maxAlignedScroll, lastContentScroll)` 漏掉图片
-  /// 所占的列 → 偏小。`_stepWithFreshMetrics` 旧落点
-  /// `dest = min(targetF, max(metrics.maxScroll, currentScroll))` 在这种低估下：当
-  /// currentScroll 已停在被低估的「末页」（>= metrics.maxScroll），`max(...)` 取
-  /// currentScroll，`dest = min(targetF, currentScroll) == currentScroll` ⇒ 调用
-  /// `setPagePosition` 不动、却仍 `return "scrolled"` ⇒ Dart 侧 `_didScroll` 为真
-  /// （不跨章），但页面没翻 ⇒ 滚轮在插画页「卡住」。
-  ///
-  /// 修复：forward 落点上界用 `max(metrics.maxScroll, trueMaxAligned)`（与跨章复核
-  /// 同一容差上界），让落点能推进到 DOM 实时可滚的真实整页边界，而非被低估的
-  /// `metrics.maxScroll` clamp 回 currentScroll。只在「DOM 确有可滚整页、只是 content
-  /// edge 低估」的边缘多兑一道，不改 BUG-169 的 floor+1/ceil-1 步长公式，也不动正常
-  /// 路径（metrics 准时 trueMaxAligned <= metrics.maxScroll，落点与旧实现等价）。
-  ///
-  /// 入参均为 settle/重建后的实时几何，语义同 [shouldCrossChapterOnLimit]。返回
-  /// [ReaderPageStep]：`scrolled` 为是否真翻了一整页（false ⇒ 调用方走 limit/跨章），
-  /// `targetScroll` 为应落到的整页滚动量（已 clamp，未翻时等于 currentScroll）。
-  @visibleForTesting
-  static ReaderPageStep resolveFreshStepForTesting({
-    required ReaderNavigationDirection direction,
-    required double currentScroll,
-    required double columnPitch,
-    required double metricsMaxScroll,
-    required double metricsMinScroll,
-    required double trueMaxScroll,
-  }) {
-    if (columnPitch <= 0) {
-      return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
-    }
-    final double stepScroll = _pageStepPosition(currentScroll, columnPitch);
-    final double trueMaxAligned =
-        (trueMaxScroll / columnPitch).floor() * columnPitch;
-    if (direction == ReaderNavigationDirection.forward) {
-      final double maxF =
-          metricsMaxScroll > trueMaxAligned ? metricsMaxScroll : trueMaxAligned;
-      double targetF =
-          (stepScroll / columnPitch).floor() * columnPitch + columnPitch;
-      if (targetF > maxF) targetF = maxF;
-      if (targetF < metricsMinScroll) targetF = metricsMinScroll;
-      if (targetF <= stepScroll + 1) {
-        return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
-      }
-      // 落点上界用 maxF（含 trueMaxAligned），消除低估时被 clamp 回 currentScroll
-      // 的卡死；仍不超过真实可滚整页边界，不会停到末尾空白占位页之外。
-      final double dest = targetF < maxF ? targetF : maxF;
-      return ReaderPageStep(scrolled: true, targetScroll: dest);
-    } else {
-      double targetB =
-          (stepScroll / columnPitch).ceil() * columnPitch - columnPitch;
-      if (targetB < metricsMinScroll) targetB = metricsMinScroll;
-      if (targetB > metricsMaxScroll) targetB = metricsMaxScroll;
-      if (targetB >= stepScroll - 1) {
-        return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
-      }
-      return ReaderPageStep(scrolled: true, targetScroll: targetB);
-    }
-  }
-
   static double _pageStepPosition(double currentScroll, double columnPitch) {
     if (columnPitch <= 0) return currentScroll;
     final double nearestPage =
@@ -1298,46 +1187,33 @@ $_sharedJs
     return this.scrollToRange(range);
   },
   getScrollContext: function() {
+    // TODO-729：单一量纲（对齐安卓 reader-paginated.js getScrollContext）。
+    // 列周期 = column-width + column-gap。CSS column-width 已等于 content-box
+    // （reader_content_styles.dart 按书写轴分支扣 turn 轴 padding），单列正好填满
+    // content-box，故真实列周期 == content-box + gap == pageStep。pageStep 是唯一的
+    // 「整页步进 / 对齐 / maxScroll 减项」量纲，废除旧的「步进量与可视区减项」双量。
+    // maxScroll = totalSize - pageStep（安卓 totalSize - pageSize 同形）：减项与对齐量
+    // 同源，末页 floor 边界与真实最后一列严格对齐，杜绝「翻一半跳章」（旧实现减项用
+    // 含 padding 的可视区，与对齐量差 padding-gap → 末页错位 ±gap）。
     var vertical = this.isVertical();
     var scrollEl = document.body;
     var cs = getComputedStyle(scrollEl);
-    var pageSize;
+    var contentBox;
     if (vertical) {
       var pt = parseFloat(cs.paddingTop) || 0;
       var pb = parseFloat(cs.paddingBottom) || 0;
-      pageSize = (this.pageHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;
+      contentBox = (this.pageHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;
     } else {
       var pl = parseFloat(cs.paddingLeft) || 0;
       var pr = parseFloat(cs.paddingRight) || 0;
-      pageSize = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
+      contentBox = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
     }
-    pageSize = Math.max(1, pageSize);
-    var clientSize = vertical
-      ? (this.pageHeight || scrollEl.clientHeight || window.innerHeight)
-      : (scrollEl.clientWidth || this.pageWidth || window.innerWidth);
+    contentBox = Math.max(1, contentBox);
     var gap = parseFloat(cs.columnGap) || 0;
-    // Column pitch = one page worth of column(s). The CSS column period is
-    // (column-width + column-gap); the single column expands to fill the content
-    // box, so that equals (content size + gap) = pageSize + gap. pageSize already
-    // subtracts body padding. Using the full clientSize here (the old behaviour)
-    // ignored padding, so once chrome insets enlarged padding-top/bottom the
-    // vertical pitch over-scrolled by exactly (chrome-top + chrome-bottom) every
-    // page and the text drifted further each turn. For horizontal this equals the
-    // old "clientSize + fontSize" because the gap already carries the left/right
-    // margins that pageSize's padding subtraction cancels out.
-    var columnPitch = pageSize + gap;
+    var pageStep = contentBox + gap;
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
-    var maxScroll = Math.max(0, totalSize - clientSize);
-    var pageHeightVar = getComputedStyle(document.documentElement).getPropertyValue('--page-height');
-    var bodyRect = scrollEl.getBoundingClientRect();
-    var htmlCH = document.documentElement.clientHeight;
-    console.log('[HoshiPagination] ctx: v=' + vertical
-      + ' hoshiPH=' + this.pageHeight + ' clientH=' + scrollEl.clientHeight
-      + ' bodyRectH=' + bodyRect.height + ' --page-height=' + pageHeightVar
-      + ' scrollH=' + scrollEl.scrollHeight
-      + ' pageSize=' + pageSize + ' pitch=' + columnPitch
-      + ' cssGap=' + gap + ' innerH=' + window.innerHeight);
-    return { vertical: vertical, scrollEl: scrollEl, pageSize: pageSize, columnPitch: columnPitch, maxScroll: maxScroll };
+    var maxScroll = Math.max(0, totalSize - pageStep);
+    return { vertical: vertical, scrollEl: scrollEl, pageSize: pageStep, maxScroll: maxScroll };
   },
   getPagePosition: function(context) {
     return context.vertical ? context.scrollEl.scrollTop : context.scrollEl.scrollLeft;
@@ -1386,9 +1262,9 @@ $_sharedJs
     document.body.addEventListener('scroll', () => {
       this.lockRootViewport();
       var context = this.getScrollContext();
-      if (context.columnPitch <= 0) return;
+      if (context.pageSize <= 0) return;
       var currentScroll = this.getPagePosition(context);
-      var snappedScroll = Math.round(currentScroll / context.columnPitch) * context.columnPitch;
+      var snappedScroll = Math.round(currentScroll / context.pageSize) * context.pageSize;
       snappedScroll = Math.min(Math.max(0, snappedScroll), context.maxScroll);
       if (Math.abs(currentScroll - snappedScroll) > 1) {
         this.assignPagePosition(context, window.lastPageScroll || 0);
@@ -1398,11 +1274,11 @@ $_sharedJs
     }, { passive: true });
   },
   alignToPage: function(context, offset) {
-    return Math.floor(Math.max(0, offset) / context.columnPitch) * context.columnPitch;
+    return Math.floor(Math.max(0, offset) / context.pageSize) * context.pageSize;
   },
   alignContentStartToPage: function(context, offset) {
     var safeOffset = Math.max(0, offset);
-    var nearestPage = Math.round(safeOffset / context.columnPitch) * context.columnPitch;
+    var nearestPage = Math.round(safeOffset / context.pageSize) * context.pageSize;
     if (Math.abs(safeOffset - nearestPage) < 1) {
       return nearestPage;
     }
@@ -1451,7 +1327,7 @@ $_sharedJs
   buildPaginationMetrics: function() {
     var context = this.getScrollContext();
     var currentScroll = this.getPagePosition(context);
-    var maxAlignedScroll = Math.floor(context.maxScroll / context.columnPitch) * context.columnPitch;
+    var maxAlignedScroll = Math.floor(context.maxScroll / context.pageSize) * context.pageSize;
     if (context.pageSize <= 0) {
       var emptyMetrics = { minScroll: 0, maxScroll: 0, totalChars: 0, progressStops: [] };
       this.paginationMetrics = emptyMetrics;
@@ -1498,7 +1374,7 @@ $_sharedJs
       lastContentEdge = Math.max(lastContentEdge, mediaEnd);
     }
     var minScroll = firstContentEdge === null ? 0 : Math.min(maxAlignedScroll, this.alignContentStartToPage(context, firstContentEdge));
-    var lastContentScroll = lastContentEdge <= 0 ? 0 : Math.floor(Math.max(0, lastContentEdge - 1) / context.columnPitch) * context.columnPitch;
+    var lastContentScroll = lastContentEdge <= 0 ? 0 : Math.floor(Math.max(0, lastContentEdge - 1) / context.pageSize) * context.pageSize;
     var maxScroll = Math.min(maxAlignedScroll, lastContentScroll);
     progressStops.sort(function(a, b) { return a.scroll - b.scroll; });
     var metrics = {
@@ -1537,14 +1413,14 @@ $_sharedJs
     // which would mis-report page 1 — so bail and let the caller show no page.
     if (this._reanchorPending === true) return null;
     var context = this.getScrollContext();
-    if (context.pageSize <= 0 || context.columnPitch <= 0) return null;
+    if (context.pageSize <= 0) return null;
     // totalPages math relies on min/maxScroll being whole-columnPitch aligned,
     // which buildPaginationMetrics guarantees (alignContentStartToPage / floor*pitch).
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var span = Math.max(0, metrics.maxScroll - metrics.minScroll);
-    var totalPages = Math.round(span / context.columnPitch) + 1;
+    var totalPages = Math.round(span / context.pageSize) + 1;
     var currentScroll = this.getPagePosition(context);
-    var page = Math.round((currentScroll - metrics.minScroll) / context.columnPitch) + 1;
+    var page = Math.round((currentScroll - metrics.minScroll) / context.pageSize) + 1;
     if (page < 1) page = 1;
     if (page > totalPages) page = totalPages;
     return { currentPage: page, totalPages: totalPages };
@@ -1601,88 +1477,42 @@ $_sharedJs
     }, 16);
     return true;
   },
-  // BUG-240：跨章 limit 的 settle 复核。已对齐 currentScroll 出发的整页步进若被
-  // 当前（可能陈旧/低估的）metrics clamp 成「翻不动」，先重建一次 metrics 拿到
-  // settle 后的真实 max/min，再用 getScrollContext().maxScroll（DOM 实时滚动上限，
-  // 永不陈旧）派生的整页末页作 1px 容差复核：只要 currentScroll 之后仍有真实可滚动
-  // 整页就放行翻页，避免「这一次没滚动」被误当「已到章节首/末页」而提前跨章。
-  // 不动 BUG-169 的 floor+1/ceil-1 步长公式，只在 limit 边缘多一道复核。
-  _stepWithFreshMetrics: function(context, direction) {
-    var metrics = this.buildPaginationMetrics();
-    var pitch = context.columnPitch;
-    var currentScroll = this.getPagePosition(context);
-    var stepScroll = this.pageStepPosition(currentScroll, pitch);
-    // 真末页/真首页：用实时 maxScroll 派生整页边界，metrics.maxScroll 取两者较大者，
-    // 抵消末列内容边缘被低估导致的 metrics.maxScroll 偏小。trueMaxAligned 含末尾占位
-    // 空白页 → 只作 forward 复核的容差上界，不作落点（落点仍用 metrics.maxScroll）。
-    var trueMaxAligned = Math.floor(context.maxScroll / pitch) * pitch;
-    if (direction === "forward") {
-      var maxF = Math.max(metrics.maxScroll, trueMaxAligned);
-      var targetF = (Math.floor(stepScroll / pitch) + 1) * pitch;
-      if (targetF > maxF) targetF = maxF;
-      if (targetF < metrics.minScroll) targetF = metrics.minScroll;
-      if (targetF <= stepScroll + 1) return "limit";
-      // TODO-627：落点上界用 maxF（含 trueMaxAligned），而非旧的
-      // max(metrics.maxScroll, currentScroll)。后者在图片晚 load 致 metrics.maxScroll
-      // 被低估、且 currentScroll 已停在被低估的「末页」时，会把 dest clamp 回
-      // currentScroll → setPagePosition 不动却仍返回 "scrolled"（插画页滚轮卡死：
-      // 既不翻页也不跨章）。改用 maxF 让落点推进到 DOM 实时可滚的真实整页边界；
-      // targetF 已 clamp 到 maxF，dest 不会越过真末页停到末尾空白占位页之外。
-      var dest = Math.min(targetF, maxF);
-      this.setPagePosition(context, dest);
-      return "scrolled";
-    } else {
-      var targetB = (Math.ceil(stepScroll / pitch) - 1) * pitch;
-      if (targetB < metrics.minScroll) targetB = metrics.minScroll;
-      if (targetB > metrics.maxScroll) targetB = metrics.maxScroll;
-      if (targetB >= stepScroll - 1) return "limit";
-      this.setPagePosition(context, targetB);
-      return "scrolled";
-    }
-  },
   paginate: function(direction) {
     var context = this.getScrollContext();
-    if (context.columnPitch <= 0) return "limit";
+    if (context.pageSize <= 0) return "limit";
     var currentScroll = this.getPagePosition(context);
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var minAlignedScroll = metrics.minScroll;
     var maxAlignedScroll = metrics.maxScroll;
-    var pitch = context.columnPitch;
+    var pitch = context.pageSize;
     var stepScroll = this.pageStepPosition(currentScroll, pitch);
     // BUG-169：从可能未对齐的 currentScroll 出发先算「严格相邻整页边界」再 clamp，
     // 是否真翻页由 clamp 后的 target 与当前位置比较得出（共用同一 target，首/末页
-    // 判定与步长计算一致）。旧实现 forward 用 round((cur+pitch)/pitch)（= round(cur/
-    // pitch)+1），cur 落在两页之间时 round 把当前页算成下一页 → 实际跳 2 页；且 guard
-    // 用 cur+pitch 在末页前一页且 cur 错位时会误判已到边界。floor+1 / ceil-1 在对齐时
-    // 与旧实现等价、错位时永远只走一页。1px 内的 WebView sub-pixel 漂移先归一化
-    // 到最近整页，避免连续 backward 把 17955.33 → 17955 误判成 limit。
-    // 与 Dart 影子 resolvePaginateStepForTesting 同算法。
+    // 判定与步长计算一致）。forward 取 floor(stepScroll/pitch)+1、backward 取
+    // ceil(stepScroll/pitch)-1：对齐时与「当前页 ±1」等价、错位时永远只走一页，
+    // 不会像旧 round((cur±pitch)/pitch) 那样把当前页算成相邻页跳 2 页。1px 内的
+    // WebView sub-pixel 漂移先经 pageStepPosition 归一化到最近整页，避免连续 backward
+    // 把 17955.33 → 17955 误判成 limit。与 Dart 影子 resolvePaginateStepForTesting
+    // 同算法。
+    //
+    // TODO-729：单一量纲（pageStep == 真实列周期 == maxScroll 减项）后，metrics 的
+    // max/minScroll 与对齐量同源、永不被低估，安卓式「翻不动即 return "limit" 跨章」
+    // 是结构性正确的——不再需要旧的二次 settle 复核（那是双量纲下 maxScroll 低估的
+    // 补救，根因消除后即多余）。安卓 reader-paginated.js paginate(814-840) 即直接
+    // return "limit"。
     if (direction === "forward") {
       var targetForward = (Math.floor(stepScroll / pitch) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
-      // BUG-240：陈旧/低估的 metrics 让这一步看似翻不动时，重建 metrics + 实时 maxScroll
-      // 复核后再定夺是否真到末页，避免提前跨章。
-      if (targetForward <= stepScroll + 1) return this._stepWithFreshMetrics(context, "forward");
+      if (targetForward <= stepScroll + 1) return "limit";
       this.setPagePosition(context, targetForward);
-      var afterScrollF = this.getPagePosition(context);
-      console.log('[HoshiPagination] paginate FORWARD: before=' + currentScroll
-        + ' target=' + targetForward + ' after=' + afterScrollF
-        + ' pitch=' + pitch + ' drift=' + (afterScrollF - targetForward)
-        + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
       return "scrolled";
     } else {
       var targetBack = (Math.ceil(stepScroll / pitch) - 1) * pitch;
       if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
-      // BUG-240：backward 同理用 settle 后的 metrics 复核，避免低估 minScroll 提前回上一章。
-      if (targetBack >= stepScroll - 1) return this._stepWithFreshMetrics(context, "backward");
+      if (targetBack >= stepScroll - 1) return "limit";
       this.setPagePosition(context, targetBack);
-      var afterScrollB = this.getPagePosition(context);
-      console.log('[HoshiPagination] paginate BACKWARD: before=' + currentScroll
-        + ' target=' + targetBack + ' after=' + afterScrollB
-        + ' pitch=' + pitch + ' drift=' + (afterScrollB - targetBack)
-        + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
       return "scrolled";
     }
   },
@@ -1753,18 +1583,18 @@ $_sharedJs
     var scrollOffset = context.vertical
       ? (context.scrollEl.scrollTop + rect.top)
       : (context.scrollEl.scrollLeft + rect.left);
-    var charPage = Math.floor(Math.max(0, scrollOffset) / context.columnPitch);
+    var charPage = Math.floor(Math.max(0, scrollOffset) / context.pageSize);
     var aligned;
     if (hintScroll !== undefined) {
       // Page-stable hint: if the target char is within one page of where we
       // started, keep the original page so a ±1-column repagination doesn't
       // visibly shift the reader; otherwise jump to the char's actual page.
-      var origPage = Math.round(hintScroll / context.columnPitch);
+      var origPage = Math.round(hintScroll / context.pageSize);
       aligned = (Math.abs(charPage - origPage) <= 1)
-        ? origPage * context.columnPitch
-        : charPage * context.columnPitch;
+        ? origPage * context.pageSize
+        : charPage * context.pageSize;
     } else {
-      aligned = charPage * context.columnPitch;
+      aligned = charPage * context.pageSize;
     }
     this.setPagePosition(context, aligned);
   },
