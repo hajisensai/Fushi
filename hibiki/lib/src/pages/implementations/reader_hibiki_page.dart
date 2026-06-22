@@ -179,7 +179,7 @@ bool shouldReclaimReaderFocusAfterGesture({
   return (width: widthChanged, height: heightChanged);
 }
 
-/// TODO-690 / BUG-397：桌面窗口拖边框 resize 后阅读器文字渲染错乱、不自动重排，
+/// TODO-690 / BUG-399：桌面窗口拖边框 resize 后阅读器文字渲染错乱、不自动重排，
 /// 翻页才恢复。唯一 resize→重排入口是 [_ReaderHibikiPageState.didChangeMetrics]
 /// → `_syncPageSize`，但 Windows 拖边框时 `didChangeMetrics` / `MediaQuery.size`
 /// 更新滞后，JS 分页几何缓存（`--page-width/height` / `this.pageWidth` / `_contW`
@@ -805,7 +805,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
-  // TODO-690 / BUG-397：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
+  // TODO-690 / BUG-399：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
   // LayoutBuilder 在每帧约束变化时比对基线（readerLayoutResizeNeedsRepaginate），
   // 超阈值就（取消旧 timer）起一个短 timer，拖拽停手后最终尺寸落一次 _syncPageSize
   // 重排。不在 builder 里 Future.delayed（会泄漏 / 重入）；timer 在 dispose 取消。
@@ -1390,7 +1390,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
-  /// TODO-690 / BUG-397：阅读器树内透明 LayoutBuilder 的 resize 通道。
+  /// TODO-690 / BUG-399：阅读器树内透明 LayoutBuilder 的 resize 通道。
   ///
   /// builder 每帧把 `constraints` 与上次记录的约束基线比对（复用
   /// [readerLayoutResizeNeedsRepaginate] 的 1px 容差），超阈值则取消旧 timer 起一个
@@ -1450,7 +1450,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       },
     );
 
-    // TODO-690 / BUG-397：透明 LayoutBuilder 作为桌面窗口 resize → 重排的通道。
+    // TODO-690 / BUG-399：透明 LayoutBuilder 作为桌面窗口 resize → 重排的通道。
     // 位于 HibikiAppUiScaleNeutralizer 之下（路由层 ReaderHibikiSource.buildLaunchPage
     // 已用 Neutralizer 包裹本页），在 WebView 子树外层。builder **零几何变换**：只读
     // constraints 交给 _onReaderConstraintsChanged（尾沿防抖起 _syncPageSize），原样返回

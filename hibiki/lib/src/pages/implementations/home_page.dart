@@ -306,7 +306,7 @@ class _HomePageState extends BasePageState<HomePage>
   void _selectTab(HomeTab tab) {
     // A same-route home-tab switch (IndexedStack, no route push/pop) still
     // changes the visible screen, so reset any focus ring lit on the old tab so
-    // it is not carried onto the new one (BUG-397). Route-based navigation is
+    // it is not carried onto the new one (BUG-398). Route-based navigation is
     // covered by AppModel.focusHighlightObserver; this handles the tab case the
     // NavigatorObserver cannot see.
     if (tab != _currentTab) {

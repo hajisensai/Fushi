@@ -1,4 +1,4 @@
-## BUG-397 · 焦点高亮切界面残留+无导航键也出现
+## BUG-398 · 焦点高亮切界面残留+无导航键也出现
 
 - **报告**：2026-06-22（用户：TODO-699）
 - **真实性**：✅ 真 bug。两个根因都在 `hibiki/lib/src/shortcuts/gamepad_service.dart`：

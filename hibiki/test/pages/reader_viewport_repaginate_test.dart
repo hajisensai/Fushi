@@ -88,7 +88,7 @@ void main() {
     });
   });
 
-  /// TODO-690 / BUG-397：桌面拖窗口边框 resize 后阅读器不重排、文字错乱（翻页才恢复）。
+  /// TODO-690 / BUG-399：桌面拖窗口边框 resize 后阅读器不重排、文字错乱（翻页才恢复）。
   ///
   /// 唯一 resize→重排入口是 didChangeMetrics→_syncPageSize，但 Windows 拖边框时
   /// didChangeMetrics / MediaQuery.size 更新滞后，JS 分页几何缓存无人失效 → 错位。

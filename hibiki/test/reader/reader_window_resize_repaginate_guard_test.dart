@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
-/// TODO-690 / BUG-397：桌面拖窗口边框 resize 后阅读器文字渲染错乱、不自动重排，翻页
+/// TODO-690 / BUG-399：桌面拖窗口边框 resize 后阅读器文字渲染错乱、不自动重排，翻页
 /// 才恢复。根因——唯一 resize→重排入口是 didChangeMetrics→_syncPageSize，但 Windows
 /// 拖边框时 didChangeMetrics / MediaQuery.size 更新滞后，JS 分页几何缓存（--page-width/
 /// height / this.pageWidth / _contW / paginationMetrics）无人失效 → 错位。

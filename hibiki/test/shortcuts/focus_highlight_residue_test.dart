@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 
-/// BUG-397 / TODO-699: the focus ring (Material focus highlight) appears on the
+/// BUG-398 / TODO-699: the focus ring (Material focus highlight) appears on the
 /// default build and gets carried to a freshly-entered screen.
 ///
 /// Two root causes, both in [GamepadService]:

@@ -837,7 +837,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         navigatorKey: appModel.navigatorKey,
         // Resets the focus highlight to touch on every route push/pop so a ring
         // lit by keyboard/gamepad navigation on one page is not carried onto the
-        // freshly-entered page (BUG-397).
+        // freshly-entered page (BUG-398).
         navigatorObservers: <NavigatorObserver>[
           appModel.focusHighlightObserver
         ],

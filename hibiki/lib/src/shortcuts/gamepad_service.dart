@@ -400,7 +400,7 @@ class GamepadService {
     // Only ACTUAL focus navigation (arrow keys / Tab) should light the ring.
     // Typing a letter, Esc, a shortcut, or any release edge previously flipped
     // the strategy to alwaysTraditional, leaving a residual ring on the default
-    // build (BUG-397). Never consume the event either way.
+    // build (BUG-398). Never consume the event either way.
     if (!gamepadKeyDrivesFocusRing(event)) return false;
     // An arrow the focused text field consumes for its caret is editing, not
     // focus traversal — keep touch mode so the caret edit does not light a ring.
@@ -411,7 +411,7 @@ class GamepadService {
 
   /// Drops the focus ring back to touch mode. Called when the screen changes
   /// (route push/pop or home-tab switch) so a ring lit by keyboard/gamepad
-  /// navigation on one surface is not carried onto the next one (BUG-397). Safe
+  /// navigation on one surface is not carried onto the next one (BUG-398). Safe
   /// to call unconditionally: [start] also seeds [FocusHighlightStrategy.alwaysTouch]
   /// on the supported platforms this service runs on, so this just re-asserts it.
   void resetHighlightForScreenSwitch() {
@@ -440,7 +440,7 @@ class GamepadService {
 /// qualifies: an arrow key on its move edge ([KeyDownEvent]/[KeyRepeatEvent]) or
 /// Tab on its press edge. A plain letter, Escape, a shortcut combo, or any
 /// release edge ([KeyUpEvent]) returns false — those are not focus traversal and
-/// must not light the ring (BUG-397: the ring previously appeared on the first
+/// must not light the ring (BUG-398: the ring previously appeared on the first
 /// keystroke and lingered).
 ///
 /// This is the single arbiter so the gamepad service and its tests agree on
@@ -471,7 +471,7 @@ bool _arrowEditsTextCaret(KeyEvent event) {
 /// A [NavigatorObserver] that resets the focus highlight to touch mode on every
 /// route push/pop/replace. Wired into [MaterialApp.navigatorObservers] so a
 /// focus ring lit by keyboard/gamepad navigation on one page does not get
-/// carried onto a freshly-entered page (BUG-397). The reset is a plain callback
+/// carried onto a freshly-entered page (BUG-398). The reset is a plain callback
 /// (typically `GamepadService.resetHighlightForScreenSwitch`) so the observer
 /// stays decoupled from the service and is unit-testable on its own.
 class HighlightResetNavigatorObserver extends NavigatorObserver {
