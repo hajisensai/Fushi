@@ -340,7 +340,32 @@ bool readerUiScaleReanchorAllowed({
       continuousMode;
 }
 
-/// TODO-693 / TODO-697: appUiScale 连续重锚的两阶段编排（运行时序列）。
+/// TODO-718: 退出再进的**恢复完成重锚**门控真值表纯函数（连续模式）。
+///
+/// 根因（同 TODO-693 家族，693 修「运行中改缩放」、718 修「首次进入恢复」）：连续模式
+/// 阅读位置是裸 `window.scrollY`，恢复脚本（`restoreToCharOffset`/`restoreProgress`）把
+/// 视口滚到锚点后**没有任何抗归零保护**。`_onRestoreComplete` 已置 `_restoreInFlight=false`、
+/// `_readerContentReady=true`，随后进入 WebView settle reflow 把 scrollY 瞬时归 0 → 此时
+/// `_handleReaderScroll` 门控（[readerScrollProgressRefreshAllowed]）已全放行 → `_refreshProgress`
+/// 把 progress≈0 落库 → 章首，下次进入也章首。存/读对称、恢复脚本也被调，只是被 reflow 冲掉。
+///
+/// 与 [readerUiScaleReanchorAllowed] 的差异：本门控在 `_onRestoreComplete` 内、`_restoreInFlight`
+/// **刚被置 false** 那一刻触发，是「恢复完成」语义而非「运行中」，故**不含** restoreInFlight
+/// 早返回（复用 [readerUiScaleReanchorAllowed] 会因 restoreInFlight 历史语义产生纠缠/误抑制）。
+/// 其余门控对齐：控制器释放 / 内容未就绪 / 歌词模式 / 分页模式（分页有 snap/lock 保护）都抑制。
+bool readerRestoreReanchorAllowed({
+  required bool controllerAvailable,
+  required bool readerContentReady,
+  required bool lyricsMode,
+  required bool continuousMode,
+}) {
+  return controllerAvailable &&
+      readerContentReady &&
+      !lyricsMode &&
+      continuousMode;
+}
+
+/// TODO-693 / TODO-697 / TODO-718: 连续模式两阶段重锚的编排核心（运行时序列）。
 ///
 /// 从 `_reanchorContinuousForUiScale` 抽出的可注入编排核心：把门控、阶段1 begin
 /// 求值（错误早返回）、`intResult` 解析、`<0` 早返回（不提交、不误清旗）、postFrame
@@ -348,6 +373,13 @@ bool readerUiScaleReanchorAllowed({
 /// 用回调注入 WebView 求值 / postFrame 调度 / 存活复检 / 错误上报，使其能在 headless
 /// `flutter_test` 下真执行（而非源码字符串扫描），锁住「先 begin 后 commit、begin<0 不
 /// commit、门控抑制不求值」的语义不被未来回归静默破坏。
+///
+/// 门控由调用方算好布尔结果经 [gateAllowed] 注入（不再硬编码单一门控函数）：appUiScale
+/// 缩放重锚走 [readerUiScaleReanchorAllowed]（运行中、含 `!restoreInFlight` 早返回），
+/// 退出再进的恢复完成重锚（TODO-718）走 [readerRestoreReanchorAllowed]（在 `_onRestoreComplete`
+/// 已置 `_restoreInFlight=false` 之后那一刻触发，语义上 restoreInFlight 必为 false，故该门控
+/// 不含 restoreInFlight 早返回）。两条触发路径共用同一两阶段 begin→commit 序列与
+/// `_reanchorPending` 串行旗，差异只在门控真值表。
 ///
 /// 各回调含义：
 /// - [evalBegin]：求值 `beginUiScaleReanchorInvocation`，返回原始 JS 结果（同步采锚+置旗）。
@@ -358,11 +390,7 @@ bool readerUiScaleReanchorAllowed({
 ///
 /// 行为与原方法逐句等价；纯编排无 Flutter 依赖（postFrame 经回调注入）。
 Future<void> runUiScaleReanchorOrchestration({
-  required bool controllerAvailable,
-  required bool readerContentReady,
-  required bool lyricsMode,
-  required bool restoreInFlight,
-  required bool continuousMode,
+  required bool gateAllowed,
   required Future<dynamic> Function() evalBegin,
   required Future<void> Function() evalCommit,
   required void Function(void Function()) schedulePostFrame,
@@ -370,13 +398,7 @@ Future<void> runUiScaleReanchorOrchestration({
   required void Function(Object error, StackTrace stack) onBeginError,
   required void Function(Object error, StackTrace stack) onCommitError,
 }) async {
-  if (!readerUiScaleReanchorAllowed(
-    controllerAvailable: controllerAvailable,
-    readerContentReady: readerContentReady,
-    lyricsMode: lyricsMode,
-    restoreInFlight: restoreInFlight,
-    continuousMode: continuousMode,
-  )) {
+  if (!gateAllowed) {
     return;
   }
   // 阶段 1：同步采样锚 + 置旗。必须先于过渡帧落地，使后续 reflow 归零 scroll 被

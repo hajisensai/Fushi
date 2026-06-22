@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
-    show readerUiScaleReanchorAllowed;
+    show readerUiScaleReanchorAllowed, readerRestoreReanchorAllowed;
 
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
@@ -246,7 +246,12 @@ void main() {
       expect(body.contains('runUiScaleReanchorOrchestration('), isTrue,
           reason: '方法必须委托给 top-level runUiScaleReanchorOrchestration（编排核心，'
               '运行时序列由 runtime 测试锁定）');
-      // 门控的五个实例字段必须绑进编排（撤任一 → 对应抑制行为不再受控）。
+      // TODO-718：编排核心改由调用方注入门控结果（gateAllowed）。693 缩放重锚路径必须绑
+      // readerUiScaleReanchorAllowed（含 !restoreInFlight 早返回）。
+      expect(
+          body.contains('gateAllowed: readerUiScaleReanchorAllowed('), isTrue,
+          reason: '缩放重锚必须把 readerUiScaleReanchorAllowed 结果绑进 gateAllowed');
+      // 门控的五个实例字段必须绑进 readerUiScaleReanchorAllowed（撤任一 → 对应抑制不再受控）。
       expect(body.contains('controllerAvailable: _controller != null'), isTrue,
           reason: '必须把控制器存活绑进门控');
       expect(
@@ -281,8 +286,9 @@ void main() {
       expect(idx, greaterThan(0),
           reason: 'runUiScaleReanchorOrchestration top-level 编排核心必须存在');
       final String body = src.substring(idx, idx + 1600);
-      expect(body.contains('readerUiScaleReanchorAllowed('), isTrue,
-          reason: '编排核心必须先过纯函数门控 readerUiScaleReanchorAllowed');
+      expect(body.contains('if (!gateAllowed)'), isTrue,
+          reason: '编排核心必须先过调用方注入的门控结果 gateAllowed（TODO-718：不再硬编码'
+              '单一门控函数，缩放/恢复两路径各传自己的门控真值表）');
       final int idxBegin = body.indexOf('await evalBegin()');
       final int idxIntResult =
           body.indexOf('ReaderPaginationScripts.intResult(begin)');
@@ -299,6 +305,156 @@ void main() {
           reason: 'postFrame 调度必须发生在 begin<0 早返回之后');
       expect(idxCommit, greaterThan(idxPostFrame),
           reason: 'commit 必须在 schedulePostFrame 回调内（settle 之后）');
+    });
+  });
+
+  group('TODO-718 readerRestoreReanchorAllowed（恢复完成重锚门控真值表）', () {
+    test('连续模式 + 全部就绪：触发重锚（恢复完成路径）', () {
+      expect(
+        readerRestoreReanchorAllowed(
+          controllerAvailable: true,
+          readerContentReady: true,
+          lyricsMode: false,
+          continuousMode: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('分页模式（continuousMode==false）抑制——分页有 snap/lock 保护', () {
+      expect(
+        readerRestoreReanchorAllowed(
+          controllerAvailable: true,
+          readerContentReady: true,
+          lyricsMode: false,
+          continuousMode: false,
+        ),
+        isFalse,
+        reason: '分页 registerSnapScroll/lockRootViewport 已挡归零，恢复路径同样无需重锚',
+      );
+    });
+
+    test('歌词模式（lyricsMode）抑制——非正文阅读无章内 scrollY 语义', () {
+      expect(
+        readerRestoreReanchorAllowed(
+          controllerAvailable: true,
+          readerContentReady: true,
+          lyricsMode: true,
+          continuousMode: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('内容未就绪（!readerContentReady）抑制——锚还算不出', () {
+      expect(
+        readerRestoreReanchorAllowed(
+          controllerAvailable: true,
+          readerContentReady: false,
+          lyricsMode: false,
+          continuousMode: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('控制器已释放（!controllerAvailable）抑制——dispose 竞态', () {
+      expect(
+        readerRestoreReanchorAllowed(
+          controllerAvailable: false,
+          readerContentReady: true,
+          lyricsMode: false,
+          continuousMode: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test(
+        '门控不含 restoreInFlight 参数——恢复完成路径下 _restoreInFlight 必为 false，'
+        '复用含早返回的 readerUiScaleReanchorAllowed 会误抑制（要求②）', () {
+      // 反向锁定：本门控签名故意没有 restoreInFlight。若有人把它合并回
+      // readerUiScaleReanchorAllowed（带 !restoreInFlight），_onRestoreComplete 调用点的
+      // 时序就会脆弱化。纯函数全就绪即放行，不依赖任何恢复期标志。
+      expect(
+        readerRestoreReanchorAllowed(
+          controllerAvailable: true,
+          readerContentReady: true,
+          lyricsMode: false,
+          continuousMode: true,
+        ),
+        isTrue,
+        reason: '恢复完成门控不应被任何 restoreInFlight 语义牵制',
+      );
+    });
+  });
+
+  group('TODO-718 Dart 守卫：_onRestoreComplete 归零前采锚 + 恢复重锚接线', () {
+    late String src;
+
+    setUpAll(() {
+      src = readReaderPageSource();
+    });
+
+    test(
+        '_onRestoreComplete 在 _restoreInFlight=false 之后、_refreshProgress() 之前采锚',
+        () {
+      // 要求①③：采锚必须在 reflow 归零前。归零发生在恢复完成后的 settle 帧，
+      // _refreshProgress() 会把（被归零冲掉的）progress 落库——故采锚+置旗必须在它之前，
+      // 置旗后 webview 守卫挡住归零 scroll 不回传，_refreshProgress 读到恢复后正确位置。
+      final int idxRestoreFalse = src.indexOf('_restoreInFlight = false;');
+      final int idxReanchor = src.indexOf('_reanchorContinuousAfterRestore();');
+      // _onRestoreComplete 里最后一处 _refreshProgress(); 调用（恢复完成收尾）。
+      final int idxStartPoll = src.indexOf('_startProgressPoll();');
+      expect(idxRestoreFalse, greaterThan(0),
+          reason: '_onRestoreComplete 必须先把 _restoreInFlight 置 false');
+      expect(idxReanchor, greaterThan(idxRestoreFalse),
+          reason: '恢复重锚必须在 _restoreInFlight=false 之后（_onRestoreComplete 内）');
+      // 采锚必须在 _startProgressPoll 之前的那段收尾（紧邻 _refreshProgress 之前）。
+      expect(idxReanchor, lessThan(idxStartPoll),
+          reason: '采锚必须在恢复完成收尾的 _refreshProgress()/_startProgressPoll() 之前，'
+              '否则归零会先污染落库（要求①③：采锚在归零前）');
+      // 同段内 _refreshProgress() 必须出现在采锚之后。
+      final String afterReanchor = src.substring(idxReanchor, idxStartPoll);
+      expect(afterReanchor.contains('_refreshProgress();'), isTrue,
+          reason: '采锚之后才轮到 _refreshProgress()（置旗已挡住归零，读到正确位置）');
+    });
+
+    test('_reanchorContinuousAfterRestore 委托编排核心并绑恢复完成门控', () {
+      final int idx =
+          src.indexOf('Future<void> _reanchorContinuousAfterRestore()');
+      expect(idx, greaterThan(0),
+          reason: '_reanchorContinuousAfterRestore 必须存在（TODO-718）');
+      final String body = src.substring(idx, idx + 2000);
+      expect(body.contains('runUiScaleReanchorOrchestration('), isTrue,
+          reason: '恢复重锚必须复用 top-level 编排核心（同 693 两阶段序列）');
+      // 要求②：必须绑恢复完成专用门控 readerRestoreReanchorAllowed（不含 restoreInFlight 早返回），
+      // 绝不复用 readerUiScaleReanchorAllowed。
+      expect(
+          body.contains('gateAllowed: readerRestoreReanchorAllowed('), isTrue,
+          reason: '恢复重锚必须绑 readerRestoreReanchorAllowed（避开会早返回的门控，要求②）');
+      expect(body.contains('readerUiScaleReanchorAllowed('), isFalse,
+          reason:
+              '恢复重锚不得复用含 !restoreInFlight 早返回的 readerUiScaleReanchorAllowed');
+      // 门控不绑 restoreInFlight（恢复完成路径下必为 false）。
+      expect(body.contains('restoreInFlight:'), isFalse,
+          reason: '恢复重锚门控不应再绑 restoreInFlight');
+      // 复用同一两阶段 begin/commit invocation（与 _reanchorPending 串行旗一致）。
+      final int idxBegin = body
+          .indexOf('ReaderPaginationScripts.beginUiScaleReanchorInvocation()');
+      final int idxCommit = body
+          .indexOf('ReaderPaginationScripts.commitUiScaleReanchorInvocation()');
+      expect(idxBegin, greaterThan(0),
+          reason: 'evalBegin 必须绑 beginUiScaleReanchorInvocation（归零前采锚+置旗）');
+      expect(idxCommit, greaterThan(0),
+          reason:
+              'evalCommit 必须绑 commitUiScaleReanchorInvocation（settle 后滚回清旗）');
+      expect(body.contains('addPostFrameCallback'), isTrue,
+          reason: 'schedulePostFrame 必须经 addPostFrameCallback 等 settle 时机');
+      expect(
+          body.contains('continuousMode: _settings?.isContinuousMode == true'),
+          isTrue,
+          reason: '必须把连续模式绑进门控（分页抑制来源）');
     });
   });
 }

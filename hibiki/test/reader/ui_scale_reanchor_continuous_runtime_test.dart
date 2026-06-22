@@ -44,14 +44,12 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   }
 
-  /// 构造一次编排调用：门控可调，begin 返回值可调，commit 是否抛异常可调。
+  /// 构造一次编排调用：门控结果（[gateAllowed]）可调，begin 返回值可调，commit 是否抛异常可调。
+  /// TODO-718 后编排核心改由调用方注入 [gateAllowed] 布尔（门控真值表由
+  /// `readerUiScaleReanchorAllowed` / `readerRestoreReanchorAllowed` 各自的纯函数单测覆盖）。
   /// 返回 future（编排主体）；postFrame 由 [pendingPostFrame] 收集，需测试手动 pump。
   Future<void> runOrchestration({
-    bool controllerAvailable = true,
-    bool readerContentReady = true,
-    bool lyricsMode = false,
-    bool restoreInFlight = false,
-    bool continuousMode = true,
+    bool gateAllowed = true,
     Object? beginResult = 1234,
     bool throwOnBegin = false,
     bool throwOnCommit = false,
@@ -60,11 +58,7 @@ void main() {
     List<Object>? commitErrors,
   }) {
     return runUiScaleReanchorOrchestration(
-      controllerAvailable: controllerAvailable,
-      readerContentReady: readerContentReady,
-      lyricsMode: lyricsMode,
-      restoreInFlight: restoreInFlight,
-      continuousMode: continuousMode,
+      gateAllowed: gateAllowed,
       evalBegin: () async {
         evals.add('begin');
         if (throwOnBegin) throw StateError('begin boom');
@@ -134,36 +128,21 @@ void main() {
     });
   });
 
-  group('门控抑制：任一守卫不满足时不求值 begin/commit', () {
-    test('分页模式（continuousMode==false）抑制——分页有 snap/lock 保护', () async {
-      await runOrchestration(continuousMode: false);
+  group('门控抑制：gateAllowed==false 时不求值 begin/commit', () {
+    // TODO-718：编排核心改由调用方注入门控结果（gateAllowed）。具体门控真值表（分页/歌词/
+    // 恢复期/未就绪/控制器释放）由 readerUiScaleReanchorAllowed / readerRestoreReanchorAllowed
+    // 各自的纯函数单测锁定（ui_scale_reanchor_continuous_test.dart）；这里只锁「门控为假
+    // 时编排整体不求值」这层运行时行为。
+    test('gateAllowed==false：begin/commit 都不得求值（门控抑制）', () async {
+      await runOrchestration(gateAllowed: false);
       await pumpOnePostFrame();
-      expect(evals, isEmpty, reason: '分页模式门控抑制：begin/commit 都不得求值');
+      expect(evals, isEmpty, reason: '门控为假：begin/commit 都不得求值');
       expect(pendingPostFrame, isEmpty);
     });
 
-    test('歌词模式（lyricsMode）抑制', () async {
-      await runOrchestration(lyricsMode: true);
-      await pumpOnePostFrame();
-      expect(evals, isEmpty, reason: '歌词模式门控抑制：不得求值');
-    });
-
-    test('恢复期（restoreInFlight）抑制——程序化恢复滚动期不重锚', () async {
-      await runOrchestration(restoreInFlight: true);
-      await pumpOnePostFrame();
-      expect(evals, isEmpty, reason: '恢复期门控抑制：不得求值');
-    });
-
-    test('内容未就绪（!readerContentReady）抑制——锚还算不出', () async {
-      await runOrchestration(readerContentReady: false);
-      await pumpOnePostFrame();
-      expect(evals, isEmpty, reason: '内容未就绪门控抑制：不得求值');
-    });
-
-    test('控制器已释放（!controllerAvailable）抑制——dispose 竞态', () async {
-      await runOrchestration(controllerAvailable: false);
-      await pumpOnePostFrame();
-      expect(evals, isEmpty, reason: '控制器释放门控抑制：不得求值');
+    test('gateAllowed==true：begin 求值（门控放行）', () async {
+      await runOrchestration(gateAllowed: true);
+      expect(evals, <String>['begin'], reason: '门控放行：begin 必须求值');
     });
   });
 

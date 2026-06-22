@@ -320,11 +320,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // 存活复检 / 错误上报，使其能在 headless 单测下真执行（TODO-697）。这里只负责把本
     // State 的实例字段绑进那些回调，行为与原内联实现逐句等价。
     return runUiScaleReanchorOrchestration(
-      controllerAvailable: _controller != null,
-      readerContentReady: _readerContentReady,
-      lyricsMode: _lyricsMode,
-      restoreInFlight: _restoreInFlight,
-      continuousMode: _settings?.isContinuousMode == true,
+      // 运行中改缩放：门控含 !restoreInFlight 早返回（恢复期程序化滚动中不重锚）。
+      gateAllowed: readerUiScaleReanchorAllowed(
+        controllerAvailable: _controller != null,
+        readerContentReady: _readerContentReady,
+        lyricsMode: _lyricsMode,
+        restoreInFlight: _restoreInFlight,
+        continuousMode: _settings?.isContinuousMode == true,
+      ),
       // 阶段 1：同步采样锚 + 置旗。必须先于过渡帧落地，使后续 reflow 归零 scroll 被
       // _reanchorPending 守卫挡在落库之外。
       evalBegin: () => _controller!.evaluateJavascript(
@@ -346,6 +349,53 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       onCommitError: (Object e, StackTrace stack) =>
           ErrorLogService.instance.log(
         'ReaderHibiki.reanchorContinuousForUiScale.commit',
+        e,
+        stack,
+      ),
+    );
+  }
+
+  /// TODO-718: 退出再进的**恢复完成重锚**（连续模式）。在 [_onRestoreComplete] 里、
+  /// `_restoreInFlight` 刚被置 false 之后那一刻调用——此时恢复脚本
+  /// （`restoreToCharOffset`/`restoreProgress`）已把视口滚到锚点落定，但随后的 WebView
+  /// settle reflow 会把裸 `window.scrollY` 瞬时归 0（连续模式无分页的 snap/lock 保护），
+  /// 归零后被 [_handleReaderScroll]（门控已全放行）当真实滚动落库 progress≈0 → 弹回章首。
+  ///
+  /// 复用与 [_reanchorContinuousForUiScale] 完全相同的两阶段 begin→commit 序列与
+  /// `_reanchorPending` 串行旗（[runUiScaleReanchorOrchestration]）：阶段1 同步采样恢复后
+  /// 落定的首个可见字符锚 + 置旗（webview.part.dart 的 `_reanchorPending` 守卫挡住归零
+  /// scroll 不回传落库），阶段2 等过渡帧 settle 后把锚滚回视口首边并清旗。差异只在门控：
+  /// 走 [readerRestoreReanchorAllowed]（不含 restoreInFlight 早返回——本路径下它必为 false）。
+  Future<void> _reanchorContinuousAfterRestore() {
+    return runUiScaleReanchorOrchestration(
+      // 恢复完成路径专用门控：调用点已置 _restoreInFlight=false，故不复用含 !restoreInFlight
+      // 早返回的 readerUiScaleReanchorAllowed（要求②：避开会早返回的那个门控）。
+      gateAllowed: readerRestoreReanchorAllowed(
+        controllerAvailable: _controller != null,
+        readerContentReady: _readerContentReady,
+        lyricsMode: _lyricsMode,
+        continuousMode: _settings?.isContinuousMode == true,
+      ),
+      // 阶段 1：在归零前同步采样恢复落定的锚 + 置旗（要求①③：采锚必须在 reflow 归零前）。
+      evalBegin: () => _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.beginUiScaleReanchorInvocation(),
+      ),
+      // 阶段 2：等过渡帧 settle 后提交滚动并清旗（沿用 _syncPageSize 的 postFrame settle）。
+      evalCommit: () => _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
+      ),
+      schedulePostFrame: (void Function() commit) =>
+          WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
+      stillAlive: () => mounted && _controller != null,
+      onBeginError: (Object e, StackTrace stack) =>
+          ErrorLogService.instance.log(
+        'ReaderHibiki.reanchorContinuousAfterRestore.begin',
+        e,
+        stack,
+      ),
+      onCommitError: (Object e, StackTrace stack) =>
+          ErrorLogService.instance.log(
+        'ReaderHibiki.reanchorContinuousAfterRestore.commit',
         e,
         stack,
       ),

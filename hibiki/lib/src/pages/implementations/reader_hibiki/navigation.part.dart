@@ -89,6 +89,14 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _sessionStartTime = DateTime.now();
     _sessionMaxAbsoluteChars = _absoluteCharPosition(_initialProgress);
 
+    // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
+    // 瞬时归 0（无分页 snap/lock 保护），归零 scroll 经 _handleReaderScroll 落库 progress≈0
+    // → 退出再进恒章首。在此（_restoreInFlight 刚置 false、恢复滚动已落定、归零尚未发生）
+    // 采锚 + 置旗：webview.part.dart 的 _reanchorPending 守卫随即挡住归零 scroll 不回传，
+    // settle 后再把锚滚回。必须在下面 _refreshProgress() 之前——置旗后归零不会污染落库。
+    // 门控/序列见 [_reanchorContinuousAfterRestore]；分页/歌词/控制器释放等由门控抑制。
+    _reanchorContinuousAfterRestore();
+
     _refreshProgress();
     _startProgressPoll();
   }
