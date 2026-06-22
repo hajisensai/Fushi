@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "По знакам",
   "collection_mined": "С карточками",
   "collection_mined_clear_confirm": "Очистить всю историю предложений с карточками?",
-  "update_connecting": "Подключение…"
+  "update_connecting": "Подключение…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

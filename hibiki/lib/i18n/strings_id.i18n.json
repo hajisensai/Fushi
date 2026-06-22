@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "Per Karakter",
   "collection_mined": "Dibuat kartu",
   "collection_mined_clear_confirm": "Kosongkan semua riwayat kalimat yang dibuat kartu?",
-  "update_connecting": "Menghubungkan…"
+  "update_connecting": "Menghubungkan…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

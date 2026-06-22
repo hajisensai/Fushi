@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "Karaktere Göre",
   "collection_mined": "Çıkarılan",
   "collection_mined_clear_confirm": "Tüm kart çıkarılan cümle geçmişi temizlensin mi?",
-  "update_connecting": "Bağlanılıyor…"
+  "update_connecting": "Bağlanılıyor…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "Par caractères",
   "collection_mined": "Cartes créées",
   "collection_mined_clear_confirm": "Effacer tout l'historique des phrases utilisées pour les cartes ?",
-  "update_connecting": "Connexion…"
+  "update_connecting": "Connexion…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

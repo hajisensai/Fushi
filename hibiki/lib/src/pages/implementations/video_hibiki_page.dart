@@ -46,6 +46,8 @@ import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_chapter_panel.dart';
+import 'package:hibiki/src/media/video/audio_energy_probe.dart';
+import 'package:hibiki/src/media/video/subtitle_auto_align.dart';
 import 'package:hibiki/src/media/video/video_chapter_markers.dart';
 import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
@@ -3659,6 +3661,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       uiScale: _videoUiScale,
       initialAsbConfig: _asbConfig,
       onSetDelay: _setDelayMs,
+      // TODO-701 阶段1：仅当当前有字幕 cue + 视频本地路径时给自动对轴按钮（否则
+      // 无可对齐对象/无音频源），否则置 null 让面板不显示该按钮。
+      onAutoAlign: (_controller?.cues.isNotEmpty ?? false) &&
+              (_controller?.videoPath?.isNotEmpty ?? false)
+          ? _autoAlignSubtitle
+          : null,
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
       onToggleSubtitleBlur: _toggleSubtitleBlur,

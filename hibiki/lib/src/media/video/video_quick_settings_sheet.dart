@@ -34,6 +34,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.initialSubtitleBlur,
     required this.initialSubtitleStyle,
     required this.onSetDelay,
+    this.onAutoAlign,
     required this.onPreviewSpeed,
     required this.onSetSpeed,
     required this.onToggleSubtitleBlur,
@@ -82,6 +83,11 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 设音画延迟（绝对值），即时生效 + 持久化由调用方负责。
   final Future<void> Function(int delayMs) onSetDelay;
+
+  /// 一键字幕自动对轴（TODO-701 阶段1）：抽音频能量包络与字幕 cue 互相关求整体平移，
+  /// 经现有 [onSetDelay] 写穿延迟落盘。回调内部负责 OSD/低置信提示；本面板只在其
+  /// `await` 期间显示按钮 loading。null=不显示自动对轴按钮（无字幕/无视频路径时）。
+  final Future<void> Function()? onAutoAlign;
 
   /// 拖动倍速滑条时的实时预览（下发真实播放倍速，不落盘）。
   final Future<void> Function(double speed) onPreviewSpeed;
@@ -230,6 +236,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 拖动字幕调轴滑条时的临时预览值（仅本地回显，松手才 [_commitDelay] 落盘+实时生效），
   /// 避免每个拖动 tick 都写 DB。null = 未在拖动。
   int? _delayDragMs;
+
+  /// 一键自动对轴进行中（TODO-701）：按钮显示 spinner 并禁用，防重入。
+  bool _autoAligning = false;
 
   /// 窄窗 push 选中的子页 id；null = 主页。宽窗下恒有选中（默认 playback）。
   String? _subPage;
@@ -658,6 +667,23 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     await widget.onSetDelay(clamped);
   }
 
+  /// TODO-701 阶段1：触发一键自动对轴。回调（[VideoQuickSettingsSheet.onAutoAlign]）
+  /// 内部抽音频能量包络、与字幕 cue 互相关求整体平移，再经 [onSetDelay] 写穿延迟并弹
+  /// OSD/低置信提示；本面板只在其执行期间把按钮切成 spinner 并禁用（防重入）。完成后
+  /// 把权威 [_delayMs] 与输入框文本同步成回调可能改写后的 [VideoQuickSettingsSheet.initialDelayMs]
+  /// ——但面板在独立路由里、父 setState 不重建它，故这里不读父 widget，改由回调
+  /// 内部经 [onSetDelay] 路径在下次打开面板时反映；本轮仅复位 loading。
+  Future<void> _runAutoAlign() async {
+    final Future<void> Function()? cb = widget.onAutoAlign;
+    if (cb == null || _autoAligning) return;
+    setState(() => _autoAligning = true);
+    try {
+      await cb();
+    } finally {
+      if (mounted) setState(() => _autoAligning = false);
+    }
+  }
+
   Widget _buildDelayRow() {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -719,6 +745,27 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           padding: EdgeInsets.all(tokens.spacing.gap / 2),
           onTap: () => _commitDelay(_delayMs + 1000),
         ),
+        // TODO-701 阶段1：一键自动对轴（按音频能量包络与字幕 cue 互相关求整体平移）。
+        // 仅当父页提供 onAutoAlign（有字幕+视频路径）时显示；执行中切 spinner 防重入。
+        if (widget.onAutoAlign != null)
+          _autoAligning
+              ? Padding(
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                )
+              : HibikiIconButton(
+                  icon: Icons.auto_fix_high,
+                  tooltip: t.video_subtitle_auto_align,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: _runAutoAlign,
+                ),
       ],
     );
 
