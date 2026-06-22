@@ -48,4 +48,16 @@ void main() {
     expect(source, contains('Icons.copy_outlined'));
     expect(source, contains('Icons.share_outlined'));
   });
+  test('illustration gallery wires keyboard ESC + arrow paging (BUG-404)', () {
+    // 查看器自己持有键盘处理，不依赖整页 PageRoute 下不稳定的全局
+    // `_handleGlobalEscape`：ESC 走 Navigator.maybePop（本页永远可退），
+    // 左右方向键复用现成 `_pageBy`（已 clamp + 同步 PageView/计数）。
+    expect(source, contains('CallbackShortcuts'));
+    expect(source, contains('LogicalKeyboardKey.escape'));
+    expect(source, contains('LogicalKeyboardKey.arrowLeft'));
+    expect(source, contains('LogicalKeyboardKey.arrowRight'));
+    expect(source, contains('Navigator.maybePop(context)'));
+    expect(source, contains('_pageBy(-1)'));
+    expect(source, contains('_pageBy(1)'));
+  });
 }
