@@ -57,13 +57,22 @@ void main() {
     );
 
     expect(onCueChanged, contains('controller.shouldRevealCurrentCue'));
-    expect(
-      onCueChanged,
-      contains(
-          'AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal)'),
-      reason:
-          'highlight must be called even when follow audio makes reveal false',
-    );
+    // TODO-724：highlight 调用从单行扩成多行并新增 pauseEnabled(imagePauseSec>0) 形参，
+    // 但「follow audio 只控制 reveal、不门控 highlight 调用本身」的契约不变——
+    // highlight 仍以 `cue: cue` + `reveal: reveal` 无条件调用。守卫改断言这两个具名实参
+    // 同时出现在 highlight( 调用里，不再钉死单行字面量。
+    // _onCueChanged 里有多处 AudiobookBridge.highlight(（跨章清空高亮的裸调用在前），
+    // 真正带 cue 的逐句高亮调用在最后——用 lastIndexOf 定位它。
+    final int hlIndex = onCueChanged.lastIndexOf('AudiobookBridge.highlight(');
+    expect(hlIndex, isNonNegative,
+        reason: 'highlight must be called even when follow audio makes reveal '
+            'false');
+    final int hlEnd = (hlIndex + 200).clamp(0, onCueChanged.length);
+    final String hlCall = onCueChanged.substring(hlIndex, hlEnd);
+    expect(hlCall, contains('cue: cue'), reason: 'highlight 仍须传当前 cue');
+    expect(hlCall, contains('reveal: reveal'),
+        reason:
+            'reveal 由 forceReveal||shouldRevealCurrentCue 决定，仍透传给 highlight');
     expect(
       onCueChanged,
       isNot(contains('if (controller.shouldRevealCurrentCue) {\n'

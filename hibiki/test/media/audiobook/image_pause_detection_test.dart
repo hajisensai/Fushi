@@ -58,4 +58,57 @@ void main() {
     expect(sasFn, contains('__hoshiImagePauseAdvance'),
         reason: 'sasayaki 高亮路径须复用共享跨图检测核心');
   });
+
+  // TODO-724：竖排滚动模式有声书自动播放跳到图片。两个根因守卫。
+  test('image-reveal scroll is gated by pauseEnabled (TODO-724 defect a)', () {
+    // __hoshiImagePauseAdvance 须接收 pauseEnabled 参数，且仅 reveal && pauseEnabled
+    // 才滚到插图——imagePauseSec=0 关闭图片暂停时绝不把视口滚到图（用户报告症状）。
+    final int fnIdx = src.indexOf('__hoshiImagePauseAdvance = function');
+    expect(fnIdx, greaterThan(-1));
+    final String fn = src.substring(fnIdx, fnIdx + 400);
+    expect(fn, contains('function(el, reveal, pauseEnabled)'),
+        reason: 'cue 推进核心须新增 pauseEnabled 参数门控滚图');
+    expect(fn, contains('if (reveal && pauseEnabled)'),
+        reason:
+            '仅 reveal 且 pauseEnabled(imagePauseSec>0) 才 __hoshiRevealTarget 滚到插图');
+
+    // Dart highlight() 须把 imagePauseSec>0 经 pauseEnabled 传进两条 JS 高亮路径。
+    final String pageSrc = File(
+      'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
+    ).readAsStringSync();
+    expect(pageSrc, contains('controller.imagePauseSec.value > 0'),
+        reason: 'reader 须按 imagePauseSec>0 算出 pauseEnabled 传给 bridge');
+    expect(pageSrc, contains('pauseEnabled: pauseEnabled'),
+        reason: 'highlight 调用须传 pauseEnabled');
+    expect(src, contains('window.__hoshiHighlightSasayakiCueById('),
+        reason: 'sasayaki 路径仍是图片暂停检测入口');
+    final int callIdx = src.indexOf('window.__hoshiHighlightSasayakiCueById(');
+    final String call = src.substring(callIdx, callIdx + 120);
+    expect(call, contains(r'$reveal, $pauseEnabled'),
+        reason: 'sasayaki 高亮 JS 调用须把 pauseEnabled 透传');
+  });
+
+  test(
+      'prev-highlight anchor is reset on restore / chapter nav (TODO-724 defect b)',
+      () {
+    // bridge 须暴露重置 cue 推进锚点的入口。
+    expect(src, contains('window.__hoshiResetPrevHighlight'),
+        reason: '须有重置 __hoshiPrevHighlight 的 JS 入口');
+    expect(src, contains('resetImagePauseAnchor'),
+        reason: 'bridge 须暴露 Dart 端 resetImagePauseAnchor API');
+
+    // _onRestoreComplete（初次开书 + 跨章推进完成的汇聚点）须调用重置，
+    // 避免恢复到中段后首次 cue 推进跨越中间所有插图 reveal 到远处图。
+    final String navSrc = File(
+      'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    ).readAsStringSync();
+    final int restoreIdx = navSrc.indexOf('void _onRestoreComplete()');
+    expect(restoreIdx, greaterThan(-1));
+    // 截到下一个方法 _startProgressPoll 之前，确保重置在恢复完成方法体内。
+    final int endIdx = navSrc.indexOf('void _startProgressPoll()', restoreIdx);
+    expect(endIdx, greaterThan(restoreIdx));
+    final String restoreBody = navSrc.substring(restoreIdx, endIdx);
+    expect(restoreBody, contains('AudiobookBridge.resetImagePauseAnchor'),
+        reason: '_onRestoreComplete 须在恢复完成时重置 cue 推进锚点');
+  });
 }

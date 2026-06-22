@@ -97,6 +97,16 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 门控/序列见 [_reanchorContinuousAfterRestore]；分页/歌词/控制器释放等由门控抑制。
     _reanchorContinuousAfterRestore();
 
+    // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
+    // (__hoshiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
+    // 的元素，__hoshiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
+    // （BUG-007 的 reveal 滚图被恢复 + 大跨度 cue 放大）。本路径同时覆盖初次开书与
+    // 有声书跨章推进（_handleCueCrossChapter→_navigateToChapter 完成后均回到这里）。
+    // 与 718 的 _reanchorContinuousAfterRestore（连续模式重锚）零共享状态，正交独立。
+    if (!_lyricsMode && _controller != null) {
+      AudiobookBridge.resetImagePauseAnchor(_controller!);
+    }
+
     _refreshProgress();
     _startProgressPoll();
   }

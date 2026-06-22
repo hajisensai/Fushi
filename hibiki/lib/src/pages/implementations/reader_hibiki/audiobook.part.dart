@@ -429,7 +429,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     }
     final bool forceReveal = controller.consumeForceReveal();
     final bool reveal = forceReveal || controller.shouldRevealCurrentCue;
-    AudiobookBridge.highlight(_controller!, cue: cue, reveal: reveal);
+    // TODO-724：仅当图片暂停开启（imagePauseSec>0）时，cue 推进跨过插图才把视口
+    // 滚到插图（配合 Dart 的 triggerImagePause 暂停让用户看见）。imagePauseSec=0
+    // 时图片暂停关闭，绝不滚图，否则视口会无预兆跳到不知哪张图（用户报告症状）。
+    final bool pauseEnabled = controller.imagePauseSec.value > 0;
+    AudiobookBridge.highlight(
+      _controller!,
+      cue: cue,
+      reveal: reveal,
+      pauseEnabled: pauseEnabled,
+    );
     _syncPositionFromCurrentCue();
   }
 

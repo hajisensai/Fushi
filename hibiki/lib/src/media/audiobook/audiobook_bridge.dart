@@ -84,23 +84,29 @@ window.__hoshiRevealTarget = function(t) {
 };
 
 // cue 推进核心：把上一句锚点更新到 el；若两锚点之间跨过 img/svg → 通知 Dart 暂停。
-// 当 reveal 为真时把视口滚到那张插图（而非 el），返回 true 表示「已 reveal 图片，
-// 调用方不要再 reveal el」。onImageDetected 与 reveal 无关，跨图就发（设备测试契约）。
-window.__hoshiImagePauseAdvance = function(el, reveal) {
+// 当 reveal 且 pauseEnabled 为真时把视口滚到那张插图（而非 el），返回 true 表示
+// 「已 reveal 图片，调用方不要再 reveal el」。
+// onImageDetected 与 reveal/pauseEnabled 无关，跨图就发（设备测试契约；Dart 侧
+// triggerImagePause 在 imagePauseSec<=0 时自然 no-op）。
+//
+// TODO-724：滚图必须受 imagePauseSec(>0) 门控。imagePauseSec=0 时图片暂停关闭，
+// 不应把视口无预兆滚到插图——返回 false 让调用方按正常 cue 跟随 reveal el。
+// 只有 imagePauseSec>0（图片暂停开启）时才滚到插图，配合 Dart 的暂停让用户看见图。
+window.__hoshiImagePauseAdvance = function(el, reveal, pauseEnabled) {
   var crossed = window.__hoshiImageBetween(window.__hoshiPrevHighlight, el);
   window.__hoshiPrevHighlight = el;
   if (!crossed) return false;
   if (window.flutter_inappwebview) {
     window.flutter_inappwebview.callHandler('onImageDetected');
   }
-  if (reveal) {
+  if (reveal && pauseEnabled) {
     window.__hoshiRevealTarget(crossed);
     return true;
   }
   return false;
 };
 
-window.__hoshiHighlight = function(selector, reveal) {
+window.__hoshiHighlight = function(selector, reveal, pauseEnabled) {
   if (reveal === undefined) reveal = true;
   document.querySelectorAll('.hoshi-active').forEach(function(e) {
     e.classList.remove('hoshi-active');
@@ -108,11 +114,18 @@ window.__hoshiHighlight = function(selector, reveal) {
   if (!selector) { window.__hoshiPrevHighlight = null; return; }
   var el = document.querySelector(selector);
   if (!el) return;
-  var revealedImage = window.__hoshiImagePauseAdvance(el, reveal);
+  var revealedImage = window.__hoshiImagePauseAdvance(el, reveal, pauseEnabled);
   el.classList.add('hoshi-active');
   if (reveal && !revealedImage) {
     window.__hoshiRevealTarget(el);
   }
+};
+
+// TODO-724：跳章 / 位置恢复完成后由 Dart 调用，重置 cue 推进锚点。
+// 否则恢复到中段后首次 cue 推进时 prev 仍指向很早的元素，
+// __hoshiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图。
+window.__hoshiResetPrevHighlight = function() {
+  window.__hoshiPrevHighlight = null;
 };
 ''';
 
@@ -198,14 +211,14 @@ window.__hoshiSasayakiAnchorEl = function(key) {
   return null;
 };
 
-window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
+window.__hoshiHighlightSasayakiCueById = function(key, reveal, pauseEnabled) {
   if (reveal === undefined) reveal = true;
   var r = window.hoshiReader;
   if (!r || typeof r.highlightSasayakiCue !== 'function') return false;
   var anchor = window.__hoshiSasayakiAnchorEl(key);
   var revealedImage = false;
   if (anchor && typeof window.__hoshiImagePauseAdvance === 'function') {
-    revealedImage = window.__hoshiImagePauseAdvance(anchor, reveal);
+    revealedImage = window.__hoshiImagePauseAdvance(anchor, reveal, pauseEnabled);
   }
   // 跨过插图且需 reveal 时：让 reader 只高亮不自动滚（已滚到插图）；否则正常 reveal。
   r.highlightSasayakiCue(key, revealedImage ? false : reveal);
@@ -323,6 +336,7 @@ window.__hoshiAnnotate = function(chapterHref) {
     InAppWebViewController controller, {
     AudioCue? cue,
     bool reveal = true,
+    bool pauseEnabled = false,
   }) async {
     if (cue == null || cue.textFragmentId.isEmpty) {
       await controller.evaluateJavascript(
@@ -336,20 +350,36 @@ window.__hoshiAnnotate = function(chapterHref) {
     // BUG-366/TODO-630 诊断：播放期逐句高亮的路径分叉。frag==null（如纯 SRT cue
     // 的 textFragmentId='[data-cue-id=...]'）走普通 __hoshiHighlight，完全不碰
     // sasayaki 高亮系统——即使 setup 期建了 range 也不会激活 ::highlight。
+    // TODO-724：pauseEnabled = imagePauseSec>0；仅它为真时跨图才滚到插图。
     debugPrint('[sasayaki-hl] highlight raw="$raw" '
         'frag=${frag == null ? "NULL->__hoshiHighlight(non-sasayaki)" : "sasayaki"} '
-        'reveal=$reveal');
+        'reveal=$reveal pauseEnabled=$pauseEnabled');
     if (frag != null) {
       await controller.evaluateJavascript(
         source: 'if(typeof __hoshiHighlightSasayakiCueById!=="undefined")'
             'window.__hoshiHighlightSasayakiCueById('
-            '${jsonEncode(raw)}, $reveal);',
+            '${jsonEncode(raw)}, $reveal, $pauseEnabled);',
       );
       return;
     }
     await controller.evaluateJavascript(
       source: 'if(typeof __hoshiHighlight!=="undefined")'
-          '__hoshiHighlight(${jsonEncode(raw)}, $reveal);',
+          '__hoshiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);',
+    );
+  }
+
+  /// 重置 cue 推进锚点（`__hoshiPrevHighlight`）。
+  ///
+  /// TODO-724：跳章 / 位置恢复完成后调用。否则恢复到章节中段后，首次 cue 推进时
+  /// `__hoshiPrevHighlight` 仍指向很早的元素，`__hoshiImageBetween` 会跨越中间
+  /// 所有插图、误把视口 reveal 到一张远处的图。与高亮清空（`__hoshiHighlight("")`）
+  /// 不同：那是清当前高亮 class，本方法只把推进锚点归零，不动可见高亮。
+  static Future<void> resetImagePauseAnchor(
+    InAppWebViewController controller,
+  ) async {
+    await controller.evaluateJavascript(
+      source: 'if(typeof __hoshiResetPrevHighlight!=="undefined")'
+          '__hoshiResetPrevHighlight();',
     );
   }
 
