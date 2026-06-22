@@ -1781,5 +1781,7 @@
   "video_subtitle_auto_align": "Auto-align subtitle",
   "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
   "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
-  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

@@ -1781,5 +1781,7 @@
   "video_subtitle_auto_align": "自动对轴",
   "video_subtitle_auto_align_running": "正在自动对轴…",
   "video_subtitle_auto_align_low_confidence": "无法可靠自动对轴（未找到明显的语音匹配）",
-  "video_subtitle_auto_align_done": "已自动对轴 $ms ms"
+  "video_subtitle_auto_align_done": "已自动对轴 $ms ms",
+  "audiobook_background_play": "退出后继续播放",
+  "audiobook_background_play_hint": "关闭时，退出阅读页即停止有声书播放；开启后退出仍在后台继续播放。"
 }

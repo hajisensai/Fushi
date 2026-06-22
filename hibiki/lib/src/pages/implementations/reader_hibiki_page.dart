@@ -1236,11 +1236,28 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // detach 不 dispose 控制器，但这里先把退出那一刻的位置写穿（BUG-203/032）。
     _syncAndFlushPosition();
     _flushReadingStats();
-    // TODO-291 阶段2：退出书籍页不再 dispose 控制器、不再隐藏悬浮窗 / 清通知。
-    // 控制器归 [AudiobookSession] 进程级持有，detach 仅卸下 reader 的 WebView 侧回调，
-    // 让会话在后台继续播 + 悬浮窗继续刷字 + 通知继续更新（用户决策①后台继续）。
-    // 控制流订阅、悬浮窗显隐、媒体通知现都由 session 管理，reader 不再触碰。
+    // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。
+    // 两种情况都先 detachReader——卸下本 reader 的 WebView 侧回调（跨章/边界跳句
+    // 退化为安全无操作），不 dispose 控制器；上面的 [_syncAndFlushPosition] 已把
+    // 退出那一刻的位置写穿，控制器侧另有 force-flush 兜底（stopPlayback /
+    // dispose），位置安全。
+    //
+    // - 默认（audiobookBackgroundPlay=false）：detach 后再 [AudiobookSession.stop]
+    //   真正止声、释放 native 解码器、清悬浮窗/通知。stop 是 async，dispose 同步
+    //   签名只能 fire-and-forget（unawaited）；但 stop 的同步首段已立刻置空
+    //   `_controller`（audiobook_session.dart），秒重进的竞态窗口收敛到微任务级。
+    // - 开启（=true）：只 detachReader，控制器留在 [AudiobookSession] 进程级常驻
+    //   持有者里继续后台播放（保 TODO-291 阶段2 的后台续播）。
     appModel.audiobookSession.detachReader(this);
+    if (!appModel.audiobookBackgroundPlay) {
+      // fire-and-forget 必须 catchError：dispose 同步签名无法 await，stop 内
+      // stopPlayback 在 await 边界后若抛平台异常（native 解码器半销毁），会逃进
+      // 当前 zone 成未捕获异步错误。与本文件其它 unawaited future 惯例对齐。
+      unawaited(
+          appModel.audiobookSession.stop().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log('ReaderHibiki.disposeStopAudiobook', e, s);
+      }));
+    }
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
     _chromeFocusScope.dispose();
