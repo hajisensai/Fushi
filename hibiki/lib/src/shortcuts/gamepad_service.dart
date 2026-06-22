@@ -397,9 +397,26 @@ class GamepadService {
   }
 
   bool _onKey(KeyEvent event) {
-    // Physical keyboard navigation wants the ring; never consume the event.
+    // Only ACTUAL focus navigation (arrow keys / Tab) should light the ring.
+    // Typing a letter, Esc, a shortcut, or any release edge previously flipped
+    // the strategy to alwaysTraditional, leaving a residual ring on the default
+    // build (BUG-397). Never consume the event either way.
+    if (!gamepadKeyDrivesFocusRing(event)) return false;
+    // An arrow the focused text field consumes for its caret is editing, not
+    // focus traversal — keep touch mode so the caret edit does not light a ring.
+    if (_arrowEditsTextCaret(event)) return false;
     _setHighlightForHardwareNav();
     return false;
+  }
+
+  /// Drops the focus ring back to touch mode. Called when the screen changes
+  /// (route push/pop or home-tab switch) so a ring lit by keyboard/gamepad
+  /// navigation on one surface is not carried onto the next one (BUG-397). Safe
+  /// to call unconditionally: [start] also seeds [FocusHighlightStrategy.alwaysTouch]
+  /// on the supported platforms this service runs on, so this just re-asserts it.
+  void resetHighlightForScreenSwitch() {
+    FocusManager.instance.highlightStrategy =
+        FocusHighlightStrategy.alwaysTouch;
   }
 
   static TraversalDirection? _dpadDirectionOf(GamepadButton button) {
@@ -415,6 +432,66 @@ class GamepadService {
       default:
         return null;
     }
+  }
+}
+
+/// Whether [event] is a keyboard event that should ARM the visible focus ring
+/// (switch the highlight strategy to traditional). Only true focus navigation
+/// qualifies: an arrow key on its move edge ([KeyDownEvent]/[KeyRepeatEvent]) or
+/// Tab on its press edge. A plain letter, Escape, a shortcut combo, or any
+/// release edge ([KeyUpEvent]) returns false — those are not focus traversal and
+/// must not light the ring (BUG-397: the ring previously appeared on the first
+/// keystroke and lingered).
+///
+/// This is the single arbiter so the gamepad service and its tests agree on
+/// exactly which keys reveal the ring; the text-field caret carve-out is applied
+/// by the caller (an arrow the caret consumes is editing, not navigation).
+@visibleForTesting
+bool gamepadKeyDrivesFocusRing(KeyEvent event) {
+  if (arrowFocusMoveDirection(event) != null) return true;
+  return event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.tab;
+}
+
+/// Whether [event] is an arrow key the currently-focused text field consumes for
+/// its caret rather than focus traversal. Mirrors global_navigation's caret rule:
+/// horizontal arrows always drive the caret; vertical arrows drive it only in a
+/// multi-line field. No focused field → false (the arrow is pure navigation).
+bool _arrowEditsTextCaret(KeyEvent event) {
+  final TraversalDirection? dir = arrowFocusMoveDirection(event);
+  if (dir == null) return false; // Tab / non-arrow: never a caret edit.
+  final EditableText? editable = focusedEditableText();
+  if (editable == null) return false;
+  if (dir == TraversalDirection.left || dir == TraversalDirection.right) {
+    return true;
+  }
+  final int? maxLines = editable.maxLines;
+  return maxLines == null || maxLines > 1; // null = unbounded = multi-line
+}
+
+/// A [NavigatorObserver] that resets the focus highlight to touch mode on every
+/// route push/pop/replace. Wired into [MaterialApp.navigatorObservers] so a
+/// focus ring lit by keyboard/gamepad navigation on one page does not get
+/// carried onto a freshly-entered page (BUG-397). The reset is a plain callback
+/// (typically `GamepadService.resetHighlightForScreenSwitch`) so the observer
+/// stays decoupled from the service and is unit-testable on its own.
+class HighlightResetNavigatorObserver extends NavigatorObserver {
+  HighlightResetNavigatorObserver(this._onScreenSwitch);
+
+  final VoidCallback _onScreenSwitch;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _onScreenSwitch();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _onScreenSwitch();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _onScreenSwitch();
   }
 }
 

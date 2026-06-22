@@ -304,6 +304,14 @@ class _HomePageState extends BasePageState<HomePage>
   /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。
   /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键）都走这里，保证 _previousTab 一致。
   void _selectTab(HomeTab tab) {
+    // A same-route home-tab switch (IndexedStack, no route push/pop) still
+    // changes the visible screen, so reset any focus ring lit on the old tab so
+    // it is not carried onto the new one (BUG-397). Route-based navigation is
+    // covered by AppModel.focusHighlightObserver; this handles the tab case the
+    // NavigatorObserver cannot see.
+    if (tab != _currentTab) {
+      appModelNoUpdate.gamepadService.resetHighlightForScreenSwitch();
+    }
     setState(() {
       if (tab == HomeTab.settings && _currentTab != HomeTab.settings) {
         _previousTab = _currentTab;
