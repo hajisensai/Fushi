@@ -291,6 +291,76 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     await _caretRefresh();
   }
 
+  /// TODO-693: appUiScale（整体界面缩放）变化时把连续模式阅读位置重锚回原字符，避免
+  /// 弹回章节开头。
+  ///
+  /// 根因：连续模式阅读位置是裸 `window.scrollY`，没有分页模式的
+  /// `registerSnapScroll`/`lockRootViewport` 保护。HibikiAppUiScale 用新 scale 重建两层
+  /// FittedBox/SizedBox → reader 子树（含 WebView 平台视图）box.size 过渡帧抖动 → 击穿
+  /// SetSizeDedup → native put_Bounds → WebView2 reflow 把 document scrollY 瞬时归 0；
+  /// 归零后连续模式无任何机制拉回，于是被章内 scroll 回传通道（onReaderScroll）当作真实
+  /// 滚动落库 progress≈0 → 弹回章节开头。
+  ///
+  /// 方案（镜像 JS 侧 setChromeInsets 的 `_reanchorPending` 串行契约，Dart 两阶段编排）：
+  /// 1. 在缩放重建那一帧**同步**采样首个可见字符偏移并置 `_reanchorPending`
+  ///    （[ReaderPaginationScripts.beginUiScaleReanchorInvocation]）——置旗挡住 reflow
+  ///    自发的归零 scroll 经 webview.part.dart 的 `_reanchorPending` 守卫不再回传，
+  ///    污染不到 `_lastProgressValue`/落库。
+  /// 2. 等过渡帧 settle（box.size 是 FittedBox 逐帧过渡，单帧 rAF 不保证稳定，沿用
+  ///    [_syncPageSize] 的 `addPostFrameCallback` settle 时机）后把锚滚回视口首边并清旗
+  ///    （[ReaderPaginationScripts.commitUiScaleReanchorInvocation]）。
+  ///
+  /// 门控（与 [_syncPageSize] / [_applyChromeInsets] / [_refreshProgress] 一致）：控制器
+  /// 释放 / 内容未就绪 / 歌词模式 / 恢复期（`_restoreInFlight`）/ 分页模式都不触发。分页
+  /// 模式即使误调，JS 侧 `beginUiScaleReanchor` 在分页 `window.hoshiReader` 缺席，
+  /// `typeof` 守卫使其整体 no-op。
+  Future<void> _reanchorContinuousForUiScale() async {
+    if (!readerUiScaleReanchorAllowed(
+      controllerAvailable: _controller != null,
+      readerContentReady: _readerContentReady,
+      lyricsMode: _lyricsMode,
+      restoreInFlight: _restoreInFlight,
+      continuousMode: _settings?.isContinuousMode == true,
+    )) {
+      return;
+    }
+    // 阶段 1：同步采样锚 + 置旗。必须先于过渡帧落地，使后续 reflow 归零 scroll 被
+    // _reanchorPending 守卫挡在落库之外。
+    dynamic begin;
+    try {
+      begin = await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.beginUiScaleReanchorInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderHibiki.reanchorContinuousForUiScale.begin',
+        e,
+        stack,
+      );
+      return;
+    }
+    if (!mounted || _controller == null) return;
+    final int charOffset = ReaderPaginationScripts.intResult(begin) ?? -1;
+    // -1 = 无可用锚（caretRangeFromPoint 失败）或已有重锚在飞（既有序列接管）→ 本次不
+    // 提交，旗由对应入口的 finally 负责清，不在此误清。
+    if (charOffset < 0) return;
+    // 阶段 2：等过渡帧 settle 后提交滚动并清旗（沿用 _syncPageSize 的 postFrame settle）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _controller == null) return;
+      try {
+        await _controller!.evaluateJavascript(
+          source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'ReaderHibiki.reanchorContinuousForUiScale.commit',
+          e,
+          stack,
+        );
+      }
+    });
+  }
+
   Widget _buildBottomChrome() {
     // 底栏可见性只取决于用户意图（_showChrome）和「首次冷加载是否完成」
     // （_hasEverLoaded，只置 true、从不复位），不再耦合每次切章都会翻转的

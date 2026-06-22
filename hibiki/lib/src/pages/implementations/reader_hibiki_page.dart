@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
@@ -287,6 +288,27 @@ bool readerScrollProgressRefreshAllowed({
       !restoreInFlight &&
       !lyricsMode &&
       controllerAvailable;
+}
+
+/// TODO-693: appUiScale 缩放重锚（连续模式）的门控真值表纯函数。
+///
+/// 仅**连续模式**中招（裸 `window.scrollY` 无分页模式的 snap/lock 保护，缩放 reflow 把
+/// scrollY 归 0 后无机制拉回 → 弹回章首），故 `continuousMode==false`（分页）一律抑制。
+/// 其余门控对齐 [readerScrollProgressRefreshAllowed] / `_syncPageSize` / `_applyChromeInsets`：
+/// 控制器释放 / 内容未就绪 / 歌词模式 / 恢复期都不触发（这些状态下 WebView 正被程序化
+/// 操作或不可用，重锚会与之竞态或读到瞬态位置）。
+bool readerUiScaleReanchorAllowed({
+  required bool controllerAvailable,
+  required bool readerContentReady,
+  required bool lyricsMode,
+  required bool restoreInFlight,
+  required bool continuousMode,
+}) {
+  return controllerAvailable &&
+      readerContentReady &&
+      !lyricsMode &&
+      !restoreInFlight &&
+      continuousMode;
 }
 
 typedef ReaderStableProgressDetails = ({
@@ -1278,6 +1300,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   @override
   Widget build(BuildContext context) {
     final Color bgColor = _themeBackgroundColor();
+
+    // TODO-693: appUiScale 变化时（整体界面缩放），连续模式阅读位置会被 reflow 归零弹回
+    // 章首（裸 window.scrollY 无分页模式的 snap/lock 保护）。在缩放变化那一帧采锚 + 置旗，
+    // 过渡帧 settle 后重锚回原字符。门控/序列见 [_reanchorContinuousForUiScale]。
+    // 用 select 只监听 appUiScale 标量，避免 AppModel 任意字段变更都触发重锚。
+    ref.listen<double>(
+      appProvider.select((AppModel m) => m.appUiScale),
+      (double? previous, double next) {
+        if (previous == null || previous == next) return;
+        _reanchorContinuousForUiScale();
+      },
+    );
 
     return Actions(
       // Desktop gamepad path: the GamepadService dispatches GamepadButtonIntent

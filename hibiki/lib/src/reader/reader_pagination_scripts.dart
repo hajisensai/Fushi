@@ -599,6 +599,21 @@ class ReaderPaginationScripts {
   static String setChromeInsetsInvocation(double topPx, double bottomPx) =>
       'window.hoshiReader && window.hoshiReader.setChromeInsets($topPx, $bottomPx)';
 
+  /// TODO-693: 连续模式 appUiScale 缩放重锚的第一阶段——在缩放重建那一帧同步采样首个
+  /// 可见字符偏移并置 `_reanchorPending`（挡住 reflow 归零 scroll 污染落库）。返回采到
+  /// 的字符偏移；-1 = 无可用锚 / 已有重锚在飞 → 调用方跳过提交阶段。
+  /// `beginUiScaleReanchor` 只存在于连续模式的 `window.hoshiReader`，分页模式缺席，
+  /// `typeof` 守卫使分页模式整体 no-op（分页有 snap/lock 保护，无需此重锚）。
+  static String beginUiScaleReanchorInvocation() => '(window.hoshiReader && '
+      "typeof window.hoshiReader.beginUiScaleReanchor === 'function') "
+      '? window.hoshiReader.beginUiScaleReanchor() : -1';
+
+  /// TODO-693: 第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
+  /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
+  static String commitUiScaleReanchorInvocation() => '(window.hoshiReader && '
+      "typeof window.hoshiReader.commitUiScaleReanchor === 'function') "
+      '? window.hoshiReader.commitUiScaleReanchor() : false';
+
   static bool didScroll(String? result) =>
       result?.trim().replaceAll('"', '') == 'scrolled';
 
@@ -2139,6 +2154,40 @@ $_sharedJs
         self._reanchorPending = false;
       }
     });
+  },
+  // TODO-693: appUiScale（整体界面缩放）变化时，连续模式的阅读位置只是裸 window.scrollY，
+  // 没有分页模式的 registerSnapScroll/lockRootViewport 保护。HibikiAppUiScale 用新 s 重建
+  // 两层 FittedBox/SizedBox → WebView 平台视图 box.size 过渡帧抖动 → 击穿 SetSizeDedup →
+  // native put_Bounds → WebView2 reflow 把 document scrollY 瞬时归 0，归零后无任何机制拉回，
+  // 于是被章内 scroll 回传通道当作真实滚动落库 progress≈0 → 弹回章节开头。
+  //
+  // 修复镜像 setChromeInsets 的 _reanchorPending 串行契约，但拆成 Dart 编排的两阶段：缩放是
+  // FittedBox 逐帧过渡，box.size 要等过渡帧 settle 才稳定，单个 rAF 不保证捕捉到稳定帧，故由
+  // Dart 在缩放重建那一帧同步采样锚 + 置旗（挡住 reflow 自发的归零 scroll 经 onReaderScroll
+  // 污染落库），再在 postFrame settle 后提交滚动。两阶段共用同一个 _reanchorPending（与
+  // setChromeInsets/updatePageSize/reanchorAfterStyleChange 同一串行旗，HBK-REG-004）。
+  beginUiScaleReanchor: function() {
+    // 已有重锚在飞（setChromeInsets/updatePageSize 等）→ 让既有序列接管，本次不重复采样，
+    // 返回 -1 让 Dart 跳过提交（_uiScaleReanchorOffset 不被本次覆盖）。
+    if (this._reanchorPending === true) return -1;
+    var charOffset = this.getFirstVisibleCharOffset();
+    if (charOffset < 0) return -1;
+    this._reanchorPending = true;
+    this._uiScaleReanchorOffset = charOffset;
+    return charOffset;
+  },
+  commitUiScaleReanchor: function() {
+    // beginUiScaleReanchor 必须先成功置旗 + 暂存锚；否则（旗未由本入口置/锚无效）整体 no-op，
+    // 绝不误清别处的 _reanchorPending（finally 只在本入口确实拥有旗时执行）。
+    var off = this._uiScaleReanchorOffset;
+    if (off === undefined || off < 0) return false;
+    try {
+      this.scrollToCharOffset(off);
+    } finally {
+      this._uiScaleReanchorOffset = undefined;
+      this._reanchorPending = false;
+    }
+    return true;
   }
 };
 window.hoshiReader._contentSize = function() {
