@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "Nach Zeichen",
   "collection_mined": "Erstellt",
   "collection_mined_clear_confirm": "Gesamten Verlauf erstellter Sätze löschen?",
-  "update_connecting": "Verbinde…"
+  "update_connecting": "Verbinde…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

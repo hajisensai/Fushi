@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "글자 수순",
   "collection_mined": "마이닝한 문장",
   "collection_mined_clear_confirm": "마이닝한 문장 기록을 모두 지울까요?",
-  "update_connecting": "연결 중…"
+  "update_connecting": "연결 중…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

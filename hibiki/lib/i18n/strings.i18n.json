@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "By Characters",
   "collection_mined": "Mined",
   "collection_mined_clear_confirm": "Clear all mined-sentence history?",
-  "update_connecting": "Connecting…"
+  "update_connecting": "Connecting…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

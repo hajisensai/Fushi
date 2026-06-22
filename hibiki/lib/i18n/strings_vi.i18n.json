@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "Theo số ký tự",
   "collection_mined": "Câu đã tạo thẻ",
   "collection_mined_clear_confirm": "Xóa toàn bộ lịch sử câu đã tạo thẻ?",
-  "update_connecting": "Đang kết nối…"
+  "update_connecting": "Đang kết nối…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }

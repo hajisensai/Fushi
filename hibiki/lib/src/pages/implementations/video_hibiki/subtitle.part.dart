@@ -693,4 +693,67 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       ),
     );
   }
+
+  /// TODO-701 阶段1：一键字幕自动对轴。抽当前视频的逐帧音频能量包络（[extractAudioEnergyEnvelope]
+  /// 经 ffmpeg 抽象），与字幕 cue 时间轴栅格化后做互相关（[bestOffsetMsByCrossCorrelation]）
+  /// 求**整体平移** offset，再走现有 [_setDelayMs] 写穿 `delayMs` 落盘（零新持久化）。
+  ///
+  /// **只整体平移、不重排 cue、不解帧率漂移**——等价于自动算出「手动延迟」该填多少。
+  /// 输入不足（无 cue/无视频路径/无音频包络）或置信度低于阈值时**不**改动延迟，仅弹
+  /// 低置信 OSD（避免乱平移）。移动端 [KitFfmpegBackend] 拿不到逐帧 RMS 时包络为空，
+  /// 走 noData 分支安全降级（[extractAudioEnergyEnvelope] 已 debugPrint 诊断）。
+  Future<void> _autoAlignSubtitle() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final List<AudioCue> cues = controller.cues;
+    final String? videoPath = controller.videoPath;
+    final int? durationMs = controller.durationMs;
+    if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
+      _showOsd(t.video_subtitle_auto_align_low_confidence);
+      return;
+    }
+    // 时长缺失时用最后一条 cue 的结束时间兜底（cue 升序由 setCues 保证），仍能栅格化。
+    final int effectiveDurationMs =
+        (durationMs != null && durationMs > 0) ? durationMs : cues.last.endMs;
+
+    _showOsd(
+      t.video_subtitle_auto_align_running,
+      icon: Icons.auto_fix_high,
+    );
+
+    final List<double> rawRms = await extractAudioEnergyEnvelope(
+      videoPath: videoPath,
+      windowMs: kSubtitleAutoAlignBinMs,
+      audioStreamIndex: controller.currentAudioStreamIndex,
+    );
+    if (!mounted) return;
+
+    final List<double> audioActivity = normalizeAudioEnergyEnvelope(rawRms);
+    final List<double> cueActivity = buildCueActivityEnvelope(
+      cues,
+      effectiveDurationMs,
+      binMs: kSubtitleAutoAlignBinMs,
+    );
+    final SubtitleAutoAlignResult result = bestOffsetMsByCrossCorrelation(
+      audioActivity,
+      cueActivity,
+      binMs: kSubtitleAutoAlignBinMs,
+    );
+
+    switch (result.status) {
+      case SubtitleAutoAlignStatus.aligned:
+        // 走现有写穿路径：controller 即时重算 cue + 落盘 delayMs + 角标 OSD。
+        await _setDelayMs(result.offsetMs);
+        if (!mounted) return;
+        _showOsd(
+          t.video_subtitle_auto_align_done(ms: result.offsetMs),
+          icon: Icons.auto_fix_high,
+        );
+        break;
+      case SubtitleAutoAlignStatus.lowConfidence:
+      case SubtitleAutoAlignStatus.noData:
+        _showOsd(t.video_subtitle_auto_align_low_confidence);
+        break;
+    }
+  }
 }

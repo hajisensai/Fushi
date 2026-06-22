@@ -1777,5 +1777,9 @@
   "stat_sort_by_chars": "按字數",
   "collection_mined": "製卡句",
   "collection_mined_clear_confirm": "清空全部製卡句記錄？",
-  "update_connecting": "正在連接更新來源…"
+  "update_connecting": "正在連接更新來源…",
+  "video_subtitle_auto_align": "Auto-align subtitle",
+  "video_subtitle_auto_align_running": "Auto-aligning subtitle…",
+  "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
+  "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms"
 }
