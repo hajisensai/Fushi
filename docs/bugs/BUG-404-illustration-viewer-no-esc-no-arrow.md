@@ -1,0 +1,8 @@
+## BUG-404 · 插画全屏画廊ESC退不出且无方向键切换
+- **报告**：2026-06-22（用户：）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/illustrations_viewer_page.dart:343-409`（`_FullScreenGallery.build`）——全屏画廊只有裸 `Focus(autofocus: true)` + `GamepadButtonIntent` 的 `Actions`，**自身无任何键盘处理**（无 `Shortcuts` / `onKeyEvent` / `LogicalKeyboardKey`）。
+  - (a) ESC 退不出：整页 PageRoute 退出外包给全局 `_handleGlobalEscape`（`global_navigation.dart:43`），但该 handler 在 Navigator 之上靠 `controller?.activeContext ?? FocusManager.instance.primaryFocus?.context` 解析当前路由；默认 `experimentalFocusNavigationEnabled=false` 时 controller 为空，只剩 primaryFocus 兜底，而画廊内 `InteractiveViewer`/`PageView` 焦点子树里 primaryFocus 解析不稳定 → ESC 经常是 no-op。
+  - (b) 左右切换：键盘方向键从未实现（只有手柄 LB/RB 且被 focusNav 门控）；触摸滑动 PageView 可用，但桌面键盘没有等价物。现成 `_pageBy(:249)` 已带 clamp + 驱动 `_pageController.animateToPage` + `onPageChanged` 更新 `_currentIndex`。
+- **[x] ① 已修复** — 在 `_FullScreenGallery.build` 给查看器自己装 `CallbackShortcuts`（包在 `Focus(autofocus:true)` 外层，覆盖整页焦点子树）：`escape -> Navigator.maybePop(context)`（本页 ESC 永远可退，不依赖实验开关）、`arrowLeft -> _pageBy(-1)`、`arrowRight -> _pageBy(1)`（复用现成 `_pageBy`，已 clamp、已驱动 PageView + 计数）。不破坏触摸滑动 / 手柄 / 返回键 / 缩放。提交 343deb915。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/illustrations_viewer_keyboard_test.dart`（widget 行为：进全屏画廊 -> sendKeyEvent(escape) 断言 pop / arrowRight 断言 _currentIndex+1 且顶栏 image_page_counter 同步 / arrowLeft 断言 -1 / 首尾 clamp 不越界）+ 扩 `illustrations_viewer_actions_guard_static_test.dart`、`illustrations_viewer_page_static_test.dart` 源码守卫断言 CallbackShortcuts + LogicalKeyboardKey.escape/arrowLeft/arrowRight + Navigator.maybePop + _pageBy 接线。提交 343deb915。
+- **备注**：手柄 LB/RB 被 focusNav 门控的问题不在本任务范围（保持现状）。

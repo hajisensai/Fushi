@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/epub/epub_book.dart' show fallbackMimeType;
@@ -343,65 +344,78 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Actions(
-      actions: <Type, Action<Intent>>{
-        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-          onInvoke: (GamepadButtonIntent intent) =>
-              _handleGamepad(intent.button),
-        ),
+    // 键盘处理由查看器自己持有（BUG-404）：ESC 退出不依赖全局
+    // `_handleGlobalEscape`（整页 PageRoute 下其 primaryFocus 解析不稳定，
+    // 实验导航关闭时退不出），左右方向键复用现成 `_pageBy`（已 clamp +
+    // 驱动 PageView + 同步计数）。包在 `Focus(autofocus:true)` 外层，覆盖
+    // 整页焦点子树，避免被内部 focusable 抢先。
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            Navigator.maybePop(context),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _pageBy(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _pageBy(1),
       },
-      child: Focus(
-        autofocus: true,
-        child: HibikiToolScaffold(
-          title: t.image_page_counter(
-            current: _currentIndex + 1,
-            total: widget.images.length,
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+            onInvoke: (GamepadButtonIntent intent) =>
+                _handleGamepad(intent.button),
           ),
-          actions: <Widget>[
-            if (isWindowsPlatform)
-              IconButton(
-                icon: const Icon(Icons.copy_outlined),
-                tooltip: t.reader_copy_image,
-                onPressed: _copyCurrentImageToClipboard,
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.share_outlined),
-                tooltip: t.share,
-                onPressed: _shareCurrentImage,
-              ),
-          ],
-          body: PageView.builder(
-            controller: _pageController,
-            itemCount: widget.images.length,
-            onPageChanged: _setCurrentIndex,
-            itemBuilder: (context, index) {
-              final Widget image = Image.memory(
-                widget.images[index].bytes,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Icon(
-                  Icons.broken_image_outlined,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  size: 64,
+        },
+        child: Focus(
+          autofocus: true,
+          child: HibikiToolScaffold(
+            title: t.image_page_counter(
+              current: _currentIndex + 1,
+              total: widget.images.length,
+            ),
+            actions: <Widget>[
+              if (isWindowsPlatform)
+                IconButton(
+                  icon: const Icon(Icons.copy_outlined),
+                  tooltip: t.reader_copy_image,
+                  onPressed: _copyCurrentImageToClipboard,
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.share_outlined),
+                  tooltip: t.share,
+                  onPressed: _shareCurrentImage,
                 ),
-              );
-              final Widget viewer = InteractiveViewer(
-                transformationController: _transformationController,
-                minScale: 0.5,
-                maxScale: 4,
-                child: Center(child: image),
-              );
-              // Windows 右键复制 / 移动端长按分享：仅当前页可操作。
-              return GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onSecondaryTapDown: isWindowsPlatform
-                    ? (TapDownDetails details) =>
-                        _showImageContextMenu(details.globalPosition)
-                    : null,
-                onLongPress: isWindowsPlatform ? null : _shareCurrentImage,
-                child: viewer,
-              );
-            },
+            ],
+            body: PageView.builder(
+              controller: _pageController,
+              itemCount: widget.images.length,
+              onPageChanged: _setCurrentIndex,
+              itemBuilder: (context, index) {
+                final Widget image = Image.memory(
+                  widget.images[index].bytes,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.broken_image_outlined,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                    size: 64,
+                  ),
+                );
+                final Widget viewer = InteractiveViewer(
+                  transformationController: _transformationController,
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: Center(child: image),
+                );
+                // Windows 右键复制 / 移动端长按分享：仅当前页可操作。
+                return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onSecondaryTapDown: isWindowsPlatform
+                      ? (TapDownDetails details) =>
+                          _showImageContextMenu(details.globalPosition)
+                      : null,
+                  onLongPress: isWindowsPlatform ? null : _shareCurrentImage,
+                  child: viewer,
+                );
+              },
+            ),
           ),
         ),
       ),

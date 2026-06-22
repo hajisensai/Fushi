@@ -23,4 +23,17 @@ void main() {
     expect(source, contains('TransformationController'));
     expect(source, contains('_toggleZoom'));
   });
+  test('full-screen gallery wires keyboard ESC + arrow paging (BUG-404)', () {
+    final String source = File(
+      'lib/src/pages/implementations/illustrations_viewer_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('CallbackShortcuts'));
+    expect(source, contains('LogicalKeyboardKey.escape'));
+    expect(source, contains('LogicalKeyboardKey.arrowLeft'));
+    expect(source, contains('LogicalKeyboardKey.arrowRight'));
+    expect(source, contains('Navigator.maybePop(context)'));
+    expect(source, contains('_pageBy(-1)'));
+    expect(source, contains('_pageBy(1)'));
+  });
 }
