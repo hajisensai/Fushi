@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "ระยะไกล",
   "sync_compare_skip": "ข้าม",
   "sync_compare_applied": "ปรับใช้ $count รายการแล้ว",
-  "sync_compare_apply": "ปรับใช้ ($count)",
+  "sync_compare_apply": "ซิงค์ตอนนี้ ($count)",
   "sync_auto_sync": "ซิงค์อัตโนมัติ",
   "sync_auto_complete": "ซิงค์: $direction $title",
   "no_matching_audio_cue": "ไม่มีเสียงที่ตรงกับประโยคนี้",
@@ -1783,5 +1783,6 @@
   "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
   "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms",
   "audiobook_background_play": "Keep playing after exit",
-  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background.",
+  "sync_compare_close": "ปิด"
 }

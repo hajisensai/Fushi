@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "원격",
   "sync_compare_skip": "건너뛰기",
   "sync_compare_applied": "변경 사항 $count개 적용됨",
-  "sync_compare_apply": "적용 ($count)",
+  "sync_compare_apply": "지금 동기화 ($count)",
   "sync_auto_sync": "자동 동기화",
   "sync_auto_complete": "동기화: $direction $title",
   "no_matching_audio_cue": "이 문장에 일치하는 오디오 없음",
@@ -1783,5 +1783,6 @@
   "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
   "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms",
   "audiobook_background_play": "Keep playing after exit",
-  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background.",
+  "sync_compare_close": "닫기"
 }

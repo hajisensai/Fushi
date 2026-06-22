@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Remoto",
   "sync_compare_skip": "Omitir",
   "sync_compare_applied": "Se aplicaron $count cambios",
-  "sync_compare_apply": "Aplicar ($count)",
+  "sync_compare_apply": "Sincronizar ahora ($count)",
   "sync_auto_sync": "Sincronización automática",
   "sync_auto_complete": "Sincronización: $direction $title",
   "no_matching_audio_cue": "No hay audio para esta frase",
@@ -1783,5 +1783,6 @@
   "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
   "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms",
   "audiobook_background_play": "Keep playing after exit",
-  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background.",
+  "sync_compare_close": "Cerrar"
 }

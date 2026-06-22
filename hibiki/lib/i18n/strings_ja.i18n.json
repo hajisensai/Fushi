@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "リモート",
   "sync_compare_skip": "スキップ",
   "sync_compare_applied": "$count件の変更を適用しました",
-  "sync_compare_apply": "適用 ($count)",
+  "sync_compare_apply": "今すぐ同期 ($count)",
   "sync_auto_sync": "自動同期",
   "sync_auto_complete": "同期: $direction $title",
   "no_matching_audio_cue": "この文に対応する音声がありません",
@@ -1783,5 +1783,6 @@
   "video_subtitle_auto_align_low_confidence": "Couldn't confidently auto-align (no clear voice match)",
   "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms",
   "audiobook_background_play": "Keep playing after exit",
-  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background.",
+  "sync_compare_close": "閉じる"
 }

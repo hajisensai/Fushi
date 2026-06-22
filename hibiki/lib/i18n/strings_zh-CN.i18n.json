@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "远端",
   "sync_compare_skip": "跳过",
   "sync_compare_applied": "已应用 $count 项更改",
-  "sync_compare_apply": "应用（$count）",
+  "sync_compare_apply": "立即同步（$count）",
   "sync_auto_sync": "自动同步",
   "sync_auto_complete": "同步: $direction $title",
   "no_matching_audio_cue": "该语句没有匹配的音频",
@@ -1783,5 +1783,6 @@
   "video_subtitle_auto_align_low_confidence": "无法可靠自动对轴（未找到明显的语音匹配）",
   "video_subtitle_auto_align_done": "已自动对轴 $ms ms",
   "audiobook_background_play": "退出后继续播放",
-  "audiobook_background_play_hint": "关闭时，退出阅读页即停止有声书播放；开启后退出仍在后台继续播放。"
+  "audiobook_background_play_hint": "关闭时，退出阅读页即停止有声书播放；开启后退出仍在后台继续播放。",
+  "sync_compare_close": "关闭"
 }
