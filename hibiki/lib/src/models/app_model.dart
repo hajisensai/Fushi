@@ -3010,6 +3010,11 @@ class AppModel with ChangeNotifier {
   void setPlayerBackgroundPlay({required bool value}) =>
       prefsRepo.setPlayerBackgroundPlay(value: value);
 
+  // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。转发偏好仓库。
+  bool get audiobookBackgroundPlay => prefsRepo.audiobookBackgroundPlay;
+  Future<void> setAudiobookBackgroundPlay({required bool value}) =>
+      prefsRepo.setAudiobookBackgroundPlay(value: value);
+
   bool get showSubtitlesInNotification => prefsRepo.showSubtitlesInNotification;
   void setShowSubtitlesInNotification({required bool value}) =>
       prefsRepo.setShowSubtitlesInNotification(value: value);

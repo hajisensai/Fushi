@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "文字数順",
   "collection_mined": "カード作成した文",
   "collection_mined_clear_confirm": "カード作成した文の履歴をすべて消去しますか？",
-  "update_connecting": "更新元に接続中…"
+  "update_connecting": "更新元に接続中…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

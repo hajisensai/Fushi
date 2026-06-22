@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "Theo số ký tự",
   "collection_mined": "Câu đã tạo thẻ",
   "collection_mined_clear_confirm": "Xóa toàn bộ lịch sử câu đã tạo thẻ?",
-  "update_connecting": "Đang kết nối…"
+  "update_connecting": "Đang kết nối…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

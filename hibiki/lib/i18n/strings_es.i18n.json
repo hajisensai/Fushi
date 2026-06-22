@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "Por caracteres",
   "collection_mined": "Creadas",
   "collection_mined_clear_confirm": "¿Borrar todo el historial de frases para tarjetas?",
-  "update_connecting": "Conectando…"
+  "update_connecting": "Conectando…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

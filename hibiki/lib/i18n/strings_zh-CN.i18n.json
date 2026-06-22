@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "按字数",
   "collection_mined": "制卡句",
   "collection_mined_clear_confirm": "清空全部制卡历史？",
-  "update_connecting": "正在连接更新源…"
+  "update_connecting": "正在连接更新源…",
+  "audiobook_background_play": "退出后继续播放",
+  "audiobook_background_play_hint": "关闭时，退出阅读页即停止有声书播放；开启后退出仍在后台继续播放。"
 }

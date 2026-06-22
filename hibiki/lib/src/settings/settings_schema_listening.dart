@@ -16,6 +16,21 @@ SettingsDestination buildListeningDestination() {
       SettingsSection(
         title: t.section_audiobook,
         items: <SettingsItem>[
+          // TODO-702：有声书退出即停（默认 OFF）/ 后台续播（开启）。默认关 = 退出
+          // 阅读页就停止有声书播放；开启后退书后会话继续在后台播。
+          SettingsSwitchItem(
+            id: 'listening.audiobook_background_play',
+            title: t.audiobook_background_play,
+            subtitle: t.audiobook_background_play_hint,
+            icon: Icons.play_circle_outline,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.audiobookBackgroundPlay,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setAudiobookBackgroundPlay(value: value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'listening.media_notification',
             title: t.show_media_notification,

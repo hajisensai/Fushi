@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "By Characters",
   "collection_mined": "Mined",
   "collection_mined_clear_confirm": "Clear all mined-sentence history?",
-  "update_connecting": "Connecting…"
+  "update_connecting": "Connecting…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

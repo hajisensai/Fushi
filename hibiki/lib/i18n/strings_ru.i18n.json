@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "По знакам",
   "collection_mined": "С карточками",
   "collection_mined_clear_confirm": "Очистить всю историю предложений с карточками?",
-  "update_connecting": "Подключение…"
+  "update_connecting": "Подключение…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

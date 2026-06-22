@@ -187,6 +187,11 @@ void main() {
       // 字幕列表「自动滚动到当前播放句」默认开，与历史面板纯内存默认 true 一致。
       expect(repo.videoSubtitleListAutoScroll, true);
     });
+
+    test('audiobookBackgroundPlay defaults to false (TODO-702 exit stops)', () {
+      // 有声书退出即停是默认：新装 / 从未切过开关的用户退出阅读页就停止播放。
+      expect(repo.audiobookBackgroundPlay, false);
+    });
   });
 
   // ── round-trip persistence ───────────────────────────────────────────
@@ -505,6 +510,27 @@ void main() {
       await repo3.loadFromDb();
       addTearDown(repo3.dispose);
       expect(repo3.videoSubtitleListAutoScroll, true);
+    });
+
+    test('setAudiobookBackgroundPlay round-trips through DB (TODO-702)',
+        () async {
+      // 默认 false；开启后跨实例 reload 仍为 true（落 Drift preferences、记住设置）。
+      expect(repo.audiobookBackgroundPlay, false);
+      await repo.setAudiobookBackgroundPlay(value: true);
+      expect(repo.audiobookBackgroundPlay, true);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.audiobookBackgroundPlay, true,
+          reason: '后台续播开关必须跨实例 reload 记住（TODO-702）');
+
+      // 关回 false 也持久。
+      await repo.setAudiobookBackgroundPlay(value: false);
+      final PreferencesRepository repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      addTearDown(repo3.dispose);
+      expect(repo3.audiobookBackgroundPlay, false);
     });
   });
 

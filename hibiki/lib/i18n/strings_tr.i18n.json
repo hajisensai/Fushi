@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "Karaktere Göre",
   "collection_mined": "Çıkarılan",
   "collection_mined_clear_confirm": "Tüm kart çıkarılan cümle geçmişi temizlensin mi?",
-  "update_connecting": "Bağlanılıyor…"
+  "update_connecting": "Bağlanılıyor…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

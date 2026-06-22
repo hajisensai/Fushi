@@ -163,6 +163,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Collapse dictionaries': 'DEVICE: popup.js collapse',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
+  // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
+  // dispose 时是否 stop 会话，无渲染树效果）；schema coverage 证 focus/change/
+  // persist/restore 经 DB，运行时分流由偏好默认 + dispose 源码守卫覆盖。
+  'listening/Keep playing after exit':
+      'test/models/preferences_repository_test.dart + test/media/audiobook/audiobook_exit_stop_policy_static_test.dart',
   'listening/Show media notification':
       'DEVICE: native AudioHandler notification',
   // TODO-038: now visible on Windows desktop too (no longer Android-only). The

@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "글자 수순",
   "collection_mined": "마이닝한 문장",
   "collection_mined_clear_confirm": "마이닝한 문장 기록을 모두 지울까요?",
-  "update_connecting": "연결 중…"
+  "update_connecting": "연결 중…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

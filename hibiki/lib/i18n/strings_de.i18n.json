@@ -1777,5 +1777,7 @@
   "stat_sort_by_chars": "Nach Zeichen",
   "collection_mined": "Erstellt",
   "collection_mined_clear_confirm": "Gesamten Verlauf erstellter Sätze löschen?",
-  "update_connecting": "Verbinde…"
+  "update_connecting": "Verbinde…",
+  "audiobook_background_play": "Keep playing after exit",
+  "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background."
 }

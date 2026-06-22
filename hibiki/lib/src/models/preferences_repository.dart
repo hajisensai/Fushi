@@ -155,6 +155,21 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// TODO-702：有声书「退出阅读页后是否继续后台播放」。默认 **false** = 退出即停
+  /// （detachReader 卸回调后 [AudiobookSession.stop] 真正止声/释放解码器，符合多数
+  /// 用户「关掉书就别再响」的预期）。开启后退书只 detachReader、会话留在进程级常驻
+  /// 持有者里继续后台播放（保 TODO-291 阶段2 的后台续播能力）。这是独立的新偏好，
+  /// **不复用** [playerBackgroundPlay]（那是只有定义、没有任何消费方的死 pref，复用
+  /// 会把语义搅混）。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留
+  /// 其存值。
+  bool get audiobookBackgroundPlay =>
+      getPref('audiobook_background_play', defaultValue: false) as bool;
+
+  Future<void> setAudiobookBackgroundPlay({required bool value}) async {
+    await setPref('audiobook_background_play', value);
+    notifyListeners();
+  }
+
   bool get showSubtitlesInNotification =>
       getPref('player_subtitle_notification', defaultValue: true) as bool;
 
