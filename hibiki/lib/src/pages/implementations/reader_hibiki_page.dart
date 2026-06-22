@@ -311,6 +311,70 @@ bool readerUiScaleReanchorAllowed({
       continuousMode;
 }
 
+/// TODO-693 / TODO-697: appUiScale 连续重锚的两阶段编排（运行时序列）。
+///
+/// 从 `_reanchorContinuousForUiScale` 抽出的可注入编排核心：把门控、阶段1 begin
+/// 求值（错误早返回）、`intResult` 解析、`<0` 早返回（不提交、不误清旗）、postFrame
+/// 调度、阶段2 commit 求值（错误吞掉）这条**真实运行时序列**收敛到一个 top-level 函数，
+/// 用回调注入 WebView 求值 / postFrame 调度 / 存活复检 / 错误上报，使其能在 headless
+/// `flutter_test` 下真执行（而非源码字符串扫描），锁住「先 begin 后 commit、begin<0 不
+/// commit、门控抑制不求值」的语义不被未来回归静默破坏。
+///
+/// 各回调含义：
+/// - [evalBegin]：求值 `beginUiScaleReanchorInvocation`，返回原始 JS 结果（同步采锚+置旗）。
+/// - [evalCommit]：求值 `commitUiScaleReanchorInvocation`（settle 后滚回+清旗）。
+/// - [schedulePostFrame]：把 commit 调度到过渡帧 settle 之后（生产用 addPostFrameCallback）。
+/// - [stillAlive]：复检 `mounted && _controller != null`，dispose 竞态时中止。
+/// - [onBeginError] / [onCommitError]：阶段1/阶段2 求值异常上报（吞掉异常不外抛）。
+///
+/// 行为与原方法逐句等价；纯编排无 Flutter 依赖（postFrame 经回调注入）。
+Future<void> runUiScaleReanchorOrchestration({
+  required bool controllerAvailable,
+  required bool readerContentReady,
+  required bool lyricsMode,
+  required bool restoreInFlight,
+  required bool continuousMode,
+  required Future<dynamic> Function() evalBegin,
+  required Future<void> Function() evalCommit,
+  required void Function(void Function()) schedulePostFrame,
+  required bool Function() stillAlive,
+  required void Function(Object error, StackTrace stack) onBeginError,
+  required void Function(Object error, StackTrace stack) onCommitError,
+}) async {
+  if (!readerUiScaleReanchorAllowed(
+    controllerAvailable: controllerAvailable,
+    readerContentReady: readerContentReady,
+    lyricsMode: lyricsMode,
+    restoreInFlight: restoreInFlight,
+    continuousMode: continuousMode,
+  )) {
+    return;
+  }
+  // 阶段 1：同步采样锚 + 置旗。必须先于过渡帧落地，使后续 reflow 归零 scroll 被
+  // _reanchorPending 守卫挡在落库之外。
+  dynamic begin;
+  try {
+    begin = await evalBegin();
+  } catch (e, stack) {
+    onBeginError(e, stack);
+    return;
+  }
+  if (!stillAlive()) return;
+  final int charOffset = ReaderPaginationScripts.intResult(begin) ?? -1;
+  // -1 = 无可用锚（caretRangeFromPoint 失败）或已有重锚在飞（既有序列接管）→ 本次不
+  // 提交，旗由对应入口的 finally 负责清，不在此误清。
+  if (charOffset < 0) return;
+  // 阶段 2：等过渡帧 settle 后提交滚动并清旗（沿用 _syncPageSize 的 postFrame settle）。
+  schedulePostFrame(() async {
+    if (!stillAlive()) return;
+    try {
+      await evalCommit();
+    } catch (e, stack) {
+      onCommitError(e, stack);
+    }
+  });
+}
+
 typedef ReaderStableProgressDetails = ({
   int current,
   int total,

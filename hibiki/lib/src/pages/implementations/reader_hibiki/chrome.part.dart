@@ -314,51 +314,42 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   /// 释放 / 内容未就绪 / 歌词模式 / 恢复期（`_restoreInFlight`）/ 分页模式都不触发。分页
   /// 模式即使误调，JS 侧 `beginUiScaleReanchor` 在分页 `window.hoshiReader` 缺席，
   /// `typeof` 守卫使其整体 no-op。
-  Future<void> _reanchorContinuousForUiScale() async {
-    if (!readerUiScaleReanchorAllowed(
+  Future<void> _reanchorContinuousForUiScale() {
+    // 实际两阶段编排（门控 → begin → intResult → postFrame → commit）抽到 top-level
+    // [runUiScaleReanchorOrchestration]，用回调注入 WebView 求值 / postFrame 调度 /
+    // 存活复检 / 错误上报，使其能在 headless 单测下真执行（TODO-697）。这里只负责把本
+    // State 的实例字段绑进那些回调，行为与原内联实现逐句等价。
+    return runUiScaleReanchorOrchestration(
       controllerAvailable: _controller != null,
       readerContentReady: _readerContentReady,
       lyricsMode: _lyricsMode,
       restoreInFlight: _restoreInFlight,
       continuousMode: _settings?.isContinuousMode == true,
-    )) {
-      return;
-    }
-    // 阶段 1：同步采样锚 + 置旗。必须先于过渡帧落地，使后续 reflow 归零 scroll 被
-    // _reanchorPending 守卫挡在落库之外。
-    dynamic begin;
-    try {
-      begin = await _controller!.evaluateJavascript(
+      // 阶段 1：同步采样锚 + 置旗。必须先于过渡帧落地，使后续 reflow 归零 scroll 被
+      // _reanchorPending 守卫挡在落库之外。
+      evalBegin: () => _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.beginUiScaleReanchorInvocation(),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log(
+      ),
+      // 阶段 2：等过渡帧 settle 后提交滚动并清旗（沿用 _syncPageSize 的 postFrame settle）。
+      evalCommit: () => _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
+      ),
+      schedulePostFrame: (void Function() commit) =>
+          WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
+      stillAlive: () => mounted && _controller != null,
+      onBeginError: (Object e, StackTrace stack) =>
+          ErrorLogService.instance.log(
         'ReaderHibiki.reanchorContinuousForUiScale.begin',
         e,
         stack,
-      );
-      return;
-    }
-    if (!mounted || _controller == null) return;
-    final int charOffset = ReaderPaginationScripts.intResult(begin) ?? -1;
-    // -1 = 无可用锚（caretRangeFromPoint 失败）或已有重锚在飞（既有序列接管）→ 本次不
-    // 提交，旗由对应入口的 finally 负责清，不在此误清。
-    if (charOffset < 0) return;
-    // 阶段 2：等过渡帧 settle 后提交滚动并清旗（沿用 _syncPageSize 的 postFrame settle）。
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _controller == null) return;
-      try {
-        await _controller!.evaluateJavascript(
-          source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
-        );
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderHibiki.reanchorContinuousForUiScale.commit',
-          e,
-          stack,
-        );
-      }
-    });
+      ),
+      onCommitError: (Object e, StackTrace stack) =>
+          ErrorLogService.instance.log(
+        'ReaderHibiki.reanchorContinuousForUiScale.commit',
+        e,
+        stack,
+      ),
+    );
   }
 
   Widget _buildBottomChrome() {

@@ -23,6 +23,10 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 /// reader_hibiki_page.dart 太重（真 InAppWebView + DB + provider）不便整页 mount，门控逻辑
 /// 抽成 [readerUiScaleReanchorAllowed] 纯函数在此锁定真值表；JS 两阶段重锚原语 + Dart
 /// 接线由源码扫描守卫锁定，防回归。
+///
+/// TODO-697 item①：两阶段编排（门控→begin→intResult→postFrame→commit）的**运行时序列**
+/// 由 `ui_scale_reanchor_continuous_runtime_test.dart` 真执行 [runUiScaleReanchorOrchestration]
+/// 锁定（源码扫描对「调用仍在、顺序仍对」假绿）；本文件保留真值表 + JS/Dart 源码扫描守卫。
 void main() {
   group('readerUiScaleReanchorAllowed（appUiScale 连续重锚门控真值表）', () {
     test('连续模式 + 全部就绪：触发重锚', () {
@@ -231,35 +235,70 @@ void main() {
           reason: 'appUiScale 变化必须触发 _reanchorContinuousForUiScale 重锚');
     });
 
-    test('_reanchorContinuousForUiScale 门控走纯函数 readerUiScaleReanchorAllowed',
-        () {
+    test('_reanchorContinuousForUiScale 委托给 top-level 编排核心并绑入实例字段', () {
+      // TODO-697：两阶段编排（门控→begin→intResult→postFrame→commit）已抽到 top-level
+      // runUiScaleReanchorOrchestration（运行时序列由 *_runtime_test.dart 真执行锁定）。
+      // 这里只静态守卫「方法把本 State 实例字段正确绑进编排回调」这层接线。
       final int idx =
           src.indexOf('Future<void> _reanchorContinuousForUiScale()');
       expect(idx, greaterThan(0), reason: '_reanchorContinuousForUiScale 必须存在');
       final String body = src.substring(idx, idx + 2000);
-      expect(body.contains('readerUiScaleReanchorAllowed('), isTrue,
-          reason: '门控必须走纯函数 readerUiScaleReanchorAllowed（含分页模式抑制）');
-      // 阶段1：先置旗 begin → 取锚 → 阶段2：postFrame settle 后 commit。
+      expect(body.contains('runUiScaleReanchorOrchestration('), isTrue,
+          reason: '方法必须委托给 top-level runUiScaleReanchorOrchestration（编排核心，'
+              '运行时序列由 runtime 测试锁定）');
+      // 门控的五个实例字段必须绑进编排（撤任一 → 对应抑制行为不再受控）。
+      expect(body.contains('controllerAvailable: _controller != null'), isTrue,
+          reason: '必须把控制器存活绑进门控');
+      expect(
+          body.contains('continuousMode: _settings?.isContinuousMode == true'),
+          isTrue,
+          reason: '必须把连续模式绑进门控（分页模式抑制的来源）');
+      expect(body.contains('readerContentReady: _readerContentReady'), isTrue);
+      expect(body.contains('lyricsMode: _lyricsMode'), isTrue);
+      expect(body.contains('restoreInFlight: _restoreInFlight'), isTrue);
+      // begin / commit 回调必须绑各自的 invocation；postFrame 必须经 addPostFrameCallback。
       final int idxBegin = body
           .indexOf('ReaderPaginationScripts.beginUiScaleReanchorInvocation()');
-      final int idxPostFrame = body.indexOf('addPostFrameCallback');
       final int idxCommit = body
           .indexOf('ReaderPaginationScripts.commitUiScaleReanchorInvocation()');
       expect(idxBegin, greaterThan(0),
-          reason: '阶段1 必须先调 beginUiScaleReanchorInvocation（同步采锚+置旗）');
-      expect(idxPostFrame, greaterThan(idxBegin),
-          reason: 'commit 必须在 addPostFrameCallback 里等过渡帧 settle '
-              '（box.size 是 FittedBox 逐帧过渡，沿用 _syncPageSize 的 settle 时机）');
-      expect(idxCommit, greaterThan(idxPostFrame),
-          reason: '阶段2 commit 必须发生在 postFrame settle 之后');
+          reason: 'evalBegin 回调必须绑 beginUiScaleReanchorInvocation（同步采锚+置旗）');
+      expect(idxCommit, greaterThan(0),
+          reason:
+              'evalCommit 回调必须绑 commitUiScaleReanchorInvocation（settle 后滚回清旗）');
+      expect(body.contains('addPostFrameCallback'), isTrue,
+          reason:
+              'schedulePostFrame 必须经 WidgetsBinding.addPostFrameCallback 等过渡帧 '
+              'settle（box.size 是 FittedBox 逐帧过渡，沿用 _syncPageSize 的 settle 时机）');
     });
 
-    test('begin 返回 -1（无锚/已有重锚在飞）时不提交，不误清旗', () {
+    test('top-level 编排 runUiScaleReanchorOrchestration 保留两阶段先后 + begin<0 早返回',
+        () {
+      // 编排核心的源码切片守卫：运行时序列已由 runtime 测试锁定，这里再静态确认
+      // 「门控 → begin → intResult → charOffset<0 早返回 → postFrame → commit」骨架在源码里。
       final int idx =
-          src.indexOf('Future<void> _reanchorContinuousForUiScale()');
-      final String body = src.substring(idx, idx + 2000);
-      expect(body.contains('if (charOffset < 0) return'), isTrue,
-          reason: 'begin 返回 -1 时必须跳过提交阶段，旗由对应入口 finally 清，不在此误清');
+          src.indexOf('Future<void> runUiScaleReanchorOrchestration(');
+      expect(idx, greaterThan(0),
+          reason: 'runUiScaleReanchorOrchestration top-level 编排核心必须存在');
+      final String body = src.substring(idx, idx + 1600);
+      expect(body.contains('readerUiScaleReanchorAllowed('), isTrue,
+          reason: '编排核心必须先过纯函数门控 readerUiScaleReanchorAllowed');
+      final int idxBegin = body.indexOf('await evalBegin()');
+      final int idxIntResult =
+          body.indexOf('ReaderPaginationScripts.intResult(begin)');
+      final int idxEarlyReturn = body.indexOf('if (charOffset < 0) return');
+      final int idxPostFrame = body.indexOf('schedulePostFrame(');
+      final int idxCommit = body.indexOf('await evalCommit()');
+      expect(idxBegin, greaterThan(0),
+          reason: '必须 await evalBegin（阶段1 同步采锚置旗）');
+      expect(idxIntResult, greaterThan(idxBegin),
+          reason: '必须在 begin 之后用 intResult 解析 JS 结果（含字符串 "-1"）');
+      expect(idxEarlyReturn, greaterThan(idxIntResult),
+          reason: 'begin<0（无锚/已有重锚在飞）必须早返回，跳过 postFrame/commit，不误清旗');
+      expect(idxPostFrame, greaterThan(idxEarlyReturn),
+          reason: 'postFrame 调度必须发生在 begin<0 早返回之后');
+      expect(idxCommit, greaterThan(idxPostFrame),
+          reason: 'commit 必须在 schedulePostFrame 回调内（settle 之后）');
     });
   });
 }
