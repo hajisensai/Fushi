@@ -27,11 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 387 条。点号进各自文件。
+> 共 391 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-404](bugs/BUG-404-illustration-viewer-no-esc-no-arrow.md) | ✅ | ✅ | 插画全屏画廊ESC退不出且无方向键切换 |
+| [BUG-403](bugs/BUG-403-popup-tap-outside-closes-all-layers.md) | ✅ | ✅ | 点查词弹窗外面一次关掉整个嵌套栈（应只关最顶层一层） |
+| [BUG-402](bugs/BUG-402-reader-desktop-cannot-copy-selection.md) | ✅ | ✅ | 桌面阅读器选中文字后无法复制（Ctrl+C / 右键复制无效） |
+| [BUG-401](bugs/BUG-401-desktop-cannot-shrink-to-phone-layout.md) | ✅ | ✅ | 桌面窗口缩不进手机底栏布局 |
+| [BUG-400](bugs/BUG-400-floating-lyric-current-line-blank.md) | ✅ | ✅ | 悬浮字幕开启后当前句空白(Android,开启后像没出现) — 并入 TODO-707 |
 | [BUG-399](bugs/BUG-399-reader-window-resize-no-repaginate.md) | ✅ | ✅ | 拖窗口边框后阅读器不重排文字错乱 |
 | [BUG-398](bugs/BUG-398-focus-ring-residue-on-switch.md) | ✅ | ✅ | 焦点高亮切界面残留+无导航键也出现 |
 | [BUG-397](bugs/BUG-397-settings-exit-sync-warning.md) | ✅ | ✅ | 设置页退出100%弹同步进行中 |
