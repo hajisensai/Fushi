@@ -151,6 +151,13 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
     return false;
   }
 
+  // Ask the OS to deliver WM_POWERBROADCAST when a monitor powers on so the
+  // window can repaint after the display returns (TODO-689). Registered after
+  // the window exists (window_handle_ is set in WM_NCCREATE). The handle is
+  // released in Destroy() to avoid a leak.
+  power_notify_ = RegisterPowerSettingNotification(
+      window_handle_, &GUID_MONITOR_POWER_ON, DEVICE_NOTIFY_WINDOW_HANDLE);
+
   return OnCreate();
 }
 
@@ -213,6 +220,29 @@ Win32Window::MessageHandler(HWND hwnd,
         SetFocus(child_content_);
       }
       return 0;
+
+    case WM_DISPLAYCHANGE:
+      // Display topology / resolution / depth changed (e.g. a monitor came
+      // back). Invalidate and ask the renderer for a fresh frame so the window
+      // does not stay blank (TODO-689). Falls through to DefWindowProc.
+      InvalidateRect(window_handle_, nullptr, FALSE);
+      OnDisplayRecovered();
+      break;
+
+    case WM_POWERBROADCAST:
+      // A monitor powered on. lparam carries a POWERBROADCAST_SETTING only for
+      // PBT_POWERSETTINGCHANGE; guard the wparam, the non-null lparam and the
+      // GUID before dereferencing to avoid a wild pointer.
+      if (wparam == PBT_POWERSETTINGCHANGE && lparam != 0) {
+        auto* setting = reinterpret_cast<POWERBROADCAST_SETTING*>(lparam);
+        if (setting->PowerSetting == GUID_MONITOR_POWER_ON &&
+            setting->Data[0] != 0) {
+          InvalidateRect(window_handle_, nullptr, FALSE);
+          OnDisplayRecovered();
+        }
+      }
+      // WM_POWERBROADCAST must return TRUE to grant/acknowledge the event.
+      return TRUE;
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);
@@ -220,6 +250,14 @@ Win32Window::MessageHandler(HWND hwnd,
 
 void Win32Window::Destroy() {
   OnDestroy();
+
+  // Release the monitor power-on notification registration before the window
+  // goes away so the handle is not leaked (TODO-689). Idempotent: nulled after
+  // unregister, and re-entry (WM_DESTROY then ~Win32Window) sees nullptr.
+  if (power_notify_) {
+    UnregisterPowerSettingNotification(power_notify_);
+    power_notify_ = nullptr;
+  }
 
   if (window_handle_) {
     DestroyWindow(window_handle_);
@@ -267,4 +305,8 @@ bool Win32Window::OnCreate() {
 
 void Win32Window::OnDestroy() {
   // No-op; provided for subclasses.
+}
+
+void Win32Window::OnDisplayRecovered() {
+  // No-op; provided for subclasses that host a renderer (TODO-689).
 }

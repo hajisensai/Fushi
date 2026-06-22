@@ -517,6 +517,19 @@ void FlutterWindow::OnDestroy() {
   Win32Window::OnDestroy();
 }
 
+void FlutterWindow::OnDisplayRecovered() {
+  // The display came back (monitor power-on / WM_DISPLAYCHANGE). The engine does
+  // not produce a new frame on its own, so the window can stay blank until some
+  // other event wakes it. Force one fresh frame (TODO-689). Only the first-tier
+  // ForceRedraw is done here; the second-tier resize jiggle is intentionally
+  // omitted because it can flicker — add it only if a real device still shows a
+  // black screen after this.
+  if (!flutter_controller_) {
+    return;
+  }
+  flutter_controller_->ForceRedraw();
+}
+
 LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,

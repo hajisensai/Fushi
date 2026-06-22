@@ -70,6 +70,13 @@ class Win32Window {
   // Called when Destroy is called.
   virtual void OnDestroy();
 
+  // Called when the OS reports the display(s) came back: a monitor powered on
+  // (GUID_MONITOR_POWER_ON via WM_POWERBROADCAST) or the display topology/mode
+  // changed (WM_DISPLAYCHANGE). The base implementation is a no-op; subclasses
+  // hosting a renderer override it to force a fresh frame so the window does
+  // not stay blank after the monitor returns (TODO-689).
+  virtual void OnDisplayRecovered();
+
  private:
   friend class WindowClassRegistrar;
 
@@ -93,6 +100,11 @@ class Win32Window {
 
   // window handle for hosted content.
   HWND child_content_ = nullptr;
+
+  // Registration handle for GUID_MONITOR_POWER_ON power-setting notifications.
+  // Held so it can be unregistered on Destroy() (avoids a handle leak). nullptr
+  // when no registration is active.
+  HPOWERNOTIFY power_notify_ = nullptr;
 };
 
 #endif  // RUNNER_WIN32_WINDOW_H_
