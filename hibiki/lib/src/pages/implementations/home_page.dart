@@ -71,6 +71,15 @@ HomeTab homeTabForVisualIndex({
   return tabs[logicalIndex];
 }
 
+/// 纯函数：顶层同步态 [PopScope] 在收到系统返回时是否应弹「同步进行中」告警。
+///
+/// 仅当**正在同步**且**当前不在设置 tab**时才告警。设置 tab 的返回由它自己的内层
+/// [PopScope]（[HomeSettingsTabContent]）拦截切回来源 tab；但同 route 多 PopScope 的
+/// 回调会被**全部遍历**，故顶层必须按当前 tab 自我收窄，否则设置 tab + 同步同时进行
+/// 时按返回会误弹告警（即使返回已被内层消费、route 未真正 pop）。
+bool shouldWarnOnExit({required bool syncing, required bool isSettingsTab}) =>
+    syncing && !isSettingsTab;
+
 class HomePage extends BasePage {
   const HomePage({super.key});
 
@@ -369,6 +378,10 @@ class _HomePageState extends BasePageState<HomePage>
               canPop: !syncing,
               onPopInvokedWithResult: (didPop, _) async {
                 if (didPop) return;
+                // 同 route 多 PopScope 的回调全部遍历，故此顶层同步 PopScope 在设置
+                // tab 上也会被触发；设置 tab 的返回由内层 PopScope 切回来源 tab，
+                // 这里据 [shouldWarnOnExit] 收窄到非设置 tab 才弹同步告警（TODO-698）。
+                if (_visibleTab == HomeTab.settings) return;
                 final bool? confirmed = await showAppDialog<bool>(
                   context: context,
                   builder: (BuildContext ctx) => _SyncExitWarningDialog(
@@ -608,8 +621,11 @@ class _HomePageState extends BasePageState<HomePage>
 
 /// 设置 tab 的内容外壳：用 [PopScope] 拦截系统返回键（Android 硬件返回 / 手势返回），
 /// 消费后切回来源 tab（[onReturnToPreviousTab]）而不是让事件冒泡到 home 顶层
-/// [PopScope] 退出 app（BUG-236）。内层 PopScope 离焦点更近，先于顶层同步态 PopScope
-/// 收到事件；非设置 tab 不构造此 widget，仍走顶层 PopScope 的正常退出/同步告警逻辑。
+/// [PopScope] 退出 app（BUG-236）。注意：同 route 多个 PopScope 的回调会被**全部
+/// 遍历**、popDisposition 按 OR 聚合（任一 canPop:false 即不真正 pop），没有「内层先收
+/// 到」的顺序保证；故顶层同步 PopScope 在设置 tab 上也会触发，需按当前 tab 自我收窄
+/// （见 [shouldWarnOnExit]，TODO-698）。非设置 tab 不构造此 widget，仍走顶层 PopScope
+/// 的正常退出/同步告警逻辑。
 ///
 /// 设置内容默认是 [HibikiSettingsContent]；[child] 仅供 widget 测试注入轻量占位以独立
 /// 验证 PopScope 拦截行为（生产路径始终用默认值）。
