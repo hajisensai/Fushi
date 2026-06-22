@@ -436,6 +436,13 @@ public class FloatingLyricService extends BaseFloatingService {
         isLocked = prefs.getBoolean(PreferenceKeys.LYRIC_LOCKED, isLocked);
         clickLookupEnabled = prefs.getBoolean(
                 PreferenceKeys.LYRIC_CLICK_LOOKUP_ENABLED, clickLookupEnabled);
+        // BUG-400/TODO-711: replay the last line + playback state pushed from
+        // Dart so createContentView's lyricText.setText(currentText) shows the
+        // current line on the first frame, instead of "" until the next cue.
+        // MainActivity persists these unconditionally because the service is not
+        // alive yet when Dart pushes the current cue right after show().
+        currentText = prefs.getString(PreferenceKeys.LYRIC_CURRENT_TEXT, currentText);
+        isPlaying = prefs.getBoolean(PreferenceKeys.LYRIC_PLAYING, isPlaying);
     }
 
     private void bringAppToFront() {

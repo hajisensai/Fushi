@@ -47,6 +47,23 @@ public final class PreferenceKeys {
     public static final String LYRIC_LOCKED = "lyricLocked";
     public static final String LYRIC_CLICK_LOOKUP_ENABLED = "lyricClickLookupEnabled";
 
+    /**
+     * Last lyric/subtitle line pushed from Dart, persisted so a freshly created
+     * {@code FloatingLyricService} can render the current line on its first frame.
+     *
+     * <p>Android starts the overlay via {@code startForegroundService}, which
+     * returns before {@code onCreate} runs. Dart pushes the current cue text
+     * immediately after {@code show}, so the live service instance does not yet
+     * exist and the text would otherwise be dropped — leaving the current line
+     * blank until the next cue (BUG-400 / TODO-711, the "opened but nothing
+     * appears" half of TODO-707). Mirrors the style-persistence path so the
+     * overlay replays state from prefs instead of assuming native readiness.</p>
+     */
+    public static final String LYRIC_CURRENT_TEXT = "lyricCurrentText";
+
+    /** Last playback state pushed from Dart, replayed on service startup. */
+    public static final String LYRIC_PLAYING = "lyricPlaying";
+
     // ── Splash / theme keys (MainActivity) ───────────────────────────────────
 
     /** Stored background colour as a packed ARGB int. */

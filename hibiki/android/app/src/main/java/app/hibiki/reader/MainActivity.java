@@ -466,6 +466,13 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     case "updateText": {
                         String text = call.argument("text");
+                        // BUG-400/TODO-711: persist the line unconditionally so a
+                        // service that has not yet finished onCreate (startForegroundService
+                        // returns before onCreate; Dart pushes the current cue right after
+                        // show) still renders the current line on its first frame via
+                        // readInitialState — instead of dropping it and showing blank
+                        // until the next cue. Mirrors persistFloatingLyricOptions.
+                        persistFloatingLyricText(text);
                         FloatingLyricService svc = FloatingLyricService.getInstance();
                         if (svc != null && text != null) {
                             svc.updateLyricText(text);
@@ -540,6 +547,9 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     case "setPlaybackState": {
                         Boolean playing = call.argument("playing");
+                        // BUG-400/TODO-711: replay playback state on startup too, so the
+                        // play/pause icon is correct on the overlay's first frame.
+                        persistFloatingLyricPlaying(playing != null && playing);
                         FloatingLyricService svc = FloatingLyricService.getInstance();
                         if (svc != null) {
                             svc.setPlaybackState(playing != null && playing);
@@ -817,6 +827,20 @@ public class MainActivity extends AudioServiceActivity {
         getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
                 .edit()
                 .putBoolean(PreferenceKeys.LYRIC_CLICK_LOOKUP_ENABLED, enabled)
+                .apply();
+    }
+
+    private void persistFloatingLyricText(String text) {
+        getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
+                .edit()
+                .putString(PreferenceKeys.LYRIC_CURRENT_TEXT, text != null ? text : "")
+                .apply();
+    }
+
+    private void persistFloatingLyricPlaying(boolean playing) {
+        getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PreferenceKeys.LYRIC_PLAYING, playing)
                 .apply();
     }
 
