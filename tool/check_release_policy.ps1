@@ -65,6 +65,13 @@ foreach ($relativePath in $workflowPaths) {
 
   Forbid-Pattern $relativePath $content '\bGITHUB_RUN_NUMBER\b' 'workflow-local run_number splits same-version Android and desktop releases'
   Forbid-Pattern $relativePath $content 'github\.run_number' 'workflow-local run_number splits build numbers across release workflows'
+
+  # TODO-705: forbid a HARDCODED make_latest:true literal so a push/debug/beta
+  # workflow can never promote a Latest release. The legitimate usage is
+  # make_latest: ${{ steps.channel.outputs.make_latest }} (template
+  # interpolation), which this literal pattern does not match -- it only fires
+  # when true is written directly after make_latest:.
+  Forbid-Pattern $relativePath $content 'make_latest:\s*true\b' 'a hardcoded make_latest:true would force a Latest release on push/debug/beta; use the channel output (release-channel hard rule)'
 }
 
 $androidWorkflow = Read-RepoFile '.github/workflows/release.yml'
@@ -75,6 +82,23 @@ $androidWorkflow = Read-RepoFile '.github/workflows/release.yml'
 # number must be the bare release sequence and never multiply by 1000000.
 Require-Text '.github/workflows/release.yml' $androidWorkflow 'ANDROID_BUILD_NUMBER=$RELEASE_SEQUENCE' 'Android build number must be the bare monotonic release sequence (versionCode base is applied in build.gradle)'
 Forbid-Pattern '.github/workflows/release.yml' $androidWorkflow 'PUBSPEC_BUILD \* 1000000' 'the *1000000 build number overflowed int32 / exceeded Android''s 2.1e9 versionCode ceiling (TODO-414)'
+
+# TODO-705: both release workflows must publish the mirror update manifest
+# (latest-<channel>.json on the update-manifest branch) so beta/debug in-China
+# update checks succeed (BUG-292). Guard that each consumes the SHARED release
+# sequence (never a workflow run_number) and that the manifest step is wired in.
+foreach ($relativePath in $workflowPaths) {
+  $content = Read-RepoFile $relativePath
+  Require-Text $relativePath $content 'tool/publish_update_manifest.sh' 'release workflows must publish the mirror update manifest (TODO-705)'
+  Require-Text $relativePath $content 'RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}' 'manifest publisher must consume the shared release sequence, not run_number (TODO-705)'
+}
+
+$manifestScript = Read-RepoFile 'tool/publish_update_manifest.sh'
+Require-Text 'tool/publish_update_manifest.sh' $manifestScript 'releases/download/' 'manifest asset URLs must be releases/download/<tag>/<name> (TODO-705)'
+# The manifest is a DATA FILE on a git branch, NOT a GitHub Release: it must
+# never invoke the release API nor promote Latest.
+Forbid-Pattern 'tool/publish_update_manifest.sh' $manifestScript 'make_latest' 'the mirror manifest is a data file on a git branch, not a GitHub Release; it must never set make_latest (TODO-705)'
+Forbid-Pattern 'tool/publish_update_manifest.sh' $manifestScript '\brun_number\b' 'manifest sequence must be the shared git release sequence, never a workflow run_number (TODO-705)'
 
 $buildGradle = Read-RepoFile 'hibiki/android/app/build.gradle'
 Require-Text 'hibiki/android/app/build.gradle' $buildGradle 'def versionCodeBase = 1000000000' 'one-time versionCode migration floor must stay above every historically-shipped versionCode (TODO-414)'

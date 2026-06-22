@@ -447,3 +447,27 @@ jobs:
         prerelease: ${{ steps.channel.outputs.prerelease }}
         make_latest: ${{ steps.channel.outputs.make_latest }}
         files: ${{ steps.channel.outputs.files }}
+    # TODO-705: publish a mirror update manifest so beta/debug in-China update
+    # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
+    # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the
+    # update-manifest branch -- it is NOT a GitHub Release: it never sets
+    # make_latest / prerelease:false, reuses the channel outputs verbatim, uses
+    # the shared release_sequence (never run_number), and update-manifest is
+    # absent from this workflow's push trigger (main/develop only) so it does
+    # not cascade a run.
+    - name: Publish mirror update manifest (Android assets)
+      if: steps.channel.outputs.publish_managed_release == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        CHANNEL: ${{ steps.channel.outputs.channel }}
+        TAG: ${{ steps.channel.outputs.tag }}
+        PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+        NOTES: ${{ steps.channel.outputs.body }}
+        VERSION: ${{ steps.channel.outputs.build_version_name }}
+        RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
+        ARTIFACTS_DIR: hibiki/build/release-artifacts
+        ASSET_GLOB: hibiki-*.apk
+        PLATFORM_LABEL: android
+      run: bash tool/publish_update_manifest.sh
