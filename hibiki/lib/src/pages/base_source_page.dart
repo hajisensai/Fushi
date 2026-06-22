@@ -332,7 +332,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         onPointerHover: onDismissBarrierHover,
                         child: GestureDetector(
                           behavior: HitTestBehavior.translucent,
-                          onTap: clearDictionaryResult,
+                          // TODO-720 / BUG-403: 点弹窗外只关最顶层一层（逐层关，保留
+                          // 父层），与光标 B/Esc 的 [dismissTopPopup] 同语义；关到最后一层
+                          // （index 0）才由 [_dismissPopupAt] 触发会话收尾
+                          // （[onAllPopupsDismissed]）。不走 [clearDictionaryResult]（那
+                          // 是清整栈的会话级路径，仍由 X 关闭 / 返回键 / 会话结束用）。
+                          onTap: dismissTopPopup,
                           child: Container(
                             color: Colors.transparent,
                           ),
@@ -422,7 +427,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onClose: () => _dismissPopupAt(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
         onBack: null,
-        onTapOutside: clearDictionaryResult,
+        // TODO-720 / BUG-403: 点弹窗外只关本层（逐层关），同 [dismissTopPopup]。
+        onTapOutside: dismissTopPopup,
         onRendered: () => _onPopupLayerRendered(index, item),
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。

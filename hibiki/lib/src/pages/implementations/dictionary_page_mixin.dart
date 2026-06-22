@@ -337,7 +337,11 @@ mixin DictionaryPageMixin {
         onClose: () => onPop(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
         onBack: null,
-        onTapOutside: () => onPop(0),
+        // TODO-720 / BUG-403: 点弹窗外只关最顶层一层（逐层关，保留父层），
+        // 同视频 [_onDismissBarrierTap]；关到最后一层（index 0）才由 onPop 的
+        // 关栈汇聚点触发会话收尾（恢复播放 / 清草稿 / 收回焦点）。无可见层
+        // （仅热槽，lastVisibleIndex=-1）时 onPop(-1) → dismissAt 安全 no-op。
+        onTapOutside: () => onPop(controller.lastVisibleIndex),
         // TODO-058：该层 WebView 渲染完成 → 翻可见挂起的冷层（消除白屏一瞬）。
         // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。
         onRendered: () {

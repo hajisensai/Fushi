@@ -60,4 +60,50 @@ void main() {
     expect(popup, contains('onDismiss: isBase ? _close : () => _popAt(index)'));
     expect(popup, contains('onClose: isBase ? null : () => _popAt(index)'));
   });
+
+  // TODO-720 / BUG-403: 点弹窗外（barrier onTap + 弹窗 onTapOutside）只关最顶层一层
+  // （逐层退回父层），不一次清整栈。这些路径必须接逐层关原语，不能写死 index 0 /
+  // 调清整栈的 clearDictionaryResult。
+  test(
+      'reader tap-outside routes through dismissTopPopup, not whole-stack clear',
+      () {
+    final String base = read('lib/src/pages/base_source_page.dart');
+
+    // barrier 全屏 onTap 与弹窗 onTapOutside 都走逐层关原语。
+    expect(base, contains('onTap: dismissTopPopup'),
+        reason: 'barrier 点外只关最顶层一层');
+    expect(base, contains('onTapOutside: dismissTopPopup'), reason: '弹窗点外只关本层');
+    // 不再用清整栈的会话级路径接「点外」。
+    expect(base, isNot(contains('onTap: clearDictionaryResult')),
+        reason: '点外不应清整栈');
+    expect(base, isNot(contains('onTapOutside: clearDictionaryResult')),
+        reason: '点外不应清整栈');
+    // 逐层关原语本体仍在（只关最顶层、保留父层）。
+    expect(base,
+        contains('final int index = _lastVisiblePopupIndex(_popup.entries);'),
+        reason: 'dismissTopPopup 取最顶层可见层下标');
+    expect(base, contains('if (index >= 0) _dismissPopupAt(index);'),
+        reason: 'dismissTopPopup 只关最顶层（-1 时安全 no-op）');
+  });
+
+  test('video tap-outside barrier dismisses only the top visible layer', () {
+    final String video =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+
+    expect(video, contains('_popNestedPopupAt(_topVisiblePopupIndex);'),
+        reason: '点外只关最顶层可见层');
+    expect(video, isNot(contains('_popNestedPopupAt(0);')),
+        reason: '不再写死 index 0 清整栈');
+  });
+
+  test('mixin tap-outside pops only the top visible layer', () {
+    final String mixin =
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+
+    expect(mixin,
+        contains('onTapOutside: () => onPop(controller.lastVisibleIndex)'),
+        reason: '点外只关最顶层可见层');
+    expect(mixin, isNot(contains('onTapOutside: () => onPop(0)')),
+        reason: '不再写死 index 0 清整栈');
+  });
 }
