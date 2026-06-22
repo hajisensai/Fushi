@@ -241,6 +241,19 @@ class UpdateChecker {
           : <Map<String, dynamic>>[release];
     }
 
+    // beta/debug：**优先**读 CI 发到 `update-manifest` 孤儿分支的镜像清单
+    // （TODO-705 方案 A）。`raw.githubusercontent.com` 经公共 gh 代理可透传
+    // （与 stable 的 302 跳转同理，纯 GFW 无代理也能成功），而原 `api.github.com/.../releases`
+    // 列表 API 经任何镜像都被 403（BUG-292），故 manifest 是 GFW 下 beta/debug 检查的
+    // 唯一可成功路径。**回退**到 `api.github.com` 直连（有 VPN/系统代理时更权威、带真实
+    // assets/notes），两条路返回值都是「与 GitHub API 同构的 release map 列表」，对上层
+    // [selectUpdateReleaseForCurrentPlatform] 完全透明——纯叠加，不破坏既有行为。
+    final Map<String, dynamic>? manifestRelease =
+        await _fetchChannelReleaseFromManifest(client, channel);
+    if (manifestRelease != null) {
+      return <Map<String, dynamic>>[manifestRelease];
+    }
+
     final body = await _httpGetString(
       client,
       'https://api.github.com/repos/$_kGitHubRepo/releases?per_page=20',
@@ -253,6 +266,25 @@ class UpdateChecker {
         .where((Map<String, dynamic> release) {
       return releaseMatchesUpdateChannel(release, channel);
     }).toList(growable: false);
+  }
+
+  /// beta/debug 镜像清单读取（TODO-705 方案 A）：取该通道的 `latest-<channel>.json`
+  /// （[manifestUrlForChannel]，经 [updateCheckUrls] 自带镜像回退），解析成与 GitHub API
+  /// 同构的 release map（[buildReleaseFromManifest]）。任一镜像成功且能解析出合法
+  /// release 即返回；URL 全失败、JSON 畸形、schemaVersion 不识别或重建后不匹配本通道
+  /// → 返 null（调用方回退 `api.github.com` 直连）。
+  static Future<Map<String, dynamic>?> _fetchChannelReleaseFromManifest(
+    HttpClient client,
+    UpdateChannel channel,
+  ) async {
+    final String? url = manifestUrlForChannel(channel);
+    if (url == null) return null;
+    final String? body = await _httpGetString(client, url);
+    if (body == null) return null;
+    final Map<String, dynamic>? release = buildReleaseFromManifest(body);
+    if (release == null) return null;
+    if (!releaseMatchesUpdateChannel(release, channel)) return null;
+    return release;
   }
 
   /// stable 通道检查（TODO-404 根因修复）：**优先**走 `github.com/.../releases/latest`
@@ -673,6 +705,98 @@ Map<String, dynamic> buildStableReleaseFromTag(String tag) {
 /// stable release 网页基址（`tag/<tag>` 拼其后，作为 fallback「打开发布页」目标）。
 const String _kStableReleasesHtmlUrl =
     'https://github.com/$_kGitHubRepo/releases';
+
+/// CI 发到 `update-manifest` 孤儿分支的镜像清单本通道文件名前缀（TODO-705）。
+/// 路径是 `raw.githubusercontent.com/<repo>/update-manifest/latest-<channel>.json`：
+/// `raw` 资源经公共 gh 代理可透传（[updateCheckUrls] 套镜像前缀），是
+/// 纯 GFW 下 beta/debug 检查唯一可成功路径（`api.github.com/.../releases` 列表被镜像 403）。
+const String kBetaManifestUrl =
+    'https://raw.githubusercontent.com/$_kGitHubRepo/update-manifest/latest-beta.json';
+
+/// debug 通道镜像清单（见 [kBetaManifestUrl]）。
+const String kDebugManifestUrl =
+    'https://raw.githubusercontent.com/$_kGitHubRepo/update-manifest/latest-debug.json';
+
+/// CI 生成镜像清单时识别的 schema 版本（TODO-705）。客户端只认该版本；
+/// 未来结构不兼容的变更递增该号，旧客户端不识别则安全回退 API 直连。
+const int kUpdateManifestSchemaVersion = 1;
+
+/// **纯函数**：按通道返回镜像清单 URL（TODO-705）。beta/debug 有 manifest；
+/// stable 走 302 跳转、不走 manifest（返 null）。
+@visibleForTesting
+String? manifestUrlForChannel(UpdateChannel channel) {
+  return switch (channel) {
+    UpdateChannel.beta => kBetaManifestUrl,
+    UpdateChannel.debug => kDebugManifestUrl,
+    UpdateChannel.stable => null,
+  };
+}
+
+/// **纯函数**：把 CI 发到 `update-manifest` 分支的 `latest-<channel>.json` 原始响应体
+/// 重建成与 GitHub API release 同构的 map，让它能直接喂给现有
+/// [selectUpdateReleaseForCurrentPlatform] / `selectAsset` 整条链路，不在更新流程里另搭
+/// 一套特例分支（TODO-705 方案 A，与 [buildStableReleaseFromTag] 同范式）。
+///
+/// manifest JSON 由 CI 生成，含：`schemaVersion`/`version`/`tag`/`prerelease`/`channel`/
+/// `notes`/`assets[{name, browser_download_url}]`。重建映射：
+/// * `tag_name: <tag>`、`prerelease: <prerelease>`、`draft: false` —— 让通道匹配通过。
+/// * `body: <notes>` —— 从 manifest 恢复 release notes。
+/// * `assets`：每项保留 `name` + **`browser_download_url`**（[UpdateAsset.fromReleaseAsset]
+///   只读这个键，非 manifest 的 `url` 字段），由 `selectAsset` 按平台/设备 ABI 自行挑。
+/// * `html_url`：拼发布页作为 fallback「打开发布页」目标。
+///
+/// **安全回退**：JSON 畸形 / 非对象 / `schemaVersion` 不等于 [kUpdateManifestSchemaVersion] /
+/// 缺 `tag` / `assets` 缺合法项 → 返 null（调用方回退 API 直连，不报错）。
+@visibleForTesting
+Map<String, dynamic>? buildReleaseFromManifest(String body) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (_) {
+    return null;
+  }
+  if (decoded is! Map<String, dynamic>) return null;
+
+  final Object? schemaVersion = decoded['schemaVersion'];
+  if (schemaVersion is! int || schemaVersion != kUpdateManifestSchemaVersion) {
+    return null;
+  }
+
+  final Object? tagRaw = decoded['tag'];
+  if (tagRaw is! String) return null;
+  final String tag = tagRaw.trim();
+  if (tag.isEmpty) return null;
+
+  final String body0 =
+      decoded['notes'] is String ? decoded['notes'] as String : '';
+  final bool prerelease = decoded['prerelease'] == true;
+
+  final List<Map<String, dynamic>> assets = <Map<String, dynamic>>[];
+  final Object? assetsRaw = decoded['assets'];
+  if (assetsRaw is List<dynamic>) {
+    for (final Object? entry in assetsRaw) {
+      if (entry is! Map<String, dynamic>) continue;
+      final Object? name = entry['name'];
+      final Object? downloadUrl = entry['browser_download_url'];
+      if (name is! String || name.isEmpty) continue;
+      if (downloadUrl is! String || downloadUrl.isEmpty) continue;
+      assets.add(<String, dynamic>{
+        'name': name,
+        'browser_download_url': downloadUrl,
+      });
+    }
+  }
+  if (assets.isEmpty) return null;
+
+  return <String, dynamic>{
+    'tag_name': tag,
+    'prerelease': prerelease,
+    'draft': false,
+    'body': body0,
+    'html_url': '$_kStableReleasesHtmlUrl/tag/$tag',
+    'assets': assets,
+  };
+}
 
 @visibleForTesting
 Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(

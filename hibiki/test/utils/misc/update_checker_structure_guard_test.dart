@@ -102,6 +102,12 @@ void main() {
     expect(source, contains('bool isUpdateVersionNewer('));
     expect(source, contains('releaseMatchesUpdateChannel('));
     expect(source, contains('normalizeReleaseVersionTag('));
+    // TODO-705: beta/debug mirror-manifest reading lives in the release part.
+    expect(source, contains('Map<String, dynamic>? buildReleaseFromManifest('));
+    expect(source, contains('String? manifestUrlForChannel('));
+    expect(source, contains('const String kBetaManifestUrl ='));
+    expect(source, contains('const String kDebugManifestUrl ='));
+    expect(source, contains('kUpdateManifestSchemaVersion'));
   });
 
   test('ui part owns dialogs + overlay and not the HttpClient engine', () {

@@ -120,7 +120,8 @@ const List<String> kAndroidReleaseAbis = <String>[
 ///
 /// 只覆盖「能应用内安装」的平台（Android / Windows，见 [platformSupportsInAppInstall]）；
 /// 其余平台 `selectAsset` 本就返 null（走打开发布页），无需合成。仅用于 **stable** 通道
-/// （beta/debug 的列表网页经镜像 403，需 TODO-404 方案 B 的 latest.json，本期不做）。
+/// （beta/debug 的列表网页经镜像 403，改读 CI 发到 `update-manifest` 分支的 latest.json，
+/// 由其自带 assets 清单，见 `update_checker_release.dart` 的 `buildReleaseFromManifest`，TODO-705）。
 List<String> synthesizeStableAssetNames(String version) {
   final List<String> names = <String>[
     'hibiki-$version-windows-setup.exe',
