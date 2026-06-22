@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
@@ -70,19 +71,42 @@ enum DesktopContentKind { readerShelf, dictionary, settings }
 
 enum SupportingPaneSide { start, end }
 
-WindowSizeClass windowSizeClassOf(BoxConstraints constraints) {
-  final double w = constraints.maxWidth;
-  if (w >= 840) return WindowSizeClass.expanded;
-  if (w >= 600) return WindowSizeClass.medium;
+/// Single source of truth for the Material compact/medium/expanded
+/// breakpoints. [width] must be the **real physical viewport width** in
+/// logical pixels — see [windowSizeClassReal] for why the raw logical width
+/// handed down inside [HibikiAppUiScale] is not it.
+WindowSizeClass windowSizeClassForWidth(double width) {
+  if (width >= 840) return WindowSizeClass.expanded;
+  if (width >= 600) return WindowSizeClass.medium;
   return WindowSizeClass.compact;
 }
 
-WindowSizeClass windowSizeClassFromContext(BuildContext context) {
-  final double w = MediaQuery.sizeOf(context).width;
-  if (w >= 840) return WindowSizeClass.expanded;
-  if (w >= 600) return WindowSizeClass.medium;
-  return WindowSizeClass.compact;
+/// Classify by the **real** viewport width.
+///
+/// BUG-401: inside [HibikiAppUiScale] the subtree is laid out against a
+/// virtual canvas of `realViewport / scale` (so visual scaling can fill the
+/// screen). A breakpoint that reads that inflated logical width never falls
+/// into [WindowSizeClass.compact] on desktop — the window's real width could
+/// shrink, but the logical width stayed high, so the phone (bottom-bar)
+/// layout was unreachable. The real width is `logicalWidth * scale`.
+///
+/// [appUiScale] is the net [HibikiAppUiScale.of] factor at the call site
+/// (1.0 below the neutraliser, on undecorated routes, or when no scale
+/// ancestor exists). A non-finite / non-positive scale degrades to identity
+/// (treat the logical width as already-real).
+WindowSizeClass windowSizeClassReal(double logicalWidth, double appUiScale) {
+  final bool usableScale =
+      appUiScale.isFinite && !appUiScale.isNaN && appUiScale > 0;
+  final double realWidth =
+      usableScale ? logicalWidth * appUiScale : logicalWidth;
+  return windowSizeClassForWidth(realWidth);
 }
+
+WindowSizeClass windowSizeClassOf(BoxConstraints constraints) =>
+    windowSizeClassForWidth(constraints.maxWidth);
+
+WindowSizeClass windowSizeClassFromContext(BuildContext context) =>
+    windowSizeClassForWidth(MediaQuery.sizeOf(context).width);
 
 double? desktopContentMaxWidth(
   WindowSizeClass sizeClass,
@@ -158,7 +182,13 @@ class DesktopContentLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final WindowSizeClass sizeClass = windowSizeClassOf(constraints);
+        // BUG-401: classify on the real physical width so a desktop window
+        // dragged narrow collapses the shelf/dictionary/settings body into
+        // the compact (full-bleed) layout instead of staying expanded.
+        final WindowSizeClass sizeClass = windowSizeClassReal(
+          constraints.maxWidth,
+          HibikiAppUiScale.of(context),
+        );
         final double? maxWidth = desktopContentMaxWidth(sizeClass, kind);
         final Widget padded = Padding(
           padding: desktopContentPadding(sizeClass),

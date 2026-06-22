@@ -439,7 +439,17 @@ class _HomePageState extends BasePageState<HomePage>
                 },
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final sizeClass = windowSizeClassOf(constraints);
+                    // BUG-401: classify on the real physical width
+                    // (logical × appUiScale). This LayoutBuilder sits INSIDE
+                    // HibikiAppUiScale, so `constraints.maxWidth` is the
+                    // inflated logical canvas width; reading it directly kept
+                    // desktop locked to the nav-rail layout and the phone
+                    // (bottom-bar) layout was unreachable however narrow the
+                    // real window got dragged.
+                    final sizeClass = windowSizeClassReal(
+                      constraints.maxWidth,
+                      HibikiAppUiScale.of(context),
+                    );
                     // compact(<600) → 底栏；medium/expanded(≥600，含竖屏平板) → 侧边布局。
                     if (sizeClass == WindowSizeClass.compact) {
                       return _buildMobileLayout();
