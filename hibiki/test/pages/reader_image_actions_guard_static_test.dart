@@ -64,7 +64,10 @@ void main() {
     expect(source, contains('HibikiChannels.clipboardImage'));
     expect(source, contains('invokeMethod<void>('));
     expect(source, contains("'copyImageFile'"));
-    expect(source, isNot(contains('Clipboard.setData')));
+    // NOTE(BUG-402): reader text-selection copy (Ctrl+C, caret.part.dart) legitimately
+    // uses Clipboard.setData for TEXT. Image copy is still locked to the native
+    // clipboardImage channel by the assertions above (clipboardImage/copyImageFile),
+    // so the old corpus-wide isNot(Clipboard.setData) guard was over-broad and removed.
   });
 
   test('reader image context menu scales with reader chrome only', () {
