@@ -2124,7 +2124,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _handleSubtitleLookupTap(hit.sentence, hit.graphemeIndex, hit.charRect);
       return;
     }
-    _popNestedPopupAt(0);
+    // TODO-720 / BUG-403: 点弹窗外只关最顶层一层（逐层关，保留父层），与 reader
+    // 的 [dismissTopPopup] 同语义；关到最后一层（index 0）时 [_popNestedPopupAt]
+    // 自然触发会话收尾（恢复播放 / 清草稿 / 收回焦点）。
+    _popNestedPopupAt(_topVisiblePopupIndex);
   }
 
   void _handleSubtitleLookupTap(

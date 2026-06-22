@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-402](bugs/BUG-402-reader-desktop-cannot-copy-selection.md) | ✅ | ✅ | 桌面阅读器选中文字后无法复制（Ctrl+C / 右键复制无效） |
+| [BUG-403](bugs/BUG-403-popup-tap-outside-closes-all-layers.md) | ✅ | ✅ | 点查词弹窗外面一次关掉整个嵌套栈（应只关最顶层一层） |
 | [BUG-399](bugs/BUG-399-reader-window-resize-no-repaginate.md) | ✅ | ✅ | 拖窗口边框后阅读器不重排文字错乱 |
 | [BUG-398](bugs/BUG-398-focus-ring-residue-on-switch.md) | ✅ | ✅ | 焦点高亮切界面残留+无导航键也出现 |
 | [BUG-397](bugs/BUG-397-settings-exit-sync-warning.md) | ✅ | ✅ | 设置页退出100%弹同步进行中 |
