@@ -1,0 +1,14 @@
+## BUG-400 · 悬浮字幕开启后当前句空白(Android,开启后像没出现) — 并入 TODO-707
+- **报告**：2026-06-22（用户：开启悬浮字幕后当前正在播的这句不显示，要等下一句才出现；严重时开启后像「没出现」。TODO-711 / 并入 TODO-707「开启后不出现」一半）
+- **真实性**：✅ 真 bug（Android 独有异步时序）。Windows 同步 Show + 常驻 window 对象不丢，是对照面。
+- **根因**：Android `show` 走 `startForegroundService` 立即返回（`MainActivity.java:443-461`），service 尚未 `onCreate`；Dart 在 `audiobook_session.dart:281-286` 的 `_syncFloatingLyric` 紧接着 `show` 之后（`_startBackgroundSurfaces` 312-318）调 `FloatingLyricChannel.updateText(当前句)`。此时 `FloatingLyricService.getInstance()==null`，`MainActivity.java:467-475` 的 `if (svc != null)` 不成立 → 当前句静默丢，下一句才补。service `createContentView`（`FloatingLyricService.java:116`）首帧 `lyricText.setText(currentText)`，而 `readInitialState`（`FloatingLyricService.java:425-439`）只读样式不读文本 → currentText 仍是 `""` → 当前句空白。
+  - 对照：样式（字号/颜色/锁定/查词）已经走 `persistFloatingLyricOptions`（`MainActivity.java:787-821`）落 prefs + `readInitialState` 回放，只有「文本/播放态」漏了这条回放路径。
+- **[x] ① 已修复** — 镜像现有样式持久化路径，纯 prefs 回放（零时序假设，不加延迟/轮询/native→Dart ready 往返）：
+  - `PreferenceKeys.java`：新增 `LYRIC_CURRENT_TEXT`（+`LYRIC_PLAYING`）键。
+  - `MainActivity.java` `updateText` 分支（原 :467-475）：**无论 svc 是否为 null** 都先 `persistFloatingLyricText(text)`（新增 helper，仿 `persistFloatingLyricOptions`），svc!=null 时仍调 `svc.updateLyricText`；`setPlaybackState` 分支同样先 `persistFloatingLyricPlaying(playing)`。
+  - `FloatingLyricService.java` `readInitialState`：补读 `currentText = prefs.getString(LYRIC_CURRENT_TEXT, currentText)` + `isPlaying = prefs.getBoolean(LYRIC_PLAYING, isPlaying)`，使 `createContentView` 首帧即显示当前句、播放/暂停图标正确（`applyStyle()→applyPlayPauseButton()` 用 `isPlaying`）。
+  - 文件：`hibiki/android/app/src/main/java/app/hibiki/reader/constants/PreferenceKeys.java`、`.../MainActivity.java`、`.../FloatingLyricService.java`。提交：`83aaaffbc`（本 worktree 分支 fix-711-floating-lyric-seed，未 push 未合并）。
+- **[x] ② 已加自动化测试** —
+  - Dart 契约行为测试 `hibiki/test/media/audiobook/floating_lyric_seed_test.dart`：钉住 `start` 拉起悬浮窗后**确实**在 `show` 之后发出携带当前句的 `updateText`（开启时序回归会让 native prefs 回放落空）；附「关闭悬浮窗时不推 updateText」反向用例。（Dart host 无法验 Java 层是否丢，故只锁线协议。）
+  - 源码扫描守卫 `hibiki/test/build/android_floating_lyric_seed_guard_test.dart`（仿 `android_popup_charindex_guard_test.dart` 风格）：断言 `PreferenceKeys` 声明新键、`MainActivity.updateText` 在 svc 判空**之前**无条件 persist、`setPlaybackState` persist playing、`FloatingLyricService.readInitialState` 回放 `LYRIC_CURRENT_TEXT`/`LYRIC_PLAYING`。
+- **备注**：真正修复在 Java 前台服务层，**必须 Android 真机/模拟器**复测：开有声书 → 打开悬浮字幕 → 当前正播这句立即显示（非空白等下一句）。覆盖「当前句空白」与 TODO-707「开启后不出现」。`assembleRelease` 编译通过≠行为已验，行为仍待真机。
