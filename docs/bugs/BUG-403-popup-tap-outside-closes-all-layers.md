@@ -12,6 +12,6 @@
   - video：`video_hibiki_page.dart` `_onDismissBarrierTap`（:2127）`_popNestedPopupAt(0)` 改 `_popNestedPopupAt(_topVisiblePopupIndex)`（:2099 = `_popup.lastVisibleIndex`，与同文件返回键 :2318 同款语义）。
   - mixin：`dictionary_page_mixin.dart` `onTapOutside`（:340）`onPop(0)` 改 `onPop(controller.lastVisibleIndex)`（`dictionary_popup_controller.dart:112`；-1 时 `dismissAt(-1)` 安全 no-op）。
 
-  逐层关到最后一层（index 0）时自然落到清栈分支，触发会话收尾（reader `onAllPopupsDismissed` / video 恢复播放+清草稿+收回焦点）。BUG-072 续播、热槽保留、草稿/收尾「仅 index 0」三条不变。提交哈希：`5da4aea79`。
+  逐层关到最后一层（index 0）时自然落到清栈分支，触发会话收尾（reader `onAllPopupsDismissed` / video 恢复播放+清草稿+收回焦点）。BUG-072 续播、热槽保留、草稿/收尾「仅 index 0」三条不变。提交哈希：`6c1fbf152`（含本 doc 哈希回填的后继提交见分支 HEAD）。
 - **[x] ② 已加自动化测试** — 行为测试 `hibiki/test/pages/popup_tap_outside_layer_test.dart`：用 `debugPopupStack` 构造两层可见栈，模拟 barrier `onTap` / 弹窗 `onTapOutside` → 断言栈 2→1 保留父层、`onAllPopupsDismissed` 未触发；再点一次 → 栈空 + 会话收尾触发；撤修复（直接调 `clearDictionaryResult`）应一次清空（红）。源码扫描守卫扩展 `hibiki/test/pages/dictionary_child_popup_close_guard_test.dart`：断言「点外」四处路径（base barrier `onTap` / base `onTapOutside` / mixin `onTapOutside` / video `_onDismissBarrierTap`）调逐层关原语（`dismissTopPopup` / `lastVisibleIndex` / `_topVisiblePopupIndex`），不再写死 `clearDictionaryResult` / `onPop(0)` / `_popNestedPopupAt(0)`。
 - **备注**：嵌套弹窗的真实渲染/点击坐标命中是 WebView 产物，widget 测试照不到几何；逐层关行为本身（栈深度 + 会话收尾）已由 `debugPopupStack` 行为测试在 Dart 层覆盖。最终交互（在弹窗内查词→点外→退回父词、再点外→关）建议真机/模拟器肉眼确认一次。
