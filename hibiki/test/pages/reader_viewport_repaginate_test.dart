@@ -87,4 +87,106 @@ void main() {
       expect(r.width, isFalse);
     });
   });
+
+  /// TODO-690 / BUG-397：桌面拖窗口边框 resize 后阅读器不重排、文字错乱（翻页才恢复）。
+  ///
+  /// 唯一 resize→重排入口是 didChangeMetrics→_syncPageSize，但 Windows 拖边框时
+  /// didChangeMetrics / MediaQuery.size 更新滞后，JS 分页几何缓存无人失效 → 错位。
+  /// 修复在阅读器树内（Neutralizer 之下、WebView 外层）包透明 LayoutBuilder，用其
+  /// constraints 变化作为更早更可靠的 resize 通道，尾沿防抖触发 _syncPageSize。
+  ///
+  /// 防抖「是否需重排」判定抽成本纯谓词 [readerLayoutResizeNeedsRepaginate]，复用
+  /// [readerViewportNeedsRepaginate] 的 1px 容差与 lastWidth>0 门控（不另写阈值），
+  /// 宽或高任一维度变化超阈值即返回 true。本组锁定它与既有视口判定一致。
+  group('readerLayoutResizeNeedsRepaginate（TODO-690 resize 防抖判定）', () {
+    test('sub-pixel 宽抖动不触发重排（与 readerViewportNeedsRepaginate 容差一致）', () {
+      expect(
+        readerLayoutResizeNeedsRepaginate(
+          width: 1280.4,
+          height: 800.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        ),
+        isFalse,
+        reason: '0.4px 宽抖动不得触发尾沿防抖重排（否则拖拽期反复整章重载弹回章首）',
+      );
+    });
+
+    test('sub-pixel 高抖动不触发重排', () {
+      expect(
+        readerLayoutResizeNeedsRepaginate(
+          width: 1280.0,
+          height: 800.4,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        ),
+        isFalse,
+      );
+    });
+
+    test('>=1px 宽变（真实拖边框）触发重排', () {
+      expect(
+        readerLayoutResizeNeedsRepaginate(
+          width: 1320.0,
+          height: 800.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        ),
+        isTrue,
+        reason: '拖窗口边框横向放大宽变 >=1px 必须触发重排（这正是 TODO-690 漏掉的通道）',
+      );
+    });
+
+    test('>=1px 高变（真实拖边框）触发重排', () {
+      expect(
+        readerLayoutResizeNeedsRepaginate(
+          width: 1280.0,
+          height: 760.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        ),
+        isTrue,
+        reason: '拖窗口边框纵向缩小高变 >=1px 必须触发重排',
+      );
+    });
+
+    test('宽高同时大变（旋转/最大化）触发重排', () {
+      expect(
+        readerLayoutResizeNeedsRepaginate(
+          width: 800.0,
+          height: 1280.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        ),
+        isTrue,
+      );
+    });
+
+    test('首帧（lastWidth==0 且 lastHeight==0）宽不触发但高触发——与底层判定一致', () {
+      // 复用 readerViewportNeedsRepaginate：宽有 lastWidth>0 门控（首帧宽不算变），
+      // 高无门控（首帧高 vs 0 必 >=1px）。任一为真即重排，故首帧整体返回 true。
+      expect(
+        readerLayoutResizeNeedsRepaginate(
+          width: 1280.0,
+          height: 800.0,
+          lastWidth: 0.0,
+          lastHeight: 0.0,
+        ),
+        isTrue,
+      );
+    });
+
+    test('约束完全不变（同一尺寸多帧重建）不触发重排——避免重复起 timer', () {
+      expect(
+        readerLayoutResizeNeedsRepaginate(
+          width: 1280.0,
+          height: 800.0,
+          lastWidth: 1280.0,
+          lastHeight: 800.0,
+        ),
+        isFalse,
+        reason: '同尺寸多帧 LayoutBuilder 重建不应反复起防抖 timer',
+      );
+    });
+  });
 }
