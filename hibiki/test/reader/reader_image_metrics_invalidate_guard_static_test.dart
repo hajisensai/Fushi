@@ -85,10 +85,12 @@ void main() {
         () {
       // TODO-656：跨章「到边界」判据改为「真试滚」——真的 scrollBy 一步、读实际位移 moved；
       // 滚动了不跨章，真滚不动才跨章。权威、同步，不靠 scrollWidth/相邻拍推算。
-      expect(pageSource.contains('root.scrollBy(0, wheelDelta)'), isTrue,
-          reason: '横排滚轮真试滚：scrollBy 纵向后读实际位移');
-      expect(pageSource.contains('root.scrollBy(wheelDelta * sign, 0)'), isTrue,
-          reason: '竖排滚轮真试滚：把 deltaY 投影到横向 scrollBy 后读实际位移');
+      expect(pageSource.contains('window.scrollBy({left: 0, top: wheelDelta'),
+          isTrue,
+          reason: '横排滚轮真试滚：window.scrollBy 纵向后读实际位移');
+      expect(pageSource.contains('window.scrollBy({left: wheelDelta * sign'),
+          isTrue,
+          reason: '竖排滚轮真试滚：deltaY 投影到横向 window.scrollBy 后读实际位移');
       expect(pageSource.contains('var moved = Math.abs(after - before) > 1'),
           isTrue,
           reason: '靠实际位移 moved 判到没到边界');

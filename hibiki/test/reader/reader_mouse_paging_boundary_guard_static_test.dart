@@ -85,8 +85,8 @@ void main() {
       // 跨章，真滚不动才跨章。彻底弃用 scrollTop<=2 / 相邻拍 / clamp 推算（横排误翻/竖排滚不动）。
       expect(wheel, contains('var moved = Math.abs(after - before) > 1'),
           reason: '滚轮跨章须靠真试滚的实际位移判边界');
-      expect(wheel, contains('root.scrollBy'),
-          reason: '横排/竖排都真的 scrollBy 一步再读位移');
+      expect(wheel, contains('window.scrollBy'),
+          reason: '横排/竖排都真的 window.scrollBy 一步再读位移（已验证原语）');
       expect(wheel, isNot(contains('atStart = root.scrollTop <= 2')),
           reason: '不得再用瞬时 scrollTop<=2 几何');
       expect(wheel, isNot(contains('_wheelLastScrollPos')),

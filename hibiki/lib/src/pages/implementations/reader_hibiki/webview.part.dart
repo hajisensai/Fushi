@@ -818,20 +818,24 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       var sign = vertical
         ? ((window.getComputedStyle(document.body).writingMode === 'vertical-rl') ? -1 : 1)
         : 1;
-      var before = vertical ? root.scrollLeft : root.scrollTop;
-      if (vertical) { root.scrollBy(wheelDelta * sign, 0); }
-      else { root.scrollBy(0, wheelDelta); }
-      var after = vertical ? root.scrollLeft : root.scrollTop;
+      // 用与键盘翻页 paginate 同款的已验证原语：window.scrollBy 滚动 + 沿书写轴测量实际
+      // 位移（横排 root.scrollTop、竖排 window.scrollX）。此前用 root.scrollBy / root.scrollLeft
+      // 在本 WebView 不生效/读不到 → moved 恒 false → 滚轮不滚动、直接翻章。
+      var before = vertical ? window.scrollX : root.scrollTop;
+      if (vertical) { window.scrollBy({left: wheelDelta * sign, top: 0, behavior: 'auto'}); }
+      else { window.scrollBy({left: 0, top: wheelDelta, behavior: 'auto'}); }
+      var after = vertical ? window.scrollX : root.scrollTop;
       var moved = Math.abs(after - before) > 1;
-      // 诊断：仅在「滚不动」或「已武装」时打印（正常滚动不刷屏），供真机定位竖排为何不动
-      // （before==after 且 scrollW<=innerW → 投影轴没内容/容器不对）。
+      // 诊断：仅在「滚不动」或「已武装」时打印，供真机定位为何不动（同时打 window.scrollX 与
+      // root.scrollLeft，看哪个真的跟随滚动）。
       if (!moved || _wheelBoundaryArmed) {
         console.log('[xchapter] wheel vertical=' + (vertical ? 1 : 0)
           + ' wheelDelta=' + Math.round(wheelDelta) + ' wheelDir=' + wheelDir
           + ' before=' + Math.round(before) + ' after=' + Math.round(after)
           + ' moved=' + (moved ? 1 : 0) + ' armed=' + _wheelBoundaryArmed
-          + ' scrollW=' + root.scrollWidth + ' scrollH=' + root.scrollHeight
-          + ' innerW=' + window.innerWidth + ' innerH=' + window.innerHeight);
+          + ' winX=' + Math.round(window.scrollX) + ' winY=' + Math.round(window.scrollY)
+          + ' rootL=' + Math.round(root.scrollLeft) + ' rootT=' + Math.round(root.scrollTop)
+          + ' scrollW=' + root.scrollWidth + ' innerW=' + window.innerWidth);
       }
       if (moved) {
         // 真的滚动了 = 没到边界，不跨章；解武装。

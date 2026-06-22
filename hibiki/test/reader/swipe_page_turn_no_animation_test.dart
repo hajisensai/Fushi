@@ -130,13 +130,15 @@ void main() {
     // 事件 scrollBy，TODO-629 ② 的 rAF 缓动平滑在此让位给正确性（竖排回到逐 notch 步进；
     // 手感若需要，后续可在「能滚」分支再叠 rAF，不影响边界判定）。
     final String continuousBranch = wheelBlock.substring(guardIdx, swipeIdx);
-    expect(continuousBranch, contains('root.scrollBy(0, wheelDelta)'),
+    expect(
+        continuousBranch, contains('window.scrollBy({left: 0, top: wheelDelta'),
         reason:
-            'horizontal continuous wheel does a real scrollBy along scrollTop');
-    expect(continuousBranch, contains('root.scrollBy(wheelDelta * sign, 0)'),
+            'horizontal continuous wheel does a real window.scrollBy along scrollTop');
+    expect(
+        continuousBranch, contains('window.scrollBy({left: wheelDelta * sign'),
         reason:
             'vertical continuous wheel projects deltaY to a real horizontal '
-            'scrollBy (browser will not map vertical wheel to the horizontal axis)');
+            'window.scrollBy (browser will not map vertical wheel to the horizontal axis)');
     expect(
         continuousBranch, contains('var moved = Math.abs(after - before) > 1'),
         reason:
