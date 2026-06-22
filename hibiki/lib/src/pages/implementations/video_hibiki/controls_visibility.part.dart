@@ -154,10 +154,41 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
   /// [_pokeControlsVisible] 续命控制条（避免 media_kit `mount=false` 让它自己的 cursor 置
   /// none）；移出由 media_kit / 自动隐藏定时按既有路径接管，不强制改光标。仅桌面有 OS 光标
   /// 语义，[_setCursorHidden] / [_pokeControlsVisible] 内部已各自桌面门控。
+  ///
+  /// BUG-391 第三轮注记：对**字幕跳转列表侧栏**而言此 helper 两臂均无效（保留无害）——
+  /// ① [_setCursorHidden]`(false)` 只控 [_buildCursorOverlay] 自层 `cursor:none`，几何上
+  ///   **不覆盖** push-aside 侧栏，且同值写入被 [ValueNotifier] 去重；
+  /// ② [_pokeControlsVisible] 开头 `if (_subtitleListVisible.value) return;` 列表开时早退。
+  /// 侧栏 OS 光标真正靠 [_forceRevealOsCursorForPanel] 直发通道重现，别误以为这两臂有用。
   void _handleSubtitleHover(bool hovering) {
     if (!mounted || !hovering) return;
     _setCursorHidden(false);
     _pokeControlsVisible();
+  }
+
+  /// 强制让 OS 真光标在侧栏上重现（BUG-391 第三轮根因修复）。
+  ///
+  /// 根因：从视频画面区（控制条 2s 淡出后 media_kit `hideMouseOnControlsRemoval` 把 OS
+  /// 光标 SetCursor(nullptr) 隐藏）移进字幕跳转列表 push-aside 侧栏时，Win embedder 那次
+  /// `none→basic` 的 `SetCursor` 在帧序窗口期没生效 / 被 `WM_SETCURSOR` 竞态回退
+  /// （Flutter #84039 同类）；而框架 [MouseCursorManager.handleDeviceCursorUpdate] 的
+  /// `lastSession == next` 去重会吞掉「再次声明 basic」，纯声明式 `MouseRegion(cursor:
+  /// basic)` 救不了（被去重吞）。
+  ///
+  /// 唯一下手点：直发 `activateSystemCursor` 通道消息，强制 OS 真 `SetCursor(IDC_ARROW)`，
+  /// 绕开框架 `lastSession==next` 去重。**双门控**：
+  /// ① 仅桌面（[_isDesktopVideoControls]，移动端无 OS 光标语义）；
+  /// ② 仅当前光标确为隐藏态（`_cursorHidden.value == true`）才发——否则会压掉 cue 行
+  ///   [InkWell] 的手型（click），且与框架 lastSession 去同步（屏幕停 basic、框架记 click）。
+  /// 设备 id 与 `kind:'basic'` 与框架 [_SystemMouseCursorSession.activate] 的消息格式一致
+  /// （`{'device', 'kind'}`，`SystemMouseCursors.basic.kind == 'basic'`）。
+  void _forceRevealOsCursorForPanel(int device) {
+    if (!_isDesktopVideoControls) return;
+    if (_cursorHidden.value != true) return;
+    SystemChannels.mouseCursor.invokeMethod<void>(
+      'activateSystemCursor',
+      <String, dynamic>{'device': device, 'kind': 'basic'},
+    );
   }
 
   /// 给字幕跳转列表侧栏内容包一层「光标唤回」[MouseRegion]（BUG-391）。
@@ -176,8 +207,18 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     if (!_isDesktopVideoControls) return child;
     return MouseRegion(
       opaque: false,
-      onEnter: (PointerEvent _) => _handleSubtitleHover(true),
-      onHover: (PointerEvent _) => _handleSubtitleHover(true),
+      // onEnter：进侧栏必发一次直发通道强制 OS 光标重现（[_forceRevealOsCursorForPanel]
+      // 内部双门控桌面 + _cursorHidden==true），同时保留 [_handleSubtitleHover] 救场
+      // （对侧栏虽 no-op 见其注释，但与画面字幕盒同款语义、无害）。
+      onEnter: (PointerEnterEvent event) {
+        _forceRevealOsCursorForPanel(event.device);
+        _handleSubtitleHover(true);
+      },
+      // onHover：仅在光标仍为隐藏态时补发直发通道（门控在 [_forceRevealOsCursorForPanel]
+      // 内）——别无条件每次 onHover 都发，否则 cue 行 InkWell 的 click 手型会被压成箭头，
+      // 且框架 lastSession=click 与屏幕 basic 去同步永久停 basic。
+      onHover: (PointerHoverEvent event) =>
+          _forceRevealOsCursorForPanel(event.device),
       child: child,
     );
   }

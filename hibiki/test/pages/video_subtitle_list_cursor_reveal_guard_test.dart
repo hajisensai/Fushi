@@ -40,10 +40,40 @@ void main() {
           reason: '仅桌面挂（移动端无 OS 光标语义，透传 child）');
       expect(body.contains('opaque: false'), isTrue,
           reason: 'opaque:false 不阻断指针下探（cue 行点击 / 查词 / 滚动照常）');
-      expect(body.contains('_handleSubtitleHover(true)'), isTrue,
-          reason: '复用字幕盒同款救场 helper 唤回光标 + 续命控制条');
+      // BUG-391 第三轮：onEnter 必须直发强制光标通道（前次 _handleSubtitleHover 两臂对
+      // 侧栏全 no-op，是 no-op 补丁的根因）。撤掉 onEnter 直发即变红。
+      expect(
+          body.contains('_forceRevealOsCursorForPanel(event.device)'), isTrue,
+          reason:
+              'onEnter/onHover 必须经 _forceRevealOsCursorForPanel 直发 activateSystemCursor');
       expect(body.contains('onEnter:'), isTrue, reason: '进入侧栏唤回');
       expect(body.contains('onHover:'), isTrue, reason: '侧栏内移动持续唤回');
+      expect(body.contains('_handleSubtitleHover(true)'), isTrue,
+          reason: 'onEnter 仍保留字幕盒同款救场（无害冗余）');
+    });
+
+    test('_forceRevealOsCursorForPanel 直发 activateSystemCursor 且双门控（桌面 + 隐藏态）',
+        () {
+      final int start =
+          src.indexOf('void _forceRevealOsCursorForPanel(int device) {');
+      expect(start, greaterThanOrEqualTo(0),
+          reason: '应有直发 OS 光标通道的 helper（绕开框架 lastSession 去重）');
+      final int end = src.indexOf('\n  }', start) + 4;
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+
+      expect(body.contains('SystemChannels.mouseCursor.invokeMethod'), isTrue,
+          reason: '必须直发 mouseCursor 通道');
+      expect(body.contains("'activateSystemCursor'"), isTrue,
+          reason: '通道方法名须为 activateSystemCursor（与框架一致）');
+      expect(body.contains("'kind': 'basic'"), isTrue,
+          reason: "kind 须为 'basic'（IDC_ARROW），不是 none");
+      expect(body.contains("'device': device"), isTrue,
+          reason: '设备 id 取自进入侧栏的真实 pointer event');
+      expect(body.contains('if (!_isDesktopVideoControls) return;'), isTrue,
+          reason: '门控①：仅桌面发');
+      expect(body.contains('if (_cursorHidden.value != true) return;'), isTrue,
+          reason: '门控②：仅 _cursorHidden==true 才发（防回退成无条件覆写 cue 行手型）');
     });
 
     test('字幕列表侧栏面板用 _withSubtitleListCursorReveal 包裹', () {
