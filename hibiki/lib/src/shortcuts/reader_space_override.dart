@@ -57,3 +57,26 @@ ShortcutAction? resolveReaderArrowPageTurn({
   }
   return null;
 }
+
+/// 桌面 Windows 阅读器「Ctrl+C 复制选中文字」止血兼容层（BUG-402）。
+///
+/// 根因：Windows 端 WebView 走 WebView2 合成模式，fork 的
+/// `flutter_inappwebview_windows` 只转发鼠标、不转发键盘事件给 WebView2，
+/// 所以浏览器原生 `copy` 永远触发不了——左键能选中文字（原生选区可建立），
+/// 但 Ctrl+C / 右键复制都到不了 WebView2。移动端与 macOS 的 WebView 自带原生
+/// copy，**不需要**也**不应该**被这个应用层快捷键覆盖（否则会双重处理）。
+///
+/// 本谓词只判定「这是不是 Windows 阅读器该接管的复制手势」：必须是
+/// Windows + 仅 Ctrl 修饰（无 Shift/Alt/Meta，避开 Ctrl+Shift+C 等其它组合）
+/// + 键是 C。命中后由调用方取 `window.getSelection()`（浏览器原生选区，**不是**
+/// `window.hoshiSelection` 查词选区）的文本写入系统剪贴板。其余一律返回 false，
+/// 交回默认处理，不吞键、不改任何现有行为。
+bool readerShouldHandleDesktopCopy({
+  required LogicalKeyboardKey key,
+  required Set<ModifierKey> modifiers,
+  required bool isWindows,
+}) {
+  if (!isWindows) return false;
+  if (key != LogicalKeyboardKey.keyC) return false;
+  return modifiers.length == 1 && modifiers.contains(ModifierKey.ctrl);
+}

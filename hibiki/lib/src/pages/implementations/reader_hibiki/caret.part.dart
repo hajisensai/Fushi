@@ -138,6 +138,25 @@ extension _ReaderCaret on _ReaderHibikiPageState {
 
     final Set<ModifierKey> modifiers = _activeModifiers();
 
+    // BUG-402：桌面 Windows 阅读器复制兼容层。Windows WebView2 合成模式下 fork 只
+    // 转发鼠标不转发键盘，Ctrl+C 到不了 WebView2 触发不了原生 copy；这里在应用层
+    // 接管：取浏览器原生选区文本写系统剪贴板。仅 Windows + 纯 Ctrl+C 命中（谓词
+    // readerShouldHandleDesktopCopy），其余键/平台一律不进，default 行为不变。
+    if (readerShouldHandleDesktopCopy(
+      key: event.logicalKey,
+      modifiers: modifiers,
+      isWindows: isWindowsPlatform,
+    )) {
+      // 已确认是 Windows 纯 Ctrl+C（我们专属的手势），且有 WebView：接管这条
+      // 复制路径并吞键。空选区在 _copyNativeSelectionToClipboard 内静默跳过
+      // （不覆盖剪贴板），但仍吞键——Windows 阅读器 Ctrl+C 没有其它合法语义。
+      // 无 WebView 时不吞键，交回默认解析（不存在的边界情况下也不破坏行为）。
+      if (_controller != null) {
+        unawaited(_copyNativeSelectionToClipboard());
+        return KeyEventResult.handled;
+      }
+    }
+
     // Android/native controller events can surface as KeyEvents. D-pad arrows
     // share logical keys with keyboard arrows, so controller-like sources must
     // enter the gamepad registry before keyboard arrow reversal runs.
@@ -279,6 +298,26 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       );
     }
     return KeyEventResult.handled;
+  }
+
+  /// BUG-402：取浏览器原生选区文本（[ReaderSelectionScripts.nativeSelectionText...]）
+  /// 写入系统剪贴板。空选区不写（不覆盖剪贴板已有内容）。WebView 半销毁时
+  /// evaluateJavascript 会抛 PlatformException，吞掉即可（复制是尽力而为）。
+  Future<void> _copyNativeSelectionToClipboard() async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    Object? raw;
+    try {
+      raw = await controller.evaluateJavascript(
+        source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
+      );
+    } catch (_) {
+      return;
+    }
+    final String text =
+        ReaderSelectionScripts.nativeSelectionTextFromResult(raw);
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
   }
 
   void _clearGamepadAHold() {
