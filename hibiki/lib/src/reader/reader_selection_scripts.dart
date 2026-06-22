@@ -27,6 +27,35 @@ class ReaderSelectionScripts {
 
   static String clearInvocation() => 'window.hoshiSelection.clearSelection()';
 
+  /// BUG-402：取**浏览器原生选区**（`window.getSelection()`）的纯文本，给桌面
+  /// Windows 的 Ctrl+C 复制兼容层用。刻意走原生 `getSelection()` 而非
+  /// `window.hoshiSelection`（后者是查词选区，是另一套坐标/状态），因为短拖/竖拖
+  /// 时原生选区照样建立，与查词逻辑无关（selectstart 在拖动起约 400ms 被
+  /// preventDefault 只影响查词高亮路径）。结果由 [nativeSelectionTextFromResult]
+  /// 解析。JSON.stringify 让结果稳定为带引号的字符串，便于解析 + 兼容各平台
+  /// evaluateJavascript 返回类型差异。
+  static String nativeSelectionTextInvocation() =>
+      'JSON.stringify(window.getSelection ? window.getSelection().toString() : null)';
+
+  /// 解析 [nativeSelectionTextInvocation] 的结果为选中文本。无选区时 JS 端
+  /// `JSON.stringify(null)` 回传字面量 `null` → 空串；有选区回传带引号的 JSON
+  /// 字符串（如 `"text"`）→ 解码出文本。Windows WebView2 经 JSON.stringify 回
+  /// 这种带引号串；若某平台直接回裸 String（非合法 JSON），原样返回兜底。
+  static String nativeSelectionTextFromResult(Object? raw) {
+    if (raw == null) return '';
+    if (raw is! String) return '';
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    try {
+      final Object? decoded = jsonDecode(trimmed);
+      // JSON `null` / 非字符串（如数字）→ 无选区，空串。
+      return decoded is String ? decoded : '';
+    } catch (_) {
+      // 不是合法 JSON：当作平台直接回的裸选区文本兜底。
+      return raw;
+    }
+  }
+
   /// TODO-393：取「当前查词句」前后各 N 句的上下文（制卡「上 N 句 / 下 N 句」用）。
   /// 返回的 JSON 由 [surroundingSentencesFromResult] 解析。[prevCount] / [nextCount]
   /// 是想要的最大句数（实际可能更少，到段首/文首即止）。
