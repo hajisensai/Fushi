@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Remoto",
   "sync_compare_skip": "Ignorar",
   "sync_compare_applied": "$count alterações aplicadas",
-  "sync_compare_apply": "Aplicar ($count)",
+  "sync_compare_apply": "Sincronizar agora ($count)",
   "sync_auto_sync": "Sincronização automática",
   "sync_auto_complete": "Sinc.: $direction $title",
   "no_matching_audio_cue": "Nenhum áudio correspondente a esta frase",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "Por caracteres",
   "collection_mined": "Criadas",
   "collection_mined_clear_confirm": "Limpar todo o histórico de frases usadas em cartões?",
-  "update_connecting": "Conectando…"
+  "update_connecting": "Conectando…",
+  "sync_compare_close": "Fechar"
 }

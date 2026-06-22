@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Remoto",
   "sync_compare_skip": "Ignora",
   "sync_compare_applied": "Applicate $count modifiche",
-  "sync_compare_apply": "Applica ($count)",
+  "sync_compare_apply": "Sincronizza ora ($count)",
   "sync_auto_sync": "Sincronizzazione automatica",
   "sync_auto_complete": "Sincronizzazione: $direction $title",
   "no_matching_audio_cue": "Nessun audio corrispondente per questa frase",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "Per caratteri",
   "collection_mined": "Frasi usate per le carte",
   "collection_mined_clear_confirm": "Cancellare tutta la cronologia delle frasi usate per le carte?",
-  "update_connecting": "Connessione…"
+  "update_connecting": "Connessione…",
+  "sync_compare_close": "Chiudi"
 }

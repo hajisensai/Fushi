@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Uzak",
   "sync_compare_skip": "Atla",
   "sync_compare_applied": "$count değişiklik uygulandı",
-  "sync_compare_apply": "Uygula ($count)",
+  "sync_compare_apply": "Şimdi eşitle ($count)",
   "sync_auto_sync": "Otomatik Eşitleme",
   "sync_auto_complete": "Eşitleme: $direction $title",
   "no_matching_audio_cue": "Bu cümle için eşleşen ses yok",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "Karaktere Göre",
   "collection_mined": "Çıkarılan",
   "collection_mined_clear_confirm": "Tüm kart çıkarılan cümle geçmişi temizlensin mi?",
-  "update_connecting": "Bağlanılıyor…"
+  "update_connecting": "Bağlanılıyor…",
+  "sync_compare_close": "Kapat"
 }

@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Từ xa",
   "sync_compare_skip": "Bỏ qua",
   "sync_compare_applied": "Đã áp dụng $count thay đổi",
-  "sync_compare_apply": "Áp dụng ($count)",
+  "sync_compare_apply": "Đồng bộ ngay ($count)",
   "sync_auto_sync": "Tự động đồng bộ",
   "sync_auto_complete": "Đồng bộ: $direction $title",
   "no_matching_audio_cue": "Không có âm thanh khớp với câu này",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "Theo số ký tự",
   "collection_mined": "Câu đã tạo thẻ",
   "collection_mined_clear_confirm": "Xóa toàn bộ lịch sử câu đã tạo thẻ?",
-  "update_connecting": "Đang kết nối…"
+  "update_connecting": "Đang kết nối…",
+  "sync_compare_close": "Đóng"
 }

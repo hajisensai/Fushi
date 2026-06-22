@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "遠端",
   "sync_compare_skip": "略過",
   "sync_compare_applied": "已套用 $count 項變更",
-  "sync_compare_apply": "套用（$count）",
+  "sync_compare_apply": "立即同步（$count）",
   "sync_auto_sync": "自動同步",
   "sync_auto_complete": "同步：$direction $title",
   "no_matching_audio_cue": "此句沒有對應的音訊",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "按字數",
   "collection_mined": "製卡句",
   "collection_mined_clear_confirm": "清空全部製卡句記錄？",
-  "update_connecting": "正在連接更新來源…"
+  "update_connecting": "正在連接更新來源…",
+  "sync_compare_close": "關閉"
 }

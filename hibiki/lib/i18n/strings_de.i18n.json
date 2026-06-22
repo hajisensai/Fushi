@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Remote",
   "sync_compare_skip": "Überspringen",
   "sync_compare_applied": "$count Änderungen angewendet",
-  "sync_compare_apply": "Anwenden ($count)",
+  "sync_compare_apply": "Jetzt synchronisieren ($count)",
   "sync_auto_sync": "Auto-Sync",
   "sync_auto_complete": "Sync: $direction $title",
   "no_matching_audio_cue": "Kein passendes Audio für diesen Satz",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "Nach Zeichen",
   "collection_mined": "Erstellt",
   "collection_mined_clear_confirm": "Gesamten Verlauf erstellter Sätze löschen?",
-  "update_connecting": "Verbinde…"
+  "update_connecting": "Verbinde…",
+  "sync_compare_close": "Schließen"
 }

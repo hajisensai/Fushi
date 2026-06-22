@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Удалённо",
   "sync_compare_skip": "Пропустить",
   "sync_compare_applied": "Применено изменений: $count",
-  "sync_compare_apply": "Применить ($count)",
+  "sync_compare_apply": "Синхронизировать сейчас ($count)",
   "sync_auto_sync": "Автосинхронизация",
   "sync_auto_complete": "Синхронизация: $direction $title",
   "no_matching_audio_cue": "Нет аудио для этого предложения",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "По знакам",
   "collection_mined": "С карточками",
   "collection_mined_clear_confirm": "Очистить всю историю предложений с карточками?",
-  "update_connecting": "Подключение…"
+  "update_connecting": "Подключение…",
+  "sync_compare_close": "Закрыть"
 }

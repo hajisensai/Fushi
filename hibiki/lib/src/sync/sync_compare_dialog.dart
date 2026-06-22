@@ -1039,7 +1039,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             children: [
               TextButton(
                 onPressed: _applying ? null : () => Navigator.pop(context),
-                child: Text(t.dialog_done),
+                child: Text(t.sync_compare_close),
               ),
               if (_entries != null && _entries!.isNotEmpty)
                 FilledButton(

@@ -1042,7 +1042,7 @@
   "sync_compare_use_remote": "Jarak Jauh",
   "sync_compare_skip": "Lewati",
   "sync_compare_applied": "$count perubahan diterapkan",
-  "sync_compare_apply": "Terapkan ($count)",
+  "sync_compare_apply": "Sinkronkan sekarang ($count)",
   "sync_auto_sync": "Sinkronisasi Otomatis",
   "sync_auto_complete": "Sinkronisasi: $direction $title",
   "no_matching_audio_cue": "Tidak ada audio yang cocok untuk kalimat ini",
@@ -1777,5 +1777,6 @@
   "stat_sort_by_chars": "Per Karakter",
   "collection_mined": "Dibuat kartu",
   "collection_mined_clear_confirm": "Kosongkan semua riwayat kalimat yang dibuat kartu?",
-  "update_connecting": "Menghubungkan…"
+  "update_connecting": "Menghubungkan…",
+  "sync_compare_close": "Tutup"
 }
