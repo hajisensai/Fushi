@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "version": "0.11.0-debug.5556",
+  "tag": "v0.11.0-debug.5556+e360d1c",
+  "channel": "debug",
+  "prerelease": true,
+  "releaseSequence": 5556,
+  "notes": "Automated desktop debug-channel build from develop @ e360d1c. Push releases are always prerelease and never Latest.",
+  "assets": [
+    {
+      "name": "hibiki-0.11.0-debug.5556-windows-setup.exe",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.0-debug.5556+e360d1c/hibiki-0.11.0-debug.5556-windows-setup.exe"
+    }
+  ]
+}
