@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
 
+/// TODO-407/716 单一真相：查词弹窗"水平滑动关闭"的位移阈值（px）。
+///
+/// [sensitivity] 越高（越灵敏）阈值越小：0.6（默认）≈ 94px，1.0 → 30px，0 → 190px。
+/// 被 [SwipeDismissWrapper]（弹窗顶栏可拖区）与 `base_source_page` 的全屏 barrier
+/// （桌面拖正文关一层，TODO-716）共用，避免两份魔法数漂移。
+double swipeDismissThreshold(double sensitivity) =>
+    30 + (1.0 - sensitivity) * 160;
+
 class SwipeDismissWrapper extends StatefulWidget {
   const SwipeDismissWrapper({
     required this.child,
@@ -26,7 +34,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
   /// spring-back frame on hosts that hide the layer before rebuilding it.
   bool _dismissing = false;
 
-  double get _threshold => 30 + (1.0 - widget.sensitivity) * 160;
+  double get _threshold => swipeDismissThreshold(widget.sensitivity);
   double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
 
   @override

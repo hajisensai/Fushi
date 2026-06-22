@@ -12,6 +12,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
 /// Number of characters of the body text that the looked-up word actually
@@ -126,6 +127,31 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Rect? _pendingSelectionRect;
 
   int _searchGeneration = 0;
+
+  /// TODO-716：桌面对齐手机的"滑动关闭弹窗"。弹窗显示时全屏 barrier 盖住正文，
+  /// 在 barrier 上水平拖累计位移过阈即关一层（[dismissTopPopup]，与点 barrier /
+  /// 光标 B/Esc 同语义），仅当 [ReaderHibikiSource.enableSwipeToClose] 开启时生效。
+  /// 单击经 Flutter 手势竞技场仍走 onTap，与拖动互斥。阈值/灵敏度复用
+  /// [swipeDismissThreshold]（与顶栏 [SwipeDismissWrapper] 同一公式，不漂移）。
+  double _barrierDragX = 0;
+
+  void _onBarrierHorizontalDragStart(DragStartDetails details) {
+    _barrierDragX = 0;
+  }
+
+  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
+    _barrierDragX += details.delta.dx;
+  }
+
+  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
+    final double threshold = swipeDismissThreshold(
+      ReaderHibikiSource.instance.dismissSwipeSensitivity,
+    );
+    final bool passedThreshold = _barrierDragX.abs() > threshold;
+    _barrierDragX = 0;
+    // 双向水平（左右皆可），与手机 [SwipeDismissWrapper] 的 _dragX.abs() 一致。
+    if (passedThreshold) dismissTopPopup();
+  }
 
   bool get isDictionaryShown => _hasVisiblePopup(_popup.entries);
 
@@ -338,6 +364,21 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                           // （[onAllPopupsDismissed]）。不走 [clearDictionaryResult]（那
                           // 是清整栈的会话级路径，仍由 X 关闭 / 返回键 / 会话结束用）。
                           onTap: dismissTopPopup,
+                          // TODO-716：桌面对齐手机——在 barrier 上水平拖过阈同样关一层。
+                          // 仅当滑动关闭开关开启时挂横拖识别（否则只 onTap，与旧行为一致）。
+                          // 竞技场天然分流：单击走 onTap、横拖走 onHorizontalDrag*，互斥。
+                          onHorizontalDragStart:
+                              ReaderHibikiSource.instance.enableSwipeToClose
+                                  ? _onBarrierHorizontalDragStart
+                                  : null,
+                          onHorizontalDragUpdate:
+                              ReaderHibikiSource.instance.enableSwipeToClose
+                                  ? _onBarrierHorizontalDragUpdate
+                                  : null,
+                          onHorizontalDragEnd:
+                              ReaderHibikiSource.instance.enableSwipeToClose
+                                  ? _onBarrierHorizontalDragEnd
+                                  : null,
                           child: Container(
                             color: Colors.transparent,
                           ),

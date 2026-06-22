@@ -288,8 +288,10 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-          // TODO-436/407②：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗的手势行为，
-          // 归「查词」分组（与查词朗读/暂停/音量并列），同时出现在阅读器快捷设置的查词段。
+          // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗的手势
+          // 行为，归「查词」分组（与查词朗读/暂停/音量并列），同时出现在阅读器快捷设置
+          // 的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让桌面在
+          // 弹窗正文区（全屏 barrier）水平拖过阈关一层（TODO-716，对齐手机手势）。
           // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
           // 开启；任何平台均可用弹窗顶栏的 X 关闭。
           SettingsSwitchItem(
