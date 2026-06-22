@@ -534,6 +534,16 @@ class AppModel with ChangeNotifier {
     registry: shortcutRegistry,
   );
 
+  /// Resets the focus highlight to touch mode on every route push/pop so a ring
+  /// lit by keyboard/gamepad navigation on one page is not carried onto the next
+  /// (BUG-397). Wired into [MaterialApp.navigatorObservers] in main.dart. Same-
+  /// route home-tab switches go through HomePage._selectTab, which calls the
+  /// underlying [GamepadService.resetHighlightForScreenSwitch] directly.
+  late final HighlightResetNavigatorObserver focusHighlightObserver =
+      HighlightResetNavigatorObserver(
+    gamepadService.resetHighlightForScreenSwitch,
+  );
+
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
   Future<void> refreshSystemPalette() => themeNotifier.refreshSystemPalette();
