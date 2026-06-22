@@ -182,20 +182,33 @@ bool shouldReclaimReaderFocusAfterGesture({
 /// 是否暗色。preset 主题在 [_ReaderHibikiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
 /// 回落到真实 ColorScheme 派生，避免再写死成白底（BUG-208 / TODO-143）。
-typedef ReaderThemeColors = ({Color bg, Color fg, Color sasayaki, bool dark});
+typedef ReaderThemeColors = ({
+  Color bg,
+  Color fg,
+  Color sasayaki,
+  Color selection,
+  Color link,
+  bool dark,
+});
 
-/// 把当前主题 key 解析成阅读器的四个颜色角色。
+/// 把当前主题 key 解析成阅读器的颜色角色（背景/字色/跟读高亮/选区高亮/链接）。
 ///
 /// 关键修复（BUG-208 / TODO-143）：旧逻辑只查私有 [presetMap]，命中失败就硬编码
 /// 白底/黑字/默认私语色。但 `themePresets` 里还有 `light-theme`，且**默认主题**是
 /// `system-theme`，两者都不在 presetMap 中，于是阅读器背景永远是白色——无论系统
 /// 强调色或明暗如何，「书籍背景没吃主题」。
 ///
+/// BUG-396：sasayaki/selection/link 三个角色色过去只在 preset/custom 命中时生效，
+/// system/light 主题落到 [ReaderContentStyles] 的硬编码默认（天蓝高亮/灰选区/蓝链接），
+/// 不吃桌面强调色。现在本解析器是这五个角色色的**单一真相源**：system/light 也从真实
+/// [scheme] 派生（sasayaki=primary、selection=tertiary 与跟读区分、link=primary），
+/// 页面统一用本结果，不再各自回落硬编码。
+///
 /// 现在：
-/// - `custom-theme`：用用户自定义的背景/字色/私语色（与旧行为一致）。
+/// - `custom-theme`：用用户自定义色（与旧行为一致）。
 /// - presetMap 命中（ecru/water/gray/dark/black）：用手调底色（向后兼容，零变化）。
-/// - 其余（light-theme / system-theme / 未来新增 key）：从真实 [scheme] 派生
-///   surface/onSurface/brightness，让阅读器背景真正跟随当前主题。
+/// - 其余（light-theme / system-theme / 未来新增 key）：从真实 [scheme] 派生，
+///   让阅读器背景/高亮/选区/链接真正跟随当前主题（强调色）。
 ReaderThemeColors resolveReaderThemeColors({
   required String themeKey,
   required Map<String, ReaderThemeColors> presetMap,
@@ -215,6 +228,9 @@ ReaderThemeColors resolveReaderThemeColors({
     bg: scheme.surface,
     fg: scheme.onSurface,
     sasayaki: scheme.primary.withValues(alpha: dark ? 0.34 : 0.40),
+    // selection 用 tertiary：与 sasayaki(primary) 错开色相，查词高亮 ≠ 跟读高亮。
+    selection: scheme.tertiary.withValues(alpha: dark ? 0.35 : 0.40),
+    link: scheme.primary,
     dark: dark,
   );
 }
@@ -1391,13 +1407,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return webView;
   }
 
-  bool get _isCustomTheme => appModel.appThemeKey == 'custom-theme';
-
   String _buildStyleTag() {
     return _cachedStyleTag ??= _computeStyleTag();
   }
 
   String _computeStyleTag() {
+    final ReaderThemeColors rc = _readerThemeColors;
     return '<style id="hoshi-reader-style">\n${ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
@@ -1407,18 +1422,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // #fff，现在吃这套真实 ColorScheme.surface/onSurface；custom-theme→用户色。
       customBg: _readerBackgroundHex,
       customFg: _customThemeTextCss,
-      // selection/sasayaki/link 是 preset 主题在 _themeColors switch 里手调的专色，
-      // 仅 custom-theme 由 page 端覆盖（无条件传会用 _themeMap 的等价副本覆盖掉
-      // preset switch 专色，引入双份硬编码耦合）；system-theme 用 _themeColors 默认兜底。
-      selectionColor: _isCustomTheme
-          ? _colorToCssRgba(appModel.customThemeSelectionColor)
-          : null,
-      sasayakiColor: _isCustomTheme
-          ? _colorToCssRgba(appModel.customThemeSasayakiColor)
-          : null,
-      linkColor: _isCustomTheme
-          ? _colorToCssRgba(appModel.customThemeLinkColor)
-          : null,
+      // BUG-396：selection/sasayaki/link 三角色色统一取自 `_readerThemeColors`（单一
+      // 真相源）——preset 透传手调专色（与旧 switch 值逐一相等，零变化）、custom 用
+      // 用户色、system/light 从真实 ColorScheme 强调色派生（不再落硬编码天蓝/灰/蓝）。
+      selectionColor: _colorToCssRgba(rc.selection),
+      sasayakiColor: _colorToCssRgba(rc.sasayaki),
+      linkColor: _colorToCssRgba(rc.link),
     )}\n</style>';
   }
 
@@ -1439,6 +1448,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await _updateLyricsStyleLive();
       return;
     }
+    final ReaderThemeColors rc = _readerThemeColors;
     final String css = ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
@@ -1446,15 +1456,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 派生色，system-theme（默认主题）不再恒白底。
       customBg: _readerBackgroundHex,
       customFg: _customThemeTextCss,
-      selectionColor: _isCustomTheme
-          ? _colorToCssRgba(appModel.customThemeSelectionColor)
-          : null,
-      sasayakiColor: _isCustomTheme
-          ? _colorToCssRgba(appModel.customThemeSasayakiColor)
-          : null,
-      linkColor: _isCustomTheme
-          ? _colorToCssRgba(appModel.customThemeLinkColor)
-          : null,
+      // BUG-396：与 _computeStyleTag 对称——三角色色统一取自 `_readerThemeColors`
+      // 单一真相源，system/light 也吃强调色（不再落硬编码默认）。
+      selectionColor: _colorToCssRgba(rc.selection),
+      sasayakiColor: _colorToCssRgba(rc.sasayaki),
+      linkColor: _colorToCssRgba(rc.link),
     );
     final String jsonCss = jsonEncode(css);
     try {

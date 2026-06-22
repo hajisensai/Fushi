@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 382 条。点号进各自文件。
+> 共 383 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-396](bugs/BUG-396-reader-theme-role-colors-system-accent.md) | ✅ | ✅ | 默认(system)主题下阅读器sasayaki/选区/链接色不吃强调色(落硬编码默认) |
 | [BUG-395](bugs/BUG-395-srt-sasayaki-highlight-setup-skipped.md) | ✅ | ✅ | SRT书匹配EPUB后逐句高亮不显示(setup早退跳过applySasayakiCues) |
 | [BUG-394](bugs/BUG-394-update-segmented-stuck-zero.md) | ✅ | ✅ | 自动更新分片下载卡0%(TODO-596回归) |
 | [BUG-393](bugs/BUG-393-video-mining-title-tag.md) | ✅ | ✅ | 「自动添加书名到标签」配置视频制卡未生效 |

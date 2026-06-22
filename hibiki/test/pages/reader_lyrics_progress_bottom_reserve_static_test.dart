@@ -22,7 +22,9 @@ void main() {
     final String body = _functionSource(
       src,
       '  Widget _buildBody()',
-      '  bool get _isCustomTheme',
+      // BUG-396：原结束标记 `_isCustomTheme` getter 已随判据归一删除，改用紧随其后的
+      // `_buildStyleTag`（仍在 `_buildBody` 之后）作为切片终点。
+      '  String _buildStyleTag()',
     );
     // 歌词模式 + 底栏可见时必须给 WebView 套底部预留，否则全屏歌词 WebView 的 CSS
     // 滚动条会延伸进底栏区域。底栏可见条件与 _buildBottomChrome / popupBottomReserve

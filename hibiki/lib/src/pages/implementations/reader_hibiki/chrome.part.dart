@@ -832,40 +832,52 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // ── Theme Colors ──────────────────────────────────────────────────
 
+  // BUG-396：selection/link 与 css `_themeColors` switch 的预设值逐一相等（ARGB 即
+  // rgba 同值），作为五角色单一真相源透传，preset 零变化；system/light 走解析器派生。
   static const Map<String, ReaderThemeColors> _themeMap = {
     'ecru-theme': (
       bg: Color(0xFFF7F6EB),
       fg: Color(0xDE000000),
       sasayaki: Color(0x66A8C68C),
+      selection: Color(0x59C2B280),
+      link: Color(0xFF7A6232),
       dark: false,
     ),
     'water-theme': (
       bg: Color(0xFFDFECF4),
       fg: Color(0xDE000000),
       sasayaki: Color(0x6664B4DC),
+      selection: Color(0x59C8AA6E),
+      link: Color(0xFF3A5FAD),
       dark: false,
     ),
     'gray-theme': (
       bg: Color(0xFF23272A),
       fg: Color(0xDEFFFFFF),
       sasayaki: Color(0x595096C8),
+      selection: Color(0x59BE9B64),
+      link: Color(0xFF6FA8DC),
       dark: true,
     ),
     'dark-theme': (
       bg: Color(0xFF121212),
       fg: Color(0x99FFFFFF),
       sasayaki: Color(0x594682B4),
+      selection: Color(0x59B4915A),
+      link: Color(0xFF7AACDF),
       dark: true,
     ),
     'black-theme': (
       bg: Color(0xFF000000),
       fg: Color(0xDEFFFFFF),
       sasayaki: Color(0x663C78AA),
+      selection: Color(0x66AA8750),
+      link: Color(0xFF5B9BD5),
       dark: true,
     ),
   };
 
-  /// custom-theme 的四个角色色（用户自定义；任一项缺省回落到合理默认）。
+  /// custom-theme 的角色色（用户自定义；任一项缺省回落到合理默认）。
   ReaderThemeColors get _customReaderThemeColors {
     final bool dark = appModel.customThemeDark;
     return (
@@ -874,6 +886,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000)),
       sasayaki:
           appModel.customThemeSasayakiColor ?? HibikiColor.defaultSasayakiColor,
+      // 回退值与 ReaderContentStyles `_ThemeColors` 默认一致（灰选区 / 蓝链接）。
+      selection: appModel.customThemeSelectionColor ?? const Color(0x66A0A0A0),
+      link: appModel.customThemeLinkColor ?? const Color(0xFF426CF5),
       dark: dark,
     );
   }
