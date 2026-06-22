@@ -179,6 +179,35 @@ bool shouldReclaimReaderFocusAfterGesture({
   return (width: widthChanged, height: heightChanged);
 }
 
+/// TODO-690 / BUG-397：桌面窗口拖边框 resize 后阅读器文字渲染错乱、不自动重排，
+/// 翻页才恢复。唯一 resize→重排入口是 [_ReaderHibikiPageState.didChangeMetrics]
+/// → `_syncPageSize`，但 Windows 拖边框时 `didChangeMetrics` / `MediaQuery.size`
+/// 更新滞后，JS 分页几何缓存（`--page-width/height` / `this.pageWidth` / `_contW`
+/// / `paginationMetrics`）无人失效，导致错位。修复用阅读器树内的透明 `LayoutBuilder`
+/// 监听约束变化作为更早更可靠的 resize 通道。
+///
+/// 本纯谓词决定一次新的布局约束相对上次已分页基线，是否大到需要触发尾沿防抖重排：
+/// 复用 [readerViewportNeedsRepaginate] 的 1px 容差与 `lastWidth>0` 门控（不另写阈
+/// 值），宽或高任一维度变化超阈值即返回 true。`LayoutBuilder` 的 `constraints` 与
+/// `_syncPageSize` 读的 `MediaQuery.size` 同处 Neutralizer 反缩放还原后的坐标空间，
+/// 数值等价，所以两条路径靠 `_lastSyncedWidth/Height` 基线天然去重幂等。
+bool readerLayoutResizeNeedsRepaginate({
+  required double width,
+  required double height,
+  required double lastWidth,
+  required double lastHeight,
+  double tolerancePx = 1.0,
+}) {
+  final ({bool width, bool height}) changed = readerViewportNeedsRepaginate(
+    width: width,
+    height: height,
+    lastWidth: lastWidth,
+    lastHeight: lastHeight,
+    tolerancePx: tolerancePx,
+  );
+  return changed.width || changed.height;
+}
+
 /// 阅读器主题用的四个颜色角色：正文背景、正文字色、私语(振假名/sasayaki)叠色、
 /// 是否暗色。preset 主题在 [_ReaderHibikiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
@@ -776,6 +805,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
+  // TODO-690 / BUG-397：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
+  // LayoutBuilder 在每帧约束变化时比对基线（readerLayoutResizeNeedsRepaginate），
+  // 超阈值就（取消旧 timer）起一个短 timer，拖拽停手后最终尺寸落一次 _syncPageSize
+  // 重排。不在 builder 里 Future.delayed（会泄漏 / 重入）；timer 在 dispose 取消。
+  Timer? _resizeRepaginateDebounce;
+  // 上次喂给防抖判定的布局约束尺寸（与 _lastSyncedWidth/Height 同坐标空间，但这条
+  // 跟踪「约束」而非「已分页基线」，避免同一尺寸的多帧重复起 timer）。
+  double _lastConstraintWidth = 0;
+  double _lastConstraintHeight = 0;
   // BUG-111: 记录最近一次 setup 脚本注入 JS 时实际用作 dartPageWidth/Height 的尺寸
   // （= 当时 MediaQuery 读到的视口）。content-ready 后必须用它作为「已分页基线」喂给
   // _syncPageSize，而不是用 content-ready 那一刻的当前 MediaQuery——否则初始重排校验
@@ -1187,6 +1225,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();
     _contentReadyTimer?.cancel();
+    _resizeRepaginateDebounce?.cancel();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
@@ -1351,6 +1390,40 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
+  /// TODO-690 / BUG-397：阅读器树内透明 LayoutBuilder 的 resize 通道。
+  ///
+  /// builder 每帧把 `constraints` 与上次记录的约束基线比对（复用
+  /// [readerLayoutResizeNeedsRepaginate] 的 1px 容差），超阈值则取消旧 timer 起一个
+  /// ~50ms 尾沿防抖 timer，timer 回调直接调 [_syncPageSize]（它内部已含
+  /// readerViewportNeedsRepaginate 判定、宽变整章重载 / 高变 updatePageSize 分流、
+  /// _lastSyncedWidth/Height 基线更新与 _reanchorPending 串行旗，与 didChangeMetrics
+  /// 路径靠基线天然去重幂等）。
+  ///
+  /// builder 内**不做**任何几何变换，只读 constraints 并起 timer；绝不在 builder 里
+  /// Future.delayed（会泄漏 / 重入）。timer 在 [dispose] 取消。约束未变（同一尺寸多帧
+  /// 重建）时早退，不重复起 timer。
+  void _onReaderConstraintsChanged(BoxConstraints constraints) {
+    final double w = constraints.maxWidth;
+    final double h = constraints.maxHeight;
+    if (!w.isFinite || !h.isFinite) return;
+    final bool needsRepaginate = readerLayoutResizeNeedsRepaginate(
+      width: w,
+      height: h,
+      lastWidth: _lastConstraintWidth,
+      lastHeight: _lastConstraintHeight,
+    );
+    _lastConstraintWidth = w;
+    _lastConstraintHeight = h;
+    if (!needsRepaginate) return;
+    _resizeRepaginateDebounce?.cancel();
+    _resizeRepaginateDebounce = Timer(
+      const Duration(milliseconds: 50),
+      () {
+        if (mounted) _syncPageSize();
+      },
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -1377,106 +1450,119 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       },
     );
 
-    return Actions(
-      // Desktop gamepad path: the GamepadService dispatches GamepadButtonIntent
-      // here (no gameButton* key events on desktop). Resolving it against the
-      // reader/audiobook scopes routes polled controller input through the exact
-      // same actions as the Android key-event path.
-      actions: <Type, Action<Intent>>{
-        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-          onInvoke: (GamepadButtonIntent intent) =>
-              _handleGamepadButton(intent.button),
-        ),
-        GamepadLongPressIntent: CallbackAction<GamepadLongPressIntent>(
-          onInvoke: (GamepadLongPressIntent intent) =>
-              _handleGamepadLongPress(intent.button),
-        ),
-      },
-      child: Focus(
-        autofocus: true,
-        focusNode: _focusNode,
-        onKeyEvent: _handleKeyEvent,
-        child: PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, dynamic result) async {
-            if (didPop) return;
-            final nav = Navigator.of(context);
-            final bool allow = await onWillPop();
-            if (allow && mounted) nav.pop();
+    // TODO-690 / BUG-397：透明 LayoutBuilder 作为桌面窗口 resize → 重排的通道。
+    // 位于 HibikiAppUiScaleNeutralizer 之下（路由层 ReaderHibikiSource.buildLaunchPage
+    // 已用 Neutralizer 包裹本页），在 WebView 子树外层。builder **零几何变换**：只读
+    // constraints 交给 _onReaderConstraintsChanged（尾沿防抖起 _syncPageSize），原样返回
+    // reader 子树。constraints.biggest 与 _syncPageSize 读的 MediaQuery.size 同处反缩放
+    // 还原后的坐标空间，数值等价，故两条 resize 通道靠 _lastSyncedWidth/Height 基线去重。
+    // 约束由布局系统每帧驱动，比 didChangeMetrics 更早更可靠（Windows 拖边框时后者滞后）。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        _onReaderConstraintsChanged(constraints);
+        return Actions(
+          // Desktop gamepad path: the GamepadService dispatches GamepadButtonIntent
+          // here (no gameButton* key events on desktop). Resolving it against the
+          // reader/audiobook scopes routes polled controller input through the exact
+          // same actions as the Android key-event path.
+          actions: <Type, Action<Intent>>{
+            GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+              onInvoke: (GamepadButtonIntent intent) =>
+                  _handleGamepadButton(intent.button),
+            ),
+            GamepadLongPressIntent: CallbackAction<GamepadLongPressIntent>(
+              onInvoke: (GamepadLongPressIntent intent) =>
+                  _handleGamepadLongPress(intent.button),
+            ),
           },
-          child: Scaffold(
-            backgroundColor: bgColor,
-            resizeToAvoidBottomInset: false,
-            body: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                Positioned.fill(
-                  child: _buildBody(),
-                ),
-                if (!_readerContentReady)
-                  Positioned.fill(
-                    child: ColoredBox(color: bgColor),
-                  ),
-                if (_readerContentReady)
-                  const SizedBox.shrink(
-                      key: ValueKey<String>('hoshi_content_ready')),
-                // On-screen focus indicator for the "reading content" layer,
-                // matching the app's standard focus ring (HibikiFocusRing:
-                // colorScheme.primary, 2.5px, 8px radius). Shown while the reader
-                // content holds primary focus and no char cursor is active (the
-                // cursor draws its own ring). Inset by the chrome insets so the
-                // ring sits inside the reading viewport and the bottom bar never
-                // occludes it — and so it is always on-screen (unlike the native
-                // WebView focus outline, which drew off-screen at the scroll pos).
-                if (_readerContentReady && !_lyricsMode)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: AnimatedBuilder(
-                        animation: _focusNode,
-                        builder: (context, _) {
-                          // Only in keyboard/gamepad highlight mode — matches the
-                          // app-wide HibikiFocusRing convention (no focus ring in
-                          // touch mode). Rebuilt on highlight change via
-                          // _onHighlightModeChanged.
-                          final bool show = _focusNavEnabled &&
-                              _focusNode.hasPrimaryFocus &&
-                              _caretSurface == CaretSurface.none &&
-                              FocusManager.instance.highlightMode ==
-                                  FocusHighlightMode.traditional;
-                          if (!show) return const SizedBox.shrink();
-                          final double bottomInset = _showChrome
-                              ? _readerChromeHeight + _stableBottomInset
-                              : _stableBottomInset;
-                          return Padding(
-                            padding: EdgeInsets.fromLTRB(
-                                1.5, _readerTopOffset, 1.5, bottomInset),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  width: 2.5,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+          child: Focus(
+            autofocus: true,
+            focusNode: _focusNode,
+            onKeyEvent: _handleKeyEvent,
+            child: PopScope(
+              canPop: false,
+              onPopInvokedWithResult: (didPop, dynamic result) async {
+                if (didPop) return;
+                final nav = Navigator.of(context);
+                final bool allow = await onWillPop();
+                if (allow && mounted) nav.pop();
+              },
+              child: Scaffold(
+                backgroundColor: bgColor,
+                resizeToAvoidBottomInset: false,
+                body: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: _buildBody(),
                     ),
-                  ),
-                _buildTopProgressBar(),
-                buildDictionary(),
-                // The bottom chrome returns a Positioned; it MUST stay a direct
-                // child of this Stack. The chrome FocusScope is mounted INSIDE
-                // the Positioned (see _buildAudiobookBar / _buildSettingsBar) so
-                // it never detaches the Positioned's StackParentData (which would
-                // drop the bar to the Stack's top-start alignment).
-                _buildBottomChrome(),
-              ],
+                    if (!_readerContentReady)
+                      Positioned.fill(
+                        child: ColoredBox(color: bgColor),
+                      ),
+                    if (_readerContentReady)
+                      const SizedBox.shrink(
+                          key: ValueKey<String>('hoshi_content_ready')),
+                    // On-screen focus indicator for the "reading content" layer,
+                    // matching the app's standard focus ring (HibikiFocusRing:
+                    // colorScheme.primary, 2.5px, 8px radius). Shown while the reader
+                    // content holds primary focus and no char cursor is active (the
+                    // cursor draws its own ring). Inset by the chrome insets so the
+                    // ring sits inside the reading viewport and the bottom bar never
+                    // occludes it — and so it is always on-screen (unlike the native
+                    // WebView focus outline, which drew off-screen at the scroll pos).
+                    if (_readerContentReady && !_lyricsMode)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: AnimatedBuilder(
+                            animation: _focusNode,
+                            builder: (context, _) {
+                              // Only in keyboard/gamepad highlight mode — matches the
+                              // app-wide HibikiFocusRing convention (no focus ring in
+                              // touch mode). Rebuilt on highlight change via
+                              // _onHighlightModeChanged.
+                              final bool show = _focusNavEnabled &&
+                                  _focusNode.hasPrimaryFocus &&
+                                  _caretSurface == CaretSurface.none &&
+                                  FocusManager.instance.highlightMode ==
+                                      FocusHighlightMode.traditional;
+                              if (!show) return const SizedBox.shrink();
+                              final double bottomInset = _showChrome
+                                  ? _readerChromeHeight + _stableBottomInset
+                                  : _stableBottomInset;
+                              return Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                    1.5, _readerTopOffset, 1.5, bottomInset),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                      width: 2.5,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    _buildTopProgressBar(),
+                    buildDictionary(),
+                    // The bottom chrome returns a Positioned; it MUST stay a direct
+                    // child of this Stack. The chrome FocusScope is mounted INSIDE
+                    // the Positioned (see _buildAudiobookBar / _buildSettingsBar) so
+                    // it never detaches the Positioned's StackParentData (which would
+                    // drop the bar to the Stack's top-start alignment).
+                    _buildBottomChrome(),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
