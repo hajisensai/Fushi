@@ -783,6 +783,13 @@ void main() {
               'ListTile track rows are the same reviewed media-page exception '
               'class as the parent video player page allowlist entry and the '
               'sibling subtitle/chapter side panels.',
+      'lib/src/pages/implementations/video_hibiki/layout.part.dart':
+          'Subtitle caption render tree (fontSize: _subtitleStyle.fontSize) '
+              'extracted verbatim from video_hibiki_page.dart (TODO-590 '
+              'batch16); the user-configurable subtitle caption font size is '
+              'content, not page chrome — the same reviewed media-page '
+              'exception class as the parent video player page allowlist entry '
+              'and the sibling video_quick_settings_sheet caption font size.',
       'lib/src/pages/implementations/home_video_page.dart':
           'Home video grid renders media content badges/download progress; '
               'long-press management actions use the shared media dialog frame, '
