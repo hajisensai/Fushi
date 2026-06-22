@@ -377,7 +377,7 @@ void main() {
       final String b = body!.group(1)!;
       final int hitAt = b.indexOf('_subtitleHitTester.hitTest(globalPos)');
       final int handlerAt = b.indexOf('_handleSubtitleLookupTap(');
-      final int popAt = b.indexOf('_popNestedPopupAt(0)');
+      final int popAt = b.indexOf('_popNestedPopupAt(_topVisiblePopupIndex)');
       expect(hitAt, greaterThanOrEqualTo(0), reason: 'hit-test the char first');
       expect(handlerAt, greaterThan(hitAt),
           reason: 'on hit, switch lookup through the lookup gate handler');
