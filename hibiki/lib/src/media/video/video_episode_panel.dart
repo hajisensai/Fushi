@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 
@@ -186,10 +188,17 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
           leading: selected
               ? Icon(Icons.play_arrow, color: cs.primary)
               : SizedBox(
-                  width: 24,
+                  // 序号列宽随字号缩放（对齐 TODO-567 字幕时间戳列范式）：固定 24px
+                  // 在放大字号下放不下两位数序号（tabular figures，10 起约字号×1.2），
+                  // Text 默认换行被 dense ListTile 行高纵向裁切。改为 `字号 + 12` 估宽
+                  // 留余量，下界 24 保证窄字号像素不变（向后兼容）。配合 Text 单行不
+                  // 换行（`maxLines:1` / `softWrap:false`），序号永不溢出 / 被裁。
+                  width: math.max(24.0, widget.fontSize + 12),
                   child: Text(
                     '${i + 1}',
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    softWrap: false,
                     style: TextStyle(
                       color: cs.onSurfaceVariant,
                       fontSize: widget.fontSize,
