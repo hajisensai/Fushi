@@ -289,6 +289,26 @@ class ReaderPaginationScripts {
   /// 入参（实时几何，单位 px）：[delta] 为投影到内容轴的主滚轮位移（横排取 deltaY，
   /// 竖排取 wheel 监听器投影后的主 delta）；[atStart]/[atEnd] 为原生滚动是否已到该轴
   /// 起点/尽头（由调用方按同款公式算好传入）。返回 jsValue 字符串或 null。
+  /// TODO-737 纯谓词：分页模式鼠标滚轮翻页的「方向意图」归一化。
+  ///
+  /// 历史 bug = 分页滚轮回传 `onSwipe('left'/'right')` 被 `invertSwipeDirection`（默认
+  /// true）连坐反向，且裸符号 `deltaY < 0 = forward` 与连续滚轮 `deltaY > 0 = forward`
+  /// （沿书写轴 delta>0=前进）方向相反 → 滚轮方向反了。修法 = 分页滚轮也按
+  /// 「deltaY>0=forward」（对齐连续滚轮），产纯语义意图 forward/backward，经新 handler
+  /// `onWheelPaginate` 直送 `_paginate`，**不读 invertSwipeDirection**（该开关从此只管
+  /// 触摸滑动 / 鼠标拖动）。竖排 RTL 的物理滚向由 JS `paginate()` 内部按 writingMode
+  /// 决定，这里只产语义意图、不二次过 writingMode（防双重反转）。
+  ///
+  /// [deltaY]/[deltaX] = wheel 事件的滚动增量。主轴取绝对值更大的那个，>0 = forward。
+  @visibleForTesting
+  static String wheelPaginateDir(
+      {required double deltaY, required double deltaX}) {
+    final bool forward = deltaY > 0 || deltaX > 0;
+    return forward
+        ? ReaderNavigationDirection.forward.jsValue
+        : ReaderNavigationDirection.backward.jsValue;
+  }
+
   @visibleForTesting
   static String? continuousWheelBoundaryDirection({
     required bool vertical,

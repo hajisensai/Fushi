@@ -790,6 +790,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // empty-callback Timer. The old timer-as-flag pattern obscured intent and left
   // a stale timer gating the next press after a speed-setting change.
   DateTime? _lastVolumeKeyTime;
+  // TODO-737: 翻页输入节流闸门的统一时间戳——滚轮(onWheelPaginate→_paginate)、音量键
+  // (_onVolumeKey→_paginate)、连续滚轮跨章(onBoundarySwipe handler)共用此一字段，
+  // 时间戳语义（读 throttleMs 即生效，无残留 timer）。删了 JS _wheelTimer 双处后，
+  // 这是滚轮/音量键翻页的唯一节流真相源。
+  DateTime? _lastPaginateTime;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;

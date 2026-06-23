@@ -758,7 +758,6 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   document.addEventListener('selectstart', function(e) {
     if (hasStart && !_hoshiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
-  var _wheelTimer = null;
   // BUG-369: 滚动模式滚轮跨章的「arm-then-fire 二次确认」状态——记上一次已武装
   // 的边界方向（null=未武装）。惯性/竖排缓动擦边的单次瞬态只武装、不跨章；同方向
   // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
@@ -843,9 +842,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         return;
       }
       // 真的滚不动了 = 到边界 → arm-then-fire 二次确认（吸收单次擦边）才跨章。
+      // TODO-737: 节流闸门已统一到 Dart 侧（onBoundarySwipe handler 的 _lastPaginateTime
+      // 时间戳），JS 不再自持 _wheelTimer。arm-then-fire 二次确认（_wheelBoundaryArmed）
+      // 才是防 BUG-369 擦边误跨章的防线，与节流无关、完整保留。
       if (_wheelBoundaryArmed === wheelDir) {
-        if (_wheelTimer) return;
-        _wheelTimer = setTimeout(function() { _wheelTimer = null; }, ${s.wheelPageTurnInterval});
         _wheelBoundaryArmed = null;
         window.flutter_inappwebview.callHandler('onBoundarySwipe', wheelDir);
       } else {
@@ -853,11 +853,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       }
       return;
     }
-    if (_wheelTimer) return;
     if (!r || !('paginationMetrics' in r)) return;
-    _wheelTimer = setTimeout(function() { _wheelTimer = null; }, ${s.wheelPageTurnInterval});
-    var forward = (e.deltaY < 0 || e.deltaX > 0);
-    window.flutter_inappwebview.callHandler('onSwipe', forward ? 'left' : 'right');
+    // TODO-737: 分页滚轮方向脱钩 invertSwipeDirection——改回传新 handler onWheelPaginate
+    // 产「语义意图」(forward/backward)，方向 deltaY>0=forward 对齐连续滚轮(沿书写轴
+    // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
+    // 节流统一到 Dart 侧 _paginate 入口时间戳闸门（throttleMs: wheelPageTurnInterval），
+    // JS 不再自持 _wheelTimer。invertSwipeDirection 从此只管触摸滑动 / 鼠标拖动。
+    var forward = (e.deltaY > 0 || e.deltaX > 0);
+    window.flutter_inappwebview.callHandler('onWheelPaginate', forward ? 'forward' : 'backward');
     e.preventDefault();
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
@@ -1167,6 +1170,29 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           },
         );
 
+        // TODO-737: 分页滚轮翻页专用 handler。JS 已把滚轮方向归一成「语义意图」
+        // (forward/backward·deltaY>0=forward 对齐连续滚轮)，这里**不读
+        // invertSwipeDirection**（该开关从此只管触摸滑动 / 鼠标拖动，不管滚轮），
+        // 直接映射成 _paginate 的导航方向。节流统一走 _paginate 入口时间戳闸门
+        // （throttleMs: wheelPageTurnInterval），不再依赖 JS _wheelTimer。
+        controller.addJavaScriptHandler(
+          handlerName: 'onWheelPaginate',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _lyricsMode) return;
+            _reclaimReaderFocusAfterGesture();
+            final String dir = args[0] as String;
+            final int throttleMs =
+                ReaderHibikiSource.instance.wheelPageTurnInterval;
+            if (dir == 'forward') {
+              _paginate(ReaderNavigationDirection.forward,
+                  throttleMs: throttleMs);
+            } else if (dir == 'backward') {
+              _paginate(ReaderNavigationDirection.backward,
+                  throttleMs: throttleMs);
+            }
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onBoundarySwipe',
           callback: (List<dynamic> args) {
@@ -1175,6 +1201,19 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _reclaimReaderFocusAfterGesture();
             final String dir = args[0] as String;
+            // TODO-737 节流分流（4 必补点 #1）：连续滚轮跨章直接调
+            // _handlePageTurnLimit、**绕过 _paginate 入口闸门**，否则归一节流后连续
+            // 滚轮跨章不受任何节流。这里就地用与 _paginate 同款 _lastPaginateTime
+            // 时间戳闸门拦绕过路径；闸门只放这一处（不放 _handlePageTurnLimit 本体），
+            // 故分页跨章经 _paginate 内部调 _handlePageTurnLimit 时不会被自己盖的戳
+            // 吞掉（章末翻得过去）。
+            final int throttleMs =
+                ReaderHibikiSource.instance.wheelPageTurnInterval;
+            if (throttleMs > 0 && _lastPaginateTime != null) {
+              final int elapsedMs =
+                  DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
+              if (elapsedMs < throttleMs) return;
+            }
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
             debugPrint('[xchapter] onBoundarySwipe dir=$dir '
                 'chapter=$_currentChapter');
@@ -1182,6 +1221,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               _handlePageTurnLimit('forward');
             } else if (dir == 'backward') {
               _handlePageTurnLimit('backward');
+            }
+            if (throttleMs > 0) {
+              _lastPaginateTime = DateTime.now();
             }
           },
         );

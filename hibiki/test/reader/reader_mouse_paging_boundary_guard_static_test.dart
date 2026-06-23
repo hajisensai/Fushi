@@ -93,6 +93,94 @@ void main() {
           reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
     });
   });
+
+  // TODO-737 守卫（4 必补点 #2：删 _wheelTimer 不变红=盲区，这里显式断言）。
+  // 行为变更声明：分页滚轮方向从此脱钩 invertSwipeDirection——该开关只管触摸滑动 /
+  // 鼠标拖动（onSwipe 路径），不再管滚轮。滚轮翻页改走新 handler onWheelPaginate，
+  // 节流闸门统一到 Dart 侧 _paginate / onBoundarySwipe 的 _lastPaginateTime 时间戳。
+  group(
+      'TODO-737 wheel input unify: direction decoupled + single throttle gate',
+      () {
+    test('JS wheel block no longer self-throttles via _wheelTimer', () {
+      final String wheel = _listenerBlock(setupScript, 'wheel');
+      // 只锁「代码形态」（赋值/读取），不锁注释文本——注释里解释「不再自持 _wheelTimer」
+      // 是允许的；真正回归是 setTimeout 节流代码复活。
+      expect(wheel, isNot(contains('_wheelTimer = setTimeout')),
+          reason: 'TODO-737：JS _wheelTimer setTimeout 节流双处已删，'
+              '节流统一到 Dart 侧时间戳闸门；删 _wheelTimer 不变红是盲区，这里显式锁住不复活');
+      expect(wheel, isNot(contains('if (_wheelTimer)')),
+          reason: 'TODO-737：JS _wheelTimer 读取门控已删，不得复活');
+      expect(wheel, isNot(contains('var _wheelTimer')),
+          reason: 'TODO-737：JS _wheelTimer 声明已删，不得复活');
+    });
+
+    test('paged wheel emits onWheelPaginate (not onSwipe)', () {
+      final String wheel = _listenerBlock(setupScript, 'wheel');
+      expect(wheel, contains("callHandler('onWheelPaginate'"),
+          reason: '分页滚轮翻页改走 onWheelPaginate（产语义意图 forward/backward）');
+      expect(wheel, isNot(contains("callHandler('onSwipe'")),
+          reason: 'wheel 块不得再回传 onSwipe（onSwipe 专属触摸/鼠标拖动）');
+      // 方向归一：deltaY>0=forward（对齐连续滚轮 delta>0=前进），消除旧裸符号
+      // deltaY<0=forward 与连续相反的方向矛盾。
+      expect(wheel, contains('var forward = (e.deltaY > 0 || e.deltaX > 0)'),
+          reason: 'TODO-737：分页滚轮方向归一为 deltaY>0=forward，对齐连续滚轮');
+      expect(wheel, isNot(contains('e.deltaY < 0 || e.deltaX > 0')),
+          reason: '旧的 deltaY<0=forward 裸符号（方向矛盾根因）必须移除');
+    });
+
+    test('arm-then-fire 二次确认仍完整（删 _wheelTimer 不回归 BUG-369）', () {
+      final String wheel = _listenerBlock(setupScript, 'wheel');
+      // arm 才是防 BUG-369 擦边误跨章的防线（与节流无关），删 _wheelTimer 后必须保留。
+      expect(wheel, contains('_wheelBoundaryArmed === wheelDir'),
+          reason: 'arm-then-fire 同方向二次确认逻辑保留');
+      expect(wheel, contains('_wheelBoundaryArmed = wheelDir'),
+          reason: '首次到边界仅武装本方向');
+      // onBoundarySwipe 仍在二次确认分支内回传（紧跟 arm 命中后清武装）。
+      final int confirm = wheel.indexOf('_wheelBoundaryArmed === wheelDir');
+      final int call = wheel.indexOf("callHandler('onBoundarySwipe'", confirm);
+      expect(call, greaterThan(confirm),
+          reason: 'onBoundarySwipe 必须在二次确认分支内回传');
+    });
+
+    test('onWheelPaginate Dart handler 不读 invertSwipeDirection，传 throttleMs',
+        () {
+      // 行为变更：onWheelPaginate handler 直送 _paginate，**不读 invertSwipeDirection**
+      // （脱钩根因），并传 wheelPageTurnInterval 作 throttleMs。Dart handler 在合并语料
+      // 的 webview.part.dart 段，setupScript 切片不含它，故读整源 [source]。
+      final int start = source.indexOf("handlerName: 'onWheelPaginate'");
+      expect(start, isNonNegative, reason: 'onWheelPaginate Dart handler 必须存在');
+      final int end = source.indexOf('addJavaScriptHandler', start + 1);
+      final String body =
+          end > start ? source.substring(start, end) : source.substring(start);
+      expect(body, isNot(contains('invertSwipeDirection')),
+          reason: 'TODO-737：滚轮翻页 handler 不得读 invertSwipeDirection（只归触摸/拖动管）');
+      expect(body, contains('throttleMs:'),
+          reason: '滚轮翻页经 _paginate 入口节流闸门（throttleMs: wheelPageTurnInterval）');
+      expect(body, contains('wheelPageTurnInterval'),
+          reason: '滚轮 throttleMs 源是 wheelPageTurnInterval');
+    });
+
+    test(
+        'throttle gate lives at _paginate entry + onBoundarySwipe (split, 防自吞)',
+        () {
+      final String src = source;
+      // _paginate 入口闸门（分页/键盘/手柄/音量键共用）。
+      expect(src, contains('int throttleMs = 0'),
+          reason: '_paginate 增加 throttleMs 入口闸门参数');
+      expect(src, contains('_lastPaginateTime'),
+          reason: '节流时间戳真相源 _lastPaginateTime 必须存在');
+      // 闸门不放 _handlePageTurnLimit 本体（否则分页跨章经 _paginate 盖戳后自吞）。
+      final int hpStart =
+          src.indexOf('void _handlePageTurnLimit(String direction)');
+      expect(hpStart, isNonNegative);
+      final int hpEnd = src.indexOf('Future<void> _refreshProgress', hpStart);
+      expect(hpEnd, greaterThan(hpStart),
+          reason: '_handlePageTurnLimit 体到下一方法 _refreshProgress 为止');
+      final String hpBody = src.substring(hpStart, hpEnd);
+      expect(hpBody, isNot(contains('_lastPaginateTime')),
+          reason: '4 必补点 #1：节流闸门不得放 _handlePageTurnLimit 本体（会自吞分页章末跨章）');
+    });
+  });
 }
 
 String _between(String source, String start, String end) {

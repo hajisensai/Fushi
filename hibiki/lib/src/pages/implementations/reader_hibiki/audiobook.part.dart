@@ -90,35 +90,36 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   void _onVolumeKey({required bool isUp}) {
     final ReaderHibikiSource src = ReaderHibikiSource.instance;
     final int speedMs = src.volumePageTurningSpeed;
-    // HBK-AUDIT-120: throttle by elapsed time since the last accepted press.
-    // speedMs<=0 disables throttling; reading speedMs here means a speed-setting
-    // change takes effect immediately (no stale timer gating the next press).
-    if (speedMs > 0 && _lastVolumeKeyTime != null) {
-      final int elapsedMs =
-          DateTime.now().difference(_lastVolumeKeyTime!).inMilliseconds;
-      if (elapsedMs < speedMs) return;
-    }
-
     final bool inverted = src.volumePageTurningInverted;
     final bool goForward = inverted ? isUp : !isUp;
 
     if (_audiobookController != null && src.volumeKeySentenceNavEnabled) {
+      // 句子导航分支自带节流：沿用时间戳语义（HBK-AUDIT-120），与翻页节流不混。
+      // speedMs<=0 关闭节流；读 speedMs 即生效，无残留 timer。
+      if (speedMs > 0 && _lastVolumeKeyTime != null) {
+        final int elapsedMs =
+            DateTime.now().difference(_lastVolumeKeyTime!).inMilliseconds;
+        if (elapsedMs < speedMs) return;
+      }
       if (goForward) {
         _audiobookController!.skipToNextCue();
       } else {
         _audiobookController!.skipToPrevCue();
       }
-    } else {
-      _paginate(goForward
-          ? ReaderNavigationDirection.forward
-          : ReaderNavigationDirection.backward);
+      if (speedMs > 0) {
+        _lastVolumeKeyTime = DateTime.now();
+      }
+      return;
     }
 
-    // HBK-AUDIT-120: record the accepted-press time so the next press is gated
-    // by elapsed time rather than an empty-body Timer.
-    if (speedMs > 0) {
-      _lastVolumeKeyTime = DateTime.now();
-    }
+    // TODO-737: 翻页分支的节流归一到 _paginate 入口时间戳闸门（throttleMs:
+    // volumePageTurningSpeed），与滚轮共用 _lastPaginateTime，删音量键自有翻页节流。
+    _paginate(
+      goForward
+          ? ReaderNavigationDirection.forward
+          : ReaderNavigationDirection.backward,
+      throttleMs: speedMs,
+    );
   }
 
   /// 解析并接管本书的有声书会话（TODO-291 阶段2）。

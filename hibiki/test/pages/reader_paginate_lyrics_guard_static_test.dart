@@ -15,7 +15,8 @@ void main() {
 
     final String paginate = _functionSource(
       source,
-      '  Future<void> _paginate(ReaderNavigationDirection direction) async',
+      // TODO-737: _paginate 签名改多行（加 {int throttleMs = 0}），标记收窄到方法首行。
+      '  Future<void> _paginate(',
       '  // ── Image Viewer',
     );
 

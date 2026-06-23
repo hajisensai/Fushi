@@ -115,15 +115,22 @@ void main() {
         reason: 'wheel listener must be a passive:false block');
     final String wheelBlock = src.substring(wheelStart, wheelEnd);
 
-    // 连续模式分支必须存在，且先于分页 onSwipe 翻页通道（轴向冲突的根因门控）。
+    // 连续模式分支必须存在，且先于分页翻页通道（轴向冲突的根因门控）。
+    // TODO-737：分页滚轮已从 onSwipe 改为新 handler onWheelPaginate（方向脱钩
+    // invertSwipeDirection），故分页翻页通道的标记从 callHandler('onSwipe' 改为
+    // callHandler('onWheelPaginate'。
     final int guardIdx = wheelBlock.indexOf('if (hoshiContinuousMode)');
     expect(guardIdx, greaterThanOrEqualTo(0),
         reason: 'wheel must branch on continuous mode before the paginated '
-            'onSwipe page-turn');
+            'onWheelPaginate page-turn');
 
-    final int swipeIdx = wheelBlock.indexOf("callHandler('onSwipe'");
+    final int swipeIdx = wheelBlock.indexOf("callHandler('onWheelPaginate'");
     expect(swipeIdx, greaterThan(guardIdx),
-        reason: 'continuous-mode branch must precede the onSwipe page-turn');
+        reason:
+            'continuous-mode branch must precede the onWheelPaginate page-turn');
+    // 分页滚轮不再经 onSwipe（那是触摸/鼠标拖动专用，受 invertSwipeDirection 管）。
+    expect(wheelBlock, isNot(contains("callHandler('onSwipe'")),
+        reason: 'TODO-737: 滚轮翻页改走 onWheelPaginate，wheel 块内不得再回传 onSwipe');
 
     // TODO-656 真试滚：连续分支里横排 scrollBy 纵向、竖排把 deltaY 投影到横向 scrollBy，
     // 再读实际位移 moved 判到没到边界（横排误翻 / 竖排滚不动的根治）。注意：真试滚是逐
@@ -143,7 +150,11 @@ void main() {
         continuousBranch, contains('var moved = Math.abs(after - before) > 1'),
         reason:
             'edge is decided by measured real movement, not geometry/clamp');
-    // 连续分支不得回传 onSwipe（90% 整屏跳页与原生滚动轴向冲突）；跨章走 onBoundarySwipe。
+    // 连续分支不得回传翻页 handler（90% 整屏跳页与原生滚动轴向冲突）；跨章走
+    // onBoundarySwipe。TODO-737 后分页通道是 onWheelPaginate，连续分支同样不得回传。
+    expect(continuousBranch, isNot(contains("callHandler('onWheelPaginate'")),
+        reason:
+            'continuous wheel must not page-turn via onWheelPaginate (BUG-239)');
     expect(continuousBranch, isNot(contains("callHandler('onSwipe'")),
         reason: 'continuous wheel must not page-turn via onSwipe (BUG-239)');
   });

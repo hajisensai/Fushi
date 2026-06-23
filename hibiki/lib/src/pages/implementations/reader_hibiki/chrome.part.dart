@@ -28,9 +28,25 @@ part of '../reader_hibiki_page.dart';
 /// live on an extension and stay in the shell, reachable via the shared private
 /// class scope.
 extension _ReaderChrome on _ReaderHibikiPageState {
-  Future<void> _paginate(ReaderNavigationDirection direction) async {
+  Future<void> _paginate(
+    ReaderNavigationDirection direction, {
+    int throttleMs = 0,
+  }) async {
     if (_controller == null) {
       return;
+    }
+    // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
+    // wheelPageTurnInterval(450)、音量键 volumePageTurningSpeed(100)、键盘/手柄 0。
+    // 时间戳语义（与音量键旧 _lastVolumeKeyTime / HBK-AUDIT-120 一致）：读 throttleMs
+    // 时即生效，无残留 timer。**只盖在 _paginate 入口**——内部跨章（_handlePageTurnLimit）
+    // 已在闸门内、不重复节流，故分页到章末经 _paginate 仍翻得过去（不自吞，4 必补点 #1）。
+    if (throttleMs > 0 && _lastPaginateTime != null) {
+      final int elapsedMs =
+          DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
+      if (elapsedMs < throttleMs) return;
+    }
+    if (throttleMs > 0) {
+      _lastPaginateTime = DateTime.now();
     }
     // Lyrics mode renders LyricsModeHtml — a vertical cue list with no
     // hoshiReader paginator. paginate() there no-ops in JS (the
