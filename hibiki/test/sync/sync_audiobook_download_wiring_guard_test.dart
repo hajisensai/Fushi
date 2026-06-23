@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-405 守卫：互联下载有声书丢音频。
+/// BUG-406 守卫：互联下载有声书丢音频。
 ///
 /// 历史 bug = 互联下载（书架远端书卡 + 同步对比对话框）只下/导 EPUB，从不补下
 /// 有声书包，即使远端书 `hasAudiobook`。修复 = 在两个下载侧接上既有原语
 /// `getRemoteAudiobook` + `importAudioDatabasePackage`。这两条接线一旦被退回到
-/// 「只导 EPUB」就回归 BUG-405，本守卫源码级钉死接线存在，避免静默回退。
+/// 「只导 EPUB」就回归 BUG-406，本守卫源码级钉死接线存在，避免静默回退。
 void main() {
   String read(String relative) {
     final File f = File(relative);
@@ -15,7 +15,7 @@ void main() {
     return f.readAsStringSync();
   }
 
-  group('BUG-405 audiobook download wiring is present at both download sites',
+  group('BUG-406 audiobook download wiring is present at both download sites',
       () {
     test(
         'bookshelf remote download (remote.part.dart) wires audiobook fetch + '

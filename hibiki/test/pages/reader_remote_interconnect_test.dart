@@ -331,7 +331,7 @@ void main() {
 
   testWidgets(
       'remote audiobook download wires getRemoteAudiobook + import with '
-      'stable remote key and local bookKey override (BUG-405)',
+      'stable remote key and local bookKey override (BUG-406)',
       (WidgetTester tester) async {
     remoteClient = _FakeRemoteBookClient(
       coverPath: remoteBookCover.path,
@@ -364,7 +364,7 @@ void main() {
 
   testWidgets(
       'remote book without audiobook never touches the audiobook wiring '
-      '(BUG-405)', (WidgetTester tester) async {
+      '(BUG-406)', (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 

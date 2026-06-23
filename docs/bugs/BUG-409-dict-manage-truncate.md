@@ -1,4 +1,4 @@
-## BUG-405 · 手机词典管理词典名显示不全(trailing控件串挤死窄屏title·749+751)
+## BUG-409 · 手机词典管理词典名显示不全(trailing控件串挤死窄屏title·749+751)
 - **报告**：2026-06-23（用户：）
 - **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/pages/implementations/dictionary_dialog_page.dart` 旧 `_buildDictionaryTile` 的单行 `HibikiListItem(leading 折叠, title 名字, trailing: Row(...))`。trailing 控件串（折叠已移 leading，但仍有 上/下箭头 + 显示/隐藏 Switch + 可选更新 + 删除 共 5-6 个固有宽控件）以 `MainAxisSize.min` 占去固有宽（含未设 shrinkWrap 的 `Switch`），中段 `title` 只分到剩余宽。360px 实测：行宽 328px 下名字 `Text` 只拿到 **136px**（≈5-6 个汉字），长词典名（如「三省堂国語辞典　第七版」）被 `maxLines:1 + ellipsis` 截短。这是优雅省略而非溢出，问题是分到的宽度太小。
 - **[x] ① 已修复** — `dictionary_dialog_page.dart:1110` 起：窄屏（`MediaQuery.sizeOf(context).width < 480`，与本页 `_buildDictionaryTypePicker` / `_buildMobilePageActions` 同一真值阈值）改两行布局——第一行 = 折叠按钮（leading 语义，最左）+ `Expanded(名字)` 独占整行剩余宽；第二行 = 副标题；第三行 = 控件串右对齐。桌面宽屏（≥480）保持单行 `HibikiListItem`（向后兼容）。行尾控件串提取为纯结构 helper `_buildDictionaryTileControls`（两布局共用，零重复）。四个 tab（term/kanji/frequency/pitch）共用本 tile，一处修复全覆盖。修复后窄屏名字宽度 >262px（0.8×行宽），较旧 136px 多拿回 ≈126px。提交：2e11f7ae2

@@ -1,4 +1,4 @@
-## BUG-405 · AnkiConnect错误提示乱码(socket/http原文透传+http latin1误解码)
+## BUG-407 · AnkiConnect错误提示乱码(socket/http原文透传+http latin1误解码)
 - **报告**：2026-06-23（用户：）
 - **真实性**：✅ 真 bug。双重根因：
   - 仓库把 socket/http 异常 `toString()` 原文直接拼进**给用户看的** `errorDetail`：`packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart:313`（`'AnkiConnect: unexpected error: $e'`）、`:287`（`'Cannot connect to AnkiConnect: $e'`）、`:416`（`'Duplicate check failed: $e'`）、`updateMinedNote` 顶层 catch；`ankiconnect_service.dart:224/:226` 同型。该串经 `error_log_service.dart:290 logMineFailure → t.card_export_failed_detail(reason:) → describeMineOutcome:339` 透传进 toast / 视频 OSD。

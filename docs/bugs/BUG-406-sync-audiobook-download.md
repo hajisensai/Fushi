@@ -1,4 +1,4 @@
-## BUG-405 · 互联下载有声书丢音频(下载侧只导EPUB不接音频包)
+## BUG-406 · 互联下载有声书丢音频(下载侧只导EPUB不接音频包)
 - **报告**：2026-06-23（用户：）
 - **真实性**：✅ 真 bug。互联下载有声书只下/导 EPUB，从不补下有声书音频包——传输能力全部已存在但下载 UI 从未调用。
   - 主根因（书架远端书卡）：`hibiki/lib/src/pages/implementations/reader_history/remote.part.dart:251` `_downloadRemoteBook` 经 `client.getRemoteBook` 只下 `.epub`，`:300` `_importRemoteBookFile` 只导 EPUB；即使 `book.hasAudiobook==true`（卡片已渲染耳机徽章 `:189`）也无视音频包。
