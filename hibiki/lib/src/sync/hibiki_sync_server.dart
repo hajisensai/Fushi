@@ -1250,7 +1250,11 @@ class HibikiSyncServer {
   shelf.Response _jsonResponse(Map<String, dynamic> body) {
     return shelf.Response.ok(
       jsonEncode(body),
-      headers: <String, String>{'Content-Type': 'application/json'},
+      // TODO-752a：必须带 charset=utf-8。否则远程查词 client 用 package:http 的
+      // `.body` 读取时按 latin1 默认解码，CJK 词典义项/书名直接乱码。
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=utf-8'
+      },
     );
   }
 

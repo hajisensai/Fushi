@@ -121,4 +121,55 @@ void main() {
       });
     }
   });
+
+  // TODO-752a: 制卡连接失败的乱码根因——后端把 socket/http 原文（含英文/latin1
+  // 乱码）透传进 toast。修复后后端只回**稳定 errorCode**，logMineFailure 据码映射
+  // 本地化 toast；errorDetail/error 仍写诊断日志，OS 原文绝不进 toast。
+  group('logMineFailure localizes by errorCode (no raw OS text in toast)', () {
+    setUp(() async {
+      await ErrorLogService.instance.clear();
+    });
+
+    final Map<String, String> cases = <String, String>{
+      AnkiErrorCode.connectionRefused: t.anki_error_connection_refused,
+      AnkiErrorCode.connectionTimeout: t.anki_error_connection_timeout,
+      AnkiErrorCode.httpError: t.anki_error_http,
+      AnkiErrorCode.connectionUnknown: t.anki_error_connection_unknown,
+    };
+    cases.forEach((String code, String localized) {
+      test('$code maps to its localized toast string', () {
+        final MineOutcome outcome = MineOutcome.failure(
+          'raw english fallback should be ignored',
+          errorCode: code,
+          error: SocketException('Connection refused',
+              osError: const OSError('Connection refused', 111)),
+        );
+        final String msg = logMineFailure(outcome);
+        // The localized message wins over the backend-provided errorDetail.
+        expect(msg, localized);
+        // The raw OS exception text is NOT in the toast (no garble vector).
+        expect(msg, isNot(contains('OSError')));
+        expect(msg, isNot(contains('raw english fallback')));
+        // Full diagnostics still reach the error log.
+        expect(ErrorLogService.instance.entries, hasLength(1));
+      });
+    });
+
+    test('unknown/absent errorCode falls back to the detail toast', () {
+      final MineOutcome outcome = MineOutcome.failure(
+        'All fields are empty',
+        errorCode: 'SOME_UNMAPPED_CODE',
+      );
+      final String msg = logMineFailure(outcome);
+      // No mapping for this code -> old behavior (detail woven into toast).
+      expect(msg, contains('All fields are empty'));
+    });
+
+    test('localizeAnkiMineError returns null for an unmapped code', () {
+      expect(localizeAnkiMineError(null), isNull);
+      expect(localizeAnkiMineError('SOME_UNMAPPED_CODE'), isNull);
+      expect(localizeAnkiMineError(AnkiErrorCode.connectionRefused),
+          t.anki_error_connection_refused);
+    });
+  });
 }

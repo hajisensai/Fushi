@@ -1,0 +1,19 @@
+## BUG-405 · AnkiConnect错误提示乱码(socket/http原文透传+http latin1误解码)
+- **报告**：2026-06-23（用户：）
+- **真实性**：✅ 真 bug。双重根因：
+  - 仓库把 socket/http 异常 `toString()` 原文直接拼进**给用户看的** `errorDetail`：`packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart:313`（`'AnkiConnect: unexpected error: $e'`）、`:287`（`'Cannot connect to AnkiConnect: $e'`）、`:416`（`'Duplicate check failed: $e'`）、`updateMinedNote` 顶层 catch；`ankiconnect_service.dart:224/:226` 同型。该串经 `error_log_service.dart:290 logMineFailure → t.card_export_failed_detail(reason:) → describeMineOutcome:339` 透传进 toast / 视频 OSD。
+  - `package:http` 的 `Response.body` 在响应头无 charset 时**默认按 latin1 解码**。「互联看远端视频」场景连的常是远端进程/代理（非真 AnkiConnect），返回无 charset 的 GBK/UTF-8 中文错误页，被 latin1 误解码成乱码后随 `$e` 透传进 toast。
+  - 次生隐患：`hibiki/lib/src/sync/hibiki_sync_server.dart:1250 _jsonResponse` 的 Content-Type 缺 `charset=utf-8`，client `hibiki_remote_lookup_client.dart:114` 用 `.body` 读会按 latin1 坏 CJK。
+- **[x] ① 已修复** — 根因修复（改编码契约 + errno 映射）：
+  - 新增稳定分类码 `AnkiErrorCode.connectionRefused/connectionTimeout/httpError/connectionUnknown`（`anki_models.dart`），与 locale 无关、永不乱码。
+  - 新增 `classifyAnkiConnectError(Object)` 单一分类器 + `ankiConnectErrorHint(code)` 英文回退（`ankiconnect_service.dart`），`checkConnection()` 改用之（保留真 AnkiConnect 的 `AnkiConnectException.message`）。
+  - `MineOutcome` 新增 `errorCode` 字段；仓库 mineEntry/updateMinedNote/查重 顶层 catch 统一经新 helper `_mineFailureFor`：网络异常按码分类，`errorDetail` 只放英文回退，**OS 原文只进 `MineOutcome.error`（诊断日志），绝不进 `errorDetail`/toast**；非网络异常给干净英文文案（去掉 `$e`）。`fetchConfiguration:287` 同样按码分类带回 `AnkiFetchResult.error(code:)`。
+  - 主 app `error_log_service.dart logMineFailure` + 新 `localizeAnkiMineError(code)` 按码映射本地化 toast（未分类退回旧 `errorDetail` 文案）；`anki_view_model.dart localizeAnkiFetchError` 同步用之。
+  - 新增 4 个 i18n key（17 语言，经 `tool/i18n_sync.dart`）：`anki_error_connection_refused/timeout/http/connection_unknown`，`dart run slang` 重新生成 `strings.g.dart`。
+  - 次生隐患修复：`hibiki_sync_server.dart _jsonResponse` 补 `charset=utf-8`。
+  - 提交哈希：见提交记录（todo-752a-anki-garble）。
+- **[x] ② 已加自动化测试** —
+  - `packages/hibiki_anki/test/ankiconnect_error_garble_test.dart`（16 例）：errno/类型 → 稳定码映射全覆盖（含 POSIX 111 / Win 10061 / 无 OSError / timeout / clientexception / 其它）；mineEntry 注入各网络异常断言 `errorCode` 正确、`errorDetail` 为 ASCII 固定串且不回显 OS 原文、latin1 乱码绝不进 `errorDetail`（进 `error`）；源码守卫禁止 `$e` 透传进 failure detail。
+  - `hibiki/test/anki/mine_failure_surfacing_test.dart` 新增 group（6 例）：`logMineFailure` 按 `errorCode` 映射本地化 toast（4 码各一例 + 回退 + `localizeAnkiMineError` 边界），断言 toast 不含 OS 原文。
+  - 验证：`flutter analyze` 主 app `No issues found!` + `hibiki_anki` 仅 1 条预存无关 warning；`hibiki_anki` 全量 111 绿、主 app `test/anki` 78 绿、`test/i18n` 17 绿（含 mojibake guard）、`test/sync` 18 绿。
+- **备注**：只做 752-A（乱码）。未做 752-B（连接状态 UI）、752-C（手机制卡没音频，需先真机确认音频源 enabled）。`checkConnection()` 仍返回真 AnkiConnect 的英文 `error` 文本（安全、便于排障，非 socket/proxy 乱码源）。

@@ -74,6 +74,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     if (code == AnkiErrorCode.collectionUnavailable) {
       return t.anki_error_collection_unavailable;
     }
+    // TODO-752a：AnkiConnect 网络错误也按稳定码本地化（与制卡 toast 同一组码），
+    // 不再透传后端拼好的英文/可能乱码的 [message]。
+    final String? mineLocalized = localizeAnkiMineError(code);
+    if (mineLocalized != null) return mineLocalized;
     return message;
   }
 

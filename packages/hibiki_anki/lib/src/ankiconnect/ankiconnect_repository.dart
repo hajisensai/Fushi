@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import '../anki_models.dart';
 import '../base_anki_repository.dart';
@@ -238,8 +240,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() async {
+    final AnkiConnectService service = await _getService();
     try {
-      final service = await _getService();
       final connectionError = await service.checkConnection();
       if (connectionError != null) {
         return AnkiFetchResult.error(connectionError);
@@ -284,7 +286,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     } on AnkiConnectException catch (e) {
       return AnkiFetchResult.error(e.message);
     } catch (e) {
-      return AnkiFetchResult.error('Cannot connect to AnkiConnect: $e');
+      // TODO-752a：连接/网络异常按稳定码分类，主 app 据码本地化展示。绝不把
+      // socket/http 的 toString()（可能含 latin1 误解码乱码）当 message 透传给
+      // 用户——[message] 仅作主 app 映射缺失时的英文回退。
+      final String code = classifyAnkiConnectError(e);
+      return AnkiFetchResult.error(
+        ankiConnectErrorHint(code, host: service.host, port: service.port),
+        code: code,
+      );
     }
   }
 
@@ -311,12 +320,36 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         context: context,
       );
     } catch (e, stack) {
+      return _mineFailureFor(e, stack);
+    }
+  }
+
+  /// TODO-752a：把 mineEntry / updateMinedNote 的顶层异常统一映射成 [MineOutcome]。
+  /// 网络异常（socket/timeout/http）按稳定码分类，errorDetail 只放**英文回退**文案，
+  /// errorCode 交给主 app 映射本地化 toast；OS 原文（可能含 latin1 误解码乱码）只进
+  /// [MineOutcome.error]（诊断日志）。其余（payload/handlebar/HTML 等编程错误）走
+  /// connectionUnknown 的通用文案，同样不把 `$e` 透传给用户（旧实现
+  /// 'unexpected error: $e' 会泄漏乱码）。保持 mineEntry 的「永不抛出」契约（BUG-077）：
+  /// 本方法不触网、不取服务，绝不抛。
+  MineOutcome _mineFailureFor(Object e, StackTrace stack) {
+    if (e is SocketException ||
+        e is TimeoutException ||
+        e is http.ClientException) {
+      final String code = classifyAnkiConnectError(e);
       return MineOutcome.failure(
-        'AnkiConnect: unexpected error: $e',
+        ankiConnectErrorHint(code),
+        errorCode: code,
         error: e,
         stackTrace: stack,
       );
     }
+    // 非网络异常（payload/handlebar/HTML 等）不属于连接错误，不套 connectionUnknown，
+    // 只给干净的英文 errorDetail（无 `$e`）走主 app 的 card_export_failed_detail 包装。
+    return MineOutcome.failure(
+      'AnkiConnect: unexpected error.',
+      error: e,
+      stackTrace: stack,
+    );
   }
 
   Future<MineOutcome> _mineEntryInner({
@@ -384,11 +417,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           addNoteReconcileFieldValue = firstFieldValue;
           addNoteReconcileAllowed = true;
         } catch (e, stack) {
-          return MineOutcome.failure(
-            'Duplicate check failed: $e',
-            error: e,
-            stackTrace: stack,
-          );
+          // TODO-752a：查重失败常因连不上 AnkiConnect（socket/timeout/http）。统一经
+          // [_mineFailureFor]：网络异常按稳定码分类本地化，OS 原文仅进诊断日志，绝不
+          // 把 `$e` 透传给用户。
+          return _mineFailureFor(e, stack);
         }
       }
     }
@@ -625,11 +657,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         );
       }
     } catch (e, stack) {
-      return MineOutcome.failure(
-        'AnkiConnect: unexpected error: $e',
-        error: e,
-        stackTrace: stack,
-      );
+      return _mineFailureFor(e, stack);
     }
   }
 

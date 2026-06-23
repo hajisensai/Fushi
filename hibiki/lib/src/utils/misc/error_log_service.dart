@@ -293,10 +293,33 @@ String logMineFailure(MineOutcome outcome) {
     outcome.error ?? outcome.errorDetail ?? 'unknown card export error',
     outcome.stackTrace,
   );
+  // TODO-752a：失败已分类（errorCode 非空）时，用与 locale 无关的稳定码映射本地化
+  // toast——绝不把后端带回的 errorDetail（可能含 socket/http 的英文/latin1 乱码原文）
+  // 直接喂给用户。errorDetail/error 仍写进上面的诊断日志。未分类失败维持旧行为。
+  final String? localized = localizeAnkiMineError(outcome.errorCode);
+  if (localized != null) return localized;
   final String? detail = outcome.errorDetail;
   return detail != null && detail.isNotEmpty
       ? t.card_export_failed_detail(reason: detail)
       : t.card_export_failed;
+}
+
+/// TODO-752a：把 [MineOutcome.errorCode] 映射成本地化的制卡失败 toast 文案；
+/// 未分类（[code] 为 null 或未知）返回 `null`，由调用方退回旧的 [errorDetail] 文案。
+/// 与 [localizeAnkiFetchError] 共享同一组 [AnkiErrorCode] 网络分类。
+String? localizeAnkiMineError(String? code) {
+  switch (code) {
+    case AnkiErrorCode.connectionRefused:
+      return t.anki_error_connection_refused;
+    case AnkiErrorCode.connectionTimeout:
+      return t.anki_error_connection_timeout;
+    case AnkiErrorCode.httpError:
+      return t.anki_error_http;
+    case AnkiErrorCode.connectionUnknown:
+      return t.anki_error_connection_unknown;
+    default:
+      return null;
+  }
 }
 
 /// 把一次制卡结果映射成「给用户看的消息 + 是否成功 + 是否应计入制卡统计」的单一真相。

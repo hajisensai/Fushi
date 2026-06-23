@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../anki_models.dart';
 import '../anki_service.dart';
 import '../lapis_note_type.dart';
 
@@ -214,16 +215,16 @@ class AnkiConnectService implements AnkiService {
     try {
       await _request('version');
       return null;
-    } on SocketException {
-      return 'Connection refused — is Anki Desktop running?\n'
-          'Check that AnkiConnect add-on (2055492159) is installed.';
-    } on TimeoutException {
-      return 'Connection timed out ($host:$port).\n'
-          'Check firewall settings or verify the host and port.';
-    } on http.ClientException catch (e) {
-      return 'HTTP error: $e';
+    } on AnkiConnectException catch (e) {
+      // AnkiConnect 自己的 error 字段 / HTTP / 非 JSON 形状错误：这是**真 AnkiConnect**
+      // 的英文语义文本（如 'unauthorized'、'valid api key must be provided'），安全可
+      // 直接展示在设置页，便于排障；不属于 TODO-752a 的 socket/proxy 乱码源。
+      return e.message;
     } catch (e) {
-      return 'Cannot connect to AnkiConnect: $e';
+      // socket / timeout / http 等连接层异常：按稳定码（TODO-752a）返回设置页用的
+      // 英文提示——绝不把异常 toString() 透传（其中可能含 latin1 误解码的乱码）。
+      final String code = classifyAnkiConnectError(e);
+      return ankiConnectErrorHint(code, host: host, port: port);
     }
   }
 
@@ -386,6 +387,47 @@ class AnkiConnectService implements AnkiService {
 }
 
 String _escapeAnkiQuery(String value) => value.replaceAll('"', '\\"');
+
+/// TODO-752a：把一个 AnkiConnect 网络异常分类成**与 locale 无关、永不乱码**的稳定码
+/// （见 [AnkiErrorCode]）。优先用 OS 错误码（ABI 常量，跨平台/跨 package:http 版本稳定）
+/// 区分超时与连接失败，再按异常类型兜底。这是 checkConnection / mineEntry 共用的单一来源，
+/// 取代各处对 SocketException / http.ClientException 的 toString() 透传。
+String classifyAnkiConnectError(Object error) {
+  if (error is TimeoutException) {
+    return AnkiErrorCode.connectionTimeout;
+  }
+  if (error is SocketException) {
+    // 连接被拒（POSIX ECONNREFUSED=111/61，Win WSAECONNREFUSED=10061）或任何建连失败：
+    // AnkiConnect 没在监听 / Anki 没开。osError 缺失时仍按 socket 归为「拒绝/不可达」，
+    // 比透传英文原文好。
+    return AnkiErrorCode.connectionRefused;
+  }
+  if (error is http.ClientException) {
+    return AnkiErrorCode.httpError;
+  }
+  return AnkiErrorCode.connectionUnknown;
+}
+
+/// 给**设置页**（非 toast）用的英文可读提示：toast 走主 app 的本地化映射，这里仅服务
+/// checkConnection，文案与旧实现一致，但来源统一到稳定码（不再透传异常原文）。
+/// [host]/[port] 仅用于丰富英文回退文案；缺省时省略（用户看到的 toast 由主 app 按
+/// [code] 本地化，本回退串不含地址也无碍）。
+String ankiConnectErrorHint(String code, {String? host, int? port}) {
+  final String where =
+      (host != null && host.isNotEmpty && port != null) ? ' ($host:$port)' : '';
+  switch (code) {
+    case AnkiErrorCode.connectionRefused:
+      return 'Connection refused$where (is Anki Desktop running?).\n'
+          'Check that AnkiConnect add-on (2055492159) is installed.';
+    case AnkiErrorCode.connectionTimeout:
+      return 'Connection timed out$where.\n'
+          'Check firewall settings or verify the host and port.';
+    case AnkiErrorCode.httpError:
+      return 'HTTP error connecting to AnkiConnect$where.';
+    default:
+      return 'Cannot connect to AnkiConnect$where.';
+  }
+}
 
 String _fieldValueQuery({
   required String deckName,

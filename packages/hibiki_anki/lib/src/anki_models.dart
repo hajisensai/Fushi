@@ -640,6 +640,21 @@ class AnkiErrorCode {
 
   /// Mirror of the Java `ANKI_COLLECTION_UNAVAILABLE` channel error code.
   static const String collectionUnavailable = 'ANKI_COLLECTION_UNAVAILABLE';
+
+  /// TODO-752a：AnkiConnect 网络错误的稳定分类码。给用户看的 toast 文案必须由
+  /// 主 app 按这些**与 locale 无关、永不乱码**的码映射本地化文案，而不是透传
+  /// `SocketException`/`http.ClientException` 的 `toString()`——后者既是英文，又会在
+  /// 「连远端进程/代理而非真 AnkiConnect」时把无 charset 的 GBK/UTF-8 错误页经
+  /// package:http 的 latin1 默认解码弄成乱码。OS 原文只进诊断日志（[MineOutcome.error]）。
+  ///
+  /// `connectionRefused`：连接被拒（AnkiConnect 没在监听 / Anki 没开）。
+  /// `connectionTimeout`：连接/响应超时（[TimeoutException]）。
+  /// `httpError`：HTTP 层错误（http.ClientException，非超时非 socket）。
+  /// `connectionUnknown`：其余无法分类的连接异常。
+  static const String connectionRefused = 'ANKI_CONNECTION_REFUSED';
+  static const String connectionTimeout = 'ANKI_CONNECTION_TIMEOUT';
+  static const String httpError = 'ANKI_HTTP_ERROR';
+  static const String connectionUnknown = 'ANKI_CONNECTION_UNKNOWN';
 }
 
 sealed class AnkiFetchResult {
@@ -685,6 +700,7 @@ class MineOutcome {
     this.result, {
     this.noteId,
     this.errorDetail,
+    this.errorCode,
     this.error,
     this.stackTrace,
   });
@@ -697,6 +713,7 @@ class MineOutcome {
   const MineOutcome.success({this.noteId})
       : result = MineResult.success,
         errorDetail = null,
+        errorCode = null,
         error = null,
         stackTrace = null;
 
@@ -704,6 +721,7 @@ class MineOutcome {
       : result = MineResult.duplicate,
         noteId = null,
         errorDetail = null,
+        errorCode = null,
         error = null,
         stackTrace = null;
 
@@ -711,17 +729,23 @@ class MineOutcome {
       : result = MineResult.notConfigured,
         noteId = null,
         errorDetail = null,
+        errorCode = null,
         error = null,
         stackTrace = null;
 
-  /// 失败：[detail] 简短原因（toast），[error]/[stackTrace] 完整诊断（错误日志）。
+  /// 失败：[detail] 简短原因（toast 的**回退**文案），[error]/[stackTrace] 完整诊断
+  /// （错误日志）。[errorCode] 非空时表示这是一个**已分类**的失败（见 [AnkiErrorCode]），
+  /// 主 app 据它映射本地化 toast 文案，[detail] 仅作为映射缺失时的英文回退；OS 原文
+  /// 不进 [detail]，只进 [error]（TODO-752a：避免英文/latin1 乱码透传给用户）。
   MineOutcome.failure(
     String detail, {
+    String? errorCode,
     Object? error,
     StackTrace? stackTrace,
   })  : result = MineResult.error,
         noteId = null,
         errorDetail = detail,
+        errorCode = errorCode,
         error = error,
         stackTrace = stackTrace;
 
@@ -731,8 +755,13 @@ class MineOutcome {
   /// 用于「制卡后更新同一张卡片字段」（[updateMinedNote]）。AnkiDroid 暂为 `null`。
   final int? noteId;
 
-  /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因。
+  /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因（回退文案）。
   final String? errorDetail;
+
+  /// 仅在 [result] == [MineResult.error] 且失败**已分类**时非空：稳定分类码
+  /// （见 [AnkiErrorCode]）。主 app 据它映射本地化 toast；为 `null` 时退回
+  /// [errorDetail]（既有未分类失败的行为不变，Never break userspace）。
+  final String? errorCode;
 
   /// 仅在错误时可能非空：原始异常对象（写入错误日志，含完整信息）。
   final Object? error;

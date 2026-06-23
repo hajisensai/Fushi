@@ -1796,5 +1796,9 @@
   "shortcut_action_dpad_right": "D-pad Right",
   "shortcut_scope_gamepad": "Gamepad",
   "section_page_turn_direction": "Page-turn direction",
-  "remote_book_audiobook_download_failed": "Could not download audiobook for this book"
+  "remote_book_audiobook_download_failed": "Could not download audiobook for this book",
+  "anki_error_connection_refused": "Could not connect to Anki: connection refused. Make sure Anki Desktop is running and the AnkiConnect add-on is installed.",
+  "anki_error_connection_timeout": "Could not connect to Anki: the connection timed out. Check the host, port, and firewall settings.",
+  "anki_error_http": "Could not export to Anki: an HTTP error occurred while contacting AnkiConnect.",
+  "anki_error_connection_unknown": "Could not export to Anki: an unexpected connection error occurred. See the error log for details."
 }
