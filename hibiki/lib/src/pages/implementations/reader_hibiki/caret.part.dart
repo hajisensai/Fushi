@@ -69,46 +69,12 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       return KeyEventResult.ignored;
     }
 
-    // While a bottom-chrome control holds focus, let directional traversal and
-    // Activate flow through to the framework (gamepad/keyboard operation of the
-    // chrome buttons) instead of resolving reader page-turn shortcuts. B/Escape
-    // closes the chrome and returns focus to the reading content rather than
-    // bubbling up to the global pop (which would exit the reader).
-    if (_chromeFocusScope.hasFocus) {
-      if (event is! KeyDownEvent) return KeyEventResult.ignored;
-      // The bar and the reading content are the same (top) layer. Up moves focus
-      // back to the reading content; B/Escape exit the reader (top-level back).
-      // The bar's visibility is controlled only by Y, so B must not hide it.
-      // (Both chrome bars are single rows, so intercepting Up never strands
-      // intra-bar vertical traversal.)
-      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        _focusNode.requestFocus();
-        return KeyEventResult.handled;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.gameButtonB ||
-          event.logicalKey == LogicalKeyboardKey.escape) {
-        unawaited(Navigator.of(context).maybePop());
-        return KeyEventResult.handled;
-      }
-      // BUG-204: 焦点落底栏控件时，裸 Space 仍应播放/暂停有声书。否则它在这里
-      // 被吞成 ignored，到不了下方 [resolveReaderSpaceOverride]，冒泡到全局
-      // 导航把裸 Space 中和为 DoNothingIntent（c152fcd91 用户裁定的正确全局
-      // 行为，**不回退**），有声书永不暂停。仅在有声书激活 + 无修饰 Space 时
-      // 拦截（与正文焦点路径同一 [resolveReaderSpaceOverride] 闸门），其余键
-      // 一律落 ignored，底栏控件本身的 Space 语义不受影响。
-      final ShortcutAction? chromeSpaceOverride = resolveReaderSpaceOverride(
-        key: event.logicalKey,
-        modifiers: _activeModifiers(),
-        hasActiveAudiobook: _hasActiveAudiobook,
-      );
-      if (chromeSpaceOverride != null) {
-        return _executeShortcutAction(
-          chromeSpaceOverride,
-          keyboardTriggerKey: event.logicalKey,
-        );
-      }
-      return KeyEventResult.ignored;
-    }
+    // TODO-700 T8: the bottom chrome bar is excluded from focus traversal
+    // (ExcludeFocus in [_buildAudiobookBar]/[_buildSettingsBar]), so
+    // `_chromeFocusScope.hasFocus` is permanently false and the old
+    // chrome-focus key branch is unreachable. Focus stays on the reading
+    // content, so Up/B/Escape and the BUG-204 bare-Space audiobook override are
+    // all handled below by the normal content path (see [resolveReaderSpaceOverride]).
 
     final KeyEventResult? gamepadAResult =
         _focusNavEnabled ? _handleGamepadAKeyEvent(event) : null;
@@ -200,24 +166,10 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       );
     }
 
-    // Caret inactive: arrow Down drops focus into the bottom bar (the sibling
-    // layer below the reading content), mirroring the gamepad polled path
-    // (_handleGamepadButton). Without this the keyboard path had no chrome
-    // route, so Down resolved to a reader page-turn shortcut and could never
-    // reach the bar (BUG-020). Gated on a visible bar that accepts focus.
-    if (_focusNavEnabled &&
-        !_caretActive &&
-        event.logicalKey == LogicalKeyboardKey.arrowDown &&
-        _showChrome) {
-      _chromeFocusScope.requestFocus();
-      if (_chromeFocusScope.context != null && _chromeFocusScope.nextFocus()) {
-        return KeyEventResult.handled;
-      }
-      // Empty chrome (no focusable child): undo the scope grab so focus isn't
-      // stranded on an empty FocusScope, then fall through to shortcut
-      // resolution. Mirrors _promoteCaretToChrome's undo.
-      _focusNode.requestFocus();
-    }
+    // TODO-700 T8: the bottom bar is excluded from focus traversal, so arrow
+    // Down no longer routes focus into the chrome (the old BUG-020 keyboard
+    // chrome route is gone). Down falls through to normal shortcut resolution
+    // below; the bar is reached by touch/mouse, never by directional keys.
 
     // 有声书激活时，无修饰 Space 改作播放/暂停（媒体播放器惯例），先于
     // reader scope 的「翻页」解析，否则 Space 永远被 reader scope 抢成翻页
@@ -352,20 +304,11 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       }
       return false;
     }
-    if (_chromeFocusScope.hasFocus) {
-      // D-pad Up moves focus back to the reading content (sibling layer above).
-      if (button == GamepadButton.dpadUp) {
-        _focusNode.requestFocus();
-        return true;
-      }
-      // B exits the reader (top-level back); the bar's visibility is Y-only, so
-      // B must not hide it. Left/Right traverse the bar's buttons.
-      if (button == GamepadButton.b) {
-        unawaited(Navigator.of(context).maybePop());
-        return true;
-      }
-      return false;
-    }
+    // TODO-700 T8: the bottom chrome bar is excluded from focus traversal, so
+    // `_chromeFocusScope.hasFocus` is permanently false here too. The old
+    // gamepad chrome-focus branch (dpad Up → content, B → exit) is unreachable
+    // and removed; focus stays on the reading content.
+
     // Char-level reading cursor — same contextual routing as the keyboard path.
     if (_focusNavEnabled && _caretActive) {
       // LB/RB flip a whole page on the cursor surface (popup scrolls, paged
@@ -393,23 +336,9 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       unawaited(_enterCaret());
       return true;
     }
-    // Top level (cursor inactive): D-pad Down moves focus into the bottom bar
-    // (the sibling layer below the reading content). The bar must be visible
-    // (its visibility is Y-controlled). D-pad Up/Down are free on the gamepad —
-    // page-turn is on RB/LB + D-pad Left/Right — so this never shadows paging.
-    if (_focusNavEnabled && button == GamepadButton.dpadDown && _showChrome) {
-      _chromeFocusScope.requestFocus();
-      // Only consume Down if focus actually advanced into a bar control. If the
-      // bar has no focusable child (nextFocus() == false), fall through so the
-      // GamepadService directional-focus fallback runs instead of stranding the
-      // press on the (focus-less) reading content.
-      // FocusNode.nextFocus() dereferences `context!`; guard against an
-      // unattached scope (chrome not yet built, e.g. content not ready) so it
-      // can never throw "Null check operator used on a null value".
-      if (_chromeFocusScope.context != null && _chromeFocusScope.nextFocus()) {
-        return true;
-      }
-    }
+    // TODO-700 T8: the bottom bar is excluded from focus traversal, so D-pad
+    // Down no longer routes focus into the chrome. It falls through to normal
+    // gamepad shortcut resolution below; the bar is operated by touch/mouse.
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.reader,
@@ -505,7 +434,9 @@ extension _ReaderCaret on _ReaderHibikiPageState {
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
-        _toggleChrome(moveFocusToChrome: true);
+        // TODO-700 T8: showing the bar no longer moves focus into it — the bar
+        // is excluded from focus traversal; focus stays on the reading content.
+        _toggleChrome();
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleBookmark:
         _addBookmarkAtCurrentPosition();

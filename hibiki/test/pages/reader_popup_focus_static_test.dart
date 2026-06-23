@@ -56,19 +56,22 @@ void main() {
       greaterThanOrEqualTo(2),
       reason: '键盘 Enter 与手柄 A 的进 caret 判定都必须透传总开关。',
     );
+    // TODO-700 T8：底栏被 ExcludeFocus 排出焦点遍历池后，「↓ 跳底栏」的焦点搬运整段
+    // 删除（底栏不再是焦点目标），原 BUG-161「↓ 跳底栏要门控在开关上」诉求随之消失。
+    // 两条断言改为断言搬运分支已删，防回退（与 reader_focus_nav_switch_static_test 一致）。
     expect(
-      code,
-      contains(
+      code.contains(
         'if (_focusNavEnabled && !_caretActive && event.logicalKey == LogicalKeyboardKey.arrowDown',
       ),
-      reason: '键盘 ↓ 跳 reader 底栏是焦点导航，关闭总开关时应回退为阅读快捷键。',
+      isFalse,
+      reason: 'TODO-700 T8：键盘 ↓ 把焦点塞进底栏的分支必须删除（底栏退出焦点遍历）。',
     );
     expect(
-      code,
-      contains(
+      code.contains(
         'if (_focusNavEnabled && button == GamepadButton.dpadDown && _showChrome)',
       ),
-      reason: '手柄 ↓ 跳 reader 底栏是焦点导航，关闭总开关时应回退给阅读器手柄快捷键。',
+      isFalse,
+      reason: 'TODO-700 T8：手柄 ↓ 把焦点塞进底栏的分支必须删除（底栏退出焦点遍历）。',
     );
   });
 }

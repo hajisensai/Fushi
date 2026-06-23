@@ -66,34 +66,41 @@ void main() {
     });
   });
 
-  group('BUG-204 源码守卫：chrome-focus 分支把 Space 路由到 audiobook 覆写', () {
+  group('BUG-204 / TODO-700 T8 源码守卫：底栏退出焦点遍历，裸 Space 仍经正文路径暂停', () {
     final String source = readReaderPageSource();
 
-    String chromeBranch() {
-      const String start = 'if (_chromeFocusScope.hasFocus) {';
-      final int startIndex = source.indexOf(start);
-      expect(startIndex, isNonNegative,
-          reason: '缺 _chromeFocusScope.hasFocus 分支');
-      // 分支以最后一条 `return KeyEventResult.ignored;` + 收尾 `}` 结束，取到
-      // 这之后的下一段（gamepad A）起点即可覆盖整个分支体。
-      const String end = 'final KeyEventResult? gamepadAResult =';
-      final int endIndex = source.indexOf(end, startIndex);
-      expect(endIndex, isNonNegative, reason: '缺 chrome 分支结尾锚点');
-      return source.substring(startIndex, endIndex);
-    }
-
-    test('chrome 分支内调用 resolveReaderSpaceOverride 并执行其结果', () {
-      final String branch = chromeBranch();
+    test(
+        'TODO-700 T8：底栏不再是焦点目标 —— _chromeFocusScope.hasFocus 顶部分支已删，'
+        '正文路径仍调用 resolveReaderSpaceOverride 暂停有声书', () {
+      // 根因变了：底栏被 ExcludeFocus 排出焦点遍历池（见下方独立守卫），
+      // `_chromeFocusScope.hasFocus` 恒为 false，旧的 chrome-focus 顶部分支不可达，
+      // 已整段移除（不留死分支）。BUG-204 的行为（裸 Space 暂停有声书）由正文焦点
+      // 路径同一个 [resolveReaderSpaceOverride] 闸门保证 —— 焦点恒在正文，Space 直达。
       expect(
-        branch,
-        contains('resolveReaderSpaceOverride('),
-        reason: '底栏焦点下裸 Space 必须路由到有声书播放/暂停覆写，'
-            '否则被吞成 ignored、冒泡到全局被中和（BUG-204）。',
+        source.contains('if (_chromeFocusScope.hasFocus) {'),
+        isFalse,
+        reason: 'TODO-700 T8：底栏退出焦点遍历后，_chromeFocusScope.hasFocus 顶部分支'
+            '应被删除（不可达死分支），不得保留。',
       );
+      // 正文主流程仍有裸 Space → audiobook 覆写（BUG-062/204 共用闸门）。
       expect(
-        branch,
-        contains('_executeShortcutAction('),
-        reason: '解析出的 Space 覆写动作必须在 chrome 分支内执行。',
+        source.contains('resolveReaderSpaceOverride('),
+        isTrue,
+        reason: '正文焦点路径必须仍调用 resolveReaderSpaceOverride，否则裸 Space '
+            '不再暂停有声书（BUG-204 行为回归）。',
+      );
+    });
+
+    test('TODO-700 T8：两条底栏都用 ExcludeFocus 退出焦点遍历池', () {
+      final String chrome = File(
+        'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+      ).readAsStringSync();
+      // 有声书条 + 设置条各一个 ExcludeFocus 包住 _chromeFocusScope。
+      expect(
+        RegExp(r'ExcludeFocus\(').allMatches(chrome).length,
+        greaterThanOrEqualTo(2),
+        reason: '底栏（有声书条 + 设置条）必须各被 ExcludeFocus 包住，把控件排出焦点'
+            '遍历池 —— 这是 TODO-700 T8 的根因修复（焦点恒在正文）。',
       );
     });
 
@@ -106,7 +113,7 @@ void main() {
         contains(
             'const SingleActivator(LogicalKeyboardKey.space): const DoNothingIntent()'),
         reason: '裸空格中和（c152fcd91 用户裁定的正确全局行为）不得回退；'
-            'BUG-204 只是补底栏焦点路径漏接的有声书 Space 覆写。',
+            'BUG-204 的暂停行为靠正文路径的 resolveReaderSpaceOverride，不靠回退中和。',
       );
     });
   });

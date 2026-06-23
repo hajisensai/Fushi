@@ -74,21 +74,24 @@ void main() {
       );
     });
 
-    test('方向键 ↓ 跳底栏焦点域门控在开关上', () {
+    // TODO-700 T8：底栏被 ExcludeFocus 排出焦点遍历池后，「↓ 跳底栏」的焦点搬运整段
+    // 删除（底栏不再是焦点目标）。原 BUG-161 的「↓ 跳底栏要门控在开关上」诉求随之
+    // 消失 —— 没有可门控的搬运分支了。两条原断言改为断言「搬运分支已删」，防回退。
+    test('TODO-700 T8：方向键 ↓ 跳底栏的焦点搬运分支已删', () {
       expect(
         code.contains(
             'if (_focusNavEnabled && !_caretActive && event.logicalKey == LogicalKeyboardKey.arrowDown'),
-        isTrue,
-        reason: '方向键 ↓ 跳底栏是焦点导航；关闭时 ↓ 应回退为翻页快捷键（BUG-161）。',
+        isFalse,
+        reason: '底栏退出焦点遍历后，方向键 ↓ 把焦点塞进底栏的分支必须删除（T8）。',
       );
     });
 
-    test('手柄 D-pad ↓ 跳底栏焦点域门控在开关上', () {
+    test('TODO-700 T8：手柄 D-pad ↓ 跳底栏的焦点搬运分支已删', () {
       expect(
         code.contains(
             'if (_focusNavEnabled && button == GamepadButton.dpadDown && _showChrome)'),
-        isTrue,
-        reason: '手柄 D-pad ↓ 跳底栏是焦点导航；关闭时应回退到手柄翻页快捷键（BUG-161）。',
+        isFalse,
+        reason: '底栏退出焦点遍历后，手柄 D-pad ↓ 把焦点塞进底栏的分支必须删除（T8）。',
       );
     });
 

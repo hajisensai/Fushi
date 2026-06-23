@@ -257,31 +257,21 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
-  void _toggleChrome({bool moveFocusToChrome = false}) {
+  void _toggleChrome() {
     _rebuild(() {
       _showChrome = !_showChrome;
     });
     _applyChromeInsets();
-    if (!_showChrome) {
-      // Chrome hidden: return focus to the reading content so directional keys
-      // resume turning the page.
-      _focusNode.requestFocus();
-    } else if (moveFocusToChrome) {
-      // Chrome shown via keyboard/gamepad: move focus into the chrome so its
-      // controls are reachable by directional navigation. The bar mounts fresh
-      // on this frame, so wait one frame before requesting focus.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_showChrome) return;
-        _chromeFocusScope.requestFocus();
-        // Guard against an unattached scope: FocusNode.nextFocus() dereferences
-        // `context!` and throws if the chrome bar hasn't mounted this node yet
-        // (e.g. toggled while reader content isn't ready). requestFocus() above
-        // is safe without a context; only the traversal needs one.
-        if (_chromeFocusScope.context != null) {
-          _chromeFocusScope.nextFocus();
-        }
-      });
-    }
+    // TODO-700 T8: the bottom chrome bar is wrapped in ExcludeFocus (see
+    // [_buildAudiobookBar]/[_buildSettingsBar]), so its controls are never
+    // focus-traversal targets — focus always lives on the reading content
+    // ([_focusNode]). Showing the bar must NOT move focus into it (the old
+    // `moveFocusToChrome` path is gone): the bar is a touch/mouse + key-glyph
+    // surface, not a directional-nav destination. Keeping focus on the content
+    // means directional keys keep turning the page and hidden shortcuts are
+    // never short-circuited by a focused bar. requestFocus() is a cheap no-op
+    // when the content already holds focus.
+    _focusNode.requestFocus();
   }
 
   Future<void> _applyChromeInsets() async {
@@ -496,32 +486,41 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           left: 0,
           right: 0,
           bottom: 0,
-          child: FocusScope(
-            node: _chromeFocusScope,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                ReaderChromeScaler(
-                  scale: _readerChromeScale,
-                  baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-                  child: AudiobookPlayBar(
-                    controller: ctrl,
-                    skipActionSeconds:
-                        ReaderHibikiSource.instance.skipActionSeconds,
-                    onOpenSettings: _showAppearanceSheet,
-                    backgroundColor: _themeBackgroundColor(),
-                    foregroundColor: _themeTextColor(),
-                    reversed: appModel.reverseReaderBottomBar,
+          // TODO-700 T8: ExcludeFocus removes every bar control from the
+          // focus traversal pool so the reading content ([_focusNode]) is the
+          // only home for focus. The bar stays operable by touch/mouse but is
+          // never a directional-nav destination, so it can neither steal a
+          // hidden shortcut nor strand the page-turn keys. _chromeFocusScope is
+          // kept as the bar's structural scope; its `.hasFocus` is now always
+          // false, which [_reclaimReaderFocusAfterGesture] relies on.
+          child: ExcludeFocus(
+            child: FocusScope(
+              node: _chromeFocusScope,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  ReaderChromeScaler(
+                    scale: _readerChromeScale,
+                    baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                    child: AudiobookPlayBar(
+                      controller: ctrl,
+                      skipActionSeconds:
+                          ReaderHibikiSource.instance.skipActionSeconds,
+                      onOpenSettings: _showAppearanceSheet,
+                      backgroundColor: _themeBackgroundColor(),
+                      foregroundColor: _themeTextColor(),
+                      reversed: appModel.reverseReaderBottomBar,
+                    ),
                   ),
-                ),
-                ColoredBox(
-                  color: _themeBackgroundColor(),
-                  child: SizedBox(
-                    height: _stableBottomInset,
-                    width: double.infinity,
+                  ColoredBox(
+                    color: _themeBackgroundColor(),
+                    child: SizedBox(
+                      height: _stableBottomInset,
+                      width: double.infinity,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -551,37 +550,42 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       left: 0,
       right: 0,
       bottom: 0,
-      child: FocusScope(
-        node: _chromeFocusScope,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ReaderChromeScaler(
-              scale: _readerChromeScale,
-              baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
-              child: ColoredBox(
-                color: _themeBackgroundColor(),
-                child: SizedBox(
-                  height: _ReaderHibikiPageState._readerChromeBaseHeight,
-                  child: Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
-                    child: Row(
-                      children:
-                          reversed ? barItems.reversed.toList() : barItems,
+      // TODO-700 T8: see [_buildAudiobookBar] — ExcludeFocus keeps the settings
+      // bar out of the focus traversal pool so focus stays on the reading
+      // content. _chromeFocusScope is kept as the structural scope only.
+      child: ExcludeFocus(
+        child: FocusScope(
+          node: _chromeFocusScope,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ReaderChromeScaler(
+                scale: _readerChromeScale,
+                baseHeight: _ReaderHibikiPageState._readerChromeBaseHeight,
+                child: ColoredBox(
+                  color: _themeBackgroundColor(),
+                  child: SizedBox(
+                    height: _ReaderHibikiPageState._readerChromeBaseHeight,
+                    child: Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+                      child: Row(
+                        children:
+                            reversed ? barItems.reversed.toList() : barItems,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            ColoredBox(
-              color: _themeBackgroundColor(),
-              child: SizedBox(
-                height: _stableBottomInset,
-                width: double.infinity,
+              ColoredBox(
+                color: _themeBackgroundColor(),
+                child: SizedBox(
+                  height: _stableBottomInset,
+                  width: double.infinity,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
