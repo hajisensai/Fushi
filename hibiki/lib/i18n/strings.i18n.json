@@ -1480,7 +1480,7 @@
   "video_shader_tier_low_hint": "mpv built-in sharpening (ewa_lanczossharp). Works on any video (animation and live-action). No download, lowest GPU load. Pick this on integrated or older cards (NVIDIA GTX 1050, AMD RX 560, Intel iGPU).",
   "video_shader_tier_medium_hint": "Anime4K Fast. Best for animation, but also works on live-action movies/TV (smaller gain). Runs on mid-range GPUs (NVIDIA GTX 1660 / RTX 3050, AMD RX 6600).",
   "video_shader_tier_high_hint": "Anime4K HQ. Sharper; best for animation, also usable on live-action (smaller gain). Needs an upper-mid GPU (NVIDIA RTX 4060 / RTX 3070, AMD RX 6700 XT / RX 7700 XT).",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32. Best quality for HD animation; also usable on live-action (smaller gain). Needs a flagship GPU (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Pick a lower tier if your GPU is weaker.",
+  "video_shader_tier_ultra_hint": "ArtCNN C4F32 DS (denoise + sharpen). Best quality for HD animation and tuned for web-encoded sources (removes compression artifacts, light sharpening); also usable on live-action (smaller gain). Needs a flagship GPU (NVIDIA RTX 4080 / RTX 5090, AMD RX 7900 XTX). Pick a lower tier if your GPU is weaker.",
   "video_shader_tier_custom_hint": "Custom shader selection. Pick a tier above to switch to a preset.",
   "video_shader_section_advanced": "Advanced (manual shaders)",
   "video_shader_first_use_download": "Download and enable",

@@ -14,7 +14,8 @@ import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 /// - [low]   = 低：内置缩放 on（ewa_lanczossharp，零下载）+ 无 GLSL。
 /// - [medium]= 中：内置缩放 on + Anime4K Fast（Mode A Fast，中低端 GPU 可跑）。
 /// - [high]  = 高：内置缩放 on + Anime4K HQ（Mode A HQ，需较强 GPU）。
-/// - [ultra] = 极高：内置缩放 on + ArtCNN C4F32（MIT，2025 最强 HD 番，需旗舰 GPU）。
+/// - [ultra] = 极高：内置缩放 on + ArtCNN C4F32 DS（denoise+sharpen 变体，MIT，专为
+///   web 压制番训练，对脏源真有去噪锐化；需旗舰 GPU）。
 enum VideoShaderTier {
   off,
   low,
@@ -79,7 +80,7 @@ final List<VideoShaderTierSpec> kVideoShaderTiers = <VideoShaderTierSpec>[
     tier: VideoShaderTier.ultra,
     id: 'ultra',
     highQuality: true,
-    preset: kArtCnnC4F32Preset,
+    preset: kArtCnnC4F32DsPreset,
   ),
 ];
 

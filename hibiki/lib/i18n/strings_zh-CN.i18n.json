@@ -1480,7 +1480,7 @@
   "video_shader_tier_low_hint": "mpv 内置锐化（ewa_lanczossharp）。对任何视频都有效（动画与真人皆可），无需下载、GPU 负载最低。集显或老显卡（N卡 GTX 1050、A卡 RX 560、Intel 核显）选这档。",
   "video_shader_tier_medium_hint": "Anime4K Fast。对动画效果最佳，真人电影/电视剧也能用（提升较小）。中端 GPU 可跑（N卡 GTX 1660 / RTX 3050，A卡 RX 6600）。",
   "video_shader_tier_high_hint": "Anime4K HQ。更锐利，对动画效果最佳，真人内容也可用（提升较小）。需要中高端 GPU（N卡 RTX 4060 / RTX 3070，A卡 RX 6700 XT / RX 7700 XT）。",
-  "video_shader_tier_ultra_hint": "ArtCNN C4F32，HD 动画最佳画质，真人内容也可用（提升较小）。需要旗舰 GPU（N卡 RTX 4080 / RTX 5090，A卡 RX 7900 XTX）。显卡较弱请往低档选。",
+  "video_shader_tier_ultra_hint": "ArtCNN C4F32 DS（去噪+锐化变体），HD 动画最佳画质，并针对 web 压制源调优（去压缩伪影、轻锐化）；真人内容也可用（提升较小）。需要旗舰 GPU（N卡 RTX 4080 / RTX 5090，A卡 RX 7900 XTX）。显卡较弱请往低档选。",
   "video_shader_tier_custom_hint": "自定义着色器组合。点上方档位可切回预设。",
   "video_shader_section_advanced": "进阶（手动着色器）",
   "video_shader_first_use_download": "一键下载并启用",

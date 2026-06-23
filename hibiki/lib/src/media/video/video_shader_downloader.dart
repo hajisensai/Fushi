@@ -175,17 +175,32 @@ final Anime4kPreset kAnime4kFastPreset =
 final Anime4kPreset kAnime4kHqPreset =
     kAnime4kPresets.firstWhere((Anime4kPreset p) => p.id == 'mode_a_hq');
 
-/// 「极高」档：ArtCNN C4F32（Artoriuz/ArtCNN，MIT，2025 最强 HD 番上采样，需旗舰 GPU）。
-/// 单文件 `.glsl`（约 740KB，内含 license 注释 + `//!HOOK` 指令，[looksLikeGlslShader]
-/// 全文扫描可通过）。经 [downloadAnime4kFiles] 同款多镜像下载，repo/ref 由本预设覆写。
-const Anime4kPreset kArtCnnC4F32Preset = Anime4kPreset(
-  id: 'artcnn_c4f32',
-  name: 'ArtCNN C4F32',
-  description: 'Strongest HD anime upscaler (MIT). Needs a flagship GPU.',
+/// 「极高」档：ArtCNN C4F32 **DS（denoise + sharpen）变体**（Artoriuz/ArtCNN，MIT，
+/// 2025 最强 HD 番上采样，需旗舰 GPU）。
+///
+/// **为什么用 DS 而非中性 C4F32**（TODO-706）：中性 `ArtCNN_C4F32` 只做数学最优上采样，
+/// 对干净 HD 源最佳，但对 web 压制番（去压缩伪影、轻锐化）毫无帮助——这正是用户吐槽
+/// 「极高反而比高弱」的真因（高档 = Anime4K Mode A HQ 有完整去振铃/去压缩修复链）。
+/// `ArtCNN_C4F32_DS` 是同网络的 denoise+sharpen 训练变体，专为压制源训练，对脏源真有
+/// 去噪锐化作用，与「高档 = Anime4K A HQ」的文件集不同 → [tierFromState] 反查无歧义。
+///
+/// 单文件 `.glsl`（内含 MIT license 注释 + `//!HOOK` 指令，[looksLikeGlslShader] 全文
+/// 扫描可通过）。经 [downloadAnime4kFiles] 同款多镜像下载，repo/ref 由本预设覆写。
+///
+/// **ref = `main`**：Artoriuz/ArtCNN 主分支是 `main`（非 `master`），raw 路径
+/// `/main/GLSL/ArtCNN_*.glsl`（联网核对 2026-06-23：`ArtCNN_C4F32_DS.glsl` 在
+/// `main` 返回 200；`master` 虽因 GitHub 把默认分支同时挂在旧名下也能解析，但 `main`
+/// 才是规范分支名，钉死 `main` 避免依赖 GitHub 的兼容别名）。
+const Anime4kPreset kArtCnnC4F32DsPreset = Anime4kPreset(
+  id: 'artcnn_c4f32_ds',
+  name: 'ArtCNN C4F32 DS',
+  description:
+      'Strongest HD anime upscaler with denoise + sharpen for web-encoded '
+      'sources (MIT). Needs a flagship GPU.',
   repo: 'Artoriuz/ArtCNN',
-  ref: 'master',
+  ref: 'main',
   shaders: <Anime4kShaderFile>[
-    Anime4kShaderFile('GLSL/ArtCNN_C4F32.glsl'),
+    Anime4kShaderFile('GLSL/ArtCNN_C4F32_DS.glsl'),
   ],
 );
 

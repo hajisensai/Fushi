@@ -53,32 +53,35 @@ void main() {
       expect(high.shaderFileNames, contains('Anime4K_Upscale_CNN_x2_VL.glsl'));
     });
 
-    test('极高 = ArtCNN C4F32（MIT）：内置缩放 on + 单文件 ArtCNN', () {
+    test('极高 = ArtCNN C4F32 DS（denoise+sharpen，MIT）：内置缩放 on + 单文件 ArtCNN DS',
+        () {
       final VideoShaderTierSpec ultra = shaderTierSpec(VideoShaderTier.ultra);
       expect(ultra.highQuality, isTrue);
-      expect(ultra.preset, same(kArtCnnC4F32Preset));
-      expect(ultra.shaderFileNames, <String>['ArtCNN_C4F32.glsl']);
+      expect(ultra.preset, same(kArtCnnC4F32DsPreset));
+      // TODO-706：极高绑 denoise+sharpen 变体（专为 web 压制源），不再是中性 C4F32。
+      expect(ultra.shaderFileNames, <String>['ArtCNN_C4F32_DS.glsl']);
     });
   });
 
-  group('kArtCnnC4F32Preset（极高档新着色器）', () {
-    test('来自 Artoriuz/ArtCNN（MIT），repo/ref 覆写默认 Anime4K', () {
-      expect(kArtCnnC4F32Preset.repo, 'Artoriuz/ArtCNN');
-      expect(kArtCnnC4F32Preset.ref, 'master');
-      expect(
-          kArtCnnC4F32Preset.shaders.single.repoPath, 'GLSL/ArtCNN_C4F32.glsl');
+  group('kArtCnnC4F32DsPreset（极高档 denoise+sharpen 变体）', () {
+    test('来自 Artoriuz/ArtCNN（MIT），DS 变体，ref=main（非 master）', () {
+      expect(kArtCnnC4F32DsPreset.repo, 'Artoriuz/ArtCNN');
+      // TODO-706：Artoriuz/ArtCNN 主分支是 main，旧的 master 已修正。
+      expect(kArtCnnC4F32DsPreset.ref, 'main');
+      expect(kArtCnnC4F32DsPreset.shaders.single.repoPath,
+          'GLSL/ArtCNN_C4F32_DS.glsl');
     });
 
-    test('镜像 URL 用 ArtCNN repo 而非硬编码 Anime4K', () {
+    test('镜像 URL 用 ArtCNN repo + main 分支 + DS 文件名', () {
       final List<String> urls = anime4kMirrorUrls(
-        kArtCnnC4F32Preset.shaders.single.repoPath,
-        repo: kArtCnnC4F32Preset.repo,
-        ref: kArtCnnC4F32Preset.ref,
+        kArtCnnC4F32DsPreset.shaders.single.repoPath,
+        repo: kArtCnnC4F32DsPreset.repo,
+        ref: kArtCnnC4F32DsPreset.ref,
       );
       expect(urls.first,
-          'https://cdn.jsdelivr.net/gh/Artoriuz/ArtCNN@master/GLSL/ArtCNN_C4F32.glsl');
+          'https://cdn.jsdelivr.net/gh/Artoriuz/ArtCNN@main/GLSL/ArtCNN_C4F32_DS.glsl');
       expect(urls.last,
-          'https://raw.githubusercontent.com/Artoriuz/ArtCNN/master/GLSL/ArtCNN_C4F32.glsl');
+          'https://raw.githubusercontent.com/Artoriuz/ArtCNN/main/GLSL/ArtCNN_C4F32_DS.glsl');
     });
   });
 
@@ -118,11 +121,29 @@ void main() {
           VideoShaderTier.high);
     });
 
-    test('内置 on + ArtCNN C4F32 → 极高', () {
+    test('内置 on + ArtCNN C4F32 DS → 极高', () {
       expect(
           tierFromState(
-              highQuality: true, enabledShaders: <String>['ArtCNN_C4F32.glsl']),
+              highQuality: true,
+              enabledShaders: <String>['ArtCNN_C4F32_DS.glsl']),
           VideoShaderTier.ultra);
+    });
+
+    test('反查唯一：高/极高文件集互不相等，(highQuality, shaderSet) 两两不重复', () {
+      // TODO-706：极高=ArtCNN DS、高=Anime4K A HQ 文件集不同 → 反查无歧义。
+      final Set<String> highSet =
+          shaderFilesForTier(VideoShaderTier.high).toSet();
+      final Set<String> ultraSet =
+          shaderFilesForTier(VideoShaderTier.ultra).toSet();
+      expect(highSet, isNot(equals(ultraSet)));
+      // (highQuality, shaderSet) 在五档间唯一：否则 tierFromState 会出现歧义命中。
+      final Set<String> seen = <String>{};
+      for (final VideoShaderTierSpec spec in kVideoShaderTiers) {
+        final List<String> sorted = spec.shaderFileNames.toList()..sort();
+        final String key = '${spec.highQuality}|${sorted.join(",")}';
+        expect(seen.add(key), isTrue,
+            reason: '档 ${spec.id} 的 (highQuality, shaderSet) 与另一档重复 → 反查歧义');
+      }
     });
 
     test('内置 on + 非标准勾选（多一个文件）→ null（自定义）', () {
@@ -136,7 +157,7 @@ void main() {
       expect(
           tierFromState(
               highQuality: false,
-              enabledShaders: <String>['ArtCNN_C4F32.glsl']),
+              enabledShaders: <String>['ArtCNN_C4F32_DS.glsl']),
           isNull);
     });
   });
