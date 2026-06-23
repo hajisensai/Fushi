@@ -1,7 +1,9 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show PointerHoverEvent;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
@@ -43,6 +45,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   const VideoSubtitleOverlay({
     required this.controller,
     this.onCharTap,
+    this.onCharHover,
     this.onHoverChanged,
     this.hitTester,
     this.isCueFavorited,
@@ -67,6 +70,15 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// [charRect] 为被点字符在全局坐标系下的矩形（弹窗定位用）。
   final void Function(String sentence, int graphemeIndex, Rect charRect)?
       onCharTap;
+
+  /// 桌面 Shift-鼠标悬停查词（TODO-756a，与阅读器 `onShiftHover` 同语义）。按住 Shift 时鼠标
+  /// 在字幕字符上移动即回调 `(sentence, graphemeIndex, charRect)`——与 [onCharTap] **同一条
+  /// 查词链路**（页面侧都走 `_handleSubtitleLookupTap` → `_lookupAt`），故点击查词与 Shift-悬停
+  /// 查词行为一致、零重写。命中节流（8px 阈值 + 同一字符不重复触发）由本组件内部承载，避免每帧
+  /// hover 都查词。非 Shift 悬停 / 模糊态 / 空句不触发（与点击不查词一致）。null（移动端 / 测试 /
+  /// 无控制条场景）= 不挂 Shift-悬停通道，外观与历史一致。
+  final void Function(String sentence, int graphemeIndex, Rect charRect)?
+      onCharHover;
 
   /// 鼠标进 / 出**字幕盒本身**（非整片视频区）时回调（BUG-283）。桌面用：字幕盒覆盖在
   /// media_kit 控制条之上，鼠标停字幕上读字 / 查词时，media_kit 控制条 2s 自动隐藏会让
@@ -166,9 +178,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// [_charHitTest] 按全局坐标反查命中的字符。
   final List<BuildContext> _charContexts = <BuildContext>[];
 
+  /// Shift-悬停查词的移动节流阈值（像素，TODO-756a）。与阅读器 `webview.part.dart` 的
+  /// `dx*dx+dy*dy < 64`（8px）同构：鼠标移动距离平方未超 64 时不重新命中查词。
+  static const double _kShiftHoverThresholdPx = 8;
+
   /// 当前句文本与模糊态快照，供 [_charHitTest] 在 build 之外读取。
   String _currentText = '';
   bool _currentBlurred = false;
+
+  /// Shift-悬停查词节流状态（TODO-756a，与阅读器 8px 阈值同构）：上次触发查词的全局 hover
+  /// 位置与命中的 grapheme 下标。鼠标移动未超 [_kShiftHoverThresholdPx]、或仍落在同一字符上
+  /// 时不重复查词（避免每帧 hover 都查），命中新字符或越过阈值才再次触发。`松开 Shift` /
+  /// 离开字幕在 [_handleShiftHover] 里复位为 [Offset.zero] / -1，使下次按 Shift 重新进入即触发。
+  Offset _lastShiftHoverPos = Offset.zero;
+  int _lastShiftHoverGrapheme = -1;
 
   /// 按全局坐标反查命中的字幕字符；模糊态/空句返回 null（与点击行为一致：模糊时不
   /// 查词）。供 [VideoSubtitleHitTester] 绑定。
@@ -181,6 +204,43 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       }
     }
     return null;
+  }
+
+  /// 桌面 Shift-鼠标悬停查词（TODO-756a）。仅在 [VideoSubtitleOverlay.onCharHover] 注册时由
+  /// [MouseRegion.onHover] 调；语义与阅读器 `onShiftHover`（`webview.part.dart`）一致：
+  /// 按住 Shift 在字幕字符上移动即对命中字符走查词。移动端无 OS hover、自然不触发。
+  ///
+  /// 节流（与阅读器 8px 阈值同构，避免每帧 hover 都查词）：
+  /// - 未按 Shift：复位节流锚（[Offset.zero] / -1），下次按 Shift 进入即触发，并直接返回；
+  /// - 按住 Shift 但移动距离平方 < [_kShiftHoverThresholdPx]² 且仍落在同一字符上：跳过（不重复查词）；
+  /// - 越过阈值或命中新字符：刷新锚并经 [VideoSubtitleOverlay.onCharHover] 触发查词（页面侧
+  ///   与点击查词同链路 `_handleSubtitleLookupTap` → `_lookupAt`）。
+  ///
+  /// 命中复用 [_charHitTest]（模糊态 / 空句返回 null → 不查词，与点击一致）。[PointerHoverEvent]
+  /// 的 `position` 已是全局坐标，与 [_charHitTest] 的全局命中契约一致。
+  void _handleShiftHover(PointerHoverEvent event) {
+    final void Function(String, int, Rect)? onCharHover = widget.onCharHover;
+    if (onCharHover == null) return;
+    if (!HardwareKeyboard.instance.isShiftPressed) {
+      // 松开 Shift：复位节流锚，使下次按 Shift 重新进入即触发（不被旧锚误判为同位置）。
+      _lastShiftHoverPos = Offset.zero;
+      _lastShiftHoverGrapheme = -1;
+      return;
+    }
+    final SubtitleCharHit? hit = _charHitTest(event.position);
+    if (hit == null) return;
+    // 同一字符 + 未越过移动阈值 → 不重复触发（节流）。命中新字符立即放行（即使移动很小，
+    // 也应换词查词，与阅读器逐字符 hover 一致）。
+    final double dx = event.position.dx - _lastShiftHoverPos.dx;
+    final double dy = event.position.dy - _lastShiftHoverPos.dy;
+    final bool sameGrapheme = hit.graphemeIndex == _lastShiftHoverGrapheme;
+    if (sameGrapheme &&
+        dx * dx + dy * dy < _kShiftHoverThresholdPx * _kShiftHoverThresholdPx) {
+      return;
+    }
+    _lastShiftHoverPos = event.position;
+    _lastShiftHoverGrapheme = hit.graphemeIndex;
+    onCharHover(hit.sentence, hit.graphemeIndex, hit.charRect);
   }
 
   @override
@@ -334,12 +394,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
 
         // 桌面悬停：①听力沉浸显形/复原（blurEnabled）②向页面回报 hover 字幕盒，让页面
         // 唤回光标 + 续命控制条（[onHoverChanged]，BUG-283——鼠标停字幕上读字时不被
-        // media_kit 自动隐藏吞掉光标）。两者合一个 MouseRegion。opaque:false：本 region 收
-        // hover 的同时不阻断 hover hit-test 继续下探到 media_kit 的 `MouseRegion` → 鼠标在
-        // 字幕上时字幕显形 / 查词 / 控制条唤起并存、光标不被吞（BUG-198）。仅在确需 hover
-        // （blur 或注册了 onHoverChanged）时挂，否则透传 box（外观像素级不变）。
-        final bool needHover =
-            widget.blurEnabled || widget.onHoverChanged != null;
+        // media_kit 自动隐藏吞掉光标）③Shift-鼠标悬停查词（[onCharHover]，TODO-756a，与
+        // 阅读器 onShiftHover 同语义，经 onHover 在按 Shift 时对命中字符查词）。三者合一个
+        // MouseRegion。opaque:false：本 region 收 hover 的同时不阻断 hover hit-test 继续下探到
+        // media_kit 的 `MouseRegion` → 鼠标在字幕上时字幕显形 / 查词 / 控制条唤起并存、光标
+        // 不被吞（BUG-198）。仅在确需 hover（blur / onHoverChanged / onCharHover 任一）时挂，
+        // 否则透传 box（外观像素级不变）。
+        final bool needHover = widget.blurEnabled ||
+            widget.onHoverChanged != null ||
+            widget.onCharHover != null;
         final Widget hoverable = needHover
             ? MouseRegion(
                 opaque: false,
@@ -347,9 +410,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
                   if (widget.blurEnabled) _setRevealed(true);
                   widget.onHoverChanged?.call(true);
                 },
+                // Shift-悬停查词（TODO-756a）：onHover 每次鼠标在字幕盒内移动都来，内部按
+                // Shift 门控 + 命中节流。onCharHover==null 时 _handleShiftHover 立即返回（零开销）。
+                onHover: _handleShiftHover,
                 onExit: (_) {
                   if (widget.blurEnabled) _setRevealed(false);
                   widget.onHoverChanged?.call(false);
+                  // 离开字幕盒：复位 Shift-悬停节流锚，下次进入即可触发（与松开 Shift 同处理）。
+                  _lastShiftHoverPos = Offset.zero;
+                  _lastShiftHoverGrapheme = -1;
                 },
                 child: box,
               )

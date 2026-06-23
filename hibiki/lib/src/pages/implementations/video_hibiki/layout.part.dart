@@ -305,6 +305,11 @@ extension _VideoLayout on _VideoHibikiPageState {
                         child: VideoSubtitleOverlay(
                           controller: controller,
                           onCharTap: _handleSubtitleLookupTap,
+                          // TODO-756a 桌面 Shift-鼠标悬停查词：与点击查词同链路
+                          // （[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup
+                          // 门控），故按住 Shift 悬停字幕字符与点击该字符行为一致。移动端无 hover、
+                          // 自然不触发；节流由 VideoSubtitleOverlay 内部承载。
+                          onCharHover: _handleSubtitleLookupTap,
                           onHoverChanged: _handleSubtitleHover,
                           hitTester: _subtitleHitTester,
                           // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
