@@ -1794,5 +1794,6 @@
   "shortcut_action_dpad_down": "D-pad Down",
   "shortcut_action_dpad_left": "D-pad Left",
   "shortcut_action_dpad_right": "D-pad Right",
-  "shortcut_scope_gamepad": "Gamepad"
+  "shortcut_scope_gamepad": "Gamepad",
+  "section_page_turn_direction": "Page-turn direction"
 }

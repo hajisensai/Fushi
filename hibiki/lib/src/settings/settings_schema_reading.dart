@@ -358,20 +358,6 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
-          SettingsSwitchItem(
-            id: 'reading_display.reverse_reader_bottom_bar',
-            title: t.reverse_reader_bottom_bar,
-            icon: Icons.swap_horiz_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 0,
-            ),
-            value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
-            onChanged: (SettingsContext c, bool value) {
-              c.appModel.toggleReverseReaderBottomBar();
-              c.refresh();
-            },
-          ),
         ],
       ),
       SettingsSection(
@@ -449,7 +435,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.touch_app_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 1,
+              order: 0,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.highlightOnTap,
@@ -494,7 +480,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.volume_up_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 2,
+              order: 1,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningEnabled,
@@ -503,52 +489,6 @@ SettingsDestination buildReadingDestination() {
               VolumeKeyChannel.instance.setInterceptEnabled(
                 settingsContext.readerSource.volumePageTurningEnabled,
               );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_controls.invert_volume_buttons',
-            title: t.invert_volume_buttons,
-            icon: Icons.swap_vert_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 3,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.volumePageTurningInverted,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleVolumePageTurningInverted();
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_controls.invert_swipe_direction',
-            title: t.invert_swipe_direction,
-            icon: Icons.swipe_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 4,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.invertSwipeDirection,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleInvertSwipeDirection();
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          // TODO-120: 反转键盘方向键翻页方向（仅键盘方向键，与滑动反转独立）。
-          SettingsSwitchItem(
-            id: 'reading_controls.reverse_arrow_page_turn',
-            title: t.reverse_arrow_page_turn,
-            icon: Icons.swap_horiz_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 5,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.reverseArrowPageTurn,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleReverseArrowPageTurn();
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
@@ -623,6 +563,75 @@ SettingsDestination buildReadingDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
+          ),
+        ],
+      ),
+      // TODO-745：把四个「翻页方向反转」开关（底栏 / 音量键 / 滑动 / 键盘方向键）
+      // 集中到一个「翻页方向」分组。纯展示重组：开关的 id/title/value/onChanged
+      // 与各自的持久化 key、默认值、消费点全不变；面板分组（ReaderGroup.behavior）
+      // 也不动，仅这四项在面板内被排成相邻一簇（order 2-5）。
+      SettingsSection(
+        title: t.section_page_turn_direction,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'reading_display.reverse_reader_bottom_bar',
+            title: t.reverse_reader_bottom_bar,
+            icon: Icons.swap_horiz_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 2,
+            ),
+            value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
+            onChanged: (SettingsContext c, bool value) {
+              c.appModel.toggleReverseReaderBottomBar();
+              c.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.invert_volume_buttons',
+            title: t.invert_volume_buttons,
+            icon: Icons.swap_vert_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 3,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.volumePageTurningInverted,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleVolumePageTurningInverted();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.invert_swipe_direction',
+            title: t.invert_swipe_direction,
+            icon: Icons.swipe_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 4,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.invertSwipeDirection,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleInvertSwipeDirection();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // TODO-120: 反转键盘方向键翻页方向（仅键盘方向键，与滑动反转独立）。
+          SettingsSwitchItem(
+            id: 'reading_controls.reverse_arrow_page_turn',
+            title: t.reverse_arrow_page_turn,
+            icon: Icons.swap_horiz_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 5,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.reverseArrowPageTurn,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleReverseArrowPageTurn();
+              notifyReaderSettingsChanged(settingsContext);
+            },
           ),
         ],
       ),
