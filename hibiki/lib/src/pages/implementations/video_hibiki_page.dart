@@ -303,6 +303,22 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   }) =>
       stackEmpty && pausedForLookup;
 
+  /// 点查词浮层外的 dismiss barrier 命中了字幕字符时，是否应「换词」（对该字符重新查词、
+  /// 替换可见浮层）而非「逐层关顶层」（TODO-758 / BUG-410，纯函数供单测）。
+  ///
+  /// 仅在**非嵌套**（[topVisibleIndex] <= 0：只有顶层可见，或仅剩隐藏热槽返回 -1）且确实
+  /// 命中字幕字符（[hitSubtitle]）时才换词——单层查词点同句另一个字符切换查词是合理交互。
+  /// 嵌套态（[topVisibleIndex] > 0，存在父层）下底部字幕仍清晰渲染、其字符矩形持续绑定，
+  /// 用户点第 2+ 个窗外面常落在字幕文字上 → 若仍换词会把整栈替换掉，顶层窗没关而是被替换
+  /// （位置相关、间歇）。故嵌套态点外一律返回 false（逐层关一层，与 reader dismissTopPopup
+  /// 同语义）。
+  @visibleForTesting
+  static bool shouldSwitchWordOnBarrierTap({
+    required int topVisibleIndex,
+    required bool hitSubtitle,
+  }) =>
+      topVisibleIndex <= 0 && hitSubtitle;
+
   /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
   /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
   /// [longPressDragMaxSpeed] 全程而手感不过敏。
@@ -2151,17 +2167,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _syncPopupOverlay();
   }
 
-  /// 查词浮层打开时，点根 Overlay 全屏 dismiss barrier 的处理：若点到了同句的另一个
-  /// 字幕字符，则**切换查词**（对该字符走 [_lookupAt]：已暂停故不重复暂停、不清
-  /// [_pausedForLookup]，`replaceStack` 替换可见浮层）→ 保持暂停、弹窗切到新词；否则
-  /// 点的是空白/控件区，[_popNestedPopupAt] 关栈并据 [_pausedForLookup] 恢复播放。
+  /// 查词浮层打开时，点根 Overlay 全屏 dismiss barrier 的处理：**非嵌套**（只有顶层可见）
+  /// 时若点到同句另一个字幕字符则**切换查词**（对该字符走 [_lookupAt]：已暂停故不重复暂停、
+  /// 不清 [_pausedForLookup]，`replaceStack` 替换可见浮层）→ 保持暂停、弹窗切到新词；否则
+  /// （命中空白/控件区，或处于嵌套态）[_popNestedPopupAt] 逐层关并据 [_pausedForLookup]
+  /// 恢复播放。门控判据见 [VideoHibikiPage.shouldSwitchWordOnBarrierTap]。
   ///
-  /// 根因（用户报）：barrier 全屏盖在字幕之上、抢走点击 → 点同句第二个词只会关栈+恢复
-  /// 播放，查不了第二个词。barrier 先反查字幕字符命中即可「点词换词、保持暂停」。
+  /// 根因 1（BUG-???，用户报）：barrier 全屏盖在字幕之上、抢走点击 → 单层查词点同句第二个
+  /// 词只会关栈+恢复播放。barrier 先反查字幕字符命中即可「点词换词、保持暂停」。
+  /// 根因 2（TODO-758 / BUG-410）：嵌套查词时底部字幕仍清晰渲染、字符矩形持续绑定，点第
+  /// 2+ 个窗外面常落在字幕文字上 → 无条件反查会 `replaceStack` 把整栈替换掉（顶层窗没关而是
+  /// 被换成新词）。故反查仅在 [_topVisiblePopupIndex] <= 0（非嵌套）时生效。
   void _onDismissBarrierTap(Offset globalPos) {
+    // TODO-758 / BUG-410: 「点字幕换词」仅在非嵌套（只有顶层可见 / 仅剩隐藏热槽）时保留——
+    // 单层查词点同句另一个字符切换查词是合理交互。嵌套态（存在父层）下底部字幕仍清晰渲染、
+    // 其字符矩形持续绑定，点第 2+ 个窗外面常落在字幕文字上；若仍走反查会 replaceStack 把整栈
+    // 替换掉（顶层窗没关而是被换成新词）。故仅当 [shouldSwitchWordOnBarrierTap] 为真才反查。
     final SubtitleCharHit? hit = _subtitleHitTester.hitTest(globalPos);
-    if (hit != null) {
-      _handleSubtitleLookupTap(hit.sentence, hit.graphemeIndex, hit.charRect);
+    if (VideoHibikiPage.shouldSwitchWordOnBarrierTap(
+      topVisibleIndex: _topVisiblePopupIndex,
+      hitSubtitle: hit != null,
+    )) {
+      _handleSubtitleLookupTap(hit!.sentence, hit.graphemeIndex, hit.charRect);
       return;
     }
     // TODO-720 / BUG-403: 点弹窗外只关最顶层一层（逐层关，保留父层），与 reader

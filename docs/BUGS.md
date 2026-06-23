@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 395 条。点号进各自文件。
+> 共 396 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-410](bugs/BUG-410-video-nested-popup-dismiss.md) | ✅ | ✅ | 视频嵌套查词点外不关顶层(字幕命中抢先replaceStack) |
 | [BUG-409](bugs/BUG-409-dict-manage-truncate.md) | ✅ | ✅ | 手机词典管理词典名显示不全(trailing控件串挤死窄屏title·749+751) |
 | [BUG-408](bugs/BUG-408-video-space-key.md) | ✅ | ✅ | 视频空格无反应(c152fcd91全局吞裸空格+视频失焦) |
 | [BUG-407](bugs/BUG-407-anki-error-garble.md) | ✅ | ✅ | AnkiConnect错误提示乱码(socket/http原文透传+http latin1误解码) |
