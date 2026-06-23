@@ -1019,6 +1019,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       focusId: HibikiFocusId('home-video-remote-$safeKey'),
       padding: EdgeInsets.zero,
       onTap: () => _openRemote(video),
+      // 短按仍流式播放（_openRemote）；长按 / 桌面右键弹选项面板，与本地视频
+      // 卡长按一致（TODO-768 / BUG-416）。原先远端视频卡无 onLongPress（长按
+      // 没反应），现在补齐。
+      onLongPress: () => _showRemoteVideoDialog(video),
+      onSecondaryTap: () => _showRemoteVideoDialog(video),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1140,6 +1145,68 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           onTap: _openStatistics,
         ),
       ],
+    );
+  }
+
+  /// 长按 / 桌面右键远端视频卡：弹与本地视频卡一致的封面背景动作面板
+  /// （[MediaItemDialogFrame] 复用，不重写）。播放仍由卡片短按 [_openRemote] 负责。
+  ///
+  /// 动作：
+  /// * 「下载」→ 复用 [_downloadRemote]（与封面下载按钮同一入口，内部已去重）。
+  /// * 「信息」→ 弹基本元数据（标题 + 是否含字幕）。
+  ///
+  /// 删除：远端视频是 host/client 模型（client 不存视频，只从 host 流式播放），
+  /// [RemoteVideoClient] / [HibikiClientSyncBackend] 均无 deleteRemoteVideo 能力，
+  /// 故不提供删除动作（真实能力边界，非掩盖）。
+  void _showRemoteVideoDialog(RemoteVideoInfo video) {
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        cover: _buildRemoteVideoCover(video),
+        title: video.title,
+        showLaunchAction: false,
+        quickActions: <DialogQuickAction>[
+          DialogQuickAction(
+            label: t.remote_video_download,
+            icon: Icons.download_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _downloadRemote(video);
+            },
+          ),
+          DialogQuickAction(
+            label: t.remote_video_info,
+            icon: Icons.info_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _showRemoteVideoInfo(video);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 展示远端视频的基本元数据（标题 + 是否含字幕）。纯信息弹窗。
+  void _showRemoteVideoInfo(RemoteVideoInfo video) {
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(video.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (video.hasSubtitle) Text(t.remote_video_info_has_subtitle),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
     );
   }
 

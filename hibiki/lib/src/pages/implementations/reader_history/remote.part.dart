@@ -156,7 +156,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
       focusId: HibikiFocusId('reader-shelf-remote-book-$safeKey'),
       onTap: () => _downloadRemoteBook(book),
-      onLongPress: () => _downloadRemoteBook(book),
+      // 短按仍直接下载（无本地副本不能直接读，下载合理）；长按 / 桌面右键
+      // （_bookCardShell.onSecondaryTap 同绑 onLongPress）改弹选项面板，与本地
+      // 书卡长按一致（TODO-768 / BUG-416）。
+      onLongPress: () => _showRemoteBookDialog(book),
       child: _bookCardLayout(
         title: book.title,
         cover: _buildRemoteBookCover(book),
@@ -179,6 +182,117 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
               ),
       ),
     );
+  }
+
+  /// 长按 / 桌面右键远端书卡：弹出与本地书卡一致的封面背景动作面板
+  /// （[MediaItemDialogFrame] 复用，不重写），列出可对该远端书执行的动作。
+  ///
+  /// 动作：
+  /// * 「下载」→ 复用 [_downloadRemoteBook]（与短按、封面下载按钮同一入口，
+  ///   内部已对重复下载去重）。
+  /// * 「信息」→ 弹基本元数据（书名 + 是否含有声书）。
+  /// * 「删除远端」→ 仅当远端后端支持删除（[HibikiClientSyncBackend] 互联后端，
+  ///   有 deleteRemoteBook/deleteRemoteAudiobook）才显示；云盘后端
+  ///   （[CloudRemoteBookClient]）无此能力，按类型门控隐藏（真实能力边界）。
+  void _showRemoteBookDialog(RemoteBookInfo book) {
+    final RemoteBookClient? client = _remoteBookClient;
+    final bool canDelete = client is HibikiClientSyncBackend;
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        cover: _buildRemoteBookCover(book),
+        title: book.title,
+        showLaunchAction: false,
+        quickActions: <DialogQuickAction>[
+          DialogQuickAction(
+            label: t.remote_book_download,
+            icon: Icons.download_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _downloadRemoteBook(book);
+            },
+          ),
+          DialogQuickAction(
+            label: t.remote_book_info,
+            icon: Icons.info_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _showRemoteBookInfo(book);
+            },
+          ),
+        ],
+        dangerActions: <DialogDangerAction>[
+          if (canDelete)
+            DialogDangerAction(
+              label: t.dialog_delete,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _confirmDeleteRemoteBook(book, client);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 展示远端书的基本元数据（书名 + 是否含有声书）。纯信息弹窗。
+  void _showRemoteBookInfo(RemoteBookInfo book) {
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(book.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (book.hasAudiobook) Text(t.remote_book_info_has_audiobook),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 删除互联后端上的远端书（含其有声书），删完刷新远端列表。仅互联后端可达
+  /// （[HibikiClientSyncBackend.deleteRemoteBook] / [deleteRemoteAudiobook]）。
+  Future<void> _confirmDeleteRemoteBook(
+    RemoteBookInfo book,
+    HibikiClientSyncBackend backend,
+  ) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(book.title),
+        content: Text(t.sync_compare_delete_confirm(name: book.title)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await backend.deleteRemoteBook(book.title);
+      if (book.hasAudiobook) {
+        await backend.deleteRemoteAudiobook(book.downloadId);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibikiHistoryPage.deleteRemoteBook', e, stack);
+    }
+    if (!mounted) return;
+    _refreshRemoteBooks();
   }
 
   /// 远端书卡左上角类型徽章：有有声书 → 耳机徽章（与本地 _audiobookBadge 同色，
