@@ -459,6 +459,21 @@ SettingsDestination buildReadingDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'reading_controls.show_top_progress_bar',
+            title: t.show_top_progress_bar,
+            icon: Icons.data_usage_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 12,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.showTopProgressBar,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleShowTopProgressBar();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsSwitchItem(
             id: 'reading_controls.tap_empty_hide_chrome',
             title: t.tap_empty_hide_chrome,
             icon: Icons.fullscreen_outlined,

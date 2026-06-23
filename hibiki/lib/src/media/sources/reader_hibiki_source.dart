@@ -664,6 +664,22 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  bool get showTopProgressBar =>
+      readerSettings?.showTopProgressBar ??
+      getPreference<bool>(key: 'show_top_progress_bar', defaultValue: true);
+
+  void toggleShowTopProgressBar() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleShowTopProgressBar();
+      return;
+    }
+    await setPreference<bool>(
+      key: 'show_top_progress_bar',
+      value: !showTopProgressBar,
+    );
+  }
+
   bool get keepScreenAwake =>
       readerSettings?.keepScreenAwake ??
       getPreference<bool>(key: 'keep_screen_awake', defaultValue: true);

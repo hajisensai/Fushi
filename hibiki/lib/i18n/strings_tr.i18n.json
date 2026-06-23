@@ -1784,5 +1784,6 @@
   "video_subtitle_auto_align_done": "Auto-aligned subtitle by $ms ms",
   "audiobook_background_play": "Keep playing after exit",
   "audiobook_background_play_hint": "When off, audiobook playback stops when you leave the reader. Turn on to keep playing in the background.",
-  "sync_compare_close": "Kapat"
+  "sync_compare_close": "Kapat",
+  "show_top_progress_bar": "Reading progress indicator"
 }

@@ -902,7 +902,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _readerContentReady &&
       _progressCurrentChars != null &&
       _progressTotalChars != null &&
-      _progressTotalChars! > 0;
+      _progressTotalChars! > 0 &&
+      ReaderHibikiSource.instance.showTopProgressBar;
 
   double get _readerTopOffset => _stableTopInset + _infoFontSize * 1.5;
 

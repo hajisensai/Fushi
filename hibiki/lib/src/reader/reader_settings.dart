@@ -324,6 +324,10 @@ class ReaderSettings {
   Future<void> toggleHighlightOnTap() =>
       _set<bool>('highlight_on_tap', !highlightOnTap);
 
+  bool get showTopProgressBar => _get<bool>('show_top_progress_bar', true);
+  Future<void> toggleShowTopProgressBar() =>
+      _set<bool>('show_top_progress_bar', !showTopProgressBar);
+
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);

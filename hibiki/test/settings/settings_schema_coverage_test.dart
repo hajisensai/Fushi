@@ -134,6 +134,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
   'reading/Tap empty area to hide controls':
       'DEVICE: WebView onTapEmpty chrome',
+  // TODO-727: 顶部「阅读进度」百分比指示的显隐开关。生效点在 reader 页 _showTopProgress
+  // getter 末尾的 && ReaderHibikiSource.showTopProgressBar 与门（WebView 阅读器顶栏 Text
+  // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。
+  'reading/Reading progress indicator':
+      'test/settings/top_progress_toggle_guard_test.dart',
   'reading/Invert swipe page turn direction': 'DEVICE: WebView swipe direction',
   // TODO-120: 反转键盘方向键翻页方向——生效点在 reader 键盘处理器（纯函数
   // resolveReaderArrowPageTurn 的 reverse 参数），由专项纯函数测试覆盖。
