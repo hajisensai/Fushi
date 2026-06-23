@@ -1775,6 +1775,49 @@ window.hoshiReader._contentSize = function() {
   var pb = parseFloat(cs.paddingBottom) || 0;
   return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
 };
+// TODO-753 诊断取证（纯只读，零行为改动）：竖排+横屏正文整体上偏 / 顶端被切 /
+// 越翻越偏，疑因 reader 注入的 viewportHeight（Flutter MediaQuery 高 dartH）与
+// WebView 真实 innerHeight / clientHeight 在「横屏+竖排+chrome inset」下不一致 →
+// CSS 列高用一个 V、JS pageStep 用另一个 V → 每页错一点累积。headless 测不出
+// （两边天然一致），必须真机取证。这里一次性把两套高度量 + chrome inset + pageStep
+// 全打成一行 [753-DIAG]：经 onConsoleMessage → debugPrint → DebugLogService 环形
+// 缓冲，用户在「设置 → 诊断 → 调试日志」开开关后即可见、用「复制全部」复制。
+// 只在竖排 + 横屏首次（按 phase 去重）打一行，避免刷屏；不碰 pageStep / 列高计算本身。
+window.hoshiReader._diag753 = function(phase) {
+  try {
+    var vertical = this.isVertical();
+    var landscape = window.innerWidth > window.innerHeight;
+    // 只在竖排 + 横屏取证（真凶场景）；其余形态直接跳过不打。
+    if (!vertical || !landscape) return;
+    if (!this._diag753Seen) this._diag753Seen = {};
+    if (this._diag753Seen[phase]) return; // 同 phase 只打一次，避免 updatePageSize 刷屏
+    this._diag753Seen[phase] = true;
+    var rootStyle = getComputedStyle(document.documentElement);
+    var topInset = rootStyle.getPropertyValue('--chrome-top-inset').trim();
+    var bottomInset = rootStyle.getPropertyValue('--chrome-bottom-inset').trim();
+    // V = getScrollContext 实际用的注入视口高（this.viewportHeight，竖排列高几何唯一基准）。
+    var ctx = this.getScrollContext();
+    // dartH = Flutter 注入的原始 viewportHeight（MediaQuery.size.height），编译期常量。
+    var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
+    console.log('[753-DIAG] phase=' + phase
+      + ' orient=' + (landscape ? 'landscape' : 'portrait')
+      + ' writingMode=' + getComputedStyle(document.body).writingMode
+      + ' vertical=' + vertical
+      + ' dartH=' + dartH
+      + ' innerH=' + window.innerHeight
+      + ' innerW=' + window.innerWidth
+      + ' bodyClientH=' + document.body.clientHeight
+      + ' docClientH=' + document.documentElement.clientHeight
+      + ' injectedV=' + this.viewportHeight
+      + ' chromeTopInset=' + topInset
+      + ' chromeBottomInset=' + bottomInset
+      + ' pageStep=' + ctx.pageSize
+      + ' maxScroll=' + ctx.maxScroll
+      + ' scrollHeight=' + document.body.scrollHeight);
+  } catch (e) {
+    console.log('[753-DIAG] phase=' + phase + ' error=' + (e && e.message ? e.message : e));
+  }
+};
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
@@ -1823,6 +1866,8 @@ $initImages
     }
     $sasayakiInit
     $initialRestoreScript
+    // TODO-753 诊断：首帧布局/恢复完成后取一行证据（仅竖排+横屏，phase 去重）。
+    window.hoshiReader._diag753('init');
   });
 };
 window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
@@ -1847,6 +1892,8 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
+  // TODO-753 诊断：尺寸变化（横竖屏切换 / chrome inset 变化）后再取一行（phase 去重）。
+  this._diag753('resize');
   if (inFlight) return;
   this._reanchorPending = true;
   var self = this;
