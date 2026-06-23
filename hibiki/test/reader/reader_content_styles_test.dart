@@ -395,10 +395,11 @@ void main() {
       // TODO-734：竖排 content-box 高 = reader-viewport-height(纯 V) − 上下 padding
       // （margin + fontSize + chrome insets），与 padding-top/padding-bottom 逐项镜像。
       // 基准是 --reader-viewport-height 不是 --page-height（后者含 +bottomOverlap 给图片）。
+      // TODO-743：竖排 column-width 现包一层 max(<F>px, calc(...)) 坍塌地板。
       expect(
           css,
           contains(
-              'column-width: calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
+              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
     });
 
     test('horizontal paginated column-gap is the same fixed constant',
@@ -650,10 +651,11 @@ void main() {
       // TODO-729：字号缩放从 column-gap 移到 column-width(content-box)——gap 固定 22px。
       // TODO-734：基准改为 --reader-viewport-height(纯 V)。竖排 content-box 高扣掉
       // fontSize(128px) 一项，列周期随字号变。
+      // TODO-743：max(128px, calc(...)) 坍塌地板；宽裕视口下 max 取 calc，零变化。
       expect(
           css,
           contains(
-              'column-width: calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
+              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
       // column-gap 固定常量，不再把 fontSize 塞进去。
       expect(css, contains('column-gap: 22px !important;'));
       // 防回归：底部预留(padding-bottom)绝不能退化成 22px（旧 bottomOverlapPx 常量）。

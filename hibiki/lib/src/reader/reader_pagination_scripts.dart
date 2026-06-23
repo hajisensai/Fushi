@@ -1343,7 +1343,14 @@ $_sharedJs
       var pr = parseFloat(cs.paddingRight) || 0;
       contentBox = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
     }
-    contentBox = Math.max(1, contentBox);
+    // TODO-743（P0 坍塌地板）：CSS column-width 在 cT+cB+F≥V 坍塌区夹了
+    // max(Fpx, calc(...)) 地板（reader_content_styles.dart 的 verticalColumnWidthCss），这里
+    // 必须用同一个字号地板，否则坍塌区 contentBox 仍归 1 → pageStep 与浏览器真实列
+    // 周期失配复活「翻一半跳章」。fontSize 用 getComputedStyle(scrollEl).fontSize ——
+    // 即 CSS `body { font-size: <settings.fontSize>px }` 应用到正文的同一运行时值，
+    // 保证 CSS 地板 == JS 地板（不靠注入常量、不会漂）。
+    var fontFloor = parseFloat(cs.fontSize) || 1;
+    contentBox = Math.max(fontFloor, contentBox);
     var gap = parseFloat(cs.columnGap) || 0;
     var pageStep = contentBox + gap;
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;

@@ -45,16 +45,30 @@ class ReaderContentStyles {
   // 注意：JS 端必须把 viewportHeight 注入为 `--reader-viewport-height` 且
   // hoshiReader.viewportHeight = V（见 reader_pagination_scripts.dart 的
   // initialize / updatePageSize），否则 CSS 变量为空回退 100vh、列高失配复活跳章。
+  //
+  // TODO-743（P0 坍塌地板）：当 cT + cB + F ≥ V（横屏短边小 + 大字号）时，上面的
+  // calc 算成负值 → 浏览器把 column-width 钳成 0 → 单列容不下一字、几十列横向叠印
+  // （正文全错位）。这里包一层 `max(${fontSizePx}px, calc(...))` 地板：正常视口
+  // calc 远大于一个字宽，max 取 calc，零行为变化；坍塌区取 fontSizePx 地板，列宽
+  // 永不到 0。max() 全平台 WebView（Chromium / WebView2 / WKWebView）均支持。
+  // 注意：JS getScrollContext 的 contentBox 必须用同一个 fontSizePx 地板（见
+  // reader_pagination_scripts.dart 的 Math.max(parseFloat(cs.fontSize), contentBox)），
+  // 否则坍塌区 CSS↔JS 列周期失配复活跳章。
   static String verticalColumnWidthCss({
     required double marginTopVh,
     required double marginBottomVh,
     required int fontSizePx,
   }) =>
-      'calc(var(--reader-viewport-height, 100vh) - ${marginTopVh}vh - ${marginBottomVh}vh - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))';
+      'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - ${marginTopVh}vh - ${marginBottomVh}vh - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
 
   /// TODO-734：竖排列高 content-box 的纯代数值（px），与 [verticalColumnWidthCss]
-  /// 的 calc 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
+  /// 的 `max(F, calc(...))` 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
   /// V=视口高，F=字号，mt/mb=上下页边距(px)，cT/cB=chrome 上下 inset(px)。
+  ///
+  /// TODO-743（P0 坍塌地板）：与 CSS 的 `max(${fontSizePx}px, calc(...))` 成对——当
+  /// cT + cB + F ≥ V（横屏短边小 + 大字号）时裸 calc 为负，浏览器把 column-width 钳
+  /// 成 0 → 列叠印。这里用 `math.max(fontSizePx, 裸代数)` 夹同一个 fontSizePx 地板，
+  /// 正常视口裸值远大于地板（max 取裸值，零行为变化），坍塌区返回 fontSizePx 地板。
   static double verticalColumnContentHeight({
     required double viewportHeightPx,
     required double fontSizePx,
@@ -63,12 +77,15 @@ class ReaderContentStyles {
     required double chromeTopInsetPx,
     required double chromeBottomInsetPx,
   }) =>
-      viewportHeightPx -
-      marginTopPx -
-      marginBottomPx -
-      fontSizePx -
-      chromeTopInsetPx -
-      chromeBottomInsetPx;
+      math.max(
+        fontSizePx,
+        viewportHeightPx -
+            marginTopPx -
+            marginBottomPx -
+            fontSizePx -
+            chromeTopInsetPx -
+            chromeBottomInsetPx,
+      );
 
   static String styleTag({
     required ReaderSettings settings,
