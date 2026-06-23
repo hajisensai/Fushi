@@ -1179,6 +1179,10 @@ window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window
 window.hoshiReader = {
   pageHeight: 0,
   pageWidth: 0,
+  // TODO-734：纯视口高 V（不含 bottomOverlap=O）。竖排列高几何唯一用它（见
+  // getScrollContext），与 CSS --reader-viewport-height 成对。必须先声明 0，否则
+  // 首帧读到 undefined→NaN→pageStep 退化成 1。initialize/updatePageSize 会赋为 V。
+  viewportHeight: 0,
   paginationMetrics: null,
 $_sharedJs
   revealElement: function(element) {
@@ -1202,7 +1206,11 @@ $_sharedJs
     if (vertical) {
       var pt = parseFloat(cs.paddingTop) || 0;
       var pb = parseFloat(cs.paddingBottom) || 0;
-      contentBox = (this.pageHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;
+      // TODO-734：竖排 contentBox 基准是纯视口高 V（viewportHeight），不是含
+      // +bottomOverlap 的 pageHeight。必须与 CSS column-width 的
+      // --reader-viewport-height 成对，否则 contentBox 比 column-width 多 O →
+      // pageStep≠realPitch 复活「翻一半跳章」。
+      contentBox = (this.viewportHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;
     } else {
       var pl = parseFloat(cs.paddingLeft) || 0;
       var pr = parseFloat(cs.paddingRight) || 0;
@@ -1642,16 +1650,22 @@ $_sharedInitViewport
   var dartW = ${dartPageWidth != null ? '${dartPageWidth.round()}' : 'null'};
   var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
   var pageWidth = dartW || window.innerWidth;
-  var pageHeight = (dartH || window.innerHeight) + $bottomOverlapPx;
+  // TODO-734：viewportHeight = 纯视口高 V（不加 bottomOverlap）。pageHeight = V + O
+  // 仍供图片虚高/scrollHeight 用。竖排列高几何（CSS column-width + JS contentBox）
+  // 成对只用 V，杜绝列底边漏出 (O−F) 进底栏。
+  var viewportHeight = dartH || window.innerHeight;
+  var pageHeight = viewportHeight + $bottomOverlapPx;
   console.log('[HoshiInit] dartW=' + dartW + ' dartH=' + dartH
     + ' innerW=' + window.innerWidth + ' innerH=' + window.innerHeight
-    + ' usedW=' + pageWidth + ' usedH=' + pageHeight);
+    + ' usedW=' + pageWidth + ' usedH=' + pageHeight + ' viewportH=' + viewportHeight);
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
+  document.documentElement.style.setProperty('--reader-viewport-height', viewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
   var cs = this._contentSize();
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
   window.hoshiReader.pageHeight = pageHeight;
+  window.hoshiReader.viewportHeight = viewportHeight;
   window.hoshiReader.pageWidth = pageWidth;
 $initImages
   var spacer = document.createElement('div');
@@ -1676,7 +1690,9 @@ $initImages
   });
 };
 window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
-  var newHeight = Math.round(cssHeight) + $bottomOverlapPx;
+  // TODO-734：newViewportHeight = 纯 V（Math.round(cssHeight)），newHeight = V + O。
+  var newViewportHeight = Math.round(cssHeight);
+  var newHeight = newViewportHeight + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
   // Shares the _reanchorPending flag with setChromeInsets (see there). If a
@@ -1686,11 +1702,13 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var inFlight = this._reanchorPending === true;
   var progress = inFlight ? 0 : this.calculateProgress();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
+  document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   var cs = this._contentSize();
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
   this.pageHeight = newHeight;
+  this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
   if (inFlight) return;
@@ -1773,6 +1791,10 @@ $_sharedInitBoot
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiReader = {
+  // TODO-734：连续模式不用竖排分页几何（无 column），故 initialize/updatePageSize
+  // 不注入 --reader-viewport-height、getScrollContext 也不引用它。但属性仍声明 0
+  // （补点2 防 stale）：两个 hoshiReader 实例属性表保持对齐，避免误读 undefined。
+  viewportHeight: 0,
 $_sharedJs
   scrollToChapterStart: function() {
     var root = document.scrollingElement || document.documentElement;

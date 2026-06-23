@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/reader/reader_content_styles.dart';
 
 /// BUG-169 源码守卫：JS `paginate()` 的翻页步长必须从「当前页边界」整页步进
 /// （forward = floor(currentScroll/pitch)+1，backward = ceil(currentScroll/pitch)-1），
@@ -112,6 +113,89 @@ void main() {
       expect(ctx.contains('totalSize - pageStep'), isTrue,
           reason: 'maxScroll 减项必须是 pageStep（与对齐量同源），不是 clientSize');
       expect(ctx.contains('clientSize'), isFalse, reason: 'clientSize 双量纲减项已删');
+    });
+  });
+
+  // TODO-734：竖排列高几何「成对」守卫——CSS column-width 与 JS getScrollContext
+  // 的 contentBox 必须同时用「纯视口高 V」（CSS=--reader-viewport-height，
+  // JS=viewportHeight）。只钉一半（只 setProperty 或只 contentBox）会让另一半仍含
+  // +bottomOverlap → pageStep≠realPitch 复活「翻一半跳章」。两个半边都钉死。
+  group('TODO-734: 竖排列高用纯视口高 V（CSS+JS 成对，不得只改一半）', () {
+    late String source;
+    setUpAll(() {
+      source = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
+    });
+
+    test('CSS 半边：竖排 column-width 引用 --reader-viewport-height', () {
+      final String css = File(
+        'lib/src/reader/reader_content_styles.dart',
+      ).readAsStringSync();
+      expect(
+        css.contains('var(--reader-viewport-height, 100vh)'),
+        isTrue,
+        reason: '竖排 column-width 必须建在纯视口高 --reader-viewport-height 上',
+      );
+      // 竖排列高基准不得再用含 +bottomOverlap 的 --page-height（那是图片虚高专用）。
+      // 用 verticalColumnWidthCss 真相源核对：它必产纯视口高基准、绝不产 page-height 基准。
+      final String vcw = ReaderContentStyles.verticalColumnWidthCss(
+        marginTopVh: 0,
+        marginBottomVh: 0,
+        fontSizePx: 22,
+      );
+      expect(
+        vcw.contains('var(--reader-viewport-height, 100vh)'),
+        isTrue,
+        reason: 'verticalColumnWidthCss 必须建在 --reader-viewport-height 上',
+      );
+      expect(
+        vcw.contains('--page-height'),
+        isFalse,
+        reason: '竖排 column-width 不得引用含 +O 的 --page-height（复活漏字）',
+      );
+    });
+
+    test('JS 半边：getScrollContext 竖排 contentBox 用 this.viewportHeight', () {
+      final String ctx = _functionSource(
+        source,
+        '  getScrollContext: function() {',
+        '\n  getPagePosition:',
+      );
+      expect(
+        ctx.contains('this.viewportHeight'),
+        isTrue,
+        reason: '竖排 contentBox 基准必须是纯视口高 this.viewportHeight',
+      );
+      // 不得用含 +O 的 this.pageHeight 当竖排 contentBox 基准。
+      expect(
+        ctx.contains('(this.pageHeight ||'),
+        isFalse,
+        reason: '竖排 contentBox 不得回退 this.pageHeight（与 CSS 失配复活跳章）',
+      );
+    });
+
+    test('注入半边：initialize/updatePageSize setProperty(--reader-viewport-height)',
+        () {
+      final int count = '--reader-viewport-height'.allMatches(source).length;
+      // setProperty 至少出现在 initialize 与 updatePageSize 两处（注释引用不计精确数，
+      // 用 setProperty 调用形态确认确实写穿到 DOM）。
+      expect(
+        source.contains(
+            "document.documentElement.style.setProperty('--reader-viewport-height'"),
+        isTrue,
+        reason: 'V 必须经 setProperty 注入 DOM，CSS 变量才非空（否则回退 100vh 失配）',
+      );
+      expect(count >= 2, isTrue,
+          reason:
+              'initialize 与 updatePageSize 两处都要注入 --reader-viewport-height');
+    });
+
+    test('viewportHeight 属性两 hoshiReader 实例都声明（防 stale NaN）', () {
+      final int decls = 'viewportHeight: 0,'.allMatches(source).length;
+      expect(decls >= 2, isTrue,
+          reason: '翻页 + 连续两个 hoshiReader 实例都要声明 viewportHeight: 0，'
+              '否则首帧读 undefined→NaN→pageStep 退化成 1');
     });
   });
 }

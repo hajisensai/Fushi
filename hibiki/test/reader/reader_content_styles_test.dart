@@ -392,12 +392,13 @@ void main() {
         () async {
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(settings: settings);
-      // 竖排 content-box 高 = page-height − 上下 padding（margin + fontSize + chrome insets），
-      // 与 padding-top/padding-bottom 逐项镜像。
+      // TODO-734：竖排 content-box 高 = reader-viewport-height(纯 V) − 上下 padding
+      // （margin + fontSize + chrome insets），与 padding-top/padding-bottom 逐项镜像。
+      // 基准是 --reader-viewport-height 不是 --page-height（后者含 +bottomOverlap 给图片）。
       expect(
           css,
           contains(
-              'column-width: calc(var(--page-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
+              'column-width: calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
     });
 
     test('horizontal paginated column-gap is the same fixed constant',
@@ -560,8 +561,11 @@ void main() {
       // TODO-729：column-gap 现在是固定常量，天然不可能为负。
       expect(css, contains('column-gap: 22px !important;'));
       // column-width(content-box) 也不得出现负 padding 项（margin 已 clamp 到 0）。
-      expect(css,
-          isNot(contains('column-width: calc(var(--page-height, 100vh) - -')));
+      // TODO-734：竖排基准现为 --reader-viewport-height。
+      expect(
+          css,
+          isNot(contains(
+              'column-width: calc(var(--reader-viewport-height, 100vh) - -')));
     });
 
     test('overflow-wrap: anywhere is present in body', () async {
@@ -644,11 +648,12 @@ void main() {
           contains(
               'padding-bottom: calc(${settings.marginBottom}vh + 128px + var(--chrome-bottom-inset, 0px))'));
       // TODO-729：字号缩放从 column-gap 移到 column-width(content-box)——gap 固定 22px。
-      // 竖排 content-box 高扣掉 fontSize(128px) 一项，列周期随字号变。
+      // TODO-734：基准改为 --reader-viewport-height(纯 V)。竖排 content-box 高扣掉
+      // fontSize(128px) 一项，列周期随字号变。
       expect(
           css,
           contains(
-              'column-width: calc(var(--page-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
+              'column-width: calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'));
       // column-gap 固定常量，不再把 fontSize 塞进去。
       expect(css, contains('column-gap: 22px !important;'));
       // 防回归：底部预留(padding-bottom)绝不能退化成 22px（旧 bottomOverlapPx 常量）。

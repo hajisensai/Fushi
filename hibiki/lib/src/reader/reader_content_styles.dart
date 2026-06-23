@@ -31,6 +31,45 @@ class ReaderLayoutDefaults {
 class ReaderContentStyles {
   ReaderContentStyles._();
 
+  // TODO-734：竖排分页列高（content-box）的唯一真相源，由 CSS 模板、JS 几何与
+  // 代数守卫共用，消除「CSS 改一半 / JS 改一半」复活 TODO-729 跳章的风险。
+  //
+  // 量纲分离（根因修复）：`--page-height`(= V + bottomOverlap=O) 同时被两处消费——
+  // 图片 max-height / scrollHeight 需要虚高 V+O（保 TODO-627 图片页），而竖排列高
+  // 只该用纯视口高 V。原实现把列高建在含 +O 的 `--page-height` 上 → 列底边落
+  // V−cB+(O−F)，字号 F<O(=22) 时漏出 (O−F) 进底栏。这里改用新变量
+  // `--reader-viewport-height`(= 纯 V)，与 JS getScrollContext 的 viewportHeight
+  // 成对一致：column-width(CSS) == contentBox(JS) == V−F−cT−cB，pageStep==realPitch
+  // 保持，列底边 = V−F−cB ≤ V−cB（漏 0，且与 F 无关）。
+  //
+  // 注意：JS 端必须把 viewportHeight 注入为 `--reader-viewport-height` 且
+  // hoshiReader.viewportHeight = V（见 reader_pagination_scripts.dart 的
+  // initialize / updatePageSize），否则 CSS 变量为空回退 100vh、列高失配复活跳章。
+  static String verticalColumnWidthCss({
+    required double marginTopVh,
+    required double marginBottomVh,
+    required int fontSizePx,
+  }) =>
+      'calc(var(--reader-viewport-height, 100vh) - ${marginTopVh}vh - ${marginBottomVh}vh - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))';
+
+  /// TODO-734：竖排列高 content-box 的纯代数值（px），与 [verticalColumnWidthCss]
+  /// 的 calc 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
+  /// V=视口高，F=字号，mt/mb=上下页边距(px)，cT/cB=chrome 上下 inset(px)。
+  static double verticalColumnContentHeight({
+    required double viewportHeightPx,
+    required double fontSizePx,
+    required double marginTopPx,
+    required double marginBottomPx,
+    required double chromeTopInsetPx,
+    required double chromeBottomInsetPx,
+  }) =>
+      viewportHeightPx -
+      marginTopPx -
+      marginBottomPx -
+      fontSizePx -
+      chromeTopInsetPx -
+      chromeBottomInsetPx;
+
   static String styleTag({
     required ReaderSettings settings,
     String? fontFaces,
@@ -114,10 +153,17 @@ class ReaderContentStyles {
     // 与对齐量同源。两轴的 content-box 与下方 padding 表达式严格镜像：
     //  - 横排：宽 = page-width − 左右 padding(${ml}vw + ${mr}vw)。perpendicular 的
     //    padding-top/bottom(含 chrome inset)不影响横向列宽。
-    //  - 竖排：高 = page-height − 上下 padding(${mt}vh + ${mb}vh + fontSize + chrome
-    //    top/bottom inset)，与 padding-top/padding-bottom 逐项对应。
+    //  - 竖排：高 = reader-viewport-height(=纯 V) − 上下 padding(${mt}vh + ${mb}vh +
+    //    fontSize + chrome top/bottom inset)，与 padding-top/padding-bottom 逐项对应。
+    //    TODO-734：基准必须是纯视口高 V（--reader-viewport-height），不是含
+    //    +bottomOverlap 的 --page-height（那是图片虚高用），否则列底边比视口底高
+    //    (O−F)，字号 F<22 漏字进底栏。与 JS getScrollContext 的 viewportHeight 成对。
     final String columnWidthCss = isVertical
-        ? 'calc(var(--page-height, 100vh) - ${mt}vh - ${mb}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px))'
+        ? ReaderContentStyles.verticalColumnWidthCss(
+            marginTopVh: mt,
+            marginBottomVh: mb,
+            fontSizePx: settings.fontSize.round(),
+          )
         : 'calc(var(--page-width, 100vw) - ${ml}vw - ${mr}vw)';
 
     final String textSpacingCss =
