@@ -708,6 +708,69 @@ async function testMineEntryDoesNotReuseAudioFromPreviousExpression() {
   );
 }
 
+// TODO-766: mining must do a FRESH audio resolve even when the playback cache
+// already holds this exact word. A remote host signs the audio URL with a
+// short-lived token (5 min); the playback path resolves+plays immediately (token
+// fresh) and CACHES the URL. If mining later reuses that cached URL the token
+// has expired and Anki downloads a 404 → empty [sound:]. So buildMinePayload must
+// re-call resolveWordAudio (re-signing a new token) rather than returning the
+// cached playback URL. Reverting the fix (mining reuses the cache) makes the
+// second resolveWordAudio call disappear → this test turns red.
+async function testMiningResolvesFreshAudioEvenWhenCacheHoldsSameWord() {
+  const context = loadPopup();
+  const resolved = [];
+  const mined = [];
+  let signCounter = 0;
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  context.window.needsAudio = true;
+  context.window.lookupEntries = [
+    {
+      expression: '猫',
+      reading: 'ねこ',
+      glossaries: [
+        {
+          dictionary: 'dict',
+          content: {tag: 'span', content: 'cat'},
+          definitionTags: '',
+          termTags: '',
+        },
+      ],
+    },
+  ];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'resolveWordAudio') {
+      resolved.push(payload);
+      // Each resolve hands back a DISTINCT token-signed URL, mimicking the host.
+      signCounter += 1;
+      return Promise.resolve(`audio://${payload.expression}?token=${signCounter}`);
+    }
+    if (name === 'playWordAudio') {
+      return Promise.resolve(true);
+    }
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  };
+
+  // 1) Play the word — this resolves+caches the playback URL (token #1).
+  const playedUrl = await context.resolveCachedAudioUrl('猫', 'ねこ', 0);
+  assert.equal(playedUrl, 'audio://猫?token=1',
+    'playback resolves and caches the first token-signed URL');
+  assert.equal(resolved.length, 1, 'playback issued exactly one resolve');
+
+  // 2) Mine the SAME word — must NOT reuse the cached token-1 URL; it must do a
+  //    fresh resolve (token #2) so Anki gets a non-expired URL.
+  await context.mineEntry('猫', 'ねこ', [], [], [], '猫', 0, '猫');
+
+  assert.equal(resolved.length, 2,
+    'mining the same word must trigger a SECOND fresh resolveWordAudio (no cache reuse)');
+  assert.equal(mined.length, 1, 'exactly one mine occurred');
+  assert.equal(mined[0].audio, 'audio://猫?token=2',
+    'the mined card carries the freshly-signed URL, not the stale cached one');
+}
+
 // ── TODO-084/087: mine button state is DETECTED AT LOOKUP TIME ─────────────
 // Builds an entry header, finds its mine button, and drives the duplicateCheck
 // handler. The button's 已制卡 ✓ / 可制卡 + state is the real Anki status
@@ -1316,6 +1379,11 @@ testSelectionHighlightReturnsBoundsForPopupPositioning();
 // testLongPressFallsBackFromElementToTextNode();
 
 testMineEntryDoesNotReuseAudioFromPreviousExpression().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testMiningResolvesFreshAudioEvenWhenCacheHoldsSameWord().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

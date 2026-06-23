@@ -1085,7 +1085,24 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const audioReading = reading || expression;
     let audio = '';
     if (window.audioSources?.length && window.needsAudio) {
-        audio = await resolveCachedAudioUrl(expression, audioReading, idx);
+        // TODO-766: mining must NOT reuse the playback cache. A remote host signs
+        // the audio file URL with a short-lived token (5 min). Playback resolves
+        // and plays it immediately so the token is still fresh, but mining can
+        // happen long after — reusing the cached URL hands Anki an expired token
+        // that 404s, and the card lands with an empty [sound:]. Force a fresh
+        // resolve here (re-signing a new token) and decouple it from the playback
+        // cache. If the fresh resolve fails (host has no audio for this word),
+        // fall back to whatever the cache holds rather than regressing to empty.
+        const fresh = await fetchAudioUrl(expression, audioReading);
+        if (fresh) {
+            audio = fresh;
+            audioUrls[idx] = { key: audioCacheKey(expression, audioReading), url: fresh };
+        } else {
+            const cached = audioUrls[idx];
+            if (cached?.key === audioCacheKey(expression, audioReading)) {
+                audio = cached.url;
+            }
+        }
     } else {
         const cached = audioUrls[idx];
         if (cached?.key === audioCacheKey(expression, audioReading)) {

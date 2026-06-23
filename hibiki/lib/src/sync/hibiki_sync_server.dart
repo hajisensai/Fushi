@@ -434,6 +434,9 @@ class HibikiSyncServer {
     final String? id = request.url.queryParameters['id'];
     final _RemoteAudioToken? token = id == null ? null : _remoteAudioTokens[id];
     if (token == null) return shelf.Response.notFound('Not found');
+    // TODO-766: 命中即续期。重置该 token 的时间戳，使其 5 分钟窗口从「最近一次被
+    // 访问」起算，正在使用中的音频不会中途被 [_pruneAudioTokens] 清掉。
+    token.createdAt = _now();
     return shelf.Response.ok(
       headOnly ? null : token.bytes,
       headers: <String, String>{
@@ -1647,7 +1650,7 @@ class _DavEntry {
 }
 
 class _RemoteAudioToken {
-  const _RemoteAudioToken({
+  _RemoteAudioToken({
     required this.bytes,
     required this.contentType,
     required this.createdAt,
@@ -1655,7 +1658,10 @@ class _RemoteAudioToken {
 
   final Uint8List bytes;
   final String contentType;
-  final DateTime createdAt;
+
+  /// TODO-766: 不是 final——每次被 [_handleAudioFile] 命中都刷新，重置 5 分钟
+  /// 过期窗口，使「正在被访问」的音频 token 不会在使用途中过期（惠及播放与制卡）。
+  DateTime createdAt;
 }
 
 /// 视频流短时 token（P4-2）。

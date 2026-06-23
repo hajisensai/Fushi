@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 400 条。点号进各自文件。
+> 共 401 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-415](bugs/BUG-415-mining-audio-token-expiry.md) | ✅ | ✅ | 制卡音频静默丢(复用查词缓存的过期token URL) |
 | [BUG-414](bugs/BUG-414-audiobook-download-bookkey-404.md) | ✅ | ✅ | 远端有声书下载404(client重算bookKey丢弃host真实key) |
 | [BUG-413](bugs/BUG-413-error-log-open-lag.md) | ✅ | ✅ | 打开错误日志卡顿(单TextField全量512KB无虚拟化) |
 | [BUG-412](bugs/BUG-412-video-shift-hover-lookup.md) | ✅ | ✅ | 视频Shift鼠标悬停不查词(自绘overlay未接reader的shift-hover) |
