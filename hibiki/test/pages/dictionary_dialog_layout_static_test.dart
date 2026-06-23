@@ -278,20 +278,31 @@ void main() {
       contains('leading: _buildDictionaryCollapseButton(dictionary)'),
       reason: 'collapse toggle must be the row leading (leftmost)',
     );
-    // 定位 _buildDictionaryTile 的 trailing Row，断言它不再含折叠按钮。
+    // TODO-749/751：窄屏（手机）下行改成两行布局，行尾控件串提取为
+    // _buildDictionaryTileControls（桌面进 HibikiListItem 的 trailing，窄屏挪到标题
+    // 下方），两处共用。下面把「行尾控件串」锚到这个 helper 的 body 上断言。
     final int tileStart = source.indexOf('Widget _buildDictionaryTile({');
+    final int controlsStart =
+        source.indexOf('Row _buildDictionaryTileControls({');
     final int tileEnd =
         source.indexOf('Widget _buildDictionaryVisibilityButton(');
     expect(tileStart, isNonNegative);
-    expect(tileEnd, greaterThan(tileStart));
-    final String tileSource = source.substring(tileStart, tileEnd);
-    final int trailingStart = tileSource.indexOf('trailing: Row(');
-    expect(trailingStart, isNonNegative);
-    final String trailingSource = tileSource.substring(trailingStart);
+    expect(controlsStart, greaterThan(tileStart));
+    expect(tileEnd, greaterThan(controlsStart));
+    // _buildDictionaryTile 仍把折叠按钮放 leading（最左），并把控件串交给 helper。
+    final String tileSource = source.substring(tileStart, controlsStart);
+    expect(
+      tileSource,
+      contains('leading: _buildDictionaryCollapseButton(dictionary)'),
+      reason: 'collapse toggle stays the row leading (leftmost)',
+    );
+    expect(tileSource, contains('_buildDictionaryTileControls('));
+    // 行尾控件串（helper body）不含折叠按钮——折叠永远只在 leading。
+    final String trailingSource = source.substring(controlsStart, tileEnd);
     expect(
       trailingSource,
       isNot(contains('_buildDictionaryCollapseButton(dictionary)')),
-      reason: 'collapse toggle moved out of trailing into leading',
+      reason: 'collapse toggle lives in leading, never the trailing cluster',
     );
 
     // ② 单击直接切换折叠状态（不经二级菜单）。
@@ -339,18 +350,17 @@ void main() {
       isNot(contains('List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(')),
     );
 
-    // ② 定位 _buildDictionaryTile 的 trailing Row。
-    final int tileStart = source.indexOf('Widget _buildDictionaryTile({');
-    final int tileEnd =
+    // ② 定位行尾控件串 helper（_buildDictionaryTileControls，桌面进 trailing、窄屏
+    //    挪到标题下方两行布局，TODO-749/751）。
+    final int controlsStart =
+        source.indexOf('Row _buildDictionaryTileControls({');
+    final int controlsEnd =
         source.indexOf('Widget _buildDictionaryVisibilityButton(');
-    expect(tileStart, isNonNegative);
-    expect(tileEnd, greaterThan(tileStart));
-    final String tileSource = source.substring(tileStart, tileEnd);
-    final int trailingStart = tileSource.indexOf('trailing: Row(');
-    expect(trailingStart, isNonNegative);
-    final String trailingSource = tileSource.substring(trailingStart);
+    expect(controlsStart, isNonNegative);
+    expect(controlsEnd, greaterThan(controlsStart));
+    final String trailingSource = source.substring(controlsStart, controlsEnd);
 
-    // trailing 里没有三点菜单，改成独立删除按钮（仍走删除确认对话框）。
+    // 控件串里没有三点菜单，改成独立删除按钮（仍走删除确认对话框）。
     expect(trailingSource, isNot(contains('Icons.more_vert')));
     expect(trailingSource, isNot(contains('buildDictionaryTileTrailing(')));
     expect(trailingSource, contains('HibikiIconButton('));

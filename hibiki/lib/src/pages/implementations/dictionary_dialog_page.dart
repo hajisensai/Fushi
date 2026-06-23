@@ -1100,11 +1100,78 @@ class _DictionaryDialogPageState extends BasePageState {
     final Color titleColor =
         enabled ? scheme.onSurface : scheme.onSurfaceVariant;
     final Color subtitleColor = scheme.onSurfaceVariant;
+    // 窄屏（手机）= 与本页其它分支同一真值阈值（_buildDictionaryTypePicker /
+    // _buildMobilePageActions 都用 width < 480）。窄屏下控件串挤死了词典名：leading
+    // 折叠 + 上/下/Switch/(更新)/删除 共 6-7 个固有宽控件占去约 176px，中段 title 只
+    // 剩约 80px ≈ 5 个汉字 → 长词典名被省略号截短。修复=窄屏改两行布局：标题独占
+    // 整行宽（不再与 trailing 抢宽），控件串挪到标题下方一行；桌面宽屏仍是单行
+    // HibikiListItem（向后兼容）。这从结构上消除「窄屏 trailing 抢 title 宽」的特殊
+    // 情况，四个 tab（term/kanji/frequency/pitch）共用本 tile 一处修复全覆盖。
+    final bool compact = MediaQuery.sizeOf(context).width < 480;
+    final Text nameText = Text(
+      dictionary.name,
+      style: textTheme.bodyLarge?.copyWith(
+        color: titleColor,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final Text subtitleText = Text(
+      _subtitleForDictionary(dictionary, dictionaryFormat),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: textTheme.bodySmall?.copyWith(
+        color: subtitleColor,
+      ),
+    );
+    final Row controls = _buildDictionaryTileControls(
+      dictionary: dictionary,
+      index: index,
+      isLast: isLast,
+      enabled: enabled,
+      onMoveUp: onMoveUp,
+      onMoveDown: onMoveDown,
+    );
     // 行内容本身不含拖拽监听：长按拖拽由外层 HibikiReorderableColumn 统一接管
     // （局部坐标，缩放下零偏移），不再用 SDK 的 ReorderableDelayedDragStartListener。
     // 行间距交给 HibikiReorderableColumn 的 spacing（见 _buildDictionaryList），
     // 此处不再包 bottom padding——否则拖拽浮层会把行间空隙连同卡片一起涂成背景，
     // 表现为「被拖行下方多出一条背景」（BUG-078 第二症状）。
+    if (compact) {
+      // 窄屏两行布局：第一行 = 折叠按钮（leading 语义，最左）+ 词典名（Expanded
+      // 拿满整行剩余宽，不再被右侧控件串抢宽）；第二行 = 副标题；第三行 = 控件串
+      // （上/下/Switch/更新/删除）右对齐。彻底消除「窄屏 trailing 抢 title 宽」的
+      // 结构（TODO-749/751）。
+      return HibikiCard(
+        padding: EdgeInsets.zero,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.rowVertical,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  _buildDictionaryCollapseButton(dictionary),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(child: nameText),
+                ],
+              ),
+              Padding(
+                padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
+                child: subtitleText,
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: controls,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return HibikiCard(
       padding: EdgeInsets.zero,
       child: HibikiListItem(
@@ -1121,67 +1188,71 @@ class _DictionaryDialogPageState extends BasePageState {
         // so even on narrow widths it shows as much as fits (graceful ellipsis)
         // and is never squeezed out by the trailing controls.
         leading: _buildDictionaryCollapseButton(dictionary),
-        title: Text(
-          dictionary.name,
-          style: textTheme.bodyLarge?.copyWith(
-            color: titleColor,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        subtitle: Text(
-          _subtitleForDictionary(dictionary, dictionaryFormat),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: textTheme.bodySmall?.copyWith(
-            color: subtitleColor,
-          ),
-        ),
+        title: nameText,
+        subtitle: subtitleText,
         // Trailing keeps only: gamepad/a11y reorder arrows, the show/hide
         // switch, and a single inline delete button. Collapse/expand moved to
         // leading; custom CSS keeps its global fallback entry under settings →
         // dictionary settings (DictCssEditorDialog 可下拉选本词典), so dropping
         // the old three-dot menu does not lose any function (TODO-422).
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Gamepad/keyboard reorder equivalent for the drag handle.
-            HibikiIconButton(
-              icon: Icons.keyboard_arrow_up,
-              size: 18,
-              tooltip: t.move_up,
-              enabled: index > 0,
-              onTap: onMoveUp,
-            ),
-            HibikiIconButton(
-              icon: Icons.keyboard_arrow_down,
-              size: 18,
-              tooltip: t.move_down,
-              enabled: !isLast,
-              onTap: onMoveDown,
-            ),
-            _buildDictionaryVisibilityButton(dictionary, enabled),
-            // TODO-609：仅在线来源词典（isUpdatable 三条件满足）显示「更新」按钮——
-            // 旧词典 / 本地导入词典 metadata 为空 → 不显示，行布局不变。
-            if (dictionary.isUpdatable) ...<Widget>[
-              SizedBox(width: tokens.spacing.gap / 2),
-              HibikiIconButton(
-                icon: Icons.system_update_alt,
-                size: 20,
-                tooltip: t.dict_update_tooltip,
-                onTap: () => _updateSingleDictionary(dictionary),
-              ),
-            ],
-            SizedBox(width: tokens.spacing.gap / 2),
-            // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。
-            HibikiIconButton(
-              icon: Icons.delete_outline,
-              size: 20,
-              tooltip: t.options_delete,
-              onTap: () => showDictionaryDeleteDialog(dictionary),
-            ),
-          ],
-        ),
+        trailing: controls,
       ),
+    );
+  }
+
+  /// 词典行尾的控件串（上/下重排箭头 + 显示/隐藏 Switch + 可选更新按钮 + 独立删除
+  /// 按钮）。桌面宽屏放进 HibikiListItem 的 trailing（与标题同一行），窄屏挪到标题
+  /// 下方（两行布局，见 _buildDictionaryTile），两处共用这一份避免重复。
+  Row _buildDictionaryTileControls({
+    required Dictionary dictionary,
+    required int index,
+    required bool isLast,
+    required bool enabled,
+    required VoidCallback onMoveUp,
+    required VoidCallback onMoveDown,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 行尾控件串（窄屏挪到标题下方，桌面在标题右侧）；末尾是独立删除按钮
+    //（TODO-422 取代旧三点菜单），不含旧的三点溢出菜单图标。
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // Gamepad/keyboard reorder equivalent for the drag handle.
+        HibikiIconButton(
+          icon: Icons.keyboard_arrow_up,
+          size: 18,
+          tooltip: t.move_up,
+          enabled: index > 0,
+          onTap: onMoveUp,
+        ),
+        HibikiIconButton(
+          icon: Icons.keyboard_arrow_down,
+          size: 18,
+          tooltip: t.move_down,
+          enabled: !isLast,
+          onTap: onMoveDown,
+        ),
+        _buildDictionaryVisibilityButton(dictionary, enabled),
+        // TODO-609：仅在线来源词典（isUpdatable 三条件满足）显示「更新」按钮——
+        // 旧词典 / 本地导入词典 metadata 为空 → 不显示，行布局不变。
+        if (dictionary.isUpdatable) ...<Widget>[
+          SizedBox(width: tokens.spacing.gap / 2),
+          HibikiIconButton(
+            icon: Icons.system_update_alt,
+            size: 20,
+            tooltip: t.dict_update_tooltip,
+            onTap: () => _updateSingleDictionary(dictionary),
+          ),
+        ],
+        SizedBox(width: tokens.spacing.gap / 2),
+        // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。
+        HibikiIconButton(
+          icon: Icons.delete_outline,
+          size: 20,
+          tooltip: t.options_delete,
+          onTap: () => showDictionaryDeleteDialog(dictionary),
+        ),
+      ],
     );
   }
 
