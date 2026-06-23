@@ -64,6 +64,39 @@ void main() {
       expect(args.indexOf('-c:a') < brIndex, isTrue);
     });
 
+    test('TODO-757 high-fidelity profile: stereo 128k AAC', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.m4b',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+        // 高保真档（关闭压缩时）由调用点传入。
+        audioChannels: 2,
+        audioBitrate: '128k',
+      );
+      final int acIndex = args.indexOf('-ac');
+      expect(acIndex, greaterThanOrEqualTo(0));
+      expect(args[acIndex + 1], '2');
+      final int brIndex = args.indexOf('-b:a');
+      expect(brIndex, greaterThanOrEqualTo(0));
+      expect(args[brIndex + 1], '128k');
+      // 编码器仍在前（对输出流生效）。
+      expect(args.indexOf('-c:a') < acIndex, isTrue);
+      expect(args.indexOf('-c:a') < brIndex, isTrue);
+    });
+
+    test('TODO-757 defaults stay on the compressed profile (mono 64k)', () {
+      // 不传 audioChannels/audioBitrate 时必须等价于压缩档（= 现状）。
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.m4b',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+      );
+      expect(args[args.indexOf('-ac') + 1], '1');
+      expect(args[args.indexOf('-b:a') + 1], '64k');
+    });
+
     test('no -map when audioStreamIndex is null (default audio selection)', () {
       final List<String> args = buildFfmpegClipArgs(
         inputPath: '/a/in.mkv',
@@ -938,6 +971,35 @@ void main() {
       expect(result, out);
       expect(File(out).existsSync(), isTrue);
       expect(File(out).lengthSync(), greaterThan(0));
+    });
+  });
+
+  group('MiningMediaCompression (TODO-757 压缩档位)', () {
+    test('compressed profile = TODO-646 现状（零行为破坏）', () {
+      const MiningMediaCompression c = MiningMediaCompression.compressed;
+      expect(c.audioChannels, 1);
+      expect(c.audioBitrate, '64k');
+      expect(c.gifFps, 8);
+      expect(c.gifWidth, 320);
+      expect(c.screenshotMaxLongEdge, 1000);
+      expect(c.screenshotQuality, 90);
+    });
+
+    test('highFidelity profile = 更清晰更大', () {
+      const MiningMediaCompression h = MiningMediaCompression.highFidelity;
+      expect(h.audioChannels, 2);
+      expect(h.audioBitrate, '128k');
+      expect(h.gifFps, 12);
+      expect(h.gifWidth, 480);
+      expect(h.screenshotMaxLongEdge, 2000);
+      expect(h.screenshotQuality, 95);
+    });
+
+    test('forCompressionEnabled selects by the compression toggle', () {
+      expect(MiningMediaCompression.forCompressionEnabled(true),
+          same(MiningMediaCompression.compressed));
+      expect(MiningMediaCompression.forCompressionEnabled(false),
+          same(MiningMediaCompression.highFidelity));
     });
   });
 }

@@ -65,6 +65,23 @@ void main() {
       expect(out.lengthInBytes, lessThan(big.lengthInBytes));
     });
 
+    test('TODO-757 high-fidelity: maxLongEdge 2000 keeps more pixels', () {
+      // 关闭压缩时调用点传高保真档（长边 2000 / 质量 95）。一张长边 2400 的图：
+      // 压缩档（默认 1000）缩到 1000；高保真档（2000）只缩到 2000，更清晰。
+      final Uint8List big = jpegOf(2400, 1350);
+      final img.Image hf = img.decodeImage(
+        downsampleCardScreenshot(big, maxLongEdge: 2000, quality: 95),
+      )!;
+      expect(hf.width, 2000);
+      expect(hf.height, 1125); // 1350 * (2000/2400)
+      final img.Image compressed = img.decodeImage(
+        downsampleCardScreenshot(big),
+      )!;
+      expect(compressed.width, 1000);
+      // 高保真档保留更多像素。
+      expect(hf.width, greaterThan(compressed.width));
+    });
+
     test('leaves a small screenshot untouched (returns the same bytes)', () {
       final Uint8List small = jpegOf(800, 450);
       final Uint8List out = downsampleCardScreenshot(small);

@@ -1800,5 +1800,7 @@
   "anki_error_connection_refused": "Could not connect to Anki: connection refused. Make sure Anki Desktop is running and the AnkiConnect add-on is installed.",
   "anki_error_connection_timeout": "Could not connect to Anki: the connection timed out. Check the host, port, and firewall settings.",
   "anki_error_http": "Could not export to Anki: an HTTP error occurred while contacting AnkiConnect.",
-  "anki_error_connection_unknown": "Could not export to Anki: an unexpected connection error occurred. See the error log for details."
+  "anki_error_connection_unknown": "Could not export to Anki: an unexpected connection error occurred. See the error log for details.",
+  "compress_mining_media": "Compress card media",
+  "compress_mining_media_hint": "Off keeps card media sharper but larger; Android sentence audio is always lossless and unaffected"
 }

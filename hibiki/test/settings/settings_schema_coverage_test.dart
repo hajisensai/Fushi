@@ -50,6 +50,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
   'cardCreation/Auto-add book title to tags':
       'test/creator/tags_field_auto_add_book_test.dart',
+  // TODO-757: 压缩制卡媒体开关。写 AppModel.compressMiningMedia（prefsRepo），
+  // 焦点遍历能切到并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非
+  // reader CSS / 主题树），无适用探针；由专项纯函数 + pref round-trip 守卫覆盖。
+  'cardCreation/Compress card media':
+      'test/settings/compress_mining_media_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡

@@ -702,6 +702,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-757 压缩制卡媒体（音频 / GIF 封面 / 截图封面）。默认 true=压缩档（= TODO-646
+  // 现状，零行为破坏）；关闭后走高保真档，媒体更清晰但卡片体积更大。Android 句子
+  // 音频本就无损 re-mux，不受此开关影响。
+  bool get compressMiningMedia =>
+      getPref('compress_mining_media', defaultValue: true) as bool;
+
+  void toggleCompressMiningMedia() async {
+    await setPref('compress_mining_media', !compressMiningMedia);
+    notifyListeners();
+  }
+
   bool get deduplicatePitchAccents =>
       getPref('deduplicate_pitch_accents', defaultValue: true) as bool;
 

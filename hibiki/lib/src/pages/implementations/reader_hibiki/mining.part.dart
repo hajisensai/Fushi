@@ -82,11 +82,20 @@ extension _ReaderMining on _ReaderHibikiPageState {
             Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
         final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
         requestedSentenceAudioClip = true;
+        // TODO-757 压缩开关：仅桌面 ffmpeg 回退路径吃压缩档（默认单声道 64k=现状；
+        // 关闭压缩走立体声 128k）。Android 句子音频走原生无损 re-mux，extractAudioSegment
+        // 的 _isSupported 分支忽略这俩参数，开关对它天然无效。
+        final MiningMediaCompression mediaCompression =
+            MiningMediaCompression.forCompressionEnabled(
+          appModel.compressMiningMedia,
+        );
         sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
           inputPath: inputFile.path,
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: outputPath,
+          audioChannels: mediaCompression.audioChannels,
+          audioBitrate: mediaCompression.audioBitrate,
           onFailure: (String summary) {
             sentenceAudioFailure = summary;
           },

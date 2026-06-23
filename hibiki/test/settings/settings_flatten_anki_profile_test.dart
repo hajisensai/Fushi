@@ -175,11 +175,15 @@ void main() {
         reason: '平铺后不应再出现指向 Anki 子页的跳转行');
 
     // ③ TODO-135 方案A：默认标签区三个开关（hibiki / 来源分类 / 自动添加书名）都
-    //    并入一个无条件显示的区块。未配置 Anki 时它们也都露出——故页面里恰有三个
-    //    SwitchRow（旧行为：仅「自动添加书名」一个）。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(3),
-        reason: 'TODO-135 方案A：未配置 Anki 时默认标签区三个开关都应显示'
-            '（hibiki / 来源分类 / 自动添加书名）');
+    //    并入一个无条件显示的区块。未配置 Anki 时它们也都露出。TODO-757 又在该区追加
+    //    「压缩制卡媒体」开关（同样无条件显示）——故页面里恰有四个 SwitchRow。
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(4),
+        reason: 'TODO-135 方案A 三开关（hibiki / 来源分类 / 自动添加书名）'
+            '+ TODO-757「压缩制卡媒体」开关，未配置 Anki 时都应显示');
+    expect(
+        find.widgetWithText(AdaptiveSettingsSwitchRow, 'Compress card media'),
+        findsOneWidget,
+        reason: 'TODO-757「压缩制卡媒体」开关应无条件显示');
     expect(find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "hibiki" tag'),
         findsOneWidget,
         reason: 'hibiki 标签开关应无条件显示');

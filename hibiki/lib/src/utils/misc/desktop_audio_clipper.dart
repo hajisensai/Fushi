@@ -12,6 +12,70 @@ export 'package:hibiki/src/media/video/ffmpeg_backend.dart'
 
 typedef FfmpegFailureReporter = void Function(String summary);
 
+/// TODO-757 制卡媒体压缩档位（音频 / GIF 封面 / 截图封面的编码参数集）。
+///
+/// 压缩开关（`AppModel.compressMiningMedia`，默认开）选档：
+/// - [compressed]（默认 = TODO-646 现状）：音频单声道 64k、GIF 320px/8fps、
+///   截图长边 1000px/质量 90。体积省一半以上，移动端小图肉眼基本无差。
+/// - [highFidelity]（关闭压缩时）：音频立体声 128k、GIF 480px/12fps、截图长边
+///   2000px/质量 95。给想要高保真的用户更清晰的媒体，代价是更大的卡片体积。
+///
+/// 不可变值对象（纯数据，可单测、可在隔离中构造）。各底层纯函数（[buildFfmpegClipArgs]
+/// / [buildFfmpegClipGifArgs] / [downsampleCardScreenshot]）仍接收原始可选参数并默认
+/// 到压缩档，本类只是调用点选档时的参数捆绑，不让纯函数读全局偏好。
+class MiningMediaCompression {
+  const MiningMediaCompression({
+    required this.audioChannels,
+    required this.audioBitrate,
+    required this.gifFps,
+    required this.gifWidth,
+    required this.screenshotMaxLongEdge,
+    required this.screenshotQuality,
+  });
+
+  /// 音频下混声道数（`-ac`）。压缩档 1（单声道），高保真档 2（立体声）。
+  final int audioChannels;
+
+  /// 音频比特率（`-b:a`，如 `'64k'`）。压缩档 64k，高保真档 128k。
+  final String audioBitrate;
+
+  /// cue 封面 GIF 帧率（`fps=`）。压缩档 8，高保真档 12。
+  final int gifFps;
+
+  /// cue 封面 GIF 宽度（`scale=W:-2`）。压缩档 320，高保真档 480。
+  final int gifWidth;
+
+  /// 帧截图封面降采样长边（px）。压缩档 1000，高保真档 2000。
+  final int screenshotMaxLongEdge;
+
+  /// 帧截图封面重编码 JPEG 质量（0–100）。压缩档 90，高保真档 95。
+  final int screenshotQuality;
+
+  /// 压缩档（默认）：与 TODO-646 写死的现状逐字节一致——零行为破坏。
+  static const MiningMediaCompression compressed = MiningMediaCompression(
+    audioChannels: 1,
+    audioBitrate: '64k',
+    gifFps: 8,
+    gifWidth: 320,
+    screenshotMaxLongEdge: 1000,
+    screenshotQuality: 90,
+  );
+
+  /// 高保真档（关闭压缩时）：更高声道/比特率/分辨率/质量，更清晰但体积更大。
+  static const MiningMediaCompression highFidelity = MiningMediaCompression(
+    audioChannels: 2,
+    audioBitrate: '128k',
+    gifFps: 12,
+    gifWidth: 480,
+    screenshotMaxLongEdge: 2000,
+    screenshotQuality: 95,
+  );
+
+  /// 据压缩开关选档：开=压缩档（默认），关=高保真档。
+  static MiningMediaCompression forCompressionEnabled(bool compress) =>
+      compress ? compressed : highFidelity;
+}
+
 void _reportFfmpegFailure(
   String source,
   FfmpegRunResult result,
@@ -73,6 +137,10 @@ List<String> buildFfmpegClipArgs({
   required String outputPath,
   int? audioStreamIndex,
   int? audioStreamCount,
+  // TODO-757 压缩开关：默认压缩档（单声道 64k，= TODO-646 现状）。关闭压缩时调用
+  // 点传立体声 128k（高保真档）。默认值保持现状，纯函数不读全局偏好。
+  int audioChannels = 1,
+  String audioBitrate = '64k',
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -96,14 +164,16 @@ List<String> buildFfmpegClipArgs({
     ],
     '-c:a',
     'aac',
-    // TODO-646 近无损压缩：句子音频是人声短片段，单声道 64k AAC 听感接近透明，
-    // 比默认（立体声 ~128k）省一半以上体积。`-ac 1` 下混单声道、`-b:a 64k` 钉比特率。
-    // 桌面句子音频与视频 cue 音频共用本函数，两条链路同时受益；Android 原生
-    // AacAdtsCueAudioRewriter 是无损 re-mux（跟源、不重编码），不经此路径、不受影响。
+    // TODO-646 近无损压缩 + TODO-757 压缩开关：句子音频是人声短片段，压缩档单声道
+    // 64k AAC 听感接近透明、比默认（立体声 ~128k）省一半以上体积。`-ac` 下混声道、
+    // `-b:a` 钉比特率，由 [audioChannels]/[audioBitrate] 决定（压缩档 1/64k=现状，
+    // 高保真档 2/128k）。桌面句子音频与视频 cue 音频共用本函数，两条链路同时受益；
+    // Android 原生 AacAdtsCueAudioRewriter 是无损 re-mux（跟源、不重编码），不经此
+    // 路径、不受压缩开关影响。
     '-ac',
-    '1',
+    '$audioChannels',
     '-b:a',
-    '64k',
+    audioBitrate,
     outputPath,
   ];
 }
@@ -340,8 +410,10 @@ List<String> buildFfmpegClipGifArgs({
   required int startMs,
   required int endMs,
   required String outputPath,
-  // TODO-646 近无损压缩：cue 封面动图收紧到 320px/8fps（原 480/12），体积省 40-60%，
-  // 移动端小图肉眼基本无差。仍走 palettegen/paletteuse 双遍避免抖动。
+  // TODO-646 近无损压缩 + TODO-757 压缩开关：压缩档 cue 封面动图收紧到 320px/8fps
+  // （= 现状，体积省 40-60%，移动端小图肉眼基本无差）；高保真档放宽到 480px/12fps。
+  // 默认值保持压缩档（现状），由调用点据压缩开关传值，纯函数不读全局偏好。仍走
+  // palettegen/paletteuse 双遍避免抖动。
   int fps = 8,
   int width = 320,
   int maxDurationMs = 10000,
@@ -381,6 +453,10 @@ Future<String?> extractClipGifViaFfmpeg({
   required int endMs,
   required String outputPath,
   FfmpegFailureReporter? onFailure,
+  // TODO-757 压缩开关：默认压缩档（320px/8fps，= 现状）；关闭压缩时调用点传高保真
+  // 档（480px/12fps）。
+  int fps = 8,
+  int width = 320,
 }) async {
   if (endMs <= startMs) return null;
   if (!File(inputPath).existsSync()) return null;
@@ -394,6 +470,8 @@ Future<String?> extractClipGifViaFfmpeg({
         startMs: startMs,
         endMs: endMs,
         outputPath: outputPath,
+        fps: fps,
+        width: width,
       ),
       const Duration(seconds: 120),
     );
@@ -599,6 +677,10 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   int? audioStreamIndex,
   int? audioStreamCount,
   FfmpegFailureReporter? onFailure,
+  // TODO-757 压缩开关：默认压缩档（单声道 64k，= 现状）；关闭压缩时调用点传立体声
+  // 128k（高保真档）。
+  int audioChannels = 1,
+  String audioBitrate = '64k',
 }) async {
   if (endMs <= startMs) return null;
   if (!File(inputPath).existsSync()) return null;
@@ -616,6 +698,8 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         outputPath: outputPath,
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: audioStreamCount,
+        audioChannels: audioChannels,
+        audioBitrate: audioBitrate,
       ),
       const Duration(seconds: 120),
     );

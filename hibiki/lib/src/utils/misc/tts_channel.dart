@@ -4,6 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+// TODO-757：把制卡媒体压缩档位 re-export 给只 import tts_channel 的调用方
+// （阅读器句子音频走 TtsChannel 桌面回退，需要选档但没直接 import clipper）。
+export 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show MiningMediaCompression;
 import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/desktop_tts.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -265,6 +269,11 @@ class TtsChannel {
     required int endMs,
     required String outputPath,
     FfmpegFailureReporter? onFailure,
+    // TODO-757 压缩开关：仅桌面 ffmpeg 回退路径吃压缩档（默认单声道 64k = 现状；
+    // 关闭压缩传立体声 128k）。Android 句子音频走原生 AacAdtsCueAudioRewriter 无损
+    // re-mux，不重编码，压缩开关对它天然无效，故 _isSupported 分支不传这俩参数。
+    int audioChannels = 1,
+    String audioBitrate = '64k',
   }) async {
     if (!_isSupported) {
       // No native channel off Android: cut the sentence clip with ffmpeg so
@@ -275,6 +284,8 @@ class TtsChannel {
         endMs: endMs,
         outputPath: outputPath,
         onFailure: onFailure,
+        audioChannels: audioChannels,
+        audioBitrate: audioBitrate,
       );
     }
     try {

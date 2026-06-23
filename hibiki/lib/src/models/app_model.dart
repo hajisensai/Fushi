@@ -3286,6 +3286,10 @@ class AppModel with ChangeNotifier {
   bool get autoAddBookNameToTags => prefsRepo.autoAddBookNameToTags;
   void toggleAutoAddBookNameToTags() => prefsRepo.toggleAutoAddBookNameToTags();
 
+  // TODO-757 压缩制卡媒体开关（透传 prefsRepo）。默认 true=压缩档（现状）。
+  bool get compressMiningMedia => prefsRepo.compressMiningMedia;
+  void toggleCompressMiningMedia() => prefsRepo.toggleCompressMiningMedia();
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();

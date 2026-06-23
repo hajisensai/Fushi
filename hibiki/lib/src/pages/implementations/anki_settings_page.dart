@@ -173,6 +173,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 setState(() {});
               },
             ),
+            // TODO-757 压缩制卡媒体开关：默认开=压缩档（现状，省体积）；关闭走高
+            // 保真档（音频立体声 128k / GIF 480px·12fps / 截图长边 2000px·质量 95），
+            // 更清晰但卡片体积更大。Android 句子音频本就无损 re-mux，不受影响。
+            AdaptiveSettingsSwitchRow(
+              title: t.compress_mining_media,
+              subtitle: t.compress_mining_media_hint,
+              icon: Icons.compress,
+              value: appModel.compressMiningMedia,
+              onChanged: (bool value) {
+                appModel.toggleCompressMiningMedia();
+                setState(() {});
+              },
+            ),
           ],
         ),
       ],

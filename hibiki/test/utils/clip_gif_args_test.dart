@@ -29,6 +29,38 @@ void main() {
       expect(args.last, '/tmp/clip.gif');
     });
 
+    test('TODO-757 high-fidelity profile: 480px / 12fps', () {
+      final args = buildFfmpegClipGifArgs(
+        inputPath: '/v/ep.mkv',
+        startMs: 1000,
+        endMs: 3000,
+        outputPath: '/tmp/hf.gif',
+        // 高保真档（关闭压缩时）由调用点传入。
+        fps: 12,
+        width: 480,
+      );
+      final filter = args[args.indexOf('-filter_complex') + 1];
+      expect(filter, contains('fps=12'));
+      expect(filter, contains('scale=480:-2'));
+      // 双遍调色板与 -loop 0 不随档位变化。
+      expect(filter, contains('palettegen'));
+      expect(filter, contains('paletteuse'));
+      expect(args[args.indexOf('-loop') + 1], '0');
+    });
+
+    test('TODO-757 defaults stay on the compressed profile (320 / 8)', () {
+      // 不传 fps/width 时必须等价于压缩档（= 现状），保零行为破坏。
+      final args = buildFfmpegClipGifArgs(
+        inputPath: '/v/ep.mkv',
+        startMs: 0,
+        endMs: 2000,
+        outputPath: '/tmp/c.gif',
+      );
+      final filter = args[args.indexOf('-filter_complex') + 1];
+      expect(filter, contains('fps=8'));
+      expect(filter, contains('scale=320:-2'));
+    });
+
     test('clamps duration to maxDurationMs for long cues', () {
       final args = buildFfmpegClipGifArgs(
         inputPath: '/v/ep.mkv',

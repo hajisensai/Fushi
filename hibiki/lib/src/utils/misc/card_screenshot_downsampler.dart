@@ -42,6 +42,9 @@ import 'package:image/image.dart' as img;
 
 /// 把制卡截图 [bytes] 降采样到长边 [maxLongEdge]px，重编码为 JPEG（质量
 /// [quality]）。长边已不超限、或解码失败时原样返回 [bytes]（绝不返回空/破坏媒体）。
+///
+/// TODO-757 压缩开关：默认压缩档（长边 1000px / 质量 90，= TODO-646 现状）。关闭压缩
+/// 时调用点传高保真档（长边 2000px / 质量 95）。默认值保持现状，纯函数不读全局偏好。
 Uint8List downsampleCardScreenshot(
   Uint8List bytes, {
   int maxLongEdge = 1000,

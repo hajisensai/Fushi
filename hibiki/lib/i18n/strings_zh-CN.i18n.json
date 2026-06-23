@@ -1800,5 +1800,7 @@
   "anki_error_connection_refused": "无法连接 Anki：连接被拒绝。请确认 Anki 桌面版正在运行，且已安装 AnkiConnect 插件。",
   "anki_error_connection_timeout": "无法连接 Anki：连接超时。请检查主机、端口和防火墙设置。",
   "anki_error_http": "无法导出到 Anki：连接 AnkiConnect 时发生 HTTP 错误。",
-  "anki_error_connection_unknown": "无法导出到 Anki：发生未知的连接错误。详情见错误日志。"
+  "anki_error_connection_unknown": "无法导出到 Anki：发生未知的连接错误。详情见错误日志。",
+  "compress_mining_media": "压缩制卡媒体",
+  "compress_mining_media_hint": "关闭后媒体更清晰但体积更大；Android 句子音频本就无损不受影响"
 }

@@ -271,6 +271,12 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final Directory tmp = await getTemporaryDirectory();
     final String? videoPath = controller.videoPath;
     final bool hasRange = clipEndMs > clipStartMs;
+    // TODO-757 压缩开关：开=压缩档（GIF 320/8·音频 ac1 64k·截图 1000/90，=现状）；
+    // 关=高保真档（GIF 480/12·音频 ac2 128k·截图 2000/95）。一处选档喂三条媒体链路。
+    final MiningMediaCompression mediaCompression =
+        MiningMediaCompression.forCompressionEnabled(
+      appModel.compressMiningMedia,
+    );
 
     // 视频卡片封面 → coverPath（→`{book-cover}`）：优先把**区间时间段**导出成循环 GIF
     // （单句=该 cue 时间窗；跨字幕=整段区间）。桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit
@@ -283,6 +289,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         startMs: clipStartMs,
         endMs: clipEndMs,
         outputPath: '${tmp.path}/video_mine_clip.gif',
+        fps: mediaCompression.gifFps,
+        width: mediaCompression.gifWidth,
         onFailure: (String summary) {
           gifFailure = summary;
         },
@@ -297,7 +305,11 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         // TODO-646 近无损压缩：截图按原始解码帧分辨率输出（1080p/4K），降采样到
         // 长边 1000px（卡面 + 灯箱放大都不糊）再写盘，省媒体库体积。解码失败/已不
         // 超限时原样返回，不破坏制卡。
-        final Uint8List cover = downsampleCardScreenshot(shot);
+        final Uint8List cover = downsampleCardScreenshot(
+          shot,
+          maxLongEdge: mediaCompression.screenshotMaxLongEdge,
+          quality: mediaCompression.screenshotQuality,
+        );
         final File f = File('${tmp.path}/video_mine_shot.jpg');
         await f.writeAsBytes(cover);
         coverPath = f.path;
@@ -316,6 +328,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         outputPath: '${tmp.path}/video_mine_audio.aac',
         audioStreamIndex: controller.currentAudioStreamIndex,
         audioStreamCount: controller.realAudioStreamCount,
+        audioChannels: mediaCompression.audioChannels,
+        audioBitrate: mediaCompression.audioBitrate,
         onFailure: (String summary) {
           audioFailure = summary;
         },
