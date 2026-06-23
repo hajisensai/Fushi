@@ -1931,9 +1931,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   Map<int, bool>? _edgeMatchResults;
 
+  /// TODO-700 T3：WebView 正文就绪的瞬间，确定性把 Flutter 焦点落到正文 [_focusNode]，
+  /// 让首开书第一次按 B / 上下句 / 播放就作用在书内（消解「首开点两下播放才听书」「首开
+  /// 按 B 退书」——根因是整页 autofocus 抢在内容就绪前、焦点落在表面层，B 冒泡全局返回）。
+  /// 严格门控：光标态 / 词典弹窗态 / 歌词态都不抢（否则会覆盖正在用的光标焦点）。整页
+  /// Focus 的 autofocus:true 仍保留作冷启动兜底，本 helper 只是把「确定性到位」补在每个
+  /// 内容就绪落点（含切应用回来 / 重启后重进，不再依赖 FocusManager 进程内记忆）。
+  void _settleFocusOnContentReady() {
+    if (!mounted || !_readerContentReady || _lyricsMode) return;
+    if (_caretActive || _caretSurface != CaretSurface.none) return;
+    if (isDictionaryShown) return; // 弹窗 WebView 持焦点期间不抢
+    _focusNode.requestFocus();
+  }
+
   @override
   void onAllPopupsDismissed() {
     if (!mounted) return;
+
     // TODO-270 F/G：整条查词浮层栈关闭 = 一次「查词会话」结束，丢弃未制卡的多句
     // 草稿（避免下次查词带着上次没用掉的累积句）。制卡成功已在 onMineFromPopup
     // 清过，这里兜住「攒了几句但没制卡就关掉」的情况。

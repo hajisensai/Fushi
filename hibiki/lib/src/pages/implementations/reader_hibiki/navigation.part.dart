@@ -28,6 +28,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         _readerContentReady = true;
         _hasEverLoaded = true;
       });
+      // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
+      _settleFocusOnContentReady();
       HibikiToast.show(msg: t.reader_content_timeout);
     });
   }
@@ -63,6 +65,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         _hasEverLoaded = true;
       });
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      // TODO-700 T3：内容就绪确定性落焦到正文（门控见 helper）。
+      _settleFocusOnContentReady();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _syncPageSize();
       });
