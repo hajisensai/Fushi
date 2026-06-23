@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 398 条。点号进各自文件。
+> 共 399 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-413](bugs/BUG-413-error-log-open-lag.md) | ✅ | ✅ | 打开错误日志卡顿(单TextField全量512KB无虚拟化) |
 | [BUG-412](bugs/BUG-412-video-shift-hover-lookup.md) | ✅ | ✅ | 视频Shift鼠标悬停不查词(自绘overlay未接reader的shift-hover) |
 | [BUG-411](bugs/BUG-411-episode-number-clip.md) | ✅ | ✅ | 选集列表两位数序号大字号下换行被裁(leading固定宽24不随字号) |
 | [BUG-410](bugs/BUG-410-video-nested-popup-dismiss.md) | ✅ | ✅ | 视频嵌套查词点外不关顶层(字幕命中抢先replaceStack) |

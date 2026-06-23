@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
@@ -11,7 +12,6 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_gamepad_keyboard.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
-import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
@@ -2173,35 +2173,80 @@ class HibikiLogPanel extends StatefulWidget {
 }
 
 class _HibikiLogPanelState extends State<HibikiLogPanel> {
-  // BUG-119：日志正文用只读 TextField 而非 SingleChildScrollView+SelectableText。
-  // 后者把整段 log 渲染成非滚动的 SelectableText（全高），外层 SingleChildScrollView
-  // 提供滚动；鼠标拖拽选区时内层 EditableText 会对祖先 Scrollable 调 bringIntoView，
-  // 把视口强行拉回选区 extent/caret，造成「按住选区往上滑就被拽回」。改用只读
-  // TextField 让 EditableText 自己当唯一滚动器：选区拖拽的边缘自动滚动走它自己的
-  // scroll controller，没有外层 SingleChildScrollView 来抢/拽，消除嵌套滚动冲突。
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.log);
+  // TODO-762：日志正文从「单个 `TextField`（maxLines:null, expands:true）全量渲染」
+  // 改为按行 `ListView.builder` 懒加载。错误/调试日志最大 ~512KB、数万行
+  // monospace，旧实现把整段一次性在 UI 线程做 `TextPainter.layout`（无行虚拟化），
+  // 首帧 layout 几百 ms~数秒 → 打开「错误日志」卡顿。改为 ListView.builder 后只对
+  // 视口内行做 layout，首帧恒定。选区/复制改由 `SelectionArea` 跨行提供。
+  //
+  // BUG-119 不回归（最高风险点）：旧实现之所以用 TextField，是为了让 EditableText
+  // 当唯一滚动器，避免拖拽选区时被祖先 Scrollable 的 bringIntoView「拽回」。这里
+  // 保留同一道防线——把 [_LogSelectionScrollController] 接到 ListView 的 controller：
+  // 拖拽选区期间，除「指针贴边 + 朝外侧」的合法边缘自动滚动外，一律拦掉程序化
+  // `jumpTo`/`animateTo`（选区把视口往光标/extent 拽回的来源），手动滚动不受影响。
+  // SelectionArea 套纯 Text（无 EditableText caret）本就没有旧的 caret bringIntoView
+  // 来源，此 gate 作为纵深防御守住不变式。守卫 `log_panel_scroll_select_guard_test`。
   late final _LogSelectionScrollController _scrollController =
       _LogSelectionScrollController();
+
+  // 整段 log 按行预切一次（不在 build 里反复 split），仅 widget.log 变化时重切。
+  // ListView.builder 按 [_lines] 索引懒构造每行，只渲染视口内行。
+  late List<String> _lines = _splitLines(widget.log);
+
+  // SelectionArea 的最近一次选中纯文本（用于自定义「分享」菜单项保留旧 shareAction）。
+  String _selectedText = '';
+
+  static List<String> _splitLines(String log) => log.split('\n');
 
   @override
   void didUpdateWidget(covariant HibikiLogPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.log != widget.log) {
-      _controller.text = widget.log;
+      _lines = _splitLines(widget.log);
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onSelectionChanged(SelectedContent? content) {
+    _selectedText = content?.plainText ?? '';
+  }
+
+  // 保留旧自定义工具栏的「分享选区」能力：在 SelectionArea 默认菜单（复制 / 全选）
+  // 之上追加一个「分享」项，调用页面传入的 [widget.shareAction]（错误/调试日志页
+  // 都是 Share.share(选中文本)）。复制/全选沿用框架默认按钮，行为不变。
+  Widget _buildContextMenu(
+    BuildContext context,
+    SelectableRegionState selectableRegionState,
+  ) {
+    final List<ContextMenuButtonItem> items = <ContextMenuButtonItem>[
+      ...selectableRegionState.contextMenuButtonItems,
+      ContextMenuButtonItem(
+        label: t.share,
+        onPressed: () {
+          final String text = _selectedText;
+          selectableRegionState.hideToolbar();
+          if (text.isNotEmpty) widget.shareAction(text);
+        },
+      ),
+    ];
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: selectableRegionState.contextMenuAnchors,
+      buttonItems: items,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final TextStyle lineStyle = tokens.type.metadata.copyWith(
+      color: tokens.surfaces.onSurface,
+      fontFamily: 'monospace',
+    );
     return SafeArea(
       top: false,
       child: Padding(
@@ -2233,29 +2278,20 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
                 },
                 onPointerUp: (_) => _scrollController.endPointerSelection(),
                 onPointerCancel: (_) => _scrollController.endPointerSelection(),
-                child: TextField(
-                  controller: _controller,
-                  scrollController: _scrollController,
-                  readOnly: true,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: tokens.type.metadata.copyWith(
-                    color: tokens.surfaces.onSurface,
-                    fontFamily: 'monospace',
-                  ),
-                  selectionControls: HibikiTextSelectionControls(
-                    shareAction: widget.shareAction,
-                    allowCopy: true,
-                    allowCut: false,
-                    allowPaste: false,
-                    allowSelectAll: true,
-                  ),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.all(tokens.spacing.card),
+                child: SelectionArea(
+                  onSelectionChanged: _onSelectionChanged,
+                  contextMenuBuilder: _buildContextMenu,
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: EdgeInsets.all(tokens.spacing.card),
+                    itemCount: _lines.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      return Text(
+                        _lines[index],
+                        style: lineStyle,
+                        softWrap: true,
+                      );
+                    },
                   ),
                 ),
               );
