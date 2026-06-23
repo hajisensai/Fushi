@@ -1,6 +1,35 @@
 // GENERATED-NOTE: extracted from reader_hibiki_page.dart (TODO-589 batch5).
 part of '../reader_hibiki_page.dart';
 
+/// TODO-746　SRT cue cross-chapter in-chapter progress (0..1). When
+/// `span = last - first <= 0` (single-cue chapter / no resolvable in-chapter
+/// offset) returns null — callers must then preserve the current scroll and
+/// never fall back to chapter-start zero. Reuses the restore-path formula
+/// `((sentenceIndex - first) / span)`, removing three duplicated copies.
+@visibleForTesting
+double? audiobookSrtCrossChapterProgress({
+  required int sentenceIndex,
+  required int first,
+  required int last,
+}) {
+  final int span = last - first;
+  if (span <= 0) return null;
+  return ((sentenceIndex - first) / span).clamp(0.0, 1.0);
+}
+
+/// TODO-746　sasayaki cue cross-chapter in-chapter progress (0..1). When
+/// `chapterChars <= 0` (chapter char count unknown / empty chapter) returns
+/// null — callers must then preserve the current scroll and never zero.
+/// Reuses the restore-path formula `normCharStart / chapterChars`.
+@visibleForTesting
+double? audiobookSasayakiCrossChapterProgress({
+  required int normCharStart,
+  required int chapterChars,
+}) {
+  if (chapterChars <= 0) return null;
+  return (normCharStart / chapterChars).clamp(0.0, 1.0);
+}
+
 /// audiobook domain helpers (profile resolution / audio-slot + session
 /// attach / cue priming + SRT chapter map / position restore-from-cue /
 /// volume-key sentence nav / cue-change sync + cross-chapter + boundary
@@ -316,10 +345,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         frag.sectionIndex >= 0 &&
         frag.sectionIndex < _book!.chapters.length) {
       _currentChapter = frag.sectionIndex;
-      _initialProgress = _chapterCharCounts[frag.sectionIndex] > 0
-          ? (frag.normCharStart / _chapterCharCounts[frag.sectionIndex])
-              .clamp(0.0, 1.0)
-          : 0.0;
+      // TODO-746: reuse the shared in-chapter progress helper (DRY). On initial
+      // open a null (unknown char count) falls back to 0.0 = chapter start,
+      // which is a sane initial anchor and preserves the original behaviour.
+      _initialProgress = audiobookSasayakiCrossChapterProgress(
+            normCharStart: frag.normCharStart,
+            chapterChars: _chapterCharCounts[frag.sectionIndex],
+          ) ??
+          0.0;
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
       debugPrint('[ReaderHibiki] restore from audio cue: '
@@ -335,10 +368,15 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           srtChapter < _book!.chapters.length) {
         _currentChapter = srtChapter;
         final (int first, int last) = _srtChapterRanges![srtChapter];
-        final int span = last - first;
-        _initialProgress = span > 0
-            ? ((cue.sentenceIndex - first) / span).clamp(0.0, 1.0)
-            : 0.0;
+        // TODO-746: reuse the shared in-chapter progress helper (DRY). On
+        // initial open a null (single-cue chapter) falls back to 0.0 =
+        // chapter start, preserving the original restore behaviour.
+        _initialProgress = audiobookSrtCrossChapterProgress(
+              sentenceIndex: cue.sentenceIndex,
+              first: first,
+              last: last,
+            ) ??
+            0.0;
         _lastProgressSection = srtChapter;
         _lastProgressValue = _initialProgress;
         debugPrint('[ReaderHibiki] restore from SRT cue: '
@@ -420,7 +458,25 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         final int? cueChapter = _srtCueChapterMap![cue.sentenceIndex];
         if (cueChapter != null && cueChapter != _currentChapter) {
           if (controller.shouldRevealCurrentCue && !_restoreInFlight) {
-            _navigateToChapter(cueChapter);
+            // TODO-746: land on the cue's real in-chapter position instead of
+            // the default progress=0.0 → restoreProgress(0) → scrollToChapterStart
+            // six-fold clear (the "slides to chapter 1" symptom). cueChapter is a
+            // map hit, so the chapter has structure; a null progress (single-cue
+            // chapter) falls back to that chapter's start, which is its real
+            // position, not a zero sentinel.
+            final List<(int, int)>? ranges = _srtChapterRanges;
+            double? progress;
+            if (ranges != null &&
+                cueChapter >= 0 &&
+                cueChapter < ranges.length) {
+              final (int first, int last) = ranges[cueChapter];
+              progress = audiobookSrtCrossChapterProgress(
+                sentenceIndex: cue.sentenceIndex,
+                first: first,
+                last: last,
+              );
+            }
+            _navigateToChapter(cueChapter, progress: progress ?? 0.0);
           } else {
             AudiobookBridge.highlight(_controller!);
           }
@@ -455,7 +511,28 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       _audiobookController?.cancelChapterTransition();
       return;
     }
-    await _navigateToChapter(newSection);
+    // TODO-746: reuse the same sasayaki in-chapter progress formula the restore
+    // path already uses, so cross-chapter playback lands on the cue's real
+    // in-chapter position instead of _navigateToChapter's default progress=0.0
+    // → restoreProgress(0) → scrollToChapterStart six-fold clear (the "slides to
+    // chapter 1" symptom). newSection here is the matched cue's own declared
+    // section (frag.sectionIndex; a text-missing cue has a null/cleared fragment
+    // and never reaches this path), so it legitimately belongs in newSection —
+    // we only need its offset, not a chapter switch. A null progress (chapter
+    // char count transiently 0 before the lazy recompute lands) falls back to
+    // 0.0 = that chapter's own start, which is the original behaviour for a
+    // matched cue and is NOT a zero-to-chapter-1 (it is its real chapter).
+    final AudioCue? cue = _audiobookController?.currentCue;
+    final SasayakiFragment? frag =
+        cue == null ? null : SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    double? progress;
+    if (frag != null && newSection < _chapterCharCounts.length) {
+      progress = audiobookSasayakiCrossChapterProgress(
+        normCharStart: frag.normCharStart,
+        chapterChars: _chapterCharCounts[newSection],
+      );
+    }
+    await _navigateToChapter(newSection, progress: progress ?? 0.0);
   }
 
   Future<void> _handleBoundarySkip(int delta) async {
