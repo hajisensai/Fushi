@@ -1795,5 +1795,6 @@
   "shortcut_action_dpad_left": "方向键 左",
   "shortcut_action_dpad_right": "方向键 右",
   "shortcut_scope_gamepad": "手柄",
-  "section_page_turn_direction": "翻页方向"
+  "section_page_turn_direction": "翻页方向",
+  "remote_book_audiobook_download_failed": "无法下载这本书的有声书"
 }

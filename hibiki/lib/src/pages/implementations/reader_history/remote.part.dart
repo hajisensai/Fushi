@@ -253,10 +253,28 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         dest,
         onProgress: (double progress) {
           if (!mounted) return;
-          _rebuild(() => _downloadingBooks[book.title] = progress);
+          // EPUB 占前半段进度，留后半段给有声书（有声书包通常更大）。否则
+          // EPUB 下完后进度卡 100% 但有声书还在拉，用户以为完了。
+          final double scaled = book.hasAudiobook ? progress * 0.5 : progress;
+          _rebuild(() => _downloadingBooks[book.title] = scaled);
         },
       );
-      await _importRemoteBookFile(dest);
+      final String? localBookKey = await _importRemoteBookFile(dest);
+      // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
+      await _downloadRemoteAudiobook(book, client, localBookKey);
+    } on _RemoteAudiobookException catch (e, stack) {
+      // EPUB 已成功入库，只是有声书没拉到：给专用可见提示（不静默吞），并照常
+      // 刷新书架（EPUB 行已在）。不在 finally 后再弹「下载成功」。
+      ErrorLogService.instance.log(
+          'ReaderHibikiHistoryPage.downloadRemoteAudiobook', e.cause, stack);
+      _rebuild(() => _downloadingBooks.remove(book.title));
+      if (!mounted) return;
+      ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+      _refreshSrtBooks();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_audiobook_download_failed)),
+      );
+      return;
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibikiHistoryPage.downloadRemoteBook', e, stack);
@@ -280,6 +298,101 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     );
   }
 
+  /// EPUB 导入成功后，按需补下该书的有声书包（750a 手动下载补音频）。
+  ///
+  /// 仅当远端书带有声书（[RemoteBookInfo.hasAudiobook]）才动作；下载经
+  /// [HibikiClientSyncBackend.getRemoteAudiobook]（live API 仅存在于互联后端，
+  /// 云盘后端 [CloudRemoteBookClient] 无此能力，按类型分支跳过——这是真实能力
+  /// 边界，非掩盖性特例）。解包经 [SyncAssetPackageService.importAudioDatabasePackage]，
+  /// 用刚导入的本地 EPUB 的 [localBookKey] 作 `bookKeyOverride` 把音频绑定到本地书。
+  ///
+  /// 下载用的远端 bookKey = `sanitizeTtuFilename(book.title)`，与 host
+  /// `RemoteAudiobookInfo.bookKey`（= host EPUB 的 bookKey = 同公式）同源。
+  ///
+  /// 失败处理：有声书下载/导入失败抛出 [_RemoteAudiobookException]，由调用方
+  /// 转成可见错误提示（不静默吞）；EPUB 已成功入库，故不回滚 EPUB。
+  Future<void> _downloadRemoteAudiobook(
+    RemoteBookInfo book,
+    RemoteBookClient client,
+    String? localBookKey,
+  ) async {
+    if (!book.hasAudiobook) return;
+    // 注入式测试钩子：绕过 backend 类型门，直接驱动下载/导入接线（与
+    // [_pageWidget.remoteBookImporter] 同模式，让接线在 widget 测试可落地）。
+    final Future<File> Function(String remoteBookKey)? injectedFetch =
+        _pageWidget.remoteAudiobookFetcher;
+    final Future<void> Function(File package, String? bookKeyOverride)?
+        injectedImport = _pageWidget.remoteAudiobookImporter;
+
+    // 生产路径：有声书 live API 仅存在于互联后端。云盘后端无此能力，按类型分支
+    // 跳过（真实能力边界）。注入钩子缺省时才据此门控。
+    if (injectedFetch == null &&
+        injectedImport == null &&
+        client is! HibikiClientSyncBackend) {
+      return;
+    }
+
+    final String remoteBookKey = sanitizeTtuFilename(book.title);
+    File? audioTmp;
+    try {
+      if (injectedFetch != null) {
+        audioTmp = await injectedFetch(remoteBookKey);
+      } else {
+        audioTmp = await _remoteAudiobookDestination(book);
+        await (client as HibikiClientSyncBackend).getRemoteAudiobook(
+          remoteBookKey,
+          audioTmp,
+          onProgress: (double progress) {
+            if (!mounted) return;
+            // 有声书占进度后半段（0.5..1.0）。
+            _rebuild(
+                () => _downloadingBooks[book.title] = 0.5 + progress * 0.5);
+          },
+        );
+      }
+
+      if (injectedImport != null) {
+        await injectedImport(audioTmp, localBookKey);
+      } else {
+        await SyncAssetPackageService(db: appModel.database)
+            .importAudioDatabasePackage(
+          packageFile: audioTmp,
+          audioDatabaseRoot: _audiobookDatabaseRoot(),
+          bookKeyOverride: localBookKey,
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibikiHistoryPage.downloadRemoteAudiobook', e, stack);
+      // 包成可见错误：调用方 catch 后弹专用提示，不与 EPUB 失败混淆。
+      throw _RemoteAudiobookException(e);
+    } finally {
+      // 临时音频包用完即删（导入已落盘到 audiobook 根目录，不依赖临时文件）。
+      if (audioTmp != null && injectedFetch == null) {
+        try {
+          if (audioTmp.existsSync()) audioTmp.deleteSync();
+        } catch (_) {
+          // best-effort temp cleanup
+        }
+      }
+    }
+  }
+
+  /// 有声书包下载临时目标文件（`.hibikiaudio`）。
+  Future<File> _remoteAudiobookDestination(RemoteBookInfo book) async {
+    final Directory temp = await getTemporaryDirectory();
+    final Directory dir =
+        Directory(p.join(temp.path, 'hibiki_remote_audiobooks'));
+    await dir.create(recursive: true);
+    return File(
+        p.join(dir.path, '${_safeRemoteBookKey(book.title)}.hibikiaudio'));
+  }
+
+  /// 本地有声书解包落盘根目录（与 [AppModelLibraryHostService] 同源
+  /// `<appDirectory>/audiobooks`，确保导入位置与 host 导入一致）。
+  Directory _audiobookDatabaseRoot() =>
+      Directory(p.join(appModel.appDirectory.path, 'audiobooks'));
+
   Future<File> _remoteBookDestination(RemoteBookInfo book) async {
     final Future<File> Function(RemoteBookInfo book)? injected =
         _pageWidget.remoteBookDownloadDestination;
@@ -290,14 +403,16 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     return File(p.join(dir.path, '${_safeRemoteBookKey(book.title)}.epub'));
   }
 
-  Future<void> _importRemoteBookFile(File file) async {
-    final Future<void> Function(File file)? injected =
+  /// 导入下载到本地的 EPUB，返回本地入库的 bookKey（= `sanitizeTtuFilename`
+  /// 后的存储标题，可能因同名冲突重命名而与远端书名派生 key 不同）。注入的测试
+  /// importer 不返回 key 时返回 null（音频接线据此降级跳过 override 绑定）。
+  Future<String?> _importRemoteBookFile(File file) async {
+    final Future<String?> Function(File file)? injected =
         _pageWidget.remoteBookImporter;
     if (injected != null) {
-      await injected(file);
-      return;
+      return injected(file);
     }
-    await EpubImporter.importFromPath(
+    return EpubImporter.importFromPath(
       db: appModel.database,
       filePath: file.path,
       fileName: p.basename(file.path),
@@ -316,4 +431,14 @@ class _RemoteBookState {
 
   final List<RemoteBookInfo> books;
   final bool failed;
+}
+
+/// 有声书下载/导入失败的内部信号：[_downloadRemoteBook] 据此与 EPUB 失败区分，
+/// 弹专用提示而非通用「下载失败」。[cause] 是底层真实异常（已记日志）。
+class _RemoteAudiobookException implements Exception {
+  const _RemoteAudiobookException(this.cause);
+  final Object cause;
+
+  @override
+  String toString() => '_RemoteAudiobookException: $cause';
 }

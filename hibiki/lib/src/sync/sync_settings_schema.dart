@@ -241,6 +241,11 @@ SettingsDestination buildSyncBackupDestination() {
             onTap: (SettingsContext ctx) => showSyncCompareDialog(
               ctx.context,
               ctx.appModel.database,
+              // 750a：远端独有书带有声书时一并补下音频包（解包落
+              // <appDirectory>/audiobooks，与 host 导入位置一致）。
+              audioDatabaseRoot: Directory(
+                p.join(ctx.appModel.appDirectory.path, 'audiobooks'),
+              ),
             ),
           ),
         ],

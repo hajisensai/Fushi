@@ -8,6 +8,7 @@ import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
+import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
@@ -433,6 +434,7 @@ Future<void> showSyncCompareDialog(
   HibikiDatabase db, {
   bool conflictsOnly = false,
   Directory? tempDir,
+  Directory? audioDatabaseRoot,
 }) async {
   final repo = SyncRepository(db);
   final backend = resolveSyncBackend(await repo.getBackendType());
@@ -465,6 +467,7 @@ Future<void> showSyncCompareDialog(
       backend: backend,
       conflictsOnly: conflictsOnly,
       tempDir: tempDir,
+      audioDatabaseRoot: audioDatabaseRoot,
     ),
   );
   if (applied != null && applied > 0 && context.mounted) {
@@ -484,6 +487,7 @@ class SyncCompareDialog extends StatefulWidget {
     required this.backend,
     this.conflictsOnly = false,
     this.tempDir,
+    this.audioDatabaseRoot,
     super.key,
   });
   final HibikiDatabase db;
@@ -494,6 +498,11 @@ class SyncCompareDialog extends StatefulWidget {
 
   /// 下载远端独有书时的临时目录；为 null 时落回系统临时目录。
   final Directory? tempDir;
+
+  /// 有声书解包落盘根目录（`<appDirectory>/audiobooks`）。下载远端独有书时若该书
+  /// 带有声书，据此一并补下音频包（750a）。为 null 时跳过有声书补下（仅导 EPUB），
+  /// 保留旧行为，供不关心有声书的测试构造。
+  final Directory? audioDatabaseRoot;
 
   @override
   State<SyncCompareDialog> createState() => _SyncCompareDialogState();
@@ -724,6 +733,54 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     }
   }
 
+  /// 750a：互联下载远端独有书时补下其有声书包（若有）。
+  ///
+  /// 远端有声书键 = `sanitizeTtuFilename(entry.title)`，与 host
+  /// `RemoteAudiobookInfo.bookKey` 同源。先查 host 有声书清单确认存在（避免对没有
+  /// 声书的书发无意义请求），再下载 `.hibikiaudio` 并经
+  /// [SyncAssetPackageService.importAudioDatabasePackage] 用本地 [localBookKey] 作
+  /// `bookKeyOverride` 解包落盘。[audioDatabaseRoot] 为 null（调用方未注入根目录）
+  /// 时跳过有声书补下，只保留 EPUB（旧行为）。
+  Future<void> _downloadLiveAudiobookFor(
+    HibikiClientSyncBackend backend,
+    SyncCompareEntry entry,
+    String localBookKey,
+  ) async {
+    final Directory? audioRoot = widget.audioDatabaseRoot;
+    if (audioRoot == null) return;
+
+    final String remoteBookKey = sanitizeTtuFilename(entry.title);
+    final List<RemoteAudiobookInfo> remote =
+        await backend.listRemoteAudiobooks();
+    final bool hasRemoteAudiobook =
+        remote.any((RemoteAudiobookInfo a) => a.bookKey == remoteBookKey);
+    if (!hasRemoteAudiobook) return;
+
+    final Directory dir = _resolveTempDir();
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final File audioTmp = File(
+      p.join(
+        dir.path,
+        'hibiki-compare-audio-'
+        '${DateTime.now().microsecondsSinceEpoch}.hibikiaudio',
+      ),
+    );
+    try {
+      await backend.getRemoteAudiobook(remoteBookKey, audioTmp);
+      await SyncAssetPackageService(db: widget.db).importAudioDatabasePackage(
+        packageFile: audioTmp,
+        audioDatabaseRoot: audioRoot,
+        bookKeyOverride: localBookKey,
+      );
+    } finally {
+      try {
+        if (audioTmp.existsSync()) audioTmp.deleteSync();
+      } catch (_) {
+        // best-effort temp cleanup
+      }
+    }
+  }
+
   Future<bool> _downloadRemoteOnlyBook(SyncCompareEntry entry) async {
     if (!entry.isDownloadableRemoteOnly) return false;
     if (entry.remoteLiveTitle != null &&
@@ -740,11 +797,14 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       );
       try {
         await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
-        await EpubImporter.importFromPath(
+        final String localBookKey = await EpubImporter.importFromPath(
           db: widget.db,
           filePath: tmp.path,
           fileName: '${entry.title}.epub',
         );
+        // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
+        // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
+        await _downloadLiveAudiobookFor(backend, entry, localBookKey);
         return true;
       } finally {
         try {

@@ -1795,5 +1795,6 @@
   "shortcut_action_dpad_left": "D-pad Left",
   "shortcut_action_dpad_right": "D-pad Right",
   "shortcut_scope_gamepad": "Gamepad",
-  "section_page_turn_direction": "Page-turn direction"
+  "section_page_turn_direction": "Page-turn direction",
+  "remote_book_audiobook_download_failed": "Could not download audiobook for this book"
 }

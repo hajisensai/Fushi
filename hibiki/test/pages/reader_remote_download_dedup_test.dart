@@ -88,7 +88,7 @@ void main() {
                 remoteBookClientLoader: () async => client,
                 remoteBookDownloadDestination: (RemoteBookInfo book) async =>
                     File('${pathProviderDir.path}/${book.title.hashCode}.epub'),
-                remoteBookImporter: (File file) async {},
+                remoteBookImporter: (File file) async => null,
               ),
             ),
           ),

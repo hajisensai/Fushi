@@ -13,6 +13,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -50,6 +51,11 @@ void main() {
   late _FakeRemoteBookClient remoteClient;
   late List<File> importedFiles;
   late File remoteBookCover;
+  // 注入的本地 EPUB bookKey（importer 返回它，音频导入据此作 bookKeyOverride）。
+  late String? importedBookKey;
+  // 有声书接线观测：fetcher 收到的远端 bookKey + importer 收到的 (file, override)。
+  late List<String> fetchedAudiobookKeys;
+  late List<({File package, String? bookKeyOverride})> importedAudiobooks;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
@@ -66,6 +72,9 @@ void main() {
     appModel.populateLanguages();
     remoteClient = _FakeRemoteBookClient(coverPath: remoteBookCover.path);
     importedFiles = <File>[];
+    importedBookKey = 'local-book-key';
+    fetchedAudiobookKeys = <String>[];
+    importedAudiobooks = <({File package, String? bookKeyOverride})>[];
   });
 
   tearDown(() async {
@@ -99,6 +108,21 @@ void main() {
                 ),
                 remoteBookImporter: (File file) async {
                   importedFiles.add(file);
+                  return importedBookKey;
+                },
+                remoteAudiobookFetcher: (String remoteBookKey) async {
+                  fetchedAudiobookKeys.add(remoteBookKey);
+                  final File pkg = File(
+                    '${pathProviderDir.path}/$remoteBookKey.hibikiaudio',
+                  );
+                  await pkg.writeAsBytes(<int>[9, 9, 9]);
+                  return pkg;
+                },
+                remoteAudiobookImporter:
+                    (File package, String? bookKeyOverride) async {
+                  importedAudiobooks.add(
+                    (package: package, bookKeyOverride: bookKeyOverride),
+                  );
                 },
               ),
             ),
@@ -303,6 +327,59 @@ void main() {
 
     expect(remoteClient.downloadedTitles, <String>['Vol_1_2_3_Finale']);
     expect(importedFiles.single.existsSync(), isTrue);
+  });
+
+  testWidgets(
+      'remote audiobook download wires getRemoteAudiobook + import with '
+      'stable remote key and local bookKey override (BUG-405)',
+      (WidgetTester tester) async {
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      title: r'Vol 1/2: Audio',
+      hasAudiobook: true,
+    );
+    importedBookKey = 'local-renamed-key';
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byTooltip(t.remote_book_download));
+      for (int i = 0; i < 40; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (importedAudiobooks.isNotEmpty) break;
+      }
+    });
+    await tester.pump();
+
+    // EPUB still imported.
+    expect(importedFiles.single.existsSync(), isTrue);
+    // Audiobook fetched with the host-stable remote key = sanitizeTtuFilename(title).
+    expect(
+        fetchedAudiobookKeys, <String>[sanitizeTtuFilename(r'Vol 1/2: Audio')]);
+    // Audiobook imported once, bound to the *local* imported EPUB bookKey.
+    expect(importedAudiobooks, hasLength(1));
+    expect(importedAudiobooks.single.bookKeyOverride, 'local-renamed-key');
+    expect(importedAudiobooks.single.package.existsSync(), isTrue);
+  });
+
+  testWidgets(
+      'remote book without audiobook never touches the audiobook wiring '
+      '(BUG-405)', (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byTooltip(t.remote_book_download));
+      for (int i = 0; i < 30; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (importedFiles.isNotEmpty) break;
+      }
+    });
+    await tester.pump();
+
+    expect(importedFiles.single.existsSync(), isTrue);
+    expect(fetchedAudiobookKeys, isEmpty);
+    expect(importedAudiobooks, isEmpty);
   });
 }
 

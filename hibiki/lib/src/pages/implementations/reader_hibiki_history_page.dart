@@ -43,6 +43,7 @@ import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/utils.dart';
@@ -58,13 +59,23 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
     this.remoteBookClientLoader,
     this.remoteBookDownloadDestination,
     this.remoteBookImporter,
+    this.remoteAudiobookFetcher,
+    this.remoteAudiobookImporter,
     super.key,
   });
 
   final Future<RemoteBookClient?> Function()? remoteBookClientLoader;
   final Future<File> Function(RemoteBookInfo book)?
       remoteBookDownloadDestination;
-  final Future<void> Function(File file)? remoteBookImporter;
+  // 返回本地入库的 bookKey（生产路径来自 EpubImporter.importFromPath）。
+  final Future<String?> Function(File file)? remoteBookImporter;
+
+  /// 测试注入：按远端 bookKey 下载有声书包，返回包文件（绕过真实互联后端）。
+  final Future<File> Function(String remoteBookKey)? remoteAudiobookFetcher;
+
+  /// 测试注入：导入有声书包（package + bookKeyOverride），绕过真实解包落盘。
+  final Future<void> Function(File package, String? bookKeyOverride)?
+      remoteAudiobookImporter;
 
   @override
   BaseHistoryPageState<BaseHistoryPage> createState() =>

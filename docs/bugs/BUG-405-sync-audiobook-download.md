@@ -1,0 +1,15 @@
+## BUG-405 · 互联下载有声书丢音频(下载侧只导EPUB不接音频包)
+- **报告**：2026-06-23（用户：）
+- **真实性**：✅ 真 bug。互联下载有声书只下/导 EPUB，从不补下有声书音频包——传输能力全部已存在但下载 UI 从未调用。
+  - 主根因（书架远端书卡）：`hibiki/lib/src/pages/implementations/reader_history/remote.part.dart:251` `_downloadRemoteBook` 经 `client.getRemoteBook` 只下 `.epub`，`:300` `_importRemoteBookFile` 只导 EPUB；即使 `book.hasAudiobook==true`（卡片已渲染耳机徽章 `:189`）也无视音频包。
+  - 同洞（同步对比对话框）：`hibiki/lib/src/sync/sync_compare_dialog.dart:742` `_downloadRemoteOnlyBook` 的互联 live 分支 → 只 `EpubImporter.importFromPath`。
+  - 已存在未被调用的原语：host `app_model_library_host_service.dart:397` `exportAudiobook` / `hibiki_sync_server.dart:844-871` `GET /api/library/audiobooks[/<bookKey>]`；client `hibiki_client_sync_backend.dart:791` `getRemoteAudiobook(bookKey, dest)`；解包 `sync_asset_package_service.dart:153` `importAudioDatabasePackage(packageFile, audioDatabaseRoot, bookKeyOverride)`。
+  - bookKey 同源核对：host `RemoteAudiobookInfo.bookKey == AudiobookRow.bookKey`，host 导入有声书时绑定其 EPUB 的 bookKey = `sanitizeTtuFilename(title)`（`hibiki_library_host_service.dart:54`）；本机 `EpubImporter` `epub_importer.dart:148` `bookKey = sanitizeTtuFilename(storedTitle)`。下载用 `sanitizeTtuFilename(book.title)` 复现 host bookKey；解包用本地刚导入 EPUB 的 bookKey 作 `bookKeyOverride`（同名冲突可能重命名 → 本地 key 可不同），二者职责不同、均正确。
+- **[x] ① 已修复** — 在两个下载侧接上既有原语（复用、不建新管道）。EPUB 成功后若 `book.hasAudiobook`：`getRemoteAudiobook(sanitizeTtuFilename(title), tmp)` 下 `.hibikiaudio` → `SyncAssetPackageService.importAudioDatabasePackage(bookKeyOverride: localBookKey, audioDatabaseRoot: <appDirectory>/audiobooks)`。有声书 live API 仅存在于 `HibikiClientSyncBackend`（云盘后端无此能力，按类型分支跳过，真实能力边界）。有声书失败给专用可见错误（`remote_book_audiobook_download_failed`，不静默吞）；EPUB 已入库故不回滚。下载进度 EPUB 占前半、音频占后半。提交 `cb9060fddfc`。
+  - `hibiki/lib/src/pages/implementations/reader_history/remote.part.dart`（`_downloadRemoteAudiobook` + `_importRemoteBookFile` 返回 bookKey + 进度分段）
+  - `hibiki/lib/src/sync/sync_compare_dialog.dart`（`_downloadLiveAudiobookFor` + `audioDatabaseRoot` 字段）
+  - `hibiki/lib/src/sync/sync_settings_schema.dart`（threading `audioDatabaseRoot`）
+- **[x] ② 已加自动化测试** — 提交 `cb9060fddfc`。
+  - `hibiki/test/pages/reader_remote_interconnect_test.dart`：`hasAudiobook` 远端书触发 `getRemoteAudiobook` + `importAudioDatabasePackage` 接线，断言远端 key = `sanitizeTtuFilename(title)`、`bookKeyOverride` = 本地 EPUB key；非有声书远端书不触达任何有声书接线。
+  - `hibiki/test/sync/sync_audiobook_download_wiring_guard_test.dart`：源码守卫两处下载侧接线（fetch + import + bookKeyOverride + 同源 key）存在，防静默回退。
+- **备注**：仅做 750a（手动下载补音频）。未改自动同步 push-only 语义（`sync_orchestrator.dart:740` `_syncAudiobooksLive` 加 toPull 属 750b，不做）。
