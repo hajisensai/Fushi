@@ -325,6 +325,22 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     return (target * 10).roundToDouble() / 10;
   }
 
+  /// 桌面屏幕边缘竖拖（左=亮度 / 右=音量）手势的灵敏度（TODO-754）：满量程
+  /// （0..100）所需的竖向拖动像素数。镜像移动端 media_kit 竖滑灵敏度量级
+  /// （[_VideoHibikiPageState._videoVerticalGestureSensitivity]=320），约半屏拖动覆盖
+  /// 全程，不过敏。
+  static const double edgeDragVerticalSensitivity = 320.0;
+
+  /// 把一次竖直拖动的累计竖向位移 [dy]（屏幕像素，向下为正，相对拖动起点）映射成
+  /// 0..100 量程上的「值增量」（向上拖动为正、向下为负，TODO-754，纯函数供单测）。
+  ///
+  /// 与移动端 media_kit 竖滑同向：手指/光标向上滑（[dy] 负）→ 增大。满量程
+  /// [edgeDragVerticalSensitivity] 像素对应 100 的变化量；调用方加到拖动起点的基准
+  /// 值再 clamp 到 0..100（音量）或映射到亮度通道。
+  @visibleForTesting
+  static double edgeDragValueDeltaFor(double dy) =>
+      -dy / edgeDragVerticalSensitivity * 100.0;
+
   @override
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
@@ -531,6 +547,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 进入视频时的系统屏幕亮度快照（移动端）。退出播放器 [restore] 写回，防止把
   /// 用户系统亮度永久留在拖动后的值（iOS 系统级亮度尤其要还原）。null=尚未取到。
   double? _enterBrightness;
+
+  // TODO-754: 桌面边缘竖拖手势状态。drag start 按起手 x 判定左/右半区并捕获基准值；
+  // update 用相对起点的累计竖位移映射增量；end 清状态。仅桌面启用（移动端走 media_kit
+  // 内建竖滑手势，见 [_mobileControlsTheme]，避免双份）。
+
+  /// 当前竖拖落在右半区（true=音量）还是左半区（false=亮度）；null=未在拖动 / 已
+  /// 中止（落在控制条 chrome / 侧栏开 / 沉浸锁 → start 不激活）。
+  bool? _edgeDragIsRightHalf;
+
+  /// 竖拖起点处捕获的基准值（0..100）：右半区=当前音量 [_volumeDisplay]，左半区=
+  /// 当前 mpv 视频亮度（-100..100）映射到 0..100。update 在此基础上加映射增量。
+  double _edgeDragStartValue = 0.0;
+
+  /// 竖拖起点的竖向坐标（屏幕 dy）；update 用 `当前dy - 起点dy` 得相对起点的累计
+  /// 竖位移（向下为正），喂 [VideoHibikiPage.edgeDragValueDeltaFor]。
+  double _edgeDragStartDy = 0.0;
 
   int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
   double get _speedStep => _asbConfig.speedStep;
@@ -4031,6 +4063,81 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final double bottomChromeTop =
         renderObject.size.height - padding.bottom - _videoButtonBarHeight;
     return local.dy <= topChromeBottom || local.dy >= bottomChromeTop;
+  }
+
+  /// 桌面边缘竖拖手势（TODO-754）：在画面左半区按住竖直拖动调亮度、右半区调音量，
+  /// 与移动端 media_kit 竖滑手势同语义（移动端走内建手势，本组 handler 仅桌面接，
+  /// 见 [_buildVideoControlsInner] 的 [_isDesktopVideoControls] 门控，避免双份）。
+  ///
+  /// 起手判定：仅桌面、非沉浸锁、无侧栏 / 剧集列表打开、起手不在控制条 chrome 区
+  /// （对齐 [_handleVideoPointerUp] 的早返回门控，避免与底部 seek bar / 顶栏抢手势）。
+  /// 不满足则 [_edgeDragIsRightHalf]=null 标记本次拖动不激活，update/end 直接早返回。
+  ///
+  /// 左 / 右半区按起手点 [DragStartDetails.localPosition].dx 与控件宽度一半比较判定。
+  /// 起点同时捕获基准值：右=当前音量、左=当前 mpv 视频亮度（映射到 0..100），后续
+  /// update 在此基准上叠加竖位移映射的增量。横拖调速（[_handleVideoLongPressStart]
+  /// 系列，需先长按）与本竖拖经手势竞技场天然分流，互不冲突。
+  ///
+  /// 亮度只走 libmpv `brightness` 属性（[VideoPlayerController.setVideoBrightness]）：
+  /// 本组手势仅桌面接（[_isDesktopVideoControls] 门控），而桌面系统屏幕亮度不可控
+  /// （[ScreenBrightnessController.canControl] 恒 false，假装能控只静默 no-op）→ 唯一
+  /// 能给画面真实反馈的可控通道就是 mpv 视频亮度（TODO-754 根因）。移动端的系统屏幕
+  /// 亮度竖滑由 media_kit 内建 brightnessGesture 承载（见 [_mobileControlsTheme]），不
+  /// 经本路径。
+  void _handleVideoEdgeDragStart(DragStartDetails details) {
+    _edgeDragIsRightHalf = null; // 默认不激活，满足条件才置位。
+    if (!_isDesktopVideoControls) return;
+    if (_immersiveLocked.value) return;
+    if (_videoSidePanel.value != null) return;
+    if (_episodeListVisible.value) return;
+    final BuildContext? controlsContext = _videoControlsContext;
+    if (controlsContext == null || !controlsContext.mounted) return;
+    final RenderObject? renderObject = controlsContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final double width = renderObject.size.width;
+    if (width <= 0) return;
+    // 起手在控制条 chrome 区（顶栏 / 底部 seek bar）的竖拖让给 chrome，不抢。
+    if (_isVideoChromePointer(controlsContext, details.globalPosition)) return;
+    final double localDx =
+        renderObject.globalToLocal(details.globalPosition).dx;
+    final bool right = localDx >= width / 2;
+    _edgeDragIsRightHalf = right;
+    _edgeDragStartDy = details.globalPosition.dy;
+    if (right) {
+      // 右半区基准 = 当前有效音量（显示真相源，0..100）。
+      _edgeDragStartValue = _volumeDisplay.value;
+    } else {
+      // 左半区基准 = 当前 mpv 视频亮度（-100..100）映射到 0..100 量程（(b+100)/2）。
+      final double mpv = (_controller?.videoBrightness ?? 0).toDouble();
+      _edgeDragStartValue = ((mpv + 100.0) / 2.0).clamp(0.0, 100.0);
+    }
+  }
+
+  /// 桌面边缘竖拖更新（TODO-754）：以起点基准值 [_edgeDragStartValue] 叠加竖位移
+  /// （`globalPosition.dy - _edgeDragStartDy`，相对起点的累计竖位移）经纯函数
+  /// [VideoHibikiPage.edgeDragValueDeltaFor] 映射的增量，clamp 到 0..100，下发到对应
+  /// 通道。右=音量经 [_applyUserVideoVolume]（内部自动弹音量 HUD）；左=亮度经
+  /// [VideoPlayerController.setVideoBrightness]（mpv `brightness`），并显式
+  /// [_showBrightnessOsd] 弹左侧亮度 HUD（复用现成 HUD，不重造）。
+  void _handleVideoEdgeDragUpdate(DragUpdateDetails details) {
+    final bool? right = _edgeDragIsRightHalf;
+    if (right == null) return; // 本次拖动未激活（门控未过）。
+    final double dy = details.globalPosition.dy - _edgeDragStartDy;
+    final double delta = VideoHibikiPage.edgeDragValueDeltaFor(dy);
+    final double value = (_edgeDragStartValue + delta).clamp(0.0, 100.0);
+    if (right) {
+      unawaited(_applyUserVideoVolume(value));
+    } else {
+      // 左半区亮度：0..100 → mpv -100..100，下发到 libmpv `brightness`，弹左侧 HUD。
+      final int mpv = ((value / 100.0) * 200.0 - 100.0).round();
+      unawaited(_controller?.setVideoBrightness(mpv) ?? Future<void>.value());
+      _showBrightnessOsd(value);
+    }
+  }
+
+  /// 桌面边缘竖拖结束（TODO-754）：清拖动状态，下次手势重新判定左 / 右半区与基准。
+  void _handleVideoEdgeDragEnd(DragEndDetails details) {
+    _edgeDragIsRightHalf = null;
   }
 
   /// 桌面右键 = 视频上下文菜单（TODO-048c）。右键松手处 [globalPosition] 作锚点弹

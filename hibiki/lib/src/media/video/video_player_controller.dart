@@ -284,6 +284,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前 mpv 配置（[load] 复用 / [applyMpvConfig] 实时切换）。
   VideoMpvConfig _mpvConfig = VideoMpvConfig.defaults;
 
+  /// 当前 mpv 视频亮度（libmpv `brightness` 属性，范围 -100..100，0=原始）。桌面
+  /// 左半区竖拖手势（TODO-754）在系统屏幕亮度不可控时改写它，给视频画面真实的亮
+  /// 度反馈。player 未实例化 / 非 libmpv 后端时只保留此目标值，[load] 不复用（每片
+  /// 重置，符合 mpv 默认）。
+  int _videoBrightness = 0;
+
   Timer? _tick;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<bool>? _completedSub;
@@ -435,6 +441,28 @@ class VideoPlayerController extends ChangeNotifier
   double get volume => _player?.state.volume ?? _lastVolume;
 
   bool get muted => _muted;
+
+  /// 当前 mpv 视频亮度（libmpv `brightness` 属性，-100..100，0=原始）。桌面左半区
+  /// 竖拖手势在系统屏幕亮度不可控时改写它（TODO-754）。
+  int get videoBrightness => _videoBrightness;
+
+  /// 设置 mpv 视频亮度（libmpv `brightness` 属性，[value] clamp 到 -100..100）。
+  ///
+  /// 经 `player.platform`（NativePlayer）的 `setProperty` 下发，与
+  /// [applyMpvConfigToPlayer] / [applySubtitleMpvPropertiesToPlayer] 同范式：非 libmpv
+  /// 后端（无 `setProperty`）/ 属性不被接受时 best-effort 静默吞掉，不影响播放。写成
+  /// 功能记入 [_videoBrightness] 供 getter 回读；未 [load] 时只记目标值。
+  Future<void> setVideoBrightness(int value) async {
+    final int clamped = value.clamp(-100, 100);
+    _videoBrightness = clamped;
+    final dynamic native = _player?.platform;
+    if (native == null) return;
+    try {
+      await native.setProperty('brightness', clamped.toString());
+    } catch (_) {
+      // 非 libmpv / 属性不支持运行时设置：best-effort no-op（与配置/字幕属性同纪律）。
+    }
+  }
 
   /// 截取当前解码帧为 JPEG 字节（制卡截图用）。未 [load] 返回 null。
   Future<Uint8List?> screenshot() async {
