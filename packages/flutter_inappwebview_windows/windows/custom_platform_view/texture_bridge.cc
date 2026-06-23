@@ -198,6 +198,19 @@ namespace flutter_inappwebview_plugin
       return std::string(buffer);
     }
 
+    // TODO-409: erase 回收后，registry 里驻留的 retired 数应趋近于 0（不再泄漏的
+    // 可观测锚点）；retired_total 是单调累计退役次数（退役链确实在跑的锚点），
+    // 不随回收下降，与查词/teardown 次数对照。
+    std::string RegistryCountsDetail(size_t active_count, size_t retired_count,
+      uint64_t retired_total)
+    {
+      char buffer[128];
+      std::snprintf(buffer, sizeof(buffer),
+        "active=%zu retired=%zu retired_total=%llu", active_count, retired_count,
+        static_cast<unsigned long long>(retired_total));
+      return std::string(buffer);
+    }
+
     class FramePoolLifetimeRegistry {
     public:
       static FramePoolLifetimeRegistry& Instance()
@@ -223,9 +236,39 @@ namespace flutter_inappwebview_plugin
           return;
         }
         const std::lock_guard<std::mutex> lock(mutex_);
+        // 维持 FinalizeFramePoolLifetime 的幂等早返回（registry_retired==true
+        // 即跳过重复退役链），即便随后从向量移除强引用。
+        if (lifetime->registry_retired) {
+          return;
+        }
         lifetime->registry_retired = true;
+        ++retired_total_;
+        // TODO-409: 退役链 ①-⑦ 已在 mutex_ 锁外（RetireFramePoolLocked/
+        // FinalizeFramePoolLifetime）跑完（pump 失效化→Stop→remove_Tick→Close
+        // session→Close pool），此处只剩最后一步：从 lifetimes_ 真正移除这条
+        // 强引用。当 registry 持最后一个强引用时，erase 触发
+        // ~WgcFramePoolLifetime 释放壳内已 Close 的 COM 句柄，消除有界泄漏。
+        // 在途 Tick 仍由 pump_state 弱引用 + 自身栈上的 shared_ptr 保护（非
+        // free-threaded 帧池 + UI 线程串行 pump），不会 UAF。
+        // 先在仍持有该条目时计算计数并写日志，保留 retired/retired_total 锚点，
+        // 再 erase 移除引用（不手动 delete/reset，让引用计数自然定序析构）。
         WgcLog::Write("registry-size", lifetime->PoolForLog(),
-          RegistryCountsDetail(ActiveCountLocked(), RetiredCountLocked()));
+          RegistryCountsDetail(ActiveCountLocked(), RetiredCountLocked(),
+            retired_total_));
+        for (auto it = lifetimes_.begin(); it != lifetimes_.end(); ++it) {
+          if (it->get() == lifetime.get()) {
+            lifetimes_.erase(it);
+            break;
+          }
+        }
+        // TODO-409 不变量（勿破坏）：erase 后这里仍解引用 lifetime->PoolForLog()
+        // 是安全的，因为对象此刻靠 RetireFramePoolLocked 的栈局部 shared_ptr 存活
+        // （erase 只把 registry 引用从「最后一个」降级为「非最后」，refcount 2→1）。
+        // 若将来重构成「registry 直接独占唯一引用、erase 即析构」，这一行会立刻变
+        // UAF——届时必须把日志移到 erase 之前，或保留一个本地强引用。
+        WgcLog::Write("registry-reclaim", lifetime->PoolForLog(),
+          RegistryCountsDetail(ActiveCountLocked(), RetiredCountLocked(),
+            retired_total_));
       }
 
     private:
@@ -255,6 +298,9 @@ namespace flutter_inappwebview_plugin
 
       std::mutex mutex_;
       std::vector<std::shared_ptr<WgcFramePoolLifetime>> lifetimes_;
+      // TODO-409: 单调累计退役次数（不随 erase 回收下降），真机用作退役链
+      // 确实在跑的可观测锚点。
+      uint64_t retired_total_ = 0;
     };
 
     void FinalizeFramePoolLifetime(
