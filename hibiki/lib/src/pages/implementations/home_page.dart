@@ -589,20 +589,27 @@ class _HomePageState extends BasePageState<HomePage>
       reversed: reversed,
     );
 
+    // Two traversal groups so D-pad / arrow Left/Right walks each region as one
+    // closed block (whole bottom bar, or whole content) instead of escaping from
+    // an edge tab up into a content focus target. Mirrors the desktop layout,
+    // which already isolates the rail and content panes (TODO-713: 移动端底栏
+    // 边缘 tab 按左/右焦点跑到上部).
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      body: SafeArea(child: _bodyWithMiniBar()),
-      bottomNavigationBar: adaptiveBottomBar(
-        context: context,
-        currentIndex: visualIndex,
-        onTap: (int index) {
-          _selectTab(homeTabForVisualIndex(
-            tabs: tabs,
-            visualIndex: index,
-            reversed: reversed,
-          ));
-        },
-        items: displayItems,
+      body: SafeArea(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
+      bottomNavigationBar: FocusTraversalGroup(
+        child: adaptiveBottomBar(
+          context: context,
+          currentIndex: visualIndex,
+          onTap: (int index) {
+            _selectTab(homeTabForVisualIndex(
+              tabs: tabs,
+              visualIndex: index,
+              reversed: reversed,
+            ));
+          },
+          items: displayItems,
+        ),
       ),
     );
   }

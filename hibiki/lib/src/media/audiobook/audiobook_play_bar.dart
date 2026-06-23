@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart'
+    show HibikiFocusId;
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
@@ -69,7 +72,8 @@ class AudiobookPlayBar extends StatelessWidget {
     final Widget playbackControls = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        IconButton(
+        _FocusableBarButton(
+          id: const HibikiFocusId('audiobook_prev'),
           icon: Icon(
             skipActionSeconds == 0
                 ? Icons.skip_previous_outlined
@@ -88,7 +92,9 @@ class AudiobookPlayBar extends StatelessWidget {
             }
           },
         ),
-        IconButton.filledTonal(
+        _FocusableBarButton(
+          id: const HibikiFocusId('audiobook_play'),
+          filledTonal: true,
           icon: Icon(
             controller.isPlaying
                 ? Icons.pause_outlined
@@ -99,7 +105,8 @@ class AudiobookPlayBar extends StatelessWidget {
           onPressed: controller.togglePlayPause,
           tooltip: controller.isPlaying ? t.pause : t.play,
         ),
-        IconButton(
+        _FocusableBarButton(
+          id: const HibikiFocusId('audiobook_next'),
           icon: Icon(
             skipActionSeconds == 0
                 ? Icons.skip_next_outlined
@@ -135,7 +142,8 @@ class AudiobookPlayBar extends StatelessWidget {
         controller: controller,
         foregroundColor: fg,
       ),
-      IconButton(
+      _FocusableBarButton(
+        id: const HibikiFocusId('audiobook_settings'),
         icon: const Icon(Icons.tune_outlined),
         iconSize: 20,
         style: flatStyle,
@@ -189,7 +197,8 @@ class AudiobookFollowAudioButton extends StatelessWidget {
             : colors.onSurfaceVariant;
         // 旧版 follow 键是无框原生 [IconButton]（仅图标着色），还原其观感的同时
         // 保留 c3dbe59a1 的纸张前景色注入：开启态用满前景色 / 关闭态 60%。
-        return IconButton(
+        return _FocusableBarButton(
+          id: const HibikiFocusId('audiobook_follow'),
           icon: Icon(on ? Icons.link : Icons.link_off),
           iconSize: 20,
           color: on ? onColor : offColor,
@@ -202,6 +211,80 @@ class AudiobookFollowAudioButton extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// 有声书播放控制条上的一个图标按钮，已注册为应用焦点目标（[HibikiFocusTarget]）。
+///
+/// 裸 Material [IconButton] 的焦点节点不会进入 [HibikiFocusController] 的目标表，
+/// 所以在 `experimentalFocusNavigation` 下方向键 / 手柄方向只在已注册的
+/// [HibikiFocusTarget] 之间移动，永远跳不到播放条这几个按钮（TODO-712：用户报
+/// 「这三个按钮好像没焦点」）。这里把按钮包进 [HibikiFocusTarget] 让它成为可达
+/// 的焦点目标。
+///
+/// [HibikiFocusTarget] 自己持有焦点节点（[Focus]）；A / Enter 经
+/// `Actions.maybeInvoke<ActivateIntent>(primaryFocus.context, ...)` 从该焦点节点
+/// **向上**走 Actions 链分发，而 [IconButton] 内建的 [ActivateIntent] 处理器在
+/// 子树**下方**够不到——所以这里在 [HibikiFocusTarget] 之上显式挂一层
+/// `Actions{ActivateIntent → onPressed}`，与导航项 `_NavFocusCell` 同款做法，
+/// 否则焦点能到但确认键按不动按钮。
+class _FocusableBarButton extends StatelessWidget {
+  const _FocusableBarButton({
+    required this.id,
+    required this.icon,
+    required this.iconSize,
+    required this.onPressed,
+    required this.tooltip,
+    this.style,
+    this.color,
+    this.filledTonal = false,
+  });
+
+  final HibikiFocusId id;
+  final Widget icon;
+  final double iconSize;
+  final VoidCallback onPressed;
+  final String tooltip;
+
+  /// 透传给底层 [IconButton] 的 [ButtonStyle]（纸张主题前景色注入）。
+  final ButtonStyle? style;
+
+  /// 透传给底层 [IconButton] 的 [IconButton.color]（follow 键按开/关态着色用）。
+  final Color? color;
+
+  /// true 时底层用 [IconButton.filledTonal]（播放/暂停键的 MD3 圆框 tonal 容器）。
+  final bool filledTonal;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget button = filledTonal
+        ? IconButton.filledTonal(
+            icon: icon,
+            iconSize: iconSize,
+            style: style,
+            color: color,
+            tooltip: tooltip,
+            onPressed: onPressed,
+          )
+        : IconButton(
+            icon: icon,
+            iconSize: iconSize,
+            style: style,
+            color: color,
+            tooltip: tooltip,
+            onPressed: onPressed,
+          );
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            onPressed();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(id: id, child: button),
     );
   }
 }
