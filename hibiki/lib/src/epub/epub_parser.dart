@@ -42,9 +42,8 @@ class EpubParser {
 
   /// Parse an already-extracted EPUB directory.
   static EpubBook parseFromExtracted(String extractDir) {
-    final File containerFile =
-        File(p.join(extractDir, 'META-INF', 'container.xml'));
-    if (!containerFile.existsSync()) {
+    final File? containerFile = _findContainerXml(extractDir);
+    if (containerFile == null) {
       throw const FormatException(
           'Invalid EPUB: missing META-INF/container.xml');
     }
@@ -175,11 +174,27 @@ class EpubParser {
     String canonicalBase,
     String name,
   ) {
-    final String filePath = p.canonicalize(p.join(extractDir, name));
-    if (!p.isWithin(canonicalBase, filePath)) {
+    // TODO-739: the zip-slip boundary check and the on-disk write path must use
+    // DIFFERENT forms of the joined path. p.canonicalize lower-cases the whole
+    // path on case-insensitive platforms (Windows), so using its result as the
+    // real write path stored 'META-INF/container.xml' on disk as 'meta-inf/...'.
+    // When a Windows host re-packages the extract dir (repackageExtractedEpub)
+    // and ships it to a case-sensitive peer (Android/Linux), the peer extracts a
+    // lower-cased 'meta-inf' and parseFromExtracted can no longer find the
+    // upper-case 'META-INF/container.xml' -> FormatException.
+    //
+    // Fix: keep full zip-slip protection by validating the boundary with the
+    // canonicalized path (a '../' or absolute entry escaping extractDir is still
+    // rejected), but write to disk using the case-preserving joined path.
+    final String joined = p.join(extractDir, name);
+    // p.normalize collapses '.'/'..' segments WITHOUT lower-casing, so the
+    // case-sensitive boundary check below still rejects a traversal entry.
+    final String normalized = p.normalize(joined);
+    if (!p.isWithin(canonicalBase, p.canonicalize(joined)) ||
+        !p.isWithin(p.normalize(extractDir), normalized)) {
       return null;
     }
-    return filePath;
+    return normalized;
   }
 
   static void _addParentDirectories(
@@ -206,6 +221,78 @@ class EpubParser {
   }
 
   // ── container.xml ──────────────────────────────────────────────────────────
+
+  /// Locate `META-INF/container.xml` under [extractDir] with case-insensitive
+  /// matching on both path segments.
+  ///
+  /// TODO-739: the canonical EPUB layout is upper-case `META-INF/container.xml`,
+  /// and the extraction side ([_safeArchivePath]) now preserves the archive
+  /// entry case. But books that were extracted by older builds (which
+  /// lower-cased the path via `p.canonicalize`) sit on disk as
+  /// `meta-inf/container.xml`. When such a book is opened on a case-sensitive
+  /// filesystem after a re-extraction, an exact upper-case lookup would fail.
+  /// Scanning the directory for a case-insensitive match rescues those legacy
+  /// extractions without weakening the on-disk fix.
+  static File? _findContainerXml(String extractDir) {
+    // Fast path: the spec-correct upper-case location.
+    final File exact = File(p.join(extractDir, 'META-INF', 'container.xml'));
+    if (exact.existsSync()) {
+      return exact;
+    }
+    final Directory? metaInf = _findChildDir(extractDir, 'META-INF');
+    if (metaInf == null) {
+      return null;
+    }
+    return _findChildFile(metaInf.path, 'container.xml');
+  }
+
+  /// Returns the child directory of [parentDir] whose name equals [name]
+  /// ignoring case, or null if none exists. Prefers an exact-case match.
+  static Directory? _findChildDir(String parentDir, String name) {
+    final Directory parent = Directory(parentDir);
+    if (!parent.existsSync()) {
+      return null;
+    }
+    final String lower = name.toLowerCase();
+    Directory? caseInsensitiveHit;
+    for (final FileSystemEntity entity in parent.listSync(followLinks: false)) {
+      if (entity is! Directory) {
+        continue;
+      }
+      final String base = p.basename(entity.path);
+      if (base == name) {
+        return entity;
+      }
+      if (caseInsensitiveHit == null && base.toLowerCase() == lower) {
+        caseInsensitiveHit = entity;
+      }
+    }
+    return caseInsensitiveHit;
+  }
+
+  /// Returns the child file of [parentDir] whose name equals [name] ignoring
+  /// case, or null if none exists. Prefers an exact-case match.
+  static File? _findChildFile(String parentDir, String name) {
+    final Directory parent = Directory(parentDir);
+    if (!parent.existsSync()) {
+      return null;
+    }
+    final String lower = name.toLowerCase();
+    File? caseInsensitiveHit;
+    for (final FileSystemEntity entity in parent.listSync(followLinks: false)) {
+      if (entity is! File) {
+        continue;
+      }
+      final String base = p.basename(entity.path);
+      if (base == name) {
+        return entity;
+      }
+      if (caseInsensitiveHit == null && base.toLowerCase() == lower) {
+        caseInsensitiveHit = entity;
+      }
+    }
+    return caseInsensitiveHit;
+  }
 
   static String? _findRootfilePath(XmlDocument container) {
     for (final XmlElement el in container.findAllElements('rootfile')) {
