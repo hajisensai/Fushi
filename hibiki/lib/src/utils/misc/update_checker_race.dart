@@ -300,3 +300,36 @@ Future<List<String>?> raceSelectFastestCandidate({
   if (winner == null) return null;
   return reorderCandidatesByRaceWinner(candidateUrls, winner);
 }
+
+/// **下载取消令牌（TODO-738）**。下载遮罩「取消」按钮按下时置位；下载引擎在每个候选
+/// 尝试边界检查它，已取消则立刻抛 [UpdateDownloadCancelledException] 中断整轮，不再继续
+/// 串行回退其余候选。Dart [HttpClient] 已发出的请求不能真 abort——本令牌只在「候选之间」
+/// 的安全点提前中断，把「全死源串行回退几分钟」期间用户的逃生意图落地（每个候选最坏
+/// 仍要等当前首字节 5s / body 15s 段超时走完，但不会再开下一个候选）。放在 race part：
+/// 与竞速探针 drain 的取消语义（R1）同家，且让 download part 不越 1500 行结构守卫。
+@visibleForTesting
+class UpdateDownloadCancellation {
+  bool _cancelled = false;
+
+  /// 是否已请求取消。
+  bool get isCancelled => _cancelled;
+
+  /// 请求取消（幂等）。下载引擎在下一个候选边界看到后中断。
+  void cancel() {
+    _cancelled = true;
+  }
+
+  /// 已取消则抛 [UpdateDownloadCancelledException]，供候选循环在边界处统一检查。
+  void throwIfCancelled() {
+    if (_cancelled) throw const UpdateDownloadCancelledException();
+  }
+}
+
+/// 用户主动取消下载时抛出的哨兵异常（TODO-738）。调用方据其类型把 UI 收尾为「已取消」
+/// 而非「下载失败」（不弹错误 SnackBar）。
+class UpdateDownloadCancelledException implements Exception {
+  const UpdateDownloadCancelledException();
+
+  @override
+  String toString() => 'UpdateDownloadCancelledException';
+}

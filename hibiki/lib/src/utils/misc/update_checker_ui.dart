@@ -358,12 +358,14 @@ Widget buildUpdateDownloadOverlayForTest({
   required ValueNotifier<String> status,
   required ValueNotifier<UpdateDownloadDiagnostics?> diagnostics,
   required VoidCallback onHide,
+  VoidCallback? onCancel,
 }) {
   return _DownloadOverlay(
     progress: progress,
     status: status,
     diagnostics: diagnostics,
     onHide: onHide,
+    onCancel: onCancel ?? () {},
   );
 }
 
@@ -373,11 +375,13 @@ class _DownloadOverlay extends StatelessWidget {
     required this.status,
     required this.diagnostics,
     required this.onHide,
+    required this.onCancel,
   });
   final ValueNotifier<double> progress;
   final ValueNotifier<String> status;
   final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics;
   final VoidCallback onHide;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -437,9 +441,20 @@ class _DownloadOverlay extends StatelessWidget {
                       },
                     ),
                     SizedBox(height: tokens.spacing.gap),
-                    TextButton(
-                      onPressed: onHide,
-                      child: Text(t.update_hide),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        // 取消（逃生口·TODO-738）：全死源串行回退期间用户可主动中断，
+                        // 不必盯着「正在连接更新源…」干等几分钟。
+                        TextButton(
+                          onPressed: onCancel,
+                          child: Text(t.update_cancel),
+                        ),
+                        TextButton(
+                          onPressed: onHide,
+                          child: Text(t.update_hide),
+                        ),
+                      ],
                     ),
                   ],
                 ),

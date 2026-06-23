@@ -1785,5 +1785,8 @@
   "audiobook_background_play": "退出后继续播放",
   "audiobook_background_play_hint": "关闭时，退出阅读页即停止有声书播放；开启后退出仍在后台继续播放。",
   "sync_compare_close": "关闭",
-  "show_top_progress_bar": "顶部阅读进度"
+  "show_top_progress_bar": "顶部阅读进度",
+  "update_cancel": "取消",
+  "update_cancelling": "正在取消…",
+  "update_cancelled": "已取消下载"
 }

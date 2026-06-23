@@ -494,6 +494,8 @@ class UpdateChecker {
     final statusController = UpdateDownloadStatusController(status);
     final diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(null);
     final overlayVisible = ValueNotifier<bool>(true);
+    // 取消令牌（TODO-738）：遮罩「取消」按钮按下后置位，下载引擎在候选边界看到即中断。
+    final cancellation = UpdateDownloadCancellation();
     late final OverlayEntry overlay;
     overlay = OverlayEntry(
       builder: (ctx) => ValueListenableBuilder<bool>(
@@ -505,6 +507,11 @@ class UpdateChecker {
             status: status,
             diagnostics: diagnostics,
             onHide: () => overlayVisible.value = false,
+            onCancel: () {
+              // 立即给反馈：置「正在取消…」并请求取消；引擎在下一个候选边界中断。
+              cancellation.cancel();
+              status.value = t.update_cancelling;
+            },
           );
         },
       ),
@@ -555,11 +562,20 @@ class UpdateChecker {
           }
           debugPrint('[Hibiki] download source failed ($url): $error');
         },
+        cancellation: cancellation,
       );
 
       status.value = t.update_installing;
 
       await updater.apply(outFile, version);
+    } on UpdateDownloadCancelledException {
+      // 用户主动取消（TODO-738）：不是失败，不记错误日志、不弹「下载失败」。
+      debugPrint('[Hibiki] update download cancelled by user');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.update_cancelled)),
+        );
+      }
     } catch (e, stack) {
       ErrorLogService.instance
           .log('UpdateChecker.downloadAndInstall', e, stack);

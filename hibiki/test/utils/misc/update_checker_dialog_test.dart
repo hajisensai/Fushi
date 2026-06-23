@@ -91,6 +91,47 @@ void main() {
     expect(find.textContaining(t.update_download_not_resumed), findsOneWidget);
   });
 
+  // TODO-738: the download overlay exposes a Cancel escape hatch that fires the
+  // onCancel callback (lets the user abort the multi-minute connecting hang).
+  testWidgets('download overlay shows a cancel button wired to onCancel', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 520);
+    addTearDown(tester.view.reset);
+
+    final ValueNotifier<double> progress = ValueNotifier<double>(0);
+    final ValueNotifier<String> status =
+        ValueNotifier<String>(t.update_connecting);
+    final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
+        ValueNotifier<UpdateDownloadDiagnostics?>(null);
+    addTearDown(progress.dispose);
+    addTearDown(status.dispose);
+    addTearDown(diagnostics.dispose);
+
+    var cancelled = false;
+    await tester.pumpWidget(
+      buildApp(
+        Stack(
+          children: <Widget>[
+            buildUpdateDownloadOverlayForTest(
+              progress: progress,
+              status: status,
+              diagnostics: diagnostics,
+              onHide: () {},
+              onCancel: () => cancelled = true,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.text(t.update_cancel), findsOneWidget);
+    await tester.tap(find.text(t.update_cancel));
+    await tester.pump();
+    expect(cancelled, isTrue, reason: 'tapping Cancel must fire onCancel');
+  });
+
   testWidgets('installer handoff success dialog shows the target version', (
     WidgetTester tester,
   ) async {

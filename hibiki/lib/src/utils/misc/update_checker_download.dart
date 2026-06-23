@@ -159,6 +159,7 @@ Future<File> downloadUpdateAsset({
   void Function(double value)? onProgress,
   UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
+  UpdateDownloadCancellation? cancellation,
 }) async {
   final String activeKey = _activeDownloadKey(updatesDir, asset, version);
   final Future<File>? activeDownload = _activeUpdateDownloads[activeKey];
@@ -175,6 +176,7 @@ Future<File> downloadUpdateAsset({
     onProgress: onProgress,
     onDiagnostics: onDiagnostics,
     onSourceFailure: onSourceFailure,
+    cancellation: cancellation,
   );
   _activeUpdateDownloads[activeKey] = download;
   try {
@@ -204,6 +206,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
   void Function(double value)? onProgress,
   UpdateDownloadDiagnosticsCallback? onDiagnostics,
   UpdateDownloadSourceFailure? onSourceFailure,
+  UpdateDownloadCancellation? cancellation,
 }) async {
   await updatesDir.create(recursive: true);
   final UpdateDownloadPaths paths =
@@ -256,6 +259,7 @@ Future<File> _downloadUpdateAssetUncoalesced({
   final List<UpdateDownloadAttemptFailure> failures =
       <UpdateDownloadAttemptFailure>[];
   for (final String url in orderedCandidates) {
+    cancellation?.throwIfCancelled();
     try {
       final _UpdateDownloadMetadata? currentMetadata =
           await _UpdateDownloadMetadata.read(stagingPaths.metadataFile);
@@ -510,8 +514,9 @@ Future<File> _downloadCandidateSingle({
     }
   }
 
+  // 首响应用首字节 5s 快判死连上即挂；body 仍 15s/段不误杀慢源（TODO-738）。
   final UpdateDownloadResponse response =
-      await openUrl(uri, headers).timeout(_kPerAttemptTimeout);
+      await openUrl(uri, headers).timeout(_kFirstByteTimeout);
   final bool requestedRange = resumeOffset > 0;
   var writeOffset = resumeOffset;
 
@@ -605,7 +610,8 @@ Future<File> _downloadCandidateSingle({
   Object? bodyError;
   StackTrace? bodyStack;
   try {
-    await for (final List<int> chunk in response.stream) {
+    await for (final List<int> chunk
+        in response.stream.timeout(_kPerAttemptTimeout)) {
       sink.add(chunk);
       received += chunk.length;
       if (total != null && total > 0) {
@@ -732,7 +738,7 @@ Future<File?> _downloadSegmented({
   };
   final UpdateDownloadResponse probe;
   try {
-    probe = await openUrl(uri, probeHeaders).timeout(_kPerAttemptTimeout);
+    probe = await openUrl(uri, probeHeaders).timeout(_kFirstByteTimeout);
   } catch (_) {
     // 探针失败：让调用方走单线程（其错误处理/换源更完整），不在此吞掉换源职责。
     return null;
@@ -863,7 +869,7 @@ Future<File?> _downloadSegmented({
             segmentBytes[index] += delta;
             reportProgress();
           },
-        ).timeout(_kPerAttemptTimeout);
+        );
         return written;
       } on _SegmentRangeUnsupported {
         rethrow; // 200/If-Range 不匹配：重试同后端无意义，交上层整体退化。
@@ -961,7 +967,8 @@ Future<int> _runSegmentRequest({
   required int appendOffset,
   required void Function(int delta) onChunk,
 }) async {
-  final UpdateDownloadResponse response = await openUrl(uri, headers);
+  final UpdateDownloadResponse response =
+      await openUrl(uri, headers).timeout(_kFirstByteTimeout);
   if (response.statusCode == HttpStatus.ok) {
     await response.stream.drain<void>();
     throw const _SegmentRangeUnsupported();
@@ -976,7 +983,8 @@ Future<int> _runSegmentRequest({
   );
   var written = appendOffset;
   try {
-    await for (final List<int> chunk in response.stream) {
+    await for (final List<int> chunk
+        in response.stream.timeout(_kPerAttemptTimeout)) {
       sink.add(chunk);
       written += chunk.length;
       onChunk(chunk.length);
