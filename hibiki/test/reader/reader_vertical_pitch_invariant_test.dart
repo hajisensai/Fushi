@@ -169,7 +169,7 @@ void main() {
       const double cT = 120;
       const double cB = 200;
       // 先证明这确实是坍塌区：裸代数 < 0（甚至 < fontSize）。
-      final double bare = smallV - 0 - 0 - f - cT - cB;
+      const double bare = smallV - 0 - 0 - f - cT - cB;
       expect(bare, lessThan(0),
           reason: '看板 case D 必须裸代数为负（cT+cB+F 越过 V），才考验地板');
       final double floored = ReaderContentStyles.verticalColumnContentHeight(
