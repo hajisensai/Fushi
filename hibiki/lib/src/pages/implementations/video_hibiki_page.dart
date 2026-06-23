@@ -437,7 +437,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 在 Android 上看起来「进度条在最下面」（被手势条/物理边缘吞掉，非控制条惯例位置）。
   /// 这个基线把进度条与按钮条整体抬离最底，再叠加 [_videoBottomSystemInset] 的系统
   /// 导航栏/手势栏 inset。
-  static const double _videoBottomChromeBaseline = 24;
+  ///
+  /// TODO-740：原值 24 是叠加在系统手势安全区（[_videoBottomSystemInset]）之上的固定
+  /// 额外留白，偏大，控制底栏离屏幕底端太远（YouTube/B 站只让系统手势安全区不加大基线）。
+  /// 降到 8（极小呼吸距离、非 0 保守）：系统手势安全区仍由 [_videoBottomSystemInset]
+  /// 独立兜底（不回归 BUG-184 手势条吞进度条），字幕避让走 [_subtitleControlsBottomReserve]
+  /// 把本基线作为加总项之一，进度条下移字幕同步下移、相对关系不变（不遮挡）。
+  static const double _videoBottomChromeBaseline = 8;
 
   /// 移动控制条进度条与底部按钮条之间的竖直间距基线（TODO-156/BUG-217）。media_kit
   /// 把进度条与底部按钮条放在**同一个** `Stack(alignment: bottomCenter)`，两者都按
