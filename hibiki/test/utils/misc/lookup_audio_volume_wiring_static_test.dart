@@ -62,7 +62,10 @@ void main() {
       );
 
       expect(desktop, contains('_player.setVolume(volume.clamp(0.0, 1.0))'));
-      expect(android, contains('mediaPlayer.setVolume(volume, volume)'));
+      // TODO-744 后改为复用单个 MediaPlayer，播放走 startPlayback(局部变量 mp)，
+      // 音量仍在 prepare/start 之前应用。
+      expect(android, contains('mp.setVolume(volume, volume)'),
+          reason: 'Android must apply volume before prepare/start');
     });
 
     test('only automatic lookup playback is routed through the dedupe gate',

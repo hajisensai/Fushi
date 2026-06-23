@@ -110,6 +110,13 @@ class LocalAudioDb {
     required String source,
     required Directory cacheDir,
   }) {
+    // 输出文件名 = (file,source) 的稳定 hash + 扩展名，与 blob 字节一一对应。
+    // 已存在即同一字节，先于开库判存：跳过开库 + 读 blob + 写盘，且即便源库已被
+    // 移除，缓存副本仍可直接复用（TODO-744：去重复写盘延迟）。
+    final String ext = file.endsWith('.opus') ? '.opus' : '.mp3';
+    final String key = _localAudioCacheKey(file: file, source: source);
+    final File out = File('${cacheDir.path}/local_audio_$key$ext');
+    if (out.existsSync()) return out.path;
     if (dbPath.isEmpty || !File(dbPath).existsSync()) return null;
     Database? db;
     try {
@@ -122,9 +129,6 @@ class LocalAudioDb {
       final Object? data = rows.first['data'];
       if (data is! Uint8List || data.isEmpty) return null;
 
-      final String ext = file.endsWith('.opus') ? '.opus' : '.mp3';
-      final String key = _localAudioCacheKey(file: file, source: source);
-      final File out = File('${cacheDir.path}/local_audio_$key$ext');
       out.parent.createSync(recursive: true);
       out.writeAsBytesSync(data);
       return out.path;

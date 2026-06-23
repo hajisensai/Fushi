@@ -38,7 +38,13 @@ public class TtsChannelHandler {
     private final Activity activity;
     private TextToSpeech tts;
     private boolean ttsReady = false;
+    // 复用单个 MediaPlayer 实例（reset() 重置而非 new）以省去每次 new 的分配 +
+    // 状态机重建开销（TODO-744）。所有 play/stop 入口都跑在 method-channel 的
+    // 主线程上，天然串行，无需额外锁。
     private MediaPlayer mediaPlayer;
+    // 每次 play/stop 自增；prepareAsync/completion/error 回调对比提交时的世代，
+    // 让被后续播放/停止取代的旧回调直接 bail，不误动已复用的 player。
+    private int playGeneration = 0;
     private final List<SQLiteDatabase> localAudioDbs = new ArrayList<>();
     private final List<String> localAudioDbPaths = new ArrayList<>();
     // 与 localAudioDbs 同 index 对齐：每库启用子来源的优先级序（首=最高）。
@@ -112,6 +118,8 @@ public class TtsChannelHandler {
             closeAllAudioDbsLocked();
         }
         ioExecutor.shutdownNow();
+        // 让在途回调失效后再释放唯一实例（最终拆除，不再复用）。
+        playGeneration++;
         if (mediaPlayer != null) {
             mediaPlayer.release();
             mediaPlayer = null;
@@ -183,67 +191,103 @@ public class TtsChannelHandler {
 
     private void handleStop(MethodChannel.Result result) {
         if (ttsReady) tts.stop();
+        // 让任何在途的 prepareAsync/completion 回调失效，再 reset() 回 Idle 复用，
+        // 不 release（实例留到 destroy 才释放）。
+        playGeneration++;
         if (mediaPlayer != null) {
-            mediaPlayer.stop();
-            mediaPlayer.release();
-            mediaPlayer = null;
+            try {
+                mediaPlayer.reset();
+            } catch (IllegalStateException e) {
+                android.util.Log.w("hibiki-audio", "stop reset failed", e);
+            }
         }
         result.success(true);
     }
 
     private void handlePlayUrl(MethodCall call, MethodChannel.Result result) {
         String url = call.argument("url");
-        float volume = readVolume(call);
-        if (url == null || url.isEmpty()) {
-            result.success(false);
-            return;
-        }
-        releaseMediaPlayer();
-        try {
-            mediaPlayer = new MediaPlayer();
-            mediaPlayer.setAudioAttributes(
-                new AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build());
-            mediaPlayer.setDataSource(url);
-            mediaPlayer.setVolume(volume, volume);
-            mediaPlayer.setOnPreparedListener(mp -> mp.start());
-            mediaPlayer.setOnCompletionListener(mp -> { mp.release(); mediaPlayer = null; });
-            mediaPlayer.setOnErrorListener((mp, what, extra) -> { mp.release(); mediaPlayer = null; return true; });
-            mediaPlayer.prepareAsync();
-            result.success(true);
-        } catch (Exception e) {
-            android.util.Log.w("hibiki-audio", "playUrl failed", e);
-            result.success(false);
-        }
+        startPlayback(url, readVolume(call), true, "playUrl", result);
     }
 
     private void handlePlayFile(MethodCall call, MethodChannel.Result result) {
         String filePath = call.argument("path");
-        float volume = readVolume(call);
-        if (filePath == null || filePath.isEmpty()) {
+        startPlayback(filePath, readVolume(call), false, "playFile", result);
+    }
+
+    /// 复用单个 MediaPlayer：reset() 回 Idle 而非 new + release，状态机走
+    /// reset→setDataSource→prepare(Async)→start。每次自增 playGeneration，回调
+    /// 比对世代后才动 player，使被后续播放/停止取代的旧回调直接 bail（TODO-744）。
+    /// [async] = true 用 prepareAsync（远程 URL），false 用同步 prepare（本地文件）。
+    private void startPlayback(String dataSource, float volume, boolean async,
+                               String tag, MethodChannel.Result result) {
+        if (dataSource == null || dataSource.isEmpty()) {
             result.success(false);
             return;
         }
-        releaseMediaPlayer();
+        final int generation = ++playGeneration;
         try {
-            mediaPlayer = new MediaPlayer();
-            mediaPlayer.setAudioAttributes(
+            MediaPlayer mp = ensureMediaPlayer();
+            // Idle 状态（new / reset 后）：可安全设置 attributes / dataSource。
+            mp.reset();
+            mp.setAudioAttributes(
                 new AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .build());
-            mediaPlayer.setDataSource(filePath);
-            mediaPlayer.setVolume(volume, volume);
-            mediaPlayer.setOnPreparedListener(mp -> mp.start());
-            mediaPlayer.setOnCompletionListener(mp -> { mp.release(); mediaPlayer = null; });
-            mediaPlayer.setOnErrorListener((mp, what, extra) -> { mp.release(); mediaPlayer = null; return true; });
-            mediaPlayer.prepare();
+            mp.setDataSource(dataSource);
+            mp.setVolume(volume, volume);
+            mp.setOnPreparedListener(p -> {
+                // 被取代则不要 start（player 可能已被下一次播放重置）。
+                if (generation != playGeneration) return;
+                try {
+                    p.start();
+                } catch (IllegalStateException e) {
+                    android.util.Log.w("hibiki-audio", tag + " start failed", e);
+                }
+            });
+            // 播完不 release，reset() 回 Idle 留待下次复用（仅当世代未变）。
+            mp.setOnCompletionListener(p -> {
+                if (generation != playGeneration) return;
+                resetMediaPlayerQuietly();
+            });
+            mp.setOnErrorListener((p, what, extra) -> {
+                // 出错后 player 进入 Error 态，必须 reset() 才能再次复用。
+                if (generation == playGeneration) {
+                    resetMediaPlayerQuietly();
+                }
+                return true;
+            });
+            if (async) {
+                mp.prepareAsync();
+            } else {
+                mp.prepare();
+                // 同步 prepare 返回即 Prepared，回调不会触发，这里直接 start。
+                if (generation == playGeneration) mp.start();
+            }
             result.success(true);
         } catch (Exception e) {
-            android.util.Log.w("hibiki-audio", "playFile failed", e);
+            android.util.Log.w("hibiki-audio", tag + " failed", e);
+            // 失败后把 player 拉回干净的 Idle 态，避免污染下次复用。
+            resetMediaPlayerQuietly();
             result.success(false);
+        }
+    }
+
+    /// 懒创建唯一的 MediaPlayer 实例（仅在主线程调用）。
+    private MediaPlayer ensureMediaPlayer() {
+        if (mediaPlayer == null) {
+            mediaPlayer = new MediaPlayer();
+        }
+        return mediaPlayer;
+    }
+
+    /// 把 player 重置回 Idle，吞掉任何 IllegalState（实例保留以供复用）。
+    private void resetMediaPlayerQuietly() {
+        if (mediaPlayer == null) return;
+        try {
+            mediaPlayer.reset();
+        } catch (IllegalStateException e) {
+            android.util.Log.w("hibiki-audio", "reset failed", e);
         }
     }
 
@@ -461,15 +505,22 @@ public class TtsChannelHandler {
                     new Handler(Looper.getMainLooper()).post(() -> result.success(null));
                     return;
                 }
+                // 输出文件名 = (file,source) 的稳定 hash + 扩展名，与 blob 字节一一对应。
+                // 已存在即同一字节，跳过查库 + 读 blob + 写盘（TODO-744：去重复写盘延迟）。
+                String ext = fileArg.endsWith(".opus") ? ".opus" : ".mp3";
+                File tempFile = new File(
+                    cacheDir,
+                    "local_audio_" + localAudioCacheKey(fileArg, sourceArg) + ext);
+                if (tempFile.exists()) {
+                    new Handler(Looper.getMainLooper()).post(() ->
+                        result.success(tempFile.getAbsolutePath()));
+                    return;
+                }
                 try (Cursor audioCursor = db.rawQuery(
                         "SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1",
                         new String[]{fileArg, sourceArg})) {
                     if (audioCursor != null && audioCursor.moveToFirst()) {
                         byte[] audioData = audioCursor.getBlob(0);
-                        String ext = fileArg.endsWith(".opus") ? ".opus" : ".mp3";
-                        File tempFile = new File(
-                            cacheDir,
-                            "local_audio_" + localAudioCacheKey(fileArg, sourceArg) + ext);
                         try (FileOutputStream fos = new FileOutputStream(tempFile)) {
                             fos.write(audioData);
                         }
@@ -646,14 +697,6 @@ public class TtsChannelHandler {
                 new Handler(Looper.getMainLooper()).post(() -> result.success(null));
             }
         });
-    }
-
-    private void releaseMediaPlayer() {
-        if (mediaPlayer != null) {
-            mediaPlayer.stop();
-            mediaPlayer.release();
-            mediaPlayer = null;
-        }
     }
 
     private void closeAllAudioDbsLocked() {

@@ -15,6 +15,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -2498,8 +2499,10 @@ class AppModel with ChangeNotifier {
   }) async {
     if (!remoteLookupEnabled) return null;
     try {
-      return HibikiRemoteLookupClient(repo: SyncRepository(_database))
-          .searchDictionary(
+      return HibikiRemoteLookupClient(
+        repo: SyncRepository(_database),
+        httpClient: _remoteLookupClient,
+      ).searchDictionary(
         term: searchTerm,
         wildcards: searchWithWildcards,
         maximumTerms: maximumTerms,
@@ -3252,6 +3255,8 @@ class AppModel with ChangeNotifier {
       dictRepo.dispose();
       mediaHistoryRepo.dispose();
     }
+    _remoteLookupHttpClient?.close();
+    _remoteLookupHttpClient = null;
     super.dispose();
   }
 
@@ -3464,6 +3469,13 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  // 远端查词/查音频共用一个 http.Client，复用 keep-alive TLS 连接（TODO-744：
+  // 避免每次查词都新建 client + 重做 DNS/TCP/TLS 握手）。SyncRepository 每次
+  // 现读 URL/token，所以服务器配置变更无需失效此 client；进程退出在 dispose 关。
+  http.Client? _remoteLookupHttpClient;
+  http.Client get _remoteLookupClient =>
+      _remoteLookupHttpClient ??= http.Client();
+
   Future<String?> lookupRemoteAudio(
     String expression,
     String reading,
@@ -3471,8 +3483,10 @@ class AppModel with ChangeNotifier {
     // 远端音频是否查询由「管理音频来源」对话框里的 hibikiRemote 源 enabled 决定
     // （resolveConfigured 只在该源 enabled 时才调用这里）；与词典远端开关 remoteLookupEnabled 无关。
     try {
-      return HibikiRemoteLookupClient(repo: SyncRepository(_database))
-          .lookupAudioUrl(expression: expression, reading: reading);
+      return HibikiRemoteLookupClient(
+        repo: SyncRepository(_database),
+        httpClient: _remoteLookupClient,
+      ).lookupAudioUrl(expression: expression, reading: reading);
     } catch (e, stack) {
       ErrorLogService.instance.log('remoteAudioLookup', e, stack);
       return null;
