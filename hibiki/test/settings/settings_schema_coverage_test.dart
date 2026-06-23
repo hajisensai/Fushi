@@ -158,6 +158,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',
   'lookup/Pause on Lookup': 'DEVICE: audiobook pause on selection',
+  // TODO-756b：悬停即查词（视频 onCharHover 门控 + 阅读器 window.__hoverAutoLookup
+  // JS 门控）。change/persist/restore 经 DB 由本测试守，运行时悬停查词分流由
+  // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。
+  'lookup/Look up on hover':
+      'test/media/video/video_subtitle_hover_lookup_test.dart',
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',

@@ -133,6 +133,7 @@ function makeHarness(continuousMode) {
 
   let prepared = rawSlice
     .replace(/\$continuousMode/g, continuousMode ? 'true' : 'false')
+    .replace(/\$hoverAutoLookup/g, 'false')
     .replace(/\$swipeDistThreshold/g, '72')
     .replace(/\$swipeFastDistThreshold/g, '36');
   prepared = '(function(){\n' + prepared + '\n})();';

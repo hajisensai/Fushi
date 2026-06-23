@@ -308,6 +308,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
     // 原生滚动产生轴向冲突，故注入 continuousMode 标志在 _gestureEnd 内门控。
     final bool continuousMode = s.isContinuousMode;
+    // TODO-756b：是否“鼠标悬停即自动查词”。注入为 JS 全局初值，mousemove 监听器
+    // 据此跳过 Shift 门控（纯悬停查词）。live 变更经 _applyHoverAutoLookupLive
+    // 改同一全局，无需整章重注入。
+    final bool hoverAutoLookup = ReaderHibikiSource.instance.hoverAutoLookup;
     final String selectionJs = ReaderSelectionScripts.source();
     final Size screenSize = MediaQuery.of(context).size;
     // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
@@ -354,6 +358,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   // BUG-239: 连续模式不让 _gestureEnd 回传 onSwipe（交给原生滚动 + 边界 IIFE），
   // 消除横向滑动 90% 跳页与原生滚动的轴向冲突；分页模式照旧水平滑动翻页。
   var hoshiContinuousMode = $continuousMode;
+  window.__hoverAutoLookup = $hoverAutoLookup;
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   var imageLongPressTimer = null;
   var imageLongPressConsumed = false;
@@ -865,7 +870,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
   document.addEventListener('mousemove', function(e) {
-    if (!e.shiftKey) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+    // TODO-756b：开了 window.__hoverAutoLookup 则纯悬停即查词（不要求 Shift）；
+    // 否则退回 756a 的 Shift 门控。未触发分支仍复位节流锚，使下次进入即触发。
+    if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
     var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
     if (dx * dx + dy * dy < 64) return;
     _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;

@@ -1803,5 +1803,7 @@
   "anki_error_connection_unknown": "Could not export to Anki: an unexpected connection error occurred. See the error log for details.",
   "compress_mining_media": "Compress card media",
   "compress_mining_media_hint": "Off keeps card media sharper but larger; Android sentence audio is always lossless and unaffected",
-  "log_copy_all": "Copy All"
+  "log_copy_all": "Copy All",
+  "hover_auto_lookup": "Look up on hover",
+  "hover_auto_lookup_hint": "Look up automatically when the mouse hovers over a character; no need to hold Shift. Desktop only."
 }

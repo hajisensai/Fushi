@@ -46,6 +46,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     required this.controller,
     this.onCharTap,
     this.onCharHover,
+    this.hoverAutoLookupEnabled = false,
     this.onHoverChanged,
     this.hitTester,
     this.isCueFavorited,
@@ -79,6 +80,12 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 无控制条场景）= 不挂 Shift-悬停通道，外观与历史一致。
   final void Function(String sentence, int graphemeIndex, Rect charRect)?
       onCharHover;
+
+  /// TODO-756b：是否“鼠标悬停即自动查词”。true 时 [_handleShiftHover] 不再要求按住
+  /// Shift，纯悬停划过字幕字符即经 [onCharHover] 查词；false 时退回 756a 的
+  /// Shift+悬停门控。由页面侧从 `ReaderHibikiSource.instance.hoverAutoLookup` 传入。
+  /// 移动端无 OS hover，本标志为何值都不产生 hover 事件、自然不触发。
+  final bool hoverAutoLookupEnabled;
 
   /// 鼠标进 / 出**字幕盒本身**（非整片视频区）时回调（BUG-283）。桌面用：字幕盒覆盖在
   /// media_kit 控制条之上，鼠标停字幕上读字 / 查词时，media_kit 控制条 2s 自动隐藏会让
@@ -221,8 +228,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   void _handleShiftHover(PointerHoverEvent event) {
     final void Function(String, int, Rect)? onCharHover = widget.onCharHover;
     if (onCharHover == null) return;
-    if (!HardwareKeyboard.instance.isShiftPressed) {
-      // 松开 Shift：复位节流锚，使下次按 Shift 重新进入即触发（不被旧锚误判为同位置）。
+    // TODO-756b：开了“悬停即查词”则纯悬停即触发，无需 Shift；否则退回 756a 的
+    // Shift 门控。两路都共用同一节流锚与命中链路（onCharHover），仅门控判据不同。
+    if (!widget.hoverAutoLookupEnabled &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      // 未开“悬停即查词”且未按 Shift：复位节流锚，使下次按 Shift 重新进入即触发
+      // （不被旧锚误判为同位置）。
       _lastShiftHoverPos = Offset.zero;
       _lastShiftHoverGrapheme = -1;
       return;

@@ -288,6 +288,28 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // TODO-756b：“鼠标悬停即自动查词”。开启后无需按住 Shift，鼠标悬停在字幕/正文
+          // 字符上即查词（与 TODO-756a 的 Shift-悬停同链路）；关闭退回 756a 的 Shift+悬停。
+          // 悬停是桌面鼠标行为、移动端无 OS hover，故仅桌面显示（DesktopLookupService.isDesktop）。
+          SettingsSwitchItem(
+            id: 'lookup.hover_auto_lookup',
+            title: t.hover_auto_lookup,
+            subtitle: t.hover_auto_lookup_hint,
+            icon: Icons.ads_click_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 5,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.hoverAutoLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource
+                  .setHoverAutoLookup(value: value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗的手势
           // 行为，归「查词」分组（与查词朗读/暂停/音量并列），同时出现在阅读器快捷设置
           // 的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让桌面在

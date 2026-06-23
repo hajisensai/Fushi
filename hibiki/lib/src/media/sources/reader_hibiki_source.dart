@@ -569,6 +569,19 @@ class ReaderHibikiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'pause_on_lookup', value: value);
   }
 
+  /// TODO-756b：是否“鼠标悬停即自动查词”。开启时无需按住 Shift，鼠标悬停在
+  /// 字幕/正文字符上即触发查词（与 TODO-756a 的 Shift-悬停同链路）；关闭时退回
+  /// 756a 的 Shift+悬停行为。悬停是桌面鼠标行为，移动端无 OS hover、自然不触发
+  /// （配置项在设置 UI 走 DesktopLookupService.isDesktop 桌面门控隐藏）。默认
+  /// false（保持 756a 既有行为）。视频页与阅读器共享 [instance]，天然通用。
+  bool get hoverAutoLookup =>
+      getPreference<bool>(key: 'hover_auto_lookup', defaultValue: false);
+
+  Future<void> setHoverAutoLookup({required bool value}) async {
+    await setPreference<bool>(key: 'hover_auto_lookup', value: value);
+    onSettingsChangedLive?.call();
+  }
+
   /// 0 = skip by sentence (default), 5/10/15/30 = skip by N seconds.
   int get skipActionSeconds =>
       getPreference<int>(key: 'skip_action_seconds', defaultValue: 0);

@@ -306,6 +306,58 @@ void main() {
     });
   });
 
+  group('hoverAutoLookup preference (TODO-756b)', () {
+    setUp(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+    tearDown(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+
+    test('defaults to false and round-trips through DB', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      // Default: 756a behavior (Shift required), hover-auto OFF.
+      expect(source.hoverAutoLookup, isFalse);
+
+      // Enable: writes through to DB and reads back symmetrically.
+      await source.setHoverAutoLookup(value: true);
+      expect(source.hoverAutoLookup, isTrue);
+      expect(
+        await db.getPref('src:reader_ttu:hover_auto_lookup'),
+        'b:true',
+      );
+
+      // Disable: round-trips back to false.
+      await source.setHoverAutoLookup(value: false);
+      expect(source.hoverAutoLookup, isFalse);
+      expect(
+        await db.getPref('src:reader_ttu:hover_auto_lookup'),
+        'b:false',
+      );
+    });
+
+    test('profile switch (refreshPreferencesFromDb) is reflected', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+      expect(source.hoverAutoLookup, isFalse);
+
+      // Simulate switching to a profile that enabled hover-auto.
+      await db.setPref('src:reader_ttu:hover_auto_lookup', 'b:true');
+      await source.refreshPreferencesFromDb();
+      expect(source.hoverAutoLookup, isTrue);
+    });
+  });
+
   group('ReaderHibikiSource author editing (BUG-220 子3)', () {
     EpubBooksCompanion bookWithAuthor(String key, {String? author}) {
       return EpubBooksCompanion.insert(

@@ -310,6 +310,10 @@ extension _VideoLayout on _VideoHibikiPageState {
                           // 门控），故按住 Shift 悬停字幕字符与点击该字符行为一致。移动端无 hover、
                           // 自然不触发；节流由 VideoSubtitleOverlay 内部承载。
                           onCharHover: _handleSubtitleLookupTap,
+                          // TODO-756b：开了“悬停即查词”则纯悬停（无需 Shift）即查词；
+                          // 关闭退回 756a 的 Shift+悬停。视频与阅读器共享 instance。
+                          hoverAutoLookupEnabled:
+                              ReaderHibikiSource.instance.hoverAutoLookup,
                           onHoverChanged: _handleSubtitleHover,
                           hitTester: _subtitleHitTester,
                           // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存

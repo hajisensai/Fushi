@@ -1709,11 +1709,32 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _sanitizedHtmlCache.clear();
   }
 
+  /// TODO-756b：把“鼠标悬停即自动查词”开关（[ReaderHibikiSource.hoverAutoLookup]）
+  /// live 下发给 WebView 的全局 `window.__hoverAutoLookup`。setup 脚本注入初值，此处
+  /// 在配置变化时改同一全局，无需整章重注入。半销毁 WebView 抛 PlatformException 时
+  /// 就地兜底（与 [_applyStylesLive] 同纪律），下发本就无意义 → 安全 no-op。
+  Future<void> _applyHoverAutoLookupLive() async {
+    if (_controller == null) return;
+    final bool enabled = ReaderHibikiSource.instance.hoverAutoLookup;
+    try {
+      await _controller!.evaluateJavascript(
+        source: 'window.__hoverAutoLookup = $enabled;',
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.applyHoverAutoLookupLive', e, stack);
+    }
+  }
+
   Future<void> _applyStylesLive() async {
     if (_controller == null || _settings == null) return;
     _invalidateStyleCache();
     // _settings 即 ReaderHibikiSource.readerSettings 本体，setTtu* 已在触发本
     // 回调前写穿同一对象，无需再 _syncSettingsFromHive 自拷贝（旧 TTU 死桥）。
+    if (!mounted || _controller == null) return;
+    // TODO-756b：把“悬停即查词”开关下发到 WebView 的 window.__hoverAutoLookup（mousemove
+    // 监听器据此跳过 Shift 门控）。独立于样式/歌词分支：阅读器与歌词模式都吃此开关。
+    await _applyHoverAutoLookupLive();
     if (!mounted || _controller == null) return;
     if (_lyricsMode) {
       await _updateLyricsStyleLive();
