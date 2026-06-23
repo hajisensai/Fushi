@@ -94,6 +94,19 @@ void main() {
       expect(runs, 1,
           reason: 'callbacks consumed once; second flush is a no-op');
     });
+
+    test('flushAll can retain callbacks for background lifecycle flushes',
+        () async {
+      int runs = 0;
+      ExitFlushRegistry.instance.register(() async => runs++);
+
+      await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
+      await ExitFlushRegistry.instance.flushAll();
+
+      expect(runs, 2,
+          reason: 'Android pause/hidden flush must durably write active pages '
+              'without unregistering their later process-exit flush');
+    });
   });
 
   group(
@@ -133,6 +146,46 @@ void main() {
       // 收紧后超时上限 1.5s（不再 3s 吃满）。
       expect(main.contains('milliseconds: 1500'), isTrue,
           reason: '根因B：Bonsoir 退出超时从 3s 收紧到 1.5s');
+    });
+
+    test('Android background lifecycle flushes active page callbacks', () {
+      final int hookAt =
+          main.indexOf('_flushActivePagesForAndroidBackground() async');
+      expect(hookAt, greaterThanOrEqualTo(0),
+          reason: 'Android pause/hidden needs an app-level awaited flush; '
+              'page-local unawaited flush can lose the write if the process is '
+              'reclaimed immediately after backgrounding');
+      final String body = main.substring(hookAt);
+      expect(body.contains('flushAll(clearCallbacks: false)'), isTrue,
+          reason: 'background flush must retain page callbacks for a later '
+              'resume/exit cycle');
+
+      final int lifecycleAt = main
+          .indexOf('void didChangeAppLifecycleState(AppLifecycleState state)');
+      expect(lifecycleAt, greaterThanOrEqualTo(0));
+      final String lifecycle = main.substring(lifecycleAt);
+      expect(lifecycle.contains('AppLifecycleState.paused'), isTrue);
+      expect(lifecycle.contains('AppLifecycleState.hidden'), isTrue);
+      expect(
+          lifecycle.contains('_flushActivePagesForAndroidBackground()'), isTrue,
+          reason: 'Android paused/hidden must trigger the retained flush');
+    });
+
+    test('detached lifecycle flushes active pages and closes the database', () {
+      final int hookAt =
+          main.indexOf('_flushAndCloseForLifecycleDetach() async');
+      expect(hookAt, greaterThanOrEqualTo(0),
+          reason: 'mobile detached is the last chance before engine/process '
+              'teardown, so it must run the same data durability gate as exit');
+
+      final String body = main.substring(hookAt);
+      final int flushAt = body.indexOf('ExitFlushRegistry.instance.flushAll()');
+      final int closeAt = body.indexOf('appModel.closeDatabase()');
+      expect(flushAt, greaterThanOrEqualTo(0),
+          reason: 'detached must flush registered reader/video callbacks');
+      expect(closeAt, greaterThan(flushAt),
+          reason: 'database close must follow flush so Drift/WAL drains after '
+              'the final resume-position writes');
     });
   });
 

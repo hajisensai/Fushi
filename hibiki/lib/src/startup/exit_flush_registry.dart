@@ -59,9 +59,15 @@ class ExitFlushRegistry {
   /// 失败不该阻止退出，但也不静默吞掉（debugPrint 记一笔）。
   ///
   /// 先快照再清空：回调内部触发的 [unregister]（如页面销毁）不会破坏迭代。
-  Future<void> flushAll() async {
+  ///
+  /// Android 退后台不是进程退出：此时也要把活跃 reader/video 的进度写穿，但页面
+  /// 可能随后恢复并继续持有同一回调。因此 [clearCallbacks] 可设为 false，用同一组
+  /// 回调做“保留式 flush”，真正退出时再清空。
+  Future<void> flushAll({bool clearCallbacks = true}) async {
     final List<ExitFlushCallback> snapshot = _callbacks.toList(growable: false);
-    _callbacks.clear();
+    if (clearCallbacks) {
+      _callbacks.clear();
+    }
     await Future.wait(<Future<void>>[
       for (final ExitFlushCallback callback in snapshot) _runGuarded(callback),
     ]);

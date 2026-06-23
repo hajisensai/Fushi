@@ -366,6 +366,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   /// 守卫：退出清理（停 Bonsoir 事件源）只跑一次，避免 [onWindowClose] 与
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
+  Future<void>? _androidBackgroundFlushInFlight;
 
   /// 守卫：Windows 安装器 handoff reconcile 的 post-frame 调度只挂一个。
   bool _windowsUpdateHandoffScheduled = false;
@@ -413,13 +414,27 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       ref.read(appProvider).refreshSystemPalette();
       return;
     }
+    if (Platform.isAndroid) {
+      switch (state) {
+        case AppLifecycleState.inactive:
+        case AppLifecycleState.paused:
+        case AppLifecycleState.hidden:
+          unawaited(_flushActivePagesForAndroidBackground());
+          return;
+        case AppLifecycleState.detached:
+          unawaited(_flushAndCloseForLifecycleDetach());
+          return;
+        case AppLifecycleState.resumed:
+          return;
+      }
+    }
     // `detached` = the app is about to be terminated (the engine is detaching
     // from the view). Tear down Bonsoir's mDNS event sources here as a fallback
     // for platforms/paths that don't go through window_manager's onWindowClose.
     // Best-effort (the callback isn't awaited by the framework): the primary,
     // guaranteed path on desktop is [onWindowClose] under setPreventClose(true).
     if (state == AppLifecycleState.detached) {
-      unawaited(_shutdownSyncSources());
+      unawaited(_flushAndCloseForLifecycleDetach());
     }
   }
 
@@ -504,26 +519,67 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     await appModel.platformServices.lifecycle.exitApp();
   }
 
-  /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源）。幂等：与桌面
-  /// [onWindowClose] 共享 [_shutdownStarted]，只跑一次。
+  /// Android 退后台不是退出：只做保留式 flush，页面回前台后仍继续持有回调。
+  ///
+  /// 页面本身也会在 paused/hidden 尝试 flush，但那是 fire-and-forget；这里给
+  /// Android 一个 app-level 汇聚点，确保 reader/video/audiobook 的 pending 位置写穿。
+  Future<void> _flushActivePagesForAndroidBackground() async {
+    final Future<void>? existing = _androidBackgroundFlushInFlight;
+    if (existing != null) {
+      return existing;
+    }
+
+    final Future<void> run = () async {
+      try {
+        await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
+      } catch (e) {
+        debugPrint('[Hibiki] android background flush failed: $e');
+      }
+    }();
+    _androidBackgroundFlushInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_androidBackgroundFlushInFlight, run)) {
+        _androidBackgroundFlushInFlight = null;
+      }
+    }
+  }
+
+  /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源），再 flush 活跃页面并 close DB。
   ///
   /// 仅作 `detached` 生命周期兜底（移动端 / 不经 window_manager 的退出路径）。桌面
   /// 点 X 走 [_flushAndExitForWindowClose]（flush + closeDB + exit(0)），不再到这里。
   /// 超时上限收紧到 1.5s（TODO-086）：原生 stop 不归时放行，避免拖住退出。
-  Future<void> _shutdownSyncSources() async {
+  Future<void> _flushAndCloseForLifecycleDetach() async {
     if (_shutdownStarted) return;
     _shutdownStarted = true;
+    final AppModel appModel = ref.read(appProvider);
     try {
-      await ref
-          .read(appProvider)
-          .syncServerController
+      await appModel.syncServerController
           .shutdownForExit()
           .timeout(const Duration(milliseconds: 1500));
     } on TimeoutException {
       debugPrint('[Hibiki] sync source shutdown on exit timed out; continuing');
     } catch (e) {
-      // 退出清理失败不该阻止退出；记一笔即可（不吞静默）。
       debugPrint('[Hibiki] sync source shutdown on exit failed: $e');
+    }
+
+    try {
+      final Future<void>? pendingBackgroundFlush =
+          _androidBackgroundFlushInFlight;
+      if (pendingBackgroundFlush != null) {
+        await pendingBackgroundFlush;
+      }
+      await ExitFlushRegistry.instance.flushAll();
+    } catch (e) {
+      debugPrint('[Hibiki] lifecycle detach flush failed: $e');
+    }
+
+    try {
+      await appModel.closeDatabase();
+    } catch (e) {
+      debugPrint('[Hibiki] database close on lifecycle detach failed: $e');
     }
   }
 
