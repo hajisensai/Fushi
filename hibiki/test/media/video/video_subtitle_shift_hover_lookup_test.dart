@@ -33,7 +33,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 typedef _Hit = ({String sentence, int graphemeIndex, Rect charRect});
 
 void main() {
-  // TODO-756a / BUG-411: video subtitles are Flutter-drawn overlays (not WebView),
+  // TODO-756a / BUG-412: video subtitles are Flutter-drawn overlays (not WebView),
   // so the reader JS shift-hover path never existed for video. This wires
   // Shift-mouse-hover lookup via VideoSubtitleOverlay.onCharHover, sharing the
   // same lookup chain as click (onCharTap). Tests assert: shift-hover hits ->
