@@ -627,6 +627,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VoidCallback? _chapterListener;
   bool _failed = false;
   String? _title;
+
+  /// 播放列表（系列）名（TODO-761，方案 B）。仅当本视频是播放列表（多集，
+  /// [_isPlaylist] 为真）时记 [VideoBookRow.title]（系列名）；单视频 / 远端视频
+  /// 保持 null。制卡时 [DictionaryPageMixin] 的 `documentTitle` 据此拼成
+  /// 「系列名 - 剧集名」，老 Anki 卡片模板的 `{document-title}` 自动带上系列名，
+  /// 无需改模板。**只用于制卡 documentTitle**，不影响播放器标题栏（仍是剧集名 [_title]）。
+  String? _playlistTitle;
   List<VideoDanmakuItem> _danmakuItems = const <VideoDanmakuItem>[];
   int _danmakuLoadSeq = 0;
 
@@ -1221,6 +1228,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
 
     if (_episodes.isNotEmpty) {
+      // TODO-761（方案 B）：确认是播放列表（多集）后记系列名（[VideoBookRow.title]），
+      // 制卡 documentTitle 据此拼「系列名 - 剧集名」。单视频 / 远端不进此分支，保持 null。
+      _playlistTitle = row.title;
       final int idx = (widget.initialEpisodeIndex ?? row.currentEpisode)
           .clamp(0, _episodes.length - 1);
       if (widget.initialEpisodeIndex != null && idx != row.currentEpisode) {

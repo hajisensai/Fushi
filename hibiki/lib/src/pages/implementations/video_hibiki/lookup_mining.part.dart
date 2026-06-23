@@ -250,6 +250,15 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     return result;
   }
 
+  /// 制卡 `documentTitle`（渲染到 Anki `{document-title}`）。播放列表（[_isPlaylist]）
+  /// 且系列名（[_playlistTitle]）非空时拼「系列名 - 剧集名」；单视频 / 远端退化为剧集名
+  /// （[_title]）。纯拼接逻辑下沉到顶层 [composeVideoMiningDocumentTitle] 便于单测。
+  String? _videoMiningDocumentTitle() => composeVideoMiningDocumentTitle(
+        isPlaylist: _isPlaylist,
+        playlistTitle: _playlistTitle,
+        episodeTitle: _title,
+      );
+
   /// 视频制卡/覆盖的落卡链路（单句 [onMineEntry]/[onUpdateEntry] 走这里）：把音频/封面
   /// 区间 `[clipStartMs, clipEndMs]`（单句即该 cue 的时间窗）抽成 GIF + 音频片段，配
   /// [sentence]/[cueSentence]/[fields] 经 [BaseAnkiRepository] 生成**一张**卡，回 OSD。
@@ -365,7 +374,11 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final AnkiMiningContext miningContext = AnkiMiningContext(
       sentence: sentence,
       cueSentence: cueSentence,
-      documentTitle: _title,
+      // TODO-761（方案 B）：播放列表下制卡时把系列名拼进 documentTitle →
+      // 渲染到 Anki `{document-title}` 成「系列名 - 剧集名」，老卡片模板零改动自动带上
+      // 系列名。单视频 / 远端（_isPlaylist 为假或 _playlistTitle 为空）→ 仍是剧集名
+      // [_title]，向后兼容零变化。
+      documentTitle: _videoMiningDocumentTitle(),
       coverPath: coverPath,
       sasayakiAudioPath: audioPath,
       // TODO-115: 视频来源 → 卡片追加 `video` 分类标签（本页覆写了 onMineEntry，
@@ -440,4 +453,24 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       debugPrint('[hibiki-stats] video addMinedSentence failed: $e\n$st');
     }
   }
+}
+
+/// 纯函数：据是否播放列表 + 系列名 + 剧集名算制卡 `documentTitle`（TODO-761，方案 B）。
+///
+/// - 播放列表且系列名非空 → 「系列名 - 剧集名」（剧集名为空时只回系列名，避免尾随分隔符）。
+/// - 单视频 / 远端 / 系列名为空（[isPlaylist] 假或 [playlistTitle] 空）→ 原 [episodeTitle]，
+///   向后兼容零变化。
+/// 分隔符固定 " - "（与卡片标题习惯一致）；不做系列名==剧集名去重（避免过度设计）。
+String? composeVideoMiningDocumentTitle({
+  required bool isPlaylist,
+  required String? playlistTitle,
+  required String? episodeTitle,
+}) {
+  if (!isPlaylist || playlistTitle == null || playlistTitle.isEmpty) {
+    return episodeTitle;
+  }
+  if (episodeTitle == null || episodeTitle.isEmpty) {
+    return playlistTitle;
+  }
+  return '$playlistTitle - $episodeTitle';
 }
