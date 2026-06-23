@@ -16,6 +16,12 @@ import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/settings/master_detail_settings_sheet.dart';
 import 'package:hibiki/utils.dart';
 
+/// TODO-742：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）当前
+/// 可用性不达标（用户报功能不可用），暂时不向用户暴露入口。设为 `false` 时字幕调轴行
+/// 不渲染自动对轴按钮；底层 [VideoQuickSettingsSheet.onAutoAlign] 回调与对轴算法管线全
+/// 部保留，功能成熟后改回 `true` 即恢复，无需重接接线。
+const bool _kSubtitleAutoAlignButtonEnabled = false;
+
 /// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
 /// （TODO-556：大分类从左栏移到顶栏横向 chip；详情独占整宽并独立滚动，分类条固定在
 /// 顶部），窄窗降级单列 push。书籍设置面板仍保持左右 master-detail，互不影响。
@@ -745,9 +751,14 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           padding: EdgeInsets.all(tokens.spacing.gap / 2),
           onTap: () => _commitDelay(_delayMs + 1000),
         ),
-        // TODO-701 阶段1：一键自动对轴（按音频能量包络与字幕 cue 互相关求整体平移）。
-        // 仅当父页提供 onAutoAlign（有字幕+视频路径）时显示；执行中切 spinner 防重入。
-        if (widget.onAutoAlign != null)
+        // TODO-742：「自动对轴」按钮暂时隐藏——音频能量互相关自动对轴（TODO-701 阶段1）
+        // 当前置信度/可用性不达标（用户报功能不可用），先不向用户暴露入口。门控用编译期
+        // 常量 [_kSubtitleAutoAlignButtonEnabled]=false，整块按钮不渲染；onAutoAlign 回调链
+        // 与 _runAutoAlign/_autoAligning 状态机原样保留（仍被本块引用，不会 unused），待
+        // 自动对轴功能成熟后把该常量翻 true 即恢复，无需重接管线。手动对轴（±50/±1000ms
+        // 步进、滑条、数值输入框）与本按钮独立，不受影响、照常可用。
+        // ignore: dead_code
+        if (_kSubtitleAutoAlignButtonEnabled && widget.onAutoAlign != null)
           _autoAligning
               ? Padding(
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -778,7 +789,15 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           // 可拉滑条（细调 ±10s）：拖动只本地预览，松手才落盘+实时生效（避免每 tick 写 DB）。
-          Slider(
+          // TODO-742：必须走 [adaptiveSlider] 而非裸 [Slider]——本面板经 showModalBottomSheet
+          // 推入根 Overlay，处在全局 [HibikiAppUiScale] 的 Transform.scale 子树里。裸 Slider 的
+          // 值指示器水平钳制（getHorizontalShift）用 localToGlobal（含 ×scale 的 GLOBAL/view
+          // 坐标）与被缩成 view/scale 的 MediaQuery.size 比较，两空间差 s²，算出巨大负 shift，
+          // 把数字气泡甩到拇指**左侧**（用户报「往右调、气泡往左走」方向相反）。adaptiveSlider
+          // 把 Slider 看到的 screenSize 还原回 GLOBAL/view 空间，钳制归零、气泡跟随拇指方向
+          // （根因与守卫见 adaptive_widgets.dart / slider_value_indicator_scale_test.dart）。
+          adaptiveSlider(
+            context: context,
             value: sliderValue,
             min: -_subtitleSyncSliderRangeMs.toDouble(),
             max: _subtitleSyncSliderRangeMs.toDouble(),

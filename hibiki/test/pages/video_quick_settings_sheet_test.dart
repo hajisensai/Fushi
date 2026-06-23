@@ -35,6 +35,7 @@ VideoQuickSettingsSheet _sheet({
   VideoSubtitleStyle? initialSubtitleStyle,
   void Function(VideoSubtitleStyle)? onSubtitleStylePreview,
   void Function(VideoSubtitleStyle)? onSubtitleStyleCommit,
+  Future<void> Function()? onAutoAlign,
 }) {
   return VideoQuickSettingsSheet(
     initialDelayMs: initialDelayMs,
@@ -42,6 +43,7 @@ VideoQuickSettingsSheet _sheet({
     initialSubtitleBlur: false,
     initialSubtitleStyle: initialSubtitleStyle ?? VideoSubtitleStyle.defaults,
     onSetDelay: (int v) async => onSetDelay?.call(v),
+    onAutoAlign: onAutoAlign,
     onPreviewSpeed: (double v) async => onPreviewSpeed?.call(v),
     onSetSpeed: (double v) async => onSetSpeed?.call(v),
     onToggleSubtitleBlur: () async {},
@@ -840,6 +842,87 @@ void main() {
     expect(delay! > 0, isTrue);
     expect(delay! % 50, 0, reason: '滑条按 50ms 一档');
   });
+
+  // ── TODO-742：①隐藏不可用的「自动对轴」按钮 ②修数字气泡方向相反 ─────────────
+
+  testWidgets(
+    'TODO-742①：即使提供 onAutoAlign 回调，「自动对轴」按钮也不渲染（功能暂隐）',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      bool autoAlignCalled = false;
+      await _pump(
+        tester,
+        _sheet(onAutoAlign: () async => autoAlignCalled = true),
+      );
+
+      // 字幕调轴行存在（手动对轴照常可用）。
+      expect(find.text(t.video_setting_av_delay), findsOneWidget);
+      final Finder delayRow = find.widgetWithText(
+        AdaptiveSettingsRow,
+        t.video_setting_av_delay,
+      );
+      // 手动对轴控件齐全：±50/±1000ms 步进 + 滑条 + 数值输入框都在。
+      expect(
+        find.descendant(
+            of: delayRow, matching: find.byIcon(Icons.chevron_right)),
+        findsOneWidget,
+        reason: '+50ms 手动对轴按钮不应被隐藏',
+      );
+      expect(
+        find.descendant(of: delayRow, matching: find.byType(Slider)),
+        findsOneWidget,
+        reason: '手动对轴滑条不应被隐藏',
+      );
+      expect(
+        find.descendant(of: delayRow, matching: find.byType(TextField)),
+        findsOneWidget,
+        reason: '手动对轴数值输入框不应被隐藏',
+      );
+
+      // 「自动对轴」按钮（auto_fix_high 图标 + 对应 tooltip）必须不渲染。
+      expect(
+        find.byIcon(Icons.auto_fix_high),
+        findsNothing,
+        reason: 'TODO-742：自动对轴按钮暂时隐藏，不应出现 auto_fix_high 图标',
+      );
+      expect(
+        find.byTooltip(t.video_subtitle_auto_align),
+        findsNothing,
+        reason: 'TODO-742：自动对轴按钮 tooltip 不应出现',
+      );
+      // 回调从未被触发（按钮不存在 → 无入口）。
+      expect(autoAlignCalled, isFalse);
+    },
+  );
+
+  test(
+    'TODO-742②源码守卫：字幕调轴滑条走 adaptiveSlider（修值指示器气泡方向相反）',
+    () {
+      // 根因：本面板经 showModalBottomSheet 推入根 Overlay，处在全局 HibikiAppUiScale 的
+      // Transform.scale 子树。裸 [Slider] 的值指示器水平钳制（getHorizontalShift）把
+      // localToGlobal（含 ×scale 的 GLOBAL/view 坐标）与被缩成 view/scale 的
+      // MediaQuery.size 比较，两空间差 s²，算出巨大负 shift，把数字气泡甩到拇指**左侧**
+      // （用户报「往右调、气泡往左走」方向相反）。[adaptiveSlider] 把 Slider 看到的
+      // screenSize 还原回 GLOBAL/view 空间，钳制归零、气泡跟随拇指——其根因修复的运行时
+      // 契约由 slider_value_indicator_scale_test.dart 直测。这里守住「字幕调轴滑条必须走
+      // adaptiveSlider、不得回退裸 Slider」，防回潮。
+      final String src =
+          File('lib/src/media/video/video_quick_settings_sheet.dart')
+              .readAsStringSync();
+      expect(
+        src,
+        contains('adaptiveSlider('),
+        reason: '字幕调轴滑条必须走 adaptiveSlider（UI scale 下值指示器气泡钳制才正确）',
+      );
+      expect(
+        RegExp(r'(?<!adaptive)Slider\(').hasMatch(src),
+        isFalse,
+        reason: '面板内不得出现裸 Slider(——会让 UI scale 下值指示器气泡甩飞方向相反；'
+            '所有滑条须走 adaptiveSlider 或 AdaptiveSettings*Row',
+      );
+    },
+  );
 
   testWidgets('subtitle sync controls wrap at narrow width and large UI scale',
       (tester) async {
