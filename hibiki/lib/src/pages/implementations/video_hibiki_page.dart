@@ -3835,10 +3835,47 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ? Center(child: Icon(Icons.error_outline, color: cs.error, size: 48))
           : (controller == null || videoController == null)
               ? const Center(child: CircularProgressIndicator())
-              : _pageDropTarget(
+              : _withPageSpaceOverride(
                   controller,
-                  _buildVideoBody(controller, videoController),
+                  _pageDropTarget(
+                    controller,
+                    _buildVideoBody(controller, videoController),
+                  ),
                 ),
+    );
+  }
+
+  /// 页内局部「裸空格 = 播放/暂停」覆盖（TODO-755，回归 c152fcd91）。
+  ///
+  /// 全局导航层（[wrapWithGlobalNavigation]）无条件把裸空格中和成
+  /// [DoNothingIntent]（`global_navigation.dart`，[DoNothingAction.consumesKey]
+  /// 为 true → 真消费按键），使焦点确认永不走空格。视频空格的正常路径是
+  /// media_kit 桌面 controls 的 `keyboardShortcuts`（[_videoKeyboardShortcuts]），
+  /// 但那只在 [_videoFocusNode]（或 controls 内置 Focus）**精确持焦**时才生效；
+  /// 一旦焦点落在视频页子树里其它节点（关对话框/菜单后短暂失焦、点了非视频区控件
+  /// 等），裸空格就会上浮到全局 [DoNothingIntent] 被吞掉 → 「按了没反应」。
+  ///
+  /// 本层是页内局部 [CallbackShortcuts]，位于全局 [DoNothingIntent] 之下、离视频
+  /// 更近：只要焦点落在视频页子树内**任意**节点，裸空格都先被这层消费、永不下沉到
+  /// 全局中和层。与阅读器 [resolveReaderSpaceOverride] / 有声书 audiobookPlayPause
+  /// 同范式——只在本页子树内覆盖裸空格，不碰全局中和（非视频界面空格仍被中和，
+  /// 不破坏 TODO-112「空格不确认焦点」）。media_kit 的 `keyboardShortcuts` 在精确
+  /// 持焦时是更近作用域、先消费，故两者不冲突；本层只是「焦点在视频页子树但不精确
+  /// 在 [_videoFocusNode]」时的兜底。语义与注册表 [_videoKeyboardShortcuts] 的
+  /// `togglePlayPause` 完全一致（经 [_runWhenImmersiveAllowsFullControls] 尊重
+  /// 沉浸锁门控），不引入特例分支。
+  Widget _withPageSpaceOverride(
+    VideoPlayerController controller,
+    Widget child,
+  ) {
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.space): () =>
+            _runWhenImmersiveAllowsFullControls(
+              () => unawaited(controller.playOrPause()),
+            ),
+      },
+      child: child,
     );
   }
 
