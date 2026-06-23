@@ -93,16 +93,17 @@ void main() {
     });
 
     test(
-        'globalBack has no gamepad binding by default (avoids Android B=back double-trigger)',
-        () {
+        'globalBack now binds gamepad B by default (TODO-700 T1/T2: back is '
+        'remappable; B no longer hardcoded)', () {
       final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
       final globalBack = win[ShortcutAction.globalBack]!;
-      expect(globalBack.gamepadBindings, isEmpty);
+      expect(globalBack.gamepadBindings.map((b) => b.button),
+          contains(GamepadButton.b));
     });
 
     test(
-        'audiobook sentence navigation has no gamepad default (would be shadowed '
-        'by reader RB/LB page-turn on the reader page)', () {
+        'audiobook sentence navigation binds gamepad X (next) / B (prev) by '
+        'default (TODO-700 T2: X=next, B=prev)', () {
       for (final platform in <TargetPlatform>[
         TargetPlatform.windows,
         TargetPlatform.macOS,
@@ -111,12 +112,18 @@ void main() {
         TargetPlatform.linux,
       ]) {
         final defaults = ShortcutDefaults.forPlatform(platform);
-        expect(defaults[ShortcutAction.audiobookNextSentence]!.gamepadBindings,
-            isEmpty,
-            reason: 'next sentence on $platform');
-        expect(defaults[ShortcutAction.audiobookPrevSentence]!.gamepadBindings,
-            isEmpty,
-            reason: 'prev sentence on $platform');
+        expect(
+            defaults[ShortcutAction.audiobookNextSentence]!
+                .gamepadBindings
+                .map((b) => b.button),
+            contains(GamepadButton.x),
+            reason: 'next sentence X on $platform');
+        expect(
+            defaults[ShortcutAction.audiobookPrevSentence]!
+                .gamepadBindings
+                .map((b) => b.button),
+            contains(GamepadButton.b),
+            reason: 'prev sentence B on $platform');
       }
     });
 
@@ -173,8 +180,9 @@ void main() {
           contains(GamepadButton.y));
       expect(dismiss.keyboardBindings.map((b) => b.key),
           contains(LogicalKeyboardKey.escape));
+      // TODO-700 T2：readerDismissDict 不再绑手柄 B（B 让位给 audiobookPrevSentence）。
       expect(dismiss.gamepadBindings.map((b) => b.button),
-          contains(GamepadButton.b));
+          isNot(contains(GamepadButton.b)));
     });
 
     test('global scroll-page actions bind to RB (down) and LB (up)', () {

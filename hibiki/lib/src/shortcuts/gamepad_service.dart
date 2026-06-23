@@ -59,12 +59,15 @@ bool dispatchGamepadButtonIntent(
 }
 
 /// Converts Android/native controller key events into the same focused
-/// [GamepadButtonIntent] path used by the desktop poller. B is deliberately
-/// ignored here so existing global-back shortcuts remain the fallback owner.
+/// [GamepadButtonIntent] path used by the desktop poller. TODO-700 T1: B is no
+/// longer special-cased — it dispatches like every other button so the focused
+/// page (reader → audiobookPrevSentence, etc.) gets first dibs, and the
+/// outermost [wrapWithGlobalNavigation] resolves it against the registry's
+/// globalBack only when no nearer handler consumed it.
 KeyEventResult dispatchNativeGamepadButtonIntent(KeyEvent event) {
   if (event is! KeyDownEvent) return KeyEventResult.ignored;
   final GamepadButton? button = GamepadButton.fromKeyEvent(event);
-  if (button == null || button == GamepadButton.b) {
+  if (button == null) {
     return KeyEventResult.ignored;
   }
 
@@ -309,7 +312,14 @@ class GamepadService {
         Actions.maybeInvoke<ActivateIntent>(ctx, const ActivateIntent());
         return;
       case GamepadButton.b:
-        navigatorKey.currentState?.maybePop();
+        // TODO-700 T1：B 不再裸 maybePop。仅当注册表把 B 解析成全局
+        // ShortcutAction.globalBack 时才返回，否则无操作（与其它未绑定按钮一致），
+        // 使「返回」键可改键（约束3/5）。页面自己的 globalBack（home）已在上面的
+        // GamepadButtonIntent 分派里消费，这里只兜未自解析的页面。
+        if (registry?.resolveGamepad(button, scope: ShortcutScope.global) ==
+            ShortcutAction.globalBack) {
+          navigatorKey.currentState?.maybePop();
+        }
         return;
       case GamepadButton.dpadUp:
       case GamepadButton.dpadDown:
@@ -318,6 +328,7 @@ class GamepadService {
         final TraversalDirection? dir = _dpadDirectionOf(button);
         if (dir != null) gamepadMoveFocusInDirection(ctx, dir);
         return;
+
       default:
         return;
     }

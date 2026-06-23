@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/components/hibiki_focus_ring.dart';
 
 /// End-to-end check that the universal navigation layer composes: a directional
@@ -10,12 +13,20 @@ import 'package:hibiki/src/utils/components/hibiki_focus_ring.dart';
 /// device-independent proof of the "gamepad operates everything" mechanism;
 /// the integration test exercises the same flow on a real device.
 void main() {
+  // TODO-700 T1：B 经注册表 globalBack 解析（可改键）；默认表已把 B 绑到 globalBack。
+  HibikiShortcutRegistry windowsRegistry() =>
+      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+
   Widget appWithLayer(Widget home, GlobalKey<NavigatorState> navKey) {
     return MaterialApp(
       navigatorKey: navKey,
       home: home,
       builder: (context, child) => HibikiFocusRing(
-        child: wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+        child: wrapWithGlobalNavigation(
+          navigatorKey: navKey,
+          registry: windowsRegistry(),
+          child: child!,
+        ),
       ),
     );
   }

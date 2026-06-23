@@ -73,19 +73,23 @@ class ShortcutDefaults {
     ], [
       _gY
     ]),
-    // 阅读器内的「返回」键：有词典弹窗就关弹窗，否则直接退出书籍（执行体见
-    // reader_hibiki_page 的 _executeShortcutAction）。键盘 Esc、手柄 B，与桌面
-    // 「Esc=上一级」直觉一致；绝不切换底栏。
+    // 阅读器内的「关词典 / 返回」键：有词典弹窗就关弹窗，否则退出书籍（执行体见
+    // reader_hibiki_page 的 _executeShortcutAction）。键盘 Esc。**TODO-700 T1/T2：
+    // 手柄 B 已从这里挪走** —— 阅读器内 B 现绑 audiobookPrevSentence（上一句），
+    // 不再退书（约束2/4：X=下一句 / B=上一句全程可用，B 不被全局返回夺舍）。退书走
+    // Esc / 返回手势 / 底栏，或非阅读器页的全局 B(globalBack)。
     ShortcutAction.readerDismissDict: _kb([
       _key(LogicalKeyboardKey.escape),
-    ], [
-      _gB
     ]),
+
+    // TODO-700 T2：书签切换手柄默认从 X 让位 —— 用户裁定 X=下一句（audiobookNext）。
+    // 书签仍可用键盘 Ctrl+D 或底栏书签按钮；只是 gamepad X 默认改给句子导航，避免与
+    // audiobookNextSentence 的 X 在 reader 组里互相遮蔽（no-shadow 守卫）。用户仍可在
+    // 设置里把书签重新绑到任意手柄键。
     ShortcutAction.readerToggleBookmark: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
-    ], [
-      _gX
     ]),
+
     // R3 toggles furigana (gamepad-only; keyboard furigana stays in settings).
     ShortcutAction.readerToggleFurigana: _kb([], [_gR3]),
     // Reader lookup/card actions now live in the remappable registry instead
@@ -121,9 +125,15 @@ class ShortcutDefaults {
     ], [
       _gY
     ]),
+    // TODO-700 T1/T2：全局「返回」可改键。键盘 Alt+Left，手柄 B。删掉旧硬绑 B 后，B
+    // 在非阅读器页（home/设置/对话框）经 globalBack 解析返回；阅读器页 B 被
+    // audiobookPrevSentence 先消费，故 B 在书内不退书（约束2/3/4/5）。
     ShortcutAction.globalBack: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.alt}),
+    ], [
+      _gB
     ]),
+
     // LB/RB = 整页翻屏（gamepad-only；键盘留空，避免与 reader PageDown 在不同
     // scope 的重复语义）。global scope，对所有非阅读器页通用；reader 页只解析
     // reader+audiobook，不会被遮蔽。执行体见 wrapWithGlobalNavigation。
@@ -139,17 +149,22 @@ class ShortcutDefaults {
     ], [
       _gL3
     ]),
-    // No gamepad default: RB/LB are already reader page-turn, and the reader
-    // page resolves the reader scope before audiobook, so an RB/LB binding here
-    // would be permanently shadowed (never fire). Sentence navigation stays on
-    // the keyboard Ctrl+Arrow bindings. Same philosophy as globalBack leaving
-    // its gamepad empty to avoid a shadowed/double-trigger binding.
+    // TODO-700 T2：句子导航补手柄默认 —— X=下一句 / B=上一句（用户意图）。reader+
+    // audiobook 同组，reader scope 先解析；readerDismissDict 已不再占 B（T2 上面挪走），
+    // readerToggleBookmark 占 X 在 reader scope —— 但 X 在两组里若同时存在会被遮蔽，
+    // 故下面 readerToggleBookmark 的 X 也已让位（见其默认）。这里 B/X 落在 audiobook
+    // scope，reader scope 无 B/X 占用 → 不被遮蔽，且阅读器内 B 不退书（约束2/4）。
     ShortcutAction.audiobookNextSentence: _kb([
       _key(LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl}),
+    ], [
+      _gX
     ]),
     ShortcutAction.audiobookPrevSentence: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl}),
+    ], [
+      _gB
     ]),
+
     // 中键点句 → 跳到该句并播放。鼠标键是位置型动作，运行时不走
     // _executeShortcutAction，而是 onPointerSeek 经 resolveMouse 判定后定位执行。
     ShortcutAction.audiobookSeekToClickedSentence: const ShortcutBindingSet(

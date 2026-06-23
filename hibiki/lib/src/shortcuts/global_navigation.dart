@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+
+import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show
         arrowFocusMoveDirection,
@@ -8,25 +12,8 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         gamepadMoveFocusInDirection;
 
-/// Intent for "go back / dismiss" driven by the gamepad B button.
-/// Reuses [Navigator.maybePop] so it uniformly closes dialogs, bottom sheets
-/// and page routes while respecting any [PopScope].
-class HibikiPopIntent extends Intent {
-  const HibikiPopIntent();
-}
-
-class HibikiPopAction extends Action<HibikiPopIntent> {
-  HibikiPopAction(this.navigatorKey);
-
-  final GlobalKey<NavigatorState> navigatorKey;
-
-  @override
-  void invoke(HibikiPopIntent intent) {
-    navigatorKey.currentState?.maybePop();
-  }
-}
-
 /// Escape -> pop the current FULL-PAGE route ("退出层级").
+
 ///
 /// The framework only wires Escape to a dismiss action for `barrierDismissible`
 /// modal routes (dialogs, dropdowns, popups, bottom sheets). Full-page routes
@@ -179,8 +166,47 @@ bool _caretKeepsArrow(EditableText editable, TraversalDirection dir) {
   return maxLines == null || maxLines > 1; // null = unbounded = multi-line
 }
 
+/// Outermost fallback for the remappable [ShortcutAction.globalBack] key
+/// (TODO-700 T1). A page that owns its own global resolution (home / reader)
+/// consumes the key in a nearer handler first; this only fires for pages that do
+/// NOT self-resolve globalBack (settings pages, dialogs), preserving "B / the
+/// bound back key pops a level" on every surface on both Android (native
+/// gameButton key events) and desktop (the polled gamepad reaches here as a
+/// synthesized key event), while letting the user rebind which key is "back".
+/// Returns handled only when the event is actually bound to globalBack.
+KeyEventResult _handleGlobalBack(
+  GlobalKey<NavigatorState> navigatorKey,
+  HibikiShortcutRegistry registry,
+  KeyEvent event,
+) {
+  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  final Set<ModifierKey> modifiers = <ModifierKey>{};
+  final HardwareKeyboard hw = HardwareKeyboard.instance;
+  if (hw.isControlPressed) modifiers.add(ModifierKey.ctrl);
+  if (hw.isShiftPressed) modifiers.add(ModifierKey.shift);
+  if (hw.isAltPressed) modifiers.add(ModifierKey.alt);
+  if (hw.isMetaPressed) modifiers.add(ModifierKey.meta);
+  ShortcutAction? action = registry.resolveKeyboard(
+    event.logicalKey,
+    modifiers: modifiers,
+    scope: ShortcutScope.global,
+  );
+  if (action == null) {
+    final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
+    if (gamepad != null) {
+      action = registry.resolveGamepad(gamepad, scope: ShortcutScope.global);
+    }
+  }
+  if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
+  final NavigatorState? nav = navigatorKey.currentState;
+  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  nav.maybePop();
+  return KeyEventResult.handled;
+}
+
 /// Wrap [child] (typically MaterialApp's builder child) with app-wide keyboard /
 /// gamepad navigation:
+
 ///
 /// * Escape pops the current full-page route ("退出层级") — desktop is where
 ///   hardware Escape matters, and it is harmless elsewhere. Popups keep the
@@ -200,6 +226,7 @@ Widget wrapWithGlobalNavigation({
   required GlobalKey<NavigatorState> navigatorKey,
   required Widget child,
   bool focusNavigationEnabled = true,
+  HibikiShortcutRegistry? registry,
 }) {
   final Map<ShortcutActivator, Intent> shortcuts = <ShortcutActivator, Intent>{
     const SingleActivator(LogicalKeyboardKey.space): const DoNothingIntent(),
@@ -214,10 +241,13 @@ Widget wrapWithGlobalNavigation({
       const SingleActivator(LogicalKeyboardKey.tab, shift: true):
           const DoNothingIntent(),
     },
-    if (focusNavigationEnabled)
-      const SingleActivator(LogicalKeyboardKey.gameButtonB):
-          const HibikiPopIntent(),
+    // TODO-700 T1：手柄 B 不再硬绑全局 Pop。B 现经 GamepadService /
+    // dispatchNativeGamepadButtonIntent 进各页 Actions，按注册表 globalBack 解析，
+    // 故「返回」可改键（约束3/5），且阅读器内 B 先被 audiobookPrevSentence 消费、
+    // 不再被全局返回夺舍退书（约束2/4）。HibikiPopIntent/HibikiPopAction 仍保留，
+    // 由 globalBack 的执行体复用（见下 Actions 注册）。
   };
+
   // Outermost: observes Escape that bubbled past every deeper handler. It never
   // takes focus or a tab stop — it only listens.
   return Focus(
@@ -231,17 +261,20 @@ Widget wrapWithGlobalNavigation({
         final KeyEventResult arrowResult =
             _handleGlobalArrowFocus(navigatorKey, event);
         if (arrowResult == KeyEventResult.handled) return arrowResult;
+        // TODO-700 T1：注册表驱动的全局返回回退（B 或用户改键后的「返回」键）。仅
+        // 对未自解析 globalBack 的页面（设置/对话框）生效；home/reader 已在更近的
+        // 处理器消费。registry 为空（测试 / 未注入）时跳过，回退到 Escape。
+        if (registry != null) {
+          final KeyEventResult backResult =
+              _handleGlobalBack(navigatorKey, registry, event);
+          if (backResult == KeyEventResult.handled) return backResult;
+        }
       }
       return _handleGlobalEscape(navigatorKey, event);
     },
     child: Shortcuts(
       shortcuts: shortcuts,
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          HibikiPopIntent: HibikiPopAction(navigatorKey),
-        },
-        child: child,
-      ),
+      child: child,
     ),
   );
 }

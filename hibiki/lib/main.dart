@@ -947,6 +947,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         navigatorKey: appModel.navigatorKey,
                         focusNavigationEnabled:
                             appModel.experimentalFocusNavigationEnabled,
+                        registry: appModel.shortcutRegistry,
+
                         // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
                         // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
                         // 整层 IgnorePointer 透传，不抢任何页面的命中测试。

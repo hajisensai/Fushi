@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
 void main() {
   KeyDownEvent keyDown(
@@ -19,13 +21,32 @@ void main() {
         deviceType: deviceType,
       );
 
-  testWidgets('gameButtonB pops the top route', (WidgetTester tester) async {
+  // TODO-700 T1：B 经注册表 globalBack 解析才返回（可改键）。测试里显式绑 B→globalBack
+  // 模拟「用户/默认把返回放在 B」。
+  HibikiShortcutRegistry registryWithBackOnB() {
+    final HibikiShortcutRegistry registry = HibikiShortcutRegistry();
+    registry.loadDefaults(TargetPlatform.windows);
+    registry.updateBinding(
+      ShortcutAction.globalBack,
+      const ShortcutBindingSet(
+        keyboardBindings: <InputBinding>[],
+        gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.b)],
+      ),
+    );
+    return registry;
+  }
+
+  testWidgets('gameButtonB pops the top route when bound to globalBack',
+      (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(MaterialApp(
       navigatorKey: navKey,
       home: const Scaffold(body: Text('home')),
-      builder: (context, child) =>
-          wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+      builder: (context, child) => wrapWithGlobalNavigation(
+        navigatorKey: navKey,
+        registry: registryWithBackOnB(),
+        child: child!,
+      ),
     ));
     navKey.currentState!.push(MaterialPageRoute<void>(
       builder: (_) => const Scaffold(body: Text('second')),
@@ -37,6 +58,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('second'), findsNothing);
     expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('gameButtonB does NOT pop when unbound from globalBack',
+      (WidgetTester tester) async {
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    final HibikiShortcutRegistry registry = HibikiShortcutRegistry()
+      ..loadDefaults(TargetPlatform.windows)
+      ..updateBinding(ShortcutAction.globalBack, const ShortcutBindingSet());
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navKey,
+      home: const Scaffold(body: Text('home')),
+      builder: (context, child) => wrapWithGlobalNavigation(
+        navigatorKey: navKey,
+        registry: registry,
+        child: child!,
+      ),
+    ));
+    navKey.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => const Scaffold(body: Text('second')),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('second'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
+    await tester.pumpAndSettle();
+    expect(find.text('second'), findsOneWidget,
+        reason: 'B 未绑 globalBack 时不应返回');
   });
 
   testWidgets('gameButtonB on root route does not crash',

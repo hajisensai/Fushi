@@ -16,7 +16,7 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 1;
+const int kShortcutSchemaVersion = 2;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -92,6 +92,28 @@ class HibikiShortcutRegistry extends ChangeNotifier {
         defaults: defaults,
       );
     }
+    // v1 -> v2（TODO-700 T1/T2，焦点系统重设计）：手柄返回/句子导航默认重排。这些迁移
+    // 全部只动 gamepad 绑定、不动键盘绑定，故「用户没动过」判据看键盘集即准确：
+    //   * globalBack    旧默认键盘仅 Alt+Left（gamepad 空）→ 新默认补手柄 B。删硬绑 B
+    //     后，老用户若键盘仍是 Alt+Left（没改过返回键）就把 B 补回，否则既退不了书又
+    //     没返回键（必做回归闸门）。
+    //   * audiobookPrevSentence 旧键盘 Ctrl+Left（gamepad 空）→ 新增手柄 B。
+    //   * audiobookNextSentence 旧键盘 Ctrl+Right（gamepad 空）→ 新增手柄 X。
+    //   * readerDismissDict 旧键盘 Esc（gamepad B）→ 去掉手柄 B（B 让位给上一句）。
+    //   * readerToggleBookmark 旧键盘 Ctrl+D（gamepad X）→ 去掉手柄 X（X 让位给下一句）。
+    if (from < 2) {
+      // 全部「仅手柄改动」：键盘默认未变，用平台无关的 keyboard-untouched 判据。
+      _restoreGamepadDefaultIfKeyboardUntouched(
+          ShortcutAction.globalBack, defaults);
+      _restoreGamepadDefaultIfKeyboardUntouched(
+          ShortcutAction.audiobookPrevSentence, defaults);
+      _restoreGamepadDefaultIfKeyboardUntouched(
+          ShortcutAction.audiobookNextSentence, defaults);
+      _restoreGamepadDefaultIfKeyboardUntouched(
+          ShortcutAction.readerDismissDict, defaults);
+      _restoreGamepadDefaultIfKeyboardUntouched(
+          ShortcutAction.readerToggleBookmark, defaults);
+    }
   }
 
   /// 当 [action] 在快照里的键盘绑定**恰等于** [oldDefaultKeyboard]（无序集合相等，
@@ -112,6 +134,24 @@ class HibikiShortcutRegistry extends ChangeNotifier {
         currentKeys.containsAll(oldKeys)) {
       _bindings[action] = currentDefault;
     }
+  }
+
+  /// TODO-700 T2 的「仅手柄改动」前向迁移：当某次迁移**只动 gamepad 默认、不动键盘
+  /// 默认**时，用户「没动过该 action」的判据就是其键盘绑定**仍等于当前平台默认键盘**
+  /// （键盘默认在该次迁移里没变，故当前默认键盘即旧默认键盘——平台无关，避免硬编码
+  /// 跨平台修饰键，如 macOS 的 Ctrl→Meta）。命中即整组回到当前默认，把新增/删除的
+  /// 手柄绑定补到位；用户改过键盘则保留其快照不动。
+  void _restoreGamepadDefaultIfKeyboardUntouched(
+    ShortcutAction action,
+    Map<ShortcutAction, ShortcutBindingSet> defaults,
+  ) {
+    final ShortcutBindingSet? currentDefault = defaults[action];
+    if (currentDefault == null) return;
+    _restoreDefaultIfUntouched(
+      action,
+      oldDefaultKeyboard: currentDefault.keyboardBindings,
+      defaults: defaults,
+    );
   }
 
   Map<String, dynamic> toJson() {

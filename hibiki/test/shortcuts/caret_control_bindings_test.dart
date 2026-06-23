@@ -47,11 +47,24 @@ void main() {
         );
       });
 
-      test('bookmark stays on controller X on $platform', () {
+      // TODO-700 T2：X 从书签改给「下一句」(audiobookNextSentence)，B 给「上一句」。
+      // 书签手柄默认让位（键盘 Ctrl+D 仍在）。X/B 落 audiobook scope，不再 reader scope。
+      test('controller X = next sentence, B = prev sentence on $platform', () {
         final registry = registryFor(platform);
         expect(
+          registry.resolveGamepad(GamepadButton.x,
+              scope: ShortcutScope.audiobook),
+          ShortcutAction.audiobookNextSentence,
+        );
+        expect(
+          registry.resolveGamepad(GamepadButton.b,
+              scope: ShortcutScope.audiobook),
+          ShortcutAction.audiobookPrevSentence,
+        );
+        expect(
           registry.resolveGamepad(GamepadButton.x, scope: ShortcutScope.reader),
-          ShortcutAction.readerToggleBookmark,
+          isNull,
+          reason: '书签手柄 X 已让位',
         );
       });
     }
