@@ -253,6 +253,7 @@ class GamepadService {
       processor: GamepadFrameProcessor(
         onButton: _dispatchButton,
         onLongPress: _dispatchLongPress,
+        onStickMove: _dispatchStickMove,
       ),
     )..start();
     // Start with the ring HIDDEN: it must only appear AFTER the user actually
@@ -325,13 +326,58 @@ class GamepadService {
       case GamepadButton.dpadDown:
       case GamepadButton.dpadLeft:
       case GamepadButton.dpadRight:
-        final TraversalDirection? dir = _dpadDirectionOf(button);
-        if (dir != null) gamepadMoveFocusInDirection(ctx, dir);
+        // TODO-700 T6: the D-pad is a BINDABLE trigger (gamepad scope). Page-
+        // owned bindings (reader page-turn, etc.) were already consumed by the
+        // GamepadButtonIntent dispatch above. Here we resolve the press against
+        // the standalone `gamepad` scope: its DEFAULT maps each dpad* button to
+        // the matching [ShortcutAction.dpad*] direction-action → generic
+        // directional focus movement. If the user rebinds the button to a
+        // different dpad direction-action, focus follows THAT direction; if the
+        // button is unbound in the gamepad scope, fall back to the physical
+        // direction so nothing breaks (约束: Never break userspace).
+        final TraversalDirection dir =
+            _dpadFocusDirection(button) ?? _dpadDirectionOf(button)!;
+        gamepadMoveFocusInDirection(ctx, dir);
         return;
 
       default:
         return;
     }
+  }
+
+  /// TODO-700 T6: the focus direction a D-pad press should move, resolved through
+  /// the rebindable `gamepad` scope. Maps the registry-resolved
+  /// [ShortcutAction.dpadUp]/[ShortcutAction.dpadDown]/[ShortcutAction.dpadLeft]/
+  /// [ShortcutAction.dpadRight] back to a [TraversalDirection]. Null when the
+  /// button is unbound in the gamepad scope (caller falls back to the physical
+  /// direction) or no registry is wired (tests).
+  TraversalDirection? _dpadFocusDirection(GamepadButton button) {
+    final ShortcutAction? action =
+        registry?.resolveGamepad(button, scope: ShortcutScope.gamepad);
+    switch (action) {
+      case ShortcutAction.dpadUp:
+        return TraversalDirection.up;
+      case ShortcutAction.dpadDown:
+        return TraversalDirection.down;
+      case ShortcutAction.dpadLeft:
+        return TraversalDirection.left;
+      case ShortcutAction.dpadRight:
+        return TraversalDirection.right;
+      default:
+        return null;
+    }
+  }
+
+  /// TODO-700 T6: the LEFT STICK channel. Fixed, generic directional FOCUS
+  /// movement only — it NEVER enters the dictionary cursor, looks a word up, or
+  /// consults the registry (用户否决「动摇杆自动查词」). The stick just moves the
+  /// focus ring like an arrow key; whatever is focused is then activated by a
+  /// SEPARATE explicit press (A / the rebindable enter-caret key).
+  void _dispatchStickMove(TraversalDirection dir) {
+    final BuildContext? ctx = _dispatchContext;
+    if (ctx == null) return;
+    _setHighlightForHardwareNav();
+    gamepadMoveFocusInDirection(ctx, dir);
   }
 
   /// LB/RB page-scroll fallback: if [button] is bound to a global scroll-page
@@ -666,13 +712,26 @@ bool _movePrimaryFocusInDirection(
 /// the edge-detection, analog-stick dead-zone/hysteresis and auto-repeat logic
 /// can be unit-tested by feeding synthetic frames with controlled timestamps.
 class GamepadFrameProcessor {
-  GamepadFrameProcessor({required this.onButton, this.onLongPress});
+  GamepadFrameProcessor({
+    required this.onButton,
+    this.onLongPress,
+    this.onStickMove,
+  });
 
-  /// Emits a [GamepadButton] press. The D-pad AND the left stick both map to the
-  /// dpad* buttons (the stick is treated exactly like the D-pad) so a controller
-  /// has ONE consistent directional behavior regardless of which stick/pad the
-  /// user pushes.
+  /// Emits a discrete [GamepadButton] press. TODO-700 T6: the D-pad emits here
+  /// (dpad* buttons, routed through the shortcut registry as bindable triggers);
+  /// the LEFT STICK no longer feeds this channel — it goes to [onStickMove]
+  /// instead, so a controller has TWO independent directional channels (stick =
+  /// focus-only navigation, d-pad = bindable).
   final void Function(GamepadButton button) onButton;
+
+  /// TODO-700 T6: the LEFT STICK's directional channel — fixed, generic FOCUS
+  /// movement only (never the dictionary lookup / caret entry / registry). Null
+  /// (e.g. in pure frame-processor unit tests) makes the stick a no-op rather
+  /// than falling back to [onButton]. Carries the SAME dead-zone hysteresis +
+  /// held-direction auto-repeat as the d-pad (TODO-699 feel preserved), just on
+  /// its own held state and emitting a [TraversalDirection] instead of a button.
+  final void Function(TraversalDirection dir)? onStickMove;
 
   /// Emits a long-press of [button] (currently only A). To mirror a mouse's
   /// tap-vs-long-press, A is decided on RELEASE: a release before [longPressMs]
@@ -718,10 +777,16 @@ class GamepadFrameProcessor {
   // Hysteretic stick direction (null = stick centred).
   TraversalDirection? _stickDir;
 
-  // Repeating directional channel state.
+  // Repeating directional channel state — D-pad.
   TraversalDirection? _heldDir;
   int _heldSinceMs = 0;
   int _lastRepeatMs = 0;
+
+  // Repeating directional channel state — LEFT STICK (independent of the D-pad
+  // so each has its own auto-repeat clock; TODO-700 T6 channel split).
+  TraversalDirection? _heldStickDir;
+  int _heldStickSinceMs = 0;
+  int _lastStickRepeatMs = 0;
 
   /// Clears all transient state — call when the controller disconnects or the
   /// active controller changes, so a stale bitmask can't fire spurious edges.
@@ -733,6 +798,7 @@ class GamepadFrameProcessor {
     _aLongFired = false;
     _stickDir = null;
     _heldDir = null;
+    _heldStickDir = null;
   }
 
   void processFrame({
@@ -786,14 +852,25 @@ class GamepadFrameProcessor {
 
     _prevButtons = buttons;
 
-    // Directional channel: D-pad wins over the stick, but both feed the same
-    // dpad* button so behavior is identical.
-    final TraversalDirection? dir =
-        _dpadDirection(buttons) ?? _readStickDirection(stickX, stickY);
-    if (dir != null) {
-      _updateHeldDirection(dir, nowMs: nowMs);
+    // TODO-700 T6: TWO independent directional channels.
+    //  * D-pad → onButton(dpad*) (bindable triggers via the registry).
+    //  * Left stick → onStickMove(dir) (fixed focus navigation; never the
+    //    registry / lookup). The D-pad still wins over the stick for the D-pad
+    //    channel; the stick channel reads independently so pushing the stick
+    //    keeps moving focus even while no D-pad is held. Both carry the SAME
+    //    hysteresis + held-direction auto-repeat (TODO-699 feel preserved).
+    final TraversalDirection? dpadDir = _dpadDirection(buttons);
+    if (dpadDir != null) {
+      _updateHeldDirection(dpadDir, nowMs: nowMs);
     } else {
       _heldDir = null;
+    }
+
+    final TraversalDirection? stickDir = _readStickDirection(stickX, stickY);
+    if (stickDir != null) {
+      _updateHeldStickDirection(stickDir, nowMs: nowMs);
+    } else {
+      _heldStickDir = null;
     }
   }
 
@@ -844,6 +921,27 @@ class GamepadFrameProcessor {
         nowMs - _lastRepeatMs >= repeatIntervalMs) {
       _lastRepeatMs = nowMs;
       onButton(dpadButtonFor(dir));
+    }
+  }
+
+  /// Left-stick held-direction auto-repeat — same timing as [_updateHeldDirection]
+  /// but on its own clock and emitting a [TraversalDirection] to [onStickMove]
+  /// (focus-only) instead of a d-pad button. Null [onStickMove] makes it a no-op
+  /// (the stick channel is unwired, e.g. in frame-processor unit tests).
+  void _updateHeldStickDirection(TraversalDirection dir, {required int nowMs}) {
+    final void Function(TraversalDirection dir)? emit = onStickMove;
+    if (emit == null) return;
+    if (_heldStickDir != dir) {
+      _heldStickDir = dir;
+      _heldStickSinceMs = nowMs;
+      _lastStickRepeatMs = nowMs;
+      emit(dir);
+      return;
+    }
+    if (nowMs - _heldStickSinceMs >= repeatDelayMs &&
+        nowMs - _lastStickRepeatMs >= repeatIntervalMs) {
+      _lastStickRepeatMs = nowMs;
+      emit(dir);
     }
   }
 

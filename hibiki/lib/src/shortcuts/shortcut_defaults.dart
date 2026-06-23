@@ -43,6 +43,9 @@ class ShortcutDefaults {
   static const _gY = GamepadBinding(GamepadButton.y);
   static const _gDpadRight = GamepadBinding(GamepadButton.dpadRight);
   static const _gDpadLeft = GamepadBinding(GamepadButton.dpadLeft);
+  static const _gDpadUp = GamepadBinding(GamepadButton.dpadUp);
+  static const _gDpadDown = GamepadBinding(GamepadButton.dpadDown);
+  static const _gA = GamepadBinding(GamepadButton.a);
   static const _gL3 = GamepadBinding(GamepadButton.thumbLeft);
   static const _gR3 = GamepadBinding(GamepadButton.thumbRight);
 
@@ -106,6 +109,16 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.readerCreateCardFromPopup: _kb([
       _key(LogicalKeyboardKey.enter, {ModifierKey.ctrl}),
+    ]),
+    // TODO-700 T7：进入选字查词光标，默认手柄 A + 键盘 Enter（与旧硬编码一致 →
+    // 行为不变，只是可改键）。与 readerLookupAtCursor 同绑 A/Enter 是有意的并行
+    // 别名（前者「进光标」、后者「进光标后查词/激活」）；enter-trigger 经
+    // bindingsFor(readerEnterCaret) 谓词查询，不经 resolveKeyboard，故无枚举顺序
+    // 歧义，no-shadow 守卫已显式排除它。
+    ShortcutAction.readerEnterCaret: _kb([
+      _key(LogicalKeyboardKey.enter),
+    ], [
+      _gA
     ]),
     ShortcutAction.homeTabBooks: _kb([
       _key(LogicalKeyboardKey.digit1, {ModifierKey.ctrl}),
@@ -272,6 +285,13 @@ class ShortcutDefaults {
     ShortcutAction.videoEscape: _kb([
       _key(LogicalKeyboardKey.escape),
     ]),
+    // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
+    // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
+    // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。
+    ShortcutAction.dpadUp: _kb([], [_gDpadUp]),
+    ShortcutAction.dpadDown: _kb([], [_gDpadDown]),
+    ShortcutAction.dpadLeft: _kb([], [_gDpadLeft]),
+    ShortcutAction.dpadRight: _kb([], [_gDpadRight]),
   };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
@@ -310,6 +330,7 @@ class ShortcutDefaults {
             );
           case ShortcutScope.home:
           case ShortcutScope.global:
+          case ShortcutScope.gamepad:
             return ShortcutBindingSet(
               gamepadBindings: desktop.gamepadBindings,
             );

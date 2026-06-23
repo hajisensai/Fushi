@@ -134,6 +134,12 @@ void main() {
       final seen = <GamepadButton, ShortcutAction>{};
       for (final scope in ShortcutScope.reader.coactiveScopes) {
         for (final action in ShortcutAction.actionsForScope(scope)) {
+          // TODO-700 T7: readerEnterCaret intentionally PARALLELS
+          // readerLookupAtCursor on A/Enter (one = "enter the cursor", the other
+          // = "look up once inside"). It is never resolved via resolveGamepad —
+          // the enter-trigger predicate queries bindingsFor(readerEnterCaret)
+          // directly — so there is no enum-order ambiguity to guard against here.
+          if (action == ShortcutAction.readerEnterCaret) continue;
           for (final gp in defaults[action]!.gamepadBindings) {
             expect(seen.containsKey(gp.button), isFalse,
                 reason: '${gp.button} bound to both ${seen[gp.button]?.key} '
@@ -155,6 +161,10 @@ void main() {
       final seen = <String, ShortcutAction>{};
       for (final scope in ShortcutScope.reader.coactiveScopes) {
         for (final action in ShortcutAction.actionsForScope(scope)) {
+          // TODO-700 T7: see the gamepad guard above — readerEnterCaret is a
+          // deliberate Enter/A parallel of readerLookupAtCursor, queried as a
+          // predicate (not via resolveKeyboard), so it is excluded here.
+          if (action == ShortcutAction.readerEnterCaret) continue;
           for (final kb in defaults[action]!.keyboardBindings) {
             final key = kb.serialize();
             expect(seen.containsKey(key), isFalse,
@@ -320,6 +330,53 @@ void main() {
             p)[ShortcutAction.audiobookSeekToClickedSentence];
         expect(set, isNotNull, reason: '$p');
         expect(set!.mouseBindings, const [MouseBinding(1)], reason: '$p');
+      }
+    });
+
+    test(
+        'readerEnterCaret defaults to Enter (keyboard) + A (gamepad) on every '
+        'platform (TODO-700 T7: enter-caret is remappable, default unchanged)',
+        () {
+      for (final p in const <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      ]) {
+        final set =
+            ShortcutDefaults.forPlatform(p)[ShortcutAction.readerEnterCaret]!;
+        expect(set.keyboardBindings.map((b) => b.key),
+            contains(LogicalKeyboardKey.enter),
+            reason: 'enter on $p');
+        expect(
+            set.gamepadBindings.map((b) => b.button), contains(GamepadButton.a),
+            reason: 'A on $p');
+      }
+    });
+
+    test(
+        'dpad four directions each default-bind their own dpad button '
+        '(TODO-700 T6: dpad is a bindable trigger in the gamepad scope)', () {
+      final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      expect(win[ShortcutAction.dpadUp]!.gamepadBindings.map((b) => b.button),
+          contains(GamepadButton.dpadUp));
+      expect(win[ShortcutAction.dpadDown]!.gamepadBindings.map((b) => b.button),
+          contains(GamepadButton.dpadDown));
+      expect(win[ShortcutAction.dpadLeft]!.gamepadBindings.map((b) => b.button),
+          contains(GamepadButton.dpadLeft));
+      expect(
+          win[ShortcutAction.dpadRight]!.gamepadBindings.map((b) => b.button),
+          contains(GamepadButton.dpadRight));
+      // dpad actions live in the standalone gamepad scope (no cross-group
+      // conflict with reader page-turn's dpad usage).
+      for (final a in <ShortcutAction>[
+        ShortcutAction.dpadUp,
+        ShortcutAction.dpadDown,
+        ShortcutAction.dpadLeft,
+        ShortcutAction.dpadRight,
+      ]) {
+        expect(a.scope, ShortcutScope.gamepad);
       }
     });
   });

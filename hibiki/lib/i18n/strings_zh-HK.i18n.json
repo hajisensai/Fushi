@@ -1788,5 +1788,11 @@
   "show_top_progress_bar": "Reading progress indicator",
   "update_cancel": "取消",
   "update_cancelling": "正在取消…",
-  "update_cancelled": "已取消下載"
+  "update_cancelled": "已取消下載",
+  "shortcut_action_reader_enter_caret": "Enter lookup cursor",
+  "shortcut_action_dpad_up": "D-pad Up",
+  "shortcut_action_dpad_down": "D-pad Down",
+  "shortcut_action_dpad_left": "D-pad Left",
+  "shortcut_action_dpad_right": "D-pad Right",
+  "shortcut_scope_gamepad": "Gamepad"
 }

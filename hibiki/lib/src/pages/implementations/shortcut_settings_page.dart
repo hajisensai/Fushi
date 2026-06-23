@@ -35,6 +35,8 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_reader_shift_lookup;
     case ShortcutAction.readerCreateCardFromPopup:
       return t.shortcut_action_reader_create_card_from_popup;
+    case ShortcutAction.readerEnterCaret:
+      return t.shortcut_action_reader_enter_caret;
     case ShortcutAction.homeTabBooks:
       return t.shortcut_action_home_tab_books;
     case ShortcutAction.homeTabDict:
@@ -115,6 +117,14 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_video_next_chapter;
     case ShortcutAction.videoEscape:
       return t.shortcut_action_video_escape;
+    case ShortcutAction.dpadUp:
+      return t.shortcut_action_dpad_up;
+    case ShortcutAction.dpadDown:
+      return t.shortcut_action_dpad_down;
+    case ShortcutAction.dpadLeft:
+      return t.shortcut_action_dpad_left;
+    case ShortcutAction.dpadRight:
+      return t.shortcut_action_dpad_right;
   }
 }
 
@@ -131,6 +141,8 @@ String _scopeLabel(ShortcutScope scope) {
       return t.shortcut_scope_audiobook;
     case ShortcutScope.video:
       return t.shortcut_scope_video;
+    case ShortcutScope.gamepad:
+      return t.shortcut_scope_gamepad;
   }
 }
 

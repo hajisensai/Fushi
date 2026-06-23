@@ -3,7 +3,11 @@ enum ShortcutScope {
   home,
   global,
   audiobook,
-  video;
+  video,
+  // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
+  // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
+  // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
+  gamepad;
 
   // Scopes that are resolved together on the same page. The reader page
   // resolves reader + audiobook bindings; the home page resolves home + global.
@@ -25,6 +29,10 @@ enum ShortcutScope {
       // detection therefore scans just video.
       case video:
         return const <ShortcutScope>[video];
+      // gamepad（dpad 四向）是独立 co-active 组：dpad 绑定永不与 reader/home 的
+      // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
+      case gamepad:
+        return const <ShortcutScope>[gamepad];
     }
   }
 }
@@ -41,6 +49,13 @@ enum ShortcutAction {
   readerShiftLookup(ShortcutScope.reader, 'reader_shift_lookup'),
   readerCreateCardFromPopup(
       ShortcutScope.reader, 'reader_create_card_from_popup'),
+  // TODO-700 T7：「进入选字查词光标」可改键（默认手柄 A + 键盘 Enter）。这是
+  // enter-trigger 的绑定真相源：reader 写死判 A/Enter 进光标的分支改读它的绑定
+  // （见 reader_caret_router.isEnterTrigger*）。默认与旧硬编码一致，行为不变，只
+  // 是变成可改键。注意它与 readerLookupAtCursor 默认同绑 A/Enter——这是有意的并行
+  // 别名（一个管「进光标」、一个管「进光标后查词/激活」），enter-trigger 不经
+  // resolveKeyboard 故无枚举顺序歧义，no-shadow 守卫显式排除它。
+  readerEnterCaret(ShortcutScope.reader, 'reader_enter_caret'),
 
   // Home
   homeTabBooks(ShortcutScope.home, 'home_tab_books'),
@@ -103,7 +118,16 @@ enum ShortcutAction {
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),
   videoNextChapter(ShortcutScope.video, 'video_next_chapter'),
-  videoEscape(ShortcutScope.video, 'video_escape');
+  videoEscape(ShortcutScope.video, 'video_escape'),
+
+  // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
+  // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
+  // 故只有 dpad 进注册表）。用户可把 dpad 方向键改绑别的功能，或把别的键绑成方向
+  // 焦点移动。
+  dpadUp(ShortcutScope.gamepad, 'dpad_up'),
+  dpadDown(ShortcutScope.gamepad, 'dpad_down'),
+  dpadLeft(ShortcutScope.gamepad, 'dpad_left'),
+  dpadRight(ShortcutScope.gamepad, 'dpad_right');
 
   const ShortcutAction(this.scope, this.key);
 

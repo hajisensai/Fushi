@@ -1788,5 +1788,11 @@
   "show_top_progress_bar": "顶部阅读进度",
   "update_cancel": "取消",
   "update_cancelling": "正在取消…",
-  "update_cancelled": "已取消下载"
+  "update_cancelled": "已取消下载",
+  "shortcut_action_reader_enter_caret": "进入选字查词光标",
+  "shortcut_action_dpad_up": "方向键 上",
+  "shortcut_action_dpad_down": "方向键 下",
+  "shortcut_action_dpad_left": "方向键 左",
+  "shortcut_action_dpad_right": "方向键 右",
+  "shortcut_scope_gamepad": "手柄"
 }

@@ -16,7 +16,7 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 2;
+const int kShortcutSchemaVersion = 3;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -114,6 +114,12 @@ class HibikiShortcutRegistry extends ChangeNotifier {
       _restoreGamepadDefaultIfKeyboardUntouched(
           ShortcutAction.readerToggleBookmark, defaults);
     }
+    // v2 -> v3（TODO-700 T6/T7）：新增 dpadUp/Down/Left/Right（gamepad scope）+
+    // readerEnterCaret（reader scope）。这些是**全新 action**，老快照里根本没有它们的
+    // key —— [loadDefaults] 已为新 action 播种平台默认，[_loadFromJson] 只覆盖快照里
+    // 显式出现的 key、保留缺席 key 的默认，故新 action 天然拿到默认绑定，无需逐个
+    // restore。这里只需 bump 版本以保持「快照版本 < 当前 ⇒ 跑迁移」不变式诚实，并
+    // 记录该判断（不动用户已改过的任何旧 action）。
   }
 
   /// 当 [action] 在快照里的键盘绑定**恰等于** [oldDefaultKeyboard]（无序集合相等，

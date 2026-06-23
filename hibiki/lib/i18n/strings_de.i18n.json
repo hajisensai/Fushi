@@ -1788,5 +1788,11 @@
   "show_top_progress_bar": "Reading progress indicator",
   "update_cancel": "Cancel",
   "update_cancelling": "Cancelling…",
-  "update_cancelled": "Download cancelled"
+  "update_cancelled": "Download cancelled",
+  "shortcut_action_reader_enter_caret": "Enter lookup cursor",
+  "shortcut_action_dpad_up": "D-pad Up",
+  "shortcut_action_dpad_down": "D-pad Down",
+  "shortcut_action_dpad_left": "D-pad Left",
+  "shortcut_action_dpad_right": "D-pad Right",
+  "shortcut_scope_gamepad": "Gamepad"
 }

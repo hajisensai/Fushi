@@ -388,6 +388,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
     } else if (ReaderCaretRouter.isEnterTriggerGamepad(
       button,
       focusNavEnabled: _focusNavEnabled,
+      enterButtons: _readerEnterCaretButtons(),
     )) {
       unawaited(_enterCaret());
       return true;
@@ -441,15 +442,39 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       return ReaderCaretRouter.isEnterTriggerKeyboard(
         keyboardTriggerKey,
         focusNavEnabled: _focusNavEnabled,
+        enterKeys: _readerEnterCaretKeys(),
       );
     }
     if (gamepadTriggerButton != null) {
       return ReaderCaretRouter.isEnterTriggerGamepad(
         gamepadTriggerButton,
         focusNavEnabled: _focusNavEnabled,
+        enterButtons: _readerEnterCaretButtons(),
       );
     }
     return _focusNavEnabled;
+  }
+
+  /// TODO-700 T7: the live keyboard keys bound to [ShortcutAction.readerEnterCaret]
+  /// (default Enter, remappable in shortcut settings). The reader's "enter the
+  /// char cursor" trigger reads these instead of the old hard-coded Enter/A, so
+  /// "进入选字查词" is a configurable key while staying Enter by default.
+  Set<LogicalKeyboardKey> _readerEnterCaretKeys() {
+    return appModel.shortcutRegistry
+        .bindingsFor(ShortcutAction.readerEnterCaret)
+        .keyboardBindings
+        .map((b) => b.key)
+        .toSet();
+  }
+
+  /// TODO-700 T7: the live gamepad buttons bound to
+  /// [ShortcutAction.readerEnterCaret] (default A, remappable).
+  Set<GamepadButton> _readerEnterCaretButtons() {
+    return appModel.shortcutRegistry
+        .bindingsFor(ShortcutAction.readerEnterCaret)
+        .gamepadBindings
+        .map((b) => b.button)
+        .toSet();
   }
 
   KeyEventResult _executeShortcutAction(

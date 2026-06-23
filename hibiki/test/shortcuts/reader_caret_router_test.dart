@@ -183,6 +183,68 @@ void main() {
     });
   });
 
+  // TODO-700 T7: the enter-caret trigger is REMAPPABLE — isEnterTrigger* accept
+  // the live readerEnterCaret bindings. With no override they keep the historical
+  // Enter/A defaults (above); with an override only the supplied keys/buttons
+  // enter the cursor.
+  group('ReaderCaretRouter enter triggers are remappable (TODO-700 T7)', () {
+    test('custom enterKeys: only the bound key enters, default A/Enter do not',
+        () {
+      final Set<LogicalKeyboardKey> bound = <LogicalKeyboardKey>{
+        LogicalKeyboardKey.keyG,
+      };
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.keyG,
+            enterKeys: bound),
+        isTrue,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter,
+            enterKeys: bound),
+        isFalse,
+      );
+    });
+
+    test(
+        'custom enterButtons: only the bound button enters, default A does not',
+        () {
+      const Set<GamepadButton> bound = <GamepadButton>{GamepadButton.y};
+      expect(
+        ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.y,
+            enterButtons: bound),
+        isTrue,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a,
+            enterButtons: bound),
+        isFalse,
+      );
+    });
+
+    test('an empty override disables enter entirely (no key/button enters)',
+        () {
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter,
+            enterKeys: <LogicalKeyboardKey>{}),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a,
+            enterButtons: const <GamepadButton>{}),
+        isFalse,
+      );
+    });
+
+    test('focusNavEnabled:false overrides any custom binding', () {
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.keyG,
+            focusNavEnabled: false,
+            enterKeys: <LogicalKeyboardKey>{LogicalKeyboardKey.keyG}),
+        isFalse,
+      );
+    });
+  });
+
   // BUG-161: the reader's char-cursor focus navigation must follow the global
   // "键盘/手柄焦点导航" switch (experimentalFocusNavigationEnabled, default off).
   // When focus navigation is disabled, Enter / game A must NOT enter the cursor —
