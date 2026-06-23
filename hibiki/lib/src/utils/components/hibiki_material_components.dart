@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show SelectedContent;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
@@ -2193,9 +2193,6 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
   // ListView.builder 按 [_lines] 索引懒构造每行，只渲染视口内行。
   late List<String> _lines = _splitLines(widget.log);
 
-  // SelectionArea 的最近一次选中纯文本（用于自定义「分享」菜单项保留旧 shareAction）。
-  String _selectedText = '';
-
   static List<String> _splitLines(String log) => log.split('\n');
 
   @override
@@ -2212,25 +2209,39 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
     super.dispose();
   }
 
-  void _onSelectionChanged(SelectedContent? content) {
-    _selectedText = content?.plainText ?? '';
+  // 「复制全部」不走 SelectionArea：ListView.builder 不构造视口外行，
+  // SelectionArea 拿不到视口外行的 Selectable，「全选→复制」只能拿到当前
+  // 视口内的几十行（TODO-762 回归，复核 af417805 实测 5000 行只复制到 38 行）。
+  // 错误/调试日志页「复制整段去排障」是核心用途，所以「复制全部」直走
+  // [widget.log] 全量、绕开 SelectionArea 的视口限制，保证一定拿到整段日志。
+  Future<void> _copyAllToClipboard() async {
+    await Clipboard.setData(ClipboardData(text: widget.log));
   }
 
-  // 保留旧自定义工具栏的「分享选区」能力：在 SelectionArea 默认菜单（复制 / 全选）
-  // 之上追加一个「分享」项，调用页面传入的 [widget.shareAction]（错误/调试日志页
-  // 都是 Share.share(选中文本)）。复制/全选沿用框架默认按钮，行为不变。
+  // 上下文菜单：覆盖框架默认的「复制」（只拿视口选区）语义。保留默认
+  // 项里「全选」之外的那些行为不变，但额外提供两个走全量 [widget.log] 的入口：
+  // 「复制全部」（复制整段日志）与「分享」（分享整段日志）。拖拽部分视口
+  // 选区的默认「复制」仍可用（对可见内容有效）；但「全选语义」必须给全量。
   Widget _buildContextMenu(
     BuildContext context,
     SelectableRegionState selectableRegionState,
   ) {
     final List<ContextMenuButtonItem> items = <ContextMenuButtonItem>[
+      // 增加「复制全部」入口：复制 widget.log 全量，不受视口限制。
+      ContextMenuButtonItem(
+        label: t.log_copy_all,
+        onPressed: () {
+          selectableRegionState.hideToolbar();
+          _copyAllToClipboard();
+        },
+      ),
       ...selectableRegionState.contextMenuButtonItems,
+      // 分享也用全量（错误/调试日志「分享整段去排障」是核心用途）。
       ContextMenuButtonItem(
         label: t.share,
         onPressed: () {
-          final String text = _selectedText;
           selectableRegionState.hideToolbar();
-          if (text.isNotEmpty) widget.shareAction(text);
+          if (widget.log.isNotEmpty) widget.shareAction(widget.log);
         },
       ),
     ];
@@ -2258,42 +2269,61 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
               final double viewportHeight = constraints.maxHeight.isFinite
                   ? constraints.maxHeight
                   : MediaQuery.sizeOf(context).height;
-              return Listener(
-                onPointerDown: (PointerDownEvent event) {
-                  if (event.buttons & kPrimaryButton == 0) return;
-                  _scrollController.beginPointerSelection(
-                    pointerY: event.localPosition.dy,
-                    viewportHeight: viewportHeight,
-                  );
-                },
-                onPointerMove: (PointerMoveEvent event) {
-                  if (event.buttons & kPrimaryButton == 0) {
-                    _scrollController.endPointerSelection();
-                    return;
-                  }
-                  _scrollController.updatePointerSelection(
-                    pointerY: event.localPosition.dy,
-                    viewportHeight: viewportHeight,
-                  );
-                },
-                onPointerUp: (_) => _scrollController.endPointerSelection(),
-                onPointerCancel: (_) => _scrollController.endPointerSelection(),
-                child: SelectionArea(
-                  onSelectionChanged: _onSelectionChanged,
-                  contextMenuBuilder: _buildContextMenu,
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: EdgeInsets.all(tokens.spacing.card),
-                    itemCount: _lines.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      return Text(
-                        _lines[index],
-                        style: lineStyle,
-                        softWrap: true,
+              return Stack(
+                children: <Widget>[
+                  Listener(
+                    onPointerDown: (PointerDownEvent event) {
+                      if (event.buttons & kPrimaryButton == 0) return;
+                      _scrollController.beginPointerSelection(
+                        pointerY: event.localPosition.dy,
+                        viewportHeight: viewportHeight,
                       );
                     },
+                    onPointerMove: (PointerMoveEvent event) {
+                      if (event.buttons & kPrimaryButton == 0) {
+                        _scrollController.endPointerSelection();
+                        return;
+                      }
+                      _scrollController.updatePointerSelection(
+                        pointerY: event.localPosition.dy,
+                        viewportHeight: viewportHeight,
+                      );
+                    },
+                    onPointerUp: (_) => _scrollController.endPointerSelection(),
+                    onPointerCancel: (_) =>
+                        _scrollController.endPointerSelection(),
+                    child: SelectionArea(
+                      contextMenuBuilder: _buildContextMenu,
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: EdgeInsets.all(tokens.spacing.card),
+                        itemCount: _lines.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          return Text(
+                            _lines[index],
+                            style: lineStyle,
+                            softWrap: true,
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
+                  // 始终可见的「复制全部」入口：复制 widget.log 全量、绕开
+                  // SelectionArea 的视口限制，保证用户一定能拿到整段日志（不会
+                  // 退化成只复制视口内的几十行）。
+                  Positioned(
+                    top: tokens.spacing.card,
+                    right: tokens.spacing.card,
+                    child: Tooltip(
+                      message: t.log_copy_all,
+                      child: FilledButton.tonalIcon(
+                        onPressed: _copyAllToClipboard,
+                        icon: const Icon(Icons.copy_all_outlined, size: 18),
+                        label: Text(t.log_copy_all),
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
           ),
@@ -2301,6 +2331,46 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
       ),
     );
   }
+}
+
+/// BUG-119 拽回判据的纯函数核心：在拖拽选区期间，决定是否放行一次程序化滚动
+/// （`jumpTo` / `animateTo`）。从 [_LogSelectionScrollController._allowProgrammaticScroll]
+/// 抽出，便于在 widget 渲染之外单测——把不变式钉死，防止有人把拦截逻辑掏空后
+/// 结构守卫仍全绿（复核 ③ 指出旧守卫名存实亡）。
+///
+/// 规则：
+/// * 选区拖拽未激活 → 一律放行（非选区期的滚动不受影响）。
+/// * 位移可忽略（<=0.5px）→ 放行（无实质拽回）。
+/// * 指针贴边（顶/底 edgeBand 内）且朝外侧 → 放行（合法的边缘自动滚动）。
+/// * 指针贴边但朝内侧 → 拦截（这正是「把视口往光标拽回」的方向）。
+/// * 指针不贴边：若用户在本次选区期间手动滚动过 → 拦截（不让程序化滚动覆盖
+///   用户刚做的手动滚动）；否则放行（未手动滚动时不与谁打架）。
+bool logSelectionScrollDecision({
+  required bool pointerSelectionActive,
+  required double delta,
+  required double? pointerY,
+  required double? viewportHeight,
+  required bool userScrolledDuringSelection,
+}) {
+  if (!pointerSelectionActive) return true;
+  if (delta.abs() <= 0.5) return true;
+
+  if (pointerY != null && viewportHeight != null && viewportHeight > 0) {
+    final double edgeBand = math.min(
+      96.0,
+      math.max(48.0, viewportHeight * 0.18),
+    );
+    final bool nearTop = pointerY <= edgeBand;
+    final bool nearBottom = pointerY >= viewportHeight - edgeBand;
+
+    if (nearTop || nearBottom) {
+      final bool movesUp = delta < 0;
+      final bool movesDown = delta > 0;
+      return (nearTop && movesUp) || (nearBottom && movesDown);
+    }
+  }
+
+  return !userScrolledDuringSelection;
 }
 
 class _LogSelectionScrollController extends ScrollController {
@@ -2346,31 +2416,16 @@ class _LogSelectionScrollController extends ScrollController {
   }
 
   bool _allowProgrammaticScroll(double targetOffset) {
-    if (!_pointerSelectionActive || !hasClients || positions.length != 1) {
-      return true;
-    }
-
-    final double delta = targetOffset - position.pixels;
-    if (delta.abs() <= 0.5) return true;
-
-    final double? pointerY = _pointerY;
-    final double? viewportHeight = _viewportHeight;
-    if (pointerY != null && viewportHeight != null && viewportHeight > 0) {
-      final double edgeBand = math.min(
-        96.0,
-        math.max(48.0, viewportHeight * 0.18),
-      );
-      final bool nearTop = pointerY <= edgeBand;
-      final bool nearBottom = pointerY >= viewportHeight - edgeBand;
-
-      if (nearTop || nearBottom) {
-        final bool movesUp = delta < 0;
-        final bool movesDown = delta > 0;
-        return (nearTop && movesUp) || (nearBottom && movesDown);
-      }
-    }
-
-    return !_userScrolledDuringSelection;
+    // 仅当当前确实附着了唯一 ScrollPosition 时才有「当前像素」可比对；否则
+    // 无可拦截的拽回，直接放行（纯几何判据下沉到 [logSelectionScrollDecision]）。
+    if (!hasClients || positions.length != 1) return true;
+    return logSelectionScrollDecision(
+      pointerSelectionActive: _pointerSelectionActive,
+      delta: targetOffset - position.pixels,
+      pointerY: _pointerY,
+      viewportHeight: _viewportHeight,
+      userScrolledDuringSelection: _userScrolledDuringSelection,
+    );
   }
 
   @override

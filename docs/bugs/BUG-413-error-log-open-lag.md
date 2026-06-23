@@ -29,5 +29,22 @@
   全部）；③ 源码守卫断言 ListView.builder+SelectionArea 接 `_LogSelectionScrollController`，
   旧的整段一次性渲染构造调用消失。`hibiki/test/pages/log_pages_export_test.dart` /
   `log_pages_static_test.dart` 保持绿（导出/复制/另存为不变）。
+- **[x] ③ 回归修复**（对抗式复核 af417805 坐实，TODO-762 同分支续修）—
+  懒加载引入的真回归：`ListView.builder` 不构造视口外 item → `SelectionArea` 拿不到
+  视口外行的 `Selectable`，面板内「全选→复制」/拖拽选区复制/上下文菜单「复制」「分享」
+  只拿到当前视口内的行（实测 5000 行只复制到 ~38 行，视口外静默丢）。旧 TextField
+  整段全选复制是完整的，错误/调试日志「复制整段去排障」是核心用途 → 数据丢失。
+  - 修复（`hibiki_material_components.dart` `_HibikiLogPanelState`）：新增
+    `_copyAllToClipboard()` 直走 `widget.log` 全量、绕开 SelectionArea；上下文菜单
+    顶部加「复制全部」项 + 分享改用 `widget.log` 全量；面板右上角加始终可见的
+    「复制全部」`FilledButton.tonalIcon`（i18n key `log_copy_all`，17 语言齐）。
+    拖拽部分视口选区的默认「复制」保留（对可见内容有效），但「全选/整段」语义给全量。
+    删除名存实亡的 `_selectedText` 视口选区缓存。
+  - 守卫加固（`log_panel_scroll_select_guard_test.dart`）：① 行为断言「复制全部」
+    覆盖全量——构造 5000 行大日志、点「复制全部」、断言剪贴板含首行**和**末行（视口外）
+    且 `== widget.log`（退化成视口复制则缺末行转红）；② 源码守卫复制/分享走
+    `widget.log` 全量、无 `_selectedText`；③ 把 BUG-119 拽回判据下沉为纯函数
+    `logSelectionScrollDecision` 并补 9 例真值表单测（复核 ③ 指出旧守卫即使掏空拦截
+    逻辑仍全绿——现在掏空成恒 true 会让贴边朝内/手动滚动覆盖等 BLOCK 用例转红）。
 - **备注**：分支 `todo-762-log-lazy`。只修渲染卡顿；磁盘文件单会话无界本次不做（不扩面）。
   导出/复制/分享/另存为全部保留（pages 仍喂同一份 `getFullLog()` 字符串）。
