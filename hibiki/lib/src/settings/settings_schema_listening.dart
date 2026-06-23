@@ -161,7 +161,7 @@ SettingsDestination buildListeningDestination() {
             icon: Icons.skip_next_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 9,
+              order: 10,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumeKeySentenceNavEnabled,

@@ -87,7 +87,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 0,
+              order: 5,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginTop,
             format: (double v) => '${v.round()}%',
@@ -105,7 +105,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 1,
+              order: 6,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginBottom,
             format: (double v) => '${v.round()}%',
@@ -123,7 +123,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 2,
+              order: 7,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginLeft,
             format: (double v) => '${v.round()}%',
@@ -141,7 +141,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 3,
+              order: 8,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginRight,
             format: (double v) => '${v.round()}%',
@@ -182,7 +182,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 5,
+              order: 2,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -216,7 +216,7 @@ SettingsDestination buildReadingDestination() {
                 c.readerSource.ttuSpreadMode != 'off',
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 6,
+              order: 3,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -243,7 +243,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 7,
+              order: 1,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -268,9 +268,11 @@ SettingsDestination buildReadingDestination() {
             title: t.ttu_view_mode_label,
             icon: Icons.chrome_reader_mode_outlined,
             controlBelow: true,
+            // TODO-725：翻页/滚动从「外观」迁到「布局与显示」组（用户最直指的
+            // 「滚动/翻页应放进布局与显示」）。仅改展示分类/排序，onChanged 不变。
             reader: const ReaderPlacement(
-              group: ReaderGroup.appearance,
-              order: 3,
+              group: ReaderGroup.layout,
+              order: 0,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -298,7 +300,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 8,
+              order: 10,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -381,7 +383,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.format_align_justify,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 10,
+              order: 11,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.ttuEnableTextJustification,
@@ -397,7 +399,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 11,
+              order: 12,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.ttuEnableVerticalFontKerning,
@@ -413,7 +415,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 12,
+              order: 13,
             ),
             value: (SettingsContext c) => c.readerSource.ttuEnableFontVPAL,
             onChanged: (SettingsContext c, bool value) {
@@ -427,7 +429,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.style_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 13,
+              order: 14,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.ttuPrioritizeReaderStyles,
@@ -447,7 +449,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.touch_app_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 0,
+              order: 1,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.highlightOnTap,
@@ -462,7 +464,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.fullscreen_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 10,
+              order: 11,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.tapEmptyToHideChrome,
@@ -477,7 +479,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.volume_up_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 1,
+              order: 2,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningEnabled,
@@ -495,7 +497,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.swap_vert_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 2,
+              order: 3,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningInverted,
@@ -510,7 +512,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.swipe_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 3,
+              order: 4,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.invertSwipeDirection,
@@ -526,7 +528,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.swap_horiz_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 3,
+              order: 5,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.reverseArrowPageTurn,
@@ -544,7 +546,7 @@ SettingsDestination buildReadingDestination() {
             divisions: 49,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 4,
+              order: 6,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningSpeed.toDouble(),
@@ -564,7 +566,7 @@ SettingsDestination buildReadingDestination() {
             divisions: 17,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 7,
+              order: 8,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.wheelPageTurnInterval.toDouble(),
@@ -584,7 +586,7 @@ SettingsDestination buildReadingDestination() {
             divisions: 17,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 8,
+              order: 9,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.swipePageTurnSensitivity,
@@ -601,7 +603,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.lightbulb_outline,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 6,
+              order: 7,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.keepScreenAwake,

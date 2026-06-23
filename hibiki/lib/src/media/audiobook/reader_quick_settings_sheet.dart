@@ -285,7 +285,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       wideBuilder: (BuildContext context, BoxConstraints constraints) {
         final double viewInsetsBottom =
             MediaQuery.of(context).viewInsets.bottom;
-        final String selectedId = _subPage ?? 'appearance';
+        // TODO-725：导航置首后宽窗默认选中改 'location'（不再默认 appearance）。
+        final String selectedId = _subPage ?? 'location';
         final Color dividerColor = isCupertinoPlatform(context)
             ? CupertinoColors.separator.resolveFrom(context)
             : HibikiDesignTokens.of(context).surfaces.outline;
@@ -381,14 +382,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
-  /// 宽窗右详情：默认外观分类顶部并入阅读进度（左父菜单不再单列进度，借此把左栏
-  /// 做矮、更多窗口能进宽窗）。其余分类只渲染各自详情。
+  /// 宽窗右详情：默认分类（导航置首后为 'location'）顶部并入阅读进度（左父菜单不
+  /// 再单列进度，借此把左栏做矮、更多窗口能进宽窗）。其余分类只渲染各自详情。
   Widget _buildWidePrimary(
     BuildContext context,
     ThemeData theme,
     String selectedId,
   ) {
-    if (selectedId != 'appearance') {
+    if (selectedId != 'location') {
       return _subPageContent(selectedId);
     }
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -410,11 +411,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 宽窗 master-detail 左 pane 的分类项（id 与 [_subPageContent] 的 case 对齐）。
   /// audiobook 仅在有 controller 时出现。
   List<({String id, IconData icon, String label})> _wideCategories() {
+    // TODO-725：导航置首（location → layout → behavior → lookup → appearance →
+    // [audiobook]）。与窄窗主页 navigationRows 顺序保持一致。
     return <({String id, IconData icon, String label})>[
       (
-        id: 'appearance',
-        icon: Icons.palette_outlined,
-        label: t.settings_destination_appearance,
+        id: 'location',
+        icon: Icons.menu_book_outlined,
+        label: t.section_navigation,
       ),
       (
         id: 'layout',
@@ -432,9 +435,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         label: t.settings_destination_lookup,
       ),
       (
-        id: 'location',
-        icon: Icons.menu_book_outlined,
-        label: t.section_navigation,
+        id: 'appearance',
+        icon: Icons.palette_outlined,
+        label: t.settings_destination_appearance,
       ),
       if (widget.controller != null)
         (
@@ -448,7 +451,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   Widget _buildMainPage(BuildContext context, ThemeData theme) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
+    // TODO-725（手机/窄窗折叠）：主页只剩「阅读进度 + 分类导航行 + 动作行」。外观
+    // 不再内联平铺，而是和其它分类一样降级成可点进的导航行（默认折叠，点开才看
+    // 内容）。导航置首：location → layout → behavior → lookup → appearance →
+    // [audiobook]，与宽窗 _wideCategories 顺序一致。
     final List<Widget> navigationRows = [
+      _categoryTile(
+        icon: Icons.menu_book_outlined,
+        label: t.section_navigation,
+        page: 'location',
+      ),
       _categoryTile(
         icon: Icons.auto_stories_outlined,
         label: t.section_layout,
@@ -465,9 +477,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         page: 'lookup',
       ),
       _categoryTile(
-        icon: Icons.menu_book_outlined,
-        label: t.section_navigation,
-        page: 'location',
+        icon: Icons.palette_outlined,
+        label: t.settings_destination_appearance,
+        page: 'appearance',
       ),
       if (widget.controller != null)
         _categoryTile(
@@ -482,8 +494,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildProgressSection(theme),
-        SizedBox(height: sectionGap),
-        _buildAppearanceInline(theme),
         SizedBox(height: sectionGap),
         AdaptiveSettingsSection(children: navigationRows),
         SizedBox(height: sectionGap),
@@ -624,33 +634,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   Future<void> _syncThemeSelection() async {
     await _updateSetting('theme', widget.appModel.appThemeKey);
     await widget.onThemeChanged?.call();
-  }
-
-  /// 外观区（原「外观」子页内容，现平铺到弹窗主页）：标题 + 主题选择器 +
-  /// schema 投影的 appearance 分组（字号/行高/段落缩进/视图模式）+ 每书
-  /// 「编辑书籍 CSS」导航行。Book CSS 需要 live、按书的 `widget.extractDir`，
-  /// 无静态 schema item 能携带，故保留 bespoke，仅在有 extract dir 时显示。
-  Widget _buildAppearanceInline(ThemeData theme) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // 单张「等宽」卡：主题行 + appearance schema 行（字号/行高/段落缩进/视图
-    // 模式）+ 编辑书籍CSS 行，行间分割线，编辑书籍CSS 是该卡最后一行（非独立卡）。
-    // appearance schema 行用 `buildSectionRows` 取「裸行」拼进同一张
-    // `AdaptiveSettingsSection`——而非 `buildDetailContent` 的 ListView+整页内
-    // 边距（那会让本卡比下方导航卡窄、还自带滚动），从而与下方导航卡等宽。
-    // 主题行用自己的 `_themeSettingsContext()` 保留实时换肤 + 词典/歌词联动；
-    // appearance 行用普通 `_settingsContext()`。
-    final List<Widget> cardChildren = _appearanceCardChildren();
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SettingsSectionHeader(
-          t.display_settings,
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        ),
-        AdaptiveSettingsSection(children: cardChildren),
-      ],
-    );
   }
 
   /// 外观卡的行集合（主题 + appearance schema 行 + 可选「编辑书籍CSS」行）。

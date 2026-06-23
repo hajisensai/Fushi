@@ -14,11 +14,15 @@ void main() {
     expect(source, contains("page: 'layout'"));
     expect(source, contains("page: 'behavior'"));
     expect(source, contains("page: 'location'"));
+    // TODO-725（手机折叠）：外观也降级成可点进的分类导航行（page），不再内联平铺。
+    expect(source, contains("page: 'appearance'"));
     expect(source, contains("page: 'audiobook'"));
     expect(source, isNot(contains('class AudiobookSettingsSheet')));
   });
 
-  test('reader quick settings home inlines the appearance controls', () {
+  test(
+      'reader quick settings home collapses appearance into a nav row '
+      '(TODO-725)', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
@@ -28,22 +32,26 @@ void main() {
       '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
     );
 
-    // 外观已平铺到主页（窄窗），不再有独立的「外观」导航子页 push 入口。
-    expect(mainSource, contains('_buildAppearanceInline(theme)'));
-    // 宽窗 master-detail 用 `id: 'appearance'`（非 `page: 'appearance'` push）。
-    expect(source, isNot(contains("page: 'appearance'")));
+    // 手机/窄窗折叠：主页只剩「阅读进度 + 分类导航行 + 动作行」。外观不再内联
+    // 平铺，而是和其它分类一样降级成可点进的导航行（默认折叠）。
+    expect(mainSource, isNot(contains('_buildAppearanceInline')));
+    expect(mainSource, contains('_buildProgressSection(theme)'));
+    expect(mainSource,
+        contains('AdaptiveSettingsSection(children: navigationRows)'));
+    expect(mainSource, contains("page: 'appearance'"));
+    // 导航置首：location 行排在 navigationRows 第一位（在 layout 之前）。
+    final int locIdx = mainSource.indexOf("page: 'location'");
+    final int layoutIdx = mainSource.indexOf("page: 'layout'");
+    expect(locIdx, isNonNegative);
+    expect(layoutIdx, isNonNegative);
+    expect(locIdx, lessThan(layoutIdx), reason: '导航（location）必须是窄窗主页第一个分类行');
+
+    // 内联外观方法已删（折叠后无引用），不应再存在。
+    expect(source, isNot(contains('Widget _buildAppearanceInline(')));
     expect(source, isNot(contains('Widget _buildQuickControlsSection(')));
 
-    // 窄窗内联包装仍是单张等宽卡（一个 AdaptiveSettingsSection）。
-    final String inlineSource = _between(
-      source,
-      '  Widget _buildAppearanceInline(ThemeData theme)',
-      '  List<Widget> _appearanceCardChildren()',
-    );
-    expect('AdaptiveSettingsSection('.allMatches(inlineSource).length, 1);
-
-    // 复用的外观行集合（窄窗内联 + 宽窗右 pane 共用）：主题行 + appearance
-    // schema 裸行 + 编辑书籍CSS（最后一行，非独立卡）。
+    // 复用的外观行集合仍在（窄窗/宽窗外观详情共用）：主题行 + appearance schema
+    // 裸行 + 编辑书籍CSS（最后一行，非独立卡）。
     final String cardSource = _between(
       source,
       '  List<Widget> _appearanceCardChildren()',
@@ -51,11 +59,8 @@ void main() {
     );
     expect(cardSource, contains('buildThemeSelector(_themeSettingsContext())'));
     expect(cardSource, contains('ReaderGroup.appearance'));
-    // appearance schema 行用 buildSectionRows 取「裸行」（非 buildDetailContent
-    // 的 ListView+整页内边距），才能与下方导航卡等宽。
     expect(cardSource, contains('buildSectionRows('));
     expect(cardSource, contains('book_css_editor_edit_css'));
-    // 主题不再是独立卡：内联区不再用旧的 _buildThemeSelector() 包装方法。
     expect(source, isNot(contains('Widget _buildThemeSelector()')));
   });
 
@@ -308,9 +313,11 @@ void main() {
     expect(source, contains('Widget _buildWidePane('));
     expect(source, contains('_wideCategories()'));
 
-    // 左 pane 把外观纳入分类（默认选中），右 pane 复用同一份子页详情。
+    // 左 pane 把全部分类列出（含外观）；导航置首后默认选中 'location'，右 pane
+    // 复用同一份子页详情。
     expect(source, contains("id: 'appearance'"));
-    expect(source, contains("_subPage ?? 'appearance'"));
+    expect(source, contains("id: 'location'"));
+    expect(source, contains("_subPage ?? 'location'"));
     expect(source, contains('_subPageContent(selectedId)'));
     // 左 pane 分类用带选中态的 MD3 列表项（pill 高亮，无 chevron 误导 push）。
     expect(source, contains('HibikiListItemSelectedShape.pill'));
@@ -350,19 +357,72 @@ void main() {
     expect(source, isNot(contains('_wideProbeHeight')));
   });
 
-  test('reader wide pane drops progress; it moves into the appearance detail',
-      () {
+  test(
+      'reader wide pane drops progress; it moves into the default detail '
+      '(TODO-725: location)', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    // 左父菜单做矮：阅读进度从左 pane 移到右侧外观详情顶部（_buildWidePrimary），
+    // 左父菜单做矮：阅读进度从左 pane 移到右侧「默认选中分类」详情顶部
+    // （_buildWidePrimary）。导航置首后默认选中是 'location'，进度并入它的详情顶部，
     // 左栏只留分类导航 + 动作，让更多窗口能进宽窗。
     expect(source, contains('Widget _buildWidePrimary('));
     expect(source, contains('_buildProgressSection(theme)'));
-    // 右 pane 渲染走 _buildWidePrimary（默认外观顶部并入进度），不再直接铺
+    // 进度并入逻辑绑默认选中的 location，不再绑 appearance。
+    final String widePrimary = _between(
+      source,
+      '  Widget _buildWidePrimary(',
+      '  List<({String id, IconData icon, String label})> _wideCategories()',
+    );
+    expect(widePrimary, contains("selectedId != 'location'"));
+    expect(widePrimary, isNot(contains("selectedId != 'appearance'")));
+    // 右 pane 渲染走 _buildWidePrimary（默认分类顶部并入进度），不再直接铺
     // _subPageContent。
     expect(source, contains('_buildWidePrimary(context, theme, selectedId)'));
+  });
+
+  test(
+      'narrow nav rows and wide categories share the same category order '
+      '(TODO-725: nav-first)', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    // 窄窗主页 navigationRows 的分类顺序（按 page: 出现顺序）。
+    final String mainSource = _between(
+      source,
+      '  Widget _buildMainPage(BuildContext context, ThemeData theme)',
+      '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
+    );
+    final List<String> narrowOrder = RegExp(r"page: '([a-z]+)'")
+        .allMatches(mainSource)
+        .map((Match m) => m.group(1)!)
+        .toList();
+
+    // 宽窗 _wideCategories 的分类顺序（按 id: 出现顺序）。
+    final String wideSource = _between(
+      source,
+      '  List<({String id, IconData icon, String label})> _wideCategories()',
+      '  Widget _buildMainPage(BuildContext context, ThemeData theme)',
+    );
+    final List<String> wideOrder = RegExp(r"id: '([a-z]+)'")
+        .allMatches(wideSource)
+        .map((Match m) => m.group(1)!)
+        .toList();
+
+    const List<String> expected = <String>[
+      'location',
+      'layout',
+      'behavior',
+      'lookup',
+      'appearance',
+      'audiobook',
+    ];
+    expect(narrowOrder, expected, reason: '窄窗主页分类顺序必须导航置首：$narrowOrder');
+    expect(wideOrder, expected, reason: '宽窗分类顺序必须与窄窗一致、导航置首：$wideOrder');
+    expect(narrowOrder.first, 'location');
+    expect(wideOrder.first, 'location');
   });
 }
 
