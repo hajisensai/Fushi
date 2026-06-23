@@ -51,19 +51,20 @@ void main() {
         reason: 'onSettingsChangedLive 必须 unawaited()+catchError，不能裸调');
   });
 
-  // BUG-023: 字体大小/行间/余白 live 变更经 _applyStylesLive 注入新 CSS 后，body
-  // 会重新分页，但旧实现只 `el.textContent = css` 就完事，从不重锚到分页边界 ——
-  // 页面停在错位滚动量、最上一行被裁。修复后注入的 JS 必须在 hoshiReader 存在时
-  // 走 reanchorAfterStyleChange（捕捉进度→换样式→重建 metrics→rAF 重锚），仅在其
-  // 缺席（未初始化 / 非分页 reader 页）时回退裸 textContent。谁把重锚去掉、退回
-  // 只设 textContent，本断言红。
-  test('applyStylesLive routes live CSS through reanchorAfterStyleChange', () {
+  // BUG-023 / TODO-736 B-1：字体大小/行间/余白 live 变更经 _applyStylesLive 注入新 CSS 后
+  // body 会重新分页，必须重锚到分页边界，否则最上一行被裁。旧实现走单函数
+  // reanchorAfterStyleChange（rAF 自驱清旗，清太早 → 翻页改字号跳章首）；TODO-736 B-1 改走
+  // 两阶段 settle-aware 编排 _reanchorForStyleChange（begin 同步换 CSS+采锚+置旗 → postFrame
+  // settle → commit 滚回+清旗+打 _reanchorClearedAt）。谁把重锚去掉、退回只设 textContent，本断言红。
+  test(
+      'applyStylesLive routes live CSS through _reanchorForStyleChange orchestration',
+      () {
     expect(
       src,
-      contains('reanchorAfterStyleChange'),
-      reason: '_applyStylesLive 注入的 live-CSS JS 必须调用 '
-          'reanchorAfterStyleChange，让字体/行间/余白变更后重排能重锚到分页边界，'
-          '否则最上一行被裁（BUG-023）。勿退回只 el.textContent = css。',
+      contains('_reanchorForStyleChange('),
+      reason: '_applyStylesLive 必须走 _reanchorForStyleChange 两阶段编排（begin/commit '
+          'settle-aware 重锚），让字体/行间/余白变更后重排能重锚到分页边界，否则最上一行被裁'
+          '（BUG-023）。勿退回只 el.textContent = css。',
     );
   });
 }

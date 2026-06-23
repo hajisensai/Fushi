@@ -326,13 +326,11 @@ void main() {
     });
   });
 
-  // BUG-023: 调整字体大小（行间/余白同源）走 _applyStylesLive 的 CSS-only live
-  // 注入，会让 body 重新分页排版，但旧路径既不重建 paginationMetrics、也不把视口
-  // 重新对齐到分页边界 —— 既有的 updatePageSize / setChromeInsets 都有「捕捉进度
-  // → 重排 → 重锚」机制，唯独外部 CSS 变更没有，于是页面停在错位的滚动量、最上
-  // 一行被裁。修复加 reanchorAfterStyleChange，两模式各镜像自身 updatePageSize 的
-  // 重锚序列。这些断言先红（方法不存在），实现后绿。
-  group('ReaderPaginationScripts.reanchorAfterStyleChange (BUG-023)', () {
+  // BUG-023 / TODO-736：调整字体大小（行间/余白同源）走 _applyStylesLive 的两阶段
+  // 编排（beginStyleReanchor/commitStyleReanchor，见 reanchor_charoffset_guard_test 守
+  // char-precise + settle-aware）。本 group 只留与样式重锚无关的分页 metrics 预热守卫
+  // （warmPaginationMetrics）；旧单函数 reanchorAfterStyleChange 已作死代码删除。
+  group('ReaderPaginationScripts pagination metrics warm (BUG-023)', () {
     final String paginated = ReaderPaginationScripts.shellScript(
       initialProgress: 0.3,
     );
@@ -340,37 +338,6 @@ void main() {
       continuousMode: true,
       initialProgress: 0.3,
     );
-
-    test('paginated shell defines reanchorAfterStyleChange', () {
-      expect(paginated, contains('reanchorAfterStyleChange'));
-    });
-
-    test('continuous shell defines reanchorAfterStyleChange', () {
-      expect(continuous, contains('reanchorAfterStyleChange'));
-    });
-
-    test(
-        'paginated re-anchor captures precise char offset, invalidates '
-        'metrics, serialises via _reanchorPending and re-snaps via '
-        'scrollToCharOffset (BUG-109)', () {
-      final int idx = paginated.indexOf('reanchorAfterStyleChange =');
-      expect(idx, greaterThanOrEqualTo(0));
-      // 取方法体（到下一处 window.hoshiReader. 赋值之前，足够覆盖本方法）。
-      final int next = paginated.indexOf('window.hoshiReader.', idx + 1);
-      final String body =
-          paginated.substring(idx, next < 0 ? paginated.length : next);
-      // BUG-109：分页重锚改用精确字符偏移（对齐 setChromeInsets），不再用粗粒度
-      // 进度分数 —— 后者重排后 alignToPage 取整会落到相邻页，切主题/字体「翻页」。
-      expect(body, contains('getFirstVisibleCharOffset()'),
-          reason: '必须在重排前用 getFirstVisibleCharOffset 精确捕捉首个可见字符（BUG-109）');
-      expect(body, contains('this.paginationMetrics = null'),
-          reason: '字体变更后分页 metrics 失效，不置空会用旧 progressStops 算错页');
-      expect(body, contains('_reanchorPending'),
-          reason: '必须复用既有 in-flight 串行标志，避免与 chrome-inset/页尺寸重锚打架');
-      expect(body, contains('scrollToCharOffset('),
-          reason: 'rAF 内必须用 scrollToCharOffset 落到该字符真实所在页（BUG-109），'
-              '勿退回 scrollToProgressPaged 的进度分数对齐');
-    });
 
     test('paginated restore completion warms pagination metrics during idle',
         () {
@@ -388,29 +355,6 @@ void main() {
           contains("typeof this.warmPaginationMetrics === 'function'"),
           reason:
               'notifyRestoreComplete 是 shared JS，连续模式必须安全跳过 paginated-only warm');
-    });
-
-    test(
-        'continuous re-anchor captures precise char offset and re-scrolls '
-        'via scrollToCharOffset (TODO-736 B-2)', () {
-      final int idx = continuous.indexOf('reanchorAfterStyleChange =');
-      expect(idx, greaterThanOrEqualTo(0));
-      // 截到方法体结尾 `\n};`（其后是手势 IIFE，非 window.hoshiReader. 赋值）。
-      final int end = continuous.indexOf('\n};', idx);
-      final String body =
-          continuous.substring(idx, end < 0 ? continuous.length : end);
-      // TODO-736 B-2：连续模式重锚改用精确字符偏移（对齐分页版 BUG-109），不再用粗粒度
-      // 进度分数 —— 后者字体/主题重排后反推落点漂移，改字号多次累积偏到章首。
-      expect(body, contains('getFirstVisibleCharOffset()'),
-          reason: '连续模式重排前必须用 getFirstVisibleCharOffset 精确捕捉（TODO-736 B-2）');
-      expect(body, contains('scrollToCharOffset('),
-          reason: '连续模式必须用 scrollToCharOffset 滚回精确字符（TODO-736 B-2）');
-      expect(body, contains('_reanchorPending'),
-          reason: '必须复用既有 in-flight 串行标志，避免与 chrome-inset/页尺寸重锚打架');
-      expect(body, isNot(contains('scrollToProgressContinuous(')),
-          reason: '不得退回 scrollToProgressContinuous 的进度分数重锚（TODO-736 B-2）');
-      expect(body, isNot(contains('calculateProgress(')),
-          reason: '不得退回 calculateProgress 的粗粒度比例（TODO-736 B-2）');
     });
 
     test(

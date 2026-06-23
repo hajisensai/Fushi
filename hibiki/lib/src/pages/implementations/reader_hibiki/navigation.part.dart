@@ -607,27 +607,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final int charOffset = snapshot.charOffset;
     final double progress = snapshot.progress;
 
-    // TODO-736 B-4（必补点1+4）：进度突降伪归零守卫。改字号/主题多次后 reflow 把滚动位置
-    // 瞬时归零，被当成「用户滚到 progress≈0」落库覆盖真实位置 → 弹回章首。但用户**真的**
-    // 把视口滚回章首也是 progress≈0，必须保留落库（防 BUG-162 丢位置）。纯函数据「上次进度
-    // 非零 & 本次≈0 & 无近期真实用户输入（_lastUserInputAt）」判伪：伪则只跳过本次**落库**，
-    // 不动 _lastProgress*（UI 进度仍如实反映当前 JS 读数，不冻结）、不动字数累加（high-water
-    // mark 单调，不受归零影响）。有近期输入 = 真章首 → 照常落库。与 B-3（settle 时间窗去抖）
-    // 判据正交独立、禁互兜底。
-    final DateTime now = DateTime.now();
-    final int? sinceUserInputMs = _lastUserInputAt == null
-        ? null
-        : now.difference(_lastUserInputAt!).inMilliseconds;
-    final bool spuriousDrop = readerProgressDropIsSpurious(
-      lastProgress: _lastProgressValue,
-      newProgress: progress,
-      sinceUserInputMs: sinceUserInputMs,
-      reanchorSettling: readerScrollWithinReanchorSettle(
-        reanchorClearedAt: _reanchorClearedAt,
-        now: now,
-      ),
-    );
-
     _lastProgressSection = _currentChapter;
     _lastProgressValue = progress;
     _lastProgressCharOffset = charOffset;
@@ -639,11 +618,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
     _sessionCharsRead += delta.charsAdded;
     _sessionMaxAbsoluteChars = delta.highWaterMark;
-    // TODO-736 B-4：伪归零（reflow 自发归零、非用户真滚回章首）只跳过落库，字数累加与 UI
-    // 进度照常（上面已更新）。非伪则照旧 500ms 去抖落库。
-    if (!spuriousDrop) {
-      _debouncedSavePosition(progress, charOffset);
-    }
+    // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的
+    // reflow 自发归零已被两墙完整覆盖（begin 换 CSS 触发的归零落在 _reanchorPending 期，由
+    // JS stableProgressInvocation 返 null 拦在落库前；commit 清旗后的 settle 尾沿由 B-3 的
+    // 250ms 窗在 _handleReaderScroll 拦掉）。B-4「无近期输入=伪」反而误伤惯性甩动到真章首
+    // （momentum 期无新输入 → sinceUserInputMs 超窗 → 误判伪 → 丢位置），故移除。500ms 去抖落库。
+    _debouncedSavePosition(progress, charOffset);
 
     if (mounted) {
       final int newTotal = _chapterCumulativeChars.isNotEmpty

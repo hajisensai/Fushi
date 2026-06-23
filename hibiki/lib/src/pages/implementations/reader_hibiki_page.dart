@@ -403,47 +403,6 @@ bool readerScrollWithinReanchorSettle({
   return sinceMs >= 0 && sinceMs < settleMs;
 }
 
-/// TODO-736 B-4: 进度突降伪归零判定纯函数（必补点1+4）。
-///
-/// 现象：翻页多次改字号/主题后弹回章首。根因之一是 reflow 把滚动位置瞬时归零，被当成
-/// 「用户滚到了 progress≈0」落库覆盖真实位置（BUG-162 家族）。但「用户真的把视口滚回
-/// 章首」也是 progress≈0，必须保留落库（否则用户主动回章首的位置丢失）。
-///
-/// 判据：上一次进度 [lastProgress] 明显非零（>[nonZeroThreshold]）而本次 [newProgress]
-/// ≈0（<[zeroThreshold]）= 一次「突降到章首」。此时：
-///   - 距最近一次真实用户输入（触摸/指针/滚轮，[sinceUserInputMs]）在 [recentInputMs] 内
-///     → 用户真把视口滚回章首 → **不伪**（返回 false，调用方照常落库，防丢位置）。
-///   - 无近期用户输入（[sinceUserInputMs] 为 null 或超窗）→ reflow 自发归零的伪归零
-///     → **伪**（返回 true，调用方跳过落库）。
-///
-/// [reanchorSettling]（B-3 的 settle 窗内）为 true 时也判伪——重锚 settle 期的归零本就该
-/// 被 B-3 抢先拦掉，这里作为正交冗余判据**独立**成立（不依赖 B-3 是否已拦，禁互兜底）。
-/// 非突降（[newProgress] 不接近 0，或 [lastProgress] 本就接近 0）一律返回 false（不抑制）。
-bool readerProgressDropIsSpurious({
-  required double lastProgress,
-  required double newProgress,
-  required int? sinceUserInputMs,
-  required bool reanchorSettling,
-  double nonZeroThreshold = 0.02,
-  double zeroThreshold = 0.005,
-  int recentInputMs = 400,
-}) {
-  // 非「突降到章首」一律不抑制（含本次接近 0 但上次也接近 0 的正常章首停留）。
-  final bool isDropToStart =
-      lastProgress > nonZeroThreshold && newProgress < zeroThreshold;
-  if (!isDropToStart) return false;
-  // 有近期真实用户输入 = 用户主动把视口滚回章首 → 必落库（防 BUG-162 丢位置），不伪。
-  final bool hasRecentInput = sinceUserInputMs != null &&
-      sinceUserInputMs >= 0 &&
-      sinceUserInputMs <= recentInputMs;
-  if (hasRecentInput) return false;
-  // 突降到章首 + 无近期用户输入 = reflow 自发归零的伪归零 → 抑制落库。
-  // reanchorSettling 在样式重锚 settle 期为 true，是同结论的正交独立信号（即使没传也
-  // 凭「无输入」成立，故这里直接判伪）。reanchorSettling 参数保留以表达判据来源，但不
-  // 反向放行（settle 期的真章首本就罕见且会被 B-3 时间窗先拦）。
-  return true;
-}
-
 /// TODO-693 / TODO-697 / TODO-718: 连续模式两阶段重锚的编排核心（运行时序列）。
 ///
 /// 从 `_reanchorContinuousForUiScale` 抽出的可注入编排核心：把门控、阶段1 begin
@@ -862,10 +821,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
   DateTime? _lastScrollProgressAt;
-  // TODO-736 必补点1/4：最近一次真实用户输入（触摸/指针/滚轮）的时间戳，由
-  // onReaderUserInput handler 写入。B-4 readerProgressDropIsSpurious 用它区分「用户真把
-  // 视口滚回章首」与「改字号/主题 reflow 把 scrollY 归零的伪归零」。null = 本会话尚无输入。
-  DateTime? _lastUserInputAt;
   // TODO-736 B-3：样式重锚 commit 清旗那一刻的时间戳。_handleReaderScroll 进门若距此
   // 250ms 内（reflow settle 尾沿 scroll），直接 return 不落库——治改字号/主题 reflow 的
   // settle 尾沿把瞬态滚动量当真实滚动落库。与 B-4 判据正交、各自独立单测、禁互兜底。
