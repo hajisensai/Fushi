@@ -36,6 +36,19 @@ Future<void> _seedLocalPosition(
       updatedAt: Value(updatedAt),
     ));
 
+/// 把书 [bookKey] 插进 host 自己的 epub_books 表（真实场景：host 有这本书才允许
+/// 接受其进度 PUT；putBookProgress 的存在性闸门要求 host 书库先有该书）。
+Future<void> _seedHostBook(HibikiDatabase db, String bookKey) =>
+    db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: bookKey,
+      epubPath: '/tmp/$bookKey.epub',
+      extractDir: '/tmp/$bookKey',
+      chapterCount: 3,
+      chaptersJson: '["ch1","ch2","ch3"]',
+      importedAt: 1700000000000,
+    ));
+
 void main() {
   late HibikiDatabase db;
 
@@ -133,6 +146,7 @@ void main() {
 
   group('putBookProgress（host-apply：真写 reader_positions）', () {
     test('PUT 新进度 → host reader_positions 真更新（GET 拉回一致）', () async {
+      await _seedHostBook(db, 'BookB');
       final AppModelLibraryHostService svc = _svc(db);
       await svc.putBookProgress(
         'BookB',
@@ -159,6 +173,7 @@ void main() {
     });
 
     test('上报旧时间戳 → 不覆盖 host 已存新进度（取较新）', () async {
+      await _seedHostBook(db, 'BookC');
       await _seedLocalPosition(db,
           bookKey: 'BookC',
           sectionIndex: 9,
@@ -182,6 +197,7 @@ void main() {
     });
 
     test('上报新时间戳 → 覆盖 host 旧进度', () async {
+      await _seedHostBook(db, 'BookD');
       await _seedLocalPosition(db,
           bookKey: 'BookD',
           sectionIndex: 1,
@@ -205,6 +221,7 @@ void main() {
     });
 
     test('负 normCharOffset clamp 到 0', () async {
+      await _seedHostBook(db, 'BookE');
       final AppModelLibraryHostService svc = _svc(db);
       await svc.putBookProgress(
         'BookE',
@@ -216,6 +233,27 @@ void main() {
       );
       final ReaderPositionRow? row = await db.getReaderPosition('BookE');
       expect(row!.normCharOffset, 0);
+    });
+
+    test('host 书库无该书 → PUT 进度被闸门挡掉（不写孤儿 reader_positions 行）', () async {
+      // host 没有 BookOrphan（任意 client 上报任意 bookKey）：闸门 no-op，
+      // 不产生孤儿行，避免 host 日后导入同 sanitize bookKey 的书时取到陈旧污染位置。
+      final AppModelLibraryHostService svc = _svc(db);
+      await svc.putBookProgress(
+        'BookOrphan',
+        const RemoteBookProgress(
+            sectionIndex: 7,
+            normCharOffset: 7000,
+            charOffset: 77,
+            updatedAtMs: 1700000000000),
+      );
+
+      final ReaderPositionRow? row = await db.getReaderPosition('BookOrphan');
+      expect(row, isNull); // 孤儿写被挡，DB 无该 bookKey 行。
+
+      // GET 端点也对不存在的书返回 empty。
+      final RemoteBookProgress got = await svc.getBookProgress('BookOrphan');
+      expect(got.updatedAtMs, 0);
     });
   });
 }

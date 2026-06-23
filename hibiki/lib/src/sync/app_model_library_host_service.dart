@@ -320,6 +320,13 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     String bookKey,
     RemoteBookProgress progress,
   ) async {
+    // host 书库不存在该 bookKey → no-op，不写孤儿 `reader_positions` 行。
+    // （reader_positions 无外键也无 GC，任意 client 上报任意 bookKey 都会落库；
+    // 之后 host 若导入同名 sanitize bookKey 的书，恢复时会取到来自别处设备、host
+    // 从没读过的陈旧位置 = 进度污染。与视频 `updateVideoBookPosition`「UPDATE
+    // 不存在即 no-op」语义对齐。syncContent 开时 client 独有书已先经
+    // `_syncBooksContentLive` importBook 推成 host 书，故正常同步不被此闸门误挡。）
+    if (await _db.getEpubBook(bookKey) == null) return;
     final RemoteBookProgress current = await getBookProgress(bookKey);
     final RemoteBookProgress incoming = RemoteBookProgress(
       sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,

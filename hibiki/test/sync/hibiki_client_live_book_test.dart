@@ -387,4 +387,31 @@ void main() {
     expect(read.sectionIndex, 9); // host 新进度保留
     expect(read.updatedAtMs, 5000);
   });
+
+  // ── 旧 host 无 /progress 路由 → 真 404 优雅退化（向后兼容，BUG-417 🟡2）──────
+  // 不挂 libraryService 的 server：GET /api/library/books/<key>/progress 经
+  // shelf 返回真实 HTTP 404（server 端 `Library service off`）。client 的
+  // remoteBookProgress 必须吃下 404、返回 RemoteBookProgress.empty、不抛、不中断，
+  // 让旧 host / 离线场景退回本地 reader_positions。
+  test('旧 host 无 progress 路由 → 真 404 优雅退化为 empty（不抛）', () async {
+    final HibikiSyncServer legacyServer = HibikiSyncServer(
+      syncDataDir:
+          Directory.systemTemp.createTempSync('hbk_legacy_no_lib_srv').path,
+      port: 0,
+      token: token,
+      allowLan: false,
+      // libraryService 省略（null）：books 路由整体返回 404，模拟旧 host。
+    );
+    await legacyServer.start();
+    addTearDown(() async => legacyServer.stop());
+    final String legacyBase = 'http://127.0.0.1:${legacyServer.port}';
+
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: legacyBase, token: token);
+
+    final RemoteBookProgress read = await backend.remoteBookProgress('AnyBook');
+    expect(read.updatedAtMs, 0);
+    expect(read.sectionIndex, 0);
+    expect(read, same(RemoteBookProgress.empty));
+  });
 }

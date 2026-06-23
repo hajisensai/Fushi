@@ -140,6 +140,9 @@ void main() {
   group('book progress full sweep', () {
     test('local has progress, host none -> push to host DB (host-apply)',
         () async {
+      // host 也有这本书（真实互联场景：syncContent 已把内容推成 host 书，或两端
+      // 各自有同名书）——putBookProgress 的书存在性闸门要求 host 书库先有该书。
+      await _seedBook(hostDb, 'BookA');
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedBook(localDb, 'BookA');
@@ -190,6 +193,7 @@ void main() {
     });
 
     test('local newer not rolled back by host old', () async {
+      await _seedBook(hostDb, 'BookC');
       await _seedPosition(hostDb, 'BookC',
           section: 1, norm: 10, charOffset: 1, updatedAt: 1000);
 
@@ -285,6 +289,7 @@ void main() {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await _seedHostVideo(hostDb, work, 'video/run', 'VRun');
+      await _seedBook(hostDb, 'BookRun');
       await _seedBook(localDb, 'BookRun');
       await _seedPosition(localDb, 'BookRun',
           section: 3, norm: 3000, charOffset: 33, updatedAt: 4000);
