@@ -53,6 +53,24 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   @override
   Future<void> deleteBook(String title) async => deletedBooks.add(title);
 
+  final Map<String, RemoteBookProgress> bookProgress =
+      <String, RemoteBookProgress>{};
+
+  @override
+  Future<RemoteBookProgress> getBookProgress(String bookKey) async =>
+      bookProgress[bookKey] ?? RemoteBookProgress.empty;
+
+  @override
+  Future<void> putBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {
+    final RemoteBookProgress current =
+        bookProgress[bookKey] ?? RemoteBookProgress.empty;
+    bookProgress[bookKey] =
+        resolveBookProgressSync(local: current, remote: progress);
+  }
+
   // ── local audio stubs ──────────────────────────────────────────────────────
   @override
   Future<List<RemoteLocalAudioInfo>> listLocalAudio() async =>
@@ -368,6 +386,88 @@ void main() {
     expect(res.statusCode, anyOf(200, 204), reason: 'DELETE 三体 应成功');
     expect(lib.deletedBooks, contains('三体'),
         reason: 'deleteBook 应以解码后中文名「三体」被调用');
+    c.close();
+  });
+  // ── progress 端点（GET/PUT /api/library/books/<bookKey>/progress, TODO-767）──
+
+  test('PUT /api/library/books/<key>/progress 写 host 进度，GET 拉回一致', () async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest put =
+        await c.putUrl(Uri.parse('$base/api/library/books/BookProg/progress'));
+    put.headers.set('authorization', authHeader());
+    put.headers.set('content-type', 'application/json');
+    put.write(jsonEncode(<String, Object?>{
+      'sectionIndex': 3,
+      'normCharOffset': 4200,
+      'charOffset': 99,
+      'updatedAtMs': 1700000000000,
+    }));
+    final HttpClientResponse putRes = await put.close();
+    expect(putRes.statusCode, 200);
+    await putRes.drain<void>();
+
+    // host fake 真存了进度。
+    expect(lib.bookProgress['BookProg']?.sectionIndex, 3);
+    expect(lib.bookProgress['BookProg']?.updatedAtMs, 1700000000000);
+
+    final HttpClientRequest get =
+        await c.getUrl(Uri.parse('$base/api/library/books/BookProg/progress'));
+    get.headers.set('authorization', authHeader());
+    final HttpClientResponse getRes = await get.close();
+    expect(getRes.statusCode, 200);
+    final Map<String, dynamic> json =
+        jsonDecode(await getRes.transform(utf8.decoder).join())
+            as Map<String, dynamic>;
+    expect(json['sectionIndex'], 3);
+    expect(json['normCharOffset'], 4200);
+    expect(json['charOffset'], 99);
+    expect(json['updatedAtMs'], 1700000000000);
+    c.close();
+  });
+
+  test('GET 未知书 progress → empty(0/0)', () async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest get = await c
+        .getUrl(Uri.parse('$base/api/library/books/NoSuchBook/progress'));
+    get.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await get.close();
+    expect(res.statusCode, 200);
+    final Map<String, dynamic> json =
+        jsonDecode(await res.transform(utf8.decoder).join())
+            as Map<String, dynamic>;
+    expect(json['updatedAtMs'], 0);
+    expect(json['sectionIndex'], 0);
+    c.close();
+  });
+
+  test('progress 端点拒绝路径穿越 bookKey', () async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest get =
+        await c.getUrl(Uri.parse('$base/api/library/books/..%2Fevil/progress'));
+    get.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await get.close();
+    expect(res.statusCode, anyOf(403, 404));
+    await res.drain<void>();
+    c.close();
+  });
+
+  test('PUT progress 含 CJK bookKey 经 URL 解码落到 host', () async {
+    final HttpClient c = HttpClient();
+    final String encoded = Uri.encodeComponent('三体');
+    final HttpClientRequest put =
+        await c.putUrl(Uri.parse('$base/api/library/books/$encoded/progress'));
+    put.headers.set('authorization', authHeader());
+    put.headers.set('content-type', 'application/json');
+    put.write(jsonEncode(<String, Object?>{
+      'sectionIndex': 7,
+      'normCharOffset': 1000,
+      'charOffset': -1,
+      'updatedAtMs': 1700000001234,
+    }));
+    final HttpClientResponse res = await put.close();
+    expect(res.statusCode, 200);
+    await res.drain<void>();
+    expect(lib.bookProgress['三体']?.sectionIndex, 7);
     c.close();
   });
 }

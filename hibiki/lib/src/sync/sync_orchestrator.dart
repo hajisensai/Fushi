@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
@@ -267,6 +268,22 @@ class SyncOrchestrator {
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
     }
 
+    // 互联书籍 + 视频进度走 live 端点双向同步（TODO-767）。
+    //
+    // 书籍：上面 SyncManager 走的 WebDAV 文件箱进度（progress_*.json）host 端
+    // 从不回灌自己的 reader_positions DB（互联角色非对称：跑 sync 的是 client，
+    // host 只跑 server），故「立即同步」点了进度不过去。这里对称视频 TODO-653 补
+    // 书籍进度 live 端点：遍历本地 epub 书逐本 PUT 本地进度到 host DB + GET host
+    // 进度回灌本地（取较新时间戳）。
+    //
+    // 视频：进度此前只在打开远端视频时按需同步（resume 路径），不进全量 sweep。
+    // 这里遍历本地 VideoBooks 推/拉 lastPositionMs，让「立即同步」一次把书+视频
+    // 进度都同步。
+    if (isInterconnect) {
+      await _syncBookProgressLive(report, b);
+      await _syncVideoProgressLive(report, b);
+    }
+
     return report;
   }
 
@@ -425,6 +442,158 @@ class SyncOrchestrator {
       index++;
     }
   }
+
+  /// 互联书籍阅读进度 live 双向同步（TODO-767）。
+  ///
+  /// 遍历本地 `epub_books`，对每本书：GET host 真相源进度（[RemoteBookClient
+  /// .remoteBookProgress]，host 直读自己的 `reader_positions`）+ 读本地
+  /// `reader_positions`，用 [resolveBookProgressSync]「取较新时间戳」选胜者；胜者
+  /// 严格新于 host 时 PUT 上报 host（[RemoteBookClient.putRemoteBookProgress]，host
+  /// 再防御性取较新落自己的 DB），胜者不同于本地时 upsert 回本地。
+  ///
+  /// 修复根因：互联「立即同步」此前书籍进度只走 SyncManager 的 WebDAV 文件箱
+  /// （progress_*.json），host 从不读回自己的 reader_positions DB，故进度不过去。
+  /// 这里补对称视频 TODO-653 的 live 端点 + host-apply，让进度真正落 host DB。
+  ///
+  /// 逐本错误进 [report.errors] 不中断整体。
+  Future<void> _syncBookProgressLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
+    for (final EpubBookRow book in localBooks) {
+      try {
+        final RemoteBookProgress remote =
+            await backend.remoteBookProgress(book.bookKey);
+        final ReaderPositionRow? localRow =
+            await _db.getReaderPosition(book.bookKey);
+        final RemoteBookProgress local = localRow == null
+            ? RemoteBookProgress.empty
+            : RemoteBookProgress(
+                sectionIndex: localRow.sectionIndex,
+                normCharOffset: localRow.normCharOffset,
+                charOffset: localRow.charOffset,
+                updatedAtMs: localRow.updatedAt,
+              );
+        final RemoteBookProgress winner =
+            resolveBookProgressSync(local: local, remote: remote);
+
+        // 本地→host：胜者严格新于 host 时上报（host 端再取较新，幂等安全）。
+        if (winner.updatedAtMs > remote.updatedAtMs ||
+            (winner.updatedAtMs == remote.updatedAtMs &&
+                (winner.sectionIndex != remote.sectionIndex ||
+                    winner.normCharOffset != remote.normCharOffset ||
+                    winner.charOffset != remote.charOffset))) {
+          await backend.putRemoteBookProgress(book.bookKey, winner);
+        }
+
+        // host→本地：胜者不同于本地时 upsert 回本地 reader_positions。
+        final bool localChanged = winner.sectionIndex != local.sectionIndex ||
+            winner.normCharOffset != local.normCharOffset ||
+            winner.charOffset != local.charOffset ||
+            winner.updatedAtMs != local.updatedAtMs;
+        if (localChanged && winner.updatedAtMs > 0) {
+          await _db.upsertReaderPosition(ReaderPositionsCompanion(
+            bookKey: Value(book.bookKey),
+            sectionIndex: Value(winner.sectionIndex),
+            normCharOffset: Value(winner.normCharOffset),
+            charOffset: Value(winner.charOffset),
+            updatedAt: Value(winner.updatedAtMs),
+          ));
+        }
+      } catch (e) {
+        report.errors.add('live book progress "${book.title}": $e');
+      }
+    }
+  }
+
+  /// 互联视频播放进度 live 双向同步（TODO-767，把视频进度并入全量 sweep）。
+  ///
+  /// 此前视频进度只在打开远端视频时按需同步（resume 路径）。这里遍历本地
+  /// `VideoBooks`，对每条：GET host 视频进度（[RemoteVideoClient.remoteVideoPosition]，
+  /// host 落自己的 `video_remote_position_<bookUid>` prefs）+ 读本地
+  /// `VideoBooks.lastPositionMs` 与本地远端进度时间戳 prefs，用 [resolveVideoPositionSync]
+  /// 「取较新时间戳」选胜者；胜者新于 host 时 PUT 上报，胜者不同于本地时写回本地
+  /// `lastPositionMs` + 本地远端进度 prefs（与视频 resume 路径同键空间）。
+  ///
+  /// 逐条错误进 [report.errors] 不中断整体。
+  Future<void> _syncVideoProgressLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    final List<VideoBookRow> localVideos = await _db.allVideoBooks();
+    if (localVideos.isEmpty) return;
+
+    // 视频进度是 host-truth 模型（client 不存视频、只从 host 流式播放）：进度端点
+    // 只对 host DB 里真实存在的视频可用。先取 host 视频清单（条目已带 positionMs /
+    // positionUpdatedAtMs，省去逐视频 GET），只对**两端都有**的视频同步进度；本地
+    // 独有视频（host 无）无 host 真相可同步，跳过（避免 PUT 打到不存在视频报 404）。
+    final Map<String, RemoteVideoInfo> hostById = <String, RemoteVideoInfo>{};
+    for (final RemoteVideoInfo info in await backend.listRemoteVideos()) {
+      hostById[info.id] = info;
+    }
+    if (hostById.isEmpty) return;
+
+    for (final VideoBookRow video in localVideos) {
+      final String uid = video.bookUid;
+      final RemoteVideoInfo? hostInfo = hostById[uid];
+      if (hostInfo == null) continue; // 本地独有视频：host 无此视频，跳过。
+      try {
+        // 本地进度时间戳：复用视频 resume 路径同键空间（不存在则 0）。
+        final int localUpdatedAtMs =
+            await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 0);
+        final int localPositionMs = video.lastPositionMs;
+
+        final ({int positionMs, int updatedAtMs}) winner =
+            resolveVideoPositionSync(
+          localPositionMs: localPositionMs,
+          localUpdatedAtMs: localUpdatedAtMs,
+          remotePositionMs: hostInfo.positionMs,
+          remoteUpdatedAtMs: hostInfo.positionUpdatedAtMs,
+        );
+
+        // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
+        if (winner.updatedAtMs > hostInfo.positionUpdatedAtMs ||
+            (winner.updatedAtMs == hostInfo.positionUpdatedAtMs &&
+                winner.positionMs != hostInfo.positionMs)) {
+          await backend.putRemoteVideoPosition(
+            uid,
+            winner.positionMs,
+            winner.updatedAtMs,
+          );
+        }
+
+        // host→本地：胜者不同于本地时写回 lastPositionMs + 远端进度 prefs
+        // （与视频 resume 路径同键空间，下次打开远端视频即用该值恢复）。
+        if (winner.positionMs != localPositionMs ||
+            winner.updatedAtMs != localUpdatedAtMs) {
+          await _db.updateVideoBookPosition(uid, winner.positionMs);
+          await _db.setPrefTyped<int>(
+              videoRemotePositionPrefKey(uid), winner.positionMs);
+          await _db.setPrefTyped<int>(
+              videoRemotePositionAtPrefKey(uid), winner.updatedAtMs);
+        }
+      } catch (e) {
+        report.errors.add('live video progress "${video.title}": $e');
+      }
+    }
+  }
+
+  /// 测试入口：直接调用 [_syncBookProgressLive]。
+  @visibleForTesting
+  Future<void> syncBookProgressLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncBookProgressLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncVideoProgressLive]。
+  @visibleForTesting
+  Future<void> syncVideoProgressLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncVideoProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncBooksContentLive]（private 方法对测试文件不可见）。
   @visibleForTesting

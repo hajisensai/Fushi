@@ -40,6 +40,16 @@ class _LiveBookLibraryService implements HibikiLibraryHostService {
   Future<void> deleteBook(String title) async {}
 
   @override
+  Future<RemoteBookProgress> getBookProgress(String bookKey) async =>
+      RemoteBookProgress.empty;
+
+  @override
+  Future<void> putBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {}
+
+  @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async =>
       <RemoteDictionaryInfo>[];
 

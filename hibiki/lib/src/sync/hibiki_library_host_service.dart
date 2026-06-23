@@ -305,6 +305,71 @@ String? resolveEpubCoverFilePath({
   return null;
 }
 
+/// host 端某本书的阅读进度（TODO-767 跨设备书籍进度同步）。
+///
+/// 字段照 `reader_positions` 列：[sectionIndex]/[normCharOffset]/[charOffset] 是
+/// 阅读器恢复锚（[charOffset] = -1 表示无精确偏移，回退 [normCharOffset] 分数），
+/// [updatedAtMs] 是该行 `updatedAt`（epoch 毫秒），跨设备冲突解决「取较新时间戳」用它
+/// （见 [resolveBookProgressSync]）。[updatedAtMs] = 0 表示 host 无记录（该书从未读过）。
+class RemoteBookProgress {
+  const RemoteBookProgress({
+    required this.sectionIndex,
+    required this.normCharOffset,
+    required this.charOffset,
+    required this.updatedAtMs,
+  });
+
+  final int sectionIndex;
+  final int normCharOffset;
+  final int charOffset;
+  final int updatedAtMs;
+
+  /// host 无该书 `reader_positions` 行时的「空」进度（updatedAtMs=0）。
+  static const RemoteBookProgress empty = RemoteBookProgress(
+    sectionIndex: 0,
+    normCharOffset: 0,
+    charOffset: -1,
+    updatedAtMs: 0,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'sectionIndex': sectionIndex,
+        'normCharOffset': normCharOffset,
+        'charOffset': charOffset,
+        'updatedAtMs': updatedAtMs,
+      };
+
+  static RemoteBookProgress fromJson(Map<String, Object?> json) =>
+      RemoteBookProgress(
+        sectionIndex: _jsonInt(json['sectionIndex']) ?? 0,
+        normCharOffset: _jsonInt(json['normCharOffset']) ?? 0,
+        charOffset: _jsonInt(json['charOffset']) ?? -1,
+        updatedAtMs: _jsonInt(json['updatedAtMs']) ?? 0,
+      );
+}
+
+/// 书籍阅读进度跨设备冲突解决（TODO-767）——「取较新时间戳」last-write-wins，
+/// 与视频 [resolveVideoPositionSync] 同范式（取较新者；时间戳相等时取「读得更远」者）。
+///
+/// host 收到 client 上报时用它决定是否覆盖已存进度，client 全量 sweep 时用它在 host
+/// 真相与本地 `reader_positions` 之间选较新者再 upsert 回本地。纯函数。
+///
+/// [local]/[remote] 两侧进度。返回胜出的整条进度。两侧时间戳均为 0（都无记录）时
+/// 取阅读位置更靠后者（先比 [RemoteBookProgress.sectionIndex] 再比 normCharOffset），
+/// 保留 0 时间戳。
+RemoteBookProgress resolveBookProgressSync({
+  required RemoteBookProgress local,
+  required RemoteBookProgress remote,
+}) {
+  if (remote.updatedAtMs > local.updatedAtMs) return remote;
+  if (local.updatedAtMs > remote.updatedAtMs) return local;
+  // 时间戳相等（含都为 0）：取阅读位置更靠后者（读得更远者胜），保留该时间戳。
+  final bool remoteFurther = remote.sectionIndex > local.sectionIndex ||
+      (remote.sectionIndex == local.sectionIndex &&
+          remote.normCharOffset > local.normCharOffset);
+  return remoteFurther ? remote : local;
+}
+
 /// 从远端书清单 [remote] 里剔除本端已存在的书（按 [localBookKeys] 去重）。
 ///
 /// 纯函数。远端书的去重键 = `sanitizeTtuFilename(title)`（与 `EpubBooks.bookKey`
@@ -659,6 +724,15 @@ abstract class HibikiLibraryHostService {
   /// 从 host 书库删除书名为 [title] 的书（DB 行 + 磁盘目录）。
   /// [title] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteBook(String title);
+
+  /// 读 host 端记录的书 [bookKey] 阅读进度（TODO-767）。返回 host 自己
+  /// `reader_positions` 行；无记录时返回 [RemoteBookProgress.empty]。
+  Future<RemoteBookProgress> getBookProgress(String bookKey);
+
+  /// 把 client 上报的书 [bookKey] 阅读进度写入 host 自己的 `reader_positions`
+  /// （TODO-767）。冲突解决「取较新时间戳」（见 [resolveBookProgressSync]）：仅当
+  /// [progress] 严格新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。
+  Future<void> putBookProgress(String bookKey, RemoteBookProgress progress);
 
   // ── 本地音频 ───────────────────────────────────────────────────────────────
 

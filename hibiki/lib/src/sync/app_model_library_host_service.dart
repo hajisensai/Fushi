@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
 import 'package:hibiki/src/media/video/video_subtitle_source.dart'
@@ -290,6 +291,58 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         final Directory dir = Directory(row.extractDir);
         if (dir.existsSync()) await dir.delete(recursive: true);
       }
+    });
+  }
+
+  /// 读 host 端书 [bookKey] 的阅读进度（TODO-767）。直读 host 自己的
+  /// `reader_positions` 表（与 host 本地阅读该书时同一真相源）；无记录返回
+  /// [RemoteBookProgress.empty]。
+  @override
+  Future<RemoteBookProgress> getBookProgress(String bookKey) async {
+    final ReaderPositionRow? row = await _db.getReaderPosition(bookKey);
+    if (row == null) return RemoteBookProgress.empty;
+    return RemoteBookProgress(
+      sectionIndex: row.sectionIndex,
+      normCharOffset: row.normCharOffset,
+      charOffset: row.charOffset,
+      updatedAtMs: row.updatedAt,
+    );
+  }
+
+  /// 把 client 上报的书 [bookKey] 进度写入 host 自己的 `reader_positions`
+  /// （TODO-767）。
+  ///
+  /// 冲突解决「取较新时间戳」（[resolveBookProgressSync]）：仅当 [progress] 严格
+  /// 新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。胜出方等于 host 已存
+  /// 进度时 no-op（不写库）。负 normCharOffset clamp 0。
+  @override
+  Future<void> putBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {
+    final RemoteBookProgress current = await getBookProgress(bookKey);
+    final RemoteBookProgress incoming = RemoteBookProgress(
+      sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,
+      normCharOffset: progress.normCharOffset < 0 ? 0 : progress.normCharOffset,
+      charOffset: progress.charOffset,
+      updatedAtMs: progress.updatedAtMs,
+    );
+    final RemoteBookProgress winner =
+        resolveBookProgressSync(local: current, remote: incoming);
+    if (winner.sectionIndex == current.sectionIndex &&
+        winner.normCharOffset == current.normCharOffset &&
+        winner.charOffset == current.charOffset &&
+        winner.updatedAtMs == current.updatedAtMs) {
+      return; // host 已存更新或相等，no-op。
+    }
+    await _runExclusive(() async {
+      await _db.upsertReaderPosition(ReaderPositionsCompanion(
+        bookKey: Value(bookKey),
+        sectionIndex: Value(winner.sectionIndex),
+        normCharOffset: Value(winner.normCharOffset),
+        charOffset: Value(winner.charOffset),
+        updatedAt: Value(winner.updatedAtMs),
+      ));
     });
   }
 

@@ -130,4 +130,18 @@ class CloudRemoteBookClient implements RemoteBookClient {
     }
     await backend.getAsset(epub.id, destination, onProgress: onProgress);
   }
+
+  /// 云盘备份没有 host 实时 reader_positions DB，进度走 WebDAV 文件箱
+  /// （progress_*.json，由 SyncManager 处理），不走 live 端点。故 live 进度查询恒
+  /// 返回 [RemoteBookProgress.empty]（让全量 sweep 在云后端下不改任何东西）。
+  @override
+  Future<RemoteBookProgress> remoteBookProgress(String bookKey) async =>
+      RemoteBookProgress.empty;
+
+  /// 云后端无 live 进度上报通道：no-op（进度由 SyncManager 的文件箱路径处理）。
+  @override
+  Future<void> putRemoteBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {}
 }

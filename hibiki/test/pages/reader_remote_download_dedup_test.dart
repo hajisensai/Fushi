@@ -171,6 +171,16 @@ class _ListFakeRemoteBookClient implements RemoteBookClient {
   }) async {
     await destination.writeAsBytes(<int>[1]);
   }
+
+  @override
+  Future<RemoteBookProgress> remoteBookProgress(String bookKey) async =>
+      RemoteBookProgress.empty;
+
+  @override
+  Future<void> putRemoteBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {}
 }
 
 class _GatedFakeRemoteBookClient implements RemoteBookClient {
@@ -190,4 +200,14 @@ class _GatedFakeRemoteBookClient implements RemoteBookClient {
     onProgress?.call(0.3);
     await completer.future;
   }
+
+  @override
+  Future<RemoteBookProgress> remoteBookProgress(String bookKey) async =>
+      RemoteBookProgress.empty;
+
+  @override
+  Future<void> putRemoteBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {}
 }

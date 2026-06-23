@@ -428,6 +428,16 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     await destination.writeAsBytes(<int>[1, 2, 3]);
     onProgress?.call(1);
   }
+
+  @override
+  Future<RemoteBookProgress> remoteBookProgress(String bookKey) async =>
+      RemoteBookProgress.empty;
+
+  @override
+  Future<void> putRemoteBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {}
 }
 
 final List<int> _tinyPngBytes =

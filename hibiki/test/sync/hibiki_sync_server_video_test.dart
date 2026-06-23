@@ -102,6 +102,24 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   @override
   Future<void> deleteBook(String title) async {}
 
+  final Map<String, RemoteBookProgress> bookProgress =
+      <String, RemoteBookProgress>{};
+
+  @override
+  Future<RemoteBookProgress> getBookProgress(String bookKey) async =>
+      bookProgress[bookKey] ?? RemoteBookProgress.empty;
+
+  @override
+  Future<void> putBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {
+    final RemoteBookProgress current =
+        bookProgress[bookKey] ?? RemoteBookProgress.empty;
+    bookProgress[bookKey] =
+        resolveBookProgressSync(local: current, remote: progress);
+  }
+
   // ── local audio stubs ───────────────────────────────────────────────────────
   @override
   Future<List<RemoteLocalAudioInfo>> listLocalAudio() async =>

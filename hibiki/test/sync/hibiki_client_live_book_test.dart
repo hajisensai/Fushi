@@ -48,6 +48,24 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   @override
   Future<void> deleteBook(String title) async => deleted.add(title);
 
+  final Map<String, RemoteBookProgress> bookProgress =
+      <String, RemoteBookProgress>{};
+
+  @override
+  Future<RemoteBookProgress> getBookProgress(String bookKey) async =>
+      bookProgress[bookKey] ?? RemoteBookProgress.empty;
+
+  @override
+  Future<void> putBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {
+    final RemoteBookProgress current =
+        bookProgress[bookKey] ?? RemoteBookProgress.empty;
+    bookProgress[bookKey] =
+        resolveBookProgressSync(local: current, remote: progress);
+  }
+
   // ── dictionaries stubs ─────────────────────────────────────────────────────
 
   @override
@@ -293,5 +311,80 @@ void main() {
 
     // 内容很小，不强断 progress 具体值，只断下载成功即可（progress 是 best-effort）。
     expect(dest.readAsStringSync(), 'EPUB:吾輩は猫である');
+  });
+  // ── 进度 live 端点（TODO-767 / BUG-417）──────────────────────────────────
+
+  test('putRemoteBookProgress 上报后 remoteBookProgress 拉回一致', () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    await backend.putRemoteBookProgress(
+      'BookKey1',
+      const RemoteBookProgress(
+          sectionIndex: 5,
+          normCharOffset: 5500,
+          charOffset: 321,
+          updatedAtMs: 1700000000000),
+    );
+
+    // host fake 真存了进度（host-apply）。
+    expect(lib.bookProgress['BookKey1']?.sectionIndex, 5);
+
+    final RemoteBookProgress read =
+        await backend.remoteBookProgress('BookKey1');
+    expect(read.sectionIndex, 5);
+    expect(read.normCharOffset, 5500);
+    expect(read.charOffset, 321);
+    expect(read.updatedAtMs, 1700000000000);
+  });
+
+  test('remoteBookProgress 未知书 → empty（host 无记录返回 0/0，不抛）', () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    final RemoteBookProgress read =
+        await backend.remoteBookProgress('UnknownBook');
+    expect(read.updatedAtMs, 0);
+    expect(read.sectionIndex, 0);
+  });
+
+  test('CJK bookKey 经 URL 编码往返一致', () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    await backend.putRemoteBookProgress(
+      '吾輩は猫である',
+      const RemoteBookProgress(
+          sectionIndex: 2,
+          normCharOffset: 200,
+          charOffset: -1,
+          updatedAtMs: 1700000009999),
+    );
+    final RemoteBookProgress read = await backend.remoteBookProgress('吾輩は猫である');
+    expect(read.sectionIndex, 2);
+    expect(read.updatedAtMs, 1700000009999);
+  });
+
+  test('上报旧时间戳不回退 host 新进度（host 端取较新）', () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    await backend.putRemoteBookProgress(
+      'BookKey2',
+      const RemoteBookProgress(
+          sectionIndex: 9,
+          normCharOffset: 9000,
+          charOffset: 1,
+          updatedAtMs: 5000),
+    );
+    await backend.putRemoteBookProgress(
+      'BookKey2',
+      const RemoteBookProgress(
+          sectionIndex: 1,
+          normCharOffset: 10,
+          charOffset: 1,
+          updatedAtMs: 1000), // 更旧
+    );
+    final RemoteBookProgress read =
+        await backend.remoteBookProgress('BookKey2');
+    expect(read.sectionIndex, 9); // host 新进度保留
+    expect(read.updatedAtMs, 5000);
   });
 }

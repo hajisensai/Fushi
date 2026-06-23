@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 402 条。点号进各自文件。
+> 共 403 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-417](bugs/BUG-417-interconnect-book-progress-no-sync.md) | ✅ | ✅ | 互联立即同步不同步书籍进度(host不回灌reader_positions·书籍无进度live端点) |
 | [BUG-416](bugs/BUG-416-remote-card-longpress-download.md) | ✅ | ✅ | 长按远端书/视频卡直接下载(应出选项面板) |
 | [BUG-415](bugs/BUG-415-mining-audio-token-expiry.md) | ✅ | ✅ | 制卡音频静默丢(复用查词缓存的过期token URL) |
 | [BUG-414](bugs/BUG-414-audiobook-download-bookkey-404.md) | ✅ | ✅ | 远端有声书下载404(client重算bookKey丢弃host真实key) |

@@ -622,6 +622,47 @@ class HibikiSyncServer {
       return serveFileWithRange(cover, request);
     }
 
+    // GET/PUT /api/library/books/<bookKey>/progress — 跨设备阅读进度（TODO-767）。
+    // GET 让 client 拉取 host 真相源进度；PUT 让 client 上报本端进度（host 取较新者）。
+    // 与 video /position 分支对称，但落 host 自己的 reader_positions DB（非 prefs）。
+    const String progressSuffix = '/progress';
+    if (reqPath.startsWith(bookPrefix) && reqPath.endsWith(progressSuffix)) {
+      final String progressBookKey = reqPath.substring(
+          bookPrefix.length, reqPath.length - progressSuffix.length);
+      if (progressBookKey.isEmpty) {
+        return shelf.Response.notFound('Missing book key');
+      }
+      if (progressBookKey.contains('/') ||
+          progressBookKey.contains('\\') ||
+          progressBookKey.contains('..')) {
+        return shelf.Response.forbidden('Invalid book key');
+      }
+      switch (method) {
+        case 'GET':
+          final RemoteBookProgress progress =
+              await svc.getBookProgress(progressBookKey);
+          return shelf.Response.ok(
+            jsonEncode(progress.toJson()),
+            headers: <String, String>{'Content-Type': 'application/json'},
+          );
+        case 'PUT':
+          final String body = await request.readAsString();
+          Map<String, dynamic> json;
+          try {
+            json = jsonDecode(body) as Map<String, dynamic>;
+          } catch (_) {
+            return shelf.Response(400, body: 'Invalid JSON');
+          }
+          await svc.putBookProgress(
+            progressBookKey,
+            RemoteBookProgress.fromJson(json.cast<String, Object?>()),
+          );
+          return shelf.Response(200);
+        default:
+          return shelf.Response(405);
+      }
+    }
+
     final String bookId = reqPath.substring(bookPrefix.length);
     if (bookId.isEmpty) {
       return shelf.Response.notFound('Missing book title');

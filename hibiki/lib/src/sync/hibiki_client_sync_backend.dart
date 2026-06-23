@@ -697,6 +697,48 @@ class HibikiClientSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/books/$title');
   }
 
+  /// 读 host 端书 [bookKey] 的阅读进度（TODO-767）。host 返回 404（该书无记录）或
+  /// 网络异常时返回 [RemoteBookProgress.empty]，让调用方退回本地 `reader_positions`
+  /// （离线 / 旧 host 无端点不致崩溃）。
+  @override
+  Future<RemoteBookProgress> remoteBookProgress(String bookKey) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
+    );
+    final HttpClientResponse res = await req.close();
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return RemoteBookProgress.empty;
+    }
+    _ops!.checkStatus(
+        res.statusCode, 'GET /api/library/books/$bookKey/progress');
+    final String body = await res.transform(utf8.decoder).join();
+    final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+    return RemoteBookProgress.fromJson(json.cast<String, Object?>());
+  }
+
+  /// 向 host 上报书 [bookKey] 的本端阅读进度（TODO-767）。host 端取较新时间戳决定
+  /// 是否覆盖（落 host 自己的 reader_positions）。
+  @override
+  Future<void> putRemoteBookProgress(
+    String bookKey,
+    RemoteBookProgress progress,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
+    );
+    req.headers.set('Content-Type', 'application/json');
+    req.write(jsonEncode(progress.toJson()));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(
+        res.statusCode, 'PUT /api/library/books/$bookKey/progress');
+  }
+
   // ── Live local audio (interconnect-only) ──────────────────────────
   // 与 live books 对称：直打 /api/library/localaudio，不经 WebDAV 暂存。
 

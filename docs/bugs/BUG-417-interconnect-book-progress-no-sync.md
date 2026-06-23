@@ -1,0 +1,16 @@
+## BUG-417 · 互联立即同步不同步书籍进度(host不回灌reader_positions·书籍无进度live端点)
+- **报告**：2026-06-24（用户：）
+- **真实性**：✅ 真 bug。根因（airtight，唯一断点=host-apply）：互联「立即同步」client 确实把书籍进度 PUT 出去了（`hibiki/lib/src/sync/hibiki_client_sync_backend.dart:302` `updateProgressFile` → WebDAV `uploadJson` 到 `sync-data/<书>/progress_*.json`），但 host 的 `_handlePut`（`hibiki/lib/src/sync/hibiki_sync_server.dart:1364`）只把字节写平文件、**从不读回自己的 `reader_positions` DB**；全仓无任何 host 侧代码扫 `progress_*.json` 回灌 DB。书籍**没有进度 live 端点**——视频有（`getVideoPosition`/`putVideoPosition`，TODO-653）。互联角色非对称（跑 sync 的是 client，host 只跑 server），故 B（host）书架进度永不更新。
+- **[x] ① 已修复** — 对称视频 TODO-653 补书籍进度 live 端点 + host-apply + 双向 + 全量 sweep（保留 WebDAV 文件箱旧路径兼容，新进度走 live 端点）：
+  - host service：`HibikiLibraryHostService.getBookProgress`/`putBookProgress`（抽象 `hibiki/lib/src/sync/hibiki_library_host_service.dart`），`AppModelLibraryHostService`（`hibiki/lib/src/sync/app_model_library_host_service.dart`）经 `_db.getReaderPosition`/`upsertReaderPosition` 读写 host 自己的 `reader_positions`；冲突套用视频「取较新时间戳」范式（新增纯函数 `resolveBookProgressSync` + `RemoteBookProgress` 结构，照 reader_positions 列 sectionIndex/normCharOffset/charOffset/updatedAt）。
+  - HTTP 端点：`GET/PUT /api/library/books/<bookKey>/progress`（`hibiki/lib/src/sync/hibiki_sync_server.dart` `_handleLibraryBooks`，参照 video `/position` 分支，含 URL 解码 + 路径穿越守卫）。
+  - client：`HibikiClientSyncBackend.remoteBookProgress`/`putRemoteBookProgress`（`hibiki/lib/src/sync/hibiki_client_sync_backend.dart`，打 live 端点，404→empty 退本地），加入 `RemoteBookClient` 接口；`CloudRemoteBookClient` 云后端 no-op（云进度仍走文件箱）。
+  - 全量 sweep：orchestrator `_syncBookProgressLive` + `_syncVideoProgressLive`（`hibiki/lib/src/sync/sync_orchestrator.dart`，互联分支由 `run()` 调用），「立即同步」一次对每本读过的书 + 每条本地视频双向同步进度（push 本地→host DB + pull host→本地 upsert，取较新）。视频沿 host-truth 模型：只对两端都有的视频同步（host `listRemoteVideos` 已带 position），本地独有视频跳过。
+  - 接线选择：走 **orchestrator 互联分支独立 live 进度 sweep**（与现有 `_syncBooksContentLive`/`_syncDictionariesLive` 分流模式一致），**不**重指 `getProgressFile`/`updateProgressFile`——后者是全 SyncBackend 共享、契约是 WebDAV href + 文件名编码时间戳，重指会逼 `listSyncFiles` 合成假文件描述符，脆弱。
+- **[x] ② 已加自动化测试** —
+  - host-apply：`hibiki/test/sync/hibiki_library_host_service_book_progress_test.dart`（PUT 真写 reader_positions·GET 拉回·取较新冲突·resolveBookProgressSync 纯函数）。
+  - HTTP 端点：`hibiki/test/sync/hibiki_sync_server_books_test.dart`（新增 progress GET/PUT 往返·未知书 empty·路径穿越拒绝·CJK bookKey 解码）。
+  - client live：`hibiki/test/sync/hibiki_client_live_book_test.dart`（新增 putRemoteBookProgress→remoteBookProgress 往返·404 empty·CJK·取较新）。
+  - 全量 sweep：`hibiki/test/sync/sync_orchestrator_live_progress_test.dart`（书+视频进度双向·取较新·全量 run() 含书+视频，真服务器/host DB/client backend/本地 DB）。
+  - `dart format` + `flutter analyze`（No issues）+ `flutter test test/sync/` 单线程 780 全绿（并行偶发的 video streamurl 失败是既有 ffmpeg 全局态竞态，与本改动无关，隔离/单线程稳定通过）。
+- **备注**：TODO-767。WebDAV 文件箱旧路径保留兼容（互联下成 dead weight 但无害）；视频进度此前只按需（开远端视频）现并入全量 sweep。
