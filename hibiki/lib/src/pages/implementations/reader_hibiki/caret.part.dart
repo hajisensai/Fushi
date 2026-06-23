@@ -701,11 +701,6 @@ extension _ReaderCaret on _ReaderHibikiPageState {
     // lyrics caret 只返回 moved/blocked，永不 pageForward/Backward，故下面分支天然跳过。
     final String status = ReaderCaretScripts.moveStatus(raw);
     switch (readerCaretMoveOutcome(physicalDir, status)) {
-      case ReaderCaretMoveOutcome.promoteChrome:
-        // Down at the bottom edge: hand focus to the bottom bar instead of
-        // turning the page (BUG-020). Mirrors the popup top-edge Up→header.
-        _promoteCaretToChrome();
-        break;
       case ReaderCaretMoveOutcome.paginateForward:
         await _paginate(ReaderNavigationDirection.forward);
         break;
@@ -714,24 +709,6 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         break;
       case ReaderCaretMoveOutcome.none:
         break;
-    }
-  }
-
-  /// Move focus from the active reader caret DOWN into the bottom chrome bar
-  /// (the sibling layer below the reading content). Spatially the same idea as
-  /// [_focusPopupHeader] (popup content Up → header), but ONE-WAY: this fully
-  /// exits the caret ([_exitCaret]) rather than just hiding the ring, so the
-  /// later Up from the bar returns to plain reading focus ([_focusNode]), not a
-  /// re-entered caret — unlike the reversible popup content↔header round-trip.
-  /// Only promotes if the bar is visible and actually accepts focus; otherwise
-  /// the caret stays put (no stranded focus, no page turn).
-  void _promoteCaretToChrome() {
-    if (!_showChrome) return; // bar hidden — nowhere to go; Down stays a no-op
-    _chromeFocusScope.requestFocus();
-    if (_chromeFocusScope.context != null && _chromeFocusScope.nextFocus()) {
-      _exitCaret(); // hide the reader caret ring; the bar's ring takes over
-    } else {
-      _focusNode.requestFocus(); // bar had no focusable child — undo
     }
   }
 

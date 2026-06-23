@@ -98,24 +98,23 @@ enum ReaderCaretMoveOutcome {
   none,
   paginateForward,
   paginateBackward,
-
-  /// Physical Down ran off the bottom of the reading content — drop focus into
-  /// the bottom chrome bar (the sibling layer below), mirroring the popup's
-  /// top-edge Up→header promotion. Down never turns the page; paging is on
-  /// Left/Right and the LB/RB shoulders.
-  promoteChrome,
 }
 
 /// Pure mapping from (physical direction, move status) → Dart action for the
-/// reader caret. Extracted so the BUG-020 edge rule is unit-tested without a
-/// WebView. Only an explicit physical `down` promotes to the chrome bar; the
-/// logical `forward` (Tab / vertical-rl reading advance) still paginates, so
-/// reading-order stepping is unaffected.
+/// reader caret. Extracted so the page-edge rule is unit-tested without a
+/// WebView.
+///
+/// TODO-700 T8: the bottom chrome bar is now excluded from focus traversal
+/// ([ExcludeFocus] in the reader chrome), so there is nowhere to "promote" the
+/// caret to. A physical Down at the bottom edge therefore turns the page, the
+/// same path as the logical `forward` reading advance — caret-active and plain
+/// reading Down stay consistent and neither strands focus on an unfocusable bar.
 ReaderCaretMoveOutcome readerCaretMoveOutcome(
     String physicalDir, String status) {
-  if (physicalDir == 'down' &&
-      (status == 'pageForward' || status == 'blocked')) {
-    return ReaderCaretMoveOutcome.promoteChrome;
+  // A physical Down off the bottom of the content reports either `pageForward`
+  // (paged) or `blocked` (continuous, at the document end). Both turn the page.
+  if (physicalDir == 'down' && status == 'blocked') {
+    return ReaderCaretMoveOutcome.paginateForward;
   }
   if (status == 'pageForward') return ReaderCaretMoveOutcome.paginateForward;
   if (status == 'pageBackward') return ReaderCaretMoveOutcome.paginateBackward;

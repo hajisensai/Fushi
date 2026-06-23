@@ -2,11 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'reader_hibiki_page_source_corpus.dart';
-
-/// Source-level guards for two reader-open crashes that can only be reproduced
-/// with a live WebView2 native layer / real focus tree, so we lock the contracts
-/// at the source level (strongest feasible layer — see docs/BUGS.md).
+/// Source-level guard for a reader-open crash that can only be reproduced with a
+/// live WebView2 native layer, so we lock the contract at the source level
+/// (strongest feasible layer — see docs/BUGS.md).
 ///
 /// BUG-019 — opening an audiobook-attached book on Windows rendered a permanent
 /// blank reader. media_kit/libmpv (loaded when the audiobook plays) can leave
@@ -16,10 +14,12 @@ import 'reader_hibiki_page_source_corpus.dart';
 /// refcounted) right before creating the environment so the precondition holds
 /// regardless of what other plugins did to global COM state.
 ///
-/// BUG-020 — `FocusScopeNode.nextFocus()` dereferences `context!`; calling it on
-/// an unattached chrome scope (e.g. toggled while reader content isn't ready)
-/// threw "Null check operator used on a null value". Every `nextFocus()` call on
-/// the chrome scope must be guarded by a `context != null` check.
+/// (The former BUG-020 sub-guard — "every `_chromeFocusScope.nextFocus()` must
+/// be context-guarded" — was removed in TODO-700 T8: the bottom chrome bar is
+/// now wrapped in `ExcludeFocus` and no longer traversed, so the reader no
+/// longer calls `_chromeFocusScope.nextFocus()` at all and the unattached-scope
+/// crash path is gone at the root. The "no dead chrome-focus traversal" contract
+/// is now held by reader_caret_down_paginates_test.dart.)
 void main() {
   group('BUG-019 · WebView2 env creation initializes COM first', () {
     // Each fork file that calls CreateCoreWebView2EnvironmentWithOptions must
@@ -57,49 +57,10 @@ void main() {
       });
     }
   });
-
-  test('BUG-020 · every chrome-scope nextFocus() is context-guarded', () {
-    // The chrome-scope traversal sites live across the reader shell + its
-    // extracted part files (TODO-589), so read the merged corpus to keep
-    // covering every `_chromeFocusScope.nextFocus()` site, not just the shell.
-    final String code = _stripDartLineComments(readReaderPageSource());
-
-    final int nextFocusCount =
-        _countOccurrences(code, '_chromeFocusScope.nextFocus()');
-    expect(nextFocusCount, greaterThan(0),
-        reason:
-            'expected the reader to traverse the chrome focus scope; if the '
-            'call was removed, drop this guard');
-
-    final int guardCount =
-        _countOccurrences(code, '_chromeFocusScope.context != null');
-    expect(guardCount, greaterThanOrEqualTo(nextFocusCount),
-        reason: 'every `_chromeFocusScope.nextFocus()` must be guarded by a '
-            '`_chromeFocusScope.context != null` check — nextFocus() throws on '
-            'an unattached scope (Null check operator used on a null value)');
-  });
-}
-
-int _countOccurrences(String haystack, String needle) {
-  int count = 0;
-  int from = 0;
-  while (true) {
-    final int idx = haystack.indexOf(needle, from);
-    if (idx < 0) break;
-    count++;
-    from = idx + needle.length;
-  }
-  return count;
 }
 
 /// Drops `//` line comments so assertions match real code, not the prose that
 /// documents the guards (which itself mentions the guarded calls).
-String _stripDartLineComments(String source) => source
-    .split('\n')
-    .where((String line) => !line.trimLeft().startsWith('//'))
-    .join('\n');
-
-/// Same, for the C++ fork files (also `//`-commented).
 String _stripCppLineComments(String source) => source
     .split('\n')
     .where((String line) => !line.trimLeft().startsWith('//'))
