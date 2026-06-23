@@ -735,9 +735,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   /// 750a：互联下载远端独有书时补下其有声书包（若有）。
   ///
-  /// 远端有声书键 = `sanitizeTtuFilename(entry.title)`，与 host
-  /// `RemoteAudiobookInfo.bookKey` 同源。先查 host 有声书清单确认存在（避免对没有
-  /// 声书的书发无意义请求），再下载 `.hibikiaudio` 并经
+  /// 远端有声书键 = host 清单里该书的真实 [RemoteAudiobookInfo.bookKey]（按
+  /// `title == entry.title` 匹配），不再按书名重算 ttu 文件名：书名重名/迁移时算出
+  /// 的 key 在 host `Audiobooks` 表不存在会 404（BUG-414）。先查
+  /// host 有声书清单确认存在（避免对没声书的书发无意义请求），再下载 `.hibikiaudio` 经
   /// [SyncAssetPackageService.importAudioDatabasePackage] 用本地 [localBookKey] 作
   /// `bookKeyOverride` 解包落盘。[audioDatabaseRoot] 为 null（调用方未注入根目录）
   /// 时跳过有声书补下，只保留 EPUB（旧行为）。
@@ -749,12 +750,18 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final Directory? audioRoot = widget.audioDatabaseRoot;
     if (audioRoot == null) return;
 
-    final String remoteBookKey = sanitizeTtuFilename(entry.title);
     final List<RemoteAudiobookInfo> remote =
         await backend.listRemoteAudiobooks();
-    final bool hasRemoteAudiobook =
-        remote.any((RemoteAudiobookInfo a) => a.bookKey == remoteBookKey);
-    if (!hasRemoteAudiobook) return;
+    // host 清单条目带真实 bookKey（= Audiobooks.bookKey）+ title（= srt.title）。
+    // 按 title 找到该书，用其真实 bookKey 下载——不要按书名重算 ttu 文件名（BUG-414）。
+    String? remoteBookKey;
+    for (final RemoteAudiobookInfo a in remote) {
+      if (a.title == entry.title) {
+        remoteBookKey = a.bookKey;
+        break;
+      }
+    }
+    if (remoteBookKey == null) return;
 
     final Directory dir = _resolveTempDir();
     if (!dir.existsSync()) dir.createSync(recursive: true);

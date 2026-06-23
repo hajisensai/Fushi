@@ -333,12 +333,19 @@ void main() {
       'remote audiobook download wires getRemoteAudiobook + import with '
       'stable remote key and local bookKey override (BUG-406)',
       (WidgetTester tester) async {
+    // host 把书名重复时加了后缀，真实 bookKey 与 sanitizeTtuFilename(title) 不同。
+    // 下载有声书必须用 host 传来的真实 bookKey（= downloadId），否则 404（BUG-414）。
+    const String hostAudiobookKey = 'Vol_1_2_Audio_2';
     remoteClient = _FakeRemoteBookClient(
       coverPath: remoteBookCover.path,
       title: r'Vol 1/2: Audio',
+      bookKey: hostAudiobookKey,
       hasAudiobook: true,
     );
     importedBookKey = 'local-renamed-key';
+    // 守护：真实 key 与 sanitize(title) 必须不同，回归用例才有意义。
+    expect(hostAudiobookKey,
+        isNot(equals(sanitizeTtuFilename(r'Vol 1/2: Audio'))));
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -353,9 +360,12 @@ void main() {
 
     // EPUB still imported.
     expect(importedFiles.single.existsSync(), isTrue);
-    // Audiobook fetched with the host-stable remote key = sanitizeTtuFilename(title).
-    expect(
-        fetchedAudiobookKeys, <String>[sanitizeTtuFilename(r'Vol 1/2: Audio')]);
+    // Audiobook fetched with the host's real bookKey (= downloadId = bookKey ?? title),
+    // NOT sanitizeTtuFilename(title). Reverting the fix flips this back to sanitize(title)
+    // and turns this red (BUG-414 regression guard).
+    expect(fetchedAudiobookKeys, <String>[hostAudiobookKey]);
+    expect(fetchedAudiobookKeys,
+        isNot(equals(<String>[sanitizeTtuFilename(r'Vol 1/2: Audio')])));
     // Audiobook imported once, bound to the *local* imported EPUB bookKey.
     expect(importedAudiobooks, hasLength(1));
     expect(importedAudiobooks.single.bookKeyOverride, 'local-renamed-key');

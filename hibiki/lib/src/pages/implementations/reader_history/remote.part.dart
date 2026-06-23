@@ -306,8 +306,11 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   /// 边界，非掩盖性特例）。解包经 [SyncAssetPackageService.importAudioDatabasePackage]，
   /// 用刚导入的本地 EPUB 的 [localBookKey] 作 `bookKeyOverride` 把音频绑定到本地书。
   ///
-  /// 下载用的远端 bookKey = `sanitizeTtuFilename(book.title)`，与 host
-  /// `RemoteAudiobookInfo.bookKey`（= host EPUB 的 bookKey = 同公式）同源。
+  /// 下载用的远端 bookKey = [RemoteBookInfo.downloadId]（= host 传来的真实
+  /// `bookKey ?? title`），与 EPUB 下载（getRemoteBook(book.downloadId)）同源，
+  /// 即 host 端 `Audiobooks.bookKey`（= host EPUB 的 bookKey）。不要再按书名
+  /// 重算 ttu 文件名——书名重名加后缀或迁移时会算出 host 不存在的 key 致 404
+  /// （BUG-414 回归根因）。
   ///
   /// 失败处理：有声书下载/导入失败抛出 [_RemoteAudiobookException]，由调用方
   /// 转成可见错误提示（不静默吞）；EPUB 已成功入库，故不回滚 EPUB。
@@ -332,7 +335,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       return;
     }
 
-    final String remoteBookKey = sanitizeTtuFilename(book.title);
+    // host 传来的真实 bookKey（= `book.bookKey ?? book.title`），与 EPUB 下载
+    // (:getRemoteBook(book.downloadId)) 同源。书名重名/迁移时按书名重算 ttu 文件名
+    // 会算出 host 不存在的 key 致 404（BUG-414），故复用 downloadId 消除不对称。
+    final String remoteBookKey = book.downloadId;
     File? audioTmp;
     try {
       if (injectedFetch != null) {

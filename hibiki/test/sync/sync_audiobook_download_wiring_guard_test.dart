@@ -34,9 +34,13 @@ void main() {
           reason: '有声书包必须经 importAudioDatabasePackage 解包落盘');
       expect(src, contains('bookKeyOverride:'),
           reason: '解包必须用本地刚导入 EPUB 的 bookKey 作 override 绑定');
-      // 远端有声书键与 host 同源（sanitizeTtuFilename(title)）。
-      expect(src, contains('sanitizeTtuFilename(book.title)'),
-          reason: '远端有声书 bookKey 必须 = sanitizeTtuFilename(title)，与 host 同源');
+      // 远端有声书键 = host 传来的真实 bookKey（book.downloadId = bookKey ?? title），
+      // 与 EPUB 下载同源；不得 sanitizeTtuFilename(title) 重算（BUG-414 致 404）。
+      expect(src, contains('book.downloadId'),
+          reason: '远端有声书 bookKey 必须 = book.downloadId（host 真实 key），'
+              '与 EPUB 下载同源');
+      expect(src, isNot(contains('sanitizeTtuFilename(book.title)')),
+          reason: '禁止用 sanitizeTtuFilename(title) 重算有声书 key（BUG-414 致 404）');
       // 有声书失败有专用可见错误（不静默吞）。
       expect(src, contains('remote_book_audiobook_download_failed'),
           reason: '有声书下载/导入失败必须有可见错误提示');
@@ -55,8 +59,14 @@ void main() {
           reason: '有声书包必须经 importAudioDatabasePackage 解包落盘');
       expect(src, contains('bookKeyOverride:'),
           reason: '解包必须用本地刚导入 EPUB 的 bookKey 作 override 绑定');
-      expect(src, contains('sanitizeTtuFilename(entry.title)'),
-          reason: '远端有声书 bookKey 必须 = sanitizeTtuFilename(title)，与 host 同源');
+      // 远端有声书键 = host 清单条目的真实 bookKey（按 title 匹配 RemoteAudiobookInfo），
+      // 不得 sanitizeTtuFilename(entry.title) 重算（BUG-414 致 404）。
+      expect(src, contains('listRemoteAudiobooks('),
+          reason: '必须查 host 有声书清单拿真实 bookKey');
+      expect(src, contains('a.bookKey'),
+          reason: '必须用清单条目的真实 bookKey 下载，而非 sanitize(title)');
+      expect(src, isNot(contains('sanitizeTtuFilename(entry.title)')),
+          reason: '禁止用 sanitizeTtuFilename(title) 重算有声书 key（BUG-414 致 404）');
     });
   });
 }
