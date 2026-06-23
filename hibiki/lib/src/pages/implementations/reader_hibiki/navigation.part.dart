@@ -131,6 +131,17 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   /// BUG-380：rAF 节流后回传可能高频到来，走 [_refreshProgressFromScroll] 的「在飞 +
   /// 待重跑」coalesce 守卫，避免较重的 hoshiProgressDetails 调用堆积。
   void _handleReaderScroll() {
+    // TODO-736 B-3：样式重锚 commit 清旗后的 settle 尾沿去抖。改字号/字体/主题 reflow 在
+    // commit（_reanchorClearedAt 打点）之后还会有几帧 settle，其间 WebView 自发的瞬态归零
+    // scroll 经此回传——250ms 内的尾沿 scroll 直接 return 不落库（治翻页多次改字号跳章首的
+    // 时序尾沿）。与 B-4（突降无输入）判据正交：B-3 管「时间窗内一律抑制」，B-4 管「突降到
+    // 章首且无用户输入才抑制」，各自独立、禁互兜底。
+    if (readerScrollWithinReanchorSettle(
+      reanchorClearedAt: _reanchorClearedAt,
+      now: DateTime.now(),
+    )) {
+      return;
+    }
     final bool allowed = readerScrollProgressRefreshAllowed(
       readerContentReady: _readerContentReady,
       restoreInFlight: _restoreInFlight,
@@ -595,6 +606,28 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final int total = snapshot.total;
     final int charOffset = snapshot.charOffset;
     final double progress = snapshot.progress;
+
+    // TODO-736 B-4（必补点1+4）：进度突降伪归零守卫。改字号/主题多次后 reflow 把滚动位置
+    // 瞬时归零，被当成「用户滚到 progress≈0」落库覆盖真实位置 → 弹回章首。但用户**真的**
+    // 把视口滚回章首也是 progress≈0，必须保留落库（防 BUG-162 丢位置）。纯函数据「上次进度
+    // 非零 & 本次≈0 & 无近期真实用户输入（_lastUserInputAt）」判伪：伪则只跳过本次**落库**，
+    // 不动 _lastProgress*（UI 进度仍如实反映当前 JS 读数，不冻结）、不动字数累加（high-water
+    // mark 单调，不受归零影响）。有近期输入 = 真章首 → 照常落库。与 B-3（settle 时间窗去抖）
+    // 判据正交独立、禁互兜底。
+    final DateTime now = DateTime.now();
+    final int? sinceUserInputMs = _lastUserInputAt == null
+        ? null
+        : now.difference(_lastUserInputAt!).inMilliseconds;
+    final bool spuriousDrop = readerProgressDropIsSpurious(
+      lastProgress: _lastProgressValue,
+      newProgress: progress,
+      sinceUserInputMs: sinceUserInputMs,
+      reanchorSettling: readerScrollWithinReanchorSettle(
+        reanchorClearedAt: _reanchorClearedAt,
+        now: now,
+      ),
+    );
+
     _lastProgressSection = _currentChapter;
     _lastProgressValue = progress;
     _lastProgressCharOffset = charOffset;
@@ -606,7 +639,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
     _sessionCharsRead += delta.charsAdded;
     _sessionMaxAbsoluteChars = delta.highWaterMark;
-    _debouncedSavePosition(progress, charOffset);
+    // TODO-736 B-4：伪归零（reflow 自发归零、非用户真滚回章首）只跳过落库，字数累加与 UI
+    // 进度照常（上面已更新）。非伪则照旧 500ms 去抖落库。
+    if (!spuriousDrop) {
+      _debouncedSavePosition(progress, charOffset);
+    }
 
     if (mounted) {
       final int newTotal = _chapterCumulativeChars.isNotEmpty

@@ -367,6 +367,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var _hoshiReaderMouseDragSwipeSent = false;
   var _hoshiReaderMouseDragIgnoreTouchEnd = false;
   function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  // TODO-736 必补点1：用户输入时间戳通道。翻页/滚动模式下，真实用户手势（触摸、指针、
+  // 滚轮）经此节流回传 onReaderUserInput，Dart 侧 _lastUserInputAt 记下「最近一次确有用户
+  // 输入」。B-4 的 readerProgressDropIsSpurious 用它区分：progress 从非零突降≈0 时——有近期
+  // 用户输入 = 用户真把视口滚回章首（必落库，防 BUG-162 丢位置）；无近期输入 = 改字号/主题
+  // reflow 把 scrollY 归零的伪归零（跳过落库）。节流 100ms，避免连续滚轮/触摸高频打桥。
+  var _hoshiLastUserInputReportAt = 0;
+  function _hoshiNotifyUserInput() {
+    var now = Date.now();
+    if (now - _hoshiLastUserInputReportAt < 100) return;
+    _hoshiLastUserInputReportAt = now;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler('onReaderUserInput');
+    }
+  }
   function _hoshiReaderCaretRangeAtPoint(x, y) {
     try {
       var range = null;
@@ -589,6 +603,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
   }, true);
   document.addEventListener('touchstart', function(e) {
+    _hoshiNotifyUserInput();
     var t = e.touches[0];
     imageLongPressConsumed = false;
     clearImageLongPressTimer();
@@ -625,6 +640,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     hasStart = false;
   }, {passive: true});
   document.addEventListener('pointerdown', function(e) {
+    _hoshiNotifyUserInput();
     if (!_hoshiReaderPointerEngages(e)) return;
     _hoshiReaderMouseDragActive = _hoshiReaderMouseDragStartAllowed(e);
     _hoshiReaderMouseDragClaimed = false;
@@ -786,6 +802,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     _vScrollRaf = requestAnimationFrame(_vScrollEaseStep);
   }
   document.addEventListener('wheel', function(e) {
+    _hoshiNotifyUserInput();
     // BUG-239 / TODO-345 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴）。
     // 此处一旦在连续模式回传 onSwipe（90% 整屏跳页），就与原生滚动产生轴向冲突。
     var r = window.hoshiReader;
@@ -1085,6 +1102,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onReaderScroll',
           callback: (_) => _handleReaderScroll(),
+        );
+
+        // TODO-736 必补点1：真实用户输入（触摸/指针/滚轮）时间戳通道。setup 脚本的
+        // _hoshiNotifyUserInput 节流回传到此，记下 _lastUserInputAt。B-4 的
+        // readerProgressDropIsSpurious 用它区分「用户真把视口滚回章首」(有近期输入·必落库)
+        // 与「改字号/主题 reflow 把 scrollY 归零的伪归零」(无近期输入·跳过落库)。
+        controller.addJavaScriptHandler(
+          handlerName: 'onReaderUserInput',
+          callback: (_) => _lastUserInputAt = DateTime.now(),
         );
 
         // BUG-117: primary internal-link path. The JS click interceptor (in the

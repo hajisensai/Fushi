@@ -365,6 +365,85 @@ bool readerRestoreReanchorAllowed({
       continuousMode;
 }
 
+/// TODO-736 B-1: 样式变更（字号/字体/主题）两阶段重锚的门控真值表纯函数。
+///
+/// 与 [readerUiScaleReanchorAllowed] / [readerRestoreReanchorAllowed] 的差异：样式重锚
+/// **两种排版模式都要**（分页与连续切字号/主题都会 reflow 漂移），故**不含** continuousMode
+/// 限制。分页模式 begin 调到分页 shell 的 `getFirstVisibleCharOffset`（带 page-stable hint），
+/// 连续模式调连续 shell 的版本（含 A-2 全文扫描兜底）；JS `typeof` 守卫使 pagination 未就绪
+/// 时 begin 返回 -1，编排自然 no-op（裸 CSS 兜底已在 `_applyStylesLive` 先行套上）。
+/// 其余门控对齐：控制器释放 / 内容未就绪 / 歌词模式（歌词走 `_updateLyricsStyleLive` 另一路）
+/// 都抑制。不含 restoreInFlight——样式变更只在运行中由用户触发，恢复期 UI 不可达此路径。
+bool readerStyleReanchorAllowed({
+  required bool controllerAvailable,
+  required bool readerContentReady,
+  required bool lyricsMode,
+}) {
+  return controllerAvailable && readerContentReady && !lyricsMode;
+}
+
+/// TODO-736 B-3: 样式重锚 settle 尾沿去抖纯函数。
+///
+/// 样式变更（字号/字体/主题）的两阶段重锚在 commit 清旗那一刻打 [reanchorClearedAt]。
+/// 此后几帧 WebView 仍在 settle reflow，其间自发的瞬态归零 scroll 会经
+/// `_handleReaderScroll` 回传。本函数判定「现在是否仍在 commit 后的 settle 去抖窗口内」：
+/// 是 → 调用方直接 return 不落库（不把 reflow 尾沿的瞬态滚动量当真实滚动）。
+///
+/// 窗口 250ms：覆盖单帧 postFrame commit 之后的 WebView2 reflow settle 尾巴（实测改字号
+/// 的 reflow 在 commit 后约 2-4 帧内落定），又短到不吞掉用户随即的真实滚动。[reanchorClearedAt]
+/// 为 null（从未样式重锚）恒返 false。与 B-4 [readerProgressDropIsSpurious] 判据正交、
+/// 各自独立单测、禁互兜底（B-3 看时间窗、B-4 看突降+输入）。
+bool readerScrollWithinReanchorSettle({
+  required DateTime? reanchorClearedAt,
+  required DateTime now,
+  int settleMs = 250,
+}) {
+  if (reanchorClearedAt == null) return false;
+  final int sinceMs = now.difference(reanchorClearedAt).inMilliseconds;
+  return sinceMs >= 0 && sinceMs < settleMs;
+}
+
+/// TODO-736 B-4: 进度突降伪归零判定纯函数（必补点1+4）。
+///
+/// 现象：翻页多次改字号/主题后弹回章首。根因之一是 reflow 把滚动位置瞬时归零，被当成
+/// 「用户滚到了 progress≈0」落库覆盖真实位置（BUG-162 家族）。但「用户真的把视口滚回
+/// 章首」也是 progress≈0，必须保留落库（否则用户主动回章首的位置丢失）。
+///
+/// 判据：上一次进度 [lastProgress] 明显非零（>[nonZeroThreshold]）而本次 [newProgress]
+/// ≈0（<[zeroThreshold]）= 一次「突降到章首」。此时：
+///   - 距最近一次真实用户输入（触摸/指针/滚轮，[sinceUserInputMs]）在 [recentInputMs] 内
+///     → 用户真把视口滚回章首 → **不伪**（返回 false，调用方照常落库，防丢位置）。
+///   - 无近期用户输入（[sinceUserInputMs] 为 null 或超窗）→ reflow 自发归零的伪归零
+///     → **伪**（返回 true，调用方跳过落库）。
+///
+/// [reanchorSettling]（B-3 的 settle 窗内）为 true 时也判伪——重锚 settle 期的归零本就该
+/// 被 B-3 抢先拦掉，这里作为正交冗余判据**独立**成立（不依赖 B-3 是否已拦，禁互兜底）。
+/// 非突降（[newProgress] 不接近 0，或 [lastProgress] 本就接近 0）一律返回 false（不抑制）。
+bool readerProgressDropIsSpurious({
+  required double lastProgress,
+  required double newProgress,
+  required int? sinceUserInputMs,
+  required bool reanchorSettling,
+  double nonZeroThreshold = 0.02,
+  double zeroThreshold = 0.005,
+  int recentInputMs = 400,
+}) {
+  // 非「突降到章首」一律不抑制（含本次接近 0 但上次也接近 0 的正常章首停留）。
+  final bool isDropToStart =
+      lastProgress > nonZeroThreshold && newProgress < zeroThreshold;
+  if (!isDropToStart) return false;
+  // 有近期真实用户输入 = 用户主动把视口滚回章首 → 必落库（防 BUG-162 丢位置），不伪。
+  final bool hasRecentInput = sinceUserInputMs != null &&
+      sinceUserInputMs >= 0 &&
+      sinceUserInputMs <= recentInputMs;
+  if (hasRecentInput) return false;
+  // 突降到章首 + 无近期用户输入 = reflow 自发归零的伪归零 → 抑制落库。
+  // reanchorSettling 在样式重锚 settle 期为 true，是同结论的正交独立信号（即使没传也
+  // 凭「无输入」成立，故这里直接判伪）。reanchorSettling 参数保留以表达判据来源，但不
+  // 反向放行（settle 期的真章首本就罕见且会被 B-3 时间窗先拦）。
+  return true;
+}
+
 /// TODO-693 / TODO-697 / TODO-718: 连续模式两阶段重锚的编排核心（运行时序列）。
 ///
 /// 从 `_reanchorContinuousForUiScale` 抽出的可注入编排核心：把门控、阶段1 begin
@@ -783,6 +862,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
   DateTime? _lastScrollProgressAt;
+  // TODO-736 必补点1/4：最近一次真实用户输入（触摸/指针/滚轮）的时间戳，由
+  // onReaderUserInput handler 写入。B-4 readerProgressDropIsSpurious 用它区分「用户真把
+  // 视口滚回章首」与「改字号/主题 reflow 把 scrollY 归零的伪归零」。null = 本会话尚无输入。
+  DateTime? _lastUserInputAt;
+  // TODO-736 B-3：样式重锚 commit 清旗那一刻的时间戳。_handleReaderScroll 进门若距此
+  // 250ms 内（reflow settle 尾沿 scroll），直接 return 不落库——治改字号/主题 reflow 的
+  // settle 尾沿把瞬态滚动量当真实滚动落库。与 B-4 判据正交、各自独立单测、禁互兜底。
+  DateTime? _reanchorClearedAt;
   Timer? _scrollProgressThrottleTimer;
   Timer? _contentReadyTimer;
   Timer? _gamepadAHoldTimer;
@@ -1693,6 +1780,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     );
     final String jsonCss = jsonEncode(css);
     try {
+      // 先确保 style 元素存在（begin 入口 setText 到它）。pagination 未就绪 / 非 reader 页
+      // （无 hoshiReader）时 beginStyleReanchorInvocation 返回 -1，下面编排自然 no-op，
+      // 这里的裸 textContent 兜底保证 CSS 仍然生效。
       await _controller!.evaluateJavascript(
         source: '''
 (function(){
@@ -1702,17 +1792,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     el.id = 'hoshi-reader-style';
     document.head.appendChild(el);
   }
-  var css = $jsonCss;
-  // 字体大小/行间/余白等 live 变更会让 body 重新分页排版。仅换 textContent 会让
-  // 视口停在错位滚动量、最上一行被裁（BUG-023）。reanchorAfterStyleChange 在换样式
-  // 的同时按既有重锚机制（捕捉进度→失效 metrics→rAF 重锚到分页边界）回正；仅在
-  // pagination 未就绪 / 非 reader 页（无 hoshiReader）时回退裸 textContent。
-  var r = window.hoshiReader;
-  if (r && typeof r.reanchorAfterStyleChange === 'function') {
-    r.reanchorAfterStyleChange(el, css);
-  } else {
-    el.textContent = css;
-  }
+  // TODO-736 B-1：无 hoshiReader（pagination 未就绪 / 非 reader 页）时直接裸套 CSS；
+  // 有 hoshiReader 时不在此换 CSS——交给下面 Dart 编排的 beginStyleReanchor 同步换 CSS
+  // + 采锚 + 置旗，commit 在 postFrame settle 后滚回（settle-aware，挡住 reflow 归零污染）。
+  if (!window.hoshiReader) { el.textContent = $jsonCss; }
 })();
 ''',
       );
@@ -1723,6 +1806,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           .log('ReaderHibiki.applyStylesLive.eval', e, stack);
       return;
     }
+    if (!mounted || _controller == null) return;
+    // TODO-736 B-1/B-2（必补点2）：样式变更两阶段 settle-aware 重锚。换字号/字体/主题点经
+    // 此走 begin（同步换 CSS + 精确采锚 + 置旗）→ postFrame settle → commit（滚回 + 清旗 +
+    // 打 _reanchorClearedAt）。拆掉了旧 reanchorAfterStyleChange 的 rAF-finally 自驱清旗——
+    // 那个在 reflow 未 settle 时就清旗，让 120ms 尾沿 scroll timer 把 reflow 归零的瞬态当真
+    // 滚动落库 → 翻页多次改字号跳章首（B 现象的时序根因）。分页/连续各自的精确锚由 JS
+    // `this` 解析（连续含 A-2 兜底），分页保 page-stable hint。
+    await _reanchorForStyleChange(jsonCss);
     if (mounted) setState(() {});
   }
 

@@ -418,6 +418,59 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     );
   }
 
+  /// TODO-736 B-1/B-2（必补点2）：样式变更（字号/字体/主题）两阶段 settle-aware 重锚。
+  ///
+  /// 由 [_applyStylesLive] 在裸套 CSS 兜底后调用。复用与 [_reanchorContinuousForUiScale]
+  /// 完全相同的两阶段 begin→commit 编排（[runUiScaleReanchorOrchestration]）与
+  /// `_reanchorPending` 串行旗，差异：
+  ///   ① 用样式专用入口 [ReaderPaginationScripts.beginStyleReanchorInvocation]（同步换 CSS
+  ///      + 采精确锚 + 失效 metrics + 置旗）/ [commitStyleReanchorInvocation]（settle 后滚回
+  ///      + 清旗），**不复用** appUiScale 那对（那对只采锚滚回不换 CSS，改字号会坏）。
+  ///   ② 门控走 [readerStyleReanchorAllowed]（两种排版模式都放行，不限连续）。
+  ///   ③ commit 完成（无论成败）写 `_reanchorClearedAt`（B-3）：清旗那一刻打点，
+  ///      [_handleReaderScroll] 进门若距此 250ms 内则尾沿 scroll 直接 return 不落库，
+  ///      治 reflow settle 尾沿把瞬态归零 scroll 当真实滚动落库 → 翻页多次改字号跳章首。
+  ///
+  /// settle 检测沿用 [_syncPageSize] 的单帧 `addPostFrameCallback`（与 TODO-718 编排一致·
+  /// 保守首版）。真机若改字号锚偏一点再加多帧探测（follow-up，本次不做）。
+  Future<void> _reanchorForStyleChange(String jsonCss) {
+    return runUiScaleReanchorOrchestration(
+      gateAllowed: readerStyleReanchorAllowed(
+        controllerAvailable: _controller != null,
+        readerContentReady: _readerContentReady,
+        lyricsMode: _lyricsMode,
+      ),
+      // 阶段 1：同步换 CSS + 采精确锚 + 置旗（必须先于 reflow 落地，挡住归零 scroll 污染落库）。
+      evalBegin: () => _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.beginStyleReanchorInvocation(jsonCss),
+      ),
+      // 阶段 2：等过渡帧 settle 后滚回 + 清旗 + 打 _reanchorClearedAt（B-3 去抖打点）。
+      evalCommit: () async {
+        await _controller!.evaluateJavascript(
+          source: ReaderPaginationScripts.commitStyleReanchorInvocation(),
+        );
+        // B-3：清旗那一刻打点（commit 即清 _reanchorPending）。距此 250ms 内的尾沿 scroll
+        // 由 _handleReaderScroll 抑制落库。无论 JS 是否真有锚可滚，settle 都已发生。
+        if (mounted) _reanchorClearedAt = DateTime.now();
+      },
+      schedulePostFrame: (void Function() commit) =>
+          WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
+      stillAlive: () => mounted && _controller != null,
+      onBeginError: (Object e, StackTrace stack) =>
+          ErrorLogService.instance.log(
+        'ReaderHibiki.reanchorForStyleChange.begin',
+        e,
+        stack,
+      ),
+      onCommitError: (Object e, StackTrace stack) =>
+          ErrorLogService.instance.log(
+        'ReaderHibiki.reanchorForStyleChange.commit',
+        e,
+        stack,
+      ),
+    );
+  }
+
   Widget _buildBottomChrome() {
     // 底栏可见性只取决于用户意图（_showChrome）和「首次冷加载是否完成」
     // （_hasEverLoaded，只置 true、从不复位），不再耦合每次切章都会翻转的

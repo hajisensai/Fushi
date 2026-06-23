@@ -523,6 +523,24 @@ class ReaderPaginationScripts {
       "typeof window.hoshiReader.commitUiScaleReanchor === 'function') "
       '? window.hoshiReader.commitUiScaleReanchor() : false';
 
+  /// TODO-736 B-1（必补点2）：样式变更专用两阶段重锚的第一阶段调用——在换样式那一刻
+  /// 同步采锚 + 换 CSS（[jsonCss] 须是已 jsonEncode 的 JS 字符串字面量）+ 失效 metrics +
+  /// 重置 image-max + 置 `_reanchorPending` + 暂存锚。返回采到的字符偏移；-1 = 无锚 / 已有
+  /// 重锚在飞 / pagination 未就绪（无 hoshiReader 或非 reader 页）→ 调用方跳过提交阶段并
+  /// 自行裸套 CSS 兜底。`beginStyleReanchor` 在分页/连续两 shell 都存在（_sharedJs），分页/
+  /// 连续各自的 getFirstVisibleCharOffset/scrollToCharOffset 经 `this` 解析（连续含 A-2 兜底）。
+  static String beginStyleReanchorInvocation(String jsonCss) =>
+      '(window.hoshiReader && '
+      "typeof window.hoshiReader.beginStyleReanchor === 'function') "
+      '? window.hoshiReader.beginStyleReanchor('
+      "document.getElementById('hoshi-reader-style'), $jsonCss) : -1";
+
+  /// TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
+  /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
+  static String commitStyleReanchorInvocation() => '(window.hoshiReader && '
+      "typeof window.hoshiReader.commitStyleReanchor === 'function') "
+      '? window.hoshiReader.commitStyleReanchor() : false';
+
   static bool didScroll(String? result) =>
       result?.trim().replaceAll('"', '') == 'scrolled';
 
@@ -718,6 +736,95 @@ class ReaderPaginationScripts {
     }
     this.nodeStartOffsets = offsets;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+  },
+  // TODO-736 A-1：连续模式进度的「字符级」分子。移植安卓 reader-continuous.js
+  // countCharsBeforeViewport（:92-151）：返回本文本节点里**已滚出视口首边**的可匹配字符
+  // 数（与 countChars / isMatchableChar 同口径作分子，calculateProgress 总字符作分母）。
+  // 旧连续 calculateProgress 是「整节点 in/out」段落级粗粒度——节点只要有一像素还在视口
+  // 就把整节点算未读，跨视口的长节点进度按整节点跳变 → 滚动模式进度感觉「没保存/不动」。
+  // 这里对整节点先用 getClientRects 的并集矩形做三态短路（全过=满、全未过=0），仅当节点
+  // 跨视口首边时才逐字二分定位首个仍可见字符，O(log n) 不全量遍历。空/零尺寸矩形跳过
+  // （图片/折叠盒），代理对用 codePointAt/fromCodePoint 迭代（与 buildSasayakiNormIndex
+  // 的码元处理一致），createWalker 已排除 rt/rp 振假名（分子分母同套，不重复计数）。
+  countCharsBeforeViewport: function(node, vertical) {
+    var text = node.textContent || '';
+    var totalChars = this.countChars(text);
+    if (totalChars <= 0) return 0;
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    if (!rects.length) return 0;
+    var minStart = Infinity;
+    var maxEnd = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      var start = vertical ? rect.left : rect.top;
+      var end = vertical ? rect.right : rect.bottom;
+      minStart = Math.min(minStart, start);
+      maxEnd = Math.max(maxEnd, end);
+    }
+    if (vertical) {
+      if (minStart >= window.innerWidth) return totalChars;
+      if (maxEnd <= window.innerWidth || minStart === Infinity) return 0;
+    } else {
+      if (maxEnd <= 0) return totalChars;
+      if (minStart >= 0 || minStart === Infinity) return 0;
+    }
+    var offsets = [];
+    var prefixCounts = [0];
+    var count = 0;
+    var offset = 0;
+    while (offset < text.length) {
+      offsets.push(offset);
+      var char = String.fromCodePoint(text.codePointAt(offset));
+      offset += char.length;
+      if (this.isMatchableChar(char)) count += 1;
+      prefixCounts.push(count);
+    }
+    var low = 0;
+    var high = offsets.length - 1;
+    var firstVisible = offsets.length;
+    while (low <= high) {
+      var mid = Math.floor((low + high) / 2);
+      if (this.isTextOffsetBeforeViewport(node, offsets[mid], text, vertical)) {
+        low = mid + 1;
+      } else {
+        firstVisible = mid;
+        high = mid - 1;
+      }
+    }
+    return prefixCounts[firstVisible];
+  },
+  // TODO-736 A-1：单字符是否已滚出视口首边（横排 rect.bottom<=0 / 竖排 rect.left>=innerWidth）。
+  // 移植安卓 isTextOffsetBeforeViewport（:142-151）。零尺寸矩形（折叠/不可见）当未过，
+  // 让二分把视口首边收敛到首个**真正可见**字符。
+  isTextOffsetBeforeViewport: function(node, offset, text, vertical) {
+    var char = String.fromCodePoint(text.codePointAt(offset));
+    if (!char) return false;
+    var range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, offset + char.length);
+    var rect = this.getRect(range);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    return vertical ? rect.left >= window.innerWidth : rect.bottom <= 0;
+  },
+  // TODO-736 A-2：getFirstVisibleCharOffset 的全文扫描兜底。连续模式下 caretRangeFromPoint
+  // 在竖排 / ruby / 图片页 / 视口首边落在折叠盒时返 null → getFirstVisibleCharOffset 退化
+  // 返 -1（落库丢精确锚、退回章节粒度分数）。本兜底用 countCharsBeforeViewport 全文累加，
+  // 返「视口首边之前的可匹配字符总数」= 首个可见字符的绝对字符偏移（与 scrollToCharOffset
+  // 的字符坐标系同口径，逆运算），无 caret 几何依赖。仅连续模式调用（分页有 snap/lock）。
+  firstVisibleCharOffsetByScan: function() {
+    var vertical = this.isVertical();
+    var walker = this.createWalker();
+    var explored = 0;
+    var node;
+    while (node = walker.nextNode()) {
+      if (this.countChars(node.textContent) > 0) {
+        explored += this.countCharsBeforeViewport(node, vertical);
+      }
+    }
+    return explored;
   },
   buildSasayakiNormIndex: function() {
     // 一次性遍历 DOM 文本节点（createWalker 跳过振假名 rt/rp），构建归一化
@@ -1667,6 +1774,8 @@ window.hoshiReader.initialize = function() {
   document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
+  // TODO-736 B-1：存图片宽比值供 _resetImageMaxVars 读（_sharedJs 不插值，见那里注释）。
+  this._imageWidthRatio = $imageWidthRatio;
   var dartW = ${dartPageWidth != null ? '${dartPageWidth.round()}' : 'null'};
   var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
   var pageWidth = dartW || window.innerWidth;
@@ -1851,6 +1960,11 @@ $_sharedJs
     return this.scrollToTarget(element);
   },
   calculateProgress: function() {
+    // TODO-736 A-1：字符级进度（对齐安卓 reader-continuous.js calculateProgress:529-541）。
+    // 分子改用 countCharsBeforeViewport 逐节点累加「已滚出视口首边的可匹配字符数」，
+    // 替代旧的「整节点 in/out」段落级粗粒度——后者把跨视口的长节点整块算未读，长节点滚
+    // 动期进度按整节点跳变、滚一大段都不动（滚动模式「进度像没保存」的根因之一）。分母
+    // 仍是 countChars 总可匹配字符；createWalker 排除 rt/rp，分子分母同套。
     var vertical = this.isVertical();
     var walker = this.createWalker();
     var totalChars = 0;
@@ -1860,12 +1974,7 @@ $_sharedJs
       var nodeLen = this.countChars(node.textContent);
       totalChars += nodeLen;
       if (nodeLen > 0) {
-        var range = document.createRange();
-        range.selectNodeContents(node);
-        var rect = this.getRect(range);
-        if (vertical ? (rect.left > window.innerWidth) : (rect.bottom < 0)) {
-          exploredChars += nodeLen;
-        }
+        exploredChars += this.countCharsBeforeViewport(node, vertical);
       }
     }
     return totalChars > 0 ? exploredChars / totalChars : 0;
@@ -1929,18 +2038,21 @@ $_sharedJs
     var x = vertical ? (window.innerWidth - pr - 2) : (pl + 2);
     var y = pt + 2;
     var range = document.caretRangeFromPoint(x, y);
-    if (!range || !range.startContainer) return -1;
+    // TODO-736 A-2：caretRangeFromPoint 在竖排 / ruby / 图片页 / 折叠盒落点返 null →
+    // 旧实现返 -1，落库丢精确字符锚、退化成章节粒度分数（退出再进/重锚回章首附近）。
+    // 改走 firstVisibleCharOffsetByScan 全文累加兜底（无 caret 几何依赖，同字符坐标系）。
+    if (!range || !range.startContainer) return this.firstVisibleCharOffsetByScan();
     var target = range.startContainer;
     if (target.nodeType !== Node.TEXT_NODE) {
       var walker = this.createWalker(target);
       target = walker.nextNode();
-      if (!target) return -1;
+      if (!target) return this.firstVisibleCharOffsetByScan();
     }
     var baseOffset = this.nodeStartOffsets.get(target);
     if (baseOffset === undefined) {
       this.buildNodeOffsets();
       baseOffset = this.nodeStartOffsets.get(target);
-      if (baseOffset === undefined) return -1;
+      if (baseOffset === undefined) return this.firstVisibleCharOffsetByScan();
     }
     var localChars = 0;
     var text = target.textContent;
@@ -2060,6 +2172,65 @@ $_sharedJs
       this._reanchorPending = false;
     }
     return true;
+  },
+  // TODO-736 B-1：图片 max 变量重置共享 helper。换样式后图片 max-width/height 须按当前
+  // content-box 重算（否则改字号 reflow 后图片尺寸约束陈旧）。$imageWidthRatio 只能在
+  // 各 shell 的 '''
+        ' 模板里插值（_sharedJs 是 r'
+        ''' 原始串不插值），故每个 shell 的
+  // initialize 把比值存到 this._imageWidthRatio，本 helper 读它，begin/reanchor 共用。
+  _resetImageMaxVars: function() {
+    var cs = this._contentSize();
+    var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
+    document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * ratio)) + 'px');
+    document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  },
+  // TODO-736 B-1（必补点2）：样式变更专用两阶段重锚的**第一阶段**，由 Dart 在换样式那一
+  // 刻调用。与 beginUiScaleReanchor 区别：那对只采锚滚回**不换 CSS**（缩放重建用），改字号
+  // 必须在同一入口换 CSS 才能让重排后的 scrollToCharOffset 锚到新排版的真实位置——故新建
+  // 这对专入口（不复用 appUiScale 那对）。流程：采锚（getFirstVisibleCharOffset，mode 解析
+  // 到分页/连续各自版本，连续含 A-2 兜底）→ 换 CSS + 失效 metrics + 重置 image-max → 置旗
+  // _reanchorPending + 暂存 _styleReanchorOffset/_styleReanchorHint。清旗推迟到 commit（由
+  // Dart postFrame settle 驱动），挡住 reflow 未落定期的归零 scroll 经 onReaderScroll 污染
+  // 落库（翻页多次改字号跳章首的时序根因）。返回采到的偏移；-1 = 无锚/已有重锚在飞 →
+  // Dart 跳过 commit。styleEl 由调用方传入（Dart 已 getElementById/createElement 建好）。
+  beginStyleReanchor: function(styleEl, css) {
+    if (!this.didInitialize) { if (styleEl) styleEl.textContent = css; return -1; }
+    // 已有重锚在飞（setChromeInsets/updatePageSize 等）→ 让既有序列接管，只换 CSS 不重采样。
+    if (this._reanchorPending === true) {
+      if (styleEl) styleEl.textContent = css;
+      this._resetImageMaxVars();
+      return -1;
+    }
+    var charOffset = this.getFirstVisibleCharOffset();
+    // 分页模式有 page-stable hint（getPagePosition），连续模式无 hint（undefined）。
+    var hint = (typeof this.getPagePosition === 'function' && typeof this.getScrollContext === 'function')
+      ? this.getPagePosition(this.getScrollContext())
+      : undefined;
+    if (styleEl) styleEl.textContent = css;
+    if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+    this._resetImageMaxVars();
+    if (charOffset < 0) return -1;
+    this._reanchorPending = true;
+    this._styleReanchorOffset = charOffset;
+    this._styleReanchorHint = hint;
+    return charOffset;
+  },
+  // TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 _reanchorPending。
+  // 仅当 beginStyleReanchor 成功暂存了有效锚时才生效，否则整体 no-op（绝不误清别处的旗，
+  // finally 只在本入口确实拥有旗时执行）。分页传 hint 保 ±1 列原页，连续 hint undefined。
+  commitStyleReanchor: function() {
+    var off = this._styleReanchorOffset;
+    if (off === undefined || off < 0) return false;
+    var hint = this._styleReanchorHint;
+    try {
+      this.scrollToCharOffset(off, hint);
+    } finally {
+      this._styleReanchorOffset = undefined;
+      this._styleReanchorHint = undefined;
+      this._reanchorPending = false;
+    }
+    return true;
   }
 };
 window.hoshiReader._contentSize = function() {
@@ -2076,6 +2247,8 @@ window.hoshiReader.initialize = function() {
   document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
+  // TODO-736 B-1：存图片宽比值供 _resetImageMaxVars 读（_sharedJs 不插值，见那里注释）。
+  this._imageWidthRatio = $imageWidthRatio;
   var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
   var contHeight = dartH || window.innerHeight;
   document.documentElement.style.setProperty('--hoshi-continuous-height', contHeight + 'px');
@@ -2124,26 +2297,25 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   });
 };
 window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
-  // 连续模式同理（见分页版注释）：外部 live CSS 变更后必须按进度重新滚动回同一
-  // 位置，否则字体/行间变更后内容相对视口漂移。镜像本模式 updatePageSize 的重锚序列，
-  // 共用 _reanchorPending（BUG-023）。
+  // TODO-736 B-2：连续模式样式重锚改用**精确字符偏移**（getFirstVisibleCharOffset →
+  // scrollToCharOffset），对齐分页版（BUG-109）与 setChromeInsets 的成熟路径，替代旧的
+  // 粗粒度进度分数（calculateProgress → scrollToProgressContinuous）。进度分数 =
+  // 已读字符/总字符，字体/行间/主题重排后字形宽与列宽变化 → 同一分数反推的落点漂移，
+  // 改字号多次后逐步累积偏到章首。getFirstVisibleCharOffset 锚到首个可见字符的真实位置
+  // （竖排/ruby/图片页 caret 失败由 A-2 firstVisibleCharOffsetByScan 兜底，不退 -1）。
+  //
+  // TODO-736 B-1：本入口是**非编排回退路径**（pagination 未驱动 Dart 编排时的同步回退，
+  // 如 !didInitialize 或直接注入点）。已拆掉旧的 rAF+finally 自驱清旗——Dart 走
+  // beginStyleReanchor/commitStyleReanchor + runUiScaleReanchorOrchestration 的 settle-aware
+  // 编排（清旗推迟到 postFrame settle，挡住 reflow 未落定期的归零 scroll 污染落库）。
+  // 这里换样式后**同步**滚回锚点（无 rAF 即无早清旗竞态），仅作不可编排时的兜底。
   if (!this.didInitialize) { styleEl.textContent = css; return; }
   var inFlight = this._reanchorPending === true;
-  var progress = inFlight ? 0 : this.calculateProgress();
+  var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
   styleEl.textContent = css;
-  var cs = this._contentSize();
-  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
-  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
-  if (inFlight || progress <= 0) return;
-  this._reanchorPending = true;
-  var self = this;
-  requestAnimationFrame(function() {
-    try {
-      self.scrollToProgressContinuous(progress);
-    } finally {
-      self._reanchorPending = false;
-    }
-  });
+  this._resetImageMaxVars();
+  if (inFlight || charOffset < 0) return;
+  this.scrollToCharOffset(charOffset);
 };
 (function() {
   var TAP_SLOP = 12;

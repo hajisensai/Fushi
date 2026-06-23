@@ -57,7 +57,8 @@ void main() {
     test('② Dart _handleReaderScroll 受门控记四门控真值 + 是否刷新', () {
       final int idx = src.indexOf('void _handleReaderScroll()');
       expect(idx, greaterThan(0));
-      final String body = src.substring(idx, idx + 1100);
+      // TODO-736 B-3 在该函数顶部插入 settle 去抖块，函数体加长，窗口放宽到 1900。
+      final String body = src.substring(idx, idx + 1900);
       expect(body.contains('if (DebugLogService.instance.enabled)'), isTrue,
           reason: 'Dart 诊断须由 DebugLogService.instance.enabled 门控（默认 off）');
       expect(body.contains("debugPrint('[ReaderDiag] _handleReaderScroll"),
@@ -75,8 +76,9 @@ void main() {
     test('③ Dart _refreshProgress 受门控记 progressCurrentChars / Total', () {
       final int idx = src.indexOf('Future<void> _refreshProgress() async');
       expect(idx, greaterThan(0));
-      // _refreshProgress 较长，取足够窗口覆盖到尾部诊断块（诊断块在 ~2350 字符处）。
-      final String body = src.substring(idx, idx + 2700);
+      // _refreshProgress 较长，取足够窗口覆盖到尾部诊断块。TODO-736 B-4 在中段插入突降
+      // 伪归零判定块，函数体加长，窗口放宽到 3700。
+      final String body = src.substring(idx, idx + 3700);
       expect(body.contains('if (DebugLogService.instance.enabled)'), isTrue,
           reason: 'Dart 诊断须由 DebugLogService.instance.enabled 门控（默认 off）');
       expect(

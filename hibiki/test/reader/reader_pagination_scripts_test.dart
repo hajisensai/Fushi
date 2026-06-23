@@ -390,16 +390,66 @@ void main() {
               'notifyRestoreComplete 是 shared JS，连续模式必须安全跳过 paginated-only warm');
     });
 
-    test('continuous re-anchor captures progress and re-scrolls', () {
+    test(
+        'continuous re-anchor captures precise char offset and re-scrolls '
+        'via scrollToCharOffset (TODO-736 B-2)', () {
       final int idx = continuous.indexOf('reanchorAfterStyleChange =');
       expect(idx, greaterThanOrEqualTo(0));
-      final int next = continuous.indexOf('window.hoshiReader.', idx + 1);
+      // 截到方法体结尾 `\n};`（其后是手势 IIFE，非 window.hoshiReader. 赋值）。
+      final int end = continuous.indexOf('\n};', idx);
       final String body =
-          continuous.substring(idx, next < 0 ? continuous.length : next);
-      expect(body, contains('calculateProgress()'));
-      expect(body, contains('_reanchorPending'));
-      expect(body, contains('scrollToProgressContinuous'),
-          reason: '连续模式重排后必须按进度重新滚动到同一位置');
+          continuous.substring(idx, end < 0 ? continuous.length : end);
+      // TODO-736 B-2：连续模式重锚改用精确字符偏移（对齐分页版 BUG-109），不再用粗粒度
+      // 进度分数 —— 后者字体/主题重排后反推落点漂移，改字号多次累积偏到章首。
+      expect(body, contains('getFirstVisibleCharOffset()'),
+          reason: '连续模式重排前必须用 getFirstVisibleCharOffset 精确捕捉（TODO-736 B-2）');
+      expect(body, contains('scrollToCharOffset('),
+          reason: '连续模式必须用 scrollToCharOffset 滚回精确字符（TODO-736 B-2）');
+      expect(body, contains('_reanchorPending'),
+          reason: '必须复用既有 in-flight 串行标志，避免与 chrome-inset/页尺寸重锚打架');
+      expect(body, isNot(contains('scrollToProgressContinuous(')),
+          reason: '不得退回 scrollToProgressContinuous 的进度分数重锚（TODO-736 B-2）');
+      expect(body, isNot(contains('calculateProgress(')),
+          reason: '不得退回 calculateProgress 的粗粒度比例（TODO-736 B-2）');
+    });
+
+    test(
+        'continuous calculateProgress is char-precise (countCharsBeforeViewport, '
+        'not whole-node in/out) — TODO-736 A-1', () {
+      final int idx = continuous.indexOf('calculateProgress: function() {');
+      expect(idx, greaterThanOrEqualTo(0));
+      final int end = continuous.indexOf('\n  },', idx);
+      final String body =
+          continuous.substring(idx, end < 0 ? continuous.length : end);
+      expect(body, contains('countCharsBeforeViewport'),
+          reason: '连续进度分子必须用 countCharsBeforeViewport 字符级累加（TODO-736 A-1），'
+              '替代整节点 in/out 的段落级粗粒度（长节点滚动期进度跳变/不动）');
+      // 旧实现整节点判定的标志（selectNodeContents 整节点矩形 + 整 nodeLen 累加）应消失。
+      expect(body, isNot(contains('exploredChars += nodeLen')),
+          reason: '不得再整节点累加 nodeLen（旧粗粒度路径，TODO-736 A-1）');
+    });
+
+    test(
+        'continuous getFirstVisibleCharOffset falls back to '
+        'firstVisibleCharOffsetByScan instead of returning -1 (TODO-736 A-2)',
+        () {
+      // 取连续 shell 的 getFirstVisibleCharOffset 方法体（到下一个 scrollToCharOffset 之前）。
+      final int idx =
+          continuous.lastIndexOf('getFirstVisibleCharOffset: function() {');
+      expect(idx, greaterThanOrEqualTo(0));
+      final int end = continuous.indexOf('scrollToCharOffset: function', idx);
+      final String body =
+          continuous.substring(idx, end < 0 ? continuous.length : end);
+      expect(body, contains('firstVisibleCharOffsetByScan()'),
+          reason: 'caret 失败（竖排/ruby/图片页）必须走全文扫描兜底，不退 -1 丢精确锚（TODO-736 A-2）');
+      // _sharedJs 必须定义该兜底。
+      expect(continuous, contains('firstVisibleCharOffsetByScan: function'),
+          reason:
+              'firstVisibleCharOffsetByScan 必须在 _sharedJs 定义（TODO-736 A-2）');
+      expect(continuous, contains('countCharsBeforeViewport: function'),
+          reason: 'countCharsBeforeViewport 必须在 _sharedJs 定义（TODO-736 A-1）');
+      expect(continuous, contains('isTextOffsetBeforeViewport: function'),
+          reason: 'isTextOffsetBeforeViewport 必须在 _sharedJs 定义（TODO-736 A-1）');
     });
   });
 }
