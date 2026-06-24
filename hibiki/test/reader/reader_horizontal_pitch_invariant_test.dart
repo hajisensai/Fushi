@@ -62,14 +62,23 @@ void main() {
           reason: '整数 clientWidth 只能是 columnWidth 失败时的 else 兜底');
     });
 
-    test('竖排路径未被改动（仍用注入 viewportHeight，不引入 columnWidth）', () {
-      // 横排修复绝不能动竖排（TODO-734/773）：竖排 contentBox 仍由注入 V 推。
-      expect(
-        source.contains(
-            'contentBox = (this.viewportHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;'),
-        isTrue,
-        reason: '竖排 contentBox 必须保持注入 viewportHeight 基准不变',
+    test('竖排也改读亚像素 columnWidth（TODO-792 与横排统一），injectedV 仅作兜底', () {
+      // TODO-792：竖排「文字越翻越向下偏」与横排同源 —— contentBox 旧用
+      // 「injectedV − 双 parseFloat(padding)」重建，与浏览器单次解析 columnWidth 差
+      // 亚像素 δ，经 N×pageStep 绝对网格累积。修复后竖排与横排统一读 used columnWidth，
+      // 注入 viewportHeight 路径降级为 columnWidth 解析失败时的 else-if 兜底。
+      final int colWidthIdx = source
+          .indexOf('var resolvedColumnWidth = parseFloat(cs.columnWidth);');
+      final int vFallbackIdx = source.indexOf(
+        'contentBox = (this.viewportHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;',
       );
+      expect(colWidthIdx, greaterThan(0));
+      expect(vFallbackIdx, greaterThan(colWidthIdx),
+          reason: '竖排 injectedV 路径必须排在 columnWidth 主路径之后（降级为兜底）');
+      // injectedV 兜底必须包在 `} else if (vertical) {` 里（columnWidth 不可用才走）。
+      final String between = source.substring(colWidthIdx, vFallbackIdx);
+      expect(between.contains('} else if (vertical) {'), isTrue,
+          reason: '注入 viewportHeight 只能是 columnWidth 失败时的竖排 else-if 兜底');
     });
 
     test('pageStep/maxScroll 同源亚像素（无新双量纲）', () {

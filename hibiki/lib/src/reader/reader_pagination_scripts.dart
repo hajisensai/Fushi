@@ -1421,34 +1421,34 @@ $_sharedJs
     var scrollEl = document.body;
     var cs = getComputedStyle(scrollEl);
     var contentBox;
-    if (vertical) {
+    // TODO-753/792（横排 + 竖排亚像素 pageStep 统一）：列周期 = used column-width +
+    // column-gap。直接取 getComputedStyle(scrollEl).columnWidth —— 浏览器对 CSS
+    // column-width（横排 `calc(page-width − <ml>vw − <mr>vw)`、竖排
+    // `max(F, calc(V − margins − F − chrome))`，两轴都解析成亚像素 used 列宽/列高）的
+    // 单次解析结果，与 column-gap 一起就是真实列周期。令 JS 翻页网格步距 pageStep ==
+    // 浏览器真实列周期，paginate 的 N×pageStep 绝对网格与真实列严格对齐，残差恒 0：
+    //   · 横排（TODO-753 真机取证）：消除整数化 scrollEl.clientWidth（CSSOM client* 被
+    //     规范取整成 1265，真实列宽 1265.33）泄漏的 δ≈0.33px/页。
+    //   · 竖排（TODO-792/773）：消除「injectedV − 双 parseFloat(padding) 重建」与浏览器
+    //     「单次 calc 解析 column-width」之间的亚像素失配 —— body padding 的 used 值按设备
+    //     像素网格独立 snap，重建路径与 column-width 解析的取整粒度不同 → 每页同号 δ 经
+    //     N×pageStep 网格累积 → 竖排文字越翻越向下偏。读 used columnWidth 让 contentBox
+    //     按定义恒等于浏览器列周期分量（CSS 端 columnWidth==contentBox 由
+    //     reader_vertical_pitch_invariant_test 代数证明，这里读权威的那个，消重建残差）。
+    // 只有 columnWidth 解析失败（'auto'/空 → NaN）才按轴回退旧路径，绝不引入双量纲。
+    var resolvedColumnWidth = parseFloat(cs.columnWidth);
+    if (resolvedColumnWidth > 0) {
+      contentBox = resolvedColumnWidth;
+    } else if (vertical) {
+      // 竖排兜底：注入纯视口高 V − 上下 padding（TODO-734 与 --reader-viewport-height 成对）。
       var pt = parseFloat(cs.paddingTop) || 0;
       var pb = parseFloat(cs.paddingBottom) || 0;
-      // TODO-734：竖排 contentBox 基准是纯视口高 V（viewportHeight），不是含
-      // +bottomOverlap 的 pageHeight。必须与 CSS column-width 的
-      // --reader-viewport-height 成对，否则 contentBox 比 column-width 多 O →
-      // pageStep≠realPitch 复活「翻一半跳章」。
       contentBox = (this.viewportHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;
     } else {
-      // TODO-753（横排亚像素 pageStep）：CSS column-width 是
-      // `calc(var(--page-width) - <ml>vw - <mr>vw)`，即横排 content-box，浏览器按
-      // 亚像素解析（实测真实列宽 1265.33px）。而 scrollEl.clientWidth 被 CSS 规范
-      // 整数化（实测 1265），用它算 contentBox/pageStep 会比真实列周期短
-      // δ≈0.33px/页 → paginate 的 N×pageStep 网格步距与浏览器真实列周期失配 →
-      // 第 N 页文字相对页框右移 N×δ 线性累积（长章数十 px = 「越翻越偏、边被切」）。
-      // 根因修复：直接取 getComputedStyle(scrollEl).columnWidth（浏览器解析后的
-      // 亚像素 used column-width，与 column-gap 一起就是真实列周期），令 JS 翻页网格
-      // 步距 == 浏览器真实列周期，残差恒 0。只有 columnWidth 解析失败（'auto'/空 →
-      // NaN）时才回退整数 clientWidth 路径（保留 viewport 兜底，绝不引入双量纲）。
-      // 注意：竖排不走这里（另一条注入 V 的不同舍入路径，属 TODO-773）。
-      var resolvedColumnWidth = parseFloat(cs.columnWidth);
-      if (resolvedColumnWidth > 0) {
-        contentBox = resolvedColumnWidth;
-      } else {
-        var pl = parseFloat(cs.paddingLeft) || 0;
-        var pr = parseFloat(cs.paddingRight) || 0;
-        contentBox = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
-      }
+      // 横排兜底：整数 clientWidth − 左右 padding（仅 columnWidth 不可用时）。
+      var pl = parseFloat(cs.paddingLeft) || 0;
+      var pr = parseFloat(cs.paddingRight) || 0;
+      contentBox = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
     }
     // TODO-743（P0 坍塌地板）：CSS column-width 在 cT+cB+F≥V 坍塌区夹了
     // max(Fpx, calc(...)) 地板（reader_content_styles.dart 的 verticalColumnWidthCss），这里
@@ -1785,6 +1785,7 @@ $_sharedJs
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       if (targetForward <= stepScroll + 1) return "limit";
       this.setPagePosition(context, targetForward);
+      this._diagTurn(context, direction, currentScroll, stepScroll, targetForward);
       return "scrolled";
     } else {
       var targetBack = (Math.ceil(stepScroll / pitch) - 1) * pitch;
@@ -1792,6 +1793,7 @@ $_sharedJs
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       if (targetBack >= stepScroll - 1) return "limit";
       this.setPagePosition(context, targetBack);
+      this._diagTurn(context, direction, currentScroll, stepScroll, targetBack);
       return "scrolled";
     }
   },
@@ -1948,12 +1950,22 @@ window.hoshiReader._diag753 = function(phase) {
     var bodyCs = getComputedStyle(document.body);
     var ctx = this.getScrollContext();
     var gap = parseFloat(bodyCs.columnGap) || 0;
-    // contentBox = JS 翻页网格用的列高（pageStep − gap，即 injectedV − padding 的双 parseFloat 路径）。
-    var contentBox = ctx.pageSize - gap;
     // resolvedColumnWidth = 浏览器对 column-width 单次解析出的 used 列高（亚像素），竖排翻页轴=列高方向，
-    // 真实列周期 == resolvedColumnWidth + gap。pitchDelta = contentBox − resolvedColumnWidth = 每页 δ。
+    // 真实列周期 == resolvedColumnWidth + gap。
     var resolvedColW = parseFloat(bodyCs.columnWidth);
+    // contentBox = 现行 JS 翻页网格用的列高（pageStep − gap）。TODO-792 修复后 getScrollContext
+    // 竖排已改读 used columnWidth，故此值 == resolvedColumnWidth → pitchDelta≈0 = 网格已对齐
+    // 浏览器真实列周期（修复生效的正向信号）。
+    var contentBox = ctx.pageSize - gap;
     var pitchDelta = (resolvedColW > 0) ? (contentBox - resolvedColW) : null;
+    // legacyContentBox = 修复前竖排重建路径（injectedV − 双 parseFloat(padding)），独立复算。
+    // legacyPitchDelta = 它 − resolvedColumnWidth = **TODO-792 修复消除掉的每页 δ**：真机日志据此
+    // 证明 δ 真实存在（legacyPitchDelta≠0 而 pitchDelta≈0 = 修复确实对齐了一个真实失配，非 no-op）；
+    // 若 legacyPitchDelta 也≈0 但仍漂移，则根因在 reveal/inset（看 [792-REVEAL] delta 数列）。
+    var legPt = parseFloat(bodyCs.paddingTop) || 0;
+    var legPb = parseFloat(bodyCs.paddingBottom) || 0;
+    var legacyContentBox = (this.viewportHeight || document.body.clientHeight || window.innerHeight) - legPt - legPb;
+    var legacyPitchDelta = (resolvedColW > 0) ? (legacyContentBox - resolvedColW) : null;
     // dartH = Flutter 注入的原始 viewportHeight（MediaQuery.size.height），编译期常量。
     var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
     console.log('[753-DIAG] phase=' + phase
@@ -1971,12 +1983,48 @@ window.hoshiReader._diag753 = function(phase) {
       + ' contentBox=' + contentBox.toFixed(3)
       + ' resolvedColumnWidth=' + (resolvedColW > 0 ? resolvedColW.toFixed(3) : 'NaN')
       + ' pitchDelta=' + (pitchDelta != null ? pitchDelta.toFixed(3) : 'null')
+      + ' legacyContentBox=' + legacyContentBox.toFixed(3)
+      + ' legacyPitchDelta=' + (legacyPitchDelta != null ? legacyPitchDelta.toFixed(3) : 'null')
       + ' pageStep=' + ctx.pageSize.toFixed(3)
       + ' maxScroll=' + ctx.maxScroll
       + ' scrollHeight=' + document.body.scrollHeight);
   } catch (e) {
     console.log('[753-DIAG] phase=' + phase + ' error=' + (e && e.message ? e.message : e));
   }
+};
+// TODO-792 [792-TURN] 手动翻页逐页漂移取证（仅竖排，零行为变化）。用户报「竖排手动翻页
+// 文字向下偏移越翻越大」，但 pageStep δ 已被证伪（默认边距 contentBox==columnWidth）。
+// paginate 的 target 恒是绝对网格 N×pitch，故若漂移累积，只能来自：
+//   ① vertical-rl scrollTop 守不住分数 target（每页 readback≠target 且 rbDelta 同号累积）
+//      → 根因=竖排 scrollTop 量化漂移，候选修=按逻辑页号定位 / target 整数化；
+//   ② readback≈target（rbDelta≈0）但文字仍偏 → jsPitch(columnWidth+gap)≠浏览器真实渲染列
+//      周期 realPitch（放大字号下 multicol used 周期≠column-width hint）→ 下一轮加 getClientRects
+//      实测列周期探针。seq 递增让真机日志直接看出是否单调累积。走 console.log 同 [753-DIAG] 管道。
+window.hoshiReader._diagTurn = function(context, direction, currentScroll, stepScroll, target) {
+  try {
+    if (!context || !context.vertical) return;
+    if (this._turnSeq == null) this._turnSeq = 0;
+    this._turnSeq += 1;
+    var seq = this._turnSeq;
+    var self = this;
+    requestAnimationFrame(function() {
+      try {
+        var readback = self.getPagePosition(context);
+        console.log('[792-TURN] seq=' + seq
+          + ' dir=' + direction
+          + ' fromScroll=' + currentScroll.toFixed(3)
+          + ' stepScroll=' + stepScroll.toFixed(3)
+          + ' target=' + target.toFixed(3)
+          + ' pitch=' + context.pageSize.toFixed(3)
+          + ' readback=' + readback.toFixed(3)
+          + ' rbDelta=' + (readback - target).toFixed(3)
+          + ' scrollHeight=' + document.body.scrollHeight
+          + ' pages=' + (context.pageSize > 0 ? (document.body.scrollHeight / context.pageSize).toFixed(2) : 'NaN'));
+      } catch (e) {
+        console.log('[792-TURN] seq=' + seq + ' error=' + (e && e.message ? e.message : e));
+      }
+    });
+  } catch (e) {}
 };
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;

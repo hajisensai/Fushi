@@ -120,6 +120,76 @@ void main() {
         isTrue);
   });
 
+  test('TODO-792：保留 legacy 重建 δ 取证（证明修复消除的是真实失配，非 no-op）', () {
+    // 修复后 getScrollContext 竖排已读 used columnWidth，故 contentBox(=pageSize−gap)
+    // == resolvedColumnWidth → pitchDelta≈0。必须独立复算修复前的重建路径
+    // （injectedV − 双 parseFloat(padding)）并打 legacyPitchDelta，否则真机日志无法区分
+    // 「修复对齐了真实 δ」与「δ 本就为 0、漂移另有来源」。
+    expect(helper.contains('var legPt = parseFloat(bodyCs.paddingTop) || 0;'),
+        isTrue,
+        reason: 'legacy 重建须独立读 body padding-top');
+    expect(
+        helper.contains('var legPb = parseFloat(bodyCs.paddingBottom) || 0;'),
+        isTrue,
+        reason: 'legacy 重建须独立读 body padding-bottom');
+    expect(
+        helper.contains(
+            'var legacyContentBox = (this.viewportHeight || document.body.clientHeight || window.innerHeight) - legPt - legPb;'),
+        isTrue,
+        reason: 'legacyContentBox 必须复算修复前的 injectedV − padding 重建路径');
+    expect(
+        helper.contains(
+            'var legacyPitchDelta = (resolvedColW > 0) ? (legacyContentBox - resolvedColW) : null;'),
+        isTrue,
+        reason: 'legacyPitchDelta = 修复消除掉的每页 δ（真机据此证明 δ 真实）');
+    expect(
+        helper.contains("+ ' legacyContentBox=' + legacyContentBox.toFixed(3)"),
+        isTrue);
+    expect(
+        helper.contains(
+            "+ ' legacyPitchDelta=' + (legacyPitchDelta != null ? legacyPitchDelta.toFixed(3) : 'null')"),
+        isTrue);
+  });
+
+  test('TODO-792：paginate 手动翻页路径有 [792-TURN] 逐页漂移探针（仅竖排，零行为变化）', () {
+    // _diagTurn 只能在 paginated shell 定义一次（continuous 不 paginate）。
+    expect(
+      'window.hoshiReader._diagTurn = function('.allMatches(source).length,
+      1,
+      reason: '_diagTurn 只能在 paginated shell 定义一次',
+    );
+    // paginate 的 forward/backward 两分支都须在 setPagePosition 后调 _diagTurn。
+    expect(
+        "this._diagTurn(context, direction, currentScroll, stepScroll, targetForward);"
+            .allMatches(source)
+            .length,
+        1,
+        reason: 'forward 翻页须打 [792-TURN]（target=targetForward）');
+    expect(
+        "this._diagTurn(context, direction, currentScroll, stepScroll, targetBack);"
+            .allMatches(source)
+            .length,
+        1,
+        reason: 'backward 翻页须打 [792-TURN]（target=targetBack）');
+    final int s = source.indexOf('window.hoshiReader._diagTurn = function(');
+    final int e =
+        source.indexOf('window.hoshiReader.initialize = function() {', s);
+    expect(e, greaterThan(s), reason: '_diagTurn 须定义在 paginated initialize 之前');
+    final String fn = source.substring(s, e);
+    expect(fn.contains('if (!context || !context.vertical) return;'), isTrue,
+        reason: '探针仅竖排打，非竖排早返回（零行为）');
+    expect(fn.contains("console.log('[792-TURN] seq='"), isTrue,
+        reason: '逐页探针行标签 [792-TURN]，走 console.log 同管道');
+    // 核心字段：rbDelta = readback − target（同号累积=scrollTop 守不住分数 target）。
+    expect(
+        fn.contains("+ ' rbDelta=' + (readback - target).toFixed(3)"), isTrue,
+        reason: 'rbDelta 是定性 scrollTop 是否守住 target 的核心字段');
+    expect(fn.contains('var readback = self.getPagePosition(context);'), isTrue,
+        reason: 'rAF 复读 scrollTop 核验是否守住 target');
+    expect(fn.contains("'[792-TURN] seq=' + seq"), isTrue,
+        reason: 'seq 递增让真机看出是否单调累积');
+  });
+
   test('从 paginated initialize（恢复完成后）与 updatePageSize 各调一次', () {
     // initialize 末尾 .then 内、恢复脚本之后调 phase='init'。
     expect(source.contains("window.hoshiReader._diag753('init');"), isTrue,
