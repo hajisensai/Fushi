@@ -529,6 +529,10 @@ body {
     required double clampedMarginTop,
     required double clampedMarginBottom,
   }) {
+    // TODO-788：连续模式无 multicol 翻页周期，padding-bottom 只用 marginBottom + chrome-bottom-inset，
+    // 不再像分页模式 (_paginatedLayoutCss :507) 那样塞一份独立的 fontSize px 预留项——分页那份 F
+    // 是承载几何项（镜像 verticalColumnWidthCss/JS contentBox 维持 pageStep==realPitch 不变式）必须保留，
+    // 连续模式那份 F 与几何无关，去掉后「下边距」真正控制底栏上方空白（末行下方仍由 inset 给底栏预留）。
     final String hiddenOverflowAxis = isVertical ? 'overflow-y' : 'overflow-x';
     final String viewportConstraintCss = isVertical
         ? 'height: var(--hoshi-continuous-height, 100vh) !important;'
@@ -555,7 +559,7 @@ body {
   $viewportConstraintCss
   padding: $paddingCss !important;
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
-  padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  padding-bottom: calc(${clampedMarginBottom}vh + var(--chrome-bottom-inset, 0px)) !important;
   $gridCss
   $textOrientCss
   $textIndentCss

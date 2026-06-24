@@ -355,8 +355,12 @@ void main() {
       expect(css, contains('padding-bottom:'));
     });
 
+    // TODO-788：连续模式无 multicol pitch，那份独立的 fontSize px 项只是底部预留，
+    // 与几何无关（不像分页 :507 的 F 要镜像 column-width/contentBox 维持翻页周期）。
+    // 去掉它后「下边距」真正控制底部空白：用户调下边距=0 时不再残留约一份字号高的空白，
+    // 末行下方仍由 --chrome-bottom-inset 给底栏预留。分页 :507 的 F 不动（见上方分页守卫）。
     test(
-        'continuous layout padding-bottom includes fontSize and chrome-bottom-inset',
+        'continuous layout padding-bottom is only marginBottom + chrome-bottom-inset (no independent fontSize term)',
         () async {
       final HibikiDatabase db =
           HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -369,7 +373,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(${settings.marginBottom}vh + var(--chrome-bottom-inset, 0px))'));
     });
 
     // TODO-729：单一量纲。column-gap 固定为常量（22px），inset/margin/fontSize 不再
