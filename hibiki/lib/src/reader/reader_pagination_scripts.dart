@@ -1402,6 +1402,10 @@ window.hoshiReader = {
   // 首帧读到 undefined→NaN→pageStep 退化成 1。initialize/updatePageSize 会赋为 V。
   viewportHeight: 0,
   paginationMetrics: null,
+  // TODO-792：实测竖排真实渲染列周期 realPitch（getScrollContext 用它当 pageStep 消文字下移
+  // 累积）。null=未测/不可用→getScrollContext 回退名义 pageStep。init/resize 后由
+  // _measureColumnPitch 赋值，paginationMetrics 失效处一并置 null 触发重测。
+  _realColumnPitch: null,
 $_sharedJs
   revealElement: function(element) {
     var range = document.createRange();
@@ -1460,6 +1464,21 @@ $_sharedJs
     contentBox = Math.max(fontFloor, contentBox);
     var gap = parseFloat(cs.columnGap) || 0;
     var pageStep = contentBox + gap;
+    // TODO-792（竖排「文字向下偏移越翻越大」根因修复·自校正）：名义 pageStep = contentBox + gap
+    // 用纯 V 列宽算（TODO-734 为防漏字把列宽基准从 page-height(V+O) 改成纯 V）。但**多列容器
+    // body 仍是 page-height(V+O)**，单列拉伸填满容器 → 浏览器真实渲染列周期 realPitch 比名义
+    // pageStep 大（真机实测每页漏 ~O：翻一整页 progress 只 +14 字、文字逐页下移）。paginate 用
+    // N×pageStep 绝对网格，pageStep<realPitch → 第 N 页文字相对页框下移 N×(realPitch−pageStep)
+    // 线性累积。修复=把翻页步进对齐到**实测真实列周期**（_measureColumnPitch 在 init/resize 后
+    // 用 getClientRects 量·见那里），列宽 CSS 不动（防漏字不回退·pitch 与列宽量纲分离，正是
+    // TODO-734 备忘推荐的方案 B）。仅竖排、仅当实测值合理（≥名义且差量 ≤2×gap·防 garbage/列宽
+    // 收缩）才采用；测不到或越界一律回退名义 pageStep（绝不变更、绝不反向 over-correct）。
+    if (vertical && this._realColumnPitch != null) {
+      var rp = this._realColumnPitch;
+      if (rp >= pageStep - 1 && rp <= pageStep + gap * 2 + 2) {
+        pageStep = rp;
+      }
+    }
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - pageStep);
     return { vertical: vertical, scrollEl: scrollEl, pageSize: pageStep, maxScroll: maxScroll };
@@ -1919,6 +1938,49 @@ window.hoshiReader._contentSize = function() {
   var pb = parseFloat(cs.paddingBottom) || 0;
   return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
 };
+// TODO-792 竖排真实渲染列周期实测（根因修复用，非诊断）。多列容器 body 是 page-height(V+O)，
+// 列宽 hint 是纯 V（TODO-734 防漏字），单列拉伸后浏览器真实列周期 realPitch 可能 > 名义
+// pageStep(contentBox+gap)，使翻页文字逐页下移累积。这里用 getClientRects 实测：竖排-rl 列内
+// 各行向左推进（left 递减），换列时 left 跳回右侧（大幅增大）= 列边界，取相邻列顶绝对 top 差的
+// 中位数 = realPitch。getScrollContext 仅当返回值合理（≥名义且差量 ≤2×gap）才用它当 pageStep。
+// 测不到 / 列数不足 / 异常一律返回 null → 调用方回退名义 pageStep（绝不变更、绝不反向）。
+window.hoshiReader._measureColumnPitch = function() {
+  try {
+    if (!this.isVertical()) return null;
+    var bodyEl = document.body;
+    var tw = document.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT, null);
+    var firstN = null, lastN = null, cnt = 0, nn;
+    while ((nn = tw.nextNode()) != null) {
+      if (nn.textContent && nn.textContent.trim().length) {
+        if (!firstN) firstN = nn;
+        lastN = nn;
+        cnt++;
+        if (cnt >= 200) break;
+      }
+    }
+    if (!firstN || !lastN) return null;
+    var rng = document.createRange();
+    rng.setStart(firstN, 0);
+    rng.setEnd(lastN, lastN.length || 0);
+    var rects = rng.getClientRects();
+    var sc = bodyEl.scrollTop || 0;
+    var breakTops = [];
+    var prevLeft = null;
+    for (var i = 0; i < rects.length; i++) {
+      var L = rects[i].left;
+      if (prevLeft !== null && L > prevLeft + 40) breakTops.push(rects[i].top + sc);
+      prevLeft = L;
+    }
+    if (breakTops.length < 2) return null;
+    var diffs = [];
+    for (var b = 1; b < breakTops.length; b++) { var d = breakTops[b] - breakTops[b - 1]; if (d > 0) diffs.push(d); }
+    if (!diffs.length) return null;
+    diffs.sort(function(a, c) { return a - c; });
+    return diffs[Math.floor(diffs.length / 2)];
+  } catch (e) {
+    return null;
+  }
+};
 // TODO-792/753 诊断取证（纯只读，零行为改动）：竖排翻页「文字越翻越偏 / 叠加漂移」。
 // 根因候选（代数已证 contentBox==columnWidth 成对，故 δ 是亚像素级，与横排 TODO-753
 // 同源）：竖排 getScrollContext 的 contentBox = injectedV − parseFloat(paddingTop) −
@@ -2155,6 +2217,9 @@ $initImages
     }
     $sasayakiInit
     $initialRestoreScript
+    // TODO-792：首帧布局/恢复完成（layout 已 settle）后实测真实列周期，供 getScrollContext
+    // 当 pageStep 消竖排翻页文字下移累积。横排/测不到返回 null → 回退名义 pageStep。
+    window.hoshiReader._realColumnPitch = window.hoshiReader._measureColumnPitch();
     // TODO-753 诊断：首帧布局/恢复完成后取一行证据（仅竖排+横屏，phase 去重）。
     window.hoshiReader._diag753('init');
   });
@@ -2181,6 +2246,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
+  // TODO-792：尺寸变了，旧实测列周期失效→先置 null（getScrollContext 回退名义 pageStep），
+  // 等下方 reanchor rAF 里 layout settle 后重测，使 reanchor 与后续翻页都用新真实列周期。
+  this._realColumnPitch = null;
   // TODO-753 诊断：尺寸变化（横竖屏切换 / chrome inset 变化）后再取一行（phase 去重）。
   this._diag753('resize');
   if (inFlight) return;
@@ -2188,6 +2256,9 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var self = this;
   requestAnimationFrame(function() {
     try {
+      // TODO-792：layout 已随新尺寸重排，先重测真实列周期再 reanchor（否则 reanchor 用名义
+      // pageStep 落点、随后翻页又切到实测周期 → 二者量纲不一致）。
+      self._realColumnPitch = self._measureColumnPitch();
       self.scrollToProgressPaged(self.getScrollContext(), progress);
     } finally {
       self._reanchorPending = false;
@@ -2517,6 +2588,9 @@ $_sharedJs
       : undefined;
     if (styleEl) styleEl.textContent = css;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+    // TODO-792：切字号/字体/主题改列高 → 旧实测列周期失效（仅分页 shell 有 _realColumnPitch，
+    // 连续 shell 设之无害），commitStyleReanchor 里 layout settle 后重测。
+    this._realColumnPitch = null;
     this._resetImageMaxVars();
     if (charOffset < 0) return -1;
     this._reanchorPending = true;
@@ -2532,6 +2606,11 @@ $_sharedJs
     if (off === undefined || off < 0) return false;
     var hint = this._styleReanchorHint;
     try {
+      // TODO-792：新样式 layout 已 settle，重测真实列周期再 reanchor，使落点与后续翻页同量纲。
+      // typeof 守卫：仅分页 shell 有 _measureColumnPitch；连续 shell 无（跳过，零风险）。
+      if (typeof this._measureColumnPitch === 'function') {
+        this._realColumnPitch = this._measureColumnPitch();
+      }
       this.scrollToCharOffset(off, hint);
     } finally {
       this._styleReanchorOffset = undefined;
