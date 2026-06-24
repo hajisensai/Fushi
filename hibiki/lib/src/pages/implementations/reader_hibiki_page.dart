@@ -787,6 +787,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     with WidgetsBindingObserver
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
+
+  /// GlobalKey on the reader [InAppWebView] so its [RenderBox] can map a global
+  /// pointer position into the WebView's local (== CSS viewport) coordinate
+  /// space — see [onDismissBarrierHover] (TODO-806). The WebView is inset within
+  /// the page Stack by the chrome insets, so a position relative to the
+  /// full-screen dismiss barrier is NOT the WebView's local coordinate.
+  final GlobalKey _webViewKey = GlobalKey(debugLabel: 'reader_webview');
   EpubBook? _book;
   EpubSpreadMap? _spreadMap;
   ReaderSettings? _settings;
@@ -2229,12 +2236,27 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _barrierHoverLastDy = -1;
       return;
     }
-    final double dx = event.localPosition.dx - _barrierHoverLastDx;
-    final double dy = event.localPosition.dy - _barrierHoverLastDy;
+    // TODO-806 真坐标系修复：[event.localPosition] 是相对**dismiss barrier**
+    // （Positioned.fill 铺满页面 Stack）的逻辑像素，而 WebView 被 chrome inset
+    // （顶栏 [_readerTopOffset] / 底栏预留）挤在 Stack 内部、原点 ≠ barrier 原点。
+    // 直接把 barrier-local 喂给 [_selectTextAt]（期望 WebView CSS 视口坐标）会按
+    // inset 整体偏移，Shift 悬停越过查词遮罩会命中错字符。改成用 WebView 自己的
+    // RenderBox 把全局指针位置（[event.position]）映成 WebView 局部坐标——与正常
+    // 路径 onShiftHover（直接用 JS e.clientX/clientY）口径一致。WebView 的逻辑像素
+    // 与 CSS 像素同尺度（平台视图把 widget 逻辑尺寸映成 CSS 视口，无页面缩放），
+    // 故不需要再乘 devicePixelRatio（DPR 换的是逻辑↔物理，不是逻辑↔CSS；多乘反而
+    // 会重新引入这个偏移）。RenderBox 不可用时（不应发生：barrier 在屏说明 WebView
+    // 也在树上）回退到 barrier-local，退化成旧行为而非崩溃。
+    final RenderObject? obj = _webViewKey.currentContext?.findRenderObject();
+    final Offset local = (obj is RenderBox && obj.attached && obj.hasSize)
+        ? obj.globalToLocal(event.position)
+        : event.localPosition;
+    final double dx = local.dx - _barrierHoverLastDx;
+    final double dy = local.dy - _barrierHoverLastDy;
     if (dx * dx + dy * dy < 64) return;
-    _barrierHoverLastDx = event.localPosition.dx;
-    _barrierHoverLastDy = event.localPosition.dy;
-    _selectTextAt(event.localPosition.dx, event.localPosition.dy);
+    _barrierHoverLastDx = local.dx;
+    _barrierHoverLastDy = local.dy;
+    _selectTextAt(local.dx, local.dy);
   }
 
   // ── Reader chrome helpers kept in the shell ─────────────────────────

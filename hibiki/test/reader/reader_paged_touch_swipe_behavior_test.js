@@ -132,6 +132,10 @@ function makeHarness(continuousMode) {
   };
 
   let prepared = rawSlice
+    // TODO-806: [806-TAP] 探针门控用 Dart 注入期插值 ${DebugLogService.instance.enabled}，
+    // 抽出的裸 JS 没替换会让 node 见到 `if (${...}) {` 语法报错。production 默认 off，
+    // 这里固定替成 false（探针整段不进 JS），与默认行为一致、不影响 swipe 断言。
+    .replace(/\$\{DebugLogService\.instance\.enabled\}/g, 'false')
     .replace(/\$continuousMode/g, continuousMode ? 'true' : 'false')
     .replace(/\$hoverAutoLookup/g, 'false')
     .replace(/\$swipeDistThreshold/g, '72')
