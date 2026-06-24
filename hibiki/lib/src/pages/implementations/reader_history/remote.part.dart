@@ -135,7 +135,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: _gridExtent(context, constraints),
-                  childAspectRatio: mediaSource.aspectRatio,
+                  childAspectRatio: kShelfBookCardAspectRatio,
                   crossAxisSpacing: tokens.spacing.gap,
                   mainAxisSpacing: tokens.spacing.gap,
                 ),
@@ -153,6 +153,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   Widget _buildRemoteBookCard(RemoteBookInfo book) {
     final String safeKey = _safeRemoteBookKey(book.title);
     return _bookCardShell(
+      slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
       focusId: HibikiFocusId('reader-shelf-remote-book-$safeKey'),
       onTap: () => _downloadRemoteBook(book),

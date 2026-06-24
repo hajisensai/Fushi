@@ -23,6 +23,8 @@ extension _ReaderHistoryVideo on _ReaderHibikiHistoryPageState {
   Widget _buildVideoCard(VideoBookRow book) {
     final tagWidget = _buildVideoBookTagLabels(book.bookUid);
     return _bookCardShell(
+      // 视频卡保留 16:9 友好的视频比例，不随 TODO-786 收窄到书封比例。
+      slotAspectRatio: kShelfVideoCardAspectRatio,
       cardKey: ValueKey<String>('video_entry_${book.bookUid}'),
       focusId: HibikiFocusId('reader-shelf-video-${book.bookUid}'),
       dragBookId: book.bookUid,

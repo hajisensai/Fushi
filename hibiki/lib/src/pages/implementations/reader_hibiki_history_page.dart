@@ -528,7 +528,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   sliver: SliverGrid.builder(
                     gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                       maxCrossAxisExtent: _gridExtent(context, constraints),
-                      childAspectRatio: mediaSource.aspectRatio,
+                      childAspectRatio: kShelfBookCardAspectRatio,
                     ),
                     itemCount: srtBooks.length,
                     itemBuilder: (_, i) => _buildSrtCard(
@@ -580,7 +580,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 sliver: SliverGrid.builder(
                   gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: _gridExtent(context, constraints),
-                    childAspectRatio: mediaSource.aspectRatio,
+                    childAspectRatio: kShelfBookCardAspectRatio,
                   ),
                   itemCount: srtBooks.length,
                   itemBuilder: (_, i) => _buildSrtCard(
@@ -596,7 +596,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               SliverGrid.builder(
                 gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: _gridExtent(context, constraints),
-                  childAspectRatio: mediaSource.aspectRatio,
+                  // 视频卡保留视频比例，不随 TODO-786 收窄（与 _buildVideoCard 一致）。
+                  childAspectRatio: kShelfVideoCardAspectRatio,
                 ),
                 itemCount: videoBooks.length,
                 itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
@@ -608,7 +609,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               SliverGrid.builder(
                 gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: _gridExtent(context, constraints),
-                  childAspectRatio: mediaSource.aspectRatio,
+                  childAspectRatio: kShelfBookCardAspectRatio,
                 ),
                 itemCount: epubBooks.length,
                 itemBuilder: (_, i) => buildMediaItem(epubBooks[i]),
@@ -729,6 +730,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget buildMediaItem(MediaItem item) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     final Widget card = _bookCardShell(
+      slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
       selectionKey: item.mediaIdentifier,

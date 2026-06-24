@@ -13,6 +13,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
     return _bookCardShell(
+      slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
       focusId: HibikiFocusId('reader-shelf-srt-${book.uid}'),
       selectionKey: selKey,

@@ -18,8 +18,11 @@ abstract class ReaderMediaSource extends MediaSource {
           mediaType: ReaderMediaType.instance,
         );
 
+  // TODO-786：阅读类媒体源默认卡槽比例归到书封比例 [kShelfBookCardAspectRatio]
+  // （≈160/260），让书架封面 fitHeight 自然铺满、消除两侧白带。视频卡在书架页用
+  // [kShelfVideoCardAspectRatio] 单独传入，不走这个默认值。
   @override
-  double get aspectRatio => 176 / 250;
+  double get aspectRatio => kShelfBookCardAspectRatio;
 
   /// The body widget to show in the tab when this source's media type and this
   /// source is selected.

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'reader_history_source_corpus.dart';
 
@@ -242,6 +244,93 @@ void main() {
       source,
       isNot(contains('const double kShelfCoverBadgeDimension = 8.0 * 2;')),
       reason: 'the shrunk 16px badge dimension must be gone (TODO-552)',
+    );
+  });
+
+  test(
+      'shelf book card slot uses the narrow book cover ratio while video keeps '
+      'its own ratio (TODO-786)', () {
+    final String source = readReaderHistorySource();
+
+    // ① 两个卡槽比例常量必须存在：书类（窄）与视频（保留原值）。
+    expect(
+      source,
+      contains('const double kShelfBookCardAspectRatio = 160 / 260;'),
+      reason: 'TODO-786: book/audiobook/SRT/remote cards must use the narrow '
+          'book cover ratio so fitHeight fills the slot without side white',
+    );
+    expect(
+      source,
+      contains('const double kShelfVideoCardAspectRatio = 176 / 250;'),
+      reason: 'video cards keep their 16:9-friendly ratio; narrowing makes the '
+          'thumbnail look worse',
+    );
+
+    // ② 书架视频 SliverGrid 仍取视频比例（不被 TODO-786 收窄）。
+    final String videoCard = _functionSource(source, 'Widget _buildVideoCard(');
+    expect(
+      videoCard,
+      contains('slotAspectRatio: kShelfVideoCardAspectRatio'),
+      reason: 'the video card shell must pass the video slot ratio',
+    );
+    // 书架主体的视频 SliverGrid（_buildVideoCard 之外的 grid delegate）也用视频比例。
+    final RegExp videoGridRatio = RegExp(
+      r'_buildVideoCard\(videoBooks\[i\]\)',
+    );
+    expect(videoGridRatio.hasMatch(source), isTrue,
+        reason: 'video shelf section grid must build video cards');
+    // 视频 grid delegate 与 _buildVideoCard 之间不得回退到书比例：视频比例常量
+    // 在书架视频 grid 出现的次数 >= 2（grid delegate + 卡片壳）。
+    expect(
+      'kShelfVideoCardAspectRatio'.allMatches(source).length,
+      greaterThanOrEqualTo(3),
+      reason: 'video ratio is referenced by the constant, the video grid '
+          'delegate, and the video card shell',
+    );
+
+    // 书类卡壳与三处书类 grid delegate（SRT × 2 + EPUB + remote）走书比例：
+    // slotAspectRatio: kShelfBookCardAspectRatio 与 childAspectRatio:
+    // kShelfBookCardAspectRatio 合计应出现多次。
+    expect(
+      'kShelfBookCardAspectRatio'.allMatches(source).length,
+      greaterThanOrEqualTo(4),
+      reason: 'book ratio must drive the book/SRT/remote card shells and grids',
+    );
+
+    // ③ reader_media_source.dart 不再含 176 / 250 字面量（改成了书比例常量）。
+    final String mediaSource = File(
+      'lib/src/media/source_types/reader_media_source.dart',
+    ).readAsStringSync();
+    expect(
+      mediaSource,
+      isNot(contains('176 / 250')),
+      reason: 'the reader media source default ratio must use the book ratio '
+          'constant, not the old 176/250 literal (TODO-786)',
+    );
+    expect(
+      mediaSource,
+      contains('double get aspectRatio => kShelfBookCardAspectRatio;'),
+      reason: 'the reader media source must default to the book cover ratio',
+    );
+
+    // ④ 注释钉死 TODO-786 是 TODO-552「不裁切」的延续，同向非回退。
+    expect(
+      source,
+      contains('TODO-786'),
+      reason: 'the ratio change must be attributed to TODO-786 in comments',
+    );
+    expect(
+      source,
+      contains('TODO-552'),
+      reason: 'TODO-786 must reference TODO-552: 552 keeps the cover '
+          'undistorted (fitHeight), 786 removes the side white — same '
+          'direction, not a regression',
+    );
+    // 仍保持 fitHeight 与 cover 禁令（不与既有守卫冲突，这里再点一次方向）。
+    expect(
+      source,
+      contains('BoxFit get _bookCardCoverFit => BoxFit.fitHeight;'),
+      reason: 'TODO-786 narrows the slot but must NOT switch to BoxFit.cover',
     );
   });
 

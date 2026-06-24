@@ -48,6 +48,27 @@ BoxFit get _bookCardCoverFit => BoxFit.fitHeight;
 /// this fixed footer keeps long book names from pushing the grid around.
 const double kShelfTitleFooterHeight = 40.0;
 
+/// Book / audiobook / SRT / remote shelf card slot aspect ratio (width / height).
+///
+/// TODO-786 是 TODO-552 「封面不裁切」决策的延续，同向而非回退：TODO-552 改回
+/// [BoxFit.fitHeight] 解决「封面被压缩变形」（不变形），但旧卡槽比例 [16/9-ish] 的
+/// 176/250≈0.704 比真实书封（≈2:3）宽，`fitHeight` 等比铺满高度后两侧露出明显白带
+/// （TODO-786 用户报「封面两侧露白」）。这里把书类卡槽收窄到接近书封比例的
+/// 160/260≈0.6154，使 `fitHeight` 自然铺满卡槽、两侧残白收敛到几像素（不改 cover，
+/// 绝不触碰 TODO-552 的不裁切决策与其守卫的 cover 禁令）。
+///
+/// 几何说明：卡槽内有绝对 40px 的标题 footer（[kShelfTitleFooterHeight]）压在封面区
+/// 下方，footer 是固定像素而非按比例，故封面区实际比例会比卡槽比例略宽（中间档
+/// 封面区 W/H ≈ 0.72），残白随档位非线性，约 5–8px/侧无法跨档归零——这是 footer
+/// 绝对像素的必然结果，不是 bug。
+const double kShelfBookCardAspectRatio = 160 / 260;
+
+/// Video shelf card slot aspect ratio (width / height).
+///
+/// 视频缩略图本身是 16:9 横构图，卡槽收窄到书封比例反而更难看（缩略图两侧裁切或
+/// 大片留白），故视频卡保留原值 176/250=0.704，不随 TODO-786 收窄。
+const double kShelfVideoCardAspectRatio = 176 / 250;
+
 /// card domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
   Widget _tagChip(BookTagRow tag) {
@@ -169,6 +190,10 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     required VoidCallback onTap,
     required VoidCallback onLongPress,
     required Widget child,
+    // TODO-786：卡槽宽高比由调用点显式传入——书/有声书/SRT/远端用
+    // [kShelfBookCardAspectRatio]，视频卡用 [kShelfVideoCardAspectRatio]。参数化而非
+    // bool isVideo，避免在壳里硬编码媒体类型分支。
+    required double slotAspectRatio,
     Key? cardKey,
     HibikiFocusId? focusId,
     String? selectionKey,
@@ -198,7 +223,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
           // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。
           onSecondaryTap: _selectionMode ? null : onLongPress,
           child: AspectRatio(
-            aspectRatio: mediaSource.aspectRatio,
+            aspectRatio: slotAspectRatio,
             child: Stack(
               fit: StackFit.expand,
               children: [
