@@ -127,12 +127,19 @@ void main() {
     // 顶 / 底栏按钮应继续可点（左侧按钮可用），故 IgnorePointer **不**绑 _subtitleListVisible。
     // 字幕列表打开时画面光标仍可见——靠前置胜出层光标覆盖 + _hasVideoOverlay（上一个 test），
     // 不再靠把 media_kit 整层 IgnorePointer 掉。
-    final int start = src.indexOf('return ListenableBuilder(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '需有 media_kit controls 的 ListenableBuilder');
-    final int end = src.indexOf('child: AdaptiveVideoControls(state),', start);
-    expect(end, greaterThan(start),
+    // BUG-391 r4（提交 1fc54c75a）在 IgnorePointer 之外又加了一层
+    // `return ListenableBuilder(`（控制条 theme builder，合法地 merge 了
+    // _subtitleListVisible / _episodeListVisible 以驱动 hideMouseOnControlsRemoval）。
+    // 它在合并语料里排在前面，故不能再用第一个 `return ListenableBuilder(` 作锚点——
+    // 那会误把 theme builder 切进来。改为先定位 IgnorePointer 闭合处
+    // (AdaptiveVideoControls)，再向前找**最近**的 `return ListenableBuilder(`，
+    // 精确锚定 IgnorePointer 自己那层 ListenableBuilder。
+    final int end = src.indexOf('child: AdaptiveVideoControls(state),');
+    expect(end, greaterThanOrEqualTo(0),
         reason: 'IgnorePointer 块应闭合到 AdaptiveVideoControls');
+    final int start = src.lastIndexOf('return ListenableBuilder(', end);
+    expect(start, greaterThanOrEqualTo(0),
+        reason: '需有 media_kit controls 的 IgnorePointer ListenableBuilder');
     final String block = src.substring(start, end);
     expect(block.contains('_subtitleListVisible'), isFalse,
         reason:

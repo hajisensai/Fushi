@@ -74,10 +74,23 @@ void main() {
       contains('_controlLayoutNotifier.value = layout;'),
       reason: '保存草稿后要先推进当前 controls builder 的监听源',
     );
+    // BUG-391 r4/r5（提交 1fc54c75a）：控制条 builder 从单一
+    // `ValueListenableBuilder<VideoControlLayout>` 升级为
+    // `ListenableBuilder + Listenable.merge([_controlLayoutNotifier, _subtitleListVisible,
+    // _episodeListVisible])`，builder 内重读 `_controlLayoutNotifier.value`——既保留对布局
+    // 变化的直接订阅，又把 push-aside 列表可见性并入（hideMouseOnControlsRemoval 依赖它们）。
+    // 故契约从「valueListenable: _controlLayoutNotifier」收紧为「merge 列表含
+    // _controlLayoutNotifier 且 builder 重读其 value」。
     expect(
       page,
-      contains('valueListenable: _controlLayoutNotifier'),
-      reason: '当前控制层需要 ValueListenableBuilder 直接订阅布局变化',
+      contains('_controlLayoutNotifier,'),
+      reason: '当前控制层的 Listenable.merge 必须含 _controlLayoutNotifier（直接订阅布局变化）',
+    );
+    expect(
+      page,
+      contains(
+          'final VideoControlLayout layout = _controlLayoutNotifier.value;'),
+      reason: 'builder 内必须重读 _controlLayoutNotifier 的当前布局值',
     );
     expect(
       page,
