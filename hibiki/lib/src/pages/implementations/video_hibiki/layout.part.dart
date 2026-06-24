@@ -202,9 +202,16 @@ extension _VideoLayout on _VideoHibikiPageState {
     VideoState state,
     VideoPlayerController controller,
   ) {
-    return ValueListenableBuilder<VideoControlLayout>(
-      valueListenable: _controlLayoutNotifier,
-      builder: (BuildContext context, VideoControlLayout layout, _) {
+    // BUG-391「管 1」防哑火：本 builder 旧只监听 [_controlLayoutNotifier]，但桌面 theme 的
+    // `hideMouseOnControlsRemoval` 现在依赖 [_subtitleListVisible]（见 controls_theme.part.dart）
+    // → 必须把 [_subtitleListVisible] 也并入监听，否则它翻转时 theme 不重建 = 管 1 改了值也白改。
+    // 用 ListenableBuilder.merge 同时听两者，builder 内重新读 [_controlLayoutNotifier] 的当前值。
+    return ListenableBuilder(
+      listenable: Listenable.merge(
+        <Listenable>[_controlLayoutNotifier, _subtitleListVisible],
+      ),
+      builder: (BuildContext context, _) {
+        final VideoControlLayout layout = _controlLayoutNotifier.value;
         final ({
           MaterialVideoControlsThemeData mobile,
           MaterialDesktopVideoControlsThemeData desktop,

@@ -6,20 +6,22 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'video_hibiki_page_source_corpus.dart';
 
-/// BUG-391：视频字幕列表侧栏鼠标光标消失。
+/// BUG-391：视频字幕列表侧栏鼠标光标消失（第四轮·双管缓解）。
 ///
-/// 根因：字幕列表是 push-aside 侧栏（[_videoWithSubtitlePanel] 的 Row 兄弟列），几何上
-/// 不在视频区 controls 的 cursor:none 胜出层内；但鼠标从画面区（控制条 2s 淡出后
-/// media_kit `hideMouseOnControlsRemoval` + 顶层 [_buildCursorOverlay] 把 OS 光标置
-/// none）移进侧栏时，侧栏没有任何 region 主动唤回光标 / 续命 media_kit 控制条 → 桌面
-/// OS 光标残留隐藏态（与画面字幕盒 BUG-283 同根：cursor:none 胜出 + 缺 hover 唤回）。
+/// 定性（**不是根因修复**）：视频区光标隐藏是**框架层 MouseRegion**（fork
+/// `material_desktop.dart:746-750`：控制条 `mount=false` → `cursor:none`、否则 `basic`，走
+/// `MouseTracker`，几何只覆盖视频列 Expanded），**不是** native `SetCursor`。侧栏残留隐藏态
+/// 的真因是 Flutter Windows embedder #84039 `WM_SETCURSOR` 竞态 + 框架 `MouseCursorManager`
+/// `lastSession` 去重（`mouse_cursor.dart:75`）。本轮源码改动只是缓解层——**Windows 真机
+/// 截图/录屏是合入硬门槛，源码守卫只锁结构、对真机有效性零增益**（headless 永远复现不了
+/// #84039、`none→basic` 在测试环境正常回落）。
 ///
-/// 修复：给字幕列表侧栏内容包一层 [_withSubtitleListCursorReveal]——hover 时调字幕盒
-/// 同款救场 [_handleSubtitleHover]（_setCursorHidden(false) + _pokeControlsVisible），
-/// 鼠标进侧栏即唤回光标 + 续命控制条。
-///
-/// media_kit controls 跑不了 headless，故源码守卫锁结构不变量；另用同构布局的 widget
-/// 行为测试证「侧栏 MouseRegion 进入即触发 hover 救场回调」与「侧栏光标不粘 none」。
+/// 管 1（源头层）：`controls_theme.part.dart` 的 `hideMouseOnControlsRemoval` 由裸 `true` 改成
+/// `!_subtitleListVisible.value`（列表开时视频列 controls MouseRegion 恒走 basic、从未隐藏 →
+/// 跨列那次 none→basic 转换不存在），并把构造桌面 theme 的 builder 改成同时监听
+/// `_subtitleListVisible`（否则改了值 theme 不重建 = 哑火）。
+/// 管 2（侧栏直发，改法 B）：`_forceRevealOsCursorForPanel` 门控只剩桌面、去掉 `_cursorHidden`
+/// 那条（上一轮恒早退悖论），`onEnter` 跨列入侧栏无条件直发一次 `activateSystemCursor`。
 void main() {
   group('源码守卫：字幕列表侧栏光标唤回（BUG-391）', () {
     late String src;
@@ -52,7 +54,8 @@ void main() {
           reason: 'onEnter 仍保留字幕盒同款救场（无害冗余）');
     });
 
-    test('_forceRevealOsCursorForPanel 直发 activateSystemCursor 且双门控（桌面 + 隐藏态）',
+    test(
+        '管 2 改法 B：_forceRevealOsCursorForPanel 直发 activateSystemCursor 且只剩桌面门控（去掉 _cursorHidden）',
         () {
       final int start =
           src.indexOf('void _forceRevealOsCursorForPanel(int device) {');
@@ -72,8 +75,12 @@ void main() {
           reason: '设备 id 取自进入侧栏的真实 pointer event');
       expect(body.contains('if (!_isDesktopVideoControls) return;'), isTrue,
           reason: '门控①：仅桌面发');
-      expect(body.contains('if (_cursorHidden.value != true) return;'), isTrue,
-          reason: '门控②：仅 _cursorHidden==true 才发（防回退成无条件覆写 cue 行手型）');
+      // 改法 B：上一轮的 `_cursorHidden.value == true` 门控在列表开态恒早退（_hasVideoOverlay
+      // 含 _subtitleListVisible → _cursorHidden 恒 false）= 第三轮空转。本轮**去掉**它，
+      // onEnter 跨列入侧栏无条件直发。若回退加回该门控，本断言转红（与第三轮恒早退悖论自相矛盾）。
+      expect(body.contains('_cursorHidden'), isFalse,
+          reason:
+              '改法 B：_forceRevealOsCursorForPanel 内不得再有 _cursorHidden 门控（否则列表开态恒早退空转）');
     });
 
     test('字幕列表侧栏面板用 _withSubtitleListCursorReveal 包裹', () {
@@ -100,9 +107,56 @@ void main() {
       expect(body.contains('_pokeControlsVisible()'), isTrue,
           reason: '续命控制条（避免 media_kit mount=false 自身 cursor 置 none）');
     });
+
+    test(
+        '管 1·2a：桌面 theme 的 hideMouseOnControlsRemoval 非裸 true、依赖 _subtitleListVisible',
+        () {
+      // 列表开时禁用控制条淡出隐藏光标 → 视频列 controls MouseRegion 恒走 basic 分支、
+      // 从源头消除跨列那次 none→basic 竞态来源。负向：改回裸 true 应转红。
+      expect(src.contains('hideMouseOnControlsRemoval: true'), isFalse,
+          reason: '管 1·2a：hideMouseOnControlsRemoval 不得是裸 true（列表开时必须翻 false）');
+      expect(
+          src.contains(
+              'hideMouseOnControlsRemoval: !_subtitleListVisible.value'),
+          isTrue,
+          reason:
+              '管 1·2a：hideMouseOnControlsRemoval 须为 !_subtitleListVisible.value（列表开 → 不隐藏光标）');
+    });
+
+    test('管 1·2b 防哑火：构造桌面 theme 的 builder 必须监听 _subtitleListVisible', () {
+      // 硬前置：2a 让 hideMouseOnControlsRemoval 依赖 _subtitleListVisible，但若构造 theme 的
+      // builder 不监听它，翻转时 theme 不重建 = 改了值也白改（哑火）。守卫 _buildVideoControlsInner
+      // 内 ListenableBuilder.merge 同时含 _controlLayoutNotifier + _subtitleListVisible。
+      final int start = src.indexOf('Widget _buildVideoControlsInner(');
+      expect(start, greaterThanOrEqualTo(0),
+          reason:
+              '应有 _buildVideoControlsInner（构造 VideoControlsThemePair 的 builder）');
+      final int end = src.indexOf('\n  Widget ', start + 1);
+      final String body = src.substring(start, end > start ? end : src.length);
+      // 监听器须同时含布局 + 字幕列表两个 notifier（顺序不强求，但两者都得在）。
+      expect(body.contains('Listenable.merge('), isTrue,
+          reason:
+              '2b：须用 Listenable.merge 合并多个监听源（替代旧 ValueListenableBuilder 单听布局）');
+      expect(body.contains('_controlLayoutNotifier'), isTrue,
+          reason: '2b：仍须监听布局 notifier（沿用旧 ValueListenableBuilder 的语义）');
+      expect(body.contains('_subtitleListVisible'), isTrue,
+          reason:
+              '2b 防哑火硬前置：构造桌面 theme 的 builder 必须监听 _subtitleListVisible，否则 2a 改了值也白改');
+      // 旧的单监听 ValueListenableBuilder 不得残留在本 builder 顶层（否则只听布局 = 哑火回归）。
+      expect(
+          body.contains(
+              'ValueListenableBuilder<VideoControlLayout>(\n      valueListenable: _controlLayoutNotifier'),
+          isFalse,
+          reason:
+              '2b：不得回退成只监听 _controlLayoutNotifier 的单 ValueListenableBuilder（哑火）');
+    });
   });
 
-  group('行为：同构布局下侧栏光标不粘 none + 进入触发救场（BUG-391）', () {
+  // 诚实标注：本行为测试用**同构 widget 布局**证「侧栏 MouseRegion 进入即触发回调 + 光标不粘
+  // none」，但 headless 测试环境**永远复现不了 #84039**（不接 Win embedder、`none→basic` 正常
+  // 回落 basic），故对真机有效性**零增益**——它只证「侧栏有 region 接管 hover」这一结构前提，
+  // 真正缓解是否生效**仅 Windows 真机截图/录屏可验（合入硬门槛）**。
+  group('行为：同构布局下侧栏光标不粘 none + 进入触发救场（BUG-391·headless 对真机零增益）', () {
     testWidgets('鼠标移到字幕列表侧栏：光标可见 + 触发 hover 救场', (WidgetTester tester) async {
       bool hoverRescued = false;
       const double panelWidth = 300;
