@@ -1430,9 +1430,25 @@ $_sharedJs
       // pageStep≠realPitch 复活「翻一半跳章」。
       contentBox = (this.viewportHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;
     } else {
-      var pl = parseFloat(cs.paddingLeft) || 0;
-      var pr = parseFloat(cs.paddingRight) || 0;
-      contentBox = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
+      // TODO-753（横排亚像素 pageStep）：CSS column-width 是
+      // `calc(var(--page-width) - <ml>vw - <mr>vw)`，即横排 content-box，浏览器按
+      // 亚像素解析（实测真实列宽 1265.33px）。而 scrollEl.clientWidth 被 CSS 规范
+      // 整数化（实测 1265），用它算 contentBox/pageStep 会比真实列周期短
+      // δ≈0.33px/页 → paginate 的 N×pageStep 网格步距与浏览器真实列周期失配 →
+      // 第 N 页文字相对页框右移 N×δ 线性累积（长章数十 px = 「越翻越偏、边被切」）。
+      // 根因修复：直接取 getComputedStyle(scrollEl).columnWidth（浏览器解析后的
+      // 亚像素 used column-width，与 column-gap 一起就是真实列周期），令 JS 翻页网格
+      // 步距 == 浏览器真实列周期，残差恒 0。只有 columnWidth 解析失败（'auto'/空 →
+      // NaN）时才回退整数 clientWidth 路径（保留 viewport 兜底，绝不引入双量纲）。
+      // 注意：竖排不走这里（另一条注入 V 的不同舍入路径，属 TODO-773）。
+      var resolvedColumnWidth = parseFloat(cs.columnWidth);
+      if (resolvedColumnWidth > 0) {
+        contentBox = resolvedColumnWidth;
+      } else {
+        var pl = parseFloat(cs.paddingLeft) || 0;
+        var pr = parseFloat(cs.paddingRight) || 0;
+        contentBox = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;
+      }
     }
     // TODO-743（P0 坍塌地板）：CSS column-width 在 cT+cB+F≥V 坍塌区夹了
     // max(Fpx, calc(...)) 地板（reader_content_styles.dart 的 verticalColumnWidthCss），这里
