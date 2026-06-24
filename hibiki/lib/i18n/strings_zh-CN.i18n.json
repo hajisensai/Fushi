@@ -1802,7 +1802,7 @@
   "anki_error_http": "无法导出到 Anki：连接 AnkiConnect 时发生 HTTP 错误。",
   "anki_error_connection_unknown": "无法导出到 Anki：发生未知的连接错误。详情见错误日志。",
   "compress_mining_media": "压缩制卡媒体",
-  "compress_mining_media_hint": "关闭后媒体更清晰但体积更大；Android 句子音频本就无损不受影响",
+  "compress_mining_media_hint": "关闭后媒体更清晰但体积更大",
   "log_copy_all": "复制全部",
   "hover_auto_lookup": "悬停即查词",
   "hover_auto_lookup_hint": "鼠标悬停在文字上即自动查词，无需按住 Shift。仅桌面端。",
