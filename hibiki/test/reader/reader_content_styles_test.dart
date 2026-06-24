@@ -815,4 +815,53 @@ void main() {
       expect(css, isNot(contains('vpal')));
     });
   });
+  // TODO-810：手机竖排书顶部 notch（摄像头）区漏出上一页文字。根因=WebView 是 Positioned.fill
+  // 全铺 edge-to-edge，notch 遮挡只靠 body 透明 padding-top（=var(--chrome-top-inset)）腾出物理区，
+  // 没有真实裁剪；竖排翻页轴=纵向 scrollTop 与顶部安全带同轴，上一页文字滚经透明带落入 notch 可见。
+  // 修复=在 body 上加 clip-path: inset(...) 在顶/底 inset 带处真实裁掉滚入的文字（横竖排同生效，
+  // 横排顶带本无字故无副作用；不动高度/pageStep/column-width/scrollTop 几何）。
+  // 此守卫锁住分页+连续两模式 body 块都含 clip-path 且引用 --chrome-top-inset（撤回即红）。
+  group('TODO-810 notch clip-path guards', () {
+    test('paginated body clips top/bottom inset bands via clip-path inset',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      // Default is paginated mode.
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;'),
+          reason: '分页 body 必须在顶/底 inset 带硬裁，防文字滚入 notch');
+    });
+
+    test('continuous body clips top/bottom inset bands via clip-path inset',
+        () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setViewMode('continuous');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;'),
+          reason: '连续 body 同样在顶/底 inset 带硬裁');
+    });
+
+    test('vertical paginated still clips (notch leak path is vertical)',
+        () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('vertical-rl');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('clip-path: inset(var(--chrome-top-inset'));
+    });
+  });
 }

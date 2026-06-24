@@ -505,6 +505,13 @@ body {
   padding: $paddingCss !important;
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
   padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  /* TODO-810：notch（摄像头）遮挡只靠透明 padding-top（=var(--chrome-top-inset)）腾出物理区，
+     没有真实裁剪。竖排翻页轴=纵向 scrollTop 与顶部安全带同轴，上一页文字滚经透明带会落入
+     notch 物理区可见（横排走 scrollLeft 不经顶带故不漏）。这里加硬裁剪在 inset 带处真实裁掉
+     滚入的文字：clip-path 以 body 边框盒为基准（border-box，margin/border 为 0 即视口），inset
+     裁的正是顶/底 padding 透明带，正文在 padding 内侧不受影响；横竖排同生效，横排顶带本无字故
+     无副作用。不动 body 高度/pageStep/column-width/scrollTop 几何（防 TODO-753/792 回归）。 */
+  clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;
   $gridCss
   $textOrientCss
   $textIndentCss
@@ -560,6 +567,10 @@ body {
   padding: $paddingCss !important;
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
   padding-bottom: calc(${clampedMarginBottom}vh + var(--chrome-bottom-inset, 0px)) !important;
+  /* TODO-810：连续模式与分页同理：竖排纵向滚动轴与顶部透明 padding 安全带同轴，需在 inset 带硬裁
+     防上一屏文字滚入 notch。clip-path 以 body 边框盒（border-box）为基准只裁顶/底 padding 透明带，
+     正文不受影响；不动高度/scrollTop 几何。 */
+  clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;
   $gridCss
   $textOrientCss
   $textIndentCss
