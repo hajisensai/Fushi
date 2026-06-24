@@ -35,7 +35,7 @@ void main() {
         '_handleReaderScroll 进门先判 settle 去抖窗并 return，早于 _refreshProgressFromScroll',
         () {
       final String body =
-          methodBody(navigation, 'void _handleReaderScroll() {');
+          methodBody(navigation, 'void _handleReaderScroll(bool userDriven) {');
       final int settleIdx = body.indexOf('readerScrollWithinReanchorSettle');
       expect(settleIdx, greaterThanOrEqualTo(0),
           reason: '_handleReaderScroll 必须先判 settle 去抖窗');

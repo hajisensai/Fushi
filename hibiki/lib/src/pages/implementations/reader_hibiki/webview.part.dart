@@ -927,8 +927,24 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   (function() {
     var _progressScrollRaf = 0;
     var _progressScrollTimer = null;
+    // TODO-718 回归修复：记录最近一次**真实用户输入**时间戳。归零/cue-reveal 等程序化滚动
+    // 与用户滚动都触发同一个原生 scroll 事件、走同一上报点，JS 桥处本不可区分；TODO-798 的
+    // 因果门「解武装」误把程序化 reflow 滚动当用户首滚 → 过早解武装 → 真归零裸奔弹回章首。
+    // 这里只在 touch/pointer/wheel/key 这类**真实输入**事件上盖时间戳，scroll 上报时据此算出
+    // isUserDriven 传给 Dart，让因果门只被真用户输入解武装。capture+passive 不干扰既有手势。
+    var _lastUserInputAt = 0;
+    function _markUserInput() { _lastUserInputAt = Date.now(); }
+    var _inputOpts = { passive: true, capture: true };
+    window.addEventListener('pointerdown', _markUserInput, _inputOpts);
+    window.addEventListener('touchstart', _markUserInput, _inputOpts);
+    window.addEventListener('wheel', _markUserInput, _inputOpts);
+    window.addEventListener('mousedown', _markUserInput, _inputOpts);
+    window.addEventListener('keydown', _markUserInput, { capture: true });
     function _reportReaderScroll() {
       var r = window.hoshiReader;
+      // 本次 scroll 是否由真实用户输入驱动：最近 1000ms 内有过用户输入事件。窗口覆盖一次
+      // 触摸/滚轮后的惯性甩动起始帧（解武装只需首发命中一次即可，无需覆盖整段惯性）。
+      var userDriven = _lastUserInputAt > 0 && (Date.now() - _lastUserInputAt) < 1000;
       // TODO-151/164 / BUG-225 诊断：默认 off（${DebugLogService.instance.enabled}
       // 由 DebugLogService 门控注入），开了才打印。reanchorPending=true 会早返回不回传，
       // hasBridge=false 说明 callHandler 不可用——便于真机定位「滚动了但进度没动」哪一链断。
@@ -936,11 +952,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       if (${DebugLogService.instance.enabled}) {
         console.log('[ReaderDiag] scroll report'
           + ' reanchorPending=' + (r ? r._reanchorPending === true : 'noReader')
+          + ' userDriven=' + userDriven
           + ' hasBridge=' + !!(window.flutter_inappwebview && window.flutter_inappwebview.callHandler));
       }
       if (r && r._reanchorPending === true) return;
       if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('onReaderScroll');
+        window.flutter_inappwebview.callHandler('onReaderScroll', userDriven);
       }
     }
     function _onReaderScrollEvent() {
@@ -1112,7 +1129,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           // 未就绪一律不触发（JS 侧已抑制 _reanchorPending 重锚瞬态）。
           controller.addJavaScriptHandler(
             handlerName: 'onReaderScroll',
-            callback: (_) => _handleReaderScroll(),
+            // TODO-718：第一参 = JS 算出的 isUserDriven（最近真实用户输入驱动），用于 798
+            // 因果门解武装（只有真用户滚动才解武装，reflow/cue-reveal 程序化滚动不解武装）。
+            callback: (args) => _handleReaderScroll(
+              args.isNotEmpty && args.first == true,
+            ),
           );
 
           // BUG-117: primary internal-link path. The JS click interceptor (in the

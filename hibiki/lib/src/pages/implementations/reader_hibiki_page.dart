@@ -475,10 +475,17 @@ bool readerContinuousProgressSnapIsInvoluntary({
   required double newProgress,
   required bool hasCommittedAnchor,
   required bool settleGuardArmed,
+  bool audiobookActivelyFollowing = false,
   double chapterStartEpsilon = 0.01,
   double minPriorProgress = 0.05,
 }) {
   if (!continuousMode) return false;
+  // TODO-724 回归修复：有声书正在播放（逐句 reveal 主动跟读）时，进度变化由音频 cue **权威**
+  // 驱动（含跨章 reveal 落到新章首），不是 WebView 自发 reflow 归零。此时这个拦截器若命中会把
+  // 视口强拽回上一发 committedAnchor（跨章时指向上一章的陈旧锚，常是图片）= 「有声书跳图片」。
+  // 故有声书主动跟读期一律放行：位置交给 cue 跟随，不做反向复位。开书恢复期有声书未自动续播
+  // （isPlaying=false），故不影响 TODO-718 的 reflow-zero 拦截。
+  if (audiobookActivelyFollowing) return false;
   if (!hasCommittedAnchor) return false;
   // 因果门：用户已真滚过（解武装）后，归零必是用户拖到章首，放行——不再误伤拖滚动条。
   if (!settleGuardArmed) return false;
@@ -910,6 +917,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 与翻章恢复直接调 _refreshProgress。
   bool _scrollProgressInFlight = false;
   bool _scrollProgressPending = false;
+  // TODO-718：节流/coalesce 窗口内累积「本批滚动是否含真实用户输入驱动」。throttle 期多发
+  // scroll 合并时只要有一发是用户驱动即累积为真；待真正发起 _refreshProgress 时消费（赋给
+  // _progressRefreshFromScroll 再清零）。程序化 reflow/cue-reveal 滚动不置真 → 不解武装 798 因果门。
+  bool _scrollUserDrivenPending = false;
   // 卡死修复：滚动触发的进度重算加时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。

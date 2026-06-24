@@ -163,6 +163,42 @@ void main() {
         reason: '解武装后一律放行——不再误伤用户真滑到章首；晚到 reflow 由 JS 重锚路径兜',
       );
     });
+
+    test('TODO-724 回归：有声书主动播放跟读期，同样的非自愿快照也放行（不拽回陈旧锚）', () {
+      // 与「核心 bug 路径」数据完全相同（武装中 + 实质性塌缩 + 有锚），唯一差别是有声书在播。
+      // 有声书逐句 reveal（含跨章落新章首）的进度变化由音频 cue 权威驱动，不是 WebView 自发
+      // reflow 归零；若仍判非自愿，拦截器会把视口强拽回上一发 committedAnchor（跨章=上章陈旧锚，
+      // 常是图片）= 「有声书跳图片」。故有声书跟读期一律放行。
+      expect(
+        readerContinuousProgressSnapIsInvoluntary(
+          continuousMode: true,
+          priorProgress: 0.5,
+          newProgress: 0.0,
+          hasCommittedAnchor: true,
+          settleGuardArmed: true,
+          audiobookActivelyFollowing: true,
+        ),
+        isFalse,
+        reason: '有声书主动跟读期进度由 cue 权威驱动，必须放行——否则跨章 reveal 被拽回上章图片',
+      );
+    });
+
+    test('TODO-724 对照：有声书未播（默认）时，同一快照仍判非自愿（不影响 718 reflow 拦截）', () {
+      // 开书恢复期有声书未自动续播 audiobookActivelyFollowing=false → 与原行为一致，
+      // reflow-zero 仍被拦截复位。证明 724 放行只挑「正在播」，不放过恢复期 reflow 归零。
+      expect(
+        readerContinuousProgressSnapIsInvoluntary(
+          continuousMode: true,
+          priorProgress: 0.5,
+          newProgress: 0.0,
+          hasCommittedAnchor: true,
+          settleGuardArmed: true,
+          audiobookActivelyFollowing: false,
+        ),
+        isTrue,
+        reason: '有声书未播时默认行为不变——TODO-718 的 reflow-zero 拦截不受影响',
+      );
+    });
   });
 
   group('TODO-798 接线守卫：判据 + 复位接进 _refreshProgress（落库之前）', () {
@@ -218,10 +254,37 @@ void main() {
       expect(beginBody.contains('_continuousSettleGuardArmed = true'), isTrue,
           reason: '每次导航必须武装因果门（恢复落定后进入自发 settle 期）');
 
+      // TODO-718：解武装路由旗只在「真实用户输入驱动」时置真（消费累积的 userDriven），
+      // reflow/cue-reveal 程序化滚动 userDriven=false → 不解武装因果门。
       final String scrollBody =
           windowFrom(navigation, 'void _refreshProgressFromScroll() {', 2000);
-      expect(scrollBody.contains('_progressRefreshFromScroll = true'), isTrue,
-          reason: '滚动驱动的 _refreshProgress 必须置路由旗，作解武装唯一候选来源');
+      expect(
+          scrollBody.contains(
+              '_progressRefreshFromScroll = _scrollUserDrivenPending'),
+          isTrue,
+          reason: '解武装路由旗必须取自累积的用户输入驱动标志，'
+              '而非「任何 scroll 都置真」（否则 reflow 归零误解武装 = TODO-718 回归）');
+      expect(scrollBody.contains('_scrollUserDrivenPending = false'), isTrue,
+          reason: '消费后必须清零累积标志');
+
+      // TODO-718：_handleReaderScroll 必须接收 JS 算出的 userDriven 并累积。
+      final String handleBody = windowFrom(
+          navigation, 'void _handleReaderScroll(bool userDriven) {', 600);
+      expect(
+          handleBody
+              .contains('if (userDriven) _scrollUserDrivenPending = true'),
+          isTrue,
+          reason: '_handleReaderScroll 必须按 JS 传入的 userDriven 累积，'
+              '节流/coalesce 期只要一发用户驱动即记真');
+
+      // TODO-724：拦截判据必须接入有声书主动跟读状态。
+      final String refreshBody2 = windowFrom(
+          navigation, 'Future<void> _refreshProgress() async {', 5200);
+      expect(
+          refreshBody2.contains('audiobookActivelyFollowing: '
+              '_audiobookController?.isPlaying == true'),
+          isTrue,
+          reason: '判据必须接入有声书 isPlaying，跟读期放行不拽回陈旧锚（TODO-724）');
 
       final String refreshBody = windowFrom(
           navigation, 'Future<void> _refreshProgress() async {', 5200);

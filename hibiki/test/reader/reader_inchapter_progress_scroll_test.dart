@@ -129,7 +129,8 @@ void main() {
     test('setup 脚本注册 window+document scroll 监听并回传 onReaderScroll', () {
       // 通道必须挂在两模式共享的 setup 脚本里（_buildReaderSetupScript），且对 window
       // 与 document 都监听（覆盖连续模式 window 滚动 + 分页模式 body 内部滚动）。
-      expect(src.contains("callHandler('onReaderScroll')"), isTrue,
+      // TODO-718：第二参传 isUserDriven（最近真实用户输入驱动），故匹配前缀不含闭括号。
+      expect(src.contains("callHandler('onReaderScroll'"), isTrue,
           reason: 'scroll reporter 必须经 callHandler 把进度回传 Dart');
       expect(
         src.contains("window.addEventListener('scroll', _onReaderScrollEvent"),
@@ -173,8 +174,9 @@ void main() {
     test('Dart 注册 onReaderScroll handler 并走纯函数门控后 coalesce 刷新', () {
       expect(src.contains("handlerName: 'onReaderScroll'"), isTrue,
           reason: '必须注册 onReaderScroll JS handler');
-      expect(src.contains('=> _handleReaderScroll()'), isTrue);
-      final int idx = src.indexOf('void _handleReaderScroll()');
+      // TODO-718：callback 现按 isUserDriven 传 _handleReaderScroll(bool)，签名加参。
+      expect(src.contains('_handleReaderScroll('), isTrue);
+      final int idx = src.indexOf('void _handleReaderScroll(bool userDriven)');
       expect(idx, greaterThan(0), reason: '_handleReaderScroll 必须存在');
       // 窗口放宽到 1900：TODO-151/164(BUG-225) 插入诊断日志块、TODO-736 B-3 插入 settle
       // 去抖块，函数体加长，旧 1100 字符窗口会切断在分发前漏掉末尾（旧窗口会误转红）。

@@ -130,7 +130,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   ///
   /// BUG-380：rAF 节流后回传可能高频到来，走 [_refreshProgressFromScroll] 的「在飞 +
   /// 待重跑」coalesce 守卫，避免较重的 hoshiProgressDetails 调用堆积。
-  void _handleReaderScroll() {
+  void _handleReaderScroll(bool userDriven) {
+    // TODO-718：累积本批滚动是否由真实用户输入驱动（JS 据最近 1000ms 内 touch/pointer/wheel/key
+    // 算出）。节流/coalesce 期多发 scroll 合并，只要有一发用户驱动即记真，待实际发起刷新时消费
+    // （见下方进度刷新路由）。reflow 归零 / cue-reveal 程序化滚动 userDriven=false → 不解武装 798 因果门。
+    if (userDriven) _scrollUserDrivenPending = true;
     // TODO-736 B-3：样式重锚 commit 清旗后的 settle 尾沿去抖。改字号/字体/主题 reflow 在
     // commit（_reanchorClearedAt 打点）之后还会有几帧 settle，其间 WebView 自发的瞬态归零
     // scroll 经此回传——250ms 内的尾沿 scroll 直接 return 不落库（治翻页多次改字号跳章首的
@@ -197,9 +201,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _scrollProgressThrottleTimer = null;
     _lastScrollProgressAt = now;
     _scrollProgressInFlight = true;
-    // TODO-798 续修边界：标记本次 _refreshProgress 是「用户原生滚动驱动」——是解武装因果门
-    // 的唯一候选来源（轮询/恢复/chrome 路径不置此旗，故不会误把锚位轮询当用户滚动解武装）。
-    _progressRefreshFromScroll = true;
+    // TODO-798 续修边界 + TODO-718 回归修复：标记本次 _refreshProgress 是否「真实用户原生滚动
+    // 驱动」——是解武装因果门的唯一候选来源。**只有真用户输入**才置真（消费累积的
+    // _scrollUserDrivenPending）；reflow 归零 / 有声书 cue-reveal 等程序化滚动虽也触发 onReaderScroll
+    // 但 userDriven=false → 不解武装，使 798 因果门继续拦得住自发归零（修 718 过早解武装弹回章首）。
+    _progressRefreshFromScroll = _scrollUserDrivenPending;
+    _scrollUserDrivenPending = false;
     _refreshProgress().whenComplete(() {
       _progressRefreshFromScroll = false;
       _scrollProgressInFlight = false;
@@ -638,6 +645,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       newProgress: progress,
       hasCommittedAnchor: committedAnchor >= 0,
       settleGuardArmed: _continuousSettleGuardArmed,
+      // TODO-724：有声书主动播放跟读期，进度由音频 cue 权威驱动，放行（不反向复位到陈旧锚）。
+      audiobookActivelyFollowing: _audiobookController?.isPlaying == true,
     )) {
       if (DebugLogService.instance.enabled) {
         debugPrint('[ReaderDiag] _refreshProgress involuntary reflow-zero snap'

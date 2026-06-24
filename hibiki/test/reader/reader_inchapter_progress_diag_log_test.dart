@@ -36,7 +36,8 @@ void main() {
     test('① JS _reportReaderScroll 受门控输出 reanchorPending / hasBridge', () {
       final int idx = src.indexOf('function _reportReaderScroll()');
       expect(idx, greaterThan(0), reason: 'JS _reportReaderScroll 必须存在');
-      final String body = src.substring(idx, idx + 900);
+      // TODO-718 在体内加了 userDriven 计算 + 注释，窗口放宽到 1300。
+      final String body = src.substring(idx, idx + 1300);
       // JS 门控用 Dart 插值的 DebugLogService.instance.enabled 渲染成字面 true/false。
       expect(
         body.contains('if (\${DebugLogService.instance.enabled})'),
@@ -55,7 +56,8 @@ void main() {
     });
 
     test('② Dart _handleReaderScroll 受门控记四门控真值 + 是否刷新', () {
-      final int idx = src.indexOf('void _handleReaderScroll()');
+      // TODO-718：签名加了 bool userDriven 参数（JS 传入的用户输入驱动标志）。
+      final int idx = src.indexOf('void _handleReaderScroll(bool userDriven)');
       expect(idx, greaterThan(0));
       // TODO-736 B-3 在该函数顶部插入 settle 去抖块，函数体加长，窗口放宽到 1900。
       final String body = src.substring(idx, idx + 1900);
