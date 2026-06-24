@@ -1969,8 +1969,9 @@ window.hoshiReader._diag753 = function(phase) {
     // TODO-792 [792-RPITCH] 直测真实渲染列周期 realPitch（init 一次，竖排，read-only）。
     // 真机 [792-TURN] 坐实 rbDelta 有界（scrollTop 没问题）但 progress 每页新增递减 →
     // realPitch（浏览器实际列周期）> pageStep（候选②/审查 C2：columnWidth 只是 hint，单列
-    // 拉伸填满可用 inline 空间后真实周期更大）。这里用 getClientRects 实测：竖排 band 垂直堆叠、
-    // 同列各行 rect 共享列顶 top，去重后相邻 top 差 = realPitch。同时打 body/html/scrollH 尺寸，
+    // 拉伸填满可用 inline 空间后真实周期更大）。这里用 getClientRects 实测：竖排-rl 列内行向左
+    // 推进（left 递减），换列时 left 跳回右侧（大幅增大）= 列边界，取相邻列顶绝对 top 差 = realPitch；
+    // 并 dump 前 40 个 rect 的 (top:left) 供离线核轴向/周期。同时打 body/html/scrollH 尺寸，
     // 离线对照 pageStep 定位多出来的量从哪来（gap / bottomOverlap O / 拉伸）。
     try {
       var rpInfo = 'na';
@@ -1989,16 +1990,25 @@ window.hoshiReader._diag753 = function(phase) {
         rrng.setStart(firstN, 0);
         rrng.setEnd(lastN, lastN.length || 0);
         var rrects = rrng.getClientRects();
-        var tps = [];
-        for (var ri = 0; ri < rrects.length; ri++) tps.push(rrects[ri].top + (this.getPagePosition(ctx) || 0));
-        tps.sort(function(a, b) { return a - b; });
-        var ut = [];
-        for (var ui = 0; ui < tps.length; ui++) { if (!ut.length || tps[ui] - ut[ut.length - 1] > 2) ut.push(tps[ui]); }
-        var colDiffs = [];
-        for (var di = 1; di < ut.length; di++) { var dd = ut[di] - ut[di - 1]; if (dd > gap) colDiffs.push(Math.round(dd * 100) / 100); }
-        colDiffs.sort(function(a, b) { return a - b; });
-        var medRP = colDiffs.length ? colDiffs[Math.floor(colDiffs.length / 2)] : null;
-        rpInfo = 'nRects=' + rrects.length + ' nCols=' + ut.length + ' realPitchMed=' + (medRP != null ? medRP : 'na') + ' colDiffs=' + colDiffs.slice(0, 12).join('|');
+        var sc = this.getPagePosition(ctx) || 0;
+        // 列边界检测：竖排-rl 列内行向左推进(left 递减)，换列时 left 跳回右侧(大幅增大)。
+        // 记录每个 left 大跳处的绝对 top = 列顶；相邻列顶差 = realPitch。同时 dump 前 40
+        // 个 rect 的 (round top : round left) 供离线核轴向/周期(怕检测阈值不准)。
+        var raw = [];
+        var breakTops = [];
+        var prevLeft = null;
+        for (var ri = 0; ri < rrects.length; ri++) {
+          var L = rrects[ri].left;
+          var T = rrects[ri].top + sc;
+          if (ri < 40) raw.push(Math.round(T) + ':' + Math.round(L));
+          if (prevLeft !== null && L > prevLeft + 40) breakTops.push(Math.round(T));
+          prevLeft = L;
+        }
+        var rpDiffs = [];
+        for (var bi = 1; bi < breakTops.length; bi++) { var d = breakTops[bi] - breakTops[bi - 1]; if (d > 0) rpDiffs.push(d); }
+        rpDiffs.sort(function(a, b) { return a - b; });
+        var medRP = rpDiffs.length ? rpDiffs[Math.floor(rpDiffs.length / 2)] : null;
+        rpInfo = 'nRects=' + rrects.length + ' nBreaks=' + breakTops.length + ' realPitchMed=' + (medRP != null ? medRP : 'na') + ' rpDiffs=' + rpDiffs.slice(0, 12).join('|') + ' raw=' + raw.join(' ');
       }
       console.log('[792-RPITCH] ' + rpInfo
         + ' pageStep=' + ctx.pageSize.toFixed(3)
