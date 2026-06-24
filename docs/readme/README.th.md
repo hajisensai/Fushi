@@ -1,134 +1,141 @@
-<h3 align="center">hibiki</h3>
-<p align="center">
-  <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
-</p>
+<div align="center">
 
-<p align="center"><b>อ่านหนังสือสักเล่ม แล้วเปลี่ยนทุกคำศัพท์ใหม่ให้กลายเป็นของคุณ</b></p>
-<p align="center">เครื่องอ่านแบบดื่มด่ำหลายแพลตฟอร์ม หลายภาษา —— อ่าน EPUB · แตะค้นหาคำ · สร้างบัตรคำ Anki · ซิงค์หนังสือเสียง · ค้นหาคำจากซับไตเติ้ลวิดีโอ</p>
+# hibiki
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
-  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
-  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
-  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
-  &nbsp;·&nbsp;
-  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
-  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
-</p>
+<img src="../static-assets/hibiki-logo.png" alt="โลโก้ hibiki" width="160">
 
-<p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 หน้าหลักของโปรเจกต์ (GitHub Pages)</b></a>
-</p>
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![License](https://img.shields.io/badge/license-GPLv3-blue)
+![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <b>ภาษาไทย</b> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | **ภาษาไทย** | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
----
+hibiki เป็นเครื่องมือเรียนภาษาแบบ immersive สำหรับ Android และ Windows ที่รวมการอ่าน EPUB การซิงก์หนังสือเสียง การค้นคำจากคำบรรยายวิดีโอ และการสร้างการ์ด Anki ด้วยการแตะครั้งเดียวเข้าไว้ด้วยกัน เพื่อให้ทุกอินพุตกลายเป็นคำศัพท์ที่นำมาทบทวนได้อย่างเป็นธรรมชาติ
 
-## บทนำ
+<table>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="ชั้นหนังสือ" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="คลังวิดีโอ" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="การอ่านแนวตั้งบนเดสก์ท็อปพร้อมป๊อปอัปค้นคำ" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="การค้นคำในวิดีโอ (ป๊อปอัปซ้อน)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="การค้นคำในวิดีโอ (รายการคำบรรยาย)" width="100%"></td>
+  </tr>
+</table>
 
-**hibiki** เป็นเครื่องอ่านสำหรับเรียนภาษาแบบดื่มด่ำที่ทำงานได้หลายแพลตฟอร์ม **แตะเพื่อค้นหาคำ เลือกคำเพื่อวิเคราะห์** ได้ทันทีในเนื้อหา EPUB เปลี่ยนคำศัพท์ใหม่ให้กลายเป็นบัตรคำ Anki ด้วยการแตะครั้งเดียว ทำให้เสียงหนังสือเสียงไฮไลต์ทีละประโยคซิงค์กับเนื้อหา และยังค้นหาคำพร้อมสร้างบัตรคำได้จากซับไตเติ้ลวิดีโอโดยตรง เครื่องมือชุดเดียวครอบคลุมการรับข้อมูลแบบดื่มด่ำทั้งสามทาง คือ «อ่าน · ฟัง · ดู»
+</div>
 
-การค้นหาในพจนานุกรมครอบคลุม **ภาษาแปลงทั้งหมด** ของ [Yomitan](https://github.com/yomidevs/yomitan) (การผันกลับ + การทำให้ข้อความเป็นมาตรฐานก่อนค้นหา) อินเทอร์เฟซรองรับ **17 ภาษา** และรองรับ **Android / iOS / macOS / Windows / Linux** ครบทั้งห้าแพลตฟอร์ม
+## คุณสมบัติ
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="ชั้นหนังสือ" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="ค้นหาคำ" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="การตั้งค่าและธีม" width="300">
-</p>
-<p align="center"><sub>ชั้นหนังสือ · ค้นหาคำ · การตั้งค่าและธีม</sub></p>
+### ชั้นหนังสือ
 
----
+- นำเข้า EPUB ทีละไฟล์ เป็นชุด หรือแบบเรียกซ้ำตามโฟลเดอร์ ดูความคืบหน้าการอ่านบนชั้นหนังสือ
+- จัดระเบียบหนังสือด้วยชั้นหนังสือที่กำหนดเอง การกรองด้วยแท็ก และการลากเพื่อจัดเรียงใหม่
+- ลากและวางไฟล์เพื่อนำเข้าหนังสือ คำบรรยาย หรือวิดีโอ (เดสก์ท็อป)
+- เชื่อมโยงไฟล์คำบรรยาย / เสียงที่มีชื่อเดียวกันโดยอัตโนมัติเมื่อนำเข้า
 
-## จุดเด่นหลัก
+### การอ่าน
 
-### 📖 อ่าน EPUB แตะแล้วค้นหาทันที
+- อ่านแบบแนวตั้งหรือแนวนอน สลับระหว่างโหมดแบ่งหน้าและโหมดเลื่อนต่อเนื่อง
+- ปรับแต่งธีม (สว่าง / มืด / ดำสนิท / กำหนดเอง) แบบอักษร ระยะห่างย่อหน้า และตัวควบคุมของโปรแกรมอ่าน
+- คำอ่านกำกับ Furigana (ふりがな)
+- ปรับขนาดส่วนติดต่อผู้ใช้ได้ ตัวควบคุมแถบล่างจะปรับตามขนาด
+- โปรไฟล์ผู้ใช้หลายคน (Profile) สลับอัตโนมัติตามหนังสือ
 
-เครื่องอ่าน EPUB ที่แสดงผลด้วย WebView (เอนจินแบ่งหน้าที่พัฒนาต่อจาก [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) แตะคำใดก็ค้นหาได้ทันที เลือกข้อความก็วิเคราะห์ได้ทันที มีทั้งโหมดเลื่อนต่อเนื่องและแบ่งหน้า ฟอนต์และธีมกำหนดเอง (สว่าง / มืด / ดำสนิท / กำหนดเอง) พร้อมทั้งฟุริงานะ สถิติการอ่าน และบุ๊กมาร์กครบครัน
+### การค้นคำ
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="อ่านแนวตั้ง · ฟุริงานะ · ซิงค์หนังสือเสียง" width="300">
-</p>
-<p align="center"><sub>เนื้อหาแนวตั้ง · ฟุริงานะ · ไฮไลต์คำที่เลือก · แถบควบคุมการซิงค์หนังสือเสียงด้านล่าง</sub></p>
+- นำเข้าพจนานุกรม [Yomitan](https://github.com/yomidevs/yomitan) (เดิมคือ Yomichan) ABBYY Lingvo (DSL) MDict (MDX) และ Migaku
+- แตะข้อความในโปรแกรมอ่านเพื่อค้นคำ ค้นหาในหน้าพจนานุกรม หรือแชร์ข้อความจากแอปอื่น
+- การแยกรูปคำ (deinflection) ครอบคลุม **ทุกภาษาของตารางการแปลงรูปของ Yomitan** + การปรับมาตรฐานข้อความก่อนค้นคำ (ตัวพิมพ์ / เครื่องหมายกำกับเสียง / harakat ภาษาอาหรับ) ขับเคลื่อนด้วยจุดรหัส (code points) โดยไม่ต้องสลับภาษา
+- แตะคำภายในคำนิยามเพื่อค้นคำแบบเรียกซ้ำ (ป๊อปอัปซ้อน)
+- การค้นหลายพจนานุกรมพร้อมกัน การจัดลำดับความสำคัญและการเปิด/ปิดแหล่งย่อย คำอ่านกำกับระดับเสียง (pitch-accent) และความถี่
+- เสียงคำทั้งแบบออนไลน์และในเครื่อง
+- แทรก CSS ที่กำหนดเอง
 
-### 🔍 แตะค้นหาคำ ครอบคลุมภาษาแปลงทั้งหมดของ Yomitan
+### ไฮไลต์และสถิติ
 
-นำเข้าพจนานุกรมได้หลายรูปแบบ ทั้ง **Yomitan** (เดิม Yomichan) / **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku** การคืนรูปคำหลายภาษา (ตารางแปลงของ Yomitan) + การทำให้ข้อความเป็นมาตรฐานก่อนค้นหา (ตัวพิมพ์ใหญ่เล็ก / เครื่องหมายเสียง / harakat ของอาหรับ) ขับเคลื่อนตามจุดรหัส (code point) โดยไม่ต้องสลับภาษา ค้นหาพร้อมกันหลายพจนานุกรม จัดลำดับและเปิดปิดแหล่งย่อย พร้อมการกำกับเสียงและความถี่ของคำ ทั้งหมดจบในหน้าต่างเดียว
+- เพิ่มไฮไลต์ห้าสีขณะอ่าน กระโดดไปยังไฮไลต์ใดก็ได้ทุกเมื่อ
+- สถิติการอ่าน: จำนวนอักขระที่อ่าน ระยะเวลา ความเร็วในการอ่าน แสดงแบบเรียลไทม์ขณะอ่าน
+- สถิติวิดีโอ: เวลาในการรับชม การ์ดที่สร้าง และรายการโปรด
 
-### 🎴 สร้างบัตรคำ Anki ในขั้นตอนเดียว
+### การสร้างการ์ด Anki
 
-เมื่อค้นพบคำใหม่ ส่งออกไปยัง [AnkiDroid](https://github.com/ankidroid/Anki-Android) และ AnkiConnect ได้ในขั้นตอนเดียว มาพร้อม schema ของชนิดโน้ต [Lapis](https://github.com/donkuri/lapis) ในตัว (vendored 1.7.0) สามารถสร้างเทมเพลตบัตรคำและสำรับได้ในแอปโดยตรง เติมประโยคบริบทอัตโนมัติ รองรับการบันทึกเสียงและการครอปภาพหน้าจอ มีหลายโปรไฟล์ส่งออก (Profile) การแมปฟิลด์กำหนดเอง และการดำเนินการด่วนสร้างบัตรคำในขั้นตอนเดียว
+- สร้างการ์ดผ่าน [AnkiDroid](https://github.com/ankidroid/Anki-Android) หรือ AnkiConnect
+- มีประเภทบันทึก [Lapis](https://github.com/donkuri/lapis) ในตัว (vendored 1.7.0) สร้างเทมเพลตการ์ดและสำรับภายในแอปด้วยการแตะครั้งเดียว
+- เติมประโยคบริบทอัตโนมัติ การบันทึกเสียงและการครอบตัดภาพหน้าจอ
+- โปรไฟล์การส่งออกหลายชุด (Profile) และการจับคู่ฟิลด์ที่กำหนดเอง
+- คำโปรด การ์ดที่สร้างและรายการโปรดจะถูกนับรวมในสถิติ
 
-### 🎧 ซิงค์หนังสือเสียง (Sasayaki)
+### การซิงก์หนังสือเสียง (Sasayaki)
 
-รองรับซับไตเติ้ล SRT / LRC / VTT / ASS โดยจัดวางข้อความซับไตเติ้ลให้ตรงกับเนื้อหา EPUB อัตโนมัติ ขณะเล่นจะ**ไฮไลต์ตามเสียงอ่านและเลื่อนหน้าซิงค์กับเสียง** ผสานกับแถบควบคุมการเล่น (ความคืบหน้า ข้ามไป ความเร็ว) ฟังหนังสือไปก็เห็นเนื้อหาสว่างทีละประโยค —— แถบควบคุมที่ด้านล่างของภาพหน้าจอการอ่านด้านบนของหน้านี้ก็คือฟังก์ชันนี้
+- รองรับคำบรรยาย SRT / LRC / VTT / ASS จับคู่ข้อความคำบรรยายกับเนื้อหา EPUB โดยอัตโนมัติ
+- การไฮไลต์ประโยคตามการเล่นและการเปลี่ยนหน้าอัตโนมัติระหว่างเล่น
+- ความเร็วในการเล่น การกระโดดตำแหน่ง และตัวควบคุมสื่อของระบบ
+- "เล่นจากประโยคนี้" พร้อมการเล่นต่อข้ามบทอย่างราบรื่น
 
-### 🎬 ค้นหาคำจากซับไตเติ้ลวิดีโอ
+### การค้นคำจากคำบรรยายวิดีโอ
 
-มีเครื่องเล่นวิดีโอในตัวที่ใช้ media_kit / libmpv รองรับซับไตเติ้ลทั้งแบบฝังในและแบบไฟล์แยก ขณะเล่นวิดีโอสามารถ**ค้นหาคำและสร้างบัตรคำได้โดยตรงจากซับไตเติ้ล** นำสื่อภาพยนตร์มาเป็นส่วนหนึ่งของการรับข้อมูลแบบดื่มด่ำ พร้อมทั้งบันทึกสถิติเวลาในการดูและจำนวนบัตรคำที่สร้าง
+- เครื่องเล่นวิดีโอในตัวที่ใช้ [media_kit](https://github.com/media-kit/media-kit) (แกนหลัก libmpv)
+- คำบรรยายแบบฝัง (แทร็กข้อความ + กราฟิก) และแบบภายนอก การนำเข้ารายการเล่น .m3u8
+- ค้นคำและสร้างการ์ดจากคำบรรยายได้โดยตรงระหว่างเล่น
+- การจัดการคลังวิดีโอ การกรองด้วยแท็ก การจัดกลุ่มเป็นซีรีส์ และการดำเนินการเป็นชุด
 
-<!-- TODO-782: 待补视频播放器截图 -->
-<p align="center"><sub>📹 ภาพหน้าจอเครื่องเล่นวิดีโอจะเพิ่มภายหลัง —— ต้องเก็บบนเครื่องจริง / เบื้องหน้า (ภาพวิดีโอ + แถบซับไตเติ้ล + หน้าต่างค้นหาคำ ดูรายละเอียดในคำอธิบายด้านล่าง)</sub></p>
+### การซิงก์ข้อมูล
 
-### 🔗 เพิ่มเติม
+- แบ็กเอนด์การซิงก์เจ็ดแบบ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP และ Hibiki P2P
+- ซิงก์ความคืบหน้าการอ่าน สถิติ และหนังสือ
 
-- **17 ภาษาสำหรับอินเทอร์เฟซ** แปลครบทุกแพลตฟอร์ม
-- **Hibiki Interconnect**: ซิงค์หนังสือ / พจนานุกรม / หนังสือเสียง / ความคืบหน้าการอ่าน ระหว่างอุปกรณ์
-- **หลายโปรไฟล์ผู้ใช้ (Profile)** สลับอัตโนมัติตามหนังสือ
-- **โหมดไม่ระบุตัวตน**; **แชร์ข้อความจากแอปอื่นเพื่อค้นหาคำ** ได้โดยตรง
+### อื่น ๆ
 
----
+- **ส่วนติดต่อผู้ใช้ 17 ภาษา** แปลครบทุกแพลตฟอร์ม
+- แชร์ข้อความจากแอปอื่นเพื่อค้นคำได้โดยตรง
 
-## แพลตฟอร์มที่รองรับ
+## การรองรับแพลตฟอร์ม
 
-| แพลตฟอร์ม | สถานะ | การแสดงผล / UI |
+| แพลตฟอร์ม | สถานะ | การเรนเดอร์ / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| iOS | ✅ | Cupertino |
-| Windows | ✅ | Material (fork ของ `flutter_inappwebview_windows` แสดงผล EPUB) |
-| macOS | ✅ | Material |
-| Linux | ✅ | Material |
+| Windows | ✅ | Material |
 
-> ขั้นต่ำ Android 7.0 (API 24) ภาษาที่ใช้ค้นหาในพจนานุกรมขึ้นอยู่กับพจนานุกรมที่นำเข้าและตารางแปลงของ Yomitan เป็นอิสระจากภาษาอินเทอร์เฟซ
+> รองรับต่ำสุด Android 7.0 (API 24) ภาษาที่ใช้ค้นคำในพจนานุกรมจะถูกกำหนดโดยพจนานุกรมที่นำเข้าและตารางการแปลงรูปของ Yomitan โดยไม่ขึ้นกับภาษาของส่วนติดต่อผู้ใช้
 
-### ภาษาอินเทอร์เฟซ (17 ภาษา)
+### ภาษาของส่วนติดต่อผู้ใช้ (17)
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
 
----
-
 ## การติดตั้งและการสร้าง
 
-เตรียมด้วยคำสั่งเดียว (`flutter pub get` + แพตช์) จากนั้นสร้าง:
+เตรียมความพร้อมด้วยคำสั่งเดียว (`flutter pub get` + apply patches) แล้วจึงสร้าง:
 
 ```bash
-# ที่รากของ repo
+# จากรากของ repository
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
-                                # หรือ (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
+# Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
+# Windows desktop
+flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` รวม ① `flutter pub get` กับ ② `ci/apply-patches.sh` ไว้ในคำสั่งเดียว โปรเจกต์นี้ล็อกเวอร์ชัน Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) ส่วนการพึ่งพาต้นทางบางส่วนถูก vendor ไว้ใน `third_party/` หรือถูกแพตช์โดย `ci/apply-patches.sh` —— รายละเอียดกลไก การสร้างทั้งห้าแพลตฟอร์ม รายการการพึ่งพาและแพตช์ ดูที่ [docs/agent/build.md](../agent/build.md)
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` รวม `flutter pub get` และ `ci/apply-patches.sh` ไว้ในคำสั่งเดียว โปรเจกต์นี้ถูกล็อกไว้ที่ Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) ดีเพนเดนซีต้นทางบางตัวถูก vendor ไว้ใต้ `third_party/` หรือถูกแพตช์โดย `ci/apply-patches.sh` ดูรายละเอียดได้ที่ [docs/agent/build.md](../agent/build.md)
 
 <details>
-<summary><b>สแตกเทคโนโลยีโดยสรุป</b></summary>
+<summary><b>เทคโนโลยีที่ใช้</b></summary>
 
 | ชั้น | เทคโนโลยี |
 |---|---|
 | เฟรมเวิร์ก | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| แพลตฟอร์ม | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino ปรับตามแพลตฟอร์ม) |
-| ตัวอ่าน | เอนจินแบ่งหน้า WebView (พัฒนาต่อจาก [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
-| วิดีโอ | media_kit / libmpv |
-| จัดเก็บข้อมูล | Drift (SQLite, WAL) + hoshidicts (เอนจินพจนานุกรม C++ FFI) |
-| NLP | ตารางแปลงของ Yomitan (การคืนรูปคำหลายภาษา) + kana_kit (การแปลงคานะ); การแบ่งคำใช้ hoshidicts FFI |
-| สร้างบัตรคำ | AnkiDroid API + AnkiConnect |
-| สากลานุวัตน์ | Slang (17 ภาษา) |
+| แพลตฟอร์ม | Android / Windows (Material Design 3) |
+| โปรแกรมอ่าน | เครื่องมือแบ่งหน้าด้วย WebView (พัฒนาจากตระกูล Hoshi Reader) |
+| วิดีโอ | media_kit (แกนหลัก libmpv) |
+| ที่จัดเก็บข้อมูล | Drift (SQLite, WAL) + hoshidicts (เครื่องมือพจนานุกรม C++ FFI) |
+| NLP | ตารางการแปลงรูปของ Yomitan (การหารูปฐานแบบหลายภาษา) + kana_kit (การแปลงคานะ) การแบ่งคำผ่าน hoshidicts FFI |
+| การสร้างการ์ด | AnkiDroid API + AnkiConnect |
+| i18n | Slang (17 ภาษา) |
 
 </details>
 
@@ -136,45 +143,59 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 <summary><b>โครงสร้างโปรเจกต์</b></summary>
 
 ```
-hibiki/                      # รากของ repo (Melos workspace: hibiki_workspace)
-├── hibiki/                  # ไดเรกทอรีหลักของแอป Flutter
+hibiki/                      # Repository root (Melos workspace: hibiki_workspace)
+├── hibiki/                  # Flutter app main directory
 │   ├── lib/
-│   │   ├── i18n/            # สากลานุวัตน์ (17 ภาษา, Slang)
+│   │   ├── i18n/            # Internationalization (17 languages, Slang)
 │   │   ├── src/
-│   │   │   ├── pages/       # หน้า (ชั้นหนังสือ, ตัวอ่าน, พจนานุกรม, การตั้งค่า ฯลฯ)
-│   │   │   ├── reader/      # สคริปต์ JS/CSS WebView ของตัวอ่าน
-│   │   │   ├── media/       # หนังสือเสียง, แยกวิเคราะห์ซับไตเติ้ล, reader source
-│   │   │   └── models/      # โมเดลข้อมูลและการจัดการสถานะ (AppModel)
+│   │   │   ├── pages/       # Pages (bookshelf, reader, dictionary, settings, etc.)
+│   │   │   ├── reader/      # Reader WebView JS/CSS scripts
+│   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
+│   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   └── android/             # โปรเจกต์ Android (manifest, native hoshidicts)
-├── packages/                # package ภายใน + flutter_inappwebview_windows(fork) + gamepads_android_stub
-├── native/                  # เอนจินพจนานุกรม C++ hoshidicts (FFI)
-├── third_party/             # แพ็กเกจแพตช์ vendored (dependency_overrides ชี้มา)
-├── ci/                      # สคริปต์แพตช์การสร้างและการทดสอบรวม
-├── tool/                    # สคริปต์ bootstrap / i18n_sync ฯลฯ
-└── docs/                    # เอกสารการพัฒนา (รวมคู่มือการดำเนินการ agent ที่ docs/agent/)
+│   └── android/             # Android project (manifest, native hoshidicts)
+├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
+├── native/                  # hoshidicts C++ dictionary engine (FFI)
+├── third_party/             # Vendored patched packages (dependency_overrides)
+├── ci/                      # Build patches and integration test scripts
+├── tool/                    # bootstrap / i18n_sync and other scripts
+└── docs/                    # Development documentation (incl. docs/agent/ operations manual)
 ```
 
 </details>
 
----
+## ความเป็นส่วนตัวและข้อมูล
+
+hibiki จัดเก็บหนังสือ พจนานุกรม แบบอักษร ข้อมูลหนังสือเสียง วิดีโอ ความคืบหน้าการอ่าน ไฮไลต์ สถิติ และการตั้งค่าที่นำเข้าไว้ในที่จัดเก็บข้อมูลในเครื่องของแอป
+
+การซิงก์บนคลาวด์ (Google Drive / OneDrive / Dropbox) ใช้ข้อมูลรับรอง OAuth ที่ผู้ใช้กำหนดค่าเอง WebDAV / FTP / SFTP ใช้ที่อยู่เซิร์ฟเวอร์และข้อมูลรับรองที่ผู้ใช้ระบุ Hibiki P2P เชื่อมต่อโดยตรงผ่านที่อยู่ที่ผู้ใช้กำหนดค่า การสร้างการ์ด Anki จะสื่อสารกับ AnkiDroid หรือที่อยู่ AnkiConnect ที่กำหนดค่าไว้
 
 ## กิตติกรรมประกาศ
 
+hibiki ต่อยอดจากโปรเจกต์และระบบนิเวศต่อไปนี้:
+
 | โปรเจกต์ | คำอธิบาย |
 |---|---|
-| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | เครื่องมือเรียนภาษาญี่ปุ่นแบบดื่มด่ำ |
-| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | เครื่องอ่านภาษาญี่ปุ่นสำหรับ Android |
-| [hoshidicts](https://github.com/Manhhao/hoshidicts) | เอนจินพจนานุกรม C++ |
-| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | เครื่องอ่านภาษาญี่ปุ่นสำหรับ iOS |
-| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | โซลูชันซิงค์หนังสือเสียง |
-| [Yomitan](https://github.com/yomidevs/yomitan) | แหล่งที่มาของรูปแบบพจนานุกรมและตารางแปลง |
-| [Lapis](https://github.com/donkuri/lapis) | ชนิดโน้ตของ Anki |
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | เครื่องมือเรียนภาษาญี่ปุ่นแบบ immersive |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | โปรแกรมอ่านภาษาญี่ปุ่นบน iOS แหล่งอ้างอิงเครื่องมือแบ่งหน้าของโปรแกรมอ่าน |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | โปรแกรมอ่านภาษาญี่ปุ่นแบบเนทีฟบน Android |
+| [hoshidicts](https://github.com/Manhhao/hoshidicts) | เครื่องมือพจนานุกรม C++ |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | โซลูชันการซิงก์หนังสือเสียง |
+| [Yomitan](https://github.com/yomidevs/yomitan) | แหล่งอ้างอิงรูปแบบพจนานุกรม ตารางการแปลงรูป และประสบการณ์การค้นคำ |
+| [Lapis](https://github.com/donkuri/lapis) | ประเภทบันทึกของ Anki |
+| [AnkiDroid](https://github.com/ankidroid/Anki-Android) | การผสานการสร้างการ์ดบน Android |
+| [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | แหล่งอ้างอิงเสียงในเครื่องและการโต้ตอบกับ AnkiDroid |
+| [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | แหล่งอ้างอิงโปรแกรมอ่าน สถิติ และความเข้ากันได้ของการซิงก์ |
+| [media_kit](https://github.com/media-kit/media-kit) | เฟรมเวิร์กการเล่นวิดีโอของ Flutter (แกนหลัก libmpv) |
 
 ## สัญญาอนุญาต
 
-[GNU General Public License v3.0](../../LICENSE)
+เผยแพร่ภายใต้ GNU General Public License v3.0 ดูรายละเอียดได้ที่ [LICENSE](../../LICENSE)
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <b>ภาษาไทย</b> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+<div align="center">
+
+<br>
+
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | **ภาษาไทย** | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+
+</div>

@@ -1,180 +1,201 @@
-<h3 align="center">hibiki</h3>
-<p align="center">
-  <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
-</p>
+<div align="center">
 
-<p align="center"><b>Bir kitap oku, her yeni kelimeyi kendine ait kıl.</b></p>
-<p align="center">Çok platformlu, çok dilli sürükleyici okuyucu —— EPUB okuma · Dokunarak arama · Anki kartı oluşturma · Sesli kitap senkronizasyonu · Video altyazısında arama</p>
+# hibiki
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
-  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
-  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
-  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
-  &nbsp;·&nbsp;
-  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
-  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
-</p>
+<img src="../static-assets/hibiki-logo.png" alt="hibiki logosu" width="160">
 
-<p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 Proje sitesi (GitHub Pages)</b></a>
-</p>
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![License](https://img.shields.io/badge/license-GPLv3-blue)
+![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <b>Türkçe</b> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | **Türkçe** | [العربية](README.ar.md)
 
----
+hibiki, Android ve Windows için EPUB okuma, sesli kitap eşitleme, video altyazılarında sözcük arama ve tek dokunuşla Anki kartı oluşturmayı bir araya getiren sürükleyici bir dil öğrenme aracıdır — böylece her girdi doğal olarak tekrar edilebilir kelime dağarcığına dönüşür.
 
-## Tanıtım
+<table>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Kitaplık" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Video Kitaplığı" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Arama açılır penceresiyle masaüstünde dikey okuma" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Videoda arama (iç içe açılır pencereler)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Videoda arama (altyazı listesi)" width="100%"></td>
+  </tr>
+</table>
 
-**hibiki**, dil öğrenimi için çok platformlu sürükleyici bir okuyucudur. Bir EPUB metninde **dokunarak sözlükte arayabilir, seçerek analiz edebilir** ve her yeni kelimeyi tek dokunuşla bir Anki kartına dönüştürebilirsin; sesli kitap sesini metinle cümle cümle senkronize vurgular; hatta video altyazılarında doğrudan arama yapıp kart oluşturursun. «Okuma · dinleme · izleme» olmak üzere üç sürükleyici girdi biçimini tek bir araçta toplar.
+</div>
 
-Sözlük arama, [Yomitan](https://github.com/yomidevs/yomitan)'ın **tüm dönüşüm dillerini** kapsar (çekim çözümleme + aramadan önce metin normalleştirme), arayüz **17 dile** yerelleştirilmiştir ve **Android / iOS / macOS / Windows / Linux** olmak üzere beş platformu destekler.
+## Özellikler
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="Kitaplık" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="Arama" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="Ayarlar ve temalar" width="300">
-</p>
-<p align="center"><sub>Kitaplık · Arama · Ayarlar ve temalar</sub></p>
+### Kitaplık
 
----
+- EPUB'ları tek tek, toplu olarak veya klasöre göre özyinelemeli içe aktarın; okuma ilerlemesini doğrudan raftan görün.
+- Kitapları özel kitaplıklar, etiket filtreleme ve yeniden sıralamak için sürükleme ile düzenleyin.
+- Kitap, altyazı veya video içe aktarmak için dosyaları sürükleyip bırakın (masaüstü).
+- İçe aktarırken aynı adlı altyazı / ses dosyalarını otomatik olarak ilişkilendirin.
 
-## Temel özellikler
+### Okuma
 
-### 📖 EPUB okuma, dokunarak arama
+- Dikey veya yatay düzende okuyun; sayfalı ve sürekli kaydırma modları arasında geçiş yapın.
+- Temaları (açık / koyu / saf siyah / özel), yazı tiplerini, paragraf aralığını ve okuyucu denetimlerini özelleştirin.
+- Furigana (ふりがな) ek açıklamaları.
+- Ayarlanabilir arayüz ölçeği; alt çubuk denetimleri ölçeği izler.
+- Çok kullanıcılı profiller (Profile), her kitap için otomatik geçiş.
 
-WebView'de oluşturulan EPUB okuyucu ([Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) türevi sayfalama motoru): herhangi bir kelimeye dokunarak anında arayın, bir metin parçası seçerek anında analiz edin. Sürekli kaydırma ve sayfalama çift modu, özel yazı tipleri ve temalar (açık / koyu / saf siyah / özel), furigana, okuma istatistikleri ve yer imleri dahildir.
+### Arama
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="Dikey okuma · Furigana · Sesli kitap senkronizasyonu" width="300">
-</p>
-<p align="center"><sub>Dikey metin · Furigana · Seçim vurgusu · Altta sesli kitap kontrol çubuğu</sub></p>
+- [Yomitan](https://github.com/yomidevs/yomitan) (eski adıyla Yomichan), ABBYY Lingvo (DSL), MDict (MDX) ve Migaku sözlüklerini içe aktarın.
+- Sözcükleri aramak için okuyucudaki metne dokunun, sözlük sayfasında arayın veya diğer uygulamalardan metin paylaşın.
+- **Tüm Yomitan dönüşüm dilleri** için çekim çözümleme + arama öncesi metin normalleştirme (büyük/küçük harf / aksan işaretleri / Arapça hareke), dil değiştirmeden kod noktalarıyla çalışır.
+- Özyinelemeli arama için tanımların içindeki sözcüklere dokunun (iç içe açılır pencereler).
+- Paralel çoklu sözlük sorguları, alt kaynak önceliği ve açma/kapatma, ton vurgusu ve sıklık ek açıklamaları.
+- Çevrimiçi ve yerel sözcük sesi.
+- Özel CSS enjekte edin.
 
-### 🔍 Dokunarak arama, Yomitan'ın tüm dönüşüm dillerini kapsar
+### Vurgular & İstatistikler
 
-Birden çok biçimde sözlük içe aktarın: **Yomitan** (eski adı Yomichan) / **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku**. Çok dilli kök çözümleme (Yomitan dönüşüm tabloları) + aramadan önce metin normalleştirme (büyük/küçük harf / aksan işaretleri / Arapça harakat), kod noktalarıyla yürütülür ve dil değiştirmeye gerek yoktur. Birden çok sözlükte paralel arama, alt kaynak önceliği ve açma/kapama, ton vurgusu açıklaması ve kelime frekansı, hepsi tek bir açılır pencerede.
+- Okurken beş renkli vurgular ekleyin; istediğiniz zaman herhangi bir vurguya atlayın.
+- Okuma istatistikleri: okunan karakter sayısı, süre, okuma hızı — okurken gerçek zamanlı olarak gösterilir.
+- Video istatistikleri: izleme süresi, oluşturulan kartlar ve favoriler.
 
-### 🎴 Tek dokunuşla Anki kartı oluşturma
+### Anki Kartı Oluşturma
 
-Yeni bir kelime bulduğunda, tek adımda [AnkiDroid](https://github.com/ankidroid/Anki-Android) ve AnkiConnect'e dışa aktar. Yerleşik [Lapis](https://github.com/donkuri/lapis) not türü şeması (vendored 1.7.0): kart şablonlarını ve desteleri doğrudan uygulamada oluşturabilirsin; bağlam cümlelerinin otomatik doldurulması, ses kaydı ve ekran görüntüsü kırpma desteği, çoklu dışa aktarma yapılandırmaları (Profile), özel alan eşleştirme ve tek adımda kart oluşturmak için hızlı eylemler.
+- [AnkiDroid](https://github.com/ankidroid/Anki-Android) veya AnkiConnect aracılığıyla kart oluşturun.
+- Yerleşik [Lapis](https://github.com/donkuri/lapis) not türü (gömülü 1.7.0); kart şablonlarını ve desteleri uygulama içinde tek dokunuşla oluşturun.
+- Bağlam cümlelerini otomatik doldurun; ses kaydı ve ekran görüntüsü kırpma.
+- Birden çok dışa aktarma profili (Profile) ve özel alan eşleme.
+- Sözcükleri favorilere ekleyin; oluşturulan kartlar ve favoriler istatistiklere dahil edilir.
 
-### 🎧 Sesli kitap senkronizasyonu (Sasayaki)
+### Sesli Kitap Eşitleme (Sasayaki)
 
-SRT / LRC / VTT / ASS altyazılarını destekler ve altyazı metnini otomatik olarak EPUB içeriğiyle hizalar. Oynatma sırasında **metni okumaya eşlik ederek vurgular ve sesle senkronize sayfa çevirir**, oynatma kontrol çubuğuyla birlikte (ilerleme, atlama, hız): dinlerken metin cümle cümle aydınlanır —— bu sayfanın üstündeki okuma ekran görüntüsünün altındaki kontrol çubuğu tam olarak bu işlevdir.
+- SRT / LRC / VTT / ASS altyazı desteği; altyazı metnini otomatik olarak EPUB gövdesiyle hizalar.
+- Oynatma sırasında takip eden cümle vurgulama ve otomatik sayfa çevirme.
+- Oynatma hızı, atlama işlemleri ve sistem medya denetimleri.
+- Sorunsuz bölümler arası devamla „bu cümleden oynat”.
 
-### 🎬 Video altyazısında arama
+### Video Altyazısında Arama
 
-media_kit / libmpv tabanlı yerleşik video oynatıcı, gömülü / harici altyazıları destekler. Bir video oynatırken **doğrudan altyazılarda arama yapıp kart oluşturabilirsin**, görsel-işitsel materyali de sürükleyici girdilere dahil edersin; aynı zamanda izleme süresini ve oluşturulan kart sayısını kaydeder.
+- [media_kit](https://github.com/media-kit/media-kit) (libmpv çekirdeği) tabanlı yerleşik video oynatıcı.
+- Gömülü (metin + grafik izler) ve harici altyazılar; .m3u8 oynatma listesi içe aktarma.
+- Oynatma sırasında doğrudan altyazılardan sözcük arayın ve kart oluşturun.
+- Video kitaplığı yönetimi, etiket filtreleme, dizi gruplama ve toplu işlemler.
 
-<!-- TODO-782: 待补视频播放器截图 -->
-<p align="center"><sub>📹 Video oynatıcı ekran görüntüsü eklenecek.</sub></p>
+### Veri Eşitleme
 
-### 🔗 Daha fazlası
+- Yedi eşitleme arka ucu: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP ve Hibiki P2P.
+- Okuma ilerlemesini, istatistikleri ve kitapları eşitleyin.
 
-- **17 arayüz dili**, tüm platformlarda yerelleştirme
-- **Hibiki Interconnect**: cihazlar arasında kitap / sözlük / sesli kitap / okuma ilerlemesi senkronizasyonu
-- **Çoklu kullanıcı profili (Profile)**, kitaba göre otomatik geçiş
-- **Gizli mod**; **doğrudan arama için diğer uygulamalardan metin paylaşımı**
+### Daha Fazlası
 
----
+- **17 arayüz dili**, tüm platformlarda tamamen yerelleştirilmiş.
+- Sözcükleri doğrudan aramak için diğer uygulamalardan metin paylaşın.
 
-## Desteklenen platformlar
+## Platform Desteği
 
-| Platform | Durum | Oluşturma / UI |
+| Platform | Durum | Oluşturma / Arayüz |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| iOS | ✅ | Cupertino |
-| Windows | ✅ | Material (`flutter_inappwebview_windows` fork'u ile EPUB oluşturma) |
-| macOS | ✅ | Material |
-| Linux | ✅ | Material |
+| Windows | ✅ | Material |
 
-> Minimum Android 7.0 (API 24). Sözlük arama dili, içe aktarılan sözlükler ve Yomitan dönüşüm tabloları tarafından belirlenir ve arayüz dilinden bağımsızdır.
+> En az Android 7.0 (API 24). Aramada kullanılabilen diller, arayüz dilinden bağımsız olarak içe aktarılan sözlükler ve Yomitan dönüşüm tabloları tarafından belirlenir.
 
-### Arayüz dilleri (17)
+### Arayüz Dilleri (17)
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
 
----
+## Kurulum & Derleme
 
-## Kurulum ve derleme
-
-Tek komutla hazırlık (`flutter pub get` + yama uygulama), ardından derleyin:
+Tek komutla hazırlık (`flutter pub get` + yamaları uygula), ardından derleyin:
 
 ```bash
-# depo kök dizininde
-bash tool/bootstrap.sh          # Windows PowerShell：.\tool\bootstrap.ps1
-                                # 或（Linux/macOS）：dart run melos bootstrap
+# Depo kök dizininden
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
 cd hibiki
+# Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
+# Windows masaüstü
+flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` tek komutta ① `flutter pub get` ve ② `ci/apply-patches.sh` işlemlerini toplar. Bu proje Flutter 3.44.0'ya (Dart SDK `>=3.5.0 <4.0.0`) kilitlenmiştir; bazı upstream bağımlılıkları `third_party/` altına vendored edilmiş veya `ci/apply-patches.sh` tarafından yamanmıştır —— mekanizma ayrıntıları, beş platformda derleme ve bağımlılık/yama listesi için [docs/agent/build.md](../agent/build.md) bölümüne bakın.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1`, `flutter pub get` ve `ci/apply-patches.sh` komutlarını tek bir komutta birleştirir. Bu proje Flutter 3.44.0 sürümüne sabitlenmiştir (Dart SDK `>=3.5.0 <4.0.0`); bazı üst akış bağımlılıkları `third_party/` altında gömülüdür veya `ci/apply-patches.sh` tarafından yamalanır — ayrıntılar için bkz. [docs/agent/build.md](../agent/build.md).
 
 <details>
-<summary><b>Teknoloji yığını özeti</b></summary>
+<summary><b>Teknoloji Yığını</b></summary>
 
 | Katman | Teknoloji |
 |---|---|
 | Çerçeve | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino uyarlanabilir) |
-| Okuyucu | WebView sayfalama motoru ([Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) türevi) |
-| Video | media_kit / libmpv |
+| Platformlar | Android / Windows (Material Design 3) |
+| Reader | WebView sayfalama motoru (Hoshi Reader ailesinden türetilmiştir) |
+| Video | media_kit (libmpv çekirdeği) |
 | Depolama | Drift (SQLite, WAL) + hoshidicts (C++ FFI sözlük motoru) |
-| NLP | Yomitan dönüşüm tabloları (çok dilli kök çözümleme) + kana_kit (kana dönüşümü); tokenizasyon hoshidicts FFI üzerinden yürür |
-| Kart oluşturma | AnkiDroid API + AnkiConnect |
-| Uluslararasılaştırma | Slang (17 dil) |
+| NLP | Yomitan dönüşüm tabloları (çok dilli kök bulma) + kana_kit (kana dönüşümü); belirteçleme hoshidicts FFI üzerinden |
+| Kart Oluşturma | AnkiDroid API + AnkiConnect |
+| i18n | Slang (17 dil) |
 
 </details>
 
 <details>
-<summary><b>Proje yapısı</b></summary>
+<summary><b>Proje Yapısı</b></summary>
 
 ```
-hibiki/                      # Depo kökü (Melos workspace: hibiki_workspace)
-├── hibiki/                  # Flutter uygulama ana dizini
+hibiki/                      # Depo kök dizini (Melos çalışma alanı: hibiki_workspace)
+├── hibiki/                  # Flutter uygulamasının ana dizini
 │   ├── lib/
 │   │   ├── i18n/            # Uluslararasılaştırma (17 dil, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # Sayfalar (kitaplık, okuyucu, sözlük, ayarlar vb.)
 │   │   │   ├── reader/      # Okuyucu WebView JS/CSS betikleri
-│   │   │   ├── media/       # Sesli kitaplar, altyazı ayrıştırma, reader source
+│   │   │   ├── media/       # Sesli kitap, altyazı ayrıştırma, okuyucu kaynağı
 │   │   │   └── models/      # Veri modelleri ve durum yönetimi (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android projesi (manifest, native hoshidicts)
-├── packages/                # Dahili package'lar + flutter_inappwebview_windows(fork) + gamepads_android_stub
+│   └── android/             # Android projesi (manifest, yerel hoshidicts)
+├── packages/                # Dahili paketler + flutter_inappwebview_windows (fork) + gamepads_android_stub
 ├── native/                  # hoshidicts C++ sözlük motoru (FFI)
-├── third_party/             # vendored yama paketleri (dependency_overrides ile gösterilir)
-├── ci/                      # Derleme yaması ve entegrasyon testi betikleri
-├── tool/                    # bootstrap / i18n_sync vb. betikler
-└── docs/                    # Geliştirme dokümantasyonu (docs/agent/ agent el kitabı dahil)
+├── third_party/             # Gömülü yamalı paketler (dependency_overrides)
+├── ci/                      # Derleme yamaları ve entegrasyon testi betikleri
+├── tool/                    # bootstrap / i18n_sync ve diğer betikler
+└── docs/                    # Geliştirme belgeleri (docs/agent/ işletim kılavuzu dahil)
 ```
 
 </details>
 
----
+## Gizlilik & Veri
+
+hibiki, içe aktarılan kitapları, sözlükleri, yazı tiplerini, sesli kitap verilerini, videoları, okuma ilerlemesini, vurguları, istatistikleri ve ayarları uygulamanın yerel deposunda saklar.
+
+Bulut eşitleme (Google Drive / OneDrive / Dropbox), kullanıcı tarafından yapılandırılan OAuth kimlik bilgilerini kullanır; WebDAV / FTP / SFTP, kullanıcı tarafından sağlanan sunucu adreslerini ve kimlik bilgilerini kullanır; Hibiki P2P, kullanıcı tarafından yapılandırılan bir adres üzerinden doğrudan bağlanır. Anki kartı oluşturma, AnkiDroid ile veya yapılandırılmış bir AnkiConnect adresiyle iletişim kurar.
 
 ## Teşekkürler
+
+hibiki aşağıdaki projeler ve ekosistem üzerine kuruludur:
 
 | Proje | Açıklama |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japonca sürükleyici öğrenme aracı |
-| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android Japonca okuyucu |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS Japonca okuyucu; okuyucu sayfalama motoru referansı |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android yerel Japonca okuyucu |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ sözlük motoru |
-| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS Japonca okuyucu |
-| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Sesli kitap senkronizasyon şeması |
-| [Yomitan](https://github.com/yomidevs/yomitan) | Sözlük biçimi ve dönüşüm tabloları kaynağı |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Sesli kitap eşitleme çözümü |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Sözlük biçimi, dönüşüm tabloları ve arama deneyimi referansı |
 | [Lapis](https://github.com/donkuri/lapis) | Anki not türü |
+| [AnkiDroid](https://github.com/ankidroid/Anki-Android) | Android kart oluşturma entegrasyonu |
+| [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Yerel ses ve AnkiDroid etkileşimi referansı |
+| [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Okuyucu, istatistik ve eşitleme uyumluluğu referansı |
+| [media_kit](https://github.com/media-kit/media-kit) | Flutter video oynatma çerçevesi (libmpv çekirdeği) |
 
 ## Lisans
 
-[GNU General Public License v3.0](../../LICENSE)
+GNU General Public License v3.0 altında dağıtılır. Ayrıntılar için bkz. [LICENSE](../../LICENSE).
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <b>Türkçe</b> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+<div align="center">
+
+<br>
+
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | **Türkçe** | [العربية](README.ar.md)
+
+</div>

@@ -1,134 +1,141 @@
-<h3 align="center">hibiki</h3>
-<p align="center">
-  <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
-</p>
+<div align="center">
 
-<p align="center"><b>Читайте книгу и делайте каждое незнакомое слово своим.</b></p>
-<p align="center">Кроссплатформенная многоязычная иммерсивная читалка — чтение EPUB · поиск слов по выделению · создание карточек Anki · синхронизация аудиокниг · поиск слов в субтитрах видео</p>
+# hibiki
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
-  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
-  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
-  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
-  &nbsp;·&nbsp;
-  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
-  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
-</p>
+<img src="../static-assets/hibiki-logo.png" alt="логотип hibiki" width="160">
 
-<p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 Главная страница проекта (GitHub Pages)</b></a>
-</p>
+![Платформа](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Лицензия](https://img.shields.io/badge/license-GPLv3-blue)
+![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <b>Русский</b> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | **Русский** | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
----
+hibiki — это иммерсивный инструмент изучения языков для Android и Windows, который объединяет чтение EPUB, синхронизацию аудиокниг, поиск слов в субтитрах видео и создание карточек Anki в одно нажатие — так каждый ввод естественным образом превращается в лексику для повторения.
 
-## Введение
+<table>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Книжная полка" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Видеотека" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Вертикальное чтение на десктопе со всплывающим окном поиска" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Поиск слов в видео (вложенные всплывающие окна)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Поиск слов в видео (список субтитров)" width="100%"></td>
+  </tr>
+</table>
 
-**hibiki** — кроссплатформенная иммерсивная читалка для изучения языков. Прямо в тексте EPUB **нажмите, чтобы искать слово, выделите, чтобы анализировать**, и превращайте незнакомое слово в карточку Anki одним нажатием; синхронизируйте аудио аудиокниги с текстом, подсвечивая его фраза за фразой; и даже ищите слова и создавайте карточки прямо в субтитрах видео. Один инструмент охватывает три формы иммерсивного ввода: «читать · слушать · смотреть».
+</div>
 
-Поиск по словарю охватывает **все языки трансформации** [Yomitan](https://github.com/yomidevs/yomitan) (деинфлексия + нормализация текста перед поиском), интерфейс локализован на **17 языков**, а приложение поддерживает все пять платформ **Android / iOS / macOS / Windows / Linux**.
+## Возможности
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="Книжная полка" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="Поиск слов" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="Настройки и темы" width="300">
-</p>
-<p align="center"><sub>Книжная полка · Поиск слов · Настройки и темы</sub></p>
+### Книжная полка
 
----
+- Импорт EPUB поштучно, пакетно или рекурсивно по папкам; просмотр прогресса чтения прямо на полке.
+- Организация книг с помощью пользовательских полок, фильтрации по тегам и перетаскивания для упорядочивания.
+- Перетаскивание файлов для импорта книг, субтитров или видео (десктоп).
+- Автоматическое связывание одноимённых файлов субтитров / аудио при импорте.
 
-## Ключевые возможности
+### Чтение
 
-### 📖 Чтение EPUB, поиск одним нажатием
+- Чтение в вертикальной или горизонтальной раскладке; переключение между постраничным режимом и непрерывной прокруткой.
+- Настройка тем (светлая / тёмная / чисто-чёрная / пользовательская), шрифтов, межабзацного интервала и элементов управления читалки.
+- Аннотации фуригана (ふりがな).
+- Регулируемый масштаб интерфейса; элементы нижней панели следуют за масштабом.
+- Несколько пользовательских профилей (Profile) с автоматическим переключением для каждой книги.
 
-EPUB-читалка, отрисованная в WebView (постраничный движок на основе [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)): нажмите на любое слово для мгновенного поиска, выделите область для мгновенного анализа. Два режима — непрерывная прокрутка и постраничный, настраиваемые шрифты и темы (светлая / тёмная / чисто-чёрная / пользовательская), фуригана, статистика чтения и закладки — всё на месте.
+### Поиск слов
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="Вертикальное чтение · Фуригана · Синхронизация аудиокниги" width="300">
-</p>
-<p align="center"><sub>Вертикальный текст · Фуригана · Подсветка по выделению · Панель синхронизации аудиокниги внизу</sub></p>
+- Импорт словарей [Yomitan](https://github.com/yomidevs/yomitan) (ранее Yomichan), ABBYY Lingvo (DSL), MDict (MDX) и Migaku.
+- Нажмите на текст в читалке для поиска слов, ищите на странице словаря или передавайте текст из других приложений.
+- Деинфлексия, охватывающая **все языки трансформации Yomitan**, + нормализация текста перед поиском (регистр / диакритика / арабская харакат), управляемая по кодовым точкам без переключения языка.
+- Нажатие на слова внутри определений для рекурсивного поиска (вложенные всплывающие окна).
+- Параллельный поиск по нескольким словарям, приоритет и включение/отключение подысточников, аннотации тонального ударения и частотности.
+- Онлайн- и локальное аудио слов.
+- Внедрение пользовательского CSS.
 
-### 🔍 Поиск по выделению, охватывает все языки трансформации Yomitan
+### Подсветки и статистика
 
-Импортируйте словари в форматах **Yomitan** (ранее Yomichan) / **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku**. Многоязычная лемматизация (таблицы трансформации Yomitan) + нормализация текста перед поиском (регистр / диакритика / арабская харакат), управляемая по кодовым точкам, без переключения языка. Параллельный поиск по нескольким словарям, приоритет и включение/отключение подысточников, разметка тонального ударения и частотность слов — всё в одном всплывающем окне.
+- Добавление пятицветных подсветок во время чтения; переход к любой подсветке в любой момент.
+- Статистика чтения: прочитанные символы, длительность, скорость чтения — отображается в реальном времени во время чтения.
+- Статистика видео: время просмотра, созданные карточки и избранное.
 
-### 🎴 Создание карточек Anki одним нажатием
+### Создание карточек Anki
 
-Найдя незнакомое слово, экспортируйте его в один шаг в [AnkiDroid](https://github.com/ankidroid/Anki-Android) и AnkiConnect. Встроенная схема типа заметки [Lapis](https://github.com/donkuri/lapis) (vendored 1.7.0) позволяет создавать шаблоны карточек и колоды прямо в приложении; автозаполнение контекстных предложений, поддержка записи аудио и обрезки скриншотов, множественные профили экспорта (Profile), настраиваемое сопоставление полей и быстрые действия для создания карточки в один жест.
+- Создание карточек через [AnkiDroid](https://github.com/ankidroid/Anki-Android) или AnkiConnect.
+- Встроенный тип заметки [Lapis](https://github.com/donkuri/lapis) (vendored 1.7.0); создание шаблонов карточек и колод прямо в приложении одним нажатием.
+- Автозаполнение контекстных предложений; запись аудио и обрезка скриншотов.
+- Несколько профилей экспорта (Profile) и настраиваемое сопоставление полей.
+- Избранные слова; созданные карточки и избранное учитываются в статистике.
 
-### 🎧 Синхронизация аудиокниг (Sasayaki)
+### Синхронизация аудиокниг (Sasayaki)
 
-Поддержка субтитров SRT / LRC / VTT / ASS с автоматическим выравниванием текста субтитров по тексту EPUB. При воспроизведении — **подсветка при чтении вслед и синхронный переход страниц**, дополненные панелью управления воспроизведением (прогресс, навигация, скорость): при прослушивании текст загорается фраза за фразой — панель управления внизу скриншота чтения в верхней части этой страницы иллюстрирует именно эту возможность.
+- Поддержка субтитров SRT / LRC / VTT / ASS; автоматическое выравнивание текста субтитров по тексту EPUB.
+- Подсветка предложений вслед за чтением и автоматический переход страниц во время воспроизведения.
+- Скорость воспроизведения, действия навигации и системные элементы управления медиа.
+- «Воспроизвести с этого предложения» с бесшовным продолжением между главами.
 
-### 🎬 Поиск слов в субтитрах видео
+### Поиск слов в субтитрах видео
 
-Встроенный видеоплеер на основе media_kit / libmpv с поддержкой встроенных / внешних субтитров. Во время воспроизведения видео **ищите слова и создавайте карточки прямо в субтитрах**, включая видеоматериалы в иммерсивный ввод; также подсчитываются время просмотра и количество созданных карточек.
+- Встроенный видеоплеер на основе [media_kit](https://github.com/media-kit/media-kit) (ядро libmpv).
+- Встроенные (текстовые + графические дорожки) и внешние субтитры; импорт плейлистов .m3u8.
+- Поиск слов и создание карточек прямо из субтитров во время воспроизведения.
+- Управление видеотекой, фильтрация по тегам, группировка по сериям и пакетные операции.
 
-<!-- TODO-782: 待补视频播放器截图 -->
-<p align="center"><sub>📹 Скриншот видеоплеера будет добавлен</sub></p>
+### Синхронизация данных
 
-### 🔗 И ещё
+- Семь бэкендов синхронизации: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP и Hibiki P2P.
+- Синхронизация прогресса чтения, статистики и книг.
 
-- **17 языков интерфейса**, локализация на всех платформах
-- **Hibiki-интерконнект**: синхронизация книг / словарей / аудиокниг / прогресса чтения между устройствами
-- **Множественные пользовательские профили (Profile)**, автоматическое переключение по книге
-- **Режим инкогнито**; **прямой поиск через отправку текста** из других приложений
+### Ещё
 
----
+- **17 языков интерфейса**, полностью локализованы на всех платформах.
+- Передача текста из других приложений для прямого поиска слов.
 
 ## Поддержка платформ
 
 | Платформа | Статус | Рендеринг / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| iOS | ✅ | Cupertino |
-| Windows | ✅ | Material (форк `flutter_inappwebview_windows` для рендеринга EPUB) |
-| macOS | ✅ | Material |
-| Linux | ✅ | Material |
+| Windows | ✅ | Material |
 
-> Минимум Android 7.0 (API 24). Язык поиска по словарю определяется импортированными словарями и таблицами трансформации Yomitan и не зависит от языка интерфейса.
+> Минимум Android 7.0 (API 24). Языки, доступные для поиска по словарю, определяются импортированными словарями и таблицами трансформации Yomitan, независимо от языка интерфейса.
 
 ### Языки интерфейса (17)
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
-
----
 
 ## Установка и сборка
 
 Подготовка одной командой (`flutter pub get` + применение патчей), затем сборка:
 
 ```bash
-# в корне репозитория
+# из корня репозитория
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
-                                # или (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
+# Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
+# Windows desktop
+flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводит в одну команду ① `flutter pub get` и ② `ci/apply-patches.sh`. Проект привязан к Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); часть upstream-зависимостей vendored в `third_party/` или патчится через `ci/apply-patches.sh` — подробности механизма, сборка на пяти платформах, список зависимостей и патчей см. в [docs/agent/build.md](../agent/build.md).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводят `flutter pub get` и `ci/apply-patches.sh` в одну команду. Проект привязан к Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); часть upstream-зависимостей vendored в `third_party/` или патчится через `ci/apply-patches.sh` — подробности см. в [docs/agent/build.md](../agent/build.md).
 
 <details>
-<summary><b>Обзор технологического стека</b></summary>
+<summary><b>Технологический стек</b></summary>
 
 | Уровень | Технология |
 |---|---|
 | Фреймворк | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Платформа | Android / iOS / macOS / Windows / Linux (адаптивный Material 3 + Cupertino) |
-| Читалка | Постраничный движок на WebView (на основе [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
-| Видео | media_kit / libmpv |
+| Платформы | Android / Windows (Material Design 3) |
+| Читалка | Постраничный движок на WebView (на основе семейства Hoshi Reader) |
+| Видео | media_kit (ядро libmpv) |
 | Хранение | Drift (SQLite, WAL) + hoshidicts (движок словарей C++ FFI) |
-| NLP | Таблицы трансформации Yomitan (многоязычная лемматизация) + kana_kit (конвертация кана); сегментация идёт через hoshidicts FFI |
+| NLP | Таблицы трансформации Yomitan (многоязычная лемматизация) + kana_kit (конвертация кана); сегментация через hoshidicts FFI |
 | Создание карточек | AnkiDroid API + AnkiConnect |
-| Интернационализация | Slang (17 языков) |
+| i18n | Slang (17 языков) |
 
 </details>
 
@@ -147,34 +154,48 @@ hibiki/                      # Корень репозитория (Melos worksp
 │   │   │   └── models/      # Модели данных и управление состоянием (AppModel)
 │   │   └── main.dart
 │   └── android/             # Android-проект (manifest, native hoshidicts)
-├── packages/                # Внутренние package + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── packages/                # Внутренние пакеты + flutter_inappwebview_windows (fork) + gamepads_android_stub
 ├── native/                  # Движок словарей C++ hoshidicts (FFI)
-├── third_party/             # vendored патч-пакеты (подключены через dependency_overrides)
-├── ci/                      # Скрипты патчей сборки и интеграционных тестов
+├── third_party/             # Vendored патч-пакеты (dependency_overrides)
+├── ci/                      # Патчи сборки и скрипты интеграционных тестов
 ├── tool/                    # Скрипты bootstrap / i18n_sync и др.
-└── docs/                    # Документация разработки (включая руководство agent в docs/agent/)
+└── docs/                    # Документация разработки (включая руководство по операциям docs/agent/)
 ```
 
 </details>
 
----
+## Конфиденциальность и данные
+
+hibiki хранит импортированные книги, словари, шрифты, данные аудиокниг, видео, прогресс чтения, подсветки, статистику и настройки в локальном хранилище приложения.
+
+Облачная синхронизация (Google Drive / OneDrive / Dropbox) использует настроенные пользователем учётные данные OAuth; WebDAV / FTP / SFTP использует предоставленные пользователем адреса серверов и учётные данные; Hibiki P2P подключается напрямую по настроенному пользователем адресу. Создание карточек Anki взаимодействует с AnkiDroid или настроенным адресом AnkiConnect.
 
 ## Благодарности
+
+hibiki опирается на следующие проекты и экосистему:
 
 | Проект | Описание |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Инструмент иммерсивного изучения японского |
-| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Читалка японского для Android |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Читалка японского для iOS; референс постраничного движка |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Нативная читалка японского для Android |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | Движок словарей C++ |
-| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Читалка японского для iOS |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Решение для синхронизации аудиокниг |
-| [Yomitan](https://github.com/yomidevs/yomitan) | Источник форматов словарей и таблиц трансформации |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Референс формата словарей, таблиц трансформации и опыта поиска |
 | [Lapis](https://github.com/donkuri/lapis) | Тип заметки Anki |
+| [AnkiDroid](https://github.com/ankidroid/Anki-Android) | Интеграция создания карточек на Android |
+| [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Референс локального аудио и взаимодействия с AnkiDroid |
+| [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Референс совместимости читалки, статистики и синхронизации |
+| [media_kit](https://github.com/media-kit/media-kit) | Фреймворк воспроизведения видео для Flutter (ядро libmpv) |
 
 ## Лицензия
 
-[GNU General Public License v3.0](../../LICENSE)
+Распространяется под лицензией GNU General Public License v3.0. Подробности см. в [LICENSE](../../LICENSE).
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <b>Русский</b> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+<div align="center">
+
+<br>
+
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | **Русский** | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+
+</div>

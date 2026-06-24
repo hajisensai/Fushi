@@ -1,134 +1,141 @@
-<h3 align="center">hibiki</h3>
-<p align="center">
-  <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
-</p>
+<div align="center">
 
-<p align="center"><b>Baca satu buku, dan jadikan setiap kata baru milikmu.</b></p>
-<p align="center">Pembaca imersif multiplatform & multibahasa —— Baca EPUB · Cari kata dengan sekali ketuk · Buat kartu Anki · Sinkronisasi buku audio · Cari kata dari subtitle video</p>
+# hibiki
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
-  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
-  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
-  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
-  &nbsp;·&nbsp;
-  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
-  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
-</p>
+<img src="../static-assets/hibiki-logo.png" alt="logo hibiki" width="160">
 
-<p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 Beranda Proyek (GitHub Pages)</b></a>
-</p>
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![License](https://img.shields.io/badge/license-GPLv3-blue)
+![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <b>Bahasa Indonesia</b> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
----
+hibiki adalah alat belajar bahasa imersif untuk Android dan Windows yang menyatukan pembacaan EPUB, sinkronisasi buku audio, pencarian kata dari subtitel video, dan pembuatan kartu Anki sekali ketuk — sehingga setiap input secara alami menjadi kosakata yang dapat ditinjau ulang.
 
-## Pendahuluan
+<table>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Rak Buku" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Pustaka Video" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Pembacaan vertikal di desktop dengan popup pencarian" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Pencarian kata video (popup bertingkat)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Pencarian kata video (daftar subtitel)" width="100%"></td>
+  </tr>
+</table>
 
-**hibiki** adalah pembaca pembelajaran bahasa imersif lintas platform. Di dalam teks EPUB Anda bisa **ketuk untuk mencari kata, pilih kata untuk menganalisis** secara langsung, lalu menjadikan kata baru sebagai kartu Anki hanya dengan sekali ketuk; menyelaraskan audio buku audio dengan teks dan menyorotinya kalimat demi kalimat; bahkan mencari kata dan membuat kartu langsung dari subtitle video. Satu perangkat mencakup ketiga jalur masukan imersif Anda: «baca · dengar · tonton».
+</div>
 
-Pencarian kamus mencakup **seluruh bahasa transformasi** [Yomitan](https://github.com/yomidevs/yomitan) (dekonjugasi + normalisasi teks sebelum pencarian), antarmuka dilokalkan ke **17 bahasa**, serta mendukung **Android / iOS / macOS / Windows / Linux** kelima platform.
+## Fitur
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="Rak buku" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="Cari kata" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="Pengaturan & tema" width="300">
-</p>
-<p align="center"><sub>Rak buku · Cari kata · Pengaturan & tema</sub></p>
+### Rak Buku
 
----
+- Impor EPUB satu per satu, secara massal, atau rekursif berdasarkan folder; lihat progres baca di rak.
+- Atur buku dengan rak buku khusus, penyaringan tag, dan seret untuk menyusun ulang.
+- Seret dan letakkan berkas untuk mengimpor buku, subtitel, atau video (desktop).
+- Otomatis mengaitkan berkas subtitel / audio bernama sama saat impor.
 
-## Sorotan Utama
+### Membaca
 
-### 📖 Baca EPUB, ketuk langsung cari
+- Baca dalam tata letak vertikal atau horizontal; beralih antara mode berhalaman dan gulir berkelanjutan.
+- Sesuaikan tema (terang / gelap / hitam pekat / khusus), font, jarak paragraf, dan kontrol pembaca.
+- Anotasi Furigana (ふりがな).
+- Skala antarmuka yang dapat disesuaikan; kontrol bilah bawah mengikuti skala.
+- Profil multi-pengguna (Profile), beralih otomatis per buku.
 
-Pembaca EPUB yang dirender dengan WebView (mesin paginasi turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)), ketuk kata apa pun untuk pencarian instan, pilih teks untuk analisis instan. Dua mode gulir berkelanjutan dan paginasi, font serta tema kustom (terang / gelap / hitam pekat / kustom), furigana, statistik membaca, dan penanda halaman semuanya tersedia.
+### Pencarian Kata
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="Baca vertikal · furigana · sinkronisasi buku audio" width="300">
-</p>
-<p align="center"><sub>Teks vertikal · furigana · sorot kata terpilih · bilah kontrol sinkronisasi buku audio di bawah</sub></p>
+- Impor kamus [Yomitan](https://github.com/yomidevs/yomitan) (dahulu Yomichan), ABBYY Lingvo (DSL), MDict (MDX), dan Migaku.
+- Ketuk teks di pembaca untuk mencari kata, cari di halaman kamus, atau bagikan teks dari aplikasi lain.
+- Deinfleksi yang mencakup **semua bahasa tabel transformasi Yomitan** + normalisasi teks sebelum pencarian (huruf besar/kecil / diakritik / harakat Arab), digerakkan oleh titik kode (code points) tanpa pergantian bahasa.
+- Ketuk kata di dalam definisi untuk pencarian rekursif (popup bertingkat).
+- Kueri multi-kamus paralel, prioritas dan pengalihan sub-sumber, anotasi aksen nada (pitch-accent) dan frekuensi.
+- Audio kata daring dan lokal.
+- Sisipkan CSS khusus.
 
-### 🔍 Cari kata dengan ketuk, mencakup semua bahasa transformasi Yomitan
+### Sorotan & Statistik
 
-Impor kamus berbagai format: **Yomitan** (sebelumnya Yomichan) / **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku**. Pemulihan bentuk kata multibahasa (tabel transformasi Yomitan) + normalisasi teks sebelum pencarian (huruf besar/kecil / tanda diakritik / harakat Arab), digerakkan per titik kode (code point), tanpa perlu beralih bahasa. Pencarian paralel multi-kamus, prioritas serta aktif-nonaktif sumber turunan, anotasi nada dan frekuensi kata, semua selesai dalam satu jendela.
+- Tambahkan sorotan lima warna saat membaca; lompat ke sorotan mana pun kapan saja.
+- Statistik baca: jumlah karakter terbaca, durasi, kecepatan baca — ditampilkan secara real-time saat membaca.
+- Statistik video: waktu tonton, kartu yang dibuat, dan favorit.
 
-### 🎴 Buat kartu Anki satu langkah
+### Pembuatan Kartu Anki
 
-Setelah menemukan kata baru, ekspor dalam satu langkah ke [AnkiDroid](https://github.com/ankidroid/Anki-Android) dan AnkiConnect. Dilengkapi schema jenis catatan [Lapis](https://github.com/donkuri/lapis) bawaan (vendored 1.7.0), Anda dapat membuat templat kartu dan dek langsung di dalam aplikasi; pengisian otomatis kalimat konteks, dukungan perekaman audio dan pemotongan tangkapan layar, beberapa profil ekspor (Profile), pemetaan bidang kustom, serta aksi cepat pembuatan kartu satu langkah.
+- Buat kartu melalui [AnkiDroid](https://github.com/ankidroid/Anki-Android) atau AnkiConnect.
+- Tipe catatan [Lapis](https://github.com/donkuri/lapis) bawaan (vendored 1.7.0); buat templat kartu dan dek di dalam aplikasi sekali ketuk.
+- Isi otomatis kalimat konteks; perekaman audio dan pemotongan tangkapan layar.
+- Beberapa profil ekspor (Profile) dan pemetaan bidang khusus.
+- Kata favorit; kartu yang dibuat dan favorit dihitung dalam statistik.
 
-### 🎧 Sinkronisasi buku audio (Sasayaki)
+### Sinkronisasi Buku Audio (Sasayaki)
 
-Mendukung subtitle SRT / LRC / VTT / ASS, secara otomatis menyelaraskan teks subtitle ke teks EPUB. Saat memutar, **sorot mengikuti bacaan, pergantian halaman tersinkron audio**, dipadukan dengan bilah kontrol pemutaran (progres, lompat, kecepatan); saat mendengarkan, teks menyala kalimat demi kalimat —— bilah kontrol di bagian bawah tangkapan layar membaca di atas halaman ini adalah fungsi ini.
+- Dukungan subtitel SRT / LRC / VTT / ASS; secara otomatis menyelaraskan teks subtitel dengan isi EPUB.
+- Penyorotan kalimat yang mengikuti dan pembalik halaman otomatis selama pemutaran.
+- Kecepatan pemutaran, aksi pencarian posisi, dan kontrol media sistem.
+- "Putar dari kalimat ini" dengan kelanjutan lintas bab tanpa jeda.
 
-### 🎬 Cari kata dari subtitle video
+### Pencarian Kata dari Subtitel Video
 
-Pemutar video bawaan berbasis media_kit / libmpv, mendukung subtitle tertanam / eksternal. Saat memutar video Anda bisa **mencari kata dan membuat kartu langsung pada subtitle**, menjadikan materi film juga sebagai masukan imersif; sekaligus mencatat statistik durasi tonton dan jumlah kartu yang dibuat.
+- Pemutar video bawaan berbasis [media_kit](https://github.com/media-kit/media-kit) (inti libmpv).
+- Subtitel tertanam (trek teks + grafik) dan eksternal; impor daftar putar .m3u8.
+- Cari kata dan buat kartu langsung dari subtitel selama pemutaran.
+- Manajemen pustaka video, penyaringan tag, pengelompokan seri, dan operasi massal.
 
-<!-- TODO-782: 待补视频播放器截图 -->
-<p align="center"><sub>📹 Tangkapan layar pemutar video menyusul —— perlu diambil di perangkat nyata / latar depan (gambar video + bilah subtitle + jendela cari kata, lihat keterangan di bawah).</sub></p>
+### Sinkronisasi Data
 
-### 🔗 Lainnya
+- Tujuh backend sinkronisasi: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, dan Hibiki P2P.
+- Sinkronkan progres baca, statistik, dan buku.
 
-- **17 bahasa antarmuka**, dilokalkan di semua platform
-- **Hibiki Interconnect**: sinkronisasi buku / kamus / buku audio / progres membaca antar perangkat
-- **Beberapa profil pengguna (Profile)**, beralih otomatis per buku
-- **Mode penyamaran**; **bagikan teks dari aplikasi lain untuk langsung mencari kata**
+### Lainnya
 
----
+- **17 bahasa antarmuka**, dilokalkan sepenuhnya di semua platform.
+- Bagikan teks dari aplikasi lain untuk langsung mencari kata.
 
-## Platform yang Didukung
+## Dukungan Platform
 
-| Platform | Status | Render / UI |
+| Platform | Status | Rendering / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| iOS | ✅ | Cupertino |
-| Windows | ✅ | Material (fork `flutter_inappwebview_windows` merender EPUB) |
-| macOS | ✅ | Material |
-| Linux | ✅ | Material |
+| Windows | ✅ | Material |
 
-> Minimal Android 7.0 (API 24). Bahasa pencarian kamus ditentukan oleh kamus yang diimpor dan tabel transformasi Yomitan, terpisah dari bahasa antarmuka.
+> Minimum Android 7.0 (API 24). Bahasa yang tersedia untuk pencarian kamus ditentukan oleh kamus yang diimpor dan tabel transformasi Yomitan, terlepas dari bahasa antarmuka.
 
-### Bahasa Antarmuka (17 bahasa)
+### Bahasa Antarmuka (17)
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
 
----
+## Instalasi & Pembangunan
 
-## Instalasi dan Build
-
-Persiapan satu perintah (`flutter pub get` + terapkan patch), lalu build:
+Persiapan satu perintah (`flutter pub get` + apply patches), lalu bangun:
 
 ```bash
-# Di root repositori
+# Dari root repositori
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
-                                # atau (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
+# Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
+# Windows desktop
+flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` menyatukan ① `flutter pub get` dan ② `ci/apply-patches.sh` menjadi satu perintah. Proyek ini mengunci Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); sebagian dependensi upstream di-vendor ke `third_party/` atau dipatch oleh `ci/apply-patches.sh` —— detail mekanisme, build kelima platform, daftar dependensi dan patch lihat [docs/agent/build.md](../agent/build.md).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` menggabungkan `flutter pub get` dan `ci/apply-patches.sh` menjadi satu perintah. Proyek ini dikunci ke Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); beberapa dependensi hulu di-vendor di bawah `third_party/` atau ditambal oleh `ci/apply-patches.sh` — lihat [docs/agent/build.md](../agent/build.md) untuk detailnya.
 
 <details>
-<summary><b>Sekilas Tumpukan Teknologi</b></summary>
+<summary><b>Tumpukan Teknologi</b></summary>
 
 | Lapisan | Teknologi |
 |---|---|
-| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platform | Android / iOS / macOS / Windows / Linux (adaptif Material 3 + Cupertino) |
-| Pembaca | Mesin paginasi WebView (turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
-| Video | media_kit / libmpv |
+| Kerangka kerja | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Platform | Android / Windows (Material Design 3) |
+| Pembaca | Mesin paginasi WebView (diturunkan dari keluarga Hoshi Reader) |
+| Video | media_kit (inti libmpv) |
 | Penyimpanan | Drift (SQLite, WAL) + hoshidicts (mesin kamus C++ FFI) |
-| NLP | Tabel transformasi Yomitan (pemulihan bentuk kata multibahasa) + kana_kit (konversi kana); segmentasi lewat hoshidicts FFI |
-| Pembuatan kartu | AnkiDroid API + AnkiConnect |
-| Internasionalisasi | Slang (17 bahasa) |
+| NLP | Tabel transformasi Yomitan (lematisasi multibahasa) + kana_kit (konversi kana); tokenisasi melalui hoshidicts FFI |
+| Pembuatan Kartu | AnkiDroid API + AnkiConnect |
+| i18n | Slang (17 bahasa) |
 
 </details>
 
@@ -136,45 +143,59 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 <summary><b>Struktur Proyek</b></summary>
 
 ```
-hibiki/                      # Root repo (Melos workspace: hibiki_workspace)
-├── hibiki/                  # Direktori utama aplikasi Flutter
+hibiki/                      # Repository root (Melos workspace: hibiki_workspace)
+├── hibiki/                  # Flutter app main directory
 │   ├── lib/
-│   │   ├── i18n/            # Internasionalisasi (17 bahasa, Slang)
+│   │   ├── i18n/            # Internationalization (17 languages, Slang)
 │   │   ├── src/
-│   │   │   ├── pages/       # Halaman (rak buku, pembaca, kamus, pengaturan, dll.)
-│   │   │   ├── reader/      # Skrip JS/CSS WebView pembaca
-│   │   │   ├── media/       # Buku audio, penguraian subtitle, reader source
-│   │   │   └── models/      # Model data & manajemen state (AppModel)
+│   │   │   ├── pages/       # Pages (bookshelf, reader, dictionary, settings, etc.)
+│   │   │   ├── reader/      # Reader WebView JS/CSS scripts
+│   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
+│   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   └── android/             # Proyek Android (manifest, native hoshidicts)
-├── packages/                # Paket internal + flutter_inappwebview_windows(fork) + gamepads_android_stub
-├── native/                  # Mesin kamus C++ hoshidicts (FFI)
-├── third_party/             # Paket patch vendored (ditunjuk dependency_overrides)
-├── ci/                      # Skrip patch build dan pengujian integrasi
-├── tool/                    # Skrip bootstrap / i18n_sync, dll.
-└── docs/                    # Dokumentasi pengembangan (termasuk manual operasi agent di docs/agent/)
+│   └── android/             # Android project (manifest, native hoshidicts)
+├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
+├── native/                  # hoshidicts C++ dictionary engine (FFI)
+├── third_party/             # Vendored patched packages (dependency_overrides)
+├── ci/                      # Build patches and integration test scripts
+├── tool/                    # bootstrap / i18n_sync and other scripts
+└── docs/                    # Development documentation (incl. docs/agent/ operations manual)
 ```
 
 </details>
 
----
+## Privasi & Data
+
+hibiki menyimpan buku, kamus, font, data buku audio, video, progres baca, sorotan, statistik, dan pengaturan yang diimpor di penyimpanan lokal aplikasi.
+
+Sinkronisasi awan (Google Drive / OneDrive / Dropbox) menggunakan kredensial OAuth yang dikonfigurasi pengguna; WebDAV / FTP / SFTP menggunakan alamat server dan kredensial yang disediakan pengguna; Hibiki P2P terhubung langsung melalui alamat yang dikonfigurasi pengguna. Pembuatan kartu Anki berkomunikasi dengan AnkiDroid atau alamat AnkiConnect yang dikonfigurasi.
 
 ## Penghargaan
 
+hibiki dibangun di atas proyek dan ekosistem berikut:
+
 | Proyek | Deskripsi |
 |---|---|
-| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Alat pembelajaran bahasa Jepang imersif |
-| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Pembaca bahasa Jepang untuk Android |
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Alat belajar imersif bahasa Jepang |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Pembaca bahasa Jepang iOS; referensi mesin paginasi pembaca |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Pembaca bahasa Jepang native Android |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | Mesin kamus C++ |
-| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Pembaca bahasa Jepang untuk iOS |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Solusi sinkronisasi buku audio |
-| [Yomitan](https://github.com/yomidevs/yomitan) | Sumber format kamus dan tabel transformasi |
-| [Lapis](https://github.com/donkuri/lapis) | Jenis catatan Anki |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Referensi format kamus, tabel transformasi, dan pengalaman pencarian kata |
+| [Lapis](https://github.com/donkuri/lapis) | Tipe catatan Anki |
+| [AnkiDroid](https://github.com/ankidroid/Anki-Android) | Integrasi pembuatan kartu Android |
+| [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Referensi audio lokal dan interaksi AnkiDroid |
+| [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Referensi pembaca, statistik, dan kompatibilitas sinkronisasi |
+| [media_kit](https://github.com/media-kit/media-kit) | Kerangka pemutaran video Flutter (inti libmpv) |
 
 ## Lisensi
 
-[GNU General Public License v3.0](../../LICENSE)
+Didistribusikan di bawah GNU General Public License v3.0. Lihat [LICENSE](../../LICENSE) untuk detailnya.
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <b>Bahasa Indonesia</b> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+<div align="center">
+
+<br>
+
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+
+</div>

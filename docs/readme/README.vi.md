@@ -1,105 +1,110 @@
-<h3 align="center">hibiki</h3>
-<p align="center">
-  <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
-</p>
+<div align="center">
 
-<p align="center"><b>Đọc một cuốn sách, biến mỗi từ mới thành của riêng bạn.</b></p>
-<p align="center">Trình đọc chuyên sâu đa nền tảng, đa ngôn ngữ —— Đọc EPUB · Chạm để tra từ · Tạo thẻ Anki · Đồng bộ sách nói · Tra từ trên phụ đề video</p>
+# hibiki
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
-  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
-  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
-  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
-  &nbsp;·&nbsp;
-  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
-  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
-</p>
+<img src="../static-assets/hibiki-logo.png" alt="logo hibiki" width="160">
 
-<p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 Trang dự án (GitHub Pages)</b></a>
-</p>
+![Nền tảng](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Giấy phép](https://img.shields.io/badge/license-GPLv3-blue)
+![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <b>Tiếng Việt</b> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | **Tiếng Việt** | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
----
+hibiki là một công cụ học ngôn ngữ chuyên sâu dành cho Android và Windows, kết hợp đọc EPUB, đồng bộ sách nói, tra từ trên phụ đề video và tạo thẻ Anki chỉ với một chạm — để mỗi nguồn tiếp nhận đều tự nhiên trở thành từ vựng có thể ôn tập.
 
-## Giới thiệu
+<table>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Kệ sách" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Thư viện video" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Đọc dọc trên máy tính với cửa sổ tra từ" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Tra từ trên video (cửa sổ lồng nhau)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Tra từ trên video (danh sách phụ đề)" width="100%"></td>
+  </tr>
+</table>
 
-**hibiki** là trình đọc chuyên sâu đa nền tảng để học ngôn ngữ. Trong nội dung của một cuốn EPUB, bạn có thể **chạm để tra từ điển và chọn để phân tích**, biến mỗi từ mới thành thẻ Anki chỉ với một chạm; đồng bộ âm thanh sách nói với văn bản, làm nổi bật theo từng câu; thậm chí tra từ và tạo thẻ trực tiếp ngay trên phụ đề video. Một công cụ duy nhất cho cả ba hình thức tiếp nhận chuyên sâu: «đọc · nghe · xem».
+</div>
 
-Việc tra cứu từ điển bao phủ **toàn bộ ngôn ngữ biến đổi** của [Yomitan](https://github.com/yomidevs/yomitan) (khử biến cách + chuẩn hóa văn bản trước khi tra), giao diện được bản địa hóa sang **17 ngôn ngữ** và hỗ trợ năm nền tảng **Android / iOS / macOS / Windows / Linux**.
+## Tính năng
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="Kệ sách" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="Tra từ" width="300">
-  &nbsp;
-  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="Cài đặt và giao diện" width="300">
-</p>
-<p align="center"><sub>Kệ sách · Tra từ · Cài đặt và giao diện</sub></p>
+### Kệ sách
 
----
+- Nhập EPUB từng cuốn, hàng loạt hoặc đệ quy theo thư mục; xem tiến độ đọc ngay trên kệ.
+- Sắp xếp sách bằng kệ tùy chỉnh, lọc theo thẻ và kéo để sắp xếp lại.
+- Kéo và thả tệp để nhập sách, phụ đề hoặc video (trên máy tính).
+- Tự động liên kết tệp phụ đề / âm thanh cùng tên khi nhập.
 
-## Tính năng nổi bật
+### Đọc
 
-### 📖 Đọc EPUB, chạm để tra
+- Đọc theo bố cục dọc hoặc ngang; chuyển đổi giữa chế độ phân trang và cuộn liên tục.
+- Tùy chỉnh giao diện (sáng / tối / đen tuyền / tùy chỉnh), phông chữ, khoảng cách đoạn và các điều khiển của trình đọc.
+- Chú thích furigana (ふりがな).
+- Tỷ lệ giao diện điều chỉnh được; các điều khiển ở thanh dưới đi theo tỷ lệ.
+- Nhiều hồ sơ người dùng (Profile), tự động chuyển đổi cho mỗi cuốn sách.
 
-Trình đọc EPUB hiển thị trong WebView (engine phân trang phái sinh từ [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)): chạm vào bất kỳ từ nào để tra ngay lập tức, chọn một đoạn văn bản để phân tích tức thì. Hai chế độ cuộn liên tục và phân trang, phông chữ và giao diện tùy chỉnh (sáng / tối / đen tuyền / tùy chỉnh), furigana, thống kê đọc và đánh dấu trang đều có đủ.
+### Tra từ
 
-<p align="center">
-  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="Đọc dọc · Furigana · Đồng bộ sách nói" width="300">
-</p>
-<p align="center"><sub>Văn bản dọc · Furigana · Tô sáng vùng chọn · Thanh điều khiển sách nói ở dưới</sub></p>
+- Nhập từ điển [Yomitan](https://github.com/yomidevs/yomitan) (trước đây là Yomichan), ABBYY Lingvo (DSL), MDict (MDX) và Migaku.
+- Chạm vào văn bản trong trình đọc để tra từ, tìm trên trang từ điển, hoặc chia sẻ văn bản từ ứng dụng khác.
+- Khử biến cách bao phủ **toàn bộ ngôn ngữ biến đổi của Yomitan** + chuẩn hóa văn bản trước khi tra (hoa/thường / dấu phụ / harakat tiếng Ả Rập), vận hành theo điểm mã mà không cần chuyển ngôn ngữ.
+- Chạm vào từ bên trong nghĩa để tra đệ quy (cửa sổ lồng nhau).
+- Tra song song nhiều từ điển, ưu tiên và bật/tắt nguồn con, chú thích thanh điệu và tần suất.
+- Âm thanh từ trực tuyến và cục bộ.
+- Chèn CSS tùy chỉnh.
 
-### 🔍 Chạm để tra, bao phủ toàn bộ ngôn ngữ biến đổi của Yomitan
+### Tô sáng và thống kê
 
-Nhập từ điển ở nhiều định dạng: **Yomitan** (trước đây là Yomichan) / **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku**. Chuyển dạng từ vựng đa ngôn ngữ (bảng biến đổi Yomitan) + chuẩn hóa văn bản trước khi tra (hoa/thường / dấu phụ / harakat tiếng Ả Rập), vận hành theo điểm mã và không cần chuyển ngôn ngữ. Tra cứu song song nhiều từ điển, ưu tiên và bật/tắt nguồn con, chú thích thanh điệu và tần suất từ, tất cả trong một cửa sổ bật lên.
+- Thêm tô sáng năm màu khi đọc; nhảy đến bất kỳ vùng tô sáng nào bất cứ lúc nào.
+- Thống kê đọc: số ký tự đã đọc, thời lượng, tốc độ đọc — hiển thị theo thời gian thực khi đọc.
+- Thống kê video: thời lượng xem, số thẻ đã tạo và mục yêu thích.
 
-### 🎴 Tạo thẻ Anki chỉ một chạm
+### Tạo thẻ Anki
 
-Tra được từ mới, xuất một bước sang [AnkiDroid](https://github.com/ankidroid/Anki-Android) và AnkiConnect. Tích hợp sẵn schema loại ghi chú [Lapis](https://github.com/donkuri/lapis) (vendored 1.7.0): bạn có thể tạo mẫu thẻ và bộ thẻ ngay trong ứng dụng; tự động điền câu ngữ cảnh, hỗ trợ ghi âm và cắt ảnh chụp màn hình, nhiều cấu hình xuất (Profile), ánh xạ trường tùy chỉnh, và thao tác nhanh để tạo thẻ trong một bước.
+- Tạo thẻ qua [AnkiDroid](https://github.com/ankidroid/Anki-Android) hoặc AnkiConnect.
+- Loại ghi chú [Lapis](https://github.com/donkuri/lapis) tích hợp sẵn (vendored 1.7.0); tạo mẫu thẻ và bộ thẻ ngay trong ứng dụng chỉ với một chạm.
+- Tự động điền câu ngữ cảnh; ghi âm và cắt ảnh chụp màn hình.
+- Nhiều hồ sơ xuất (Profile) và ánh xạ trường tùy chỉnh.
+- Từ yêu thích; thẻ đã tạo và mục yêu thích được tính vào thống kê.
 
-### 🎧 Đồng bộ sách nói (Sasayaki)
+### Đồng bộ sách nói (Sasayaki)
 
-Hỗ trợ phụ đề SRT / LRC / VTT / ASS, tự động căn chỉnh văn bản phụ đề với nội dung EPUB. Khi phát **tô sáng văn bản theo nhịp đọc và lật trang đồng bộ với âm thanh**, kết hợp thanh điều khiển phát lại (tiến trình, tua, tốc độ): khi nghe, văn bản sáng lên theo từng câu —— thanh điều khiển ở dưới ảnh chụp màn hình đọc ở đầu trang này chính là tính năng này.
+- Hỗ trợ phụ đề SRT / LRC / VTT / ASS; tự động căn chỉnh văn bản phụ đề với nội dung EPUB.
+- Tô sáng câu theo nhịp đọc và tự động lật trang khi phát.
+- Tốc độ phát, thao tác tua và điều khiển media của hệ thống.
+- «Phát từ câu này» với chuyển tiếp liền mạch giữa các chương.
 
-### 🎬 Tra từ trên phụ đề video
+### Tra từ trên phụ đề video
 
-Trình phát video tích hợp dựa trên media_kit / libmpv, hỗ trợ phụ đề nhúng / phụ đề ngoài. Khi phát video, bạn có thể **tra từ và tạo thẻ trực tiếp ngay trên phụ đề**, đưa cả tư liệu phim ảnh vào nguồn tiếp nhận chuyên sâu; đồng thời thống kê thời lượng xem và số thẻ đã tạo.
+- Trình phát video tích hợp dựa trên [media_kit](https://github.com/media-kit/media-kit) (lõi libmpv).
+- Phụ đề nhúng (dạng văn bản + dạng đồ họa) và phụ đề ngoài; nhập danh sách phát .m3u8.
+- Tra từ và tạo thẻ trực tiếp từ phụ đề khi phát.
+- Quản lý thư viện video, lọc theo thẻ, nhóm theo series và thao tác hàng loạt.
 
-<!-- TODO-782: 待补视频播放器截图 -->
-<p align="center"><sub>📹 Ảnh chụp màn hình trình phát video sẽ được bổ sung.</sub></p>
+### Đồng bộ dữ liệu
 
-### 🔗 Khác
+- Bảy backend đồng bộ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP và Hibiki P2P.
+- Đồng bộ tiến độ đọc, thống kê và sách.
 
-- **17 ngôn ngữ giao diện**, bản địa hóa trên mọi nền tảng
-- **Hibiki Interconnect**: đồng bộ sách / từ điển / sách nói / tiến độ đọc giữa các thiết bị
-- **Nhiều hồ sơ người dùng (Profile)**, tự động chuyển đổi theo sách
-- **Chế độ ẩn danh**; **chia sẻ văn bản từ ứng dụng khác để tra trực tiếp**
+### Khác
 
----
+- **17 ngôn ngữ giao diện**, bản địa hóa đầy đủ trên mọi nền tảng.
+- Chia sẻ văn bản từ ứng dụng khác để tra từ trực tiếp.
 
 ## Nền tảng hỗ trợ
 
 | Nền tảng | Trạng thái | Hiển thị / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| iOS | ✅ | Cupertino |
-| Windows | ✅ | Material (hiển thị EPUB qua bản fork `flutter_inappwebview_windows`) |
-| macOS | ✅ | Material |
-| Linux | ✅ | Material |
+| Windows | ✅ | Material |
 
-> Tối thiểu Android 7.0 (API 24). Ngôn ngữ tra cứu từ điển do các từ điển đã nhập và bảng biến đổi Yomitan quyết định, độc lập với ngôn ngữ giao diện.
+> Tối thiểu Android 7.0 (API 24). Các ngôn ngữ khả dụng để tra từ điển do các từ điển đã nhập và bảng biến đổi Yomitan quyết định, độc lập với ngôn ngữ giao diện.
 
 ### Ngôn ngữ giao diện (17)
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
-
----
 
 ## Cài đặt và biên dịch
 
@@ -107,28 +112,30 @@ Chuẩn bị bằng một lệnh (`flutter pub get` + áp dụng bản vá), sau
 
 ```bash
 # tại thư mục gốc của kho
-bash tool/bootstrap.sh          # Windows PowerShell：.\tool\bootstrap.ps1
-                                # 或（Linux/macOS）：dart run melos bootstrap
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
 cd hibiki
+# Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
+# Windows desktop
+flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` gom ① `flutter pub get` và ② `ci/apply-patches.sh` vào một lệnh. Dự án này được khóa ở Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); một số phụ thuộc upstream được vendor vào `third_party/` hoặc được `ci/apply-patches.sh` vá —— chi tiết cơ chế, biên dịch trên năm nền tảng và danh sách phụ thuộc/bản vá xem [docs/agent/build.md](../agent/build.md).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` gom `flutter pub get` và `ci/apply-patches.sh` vào một lệnh. Dự án được khóa ở Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); một số phụ thuộc upstream được vendor vào `third_party/` hoặc được `ci/apply-patches.sh` vá — chi tiết xem [docs/agent/build.md](../agent/build.md).
 
 <details>
-<summary><b>Tổng quan công nghệ</b></summary>
+<summary><b>Công nghệ</b></summary>
 
 | Tầng | Công nghệ |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Nền tảng | Android / iOS / macOS / Windows / Linux (thích ứng Material 3 + Cupertino) |
-| Trình đọc | Engine phân trang WebView (phái sinh từ [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
-| Video | media_kit / libmpv |
+| Nền tảng | Android / Windows (Material Design 3) |
+| Trình đọc | Engine phân trang WebView (phái sinh từ dòng Hoshi Reader) |
+| Video | media_kit (lõi libmpv) |
 | Lưu trữ | Drift (SQLite, WAL) + hoshidicts (engine từ điển C++ FFI) |
 | NLP | Bảng biến đổi Yomitan (chuyển dạng từ vựng đa ngôn ngữ) + kana_kit (chuyển đổi kana); phân tách từ qua hoshidicts FFI |
 | Tạo thẻ | AnkiDroid API + AnkiConnect |
-| Quốc tế hóa | Slang (17 ngôn ngữ) |
+| i18n | Slang (17 ngôn ngữ) |
 
 </details>
 
@@ -147,34 +154,48 @@ hibiki/                      # Gốc kho (Melos workspace: hibiki_workspace)
 │   │   │   └── models/      # Mô hình dữ liệu và quản lý trạng thái (AppModel)
 │   │   └── main.dart
 │   └── android/             # Dự án Android (manifest, native hoshidicts)
-├── packages/                # Package nội bộ + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── packages/                # Package nội bộ + flutter_inappwebview_windows (fork) + gamepads_android_stub
 ├── native/                  # Engine từ điển C++ hoshidicts (FFI)
-├── third_party/             # Gói vá vendored (dependency_overrides trỏ tới)
-├── ci/                      # Script vá biên dịch và kiểm thử tích hợp
+├── third_party/             # Gói vá vendored (dependency_overrides)
+├── ci/                      # Bản vá biên dịch và script kiểm thử tích hợp
 ├── tool/                    # Script bootstrap / i18n_sync, v.v.
-└── docs/                    # Tài liệu phát triển (gồm sổ tay thao tác agent docs/agent/)
+└── docs/                    # Tài liệu phát triển (gồm sổ tay thao tác docs/agent/)
 ```
 
 </details>
 
----
+## Quyền riêng tư và dữ liệu
+
+hibiki lưu trữ sách, từ điển, phông chữ, dữ liệu sách nói, video, tiến độ đọc, vùng tô sáng, thống kê và cài đặt đã nhập trong bộ nhớ cục bộ của ứng dụng.
+
+Đồng bộ đám mây (Google Drive / OneDrive / Dropbox) sử dụng thông tin xác thực OAuth do người dùng cấu hình; WebDAV / FTP / SFTP sử dụng địa chỉ máy chủ và thông tin xác thực do người dùng cung cấp; Hibiki P2P kết nối trực tiếp qua địa chỉ do người dùng cấu hình. Việc tạo thẻ Anki giao tiếp với AnkiDroid hoặc địa chỉ AnkiConnect đã cấu hình.
 
 ## Lời cảm ơn
+
+hibiki được xây dựng dựa trên các dự án và hệ sinh thái sau:
 
 | Dự án | Mô tả |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Công cụ học tiếng Nhật chuyên sâu |
-| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Trình đọc tiếng Nhật cho Android |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Trình đọc tiếng Nhật cho iOS; tham chiếu engine phân trang |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Trình đọc tiếng Nhật native cho Android |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | Engine từ điển C++ |
-| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Trình đọc tiếng Nhật cho iOS |
-| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Phương án đồng bộ sách nói |
-| [Yomitan](https://github.com/yomidevs/yomitan) | Nguồn định dạng từ điển và bảng biến đổi |
+| [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Giải pháp đồng bộ sách nói |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Tham chiếu định dạng từ điển, bảng biến đổi và trải nghiệm tra từ |
 | [Lapis](https://github.com/donkuri/lapis) | Loại ghi chú Anki |
+| [AnkiDroid](https://github.com/ankidroid/Anki-Android) | Tích hợp tạo thẻ trên Android |
+| [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Tham chiếu âm thanh cục bộ và tương tác với AnkiDroid |
+| [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Tham chiếu khả năng tương thích trình đọc, thống kê và đồng bộ |
+| [media_kit](https://github.com/media-kit/media-kit) | Framework phát video cho Flutter (lõi libmpv) |
 
 ## Giấy phép
 
-[GNU General Public License v3.0](../../LICENSE)
+Phân phối theo Giấy phép Công cộng GNU phiên bản 3.0 (GNU General Public License v3.0). Xem [LICENSE](../../LICENSE) để biết chi tiết.
 
-<p align="center">
-  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <b>Tiếng Việt</b> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
-</p>
+<div align="center">
+
+<br>
+
+[简体中文](../../README.md) | [English](README.en.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | **Tiếng Việt** | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
+
+</div>
