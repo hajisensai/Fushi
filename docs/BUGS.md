@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 404 条。点号进各自文件。
+> 共 405 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-418](bugs/BUG-418-reader-continuous-snap-chapter-start.md) | ✅ | ✅ | 连续模式书籍历史恒回章首(reflow非自愿归零·795/797未修好) |
 | [BUG-417](bugs/BUG-417-interconnect-book-progress-no-sync.md) | ✅ | ✅ | 互联立即同步不同步书籍进度(host不回灌reader_positions·书籍无进度live端点) |
 | [BUG-416](bugs/BUG-416-remote-card-longpress-download.md) | ✅ | ✅ | 长按远端书/视频卡直接下载(应出选项面板) |
 | [BUG-415](bugs/BUG-415-mining-audio-token-expiry.md) | ✅ | ✅ | 制卡音频静默丢(复用查词缓存的过期token URL) |
@@ -57,7 +58,7 @@
 | [BUG-394](bugs/BUG-394-update-segmented-stuck-zero.md) | ✅ | ✅ | 自动更新分片下载卡0%(TODO-596回归) |
 | [BUG-393](bugs/BUG-393-video-mining-title-tag.md) | ✅ | ✅ | 「自动添加书名到标签」配置视频制卡未生效 |
 | [BUG-392](bugs/BUG-392-video-mining-subtitle-delay.md) | ✅ | ✅ | 视频制卡未应用字幕调轴(delay)到音频/封面裁剪时间 |
-| [BUG-391](bugs/BUG-391-subtitle-list-cursor-hidden.md) | ✅ | ✅ | 视频字幕列表侧栏鼠标光标消失 |
+| [BUG-391](bugs/BUG-391-subtitle-list-cursor-hidden.md) | 🚧 | 🚧 | 视频字幕列表侧栏鼠标光标消失 |
 | [BUG-390](bugs/BUG-390-reader-lookup-eval-missingplugin.md) | ✅ | ✅ | 阅读器查词高亮 evaluateJavascript 在半销毁 WebView 上抛 MissingPluginException 崩溃 |
 | [BUG-383](bugs/BUG-383-video-seekbar-siderail-insets.md) | ✅ | ✅ | 手势导航/圆角手机视频进度条偏高+底栏侧边大留白(viewPadding不归零·SafeArea双重内缩) |
 | [BUG-382](bugs/BUG-382-jimaku-result-truncated-episode.md) | ✅ | ✅ | Jimaku 自动获取字幕结果项文件名单行截断，集数被省略号吃掉看不见 |

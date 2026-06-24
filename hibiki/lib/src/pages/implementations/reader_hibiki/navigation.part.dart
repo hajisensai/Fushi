@@ -612,6 +612,40 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final int charOffset = snapshot.charOffset;
     final double progress = snapshot.progress;
 
+    // TODO-798：连续模式非自愿 reflow 归零拦截（位置不连续判据，真因修复）。
+    // 退出再进恢复落定后，WebView 自发 reflow 把裸 window.scrollY 瞬时归 0，归零 scroll
+    // 经 onReaderScroll → 这里读到 progress≈0。既有 JS _reanchorPending 旗 / Dart B-3
+    // 250ms 窗都是时间边界的，大章+图片首开 reflow 远超 250ms 时晚到的归零穿过两墙落库
+    // 章首（795/797 没修到的真因）。改用「上一发实质性非零 → 这一发单步塌缩到章首」判
+    // 非自愿（与输入时序无关，不误伤惯性甩动）：命中则根因式**复位到已提交字符锚**（把
+    // 视口滚回，不止跳过落库）并 return——保留 _lastProgress* 不被归零覆盖，不污染落库/统计。
+    final double priorProgress = _lastProgressValue;
+    final int committedAnchor = _lastProgressCharOffset >= 0
+        ? _lastProgressCharOffset
+        : _initialCharOffset;
+    if (readerContinuousProgressSnapIsInvoluntary(
+      continuousMode: _settings?.isContinuousMode == true,
+      priorProgress: priorProgress,
+      newProgress: progress,
+      hasCommittedAnchor: committedAnchor >= 0,
+    )) {
+      if (DebugLogService.instance.enabled) {
+        debugPrint('[ReaderDiag] _refreshProgress involuntary reflow-zero snap'
+            ' prior=${priorProgress.toStringAsFixed(4)}'
+            ' new=${progress.toStringAsFixed(4)}'
+            ' → re-anchor to committed charOffset=$committedAnchor (no save)');
+      }
+      // 复位到已提交锚（webview.part.dart 的 _reanchorPending 守卫挡住复位滚动自身回传）。
+      if (_controller != null) {
+        _controller!.evaluateJavascript(
+          source: ReaderPaginationScripts.scrollToCharOffsetInvocation(
+            committedAnchor,
+          ),
+        );
+      }
+      return;
+    }
+
     _lastProgressSection = _currentChapter;
     _lastProgressValue = progress;
     _lastProgressCharOffset = charOffset;

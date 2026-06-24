@@ -430,6 +430,45 @@ bool readerScrollWithinReanchorSettle({
   return sinceMs >= 0 && sinceMs < settleMs;
 }
 
+/// TODO-798: 连续模式「非自愿 reflow 归零」判据（位置不连续，非时间窗）。
+///
+/// 根因（795/797 都没修到的真因）：连续模式阅读位置是裸 `window.scrollY`。退出再进恢复
+/// 后，WebView 平台视图自发 reflow（box.size 抖动 / 图片或 SVG 异步 settle）把 scrollY
+/// **瞬时归 0**。这个归零产生的 scroll 事件经 JS `_reportReaderScroll` 回传 `onReaderScroll`
+/// → `_refreshProgress` 读到 progress≈0 → 落库章首。
+///
+/// 既有两墙都是**时间边界**的，而它们要防的 reflow 是**时间无边界**的：
+///  - JS `_reanchorPending` 旗只在 commit（begin 后约 1 帧）就清，归零晚到时旗已清；
+///  - Dart B-3 [readerScrollWithinReanchorSettle] 只有 250ms，归零晚到时窗已关。
+/// 大章 + 图片首开的 reflow 远超 250ms → 两墙皆漏 → 797 修了「commit 也武装 B-3」仍无效。
+///
+/// 正确判据是**位置不连续**而非输入时序（这正是 B-4 `readerProgressDropIsSpurious` 用
+/// 「无近期输入=伪」栽跟头的地方——惯性甩动到真章首无新输入被误判）：非自愿归零是从一个
+/// 实质性的已提交位置 [priorProgress] **单步**塌缩到章首（[newProgress]≈0）。用户真滚到章
+/// 首（含惯性甩动）会经 rAF 节流逐帧上报一串递减进度（0.5→0.4→…→0.05→0），每发都更新
+/// [priorProgress]，到 0 那一发的 prior 已≈0、delta 极小 → 不触发；非自愿 reflow 只产生
+/// **一发** prior=0.5→new≈0 的大跳 → 触发。判据与「是否输入」完全无关，故不误伤甩动。
+///
+/// 仅连续模式（[continuousMode]）；分页模式有 snap/lock 保护，归零不裸奔，恒 false。
+/// 触发后调用方应**复位到已提交锚**（[hasCommittedAnchor] 为真才有锚可复位）并跳过落库；
+/// 无锚（首开尚无任何已提交位置）时无从复位，返回 false 让正常路径处理。
+bool readerContinuousProgressSnapIsInvoluntary({
+  required bool continuousMode,
+  required double priorProgress,
+  required double newProgress,
+  required bool hasCommittedAnchor,
+  double chapterStartEpsilon = 0.01,
+  double minPriorProgress = 0.05,
+}) {
+  if (!continuousMode) return false;
+  if (!hasCommittedAnchor) return false;
+  // 新进度必须塌缩到章首附近。
+  if (newProgress > chapterStartEpsilon) return false;
+  // 紧邻的上一发进度必须实质性非零（单步大跳 = 非自愿；逐帧递减到 0 = 用户真滚）。
+  if (priorProgress < minPriorProgress) return false;
+  return true;
+}
+
 /// TODO-693 / TODO-697 / TODO-718: 连续模式两阶段重锚的编排核心（运行时序列）。
 ///
 /// 从 `_reanchorContinuousForUiScale` 抽出的可注入编排核心：把门控、阶段1 begin
