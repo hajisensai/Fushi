@@ -23,6 +23,36 @@ void main() {
       expect(r.record, isTrue);
     });
 
+    test('TODO-779 success + audioWarning: 成功文案后追加音频失败提示', () {
+      const reason = 'HTTP 404 for https://dict.example/a.mp3';
+      final r = describeMineOutcome(
+        const MineOutcome.success(audioWarning: reason),
+        deckName: 'Deck1',
+      );
+      // 卡片仍算成功、仍记账（音频缺失不撤销制卡）。
+      expect(r.success, isTrue);
+      expect(r.record, isTrue);
+      // 成功文案保留，并追加可见的音频失败原因（含 HTTP 码/URL）。
+      expect(r.message, contains(t.card_exported(deck: 'Deck1')));
+      expect(r.message, contains('404'));
+      expect(r.message, contains('https://dict.example/a.mp3'));
+      expect(r.message, isNot(t.card_exported(deck: 'Deck1')));
+    });
+
+    test('TODO-779 overwrite + audioWarning: 覆盖文案后追加音频失败提示', () {
+      const reason = 'HTTP 500 for https://dict.example/a.mp3';
+      final r = describeMineOutcome(
+        const MineOutcome.success(noteId: 7, audioWarning: reason),
+        deckName: 'Deck1',
+        overwrite: true,
+      );
+      expect(r.success, isTrue);
+      // 覆盖不记账（与既有行为一致）。
+      expect(r.record, isFalse);
+      expect(r.message, contains(t.card_overwritten(deck: 'Deck1')));
+      expect(r.message, contains('500'));
+    });
+
     test('duplicate: 重复文案 + 不成功不记账', () {
       final r = describeMineOutcome(const MineOutcome(MineResult.duplicate));
       expect(r.message, t.card_duplicate);

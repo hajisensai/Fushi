@@ -1809,5 +1809,6 @@
   "remote_book_info": "Info",
   "remote_book_info_has_audiobook": "Includes audiobook",
   "remote_video_info": "Info",
-  "remote_video_info_has_subtitle": "Includes subtitles"
+  "remote_video_info_has_subtitle": "Includes subtitles",
+  "card_exported_audio_failed": "Card exported, but the audio failed to download ($reason)."
 }

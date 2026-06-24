@@ -1809,5 +1809,6 @@
   "remote_book_info": "信息",
   "remote_book_info_has_audiobook": "包含有声书",
   "remote_video_info": "信息",
-  "remote_video_info_has_subtitle": "包含字幕"
+  "remote_video_info_has_subtitle": "包含字幕",
+  "card_exported_audio_failed": "卡片已导出，但音频下载失败（$reason）。"
 }

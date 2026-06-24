@@ -8,6 +8,56 @@ import 'anki_models.dart';
 import 'lapis_note_type.dart';
 import 'lapis_preset.dart';
 
+/// TODO-779：单词远程音频获取的结果载体。两 backend 的远程音频路径
+/// （`_storeRemoteAudio` / `_addRemoteAudio`）共用，把过去只能返回的裸 ref
+/// （`String?`，失败时静默 `null`）升级成「ref + 可见失败原因」二元组。
+///
+/// - [ref] 非空 = 成功：裸媒体引用（AnkiConnect 的裸文件名 / AnkiDroid `addFileToMedia`
+///   返回的文件名），调用方包成 `[sound:ref]` 写进卡片。
+/// - [failureReason] 非空 = **可见失败**：卡片仍会建好但音频落空，原因（含 HTTP 码/URL）
+///   冒泡到 [MineOutcome.audioWarning]，让用户看到「音频获取失败」而非盲猜。
+/// - 两者皆 `null` = 本就没有音频要取（[AnkiAudioRefKind.empty]）或本地文件缺失，
+///   不是错误、无需提示（与旧版静默 `null` 行为一致，Never break userspace）。
+///
+/// **关键不变式**：[failureReason] 非空时 [ref] 必须为 `null`——绝不把非 200 的错误
+/// 响应体当 .mp3 字节写入媒体（HBK-AUDIT-019：会嵌坏文件）。
+@immutable
+class AudioFetchOutcome {
+  const AudioFetchOutcome._({this.ref, this.failureReason})
+      : assert(ref == null || failureReason == null,
+            'A successful audio fetch (ref) cannot also carry a failure reason.');
+
+  /// 成功：拿到裸媒体引用 [ref]。
+  const AudioFetchOutcome.stored(String ref) : this._(ref: ref);
+
+  /// 没有音频要取 / 本地文件缺失：既非成功也非可见失败（不提示）。
+  const AudioFetchOutcome.none() : this._();
+
+  /// 可见失败：[reason] 含 HTTP 码/URL 或异常摘要，冒泡到 [MineOutcome.audioWarning]。
+  const AudioFetchOutcome.failed(String reason) : this._(failureReason: reason);
+
+  /// 非空 = 成功取得的裸媒体引用（包成 `[sound:ref]`）。
+  final String? ref;
+
+  /// 非空 = 可见失败原因（卡片仍建好，音频落空）。
+  final String? failureReason;
+}
+
+/// TODO-779：字段渲染的结果载体。把渲染出的卡片字段 [fields] 与**部分成功**信号
+/// [audioWarning]（单词远程音频下载失败原因）一起回传，让 `_mineEntryInner` /
+/// `updateMinedNote` 的成功分支能把警告带进 [MineOutcome.success]。
+@immutable
+class RenderedMinedFields {
+  const RenderedMinedFields(this.fields, {this.audioWarning});
+
+  /// 渲染出的卡片字段（字段名 → 值，仅含非空值）。
+  final Map<String, String> fields;
+
+  /// 非空 = 单词远程音频下载失败的简短原因（含 HTTP 码/URL），来自
+  /// [AudioFetchOutcome.failureReason]。
+  final String? audioWarning;
+}
+
 abstract class BaseAnkiRepository {
   @protected
   static const settingsKey = 'hoshi_anki_settings';
@@ -255,4 +305,20 @@ abstract class BaseAnkiRepository {
     }
     return fields;
   }
+
+  // ── 远程单词音频失败原因（TODO-779）：两 backend 共用，杜绝两份文案漂移 ──────────
+
+  /// 把单词远程音频的**非 200 HTTP 响应**格式化成给用户看的简短失败原因
+  /// （含状态码与 URL）。两 backend 的远程音频路径在拒绝把错误响应体当 .mp3
+  /// 写入（HBK-AUDIT-019）的同时调用本方法，把原因经 [AudioFetchOutcome.failed]
+  /// 冒泡到 [MineOutcome.audioWarning]，让用户看到「为什么没音频」。纯函数、可单测。
+  @protected
+  String audioFetchHttpFailureReason(int statusCode, String url) =>
+      'HTTP $statusCode for $url';
+
+  /// 把单词远程音频抓取期间抛出的**异常**（DNS/连接失败/超时等）格式化成给用户看的
+  /// 简短失败原因（含异常摘要与 URL）。与 [audioFetchHttpFailureReason] 同语义，覆盖
+  /// 非 HTTP-码类的可见失败。纯函数、可单测。
+  @protected
+  String audioFetchErrorReason(Object error, String url) => '$error for $url';
 }

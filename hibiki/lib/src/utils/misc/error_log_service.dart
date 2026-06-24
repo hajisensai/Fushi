@@ -343,10 +343,18 @@ String? localizeAnkiMineError(String? code) {
 }) {
   switch (outcome.result) {
     case MineResult.success:
+      // TODO-779：卡片已建好，但单词远程音频下载失败（非 200 / 网络异常）时，把
+      // 失败原因（含 HTTP 码/URL）追加到成功 toast，终结用户「没音频不知为何」的盲猜。
+      // audioWarning 为 null（音频本就没有或下载成功）时维持原成功文案（向后兼容）。
+      final String? audioWarning = outcome.audioWarning;
+      final String baseMessage = overwrite
+          ? t.card_overwritten(deck: deckName)
+          : t.card_exported(deck: deckName);
+      final String message = audioWarning != null && audioWarning.isNotEmpty
+          ? '$baseMessage ${t.card_exported_audio_failed(reason: audioWarning)}'
+          : baseMessage;
       return (
-        message: overwrite
-            ? t.card_overwritten(deck: deckName)
-            : t.card_exported(deck: deckName),
+        message: message,
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
