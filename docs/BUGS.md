@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 407 条。点号进各自文件。
+> 共 408 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-421](bugs/BUG-421-meikyo-atrule-scope.md) | ✅ | ✅ | 明鏡第三版 styles.css @media at-rule 被作用域前缀污染导致整块失效 |
 | [BUG-420](bugs/BUG-420-local-audiobook-sentence-audio.md) | ✅ | ✅ | 本地有声书查词制卡无句子音频 (TODO-811) |
 | [BUG-419](bugs/BUG-419-disabled-dict-still-in-lookup.md) | ✅ | ✅ | 禁用词典后查词仍显示该词典释义 |
 | [BUG-418](bugs/BUG-418-reader-continuous-snap-chapter-start.md) | ✅ | ✅ | 连续模式书籍历史恒回章首(reflow非自愿归零·795/797未修好) |

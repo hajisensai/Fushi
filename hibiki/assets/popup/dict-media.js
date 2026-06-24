@@ -41,8 +41,57 @@ function constructDictCss(css, dictName, scopePrefix) {
             continue;
         }
         const bracePos = css.indexOf('{', i);
+        const semiPos = css.indexOf(';', i);
+        // Statement at-rules (`@import`, `@charset`, `@namespace`, `@layer a, b;`)
+        // terminate with `;` before any block — pass them through verbatim; they
+        // carry no selector that could (or should) be scoped.
+        if (semiPos !== -1 && (bracePos === -1 || semiPos < bracePos)) {
+            const statement = css.slice(i, semiPos + 1);
+            if (statement.trimStart().startsWith('@')) {
+                parts.push(statement);
+                i = semiPos + 1;
+                continue;
+            }
+        }
         if (bracePos === -1) break;
         const selectorPart = css.slice(i, bracePos);
+        const selectorPrelude = selectorPart.trim();
+        // Block at-rules need their prelude preserved unscoped. Two families:
+        //  - Conditional groups (`@media`/`@supports`/`@container`/`@layer`/`@scope`)
+        //    wrap nested STYLE RULES, so their inner rules must still be scoped.
+        //  - Other at-rules (`@font-face`/`@keyframes`/`@page`/`@font-feature-values`/...)
+        //    contain declarations or keyframe-selectors that must NOT be prefixed.
+        const atRuleMatch = selectorPrelude.match(/^@([a-z-]+)/i);
+        if (atRuleMatch) {
+            const atName = atRuleMatch[1].toLowerCase();
+            const isConditionalGroup =
+                atName === 'media' ||
+                atName === 'supports' ||
+                atName === 'container' ||
+                atName === 'layer' ||
+                atName === 'scope';
+            // Capture the at-rule's own block so we can decide per-family.
+            i = bracePos + 1;
+            let atDepth = 1;
+            const atBlockStart = i;
+            while (i < css.length && atDepth > 0) {
+                if (css[i] === '{') atDepth++;
+                else if (css[i] === '}') atDepth--;
+                i++;
+            }
+            const atBlockContent = css.slice(atBlockStart, i - 1);
+            parts.push(selectorPart, ' {');
+            if (isConditionalGroup) {
+                // Recurse so inner style rules get the prefix; the prelude stays raw.
+                parts.push(constructDictCss(atBlockContent, dictName, scopePrefix));
+            } else {
+                // @font-face / @keyframes / @page: body is declarations or
+                // keyframe selectors — emit verbatim, never prefixed.
+                parts.push(atBlockContent);
+            }
+            parts.push('}');
+            continue;
+        }
         const selectors = selectorPart.split(',').map(s => {
             const trimmed = s.trim();
             if (!trimmed) return '';
