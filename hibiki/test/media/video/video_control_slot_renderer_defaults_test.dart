@@ -145,8 +145,15 @@ void main() {
           src,
           contains(
               '_controlLayoutNotifier.value = appModel.videoControlLayout'));
-      expect(src, contains('ValueListenableBuilder<VideoControlLayout>'));
-      expect(src, contains('valueListenable: _controlLayoutNotifier'));
+      // BUG-391 r4/r5 (TODO-771)：control bar 从
+      // ValueListenableBuilder<VideoControlLayout> 改为 ListenableBuilder +
+      // Listenable.merge（侧栏可见性也要重建 theme）；仍以持久化的
+      // _controlLayoutNotifier 为权威，builder 内 .value 取值重建。
+      expect(src, contains('Listenable.merge('));
+      expect(
+          src,
+          contains(
+              'final VideoControlLayout layout = _controlLayoutNotifier.value'));
       expect(src, contains('_currentVideoControlsTheme(controller, layout)'));
       expect(src, contains('appModel.setVideoControlLayout(layout)'));
       // The phase-1 read-only derivation is gone.
