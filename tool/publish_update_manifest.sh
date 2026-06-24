@@ -79,29 +79,71 @@ PY
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git"
+# Default to the real GitHub remote. MANIFEST_REMOTE_OVERRIDE lets the
+# offline race test (hibiki/test/tools/update_manifest_publish_race_test.dart)
+# point at a local bare repo; it is never set in CI.
+REMOTE="${MANIFEST_REMOTE_OVERRIDE:-https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git}"
 git -C "$WORK_DIR" init -q
 git -C "$WORK_DIR" remote add origin "$REMOTE"
 git -C "$WORK_DIR" config user.name "github-actions[bot]"
 git -C "$WORK_DIR" config user.email "github-actions[bot]@users.noreply.github.com"
 
+
+# Locate the extracted, unit-testable merge step next to this script.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MERGE_PY="$SCRIPT_DIR/merge_update_manifest.py"
+if [ ! -f "$MERGE_PY" ]; then
+  echo "::error title=Missing merge step::$MERGE_PY not found"
+  exit 1
+fi
+
+# Publish loop: ALWAYS merge this platform's assets onto the LIVE remote tip and
+# push. On any non-fast-forward rejection (a sibling platform job pushed first)
+# re-fetch the new tip and re-merge so the loser preserves the winner's assets.
+#
+# Race fix (TODO-781): the prior version swallowed `git fetch` errors and fell
+# into orphan-branch mode, which would WIPE the other platform's already-pushed
+# assets on a transient network blip. Branch existence is now decided
+# deterministically with `git ls-remote`: a present branch MUST fetch cleanly
+# (network failure -> retry, never orphan); only a genuinely absent branch
+# starts an orphan tree.
 attempt=0
-max_attempts=5
+max_attempts=8
 while :; do
   attempt=$((attempt + 1))
 
-  # Fetch the existing manifest branch if present; otherwise start an orphan.
-  if git -C "$WORK_DIR" fetch -q origin update-manifest 2>/dev/null; then
+  # Does the manifest branch exist on the remote right now? Decide orphan-vs-fetch
+  # from this, not from whether a fetch happened to fail.
+  branch_exists=0
+  if git -C "$WORK_DIR" ls-remote --exit-code --heads origin update-manifest >/dev/null 2>&1; then
+    branch_exists=1
+  fi
+
+  if [ "$branch_exists" -eq 1 ]; then
+    # Branch exists -> we MUST sync onto its live tip. A fetch failure here is a
+    # transient error, NOT a signal to orphan; retry without destroying assets.
+    if ! git -C "$WORK_DIR" fetch -q origin update-manifest; then
+      if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "::error title=Manifest fetch failed::Could not fetch existing update-manifest after $max_attempts attempts."
+        exit 1
+      fi
+      echo "Fetch of existing update-manifest failed (attempt $attempt); retrying..."
+      sleep $((attempt * 3))
+      continue
+    fi
     git -C "$WORK_DIR" checkout -q -B update-manifest FETCH_HEAD
+    git -C "$WORK_DIR" reset -q --hard FETCH_HEAD
   else
+    # Branch genuinely absent -> start a fresh orphan tree.
     git -C "$WORK_DIR" checkout -q --orphan update-manifest
     git -C "$WORK_DIR" rm -rfq --cached . 2>/dev/null || true
     find "$WORK_DIR" -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
   fi
 
-  # Merge THIS platform's assets into any existing manifest for the same tag
-  # (preserve the other platform's assets), then rewrite the file. Runs inside
-  # the branch checkout so the manifest path resolves against the branch tree.
+  # Merge THIS platform's assets into any existing same-tag manifest (preserve
+  # the other platform's assets, dedupe by name). A different (older) tag is
+  # fully superseded. Runs inside the branch checkout so the manifest path
+  # resolves against the branch tree.
   (
     cd "$WORK_DIR"
     MANIFEST_FILE="$MANIFEST_FILE" \
@@ -109,57 +151,7 @@ while :; do
     PRERELEASE="$PRERELEASE" NOTES="$NOTES" \
     RELEASE_SEQUENCE="$RELEASE_SEQUENCE" \
     PLATFORM_ASSETS_JSON="$PLATFORM_ASSETS_JSON" \
-    python3 - <<'PY'
-import json, os
-
-path = os.environ["MANIFEST_FILE"]
-tag = os.environ["TAG"]
-channel = os.environ["CHANNEL"]
-version = os.environ["VERSION"]
-prerelease = os.environ["PRERELEASE"].strip().lower() == "true"
-notes = os.environ["NOTES"]
-release_sequence = os.environ["RELEASE_SEQUENCE"]
-new_assets = json.loads(os.environ["PLATFORM_ASSETS_JSON"])
-
-existing = {}
-if os.path.exists(path):
-    try:
-        with open(path, encoding="utf-8") as f:
-            existing = json.load(f)
-        if not isinstance(existing, dict):
-            existing = {}
-    except Exception:
-        existing = {}
-
-# Same-tag manifest: keep the other platform's assets and merge ours (dedupe by
-# name). A newer tag fully supersedes the prior assets.
-prior_assets = []
-if existing.get("tag") == tag and isinstance(existing.get("assets"), list):
-    prior_assets = [
-        a for a in existing["assets"]
-        if isinstance(a, dict) and a.get("name") and a.get("browser_download_url")
-    ]
-
-by_name = {a["name"]: a for a in prior_assets}
-for a in new_assets:
-    by_name[a["name"]] = a
-merged = sorted(by_name.values(), key=lambda a: a["name"])
-
-manifest = {
-    "schemaVersion": 1,
-    "version": version,
-    "tag": tag,
-    "channel": channel,
-    "prerelease": prerelease,
-    "releaseSequence": int(release_sequence),
-    "notes": notes,
-    "assets": merged,
-}
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(manifest, f, ensure_ascii=False, indent=2)
-    f.write("\n")
-print(f"Wrote {path} with {len(merged)} asset(s) for tag {tag}")
-PY
+    python3 "$MERGE_PY"
   )
 
   git -C "$WORK_DIR" add "$MANIFEST_FILE"
@@ -178,7 +170,9 @@ PY
     echo "::error title=Manifest push failed::Could not push update-manifest after $max_attempts attempts."
     exit 1
   fi
-  echo "Push raced/failed (attempt $attempt); resetting and retrying..."
+  # Non-fast-forward: a sibling job pushed first. Drop our commit, loop back to
+  # re-fetch the new live tip and re-merge onto it (preserving their assets).
+  echo "Push raced/failed (attempt $attempt); re-fetching live tip and re-merging..."
   git -C "$WORK_DIR" reset -q --hard
   sleep $((attempt * 3))
 done
