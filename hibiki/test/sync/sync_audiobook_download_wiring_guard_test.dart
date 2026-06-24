@@ -98,4 +98,52 @@ void main() {
           reason: 'toPull 落盘后必须计入 audiobooksImported');
     });
   });
+
+  group(
+      'BUG-414/TODO-809 forward guard: audiobook write paths bind the SOURCE '
+      'real key, never sanitizeTtuFilename(title)', () {
+    // 历史 BUG-414：pull/import 侧用 sanitizeTtuFilename(title) 重算 audiobook 的
+    // book_key 而非源端真实 key 写库 → audiobooks.book_key 与 epub_books.book_key
+    // 失配 → 书架耳机徽章查不中（有声书集体「变普通书」）。v26 一次性回填已愈旧库，
+    // 本守卫把「写入侧永远用源端真实 key」钉成可回归契约，挡住整个 audiobook 写入
+    // 家族（三条 pull 写入路径）退回 sanitize(title) 重算。
+    test(
+        'orchestrator pull import binds bookKeyOverride to the local EPUB key '
+        '(localBookKeys-filtered), not a recomputed sanitize', () {
+      final String src = read('lib/src/sync/sync_orchestrator.dart');
+      // Pull import 的 override 绑定的是 toPull 循环变量 key（= 已被 localBookKeys
+      // 筛过的本地 EPUB bookKey），而非任何 sanitizeTtuFilename(...title)。
+      expect(src, contains('bookKeyOverride: key'),
+          reason: 'pull import 的 bookKeyOverride 必须是本地 EPUB 的真实 key 变量');
+      // audiobook 写入 override 绝不出现按 title 重算 key（BUG-414 失配根因）。
+      // 注意：epub_books 的 book_key 本就是 sanitizeTtuFilename(title)，故 EPUB
+      // 书 diff 里的 sanitizeTtuFilename(...) 是合法的，本守卫只钉 audiobook 写入
+      // override 这一处不得重算。
+      expect(src, isNot(contains('bookKeyOverride: sanitizeTtuFilename(')),
+          reason: '禁止把 sanitizeTtuFilename(...) 作为 audiobook 写入 override');
+    });
+
+    test(
+        'all three pull write sites import audiobooks WITHOUT '
+        'sanitizeTtuFilename(...title) as the bound key', () {
+      const List<String> sites = <String>[
+        'lib/src/pages/implementations/reader_history/remote.part.dart',
+        'lib/src/sync/sync_compare_dialog.dart',
+        'lib/src/sync/sync_orchestrator.dart',
+      ];
+      for (final String site in sites) {
+        final String src = read(site);
+        // 各写入点都接了真实导入原语。
+        expect(src, contains('importAudioDatabasePackage('),
+            reason: '$site 必须经 importAudioDatabasePackage 落盘');
+        // 任一写入点都不得用 title 重算 audiobook key（BUG-414 整类回归）。
+        expect(src, isNot(contains('sanitizeTtuFilename(book.title)')),
+            reason: '$site 禁止用 sanitizeTtuFilename(book.title) 重算有声书 key');
+        expect(src, isNot(contains('sanitizeTtuFilename(entry.title)')),
+            reason: '$site 禁止用 sanitizeTtuFilename(entry.title) 重算有声书 key');
+        expect(src, isNot(contains('sanitizeTtuFilename(a.title)')),
+            reason: '$site 禁止用 sanitizeTtuFilename(a.title) 重算有声书 key');
+      }
+    });
+  });
 }

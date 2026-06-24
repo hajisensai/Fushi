@@ -254,7 +254,7 @@ void main() {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 25);
+      expect(version.data['user_version'], 26);
     });
 
     test('all expected tables exist', () async {
@@ -314,7 +314,7 @@ void main() {
       // The upgrade ladder bumped the schema to the current version (a v14 DB
       // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 25);
+      expect(version.read<int>('user_version'), 26);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -332,7 +332,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 25);
+      expect(version.read<int>('user_version'), 26);
 
       // The table carries the full v17 column set (no stepwise add-column
       // ladder remains).
@@ -375,7 +375,7 @@ void main() {
       final db = await _openV20DbWithoutVideoTagMappings();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 25);
+      expect(version.read<int>('user_version'), 26);
 
       // The new mapping table exists and shares the BookTags pool: tag the
       // seeded video book and read it back.
@@ -394,7 +394,7 @@ void main() {
       final db = await _openV21DbWithoutVideoStats();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 25);
+      expect(version.read<int>('user_version'), 26);
 
       // The pre-existing video_books row survived the migration, with the new
       // completed_at column defaulting to null (lossless add-column).
@@ -435,7 +435,7 @@ void main() {
       final db = await _openV22DbWithoutActivityTables();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 25);
+      expect(version.read<int>('user_version'), 26);
 
       // 收藏：新增→已存在判定→取消，全链可用。
       final added = await db.addFavoriteWord(
@@ -485,7 +485,7 @@ void main() {
       final db = await _openV24DbWithoutMinedSentences();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 25);
+      expect(version.read<int>('user_version'), 26);
 
       // The migrated table is usable: record two mined sentences (history is a
       // flow, not deduplicated) then read them back newest-first.

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
@@ -85,7 +86,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 25;
+  int get schemaVersion => 26;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -383,6 +384,16 @@ class HibikiDatabase extends _$HibikiDatabase {
               await m.createTable(minedSentences);
             }
           }
+          if (from < 26) {
+            // TODO-809 自愈回填：历史（BUG-414 修复前）sync/导入侧用
+            // sanitizeTtuFilename(title) 重算 audiobook 的 book_key 而非 host 真实
+            // key 写库，导致 audiobooks.book_key 与 epub_books.book_key 集体失配 →
+            // 书架耳机徽章判据（audiobooks.book_key == epub_books.book_key 纯字符串
+            // 相等）查不中，有声书集体「变成普通书」。写入侧已彻底修干净，但已落库的
+            // 失配旧行永远查不中，故需一次性安全回填。详见
+            // backfillMismatchedAudiobookKeysV26 的契约说明。
+            await backfillMismatchedAudiobookKeysV26();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -592,6 +603,118 @@ class HibikiDatabase extends _$HibikiDatabase {
         rows.where((QueryRow r) => r.read<int>('pk') > 0);
     return pkCols.length == 1 &&
         pkCols.first.read<String>('name') == 'book_uid';
+  }
+
+  /// TODO-809 自愈回填：把 `audiobooks` 里 `book_key` 与任一 `epub_books.book_key`
+  /// 失配的旧行，经其 SRT 伴生记录的标题在 `epub_books` 中**唯一匹配**到的真实
+  /// book_key，三表（audiobooks / srt_books / audio_cues）一致改写回去，让书架耳机
+  /// 徽章（判据 = `audiobooks.book_key == epub_books.book_key`）重新查得中。
+  ///
+  /// 失配根因：BUG-414 修复前，sync/导入侧用 `sanitizeTtuFilename(title)` 重算
+  /// book_key 而非 host 真实 key 写库。写入侧现已干净，但已落库失配旧行需此一次性
+  /// 安全回填修复。
+  ///
+  /// 匹配链路：失配 audiobook -> 同 book_key 的 srt_books 行（伴生 SRT）-> 该 SRT
+  /// 的 `title` -> `epub_books.title`。仅当该 title 在 epub_books 中**恰好 1 条**
+  /// （`COUNT(*) == 1`）时才视为安全匹配并改写；0 条（孤儿）或 >1 条（同名歧义）
+  /// 一律保持原值不动，仅记日志。
+  ///
+  /// 安全边界（Never break userspace）：
+  /// - 只在唯一安全匹配（m == 1）时改写，绝不盲改、绝不删行。
+  /// - 改写前先排除「目标真实 key 已被另一行 audiobook 占用」的情形（避免撞
+  ///   `audiobooks.book_key UNIQUE` 等唯一约束），歧义同样跳过。
+  /// - 全程单事务；幂等——健全库（无失配行）下自动 no-op，零行变更；可重复执行无
+  ///   副作用（再次执行时所有行已匹配，候选集为空）。
+  /// - 缺表（partial DB 无 audiobooks/srt_books/epub_books）守卫跳过。
+  Future<void> backfillMismatchedAudiobookKeysV26() async {
+    if (!await _tableExists('audiobooks') ||
+        !await _tableExists('srt_books') ||
+        !await _tableExists('epub_books')) {
+      return;
+    }
+    // 列守卫：极端 partial/legacy DB 可能缺 book_key 列（理论上到 v26 已 re-key，
+    // 但守卫成本低、可彻底避免 "no such column" 抛错中断整条迁移）。
+    if (!await _columnExists('audiobooks', 'book_key') ||
+        !await _columnExists('srt_books', 'book_key') ||
+        !await _columnExists('srt_books', 'title') ||
+        !await _columnExists('epub_books', 'book_key') ||
+        !await _columnExists('epub_books', 'title')) {
+      return;
+    }
+    final bool hasAudioCues = await _tableExists('audio_cues') &&
+        await _columnExists('audio_cues', 'book_key');
+
+    await transaction(() async {
+      // 候选：audiobooks.book_key 不在 epub_books 任何 book_key 里（失配），且其
+      // 同 book_key 的 srt_books.title 在 epub_books 中唯一匹配（COUNT == 1）。
+      // newKey = 该唯一 epub_books.book_key。
+      final List<QueryRow> candidates = await customSelect(
+        'SELECT a.book_key AS old_key, '
+        '(SELECT e.book_key FROM epub_books e WHERE e.title = s.title) AS new_key '
+        'FROM audiobooks a '
+        'JOIN srt_books s ON s.book_key = a.book_key '
+        'WHERE a.book_key NOT IN (SELECT book_key FROM epub_books) '
+        'AND (SELECT COUNT(*) FROM epub_books e WHERE e.title = s.title) = 1',
+      ).get();
+
+      int rewritten = 0;
+      int skippedTargetOccupied = 0;
+      int skippedAmbiguousOldKey = 0;
+      final Set<String> claimedNewKeys = <String>{};
+
+      // 同一 old_key 经多条 SRT 解析到不同 new_key 的歧义行剔除（srt_books 对
+      // book_key 不设唯一约束，防御性处理）。
+      final Map<String, Set<String>> oldToNew = <String, Set<String>>{};
+      for (final QueryRow row in candidates) {
+        final String oldKey = row.read<String>('old_key');
+        final String newKey = row.read<String>('new_key');
+        (oldToNew[oldKey] ??= <String>{}).add(newKey);
+      }
+
+      for (final MapEntry<String, Set<String>> entry in oldToNew.entries) {
+        final String oldKey = entry.key;
+        if (entry.value.length != 1) {
+          skippedAmbiguousOldKey += 1;
+          continue;
+        }
+        final String newKey = entry.value.first;
+        // 目标真实 key 已被另一行 audiobook（或本批已认领）占用 -> 跳过，避免撞
+        // audiobooks.book_key UNIQUE。
+        final List<QueryRow> occupied = await customSelect(
+          'SELECT 1 FROM audiobooks WHERE book_key = ? LIMIT 1',
+          variables: <Variable>[Variable<String>(newKey)],
+        ).get();
+        if (occupied.isNotEmpty || claimedNewKeys.contains(newKey)) {
+          skippedTargetOccupied += 1;
+          continue;
+        }
+        claimedNewKeys.add(newKey);
+
+        await customStatement(
+          'UPDATE audiobooks SET book_key = ? WHERE book_key = ?',
+          <Object?>[newKey, oldKey],
+        );
+        await customStatement(
+          'UPDATE srt_books SET book_key = ? WHERE book_key = ?',
+          <Object?>[newKey, oldKey],
+        );
+        if (hasAudioCues) {
+          await customStatement(
+            'UPDATE audio_cues SET book_key = ? WHERE book_key = ?',
+            <Object?>[newKey, oldKey],
+          );
+        }
+        rewritten += 1;
+      }
+
+      debugPrint(
+        '[hibiki-migration v26] audiobook book_key backfill: '
+        'rewritten=$rewritten, '
+        'skippedAmbiguousOldKey=$skippedAmbiguousOldKey, '
+        'skippedTargetOccupied=$skippedTargetOccupied '
+        '(orphans/同名歧义的失配行保持原值不动)',
+      );
+    });
   }
 
   // ── preferences helpers ─────────────────────────────────────────
