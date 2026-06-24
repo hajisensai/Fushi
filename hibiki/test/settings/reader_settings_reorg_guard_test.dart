@@ -64,6 +64,36 @@ void main() {
     );
   });
 
+  test('字号/行高/缩进归 layout 组、appearance 组无 schema 项（TODO-774）', () {
+    final Map<ReaderGroup, List<SettingsItem>> grouped = collected();
+    final List<String> layoutIds =
+        grouped[ReaderGroup.layout]!.map((SettingsItem i) => i.id).toList();
+    for (final String id in <String>[
+      'reading_display.font_size',
+      'reading_display.line_height',
+      'reading_display.text_indentation',
+    ]) {
+      expect(layoutIds, contains(id), reason: '$id 是字体/行高/缩进，应并入「布局与显示」组');
+    }
+    // appearance 组在 TODO-774 后已无任何 schema 项（grouped 中应缺失或为空）。
+    final List<SettingsItem> appearance =
+        grouped[ReaderGroup.appearance] ?? <SettingsItem>[];
+    expect(appearance, isEmpty,
+        reason: 'appearance 组已无 schema 项（3 项已迁到 layout）');
+  });
+
+  test('layout 组 order 连续无洞 {0..N}（TODO-774 撞号守卫）', () {
+    final Map<ReaderGroup, List<SettingsItem>> grouped = collected();
+    final List<int> orders = grouped[ReaderGroup.layout]!
+        .map((SettingsItem i) => i.reader!.order)
+        .toList();
+    final Set<int> expected = <int>{
+      for (int i = 0; i < orders.length; i++) i,
+    };
+    expect(orders.toSet(), expected,
+        reason: 'layout 组 order 必须是连续无洞的 {0..${orders.length - 1}}：$orders');
+  });
+
   test('手势类设置仍留在 behavior（阅读操作）组（TODO-725）', () {
     final Map<ReaderGroup, List<SettingsItem>> grouped = collected();
     final Set<String> behaviorIds =

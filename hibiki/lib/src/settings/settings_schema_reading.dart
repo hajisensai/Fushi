@@ -29,8 +29,8 @@ SettingsDestination buildReadingDestination() {
             max: 128,
             step: 1,
             reader: const ReaderPlacement(
-              group: ReaderGroup.appearance,
-              order: 0,
+              group: ReaderGroup.layout,
+              order: 1,
             ),
             value: (SettingsContext c) => c.readerSource.ttuFontSize,
             format: (double v) => '${v.round()}',
@@ -47,8 +47,8 @@ SettingsDestination buildReadingDestination() {
             max: 3,
             step: 0.1,
             reader: const ReaderPlacement(
-              group: ReaderGroup.appearance,
-              order: 1,
+              group: ReaderGroup.layout,
+              order: 2,
             ),
             value: (SettingsContext c) => c.readerSource.ttuLineHeight,
             format: (double v) => v.toStringAsFixed(2),
@@ -65,8 +65,8 @@ SettingsDestination buildReadingDestination() {
             max: 10,
             step: 1,
             reader: const ReaderPlacement(
-              group: ReaderGroup.appearance,
-              order: 2,
+              group: ReaderGroup.layout,
+              order: 3,
             ),
             value: (SettingsContext c) => c.readerSource.ttuTextIndentation,
             format: (double v) => '${v.round()}',
@@ -87,7 +87,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 5,
+              order: 8,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginTop,
             format: (double v) => '${v.round()}%',
@@ -105,7 +105,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 6,
+              order: 9,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginBottom,
             format: (double v) => '${v.round()}%',
@@ -123,7 +123,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 7,
+              order: 10,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginLeft,
             format: (double v) => '${v.round()}%',
@@ -141,7 +141,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 8,
+              order: 11,
             ),
             value: (SettingsContext c) => c.readerSource.ttuMarginRight,
             format: (double v) => '${v.round()}%',
@@ -159,7 +159,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 4,
+              order: 7,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.ttuPageColumns.toDouble(),
@@ -182,7 +182,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 2,
+              order: 5,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -216,7 +216,7 @@ SettingsDestination buildReadingDestination() {
                 c.readerSource.ttuSpreadMode != 'off',
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 3,
+              order: 6,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -243,7 +243,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 1,
+              order: 4,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -300,7 +300,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 10,
+              order: 13,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -328,7 +328,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 9,
+              order: 12,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -369,7 +369,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.format_align_justify,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 11,
+              order: 14,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.ttuEnableTextJustification,
@@ -385,7 +385,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 12,
+              order: 15,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.ttuEnableVerticalFontKerning,
@@ -401,7 +401,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 13,
+              order: 16,
             ),
             value: (SettingsContext c) => c.readerSource.ttuEnableFontVPAL,
             onChanged: (SettingsContext c, bool value) {
@@ -415,7 +415,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.style_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 14,
+              order: 17,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.ttuPrioritizeReaderStyles,
