@@ -65,6 +65,12 @@ void main() {
       expect(repo.popupInstantScroll, false);
     });
 
+    test('popupDictionaryColumns defaults to 1 (classic single column)', () {
+      // TODO-776: a fresh install renders one dictionary per row (N=1), which
+      // is the untouched classic vertical layout.
+      expect(repo.popupDictionaryColumns, 1);
+    });
+
     test('searchDebounceDelay defaults to 100', () {
       expect(repo.searchDebounceDelay, 100);
     });
@@ -234,6 +240,37 @@ void main() {
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       expect(repo2.popupMaxHeight, 560.0);
+      repo2.dispose();
+    });
+
+    test('setPopupDictionaryColumns round-trips through DB', () async {
+      await repo.setPopupDictionaryColumns(3);
+
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.popupDictionaryColumns, 3);
+      repo2.dispose();
+    });
+
+    test('setPopupDictionaryColumns clamps out-of-range writes to 1..4',
+        () async {
+      // TODO-776: an absurd column count must never reach the CSS grid. Both
+      // over- and under-range writes are clamped on the way into storage.
+      await repo.setPopupDictionaryColumns(99);
+      expect(repo.popupDictionaryColumns, 4);
+
+      await repo.setPopupDictionaryColumns(0);
+      expect(repo.popupDictionaryColumns, 1);
+
+      await repo.setPopupDictionaryColumns(-5);
+      expect(repo.popupDictionaryColumns, 1);
+
+      // The clamped value also survives a reload (storage holds the clamped
+      // number, not the raw out-of-range input).
+      await repo.setPopupDictionaryColumns(10);
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.popupDictionaryColumns, 4);
       repo2.dispose();
     });
 
