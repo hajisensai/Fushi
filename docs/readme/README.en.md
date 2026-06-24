@@ -39,11 +39,11 @@ hibiki is an immersive language-learning tool for Android and Windows that bring
 
 ### Reading
 
-- Read in vertical (縦書き) or horizontal (横書き) layout; switch between paginated and continuous-scroll modes.
+- Read in vertical or horizontal layout; switch between paginated and continuous-scroll modes.
 - Customize themes (light / dark / pure black / custom), fonts, paragraph spacing, and reader controls.
-- Furigana (ふりがな) annotations; full-screen image viewer inside the reader.
+- Furigana (ふりがな) annotations.
 - Adjustable UI scale; bottom bar controls follow the scale.
-- Multi-user profiles (Profile), auto-switched per book; incognito mode.
+- Multi-user profiles (Profile), auto-switched per book.
 
 ### Lookup
 
@@ -85,32 +85,20 @@ hibiki is an immersive language-learning tool for Android and Windows that bring
 
 ### Data Sync
 
-- Sync reading progress, statistics, and books via Google Drive.
+- Seven sync backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, and Hibiki P2P (direct LAN device-to-device).
+- Sync reading progress, statistics, and books.
 
 ### More
 
 - **17 interface languages**, fully localized across all platforms.
-- **Desktop drag-and-drop import**: drag in books, subtitles, audio, or video files.
 - Share text from other apps to look up words directly.
-
-## Why hibiki
-
-Conventional subtitle-mining tools are great for pulling sentences from video, but the learning pipeline usually stops at "video + subtitles + cards": reading requires a different app, audiobook sync needs yet another solution, and dictionaries and card creation still depend on browser extensions and external tool chains. hibiki closes these gaps — words you encounter while reading, listening, or watching all land in the same local dictionaries, the same context, the same Anki configuration, and the same statistics.
-
-- **One app for read · listen · watch:** EPUB reading, audiobook sync, video subtitle lookup, and Anki card creation in a single app — no juggling browser extensions, subtitle websites, dictionary plugins, and Anki configs.
-- **True multilingual lookup:** Deinflection covers all Yomitan transformation languages (not just Japanese); case / diacritics / Arabic harakat normalization is code-point driven — import the right dictionaries and look up words without switching languages.
-- **Native C++ dictionary engine:** Powered by [hoshidicts](https://github.com/Manhhao/hoshidicts) via C++ FFI — dictionary import and lookup speed far exceed a pure Dart implementation.
-- **Video is input too:** Not just EPUBs — the built-in video player has subtitle lookup and card creation, turning film and TV into learning material.
-- **Unified learning pipeline:** No matter which input a word comes from, it enters the same local dictionaries, the same favorites, the same Anki configuration, and the same statistics — no more scattering across tools.
-- **Recursive lookup inside definitions:** Tap an unfamiliar word inside a dictionary definition to open a nested lookup popup — no need to copy text or leave the current context.
-- **Deep audiobook integration:** Subtitle alignment to body text, sentence highlighting, auto page-turning, cross-chapter playback, and sentence audio for card creation — audiobooks are part of the reading experience, not a bolt-on feature.
 
 ## Platform Support
 
 | Platform | Status | Rendering / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material (EPUB rendered by the forked `flutter_inappwebview_windows`) |
+| Windows | ✅ | Material |
 
 > Minimum Android 7.0 (API 24). The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language.
 
@@ -180,7 +168,7 @@ hibiki/                      # Repository root (Melos workspace: hibiki_workspac
 
 hibiki stores imported books, dictionaries, fonts, audiobook data, videos, reading progress, highlights, statistics, and settings in the app's local storage.
 
-Google Drive sync uses user-configured Google Cloud OAuth. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
+Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth credentials; WebDAV / FTP / SFTP uses user-provided server addresses and credentials; Hibiki P2P connects directly over the local network. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
 
 ## Acknowledgments
 
@@ -188,7 +176,7 @@ hibiki builds on the following projects and ecosystem:
 
 | Project | Description |
 |---|---|
-| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japanese immersive learning tool; hibiki's original reference |
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japanese immersive learning tool |
 | [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS Japanese reader; reader paging engine reference |
 | [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android native Japanese reader |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ dictionary engine |

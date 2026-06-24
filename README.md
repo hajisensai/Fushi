@@ -39,11 +39,11 @@ hibiki 是一款面向 Android 与 Windows 的沉浸式语言学习工具，把 
 
 ### 阅读
 
-- 以竖排（縦書き）或横排（横書き）阅读日文书籍，并在分页和连续滚动之间切换。
+- 以竖排或横排阅读书籍，并在分页和连续滚动之间切换。
 - 自定义主题（明 / 暗 / 纯黑 / 自定义）、字体、段落间距和阅读器控件。
-- 振假名（ふりがな）标注，阅读器内全屏查看图片。
+- 振假名（ふりがな）标注。
 - 界面大小可调，底栏控件跟随缩放。
-- 多用户配置（Profile），按书自动切换；无痕模式。
+- 多用户配置（Profile），按书自动切换。
 
 ### 查词
 
@@ -85,32 +85,20 @@ hibiki 是一款面向 Android 与 Windows 的沉浸式语言学习工具，把 
 
 ### 数据同步
 
-- 通过 Google Drive 同步阅读进度、统计和书籍。
+- 支持 Google Drive、OneDrive、Dropbox、WebDAV、FTP、SFTP 和 Hibiki P2P（局域网设备间直连）七种同步后端。
+- 同步阅读进度、统计和书籍。
 
 ### 更多
 
 - **17 种界面语言**，全平台本地化。
-- **桌面拖放导入**：直接拖入书籍、字幕、音频或视频文件。
 - 从其他应用分享文本直接查词。
-
-## 为什么选择 hibiki
-
-传统的字幕制卡流程很适合从视频里快速挖句子，但学习链路往往停留在「视频 + 字幕 + 制卡」这一段：读书要换阅读器，听有声书要另找同步方案，词典和制卡还得依赖浏览器扩展与外部工具拼接。hibiki 解决的是这条链路的断裂感——读书、听书、看视频里的生词，都在同一套本地词典、同一套上下文、同一套 Anki 配置和统计体系里沉淀下来。
-
-- **一个 App 打通读 · 听 · 看：** EPUB 阅读、有声书同步、视频字幕查词、Anki 制卡在同一个 App 里完成，不需要在浏览器扩展、字幕网页、词典插件和 Anki 配置之间来回切换。
-- **真正的多语言查词：** 词形还原覆盖 Yomitan 全部变换语言（不仅仅是日语），大小写 / 变音符 / 阿拉伯 harakat 归一化按码点驱动，导入对应词典即可查词，无需切换语言。
-- **C++ 原生词典引擎：** 底层使用 [hoshidicts](https://github.com/Manhhao/hoshidicts) C++ FFI，词典导入与查词速度远超纯 Dart 实现。
-- **视频也是输入：** 不止于 EPUB —— 视频播放器内置字幕查词与制卡，影视素材直接成为学习素材。
-- **统一的学习沉淀：** 无论从哪种输入查到的词，都进入同一套本地词典、同一份收藏、同一套 Anki 配置和统计体系，不再分散在不同工具里。
-- **释义内递归查词：** 点击词典释义里的生词即可打开嵌套查词弹窗，不需要复制文本或离开当前上下文。
-- **有声书深度整合：** 字幕对齐到正文、逐句高亮、自动翻页、跨章节播放、句子音频制卡 —— 有声书不是附加功能，而是阅读体验的一部分。
 
 ## 平台支持
 
 | 平台 | 状态 | 渲染 / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material（fork 的 `flutter_inappwebview_windows` 渲染 EPUB） |
+| Windows | ✅ | Material |
 
 > 最低 Android 7.0（API 24）。词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。
 
@@ -180,7 +168,7 @@ hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
 
 hibiki 将导入的书籍、词典、字体、有声书数据、视频、阅读进度、高亮、统计和设置保存在 App 本地存储中。
 
-Google Drive 同步使用由用户配置的 Google Cloud OAuth。Anki 制卡会与 AnkiDroid 或已配置的 AnkiConnect 地址通信。
+云同步（Google Drive / OneDrive / Dropbox）使用由用户配置的 OAuth 凭据；WebDAV / FTP / SFTP 使用用户提供的服务器地址与凭据；Hibiki P2P 仅在局域网内直连。Anki 制卡会与 AnkiDroid 或已配置的 AnkiConnect 地址通信。
 
 ## 鸣谢
 
@@ -188,7 +176,7 @@ hibiki 基于以下项目与生态：
 
 | 项目 | 说明 |
 |---|---|
-| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日语沉浸式学习工具，hibiki 的前身参考 |
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日语沉浸式学习工具 |
 | [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日语阅读器，阅读器分页引擎参考 |
 | [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android 原生日语阅读器 |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ 词典引擎 |
