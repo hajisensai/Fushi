@@ -31,5 +31,6 @@ export 'src/matching/audio_text_normalizer.dart';
 export 'src/matching/epub_srt_matcher.dart';
 export 'src/matching/epub_cue_matcher.dart';
 export 'src/matching/collection_audio_matcher.dart';
+export 'src/matching/cue_file_index_assigner.dart';
 export 'src/matching/sasayaki_match_codec.dart';
 export 'src/matching/cues_to_epub.dart';

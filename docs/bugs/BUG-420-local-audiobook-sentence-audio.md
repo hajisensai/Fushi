@@ -1,0 +1,16 @@
+## BUG-420 · 本地有声书查词制卡无句子音频 (TODO-811)
+- **报告**：2026-06-25（用户：手机端本地有声书查词制卡，卡片里没有句子音频；有声书本身能正常播放）
+- **真实性**：✅ 真 bug。根因不在路由也不在写卡层（两者对称正常），在区间解析的数据结构。
+  - 真断点 1（位置匹配对非 sasayaki cue 整类哑火）：`packages/hibiki_audio/lib/src/matching/collection_audio_matcher.dart:50-54` 位置匹配对每条 cue `SasayakiMatchCodec.tryDecode(cue.textFragmentId)`，本地有声书的 cue `textFragmentId` 是 `[data-cue-id="N"]`（SRT）/`#sN`（SMIL）/空，都不是 sasayaki 编码 → `frag==null continue` → 全部跳过，无 hits/nearest。
+  - 真断点 2（位置 helper 不传文本兜底）：`hibiki/lib/src/media/audiobook/mining_audio_clip.dart:_rangeFromSentencePosition` 调 `findPlaybackRange` 时**没有把句子文本作为 `text` 兜底传进去**。于是位置匹配死掉后 `text=''` → `findPlaybackRange` 返回 null。
+  - 合成症状：词落在 matcher 对齐空隙 → `_findCueForOffset` 返回 null（`audiobook.part.dart:563-577` `if(frag==null) continue`）→ `_lookupCue==null` → `miningSentenceAudioRange` 的 `cue==null` 分支只剩 position helper，而它又返回 null → 整体返回 null → `mining.part.dart:103-113` 的 `else if(cue==null)` 分支只 debugPrint 静默丢，无 toast、无音频。
+  - 叠加缺陷：单时间轴字幕（SRT/LRC/VTT/ASS）解析器把所有 cue 的 `audioFileIndex` 恒设 0（`srt_parser.dart:50` 等），多音频文件书会裁错文件。
+- **[x] ① 已修复** — commit 见下。
+  - 主修：`mining_audio_clip.dart` `_rangeFromSentencePosition` 新增 `sentence` 形参，把句子文本作为 `text` 兜底透传给 `CollectionAudioMatcher.findPlaybackRange`；位置匹配（sasayaki）命中时仍优先用位置区间，命中不到时（非 sasayaki cue）回退到 cue 文本匹配（cue 自带真实 start/end ms）。无归一化 span 时若 `cue==null` 也走纯文本兜底。
+  - 可见性：`mining.part.dart` 的 `else if(cue==null)` 静默分支追加 `HibikiToast.show(msg: t.card_mined_without_sentence_audio)`，把「制卡但无句子音频」变可见（卡片仍会创建，句子音频是可选项）。新增 i18n key `card_mined_without_sentence_audio`（17 语言经 i18n_sync + slang 生成）。
+  - 并行修 audioFileIndex 恒 0：新增纯函数 `packages/hibiki_audio/lib/src/matching/cue_file_index_assigner.dart` `reindexCuesByFileBoundaries`（按累积文件时长边界给单时间轴 cue 重分配 audioFileIndex + 改写成文件局部时间）；`AudiobookStorage.probeAudioDurationsMs` 用一次性 AudioPlayer 探每个文件时长；`audiobook_import_dialog.dart` 在 saveCues 前，多文件 + 单时间轴格式（srt/lrc/vtt/ass，跳过自带映射的 smil/json）时探时长并 reindex（探测不全则跳过不动 cue）。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/audiobook/mining_audio_clip_test.dart`：新增「非 sasayaki cue + gap 词（cue==null）经文本兜底解出非空区间」（红→绿），保留两条负例仍返回 null。
+  - `packages/hibiki_audio/test/matching/cue_file_index_assigner_test.dart`：双文件书第二文件 cue `audioFileIndex==1` + 时间码改写；单文件不动；越界夹紧。
+  - `hibiki/test/reader/reader_mining_audio_guard_test.dart`：守卫静默分支必须弹 `card_mined_without_sentence_audio` toast。
+- **备注**：host 无 media3/真 Anki，extractAudioSegment 与 probeAudioDurationsMs 走真实音频解码，必须真机用本地有声书复测：①gap 词查词制卡卡片带句子音频；②多音频文件书第二文件段落的句子裁出正确文件。

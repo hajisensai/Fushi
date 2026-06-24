@@ -28,6 +28,7 @@ AudioPlaybackRange? miningSentenceAudioRange({
   final AudioPlaybackRange? positionRange = _rangeFromSentencePosition(
     cues: cues,
     cue: cue,
+    sentence: sentence,
     sectionIndex: sectionIndex,
     sentenceNormCharOffset: sentenceNormCharOffset,
     sentenceNormCharLength: sentenceNormCharLength,
@@ -50,15 +51,34 @@ AudioPlaybackRange? miningSentenceAudioRange({
 AudioPlaybackRange? _rangeFromSentencePosition({
   required List<AudioCue> cues,
   required AudioCue? cue,
+  required String sentence,
   required int? sectionIndex,
   required int? sentenceNormCharOffset,
   required int? sentenceNormCharLength,
 }) {
+  // TODO-811: local (non-sasayaki) audiobooks have cues whose textFragmentId is a
+  // plain selector ([data-cue-id="N"]) or empty, never a sasayaki-encoded
+  // fragment, so CollectionAudioMatcher's position matching cannot place them. The
+  // sentence text is the only span anchor left, so always forward it as the text
+  // fallback; findPlaybackRange returns the sasayaki position range when present
+  // and otherwise recovers the range from the cue texts (which carry the real
+  // start/end ms). Without this, a gap word (cue == null) on a local audiobook
+  // resolved no range at all -> the card silently lost its sentence audio.
+  final String textFallback = sentence.trim();
   if (sectionIndex == null ||
       sentenceNormCharOffset == null ||
       sentenceNormCharLength == null ||
       sentenceNormCharLength <= 0) {
-    return null;
+    // No usable normalized span. Still try the text fallback when there is no
+    // lookup cue to anchor a section (gap word); when a cue exists the caller's
+    // _expandAroundCue path already handles text-based expansion.
+    if (cue != null || textFallback.isEmpty) {
+      return null;
+    }
+    return CollectionAudioMatcher.findPlaybackRange(
+      cues: cues,
+      text: textFallback,
+    );
   }
   // When a lookup cue exists, keep the original guard: trust the sentence span
   // only if the cue actually decodes to this section (the word truly belongs to
@@ -78,6 +98,7 @@ AudioPlaybackRange? _rangeFromSentencePosition({
     sectionIndex: sectionIndex,
     normCharOffset: sentenceNormCharOffset,
     normCharLength: sentenceNormCharLength,
+    text: textFallback.isEmpty ? null : textFallback,
   );
 }
 

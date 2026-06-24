@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:just_audio/just_audio.dart';
 
 abstract final class AudiobookStorage {
   static const Set<String> audioExtensions = {
@@ -23,6 +24,27 @@ abstract final class AudiobookStorage {
 
   static bool isAudioFile(String path) =>
       audioExtensions.contains(p.extension(path).toLowerCase());
+
+  /// TODO-811: 逐个探测音频文件时长（毫秒），下标与 [paths] 对齐。某个文件探测失败
+  /// （损坏/解码不支持）返回 0（调用方据此判定无法可靠分文件）。多文件单时间轴有声书
+  /// 导入时用这些边界给 cue 重新分配 [AudioCue.audioFileIndex]（见
+  /// [reindexCuesByFileBoundaries]）。每个文件用一次性 [AudioPlayer]，探完即释放。
+  static Future<List<int>> probeAudioDurationsMs(List<String> paths) async {
+    final List<int> out = <int>[];
+    for (final String path in paths) {
+      final AudioPlayer player = AudioPlayer();
+      try {
+        final Duration? dur = await player.setFilePath(path);
+        out.add(dur?.inMilliseconds ?? 0);
+      } catch (_) {
+        out.add(0);
+      } finally {
+        await player.dispose();
+      }
+    }
+    return out;
+  }
+
   static String _stableHash(String input) {
     final List<int> bytes = utf8.encode(input);
     int h = 0x811c9dc5;

@@ -101,15 +101,20 @@ extension _ReaderMining on _ReaderHibikiPageState {
           },
         );
       } else if (cue == null) {
-        // Visibility: audio exists but neither a lookup cue / sentence span nor a
-        // mergeable draft range resolved to a cue range (or the draft spans
-        // multiple audio files → text-only). Log so a future "no sentence audio"
-        // report is traceable instead of being a silent drop.
+        // TODO-811 visibility: audio files exist but neither a lookup cue /
+        // sentence span nor a mergeable draft range resolved to a cue range (or
+        // the draft spans multiple audio files → text-only). The card is still
+        // created (sentence audio is optional), but the user must SEE that no
+        // sentence audio was attached instead of silently getting an audio-less
+        // card. Previously this was a debugPrint-only silent drop — the exact
+        // symptom users reported for local audiobooks ("card has no sentence
+        // audio"). Surface a toast like the export-failure path, then continue.
         debugPrint(
           '[ReaderHibiki] mine: audio present but no sentence-audio range '
           '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}, '
           'draftSentences=${_miningDraft.length}).',
         );
+        HibikiToast.show(msg: t.card_mined_without_sentence_audio);
       }
     }
 

@@ -175,6 +175,54 @@ void main() {
       expect(clip.endMs, 4300);
     });
 
+    // TODO-811: local (non-sasayaki) audiobook. Every cue's textFragmentId is a
+    // plain SRT selector ('[data-cue-id="N"]'), not a sasayaki-encoded fragment,
+    // so position matching cannot use it. The looked-up word fell in an alignment
+    // gap (cue == null). The sentence audio must still be recovered from the cue
+    // texts via text matching - this is the exact case where local-audiobook
+    // mining produced no sentence audio. Reverting the text-fallback turns it red.
+    test('recovers gap-word sentence audio for non-sasayaki cues via text', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕',
+          textFragmentId: '[data-cue-id="0"]',
+        ),
+        _cue(
+          startMs: 1600,
+          endMs: 2300,
+          text: 'は',
+          textFragmentId: '[data-cue-id="1"]',
+        ),
+        _cue(
+          startMs: 2300,
+          endMs: 4300,
+          text: '学校へ行った',
+          textFragmentId: '[data-cue-id="2"]',
+        ),
+        _cue(
+          startMs: 4300,
+          endMs: 5200,
+          text: '次の文',
+          textFragmentId: '[data-cue-id="3"]',
+        ),
+      ];
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: null,
+        sentence: '「僕は学校へ行った。」',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 60,
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 1000);
+      expect(clip.endMs, 4300);
+    });
+
     test('returns null when there is no cue and no usable sentence span', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(

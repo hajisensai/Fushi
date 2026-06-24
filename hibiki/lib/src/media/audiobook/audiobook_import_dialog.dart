@@ -760,6 +760,28 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       }
       await widget.repo.saveAudiobook(audiobook);
       if (parsed != null) {
+        // TODO-811: single-timeline subtitle formats (srt/lrc/vtt/ass) carry one
+        // continuous timeline, so the parser sets every cue's audioFileIndex to 0.
+        // With multiple audio files that cuts sentence audio from the wrong file.
+        // SMIL/JSON already map files/fragments themselves, so skip them. Probe
+        // per-file durations and rebind each cue to its real file + local time.
+        const Set<String> singleTimelineFormats = {'srt', 'lrc', 'vtt', 'ass'};
+        if (persistedPaths.length > 1 &&
+            persistedAlignment != null &&
+            singleTimelineFormats.contains(audiobook.alignmentFormat)) {
+          final List<int> durationsMs =
+              await AudiobookStorage.probeAudioDurationsMs(persistedPaths);
+          if (durationsMs.length == persistedPaths.length &&
+              durationsMs.every((int d) => d > 0)) {
+            reindexCuesByFileBoundaries(
+              cues: parsed.cues,
+              fileDurationsMs: durationsMs,
+            );
+          } else {
+            debugPrint('[AudiobookImport] TODO-811 skip cue reindex: '
+                'duration probe incomplete ($durationsMs).');
+          }
+        }
         await widget.repo.saveCues(
           bookKey: widget.bookKey,
           cues: parsed.cues,

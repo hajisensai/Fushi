@@ -193,5 +193,30 @@ void main() {
       expect(guardIndex, greaterThanOrEqualTo(0));
       expect(mineIndex, greaterThan(guardIndex));
     });
+
+    // TODO-811: when audio files exist but no sentence-audio range resolves
+    // (gap word, no lookup cue, text fallback also empty) the card is still made
+    // but WITHOUT sentence audio. That used to be a debugPrint-only silent drop -
+    // the exact symptom users reported for local audiobooks. The card must now
+    // tell the user no sentence audio was attached instead of silently dropping.
+    test('surfaces a toast when no sentence-audio range resolves (TODO-811)',
+        () {
+      final String source = readReaderPageSource();
+
+      expect(
+        source,
+        contains('HibikiToast.show(msg: t.card_mined_without_sentence_audio)'),
+        reason:
+            'A card created with audio files present but no resolvable sentence '
+            'range must visibly tell the user no sentence audio was attached, '
+            'not silently produce an audio-less card.',
+      );
+      final int branchIndex = source.indexOf('} else if (cue == null) {');
+      final int toastIndex =
+          source.indexOf('t.card_mined_without_sentence_audio');
+      expect(branchIndex, greaterThanOrEqualTo(0));
+      expect(toastIndex, greaterThan(branchIndex),
+          reason: 'The toast must live inside the no-range gap branch.');
+    });
   });
 }

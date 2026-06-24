@@ -1812,5 +1812,6 @@
   "remote_video_info_has_subtitle": "包含字幕",
   "popup_dictionary_columns": "每行词典数",
   "popup_dictionary_columns_hint": "在一行内并排显示多个词典；窄屏建议少列",
-  "card_exported_audio_failed": "卡片已导出，但音频下载失败（$reason）。"
+  "card_exported_audio_failed": "卡片已导出，但音频下载失败（$reason）。",
+  "card_mined_without_sentence_audio": "已制卡，但本次选区找不到句子音频。"
 }
