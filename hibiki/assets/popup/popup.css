@@ -48,6 +48,39 @@ body {
     padding: 0 10px 10px;
 }
 
+/* Themed scrollbar (mirrors reader_content_styles.dart / lyrics_mode_html.dart).
+   The track stays transparent so it shows the popup background; the thumb takes
+   --text-color (onSurface, injected by dictionary_popup_webview _themeVariablesJs),
+   so dark themes get a light thumb and light themes a dark one. The standard
+   props cover Firefox/Chromium 121+; the -webkit pseudo-elements cover Android
+   WebView / Windows WebView2 / macOS WKWebView. color-scheme is pinned per theme
+   in the html[data-theme] blocks below -- WebView2's Fluent overlay scrollbar
+   ignores ::-webkit-scrollbar and only follows the UA color-scheme. */
+html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-color) transparent;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--text-color);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 8px;
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
 .entry {
     padding: 8px 0;
 }
@@ -762,6 +795,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 html[data-theme="light"] {
+    color-scheme: light;
     --background-color: #fff;
     --background-color-light: #fff;
     --text-color: #000;
@@ -775,6 +809,7 @@ html[data-theme="light"] {
 }
 
 html[data-theme="dark"] {
+    color-scheme: dark;
     --background-color: #000;
     --background-color-light: #000;
     --text-color: #fff;
