@@ -3,12 +3,23 @@
   <img src="docs/static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
 </p>
 
+<p align="center"><b>读一本书，把每个生词都变成你的。</b></p>
+<p align="center">多平台 · 多语言沉浸式阅读器 —— EPUB 阅读 · 划词查词 · Anki 制卡 · 有声书同步 · 视频字幕查词</p>
+
 <p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
+  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
+  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
+  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
+  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
+  &nbsp;·&nbsp;
+  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
+  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
 </p>
 
-<p align="center">多平台 · 多语言沉浸式阅读器</p>
-<p align="center">EPUB 阅读 · 划词查词 · Anki 制卡 · 有声书同步</p>
+<p align="center">
+  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 项目主页 (GitHub Pages)</b></a>
+</p>
 
 <p align="center">
   <a href="docs/readme/README.en.md">English</a> · <a href="docs/readme/README.ja.md">日本語</a> · <a href="docs/readme/README.ko.md">한국어</a> · <a href="docs/readme/README.es.md">Español</a> · <a href="docs/readme/README.fr.md">Français</a> · <a href="docs/readme/README.de.md">Deutsch</a> · <a href="docs/readme/README.pt-BR.md">Português</a> · <a href="docs/readme/README.ru.md">Русский</a> · <a href="docs/readme/README.it.md">Italiano</a> · <a href="docs/readme/README.nl.md">Nederlands</a> · <a href="docs/readme/README.tr.md">Türkçe</a> · <a href="docs/readme/README.vi.md">Tiếng Việt</a> · <a href="docs/readme/README.th.md">ภาษาไทย</a> · <a href="docs/readme/README.id.md">Bahasa Indonesia</a> · <a href="docs/readme/README.ar.md">العربية</a> · <a href="docs/readme/README.zh-Hant.md">繁體中文</a>
@@ -18,94 +29,79 @@
 
 ## 简介
 
-**hibiki** 是一款多平台沉浸式阅读应用：在 EPUB 正文里点按即查词、选词即分析，并把生词一键做成 Anki 卡片。沉浸式学习。词典查询现已覆盖 [Yomitan](https://github.com/yomidevs/yomitan) 的全部变换语言（去屈折 + 查词前文本归一化），界面本地化为 17 种语言。
+**hibiki** 是一款多平台沉浸式语言学习阅读器。在 EPUB 正文里**点按即查词、选词即分析**，把生词一键做成 Anki 卡片；让有声书音频与正文逐句同步高亮；甚至在视频字幕里直接查词制卡。一套工具，覆盖你「读 · 听 · 看」三种沉浸式输入。
 
-## 截图
+词典查询覆盖 [Yomitan](https://github.com/yomidevs/yomitan) 的**全部变换语言**（去屈折 + 查词前文本归一化），界面本地化为 **17 种语言**，并支持 **Android / iOS / macOS / Windows / Linux** 五端。
 
 <p align="center">
-  <img src="docs/static-assets/screenshots/hibiki-readme-home.png" alt="书架" width="320">
+  <img src="docs/static-assets/screenshots/hibiki-readme-home.png" alt="书架" width="300">
   &nbsp;
-  <img src="docs/static-assets/screenshots/hibiki-readme-dictionaries.png" alt="查词" width="320">
+  <img src="docs/static-assets/screenshots/hibiki-readme-dictionaries.png" alt="查词" width="300">
   &nbsp;
-  <img src="docs/static-assets/screenshots/hibiki-readme-settings.png" alt="设置与主题" width="320">
+  <img src="docs/static-assets/screenshots/hibiki-readme-settings.png" alt="设置与主题" width="300">
 </p>
 <p align="center"><sub>书架 · 查词 · 设置与主题</sub></p>
 
-## 功能
+---
 
-### EPUB 阅读
-- WebView 渲染 EPUB（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 衍生的分页引擎）
-- 点按即查词，选词即分析
-- 连续滚动 / 分页两种模式
-- 自定义字体、主题（明 / 暗 / 纯黑 / 自定义）
-- 阅读统计与书签
+## 核心亮点
 
-### 词典
-- 导入多种格式词典：**Yomitan**（原 Yomichan）/ **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **StarDict** / **Migaku**
-- 多语言词形还原（Yomitan 变换表）+ 查词前文本归一化（大小写 / 变音符 / 阿拉伯 harakat），按码点驱动、无需切换语言
-- 音调标注与词频信息
-- 多词典并行查询、子来源优先级与启停、搜索历史
+### 📖 EPUB 阅读，点按即查
 
-### Anki 制卡
-- 一键导出至 [AnkiDroid](https://github.com/ankidroid/Anki-Android)
-- 内置 [Lapis](https://github.com/donkuri/lapis) 笔记类型 schema（vendored 1.7.0），可在 App 内直接创建对应卡片模板与牌组
-- 自动填充上下文句子，支持录音、截图裁剪
-- 多导出配置（Profile）、自定义字段映射
-- 快速操作（Quick Actions）一步制卡
+WebView 渲染的 EPUB 阅读器（基于 [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 衍生的分页引擎），点按任意词即时查词、选区即时分析。连续滚动与分页双模式，自定义字体与主题（明 / 暗 / 纯黑 / 自定义），振假名、阅读统计与书签一应俱全。
 
-### 有声书同步（Sasayaki）
-- 字幕格式：SRT / LRC / VTT / ASS
-- 字幕文本自动对齐 EPUB 正文
-- 跟读高亮，音频同步翻页
-- 播放控制栏（进度、跳转、倍速）
+<p align="center">
+  <img src="docs/static-assets/screenshots/hibiki-readme-reader.png" alt="竖排阅读 · 振假名 · 有声书同步" width="300">
+</p>
+<p align="center"><sub>竖排正文 · 振假名 · 划词高亮 · 底部有声书同步控制条</sub></p>
 
-### 其他
-- 17 种界面语言
-- 多用户配置（Profile）
-- 无痕模式
-- 从其他应用分享文本直接查词
-- 设备间同步（书籍 / 词典 / 有声书 / 阅读进度）
+### 🔍 划词查词，覆盖 Yomitan 全部变换语言
 
-## 支持语言
+导入 **Yomitan**（原 Yomichan）/ **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku** 多种格式词典。多语言词形还原（Yomitan 变换表）+ 查词前文本归一化（大小写 / 变音符 / 阿拉伯 harakat），按码点驱动、无需切换语言。多词典并行查询、子来源优先级与启停、音调标注与词频，皆在一个弹窗里搞定。
 
-界面本地化为以下 17 种语言：
+### 🎴 一键 Anki 制卡
 
-| 语言 | 代码 |
-|---|---|
-| English | `en` |
-| 简体中文 | `zh-CN` |
-| 繁體中文 | `zh-HK` |
-| 日本語 | `ja` |
-| 한국어 | `ko` |
-| Español | `es` |
-| Français | `fr` |
-| Deutsch | `de` |
-| Português (Brasil) | `pt-BR` |
-| Русский | `ru` |
-| Tiếng Việt | `vi` |
-| ภาษาไทย | `th` |
-| Bahasa Indonesia | `id` |
-| Italiano | `it` |
-| Nederlands | `nl` |
-| Türkçe | `tr` |
-| العربية | `ar` |
+查到生词，一步导出至 [AnkiDroid](https://github.com/ankidroid/Anki-Android) 与 AnkiConnect。内置 [Lapis](https://github.com/donkuri/lapis) 笔记类型 schema（vendored 1.7.0），可在 App 内直接创建卡片模板与牌组；自动填充上下文句子，支持录音与截图裁剪、多导出配置（Profile）、自定义字段映射，以及快速操作一步制卡。
 
-> 词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。
+### 🎧 有声书同步（Sasayaki）
 
-## 技术栈
+支持 SRT / LRC / VTT / ASS 字幕，自动将字幕文本对齐到 EPUB 正文。播放时**跟读高亮、音频同步翻页**，配合播放控制栏（进度、跳转、倍速），听书时正文逐句点亮——本页顶部那张阅读截图底部的控制条即为此功能。
 
-| 层 | 技术 |
-|---|---|
-| 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
-| 平台 | Android / Windows（iOS / macOS / Linux 后续支持；Material 3 + Cupertino 自适应） |
-| 阅读器 | WebView 分页引擎（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 衍生） |
-| 存储 | Drift（SQLite，WAL）+ hoshidicts（C++ FFI 词典引擎） |
-| NLP | Yomitan 变换表（多语言词形还原）+ kana_kit（假名转换）；分词走 hoshidicts FFI |
-| 制卡 | AnkiDroid API |
-| 国际化 | Slang（17 种语言） |
-| 最低版本 | Android 7.0（API 24） |
+### 🎬 视频字幕查词
 
-## 构建
+内置基于 media_kit / libmpv 的视频播放器，支持内嵌 / 外挂字幕。播放视频时**直接在字幕上查词、制卡**，把影视素材也纳入沉浸式输入；同时统计观看时长与制卡数量。
+
+<!-- TODO-782: 待补视频播放器截图 -->
+<p align="center"><sub>📹 视频播放器截图待补 —— 需在真机/前台采集（视频画面 + 字幕条 + 查词弹窗，详见下方说明）。</sub></p>
+
+### 🔗 更多
+
+- **17 种界面语言**，全平台本地化
+- **Hibiki 互联**：设备间同步书籍 / 词典 / 有声书 / 阅读进度
+- **多用户配置（Profile）**，按书自动切换
+- **无痕模式**；从其他应用**分享文本直接查词**
+
+---
+
+## 平台支持
+
+| 平台 | 状态 | 渲染 / UI |
+|---|---|---|
+| Android | ✅ | Material Design 3 |
+| iOS | ✅ | Cupertino |
+| Windows | ✅ | Material（fork 的 `flutter_inappwebview_windows` 渲染 EPUB） |
+| macOS | ✅ | Material |
+| Linux | ✅ | Material |
+
+> 最低 Android 7.0（API 24）。词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。
+
+### 界面语言（17 种）
+
+English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
+
+---
+
+## 安装与构建
 
 一键准备（`flutter pub get` + 打补丁），然后构建：
 
@@ -118,60 +114,26 @@ cd hibiki
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把两件事收敛成一条命令：①`flutter pub get`；②运行
-`ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样的事（Windows 上
-melos 有 CJK 编码 bug，改用 `tool/bootstrap.ps1`）。
-
-> **补丁说明：** `ci/apply-patches.sh` 会将 `ci/patches/` 下的修改覆盖到实际 pub cache。每次清除 pub cache 或重新 `flutter pub get` 后必须重新执行（bootstrap 已包含这步）。脚本找不到任何补丁目标时会跳过并警告，而不是假装成功。
-
-## 依赖与补丁
-
-本项目锁定 Flutter 3.44.0，部分上游依赖尚未适配。修补分两条路：① 需作为构建输入、跨机一致复现的包直接 vendor 到 `third_party/` 并用 `dependency_overrides` 指向（`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`，**无需**打 pub-cache 补丁）；② 其余包由 `ci/apply-patches.sh` 修补 pub cache 源码。机制细节见 [docs/agent/build.md](docs/agent/build.md)。下方折叠表是按改动归类的历史清单，与机制 ① 重叠的包以 vendored 版本为准。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 ①`flutter pub get` 与 ②`ci/apply-patches.sh` 收敛成一条命令。本项目锁定 Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`），部分上游依赖经 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修补——机制细节、五平台构建、依赖与补丁清单见 [docs/agent/build.md](docs/agent/build.md)。
 
 <details>
-<summary><b>Flutter API 变更补丁</b></summary>
+<summary><b>技术栈一览</b></summary>
 
-| 包 | 改动 |
+| 层 | 技术 |
 |---|---|
-| `network_to_file_image` 4.0.1 | `load` → `loadImage`；`DecoderCallback` → `ImageDecoderCallback`；`hashValues` → `Object.hash`；`instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`；替换已移除的 `imageCache.putIfAbsent` |
-| `flutter_blurhash` 0.7.0 | 同上 `loadImage` / `hashValues` / `ImmutableBuffer` |
-| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
-| `carousel_slider` 4.2.1 | 内部 import 加 `hide CarouselController` 避免命名冲突 |
-| `fading_edge_scrollview` 3.0.0 | `PageView.controller` nullable 修复 |
+| 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
+| 平台 | Android / iOS / macOS / Windows / Linux（Material 3 + Cupertino 自适应） |
+| 阅读器 | WebView 分页引擎（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 衍生） |
+| 视频 | media_kit / libmpv |
+| 存储 | Drift（SQLite，WAL）+ hoshidicts（C++ FFI 词典引擎） |
+| NLP | Yomitan 变换表（多语言词形还原）+ kana_kit（假名转换）；分词走 hoshidicts FFI |
+| 制卡 | AnkiDroid API + AnkiConnect |
+| 国际化 | Slang（17 种语言） |
 
 </details>
 
 <details>
-<summary><b>v1 Embedding 移除补丁</b></summary>
-
-Flutter 3.44.0 完全移除了 v1 embedding API（`PluginRegistry.Registrar`），以下插件需删除相关引用：
-
-`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite`
-
-</details>
-
-<details>
-<summary><b>Gradle / Kotlin 补丁</b></summary>
-
-| 目标 | 改动 |
-|---|---|
-| `android/build.gradle` afterEvaluate | 子项目强制 `compileSdk`（默认 36，个别 34）；移除 `-Werror` |
-| `audio_session` 0.1.14 | 移除 `-Werror`、`-Xlint:deprecation` |
-| `package_info_plus` 4.0.2 | Kotlin null 安全修复 |
-| `receive_intent` (git) | Kotlin null 安全修复 |
-
-</details>
-
-<details>
-<summary><b>Git 依赖</b></summary>
-
-| 包 | 来源 |
-|---|---|
-| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
-
-</details>
-
-## 项目结构
+<summary><b>项目结构</b></summary>
 
 ```
 hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
@@ -193,6 +155,10 @@ hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
 └── docs/                    # 开发文档（含 docs/agent/ agent 操作手册）
 ```
 
+</details>
+
+---
+
 ## 致谢
 
 | 项目 | 说明 |
@@ -208,3 +174,7 @@ hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
 ## 许可证
 
 [GNU General Public License v3.0](LICENSE)
+
+<p align="center">
+  <a href="docs/readme/README.en.md">English</a> · <a href="docs/readme/README.ja.md">日本語</a> · <a href="docs/readme/README.ko.md">한국어</a> · <a href="docs/readme/README.es.md">Español</a> · <a href="docs/readme/README.fr.md">Français</a> · <a href="docs/readme/README.de.md">Deutsch</a> · <a href="docs/readme/README.pt-BR.md">Português</a> · <a href="docs/readme/README.ru.md">Русский</a> · <a href="docs/readme/README.it.md">Italiano</a> · <a href="docs/readme/README.nl.md">Nederlands</a> · <a href="docs/readme/README.tr.md">Türkçe</a> · <a href="docs/readme/README.vi.md">Tiếng Việt</a> · <a href="docs/readme/README.th.md">ภาษาไทย</a> · <a href="docs/readme/README.id.md">Bahasa Indonesia</a> · <a href="docs/readme/README.ar.md">العربية</a> · <a href="docs/readme/README.zh-Hant.md">繁體中文</a>
+</p>
