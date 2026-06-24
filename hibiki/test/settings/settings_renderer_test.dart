@@ -607,13 +607,16 @@ void main() {
     );
 
     expect(find.text('App version'), findsOneWidget);
-    expect(find.text('9.8.7+654'), findsOneWidget);
+    // TODO-772: versionName 与 versionCode 用括号并列展示，不再用 semver `+`
+    // 把 versionCode 拼进 versionName（旧 `9.8.7+654` 会渲染畸形版本号）。
+    expect(find.text('9.8.7 (654)'), findsOneWidget);
+    expect(find.text('9.8.7+654'), findsNothing);
     expect(
       find.byWidgetPredicate(
         (Widget widget) =>
             widget is AdaptiveSettingsRow &&
             widget.title == 'App version' &&
-            widget.subtitle == '9.8.7+654' &&
+            widget.subtitle == '9.8.7 (654)' &&
             widget.onTap == null,
       ),
       findsOneWidget,

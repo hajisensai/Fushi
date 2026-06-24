@@ -8,6 +8,7 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 SettingsDestination buildSystemDestination() {
@@ -201,8 +202,16 @@ Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
   final packageInfo = settingsContext.appModel.packageInfo;
   return AdaptiveSettingsRow(
     title: t.app_version,
-    subtitle: '${packageInfo.version}+${packageInfo.buildNumber}',
+    subtitle: formatAppVersionDisplay(packageInfo),
     icon: Icons.info_outline,
     showIcon: true,
   );
 }
+
+/// 版本展示文案。versionName 是 semver（含 `-debug.5613` 等预发布段），
+/// buildNumber 是 Android versionCode（如 `1000561300`），两者语义不同：
+/// 绝不能用 semver 的 `+` build-metadata 把 versionCode 拼进 versionName，
+/// 否则会渲染出畸形的 `0.11.1-debug.5613+1000561300`。用括号并列展示。
+@visibleForTesting
+String formatAppVersionDisplay(PackageInfo packageInfo) =>
+    '${packageInfo.version} (${packageInfo.buildNumber})';
