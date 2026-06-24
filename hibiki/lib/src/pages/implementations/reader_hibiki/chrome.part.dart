@@ -591,15 +591,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     );
   }
 
+  // TODO-796: resolve a TOC entry's href to its spine chapter index through the
+  // same canonicalization [EpubBook.resolveInternalLink] uses, so a cover/front-
+  // matter entry whose href differs only by `./` / `%xx` / case is matched (not
+  // dropped, which used to shove the real first chapter into row 0 and make a
+  // "Cover" tap jump to chapter 1).
   int _tocHrefToChapterIndex(String? href) {
-    if (href == null || _book == null) return -1;
-    final String cleanHref = href.split('#').first;
-    for (int i = 0; i < _book!.chapters.length; i++) {
-      if (_book!.chapters[i].href == cleanHref) {
-        return i;
-      }
-    }
-    return -1;
+    if (_book == null) return -1;
+    return _book!.chapterIndexForHref(href);
   }
 
   Future<void> _showAppearanceSheet() async {

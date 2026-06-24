@@ -264,6 +264,105 @@ void main() {
     });
   });
 
+  // TODO-796: the TOC sheet maps each entry's stored href to a spine chapter
+  // index through [EpubBook.chapterIndexForHref], which must use the SAME
+  // canonicalization as [resolveInternalLink]. A cover/front-matter TOC entry
+  // whose href differs only by `./` / `%xx` / letter case previously resolved
+  // to -1 with a raw `==`, was silently dropped from the flattened TOC, and the
+  // real first chapter slid into row 0 — clicking "Cover" jumped to chapter 1.
+  group('EpubBook.chapterIndexForHref (TODO-796 cover TOC matching)', () {
+    final book = EpubBook(
+      title: 'Test',
+      chapters: [
+        EpubChapter(
+          id: 'cover',
+          href: 'OEBPS/cover.xhtml',
+          mediaType: 'application/xhtml+xml',
+          html: '',
+        ),
+        EpubChapter(
+          id: 'ch1',
+          href: 'OEBPS/text/chapter1.xhtml',
+          mediaType: 'application/xhtml+xml',
+          html: '',
+        ),
+      ],
+    );
+
+    test('exact stored href resolves to its spine index', () {
+      expect(book.chapterIndexForHref('OEBPS/cover.xhtml'), 0);
+      expect(book.chapterIndexForHref('OEBPS/text/chapter1.xhtml'), 1);
+    });
+
+    test('cover href with fragment still resolves (not -1)', () {
+      expect(book.chapterIndexForHref('OEBPS/cover.xhtml#top'), 0);
+    });
+
+    test('current-dir (./) cover href resolves', () {
+      expect(book.chapterIndexForHref('OEBPS/./cover.xhtml'), 0);
+    });
+
+    test('parent-relative (../) href resolves', () {
+      expect(book.chapterIndexForHref('OEBPS/text/../cover.xhtml'), 0);
+    });
+
+    test('duplicate slashes resolve', () {
+      expect(book.chapterIndexForHref('OEBPS//cover.xhtml'), 0);
+    });
+
+    test('percent-encoded cover href resolves', () {
+      // %2F is '/', %63%6F%76%65%72 is 'cover' — a TOC that points at an escaped
+      // path must still land on the spine chapter, not -1.
+      expect(book.chapterIndexForHref('OEBPS%2Fcover.xhtml'), 0);
+    });
+
+    test('case-only difference recovers the spine chapter (cover fallback)', () {
+      // Filesystem-case-insensitive authoring: TOC says Cover.XHTML, spine has
+      // cover.xhtml. resolveInternalLink stays case-sensitive (case-sensitive
+      // FS), but the TOC matcher case-insensitive fallback recovers it so the
+      // cover row is not dropped.
+      expect(book.chapterIndexForHref('OEBPS/Cover.XHTML'), 0);
+    });
+
+    test('percent-encoded Japanese cover href resolves', () {
+      final jpBook = EpubBook(
+        title: 'Test',
+        chapters: [
+          EpubChapter(
+            id: 'cover',
+            href: '表紙.xhtml',
+            mediaType: 'application/xhtml+xml',
+            html: '',
+          ),
+        ],
+      );
+      expect(
+        jpBook.chapterIndexForHref('%E8%A1%A8%E7%B4%99.xhtml'),
+        0,
+      );
+    });
+
+    test('null / empty href returns -1', () {
+      expect(book.chapterIndexForHref(null), -1);
+      expect(book.chapterIndexForHref(''), -1);
+      expect(book.chapterIndexForHref('   '), -1);
+    });
+
+    test('href owned by no spine chapter returns -1 (dirty TOC item skipped)', () {
+      // A cover entry pointing straight at the image (not a spine document) is
+      // genuinely unlocatable and must still be skippable — but only AFTER the
+      // canonical + case-insensitive passes both fail, never via a stale ==.
+      expect(book.chapterIndexForHref('OEBPS/images/cover.jpg'), -1);
+    });
+
+    test('malformed percent escape degrades to literal compare (no throw)', () {
+      // A stray '%' must not abort the whole jump; it falls back to a literal
+      // canonical compare instead of throwing.
+      expect(book.chapterIndexForHref('OEBPS/cover%.xhtml'), -1);
+      expect(book.chapterIndexForHref('OEBPS/cover.xhtml'), 0);
+    });
+  });
+
   group('EpubResource.readBytes', () {
     test('returns in-memory bytes if available', () {
       final resource = EpubResource(

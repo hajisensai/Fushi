@@ -600,6 +600,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);
     if (snapshot == null) {
+      // TODO-796：封面/插图等纯图片页全章无文本 → JS 返空串 → snapshot==null。这是
+      // 合法状态，不是「未 settle」，旧逻辑一律早退会让顶部百分比沿用上一章旧值。
+      // 用该图片页的章首累计字数 / 全书总字数给进度 UI 兜底（封面≈全书 0%），让百分比
+      // 立即落到正确值；不写 DB、不累计 session（那条路确实需要真实快照）。
+      _applyImagePageProgressFallback();
       return;
     }
 
@@ -645,6 +650,29 @@ window.flutter_inappwebview.callHandler('spreadReady');
             ' (progress=${progress.toStringAsFixed(4)} section=$_currentChapter)');
       }
     }
+  }
+
+  /// TODO-796：当前章是纯图片/封面页（全章无文本 → JS 无进度快照）时，把顶部进度 UI
+  /// 拉到该章在全书中的章首位置（封面≈全书 0%），而不是沿用上一章旧百分比。只动进度
+  /// 显示字段，不碰 DB 落库 / session 字数累计（图片页无章内文本进度可言）。
+  void _applyImagePageProgressFallback() {
+    if (!mounted || _book == null) return;
+    if (!_book!.isImageOnlyChapter(_currentChapter)) return;
+    final ({int currentChars, int totalChars})? anchor =
+        imagePageProgressAnchor(
+      chapterIndex: _currentChapter,
+      cumulativeChars: _chapterCumulativeChars,
+      charCounts: _chapterCharCounts,
+    );
+    if (anchor == null) return;
+    if (_progressCurrentChars == anchor.currentChars &&
+        _progressTotalChars == anchor.totalChars) {
+      return;
+    }
+    _rebuild(() {
+      _progressCurrentChars = anchor.currentChars;
+      _progressTotalChars = anchor.totalChars;
+    });
   }
 
   Future<void> _syncPositionFromWebViewProgress() async {

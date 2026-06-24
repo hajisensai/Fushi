@@ -93,7 +93,7 @@ class EpubBook {
     if (!uri.path.startsWith('/epub/')) return null;
 
     final String epubPath = _canonicalEpubPath(
-        Uri.decodeComponent(uri.path.substring('/epub/'.length)));
+        _decodeHrefPath(uri.path.substring('/epub/'.length)));
     final String? fragment = uri.fragment.isNotEmpty ? uri.fragment : null;
 
     for (int i = 0; i < chapters.length; i++) {
@@ -103,6 +103,58 @@ class EpubBook {
     }
 
     return null;
+  }
+
+  /// TODO-796: maps a stored TOC `href` (a spine-relative path that may carry a
+  /// `#fragment`, percent escapes, `./`/`../` segments, or case differences from
+  /// the spine chapter href) to its spine chapter index, or -1 when no spine
+  /// chapter owns it.
+  ///
+  /// The TOC sheet previously matched with a raw `==` against the stored chapter
+  /// href ([_tocHrefToChapterIndex]), a *different* standard than
+  /// [resolveInternalLink]'s [_canonicalEpubPath] comparison. A cover/front-
+  /// matter TOC entry whose href differed only by `./` / `%xx` / letter case
+  /// then resolved to -1 and was silently dropped from the flattened TOC, so the
+  /// real first chapter slid into row 0 — clicking "Cover" jumped to chapter 1.
+  ///
+  /// This reuses the one canonicalization standard (so link resolution and TOC
+  /// matching can never disagree) and, only when the exact-canonical pass finds
+  /// nothing, falls back to a case-insensitive canonical pass. Case folding is
+  /// kept out of [_canonicalEpubPath] itself so [resolveInternalLink] still
+  /// honours case-sensitive filesystems; the fallback is TOC-local and only ever
+  /// recovers an otherwise-dropped entry — it never reroutes a path that already
+  /// matched exactly.
+  int chapterIndexForHref(String? href) {
+    if (href == null) return -1;
+    final String base = normalizeHref(href);
+    if (base.isEmpty) return -1;
+    final String target = _canonicalEpubPath(_decodeHrefPath(base));
+    if (target.isEmpty) return -1;
+
+    for (int i = 0; i < chapters.length; i++) {
+      if (_canonicalEpubPath(chapters[i].href) == target) {
+        return i;
+      }
+    }
+    final String targetLower = target.toLowerCase();
+    for (int i = 0; i < chapters.length; i++) {
+      if (_canonicalEpubPath(chapters[i].href).toLowerCase() == targetLower) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /// Percent-decodes a href path, degrading to the raw value on malformed
+  /// escapes (a TOC `src` is untrusted input — a stray `%` must not abort the
+  /// whole jump). Mirrors the percent-decoding [EpubParser] applies at parse
+  /// time so both sides of the comparison are decoded.
+  static String _decodeHrefPath(String path) {
+    try {
+      return Uri.decodeComponent(path);
+    } on ArgumentError {
+      return path;
+    }
   }
 
   // BUG-097: the WebView resolves a relative `<a href>` against the current

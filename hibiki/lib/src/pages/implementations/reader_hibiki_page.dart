@@ -294,6 +294,34 @@ ReadProgressResult accumulateSessionChars({
   return (charsAdded: 0, highWaterMark: highWaterMark);
 }
 
+/// TODO-796：图片/封面页（纯 `<img>`，全章无可读文本）的进度 UI 兜底锚点。
+///
+/// 这类页 `paginationMetrics.totalChars==0` → JS `hoshiProgressDetails()` 返空串
+/// → `parseReaderStableProgressDetails` 返 null → `_refreshProgress` 旧逻辑一律早
+/// 退，顶部百分比沿用上一章旧值（导航到封面进度不变 = BUG-796 之一）。封面/插图
+/// 没有章内文本进度可言，但它在全书里有确定位置——用该章在累计前缀里的章首绝对
+/// 字数作 current、全书总字数作 total，百分比就落到正确值（封面≈全书 0%）。
+///
+/// 入参是已落定的累计前缀 [cumulativeChars]（每章起始累计字数）和每章字数
+/// [charCounts]；列表为空 / 越界 / 全书零字数（计数尚未算完）时返回 null，让调用方
+/// 维持现状不写脏值。纯函数，无副作用，供单测锁定兜底语义。
+({int currentChars, int totalChars})? imagePageProgressAnchor({
+  required int chapterIndex,
+  required List<int> cumulativeChars,
+  required List<int> charCounts,
+}) {
+  if (cumulativeChars.isEmpty ||
+      charCounts.isEmpty ||
+      cumulativeChars.length != charCounts.length ||
+      chapterIndex < 0 ||
+      chapterIndex >= cumulativeChars.length) {
+    return null;
+  }
+  final int total = cumulativeChars.last + charCounts.last;
+  if (total <= 0) return null;
+  return (currentChars: cumulativeChars[chapterIndex], totalChars: total);
+}
+
 /// BUG-213：章内原生滚动回传（`onReaderScroll`）到来时，是否应刷新章内进度。
 ///
 /// 章内进度 UI 字段只在 `_refreshProgress()` 里写；原生滚动（连续模式 window 滚动、
