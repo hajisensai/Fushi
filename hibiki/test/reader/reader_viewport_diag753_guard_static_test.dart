@@ -2,12 +2,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-753 源码守卫：竖排+横屏「正文整体上偏 / 顶端被切 / 越翻越偏」是真机专属，
-/// headless 测不出（注入的 viewportHeight 与 WebView 真实 innerHeight/clientHeight
-/// 在 headless 下天然一致），必须靠真机取证。`window.hoshiReader._diag753(phase)`
-/// 一次性把两套高度量 + chrome inset + getScrollContext().pageSize 打成一行
-/// `[753-DIAG]`，经 onConsoleMessage → debugPrint → DebugLogService 环形缓冲，用户
-/// 在「设置 → 诊断 → 调试日志」开开关后即可见 + 用「复制全部」复制。
+/// TODO-792/753 源码守卫：竖排翻页「文字越翻越偏 / 叠加漂移」是真机专属，headless
+/// 测不出（注入的 viewportHeight 与 WebView 真实 innerHeight/clientHeight 在 headless
+/// 下天然一致；probe 的 column-width 也省了 −cT−cB，δ 天然为 0），必须靠真机取证。
+/// `window.hoshiReader._diag753(phase)` 一次性把两套高度量 + chrome inset +
+/// getScrollContext().pageSize + **每页 δ（pitchDelta = contentBox − 浏览器解析
+/// columnWidth）** 打成一行 `[753-DIAG]`，经 onConsoleMessage → debugPrint →
+/// DebugLogService 环形缓冲，用户在「设置 → 诊断 → 调试日志」开开关后可「复制全部」。
+///
+/// TODO-792：旧版只在竖排+横屏打，漏掉用户竖屏竖排场景；现竖排横/竖屏都打，按
+/// phase+朝向去重。关键新字段 pitchDelta 让真机日志一锤定音：>0 坐实竖排该跟横排一样
+/// 改读 getComputedStyle.columnWidth 消 δ；≈0 则漂移另有来源（reanchor/inset 遮挡）。
 ///
 /// 这个守卫只锁「诊断接入存在且字段完整、走 console.log 同管道、只在分页 shell」，
 /// 撤掉任一点 → 转红。纯取证，不验运行时几何（needsDevice）。
@@ -29,19 +34,22 @@ void main() {
     helper = source.substring(start, end);
   });
 
-  test('诊断只在竖排 + 横屏取证（真凶场景），其余形态早返回', () {
+  test('诊断在竖排（横/竖屏都打），非竖排早返回（TODO-792 放宽）', () {
     expect(helper.contains('this.isVertical()'), isTrue, reason: '须按竖排判据门控');
+    expect(helper.contains('if (!vertical) return;'), isTrue,
+        reason: '非竖排（横排亚像素 δ 已由 TODO-753 修复）一律早返回不打');
     expect(helper.contains('window.innerWidth > window.innerHeight'), isTrue,
-        reason: '须按横屏判据门控（innerW>innerH）');
-    expect(helper.contains('if (!vertical || !landscape) return;'), isTrue,
-        reason: '非竖排或非横屏一律早返回不打，避免无关刷屏');
+        reason: '仍按横/竖屏算 orient 字段（写进日志），但不再用作门控');
+    expect(helper.contains('if (!vertical || !landscape) return;'), isFalse,
+        reason: 'TODO-792：旧版「非横屏早返回」门控已移除，竖屏竖排也须取证');
   });
 
-  test('同 phase 只打一行（去重，避免 updatePageSize 刷屏）', () {
-    expect(helper.contains('this._diag753Seen'), isTrue,
-        reason: '须有 per-phase 去重标记');
-    expect(helper.contains('if (this._diag753Seen[phase]) return;'), isTrue,
-        reason: '同 phase 第二次起早返回');
+  test('phase+朝向去重（横竖屏各打一次，避免 updatePageSize 刷屏）', () {
+    expect(helper.contains('this._diag753Seen'), isTrue, reason: '须有去重标记');
+    expect(helper.contains("var key = phase + '_' + orient;"), isTrue,
+        reason: 'TODO-792：按 phase+朝向去重（横竖屏切换各打一次仍不刷屏）');
+    expect(helper.contains('if (this._diag753Seen[key]) return;'), isTrue,
+        reason: '同 phase+朝向第二次起早返回');
   });
 
   test('诊断走 console.log（经 onConsoleMessage → debugPrint → DebugLog 同管道）', () {
@@ -79,12 +87,36 @@ void main() {
     // pageStep 来自 getScrollContext（JS pageStep 实际用的 V），与 CSS 列高 V 对照。
     expect(helper.contains('var ctx = this.getScrollContext();'), isTrue,
         reason: 'pageStep 必须取自 getScrollContext，对照 CSS 列高 V');
-    expect(helper.contains("+ ' pageStep=' + ctx.pageSize"), isTrue);
+    expect(helper.contains("+ ' pageStep=' + ctx.pageSize.toFixed(3)"), isTrue);
     expect(helper.contains("+ ' scrollHeight=' + document.body.scrollHeight"),
+        isTrue);
+    expect(helper.contains("+ ' writingMode=' + bodyCs.writingMode"), isTrue);
+  });
+
+  test('TODO-792：采集每页 δ —— contentBox vs 浏览器解析 columnWidth + pitchDelta', () {
+    expect(helper.contains('var bodyCs = getComputedStyle(document.body);'),
+        isTrue,
+        reason: '复用 body computed style 读 columnWidth/columnGap');
+    expect(
+        helper.contains('var resolvedColW = parseFloat(bodyCs.columnWidth);'),
+        isTrue,
+        reason: '须读浏览器对 column-width 单次解析的 used 列高（亚像素）');
+    expect(helper.contains('var contentBox = ctx.pageSize - gap;'), isTrue,
+        reason: 'contentBox = JS 翻页网格列高（pageStep − gap，双 parseFloat 路径产物）');
+    expect(
+        helper.contains(
+            'var pitchDelta = (resolvedColW > 0) ? (contentBox - resolvedColW) : null;'),
+        isTrue,
+        reason:
+            'pitchDelta = contentBox − resolvedColumnWidth = 每页 δ（坐实/排除竖排亚像素根因的关键字段）');
+    expect(helper.contains("+ ' contentBox=' + contentBox.toFixed(3)"), isTrue);
+    expect(
+        helper.contains(
+            "+ ' resolvedColumnWidth=' + (resolvedColW > 0 ? resolvedColW.toFixed(3) : 'NaN')"),
         isTrue);
     expect(
         helper.contains(
-            "+ ' writingMode=' + getComputedStyle(document.body).writingMode"),
+            "+ ' pitchDelta=' + (pitchDelta != null ? pitchDelta.toFixed(3) : 'null')"),
         isTrue);
   });
 

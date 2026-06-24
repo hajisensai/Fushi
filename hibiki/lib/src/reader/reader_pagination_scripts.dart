@@ -1887,33 +1887,48 @@ window.hoshiReader._contentSize = function() {
   var pb = parseFloat(cs.paddingBottom) || 0;
   return { w: (document.body.clientWidth || window.innerWidth) - pl - pr, h: (document.body.clientHeight || window.innerHeight) - pt - pb };
 };
-// TODO-753 诊断取证（纯只读，零行为改动）：竖排+横屏正文整体上偏 / 顶端被切 /
-// 越翻越偏，疑因 reader 注入的 viewportHeight（Flutter MediaQuery 高 dartH）与
-// WebView 真实 innerHeight / clientHeight 在「横屏+竖排+chrome inset」下不一致 →
-// CSS 列高用一个 V、JS pageStep 用另一个 V → 每页错一点累积。headless 测不出
-// （两边天然一致），必须真机取证。这里一次性把两套高度量 + chrome inset + pageStep
-// 全打成一行 [753-DIAG]：经 onConsoleMessage → debugPrint → DebugLogService 环形
-// 缓冲，用户在「设置 → 诊断 → 调试日志」开开关后即可见、用「复制全部」复制。
-// 只在竖排 + 横屏首次（按 phase 去重）打一行，避免刷屏；不碰 pageStep / 列高计算本身。
+// TODO-792/753 诊断取证（纯只读，零行为改动）：竖排翻页「文字越翻越偏 / 叠加漂移」。
+// 根因候选（代数已证 contentBox==columnWidth 成对，故 δ 是亚像素级，与横排 TODO-753
+// 同源）：竖排 getScrollContext 的 contentBox = injectedV − parseFloat(paddingTop) −
+// parseFloat(paddingBottom)（两次 parseFloat 后相减的浮点路径），而浏览器对
+// `column-width: max(F, calc(injectedV − mt·vh − mb·vh − F − cT − cB))` 是**单次**解析出
+// used 列高（亚像素）。两条舍入路径在真机 vh 单位 + chrome inset 下可差零点几 px/页 →
+// paginate 的 N×pageStep 绝对网格与浏览器真实列周期(columnWidth+gap)失配 → 文字相对
+// 页框每页线性右移、长章累积成可见漂移。headless 测不出（probe 的 column-width 省了
+// −cT−cB、vh 也无 notch，两条路径天然同值 δ=0），必须真机取证。
+// 关键新增字段 pitchDelta = contentBox − parseFloat(columnWidth) = **每页 δ**：>0 则坐实
+// 竖排该跟横排一样改读 getComputedStyle.columnWidth 消 δ；≈0 则漂移另有来源（reanchor/
+// chrome inset 遮挡），诊断指向新方向。一行 [753-DIAG] 经 onConsoleMessage → debugPrint
+// → DebugLogService 环形缓冲，用户在「设置 → 诊断 → 调试日志」开开关后可「复制全部」。
+// 旧版只在竖排+横屏打，漏掉用户竖屏竖排场景；现竖排横/竖屏都打，按 phase+朝向去重避免刷屏。
 window.hoshiReader._diag753 = function(phase) {
   try {
     var vertical = this.isVertical();
+    // 横排亚像素 δ 已由 TODO-753 修复（getScrollContext 横排读 columnWidth），这里只为竖排取证。
+    if (!vertical) return;
     var landscape = window.innerWidth > window.innerHeight;
-    // 只在竖排 + 横屏取证（真凶场景）；其余形态直接跳过不打。
-    if (!vertical || !landscape) return;
+    var orient = landscape ? 'landscape' : 'portrait';
+    var key = phase + '_' + orient; // phase+朝向去重：横竖屏切换各打一次，仍不刷屏
     if (!this._diag753Seen) this._diag753Seen = {};
-    if (this._diag753Seen[phase]) return; // 同 phase 只打一次，避免 updatePageSize 刷屏
-    this._diag753Seen[phase] = true;
+    if (this._diag753Seen[key]) return;
+    this._diag753Seen[key] = true;
     var rootStyle = getComputedStyle(document.documentElement);
     var topInset = rootStyle.getPropertyValue('--chrome-top-inset').trim();
     var bottomInset = rootStyle.getPropertyValue('--chrome-bottom-inset').trim();
-    // V = getScrollContext 实际用的注入视口高（this.viewportHeight，竖排列高几何唯一基准）。
+    var bodyCs = getComputedStyle(document.body);
     var ctx = this.getScrollContext();
+    var gap = parseFloat(bodyCs.columnGap) || 0;
+    // contentBox = JS 翻页网格用的列高（pageStep − gap，即 injectedV − padding 的双 parseFloat 路径）。
+    var contentBox = ctx.pageSize - gap;
+    // resolvedColumnWidth = 浏览器对 column-width 单次解析出的 used 列高（亚像素），竖排翻页轴=列高方向，
+    // 真实列周期 == resolvedColumnWidth + gap。pitchDelta = contentBox − resolvedColumnWidth = 每页 δ。
+    var resolvedColW = parseFloat(bodyCs.columnWidth);
+    var pitchDelta = (resolvedColW > 0) ? (contentBox - resolvedColW) : null;
     // dartH = Flutter 注入的原始 viewportHeight（MediaQuery.size.height），编译期常量。
     var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
     console.log('[753-DIAG] phase=' + phase
-      + ' orient=' + (landscape ? 'landscape' : 'portrait')
-      + ' writingMode=' + getComputedStyle(document.body).writingMode
+      + ' orient=' + orient
+      + ' writingMode=' + bodyCs.writingMode
       + ' vertical=' + vertical
       + ' dartH=' + dartH
       + ' innerH=' + window.innerHeight
@@ -1923,7 +1938,10 @@ window.hoshiReader._diag753 = function(phase) {
       + ' injectedV=' + this.viewportHeight
       + ' chromeTopInset=' + topInset
       + ' chromeBottomInset=' + bottomInset
-      + ' pageStep=' + ctx.pageSize
+      + ' contentBox=' + contentBox.toFixed(3)
+      + ' resolvedColumnWidth=' + (resolvedColW > 0 ? resolvedColW.toFixed(3) : 'NaN')
+      + ' pitchDelta=' + (pitchDelta != null ? pitchDelta.toFixed(3) : 'null')
+      + ' pageStep=' + ctx.pageSize.toFixed(3)
       + ' maxScroll=' + ctx.maxScroll
       + ' scrollHeight=' + document.body.scrollHeight);
   } catch (e) {
