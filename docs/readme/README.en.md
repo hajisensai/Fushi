@@ -10,7 +10,7 @@
 
 [简体中文](../../README.md) | **English** | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-hibiki is a multilingual immersive language-learning tool that brings reading EPUBs, listening to audiobooks, and watching videos into a single lookup, card-creation, and statistics workflow.
+hibiki is an immersive language-learning tool for Android and Windows that brings EPUB reading, audiobook sync, video subtitle lookup, and one-tap Anki card creation together — so every input naturally becomes reviewable vocabulary.
 
 <table>
   <tr>
@@ -95,11 +95,13 @@ hibiki is a multilingual immersive language-learning tool that brings reading EP
 
 ## Why hibiki
 
-- **Read · Listen · Watch, one app:** EPUB reading, audiobook sync, video subtitle lookup, and Anki card creation in a single app — no juggling multiple tools.
+Conventional subtitle-mining tools are great for pulling sentences from video, but the learning pipeline usually stops at "video + subtitles + cards": reading requires a different app, audiobook sync needs yet another solution, and dictionaries and card creation still depend on browser extensions and external tool chains. hibiki closes these gaps — words you encounter while reading, listening, or watching all land in the same local dictionaries, the same context, the same Anki configuration, and the same statistics.
+
+- **One app for read · listen · watch:** EPUB reading, audiobook sync, video subtitle lookup, and Anki card creation in a single app — no juggling browser extensions, subtitle websites, dictionary plugins, and Anki configs.
 - **True multilingual lookup:** Deinflection covers all Yomitan transformation languages (not just Japanese); case / diacritics / Arabic harakat normalization is code-point driven — import the right dictionaries and look up words without switching languages.
 - **Native C++ dictionary engine:** Powered by [hoshidicts](https://github.com/Manhhao/hoshidicts) via C++ FFI — dictionary import and lookup speed far exceed a pure Dart implementation.
 - **Video is input too:** Not just EPUBs — the built-in video player has subtitle lookup and card creation, turning film and TV into learning material.
-- **Unified desktop and mobile experience:** Android and Windows share the same codebase, Material Design 3 adaptive layout, wide-screen master-detail, and drag-and-drop import.
+- **Unified learning pipeline:** No matter which input a word comes from, it enters the same local dictionaries, the same favorites, the same Anki configuration, and the same statistics — no more scattering across tools.
 - **Recursive lookup inside definitions:** Tap an unfamiliar word inside a dictionary definition to open a nested lookup popup — no need to copy text or leave the current context.
 - **Deep audiobook integration:** Subtitle alignment to body text, sentence highlighting, auto page-turning, cross-chapter playback, and sentence audio for card creation — audiobooks are part of the reading experience, not a bolt-on feature.
 
