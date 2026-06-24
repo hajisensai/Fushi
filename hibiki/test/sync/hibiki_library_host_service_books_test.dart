@@ -213,8 +213,8 @@ void main() {
         title: 'PlainBook',
         extractDir: plainExtract,
       );
-      // 给 AudioBook 这本书注册一条 Audiobooks 行（与本地书卡 hasAudiobook 同源：
-      // bookKey 出现在 getAllAudiobooks）。
+      // 给 AudioBook 这本书注册可经 live-sync 导出的有声书：Audiobooks + SrtBooks
+      // 两表齐备（与 listAudiobooks / exportAudiobook 同源，TODO-778）。
       final Directory audioDir = Directory(p.join(tmp.path, 'audio'))
         ..createSync(recursive: true);
       final File track = File(p.join(audioDir.path, 'track.m4b'))
@@ -228,6 +228,15 @@ void main() {
         alignmentFormat: 'srt',
         alignmentPath: align.path,
       ));
+      await db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srt-audiobook',
+        title: 'AudioBook',
+        audioRoot: Value(audioDir.path),
+        audioPathsJson: Value(jsonEncode(<String>[track.path])),
+        srtPath: align.path,
+        importedAt: 0,
+        bookKey: Value(audioKey),
+      ));
 
       final AppModelLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
@@ -237,6 +246,46 @@ void main() {
 
       expect(byTitle['AudioBook']!.hasAudiobook, isTrue);
       expect(byTitle['PlainBook']!.hasAudiobook, isFalse);
+    });
+
+    test(
+        'listBooks 对孤儿有声书（有 Audiobook 无 SrtBook）填 hasAudiobook==false（TODO-778）',
+        () async {
+      // EPUB 对齐有声书的形态：有 Audiobooks 行但没有 SrtBooks 行。
+      // exportAudiobook 要求两表齐备，缺 SrtBook 即抛 StateError → 服务端 404；
+      // 故 hasAudiobook 徽章必须排除它，否则 client 亮耳机却下载 404。
+      final String orphanExtract = p.join(tmp.path, 'OrphanAudio');
+      final String orphanKey = await _insertBookWithExtractDir(
+        db: db,
+        title: 'OrphanAudio',
+        extractDir: orphanExtract,
+      );
+      final Directory audioDir = Directory(p.join(tmp.path, 'orphan-audio'))
+        ..createSync(recursive: true);
+      final File align = File(p.join(audioDir.path, 'align.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
+      await db.upsertAudiobook(AudiobooksCompanion.insert(
+        bookKey: orphanKey,
+        audioRoot: Value(audioDir.path),
+        alignmentFormat: 'srt',
+        alignmentPath: align.path,
+      ));
+      // 故意不插 SrtBooks 行。
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+      final RemoteBookInfo orphan =
+          list.firstWhere((RemoteBookInfo b) => b.title == 'OrphanAudio');
+
+      // 徽章判据修复后：孤儿有声书不亮 hasAudiobook。
+      expect(orphan.hasAudiobook, isFalse);
+
+      // 印证根因链：徽章亮起本会触发的 exportAudiobook 此时确实抛 StateError
+      //（即服务端 404 的来源），证明排除它不误伤——被排除的本就 100% 下载失败。
+      await expectLater(
+        svc.exportAudiobook(orphanKey),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('#4 listBooks 把 EPUB 内部相对 href 封面解析成可服务的绝对路径', () async {
