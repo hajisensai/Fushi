@@ -56,6 +56,11 @@ WebView 渲染的 EPUB 阅读器，分页引擎衍生自 Hoshi Reader 系列（i
 
 导入 **Yomitan**（原 Yomichan）/ **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku** 多种格式词典。多语言词形还原（Yomitan 变换表）+ 查词前文本归一化（大小写 / 变音符 / 阿拉伯 harakat），按码点驱动、无需切换语言。多词典并行查询、子来源优先级与启停、音调标注与词频，皆在一个弹窗里搞定。
 
+<p align="center">
+  <img src="docs/static-assets/screenshots/hibiki-readme-reader-lookup.png" alt="桌面竖排阅读 · 划词查词弹窗 · 有声书同步" width="620">
+</p>
+<p align="center"><sub>桌面竖排阅读（深色主题）· 划词查词弹窗 · 有声书插画与同步控制条</sub></p>
+
 ### 🎴 一键 Anki 制卡
 
 查到生词，一步导出至 [AnkiDroid](https://github.com/ankidroid/Anki-Android) 与 AnkiConnect。内置 [Lapis](https://github.com/donkuri/lapis) 笔记类型 schema（vendored 1.7.0），可在 App 内直接创建卡片模板与牌组；自动填充上下文句子，支持录音与截图裁剪、多导出配置（Profile）、自定义字段映射，以及一键制卡。
@@ -68,8 +73,17 @@ WebView 渲染的 EPUB 阅读器，分页引擎衍生自 Hoshi Reader 系列（i
 
 内置基于 [media_kit](https://github.com/media-kit/media-kit)（libmpv 内核）的视频播放器，支持内嵌 / 外挂字幕。播放视频时**直接在字幕上查词、制卡**，把影视素材也纳入沉浸式输入；同时统计观看时长与制卡数量。
 
-<!-- TODO-785 待补视频播放器截图 -->
-<p align="center"><sub>📹 视频播放器截图待补 —— 需在真机/前台采集（视频画面 + 字幕条 + 查词弹窗）。</sub></p>
+<p align="center">
+  <img src="docs/static-assets/screenshots/hibiki-readme-video-lookup.png" alt="视频字幕查词" width="620">
+</p>
+<p align="center"><sub>视频画面 · 字幕条 · 右侧字幕列表 · 划词查词弹窗</sub></p>
+
+<p align="center">
+  <img src="docs/static-assets/screenshots/hibiki-readme-video-library.png" alt="视频库" width="300">
+  &nbsp;
+  <img src="docs/static-assets/screenshots/hibiki-readme-video-nested.png" alt="嵌套查词（多层弹窗）" width="300">
+</p>
+<p align="center"><sub>视频库 · 视频内嵌套查词（弹窗里再查词）</sub></p>
 
 ### 🔗 更多
 
