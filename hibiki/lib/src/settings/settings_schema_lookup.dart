@@ -380,6 +380,26 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-776: dictionaries-per-row grid (experimental). int preference
+          // surfaced through a double slider, so value/onChanged bridge int↔double.
+          SettingsSliderItem(
+            id: 'lookup.popup_dictionary_columns',
+            title: t.popup_dictionary_columns,
+            subtitle: t.popup_dictionary_columns_hint +
+                t.settings_experimental_suffix,
+            icon: Icons.view_column_outlined,
+            min: 1,
+            max: 4,
+            divisions: 3,
+            titleReadout: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupDictionaryColumns.toDouble(),
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupDictionaryColumns(value.round());
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'lookup.show_expression_tags',
             title: t.show_expression_tags,

@@ -357,6 +357,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-776: number of dictionary blocks rendered per row inside one entry's
+  // glossary section (experimental). Default 1 = the classic single vertical
+  // column; clamped to 1..4 both on read and write so a corrupt/out-of-range
+  // stored value can never reach the CSS grid as an absurd column count.
+  int get popupDictionaryColumns =>
+      (getPref('popup_dictionary_columns', defaultValue: 1) as int).clamp(1, 4);
+
+  Future<void> setPopupDictionaryColumns(int columns) async {
+    await setPref('popup_dictionary_columns', columns.clamp(1, 4));
+    notifyListeners();
+  }
+
   // Default OFF (smooth/animated popup scrolling). Instant (no-animation)
   // jump scrolling is an e-ink opt-in enabled only by the dedicated lookup
   // setting. getPref returns this default solely when the key was never set,

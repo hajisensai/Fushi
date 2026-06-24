@@ -43,6 +43,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
+  // TODO-776: 查词弹窗每行词典数（实验性）。焦点遍历能切到滑块并写穿 DB
+  // （changed=true），但生效点在 popup WebView 的 CSS grid（--dict-columns 注入 +
+  // popup.css grid 渲染，非 reader CSS / 主题树），无适用的 reader/appearance 探针；
+  // 由专项 widget 契约 + popup.css/注入源码守卫覆盖。
+  'lookup/Dictionaries per row':
+      'test/settings/popup_dictionary_columns_test.dart',
   'lookup/Instant popup scroll': 'test/reader/reader_caret_scripts_test.dart',
   // TODO-108: 底部固定弹窗开关——生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流（非 reader CSS / 主题树），
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。

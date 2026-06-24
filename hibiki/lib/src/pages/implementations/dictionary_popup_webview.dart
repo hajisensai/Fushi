@@ -463,9 +463,13 @@ class DictionaryPopupWebViewState
         '${(primary.g * 255.0).round().clamp(0, 255)}, '
         '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
     final String textRgba = cssRgb(scheme.onSurface);
-    final Color bgColor =
-        ref.read(appProvider).overrideDictionaryColor ?? scheme.surface;
+    final appModel = ref.read(appProvider);
+    final Color bgColor = appModel.overrideDictionaryColor ?? scheme.surface;
     final String bgRgb = cssRgb(bgColor);
+    // TODO-776: drive the per-row dictionary-count grid (experimental). Injected
+    // alongside the theme vars so a live theme switch re-applies it; the popup
+    // CSS falls back to 1 when the property is absent (untouched default).
+    final int dictColumns = appModel.popupDictionaryColumns;
     return '''
       document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
@@ -476,6 +480,7 @@ class DictionaryPopupWebViewState
       document.documentElement.style.setProperty('--md-outline-variant', '${cssRgb(scheme.outlineVariant)}');
       document.documentElement.style.setProperty('--md-on-surface-variant', '${cssRgb(scheme.onSurfaceVariant)}');
       document.documentElement.style.setProperty('--md-primary', '${cssRgb(scheme.primary)}');
+      document.documentElement.style.setProperty('--dict-columns', '$dictColumns');
 ''';
   }
 

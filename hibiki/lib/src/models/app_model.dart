@@ -3303,6 +3303,10 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
 
+  int get popupDictionaryColumns => prefsRepo.popupDictionaryColumns;
+  Future<void> setPopupDictionaryColumns(int columns) =>
+      prefsRepo.setPopupDictionaryColumns(columns);
+
   bool get remoteLookupEnabled => prefsRepo.remoteLookupEnabled;
   Future<void> setRemoteLookupEnabled(bool value) =>
       prefsRepo.setRemoteLookupEnabled(value);

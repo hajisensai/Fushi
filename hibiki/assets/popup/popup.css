@@ -647,8 +647,32 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     margin-top: 0;
 }
 
+/* TODO-776: multi-dictionary-per-row layout (experimental). The glossary body
+   holds one <details.glossary-group> per dictionary; default N=1 keeps the
+   classic single vertical column. The column count is driven entirely by the
+   --dict-columns custom property injected from the host (1..4), so N=1 is the
+   untouched fall-through. Only column-gap is used here: the .glossary-group
+   already carries margin-top:3px (rule below) and grid does NOT collapse item
+   margins, so adding row-gap/gap would stack gap+margin into a DOUBLED vertical
+   gap at N=1 and break every existing user's default spacing. column-gap only
+   affects the inter-column distance and leaves the row margin untouched. */
+.glossary-section > .category-body {
+    display: grid;
+    grid-template-columns: repeat(var(--dict-columns, 1), minmax(0, 1fr));
+    column-gap: 6px;
+}
+
 .glossary-section > .category-body > .glossary-group {
     margin-top: 3px;
+    /* Keep long glossary content from forcing the grid track wider than its
+       1fr share (which would overflow the popup horizontally). */
+    min-width: 0;
+}
+
+/* Wide dictionary images must shrink to the narrow column instead of pushing
+   the grid track past its 1fr share. */
+.glossary-group img {
+    max-width: 100%;
 }
 
 .pitch-list {
