@@ -160,13 +160,13 @@ void main() {
     );
     // paginate 的 forward/backward 两分支都须在 setPagePosition 后调 _diagTurn。
     expect(
-        "this._diagTurn(context, direction, currentScroll, stepScroll, targetForward);"
+        'this._diagTurn(context, direction, currentScroll, stepScroll, targetForward);'
             .allMatches(source)
             .length,
         1,
         reason: 'forward 翻页须打 [792-TURN]（target=targetForward）');
     expect(
-        "this._diagTurn(context, direction, currentScroll, stepScroll, targetBack);"
+        'this._diagTurn(context, direction, currentScroll, stepScroll, targetBack);'
             .allMatches(source)
             .length,
         1,
