@@ -699,6 +699,7 @@ class MineOutcome {
   const MineOutcome(
     this.result, {
     this.noteId,
+    this.audioWarning,
     this.errorDetail,
     this.errorCode,
     this.error,
@@ -710,7 +711,14 @@ class MineOutcome {
   /// [noteId] 默认为 `null`，现有不关心 id 的调用点 `MineOutcome.success()` 行为
   /// 不变（向后兼容，Never break userspace）。AnkiDroid 后端暂不回传 id（子任务 B），
   /// 仍走默认 `null`。
-  const MineOutcome.success({this.noteId})
+  ///
+  /// TODO-779：[audioWarning] 是**部分成功**信号——卡片已建好，但单词远程音频下载
+  /// 失败（非 200 / 网络异常），`[sound:]` 落空。非空时带**简短人类可读原因**
+  /// （含 HTTP 码/URL，由 [BaseAnkiRepository.audioFetchHttpFailureReason] /
+  /// [BaseAnkiRepository.audioFetchErrorReason] 生成），让主 app 在成功 toast 后追加
+  /// 「音频获取失败: …」提示，终结用户「没音频不知为何」的盲猜。默认 `null`（音频本就
+  /// 没有、或下载成功）时行为与旧版一致（Never break userspace）。
+  const MineOutcome.success({this.noteId, this.audioWarning})
       : result = MineResult.success,
         errorDetail = null,
         errorCode = null,
@@ -720,6 +728,7 @@ class MineOutcome {
   const MineOutcome.duplicate()
       : result = MineResult.duplicate,
         noteId = null,
+        audioWarning = null,
         errorDetail = null,
         errorCode = null,
         error = null,
@@ -728,6 +737,7 @@ class MineOutcome {
   const MineOutcome.notConfigured()
       : result = MineResult.notConfigured,
         noteId = null,
+        audioWarning = null,
         errorDetail = null,
         errorCode = null,
         error = null,
@@ -744,6 +754,7 @@ class MineOutcome {
     StackTrace? stackTrace,
   })  : result = MineResult.error,
         noteId = null,
+        audioWarning = null,
         errorDetail = detail,
         errorCode = errorCode,
         error = error,
@@ -754,6 +765,12 @@ class MineOutcome {
   /// 仅在 [result] == [MineResult.success] 时可能非空：后端返回的 note id。
   /// 用于「制卡后更新同一张卡片字段」（[updateMinedNote]）。AnkiDroid 暂为 `null`。
   final int? noteId;
+
+  /// 仅在 [result] == [MineResult.success] 时可能非空：单词远程音频下载失败的
+  /// **简短人类可读原因**（含 HTTP 码/URL）。卡片仍已建好，只是 `[sound:]` 落空；
+  /// 主 app 据它在成功 toast 后追加「音频获取失败」提示。`null` = 音频本就没有或
+  /// 下载成功（TODO-779）。
+  final String? audioWarning;
 
   /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因（回退文案）。
   final String? errorDetail;

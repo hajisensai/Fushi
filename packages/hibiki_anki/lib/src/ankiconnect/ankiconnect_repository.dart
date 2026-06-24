@@ -387,12 +387,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
 
-    final fields = await _renderMinedFields(
+    final rendered = await _renderMinedFields(
       service: service,
       settings: settings,
       payload: payload,
       context: context,
     );
+    final Map<String, String> fields = rendered.fields;
+    // TODO-779: 单词远程音频下载失败时带可见原因到成功 toast（卡片仍建好）。
+    final String? audioWarning = rendered.audioWarning;
 
     String? addNoteReconcileFieldName;
     String? addNoteReconcileFieldValue;
@@ -457,7 +460,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         tags: tags,
         allowDuplicate: settings.allowDupes,
       );
-      return MineOutcome.success(noteId: noteId);
+      return MineOutcome.success(noteId: noteId, audioWarning: audioWarning);
     } on AnkiConnectCommitUnknownException catch (e, stack) {
       if (!addNoteReconcileAllowed ||
           addNoteReconcileFieldName == null ||
@@ -475,7 +478,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           fieldValue: addNoteReconcileFieldValue,
         );
         if (matches.length == 1) {
-          return MineOutcome.success(noteId: matches.single);
+          return MineOutcome.success(
+            noteId: matches.single,
+            audioWarning: audioWarning,
+          );
         }
         return MineOutcome.failure(
           _addNoteCommitUnknownMessage(matchCount: matches.length),
@@ -532,7 +538,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   ///
   /// TODO-270 C1：制卡（[_mineEntryInner]）与更新已制卡片（[updateMinedNote]）
   /// 共用这一段渲染，避免两份漂移。
-  Future<Map<String, String>> _renderMinedFields({
+  ///
+  /// TODO-779：返回 [RenderedMinedFields]（fields + audioWarning）而非裸字段 map，
+  /// 把单词远程音频下载失败的可见原因带给成功分支。
+  Future<RenderedMinedFields> _renderMinedFields({
     required AnkiConnectService service,
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
@@ -548,7 +557,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           : Future<String?>.value(null),
       payload.audio.isNotEmpty
           ? _storeRemoteAudio(service, payload.audio)
-          : Future<String?>.value(null),
+          : Future<AudioFetchOutcome>.value(const AudioFetchOutcome.none()),
       buildDictionaryMediaTags(
         payload.dictionaryMedia,
         (media) => _storeDictionaryMedia(service, media),
@@ -557,10 +566,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final List<dynamic> mediaResults = await Future.wait(mediaFutures);
     final String? coverMediaRef = mediaResults[0] as String?;
     final String? sasayakiMediaRef = mediaResults[1] as String?;
-    final String? remoteAudioRef = mediaResults[2] as String?;
+    final AudioFetchOutcome remoteAudio = mediaResults[2] as AudioFetchOutcome;
     final Map<String, String> dictionaryMediaTags =
         mediaResults[3] as Map<String, String>;
 
+    final String? remoteAudioRef = remoteAudio.ref;
     final String processedAudio =
         remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '';
 
@@ -592,11 +602,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       dictionaryMedia: payload.dictionaryMedia,
     );
 
-    return buildMinedFields(
-      fieldMappings: settings.fieldMappings,
-      payload: mediaPayload,
-      context: mediaContext,
-      dictionaryMediaTags: dictionaryMediaTags,
+    return RenderedMinedFields(
+      buildMinedFields(
+        fieldMappings: settings.fieldMappings,
+        payload: mediaPayload,
+        context: mediaContext,
+        dictionaryMediaTags: dictionaryMediaTags,
+      ),
+      audioWarning: remoteAudio.failureReason,
     );
   }
 
@@ -631,12 +644,13 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         );
       }
 
-      final fields = await _renderMinedFields(
+      final rendered = await _renderMinedFields(
         service: service,
         settings: settings,
         payload: payload,
         context: context,
       );
+      final Map<String, String> fields = rendered.fields;
 
       // 渲染为空说明没有任何字段映射命中，更新会把已有卡片清空——拒绝。
       if (fields.isEmpty) {
@@ -648,7 +662,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
       try {
         await service.updateNoteFields(noteId, fields);
-        return MineOutcome.success(noteId: noteId);
+        // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
+        return MineOutcome.success(
+          noteId: noteId,
+          audioWarning: rendered.audioWarning,
+        );
       } on AnkiConnectException catch (e, stack) {
         return MineOutcome.failure(
           'AnkiConnect: ${e.message}',
@@ -767,17 +785,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
-  Future<String?> _storeRemoteAudio(
+  /// TODO-779：返回 [AudioFetchOutcome]（ref 成功 / failureReason 可见失败 / none
+  /// 无音频）而非裸 `String?`，让非 200 与异常不再静默落空，而是把原因冒泡到
+  /// [MineOutcome.audioWarning] 给用户看。`return null` 的拒绝坏字节语义不变。
+  Future<AudioFetchOutcome> _storeRemoteAudio(
       AnkiConnectService service, String url) async {
     try {
       File? audioFile;
       switch (AnkiAudioRef.classify(url)) {
         case AnkiAudioRefKind.empty:
-          return null;
+          return const AudioFetchOutcome.none();
         case AnkiAudioRefKind.localFile:
           // file:// URI or a bare absolute path (Unix `/…` or Windows `C:\…`).
           final file = File(AnkiAudioRef.localPath(url));
-          if (!file.existsSync()) return null;
+          if (!file.existsSync()) return const AudioFetchOutcome.none();
           final bytes = await file.readAsBytes();
           final filename = hibikiAnkiMediaFilenameForBytes(
             prefix: 'hibiki_audio_',
@@ -789,7 +810,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             filename: filename,
             data: base64Encode(bytes),
           );
-          return filename;
+          return AudioFetchOutcome.stored(filename);
         case AnkiAudioRefKind.remoteUrl:
           final client = HttpClient();
           try {
@@ -797,11 +818,13 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             final response = await request.close();
             // A non-200 returns an HTML/JSON error body; writing it verbatim to
             // .mp3 would embed a broken "audio" file into the card
-            // (HBK-AUDIT-019).
+            // (HBK-AUDIT-019). TODO-779: surface the failure instead of dropping
+            // it silently — the card is still created, only the audio is missing.
             if (response.statusCode != 200) {
-              debugPrint(
-                  'AnkiConnectRepository._storeRemoteAudio: HTTP ${response.statusCode} for $url');
-              return null;
+              final reason =
+                  audioFetchHttpFailureReason(response.statusCode, url);
+              debugPrint('AnkiConnectRepository._storeRemoteAudio: $reason');
+              return AudioFetchOutcome.failed(reason);
             }
             final bytes =
                 await response.fold<List<int>>([], (a, b) => a..addAll(b));
@@ -827,17 +850,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // Every switch branch above either returns or assigns audioFile, so it is
       // non-null here; only existence can still fail (missing local file or a
       // download that produced no file).
-      if (!audioFile.existsSync()) return null;
+      if (!audioFile.existsSync()) return const AudioFetchOutcome.none();
       final bytes = await audioFile.readAsBytes();
       final filename = audioFile.uri.pathSegments.last;
       await service.storeMediaFile(
         filename: filename,
         data: base64Encode(bytes),
       );
-      return filename;
+      return AudioFetchOutcome.stored(filename);
     } catch (e, stack) {
-      debugPrint('AnkiConnectRepository._storeRemoteAudio: $e\n$stack');
-      return null;
+      // TODO-779: a thrown exception (DNS/connection/timeout) is also a visible
+      // audio failure — the card is still created, surface the reason.
+      final reason = audioFetchErrorReason(e, url);
+      debugPrint('AnkiConnectRepository._storeRemoteAudio: $reason\n$stack');
+      return AudioFetchOutcome.failed(reason);
     }
   }
 
