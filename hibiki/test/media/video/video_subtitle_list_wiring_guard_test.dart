@@ -158,10 +158,12 @@ void main() {
 
   group('TODO-613 subtitle-list auto-scroll persistence wiring', () {
     test('jump panel reads the persisted auto-scroll value on open', () {
+      // 接线断言对 dart format 的换行容忍：源里 initialAutoScroll: 与
+      // appModel.videoSubtitleListAutoScroll 可能被折到两行（subtitle.part.dart
+      // 缩进较深时会换行），用 \s+ 匹配而非写死单空格。
       expect(
-        src.contains(
-          'initialAutoScroll: appModel.videoSubtitleListAutoScroll,',
-        ),
+        RegExp(r'initialAutoScroll:\s*appModel\.videoSubtitleListAutoScroll,')
+            .hasMatch(src),
         isTrue,
         reason: 'auto-scroll initial state must come from Drift preferences '
             '(TODO-613)',
