@@ -1,98 +1,108 @@
-<h3 align="center">hibiki</h3>
-<p align="center">
-  <img src="docs/static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
-</p>
+<div align="center">
 
-<p align="center"><b>读、听、看，把每一个生词变成可掌握的语言。</b></p>
-<p align="center">多语言沉浸式语言学习工具 —— 读 · 听 · 看：EPUB 阅读 · 有声书同步 · 视频字幕查词 · 划词查词 · Anki 制卡</p>
+# hibiki
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
-  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
-  &nbsp;·&nbsp;
-  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
-  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
-</p>
+<img src="docs/static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
 
-<p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 项目主页 (GitHub Pages)</b></a>
-</p>
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![License](https://img.shields.io/badge/license-GPLv3-blue)
+![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
-<p align="center">
-  <a href="docs/readme/README.en.md">English</a> · <a href="docs/readme/README.ja.md">日本語</a> · <a href="docs/readme/README.ko.md">한국어</a> · <a href="docs/readme/README.es.md">Español</a> · <a href="docs/readme/README.fr.md">Français</a> · <a href="docs/readme/README.de.md">Deutsch</a> · <a href="docs/readme/README.pt-BR.md">Português</a> · <a href="docs/readme/README.ru.md">Русский</a> · <a href="docs/readme/README.it.md">Italiano</a> · <a href="docs/readme/README.nl.md">Nederlands</a> · <a href="docs/readme/README.tr.md">Türkçe</a> · <a href="docs/readme/README.vi.md">Tiếng Việt</a> · <a href="docs/readme/README.th.md">ภาษาไทย</a> · <a href="docs/readme/README.id.md">Bahasa Indonesia</a> · <a href="docs/readme/README.ar.md">العربية</a> · <a href="docs/readme/README.zh-Hant.md">繁體中文</a>
-</p>
+[English](docs/readme/README.en.md) | **简体中文** | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
----
+hibiki 是一款多语言沉浸式语言学习工具，把读 EPUB、听有声书、看视频三种输入收进一套查词、制卡与统计流程。
 
-## 简介
+<table>
+  <tr>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-home.png" alt="书架" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-reader.png" alt="竖排阅读" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-dictionaries.png" alt="查词" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-settings.png" alt="设置" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-reader-lookup.png" alt="桌面竖排阅读查词" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-video-lookup.png" alt="视频字幕查词" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-video-library.png" alt="视频库" width="100%"></td>
+    <td><img src="docs/static-assets/screenshots/hibiki-readme-video-nested.png" alt="嵌套查词" width="100%"></td>
+  </tr>
+</table>
 
-**hibiki** 是一款多语言沉浸式语言学习工具，把「读 · 听 · 看」三种输入收进一套查词、制卡与同步流程：在 EPUB 正文里点按即查词、选词即分析，把生词一键做成 Anki 卡片；让有声书音频与正文逐句同步高亮、自动翻页；也能在视频字幕上直接查词制卡。一处查到的词，自动带上上下文进入复习。
+</div>
 
-词典查询覆盖 [Yomitan](https://github.com/yomidevs/yomitan) 的**全部变换语言**（去屈折 + 查词前文本归一化），界面本地化为 **17 种语言**，当前在 **Android 与 Windows** 两端出包。
+## 功能
 
-<p align="center">
-  <img src="docs/static-assets/screenshots/hibiki-readme-home.png" alt="书架" width="300">
-  &nbsp;
-  <img src="docs/static-assets/screenshots/hibiki-readme-dictionaries.png" alt="查词" width="300">
-  &nbsp;
-  <img src="docs/static-assets/screenshots/hibiki-readme-settings.png" alt="设置与主题" width="300">
-</p>
-<p align="center"><sub>书架 · 查词 · 设置与主题</sub></p>
+### 书架
 
----
+- 单本、批量或按文件夹递归导入 EPUB，并在书架查看阅读进度。
+- 使用自定义书架整理书籍，支持标签筛选与拖拽排序。
+- 拖放文件即可导入书籍、字幕或视频（桌面端）。
+- 导入时自动关联同名字幕 / 音频文件。
 
-## 核心亮点
+### 阅读
 
-### 📖 EPUB 阅读，点按即查
+- 以竖排（縦書き）或横排（横書き）阅读日文书籍，并在分页和连续滚动之间切换。
+- 自定义主题（明 / 暗 / 纯黑 / 自定义）、字体、段落间距和阅读器控件。
+- 振假名（ふりがな）标注，阅读器内全屏查看图片。
+- 界面大小可调，底栏控件跟随缩放。
+- 多用户配置（Profile），按书自动切换；无痕模式。
 
-WebView 渲染的 EPUB 阅读器，分页引擎衍生自 Hoshi Reader 系列（iOS 的 [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 与 Android 的 [Hoshi-Reader-Android](https://github.com/HuangAntimony/Hoshi-Reader-Android)）。点按任意词即时查词、选区即时分析。连续滚动与分页双模式，自定义字体与主题（明 / 暗 / 纯黑 / 自定义），振假名、阅读统计与书签一应俱全。
+### 查词
 
-<p align="center">
-  <img src="docs/static-assets/screenshots/hibiki-readme-reader.png" alt="竖排阅读 · 振假名 · 有声书同步" width="300">
-</p>
-<p align="center"><sub>竖排正文 · 振假名 · 划词高亮 · 底部有声书同步控制条</sub></p>
+- 导入 [Yomitan](https://github.com/yomidevs/yomitan)（原 Yomichan）、ABBYY Lingvo (DSL)、MDict (MDX)、Migaku 多种格式词典。
+- 阅读器中点按文本查词，词典页搜索，或从其他 App 分享文本查词。
+- 覆盖 Yomitan **全部变换语言**的词形还原（去屈折）+ 查词前文本归一化（大小写 / 变音符 / 阿拉伯 harakat），按码点驱动、无需切换语言。
+- 点击释义中的生词进行递归查询（嵌套弹窗）。
+- 多词典并行查询、子来源优先级与启停、音调标注与词频。
+- 使用在线或本地单词音频。
+- 注入自定义 CSS 样式。
 
-### 🔍 划词查词，覆盖 Yomitan 全部变换语言
+### 标注与统计
 
-导入 **Yomitan**（原 Yomichan）/ **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku** 多种格式词典。多语言词形还原（Yomitan 变换表）+ 查词前文本归一化（大小写 / 变音符 / 阿拉伯 harakat），按码点驱动、无需切换语言。多词典并行查询、子来源优先级与启停、音调标注与词频，皆在一个弹窗里搞定。
+- 阅读时添加五色高亮标注，并随时跳转。
+- 阅读数据统计：字符数、时长、阅读速度，可在阅读时实时显示。
+- 视频统计：观看时长、制卡与收藏数量。
 
-<p align="center">
-  <img src="docs/static-assets/screenshots/hibiki-readme-reader-lookup.png" alt="桌面竖排阅读 · 划词查词弹窗 · 有声书同步" width="620">
-</p>
-<p align="center"><sub>桌面竖排阅读（深色主题）· 划词查词弹窗 · 有声书插画与同步控制条</sub></p>
+### Anki 制卡
 
-### 🎴 一键 Anki 制卡
+- 通过 [AnkiDroid](https://github.com/ankidroid/Anki-Android) 或 AnkiConnect 制卡。
+- 内置 [Lapis](https://github.com/donkuri/lapis) 笔记类型（vendored 1.7.0），可在 App 内一键创建卡片模板与牌组。
+- 自动填充上下文句子，支持录音与截图裁剪。
+- 多导出配置（Profile）、自定义字段映射。
+- 收藏生词，制卡与收藏计入统计。
 
-查到生词，一步导出至 [AnkiDroid](https://github.com/ankidroid/Anki-Android) 与 AnkiConnect。内置 [Lapis](https://github.com/donkuri/lapis) 笔记类型 schema（vendored 1.7.0），可在 App 内直接创建卡片模板与牌组；自动填充上下文句子，支持录音与截图裁剪、多导出配置（Profile）、自定义字段映射，以及一键制卡。
+### 有声书跟读（Sasayaki）
 
-### 🎧 有声书同步（Sasayaki）
+- 支持 SRT / LRC / VTT / ASS 字幕，自动将字幕文本对齐到 EPUB 正文。
+- 播放时正文逐句高亮，自动翻页。
+- 控制播放速度、跳转动作和系统媒体控制。
+- 「从本句播放」跨章节无缝衔接。
 
-支持 SRT / LRC / VTT / ASS 字幕，自动将字幕文本对齐到 EPUB 正文。播放时正文逐句高亮，音频与阅读位置同步翻页，并配合播放控制栏（进度、跳转、倍速）边听边读，让有声书的音频成为沉浸式输入的一部分。
+### 视频字幕查词
 
-### 🎬 视频字幕查词
+- 内置基于 [media_kit](https://github.com/media-kit/media-kit)（libmpv 内核）的视频播放器。
+- 支持内嵌（文本轨 + 图形轨）和外挂字幕，.m3u8 播放列表导入。
+- 播放视频时直接在字幕上查词、制卡，把影视素材也纳入沉浸式输入。
+- 视频库管理、标签筛选、系列分组与批量操作。
 
-内置基于 [media_kit](https://github.com/media-kit/media-kit)（libmpv 内核）的视频播放器，支持内嵌 / 外挂字幕。播放视频时**直接在字幕上查词、制卡**，把影视素材也纳入沉浸式输入；同时统计观看时长与制卡数量。
+### 数据同步
 
-<p align="center">
-  <img src="docs/static-assets/screenshots/hibiki-readme-video-lookup.png" alt="视频字幕查词" width="620">
-</p>
-<p align="center"><sub>视频画面 · 字幕条 · 右侧字幕列表 · 划词查词弹窗</sub></p>
+- 通过 Google Drive 同步阅读进度、统计和书籍。
 
-<p align="center">
-  <img src="docs/static-assets/screenshots/hibiki-readme-video-library.png" alt="视频库" width="300">
-  &nbsp;
-  <img src="docs/static-assets/screenshots/hibiki-readme-video-nested.png" alt="嵌套查词（多层弹窗）" width="300">
-</p>
-<p align="center"><sub>视频库 · 视频内嵌套查词（弹窗里再查词）</sub></p>
+### 更多
 
-### 🔗 更多
+- **17 种界面语言**，全平台本地化。
+- **桌面拖放导入**：直接拖入书籍、字幕、音频或视频文件。
+- 从其他应用分享文本直接查词。
 
-- **17 种界面语言**，全平台本地化
-- **Hibiki 互联**：设备间同步书籍 / 词典 / 有声书 / 阅读进度
-- **多用户配置（Profile）**，按书自动切换
-- **无痕模式**；从其他应用**分享文本直接查词**
+## 为什么选择 hibiki
 
----
+- **读 · 听 · 看，一个 App：** EPUB 阅读、有声书同步、视频字幕查词、Anki 制卡在同一个 App 里完成，不需要在多个工具之间切换。
+- **真正的多语言查词：** 词形还原覆盖 Yomitan 全部变换语言（不仅仅是日语），大小写 / 变音符 / 阿拉伯 harakat 归一化按码点驱动，导入对应词典即可查词，无需切换语言。
+- **C++ 原生词典引擎：** 底层使用 [hoshidicts](https://github.com/Manhhao/hoshidicts) C++ FFI，词典导入与查词速度远超纯 Dart 实现。
+- **视频也是输入：** 不止于 EPUB —— 视频播放器内置字幕查词与制卡，影视素材直接成为学习素材。
+- **桌面与移动端统一体验：** Android 与 Windows 共用同一代码库，Material Design 3 自适应布局，宽屏 master-detail、拖放导入一应俱全。
+- **释义内递归查词：** 点击词典释义里的生词即可打开嵌套查词弹窗，不需要复制文本或离开当前上下文。
+- **有声书深度整合：** 字幕对齐到正文、逐句高亮、自动翻页、跨章节播放、句子音频制卡 —— 有声书不是附加功能，而是阅读体验的一部分。
 
 ## 平台支持
 
@@ -106,8 +116,6 @@ WebView 渲染的 EPUB 阅读器，分页引擎衍生自 Hoshi Reader 系列（i
 ### 界面语言（17 种）
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
-
----
 
 ## 安装与构建
 
@@ -124,7 +132,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 ①`flutter pub get` 与 ②`ci/apply-patches.sh` 收敛成一条命令。本项目锁定 Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`），部分上游依赖经 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修补——机制细节、构建与依赖补丁清单见 [docs/agent/build.md](docs/agent/build.md)。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 与 `ci/apply-patches.sh` 收敛成一条命令。本项目锁定 Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`），部分上游依赖经 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修补——机制细节见 [docs/agent/build.md](docs/agent/build.md)。
 
 <details>
 <summary><b>技术栈一览</b></summary>
@@ -167,24 +175,38 @@ hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
 
 </details>
 
----
+## 隐私与数据
 
-## 致谢
+hibiki 将导入的书籍、词典、字体、有声书数据、视频、阅读进度、高亮、统计和设置保存在 App 本地存储中。
+
+Google Drive 同步使用由用户配置的 Google Cloud OAuth。Anki 制卡会与 AnkiDroid 或已配置的 AnkiConnect 地址通信。
+
+## 鸣谢
+
+hibiki 基于以下项目与生态：
 
 | 项目 | 说明 |
 |---|---|
-| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日语沉浸式学习工具 |
-| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android 日语阅读器 |
+| [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日语沉浸式学习工具，hibiki 的前身参考 |
+| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日语阅读器，阅读器分页引擎参考 |
+| [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android 原生日语阅读器 |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ 词典引擎 |
-| [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日语阅读器 |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | 有声书同步方案 |
-| [Yomitan](https://github.com/yomidevs/yomitan) | 词典格式与变换表来源 |
+| [Yomitan](https://github.com/yomidevs/yomitan) | 词典格式、变换表与查词体验参考 |
 | [Lapis](https://github.com/donkuri/lapis) | Anki 笔记类型 |
+| [AnkiDroid](https://github.com/ankidroid/Anki-Android) | Android 制卡集成 |
+| [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | 本地音频与 AnkiDroid 交互参考 |
+| [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | 阅读器、统计与同步兼容性参考 |
+| [media_kit](https://github.com/media-kit/media-kit) | Flutter 视频播放框架（libmpv 内核） |
 
 ## 许可证
 
-[GNU General Public License v3.0](LICENSE)
+本项目基于 GNU General Public License v3.0 发布。详情见 [LICENSE](LICENSE)。
 
-<p align="center">
-  <a href="docs/readme/README.en.md">English</a> · <a href="docs/readme/README.ja.md">日本語</a> · <a href="docs/readme/README.ko.md">한국어</a> · <a href="docs/readme/README.es.md">Español</a> · <a href="docs/readme/README.fr.md">Français</a> · <a href="docs/readme/README.de.md">Deutsch</a> · <a href="docs/readme/README.pt-BR.md">Português</a> · <a href="docs/readme/README.ru.md">Русский</a> · <a href="docs/readme/README.it.md">Italiano</a> · <a href="docs/readme/README.nl.md">Nederlands</a> · <a href="docs/readme/README.tr.md">Türkçe</a> · <a href="docs/readme/README.vi.md">Tiếng Việt</a> · <a href="docs/readme/README.th.md">ภาษาไทย</a> · <a href="docs/readme/README.id.md">Bahasa Indonesia</a> · <a href="docs/readme/README.ar.md">العربية</a> · <a href="docs/readme/README.zh-Hant.md">繁體中文</a>
-</p>
+<div align="center">
+
+<br>
+
+[English](docs/readme/README.en.md) | **简体中文** | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
+
+</div>
