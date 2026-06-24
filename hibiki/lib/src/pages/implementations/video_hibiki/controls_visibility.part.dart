@@ -155,68 +155,87 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
   /// none）；移出由 media_kit / 自动隐藏定时按既有路径接管，不强制改光标。仅桌面有 OS 光标
   /// 语义，[_setCursorHidden] / [_pokeControlsVisible] 内部已各自桌面门控。
   ///
-  /// BUG-391 第三轮注记：对**字幕跳转列表侧栏**而言此 helper 两臂均无效（保留无害）——
+  /// BUG-391 注记：对**字幕跳转列表侧栏**而言此 helper 两臂均 no-op（保留无害）——
   /// ① [_setCursorHidden]`(false)` 只控 [_buildCursorOverlay] 自层 `cursor:none`，几何上
   ///   **不覆盖** push-aside 侧栏，且同值写入被 [ValueNotifier] 去重；
   /// ② [_pokeControlsVisible] 开头 `if (_subtitleListVisible.value) return;` 列表开时早退。
-  /// 侧栏 OS 光标真正靠 [_forceRevealOsCursorForPanel] 直发通道重现，别误以为这两臂有用。
+  /// 侧栏 OS 光标重现靠「管 1」（[_desktopControlsTheme] 的 `hideMouseOnControlsRemoval` 在列表开时
+  /// 翻 false，从源头消除竞态来源）+「管 2」（[_forceRevealOsCursorForPanel] 侧栏直发，推测性缓解），
+  /// 别误以为这两臂有用。
   void _handleSubtitleHover(bool hovering) {
     if (!mounted || !hovering) return;
     _setCursorHidden(false);
     _pokeControlsVisible();
   }
 
-  /// 强制让 OS 真光标在侧栏上重现（BUG-391 第三轮根因修复）。
+  /// 侧栏直发 OS 光标的「管 2」推测性缓解（BUG-391 第四轮，改法 B）。
   ///
-  /// 根因：从视频画面区（控制条 2s 淡出后 media_kit `hideMouseOnControlsRemoval` 把 OS
-  /// 光标 SetCursor(nullptr) 隐藏）移进字幕跳转列表 push-aside 侧栏时，Win embedder 那次
-  /// `none→basic` 的 `SetCursor` 在帧序窗口期没生效 / 被 `WM_SETCURSOR` 竞态回退
-  /// （Flutter #84039 同类）；而框架 [MouseCursorManager.handleDeviceCursorUpdate] 的
-  /// `lastSession == next` 去重会吞掉「再次声明 basic」，纯声明式 `MouseRegion(cursor:
-  /// basic)` 救不了（被去重吞）。
+  /// **定性（不是根因修复）**：本 helper 是 Flutter Windows embedder 平台缺陷（#84039
+  /// `WM_SETCURSOR` 竞态）+ 框架 `MouseCursorManager` 的 `lastSession` 去重
+  /// （`mouse_cursor.dart:75`）的**缓解层**。视频区光标隐藏的真实机制是**框架层
+  /// MouseRegion**（fork `material_desktop.dart:746-750` 在控制条 `mount=false` 时
+  /// `cursor: none`、否则 `basic`，走 `MouseTracker`，几何**只覆盖视频列 Expanded**），
+  /// **不是** native `SetCursor`。从视频列（控制条 2s 淡出 → 该 MouseRegion 取 `none` 分支
+  /// → 框架经 `MouseTracker` 下发一次 `none→basic`/`basic→none` 的光标会话）移进字幕跳转
+  /// 列表 push-aside 侧栏时，侧栏残留隐藏态的真因是 #84039 那次 `none→basic` 的 embedder
+  /// `SetCursor` 在帧序窗口期没生效 / 被 `WM_SETCURSOR` 竞态回退，叠加框架
+  /// `lastSession == next` 去重吞掉「再次声明 basic」——纯声明式 `MouseRegion(cursor:basic)`
+  /// 救不了（被去重吞）。
   ///
-  /// 唯一下手点：直发 `activateSystemCursor` 通道消息，强制 OS 真 `SetCursor(IDC_ARROW)`，
-  /// 绕开框架 `lastSession==next` 去重。**双门控**：
-  /// ① 仅桌面（[_isDesktopVideoControls]，移动端无 OS 光标语义）；
-  /// ② 仅当前光标确为隐藏态（`_cursorHidden.value == true`）才发——否则会压掉 cue 行
-  ///   [InkWell] 的手型（click），且与框架 lastSession 去同步（屏幕停 basic、框架记 click）。
-  /// 设备 id 与 `kind:'basic'` 与框架 [_SystemMouseCursorSession.activate] 的消息格式一致
-  /// （`{'device', 'kind'}`，`SystemMouseCursors.basic.kind == 'basic'`）。
+  /// 改法 B（解除上一轮的门控悖论）：上一轮用 `_cursorHidden.value == true` 当第二道门控，
+  /// 但列表开态 [_hasVideoOverlay] 含 [_subtitleListVisible] →
+  /// [_applyControlsVisibilityFromMediaKit] 把 [_cursorHidden] 恒置 false（见 :105）→ 该门控
+  /// **恒早退** = 第三轮空转。故本轮门控**只保留** [_isDesktopVideoControls]、去掉 `_cursorHidden`
+  /// 那条；onEnter 跨列入侧栏**无条件直发一次** `activateSystemCursor{kind:'basic'}`，直发
+  /// `mouseCursor` 通道、强制 OS 真 `SetCursor(IDC_ARROW)`、绕开框架 `lastSession==next` 去重。
+  ///
+  /// **诚实标注**：onEnter 直发 = 重发框架刚下发过的同条 `basic` 消息，有效性 = 这次重发能否
+  /// 赢 embedder 竞态，是**未证假设**，与第三轮同模型只差门控 → 标「推测性缓解，兜开列表瞬态
+  /// 那次 `none→basic` 竞态」，**不是根因修复**。Windows 真机截图/录屏是合入硬门槛；源码守卫
+  /// 只锁结构、对真机有效性零增益。设备 id 与 `kind:'basic'` 与框架
+  /// [_SystemMouseCursorSession.activate] 的消息格式一致（`{'device', 'kind'}`，
+  /// `SystemMouseCursors.basic.kind == 'basic'`）。
   void _forceRevealOsCursorForPanel(int device) {
     if (!_isDesktopVideoControls) return;
-    if (_cursorHidden.value != true) return;
     SystemChannels.mouseCursor.invokeMethod<void>(
       'activateSystemCursor',
       <String, dynamic>{'device': device, 'kind': 'basic'},
     );
   }
 
-  /// 给字幕跳转列表侧栏内容包一层「光标唤回」[MouseRegion]（BUG-391）。
+  /// 给字幕跳转列表侧栏内容包一层「光标唤回」[MouseRegion]（BUG-391，管 2 改法 B）。
   ///
-  /// 根因：字幕列表是 push-aside 侧栏（[_videoWithSubtitlePanel] 的 Row 兄弟列），几何上
-  /// 不在视频区 controls 的 cursor:none 胜出层内；但鼠标从画面区（控制条 2s 淡出后
-  /// media_kit `hideMouseOnControlsRemoval` + 顶层 [_buildCursorOverlay] 把 OS 光标置
-  /// none）移进侧栏时，侧栏没有任何 region 主动唤回光标 / 续命 media_kit 控制条 → 桌面
-  /// OS 光标残留隐藏态（与画面字幕盒 BUG-283 同根：cursor:none 胜出 + 缺 hover 唤回）。
+  /// 机制（框架层，不是 native）：字幕列表是 push-aside 侧栏（[_videoWithSubtitlePanel]
+  /// 的 Row 兄弟列），几何上不在视频列那条**框架 MouseRegion**（fork
+  /// `material_desktop.dart:746-750`：控制条 `mount=false` → `cursor:none`、否则 `basic`，走
+  /// `MouseTracker`，几何只覆盖视频列 Expanded）的胜出范围内；但鼠标从视频列（控制条 2s
+  /// 淡出 → 该 MouseRegion 取 `none` 分支）移进侧栏时，侧栏残留隐藏态的真因是 #84039
+  /// embedder `WM_SETCURSOR` 竞态吞掉那次 `none→basic` + 框架 `lastSession` 去重
+  /// （`mouse_cursor.dart:75`），不是缺 region 唤回。
   ///
-  /// 复用字幕盒同款救场 [_handleSubtitleHover]：鼠标进 / 移动在侧栏上即唤回光标 + 续命
-  /// 控制条。`opaque:false`：本层只收 hover、不阻断指针下探（cue 行点击 / 查词 / 滚动
-  /// 照常命中下层 [VideoSubtitleJumpPanel]）。仅桌面有 OS 光标语义才挂（移动端透传 child，
-  /// 像素级不变、零开销）；[_handleSubtitleHover] 内部也各自桌面门控（双保险）。
+  /// 管 2（推测性缓解）：onEnter 跨列入侧栏经 [_forceRevealOsCursorForPanel] **无条件直发一次**
+  /// `activateSystemCursor{kind:'basic'}`，赌这次重发能赢 embedder 竞态（未证假设，见该 helper
+  /// 文档；真有效性靠 Windows 真机验证）。onHover 维持现状（仍经该 helper 直发，但列表开态
+  /// [_cursorHidden] 因 [_hasVideoOverlay] 恒 false 已无第二门控，故等于无条件每帧直发——cue
+  /// 行手型由 cue 行 [InkWell] 声明式 `MouseRegion(click)` 保证，**不靠 onHover 续命**）。
+  /// 同时保留 [_handleSubtitleHover]（对侧栏两臂均 no-op，见其注释，无害冗余）。
+  /// `opaque:false`：本层只收 hover、不阻断指针下探（cue 行点击 / 查词 / 滚动照常命中下层
+  /// [VideoSubtitleJumpPanel]）。仅桌面有 OS 光标语义才挂（移动端透传 child，像素级不变、零
+  /// 开销）；[_forceRevealOsCursorForPanel] / [_handleSubtitleHover] 内部也各自桌面门控。
   Widget _withSubtitleListCursorReveal(Widget child) {
     if (!_isDesktopVideoControls) return child;
     return MouseRegion(
       opaque: false,
-      // onEnter：进侧栏必发一次直发通道强制 OS 光标重现（[_forceRevealOsCursorForPanel]
-      // 内部双门控桌面 + _cursorHidden==true），同时保留 [_handleSubtitleHover] 救场
-      // （对侧栏虽 no-op 见其注释，但与画面字幕盒同款语义、无害）。
+      // onEnter：跨列入侧栏无条件直发一次强制 OS 光标通道（改法 B：[_forceRevealOsCursorForPanel]
+      // 现在只剩桌面门控、去掉了 _cursorHidden 那条 → 兜开列表瞬态那次 none→basic 竞态），同时
+      // 保留 [_handleSubtitleHover] 救场（对侧栏两臂均 no-op 见其注释，无害冗余）。
       onEnter: (PointerEnterEvent event) {
         _forceRevealOsCursorForPanel(event.device);
         _handleSubtitleHover(true);
       },
-      // onHover：仅在光标仍为隐藏态时补发直发通道（门控在 [_forceRevealOsCursorForPanel]
-      // 内）——别无条件每次 onHover 都发，否则 cue 行 InkWell 的 click 手型会被压成箭头，
-      // 且框架 lastSession=click 与屏幕 basic 去同步永久停 basic。
+      // onHover：维持现状（仍经 [_forceRevealOsCursorForPanel] 直发）。注意列表开态 [_cursorHidden]
+      // 因 [_hasVideoOverlay] 恒 false、改法 B 又去掉了 _cursorHidden 门控 → 这里等于无条件每帧直发；
+      // cue 行手型由 cue 行 [InkWell] 声明式 MouseRegion(click) 保证，**不靠 onHover 续命**。
       onHover: (PointerHoverEvent event) =>
           _forceRevealOsCursorForPanel(event.device),
       child: child,
