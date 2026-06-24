@@ -52,6 +52,35 @@ void main() {
       expect(m.posFraction, isNull);
     });
 
+    test(r'\p1 drawing-mode body outside tag block is discarded', () {
+      // Real OP karaoke line: \p1 enters drawing mode; the vector command
+      // body (m/l/b coords) lives OUTSIDE the {...} block and must not render.
+      final SubtitleMarkup m = parseSubtitleMarkup(
+          r'{\an7\pos(461.719,678.906)\p1\c&H7056F8&}m 0 0 l 8.475 0 l 0 16.0596{\p0}');
+      expect(m.plainText, isEmpty);
+      expect(m.plainText.contains('m 0 0 l'), isFalse);
+      expect(m.spans, isEmpty);
+    });
+
+    test(r'\p0 ends drawing mode; later real text still renders', () {
+      final SubtitleMarkup m =
+          parseSubtitleMarkup(r'{\p1}m 0 0 l 8.475 0{\p0}本当のセリフ');
+      expect(m.plainText, '本当のセリフ');
+      expect(m.plainText.contains('m 0 0'), isFalse);
+    });
+
+    test(r'drawing mode persists to end of cue when no \p0', () {
+      final SubtitleMarkup m =
+          parseSubtitleMarkup(r'{\p1}m 0 0 l 100 0 b 1 2 3 4 5 6');
+      expect(m.plainText, isEmpty);
+    });
+
+    test('plain dialogue without p is byte-for-byte unchanged', () {
+      final SubtitleMarkup m = parseSubtitleMarkup('吾輩は猫である。');
+      expect(m.plainText, '吾輩は猫である。');
+      expect(m.spans, isEmpty);
+    });
+
     test('plain text with no tags: empty spans, null anchor', () {
       final SubtitleMarkup m = parseSubtitleMarkup('こんにちは');
       expect(m.plainText, 'こんにちは');

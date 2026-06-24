@@ -120,6 +120,10 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
   final _Style style = _Style();
   SubtitleAnchor? anchor;
   SubtitlePos? pos;
+  // ASS 绘图模式：\pN(N>0) 开启、\p0 关闭，作用域持续到本条 cue 结束。开启
+  // 期间标签块之外的正文是矢量绘图命令（m/l/b 坐标），是图形不是文字，必须
+  // 丢弃而非当 plainText 渲染（TODO-799 OP 卡拉OK 满屏坐标乱码）。
+  final _DrawingState drawing = _DrawingState();
 
   void flush() {
     if (cur.isEmpty) return;
@@ -144,10 +148,16 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         style,
         (SubtitleAnchor a) => anchor = a,
         (SubtitlePos p) => pos = p,
+        (bool on) => drawing.active = on,
         playResX,
         playResY,
       );
       i = close + 1;
+      continue;
+    }
+    if (drawing.active) {
+      // 绘图模式下标签块之外的正文是矢量命令，整体丢弃。
+      i++;
       continue;
     }
     if (c == r'\' && i + 1 < n) {
@@ -208,6 +218,7 @@ void _applyOverrideBlock(
   _Style style,
   void Function(SubtitleAnchor) setAnchor,
   void Function(SubtitlePos) setPos,
+  void Function(bool) setDrawing,
   double? playResX,
   double? playResY,
 ) {
@@ -273,7 +284,14 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // 其余（\k \t \move \fad \p \frx \fscx \clip \bord \shad ...）忽略。
+    // \p<n>：绘图模式开关。n>0 进入，n=0 退出；作用域持续到本条 cue 结束。
+    final RegExpMatch? p1 = RegExp(r'^p(\d+)$').firstMatch(tag);
+    if (p1 != null) {
+      setDrawing(int.parse(p1.group(1)!) > 0);
+      continue;
+    }
+
+    // 其余（\k \t \move \fad \frx \fscx \clip \bord \shad ...）忽略。
   }
 }
 
@@ -284,4 +302,9 @@ int _assColorToArgb(String hex) {
   final int g = (v >> 8) & 0xFF;
   final int r = v & 0xFF;
   return 0xFF000000 | (r << 16) | (g << 8) | b;
+}
+
+/// 扫描过程内部可变绘图模式状态（\pN 开 / \p0 关）。
+class _DrawingState {
+  bool active = false;
 }
