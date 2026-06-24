@@ -3,12 +3,23 @@
   <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
 </p>
 
+<p align="center"><b>一冊の本を読み、知らない言葉をすべて自分のものにする。</b></p>
+<p align="center">マルチプラットフォーム・多言語のイマーシブリーダー —— EPUB 読書 · タップで辞書引き · Anki カード作成 · オーディオブック同期 · 動画字幕の辞書引き</p>
+
 <p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
+  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
+  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
+  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
+  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
+  &nbsp;·&nbsp;
+  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
+  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
 </p>
 
-<p align="center">Android 向け日本語イマーシブリーダー</p>
-<p align="center">EPUB · 辞書 · Anki · オーディオブック同期</p>
+<p align="center">
+  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 プロジェクトホームページ (GitHub Pages)</b></a>
+</p>
 
 <p align="center">
   <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <b>日本語</b> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
@@ -18,154 +29,111 @@
 
 ## 概要
 
-**hibiki** は日本語学習者のための Android 読書アプリです。
+**hibiki** はマルチプラットフォームのイマーシブ言語学習リーダーです。EPUB 本文の中で**タップして辞書引き、選択して解析**し、知らない言葉をワンタップで Anki カードにできます。オーディオブックの音声を本文と一文ずつ同期してハイライトし、さらには動画の字幕からそのまま辞書引き・カード作成も可能です。一つのツールで「読む・聴く・観る」の 3 つのイマーシブな入力をカバーします。
 
-## 機能
+辞書引きは [Yomitan](https://github.com/yomidevs/yomitan) の**すべての変換言語**（活用解除 + 辞書引き前のテキスト正規化）に対応し、インターフェースは **17 言語**にローカライズされ、**Android / iOS / macOS / Windows / Linux** の 5 つのプラットフォームに対応します。
 
-### EPUB リーダー
-- WebView で EPUB を描画（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 由来のページングエンジン）
-- タップで辞書引き、選択で解析
-- カスタムフォント、テーマ（ライト／ダーク）
-- 読書統計とブックマーク
-- 連続スクロール／ページ送りの 2 モード
+<p align="center">
+  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="本棚" width="300">
+  &nbsp;
+  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="辞書引き" width="300">
+  &nbsp;
+  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="設定とテーマ" width="300">
+</p>
+<p align="center"><sub>本棚 · 辞書引き · 設定とテーマ</sub></p>
 
-### 辞書
-- [Yomitan](https://github.com/yomidevs/yomitan) 形式の辞書をインポート（旧 Yomichan）
-- アクセント表示と語彙頻度情報に対応
-- 複数辞書の並列検索、検索履歴
-- Ve による活用形の原形復元
+---
 
-### Anki カード作成
-- [AnkiDroid](https://github.com/ankidroid/Anki-Android) へワンタップエクスポート
-- 文脈文の自動入力
-- 録音・スクリーンショットのトリミングに対応
-- 複数エクスポートプロファイル、カスタムフィールドマッピング
-- クイックアクションでワンステップ作成
+## 主な機能
 
-### オーディオブック同期（Sasayaki）
-- 字幕形式：SRT / LRC / VTT / ASS
-- 字幕テキストを EPUB 本文に自動整列
-- 追従ハイライト、音声同期ページ送り
-- 再生コントロールバー（進捗、シーク、倍速）
+### 📖 EPUB 読書、タップで辞書引き
 
-### その他
-- 17 種類のインターフェース言語
-- 複数ユーザープロファイル
-- シークレットモード
-- 他のアプリからテキストを共有して直接辞書引き
+WebView で描画される EPUB リーダー（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 由来のページングエンジン）。任意の単語をタップすると即座に辞書引き、選択範囲をその場で解析します。連続スクロールとページ送りの 2 モード、カスタムフォントとテーマ（ライト / ダーク / 純黒 / カスタム）、ふりがな、読書統計、ブックマークまで一通り揃っています。
 
-## 対応言語
+<p align="center">
+  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="縦書き読書 · ふりがな · オーディオブック同期" width="300">
+</p>
+<p align="center"><sub>縦書き本文 · ふりがな · 選択ハイライト · 下部のオーディオブック同期コントロールバー</sub></p>
 
-インターフェースは以下の言語をサポートしています：
+### 🔍 タップで辞書引き、Yomitan のすべての変換言語に対応
 
-| 言語 | コード |
-|---|---|
-| English | `en` |
-| 简体中文 | `zh-CN` |
-| 繁體中文 | `zh-HK` |
-| 日本語 | `ja` |
-| 한국어 | `ko` |
-| Español | `es` |
-| Français | `fr` |
-| Deutsch | `de` |
-| Português (Brasil) | `pt-BR` |
-| Русский | `ru` |
-| Tiếng Việt | `vi` |
-| ภาษาไทย | `th` |
-| Bahasa Indonesia | `id` |
-| Italiano | `it` |
-| Nederlands | `nl` |
-| Türkçe | `tr` |
-| العربية | `ar` |
+**Yomitan**（旧 Yomichan）/ **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku** など複数形式の辞書をインポートできます。多言語の活用形復元（Yomitan 変換表）+ 辞書引き前のテキスト正規化（大文字小文字 / ダイアクリティカルマーク / アラビア語の harakat）に対応し、コードポイント駆動で言語の切り替えは不要です。複数辞書の並列検索、サブソースの優先順位と有効・無効の切り替え、アクセント表記、語彙頻度——すべて一つのポップアップで完結します。
 
-## 技術スタック
+### 🎴 ワンタップ Anki カード作成
+
+知らない言葉を見つけたら、[AnkiDroid](https://github.com/ankidroid/Anki-Android) と AnkiConnect へ一手でエクスポート。内蔵の [Lapis](https://github.com/donkuri/lapis) ノートタイプ schema（vendored 1.7.0）で、アプリ内から直接カードテンプレートとデッキを作成できます。文脈文を自動入力し、録音とスクリーンショットのトリミング、複数のエクスポートプロファイル（Profile）、カスタムフィールドマッピング、クイックアクションによるワンステップ作成に対応します。
+
+### 🎧 オーディオブック同期（Sasayaki）
+
+SRT / LRC / VTT / ASS 字幕に対応し、字幕テキストを EPUB 本文に自動整列します。再生時には**追従ハイライトと音声同期ページ送り**で、聴きながら本文が一文ずつ点灯します。再生コントロールバー（進捗、シーク、倍速）も備え——本ページ上部の読書スクリーンショット下部のコントロールバーがまさにこの機能です。
+
+### 🎬 動画字幕の辞書引き
+
+media_kit / libmpv ベースの動画プレーヤーを内蔵し、内蔵字幕・外部字幕の両方に対応します。動画再生中に**字幕から直接辞書引き・カード作成**ができ、映像作品の素材もイマーシブな入力に取り込めます。視聴時間とカード作成数の統計も記録します。
+
+<!-- TODO-782: 待补视频播放器截图 -->
+<p align="center"><sub>📹 動画プレーヤーのスクリーンショットは後日追加予定 —— 実機 / フォアグラウンドでの取得が必要です（動画画面 + 字幕バー + 辞書引きポップアップ、下記の説明を参照）。</sub></p>
+
+### 🔗 その他
+
+- **17 種類のインターフェース言語**、全プラットフォームでローカライズ
+- **Hibiki 相互接続**：端末間で書籍 / 辞書 / オーディオブック / 読書進捗を同期
+- **複数ユーザープロファイル（Profile）**、本ごとに自動切り替え
+- **シークレットモード**；他のアプリから**テキストを共有してそのまま辞書引き**
+
+---
+
+## 対応プラットフォーム
+
+| プラットフォーム | 状態 | 描画 / UI |
+|---|---|---|
+| Android | ✅ | Material Design 3 |
+| iOS | ✅ | Cupertino |
+| Windows | ✅ | Material（fork した `flutter_inappwebview_windows` で EPUB を描画） |
+| macOS | ✅ | Material |
+| Linux | ✅ | Material |
+
+> 最低 Android 7.0（API 24）。辞書引きの言語はインポートした辞書と Yomitan 変換表によって決まり、インターフェース言語とは独立しています。
+
+### インターフェース言語（17 種類）
+
+English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
+
+---
+
+## インストールとビルド
+
+ワンコマンド準備（`flutter pub get` + パッチ適用）の後、ビルドします：
+
+```bash
+# 在仓库根目录
+bash tool/bootstrap.sh          # Windows PowerShell：.\tool\bootstrap.ps1
+                                # 或（Linux/macOS）：dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi
+```
+
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` は ①`flutter pub get` と ②`ci/apply-patches.sh` を 1 コマンドにまとめます。本プロジェクトは Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`）に固定されており、一部の上流依存は `third_party/` に vendor されるか `ci/apply-patches.sh` でパッチされます——仕組みの詳細、5 プラットフォームのビルド、依存とパッチの一覧は [docs/agent/build.md](../agent/build.md) を参照してください。
+
+<details>
+<summary><b>技術スタック一覧</b></summary>
 
 | レイヤー | 技術 |
 |---|---|
 | フレームワーク | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
 | プラットフォーム | Android / iOS / macOS / Windows / Linux（Material 3 + Cupertino アダプティブ） |
 | リーダー | WebView ページングエンジン（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 由来） |
-| ストレージ | Drift (SQLite、WAL) + hoshidicts (C++ FFI 辞書エンジン) |
-| NLP | Ve（活用形の原形復元） |
-| カード作成 | AnkiDroid API |
+| 動画 | media_kit / libmpv |
+| ストレージ | Drift（SQLite、WAL）+ hoshidicts（C++ FFI 辞書エンジン） |
+| NLP | Yomitan 変換表（多言語の活用形復元）+ kana_kit（かな変換）；分かち書きは hoshidicts FFI |
+| カード作成 | AnkiDroid API + AnkiConnect |
 | 国際化 | Slang（17 言語） |
-| 最低バージョン | Android 7.0（API 24） |
-
-## ビルド
-
-ワンコマンド準備（`flutter pub get` + パッチ適用）の後、ビルドします：
-
-```bash
-# リポジトリのルートで
-bash tool/bootstrap.sh          # Windows PowerShell：.\tool\bootstrap.ps1
-                                # または（Linux/macOS）：dart run melos bootstrap
-
-cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi
-```
-
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` は 2 つの処理を 1 コマンドにまとめます：①`flutter pub get`；②`ci/apply-patches.sh` の実行。`melos bootstrap` も post hook で同じ処理を行います（Windows では melos に CJK エンコーディングのバグがあるため `tool/bootstrap.ps1` を使用してください）。
-
-> **パッチの説明：** `ci/apply-patches.sh` は `ci/patches/` 配下の変更を実際の pub cache に上書きします。pub cache をクリアするか `flutter pub get` を再実行するたびに再実行が必要です（bootstrap はこのステップを含みます）。スクリプトはパッチ対象が見つからない場合、成功したふりをせずスキップして警告します。
-
-## 依存関係とパッチ
-
-本プロジェクトは Flutter 3.44.0 に固定されており、一部の上流依存パッケージはまだ未対応です。パッチは 2 つの仕組みに分かれます：① ビルド入力として必要でマシン間で一貫して再現すべきパッケージは `third_party/` に直接 vendor し `dependency_overrides` で指定します（`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`、pub-cache パッチは**不要**）；② その他のパッケージは `ci/apply-patches.sh` が pub cache のソースをパッチします。仕組みの詳細は [docs/agent/build.md](../agent/build.md) を参照してください。下の折りたたみ表は変更内容で分類した歴史的なリストで、仕組み①と重複するパッケージは vendored 版が優先されます。
-
-<details>
-<summary><b>Flutter API 変更パッチ</b></summary>
-
-| パッケージ | 変更内容 |
-|---|---|
-| `network_to_file_image` 4.0.1 | `load` → `loadImage`；`DecoderCallback` → `ImageDecoderCallback`；`hashValues` → `Object.hash`；`instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`；削除された `imageCache.putIfAbsent` を置換 |
-| `flutter_blurhash` 0.7.0 | 同上の `loadImage` / `hashValues` / `ImmutableBuffer` 変更 |
-| `RubyText` (git) | `MediaQuery.boldTextOverride` → `boldTextOf` |
-| `material_floating_search_bar` (git) | `headline6` → `titleLarge`；`subtitle1` → `titleMedium` |
-| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
-| `carousel_slider` 4.2.1 | 内部 import に `hide CarouselController` を追加し命名衝突を回避 |
-| `fading_edge_scrollview` 3.0.0 | `PageView.controller` の nullable 修正 |
 
 </details>
 
 <details>
-<summary><b>v1 Embedding 削除パッチ</b></summary>
-
-Flutter 3.44.0 では v1 embedding API（`PluginRegistry.Registrar`）が完全に削除されました。以下のプラグインから関連する参照を削除する必要があります：
-
-`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
-
-</details>
-
-<details>
-<summary><b>Gradle / Kotlin パッチ</b></summary>
-
-| 対象 | 変更内容 |
-|---|---|
-| `android/build.gradle` afterEvaluate | サブプロジェクトに `compileSdk` を強制（デフォルト 36、一部 34）；`-Werror` を削除 |
-| `audio_session` 0.1.14 | `-Werror`、`-Xlint:deprecation` を削除 |
-| `package_info_plus` 4.0.2 | Kotlin null 安全の修正 |
-| `receive_intent` (git) | Kotlin null 安全の修正 |
-
-</details>
-
-<details>
-<summary><b>Git 依存パッケージ</b></summary>
-
-| パッケージ | ソース |
-|---|---|
-| `blurrycontainer` | [arianneorpilla/blurry_container](https://github.com/arianneorpilla/blurry_container/) |
-| `filesystem_picker` | [arianneorpilla/filesystem_picker](https://github.com/arianneorpilla/filesystem_picker) |
-| `flutter_inappwebview` | [arianneorpilla/flutter_inappwebview](https://github.com/arianneorpilla/flutter_inappwebview) |
-| `material_floating_search_bar` | [arianneorpilla/material_floating_search_bar](https://github.com/arianneorpilla/material_floating_search_bar) |
-| `ruby_text` | [arianneorpilla/RubyText](https://github.com/arianneorpilla/RubyText) |
-| `spaces` | [arianneorpilla/spaces](https://github.com/arianneorpilla/spaces) |
-| `ve_dart` | [arianneorpilla/ve_dart](https://github.com/arianneorpilla/ve_dart) |
-| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
-| `wakelock` | [diegotori/wakelock](https://github.com/diegotori/wakelock) |
-
-</details>
-
-## プロジェクト構成
+<summary><b>プロジェクト構成</b></summary>
 
 ```
 hibiki/                      # リポジトリのルート（Melos workspace: hibiki_workspace）
@@ -180,11 +148,16 @@ hibiki/                      # リポジトリのルート（Melos workspace: hi
 │   │   └── main.dart
 │   └── android/             # Android プロジェクト（manifest、native hoshidicts）
 ├── packages/                # 内部パッケージ + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── native/                  # hoshidicts C++ 辞書エンジン（FFI）
 ├── third_party/             # vendored パッチパッケージ（dependency_overrides が指定）
 ├── ci/                      # ビルドパッチと統合テストスクリプト
 ├── tool/                    # bootstrap / i18n_sync などのスクリプト
 └── docs/                    # 開発ドキュメント（docs/agent/ エージェント操作マニュアルを含む）
 ```
+
+</details>
+
+---
 
 ## 謝辞
 
@@ -195,10 +168,13 @@ hibiki/                      # リポジトリのルート（Melos workspace: hi
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ 辞書エンジン |
 | [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日本語リーダー |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | オーディオブック同期ソリューション |
-| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | EPUB レンダリングエンジン |
-| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | ttu コミュニティメンテナンス版（SvelteKit v2）、hibiki fork の上流ベース |
-| [Yomitan](https://github.com/yomidevs/yomitan) | 辞書フォーマットのソース |
+| [Yomitan](https://github.com/yomidevs/yomitan) | 辞書フォーマットと変換表のソース |
+| [Lapis](https://github.com/donkuri/lapis) | Anki ノートタイプ |
 
 ## ライセンス
 
 [GNU General Public License v3.0](../../LICENSE)
+
+<p align="center">
+  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <b>日本語</b> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
+</p>

@@ -3,12 +3,23 @@
   <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
 </p>
 
+<p align="center"><b>Lies ein Buch und mach dir jedes unbekannte Wort zu eigen.</b></p>
+<p align="center">Plattformübergreifender, mehrsprachiger immersiver Reader — EPUB-Lesen · Wörter per Auswahl nachschlagen · Anki-Karten erstellen · Hörbuch-Synchronisation · Wörter in Videountertiteln nachschlagen</p>
+
 <p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
+  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
+  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
+  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
+  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
+  &nbsp;·&nbsp;
+  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
+  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
 </p>
 
-<p align="center">Immersiver Japanisch-Reader für Android</p>
-<p align="center">EPUB · Wörterbuch · Anki · Hörbuch-Synchronisation</p>
+<p align="center">
+  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 Projekt-Homepage (GitHub Pages)</b></a>
+</p>
 
 <p align="center">
   <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <b>Deutsch</b> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
@@ -18,82 +29,81 @@
 
 ## Einführung
 
-**hibiki** ist eine Android-Lese-App für Japanisch-Lernende.
+**hibiki** ist ein plattformübergreifender, immersiver Reader zum Sprachenlernen. Im EPUB-Text **antippen zum Nachschlagen, markieren zum Analysieren** – und ein unbekanntes Wort mit einem Klick in eine Anki-Karte verwandeln; Hörbuch-Audio satzweise synchron zum Text hervorheben; und sogar direkt in Videountertiteln Wörter nachschlagen und Karten erstellen. Ein Werkzeug für alle drei Formen immersiver Eingabe: „Lesen · Hören · Sehen".
 
-## Funktionen
+Das Wörterbuch-Nachschlagen deckt **alle Transformationssprachen** von [Yomitan](https://github.com/yomidevs/yomitan) ab (Deflexion + Textnormalisierung vor dem Nachschlagen), die Oberfläche ist in **17 Sprachen** lokalisiert und die App unterstützt alle fünf Plattformen **Android / iOS / macOS / Windows / Linux**.
 
-### EPUB-Leser
-- EPUB-Rendering in WebView (Seitenumbruch-Engine abgeleitet von [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
-- Antippen zum Nachschlagen, Markieren zum Analysieren
-- Benutzerdefinierte Schriftarten und Designs (hell/dunkel)
-- Lesestatistiken und Lesezeichen
-- Zwei Modi: Endlos-Scrollen / Seitenumbruch
+<p align="center">
+  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="Bibliothek" width="300">
+  &nbsp;
+  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="Nachschlagen" width="300">
+  &nbsp;
+  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="Einstellungen und Designs" width="300">
+</p>
+<p align="center"><sub>Bibliothek · Nachschlagen · Einstellungen und Designs</sub></p>
 
-### Wörterbuch
-- Import von Wörterbüchern im [Yomitan](https://github.com/yomidevs/yomitan)-Format (ehemals Yomichan)
-- Unterstützung für Tonhöhenakzent und Häufigkeitsdaten
-- Parallele Suche in mehreren Wörterbüchern, Suchverlauf
-- Ve-Dekonjugation
+---
 
-### Anki-Karten
-- Ein-Tipp-Export nach [AnkiDroid](https://github.com/ankidroid/Anki-Android)
-- Automatisches Ausfüllen von Kontextsätzen
-- Audioaufnahme und Screenshot-Zuschnitt
-- Mehrere Exportprofile, benutzerdefinierte Feldzuordnung
-- Schnellaktionen (Quick Actions) für Kartenerstellung in einem Schritt
+## Highlights
 
-### Hörbuch-Synchronisation (Sasayaki)
-- Untertitelformate: SRT / LRC / VTT / ASS
-- Automatische Ausrichtung der Untertitel am EPUB-Text
-- Mitlese-Hervorhebung, audiosynchrones Seitenwechseln
-- Wiedergabesteuerung (Fortschritt, Navigation, Geschwindigkeit)
+### 📖 EPUB-Lesen, Nachschlagen per Antippen
 
-### Sonstiges
-- 17 Oberflächensprachen
-- Mehrere Benutzerprofile
-- Inkognito-Modus
-- Text aus anderen Apps teilen zum direkten Nachschlagen
+In WebView gerenderter EPUB-Reader (Seitenumbruch-Engine abgeleitet von [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)): Tippe ein beliebiges Wort an, um es sofort nachzuschlagen, markiere einen Bereich für die sofortige Analyse. Zwei Modi – Endlos-Scrollen und Seitenumbruch –, benutzerdefinierte Schriftarten und Designs (hell / dunkel / reines Schwarz / benutzerdefiniert), Furigana, Lesestatistiken und Lesezeichen sind alle dabei.
 
-## Unterstützte Sprachen
+<p align="center">
+  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="Vertikales Lesen · Furigana · Hörbuch-Synchronisation" width="300">
+</p>
+<p align="center"><sub>Vertikaler Text · Furigana · Auswahl-Hervorhebung · Hörbuch-Synchronisationsleiste am unteren Rand</sub></p>
 
-Die Oberfläche unterstützt folgende Sprachen:
+### 🔍 Nachschlagen per Auswahl, deckt alle Transformationssprachen von Yomitan ab
 
-| Sprache | Code |
-|---|---|
-| English | `en` |
-| 简体中文 | `zh-CN` |
-| 繁體中文 | `zh-HK` |
-| 日本語 | `ja` |
-| 한국어 | `ko` |
-| Español | `es` |
-| Français | `fr` |
-| Deutsch | `de` |
-| Português (Brasil) | `pt-BR` |
-| Русский | `ru` |
-| Tiếng Việt | `vi` |
-| ภาษาไทย | `th` |
-| Bahasa Indonesia | `id` |
-| Italiano | `it` |
-| Nederlands | `nl` |
-| Türkçe | `tr` |
-| العربية | `ar` |
+Importiere Wörterbücher in den Formaten **Yomitan** (ehemals Yomichan) / **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku**. Mehrsprachige Lemmatisierung (Yomitan-Transformationstabellen) + Textnormalisierung vor dem Nachschlagen (Groß-/Kleinschreibung / Diakritika / arabische Harakat), codepunktgesteuert, ohne Sprachwechsel. Parallele Suche in mehreren Wörterbüchern, Priorität und Aktivierung/Deaktivierung von Unterquellen, Tonhöhenakzent-Markierung und Wortfrequenz – alles in einem einzigen Pop-up.
 
-## Technologie-Stack
+### 🎴 Anki-Karten mit einem Klick
 
-| Schicht | Technologie |
-|---|---|
-| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Plattform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptiv) |
-| Reader | WebView-Seitenumbruch-Engine (abgeleitet von [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
-| Speicher | Drift (SQLite, WAL) + hoshidicts (C++ FFI Wörterbuch-Engine) |
-| NLP | Ve (Dekonjugation) |
-| Kartenerstellung | AnkiDroid API |
-| Internationalisierung | Slang (17 Sprachen) |
-| Mindestversion | Android 7.0 (API 24) |
+Ist ein unbekanntes Wort gefunden, exportiere es in einem Schritt nach [AnkiDroid](https://github.com/ankidroid/Anki-Android) und AnkiConnect. Integriertes [Lapis](https://github.com/donkuri/lapis)-Notiztyp-Schema (vendort 1.7.0), mit dem sich Kartenvorlagen und Stapel direkt in der App erstellen lassen; automatisches Ausfüllen von Kontextsätzen, Unterstützung für Audioaufnahme und Screenshot-Zuschnitt, mehrere Exportprofile (Profile), benutzerdefinierte Feldzuordnung sowie Schnellaktionen zur Kartenerstellung in einem Schritt.
 
-## Kompilierung
+### 🎧 Hörbuch-Synchronisation (Sasayaki)
 
-Vorbereitung mit einem Befehl (`flutter pub get` + wendet Patches an), dann kompilieren:
+Unterstützung für SRT- / LRC- / VTT- / ASS-Untertitel mit automatischer Ausrichtung des Untertiteltextes am EPUB-Text. Bei der Wiedergabe **Mitlese-Hervorhebung und audiosynchroner Seitenwechsel**, ergänzt durch eine Wiedergabesteuerung (Fortschritt, Navigation, Geschwindigkeit): Beim Hören leuchtet der Text Satz für Satz auf – die Steuerleiste am unteren Rand des Lese-Screenshots oben auf dieser Seite zeigt genau diese Funktion.
+
+### 🎬 Wörter in Videountertiteln nachschlagen
+
+Integrierter Videoplayer auf Basis von media_kit / libmpv mit Unterstützung für eingebettete / externe Untertitel. Beim Abspielen eines Videos **direkt im Untertitel Wörter nachschlagen und Karten erstellen**, um auch Filmmaterial in die immersive Eingabe einzubeziehen; zudem werden Sehdauer und Anzahl der erstellten Karten erfasst.
+
+<!-- TODO-782: 待补视频播放器截图 -->
+<p align="center"><sub>📹 Videoplayer-Screenshot folgt</sub></p>
+
+### 🔗 Mehr
+
+- **17 Oberflächensprachen**, Lokalisierung auf allen Plattformen
+- **Hibiki-Interconnect**: Synchronisation von Büchern / Wörterbüchern / Hörbüchern / Lesefortschritt zwischen Geräten
+- **Mehrbenutzer-Profile (Profile)**, automatischer Wechsel je Buch
+- **Inkognito-Modus**; **direktes Nachschlagen durch Teilen von Text** aus anderen Apps
+
+---
+
+## Plattformunterstützung
+
+| Plattform | Status | Rendering / UI |
+|---|---|---|
+| Android | ✅ | Material Design 3 |
+| iOS | ✅ | Cupertino |
+| Windows | ✅ | Material (geforktes `flutter_inappwebview_windows` für EPUB-Rendering) |
+| macOS | ✅ | Material |
+| Linux | ✅ | Material |
+
+> Mindestens Android 7.0 (API 24). Die Nachschlagesprache des Wörterbuchs ergibt sich aus den importierten Wörterbüchern und den Yomitan-Transformationstabellen, unabhängig von der Oberflächensprache.
+
+### Oberflächensprachen (17)
+
+English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
+
+---
+
+## Installation und Kompilierung
+
+Vorbereitung mit einem Befehl (`flutter pub get` + Patches anwenden), dann kompilieren:
 
 ```bash
 # im Repository-Root
@@ -104,68 +114,26 @@ cd hibiki
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` bündelt zwei Schritte in einem Befehl: ① `flutter pub get`; ② Ausführung von `ci/apply-patches.sh`. `melos bootstrap` erledigt dasselbe über einen Post-Hook (auf Windows hat melos einen CJK-Encoding-Bug, daher `tool/bootstrap.ps1` verwenden).
-
-> **Patch-Hinweis:** `ci/apply-patches.sh` überschreibt den tatsächlichen Pub Cache mit den Änderungen aus `ci/patches/`. Nach jedem Leeren des Pub Cache oder erneutem `flutter pub get` muss es erneut ausgeführt werden (bootstrap erledigt das bereits). Findet das Skript kein Patch-Ziel, überspringt es und warnt, statt Erfolg vorzutäuschen.
-
-## Abhängigkeiten und Patches
-
-Dieses Projekt ist auf Flutter 3.44.0 festgelegt; einige Upstream-Abhängigkeiten sind noch nicht angepasst. Die Korrekturen laufen über zwei Wege: ① Pakete, die als Build-Eingabe maschinenübergreifend konsistent reproduzierbar sein müssen, werden direkt unter `third_party/` vendort und per `dependency_overrides` referenziert (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **kein** Pub-Cache-Patch nötig); ② die übrigen Pakete werden von `ci/apply-patches.sh` im Pub-Cache-Quellcode gepatcht. Mechanismus-Details siehe [docs/agent/build.md](../agent/build.md). Die folgenden Klapptabellen sind eine nach Änderung gruppierte historische Liste; bei Überschneidung mit Mechanismus ① gilt die vendorte Version.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` bündelt in einem Befehl ① `flutter pub get` und ② `ci/apply-patches.sh`. Das Projekt ist auf Flutter 3.44.0 festgelegt (Dart SDK `>=3.5.0 <4.0.0`); einige Upstream-Abhängigkeiten sind unter `third_party/` vendort oder werden von `ci/apply-patches.sh` gepatcht — Mechanismus-Details, Kompilierung auf allen fünf Plattformen sowie Abhängigkeits- und Patch-Liste siehe [docs/agent/build.md](../agent/build.md).
 
 <details>
-<summary><b>Flutter-API-Änderungspatches</b></summary>
+<summary><b>Technologie-Stack im Überblick</b></summary>
 
-| Paket | Änderungen |
+| Schicht | Technologie |
 |---|---|
-| `network_to_file_image` 4.0.1 | `load` → `loadImage`; `DecoderCallback` → `ImageDecoderCallback`; `hashValues` → `Object.hash`; `instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`; Ersetzung des entfernten `imageCache.putIfAbsent` |
-| `flutter_blurhash` 0.7.0 | Ebenso `loadImage` / `hashValues` / `ImmutableBuffer` |
-| `RubyText` (git) | `MediaQuery.boldTextOverride` → `boldTextOf` |
-| `material_floating_search_bar` (git) | `headline6` → `titleLarge`; `subtitle1` → `titleMedium` |
-| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
-| `carousel_slider` 4.2.1 | Internes Import mit `hide CarouselController` zur Vermeidung von Namenskonflikten |
-| `fading_edge_scrollview` 3.0.0 | Nullable-Korrektur für `PageView.controller` |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Plattform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptiv) |
+| Reader | WebView-Seitenumbruch-Engine (abgeleitet von [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Video | media_kit / libmpv |
+| Speicher | Drift (SQLite, WAL) + hoshidicts (C++ FFI Wörterbuch-Engine) |
+| NLP | Yomitan-Transformationstabellen (mehrsprachige Lemmatisierung) + kana_kit (Kana-Konvertierung); die Segmentierung läuft über hoshidicts FFI |
+| Kartenerstellung | AnkiDroid API + AnkiConnect |
+| Internationalisierung | Slang (17 Sprachen) |
 
 </details>
 
 <details>
-<summary><b>v1-Embedding-Entfernungspatches</b></summary>
-
-Flutter 3.44.0 hat die v1-Embedding-API (`PluginRegistry.Registrar`) vollständig entfernt. Die folgenden Plugins erfordern das Entfernen der entsprechenden Referenzen:
-
-`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
-
-</details>
-
-<details>
-<summary><b>Gradle-/Kotlin-Patches</b></summary>
-
-| Ziel | Änderungen |
-|---|---|
-| `android/build.gradle` afterEvaluate | Erzwungenes `compileSdk` (Standard 36, einzelne 34) für Unterprojekte; Entfernung von `-Werror` |
-| `audio_session` 0.1.14 | Entfernung von `-Werror`, `-Xlint:deprecation` |
-| `package_info_plus` 4.0.2 | Kotlin Null-Sicherheitskorrektur |
-| `receive_intent` (git) | Kotlin Null-Sicherheitskorrektur |
-
-</details>
-
-<details>
-<summary><b>Git-Abhängigkeiten</b></summary>
-
-| Paket | Quelle |
-|---|---|
-| `blurrycontainer` | [arianneorpilla/blurry_container](https://github.com/arianneorpilla/blurry_container/) |
-| `filesystem_picker` | [arianneorpilla/filesystem_picker](https://github.com/arianneorpilla/filesystem_picker) |
-| `flutter_inappwebview` | [arianneorpilla/flutter_inappwebview](https://github.com/arianneorpilla/flutter_inappwebview) |
-| `material_floating_search_bar` | [arianneorpilla/material_floating_search_bar](https://github.com/arianneorpilla/material_floating_search_bar) |
-| `ruby_text` | [arianneorpilla/RubyText](https://github.com/arianneorpilla/RubyText) |
-| `spaces` | [arianneorpilla/spaces](https://github.com/arianneorpilla/spaces) |
-| `ve_dart` | [arianneorpilla/ve_dart](https://github.com/arianneorpilla/ve_dart) |
-| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
-| `wakelock` | [diegotori/wakelock](https://github.com/diegotori/wakelock) |
-
-</details>
-
-## Projektstruktur
+<summary><b>Projektstruktur</b></summary>
 
 ```
 hibiki/                      # Repository-Root (Melos-Workspace: hibiki_workspace)
@@ -180,11 +148,16 @@ hibiki/                      # Repository-Root (Melos-Workspace: hibiki_workspac
 │   │   └── main.dart
 │   └── android/             # Android-Projekt (Manifest, native hoshidicts)
 ├── packages/                # Interne Packages + flutter_inappwebview_windows(Fork) + gamepads_android_stub
+├── native/                  # hoshidicts C++ Wörterbuch-Engine (FFI)
 ├── third_party/             # vendorte Patch-Pakete (von dependency_overrides referenziert)
 ├── ci/                      # Build-Patches und Integrationstest-Skripte
 ├── tool/                    # bootstrap / i18n_sync u. a. Skripte
 └── docs/                    # Entwicklungsdokumentation (inkl. docs/agent/ Agent-Handbuch)
 ```
+
+</details>
+
+---
 
 ## Danksagungen
 
@@ -195,10 +168,13 @@ hibiki/                      # Repository-Root (Melos-Workspace: hibiki_workspac
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ Wörterbuch-Engine |
 | [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS-Japanisch-Reader |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Hörbuch-Synchronisationslösung |
-| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | EPUB-Rendering-Engine |
-| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | Community-gepflegte ttu-Version (SvelteKit v2), Upstream-Basis des hibiki-Forks |
-| [Yomitan](https://github.com/yomidevs/yomitan) | Wörterbuchformat-Quelle |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Quelle für Wörterbuchformate und Transformationstabellen |
+| [Lapis](https://github.com/donkuri/lapis) | Anki-Notiztyp |
 
 ## Lizenz
 
 [GNU General Public License v3.0](../../LICENSE)
+
+<p align="center">
+  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <b>Deutsch</b> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
+</p>

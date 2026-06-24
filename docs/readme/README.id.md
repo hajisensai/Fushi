@@ -3,12 +3,23 @@
   <img src="../static-assets/hibiki-logo.png" alt="hibiki logo" width="160">
 </p>
 
+<p align="center"><b>Baca satu buku, dan jadikan setiap kata baru milikmu.</b></p>
+<p align="center">Pembaca imersif multiplatform & multibahasa —— Baca EPUB · Cari kata dengan sekali ketuk · Buat kartu Anki · Sinkronisasi buku audio · Cari kata dari subtitle video</p>
+
 <p align="center">
-  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
+  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android">
+  <img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS">
+  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS">
+  <img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
+  &nbsp;·&nbsp;
+  <img src="https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white" alt="Flutter">
+  <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
 </p>
 
-<p align="center">Pembaca bahasa Jepang imersif untuk Android</p>
-<p align="center">EPUB · Kamus · Anki · Sinkronisasi Buku Audio</p>
+<p align="center">
+  <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>📖 Beranda Proyek (GitHub Pages)</b></a>
+</p>
 
 <p align="center">
   <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <b>Bahasa Indonesia</b> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
@@ -18,80 +29,79 @@
 
 ## Pendahuluan
 
-**hibiki** adalah aplikasi membaca di Android untuk pelajar bahasa Jepang.
+**hibiki** adalah pembaca pembelajaran bahasa imersif lintas platform. Di dalam teks EPUB Anda bisa **ketuk untuk mencari kata, pilih kata untuk menganalisis** secara langsung, lalu menjadikan kata baru sebagai kartu Anki hanya dengan sekali ketuk; menyelaraskan audio buku audio dengan teks dan menyorotinya kalimat demi kalimat; bahkan mencari kata dan membuat kartu langsung dari subtitle video. Satu perangkat mencakup ketiga jalur masukan imersif Anda: «baca · dengar · tonton».
 
-## Fitur
+Pencarian kamus mencakup **seluruh bahasa transformasi** [Yomitan](https://github.com/yomidevs/yomitan) (dekonjugasi + normalisasi teks sebelum pencarian), antarmuka dilokalkan ke **17 bahasa**, serta mendukung **Android / iOS / macOS / Windows / Linux** kelima platform.
 
-### Pembacaan EPUB
-- Render EPUB di WebView (mesin paginasi turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
-- Ketuk untuk mencari kata, pilih teks untuk menganalisis
-- Font kustom, tema (terang/gelap)
-- Statistik membaca dan penanda halaman
-- Mode gulir berkelanjutan / halaman
+<p align="center">
+  <img src="../static-assets/screenshots/hibiki-readme-home.png" alt="Rak buku" width="300">
+  &nbsp;
+  <img src="../static-assets/screenshots/hibiki-readme-dictionaries.png" alt="Cari kata" width="300">
+  &nbsp;
+  <img src="../static-assets/screenshots/hibiki-readme-settings.png" alt="Pengaturan & tema" width="300">
+</p>
+<p align="center"><sub>Rak buku · Cari kata · Pengaturan & tema</sub></p>
 
-### Kamus
-- Impor kamus format [Yomitan](https://github.com/yomidevs/yomitan) (sebelumnya Yomichan)
-- Data aksen nada dan frekuensi kata
-- Pencarian paralel multi-kamus, riwayat pencarian
-- Dekonjugasi Ve
+---
 
-### Kartu Anki
-- Ekspor satu ketuk ke [AnkiDroid](https://github.com/ankidroid/Anki-Android)
-- Pengisian otomatis kalimat konteks
-- Dukungan perekaman audio, pemotongan tangkapan layar
-- Beberapa profil ekspor, pemetaan bidang kustom
-- Aksi Cepat (Quick Actions) pembuatan kartu satu langkah
+## Sorotan Utama
 
-### Sinkronisasi Buku Audio (Sasayaki)
-- Format subtitle: SRT / LRC / VTT / ASS
-- Penyelarasan otomatis subtitle dengan teks EPUB
-- Penyorotan mengikuti audio, pergantian halaman sinkron
-- Kontrol pemutaran (progres, lompat, kecepatan)
+### 📖 Baca EPUB, ketuk langsung cari
 
-### Lainnya
-- 17 bahasa antarmuka
-- Beberapa profil pengguna
-- Mode penyamaran
-- Bagikan teks dari aplikasi lain untuk mencari kata
+Pembaca EPUB yang dirender dengan WebView (mesin paginasi turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)), ketuk kata apa pun untuk pencarian instan, pilih teks untuk analisis instan. Dua mode gulir berkelanjutan dan paginasi, font serta tema kustom (terang / gelap / hitam pekat / kustom), furigana, statistik membaca, dan penanda halaman semuanya tersedia.
 
-## Bahasa yang Didukung
+<p align="center">
+  <img src="../static-assets/screenshots/hibiki-readme-reader.png" alt="Baca vertikal · furigana · sinkronisasi buku audio" width="300">
+</p>
+<p align="center"><sub>Teks vertikal · furigana · sorot kata terpilih · bilah kontrol sinkronisasi buku audio di bawah</sub></p>
 
-Antarmuka mendukung bahasa-bahasa berikut:
+### 🔍 Cari kata dengan ketuk, mencakup semua bahasa transformasi Yomitan
 
-| Bahasa | Kode |
-|---|---|
-| English | `en` |
-| 简体中文 | `zh-CN` |
-| 繁體中文 | `zh-HK` |
-| 日本語 | `ja` |
-| 한국어 | `ko` |
-| Español | `es` |
-| Français | `fr` |
-| Deutsch | `de` |
-| Português (Brasil) | `pt-BR` |
-| Русский | `ru` |
-| Tiếng Việt | `vi` |
-| ภาษาไทย | `th` |
-| Bahasa Indonesia | `id` |
-| Italiano | `it` |
-| Nederlands | `nl` |
-| Türkçe | `tr` |
-| العربية | `ar` |
+Impor kamus berbagai format: **Yomitan** (sebelumnya Yomichan) / **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **Migaku**. Pemulihan bentuk kata multibahasa (tabel transformasi Yomitan) + normalisasi teks sebelum pencarian (huruf besar/kecil / tanda diakritik / harakat Arab), digerakkan per titik kode (code point), tanpa perlu beralih bahasa. Pencarian paralel multi-kamus, prioritas serta aktif-nonaktif sumber turunan, anotasi nada dan frekuensi kata, semua selesai dalam satu jendela.
 
-## Tumpukan Teknologi
+### 🎴 Buat kartu Anki satu langkah
 
-| Lapisan | Teknologi |
-|---|---|
-| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platform | Android / iOS / macOS / Windows / Linux (adaptif Material 3 + Cupertino) |
-| Pembaca | Mesin paginasi WebView (turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
-| Penyimpanan | Drift (SQLite, WAL) + hoshidicts (mesin kamus C++ FFI) |
-| NLP | Ve (dekonjugasi) |
-| Pembuatan kartu | AnkiDroid API |
-| Internasionalisasi | Slang (17 bahasa) |
-| Versi minimum | Android 7.0 (API 24) |
+Setelah menemukan kata baru, ekspor dalam satu langkah ke [AnkiDroid](https://github.com/ankidroid/Anki-Android) dan AnkiConnect. Dilengkapi schema jenis catatan [Lapis](https://github.com/donkuri/lapis) bawaan (vendored 1.7.0), Anda dapat membuat templat kartu dan dek langsung di dalam aplikasi; pengisian otomatis kalimat konteks, dukungan perekaman audio dan pemotongan tangkapan layar, beberapa profil ekspor (Profile), pemetaan bidang kustom, serta aksi cepat pembuatan kartu satu langkah.
 
-## Build
+### 🎧 Sinkronisasi buku audio (Sasayaki)
+
+Mendukung subtitle SRT / LRC / VTT / ASS, secara otomatis menyelaraskan teks subtitle ke teks EPUB. Saat memutar, **sorot mengikuti bacaan, pergantian halaman tersinkron audio**, dipadukan dengan bilah kontrol pemutaran (progres, lompat, kecepatan); saat mendengarkan, teks menyala kalimat demi kalimat —— bilah kontrol di bagian bawah tangkapan layar membaca di atas halaman ini adalah fungsi ini.
+
+### 🎬 Cari kata dari subtitle video
+
+Pemutar video bawaan berbasis media_kit / libmpv, mendukung subtitle tertanam / eksternal. Saat memutar video Anda bisa **mencari kata dan membuat kartu langsung pada subtitle**, menjadikan materi film juga sebagai masukan imersif; sekaligus mencatat statistik durasi tonton dan jumlah kartu yang dibuat.
+
+<!-- TODO-782: 待补视频播放器截图 -->
+<p align="center"><sub>📹 Tangkapan layar pemutar video menyusul —— perlu diambil di perangkat nyata / latar depan (gambar video + bilah subtitle + jendela cari kata, lihat keterangan di bawah).</sub></p>
+
+### 🔗 Lainnya
+
+- **17 bahasa antarmuka**, dilokalkan di semua platform
+- **Hibiki Interconnect**: sinkronisasi buku / kamus / buku audio / progres membaca antar perangkat
+- **Beberapa profil pengguna (Profile)**, beralih otomatis per buku
+- **Mode penyamaran**; **bagikan teks dari aplikasi lain untuk langsung mencari kata**
+
+---
+
+## Platform yang Didukung
+
+| Platform | Status | Render / UI |
+|---|---|---|
+| Android | ✅ | Material Design 3 |
+| iOS | ✅ | Cupertino |
+| Windows | ✅ | Material (fork `flutter_inappwebview_windows` merender EPUB) |
+| macOS | ✅ | Material |
+| Linux | ✅ | Material |
+
+> Minimal Android 7.0 (API 24). Bahasa pencarian kamus ditentukan oleh kamus yang diimpor dan tabel transformasi Yomitan, terpisah dari bahasa antarmuka.
+
+### Bahasa Antarmuka (17 bahasa)
+
+English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
+
+---
+
+## Instalasi dan Build
 
 Persiapan satu perintah (`flutter pub get` + terapkan patch), lalu build:
 
@@ -104,70 +114,26 @@ cd hibiki
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` menyatukan dua hal menjadi satu perintah: ① `flutter pub get`;
-② menjalankan `ci/apply-patches.sh`. `melos bootstrap` melakukan hal yang sama melalui post hook
-(di Windows melos punya bug encoding CJK, jadi gunakan `tool/bootstrap.ps1`).
-
-> **Catatan patch:** `ci/apply-patches.sh` menimpa perubahan di `ci/patches/` ke pub cache yang sebenarnya. Setiap kali pub cache dihapus atau `flutter pub get` dijalankan ulang harus dijalankan kembali (bootstrap sudah mencakup langkah ini). Ketika skrip tidak menemukan target patch apa pun, ia melewati dan memberi peringatan alih-alih berpura-pura berhasil.
-
-## Dependensi & Patch
-
-Proyek ini dikunci ke Flutter 3.44.0, beberapa dependensi upstream belum diadaptasi. Patching dibagi menjadi dua mekanisme: ① paket yang perlu menjadi input build dan direproduksi konsisten antar mesin di-vendor langsung ke `third_party/` dan ditunjuk dengan `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **tanpa** patch pub-cache); ② paket selebihnya dipatch sumbernya di pub cache oleh `ci/apply-patches.sh`. Detail mekanisme lihat [docs/agent/build.md](../agent/build.md). Tabel lipat di bawah adalah daftar historis yang dikelompokkan berdasarkan perubahan; untuk paket yang tumpang tindih dengan mekanisme ①, versi vendored yang berlaku.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` menyatukan ① `flutter pub get` dan ② `ci/apply-patches.sh` menjadi satu perintah. Proyek ini mengunci Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); sebagian dependensi upstream di-vendor ke `third_party/` atau dipatch oleh `ci/apply-patches.sh` —— detail mekanisme, build kelima platform, daftar dependensi dan patch lihat [docs/agent/build.md](../agent/build.md).
 
 <details>
-<summary><b>Patch Perubahan Flutter API</b></summary>
+<summary><b>Sekilas Tumpukan Teknologi</b></summary>
 
-| Paket | Perubahan |
+| Lapisan | Teknologi |
 |---|---|
-| `network_to_file_image` 4.0.1 | `load` → `loadImage`; `DecoderCallback` → `ImageDecoderCallback`; `hashValues` → `Object.hash`; `instantiateImageCodec` → `ImmutableBuffer` + `ImageDescriptor`; ganti `imageCache.putIfAbsent` yang dihapus |
-| `flutter_blurhash` 0.7.0 | Sama: `loadImage` / `hashValues` / `ImmutableBuffer` |
-| `RubyText` (git) | `MediaQuery.boldTextOverride` → `boldTextOf` |
-| `material_floating_search_bar` (git) | `headline6` → `titleLarge`; `subtitle1` → `titleMedium` |
-| `win32` 4.1.4 | `UnmodifiableUint8ListView` → `Uint8List` |
-| `carousel_slider` 4.2.1 | Tambahkan `hide CarouselController` pada import internal untuk menghindari konflik nama |
-| `fading_edge_scrollview` 3.0.0 | Perbaikan `PageView.controller` nullable |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Platform | Android / iOS / macOS / Windows / Linux (adaptif Material 3 + Cupertino) |
+| Pembaca | Mesin paginasi WebView (turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Video | media_kit / libmpv |
+| Penyimpanan | Drift (SQLite, WAL) + hoshidicts (mesin kamus C++ FFI) |
+| NLP | Tabel transformasi Yomitan (pemulihan bentuk kata multibahasa) + kana_kit (konversi kana); segmentasi lewat hoshidicts FFI |
+| Pembuatan kartu | AnkiDroid API + AnkiConnect |
+| Internasionalisasi | Slang (17 bahasa) |
 
 </details>
 
 <details>
-<summary><b>Patch Penghapusan v1 Embedding</b></summary>
-
-Flutter 3.44.0 sepenuhnya menghapus v1 embedding API (`PluginRegistry.Registrar`). Plugin berikut perlu referensi terkait dihapus:
-
-`flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
-
-</details>
-
-<details>
-<summary><b>Patch Gradle / Kotlin</b></summary>
-
-| Target | Perubahan |
-|---|---|
-| `android/build.gradle` afterEvaluate | Paksa `compileSdk` pada subproyek (default 36, beberapa 34); hapus `-Werror` |
-| `audio_session` 0.1.14 | Hapus `-Werror`, `-Xlint:deprecation` |
-| `package_info_plus` 4.0.2 | Perbaikan Kotlin null safety |
-| `receive_intent` (git) | Perbaikan Kotlin null safety |
-
-</details>
-
-<details>
-<summary><b>Dependensi Git</b></summary>
-
-| Paket | Sumber |
-|---|---|
-| `blurrycontainer` | [arianneorpilla/blurry_container](https://github.com/arianneorpilla/blurry_container/) |
-| `filesystem_picker` | [arianneorpilla/filesystem_picker](https://github.com/arianneorpilla/filesystem_picker) |
-| `flutter_inappwebview` | [arianneorpilla/flutter_inappwebview](https://github.com/arianneorpilla/flutter_inappwebview) |
-| `material_floating_search_bar` | [arianneorpilla/material_floating_search_bar](https://github.com/arianneorpilla/material_floating_search_bar) |
-| `ruby_text` | [arianneorpilla/RubyText](https://github.com/arianneorpilla/RubyText) |
-| `spaces` | [arianneorpilla/spaces](https://github.com/arianneorpilla/spaces) |
-| `ve_dart` | [arianneorpilla/ve_dart](https://github.com/arianneorpilla/ve_dart) |
-| `receive_intent` | [arianneorpilla/receive_intent](https://github.com/arianneorpilla/receive_intent) |
-| `wakelock` | [diegotori/wakelock](https://github.com/diegotori/wakelock) |
-
-</details>
-
-## Struktur Proyek
+<summary><b>Struktur Proyek</b></summary>
 
 ```
 hibiki/                      # Root repo (Melos workspace: hibiki_workspace)
@@ -182,11 +148,16 @@ hibiki/                      # Root repo (Melos workspace: hibiki_workspace)
 │   │   └── main.dart
 │   └── android/             # Proyek Android (manifest, native hoshidicts)
 ├── packages/                # Paket internal + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── native/                  # Mesin kamus C++ hoshidicts (FFI)
 ├── third_party/             # Paket patch vendored (ditunjuk dependency_overrides)
 ├── ci/                      # Skrip patch build dan pengujian integrasi
 ├── tool/                    # Skrip bootstrap / i18n_sync, dll.
-└── docs/                    # Dokumentasi pengembangan (termasuk manual operasi agent docs/agent/)
+└── docs/                    # Dokumentasi pengembangan (termasuk manual operasi agent di docs/agent/)
 ```
+
+</details>
+
+---
 
 ## Penghargaan
 
@@ -197,10 +168,13 @@ hibiki/                      # Root repo (Melos workspace: hibiki_workspace)
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | Mesin kamus C++ |
 | [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | Pembaca bahasa Jepang untuk iOS |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Solusi sinkronisasi buku audio |
-| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Mesin render EPUB |
-| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | Versi komunitas ttu (SvelteKit v2), basis upstream hibiki fork |
-| [Yomitan](https://github.com/yomidevs/yomitan) | Sumber format kamus |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Sumber format kamus dan tabel transformasi |
+| [Lapis](https://github.com/donkuri/lapis) | Jenis catatan Anki |
 
 ## Lisensi
 
 [GNU General Public License v3.0](../../LICENSE)
+
+<p align="center">
+  <a href="../../README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a> · <a href="README.it.md">Italiano</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.th.md">ภาษาไทย</a> · <b>Bahasa Indonesia</b> · <a href="README.ar.md">العربية</a> · <a href="README.zh-Hant.md">繁體中文</a>
+</p>
