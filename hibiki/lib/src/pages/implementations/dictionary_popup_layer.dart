@@ -422,11 +422,26 @@ class DictionaryPopupLayer extends StatelessWidget {
       surfaceChild = body;
     }
 
-    final Widget content = HibikiPopupSurface(
+    final Widget surface = HibikiPopupSurface(
       color: fillColor,
       showBorder: showBorder,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
       child: surfaceChild,
+    );
+
+    // TODO-805：弹窗的「关闭命中区」必须等于弹窗的可视矩形。宿主把弹窗摆在
+    // [parkedPopupLayer] 的 `Positioned` 矩形里，全屏 dismiss barrier 是这块矩形的
+    // **补集**（点矩形外 → barrier → 关一层）。但 [HibikiPopupSurface] 是 `Material`，
+    // 圆角 `Clip.antiAlias` 让 `RenderPhysicalShape.hitTest` 按圆角形状裁剪命中：圆角
+    // 弧外的角落（仍在 `Positioned` 矩形内、视觉上仍是弹窗）命中假 → 漏到下面的
+    // barrier → 关窗；透明 WebView 正文外的余白、顶栏空白同理。用户因此感到「点击
+    // 消失的位置和弹窗外边有差异」。包一层 `HitTestBehavior.opaque` 的吸收层，使整个
+    // `Positioned` 矩形（含圆角余白）一律命中真值、停在弹窗层不再下穿 barrier；空
+    // `onTap` 在竞技场必输给任何子识别器，按钮 / WebView / 顶栏滑动判定一律不受影响。
+    final Widget content = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: surface,
     );
 
     if (topBar != null || !_swipeActive) return content;
