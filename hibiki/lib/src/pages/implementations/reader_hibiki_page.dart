@@ -442,12 +442,29 @@ bool readerScrollWithinReanchorSettle({
 ///  - Dart B-3 [readerScrollWithinReanchorSettle] 只有 250ms，归零晚到时窗已关。
 /// 大章 + 图片首开的 reflow 远超 250ms → 两墙皆漏 → 797 修了「commit 也武装 B-3」仍无效。
 ///
-/// 正确判据是**位置不连续**而非输入时序（这正是 B-4 `readerProgressDropIsSpurious` 用
+/// 第一道判据是**位置不连续**而非输入时序（这正是 B-4 `readerProgressDropIsSpurious` 用
 /// 「无近期输入=伪」栽跟头的地方——惯性甩动到真章首无新输入被误判）：非自愿归零是从一个
 /// 实质性的已提交位置 [priorProgress] **单步**塌缩到章首（[newProgress]≈0）。用户真滚到章
 /// 首（含惯性甩动）会经 rAF 节流逐帧上报一串递减进度（0.5→0.4→…→0.05→0），每发都更新
 /// [priorProgress]，到 0 那一发的 prior 已≈0、delta 极小 → 不触发；非自愿 reflow 只产生
-/// **一发** prior=0.5→new≈0 的大跳 → 触发。判据与「是否输入」完全无关，故不误伤甩动。
+/// **一发** prior=0.5→new≈0 的大跳 → 触发。
+///
+/// 但**仅位置不连续不足以根因区分**「reflow 归零」与「用户抓滚动条 thumb 快拖 / 点轨道
+/// 跳到章首」（TODO-798 续修边界）。桌面连续模式有真实可拖的原生滚动条
+/// （reader_content_styles.dart `scrollbar-width:thin`）；用户拖 thumb / 点轨道跳章首走
+/// **原生 scroll**（绕过 wheel 的 rAF 逐帧路径），而进度采样受 `_refreshProgressFromScroll`
+/// 的 50ms 节流 + in-flight coalesce 限制——追不上手速时，到 0 那一发之前最后采到的 prior
+/// 可能仍停在 0.15~0.3（> [minPriorProgress]），与 reflow 归零在**数据层不可区分**。
+///
+/// 故加第二道**因果**判据 [settleGuardArmed]（事件驱动，非时间窗、非输入时序）：reflow
+/// 归零是**自发 settle 产物**，只发生在「恢复落定后 → 用户首次真实滚动前」这段自发期；
+/// 用户拖滚动条到章首必然先产生一次真实的用户滚动 → 调用方据此解武装（disarm）。两道
+/// 判据**与门**：只有「位置塌缩」且「仍在自发 settle 期（用户尚未真滚过）」才判非自愿。
+///  - 主 bug 路径（恢复→reflow 归零）发生在用户首次滚动前 → 武装中 → 仍命中、修复不退化。
+///  - 用户拖滚动条到章首：拖动本身就是首次真实滚动 → 已解武装 → 放行用户停章首（边界修复）。
+///  - 用户滚过一次后晚到的图片 reflow 归零：已解武装 → 本判据不再兜（acceptable 取舍）——
+///    此时 [priorProgress] 已是用户真实位置，且离散图片 reflow 仍由 JS `_reanchorPending`
+///    路径在其自身事件上重锚；不再误伤「用户真滑到章首」比兜这罕见晚 reflow 更重要。
 ///
 /// 仅连续模式（[continuousMode]）；分页模式有 snap/lock 保护，归零不裸奔，恒 false。
 /// 触发后调用方应**复位到已提交锚**（[hasCommittedAnchor] 为真才有锚可复位）并跳过落库；
@@ -457,11 +474,14 @@ bool readerContinuousProgressSnapIsInvoluntary({
   required double priorProgress,
   required double newProgress,
   required bool hasCommittedAnchor,
+  required bool settleGuardArmed,
   double chapterStartEpsilon = 0.01,
   double minPriorProgress = 0.05,
 }) {
   if (!continuousMode) return false;
   if (!hasCommittedAnchor) return false;
+  // 因果门：用户已真滚过（解武装）后，归零必是用户拖到章首，放行——不再误伤拖滚动条。
+  if (!settleGuardArmed) return false;
   // 新进度必须塌缩到章首附近。
   if (newProgress > chapterStartEpsilon) return false;
   // 紧邻的上一发进度必须实质性非零（单步大跳 = 非自愿；逐帧递减到 0 = 用户真滚）。
@@ -907,6 +927,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
+  // TODO-798 续修边界：连续模式「非自愿 reflow 归零」判据的因果武装位
+  // （事件驱动，非时间窗）。每次导航 _beginNavigation 武装（恢复落定后进入自发 settle
+  // 期）；用户首次真实滚动（_refreshProgressFromScroll 经 _markUserScrollIfDisarming
+  // 落得一个非塌缩进度）即解武装。解武装后 readerContinuousProgressSnapIsInvoluntary 恒
+  // 放行——区分「reflow 归零」（武装中）与「用户拖滚动条到章首」（已解武装）。
+  bool _continuousSettleGuardArmed = false;
+  // 路由位：仅 _refreshProgressFromScroll 触发的 _refreshProgress 才视作「用户滚动驱动」
+  // 候选——用于解武装因果门。轮询/恢复/chrome 驱动的 _refreshProgress 不解武装（否则
+  // 恢复后的首发轮询会把锚位当用户滚动误解武装，reflow 归零随即裸奔）。
+  bool _progressRefreshFromScroll = false;
 
   AudiobookPlayerController? _audiobookController;
   String? _audiobookBookKey;

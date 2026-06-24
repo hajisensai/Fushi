@@ -77,8 +77,9 @@ void main() {
       final int idx = src.indexOf('Future<void> _refreshProgress() async');
       expect(idx, greaterThan(0));
       // _refreshProgress 较长，取足够窗口覆盖到尾部诊断块。TODO-798 在中段插入非自愿
-      // reflow 归零判据块（含自带诊断 + 复位），函数体再加长，窗口放宽到 4400。
-      final String body = src.substring(idx, idx + 4400);
+      // reflow 归零判据块（含自带诊断 + 复位），续修边界又加因果门解武装块，函数体再
+      // 加长，窗口放宽到 5200。
+      final String body = src.substring(idx, idx + 5200);
       expect(body.contains('if (DebugLogService.instance.enabled)'), isTrue,
           reason: 'Dart 诊断须由 DebugLogService.instance.enabled 门控（默认 off）');
       expect(

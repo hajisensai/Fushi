@@ -197,7 +197,11 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _scrollProgressThrottleTimer = null;
     _lastScrollProgressAt = now;
     _scrollProgressInFlight = true;
+    // TODO-798 续修边界：标记本次 _refreshProgress 是「用户原生滚动驱动」——是解武装因果门
+    // 的唯一候选来源（轮询/恢复/chrome 路径不置此旗，故不会误把锚位轮询当用户滚动解武装）。
+    _progressRefreshFromScroll = true;
     _refreshProgress().whenComplete(() {
+      _progressRefreshFromScroll = false;
       _scrollProgressInFlight = false;
       if (_scrollProgressPending && mounted) {
         _scrollProgressPending = false;
@@ -236,6 +240,10 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 脚本（旧的 post-await 复位在 lyrics/spread/early-return/throw 路径会被跳过）。
     _initialFragment = fragment;
     _restoreInFlight = true;
+    // TODO-798 续修边界：每次导航开启一段新的自发 settle 期——武装非自愿 reflow 归零
+    // 因果门。恢复落定后到用户首次真实滚动前的归零都属自发 reflow（命中复位）；用户首
+    // 次真滚即解武装（_refreshProgressFromScroll 路径），此后归零必是用户拖到章首（放行）。
+    _continuousSettleGuardArmed = true;
     _rebuild(() {
       _readerContentReady = false;
     });
@@ -623,16 +631,19 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final int committedAnchor = _lastProgressCharOffset >= 0
         ? _lastProgressCharOffset
         : _initialCharOffset;
+    final bool fromUserScroll = _progressRefreshFromScroll;
     if (readerContinuousProgressSnapIsInvoluntary(
       continuousMode: _settings?.isContinuousMode == true,
       priorProgress: priorProgress,
       newProgress: progress,
       hasCommittedAnchor: committedAnchor >= 0,
+      settleGuardArmed: _continuousSettleGuardArmed,
     )) {
       if (DebugLogService.instance.enabled) {
         debugPrint('[ReaderDiag] _refreshProgress involuntary reflow-zero snap'
             ' prior=${priorProgress.toStringAsFixed(4)}'
             ' new=${progress.toStringAsFixed(4)}'
+            ' armed=$_continuousSettleGuardArmed fromScroll=$fromUserScroll'
             ' → re-anchor to committed charOffset=$committedAnchor (no save)');
       }
       // 复位到已提交锚（webview.part.dart 的 _reanchorPending 守卫挡住复位滚动自身回传）。
@@ -644,6 +655,19 @@ window.flutter_inappwebview.callHandler('spreadReady');
         );
       }
       return;
+    }
+    // TODO-798 续修边界：因果门解武装。本次是用户原生滚动驱动且**未**判非自愿（落得一个
+    // 真实的非塌缩进度，含「用户拖滚动条途中」与「用户拖到章首那一发但 prior 已≈0」）→
+    // 用户已真滚过，此后任何归零都该归用户（拖到章首），永久解武装本章载入的因果门。
+    // 不在「判非自愿」分支解武装（那是 reflow 归零，复位后仍在 settle 期）；不在轮询/恢复
+    // 路径解武装（fromUserScroll=false，否则恢复后首发轮询会误解武装致 reflow 归零裸奔）。
+    if (fromUserScroll && _continuousSettleGuardArmed) {
+      _continuousSettleGuardArmed = false;
+      if (DebugLogService.instance.enabled) {
+        debugPrint('[ReaderDiag] _refreshProgress first real user scroll'
+            ' → disarm continuous settle guard (progress='
+            '${progress.toStringAsFixed(4)})');
+      }
     }
 
     _lastProgressSection = _currentChapter;
