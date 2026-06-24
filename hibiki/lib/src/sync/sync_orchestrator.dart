@@ -117,12 +117,16 @@ class SyncRunReport {
 /// which is left unchanged:
 ///   1. upload local book files when enabled;
 ///   2. dictionary packages (push/pull in the `__dictionaries__` namespace);
-///   3. upload local audiobook packages when enabled.
+///   3. sync local audiobook packages when enabled (interconnect: bidirectional,
+///      see [_syncAudiobooksLive]; cloud backend: upload-only).
 ///
-/// File switches are upload-only. Remote-only books/audiobooks are intentionally
-/// left remote until the user explicitly downloads them from the compare or
-/// interconnect UI. Deletes are never propagated. Dictionaries and local-audio
-/// sources remain union-synced because they are separate opt-in sharing pools.
+/// Book content switches are upload-only: remote-only EPUBs stay remote until the
+/// user explicitly downloads them from the compare or interconnect UI. Audiobooks
+/// over the interconnect live API are bidirectional (TODO-809) but pull only into
+/// books the device already owns (no orphan audiobook rows; remote audiobooks for
+/// unknown books still wait for manual download). Deletes are never propagated.
+/// Dictionaries and local-audio sources remain union-synced because they are
+/// separate opt-in sharing pools.
 class SyncOrchestrator {
   SyncOrchestrator({
     required HibikiDatabase db,
@@ -143,12 +147,14 @@ class SyncOrchestrator {
   })  : _db = db,
         _backend = backend,
         _dictionaryResourceRoot = dictionaryResourceRoot,
+        _audioDatabaseRoot = audioDatabaseRoot,
         _tempDir = tempDir,
         _packages = SyncAssetPackageService(db: db);
 
   final HibikiDatabase _db;
   final SyncBackend _backend;
   final Directory _dictionaryResourceRoot;
+  final Directory _audioDatabaseRoot;
   final Directory _tempDir;
   final SyncAssetPackageService _packages;
 
@@ -897,12 +903,19 @@ class SyncOrchestrator {
     }
   }
 
-  /// 互联有声书包 live 上传。
+  /// 互联有声书包 live 双向同步（TODO-809：立即/自动同步双向拉取）。
   ///
-  /// 直打对端 `/api/library/audiobooks` 端点，按 `bookKey` 只处理 toPush：
-  /// 本端有 ∧ 远端无 → `exportAudioDatabasePackage` 打包 → `putRemoteAudiobook`。
-  /// 远端独有有声书包不在自动同步中拉取，避免启用上传开关后把对端独有内容
-  /// 自动塞进本机库。
+  /// 直打对端 `/api/library/audiobooks` 端点，按 `bookKey` union：
+  /// - Push（本端有 ∧ 远端无）→ `exportAudioDatabasePackage` 打包 → `putRemoteAudiobook`。
+  /// - Pull（远端有 ∧ 本端无有声书）→ `getRemoteAudiobook` 下载 →
+  ///   `importAudioDatabasePackage` 解包落盘。
+  ///
+  /// **Pull 防孤儿约束**：`importAudioDatabasePackage` 只 upsert Audiobooks/SrtBooks
+  /// 行，不创建 EpubBooks 行。故只对「本端已有同 bookKey 的 EPUB、但当前缺音频」的
+  /// 远端项拉取——否则会落下没有书可绑的孤儿有声书行（这正是历史上选 push-only 的
+  /// 动机）。无对应本地 EPUB 的远端有声书跳过并记一条 info 级 error，留给手动下载
+  /// （书架远端书卡 / 同步对比对话框）补音频。拉取时用本地 EPUB 的 bookKey 作
+  /// `bookKeyOverride`，保证写入行与本地 EPUB 字节相等可配对（徽章亮）。
   ///
   /// 仅当 client syncAudioBookFiles 开且 isInterconnect 时由 [run] 调用。
   /// 进度走 [SyncPhase.audiobooks]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
@@ -913,6 +926,7 @@ class SyncOrchestrator {
     final List<RemoteAudiobookInfo> remoteAudiobooks =
         await backend.listRemoteAudiobooks();
     final List<AudiobookRow> localAudiobooks = await _db.getAllAudiobooks();
+    final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
 
     final Set<String> localKeys = <String>{
       for (final AudiobookRow ab in localAudiobooks) ab.bookKey,
@@ -920,13 +934,25 @@ class SyncOrchestrator {
     final Set<String> remoteKeys = <String>{
       for (final RemoteAudiobookInfo r in remoteAudiobooks) r.bookKey,
     };
+    // 本端已有 EPUB 的 bookKey 集合：Pull 只对「本端有书但缺音频」的远端项动作，
+    // 避免落下无 EpubBooks 行可绑的孤儿有声书（importAudioDatabasePackage 不建书行）。
+    final Set<String> localBookKeys = <String>{
+      for (final EpubBookRow b in localBooks) b.bookKey,
+    };
 
     final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
       localKeys: localKeys,
       remoteKeys: remoteKeys,
     );
 
-    final int total = diff.toPush.length;
+    // toPull = 远端有 ∧ 本端无有声书；再筛出本端已有同 bookKey EPUB 的项。
+    // 无本地 EPUB 的远端项不拉（防孤儿），留给手动下载补音频。
+    final List<String> toPull = <String>[
+      for (final String key in diff.toPull)
+        if (localBookKeys.contains(key)) key,
+    ];
+
+    final int total = diff.toPush.length + toPull.length;
     int index = 0;
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
@@ -957,6 +983,35 @@ class SyncOrchestrator {
         report.audiobooksExported++;
       } catch (e) {
         report.errors.add('live push audiobook "$key": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+
+    // ── Pull：远端有、本端有书但缺音频 → 下载并解包落盘 ────────────
+    for (final String key in toPull) {
+      _emit(SyncPhase.audiobooks,
+          itemIndex: index, itemTotal: total, title: key);
+      File? tmp;
+      try {
+        tmp = _tmpFile('.hibikiaudio');
+        await backend.getRemoteAudiobook(
+          key,
+          tmp,
+          onProgress: (double f) => _emit(SyncPhase.audiobooks,
+              itemIndex: index, itemTotal: total, title: key, fileFraction: f),
+        );
+        // 用本地 EPUB 的 bookKey 作 override：远端 key 已等于本地 EPUB 的 bookKey
+        // （toPull 已由 localBookKeys 筛过），显式 override 保写入行与 EPUB 可配对。
+        await _packages.importAudioDatabasePackage(
+          packageFile: tmp,
+          audioDatabaseRoot: _audioDatabaseRoot,
+          bookKeyOverride: key,
+        );
+        report.audiobooksImported++;
+      } catch (e) {
+        report.errors.add('live pull audiobook "$key": $e');
       } finally {
         _safeDelete(tmp);
       }

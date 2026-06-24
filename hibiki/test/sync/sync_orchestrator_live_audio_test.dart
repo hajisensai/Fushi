@@ -508,6 +508,50 @@ void main() {
       expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNull);
     });
 
+    test(
+        'pull（TODO-809）：本地有 HostAudioBook 的 EPUB 但缺音频，host 有 → '
+        '双向拉取下载并解包落盘', () async {
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+
+      // 本地已有同 bookKey 的 EPUB 书行，但没有 Audiobook/SrtBook（缺音频）。
+      // 这是 toPull 唯一应动作的场景：有书可绑，不会落孤儿有声书行。
+      await localDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'HostAudioBook',
+          title: 'Host Audio Book',
+          epubPath: p.join(work.path, 'local_host_audio.epub'),
+          extractDir: '',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNull,
+          reason: '前置：本地此时缺音频');
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_ab_pull_ok'))
+        ..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty,
+          reason: 'live pull audiobook 无错误: ${report.errors}');
+      expect(report.audiobooksImported, 1,
+          reason: 'host 独有有声书且本地有同 bookKey EPUB → 应被拉取导入');
+      expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNotNull,
+          reason: '拉取后本地应出现 HostAudioBook 的 Audiobook 行');
+    });
+
     test('push：本地有 LocalAudioBook 有声书，host 无 → 推送到 host', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);

@@ -69,4 +69,33 @@ void main() {
           reason: '禁止用 sanitizeTtuFilename(title) 重算有声书 key（BUG-414 致 404）');
     });
   });
+
+  group('TODO-809 live audiobook sync pulls remote-only into local books', () {
+    test(
+        'orchestrator _syncAudiobooksLive wires toPull download + import '
+        '(not push-only)', () {
+      final String src = read('lib/src/sync/sync_orchestrator.dart');
+
+      // 必须遍历 diff.toPull（历史 push-only 时根本不读 toPull）。
+      expect(src, contains('diff.toPull'),
+          reason: '立即/自动同步有声书必须遍历 diff.toPull（双向拉取），'
+              '不能再 push-only');
+      // Pull 经 live API 下载有声书包。
+      expect(src, contains('backend.getRemoteAudiobook('),
+          reason: 'toPull 必须经 HibikiClientSyncBackend.getRemoteAudiobook 下载');
+      // Pull 经既有解包原语落盘，并用本地 bookKey 作 override 绑定。
+      expect(src, contains('importAudioDatabasePackage('),
+          reason: 'toPull 必须经 importAudioDatabasePackage 解包落盘');
+      expect(src, contains('bookKeyOverride:'),
+          reason: '解包必须用本地 EPUB 的 bookKey 作 override 绑定');
+      // 防孤儿：只拉本端已有同 bookKey EPUB 的远端项。
+      expect(src, contains('localBookKeys'),
+          reason: 'toPull 必须先按本地 EPUB 的 bookKey 集合筛过，避免落孤儿有声书行');
+      expect(src, contains('localBookKeys.contains('),
+          reason: '只对本端已有同 bookKey EPUB 的远端项拉取（防孤儿）');
+      // Pull 成功计入 audiobooksImported（触发本地库刷新）。
+      expect(src, contains('report.audiobooksImported++'),
+          reason: 'toPull 落盘后必须计入 audiobooksImported');
+    });
+  });
 }
