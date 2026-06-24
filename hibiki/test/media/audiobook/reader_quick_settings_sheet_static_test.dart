@@ -51,17 +51,57 @@ void main() {
     expect(source, isNot(contains('Widget _buildQuickControlsSection(')));
 
     // 复用的外观行集合仍在（窄窗/宽窗外观详情共用）：主题行 + appearance schema
-    // 裸行 + 编辑书籍CSS（最后一行，非独立卡）。
+    // 裸行。TODO-801：「编辑书籍 CSS」已按排版语义移到「布局与显示」组，外观卡
+    // 不再含它。
     final String cardSource = _between(
       source,
       '  List<Widget> _appearanceCardChildren()',
-      '  Widget _buildAppearanceDetail()',
+      '  Widget _buildBookCssEditorRow()',
     );
     expect(cardSource, contains('buildThemeSelector(_themeSettingsContext())'));
     expect(cardSource, contains('ReaderGroup.appearance'));
     expect(cardSource, contains('buildSectionRows('));
-    expect(cardSource, contains('book_css_editor_edit_css'));
+    expect(cardSource, isNot(contains('book_css_editor_edit_css')),
+        reason: 'TODO-801：编辑书籍 CSS 行不应再出现在外观卡的行集合里');
     expect(source, isNot(contains('Widget _buildThemeSelector()')));
+  });
+
+  test(
+      'book-CSS editor row lives in the layout sub-page, not appearance '
+      '(TODO-801)', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    // 归类语义：CSS 改的是排版，属「布局与显示」组（layout），不属外观。
+    // 「编辑书籍 CSS」入口行随 layout 子页详情渲染，且仅当 extractDir 可用时出现。
+    final String layoutDetailSource = _between(
+      source,
+      '  Widget _buildLayoutDetail()',
+      '  Widget _buildAppearanceDetail()',
+    );
+    expect(layoutDetailSource,
+        contains('_buildReaderGroupContent(ReaderGroup.layout'),
+        reason: 'layout 子页详情先渲染 layout schema 行');
+    expect(layoutDetailSource, contains('_buildBookCssEditorRow()'),
+        reason: 'TODO-801：编辑书籍 CSS 行随 layout 子页详情渲染');
+    expect(layoutDetailSource, contains('widget.extractDir == null'),
+        reason: 'extractDir 不可用时不渲染 CSS 行（保留显示条件）');
+
+    // CSS 编辑入口行本身仍保留打开 BookCssEditorPage + 返回后整章重排的逻辑。
+    final String cssRowSource = _between(
+      source,
+      '  Widget _buildBookCssEditorRow()',
+      '  Widget _buildLayoutDetail()',
+    );
+    expect(cssRowSource, contains('book_css_editor_edit_css'));
+    expect(cssRowSource,
+        contains('BookCssEditorPage(extractDir: widget.extractDir!'));
+    expect(cssRowSource, contains('_reloadLayoutLive()'));
+
+    // 'layout' 子页分支调用 _buildLayoutDetail（非直接 _buildReaderGroupContent）。
+    expect(source, contains(': _buildLayoutDetail()'),
+        reason: 'layout 子页（非歌词模式）经 _buildLayoutDetail 渲染');
   });
 
   test('reader quick settings sheet uses shared MD3 sheet chrome', () {

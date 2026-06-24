@@ -529,7 +529,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         // schema items (they write lyrics-only `setLyrics*` setters).
         return widget.lyricsMode
             ? _buildLyricsDisplaySection()
-            : _buildReaderGroupContent(ReaderGroup.layout, t.section_layout);
+            : _buildLayoutDetail();
       case 'behavior':
         return _buildReaderGroupContent(
           ReaderGroup.behavior,
@@ -636,8 +636,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     await widget.onThemeChanged?.call();
   }
 
-  /// 外观卡的行集合（主题 + appearance schema 行 + 可选「编辑书籍CSS」行）。
-  /// 内联（窄窗主页）与右 pane 详情（宽窗 master-detail）共用，避免重复。
+  /// 外观卡的行集合（主题选择器 + appearance schema 行）。内联（窄窗主页）与右
+  /// pane 详情（宽窗 master-detail）共用，避免重复。「编辑书籍 CSS」已按排版语义
+  /// 移到「布局与显示」组（见 [_buildLayoutDetail]），不再属于外观卡。
   List<Widget> _appearanceCardChildren() {
     final SettingsContext appearanceCtx = _settingsContext();
     final SettingsDestination base = buildReaderGroupDestination(
@@ -655,22 +656,45 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           settingsContext: appearanceCtx,
           section: section,
         ),
-      if (widget.extractDir != null)
-        AdaptiveSettingsNavigationRow(
-          title: t.book_css_editor_edit_css,
-          icon: Icons.code_outlined,
-          onTap: () async {
-            await Navigator.push(
-              context,
-              adaptivePageRoute(
-                builder: (_) =>
-                    BookCssEditorPage(extractDir: widget.extractDir!),
-              ),
-            );
-            await _reloadLayoutLive();
-          },
-        ),
     ];
+  }
+
+  /// 「编辑书籍 CSS」入口行。归类语义对齐：CSS 改的是排版（字号/行高/边距等同
+  /// 一维度），属「布局与显示」组而非「外观」，故随 layout 子页渲染（窄窗 push
+  /// 子页 + 宽窗右 pane 共用）。仅当书籍解压目录可用（`extractDir != null`）时
+  /// 出现；点击打开 [BookCssEditorPage]，返回后整章重排以应用新 CSS。
+  Widget _buildBookCssEditorRow() {
+    return AdaptiveSettingsNavigationRow(
+      title: t.book_css_editor_edit_css,
+      icon: Icons.code_outlined,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          adaptivePageRoute(
+            builder: (_) => BookCssEditorPage(extractDir: widget.extractDir!),
+          ),
+        );
+        await _reloadLayoutLive();
+      },
+    );
+  }
+
+  /// 「布局与显示」子页详情：layout schema 行 + 可选「编辑书籍 CSS」行。窄窗
+  /// push 子页与宽窗右 pane 共用（经 [_subPageContent] 的 'layout' 分支）。
+  Widget _buildLayoutDetail() {
+    final Widget layoutContent =
+        _buildReaderGroupContent(ReaderGroup.layout, t.section_layout);
+    if (widget.extractDir == null) {
+      return layoutContent;
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        layoutContent,
+        AdaptiveSettingsSection(children: <Widget>[_buildBookCssEditorRow()]),
+      ],
+    );
   }
 
   /// 宽窗 master-detail 右 pane 的外观详情：仅卡片，无 `display_settings`
