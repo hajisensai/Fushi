@@ -1545,11 +1545,41 @@ $_sharedJs
     var currentScroll = this.getPagePosition(context);
     var anchor = (context.vertical ? (rect.top + rect.bottom) / 2 : (rect.left + rect.right) / 2) + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
+    // TODO-792 [792-REVEAL] 逐句 reveal 取证探针（仅竖排，零行为变化）。
+    // 有声书跨章自动翻页时连续打印 delta = anchor − targetScroll 数列：
+    //   有界震荡(<pageStep 随机) → floor 不累积，根因前移到 rect 串列/别处；
+    //   单调增长 → 坐实 anchor/floor 累积 → 候选A(scrollToRange 加 page-stable hint)；
+    //   配套 [792-REVEAL-RB] 若 readback≠target 且随句增长 → 竖排 scrollTop 亚像素回读漂移 → 候选B。
+    // 走 console.log → onConsoleMessage → debugPrint → DebugLogService，与 [753-DIAG] 同管道。
+    if (context.vertical) {
+      try {
+        console.log('[792-REVEAL]'
+          + ' rectTop=' + (rect.top != null ? rect.top.toFixed(2) : 'null')
+          + ' rectBot=' + (rect.bottom != null ? rect.bottom.toFixed(2) : 'null')
+          + ' currentScroll=' + currentScroll.toFixed(2)
+          + ' anchor=' + anchor.toFixed(2)
+          + ' targetScroll=' + targetScroll.toFixed(2)
+          + ' delta=' + (anchor - targetScroll).toFixed(3)
+          + ' pageStep=' + context.pageSize.toFixed(3)
+          + ' maxScroll=' + context.maxScroll
+          + ' scrollHeight=' + document.body.scrollHeight);
+      } catch (e) {}
+    }
     if (targetScroll === currentScroll) return false;
     this.setPagePosition(context, targetScroll);
     var self = this;
     requestAnimationFrame(function() {
       self.setPagePosition(context, targetScroll);
+      // [792-REVEAL-RB] rAF 复读：核验 vertical-rl scrollTop 是否亚像素回读漂移。
+      if (context.vertical) {
+        try {
+          var readback = self.getPagePosition(context);
+          console.log('[792-REVEAL-RB]'
+            + ' targetScroll=' + targetScroll.toFixed(2)
+            + ' readbackScroll=' + readback.toFixed(2)
+            + ' rbDelta=' + (readback - targetScroll).toFixed(3));
+        } catch (e) {}
+      }
     });
     return true;
   },

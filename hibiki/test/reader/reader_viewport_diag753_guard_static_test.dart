@@ -140,4 +140,33 @@ void main() {
       reason: '_diag753 只能在 paginated shell 定义一次，不得进 continuous shell',
     );
   });
+
+  test('TODO-792：scrollToRange 内有 [792-REVEAL] 逐句 reveal 取证探针（仅竖排，零行为变化）', () {
+    final int s = source.indexOf('scrollToRange: function(range) {');
+    expect(s, greaterThan(0), reason: 'scrollToRange 必须存在');
+    final int e = source.indexOf('contentLastPageScroll:', s);
+    expect(e, greaterThan(s),
+        reason: 'scrollToRange 之后须有 contentLastPageScroll');
+    final String fn = source.substring(s, e);
+    // 仅竖排门控：横排亚像素 δ 已由 TODO-753 修复，竖排 pitchDelta=0 另有来源（reveal 累积），
+    // 探针只在竖排打，避免横排噪声刷屏。
+    expect(fn.contains('if (context.vertical) {'), isTrue, reason: '探针须只在竖排打');
+    expect(fn.contains("console.log('[792-REVEAL]'"), isTrue,
+        reason: '逐句探针行标签 [792-REVEAL]，走 console.log 与 [753-DIAG] 同管道');
+    // 核心判据字段：delta = anchor − targetScroll（有界震荡=floor 不累积；单调增长=坐实累积）。
+    expect(
+        fn.contains("+ ' delta=' + (anchor - targetScroll).toFixed(3)"), isTrue,
+        reason: 'delta 是定性 floor 是否累积的核心字段');
+    expect(fn.contains("+ ' anchor=' + anchor.toFixed(2)"), isTrue);
+    expect(fn.contains("+ ' targetScroll=' + targetScroll.toFixed(2)"), isTrue);
+    // rAF 复读探针：核验 vertical-rl scrollTop 是否亚像素回读漂移。
+    expect(fn.contains("console.log('[792-REVEAL-RB]'"), isTrue,
+        reason: 'rAF 复读 [792-REVEAL-RB] 核验 scrollTop 回读漂移');
+    expect(fn.contains("+ ' rbDelta=' + (readback - targetScroll).toFixed(3)"),
+        isTrue);
+    // 零行为变化：探针不得改动既有 floor 对齐逻辑（仅取证）。
+    expect(fn.contains('var targetScroll = this.alignToPage(context, anchor);'),
+        isTrue,
+        reason: '探针不改既有 floor 对齐（仅取证，本轮不动行为）');
+  });
 }
