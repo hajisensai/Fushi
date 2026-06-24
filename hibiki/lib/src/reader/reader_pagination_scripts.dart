@@ -1997,9 +1997,10 @@ window.hoshiReader._diag753 = function(phase) {
 // paginate 的 target 恒是绝对网格 N×pitch，故若漂移累积，只能来自：
 //   ① vertical-rl scrollTop 守不住分数 target（每页 readback≠target 且 rbDelta 同号累积）
 //      → 根因=竖排 scrollTop 量化漂移，候选修=按逻辑页号定位 / target 整数化；
-//   ② readback≈target（rbDelta≈0）但文字仍偏 → jsPitch(columnWidth+gap)≠浏览器真实渲染列
-//      周期 realPitch（放大字号下 multicol used 周期≠column-width hint）→ 下一轮加 getClientRects
-//      实测列周期探针。seq 递增让真机日志直接看出是否单调累积。走 console.log 同 [753-DIAG] 管道。
+//   ② readback≈target（rbDelta≈0）但 firstCharTop 随 seq 单调增大 → 渲染层真实文字位置逐页
+//      下移（放大字号 multicol 列内布局/行高累积，几何量 pageStep 看不到）→ 根因在 CSS 列高/
+//      行盒，非 scroll 逻辑。firstCharTop 经 caretRangeFromPoint 直测首字像素位置（直接量「文字
+//      向下偏移」本身）。seq 递增让真机日志直接看出是否单调累积。走 console.log 同 [753-DIAG] 管道。
 window.hoshiReader._diagTurn = function(context, direction, currentScroll, stepScroll, target) {
   try {
     if (!context || !context.vertical) return;
@@ -2010,6 +2011,28 @@ window.hoshiReader._diagTurn = function(context, direction, currentScroll, stepS
     requestAnimationFrame(function() {
       try {
         var readback = self.getPagePosition(context);
+        // 直接量「文字向下偏移」：vertical-rl 首列在右、首字在顶。从右缘向左扫
+        // caretRangeFromPoint 找首个可见字，取其字符 rect.top。无漂移时该值每页恒
+        // ≈ paddingTop（首字贴页顶）；若随 seq 单调增大 = 文字逐页下移（候选②=渲染层
+        // 真实文字位置漂移，与 rbDelta≈0 并存可坐实非 scrollTop 问题）。read-only。
+        var bodyCs = getComputedStyle(document.body);
+        var padTop = parseFloat(bodyCs.paddingTop) || 0;
+        var probeY = padTop + 2;
+        var firstCharTop = null;
+        for (var px = window.innerWidth - 2; px > window.innerWidth * 0.4; px -= 6) {
+          var cr = document.caretRangeFromPoint ? document.caretRangeFromPoint(px, probeY) : null;
+          if (cr && cr.startContainer && cr.startContainer.nodeType === 3) {
+            var tr = document.createRange();
+            var off = cr.startOffset;
+            tr.setStart(cr.startContainer, off);
+            tr.setEnd(cr.startContainer, Math.min(off + 1, cr.startContainer.length || off + 1));
+            var rects = tr.getClientRects();
+            if (rects && rects.length && (rects[0].width || rects[0].height)) {
+              firstCharTop = rects[0].top;
+              break;
+            }
+          }
+        }
         console.log('[792-TURN] seq=' + seq
           + ' dir=' + direction
           + ' fromScroll=' + currentScroll.toFixed(3)
@@ -2018,6 +2041,8 @@ window.hoshiReader._diagTurn = function(context, direction, currentScroll, stepS
           + ' pitch=' + context.pageSize.toFixed(3)
           + ' readback=' + readback.toFixed(3)
           + ' rbDelta=' + (readback - target).toFixed(3)
+          + ' firstCharTop=' + (firstCharTop != null ? firstCharTop.toFixed(2) : 'null')
+          + ' firstCharTopVsInset=' + (firstCharTop != null ? (firstCharTop - padTop).toFixed(2) : 'null')
           + ' scrollHeight=' + document.body.scrollHeight
           + ' pages=' + (context.pageSize > 0 ? (document.body.scrollHeight / context.pageSize).toFixed(2) : 'NaN'));
       } catch (e) {

@@ -188,6 +188,13 @@ void main() {
         reason: 'rAF 复读 scrollTop 核验是否守住 target');
     expect(fn.contains("'[792-TURN] seq=' + seq"), isTrue,
         reason: 'seq 递增让真机看出是否单调累积');
+    // 候选②直测：首个可见字像素位置（vertical-rl 从右缘扫 caretRangeFromPoint）。
+    expect(fn.contains('document.caretRangeFromPoint'), isTrue,
+        reason: '须用 caretRangeFromPoint 抓首个可见字（直测文字向下偏移）');
+    expect(fn.contains("+ ' firstCharTop=' +"), isTrue,
+        reason: 'firstCharTop 直接量首字像素位置·随 seq 增大=渲染层文字逐页下移（候选②）');
+    expect(fn.contains("+ ' firstCharTopVsInset=' +"), isTrue,
+        reason: 'firstCharTopVsInset = 首字相对页顶 padding 的偏移（无漂移应每页恒定）');
   });
 
   test('从 paginated initialize（恢复完成后）与 updatePageSize 各调一次', () {
