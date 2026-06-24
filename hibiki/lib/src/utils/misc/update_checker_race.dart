@@ -301,22 +301,61 @@ Future<List<String>?> raceSelectFastestCandidate({
   return reorderCandidatesByRaceWinner(candidateUrls, winner);
 }
 
-/// **下载取消令牌（TODO-738）**。下载遮罩「取消」按钮按下时置位；下载引擎在每个候选
-/// 尝试边界检查它，已取消则立刻抛 [UpdateDownloadCancelledException] 中断整轮，不再继续
-/// 串行回退其余候选。Dart [HttpClient] 已发出的请求不能真 abort——本令牌只在「候选之间」
-/// 的安全点提前中断，把「全死源串行回退几分钟」期间用户的逃生意图落地（每个候选最坏
-/// 仍要等当前首字节 5s / body 15s 段超时走完，但不会再开下一个候选）。放在 race part：
-/// 与竞速探针 drain 的取消语义（R1）同家，且让 download part 不越 1500 行结构守卫。
+/// **下载取消令牌（TODO-738 / TODO-808）**。下载遮罩「取消」按钮按下时置位。
+///
+/// 两层取消语义协作，缺一不可：
+///   1. **候选边界检查**（TODO-738）：下载引擎在每个候选尝试边界调 [throwIfCancelled]，
+///      已取消则抛 [UpdateDownloadCancelledException] 中断整轮，不再串行回退其余候选。
+///   2. **在途 abort**（TODO-808）：仅边界检查不够——Dart [HttpClient] 默认要等当前候选
+///      首字节 5s / body 段超时走完才到下一个边界，用户点「取消」后仍卡几秒到十几秒。
+///      调用方用 [registerAbort] 登记一个「强断在途连接」回调（实际是
+///      `client.close(force: true)`，强制断开该 client 上所有在途 socket），[cancel] 时
+///      **主动**调用它，让正在 await 的建连 / 读流立即抛错跳出，取消即时生效。
+///
+/// abort 回调登记/清理用 [registerAbort] / [clearAbort] 成对管理。整轮下载共用同一个
+/// [HttpClient]（见 release part `_downloadAndInstall`），故只需登记一次；回调内的
+/// `client.close(force: true)` 与 finally 的 `client.close()` 关两次幂等、不报错。
+/// 放在 race part：与竞速探针 drain 的取消语义（R1）同家，且让 download part 不越结构守卫。
 @visibleForTesting
 class UpdateDownloadCancellation {
   bool _cancelled = false;
+  void Function()? _abort;
 
   /// 是否已请求取消。
   bool get isCancelled => _cancelled;
 
-  /// 请求取消（幂等）。下载引擎在下一个候选边界看到后中断。
+  /// 登记「强断在途连接」回调（TODO-808）。下载开始前由调用方注入
+  /// `() => client.close(force: true)`。若**登记时已取消**，立即触发一次 abort——覆盖
+  /// 「用户在 client 建好之前就点了取消」的竞态，避免回调登记后再也不被调用。
+  void registerAbort(void Function() abort) {
+    _abort = abort;
+    if (_cancelled) _fireAbort();
+  }
+
+  /// 注销 abort 回调（TODO-808）。下载结束（finally）时清理，避免 cancel() 误关已被
+  /// 复用/释放的下一个 client。
+  void clearAbort() {
+    _abort = null;
+  }
+
+  /// 请求取消（幂等）。置位取消标记，并**立即**触发已登记的 abort 回调强断在途连接
+  /// （TODO-808），不再等候选边界 / 超时；引擎在下一个边界看到标记后收尾为已取消。
   void cancel() {
     _cancelled = true;
+    _fireAbort();
+  }
+
+  /// 触发并消费 abort 回调（只触发一次：触发后清空，防强断后 finally 再次 force-close
+  /// 已关 client）。回调自身的异常吞掉——强断 best-effort，不该让取消路径再抛。
+  void _fireAbort() {
+    final void Function()? abort = _abort;
+    _abort = null;
+    if (abort == null) return;
+    try {
+      abort();
+    } catch (_) {
+      // 强断 best-effort：client 已关 / 平台差异导致的异常吞掉，不污染取消路径。
+    }
   }
 
   /// 已取消则抛 [UpdateDownloadCancelledException]，供候选循环在边界处统一检查。

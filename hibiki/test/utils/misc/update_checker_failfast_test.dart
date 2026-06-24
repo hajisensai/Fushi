@@ -10,7 +10,8 @@ import 'package:hibiki/src/utils/misc/update_checker.dart';
 // Root cause A: race returns null (all dead) then serial fallback used 15s for
 // the connect-to-first-response of every candidate => N candidates pile into
 // minutes. Fix: serial fallback uses 5s first-byte timeout; body streaming after
-// the first byte still gets 15s/segment so a slow-but-alive source is not killed.
+// the first byte still gets 8s/segment (TODO-808: was 15s) so a slow-but-alive
+// source is not killed.
 // Direction 2: cancellation token, candidate loop breaks early at each boundary.
 void main() {
   group('Direction 1 serial fallback fail-fast (5s first byte, no 15s pileup)',
@@ -104,7 +105,7 @@ void main() {
     );
 
     test(
-      'slow body not killed by 5s: first byte arrives, chunks 8s apart, ok',
+      'slow body not killed: first byte arrives, chunks 4s apart (< 8s), ok',
       () async {
         final List<int> payload = _payload();
         final UpdateAsset asset = _asset(payload);
@@ -117,11 +118,11 @@ void main() {
           connectionCount: 1,
           minSegmentBytes: _minSeg,
           openUrl: (Uri _, Map<String, String> __) async =>
-              _slowBodyResponse(payload, gapMs: 8000),
+              _slowBodyResponse(payload, gapMs: 4000),
         );
 
         expect(await file.readAsBytes(), payload,
-            reason: 'slow body (8s/chunk < 15s) must not be killed');
+            reason: 'slow body (4s/chunk < 8s per-attempt) must not be killed');
       },
       timeout: const Timeout(Duration(seconds: 60)),
     );

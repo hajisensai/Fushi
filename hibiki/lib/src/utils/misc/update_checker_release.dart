@@ -112,7 +112,8 @@ class UpdateChecker {
     try {
       await _cleanupOldApks(currentVersion);
       client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 30);
+      // TODO-808：检查阶段建连超时同步压到 10s（与下载一致），死镜像更快判死、回退更快。
+      client.connectionTimeout = const Duration(seconds: 10);
       // 走系统/环境代理：用户开着 clash/v2ray 时检查请求经其出口直连 api.github.com
       // （纯 GFW 下唯一可成功路径，BUG-292）。无代理则等价直连，不破坏镜像回退。
       await applyUpdateProxy(client);
@@ -523,10 +524,17 @@ class UpdateChecker {
     HttpClient? client;
     try {
       client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 30);
+      // TODO-808：建连超时从 30s 压到 10s——死镜像 TCP 连不上时更快判死、串行回退更快。
+      client.connectionTimeout = const Duration(seconds: 10);
       client.idleTimeout = const Duration(seconds: 60);
       // 下载同样走系统/环境代理（与检查一致）：直连/镜像不通时经用户代理出口下载。
       await applyUpdateProxy(client);
+
+      // TODO-808：把「强断在途连接」回调登记进取消令牌——用户点「取消」时立即
+      // close(force: true) 断开所有在途 socket，正在 await 的建连/读流即刻抛错跳出，
+      // 不再等当前候选首字节/段超时走完。finally 的 client.close() 与此关两次幂等。
+      final HttpClient abortClient = client;
+      cancellation.registerAbort(() => abortClient.close(force: true));
 
       final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
       final File outFile = await downloadUpdateAsset(
@@ -585,6 +593,9 @@ class UpdateChecker {
         );
       }
     } finally {
+      // TODO-808：先注销 abort 回调（避免 cancel 误关下一个 client），再常规关闭。
+      // 取消路径已 close(force: true)，这里再 close() 幂等无害。
+      cancellation.clearAbort();
       client?.close();
       overlay.remove();
       progress.dispose();

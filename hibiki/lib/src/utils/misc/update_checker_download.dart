@@ -3,7 +3,9 @@ part of 'update_checker.dart';
 /// 单个候选 URL 的尝试超时。`HttpClient.connectionTimeout` 只管「建立 TCP 连接」
 /// 那一跳；某个镜像 TCP 连上却挂起不返回时，需要这个整体超时把它判死、回退到下一个，
 /// 否则一个坏镜像就能拖垮整轮检查（BUG-277）。
-const Duration _kPerAttemptTimeout = Duration(seconds: 15);
+/// TODO-808：从 15s 压到 8s——死镜像「连上即挂、不返 body」更快判死，串行回退更快；
+/// 首字节已由 [_kFirstByteTimeout]（5s）单独快判，8s 仍足够喂活但慢的源。
+const Duration _kPerAttemptTimeout = Duration(seconds: 8);
 const Duration _kDownloadDiagnosticsInterval = Duration(milliseconds: 500);
 
 /// 多线程分片下载默认并发连接数（TODO-596）。clamp 1..[_kMaxDownloadConnections]。
@@ -295,6 +297,12 @@ Future<File> _downloadUpdateAssetUncoalesced({
         onDiagnostics: onDiagnostics,
       );
     } catch (e, stack) {
+      // TODO-808：用户取消会经 abort 强断在途连接，使当前候选抛出 socket/HTTP 错误
+      // 被收进 failures。若已取消（含最后一个候选——其后没有下一个边界来 throwIfCancelled），
+      // 立即抛出取消异常收尾为「已取消」，而非把强断当成 update_network_failure 误报。
+      if (cancellation?.isCancelled ?? false) {
+        throw const UpdateDownloadCancelledException();
+      }
       failures
           .add(UpdateDownloadAttemptFailure(url: url, error: e, stack: stack));
       onSourceFailure?.call(url, e, stack);
