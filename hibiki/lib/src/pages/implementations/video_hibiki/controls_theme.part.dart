@@ -54,10 +54,14 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // hideMouseOnControlsRemoval 翻 false 后，列表开态视频列 controls MouseRegion 恒走 basic
       // 分支、视频列光标从未隐藏 → 鼠标跨进侧栏前那次 none→basic 转换根本不存在 → 从源头消除
       // #84039 竞态来源（不是缩小窗口）。**这是框架层 MouseRegion，不是 native SetCursor**。
-      // ⚠️ 防哑火：本值依赖 [_subtitleListVisible]，但构造本 theme 的 builder（layout.part.dart
-      // :_buildVideoControlsInner）必须同时监听 [_subtitleListVisible]、否则其翻转时 theme 不重建
-      // = 改了值也白改（见 layout.part.dart 的 ListenableBuilder.merge）。仅桌面 theme，移动端不动。
-      hideMouseOnControlsRemoval: !_subtitleListVisible.value,
+      // r5：选集列表 [_episodeListVisible] 与字幕列表同为 push-aside 侧栏（[_videoWithSubtitlePanel]
+      // 的 Row 兄弟列），机理完全相同 → 必须一并排除，否则切到选集列表时视频列 controls MouseRegion
+      // 仍走 cursor:none 分支、跨列 none→basic 竞态复现（此前只排除字幕列表 = 选集列表光标照样隐藏）。
+      // ⚠️ 防哑火：本值依赖 [_subtitleListVisible] / [_episodeListVisible]，但构造本 theme 的 builder
+      // （layout.part.dart :_buildVideoControlsInner）必须同时监听这两个 notifier、否则其翻转时 theme
+      // 不重建 = 改了值也白改（见 layout.part.dart 的 ListenableBuilder.merge）。仅桌面 theme，移动端不动。
+      hideMouseOnControlsRemoval:
+          !(_subtitleListVisible.value || _episodeListVisible.value),
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
       // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。

@@ -242,6 +242,37 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
     );
   }
 
+  /// 给 push-aside 侧栏兄弟列（字幕列表 [_subtitleJumpSidePanel] / 选集列表
+  /// [_episodeSidePanel]）包一层**声明式** `MouseRegion(opaque: true, cursor: basic)`
+  /// 外层——BUG-391 r5 的**根因修**（不是前几轮的救场 onEnter 直发）。
+  ///
+  /// 根因机理：侧栏是 [_videoWithSubtitlePanel] 的 Row 兄弟列，几何上不在视频列那条
+  /// 控制条 MouseRegion（fork `material_desktop.dart:746-750`：控制条 `mount=false`
+  /// → `cursor:none`）的胜出范围内。鼠标从视频列（none 会话）跨进侧栏列时，框架
+  /// MouseTracker 的 `none→basic` 被 Flutter Windows embedder 的 `WM_SETCURSOR`
+  /// 竞态（#84039）+ [MouseCursorManager] 的 `lastSession` 去重（`mouse_cursor.dart`）
+  /// 吞掉，侧栏残留隐藏态。
+  ///
+  /// `opaque: true` 是关键：让 MouseTracker 把整个侧栏列当作**独立 annotation**——
+  /// 鼠标进列即进入一个干净的 `basic` 会话（annotation 边界处 enter/exit 一对事件），
+  /// 不再是「视频列 none 会话延续到侧栏」那种 `lastSession==next` 被去重的同会话续命，
+  /// 从源头消除「none 会话残留 + 去重吞掉再次声明」的竞态。声明式 `cursor: basic` 由
+  /// MouseTracker 在进入本 annotation 时主动下发，不依赖任何 hover 回调时序。
+  ///
+  /// 与 [_withSubtitleListCursorReveal]（救场层，保留作冗余）配合：本层在**最外**包整列、
+  /// 提供干净 annotation 边界 + basic 会话；cue 行 / 列表项自身的点击手型由更上层的
+  /// `InkWell` 各自声明的 `MouseRegion(click)` 在本 annotation 内胜出（更靠前/更靠近指针的
+  /// annotation 优先），故不破坏列表项点击手型。仅桌面有 OS 光标语义才挂（移动端透传 child，
+  /// 像素级不变、零开销）。
+  Widget _withSidePanelOpaqueCursor(Widget child) {
+    if (!_isDesktopVideoControls) return child;
+    return MouseRegion(
+      opaque: true,
+      cursor: SystemMouseCursors.basic,
+      child: child,
+    );
+  }
+
   /// 唤回视频左侧锁 / 解锁按钮并重置 2s 自动淡出（TODO-126）。鼠标移动（hover）/ 触屏点画面
   /// 时调用。**不被锁 gate**（与 [_markControlsVisible] 不同）——沉浸态解锁按钮要能淡出后再
   /// 被唤回，否则用户失去可见退出口。Esc / Shift+L 始终另有退出路径，不依赖此可见性。

@@ -191,25 +191,32 @@ extension _VideoEpisode on _VideoHibikiPageState {
       alignment: Alignment.centerLeft,
       child: SizedBox(
         width: visible ? panelWidth : 0,
+        // BUG-391 r5 根因修：选集列表此前**完全无** cursor-reveal 覆盖（字幕列表有救场层但选集
+        // 列表裸奔），整列最外层补一层与字幕侧栏同款声明式 opaque MouseRegion（cursor:basic）——
+        // 让 MouseTracker 把侧栏列视为独立 annotation、鼠标进列即进干净 basic 会话，绕开「视频列
+        // none 会话残留 + lastSession 去重」竞态（见 _withSidePanelOpaqueCursor）。隐藏时透传
+        // SizedBox.shrink（零宽、无 region）。
         child: visible
-            ? ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.centerLeft,
-                  minWidth: panelWidth,
-                  maxWidth: panelWidth,
-                  child: SafeArea(
-                    left: false,
-                    child: VideoEpisodePanel(
-                      key: const ValueKey<String>('video-episode-panel'),
-                      episodes: _episodes,
-                      currentIndex: _currentEpisode,
-                      onTapEpisode: _handleEpisodeListTap,
-                      onClose: _closeEpisodeList,
-                      colorScheme: cs,
-                      title: t.video_episode_list,
-                      emptyHint: t.video_episode_list_empty,
-                      fontSize: 14 * _videoUiScale,
-                      width: panelWidth,
+            ? _withSidePanelOpaqueCursor(
+                ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    minWidth: panelWidth,
+                    maxWidth: panelWidth,
+                    child: SafeArea(
+                      left: false,
+                      child: VideoEpisodePanel(
+                        key: const ValueKey<String>('video-episode-panel'),
+                        episodes: _episodes,
+                        currentIndex: _currentEpisode,
+                        onTapEpisode: _handleEpisodeListTap,
+                        onClose: _closeEpisodeList,
+                        colorScheme: cs,
+                        title: t.video_episode_list,
+                        emptyHint: t.video_episode_list_empty,
+                        fontSize: 14 * _videoUiScale,
+                        width: panelWidth,
+                      ),
                     ),
                   ),
                 ),
