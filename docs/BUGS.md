@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 403 条。点号进各自文件。
+> 共 404 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -43,6 +43,7 @@
 | [BUG-408](bugs/BUG-408-video-space-key.md) | ✅ | ✅ | 视频空格无反应(c152fcd91全局吞裸空格+视频失焦) |
 | [BUG-407](bugs/BUG-407-anki-error-garble.md) | ✅ | ✅ | AnkiConnect错误提示乱码(socket/http原文透传+http latin1误解码) |
 | [BUG-406](bugs/BUG-406-sync-audiobook-download.md) | ✅ | ✅ | 互联下载有声书丢音频(下载侧只导EPUB不接音频包) |
+| [BUG-405](bugs/BUG-405-pagination-cumulative-offset.md) | ✅ | ✅ | 竖排翻页累积偏移(pageStep名义值≠真实渲染列周期) |
 | [BUG-404](bugs/BUG-404-illustration-viewer-no-esc-no-arrow.md) | ✅ | ✅ | 插画全屏画廊ESC退不出且无方向键切换 |
 | [BUG-403](bugs/BUG-403-popup-tap-outside-closes-all-layers.md) | ✅ | ✅ | 点查词弹窗外面一次关掉整个嵌套栈（应只关最顶层一层） |
 | [BUG-402](bugs/BUG-402-reader-desktop-cannot-copy-selection.md) | ✅ | ✅ | 桌面阅读器选中文字后无法复制（Ctrl+C / 右键复制无效） |

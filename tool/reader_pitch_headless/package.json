@@ -1,0 +1,13 @@
+{
+  "name": "reader-pitch-headless",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headless Chrome probe for Hibiki vertical reader pagination column-period geometry (BUG-405 regression tool).",
+  "type": "commonjs",
+  "scripts": {
+    "probe": "node band_period_probe.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.2.0"
+  }
+}

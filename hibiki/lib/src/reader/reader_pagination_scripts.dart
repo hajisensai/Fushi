@@ -826,6 +826,97 @@ class ReaderPaginationScripts {
     }
     return explored;
   },
+  // TODO-773 P0：分页版 getFirstVisibleCharOffset 的扫描兜底。竖排切字号/字体/主题后
+  // 页顶常落 ruby / 图片 / 折叠盒 → caretRangeFromPoint 返 null → 分页版三个失败出口
+  // 裸 return -1 → beginStyleReanchor 返 -1 → Dart 跳过 commit → CSS 已换但 scrollTop
+  // 停残值不滚回 → 文字漂移。连续版在相同三失败点早已回退 firstVisibleCharOffsetByScan，
+  // 但**不能裸抄连续版**：连续版判据用 window 量纲（window.innerWidth），而分页几何是
+  // body-relative（getScrollContext scrollEl=document.body / 分页版 caret 探边用
+  // document.body.clientWidth-pr，刻意不用 window.innerWidth）。分页模式下 body
+  // overflow:hidden + margin:0 + width:--page-width 使 body 填满视口左上角(0,0)，故横排
+  // 视口首边(top)仍是 viewport-y 0（与连续同），唯一差异是竖排首边(right)：连续用
+  // window.innerWidth，分页必须用 document.body.clientWidth（与分页 caret 探边同量纲），
+  // 否则 body 不满窗时判据相差几像素→兜底锚到错列。故另立分页专版（option a），保持连续
+  // 版 window 量纲三件套零改动，各路径量纲就地可见（不靠参数分支）。仅分页 shell 调用。
+  firstVisibleCharOffsetByScanPaged: function() {
+    var vertical = this.isVertical();
+    var firstEdge = vertical ? document.body.clientWidth : 0;
+    var walker = this.createWalker();
+    var explored = 0;
+    var node;
+    while (node = walker.nextNode()) {
+      if (this.countChars(node.textContent) > 0) {
+        explored += this.countCharsBeforeViewportPaged(node, vertical, firstEdge);
+      }
+    }
+    return explored;
+  },
+  // TODO-773 P0：countCharsBeforeViewport 的分页版（body-relative 首边）。与连续版逐字
+  // 二分定位同算法，仅把视口首边参照从 window.innerWidth（竖排）/ 0（横排）改为传入的
+  // firstEdge（竖排=document.body.clientWidth / 横排=0），其余三态短路、零尺寸跳过、
+  // 代理对迭代全部一致。
+  countCharsBeforeViewportPaged: function(node, vertical, firstEdge) {
+    var text = node.textContent || '';
+    var totalChars = this.countChars(text);
+    if (totalChars <= 0) return 0;
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    if (!rects.length) return 0;
+    var minStart = Infinity;
+    var maxEnd = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      var start = vertical ? rect.left : rect.top;
+      var end = vertical ? rect.right : rect.bottom;
+      minStart = Math.min(minStart, start);
+      maxEnd = Math.max(maxEnd, end);
+    }
+    if (vertical) {
+      if (minStart >= firstEdge) return totalChars;
+      if (maxEnd <= firstEdge || minStart === Infinity) return 0;
+    } else {
+      if (maxEnd <= firstEdge) return totalChars;
+      if (minStart >= firstEdge || minStart === Infinity) return 0;
+    }
+    var offsets = [];
+    var prefixCounts = [0];
+    var count = 0;
+    var offset = 0;
+    while (offset < text.length) {
+      offsets.push(offset);
+      var char = String.fromCodePoint(text.codePointAt(offset));
+      offset += char.length;
+      if (this.isMatchableChar(char)) count += 1;
+      prefixCounts.push(count);
+    }
+    var low = 0;
+    var high = offsets.length - 1;
+    var firstVisible = offsets.length;
+    while (low <= high) {
+      var mid = Math.floor((low + high) / 2);
+      if (this.isTextOffsetBeforeViewportPaged(node, offsets[mid], text, vertical, firstEdge)) {
+        low = mid + 1;
+      } else {
+        firstVisible = mid;
+        high = mid - 1;
+      }
+    }
+    return prefixCounts[firstVisible];
+  },
+  // TODO-773 P0：isTextOffsetBeforeViewport 的分页版（body-relative 首边）。竖排判
+  // rect.left>=firstEdge（=document.body.clientWidth）、横排判 rect.bottom<=firstEdge（=0）。
+  isTextOffsetBeforeViewportPaged: function(node, offset, text, vertical, firstEdge) {
+    var char = String.fromCodePoint(text.codePointAt(offset));
+    if (!char) return false;
+    var range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, offset + char.length);
+    var rect = this.getRect(range);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    return vertical ? rect.left >= firstEdge : rect.bottom <= firstEdge;
+  },
   buildSasayakiNormIndex: function() {
     // 一次性遍历 DOM 文本节点（createWalker 跳过振假名 rt/rp），构建归一化
     // 全文 full 与反查表 map：map[k] = {node,start,end}（第 k 个归一化字符在其
@@ -1667,18 +1758,23 @@ $_sharedJs
     var x = context.vertical ? (document.body.clientWidth - pr - 2) : (pl + 2);
     var y = pt + 2;
     var range = document.caretRangeFromPoint(x, y);
-    if (!range || !range.startContainer) return -1;
+    // TODO-773 P0：竖排切字号/字体/主题后页顶落 ruby/图片/折叠盒 → caretRangeFromPoint 返
+    // null → 旧实现裸 return -1 → beginStyleReanchor 返 -1 → Dart 跳过 commit → CSS 已换但
+    // scrollTop 停残值不滚回 → 文字漂移。改走 firstVisibleCharOffsetByScanPaged 全文累加兜底
+    // （body-relative 首边，与分页 caret 探边同量纲；不裸抄连续版 window 量纲的
+    // firstVisibleCharOffsetByScan）。连续版三失败点早有同形兜底。
+    if (!range || !range.startContainer) return this.firstVisibleCharOffsetByScanPaged();
     var target = range.startContainer;
     if (target.nodeType !== Node.TEXT_NODE) {
       var walker = this.createWalker(target);
       target = walker.nextNode();
-      if (!target) return -1;
+      if (!target) return this.firstVisibleCharOffsetByScanPaged();
     }
     var baseOffset = this.nodeStartOffsets.get(target);
     if (baseOffset === undefined) {
       this.buildNodeOffsets();
       baseOffset = this.nodeStartOffsets.get(target);
-      if (baseOffset === undefined) return -1;
+      if (baseOffset === undefined) return this.firstVisibleCharOffsetByScanPaged();
     }
     var localChars = 0;
     var text = target.textContent;
