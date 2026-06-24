@@ -197,6 +197,25 @@ void main() {
         reason: 'firstCharTopVsInset = 首字相对页顶 padding 的偏移（无漂移应每页恒定）');
   });
 
+  test('TODO-792：_diag753 内有 [792-RPITCH] getClientRects 实测真实列周期探针', () {
+    // pitchDelta 只量 columnWidth hint；[792-RPITCH] 用 getClientRects 实测浏览器真实
+    // 渲染列周期 realPitch（去重列顶 top 差），对照 pageStep 定位 realPitch>pageStep 的差量。
+    expect(helper.contains("console.log('[792-RPITCH] '"), isTrue,
+        reason: '须有 [792-RPITCH] 实测列周期探针行，走 console.log 同管道');
+    expect(helper.contains('var rrects = rrng.getClientRects();'), isTrue,
+        reason: '须用 getClientRects 实测真实渲染列 rect（非 columnWidth hint）');
+    expect(
+        helper.contains("+ ' realPitchMed=' +") ||
+            helper.contains('realPitchMed='),
+        isTrue,
+        reason: '须打 realPitchMed（相邻列顶 top 差的众数=真实列周期）');
+    expect(helper.contains("+ ' pageStep=' + ctx.pageSize.toFixed(3)"), isTrue,
+        reason: '须并打 pageStep 对照（realPitch−pageStep = 每页漂移量）');
+    expect(helper.contains("+ ' bodyScrollH=' + document.body.scrollHeight"),
+        isTrue,
+        reason: '须打 body/scroll 尺寸定位列拉伸来源（O/gap/拉伸）');
+  });
+
   test('从 paginated initialize（恢复完成后）与 updatePageSize 各调一次', () {
     // initialize 末尾 .then 内、恢复脚本之后调 phase='init'。
     expect(source.contains("window.hoshiReader._diag753('init');"), isTrue,

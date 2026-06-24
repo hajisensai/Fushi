@@ -1966,6 +1966,52 @@ window.hoshiReader._diag753 = function(phase) {
     var legPb = parseFloat(bodyCs.paddingBottom) || 0;
     var legacyContentBox = (this.viewportHeight || document.body.clientHeight || window.innerHeight) - legPt - legPb;
     var legacyPitchDelta = (resolvedColW > 0) ? (legacyContentBox - resolvedColW) : null;
+    // TODO-792 [792-RPITCH] 直测真实渲染列周期 realPitch（init 一次，竖排，read-only）。
+    // 真机 [792-TURN] 坐实 rbDelta 有界（scrollTop 没问题）但 progress 每页新增递减 →
+    // realPitch（浏览器实际列周期）> pageStep（候选②/审查 C2：columnWidth 只是 hint，单列
+    // 拉伸填满可用 inline 空间后真实周期更大）。这里用 getClientRects 实测：竖排 band 垂直堆叠、
+    // 同列各行 rect 共享列顶 top，去重后相邻 top 差 = realPitch。同时打 body/html/scrollH 尺寸，
+    // 离线对照 pageStep 定位多出来的量从哪来（gap / bottomOverlap O / 拉伸）。
+    try {
+      var rpInfo = 'na';
+      var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+      var firstN = null, lastN = null, cnt = 0, nn;
+      while ((nn = tw.nextNode()) != null) {
+        if (nn.textContent && nn.textContent.trim().length) {
+          if (!firstN) firstN = nn;
+          lastN = nn;
+          cnt++;
+          if (cnt >= 80) break;
+        }
+      }
+      if (firstN && lastN) {
+        var rrng = document.createRange();
+        rrng.setStart(firstN, 0);
+        rrng.setEnd(lastN, lastN.length || 0);
+        var rrects = rrng.getClientRects();
+        var tps = [];
+        for (var ri = 0; ri < rrects.length; ri++) tps.push(rrects[ri].top + (this.getPagePosition(ctx) || 0));
+        tps.sort(function(a, b) { return a - b; });
+        var ut = [];
+        for (var ui = 0; ui < tps.length; ui++) { if (!ut.length || tps[ui] - ut[ut.length - 1] > 2) ut.push(tps[ui]); }
+        var colDiffs = [];
+        for (var di = 1; di < ut.length; di++) { var dd = ut[di] - ut[di - 1]; if (dd > gap) colDiffs.push(Math.round(dd * 100) / 100); }
+        colDiffs.sort(function(a, b) { return a - b; });
+        var medRP = colDiffs.length ? colDiffs[Math.floor(colDiffs.length / 2)] : null;
+        rpInfo = 'nRects=' + rrects.length + ' nCols=' + ut.length + ' realPitchMed=' + (medRP != null ? medRP : 'na') + ' colDiffs=' + colDiffs.slice(0, 12).join('|');
+      }
+      console.log('[792-RPITCH] ' + rpInfo
+        + ' pageStep=' + ctx.pageSize.toFixed(3)
+        + ' columnWidthHint=' + (resolvedColW > 0 ? resolvedColW.toFixed(3) : 'na')
+        + ' gap=' + gap
+        + ' bodyClientH=' + document.body.clientHeight
+        + ' bodyScrollH=' + document.body.scrollHeight
+        + ' bodyOffsetH=' + document.body.offsetHeight
+        + ' docClientH=' + document.documentElement.clientHeight
+        + ' bodyContentBoxH=' + (document.body.clientHeight - legPt - legPb).toFixed(2));
+    } catch (eRP) {
+      console.log('[792-RPITCH] error=' + (eRP && eRP.message ? eRP.message : eRP));
+    }
     // dartH = Flutter 注入的原始 viewportHeight（MediaQuery.size.height），编译期常量。
     var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
     console.log('[753-DIAG] phase=' + phase
