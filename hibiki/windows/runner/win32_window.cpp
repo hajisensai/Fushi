@@ -51,6 +51,16 @@ bool IsTestHiddenMode() {
   return GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
 }
 
+// True when HIBIKI_TEST_ONSCREEN is set (to anything non-empty). Only meaningful
+// together with test-hidden mode: the window keeps WS_EX_NOACTIVATE (it still
+// never steals the user's foreground/keyboard focus) but is placed at a real
+// on-screen origin instead of off-screen, so DWM composes it for Windows
+// Graphics Capture / OS screen-grab screenshots. Lets a non-blocking visible
+// capture exist without hijacking what the user is doing.
+bool IsTestOnscreenMode() {
+  return GetEnvironmentVariableW(L"HIBIKI_TEST_ONSCREEN", nullptr, 0) > 0;
+}
+
 }  // namespace
 
 // Manages the Win32Window's window class registration.
@@ -137,9 +147,16 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   // the real app without disturbing the user. WS_VISIBLE is kept so the engine
   // keeps rendering; only the position + ex-style change.
   const bool hidden = IsTestHiddenMode();
+  // On-screen test mode keeps the window non-activating (WS_EX_NOACTIVATE, so it
+  // never steals the user's foreground/keyboard focus) but at a real on-screen
+  // origin so it is composed for screenshots. Default test mode stays parked
+  // off-screen. Both are non-blocking; only the position differs.
+  const bool onscreen = hidden && IsTestOnscreenMode();
   const DWORD ex_style = hidden ? (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) : 0;
-  const int window_x = hidden ? kOffscreenOrigin : Scale(origin.x, scale_factor);
-  const int window_y = hidden ? kOffscreenOrigin : Scale(origin.y, scale_factor);
+  const int window_x =
+      (hidden && !onscreen) ? kOffscreenOrigin : Scale(origin.x, scale_factor);
+  const int window_y =
+      (hidden && !onscreen) ? kOffscreenOrigin : Scale(origin.y, scale_factor);
 
   HWND window = CreateWindowEx(
       ex_style, window_class, title.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,

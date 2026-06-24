@@ -9,11 +9,25 @@
 #   .\tool\run_windows_itest.ps1
 #   .\tool\run_windows_itest.ps1 integration_test\app_smoke_test.dart
 #   .\tool\run_windows_itest.ps1 -DryRun integration_test\app_smoke_test.dart
+#   .\tool\run_windows_itest.ps1 -Visible integration_test\app_smoke_test.dart
+#
+# Both modes are non-blocking: the window is always non-activating
+# (WS_EX_NOACTIVATE) and never steals the user's foreground/keyboard focus.
+#   default   -> window stays OFF-SCREEN; captured via PrintWindow (grabs the
+#                window's own composited content even off-screen/occluded). Fully
+#                invisible. Try this first.
+#   -Visible  -> same non-activating window placed ON-SCREEN (HIBIKI_TEST_ONSCREEN)
+#                so DWM composes it for a faithful capture if the off-screen
+#                PrintWindow grab comes back blank for the WGC WebView region. It
+#                shows in a corner but does NOT take focus — keep using other apps.
+# Screenshots land in <evidenceDir>\screenshots\shot-NN.png (-Visible also writes
+# shot-NN-screen.png via CopyFromScreen).
 param(
   [string]$Target = "integration_test\desktop_settings_smoke_test.dart",
   [string]$EvidenceRoot = "",
   [string]$RunId = "",
-  [switch]$DryRun
+  [switch]$DryRun,
+  [switch]$Visible
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,6 +124,85 @@ function Add-RunnerSnapshot {
   }
 }
 
+# Native interop for window screenshots. PrintWindow with PW_RENDERFULLCONTENT
+# (2) captures DirectComposition / WGC content even when the window is occluded
+# or off-screen (best-effort, may still be blank for the WebView texture).
+# CopyFromScreen grabs the real composited pixels when the window is on-screen
+# (-Visible mode), which is the only path that reliably captures the WebView.
+try {
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class HibikiWinShot {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+  [DllImport("user32.dll")]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+}
+'@ -ErrorAction Stop
+} catch {
+  # Type already loaded in this session, or compilation unavailable; capture is
+  # best-effort and never fails the run.
+}
+try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch { }
+
+function Get-RunnerWindowHandle {
+  param([array]$Snapshot)
+  if ($null -eq $Snapshot) { return [IntPtr]::Zero }
+  foreach ($process in $Snapshot) {
+    if (-not $process.isTestRunner) { continue }
+    $raw = [string]$process.mainWindowHandle
+    if ([string]::IsNullOrWhiteSpace($raw) -or $raw -eq "0") { continue }
+    try {
+      $handle = [IntPtr][int64]$raw
+      if ($handle -ne [IntPtr]::Zero) { return $handle }
+    } catch { }
+  }
+  return [IntPtr]::Zero
+}
+
+function Save-WindowShot {
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$Handle,
+    [Parameter(Mandatory = $true)][string]$Path,
+    [switch]$ScreenGrab
+  )
+  try {
+    $rect = New-Object 'HibikiWinShot+RECT'
+    if (-not [HibikiWinShot]::GetWindowRect($Handle, [ref]$rect)) { return $false }
+    $width = $rect.Right - $rect.Left
+    $height = $rect.Bottom - $rect.Top
+    if ($width -le 0 -or $height -le 0) { return $false }
+    $bitmap = New-Object System.Drawing.Bitmap($width, $height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+      if ($ScreenGrab) {
+        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0,
+          (New-Object System.Drawing.Size($width, $height)))
+      } else {
+        $hdc = $graphics.GetHdc()
+        try {
+          # PW_RENDERFULLCONTENT = 2
+          [void][HibikiWinShot]::PrintWindow($Handle, $hdc, 2)
+        } finally {
+          $graphics.ReleaseHdc($hdc)
+        }
+      }
+      $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+      $graphics.Dispose()
+      $bitmap.Dispose()
+    }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
 $AppRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $AppRoot "..")).Path
 
@@ -137,6 +230,7 @@ $Paths = [ordered]@{
   appSupport = Join-Path $IsolatedRoot "app-support"
   nativeLogs = Join-Path $IsolatedRoot "logs\native"
   webView2Profile = Join-Path $IsolatedRoot "webview2-profile"
+  screenshotDir = Join-Path $EvidenceDir "screenshots"
   expectedRunnerPath = Join-Path $AppRoot "build\windows\x64\runner\Debug\hibiki.exe"
 }
 
@@ -150,7 +244,8 @@ foreach ($path in @(
     $Paths.documents,
     $Paths.appSupport,
     $Paths.nativeLogs,
-    $Paths.webView2Profile
+    $Paths.webView2Profile,
+    $Paths.screenshotDir
   )) {
   New-Item -ItemType Directory -Force -Path $path | Out-Null
 }
@@ -188,7 +283,8 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
   "[itest] evidenceDir=$EvidenceDir",
   "[itest] user Hibiki instances before=$($before.Count)",
   "[itest] command=$commandLine",
-  "[itest] dryRun=$($DryRun.IsPresent)"
+  "[itest] dryRun=$($DryRun.IsPresent)",
+  "[itest] visible=$($Visible.IsPresent)"
 ) | Out-File -LiteralPath $commandLog -Encoding UTF8
 
 $runnerRecords = [System.Collections.ArrayList]::new()
@@ -204,6 +300,7 @@ if ($DryRun) {
   Add-Content -LiteralPath $commandLog -Value "[itest] dry run: runner not started"
 } else {
   $oldHidden = $env:HIBIKI_TEST_HIDDEN
+  $oldOnscreen = $env:HIBIKI_TEST_ONSCREEN
   $oldRoot = $env:HIBIKI_TEST_ROOT
   $oldRunId = $env:HIBIKI_TEST_RUN_ID
   $oldWebView2 = $env:HIBIKI_WEBVIEW2_USER_DATA_FOLDER
@@ -213,7 +310,18 @@ if ($DryRun) {
   $oldTmp = $env:TMP
   $oldUserProfile = $env:USERPROFILE
   try {
+    # Always keep HIBIKI_TEST_HIDDEN set: it makes the window non-activating
+    # (WS_EX_NOACTIVATE), so the app NEVER steals the user's foreground/keyboard
+    # focus in either mode. -Visible additionally sets HIBIKI_TEST_ONSCREEN to
+    # place that same non-activating window on-screen (composed for a faithful
+    # screenshot); the default leaves it off-screen (fully invisible). Both are
+    # non-blocking — the user keeps using other apps the whole time.
     $env:HIBIKI_TEST_HIDDEN = "1"
+    if ($Visible) {
+      $env:HIBIKI_TEST_ONSCREEN = "1"
+    } else {
+      Remove-Item Env:\HIBIKI_TEST_ONSCREEN -ErrorAction SilentlyContinue
+    }
     $env:HIBIKI_TEST_ROOT = $Paths.isolatedRoot
     $env:HIBIKI_TEST_RUN_ID = $RunId
     $env:HIBIKI_WEBVIEW2_USER_DATA_FOLDER = $Paths.webView2Profile
@@ -233,6 +341,11 @@ if ($DryRun) {
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
     $psi.EnvironmentVariables["HIBIKI_TEST_HIDDEN"] = "1"
+    if ($Visible) {
+      $psi.EnvironmentVariables["HIBIKI_TEST_ONSCREEN"] = "1"
+    } elseif ($psi.EnvironmentVariables.ContainsKey("HIBIKI_TEST_ONSCREEN")) {
+      [void]$psi.EnvironmentVariables.Remove("HIBIKI_TEST_ONSCREEN")
+    }
     $psi.EnvironmentVariables["HIBIKI_TEST_ROOT"] = $Paths.isolatedRoot
     $psi.EnvironmentVariables["HIBIKI_TEST_RUN_ID"] = $RunId
     $psi.EnvironmentVariables["HIBIKI_WEBVIEW2_USER_DATA_FOLDER"] =
@@ -249,12 +362,43 @@ if ($DryRun) {
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
 
+    $shotIteration = 0
+    $shotCount = 0
     while (-not $process.HasExited) {
       $snapshot = @(Get-HibikiProcessSnapshot -CurrentRunId $RunId `
         -RunnerPathPrefix $RunnerPathPrefix)
       Add-RunnerSnapshot -RunnerRecords $runnerRecords -Snapshot $snapshot
+      # Throttled OS screen-grab of the runner window: ~1 shot / 2s, capped at
+      # 12. -Visible uses CopyFromScreen (real on-screen pixels incl. WebView);
+      # off-screen default falls back to best-effort PrintWindow. Never fatal.
+      if (($shotIteration % 8) -eq 0 -and $shotCount -lt 12) {
+        $shotHandle = Get-RunnerWindowHandle -Snapshot $snapshot
+        if ($shotHandle -ne [IntPtr]::Zero) {
+          # PrintWindow is the primary capture: it grabs the window's own
+          # composited content even when it is off-screen, behind other windows,
+          # or never focused — so it works in both the default off-screen mode
+          # and the non-activating on-screen (-Visible) mode without disturbing
+          # the user. -Visible additionally saves a CopyFromScreen variant
+          # (faithful when the window is on top of its screen region).
+          $shotPath = Join-Path $Paths.screenshotDir `
+            ("shot-{0:D2}.png" -f $shotCount)
+          if (Save-WindowShot -Handle $shotHandle -Path $shotPath) {
+            $shotCount++
+            Add-Content -LiteralPath $commandLog `
+              -Value "[itest] screenshot saved: $shotPath"
+          }
+          if ($Visible) {
+            $screenPath = Join-Path $Paths.screenshotDir `
+              ("shot-{0:D2}-screen.png" -f $shotCount)
+            [void](Save-WindowShot -Handle $shotHandle -Path $screenPath -ScreenGrab)
+          }
+        }
+      }
+      $shotIteration++
       Start-Sleep -Milliseconds 250
     }
+    Add-Content -LiteralPath $commandLog `
+      -Value "[itest] screenshots captured=$shotCount visible=$($Visible.IsPresent)"
     $process.WaitForExit()
     $exitCode = [int]$process.ExitCode
 
@@ -269,6 +413,7 @@ if ($DryRun) {
     Add-Content -LiteralPath $commandLog -Value "`n[script-error]`n$($_ | Out-String)"
   } finally {
     $env:HIBIKI_TEST_HIDDEN = $oldHidden
+    $env:HIBIKI_TEST_ONSCREEN = $oldOnscreen
     $env:HIBIKI_TEST_ROOT = $oldRoot
     $env:HIBIKI_TEST_RUN_ID = $oldRunId
     $env:HIBIKI_WEBVIEW2_USER_DATA_FOLDER = $oldWebView2
