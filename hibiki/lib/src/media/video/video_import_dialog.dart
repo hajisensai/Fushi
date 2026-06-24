@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -479,77 +482,101 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     }
   }
 
+  /// 拖文件进本对话框 → 有 m3u8/m3u 播放列表则走 [_importPlaylistFromPath]
+  /// 一次性解析导入（与手动点「播放列表」一致，会关窗）；否则第一个视频写
+  /// `_videoPath`、第一个字幕写 `_subtitlePath`。纯解析交给 [resolveVideoDialogDrop]。
+  void _handleDialogDrop(List<String> paths, Offset _) {
+    if (_busy) return;
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    final VideoDialogDropResult r = resolveVideoDialogDrop(files);
+    if (r.isEmpty) return;
+    final String? playlist = r.playlistPath;
+    if (playlist != null) {
+      _importPlaylistFromPath(playlist);
+      return;
+    }
+    setState(() {
+      if (r.videoPath != null) _videoPath = r.videoPath;
+      if (r.subtitlePath != null) _subtitlePath = r.subtitlePath;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(t.video_import_title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          FilledButton.tonalIcon(
-            onPressed: _busy ? null : _pickFolder,
-            icon: const Icon(Icons.create_new_folder_outlined),
-            label: Text(
-              t.video_import_pick_folder,
-              overflow: TextOverflow.ellipsis,
+    return HibikiFileDropTarget(
+      enabled: !_busy,
+      debugLabel: 'video-import-dialog',
+      onDrop: _handleDialogDrop,
+      child: AlertDialog(
+        title: Text(t.video_import_title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FilledButton.tonalIcon(
+              onPressed: _busy ? null : _pickFolder,
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: Text(
+                t.video_import_pick_folder,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.tonalIcon(
-            onPressed: _busy ? null : _pickPlaylist,
-            icon: const Icon(Icons.playlist_play),
-            label: Text(
-              t.video_import_pick_playlist,
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+              onPressed: _busy ? null : _pickPlaylist,
+              icon: const Icon(Icons.playlist_play),
+              label: Text(
+                t.video_import_pick_playlist,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(height: 16),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _pickVideo,
-            icon: const Icon(Icons.movie_outlined),
-            label: Text(
-              _videoPath == null
-                  ? t.video_import_pick_video
-                  : p.basename(_videoPath!),
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 8),
+            const Divider(height: 16),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _pickVideo,
+              icon: const Icon(Icons.movie_outlined),
+              label: Text(
+                _videoPath == null
+                    ? t.video_import_pick_video
+                    : p.basename(_videoPath!),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _pickSubtitle,
-            icon: const Icon(Icons.subtitles_outlined),
-            label: Text(
-              _subtitlePath == null
-                  ? t.video_import_pick_subtitle
-                  : p.basename(_subtitlePath!),
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _pickSubtitle,
+              icon: const Icon(Icons.subtitles_outlined),
+              label: Text(
+                _subtitlePath == null
+                    ? t.video_import_pick_subtitle
+                    : p.basename(_subtitlePath!),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
+            const SizedBox(height: 4),
+            Text(
+              t.video_import_subtitle_optional,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
           ),
-          const SizedBox(height: 4),
-          Text(
-            t.video_import_subtitle_optional,
-            style: Theme.of(context).textTheme.bodySmall,
+          FilledButton(
+            onPressed: _canImport ? _doImport : null,
+            child: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(t.video_import_confirm),
           ),
         ],
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        FilledButton(
-          onPressed: _canImport ? _doImport : null,
-          child: _busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(t.video_import_confirm),
-        ),
-      ],
     );
   }
 }

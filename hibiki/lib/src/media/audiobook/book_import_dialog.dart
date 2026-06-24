@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
@@ -36,6 +39,7 @@ class BookImportDialog extends StatefulWidget {
     required this.db,
     this.initialEpubPath,
     this.initialSubtitlePath,
+    this.initialAudioPaths,
     super.key,
   });
 
@@ -44,6 +48,12 @@ class BookImportDialog extends StatefulWidget {
   final HibikiDatabase db;
   final String? initialEpubPath;
   final String? initialSubtitlePath;
+
+  /// 拖拽导入预填：随新书一起拖入的音频文件路径。EPUB+音频拖到书架空白处时透传，
+  /// 否则丢失（书架 `importNewBook` 此前未携带 `files.audios`）。音频必配字幕，
+  /// 故仅预填展示——`_doImport` 的「音频必须配字幕」校验照旧（拖 EPUB+音频无字幕
+  /// 时仍要求补字幕）。
+  final List<String>? initialAudioPaths;
 
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
@@ -94,6 +104,17 @@ class _BookImportDialogState extends State<BookImportDialog>
       _subtitlePath = sub;
       _subtitleName = p.basename(sub);
     }
+    final List<String>? audios = widget.initialAudioPaths;
+    if (audios != null && audios.isNotEmpty) {
+      _audioPaths = List<String>.of(audios);
+      // 预填音频时尝试抽内嵌封面（与 _pickAudio 路径一致）。首帧后跑，避免在
+      // initState 内同步触发 setState / 平台通道调用。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _coverPath == null) {
+          _tryExtractAudioCover();
+        }
+      });
+    }
   }
 
   @override
@@ -107,40 +128,80 @@ class _BookImportDialogState extends State<BookImportDialog>
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return BookImportDialogFrame(
-      title: Text(t.srt_import),
-      content: _buildForm(),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed: importing ? null : _doImport,
-          child: importing
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: tokens.spacing.gap * 2,
-                      height: tokens.spacing.gap * 2,
-                      child: adaptiveIndicator(
-                        context: context,
-                        strokeWidth: 2,
-                        color: tokens.surfaces.primary,
+    return HibikiFileDropTarget(
+      enabled: !importing,
+      debugLabel: 'book-import-dialog',
+      onDrop: _handleDialogDrop,
+      child: BookImportDialogFrame(
+        title: Text(t.srt_import),
+        content: _buildForm(),
+        actions: [
+          adaptiveDialogAction(
+            context: context,
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: context,
+            isDefaultAction: true,
+            onPressed: importing ? null : _doImport,
+            child: importing
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: tokens.spacing.gap * 2,
+                        height: tokens.spacing.gap * 2,
+                        child: adaptiveIndicator(
+                          context: context,
+                          strokeWidth: 2,
+                          color: tokens.surfaces.primary,
+                        ),
                       ),
-                    ),
-                    SizedBox(width: tokens.spacing.gap),
-                    Text(t.dialog_importing),
-                  ],
-                )
-              : Text(t.dialog_import),
-        ),
-      ],
+                      SizedBox(width: tokens.spacing.gap),
+                      Text(t.dialog_importing),
+                    ],
+                  )
+                : Text(t.dialog_import),
+          ),
+        ],
+      ),
     );
+  }
+
+  /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。
+  /// 纯解析交给 [resolveBookDialogDrop]；此处只 setState + sidecar/封面副作用。
+  void _handleDialogDrop(List<String> paths, Offset _) {
+    if (importing) return;
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    final BookDialogDropResult r = resolveBookDialogDrop(files);
+    if (r.isEmpty) return;
+    final String? droppedEpub = r.epubPath;
+    final bool gotAudio = r.audioPaths.isNotEmpty;
+    setState(() {
+      if (droppedEpub != null) {
+        _epubPath = droppedEpub;
+        _epubName = p.basename(droppedEpub);
+        if (_titleCtrl.text.isEmpty) {
+          _titleCtrl.text = p.basenameWithoutExtension(droppedEpub);
+        }
+      }
+      if (r.subtitlePath != null) {
+        _subtitlePath = r.subtitlePath;
+        _subtitleName = p.basename(r.subtitlePath!);
+      }
+      if (gotAudio) {
+        _audioPaths = r.audioPaths;
+        _audioCoverPath = null;
+      }
+    });
+    // 拖入主书文件时顺带扫同目录 sidecar（仅填空、不覆盖）；拖入音频时抽内嵌封面。
+    if (droppedEpub != null) {
+      _autoAttachSidecars(droppedEpub);
+    }
+    if (gotAudio && _coverPath == null) {
+      _tryExtractAudioCover();
+    }
   }
 
   Widget _buildForm() {

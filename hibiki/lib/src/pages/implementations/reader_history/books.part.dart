@@ -462,6 +462,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           epubPath: files.books.first,
           subtitlePath:
               files.subtitles.isNotEmpty ? files.subtitles.first : null,
+          audioPaths: files.audios,
         );
       case DropIntent.attachToBookCard:
         _openAudiobookPrefilled(
@@ -501,6 +502,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   Future<void> _openBookImportPrefilled({
     required String epubPath,
     required String? subtitlePath,
+    List<String> audioPaths = const <String>[],
   }) async {
     final bool? imported = await showAppDialog<bool>(
       context: context,
@@ -510,6 +512,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         db: appModel.database,
         initialEpubPath: epubPath,
         initialSubtitlePath: subtitlePath,
+        initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
       ),
     );
     if (imported == true && mounted) {

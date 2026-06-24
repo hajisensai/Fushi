@@ -6,6 +6,9 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
@@ -157,6 +160,40 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   @override
   Widget build(BuildContext context) {
+    return HibikiFileDropTarget(
+      enabled: !importing,
+      debugLabel: 'audiobook-import-dialog',
+      onDrop: _handleDialogDrop,
+      child: _buildContent(context),
+    );
+  }
+
+  /// 拖文件进本对话框 → 全部音频写 `_audioPaths`（清 `_audioDir`，两者互斥）、
+  /// 第一个字幕写 `_alignmentPath`，并复用「强制进可保存导入表单」语义
+  /// （`_patchingAudio = true`）——否则已有完整有声书时只读视图会静默丢弃拖入值。
+  /// 纯解析交给 [resolveAudiobookDialogDrop]。
+  void _handleDialogDrop(List<String> paths, Offset _) {
+    if (importing) return;
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    final AudiobookDialogDropResult r = resolveAudiobookDialogDrop(files);
+    if (r.isEmpty) return;
+    setState(() {
+      if (r.audioPaths.isNotEmpty) {
+        _audioPaths = r.audioPaths;
+        _audioDir = null;
+      }
+      if (r.alignmentPath != null) {
+        _alignmentPath = r.alignmentPath;
+        _alignmentName = p.basename(r.alignmentPath!);
+        _probedCues = null;
+        _probedCuesSourcePath = null;
+      }
+      // 让拖入值进入可保存的导入表单（见 _initExisting 的同款闸门注释）。
+      _patchingAudio = true;
+    });
+  }
+
+  Widget _buildContent(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     if (!_existingLoaded) {
       return AudiobookImportDialogFrame(
