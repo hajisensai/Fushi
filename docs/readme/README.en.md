@@ -85,7 +85,7 @@ hibiki is an immersive language-learning tool for Android and Windows that bring
 
 ### Data Sync
 
-- Seven sync backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, and Hibiki P2P (direct LAN device-to-device).
+- Seven sync backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, and Hibiki P2P.
 - Sync reading progress, statistics, and books.
 
 ### More
@@ -168,7 +168,7 @@ hibiki/                      # Repository root (Melos workspace: hibiki_workspac
 
 hibiki stores imported books, dictionaries, fonts, audiobook data, videos, reading progress, highlights, statistics, and settings in the app's local storage.
 
-Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth credentials; WebDAV / FTP / SFTP uses user-provided server addresses and credentials; Hibiki P2P connects directly over the local network. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
+Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth credentials; WebDAV / FTP / SFTP uses user-provided server addresses and credentials; Hibiki P2P connects directly via a user-configured address. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
 
 ## Acknowledgments
 

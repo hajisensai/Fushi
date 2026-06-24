@@ -85,7 +85,7 @@ hibiki 是一款面向 Android 與 Windows 的沉浸式語言學習工具，把 
 
 ### 資料同步
 
-- 支援 Google Drive、OneDrive、Dropbox、WebDAV、FTP、SFTP 和 Hibiki P2P（區域網路裝置間直連）七種同步後端。
+- 支援 Google Drive、OneDrive、Dropbox、WebDAV、FTP、SFTP 和 Hibiki P2P 七種同步後端。
 - 同步閱讀進度、統計和書籍。
 
 ### 更多
@@ -168,7 +168,7 @@ hibiki/                      # 倉庫根（Melos workspace: hibiki_workspace）
 
 hibiki 將匯入的書籍、詞典、字型、有聲書資料、影片、閱讀進度、高亮、統計和設定儲存在 App 本機儲存中。
 
-雲端同步（Google Drive / OneDrive / Dropbox）使用由使用者設定的 OAuth 憑據；WebDAV / FTP / SFTP 使用使用者提供的伺服器位址與憑據；Hibiki P2P 僅在區域網路內直連。Anki 製卡會與 AnkiDroid 或已設定的 AnkiConnect 位址通訊。
+雲端同步（Google Drive / OneDrive / Dropbox）使用由使用者設定的 OAuth 憑據；WebDAV / FTP / SFTP 使用使用者提供的伺服器位址與憑據；Hibiki P2P 透過使用者設定的位址直連。Anki 製卡會與 AnkiDroid 或已設定的 AnkiConnect 位址通訊。
 
 ## 致謝
 
