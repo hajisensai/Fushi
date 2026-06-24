@@ -595,6 +595,11 @@ class DictionaryPopupWebViewState
       window.showExpressionTags = $showExprTags;
       window.collapseDictionaries = $collapseDict;
       window.collapsedDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isCollapsed(appModel.targetLanguage)).map((d) => d.name).toList())};
+      // TODO-804: 词典管理里关掉（show/hide 开关 off）的词典 = isHidden。term 词典
+      // 在引擎里恒注册（AppModel.bucketDictPaths：隐藏 term 仍进桶，渲染期才过滤），
+      // FFI 查询仍带回其义项。把隐藏词典名注入 JS，由 popup.js 的 createGlossarySectionWrapper
+      // 在唯一分组点剔除，使被禁用词典的释义不再出现在查词弹窗（与 collapsedDictionaryNames 同源）。
+      window.hiddenDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isHidden(appModel.targetLanguage)).map((d) => d.name).toList())};
       try { window.lookupEntries = $entriesJson; } catch(e) {
         console.error('[popup] lookupEntries parse error', e);
         window.lookupEntries = [];

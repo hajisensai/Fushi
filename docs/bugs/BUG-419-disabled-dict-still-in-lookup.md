@@ -1,0 +1,6 @@
+## BUG-419 · 禁用词典后查词仍显示该词典释义
+- **报告**：2026-06-24（用户：TODO-804）
+- **真实性**：✅ 真 bug —— 词典管理里关掉某 term 词典（show/hide 开关 off）后，查词弹窗仍显示该词典释义。根因 `hibiki/lib/src/models/app_model.dart:213`（`bucketDictPaths` 的 `case DictionaryType.term:` 不按 hidden 过滤，隐藏 term 词典仍注册进 FFI 引擎，按设计应在渲染期过滤）+ `hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart:597`（查词弹窗 WebView 只注入 `collapsedDictionaryNames`，从不注入隐藏名单）+ `hibiki/assets/popup/popup.js:1641` `createGlossarySectionWrapper` 渲染所有词典义项、无 hidden 过滤。freq/pitch/kanji 在桶级已按 hidden 过滤（同文件 :216/:218/:220），只有 term 词典泄漏；原生结果页 `dictionary_term_page.dart:63` 已正确过滤，但用户实际查词走 WebView 弹窗路径。
+- **[x] ① 已修复** —— 宿主在 `dictionary_popup_webview.dart` 注入 `window.hiddenDictionaryNames`（取 `d.isHidden(targetLanguage)`，即管理开关切换的同一谓词，紧挨 `collapsedDictionaryNames`）；popup.js 在唯一的词条义项分组点 `createGlossarySectionWrapper` 据此剔除隐藏词典义项（仅隐藏词典的词条不产生空卡）。覆盖 reader/video/首页查词/弹窗/悬浮全部走 WebView 的查词路径。提交：见 TODO-804 commit。
+- **[x] ② 已加自动化测试** —— `hibiki/test/pages/popup_hidden_dictionary_filter_test.dart`（Node 真执行 popup.js `createGlossarySectionWrapper` 断言隐藏词典被排除 + 静态守卫 popup.js 过滤点与宿主注入在位）；行为 harness `hibiki/test/pages/popup_hidden_dictionary_filter_test.js`。撤掉 popup.js 过滤行实测转红。
+- **备注**：未真机复测（无设备）；逻辑层 + Node 行为层已闭环，需用户真机在词典管理关一本 term 词典后查词确认其释义消失。

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 405 条。点号进各自文件。
+> 共 406 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-419](bugs/BUG-419-disabled-dict-still-in-lookup.md) | ✅ | ✅ | 禁用词典后查词仍显示该词典释义 |
 | [BUG-418](bugs/BUG-418-reader-continuous-snap-chapter-start.md) | ✅ | ✅ | 连续模式书籍历史恒回章首(reflow非自愿归零·795/797未修好) |
 | [BUG-417](bugs/BUG-417-interconnect-book-progress-no-sync.md) | ✅ | ✅ | 互联立即同步不同步书籍进度(host不回灌reader_positions·书籍无进度live端点) |
 | [BUG-416](bugs/BUG-416-remote-card-longpress-download.md) | ✅ | ✅ | 长按远端书/视频卡直接下载(应出选项面板) |

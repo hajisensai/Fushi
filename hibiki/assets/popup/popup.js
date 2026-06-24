@@ -1639,8 +1639,18 @@ function createPitchSection(pitches, reading) {
 }
 
 function createGlossarySectionWrapper(entry) {
+    // TODO-804: a term dictionary disabled in 词典管理 (its show/hide switch off)
+    // is added to hiddenDictionaryNames by the host. Term dictionaries are still
+    // registered in the native engine (see AppModel.bucketDictPaths — hidden term
+    // dicts stay in the bucket because filtering happens at render time), so the
+    // FFI lookup still returns their glossaries. Drop them here, the single
+    // grouping point shared by every term-glossary render path, so a disabled
+    // dictionary's definitions never surface in the lookup popup. Mirrors how
+    // collapsedDictionaryNames is consumed in createGlossarySection.
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     const grouped = {};
     entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
         (grouped[g.dictionary] ??= []).push({
             content: g.content,
             definitionTags: g.definitionTags,
