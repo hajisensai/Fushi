@@ -201,11 +201,12 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   @override
   Future<List<RemoteBookInfo>> listBooks() async {
     final List<EpubBookRow> rows = await _db.getAllEpubBooks();
-    // 该书是否已配有声书：bookKey 出现在 Audiobooks 表（与本地书卡
-    // `_getAudiobookInfo` / `AudiobookRepository.buildBookKeyMap` 同源，TODO-655a）。
-    final Set<String> audiobookKeys = <String>{
-      for (final AudiobookRow a in await _db.getAllAudiobooks()) a.bookKey,
-    };
+    // 该书是否已配「可经 live-sync 导出」的有声书。判据必须与 [listAudiobooks] /
+    // [exportAudiobook] 完全同源——仅 Audiobooks 行还不够，导出格式需 srtBookUid，
+    // 故只有同时具备 SrtBooks 行的 bookKey 才算可下载（TODO-778）。否则 EPUB 对齐
+    // 有声书（有 Audiobook 无 SrtBook）会亮徽章 + 可点下载，但 exportAudiobook
+    // 抛 StateError → 服务端 404。
+    final Set<String> audiobookKeys = await _srtBackedAudiobookKeys();
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -435,6 +436,22 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   }
 
   // ── 有声书包（T3.1）────────────────────────────────────────────────────────
+
+  /// 既有 Audiobooks 行又有 SrtBooks 行的 bookKey 集合——即真正可经 live-sync
+  /// 导出的有声书（[exportAudiobook] 要求两表齐备，缺一即抛 StateError → 404）。
+  ///
+  /// [listBooks] 的 `hasAudiobook` 徽章、[listAudiobooks] 清单、orchestrator
+  /// sweep 三处判据全部走此单一派生逻辑，确保徽章/清单/导出契约完全同源（TODO-778）。
+  Future<Set<String>> _srtBackedAudiobookKeys() async {
+    final List<AudiobookRow> rows = await _db.getAllAudiobooks();
+    final Set<String> keys = <String>{};
+    for (final AudiobookRow r in rows) {
+      if (await _db.getSrtBookByBookKey(r.bookKey) != null) {
+        keys.add(r.bookKey);
+      }
+    }
+    return keys;
+  }
 
   /// host 当前可导出的有声书清单。
   @override
