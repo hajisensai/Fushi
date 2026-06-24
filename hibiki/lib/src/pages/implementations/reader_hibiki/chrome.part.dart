@@ -339,10 +339,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       evalBegin: () => _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.beginUiScaleReanchorInvocation(),
       ),
-      // 阶段 2：等过渡帧 settle 后提交滚动并清旗（沿用 _syncPageSize 的 postFrame settle）。
-      evalCommit: () => _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
-      ),
+      // 阶段 2：等过渡帧 settle 后提交滚动并清旗，并打 _reanchorClearedAt 武装 B-3 窗。
+      evalCommit: () async {
+        await _controller!.evaluateJavascript(
+          source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
+        );
+        // TODO-797 同根因 sibling：appUiScale 缩放（TODO-693）重锚 commit 清旗后的 settle 尾沿与
+        // 恢复重锚同样会被 reflow 归零落库 progress≈0 → 弹回章首；删 B-4 后此路径同样裸奔。对齐
+        // 样式/恢复路径打点 _reanchorClearedAt，让 B-3 窗一并覆盖缩放 settle 尾沿。
+        if (mounted) _reanchorClearedAt = DateTime.now();
+      },
       schedulePostFrame: (void Function() commit) =>
           WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
       stillAlive: () => mounted && _controller != null,
@@ -386,10 +392,19 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       evalBegin: () => _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.beginUiScaleReanchorInvocation(),
       ),
-      // 阶段 2：等过渡帧 settle 后提交滚动并清旗（沿用 _syncPageSize 的 postFrame settle）。
-      evalCommit: () => _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
-      ),
+      // 阶段 2：等过渡帧 settle 后提交滚动并清旗，并打 _reanchorClearedAt 武装 B-3 窗。
+      evalCommit: () async {
+        await _controller!.evaluateJavascript(
+          source: ReaderPaginationScripts.commitUiScaleReanchorInvocation(),
+        );
+        // TODO-797 回归根因：commit 清旗后，连续模式 WebView settle reflow 仍会在随后几帧把裸
+        // window.scrollY 瞬时归 0，归零 scroll 经 _handleReaderScroll 落库 progress≈0 → 退出再进恒
+        // 章首。ea096d866 删 B-4 伪归零守卫时论证「commit 清旗后的 settle 尾沿由 B-3 250ms 窗拦掉」
+        // 只对样式重锚成立（_reanchorForStyleChange 的 commit 打 _reanchorClearedAt）——本恢复重锚
+        // （TODO-718）路径从未打点 B-3，故归零裸奔落库 → 滚动模式历史记录恒回章首。对齐样式路径
+        // 打点，让既有 B-3 窗覆盖恢复 settle 尾沿（根因式，复用已测机制，不复用被证伪的「无输入=伪」）。
+        if (mounted) _reanchorClearedAt = DateTime.now();
+      },
       schedulePostFrame: (void Function() commit) =>
           WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
       stillAlive: () => mounted && _controller != null,

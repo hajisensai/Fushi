@@ -98,4 +98,48 @@ void main() {
           reason: 'commit 完成须打 _reanchorClearedAt 供 B-3 去抖');
     });
   });
+
+  group('TODO-797 回归锁：恢复重锚 / appUiScale 重锚 commit 也武装 B-3（_reanchorClearedAt）',
+      () {
+    // 根因：ea096d866 删 B-4 伪归零守卫时，论证「commit 清旗后的 settle 尾沿由 B-3 250ms 窗
+    // 拦掉」只对样式重锚成立——恢复重锚（TODO-718）/ appUiScale 重锚（TODO-693）的 commit 从不
+    // 打点 _reanchorClearedAt，故连续模式 reflow 归零 scroll 裸奔经 _handleReaderScroll 落库
+    // progress≈0 → 滚动模式历史记录恒回章首（TODO-724 回归再现）。三条 reanchor-commit 路径
+    // 必须统一武装 B-3 窗；撤掉任一打点 → 转红。
+    String reanchorBody(String signature) {
+      final int idx = chrome.indexOf(signature);
+      expect(idx, greaterThanOrEqualTo(0), reason: '找不到 $signature');
+      final int end = chrome.indexOf('\n  }\n', idx);
+      return chrome.substring(idx, end < 0 ? chrome.length : end);
+    }
+
+    test('_reanchorContinuousAfterRestore 的 commit 打 _reanchorClearedAt', () {
+      final String body =
+          reanchorBody('Future<void> _reanchorContinuousAfterRestore() {');
+      expect(body, contains('commitUiScaleReanchorInvocation'),
+          reason: '恢复重锚走 begin/commit 编排');
+      expect(body, contains('_reanchorClearedAt = DateTime.now()'),
+          reason: 'TODO-797：恢复重锚 commit 必须打 _reanchorClearedAt，'
+              '否则 settle 归零 scroll 裸奔落库 → 滚动模式历史恒回章首');
+    });
+
+    test('_reanchorContinuousForUiScale 的 commit 打 _reanchorClearedAt', () {
+      final String body =
+          reanchorBody('Future<void> _reanchorContinuousForUiScale() {');
+      expect(body, contains('commitUiScaleReanchorInvocation'),
+          reason: 'appUiScale 重锚走 begin/commit 编排');
+      expect(body, contains('_reanchorClearedAt = DateTime.now()'),
+          reason:
+              'TODO-797 sibling：appUiScale 重锚 commit 同样须打 _reanchorClearedAt，'
+              '否则缩放 settle 归零 scroll 裸奔落库 → 回章首');
+    });
+
+    test('三条 reanchor-commit 路径全部武装 B-3（统一不可遗漏）', () {
+      final int count =
+          '_reanchorClearedAt = DateTime.now()'.allMatches(chrome).length;
+      expect(count, greaterThanOrEqualTo(3),
+          reason:
+              '恢复(718)/appUiScale(693)/样式(736) 三条 reanchor-commit 路径须各打点一次');
+    });
+  });
 }
