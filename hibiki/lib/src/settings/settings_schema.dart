@@ -82,7 +82,6 @@ SettingsDestination buildReaderQuickSettingsDestination(
     summary: t.source_description_epub,
     icon: Icons.tune_outlined,
     sections: <SettingsSection>[
-      sectionFor(ReaderGroup.appearance, t.settings_destination_appearance),
       sectionFor(ReaderGroup.layout, t.section_layout),
       sectionFor(ReaderGroup.behavior, t.settings_destination_reading_controls),
       sectionFor(ReaderGroup.lookup, t.settings_destination_lookup),

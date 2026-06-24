@@ -55,13 +55,6 @@ void main() {
         reason: '翻页/滚动必须出现在「布局与显示」组');
     expect(layoutIds.first, 'reading_display.view_mode',
         reason: 'view_mode 是 layout 组排序后的首项（order 0）');
-    // 不再属于 appearance 组。
-    final List<SettingsItem> appearance =
-        grouped[ReaderGroup.appearance] ?? <SettingsItem>[];
-    expect(
-      appearance.map((SettingsItem i) => i.id),
-      isNot(contains('reading_display.view_mode')),
-    );
   });
 
   test('字号/行高/缩进归 layout 组、appearance 组无 schema 项（TODO-774）', () {
@@ -75,11 +68,14 @@ void main() {
     ]) {
       expect(layoutIds, contains(id), reason: '$id 是字体/行高/缩进，应并入「布局与显示」组');
     }
-    // appearance 组在 TODO-774 后已无任何 schema 项（grouped 中应缺失或为空）。
-    final List<SettingsItem> appearance =
-        grouped[ReaderGroup.appearance] ?? <SettingsItem>[];
-    expect(appearance, isEmpty,
-        reason: 'appearance 组已无 schema 项（3 项已迁到 layout）');
+    // TODO-802：appearance 组（ReaderGroup.appearance）已整组删除，ReaderGroup
+    // 枚举只剩 layout / behavior / lookup / audiobook 四值。
+    expect(
+      ReaderGroup.values.map((ReaderGroup g) => g.name),
+      isNot(contains('appearance')),
+      reason: 'TODO-802：ReaderGroup 枚举不应再含 appearance',
+    );
+    expect(ReaderGroup.values, hasLength(4));
   });
 
   test('layout 组 order 连续无洞 {0..N}（TODO-774 撞号守卫）', () {

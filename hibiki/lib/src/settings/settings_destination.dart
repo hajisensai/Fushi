@@ -20,7 +20,11 @@ enum SettingsDestinationId {
 
 /// 书内快捷面板的分组维度，与全局 [SettingsDestinationId] 正交。
 /// 一个设置项可以同时出现在全局某 destination 和书内某 [ReaderGroup]。
-enum ReaderGroup { appearance, layout, behavior, lookup, audiobook }
+///
+/// TODO-802/774：原「外观」组（appearance）已删——字体/行高/缩进早已并入
+/// [layout]（TODO-774），最后只剩主题选择器，亦并入 [layout]（主题改的也是阅读
+/// 显示），外观组整个不再存在。
+enum ReaderGroup { layout, behavior, lookup, audiobook }
 
 /// 描述某个 [SettingsItem] 在书内快捷面板里的放置位置。
 /// 为 null 表示该项不出现在书内面板（仅全局可见）。

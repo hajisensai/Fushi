@@ -14,15 +14,16 @@ void main() {
     expect(source, contains("page: 'layout'"));
     expect(source, contains("page: 'behavior'"));
     expect(source, contains("page: 'location'"));
-    // TODO-725（手机折叠）：外观也降级成可点进的分类导航行（page），不再内联平铺。
-    expect(source, contains("page: 'appearance'"));
+    // TODO-802：「外观」分类整组删除，不再有 appearance 导航项 / 子页分支。
+    expect(source, isNot(contains("page: 'appearance'")));
+    expect(source, isNot(contains("case 'appearance':")));
     expect(source, contains("page: 'audiobook'"));
     expect(source, isNot(contains('class AudiobookSettingsSheet')));
   });
 
   test(
-      'reader quick settings home collapses appearance into a nav row '
-      '(TODO-725)', () {
+      'reader quick settings home has no appearance nav row; appearance group '
+      'dropped (TODO-802)', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
@@ -32,13 +33,13 @@ void main() {
       '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
     );
 
-    // 手机/窄窗折叠：主页只剩「阅读进度 + 分类导航行 + 动作行」。外观不再内联
-    // 平铺，而是和其它分类一样降级成可点进的导航行（默认折叠）。
+    // 手机/窄窗折叠：主页只剩「阅读进度 + 分类导航行 + 动作行」。
     expect(mainSource, isNot(contains('_buildAppearanceInline')));
     expect(mainSource, contains('_buildProgressSection(theme)'));
     expect(mainSource,
         contains('AdaptiveSettingsSection(children: navigationRows)'));
-    expect(mainSource, contains("page: 'appearance'"));
+    // TODO-802：外观分类整组删除，主页不再有「外观」导航行。
+    expect(mainSource, isNot(contains("page: 'appearance'")));
     // 导航置首：location 行排在 navigationRows 第一位（在 layout 之前）。
     final int locIdx = mainSource.indexOf("page: 'location'");
     final int layoutIdx = mainSource.indexOf("page: 'layout'");
@@ -46,47 +47,52 @@ void main() {
     expect(layoutIdx, isNonNegative);
     expect(locIdx, lessThan(layoutIdx), reason: '导航（location）必须是窄窗主页第一个分类行');
 
-    // 内联外观方法已删（折叠后无引用），不应再存在。
+    // 内联外观方法已删，不应再存在。
     expect(source, isNot(contains('Widget _buildAppearanceInline(')));
     expect(source, isNot(contains('Widget _buildQuickControlsSection(')));
 
-    // 复用的外观行集合仍在（窄窗/宽窗外观详情共用）：主题行 + appearance schema
-    // 裸行。TODO-801：「编辑书籍 CSS」已按排版语义移到「布局与显示」组，外观卡
-    // 不再含它。
-    final String cardSource = _between(
-      source,
-      '  List<Widget> _appearanceCardChildren()',
-      '  Widget _buildBookCssEditorRow()',
-    );
-    expect(cardSource, contains('buildThemeSelector(_themeSettingsContext())'));
-    expect(cardSource, contains('ReaderGroup.appearance'));
-    expect(cardSource, contains('buildSectionRows('));
-    expect(cardSource, isNot(contains('book_css_editor_edit_css')),
-        reason: 'TODO-801：编辑书籍 CSS 行不应再出现在外观卡的行集合里');
+    // TODO-802：外观卡 + 其行集合 helper 整个删除（外观详情、外观行集合都不再存在）。
+    expect(source, isNot(contains('_appearanceCardChildren')),
+        reason: 'TODO-802：外观行集合 helper 已删');
+    expect(source, isNot(contains('Widget _buildAppearanceDetail()')),
+        reason: 'TODO-802：外观详情子页已删');
+    expect(source, isNot(contains('ReaderGroup.appearance')),
+        reason: 'TODO-802：ReaderGroup.appearance 枚举值已删，不应再被引用');
     expect(source, isNot(contains('Widget _buildThemeSelector()')));
   });
 
   test(
-      'book-CSS editor row lives in the layout sub-page, not appearance '
-      '(TODO-801)', () {
+      'layout sub-page hosts theme selector + book-CSS row; lyrics mode keeps '
+      'them reachable (TODO-802/774/801)', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    // 归类语义：CSS 改的是排版，属「布局与显示」组（layout），不属外观。
-    // 「编辑书籍 CSS」入口行随 layout 子页详情渲染，且仅当 extractDir 可用时出现。
+    // TODO-802/774：主题选择器从已删的「外观」组并入「布局与显示」子页顶部；
+    // TODO-801：CSS 行也在 layout 子页（仅 extractDir 可用时）。
     final String layoutDetailSource = _between(
       source,
       '  Widget _buildLayoutDetail()',
-      '  Widget _buildAppearanceDetail()',
+      '  Widget _buildLocationSection(ThemeData theme)',
     );
+    expect(layoutDetailSource, contains('_buildThemeSelectorSection()'),
+        reason: 'TODO-802：主题选择器并入 layout 子页（外观组已删）');
     expect(layoutDetailSource,
         contains('_buildReaderGroupContent(ReaderGroup.layout'),
-        reason: 'layout 子页详情先渲染 layout schema 行');
+        reason: 'layout 子页详情渲染 layout schema 行');
     expect(layoutDetailSource, contains('_buildBookCssEditorRow()'),
         reason: 'TODO-801：编辑书籍 CSS 行随 layout 子页详情渲染');
-    expect(layoutDetailSource, contains('widget.extractDir == null'),
+    expect(layoutDetailSource, contains('widget.extractDir != null'),
         reason: 'extractDir 不可用时不渲染 CSS 行（保留显示条件）');
+
+    // 主题选择器卡用主题专用 context（换肤后还 _syncThemeSelection）。
+    final String themeSectionSource = _between(
+      source,
+      '  Widget _buildThemeSelectorSection()',
+      '  Widget _buildBookCssEditorRow()',
+    );
+    expect(themeSectionSource,
+        contains('buildThemeSelector(_themeSettingsContext())'));
 
     // CSS 编辑入口行本身仍保留打开 BookCssEditorPage + 返回后整章重排的逻辑。
     final String cssRowSource = _between(
@@ -102,6 +108,19 @@ void main() {
     // 'layout' 子页分支调用 _buildLayoutDetail（非直接 _buildReaderGroupContent）。
     expect(source, contains(': _buildLayoutDetail()'),
         reason: 'layout 子页（非歌词模式）经 _buildLayoutDetail 渲染');
+
+    // TODO-802 可达性：歌词模式布局子页也露出主题选择器 + CSS 行，否则删外观组后
+    // 歌词模式将完全够不到主题/CSS。
+    final String lyricsSource = _between(
+      source,
+      '  Widget _buildLyricsDisplaySection()',
+      '  Widget _buildLyricsMarginSection()',
+    );
+    expect(lyricsSource, contains('_buildThemeSelectorSection()'),
+        reason: 'TODO-802：歌词模式必须能达到主题选择器');
+    expect(lyricsSource, contains('_buildBookCssEditorRow()'),
+        reason: 'TODO-802：歌词模式（extractDir 可用时）必须能达到编辑书籍 CSS');
+    expect(lyricsSource, contains('widget.extractDir != null'));
   });
 
   test('reader quick settings sheet uses shared MD3 sheet chrome', () {
@@ -353,9 +372,9 @@ void main() {
     expect(source, contains('Widget _buildWidePane('));
     expect(source, contains('_wideCategories()'));
 
-    // 左 pane 把全部分类列出（含外观）；导航置首后默认选中 'location'，右 pane
-    // 复用同一份子页详情。
-    expect(source, contains("id: 'appearance'"));
+    // 左 pane 列出全部分类；导航置首后默认选中 'location'，右 pane 复用同一份子页
+    // 详情。TODO-802：外观分类已删，左 pane 不应再含它。
+    expect(source, isNot(contains("id: 'appearance'")));
     expect(source, contains("id: 'location'"));
     expect(source, contains("_subPage ?? 'location'"));
     expect(source, contains('_subPageContent(selectedId)'));
@@ -451,12 +470,12 @@ void main() {
         .map((Match m) => m.group(1)!)
         .toList();
 
+    // TODO-802：「外观」分类已删，顺序里不再含 appearance。
     const List<String> expected = <String>[
       'location',
       'layout',
       'behavior',
       'lookup',
-      'appearance',
       'audiobook',
     ];
     expect(narrowOrder, expected, reason: '窄窗主页分类顺序必须导航置首：$narrowOrder');

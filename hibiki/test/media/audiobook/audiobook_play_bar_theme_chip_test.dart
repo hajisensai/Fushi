@@ -94,33 +94,20 @@ void main() {
     await tester.pump();
 
     expect(find.byType(AdaptiveSettingsNavigationRow), findsWidgets);
-    // TODO-725（手机/窄窗折叠）：主页只剩「进度 + 分类导航行 + 动作行」。外观也
-    // 降级成导航行（默认折叠），不再内联平铺。
-    expect(find.text(t.settings_destination_appearance), findsOneWidget);
+    // TODO-725（手机/窄窗折叠）：主页只剩「进度 + 分类导航行 + 动作行」。
+    // TODO-802：外观分类整组删除，主页不再有「外观」导航行。
+    expect(find.text(t.settings_destination_appearance), findsNothing);
     expect(find.text(t.section_layout), findsOneWidget);
     expect(find.text(t.settings_destination_reading_controls), findsOneWidget);
     expect(find.text(t.settings_destination_lookup), findsOneWidget);
     expect(find.text(t.section_navigation), findsOneWidget);
-    // 外观不再内联：主页不渲染内联「排版设置」卡标题 / 主题选择器 / 字号步进。
+    // 主页不渲染内联「排版设置」卡标题 / 主题选择器 / 字号步进（都在 layout 子页）。
     expect(find.text(t.display_settings), findsNothing);
     expect(find.text(t.ttu_theme), findsNothing);
     expect(find.byType(HibikiSchemeSwatch), findsNothing);
     expect(find.text(t.ttu_font_size), findsNothing);
     expect(find.byType(ListTile), findsNothing);
 
-    // 点进「外观」子页：主题选择器 + 字号/行高（schema 投影）此时才出现。
-    await tester.ensureVisible(find.text(t.settings_destination_appearance));
-    await tester.tap(find.text(t.settings_destination_appearance));
-    await tester.pumpAndSettle();
-    expect(find.text(t.ttu_theme), findsOneWidget);
-    expect(find.byType(HibikiSchemeSwatch), findsWidgets);
-    expect(find.text(t.ttu_font_size), findsOneWidget);
-    expect(find.text(t.ttu_line_height), findsOneWidget);
-    expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
-    expect(find.byType(ListTile), findsNothing);
-
-    await tester.tap(find.byIcon(Icons.arrow_back));
-    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text(t.settings_destination_lookup));
     await tester.tap(find.text(t.settings_destination_lookup));
     await tester.pumpAndSettle();
@@ -134,6 +121,12 @@ void main() {
     await tester.tap(find.text(t.section_layout));
     await tester.pumpAndSettle();
 
+    // TODO-802：主题选择器并入「布局与显示」子页顶部（外观组已删）。
+    expect(find.text(t.ttu_theme), findsOneWidget);
+    expect(find.byType(HibikiSchemeSwatch), findsWidgets);
+    // TODO-774：字号/行高（schema 投影）也在 layout 子页。
+    expect(find.text(t.ttu_font_size), findsOneWidget);
+    expect(find.text(t.ttu_line_height), findsOneWidget);
     // TODO-725：翻页/滚动（view_mode）现归「布局与显示」组，进 layout 子页可见。
     expect(find.text(t.ttu_view_mode_label), findsOneWidget);
     // Schema-projected segmented items render as AdaptiveSettingsSegmentedRow
@@ -177,9 +170,9 @@ void main() {
     await tester.pump();
 
     // TODO-725：左 pane 列出全部分类（导航置首，默认选中「导航/location」）。
-    // 右 pane 默认显示 location 详情顶部并入的阅读进度，外观主题行此时**不**出现
-    // （它在点开「外观」分类后才渲染）。
-    expect(find.text(t.settings_destination_appearance), findsOneWidget);
+    // 右 pane 默认显示 location 详情顶部并入的阅读进度，主题行此时**不**出现
+    // （它在点开「布局与显示」分类后才渲染）。TODO-802：外观分类已删。
+    expect(find.text(t.settings_destination_appearance), findsNothing);
     expect(find.text(t.section_navigation), findsOneWidget);
     expect(find.text(t.section_layout), findsOneWidget);
     expect(find.text(t.reading_progress), findsOneWidget);
@@ -188,15 +181,11 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
     expect(find.byType(AdaptiveSettingsNavigationRow), findsNothing);
 
-    // 选「外观」→ 右 pane 切到外观详情（主题行出现），仍无返回箭头。
-    await tester.tap(find.text(t.settings_destination_appearance));
-    await tester.pumpAndSettle();
-    expect(find.text(t.ttu_theme), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_back), findsNothing);
-
-    // 选「布局」→ 右 pane 切到布局详情（schema 投影的分段行），仍无返回箭头。
+    // 选「布局」→ 右 pane 切到布局详情：主题行（TODO-802 并入）+ schema 投影的
+    // 分段行都出现，仍无返回箭头。
     await tester.tap(find.text(t.section_layout));
     await tester.pumpAndSettle();
+    expect(find.text(t.ttu_theme), findsOneWidget);
     expect(find.byType(AdaptiveSettingsSegmentedRow<Object>), findsWidgets);
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
@@ -242,8 +231,9 @@ void main() {
     await tester.tap(find.text(t.section_layout));
     await tester.pumpAndSettle();
 
-    // 左父菜单里的「外观」分类项作为锚点：只出现在左 pane（右 pane 现是布局）。
-    final Finder leftAnchor = find.text(t.settings_destination_appearance);
+    // 左父菜单里的「查词」分类项作为锚点：只出现在左 pane（右 pane 现是布局）。
+    // TODO-802：原用的「外观」分类已删，改用同样只在左 pane 的「查词」。
+    final Finder leftAnchor = find.text(t.settings_destination_lookup);
     expect(leftAnchor, findsOneWidget);
     final Offset leftBefore = tester.getTopLeft(leftAnchor);
 

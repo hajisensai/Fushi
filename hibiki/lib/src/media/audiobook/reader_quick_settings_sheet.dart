@@ -411,8 +411,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 宽窗 master-detail 左 pane 的分类项（id 与 [_subPageContent] 的 case 对齐）。
   /// audiobook 仅在有 controller 时出现。
   List<({String id, IconData icon, String label})> _wideCategories() {
-    // TODO-725：导航置首（location → layout → behavior → lookup → appearance →
-    // [audiobook]）。与窄窗主页 navigationRows 顺序保持一致。
+    // TODO-725 / TODO-802：导航置首（location → layout → behavior → lookup →
+    // [audiobook]）。「外观」组已删，主题选择器并入 layout（见 _buildLayoutDetail）。
+    // 与窄窗主页 navigationRows 顺序保持一致。
     return <({String id, IconData icon, String label})>[
       (
         id: 'location',
@@ -434,11 +435,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         icon: Icons.manage_search_outlined,
         label: t.settings_destination_lookup,
       ),
-      (
-        id: 'appearance',
-        icon: Icons.palette_outlined,
-        label: t.settings_destination_appearance,
-      ),
       if (widget.controller != null)
         (
           id: 'audiobook',
@@ -451,10 +447,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   Widget _buildMainPage(BuildContext context, ThemeData theme) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
-    // TODO-725（手机/窄窗折叠）：主页只剩「阅读进度 + 分类导航行 + 动作行」。外观
-    // 不再内联平铺，而是和其它分类一样降级成可点进的导航行（默认折叠，点开才看
-    // 内容）。导航置首：location → layout → behavior → lookup → appearance →
-    // [audiobook]，与宽窗 _wideCategories 顺序一致。
+    // TODO-725（手机/窄窗折叠）/ TODO-802：主页只剩「阅读进度 + 分类导航行 + 动作
+    // 行」。「外观」组已删，主题选择器并入 layout 子页顶部（见 _buildLayoutDetail）。
+    // 导航置首：location → layout → behavior → lookup → [audiobook]，与宽窗
+    // _wideCategories 顺序一致。
     final List<Widget> navigationRows = [
       _categoryTile(
         icon: Icons.menu_book_outlined,
@@ -475,11 +471,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         icon: Icons.manage_search_outlined,
         label: t.settings_destination_lookup,
         page: 'lookup',
-      ),
-      _categoryTile(
-        icon: Icons.palette_outlined,
-        label: t.settings_destination_appearance,
-        page: 'appearance',
       ),
       if (widget.controller != null)
         _categoryTile(
@@ -522,11 +513,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 某分类的详情内容（不含返回页头）。窄窗 push 子页与宽窗右 pane 共用。
   Widget _subPageContent(String page) {
     switch (page) {
-      case 'appearance':
-        return _buildAppearanceDetail();
       case 'layout':
         // Lyrics mode keeps its bespoke font/margin controls — those are not
-        // schema items (they write lyrics-only `setLyrics*` setters).
+        // schema items (they write lyrics-only `setLyrics*` setters) — but still
+        // exposes the theme selector + book-CSS row via _buildLyricsDisplaySection
+        // so the theme/CSS stay reachable after the appearance group was dropped
+        // (TODO-802 reachability).
         return widget.lyricsMode
             ? _buildLyricsDisplaySection()
             : _buildLayoutDetail();
@@ -551,8 +543,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
   String _subPageTitle(String page) {
     switch (page) {
-      case 'appearance':
-        return t.settings_destination_appearance;
       case 'layout':
         return t.section_layout;
       case 'behavior':
@@ -636,27 +626,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     await widget.onThemeChanged?.call();
   }
 
-  /// 外观卡的行集合（主题选择器 + appearance schema 行）。内联（窄窗主页）与右
-  /// pane 详情（宽窗 master-detail）共用，避免重复。「编辑书籍 CSS」已按排版语义
-  /// 移到「布局与显示」组（见 [_buildLayoutDetail]），不再属于外观卡。
-  List<Widget> _appearanceCardChildren() {
-    final SettingsContext appearanceCtx = _settingsContext();
-    final SettingsDestination base = buildReaderGroupDestination(
-      appearanceCtx,
-      ReaderGroup.appearance,
-      t.settings_destination_appearance,
+  /// 主题选择器卡。TODO-802：「外观」组删除后，主题（阅读纸张配色，改的也是阅读
+  /// 显示）并入「布局与显示」子页顶部；普通布局子页与歌词模式子页共用此卡，保证
+  /// 删外观组后主题仍可达。主题行用专门的 [_themeSettingsContext]（换肤后还要
+  /// `_syncThemeSelection` 落 reader 设置 + 触发词典/歌词联动）。
+  Widget _buildThemeSelectorSection() {
+    return AdaptiveSettingsSection(
+      children: <Widget>[buildThemeSelector(_themeSettingsContext())],
     );
-    final SettingsRenderer renderer = isCupertinoPlatform(context)
-        ? const CupertinoSettingsRenderer()
-        : const MaterialSettingsRenderer();
-    return <Widget>[
-      buildThemeSelector(_themeSettingsContext()),
-      for (final SettingsSection section in base.sections)
-        ...renderer.buildSectionRows(
-          settingsContext: appearanceCtx,
-          section: section,
-        ),
-    ];
   }
 
   /// 「编辑书籍 CSS」入口行。归类语义对齐：CSS 改的是排版（字号/行高/边距等同
@@ -679,28 +656,24 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
-  /// 「布局与显示」子页详情：layout schema 行 + 可选「编辑书籍 CSS」行。窄窗
-  /// push 子页与宽窗右 pane 共用（经 [_subPageContent] 的 'layout' 分支）。
+  /// 「布局与显示」子页详情：主题选择器（TODO-802 并入）→ layout schema 行 →
+  /// 可选「编辑书籍 CSS」行。窄窗 push 子页与宽窗右 pane 共用（经
+  /// [_subPageContent] 的 'layout' 分支）。
   Widget _buildLayoutDetail() {
     final Widget layoutContent =
         _buildReaderGroupContent(ReaderGroup.layout, t.section_layout);
-    if (widget.extractDir == null) {
-      return layoutContent;
-    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        _buildThemeSelectorSection(),
         layoutContent,
-        AdaptiveSettingsSection(children: <Widget>[_buildBookCssEditorRow()]),
+        if (widget.extractDir != null)
+          AdaptiveSettingsSection(
+            children: <Widget>[_buildBookCssEditorRow()],
+          ),
       ],
     );
-  }
-
-  /// 宽窗 master-detail 右 pane 的外观详情：仅卡片，无 `display_settings`
-  /// 内联标题（标题已由左 pane 选中项体现）。
-  Widget _buildAppearanceDetail() {
-    return AdaptiveSettingsSection(children: _appearanceCardChildren());
   }
 
   Widget _buildLocationSection(ThemeData theme) {
@@ -1355,7 +1328,28 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
+  /// 歌词模式的「布局与显示」子页详情。TODO-802 可达性修复：删「外观」组后，歌词
+  /// 模式以前经外观组才够得到的主题选择器 + 编辑书籍 CSS 行，现随歌词布局子页一并
+  /// 露出（主题在最前，其次歌词字号/边距等专属控件，最后 extractDir 可用时的 CSS
+  /// 行），否则歌词模式将完全够不到主题/CSS。歌词字号/边距是歌词专属设置（写
+  /// 歌词-only `setLyrics*` setter），非 schema 项，故保持 bespoke。
   Widget _buildLyricsDisplaySection() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildThemeSelectorSection(),
+        _buildLyricsMarginSection(),
+        if (widget.extractDir != null)
+          AdaptiveSettingsSection(
+            children: <Widget>[_buildBookCssEditorRow()],
+          ),
+      ],
+    );
+  }
+
+  /// 歌词专属字号 / 文字色 / 四边距控件（歌词-only `setLyrics*` setter，非 schema）。
+  Widget _buildLyricsMarginSection() {
     return AdaptiveSettingsSection(
       children: [
         AdaptiveSettingsRow(
