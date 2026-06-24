@@ -2,77 +2,70 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-792 竖排「文字向下偏移越翻越大」根因修复守卫（确定性 pitch += bottomOverlap）。
+/// TODO-792 竖排「文字整体往下 / 逐列斜置 + 翻页累积漂移」根因修复守卫（容器高度对齐纯 V）。
 ///
-/// 根因（真机 [792-TURN]/[753-DIAG]/[792-RPITCH] 取证）：TODO-734 为防漏字把竖排 column-width
-/// 基准从 `--page-height`(V+O) 改成纯 V（reader_content_styles.dart verticalColumnWidthCss·793），
-/// 但多列容器 body 仍是 `height:var(--page-height)`(V+O)。column-fill 下单列拉伸填满容器内容盒
-/// (V+O)−padding，故浏览器真实渲染列周期 realPitch = ((V+O)−padding)+gap = 名义 pageStep + O
-/// （O=bottomOverlap）。真机 [792-RPITCH] raw 坐标实测列顶 68→905、周期 837 = 815+22 坐实。
-/// paginate 用 N×pageStep 绝对网格、pageStep < realPitch → 第 N 页文字下移 N×O 线性累积。
+/// 渲染模型（真机截图 + [792-RPITCH] raw 坐标）：vertical-rl + multicol 下，列沿物理水平轴
+/// 右→左堆成一「行列」，内容超一屏宽则沿 inline（竖直）轴溢出成下一行列往下堆，scrollTop 翻页
+/// 推进行列。根因：多列容器 body `height:var(--page-height)`(=V+O) 比列宽基准
+/// (verticalColumnWidthCss = 纯 V−margins−F−chrome ≈ 793) 大一个 bottomOverlap O →
+/// 浏览器把单列 used 高从 793 拉伸到 ((V+O)−padding)≈815、相邻列顶差 = realPitch 837 > 名义
+/// pageStep 815 → ① 页间 N×pageStep 网格累积漂移；② 页内 column-fill 在溢出列上逐列下移 = 整体
+/// 往下 / 斜的平行四边形。
 ///
-/// 修复（量纲分离·确定性）：列宽 CSS 不动（防漏字不回退），getScrollContext 竖排把翻页步进
-/// pageStep 加回 O（= this.pageHeight − this.viewportHeight，init/updatePageSize 成对赋值），
-/// 对齐浏览器真实列周期。横排不碰。O 未初始化为 0/NaN 时 isFinite/正数守卫回退名义 pageStep。
+/// 根因修复（一处治两症·量纲对齐）：多列容器 body 高度改用纯 V（--reader-viewport-height），
+/// 与 column-width 基准同量纲 → 列不再被拉伸、used 高回 793、realPitch 回 815 == 名义 pageStep。
+/// 故 getScrollContext **不再** pageStep+=O 补偿（容器对齐后 contentBox+gap 已等于真实列周期，
+/// 加 O 反过冲）。列宽 CSS 不动（防漏字不回退）；html 仍 V+O（滚动/图片虚高）；图片用独立
+/// --hoshi-image-max-height 跟 body content-box 走，容器改纯 V 不切图。
 ///
-/// （早期版本曾用 getClientRects 实测列周期，但竖排 ruby 振假名碎块把 left-跳变检测骗出噪声值
-/// 585，故改用确定性 O 算法——realPitch=pageStep+O 对 multicol column-fill 普适，不靠脆弱实测。）
+/// headless 测不出真实 multicol 渲染，故守源码结构：撤掉容器高度对齐 / 复活 pageStep+=O → 转红。
 void main() {
-  late String source;
+  late String css;
+  late String js;
 
   setUpAll(() {
-    source = File(
+    css = File(
+      'lib/src/reader/reader_content_styles.dart',
+    ).readAsStringSync();
+    js = File(
       'lib/src/reader/reader_pagination_scripts.dart',
     ).readAsStringSync();
   });
 
-  test('getScrollContext 竖排 pageStep 加回 bottomOverlap O（对齐真实列周期）', () {
-    // 仅竖排进入加 O 分支。
-    expect(source.contains('if (vertical) {'), isTrue,
-        reason: '必须有仅竖排分支（横排不碰）');
-    // O = pageHeight − viewportHeight（V+O 减纯 V）。
+  test('多列容器 body 高度用纯 V（--reader-viewport-height），不用 V+O 的 --page-height', () {
+    // 分页 body 块里必须显式把 body 高度对齐到纯视口高 V（覆盖 html,body 的 --page-height），
+    // 否则容器 inline 高 (V+O)−padding 比列宽基准大 O → 列拉伸 → 累积 + 斜置复活。
     expect(
-        source
-            .contains('var overlapO = this.pageHeight - this.viewportHeight;'),
-        isTrue,
-        reason: 'O 必须取运行时 pageHeight−viewportHeight（=bottomOverlap）');
-    // 守卫：仅当 O 有限且为正才加（未初始化 0/NaN → 回退名义 pageStep）。
+      css.contains('height: var(--reader-viewport-height, 100vh) !important;'),
+      isTrue,
+      reason: 'body(multicol 容器)高度必须用纯 V(--reader-viewport-height)，'
+          '与 column-width 基准同量纲，列才不被 V+O 容器拉伸（治累积 + 斜置）',
+    );
+  });
+
+  test('getScrollContext 竖排不再 pageStep+=O 补偿（容器对齐后名义 pageStep 已等于真实列周期）', () {
+    expect(js.contains('pageStep += overlapO'), isFalse,
+        reason: '容器高度对齐纯 V 后 realPitch 回 815 == 名义 pageStep，'
+            '不得再加 O（会过冲反向漂移）');
+    expect(js.contains('var overlapO = this.pageHeight - this.viewportHeight;'),
+        isFalse,
+        reason: 'overlapO 补偿逻辑必须已删（根因下沉到 CSS 容器高度）');
+    // pageStep 仍是名义 contentBox + gap（不动）。
+    expect(js.contains('var pageStep = contentBox + gap;'), isTrue,
+        reason: '名义 pageStep = contentBox + gap 保持不变');
+  });
+
+  test('列宽 CSS 仍用纯 V 基准（TODO-734 防漏字不回退）', () {
     expect(
-        source.contains(
-            'if (isFinite(overlapO) && overlapO > 0) pageStep += overlapO;'),
-        isTrue,
-        reason: 'isFinite + 正数守卫，未初始化时回退名义 pageStep（绝不变更）');
+      css.contains(
+          'max(\${fontSizePx}px, calc(var(--reader-viewport-height, 100vh)'),
+      isTrue,
+      reason: 'verticalColumnWidthCss 仍以纯 V 为基准，防漏字修复不回退',
+    );
   });
 
-  test('加 O 发生在名义 pageStep 之后、maxScroll 之前（同源）', () {
-    final int nominalIdx = source.indexOf('var pageStep = contentBox + gap;');
-    final int addOIdx =
-        source.indexOf('var overlapO = this.pageHeight - this.viewportHeight;');
-    final int maxScrollIdx =
-        source.indexOf('var maxScroll = Math.max(0, totalSize - pageStep);');
-    expect(nominalIdx, greaterThan(0));
-    expect(addOIdx, greaterThan(nominalIdx), reason: '加 O 必须在名义 pageStep 计算之后');
-    expect(maxScrollIdx, greaterThan(addOIdx),
-        reason: 'maxScroll 必须用加 O 后的 pageStep（pitch 与对齐量同源，防末页错位）');
-  });
-
-  test('横排 pageStep 不加 O（只动竖排）', () {
-    // 加 O 只在 `if (vertical)` 内；横排分支（columnWidth/clientWidth）不得出现 overlapO。
-    final int addOIdx = source.indexOf('var overlapO =');
-    final int ctxStart = source.indexOf('getScrollContext: function() {');
-    final int ctxEnd = source.indexOf('getPagePosition: function', ctxStart);
-    expect(addOIdx, greaterThan(ctxStart));
-    expect(addOIdx, lessThan(ctxEnd),
-        reason: 'overlapO 必须在 getScrollContext 内、仅竖排分支');
-    // overlapO 在 source 中只出现在这一处（声明1 + isFinite/>0/+= 三处使用 = 4），不污染横排。
-    expect('overlapO'.allMatches(source).length, 4,
-        reason: 'overlapO 仅 getScrollContext 竖排分支用（声明1 + if 内 3 次），不外泄横排');
-  });
-
-  test('实测列周期机制已移除（不再依赖 _measureColumnPitch/_realColumnPitch）', () {
-    expect(source.contains('_measureColumnPitch'), isFalse,
-        reason: '脆弱的 getClientRects 实测已被确定性 O 算法取代，须删净');
-    expect(source.contains('_realColumnPitch'), isFalse,
-        reason: '实测缓存字段须删净（确定性算法不缓存）');
+  test('图片高度用独立 --hoshi-image-max-height（与 body 容器高度解耦，改容器不切图）', () {
+    expect(css.contains('var(--hoshi-image-max-height'), isTrue,
+        reason: '图片 max-height 走独立变量，跟 body content-box，容器改纯 V 不切图');
   });
 }

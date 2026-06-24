@@ -500,6 +500,15 @@ body {
   overflow-wrap: anywhere !important;
   $textSpacingCss
   box-sizing: border-box !important;
+  /* TODO-792 根因修复：多列容器(body)高度必须用纯视口高 V(--reader-viewport-height)，不是
+     含 +bottomOverlap 的 --page-height(V+O)。html 仍 V+O(滚动/图片虚高用)，但 body 作为
+     multicol 容器若是 V+O，其 content-box inline 高 = (V+O)−padding 比 column-width 基准
+     (纯 V−padding−F = verticalColumnWidthCss) 大一个 O → 浏览器把单列 used 高从 793 拉伸到
+     815、相邻列顶差 = 真实列周期 837 > 名义 pageStep 815 → ① 页间翻页累积漂移 ② 页内 column-fill
+     在溢出列上沿 inline(竖直)轴逐列下移 = 整体往下/斜的平行四边形。容器高对齐纯 V 后列不再拉伸、
+     used 高回 793、realPitch 回 815 = 名义 pageStep，两症同消(故同时 revert getScrollContext 的
+     pageStep+=O)。图片用独立 --hoshi-image-max-height(跟 body content-box 走)不受影响、不切图。 */
+  height: var(--reader-viewport-height, 100vh) !important;
   column-width: $columnWidthCss !important;
   column-gap: $columnGapCss !important;
   padding: $paddingCss !important;

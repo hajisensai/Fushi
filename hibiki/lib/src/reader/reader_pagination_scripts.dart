@@ -1460,20 +1460,11 @@ $_sharedJs
     contentBox = Math.max(fontFloor, contentBox);
     var gap = parseFloat(cs.columnGap) || 0;
     var pageStep = contentBox + gap;
-    // TODO-792（竖排「文字向下偏移越翻越大」根因修复）：名义 pageStep = contentBox + gap 用纯 V
-    // 列宽算（TODO-734 为防漏字把列宽基准从 page-height(V+O) 改成纯 V）。但**多列容器 body 仍是
-    // `height:var(--page-height)`(V+O)**，单列在 column-fill 下拉伸填满容器内容盒 (V+O)−padding，
-    // 故浏览器真实渲染列周期 realPitch = ((V+O)−padding)+gap = 名义 pageStep + O（O=bottomOverlap）。
-    // 真机 [792-RPITCH] 实测列顶 68→905 周期 837 = 815+22 坐实（raw 坐标·ruby 振假名碎块除外）。
-    // paginate 用 N×pageStep 绝对网格，pageStep<realPitch → 第 N 页文字下移 N×O 线性累积。
-    // 修复=竖排翻页步进加回 O（=pageHeight−viewportHeight），对齐浏览器真实列周期；列宽 CSS 不动
-    // （防漏字不回退·pitch 与列宽量纲分离，正是 TODO-734 备忘推荐的方案 B）。横排不碰。O 取运行时
-    // this.pageHeight−this.viewportHeight（init/updatePageSize 成对赋值）；未初始化为 0/NaN →
-    // isFinite/正数守卫回退名义 pageStep（绝不变更）。
-    if (vertical) {
-      var overlapO = this.pageHeight - this.viewportHeight;
-      if (isFinite(overlapO) && overlapO > 0) pageStep += overlapO;
-    }
+    // TODO-792（竖排「文字向下偏移」根因修复·已下沉到 CSS）：曾一度在这里给竖排 pageStep += O
+    // 补偿「列被 V+O 容器拉伸」造成的 realPitch>pageStep，但那只治页间累积、治不了页内逐列斜置
+    // （斜置同源于列拉伸）。根因修法是让多列容器 body 高 == 纯 V（reader_content_styles.dart 的
+    // `body{height:var(--reader-viewport-height)}`）→ 列不再拉伸、used 列高回 793、realPitch 回
+    // 815 == 名义 pageStep。故这里**不再补偿**：contentBox+gap 已等于真实列周期，加 O 反会过冲。
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - pageStep);
     return { vertical: vertical, scrollEl: scrollEl, pageSize: pageStep, maxScroll: maxScroll };
