@@ -145,6 +145,13 @@ class EpubBook {
     return -1;
   }
 
+  /// TODO-807：章节 [index] 是否为 EPUB 导航/目录文档（见 [EpubChapter.isNav]）。
+  /// 越界返回 false。有声书被动跨章跟随据此跳过目录页。
+  bool isChapterNav(int index) {
+    if (index < 0 || index >= chapters.length) return false;
+    return chapters[index].isNav;
+  }
+
   /// Percent-decodes a href path, degrading to the raw value on malformed
   /// escapes (a TOC `src` is untrusted input — a stray `%` must not abort the
   /// whole jump). Mirrors the percent-decoding [EpubParser] applies at parse
@@ -182,6 +189,7 @@ class EpubChapter {
     this.spineIndex,
     this.linear = true,
     this.spreadProperty,
+    this.isNav = false,
   })  : _eagerHtml = html,
         _filePath = null;
 
@@ -200,6 +208,7 @@ class EpubChapter {
     this.spineIndex,
     this.linear = true,
     this.spreadProperty,
+    this.isNav = false,
   })  : _eagerHtml = null,
         _filePath = filePath;
 
@@ -211,6 +220,15 @@ class EpubChapter {
 
   /// `page-spread-left`, `page-spread-right`, or `null`.
   final String? spreadProperty;
+
+  /// TODO-807：该 spine 项是 EPUB 导航/目录文档（`properties="nav"` /
+  /// `epub:type="toc"`）或封面页——日文 EPUB 常把目录页作为 spine 首个 linear
+  /// 项，于是 `chapters[0]` 就是目录页。有声书被动跨章跟随时不能把这种页当作
+  /// 导航目标（会跳到目录），但它已被序列化进 DB chaptersJson（按 index 寻
+  /// 址），物理删除会移位既有书的存储 index，故保留该项、只打标记，导航逻辑
+  /// 跳过它。默认 false（DB 回退路径 / 旧测试构造的章节天然为正文，保持原
+  /// 行为）。
+  final bool isNav;
 
   final String? _eagerHtml;
   final String? _filePath;

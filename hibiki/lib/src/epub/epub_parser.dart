@@ -386,6 +386,19 @@ class EpubParser {
         }
       }
 
+      // TODO-807: mark the EPUB navigation/TOC document so audiobook passive
+      // cross-chapter follow never treats it as a jump target. EPUB 3 tags the
+      // nav doc with `properties="nav"` on its manifest item — the same marker
+      // [_parseToc] keys on. Japanese EPUBs commonly place this nav page as the
+      // first linear spine item, so chapters[0] is the TOC; a cross-chapter
+      // navigation that landed there showed the user the table of contents
+      // instead of the next chapter. We keep the chapter in the list (its index
+      // is serialized into chaptersJson and physically removing it would shift
+      // every stored index of existing books) and only flag it; the navigation
+      // logic skips flagged pages.
+      final bool isNavDoc =
+          item.properties != null && item.properties!.contains('nav');
+
       // TODO-296: defer the chapter XHTML read. _parseSpine still verifies the
       // file exists above, but the bytes are read + decoded lazily on first
       // [EpubChapter.html] access — open-book no longer slurps the whole book.
@@ -397,6 +410,7 @@ class EpubParser {
         spineIndex: index,
         linear: linear != 'no',
         spreadProperty: spreadProperty,
+        isNav: isNavDoc,
       ));
     }
     return chapters;

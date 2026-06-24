@@ -30,6 +30,29 @@ double? audiobookSasayakiCrossChapterProgress({
   return (normCharStart / chapterChars).clamp(0.0, 1.0);
 }
 
+/// TODO-807　SRT 被动跨章导航目标决策（纯函数）。
+///
+/// `_srtCueChapterMap` 的 value 是 [CuesToEpub.splitChapters] 的人工切章序号，
+/// 与 EPUB `_book!.chapters` 的真实 spine index **零映射**。把序号直接当 index
+/// 导航会滑到错误章——常是目录/nav 页（日文 EPUB spine 首项常是目录）。本函数
+/// 收口决策：
+///   * [resolvedChapter] < 0（按 chapterHref / 正文都反查不到真实章）→ 返回 -1
+///     「保位不跳」，**绝不**回退到 index 0。
+///   * 反查到的章是目录/nav 页（[resolvedIsNav]）→ 返回 -1 保位。
+///   * 与当前章相同 → 返回 -1（无需导航）。
+///   * 否则返回 [resolvedChapter] 作为真实导航目标。
+@visibleForTesting
+int audiobookSrtCrossChapterTarget({
+  required int resolvedChapter,
+  required int currentChapter,
+  required bool resolvedIsNav,
+}) {
+  if (resolvedChapter < 0) return -1;
+  if (resolvedIsNav) return -1;
+  if (resolvedChapter == currentChapter) return -1;
+  return resolvedChapter;
+}
+
 /// audiobook domain helpers (profile resolution / audio-slot + session
 /// attach / cue priming + SRT chapter map / position restore-from-cue /
 /// volume-key sentence nav / cue-change sync + cross-chapter + boundary
@@ -422,6 +445,19 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     return -1;
   }
 
+  /// TODO-807：把一条 SRT cue 反查回 `_book!.chapters` 的**真实** index。
+  ///
+  /// `_srtCueChapterMap` 的 value 是 [CuesToEpub.splitChapters] 的人工切章
+  /// 序号，与 EPUB spine 无映射；直接当 chapters index 用会滑到错误章（常是
+  /// 目录/nav 页）。这里先按 cue 的 `chapterHref` 精确匹配章节 href，匹配不到
+  /// 再按 cue 正文文本在各章正文里查（短文本不可靠则放弃）。两者皆失败返回
+  /// -1，调用方据此**保位不跳**，绝不回退到 index 0。
+  int _resolveSrtCueChapter(AudioCue cue) {
+    final int byHref = _chapterIndexForCue(cue);
+    if (byHref >= 0) return byHref;
+    return _chapterIndexForText(cue.text);
+  }
+
   void _onCueChanged() {
     if (!mounted || _controller == null) return;
     final AudiobookPlayerController? controller = _audiobookController;
@@ -456,7 +492,20 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       }
       if (frag == null && _srtCueChapterMap != null) {
         final int? cueChapter = _srtCueChapterMap![cue.sentenceIndex];
-        if (cueChapter != null && cueChapter != _currentChapter) {
+        // TODO-807 根因：_srtCueChapterMap 的 value 是 CuesToEpub.splitChapters
+        // 的「人工切章序号」（≤500cue/≤10min 切），与 _book!.chapters 的真实
+        // spine index 零映射。以前把 cueChapter 直接当 chapters index 喂给
+        // _navigateToChapter → 跨章时滑到 chapters[cueChapter]，常命中目录/nav
+        // 页（日文 EPUB spine 首项常是目录）。必须先把 cue 反查回真实章节
+        // index（按 chapterHref，失败再按正文文本）；反查失败一律保位只高亮、
+        // 绝不导航、绝不回退到 index 0。
+        final int realChapter = _resolveSrtCueChapter(cue);
+        final int navTarget = audiobookSrtCrossChapterTarget(
+          resolvedChapter: realChapter,
+          currentChapter: _currentChapter,
+          resolvedIsNav: _book?.isChapterNav(realChapter) ?? false,
+        );
+        if (cueChapter != null && navTarget >= 0) {
           if (controller.shouldRevealCurrentCue && !_restoreInFlight) {
             // TODO-746: land on the cue's real in-chapter position instead of
             // the default progress=0.0 → restoreProgress(0) → scrollToChapterStart
@@ -476,12 +525,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
                 last: last,
               );
             }
-            _navigateToChapter(cueChapter, progress: progress ?? 0.0);
+            // 导航的是反查到的真实章节 index（navTarget），不是 splitChapters
+            // 序号；navTarget 已剔除「反查不到 / 目录页 / 同章」三种保位情况。
+            _navigateToChapter(navTarget, progress: progress ?? 0.0);
           } else {
             AudiobookBridge.highlight(_controller!);
           }
           return;
         }
+        // splitChapters 分桶变了但反查不到真实章（chapterHref 不匹配、文本
+        // 太短、或该 cue 属于一个不作为导航目标的页）→ 不跨章，落到下方统一
+        // highlight 收尾（保位只高亮、不归零）。
       }
     }
     final bool forceReveal = controller.consumeForceReveal();
@@ -508,6 +562,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         _book == null ||
         newSection < 0 ||
         newSection >= _book!.chapters.length) {
+      _audiobookController?.cancelChapterTransition();
+      return;
+    }
+    // TODO-807（路径 B 守卫）：sasayaki 跨章用 frag.sectionIndex 当真实章 index，
+    // 但若该 index 指向 EPUB 目录/nav 页（spine 含目录页时），导航过去就把用户
+    // 甩到目录。命中 nav 页则保位不跳（取消跳章守卫、保留当前章），与「反查不到
+    // 不跳」语义一致，绝不归零到 index 0。
+    if (_book!.isChapterNav(newSection)) {
       _audiobookController?.cancelChapterTransition();
       return;
     }

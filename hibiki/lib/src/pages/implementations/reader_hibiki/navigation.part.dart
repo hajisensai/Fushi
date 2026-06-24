@@ -278,6 +278,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     if (_controller == null) {
       return;
     }
+    // TODO-807（纵深防御）：被动（有声书跟随）导航绝不落到 EPUB 目录/nav 页——
+    // 否则跨章会把用户甩到目录。manual=true 是用户显式跳章（TOC 点击 / 翻章
+    // 按钮），保留其自由不拦。被动命中 nav 页直接保位（不加载、不归零）。
+    if (!manual && _book!.isChapterNav(index)) {
+      return;
+    }
 
     if (manual) {
       _audiobookController?.noteManualReaderNavigation();
