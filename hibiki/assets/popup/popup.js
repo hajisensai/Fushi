@@ -2141,7 +2141,35 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
     return details;
 }
 
+// TODO-833: predicate shared by every entry-render path (renderPopup first /
+// rest entries + updatePopupIncremental). A term entry only earns a card when
+// it has at least one *visible* glossary section, i.e. createGlossarySectionWrapper
+// returns non-null. The wrapper is the single point that applies the BUG-419
+// hidden-dictionary filter, so "glossaryWrapper === null" means every dictionary
+// for this entry was hidden (or the entry carried no glossary at all). In that
+// case header + frequency/pitch badges would render alone as an empty shell card
+// (BUG-419 only stripped the body, never the shell). The frequency badge is
+// redundant — the same expression's real card already carries it — so skipping
+// the whole entry loses no information. Kanji cards go through buildKanjiCards()
+// (a separate path) and never reach buildEntryElement, so this never affects them.
+//
+// Returns the prebuilt glossary wrapper (object) when the entry is renderable, or
+// null when it must be skipped. buildEntryElement reuses the same wrapper so the
+// hidden filter runs exactly once per entry.
+function entryGlossaryWrapperOrNull(entry) {
+    return createGlossarySectionWrapper(entry);
+}
+
 function buildEntryElement(entry, idx) {
+    // TODO-833: decide first whether this entry has any visible glossary. If the
+    // hidden-dictionary filter (BUG-419) removed every dictionary, this term entry
+    // would otherwise render as a header-only shell with a redundant frequency
+    // badge ("标题+频率徽章但正文空白"). Skip the whole card by returning null.
+    const glossaryWrapper = entryGlossaryWrapperOrNull(entry);
+    if (!glossaryWrapper) {
+        return null;
+    }
+
     const entryDiv = el('div', { className: 'entry' });
     entryDiv.appendChild(createEntryHeader(entry, idx));
 
@@ -2170,13 +2198,10 @@ function buildEntryElement(entry, idx) {
         entryDiv.appendChild(pitchSection);
     }
 
-    const glossaryWrapper = createGlossarySectionWrapper(entry);
-    if (glossaryWrapper) {
-        const { details, body, grouped, dictNames } = glossaryWrapper;
-        entryDiv.appendChild(details);
-        for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
-            body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
-        }
+    const { details, body, grouped, dictNames } = glossaryWrapper;
+    entryDiv.appendChild(details);
+    for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
+        body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
     }
 
     return entryDiv;
@@ -2362,6 +2387,17 @@ window.renderPopup = function() {
 
     const gen = ++window._renderGeneration;
 
+    // TODO-833: entries that the hidden-dictionary filter leaves with no visible
+    // glossary are skipped (buildEntryElement returns null), so the rendered DOM
+    // `.entry` nodes are no longer 1:1 with `entries`. _entryDomIndex maps each
+    // entries index to its `.entry` DOM index (or -1 when skipped). _renderedGlossaryCounts
+    // stays length=entries.length (the per-entry glossary count we last rendered).
+    // updatePopupIncremental relies on this map to locate an entry's node — a bare
+    // existingEntries[idx] would otherwise pour entry A's definitions into entry B's
+    // card once any earlier entry was skipped.
+    let renderedDomCount = 0;
+    const entryDomIndex = new Array(entries.length).fill(-1);
+
     // Kanji-only result (no term entries): render just the kanji card(s).
     if (!entries || !entries.length) {
         container.innerHTML = '';
@@ -2382,19 +2418,24 @@ window.renderPopup = function() {
             container.appendChild(kanjiSection);
         }
         const firstEntry = buildEntryElement(entries[0], 0);
-        container.appendChild(firstEntry);
-        postProcessRuby(firstEntry);
+        if (firstEntry) {
+            container.appendChild(firstEntry);
+            postProcessRuby(firstEntry);
+            entryDomIndex[0] = renderedDomCount++;
+        }
         applyCustomCSS();
     } catch (e) {
         // 渲染抛错也发信号让 Dart 翻可见（哪怕内容不全），杜绝永久挂起。
         console.error('[popup] renderPopup first-entry render failed', e);
         window._renderedGlossaryCounts = [];
+        window._entryDomIndex = [];
         _firePopupRendered();
         return;
     }
 
     if (entries.length === 1) {
         window._renderedGlossaryCounts = [entries[0].glossaries.length];
+        window._entryDomIndex = entryDomIndex;
         console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=1');
         _firePopupRendered();
         return;
@@ -2407,12 +2448,21 @@ window.renderPopup = function() {
             for (let idx = 1; idx < entries.length; idx++) {
                 const entry = entries[idx];
                 if (!entry) continue;
-                fragment.appendChild(document.createElement('hr'));
-                fragment.appendChild(buildEntryElement(entry, idx));
+                const element = buildEntryElement(entry, idx);
+                if (!element) continue;
+                // TODO-833: only insert a separator hr when there is already a
+                // rendered card before this one (kanji card or an earlier entry),
+                // never a leading hr nor an hr between two skipped entries.
+                if (renderedDomCount > 0 || kanjiSection) {
+                    fragment.appendChild(document.createElement('hr'));
+                }
+                fragment.appendChild(element);
+                entryDomIndex[idx] = renderedDomCount++;
             }
             container.appendChild(fragment);
             postProcessRuby(container);
             window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
+            window._entryDomIndex = entryDomIndex;
             console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
         } catch (e) {
             console.error('[popup] renderPopup rest-entries render failed', e);
@@ -2428,48 +2478,96 @@ window.updatePopupIncremental = function() {
 
     const entries = window.lookupEntries;
     const prevCounts = window._renderedGlossaryCounts || [];
+    // TODO-833: existing `.entry` DOM nodes are NOT 1:1 with `entries` — skipped
+    // (empty after hidden-dictionary filter) entries have no node. _entryDomIndex
+    // maps each entries index to its `.entry` DOM index (-1 = no node). Index the
+    // live NodeList through this map, never by raw entries idx, or A's definitions
+    // land in B's card. Fall back to a full renderPopup() if the map is absent
+    // (e.g. a render path that predates it) or its length disagrees with prevCounts.
+    const domIndex = window._entryDomIndex;
     const existingEntries = container.querySelectorAll(':scope > .entry');
+    const mapUsable = Array.isArray(domIndex) && domIndex.length === prevCounts.length;
 
     for (let idx = 0; idx < entries.length; idx++) {
         const entry = entries[idx];
         const newCount = entry.glossaries.length;
 
         if (idx < prevCounts.length) {
-            if (newCount !== prevCounts[idx]) {
-                const entryDiv = existingEntries[idx];
-                const body = entryDiv.querySelector('.glossary-section .category-body');
-                if (body) {
-                    const existingDicts = new Set();
-                    body.querySelectorAll(':scope > .glossary-group > [data-dictionary]').forEach(
-                        node => existingDicts.add(node.getAttribute('data-dictionary')));
-                    const grouped = {};
-                    entry.glossaries.forEach(g => {
-                        (grouped[g.dictionary] ??= []).push({
-                            content: g.content,
-                            definitionTags: g.definitionTags,
-                            termTags: g.termTags,
-                        });
+            if (newCount === prevCounts[idx]) {
+                continue;
+            }
+            // TODO-833: the entry's visible-glossary status may flip when the load
+            // attaches a glossary from a non-hidden dictionary to a previously empty
+            // (skipped) entry, or removes the last visible one. The incremental
+            // in-place update can only patch an existing card; a skipped→visible (or
+            // the reverse) transition changes the card count and ordering, so rebuild
+            // the whole popup — correct over clever, and rare.
+            const nowRenderable = entryGlossaryWrapperOrNull(entry) !== null;
+            const domIdx = mapUsable ? domIndex[idx] : idx;
+            const hadCard = mapUsable ? domIdx >= 0 : true;
+            if (!mapUsable || nowRenderable !== hadCard) {
+                window.renderPopup();
+                return;
+            }
+            if (!nowRenderable) {
+                continue;
+            }
+            const entryDiv = existingEntries[domIdx];
+            if (!entryDiv) {
+                window.renderPopup();
+                return;
+            }
+            const body = entryDiv.querySelector('.glossary-section .category-body');
+            if (body) {
+                const existingDicts = new Set();
+                body.querySelectorAll(':scope > .glossary-group > [data-dictionary]').forEach(
+                    node => existingDicts.add(node.getAttribute('data-dictionary')));
+                const grouped = {};
+                const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
+                entry.glossaries.forEach(g => {
+                    if (hiddenDictionaryNames.includes(g.dictionary)) return;
+                    (grouped[g.dictionary] ??= []).push({
+                        content: g.content,
+                        definitionTags: g.definitionTags,
+                        termTags: g.termTags,
                     });
-                    for (const dictName of Object.keys(grouped)) {
-                        if (!existingDicts.has(dictName)) {
-                            const section = createGlossarySection(dictName, grouped[dictName], false, idx);
-                            body.appendChild(section);
-                            postProcessRuby(section);
-                        }
+                });
+                for (const dictName of Object.keys(grouped)) {
+                    if (!existingDicts.has(dictName)) {
+                        const section = createGlossarySection(dictName, grouped[dictName], false, idx);
+                        body.appendChild(section);
+                        postProcessRuby(section);
                     }
                 }
             }
         } else {
+            // TODO-833: newly appended entry — skip it entirely (no card, no hr) when
+            // the hidden-dictionary filter leaves it with no visible glossary.
+            const newElement = buildEntryElement(entry, idx);
+            if (!newElement) {
+                continue;
+            }
             if (container.children.length > 0) {
                 container.appendChild(document.createElement('hr'));
             }
-            const newElement = buildEntryElement(entry, idx);
             container.appendChild(newElement);
             postProcessRuby(newElement);
         }
     }
 
+    // TODO-833: rebuild the dom-index map so a subsequent incremental call still
+    // locates nodes correctly (tail entries may have been skipped above).
+    const rebuiltDomIndex = new Array(entries.length).fill(-1);
+    const finalEntries = container.querySelectorAll(':scope > .entry');
+    let domCursor = 0;
+    for (let idx = 0; idx < entries.length; idx++) {
+        if (entryGlossaryWrapperOrNull(entries[idx]) !== null) {
+            rebuiltDomIndex[idx] = domCursor < finalEntries.length ? domCursor : -1;
+            domCursor++;
+        }
+    }
     window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
+    window._entryDomIndex = rebuiltDomIndex;
     applyCustomCSS();
 
     window.flutter_inappwebview.callHandler('popupRendered',
