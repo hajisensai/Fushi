@@ -52,4 +52,20 @@ void main() {
     );
     expect(windowsIcon.hasMatch(pubspec), isTrue);
   });
+
+  test('Android 12+ 系统 splash 图标用文字 wordmark 前景', () {
+    for (final String rel in <String>[
+      'android/app/src/main/res/values-v31/styles.xml',
+      'android/app/src/main/res/values-night-v31/styles.xml',
+    ]) {
+      final String styles = read(rel);
+      expect(
+        styles.contains('android:windowSplashScreenAnimatedIcon') &&
+            styles.contains('@drawable/ic_launcher_minimal_foreground'),
+        isTrue,
+        reason: '$rel 的 Android 12+ splash 应显示文字 wordmark 前景'
+            '（与默认启动器图标一致）',
+      );
+    }
+  });
 }
