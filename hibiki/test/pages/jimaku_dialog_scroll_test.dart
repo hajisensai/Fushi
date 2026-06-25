@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:hibiki/utils.dart';
 
 /// 矮屏（手机横屏 / 软键盘弹起时的可视高度）下验证 Jimaku 自动获取字幕对话框候选列表区。
 ///
@@ -37,8 +37,12 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    // 唯一 key：同一 tester 内连续多次 pumpDialog（如「随高度增长」用例）时强制整棵
+    // 树重建、丢弃上一次残留的 dialog route，避免旧 modal barrier 挡住下一次「open」点击
+    // 导致新对话框打不开（HibikiDialogFrame 依赖 MediaQuery，复用树时第二次更易残留）。
     await tester.pumpWidget(
       MaterialApp(
+        key: UniqueKey(),
         home: Scaffold(
           body: Builder(builder: (BuildContext ctx) {
             return ElevatedButton(
@@ -245,5 +249,45 @@ void main() {
     expect(find.textContaining('第02話'), findsOneWidget,
         reason: '第二集的集数(第02話)也应完整可见');
     expect(tester.takeException(), isNull);
+  });
+
+  /// 实际可视对话框宽度：取 HibikiDialogFrame 内层 [ConstrainedBox]（受 maxWidth 约束、
+  /// 被 [Dialog] 居中、宽度贴合内容）。HibikiDialogFrame 本身的 RenderBox 是充满屏幕的
+  /// Dialog 根盒，量不到真实对话框宽，故下钻到受约束的内容盒。
+  double measuredDialogWidth(WidgetTester tester) {
+    final Finder box = find.descendant(
+      of: find.byType(HibikiDialogFrame),
+      matching: find.byType(ConstrainedBox),
+    );
+    return tester.getSize(box.first).width;
+  }
+
+  // TODO-835：旧外壳写死 maxWidth:380，大屏永远窄。改用 HibikiDialogFrame(maxWidth:720)
+  // 后大屏对话框实际宽应 >380，同时仍由 720 封顶。
+  testWidgets('TODO-835: wide screen dialog is wider than old 380 cap',
+      (WidgetTester tester) async {
+    await pumpDialog(tester, screen: const Size(1280, 800));
+    // 候选列表宽度 = 对话框内容宽 - 左右各 24 padding（约 720-48=672），必 >380-48。
+    final double listWidth =
+        tester.getSize(find.byType(JimakuCandidateList)).width;
+    expect(listWidth, greaterThan(380.0 - 48.0),
+        reason: '大屏候选列表内容宽应比旧 380 上限内容宽更宽（HibikiDialogFrame maxWidth:720）');
+    final double dialogWidth = measuredDialogWidth(tester);
+    expect(dialogWidth, greaterThan(380.0), reason: '大屏对话框实际宽应 >380（旧写死上限）');
+    expect(dialogWidth, lessThanOrEqualTo(720.0),
+        reason: '对话框宽应由 maxWidth:720 封顶');
+    expect(tester.takeException(), isNull);
+  });
+
+  // TODO-835：窄窗（小手机）下 insetPadding 保留 horizontal:16，对话框宽 = 屏宽-32，
+  // 不被 frame 默认 horizontal:40 挤窄，且不溢出。
+  testWidgets(
+      'TODO-835: narrow screen dialog fits within screen width minus 32',
+      (WidgetTester tester) async {
+    await pumpDialog(tester, screen: const Size(360, 640));
+    final double dialogWidth = measuredDialogWidth(tester);
+    expect(dialogWidth, lessThanOrEqualTo(360.0 - 32.0 + 0.5),
+        reason: '窄窗对话框宽应 <=屏宽-32（insetPadding horizontal:16 左右共 32）');
+    expect(tester.takeException(), isNull, reason: '窄窗不应溢出');
   });
 }
