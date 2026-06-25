@@ -1317,6 +1317,12 @@ class HibikiDatabase extends _$HibikiDatabase {
       (select(favoriteWords)..where((t) => t.sourceType.equals(sourceType)))
           .get();
 
+  /// 取全部收藏词，按 createdAt 倒序（最近在前），供收藏夹导出（TODO-829）。
+  /// 纯 select，不动 schema。
+  Future<List<FavoriteWordRow>> getAllFavoriteWords() =>
+      (select(favoriteWords)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .get();
+
   // ── mining statistics ───────────────────────────────────────────
   /// 制卡成功计数 +[delta]：累加到 (sourceType, dateKey) 现有计数。
   Future<void> addMiningCount({
