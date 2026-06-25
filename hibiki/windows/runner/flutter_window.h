@@ -53,6 +53,15 @@ class FlutterWindow : public Win32Window {
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);
+
+  // Loads an image file via WIC, builds big/small HICONs and applies them to
+  // the top-level window (WM_SETICON). Returns true if at least one icon was
+  // applied. The previous HICONs are destroyed on replacement and in OnDestroy.
+  bool ApplyWindowIcon(const std::wstring& path);
+
+  // Owned window icons set via ApplyWindowIcon. nullptr until first applied.
+  HICON icon_big_ = nullptr;
+  HICON icon_small_ = nullptr;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
