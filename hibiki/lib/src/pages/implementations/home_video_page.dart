@@ -34,6 +34,7 @@ import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
+import 'package:hibiki/src/sync/interconnect_download_manager.dart';
 import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -73,11 +74,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
   RemoteVideoClient? _remoteVideoClient;
-
-  /// 正在下载中的远端视频（key = [RemoteVideoInfo.id]）。值为进度分数 0..1；
-  /// 收到首个 onProgress 前为 null（不确定进度）。下载期间用它在卡片上替换下载
-  /// 按钮为进度指示（#3：远端下载全程有进行中反馈，不再 await 完才弹一次提示）。
-  final Map<String, double?> _downloadingVideos = <String, double?>{};
 
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
   /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
@@ -575,27 +571,32 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       );
       return;
     }
-    // 同一视频已在下载中：忽略重复点击。
-    if (_downloadingVideos.containsKey(video.id)) return;
-    // #3: 标记下载中（先置不确定进度），卡片立刻显示进行中反馈。
-    setState(() => _downloadingVideos[video.id] = null);
+    // 根因修复（TODO-819）：下载任务委托给 app 级 InterconnectDownloadManager 而非
+    // 本页 State —— 故切 tab / 退页 / 本页 dispose 时下载仍在管理器里推进到底，重进
+    // 页面只 ref.watch 订阅渲染进度。底层 client.downloadRemoteVideo 已走可续传引擎
+    // （Range + .part），中断留 part 下次可续。manager 自身去重（同 id 在跑则忽略）。
+    final InterconnectDownloadManager manager =
+        ref.read(interconnectDownloadManagerProvider);
+    if (manager.isRunning(video.id)) return;
+
+    final File dest = await _remoteDownloadDestination(video);
     try {
-      final File dest = await _remoteDownloadDestination(video);
-      await client.downloadRemoteVideo(
-        video.id,
-        dest,
-        onProgress: (double progress) {
-          if (!mounted) return;
-          setState(() => _downloadingVideos[video.id] = progress);
-        },
+      await manager.startVideoDownload(
+        id: video.id,
+        title: video.title,
+        dest: dest,
+        run: (File target, {void Function(double progress)? onProgress}) =>
+            client.downloadRemoteVideo(
+          video.id,
+          target,
+          onProgress: onProgress,
+        ),
+        // 建行/下字幕/抽封面收尾（TODO-820）：与下载同一失败边界，任一失败计入任务
+        // 失败。bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：
+        // upsert 同行不撞键），故下载好的视频立即出现在列表、并从「配对设备」区隐藏。
+        onComplete: (File downloaded) =>
+            _registerDownloadedVideo(client, video, downloaded),
       );
-      // 根因修复（TODO-820）：下载只写了磁盘文件，从不建 VideoBooks 行——而视频列表
-      // 唯一数据源是 VideoBooks 行（widget.repo.listAll），导致「下载好的视频在列表
-      // 里根本看不到」。这里复用本地导入同款 saveVideoBook 原语补上建行（bookUid 直接
-      // 用稳定的远端 video.id，与 dedupeRemoteVideos 的去重键一致：重复下载 upsert 同
-      // 行不撞键、不重复），并连带下字幕/抽封面。建行与下载同属一个失败边界，任一失败
-      // 都走下方 catch 给明确提示，不静默丢半成品。
-      await _registerDownloadedVideo(client, video, dest);
     } catch (e) {
       debugPrint('[home-video] remote video download failed: $e');
       if (!mounted) return;
@@ -603,12 +604,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         SnackBar(content: Text(t.remote_video_download_failed)),
       );
       return;
-    } finally {
-      if (mounted) {
-        setState(() => _downloadingVideos.remove(video.id));
-      } else {
-        _downloadingVideos.remove(video.id);
-      }
     }
     if (!mounted) return;
     // 刷新列表让新建的 VideoBooks 行立即出现（并把已下载视频从「配对设备」区去重隐藏）。
@@ -1130,11 +1125,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: _downloadingVideos.containsKey(video.id)
+                  child: ref
+                          .watch(interconnectDownloadManagerProvider)
+                          .isRunning(video.id)
                       ? RemoteDownloadProgressBadge(
                           key: ValueKey<String>(
                               'remote_video_downloading_$safeKey'),
-                          progress: _downloadingVideos[video.id],
+                          progress: ref
+                              .watch(interconnectDownloadManagerProvider)
+                              .progressFor(video.id),
                           tooltip: t.remote_video_downloading,
                         )
                       : IconButton.filledTonal(

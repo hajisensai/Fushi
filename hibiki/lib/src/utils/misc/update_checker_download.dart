@@ -453,6 +453,14 @@ Future<File> _downloadCandidate({
   );
 }
 
+/// 单连接续传下载一个候选 url（TODO-819 已下沉到通用 [ResumableDownloader]）。
+///
+/// 本函数只保留 update_checker 专属的外层包装：① 流前把校验器写进 staging metadata
+/// （供跨候选 [_promotePartIfComplete] 复用）② 把引擎的 received/total/resume/restart
+/// 信号重建成 [UpdateDownloadDiagnostics]（多镜像 UI 需要 host/速度/续传徽标）③ 引擎
+/// 把完成文件落到 staging.file 后，沿用现有 [_promoteCompleteDownload] 做 staging→final
+/// 两段原子 rename + owner/metadata 清理。Range/.part/416/200/size+sha 校验全部由引擎
+/// 负责，行为与下沉前逐条一致（由 update_checker_download_resume_test 守卫）。
 Future<File> _downloadCandidateSingle({
   required UpdateAsset asset,
   required String version,
@@ -466,7 +474,6 @@ Future<File> _downloadCandidateSingle({
   UpdateDownloadDiagnosticsCallback? onDiagnostics,
   bool restarted = false,
 }) async {
-  final Uri uri = Uri.parse(url);
   final String sourceHost = hostLabelForUpdateUrl(url);
   final Stopwatch diagnosticsStopwatch = Stopwatch()..start();
   var lastDiagnosticsElapsed = -_kDownloadDiagnosticsInterval.inMilliseconds;
@@ -481,7 +488,6 @@ Future<File> _downloadCandidateSingle({
   }) {
     final UpdateDownloadDiagnosticsCallback? callback = onDiagnostics;
     if (callback == null) return;
-
     final int elapsed = diagnosticsStopwatch.elapsedMilliseconds;
     if (!force &&
         elapsed - lastDiagnosticsElapsed <
@@ -489,7 +495,6 @@ Future<File> _downloadCandidateSingle({
       return;
     }
     lastDiagnosticsElapsed = elapsed;
-
     callback(
       UpdateDownloadDiagnostics(
         sourceUrl: url,
@@ -513,115 +518,72 @@ Future<File> _downloadCandidateSingle({
     force: true,
   );
 
-  final Map<String, String> headers = <String, String>{};
-  if (resumeOffset > 0) {
-    headers[HttpHeaders.rangeHeader] = 'bytes=$resumeOffset-';
-    final String? ifRange = metadata?.etag ?? metadata?.lastModified;
-    if (ifRange != null && ifRange.isNotEmpty) {
-      headers[HttpHeaders.ifRangeHeader] = ifRange;
-    }
-  }
-
-  // 首响应用首字节 5s 快判死连上即挂；body 仍 8s/段不误杀慢源（TODO-738，TODO-821 订正）。
-  final UpdateDownloadResponse response =
-      await openUrl(uri, headers).timeout(_kFirstByteTimeout);
-  final bool requestedRange = resumeOffset > 0;
-  var writeOffset = resumeOffset;
-
-  if (requestedRange &&
-      response.statusCode == HttpStatus.requestedRangeNotSatisfiable &&
-      !restarted) {
-    await response.stream.drain<void>();
-    await _deleteFile(stagingPaths.partFile);
-    await _deleteFile(stagingPaths.metadataFile);
-    return _downloadCandidateSingle(
-      asset: asset,
-      version: version,
-      paths: paths,
-      stagingPaths: stagingPaths,
-      url: url,
-      openUrl: openUrl,
-      metadata: null,
-      resumeOffset: 0,
-      onProgress: onProgress,
-      onDiagnostics: onDiagnostics,
-      restarted: true,
-    );
-  }
-
-  if (requestedRange && response.statusCode == HttpStatus.partialContent) {
-    final int? start =
-        _contentRangeStart(response.header(HttpHeaders.contentRangeHeader));
-    if (start != resumeOffset) {
-      await response.stream.drain<void>();
-      await _deleteFile(stagingPaths.partFile);
-      await _deleteFile(stagingPaths.metadataFile);
-      if (!restarted) {
-        return _downloadCandidateSingle(
-          asset: asset,
-          version: version,
-          paths: paths,
-          stagingPaths: stagingPaths,
-          url: url,
-          openUrl: openUrl,
-          metadata: null,
-          resumeOffset: 0,
-          onProgress: onProgress,
-          onDiagnostics: onDiagnostics,
-          restarted: true,
+  // 续传校验器：把已有 metadata 的 etag/lastModified 透给引擎做 If-Range。
+  final ResumableDownloadState? resumeState = metadata == null
+      ? null
+      : ResumableDownloadState(
+          etag: metadata.etag,
+          lastModified: metadata.lastModified,
         );
+
+  // 引擎拿到首响应后回写：① 重建续传/重启诊断标志（影响速度起点）② 把
+  // 校验器 + 探得总大小落进 staging metadata，供跨候选 promote 复用。
+  Future<void> persistStagingMetadata(ResumableDownloadMetaInfo info) async {
+    final _UpdateDownloadMetadata nextMetadata = _UpdateDownloadMetadata(
+      version: version,
+      name: asset.name,
+      url: asset.url,
+      sizeBytes: asset.sizeBytes ?? info.totalBytes,
+      etag: info.etag ?? metadata?.etag,
+      lastModified: info.lastModified ?? metadata?.lastModified,
+      sha256Digest: asset.sha256Digest,
+    );
+    await nextMetadata.write(stagingPaths.metadataFile);
+  }
+
+  // 引擎首响应回调是同步的；metadata 写盘是异步的。先记下待写 metadata，引擎流式
+  // 写盘前 await 它落地（与下沉前「先写 metadata 再开 sink」时序一致）。
+  Future<void>? pendingMetadataWrite;
+
+  final ResumableDownloader downloader = ResumableDownloader(
+    url: url,
+    destination: stagingPaths.file,
+    partFile: stagingPaths.partFile,
+    open: (Uri uri, Map<String, String> headers) => openUrl(uri, headers)
+        .then((UpdateDownloadResponse r) => ResumableDownloadResponse(
+              statusCode: r.statusCode,
+              headers: r.headers,
+              stream: r.stream,
+            )),
+    expectedSize: asset.sizeBytes ?? metadata?.sizeBytes,
+    expectedSha256: asset.sha256Digest,
+    resumeState: resumeState,
+    firstByteTimeout: _kFirstByteTimeout,
+    bodyTimeout: _kPerAttemptTimeout,
+    onMeta: (ResumableDownloadMetaInfo info) {
+      resumed = info.resumed;
+      restartedFromZero = info.restartedFromZero;
+      if (info.restartedFromZero) speedStartBytes = 0;
+      pendingMetadataWrite = persistStagingMetadata(info);
+      final int? total = asset.sizeBytes ?? info.totalBytes;
+      if (total != null && total > 0) {
+        onProgress?.call(info.writeOffset / total);
+      } else {
+        onProgress?.call(0);
       }
-      throw HttpException('invalid content-range for resume: $url');
-    }
-    resumed = true;
-  } else if (response.statusCode == HttpStatus.ok) {
-    if (requestedRange) {
-      await _deleteFile(stagingPaths.partFile);
-      await _deleteFile(stagingPaths.metadataFile);
-      writeOffset = 0;
-      speedStartBytes = 0;
-      restartedFromZero = true;
-    }
-  } else {
-    await response.stream.drain<void>();
-    throw HttpException('download failed (${response.statusCode}): $url');
-  }
-
-  final int? responseTotal = _responseTotalSize(response, writeOffset);
-  final _UpdateDownloadMetadata nextMetadata = _UpdateDownloadMetadata(
-    version: version,
-    name: asset.name,
-    url: asset.url,
-    sizeBytes: asset.sizeBytes ?? responseTotal,
-    etag: response.header(HttpHeaders.etagHeader) ?? metadata?.etag,
-    lastModified: response.header(HttpHeaders.lastModifiedHeader) ??
-        metadata?.lastModified,
-    sha256Digest: asset.sha256Digest,
-  );
-  await nextMetadata.write(stagingPaths.metadataFile);
-
-  final IOSink sink = stagingPaths.partFile.openWrite(
-    mode: writeOffset > 0 ? FileMode.append : FileMode.write,
-  );
-  var received = writeOffset;
-  final int? total = nextMetadata.sizeBytes;
-  if (total != null && total > 0) {
-    onProgress?.call(received / total);
-  } else {
-    onProgress?.call(0);
-  }
-  reportDiagnostics(
-    receivedBytes: received,
-    totalBytes: total,
-    force: true,
-  );
-  Object? bodyError;
-  StackTrace? bodyStack;
-  try {
-    await for (final List<int> chunk
-        in response.stream.timeout(_kPerAttemptTimeout)) {
-      sink.add(chunk);
-      received += chunk.length;
+      reportDiagnostics(
+        receivedBytes: info.writeOffset,
+        totalBytes: total,
+        force: true,
+      );
+    },
+    onProgress: (int received, int? total) async {
+      // 首个进度回调出现在 metadata 写盘后：流式开始前确保已落地。
+      final Future<void>? write = pendingMetadataWrite;
+      if (write != null) {
+        pendingMetadataWrite = null;
+        await write;
+      }
       if (total != null && total > 0) {
         onProgress?.call(received / total);
       }
@@ -630,59 +592,49 @@ Future<File> _downloadCandidateSingle({
         totalBytes: total,
         force: false,
       );
-    }
-    await sink.flush();
-    reportDiagnostics(
-      receivedBytes: received,
-      totalBytes: total,
-      force: true,
-    );
-  } catch (e, stack) {
-    bodyError = e;
-    bodyStack = stack;
-  }
-
-  Object? closeError;
-  StackTrace? closeStack;
-  try {
-    await sink.close();
-  } catch (e, stack) {
-    closeError = e;
-    closeStack = stack;
-  }
-
-  Object? doneError;
-  StackTrace? doneStack;
-  try {
-    await sink.done;
-  } catch (e, stack) {
-    doneError = e;
-    doneStack = stack;
-  }
-
-  if (bodyError != null) Error.throwWithStackTrace(bodyError, bodyStack!);
-  if (closeError != null) Error.throwWithStackTrace(closeError, closeStack!);
-  if (doneError != null) Error.throwWithStackTrace(doneError, doneStack!);
-
-  final int actualSize = await stagingPaths.partFile.length();
-  final _UpdateDownloadMetadata completeMetadata = nextMetadata.copyWith(
-    sizeBytes: nextMetadata.sizeBytes ?? actualSize,
+    },
   );
-  if (!await _isValidCompleteDownload(
-    stagingPaths.partFile,
-    asset,
-    completeMetadata,
-  )) {
-    await _deleteFile(stagingPaths.partFile);
-    throw Exception('download integrity check failed: ${asset.name}');
+
+  final File completedInStaging = await downloader.download();
+  // 兜底：极小响应可能无进度回调，确保 metadata 已落地。
+  final Future<void>? write = pendingMetadataWrite;
+  if (write != null) {
+    pendingMetadataWrite = null;
+    await write;
   }
 
+  // 引擎已做 size+sha 校验并落到 staging.file；重新组装完成 metadata（带实际大小）
+  // 后走现有 staging→final 两段 promote（保 owner/metadata 清理语义不变）。
+  final int actualSize = await completedInStaging.length();
+  final _UpdateDownloadMetadata? written =
+      await _UpdateDownloadMetadata.read(stagingPaths.metadataFile);
+  final _UpdateDownloadMetadata completeMetadata = (written ??
+          _UpdateDownloadMetadata(
+            version: version,
+            name: asset.name,
+            url: asset.url,
+            sizeBytes: asset.sizeBytes,
+            etag: metadata?.etag,
+            lastModified: metadata?.lastModified,
+            sha256Digest: asset.sha256Digest,
+          ))
+      .copyWith(
+          sizeBytes: (written?.sizeBytes ?? asset.sizeBytes) ?? actualSize);
+
+  // staging.file 是引擎 rename 出来的最终文件；_promoteCompleteDownload 期望从
+  // staging.partFile rename，故把它重命名回 partFile 名再交给现有 promote。
+  await completedInStaging.rename(stagingPaths.partFile.path);
   final File promoted = await _promoteCompleteDownload(
     paths,
     stagingPaths,
     completeMetadata,
   );
   onProgress?.call(1);
+  reportDiagnostics(
+    receivedBytes: actualSize,
+    totalBytes: completeMetadata.sizeBytes,
+    force: true,
+  );
   return promoted;
 }
 
@@ -1272,24 +1224,6 @@ Future<bool> _isValidCompleteDownload(
 Future<String> _sha256OfFile(File file) async {
   final Digest digest = await sha256.bind(file.openRead()).first;
   return digest.toString();
-}
-
-int? _responseTotalSize(UpdateDownloadResponse response, int writeOffset) {
-  final int? contentRangeTotal =
-      _contentRangeTotal(response.header(HttpHeaders.contentRangeHeader));
-  if (contentRangeTotal != null) return contentRangeTotal;
-  final int? contentLength =
-      _parsePositiveInt(response.header(HttpHeaders.contentLengthHeader));
-  if (contentLength == null) return null;
-  return response.statusCode == HttpStatus.partialContent
-      ? writeOffset + contentLength
-      : contentLength;
-}
-
-int? _contentRangeStart(String? value) {
-  final RegExpMatch? match = _contentRangeMatch(value);
-  if (match == null) return null;
-  return int.tryParse(match.group(1)!);
 }
 
 int? _contentRangeTotal(String? value) {

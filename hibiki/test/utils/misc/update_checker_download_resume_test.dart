@@ -491,8 +491,10 @@ void main() {
     });
 
     test('awaits IOSink.done so open/write/close errors stay catchable', () {
+      // TODO-819：单连接续传写盘逻辑已下沉到通用 ResumableDownloader，IOSink 错误
+      // 可捕获契约也随之搬到该引擎；守卫跟随真实代码位置。
       final String source = File(
-        'lib/src/utils/misc/update_checker_download.dart',
+        'lib/src/utils/misc/resumable_downloader.dart',
       ).readAsStringSync();
 
       expect(

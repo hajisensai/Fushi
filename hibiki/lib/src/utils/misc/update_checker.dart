@@ -23,6 +23,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
+import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/utils/misc/update_handoff.dart';
 import 'package:hibiki/utils.dart';
 

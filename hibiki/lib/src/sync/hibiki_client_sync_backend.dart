@@ -6,6 +6,7 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
+import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -959,11 +960,52 @@ class HibikiClientSyncBackend extends SyncBackend
     void Function(double progress)? onProgress,
   }) async {
     final RemoteVideoStreamUrls urls = await remoteVideoStreamUrls(id);
-    await _downloadPlainUrl(
-      urls.streamUrl,
-      dest,
-      context: 'GET /api/library/videos/$id/stream',
-      onProgress: onProgress,
+    // 根因修复（TODO-819）：旧实现是裸 GET 无 Range，中断即整包删、
+    // 下次从 0。host /stream 已支持 Range（serveFileWithRange → 206），故改走通用
+    // ResumableDownloader：Range + 同目录 .part + 中断保留 part 可续传。LAN 单源
+    // 不分片（单连接 Range 已足够，避免共享出口限流）。
+    final File partFile = File('${dest.path}.part');
+    await dest.parent.create(recursive: true);
+    final HttpClient client = HttpClient();
+    try {
+      final ResumableDownloader downloader = ResumableDownloader(
+        url: urls.streamUrl,
+        destination: dest,
+        partFile: partFile,
+        open: (Uri uri, Map<String, String> headers) =>
+            _openResumableRequest(client, uri, headers),
+        onProgress: (int received, int? total) {
+          if (total != null && total > 0) {
+            onProgress?.call(received / total);
+          }
+        },
+      );
+      await downloader.download();
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// ResumableDownloader 的注入缝：用 [client] 发一次带 [headers]（含 Range/If-Range）
+  /// 的 GET，包成 [ResumableDownloadResponse]。token stream URL 自带鉴权，无需额外头。
+  Future<ResumableDownloadResponse> _openResumableRequest(
+    HttpClient client,
+    Uri uri,
+    Map<String, String> headers,
+  ) async {
+    final HttpClientRequest request = await client.openUrl('GET', uri);
+    for (final MapEntry<String, String> entry in headers.entries) {
+      request.headers.set(entry.key, entry.value);
+    }
+    final HttpClientResponse response = await request.close();
+    final Map<String, String> responseHeaders = <String, String>{};
+    response.headers.forEach((String name, List<String> values) {
+      if (values.isNotEmpty) responseHeaders[name] = values.join(',');
+    });
+    return ResumableDownloadResponse(
+      statusCode: response.statusCode,
+      headers: responseHeaders,
+      stream: response,
     );
   }
 
@@ -1016,46 +1058,6 @@ class HibikiClientSyncBackend extends SyncBackend
 
   static String _encodeVideoId(String id) =>
       id.split('/').map(Uri.encodeComponent).join('/');
-
-  Future<void> _downloadPlainUrl(
-    String url,
-    File destination, {
-    required String context,
-    void Function(double progress)? onProgress,
-  }) async {
-    final HttpClient client = HttpClient();
-    final HttpClientRequest request =
-        await client.openUrl('GET', Uri.parse(url));
-    final HttpClientResponse response = await request.close();
-    try {
-      _ops!.checkStatus(response.statusCode, context);
-      final int contentLength = response.contentLength;
-      final IOSink sink = destination.openWrite();
-      int bytesReceived = 0;
-      bool success = false;
-      try {
-        await for (final List<int> chunk in response) {
-          sink.add(chunk);
-          bytesReceived += chunk.length;
-          if (contentLength > 0) {
-            onProgress?.call(bytesReceived / contentLength);
-          }
-        }
-        success = true;
-      } finally {
-        await sink.close();
-        if (!success) {
-          try {
-            destination.deleteSync();
-          } catch (e) {
-            debugPrint('[hibiki-client] failed to clean up temp file: $e');
-          }
-        }
-      }
-    } finally {
-      client.close(force: true);
-    }
-  }
 
   // ── Test connection ───────────────────────────────────────────────
 
