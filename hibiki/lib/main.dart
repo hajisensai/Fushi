@@ -30,6 +30,7 @@ import 'package:hibiki/src/utils/misc/wgc_capture_log.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
@@ -294,6 +295,19 @@ void main([List<String> args = const <String>[]]) {
           await warmup.run();
         } catch (e) {
           debugPrint('[Hibiki] WebView warmup failed (non-fatal): $e');
+        }
+      }));
+    }
+
+    // TODO-617: start the global lookup overlay trigger on desktop (Windows MVP).
+    // After the first frame so the Flutter view / WebView2 host is attached.
+    if (isDesktopPlatform) {
+      unawaited(Future(() async {
+        try {
+          await WidgetsBinding.instance.endOfFrame;
+          await GlobalLookupController.instance.start(appModel: appModel);
+        } catch (e) {
+          debugPrint('[Hibiki] global lookup start failed (non-fatal): $e');
         }
       }));
     }
