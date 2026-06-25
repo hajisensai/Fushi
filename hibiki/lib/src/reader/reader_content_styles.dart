@@ -562,6 +562,18 @@ body {
     // 是承载几何项（镜像 verticalColumnWidthCss/JS contentBox 维持 pageStep==realPitch 不变式）必须保留，
     // 连续模式那份 F 与几何无关，去掉后「下边距」真正控制底栏上方空白（末行下方仍由 inset 给底栏预留）。
     final String hiddenOverflowAxis = isVertical ? 'overflow-y' : 'overflow-x';
+    // TODO-718（真机铁证·2026-06-25）：连续模式隐藏溢出轴 **只放在 html，不放 body**（横竖排
+    // 都如此）。给 body 加 overflow:hidden 会触发 CSS「一轴非 visible 则另一可见轴算成 auto」规则，
+    // 使 body 另一轴变 auto → **body 自己成为滚动容器**，scrollingElement/root 与真实滚动器错位：
+    //  - 横排：window.scrollBy({top}) 滚的是 body、window.scrollY 成幽灵值（真机 winY=667 而
+    //    scrollingElement.scrollTop=0）→ 滚轮 moved 判据(读 root.scrollTop)恒 false 误跳章、进度卡 0.34%。
+    //  - 竖排：阅读/滚轮用 window.scrollBy({left}) 能滚，但**恢复** scrollToCharOffset 写 root.scrollLeft
+    //    （root=scrollingElement=body）是幽灵 → 恢复后视口不动留在章首（真机 718-drift：存 0.0228、
+    //    onLoadStop 0.0228 全对，但 actual 在 t+400 塌成 0.0000）。
+    // 只放 html 时 html/window/scrollingElement 三者统一为唯一滚动器，阅读与恢复用同一个元素，
+    // window.scrollBy / root.scroll* / window.scroll* 全部一致生效。
+    final String overflowRule =
+        'html {\n  $hiddenOverflowAxis: hidden !important;\n}';
     final String viewportConstraintCss = isVertical
         ? 'height: var(--hoshi-continuous-height, 100vh) !important;'
         : '''
@@ -569,8 +581,8 @@ width: 100vw !important;
   min-height: 100vh !important;''';
 
     return '''
+$overflowRule
 html, body {
-  $hiddenOverflowAxis: hidden !important;
   margin: 0 !important;
   padding: 0 !important;
   background: ${colors.backgroundColor} !important;

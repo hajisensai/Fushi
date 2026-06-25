@@ -869,4 +869,37 @@ void main() {
       expect(css, contains('var(--chrome-top-inset, 0px))'));
     });
   });
+
+  // TODO-718（真机铁证·2026-06-25）：连续模式隐藏溢出轴只能放 html，不能放 body。
+  // 放 body 会触发 CSS「一轴非 visible→另一轴算 auto」使 body 成为滚动容器，
+  // scrollingElement/root 与真实 window 滚动器错位 → 横排滚轮跳章+进度卡 0.34%、
+  // 竖排恢复(scrollToCharOffset 写 root.scrollLeft)幽灵→视口留章首。守卫两种写向。
+  group('TODO-718 连续溢出轴只放 html（防 body 成滚动容器回归）', () {
+    Future<String> continuousCss(String writingMode) async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setViewMode('continuous');
+      await settings.setWritingMode(writingMode);
+      return ReaderContentStyles.css(settings: settings);
+    }
+
+    test('横排连续：overflow-x:hidden 在 html{}、不在 html, body{}', () async {
+      final String css = await continuousCss('horizontal-tb');
+      expect(css, contains('html {\n  overflow-x: hidden !important;\n}'),
+          reason: 'overflow-x:hidden 必须只放 html');
+      expect(css, isNot(contains('html, body {\n  overflow-x: hidden')),
+          reason: 'overflow-x:hidden 绝不能放 body（否则 body 成滚动容器→滚轮跳章/进度卡）');
+    });
+
+    test('竖排连续：overflow-y:hidden 在 html{}、不在 html, body{}', () async {
+      final String css = await continuousCss('vertical-rl');
+      expect(css, contains('html {\n  overflow-y: hidden !important;\n}'),
+          reason: 'overflow-y:hidden 必须只放 html');
+      expect(css, isNot(contains('html, body {\n  overflow-y: hidden')),
+          reason: 'overflow-y:hidden 绝不能放 body（否则恢复 root.scrollLeft 幽灵→视口留章首）');
+    });
+  });
 }
