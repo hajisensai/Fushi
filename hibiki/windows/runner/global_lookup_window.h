@@ -16,9 +16,15 @@
 #include <windows.h>
 #include <wrl.h>
 
+// The WebView2 SDK headers trip /WX (warnings-as-errors) via C4458 ('value'
+// hides class member) on the runner target. Suppress around the SDK includes
+// only — the warning is in Microsoft's headers, not our code.
+#pragma warning(push)
+#pragma warning(disable : 4458)
 #include <WebView2.h>
 #include <WebView2EnvironmentOptions.h>
 #include <wil/com.h>
+#pragma warning(pop)
 
 #include <cstdint>
 #include <functional>

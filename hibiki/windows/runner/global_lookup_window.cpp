@@ -136,7 +136,7 @@ void GlobalLookupWindow::EnsureWebView() {
   // (non file/http(s) schemes are otherwise ignored). Mirrors the fork's
   // webview_environment.cpp:69-76.
   wil::com_ptr<ICoreWebView2EnvironmentOptions4> options4;
-  if (SUCCEEDED(options.As(&options4))) {
+  if (SUCCEEDED(options->QueryInterface(IID_PPV_ARGS(&options4)))) {
     auto reg = Make<CoreWebView2CustomSchemeRegistration>(L"image");
     reg->put_TreatAsSecure(TRUE);
     reg->put_HasAuthorityComponent(TRUE);
