@@ -1393,6 +1393,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Future<void> onSourcePagePop() async {
     await _syncAndFlushPosition();
     await _flushReadingStats();
+    // TODO-831：「退出后续播」关闭（audiobookBackgroundPlay=false）时，把真正
+    // 停会话从 dispose 提前到这里——onSourcePagePop 被 onWillPop await，此刻页面
+    // 仍 mounted、pop 动画尚未开始，await stop 完成后会话已空（_book/_controller
+    // 置 null + notifyListeners），下层书架在 pop 动画首帧重建时 NowListeningMiniBar
+    // 即见空会话从一开始 SizedBox.shrink，消除「显一帧再收起」的闪播放条。
+    // dispose() 里的 unawaited(stop()) 兜底保留（硬 kill / 系统回收 / 非 PopScope
+    // 退出路径 onWillPop 不一定跑到），stop 对 controller==null 幂等早返回。
+    if (!appModel.audiobookBackgroundPlay) {
+      await appModel.audiobookSession.stop();
+    }
   }
 
   // The input device flipped between touch (mouse/pointer) and keyboard/gamepad.
