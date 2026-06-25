@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "Woordenboeken per rij",
   "popup_dictionary_columns_hint": "Meerdere woordenboeken naast elkaar tonen; gebruik minder kolommen op smalle schermen",
   "card_exported_audio_failed": "Kaart geëxporteerd, maar de audio kon niet worden gedownload ($reason).",
-  "card_mined_without_sentence_audio": "Kaart aangemaakt zonder zinsaudio (geen gevonden voor deze selectie)."
+  "card_mined_without_sentence_audio": "Kaart aangemaakt zonder zinsaudio (geen gevonden voor deze selectie).",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

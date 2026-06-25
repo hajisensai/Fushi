@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "จำนวนพจนานุกรมต่อแถว",
   "popup_dictionary_columns_hint": "แสดงพจนานุกรมหลายเล่มเคียงข้างกัน ใช้คอลัมน์น้อยลงบนหน้าจอแคบ",
   "card_exported_audio_failed": "ส่งออกการ์ดแล้ว แต่ดาวน์โหลดเสียงไม่สำเร็จ ($reason)",
-  "card_mined_without_sentence_audio": "สร้างการ์ดโดยไม่มีเสียงประโยค (ไม่พบเสียงสำหรับส่วนที่เลือกนี้)"
+  "card_mined_without_sentence_audio": "สร้างการ์ดโดยไม่มีเสียงประโยค (ไม่พบเสียงสำหรับส่วนที่เลือกนี้)",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

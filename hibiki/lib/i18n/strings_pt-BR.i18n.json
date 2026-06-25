@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "Dicionários por linha",
   "popup_dictionary_columns_hint": "Mostrar vários dicionários lado a lado; use menos colunas em telas estreitas",
   "card_exported_audio_failed": "Cartão exportado, mas o download do áudio falhou ($reason).",
-  "card_mined_without_sentence_audio": "Cartão criado sem áudio da frase (nenhum encontrado para esta seleção)."
+  "card_mined_without_sentence_audio": "Cartão criado sem áudio da frase (nenhum encontrado para esta seleção).",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

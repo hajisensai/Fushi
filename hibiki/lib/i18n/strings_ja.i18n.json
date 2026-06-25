@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "1 行あたりの辞書数",
   "popup_dictionary_columns_hint": "複数の辞書を横並びで表示します。画面が狭い場合は列数を減らしてください",
   "card_exported_audio_failed": "カードを書き出しましたが、音声のダウンロードに失敗しました（$reason）。",
-  "card_mined_without_sentence_audio": "カードを作成しましたが、今回の選択範囲では例文の音声が見つかりませんでした。"
+  "card_mined_without_sentence_audio": "カードを作成しましたが、今回の選択範囲では例文の音声が見つかりませんでした。",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

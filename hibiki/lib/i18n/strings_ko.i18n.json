@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "한 줄당 사전 수",
   "popup_dictionary_columns_hint": "여러 사전을 나란히 표시합니다. 화면이 좁으면 열 수를 줄이세요",
   "card_exported_audio_failed": "카드를 내보냈지만 오디오 다운로드에 실패했습니다($reason).",
-  "card_mined_without_sentence_audio": "카드를 만들었지만 이번 선택 범위에서 문장 오디오를 찾지 못했습니다."
+  "card_mined_without_sentence_audio": "카드를 만들었지만 이번 선택 범위에서 문장 오디오를 찾지 못했습니다.",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

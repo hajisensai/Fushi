@@ -156,4 +156,48 @@ void main() {
     expect(abortIndex, lessThan(contextIndex),
         reason: '中止必须发生在 repo.mineEntry/updateMinedNote 之前。');
   });
+
+  test(
+      'TODO-816 ③: GIF fallback grabs the cue-time frame, not the current '
+      'decoded frame', () {
+    // 根因（TODO-816 ③）：GIF 不可用时旧兜底直接 controller.screenshot() 截**播放器
+    // 当前解码帧**（从不 seek 到 cue 时间），所以一旦退到兜底，封面就是播放器当下停的帧
+    // （常是片头/暂停处），与卡片例句不是同一段。GIF 主路径用的是 clipStartMs（经
+    // miningClipTimeMs 逆变换回播放器轴的目标毫秒），降级帧必须用同一个 cue 时间从视频
+    // 文件抽，才与例句对齐。
+    final String mineCard = region(
+      'Future<MinePopupResult> _mineVideoCard(',
+      'Future<void> _recordMinedSentenceForVideo(',
+    );
+    expect(mineCard, contains('extractVideoFrameViaFfmpeg('),
+        reason: 'GIF 不可用时须按 cue 时间从视频文件抽单帧（而非截当前解码帧）。');
+    expect(mineCard, contains('atSeconds: clipStartMs / 1000.0'),
+        reason: '降级帧的取帧时间必须 = clipStartMs（与 GIF 主路径同一播放器轴坐标）。');
+
+    // controller.screenshot()（当前解码帧）只能是无 cue（无区间）或 cue 抽帧也失败后的
+    // 最后兜底，必须排在 extractVideoFrameViaFfmpeg 之后——保证有区间时优先按 cue 取帧。
+    final int frameIdx = mineCard.indexOf('extractVideoFrameViaFfmpeg(');
+    final int screenshotIdx = mineCard.indexOf('controller.screenshot()');
+    expect(frameIdx, greaterThanOrEqualTo(0));
+    expect(screenshotIdx, greaterThan(frameIdx),
+        reason: '当前帧截图只能是 cue 抽帧失败/无区间后的最后兜底，须排在按 cue 抽帧之后。');
+  });
+
+  test('TODO-816 ④: degrading a clip to a still frame surfaces an OSD', () {
+    // 根因（TODO-816 ④）：动图降级为静态帧时旧实现仅 debugPrint 静默吞掉，用户不知拿到
+    // 的是降级图。必须给用户可感知 OSD（复用 i18n，携带底层失败摘要）。
+    final String mineCard = region(
+      'Future<MinePopupResult> _mineVideoCard(',
+      'Future<void> _recordMinedSentenceForVideo(',
+    );
+    expect(mineCard, contains('bool degradedToStill'),
+        reason: '须显式跟踪「动图降级为静态」状态，作为提示判据。');
+    expect(mineCard, contains('card_cover_degraded_to_static'),
+        reason: '降级为静态图须给用户可见 OSD（不再只 debugPrint 静默吞掉）。');
+    expect(mineCard, contains('reason: gifFailure ??'),
+        reason: 'OSD 应携带 GIF 失败的底层 ffmpeg 诊断摘要，最贴近根因。');
+    // 提示必须 mounted 守卫（异步路径，页面可能已退出）。
+    expect(mineCard, contains('degradedToStill && mounted'),
+        reason: '降级提示须 mounted 守卫，避免向已销毁页面 _showOsd。');
+  });
 }

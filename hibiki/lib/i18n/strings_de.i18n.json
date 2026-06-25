@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "Wörterbücher pro Zeile",
   "popup_dictionary_columns_hint": "Mehrere Wörterbücher nebeneinander anzeigen; auf schmalen Bildschirmen weniger Spalten verwenden",
   "card_exported_audio_failed": "Karte exportiert, aber das Audio konnte nicht heruntergeladen werden ($reason).",
-  "card_mined_without_sentence_audio": "Karte ohne Satz-Audio erstellt (keines für diese Auswahl gefunden)."
+  "card_mined_without_sentence_audio": "Karte ohne Satz-Audio erstellt (keines für diese Auswahl gefunden).",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

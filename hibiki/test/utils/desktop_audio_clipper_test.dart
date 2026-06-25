@@ -615,6 +615,10 @@ void main() {
   });
 
   group('extractVideoFrameViaFfmpeg', () {
+    tearDown(() {
+      ffmpeg.setFfmpegBackendForTesting(null);
+    });
+
     test('returns null when the input file does not exist', () async {
       expect(
         await extractVideoFrameViaFfmpeg(
@@ -623,6 +627,48 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test(
+        'TODO-816 ④: reports diagnostics via onFailure when frame grab fails',
+        () async {
+      // 根因（TODO-816 ④）：制卡封面降级链路需要拿到失败摘要才能给用户可感知提示。
+      // 旧 extractVideoFrameViaFfmpeg 只往 ErrorLogService 记日志、不回调 onFailure，
+      // 调用方无从向用户解释「为什么降级成静态图」。本守卫钉住失败摘要经 onFailure 回传。
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_frame_fail_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String input = '${dir.path}/in.mkv';
+      final String output = '${dir.path}/frame.jpg';
+      File(input).writeAsBytesSync(<int>[0, 1, 2, 3]);
+      final List<String> failures = <String>[];
+
+      ffmpeg.setFfmpegBackendForTesting(_FakeFfmpegBackend(
+        const ffmpeg.FfmpegRunResult(
+          returnCode: -1073741701,
+          output: 'The application was unable to start correctly.',
+          executable: r'C:\Hibiki\ffmpeg.exe',
+          attemptedExecutables: <String>[
+            r'C:\Hibiki\ffmpeg.exe',
+            'ffmpeg',
+          ],
+          fallbackReason: 'bundled ffmpeg produced STATUS_INVALID_IMAGE_FORMAT',
+        ),
+      ));
+
+      final String? result = await extractVideoFrameViaFfmpeg(
+        inputPath: input,
+        outputPath: output,
+        atSeconds: 2,
+        onFailure: failures.add,
+      );
+
+      expect(result, isNull);
+      expect(File(output).existsSync(), isFalse);
+      expect(failures, hasLength(1),
+          reason: '抽帧失败必须经 onFailure 回传给制卡降级提示路径。');
+      expect(failures.single, contains('0xC000007B'));
+      expect(failures.single, contains('STATUS_INVALID_IMAGE_FORMAT'));
     });
 
     test('grabs a real frame when ffmpeg is available', () async {

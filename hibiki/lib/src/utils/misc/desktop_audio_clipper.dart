@@ -364,6 +364,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
   required String inputPath,
   required String outputPath,
   double atSeconds = 10.0,
+  FfmpegFailureReporter? onFailure,
 }) async {
   if (!File(inputPath).existsSync()) return null;
   final File output = File(outputPath);
@@ -378,21 +379,31 @@ Future<String?> extractVideoFrameViaFfmpeg({
       const Duration(seconds: 30),
     );
     final int? code = result.returnCode;
-    if (code == null) {
-      if (output.existsSync()) {
-        try {
-          output.deleteSync();
-        } catch (_) {}
-      }
-      return null;
+    if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
+      return outputPath;
     }
-    if (output.existsSync() && output.lengthSync() > 0) return outputPath;
+    if (output.existsSync()) {
+      try {
+        output.deleteSync();
+      } catch (_) {}
+    }
+    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure);
     return null;
   } on ProcessException catch (e, stack) {
-    ErrorLogService.instance.log('extractVideoFrameViaFfmpeg', e, stack);
+    _reportFfmpegProcessException(
+      'extractVideoFrameViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
     return null;
   } catch (e, stack) {
-    ErrorLogService.instance.log('extractVideoFrameViaFfmpeg', e, stack);
+    _reportFfmpegUnexpectedException(
+      'extractVideoFrameViaFfmpeg',
+      e,
+      stack,
+      onFailure,
+    );
     return null;
   }
 }

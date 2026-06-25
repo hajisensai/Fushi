@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "Satır başına sözlük",
   "popup_dictionary_columns_hint": "Birden çok sözlüğü yan yana göster; dar ekranlarda daha az sütun kullan",
   "card_exported_audio_failed": "Kart aktarıldı ancak ses indirilemedi ($reason).",
-  "card_mined_without_sentence_audio": "Kart cümle sesi olmadan oluşturuldu (bu seçim için bulunamadı)."
+  "card_mined_without_sentence_audio": "Kart cümle sesi olmadan oluşturuldu (bu seçim için bulunamadı).",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

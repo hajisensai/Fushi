@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "القواميس في كل صف",
   "popup_dictionary_columns_hint": "عرض عدة قواميس جنبًا إلى جنب؛ استخدم أعمدة أقل على الشاشات الضيقة",
   "card_exported_audio_failed": "تم تصدير البطاقة، لكن فشل تنزيل الصوت ($reason).",
-  "card_mined_without_sentence_audio": "تم إنشاء البطاقة بدون صوت الجملة (لم يُعثر على صوت لهذا التحديد)."
+  "card_mined_without_sentence_audio": "تم إنشاء البطاقة بدون صوت الجملة (لم يُعثر على صوت لهذا التحديد).",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

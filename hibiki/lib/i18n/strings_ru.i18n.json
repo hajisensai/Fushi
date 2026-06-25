@@ -1813,5 +1813,6 @@
   "popup_dictionary_columns": "Словарей в ряду",
   "popup_dictionary_columns_hint": "Показывать несколько словарей рядом; на узких экранах используйте меньше столбцов",
   "card_exported_audio_failed": "Карточка экспортирована, но не удалось загрузить аудио ($reason).",
-  "card_mined_without_sentence_audio": "Карточка создана без аудио предложения (для этого выделения ничего не найдено)."
+  "card_mined_without_sentence_audio": "Карточка создана без аудио предложения (для этого выделения ничего не найдено).",
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
 }

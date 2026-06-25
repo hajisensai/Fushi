@@ -289,7 +289,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
 
     // 视频卡片封面 → coverPath（→`{book-cover}`）：优先把**区间时间段**导出成循环 GIF
     // （单句=该 cue 时间窗；跨字幕=整段区间）。桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit
-    // （resolveFfmpegBackend）；无区间 / 导出失败（ffmpeg 真不可用等）时回退当前帧截图。
+    // （resolveFfmpegBackend）；无区间 / 导出失败（ffmpeg 真不可用等）时回退**按 cue 时间
+    // 抽的单帧**（见下方降级链路）。
     String? coverPath;
     String? gifFailure;
     if (hasRange && videoPath != null) {
@@ -305,6 +306,35 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         },
       );
     }
+    // 封面降级链路（GIF 不可用 / 无区间时）。
+    // BUG（TODO-816 ③）根因修：旧兜底直接截**播放器当前解码帧**——它从不 seek 到 cue
+    // 时间，所以一旦退到这条路径，封面就取到播放器当下停的帧（常是片头/暂停处），与卡片
+    // 例句不是同一段。GIF 主路径用的是 [clipStartMs]
+    // （已经过 miningClipTimeMs 逆变换回播放器轴的目标毫秒），降级帧必须用**同一个**
+    // cue 时间从视频文件抽，才与例句对齐。
+    bool degradedToStill = false;
+    if (coverPath == null && hasRange && videoPath != null) {
+      String? frameFailure;
+      coverPath = await extractVideoFrameViaFfmpeg(
+        inputPath: videoPath,
+        outputPath: '${tmp.path}/video_mine_frame.jpg',
+        atSeconds: clipStartMs / 1000.0,
+        onFailure: (String summary) {
+          frameFailure = summary;
+        },
+      );
+      if (coverPath != null) {
+        // 成功抽到 cue 时间帧：仍是「动图降级为静态」，需告知用户（W2a）。
+        degradedToStill = true;
+      } else if (frameFailure != null) {
+        debugPrint(
+          '[VideoHibiki] mine: GIF + cue-frame export both failed '
+          '(gif=$gifFailure; frame=$frameFailure).',
+        );
+      }
+    }
+    // 最后兜底：无区间（无 cue），或按 cue 时间抽帧也失败 → 截播放器当前解码帧。无区间
+    // 本就没有可对齐的 cue 时间，当前帧是唯一合理来源；区间存在但抽帧失败时这是降级。
     if (coverPath == null) {
       if (gifFailure != null) {
         debugPrint('[VideoHibiki] mine: GIF clip export failed: $gifFailure');
@@ -322,7 +352,16 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         final File f = File('${tmp.path}/video_mine_shot.jpg');
         await f.writeAsBytes(cover);
         coverPath = f.path;
+        // 区间存在却退到当前帧（GIF + cue 抽帧都失败）：也属动图降级为静态，提示用户。
+        if (hasRange) degradedToStill = true;
       }
+    }
+    // W2a 根因修：动图降级为静态帧时给用户可感知 OSD，原仅 debugPrint 静默吞掉，用户
+    // 不知拿到的是降级图。原因取 GIF 失败摘要（最贴近根因）。
+    if (degradedToStill && mounted) {
+      _showOsd(t.card_cover_degraded_to_static(
+        reason: gifFailure ?? 'animated clip unavailable',
+      ));
     }
 
     // 区间音频片段（桌面 ffmpeg 按时间裁，映射到当前选中音轨）→ sasayakiAudioPath。
