@@ -10,16 +10,14 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
-
-import '../utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 /// Thin wrapper over [HibikiChannels.globalLookup]. Static because there is a
 /// single overlay per process.
 abstract final class GlobalLookupChannel {
-  static final MethodChannel _channel = HibikiChannels.globalLookup;
+  static const MethodChannel _channel = HibikiChannels.globalLookup;
 
   /// Sets the absolute folder that holds popup.html / popup.js / popup.css and
   /// popup_bridge_adapter.js (flutter_assets/assets/popup at runtime). Must be
@@ -37,7 +35,8 @@ abstract final class GlobalLookupChannel {
     int width = 420,
     int height = 600,
   }) async {
-    final bool? ok = await _channel.invokeMethod<bool>('showAt', <String, Object?>{
+    final bool? ok =
+        await _channel.invokeMethod<bool>('showAt', <String, Object?>{
       'x': x,
       'y': y,
       'width': width,
