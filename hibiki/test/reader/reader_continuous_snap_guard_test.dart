@@ -4,29 +4,43 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
     show readerContinuousProgressSnapIsInvoluntary;
 
-/// TODO-798：连续/滚动模式书籍历史记录恒回章首（795/797 修了仍未修好）。
+/// TODO-718/798 连续模式「退出再进恒回章首 / 位置不恢复」非自愿 reflow 归零判据。
 ///
-/// 真因（位置不连续，非时间窗）：连续模式裸 `window.scrollY` 退出再进恢复后，WebView
-/// 自发 reflow 把 scrollY 瞬时归 0，归零 scroll 经 onReaderScroll → _refreshProgress 落库
-/// 章首。既有两墙（JS _reanchorPending 旗 / Dart B-3 250ms 窗）都是时间边界的，归零晚到
-/// （大章+图片首开 reflow 远超 250ms）就穿过 → 落库 progress≈0。
+/// 真因：连续模式裸 `window.scrollX/Y` 退出再进恢复后，WebView 自发 reflow 把滚动瞬时归 0，
+/// 归零 scroll 经 onReaderScroll → _refreshProgress 落库章首。
 ///
-/// [readerContinuousProgressSnapIsInvoluntary] 用「上一发实质性非零 → 这一发单步塌缩到
-/// 章首」判非自愿归零（与输入时序无关，故不误伤惯性甩动到真章首——那会逐帧递减上报）。
+/// 判据重设计（TODO-718·2026-06-25·删除 settleGuardArmed 因果门状态机）：旧版用「武装/解武装」
+/// 状态机区分 reflow 归零 vs 用户拖到章首，但解武装信号被 B-3 settle 窗 / 拦截器前置 return 双重
+/// 吞掉 → 门永 armed → 用户向前滚被反复拽回恢复锚、滚不出去、保存值停在开头。改为**无状态**：
+/// 直接用本次刷新是否真用户输入驱动 [fromUserScroll]（JS 据最近 1000ms 内 touch/pointer/wheel/key
+/// 算出；reflow/cue-reveal 程序化滚动恒 false）区分——用户真滚一律放行，程序化归零才复位。
 void main() {
-  group('readerContinuousProgressSnapIsInvoluntary（非自愿 reflow 归零判据真值表）', () {
-    test('连续模式：实质性位置单步塌缩到章首 + 有锚 → 判非自愿（核心 bug 路径）', () {
+  group('readerContinuousProgressSnapIsInvoluntary（无状态非自愿 reflow 归零判据真值表）', () {
+    test('程序化归零(fromUserScroll=false)：实质性塌缩到章首 + 有锚 → 判非自愿（核心 bug 路径）', () {
       expect(
         readerContinuousProgressSnapIsInvoluntary(
           continuousMode: true,
           priorProgress: 0.5,
           newProgress: 0.0,
           hasCommittedAnchor: true,
-          settleGuardArmed: true,
+          fromUserScroll: false,
         ),
         isTrue,
-        reason: '恢复落定在 0.5 后（自发 settle 期·武装中）reflow 单步归 0，'
-            '必须判非自愿并复位，不得落库章首',
+        reason: '恢复落定在 0.5 后，非用户输入的 reflow 单步归 0 → 复位，不得落库章首',
+      );
+    });
+
+    test('用户真滚(fromUserScroll=true)：同样塌缩到章首也放行（用户要去章首就去）', () {
+      expect(
+        readerContinuousProgressSnapIsInvoluntary(
+          continuousMode: true,
+          priorProgress: 0.5,
+          newProgress: 0.0,
+          hasCommittedAnchor: true,
+          fromUserScroll: true,
+        ),
+        isFalse,
+        reason: '用户真实输入驱动的滚动一律放行——无门无陷阱，用户能滚到任何位置含章首',
       );
     });
 
@@ -37,7 +51,7 @@ void main() {
           priorProgress: 0.5,
           newProgress: 0.0,
           hasCommittedAnchor: true,
-          settleGuardArmed: true,
+          fromUserScroll: false,
         ),
         isFalse,
       );
@@ -50,160 +64,90 @@ void main() {
           priorProgress: 0.5,
           newProgress: 0.0,
           hasCommittedAnchor: false,
-          settleGuardArmed: true,
+          fromUserScroll: false,
         ),
         isFalse,
       );
     });
 
-    test('用户惯性甩动到章首：逐帧递减，到 0 那一发 prior 已≈0 → 不误判（B-4 栽跟头处）', () {
-      // 甩动尾段连续两发：…→0.04→0.0。到 0 那一发的 prior=0.04 < minPrior → false。
-      expect(
-        readerContinuousProgressSnapIsInvoluntary(
-          continuousMode: true,
-          priorProgress: 0.04,
-          newProgress: 0.0,
-          hasCommittedAnchor: true,
-          settleGuardArmed: true,
-        ),
-        isFalse,
-        reason: '用户真滚到章首（含惯性甩动）逐帧上报，到 0 时 prior 已≈0，必须放行落库',
-      );
-    });
-
-    test('用户从中段正常滚动（新进度未塌缩到章首）→ 放行落库', () {
+    test('新进度未塌缩到章首（仍在正文）→ 放行落库', () {
       expect(
         readerContinuousProgressSnapIsInvoluntary(
           continuousMode: true,
           priorProgress: 0.5,
           newProgress: 0.45,
           hasCommittedAnchor: true,
-          settleGuardArmed: true,
+          fromUserScroll: false,
         ),
         isFalse,
       );
     });
 
-    test('用户主动停在章首再退出（prior 已≈0）→ 放行，保住「真滑到章首仍能保存」', () {
+    test('上一发已≈0（prior<minPrior）→ 不误判（程序化也放行：非「实质性单步塌缩」）', () {
       expect(
         readerContinuousProgressSnapIsInvoluntary(
           continuousMode: true,
-          priorProgress: 0.0,
+          priorProgress: 0.04,
           newProgress: 0.0,
           hasCommittedAnchor: true,
-          settleGuardArmed: true,
+          fromUserScroll: false,
         ),
         isFalse,
-        reason: '相邻保护②：用户真停在章首必须能保存章首，不能被一刀切禁止归零',
+        reason: 'prior 已≈0 不算实质性塌缩，放行（与原 minPrior 阈值语义一致）',
       );
     });
 
-    test('边界：prior 恰在阈值、new 恰在章首 epsilon 内 → 判非自愿', () {
+    test('边界：prior 恰在阈值、new 恰在章首 epsilon 内、fromUserScroll=false → 判非自愿', () {
       expect(
         readerContinuousProgressSnapIsInvoluntary(
           continuousMode: true,
           priorProgress: 0.05,
           newProgress: 0.01,
           hasCommittedAnchor: true,
-          settleGuardArmed: true,
+          fromUserScroll: false,
         ),
         isTrue,
       );
     });
 
-    test(
-        '续修边界①：用户拖滚动条到章首（拖动途中已解武装）→ 放行，不被拽回'
-        '（prior=0.15、new=0、有锚、settleGuardArmed=false）', () {
-      // 桌面原生滚动条 thumb 快拖 / 点轨道跳章首：50ms 节流 + in-flight coalesce 采样
-      // 追不上手速，到 0 那一发之前最后采到的 prior 停在 0.15（> minPrior 0.05），与
-      // reflow 归零在数据层不可区分。但用户拖动途中的早发滚动已把因果门解武装
-      // （settleGuardArmed=false）→ 因果门放行，用户停在章首不被复位拽回。
-      expect(
-        readerContinuousProgressSnapIsInvoluntary(
-          continuousMode: true,
-          priorProgress: 0.15,
-          newProgress: 0.0,
-          hasCommittedAnchor: true,
-          settleGuardArmed: false,
-        ),
-        isFalse,
-        reason: '用户已真滚过（解武装）→ 归零必是用户拖到章首，必须放行停在章首',
-      );
-    });
-
-    test(
-        '续修边界②：因果与门——同样的 prior=0.15→0，仍在自发 settle 期（武装中）'
-        '则判非自愿（reflow 归零，复位）', () {
-      // 与上一例数据层完全相同，唯一差别是 settleGuardArmed。证明因果门是真区分两类
-      // 归零的判据（非靠 prior 阈值魔法）：武装中 = reflow，解武装 = 用户拖到章首。
-      expect(
-        readerContinuousProgressSnapIsInvoluntary(
-          continuousMode: true,
-          priorProgress: 0.15,
-          newProgress: 0.0,
-          hasCommittedAnchor: true,
-          settleGuardArmed: true,
-        ),
-        isTrue,
-        reason: '同一数据快照，武装中则属恢复后自发 reflow 归零，必须复位',
-      );
-    });
-
-    test('续修边界③：核心 bug 快照在解武装后不再误判（与门否决）', () {
-      // 用户滚过一次后晚到的图片 reflow 归零：已解武装 → 本判据不再兜（acceptable 取舍）。
+    test('TODO-724：有声书主动播放跟读期一律放行（不拽回陈旧锚=不跳图片）', () {
+      // 与核心 bug 路径数据相同（程序化 + 塌缩 + 有锚），唯一差别是有声书在播：进度由音频 cue
+      // 权威驱动（含跨章 reveal 落新章首），不是自发 reflow 归零，必须放行。
       expect(
         readerContinuousProgressSnapIsInvoluntary(
           continuousMode: true,
           priorProgress: 0.5,
           newProgress: 0.0,
           hasCommittedAnchor: true,
-          settleGuardArmed: false,
-        ),
-        isFalse,
-        reason: '解武装后一律放行——不再误伤用户真滑到章首；晚到 reflow 由 JS 重锚路径兜',
-      );
-    });
-
-    test('TODO-724 回归：有声书主动播放跟读期，同样的非自愿快照也放行（不拽回陈旧锚）', () {
-      // 与「核心 bug 路径」数据完全相同（武装中 + 实质性塌缩 + 有锚），唯一差别是有声书在播。
-      // 有声书逐句 reveal（含跨章落新章首）的进度变化由音频 cue 权威驱动，不是 WebView 自发
-      // reflow 归零；若仍判非自愿，拦截器会把视口强拽回上一发 committedAnchor（跨章=上章陈旧锚，
-      // 常是图片）= 「有声书跳图片」。故有声书跟读期一律放行。
-      expect(
-        readerContinuousProgressSnapIsInvoluntary(
-          continuousMode: true,
-          priorProgress: 0.5,
-          newProgress: 0.0,
-          hasCommittedAnchor: true,
-          settleGuardArmed: true,
+          fromUserScroll: false,
           audiobookActivelyFollowing: true,
         ),
         isFalse,
-        reason: '有声书主动跟读期进度由 cue 权威驱动，必须放行——否则跨章 reveal 被拽回上章图片',
+        reason: '有声书跟读期进度由 cue 权威驱动，放行——否则跨章 reveal 被拽回上章图片',
       );
     });
 
-    test('TODO-724 对照：有声书未播（默认）时，同一快照仍判非自愿（不影响 718 reflow 拦截）', () {
-      // 开书恢复期有声书未自动续播 audiobookActivelyFollowing=false → 与原行为一致，
-      // reflow-zero 仍被拦截复位。证明 724 放行只挑「正在播」，不放过恢复期 reflow 归零。
+    test('TODO-724 对照：有声书未播时同一程序化快照仍判非自愿（不影响 718 reflow 拦截）', () {
       expect(
         readerContinuousProgressSnapIsInvoluntary(
           continuousMode: true,
           priorProgress: 0.5,
           newProgress: 0.0,
           hasCommittedAnchor: true,
-          settleGuardArmed: true,
+          fromUserScroll: false,
           audiobookActivelyFollowing: false,
         ),
         isTrue,
-        reason: '有声书未播时默认行为不变——TODO-718 的 reflow-zero 拦截不受影响',
       );
     });
   });
 
-  group('TODO-798 接线守卫：判据 + 复位接进 _refreshProgress（落库之前）', () {
+  group('TODO-718/798 接线守卫：判据(无状态) + 复位接进 _refreshProgress（落库之前）', () {
     final String navigation = File(
       'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    ).readAsStringSync();
+    final String page = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
     ).readAsStringSync();
 
     String methodBody(String src, String signature) {
@@ -220,132 +164,56 @@ void main() {
       final int guardIdx =
           body.indexOf('readerContinuousProgressSnapIsInvoluntary');
       expect(guardIdx, greaterThanOrEqualTo(0),
-          reason: '_refreshProgress 必须用位置不连续判据拦非自愿 reflow 归零');
+          reason: '_refreshProgress 必须用非自愿判据拦 reflow 归零');
       final int saveIdx =
           body.indexOf('_debouncedSavePosition(progress, charOffset)');
       expect(saveIdx, greaterThan(guardIdx),
           reason: '判据必须在 _debouncedSavePosition 之前——否则归零会先落库章首');
       expect(body.contains('scrollToCharOffsetInvocation'), isTrue,
-          reason: '触发后必须根因式复位到已提交锚（不止跳过落库，还要把视口滚回），'
-              '否则用户仍会看到弹回章首');
+          reason: '触发后必须复位到已提交锚（把视口滚回），否则用户仍会看到弹回章首');
     });
 
-    test('续修边界接线：因果门 settleGuardArmed 必须真传入判据', () {
+    test('判据接入无状态信号 fromUserScroll + 有声书 isPlaying（非旧因果门）', () {
       final String body =
           methodBody(navigation, 'Future<void> _refreshProgress() async {');
-      expect(body.contains('settleGuardArmed: _continuousSettleGuardArmed'),
+      expect(body.contains('fromUserScroll: fromUserScroll'), isTrue,
+          reason: '判据必须接入 fromUserScroll（无状态用户输入信号）');
+      expect(
+          body.contains('audiobookActivelyFollowing: '
+              '_audiobookController?.isPlaying == true'),
           isTrue,
-          reason: '判据必须接入因果门字段 _continuousSettleGuardArmed，'
-              '否则退回纯位置判据会误伤拖滚动条到章首');
+          reason: '判据必须接入有声书 isPlaying（跟读期放行，TODO-724）');
     });
 
-    // methodBody 的「双空格缩进闭合花括号」终止符在多行参数列表 / 嵌套闭包上会提前
-    // 截断，故下面武装/解武装接线断言改用「从签名起的窗口」（与 diag-log 守卫同款窗口法）。
-    String windowFrom(String src, String signature, int len) {
-      final int idx = src.indexOf(signature);
-      expect(idx, greaterThanOrEqualTo(0), reason: '找不到 $signature');
-      final int end = (idx + len).clamp(0, src.length);
-      return src.substring(idx, end);
-    }
-
-    test('续修边界接线：导航开启武装、用户首次真实滚动解武装', () {
-      final String beginBody =
-          windowFrom(navigation, 'void _beginNavigation({', 1500);
-      expect(beginBody.contains('_continuousSettleGuardArmed = true'), isTrue,
-          reason: '每次导航必须武装因果门（恢复落定后进入自发 settle 期）');
-
-      // TODO-718：解武装路由旗只在「真实用户输入驱动」时置真（消费累积的 userDriven），
-      // reflow/cue-reveal 程序化滚动 userDriven=false → 不解武装因果门。
+    test(
+        'fromUserScroll 来自累积的真用户输入(_progressRefreshFromScroll = _scrollUserDrivenPending)',
+        () {
       final String scrollBody =
-          windowFrom(navigation, 'void _refreshProgressFromScroll() {', 2000);
+          methodBody(navigation, 'void _refreshProgressFromScroll() {');
       expect(
           scrollBody.contains(
               '_progressRefreshFromScroll = _scrollUserDrivenPending'),
           isTrue,
-          reason: '解武装路由旗必须取自累积的用户输入驱动标志，'
-              '而非「任何 scroll 都置真」（否则 reflow 归零误解武装 = TODO-718 回归）');
-      expect(scrollBody.contains('_scrollUserDrivenPending = false'), isTrue,
-          reason: '消费后必须清零累积标志');
-
-      // TODO-718：_handleReaderScroll 必须接收 JS 算出的 userDriven 并累积。
-      final String handleBody = windowFrom(
-          navigation, 'void _handleReaderScroll(bool userDriven) {', 600);
+          reason: '路由旗必须取自累积的用户输入驱动标志（reflow/cue-reveal=false）');
+      final String handleBody =
+          methodBody(navigation, 'void _handleReaderScroll(bool userDriven) {');
       expect(
           handleBody
               .contains('if (userDriven) _scrollUserDrivenPending = true'),
           isTrue,
-          reason: '_handleReaderScroll 必须按 JS 传入的 userDriven 累积，'
-              '节流/coalesce 期只要一发用户驱动即记真');
-
-      // TODO-724：拦截判据必须接入有声书主动跟读状态。
-      final String refreshBody2 = windowFrom(
-          navigation, 'Future<void> _refreshProgress() async {', 5200);
-      expect(
-          refreshBody2.contains('audiobookActivelyFollowing: '
-              '_audiobookController?.isPlaying == true'),
-          isTrue,
-          reason: '判据必须接入有声书 isPlaying，跟读期放行不拽回陈旧锚（TODO-724）');
-
-      final String refreshBody = windowFrom(
-          navigation, 'Future<void> _refreshProgress() async {', 5200);
-      expect(
-          refreshBody.contains('_continuousSettleGuardArmed = false'), isTrue,
-          reason: '用户首次真实滚动（未判非自愿）必须解武装因果门');
-      // 解武装必须门控在 fromUserScroll——否则恢复后首发轮询会误解武装致 reflow 裸奔。
-      expect(
-          refreshBody.contains('if (fromUserScroll && '
-              '_continuousSettleGuardArmed)'),
-          isTrue,
-          reason: '解武装必须仅在用户滚动驱动路径，轮询/恢复不得解武装');
+          reason: '_handleReaderScroll 必须按 JS 传入的 userDriven 累积');
     });
 
-    test('TODO-718 根因②：用户真实滚动在 _handleReaderScroll 顶部最先解武装(早于 B-3 return)', () {
-      // 解武装信号若被 B-3 settle 窗整发 return / 拦截器命中前置 return 吞掉，因果门永远 armed →
-      // 用户向前滚被 reflow 归零拦截拽回恢复锚、滚不出去、保存值停在开头。故 userDriven 解武装
-      // 必须放在 _handleReaderScroll 最前、早于 readerScrollWithinReanchorSettle 的 return。
-      final int handleIdx =
-          navigation.indexOf('void _handleReaderScroll(bool userDriven) {');
-      expect(handleIdx, greaterThan(0));
-      final int disarmIdx = navigation.indexOf(
-          'if (userDriven && _continuousSettleGuardArmed) {', handleIdx);
-      final int b3Idx =
-          navigation.indexOf('readerScrollWithinReanchorSettle(', handleIdx);
-      expect(disarmIdx, greaterThan(handleIdx),
-          reason: 'userDriven 解武装必须在 _handleReaderScroll 内');
-      expect(disarmIdx, lessThan(b3Idx),
-          reason: 'userDriven 解武装必须早于 B-3 settle 窗的 return，'
-              '否则 250ms 内用户滚动的解武装被吞 → 门永 armed → 卡在恢复锚(TODO-718 回归)');
-    });
-
-    test('TODO-718 根因：初次开书 + 样式重载的裸恢复路径也必须武装因果门', () {
-      // 初次开书(从书架点开)走 webview.part.dart 的 _loadChapterDirectly 裸装章，**不经
-      // _beginNavigation**；若不武装因果门，TODO-798 拦截器第一道门(!settleGuardArmed)恒放行 →
-      // 连续模式恢复位置被 reflow 归零裸奔落库弹回章首(798/718 对初次开书无效的真因)。
-      final String webview = File(
-        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
-      ).readAsStringSync();
-      final int openIdx =
-          webview.indexOf('_loadChapterDirectly(_currentChapter)');
-      expect(openIdx, greaterThan(0), reason: '初次开书装章入口必须存在');
-      // 武装必须紧邻在 _loadChapterDirectly 之前(同一 else 块内)。
-      final String openWindow =
-          webview.substring((openIdx - 400).clamp(0, webview.length), openIdx);
-      expect(openWindow.contains('_continuousSettleGuardArmed = true'), isTrue,
-          reason: '初次开书裸装章前必须武装因果门(对齐 _beginNavigation)，'
-              '否则 TODO-798 拦截器对初次开书恒放行 → 弹回章首(TODO-718)');
-
-      // 样式重载(改字号/字体)同样裸恢复，纵深防御也武装。
-      final String chrome = File(
-        'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
-      ).readAsStringSync();
-      final int reloadIdx = chrome.indexOf('reloadWithCurrentSettings:');
-      expect(reloadIdx, greaterThan(0),
-          reason: 'reloadWithCurrentSettings 必须存在');
-      final String reloadWindow = chrome.substring(
-          (reloadIdx - 400).clamp(0, chrome.length), reloadIdx);
+    test('因果门状态机已彻底删除（不再有 _continuousSettleGuardArmed 字段/赋值）', () {
+      // 旧状态机的解武装信号被前置 return 吞掉致用户卡在恢复锚——已用无状态判据取代。
+      // 仅允许注释提及，不得有 `bool _continuousSettleGuardArmed` 声明或 `= true/false` 赋值。
+      expect(page.contains('bool _continuousSettleGuardArmed'), isFalse,
+          reason: '_continuousSettleGuardArmed 字段必须删除');
+      expect(navigation.contains('_continuousSettleGuardArmed = true'), isFalse,
+          reason: '不得再有因果门武装');
       expect(
-          reloadWindow.contains('_continuousSettleGuardArmed = true'), isTrue,
-          reason: '样式重载裸恢复也武装因果门(纵深防御，B-3 窗超窗仍兜)');
+          navigation.contains('_continuousSettleGuardArmed = false'), isFalse,
+          reason: '不得再有因果门解武装');
     });
   });
 }

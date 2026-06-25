@@ -977,10 +977,6 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
     _restoreCompleter = Completer<bool>();
     _restoreInFlight = true;
-    // TODO-718 纵深防御：改字号/字体后整页重载也走这条裸恢复路径(不经 _beginNavigation)，
-    // 同样会触发自发 reflow 归零。武装因果门让 TODO-798 拦截器在 B-3 250ms 窗超窗后仍兜得住
-    // (与初次开书 webview.part.dart / _beginNavigation 同语义)；用户首次真滚再解武装。
-    _continuousSettleGuardArmed = true;
     debugPrint('[ReaderHibiki] reloadWithCurrentSettings: '
         'chapter=$_currentChapter progress=$_initialProgress '
         'generation=$gen continuous=${_settings?.isContinuousMode}');

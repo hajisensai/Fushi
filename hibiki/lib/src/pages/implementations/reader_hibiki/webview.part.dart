@@ -1098,12 +1098,6 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             _loadLyricsPage();
           } else {
             _restoreInFlight = true;
-            // TODO-718 根因修复：初次开书(从书架点开)走这条裸装章路径，**不经 _beginNavigation**，
-            // 此前因果门 _continuousSettleGuardArmed 一直是 false → TODO-798 非自愿 reflow 归零
-            // 拦截器第一道门(if !settleGuardArmed return false)恒早返回放行 → 连续模式恢复位置被
-            // 自发 reflow 归零裸奔落库 → 弹回章首(798/718 此前对初次开书无效的真因)。这里与
-            // _beginNavigation:253 同语义武装因果门：开启恢复/自发 settle 期，用户首次真滚再解武装。
-            _continuousSettleGuardArmed = true;
             _loadChapterDirectly(_currentChapter);
           }
 

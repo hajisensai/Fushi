@@ -133,19 +133,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   void _handleReaderScroll(bool userDriven) {
     // TODO-718：累积本批滚动是否由真实用户输入驱动（JS 据最近 1000ms 内 touch/pointer/wheel/key
     // 算出）。节流/coalesce 期多发 scroll 合并，只要有一发用户驱动即记真，待实际发起刷新时消费
-    // （见下方进度刷新路由）。reflow 归零 / cue-reveal 程序化滚动 userDriven=false → 不解武装 798 因果门。
+    // （见下方进度刷新路由消费）。这是无状态 reflow-归零判据的唯一区分信号
+    // （取代已删的 _continuousSettleGuardArmed 状态机）：reflow 归零 / cue-reveal = userDriven=false。
     if (userDriven) _scrollUserDrivenPending = true;
-    // TODO-718 根因修复（解武装信号被前置拦截吞掉 → 用户滚不出去/卡在恢复锚）：用户真实输入
-    // 驱动的滚动必须在这里**最先**解武装因果门——早于下面 B-3 settle 窗的整发 return、也早于
-    // _refreshProgress 里「拦截器命中后 return（在解武装之前）」。否则:① 用户在 restore 重锚后
-    // 250ms 内滚动被 B-3 整发吞掉、连解武装一起丢;② 用户向前滚时某帧 reflow 把进度瞬时读成 0,
-    // armed 拦截器命中把视口拽回 committedAnchor(≈恢复锚)且 return 不解武 → 门永远 armed、用户
-    // 每次滚动都被弹回开头、保存值停在恢复位置。reflow 归零/cue-reveal 是 userDriven=false → 不在
-    // 此解武装(继续保护恢复不被自发归零裸奔=TODO-718/798 主路径)。只有真用户输入才解武装、之后
-    // 拦截器放行(armed=false)→ 用户自由滚动、真实位置得以保存/恢复。
-    if (userDriven && _continuousSettleGuardArmed) {
-      _continuousSettleGuardArmed = false;
-    }
     // TODO-736 B-3：样式重锚 commit 清旗后的 settle 尾沿去抖。改字号/字体/主题 reflow 在
     // commit（_reanchorClearedAt 打点）之后还会有几帧 settle，其间 WebView 自发的瞬态归零
     // scroll 经此回传——250ms 内的尾沿 scroll 直接 return 不落库（治翻页多次改字号跳章首的
@@ -258,10 +248,8 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 脚本（旧的 post-await 复位在 lyrics/spread/early-return/throw 路径会被跳过）。
     _initialFragment = fragment;
     _restoreInFlight = true;
-    // TODO-798 续修边界：每次导航开启一段新的自发 settle 期——武装非自愿 reflow 归零
-    // 因果门。恢复落定后到用户首次真实滚动前的归零都属自发 reflow（命中复位）；用户首
-    // 次真滚即解武装（_refreshProgressFromScroll 路径），此后归零必是用户拖到章首（放行）。
-    _continuousSettleGuardArmed = true;
+    // TODO-718 重设计：删除 _continuousSettleGuardArmed 武装——非自愿 reflow 归零判据已改无状态
+    // （直接看 fromUserScroll），不再需要「导航武装/用户滚动解武装」状态机。
     _rebuild(() {
       _readerContentReady = false;
     });
@@ -661,7 +649,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       priorProgress: priorProgress,
       newProgress: progress,
       hasCommittedAnchor: committedAnchor >= 0,
-      settleGuardArmed: _continuousSettleGuardArmed,
+      // TODO-718 重设计：无状态判据——本次刷新是否真用户输入驱动（取代已删的因果门状态机）。
+      fromUserScroll: fromUserScroll,
       // TODO-724：有声书主动播放跟读期，进度由音频 cue 权威驱动，放行（不反向复位到陈旧锚）。
       audiobookActivelyFollowing: _audiobookController?.isPlaying == true,
     )) {
@@ -669,7 +658,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
         debugPrint('[ReaderDiag] _refreshProgress involuntary reflow-zero snap'
             ' prior=${priorProgress.toStringAsFixed(4)}'
             ' new=${progress.toStringAsFixed(4)}'
-            ' armed=$_continuousSettleGuardArmed fromScroll=$fromUserScroll'
+            ' fromScroll=$fromUserScroll'
             ' → re-anchor to committed charOffset=$committedAnchor (no save)');
       }
       // 复位到已提交锚（webview.part.dart 的 _reanchorPending 守卫挡住复位滚动自身回传）。
@@ -681,19 +670,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
         );
       }
       return;
-    }
-    // TODO-798 续修边界：因果门解武装。本次是用户原生滚动驱动且**未**判非自愿（落得一个
-    // 真实的非塌缩进度，含「用户拖滚动条途中」与「用户拖到章首那一发但 prior 已≈0」）→
-    // 用户已真滚过，此后任何归零都该归用户（拖到章首），永久解武装本章载入的因果门。
-    // 不在「判非自愿」分支解武装（那是 reflow 归零，复位后仍在 settle 期）；不在轮询/恢复
-    // 路径解武装（fromUserScroll=false，否则恢复后首发轮询会误解武装致 reflow 归零裸奔）。
-    if (fromUserScroll && _continuousSettleGuardArmed) {
-      _continuousSettleGuardArmed = false;
-      if (DebugLogService.instance.enabled) {
-        debugPrint('[ReaderDiag] _refreshProgress first real user scroll'
-            ' → disarm continuous settle guard (progress='
-            '${progress.toStringAsFixed(4)})');
-      }
     }
 
     _lastProgressSection = _currentChapter;

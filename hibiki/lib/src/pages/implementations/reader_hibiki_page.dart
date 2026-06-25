@@ -456,15 +456,17 @@ bool readerScrollWithinReanchorSettle({
 /// 的 50ms 节流 + in-flight coalesce 限制——追不上手速时，到 0 那一发之前最后采到的 prior
 /// 可能仍停在 0.15~0.3（> [minPriorProgress]），与 reflow 归零在**数据层不可区分**。
 ///
-/// 故加第二道**因果**判据 [settleGuardArmed]（事件驱动，非时间窗、非输入时序）：reflow
-/// 归零是**自发 settle 产物**，只发生在「恢复落定后 → 用户首次真实滚动前」这段自发期；
-/// 用户拖滚动条到章首必然先产生一次真实的用户滚动 → 调用方据此解武装（disarm）。两道
-/// 判据**与门**：只有「位置塌缩」且「仍在自发 settle 期（用户尚未真滚过）」才判非自愿。
-///  - 主 bug 路径（恢复→reflow 归零）发生在用户首次滚动前 → 武装中 → 仍命中、修复不退化。
-///  - 用户拖滚动条到章首：拖动本身就是首次真实滚动 → 已解武装 → 放行用户停章首（边界修复）。
-///  - 用户滚过一次后晚到的图片 reflow 归零：已解武装 → 本判据不再兜（acceptable 取舍）——
-///    此时 [priorProgress] 已是用户真实位置，且离散图片 reflow 仍由 JS `_reanchorPending`
-///    路径在其自身事件上重锚；不再误伤「用户真滑到章首」比兜这罕见晚 reflow 更重要。
+/// TODO-718 重设计（2026-06-25·删除 settleGuardArmed 因果门状态机）：旧版用「武装/解武装」
+/// 状态机区分 reflow 归零 vs 用户拖到章首，但解武装信号被 B-3 settle 窗整发 return / 拦截器命中
+/// 前置 return 双重吞掉 → 门永远 armed → 用户向前滚被 reflow 归零反复拽回恢复锚、滚不出去、保存
+/// 值停在开头（状态机最隐蔽的「信号被吞」bug，此区连改 4 轮）。改为**无状态**判据：直接用本次
+/// 进度刷新是否**由真实用户输入驱动** [fromUserScroll]（JS 据最近 1000ms 内 touch/pointer/wheel/key
+/// 算出，reflow/cue-reveal 程序化滚动恒 false）区分——
+///  - [fromUserScroll]=true（用户真滚，含拖滚动条/惯性甩动到章首）→ 一律放行、接受、落库（无门、
+///    无陷阱，用户能滚到任何位置含章首）；
+///  - [fromUserScroll]=false 且位置从实质性 [priorProgress] 单步塌缩到章首 [newProgress]≈0 →
+///    判定 WebView 自发 reflow 归零 → 复位到已提交锚 + 跳过落库（保护恢复/已读位置不被归零裸奔，
+///    且因 fromUserScroll 是即时事实、非状态，对晚到 reflow 也持续有效，不像旧门解武后失效）。
 ///
 /// 仅连续模式（[continuousMode]）；分页模式有 snap/lock 保护，归零不裸奔，恒 false。
 /// 触发后调用方应**复位到已提交锚**（[hasCommittedAnchor] 为真才有锚可复位）并跳过落库；
@@ -474,21 +476,19 @@ bool readerContinuousProgressSnapIsInvoluntary({
   required double priorProgress,
   required double newProgress,
   required bool hasCommittedAnchor,
-  required bool settleGuardArmed,
+  required bool fromUserScroll,
   bool audiobookActivelyFollowing = false,
   double chapterStartEpsilon = 0.01,
   double minPriorProgress = 0.05,
 }) {
   if (!continuousMode) return false;
-  // TODO-724 回归修复：有声书正在播放（逐句 reveal 主动跟读）时，进度变化由音频 cue **权威**
-  // 驱动（含跨章 reveal 落到新章首），不是 WebView 自发 reflow 归零。此时这个拦截器若命中会把
-  // 视口强拽回上一发 committedAnchor（跨章时指向上一章的陈旧锚，常是图片）= 「有声书跳图片」。
-  // 故有声书主动跟读期一律放行：位置交给 cue 跟随，不做反向复位。开书恢复期有声书未自动续播
-  // （isPlaying=false），故不影响 TODO-718 的 reflow-zero 拦截。
+  // 用户真实输入驱动的滚动（含拖滚动条/惯性甩动到章首）→ 一律放行：用户要去哪就去哪，绝不
+  // 反向复位。这取代了旧的「武装/解武装」状态机（无状态、不会被前置 return 吞信号、无陷阱）。
+  if (fromUserScroll) return false;
+  // TODO-724：有声书主动播放（逐句 reveal 跟读，含跨章落新章首）由音频 cue 权威驱动，非自发
+  // reflow 归零，放行（否则会把视口拽回上一发 committedAnchor=上章陈旧锚/图片=「有声书跳图片」）。
   if (audiobookActivelyFollowing) return false;
   if (!hasCommittedAnchor) return false;
-  // 因果门：用户已真滚过（解武装）后，归零必是用户拖到章首，放行——不再误伤拖滚动条。
-  if (!settleGuardArmed) return false;
   // 新进度必须塌缩到章首附近。
   if (newProgress > chapterStartEpsilon) return false;
   // 紧邻的上一发进度必须实质性非零（单步大跳 = 非自愿；逐帧递减到 0 = 用户真滚）。
@@ -945,15 +945,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
-  // TODO-798 续修边界：连续模式「非自愿 reflow 归零」判据的因果武装位
-  // （事件驱动，非时间窗）。每次导航 _beginNavigation 武装（恢复落定后进入自发 settle
-  // 期）；用户首次真实滚动（_refreshProgressFromScroll 经 _markUserScrollIfDisarming
-  // 落得一个非塌缩进度）即解武装。解武装后 readerContinuousProgressSnapIsInvoluntary 恒
-  // 放行——区分「reflow 归零」（武装中）与「用户拖滚动条到章首」（已解武装）。
-  bool _continuousSettleGuardArmed = false;
-  // 路由位：仅 _refreshProgressFromScroll 触发的 _refreshProgress 才视作「用户滚动驱动」
-  // 候选——用于解武装因果门。轮询/恢复/chrome 驱动的 _refreshProgress 不解武装（否则
-  // 恢复后的首发轮询会把锚位当用户滚动误解武装，reflow 归零随即裸奔）。
+  // TODO-718 重设计：连续模式「非自愿 reflow 归零」判据改用无状态的「本次刷新是否真用户输入
+  // 驱动」[_progressRefreshFromScroll]（删除了旧的 _continuousSettleGuardArmed 武装/解武装状态机
+  // ——其解武装信号被 B-3 窗/拦截器前置 return 吞掉致门永 armed、用户滚不出去）。
+  // 路由位：仅 _refreshProgressFromScroll 经真实用户输入（JS userDriven）触发的 _refreshProgress
+  // 才置真。reflow 归零 / cue-reveal / 轮询 / 恢复 / chrome 驱动恒 false → 判据据此识别自发归零。
   bool _progressRefreshFromScroll = false;
 
   AudiobookPlayerController? _audiobookController;
