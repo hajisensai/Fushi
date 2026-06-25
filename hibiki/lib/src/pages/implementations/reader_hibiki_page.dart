@@ -1032,6 +1032,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ErrorLogService.instance.log('ReaderHibiki.onLayoutReloadLive', e, s);
       }));
     };
+    // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
+    // 不动 WebView 内容、不重锚、不重排分页。
+    ReaderHibikiSource.onChromeReloadLive = () {
+      if (!mounted) return;
+      setState(() {});
+    };
     _initBook();
   }
 
@@ -1318,6 +1324,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
     ReaderHibikiSource.onLayoutReloadLive = null;
+    ReaderHibikiSource.onChromeReloadLive = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {

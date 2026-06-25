@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 
@@ -65,6 +67,73 @@ void main() {
       reason: '_applyStylesLive 必须走 _reanchorForStyleChange 两阶段编排（begin/commit '
           'settle-aware 重锚），让字体/行间/余白变更后重排能重锚到分页边界，否则最上一行被裁'
           '（BUG-023）。勿退回只 el.textContent = css。',
+    );
+  });
+
+  // TODO-842：「反转阅读器底栏」改完不实时生效须退出重进。根因=该项 onChanged
+  // 只调 quick-settings sheet 自身 refresh()，不触碰下层 reader 页；reader 底栏裸读
+  // appModel.reverseReaderBottomBar（非 ref.watch），只有 reader 页 rebuild 才重取值。
+  // 修复=新增轻量 onChromeReloadLive hook（纯 setState 重建 chrome 层，不重锚/不重排/
+  // 不动 WebView），reader 注册+dispose 置 null，settings_actions 新增
+  // notifyReaderChromeChanged，reverse_reader_bottom_bar 的 onChanged 改走它。
+  // 任何一处接线退回（漏注册 / 漏 dispose 置 null / onChanged 退回裸 c.refresh()），本组红。
+  test('TODO-842: reverse-bottom-bar toggle wired through onChromeReloadLive',
+      () {
+    // 1) reader 页注册 + dispose 置 null（防泄漏）。
+    expect(
+      src,
+      contains('onChromeReloadLive ='),
+      reason:
+          'reader initState 必须注册 onChromeReloadLive（纯 setState 重建 chrome 层），'
+          '否则反转底栏改完不实时生效须退出重进（TODO-842）。',
+    );
+    expect(
+      src,
+      contains('onChromeReloadLive = null'),
+      reason: 'reader dispose 必须把 onChromeReloadLive 置 null，防止静态 hook 泄漏到已销毁页。',
+    );
+
+    // 2) settings_actions.dart 新增 notifyReaderChromeChanged 且体内 fire hook。
+    final String actions = File('lib/src/settings/settings_actions.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(
+      actions,
+      contains('void notifyReaderChromeChanged('),
+      reason:
+          'settings_actions 必须提供 notifyReaderChromeChanged 触发 reader chrome 重建。',
+    );
+    expect(
+      actions,
+      contains('onChromeReloadLive?.call()'),
+      reason:
+          'notifyReaderChromeChanged 体内必须 fire onChromeReloadLive，否则 reader 不重建。',
+    );
+
+    // 3) reverse_reader_bottom_bar 的 onChanged 走 notifyReaderChromeChanged，
+    //    不再裸 c.refresh()（裸 refresh 只重建设置浮层，不碰 reader 页）。
+    final String schema = File('lib/src/settings/settings_schema_reading.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    final int idx =
+        schema.indexOf("'reading_display.reverse_reader_bottom_bar'");
+    expect(idx, greaterThanOrEqualTo(0),
+        reason: 'reverse_reader_bottom_bar 设置项缺失。');
+    // 取该项 onChanged 闭包到下一个 `),` 块尾的切片，断言走 hook 而非裸 refresh。
+    final int onChangedIdx = schema.indexOf('onChanged:', idx);
+    final String slice = schema.substring(onChangedIdx, onChangedIdx + 200);
+    expect(
+      slice,
+      contains('notifyReaderChromeChanged(c)'),
+      reason:
+          'reverse_reader_bottom_bar onChanged 必须走 notifyReaderChromeChanged，'
+          '否则只重建设置浮层、reader 底栏不实时镜像（TODO-842）。',
+    );
+    expect(
+      slice.contains('c.refresh()'),
+      isFalse,
+      reason:
+          'reverse_reader_bottom_bar onChanged 不应再裸调 c.refresh()（不触下层 reader 页）。',
     );
   });
 }

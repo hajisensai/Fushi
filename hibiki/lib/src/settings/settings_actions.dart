@@ -154,6 +154,16 @@ void notifyReaderLayoutChanged(SettingsContext settingsContext) {
   settingsContext.refresh();
 }
 
+/// Like [notifyReaderSettingsChanged], but for pure Flutter chrome layout keys
+/// (e.g. reverse reader bottom bar) that neither re-inject CSS nor reload the
+/// chapter. Fires the reader's chrome-reload hook so the underlying reader page
+/// rebuilds once and re-reads the preference live, instead of only refreshing
+/// the quick-settings sheet (which left the reader stale until re-entry).
+void notifyReaderChromeChanged(SettingsContext settingsContext) {
+  ReaderHibikiSource.onChromeReloadLive?.call();
+  settingsContext.refresh();
+}
+
 Future<void> setKeepScreenAwake(
   SettingsContext settingsContext,
   bool value,

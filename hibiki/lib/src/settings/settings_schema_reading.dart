@@ -657,7 +657,7 @@ SettingsDestination buildReadingDestination() {
             value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
             onChanged: (SettingsContext c, bool value) {
               c.appModel.toggleReverseReaderBottomBar();
-              c.refresh();
+              notifyReaderChromeChanged(c);
             },
           ),
         ],

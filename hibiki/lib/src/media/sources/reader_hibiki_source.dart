@@ -430,6 +430,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// reader settings, not just the in-book sheet.
   static VoidCallback? onLayoutReloadLive;
 
+  /// Fired on pure Flutter chrome layout changes (e.g. reverse reader bottom
+  /// bar) that neither touch the injected CSS nor require a chapter reload.
+  /// The reader simply rebuilds its chrome layer once to re-read the preference;
+  /// kept separate from [onSettingsChangedLive] (which also runs a WebView CSS
+  /// re-eval + re-anchor) and [onLayoutReloadLive] (which re-runs pagination).
+  static VoidCallback? onChromeReloadLive;
+
   bool get volumePageTurningEnabled => getPreference<bool>(
       key: 'volume_page_turning_enabled', defaultValue: true);
 
