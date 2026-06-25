@@ -358,6 +358,69 @@ void main() {
     });
   });
 
+  group('invertAudiobookSkipDirection is per-reader (TODO-830)', () {
+    setUp(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+    tearDown(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+
+    test(
+        'defaults to false and round-trips through the global source pref '
+        'when no reader page is open', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      // Default = false (现有行为：左=上一句、右=下一句)。
+      expect(source.invertAudiobookSkipDirection, isFalse);
+
+      source.toggleInvertAudiobookSkipDirection();
+      // toggle 内部 await setPreference，给微任务/IO 一拍落定。
+      await Future<void>.delayed(Duration.zero);
+      expect(source.invertAudiobookSkipDirection, isTrue);
+      expect(
+        await db.getPref('src:reader_ttu:invert_audiobook_skip_direction'),
+        'b:true',
+      );
+    });
+
+    test(
+        'reads/writes through ReaderSettings (per-reader) when a reader page '
+        'is open, mirroring invert_swipe / reverse_arrow', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      final ReaderSettings perBook = ReaderSettings(db);
+      await perBook.refreshFromDb();
+      ReaderHibikiSource.readerSettings = perBook;
+
+      // Per-reader default false.
+      expect(source.invertAudiobookSkipDirection, isFalse);
+
+      // Toggle 走 ReaderSettings 分层（perBook.toggle），不是 source.setPreference。
+      source.toggleInvertAudiobookSkipDirection();
+      await Future<void>.delayed(Duration.zero);
+      expect(perBook.invertAudiobookSkipDirection, isTrue);
+      expect(source.invertAudiobookSkipDirection, isTrue);
+      // 证明写经 ReaderSettings 路径：ReaderSettings._set 用 value.toString()
+      // 编码（'true'），而 source.setPreference 会用 PrefCodec.encode（'b:true'）。
+      // 两路径共用同一 DB key，但编码不同——'true' 坐实走了 per-reader 分层。
+      expect(
+        await db.getPref('src:reader_ttu:invert_audiobook_skip_direction'),
+        'true',
+      );
+    });
+  });
+
   group('ReaderHibikiSource author editing (BUG-220 子3)', () {
     EpubBooksCompanion bookWithAuthor(String key, {String? author}) {
       return EpubBooksCompanion.insert(

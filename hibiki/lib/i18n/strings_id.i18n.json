@@ -1814,5 +1814,7 @@
   "popup_dictionary_columns_hint": "Tampilkan beberapa kamus berdampingan; gunakan lebih sedikit kolom pada layar sempit",
   "card_exported_audio_failed": "Kartu diekspor, tetapi audio gagal diunduh ($reason).",
   "card_mined_without_sentence_audio": "Kartu dibuat tanpa audio kalimat (tidak ditemukan untuk pilihan ini).",
-  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
+  "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
+  "section_bottom_bar_layout": "Bottom bar layout"
 }

@@ -1814,5 +1814,7 @@
   "popup_dictionary_columns_hint": "Muestra varios diccionarios en paralelo; usa menos columnas en pantallas estrechas",
   "card_exported_audio_failed": "Tarjeta exportada, pero falló la descarga del audio ($reason).",
   "card_mined_without_sentence_audio": "Tarjeta creada sin audio de frase (no se encontró para esta selección).",
-  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
+  "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
+  "section_bottom_bar_layout": "Bottom bar layout"
 }

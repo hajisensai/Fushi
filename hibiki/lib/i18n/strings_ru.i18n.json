@@ -1814,5 +1814,7 @@
   "popup_dictionary_columns_hint": "Показывать несколько словарей рядом; на узких экранах используйте меньше столбцов",
   "card_exported_audio_failed": "Карточка экспортирована, но не удалось загрузить аудио ($reason).",
   "card_mined_without_sentence_audio": "Карточка создана без аудио предложения (для этого выделения ничего не найдено).",
-  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
+  "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
+  "section_bottom_bar_layout": "Bottom bar layout"
 }

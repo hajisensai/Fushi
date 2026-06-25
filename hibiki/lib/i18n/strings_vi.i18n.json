@@ -1814,5 +1814,7 @@
   "popup_dictionary_columns_hint": "Hiển thị nhiều từ điển cạnh nhau; dùng ít cột hơn trên màn hình hẹp",
   "card_exported_audio_failed": "Đã xuất thẻ, nhưng tải âm thanh thất bại ($reason).",
   "card_mined_without_sentence_audio": "Đã tạo thẻ nhưng không có âm thanh câu (không tìm thấy cho vùng chọn này).",
-  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
+  "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
+  "section_bottom_bar_layout": "Bottom bar layout"
 }

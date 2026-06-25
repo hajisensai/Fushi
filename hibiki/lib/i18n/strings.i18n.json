@@ -1814,5 +1814,7 @@
   "popup_dictionary_columns_hint": "Show multiple dictionaries side by side; use fewer columns on narrow screens",
   "card_exported_audio_failed": "Card exported, but the audio failed to download ($reason).",
   "card_mined_without_sentence_audio": "Card created without sentence audio (none found for this selection).",
-  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
+  "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
+  "section_bottom_bar_layout": "Bottom bar layout"
 }

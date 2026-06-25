@@ -1814,5 +1814,7 @@
   "popup_dictionary_columns_hint": "在一行內並排顯示多個詞典；窄螢幕建議少列",
   "card_exported_audio_failed": "卡片已匯出，但音訊下載失敗（$reason）。",
   "card_mined_without_sentence_audio": "已製卡，但今次選取範圍找不到例句音訊。",
-  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
+  "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
+  "section_bottom_bar_layout": "Bottom bar layout"
 }
