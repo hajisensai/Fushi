@@ -24,4 +24,7 @@ abstract final class HibikiChannels {
       MethodChannel('$_prefix/clipboard_image');
   static const MethodChannel screenBrightness =
       MethodChannel('$_prefix/screen_brightness');
+  // TODO-617: drives the desktop global lookup overlay (bare WebView2 window).
+  static const MethodChannel globalLookup =
+      MethodChannel('$_prefix/global_lookup');
 }

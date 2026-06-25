@@ -7,11 +7,14 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
+
+#include <flutter/method_result_functions.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -272,6 +275,7 @@ bool FlutterWindow::OnCreate() {
       });
 
   RegisterFloatingLyricChannel();
+  RegisterGlobalLookupChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -362,6 +366,19 @@ std::wstring WideFromValue(const flutter::EncodableMap* args, const char* key,
   MultiByteToWideChar(CP_UTF8, 0, s->data(), static_cast<int>(s->size()),
                       result.data(), size);
   return result;
+}
+
+std::string StringFromValue(const flutter::EncodableMap* args, const char* key,
+                            const std::string& fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  const auto* s = std::get_if<std::string>(&it->second);
+  return s != nullptr ? *s : fallback;
 }
 
 FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
@@ -483,6 +500,81 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           floating_lyric_window_->SetLocked(
               BoolFromValue(args, "locked", false));
           result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+}
+
+void FlutterWindow::RegisterGlobalLookupChannel() {
+  global_lookup_window_ = std::make_unique<GlobalLookupWindow>();
+
+  global_lookup_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/global_lookup",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  // image:// -> ask the main Dart engine for the bytes. Asynchronous: the reply
+  // is delivered on this (platform) thread, so the WebView2 deferral is
+  // completed inside the InvokeMethod result without blocking the message loop.
+  global_lookup_window_->SetMediaResolver(
+      [this](const std::string& url,
+             std::function<void(std::vector<uint8_t>)> respond) {
+        auto args = std::make_unique<flutter::EncodableValue>(
+            flutter::EncodableMap{{flutter::EncodableValue("url"),
+                                   flutter::EncodableValue(url)}});
+        auto result = std::make_unique<
+            flutter::MethodResultFunctions<flutter::EncodableValue>>(
+            [respond](const flutter::EncodableValue* ok) {
+              std::vector<uint8_t> bytes;
+              if (ok != nullptr) {
+                if (const auto* b =
+                        std::get_if<std::vector<uint8_t>>(ok)) {
+                  bytes = *b;
+                }
+              }
+              respond(std::move(bytes));
+            },
+            [respond](const std::string&, const std::string&,
+                      const flutter::EncodableValue*) { respond({}); },
+            [respond]() { respond({}); });
+        global_lookup_channel_->InvokeMethod("getMedia", std::move(args),
+                                             std::move(result));
+      });
+
+  // JS postMessage (dismiss / audio handlers) -> Dart.
+  global_lookup_window_->SetMessageCallback([this](const std::string& json) {
+    global_lookup_channel_->InvokeMethod(
+        "jsMessage", std::make_unique<flutter::EncodableValue>(json));
+  });
+
+  global_lookup_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const std::string& method = call.method_name();
+
+        if (method == "prepare") {
+          global_lookup_window_->SetPopupAssetsDir(
+              WideFromValue(args, "assetsDir", L""));
+          result->Success();
+        } else if (method == "showAt") {
+          const bool ok = global_lookup_window_->ShowAt(
+              IntFromValue(args, "x", 0), IntFromValue(args, "y", 0),
+              IntFromValue(args, "width", 420),
+              IntFromValue(args, "height", 600), GetHandle());
+          result->Success(flutter::EncodableValue(ok));
+        } else if (method == "render") {
+          global_lookup_window_->RenderJson(StringFromValue(args, "json", ""));
+          result->Success();
+        } else if (method == "hide") {
+          global_lookup_window_->Hide();
+          result->Success();
+        } else if (method == "isShowing") {
+          result->Success(
+              flutter::EncodableValue(global_lookup_window_->IsShowing()));
         } else {
           result->NotImplemented();
         }
