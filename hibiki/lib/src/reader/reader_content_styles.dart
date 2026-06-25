@@ -155,6 +155,16 @@ class ReaderContentStyles {
     final double mr = math.max(0, settings.marginRight);
 
     final String paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw';
+    // TODO-792 续（相邻页/列露出 bleed 修复）：分页模式视口比单列周期大（viewport > pageStep），
+    // 多出的部分在页边缘露出上/下页（竖排）或左/右页（横排）的相邻列。clip-path 以 body 边框盒
+    // （固定视口帧，margin/border=0 即视口）为基准、裁到**正文内容盒**（= 全 padding：四边各等于
+    // body 实际 padding），把滚进留白区的相邻列裁掉；正文在内容盒内侧不受影响，被裁的留白区显示
+    // html/body 背景（同色）= 页边距照常空白。四边都裁：竖排消上下露、横排消左右露。padding 四边
+    // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+F+chromeBottom，
+    // 左右=ml/mr vw），裁边恰在列边缘、不切正文。
+    final String contentClipCss =
+        'inset(calc(${mt}vh + var(--chrome-top-inset, 0px)) ${mr}vw '
+        'calc(${mb}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) ${ml}vw)';
     // TODO-729：column-gap 固定为常量（= 安卓 calc(0vh + 22px)）。它只是相邻列之间
     // 的恒定空隙，**不再**承载 margin / fontSize / chrome inset —— 那些 inset 全部由
     // padding 承载（横排在 padding 左右 + perpendicular 的 padding-top/bottom；竖排在
@@ -259,6 +269,7 @@ p {
             columnsCss: columnsCss,
             clampedMarginTop: mt,
             clampedMarginBottom: mb,
+            contentClipCss: contentClipCss,
           );
 
     final String readerStylePriority =
@@ -475,6 +486,7 @@ a {
     required String columnsCss,
     required double clampedMarginTop,
     required double clampedMarginBottom,
+    required String contentClipCss,
   }) {
     return '''
 html, body {
@@ -514,13 +526,13 @@ body {
   padding: $paddingCss !important;
   padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
   padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
-  /* TODO-810：notch（摄像头）遮挡只靠透明 padding-top（=var(--chrome-top-inset)）腾出物理区，
-     没有真实裁剪。竖排翻页轴=纵向 scrollTop 与顶部安全带同轴，上一页文字滚经透明带会落入
-     notch 物理区可见（横排走 scrollLeft 不经顶带故不漏）。这里加硬裁剪在 inset 带处真实裁掉
-     滚入的文字：clip-path 以 body 边框盒为基准（border-box，margin/border 为 0 即视口），inset
-     裁的正是顶/底 padding 透明带，正文在 padding 内侧不受影响；横竖排同生效，横排顶带本无字故
-     无副作用。不动 body 高度/pageStep/column-width/scrollTop 几何（防 TODO-753/792 回归）。 */
-  clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;
+  /* TODO-810 + TODO-792：clip-path 以 body 边框盒（border-box·margin/border=0 即固定视口帧）为
+     基准裁到**正文内容盒**（四边各 = body 实际 padding），一举两用：① 裁掉 notch/状态栏安全带里
+     滚入的上一页文字（原 TODO-810 只裁 chrome inset 那一截）；② 裁掉分页模式因 viewport > 单列
+     周期而在留白区露出的相邻页/列（竖排上下、横排左右）。正文在内容盒内侧不受影响；被裁的留白区
+     显示 html/body 背景（同色）= 页边距照常空白。不动 body 高度/pageStep/column-width/scrollTop
+     几何（防 TODO-753/792 回归）。contentClipCss 与上面 padding-top/right/bottom/left 逐项一致。 */
+  clip-path: $contentClipCss !important;
   $gridCss
   $textOrientCss
   $textIndentCss

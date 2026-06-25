@@ -827,11 +827,14 @@ void main() {
       final ReaderSettings settings = await _defaultSettings();
       // Default is paginated mode.
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(
-          css,
-          contains(
-              'clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;'),
-          reason: '分页 body 必须在顶/底 inset 带硬裁，防文字滚入 notch');
+      // TODO-792：分页 clip-path 从「只裁 chrome inset」扩成「裁到正文内容盒(=全 padding，四边
+      // 各含 margin/chrome/F)」，一举裁掉 notch 滚入文字 + 相邻页/列在留白区的露出(bleed)。
+      expect(css, contains('clip-path: inset(calc('),
+          reason: '分页 body clip-path 必须裁到正文内容盒（inset 用 calc 含 padding 表达式）');
+      expect(css, contains('var(--chrome-top-inset, 0px))'),
+          reason: 'clip 顶边须含 chrome-top（防 notch 滚入），且并入 margin（裁相邻页露出）');
+      expect(css, contains('var(--chrome-bottom-inset, 0px))'),
+          reason: 'clip 底边须含 chrome-bottom');
     });
 
     test('continuous body clips top/bottom inset bands via clip-path inset',
@@ -861,7 +864,9 @@ void main() {
       await settings.setWritingMode('vertical-rl');
 
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('clip-path: inset(var(--chrome-top-inset'));
+      // TODO-792：竖排分页 clip 现裁到内容盒（inset(calc(...)）——仍含 chrome inset 防 notch。
+      expect(css, contains('clip-path: inset(calc('));
+      expect(css, contains('var(--chrome-top-inset, 0px))'));
     });
   });
 }
