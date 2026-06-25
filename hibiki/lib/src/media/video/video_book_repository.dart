@@ -33,7 +33,9 @@ class VideoBookRepository {
   Future<void> updateDelayMs(String bookUid, int delayMs) =>
       _db.updateVideoBookDelayMs(bookUid, delayMs);
 
-  /// 更新用户选中的字幕源（外挂存路径；内嵌存 `embedded:<n>`；关闭存 null）。
+  /// 更新用户选中的字幕源（外挂存绝对路径；内嵌存 `embedded:<n>`；用户显式关闭存
+  /// `off:` 哨兵 `SubtitleSource.offSentinel`，TODO-818；null=无偏好/从未选过，按
+  /// 「自动选默认」恢复，与「显式关闭」区分，勿混用）。
   Future<void> updateSubtitleSource(String bookUid, String? subtitleSource) =>
       _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
 

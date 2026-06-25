@@ -1038,8 +1038,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
 
-  /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / null=关闭）；
-  /// 用于字幕源菜单高亮当前项。
+  /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / `off:`=用户显式关闭哨兵
+  /// （[SubtitleSource.offSentinel]，TODO-818） / null=无偏好或远端清字幕）；用于字幕
+  /// 源菜单高亮当前项。
   String? _currentSubtitleSource;
 
   /// 当前选中的音轨 id（libmpv `AudioTrack.id`）；null=未选过跟随默认。
@@ -1405,7 +1406,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String? externalSub = row.subtitleSource;
     int? graphicStreamIndex;
 
-    if (cues.isEmpty) {
+    // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
+    // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
+    if (SubtitleSource.isOff(row.subtitleSource)) {
+      cues = const <AudioCue>[];
+    } else if (cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (row.subtitleSource != null && row.subtitleSource!.isNotEmpty) {
         final ({
@@ -1584,32 +1589,39 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String? externalSub;
     int? graphicStreamIndex;
 
-    // ① 按上次偏好（同类）选新集字幕源：内嵌同 streamIndex / 外挂同语言后缀。
-    if (subtitleSource != null && subtitleSource.isNotEmpty) {
-      final ({
-        String persisted,
-        List<AudioCue> cues,
-        int? graphicStreamIndex
-      })? restored = await _restorePersistedSubtitle(
-        videoPath: episode.path,
-        persisted: subtitleSource,
-        crossEpisode: true,
-      );
-      if (restored != null) {
-        cues = restored.cues;
-        externalSub = restored.persisted;
-        graphicStreamIndex = restored.graphicStreamIndex;
+    // TODO-818：用户显式关闭字幕（哨兵存在 video book 的 subtitleSource 上，作用域与
+    // 选具体源一致——按整张 video book 持久化，各集共享）。哨兵短路两个自动重选向量
+    // （sidecar 探测 + 内嵌轨抽取），externalSub 保持哨兵传给 _applyLoad 维持关闭态。
+    if (SubtitleSource.isOff(subtitleSource)) {
+      externalSub = subtitleSource;
+    } else {
+      // ① 按上次偏好（同类）选新集字幕源：内嵌同 streamIndex / 外挂同语言后缀。
+      if (subtitleSource != null && subtitleSource.isNotEmpty) {
+        final ({
+          String persisted,
+          List<AudioCue> cues,
+          int? graphicStreamIndex
+        })? restored = await _restorePersistedSubtitle(
+          videoPath: episode.path,
+          persisted: subtitleSource,
+          crossEpisode: true,
+        );
+        if (restored != null) {
+          cues = restored.cues;
+          externalSub = restored.persisted;
+          graphicStreamIndex = restored.graphicStreamIndex;
+        }
       }
-    }
 
-    // ② 无偏好 / 无匹配：退默认 sidecar 探测。图形轨恢复时 cues 虽空但 externalSub
-    // 已置（embedded:<n>），不能让 sidecar 覆盖掉画面字幕选择（BUG-122）。
-    if (cues.isEmpty && externalSub == null) {
-      final ({String path, List<AudioCue> cues})? sidecar =
-          await _detectSidecar(episode.path, widget.bookUid);
-      if (sidecar != null) {
-        cues = sidecar.cues;
-        externalSub = sidecar.path;
+      // ② 无偏好 / 无匹配：退默认 sidecar 探测。图形轨恢复时 cues 虽空但
+      // externalSub 已置（embedded:<n>），不能让 sidecar 覆盖掉画面字幕选择（BUG-122）。
+      if (cues.isEmpty && externalSub == null) {
+        final ({String path, List<AudioCue> cues})? sidecar =
+            await _detectSidecar(episode.path, widget.bookUid);
+        if (sidecar != null) {
+          cues = sidecar.cues;
+          externalSub = sidecar.path;
+        }
       }
     }
 
@@ -1725,6 +1737,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         initialSpeed: _playbackSpeed,
         initialVolume: _playbackVolume,
         externalSubtitlePath: externalSubtitlePath,
+        // TODO-818：externalSubtitlePath 为「显式关闭」哨兵时，禁止 controller 后台
+        // 自动抽取内嵌文本轨成 cue（否则关了字幕重启又被内嵌轨自动选上）。
+        subtitleExplicitlyOff: SubtitleSource.isOff(externalSubtitlePath),
         renderGraphicStreamIndex: renderGraphicStreamIndex,
         shaderPaths: shaderPaths,
         mpvConfig: mpvConfig,
@@ -1763,8 +1778,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _title = title;
       _failed = false;
       _currentVideoPath = videoPath;
-      // 外挂字幕路径即持久化值；内嵌自动加载（externalSubtitlePath==null）时
-      // 当前选中由 _currentSubtitleSource 保留（菜单切换时再写）。
+      // externalSubtitlePath 即持久化值：外挂路径 / `embedded:<n>` / `off:`（显式关闭
+      // 哨兵，TODO-818）都按原样写进 _currentSubtitleSource 供菜单高亮。内嵌自动加载
+      // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
+      // 切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
     _syncControllerChapterAvailability(controller);

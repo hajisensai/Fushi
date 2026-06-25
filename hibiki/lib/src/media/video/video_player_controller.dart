@@ -720,6 +720,7 @@ class VideoPlayerController extends ChangeNotifier
     double initialSpeed = 1.0,
     double initialVolume = 100.0,
     String? externalSubtitlePath,
+    bool subtitleExplicitlyOff = false,
     int? renderGraphicStreamIndex,
     List<String> shaderPaths = const <String>[],
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
@@ -901,9 +902,12 @@ class VideoPlayerController extends ChangeNotifier
     // 与下面的「抽文本 cue 自动加载」互斥——图形轨没有可抽的文本。
     if (renderGraphicStreamIndex != null) {
       unawaited(selectEmbeddedGraphicTrack(renderGraphicStreamIndex));
-    } else if ((externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&
+    } else if (!subtitleExplicitlyOff &&
+        (externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&
         cues.isEmpty) {
       // 无外挂字幕且无 cue 时，桌面端后台抽内嵌文本字幕轨成可点击 cue（不阻塞首帧）。
+      // TODO-818：用户显式关闭字幕（subtitleExplicitlyOff）时不触发此自动抽取，否则
+      // 关了字幕重启又被内嵌轨自动选上。
       unawaited(_loadEmbeddedSubtitleIfNeeded(
         player: player,
         loadToken: loadToken,

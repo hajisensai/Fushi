@@ -308,6 +308,21 @@ class SubtitleSource {
   /// 内嵌源约定前缀（持久化时拼 streamIndex）。
   static const String embeddedPrefix = 'embedded:';
 
+  /// 「用户显式关闭字幕」哨兵（持久化到 `VideoBooks.subtitleSource`）。
+  ///
+  /// 第三态的单一真值：补全 `subtitleSource` 列原本只有「非空=选了具体源」与
+  /// `null=从未选过/无偏好` 两态、把「显式关闭」与「无偏好」压成同一 `null` 的歧义
+  /// （TODO-818）。与 [embeddedPrefix] 同命名空间但不撞——外挂源是绝对路径、内嵌源是
+  /// `embedded:<n>`，都不会是裸 `off:`。
+  ///
+  /// 向后兼容铁律：旧数据里的 `null` 仍按「无偏好→自动选默认」处理；只有新写入的本
+  /// 哨兵才表示「显式关闭」，故 [isOff] 只认这一字符串，绝不把 `null` 当关闭。
+  static const String offSentinel = 'off:';
+
+  /// 持久化值 [persisted] 是否代表「用户显式关闭字幕」（见 [offSentinel]）。
+  /// `null`（旧数据/无偏好）返回 false。
+  static bool isOff(String? persisted) => persisted == offSentinel;
+
   /// 持久化值：内嵌 → `embedded:<n>`，外挂 → 绝对路径。
   String toPersistedValue() =>
       isEmbedded ? '$embeddedPrefix$streamIndex' : externalPath!;

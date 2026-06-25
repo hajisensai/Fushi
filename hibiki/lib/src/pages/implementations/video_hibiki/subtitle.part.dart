@@ -132,7 +132,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       ListTile(
         leading: const Icon(Icons.subtitles_off),
         title: Text(t.video_subtitle_off),
-        selected: _currentSubtitleSource == null,
+        // TODO-818：「关闭」项高亮判据。本地用显式关闭哨兵；远端模式不落库（关闭仅
+        // 清内存 _currentSubtitleSource=null），故 null 也算关闭，覆盖两种表面。
+        selected: SubtitleSource.isOff(_currentSubtitleSource) ||
+            (_isRemote && _currentSubtitleSource == null),
         selectedColor: cs.primary,
         enabled: !_subtitleLoadingShown,
         onTap: _subtitleLoadingShown
@@ -603,24 +606,30 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     return true;
   }
 
-  /// 关闭字幕：清空 cue overlay + 关 libmpv 字幕轨 + 持久化 null。
+  /// 关闭字幕：清空 cue overlay + 关 libmpv 字幕轨 + 持久化「显式关闭」哨兵。
+  ///
+  /// TODO-818：持久化 [SubtitleSource.offSentinel] 而非 `null`。`null` 与「从未选过/
+  /// 无偏好」撞，重启会被恢复路径当「无偏好→自动选默认」处理，导致用户明明关了字幕
+  /// 重启又自动选上。哨兵让恢复路径（[_loadSingle]/[_loadEpisode]）识别为「显式关闭」
+  /// 并短路掉 sidecar 探测与内嵌轨自动抽取两个自动重选向量。
   Future<void> _selectSubtitleOff(VideoPlayerController controller) async {
     controller.setCues(const <AudioCue>[]);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     // BUG-081: 关字幕也要清掉单视频已落库的 cue，否则重进时 `loadCues` 命中旧
-    // cue 又把字幕显示回来。cue 与源指针原子清空（事务）。播放列表不入 cue，只
-    // 清源指针。
+    // cue 又把字幕显示回来。cue 与源指针原子写入（事务）。播放列表不入 cue，只
+    // 写源指针。
     if (_episodes.isEmpty) {
       await widget.repo.saveSubtitleSelection(
         bookUid: widget.bookUid,
-        subtitleSource: null,
+        subtitleSource: SubtitleSource.offSentinel,
         cues: const <AudioCue>[],
       );
     } else {
-      await widget.repo.updateSubtitleSource(widget.bookUid, null);
+      await widget.repo
+          .updateSubtitleSource(widget.bookUid, SubtitleSource.offSentinel);
     }
     if (!mounted) return;
-    _rebuild(() => _currentSubtitleSource = null);
+    _rebuild(() => _currentSubtitleSource = SubtitleSource.offSentinel);
   }
 
   /// [_videoWithSubtitlePanel] 的右侧面板列。用 [AnimatedSize] 让列宽在 0 ↔ panelWidth
