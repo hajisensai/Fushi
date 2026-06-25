@@ -76,8 +76,12 @@ String buildOverlayRenderScript({
       if (!s) {
         s = document.createElement('style');
         s.id = 'hibiki-overlay-style';
-        // Read-only out-of-app lookup: hide the mining (+) button.
-        s.textContent = '.mine-button{display:none !important;}';
+        // Read-only out-of-app lookup: hide the mining (+) button. Also give the
+        // symbol glyphs (audio music-note, collapse arrows) a Windows symbol
+        // font so they don't render as tofu under popup.css's forced macOS font.
+        s.textContent =
+          '.mine-button{display:none !important;}' +
+          '.audio-button,.glossary-group>summary{font-family:"Segoe UI Symbol","Segoe UI Emoji","Segoe UI",sans-serif !important;}';
         document.head.appendChild(s);
       }
     })();

@@ -164,7 +164,9 @@ class GlobalLookupController {
     // scrollHeight; multiply by the same zoom the content uses, and base the
     // width on the reader's popup width (380) so it follows the UI-scale +
     // dictionary font-size settings.
-    if (handler == 'contentHeight') {
+    // popup.js reports the rendered scrollHeight via popupRendered (the main
+    // popup) or contentHeight (definition.js). Either carries the height.
+    if (handler == 'popupRendered' || handler == 'contentHeight') {
       final AppModel? model = _appModel;
       final Object? args = message['args'];
       if (model != null && args is List && args.isNotEmpty) {
@@ -173,7 +175,10 @@ class GlobalLookupController {
           final double zoom =
               model.appUiScale * (model.dictionaryFontSize / 16.0);
           final int width = (380 * zoom).round();
-          final int height = (h * zoom).round() + 8;
+          // Cap so a long entry doesn't fill the screen — content scrolls
+          // inside. Native further clamps to the monitor work area.
+          final double rawHeight = (h * zoom) + 8;
+          final int height = rawHeight > 720 ? 720 : rawHeight.round();
           unawaited(GlobalLookupChannel.resize(width: width, height: height));
         }
       }
