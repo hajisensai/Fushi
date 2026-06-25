@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 409 条。点号进各自文件。
+> 共 410 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-423](bugs/BUG-423-log-select-freeze.md) | ✅ | ✅ | 调试日志框选拖拽未响应卡死 |
 | [BUG-422](bugs/BUG-422-rail-right-focus.md) | ✅ | ✅ | 平板宽屏 rail 焦点右键应进内容区（TODO-814） |
 | [BUG-421](bugs/BUG-421-meikyo-atrule-scope.md) | ✅ | ✅ | 明鏡第三版 styles.css @media at-rule 被作用域前缀污染导致整块失效 |
 | [BUG-420](bugs/BUG-420-local-audiobook-sentence-audio.md) | ✅ | ✅ | 本地有声书查词制卡无句子音频 (TODO-811) |

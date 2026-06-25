@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -2266,28 +2264,19 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
           padding: EdgeInsets.zero,
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              final double viewportHeight = constraints.maxHeight.isFinite
-                  ? constraints.maxHeight
-                  : MediaQuery.sizeOf(context).height;
               return Stack(
                 children: <Widget>[
                   Listener(
                     onPointerDown: (PointerDownEvent event) {
                       if (event.buttons & kPrimaryButton == 0) return;
-                      _scrollController.beginPointerSelection(
-                        pointerY: event.localPosition.dy,
-                        viewportHeight: viewportHeight,
-                      );
+                      _scrollController.beginPointerSelection();
                     },
                     onPointerMove: (PointerMoveEvent event) {
+                      // 主键松开（拖拽选区结束）→ 解除拦截，恢复程序化滚动。
+                      // TODO-822 后拖拽期间不再追踪指针几何，move 只需观测主键状态。
                       if (event.buttons & kPrimaryButton == 0) {
                         _scrollController.endPointerSelection();
-                        return;
                       }
-                      _scrollController.updatePointerSelection(
-                        pointerY: event.localPosition.dy,
-                        viewportHeight: viewportHeight,
-                      );
                     },
                     onPointerUp: (_) => _scrollController.endPointerSelection(),
                     onPointerCancel: (_) =>
@@ -2299,10 +2288,17 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
                         padding: EdgeInsets.all(tokens.spacing.card),
                         itemCount: _lines.length,
                         itemBuilder: (BuildContext context, int index) {
+                          // TODO-806/TODO-822：单行不换行（softWrap:false）。
+                          // 换行会把一行日志拆成多视觉行 → SelectionArea 的单行
+                          // 选区命中要对每段 wrap 后的子矩形逐一求交，命中成本随
+                          // 行长放大（TODO-806 框选坐标错位、TODO-822 拖拽卡顿的
+                          // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
+                          // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
+                          // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
                           return Text(
                             _lines[index],
                             style: lineStyle,
-                            softWrap: true,
+                            softWrap: false,
                           );
                         },
                       ),
@@ -2338,93 +2334,57 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
 /// 抽出，便于在 widget 渲染之外单测——把不变式钉死，防止有人把拦截逻辑掏空后
 /// 结构守卫仍全绿（复核 ③ 指出旧守卫名存实亡）。
 ///
-/// 规则：
+/// 规则（TODO-822 简化后——拖拽选区期间一律拦掉程序化滚动）：
 /// * 选区拖拽未激活 → 一律放行（非选区期的滚动不受影响）。
-/// * 位移可忽略（<=0.5px）→ 放行（无实质拽回）。
-/// * 指针贴边（顶/底 edgeBand 内）且朝外侧 → 放行（合法的边缘自动滚动）。
-/// * 指针贴边但朝内侧 → 拦截（这正是「把视口往光标拽回」的方向）。
-/// * 指针不贴边：若用户在本次选区期间手动滚动过 → 拦截（不让程序化滚动覆盖
-///   用户刚做的手动滚动）；否则放行（未手动滚动时不与谁打架）。
+/// * 位移可忽略（<=0.5px）→ 放行（无实质滚动）。
+/// * 选区拖拽激活且有实质位移 → 一律拦截。
+///
+/// TODO-822（调试日志框选拖拽卡死）的根因消除：
+/// 旧规则在「指针贴边且朝外侧」时放行边缘自动滚动。但正文是
+/// `ListView.builder` 懒构造 + `SelectionArea` 跨行选区——拖拽贴边触发边缘自动
+/// 滚动 → 列表持续构造视口外新行 → SelectionArea 注册的 Selectable 集合随拖拽
+/// 时长单调膨胀 → 每次指针 move 都对全部 Selectable 做命中/边界重算占满 UI 线程
+/// → 未响应卡死。把「边缘自动滚动」这条放行分支删掉后，拖拽选区期间 Selectable
+/// 集合被钉在视口内有限行，膨胀链路从根上断掉，决策退化成纯粹的「拽回拦截」
+/// （不再有按指针位置/方向区分的特殊情况）。
+///
+/// Never break userspace：滚到视口外去框选本就不可靠（SelectionArea 不为滚出
+/// 视口的行保留选区），且「复制整段日志去排障」这一真实用途已由常驻「复制全部」
+/// 按钮（绕开 SelectionArea 走 widget.log 全量）完整覆盖，禁用边缘自动滚动不损失
+/// 任何可用能力。手动滚动（applyUserOffset / pointerScroll）不经本判据，不受影响。
 bool logSelectionScrollDecision({
   required bool pointerSelectionActive,
   required double delta,
-  required double? pointerY,
-  required double? viewportHeight,
-  required bool userScrolledDuringSelection,
 }) {
   if (!pointerSelectionActive) return true;
   if (delta.abs() <= 0.5) return true;
-
-  if (pointerY != null && viewportHeight != null && viewportHeight > 0) {
-    final double edgeBand = math.min(
-      96.0,
-      math.max(48.0, viewportHeight * 0.18),
-    );
-    final bool nearTop = pointerY <= edgeBand;
-    final bool nearBottom = pointerY >= viewportHeight - edgeBand;
-
-    if (nearTop || nearBottom) {
-      final bool movesUp = delta < 0;
-      final bool movesDown = delta > 0;
-      return (nearTop && movesUp) || (nearBottom && movesDown);
-    }
-  }
-
-  return !userScrolledDuringSelection;
+  return false;
 }
 
 class _LogSelectionScrollController extends ScrollController {
   _LogSelectionScrollController()
       : super(debugLabel: 'hibiki-log-selection-scroll');
 
+  // 拖拽选区是否激活。这是 [logSelectionScrollDecision] 唯一需要的状态——
+  // TODO-822 简化判据后不再追踪指针几何 / 手动滚动标志（边缘自动滚动整条拿掉，
+  // 不存在按指针位置/方向区分的特殊情况）。
   bool _pointerSelectionActive = false;
-  bool _userScrolledDuringSelection = false;
-  double? _pointerY;
-  double? _viewportHeight;
 
-  void beginPointerSelection({
-    required double pointerY,
-    required double viewportHeight,
-  }) {
+  void beginPointerSelection() {
     _pointerSelectionActive = true;
-    _userScrolledDuringSelection = false;
-    updatePointerSelection(
-      pointerY: pointerY,
-      viewportHeight: viewportHeight,
-    );
-  }
-
-  void updatePointerSelection({
-    required double pointerY,
-    required double viewportHeight,
-  }) {
-    _pointerY = pointerY;
-    _viewportHeight = viewportHeight;
   }
 
   void endPointerSelection() {
     _pointerSelectionActive = false;
-    _userScrolledDuringSelection = false;
-    _pointerY = null;
-    _viewportHeight = null;
-  }
-
-  void _markUserScroll(double oldPixels, double newPixels) {
-    if (!_pointerSelectionActive) return;
-    if ((newPixels - oldPixels).abs() <= 0.5) return;
-    _userScrolledDuringSelection = true;
   }
 
   bool _allowProgrammaticScroll(double targetOffset) {
     // 仅当当前确实附着了唯一 ScrollPosition 时才有「当前像素」可比对；否则
-    // 无可拦截的拽回，直接放行（纯几何判据下沉到 [logSelectionScrollDecision]）。
+    // 无可拦截的拽回，直接放行（纯判据下沉到 [logSelectionScrollDecision]）。
     if (!hasClients || positions.length != 1) return true;
     return logSelectionScrollDecision(
       pointerSelectionActive: _pointerSelectionActive,
       delta: targetOffset - position.pixels,
-      pointerY: _pointerY,
-      viewportHeight: _viewportHeight,
-      userScrolledDuringSelection: _userScrolledDuringSelection,
     );
   }
 
@@ -2473,13 +2433,9 @@ class _LogSelectionScrollPosition extends ScrollPositionWithSingleContext {
 
   final _LogSelectionScrollController controller;
 
-  @override
-  void applyUserOffset(double delta) {
-    final double oldPixels = pixels;
-    super.applyUserOffset(delta);
-    controller._markUserScroll(oldPixels, pixels);
-  }
-
+  // 手动滚动（applyUserOffset / pointerScroll）不 override：它们是用户拖滚动条 /
+  // 滚轮的入口，本就该照常生效，不经拦截判据。只拦程序化 animateTo / jumpTo
+  // （SelectionArea 的边缘自动滚动 / bringIntoView 拽回都走这两条）。
   @override
   Future<void> animateTo(
     double to, {
@@ -2496,13 +2452,6 @@ class _LogSelectionScrollPosition extends ScrollPositionWithSingleContext {
   void jumpTo(double value) {
     if (!controller._allowProgrammaticScroll(value)) return;
     super.jumpTo(value);
-  }
-
-  @override
-  void pointerScroll(double delta) {
-    final double oldPixels = pixels;
-    super.pointerScroll(delta);
-    controller._markUserScroll(oldPixels, pixels);
   }
 }
 

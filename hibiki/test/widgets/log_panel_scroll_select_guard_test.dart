@@ -137,6 +137,12 @@ void main() {
     // BUG-119 防线仍在：ListView 挂自定义拽回拦截 controller。
     expect(panel, contains('_LogSelectionScrollController'));
     expect(panel, contains('controller: _scrollController'));
+    // BUG-423 / TODO-806：日志行不换行（softWrap:false），降低单行选区命中成本
+    // 兼修框选坐标错位。改回 softWrap:true 会重新放大拖拽命中成本。
+    expect(panel, contains('softWrap: false'),
+        reason: '日志行必须 softWrap:false（BUG-423 拖拽命中成本 / TODO-806 坐标错位）');
+    expect(panel, isNot(contains('softWrap: true')),
+        reason: 'softWrap:true 会把一行拆成多视觉行，放大 SelectionArea 单行命中成本');
     // 旧的「会被拽回 / 整段一次性渲染」构造调用消失（ASCII 括号形避免误伤注释里提到
     // 这些类名的说明文字）。
     expect(panel, isNot(contains('TextField(')));
@@ -229,130 +235,68 @@ void main() {
         reason: '复制/分享一旦读 _selectedText 就只拿视口选区（TODO-762 回归）');
   });
 
-  // —— BUG-119 拽回判据纯函数守卫 ——
+  // —— BUG-119 拽回 + BUG-423/TODO-822 防膨胀判据纯函数守卫 ——
   // 复核 ③：旧的结构守卫即使把 _allowProgrammaticScroll 掏空（恒 return true）也全绿。
   // 把判据下沉成纯函数 logSelectionScrollDecision 后，这组单测直接钉死它的真值表：
   // 掏空（恒 true）或退化拦截逻辑都会让某条断言转红。
-  group('logSelectionScrollDecision (BUG-119 pull-back gate, pure)', () {
+  //
+  // BUG-423 / TODO-822（调试日志框选拖拽卡死）后判据简化：正文是 ListView.builder
+  // 懒构造 + SelectionArea 跨行选区，拖拽贴边触发边缘自动滚动会持续构造视口外新行 →
+  // SelectionArea 的 Selectable 集合随拖拽时长单调膨胀 → 每次指针 move 全量重算占满
+  // UI 线程 → 未响应。修复 = 拖拽选区激活且有实质位移时一律拦截程序化滚动（边缘
+  // 自动滚动这条放行分支被删掉，Selectable 集合钉在视口内有限行）。本组真值表把
+  // 「拖拽期一律拦」钉死——任何人把边缘自动滚动放行加回来都会让 BLOCK 断言转红。
+  group('logSelectionScrollDecision (BUG-119 + BUG-423 anti-bloat gate, pure)',
+      () {
     test('drag inactive -> always allow (non-selection scroll untouched)', () {
       expect(
         logSelectionScrollDecision(
           pointerSelectionActive: false,
           delta: -200,
-          pointerY: 200,
-          viewportHeight: 400,
-          userScrolledDuringSelection: false,
         ),
         isTrue,
       );
     });
 
-    test('negligible delta (<=0.5) -> allow', () {
+    test('negligible delta (<=0.5) -> allow (no real scroll to gate)', () {
       expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: 0.4,
-          pointerY: 200,
-          viewportHeight: 400,
-          userScrolledDuringSelection: false,
-        ),
+        logSelectionScrollDecision(pointerSelectionActive: true, delta: 0.4),
+        isTrue,
+      );
+      expect(
+        logSelectionScrollDecision(pointerSelectionActive: true, delta: -0.5),
         isTrue,
       );
     });
 
-    test('near-bottom edge moving DOWN (outward) -> allow (edge auto-scroll)',
-        () {
-      // viewportHeight 400, edgeBand=clamp(48,72,96)=72 -> bottom band y>=328.
+    // BUG-423 核心：拖拽选区期间，任何有实质位移的程序化滚动都拦——含「边缘自动
+    // 滚动」（向上拖到顶/向下拖到底）。这正是 Selectable 集合无界膨胀的来源，必须拦。
+    test(
+        'drag active + downward programmatic scroll -> BLOCK '
+        '(no edge auto-scroll bloat)', () {
       expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: 50, // downward
-          pointerY: 390,
-          viewportHeight: 400,
-          userScrolledDuringSelection: false,
-        ),
-        isTrue,
-      );
-    });
-
-    test('near-top edge moving UP (outward) -> allow (edge auto-scroll)', () {
-      expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: -50, // upward
-          pointerY: 10,
-          viewportHeight: 400,
-          userScrolledDuringSelection: false,
-        ),
-        isTrue,
-      );
-    });
-
-    test('near-bottom edge moving UP (inward) -> BLOCK (pull-back direction)',
-        () {
-      expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: -50, // upward while pinned at bottom edge = bring-into-view
-          pointerY: 390,
-          viewportHeight: 400,
-          userScrolledDuringSelection: false,
-        ),
+        logSelectionScrollDecision(pointerSelectionActive: true, delta: 200),
         isFalse,
-      );
-    });
-
-    test('not near any edge, no manual scroll -> allow (no fight to gate)', () {
-      expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: -120,
-          pointerY: 200, // middle of 400px viewport, outside both edge bands
-          viewportHeight: 400,
-          userScrolledDuringSelection: false,
-        ),
-        isTrue,
       );
     });
 
     test(
-        'not near edge but user manually scrolled -> BLOCK (do not override '
-        'the user manual scroll)', () {
+        'drag active + upward programmatic scroll -> BLOCK '
+        '(no edge auto-scroll bloat / no pull-back)', () {
       expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: -120,
-          pointerY: 200,
-          viewportHeight: 400,
-          userScrolledDuringSelection: true,
-        ),
+        logSelectionScrollDecision(pointerSelectionActive: true, delta: -200),
         isFalse,
       );
     });
 
-    test('missing pointer geometry, user manually scrolled -> BLOCK', () {
+    test('drag active + small-but-real delta -> BLOCK', () {
       expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: -120,
-          pointerY: null,
-          viewportHeight: null,
-          userScrolledDuringSelection: true,
-        ),
+        logSelectionScrollDecision(pointerSelectionActive: true, delta: 5),
         isFalse,
       );
-    });
-
-    test('missing pointer geometry, no manual scroll -> allow', () {
       expect(
-        logSelectionScrollDecision(
-          pointerSelectionActive: true,
-          delta: -120,
-          pointerY: null,
-          viewportHeight: null,
-          userScrolledDuringSelection: false,
-        ),
-        isTrue,
+        logSelectionScrollDecision(pointerSelectionActive: true, delta: -5),
+        isFalse,
       );
     });
   });
