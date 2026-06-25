@@ -63,14 +63,37 @@ void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
   }
 }
 
+LRESULT CALLBACK GlobalLookupWindow::MouseHookProc(int code, WPARAM wparam,
+                                                   LPARAM lparam) {
+  if (code >= 0 &&
+      (wparam == WM_LBUTTONDOWN || wparam == WM_RBUTTONDOWN ||
+       wparam == WM_NCLBUTTONDOWN)) {
+    GlobalLookupWindow* self = s_hook_owner_;
+    if (self != nullptr && self->IsShowing() && self->hwnd_ != nullptr) {
+      const MSLLHOOKSTRUCT* info =
+          reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
+      RECT rc;
+      GetWindowRect(self->hwnd_, &rc);
+      if (!PtInRect(&rc, info->pt)) {
+        self->Hide();  // Click outside the card -> dismiss.
+      }
+    }
+  }
+  return CallNextHookEx(nullptr, code, wparam, lparam);
+}
+
 GlobalLookupWindow::GlobalLookupWindow() = default;
 
 GlobalLookupWindow::~GlobalLookupWindow() {
   if (foreground_hook_ != nullptr) {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;
-    s_hook_owner_ = nullptr;
   }
+  if (mouse_hook_ != nullptr) {
+    UnhookWindowsHookEx(mouse_hook_);
+    mouse_hook_ = nullptr;
+  }
+  s_hook_owner_ = nullptr;
   if (controller_) {
     controller_->Close();
   }
@@ -122,12 +145,17 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
   visible_ = true;
   // Arm the click-outside dismiss (skip our own process so interacting with the
   // card or main window does not close it).
+  s_hook_owner_ = this;
   if (foreground_hook_ == nullptr) {
-    s_hook_owner_ = this;
     foreground_hook_ = SetWinEventHook(
         EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
         &GlobalLookupWindow::ForegroundHookProc, 0, 0,
         WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+  }
+  if (mouse_hook_ == nullptr) {
+    mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
+                                   &GlobalLookupWindow::MouseHookProc,
+                                   GetModuleHandle(nullptr), 0);
   }
   return true;
 }
@@ -167,8 +195,12 @@ void GlobalLookupWindow::Hide() {
   if (foreground_hook_ != nullptr) {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;
-    s_hook_owner_ = nullptr;
   }
+  if (mouse_hook_ != nullptr) {
+    UnhookWindowsHookEx(mouse_hook_);
+    mouse_hook_ = nullptr;
+  }
+  s_hook_owner_ = nullptr;
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }

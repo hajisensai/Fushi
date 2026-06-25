@@ -71,6 +71,16 @@ String buildOverlayRenderScript({
 
   return '''
     $themeVarsJs
+    (function(){
+      var s = document.getElementById('hibiki-overlay-style');
+      if (!s) {
+        s = document.createElement('style');
+        s.id = 'hibiki-overlay-style';
+        // Read-only out-of-app lookup: hide the mining (+) button.
+        s.textContent = '.mine-button{display:none !important;}';
+        document.head.appendChild(s);
+      }
+    })();
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
     window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
     window.needsAudio = true;

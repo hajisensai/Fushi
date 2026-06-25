@@ -155,6 +155,7 @@ class GlobalLookupController {
 
   void _onJsMessage(Map<String, Object?> message) {
     final Object? handler = message['handler'];
+    glog('js: handler=$handler args=${message['args']}');
     if (handler == 'tapOutside' || handler == 'dismiss') {
       GlobalLookupChannel.hide();
       return;

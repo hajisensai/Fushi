@@ -32,8 +32,11 @@ runInNewContext(adapterSrc, sandbox);
 const p = sandbox.window.flutter_inappwebview.callHandler('playWordAudio', {
   term: 'favour',
 });
+// posted entries are OBJECTS (not stringified) so WebView2 get_WebMessageAsJson
+// returns a JSON object, not a double-encoded string.
 assert.strictEqual(posted.length, 1, 'one message posted');
-const env = JSON.parse(posted[0]);
+const env = posted[0];
+assert.strictEqual(typeof env, 'object');
 assert.strictEqual(env.handler, 'playWordAudio');
 assert.deepStrictEqual(env.args, [{ term: 'favour' }]);
 assert.strictEqual(typeof env.__bridgeId, 'number');
@@ -45,7 +48,7 @@ assert.deepStrictEqual(result, { url: 'a.mp3' });
 
 // 3. void / null reply resolves to null (read-only handlers — prevents freeze).
 const p2 = sandbox.window.flutter_inappwebview.callHandler('mineEntry', {});
-const env2 = JSON.parse(posted[1]);
+const env2 = posted[1];
 sandbox.window.__hibikiBridgeResolve(env2.__bridgeId, null);
 assert.strictEqual(await p2, null);
 

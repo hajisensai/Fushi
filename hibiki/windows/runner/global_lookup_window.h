@@ -79,11 +79,14 @@ class GlobalLookupWindow {
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam) noexcept;
-  // Closes the overlay when the user activates another window (click outside).
+  // Closes the overlay when the user activates another window (alt-tab away).
   static void CALLBACK ForegroundHookProc(HWINEVENTHOOK hook, DWORD event,
                                           HWND hwnd, LONG id_object,
                                           LONG id_child, DWORD thread,
                                           DWORD time);
+  // Closes the overlay when a click lands outside the card (incl. blank space in
+  // the same app, which the foreground hook does not catch).
+  static LRESULT CALLBACK MouseHookProc(int code, WPARAM wparam, LPARAM lparam);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   void EnsureWindowClass();
   void EnsureWebView();
@@ -92,6 +95,7 @@ class GlobalLookupWindow {
 
   HWND hwnd_ = nullptr;
   HWINEVENTHOOK foreground_hook_ = nullptr;
+  HHOOK mouse_hook_ = nullptr;
   static GlobalLookupWindow* s_hook_owner_;
   bool visible_ = false;
   bool class_registered_ = false;

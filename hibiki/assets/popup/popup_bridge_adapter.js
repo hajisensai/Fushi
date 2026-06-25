@@ -24,8 +24,11 @@
     var id = ++_seq;
     return new Promise(function (resolve) {
       _pending[id] = resolve;
+      // Post the OBJECT (not a stringified string): WebView2's
+      // get_WebMessageAsJson returns it as a JSON object. Posting a string
+      // would double-encode it (quoted/escaped) and break native parsing.
       window.chrome.webview.postMessage(
-        JSON.stringify({ handler: name, args: args, __bridgeId: id }));
+        { handler: name, args: args, __bridgeId: id });
     });
   };
 
