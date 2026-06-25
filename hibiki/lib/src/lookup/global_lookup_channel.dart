@@ -34,6 +34,7 @@ abstract final class GlobalLookupChannel {
     required int y,
     int width = 420,
     int height = 600,
+    bool atCursor = false,
   }) async {
     final bool? ok =
         await _channel.invokeMethod<bool>('showAt', <String, Object?>{
@@ -41,6 +42,7 @@ abstract final class GlobalLookupChannel {
       'y': y,
       'width': width,
       'height': height,
+      'atCursor': atCursor,
     });
     return ok ?? false;
   }

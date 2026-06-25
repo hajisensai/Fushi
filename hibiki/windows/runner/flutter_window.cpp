@@ -561,9 +561,19 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
               WideFromValue(args, "assetsDir", L""));
           result->Success();
         } else if (method == "showAt") {
+          int x = IntFromValue(args, "x", 0);
+          int y = IntFromValue(args, "y", 0);
+          if (BoolFromValue(args, "atCursor", false)) {
+            // GetCursorPos returns physical screen pixels, matching
+            // CreateWindowEx — no logical/physical DPI mismatch.
+            POINT pt;
+            if (GetCursorPos(&pt)) {
+              x = pt.x + 8;
+              y = pt.y + 8;
+            }
+          }
           const bool ok = global_lookup_window_->ShowAt(
-              IntFromValue(args, "x", 0), IntFromValue(args, "y", 0),
-              IntFromValue(args, "width", 420),
+              x, y, IntFromValue(args, "width", 420),
               IntFromValue(args, "height", 600), GetHandle());
           result->Success(flutter::EncodableValue(ok));
         } else if (method == "render") {

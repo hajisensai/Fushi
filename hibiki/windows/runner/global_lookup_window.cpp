@@ -274,16 +274,15 @@ void GlobalLookupWindow::ConfigureWebView() {
       nullptr);
 }
 
-void GlobalLookupWindow::RenderJson(const std::string& popup_json) {
+void GlobalLookupWindow::RenderJson(const std::string& full_script) {
+  // full_script is the complete JS built in Dart (settings + lookupEntries +
+  // renderPopup), mirroring dictionary_popup_webview._pushResults. Cached until
+  // the page finishes loading (renderPopup must exist).
   if (!webview_ready_ || !webview_) {
-    pending_json_ = popup_json;
+    pending_json_ = full_script;
     return;
   }
-  // popup_json is valid JSON, which is a valid JS expression as the RHS of an
-  // assignment. Align the global name with dictionary_popup_webview.dart.
-  std::wstring script = L"window.lookupEntries = " + Utf8ToWide(popup_json) +
-                        L"; window.renderPopup && window.renderPopup();";
-  webview_->ExecuteScript(script.c_str(), nullptr);
+  webview_->ExecuteScript(Utf8ToWide(full_script).c_str(), nullptr);
 }
 
 LRESULT CALLBACK GlobalLookupWindow::WndProc(HWND hwnd, UINT message,
