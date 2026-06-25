@@ -298,5 +298,36 @@ void main() {
           isTrue,
           reason: '解武装必须仅在用户滚动驱动路径，轮询/恢复不得解武装');
     });
+
+    test('TODO-718 根因：初次开书 + 样式重载的裸恢复路径也必须武装因果门', () {
+      // 初次开书(从书架点开)走 webview.part.dart 的 _loadChapterDirectly 裸装章，**不经
+      // _beginNavigation**；若不武装因果门，TODO-798 拦截器第一道门(!settleGuardArmed)恒放行 →
+      // 连续模式恢复位置被 reflow 归零裸奔落库弹回章首(798/718 对初次开书无效的真因)。
+      final String webview = File(
+        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      ).readAsStringSync();
+      final int openIdx =
+          webview.indexOf('_loadChapterDirectly(_currentChapter)');
+      expect(openIdx, greaterThan(0), reason: '初次开书装章入口必须存在');
+      // 武装必须紧邻在 _loadChapterDirectly 之前(同一 else 块内)。
+      final String openWindow =
+          webview.substring((openIdx - 400).clamp(0, webview.length), openIdx);
+      expect(openWindow.contains('_continuousSettleGuardArmed = true'), isTrue,
+          reason: '初次开书裸装章前必须武装因果门(对齐 _beginNavigation)，'
+              '否则 TODO-798 拦截器对初次开书恒放行 → 弹回章首(TODO-718)');
+
+      // 样式重载(改字号/字体)同样裸恢复，纵深防御也武装。
+      final String chrome = File(
+        'lib/src/pages/implementations/reader_hibiki/chrome.part.dart',
+      ).readAsStringSync();
+      final int reloadIdx = chrome.indexOf('reloadWithCurrentSettings:');
+      expect(reloadIdx, greaterThan(0),
+          reason: 'reloadWithCurrentSettings 必须存在');
+      final String reloadWindow = chrome.substring(
+          (reloadIdx - 400).clamp(0, chrome.length), reloadIdx);
+      expect(
+          reloadWindow.contains('_continuousSettleGuardArmed = true'), isTrue,
+          reason: '样式重载裸恢复也武装因果门(纵深防御，B-3 窗超窗仍兜)');
+    });
   });
 }
