@@ -216,4 +216,67 @@ void main() {
           reason: '不得再有因果门解武装');
     });
   });
+
+  group('TODO-718 退出 flush 路径同源守卫：reflow 归零不得覆盖缓存锚', () {
+    final String navigation = File(
+      'lib/src/pages/implementations/reader_hibiki/navigation.part.dart',
+    ).readAsStringSync();
+
+    String methodBody(String src, String signature) {
+      final int idx = src.indexOf(signature);
+      expect(idx, greaterThanOrEqualTo(0), reason: '找不到方法 $signature');
+      final int end = src.indexOf('\n  }', idx);
+      expect(end, greaterThan(idx), reason: '找不到方法 $signature 的体结尾');
+      return src.substring(idx, end);
+    }
+
+    test('小但真实的位置(2%)程序化塌缩到章首 → 判非自愿（minPriorProgress=0.01 保护 <5% 位置）', () {
+      // 真机：重开恢复到 0.0201(2%)、无用户滚动、cue 注入 reflow 归零，退出 flush 实时读到 0。
+      // 默认 minPriorProgress=0.05 会放过 2%（用户位置常 <5%）；退出路径传 0.01 才保护得住。
+      expect(
+        readerContinuousProgressSnapIsInvoluntary(
+          continuousMode: true,
+          priorProgress: 0.0201,
+          newProgress: 0.0,
+          hasCommittedAnchor: true,
+          fromUserScroll: false,
+          minPriorProgress: 0.01,
+        ),
+        isTrue,
+        reason: '2% 是真实恢复位置，程序化 reflow 归零必须判非自愿、保留缓存锚',
+      );
+    });
+
+    test('默认阈值(0.05)下 2% 会被放过——证明退出路径必须显式传 0.01', () {
+      expect(
+        readerContinuousProgressSnapIsInvoluntary(
+          continuousMode: true,
+          priorProgress: 0.0201,
+          newProgress: 0.0,
+          hasCommittedAnchor: true,
+          fromUserScroll: false,
+        ),
+        isFalse,
+        reason: '默认 minPriorProgress=0.05 放过 2%，故退出 flush 守卫必须传更小阈值',
+      );
+    });
+
+    test('_syncPositionFromWebViewProgress 在覆盖 _lastProgress* 前先判非自愿归零并保留缓存',
+        () {
+      final String body = methodBody(navigation,
+          'Future<void> _syncPositionFromWebViewProgress() async {');
+      final int guardIdx =
+          body.indexOf('readerContinuousProgressSnapIsInvoluntary');
+      expect(guardIdx, greaterThanOrEqualTo(0),
+          reason: '退出读路径必须用同源判据拦自发 reflow 归零（绕过它会把恢复位置覆盖成章首）');
+      final int overwriteIdx =
+          body.indexOf('_lastProgressValue = snapshot.progress');
+      expect(overwriteIdx, greaterThan(guardIdx),
+          reason: '判据必须在覆盖 _lastProgress* 之前——否则归零会先写穿缓存锚');
+      expect(body.contains('minPriorProgress: 0.01'), isTrue,
+          reason: '退出路径必须传 0.01 阈值，保护 <5% 的真实位置');
+      expect(body.contains('fromUserScroll: false'), isTrue,
+          reason: '退出读是程序化读，非用户输入驱动');
+    });
+  });
 }

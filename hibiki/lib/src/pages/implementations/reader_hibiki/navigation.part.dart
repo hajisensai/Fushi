@@ -765,6 +765,37 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
 
+    // TODO-718（真机铁证·2026-06-25）：退出 / lifecycle flush 的这次**实时读**会撞上
+    // 「重开恢复 + sasayaki cue 注入」引发的自发 reflow 归零——cue 高亮注入 mutate DOM →
+    // WebView 把 scrollY 瞬时归 0，stableProgress 返回**有效的 0**（非 null，躲过上面的 null
+    // 守卫）。这条 flush 路径**不经** _refreshProgress 的非自愿归零拦截器，会把 _lastProgress*
+    // 直接覆盖成 (0,0) 再 _flushPosition 落库 → 把刚恢复好的位置写成章首（日志实测：重开
+    // restore=201、onLoadStop=0.0201 全对，无任何用户滚动，cue 注入后 flush 出 normOffset=0 →
+    // 下次进来章首）。复用 _refreshProgress 同源判据：实时读塌缩到章首、缓存位置明显非章首、
+    // 非有声书跟读 → 判自发 reflow 归零，**丢弃本次读、保留缓存锚**（_lastProgress* 不被归零
+    // 覆盖，_flushPosition 落缓存的真实位置）。fromUserScroll=false：退出读是程序化的，用户真
+    // 滚已由 _refreshProgress 实时写进 _lastProgress*；minPriorProgress=chapterStartEpsilon
+    // 而非默认 0.05，使 2% 这种小但真实的位置也受保护（用户位置常 <5%）。
+    final int committedAnchor = _lastProgressCharOffset >= 0
+        ? _lastProgressCharOffset
+        : _initialCharOffset;
+    if (readerContinuousProgressSnapIsInvoluntary(
+      continuousMode: _settings?.isContinuousMode == true,
+      priorProgress: _lastProgressValue,
+      newProgress: snapshot.progress,
+      hasCommittedAnchor: committedAnchor >= 0,
+      fromUserScroll: false,
+      audiobookActivelyFollowing: _audiobookController?.isPlaying == true,
+      minPriorProgress: 0.01,
+    )) {
+      if (DebugLogService.instance.enabled) {
+        debugPrint('[ReaderHibiki] syncPosition skip involuntary reflow-zero: '
+            'prior=${_lastProgressValue.toStringAsFixed(4)} '
+            'read=${snapshot.progress.toStringAsFixed(4)} → keep cached anchor');
+      }
+      return;
+    }
+
     _lastProgressSection = _currentChapter;
     _lastProgressValue = snapshot.progress;
     _lastProgressCharOffset = snapshot.charOffset;
