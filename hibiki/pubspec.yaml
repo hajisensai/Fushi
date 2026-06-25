@@ -236,7 +236,7 @@ flutter_icons:
   adaptive_icon_foreground: "assets/meta/splash_source.png"
   windows:
     generate: true
-    image_path: "assets/meta/launcher_icon_full.png"
+    image_path: "assets/meta/launcher_icon_minimal.png"
     icon_size: 256
 
 flutter:

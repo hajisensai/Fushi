@@ -14,7 +14,7 @@
     <application
         android:label="Hibiki"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon"
+        android:icon="@mipmap/launcher_icon_minimal"
         android:networkSecurityConfig="@xml/network_security_config"
         android:enableOnBackInvokedCallback="true"
         xmlns:tools="http://schemas.android.com/tools"
@@ -50,7 +50,7 @@
         <activity-alias
             android:name=".MainActivityDefault"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/launcher_icon"
+            android:icon="@mipmap/launcher_icon_minimal"
             android:label="Hibiki"
             android:enabled="true"
             android:exported="true">
