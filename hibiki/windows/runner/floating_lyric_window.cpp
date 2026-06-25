@@ -134,6 +134,71 @@ float FloatingLyricWindow::ScaleForDpi(float value) const {
   return value * (static_cast<float>(dpi_) / 96.0f);
 }
 
+POINT FloatingLyricWindow::ClampOriginToWorkArea(int x, int y, int width,
+                                                 int height,
+                                                 const RECT& work) const {
+  // TODO-832: keep at least |margin| px of the strip inside the work area on
+  // every edge so it can never be dragged / restored fully off-screen. All
+  // quantities here are screen physical px (margin already DPI-scaled), the
+  // same unit system as Dart clampFloatingWindowOrigin.
+  const int margin_x =
+      static_cast<int>(ScaleForDpi(kMinVisibleMarginDip));
+  // A strip narrower than the margin can at most show its whole width.
+  const int margin = margin_x < width ? margin_x : width;
+  const int margin_v = margin_x < height ? margin_x : height;
+
+  const int min_x = work.left - (width - margin);
+  const int max_x = work.right - margin;
+  const int min_y = work.top - (height - margin_v);
+  const int max_y = work.bottom - margin_v;
+
+  // When the strip is bigger than the work area min > max; anchor to the lower
+  // bound (top-left) instead of ejecting it.
+  int clamped_x = x;
+  if (min_x > max_x) {
+    clamped_x = min_x;
+  } else if (clamped_x < min_x) {
+    clamped_x = min_x;
+  } else if (clamped_x > max_x) {
+    clamped_x = max_x;
+  }
+
+  int clamped_y = y;
+  if (min_y > max_y) {
+    clamped_y = min_y;
+  } else if (clamped_y < min_y) {
+    clamped_y = min_y;
+  } else if (clamped_y > max_y) {
+    clamped_y = max_y;
+  }
+
+  return POINT{clamped_x, clamped_y};
+}
+
+void FloatingLyricWindow::ClampCurrentPositionToWindowMonitor() {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const int width = rc.right - rc.left;
+  const int height = rc.bottom - rc.top;
+  HMONITOR monitor = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO mi = {};
+  mi.cbSize = sizeof(mi);
+  if (!GetMonitorInfo(monitor, &mi)) {
+    return;
+  }
+  const POINT clamped =
+      ClampOriginToWorkArea(rc.left, rc.top, width, height, mi.rcWork);
+  if (clamped.x != rc.left || clamped.y != rc.top) {
+    SetWindowPos(hwnd_, HWND_TOPMOST, clamped.x, clamped.y, 0, 0,
+                 SWP_NOSIZE | SWP_NOACTIVATE);
+  }
+}
+
 bool FloatingLyricWindow::Show(HWND owner) {
   EnsureWindowClass();
   if (!EnsureDeviceResources()) {
@@ -294,8 +359,24 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       if (dragging_) {
         POINT cursor;
         GetCursorPos(&cursor);
-        const int new_x = cursor.x - drag_anchor_.x;
-        const int new_y = cursor.y - drag_anchor_.y;
+        int new_x = cursor.x - drag_anchor_.x;
+        int new_y = cursor.y - drag_anchor_.y;
+        // TODO-832: clamp against the work area of the monitor under the
+        // cursor (not the window's old monitor) so the strip can never be
+        // dragged off-screen yet still slides freely across displays.
+        RECT rc;
+        GetWindowRect(hwnd_, &rc);
+        const int width = rc.right - rc.left;
+        const int height = rc.bottom - rc.top;
+        HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = {};
+        mi.cbSize = sizeof(mi);
+        if (GetMonitorInfo(monitor, &mi)) {
+          const POINT clamped =
+              ClampOriginToWorkArea(new_x, new_y, width, height, mi.rcWork);
+          new_x = clamped.x;
+          new_y = clamped.y;
+        }
         SetWindowPos(hwnd_, HWND_TOPMOST, new_x, new_y, 0, 0,
                      SWP_NOSIZE | SWP_NOACTIVATE);
         return 0;
@@ -445,10 +526,19 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       dpi_ = HIWORD(wparam);
       DiscardDeviceResources();
       EnsureDeviceResources();
+      // TODO-832: a DPI change (e.g. dragged to a different-scale monitor, or
+      // the user changed scaling) can leave the strip partly off the new work
+      // area. The cursor isn't necessarily over the window here, so clamp
+      // against the window's own monitor work area, not the cursor's.
+      ClampCurrentPositionToWindowMonitor();
       RequestRender();
       return 0;
     }
     case WM_DISPLAYCHANGE: {
+      // TODO-832: resolution / monitor hot-plug can shrink or remove the work
+      // area the strip was sitting in; pull it back so ≥ kMinVisibleMarginDip
+      // stays grabbable. Use the window's monitor (cursor may be elsewhere).
+      ClampCurrentPositionToWindowMonitor();
       RequestRender();
       return 0;
     }
