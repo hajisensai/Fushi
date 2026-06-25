@@ -113,6 +113,37 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
 
     _refreshProgress();
     _startProgressPoll();
+    _diag718ProbeViewportDrift();
+  }
+
+  /// TODO-718 诊断（默认 off·DebugLogService 门控·只读不改行为）：恢复完成后多次读**真实**
+  /// WebView progress（区别于 onLoadStop 打印的恢复目标 _initialProgress），定位连续模式
+  /// 视口从恢复位「漂回章首」发生在哪一刻——是恢复滚动根本没生效（从头到尾≈0），还是恢复
+  /// 成功后被晚到 reflow（cue 注入 / settle）静默冲回 0。每发打印 target/actual 对照。
+  void _diag718ProbeViewportDrift() {
+    if (!DebugLogService.instance.enabled) return;
+    final double target = _initialProgress;
+    Future<void> probe(String tag) async {
+      if (!mounted || _controller == null) return;
+      final dynamic result = await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.stableProgressInvocation(),
+      );
+      final ReaderStableProgressDetails? snap =
+          parseReaderStableProgressDetails(result);
+      debugPrint(
+          '[ReaderDiag] 718-drift $tag target=${target.toStringAsFixed(4)}'
+          ' actual=${snap == null ? "null" : snap.progress.toStringAsFixed(4)}'
+          ' lastVal=${_lastProgressValue.toStringAsFixed(4)}'
+          ' lastChar=$_lastProgressCharOffset restoreInFlight=$_restoreInFlight');
+    }
+
+    probe('t+0');
+    Future<void>.delayed(
+        const Duration(milliseconds: 400), () => probe('t+400'));
+    Future<void>.delayed(
+        const Duration(milliseconds: 1000), () => probe('t+1000'));
+    Future<void>.delayed(
+        const Duration(milliseconds: 1800), () => probe('t+1800'));
   }
 
   void _startProgressPoll() {
