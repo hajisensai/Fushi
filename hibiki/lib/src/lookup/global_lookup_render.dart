@@ -105,5 +105,29 @@ String buildOverlayRenderScript({
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
+    // Self-measure for the bare overlay window. The card has no intrinsic
+    // width (body fills the viewport), so Dart sizes the window's WIDTH from
+    // the known logical box (popupMaxWidth * appUiScale) * devicePixelRatio —
+    // devicePixelRatio is only knowable here (= monitor DPI scale). HEIGHT is
+    // the physical scrollHeight (scrollHeight already includes the CSS zoom
+    // magnification; * dpr converts CSS px -> physical px). Re-posts on resize
+    // so the height re-measures once Dart has applied the correct width.
+    (function(){
+      if (window.__hibikiOverlaySizeWired) { window.__hibikiPostOverlaySize(); return; }
+      window.__hibikiOverlaySizeWired = true;
+      window.__hibikiPostOverlaySize = function(){
+        try {
+          var dpr = window.devicePixelRatio || 1;
+          var h = Math.ceil((document.documentElement.scrollHeight || 0) * dpr);
+          window.chrome.webview.postMessage({handler: 'overlaySize', args: [dpr, h]});
+        } catch (e) {}
+      };
+      window.addEventListener('resize', function(){
+        requestAnimationFrame(window.__hibikiPostOverlaySize);
+      });
+      requestAnimationFrame(function(){
+        requestAnimationFrame(window.__hibikiPostOverlaySize);
+      });
+    })();
 ''';
 }

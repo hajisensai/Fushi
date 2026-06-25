@@ -322,12 +322,20 @@ void GlobalLookupWindow::ConfigureWebView() {
               if (message_cb_) {
                 message_cb_(body);
               }
-              // Resolve the callHandler promise so popup.js await-points (mine /
-              // duplicateCheck / playWordAudio) never hang. Read-only MVP: null
-              // reply. The id is the integer after "__bridgeId":.
+              // Resolve the callHandler promise so popup.js await-points never
+              // hang. Most handlers are read-only here and get an immediate
+              // null. The AUDIO handlers, however, need a real reply from the
+              // main Dart engine (audio URL / play result), so they are
+              // DEFERRED: native does not resolve them; Dart computes the reply
+              // and calls back ResolveBridge(id, json). The id is the integer
+              // after "__bridgeId":.
+              const bool deferred =
+                  body.find("\"resolveWordAudio\"") != std::string::npos ||
+                  body.find("\"queryLocalAudio\"") != std::string::npos ||
+                  body.find("\"playWordAudio\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
-              if (pos != std::string::npos) {
+              if (!deferred && pos != std::string::npos) {
                 pos += key.size();
                 size_t end = pos;
                 while (end < body.size() && body[end] >= '0' &&
@@ -401,6 +409,20 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
     return;
   }
   webview_->ExecuteScript(Utf8ToWide(full_script).c_str(), nullptr);
+}
+
+void GlobalLookupWindow::ResolveBridge(int64_t id,
+                                       const std::string& json_value) {
+  if (!webview_) {
+    return;
+  }
+  // json_value is a ready JS string literal (Dart double-encodes it) — the
+  // overlay adapter does JSON.parse on it. Splice it in verbatim.
+  std::wstring script = L"window.__hibikiBridgeResolve && "
+                        L"window.__hibikiBridgeResolve(" +
+                        std::to_wstring(id) + L", " + Utf8ToWide(json_value) +
+                        L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
 }
 
 LRESULT CALLBACK GlobalLookupWindow::WndProc(HWND hwnd, UINT message,

@@ -61,6 +61,19 @@ abstract final class GlobalLookupChannel {
         'height': height,
       });
 
+  /// Resolves a deferred JS bridge promise (audio handlers). The overlay adapter
+  /// does `JSON.parse(arg)` on the second argument of
+  /// window.__hibikiBridgeResolve(id, arg) — i.e. it expects a JS *string*
+  /// containing the reply's JSON. So we double-encode: the inner jsonEncode
+  /// produces the reply JSON text, the outer jsonEncode turns that into a JS
+  /// string literal native can splice in verbatim (keeping the native side free
+  /// of any escaping logic).
+  static Future<void> resolveBridge(int id, Object? value) =>
+      _channel.invokeMethod<void>('resolveBridge', <String, Object?>{
+        'id': id,
+        'value': jsonEncode(jsonEncode(value)),
+      });
+
   static Future<void> hide() => _channel.invokeMethod<void>('hide');
 
   static Future<bool> isShowing() async =>

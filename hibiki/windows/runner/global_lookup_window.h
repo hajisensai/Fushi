@@ -69,6 +69,12 @@ class GlobalLookupWindow {
   // WebView2 finishes initial navigation if called too early.
   void RenderJson(const std::string& popup_json);
 
+  // Resolves a deferred JS bridge promise. |json_value| is a JSON literal
+  // (e.g. "\"file:///a.mp3\"", "true", "null") passed straight to
+  // window.__hibikiBridgeResolve(id, json_value). Used by the audio handlers,
+  // whose real reply comes from the main Dart engine.
+  void ResolveBridge(int64_t id, const std::string& json_value);
+
   void SetMediaResolver(MediaResolver resolver) {
     media_resolver_ = std::move(resolver);
   }
