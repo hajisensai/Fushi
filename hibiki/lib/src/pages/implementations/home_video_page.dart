@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -19,6 +21,7 @@ import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
@@ -586,6 +589,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           setState(() => _downloadingVideos[video.id] = progress);
         },
       );
+      // 根因修复（TODO-820）：下载只写了磁盘文件，从不建 VideoBooks 行——而视频列表
+      // 唯一数据源是 VideoBooks 行（widget.repo.listAll），导致「下载好的视频在列表
+      // 里根本看不到」。这里复用本地导入同款 saveVideoBook 原语补上建行（bookUid 直接
+      // 用稳定的远端 video.id，与 dedupeRemoteVideos 的去重键一致：重复下载 upsert 同
+      // 行不撞键、不重复），并连带下字幕/抽封面。建行与下载同属一个失败边界，任一失败
+      // 都走下方 catch 给明确提示，不静默丢半成品。
+      await _registerDownloadedVideo(client, video, dest);
     } catch (e) {
       debugPrint('[home-video] remote video download failed: $e');
       if (!mounted) return;
@@ -601,9 +611,94 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       }
     }
     if (!mounted) return;
+    // 刷新列表让新建的 VideoBooks 行立即出现（并把已下载视频从「配对设备」区去重隐藏）。
+    _refresh();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_video_downloaded)),
     );
+  }
+
+  /// 把刚下载到本机的对端视频 [dest] 登记成本地 [VideoBooksCompanion] 行，使其出现在
+  /// 视频列表（TODO-820）。bookUid 直接取远端稳定 [RemoteVideoInfo.id]——与
+  /// [dedupeRemoteVideos] 的去重键一致，故 upsert 语义下重复下载同一视频只覆盖同一行、
+  /// 不产生重复条目，且下载后该视频从「配对设备」区消失、进入本地列表。
+  ///
+  /// 字幕：host 字幕原语 [RemoteVideoClient.getRemoteVideoSubtitle] 就绪，[video]
+  /// 标记 [RemoteVideoInfo.hasSubtitle] 时下载外挂字幕落地、解析成 cue 一并写入，使
+  /// 下载来的视频可查词/句导航。封面：host 无封面文件下载原语（仅 coverUrl/coverPath
+  /// 元数据），故退回本地抽帧 [extractVideoCover]（桌面 ffmpeg；移动端无则留空占位），
+  /// 与本地导入一致。
+  Future<void> _registerDownloadedVideo(
+    RemoteVideoClient client,
+    RemoteVideoInfo video,
+    File dest,
+  ) async {
+    final String bookUid = video.id;
+    final ({String? source, String? format, List<AudioCue> cues}) subtitle =
+        await _downloadRemoteSubtitleForBook(client, video, bookUid);
+    await widget.repo.saveVideoBook(VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: Value(video.title),
+      videoPath: Value(dest.path),
+      subtitleSource: Value<String?>(subtitle.source),
+      subtitleFormat: Value<String?>(subtitle.format),
+      embeddedSubtitleTrack: subtitle.source == null
+          ? const Value<int?>(0)
+          : const Value<int?>(null),
+      importedAt: Value(DateTime.now()),
+    ));
+    if (subtitle.cues.isNotEmpty) {
+      await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
+    }
+    // 封面抽帧（extractVideoCover 走 ffmpeg 子进程，最长 30s）是慢的可选增强，绝不能
+    // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
+    // 单独抽好后再 updateCover 回写并刷新一次（extractVideoCover 内部已吞失败返 null，
+    // 移动端无 ffmpeg 时留空占位，与本地导入一致）。
+    final String? coverPath =
+        await extractVideoCover(videoPath: dest.path, bookUid: bookUid);
+    if (coverPath != null) {
+      await widget.repo.updateCover(bookUid, coverPath);
+      if (mounted) _refresh();
+    }
+  }
+
+  /// 下载并解析对端外挂字幕（TODO-820）：返回外挂字幕落地路径 / 格式 / 解析出的 cue。
+  /// [video] 无可下载文本字幕（[RemoteVideoInfo.hasSubtitle]==false）时返回三者皆空，
+  /// 由调用方退回内嵌默认轨。字幕落 `<appDocs>/video_subtitles/`（与本地导入同目录），
+  /// 文件名据稳定 bookUid 派生（重复下载覆盖同一副本，不堆垃圾）。
+  Future<({String? source, String? format, List<AudioCue> cues})>
+      _downloadRemoteSubtitleForBook(
+    RemoteVideoClient client,
+    RemoteVideoInfo video,
+    String bookUid,
+  ) async {
+    if (!video.hasSubtitle) {
+      return (source: null, format: null, cues: const <AudioCue>[]);
+    }
+    final String ext = _remoteSubtitleExtension(video.subtitleFileName);
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory dir =
+        Directory(p.join(docs.path, VideoStorage.subtitlesDirName));
+    await dir.create(recursive: true);
+    final String safeUid = video.id.replaceAll(RegExp(r'[\/:*?"<>|]'), '_');
+    final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
+    await client.getRemoteVideoSubtitle(video.id, subDest);
+    final String content = await readTextWithEncoding(subDest);
+    final List<AudioCue> cues = parseSubtitleCues(
+      content: content,
+      format: ext,
+      bookUid: bookUid,
+    );
+    return (source: subDest.path, format: ext, cues: cues);
+  }
+
+  /// 从 host 提供的字幕文件名取真实扩展名（保留 `.ass/.ssa/.vtt/.srt` 解析语义）；
+  /// 缺失/无扩展名时回退 `srt`（host 文本字幕最常见格式）。纯函数。
+  String _remoteSubtitleExtension(String? subtitleFileName) {
+    if (subtitleFileName == null || subtitleFileName.isEmpty) return 'srt';
+    final String ext =
+        p.extension(subtitleFileName).replaceFirst('.', '').toLowerCase();
+    return ext.isEmpty ? 'srt' : ext;
   }
 
   Future<File> _remoteDownloadDestination(RemoteVideoInfo video) async {
