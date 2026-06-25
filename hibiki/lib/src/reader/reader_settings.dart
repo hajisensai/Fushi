@@ -346,6 +346,15 @@ class ReaderSettings {
   Future<void> toggleReverseArrowPageTurn() =>
       _set<bool>('reverse_arrow_page_turn', !reverseArrowPageTurn);
 
+  // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader，每本书
+  // 各自记忆，与 invert_swipe_direction / reverse_arrow_page_turn 一致）。
+  // 默认 false = 现有行为（左=上一句/快退、右=下一句/快进）；true = 左右功能互换。
+  // 这是「功能反转」维度，与 reverseReaderBottomBar 的「位置镜像」维度严格正交。
+  bool get invertAudiobookSkipDirection =>
+      _get<bool>('invert_audiobook_skip_direction', false);
+  Future<void> toggleInvertAudiobookSkipDirection() => _set<bool>(
+      'invert_audiobook_skip_direction', !invertAudiobookSkipDirection);
+
   int get volumePageTurningSpeed => _get<int>('volume_page_turning_speed', 100);
   Future<void> setVolumePageTurningSpeed(int v) =>
       _set<int>('volume_page_turning_speed', v);

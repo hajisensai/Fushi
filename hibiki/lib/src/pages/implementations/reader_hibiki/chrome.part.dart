@@ -525,6 +525,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
                       backgroundColor: _themeBackgroundColor(),
                       foregroundColor: _themeTextColor(),
                       reversed: appModel.reverseReaderBottomBar,
+                      // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
+                      // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
+                      invertSkip: ReaderHibikiSource
+                          .instance.invertAudiobookSkipDirection,
                     ),
                   ),
                   ColoredBox(

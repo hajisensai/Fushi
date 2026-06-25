@@ -518,6 +518,27 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader，分层与
+  // invert_swipe_direction / reverse_arrow_page_turn 一致），默认 false。
+  bool get invertAudiobookSkipDirection =>
+      readerSettings?.invertAudiobookSkipDirection ??
+      getPreference<bool>(
+        key: 'invert_audiobook_skip_direction',
+        defaultValue: false,
+      );
+
+  void toggleInvertAudiobookSkipDirection() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleInvertAudiobookSkipDirection();
+      return;
+    }
+    await setPreference<bool>(
+      key: 'invert_audiobook_skip_direction',
+      value: !invertAudiobookSkipDirection,
+    );
+  }
+
   // TODO-080B: read through THIS source's profile-aware preference cache
   // ([_preferences], reloaded by AppModel.refreshPrefCache on every profile
   // switch) instead of the reader-page-owned static [readerSettings] snapshot.

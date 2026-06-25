@@ -19,6 +19,7 @@ class AudiobookPlayBar extends StatelessWidget {
     this.backgroundColor,
     this.foregroundColor,
     this.reversed = false,
+    this.invertSkip = false,
     super.key,
   });
 
@@ -40,6 +41,15 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 永远在左、快进/下一句永远在右（否则方向语义错乱，BUG-021）。cue 文本
   /// 内部方向同样保留。
   final bool reversed;
+
+  /// 跟随「反转底栏前进后退按钮」偏好（[ReaderSettings.invertAudiobookSkipDirection]）。
+  /// 为 true 时把 ⏮ / ⏭ 两键的**功能方向**整体互换——左键变下一句/快进、右键变
+  /// 上一句/快退，图标 + tooltip + onPressed 三者一起换以保持视觉与行为一致。
+  ///
+  /// 与 [reversed] 严格正交：[reversed] 只镜像顶层控件的屏幕左右位置（barItems
+  /// 顺序），不碰任何 onPressed/图标；[invertSkip] 只换三联键内部功能 + 图标，
+  /// 不碰位置。两维度互不连带（BUG-021 契约的延伸）。
+  final bool invertSkip;
 
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
@@ -69,28 +79,63 @@ class AudiobookPlayBar extends StatelessWidget {
         : Theme.of(context).textTheme.bodySmall;
     // ⏮⏯⏭ 是一个原子组：reversed 镜像整条 bar 时这组只换边、内部方向不动，
     // 否则快退/快进会左右颠倒（BUG-021）。用 min-size Row 包住三键。
+    //
+    // [invertSkip] 是一个与 reversed 正交的功能维度：开时把左键（屏幕上仍在
+    // 左、id=audiobook_prev）的图标 + tooltip + onPressed 整体换成「下一句/快进」，
+    // 右键换成「上一句/快退」，三者一起换以免视觉与行为脱节。位置（左右）不变，
+    // 只是功能互换——这与 reversed（只换位置不换功能）互不连带。
+    //
+    // 把「后退」与「前进」两组语义抽成局部记录，再按 invertSkip 决定哪组喂左键、
+    // 哪组喂右键，消除内部的 if 分支特例。
+    final ({
+      IconData icon,
+      String tooltip,
+      VoidCallback onPressed
+    }) backwardKey = (
+      icon: skipActionSeconds == 0
+          ? Icons.skip_previous_outlined
+          : Icons.fast_rewind_outlined,
+      tooltip:
+          skipActionSeconds == 0 ? t.prev_sentence : '-${skipActionSeconds}s',
+      onPressed: () {
+        if (skipActionSeconds == 0) {
+          controller.skipToPrevCue();
+        } else {
+          controller.seekRelative(-skipActionSeconds);
+        }
+      },
+    );
+    final ({IconData icon, String tooltip, VoidCallback onPressed}) forwardKey =
+        (
+      icon: skipActionSeconds == 0
+          ? Icons.skip_next_outlined
+          : Icons.fast_forward_outlined,
+      tooltip:
+          skipActionSeconds == 0 ? t.next_sentence : '+${skipActionSeconds}s',
+      onPressed: () {
+        if (skipActionSeconds == 0) {
+          controller.skipToNextCue();
+        } else {
+          controller.seekRelative(skipActionSeconds);
+        }
+      },
+    );
+    // 左键（屏幕左侧，id=audiobook_prev）：invertSkip 开时变前进键。
+    final ({IconData icon, String tooltip, VoidCallback onPressed}) leftKey =
+        invertSkip ? forwardKey : backwardKey;
+    // 右键（屏幕右侧，id=audiobook_next）：invertSkip 开时变后退键。
+    final ({IconData icon, String tooltip, VoidCallback onPressed}) rightKey =
+        invertSkip ? backwardKey : forwardKey;
     final Widget playbackControls = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         _FocusableBarButton(
           id: const HibikiFocusId('audiobook_prev'),
-          icon: Icon(
-            skipActionSeconds == 0
-                ? Icons.skip_previous_outlined
-                : Icons.fast_rewind_outlined,
-          ),
+          icon: Icon(leftKey.icon),
           iconSize: 22,
           style: flatStyle,
-          tooltip: skipActionSeconds == 0
-              ? t.prev_sentence
-              : '-${skipActionSeconds}s',
-          onPressed: () {
-            if (skipActionSeconds == 0) {
-              controller.skipToPrevCue();
-            } else {
-              controller.seekRelative(-skipActionSeconds);
-            }
-          },
+          tooltip: leftKey.tooltip,
+          onPressed: leftKey.onPressed,
         ),
         _FocusableBarButton(
           id: const HibikiFocusId('audiobook_play'),
@@ -107,23 +152,11 @@ class AudiobookPlayBar extends StatelessWidget {
         ),
         _FocusableBarButton(
           id: const HibikiFocusId('audiobook_next'),
-          icon: Icon(
-            skipActionSeconds == 0
-                ? Icons.skip_next_outlined
-                : Icons.fast_forward_outlined,
-          ),
+          icon: Icon(rightKey.icon),
           iconSize: 22,
           style: flatStyle,
-          tooltip: skipActionSeconds == 0
-              ? t.next_sentence
-              : '+${skipActionSeconds}s',
-          onPressed: () {
-            if (skipActionSeconds == 0) {
-              controller.skipToNextCue();
-            } else {
-              controller.seekRelative(skipActionSeconds);
-            }
-          },
+          tooltip: rightKey.tooltip,
+          onPressed: rightKey.onPressed,
         ),
       ],
     );

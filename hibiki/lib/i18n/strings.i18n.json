@@ -1823,5 +1823,7 @@
   "collection_export_format": "Format",
   "collection_export_pick_book": "Choose a book",
   "collection_export_all_words": "All favorite words",
-  "collection_export_no_items": "Nothing to export"
+  "collection_export_no_items": "Nothing to export",
+  "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
+  "section_bottom_bar_layout": "Bottom bar layout"
 }

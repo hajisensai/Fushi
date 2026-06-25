@@ -1823,5 +1823,7 @@
   "collection_export_format": "格式",
   "collection_export_pick_book": "选择书籍",
   "collection_export_all_words": "全部收藏词",
-  "collection_export_no_items": "没有可导出的内容"
+  "collection_export_no_items": "没有可导出的内容",
+  "invert_audiobook_skip_direction": "反转底栏前进后退按钮",
+  "section_bottom_bar_layout": "底栏布局"
 }

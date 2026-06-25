@@ -219,6 +219,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Open lookup on startup': 'test/pages/home_page_tabs_test.dart',
   'reading/Reverse reader bottom bar':
       'DEVICE: reader bottom-bar layout order (like reverse nav bar)',
+  // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader）。change/
+  // persist/restore 经 DB 由本测试守；运行时把 ⏮/⏭ 的 icon+tooltip+onPressed 互换
+  // 的功能维度由专项 widget 行为测试覆盖（与 reverse-bottom-bar 的位置镜像正交）。
+  'reading/Invert bottom-bar skip buttons':
+      'test/media/audiobook/audiobook_play_bar_reverse_test.dart',
 };
 
 /// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。

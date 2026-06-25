@@ -566,34 +566,22 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
-      // TODO-745：把四个「翻页方向反转」开关（底栏 / 音量键 / 滑动 / 键盘方向键）
-      // 集中到一个「翻页方向」分组。纯展示重组：开关的 id/title/value/onChanged
-      // 与各自的持久化 key、默认值、消费点全不变；面板分组（ReaderGroup.behavior）
-      // 也不动，仅这四项在面板内被排成相邻一簇（order 2-5）。
+      // TODO-745 / TODO-830：「翻页方向」分组只收**真正反转翻页/句子方向**的
+      // 开关（音量键 / 滑动 / 键盘方向键 + 反转底栏前进后退按钮）。原 TODO-745 误把
+      // 「反转阅读器底栏」（纯左右镜像底栏控件位置、与翻页方向无关）塞进来，
+      // 现移到下方独立的「底栏布局」分组（id/持久化 key 不变，仅换 UI 分组）。
+      // 纯展示重组：各开关的 id/title/value/onChanged 与持久化 key、默认值、
+      // 消费点全不变；面板分组（ReaderGroup.behavior）也不动。
       SettingsSection(
         title: t.section_page_turn_direction,
         items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'reading_display.reverse_reader_bottom_bar',
-            title: t.reverse_reader_bottom_bar,
-            icon: Icons.swap_horiz_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 2,
-            ),
-            value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
-            onChanged: (SettingsContext c, bool value) {
-              c.appModel.toggleReverseReaderBottomBar();
-              c.refresh();
-            },
-          ),
           SettingsSwitchItem(
             id: 'reading_controls.invert_volume_buttons',
             title: t.invert_volume_buttons,
             icon: Icons.swap_vert_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 3,
+              order: 2,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningInverted,
@@ -608,7 +596,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.swipe_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 4,
+              order: 3,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.invertSwipeDirection,
@@ -624,13 +612,52 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.swap_horiz_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
-              order: 5,
+              order: 4,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.reverseArrowPageTurn,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.readerSource.toggleReverseArrowPageTurn();
               notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader）。
+          SettingsSwitchItem(
+            id: 'reading_controls.invert_audiobook_skip_direction',
+            title: t.invert_audiobook_skip_direction,
+            icon: Icons.swap_horizontal_circle_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 5,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.invertAudiobookSkipDirection,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleInvertAudiobookSkipDirection();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+        ],
+      ),
+      // TODO-830：「底栏布局」分组——只放纯位置镜像的「反转阅读器底栏」（与
+      // 翻页方向无关，仅左右调换底栏控件位置，左右手布局偏好）。
+      SettingsSection(
+        title: t.section_bottom_bar_layout,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'reading_display.reverse_reader_bottom_bar',
+            title: t.reverse_reader_bottom_bar,
+            icon: Icons.swap_horiz_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              // order 13：behavior 组内已用 0-9/11/12（10 在 listening），取末位
+              // 空号，避免与 volume_page_turning_speed(6)/keep_screen_awake(7) 撞号。
+              order: 13,
+            ),
+            value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
+            onChanged: (SettingsContext c, bool value) {
+              c.appModel.toggleReverseReaderBottomBar();
+              c.refresh();
             },
           ),
         ],
