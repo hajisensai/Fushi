@@ -60,7 +60,7 @@ void main() {
       final int idx = src.indexOf('void _handleReaderScroll(bool userDriven)');
       expect(idx, greaterThan(0));
       // TODO-736 B-3 在该函数顶部插入 settle 去抖块，函数体加长，窗口放宽到 1900。
-      final String body = src.substring(idx, idx + 1900);
+      final String body = src.substring(idx, idx + 2700);
       expect(body.contains('if (DebugLogService.instance.enabled)'), isTrue,
           reason: 'Dart 诊断须由 DebugLogService.instance.enabled 门控（默认 off）');
       expect(body.contains("debugPrint('[ReaderDiag] _handleReaderScroll"),

@@ -299,6 +299,24 @@ void main() {
           reason: '解武装必须仅在用户滚动驱动路径，轮询/恢复不得解武装');
     });
 
+    test('TODO-718 根因②：用户真实滚动在 _handleReaderScroll 顶部最先解武装(早于 B-3 return)', () {
+      // 解武装信号若被 B-3 settle 窗整发 return / 拦截器命中前置 return 吞掉，因果门永远 armed →
+      // 用户向前滚被 reflow 归零拦截拽回恢复锚、滚不出去、保存值停在开头。故 userDriven 解武装
+      // 必须放在 _handleReaderScroll 最前、早于 readerScrollWithinReanchorSettle 的 return。
+      final int handleIdx =
+          navigation.indexOf('void _handleReaderScroll(bool userDriven) {');
+      expect(handleIdx, greaterThan(0));
+      final int disarmIdx = navigation.indexOf(
+          'if (userDriven && _continuousSettleGuardArmed) {', handleIdx);
+      final int b3Idx =
+          navigation.indexOf('readerScrollWithinReanchorSettle(', handleIdx);
+      expect(disarmIdx, greaterThan(handleIdx),
+          reason: 'userDriven 解武装必须在 _handleReaderScroll 内');
+      expect(disarmIdx, lessThan(b3Idx),
+          reason: 'userDriven 解武装必须早于 B-3 settle 窗的 return，'
+              '否则 250ms 内用户滚动的解武装被吞 → 门永 armed → 卡在恢复锚(TODO-718 回归)');
+    });
+
     test('TODO-718 根因：初次开书 + 样式重载的裸恢复路径也必须武装因果门', () {
       // 初次开书(从书架点开)走 webview.part.dart 的 _loadChapterDirectly 裸装章，**不经
       // _beginNavigation**；若不武装因果门，TODO-798 拦截器第一道门(!settleGuardArmed)恒放行 →

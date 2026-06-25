@@ -135,6 +135,17 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 算出）。节流/coalesce 期多发 scroll 合并，只要有一发用户驱动即记真，待实际发起刷新时消费
     // （见下方进度刷新路由）。reflow 归零 / cue-reveal 程序化滚动 userDriven=false → 不解武装 798 因果门。
     if (userDriven) _scrollUserDrivenPending = true;
+    // TODO-718 根因修复（解武装信号被前置拦截吞掉 → 用户滚不出去/卡在恢复锚）：用户真实输入
+    // 驱动的滚动必须在这里**最先**解武装因果门——早于下面 B-3 settle 窗的整发 return、也早于
+    // _refreshProgress 里「拦截器命中后 return（在解武装之前）」。否则:① 用户在 restore 重锚后
+    // 250ms 内滚动被 B-3 整发吞掉、连解武装一起丢;② 用户向前滚时某帧 reflow 把进度瞬时读成 0,
+    // armed 拦截器命中把视口拽回 committedAnchor(≈恢复锚)且 return 不解武 → 门永远 armed、用户
+    // 每次滚动都被弹回开头、保存值停在恢复位置。reflow 归零/cue-reveal 是 userDriven=false → 不在
+    // 此解武装(继续保护恢复不被自发归零裸奔=TODO-718/798 主路径)。只有真用户输入才解武装、之后
+    // 拦截器放行(armed=false)→ 用户自由滚动、真实位置得以保存/恢复。
+    if (userDriven && _continuousSettleGuardArmed) {
+      _continuousSettleGuardArmed = false;
+    }
     // TODO-736 B-3：样式重锚 commit 清旗后的 settle 尾沿去抖。改字号/字体/主题 reflow 在
     // commit（_reanchorClearedAt 打点）之后还会有几帧 settle，其间 WebView 自发的瞬态归零
     // scroll 经此回传——250ms 内的尾沿 scroll 直接 return 不落库（治翻页多次改字号跳章首的
