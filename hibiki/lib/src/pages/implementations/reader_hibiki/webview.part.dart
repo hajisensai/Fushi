@@ -927,18 +927,23 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   (function() {
     var _progressScrollRaf = 0;
     var _progressScrollTimer = null;
-    // TODO-718 回归修复：记录最近一次**真实用户输入**时间戳。归零/cue-reveal 等程序化滚动
-    // 与用户滚动都触发同一个原生 scroll 事件、走同一上报点，JS 桥处本不可区分；TODO-798 的
-    // 因果门「解武装」误把程序化 reflow 滚动当用户首滚 → 过早解武装 → 真归零裸奔弹回章首。
-    // 这里只在 touch/pointer/wheel/key 这类**真实输入**事件上盖时间戳，scroll 上报时据此算出
-    // isUserDriven 传给 Dart，让因果门只被真用户输入解武装。capture+passive 不干扰既有手势。
+    // TODO-718 总根因修复（真机铁证·2026-06-25·5742 日志每条 scroll report 恒 userDriven=true）：
+    // 记录最近一次**真实滚动意图**时间戳。归零/cue-reveal 等程序化滚动与用户滚动都触发同一个
+    // 原生 scroll 事件、走同一上报点，JS 桥处本不可区分；scroll 上报时据此算 userDriven 传给 Dart，
+    // 让 reflow-归零拦截器（_refreshProgress + 退出 flush 守卫）只放行真用户滚动、拦住程序化归零。
+    //
+    // 关键：只绑**移动**事件（wheel / touchmove / keydown），**不绑按下**事件（pointerdown /
+    // touchstart / mousedown）。按下事件在「点一下开书 / 点屏幕 / 拖前按住」时就触发，会把后续
+    // 1000ms 内的 load/settle/cue reflow 全误标成 userDriven=true → 拦截器恒被放行、形同虚设 →
+    // reflow 归零照样落库 0 → 下次 target=0=章首（saga 总根）。移动事件只在**真正滚动**时连续
+    // 触发：用户滚动→userDriven=true（含惯性甩动起始帧·1000ms 窗覆盖）；load/cue 静默 reflow 无
+    // 移动事件→userDriven=false→拦截器命中复位+不落库。用户真滚到章首仍 userDriven=true 放行
+    // （能到章首），不误伤。capture+passive 不干扰既有手势。
     var _lastUserInputAt = 0;
     function _markUserInput() { _lastUserInputAt = Date.now(); }
     var _inputOpts = { passive: true, capture: true };
-    window.addEventListener('pointerdown', _markUserInput, _inputOpts);
-    window.addEventListener('touchstart', _markUserInput, _inputOpts);
     window.addEventListener('wheel', _markUserInput, _inputOpts);
-    window.addEventListener('mousedown', _markUserInput, _inputOpts);
+    window.addEventListener('touchmove', _markUserInput, _inputOpts);
     window.addEventListener('keydown', _markUserInput, { capture: true });
     function _reportReaderScroll() {
       var r = window.hoshiReader;

@@ -261,6 +261,35 @@ void main() {
       );
     });
 
+    test(
+        'userDriven 打点只绑移动事件(wheel/touchmove/keydown)·不绑按下事件(pointerdown/touchstart/mousedown)',
+        () {
+      // saga 总根：按下事件在点开书/点屏幕时就触发，把后续 1000ms 内的 load/cue reflow 全误标
+      // userDriven=true → 拦截器恒被放行形同虚设 → reflow 归零落库 0 → 下次 target=0=章首。
+      // userDriven 必须只反映「真正在滚动」，故 _markUserInput 只能绑移动事件。
+      final String webview = File(
+        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      ).readAsStringSync();
+      expect(
+          webview.contains("addEventListener('wheel', _markUserInput"), isTrue,
+          reason: 'wheel 是桌面滚动信号，必须绑');
+      expect(webview.contains("addEventListener('touchmove', _markUserInput"),
+          isTrue,
+          reason: 'touchmove 是触屏滚动信号，必须绑（不是 touchstart）');
+      expect(webview.contains("addEventListener('keydown', _markUserInput"),
+          isTrue,
+          reason: '方向/翻页键滚动信号，必须绑');
+      expect(webview.contains("addEventListener('pointerdown', _markUserInput"),
+          isFalse,
+          reason: 'pointerdown 是按下事件(点开书即触发)，绝不能绑——否则 userDriven 恒真');
+      expect(webview.contains("addEventListener('touchstart', _markUserInput"),
+          isFalse,
+          reason: 'touchstart 是按下事件，绝不能绑（用 touchmove 代替）');
+      expect(webview.contains("addEventListener('mousedown', _markUserInput"),
+          isFalse,
+          reason: 'mousedown 是按下事件，绝不能绑');
+    });
+
     test('_syncPositionFromWebViewProgress 在覆盖 _lastProgress* 前先判非自愿归零并保留缓存',
         () {
       final String body = methodBody(navigation,
