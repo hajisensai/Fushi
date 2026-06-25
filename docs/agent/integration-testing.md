@@ -26,7 +26,7 @@
 
 ## 焦点驱动操作（不用点击，三端一致）
 
-集成测试**操作真 app 一律用焦点 + 合成按键，绝不坐标点击**。点击依赖精确屏幕位置（布局/滚动/缩放/平台一变就错位、易出错）；焦点 + 按键**位置无关**，而且**不要求 OS 窗口真获得焦点**，所以同一份测试在模拟器、Windows 离屏 runner、Mac 离屏 runner 上机制完全一致。
+焦点 + 合成按键**位置无关**，而且**不要求 OS 窗口真获得焦点**——所以同一份测试在模拟器、Windows 离屏 runner、Mac 离屏 runner 上机制完全一致（为何禁坐标点击见上「关键约束」）。
 
 **原语**：`integration_test/helpers/focus_driver.dart` 的 `FocusDriver`（只发 `tester.sendKeyEvent`，绝不 `tester.tap`）：
 
@@ -40,7 +40,7 @@
 **标准操作模式**（见 `integration_test/comprehensive_settings_test.dart` 与 widget 层 `test/settings/settings_schema_coverage_test.dart`）：
 `Tab` 遍历 → 对落到的每个控件**检测类型**（向上遍历 widget 祖先找 `AdaptiveSettings{Switch,Slider,Stepper,Segmented}Row`）→ **按类型驱动**（Switch→`Enter`，可调→方向键）→ 断言**真写穿 DB / 真生效**（不只点几下）→ **还原** prefs（不动用户真实设置）。
 
-**激活键的平台差异**：app 主激活是手柄 `gameButtonA`——模拟器（Android）能合成它；**桌面（Windows/Mac）合不出**（无物理键映射，`sendKeyEvent(gameButtonA)` 抛 "not found in windows physical key map"）→ 桌面用 `Enter`（**不要用 `Space`**：App 已把裸空格中和为 `DoNothingIntent`，焦点确认不再走空格）。`Tab` 与方向键到处都行，优先用它们。
+**激活键的平台差异**：app 主激活是手柄 `gameButtonA`——模拟器（Android）能合成它；**桌面（Windows/Mac）合不出**（无物理键映射，`sendKeyEvent(gameButtonA)` 抛 "not found in windows physical key map"）→ 桌面用 `Enter`（不走 `Space`，见上表）。`Tab` 与方向键到处都行，优先用它们。
 
 **为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `HIBIKI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
 
@@ -54,12 +54,7 @@ flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/inte
 .\tool\run_mac_itest.ps1 integration_test/<t>_test.dart
 ```
 
-`reader_computer_use_flow` 在 Windows runner 下还会把可见验收证据写入
-`.codex-test/windows-itest/<run-id>/computer-use/reader_computer_use_flow/`：
-`function-matrix.md/json` 汇总 reader 非白屏、连续翻页、连续查词、
-popup 可见内容和 Escape 回 reader caret；`flutter-ui-tree-*.txt` 记录关键
-阶段的 Flutter widget tree。截图是否保存以矩阵里的 `Screenshots` 为准，
-Windows 平台截图能力不可用时不能把截图缺失误判为功能失败。
+`reader_computer_use_flow` 在 Windows runner 下还会把可见验收证据（function-matrix、flutter-ui-tree、截图）写进 `.codex-test/windows-itest/<run-id>/computer-use/...`——产物清单、判读规则、「截图缺失≠功能失败」见 [computer-use-testing.md](computer-use-testing.md)。
 
 ## 一键运行（全自动，仅模拟器）
 
@@ -76,7 +71,7 @@ bash ci/integration-test.sh --avd=hoshi_test_api35
 
 当前 `ci/integration-test.sh` 的静态 `ALL_TARGETS` 共 **20** 个目标：`anki_integration`、`app_smoke`、`comprehensive_imports`、`comprehensive_reader_lookup`、`comprehensive_settings`、`feature_flows`、`gamepad_navigation`、`home_keyboard`、`image_pause_detection`、`navigation_stability`、`popup_dictionary`、`reader_caret`、`reader_computer_use_flow`、`reader_dictionary`、`reader_keyboard`、`reader_pagination`、`reader_popup_caret`、`regression`、`settings_validation`、`user_path`。runner 不自动 glob，新增目标必须同时加入该列表。
 
-书库依赖类测试（`reader_dictionary` / `reader_keyboard` / `reader_computer_use_flow` / `regression`）通过 `integration_test/helpers/library_fixture.dart` 在测试内自带 fixture：`seedReaderBook` 用 `EpubGenerator`+`EpubImporter` 程序化导入合成 EPUB，`seedDictionary` 导入 runner 推到 `/sdcard/Download/test_dict.zip` 的字典；没有外部字典时会生成 `testword` / `猫` 的最小词典。因此在全新安装上也无需手动导入。
+书库依赖类测试（`reader_dictionary` / `reader_keyboard` / `reader_computer_use_flow` / `regression`）由 `integration_test/helpers/library_fixture.dart` 在测试内自带 fixture，全新安装也无需手动导入（fixture 细节见下方「测试素材」）。
 
 ## AnkiDroid 集成测试
 
