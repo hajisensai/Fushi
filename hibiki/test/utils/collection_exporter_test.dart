@@ -69,8 +69,7 @@ void main() {
       expect(buildSentenceExport(s, format: ExportFormat.csv).startsWith(bom),
           isTrue);
       expect(
-          buildSentenceExport(s, format: ExportFormat.markdown)
-              .startsWith(bom),
+          buildSentenceExport(s, format: ExportFormat.markdown).startsWith(bom),
           isFalse);
       expect(buildSentenceExport(s, format: ExportFormat.txt).startsWith(bom),
           isFalse);
@@ -196,8 +195,8 @@ void main() {
       expect(md, contains('**走る**'));
       expect(md, isNot(contains('**走る**（')));
 
-      expect(buildWordExport(w, format: ExportFormat.csv).startsWith(bom),
-          isTrue);
+      expect(
+          buildWordExport(w, format: ExportFormat.csv).startsWith(bom), isTrue);
       expect(buildWordExport(w, format: ExportFormat.json).startsWith(bom),
           isFalse);
 
