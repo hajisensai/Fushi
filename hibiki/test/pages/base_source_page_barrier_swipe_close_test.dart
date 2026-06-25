@@ -19,12 +19,15 @@ import '../helpers/test_platform_services.dart';
 /// complaint). This guard locks the gesture-routing contract of the full-screen
 /// barrier in [BaseSourcePageState.buildDictionary]:
 ///   - switch ON: horizontal drag past threshold -> close ONE layer
-///     (dismissTopPopup, keeping the parent).
+///     (dismissTopPopup, keeping the parent). Swipe-to-close is a directed
+///     dismiss gesture (mobile parity) and stays layer-by-layer.
 ///   - bidirectional horizontal (left or right), like mobile _dragX.abs().
 ///   - threshold reuses [swipeDismissThreshold] (default sensitivity 0.6 ~94px);
 ///     below-threshold springs back without closing.
-///   - a tap still routes through onTap -> close one layer (tap/drag arena is
-///     mutually exclusive, no swallowing).
+///   - TODO-834: a tap on the bare barrier (true blank outside all popups) now
+///     routes through onTap -> clearDictionaryResult, clearing the WHOLE stack
+///     (reverts TODO-720's close-one-layer) and keeping the hidden warm slot.
+///     Tap/drag arena is mutually exclusive, no swallowing.
 ///   - switch OFF: barrier only taps, horizontal drag is inert (old desktop).
 ///   - hover is not swallowed (onDismissBarrierHover still reachable).
 ///
@@ -255,7 +258,7 @@ void main() {
 
   testWidgets(
       'switch OFF: horizontal drag past threshold does NOT close (no swipe), '
-      'tap still closes one layer', (WidgetTester tester) async {
+      'tap clears the whole stack (TODO-834)', (WidgetTester tester) async {
     await ReaderHibikiSource.instance.setEnableSwipeToClose(false);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
@@ -273,15 +276,22 @@ void main() {
     expect(host.debugPopupStack, hasLength(2),
         reason: 'with the switch off the barrier only taps, drag is inert');
 
+    // TODO-834：点 barrier（所有弹窗外真空白）一次性清整栈，保留隐藏热槽。
     await tester.tapAt(_bareBarrierPoint);
     await tester.pump();
+    expect(host.dictionaryPopupShown, isFalse,
+        reason:
+            'tap-barrier clears the whole stack regardless of swipe switch');
     expect(host.debugPopupStack, hasLength(1),
-        reason: 'tap-barrier closing one layer survives the switch being off');
+        reason: 'the hidden warm slot survives (BUG-092)');
+    expect(host.debugPopupStack.single.visible, isFalse);
+    expect(host.debugPopupStack.single.isWarmSlot, isTrue);
   });
 
   testWidgets(
-      'switch ON: a tap (not a drag) closes exactly one layer (tap/drag arena '
-      'does not swallow each other)', (WidgetTester tester) async {
+      'switch ON: a tap (not a drag) clears the whole stack (TODO-834; '
+      'tap/drag arena does not swallow each other)',
+      (WidgetTester tester) async {
     await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
@@ -298,9 +308,12 @@ void main() {
     await tester.tapAt(_bareBarrierPoint);
     await tester.pump();
 
+    // TODO-834：tap 经手势竞技场仍走 onTap → clearDictionaryResult 清整栈。
+    expect(host.dictionaryPopupShown, isFalse,
+        reason: 'a tap still routes through onTap and clears the whole stack');
     expect(host.debugPopupStack, hasLength(1),
-        reason: 'a tap still routes through onTap and closes one layer');
-    expect(host.debugPopupStack.single.visible, isTrue);
+        reason: 'the hidden warm slot survives');
+    expect(host.debugPopupStack.single.visible, isFalse);
   });
 
   testWidgets(

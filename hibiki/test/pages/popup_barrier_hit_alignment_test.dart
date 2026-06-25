@@ -8,8 +8,9 @@ import '../widgets/widget_test_helpers.dart';
 /// TODO-805：点查词弹窗外的「关闭命中区」必须与弹窗**实际可视矩形**对齐。
 ///
 /// 生产里弹窗层 [DictionaryPopupLayer] 与一个全屏 dismiss barrier
-/// （`Positioned.fill` 的 `GestureDetector(onTap: dismissTopPopup)`）同处一个
-/// `Stack`，弹窗在 barrier 之上。点弹窗内应被弹窗吃掉、点弹窗外才落到 barrier。
+/// （`Positioned.fill` 的 `GestureDetector(onTap: clearDictionaryResult)`，
+/// TODO-834 后点真空白清整栈）同处一个 `Stack`，弹窗在 barrier 之上。点弹窗内应
+/// 被弹窗吃掉、点弹窗外才落到 barrier（命中区几何不受 TODO-834 关闭语义改动影响）。
 ///
 /// 根因：弹窗 surface（[HibikiPopupSurface] = `Material`）本身不吸收指针；只有
 /// 内部 WebView 正文区与按钮命中真值。带顶栏（音频控制 / X / 返回）时，顶栏的

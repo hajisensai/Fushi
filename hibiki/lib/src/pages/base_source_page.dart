@@ -129,8 +129,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   int _searchGeneration = 0;
 
   /// TODO-716：桌面对齐手机的"滑动关闭弹窗"。弹窗显示时全屏 barrier 盖住正文，
-  /// 在 barrier 上水平拖累计位移过阈即关一层（[dismissTopPopup]，与点 barrier /
-  /// 光标 B/Esc 同语义），仅当 [ReaderHibikiSource.enableSwipeToClose] 开启时生效。
+  /// 在 barrier 上水平拖累计位移过阈即关一层（[dismissTopPopup]，与光标 B/Esc 逐层
+  /// 退回同语义；TODO-834 后这与「点 barrier 真空白清整栈」不同——滑动是明确的
+  /// 关前置弹窗手势，对齐手机顶栏 [SwipeDismissWrapper] 的逐层关），仅当
+  /// [ReaderHibikiSource.enableSwipeToClose] 开启时生效。
   /// 单击经 Flutter 手势竞技场仍走 onTap，与拖动互斥。阈值/灵敏度复用
   /// [swipeDismissThreshold]（与顶栏 [SwipeDismissWrapper] 同一公式，不漂移）。
   double _barrierDragX = 0;
@@ -358,12 +360,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         onPointerHover: onDismissBarrierHover,
                         child: GestureDetector(
                           behavior: HitTestBehavior.translucent,
-                          // TODO-720 / BUG-403: 点弹窗外只关最顶层一层（逐层关，保留
-                          // 父层），与光标 B/Esc 的 [dismissTopPopup] 同语义；关到最后一层
-                          // （index 0）才由 [_dismissPopupAt] 触发会话收尾
-                          // （[onAllPopupsDismissed]）。不走 [clearDictionaryResult]（那
-                          // 是清整栈的会话级路径，仍由 X 关闭 / 返回键 / 会话结束用）。
-                          onTap: dismissTopPopup,
+                          // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**
+                          // 的真空白 = 一次性清整栈（会话级路径 [clearDictionaryResult]
+                          // → [_dismissPopupAt(0)] 触发会话收尾 [onAllPopupsDismissed]，
+                          // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
+                          // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
+                          // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
+                          onTap: clearDictionaryResult,
                           // TODO-716：桌面对齐手机——在 barrier 上水平拖过阈同样关一层。
                           // 仅当滑动关闭开关开启时挂横拖识别（否则只 onTap，与旧行为一致）。
                           // 竞技场天然分流：单击走 onTap、横拖走 onHorizontalDrag*，互斥。
@@ -468,8 +471,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onClose: () => _dismissPopupAt(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
         onBack: null,
-        // TODO-720 / BUG-403: 点弹窗外只关本层（逐层关），同 [dismissTopPopup]。
-        onTapOutside: dismissTopPopup,
+        // TODO-834：点**某层弹窗本体的空白区**（非内容区）只关该层衍生的后代层，
+        // 保留本层 + 祖先（不关母代）。点顶层（无后代）= no-op 栈不变。
+        onTapOutside: () => dismissDescendantsOf(index),
         onRendered: () => _onPopupLayerRendered(index, item),
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。
@@ -621,6 +625,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void dismissTopPopup() {
     final int index = _lastVisiblePopupIndex(_popup.entries);
     if (index >= 0) _dismissPopupAt(index);
+  }
+
+  /// TODO-834：关闭第 [index] 层**衍生的所有后代层**（index 更大的全部层），保留本层
+  /// + 祖先。线性扁平栈里 index 即 depth，无分叉，故「后代」= `index+1..end`，用
+  /// [DictionaryPopupController.truncateTo] 精确裁掉。点最顶层（无后代）= no-op 栈不变
+  /// （本层成新顶层，选区高亮保留，不走清整栈路径）。裁完调一次
+  /// [onDictionaryStackChanged] 让光标跟随回到新顶层（与 B/Esc 逐层退回同钩子）。
+  @protected
+  void dismissDescendantsOf(int index) {
+    if (index < 0 || index >= _popup.entries.length - 1) return; // 无后代=no-op
+    _popup.truncateTo(index + 1);
+    onDictionaryStackChanged();
   }
 
   /// 竖排避让（放当前列左/右侧而非上/下）只对**顶层弹窗**成立：顶层选区来自

@@ -62,50 +62,102 @@ void main() {
     expect(popup, contains('onClose: isBase ? null : () => _popAt(index)'));
   });
 
-  // TODO-720 / BUG-403: 点弹窗外（barrier onTap + 弹窗 onTapOutside）只关最顶层一层
-  // （逐层退回父层），不一次清整栈。这些路径必须接逐层关原语，不能写死 index 0 /
-  // 调清整栈的 clearDictionaryResult。
-  test(
-      'reader tap-outside routes through dismissTopPopup, not whole-stack clear',
+  // TODO-834（反转 TODO-720 / BUG-403）：区分两种「点外」——
+  //  (A) 点**所有弹窗矩形外**的真空白（全屏 barrier onTap）= 清整栈（会话收尾）。
+  //  (B) 点**某层弹窗本体的空白区**（弹窗 onTapOutside）= 只关该层衍生的后代层、
+  //      保留本层 + 祖先（点顶层无后代 = no-op）。
+  // barrier 必须走清整栈路径；onTapOutside 必须带本层 index 走 truncateTo 关后代，
+  // 不能再写死 dismissTopPopup / lastVisibleIndex / index 0。
+  test('reader barrier clears the whole stack; onTapOutside closes descendants',
       () {
     final String base = read('lib/src/pages/base_source_page.dart');
 
-    // barrier 全屏 onTap 与弹窗 onTapOutside 都走逐层关原语。
-    expect(base, contains('onTap: dismissTopPopup'),
-        reason: 'barrier 点外只关最顶层一层');
-    expect(base, contains('onTapOutside: dismissTopPopup'), reason: '弹窗点外只关本层');
-    // 不再用清整栈的会话级路径接「点外」。
-    expect(base, isNot(contains('onTap: clearDictionaryResult')),
-        reason: '点外不应清整栈');
-    expect(base, isNot(contains('onTapOutside: clearDictionaryResult')),
-        reason: '点外不应清整栈');
-    // 逐层关原语本体仍在（只关最顶层、保留父层）。
-    expect(base,
-        contains('final int index = _lastVisiblePopupIndex(_popup.entries);'),
-        reason: 'dismissTopPopup 取最顶层可见层下标');
-    expect(base, contains('if (index >= 0) _dismissPopupAt(index);'),
-        reason: 'dismissTopPopup 只关最顶层（-1 时安全 no-op）');
+    // (A) barrier 全屏 onTap = 清整栈（会话级路径，触发 onAllPopupsDismissed + 留热槽）。
+    expect(base, contains('onTap: clearDictionaryResult'),
+        reason: 'barrier 点所有弹窗外清整栈');
+    // (B) 弹窗本体 onTapOutside = 关本层后代（带本层 index）。
+    expect(base, contains('onTapOutside: () => dismissDescendantsOf(index)'),
+        reason: '点某层本体空白只关其后代');
+    // 不再用逐层关一层的 dismissTopPopup 接「点外」。
+    expect(base, isNot(contains('onTap: dismissTopPopup')),
+        reason: 'barrier 不再逐层关一层（改清整栈）');
+    expect(base, isNot(contains('onTapOutside: dismissTopPopup')),
+        reason: 'onTapOutside 不再逐层关一层（改关后代）');
+    // 关后代原语本体：truncateTo(index+1)，无后代时 no-op。
+    expect(base, contains('void dismissDescendantsOf(int index)'),
+        reason: '关后代 helper 存在');
+    expect(base, contains('_popup.truncateTo(index + 1);'),
+        reason: '关后代用 truncateTo(index+1) 精确裁后代');
+    expect(
+        base,
+        contains(
+            'if (index < 0 || index >= _popup.entries.length - 1) return;'),
+        reason: '点顶层（无后代）no-op 栈不变');
+    expect(base, contains('onDictionaryStackChanged();'),
+        reason: '关后代后调一次让光标跟随新顶层');
   });
 
-  test('video tap-outside barrier dismisses only the top visible layer', () {
+  test('video barrier clears the whole stack (descendants + parents)', () {
     final String video =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
 
-    expect(video, contains('_popNestedPopupAt(_topVisiblePopupIndex);'),
-        reason: '点外只关最顶层可见层');
-    expect(video, isNot(contains('_popNestedPopupAt(0);')),
-        reason: '不再写死 index 0 清整栈');
+    // 点所有弹窗外清整栈（保留热槽 + 会话收尾恢复播放/清草稿/收回焦点）。
+    // 取 _onDismissBarrierTap 方法体（到下一个方法 _handleSubtitleLookupTap 之前），
+    // 精确断言 barrier 分支清整栈，且不串到 back/Esc 逐层退回的 _handleBackOrExit。
+    final int barrierStart = video.indexOf('void _onDismissBarrierTap(');
+    expect(barrierStart, greaterThanOrEqualTo(0), reason: 'barrier 方法存在');
+    final int barrierEnd =
+        video.indexOf('void _handleSubtitleLookupTap(', barrierStart);
+    expect(barrierEnd, greaterThan(barrierStart));
+    final String barrierBody = video.substring(barrierStart, barrierEnd);
+
+    expect(barrierBody, contains('_popNestedPopupAt(0);'),
+        reason: 'barrier 点所有弹窗外清整栈到 index 0');
+    expect(barrierBody,
+        isNot(contains('_popNestedPopupAt(_topVisiblePopupIndex)')),
+        reason: 'barrier 不再逐层关一层（改清整栈）');
+    // TODO-758 / BUG-410 字幕反查门控仍在（点字幕换词只在非嵌套态）。
+    expect(
+        barrierBody, contains('VideoHibikiPage.shouldSwitchWordOnBarrierTap('),
+        reason: '字幕反查门控保持不变');
+    // 红线：back/Esc 逐层退回（_handleBackOrExit）保持不变，仍逐层关一层。
+    expect(video, contains('Future<void> _handleBackOrExit()'),
+        reason: 'back/Esc 退出汇聚点仍在');
+    final int backStart = video.indexOf('Future<void> _handleBackOrExit()');
+    final String backBody = video.substring(backStart, backStart + 220);
+    expect(backBody, contains('_popNestedPopupAt(_topVisiblePopupIndex);'),
+        reason: 'back/Esc 仍逐层退回（不受 TODO-834 barrier 改动影响）');
   });
 
-  test('mixin tap-outside pops only the top visible layer', () {
+  test('mixin onTapOutside closes descendants of the tapped layer', () {
     final String mixin =
         read('lib/src/pages/implementations/dictionary_page_mixin.dart');
 
-    expect(mixin,
-        contains('onTapOutside: () => onPop(controller.lastVisibleIndex)'),
-        reason: '点外只关最顶层可见层');
+    expect(
+        mixin,
+        contains(
+            'onTapOutside: () => _dismissDescendantsOfLayer(index, controller)'),
+        reason: '点本层本体空白只关其后代');
     expect(mixin, isNot(contains('onTapOutside: () => onPop(0)')),
         reason: '不再写死 index 0 清整栈');
+    expect(
+        mixin,
+        isNot(
+            contains('onTapOutside: () => onPop(controller.lastVisibleIndex)')),
+        reason: '不再逐层关一层（改关后代）');
+    // 关后代原语本体：truncateTo(index+1)，无后代时 no-op。
+    expect(
+        mixin,
+        contains(
+            'void _dismissDescendantsOfLayer(\n    int index,\n    DictionaryPopupController controller,\n  )'),
+        reason: '关后代 helper 存在');
+    expect(mixin, contains('controller.truncateTo(index + 1)'),
+        reason: '关后代用 truncateTo(index+1) 精确裁后代');
+    expect(
+        mixin,
+        contains(
+            'if (index < 0 || index >= controller.entries.length - 1) return;'),
+        reason: '点顶层（无后代）no-op 栈不变');
   });
 
   // TODO-758 / BUG-410: 视频嵌套查词时点弹窗外面常落在底部仍渲染的字幕文字上，barrier
@@ -187,11 +239,11 @@ void main() {
       contains('topVisibleIndex: _topVisiblePopupIndex'),
       reason: '门控判据用最顶层可见层下标',
     );
-    // 门控为假（含嵌套态命中字幕）仍落到逐层关原语。
+    // TODO-834：门控为假（含嵌套态命中字幕、点真空白）落到清整栈。
     expect(
       video,
-      contains('_popNestedPopupAt(_topVisiblePopupIndex);'),
-      reason: '点外（含嵌套命中字幕）只关最顶层可见层',
+      contains('_popNestedPopupAt(0);'),
+      reason: '点外（含嵌套命中字幕、真空白）清整栈到 index 0',
     );
   });
 

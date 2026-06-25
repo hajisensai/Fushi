@@ -2313,10 +2313,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _handleSubtitleLookupTap(hit!.sentence, hit.graphemeIndex, hit.charRect);
       return;
     }
-    // TODO-720 / BUG-403: 点弹窗外只关最顶层一层（逐层关，保留父层），与 reader
-    // 的 [dismissTopPopup] 同语义；关到最后一层（index 0）时 [_popNestedPopupAt]
-    // 自然触发会话收尾（恢复播放 / 清草稿 / 收回焦点）。
-    _popNestedPopupAt(_topVisiblePopupIndex);
+    // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗外**的真空白 = 一次性清整栈
+    // （[_popNestedPopupAt(0)] → controller.dismissAt(0) 保留隐藏热槽 BUG-092，并在关栈
+    // 汇聚点触发会话收尾：恢复播放 / 清草稿 / 收回焦点）。落在字幕文字上的反查门控
+    // [shouldSwitchWordOnBarrierTap]（TODO-758 / BUG-410）保持不变，已在上方先判。
+    _popNestedPopupAt(0);
   }
 
   void _handleSubtitleLookupTap(

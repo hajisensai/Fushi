@@ -337,11 +337,11 @@ mixin DictionaryPageMixin {
         onClose: () => onPop(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
         onBack: null,
-        // TODO-720 / BUG-403: 点弹窗外只关最顶层一层（逐层关，保留父层），
-        // 同视频 [_onDismissBarrierTap]；关到最后一层（index 0）才由 onPop 的
-        // 关栈汇聚点触发会话收尾（恢复播放 / 清草稿 / 收回焦点）。无可见层
-        // （仅热槽，lastVisibleIndex=-1）时 onPop(-1) → dismissAt 安全 no-op。
-        onTapOutside: () => onPop(controller.lastVisibleIndex),
+        // TODO-834：点**本层弹窗本体的空白区**只关该层衍生的后代层（index 更大的全部），
+        // 保留本层 + 祖先。线性扁平栈里 index 即 depth，故后代 = `index+1..end`，用
+        // [DictionaryPopupController.truncateTo] 精确裁。点本层无后代 = no-op 栈不变。
+        // 不走 onPop（onPop(0) 是清整栈的会话级路径，仅 barrier / X 用）。
+        onTapOutside: () => _dismissDescendantsOfLayer(index, controller),
         // TODO-058：该层 WebView 渲染完成 → 翻可见挂起的冷层（消除白屏一瞬）。
         // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。
         onRendered: () {
@@ -557,5 +557,18 @@ mixin DictionaryPageMixin {
   void popNestedPopupAt(int index, DictionaryPopupController controller) {
     if (index < 0 || index >= controller.entries.length) return;
     setState(() => controller.dismissAt(index));
+  }
+
+  /// TODO-834：关闭第 [index] 层**衍生的所有后代层**（index 更大的全部），保留本层
+  /// + 祖先。线性扁平栈里 index 即 depth、无分叉，故后代 = `index+1..end`，用
+  /// [DictionaryPopupController.truncateTo] 精确裁。点最顶层（无后代）= no-op 栈不变。
+  /// 与基类 [BaseSourcePageState] 的同名 helper 同语义（mixin 路径不监听 controller，
+  /// 故显式 setState 重建）。
+  void _dismissDescendantsOfLayer(
+    int index,
+    DictionaryPopupController controller,
+  ) {
+    if (index < 0 || index >= controller.entries.length - 1) return; // 无后代
+    setState(() => controller.truncateTo(index + 1));
   }
 }

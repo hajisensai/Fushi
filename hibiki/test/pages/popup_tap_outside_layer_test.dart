@@ -9,11 +9,13 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// TODO-720 / BUG-403: 点查词弹窗外面只关**最顶层一层**（逐层退回父层），不一次
-/// 清掉整个嵌套栈。生产里 reader 的 barrier `onTap` 与弹窗 `onTapOutside` 都接到
-/// [BaseSourcePageState.dismissTopPopup]，这里直接驱动该入口断言逐层关语义：两层
-/// 可见栈 → 点外一次 → 2→1 保留父层、`onAllPopupsDismissed` 未触发；再点一次 → 关
-/// 到最后一层触发会话收尾。
+/// TODO-834（反转 TODO-720 / BUG-403）：区分两种「点弹窗外」——
+///  (A) 点**所有弹窗矩形外**的真空白（全屏 barrier `onTap`）= 一次性清整栈，触发会话
+///      收尾（[onAllPopupsDismissed]），保留隐藏热槽。生产里 reader 的 barrier `onTap`
+///      接到 [BaseSourcePageState.clearDictionaryResult]。
+///  (B) 点**某层弹窗本体的空白区**（弹窗 `onTapOutside`）= 只关该层衍生的**后代**层，
+///      保留本层 + 祖先（不关母代）。生产里接到 `_dismissDescendantsOf(index)`。点最顶层
+///      （无后代）= no-op 栈不变。
 ///
 /// 真实 [DictionaryPopupWebView] 在单测 harness 起不来，故经 `debugPopupStack` 断言
 /// 栈生命周期（宿主不渲染 buildDictionary）。
@@ -87,12 +89,12 @@ class TapOutsideHostPageState extends BaseSourcePageState<TapOutsideHostPage> {
     );
   }
 
-  /// 测试入口：复刻生产「点弹窗外」的接线（barrier onTap / onTapOutside 都调
-  /// [dismissTopPopup]）。
-  void tapOutside() => dismissTopPopup();
+  /// 测试入口 (A)：复刻生产「点所有弹窗外的真空白」（全屏 barrier onTap）= 清整栈。
+  void tapBarrier() => clearDictionaryResult();
 
-  /// 撤修复对照：旧行为是点外直接清整栈（会话级路径）。
-  void tapOutsideOldBehavior() => clearDictionaryResult();
+  /// 测试入口 (B)：复刻生产「点第 [index] 层弹窗本体空白」（弹窗 onTapOutside）=
+  /// 只关该层衍生的后代层（保留本层 + 祖先）。
+  void tapOutsideLayer(int index) => dismissDescendantsOf(index);
 
   /// 转发受保护的 [topVisiblePopupIndex]，供测试断言（直接读会报
   /// invalid_use_of_protected_member）。
@@ -124,14 +126,16 @@ Widget buildTapOutsideTestApp({
   );
 }
 
-/// 建出「两层都可见」的嵌套栈：seed 热槽 → 查 first（复用热槽，可见）→ 查 second
-/// （嵌套追加，空 entries → 立即可见）。
-Future<void> buildTwoVisibleLayers(
+/// 建出「N 层都可见」的嵌套栈：seed 热槽 → 逐次查词（首词复用热槽，其余嵌套追加，
+/// 空 entries → 立即可见）。返回时栈长度 = [terms].length，全部可见。
+Future<void> buildVisibleLayers(
   WidgetTester tester,
   TapOutsideHostPageState host,
+  List<String> terms,
 ) async {
-  await host.search('first');
-  await host.search('second');
+  for (final String term in terms) {
+    await host.search(term);
+  }
   await tester.pump();
 }
 
@@ -141,8 +145,9 @@ void main() {
   });
 
   testWidgets(
-      'tap-outside on a nested stack closes only the top layer (2 -> 1), '
-      'keeping the parent and NOT ending the session', (tester) async {
+      'tap on a middle layer body closes its descendants (3 -> 2), '
+      'keeping that layer + ancestors and NOT ending the session',
+      (tester) async {
     final appModel = TapOutsideTestAppModel();
     final hostKey = GlobalKey<TapOutsideHostPageState>();
     await tester.pumpWidget(
@@ -152,32 +157,32 @@ void main() {
     await tester.pump();
 
     final host = hostKey.currentState!;
-    await buildTwoVisibleLayers(tester, host);
+    await buildVisibleLayers(tester, host, <String>['a', 'b', 'c']);
 
-    // 两层可见栈。
-    final twoStack = host.debugPopupStack;
-    expect(twoStack, hasLength(2));
-    expect(twoStack.every((e) => e.visible), isTrue);
-    expect(host.debugTopVisiblePopupIndex, 1);
+    // 三层可见栈（index 0/1/2）。
+    final threeStack = host.debugPopupStack;
+    expect(threeStack, hasLength(3));
+    expect(threeStack.every((e) => e.visible), isTrue);
+    expect(host.debugTopVisiblePopupIndex, 2);
 
     host.allDismissedCalls = 0;
     host.stackChangedCalls = 0;
 
-    // 点弹窗外一次 → 只关最顶层（index 1），保留父层（index 0 仍可见）。
-    host.tapOutside();
+    // 点 index 1 本体空白 → 只关其后代（index 2），保留本层 (1) + 祖先 (0)。
+    host.tapOutsideLayer(1);
     await tester.pump();
 
-    final oneStack = host.debugPopupStack;
-    expect(oneStack, hasLength(1), reason: '只关最顶层一层，父层应保留');
-    expect(oneStack.single.visible, isTrue, reason: '父层仍可见');
-    expect(host.debugTopVisiblePopupIndex, 0);
-    expect(host.allDismissedCalls, 0, reason: '还没关到最后一层，不触发会话收尾');
-    expect(host.stackChangedCalls, 1, reason: '关子层走 onDictionaryStackChanged');
+    final twoStack = host.debugPopupStack;
+    expect(twoStack, hasLength(2), reason: '只关 index 1 的后代（index 2），留 0,1');
+    expect(twoStack.every((e) => e.visible), isTrue, reason: '本层 + 祖先仍可见');
+    expect(host.debugTopVisiblePopupIndex, 1);
+    expect(host.allDismissedCalls, 0, reason: '没清整栈，不触发会话收尾');
+    expect(host.stackChangedCalls, 1,
+        reason: '关后代调一次 onDictionaryStackChanged');
   });
 
-  testWidgets(
-      'tapping outside again on the last layer ends the session '
-      '(onAllPopupsDismissed fires)', (tester) async {
+  testWidgets('tap on the top layer body is a no-op when it has no descendants',
+      (tester) async {
     final appModel = TapOutsideTestAppModel();
     final hostKey = GlobalKey<TapOutsideHostPageState>();
     await tester.pumpWidget(
@@ -187,27 +192,25 @@ void main() {
     await tester.pump();
 
     final host = hostKey.currentState!;
-    await buildTwoVisibleLayers(tester, host);
+    await buildVisibleLayers(tester, host, <String>['a', 'b']);
     expect(host.debugPopupStack, hasLength(2));
 
     host.allDismissedCalls = 0;
+    host.stackChangedCalls = 0;
 
-    // 第一次点外：2 -> 1（保留父层），不收尾。
-    host.tapOutside();
+    // 点顶层 (index 1) 本体空白 = 无后代 → no-op，栈不变。
+    host.tapOutsideLayer(1);
     await tester.pump();
-    expect(host.dictionaryPopupShown, isTrue);
-    expect(host.allDismissedCalls, 0);
 
-    // 第二次点外：关到最后一层 → 触发会话收尾。
-    host.tapOutside();
-    await tester.pump();
-    expect(host.dictionaryPopupShown, isFalse, reason: '最后一层关掉，无可见弹窗');
-    expect(host.allDismissedCalls, 1, reason: '关到最后一层触发会话收尾');
+    expect(host.debugPopupStack, hasLength(2), reason: '点顶层无后代，栈不变');
+    expect(host.debugTopVisiblePopupIndex, 1);
+    expect(host.allDismissedCalls, 0, reason: 'no-op 不收尾');
+    expect(host.stackChangedCalls, 0, reason: 'no-op 不触发栈变更钩子');
   });
 
   testWidgets(
-      'regression contrast: old whole-stack clear ends the session immediately '
-      'even with a parent layer present', (tester) async {
+      'barrier tap (true blank outside all popups) clears the whole stack '
+      'and ends the session, keeping the hidden warm slot', (tester) async {
     final appModel = TapOutsideTestAppModel();
     final hostKey = GlobalKey<TapOutsideHostPageState>();
     await tester.pumpWidget(
@@ -217,15 +220,21 @@ void main() {
     await tester.pump();
 
     final host = hostKey.currentState!;
-    await buildTwoVisibleLayers(tester, host);
-    expect(host.debugPopupStack, hasLength(2));
+    await buildVisibleLayers(tester, host, <String>['a', 'b', 'c']);
+    expect(host.debugPopupStack, hasLength(3));
 
     host.allDismissedCalls = 0;
 
-    // 旧行为（清整栈）：一次就清掉两层并立即收尾——正是 BUG-403 要避免的。
-    host.tapOutsideOldBehavior();
+    // 点所有弹窗外真空白（barrier）→ 一次清整栈 + 会话收尾。
+    host.tapBarrier();
     await tester.pump();
-    expect(host.dictionaryPopupShown, isFalse);
-    expect(host.allDismissedCalls, 1, reason: '清整栈一次就收尾（与逐层关相反），用于对照确认修复改了行为');
+
+    expect(host.dictionaryPopupShown, isFalse, reason: '整栈清空，无可见弹窗');
+    expect(host.allDismissedCalls, 1, reason: '清整栈触发一次会话收尾');
+    // BUG-092：清整栈保留隐藏热槽（index 0，visible=false）而非销毁。
+    final after = host.debugPopupStack;
+    expect(after, hasLength(1), reason: '保留隐藏热槽');
+    expect(after.single.isWarmSlot, isTrue);
+    expect(after.single.visible, isFalse, reason: '热槽隐身复用，不可见');
   });
 }
