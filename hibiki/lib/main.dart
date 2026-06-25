@@ -25,6 +25,7 @@ import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/wgc_capture_log.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
@@ -121,6 +122,21 @@ void main([List<String> args = const <String>[]]) {
       // [_HoshiReaderAppState.onWindowClose] (TODO-086).
       await windowManager.setPreventClose(true);
       await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
+      // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
+      // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
+      if (Platform.isWindows) {
+        try {
+          final String presetKey = await loadIconPresetKey();
+          final String? iconPath = presetKey == customIconKey
+              ? await loadCustomIconPath()
+              : await exportPresetIconToFile(presetKey);
+          if (iconPath != null && File(iconPath).existsSync()) {
+            await WindowCaptionChannel.setWindowIcon(iconPath);
+          }
+        } catch (e) {
+          debugPrint('[Hibiki] window icon restore failed: $e');
+        }
+      }
     }
     JustAudioMediaKit.title = 'Hibiki';
     // 关闭 pitch-shift 控制（默认 true）。开启时 media_kit 的 setRate 会在每次调速时
