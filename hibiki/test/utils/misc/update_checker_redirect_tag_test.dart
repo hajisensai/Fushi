@@ -120,15 +120,15 @@ void main() {
     });
   });
 
-  group('302 候选回退（直连恒首位不变式，注入 fetcher）', () {
-    test('直连首位 302 失败时回退镜像候选，且直连仍排第一', () async {
+  group('302 候选并发竞速（直连恒首位 + 并发选最快活源，注入 fetcher）', () {
+    test('直连首位 302 失败时镜像候选胜出（候选并发发起，不串行逐个等）', () async {
       final List<String> attempted = <String>[];
       final List<String> urls =
           updateCheckUrls('https://github.com/x/y/releases/latest');
       expect(urls.first, 'https://github.com/x/y/releases/latest',
           reason: '直连必须恒为首候选');
 
-      // 模拟：直连本身被 GFW 切断（返回 null），第一个镜像透传 302 拿到 tag。
+      // 模拟：直连本身被 GFW 切断（返回 null），镜像透传 302 拿到 tag。
       final String? tag = await fetchFirstSuccessfulBody(
         urls,
         fetch: (String u) async {
@@ -140,9 +140,10 @@ void main() {
         },
       );
       expect(tag, 'v0.4.1');
-      // 直连先试、失败后才试第二个候选（镜像），印证直连优先 + 逐镜像回退。
-      expect(attempted.first, urls.first);
-      expect(attempted.length, 2);
+      // TODO-821：并发竞速 → 所有候选都被并发发起（不再串行「直连失败才试镜像」）。
+      // 直连失败、镜像成功 → 镜像胜出。
+      expect(attempted, unorderedEquals(urls), reason: '并发竞速：全部候选并发发起');
+      expect(attempted.length, urls.length);
     });
 
     test('全候选 302 都失败则整体返回 null（回退到 API 直连由上层负责）', () async {

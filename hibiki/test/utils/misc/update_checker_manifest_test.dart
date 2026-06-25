@@ -195,8 +195,9 @@ void main() {
       expect(urls.length, greaterThan(1));
     });
 
-    test('direct-first failure falls back to first mirror for manifest body',
-        () async {
+    test(
+        'direct-first failure: concurrent race still obtains manifest body '
+        'from a mirror (TODO-821)', () async {
       final List<String> attempted = <String>[];
       final List<String> urls =
           updateCheckUrls(manifestUrlForChannel(UpdateChannel.beta)!);
@@ -210,9 +211,10 @@ void main() {
         },
       );
       expect(body, json);
-      expect(attempted.first, urls.first);
-      expect(attempted.length, 2,
-          reason: 'direct fails, then second candidate');
+      // TODO-821：串行逐个尝试改并发竞速 → 全部候选并发发起（不再只试到第 2 个）。
+      expect(attempted, containsAll(urls), reason: '并发竞速对所有候选并发发起 fetch');
+      expect(attempted.contains(urls.first), isTrue, reason: '直连候选也被发起（虽失败）');
+      // 直连失败 → 镜像合法成功胜出，仍能拿到并重建 manifest。
       expect(buildReleaseFromManifest(body!), isNotNull);
     });
 

@@ -59,4 +59,34 @@ void main() {
         reason:
             'finally must clear the abort to avoid closing a reused client');
   });
+
+  test('check phase races candidates concurrently, not serially (TODO-821)',
+      () {
+    const String net = '$dir/update_checker_net.dart';
+    final String source = read(net);
+    // The concurrent primitive must exist and fetchFirstSuccessfulBody must
+    // delegate to it (a serial for-await regression drops these).
+    expect(source, contains('Future<String?> raceFirstSuccessfulBody('),
+        reason: 'check phase needs a concurrent race primitive');
+    expect(source, contains('return raceFirstSuccessfulBody('),
+        reason: 'fetchFirstSuccessfulBody must delegate to the race primitive');
+    expect(source, contains('Future.any(<Future<void>>['),
+        reason: 'race uses Future.any over a decided completer + allDone');
+  });
+
+  test(
+      'check phase client is interruptible via UpdateCheckCancellation '
+      '(TODO-821/808 check-side hole)', () {
+    final String releaseSource = read(release);
+    final String raceSource = read(race);
+    // The check token type + its abort wiring must exist.
+    expect(raceSource, contains('class UpdateCheckCancellation'),
+        reason: 'check phase needs its own interruptible cancellation token');
+    expect(releaseSource, contains('UpdateCheckCancellation()'),
+        reason: '_check must build a check cancellation token');
+    expect(releaseSource, contains('cancellation.registerAbort('),
+        reason: '_check must register a force-close abort into the token');
+    expect(releaseSource, contains('static void cancelActiveCheck()'),
+        reason: 'an interrupt entry must exist to abort a hung check');
+  });
 }

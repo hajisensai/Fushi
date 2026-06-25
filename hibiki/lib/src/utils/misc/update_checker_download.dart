@@ -522,7 +522,7 @@ Future<File> _downloadCandidateSingle({
     }
   }
 
-  // 首响应用首字节 5s 快判死连上即挂；body 仍 15s/段不误杀慢源（TODO-738）。
+  // 首响应用首字节 5s 快判死连上即挂；body 仍 8s/段不误杀慢源（TODO-738，TODO-821 订正）。
   final UpdateDownloadResponse response =
       await openUrl(uri, headers).timeout(_kFirstByteTimeout);
   final bool requestedRange = resumeOffset > 0;

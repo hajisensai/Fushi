@@ -32,6 +32,10 @@ class UpdateChecker {
   static final Map<String, Future<void>> _activeUpdateFlows =
       <String, Future<void>>{};
 
+  /// 当前在途的检查阶段中断令牌（TODO-821）。`_check` 进入时登记，退出时清空。
+  /// 同一时刻只跑一轮检查（`scheduleCheck` 走 post-frame 单次触发），单个足矣。
+  static UpdateCheckCancellation? _activeCheckCancellation;
+
   static void scheduleCheck(
     BuildContext context,
     String currentVersion, {
@@ -109,6 +113,8 @@ class UpdateChecker {
     // 不能自装的平台忽略 autoInstall（无意义），但仍可「检查→打开发布页」。
     if (neverRemind && !(canInstall && autoInstall)) return;
     HttpClient? client;
+    final UpdateCheckCancellation cancellation = UpdateCheckCancellation();
+    _activeCheckCancellation = cancellation;
     try {
       await _cleanupOldApks(currentVersion);
       client = HttpClient();
@@ -117,6 +123,12 @@ class UpdateChecker {
       // 走系统/环境代理：用户开着 clash/v2ray 时检查请求经其出口直连 api.github.com
       // （纯 GFW 下唯一可成功路径，BUG-292）。无代理则等价直连，不破坏镜像回退。
       await applyUpdateProxy(client);
+
+      // TODO-821：把「强断在途连接」回调登记进检查中断令牌——`cancelActiveCheck()` 被调时
+      // 立即 close(force: true) 断开所有在途 socket，正在 await 的并发候选请求即刻抛错跳出，
+      // 不再等建连/首字节/body 超时走完。finally 的 client.close() 与此关两次幂等。
+      final HttpClient abortClient = client;
+      cancellation.registerAbort(() => abortClient.close(force: true));
 
       final List<Map<String, dynamic>> releases =
           await _fetchReleasesForChannel(client, channel);
@@ -173,8 +185,21 @@ class UpdateChecker {
       ErrorLogService.instance.log('UpdateChecker.check', e, stack);
       debugPrint('[Hibiki] update check failed: $e');
     } finally {
+      // TODO-821：先注销 abort 回调（避免后续 cancel 误关已释放的 client），清空在途令牌，
+      // 再常规关闭。中断路径已 close(force: true)，这里再 close() 幂等无害。
+      cancellation.clearAbort();
+      if (identical(_activeCheckCancellation, cancellation)) {
+        _activeCheckCancellation = null;
+      }
       client?.close();
     }
+  }
+
+  /// **检查阶段中断入口（TODO-821）**：强断当前在途的更新检查（若有）。卡在「正在连接
+  /// 更新源」时由调用方（如页面退出 / 生命周期）调用，立即 close(force: true) 断开在途
+  /// 检查连接，使整轮检查即刻收尾而非干等超时。无在途检查则 no-op。
+  static void cancelActiveCheck() {
+    _activeCheckCancellation?.cancel();
   }
 
   /// 多镜像回退的更新检查请求（BUG-277）。生成「直连 + 各 gh 代理前缀」候选列表

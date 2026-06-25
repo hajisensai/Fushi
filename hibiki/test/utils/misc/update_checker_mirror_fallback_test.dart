@@ -72,8 +72,8 @@ void main() {
     });
   });
 
-  group('fetchFirstSuccessfulBody (逐候选回退执行，注入 fetcher)', () {
-    test('首候选成功则直接返回，不再尝试后续', () async {
+  group('fetchFirstSuccessfulBody (并发竞速选最快活源，注入 fetcher)', () {
+    test('直连合法成功 → 直连胜出（候选并发发起，不再串行逐个等）', () async {
       final List<String> attempted = <String>[];
       final String? body = await fetchFirstSuccessfulBody(
         <String>['a', 'b', 'c'],
@@ -82,11 +82,14 @@ void main() {
           return 'BODY($url)';
         },
       );
-      expect(body, 'BODY(a)');
-      expect(attempted, <String>['a'], reason: '首个成功后不应再试 b/c');
+      // TODO-821：胜出条件=合法响应；直连('a',首项)成功 → 直连优先 tie-break 胜出。
+      expect(body, 'BODY(a)', reason: '直连合法成功 → 直连优先胜出');
+      // 并发语义：全部候选都被并发发起（不再串行「首个成功后跳过 b/c」）。
+      expect(attempted, unorderedEquals(<String>['a', 'b', 'c']),
+          reason: '并发竞速：所有候选都并发发起');
     });
 
-    test('首候选失败(null)自动试下一个，任一成功则整体成功', () async {
+    test('直连+部分镜像失败时，唯一合法成功的候选胜出（并发全发起）', () async {
       final List<String> attempted = <String>[];
       final String? body = await fetchFirstSuccessfulBody(
         <String>['a', 'b', 'c'],
@@ -96,11 +99,13 @@ void main() {
           return 'BODY($url)';
         },
       );
+      // 'c' 是唯一合法成功者 → 它胜出（直连 'a' 失败，不触发 tie-break）。
       expect(body, 'BODY(c)');
-      expect(attempted, <String>['a', 'b', 'c']);
+      expect(attempted, unorderedEquals(<String>['a', 'b', 'c']),
+          reason: '全失败/落败前每个候选都并发发起过');
     });
 
-    test('首候选抛异常也继续试下一个（异常不冒泡终止回退）', () async {
+    test('直连抛异常不终止竞速：唯一合法成功的镜像胜出（异常不冒泡）', () async {
       final List<String> attempted = <String>[];
       final String? body = await fetchFirstSuccessfulBody(
         <String>['a', 'b'],
@@ -110,8 +115,9 @@ void main() {
           return 'BODY(b)';
         },
       );
+      // 直连 'a' 抛异常（失败）→ 不参与裁决；'b' 合法成功胜出。
       expect(body, 'BODY(b)');
-      expect(attempted, <String>['a', 'b']);
+      expect(attempted, unorderedEquals(<String>['a', 'b']));
     });
 
     test('全部候选失败才返回 null（整体失败）', () async {
@@ -124,7 +130,8 @@ void main() {
         },
       );
       expect(body, isNull);
-      expect(attempted, <String>['a', 'b', 'c'], reason: '全失败前必须把每个都试过');
+      expect(attempted, unorderedEquals(<String>['a', 'b', 'c']),
+          reason: '全失败前每个候选都并发发起过');
     });
 
     test('每个失败的候选都通过 onFailure 回调记录其主机标签', () async {
@@ -139,8 +146,9 @@ void main() {
       );
       expect(
         failedHosts,
-        <String>['api.github.com', 'ghfast.top'],
-        reason: '日志要能看出连不上哪个源（hostLabelForUpdateUrl）',
+        unorderedEquals(<String>['api.github.com', 'ghfast.top']),
+        reason: '日志要能看出连不上哪个源（hostLabelForUpdateUrl）；'
+            '并发竞速下记录顺序不定，但每个失败源都要记一条',
       );
     });
 

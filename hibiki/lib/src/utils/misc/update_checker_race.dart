@@ -1,9 +1,10 @@
 part of 'update_checker.dart';
 
-/// **首字节超时（TODO-683）**。[_kPerAttemptTimeout]（15s）管「一段正式下载」的整体
-/// 耗时；但下载阶段第一步是对每个候选发探针（`Range: bytes=0-`，只探不真下载），目的
-/// 只是「这个源能不能用、拿到总大小」。GFW 下坏候选 TCP 连上后挂起不返首字节，用 15s
-/// 整体超时会让每个坏候选都吃满 15s，首字节前进度恒显 0%（TODO-596 回归）。探针只需
+/// **首字节超时（TODO-683）**。[_kPerAttemptTimeout]（8s，TODO-808 从 15s 压下来）管
+/// 「一段正式下载」的整体耗时；但下载阶段第一步是对每个候选发探针（`Range: bytes=0-`，
+/// 只探不真下载），目的只是「这个源能不能用、拿到总大小」。GFW 下坏候选 TCP 连上后挂起
+/// 不返首字节，用 body 超时会让每个坏候选都吃满它，首字节前进度恒显 0%（TODO-596 回归）。
+/// 探针只需
 /// 一个短得多的「建连到首字节」超时来快判死坏候选——5s 足够区分「能用」与「连上即挂」，
 /// 又不会误杀慢但可用的源。**只用于探针**；分段正式下载各段仍用 [_kPerAttemptTimeout]。
 const Duration _kFirstByteTimeout = Duration(seconds: 5);
@@ -371,4 +372,57 @@ class UpdateDownloadCancelledException implements Exception {
 
   @override
   String toString() => 'UpdateDownloadCancelledException';
+}
+
+/// **检查阶段中断令牌（TODO-821 / TODO-808 检查侧补口）**。下载阶段早有
+/// [UpdateDownloadCancellation] 的「强断在途连接」能力（`client.close(force: true)`），
+/// 但**检查阶段** `_check` 的 [HttpClient] 之前没有任何可中断入口——卡在
+/// 「正在连接更新源」时，只能干等建连 10s / 首字节 5s / body 8s 走完（TODO-808「取消也卡」
+/// 在检查阶段的残留空洞）。
+///
+/// 检查阶段已无候选串行边界（TODO-821 改成并发竞速），故本令牌**只需 abort 在途连接**这一层
+/// （不需要下载那套候选边界 [UpdateDownloadCancellation.throwIfCancelled]）：调用方
+/// （[UpdateChecker._check]）注入 `() => client.close(force: true)`，[cancel] 时立即强断
+/// 该 client 上所有在途 socket，正在 await 的并发候选请求即刻抛错跳出、整轮检查收尾。
+///
+/// 与 [UpdateDownloadCancellation] 同范式（registerAbort / clearAbort / 一次性 _fireAbort），
+/// 放在 race part 与下载取消令牌同家。
+@visibleForTesting
+class UpdateCheckCancellation {
+  bool _cancelled = false;
+  void Function()? _abort;
+
+  /// 是否已请求中断。
+  bool get isCancelled => _cancelled;
+
+  /// 登记「强断在途连接」回调（[UpdateChecker._check] 注入
+  /// `() => client.close(force: true)`）。**登记时已中断**则立即触发一次，覆盖「中断早于
+  /// client 建好」的竞态。
+  void registerAbort(void Function() abort) {
+    _abort = abort;
+    if (_cancelled) _fireAbort();
+  }
+
+  /// 注销 abort 回调（检查结束 finally 调用），避免后续 cancel 误关已释放的 client。
+  void clearAbort() {
+    _abort = null;
+  }
+
+  /// 请求中断（幂等）：置位 + **立即**触发 abort 强断在途连接，不再等建连/首字节/body 超时。
+  void cancel() {
+    _cancelled = true;
+    _fireAbort();
+  }
+
+  /// 触发并消费 abort 回调（只触发一次）。回调异常吞掉——强断 best-effort，不污染中断路径。
+  void _fireAbort() {
+    final void Function()? abort = _abort;
+    _abort = null;
+    if (abort == null) return;
+    try {
+      abort();
+    } catch (_) {
+      // 强断 best-effort：client 已关 / 平台差异异常吞掉。
+    }
+  }
 }
