@@ -211,9 +211,9 @@ void main() {
         },
       );
       expect(body, json);
-      // TODO-821：串行逐个尝试改并发竞速 → 全部候选并发发起（不再只试到第 2 个）。
-      expect(attempted, containsAll(urls), reason: '并发竞速对所有候选并发发起 fetch');
-      expect(attempted.contains(urls.first), isTrue, reason: '直连候选也被发起（虽失败）');
+      // TODO-821：串行逐个尝试改并发竞速 → 全部候选并发发起（含失败的直连），
+      // 不多不少（串行只会 attempt 到第 2 个，unorderedEquals 直接转红）。
+      expect(attempted, unorderedEquals(urls), reason: '并发竞速对所有候选并发发起 fetch');
       // 直连失败 → 镜像合法成功胜出，仍能拿到并重建 manifest。
       expect(buildReleaseFromManifest(body!), isNotNull);
     });
