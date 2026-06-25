@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "version": "0.11.1",
+  "tag": "v0.11.1",
+  "channel": "formal",
+  "prerelease": false,
+  "releaseSequence": 5749,
+  "notes": "Manual formal release from develop @ 93f061c.",
+  "assets": [
+    {
+      "name": "hibiki-0.11.1-93f061c-debug.apk",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.1/hibiki-0.11.1-93f061c-debug.apk"
+    },
+    {
+      "name": "hibiki-0.11.1-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.1/hibiki-0.11.1-arm64-v8a.apk"
+    },
+    {
+      "name": "hibiki-0.11.1-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.1/hibiki-0.11.1-armeabi-v7a.apk"
+    },
+    {
+      "name": "hibiki-0.11.1-x86_64.apk",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.1/hibiki-0.11.1-x86_64.apk"
+    }
+  ]
+}
