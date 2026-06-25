@@ -545,6 +545,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 仍只活 2 秒就消失。每次派发翻转此标志、把 x 偏 ±1px，使坐标始终变化，强制
   /// MouseTracker 每次都回调 onHover 续命。仅 1px 抖动不会偏出控制条命中区。
   bool _pokeParity = false;
+
+  /// 合成 hover 派发去重旗（BUG-425）。[_pokeControlsVisible] 经
+  /// [GestureBinding.handlePointerEvent] 派发合成 [PointerHoverEvent] 唤醒控制条，但派发
+  /// 会同步进入 Flutter `MouseTracker.updateWithEvent` → 写 `_mouseStates[device]`。当
+  /// poke 由 **MouseRegion 自己的 onEnter/onHover 回调**触发（rail / 锁按钮 keep-alive、
+  /// 字幕盒 hover）时，这些回调本就跑在 `MouseTracker.updateAllDevices` 遍历 `_mouseStates`
+  /// 的 `_deviceUpdatePhase` 内 → 合成派发在迭代期增删该 Map → release 构建抛
+  /// `Concurrent modification during iteration: _Map len:2`（debug 是 `_debugDuringDeviceUpdate`
+  /// 断言）。修复：合成派发恒经 [scheduleMicrotask] 延迟到当前调用栈（含 MouseTracker 迭代）
+  /// 解开后再执行，绝不重入；此旗把同一微任务窗口内的多次 poke 折叠成一次派发（dedup）。
+  bool _pokeDispatchScheduled = false;
+
+  /// 待派发的合成 hover 事件（BUG-425）。[_pokeControlsVisible] 在命中区几何有效时同步构造，
+  /// [_dispatchPokeHover] 在微任务里取出派发。每次 poke 刷新为最新抖动位置，连按时去重为单
+  /// 次派发但派发的仍是最新位置（保 TODO-148/BUG-215 的去重续命）。
+  PointerHoverEvent? _pendingPokeHover;
   static const double _volumeStep = 5.0;
 
   /// media_kit 移动控制条竖滑（左=亮度 / 右=音量）的灵敏度（TODO-172/BUG-230）。

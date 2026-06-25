@@ -48,19 +48,44 @@ extension _VideoControlsVisibility on _VideoHibikiPageState {
       center.dx + (_pokeParity ? 1.0 : -1.0),
       center.dy,
     );
-    GestureBinding.instance.handlePointerEvent(
-      PointerHoverEvent(
-        position: pokePosition,
-        // 复用一个稳定的合成设备 id，避免与真实鼠标/触控设备冲突。
-        device: _VideoHibikiPageState._syntheticHoverDevice,
-        kind: PointerDeviceKind.mouse,
-      ),
+    // 合成 hover 事件在此（命中区几何有效时）同步构造，但**派发**延迟到微任务（BUG-425）。
+    _pendingPokeHover = PointerHoverEvent(
+      position: pokePosition,
+      // 复用一个稳定的合成设备 id，避免与真实鼠标/触控设备冲突。
+      device: _VideoHibikiPageState._syntheticHoverDevice,
+      kind: PointerDeviceKind.mouse,
     );
+    // BUG-425：合成 hover 的**派发**恒延迟到 [scheduleMicrotask]，绝不在本调用栈内同步
+    // 派发。本 helper 的部分调用方是 MouseRegion 自己的 onEnter/onHover（rail / 锁按钮
+    // keep-alive、字幕盒 hover），它们运行在 Flutter `MouseTracker.updateAllDevices` 遍历
+    // `_mouseStates` 的 `_deviceUpdatePhase` 内；若此处同步 `handlePointerEvent` →
+    // `MouseTracker.updateWithEvent` 会在迭代期写 `_mouseStates[_syntheticHoverDevice]` →
+    // release 抛 `Concurrent modification during iteration: _Map len:2`（debug 触
+    // `_debugDuringDeviceUpdate` 重入断言）。微任务在当前调用栈（含 MouseTracker 迭代）解开
+    // 后、下一事件/帧前执行，唤醒在用户尺度上仍即时，但不再重入。[_pokeDispatchScheduled]
+    // 把同一微任务窗口内的多次 poke 折叠成一次派发：每次都刷新 [_pendingPokeHover] 为最新
+    // 抖动位置（保 BUG-215 去重续命），但只排一个微任务，派发最新那条。
     // 不再在 Hibiki 侧另翻镜像可见性（TODO-364）：刚派发的合成 hover 会命中 media_kit
     // 自己的 MouseRegion → 其 onHover 翻 `visible=true` 并重置 **它唯一的** 隐藏 Timer、
     // 把真实可见性推进 [_mediaKitControlsVisible]，由 [_applyControlsVisibilityFromMediaKit]
     // 派生进 [_videoControlsVisible]。键盘 / seek 唤起控制条时字幕跟着上顶，且与真实控制条
     // 同相位（旧实现这里直接翻镜像 + 另起 Timer 是相位反的根因）。
+    if (_pokeDispatchScheduled) return;
+    _pokeDispatchScheduled = true;
+    scheduleMicrotask(_dispatchPokeHover);
+  }
+
+  /// 在微任务里真正派发 [_pokeControlsVisible] 排好的合成 hover（BUG-425）。此时已脱离任何
+  /// MouseRegion 回调 / `MouseTracker` 迭代栈，经 [GestureBinding.handlePointerEvent] 写
+  /// `_mouseStates` 不再与遍历冲突。派发前重校验 `mounted`（微任务窗口内页面可能已销毁），
+  /// 失效则丢弃（仅丢一次控制条续命，无副作用）。派发的是 [_pendingPokeHover]——即同一窗口内
+  /// 最后一次 poke 刷新的最新抖动位置，连按时去重为单次派发但位置仍是最新（保 BUG-215）。
+  void _dispatchPokeHover() {
+    _pokeDispatchScheduled = false;
+    final PointerHoverEvent? event = _pendingPokeHover;
+    _pendingPokeHover = null;
+    if (event == null || !mounted) return;
+    GestureBinding.instance.handlePointerEvent(event);
   }
 
   void _clearRailHover() {
