@@ -310,6 +310,55 @@ void main() {
       expect(f, isNull);
     });
   });
+
+  // ── getVideoPosition 向后兼容（TODO-816 断点②）─────────────────────────────────
+  group('getVideoPosition host-local backward compat', () {
+    test('falls back to VideoBooks.lastPositionMs when no prefs', () async {
+      // host 本机播放只写 lastPositionMs（旧数据，无 video_remote_position prefs）。
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/local',
+        title: 'Local',
+        videoPath: '/tmp/local.mp4',
+        lastPositionMs: const Value(360000),
+      ));
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      final ({int positionMs, int updatedAtMs}) progress =
+          await svc.getVideoPosition('video/local');
+      expect(progress.positionMs, 360000,
+          reason:
+              'host self-play progress must be readable via getVideoPosition');
+      // 旧数据无时间戳：返回 0，任何带时间戳的远端进度都能盖过它。
+      expect(progress.updatedAtMs, 0);
+    });
+
+    test('prefs progress wins over lastPositionMs', () async {
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/both',
+        title: 'Both',
+        videoPath: '/tmp/both.mp4',
+        lastPositionMs: const Value(100000),
+      ));
+      await db.setPrefTyped<int>(
+          videoRemotePositionPrefKey('video/both'), 800000);
+      await db.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/both'), 7000);
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      final ({int positionMs, int updatedAtMs}) progress =
+          await svc.getVideoPosition('video/both');
+      expect(progress.positionMs, 800000);
+      expect(progress.updatedAtMs, 7000);
+    });
+
+    test('unknown id returns zero', () async {
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final ({int positionMs, int updatedAtMs}) progress =
+          await svc.getVideoPosition('video/missing');
+      expect(progress.positionMs, 0);
+      expect(progress.updatedAtMs, 0);
+    });
+  });
 }
 
 class _EmbeddedSubtitleProbeBackend implements FfmpegBackend {

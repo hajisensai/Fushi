@@ -282,6 +282,72 @@ void main() {
       final VideoBookRow? row = await localDb.getVideoBookByBookUid('video/v2');
       expect(row!.lastPositionMs, 1200000);
     });
+
+    test('streamed video (prefs only, no local VideoBooks row) pushes to host',
+        () async {
+      // client 流式看远端视频：本地无 VideoBooks 行，只有 resume 路径写的
+      // video_remote_position_<uid> + _at_<uid> prefs（断点①回归）。
+      await _seedHostVideo(hostDb, work, 'video/stream', 'Stream');
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(
+          videoRemotePositionPrefKey('video/stream'), 720000);
+      await localDb.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/stream'), 5000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tvs'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncVideoProgressLiveForTest(SyncRunReport(), backend);
+
+      final int hostPos = await hostDb.getPrefTyped<int>(
+          videoRemotePositionPrefKey('video/stream'), 0);
+      expect(hostPos, 720000,
+          reason: 'streamed video progress must enter host via full sweep');
+      // 写回不得为流式视频强建 VideoBooks 行（避免污染书架）。
+      final VideoBookRow? localRow =
+          await localDb.getVideoBookByBookUid('video/stream');
+      expect(localRow, isNull,
+          reason: 'sweep must not create a VideoBooks row for streamed video');
+    });
+
+    test('streamed video receives newer host progress into prefs (no row)',
+        () async {
+      await _seedHostVideo(hostDb, work, 'video/stream2', 'Stream2');
+      await hostDb.setPrefTyped<int>(
+          videoRemotePositionPrefKey('video/stream2'), 990000);
+      await hostDb.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/stream2'), 9000);
+
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(
+          videoRemotePositionPrefKey('video/stream2'), 100000);
+      await localDb.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/stream2'), 2000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tvs2'))..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncVideoProgressLiveForTest(SyncRunReport(), backend);
+
+      final int localPos = await localDb.getPrefTyped<int>(
+          videoRemotePositionPrefKey('video/stream2'), 0);
+      expect(localPos, 990000,
+          reason: 'host-newer streamed progress must write back to prefs');
+      final int localAt = await localDb.getPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/stream2'), 0);
+      expect(localAt, 9000);
+      final VideoBookRow? localRow =
+          await localDb.getVideoBookByBookUid('video/stream2');
+      expect(localRow, isNull);
+    });
   });
 
   group('full run() syncs book + video progress together', () {

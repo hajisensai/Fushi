@@ -679,18 +679,32 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     return f.existsSync() ? f : null;
   }
 
-  /// 读 host 端 [id] 视频的播放断点（TODO-653）。落 host 自己的
-  /// `video_remote_position_<bookUid>` + `video_remote_position_at_<bookUid>` prefs
-  /// （与 host 本地播放该视频时同一键空间）；无记录返回 (0, 0)。
+  /// 读 host 端 [id] 视频的播放断点（TODO-653 / TODO-816 断点②）。
+  ///
+  /// 真相源是 `video_remote_position_<bookUid>` + `video_remote_position_at_<bookUid>`
+  /// prefs（host 本机播放与远端 resume 路径统一写此键空间，见 video_hibiki_page
+  /// `_persistPosition` / `_persistRemotePosition`）。
+  ///
+  /// 向后兼容：TODO-816 之前 host 本机播放只写 `VideoBooks.lastPositionMs`、不写 prefs，
+  /// 那部分旧进度在 prefs 里缺失。故 prefs 无记录时回退查 `VideoBooks.lastPositionMs`
+  /// （旧数据无独立时间戳记 0），与 prefs 经 [resolveVideoPositionSync] 取较新——既能读
+  /// 出旧本机播放进度（client 跨设备恢复），又不让无时间戳的旧值盖过更新的 prefs 进度。
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id,
   ) async {
-    final int positionMs =
+    final int prefsPos =
         await _db.getPrefTyped<int>(videoRemotePositionPrefKey(id), 0);
-    final int updatedAtMs =
+    final int prefsAt =
         await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(id), 0);
-    return (positionMs: positionMs, updatedAtMs: updatedAtMs);
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    final int rowPos = row?.lastPositionMs ?? 0;
+    return resolveVideoPositionSync(
+      localPositionMs: prefsPos,
+      localUpdatedAtMs: prefsAt,
+      remotePositionMs: rowPos,
+      remoteUpdatedAtMs: 0,
+    );
   }
 
   /// 把 client 上报的 [id] 视频断点写入 host（TODO-653）。

@@ -402,6 +402,19 @@ String videoRemotePositionPrefKey(String bookUid) =>
 String videoRemotePositionAtPrefKey(String bookUid) =>
     'video_remote_position_at_$bookUid';
 
+/// [videoRemotePositionPrefKey] 的逆：从位置 prefs key 反解出 bookUid，非该 key 返回
+/// null。用于全量同步枚举「本地看过的流式视频 uid」（无 VideoBooks 行也有此 prefs，
+/// TODO-816 断点①）。必须排除更长前缀的时间戳键 [videoRemotePositionAtPrefKey]
+/// （`video_remote_position_at_<uid>`），否则会把时间戳键误当成 uid 以 `at_` 开头。
+String? videoUidFromRemotePositionPrefKey(String key) {
+  const String atPrefix = 'video_remote_position_at_';
+  const String posPrefix = 'video_remote_position_';
+  if (key.startsWith(atPrefix)) return null;
+  if (!key.startsWith(posPrefix)) return null;
+  final String uid = key.substring(posPrefix.length);
+  return uid.isEmpty ? null : uid;
+}
+
 /// 视频播放进度跨设备冲突解决（TODO-653）——「取较新时间戳」last-write-wins。
 ///
 /// 纯函数，与有声书进度的 `SyncManager._determineSyncDirection` 同范式（取较新者；

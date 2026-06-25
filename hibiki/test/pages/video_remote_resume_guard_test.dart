@@ -185,5 +185,35 @@ void main() {
         reason: 'remote position must be uploaded to host (TODO-653)',
       );
     });
+
+    test(
+        'TODO-816: host self-play also writes video_remote_position prefs '
+        '(unified key space)', () {
+      // 断点②：host 本机播放（_persistPosition 单视频路径）此前只写
+      // VideoBooks.lastPositionMs，不写 video_remote_position_<uid> prefs；而
+      // getVideoPosition 读 prefs → client 拉清单拿不到 host 本机进度。修复让本机
+      // 单视频播放也落同一键空间（带时间戳），消除「两套键」特殊情况。
+      final String persist = region(
+        'Future<void> _persistPosition(String uid, int posMs) async {',
+        'String _encodeEpisodes()',
+      );
+      expect(
+        persist.contains('updatePosition(uid, posMs)'),
+        isTrue,
+        reason:
+            'single video must still write lastPositionMs (backward compat)',
+      );
+      expect(
+        persist.contains('videoRemotePositionPrefKey(uid)'),
+        isTrue,
+        reason: 'host self-play must mirror into the remote-position key space',
+      );
+      expect(
+        persist.contains('videoRemotePositionAtPrefKey(uid)'),
+        isTrue,
+        reason:
+            'host self-play must stamp an updatedAt for conflict resolution',
+      );
+    });
   });
 }

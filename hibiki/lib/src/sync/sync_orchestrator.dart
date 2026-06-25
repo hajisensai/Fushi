@@ -513,74 +513,111 @@ class SyncOrchestrator {
     }
   }
 
-  /// 互联视频播放进度 live 双向同步（TODO-767，把视频进度并入全量 sweep）。
+  /// 互联视频播放进度 live 双向同步（TODO-767 + TODO-816）。
   ///
-  /// 此前视频进度只在打开远端视频时按需同步（resume 路径）。这里遍历本地
-  /// `VideoBooks`，对每条：GET host 视频进度（[RemoteVideoClient.remoteVideoPosition]，
-  /// host 落自己的 `video_remote_position_<bookUid>` prefs）+ 读本地
-  /// `VideoBooks.lastPositionMs` 与本地远端进度时间戳 prefs，用 [resolveVideoPositionSync]
-  /// 「取较新时间戳」选胜者；胜者新于 host 时 PUT 上报，胜者不同于本地时写回本地
-  /// `lastPositionMs` + 本地远端进度 prefs（与视频 resume 路径同键空间）。
+  /// 此前只遍历本地 `VideoBooks`，对每条比对 host 进度。但 client 流式看的远端视频
+  /// 在本地**没有 VideoBooks 行**（[home_video_page._openRemote] 只 push 不 upsert，
+  /// 进度只落 `video_remote_position_<uid>` prefs，见 video_hibiki_page._persistRemotePosition）
+  /// → 旧 sweep 永远扫不到，流式视频进度无法纳入全量双向同步（TODO-816 子问题1 断点①）。
+  ///
+  /// 修复：同步基底统一为 uid 集合 = 「本地 VideoBooks 行 uid」∪「本地有
+  /// `video_remote_position_<uid>` prefs 的 uid（哪怕无行）」，只对 host 也有的 uid 同步。
+  /// 每个 uid 的本地进度统一从 prefs（带时间戳）取，并与 `VideoBooks.lastPositionMs`
+  /// （旧数据，无独立时间戳记 0）经 [resolveVideoPositionSync] 取较新作为本地真相；
+  /// 与 host 进度再比对。胜者新于 host → PUT；胜者不同于本地 → 写回 prefs，**仅当本地
+  /// 存在 VideoBooks 行时**才一并更新 `lastPositionMs`（流式视频绝不强建行污染书架）。
   ///
   /// 逐条错误进 [report.errors] 不中断整体。
   Future<void> _syncVideoProgressLive(
     SyncRunReport report,
     HibikiClientSyncBackend backend,
   ) async {
-    final List<VideoBookRow> localVideos = await _db.allVideoBooks();
-    if (localVideos.isEmpty) return;
+    // 基底①：本地 VideoBooks 行（uid → lastPositionMs，向后兼容书架视频）。
+    final Map<String, int> rowPositionByUid = <String, int>{};
+    for (final VideoBookRow video in await _db.allVideoBooks()) {
+      rowPositionByUid[video.bookUid] = video.lastPositionMs;
+    }
+    // 基底②：本地看过的流式视频（有 video_remote_position_<uid> prefs 但无行）。
+    final Set<String> localUids = <String>{...rowPositionByUid.keys};
+    final Map<String, String> allPrefs = await _db.getAllPrefs();
+    for (final String key in allPrefs.keys) {
+      final String? uid = videoUidFromRemotePositionPrefKey(key);
+      if (uid != null) localUids.add(uid);
+    }
+    if (localUids.isEmpty) return;
 
-    // 视频进度是 host-truth 模型（client 不存视频、只从 host 流式播放）：进度端点
-    // 只对 host DB 里真实存在的视频可用。先取 host 视频清单（条目已带 positionMs /
-    // positionUpdatedAtMs，省去逐视频 GET），只对**两端都有**的视频同步进度；本地
-    // 独有视频（host 无）无 host 真相可同步，跳过（避免 PUT 打到不存在视频报 404）。
+    // 视频进度是 host-truth 模型：进度端点只对 host DB 里真实存在的视频可用。先取
+    // host 视频清单（条目已带 positionMs / positionUpdatedAtMs，省去逐视频 GET），
+    // 只对两端都有的视频同步；本地独有视频（host 无）无 host 真相可同步，跳过。
     final Map<String, RemoteVideoInfo> hostById = <String, RemoteVideoInfo>{};
     for (final RemoteVideoInfo info in await backend.listRemoteVideos()) {
       hostById[info.id] = info;
     }
     if (hostById.isEmpty) return;
 
-    for (final VideoBookRow video in localVideos) {
-      final String uid = video.bookUid;
+    for (final String uid in localUids) {
       final RemoteVideoInfo? hostInfo = hostById[uid];
       if (hostInfo == null) continue; // 本地独有视频：host 无此视频，跳过。
       try {
-        // 本地进度时间戳：复用视频 resume 路径同键空间（不存在则 0）。
-        final int localUpdatedAtMs =
-            await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 0);
-        final int localPositionMs = video.lastPositionMs;
-
-        final ({int positionMs, int updatedAtMs}) winner =
-            resolveVideoPositionSync(
-          localPositionMs: localPositionMs,
-          localUpdatedAtMs: localUpdatedAtMs,
-          remotePositionMs: hostInfo.positionMs,
-          remoteUpdatedAtMs: hostInfo.positionUpdatedAtMs,
-        );
-
-        // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
-        if (winner.updatedAtMs > hostInfo.positionUpdatedAtMs ||
-            (winner.updatedAtMs == hostInfo.positionUpdatedAtMs &&
-                winner.positionMs != hostInfo.positionMs)) {
-          await backend.putRemoteVideoPosition(
-            uid,
-            winner.positionMs,
-            winner.updatedAtMs,
-          );
-        }
-
-        // host→本地：胜者不同于本地时写回 lastPositionMs + 远端进度 prefs
-        // （与视频 resume 路径同键空间，下次打开远端视频即用该值恢复）。
-        if (winner.positionMs != localPositionMs ||
-            winner.updatedAtMs != localUpdatedAtMs) {
-          await _db.updateVideoBookPosition(uid, winner.positionMs);
-          await _db.setPrefTyped<int>(
-              videoRemotePositionPrefKey(uid), winner.positionMs);
-          await _db.setPrefTyped<int>(
-              videoRemotePositionAtPrefKey(uid), winner.updatedAtMs);
-        }
+        await _syncOneVideoProgressLive(
+            uid, hostInfo, rowPositionByUid, backend);
       } catch (e) {
-        report.errors.add('live video progress "${video.title}": $e');
+        report.errors.add('live video progress "$uid": $e');
+      }
+    }
+  }
+
+  /// 同步单个视频 [uid] 的进度（[_syncVideoProgressLive] 的循环体，控制缩进层数）。
+  ///
+  /// [rowPositionByUid] 含本地 VideoBooks 行时表示书架视频（写回需更新 lastPositionMs）；
+  /// 不含则为流式视频（只写 prefs，不建行）。本地进度统一从 prefs 取并与 lastPositionMs
+  /// 经 [resolveVideoPositionSync] 取较新。
+  Future<void> _syncOneVideoProgressLive(
+    String uid,
+    RemoteVideoInfo hostInfo,
+    Map<String, int> rowPositionByUid,
+    HibikiClientSyncBackend backend,
+  ) async {
+    // 本地进度真相：书架视频与流式视频共用一个 `_at_` prefs 时间戳。书架视频的位置
+    // 在 `VideoBooks.lastPositionMs`（本机播放写），流式视频的位置在
+    // `video_remote_position_<uid>` prefs（resume 路径写）——同一进度的两处镜像，不会
+    // 同时各有不同含义。本地位置取「有行用 lastPositionMs，否则用 prefs 位置」，时间戳
+    // 统一取 `_at_` prefs（无则 0=旧数据，被任何带时间戳的远端进度盖过）。
+    final int prefsPos =
+        await _db.getPrefTyped<int>(videoRemotePositionPrefKey(uid), 0);
+    final int prefsAt =
+        await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 0);
+    final int? rowPos = rowPositionByUid[uid];
+    final int localPositionMs = rowPos ?? prefsPos;
+
+    final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
+      localPositionMs: localPositionMs,
+      localUpdatedAtMs: prefsAt,
+      remotePositionMs: hostInfo.positionMs,
+      remoteUpdatedAtMs: hostInfo.positionUpdatedAtMs,
+    );
+
+    // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
+    if (winner.updatedAtMs > hostInfo.positionUpdatedAtMs ||
+        (winner.updatedAtMs == hostInfo.positionUpdatedAtMs &&
+            winner.positionMs != hostInfo.positionMs)) {
+      await backend.putRemoteVideoPosition(
+        uid,
+        winner.positionMs,
+        winner.updatedAtMs,
+      );
+    }
+
+    // host→本地：胜者不同于本地时写回。位置真相统一落 `video_remote_position_<uid>`
+    // + `_at_` prefs（resume 路径同键空间）；仅当本地存在 VideoBooks 行时一并更新
+    // lastPositionMs（流式视频不建行，避免污染书架）。
+    if (winner.positionMs != localPositionMs || winner.updatedAtMs != prefsAt) {
+      await _db.setPrefTyped<int>(
+          videoRemotePositionPrefKey(uid), winner.positionMs);
+      await _db.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey(uid), winner.updatedAtMs);
+      if (rowPos != null) {
+        await _db.updateVideoBookPosition(uid, winner.positionMs);
       }
     }
   }

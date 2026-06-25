@@ -1870,11 +1870,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 位置持久化（controller 每秒至多一次回调）。
   ///
   /// 播放列表：把进度记到**当前集**的 [PlaylistEntry.positionMs] 并回写整段
-  /// playlistJson（每集各记自己的进度，换集互不干扰）。单视频：仍走
-  /// VideoBook.lastPositionMs 不变。
+  /// playlistJson（每集各记自己的进度，换集互不干扰）。单视频：写
+  /// VideoBook.lastPositionMs，并镜像到 `video_remote_position_<uid>` +
+  /// `video_remote_position_at_<uid>` prefs（TODO-816 断点②）。
+  ///
+  /// 镜像目的：host 本机播放此视频时，client 拉清单经 host 的 getVideoPosition 读的是
+  /// prefs 键空间；若本机播放只写 lastPositionMs 不写 prefs，host 自看进度就进不了同步
+  /// 读取键 → client 拿不到。镜像后与远端 resume 路径（[_persistRemotePosition]）统一键
+  /// 空间，消除「两套键」特殊情况。播放列表（多集）进度是 per-episode 语义，与 host
+  /// 按 bookUid 的单一进度模型不对应，不镜像。
   Future<void> _persistPosition(String uid, int posMs) async {
     if (_episodes.isEmpty) {
       await widget.repo.updatePosition(uid, posMs);
+      final int clamped = posMs < 0 ? 0 : posMs;
+      await appModel.prefsRepo
+          .setPref(videoRemotePositionPrefKey(uid), clamped);
+      await appModel.prefsRepo.setPref(videoRemotePositionAtPrefKey(uid),
+          DateTime.now().millisecondsSinceEpoch);
       return;
     }
     _episodes = updateEntryPosition(_episodes, _currentEpisode, posMs);
