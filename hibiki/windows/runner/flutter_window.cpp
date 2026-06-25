@@ -579,6 +579,10 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "render") {
           global_lookup_window_->RenderJson(StringFromValue(args, "json", ""));
           result->Success();
+        } else if (method == "resize") {
+          global_lookup_window_->ResizeTo(IntFromValue(args, "width", 0),
+                                          IntFromValue(args, "height", 0));
+          result->Success();
         } else if (method == "hide") {
           global_lookup_window_->Hide();
           result->Success();

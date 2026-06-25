@@ -7,6 +7,11 @@
 // onto WebView2's window.chrome.webview.postMessage, and resolves the returned
 // Promise when native replies via window.__hibikiBridgeResolve(id, jsonValue).
 //
+// IMPORTANT: every callHandler MUST be resolved or popup.js await-points (mine /
+// duplicateCheck / playWordAudio) hang and freeze the card. Native resolves each
+// one (null for read-only handlers). The id is sent as __bridgeId so native can
+// extract it without a JSON parser.
+//
 // Kept dependency-free so it can be unit-tested under node
 // (test/lookup/popup_bridge_adapter_test.mjs).
 (function () {
@@ -20,12 +25,13 @@
     return new Promise(function (resolve) {
       _pending[id] = resolve;
       window.chrome.webview.postMessage(
-        JSON.stringify({ handler: name, args: args, id: id }));
+        JSON.stringify({ handler: name, args: args, __bridgeId: id }));
     });
   };
 
-  // Called by native with the handler's return value (JSON string, or undefined
-  // for void handlers). Resolves the matching callHandler Promise.
+  // Called by native with the handler's return value (JSON string, or null/
+  // undefined for void / read-only handlers). Resolves the matching callHandler
+  // Promise.
   window.__hibikiBridgeResolve = function (id, jsonValue) {
     var resolve = _pending[id];
     if (!resolve) {

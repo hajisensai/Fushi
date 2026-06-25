@@ -59,6 +59,9 @@ class GlobalLookupWindow {
   // focus. Creates the window + WebView2 lazily on first call. Returns false if
   // window creation failed.
   bool ShowAt(int x, int y, int width, int height, HWND owner);
+  // Resizes to fit the rendered card (physical px); clamps to the monitor work
+  // area and nudges back on-screen if the bottom/right would overflow.
+  void ResizeTo(int width, int height);
   void Hide();
   bool IsShowing() const;
 
@@ -76,6 +79,11 @@ class GlobalLookupWindow {
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam) noexcept;
+  // Closes the overlay when the user activates another window (click outside).
+  static void CALLBACK ForegroundHookProc(HWINEVENTHOOK hook, DWORD event,
+                                          HWND hwnd, LONG id_object,
+                                          LONG id_child, DWORD thread,
+                                          DWORD time);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   void EnsureWindowClass();
   void EnsureWebView();
@@ -83,6 +91,8 @@ class GlobalLookupWindow {
   std::wstring LoadAdapterScript() const;
 
   HWND hwnd_ = nullptr;
+  HWINEVENTHOOK foreground_hook_ = nullptr;
+  static GlobalLookupWindow* s_hook_owner_;
   bool visible_ = false;
   bool class_registered_ = false;
   bool webview_ready_ = false;

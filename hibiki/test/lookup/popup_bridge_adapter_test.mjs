@@ -36,17 +36,17 @@ assert.strictEqual(posted.length, 1, 'one message posted');
 const env = JSON.parse(posted[0]);
 assert.strictEqual(env.handler, 'playWordAudio');
 assert.deepStrictEqual(env.args, [{ term: 'favour' }]);
-assert.strictEqual(typeof env.id, 'number');
+assert.strictEqual(typeof env.__bridgeId, 'number');
 
 // 2. native reply resolves the Promise with the parsed value.
-sandbox.window.__hibikiBridgeResolve(env.id, JSON.stringify({ url: 'a.mp3' }));
+sandbox.window.__hibikiBridgeResolve(env.__bridgeId, JSON.stringify({ url: 'a.mp3' }));
 const result = await p;
 assert.deepStrictEqual(result, { url: 'a.mp3' });
 
-// 3. void reply resolves to null.
-const p2 = sandbox.window.flutter_inappwebview.callHandler('dismiss');
+// 3. void / null reply resolves to null (read-only handlers — prevents freeze).
+const p2 = sandbox.window.flutter_inappwebview.callHandler('mineEntry', {});
 const env2 = JSON.parse(posted[1]);
-sandbox.window.__hibikiBridgeResolve(env2.id, undefined);
+sandbox.window.__hibikiBridgeResolve(env2.__bridgeId, null);
 assert.strictEqual(await p2, null);
 
 // 4. unknown id is ignored (no throw).

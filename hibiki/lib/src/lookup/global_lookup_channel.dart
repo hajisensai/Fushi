@@ -53,6 +53,14 @@ abstract final class GlobalLookupChannel {
         'json': popupJson,
       });
 
+  /// Resizes the overlay window (physical px), clamped to the work area by
+  /// native. Keeps the current top-left anchor.
+  static Future<void> resize({required int width, required int height}) =>
+      _channel.invokeMethod<void>('resize', <String, Object?>{
+        'width': width,
+        'height': height,
+      });
+
   static Future<void> hide() => _channel.invokeMethod<void>('hide');
 
   static Future<bool> isShowing() async =>

@@ -49,9 +49,28 @@ std::string WideToUtf8(const std::wstring& value) {
 
 }  // namespace
 
+GlobalLookupWindow* GlobalLookupWindow::s_hook_owner_ = nullptr;
+
+void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
+                                                     HWND hwnd, LONG, LONG,
+                                                     DWORD, DWORD) {
+  GlobalLookupWindow* self = s_hook_owner_;
+  // The user activated another window (click outside the card). Own-process
+  // events are skipped via WINEVENT_SKIPOWNPROCESS, so this never fires for our
+  // own overlay/main window.
+  if (self != nullptr && self->IsShowing() && hwnd != self->hwnd_) {
+    self->Hide();
+  }
+}
+
 GlobalLookupWindow::GlobalLookupWindow() = default;
 
 GlobalLookupWindow::~GlobalLookupWindow() {
+  if (foreground_hook_ != nullptr) {
+    UnhookWinEvent(foreground_hook_);
+    foreground_hook_ = nullptr;
+    s_hook_owner_ = nullptr;
+  }
   if (controller_) {
     controller_->Close();
   }
@@ -101,11 +120,55 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
   SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   visible_ = true;
+  // Arm the click-outside dismiss (skip our own process so interacting with the
+  // card or main window does not close it).
+  if (foreground_hook_ == nullptr) {
+    s_hook_owner_ = this;
+    foreground_hook_ = SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+  }
   return true;
+}
+
+void GlobalLookupWindow::ResizeTo(int width, int height) {
+  if (hwnd_ == nullptr || width <= 0 || height <= 0) {
+    return;
+  }
+  RECT rc;
+  GetWindowRect(hwnd_, &rc);
+  int x = rc.left;
+  int y = rc.top;
+
+  HMONITOR monitor = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO mi = {};
+  mi.cbSize = sizeof(mi);
+  if (GetMonitorInfo(monitor, &mi)) {
+    const int work_w = mi.rcWork.right - mi.rcWork.left;
+    const int work_h = mi.rcWork.bottom - mi.rcWork.top;
+    width = width < work_w ? width : work_w;
+    height = height < work_h ? height : work_h;
+    if (x + width > mi.rcWork.right) {
+      x = mi.rcWork.right - width;
+    }
+    if (y + height > mi.rcWork.bottom) {
+      y = mi.rcWork.bottom - height;
+    }
+    if (x < mi.rcWork.left) x = mi.rcWork.left;
+    if (y < mi.rcWork.top) y = mi.rcWork.top;
+  }
+  SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
+               SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
 void GlobalLookupWindow::Hide() {
   visible_ = false;
+  if (foreground_hook_ != nullptr) {
+    UnhookWinEvent(foreground_hook_);
+    foreground_hook_ = nullptr;
+    s_hook_owner_ = nullptr;
+  }
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }
@@ -222,8 +285,31 @@ void GlobalLookupWindow::ConfigureWebView() {
           [this](ICoreWebView2*,
                  ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
             wil::unique_cotaskmem_string json;
-            if (SUCCEEDED(args->get_WebMessageAsJson(&json)) && message_cb_) {
-              message_cb_(WideToUtf8(json.get()));
+            if (SUCCEEDED(args->get_WebMessageAsJson(&json))) {
+              std::string body = WideToUtf8(json.get());
+              if (message_cb_) {
+                message_cb_(body);
+              }
+              // Resolve the callHandler promise so popup.js await-points (mine /
+              // duplicateCheck / playWordAudio) never hang. Read-only MVP: null
+              // reply. The id is the integer after "__bridgeId":.
+              const std::string key = "\"__bridgeId\":";
+              size_t pos = body.find(key);
+              if (pos != std::string::npos) {
+                pos += key.size();
+                size_t end = pos;
+                while (end < body.size() && body[end] >= '0' &&
+                       body[end] <= '9') {
+                  ++end;
+                }
+                if (end > pos && webview_) {
+                  std::string id = body.substr(pos, end - pos);
+                  std::wstring script = L"window.__hibikiBridgeResolve && "
+                                        L"window.__hibikiBridgeResolve(" +
+                                        Utf8ToWide(id) + L", null);";
+                  webview_->ExecuteScript(script.c_str(), nullptr);
+                }
+              }
             }
             return S_OK;
           })

@@ -159,6 +159,25 @@ class GlobalLookupController {
       GlobalLookupChannel.hide();
       return;
     }
+    // Size the window to the rendered card. popup.js reports the unzoomed
+    // scrollHeight; multiply by the same zoom the content uses, and base the
+    // width on the reader's popup width (380) so it follows the UI-scale +
+    // dictionary font-size settings.
+    if (handler == 'contentHeight') {
+      final AppModel? model = _appModel;
+      final Object? args = message['args'];
+      if (model != null && args is List && args.isNotEmpty) {
+        final num? h = args.first is num ? args.first as num : null;
+        if (h != null && h > 0) {
+          final double zoom =
+              model.appUiScale * (model.dictionaryFontSize / 16.0);
+          final int width = (380 * zoom).round();
+          final int height = (h * zoom).round() + 8;
+          unawaited(GlobalLookupChannel.resize(width: width, height: height));
+        }
+      }
+      return;
+    }
     // Nested lookup: clicking a term/kanji in the card emits onLinkClick with
     // the query as the first arg. Re-search and re-render in place.
     if (handler == 'onLinkClick') {
