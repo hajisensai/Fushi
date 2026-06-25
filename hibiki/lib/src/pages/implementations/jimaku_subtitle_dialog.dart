@@ -4,9 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
+import 'package:hibiki/utils.dart';
 
 /// 按关键词（大小写不敏感子串）筛选列表；空/纯空白关键词原样返回。纯函数，便于单测。
 List<T> filterByKeyword<T>(
@@ -212,85 +212,87 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    // 用 Dialog（而非 AlertDialog）：Dialog 把它的 child 约束到屏幕减去 inset 的有界高度，
-    // 于是 Column(min) 拿到有界的高度天花板，候选列表的 Flexible 能正确分到剩余空间。
-    // 旧 AlertDialog 不给 content 固定高度，Column.min 下 Flexible 拿到 0 → 列表被压成
-    // 0 高、看不见且吞滚动（BUG-279 根因）。
-    return Dialog(
+    // 外壳用仓库标准 HibikiDialogFrame（内部仍是 Dialog）：scrollable:false 仍由
+    // maxHeight 给整个对话框有界高度天花板，于是 Column(min) 拿到有界高度，候选列表的
+    // Flexible 能正确分到剩余空间，内部普通（非 shrinkWrap）ListView 正常滚动，保留
+    // BUG-279 不变量。若用 frame 默认 scrollable:true 包 SingleChildScrollView 给无界
+    // 高度，Flexible 会坍缩成 0 高 → 回归 BUG-279，故此处必须 scrollable:false。
+    // maxWidth 提到 720 让大屏不再窄；insetPadding 保留 horizontal:16（手机宽=屏宽-32
+    // 同现状，大屏由 720 封顶居中），不用 frame 默认 horizontal:40 否则手机变窄。
+    return HibikiDialogFrame(
+      maxWidth: 720,
+      maxHeightFactor: 0.86,
+      scrollable: false,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(t.video_jimaku_fetch, style: theme.textTheme.titleLarge),
-              const SizedBox(height: 16),
-              _buildApiKeySection(),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _queryCtrl,
-                decoration: InputDecoration(labelText: t.video_jimaku_query),
-                onSubmitted: (_) => _search(),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(t.video_jimaku_fetch, style: theme.textTheme.titleLarge),
+          const SizedBox(height: 16),
+          _buildApiKeySection(),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _queryCtrl,
+            decoration: InputDecoration(labelText: t.video_jimaku_query),
+            onSubmitted: (_) => _search(),
+          ),
+          const SizedBox(height: 12),
+          if (_searching)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_searched && _candidates.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child:
+                  Text(t.video_jimaku_no_results, textAlign: TextAlign.center),
+            )
+          else if (_candidates.isNotEmpty) ...<Widget>[
+            TextField(
+              decoration: InputDecoration(
+                labelText: t.video_jimaku_filter,
+                isDense: true,
+                prefixIcon: const Icon(Icons.filter_list, size: 18),
               ),
-              const SizedBox(height: 12),
-              if (_searching)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_searched && _candidates.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Text(t.video_jimaku_no_results,
-                      textAlign: TextAlign.center),
-                )
-              else if (_candidates.isNotEmpty) ...<Widget>[
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: t.video_jimaku_filter,
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.filter_list, size: 18),
-                  ),
-                  onChanged: (String v) => setState(() => _filter = v),
-                ),
-                const SizedBox(height: 8),
-                // 候选列表吃掉对话框内剩余的高度：外层 Dialog 已把整个对话框高度有界
-                // 化，这里的 Flexible 能正确分到剩余空间，内部普通（非 shrinkWrap）
-                // ListView 填满后正常滚动。矮屏剩余空间小但仍可滚，高屏自然变高。
-                Flexible(
-                  child: JimakuCandidateList(
-                    candidates: _candidates,
-                    filter: _filter,
-                    busyName: _busyName,
-                    onDownload: _busyName == null ? _download : null,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              // 用 Wrap 而非 Row：窄屏（如 360dp）下 Cancel + 带图标的 Search 放不下
-              // 时自动换行，避免水平 RenderFlex 溢出。
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 4,
-                children: <Widget>[
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text(t.dialog_cancel),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _searching ? null : _search,
-                    icon: const Icon(Icons.search),
-                    label: Text(t.video_jimaku_search),
-                  ),
-                ],
+              onChanged: (String v) => setState(() => _filter = v),
+            ),
+            const SizedBox(height: 8),
+            // 候选列表吃掉对话框内剩余的高度：外层 HibikiDialogFrame（scrollable:false）
+            // 已把整个对话框高度有界化，这里的 Flexible 能正确分到剩余空间，内部普通
+            //（非 shrinkWrap）ListView 填满后正常滚动。矮屏剩余空间小但仍可滚，高屏自
+            // 然变高。
+            Flexible(
+              child: JimakuCandidateList(
+                candidates: _candidates,
+                filter: _filter,
+                busyName: _busyName,
+                onDownload: _busyName == null ? _download : null,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          // 用 Wrap 而非 Row：窄屏（如 360dp）下 Cancel + 带图标的 Search 放不下
+          // 时自动换行，避免水平 RenderFlex 溢出。
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton.icon(
+                onPressed: _searching ? null : _search,
+                icon: const Icon(Icons.search),
+                label: Text(t.video_jimaku_search),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -298,9 +300,10 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
 
 /// 可下载 Jimaku 候选的滚动列表区（从对话框抽出便于在小屏约束下做 widget 测试）。
 ///
-/// 关键不变量：由外层（对话框里的 [Flexible]，其祖先 [Dialog] 已把整个对话框高度有界
-/// 化）给定有界高度，内部用普通可滚动 [ListView]（**非** `shrinkWrap`），从而在矮屏上
-/// 保持非 0 高度且能正常滚动（BUG-279）。
+/// 关键不变量：由外层（对话框里的 [Flexible]，其祖先 [HibikiDialogFrame]（内部仍是
+/// [Dialog]，且 `scrollable:false` 仍由 maxHeight 给 [Flexible] 有界高度）已把整个对话框
+/// 高度有界化）给定有界高度，内部用普通可滚动 [ListView]（**非** `shrinkWrap`），从而在矮屏
+/// 上保持非 0 高度且能正常滚动，保留 BUG-279 不变量。
 class JimakuCandidateList extends StatelessWidget {
   const JimakuCandidateList({
     required this.candidates,
