@@ -138,6 +138,26 @@ class FloatingLyricWindow {
 
   float ScaleForDpi(float value) const;
 
+  // Minimum visible margin (in 96-DPI logical px) that must always stay inside
+  // the target monitor's work area, so the strip can never be dragged or
+  // restored entirely off-screen (TODO-832). Run through ScaleForDpi before use
+  // — drag math is in screen physical px. Mirrors Android MIN_VISIBLE_DP=48.
+  static constexpr float kMinVisibleMarginDip = 48.0f;
+
+  // Clamps a proposed top-left window origin (screen physical px) so at least
+  // ScaleForDpi(kMinVisibleMarginDip) of the window stays inside |work| on
+  // every edge. |work| is the target monitor's rcWork (chosen by the caller:
+  // MonitorFromPoint(cursor) on drag, MonitorFromWindow(hwnd_) on display/DPI
+  // change). Returns the clamped origin as {x, y}. Single source of truth for
+  // the same formula as Dart clampFloatingWindowOrigin.
+  POINT ClampOriginToWorkArea(int x, int y, int width, int height,
+                              const RECT& work) const;
+
+  // Pulls the current window back inside the work area of the monitor it sits
+  // on (MonitorFromWindow), used by WM_DISPLAYCHANGE / WM_DPICHANGED where the
+  // cursor is not necessarily over the strip. No-op when already inside.
+  void ClampCurrentPositionToWindowMonitor();
+
   HWND hwnd_ = nullptr;
   bool class_registered_ = false;
   bool visible_ = false;
