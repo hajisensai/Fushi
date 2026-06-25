@@ -1399,9 +1399,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 置 null + notifyListeners），下层书架在 pop 动画首帧重建时 NowListeningMiniBar
     // 即见空会话从一开始 SizedBox.shrink，消除「显一帧再收起」的闪播放条。
     // dispose() 里的 unawaited(stop()) 兜底保留（硬 kill / 系统回收 / 非 PopScope
-    // 退出路径 onWillPop 不一定跑到），stop 对 controller==null 幂等早返回。
+    // 退出路径 onWillPop 不一定跑到），stop() 内部对已清空的 controller 做 no-op，
+    // 二次调用安全。
     if (!appModel.audiobookBackgroundPlay) {
-      await appModel.audiobookSession.stop();
+      // W1：onSourcePagePop 被 onWillPop await，stop 在桌面释放 native 解码器时
+      // 若抛平台异常，异常会沿 onWillPop → onPopInvokedWithResult 逃逸，导致
+      // nav.pop() 不执行（用户退不出阅读器）。与 dispose 路径的 catchError 对齐：
+      // 记错误后照常继续退出，绝不能因 stop 失败卡住不 pop。
+      try {
+        await appModel.audiobookSession.stop();
+      } catch (e, s) {
+        ErrorLogService.instance.log('ReaderHibiki.popStopAudiobook', e, s);
+      }
     }
   }
 
