@@ -12,6 +12,11 @@
 
 hibiki 是一款面向 Android 与 Windows 的沉浸式语言学习工具，把 EPUB 阅读、有声书同步、视频字幕查词和一键 Anki 制卡整合在一起，让每一次输入都自然沉淀为可复习的词汇记忆。
 
+读一本书，遇到不认识的词——点一下就能查词典，查完一键制成 Anki 卡片。<br>
+听有声书时，正文逐句高亮跟读，自动翻页。<br>
+看视频时，直接在字幕上查词、制卡。<br>
+所有场景共享同一套词典、统计和复习流程。
+
 <table>
   <tr>
     <td><img src="docs/static-assets/screenshots/hibiki-readme-bookshelf-zh.png" alt="书架" width="100%"></td>

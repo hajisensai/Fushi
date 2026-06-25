@@ -12,6 +12,11 @@
 
 hibiki is an immersive language-learning tool for Android and Windows that brings EPUB reading, audiobook sync, video subtitle lookup, and one-tap Anki card creation together — so every input naturally becomes reviewable vocabulary.
 
+Reading a book and hit an unknown word? Tap it to look it up, then create an Anki card in one tap.<br>
+Listening to an audiobook? The text highlights sentence by sentence and turns pages automatically.<br>
+Watching a video? Look up words right from the subtitles.<br>
+Every input mode shares the same dictionaries, statistics, and review workflow.
+
 <table>
   <tr>
     <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Bookshelf" width="100%"></td>
