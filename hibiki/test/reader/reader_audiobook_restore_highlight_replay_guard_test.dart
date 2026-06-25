@@ -80,6 +80,31 @@ void main() {
       reason: 'follow audio must not gate the highlight call itself',
     );
   });
+
+  test('TODO-718：cue 位置只在 reveal（权威驱动视图）时覆盖落库阅读位置，被动高亮不覆盖', () {
+    // 真因：_onCueChanged 结尾**无条件** _syncPositionFromCurrentCue()，重开 / 暂停态把当前
+    // cue 高亮上去（reveal=false）也会把恢复好的滚动位置覆盖成暂停中的音频 cue 位置（真机：
+    // restore=244 被 cue ns=995 覆盖成 440、charOffset 退化成 -1）→ 每次重开回到那条固定 cue。
+    final String onCueChanged = _functionSource(
+      readerSource,
+      'void _onCueChanged() {',
+      'Future<void> _handleCueCrossChapter',
+    );
+    // 末尾的逐句 highlight 调用之后，位置同步必须被 `if (reveal)` 包住——而不是裸调用。
+    final int hlIndex = onCueChanged.lastIndexOf('AudiobookBridge.highlight(');
+    final String tail = onCueChanged.substring(hlIndex);
+    final int syncIndex = tail.indexOf('_syncPositionFromCurrentCue()');
+    expect(syncIndex, isNonNegative,
+        reason: '末尾仍须有位置同步（reveal 为真时用 cue 落库，不回归 724）');
+    final int guardIndex = tail.indexOf('if (reveal)');
+    expect(guardIndex, isNonNegative,
+        reason: 'cue 位置覆盖必须门控在 reveal 内（被动高亮不得覆盖用户滚动位置）');
+    expect(guardIndex, lessThan(syncIndex),
+        reason: 'if (reveal) 必须在 _syncPositionFromCurrentCue() 之前包住它');
+    // 末尾的位置同步不得是脱离 reveal 门的裸调用。
+    expect(tail, isNot(contains('    );\n    _syncPositionFromCurrentCue();')),
+        reason: '位置同步不得在 highlight 之后裸调用（必须在 if (reveal) 块内）');
+  });
 }
 
 String _functionSource(String source, String start, String end) {

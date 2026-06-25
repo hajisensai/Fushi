@@ -550,7 +550,16 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       reveal: reveal,
       pauseEnabled: pauseEnabled,
     );
-    _syncPositionFromCurrentCue();
+    // TODO-718（真机铁证·2026-06-25）：只有 cue 权威驱动视图时（reveal=播放跟随 / 显式
+    // reveal / forceReveal）才用 cue 位置覆盖落库的阅读位置。**被动高亮**——重开 / 暂停态把
+    // 当前 cue 高亮上去（reveal=false）——绝不覆盖用户的滚动阅读位置：否则恢复后的位置被
+    // 暂停中的音频 cue 拽走（真机：restore=244 被 cue ns=995 覆盖成 440、charOffset 退化成
+    // -1，无论阅读位置还是有声书位置每次重开都回到那条固定 cue ≈ 章首）。followAudio OFF +
+    // 播放时 reveal 亦为 false（用户自控滚动，不自动跟读）→ 位置跟滚动不跟 cue，符合预期。
+    // 播放且跟读期 reveal=true → 仍正常用 cue 落库，不回归 724。
+    if (reveal) {
+      _syncPositionFromCurrentCue();
+    }
   }
 
   Future<void> _handleCueCrossChapter(int newSection) async {
