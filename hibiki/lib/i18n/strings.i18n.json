@@ -1814,5 +1814,14 @@
   "popup_dictionary_columns_hint": "Show multiple dictionaries side by side; use fewer columns on narrow screens",
   "card_exported_audio_failed": "Card exported, but the audio failed to download ($reason).",
   "card_mined_without_sentence_audio": "Card created without sentence audio (none found for this selection).",
-  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason"
+  "card_cover_degraded_to_static": "Card cover fell back to a still frame (animated clip unavailable): $reason",
+  "collection_export_sentences_title": "Favorite Sentences",
+  "collection_export_words_title": "Favorite Words",
+  "collection_export_save": "Save Export",
+  "collection_export_saved": "Export saved",
+  "collection_export_failed": "Export failed",
+  "collection_export_format": "Format",
+  "collection_export_pick_book": "Choose a book",
+  "collection_export_all_words": "All favorite words",
+  "collection_export_no_items": "Nothing to export"
 }
