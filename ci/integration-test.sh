@@ -33,18 +33,10 @@ PKG="${PKG:-app.hibiki.reader}"
 DICT_DIR="${DICT_DIR:-/d/辞典}"
 DICT_ZIP="${DICT_ZIP:-}"
 
-# Convert an MSYS path (/d/foo) to a Windows path (D:/foo) so the native
-# adb.exe can stat the local push source. adb push needs MSYS_NO_PATHCONV=1 for
-# the /sdcard destination, which also disables conversion of the source — so a
-# /d/... source reaches adb verbatim and fails to stat. Pre-converting the
-# source to D:/... makes both ends valid under MSYS_NO_PATHCONV=1.
-win_path() {
-  if command -v cygpath >/dev/null 2>&1; then
-    cygpath -m "$1"
-  else
-    echo "$1" | sed -E 's#^/([a-zA-Z])/#\U\1:/#'
-  fi
-}
+# NOTE: win_path() (MSYS /d/foo -> Windows D:/foo for native adb.exe) is provided
+# by ci/lib/provision-ankidroid.sh, which is sourced below before any caller uses
+# it (the dictionary push at the bottom of this script). Defining it in the
+# shared lib keeps it usable by the APK install there too (single definition).
 APK_REL="build/app/outputs/flutter-apk/app-debug.apk"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -114,7 +106,15 @@ fi
 # ── Pre-install with all runtime perms granted (preserved across flutter
 #    drive's -r reinstall, so the AnkiDroid grant survives the run). ──
 echo ">>> Pre-installing Hibiki with runtime permissions granted..."
-MSYS_NO_PATHCONV=1 $ADBD install -r -g "$APK_REL"
+MSYS_NO_PATHCONV=1 $ADBD install -r -g "$(win_path "$APK_REL")"
+
+# Re-enable the default launcher activity-alias. Hibiki's runtime icon switcher
+# (IconSwitchHelper) disables .MainActivityDefault when the user picks a
+# different launcher icon; a fresh `install -r` can land with that alias still
+# disabled, leaving the app with no enabled LAUNCHER component — `flutter drive`
+# then resolves no launchable activity. Idempotent (no-op if already enabled);
+# non-fatal so a manifest rename never aborts the run.
+MSYS_NO_PATHCONV=1 $ADBD shell pm enable "$PKG/.MainActivityDefault" >/dev/null 2>&1 || true
 
 # All-Files-Access (MANAGE_EXTERNAL_STORAGE) is an appop, NOT a runtime
 # permission, so `install -g` does not grant it. Without it the app process gets
@@ -138,13 +138,52 @@ for _ in $(seq 1 15); do
   sleep 1
 done
 
+# ── Target list (classified by prerequisite for the summary) ──
+# Resolved here (before provisioning) so we only pay for prerequisites the
+# selected targets actually need — e.g. a `--only=app_smoke` run must not boot
+# and onboard AnkiDroid.
+ALL_TARGETS=(
+  app_smoke settings_validation navigation_stability home_keyboard
+  gamepad_navigation feature_flows
+  comprehensive_imports comprehensive_reader_lookup comprehensive_settings
+  reader_pagination reader_caret reader_popup_caret reader_computer_use_flow
+  image_pause_detection
+  popup_dictionary anki_integration
+  regression user_path reader_dictionary reader_keyboard
+)
+
+TARGETS=()
+if [ -n "$ONLY" ]; then
+  IFS=',' read -ra TARGETS <<< "$ONLY"
+else
+  TARGETS=("${ALL_TARGETS[@]}")
+fi
+if [ ${#TARGETS[@]} -eq 0 ]; then
+  echo ">>> FAIL: no targets to run (empty --only?)." >&2
+  exit 2
+fi
+
+# Only anki_integration needs the (slow) AnkiDroid install + collection
+# onboarding. Gate the provisioning on the selected target set.
+NEEDS_ANKI=false
+for t in "${TARGETS[@]}"; do
+  if [ "$t" = anki_integration ]; then
+    NEEDS_ANKI=true
+    break
+  fi
+done
+
 # ── Provision external prerequisites (best effort; failures only affect the
 #    targets that need them, reported in the summary). ──
 ANKI_OK=false
-if provision_ankidroid && grant_hibiki_ankidroid_permission; then
-  ANKI_OK=true
+if [ "$NEEDS_ANKI" = true ]; then
+  if provision_ankidroid && grant_hibiki_ankidroid_permission; then
+    ANKI_OK=true
+  else
+    echo ">>> WARN: AnkiDroid not fully provisioned — anki_integration may fail." >&2
+  fi
 else
-  echo ">>> WARN: AnkiDroid not fully provisioned — anki_integration may fail." >&2
+  echo ">>> Skipping AnkiDroid provisioning (anki_integration not selected)."
 fi
 
 DICT_OK=false
@@ -172,28 +211,6 @@ if [ -n "$DICT_ZIP" ] && [ -f "$DICT_ZIP" ]; then
   fi
 else
   echo ">>> WARN: no dictionary zip found under $DICT_DIR — popup_dictionary may fail." >&2
-fi
-
-# ── Target list (classified by prerequisite for the summary) ──
-ALL_TARGETS=(
-  app_smoke settings_validation navigation_stability home_keyboard
-  gamepad_navigation feature_flows
-  comprehensive_imports comprehensive_reader_lookup comprehensive_settings
-  reader_pagination reader_caret reader_popup_caret reader_computer_use_flow
-  image_pause_detection
-  popup_dictionary anki_integration
-  regression user_path reader_dictionary reader_keyboard
-)
-
-TARGETS=()
-if [ -n "$ONLY" ]; then
-  IFS=',' read -ra TARGETS <<< "$ONLY"
-else
-  TARGETS=("${ALL_TARGETS[@]}")
-fi
-if [ ${#TARGETS[@]} -eq 0 ]; then
-  echo ">>> FAIL: no targets to run (empty --only?)." >&2
-  exit 2
 fi
 
 PASS=(); FAIL=(); SKIP=(); NOTES=()
