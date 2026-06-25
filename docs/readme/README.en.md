@@ -111,7 +111,13 @@ Every input mode shares the same dictionaries, statistics, and review workflow.
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
 
-## Installation & Building
+## Installation
+
+Download the latest release from [GitHub Releases](https://github.com/hdjsadgfwtg/hibiki/releases) — Android APK and Windows installer are available.
+
+> Requires Android 7.0 (API 24) or higher.
+
+## Building
 
 One-command prep (`flutter pub get` + apply patches), then build:
 

@@ -111,7 +111,13 @@ hibiki 是一款面向 Android 与 Windows 的沉浸式语言学习工具，把 
 
 English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español · Français · Deutsch · Português (Brasil) · Русский · Tiếng Việt · ภาษาไทย · Bahasa Indonesia · Italiano · Nederlands · Türkçe · العربية
 
-## 安装与构建
+## 安装
+
+从 [GitHub Releases](https://github.com/hdjsadgfwtg/hibiki/releases) 下载最新版本，支持 Android APK 和 Windows 安装包。
+
+> 最低 Android 7.0（API 24）。
+
+## 构建
 
 一键准备（`flutter pub get` + 打补丁），然后构建：
 
