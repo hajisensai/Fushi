@@ -224,6 +224,9 @@ HICON CreateIconFromImageFile(const std::wstring& path, int size) {
     return nullptr;
   }
   memcpy(dib_pixels, pixels.data(), pixels.size());
+  // 32bpp BGRA color bitmap 带 alpha 通道时，CreateIconIndirect 直接用 color 的
+  // alpha 做混合、忽略 AND mask 的内容，故 mask 仅需存在（1bpp 占位）即可，内容
+  // 无关。若日后把 color 改回 24bpp，必须改用真正的 AND mask，否则透明区域花屏。
   HBITMAP mask = CreateBitmap(size, size, 1, 1, nullptr);
   if (mask == nullptr) {
     DeleteObject(color);

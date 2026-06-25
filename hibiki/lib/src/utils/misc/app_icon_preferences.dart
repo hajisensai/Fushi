@@ -51,10 +51,8 @@ Future<String> exportPresetIconToFile(String presetKey) async {
 /// 返回拷贝后的路径。
 Future<String> persistCustomIconFile(String sourcePath) async {
   final Directory dir = await getApplicationSupportDirectory();
-  final String ext = sourcePath.contains('.')
-      ? sourcePath.substring(sourcePath.lastIndexOf('.'))
-      : '.png';
-  final File dest = File('${dir.path}/window_icon_custom$ext');
+  // 固定单一落点：原生 WIC 按内容解码不依赖扩展名，固定路径避免换图时残留孤儿文件。
+  final File dest = File('${dir.path}/window_icon_custom.png');
   await File(sourcePath).copy(dest.path);
   return dest.path;
 }
