@@ -176,7 +176,7 @@ void main() {
           reason: '必须注册 onReaderScroll JS handler');
       // TODO-718：callback 现按 isUserDriven 传 _handleReaderScroll(bool)，签名加参。
       expect(src.contains('_handleReaderScroll('), isTrue);
-      final int idx = src.indexOf('void _handleReaderScroll(bool userDriven)');
+      final int idx = src.indexOf('void _handleReaderScroll()');
       expect(idx, greaterThan(0), reason: '_handleReaderScroll 必须存在');
       // 窗口放宽到 2700：TODO-151/164(BUG-225) 诊断块 + TODO-736 B-3 settle 块 + TODO-718
       // 顶部解武装块，函数体持续加长（旧窗口会切断在分发前漏掉末尾误转红）。

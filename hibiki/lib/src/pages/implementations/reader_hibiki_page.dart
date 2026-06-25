@@ -430,72 +430,6 @@ bool readerScrollWithinReanchorSettle({
   return sinceMs >= 0 && sinceMs < settleMs;
 }
 
-/// TODO-798: 连续模式「非自愿 reflow 归零」判据（位置不连续，非时间窗）。
-///
-/// 根因（795/797 都没修到的真因）：连续模式阅读位置是裸 `window.scrollY`。退出再进恢复
-/// 后，WebView 平台视图自发 reflow（box.size 抖动 / 图片或 SVG 异步 settle）把 scrollY
-/// **瞬时归 0**。这个归零产生的 scroll 事件经 JS `_reportReaderScroll` 回传 `onReaderScroll`
-/// → `_refreshProgress` 读到 progress≈0 → 落库章首。
-///
-/// 既有两墙都是**时间边界**的，而它们要防的 reflow 是**时间无边界**的：
-///  - JS `_reanchorPending` 旗只在 commit（begin 后约 1 帧）就清，归零晚到时旗已清；
-///  - Dart B-3 [readerScrollWithinReanchorSettle] 只有 250ms，归零晚到时窗已关。
-/// 大章 + 图片首开的 reflow 远超 250ms → 两墙皆漏 → 797 修了「commit 也武装 B-3」仍无效。
-///
-/// 第一道判据是**位置不连续**而非输入时序（这正是 B-4 `readerProgressDropIsSpurious` 用
-/// 「无近期输入=伪」栽跟头的地方——惯性甩动到真章首无新输入被误判）：非自愿归零是从一个
-/// 实质性的已提交位置 [priorProgress] **单步**塌缩到章首（[newProgress]≈0）。用户真滚到章
-/// 首（含惯性甩动）会经 rAF 节流逐帧上报一串递减进度（0.5→0.4→…→0.05→0），每发都更新
-/// [priorProgress]，到 0 那一发的 prior 已≈0、delta 极小 → 不触发；非自愿 reflow 只产生
-/// **一发** prior=0.5→new≈0 的大跳 → 触发。
-///
-/// 但**仅位置不连续不足以根因区分**「reflow 归零」与「用户抓滚动条 thumb 快拖 / 点轨道
-/// 跳到章首」（TODO-798 续修边界）。桌面连续模式有真实可拖的原生滚动条
-/// （reader_content_styles.dart `scrollbar-width:thin`）；用户拖 thumb / 点轨道跳章首走
-/// **原生 scroll**（绕过 wheel 的 rAF 逐帧路径），而进度采样受 `_refreshProgressFromScroll`
-/// 的 50ms 节流 + in-flight coalesce 限制——追不上手速时，到 0 那一发之前最后采到的 prior
-/// 可能仍停在 0.15~0.3（> [minPriorProgress]），与 reflow 归零在**数据层不可区分**。
-///
-/// TODO-718 重设计（2026-06-25·删除 settleGuardArmed 因果门状态机）：旧版用「武装/解武装」
-/// 状态机区分 reflow 归零 vs 用户拖到章首，但解武装信号被 B-3 settle 窗整发 return / 拦截器命中
-/// 前置 return 双重吞掉 → 门永远 armed → 用户向前滚被 reflow 归零反复拽回恢复锚、滚不出去、保存
-/// 值停在开头（状态机最隐蔽的「信号被吞」bug，此区连改 4 轮）。改为**无状态**判据：直接用本次
-/// 进度刷新是否**由真实用户输入驱动** [fromUserScroll]（JS 据最近 1000ms 内 touch/pointer/wheel/key
-/// 算出，reflow/cue-reveal 程序化滚动恒 false）区分——
-///  - [fromUserScroll]=true（用户真滚，含拖滚动条/惯性甩动到章首）→ 一律放行、接受、落库（无门、
-///    无陷阱，用户能滚到任何位置含章首）；
-///  - [fromUserScroll]=false 且位置从实质性 [priorProgress] 单步塌缩到章首 [newProgress]≈0 →
-///    判定 WebView 自发 reflow 归零 → 复位到已提交锚 + 跳过落库（保护恢复/已读位置不被归零裸奔，
-///    且因 fromUserScroll 是即时事实、非状态，对晚到 reflow 也持续有效，不像旧门解武后失效）。
-///
-/// 仅连续模式（[continuousMode]）；分页模式有 snap/lock 保护，归零不裸奔，恒 false。
-/// 触发后调用方应**复位到已提交锚**（[hasCommittedAnchor] 为真才有锚可复位）并跳过落库；
-/// 无锚（首开尚无任何已提交位置）时无从复位，返回 false 让正常路径处理。
-bool readerContinuousProgressSnapIsInvoluntary({
-  required bool continuousMode,
-  required double priorProgress,
-  required double newProgress,
-  required bool hasCommittedAnchor,
-  required bool fromUserScroll,
-  bool audiobookActivelyFollowing = false,
-  double chapterStartEpsilon = 0.01,
-  double minPriorProgress = 0.05,
-}) {
-  if (!continuousMode) return false;
-  // 用户真实输入驱动的滚动（含拖滚动条/惯性甩动到章首）→ 一律放行：用户要去哪就去哪，绝不
-  // 反向复位。这取代了旧的「武装/解武装」状态机（无状态、不会被前置 return 吞信号、无陷阱）。
-  if (fromUserScroll) return false;
-  // TODO-724：有声书主动播放（逐句 reveal 跟读，含跨章落新章首）由音频 cue 权威驱动，非自发
-  // reflow 归零，放行（否则会把视口拽回上一发 committedAnchor=上章陈旧锚/图片=「有声书跳图片」）。
-  if (audiobookActivelyFollowing) return false;
-  if (!hasCommittedAnchor) return false;
-  // 新进度必须塌缩到章首附近。
-  if (newProgress > chapterStartEpsilon) return false;
-  // 紧邻的上一发进度必须实质性非零（单步大跳 = 非自愿；逐帧递减到 0 = 用户真滚）。
-  if (priorProgress < minPriorProgress) return false;
-  return true;
-}
-
 /// TODO-693 / TODO-697 / TODO-718: 连续模式两阶段重锚的编排核心（运行时序列）。
 ///
 /// 从 `_reanchorContinuousForUiScale` 抽出的可注入编排核心：把门控、阶段1 begin
@@ -917,10 +851,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 与翻章恢复直接调 _refreshProgress。
   bool _scrollProgressInFlight = false;
   bool _scrollProgressPending = false;
-  // TODO-718：节流/coalesce 窗口内累积「本批滚动是否含真实用户输入驱动」。throttle 期多发
-  // scroll 合并时只要有一发是用户驱动即累积为真；待真正发起 _refreshProgress 时消费（赋给
-  // _progressRefreshFromScroll 再清零）。程序化 reflow/cue-reveal 滚动不置真 → 不解武装 798 因果门。
-  bool _scrollUserDrivenPending = false;
   // 卡死修复：滚动触发的进度重算加时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
@@ -945,12 +875,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
-  // TODO-718 重设计：连续模式「非自愿 reflow 归零」判据改用无状态的「本次刷新是否真用户输入
-  // 驱动」[_progressRefreshFromScroll]（删除了旧的 _continuousSettleGuardArmed 武装/解武装状态机
-  // ——其解武装信号被 B-3 窗/拦截器前置 return 吞掉致门永 armed、用户滚不出去）。
-  // 路由位：仅 _refreshProgressFromScroll 经真实用户输入（JS userDriven）触发的 _refreshProgress
-  // 才置真。reflow 归零 / cue-reveal / 轮询 / 恢复 / chrome 驱动恒 false → 判据据此识别自发归零。
-  bool _progressRefreshFromScroll = false;
 
   AudiobookPlayerController? _audiobookController;
   String? _audiobookBookKey;

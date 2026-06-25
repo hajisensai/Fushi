@@ -57,7 +57,7 @@ void main() {
 
     test('② Dart _handleReaderScroll 受门控记四门控真值 + 是否刷新', () {
       // TODO-718：签名加了 bool userDriven 参数（JS 传入的用户输入驱动标志）。
-      final int idx = src.indexOf('void _handleReaderScroll(bool userDriven)');
+      final int idx = src.indexOf('void _handleReaderScroll()');
       expect(idx, greaterThan(0));
       // TODO-736 B-3 在该函数顶部插入 settle 去抖块，函数体加长，窗口放宽到 1900。
       final String body = src.substring(idx, idx + 2700);

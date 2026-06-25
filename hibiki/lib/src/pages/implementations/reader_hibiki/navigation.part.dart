@@ -161,12 +161,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   ///
   /// BUG-380：rAF 节流后回传可能高频到来，走 [_refreshProgressFromScroll] 的「在飞 +
   /// 待重跑」coalesce 守卫，避免较重的 hoshiProgressDetails 调用堆积。
-  void _handleReaderScroll(bool userDriven) {
-    // TODO-718：累积本批滚动是否由真实用户输入驱动（JS 据最近 1000ms 内 touch/pointer/wheel/key
-    // 算出）。节流/coalesce 期多发 scroll 合并，只要有一发用户驱动即记真，待实际发起刷新时消费
-    // （见下方进度刷新路由消费）。这是无状态 reflow-归零判据的唯一区分信号
-    // （取代已删的 _continuousSettleGuardArmed 状态机）：reflow 归零 / cue-reveal = userDriven=false。
-    if (userDriven) _scrollUserDrivenPending = true;
+  void _handleReaderScroll() {
     // TODO-736 B-3：样式重锚 commit 清旗后的 settle 尾沿去抖。改字号/字体/主题 reflow 在
     // commit（_reanchorClearedAt 打点）之后还会有几帧 settle，其间 WebView 自发的瞬态归零
     // scroll 经此回传——250ms 内的尾沿 scroll 直接 return 不落库（治翻页多次改字号跳章首的
@@ -233,14 +228,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _scrollProgressThrottleTimer = null;
     _lastScrollProgressAt = now;
     _scrollProgressInFlight = true;
-    // TODO-798 续修边界 + TODO-718 回归修复：标记本次 _refreshProgress 是否「真实用户原生滚动
-    // 驱动」——是解武装因果门的唯一候选来源。**只有真用户输入**才置真（消费累积的
-    // _scrollUserDrivenPending）；reflow 归零 / 有声书 cue-reveal 等程序化滚动虽也触发 onReaderScroll
-    // 但 userDriven=false → 不解武装，使 798 因果门继续拦得住自发归零（修 718 过早解武装弹回章首）。
-    _progressRefreshFromScroll = _scrollUserDrivenPending;
-    _scrollUserDrivenPending = false;
     _refreshProgress().whenComplete(() {
-      _progressRefreshFromScroll = false;
       _scrollProgressInFlight = false;
       if (_scrollProgressPending && mounted) {
         _scrollProgressPending = false;
@@ -663,45 +651,14 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final int charOffset = snapshot.charOffset;
     final double progress = snapshot.progress;
 
-    // TODO-798：连续模式非自愿 reflow 归零拦截（位置不连续判据，真因修复）。
-    // 退出再进恢复落定后，WebView 自发 reflow 把裸 window.scrollY 瞬时归 0，归零 scroll
-    // 经 onReaderScroll → 这里读到 progress≈0。既有 JS _reanchorPending 旗 / Dart B-3
-    // 250ms 窗都是时间边界的，大章+图片首开 reflow 远超 250ms 时晚到的归零穿过两墙落库
-    // 章首（795/797 没修到的真因）。改用「上一发实质性非零 → 这一发单步塌缩到章首」判
-    // 非自愿（与输入时序无关，不误伤惯性甩动）：命中则根因式**复位到已提交字符锚**（把
-    // 视口滚回，不止跳过落库）并 return——保留 _lastProgress* 不被归零覆盖，不污染落库/统计。
-    final double priorProgress = _lastProgressValue;
-    final int committedAnchor = _lastProgressCharOffset >= 0
-        ? _lastProgressCharOffset
-        : _initialCharOffset;
-    final bool fromUserScroll = _progressRefreshFromScroll;
-    if (readerContinuousProgressSnapIsInvoluntary(
-      continuousMode: _settings?.isContinuousMode == true,
-      priorProgress: priorProgress,
-      newProgress: progress,
-      hasCommittedAnchor: committedAnchor >= 0,
-      // TODO-718 重设计：无状态判据——本次刷新是否真用户输入驱动（取代已删的因果门状态机）。
-      fromUserScroll: fromUserScroll,
-      // TODO-724：有声书主动播放跟读期，进度由音频 cue 权威驱动，放行（不反向复位到陈旧锚）。
-      audiobookActivelyFollowing: _audiobookController?.isPlaying == true,
-    )) {
-      if (DebugLogService.instance.enabled) {
-        debugPrint('[ReaderDiag] _refreshProgress involuntary reflow-zero snap'
-            ' prior=${priorProgress.toStringAsFixed(4)}'
-            ' new=${progress.toStringAsFixed(4)}'
-            ' fromScroll=$fromUserScroll'
-            ' → re-anchor to committed charOffset=$committedAnchor (no save)');
-      }
-      // 复位到已提交锚（webview.part.dart 的 _reanchorPending 守卫挡住复位滚动自身回传）。
-      if (_controller != null) {
-        _controller!.evaluateJavascript(
-          source: ReaderPaginationScripts.scrollToCharOffsetInvocation(
-            committedAnchor,
-          ),
-        );
-      }
-      return;
-    }
+    // TODO-718（回退式根治·2026-06-25）：原 TODO-798「位置不连续启发式拦截器」+ userDriven
+    // 路由已整套删除——它依赖的 userDriven 信号真机恒真致拦截器形同虚设、且与原始 reanchor
+    // 机制并存打架（横排误触发跳章）。抗自发 reflow 归零回到干净的源头屏蔽机制：恢复完成
+    // 的 [_reanchorContinuousAfterRestore] 两阶段 begin→commit 期间，webview.part.dart 的
+    // `_reanchorPending` 旗在 scroll 上报源头直接 return，归零 scroll 根本不回传、永不落库，
+    // settle 后把锚滚回；commit 清旗那一刻起 B-3 250ms 窗在 _handleReaderScroll 兜尾沿。
+    // 晚到 reflow（cue 注入 / 大章 settle）由事件驱动重锚覆盖（见 _reanchorContinuousAfterRestore
+    // 的再触发点）。这里不再做任何启发式判据，读到什么就如实落库。
 
     _lastProgressSection = _currentChapter;
     _lastProgressValue = progress;
@@ -796,31 +753,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
 
-    // TODO-718（真机铁证·2026-06-25）：退出 / lifecycle flush 的这次**实时读**会撞上
-    // 「重开恢复 + sasayaki cue 注入」引发的自发 reflow 归零——cue 高亮注入 mutate DOM →
-    // WebView 把 scrollY 瞬时归 0，stableProgress 返回**有效的 0**（非 null，躲过上面的 null
-    // 守卫）。这条 flush 路径**不经** _refreshProgress 的非自愿归零拦截器，会把 _lastProgress*
-    // 直接覆盖成 (0,0) 再 _flushPosition 落库 → 把刚恢复好的位置写成章首（日志实测：重开
-    // restore=201、onLoadStop=0.0201 全对，无任何用户滚动，cue 注入后 flush 出 normOffset=0 →
-    // 下次进来章首）。复用 _refreshProgress 同源判据：实时读塌缩到章首、缓存位置明显非章首、
-    // 非有声书跟读 → 判自发 reflow 归零，**丢弃本次读、保留缓存锚**（_lastProgress* 不被归零
-    // 覆盖，_flushPosition 落缓存的真实位置）。fromUserScroll=false：退出读是程序化的，用户真
-    // 滚已由 _refreshProgress 实时写进 _lastProgress*；minPriorProgress=chapterStartEpsilon
-    // 而非默认 0.05，使 2% 这种小但真实的位置也受保护（用户位置常 <5%）。
-    final int committedAnchor = _lastProgressCharOffset >= 0
-        ? _lastProgressCharOffset
-        : _initialCharOffset;
-    if (readerContinuousProgressSnapIsInvoluntary(
-      continuousMode: _settings?.isContinuousMode == true,
-      priorProgress: _lastProgressValue,
-      newProgress: snapshot.progress,
-      hasCommittedAnchor: committedAnchor >= 0,
-      fromUserScroll: false,
-      audiobookActivelyFollowing: _audiobookController?.isPlaying == true,
-      minPriorProgress: 0.01,
-    )) {
+    // TODO-718：退出 / lifecycle flush 的这次**实时读**可能撞上自发 reflow 归零（cue 注入 /
+    // settle 把 scrollY 瞬时归 0，stableProgress 返回**有效的 0**）。简单不变量（非启发式·无
+    // userDriven·无时间窗·无重锚动作）：退出读不得用瞬时 ≈0 覆盖一个已知非章首的缓存位置。
+    // 连续模式下，若读到章首(≤epsilon)而缓存位置明显非章首、且非有声书播放 → 判瞬时归零，
+    // 丢弃本次读、保留缓存（_flushPosition 落缓存的真实位置）。用户真滚到章首时 _lastProgressValue
+    // 已被 _refreshProgress 实时写≈0，prior 不再>epsilon → 不拦，如实落 0。
+    const double chapterStartEpsilon = 0.01;
+    final bool transientZero = _settings?.isContinuousMode == true &&
+        snapshot.progress <= chapterStartEpsilon &&
+        _lastProgressValue > chapterStartEpsilon &&
+        _audiobookController?.isPlaying != true;
+    if (transientZero) {
       if (DebugLogService.instance.enabled) {
-        debugPrint('[ReaderHibiki] syncPosition skip involuntary reflow-zero: '
+        debugPrint('[ReaderHibiki] syncPosition skip transient reflow-zero: '
             'prior=${_lastProgressValue.toStringAsFixed(4)} '
             'read=${snapshot.progress.toStringAsFixed(4)} → keep cached anchor');
       }
