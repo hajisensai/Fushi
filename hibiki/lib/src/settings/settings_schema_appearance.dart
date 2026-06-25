@@ -68,7 +68,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.app_icon',
             title: t.app_icon_label,
             icon: Icons.widgets_outlined,
-            visible: (_) => Platform.isAndroid,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
             builder: (_) => const MiscellaneousSettingsPage(),
           ),
           SettingsSwitchItem(
