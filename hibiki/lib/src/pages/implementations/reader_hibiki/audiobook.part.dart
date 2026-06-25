@@ -544,6 +544,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 滚到插图（配合 Dart 的 triggerImagePause 暂停让用户看见）。imagePauseSec=0
     // 时图片暂停关闭，绝不滚图，否则视口会无预兆跳到不知哪张图（用户报告症状）。
     final bool pauseEnabled = controller.imagePauseSec.value > 0;
+    // TODO-825：cue 权威驱动视口跟随时（reveal=true）AudiobookBridge.highlight 会经 JS
+    // scrollToTarget 用 behavior:'smooth' 平滑滚动到当前句。这条程序化跟随滚动必须武装 B-3
+    // settle 保护窗（与 恢复/缩放/换样式 三条 reanchor commit 同机制，见 eaa151581）：smooth
+    // 动画跨多帧落定，落定那帧 WebView 回弹的 scroll 经 _handleReaderScroll 回传 → 若不抑制就
+    // 触发 _refreshProgress setState 重绘 + 可能命中 TODO-798 非自愿归零判据被反手二次滚动 =
+    // 「停下→被拽回」闪屏。在发起跟随滚动前打点 _reanchorClearedAt，使 readerScrollWithinReanchorSettle
+    // 在落定尾沿 250ms 内一律 return 不落库/不复位，从源头消除二次反弹——动画保留，闪烁治住。
+    // reveal=false（被动高亮/暂停态）不滚视口，不打点，不影响用户自控滚动落库。
+    if (reveal) {
+      _reanchorClearedAt = DateTime.now();
+    }
     AudiobookBridge.highlight(
       _controller!,
       cue: cue,

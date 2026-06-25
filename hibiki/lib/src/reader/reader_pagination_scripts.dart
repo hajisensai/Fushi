@@ -2248,13 +2248,15 @@ $_sharedJs
     document.body.scrollTop = 0;
     document.body.scrollLeft = 0;
   },
-  // TODO-803：连续模式有声书逐句高亮跟随滚动必须用 behavior:'instant'，禁用 'smooth'。
-  // smooth 是「滚动结束闪一下屏幕」的根因：① smooth 动画跨多帧逐帧派发 scroll 事件，每帧
-  // 经 onReaderScroll 回弹回 Dart 触发 _refreshProgress（cue reveal 不武装 B-3/_reanchorPending，
-  // 不受 250ms settle 窗保护）→ 动画落定那一发 setState 重绘 + TODO-798 非自愿归零判据可能
-  // 反手复位二次滚动，视觉上「停下→被拽回」=闪屏；② smooth 在快速句子切换/快进时排队堆积
-  // 导致视口抖动（历史 d6b99b95c 已因此从 smooth 改 instant，f2c984b3b 为「拉回动画」又改回，
-  // 是回归）。分页模式 reveal（scrollToRange）一直是 instant 不闪，连续模式对齐之。
+  // TODO-825：连续模式有声书逐句高亮跟随滚动用 behavior:'smooth' 平滑动画（用户要求恢复
+  // 动画，禁止砍成 instant——见已撤的 TODO-803）。「滚动结束闪一下屏幕」的根因不是 smooth
+  // 动画本身，而是这条**程序化跟随滚动没武装 settle 保护窗**：cue reveal 经 Dart
+  // AudiobookBridge.highlight(reveal:true) 触发本函数，但当年只有 恢复/缩放/换样式 三条
+  // reanchor commit 武装了 B-3 250ms settle 窗（eaa151581）→ smooth 动画落定那帧 scroll 回弹
+  // 回 Dart 触发 _refreshProgress setState 重绘 + 可能命中 TODO-798 非自愿归零判据被反手二次
+  // 滚动 = 闪屏。TODO-825 的根因修是在 Dart 跟随滚动调用点（audiobook.part.dart _onCueChanged
+  // reveal 分支）武装 _reanchorClearedAt 让 B-3 窗覆盖这条平滑滚动的落定尾沿，从源头消除二次
+  // 反弹——动画保留，闪烁靠 settle 窗治住。分页模式 reveal（scrollToRange）走另一路不受影响。
   scrollToTarget: function(target) {
     var rect = this.getRect(target);
     var margin = 0.15;
@@ -2264,15 +2266,15 @@ $_sharedJs
       var safe = vw * margin;
       if (rect.left >= safe && rect.right <= vw - safe) return false;
       if (wm === 'vertical-rl') {
-        window.scrollBy({left: rect.right - (vw - safe), behavior: 'instant'});
+        window.scrollBy({left: rect.right - (vw - safe), behavior: 'smooth'});
       } else {
-        window.scrollBy({left: rect.left - safe, behavior: 'instant'});
+        window.scrollBy({left: rect.left - safe, behavior: 'smooth'});
       }
     } else {
       var vh = window.innerHeight;
       var safe = vh * margin;
       if (rect.top >= safe && rect.bottom <= vh - safe) return false;
-      window.scrollBy({top: rect.top - safe, behavior: 'instant'});
+      window.scrollBy({top: rect.top - safe, behavior: 'smooth'});
     }
     return true;
   },
