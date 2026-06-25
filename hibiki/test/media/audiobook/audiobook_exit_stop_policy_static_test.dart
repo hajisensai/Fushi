@@ -69,4 +69,52 @@ void main() {
           '不能无条件 stop（开启后台续播时应保留会话继续播）',
     );
   });
+
+  // TODO-831：退出即停的时机从 dispose 提前到 onSourcePagePop（被 onWillPop
+  // await，pop 动画开始前完成），让书架 NowListeningMiniBar 从首帧就见空会话、
+  // 不闪播放条。这里钉住该提前的 await stop 在偏好门控内存在；dispose 的兜底
+  // unawaited(stop()) 由上面三条守卫继续钉。
+  test('onSourcePagePop awaits a guarded stop on exit (TODO-831)', () {
+    final RegExpMatch? body = RegExp(
+      r'Future<void> onSourcePagePop\(\) async \{(.*?)\n  \}',
+      dotAll: true,
+    ).firstMatch(src);
+    expect(body, isNotNull, reason: '找不到 onSourcePagePop 方法体');
+    final String pop = body!.group(1)!;
+    expect(
+      RegExp(
+        r'if\s*\(\s*!appModel\.audiobookBackgroundPlay\s*\)\s*\{[\s\S]*?'
+        r'await\s+appModel\.audiobookSession\.stop\(\)',
+      ).hasMatch(pop),
+      isTrue,
+      reason: '退出即停必须在 onSourcePagePop 里按 !audiobookBackgroundPlay '
+          '门控 await stop（pop 动画前止声，消除迷你条闪播放条）',
+    );
+  });
+
+  // W1（TODO-831 复核）：onSourcePagePop 被 onWillPop await，若 stop 在桌面释放
+  // native 解码器时抛平台异常，异常会沿 onWillPop → onPopInvokedWithResult 逃逸，
+  // 导致 nav.pop() 不执行（用户退不出阅读器）。这里钉住 await stop 被 try/catch
+  // 包裹、异常记到 ErrorLogService、catch 后照常退出（与 dispose 路径 catchError
+  // 对齐）；防止未来重构把这层错误守卫去掉。
+  test('onSourcePagePop guards stop() with try/catch + ErrorLogService (W1)',
+      () {
+    final RegExpMatch? body = RegExp(
+      r'Future<void> onSourcePagePop\(\) async \{(.*?)\n  \}',
+      dotAll: true,
+    ).firstMatch(src);
+    expect(body, isNotNull, reason: '找不到 onSourcePagePop 方法体');
+    final String pop = body!.group(1)!;
+    expect(
+      RegExp(
+        r'try\s*\{[\s\S]*?'
+        r'await\s+appModel\.audiobookSession\.stop\(\)[\s\S]*?'
+        r'\}\s*catch\s*\([^)]*\)\s*\{[\s\S]*?'
+        r'ErrorLogService\.instance\.log\(',
+      ).hasMatch(pop),
+      isTrue,
+      reason: 'onSourcePagePop 的 await stop 必须被 try/catch 包裹、异常记到 '
+          'ErrorLogService，stop 抛异常时不得逃逸阻断 nav.pop()（W1）',
+    );
+  });
 }

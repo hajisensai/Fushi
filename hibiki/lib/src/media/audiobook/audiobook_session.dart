@@ -237,6 +237,12 @@ class AudiobookSession extends ChangeNotifier {
     _reader = null;
     _controller = null;
     _book = null;
+    // TODO-831：同步清空 _book/_controller 后立即通知一次，让监听者（书架
+    // NowListeningMiniBar）在下面 await stopPlayback / _stopBackgroundSurfaces
+    // 之前就见到空会话并收起，不必等末尾那次 notifyListeners。止声/释放解码器的
+    // 既有顺序（stopPlayback→dispose，BUG-278/367）不变；末尾 notifyListeners
+    // 保留，覆盖 await 期间可能产生的其它监听者。
+    notifyListeners();
 
     _playStreamSub?.cancel();
     _seekStreamSub?.cancel();
