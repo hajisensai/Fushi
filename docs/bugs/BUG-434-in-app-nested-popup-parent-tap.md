@@ -7,9 +7,9 @@
   - `popup.js:2763` 卡片分支改门控：`if (window.__hasChildPopup) callHandler('tapOutside'); return;`（叶子层 `__hasChildPopup` falsy 仍裸 return 保持 859）。
   - `DictionaryPopupWebView` 新增 `hasChildPopup` 入参 + `_setHasChildPopupJs(bool)` 注入 `window.__hasChildPopup`，`didUpdateWidget` 用**独立 if**（不搭 result 便车）、onLoadStop 冷加载补发初值。
   - `DictionaryPopupLayer` 透传 `hasChildPopup`；三处 in-app 渲染点（`base_source_page.dart` / `dictionary_page_mixin.dart` / `popup_dictionary_page.dart`）按 `index < entries.length - 1` 派生传入。
-  - 提交：b86c0defaf99a65f63c698547a0ae183c1b5e7a5
+  - 提交：93e9660f7
 - **[x] ② 已加自动化测试** —
   - JS 纯守卫 `hibiki/test/utils/misc/popup_asset_behavior_test.js`：`__hasChildPopup` true/false 点 .entry / .kanji-card-section 两分支、点 .glossary-content 文字不被门控波及、点纯背景两态都发 tapOutside（撤修复转红已实测）。
   - 源码守卫 `hibiki/test/pages/dictionary_child_popup_close_guard_test.dart`：popup.js 门控正则、webview 两个独立 if、三处 host 的派生表达式。
-  - 提交：b86c0defaf99a65f63c698547a0ae183c1b5e7a5
+  - 提交：93e9660f7
 - **备注**：与 TODO-859（点卡片留白保留本层）/ TODO-834（dismissDescendantsOf 关后代）配套；global_lookup 走独立 native WebView2 不经 layer，不受影响。
