@@ -641,7 +641,15 @@ function constructSingleGlossaryHtml(entryIndex) {
         currentGlossary = '';
     };
     
+    // TODO-865 / BUG-419 sibling: hidden term dictionaries stay registered in the
+    // FFI engine (see AppModel.bucketDictPaths — filtering happens at render time),
+    // so entry.glossaries still carries their definitions. The mining payload path
+    // (constructSingleGlossaryHtml / constructGlossaryHtml) must drop them too, the
+    // same way createGlossarySectionWrapper does for the lookup popup, so a disabled
+    // dictionary's glossary never ends up in an Anki card field.
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
         const dictName = g.dictionary;
         const dictChanged = lastDict !== dictName;
         if (dictChanged) {
@@ -697,7 +705,9 @@ function constructGlossaryHtml(entryIndex) {
     let prevTags = null;
     let index = 0;
     
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
         const dictName = g.dictionary;
 
         const tempDiv = document.createElement('div');
