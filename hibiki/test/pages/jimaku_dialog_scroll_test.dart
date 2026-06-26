@@ -290,4 +290,126 @@ void main() {
         reason: '窄窗对话框宽应 <=屏宽-32（insetPadding horizontal:16 左右共 32）');
     expect(tester.takeException(), isNull, reason: '窄窗不应溢出');
   });
+
+  // ── TODO-674: 语言筛选 + 记忆 + 集数保底 ────────────────────────────────
+
+  /// 混合语言候选（ja/zh + 一个认不出语言）。
+  List<JimakuCandidate> mixedLangCandidates() => <JimakuCandidate>[
+        JimakuCandidate(
+            entryName: 'S',
+            file: JimakuFile(name: 'ep01.ja.srt', url: 'https://x/1')),
+        JimakuCandidate(
+            entryName: 'S',
+            file: JimakuFile(name: 'ep02.ja.srt', url: 'https://x/2')),
+        JimakuCandidate(
+            entryName: 'S',
+            file: JimakuFile(name: 'ep01.zh.srt', url: 'https://x/3')),
+        JimakuCandidate(
+            entryName: 'S',
+            file: JimakuFile(name: 'ep01.srt', url: 'https://x/4')),
+      ];
+
+  /// pump 真实对话框（混合语言候选），可注入语言记忆 + 选语言回调。
+  Future<void> pumpLangDialog(
+    WidgetTester tester, {
+    String? initialPreferredLanguage,
+    void Function(String lang)? onLang,
+  }) async {
+    tester.view.physicalSize = const Size(720, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        key: UniqueKey(),
+        home: Scaffold(
+          body: Builder(builder: (BuildContext ctx) {
+            return ElevatedButton(
+              onPressed: () => showDialog<String>(
+                context: ctx,
+                builder: (_) => JimakuSubtitleDialog(
+                  initialQuery: 'Some Anime',
+                  initialApiKey: 'TEST_KEY',
+                  onApiKeyChanged: (_) async {},
+                  saveDirectory: '/tmp/jimaku',
+                  initialPreferredLanguage: initialPreferredLanguage,
+                  onPreferredLanguageChanged: (String lang) async =>
+                      onLang?.call(lang),
+                  debugInitialCandidates: mixedLangCandidates(),
+                ),
+              ),
+              child: const Text('open'),
+            );
+          }),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+  }
+
+  // 候选列表喂给 JimakuCandidateList 的候选数（语言筛选后）。比数 ListTile 更可靠：
+  // 列表是非 shrinkWrap 懒加载 ListView，只渲染可视行，数 ListTile 会受屏高影响。
+  int shownCandidateCount(WidgetTester tester) {
+    final JimakuCandidateList list =
+        tester.widget(find.byType(JimakuCandidateList));
+    return list.candidates.length;
+  }
+
+  testWidgets('TODO-674: language chips render only present languages + All',
+      (WidgetTester tester) async {
+    await pumpLangDialog(tester);
+    // 「全部」+ ja + zh chip 渲染；ko/en 不渲染（候选里没有）。
+    expect(find.widgetWithText(ChoiceChip, t.video_jimaku_language_all),
+        findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, '日本語'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, '中文'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'English'), findsNothing);
+    // 默认「全部」：4 条候选全列（含认不出语言的 ep01.srt）。
+    expect(shownCandidateCount(tester), 4);
+  });
+
+  testWidgets('TODO-674: selecting ja filters list + persists language',
+      (WidgetTester tester) async {
+    String? saved;
+    await pumpLangDialog(tester, onLang: (String l) => saved = l);
+    await tester.tap(find.widgetWithText(ChoiceChip, '日本語'));
+    await tester.pumpAndSettle();
+    // 选 ja：只剩 2 条 ja 候选（认不出语言的被过滤）。
+    expect(shownCandidateCount(tester), 2);
+    // 选择即写：持久化回调被调用。
+    expect(saved, 'ja');
+  });
+
+  testWidgets('TODO-674: remembered language preselects + prefilters list',
+      (WidgetTester tester) async {
+    await pumpLangDialog(tester, initialPreferredLanguage: 'zh');
+    // 记忆语言 zh 预选 → 首屏只列 1 条 zh 候选。
+    expect(shownCandidateCount(tester), 1);
+    final ChoiceChip zhChip =
+        tester.widget(find.widgetWithText(ChoiceChip, '中文'));
+    expect(zhChip.selected, isTrue, reason: '记忆语言应预选');
+  });
+
+  testWidgets(
+      'TODO-674: remembered language absent in results falls back to All',
+      (WidgetTester tester) async {
+    // 记忆 ko，但候选里没有 ko → 退回「全部」，不空屏。
+    await pumpLangDialog(tester, initialPreferredLanguage: 'ko');
+    expect(shownCandidateCount(tester), 4, reason: '退回全部，列全部候选');
+    final ChoiceChip allChip = tester
+        .widget(find.widgetWithText(ChoiceChip, t.video_jimaku_language_all));
+    expect(allChip.selected, isTrue, reason: '无候选的记忆语言退回「全部」');
+  });
+
+  testWidgets(
+      'TODO-674: episode field present + empty value lists all (no shrink)',
+      (WidgetTester tester) async {
+    await pumpLangDialog(tester);
+    // 集数输入框存在（labelText）。
+    expect(
+        find.widgetWithText(TextField, t.video_jimaku_episode), findsOneWidget);
+    // 默认空集号：候选数不减（= 现状，保底空集号不藏候选）。
+    expect(shownCandidateCount(tester), 4);
+  });
 }

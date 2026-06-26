@@ -1825,5 +1825,10 @@
   "collection_export_all_words": "All favorite words",
   "collection_export_no_items": "Nothing to export",
   "invert_audiobook_skip_direction": "Invert bottom-bar skip buttons",
-  "section_bottom_bar_layout": "Bottom bar layout"
+  "section_bottom_bar_layout": "Bottom bar layout",
+  "video_jimaku_episode": "Episode (optional)",
+  "video_jimaku_episode_hint": "Leave empty to list all",
+  "video_jimaku_language": "Language",
+  "video_jimaku_language_all": "All",
+  "video_jimaku_show_all_episodes": "Show all episodes"
 }

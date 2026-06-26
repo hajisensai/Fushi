@@ -1825,5 +1825,10 @@
   "collection_export_all_words": "全部收藏词",
   "collection_export_no_items": "没有可导出的内容",
   "invert_audiobook_skip_direction": "反转底栏前进后退按钮",
-  "section_bottom_bar_layout": "底栏布局"
+  "section_bottom_bar_layout": "底栏布局",
+  "video_jimaku_episode": "集数（可选）",
+  "video_jimaku_episode_hint": "留空列出全部",
+  "video_jimaku_language": "语言",
+  "video_jimaku_language_all": "全部",
+  "video_jimaku_show_all_episodes": "显示全部集"
 }

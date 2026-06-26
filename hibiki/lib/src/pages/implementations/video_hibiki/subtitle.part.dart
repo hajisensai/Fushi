@@ -308,6 +308,11 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     final Directory docs = await getApplicationDocumentsDirectory();
     final String saveDir = p.join(docs.path, 'video_subtitles');
     if (!context.mounted) return;
+    // 语言记忆按系列（番名）粒度：seriesKey = query 归一（小写 + trim），与
+    // PreferencesRepository 的 map key 约定一致。打开时读上次语言、选中时写回。
+    final String seriesKey = query.trim().toLowerCase();
+    final String? preferredLanguage =
+        appModel.jimakuPreferredLanguages[seriesKey];
     final String? downloaded = await showDialog<String>(
       context: context,
       builder: (_) => JimakuSubtitleDialog(
@@ -315,6 +320,9 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         initialApiKey: appModel.jimakuApiKey,
         onApiKeyChanged: (String key) => appModel.setJimakuApiKey(key),
         saveDirectory: saveDir,
+        initialPreferredLanguage: preferredLanguage,
+        onPreferredLanguageChanged: (String lang) =>
+            appModel.setJimakuPreferredLanguage(seriesKey, lang),
       ),
     );
     // Jimaku 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。

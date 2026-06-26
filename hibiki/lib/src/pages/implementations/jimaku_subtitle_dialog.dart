@@ -23,6 +23,55 @@ class JimakuCandidate {
   const JimakuCandidate({required this.entryName, required this.file});
   final String entryName;
   final JimakuFile file;
+
+  /// 该候选文件名识别出的语言代码（`ja`/`zh`/`en`/`ko`），认不出为 `null`。
+  String? get language => detectSubtitleLanguage(file.name);
+}
+
+/// 按语言代码筛选候选。[language] 为 null（= 全部）时原样返回；非 null 时只留该语言
+/// 的候选。纯函数，便于单测。
+///
+/// 保底：识别不出语言（`candidate.language == null`）的候选在选定具体语言时被过滤掉，
+/// 但「全部」永远列出全部——故认不出语言绝不会让候选彻底消失（仍能在「全部」里看到）。
+List<JimakuCandidate> filterCandidatesByLanguage(
+    List<JimakuCandidate> candidates, String? language) {
+  if (language == null) return candidates;
+  return candidates
+      .where((JimakuCandidate c) => c.language == language)
+      .toList(growable: false);
+}
+
+/// 候选里出现过的语言代码集合（去重，稳定顺序 ja/zh/en/ko 优先）。用于渲染语言筛选
+/// chip。认不出语言（null）不计入（归到「全部」）。纯函数。
+List<String> availableLanguages(List<JimakuCandidate> candidates) {
+  const List<String> order = <String>['ja', 'zh', 'en', 'ko'];
+  final Set<String> present = <String>{};
+  for (final JimakuCandidate c in candidates) {
+    final String? lang = c.language;
+    if (lang != null) present.add(lang);
+  }
+  final List<String> out = <String>[];
+  for (final String lang in order) {
+    if (present.remove(lang)) out.add(lang);
+  }
+  out.addAll(present);
+  return out;
+}
+
+/// 语言代码 → 显示名（chip 文案）。白名单外回退原代码大写。
+String jimakuLanguageLabel(String code) {
+  switch (code) {
+    case 'ja':
+      return '日本語';
+    case 'zh':
+      return '中文';
+    case 'en':
+      return 'English';
+    case 'ko':
+      return '한국어';
+    default:
+      return code.toUpperCase();
+  }
 }
 
 /// 「自动获取字幕（Jimaku）」对话框（参照 asbplayer）：填 API key → 用番名经 AniList
@@ -36,6 +85,8 @@ class JimakuSubtitleDialog extends StatefulWidget {
     required this.initialApiKey,
     required this.onApiKeyChanged,
     required this.saveDirectory,
+    this.initialPreferredLanguage,
+    this.onPreferredLanguageChanged,
     this.debugInitialCandidates,
     super.key,
   });
@@ -52,6 +103,12 @@ class JimakuSubtitleDialog extends StatefulWidget {
   /// 下载字幕保存目录（绝对路径，函数内确保存在）。
   final String saveDirectory;
 
+  /// 上次为该系列选过的字幕语言代码（按系列记忆，调起处从偏好读出）；null = 无记忆。
+  final String? initialPreferredLanguage;
+
+  /// 选中语言时的持久化回调（TODO-674，与 [onApiKeyChanged] 同范式）；null = 不持久化。
+  final Future<void> Function(String langCode)? onPreferredLanguageChanged;
+
   /// 仅测试用：预置候选结果，免去联网搜索即可验证「已有结果」时的列表布局/滚动。
   @visibleForTesting
   final List<JimakuCandidate>? debugInitialCandidates;
@@ -65,6 +122,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
       TextEditingController(text: widget.initialApiKey);
   late final TextEditingController _queryCtrl =
       TextEditingController(text: widget.initialQuery);
+  // 集数输入框：初值空（用户决策「默认空」）。空 → 不传 episode（= 现状列全部）。
+  final TextEditingController _episodeCtrl = TextEditingController();
 
   bool _searching = false;
   bool _searched = false;
@@ -75,14 +134,31 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   bool _apiKeyCollapsed = false;
   String _filter = ''; // 候选列表二次关键词筛选（asbplayer 式，按 WEBRip/BD 等过滤）
 
+  /// 当前选中的语言筛选；null = 「全部」（不过滤）。
+  String? _selectedLanguage;
+
+  /// 上次搜索是否带了集数（用于「该集无结果」时显示「显示全部集」出口）。
+  bool _searchedWithEpisode = false;
+
   @override
   void initState() {
     super.initState();
+    _selectedLanguage = widget.initialPreferredLanguage;
     final List<JimakuCandidate>? seed = widget.debugInitialCandidates;
     if (seed != null && seed.isNotEmpty) {
       _candidates = List<JimakuCandidate>.unmodifiable(seed);
       _searched = true;
       _apiKeyCollapsed = widget.initialApiKey.trim().isNotEmpty;
+      _reconcileSelectedLanguage();
+    }
+  }
+
+  /// 把记忆/选中的语言与当前候选对齐：记忆语言本次结果里没出现 → 退回「全部」
+  /// （保底：绝不因记忆语言无候选而空屏）。
+  void _reconcileSelectedLanguage() {
+    final String? lang = _selectedLanguage;
+    if (lang != null && !availableLanguages(_candidates).contains(lang)) {
+      _selectedLanguage = null;
     }
   }
 
@@ -90,6 +166,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   void dispose() {
     _apiKeyCtrl.dispose();
     _queryCtrl.dispose();
+    _episodeCtrl.dispose();
     super.dispose();
   }
 
@@ -101,6 +178,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
       return;
     }
     if (query.isEmpty) return;
+    // 集数：空或非法 → null（不传 episode = 现状列全部），保底逻辑见 §1.2。
+    final int? episode = int.tryParse(_episodeCtrl.text.trim());
     await widget.onApiKeyChanged(apiKey);
 
     setState(() {
@@ -124,7 +203,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
 
       final List<JimakuCandidate> candidates = <JimakuCandidate>[];
       for (final JimakuEntry entry in entries) {
-        final List<JimakuFile> files = await jimaku.listFiles(entry.id);
+        final List<JimakuFile> files =
+            await jimaku.listFiles(entry.id, episode: episode);
         for (final JimakuFile f in files) {
           if (f.isTextSubtitle) {
             candidates.add(JimakuCandidate(entryName: entry.name, file: f));
@@ -135,6 +215,9 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
       setState(() {
         _candidates = candidates;
         _searched = true;
+        _searchedWithEpisode = episode != null;
+        // 记忆语言本次无候选 → 退回「全部」，不空屏（保底）。
+        _reconcileSelectedLanguage();
         // 配好 key 且搜出结果后，默认收起 API key 输入区腾出列表空间
         // （用户：「apikey 配完是不是可以缩小显示」）。用户仍可点「修改」展开。
         _apiKeyCollapsed = candidates.isNotEmpty;
@@ -208,6 +291,49 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
     );
   }
 
+  /// 选某语言（[lang]=null 即「全部」）：更新筛选 + 选具体语言时持久化记忆（选择即写）。
+  Future<void> _selectLanguage(String? lang) async {
+    setState(() => _selectedLanguage = lang);
+    if (lang != null) {
+      await widget.onPreferredLanguageChanged?.call(lang);
+    }
+  }
+
+  /// 「显示全部集」：清空集数框并重搜（不带 episode），从 Jimaku 启发式误伤里逃生。
+  void _showAllEpisodes() {
+    _episodeCtrl.clear();
+    _search();
+  }
+
+  /// 语言筛选 chip 排（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
+  Widget _buildLanguageChips() {
+    final List<String> langs = availableLanguages(_candidates);
+    if (langs.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text(t.video_jimaku_language,
+              style: Theme.of(context).textTheme.labelMedium),
+          ChoiceChip(
+            label: Text(t.video_jimaku_language_all),
+            selected: _selectedLanguage == null,
+            onSelected: (_) => _selectLanguage(null),
+          ),
+          for (final String lang in langs)
+            ChoiceChip(
+              label: Text(jimakuLanguageLabel(lang)),
+              selected: _selectedLanguage == lang,
+              onSelected: (_) => _selectLanguage(lang),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -231,12 +357,41 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
         children: <Widget>[
           Text(t.video_jimaku_fetch, style: theme.textTheme.titleLarge),
           const SizedBox(height: 16),
-          _buildApiKeySection(),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _queryCtrl,
-            decoration: InputDecoration(labelText: t.video_jimaku_query),
-            onSubmitted: (_) => _search(),
+          // 头部输入区（api key / query / episode）放进可收缩的 Flexible 滚动视图：矮屏
+          // （TODO-674 新增了 episode 必填项后头部更高）时整个头部能内部滚动，不再把固定
+          // 兄弟撑出 RenderFlex 溢出；高屏自然贴合内容、不滚。候选列表仍是独立 Flexible，
+          // 保留 BUG-279（非 shrinkWrap ListView）不变量。
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _buildApiKeySection(),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _queryCtrl,
+                    decoration:
+                        InputDecoration(labelText: t.video_jimaku_query),
+                    onSubmitted: (_) => _search(),
+                  ),
+                  const SizedBox(height: 8),
+                  // 集数输入：默认空 → 列全部（现状）；填数字 → 只搜该集（Jimaku 服务端
+                  // 启发式）。hint（而非 helperText）内联在框里，不额外占一行垂直空间。
+                  TextField(
+                    controller: _episodeCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: t.video_jimaku_episode,
+                      hintText: t.video_jimaku_episode_hint,
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.tag, size: 18),
+                    ),
+                    onSubmitted: (_) => _search(),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           if (_searching)
@@ -247,10 +402,25 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
           else if (_searched && _candidates.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child:
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
                   Text(t.video_jimaku_no_results, textAlign: TextAlign.center),
+                  // 带了集数却 0 结果：Jimaku 文件名启发式可能误伤整季打包字幕，给一键
+                  // 「显示全部集」逃生口（清集数框重搜）。
+                  if (_searchedWithEpisode) ...<Widget>[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _showAllEpisodes,
+                      icon: const Icon(Icons.list, size: 18),
+                      label: Text(t.video_jimaku_show_all_episodes),
+                    ),
+                  ],
+                ],
+              ),
             )
           else if (_candidates.isNotEmpty) ...<Widget>[
+            _buildLanguageChips(),
             TextField(
               decoration: InputDecoration(
                 labelText: t.video_jimaku_filter,
@@ -263,10 +433,11 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
             // 候选列表吃掉对话框内剩余的高度：外层 HibikiDialogFrame（scrollable:false）
             // 已把整个对话框高度有界化，这里的 Flexible 能正确分到剩余空间，内部普通
             //（非 shrinkWrap）ListView 填满后正常滚动。矮屏剩余空间小但仍可滚，高屏自
-            // 然变高。
+            // 然变高。先按语言筛选（_selectedLanguage），再交给列表做关键词二次筛选。
             Flexible(
               child: JimakuCandidateList(
-                candidates: _candidates,
+                candidates:
+                    filterCandidatesByLanguage(_candidates, _selectedLanguage),
                 filter: _filter,
                 busyName: _busyName,
                 onDownload: _busyName == null ? _download : null,

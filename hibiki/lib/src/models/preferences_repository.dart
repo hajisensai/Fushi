@@ -672,6 +672,35 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 每系列（番名）记住的 Jimaku 字幕语言偏好：`{ "<series 小写归一>": "<langCode>" }`。
+  ///
+  /// 单一 JSON map 落 KV 表（避免每系列一个 key 撑爆表）；解析失败回退空 map
+  /// （与 [customDictCSS] 同款容错）。
+  Map<String, String> get jimakuPreferredLanguages {
+    final String raw = getPref('jimaku_pref_langs', defaultValue: '') as String;
+    if (raw.isEmpty) return <String, String>{};
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((dynamic k, dynamic v) =>
+            MapEntry<String, String>(k.toString(), v.toString()));
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+          'PreferencesRepository.jimakuPreferredLanguages.decode', e, stack);
+    }
+    return <String, String>{};
+  }
+
+  /// 记住某系列（[seriesKey]）选的字幕语言（[langCode]，读改写整 map）。
+  Future<void> setJimakuPreferredLanguage(
+      String seriesKey, String langCode) async {
+    final Map<String, String> map = jimakuPreferredLanguages;
+    map[seriesKey] = langCode;
+    await setPref('jimaku_pref_langs', jsonEncode(map));
+    notifyListeners();
+  }
+
   // ── transcript ───────────────────────────────────────────────────────
 
   bool get isTranscriptPlayerMode =>

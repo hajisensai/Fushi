@@ -2127,6 +2127,13 @@ class AppModel with ChangeNotifier {
 
   Future<void> setJimakuApiKey(String key) => prefsRepo.setJimakuApiKey(key);
 
+  /// 每系列记住的 Jimaku 字幕语言偏好（TODO-674）。
+  Map<String, String> get jimakuPreferredLanguages =>
+      prefsRepo.jimakuPreferredLanguages;
+
+  Future<void> setJimakuPreferredLanguage(String seriesKey, String langCode) =>
+      prefsRepo.setJimakuPreferredLanguage(seriesKey, langCode);
+
   bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 

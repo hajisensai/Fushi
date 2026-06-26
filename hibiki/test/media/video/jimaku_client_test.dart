@@ -73,4 +73,51 @@ void main() {
       expect(const JimakuFile(name: 'noext', url: 'u').extension, '');
     });
   });
+
+  group('detectSubtitleLanguage (TODO-674)', () {
+    test('倒数第二段语言后缀', () {
+      expect(detectSubtitleLanguage('ep01.ja.srt'), 'ja');
+      expect(detectSubtitleLanguage('ep01.jpn.ass'), 'ja');
+      expect(detectSubtitleLanguage('ep01.zh-CN.ass'), 'zh');
+      expect(detectSubtitleLanguage('ep01.chs.srt'), 'zh');
+      expect(detectSubtitleLanguage('ep01.cht.srt'), 'zh');
+      expect(detectSubtitleLanguage('ep01.en.vtt'), 'en');
+      expect(detectSubtitleLanguage('ep01.eng.srt'), 'en');
+      expect(detectSubtitleLanguage('ep01.ko.srt'), 'ko');
+    });
+
+    test('方括号 / 圆括号语言标记', () {
+      expect(detectSubtitleLanguage('[CHS]some show.srt'), 'zh');
+      expect(detectSubtitleLanguage('[JP] show ep01.srt'), 'ja');
+      expect(detectSubtitleLanguage('show (ENG).srt'), 'en');
+    });
+
+    test('中日韩文字语言标记', () {
+      expect(detectSubtitleLanguage('鬼滅の刃 日本語字幕.srt'), 'ja');
+      expect(detectSubtitleLanguage('某番 简体中文.ass'), 'zh');
+      expect(detectSubtitleLanguage('某番 繁體.ass'), 'zh');
+    });
+
+    test('认不出 / 无后缀 → null（保底，绝不猜错）', () {
+      expect(detectSubtitleLanguage('ep01.srt'), isNull);
+      expect(detectSubtitleLanguage('no-ext'), isNull);
+      expect(detectSubtitleLanguage('ep01.fr.srt'), isNull); // 白名单外
+      expect(detectSubtitleLanguage('ep01.1080p.srt'), isNull);
+    });
+  });
+
+  group('buildListFilesUri (TODO-674)', () {
+    test('无 episode → 不带 query（向后兼容旧路径）', () {
+      final Uri uri = buildListFilesUri('https://jimaku.cc/api', 42);
+      expect(uri.toString(), 'https://jimaku.cc/api/entries/42/files');
+      expect(uri.queryParameters, isEmpty);
+    });
+
+    test('有 episode → 拼 episode=<n>', () {
+      final Uri uri =
+          buildListFilesUri('https://jimaku.cc/api', 42, episode: 7);
+      expect(uri.queryParameters['episode'], '7');
+      expect(uri.path, '/api/entries/42/files');
+    });
+  });
 }

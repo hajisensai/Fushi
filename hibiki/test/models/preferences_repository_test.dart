@@ -571,6 +571,43 @@ void main() {
     });
   });
 
+  // ── jimaku per-series language memory (TODO-674) ──────────────────────
+
+  group('jimakuPreferredLanguages (TODO-674)', () {
+    test('defaults to empty map', () {
+      expect(repo.jimakuPreferredLanguages, isEmpty);
+    });
+
+    test('round-trips a single series language through DB', () async {
+      await repo.setJimakuPreferredLanguage('naruto', 'ja');
+      expect(repo.jimakuPreferredLanguages['naruto'], 'ja');
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.jimakuPreferredLanguages['naruto'], 'ja');
+    });
+
+    test('multiple series do not overwrite each other', () async {
+      await repo.setJimakuPreferredLanguage('naruto', 'ja');
+      await repo.setJimakuPreferredLanguage('one piece', 'zh');
+      await repo.setJimakuPreferredLanguage('naruto', 'en'); // 覆盖同系列
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      final Map<String, String> langs = repo2.jimakuPreferredLanguages;
+      expect(langs['naruto'], 'en');
+      expect(langs['one piece'], 'zh');
+      expect(langs, hasLength(2));
+    });
+
+    test('corrupted JSON falls back to empty map', () async {
+      await repo.setPref('jimaku_pref_langs', 'not-json');
+      expect(repo.jimakuPreferredLanguages, isEmpty);
+    });
+  });
+
   // ── cache coherence ──────────────────────────────────────────────────
 
   group('cache coherence', () {
