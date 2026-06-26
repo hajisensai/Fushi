@@ -409,6 +409,7 @@ enum _VideoSidePanelKind {
   speed,
   settings,
   subtitleSources,
+  secondarySubtitleSources,
   audioTracks,
   chapters,
 }
@@ -1068,6 +1069,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 源菜单高亮当前项。
   String? _currentSubtitleSource;
 
+  /// 当前选中的副字幕源持久化值（TODO-857 视频双字幕 Path A）：与
+  /// [_currentSubtitleSource] 同款四态编码（外挂路径 / `embedded:<n>` / `off:` /
+  /// null）。副字幕由 libmpv `secondary-sid` 自渲染（不进 cue 流，不可查词），与主
+  /// 字幕独立；首版仅支持内嵌轨。用于副字幕源菜单高亮当前项。
+  String? _currentSecondarySubtitleSource;
+
   /// 当前选中的音轨 id（libmpv `AudioTrack.id`）；null=未选过跟随默认。
   /// 多集换集时复用同一值（用户选了日语音轨，每集都用日语）。
   String? _currentAudioTrackId;
@@ -1235,6 +1242,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 记录持久化的字幕源（菜单高亮当前项用）+ 音轨偏好（换集复用）+ 音画延迟
     // （跨重启保留）+ 播放倍速（per-book 偏好，速度记忆）。
     _currentSubtitleSource = row.subtitleSource;
+    _currentSecondarySubtitleSource = row.secondarySubtitleSource;
     _currentAudioTrackId = row.audioTrackId;
     _delayMs = row.delayMs;
     _playbackSpeed = _readPersistedSpeed();
@@ -1285,6 +1293,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final RemoteVideoInfo info = widget.remoteInfo!;
     final RemoteVideoClient client = widget.remoteClient!;
     _currentSubtitleSource = null;
+    _currentSecondarySubtitleSource = null;
     _currentAudioTrackId = null;
     _delayMs = 0;
     _playbackSpeed = _readPersistedSpeed();
@@ -1877,6 +1886,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 恢复用户选过的音轨（含多集换集复用）：audioTracks 在 player open 后才填充，
     // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
     unawaited(_restoreAudioTrack(controller));
+    // TODO-857：恢复用户选过的副字幕轨（libmpv secondary-sid 自渲染）。与主
+    // 字幕独立，仅内嵌轨；其内部 _waitUntilSubtitleTracksReady 等轨就绪。
+    unawaited(_restoreSecondarySubtitle(controller));
   }
 
   void _handleEmbeddedSubtitleAutoLoad(

@@ -205,6 +205,68 @@ extension _VideoSubtitle on _VideoHibikiPageState {
                 ? null
                 : () => unawaited(_selectSubtitleSource(controller, source)),
           ),
+      // TODO-857 视频双字幕（Path A）：副字幕入口。副字幕走 libmpv secondary-sid
+      // 自渲染（不可查词），仅本地视频内嵌轨（远端无内嵌轨枚举，不显示）。
+      if (!_isRemote) const Divider(height: 1),
+      if (!_isRemote)
+        ListTile(
+          leading: const Icon(Icons.subtitles_outlined),
+          title: Text(t.video_secondary_subtitle_sources),
+          subtitle: Text(t.video_secondary_subtitle_hint),
+          trailing: const Icon(Icons.chevron_right),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_showSecondarySubtitleSourceMenu(controller)),
+        ),
+    ];
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: rows,
+    );
+  }
+
+  /// 副字幕源 side panel（TODO-857 视频双字幕 Path A）：仅列内嵌字幕轨 + 顶部
+  /// 「关闭」项。副字幕走 libmpv `secondary-sid` 自渲染（**不可查词**），与主字幕
+  /// （可点 overlay）独立——故复用 [_subtitleMenuSources] 但只取内嵌轨（[_isEmbedded]
+  /// 且非图形位图轨同样可选：libmpv 自渲染位图也行，但首版与主字幕一致仅列文本/通用
+  /// 内嵌轨，图形轨交由 libmpv 自渲染亦无妨，统一不过滤 codec）。
+  Widget _buildSecondarySubtitleSourcesSidePanel(
+    VideoPlayerController controller,
+  ) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    final List<SubtitleSource> embedded = _subtitleMenuSources
+        .where((SubtitleSource s) => s.isEmbedded)
+        .toList(growable: false);
+    final List<Widget> rows = <Widget>[
+      if (_subtitleMenuLoading) const LinearProgressIndicator(),
+      ListTile(
+        leading: const Icon(Icons.subtitles_off),
+        title: Text(t.video_subtitle_off),
+        // 「关闭」高亮：显式关闭哨兵或无副字幕（null）。
+        selected: SubtitleSource.isOff(_currentSecondarySubtitleSource) ||
+            _currentSecondarySubtitleSource == null,
+        selectedColor: cs.primary,
+        enabled: !_subtitleLoadingShown,
+        onTap: _subtitleLoadingShown
+            ? null
+            : () => unawaited(_selectSecondarySubtitleOff(controller)),
+      ),
+      const Divider(height: 1),
+      for (final SubtitleSource source in embedded)
+        ListTile(
+          leading: Icon(
+            source.isGraphicEmbedded ? Icons.image_outlined : Icons.movie,
+          ),
+          title: Text(source.label),
+          selected: source.matchesPersisted(_currentSecondarySubtitleSource),
+          selectedColor: cs.primary,
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () =>
+                  unawaited(_selectSecondarySubtitleSource(controller, source)),
+        ),
     ];
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -269,6 +331,102 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       _subtitleMenuSources = sources;
       _subtitleMenuLoading = false;
     });
+  }
+
+  /// 弹「副字幕源」side panel（TODO-857 视频双字幕 Path A）。复用主字幕的源枚举
+  /// （[_subtitleSourcesForMenu]）填 [_subtitleMenuSources]，副字幕面板只取其中内嵌轨。
+  /// 远端 / 无本地视频路径时列空（远端无内嵌轨枚举）。
+  Future<void> _showSecondarySubtitleSourceMenu(
+    VideoPlayerController controller,
+  ) async {
+    final String? videoPath = _currentVideoPath;
+    if (_isRemote || videoPath == null) {
+      _rebuild(() {
+        _subtitleMenuSources = const <SubtitleSource>[];
+        _subtitleMenuLoading = false;
+      });
+      _showVideoSidePanel(_VideoSidePanelKind.secondarySubtitleSources);
+      return;
+    }
+    _rebuild(() {
+      _subtitleMenuSources = const <SubtitleSource>[];
+      _subtitleMenuLoading = true;
+    });
+    _showVideoSidePanel(_VideoSidePanelKind.secondarySubtitleSources);
+    final List<SubtitleSource> sources;
+    try {
+      sources = await _subtitleSourcesForMenu(
+        videoPath: videoPath,
+        currentSubtitleSource: _currentSubtitleSource,
+        currentCues: controller.cues,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _rebuild(() => _subtitleMenuLoading = false);
+      return;
+    }
+    if (!mounted) return;
+    _rebuild(() {
+      _subtitleMenuSources = sources;
+      _subtitleMenuLoading = false;
+    });
+  }
+
+  /// 选中某副字幕源（TODO-857）：经 libmpv `secondary-sid` 自渲染 → 持久化
+  /// `embedded:<n>` → setState。**不抽 cue、不切主字幕轨**（副字幕不进 Dart cue 流，
+  /// 不可查词）。仅内嵌轨；选轨失败（轨未就绪/越界/换片）诚实提示且不持久化。
+  Future<bool> _selectSecondarySubtitleSource(
+    VideoPlayerController controller,
+    SubtitleSource source,
+  ) async {
+    if (!source.isEmbedded || source.streamIndex == null) return false;
+    final bool shown =
+        await controller.selectSecondarySubtitleTrack(source.streamIndex!);
+    if (!mounted) return false;
+    if (!shown) {
+      _showOsd(t.video_subtitle_load_failed(label: source.label));
+      return false;
+    }
+    final String persisted = source.toPersistedValue();
+    await widget.repo.updateSecondarySubtitleSource(widget.bookUid, persisted);
+    if (!mounted) return false;
+    _rebuild(() => _currentSecondarySubtitleSource = persisted);
+    _showOsd(t.video_subtitle_switched(label: source.label));
+    return true;
+  }
+
+  /// 关闭副字幕（TODO-857）：清 libmpv `secondary-sid` + 持久化「显式关闭」哨兵。
+  /// 与主字幕「关闭」对称（哨兵区分「无偏好 null」与「显式关闭」，恢复时不自动重选）。
+  Future<void> _selectSecondarySubtitleOff(
+    VideoPlayerController controller,
+  ) async {
+    await controller.clearSecondarySubtitleTrack();
+    await widget.repo.updateSecondarySubtitleSource(
+      widget.bookUid,
+      SubtitleSource.offSentinel,
+    );
+    if (!mounted) return;
+    _rebuild(
+        () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel);
+  }
+
+  /// 视频就绪后恢复用户选过的副字幕轨（TODO-857）。仅内嵌轨（`embedded:<n>`）：
+  /// 解析 streamIndex 经 [VideoPlayerController.selectSecondarySubtitleTrack] 下发
+  /// `secondary-sid`（其内部 [_waitUntilSubtitleTracksReady] 等轨就绪 + UAF 防护）。
+  /// null=无偏好 / `off:`=显式关闭 / 外挂路径（首版不支持）都不下发，保持无副字幕。
+  Future<void> _restoreSecondarySubtitle(
+    VideoPlayerController controller,
+  ) async {
+    final String? persisted = _currentSecondarySubtitleSource;
+    if (persisted == null || persisted.isEmpty) return;
+    if (SubtitleSource.isOff(persisted)) return;
+    if (!persisted.startsWith(SubtitleSource.embeddedPrefix)) return;
+    final int? streamIndex = int.tryParse(
+      persisted.substring(SubtitleSource.embeddedPrefix.length),
+    );
+    if (streamIndex == null) return;
+    if (!mounted || _controller != controller) return;
+    await controller.selectSecondarySubtitleTrack(streamIndex);
   }
 
   /// Jimaku 搜索用的番名 query。能算出非空 query 时返回它，否则返回 null

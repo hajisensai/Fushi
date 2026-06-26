@@ -86,6 +86,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return t.video_settings_title;
       case _VideoSidePanelKind.subtitleSources:
         return t.video_menu_subtitle_track;
+      case _VideoSidePanelKind.secondarySubtitleSources:
+        return t.video_secondary_subtitle_sources;
       case _VideoSidePanelKind.audioTracks:
         return t.video_audio_track;
       case _VideoSidePanelKind.chapters:
@@ -100,6 +102,7 @@ extension _VideoSidePanel on _VideoHibikiPageState {
       case _VideoSidePanelKind.chapters:
         return 420;
       case _VideoSidePanelKind.subtitleSources:
+      case _VideoSidePanelKind.secondarySubtitleSources:
       case _VideoSidePanelKind.audioTracks:
       case _VideoSidePanelKind.speed:
         return 320;
@@ -117,6 +120,8 @@ extension _VideoSidePanel on _VideoHibikiPageState {
         return _buildVideoQuickSettingsSheet();
       case _VideoSidePanelKind.subtitleSources:
         return _buildSubtitleSourcesSidePanel(controller);
+      case _VideoSidePanelKind.secondarySubtitleSources:
+        return _buildSecondarySubtitleSourcesSidePanel(controller);
       case _VideoSidePanelKind.audioTracks:
         return _buildAudioTracksSidePanel(controller);
       case _VideoSidePanelKind.chapters:
