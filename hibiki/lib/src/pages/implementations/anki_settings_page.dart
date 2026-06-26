@@ -337,6 +337,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         title: t.anki_select_handlebar(field: field),
         initialValue: currentValue,
         options: options,
+        labelFor: ankiHandlebarLabel,
       ),
     );
 
@@ -448,18 +449,79 @@ class _AnkiConnectionFieldState extends State<_AnkiConnectionField> {
   }
 }
 
+/// 把 Anki 占位符字面量（如 `{book-cover}`）映射成本地化友好标签（如「Book Cover」）。
+///
+/// **纯展示**：只用于 picker 列表显示，绝不改变写进 `fieldMappings` 的字面量真值
+/// （渲染器认的是字面量）。未识别 / 动态占位符回退原字面量，绝不返回空白：
+/// - `{single-glossary-<dict>}` → 直接显示词典名 `<dict>`（零新 i18n key）。
+/// - 其它未知占位符 → 原样返回 `option`（向后兼容）。
+String ankiHandlebarLabel(String option) {
+  const String singleGlossaryPrefix = '{single-glossary-';
+  if (option.startsWith(singleGlossaryPrefix) && option.endsWith('}')) {
+    return option.substring(singleGlossaryPrefix.length, option.length - 1);
+  }
+  switch (option) {
+    case '{expression}':
+      return t.handlebar_expression;
+    case '{reading}':
+      return t.handlebar_reading;
+    case '{furigana-plain}':
+      return t.handlebar_furigana_plain;
+    case '{audio}':
+      return t.handlebar_audio;
+    case '{glossary}':
+      return t.handlebar_glossary;
+    case '{glossary-first}':
+      return t.handlebar_glossary_first;
+    case '{selected-glossary}':
+      return t.handlebar_selected_glossary;
+    case '{popup-selection-text}':
+      return t.handlebar_popup_selection_text;
+    case '{sentence}':
+      return t.handlebar_sentence;
+    case '{cue-sentence}':
+      return t.handlebar_cue_sentence;
+    case '{frequencies}':
+      return t.handlebar_frequencies;
+    case '{frequency-harmonic-rank}':
+      return t.handlebar_frequency_harmonic_rank;
+    case '{pitch-accent-positions}':
+      return t.handlebar_pitch_accent_positions;
+    case '{pitch-accent-categories}':
+      return t.handlebar_pitch_accent_categories;
+    case '{document-title}':
+      return t.handlebar_document_title;
+    case '{book-cover}':
+      return t.handlebar_book_cover;
+    case '{video-clip}':
+      return t.handlebar_video_clip;
+    case '{sasayaki-audio}':
+      return t.handlebar_sasayaki_audio;
+    default:
+      return option;
+  }
+}
+
+/// 默认标签回调：恒等返回原字面量（const 构造器默认值需顶层函数）。
+String _identityLabel(String option) => option;
+
 @visibleForTesting
 class AnkiHandlebarPickerDialog extends StatefulWidget {
   const AnkiHandlebarPickerDialog({
     required this.title,
     required this.initialValue,
     required this.options,
+    this.labelFor = _identityLabel,
     super.key,
   });
 
   final String title;
   final String initialValue;
   final List<String> options;
+
+  /// 占位符字面量 → 显示标签的纯展示映射（默认恒等：显示原字面量，向后兼容）。
+  /// 选中 / 比较 / 写入仍全程用字面量，只有列表显示走此回调。
+  final String Function(String option) labelFor;
 
   @override
   State<AnkiHandlebarPickerDialog> createState() =>
@@ -537,7 +599,7 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
                   if (opt == '-') return const Divider(height: 1);
                   final isSelected = widget.initialValue == opt;
                   return AdaptiveSettingsRow(
-                    title: opt,
+                    title: widget.labelFor(opt),
                     trailing: isSelected
                         ? Icon(
                             Icons.check,

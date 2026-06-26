@@ -79,4 +79,57 @@ void main() {
       );
     },
   );
+
+  // TODO-843: the picker shows localized friendly labels (via `labelFor`) but
+  // tapping an option must still return the raw handlebar literal — the field
+  // mapping persists the literal that the renderer understands, never the
+  // display label. This guards the display-vs-storage invariant.
+  testWidgets(
+    'picker shows friendly labels but returns the raw literal on tap',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 1200);
+      addTearDown(tester.view.reset);
+
+      String? returned;
+      await tester.pumpWidget(
+        buildApp(
+          Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    returned = await showDialog<String>(
+                      context: context,
+                      builder: (_) => AnkiHandlebarPickerDialog(
+                        title: 'Select value for Image',
+                        initialValue: '',
+                        options: const <String>['{book-cover}', '{video-clip}'],
+                        labelFor: ankiHandlebarLabel,
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Friendly labels are shown, raw literals are not.
+      expect(find.text('Book Cover'), findsOneWidget);
+      expect(find.text('Video Clip (GIF)'), findsOneWidget);
+      expect(find.text('{book-cover}'), findsNothing);
+      expect(find.text('{video-clip}'), findsNothing);
+
+      // Tapping the friendly "Video Clip (GIF)" returns the raw literal.
+      await tester.tap(find.text('Video Clip (GIF)'));
+      await tester.pumpAndSettle();
+      expect(returned, '{video-clip}');
+    },
+  );
 }

@@ -146,4 +146,53 @@ void main() {
       expect(body, isNot(contains("return '[sound:")));
     });
   });
+
+  // TODO-843：{video-clip} 是 {book-cover} 的语义别名，两者读同一 context.coverPath。
+  // 在**同一 backend**（基类 buildMinedFields）内，把 image 字段映射 {video-clip} 与
+  // 映射 {book-cover}（给同一已嵌入的 coverPath 媒体引用）必须产出**相同**字段值——
+  // 证明无运行时分叉、媒体嵌入零改动。（跨 backend 包装格式本就不同，故只在同 backend 内比。）
+  group('{video-clip} == {book-cover} within one backend (TODO-843)', () {
+    // 模拟 backend 落盘后回填的 context：coverPath 已是 <img src="ref"> 媒体引用。
+    const AnkiMiningContext mediaContext = AnkiMiningContext(
+      sentence: '',
+      coverPath: '<img src="hibiki_cover_x.gif">',
+    );
+    const AnkiMiningPayload payload = AnkiMiningPayload(expression: '一');
+
+    test('mapping {video-clip} yields the same field value as {book-cover}',
+        () {
+      final Map<String, String> clipFields = repo.fieldsFor(
+        fieldMappings: const <String, String>{'Image': '{video-clip}'},
+        payload: payload,
+        context: mediaContext,
+        tags: const <String, String>{},
+      );
+      final Map<String, String> coverFields = repo.fieldsFor(
+        fieldMappings: const <String, String>{'Image': '{book-cover}'},
+        payload: payload,
+        context: mediaContext,
+        tags: const <String, String>{},
+      );
+      expect(clipFields['Image'], '<img src="hibiki_cover_x.gif">');
+      expect(clipFields['Image'], coverFields['Image']);
+    });
+
+    test('null coverPath → both render empty image field', () {
+      final Map<String, String> clipFields = repo.fieldsFor(
+        fieldMappings: const <String, String>{'Image': '{video-clip}'},
+        payload: payload,
+        context: const AnkiMiningContext(sentence: ''),
+        tags: const <String, String>{},
+      );
+      final Map<String, String> coverFields = repo.fieldsFor(
+        fieldMappings: const <String, String>{'Image': '{book-cover}'},
+        payload: payload,
+        context: const AnkiMiningContext(sentence: ''),
+        tags: const <String, String>{},
+      );
+      // buildMinedFields 对空值字段一视同仁（两者都不写入该字段）；关键是行为一致。
+      expect(clipFields['Image'], coverFields['Image']);
+      expect(clipFields['Image'] ?? '', '');
+    });
+  });
 }

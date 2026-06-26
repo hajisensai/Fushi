@@ -414,6 +414,11 @@ class AnkiHandlebarRenderer {
         return context.documentTitle ?? '';
       case '{book-cover}':
         return context.coverPath ?? '';
+      // {video-clip} 是 {book-cover} 的语义别名：视频场景下 coverPath 本就是 GIF/
+      // 降级帧（见 video lookup_mining），让用户能给视频卡用语义清晰的字段名，而不必
+      // 借用 {book-cover}。两者读同一个 coverPath，运行时零分叉、媒体嵌入零改动。
+      case '{video-clip}':
+        return context.coverPath ?? '';
       case '{sasayaki-audio}':
         return context.sasayakiAudioPath ?? '';
       default:
@@ -487,6 +492,7 @@ class AnkiHandlebarOptions {
     '{pitch-accent-categories}',
     '{document-title}',
     '{book-cover}',
+    '{video-clip}',
     '{sasayaki-audio}',
   ];
 
