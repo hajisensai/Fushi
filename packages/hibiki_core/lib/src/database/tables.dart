@@ -360,6 +360,11 @@ class VideoBooks extends Table {
   TextColumn get title => text()();
   TextColumn get videoPath => text()();
   TextColumn get subtitleSource => text().nullable()();
+
+  /// 副字幕源（TODO-857 视频双字幕 Path A）：与 [subtitleSource] 同款四态编码
+  /// （外挂存绝对路径；内嵌存 `embedded:<n>`；关闭存 `off:`；无副字幕存 null）。
+  /// 副字幕由 libmpv `secondary-sid` 自渲染，不进 Dart cue 流，不可查词。
+  TextColumn get secondarySubtitleSource => text().nullable()();
   TextColumn get subtitleFormat => text().nullable()();
   IntColumn get embeddedSubtitleTrack => integer().nullable()();
   TextColumn get coverPath => text().nullable()();

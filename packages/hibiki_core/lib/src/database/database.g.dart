@@ -8937,6 +8937,12 @@ class $VideoBooksTable extends VideoBooks
   late final GeneratedColumn<String> subtitleSource = GeneratedColumn<String>(
       'subtitle_source', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _secondarySubtitleSourceMeta =
+      const VerificationMeta('secondarySubtitleSource');
+  @override
+  late final GeneratedColumn<String> secondarySubtitleSource =
+      GeneratedColumn<String>('secondary_subtitle_source', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _subtitleFormatMeta =
       const VerificationMeta('subtitleFormat');
   @override
@@ -9018,6 +9024,7 @@ class $VideoBooksTable extends VideoBooks
         title,
         videoPath,
         subtitleSource,
+        secondarySubtitleSource,
         subtitleFormat,
         embeddedSubtitleTrack,
         coverPath,
@@ -9063,6 +9070,13 @@ class $VideoBooksTable extends VideoBooks
           _subtitleSourceMeta,
           subtitleSource.isAcceptableOrUnknown(
               data['subtitle_source']!, _subtitleSourceMeta));
+    }
+    if (data.containsKey('secondary_subtitle_source')) {
+      context.handle(
+          _secondarySubtitleSourceMeta,
+          secondarySubtitleSource.isAcceptableOrUnknown(
+              data['secondary_subtitle_source']!,
+              _secondarySubtitleSourceMeta));
     }
     if (data.containsKey('subtitle_format')) {
       context.handle(
@@ -9141,6 +9155,9 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.string, data['${effectivePrefix}video_path'])!,
       subtitleSource: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}subtitle_source']),
+      secondarySubtitleSource: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}secondary_subtitle_source']),
       subtitleFormat: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}subtitle_format']),
       embeddedSubtitleTrack: attachedDatabase.typeMapping.read(
@@ -9177,6 +9194,11 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   final String title;
   final String videoPath;
   final String? subtitleSource;
+
+  /// 副字幕源（TODO-857 视频双字幕 Path A）：与 [subtitleSource] 同款四态编码
+  /// （外挂存绝对路径；内嵌存 `embedded:<n>`；关闭存 `off:`；无副字幕存 null）。
+  /// 副字幕由 libmpv `secondary-sid` 自渲染，不进 Dart cue 流，不可查词。
+  final String? secondarySubtitleSource;
   final String? subtitleFormat;
   final int? embeddedSubtitleTrack;
   final String? coverPath;
@@ -9208,6 +9230,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       required this.title,
       required this.videoPath,
       this.subtitleSource,
+      this.secondarySubtitleSource,
       this.subtitleFormat,
       this.embeddedSubtitleTrack,
       this.coverPath,
@@ -9227,6 +9250,10 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     map['video_path'] = Variable<String>(videoPath);
     if (!nullToAbsent || subtitleSource != null) {
       map['subtitle_source'] = Variable<String>(subtitleSource);
+    }
+    if (!nullToAbsent || secondarySubtitleSource != null) {
+      map['secondary_subtitle_source'] =
+          Variable<String>(secondarySubtitleSource);
     }
     if (!nullToAbsent || subtitleFormat != null) {
       map['subtitle_format'] = Variable<String>(subtitleFormat);
@@ -9266,6 +9293,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       subtitleSource: subtitleSource == null && nullToAbsent
           ? const Value.absent()
           : Value(subtitleSource),
+      secondarySubtitleSource: secondarySubtitleSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(secondarySubtitleSource),
       subtitleFormat: subtitleFormat == null && nullToAbsent
           ? const Value.absent()
           : Value(subtitleFormat),
@@ -9304,6 +9334,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       title: serializer.fromJson<String>(json['title']),
       videoPath: serializer.fromJson<String>(json['videoPath']),
       subtitleSource: serializer.fromJson<String?>(json['subtitleSource']),
+      secondarySubtitleSource:
+          serializer.fromJson<String?>(json['secondarySubtitleSource']),
       subtitleFormat: serializer.fromJson<String?>(json['subtitleFormat']),
       embeddedSubtitleTrack:
           serializer.fromJson<int?>(json['embeddedSubtitleTrack']),
@@ -9326,6 +9358,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'title': serializer.toJson<String>(title),
       'videoPath': serializer.toJson<String>(videoPath),
       'subtitleSource': serializer.toJson<String?>(subtitleSource),
+      'secondarySubtitleSource':
+          serializer.toJson<String?>(secondarySubtitleSource),
       'subtitleFormat': serializer.toJson<String?>(subtitleFormat),
       'embeddedSubtitleTrack': serializer.toJson<int?>(embeddedSubtitleTrack),
       'coverPath': serializer.toJson<String?>(coverPath),
@@ -9345,6 +9379,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           String? title,
           String? videoPath,
           Value<String?> subtitleSource = const Value.absent(),
+          Value<String?> secondarySubtitleSource = const Value.absent(),
           Value<String?> subtitleFormat = const Value.absent(),
           Value<int?> embeddedSubtitleTrack = const Value.absent(),
           Value<String?> coverPath = const Value.absent(),
@@ -9362,6 +9397,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
         videoPath: videoPath ?? this.videoPath,
         subtitleSource:
             subtitleSource.present ? subtitleSource.value : this.subtitleSource,
+        secondarySubtitleSource: secondarySubtitleSource.present
+            ? secondarySubtitleSource.value
+            : this.secondarySubtitleSource,
         subtitleFormat:
             subtitleFormat.present ? subtitleFormat.value : this.subtitleFormat,
         embeddedSubtitleTrack: embeddedSubtitleTrack.present
@@ -9387,6 +9425,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       subtitleSource: data.subtitleSource.present
           ? data.subtitleSource.value
           : this.subtitleSource,
+      secondarySubtitleSource: data.secondarySubtitleSource.present
+          ? data.secondarySubtitleSource.value
+          : this.secondarySubtitleSource,
       subtitleFormat: data.subtitleFormat.present
           ? data.subtitleFormat.value
           : this.subtitleFormat,
@@ -9422,6 +9463,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('title: $title, ')
           ..write('videoPath: $videoPath, ')
           ..write('subtitleSource: $subtitleSource, ')
+          ..write('secondarySubtitleSource: $secondarySubtitleSource, ')
           ..write('subtitleFormat: $subtitleFormat, ')
           ..write('embeddedSubtitleTrack: $embeddedSubtitleTrack, ')
           ..write('coverPath: $coverPath, ')
@@ -9443,6 +9485,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       title,
       videoPath,
       subtitleSource,
+      secondarySubtitleSource,
       subtitleFormat,
       embeddedSubtitleTrack,
       coverPath,
@@ -9462,6 +9505,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.title == this.title &&
           other.videoPath == this.videoPath &&
           other.subtitleSource == this.subtitleSource &&
+          other.secondarySubtitleSource == this.secondarySubtitleSource &&
           other.subtitleFormat == this.subtitleFormat &&
           other.embeddedSubtitleTrack == this.embeddedSubtitleTrack &&
           other.coverPath == this.coverPath &&
@@ -9480,6 +9524,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<String> title;
   final Value<String> videoPath;
   final Value<String?> subtitleSource;
+  final Value<String?> secondarySubtitleSource;
   final Value<String?> subtitleFormat;
   final Value<int?> embeddedSubtitleTrack;
   final Value<String?> coverPath;
@@ -9497,6 +9542,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.title = const Value.absent(),
     this.videoPath = const Value.absent(),
     this.subtitleSource = const Value.absent(),
+    this.secondarySubtitleSource = const Value.absent(),
     this.subtitleFormat = const Value.absent(),
     this.embeddedSubtitleTrack = const Value.absent(),
     this.coverPath = const Value.absent(),
@@ -9515,6 +9561,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     required String title,
     required String videoPath,
     this.subtitleSource = const Value.absent(),
+    this.secondarySubtitleSource = const Value.absent(),
     this.subtitleFormat = const Value.absent(),
     this.embeddedSubtitleTrack = const Value.absent(),
     this.coverPath = const Value.absent(),
@@ -9535,6 +9582,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<String>? title,
     Expression<String>? videoPath,
     Expression<String>? subtitleSource,
+    Expression<String>? secondarySubtitleSource,
     Expression<String>? subtitleFormat,
     Expression<int>? embeddedSubtitleTrack,
     Expression<String>? coverPath,
@@ -9553,6 +9601,8 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (title != null) 'title': title,
       if (videoPath != null) 'video_path': videoPath,
       if (subtitleSource != null) 'subtitle_source': subtitleSource,
+      if (secondarySubtitleSource != null)
+        'secondary_subtitle_source': secondarySubtitleSource,
       if (subtitleFormat != null) 'subtitle_format': subtitleFormat,
       if (embeddedSubtitleTrack != null)
         'embedded_subtitle_track': embeddedSubtitleTrack,
@@ -9574,6 +9624,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<String>? title,
       Value<String>? videoPath,
       Value<String?>? subtitleSource,
+      Value<String?>? secondarySubtitleSource,
       Value<String?>? subtitleFormat,
       Value<int?>? embeddedSubtitleTrack,
       Value<String?>? coverPath,
@@ -9591,6 +9642,8 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       title: title ?? this.title,
       videoPath: videoPath ?? this.videoPath,
       subtitleSource: subtitleSource ?? this.subtitleSource,
+      secondarySubtitleSource:
+          secondarySubtitleSource ?? this.secondarySubtitleSource,
       subtitleFormat: subtitleFormat ?? this.subtitleFormat,
       embeddedSubtitleTrack:
           embeddedSubtitleTrack ?? this.embeddedSubtitleTrack,
@@ -9621,6 +9674,10 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     }
     if (subtitleSource.present) {
       map['subtitle_source'] = Variable<String>(subtitleSource.value);
+    }
+    if (secondarySubtitleSource.present) {
+      map['secondary_subtitle_source'] =
+          Variable<String>(secondarySubtitleSource.value);
     }
     if (subtitleFormat.present) {
       map['subtitle_format'] = Variable<String>(subtitleFormat.value);
@@ -9669,6 +9726,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('title: $title, ')
           ..write('videoPath: $videoPath, ')
           ..write('subtitleSource: $subtitleSource, ')
+          ..write('secondarySubtitleSource: $secondarySubtitleSource, ')
           ..write('subtitleFormat: $subtitleFormat, ')
           ..write('embeddedSubtitleTrack: $embeddedSubtitleTrack, ')
           ..write('coverPath: $coverPath, ')
@@ -18376,6 +18434,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   required String title,
   required String videoPath,
   Value<String?> subtitleSource,
+  Value<String?> secondarySubtitleSource,
   Value<String?> subtitleFormat,
   Value<int?> embeddedSubtitleTrack,
   Value<String?> coverPath,
@@ -18394,6 +18453,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<String> title,
   Value<String> videoPath,
   Value<String?> subtitleSource,
+  Value<String?> secondarySubtitleSource,
   Value<String?> subtitleFormat,
   Value<int?> embeddedSubtitleTrack,
   Value<String?> coverPath,
@@ -18467,6 +18527,10 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<String> get subtitleSource => $composableBuilder(
       column: $table.subtitleSource,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get secondarySubtitleSource => $composableBuilder(
+      column: $table.secondarySubtitleSource,
       builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get subtitleFormat => $composableBuilder(
@@ -18568,6 +18632,10 @@ class $$VideoBooksTableOrderingComposer
       column: $table.subtitleSource,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get secondarySubtitleSource => $composableBuilder(
+      column: $table.secondarySubtitleSource,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get subtitleFormat => $composableBuilder(
       column: $table.subtitleFormat,
       builder: (column) => ColumnOrderings(column));
@@ -18645,6 +18713,9 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<String> get subtitleSource => $composableBuilder(
       column: $table.subtitleSource, builder: (column) => column);
+
+  GeneratedColumn<String> get secondarySubtitleSource => $composableBuilder(
+      column: $table.secondarySubtitleSource, builder: (column) => column);
 
   GeneratedColumn<String> get subtitleFormat => $composableBuilder(
       column: $table.subtitleFormat, builder: (column) => column);
@@ -18747,6 +18818,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<String> title = const Value.absent(),
             Value<String> videoPath = const Value.absent(),
             Value<String?> subtitleSource = const Value.absent(),
+            Value<String?> secondarySubtitleSource = const Value.absent(),
             Value<String?> subtitleFormat = const Value.absent(),
             Value<int?> embeddedSubtitleTrack = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
@@ -18765,6 +18837,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             title: title,
             videoPath: videoPath,
             subtitleSource: subtitleSource,
+            secondarySubtitleSource: secondarySubtitleSource,
             subtitleFormat: subtitleFormat,
             embeddedSubtitleTrack: embeddedSubtitleTrack,
             coverPath: coverPath,
@@ -18783,6 +18856,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             required String title,
             required String videoPath,
             Value<String?> subtitleSource = const Value.absent(),
+            Value<String?> secondarySubtitleSource = const Value.absent(),
             Value<String?> subtitleFormat = const Value.absent(),
             Value<int?> embeddedSubtitleTrack = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
@@ -18801,6 +18875,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             title: title,
             videoPath: videoPath,
             subtitleSource: subtitleSource,
+            secondarySubtitleSource: secondarySubtitleSource,
             subtitleFormat: subtitleFormat,
             embeddedSubtitleTrack: embeddedSubtitleTrack,
             coverPath: coverPath,

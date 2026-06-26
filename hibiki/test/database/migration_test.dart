@@ -313,6 +313,50 @@ CREATE TABLE video_books (
   return db;
 }
 
+/// Opens a `user_version = 27` database whose video_books has the v27 `source_id`
+/// column but lacks the v28 `secondary_subtitle_source` column, forcing the real
+/// `if (from < 28)` onUpgrade branch (add secondary_subtitle_source to
+/// video_books) to run. This is the TODO-857 lossless-migration check: the
+/// seeded video row must survive with secondary_subtitle_source defaulting to
+/// NULL. The DDL mirrors the v27 generated shape minus the new column.
+Future<HibikiDatabase> _openV27DbWithVideoRow() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA foreign_keys = OFF');
+        rawDb.execute('''
+CREATE TABLE video_books (
+  book_uid TEXT NOT NULL PRIMARY KEY,
+  title TEXT NOT NULL,
+  video_path TEXT NOT NULL,
+  subtitle_source TEXT,
+  subtitle_format TEXT,
+  embedded_subtitle_track INTEGER,
+  cover_path TEXT,
+  last_position_ms INTEGER NOT NULL DEFAULT 0,
+  imported_at INTEGER,
+  playlist_json TEXT,
+  current_episode INTEGER NOT NULL DEFAULT 0,
+  audio_track_id TEXT,
+  delay_ms INTEGER NOT NULL DEFAULT 0,
+  completed_at INTEGER,
+  source_id TEXT
+)
+''');
+        rawDb.execute(
+          'INSERT INTO video_books '
+          '(book_uid, title, video_path, subtitle_source) '
+          "VALUES ('video/seed27', 'SeedVideo27', '/abs/seed27.mp4', "
+          "'embedded:0')",
+        );
+        rawDb.execute('PRAGMA user_version = 27');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
@@ -642,6 +686,36 @@ void main() {
           .getSingle();
       expect(video.read<String>('book_uid'), 'video/seed');
       expect(video.data['source_id'], isNull);
+    });
+
+    test('real v27->v28 adds video_books.secondary_subtitle_source (lossless)',
+        () async {
+      // TODO-857: the from<28 onUpgrade branch must add a nullable
+      // secondary_subtitle_source column to video_books and leave the
+      // pre-existing video row intact (subtitle_source untouched,
+      // secondary_subtitle_source defaulting to NULL — "Never break userspace").
+      final db = await _openV27DbWithVideoRow();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+
+      // video_books gained the secondary_subtitle_source column.
+      final videoCols =
+          (await db.customSelect("PRAGMA table_info('video_books')").get())
+              .map((r) => r.data['name'] as String)
+              .toSet();
+      expect(videoCols, contains('secondary_subtitle_source'));
+
+      // Lossless: the seeded row survives, primary subtitle untouched, the new
+      // secondary subtitle column defaulting to NULL.
+      final video = await db
+          .customSelect(
+              'SELECT book_uid, subtitle_source, secondary_subtitle_source '
+              "FROM video_books WHERE book_uid='video/seed27'")
+          .getSingle();
+      expect(video.read<String>('book_uid'), 'video/seed27');
+      expect(video.read<String>('subtitle_source'), 'embedded:0');
+      expect(video.data['secondary_subtitle_source'], isNull);
     });
 
     test(

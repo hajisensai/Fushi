@@ -87,7 +87,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 28;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -413,6 +413,17 @@ class HibikiDatabase extends _$HibikiDatabase {
             if (await _tableExists('epub_books') &&
                 !await _columnExists('epub_books', 'source_id')) {
               await m.addColumn(epubBooks, epubBooks.sourceId);
+            }
+          }
+          if (from < 28) {
+            // TODO-857 视频双字幕（Path A）：video_books 加 secondary_subtitle_source。
+            // 无损迁移：只 addColumn（nullable 无 default → 既有行全 NULL = 无副字幕），
+            // 不 DROP / 不改既有列 / 不删行。守卫幂等（fresh DB 已由 onCreate 的
+            // createAll 建好，用 _columnExists 守卫避免重复加列，重复升级 no-op）。
+            if (await _tableExists('video_books') &&
+                !await _columnExists(
+                    'video_books', 'secondary_subtitle_source')) {
+              await m.addColumn(videoBooks, videoBooks.secondarySubtitleSource);
             }
           }
         },
@@ -1044,6 +1055,14 @@ class HibikiDatabase extends _$HibikiDatabase {
           String bookUid, String? subtitleSource) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(subtitleSource: Value(subtitleSource)));
+
+  /// 更新用户选中的副字幕源（TODO-857）：与 [updateVideoBookSubtitleSource] 同款
+  /// 四态编码（外挂路径 / `embedded:<n>` / `off:` / null）。
+  Future<void> updateVideoBookSecondarySubtitleSource(
+          String bookUid, String? secondarySubtitleSource) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid))).write(
+          VideoBooksCompanion(
+              secondarySubtitleSource: Value(secondarySubtitleSource)));
 
   /// 更新用户选中的音轨 id（libmpv `AudioTrack.id`；清除存 null）。
   Future<void> updateVideoBookAudioTrackId(
