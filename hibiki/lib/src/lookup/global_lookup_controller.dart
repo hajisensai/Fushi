@@ -167,16 +167,23 @@ class GlobalLookupController {
         : 1.0;
   }
 
-  /// Resolves gaiji bytes for an image://?dictionary=..&path=.. request.
+  /// Resolves the bytes for a dictionary media request from the overlay
+  /// WebView2. Both custom schemes are routed here (matching the in-app
+  /// InAppWebView): `image://?dictionary=..&path=..` (gaiji / <img>) and
+  /// `dictmedia://<encoded-path>?dictionary=..` (dictionary <link> stylesheets
+  /// and their relative font/bg resources). The two schemes carry the media
+  /// path in different positions, so parsing is scheme-aware (see
+  /// [resolveGlobalLookupMedia]). The Content-Type is derived natively from the
+  /// URL (see global_lookup_window.cpp MediaContentTypeHeader); this side only
+  /// supplies the bytes.
   Future<Uint8List> _resolveMedia(String url) async {
     try {
-      final Uri uri = Uri.parse(url);
-      final String dict = uri.queryParameters['dictionary'] ?? '';
-      final String path = uri.queryParameters['path'] ?? '';
-      if (dict.isEmpty || path.isEmpty) {
+      final GlobalLookupMediaRequest? request = resolveGlobalLookupMedia(url);
+      if (request == null) {
         return Uint8List(0);
       }
-      final Uint8List? bytes = HoshiDicts.instance.getMediaFile(dict, path);
+      final Uint8List? bytes =
+          HoshiDicts.instance.getMediaFile(request.dictionary, request.path);
       return bytes ?? Uint8List(0);
     } catch (_) {
       return Uint8List(0);
@@ -403,4 +410,107 @@ class GlobalLookupController {
       glog('nested: EXCEPTION $e\n$st');
     }
   }
+}
+
+/// A parsed dictionary-media request from the overlay WebView2.
+///
+/// The overlay (app-external global lookup) registers the SAME two custom
+/// schemes the in-app InAppWebView does (see
+/// `dictionary_webview_media.dart` `dictionaryMediaCustomSchemes`):
+///   - `image://?dictionary=<name>&path=<path>` — gaiji / <img> bytes; the
+///     Content-Type is the image type for the path's extension.
+///   - `dictmedia://<encoded-path>?dictionary=<name>` — a dictionary's <link>
+///     stylesheet (and its relative font/bg resources); the path lives in the
+///     URL **host** (percent-encoded) and the Content-Type is `text/css`.
+///
+/// This is a pure, dependency-free parse so it can be unit-tested directly.
+class GlobalLookupMediaRequest {
+  const GlobalLookupMediaRequest({
+    required this.dictionary,
+    required this.path,
+    required this.contentType,
+  });
+
+  final String dictionary;
+  final String path;
+
+  /// The HTTP Content-Type the resource should be served as. Mirrors the in-app
+  /// `dictionary_webview_media.dart` MIME logic and the native overlay's
+  /// `MediaContentTypeHeader`, so the same bytes get the same type on every
+  /// surface.
+  final String contentType;
+}
+
+/// Normalises a dictionary media path the same way the in-app
+/// `dictionary_webview_media.dart` `_normalizeMediaPath` does: trims, converts
+/// back-slashes to forward, and strips any leading slashes.
+String _normalizeGlobalLookupMediaPath(String path) {
+  return path.trim().replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
+}
+
+/// Returns the image MIME type for [path]'s extension, mirroring the in-app
+/// `_mimeTypeForPath`.
+String _globalLookupImageMime(String path) {
+  final String ext = path.split('.').last.toLowerCase();
+  switch (ext) {
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'svg':
+      return 'image/svg+xml';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+/// Parses an overlay media [url] into (dictionary, path, contentType),
+/// scheme-aware, matching the in-app `dictionary_webview_media.dart` parsing
+/// exactly. Returns null when the scheme is unsupported or the required fields
+/// are missing/empty (the caller then serves a 404 by returning no bytes).
+GlobalLookupMediaRequest? resolveGlobalLookupMedia(String url) {
+  final Uri uri;
+  try {
+    uri = Uri.parse(url);
+  } catch (_) {
+    return null;
+  }
+
+  if (uri.scheme == 'image') {
+    final String dictionary = uri.queryParameters['dictionary'] ?? '';
+    final String path =
+        _normalizeGlobalLookupMediaPath(uri.queryParameters['path'] ?? '');
+    if (dictionary.isEmpty || path.isEmpty) {
+      return null;
+    }
+    return GlobalLookupMediaRequest(
+      dictionary: dictionary,
+      path: path,
+      contentType: _globalLookupImageMime(path),
+    );
+  }
+
+  if (uri.scheme == 'dictmedia') {
+    final String dictionary = uri.queryParameters['dictionary'] ?? '';
+    // The path is the percent-encoded URL host (matching the in-app
+    // `Uri.decodeComponent(url.host)` parse).
+    final String path = _normalizeGlobalLookupMediaPath(
+      Uri.decodeComponent(uri.host),
+    );
+    if (dictionary.isEmpty || path.isEmpty) {
+      return null;
+    }
+    return GlobalLookupMediaRequest(
+      dictionary: dictionary,
+      path: path,
+      contentType: 'text/css',
+    );
+  }
+
+  return null;
 }

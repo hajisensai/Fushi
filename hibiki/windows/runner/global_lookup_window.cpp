@@ -47,6 +47,42 @@ std::string WideToUtf8(const std::wstring& value) {
   return result;
 }
 
+// Picks the HTTP Content-Type header for a resolved custom-scheme resource,
+// mirroring the in-app dictionary_webview_media.dart logic so the app-external
+// overlay serves the SAME content-type the in-app InAppWebView does:
+//   - dictmedia:// (dictionary <link> stylesheets) -> text/css (matches the
+//     in-app dictmedia branch which hardcodes text/css).
+//   - image:// and everything else -> by file extension (png/jpg/gif/webp/svg),
+//     defaulting to application/octet-stream.
+// The page only references dictmedia:// for the dictionary's own <link>
+// stylesheets, so text/css is the faithful type; image:// covers gaiji/<img>.
+std::wstring MediaContentTypeHeader(const std::string& url) {
+  const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
+  if (is_dictmedia) {
+    return L"Content-Type: text/css";
+  }
+  // Extension is taken from the part before any '?' query.
+  std::string path = url;
+  size_t q = path.find('?');
+  if (q != std::string::npos) {
+    path = path.substr(0, q);
+  }
+  size_t dot = path.find_last_of('.');
+  std::string ext;
+  if (dot != std::string::npos) {
+    ext = path.substr(dot + 1);
+    for (char& c : ext) {
+      c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+    }
+  }
+  if (ext == "png") return L"Content-Type: image/png";
+  if (ext == "jpg" || ext == "jpeg") return L"Content-Type: image/jpeg";
+  if (ext == "gif") return L"Content-Type: image/gif";
+  if (ext == "webp") return L"Content-Type: image/webp";
+  if (ext == "svg") return L"Content-Type: image/svg+xml";
+  return L"Content-Type: application/octet-stream";
+}
+
 }  // namespace
 
 GlobalLookupWindow* GlobalLookupWindow::s_hook_owner_ = nullptr;
@@ -280,16 +316,25 @@ std::wstring GlobalLookupWindow::LoadAdapterScript() const {
 void GlobalLookupWindow::EnsureWebView() {
   CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   auto options = Make<CoreWebView2EnvironmentOptions>();
-  // Register image:// as a custom scheme so WebResourceRequested fires for it
-  // (non file/http(s) schemes are otherwise ignored). Mirrors the fork's
-  // webview_environment.cpp:69-76.
+  // Register image:// AND dictmedia:// as custom schemes so WebResourceRequested
+  // fires for them (non file/http(s) schemes are otherwise ignored). Must mirror
+  // the in-app InAppWebView which registers BOTH schemes (see
+  // dictionary_webview_media.dart dictionaryMediaCustomSchemes = [image,
+  // dictmedia]). image:// serves gaiji/img bytes; dictmedia:// serves the
+  // dictionary's <link> stylesheets (+ their relative font/bg resources). Mirrors
+  // the fork's webview_environment.cpp:69-76.
   wil::com_ptr<ICoreWebView2EnvironmentOptions4> options4;
   if (SUCCEEDED(options->QueryInterface(IID_PPV_ARGS(&options4)))) {
-    auto reg = Make<CoreWebView2CustomSchemeRegistration>(L"image");
-    reg->put_TreatAsSecure(TRUE);
-    reg->put_HasAuthorityComponent(TRUE);
-    ICoreWebView2CustomSchemeRegistration* regs[] = {reg.Get()};
-    options4->SetCustomSchemeRegistrations(1, regs);
+    auto image_reg = Make<CoreWebView2CustomSchemeRegistration>(L"image");
+    image_reg->put_TreatAsSecure(TRUE);
+    image_reg->put_HasAuthorityComponent(TRUE);
+    auto dictmedia_reg =
+        Make<CoreWebView2CustomSchemeRegistration>(L"dictmedia");
+    dictmedia_reg->put_TreatAsSecure(TRUE);
+    dictmedia_reg->put_HasAuthorityComponent(TRUE);
+    ICoreWebView2CustomSchemeRegistration* regs[] = {image_reg.Get(),
+                                                     dictmedia_reg.Get()};
+    options4->SetCustomSchemeRegistrations(2, regs);
   }
 
   CreateCoreWebView2EnvironmentWithOptions(
@@ -409,7 +454,8 @@ void GlobalLookupWindow::ConfigureWebView() {
           .Get(),
       nullptr);
 
-  // Intercept image:// and route the bytes from the main Dart engine.
+  // Intercept image:// and dictmedia:// and route the bytes from the main
+  // Dart engine (the in-app InAppWebView handles both schemes).
   webview_->AddWebResourceRequestedFilter(
       L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
   webview_->add_WebResourceRequested(
@@ -421,7 +467,13 @@ void GlobalLookupWindow::ConfigureWebView() {
             wil::unique_cotaskmem_string uri;
             req->get_Uri(&uri);
             std::string url = WideToUtf8(uri.get());
-            if (url.rfind("image://", 0) != 0) {
+            // Route BOTH custom schemes through the main Dart engine, matching
+            // the in-app InAppWebView (image:// gaiji/img bytes + dictmedia://
+            // dictionary stylesheets). Anything else is a popup asset served by
+            // the virtual host.
+            const bool is_image = url.rfind("image://", 0) == 0;
+            const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
+            if (!is_image && !is_dictmedia) {
               return S_OK;  // Let the virtual host serve popup assets.
             }
             if (!media_resolver_) {
@@ -434,8 +486,14 @@ void GlobalLookupWindow::ConfigureWebView() {
             // the response here is safe.
             wil::com_ptr<ICoreWebView2WebResourceRequestedEventArgs> args_keep =
                 args;
+            // Content-Type is derived from the URL (scheme/extension) so the
+            // overlay serves the SAME type the in-app InAppWebView does — CSS
+            // for dictmedia://, image/* by extension for image:// (a hardcoded
+            // image/png would make WebView2 reject the dictionary stylesheet).
+            std::wstring content_type = MediaContentTypeHeader(url);
             media_resolver_(
-                url, [this, deferral, args_keep](std::vector<uint8_t> bytes) {
+                url, [this, deferral, args_keep, content_type](
+                         std::vector<uint8_t> bytes) {
                   wil::com_ptr<IStream> stream = SHCreateMemStream(
                       bytes.empty() ? nullptr : bytes.data(),
                       static_cast<UINT>(bytes.size()));
@@ -443,7 +501,7 @@ void GlobalLookupWindow::ConfigureWebView() {
                   env_->CreateWebResourceResponse(
                       stream.get(), bytes.empty() ? 404 : 200,
                       bytes.empty() ? L"Not Found" : L"OK",
-                      L"Content-Type: image/png", &resp);
+                      content_type.c_str(), &resp);
                   args_keep->put_Response(resp.get());
                   deferral->Complete();
                 });
