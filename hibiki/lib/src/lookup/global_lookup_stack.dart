@@ -67,6 +67,20 @@ class GlobalLookupFrame {
     );
   }
 
+  /// Serialises the frame to a render-payload map for the host script
+  /// (TODO-867 P3b global_lookup_host.js renderStack). Geometry / settings JS /
+  /// entries are NOT held by the pure stack model (they live in
+  /// global_lookup_render); this map carries only the stack-owned identity +
+  /// linkage fields. [GlobalLookupController] merges per-frame geometry +
+  /// settingsJs on top before pushing the payload.
+  Map<String, Object?> toRenderMap() {
+    return <String, Object?>{
+      'id': id,
+      'parentIndex': parentIndex,
+      'clearSelectionSignal': clearSelectionSignal,
+    };
+  }
+
   @override
   bool operator ==(Object other) {
     return other is GlobalLookupFrame &&

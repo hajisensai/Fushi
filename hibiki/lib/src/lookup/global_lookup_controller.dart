@@ -19,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'package:hibiki/src/lookup/global_lookup_channel.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/global_lookup_render.dart';
+import 'package:hibiki/src/lookup/global_lookup_stack.dart';
 import 'package:hibiki/src/lookup/selection_capture_ffi.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -49,6 +50,16 @@ class GlobalLookupController {
   // off-screen / awaiting reveal. Reset per lookup.
   bool _revealed = false;
   Timer? _revealSafety;
+
+  // TODO-867 P3b nested stack. The ordered lookup-popup stack (index 0 root
+  // ... last = deepest child) drives the host renderStack payload. Each
+  // frame's own DictionarySearchResult is held alongside (the pure stack
+  // model only carries identity/linkage). _frameSeq mints stable per-frame
+  // ids (the stack model never generates random/clock ids, see its docs).
+  GlobalLookupStack _stack = GlobalLookupStack.empty;
+  final Map<String, DictionarySearchResult> _frameResults =
+      <String, DictionarySearchResult>{};
+  int _frameSeq = 0;
 
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
@@ -125,6 +136,13 @@ class GlobalLookupController {
       _revealed = false;
       _revealSafety?.cancel();
 
+      // TODO-867 P3b: a new hotkey lookup RESETS the whole stack to a single
+      // root frame (no result -> empty stack, nothing pushed; see
+      // pushLookupFrame). The single-frame overlay (_renderResult below) is
+      // unchanged; _renderStack additionally emits the host stack payload
+      // (inert until P3c injects global_lookup_host.js + navigates host.html).
+      _resetStackRoot(text, result);
+
       // Render OFF-SCREEN at the reader-faithful size (popupMax* × appUiScale ×
       // dpr) so the page measures at the correct width straight away; the card
       // is revealed once via overlaySize. dpr is the main window's — the same
@@ -137,6 +155,7 @@ class GlobalLookupController {
       final bool shown = await GlobalLookupChannel.showAt(
           x: 0, y: 0, width: w0, height: h0, atCursor: true);
       await _renderResult(result);
+      await _renderStack();
       glog('hotkey: showAt(atCursor)=$shown off-screen w0=$w0 h0=$h0 rendered');
       _autoReadFirstEntry(model, result);
       // Safety: if the page never reports a size (render failure), reveal at the
@@ -215,6 +234,34 @@ class GlobalLookupController {
     glog('js: handler=$handler args=${message['args']}');
     if (handler == 'tapOutside' || handler == 'dismiss') {
       GlobalLookupChannel.hide();
+      return;
+    }
+    // TODO-867 P3b nested stack: the host can request closing a specific
+    // layer. dismissPopupAt([index]) closes that popup + its children
+    // (root index 0 -> whole stack empty -> hide); closeChildPopups([parent])
+    // truncates children of a parent (+ clears that parent's selection). Both
+    // rebuild the stack via the pure model and re-render. (These are P3c-era
+    // host messages; wired now so the stack path is exercised end-to-end.)
+    if (handler == 'dismissPopupAt') {
+      final int? index = _firstIntArg(message);
+      if (index != null) {
+        _stack = dismissPopupAt(_stack, index);
+        _pruneFrameResults();
+        if (_stack.isEmpty) {
+          GlobalLookupChannel.hide();
+        } else {
+          unawaited(_renderStack());
+        }
+      }
+      return;
+    }
+    if (handler == 'closeChildPopups') {
+      final int? parentIndex = _firstIntArg(message);
+      if (parentIndex != null) {
+        _stack = closeChildPopupsAndClearSelection(_stack, parentIndex);
+        _pruneFrameResults();
+        unawaited(_renderStack());
+      }
       return;
     }
     // TODO-854 M1a-2：顶部下滑关闭。覆盖窗的 kPopupTopPullReleaseJs 识别到顶部
@@ -403,12 +450,116 @@ class GlobalLookupController {
       );
       _lastSentWidth = -1;
       _lastSentHeight = -1;
+      // TODO-867 P3b: push a CHILD frame onto the stack (parent = current
+      // top). pushLookupFrame drops a no-result lookup (resultCount<=0), so an
+      // empty nested search leaves the stack unchanged (identical object) and
+      // only re-renders the single-frame overlay's no-results state.
+      _pushChildFrame(query, result);
       await _renderResult(result);
+      await _renderStack();
       glog('nested: "$query" entries=${result.entries.length}');
       _autoReadFirstEntry(model, result);
     } catch (e, st) {
       glog('nested: EXCEPTION $e\n$st');
     }
+  }
+
+  /// Resets the stack to a single root frame for a fresh hotkey lookup. A
+  /// no-result lookup leaves the stack empty (pushLookupFrame drops it), so
+  /// the host shows nothing while the single-frame overlay shows its own
+  /// no-results state. [text] is the query, [result] its search result.
+  void _resetStackRoot(String text, DictionarySearchResult result) {
+    _frameResults.clear();
+    final String id = _nextFrameId();
+    final GlobalLookupFrame root = GlobalLookupFrame(
+      id: id,
+      query: text,
+      parentIndex: -1,
+      resultCount: result.entries.length,
+    );
+    _stack = pushLookupFrame(GlobalLookupStack.empty, root);
+    if (_stack.isNotEmpty) {
+      _frameResults[id] = result;
+    }
+  }
+
+  /// Pushes a child frame (nested lookup) whose parent is the current top.
+  /// pushLookupFrame drops a no-result lookup, so the stack is unchanged when
+  /// [result] is empty (identical object returned). [query] is the clicked
+  /// term; [result] its search result.
+  void _pushChildFrame(String query, DictionarySearchResult result) {
+    final int parentIndex = _stack.length - 1;
+    final String id = _nextFrameId();
+    final GlobalLookupFrame child = GlobalLookupFrame(
+      id: id,
+      query: query,
+      parentIndex: parentIndex,
+      resultCount: result.entries.length,
+    );
+    final GlobalLookupStack next = pushLookupFrame(_stack, child);
+    if (!identical(next, _stack)) {
+      _stack = next;
+      _frameResults[id] = result;
+    }
+  }
+
+  /// Mints a stable, monotonic per-frame id. The pure stack model never
+  /// generates random/clock ids (so it stays testable); the controller owns
+  /// id minting here.
+  String _nextFrameId() => 'frame-${_frameSeq++}';
+
+  /// Drops cached results for frames no longer in the stack (after a close /
+  /// truncate), so the result map does not leak removed layers.
+  void _pruneFrameResults() {
+    final Set<String> live =
+        _stack.frames.map((GlobalLookupFrame f) => f.id).toSet();
+    _frameResults.removeWhere((String id, _) => !live.contains(id));
+  }
+
+  /// Extracts the first int argument from a host JS message (args[0]).
+  /// Returns null when absent / non-numeric.
+  int? _firstIntArg(Map<String, Object?> message) {
+    final Object? args = message['args'];
+    if (args is List && args.isNotEmpty) {
+      final Object? first = args.first;
+      if (first is num) {
+        return first.toInt();
+      }
+      if (first is String) {
+        return int.tryParse(first);
+      }
+    }
+    return null;
+  }
+
+  /// Builds the host stack render payload from the current stack + per-frame
+  /// results and pushes it to the overlay (TODO-867 P3b). Inert until P3c
+  /// injects global_lookup_host.js (the script is guarded by
+  /// `window.__globalLookupHost &&`), so the live single-frame overlay is
+  /// unaffected today. Frames whose result was pruned are skipped.
+  Future<void> _renderStack() async {
+    final BuildContext? ctx = _appModel?.navigatorKey.currentContext;
+    final AppModel? model = _appModel;
+    if (ctx == null || model == null || _stack.isEmpty) {
+      return;
+    }
+    final List<GlobalLookupFramePayload> payloads =
+        <GlobalLookupFramePayload>[];
+    for (final GlobalLookupFrame frame in _stack.frames) {
+      final DictionarySearchResult? result = _frameResults[frame.id];
+      if (result == null) {
+        continue;
+      }
+      payloads.add(GlobalLookupFramePayload(frame: frame, result: result));
+    }
+    if (payloads.isEmpty) {
+      return;
+    }
+    await GlobalLookupChannel.render(buildStackRenderScript(
+      context: ctx,
+      appModel: model,
+      payloads: payloads,
+    ));
   }
 }
 
