@@ -32,6 +32,8 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     toggleSubtitleList: () => log.add('toggleSubtitleList'),
     toggleImmersiveLock: () => log.add('toggleImmersiveLock'),
     toggleSubtitleBlur: () => log.add('toggleSubtitleBlur'),
+    cycleSubtitleObscure: () => log.add('cycleSubtitleObscure'),
+    toggleSubtitleHide: () => log.add('toggleSubtitleHide'),
     toggleFavoriteSentence: () => log.add('toggleFavoriteSentence'),
     replayCurrentSubtitle: () => log.add('replayCurrentSubtitle'),
     replayPreviousSubtitle: () => log.add('replayPreviousSubtitle'),

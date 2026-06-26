@@ -123,6 +123,13 @@ enum ShortcutAction {
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),
   videoNextChapter(ShortcutScope.video, 'video_next_chapter'),
   videoEscape(ShortcutScope.video, 'video_escape'),
+  // TODO-840 Part B：字幕遮蔽模式（不遮蔽/模糊/隐藏，见 VideoSubtitleObscureMode）。
+  // videoCycleSubtitleObscure 在三态间循环；videoToggleSubtitleHide 直接开/关「隐藏
+  // 主字幕」。与历史的 videoToggleSubtitleBlur（B，开/关模糊）正交并存——后者保留
+  // 不破坏旧绑定（Never break userspace）。三者执行体都在 video_player_shortcuts。
+  videoCycleSubtitleObscure(
+      ShortcutScope.video, 'video_cycle_subtitle_obscure'),
+  videoToggleSubtitleHide(ShortcutScope.video, 'video_toggle_subtitle_hide'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

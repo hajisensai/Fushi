@@ -107,6 +107,10 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_video_toggle_immersive_lock;
     case ShortcutAction.videoToggleSubtitleBlur:
       return t.shortcut_action_video_toggle_subtitle_blur;
+    case ShortcutAction.videoCycleSubtitleObscure:
+      return t.shortcut_action_video_cycle_subtitle_obscure;
+    case ShortcutAction.videoToggleSubtitleHide:
+      return t.shortcut_action_video_toggle_subtitle_hide;
     case ShortcutAction.videoToggleFavoriteSentence:
       return t.shortcut_action_video_toggle_favorite_sentence;
     case ShortcutAction.videoReplayCurrentSubtitle:

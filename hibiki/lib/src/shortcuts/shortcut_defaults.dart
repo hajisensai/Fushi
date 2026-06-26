@@ -292,6 +292,15 @@ class ShortcutDefaults {
     ShortcutAction.videoEscape: _kb([
       _key(LogicalKeyboardKey.escape),
     ]),
+    // TODO-840 Part B：字幕遮蔽三态循环（不遮蔽→模糊→隐藏→…）默认 Shift+B，紧挨历史
+    // 的「切换模糊」B 键（videoToggleSubtitleBlur 仍保留），video 独立 co-active 组内
+    // 不与其它键冲突。直接「隐藏主字幕」开关默认 H（video 组内未占用）。
+    ShortcutAction.videoCycleSubtitleObscure: _kb([
+      _key(LogicalKeyboardKey.keyB, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleSubtitleHide: _kb([
+      _key(LogicalKeyboardKey.keyH),
+    ]),
     // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
     // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
     // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。

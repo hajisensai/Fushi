@@ -26,6 +26,8 @@ class VideoPlayerShortcutActions {
     required this.toggleSubtitleList,
     required this.toggleImmersiveLock,
     required this.toggleSubtitleBlur,
+    required this.cycleSubtitleObscure,
+    required this.toggleSubtitleHide,
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
     required this.replayPreviousSubtitle,
@@ -63,6 +65,12 @@ class VideoPlayerShortcutActions {
   /// 翻转字幕模糊（默认 B 键，asbplayer 同款）。原本挂在 video 本体内层独立
   /// CallbackShortcuts，TODO-134 起并入可重映射注册表，与其它视频键统一。
   final VoidCallback toggleSubtitleBlur;
+
+  /// 循环字幕遮蔽模式（TODO-840 Part B，默认 Shift+B）：不遮蔽 → 模糊 → 隐藏 → …。
+  final VoidCallback cycleSubtitleObscure;
+
+  /// 开/关「隐藏主字幕」（TODO-840 Part B，默认 H）：在隐藏与不遮蔽之间切换。
+  final VoidCallback toggleSubtitleHide;
 
   final VoidCallback toggleFavoriteSentence;
   final VoidCallback replayCurrentSubtitle;
@@ -106,6 +114,8 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
     ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
+    ShortcutAction.videoCycleSubtitleObscure: actions.cycleSubtitleObscure,
+    ShortcutAction.videoToggleSubtitleHide: actions.toggleSubtitleHide,
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
@@ -132,8 +142,14 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
   for (final MapEntry<ShortcutAction, VoidCallback> entry
       in callbacks.entries) {
     final ShortcutAction action = entry.key;
-    final bool includeRepeats =
-        action != ShortcutAction.videoToggleSubtitleBlur;
+    // 模糊切换 / 遮蔽循环 / 隐藏切换都是 press-edge-only（按一下翻一次，长按不连发，
+    // 与历史 videoToggleSubtitleBlur 同语义）。TODO-840 Part B。
+    const Set<ShortcutAction> pressEdgeOnly = <ShortcutAction>{
+      ShortcutAction.videoToggleSubtitleBlur,
+      ShortcutAction.videoCycleSubtitleObscure,
+      ShortcutAction.videoToggleSubtitleHide,
+    };
+    final bool includeRepeats = !pressEdgeOnly.contains(action);
     for (final binding in registry.bindingsFor(action).keyboardBindings) {
       // Last writer wins if two actions share a key; the settings UI's conflict
       // check prevents users from creating that within the video scope, and the
