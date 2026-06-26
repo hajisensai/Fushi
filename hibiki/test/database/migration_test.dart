@@ -249,12 +249,76 @@ Future<HibikiDatabase> _openV24DbWithoutMinedSentences() async {
   return db;
 }
 
+/// Opens a `user_version = 26` database that already has minimal video_books /
+/// epub_books rows (WITHOUT the v27 source_id column and WITHOUT media_sources),
+/// forcing the real `if (from < 27)` onUpgrade branch (create media_sources +
+/// add source_id to both book tables) to run. This is the TODO-817 lossless-
+/// migration check: the seeded rows must survive with source_id defaulting to
+/// NULL. The DDL mirrors the v26 generated shape minus the new column.
+Future<HibikiDatabase> _openV26DbWithBookRows() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA foreign_keys = OFF');
+        rawDb.execute('''
+CREATE TABLE epub_books (
+  book_key TEXT NOT NULL PRIMARY KEY,
+  title TEXT NOT NULL,
+  author TEXT,
+  cover_path TEXT,
+  epub_path TEXT NOT NULL,
+  extract_dir TEXT NOT NULL,
+  chapter_count INTEGER NOT NULL,
+  chapters_json TEXT NOT NULL,
+  toc_json TEXT,
+  source_metadata TEXT,
+  imported_at INTEGER NOT NULL
+)
+''');
+        rawDb.execute('''
+CREATE TABLE video_books (
+  book_uid TEXT NOT NULL PRIMARY KEY,
+  title TEXT NOT NULL,
+  video_path TEXT NOT NULL,
+  subtitle_source TEXT,
+  subtitle_format TEXT,
+  embedded_subtitle_track INTEGER,
+  cover_path TEXT,
+  last_position_ms INTEGER NOT NULL DEFAULT 0,
+  imported_at INTEGER,
+  playlist_json TEXT,
+  current_episode INTEGER NOT NULL DEFAULT 0,
+  audio_track_id TEXT,
+  delay_ms INTEGER NOT NULL DEFAULT 0,
+  completed_at INTEGER
+)
+''');
+        rawDb.execute(
+          'INSERT INTO epub_books '
+          '(book_key, title, epub_path, extract_dir, chapter_count, '
+          ' chapters_json, imported_at) '
+          "VALUES ('GammaBook', 'GammaBook', '/abs/g.epub', '/abs/g', 1, "
+          "'[]', 30)",
+        );
+        rawDb.execute(
+          'INSERT INTO video_books '
+          '(book_uid, title, video_path) '
+          "VALUES ('video/seed', 'SeedVideo', '/abs/seed.mp4')",
+        );
+        rawDb.execute('PRAGMA user_version = 26');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 26);
+      expect(version.data['user_version'], db.schemaVersion);
     });
 
     test('all expected tables exist', () async {
@@ -293,6 +357,7 @@ void main() {
           'favorite_words',
           'mining_statistics',
           'mined_sentences',
+          'media_sources',
         ]),
       );
     });
@@ -314,7 +379,7 @@ void main() {
       // The upgrade ladder bumped the schema to the current version (a v14 DB
       // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 26);
+      expect(version.read<int>('user_version'), db.schemaVersion);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -332,7 +397,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 26);
+      expect(version.read<int>('user_version'), db.schemaVersion);
 
       // The table carries the full v17 column set (no stepwise add-column
       // ladder remains).
@@ -375,7 +440,7 @@ void main() {
       final db = await _openV20DbWithoutVideoTagMappings();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 26);
+      expect(version.read<int>('user_version'), db.schemaVersion);
 
       // The new mapping table exists and shares the BookTags pool: tag the
       // seeded video book and read it back.
@@ -394,7 +459,7 @@ void main() {
       final db = await _openV21DbWithoutVideoStats();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 26);
+      expect(version.read<int>('user_version'), db.schemaVersion);
 
       // The pre-existing video_books row survived the migration, with the new
       // completed_at column defaulting to null (lossless add-column).
@@ -435,7 +500,7 @@ void main() {
       final db = await _openV22DbWithoutActivityTables();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 26);
+      expect(version.read<int>('user_version'), db.schemaVersion);
 
       // 收藏：新增→已存在判定→取消，全链可用。
       final added = await db.addFavoriteWord(
@@ -485,7 +550,7 @@ void main() {
       final db = await _openV24DbWithoutMinedSentences();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 26);
+      expect(version.read<int>('user_version'), db.schemaVersion);
 
       // The migrated table is usable: record two mined sentences (history is a
       // flow, not deduplicated) then read them back newest-first.
@@ -531,6 +596,52 @@ void main() {
       expect(await db.getAllMinedSentences(), hasLength(1));
       await db.clearMinedSentences();
       expect(await db.getAllMinedSentences(), isEmpty);
+    });
+
+    test('real v26->v27 creates media_sources + adds source_id (lossless)',
+        () async {
+      // TODO-817 M0: the from<27 onUpgrade branch must (a) create the
+      // media_sources table, (b) add a nullable source_id FK column to both
+      // video_books and epub_books, and (c) leave the pre-existing book rows
+      // intact with source_id defaulting to NULL ("Never break userspace").
+      final db = await _openV26DbWithBookRows();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+
+      // media_sources table now exists.
+      final tables = await db
+          .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
+          .get();
+      final tableNames = tables.map((r) => r.data['name'] as String).toSet();
+      expect(tableNames, contains('media_sources'));
+
+      // Both book tables gained the source_id column.
+      final epubCols =
+          (await db.customSelect("PRAGMA table_info('epub_books')").get())
+              .map((r) => r.data['name'] as String)
+              .toSet();
+      expect(epubCols, contains('source_id'));
+      final videoCols =
+          (await db.customSelect("PRAGMA table_info('video_books')").get())
+              .map((r) => r.data['name'] as String)
+              .toSet();
+      expect(videoCols, contains('source_id'));
+
+      // Lossless: the seeded rows survive, with source_id NULL.
+      final epub = await db
+          .customSelect(
+              "SELECT book_key, source_id FROM epub_books WHERE book_key='GammaBook'")
+          .getSingle();
+      expect(epub.read<String>('book_key'), 'GammaBook');
+      expect(epub.data['source_id'], isNull);
+
+      final video = await db
+          .customSelect(
+              "SELECT book_uid, source_id FROM video_books WHERE book_uid='video/seed'")
+          .getSingle();
+      expect(video.read<String>('book_uid'), 'video/seed');
+      expect(video.data['source_id'], isNull);
     });
 
     test(

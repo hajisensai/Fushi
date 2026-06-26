@@ -239,6 +239,12 @@ class EpubBooks extends Table {
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
 
+  /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
+  /// onDelete:setNull = 移除来源时保留书目（归 NULL），不连坐删条目。
+  IntColumn get sourceId => integer()
+      .nullable()
+      .references(MediaSources, #id, onDelete: KeyAction.setNull)();
+
   @override
   Set<Column> get primaryKey => {bookKey};
 }
@@ -377,6 +383,12 @@ class VideoBooks extends Table {
   /// 视频首次播放进度 ≥ 90% 的时间戳（完成标记）；null = 未完成。统计去重计数用。
   DateTimeColumn get completedAt => dateTime().nullable()();
 
+  /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
+  /// onDelete:setNull = 移除来源时保留视频（归 NULL），不连坐删条目。
+  IntColumn get sourceId => integer()
+      .nullable()
+      .references(MediaSources, #id, onDelete: KeyAction.setNull)();
+
   @override
   Set<Column> get primaryKey => {bookUid};
 }
@@ -473,5 +485,52 @@ class MinedSentences extends Table {
   /// AnkiConnect 成功制卡带回的 note id；AnkiDroid 恒 null。
   IntColumn get noteId => integer().nullable()();
   TextColumn get dateKey => text()();
+  IntColumn get createdAt => integer()();
+}
+
+// ── media_sources ─────────────────────────────────────────────────
+/// TODO-817 网络/本地来源库：一个「来源」是一个媒体根（本地文件夹或网络根），
+/// 扫描后产出多本书/视频（[EpubBooks].sourceId / [VideoBooks].sourceId 反向指向）。
+///
+/// 🔴 凭据红线：[configJson] **绝不裸存明文密码**。本地来源恒 NULL；网络来源（SFTP/
+/// FTP/HTTP，M3 才落）只存凭据「引用（键）」而非密码本体，密码存储方案（复用 base64
+/// vs 真 secure storage）是 M3 用户决策点，不在 M0 预判。
+@DataClassName('MediaSourceRow')
+class MediaSources extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 显示名，默认取 rootPath 末段文件夹名。
+  TextColumn get label => text()();
+
+  /// 媒体种类：'video' | 'book'。同一文件夹可分别建 video / book 两条来源，
+  /// 故不对 rootPath 加 UNIQUE。
+  TextColumn get mediaKind => text()();
+
+  /// 传输方式：'local' | 'sftp' | 'ftp' | 'http'。M0 只写 'local'，
+  /// 网络取值前瞻容纳（M3 才接入）。
+  TextColumn get transport => text().withDefault(const Constant('local'))();
+
+  /// 本地绝对路径或网络根（含 scheme）。
+  TextColumn get rootPath => text()();
+
+  /// 凭据引用（键）/ 网络配置 JSON。**绝不裸存明文密码**；本地恒 NULL。
+  TextColumn get configJson => text().nullable()();
+
+  /// 截图「媒体数」：上次扫描产出的条目数。
+  IntColumn get mediaCount => integer().withDefault(const Constant(0))();
+
+  /// 截图「上次扫描时间」。
+  DateTimeColumn get lastScannedAt => dateTime().nullable()();
+
+  /// 上次扫描失败原因（成功则 NULL）。
+  TextColumn get lastScanError => text().nullable()();
+
+  /// 是否递归扫描子目录。
+  BoolColumn get recursive => boolean().withDefault(const Constant(true))();
+
+  /// 列表排序权重（同 [BookTags].sortOrder 范式）。
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
   IntColumn get createdAt => integer()();
 }

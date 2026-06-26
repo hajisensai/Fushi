@@ -80,13 +80,14 @@ LazyDatabase _openDb(String dbDirectory) {
   FavoriteWords,
   MiningStatistics,
   MinedSentences,
+  MediaSources,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 26;
+  int get schemaVersion => 27;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -393,6 +394,26 @@ class HibikiDatabase extends _$HibikiDatabase {
             // 失配旧行永远查不中，故需一次性安全回填。详见
             // backfillMismatchedAudiobookKeysV26 的契约说明。
             await backfillMismatchedAudiobookKeysV26();
+          }
+          if (from < 27) {
+            // TODO-817 网络/本地来源库地基：新增 media_sources 表 + video_books /
+            // epub_books 的 source_id 外键列（onDelete:setNull）。无损迁移：只
+            // createTable + addColumn（nullable 无 default → 既有行 source_id 全
+            // NULL），不 DROP / 不改既有列 / 不删行。守卫幂等（fresh DB 已由 onCreate
+            // 的 createAll 建好，重复升级 no-op）。**顺序必须先 createTable(mediaSources)
+            // 再两 addColumn**（FK 目标表须先存在；SQLite ADD COLUMN 带 REFERENCES 仅
+            // 当新列默认 NULL 时合法，sourceId nullable 无 default 满足）。
+            if (!await _tableExists('media_sources')) {
+              await m.createTable(mediaSources);
+            }
+            if (await _tableExists('video_books') &&
+                !await _columnExists('video_books', 'source_id')) {
+              await m.addColumn(videoBooks, videoBooks.sourceId);
+            }
+            if (await _tableExists('epub_books') &&
+                !await _columnExists('epub_books', 'source_id')) {
+              await m.addColumn(epubBooks, epubBooks.sourceId);
+            }
           }
         },
         onCreate: (m) async {
@@ -1016,6 +1037,65 @@ class HibikiDatabase extends _$HibikiDatabase {
         await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
             .go();
       });
+
+  // ── media_sources ───────────────────────────────────────────────
+  // TODO-817：网络/本地来源库 CRUD。configJson 绝不裸存明文密码（本地恒 NULL，
+  // 网络只存凭据引用键，密码本体 M3 才落）。
+
+  /// 插入一条来源，返回自增 id。
+  Future<int> insertMediaSource(MediaSourcesCompanion source) =>
+      into(mediaSources).insert(source);
+
+  /// 按 id 幂等 upsert（存在则整行更新）。
+  Future<void> upsertMediaSource(MediaSourcesCompanion source) =>
+      into(mediaSources).insertOnConflictUpdate(source);
+
+  /// 全部来源，按 sortOrder 升序、id 升序（列表稳定排序）。
+  Future<List<MediaSourceRow>> getAllMediaSources() => (select(mediaSources)
+        ..orderBy([
+          (t) => OrderingTerm(expression: t.sortOrder),
+          (t) => OrderingTerm(expression: t.id),
+        ]))
+      .get();
+
+  /// 按媒体种类（'video' | 'book'）过滤，仍按 sortOrder、id 升序。
+  Future<List<MediaSourceRow>> getMediaSourcesByKind(String mediaKind) =>
+      (select(mediaSources)
+            ..where((t) => t.mediaKind.equals(mediaKind))
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+  /// 按 id 取单条来源（不存在返回 null）。
+  Future<MediaSourceRow?> getMediaSourceById(int id) =>
+      (select(mediaSources)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// 删除来源：依赖 FK onDelete:setNull，归属本来源的 video_books / epub_books
+  /// 自动把 source_id 归 NULL（条目保留，不连坐删）。返回删除行数。
+  Future<int> deleteMediaSource(int id) =>
+      (delete(mediaSources)..where((t) => t.id.equals(id))).go();
+
+  /// 回写一次扫描结果（媒体数 / 时间 / 失败原因）。
+  Future<void> updateMediaSourceScanResult({
+    required int id,
+    required int mediaCount,
+    required DateTime lastScannedAt,
+    String? lastScanError,
+  }) =>
+      (update(mediaSources)..where((t) => t.id.equals(id))).write(
+        MediaSourcesCompanion(
+          mediaCount: Value(mediaCount),
+          lastScannedAt: Value(lastScannedAt),
+          lastScanError: Value(lastScanError),
+        ),
+      );
+
+  /// 更新来源显示名。
+  Future<void> updateMediaSourceLabel(int id, String label) =>
+      (update(mediaSources)..where((t) => t.id.equals(id)))
+          .write(MediaSourcesCompanion(label: Value(label)));
 
   // ── audio cues ──────────────────────────────────────────────────
   // [bookKey] is the owner key: either an audiobook bookKey OR an srt_books.uid

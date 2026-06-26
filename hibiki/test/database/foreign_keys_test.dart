@@ -1,5 +1,6 @@
-﻿import 'dart:io';
+import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -187,6 +188,70 @@ void main() {
         .go();
 
     expect(await _count(db, 'book_tag_mappings'), 0);
+  });
+
+  test(
+      'deleting a media source sets source_id NULL on its books (setNull, '
+      'not cascade)', () async {
+    // TODO-817 M0: this is the repo's FIRST onDelete:setNull FK. _openRealDb is
+    // mandatory because only the on-disk DB has PRAGMA foreign_keys=ON enforced
+    // (forTesting memory DBs do not). Removing a source must KEEP the media
+    // rows and null out their source_id — the opposite of cascade.
+    final db = await _openRealDb();
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Drive',
+        mediaKind: 'book',
+        rootPath: '/srv/media',
+        createdAt: now,
+      ),
+    );
+
+    const String bookKey = 'SourcedBook';
+    await db.into(db.epubBooks).insert(
+          EpubBooksCompanion.insert(
+            bookKey: bookKey,
+            title: 'SourcedBook',
+            epubPath: '/tmp/sb.epub',
+            extractDir: '/tmp/sb',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: now,
+            sourceId: Value(sourceId),
+          ),
+        );
+    const String bookUid = 'video/sourced';
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: bookUid,
+        title: 'SourcedVideo',
+        videoPath: '/tmp/sv.mp4',
+        sourceId: Value(sourceId),
+      ),
+    );
+
+    // Precondition: both rows point at the source.
+    final epubBefore = await (db.select(db.epubBooks)
+          ..where((t) => t.bookKey.equals(bookKey)))
+        .getSingle();
+    expect(epubBefore.sourceId, sourceId);
+    final videoBefore = await db.getVideoBookByBookUid(bookUid);
+    expect(videoBefore!.sourceId, sourceId);
+
+    final removed = await db.deleteMediaSource(sourceId);
+    expect(removed, 1);
+
+    // setNull: the media rows SURVIVE; only source_id is nulled.
+    expect(await _count(db, 'epub_books'), 1);
+    expect(await _count(db, 'video_books'), 1);
+    final epubAfter = await (db.select(db.epubBooks)
+          ..where((t) => t.bookKey.equals(bookKey)))
+        .getSingle();
+    expect(epubAfter.sourceId, isNull);
+    final videoAfter = await db.getVideoBookByBookUid(bookUid);
+    expect(videoAfter!.sourceId, isNull);
   });
 
   test('migration tolerates legacy database with existing sort order column',
