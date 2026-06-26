@@ -369,6 +369,21 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-845: how many leading dictionary blocks the lookup popup auto-expands
+  // (force-open <details>) even when "collapse dictionaries" is on. Default 1
+  // preserves the historical "only the first dictionary is expanded" behaviour.
+  // Clamped to 0..6 on read and write so a corrupt/out-of-range stored value
+  // can never reach popup.js as an absurd expand threshold; the clamp range is
+  // identical to the lookup settings slider min/max.
+  int get popupAutoExpandDictionaries =>
+      (getPref('popup_auto_expand_dictionaries', defaultValue: 1) as int)
+          .clamp(0, 6);
+
+  Future<void> setPopupAutoExpandDictionaries(int count) async {
+    await setPref('popup_auto_expand_dictionaries', count.clamp(0, 6));
+    notifyListeners();
+  }
+
   // Default OFF (smooth/animated popup scrolling). Instant (no-animation)
   // jump scrolling is an e-ink opt-in enabled only by the dedicated lookup
   // setting. getPref returns this default solely when the key was never set,

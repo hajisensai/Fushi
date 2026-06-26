@@ -1834,5 +1834,7 @@
   "update_install_permission_title": "允許安裝更新",
   "update_install_permission_message": "請在系統設定中允許 Hibiki 安裝應用程式，然後重試安裝。",
   "update_install_permission_retry": "重試安裝",
-  "update_install_permission_cancel": "取消"
+  "update_install_permission_cancel": "取消",
+  "popup_auto_expand_dictionaries": "Auto-expand dictionaries",
+  "popup_auto_expand_dictionaries_hint": "Keep the first N dictionary blocks expanded even when 'Collapse dictionaries' is on (0 = collapse all)"
 }

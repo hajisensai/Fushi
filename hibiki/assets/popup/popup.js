@@ -1992,10 +1992,17 @@ window.hoshiPopupMineFirstEntry = async function() {
     return true;
 };
 
-function createGlossarySection(dictName, contents, isFirst, entryIdx) {
+// TODO-845: `dictIdx` is the dictionary's global position within an entry's
+// glossary body (0-based). The popup auto-expands the leading
+// `window.autoExpandDictionaries` blocks even when collapseDictionaries is on
+// (default 1 = the historical "only the first dictionary expanded" behaviour,
+// where the leading block opened regardless of its per-dictionary collapse flag).
+function createGlossarySection(dictName, contents, dictIdx, entryIdx) {
     const details = el('details', { className: 'glossary-group' });
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
-    if (isFirst || (!window.collapseDictionaries && !perDictCollapsed)) {
+    const autoExpandN = window.autoExpandDictionaries ?? 1;
+    const autoExpanded = dictIdx < autoExpandN;
+    if (autoExpanded || (!window.collapseDictionaries && !perDictCollapsed)) {
         details.open = true;
     }
 
@@ -2201,7 +2208,7 @@ function buildEntryElement(entry, idx) {
     const { details, body, grouped, dictNames } = glossaryWrapper;
     entryDiv.appendChild(details);
     for (let dictIdx = 0; dictIdx < dictNames.length; dictIdx++) {
-        body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx === 0, idx));
+        body.appendChild(createGlossarySection(dictNames[dictIdx], grouped[dictNames[dictIdx]], dictIdx, idx));
     }
 
     return entryDiv;
@@ -2532,9 +2539,18 @@ window.updatePopupIncremental = function() {
                         termTags: g.termTags,
                     });
                 });
+                // TODO-845: the auto-expand threshold keys off each block's global
+                // index within the entry's glossary body. New blocks land *after*
+                // the already-rendered ones, so seed appendIndex with the live count
+                // of visible `.glossary-group` children and bump it per appended
+                // block — same `dictIdx < autoExpandN` rule as the first-paint loop,
+                // never a bare `false` (which would forbid any incremental expand).
+                let appendIndex =
+                    body.querySelectorAll(':scope > .glossary-group').length;
                 for (const dictName of Object.keys(grouped)) {
                     if (!existingDicts.has(dictName)) {
-                        const section = createGlossarySection(dictName, grouped[dictName], false, idx);
+                        const section = createGlossarySection(dictName, grouped[dictName], appendIndex, idx);
+                        appendIndex++;
                         body.appendChild(section);
                         postProcessRuby(section);
                     }

@@ -3314,6 +3314,10 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
+  int get popupAutoExpandDictionaries => prefsRepo.popupAutoExpandDictionaries;
+  Future<void> setPopupAutoExpandDictionaries(int count) =>
+      prefsRepo.setPopupAutoExpandDictionaries(count);
+
   bool get remoteLookupEnabled => prefsRepo.remoteLookupEnabled;
   Future<void> setRemoteLookupEnabled(bool value) =>
       prefsRepo.setRemoteLookupEnabled(value);

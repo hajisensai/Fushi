@@ -528,6 +528,7 @@ class DictionaryPopupWebViewState
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
     final collapseDict = appModel.collapseDictionaries;
+    final autoExpandDicts = appModel.popupAutoExpandDictionaries;
     final showExprTags = appModel.showExpressionTags;
     final popupInstantScroll = appModel.popupInstantScroll;
     final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
@@ -594,6 +595,11 @@ class DictionaryPopupWebViewState
       window.harmonicFrequency = $harmonicFreq;
       window.showExpressionTags = $showExprTags;
       window.collapseDictionaries = $collapseDict;
+      // TODO-845: how many leading dictionary blocks the popup auto-expands even
+      // when collapseDictionaries is on. Per-lookup scalar re-injected here (after
+      // collapseDictionaries, not in _themeVariablesJs which is the CSS --dict-*
+      // path) so each new word always sees the latest value with no stale state.
+      window.autoExpandDictionaries = $autoExpandDicts;
       window.collapsedDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isCollapsed(appModel.targetLanguage)).map((d) => d.name).toList())};
       // TODO-804: 词典管理里关掉（show/hide 开关 off）的词典 = isHidden。term 词典
       // 在引擎里恒注册（AppModel.bucketDictPaths：隐藏 term 仍进桶，渲染期才过滤），

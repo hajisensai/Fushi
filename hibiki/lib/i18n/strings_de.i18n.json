@@ -1834,5 +1834,7 @@
   "update_install_permission_title": "Allow installing updates",
   "update_install_permission_message": "Please allow Hibiki to install apps in system settings, then retry.",
   "update_install_permission_retry": "Retry install",
-  "update_install_permission_cancel": "Cancel"
+  "update_install_permission_cancel": "Cancel",
+  "popup_auto_expand_dictionaries": "Auto-expand dictionaries",
+  "popup_auto_expand_dictionaries_hint": "Keep the first N dictionary blocks expanded even when 'Collapse dictionaries' is on (0 = collapse all)"
 }

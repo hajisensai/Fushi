@@ -380,6 +380,27 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-845: how many leading dictionary blocks the popup auto-expands
+          // even when "collapse dictionaries" is on. int preference surfaced
+          // through a double slider; min/max (0..6) match the repository clamp.
+          SettingsSliderItem(
+            id: 'lookup.popup_auto_expand_dictionaries',
+            title: t.popup_auto_expand_dictionaries,
+            subtitle: t.popup_auto_expand_dictionaries_hint,
+            icon: Icons.unfold_more_outlined,
+            min: 0,
+            max: 6,
+            divisions: 6,
+            titleReadout: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupAutoExpandDictionaries.toDouble(),
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel
+                  .setPopupAutoExpandDictionaries(value.round());
+              settingsContext.refresh();
+            },
+          ),
           // TODO-776: dictionaries-per-row grid (experimental). int preference
           // surfaced through a double slider, so value/onChanged bridge int↔double.
           SettingsSliderItem(
@@ -443,8 +464,8 @@ SettingsDestination buildLookupDestination() {
             title: t.popup_max_width,
             icon: Icons.open_in_full_outlined,
             min: 250,
-            max: 1400,
-            divisions: 115,
+            max: 1000,
+            divisions: 75,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupMaxWidth,
             label: (double value) => value.round().toString(),
@@ -458,8 +479,8 @@ SettingsDestination buildLookupDestination() {
             title: t.popup_max_height,
             icon: Icons.height_outlined,
             min: 200,
-            max: 1200,
-            divisions: 100,
+            max: 800,
+            divisions: 60,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupMaxHeight,
             label: (double value) => value.round().toString(),
