@@ -196,15 +196,17 @@ class GlobalLookupController {
             (args[0] is num) ? (args[0] as num).toDouble() : 1.0;
         final num? physH = args[1] is num ? args[1] as num : null;
         if (dpr > 0 && physH != null && physH > 0) {
-          // Design (CSS-layout) width of the card. popupMaxWidth is a user
-          // pref that can be cranked very wide (e.g. 900) for the in-app popup,
-          // where it's bounded by the reader and shrinks to content. A bare
-          // standalone window forced that wide looks absurd (stretched, short),
-          // so clamp it to a sane standalone band. appUiScale (bigger UI) and
-          // dpr (physical px) still scale the WINDOW up from that design width.
-          final double designWidth = model.popupMaxWidth.clamp(300.0, 460.0);
-          final int width = (designWidth * model.appUiScale * dpr).round();
-          final int height = physH.round();
+          // Faithful to the reader popup: both dimensions are
+          // popupMax* × appUiScale, converted to physical px via dpr. WIDTH is
+          // fixed; HEIGHT is the content height CAPPED at popupMaxHeight (the
+          // card scrolls inside) — without the cap a long entry makes the
+          // window fill the whole screen.
+          final int width =
+              (model.popupMaxWidth * model.appUiScale * dpr).round();
+          final double maxHeight =
+              model.popupMaxHeight * model.appUiScale * dpr;
+          final int height =
+              (physH > maxHeight ? maxHeight : physH.toDouble()).round();
           // Converge: only push when the target actually changed, so the
           // resize -> re-measure loop settles instead of ping-ponging.
           if (width != _lastSentWidth || height != _lastSentHeight) {

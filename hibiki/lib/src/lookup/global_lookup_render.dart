@@ -50,9 +50,7 @@ String buildOverlayRenderScript({
     document.documentElement.style.setProperty('--md-outline-variant', '${_cssRgb(scheme.outlineVariant)}');
     document.documentElement.style.setProperty('--md-on-surface-variant', '${_cssRgb(scheme.onSurfaceVariant)}');
     document.documentElement.style.setProperty('--md-primary', '${_cssRgb(scheme.primary)}');
-    // Standalone overlay is a narrow card: force a single dictionary column so
-    // the multi-column grid (TODO-776) does not stretch the window wide.
-    document.documentElement.style.setProperty('--dict-columns', '1');
+    document.documentElement.style.setProperty('--dict-columns', '${appModel.popupDictionaryColumns}');
 ''';
 
   final String entriesJson = result.popupJson ?? '[]';
