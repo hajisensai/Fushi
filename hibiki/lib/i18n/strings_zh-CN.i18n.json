@@ -1843,5 +1843,11 @@
   "profile_export_failed": "导出失败",
   "profile_import_success": "配置方案已导入",
   "profile_import_failed": "导入失败",
-  "profile_import_invalid": "配置方案文件无效"
+  "profile_import_invalid": "配置方案文件无效",
+  "show_bottom_bar_cue": "显示当前句子",
+  "top_progress_position": "进度位置",
+  "top_progress_pos_left": "左上",
+  "top_progress_pos_center": "居中",
+  "top_progress_pos_right": "右上",
+  "gamepad_auto_immersive": "连接手柄自动沉浸"
 }

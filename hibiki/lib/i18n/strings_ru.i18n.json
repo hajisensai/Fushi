@@ -1843,5 +1843,11 @@
   "profile_export_failed": "Export failed",
   "profile_import_success": "Profile imported",
   "profile_import_failed": "Import failed",
-  "profile_import_invalid": "Invalid profile file"
+  "profile_import_invalid": "Invalid profile file",
+  "show_bottom_bar_cue": "Show current sentence",
+  "top_progress_position": "Progress position",
+  "top_progress_pos_left": "Top-left",
+  "top_progress_pos_center": "Center",
+  "top_progress_pos_right": "Top-right",
+  "gamepad_auto_immersive": "Auto-immersive on gamepad"
 }
