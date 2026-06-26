@@ -428,6 +428,25 @@ jobs:
           cp "$f" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${ABI}.apk"
         done
 
+    # TODO-866: the prepared APKs in build/release-artifacts/ are otherwise only
+    # ever uploaded as GitHub Release assets (the softprops steps below). When
+    # that release publish intermittently 403s ("Resource not accessible by
+    # integration"), the APK is built successfully but has NO download path and
+    # is destroyed with the runner. Capture it as a workflow-run artifact so the
+    # build is always downloadable from the run page, decoupled from Release
+    # publish. Pure additive capture: touches no tag/publish/Latest/formal
+    # logic. always() + no channel gate so a successful build is downloadable
+    # even if a later publish step 403s; if-no-files-found: ignore tolerates
+    # channels/events that produced no APK.
+    - name: Upload APK artifacts to workflow run
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: hibiki-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
+        path: hibiki/build/release-artifacts/*.apk
+        if-no-files-found: ignore
+        retention-days: 14
+
     - name: Upload APKs to GitHub Release event
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v3
