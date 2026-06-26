@@ -331,4 +331,92 @@ void main() {
       expect(directive, contains('PROXY 127.0.0.1:7890'));
     });
   });
+
+  group('normalizeUserProxyHostPort（归一用户手填代理，纯函数 TODO-871/862）', () {
+    test('裸 host:port → 原样返回', () {
+      expect(normalizeUserProxyHostPort('127.0.0.1:7890'), '127.0.0.1:7890');
+    });
+
+    test('带 http:// 前缀 → 剥前缀', () {
+      expect(normalizeUserProxyHostPort('http://127.0.0.1:7890'),
+          '127.0.0.1:7890');
+    });
+
+    test('带 https:// 前缀 → 剥前缀', () {
+      expect(normalizeUserProxyHostPort('https://127.0.0.1:7890'),
+          '127.0.0.1:7890');
+    });
+
+    test('前后空格 → trim 后合法', () {
+      expect(
+          normalizeUserProxyHostPort('  127.0.0.1:7890  '), '127.0.0.1:7890');
+    });
+
+    test('主机名 host:port → 合法', () {
+      expect(
+          normalizeUserProxyHostPort('proxy.local:1080'), 'proxy.local:1080');
+    });
+
+    test('端口边界 1 / 65535 合法', () {
+      expect(normalizeUserProxyHostPort('127.0.0.1:1'), '127.0.0.1:1');
+      expect(normalizeUserProxyHostPort('127.0.0.1:65535'), '127.0.0.1:65535');
+    });
+
+    test('空串 → null', () {
+      expect(normalizeUserProxyHostPort(''), isNull);
+      expect(normalizeUserProxyHostPort('   '), isNull);
+    });
+
+    test('缺端口（无冒号）→ null', () {
+      expect(normalizeUserProxyHostPort('127.0.0.1'), isNull);
+    });
+
+    test('非数字端口 → null', () {
+      expect(normalizeUserProxyHostPort('127.0.0.1:abc'), isNull);
+      expect(normalizeUserProxyHostPort(':abc'), isNull);
+    });
+
+    test('端口 0 → null（越界）', () {
+      expect(normalizeUserProxyHostPort('127.0.0.1:0'), isNull);
+    });
+
+    test('端口 70000 → null（越界）', () {
+      expect(normalizeUserProxyHostPort('127.0.0.1:70000'), isNull);
+    });
+
+    test('带路径 → null', () {
+      expect(normalizeUserProxyHostPort('127.0.0.1:7890/path'), isNull);
+      expect(normalizeUserProxyHostPort('http://127.0.0.1:7890/x?y'), isNull);
+    });
+
+    test('空 host（仅冒号端口）→ null', () {
+      expect(normalizeUserProxyHostPort(':7890'), isNull);
+    });
+
+    test('IPv4 段越界（>255）→ null', () {
+      expect(normalizeUserProxyHostPort('999.0.0.1:7890'), isNull);
+    });
+
+    test('【必改④】IPv6 字面量 [::1]:7890 → null（本期不支持）', () {
+      expect(normalizeUserProxyHostPort('[::1]:7890'), isNull);
+      expect(normalizeUserProxyHostPort('::1:7890'), isNull);
+      expect(normalizeUserProxyHostPort('fe80::1:7890'), isNull);
+    });
+
+    test('合法手填代理经 _buildProxyEnv 同范式装配后能被 findProxyFromEnvironment 识别', () {
+      // 复用 Windows 注册表纯函数把同一 host:port 装配成 env（与短路路径等价目标：
+      // 最终生成 PROXY 指令），验证归一结果是 findProxyFromEnvironment 可消费的形态。
+      final String? normalized = normalizeUserProxyHostPort('127.0.0.1:7890');
+      expect(normalized, '127.0.0.1:7890');
+      final Map<String, String> env = parseWindowsRegistryProxy(
+        proxyEnableOutput: _regEnable('0x1'),
+        proxyServerOutput: _regServer(normalized!),
+      );
+      final String directive = HttpClient.findProxyFromEnvironment(
+        Uri.parse('https://api.github.com/repos/x/y/releases/latest'),
+        environment: env,
+      );
+      expect(directive, contains('PROXY 127.0.0.1:7890'));
+    });
+  });
 }

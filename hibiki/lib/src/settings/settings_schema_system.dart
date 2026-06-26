@@ -5,6 +5,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_fields.dart';
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
@@ -75,6 +76,11 @@ SettingsDestination buildSystemDestination() {
               await settingsContext.appModel.setUpdateAutoInstall(value);
               settingsContext.refresh();
             },
+          ),
+          SettingsCustomItem(
+            id: 'system.update_custom_proxy',
+            icon: Icons.dns_outlined,
+            builder: _buildUpdateCustomProxyField,
           ),
         ],
       ),
@@ -189,6 +195,31 @@ SettingsDestination buildSystemDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 「自定义更新代理」输入框（TODO-871/862）：fake-ip/TUN 模式下系统代理写注册表、
+/// Dart HttpClient 读不到时的兜底入口。空串=清除（合法）；非空但格式非法时弹 SnackBar
+/// 提示并仍存原串——运行时纯函数 [normalizeUserProxyHostPort] 兜底忽略非法值、不阻断检查。
+Widget _buildUpdateCustomProxyField(SettingsContext settingsContext) {
+  return SettingsSecretField(
+    title: t.update_custom_proxy_label,
+    hintText: t.update_custom_proxy_hint,
+    icon: Icons.dns_outlined,
+    initialValue: settingsContext.appModel.updateCustomProxy,
+    keyboardType: TextInputType.url,
+    onChanged: (String value) async {
+      final String trimmed = value.trim();
+      await settingsContext.appModel.setUpdateCustomProxy(trimmed);
+      // 非空且无法归一成合法 host:port → 提示（仍保存原串，运行时忽略）。
+      if (trimmed.isNotEmpty && normalizeUserProxyHostPort(trimmed) == null) {
+        final BuildContext ctx = settingsContext.context;
+        if (!ctx.mounted) return;
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text(t.update_custom_proxy_invalid)),
+        );
+      }
+    },
   );
 }
 

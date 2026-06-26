@@ -1874,5 +1874,8 @@
   "media_source_add": "添加来源",
   "media_source_count_video": "$n 个视频",
   "media_source_count_book": "$n 本书",
-  "media_source_last_scan": "上次扫描 $time"
+  "media_source_last_scan": "上次扫描 $time",
+  "update_custom_proxy_label": "自定义更新代理",
+  "update_custom_proxy_hint": "host:port，例如 127.0.0.1:7890（仅 IPv4/域名）",
+  "update_custom_proxy_invalid": "代理格式无效，请用 host:port"
 }

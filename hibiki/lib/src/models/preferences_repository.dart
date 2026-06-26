@@ -1135,6 +1135,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 用户手填的「自定义更新代理」（`host:port`，空串=未设）。fake-ip/TUN 模式下系统
+  /// 代理只写注册表、Dart HttpClient 读不到时的兜底入口（TODO-871/862）：非空时检查/下载
+  /// 直接走它，优先于 env/GUI 系统代理。空串=清除（回退默认 env>GUI>DIRECT 逻辑）。
+  String get updateCustomProxy =>
+      getPref('update_custom_proxy', defaultValue: '') as String;
+
+  Future<void> setUpdateCustomProxy(String value) async {
+    await setPref('update_custom_proxy', value);
+    notifyListeners();
+  }
+
   // ── bookmarks flag ───────────────────────────────────────────────────
 
   bool get populateBookmarksFlag =>

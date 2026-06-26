@@ -3780,6 +3780,10 @@ class AppModel with ChangeNotifier {
   Future<void> setUpdateDebugChannel(bool value) =>
       prefsRepo.setUpdateDebugChannel(value);
 
+  String get updateCustomProxy => prefsRepo.updateCustomProxy;
+  Future<void> setUpdateCustomProxy(String value) =>
+      prefsRepo.setUpdateCustomProxy(value);
+
   bool get populateBookmarksFlag => prefsRepo.populateBookmarksFlag;
   void setPopulateBookmarksFlag() => prefsRepo.setPopulateBookmarksFlag();
 

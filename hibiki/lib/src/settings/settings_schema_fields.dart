@@ -12,6 +12,7 @@ class SettingsSecretField extends StatefulWidget {
     required this.onChanged,
     this.obscureText = false,
     this.keyboardType = TextInputType.text,
+    this.hintText,
   });
 
   final String title;
@@ -19,6 +20,9 @@ class SettingsSecretField extends StatefulWidget {
   final String initialValue;
   final bool obscureText;
   final TextInputType keyboardType;
+
+  /// 可选占位提示（传给内部 TextField 的 decoration.hintText）。null = 不显示提示。
+  final String? hintText;
   final Future<void> Function(String value) onChanged;
 
   @override
@@ -66,6 +70,7 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
         keyboardType: widget.keyboardType,
         textInputAction: TextInputAction.done,
         labelText: widget.title,
+        hintText: widget.hintText,
         onChanged: _scheduleChanged,
         onSubmitted: _submit,
       ),

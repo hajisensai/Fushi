@@ -132,6 +132,7 @@ class _HomePageState extends BasePageState<HomePage>
           autoInstall: appModel.updateAutoInstall,
           betaChannel: appModel.updateBetaChannel,
           debugChannel: appModel.updateDebugChannel,
+          customProxy: appModel.updateCustomProxy,
         );
       }
 

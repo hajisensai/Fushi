@@ -43,6 +43,7 @@ class UpdateChecker {
     bool autoInstall = false,
     bool betaChannel = false,
     bool debugChannel = false,
+    String customProxy = '',
   }) {
     final UpdateChannel channel = debugChannel
         ? UpdateChannel.debug
@@ -51,7 +52,10 @@ class UpdateChecker {
             : UpdateChannel.stable;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _check(context, currentVersion,
-          neverRemind: neverRemind, autoInstall: autoInstall, channel: channel);
+          neverRemind: neverRemind,
+          autoInstall: autoInstall,
+          channel: channel,
+          customProxy: customProxy);
     });
   }
 
@@ -106,6 +110,7 @@ class UpdateChecker {
     bool neverRemind = false,
     bool autoInstall = false,
     UpdateChannel channel = UpdateChannel.stable,
+    String customProxy = '',
   }) async {
     final PlatformUpdater updater = updaterForCurrentPlatform();
     if (!updater.supportsUpdateCheck) return;
@@ -122,7 +127,7 @@ class UpdateChecker {
       client.connectionTimeout = const Duration(seconds: 10);
       // 走系统/环境代理：用户开着 clash/v2ray 时检查请求经其出口直连 api.github.com
       // （纯 GFW 下唯一可成功路径，BUG-292）。无代理则等价直连，不破坏镜像回退。
-      await applyUpdateProxy(client);
+      await applyUpdateProxy(client, userProxy: customProxy);
 
       // TODO-821：把「强断在途连接」回调登记进检查中断令牌——`cancelActiveCheck()` 被调时
       // 立即 close(force: true) 断开所有在途 socket，正在 await 的并发候选请求即刻抛错跳出，
@@ -171,9 +176,11 @@ class UpdateChecker {
       }
       if (!context.mounted) return;
       if (canInstall && autoInstall) {
-        _downloadAndInstall(context, asset!, tagName, updater);
+        _downloadAndInstall(context, asset!, tagName, updater,
+            customProxy: customProxy);
       } else if (canInstall) {
-        _showUpdateDialog(context, tagName, releaseBody, asset!, updater);
+        _showUpdateDialog(context, tagName, releaseBody, asset!, updater,
+            customProxy: customProxy);
       } else {
         // 能检查但不能自装（本期 iOS/mac/Linux）：弹「前往下载」打开发布页。
         final String? htmlUrl = json['html_url'] as String?;
@@ -405,8 +412,9 @@ class UpdateChecker {
     String version,
     String releaseNotes,
     UpdateAsset asset,
-    PlatformUpdater updater,
-  ) {
+    PlatformUpdater updater, {
+    String customProxy = '',
+  }) {
     showAppDialog<void>(
       context: context,
       builder: (ctx) => UpdateAvailableDialog(
@@ -415,7 +423,8 @@ class UpdateChecker {
         primaryLabel: t.update_download,
         onPrimary: () {
           Navigator.of(ctx).pop();
-          _downloadAndInstall(context, asset, version, updater);
+          _downloadAndInstall(context, asset, version, updater,
+              customProxy: customProxy);
         },
       ),
     );
@@ -449,12 +458,14 @@ class UpdateChecker {
     BuildContext context,
     UpdateAsset asset,
     String version,
-    PlatformUpdater updater,
-  ) async {
+    PlatformUpdater updater, {
+    String customProxy = '',
+  }) async {
     final String flowKey = _updateFlowKey(asset, version, updater);
     return _runExclusiveUpdateFlow(
       flowKey,
-      () => _runDownloadAndInstall(context, asset, version, updater),
+      () => _runDownloadAndInstall(context, asset, version, updater,
+          customProxy: customProxy),
       onAlreadyActive: () {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -595,8 +606,9 @@ class UpdateChecker {
     BuildContext context,
     UpdateAsset asset,
     String version,
-    PlatformUpdater updater,
-  ) async {
+    PlatformUpdater updater, {
+    String customProxy = '',
+  }) async {
     final progress = ValueNotifier<double>(0);
     // 体感快修（TODO-683）：进下载前显「正在连接更新源…」，首个进度/诊断信号到达再翻
     // 「正在下载更新…」。GFW 下坏候选累积超时期间不再让用户盯着「下载中 0%」误以为卡死。
@@ -637,7 +649,8 @@ class UpdateChecker {
       client.connectionTimeout = const Duration(seconds: 10);
       client.idleTimeout = const Duration(seconds: 60);
       // 下载同样走系统/环境代理（与检查一致）：直连/镜像不通时经用户代理出口下载。
-      await applyUpdateProxy(client);
+      // 手填代理同检查阶段优先（TODO-871/862）：全部下载入口都把 customProxy 透到这里。
+      await applyUpdateProxy(client, userProxy: customProxy);
 
       // TODO-808：把「强断在途连接」回调登记进取消令牌——用户点「取消」时立即
       // close(force: true) 断开所有在途 socket，正在 await 的建连/读流即刻抛错跳出，

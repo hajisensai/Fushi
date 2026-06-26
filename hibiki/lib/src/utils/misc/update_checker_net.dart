@@ -176,6 +176,69 @@ String? _selectCheckRaceWinner(List<_UpdateCheckOutcome> succeeded) {
   return succeeded.first.body;
 }
 
+/// **纯函数（TODO-871/862）**：把用户手填的「自定义更新代理」原始串归一成
+/// `host:port`，非法返 null（调用方据此 fail-open 落回默认 env>GUI>DIRECT 逻辑，绝不误切）。
+///
+/// 规则：trim → 剥可选 `http://` / `https://` 前缀 → 校验 `host:port`：
+/// * host = IPv4（四段 0-255）或主机名（字母数字 + `.` + `-`，至少一个非空标签）。
+/// * port = 纯数字、范围 1-65535。
+///
+/// **【必改④】IPv6 字面量**（`[::1]:7890`，含方括号 / 多个冒号）本期**不支持**→ 直接返
+/// null（fail-open 落回默认）。空串 / 缺端口 / 非数字端口 / `0` / `70000` / 带路径 → null。
+///
+/// 公开（非 @visibleForTesting）：除测试外，设置页输入框也实时调用它做格式校验
+/// （`settings_schema_system.dart`），故是真实生产 API。
+String? normalizeUserProxyHostPort(String raw) {
+  String value = raw.trim();
+  if (value.isEmpty) return null;
+  // 剥可选 scheme 前缀（大小写不敏感）。
+  for (final String scheme in const <String>['https://', 'http://']) {
+    if (value.toLowerCase().startsWith(scheme)) {
+      value = value.substring(scheme.length).trim();
+      break;
+    }
+  }
+  if (value.isEmpty) return null;
+  // 带路径 / query / fragment 一律不接受（host:port 之外的内容）。
+  if (value.contains('/') || value.contains('?') || value.contains('#')) {
+    return null;
+  }
+  // IPv6 字面量（方括号或多于一个冒号）本期不支持 → null（【必改④】）。
+  if (value.contains('[') || value.contains(']')) return null;
+  final int firstColon = value.indexOf(':');
+  if (firstColon < 0) return null; // 缺端口。
+  if (value.indexOf(':', firstColon + 1) >= 0) return null; // 多冒号（疑似 IPv6）。
+  final String host = value.substring(0, firstColon);
+  final String portText = value.substring(firstColon + 1);
+  if (host.isEmpty || portText.isEmpty) return null;
+  if (!_isValidProxyHost(host)) return null;
+  final int? port = int.tryParse(portText);
+  if (port == null || port < 1 || port > 65535) return null;
+  return '$host:$port';
+}
+
+/// 校验 [host] 是否为合法 IPv4 或主机名（normalizeUserProxyHostPort 内部用）。
+bool _isValidProxyHost(String host) {
+  // IPv4：四段、每段 0-255。
+  final RegExpMatch? ipv4 =
+      RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(host);
+  if (ipv4 != null) {
+    for (int i = 1; i <= 4; i++) {
+      final int seg = int.parse(ipv4.group(i)!);
+      if (seg > 255) return false;
+    }
+    return true;
+  }
+  // 主机名：点分标签，每段字母数字或内部连字符，不以 `-` 起止。
+  final RegExp label = RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$');
+  final List<String> parts = host.split('.');
+  for (final String part in parts) {
+    if (part.isEmpty) return false;
+    if (!label.hasMatch(part)) return false;
+  }
+  return true;
+}
+
 /// **根因修复（TODO-384 第二轮）**：让更新检查/下载用的 [HttpClient] 走用户机器上
 /// 正在运行的系统/环境代理。
 ///
@@ -206,7 +269,17 @@ String? _selectCheckRaceWinner(List<_UpdateCheckOutcome> succeeded) {
 /// **PAC 降级**：mac/Linux GUI 配成 PAC（自动代理）时，本实现**不解析/执行 PAC 脚本**，明确
 /// 降级直连（DIRECT）并打 debug 日志（见 [resolveMacSystemProxyEnvironment] /
 /// [resolveLinuxSystemProxyEnvironment]）。
-Future<void> applyUpdateProxy(HttpClient client) async {
+Future<void> applyUpdateProxy(HttpClient client, {String? userProxy}) async {
+  // 【必改③】用户手填代理优先：normalize 非 null → 直接短路，不进 environment 合并、
+  // 不参与 env>GUI>DIRECT 排序，消除「手填 vs 系统代理」覆盖顺序不确定（TODO-871/862）。
+  // fake-ip/TUN 模式下系统代理写注册表 Dart 读不到，这是唯一可靠出口。normalize 返 null
+  // （空/畸形/IPv6）则 fail-open 落回下面默认逻辑——绝不误切。
+  final String? normalizedUserProxy =
+      normalizeUserProxyHostPort(userProxy ?? '');
+  if (normalizedUserProxy != null) {
+    client.findProxy = (Uri uri) => 'PROXY $normalizedUserProxy';
+    return;
+  }
   final Map<String, String> environment = <String, String>{
     ...Platform.environment,
   };

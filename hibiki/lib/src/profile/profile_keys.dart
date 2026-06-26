@@ -31,6 +31,9 @@ class ProfileKeys {
     // HBK-AUDIT-045: keep ALL update-channel/policy keys app-global so the
     // debug channel isn't asymmetrically profile-scoped vs the others.
     'update_debug_channel',
+    // TODO-871: custom update proxy is a global update-policy key (same family as
+    // update_beta_channel / update_debug_channel) — never per-profile snapshot.
+    'update_custom_proxy',
     // TODO-855: the monotonic prefs-version counter is the cross-process signal
     // the :popup process reads to decide whether to refresh its warm-reuse
     // pref cache. It must stay app-global and monotonic — snapshotting it
