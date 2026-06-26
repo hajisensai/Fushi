@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 413 条。点号进各自文件。
+> 共 414 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-428](bugs/BUG-428-shortcut-key-capture-focus.md) | ✅ | ✅ | 快捷键录制单键经常没反应 (TODO-838) |
 | [BUG-427](bugs/BUG-427-install-permission-retry.md) | ✅ | ✅ | Android install permission granted then cannot resume/retry install |
 | [BUG-426](bugs/BUG-426-empty-entry-shell.md) | ✅ | ✅ | 隐藏词典致空正文壳卡（TODO-833） |
 | [BUG-425](bugs/BUG-425-mouse-tracker-concurrent-modification.md) | ✅ | ✅ | 视频页合成 hover 在 MouseTracker 遍历期重入致 Concurrent modification 崩溃 |

@@ -443,7 +443,18 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       _capturing = true;
       _conflictWarning = null;
     });
-    _captureFocusNode.requestFocus();
+    // TODO-838: the capture Focus lives in the `if (_capturing)` subtree, which
+    // is only built on the NEXT frame after this setState. Requesting focus here
+    // (synchronously) targets a not-yet-attached node and is a no-op, leaving
+    // only `autofocus: true` to race the dialog/route's other focusables for
+    // primary focus — intermittently the capture node loses, bare letter/digit
+    // keys bubble to the global Shortcuts and get dropped ("按了没反应"). Defer
+    // the request to a post-frame callback so the node is mounted first, making
+    // focus acquisition deterministic.
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted || !_capturing) return;
+      _captureFocusNode.requestFocus();
+    });
   }
 
   void _cancelCapture() {

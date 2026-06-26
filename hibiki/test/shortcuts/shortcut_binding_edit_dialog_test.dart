@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/shortcut_settings_page.dart';
+import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -25,6 +26,41 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ShortcutBindingEditDialog(
+                action: action,
+                registry: registry,
+                initial: const ShortcutBindingSet(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Reproduces the real-device layering: the dialog lives under
+  // wrapWithGlobalNavigation, whose Shortcuts maps bare Space to DoNothingIntent
+  // and (focus navigation off) Tab too. If the capture Focus loses primary focus,
+  // bare letter/digit keys bubble up here and get silently swallowed — TODO-838.
+  Future<void> pumpDialogWithGlobalNav(
+    WidgetTester tester,
+    HibikiShortcutRegistry registry, {
+    ShortcutAction action = ShortcutAction.readerToggleBookmark,
+  }) async {
+    final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(
+            navigatorKey: navigatorKey,
+            focusNavigationEnabled: false,
+            registry: registry,
+            child: child ?? const SizedBox.shrink(),
+          ),
           home: Scaffold(
             body: Center(
               child: ShortcutBindingEditDialog(
@@ -266,6 +302,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(HibikiTagChip, 'Ctrl+KeyB'), findsOneWidget);
+  });
+
+  testWidgets(
+      'bare single key is captured even under global navigation Shortcuts',
+      (WidgetTester tester) async {
+    // TODO-838: with the dialog nested under wrapWithGlobalNavigation, the
+    // capture Focus must deterministically hold primary focus so a bare letter
+    // key reaches _onKeyEvent instead of bubbling to the global Shortcuts and
+    // getting dropped. Covers both "bare single key recorded" and "global layer
+    // does not steal it".
+    await pumpDialogWithGlobalNav(tester, buildRegistry());
+    await startCapture(tester);
+    expect(find.text(t.shortcut_press_key), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(HibikiTagChip, 'KeyB'), findsOneWidget);
+    expect(find.text(t.shortcut_press_key), findsNothing);
+    expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
 
   testWidgets('stop-capture control exits capture without binding a key',
