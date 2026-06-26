@@ -186,10 +186,15 @@ KeyEventResult _handleGlobalBack(
   if (hw.isShiftPressed) modifiers.add(ModifierKey.shift);
   if (hw.isAltPressed) modifiers.add(ModifierKey.alt);
   if (hw.isMetaPressed) modifiers.add(ModifierKey.meta);
+  // TODO-847: IME 激活时 logicalKey 被改写成 process，传 physicalKey 让 registry
+  // 走物理键回退还原 globalBack（默认 Esc）；文本框 composing 时传 null 关闭回退。
+  final PhysicalKeyboardKey? imeFallbackPhysicalKey =
+      focusedEditableText() == null ? event.physicalKey : null;
   ShortcutAction? action = registry.resolveKeyboard(
     event.logicalKey,
     modifiers: modifiers,
     scope: ShortcutScope.global,
+    physicalKey: imeFallbackPhysicalKey,
   );
   if (action == null) {
     final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);

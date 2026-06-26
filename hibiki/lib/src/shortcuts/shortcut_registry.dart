@@ -238,10 +238,22 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 解析按下的键到 scope 内绑定的动作。正常路径走 [InputBinding.==] 精确相等
+  /// （logicalKey + modifiers）。
+  ///
+  /// TODO-847：Windows 微软 IME 激活时，Flutter 引擎把 KeyDownEvent 的 logicalKey
+  /// 改写成 [LogicalKeyboardKey.process]，精确相等永远失败、全表面快捷键失效。
+  /// physicalKey（USB HID 扫描码）不受 IME 改写，故仅当 `key == process &&
+  /// physicalKey != null` 时启用物理键回退分支：在 modifiers 完全相同的前提下按
+  /// binding 的 [InputBinding.physicalKey] 比对。调用方在文本框 composing 时应传
+  /// `physicalKey: null` 关闭回退，避免 IME 打字误触快捷键。
+  ///
+  /// 已知限制：物理回退仅对 US-QWERTY 物理布局正确（见 [InputBinding._logicalToPhysical]）。
   ShortcutAction? resolveKeyboard(
     LogicalKeyboardKey key, {
     required Set<ModifierKey> modifiers,
     required ShortcutScope scope,
+    PhysicalKeyboardKey? physicalKey,
   }) {
     final target = InputBinding(key: key, modifiers: modifiers);
     for (final action in ShortcutAction.actionsForScope(scope)) {
@@ -249,6 +261,21 @@ class HibikiShortcutRegistry extends ChangeNotifier {
       if (bindings == null) continue;
       for (final kb in bindings.keyboardBindings) {
         if (kb == target) return action;
+      }
+    }
+    // TODO-847 物理键回退：仅在 IME 把 logicalKey 改写成 process 且调用方提供了
+    // physicalKey 时启用，正常路径（上面精确相等）已先尝试且完全不受影响。
+    if (key == LogicalKeyboardKey.process && physicalKey != null) {
+      for (final action in ShortcutAction.actionsForScope(scope)) {
+        final bindings = _bindings[action];
+        if (bindings == null) continue;
+        for (final kb in bindings.keyboardBindings) {
+          if (setEquals(kb.modifiers, modifiers) &&
+              kb.physicalKey != null &&
+              kb.physicalKey == physicalKey) {
+            return action;
+          }
+        }
       }
     }
     return null;

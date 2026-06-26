@@ -326,4 +326,101 @@ void main() {
       }
     });
   });
+  group('TODO-847 IME 改写 logicalKey=process 时的物理键回退', () {
+    test('Space override: process + physical Space → 播放/暂停', () {
+      // 修前：key=process != space → null（红）。修后：physical Space 命中（绿）。
+      expect(
+        resolveReaderSpaceOverride(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          hasActiveAudiobook: true,
+          physicalKey: PhysicalKeyboardKey.space,
+        ),
+        ShortcutAction.audiobookPlayPause,
+      );
+    });
+
+    test('Space override: process 但 physicalKey null → 不覆写', () {
+      expect(
+        resolveReaderSpaceOverride(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          hasActiveAudiobook: true,
+          physicalKey: null,
+        ),
+        isNull,
+      );
+    });
+
+    test('Space override: process + 非 Space 物理键 → 不覆写', () {
+      expect(
+        resolveReaderSpaceOverride(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          hasActiveAudiobook: true,
+          physicalKey: PhysicalKeyboardKey.keyA,
+        ),
+        isNull,
+      );
+    });
+
+    test('Arrow override: RTL + process + physical Left → 前进（方向不反转）', () {
+      // 修前：key=process 落空 → 注册表 Right=前进 写死，RTL 方向反转（红行为）。
+      // 修后：physical Left 还原 RTL 前进语义（绿）。
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          physicalKey: PhysicalKeyboardKey.arrowLeft,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          physicalKey: PhysicalKeyboardKey.arrowRight,
+        ),
+        ShortcutAction.readerPageBackward,
+      );
+    });
+
+    test('Arrow override: LTR + process + physical Right → 前进', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          rtl: false,
+          physicalKey: PhysicalKeyboardKey.arrowRight,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+    });
+
+    test('Arrow override: process 但 physicalKey null → 不覆写', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          physicalKey: null,
+        ),
+        isNull,
+      );
+    });
+
+    test('Arrow override: 带修饰时即便 process+physical 也不覆写', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.process,
+          modifiers: const <ModifierKey>{ModifierKey.ctrl},
+          rtl: true,
+          physicalKey: PhysicalKeyboardKey.arrowLeft,
+        ),
+        isNull,
+      );
+    });
+  });
 }

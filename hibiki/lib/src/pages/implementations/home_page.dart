@@ -240,15 +240,22 @@ class _HomePageState extends BasePageState<HomePage>
       modifiers.add(ModifierKey.meta);
     }
 
+    // TODO-847: IME 激活时 logicalKey 被改写成 process，传 physicalKey 让 registry
+    // 走物理键回退；文本框 composing（focusedEditableText != null）时传 null 关闭
+    // 回退，避免搜索框打字误触 Ctrl+数字等快捷键。
+    final PhysicalKeyboardKey? imeFallbackPhysicalKey =
+        focusedEditableText() == null ? event.physicalKey : null;
     ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.home,
+          physicalKey: imeFallbackPhysicalKey,
         ) ??
         appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.global,
+          physicalKey: imeFallbackPhysicalKey,
         );
 
     if (action == null) {

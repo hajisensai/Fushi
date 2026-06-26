@@ -134,11 +134,17 @@ extension _ReaderCaret on _ReaderHibikiPageState {
           : KeyEventResult.ignored;
     }
 
+    // TODO-847: IME 激活时 logicalKey 被改写成 process，传 physicalKey 让 registry
+    // 走物理键回退；文本框 composing 时（focusedEditableText != null）传 null 关闭
+    // 回退，避免 IME 打字误触快捷键。
+    final PhysicalKeyboardKey? imeFallbackPhysicalKey =
+        focusedEditableText() == null ? event.physicalKey : null;
     final ShortcutAction? directReaderAction =
         appModel.shortcutRegistry.resolveKeyboard(
       event.logicalKey,
       modifiers: modifiers,
       scope: ShortcutScope.reader,
+      physicalKey: imeFallbackPhysicalKey,
     );
 
     // Char-level reading cursor (book has focus; chrome already returned above).
@@ -174,10 +180,14 @@ extension _ReaderCaret on _ReaderHibikiPageState {
     // 有声书激活时，无修饰 Space 改作播放/暂停（媒体播放器惯例），先于
     // reader scope 的「翻页」解析，否则 Space 永远被 reader scope 抢成翻页
     // （翻页仍可用方向键/PageDown；Shift+Space 后退翻页、Ctrl+Space 原义不变）。
+    // TODO-847: 这两个 override 直读 logicalKey，IME 改写成 process 时也会失效
+    // （RTL 书翻页方向反转、有声书裸 Space 误翻页）。传 physicalKey 让它们在
+    // key==process 时按物理键还原 Space/方向键语义；文本框 composing 时为 null。
     final ShortcutAction? spaceOverride = resolveReaderSpaceOverride(
       key: event.logicalKey,
       modifiers: modifiers,
       hasActiveAudiobook: _hasActiveAudiobook,
+      physicalKey: imeFallbackPhysicalKey,
     );
     // BUG-099: bare Left/Right page-turn follows the reading direction (RTL book
     // advances on Left). Resolved before the registry, which binds Right=forward
@@ -187,6 +197,7 @@ extension _ReaderCaret on _ReaderHibikiPageState {
       modifiers: modifiers,
       rtl: _isRtlReading,
       reverse: ReaderHibikiSource.instance.reverseArrowPageTurn,
+      physicalKey: imeFallbackPhysicalKey,
     );
     ShortcutAction? action = spaceOverride ??
         arrowOverride ??
@@ -195,11 +206,13 @@ extension _ReaderCaret on _ReaderHibikiPageState {
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.reader,
+          physicalKey: imeFallbackPhysicalKey,
         ) ??
         appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.audiobook,
+          physicalKey: imeFallbackPhysicalKey,
         );
 
     if (action == null) return KeyEventResult.ignored;

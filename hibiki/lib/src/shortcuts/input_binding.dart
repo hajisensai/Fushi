@@ -165,6 +165,106 @@ class InputBinding {
     LogicalKeyboardKey.gameButtonMode: 'GameMode',
   };
 
+  // TODO-847 / BUG: Windows 微软 IME 激活时，Flutter 引擎把 KeyDownEvent 的
+  // logicalKey 改写成 LogicalKeyboardKey.process（输入法占用），导致 [==] 精确相等
+  // 永远失败、全表面快捷键失效。physicalKey（USB HID 扫描码）不受 IME 改写影响，
+  // 故 [HibikiShortcutRegistry.resolveKeyboard] 仅在 key==process 时启用 physical
+  // 回退。这里把每个 binding 的逻辑键映射到对应物理键，供回退分支按物理键比对。
+  //
+  // 覆盖与 [_knownKeys] 相同的非 game* 键集；缺键会让该键在 IME 下仍然失效，由
+  // input_binding_test 的 `_knownKeys⊇` 守卫防漏。
+  //
+  // 已知限制：physical↔logical 一一对应仅在 US-QWERTY 物理布局下成立。非美式物理
+  // 键盘（如 AZERTY/德语 QWERTZ）上字母/符号键的物理位与逻辑键不一致，回退可能错绑
+  // 到相邻键。因为回退仅在 key==process（IME 激活，本就全失效）时启用，所以最坏只
+  // 是“按某键触发了另一个快捷键”，不会比现状（全部失效）更糟；标记为 known
+  // limitation 而非根治，待引擎提供 IME 下稳定的逻辑键时清理。
+  //
+  // 不能用 const：PhysicalKeyboardKey/LogicalKeyboardKey 缺少 const Map key 所需的
+  // primitive equality（同 [_knownKeys] 的 CFE 限制）。
+  static final Map<LogicalKeyboardKey, PhysicalKeyboardKey> _logicalToPhysical =
+      {
+    LogicalKeyboardKey.space: PhysicalKeyboardKey.space,
+    LogicalKeyboardKey.escape: PhysicalKeyboardKey.escape,
+    LogicalKeyboardKey.pageUp: PhysicalKeyboardKey.pageUp,
+    LogicalKeyboardKey.pageDown: PhysicalKeyboardKey.pageDown,
+    LogicalKeyboardKey.arrowUp: PhysicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown: PhysicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowLeft: PhysicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight: PhysicalKeyboardKey.arrowRight,
+    LogicalKeyboardKey.enter: PhysicalKeyboardKey.enter,
+    LogicalKeyboardKey.tab: PhysicalKeyboardKey.tab,
+    LogicalKeyboardKey.backspace: PhysicalKeyboardKey.backspace,
+    LogicalKeyboardKey.mediaPlay: PhysicalKeyboardKey.mediaPlay,
+    LogicalKeyboardKey.mediaPause: PhysicalKeyboardKey.mediaPause,
+    LogicalKeyboardKey.mediaPlayPause: PhysicalKeyboardKey.mediaPlayPause,
+    LogicalKeyboardKey.delete: PhysicalKeyboardKey.delete,
+    LogicalKeyboardKey.home: PhysicalKeyboardKey.home,
+    LogicalKeyboardKey.end: PhysicalKeyboardKey.end,
+    LogicalKeyboardKey.f1: PhysicalKeyboardKey.f1,
+    LogicalKeyboardKey.f2: PhysicalKeyboardKey.f2,
+    LogicalKeyboardKey.f3: PhysicalKeyboardKey.f3,
+    LogicalKeyboardKey.f4: PhysicalKeyboardKey.f4,
+    LogicalKeyboardKey.f5: PhysicalKeyboardKey.f5,
+    LogicalKeyboardKey.f6: PhysicalKeyboardKey.f6,
+    LogicalKeyboardKey.f7: PhysicalKeyboardKey.f7,
+    LogicalKeyboardKey.f8: PhysicalKeyboardKey.f8,
+    LogicalKeyboardKey.f9: PhysicalKeyboardKey.f9,
+    LogicalKeyboardKey.f10: PhysicalKeyboardKey.f10,
+    LogicalKeyboardKey.f11: PhysicalKeyboardKey.f11,
+    LogicalKeyboardKey.f12: PhysicalKeyboardKey.f12,
+    LogicalKeyboardKey.digit0: PhysicalKeyboardKey.digit0,
+    LogicalKeyboardKey.digit1: PhysicalKeyboardKey.digit1,
+    LogicalKeyboardKey.digit2: PhysicalKeyboardKey.digit2,
+    LogicalKeyboardKey.digit3: PhysicalKeyboardKey.digit3,
+    LogicalKeyboardKey.digit4: PhysicalKeyboardKey.digit4,
+    LogicalKeyboardKey.digit5: PhysicalKeyboardKey.digit5,
+    LogicalKeyboardKey.digit6: PhysicalKeyboardKey.digit6,
+    LogicalKeyboardKey.digit7: PhysicalKeyboardKey.digit7,
+    LogicalKeyboardKey.digit8: PhysicalKeyboardKey.digit8,
+    LogicalKeyboardKey.digit9: PhysicalKeyboardKey.digit9,
+    LogicalKeyboardKey.keyA: PhysicalKeyboardKey.keyA,
+    LogicalKeyboardKey.keyB: PhysicalKeyboardKey.keyB,
+    LogicalKeyboardKey.keyC: PhysicalKeyboardKey.keyC,
+    LogicalKeyboardKey.keyD: PhysicalKeyboardKey.keyD,
+    LogicalKeyboardKey.keyE: PhysicalKeyboardKey.keyE,
+    LogicalKeyboardKey.keyF: PhysicalKeyboardKey.keyF,
+    LogicalKeyboardKey.keyG: PhysicalKeyboardKey.keyG,
+    LogicalKeyboardKey.keyH: PhysicalKeyboardKey.keyH,
+    LogicalKeyboardKey.keyI: PhysicalKeyboardKey.keyI,
+    LogicalKeyboardKey.keyJ: PhysicalKeyboardKey.keyJ,
+    LogicalKeyboardKey.keyK: PhysicalKeyboardKey.keyK,
+    LogicalKeyboardKey.keyL: PhysicalKeyboardKey.keyL,
+    LogicalKeyboardKey.keyM: PhysicalKeyboardKey.keyM,
+    LogicalKeyboardKey.keyN: PhysicalKeyboardKey.keyN,
+    LogicalKeyboardKey.keyO: PhysicalKeyboardKey.keyO,
+    LogicalKeyboardKey.keyP: PhysicalKeyboardKey.keyP,
+    LogicalKeyboardKey.keyQ: PhysicalKeyboardKey.keyQ,
+    LogicalKeyboardKey.keyR: PhysicalKeyboardKey.keyR,
+    LogicalKeyboardKey.keyS: PhysicalKeyboardKey.keyS,
+    LogicalKeyboardKey.keyT: PhysicalKeyboardKey.keyT,
+    LogicalKeyboardKey.keyU: PhysicalKeyboardKey.keyU,
+    LogicalKeyboardKey.keyV: PhysicalKeyboardKey.keyV,
+    LogicalKeyboardKey.keyW: PhysicalKeyboardKey.keyW,
+    LogicalKeyboardKey.keyX: PhysicalKeyboardKey.keyX,
+    LogicalKeyboardKey.keyY: PhysicalKeyboardKey.keyY,
+    LogicalKeyboardKey.keyZ: PhysicalKeyboardKey.keyZ,
+    LogicalKeyboardKey.bracketLeft: PhysicalKeyboardKey.bracketLeft,
+    LogicalKeyboardKey.bracketRight: PhysicalKeyboardKey.bracketRight,
+    LogicalKeyboardKey.minus: PhysicalKeyboardKey.minus,
+    LogicalKeyboardKey.equal: PhysicalKeyboardKey.equal,
+    LogicalKeyboardKey.comma: PhysicalKeyboardKey.comma,
+    LogicalKeyboardKey.period: PhysicalKeyboardKey.period,
+    LogicalKeyboardKey.slash: PhysicalKeyboardKey.slash,
+    LogicalKeyboardKey.semicolon: PhysicalKeyboardKey.semicolon,
+    LogicalKeyboardKey.backquote: PhysicalKeyboardKey.backquote,
+  };
+
+  /// 本 binding 逻辑键对应的物理键（USB HID 扫描码）；不在覆盖表内（如 game* 键、
+  /// numpad、F13+）返回 null。仅供 IME 改写 logicalKey 时的物理键回退使用，绝不进入
+  /// [==] / [hashCode] / [serialize]（保持 Set 去重、冲突检测、JSON 兼容不变）。
+  PhysicalKeyboardKey? get physicalKey => _logicalToPhysical[key];
+
   List<String> get _sortedModifierLabels =>
       (modifiers.toList()..sort((a, b) => a.index.compareTo(b.index)))
           .map((m) => m.label)
