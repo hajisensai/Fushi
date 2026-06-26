@@ -295,6 +295,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onClearSentenceDraft,
     this.isSearching = false,
     this.keepWebViewWarm = false,
+    this.hasChildPopup = false,
     this.onTapOutside,
     this.onScrolledToBottom,
     this.onRendered,
@@ -321,6 +322,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// [BaseSourcePageState] (BUG-092) to kill the per-lookup white flash on the
   /// reader/video/audiobook surfaces.
   final bool keepWebViewWarm;
+
+  /// TODO-869：本层弹窗是否有子（后代）弹窗。透传给 [DictionaryPopupWebView] 注入
+  /// `window.__hasChildPopup`，让 popup.js 点卡片本体留白时据此关后代层（有子层才发
+  /// tapOutside，叶子层不发，保持 TODO-859）。宿主按 `index < entries.length - 1` 派生。
+  final bool hasChildPopup;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey;
   final VoidCallback onDismiss;
   final void Function(String text, Rect localRect) onTextSelected;
@@ -529,6 +535,7 @@ class DictionaryPopupLayer extends StatelessWidget {
           DictionaryPopupWebView(
             key: webViewKey,
             result: result ?? kPopupSearchingPlaceholderResult,
+            hasChildPopup: hasChildPopup,
             onTapOutside: onTapOutside,
             onTextSelected: onTextSelected,
             onLinkClick: onLinkClick,

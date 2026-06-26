@@ -272,6 +272,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           result: entry.result,
           isSearching: entry.isSearching,
           webViewKey: entry.webViewKey,
+          // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
+          hasChildPopup: index < _popup.entries.length - 1,
           isDark: isDark,
           showBorder: false,
           swipeDismissible: !isBase,

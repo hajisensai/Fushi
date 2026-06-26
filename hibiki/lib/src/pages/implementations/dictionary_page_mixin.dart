@@ -327,6 +327,8 @@ mixin DictionaryPageMixin {
         isSearching: entry.isSearching,
         keepWebViewWarm: entry.isWarmSlot,
         webViewKey: entry.webViewKey,
+        // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
+        hasChildPopup: index < controller.entries.length - 1,
         isDark: isDark,
         overrideFillColor: mixinAppModel.overrideDictionaryColor,
         onDismiss: () => onPop(index),

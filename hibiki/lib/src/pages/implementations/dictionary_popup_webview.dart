@@ -58,6 +58,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
     super.key,
+    this.hasChildPopup = false,
     this.onTextSelected,
     this.onLinkClick,
     this.onTapOutside,
@@ -77,6 +78,11 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   });
 
   final DictionarySearchResult result;
+
+  /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
+  /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
+  /// 不发，保持 TODO-859）。宿主按 `index < entries.length - 1` 派生传入。
+  final bool hasChildPopup;
   final void Function(String text, Rect localRect)? onTextSelected;
   final void Function(String query, Rect localRect)? onLinkClick;
   final VoidCallback? onTapOutside;
@@ -395,6 +401,20 @@ class DictionaryPopupWebViewState
     if (oldWidget.result != widget.result) {
       _pushResults();
     }
+    // TODO-869：独立比较，不搭 result 便车——子弹窗增减时 result 可能没变（卡片内容
+    // 不变），但 hasChildPopup 翻转必须重新注入，否则父窗点卡片关不掉刚 push 的子窗。
+    if (oldWidget.hasChildPopup != widget.hasChildPopup) {
+      _setHasChildPopupJs(widget.hasChildPopup);
+    }
+  }
+
+  /// TODO-869：把本层是否有子弹窗注入 WebView 的 `window.__hasChildPopup`。门控与
+  /// [_pushResults] 同步（controller 就绪且页面 loadStop 后才下发），未就绪时由
+  /// onLoadStop 旁的种子调用补发当前值。
+  void _setHasChildPopupJs(bool hasChild) {
+    if (_controller == null || !_ready) return;
+    _controller!
+        .evaluateJavascript(source: 'window.__hasChildPopup = $hasChild;');
   }
 
   @override
@@ -1229,6 +1249,9 @@ class DictionaryPopupWebViewState
           if (!mounted) return;
           unawaited(_pushInstantScrollPreference());
           _pushResults();
+          // TODO-869：冷加载就绪后显式下发一次当前 hasChildPopup（默认 false 也下发，
+          // 保证叶子层 __hasChildPopup 明确为 false）。
+          _setHasChildPopupJs(widget.hasChildPopup);
         });
       },
       onReceivedError: (controller, request, error) {

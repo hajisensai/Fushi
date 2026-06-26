@@ -257,4 +257,77 @@ void main() {
       reason: '门控纯函数判据：仅非嵌套且命中字幕才换词',
     );
   });
+
+  // TODO-869：父弹窗有子弹窗时点卡片本体也要关后代层。门控 = popup.js 读
+  // window.__hasChildPopup（宿主据 index < entries.length-1 注入），有子层才发
+  // tapOutside（叶子层裸 return 保持 TODO-859）。
+  group('TODO-869 parent-tap closes child via __hasChildPopup gate', () {
+    test('popup.js gates the card-body tapOutside on __hasChildPopup', () {
+      final String js = read('assets/popup/popup.js');
+      // 卡片分支内有 __hasChildPopup 门控，且其后发 tapOutside。
+      final RegExp gated = RegExp(
+        r'if \(window\.__hasChildPopup\)[\s\S]{0,120}?'
+        r"callHandler\('tapOutside'\)",
+      );
+      expect(gated.hasMatch(js), isTrue,
+          reason:
+              'card-body tapOutside must be gated by if (window.__hasChildPopup)');
+      // 门控落在 .entry/.kanji-card-section 卡片分支内（裸 return 之上）。
+      expect(
+          js,
+          contains(
+              "if (target?.closest('.entry') || target?.closest('.kanji-card-section')) {"),
+          reason: 'card-root predicate retained (TODO-859)');
+    });
+
+    test('webview compares hasChildPopup and result as two independent ifs',
+        () {
+      final String web =
+          read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+      // result 与 hasChildPopup 必须各自独立的 if，hasChildPopup 不搭 result 便车。
+      final RegExp twoIfs = RegExp(
+        r'if \(oldWidget\.result != widget\.result\) \{[\s\S]*?\}'
+        r'[\s\S]*?'
+        r'if \(oldWidget\.hasChildPopup != widget\.hasChildPopup\) \{',
+      );
+      expect(twoIfs.hasMatch(web), isTrue,
+          reason: 'didUpdateWidget must compare hasChildPopup in its OWN if, '
+              'not piggyback on the result compare');
+      expect(web, contains('final bool hasChildPopup;'),
+          reason: 'hasChildPopup field declared');
+      expect(web, contains('void _setHasChildPopupJs(bool hasChild)'),
+          reason: 'typed injector method present');
+      expect(web, contains('window.__hasChildPopup = '),
+          reason: 'injects window.__hasChildPopup');
+    });
+
+    test('layer forwards hasChildPopup to the webview', () {
+      final String layer =
+          read('lib/src/pages/implementations/dictionary_popup_layer.dart');
+      expect(layer, contains('final bool hasChildPopup;'),
+          reason: 'layer field declared');
+      expect(layer, contains('hasChildPopup: hasChildPopup,'),
+          reason: 'layer forwards hasChildPopup to DictionaryPopupWebView');
+    });
+
+    test('all three in-app hosts derive hasChildPopup from index < len-1', () {
+      final String base = read('lib/src/pages/base_source_page.dart');
+      final String mixin =
+          read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+      final String popup =
+          read('lib/src/pages/implementations/popup_dictionary_page.dart');
+
+      // 派生表达式：index < <something>.length - 1（恰好对应「本层之上还有后代」）。
+      final RegExp derived =
+          RegExp(r'hasChildPopup: index < [\w_.]+\.length - 1');
+      expect(derived.hasMatch(base), isTrue,
+          reason:
+              'base_source_page passes hasChildPopup: index < ...length - 1');
+      expect(derived.hasMatch(mixin), isTrue,
+          reason: 'mixin passes hasChildPopup: index < ...length - 1');
+      expect(derived.hasMatch(popup), isTrue,
+          reason:
+              'popup_dictionary_page passes hasChildPopup: index < ...length - 1');
+    });
+  });
 }

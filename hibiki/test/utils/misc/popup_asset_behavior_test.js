@@ -523,8 +523,11 @@ function testTappingDefinitionImageOpensLightbox() {
 // (.entry / .kanji-card) keeps the layer; only a tap on pure popup background
 // fires tapOutside.
 
-function fireDocumentClick(context, target, clientX = 50, clientY = 50) {
+function fireDocumentClick(
+    context, target, clientX = 50, clientY = 50, {hasChild = false} = {}) {
   const handler = context.__listeners.click[0];
+  // TODO-869：宿主据 `index < entries.length - 1` 注入 window.__hasChildPopup。
+  context.window.__hasChildPopup = hasChild;
   let tapOutsideCalls = 0;
   context.window.flutter_inappwebview.callHandler = (name) => {
     if (name === 'tapOutside') {
@@ -638,6 +641,81 @@ function testTapInKanjiSectionGapKeepsLayer() {
   const result = fireDocumentClick(context, sectionGap);
   assert.equal(result.tapOutsideCalls, 0,
     'tapping the kanji-card-section gap/margin must NOT fire tapOutside (layer kept)');
+}
+
+// ── TODO-869：父弹窗有子弹窗时，点卡片本体也得发 tapOutside 关后代层 ───────────
+// TODO-859 让点卡片本体留白保留本层（叶子层正确）。但父层有子弹窗时，点卡片区
+// （占父弹窗绝大面积）裸 return 关不掉子窗 = 真 bug。宿主据 index<len-1 注入
+// window.__hasChildPopup，popup.js 据此在卡片分支也发 tapOutside（仅有子层时）。
+
+// (869-1) 有子弹窗时点 .entry 卡片留白 → 发 tapOutside（关后代）、不选词。
+function testEntryWhitespaceWithChildFiresTapOutside() {
+  const context = loadPopup();
+  const {cardGap} = buildEntryCardDom(context);
+  const result = fireDocumentClick(context, cardGap, 50, 50, {hasChild: true});
+  assert.equal(result.tapOutsideCalls, 1,
+    'parent layer with a child popup: tapping entry-card whitespace must fire tapOutside');
+  assert.equal(result.selectCalls, 0,
+    'tapping card whitespace must not select a word');
+}
+
+// (869-2) 无子弹窗（叶子层）点 .entry 留白 → 不发 tapOutside（859 镜像不回归）。
+function testEntryWhitespaceWithoutChildKeepsLayer() {
+  const context = loadPopup();
+  const {cardGap} = buildEntryCardDom(context);
+  const result = fireDocumentClick(context, cardGap, 50, 50, {hasChild: false});
+  assert.equal(result.tapOutsideCalls, 0,
+    'leaf layer (no child): tapping entry-card whitespace must NOT fire tapOutside (859 kept)');
+}
+
+// (869-3) 有子弹窗时点 .kanji-card-section 留白 → 发 tapOutside（kanji 同构）。
+function testKanjiSectionWhitespaceWithChildFiresTapOutside() {
+  const context = loadPopup();
+  const section = new FakeElement('div');
+  section.classList.add('kanji-card-section');
+  const sectionGap = new FakeElement('div');
+  context.document.body.appendChild(section);
+  section.appendChild(sectionGap);
+  const result = fireDocumentClick(context, sectionGap, 50, 50, {hasChild: true});
+  assert.equal(result.tapOutsideCalls, 1,
+    'parent layer with a child popup: tapping kanji-section whitespace must fire tapOutside');
+}
+
+// (869-4) 无子弹窗时点 .kanji-card-section 留白 → 不发 tapOutside（859 镜像）。
+function testKanjiSectionWhitespaceWithoutChildKeepsLayer() {
+  const context = loadPopup();
+  const section = new FakeElement('div');
+  section.classList.add('kanji-card-section');
+  const sectionGap = new FakeElement('div');
+  context.document.body.appendChild(section);
+  section.appendChild(sectionGap);
+  const result = fireDocumentClick(context, sectionGap, 50, 50, {hasChild: false});
+  assert.equal(result.tapOutsideCalls, 0,
+    'leaf layer (no child): tapping kanji-section whitespace must NOT fire tapOutside (859 kept)');
+}
+
+// (869-5) 有子弹窗时点 .glossary-content 文字本体仍走选词分支，不被门控波及。
+function testGlossaryTextWithChildStillSelects() {
+  const context = loadPopup();
+  const {glossary} = buildEntryCardDom(context);
+  const result = fireDocumentClick(context, glossary, 50, 50, {hasChild: true});
+  assert.equal(result.selectCalls, 1,
+    'tapping glossary text must still select a word even with a child popup');
+  assert.equal(result.tapOutsideCalls, 0,
+    'selecting a word must not fire tapOutside (selection branch precedes the card gate)');
+}
+
+// (869-6) 纯背景 body：有/无子弹窗都发 tapOutside（背景分支不受门控影响）。
+function testBackgroundFiresTapOutsideRegardlessOfChild() {
+  for (const hasChild of [true, false]) {
+    const context = loadPopup();
+    buildEntryCardDom(context);
+    const background = new FakeElement('div');
+    context.document.body.appendChild(background);
+    const result = fireDocumentClick(context, background, 50, 50, {hasChild});
+    assert.equal(result.tapOutsideCalls, 1,
+      `tapping pure background must fire tapOutside (hasChild=${hasChild})`);
+  }
 }
 
 // ── TODO-859 症状B: image lightbox hit-box narrowed to real image pixels ────
@@ -1592,6 +1670,12 @@ testTapOnEntryCardWhitespaceKeepsLayer();
 testTapOnPopupBackgroundFiresTapOutside();
 testTapInsideKanjiCardKeepsLayer();
 testTapInKanjiSectionGapKeepsLayer();
+testEntryWhitespaceWithChildFiresTapOutside();
+testEntryWhitespaceWithoutChildKeepsLayer();
+testKanjiSectionWhitespaceWithChildFiresTapOutside();
+testKanjiSectionWhitespaceWithoutChildKeepsLayer();
+testGlossaryTextWithChildStillSelects();
+testBackgroundFiresTapOutsideRegardlessOfChild();
 testTapOnImagePixelsOpensLightbox();
 testTapInImageContainerWhitespaceDoesNotOpenLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();

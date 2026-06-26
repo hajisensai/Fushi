@@ -2761,6 +2761,14 @@ document.addEventListener('click', (e) => {
     // 边距」——点这些留白两个 closest 都不命中→落 tapOutside 关子窗=死区对汉字卡复发。
     // 改判 .kanji-card-section 才能覆盖卡间留白 + section 外边距。
     if (target?.closest('.entry') || target?.closest('.kanji-card-section')) {
+        // TODO-869：点卡片本体留白本应保留本层（TODO-859 语义）。但若本层有子弹窗
+        // （__hasChildPopup，宿主据 index < entries.length-1 注入），点卡片区也得发
+        // tapOutside 让宿主关掉后代层（dismissDescendantsOf）——否则父窗点卡片关不掉子
+        // 窗（卡片占父弹窗绝大面积）。叶子层 __hasChildPopup falsy → 仍裸 return 保持
+        // 859 不回归。点文字本体走上面 .glossary-content 选词分支，不经这里。
+        if (window.__hasChildPopup) {
+            window.flutter_inappwebview.callHandler('tapOutside');
+        }
         return;
     }
     window.flutter_inappwebview.callHandler('tapOutside');

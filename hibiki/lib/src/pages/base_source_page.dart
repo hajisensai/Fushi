@@ -461,6 +461,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         result: item.result,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
+        // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
+        hasChildPopup: index < stack.length - 1,
         isDark: isDark,
         overrideFillColor: appModel.overrideDictionaryColor,
         onDismiss: () => _dismissPopupAt(index),

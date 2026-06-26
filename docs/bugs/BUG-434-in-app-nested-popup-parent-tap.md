@@ -1,0 +1,15 @@
+## BUG-434 · app内查词父弹窗点击不关子弹窗
+- **报告**：2026-06-27（用户：）· TODO-869
+- **真实性**：✅ 真 bug，根因 `hibiki/assets/popup/popup.js:2763`
+- **现象**：app 内阅读器 / 视频查词，弹出子弹窗后，点父弹窗的卡片区域（.entry / .kanji-card-section，占父弹窗绝大面积）不关闭子弹窗；只有点父弹窗卡片之外的纯背景才关得掉。
+- **根因**：TODO-859（方案1，`popup.js` document click handler）把「点卡片本体留白」改为裸 `return`（保留本层、不发 `tapOutside`）。这对叶子层正确，但父层有子弹窗时点卡片区也裸 return，宿主侧 `dismissDescendantsOf(index)` / `truncateTo(index+1)`（TODO-834，`base_source_page.dart:476` / `dictionary_page_mixin.dart:344`）永不被触发，子弹窗关不掉。
+- **[x] ① 已修复** —
+  - `popup.js:2763` 卡片分支改门控：`if (window.__hasChildPopup) callHandler('tapOutside'); return;`（叶子层 `__hasChildPopup` falsy 仍裸 return 保持 859）。
+  - `DictionaryPopupWebView` 新增 `hasChildPopup` 入参 + `_setHasChildPopupJs(bool)` 注入 `window.__hasChildPopup`，`didUpdateWidget` 用**独立 if**（不搭 result 便车）、onLoadStop 冷加载补发初值。
+  - `DictionaryPopupLayer` 透传 `hasChildPopup`；三处 in-app 渲染点（`base_source_page.dart` / `dictionary_page_mixin.dart` / `popup_dictionary_page.dart`）按 `index < entries.length - 1` 派生传入。
+  - 提交：b86c0defaf99a65f63c698547a0ae183c1b5e7a5
+- **[x] ② 已加自动化测试** —
+  - JS 纯守卫 `hibiki/test/utils/misc/popup_asset_behavior_test.js`：`__hasChildPopup` true/false 点 .entry / .kanji-card-section 两分支、点 .glossary-content 文字不被门控波及、点纯背景两态都发 tapOutside（撤修复转红已实测）。
+  - 源码守卫 `hibiki/test/pages/dictionary_child_popup_close_guard_test.dart`：popup.js 门控正则、webview 两个独立 if、三处 host 的派生表达式。
+  - 提交：b86c0defaf99a65f63c698547a0ae183c1b5e7a5
+- **备注**：与 TODO-859（点卡片留白保留本层）/ TODO-834（dismissDescendantsOf 关后代）配套；global_lookup 走独立 native WebView2 不经 layer，不受影响。
