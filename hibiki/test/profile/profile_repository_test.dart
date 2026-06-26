@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -264,6 +265,74 @@ void main() {
 
       expect(await db.getPref('font_size'), '16');
       expect(await db.getPref('theme'), 'dark');
+    });
+  });
+
+  group('applyProfile bumps prefs_version (TODO-855)', () {
+    test(
+        'a profile switch increments the cross-process prefs-version so the '
+        'warm-reuse popup detects it', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+
+      // Profile A: font_size = 16, snapshot it.
+      final pidA = await repo.createProfile('A');
+      await db.setPref('font_size', '16');
+      await repo.snapshotCurrentSettings(pidA);
+
+      // Profile B: font_size = 24, snapshot it.
+      final pidB = await repo.createProfile('B');
+      await db.setPref('font_size', '24');
+      await repo.snapshotCurrentSettings(pidB);
+
+      Future<int> readVersion() async {
+        final String? raw =
+            await db.getPref(PreferencesRepository.prefsVersionKey);
+        return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+      }
+
+      final int before = await readVersion();
+
+      // Switch to A: applyProfile writes prefs straight through _db.setPref,
+      // bypassing PreferencesRepository.setPref, so the bump must be done by
+      // applyProfile itself.
+      await repo.applyProfile(pidA);
+      expect(await db.getPref('font_size'), '16');
+
+      final int after = await readVersion();
+      expect(after, greaterThan(before),
+          reason:
+              'profile switch must bump prefs_version for :popup detection');
+
+      // A second switch bumps again (monotonic).
+      await repo.applyProfile(pidB);
+      final int after2 = await readVersion();
+      expect(after2, greaterThan(after));
+    });
+
+    test(
+        'prefs_version is NOT captured into a profile snapshot (stays '
+        'app-global and monotonic)', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('A');
+
+      await db.setPref('font_size', '16');
+      // Bump the version a few times via the repository write path.
+      final prefs = PreferencesRepository(db);
+      addTearDown(prefs.dispose);
+      await prefs.loadFromDb();
+      await prefs.setPref('font_size', '16');
+      await prefs.setPref('theme', 'dark');
+
+      await repo.snapshotCurrentSettings(pid);
+
+      final rows = await db.getProfileSettings(pid);
+      final hasVersion = rows.any((r) =>
+          r.category == 'pref' &&
+          r.key == PreferencesRepository.prefsVersionKey);
+      expect(hasVersion, isFalse,
+          reason: 'prefs_version must be excluded from profile snapshots');
     });
   });
 }

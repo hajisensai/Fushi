@@ -761,4 +761,69 @@ void main() {
       expect(repo2.floatingLyricButtonBgOpacity, 40);
     });
   });
+
+  // ── prefs-version cross-process change signal (TODO-855) ──────────────
+  group('prefsVersion (TODO-855)', () {
+    test('starts at 0 on a fresh install', () async {
+      expect(repo.prefsVersion, 0);
+      expect(await repo.readPrefsVersionFromDb(), 0);
+    });
+
+    test('setPref bumps the persisted version monotonically', () async {
+      expect(repo.prefsVersion, 0);
+      await repo.setPref('k1', 'a');
+      expect(repo.prefsVersion, 1);
+      await repo.setPref('k2', 'b');
+      expect(repo.prefsVersion, 2);
+      // Same key written again still counts as a change.
+      await repo.setPref('k1', 'c');
+      expect(repo.prefsVersion, 3);
+    });
+
+    test('the version itself is persisted to DB and survives a reload',
+        () async {
+      await repo.setPref('k1', 'a');
+      await repo.setPref('k2', 'b');
+      expect(await repo.readPrefsVersionFromDb(), 2);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      // A second process loading the same DB sees the persisted counter.
+      expect(repo2.prefsVersion, 2);
+      expect(await repo2.readPrefsVersionFromDb(), 2);
+    });
+
+    test('writing the version key directly does NOT recurse / double-bump',
+        () async {
+      // setPref guards the version key against re-bumping itself. A direct
+      // write of prefsVersionKey must not increment the counter further.
+      await repo.setPref('k1', 'a');
+      expect(repo.prefsVersion, 1);
+      // The version key is a PrefCodec int; a direct int write of it must be
+      // parsed back correctly and must NOT trigger an extra bump on top.
+      await repo.setPref(PreferencesRepository.prefsVersionKey, 99);
+      expect(repo.prefsVersion, 99);
+    });
+
+    test(
+        'readPrefsVersionFromDb sees a cross-process write the in-memory '
+        'cache has not yet observed', () async {
+      await repo.setPref('k1', 'a');
+      expect(repo.prefsVersion, 1);
+
+      // Simulate the MAIN app process bumping the counter while THIS (popup)
+      // process holds a stale cache: write straight to the DB row (PrefCodec
+      // int, exactly as the repository bump and applyProfile store it).
+      await db.setPref(
+        PreferencesRepository.prefsVersionKey,
+        PrefCodec.encode(7),
+      );
+
+      // In-memory cache is stale...
+      expect(repo.prefsVersion, 1);
+      // ...but the cheap DB read detects the change.
+      expect(await repo.readPrefsVersionFromDb(), 7);
+    });
+  });
 }

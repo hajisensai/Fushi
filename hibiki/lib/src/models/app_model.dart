@@ -484,6 +484,13 @@ class AppModel with ChangeNotifier {
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
 
+  /// TODO-855: last prefs-version this process has reconciled its cache against.
+  /// Used by [refreshPrefCacheIfChanged] so the warm-reuse :popup process only
+  /// reloads its pref cache when the main app actually mutated a preference or
+  /// switched profile, instead of unconditionally re-scanning the whole
+  /// preferences table on every external lookup. -1 = not yet primed.
+  int _lastSeenPrefsVersion = -1;
+
   /// Media history and search history, extracted for testability.
   late MediaHistoryRepository mediaHistoryRepo;
 
@@ -1628,6 +1635,9 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: DONE');
       _isInitialised = true;
+      // TODO-855: prime the prefs-version watermark from the freshly loaded
+      // cache (keeps refreshPrefCacheIfChanged consistent if ever reused here).
+      _lastSeenPrefsVersion = prefsRepo.prefsVersion;
       _setupFloatingDictHandlers();
       if (showFloatingDict) setShowFloatingDict(false);
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
@@ -1680,8 +1690,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> initialiseForDictionaryPopup() async {
     if (_isInitialised) {
-      debugPrint('[Hibiki-popup] init: already initialised, refreshing prefs');
-      await refreshPrefCache();
+      debugPrint('[Hibiki-popup] init: already initialised, '
+          'refreshing prefs if changed');
+      // TODO-855: only do the expensive full reload when the main app actually
+      // mutated a preference / switched profile since the last lookup; a cheap
+      // single-row DB version read gates it.
+      await refreshPrefCacheIfChanged();
       await _localAudioManager.bindForNativeHandler();
       return;
     }
@@ -1768,6 +1782,9 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki-popup] init: DONE');
       _isInitialised = true;
+      // TODO-855: prime the prefs-version watermark from the freshly loaded
+      // cache so the first warm-reuse lookup doesn't trigger a redundant reload.
+      _lastSeenPrefsVersion = prefsRepo.prefsVersion;
       notifyListeners();
     } catch (e, stack) {
       ErrorLogService.instance.log('AppModel.popupInit', e, stack);
@@ -1795,6 +1812,28 @@ class AppModel with ChangeNotifier {
       ReaderHibikiSource.instance,
       defaultTargetPlatform,
     );
+    // TODO-855: after a full reload the in-memory cache holds the latest DB
+    // version, so advance the watermark to keep refreshPrefCacheIfChanged from
+    // immediately reloading again.
+    _lastSeenPrefsVersion = prefsRepo.prefsVersion;
+  }
+
+  /// TODO-855: refresh the preference cache only when the persisted prefs
+  /// version in the DB differs from the last value this process reconciled
+  /// against. This is the warm-reuse :popup hot path: a separate process whose
+  /// cache survives across external lookups but never observes the main app's
+  /// profile switches / preference edits directly. A single indexed
+  /// [PreferencesRepository.readPrefsVersionFromDb] row read replaces the
+  /// previous unconditional full-table [refreshPrefCache] on every lookup; the
+  /// expensive reload now happens only when something actually changed.
+  Future<void> refreshPrefCacheIfChanged() async {
+    final int dbVersion = await prefsRepo.readPrefsVersionFromDb();
+    if (dbVersion == _lastSeenPrefsVersion) return;
+    await refreshPrefCache();
+    // refreshPrefCache already advanced _lastSeenPrefsVersion from the reloaded
+    // cache; align it to the value we just read so a concurrent writer between
+    // the read and the reload can still be detected on the next call.
+    _lastSeenPrefsVersion = dbVersion;
   }
 
   // ── sync pref helpers (delegated to PreferencesRepository) ──────────

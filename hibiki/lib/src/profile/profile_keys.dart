@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
 
+import 'package:hibiki/src/models/preferences_repository.dart';
+
 class ProfileKeys {
   ProfileKeys._();
 
@@ -29,6 +31,12 @@ class ProfileKeys {
     // HBK-AUDIT-045: keep ALL update-channel/policy keys app-global so the
     // debug channel isn't asymmetrically profile-scoped vs the others.
     'update_debug_channel',
+    // TODO-855: the monotonic prefs-version counter is the cross-process signal
+    // the :popup process reads to decide whether to refresh its warm-reuse
+    // pref cache. It must stay app-global and monotonic — snapshotting it
+    // into a profile (and restoring/wiping it on profile switch) would make
+    // the counter non-monotonic and break change detection.
+    PreferencesRepository.prefsVersionKey,
   };
 
   static const List<String> _excludedPrefPrefixes = [

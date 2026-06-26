@@ -68,8 +68,15 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     PopupChannel.instance.init(
       onNewProcessText: (String text, int charIndex) async {
         final appModel = ref.read(appProvider);
+        // TODO-855: warm-reuse hot path. Don't unconditionally re-scan the whole
+        // preferences table on every external ProcessText (the v0.4.1 path was a
+        // pure setState). refreshPrefCacheIfChanged does one cheap indexed DB
+        // version read and only does the full reload when the main app actually
+        // mutated a preference / switched profile since the last lookup, so the
+        // warm-reuse popup still sees a new profile's prefs without paying the
+        // reload cost on every word.
         if (appModel.isInitialised) {
-          await appModel.refreshPrefCache();
+          await appModel.refreshPrefCacheIfChanged();
         }
         if (!mounted) return;
         final String resolved = _extractWord(appModel, text, charIndex);

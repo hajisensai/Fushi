@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/media_source.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
 import 'package:hibiki/src/sync/backup_service.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
@@ -181,6 +182,21 @@ class ProfileRepository {
       for (final entry in prefMap.entries) {
         await _db.setPref(entry.key, entry.value);
       }
+      // TODO-855: a profile switch writes prefs straight through _db.setPref,
+      // bypassing PreferencesRepository.setPref's version bump. Bump the
+      // persisted prefs-version here (atomically, in the same transaction) so
+      // the separate :popup process's warm-reuse cache detects the switch and
+      // reloads on its next lookup. prefs_version is excluded from profile
+      // snapshots, so it is neither pruned above nor present in prefMap. Stored
+      // as a PrefCodec int to round-trip identically to the repository's bump.
+      final String? rawVersion =
+          currentPrefs[PreferencesRepository.prefsVersionKey];
+      final int nextVersion =
+          (rawVersion == null ? 0 : PrefCodec.decode<int>(rawVersion, 0)) + 1;
+      await _db.setPref(
+        PreferencesRepository.prefsVersionKey,
+        PrefCodec.encode(nextVersion),
+      );
     });
 
     // Anki settings (SharedPreferences)

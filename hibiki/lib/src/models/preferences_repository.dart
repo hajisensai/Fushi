@@ -73,6 +73,15 @@ class PreferencesRepository extends ChangeNotifier {
 
   static const String videoAnime4kPromptShownKey = 'video_anime4k_prompt_shown';
 
+  /// TODO-855: persisted monotonic counter bumped on every preference write
+  /// (and on profile switch, bumped by [ProfileRepository.applyProfile]). It is
+  /// the cross-process change signal: the separate :popup process reads it via
+  /// [readPrefsVersionFromDb] and only reloads its warm-reuse pref cache when it
+  /// differs from the last value it saw, instead of unconditionally re-scanning
+  /// the whole preferences table on every lookup. Excluded from profile
+  /// snapshots (see ProfileKeys) so it stays app-global and monotonic.
+  static const String prefsVersionKey = 'prefs_version';
+
   final HibikiDatabase _db;
   final Map<String, String> _prefCache = {};
 
@@ -108,6 +117,40 @@ class PreferencesRepository extends ChangeNotifier {
     final String strVal = PrefCodec.encode(value);
     _prefCache[key] = strVal;
     await _db.setPref(key, strVal);
+    // TODO-855: bump the cross-process change signal on every real pref write.
+    // Guard against the version key itself to avoid unbounded recursion.
+    if (key != prefsVersionKey) {
+      await _bumpPrefsVersion();
+    }
+  }
+
+  /// The prefs-version value currently held in this process's in-memory cache
+  /// (0 when never written). Cheap synchronous read; not a cross-process check.
+  /// Stored as a normal PrefCodec int, so [PrefCodec.decode] tolerates both the
+  /// tagged (`i:N`) and any legacy raw (`N`) form.
+  int get prefsVersion {
+    final String? raw = _prefCache[prefsVersionKey];
+    return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+  }
+
+  /// Read the prefs-version straight from the DB (single indexed row lookup),
+  /// bypassing this process's in-memory cache. The :popup process uses this to
+  /// detect that the main app mutated a preference or switched profile while the
+  /// warm-reuse popup was alive, without a full preferences-table reload.
+  Future<int> readPrefsVersionFromDb() async {
+    final String? raw = await _db.getPref(prefsVersionKey);
+    return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+  }
+
+  /// Atomically increment the persisted prefs-version (cache + DB) so the next
+  /// cross-process [readPrefsVersionFromDb] observes a strictly larger value.
+  /// Encoded as a normal PrefCodec int so it round-trips like every other int
+  /// pref (including a direct setPref of the version key, which is parsed back
+  /// correctly even though the recursion guard skips re-bumping it).
+  Future<void> _bumpPrefsVersion() async {
+    final String strVal = PrefCodec.encode(prefsVersion + 1);
+    _prefCache[prefsVersionKey] = strVal;
+    await _db.setPref(prefsVersionKey, strVal);
   }
 
   bool containsKey(String key) => _prefCache.containsKey(key);
