@@ -42,6 +42,10 @@ enum ShortcutAction {
   readerPageForward(ShortcutScope.reader, 'reader_page_forward'),
   readerPageBackward(ShortcutScope.reader, 'reader_page_backward'),
   readerToggleChrome(ShortcutScope.reader, 'reader_toggle_chrome'),
+  // TODO-728：直接打开阅读器设置菜单（外观/进度/目录的快速设置面板，执行体
+  // = _showAppearanceSheet）。与 readerToggleChrome 正交——后者只 show/hide 底栏，
+  // 这个一键弹出设置面板，省去先开底栏再焦点移到齿轮按钮的来回。默认键盘 T。
+  readerOpenMenu(ShortcutScope.reader, 'reader_open_menu'),
   readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
   readerToggleBookmark(ShortcutScope.reader, 'reader_toggle_bookmark'),
   readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),

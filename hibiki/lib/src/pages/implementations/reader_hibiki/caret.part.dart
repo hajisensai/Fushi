@@ -451,6 +451,15 @@ extension _ReaderCaret on _ReaderHibikiPageState {
         // is excluded from focus traversal; focus stays on the reading content.
         _toggleChrome();
         return KeyEventResult.handled;
+      case ShortcutAction.readerOpenMenu:
+        // TODO-728：一键打开阅读器设置菜单（外观/进度/目录快速设置面板），免去先
+        // 开底栏再把焦点移到齿轮按钮。_showAppearanceSheet 自带重入守卫。
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
+        unawaited(_showAppearanceSheet());
+        return KeyEventResult.handled;
       case ShortcutAction.readerToggleBookmark:
         _addBookmarkAtCurrentPosition();
         return KeyEventResult.handled;

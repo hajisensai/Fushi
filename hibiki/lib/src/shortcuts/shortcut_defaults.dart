@@ -76,6 +76,13 @@ class ShortcutDefaults {
     ], [
       _gY
     ]),
+    // TODO-728：一键打开阅读器设置菜单（_showAppearanceSheet）。键盘默认 T，
+    // 在 reader co-active 组（reader+audiobook）里未被占用，避开 M / 方向 /
+    // PageUp/Down / Enter 系 / Ctrl+方向 / Ctrl+Space。手柄留空——reader 组手柄键
+    // 已被翻页/查词/句子导航占满，再绑会触发 no-shadow 守卫；用户可在设置里自绑。
+    ShortcutAction.readerOpenMenu: _kb([
+      _key(LogicalKeyboardKey.keyT),
+    ]),
     // 阅读器内的「关词典 / 返回」键：有词典弹窗就关弹窗，否则退出书籍（执行体见
     // reader_hibiki_page 的 _executeShortcutAction）。键盘 Esc。**TODO-700 T1/T2：
     // 手柄 B 已从这里挪走** —— 阅读器内 B 现绑 audiobookPrevSentence（上一句），

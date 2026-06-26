@@ -195,6 +195,51 @@ void main() {
           isNot(contains(GamepadButton.b)));
     });
 
+    test(
+        'reader open-menu (TODO-728) defaults to keyboard T on every platform '
+        'and does not collide with any other reader-group binding', () {
+      for (final p in const <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      ]) {
+        final defaults = ShortcutDefaults.forPlatform(p);
+        expect(defaults.containsKey(ShortcutAction.readerOpenMenu), isTrue,
+            reason: 'missing readerOpenMenu default on $p');
+      }
+      // Mobile profile keeps reader keyboard bindings, so T must survive there.
+      final android = ShortcutDefaults.forPlatform(TargetPlatform.android);
+      expect(
+        android[ShortcutAction.readerOpenMenu]!
+            .keyboardBindings
+            .map((b) => b.key),
+        contains(LogicalKeyboardKey.keyT),
+        reason: 'T survives the mobile reader profile',
+      );
+      final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      expect(
+        win[ShortcutAction.readerOpenMenu]!.keyboardBindings.map((b) => b.key),
+        contains(LogicalKeyboardKey.keyT),
+      );
+      // No default gamepad binding (reader-group buttons are all taken).
+      expect(win[ShortcutAction.readerOpenMenu]!.gamepadBindings, isEmpty);
+      // T is not owned by any other reader co-active action (no shadow).
+      for (final scope in ShortcutScope.reader.coactiveScopes) {
+        for (final action in ShortcutAction.actionsForScope(scope)) {
+          if (action == ShortcutAction.readerOpenMenu) continue;
+          expect(
+            win[action]!.keyboardBindings.map((b) => b.key),
+            isNot(contains(LogicalKeyboardKey.keyT)),
+            reason: '${action.key} also binds T — would shadow readerOpenMenu',
+          );
+        }
+      }
+      // readerOpenMenu lives in the reader scope (resolved on the reader page).
+      expect(ShortcutAction.readerOpenMenu.scope, ShortcutScope.reader);
+    });
+
     test('global scroll-page actions bind to RB (down) and LB (up)', () {
       final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
       expect(

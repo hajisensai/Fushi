@@ -1849,5 +1849,6 @@
   "top_progress_pos_left": "左上",
   "top_progress_pos_center": "居中",
   "top_progress_pos_right": "右上",
-  "gamepad_auto_immersive": "连接手柄自动沉浸"
+  "gamepad_auto_immersive": "连接手柄自动沉浸",
+  "shortcut_action_reader_open_menu": "打开设置菜单"
 }

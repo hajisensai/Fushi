@@ -1849,5 +1849,6 @@
   "top_progress_pos_left": "Top-left",
   "top_progress_pos_center": "Center",
   "top_progress_pos_right": "Top-right",
-  "gamepad_auto_immersive": "Auto-immersive on gamepad"
+  "gamepad_auto_immersive": "Auto-immersive on gamepad",
+  "shortcut_action_reader_open_menu": "Open Settings Menu"
 }
