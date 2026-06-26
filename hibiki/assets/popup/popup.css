@@ -1015,3 +1015,15 @@ html.global-lookup .glossary-section > .category-body > .glossary-group {
     height: auto;
     align-self: flex-start;
 }
+/* TODO-860 / BUG-435: 词典 structured-content 文本链接错位。
+   词典语法节点的 inline style（float / position:absolute|fixed，经
+   popup.js:516 setStructuredContentElementStyle 无白名单原样落 element.style，
+   次因为词典自带 styles.css 的 a{float/position}）会让文本链接 <a class="gloss-sc-a">
+   逃逸 inline 流跑到「旁边」。纯 CSS 兜底：强制文本链接回到 inline 流。
+   作用域铁律：选择器只限定标签+完整类名 a.gloss-sc-a，绝不命中图片链接
+   .gloss-image-link（TODO-859/350 图片合法依赖 position/float），也不碰 ruby/rt。 */
+.structured-content a.gloss-sc-a {
+    float: none !important;
+    position: static !important;
+    display: inline;
+}

@@ -1,0 +1,6 @@
+## BUG-435 · 查词弹窗词典释义内链接错位跑到旁边
+- **报告**：2026-06-27（用户：）
+- **真实性**：✅ 真 bug — 词典 structured-content 节点带 inline `style`（`float` / `position:absolute|fixed`）经 `hibiki/assets/popup/popup.js:516` `setStructuredContentElementStyle` 无白名单原样落 `element.style`，文本链接 `<a class="gloss-sc-a">`（popup.js:1353）逃逸 inline 流跑到「旁边」。次因=词典自带 styles.css（dict-media.js constructCss）里的 `a{float/position}`。
+- **[x] ① 已修复** — 纯 CSS 兜底（不改 JS）：`hibiki/assets/popup/popup.css` 追加 `.structured-content a.gloss-sc-a { float:none!important; position:static!important; display:inline; }` 把文本链接拉回 inline 流。作用域铁律：选择器只限定标签+完整类名 `a.gloss-sc-a`，绝不命中图片链接 `.gloss-image-link`（popup.js:866，TODO-859/350 图片合法依赖 position/float），也不碰 ruby/rt。提交：688e5447f
+- **[x] ② 已加自动化测试** — 两守卫：① `hibiki/test/pages/popup_glossary_link_scope_test.js`（Node-vm 真执行 popup.js `renderStructuredContent` + `createDefinitionImage`，断言文本链接被 `a.gloss-sc-a` 规则中和 float/position，**反向断言**图片链接 `gloss-image-link` 不被触及）；② `hibiki/test/pages/popup_glossary_link_scope_test.dart`（node 驱动 + CSS 源码守卫，断 popup.css 含 `a.gloss-sc-a` 规则 + `float:none!important` + `position:static!important` 且不含 `gloss-image-link`）。撤规则两守卫转红已验。提交：688e5447f
+- **备注**：plan-review a5b9fdf5 定稿纯 CSS 兜底 B；JS 白名单方案 A 会误伤合法用 position/float 的 span/div structured-content 节点，已砍。同家族 TODO-859（图片溢出）。
