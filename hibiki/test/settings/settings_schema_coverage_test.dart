@@ -182,6 +182,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Lookup audio volume':
       'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',
   'lookup/Collapse dictionaries': 'DEVICE: popup.js collapse',
+  // TODO-845: 折叠词典时仍展开前 N 本。效果在 popup.js createGlossarySection 的
+  // <details>.open（WebView 渲染，widget 测不到）；由 node 行为守卫真执行覆盖。
+  'lookup/Auto-expand dictionaries':
+      'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
   // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
