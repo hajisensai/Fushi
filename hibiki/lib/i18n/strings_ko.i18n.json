@@ -1857,5 +1857,8 @@
   "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
   "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles",
   "video_secondary_subtitle_sources": "Secondary subtitle",
-  "video_secondary_subtitle_hint": "Rendered by player (not lookupable)"
+  "video_secondary_subtitle_hint": "Rendered by player (not lookupable)",
+  "dict_update_name_mismatch_title": "Names do not match",
+  "dict_update_name_mismatch_body": "The selected file is \"$incoming\", but you are updating \"$existing\". Replace anyway?",
+  "dialog_replace": "Replace"
 }

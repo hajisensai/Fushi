@@ -1233,17 +1233,21 @@ class _DictionaryDialogPageState extends BasePageState {
           onTap: onMoveDown,
         ),
         _buildDictionaryVisibilityButton(dictionary, enabled),
-        // TODO-609：仅在线来源词典（isUpdatable 三条件满足）显示「更新」按钮——
-        // 旧词典 / 本地导入词典 metadata 为空 → 不显示，行布局不变。
-        if (dictionary.isUpdatable) ...<Widget>[
-          SizedBox(width: tokens.spacing.gap / 2),
-          HibikiIconButton(
-            icon: Icons.system_update_alt,
-            size: 20,
-            tooltip: t.dict_update_tooltip,
-            onTap: () => _updateSingleDictionary(dictionary),
-          ),
-        ],
+        // TODO-839：每本词典行尾恒显示一个「更新」按钮（消除「这本能更新那本不能」
+        // 的视觉断层）。按 isUpdatable 分流：
+        //   - 在线来源（isUpdatable 三条件满足）→ 走 _updateSingleDictionary（拉远端
+        //     index.json 比 revision，TODO-609 原行为不变；它首行另有 isUpdatable 双保险）。
+        //   - 本地导入 / 旧词典（isUpdatable=false）→ 走 _updateDictionaryFromFile（从
+        //     文件重选 force 覆盖；异名先弹确认，避免静默改判成新增导入）。
+        SizedBox(width: tokens.spacing.gap / 2),
+        HibikiIconButton(
+          icon: Icons.system_update_alt,
+          size: 20,
+          tooltip: t.dict_update_tooltip,
+          onTap: () => dictionary.isUpdatable
+              ? _updateSingleDictionary(dictionary)
+              : _updateDictionaryFromFile(dictionary),
+        ),
         SizedBox(width: tokens.spacing.gap / 2),
         // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。
         HibikiIconButton(
@@ -1491,6 +1495,130 @@ class _DictionaryDialogPageState extends BasePageState {
       }
     }
     HibikiToast.show(msg: resultMsg);
+  }
+
+  /// TODO-839：本地导入 / 旧词典（isUpdatable=false，无在线来源）的「从文件重选覆盖
+  /// 更新」。让用户重选一个词典包，force 覆盖原词典（保留 order/hidden/collapsed），
+  /// 失败不丢原词典（复用 importFromFile 的 import_temp 暂存→成功才删旧）。
+  ///
+  /// 异名陷阱处理：decideUpdate 按**新包 index.json 的 title** 决策，而非用户点的那本
+  /// 词典。新包异名（base 名都不同）时它会 newDictionary 把新包当全新词典追加、原词典
+  /// 原封不动留着——用户以为「更新了」实则多出一本、原词典没变。故导入前先廉价探出新
+  /// 包 title（仅 yomitan zip 可探），与被更新词典名不同则弹确认（dsl/mdx 探不到 title
+  /// → 退化为纯 force，量极低可接受）。
+  Future<void> _updateDictionaryFromFile(Dictionary dictionary) async {
+    if (_isDownloading) return;
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FilePicker.platform.clearTemporaryFiles();
+    }
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['zip', 'dsl', 'mdx', 'ifo'],
+      allowMultiple: false,
+    );
+    final String? pickedPath =
+        picked?.files.isNotEmpty == true ? picked!.files.single.path : null;
+    if (pickedPath == null) {
+      if (Platform.isAndroid || Platform.isIOS) {
+        await FilePicker.platform.clearTemporaryFiles();
+      }
+      return;
+    }
+    final File file = File(pickedPath);
+
+    // 异名确认：仅 yomitan zip 能廉价探出 title；探到且与目标词典异名时先弹确认。
+    final String? incomingTitle =
+        DictionaryImportManager.peekDictionaryTitle(file);
+    if (incomingTitle != null && incomingTitle != dictionary.name) {
+      final bool? confirmed = await _confirmNameMismatch(
+        incoming: incomingTitle,
+        existing: dictionary.name,
+      );
+      if (confirmed != true) {
+        if (Platform.isAndroid || Platform.isIOS) {
+          await FilePicker.platform.clearTemporaryFiles();
+        }
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    _isDownloading = true;
+
+    final ValueNotifier<String> progressNotifier =
+        ValueNotifier<String>(t.dict_update_updating(name: dictionary.name));
+    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
+
+    showAppDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (ctx) => ValueListenableBuilder<String>(
+        valueListenable: progressNotifier,
+        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
+          message: msg,
+          progressListenable: downloadProgress,
+        ),
+      ),
+    );
+
+    String resultMsg = t.dict_update_done(name: dictionary.name);
+    try {
+      await appModel.importDictionary(
+        file: file,
+        progressNotifier: progressNotifier,
+        onImportSuccess: () {},
+        forceReplaceExisting: true,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictionaryDialog.updateFromFile', e, stack);
+      resultMsg = t.dict_update_failed(error: '$e');
+    } finally {
+      progressNotifier.dispose();
+      downloadProgress.dispose();
+      _isDownloading = false;
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {});
+      }
+      if (Platform.isAndroid || Platform.isIOS) {
+        await FilePicker.platform.clearTemporaryFiles();
+      }
+    }
+    HibikiToast.show(msg: resultMsg);
+  }
+
+  /// 异名覆盖确认对话框：所选文件包名 [incoming] 与被更新词典 [existing] 不同时弹出，
+  /// 用户点「替换」返 true、取消 / 关闭返 null（中止、原词典不动）。
+  Future<bool?> _confirmNameMismatch({
+    required String incoming,
+    required String existing,
+  }) {
+    return showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => DictionaryConfirmationDialog(
+        title: Text(t.dict_update_name_mismatch_title),
+        content: Text(
+          t.dict_update_name_mismatch_body(
+            incoming: incoming,
+            existing: existing,
+          ),
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            child: Text(t.dialog_cancel),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            isDefaultAction: true,
+            child: Text(t.dialog_replace),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
   }
 
   /// action bar「检查更新」：遍历所有可更新词典逐个比对，有新版的逐个下载重导，

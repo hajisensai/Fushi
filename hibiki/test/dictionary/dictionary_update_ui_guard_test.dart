@@ -23,11 +23,27 @@ void main() {
     src = page.readAsStringSync();
   });
 
-  test('行更新按钮仅 isUpdatable 时显示', () {
-    expect(src.contains('if (dictionary.isUpdatable)'), isTrue,
-        reason: '词典行更新按钮必须 gate 在 dictionary.isUpdatable');
-    expect(src.contains('_updateSingleDictionary(dictionary)'), isTrue,
-        reason: '行更新按钮点击应调 _updateSingleDictionary');
+  test('TODO-839：行尾更新按钮对所有词典恢显示，按 isUpdatable 分流', () {
+    // 不再 gate 在 `if (dictionary.isUpdatable)`，而是恒渲染一个按钮、点击时按 isUpdatable 三元分流：
+    // 在线走 _updateSingleDictionary、本地走 _updateDictionaryFromFile。
+    expect(src.contains('dictionary.isUpdatable'), isTrue,
+        reason: '行尾更新按钮 onTap 应按 dictionary.isUpdatable 三元分流');
+    expect(src.contains('? _updateSingleDictionary(dictionary)'), isTrue,
+        reason: 'isUpdatable 词典应走在线更新 _updateSingleDictionary');
+    expect(src.contains(': _updateDictionaryFromFile(dictionary)'), isTrue,
+        reason: '非 isUpdatable 词典应走从文件覆盖 _updateDictionaryFromFile');
+  });
+
+  test('TODO-839：从文件覆盖更新走 force 重导 + 异名确认接线', () {
+    expect(src.contains('DictionaryImportManager.peekDictionaryTitle(file)'),
+        isTrue,
+        reason: '从文件更新前应帩价探出新包 title 判断异名');
+    expect(src.contains('_confirmNameMismatch('), isTrue,
+        reason: '异名时应弹亮确认对话框');
+    expect(src.contains('t.dict_update_name_mismatch_body('), isTrue,
+        reason: '异名确认对话框应引用 dict_update_name_mismatch_body 文案');
+    expect(src.contains('DictionaryConfirmationDialog('), isTrue,
+        reason: '异名确认应复用 DictionaryConfirmationDialog');
   });
 
   test('action bar「检查更新」按 isUpdatable 存在性门控', () {
