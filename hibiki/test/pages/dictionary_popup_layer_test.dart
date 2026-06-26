@@ -116,6 +116,36 @@ void main() {
       expect(wide.width, lessThanOrEqualTo(screen.width));
       expect(wide.right, lessThanOrEqualTo(screen.width));
     });
+
+    test(
+        'TODO-846: new 1400 max is reachable on a wide screen, still in bounds',
+        () {
+      // 大屏（1920 宽）足以容纳新的 1400 上限：弹窗宽应到达 1400 且不越界。
+      final Rect popupRect = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxWidth: 1400,
+      );
+
+      expect(popupRect.width, 1400);
+      expect(popupRect.left, greaterThanOrEqualTo(0));
+      expect(popupRect.right, lessThanOrEqualTo(screen.width));
+    });
+
+    test('TODO-846: 1400 max still clamped down by a small screen', () {
+      // 小屏：即使设置 maxWidth=1400，弹窗也被屏幕可用宽度夹住，不得越界。
+      const Size smallScreen = Size(360, 720);
+      final Rect popupRect = calcPopupPosition(
+        selectionRect: const Rect.fromLTWH(180, 120, 40, 24),
+        screen: smallScreen,
+        maxWidth: 1400,
+      );
+
+      expect(popupRect.width, lessThan(1400),
+          reason: '小屏可用宽度远小于 1400，弹窗须被屏幕夹住');
+      expect(popupRect.left, greaterThanOrEqualTo(0));
+      expect(popupRect.right, lessThanOrEqualTo(smallScreen.width));
+    });
   });
 
   group('calcPopupPosition maxHeight constraint (half-screen cap removed)', () {

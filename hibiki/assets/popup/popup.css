@@ -150,7 +150,9 @@ html {
     align-items: center;
     flex-shrink: 0;
     margin-left: auto;
-    gap: 6px;
+    /* TODO-846: 顶部按钮间距加大（宽不够时自动缩小）。间距单一来源走 flex gap，
+       不再让 .mine-button / .sentence-context-picker 各自 margin-left 叠加导致不均匀。 */
+    gap: clamp(6px, 2.2vw, 12px);
 }
 
 .audio-button,
@@ -162,10 +164,6 @@ html {
     font-size: 18px;
     opacity: 0.5;
     -webkit-user-select: none;
-}
-
-.mine-button {
-    margin-left: 6px;
 }
 
 .mine-button.duplicate {
@@ -194,7 +192,6 @@ html {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    margin-left: 6px;
     align-self: center;
 }
 
