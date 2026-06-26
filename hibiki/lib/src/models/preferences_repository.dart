@@ -73,14 +73,17 @@ class PreferencesRepository extends ChangeNotifier {
 
   static const String videoAnime4kPromptShownKey = 'video_anime4k_prompt_shown';
 
-  /// TODO-855: persisted monotonic counter bumped on every preference write
-  /// (and on profile switch, bumped by [ProfileRepository.applyProfile]). It is
-  /// the cross-process change signal: the separate :popup process reads it via
-  /// [readPrefsVersionFromDb] and only reloads its warm-reuse pref cache when it
-  /// differs from the last value it saw, instead of unconditionally re-scanning
-  /// the whole preferences table on every lookup. Excluded from profile
-  /// snapshots (see ProfileKeys) so it stays app-global and monotonic.
-  static const String prefsVersionKey = 'prefs_version';
+  /// TODO-855: persisted monotonic counter, the cross-process change signal the
+  /// separate :popup process reads via [readPrefsVersionFromDb] to decide
+  /// whether to reload its warm-reuse pref cache, instead of unconditionally
+  /// re-scanning the whole preferences table on every lookup. The bump itself
+  /// lives at the single lowest write choke point [HibikiDatabase.setPref], so
+  /// EVERY writer (this repository, ThemeNotifier, MediaSource, profile switch,
+  /// sync/backup restore) advances it automatically. This is an alias to that
+  /// DB-layer key so app-layer call sites (ProfileKeys, tests) share one truth.
+  /// Excluded from profile snapshots (see ProfileKeys) so it stays app-global
+  /// and monotonic.
+  static const String prefsVersionKey = HibikiDatabase.prefsVersionKey;
 
   final HibikiDatabase _db;
   final Map<String, String> _prefCache = {};
@@ -116,18 +119,23 @@ class PreferencesRepository extends ChangeNotifier {
   Future<void> setPref(String key, dynamic value) async {
     final String strVal = PrefCodec.encode(value);
     _prefCache[key] = strVal;
+    // [HibikiDatabase.setPref] also bumps the persisted prefs-version (TODO-855)
+    // for any key other than the version key itself; no explicit bump needed
+    // here. The in-memory [prefsVersion] getter intentionally does NOT track
+    // that same-process bump — change detection is cross-process and goes
+    // through [readPrefsVersionFromDb] / a full [loadFromDb] reload.
     await _db.setPref(key, strVal);
-    // TODO-855: bump the cross-process change signal on every real pref write.
-    // Guard against the version key itself to avoid unbounded recursion.
-    if (key != prefsVersionKey) {
-      await _bumpPrefsVersion();
-    }
   }
 
-  /// The prefs-version value currently held in this process's in-memory cache
-  /// (0 when never written). Cheap synchronous read; not a cross-process check.
-  /// Stored as a normal PrefCodec int, so [PrefCodec.decode] tolerates both the
-  /// tagged (`i:N`) and any legacy raw (`N`) form.
+  /// The prefs-version value currently held in this process's in-memory cache,
+  /// as last populated by [loadFromDb]/[refreshFromDb] (0 when never loaded).
+  /// Cheap synchronous read; NOT a cross-process check and NOT advanced by this
+  /// process's own [setPref] calls (the bump is sunk into the DB layer and only
+  /// re-enters the cache on the next full reload). [AppModel] uses it solely to
+  /// prime its watermark right after a reload; live change detection goes
+  /// through [readPrefsVersionFromDb]. Stored as a PrefCodec int, so
+  /// [PrefCodec.decode] tolerates both the tagged (`i:N`) and legacy raw (`N`)
+  /// form.
   int get prefsVersion {
     final String? raw = _prefCache[prefsVersionKey];
     return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
@@ -140,17 +148,6 @@ class PreferencesRepository extends ChangeNotifier {
   Future<int> readPrefsVersionFromDb() async {
     final String? raw = await _db.getPref(prefsVersionKey);
     return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
-  }
-
-  /// Atomically increment the persisted prefs-version (cache + DB) so the next
-  /// cross-process [readPrefsVersionFromDb] observes a strictly larger value.
-  /// Encoded as a normal PrefCodec int so it round-trips like every other int
-  /// pref (including a direct setPref of the version key, which is parsed back
-  /// correctly even though the recursion guard skips re-bumping it).
-  Future<void> _bumpPrefsVersion() async {
-    final String strVal = PrefCodec.encode(prefsVersion + 1);
-    _prefCache[prefsVersionKey] = strVal;
-    await _db.setPref(prefsVersionKey, strVal);
   }
 
   bool containsKey(String key) => _prefCache.containsKey(key);

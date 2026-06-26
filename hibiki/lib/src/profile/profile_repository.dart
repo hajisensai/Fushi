@@ -180,17 +180,24 @@ class ProfileRepository {
         }
       }
       for (final entry in prefMap.entries) {
+        // [HibikiDatabase.setPref] auto-bumps the persisted prefs-version
+        // (TODO-855) for every non-version key written here, so the common
+        // profile switch (which always writes at least one pref) is already
+        // signalled to the :popup process.
         await _db.setPref(entry.key, entry.value);
       }
-      // TODO-855: a profile switch writes prefs straight through _db.setPref,
-      // bypassing PreferencesRepository.setPref's version bump. Bump the
-      // persisted prefs-version here (atomically, in the same transaction) so
-      // the separate :popup process's warm-reuse cache detects the switch and
-      // reloads on its next lookup. prefs_version is excluded from profile
-      // snapshots, so it is neither pruned above nor present in prefMap. Stored
-      // as a PrefCodec int to round-trip identically to the repository's bump.
+      // TODO-855: guarantee a bump even for the edge cases the per-key
+      // auto-bump above does NOT cover — a switch into a profile with an empty
+      // snapshot, or one whose only effect is deleting prefs (deletePref does
+      // not bump). Read the CURRENT (post-loop, already-bumped) version and add
+      // one more so the counter is always present and strictly monotonic; an
+      // extra increment on top of the per-key bumps is harmless (the popup just
+      // reloads once on its next lookup). Written through _db.setPref against
+      // the version key itself, whose recursion guard skips re-bumping, so this
+      // does NOT double-count. prefs_version is excluded from profile snapshots,
+      // so it is neither pruned above nor present in prefMap.
       final String? rawVersion =
-          currentPrefs[PreferencesRepository.prefsVersionKey];
+          await _db.getPref(PreferencesRepository.prefsVersionKey);
       final int nextVersion =
           (rawVersion == null ? 0 : PrefCodec.decode<int>(rawVersion, 0)) + 1;
       await _db.setPref(

@@ -745,9 +745,43 @@ class HibikiDatabase extends _$HibikiDatabase {
     return row?.value;
   }
 
+  /// TODO-855: persisted monotonic counter, bumped on every preference write
+  /// at this single lowest-level write choke point ([setPref]). It is the
+  /// cross-process change signal the separate :popup process reads (via a cheap
+  /// indexed row lookup) to decide whether to reload its warm-reuse pref cache,
+  /// instead of unconditionally re-scanning the whole preferences table on each
+  /// lookup. Sinking the bump here means EVERY path that writes a preference —
+  /// PreferencesRepository, ThemeNotifier (theme / app_ui_scale), MediaSource
+  /// (per-source font sizes etc.), profile switch, sync/backup restore —
+  /// automatically advances it; no caller can forget to bump.
+  static const String prefsVersionKey = 'prefs_version';
+
   Future<void> setPref(String key, String value) async {
     await into(preferences).insertOnConflictUpdate(
       PreferencesCompanion.insert(key: key, value: value),
+    );
+    // Bump the cross-process change signal for every real pref write. Skip the
+    // version key itself (a direct write of it — e.g. a sync/backup restore
+    // replaying the persisted counter — must NOT recursively bump on top of
+    // its own value, which would double-count and break monotonic alignment).
+    if (key != prefsVersionKey) {
+      await _bumpPrefsVersion();
+    }
+  }
+
+  /// Atomically increment the persisted prefs-version directly in the DB so the
+  /// next cross-process read observes a strictly larger value. Encoded as a
+  /// PrefCodec int (`i:N`) so it round-trips identically to every other int
+  /// preference. Writes via the raw [into]/[insertOnConflictUpdate] path (NOT
+  /// [setPref]) to avoid re-entering the recursion guard above.
+  Future<void> _bumpPrefsVersion() async {
+    final String? raw = await getPref(prefsVersionKey);
+    final int current = raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+    await into(preferences).insertOnConflictUpdate(
+      PreferencesCompanion.insert(
+        key: prefsVersionKey,
+        value: PrefCodec.encode(current + 1),
+      ),
     );
   }
 

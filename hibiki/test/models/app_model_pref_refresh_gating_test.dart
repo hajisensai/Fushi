@@ -123,4 +123,42 @@ void main() {
     expect(appModel.refreshCount, 2,
         reason: 'profile switch (direct DB version bump) must be detected');
   });
+
+  // The bump now lives in HibikiDatabase.setPref, so writers that bypass
+  // PreferencesRepository (ThemeNotifier, MediaSource) also signal the popup.
+  // Both notifiers write through _db.setPref, exactly as simulated below.
+
+  test(
+      'a theme / app_ui_scale change (ThemeNotifier path) triggers one refresh',
+      () async {
+    await appModel.refreshPrefCacheIfChanged(); // primes -> 1
+    expect(appModel.refreshCount, 1);
+
+    // ThemeNotifier._set / _seedAppUiScale write straight through _db.setPref;
+    // previously this bypassed the bump and the warm-reuse popup stayed on the
+    // old theme / UI scale (the regression this fix closes).
+    await db.setPref('app_ui_scale', PrefCodec.encode(1.25));
+
+    await appModel.refreshPrefCacheIfChanged();
+    expect(appModel.refreshCount, 2,
+        reason: 'theme/app_ui_scale change must reload the warm-reuse cache');
+
+    await appModel.refreshPrefCacheIfChanged();
+    expect(appModel.refreshCount, 2,
+        reason: 'no further change -> no further reload');
+  });
+
+  test('a per-source font-size change (MediaSource path) triggers one refresh',
+      () async {
+    await appModel.refreshPrefCacheIfChanged(); // primes -> 1
+    expect(appModel.refreshCount, 1);
+
+    // MediaSource.setPreference writes a namespaced key straight through
+    // _db.setPref (e.g. reader/lyrics font size); it must bump too.
+    await db.setPref('src:reader_ttu:ttu_font_size', PrefCodec.encode(22));
+
+    await appModel.refreshPrefCacheIfChanged();
+    expect(appModel.refreshCount, 2,
+        reason: 'source font-size change must reload the warm-reuse cache');
+  });
 }

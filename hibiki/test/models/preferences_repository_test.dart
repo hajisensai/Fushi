@@ -763,6 +763,13 @@ void main() {
   });
 
   // ── prefs-version cross-process change signal (TODO-855) ──────────────
+  //
+  // The bump now lives at the single lowest write choke point
+  // [HibikiDatabase.setPref], so EVERY writer advances it automatically. The
+  // authoritative value is the DB row (read via [readPrefsVersionFromDb]); the
+  // in-memory [prefsVersion] getter is only refreshed on a full [loadFromDb]
+  // reload, NOT by this process's own setPref calls — hence the assertions
+  // below read the DB, not the in-memory getter.
   group('prefsVersion (TODO-855)', () {
     test('starts at 0 on a fresh install', () async {
       expect(repo.prefsVersion, 0);
@@ -770,14 +777,26 @@ void main() {
     });
 
     test('setPref bumps the persisted version monotonically', () async {
-      expect(repo.prefsVersion, 0);
+      expect(await repo.readPrefsVersionFromDb(), 0);
       await repo.setPref('k1', 'a');
-      expect(repo.prefsVersion, 1);
+      expect(await repo.readPrefsVersionFromDb(), 1);
       await repo.setPref('k2', 'b');
-      expect(repo.prefsVersion, 2);
+      expect(await repo.readPrefsVersionFromDb(), 2);
       // Same key written again still counts as a change.
       await repo.setPref('k1', 'c');
-      expect(repo.prefsVersion, 3);
+      expect(await repo.readPrefsVersionFromDb(), 3);
+    });
+
+    test('the in-memory getter reflects the DB only after a full reload',
+        () async {
+      // A same-process write does NOT advance the in-memory getter (bump is
+      // in the DB layer); a reload picks it up.
+      await repo.setPref('k1', 'a');
+      expect(repo.prefsVersion, 0,
+          reason: 'in-memory getter is stale until the next loadFromDb');
+      expect(await repo.readPrefsVersionFromDb(), 1);
+      await repo.refreshFromDb();
+      expect(repo.prefsVersion, 1);
     });
 
     test('the version itself is persisted to DB and survives a reload',
@@ -796,33 +815,46 @@ void main() {
 
     test('writing the version key directly does NOT recurse / double-bump',
         () async {
-      // setPref guards the version key against re-bumping itself. A direct
-      // write of prefsVersionKey must not increment the counter further.
+      // The DB-layer choke point guards the version key against re-bumping
+      // itself. A direct write of prefsVersionKey must not increment further.
       await repo.setPref('k1', 'a');
-      expect(repo.prefsVersion, 1);
+      expect(await repo.readPrefsVersionFromDb(), 1);
       // The version key is a PrefCodec int; a direct int write of it must be
       // parsed back correctly and must NOT trigger an extra bump on top.
       await repo.setPref(PreferencesRepository.prefsVersionKey, 99);
-      expect(repo.prefsVersion, 99);
+      expect(await repo.readPrefsVersionFromDb(), 99);
+    });
+
+    test('a direct DB write of an ordinary key also bumps (sunk into setPref)',
+        () async {
+      // Writers that bypass PreferencesRepository (ThemeNotifier, MediaSource,
+      // profile switch) go straight through HibikiDatabase.setPref and must
+      // still bump — that is the whole point of sinking the bump down a layer.
+      expect(await repo.readPrefsVersionFromDb(), 0);
+      await db.setPref('app_ui_scale', PrefCodec.encode(1.25));
+      expect(await repo.readPrefsVersionFromDb(), 1);
+      await db.setPref('src:reader_ttu:ttu_font_size', PrefCodec.encode(20));
+      expect(await repo.readPrefsVersionFromDb(), 2);
     });
 
     test(
         'readPrefsVersionFromDb sees a cross-process write the in-memory '
         'cache has not yet observed', () async {
       await repo.setPref('k1', 'a');
-      expect(repo.prefsVersion, 1);
+      // In-memory cache is stale (no same-process bump tracking)...
+      expect(repo.prefsVersion, 0);
+      // ...but the cheap DB read sees the write's bump.
+      expect(await repo.readPrefsVersionFromDb(), 1);
 
-      // Simulate the MAIN app process bumping the counter while THIS (popup)
-      // process holds a stale cache: write straight to the DB row (PrefCodec
-      // int, exactly as the repository bump and applyProfile store it).
+      // Simulate the MAIN app process bumping the counter further while THIS
+      // (popup) process holds a stale cache: write straight to the DB row
+      // (PrefCodec int; the version key skips the recursion guard, so this is
+      // an exact value, no extra bump).
       await db.setPref(
         PreferencesRepository.prefsVersionKey,
         PrefCodec.encode(7),
       );
-
-      // In-memory cache is stale...
-      expect(repo.prefsVersion, 1);
-      // ...but the cheap DB read detects the change.
+      expect(repo.prefsVersion, 0);
       expect(await repo.readPrefsVersionFromDb(), 7);
     });
   });

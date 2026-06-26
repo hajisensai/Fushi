@@ -153,7 +153,13 @@ void main() {
       );
 
       final all = await db.getAllPrefs();
-      expect(all.length, n);
+      // Exclude the prefs_version row: every setPref now auto-bumps the
+      // cross-process change counter (TODO-855), adding one bookkeeping row on
+      // top of the n user keys.
+      final userKeys = all.keys
+          .where((String k) => k != HibikiDatabase.prefsVersionKey)
+          .toList();
+      expect(userKeys.length, n);
       for (int i = 0; i < n; i++) {
         expect(all['key_$i'], 'val_$i');
       }
