@@ -118,7 +118,14 @@ String buildOverlayRenderScript({
       window.__hibikiPostOverlaySize = function(){
         try {
           var dpr = window.devicePixelRatio || 1;
-          var h = Math.ceil((document.documentElement.scrollHeight || 0) * dpr);
+          // Measure CONTENT height (body), NOT documentElement.scrollHeight:
+          // the root element's scrollHeight is clamped to the viewport, so a
+          // short card in the tall off-screen render window would report the
+          // window height (max) instead of the content. body height is the
+          // true content height -> short cards fit snugly, tall cards cap+scroll.
+          var b = document.body;
+          var contentH = b ? Math.max(b.scrollHeight, b.getBoundingClientRect().height) : 0;
+          var h = Math.ceil(contentH * dpr);
           window.chrome.webview.postMessage({handler: 'overlaySize', args: [dpr, h]});
         } catch (e) {}
       };
