@@ -1200,7 +1200,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       return Image.file(
         File(coverPath),
         key: ValueKey<String>('remote_video_cover_$safeKey'),
-        fit: BoxFit.cover,
+        // TODO-616 phase C: 视频封面是 16:9（1.78）源，封面卡槽比它更窄
+        // （约 1.3-1.55），BoxFit.cover 会裁掉左右。改用 contain 让整帧完整
+        // 显示，上下留少量空带 = 用户要的「完整显示」。
+        fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _coverPlaceholder(),
       );
     }
@@ -1210,7 +1213,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         coverUrl,
         key: ValueKey<String>('remote_video_cover_$safeKey'),
         headers: remoteCoverHeadersFor(_remoteVideoClient),
-        fit: BoxFit.cover,
+        // TODO-616 phase C: 同上，远端云视频封面也用 contain 完整显示不裁切。
+        fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _coverPlaceholder(),
       );
     }
@@ -1641,7 +1645,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (cover != null && File(cover).existsSync()) {
       return Image.file(
         File(cover),
-        fit: BoxFit.cover,
+        // TODO-616 phase C: 本地视频封面同样用 contain（封面卡槽比 16:9 源更窄，
+        // cover 会裁左右），完整显示不裁切。
+        fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _coverPlaceholder(),
       );
     }
