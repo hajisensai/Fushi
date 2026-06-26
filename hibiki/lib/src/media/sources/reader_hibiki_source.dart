@@ -760,6 +760,24 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  // TODO-728: bottom-bar current-sentence cue toggle (per-reader; layered like
+  // showTopProgressBar / tapEmptyToHideChrome), default true = current behavior.
+  bool get showBottomBarCue =>
+      readerSettings?.showBottomBarCue ??
+      getPreference<bool>(key: 'show_bottom_bar_cue', defaultValue: true);
+
+  void toggleShowBottomBarCue() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleShowBottomBarCue();
+      return;
+    }
+    await setPreference<bool>(
+      key: 'show_bottom_bar_cue',
+      value: !showBottomBarCue,
+    );
+  }
+
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
 
   double get ttuFontSize =>

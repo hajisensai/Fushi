@@ -474,6 +474,24 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // TODO-728: per-reader toggle for the audiobook bottom-bar current
+          // sentence. behavior group order 14 (15/16 reserved for the progress
+          // position + gamepad-immersive items added in the same TODO).
+          SettingsSwitchItem(
+            id: 'reading_controls.show_bottom_bar_cue',
+            title: t.show_bottom_bar_cue,
+            icon: Icons.subtitles_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 14,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.showBottomBarCue,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleShowBottomBarCue();
+              notifyReaderChromeChanged(settingsContext);
+            },
+          ),
           SettingsSwitchItem(
             id: 'reading_controls.volume_page_turning',
             title: t.volume_button_page_turning,

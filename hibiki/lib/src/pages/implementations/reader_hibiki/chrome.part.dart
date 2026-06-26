@@ -529,6 +529,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
                       // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
                       invertSkip: ReaderHibikiSource
                           .instance.invertAudiobookSkipDirection,
+                      // TODO-728: per-reader toggle for the current-sentence cue.
+                      showCue: ReaderHibikiSource.instance.showBottomBarCue,
                     ),
                   ),
                   ColoredBox(

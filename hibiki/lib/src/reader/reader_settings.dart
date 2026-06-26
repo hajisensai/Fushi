@@ -332,6 +332,13 @@ class ReaderSettings {
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
 
+  // TODO-728②：有声书底栏是否显示「当前句子」cue 文本（per-reader，每本书各自
+  // 记忆）。默认 true = 现状（始终显示）；false = 隐藏 cue 文本但保留布局占位，
+  // 底栏其它控件位置不动。
+  bool get showBottomBarCue => _get<bool>('show_bottom_bar_cue', true);
+  Future<void> toggleShowBottomBarCue() =>
+      _set<bool>('show_bottom_bar_cue', !showBottomBarCue);
+
   bool get tapEmptyToHideChrome => _get<bool>('tap_empty_hide_chrome', false);
   Future<void> toggleTapEmptyToHideChrome() =>
       _set<bool>('tap_empty_hide_chrome', !tapEmptyToHideChrome);

@@ -20,6 +20,7 @@ class AudiobookPlayBar extends StatelessWidget {
     this.foregroundColor,
     this.reversed = false,
     this.invertSkip = false,
+    this.showCue = true,
     super.key,
   });
 
@@ -50,6 +51,12 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 顺序），不碰任何 onPressed/图标；[invertSkip] 只换三联键内部功能 + 图标，
   /// 不碰位置。两维度互不连带（BUG-021 契约的延伸）。
   final bool invertSkip;
+
+  /// TODO-728: whether to render the current-sentence ([currentCue]) text in the
+  /// bar. Default true = current behavior. When false the text is replaced by an
+  /// empty placeholder that still occupies the same Expanded flex slot, so the
+  /// other controls keep their positions (no layout jump).
+  final bool showCue;
 
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
@@ -163,13 +170,17 @@ class AudiobookPlayBar extends StatelessWidget {
     final List<Widget> barItems = <Widget>[
       playbackControls,
       SizedBox(width: tokens.spacing.gap / 2),
+      // TODO-728: keep the Expanded slot whether or not the cue is shown so the
+      // surrounding controls do not shift when the user toggles it off.
       Expanded(
-        child: Text(
-          controller.currentCue?.text ?? '',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: cueStyle,
-        ),
+        child: showCue
+            ? Text(
+                controller.currentCue?.text ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: cueStyle,
+              )
+            : const SizedBox.shrink(),
       ),
       AudiobookFollowAudioButton(
         controller: controller,
