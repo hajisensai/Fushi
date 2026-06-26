@@ -1857,5 +1857,6 @@
   "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
   "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles",
   "video_secondary_subtitle_sources": "Secondary subtitle",
-  "video_secondary_subtitle_hint": "Rendered by player (not lookupable)"
+  "video_secondary_subtitle_hint": "Rendered by player (not lookupable)",
+  "handlebar_video_clip": "Video Clip (GIF)"
 }
