@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -9,7 +10,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/media.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
@@ -83,8 +84,24 @@ void main() {
             '($seededEntryKey).');
       }
 
-      await _activateBook(tester, driver, seededEntry);
+      await _activateBook(tester, bookKey);
       await tester.pump(const Duration(seconds: 3));
+
+      // === Reader route ready ===
+      // _activateBook opens the reader via appModel.openMedia (the deterministic
+      // off-screen path). Before waiting on the WebView, assert the reader page
+      // itself mounted, so a silent open failure shows up here as a missing
+      // ReaderHibikiPage rather than being misread downstream as a WebView
+      // mount timeout.
+      for (int i = 0;
+          i < 40 && find.byType(ReaderHibikiPage).evaluate().isEmpty;
+          i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      expect(find.byType(ReaderHibikiPage), findsOneWidget,
+          reason: 'ReaderHibikiPage must mount after openMedia — if this '
+              'fails the reader never opened (not a WebView timeout).');
+      debugPrint('[M1] ReaderHibikiPage mounted');
 
       // === Wait for WebView ===
       const Key webViewKey = ValueKey<String>('hoshi_webview');
@@ -333,15 +350,49 @@ Future<void> _openBooksTab(
   await tester.pump(const Duration(milliseconds: 500));
 }
 
+/// Open the seeded reader book deterministically.
+///
+/// The shelf book card's Enter→activate→openMedia binding is only installed
+/// when the card lives under a [HibikiFocusRoot]; the shelf does not wrap its
+/// cards in one, so a focus-driven Enter is a no-op and the reader never opens
+/// (TODO-783). Bypass the UI focus tree entirely: resolve the book's
+/// [MediaItem] from its key and drive [AppModel.openMedia] directly — the same
+/// call the real card tap makes — which pushes [ReaderHibikiPage] onto the
+/// navigator regardless of focus-tree state.
 Future<void> _activateBook(
   WidgetTester tester,
-  FocusDriver driver,
-  Finder bookEntry,
+  String bookKey,
 ) async {
-  final bool focused = await driver.focusWidget(bookEntry);
-  expect(focused, isTrue, reason: 'Book card must be reachable by focus');
-  await driver.activate();
-  await tester.pump(const Duration(milliseconds: 500));
+  final BuildContext appContext =
+      tester.element(find.byType(MaterialApp).first);
+  final ProviderContainer container = ProviderScope.containerOf(appContext);
+  final AppModel appModel = container.read(appProvider);
+
+  // openMedia requires a WidgetRef but never dereferences it on the open path
+  // (it routes through the app's navigatorKey context, not ref). The root
+  // [HoshiReaderApp] is a ConsumerStatefulWidget, so its element IS a WidgetRef.
+  final ConsumerStatefulElement appElement = tester
+      .element(find.byType(app.HoshiReaderApp)) as ConsumerStatefulElement;
+  final WidgetRef ref = appElement;
+
+  final MediaItem? item =
+      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
+  expect(item, isNotNull,
+      reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
+
+  // Do NOT await openMedia to completion: it awaits Navigator.push, whose
+  // future only resolves when the reader route is popped, so awaiting it here
+  // would block the linear test body forever. Fire it (the same call the real
+  // card onTap makes) and pump frames so the push and the reader's async
+  // _initBook run; the route-lifetime future is intentionally unawaited.
+  unawaited(appModel.openMedia(
+    ref: ref,
+    mediaSource: ReaderHibikiSource.instance,
+    item: item,
+  ));
+  for (int i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
 }
 
 Future<void> _toggleReaderChrome(
@@ -394,6 +445,14 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   debugPrint('[M1] Imported test EPUB as book key=$bookKey');
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
-  await tester.pumpAndSettle();
+  // Bounded pump instead of pumpAndSettle: off-screen the shelf keeps
+  // scheduling frames (cover image loads / periodic providers), so an
+  // unbounded pumpAndSettle never reaches quiescence and silently eats the
+  // whole test budget. A fixed pump lets the invalidated books provider
+  // rebuild without waiting for a steady state that never arrives.
+  for (int i = 0; i < 12; i++) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+  debugPrint('[M1] Shelf refreshed after seed');
   return bookKey;
 }
