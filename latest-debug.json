@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "version": "0.11.2-debug.5864",
-  "tag": "v0.11.2-debug.5864+7528635",
+  "version": "0.11.2-debug.5865",
+  "tag": "v0.11.2-debug.5865+8a44707",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 5864,
-  "notes": "Automated release-signed debug-channel build from develop @ 7528635. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 5865,
+  "notes": "Automated release-signed debug-channel build from develop @ 8a44707. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-0.11.2-debug.5864-7528635-debug.apk",
-      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.2-debug.5864+7528635/hibiki-0.11.2-debug.5864-7528635-debug.apk"
+      "name": "hibiki-0.11.2-debug.5865-8a44707-debug.apk",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.2-debug.5865+8a44707/hibiki-0.11.2-debug.5865-8a44707-debug.apk"
     }
   ]
 }
