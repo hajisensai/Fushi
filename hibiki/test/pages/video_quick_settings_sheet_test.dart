@@ -843,10 +843,11 @@ void main() {
     expect(delay! % 50, 0, reason: '滑条按 50ms 一档');
   });
 
-  // ── TODO-742：①隐藏不可用的「自动对轴」按钮 ②修数字气泡方向相反 ─────────────
+  // ── TODO-413：翻开「自动对轴」按钮（TODO-742 曾临时隐藏，算法管线已就绪）；
+  //    手动对轴控件与数字气泡方向（TODO-742②）保持不变 ─────────────
 
   testWidgets(
-    'TODO-742①：即使提供 onAutoAlign 回调，「自动对轴」按钮也不渲染（功能暂隐）',
+    'TODO-413：提供 onAutoAlign 回调时「自动对轴」按钮渲染并可触发回调',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -862,37 +863,57 @@ void main() {
         AdaptiveSettingsRow,
         t.video_setting_av_delay,
       );
-      // 手动对轴控件齐全：±50/±1000ms 步进 + 滑条 + 数值输入框都在。
+      // 手动对轴控件齐全：±50/±1000ms 步进 + 滑条 + 数值输入框都在（不被自动对轴挤掉）。
       expect(
         find.descendant(
             of: delayRow, matching: find.byIcon(Icons.chevron_right)),
         findsOneWidget,
-        reason: '+50ms 手动对轴按钮不应被隐藏',
+        reason: '+50ms 手动对轴按钮应照常渲染',
       );
       expect(
         find.descendant(of: delayRow, matching: find.byType(Slider)),
         findsOneWidget,
-        reason: '手动对轴滑条不应被隐藏',
+        reason: '手动对轴滑条应照常渲染',
       );
       expect(
         find.descendant(of: delayRow, matching: find.byType(TextField)),
         findsOneWidget,
-        reason: '手动对轴数值输入框不应被隐藏',
+        reason: '手动对轴数值输入框应照常渲染',
       );
 
-      // 「自动对轴」按钮（auto_fix_high 图标 + 对应 tooltip）必须不渲染。
+      // 「自动对轴」按钮（auto_fix_high 图标 + 对应 tooltip）现在必须渲染。
+      final Finder autoAlignBtn = find.descendant(
+        of: delayRow,
+        matching: find.byIcon(Icons.auto_fix_high),
+      );
+      expect(
+        autoAlignBtn,
+        findsOneWidget,
+        reason: 'TODO-413：自动对轴按钮应随 onAutoAlign 回调渲染',
+      );
+
+      // 点击触发回调（防重入状态机在 _runAutoAlign 内，回调真被调一次即可）。
+      await tester.ensureVisible(autoAlignBtn);
+      await tester.tap(autoAlignBtn);
+      await tester.pumpAndSettle();
+      expect(autoAlignCalled, isTrue,
+          reason: 'TODO-413：点击自动对轴按钮应触发 onAutoAlign 回调');
+    },
+  );
+
+  testWidgets(
+    'TODO-413：onAutoAlign 为 null 时不渲染「自动对轴」按钮（无入口）',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, _sheet());
+
+      expect(find.text(t.video_setting_av_delay), findsOneWidget);
       expect(
         find.byIcon(Icons.auto_fix_high),
         findsNothing,
-        reason: 'TODO-742：自动对轴按钮暂时隐藏，不应出现 auto_fix_high 图标',
+        reason: '无 onAutoAlign 回调时不应渲染自动对轴按钮',
       );
-      expect(
-        find.byTooltip(t.video_subtitle_auto_align),
-        findsNothing,
-        reason: 'TODO-742：自动对轴按钮 tooltip 不应出现',
-      );
-      // 回调从未被触发（按钮不存在 → 无入口）。
-      expect(autoAlignCalled, isFalse);
     },
   );
 

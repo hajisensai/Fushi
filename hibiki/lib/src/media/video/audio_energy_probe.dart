@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 
 /// 视频/有声书的「逐帧音频能量包络」抽取（TODO-701 阶段1，自动对轴用）。
 ///
@@ -18,6 +19,13 @@ import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 /// 足够分辨率，又把一部 2h 电影的样本控制在 ~72000 行内。
 const int kAudioEnergyWindowMs = 100;
 
+/// 自动对轴探测的默认时间上界（毫秒）：只抽视频前 20 分钟的音频能量。求一个**全局
+/// 固定整体平移**（与手动延迟同义）足够——整轨抽包络对 2h 4K REMUX 要数十秒~分钟
+/// （astats 读穿整条音轨），前 N 分钟即可定位偏移。截断同时作用于 ffmpeg `-t`（少抽
+/// 音频）与字幕 cue 栅格化上界（[buildCueActivityEnvelope] 的 durationMs），两侧栅格都
+/// 从 t=0 同 binMs 起、截到同一上界，相位一致不偏。0 或负值表示不截断（抽整轨）。
+const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
+
 /// **纯函数**：构造抽取逐帧音频 RMS 能量的 ffmpeg 参数。
 ///
 /// 关键链路（必须 `astats` + `ametadata=print` **配对**）：
@@ -29,7 +37,13 @@ const int kAudioEnergyWindowMs = 100;
 /// - `ametadata=print:key=lavfi.astats.Overall.RMS_level`：把每块的 RMS_level 连同
 ///   `pts_time` 打到 stderr（这步才让逐帧能量「可见」，否则 astats 只是写进 metadata
 ///   没人读）。
-/// - `-map 0:a:<idx>`（可选）：多音轨时裁到用户正在听的那条轨。
+/// - `-map 0:a:<idx>`（可选）：多音轨时裁到用户正在听的那条轨。越界由 [resolveAudioMapIndex]
+///   （BUG-345 同范式）拦截：[audioStreamIndex] >= [audioStreamCount] 时不加 `-map` 回退默认
+///   轨——外挂音轨场景 mpv 轨序号未必 = ffmpeg `0:a:N`，越界会让 ffmpeg `Stream map matches
+///   no streams` 硬失败→空包络→上层 noData 安全降级（不误移），故宁可回退默认轨。
+/// - `-t <limitSeconds>`（可选）：只抽前 [limitSeconds] 秒音频（大文件性能截断，与字幕
+///   cue 栅格化上界同步，见 [kSubtitleAutoAlignProbeLimitMs]）。须置于输入**之后**（输出
+///   选项），裁的是已解码音频时长。
 /// - `-f null -`：丢弃音频输出，只要 stderr 上的元数据。
 ///
 /// 无 IO，可单测。
@@ -38,19 +52,30 @@ List<String> buildFfmpegPcmEnvelopeArgs({
   int windowMs = kAudioEnergyWindowMs,
   int sampleRate = 8000,
   int? audioStreamIndex,
+  int? audioStreamCount,
+  int? limitSeconds,
 }) {
   final int win = windowMs <= 0 ? kAudioEnergyWindowMs : windowMs;
   final int rate = sampleRate <= 0 ? 8000 : sampleRate;
   final int nsamples = (rate * win) ~/ 1000;
   final int blockSamples = nsamples <= 0 ? 1 : nsamples;
+  // 越界回退：与制卡裁剪路径共用 BUG-345 边界判定，越界则不加 `-map` 用默认轨。
+  final int? mapIndex = resolveAudioMapIndex(
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+  );
   final List<String> args = <String>[
     '-hide_banner',
     '-nostats',
     '-i',
     inputPath
   ];
-  if (audioStreamIndex != null && audioStreamIndex >= 0) {
-    args.addAll(<String>['-map', '0:a:$audioStreamIndex']);
+  if (mapIndex != null) {
+    args.addAll(<String>['-map', '0:a:$mapIndex']);
+  }
+  // 性能截断：只解码前 limitSeconds 秒（输出选项，须在 -i 之后）。
+  if (limitSeconds != null && limitSeconds > 0) {
+    args.addAll(<String>['-t', '$limitSeconds']);
   }
   args.addAll(<String>[
     '-af',
@@ -120,6 +145,8 @@ Future<List<double>> extractAudioEnergyEnvelope({
   required String videoPath,
   int windowMs = kAudioEnergyWindowMs,
   int? audioStreamIndex,
+  int? audioStreamCount,
+  int? limitMs = kSubtitleAutoAlignProbeLimitMs,
 }) async {
   if (!File(videoPath).existsSync()) {
     debugPrint('[audio-energy] input missing: $videoPath');
@@ -127,12 +154,18 @@ Future<List<double>> extractAudioEnergyEnvelope({
   }
   final int sizeBytes = _fileSizeOrZero(videoPath);
   final Duration timeout = audioEnergyProbeTimeoutForBytes(sizeBytes);
+  // 性能截断：limitMs 换算成 ffmpeg `-t` 秒数（向上取整，保证覆盖到上界那一格）；
+  // <=0 或 null 表示抽整轨。与 [buildCueActivityEnvelope] 的 durationMs 上界须取同值。
+  final int? limitSeconds =
+      (limitMs != null && limitMs > 0) ? (limitMs + 999) ~/ 1000 : null;
   try {
     final FfmpegRunResult result = await resolveFfmpegBackend().run(
       buildFfmpegPcmEnvelopeArgs(
         inputPath: videoPath,
         windowMs: windowMs,
         audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+        limitSeconds: limitSeconds,
       ),
       timeout,
     );

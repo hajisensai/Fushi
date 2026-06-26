@@ -77,6 +77,10 @@ const int kSubtitleAutoAlignBinMs = 100;
 const int kSubtitleAutoAlignMaxShiftMs = 15000;
 
 /// 默认置信阈值。低于此值认为对齐不可信（噪声/无明显语音结构），不写穿延迟。
+///
+/// TODO-413：此 0.15 偏低，误判（把噪声当对齐而误移字幕）风险存在。**真机门禁须用真实
+/// 错轴样本验是否过松**——过松则上调此常量（纯数值，配套纯函数测试同步），不在施工阶段
+/// 擅自改动（阈值由真机门禁定）。
 const double kSubtitleAutoAlignMinConfidence = 0.15;
 
 /// **纯函数**：把字幕 [cues] 栅格化成时间轴活动序列。
@@ -85,7 +89,11 @@ const double kSubtitleAutoAlignMinConfidence = 0.15;
 /// 格置 1，其余 0。返回长度 `ceil(durationMs / binMs)` 的 0/1 列表（double，便于
 /// 与音频能量包络同类型互相关）。空 cue / 非正时长返回空列表。
 ///
-/// 越界 cue 端点会被 clamp 进 `[0, length)`；start>=end 的退化 cue 跳过。
+/// start>=end 的退化 cue 跳过。**截断语义（TODO-413）**：`startMs >= durationMs` 的
+/// cue 整段在上界之外，**直接跳过**（不 clamp 到末格——否则前 N 分钟截断时所有尾部
+/// cue 会在边界格堆出假活动，污染互相关）；横跨上界的 cue 只保留落在 `[0, durationMs)`
+/// 内的部分（endMs 端点 clamp 到末格）。这样 cue 栅格与音频 `-t` 截断后的包络共享同一
+/// `[0, durationMs)` 时间窗，相位一致。
 List<double> buildCueActivityEnvelope(
   List<AudioCue> cues,
   int durationMs, {
@@ -100,6 +108,8 @@ List<double> buildCueActivityEnvelope(
     final int startMs = cue.startMs;
     final int endMs = cue.endMs;
     if (endMs <= startMs) continue;
+    // 整段越上界：跳过（不堆边界假活动）。负 endMs 同理被 endMs<=startMs 或此处过滤。
+    if (startMs >= durationMs || endMs <= 0) continue;
     final int startBin = (startMs ~/ binMs).clamp(0, length - 1);
     // endMs 闭区间末尾落在前一格：用 (endMs - 1) 防止把整段右边多覆盖一格。
     final int endBin = ((endMs - 1) ~/ binMs).clamp(0, length - 1);

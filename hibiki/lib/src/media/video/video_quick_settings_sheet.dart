@@ -16,11 +16,12 @@ import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/settings/master_detail_settings_sheet.dart';
 import 'package:hibiki/utils.dart';
 
-/// TODO-742：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）当前
-/// 可用性不达标（用户报功能不可用），暂时不向用户暴露入口。设为 `false` 时字幕调轴行
-/// 不渲染自动对轴按钮；底层 [VideoQuickSettingsSheet.onAutoAlign] 回调与对轴算法管线全
-/// 部保留，功能成熟后改回 `true` 即恢复，无需重接接线。
-const bool _kSubtitleAutoAlignButtonEnabled = false;
+/// TODO-413：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）算法
+/// 管线已完整落地（抽包络 + 互相关 + 置信门控 + 写穿 delayMs），TODO-742 曾因「真机未验、
+/// 暂缓发布」临时关掉入口（非确定性缺陷）；TODO-413 翻开此开关上线，配套前 N 分钟截断
+/// （大文件性能）与音轨越界回退（外挂音轨边界）。降级链已闭环：无 ffmpeg / 超时 / 空包络 /
+/// 低相关一律不改 delayMs 仅提示，翻开关最坏只是「低置信」提示（降级非破坏）。
+const bool _kSubtitleAutoAlignButtonEnabled = true;
 
 /// 视频播放设置面板：宽窗用「顶部横向分类 chip 行 + 下方详情」上下分栏
 /// （TODO-556：大分类从左栏移到顶栏横向 chip；详情独占整宽并独立滚动，分类条固定在
@@ -751,13 +752,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           padding: EdgeInsets.all(tokens.spacing.gap / 2),
           onTap: () => _commitDelay(_delayMs + 1000),
         ),
-        // TODO-742：「自动对轴」按钮暂时隐藏——音频能量互相关自动对轴（TODO-701 阶段1）
-        // 当前置信度/可用性不达标（用户报功能不可用），先不向用户暴露入口。门控用编译期
-        // 常量 [_kSubtitleAutoAlignButtonEnabled]=false，整块按钮不渲染；onAutoAlign 回调链
-        // 与 _runAutoAlign/_autoAligning 状态机原样保留（仍被本块引用，不会 unused），待
-        // 自动对轴功能成熟后把该常量翻 true 即恢复，无需重接管线。手动对轴（±50/±1000ms
-        // 步进、滑条、数值输入框）与本按钮独立，不受影响、照常可用。
-        // ignore: dead_code
+        // TODO-413：「自动对轴」按钮（音频能量互相关自动对轴，TODO-701 阶段1）。门控用
+        // 编译期常量 [_kSubtitleAutoAlignButtonEnabled]=true 上线；执行期切 spinner 并禁用
+        // （_runAutoAlign/_autoAligning 防重入）。手动对轴（±50/±1000ms 步进、滑条、数值
+        // 输入框）与本按钮独立，互不影响、照常可用。
         if (_kSubtitleAutoAlignButtonEnabled && widget.onAutoAlign != null)
           _autoAligning
               ? Padding(

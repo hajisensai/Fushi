@@ -737,8 +737,13 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       return;
     }
     // 时长缺失时用最后一条 cue 的结束时间兜底（cue 升序由 setCues 保证），仍能栅格化。
-    final int effectiveDurationMs =
+    final int rawDurationMs =
         (durationMs != null && durationMs > 0) ? durationMs : cues.last.endMs;
+    // 性能截断（TODO-413）：cue 栅格化上界与 [extractAudioEnergyEnvelope] 的 ffmpeg `-t`
+    // 取同一上界（前 N 分钟），两侧栅格都从 t=0 同 binMs 起、截到同一上界，相位一致不偏；
+    // 超界的 cue 在 [buildCueActivityEnvelope] 内按 length 自然 clamp/跳过（不进活动序列）。
+    final int effectiveDurationMs =
+        math.min(rawDurationMs, kSubtitleAutoAlignProbeLimitMs);
 
     _showOsd(
       t.video_subtitle_auto_align_running,
@@ -749,6 +754,8 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       videoPath: videoPath,
       windowMs: kSubtitleAutoAlignBinMs,
       audioStreamIndex: controller.currentAudioStreamIndex,
+      audioStreamCount: controller.realAudioStreamCount,
+      limitMs: kSubtitleAutoAlignProbeLimitMs,
     );
     if (!mounted) return;
 
