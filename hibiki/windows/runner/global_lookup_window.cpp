@@ -121,30 +121,83 @@ void GlobalLookupWindow::EnsureWindowClass() {
   class_registered_ = true;
 }
 
+int GlobalLookupWindow::OffscreenX() const {
+  // Just past the right edge of the whole virtual desktop: the window is shown
+  // (so WebView2 renders + the page can self-measure) but invisible to the
+  // user. Avoids the flicker of sizing a *visible* window through the
+  // measure->resize convergence. Reveal() moves it to the cursor once stable.
+  return GetSystemMetrics(SM_XVIRTUALSCREEN) +
+         GetSystemMetrics(SM_CXVIRTUALSCREEN) + 200;
+}
+
 bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
                                 HWND owner) {
   EnsureWindowClass();
+  // Remember where the card should ultimately appear; Reveal() uses it.
+  pending_x_ = x;
+  pending_y_ = y;
+  revealed_ = false;
+  // Render OFF-SCREEN at the requested size. The page measures itself there and
+  // Dart calls Reveal() with the final size, so the user only ever sees the
+  // settled card (no width/height jitter on screen).
+  const int off_x = OffscreenX();
   if (hwnd_ == nullptr) {
     // No WS_EX_LAYERED: WebView2 brings its own composition surface and does not
     // coexist with a layered window. WS_EX_NOACTIVATE keeps the foreground app's
     // keyboard focus intact when the card appears (design §5 guarantee 3).
     hwnd_ = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName,
-        L"Hibiki Lookup", WS_POPUP, x, y, width, height, owner, nullptr,
+        L"Hibiki Lookup", WS_POPUP, off_x, 0, width, height, owner, nullptr,
         GetModuleHandle(nullptr), this);
     if (hwnd_ == nullptr) {
       return false;
     }
     EnsureWebView();
   } else {
-    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+    SetWindowPos(hwnd_, HWND_TOPMOST, off_x, 0, width, height, SWP_NOACTIVATE);
   }
+  // Shown (so WebView2 lays out + renders) but parked off-screen and NOT yet
+  // "visible_" — the click-outside hooks stay disarmed until Reveal().
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
-  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  visible_ = false;
+  return true;
+}
+
+void GlobalLookupWindow::Reveal(int width, int height) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  if (width <= 0 || height <= 0) {
+    RECT rc;
+    GetWindowRect(hwnd_, &rc);
+    width = rc.right - rc.left;
+    height = rc.bottom - rc.top;
+  }
+  int x = pending_x_;
+  int y = pending_y_;
+  // Clamp the final card to the cursor monitor's work area (same math as
+  // ResizeTo) so a tall/edge-anchored card stays fully on-screen.
+  POINT cursor = {pending_x_, pending_y_};
+  HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO mi = {};
+  mi.cbSize = sizeof(mi);
+  if (GetMonitorInfo(monitor, &mi)) {
+    const int work_w = mi.rcWork.right - mi.rcWork.left;
+    const int work_h = mi.rcWork.bottom - mi.rcWork.top;
+    width = width < work_w ? width : work_w;
+    height = height < work_h ? height : work_h;
+    if (x + width > mi.rcWork.right) x = mi.rcWork.right - width;
+    if (y + height > mi.rcWork.bottom) y = mi.rcWork.bottom - height;
+    if (x < mi.rcWork.left) x = mi.rcWork.left;
+    if (y < mi.rcWork.top) y = mi.rcWork.top;
+  }
+  SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
+               SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+  ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+  revealed_ = true;
   visible_ = true;
-  // Arm the click-outside dismiss (skip our own process so interacting with the
-  // card or main window does not close it).
+  // Arm the click-outside dismiss only now that the card is on-screen (skip our
+  // own process so interacting with the card / main window does not close it).
   s_hook_owner_ = this;
   if (foreground_hook_ == nullptr) {
     foreground_hook_ = SetWinEventHook(
@@ -157,7 +210,6 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
                                    &GlobalLookupWindow::MouseHookProc,
                                    GetModuleHandle(nullptr), 0);
   }
-  return true;
 }
 
 void GlobalLookupWindow::ResizeTo(int width, int height) {
@@ -192,6 +244,7 @@ void GlobalLookupWindow::ResizeTo(int width, int height) {
 
 void GlobalLookupWindow::Hide() {
   visible_ = false;
+  revealed_ = false;
   if (foreground_hook_ != nullptr) {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;

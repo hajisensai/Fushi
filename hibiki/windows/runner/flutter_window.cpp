@@ -583,6 +583,10 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           global_lookup_window_->ResizeTo(IntFromValue(args, "width", 0),
                                           IntFromValue(args, "height", 0));
           result->Success();
+        } else if (method == "reveal") {
+          global_lookup_window_->Reveal(IntFromValue(args, "width", 0),
+                                        IntFromValue(args, "height", 0));
+          result->Success();
         } else if (method == "resolveBridge") {
           // Dart's real reply for a deferred audio handler. "value" is a JSON
           // literal string (jsonEncode'd in Dart): pass it straight through.

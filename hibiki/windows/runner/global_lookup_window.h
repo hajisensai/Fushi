@@ -62,6 +62,11 @@ class GlobalLookupWindow {
   // Resizes to fit the rendered card (physical px); clamps to the monitor work
   // area and nudges back on-screen if the bottom/right would overflow.
   void ResizeTo(int width, int height);
+  // Moves the off-screen-rendered card to the pending cursor anchor at its final
+  // size and makes it visible (arming the click-outside hooks). Called once per
+  // lookup after the page has self-measured, so the user never sees the
+  // measure->resize jitter. Pass <=0 to keep the current size.
+  void Reveal(int width, int height);
   void Hide();
   bool IsShowing() const;
 
@@ -94,6 +99,7 @@ class GlobalLookupWindow {
   // the same app, which the foreground hook does not catch).
   static LRESULT CALLBACK MouseHookProc(int code, WPARAM wparam, LPARAM lparam);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
+  int OffscreenX() const;
   void EnsureWindowClass();
   void EnsureWebView();
   void ConfigureWebView();
@@ -104,6 +110,9 @@ class GlobalLookupWindow {
   HHOOK mouse_hook_ = nullptr;
   static GlobalLookupWindow* s_hook_owner_;
   bool visible_ = false;
+  bool revealed_ = false;
+  int pending_x_ = 0;
+  int pending_y_ = 0;
   bool class_registered_ = false;
   bool webview_ready_ = false;
   std::wstring popup_assets_dir_;

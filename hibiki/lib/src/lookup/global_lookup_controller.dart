@@ -43,6 +43,11 @@ class GlobalLookupController {
   // lookup so a new card re-sizes from scratch.
   int _lastSentWidth = -1;
   int _lastSentHeight = -1;
+  // The overlay renders off-screen until the first self-measurement, then is
+  // revealed once at its final size (no on-screen jitter). False = still
+  // off-screen / awaiting reveal. Reset per lookup.
+  bool _revealed = false;
+  Timer? _revealSafety;
 
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
@@ -112,20 +117,51 @@ class GlobalLookupController {
         searchWithWildcards: false,
       );
       glog('hotkey: searched "$text" -> entries=${result.entries.length}');
-      // New card: forget the previous size so overlaySize re-applies fully.
+      // New card: forget the previous size + reveal state so the overlay
+      // re-measures and reveals from scratch.
       _lastSentWidth = -1;
       _lastSentHeight = -1;
+      _revealed = false;
+      _revealSafety?.cancel();
 
-      // Always show — popup.js renders a no-results card when there are no
-      // entries (matches the in-app popup). Position natively (GetCursorPos =
+      // Render OFF-SCREEN at the reader-faithful size (popupMax* × appUiScale ×
+      // dpr) so the page measures at the correct width straight away; the card
+      // is revealed once via overlaySize. dpr is the main window's — the same
+      // monitor in the common case; the page reports the authoritative dpr in
+      // overlaySize and Reveal uses that. Position natively (GetCursorPos =
       // physical px) to avoid the logical/physical DPI mismatch.
-      final bool shown =
-          await GlobalLookupChannel.showAt(x: 0, y: 0, atCursor: true);
+      final double dpr = _devicePixelRatio();
+      final int w0 = (model.popupMaxWidth * model.appUiScale * dpr).round();
+      final int h0 = (model.popupMaxHeight * model.appUiScale * dpr).round();
+      final bool shown = await GlobalLookupChannel.showAt(
+          x: 0, y: 0, width: w0, height: h0, atCursor: true);
       await _renderResult(result);
-      glog('hotkey: showAt(atCursor)=$shown rendered');
+      glog('hotkey: showAt(atCursor)=$shown off-screen w0=$w0 h0=$h0 rendered');
+      // Safety: if the page never reports a size (render failure), reveal at the
+      // provisional size anyway so the card is not stuck invisible off-screen.
+      _revealSafety = Timer(const Duration(milliseconds: 450), () {
+        if (!_revealed) {
+          _revealed = true;
+          glog('reveal: SAFETY timeout w=$w0 h=$h0');
+          unawaited(GlobalLookupChannel.reveal(width: w0, height: h0));
+        }
+      });
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
+  }
+
+  /// The main window's device-pixel ratio (monitor scale). Used as the initial
+  /// off-screen render width; the page later reports the authoritative dpr.
+  double _devicePixelRatio() {
+    final BuildContext? ctx = _appModel?.navigatorKey.currentContext;
+    if (ctx != null) {
+      final double dpr = MediaQuery.maybeOf(ctx)?.devicePixelRatio ?? 0;
+      if (dpr > 0) return dpr;
+    }
+    return WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
+        ? WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio
+        : 1.0;
   }
 
   /// Resolves gaiji bytes for an image://?dictionary=..&path=.. request.
@@ -207,13 +243,22 @@ class GlobalLookupController {
               model.popupMaxHeight * model.appUiScale * dpr;
           final int height =
               (physH > maxHeight ? maxHeight : physH.toDouble()).round();
-          // Converge: only push when the target actually changed, so the
-          // resize -> re-measure loop settles instead of ping-ponging.
-          if (width != _lastSentWidth || height != _lastSentHeight) {
+          if (!_revealed) {
+            // First measurement (off-screen): reveal the card at its final size
+            // in one shot — the user never sees the measure→resize jitter.
+            _revealed = true;
+            _revealSafety?.cancel();
             _lastSentWidth = width;
             _lastSentHeight = height;
-            glog('resize: dpr=$dpr popupMaxWidth=${model.popupMaxWidth} '
+            glog('reveal: dpr=$dpr popupMaxWidth=${model.popupMaxWidth} '
                 'appUiScale=${model.appUiScale} physH=$physH -> w=$width h=$height');
+            unawaited(GlobalLookupChannel.reveal(width: width, height: height));
+          } else if (width != _lastSentWidth || height != _lastSentHeight) {
+            // Already on-screen (e.g. nested re-lookup changed the content):
+            // resize in place. Guarded so the resize→re-measure loop settles.
+            _lastSentWidth = width;
+            _lastSentHeight = height;
+            glog('resize: dpr=$dpr physH=$physH -> w=$width h=$height');
             unawaited(GlobalLookupChannel.resize(width: width, height: height));
           }
         }

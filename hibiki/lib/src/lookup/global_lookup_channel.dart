@@ -74,6 +74,15 @@ abstract final class GlobalLookupChannel {
         'value': jsonEncode(jsonEncode(value)),
       });
 
+  /// Moves the off-screen-rendered overlay to the cursor at its final size and
+  /// makes it visible. Called once per lookup after the page self-measures, so
+  /// the user never sees the measure→resize jitter.
+  static Future<void> reveal({required int width, required int height}) =>
+      _channel.invokeMethod<void>('reveal', <String, Object?>{
+        'width': width,
+        'height': height,
+      });
+
   static Future<void> hide() => _channel.invokeMethod<void>('hide');
 
   static Future<bool> isShowing() async =>
