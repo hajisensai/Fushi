@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "floating_lyric_window.h"
+#include "global_lookup_window.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -49,6 +50,14 @@ class FlutterWindow : public Win32Window {
 
   // Wires the floating_lyric MethodChannel to floating_lyric_window_.
   void RegisterFloatingLyricChannel();
+
+  // TODO-617: drives the global lookup overlay (bare WebView2 window). The main
+  // Dart engine pushes popupJson over this channel; image:// + JS messages route
+  // back. See global_lookup_window.h.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      global_lookup_channel_;
+  std::unique_ptr<GlobalLookupWindow> global_lookup_window_;
+  void RegisterGlobalLookupChannel();
 
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.

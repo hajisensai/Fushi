@@ -17,6 +17,29 @@ Future<void> playLookupAudio(
   String expression,
   String reading,
 ) async {
+  final String? url =
+      await resolveLookupAudioUrl(appModel, expression, reading);
+  debugPrint('[hibiki-autoread] resolved url=$url');
+  if (url == null || url.isEmpty) return;
+
+  // Plays remote URLs and local file paths uniformly, including Windows
+  // drive-letter paths (BUG-046).
+  final bool ok = await TtsChannel.instance.playAudioRef(
+    url,
+    volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+  );
+  debugPrint('[hibiki-autoread] play ok=$ok');
+}
+
+/// Resolves (but does not play) the configured-source audio URL/path for
+/// [expression] / [reading] — enabled sources only, no TTS fallback. Single
+/// source of truth shared by [playLookupAudio] and the global-lookup overlay's
+/// two-step bridge (resolveWordAudio -> url, then playWordAudio -> play).
+Future<String?> resolveLookupAudioUrl(
+  AppModel appModel,
+  String expression,
+  String reading,
+) async {
   final sources = appModel.enabledAudioSources;
   debugPrint(
       '[hibiki-autoread] "$expression" reading="$reading" sources=${sources.length}');
@@ -49,19 +72,9 @@ Future<void> playLookupAudio(
       reading,
     ),
   );
-  final String? url = await resolver.resolveConfigured(
+  return resolver.resolveConfigured(
     expression: expression,
     reading: reading,
     sources: appModel.audioSourceConfigs,
   );
-  debugPrint('[hibiki-autoread] resolved url=$url');
-  if (url == null || url.isEmpty) return;
-
-  // Plays remote URLs and local file paths uniformly, including Windows
-  // drive-letter paths (BUG-046).
-  final bool ok = await TtsChannel.instance.playAudioRef(
-    url,
-    volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-  );
-  debugPrint('[hibiki-autoread] play ok=$ok');
 }

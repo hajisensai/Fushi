@@ -12,6 +12,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/reader/dictionary_font_css.dart';
+import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:path/path.dart' as p;
@@ -213,36 +214,10 @@ class DictionaryPopupWebViewState
 })();
 ''';
 
-  static const String _topPullReleaseJs = '''
-(function(){
-  if(window.__hoshiTopPullInstalled) return;
-  window.__hoshiTopPullInstalled = true;
-  var startY = null;
-  var pulled = false;
-  function atTop(){
-    var st = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-    return st <= 0;
-  }
-  window.addEventListener('touchstart', function(e){
-    if(!e.touches || e.touches.length !== 1) return;
-    startY = e.touches[0].clientY;
-    pulled = false;
-  }, {passive: true});
-  window.addEventListener('touchmove', function(e){
-    if(startY === null || !e.touches || e.touches.length !== 1) return;
-    if(atTop() && e.touches[0].clientY - startY > 48) {
-      pulled = true;
-    }
-  }, {passive: true});
-  window.addEventListener('touchend', function(){
-    if(pulled) {
-      window.flutter_inappwebview.callHandler('topPullReleased');
-    }
-    startY = null;
-    pulled = false;
-  }, {passive: true});
-})();
-''';
+  // TODO-854 M1a-2：下滑关闭弹窗的注入 JS 收口到 kPopupTopPullReleaseJs（单一真相，
+  // 桌面 in-app 弹窗与 Windows 全局查词覆盖窗共用）。touch + pointer/mouse 两套识别，
+  // 解决桌面 WebView2 不触发 touch 导致下滑关闭失效。
+  static const String _topPullReleaseJs = kPopupTopPullReleaseJs;
 
   void highlightSelection(int charCount) {
     _controller?.evaluateJavascript(

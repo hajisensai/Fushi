@@ -213,8 +213,17 @@ void main() {
 
     expect(webViewSrc, contains('final VoidCallback? onTopPullReleased;'));
     expect(webViewSrc, contains("handlerName: 'topPullReleased'"));
+    // TODO-854 M1a-2：下滑关闭 JS 收口到 kPopupTopPullReleaseJs（桌面 in-app 弹窗 +
+    // Windows 全局查词覆盖窗共用）。WebView 仍注入该脚本（_topPullReleaseJs ＝
+    // kPopupTopPullReleaseJs），脚本本身回调 topPullReleased——保护意图不变，只是
+    // 真相源搬到了共享常量。
+    expect(webViewSrc, contains('_topPullReleaseJs = kPopupTopPullReleaseJs'));
     expect(
-      webViewSrc,
+        webViewSrc, contains('evaluateJavascript(source: _topPullReleaseJs)'));
+    final String swipeJsSrc =
+        read('lib/src/reader/popup_swipe_close_script.dart');
+    expect(
+      swipeJsSrc,
       contains("callHandler('topPullReleased')"),
       reason: 'The real definition WebView must report a top pull release; '
           'an outer Flutter scroll wrapper would not reliably receive WebView '
