@@ -3776,6 +3776,628 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
   }
 }
 
+class $MediaSourcesTable extends MediaSources
+    with TableInfo<$MediaSourcesTable, MediaSourceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaSourcesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _labelMeta = const VerificationMeta('label');
+  @override
+  late final GeneratedColumn<String> label = GeneratedColumn<String>(
+      'label', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaKindMeta =
+      const VerificationMeta('mediaKind');
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+      'media_kind', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _transportMeta =
+      const VerificationMeta('transport');
+  @override
+  late final GeneratedColumn<String> transport = GeneratedColumn<String>(
+      'transport', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('local'));
+  static const VerificationMeta _rootPathMeta =
+      const VerificationMeta('rootPath');
+  @override
+  late final GeneratedColumn<String> rootPath = GeneratedColumn<String>(
+      'root_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _configJsonMeta =
+      const VerificationMeta('configJson');
+  @override
+  late final GeneratedColumn<String> configJson = GeneratedColumn<String>(
+      'config_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _mediaCountMeta =
+      const VerificationMeta('mediaCount');
+  @override
+  late final GeneratedColumn<int> mediaCount = GeneratedColumn<int>(
+      'media_count', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _lastScannedAtMeta =
+      const VerificationMeta('lastScannedAt');
+  @override
+  late final GeneratedColumn<DateTime> lastScannedAt =
+      GeneratedColumn<DateTime>('last_scanned_at', aliasedName, true,
+          type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _lastScanErrorMeta =
+      const VerificationMeta('lastScanError');
+  @override
+  late final GeneratedColumn<String> lastScanError = GeneratedColumn<String>(
+      'last_scan_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _recursiveMeta =
+      const VerificationMeta('recursive');
+  @override
+  late final GeneratedColumn<bool> recursive = GeneratedColumn<bool>(
+      'recursive', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("recursive" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        label,
+        mediaKind,
+        transport,
+        rootPath,
+        configJson,
+        mediaCount,
+        lastScannedAt,
+        lastScanError,
+        recursive,
+        sortOrder,
+        createdAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_sources';
+  @override
+  VerificationContext validateIntegrity(Insertable<MediaSourceRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('label')) {
+      context.handle(
+          _labelMeta, label.isAcceptableOrUnknown(data['label']!, _labelMeta));
+    } else if (isInserting) {
+      context.missing(_labelMeta);
+    }
+    if (data.containsKey('media_kind')) {
+      context.handle(_mediaKindMeta,
+          mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta));
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('transport')) {
+      context.handle(_transportMeta,
+          transport.isAcceptableOrUnknown(data['transport']!, _transportMeta));
+    }
+    if (data.containsKey('root_path')) {
+      context.handle(_rootPathMeta,
+          rootPath.isAcceptableOrUnknown(data['root_path']!, _rootPathMeta));
+    } else if (isInserting) {
+      context.missing(_rootPathMeta);
+    }
+    if (data.containsKey('config_json')) {
+      context.handle(
+          _configJsonMeta,
+          configJson.isAcceptableOrUnknown(
+              data['config_json']!, _configJsonMeta));
+    }
+    if (data.containsKey('media_count')) {
+      context.handle(
+          _mediaCountMeta,
+          mediaCount.isAcceptableOrUnknown(
+              data['media_count']!, _mediaCountMeta));
+    }
+    if (data.containsKey('last_scanned_at')) {
+      context.handle(
+          _lastScannedAtMeta,
+          lastScannedAt.isAcceptableOrUnknown(
+              data['last_scanned_at']!, _lastScannedAtMeta));
+    }
+    if (data.containsKey('last_scan_error')) {
+      context.handle(
+          _lastScanErrorMeta,
+          lastScanError.isAcceptableOrUnknown(
+              data['last_scan_error']!, _lastScanErrorMeta));
+    }
+    if (data.containsKey('recursive')) {
+      context.handle(_recursiveMeta,
+          recursive.isAcceptableOrUnknown(data['recursive']!, _recursiveMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MediaSourceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaSourceRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      label: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}label'])!,
+      mediaKind: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_kind'])!,
+      transport: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}transport'])!,
+      rootPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}root_path'])!,
+      configJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}config_json']),
+      mediaCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}media_count'])!,
+      lastScannedAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.dateTime, data['${effectivePrefix}last_scanned_at']),
+      lastScanError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_scan_error']),
+      recursive: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}recursive'])!,
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $MediaSourcesTable createAlias(String alias) {
+    return $MediaSourcesTable(attachedDatabase, alias);
+  }
+}
+
+class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
+  final int id;
+
+  /// 显示名，默认取 rootPath 末段文件夹名。
+  final String label;
+
+  /// 媒体种类：'video' | 'book'。同一文件夹可分别建 video / book 两条来源，
+  /// 故不对 rootPath 加 UNIQUE。
+  final String mediaKind;
+
+  /// 传输方式：'local' | 'sftp' | 'ftp' | 'http'。M0 只写 'local'，
+  /// 网络取值前瞻容纳（M3 才接入）。
+  final String transport;
+
+  /// 本地绝对路径或网络根（含 scheme）。
+  final String rootPath;
+
+  /// 凭据引用（键）/ 网络配置 JSON。**绝不裸存明文密码**；本地恒 NULL。
+  final String? configJson;
+
+  /// 截图「媒体数」：上次扫描产出的条目数。
+  final int mediaCount;
+
+  /// 截图「上次扫描时间」。
+  final DateTime? lastScannedAt;
+
+  /// 上次扫描失败原因（成功则 NULL）。
+  final String? lastScanError;
+
+  /// 是否递归扫描子目录。
+  final bool recursive;
+
+  /// 列表排序权重（同 [BookTags].sortOrder 范式）。
+  final int sortOrder;
+
+  /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
+  final int createdAt;
+  const MediaSourceRow(
+      {required this.id,
+      required this.label,
+      required this.mediaKind,
+      required this.transport,
+      required this.rootPath,
+      this.configJson,
+      required this.mediaCount,
+      this.lastScannedAt,
+      this.lastScanError,
+      required this.recursive,
+      required this.sortOrder,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['label'] = Variable<String>(label);
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['transport'] = Variable<String>(transport);
+    map['root_path'] = Variable<String>(rootPath);
+    if (!nullToAbsent || configJson != null) {
+      map['config_json'] = Variable<String>(configJson);
+    }
+    map['media_count'] = Variable<int>(mediaCount);
+    if (!nullToAbsent || lastScannedAt != null) {
+      map['last_scanned_at'] = Variable<DateTime>(lastScannedAt);
+    }
+    if (!nullToAbsent || lastScanError != null) {
+      map['last_scan_error'] = Variable<String>(lastScanError);
+    }
+    map['recursive'] = Variable<bool>(recursive);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  MediaSourcesCompanion toCompanion(bool nullToAbsent) {
+    return MediaSourcesCompanion(
+      id: Value(id),
+      label: Value(label),
+      mediaKind: Value(mediaKind),
+      transport: Value(transport),
+      rootPath: Value(rootPath),
+      configJson: configJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(configJson),
+      mediaCount: Value(mediaCount),
+      lastScannedAt: lastScannedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastScannedAt),
+      lastScanError: lastScanError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastScanError),
+      recursive: Value(recursive),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory MediaSourceRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaSourceRow(
+      id: serializer.fromJson<int>(json['id']),
+      label: serializer.fromJson<String>(json['label']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      transport: serializer.fromJson<String>(json['transport']),
+      rootPath: serializer.fromJson<String>(json['rootPath']),
+      configJson: serializer.fromJson<String?>(json['configJson']),
+      mediaCount: serializer.fromJson<int>(json['mediaCount']),
+      lastScannedAt: serializer.fromJson<DateTime?>(json['lastScannedAt']),
+      lastScanError: serializer.fromJson<String?>(json['lastScanError']),
+      recursive: serializer.fromJson<bool>(json['recursive']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'label': serializer.toJson<String>(label),
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'transport': serializer.toJson<String>(transport),
+      'rootPath': serializer.toJson<String>(rootPath),
+      'configJson': serializer.toJson<String?>(configJson),
+      'mediaCount': serializer.toJson<int>(mediaCount),
+      'lastScannedAt': serializer.toJson<DateTime?>(lastScannedAt),
+      'lastScanError': serializer.toJson<String?>(lastScanError),
+      'recursive': serializer.toJson<bool>(recursive),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  MediaSourceRow copyWith(
+          {int? id,
+          String? label,
+          String? mediaKind,
+          String? transport,
+          String? rootPath,
+          Value<String?> configJson = const Value.absent(),
+          int? mediaCount,
+          Value<DateTime?> lastScannedAt = const Value.absent(),
+          Value<String?> lastScanError = const Value.absent(),
+          bool? recursive,
+          int? sortOrder,
+          int? createdAt}) =>
+      MediaSourceRow(
+        id: id ?? this.id,
+        label: label ?? this.label,
+        mediaKind: mediaKind ?? this.mediaKind,
+        transport: transport ?? this.transport,
+        rootPath: rootPath ?? this.rootPath,
+        configJson: configJson.present ? configJson.value : this.configJson,
+        mediaCount: mediaCount ?? this.mediaCount,
+        lastScannedAt:
+            lastScannedAt.present ? lastScannedAt.value : this.lastScannedAt,
+        lastScanError:
+            lastScanError.present ? lastScanError.value : this.lastScanError,
+        recursive: recursive ?? this.recursive,
+        sortOrder: sortOrder ?? this.sortOrder,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  MediaSourceRow copyWithCompanion(MediaSourcesCompanion data) {
+    return MediaSourceRow(
+      id: data.id.present ? data.id.value : this.id,
+      label: data.label.present ? data.label.value : this.label,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      transport: data.transport.present ? data.transport.value : this.transport,
+      rootPath: data.rootPath.present ? data.rootPath.value : this.rootPath,
+      configJson:
+          data.configJson.present ? data.configJson.value : this.configJson,
+      mediaCount:
+          data.mediaCount.present ? data.mediaCount.value : this.mediaCount,
+      lastScannedAt: data.lastScannedAt.present
+          ? data.lastScannedAt.value
+          : this.lastScannedAt,
+      lastScanError: data.lastScanError.present
+          ? data.lastScanError.value
+          : this.lastScanError,
+      recursive: data.recursive.present ? data.recursive.value : this.recursive,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaSourceRow(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('transport: $transport, ')
+          ..write('rootPath: $rootPath, ')
+          ..write('configJson: $configJson, ')
+          ..write('mediaCount: $mediaCount, ')
+          ..write('lastScannedAt: $lastScannedAt, ')
+          ..write('lastScanError: $lastScanError, ')
+          ..write('recursive: $recursive, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      label,
+      mediaKind,
+      transport,
+      rootPath,
+      configJson,
+      mediaCount,
+      lastScannedAt,
+      lastScanError,
+      recursive,
+      sortOrder,
+      createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaSourceRow &&
+          other.id == this.id &&
+          other.label == this.label &&
+          other.mediaKind == this.mediaKind &&
+          other.transport == this.transport &&
+          other.rootPath == this.rootPath &&
+          other.configJson == this.configJson &&
+          other.mediaCount == this.mediaCount &&
+          other.lastScannedAt == this.lastScannedAt &&
+          other.lastScanError == this.lastScanError &&
+          other.recursive == this.recursive &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt);
+}
+
+class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
+  final Value<int> id;
+  final Value<String> label;
+  final Value<String> mediaKind;
+  final Value<String> transport;
+  final Value<String> rootPath;
+  final Value<String?> configJson;
+  final Value<int> mediaCount;
+  final Value<DateTime?> lastScannedAt;
+  final Value<String?> lastScanError;
+  final Value<bool> recursive;
+  final Value<int> sortOrder;
+  final Value<int> createdAt;
+  const MediaSourcesCompanion({
+    this.id = const Value.absent(),
+    this.label = const Value.absent(),
+    this.mediaKind = const Value.absent(),
+    this.transport = const Value.absent(),
+    this.rootPath = const Value.absent(),
+    this.configJson = const Value.absent(),
+    this.mediaCount = const Value.absent(),
+    this.lastScannedAt = const Value.absent(),
+    this.lastScanError = const Value.absent(),
+    this.recursive = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  MediaSourcesCompanion.insert({
+    this.id = const Value.absent(),
+    required String label,
+    required String mediaKind,
+    this.transport = const Value.absent(),
+    required String rootPath,
+    this.configJson = const Value.absent(),
+    this.mediaCount = const Value.absent(),
+    this.lastScannedAt = const Value.absent(),
+    this.lastScanError = const Value.absent(),
+    this.recursive = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    required int createdAt,
+  })  : label = Value(label),
+        mediaKind = Value(mediaKind),
+        rootPath = Value(rootPath),
+        createdAt = Value(createdAt);
+  static Insertable<MediaSourceRow> custom({
+    Expression<int>? id,
+    Expression<String>? label,
+    Expression<String>? mediaKind,
+    Expression<String>? transport,
+    Expression<String>? rootPath,
+    Expression<String>? configJson,
+    Expression<int>? mediaCount,
+    Expression<DateTime>? lastScannedAt,
+    Expression<String>? lastScanError,
+    Expression<bool>? recursive,
+    Expression<int>? sortOrder,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (label != null) 'label': label,
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (transport != null) 'transport': transport,
+      if (rootPath != null) 'root_path': rootPath,
+      if (configJson != null) 'config_json': configJson,
+      if (mediaCount != null) 'media_count': mediaCount,
+      if (lastScannedAt != null) 'last_scanned_at': lastScannedAt,
+      if (lastScanError != null) 'last_scan_error': lastScanError,
+      if (recursive != null) 'recursive': recursive,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  MediaSourcesCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? label,
+      Value<String>? mediaKind,
+      Value<String>? transport,
+      Value<String>? rootPath,
+      Value<String?>? configJson,
+      Value<int>? mediaCount,
+      Value<DateTime?>? lastScannedAt,
+      Value<String?>? lastScanError,
+      Value<bool>? recursive,
+      Value<int>? sortOrder,
+      Value<int>? createdAt}) {
+    return MediaSourcesCompanion(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      mediaKind: mediaKind ?? this.mediaKind,
+      transport: transport ?? this.transport,
+      rootPath: rootPath ?? this.rootPath,
+      configJson: configJson ?? this.configJson,
+      mediaCount: mediaCount ?? this.mediaCount,
+      lastScannedAt: lastScannedAt ?? this.lastScannedAt,
+      lastScanError: lastScanError ?? this.lastScanError,
+      recursive: recursive ?? this.recursive,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (label.present) {
+      map['label'] = Variable<String>(label.value);
+    }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (transport.present) {
+      map['transport'] = Variable<String>(transport.value);
+    }
+    if (rootPath.present) {
+      map['root_path'] = Variable<String>(rootPath.value);
+    }
+    if (configJson.present) {
+      map['config_json'] = Variable<String>(configJson.value);
+    }
+    if (mediaCount.present) {
+      map['media_count'] = Variable<int>(mediaCount.value);
+    }
+    if (lastScannedAt.present) {
+      map['last_scanned_at'] = Variable<DateTime>(lastScannedAt.value);
+    }
+    if (lastScanError.present) {
+      map['last_scan_error'] = Variable<String>(lastScanError.value);
+    }
+    if (recursive.present) {
+      map['recursive'] = Variable<bool>(recursive.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaSourcesCompanion(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('transport: $transport, ')
+          ..write('rootPath: $rootPath, ')
+          ..write('configJson: $configJson, ')
+          ..write('mediaCount: $mediaCount, ')
+          ..write('lastScannedAt: $lastScannedAt, ')
+          ..write('lastScanError: $lastScanError, ')
+          ..write('recursive: $recursive, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $EpubBooksTable extends EpubBooks
     with TableInfo<$EpubBooksTable, EpubBookRow> {
   @override
@@ -3846,6 +4468,15 @@ class $EpubBooksTable extends EpubBooks
   late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
       'imported_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _sourceIdMeta =
+      const VerificationMeta('sourceId');
+  @override
+  late final GeneratedColumn<int> sourceId = GeneratedColumn<int>(
+      'source_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_sources (id) ON DELETE SET NULL'));
   @override
   List<GeneratedColumn> get $columns => [
         bookKey,
@@ -3858,7 +4489,8 @@ class $EpubBooksTable extends EpubBooks
         chaptersJson,
         tocJson,
         sourceMetadata,
-        importedAt
+        importedAt,
+        sourceId
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3938,6 +4570,10 @@ class $EpubBooksTable extends EpubBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('source_id')) {
+      context.handle(_sourceIdMeta,
+          sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta));
+    }
     return context;
   }
 
@@ -3969,6 +4605,8 @@ class $EpubBooksTable extends EpubBooks
           .read(DriftSqlType.string, data['${effectivePrefix}source_metadata']),
       importedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+      sourceId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}source_id']),
     );
   }
 
@@ -3990,6 +4628,10 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String? tocJson;
   final String? sourceMetadata;
   final int importedAt;
+
+  /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
+  /// onDelete:setNull = 移除来源时保留书目（归 NULL），不连坐删条目。
+  final int? sourceId;
   const EpubBookRow(
       {required this.bookKey,
       required this.title,
@@ -4001,7 +4643,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       required this.chaptersJson,
       this.tocJson,
       this.sourceMetadata,
-      required this.importedAt});
+      required this.importedAt,
+      this.sourceId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -4024,6 +4667,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       map['source_metadata'] = Variable<String>(sourceMetadata);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    if (!nullToAbsent || sourceId != null) {
+      map['source_id'] = Variable<int>(sourceId);
+    }
     return map;
   }
 
@@ -4047,6 +4693,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? const Value.absent()
           : Value(sourceMetadata),
       importedAt: Value(importedAt),
+      sourceId: sourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceId),
     );
   }
 
@@ -4065,6 +4714,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson: serializer.fromJson<String?>(json['tocJson']),
       sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      sourceId: serializer.fromJson<int?>(json['sourceId']),
     );
   }
   @override
@@ -4082,6 +4732,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'tocJson': serializer.toJson<String?>(tocJson),
       'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
       'importedAt': serializer.toJson<int>(importedAt),
+      'sourceId': serializer.toJson<int?>(sourceId),
     };
   }
 
@@ -4096,7 +4747,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           String? chaptersJson,
           Value<String?> tocJson = const Value.absent(),
           Value<String?> sourceMetadata = const Value.absent(),
-          int? importedAt}) =>
+          int? importedAt,
+          Value<int?> sourceId = const Value.absent()}) =>
       EpubBookRow(
         bookKey: bookKey ?? this.bookKey,
         title: title ?? this.title,
@@ -4110,6 +4762,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         sourceMetadata:
             sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
         importedAt: importedAt ?? this.importedAt,
+        sourceId: sourceId.present ? sourceId.value : this.sourceId,
       );
   EpubBookRow copyWithCompanion(EpubBooksCompanion data) {
     return EpubBookRow(
@@ -4132,6 +4785,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           : this.sourceMetadata,
       importedAt:
           data.importedAt.present ? data.importedAt.value : this.importedAt,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
     );
   }
 
@@ -4148,7 +4802,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('chaptersJson: $chaptersJson, ')
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
-          ..write('importedAt: $importedAt')
+          ..write('importedAt: $importedAt, ')
+          ..write('sourceId: $sourceId')
           ..write(')'))
         .toString();
   }
@@ -4165,7 +4820,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       chaptersJson,
       tocJson,
       sourceMetadata,
-      importedAt);
+      importedAt,
+      sourceId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -4180,7 +4836,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.chaptersJson == this.chaptersJson &&
           other.tocJson == this.tocJson &&
           other.sourceMetadata == this.sourceMetadata &&
-          other.importedAt == this.importedAt);
+          other.importedAt == this.importedAt &&
+          other.sourceId == this.sourceId);
 }
 
 class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
@@ -4195,6 +4852,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> tocJson;
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
+  final Value<int?> sourceId;
   final Value<int> rowid;
   const EpubBooksCompanion({
     this.bookKey = const Value.absent(),
@@ -4208,6 +4866,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   EpubBooksCompanion.insert({
@@ -4222,6 +4881,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
+    this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : bookKey = Value(bookKey),
         title = Value(title),
@@ -4242,6 +4902,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? tocJson,
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
+    Expression<int>? sourceId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4256,6 +4917,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (tocJson != null) 'toc_json': tocJson,
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
+      if (sourceId != null) 'source_id': sourceId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4272,6 +4934,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       Value<String?>? tocJson,
       Value<String?>? sourceMetadata,
       Value<int>? importedAt,
+      Value<int?>? sourceId,
       Value<int>? rowid}) {
     return EpubBooksCompanion(
       bookKey: bookKey ?? this.bookKey,
@@ -4285,6 +4948,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       tocJson: tocJson ?? this.tocJson,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
+      sourceId: sourceId ?? this.sourceId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4325,6 +4989,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (sourceId.present) {
+      map['source_id'] = Variable<int>(sourceId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4345,6 +5012,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('sourceId: $sourceId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -8335,6 +9003,15 @@ class $VideoBooksTable extends VideoBooks
   late final GeneratedColumn<DateTime> completedAt = GeneratedColumn<DateTime>(
       'completed_at', aliasedName, true,
       type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _sourceIdMeta =
+      const VerificationMeta('sourceId');
+  @override
+  late final GeneratedColumn<int> sourceId = GeneratedColumn<int>(
+      'source_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_sources (id) ON DELETE SET NULL'));
   @override
   List<GeneratedColumn> get $columns => [
         bookUid,
@@ -8350,7 +9027,8 @@ class $VideoBooksTable extends VideoBooks
         currentEpisode,
         audioTrackId,
         delayMs,
-        completedAt
+        completedAt,
+        sourceId
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8442,6 +9120,10 @@ class $VideoBooksTable extends VideoBooks
           completedAt.isAcceptableOrUnknown(
               data['completed_at']!, _completedAtMeta));
     }
+    if (data.containsKey('source_id')) {
+      context.handle(_sourceIdMeta,
+          sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta));
+    }
     return context;
   }
 
@@ -8479,6 +9161,8 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.int, data['${effectivePrefix}delay_ms'])!,
       completedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
+      sourceId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}source_id']),
     );
   }
 
@@ -8515,6 +9199,10 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   /// 视频首次播放进度 ≥ 90% 的时间戳（完成标记）；null = 未完成。统计去重计数用。
   final DateTime? completedAt;
+
+  /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
+  /// onDelete:setNull = 移除来源时保留视频（归 NULL），不连坐删条目。
+  final int? sourceId;
   const VideoBookRow(
       {required this.bookUid,
       required this.title,
@@ -8529,7 +9217,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       required this.currentEpisode,
       this.audioTrackId,
       required this.delayMs,
-      this.completedAt});
+      this.completedAt,
+      this.sourceId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -8562,6 +9251,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     map['delay_ms'] = Variable<int>(delayMs);
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
+    }
+    if (!nullToAbsent || sourceId != null) {
+      map['source_id'] = Variable<int>(sourceId);
     }
     return map;
   }
@@ -8598,6 +9290,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(completedAt),
+      sourceId: sourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceId),
     );
   }
 
@@ -8620,6 +9315,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
       delayMs: serializer.fromJson<int>(json['delayMs']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
+      sourceId: serializer.fromJson<int?>(json['sourceId']),
     );
   }
   @override
@@ -8640,6 +9336,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'audioTrackId': serializer.toJson<String?>(audioTrackId),
       'delayMs': serializer.toJson<int>(delayMs),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
+      'sourceId': serializer.toJson<int?>(sourceId),
     };
   }
 
@@ -8657,7 +9354,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           int? currentEpisode,
           Value<String?> audioTrackId = const Value.absent(),
           int? delayMs,
-          Value<DateTime?> completedAt = const Value.absent()}) =>
+          Value<DateTime?> completedAt = const Value.absent(),
+          Value<int?> sourceId = const Value.absent()}) =>
       VideoBookRow(
         bookUid: bookUid ?? this.bookUid,
         title: title ?? this.title,
@@ -8679,6 +9377,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
             audioTrackId.present ? audioTrackId.value : this.audioTrackId,
         delayMs: delayMs ?? this.delayMs,
         completedAt: completedAt.present ? completedAt.value : this.completedAt,
+        sourceId: sourceId.present ? sourceId.value : this.sourceId,
       );
   VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
     return VideoBookRow(
@@ -8712,6 +9411,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       delayMs: data.delayMs.present ? data.delayMs.value : this.delayMs,
       completedAt:
           data.completedAt.present ? data.completedAt.value : this.completedAt,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
     );
   }
 
@@ -8731,7 +9431,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('delayMs: $delayMs, ')
-          ..write('completedAt: $completedAt')
+          ..write('completedAt: $completedAt, ')
+          ..write('sourceId: $sourceId')
           ..write(')'))
         .toString();
   }
@@ -8751,7 +9452,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       currentEpisode,
       audioTrackId,
       delayMs,
-      completedAt);
+      completedAt,
+      sourceId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -8769,7 +9471,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.currentEpisode == this.currentEpisode &&
           other.audioTrackId == this.audioTrackId &&
           other.delayMs == this.delayMs &&
-          other.completedAt == this.completedAt);
+          other.completedAt == this.completedAt &&
+          other.sourceId == this.sourceId);
 }
 
 class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
@@ -8787,6 +9490,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<String?> audioTrackId;
   final Value<int> delayMs;
   final Value<DateTime?> completedAt;
+  final Value<int?> sourceId;
   final Value<int> rowid;
   const VideoBooksCompanion({
     this.bookUid = const Value.absent(),
@@ -8803,6 +9507,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
+    this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   VideoBooksCompanion.insert({
@@ -8820,6 +9525,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
     this.completedAt = const Value.absent(),
+    this.sourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : bookUid = Value(bookUid),
         title = Value(title),
@@ -8839,6 +9545,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<String>? audioTrackId,
     Expression<int>? delayMs,
     Expression<DateTime>? completedAt,
+    Expression<int>? sourceId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8857,6 +9564,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (audioTrackId != null) 'audio_track_id': audioTrackId,
       if (delayMs != null) 'delay_ms': delayMs,
       if (completedAt != null) 'completed_at': completedAt,
+      if (sourceId != null) 'source_id': sourceId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8876,6 +9584,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<String?>? audioTrackId,
       Value<int>? delayMs,
       Value<DateTime?>? completedAt,
+      Value<int?>? sourceId,
       Value<int>? rowid}) {
     return VideoBooksCompanion(
       bookUid: bookUid ?? this.bookUid,
@@ -8893,6 +9602,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       audioTrackId: audioTrackId ?? this.audioTrackId,
       delayMs: delayMs ?? this.delayMs,
       completedAt: completedAt ?? this.completedAt,
+      sourceId: sourceId ?? this.sourceId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8943,6 +9653,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (completedAt.present) {
       map['completed_at'] = Variable<DateTime>(completedAt.value);
     }
+    if (sourceId.present) {
+      map['source_id'] = Variable<int>(sourceId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -8966,6 +9679,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('audioTrackId: $audioTrackId, ')
           ..write('delayMs: $delayMs, ')
           ..write('completedAt: $completedAt, ')
+          ..write('sourceId: $sourceId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -11222,6 +11936,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $SrtBooksTable srtBooks = $SrtBooksTable(this);
   late final $ReaderPositionsTable readerPositions =
       $ReaderPositionsTable(this);
+  late final $MediaSourcesTable mediaSources = $MediaSourcesTable(this);
   late final $EpubBooksTable epubBooks = $EpubBooksTable(this);
   late final $BookmarksTable bookmarks = $BookmarksTable(this);
   late final $ReadingStatisticsTable readingStatistics =
@@ -11268,6 +11983,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         audioCues,
         srtBooks,
         readerPositions,
+        mediaSources,
         epubBooks,
         bookmarks,
         readingStatistics,
@@ -11294,6 +12010,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
         [
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_sources',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('epub_books', kind: UpdateKind.update),
+            ],
+          ),
           WritePropagation(
             on: TableUpdateQuery.onTableName('epub_books',
                 limitUpdateKind: UpdateKind.delete),
@@ -11348,6 +12071,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('book_profiles', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_sources',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('video_books', kind: UpdateKind.update),
             ],
           ),
           WritePropagation(
@@ -13219,6 +13949,434 @@ typedef $$ReaderPositionsTableProcessedTableManager = ProcessedTableManager<
     ),
     ReaderPositionRow,
     PrefetchHooks Function()>;
+typedef $$MediaSourcesTableCreateCompanionBuilder = MediaSourcesCompanion
+    Function({
+  Value<int> id,
+  required String label,
+  required String mediaKind,
+  Value<String> transport,
+  required String rootPath,
+  Value<String?> configJson,
+  Value<int> mediaCount,
+  Value<DateTime?> lastScannedAt,
+  Value<String?> lastScanError,
+  Value<bool> recursive,
+  Value<int> sortOrder,
+  required int createdAt,
+});
+typedef $$MediaSourcesTableUpdateCompanionBuilder = MediaSourcesCompanion
+    Function({
+  Value<int> id,
+  Value<String> label,
+  Value<String> mediaKind,
+  Value<String> transport,
+  Value<String> rootPath,
+  Value<String?> configJson,
+  Value<int> mediaCount,
+  Value<DateTime?> lastScannedAt,
+  Value<String?> lastScanError,
+  Value<bool> recursive,
+  Value<int> sortOrder,
+  Value<int> createdAt,
+});
+
+final class $$MediaSourcesTableReferences extends BaseReferences<
+    _$HibikiDatabase, $MediaSourcesTable, MediaSourceRow> {
+  $$MediaSourcesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$EpubBooksTable, List<EpubBookRow>>
+      _epubBooksRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.epubBooks,
+              aliasName: 'media_sources__id__epub_books__source_id');
+
+  $$EpubBooksTableProcessedTableManager get epubBooksRefs {
+    final manager = $$EpubBooksTableTableManager($_db, $_db.epubBooks)
+        .filter((f) => f.sourceId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_epubBooksRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$VideoBooksTable, List<VideoBookRow>>
+      _videoBooksRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.videoBooks,
+              aliasName: 'media_sources__id__video_books__source_id');
+
+  $$VideoBooksTableProcessedTableManager get videoBooksRefs {
+    final manager = $$VideoBooksTableTableManager($_db, $_db.videoBooks)
+        .filter((f) => f.sourceId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_videoBooksRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$MediaSourcesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaSourcesTable> {
+  $$MediaSourcesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+      column: $table.mediaKind, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get transport => $composableBuilder(
+      column: $table.transport, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get rootPath => $composableBuilder(
+      column: $table.rootPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get configJson => $composableBuilder(
+      column: $table.configJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get mediaCount => $composableBuilder(
+      column: $table.mediaCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get lastScannedAt => $composableBuilder(
+      column: $table.lastScannedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastScanError => $composableBuilder(
+      column: $table.lastScanError, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get recursive => $composableBuilder(
+      column: $table.recursive, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  Expression<bool> epubBooksRefs(
+      Expression<bool> Function($$EpubBooksTableFilterComposer f) f) {
+    final $$EpubBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.epubBooks,
+        getReferencedColumn: (t) => t.sourceId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EpubBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.epubBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> videoBooksRefs(
+      Expression<bool> Function($$VideoBooksTableFilterComposer f) f) {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.sourceId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$MediaSourcesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaSourcesTable> {
+  $$MediaSourcesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+      column: $table.mediaKind, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get transport => $composableBuilder(
+      column: $table.transport, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get rootPath => $composableBuilder(
+      column: $table.rootPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get configJson => $composableBuilder(
+      column: $table.configJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get mediaCount => $composableBuilder(
+      column: $table.mediaCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get lastScannedAt => $composableBuilder(
+      column: $table.lastScannedAt,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastScanError => $composableBuilder(
+      column: $table.lastScanError,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get recursive => $composableBuilder(
+      column: $table.recursive, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MediaSourcesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaSourcesTable> {
+  $$MediaSourcesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get label =>
+      $composableBuilder(column: $table.label, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get transport =>
+      $composableBuilder(column: $table.transport, builder: (column) => column);
+
+  GeneratedColumn<String> get rootPath =>
+      $composableBuilder(column: $table.rootPath, builder: (column) => column);
+
+  GeneratedColumn<String> get configJson => $composableBuilder(
+      column: $table.configJson, builder: (column) => column);
+
+  GeneratedColumn<int> get mediaCount => $composableBuilder(
+      column: $table.mediaCount, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastScannedAt => $composableBuilder(
+      column: $table.lastScannedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lastScanError => $composableBuilder(
+      column: $table.lastScanError, builder: (column) => column);
+
+  GeneratedColumn<bool> get recursive =>
+      $composableBuilder(column: $table.recursive, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  Expression<T> epubBooksRefs<T extends Object>(
+      Expression<T> Function($$EpubBooksTableAnnotationComposer a) f) {
+    final $$EpubBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.epubBooks,
+        getReferencedColumn: (t) => t.sourceId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EpubBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.epubBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> videoBooksRefs<T extends Object>(
+      Expression<T> Function($$VideoBooksTableAnnotationComposer a) f) {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.sourceId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$MediaSourcesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaSourcesTable,
+    MediaSourceRow,
+    $$MediaSourcesTableFilterComposer,
+    $$MediaSourcesTableOrderingComposer,
+    $$MediaSourcesTableAnnotationComposer,
+    $$MediaSourcesTableCreateCompanionBuilder,
+    $$MediaSourcesTableUpdateCompanionBuilder,
+    (MediaSourceRow, $$MediaSourcesTableReferences),
+    MediaSourceRow,
+    PrefetchHooks Function({bool epubBooksRefs, bool videoBooksRefs})> {
+  $$MediaSourcesTableTableManager(_$HibikiDatabase db, $MediaSourcesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaSourcesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaSourcesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaSourcesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> label = const Value.absent(),
+            Value<String> mediaKind = const Value.absent(),
+            Value<String> transport = const Value.absent(),
+            Value<String> rootPath = const Value.absent(),
+            Value<String?> configJson = const Value.absent(),
+            Value<int> mediaCount = const Value.absent(),
+            Value<DateTime?> lastScannedAt = const Value.absent(),
+            Value<String?> lastScanError = const Value.absent(),
+            Value<bool> recursive = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              MediaSourcesCompanion(
+            id: id,
+            label: label,
+            mediaKind: mediaKind,
+            transport: transport,
+            rootPath: rootPath,
+            configJson: configJson,
+            mediaCount: mediaCount,
+            lastScannedAt: lastScannedAt,
+            lastScanError: lastScanError,
+            recursive: recursive,
+            sortOrder: sortOrder,
+            createdAt: createdAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String label,
+            required String mediaKind,
+            Value<String> transport = const Value.absent(),
+            required String rootPath,
+            Value<String?> configJson = const Value.absent(),
+            Value<int> mediaCount = const Value.absent(),
+            Value<DateTime?> lastScannedAt = const Value.absent(),
+            Value<String?> lastScanError = const Value.absent(),
+            Value<bool> recursive = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            required int createdAt,
+          }) =>
+              MediaSourcesCompanion.insert(
+            id: id,
+            label: label,
+            mediaKind: mediaKind,
+            transport: transport,
+            rootPath: rootPath,
+            configJson: configJson,
+            mediaCount: mediaCount,
+            lastScannedAt: lastScannedAt,
+            lastScanError: lastScanError,
+            recursive: recursive,
+            sortOrder: sortOrder,
+            createdAt: createdAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$MediaSourcesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {epubBooksRefs = false, videoBooksRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (epubBooksRefs) db.epubBooks,
+                if (videoBooksRefs) db.videoBooks
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (epubBooksRefs)
+                    await $_getPrefetchedData<MediaSourceRow, $MediaSourcesTable,
+                            EpubBookRow>(
+                        currentTable: table,
+                        referencedTable: $$MediaSourcesTableReferences
+                            ._epubBooksRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$MediaSourcesTableReferences(db, table, p0)
+                                .epubBooksRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.sourceId == item.id),
+                        typedResults: items),
+                  if (videoBooksRefs)
+                    await $_getPrefetchedData<MediaSourceRow, $MediaSourcesTable,
+                            VideoBookRow>(
+                        currentTable: table,
+                        referencedTable: $$MediaSourcesTableReferences
+                            ._videoBooksRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$MediaSourcesTableReferences(db, table, p0)
+                                .videoBooksRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.sourceId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$MediaSourcesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MediaSourcesTable,
+    MediaSourceRow,
+    $$MediaSourcesTableFilterComposer,
+    $$MediaSourcesTableOrderingComposer,
+    $$MediaSourcesTableAnnotationComposer,
+    $$MediaSourcesTableCreateCompanionBuilder,
+    $$MediaSourcesTableUpdateCompanionBuilder,
+    (MediaSourceRow, $$MediaSourcesTableReferences),
+    MediaSourceRow,
+    PrefetchHooks Function({bool epubBooksRefs, bool videoBooksRefs})>;
 typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   required String bookKey,
   required String title,
@@ -13231,6 +14389,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   required int importedAt,
+  Value<int?> sourceId,
   Value<int> rowid,
 });
 typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
@@ -13245,12 +14404,27 @@ typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   Value<int> importedAt,
+  Value<int?> sourceId,
   Value<int> rowid,
 });
 
 final class $$EpubBooksTableReferences
     extends BaseReferences<_$HibikiDatabase, $EpubBooksTable, EpubBookRow> {
   $$EpubBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaSourcesTable _sourceIdTable(_$HibikiDatabase db) =>
+      db.mediaSources.createAlias('epub_books__source_id__media_sources__id');
+
+  $$MediaSourcesTableProcessedTableManager? get sourceId {
+    final $_column = $_itemColumn<int>('source_id');
+    if ($_column == null) return null;
+    final manager = $$MediaSourcesTableTableManager($_db, $_db.mediaSources)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_sourceIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
 
   static MultiTypedResultKey<$BookmarksTable, List<BookmarkRow>>
       _bookmarksRefsTable(_$HibikiDatabase db) =>
@@ -13326,6 +14500,26 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnFilters(column));
+
+  $$MediaSourcesTableFilterComposer get sourceId {
+    final $$MediaSourcesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.sourceId,
+        referencedTable: $db.mediaSources,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaSourcesTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
 
   Expression<bool> bookmarksRefs(
       Expression<bool> Function($$BookmarksTableFilterComposer f) f) {
@@ -13414,6 +14608,26 @@ class $$EpubBooksTableOrderingComposer
 
   ColumnOrderings<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnOrderings(column));
+
+  $$MediaSourcesTableOrderingComposer get sourceId {
+    final $$MediaSourcesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.sourceId,
+        referencedTable: $db.mediaSources,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaSourcesTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
 }
 
 class $$EpubBooksTableAnnotationComposer
@@ -13457,6 +14671,26 @@ class $$EpubBooksTableAnnotationComposer
 
   GeneratedColumn<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => column);
+
+  $$MediaSourcesTableAnnotationComposer get sourceId {
+    final $$MediaSourcesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.sourceId,
+        referencedTable: $db.mediaSources,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaSourcesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
 
   Expression<T> bookmarksRefs<T extends Object>(
       Expression<T> Function($$BookmarksTableAnnotationComposer a) f) {
@@ -13512,7 +14746,8 @@ class $$EpubBooksTableTableManager extends RootTableManager<
     $$EpubBooksTableUpdateCompanionBuilder,
     (EpubBookRow, $$EpubBooksTableReferences),
     EpubBookRow,
-    PrefetchHooks Function({bool bookmarksRefs, bool bookTagMappingsRefs})> {
+    PrefetchHooks Function(
+        {bool sourceId, bool bookmarksRefs, bool bookTagMappingsRefs})> {
   $$EpubBooksTableTableManager(_$HibikiDatabase db, $EpubBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -13535,6 +14770,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             Value<int> importedAt = const Value.absent(),
+            Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               EpubBooksCompanion(
@@ -13549,6 +14785,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            sourceId: sourceId,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -13563,6 +14800,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             required int importedAt,
+            Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               EpubBooksCompanion.insert(
@@ -13577,6 +14815,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            sourceId: sourceId,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -13586,14 +14825,41 @@ class $$EpubBooksTableTableManager extends RootTableManager<
                   ))
               .toList(),
           prefetchHooksCallback: (
-              {bookmarksRefs = false, bookTagMappingsRefs = false}) {
+              {sourceId = false,
+              bookmarksRefs = false,
+              bookTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (bookmarksRefs) db.bookmarks,
                 if (bookTagMappingsRefs) db.bookTagMappings
               ],
-              addJoins: null,
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (sourceId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.sourceId,
+                    referencedTable:
+                        $$EpubBooksTableReferences._sourceIdTable(db),
+                    referencedColumn:
+                        $$EpubBooksTableReferences._sourceIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
               getPrefetchedDataCallback: (items) async {
                 return [
                   if (bookmarksRefs)
@@ -13640,7 +14906,8 @@ typedef $$EpubBooksTableProcessedTableManager = ProcessedTableManager<
     $$EpubBooksTableUpdateCompanionBuilder,
     (EpubBookRow, $$EpubBooksTableReferences),
     EpubBookRow,
-    PrefetchHooks Function({bool bookmarksRefs, bool bookTagMappingsRefs})>;
+    PrefetchHooks Function(
+        {bool sourceId, bool bookmarksRefs, bool bookTagMappingsRefs})>;
 typedef $$BookmarksTableCreateCompanionBuilder = BookmarksCompanion Function({
   Value<int> id,
   required String bookKey,
@@ -17119,6 +18386,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<String?> audioTrackId,
   Value<int> delayMs,
   Value<DateTime?> completedAt,
+  Value<int?> sourceId,
   Value<int> rowid,
 });
 typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
@@ -17136,12 +18404,27 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<String?> audioTrackId,
   Value<int> delayMs,
   Value<DateTime?> completedAt,
+  Value<int?> sourceId,
   Value<int> rowid,
 });
 
 final class $$VideoBooksTableReferences
     extends BaseReferences<_$HibikiDatabase, $VideoBooksTable, VideoBookRow> {
   $$VideoBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaSourcesTable _sourceIdTable(_$HibikiDatabase db) =>
+      db.mediaSources.createAlias('video_books__source_id__media_sources__id');
+
+  $$MediaSourcesTableProcessedTableManager? get sourceId {
+    final $_column = $_itemColumn<int>('source_id');
+    if ($_column == null) return null;
+    final manager = $$MediaSourcesTableTableManager($_db, $_db.mediaSources)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_sourceIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
 
   static MultiTypedResultKey<$VideoBookTagMappingsTable,
       List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
@@ -17219,6 +18502,26 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnFilters(column));
+
+  $$MediaSourcesTableFilterComposer get sourceId {
+    final $$MediaSourcesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.sourceId,
+        referencedTable: $db.mediaSources,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaSourcesTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
 
   Expression<bool> videoBookTagMappingsRefs(
       Expression<bool> Function($$VideoBookTagMappingsTableFilterComposer f)
@@ -17300,6 +18603,26 @@ class $$VideoBooksTableOrderingComposer
 
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => ColumnOrderings(column));
+
+  $$MediaSourcesTableOrderingComposer get sourceId {
+    final $$MediaSourcesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.sourceId,
+        referencedTable: $db.mediaSources,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaSourcesTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
 }
 
 class $$VideoBooksTableAnnotationComposer
@@ -17353,6 +18676,26 @@ class $$VideoBooksTableAnnotationComposer
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
       column: $table.completedAt, builder: (column) => column);
 
+  $$MediaSourcesTableAnnotationComposer get sourceId {
+    final $$MediaSourcesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.sourceId,
+        referencedTable: $db.mediaSources,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaSourcesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
   Expression<T> videoBookTagMappingsRefs<T extends Object>(
       Expression<T> Function($$VideoBookTagMappingsTableAnnotationComposer a)
           f) {
@@ -17388,7 +18731,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
     $$VideoBooksTableUpdateCompanionBuilder,
     (VideoBookRow, $$VideoBooksTableReferences),
     VideoBookRow,
-    PrefetchHooks Function({bool videoBookTagMappingsRefs})> {
+    PrefetchHooks Function({bool sourceId, bool videoBookTagMappingsRefs})> {
   $$VideoBooksTableTableManager(_$HibikiDatabase db, $VideoBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -17414,6 +18757,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
+            Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion(
@@ -17431,6 +18775,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             audioTrackId: audioTrackId,
             delayMs: delayMs,
             completedAt: completedAt,
+            sourceId: sourceId,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -17448,6 +18793,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
+            Value<int?> sourceId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion.insert(
@@ -17465,6 +18811,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             audioTrackId: audioTrackId,
             delayMs: delayMs,
             completedAt: completedAt,
+            sourceId: sourceId,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -17473,13 +18820,39 @@ class $$VideoBooksTableTableManager extends RootTableManager<
                     $$VideoBooksTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({videoBookTagMappingsRefs = false}) {
+          prefetchHooksCallback: (
+              {sourceId = false, videoBookTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (videoBookTagMappingsRefs) db.videoBookTagMappings
               ],
-              addJoins: null,
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (sourceId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.sourceId,
+                    referencedTable:
+                        $$VideoBooksTableReferences._sourceIdTable(db),
+                    referencedColumn:
+                        $$VideoBooksTableReferences._sourceIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
               getPrefetchedDataCallback: (items) async {
                 return [
                   if (videoBookTagMappingsRefs)
@@ -17513,7 +18886,7 @@ typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
     $$VideoBooksTableUpdateCompanionBuilder,
     (VideoBookRow, $$VideoBooksTableReferences),
     VideoBookRow,
-    PrefetchHooks Function({bool videoBookTagMappingsRefs})>;
+    PrefetchHooks Function({bool sourceId, bool videoBookTagMappingsRefs})>;
 typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
     = VideoBookTagMappingsCompanion Function({
   Value<int> id,
@@ -18874,6 +20247,8 @@ class $HibikiDatabaseManager {
       $$SrtBooksTableTableManager(_db, _db.srtBooks);
   $$ReaderPositionsTableTableManager get readerPositions =>
       $$ReaderPositionsTableTableManager(_db, _db.readerPositions);
+  $$MediaSourcesTableTableManager get mediaSources =>
+      $$MediaSourcesTableTableManager(_db, _db.mediaSources);
   $$EpubBooksTableTableManager get epubBooks =>
       $$EpubBooksTableTableManager(_db, _db.epubBooks);
   $$BookmarksTableTableManager get bookmarks =>
