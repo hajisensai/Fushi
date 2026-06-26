@@ -1,0 +1,255 @@
+// TODO-817 M1b source-library scanner: scans one MediaSource (local folder root)
+// into many books/videos, backfilling sourceId on insert, then writes the
+// media-count / scan-time / scan-error back onto MediaSources.
+//
+// [planScanFromFileList] is a pure function (no IO): it takes a SourceFileEntry
+// list and classifies into epub / video / subtitle, associating each video with
+// its same-stem sidecar subtitle via the existing sidecar pure function.
+// [MediaSourceScanner.scan] is the thin IO orchestration: list via
+// SourceFileSystem (M1b wires only LocalSourceFileSystem) -> planScanFromFileList
+// -> reuse existing importers (EpubImporter.importFromPath /
+// VideoBookRepository.saveVideoBook) with sourceId -> updateMediaSourceScanResult.
+//
+// Zero-behaviour-change: only a new scan entry is added; existing manual import
+// paths (dialogs) are untouched, sourceId defaults to null. Network transport is
+// still a placeholder (NetworkSourceFileSystem throws UnimplementedError); M1b
+// does not connect to any network and does not touch credentials.
+
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+
+import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+
+import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/import/sidecar_finder.dart';
+import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:hibiki/src/media/video/video_import_dialog.dart';
+
+/// EPUB extensions (lowercase, no leading dot).
+const Set<String> kScanEpubExtensions = <String>{'epub'};
+
+/// Subtitle whitelist shared with the video import dialog (no lrc).
+const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
+
+/// One pending video item: video path + associated same-stem subtitle (or null).
+@immutable
+class ScanVideoItem {
+  const ScanVideoItem({required this.videoPath, this.subtitlePath});
+
+  /// Full video file path (source namespace).
+  final String videoPath;
+
+  /// Associated subtitle full path; null when no same-name subtitle.
+  final String? subtitlePath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanVideoItem &&
+      other.videoPath == videoPath &&
+      other.subtitlePath == subtitlePath;
+
+  @override
+  int get hashCode => Object.hash(videoPath, subtitlePath);
+}
+
+/// Classification result of one scan (pure data).
+@immutable
+class ScanPlan {
+  const ScanPlan({
+    this.epubPaths = const <String>[],
+    this.videos = const <ScanVideoItem>[],
+  });
+
+  /// Pending EPUB file full paths.
+  final List<String> epubPaths;
+
+  /// Pending video items (with associated subtitles).
+  final List<ScanVideoItem> videos;
+}
+
+/// Extension of an entry name (lowercase, no leading dot).
+String _extOf(String name) =>
+    p.extension(name).toLowerCase().replaceFirst('.', '');
+
+/// Pure function: classifies a listed [files] set into a scan plan. No IO.
+///
+/// - Skips directory entries (recursive listing yields only files anyway).
+/// - EPUB (ext in [kScanEpubExtensions]) -> [ScanPlan.epubPaths].
+/// - Video (ext in [kVideoExtensions]) -> [ScanPlan.videos], associating the
+///   same-stem subtitle found by [selectSidecarNames] within the same directory.
+/// - Subtitles are not inserted on their own; they only attach to a video.
+///
+/// Sidecar association is scoped to the same directory: [files] are bucketed by
+/// parent dir, and each video is matched against its own directory file-name set,
+/// matching the import dialog's sidecar semantics.
+ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
+  // parent dir -> all file basenames under it (for sidecar matching).
+  final Map<String, List<String>> namesByDir = <String, List<String>>{};
+  for (final SourceFileEntry e in files) {
+    if (e.isDirectory) continue;
+    final String dir = p.dirname(e.path);
+    (namesByDir[dir] ??= <String>[]).add(e.name);
+  }
+
+  final List<String> epubPaths = <String>[];
+  final List<ScanVideoItem> videos = <ScanVideoItem>[];
+
+  for (final SourceFileEntry e in files) {
+    if (e.isDirectory) continue;
+    final String ext = _extOf(e.name);
+    if (kScanEpubExtensions.contains(ext)) {
+      epubPaths.add(e.path);
+      continue;
+    }
+    if (kVideoExtensions.contains('.$ext')) {
+      final String dir = p.dirname(e.path);
+      final List<String> siblings = namesByDir[dir] ?? const <String>[];
+      final ({String? subtitle, List<String> audio}) sel = selectSidecarNames(
+        mainFileName: e.name,
+        siblingNames: siblings,
+        wantAudio: false,
+        subtitleExts: kScanVideoSubtitleExts,
+      );
+      videos.add(ScanVideoItem(
+        videoPath: e.path,
+        subtitlePath: sel.subtitle == null ? null : p.join(dir, sel.subtitle!),
+      ));
+    }
+  }
+
+  return ScanPlan(epubPaths: epubPaths, videos: videos);
+}
+
+/// Source-library scanner: scans one [MediaSourceRow] root, inserts the media
+/// owned by this source, and writes back the scan result.
+class MediaSourceScanner {
+  MediaSourceScanner(this._db) : _videoRepo = VideoBookRepository(_db);
+
+  final HibikiDatabase _db;
+  final VideoBookRepository _videoRepo;
+
+  /// Scans one source library.
+  ///
+  /// [fs] defaults to [LocalSourceFileSystem] (M1b connects only locally); tests
+  /// inject a local impl over a real temp dir. Routes by [MediaSourceRow.mediaKind]
+  /// ('book' | 'video'):
+  /// - 'book': each EPUB -> [EpubImporter.importFromPath] (with sourceId).
+  /// - 'video': each video -> [VideoBookRepository.saveVideoBook] (with sourceId)
+  ///   plus parsed cues when a same-name subtitle exists.
+  ///
+  /// After insert, calls [HibikiDatabase.updateMediaSourceScanResult] to write the
+  /// media count / timestamp; any throw records its text in lastScanError
+  /// (mediaCount reflects the count successfully inserted before the failure).
+  Future<void> scan(
+    MediaSourceRow source, {
+    SourceFileSystem? fs,
+  }) async {
+    final SourceFileSystem files = fs ?? const LocalSourceFileSystem();
+    int mediaCount = 0;
+    String? scanError;
+    try {
+      final List<SourceFileEntry> entries = await files.listFiles(
+        source.rootPath,
+        recursive: source.recursive,
+      );
+      final ScanPlan plan = planScanFromFileList(entries);
+
+      if (source.mediaKind == 'book') {
+        mediaCount = await _importBooks(plan, source.id);
+      } else if (source.mediaKind == 'video') {
+        mediaCount = await _importVideos(plan, source.id);
+      } else {
+        throw ArgumentError.value(
+          source.mediaKind,
+          'mediaKind',
+          'Unsupported media kind for scan (expected book | video)',
+        );
+      }
+    } catch (e, stack) {
+      scanError = e.toString();
+      debugPrint('MediaSourceScanner.scan failed for '
+          'source ${source.id} (${source.rootPath}): $e\n$stack');
+    }
+
+    await _db.updateMediaSourceScanResult(
+      id: source.id,
+      mediaCount: mediaCount,
+      lastScannedAt: DateTime.now(),
+      lastScanError: scanError,
+    );
+  }
+
+  /// Imports every EPUB in the plan; returns the count successfully inserted.
+  Future<int> _importBooks(ScanPlan plan, int sourceId) async {
+    int count = 0;
+    for (final String epubPath in plan.epubPaths) {
+      await EpubImporter.importFromPath(
+        db: _db,
+        filePath: epubPath,
+        fileName: p.basename(epubPath),
+        sourceId: sourceId,
+      );
+      count++;
+    }
+    return count;
+  }
+
+  /// Imports every video in the plan (with sidecar subtitle cues); returns count.
+  Future<int> _importVideos(ScanPlan plan, int sourceId) async {
+    if (plan.videos.isEmpty) return 0;
+    // Existing book_uid set for silent same-name dedup (matches import dialog).
+    final Set<String> existingKeys =
+        (await _videoRepo.listAll()).map((VideoBookRow r) => r.bookUid).toSet();
+
+    int count = 0;
+    for (final ScanVideoItem item in plan.videos) {
+      final String bookUid = uniqueVideoBookUid(
+        singleVideoBookUid(item.videoPath),
+        existingKeys,
+      );
+      existingKeys.add(bookUid);
+
+      String? subtitleSource;
+      String? subtitleFormat;
+      List<AudioCue> cues = const <AudioCue>[];
+      if (item.subtitlePath != null) {
+        final String fmt = _extOf(p.basename(item.subtitlePath!));
+        final String content =
+            await readTextWithEncoding(File(item.subtitlePath!));
+        cues = parseSubtitleCues(
+          content: content,
+          format: fmt,
+          bookUid: bookUid,
+        );
+        subtitleSource = item.subtitlePath;
+        subtitleFormat = fmt;
+      }
+
+      await _videoRepo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(bookUid),
+          title: Value(p.basenameWithoutExtension(item.videoPath)),
+          videoPath: Value(item.videoPath),
+          subtitleSource: Value<String?>(subtitleSource),
+          subtitleFormat: Value<String?>(subtitleFormat),
+          embeddedSubtitleTrack: subtitleSource == null
+              ? const Value<int?>(0)
+              : const Value<int?>(null),
+          importedAt: Value(DateTime.now()),
+        ),
+        sourceId: sourceId,
+      );
+      if (cues.isNotEmpty) {
+        await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
+      }
+      count++;
+    }
+    return count;
+  }
+}

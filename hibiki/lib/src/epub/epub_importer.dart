@@ -67,6 +67,7 @@ class EpubImporter {
     required String filePath,
     required String fileName,
     DuplicateTitleCallback? onDuplicateTitle,
+    int? sourceId,
   }) async {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
@@ -81,6 +82,7 @@ class EpubImporter {
       fileName: fileName,
       tempDir: tempDir,
       onDuplicateTitle: onDuplicateTitle,
+      sourceId: sourceId,
     );
   }
 
@@ -99,6 +101,7 @@ class EpubImporter {
     required String fileName,
     required String tempDir,
     DuplicateTitleCallback? onDuplicateTitle,
+    int? sourceId,
   }) async {
     String? insertedKey;
     String extractDir = tempDir;
@@ -178,6 +181,9 @@ class EpubImporter {
           chaptersJson: chaptersJson,
           tocJson: tocJson != null ? Value(tocJson) : const Value.absent(),
           importedAt: DateTime.now().millisecondsSinceEpoch,
+          // TODO-817 M1b：扫描器入库时回填来源库 id；手动导入 sourceId==null
+          // → Value.absent() 落 NULL（向后兼容）。
+          sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
         ),
       );
 

@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -10,8 +11,16 @@ class VideoBookRepository {
 
   final HibikiDatabase _db;
 
-  Future<void> saveVideoBook(VideoBooksCompanion book) =>
-      _db.upsertVideoBook(book);
+  /// 写入/更新一本视频书。
+  ///
+  /// TODO-817 M1b：可选 [sourceId] 指向归属的网络/本地来源库（[MediaSources].id）；
+  /// 默认 null = 手动导入无来源（向后兼容，现有手动导入调用点一字不改）。只在
+  /// [book] 自身没显式设过 sourceId 时才合并进 companion，避免覆盖调用方意图。
+  Future<void> saveVideoBook(VideoBooksCompanion book, {int? sourceId}) {
+    final VideoBooksCompanion withSource =
+        sourceId == null ? book : book.copyWith(sourceId: Value(sourceId));
+    return _db.upsertVideoBook(withSource);
+  }
 
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
       _db.getVideoBookByBookUid(bookUid);
