@@ -367,7 +367,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        flutter --verbose build apk --release \
+        flutter --verbose build apk --release --target-platform android-arm64 \
           --build-name "${{ steps.channel.outputs.build_version_name }}" \
           --build-number "${{ steps.channel.outputs.android_build_number }}"
 

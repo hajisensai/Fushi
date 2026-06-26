@@ -132,7 +132,7 @@ jobs:
     - name: Build debug APK
       working-directory: hibiki
       run: >-
-        flutter build apk --debug
+        flutter build apk --debug --target-platform android-arm64
         --build-number "$RELEASE_SEQUENCE"
 
     - name: Prepare debug APK artifact

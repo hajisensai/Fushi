@@ -114,6 +114,13 @@ void main() {
     expect(debugChannelBuild, isNot(contains('--split-per-abi')));
     expect(splitReleaseBuild, contains('--split-per-abi --release'));
 
+    // TODO-841: push/debug 通道只打 arm64-only 瘦身（debug 包太大，正常人只用
+    // arm64）；beta/formal 的 split-per-abi 必须保留全 ABI（资产名依赖全 ABI）。
+    expect(debugChannelBuild, contains('--target-platform android-arm64'),
+        reason: 'TODO-841: push/debug 通道只打 arm64-only 瘦身');
+    expect(splitReleaseBuild, isNot(contains('--target-platform')),
+        reason: 'beta/formal 必须保留全 ABI，不得限制到单一 ABI');
+
     expect(preBuildDiagnostics, contains('flutter --version'));
     expect(preBuildDiagnostics, contains('dart --version'));
     expect(preBuildDiagnostics, contains('java -version'));
@@ -199,6 +206,11 @@ void main() {
         greaterThanOrEqualTo(2),
         reason: 'debug + release validation builds must carry the shared '
             'build number so their versionCode matches release.yml');
+
+    // TODO-841: main.yml 的 14 天 debug artifact 也瘦身成 arm64-only。
+    expect(mainWorkflow, contains('flutter build apk --debug '
+        '--target-platform android-arm64'),
+        reason: 'TODO-841: push 的 debug artifact 也只打 arm64-only');
 
     // build.gradle owns the one-time migration floor + ceiling assertion.
     expect(buildGradle, contains('def versionCodeBase = 1000000000'),
