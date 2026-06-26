@@ -1858,5 +1858,8 @@
   "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles",
   "video_secondary_subtitle_sources": "Secondary subtitle",
   "video_secondary_subtitle_hint": "Rendered by player (not lookupable)",
-  "handlebar_video_clip": "Video Clip (GIF)"
+  "handlebar_video_clip": "Video Clip (GIF)",
+  "dict_update_name_mismatch_title": "Names do not match",
+  "dict_update_name_mismatch_body": "The selected file is \"$incoming\", but you are updating \"$existing\". Replace anyway?",
+  "dialog_replace": "Replace"
 }

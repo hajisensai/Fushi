@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -434,6 +435,47 @@ class DictionaryImportManager {
       throw Exception('Dictionary title is empty');
     }
     return cleaned;
+  }
+
+  /// TODO-839：在**不导入**的前提下，从一个 yomitan zip 包里廉价探出 `index.json`
+  /// 的 `title`，供「从文件重选覆盖更新」在导入前判断新旧包是否同名（异名时弹确认，
+  /// 避免 [decideUpdate] 把异名包静默改判成新增导入、原词典原封不动留着的语义陷阱）。
+  ///
+  /// 只解压 zip 里**唯一一个** `index.json` entry 并解析 title，不解压全量、不落盘、
+  /// 不改任何状态——纯函数（仅依赖入参 [File] 与磁盘只读）。
+  ///
+  /// 仅支持 yomitan zip：dsl/mdx 的 title 不在 index.json（要等 native 导入后才知道），
+  /// 廉价 peek 拿不到 → 返回 null（调用方退化为纯 force 重导，不弹异名确认）。坏包 /
+  /// 无 index.json / title 缺失也返回 null。
+  static String? peekDictionaryTitle(File file) {
+    if (path.extension(file.path).toLowerCase() != '.zip') return null;
+    try {
+      final InputFileStream input = InputFileStream(file.path);
+      try {
+        final ZipDirectory dir = ZipDirectory.read(input);
+        ZipFileHeader? indexHeader;
+        for (final ZipFileHeader header in dir.fileHeaders) {
+          final String name = header.filename.toLowerCase();
+          if (name == 'index.json' || name.endsWith('/index.json')) {
+            indexHeader = header;
+            break;
+          }
+        }
+        final ZipFile? entry = indexHeader?.file;
+        if (entry == null) return null;
+        final dynamic decoded = jsonDecode(utf8.decode(entry.content));
+        if (decoded is! Map) return null;
+        final dynamic title = decoded['title'];
+        if (title is! String) return null;
+        final String trimmed = title.trim();
+        return trimmed.isEmpty ? null : _sanitizeTitle(trimmed);
+      } finally {
+        input.closeSync();
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictImport.peekTitle', e, stack);
+      return null;
+    }
   }
 
   static DictionaryType _parseType(String type) {

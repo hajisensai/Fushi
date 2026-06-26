@@ -1858,5 +1858,8 @@
   "shortcut_action_video_toggle_subtitle_hide": "切换隐藏字幕",
   "video_secondary_subtitle_sources": "副字幕",
   "video_secondary_subtitle_hint": "由播放器渲染（不可查词）",
-  "handlebar_video_clip": "视频片段 (GIF)"
+  "handlebar_video_clip": "视频片段 (GIF)",
+  "dict_update_name_mismatch_title": "词典名称不一致",
+  "dict_update_name_mismatch_body": "所选文件是「$incoming」，但你正在更新「$existing」。仍要替换吗？",
+  "dialog_replace": "替换"
 }
