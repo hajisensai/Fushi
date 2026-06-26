@@ -23,6 +23,7 @@ import 'package:hibiki/src/lookup/selection_capture_ffi.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
+import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
@@ -137,6 +138,7 @@ class GlobalLookupController {
           x: 0, y: 0, width: w0, height: h0, atCursor: true);
       await _renderResult(result);
       glog('hotkey: showAt(atCursor)=$shown off-screen w0=$w0 h0=$h0 rendered');
+      _autoReadFirstEntry(model, result);
       // Safety: if the page never reports a size (render failure), reveal at the
       // provisional size anyway so the card is not stuck invisible off-screen.
       _revealSafety = Timer(const Duration(milliseconds: 450), () {
@@ -160,7 +162,8 @@ class GlobalLookupController {
       if (dpr > 0) return dpr;
     }
     return WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
-        ? WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio
+        ? WidgetsBinding
+            .instance.platformDispatcher.views.first.devicePixelRatio
         : 1.0;
   }
 
@@ -228,8 +231,7 @@ class GlobalLookupController {
       final AppModel? model = _appModel;
       final Object? args = message['args'];
       if (model != null && args is List && args.length >= 2) {
-        final double dpr =
-            (args[0] is num) ? (args[0] as num).toDouble() : 1.0;
+        final double dpr = (args[0] is num) ? (args[0] as num).toDouble() : 1.0;
         final num? physH = args[1] is num ? args[1] as num : null;
         if (dpr > 0 && physH != null && physH > 0) {
           // Faithful to the reader popup: both dimensions are
@@ -288,8 +290,9 @@ class GlobalLookupController {
   /// the awaiting ♪ button never freezes.
   Future<void> _handleAudioBridge(
       String handler, Map<String, Object?> message) async {
-    final int? id =
-        (message['__bridgeId'] is num) ? (message['__bridgeId'] as num).toInt() : null;
+    final int? id = (message['__bridgeId'] is num)
+        ? (message['__bridgeId'] as num).toInt()
+        : null;
     Object? reply;
     try {
       final AppModel? model = _appModel;
@@ -332,6 +335,45 @@ class GlobalLookupController {
     }
   }
 
+  /// 全局查词查到词后，按用户「自动朗读」(autoReadOnLookup) 偏好自动发音。
+  /// 复用主 Dart 查词链路同一去重协调器 (LookupAutoReadCoordinator)，播放走 overlay
+  /// 已有的两步音频桥 (resolveLookupAudioUrl -> TtsChannel.playAudioRef)，与手动 ♪
+  /// 按钮 (_handleAudioBridge) 同一解析/播放路径，不另起 playLookupAudio 绕过 overlay 桥。
+  void _autoReadFirstEntry(AppModel model, DictionarySearchResult result) {
+    if (!ReaderHibikiSource.instance.autoReadOnLookup) {
+      return;
+    }
+    if (result.entries.isEmpty) {
+      return;
+    }
+    final DictionaryEntry entry = result.entries.first;
+    final String expression = entry.word;
+    final String reading = entry.reading;
+    if (expression.isEmpty) {
+      return;
+    }
+    unawaited(LookupAutoReadCoordinator.instance.runAutomatic(
+      expression: expression,
+      reading: reading,
+      play: () => _playWordAudio(model, expression, reading),
+    ));
+  }
+
+  /// overlay 音频桥的两步：解析配置源 URL，再用 overlay 同一播放器播放（与
+  /// _handleAudioBridge 的 resolveWordAudio/playWordAudio 逐步一致）。
+  Future<void> _playWordAudio(
+      AppModel model, String expression, String reading) async {
+    final String? url = await resolveLookupAudioUrl(model, expression, reading);
+    glog('autoread: resolved url=$url for "$expression"/"$reading"');
+    if (url == null || url.isEmpty) {
+      return;
+    }
+    await TtsChannel.instance.playAudioRef(
+      url,
+      volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+    );
+  }
+
   Future<void> _lookupNested(String query) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -346,6 +388,7 @@ class GlobalLookupController {
       _lastSentHeight = -1;
       await _renderResult(result);
       glog('nested: "$query" entries=${result.entries.length}');
+      _autoReadFirstEntry(model, result);
     } catch (e, st) {
       glog('nested: EXCEPTION $e\n$st');
     }
