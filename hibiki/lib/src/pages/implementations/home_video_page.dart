@@ -26,6 +26,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:hibiki/src/pages/implementations/media_sources_dialog.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
@@ -296,6 +297,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       builder: (_) => VideoImportDialog(repo: widget.repo),
     );
     if (bookUid != null) _refresh();
+  }
+
+  /// 打开「管理来源」对话框（视频来源库）。关闭后刷新列表（扫描可能新增视频）。
+  Future<void> _openManageSources() async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => const MediaSourcesDialog(mediaKind: 'video'),
+    );
+    if (mounted) _refresh();
   }
 
   /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
@@ -1227,6 +1237,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             tooltip: t.video_import_action,
             icon: Icons.add,
             onTap: _openImport,
+          ),
+        if (canImport)
+          HibikiIconButton(
+            tooltip: t.media_source_manage_title,
+            icon: Icons.folder_copy_outlined,
+            onTap: _openManageSources,
           ),
         HibikiIconButton(
           tooltip: t.collections,

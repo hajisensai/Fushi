@@ -1,7 +1,7 @@
 name: hibiki
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 0.11.2+245
+version: 0.11.2+246
 environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
@@ -217,6 +217,12 @@ dependency_overrides:
 dev_dependencies:
   build_runner: ^2.3.3
   just_audio_platform_interface: ^4.6.0
+  # TODO-817 M1c scanner test overrides CharsetDetectorPlatform with a Dart
+  # fake to verify SJIS subtitle decoding headlessly (native channel is
+  # unavailable in flutter test). These are transitive deps of
+  # flutter_charset_detector; declared here only for the test import.
+  flutter_charset_detector_platform_interface: ^1.1.0
+  plugin_platform_interface: ^2.1.0
   drift_dev: ^2.23.0
   dart_mappable_builder: ^4.6.0
   dependency_validator: ^3.0.0

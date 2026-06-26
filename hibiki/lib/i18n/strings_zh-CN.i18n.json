@@ -1857,5 +1857,19 @@
   "shortcut_action_video_cycle_subtitle_obscure": "循环字幕遮蔽模式",
   "shortcut_action_video_toggle_subtitle_hide": "切换隐藏字幕",
   "video_secondary_subtitle_sources": "副字幕",
-  "video_secondary_subtitle_hint": "由播放器渲染（不可查词）"
+  "video_secondary_subtitle_hint": "由播放器渲染（不可查词）",
+  "media_source_manage_title": "管理来源",
+  "media_source_add_local_folder": "本地文件夹",
+  "media_source_add_network": "网络",
+  "media_source_network_coming_soon": "网络来源敬请期待",
+  "media_source_rescan": "重新扫描",
+  "media_source_open_folder": "打开文件夹",
+  "media_source_remove": "移除来源",
+  "media_source_remove_keeps_media": "移除来源不会删除已导入的媒体。",
+  "media_source_scan_error": "扫描失败",
+  "media_source_no_sources": "暂无来源",
+  "media_source_add": "添加来源",
+  "media_source_count_video": "$n 个视频",
+  "media_source_count_book": "$n 本书",
+  "media_source_last_scan": "上次扫描 $time"
 }

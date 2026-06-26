@@ -1857,5 +1857,19 @@
   "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
   "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles",
   "video_secondary_subtitle_sources": "Secondary subtitle",
-  "video_secondary_subtitle_hint": "Rendered by player (not lookupable)"
+  "video_secondary_subtitle_hint": "Rendered by player (not lookupable)",
+  "media_source_manage_title": "Manage Sources",
+  "media_source_add_local_folder": "Local Folder",
+  "media_source_add_network": "Network",
+  "media_source_network_coming_soon": "Network sources coming soon",
+  "media_source_rescan": "Rescan",
+  "media_source_open_folder": "Open Folder",
+  "media_source_remove": "Remove Source",
+  "media_source_remove_keeps_media": "Removing a source does not delete imported media.",
+  "media_source_scan_error": "Scan failed",
+  "media_source_no_sources": "No sources yet",
+  "media_source_add": "Add Source",
+  "media_source_count_video": "$n videos",
+  "media_source_count_book": "$n books",
+  "media_source_last_scan": "Last scan $time"
 }

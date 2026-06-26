@@ -15,7 +15,10 @@ import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_charset_detector_platform_interface/decoding_result.dart';
+import 'package:flutter_charset_detector_platform_interface/flutter_charset_detector_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:hibiki/src/media/source/media_source_scanner.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -272,4 +275,119 @@ void main() {
       expect(after.lastScanError, isNull);
     });
   });
+
+  // ── TODO-817 M1c T5: subtitle charset detection via copyToLocal ────────────
+  // A real Shift-JIS .srt (Japanese cue) must decode correctly. These bytes
+  // (こんにちは = 82 b1 82 f1 82 c9 82 bf 82 cd) are INVALID UTF-8, so the
+  // scanner's readTextWithEncoding path falls back to the charset detector. If
+  // the scanner used fs.readText (plain utf8.decode) instead, decoding would
+  // throw, the scan would record lastScanError and parse zero cues -> RED. This
+  // guards M1b TODO② (copyToLocal + readTextWithEncoding) from regressing back to
+  // a UTF-8-only read. CharsetDetector.autoDecode is a native method channel
+  // unavailable in headless flutter test, so we override its platform interface
+  // with a Dart fake that decodes the known SJIS fixture.
+  group('MediaSourceScanner.scan subtitle charset (SJIS)', () {
+    late Directory tmp;
+    late CharsetDetectorPlatform original;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('m1c_sjis_');
+      original = CharsetDetectorPlatform.instance;
+      CharsetDetectorPlatform.instance = _FakeSjisCharsetDetector();
+    });
+    tearDown(() {
+      CharsetDetectorPlatform.instance = original;
+      try {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    test('Shift-JIS subtitle decodes to Japanese cue text', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // SRT with a Japanese cue encoded as Shift-JIS bytes (invalid UTF-8).
+      final List<int> sjis = <int>[];
+      sjis.addAll('1\n00:00:01,000 --> 00:00:02,000\n'.codeUnits);
+      // こんにちは in Shift-JIS / CP932.
+      sjis.addAll(
+          <int>[0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd]);
+      sjis.add(0x0a);
+      File(p.join(tmp.path, 'movie.mp4')).writeAsStringSync('fake-mp4');
+      File(p.join(tmp.path, 'movie.srt')).writeAsBytesSync(sjis);
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await MediaSourceScanner(db).scan(source);
+
+      // Scan succeeded (no error) and the SJIS cue decoded to Japanese.
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull,
+          reason:
+              'SJIS subtitle must decode via readTextWithEncoding fallback, '
+              'not throw on a UTF-8-only read');
+      final VideoBookRepository repo = VideoBookRepository(db);
+      final List<VideoBookRow> videos = await repo.listAll();
+      expect(videos, hasLength(1));
+      final List<AudioCueRow> cues =
+          await db.getCuesForBook(videos.single.bookUid);
+      expect(cues, isNotEmpty);
+      expect(cues.first.cueText, contains('こんにちは'),
+          reason: 'cue text must be the decoded Japanese, proving the scanner '
+              'routed through readTextWithEncoding (SJIS), not fs.readText');
+    });
+  });
+}
+
+/// Fake [CharsetDetectorPlatform] for headless tests: decodes the known
+/// Shift-JIS SRT fixture (ASCII bytes 1:1, the こんにちは SJIS run -> Japanese).
+/// Only used as the fallback when utf8.decode throws on the SJIS bytes.
+class _FakeSjisCharsetDetector extends CharsetDetectorPlatform
+    with MockPlatformInterfaceMixin {
+  @override
+  Future<DecodingResult> autoDecode(Uint8List bytes) async {
+    final StringBuffer out = StringBuffer();
+    int i = 0;
+    while (i < bytes.length) {
+      final int b = bytes[i];
+      if (b < 0x80) {
+        out.writeCharCode(b);
+        i += 1;
+        continue;
+      }
+      // Shift-JIS double-byte lead (0x81-0x9F or 0xE0-0xFC).
+      if (i + 1 < bytes.length) {
+        final int lo = bytes[i + 1];
+        final String? ch = _sjisPair(b, lo);
+        if (ch != null) {
+          out.write(ch);
+          i += 2;
+          continue;
+        }
+      }
+      i += 1; // skip unknown byte
+    }
+    return DecodingResult.fromJson(<String, dynamic>{
+      'charset': 'Shift_JIS',
+      'string': out.toString(),
+    });
+  }
+
+  /// Minimal SJIS->Unicode table for the fixture's こんにちは.
+  String? _sjisPair(int hi, int lo) {
+    const Map<int, String> table = <int, String>{
+      0x82b1: 'こ',
+      0x82f1: 'ん',
+      0x82c9: 'に',
+      0x82bf: 'ち',
+      0x82cd: 'は',
+    };
+    return table[(hi << 8) | lo];
+  }
 }
