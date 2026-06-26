@@ -14,6 +14,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
@@ -136,5 +137,10 @@ String buildOverlayRenderScript({
         requestAnimationFrame(window.__hibikiPostOverlaySize);
       });
     })();
+    // TODO-854 M1a-2：给覆盖窗也挂下滑关闭手势识别（pointer/mouse，桌面
+    // WebView2 不触发 touch）。回调 topPullReleased 经原生 callHandler shim
+    // 桥到 chrome.webview.postMessage，由 GlobalLookupController 据用户
+    // enableSwipeToClose 偏好决定是否真正 hide。
+    $kPopupTopPullReleaseJs
 ''';
 }

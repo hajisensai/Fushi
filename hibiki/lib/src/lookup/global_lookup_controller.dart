@@ -210,6 +210,16 @@ class GlobalLookupController {
       GlobalLookupChannel.hide();
       return;
     }
+    // TODO-854 M1a-2：顶部下滑关闭。覆盖窗的 kPopupTopPullReleaseJs 识别到顶部
+    // 下滑（桌面 pointer/mouse）后 callHandler('topPullReleased')；是否真正关闭
+    // 尊重用户「滑动关闭弹窗」(enableSwipeToClose) 偏好——关时忽略，与 in-app
+    // 弹窗一致（Windows 默认 false，鼠标框选与下滑同形）。
+    if (handler == 'topPullReleased') {
+      if (ReaderHibikiSource.instance.enableSwipeToClose) {
+        GlobalLookupChannel.hide();
+      }
+      return;
+    }
     // Audio handlers are DEFERRED natively (see global_lookup_window.cpp): the
     // main engine must supply the real reply and resolve the JS promise via
     // resolveBridge(id, value), else the ♪ button hangs. popup.js calls
