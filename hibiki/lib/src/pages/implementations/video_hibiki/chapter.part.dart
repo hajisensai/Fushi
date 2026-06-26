@@ -135,6 +135,66 @@ extension _VideoChapter on _VideoHibikiPageState {
     );
   }
 
+  /// 进度条 hover 缩略图预览层（TODO-669，方案 A）：桌面 hover seek bar 时在指针
+  /// 上方弹该时间点的画面缩略图 + 时间戳。几何与章节刻度层同源——`Padding(left/right:16)`
+  /// 对齐 `seekBarMargin`、轨道带由 [videoSeekBarTrackBand] 锚定，浮层贴在轨道带**上方**。
+  ///
+  /// [_thumbnailPreview] 为 null（移动端 / 未就绪）时不挂；hover 位置 / 状态由调度器
+  /// （经 fork `onHoverPosition` → [_onSeekBarHover] → request）驱动，本层只渲染。
+  /// [IgnorePointer] 纯视觉，不拦 seek bar 自身拖动；随控制条 [_videoControlsVisible]
+  /// 淡入淡出（控制条隐时 hover 也无意义）。
+  Widget _buildThumbnailPreviewOverlay(VideoPlayerController controller) {
+    final VideoThumbnailPreviewController? preview = _thumbnailPreview;
+    if (preview == null) return const SizedBox.shrink();
+    // 缩略图轨道竖直锚点：与刻度层同样的 band，浮层底缘抬到轨道带上沿 + 间距。
+    final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
+    final ({double bottom, double height}) band = videoSeekBarTrackBand(
+      isDesktop: _isDesktopVideoControls,
+      buttonBarHeight: _videoButtonBarHeight,
+      seekBarButtonGap: _videoSeekBarButtonGap,
+      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      seekBarTrackHeight: _videoSeekBarTrackHeight,
+      bottomChromeBaseline: _VideoHibikiPageState._videoBottomChromeBaseline,
+      bottomSystemInset: _videoBottomSystemInset(),
+      tickHeight: tickHeight,
+    );
+    // 浮层底缘 = 轨道带上沿（band.bottom + band.height）+ 一个小间距。
+    final double previewBottom =
+        band.bottom + band.height + 6.0 * _videoUiScale;
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    return Positioned.fill(
+      child: SafeArea(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _videoControlsVisible,
+          builder: (BuildContext _, bool controlsVisible, __) {
+            return IgnorePointer(
+              child: Padding(
+                // 水平内缩 16px 对齐 seekBarMargin；轨道内宽由内部 LayoutBuilder 取。
+                padding: const EdgeInsets.only(left: 16, right: 16),
+                child: LayoutBuilder(
+                  builder: (BuildContext _, BoxConstraints constraints) {
+                    return Stack(
+                      children: <Widget>[
+                        VideoThumbnailPreviewOverlay(
+                          controller: preview,
+                          trackWidth: constraints.maxWidth,
+                          bottomOffset: previewBottom,
+                          colorScheme: cs,
+                          uiScale: _videoUiScale,
+                          controlsVisible: controlsVisible,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   /// 内封章节面板（TODO-424）：列出 [controller] 的章节，点击跳转，高亮当前章。
   /// 当前章由 [controller] 的播放位置对照各章起点同步算出（[VideoPlayerController
   /// .chapterIndexForPosition]），无需异步轮询 libmpv `chapter`。

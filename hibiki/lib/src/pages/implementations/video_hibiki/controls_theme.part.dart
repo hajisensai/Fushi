@@ -47,6 +47,10 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
       // bar 把内部 onSeekStart 与本回调合并调用（third_party/media_kit_video）。
       onSeekStart: () => controller.clearSeekTargetSnap(),
+      // TODO-669：进度条 hover 缩略图预览。seek bar hover 时 fork 把 hover 比例
+      // （轨道内宽权威值）回调给 [_onSeekBarHover]，桌面转发到取帧调度器、移动端不接
+      // （触屏无 hover，故仅桌面 theme 接线）。null 时 fork 零行为变化。
+      onHoverPosition: _onSeekBarHover,
       // 控制条隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       // BUG-391「管 1」（源头层，机理最硬）：字幕跳转列表侧栏开启时禁用本隐藏。机制——
       // fork material_desktop.dart:746-750 的控制条 MouseRegion 在 `mount=false`（控制条隐藏）

@@ -206,6 +206,19 @@ class MaterialDesktopVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function()? onSeekStart;
 
+  // SEEK BAR HOVER POSITION (Hibiki patch)
+
+  /// Optional callback fired with the current hover position (fraction `[0,1]`
+  /// of the seek-bar track width) as the pointer moves over the seek bar, and
+  /// with `null` when the pointer leaves it. media_kit computes this fraction
+  /// internally (`localPosition.dx / constraints.maxWidth`, the track inner
+  /// width after `seekBarMargin`) but never surfaces it; Hibiki uses it to drive
+  /// the progress-bar hover thumbnail preview (TODO-669) — the fraction comes
+  /// straight from the seek bar's own coordinate space, so the host never has to
+  /// re-derive the 16px margin. Null (upstream default) = no callback, behaviour
+  /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final void Function(double? fraction)? onHoverPosition;
+
   /// {@macro material_desktop_video_controls_theme_data}
   const MaterialDesktopVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -257,6 +270,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.shiftSubtitlesOnControlsVisibilityChange = true,
     this.visibilityNotifier,
     this.onSeekStart,
+    this.onHoverPosition,
   });
 
   /// Creates a copy of this [MaterialDesktopVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -300,6 +314,7 @@ class MaterialDesktopVideoControlsThemeData {
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
     void Function()? onSeekStart,
+    void Function(double? fraction)? onHoverPosition,
   }) {
     return MaterialDesktopVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -356,6 +371,7 @@ class MaterialDesktopVideoControlsThemeData {
               this.shiftSubtitlesOnControlsVisibilityChange,
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
       onSeekStart: onSeekStart ?? this.onSeekStart,
+      onHoverPosition: onHoverPosition ?? this.onHoverPosition,
     );
   }
 }
@@ -859,6 +875,12 @@ class _MaterialDesktopVideoControlsState
                                               ? const Offset(0.0, 16.0)
                                               : Offset.zero,
                                           child: MaterialDesktopSeekBar(
+                                            // Hibiki patch (TODO-669): forward
+                                            // the host hover-position callback so
+                                            // the seek bar can drive the
+                                            // thumbnail preview. See PATCHES.md.
+                                            onHoverPosition: _theme(context)
+                                                .onHoverPosition,
                                             onSeekStart: () {
                                               _theme(context)
                                                   .onSeekStart
@@ -980,10 +1002,15 @@ class MaterialDesktopSeekBar extends StatefulWidget {
   final VoidCallback? onSeekStart;
   final VoidCallback? onSeekEnd;
 
+  /// Hibiki patch (TODO-669): hover position callback (fraction `[0,1]` of the
+  /// track width, or null on exit). See third_party/media_kit_video/PATCHES.md.
+  final void Function(double? fraction)? onHoverPosition;
+
   const MaterialDesktopSeekBar({
     super.key,
     this.onSeekStart,
     this.onSeekEnd,
+    this.onHoverPosition,
   });
 
   @override
@@ -1100,6 +1127,9 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
       hover = true;
       slider = percent.clamp(0.0, 1.0);
     });
+    // Hibiki patch (TODO-669): surface the hover fraction to the host so it can
+    // render the progress-bar thumbnail preview. See PATCHES.md.
+    widget.onHoverPosition?.call(percent.clamp(0.0, 1.0));
   }
 
   void onEnter(PointerEnterEvent e, BoxConstraints constraints) {
@@ -1108,6 +1138,8 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
       hover = true;
       slider = percent.clamp(0.0, 1.0);
     });
+    // Hibiki patch (TODO-669): surface the hover fraction on enter too.
+    widget.onHoverPosition?.call(percent.clamp(0.0, 1.0));
   }
 
   void onExit(PointerExitEvent e, BoxConstraints constraints) {
@@ -1115,6 +1147,8 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
       hover = false;
       slider = 0.0;
     });
+    // Hibiki patch (TODO-669): clear the host thumbnail preview on exit.
+    widget.onHoverPosition?.call(null);
   }
 
   /// Returns the current playback position in percentage.

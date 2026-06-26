@@ -306,6 +306,10 @@ extension _VideoLayout on _VideoHibikiPageState {
                       // 进度条章节刻度层（TODO-432）：叠在 seek bar 同一几何上画每章一条竖线。
                       // IgnorePointer 纯视觉、不拦 seek bar 拖动；随控制条显隐、仅有章节时画。
                       _buildChapterMarkersOverlay(controller),
+                      // 进度条 hover 缩略图预览层（TODO-669）：桌面 hover seek bar 时在指针
+                      // 上方弹缩略图 + 时间戳。纯视觉 IgnorePointer（不拦 seek bar 拖动），
+                      // hover 位置经 fork onHoverPosition → [_onSeekBarHover] 取得。
+                      _buildThumbnailPreviewOverlay(controller),
                       Positioned.fill(
                         child: VideoDanmakuOverlay(
                           items: _danmakuItems,

@@ -119,3 +119,34 @@ to the side-rail play/pause buttons on both `material_desktop.dart` and
 one arena resolution (imperceptible).
 
 Source-guard test: `hibiki/test/pages/video_play_pause_tap_arena_guard_test.dart`.
+
+## TODO-669: surface seek-bar hover position (`onHoverPosition`)
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart`, the desktop
+theme data class (`MaterialDesktopVideoControlsThemeData`) and the desktop seek
+bar (`MaterialDesktopSeekBar` / `MaterialDesktopSeekBarState`).
+
+Hibiki adds a progress-bar hover thumbnail preview (TODO-669): hovering the seek
+bar pops a thumbnail of the frame at that time. media_kit already computes the
+hover fraction internally — `MaterialDesktopSeekBarState.onHover`/`onEnter` do
+`percent = e.localPosition.dx / constraints.maxWidth` (the track inner width
+*after* `seekBarMargin`, so it is the authoritative fraction of the track) — but
+it keeps that fraction private (only used to paint its own hover highlight) and
+exposes no host-level hover hook or tooltip callback.
+
+The patch adds an optional `final void Function(double? fraction)?
+onHoverPosition;` to `MaterialDesktopVideoControlsThemeData` (wired through its
+constructor and `copyWith`) and to the `MaterialDesktopSeekBar` widget. The
+theme's callback is forwarded into the seek-bar widget at its single construction
+site, and `MaterialDesktopSeekBarState` calls `widget.onHoverPosition?.call(...)`
+with the clamped fraction in `onHover`/`onEnter` and with `null` in `onExit`.
+Because the fraction comes straight from the seek bar's own coordinate space, the
+host never re-derives the 16px margin. When no callback is injected the behaviour
+is identical to pub.dev.
+
+Hibiki injects `onHoverPosition: _onSeekBarHover` only through the **desktop**
+control theme (`_desktopControlsTheme` in `video_hibiki_page.dart`); the mobile
+theme deliberately does not (touch has no hover), keeping mobile behaviour
+unchanged.
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.

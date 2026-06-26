@@ -54,6 +54,8 @@ import 'package:hibiki/src/media/video/video_clip_exporter.dart';
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
+import 'package:hibiki/src/media/video/video_thumbnail_preview_controller.dart';
+import 'package:hibiki/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
@@ -640,6 +642,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> debugPlay() async => _controller?.play();
 
   VideoPlayerController? _controller;
+
+  /// 进度条 hover 缩略图预览调度器（TODO-669，方案 A）。仅桌面本地文件视频时创建；
+  /// 移动端 / 远端流为 null（不取帧，仅经 [_onSeekBarHover] 走 timestampOnly）。
+  /// 换集（视频路径变）时重建（绑新离屏取帧器），页面 dispose 时一并销毁。
+  VideoThumbnailPreviewController? _thumbnailPreview;
+  OffscreenVideoFrameGrabber? _thumbnailGrabber;
   VideoPlayerController? _chapterListenerController;
   VoidCallback? _chapterListener;
   bool _failed = false;
@@ -1801,6 +1809,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
     _syncControllerChapterAvailability(controller);
+    // TODO-669：建立 / 重置进度条 hover 缩略图预览（桌面本地文件实时取帧；远端流 /
+    // 移动端降级）。在 _currentVideoPath 更新后调，按新路径绑离屏取帧器。
+    _setupThumbnailPreview(videoPath);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refocusVideo();
     });
@@ -2026,6 +2037,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // TODO-099: 退出视频页还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
     unawaited(_restoreOrientationOnExit());
     _clearClipExportState();
+    // TODO-669：销毁缩略图预览（作废在途取帧 + 销毁离屏 Player + 释放末帧）。
+    _disposeThumbnailPreview();
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
@@ -2156,6 +2169,59 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case TargetPlatform.fuchsia:
         return false;
     }
+  }
+
+  /// seek bar hover 回调（TODO-669）：fork 桌面 seek bar 把 hover 比例（轨道内宽
+  /// 权威值，null = onExit）回调到这里。仅桌面 theme 接此回调（移动端触屏无 hover）。
+  ///
+  /// 转发到取帧调度器：[fraction]==null → 隐藏浮层（作废在途取帧）；否则即时更新
+  /// 浮层位置 + 时间戳，桌面本地文件（[_thumbnailPreview] 已建）取帧、远端流 /
+  /// 取帧器缺失则 timestampOnly。调度器为 null（理论上桌面恒有，防御）时静默忽略。
+  void _onSeekBarHover(double? fraction) {
+    final VideoThumbnailPreviewController? preview = _thumbnailPreview;
+    if (preview == null) return;
+    // 远端流无离屏取帧器 → desktop:false 让调度器走 timestampOnly（只显时间戳）。
+    final bool canGrab = _thumbnailGrabber != null;
+    preview.request(fraction, desktop: canGrab);
+  }
+
+  /// 在 [load] 成功后建立 / 重置缩略图预览（TODO-669）。仅桌面构造调度器；本地
+  /// 文件视频额外构造离屏取帧器（实时取帧），远端流不构造取帧器（走 timestampOnly）。
+  /// 视频路径变（换集）时销毁旧取帧器 + 调度器、按新路径重建。
+  void _setupThumbnailPreview(String? videoPath) {
+    if (!_isDesktopVideoControls) {
+      // 移动端：完全不创建（零新增运行时、零行为变化）。
+      _disposeThumbnailPreview();
+      return;
+    }
+    // 路径未变且已建好 → 复用（避免每次 load 重建离屏 Player）。
+    final bool pathChanged = _thumbnailGrabber?.videoPath != videoPath;
+    if (_thumbnailPreview != null && !pathChanged) return;
+
+    _disposeThumbnailPreview();
+
+    // 远端流（http/s）或无本地路径 → 不建离屏取帧器（调度器仍建，走 timestampOnly）。
+    final bool isLocalFile = videoPath != null &&
+        !_isRemote &&
+        Uri.tryParse(videoPath)?.scheme != 'http' &&
+        Uri.tryParse(videoPath)?.scheme != 'https';
+    final OffscreenVideoFrameGrabber? grabber =
+        isLocalFile ? OffscreenVideoFrameGrabber(videoPath: videoPath) : null;
+    _thumbnailGrabber = grabber;
+    _thumbnailPreview = VideoThumbnailPreviewController(
+      grabber: grabber != null
+          ? grabber.grab
+          // 无取帧器（远端流）：取帧函数恒返回 null，调度器据此 timestampOnly。
+          : (int _) async => null,
+      durationMsProvider: () => _controller?.durationMs ?? 0,
+    );
+  }
+
+  void _disposeThumbnailPreview() {
+    _thumbnailPreview?.dispose();
+    _thumbnailPreview = null;
+    _thumbnailGrabber?.dispose();
+    _thumbnailGrabber = null;
   }
 
   /// 查词浮层顶部「收藏当前字幕句」星标行（覆写 [DictionaryPageMixin.buildPopupHeaderFor]）。

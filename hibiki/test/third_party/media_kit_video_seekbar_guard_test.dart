@@ -69,9 +69,11 @@ void main() {
 
     test('onPointerUp returns early when unmounted', () {
       expect(
-        bodyOf('onPointerUp').contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
+        bodyOf('onPointerUp')
+            .contains(RegExp(r'if\s*\(\s*!mounted\s*\)\s*return')),
         isTrue,
-        reason: 'onPointerUp dereferences controller(context); it must bail out '
+        reason:
+            'onPointerUp dereferences controller(context); it must bail out '
             'with `if (!mounted) return;` before that, or the disposed-State '
             'crash (BUG-235) returns.',
       );
@@ -84,6 +86,108 @@ void main() {
         isTrue,
         reason: 'onPointerMove also dereferences controller(context); it must '
             'bail out with `if (!mounted) return;` (BUG-235).',
+      );
+    });
+  });
+
+  group('TODO-669: seek-bar onHoverPosition patch survives re-vendor', () {
+    late String source;
+
+    setUp(() {
+      source = File(controlsPath).readAsStringSync();
+    });
+
+    test('theme data class exposes onHoverPosition field', () {
+      expect(
+        source.contains(
+          RegExp(r'void Function\(double\? fraction\)\?\s+onHoverPosition'),
+        ),
+        isTrue,
+        reason: 'MaterialDesktopVideoControlsThemeData must keep the '
+            'onHoverPosition field (TODO-669); without it the host can no '
+            'longer drive the progress-bar thumbnail preview.',
+      );
+    });
+
+    test('copyWith carries onHoverPosition', () {
+      expect(
+        source.contains(
+          RegExp(
+              r'onHoverPosition:\s*onHoverPosition \?\? this\.onHoverPosition'),
+        ),
+        isTrue,
+        reason: 'copyWith must propagate onHoverPosition (TODO-669).',
+      );
+    });
+
+    test('onHover/onEnter call onHoverPosition with the fraction', () {
+      // Two call sites with a clamped percent (onHover + onEnter).
+      final Iterable<Match> calls = RegExp(
+        r'widget\.onHoverPosition\?\.call\(percent\.clamp',
+      ).allMatches(source);
+      expect(
+        calls.length,
+        greaterThanOrEqualTo(2),
+        reason: 'onHover and onEnter must surface the hover fraction to the '
+            'host (TODO-669).',
+      );
+    });
+
+    test('onExit clears the preview with null', () {
+      expect(
+        source.contains(RegExp(r'widget\.onHoverPosition\?\.call\(null\)')),
+        isTrue,
+        reason: 'onExit must clear the host thumbnail preview with null '
+            '(TODO-669).',
+      );
+    });
+
+    test('seek bar widget forwards the theme callback', () {
+      expect(
+        source.contains(
+          RegExp(r'onHoverPosition:\s*_theme\(context\)\s*\.onHoverPosition'),
+        ),
+        isTrue,
+        reason: 'The seek bar must be constructed with the theme '
+            "onHoverPosition (TODO-669), or the host's callback never fires.",
+      );
+    });
+  });
+
+  group('TODO-669: host wiring (desktop only)', () {
+    test('desktop controls theme injects onHoverPosition', () {
+      final String themeSrc = File(
+        'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart',
+      ).readAsStringSync();
+      final int desktopStart = themeSrc.indexOf('_desktopControlsTheme(');
+      final int mobileStart = themeSrc.indexOf('_mobileControlsTheme(');
+      expect(desktopStart, isNonNegative);
+      expect(mobileStart, isNonNegative);
+      final String desktopBody = themeSrc.substring(desktopStart, mobileStart);
+      final String mobileBody = themeSrc.substring(mobileStart);
+      expect(
+        desktopBody.contains('onHoverPosition: _onSeekBarHover'),
+        isTrue,
+        reason: 'desktop controls theme must wire onHoverPosition to '
+            '_onSeekBarHover (TODO-669).',
+      );
+      expect(
+        mobileBody.contains('onHoverPosition'),
+        isFalse,
+        reason: 'mobile controls theme must NOT wire onHoverPosition — touch '
+            'has no hover, mobile stays unchanged (TODO-669).',
+      );
+    });
+
+    test('thumbnail preview overlay is mounted in the controls Stack', () {
+      final String layoutSrc = File(
+        'lib/src/pages/implementations/video_hibiki/layout.part.dart',
+      ).readAsStringSync();
+      expect(
+        layoutSrc.contains('_buildThumbnailPreviewOverlay(controller)'),
+        isTrue,
+        reason: 'the thumbnail preview overlay must ride the controls Stack '
+            '(TODO-669).',
       );
     });
   });
