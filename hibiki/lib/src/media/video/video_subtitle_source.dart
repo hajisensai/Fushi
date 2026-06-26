@@ -39,7 +39,8 @@ class EmbeddedSubtitleTrack {
   /// 语言（ISO code，如 `eng` / `jpn`）；ffmpeg 日志里 `#0:N(lang)` 的括号内容。
   final String? language;
 
-  /// 轨标题（若 ffmpeg 日志含 metadata title，当前解析不提取，预留）。
+  /// 轨标题（ffmpeg 日志 metadata 块里的 `title` / mp4 回退 `handler_name`；
+  /// 无则为 null）。例如龙女仆 ass 轨的 `Full Subtitles` / `Signs & Songs`。
   final String? title;
 }
 
@@ -83,29 +84,94 @@ final RegExp _subtitleStreamPattern = RegExp(
   r'Stream #\d+:\d+(?:\[0x[0-9a-fA-F]+\])?(?:\(([^)]+)\))?: Subtitle:\s+([A-Za-z0-9_]+)',
 );
 
+/// 匹配 ffmpeg 任意 `Stream #N:M ...` 行（任意类型：Video/Audio/Subtitle/
+/// Attachment…）。解析字幕轨 metadata 块时用它识别「下一条 Stream 行」边界——
+/// metadata 块是该 Stream 行下方更深缩进的独立行，扫到下一条 Stream 即停。
+final RegExp _anyStreamLinePattern = RegExp(r'Stream #\d+:\d+');
+
+/// 匹配 ffmpeg metadata 块里的 `title           : <值>` 行（mkv 软字幕的轨名）。
+/// 键名大小写不敏感，冒号两侧允许任意空白。
+final RegExp _metadataTitlePattern = RegExp(
+  r'^\s*title\s*:\s*(.+?)\s*$',
+  caseSensitive: false,
+);
+
+/// 匹配 ffmpeg metadata 块里的 `handler_name : <值>` 行（mp4 容器轨名所在）。
+final RegExp _metadataHandlerNamePattern = RegExp(
+  r'^\s*handler_name\s*:\s*(.+?)\s*$',
+  caseSensitive: false,
+);
+
+/// mp4 `handler_name` 常见的容器噪声值（非用户可读轨名），需过滤掉。
+const Set<String> _handlerNameNoise = <String>{
+  'subtitlehandler',
+  'soundhandler',
+  'videohandler',
+  'mainconcept video media handler',
+  'core media audio',
+  'core media video',
+};
+
 /// **纯函数**：解析 `ffmpeg -i <video>` 的 stderr，提取所有内嵌字幕轨。
 ///
 /// 按出现顺序为每条字幕分配相对序号（0,1,2…），即 `-map 0:s:N` 的 N。提取
-/// 语言（括号内）与 codec（`Subtitle: ` 后第一个 token）。无字幕轨 / 空输入返回
+/// 语言（括号内）、codec（`Subtitle: ` 后第一个 token）以及轨标题 [title]。
+///
+/// 轨标题不在 `Stream #0:N` 行上，而在其下方更深缩进的独立 `Metadata:` 块里
+/// （mkv 为 `title : <名字>`；mp4 容器一般写 `handler_name : <名字>`，但
+/// `SubtitleHandler` 之类是无意义的容器噪声，需过滤）。扫到字幕 Stream 行后继续
+/// 向后读其 metadata 块，直到下一条 Stream 行或输入结束。无字幕轨 / 空输入返回
 /// 空列表。不碰文件系统，可单测。
 List<EmbeddedSubtitleTrack> parseSubtitleStreamsFromFfmpegLog(
   String ffmpegStderr,
 ) {
   final List<EmbeddedSubtitleTrack> tracks = <EmbeddedSubtitleTrack>[];
+  final List<String> lines = const LineSplitter().convert(ffmpegStderr);
   int relativeIndex = 0;
-  for (final String line in const LineSplitter().convert(ffmpegStderr)) {
-    final RegExpMatch? m = _subtitleStreamPattern.firstMatch(line);
+  for (int i = 0; i < lines.length; i++) {
+    final RegExpMatch? m = _subtitleStreamPattern.firstMatch(lines[i]);
     if (m == null) continue;
     final String? language = m.group(1);
     final String codec = m.group(2)!;
+    final String? title = _extractTrackTitle(lines, i + 1);
     tracks.add(EmbeddedSubtitleTrack(
       streamIndex: relativeIndex,
       codec: codec,
       language: language,
+      title: title,
     ));
     relativeIndex++;
   }
   return tracks;
+}
+
+/// 从字幕 Stream 行之后（[start] 起）向后扫描其 metadata 块，提取有意义的轨标题。
+///
+/// 扫描到下一条 `Stream #N:M` 行即停（metadata 块只属于上一条 Stream）。优先取
+/// `title`（mkv 软字幕轨名）；mp4 容器没有 title 时回退第一条 `handler_name`，但
+/// 过滤掉 `SubtitleHandler` 之类的容器噪声。没有可用标题返回 null（保持旧行为不
+/// 显示标题）。
+String? _extractTrackTitle(List<String> lines, int start) {
+  String? handlerFallback;
+  for (int i = start; i < lines.length; i++) {
+    final String line = lines[i];
+    if (_anyStreamLinePattern.hasMatch(line)) break;
+    final RegExpMatch? titleMatch = _metadataTitlePattern.firstMatch(line);
+    if (titleMatch != null) {
+      final String value = titleMatch.group(1)!.trim();
+      if (value.isNotEmpty) return value;
+    }
+    final RegExpMatch? handlerMatch =
+        _metadataHandlerNamePattern.firstMatch(line);
+    if (handlerMatch != null && handlerFallback == null) {
+      final String value = handlerMatch.group(1)!.trim();
+      if (value.isNotEmpty &&
+          !_handlerNameNoise.contains(value.toLowerCase())) {
+        handlerFallback = value;
+      }
+    }
+  }
+  return handlerFallback;
 }
 
 /// 按文件扩展名判定字幕格式（外挂文件用）。`.ssa` 归入 [SubtitleFormat.ass]；
@@ -682,7 +748,7 @@ Future<SubtitleSourceListing> listAllSubtitleSourcesWithDiagnostics(
       streamIndex: track.streamIndex,
       language: track.language,
       codec: track.codec,
-      label: _embeddedLabel(track),
+      label: embeddedSubtitleTrackLabel(track),
     ));
   }
 
@@ -810,17 +876,21 @@ String _subtitleMenuPathKey(String path) {
   return Platform.isWindows ? key.toLowerCase() : key;
 }
 
-/// 内嵌轨菜单标签：`内封 N: lang / codec`（lang 缺省省略）。
+/// 内嵌轨菜单标签：`内封 N: lang / title / codec`（lang、title 缺省各自省略）。
+///
+/// title 取自轨 metadata（mkv `title` / mp4 `handler_name`），有则纳入显示，
+/// 拼接顺序与远端 `_remoteEmbeddedSubtitleLabel`（lang / title / codec）一致。
 ///
 /// 用「内封」而非「内嵌」：容器内封装的软字幕（mkv/mp4 的字幕流）业界叫**内封**；
 /// 「内嵌」在字幕圈指烧进画面像素的硬字幕。早先误用「内嵌」会让用户误判（BUG-122）。
-String _embeddedLabel(EmbeddedSubtitleTrack track) {
-  final StringBuffer sb = StringBuffer('内封 ${track.streamIndex}: ');
-  if ((track.language ?? '').isNotEmpty) {
-    sb.write('${track.language} / ');
-  }
-  sb.write(track.codec);
-  return sb.toString();
+@visibleForTesting
+String embeddedSubtitleTrackLabel(EmbeddedSubtitleTrack track) {
+  final List<String> parts = <String>[
+    if ((track.language ?? '').isNotEmpty) track.language!,
+    if ((track.title ?? '').isNotEmpty) track.title!,
+    track.codec,
+  ];
+  return '内封 ${track.streamIndex}: ${parts.join(' / ')}';
 }
 
 /// 加载某字幕源为 cue 列表。

@@ -34,10 +34,13 @@ Input #0, matroska,webm, from 'S01E01.mkv':
       expect(tracks[0].streamIndex, 0);
       expect(tracks[0].language, 'eng');
       expect(tracks[0].codec, 'ass');
+      // 该片段字幕 Stream 行后无 Metadata 块 → title 保持 null。
+      expect(tracks[0].title, isNull);
 
       expect(tracks[1].streamIndex, 1);
       expect(tracks[1].language, 'eng');
       expect(tracks[1].codec, 'ass');
+      expect(tracks[1].title, isNull);
     });
 
     test('subrip(srt) 字幕轨 + 多语言 + 无语言括号', () {
@@ -94,6 +97,79 @@ Input #0, matroska,webm, from 'S01E01.mkv':
       expect(tracks[1].streamIndex, 1);
     });
 
+    test('mkv 轨 Metadata title 提取（龙女仆：Full Subtitles / Signs & Songs）', () {
+      // 真实 mkv：每条字幕 Stream 行下方有更深缩进的独立 Metadata 块，
+      // `title : <名字>` 才是用户可读的轨名（Stream 行本身只有 lang/codec）。
+      const String stderr = '''
+  Stream #0:0: Video: hevc (Main 10)
+  Stream #0:1(eng): Audio: opus (default)
+  Stream #0:2(eng): Subtitle: ass (default)
+    Metadata:
+      title           : Full Subtitles
+  Stream #0:3(eng): Subtitle: ass
+    Metadata:
+      title           : Signs & Songs
+  Stream #0:4: Attachment: ttf
+    Metadata:
+      filename        : font.ttf
+''';
+      final List<EmbeddedSubtitleTrack> tracks =
+          parseSubtitleStreamsFromFfmpegLog(stderr);
+      expect(tracks, hasLength(2));
+      expect(tracks[0].streamIndex, 0);
+      expect(tracks[0].title, 'Full Subtitles');
+      expect(tracks[0].codec, 'ass');
+      expect(tracks[1].streamIndex, 1);
+      expect(tracks[1].title, 'Signs & Songs');
+      // Attachment 轨的 Metadata（filename）不应污染上一条字幕的 title。
+    });
+
+    test('无 Metadata title 的字幕轨：title 保持 null（旧行为不变）', () {
+      const String stderr = '''
+  Stream #0:2(eng): Subtitle: ass (ssa) (forced)
+  Stream #0:3(eng): Subtitle: ass (ssa) (default)
+''';
+      final List<EmbeddedSubtitleTrack> tracks =
+          parseSubtitleStreamsFromFfmpegLog(stderr);
+      expect(tracks, hasLength(2));
+      expect(tracks[0].title, isNull);
+      expect(tracks[1].title, isNull);
+    });
+
+    test('mp4 容器：handler_name 回退作 title，但 SubtitleHandler 噪声被过滤', () {
+      const String stderr = '''
+  Stream #0:0[0x1](und): Video: h264 (High)
+    Metadata:
+      handler_name    : VideoHandler
+  Stream #0:1[0x2](eng): Subtitle: mov_text (tx3g)
+    Metadata:
+      handler_name    : English Forced
+  Stream #0:2[0x3](jpn): Subtitle: mov_text (tx3g)
+    Metadata:
+      handler_name    : SubtitleHandler
+''';
+      final List<EmbeddedSubtitleTrack> tracks =
+          parseSubtitleStreamsFromFfmpegLog(stderr);
+      expect(tracks, hasLength(2));
+      // 有意义的 handler_name 作 title 回退。
+      expect(tracks[0].title, 'English Forced');
+      // SubtitleHandler 是容器噪声，过滤后 title 为 null。
+      expect(tracks[1].title, isNull);
+    });
+
+    test('title 优先于 handler_name（同一轨两者都有时取 title）', () {
+      const String stderr = '''
+  Stream #0:1(jpn): Subtitle: subrip
+    Metadata:
+      title           : 日本語字幕
+      handler_name    : SubtitleHandler
+''';
+      final List<EmbeddedSubtitleTrack> tracks =
+          parseSubtitleStreamsFromFfmpegLog(stderr);
+      expect(tracks, hasLength(1));
+      expect(tracks[0].title, '日本語字幕');
+    });
+
     test('无字幕轨返回空列表', () {
       const String stderr = '''
   Stream #0:0: Video: h264
@@ -104,6 +180,52 @@ Input #0, matroska,webm, from 'S01E01.mkv':
 
     test('空字符串返回空列表', () {
       expect(parseSubtitleStreamsFromFfmpegLog(''), isEmpty);
+    });
+  });
+
+  group('embeddedSubtitleTrackLabel（菜单标签含 title·TODO-844）', () {
+    test('有 title：内封 N: lang / title / codec', () {
+      expect(
+        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
+          streamIndex: 0,
+          codec: 'ass',
+          language: 'eng',
+          title: 'Full Subtitles',
+        )),
+        '内封 0: eng / Full Subtitles / ass',
+      );
+    });
+
+    test('无 title：退回旧标签 内封 N: lang / codec（不显示 title）', () {
+      expect(
+        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
+          streamIndex: 1,
+          codec: 'subrip',
+          language: 'jpn',
+        )),
+        '内封 1: jpn / subrip',
+      );
+    });
+
+    test('无 language 有 title：内封 N: title / codec', () {
+      expect(
+        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
+          streamIndex: 2,
+          codec: 'ass',
+          title: 'Signs & Songs',
+        )),
+        '内封 2: Signs & Songs / ass',
+      );
+    });
+
+    test('lang/title 全缺省：内封 N: codec', () {
+      expect(
+        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
+          streamIndex: 3,
+          codec: 'mov_text',
+        )),
+        '内封 3: mov_text',
+      );
     });
   });
 

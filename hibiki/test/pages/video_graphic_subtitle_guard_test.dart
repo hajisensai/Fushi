@@ -28,11 +28,12 @@ void main() {
 
   test('字幕标签术语用「内封」而非「内嵌」（BUG-122）', () {
     final String src = read('lib/src/media/video/video_subtitle_source.dart');
-    // _embeddedLabel 生成的菜单标签前缀必须是「内封 N: 」。
+    // embeddedSubtitleTrackLabel 生成的菜单标签前缀必须是「内封 N: 」（TODO-844
+    // 后改用 parts.join，但前缀文案不变）。
     expect(
-      src.contains(r"StringBuffer('内封 ${track.streamIndex}: ')"),
+      src.contains(r"'内封 ${track.streamIndex}: ${parts.join(' / ')}'"),
       isTrue,
-      reason: '_embeddedLabel 应生成「内封 N: 」前缀',
+      reason: 'embeddedSubtitleTrackLabel 应生成「内封 N: 」前缀',
     );
     // 不应再用「内嵌 N」当用户可见标签前缀。
     expect(
