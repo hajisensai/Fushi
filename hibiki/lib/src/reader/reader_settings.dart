@@ -339,6 +339,20 @@ class ReaderSettings {
   Future<void> toggleShowBottomBarCue() =>
       _set<bool>('show_bottom_bar_cue', !showBottomBarCue);
 
+  // TODO-728: top reading-progress position (per-reader). One of
+  // 'left' | 'center' | 'right'; default 'center' = current behavior
+  // (centered between left/right 96px insets). Normalized on read so an
+  // unexpected stored value degrades to 'center'.
+  static String normalizeTopProgressPosition(String value) => switch (value) {
+        'left' || 'center' || 'right' => value,
+        _ => 'center',
+      };
+
+  String get topProgressPosition => normalizeTopProgressPosition(
+      _get<String>('top_progress_position', 'center'));
+  Future<void> setTopProgressPosition(String v) =>
+      _set<String>('top_progress_position', normalizeTopProgressPosition(v));
+
   bool get tapEmptyToHideChrome => _get<bool>('tap_empty_hide_chrome', false);
   Future<void> toggleTapEmptyToHideChrome() =>
       _set<bool>('tap_empty_hide_chrome', !tapEmptyToHideChrome);

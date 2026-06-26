@@ -459,6 +459,41 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // TODO-728: where the top reading-progress text sits. Only shown when
+          // the progress bar itself is enabled. behavior group order 15.
+          SettingsSegmentedItem<String>(
+            id: 'reading_controls.top_progress_position',
+            title: t.top_progress_position,
+            icon: Icons.align_horizontal_center,
+            controlBelow: true,
+            visible: (SettingsContext c) => c.readerSource.showTopProgressBar,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 15,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'left',
+                label: t.top_progress_pos_left,
+                tooltip: t.top_progress_pos_left,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'center',
+                label: t.top_progress_pos_center,
+                tooltip: t.top_progress_pos_center,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'right',
+                label: t.top_progress_pos_right,
+                tooltip: t.top_progress_pos_right,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.topProgressPosition,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTopProgressPosition(v);
+              notifyReaderChromeChanged(c);
+            },
+          ),
           SettingsSwitchItem(
             id: 'reading_controls.tap_empty_hide_chrome',
             title: t.tap_empty_hide_chrome,

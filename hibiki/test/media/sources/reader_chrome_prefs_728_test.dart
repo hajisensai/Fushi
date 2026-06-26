@@ -87,4 +87,89 @@ void main() {
           reason: 'per-reader pref must not leak across books');
     });
   });
+
+  group('topProgressPosition is per-reader (TODO-728 3)', () {
+    setUp(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+    tearDown(() {
+      ReaderHibikiSource.readerSettings = null;
+    });
+
+    test('defaults to center and round-trips through the global source pref',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      expect(source.topProgressPosition, 'center');
+
+      source.setTopProgressPosition('right');
+      await Future<void>.delayed(Duration.zero);
+      expect(source.topProgressPosition, 'right');
+      expect(
+        await db.getPref('src:reader_ttu:top_progress_position'),
+        's:right',
+      );
+    });
+
+    test('an unknown stored value degrades to center', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+      await db.setPref('src:reader_ttu:top_progress_position', 's:bottom');
+      await source.refreshPreferencesFromDb();
+      expect(source.topProgressPosition, 'center');
+    });
+
+    test('reads/writes through ReaderSettings (per-reader) when open',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      final ReaderSettings perBook = ReaderSettings(db);
+      await perBook.refreshFromDb();
+      ReaderHibikiSource.readerSettings = perBook;
+
+      expect(source.topProgressPosition, 'center');
+
+      source.setTopProgressPosition('left');
+      await Future<void>.delayed(Duration.zero);
+      expect(perBook.topProgressPosition, 'left');
+      expect(source.topProgressPosition, 'left');
+      // per-reader path: ReaderSettings._set uses value.toString() ('left'),
+      // not the source PrefCodec ('s:left').
+      expect(
+        await db.getPref('src:reader_ttu:top_progress_position'),
+        'left',
+      );
+    });
+
+    test('two books do not cross-contaminate', () async {
+      final dbA = HibikiDatabase.forTesting(NativeDatabase.memory());
+      final dbB = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+
+      final ReaderSettings bookA = ReaderSettings(dbA);
+      final ReaderSettings bookB = ReaderSettings(dbB);
+      await bookA.refreshFromDb();
+      await bookB.refreshFromDb();
+
+      await bookA.setTopProgressPosition('right');
+      expect(bookA.topProgressPosition, 'right');
+      expect(bookB.topProgressPosition, 'center',
+          reason: 'per-reader pref must not leak across books');
+    });
+  });
 }

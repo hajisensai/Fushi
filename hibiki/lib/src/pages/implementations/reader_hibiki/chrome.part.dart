@@ -1016,19 +1016,37 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     final double ratio =
         (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
     final Color infoColor = _themeTextColor();
+    final String position = ReaderHibikiSource.instance.topProgressPosition;
 
+    // TODO-728: position-aware top progress + tap-to-toggle chrome.
+    //  - The Positioned strip spans the available width (16px side margins);
+    //    [Align] pushes the text to the configured side (left/center/right).
+    //  - The opaque [GestureDetector] wraps ONLY the [Text], so its hit box is
+    //    the text's own bounds. A tap on the text toggles the chrome (the
+    //    pointer-only mouse/touch equivalent of the readerToggleChrome shortcut
+    //    used by M / gamepad-Y); a tap anywhere ELSE in the strip is NOT inside
+    //    the GestureDetector child, so it passes through to the WebView and does
+    //    not swallow text selection (penetration guard).
+    //  - No Focus/canRequestFocus wrapper: this stays a pure pointer surface and
+    //    must never enter the focus-traversal pool (TODO-700 invariant).
     return Positioned(
       top: _stableTopInset,
-      left: 96,
-      right: 96,
-      child: IgnorePointer(
-        child: Text(
-          '$_progressCurrentChars / $_progressTotalChars'
-          '  ${(ratio * 100).toStringAsFixed(2)}%',
-          key: const ValueKey<String>('hoshi_progress'),
-          style: TextStyle(
-              fontSize: _ReaderHibikiPageState._infoFontSize, color: infoColor),
-          textAlign: TextAlign.center,
+      left: 16,
+      right: 16,
+      child: Align(
+        alignment: readerTopProgressAlignment(position),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _toggleChrome,
+          child: Text(
+            '$_progressCurrentChars / $_progressTotalChars'
+            '  ${(ratio * 100).toStringAsFixed(2)}%',
+            key: const ValueKey<String>('hoshi_progress'),
+            style: TextStyle(
+                fontSize: _ReaderHibikiPageState._infoFontSize,
+                color: infoColor),
+            textAlign: readerTopProgressTextAlign(position),
+          ),
         ),
       ),
     );

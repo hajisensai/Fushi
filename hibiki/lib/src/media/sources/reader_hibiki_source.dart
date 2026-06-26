@@ -778,6 +778,32 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  // TODO-728: top reading-progress position (per-reader; layered like the
+  // booleans above). 'left' | 'center' | 'right', default 'center'. Normalized
+  // through ReaderSettings so a bad stored value degrades to 'center'.
+  String get topProgressPosition =>
+      readerSettings?.topProgressPosition ??
+      ReaderSettings.normalizeTopProgressPosition(
+        getPreference<String>(
+          key: 'top_progress_position',
+          defaultValue: 'center',
+        ),
+      );
+
+  void setTopProgressPosition(String value) async {
+    final String normalized =
+        ReaderSettings.normalizeTopProgressPosition(value);
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setTopProgressPosition(normalized);
+      return;
+    }
+    await setPreference<String>(
+      key: 'top_progress_position',
+      value: normalized,
+    );
+  }
+
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
 
   double get ttuFontSize =>
