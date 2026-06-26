@@ -152,6 +152,14 @@ void main() {
           {'name': 'Klee One', 'path': bodyFontPath, 'enabled': false},
         ]),
       );
+      // TODO-864: video subtitle font target also carries an absolute path that
+      // must be stripped/rebased on export+import.
+      await srcDb.setPref(
+        'src:reader_ttu:video_sub_fonts',
+        jsonEncode(<Map<String, dynamic>>[
+          {'name': 'Mincho', 'path': uiFontPath, 'enabled': true},
+        ]),
+      );
       await srcDb.setPref(
         'src:reader_ttu:font_catalog',
         jsonEncode(<String, dynamic>{
@@ -247,6 +255,19 @@ void main() {
           jsonDecode(prefs['src:reader_ttu:dict_fonts']!) as List<dynamic>;
       expect((dict[0] as Map)['path'], '${dstFontsDir.path}/Klee_1.ttf');
       expect((dict[0] as Map)['enabled'], false);
+
+      // TODO-864: the video subtitle font's source-device absolute path must be
+      // rebased onto this device's root (not leaked), proving the new key is in
+      // both `_legacyFontPrefKeys` whitelists.
+      final List<dynamic> videoSub =
+          jsonDecode(prefs['src:reader_ttu:video_sub_fonts']!) as List<dynamic>;
+      expect((videoSub[0] as Map)['path'], '${dstFontsDir.path}/Mincho_2.otf');
+      expect(
+        (videoSub[0] as Map)['path'],
+        isNot(contains(srcFontsDir.path)),
+        reason: 'video subtitle font absolute path must not leak the source '
+            'device root',
+      );
 
       final Map<String, dynamic> catalog =
           jsonDecode(prefs['src:reader_ttu:font_catalog']!)

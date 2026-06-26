@@ -947,6 +947,13 @@ class AppModel with ChangeNotifier {
   String? _appFontFamily;
   String? get appFontFamily => _appFontFamily;
 
+  /// The user's custom video-subtitle font family, or null to use the platform
+  /// default (+ CJK fallback chain). Resolved/registered with the Flutter
+  /// engine by [refreshAppFont] from the [FontTarget.videoSubtitle] target
+  /// (TODO-864), independent of the app-wide UI font.
+  String? _subtitleFontFamily;
+  String? get subtitleFontFamily => _subtitleFontFamily;
+
   /// Loads the first enabled entry from the reader's `customFonts` list as the
   /// app-wide UI font (registering the file with the Flutter engine via
   /// [AppFontLoader]) and rebuilds the theme. Falls back to the language
@@ -959,8 +966,16 @@ class AppModel with ChangeNotifier {
     // 词典字体相互独立。
     final String? family =
         await AppFontLoader.resolveAndLoad(settings.appUiFonts);
-    if (family == _appFontFamily) return;
+    // TODO-864: 视频字幕字体走独立的 videoSubtitle 目标；复用同一次
+    // refreshFromDb 一起解析。两个 target 都解析完再判是否 notify，否则
+    // 只改字幕字体（appUi 未变）时 early-return 会吞掉刷新。
+    final String? subtitleFamily =
+        await AppFontLoader.resolveAndLoad(settings.videoSubtitleFonts);
+    if (family == _appFontFamily && subtitleFamily == _subtitleFontFamily) {
+      return;
+    }
     _appFontFamily = family;
+    _subtitleFontFamily = subtitleFamily;
     notifyListeners();
   }
 
@@ -1573,6 +1588,9 @@ class AppModel with ChangeNotifier {
       // settings just loaded above to avoid a second prefs read.
       _appFontFamily =
           await AppFontLoader.resolveAndLoad(readerSettings.appUiFonts);
+      // TODO-864: 视频字幕字体同样在首帧前从 videoSubtitle 目标解析。
+      _subtitleFontFamily =
+          await AppFontLoader.resolveAndLoad(readerSettings.videoSubtitleFonts);
       ReaderHibikiSource.readerSettings = readerSettings;
 
       // Start polling physical controllers on platforms that need it (desktop);

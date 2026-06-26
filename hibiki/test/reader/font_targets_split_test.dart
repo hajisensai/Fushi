@@ -83,6 +83,58 @@ void main() {
     );
     // Body key must stay the legacy value verbatim (backward-compat ironclad).
     expect(ReaderSettings.fontKeyBody, 'custom_fonts');
+    // TODO-864: video subtitle target maps to its own key, equally ironclad.
+    expect(
+      ReaderSettings.fontKeyForTarget(FontTarget.videoSubtitle),
+      'video_sub_fonts',
+    );
+    expect(ReaderSettings.fontKeyVideoSubtitle, 'video_sub_fonts');
+  });
+
+  test('video subtitle target reads/writes independently of other targets',
+      () async {
+    final ReaderSettings settings = ReaderSettings(db);
+    await settings.refreshFromDb();
+    await settings.setCustomFonts(
+      _fonts(_font('BodyFont', path: '/fonts/body.ttf')),
+    );
+    await settings.setFontsForTarget(
+      FontTarget.videoSubtitle,
+      _fonts(_font('SubFont', path: '/fonts/sub.ttf')),
+    );
+
+    final ReaderSettings restored = ReaderSettings(db);
+    await restored.refreshFromDb();
+
+    expect(restored.videoSubtitleFonts.single['name'], 'SubFont');
+    expect(restored.videoSubtitleFonts.single['path'], '/fonts/sub.ttf');
+    // Other targets untouched by the subtitle write.
+    expect(restored.customFonts.single['name'], 'BodyFont');
+    expect(
+      restored.fontsForTarget(FontTarget.videoSubtitle).single['name'],
+      'SubFont',
+    );
+  });
+
+  test('video subtitle target is NOT body-seeded (defaults empty)', () async {
+    // Critical TODO-864 backward-compat: unlike the historical appUi/dictionary
+    // body-seed compat, the new video subtitle target must stay empty when the
+    // user has only ever set the body list -> overlay falls back to platform
+    // default (null fontFamily), matching the pre-split visuals.
+    final ReaderSettings settings = ReaderSettings(db);
+    await settings.refreshFromDb();
+    await settings.setCustomFonts(
+      _fonts(_font('BodySeed', path: '/fonts/body-seed.ttf')),
+    );
+
+    final ReaderSettings restored = ReaderSettings(db);
+    await restored.refreshFromDb();
+
+    // appUi/dictionary still inherit body (historical compat preserved)...
+    expect(restored.appUiFonts.single['name'], 'BodySeed');
+    expect(restored.dictionaryFonts.single['name'], 'BodySeed');
+    // ...but video subtitle does not.
+    expect(restored.videoSubtitleFonts, isEmpty);
   });
 
   test('setting body fonts first still seeds untouched targets from body',

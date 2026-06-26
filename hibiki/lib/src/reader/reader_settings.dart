@@ -6,10 +6,10 @@ import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
-/// The three independent font targets a user can configure (TODO-049):
-/// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]).
-/// Each maps to its own persisted `[{name,path,enabled}]` list; see
-/// [ReaderSettings.fontKeyForTarget].
+/// The independent font targets a user can configure (TODO-049 / TODO-864):
+/// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
+/// 视频字幕字体 ([videoSubtitle]). Each maps to its own persisted
+/// `[{name,path,enabled}]` list; see [ReaderSettings.fontKeyForTarget].
 enum FontTarget {
   /// App-wide UI (ThemeData) font — menus, buttons, settings, etc.
   appUi,
@@ -19,6 +19,11 @@ enum FontTarget {
 
   /// Dictionary popup (definition/meaning) font.
   dictionary,
+
+  /// Video subtitle font (Flutter `VideoSubtitleOverlay` `TextStyle.fontFamily`,
+  /// not libmpv — Hibiki renders text subtitles in the Flutter layer). New in
+  /// TODO-864.
+  videoSubtitle,
 }
 
 /// All reader display/behavior settings, decoupled from the media source.
@@ -396,6 +401,10 @@ class ReaderSettings {
   /// Persistence key for the dictionary popup font list. New in TODO-049.
   static const String fontKeyDictionary = 'dict_fonts';
 
+  /// Persistence key for the video subtitle font list. New in TODO-864.
+  /// Sibling of the other `*_fonts` keys; backs [FontTarget.videoSubtitle].
+  static const String fontKeyVideoSubtitle = 'video_sub_fonts';
+
   /// Persistence key for the shared font catalog.
   static const String fontCatalogKey = 'font_catalog';
 
@@ -406,6 +415,7 @@ class ReaderSettings {
     fontKeyBody,
     fontKeyAppUi,
     fontKeyDictionary,
+    fontKeyVideoSubtitle,
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -437,6 +447,8 @@ class ReaderSettings {
         fontKeyAppUi: _legacyFontListForKey(fontKeyAppUi),
       if (_cache.containsKey(fontKeyDictionary))
         fontKeyDictionary: _legacyFontListForKey(fontKeyDictionary),
+      if (_cache.containsKey(fontKeyVideoSubtitle))
+        fontKeyVideoSubtitle: _legacyFontListForKey(fontKeyVideoSubtitle),
     };
   }
 
@@ -517,7 +529,15 @@ class ReaderSettings {
 
   List<Map<String, dynamic>> _fontListForTargetKey(String key) {
     final FontCatalogState state = _fontCatalogState();
+    // Historical body-seed compat (TODO-049): appUi/dictionary with no stored
+    // row inherited the body list so the split didn't change visuals for users
+    // who'd only set the legacy `custom_fonts` list. The video-subtitle target
+    // is new (TODO-864) and must NOT inherit body -- "unset" means platform
+    // default (null fontFamily), matching the old overlay behavior. Exclude it
+    // precisely (not a blanket non-three-target rule) so appUi/dictionary keep
+    // their compat seed.
     if (key != fontKeyBody &&
+        key != fontKeyVideoSubtitle &&
         !state.hasTarget(key) &&
         state.hasTarget(fontKeyBody)) {
       final FontCatalogState seeded = state.withTargetFonts(
@@ -542,12 +562,18 @@ class ReaderSettings {
   List<Map<String, dynamic>> get dictionaryFonts =>
       _fontListForTargetKey(fontKeyDictionary);
 
+  /// Video subtitle font list (TODO-864). Empty when unset -> overlay falls
+  /// back to the platform default + CJK fallback chain.
+  List<Map<String, dynamic>> get videoSubtitleFonts =>
+      _fontListForTargetKey(fontKeyVideoSubtitle);
+
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
       switch (target) {
         FontTarget.body => customFonts,
         FontTarget.appUi => appUiFonts,
         FontTarget.dictionary => dictionaryFonts,
+        FontTarget.videoSubtitle => videoSubtitleFonts,
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -583,6 +609,7 @@ class ReaderSettings {
         FontTarget.body => fontKeyBody,
         FontTarget.appUi => fontKeyAppUi,
         FontTarget.dictionary => fontKeyDictionary,
+        FontTarget.videoSubtitle => fontKeyVideoSubtitle,
       };
 
   /// Persists the whole list for [target]. The body convenience overload

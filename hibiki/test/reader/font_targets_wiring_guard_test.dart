@@ -15,16 +15,40 @@ void main() {
   test('app-wide UI font is resolved from the appUiFonts target', () {
     final String src = read('lib/src/models/app_model.dart');
     // Both the live refresh and the init path must feed appUiFonts to the loader.
+    // refresh resolves appUi + videoSubtitle; init resolves appUi + videoSubtitle
+    // => four AppFontLoader call sites total (TODO-864).
     expect(
       'AppFontLoader.resolveAndLoad('.allMatches(src).length,
-      greaterThanOrEqualTo(2),
-      reason: 'expected the two AppFontLoader call sites (refresh + init)',
+      greaterThanOrEqualTo(4),
+      reason: 'expected the four AppFontLoader call sites '
+          '(refresh appUi+videoSub, init appUi+videoSub)',
     );
     expect(src.contains('resolveAndLoad(settings.appUiFonts)'), isTrue);
     expect(src.contains('resolveAndLoad(readerSettings.appUiFonts)'), isTrue);
     // It must NOT be fed the body list any more.
     expect(src.contains('resolveAndLoad(settings.customFonts)'), isFalse);
     expect(src.contains('resolveAndLoad(readerSettings.customFonts)'), isFalse);
+  });
+
+  test('video subtitle font is resolved from the videoSubtitleFonts target',
+      () {
+    final String src = read('lib/src/models/app_model.dart');
+    // Both the live refresh and the init path must feed videoSubtitleFonts.
+    expect(src.contains('resolveAndLoad(settings.videoSubtitleFonts)'), isTrue);
+    expect(src.contains('resolveAndLoad(readerSettings.videoSubtitleFonts)'),
+        isTrue);
+    // app_model exposes the dedicated family getter.
+    expect(src.contains('String? get subtitleFontFamily'), isTrue);
+  });
+
+  test('video subtitle overlay binds to subtitleFontFamily, not appFontFamily',
+      () {
+    final String src =
+        read('lib/src/pages/implementations/video_hibiki/layout.part.dart');
+    // The overlay font source must be the subtitle target (TODO-864); a future
+    // refactor pointing it back at appFontFamily silently re-couples them.
+    expect(src.contains('fontFamily: appModel.subtitleFontFamily'), isTrue);
+    expect(src.contains('fontFamily: appModel.appFontFamily'), isFalse);
   });
 
   test('dictionary popup injects the dictionaryFonts target', () {
@@ -55,7 +79,7 @@ void main() {
     );
   });
 
-  test('settings exposes one font catalog entry with three row targets', () {
+  test('settings exposes one font catalog entry with four row targets', () {
     final String schema =
         read('lib/src/settings/settings_schema_appearance.dart');
     expect(schema.contains("'appearance.font_catalog'"), isTrue);
@@ -80,5 +104,7 @@ void main() {
     expect(src.contains("fontKeyBody = 'custom_fonts'"), isTrue);
     expect(src.contains("fontKeyAppUi = 'app_ui_fonts'"), isTrue);
     expect(src.contains("fontKeyDictionary = 'dict_fonts'"), isTrue);
+    // TODO-864: video subtitle font key is equally ironclad (backward-compat).
+    expect(src.contains("fontKeyVideoSubtitle = 'video_sub_fonts'"), isTrue);
   });
 }

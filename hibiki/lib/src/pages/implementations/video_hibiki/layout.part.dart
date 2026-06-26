@@ -380,7 +380,7 @@ extension _VideoLayout on _VideoHibikiPageState {
                           // 字幕骑进度条上方一点点、不顶飞 ~47×缩放 的透明命中区空白。
                           controlsBottomReserve:
                               _subtitleControlsBottomReserve(),
-                          fontFamily: appModel.appFontFamily,
+                          fontFamily: appModel.subtitleFontFamily,
                         ),
                       ),
                       _buildOsdOverlay(),

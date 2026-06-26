@@ -1382,6 +1382,7 @@ class CustomFontCatalogTile extends StatelessWidget {
         FontTarget.appUi => t.font_target_app_ui,
         FontTarget.body => t.font_target_body,
         FontTarget.dictionary => t.font_target_dictionary,
+        FontTarget.videoSubtitle => t.font_target_video_subtitle,
       };
 
   @override

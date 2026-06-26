@@ -388,6 +388,7 @@ class ProfileRepository {
     'src:reader_ttu:custom_fonts',
     'src:reader_ttu:app_ui_fonts',
     'src:reader_ttu:dict_fonts',
+    'src:reader_ttu:video_sub_fonts',
   ];
 
   /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法

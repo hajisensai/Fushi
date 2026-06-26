@@ -1877,5 +1877,6 @@
   "media_source_last_scan": "Last scan $time",
   "update_custom_proxy_label": "Custom update proxy",
   "update_custom_proxy_hint": "host:port, e.g. 127.0.0.1:7890 (IPv4/host only)",
-  "update_custom_proxy_invalid": "Invalid proxy. Use host:port"
+  "update_custom_proxy_invalid": "Invalid proxy. Use host:port",
+  "font_target_video_subtitle": "Video Subtitle Font"
 }

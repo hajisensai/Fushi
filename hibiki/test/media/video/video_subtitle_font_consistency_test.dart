@@ -119,4 +119,35 @@ void main() {
       expect(txt.style!.fontFamilyFallback, isNotEmpty);
     });
   });
+
+  group('TODO-864 视频字幕字体独立 target（subtitleFontFamily → overlay）', () {
+    testWidgets('设了字幕字体时每字 fontFamily 用该字体（与 appUi 解耦）', (tester) async {
+      // app_model.subtitleFontFamily 由 FontTarget.videoSubtitle 解析后喂进
+      // VideoSubtitleOverlay(fontFamily:)；这里直接验证 overlay 契约：传入字幕
+      // 字体 → 每字符填充层用它，不再硬跟随 appFontFamily。
+      final VideoPlayerController c = _controllerWithCue('字幕の');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(controller: c, fontFamily: 'SubtitleOnlyFont'),
+      );
+      final List<TextStyle> styles = _charStyles(tester, '字幕の');
+      for (final TextStyle s in styles) {
+        expect(s.fontFamily, 'SubtitleOnlyFont');
+        expect(s.fontFamilyFallback, isNotEmpty);
+      }
+    });
+
+    testWidgets('字幕字体未设（null）→ 平台默认 + 回退链（旧视觉等价）', (tester) async {
+      // TODO-864 向后兼容：videoSubtitle target 不被 body-seed，未设时
+      // subtitleFontFamily 为 null → overlay 走平台默认字体 + CJK 回退链。
+      final VideoPlayerController c = _controllerWithCue('の');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(controller: c),
+      );
+      final Text txt = _fillTextOf(tester, 'の');
+      expect(txt.style!.fontFamily, isNull);
+      expect(txt.style!.fontFamilyFallback, isNotEmpty);
+    });
+  });
 }

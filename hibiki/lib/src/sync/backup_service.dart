@@ -263,6 +263,7 @@ class BackupService {
     'src:reader_ttu:custom_fonts',
     'src:reader_ttu:app_ui_fonts',
     'src:reader_ttu:dict_fonts',
+    'src:reader_ttu:video_sub_fonts',
   ];
 
   /// Sidecar file holding this device's sync config across an import. Written
