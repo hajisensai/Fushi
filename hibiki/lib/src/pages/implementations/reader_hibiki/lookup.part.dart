@@ -17,12 +17,24 @@ part of '../reader_hibiki_page.dart';
 extension _ReaderLookup on _ReaderHibikiPageState {
   // ── Text Selection → Dictionary ───────────────────────────────────
 
-  Future<void> _selectTextAt(double cssX, double cssY) async {
+  /// [fromHover]（默认 false）透传给 [ReaderSelectionScripts.selectInvocation]：
+  /// true 表示悬停查词路径（onShiftHover / onDismissBarrierHover），命中空白不再
+  /// fire `onTapEmpty`（TODO-851，消操作栏闪烁）；false 是真点击路径，行为不变。
+  Future<void> _selectTextAt(
+    double cssX,
+    double cssY, {
+    bool fromHover = false,
+  }) async {
     if (_controller == null) return;
     const int maxLength = 400;
     try {
       await _controller!.evaluateJavascript(
-        source: ReaderSelectionScripts.selectInvocation(cssX, cssY, maxLength),
+        source: ReaderSelectionScripts.selectInvocation(
+          cssX,
+          cssY,
+          maxLength,
+          fromHover: fromHover,
+        ),
       );
     } catch (e, stack) {
       // TODO-678（BUG-005 同根因）：onTap / onShiftHover / onDismissBarrierHover

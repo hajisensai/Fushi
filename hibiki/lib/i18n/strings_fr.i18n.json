@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "Désactivé, les médias restent plus nets mais plus volumineux",
   "log_copy_all": "Tout copier",
   "hover_auto_lookup": "Rechercher au survol",
-  "hover_auto_lookup_hint": "Recherche automatique lorsque la souris survole un caractère ; pas besoin de maintenir Maj. Bureau uniquement.",
+  "hover_auto_lookup_hint": "Recherche automatique lorsque la souris survole un caractère ; pas besoin de cliquer ni de maintenir Maj. Affiche au plus une fenêtre contextuelle. Bureau uniquement.",
   "remote_book_info": "Infos",
   "remote_book_info_has_audiobook": "Livre audio inclus",
   "remote_video_info": "Infos",

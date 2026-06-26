@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "关闭后媒体更清晰但体积更大",
   "log_copy_all": "复制全部",
   "hover_auto_lookup": "悬停即查词",
-  "hover_auto_lookup_hint": "鼠标悬停在文字上即自动查词，无需按住 Shift。仅桌面端。",
+  "hover_auto_lookup_hint": "鼠标悬停在文字上即自动查词，无需点击或按住 Shift；最多触发一层弹窗。仅桌面端。",
   "remote_book_info": "信息",
   "remote_book_info_has_audiobook": "包含有声书",
   "remote_video_info": "信息",

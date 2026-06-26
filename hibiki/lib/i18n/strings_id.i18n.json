@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "Jika nonaktif, media kartu lebih tajam tetapi lebih besar",
   "log_copy_all": "Salin Semua",
   "hover_auto_lookup": "Cari saat hover",
-  "hover_auto_lookup_hint": "Cari otomatis saat mouse diarahkan ke sebuah karakter; tidak perlu menahan Shift. Hanya desktop.",
+  "hover_auto_lookup_hint": "Cari otomatis saat mouse diarahkan ke sebuah karakter; tanpa mengeklik atau menahan Shift. Memunculkan maksimal satu lapis popup. Hanya desktop.",
   "remote_book_info": "Info",
   "remote_book_info_has_audiobook": "Termasuk buku audio",
   "remote_video_info": "Info",

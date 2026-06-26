@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "Khi tắt, media của thẻ sắc nét hơn nhưng dung lượng lớn hơn",
   "log_copy_all": "Sao chép tất cả",
   "hover_auto_lookup": "Tra cứu khi di chuột",
-  "hover_auto_lookup_hint": "Tự động tra cứu khi di chuột qua một ký tự; không cần giữ Shift. Chỉ trên máy tính.",
+  "hover_auto_lookup_hint": "Tự động tra cứu khi di chuột qua một ký tự; không cần nhấp hay giữ Shift. Hiển thị tối đa một lớp cửa sổ bật lên. Chỉ trên máy tính.",
   "remote_book_info": "Thông tin",
   "remote_book_info_has_audiobook": "Bao gồm sách nói",
   "remote_video_info": "Thông tin",

@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "Deaktiviert bleiben Kartenmedien schärfer, aber größer",
   "log_copy_all": "Alles kopieren",
   "hover_auto_lookup": "Beim Überfahren nachschlagen",
-  "hover_auto_lookup_hint": "Automatisch nachschlagen, wenn die Maus über ein Zeichen fährt; ohne Shift zu halten. Nur Desktop.",
+  "hover_auto_lookup_hint": "Automatisch nachschlagen, wenn die Maus über ein Zeichen fährt; ohne Klicken oder Shift zu halten. Erzeugt höchstens eine Popup-Ebene. Nur Desktop.",
   "remote_book_info": "Info",
   "remote_book_info_has_audiobook": "Enthält Hörbuch",
   "remote_video_info": "Info",

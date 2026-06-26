@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "Desactivado mantiene los medios más nítidos pero más grandes",
   "log_copy_all": "Copiar todo",
   "hover_auto_lookup": "Buscar al pasar el cursor",
-  "hover_auto_lookup_hint": "Busca automáticamente al pasar el ratón sobre un carácter; sin mantener Mayús. Solo en escritorio.",
+  "hover_auto_lookup_hint": "Busca automáticamente al pasar el ratón sobre un carácter; sin hacer clic ni mantener Mayús. Muestra como máximo una capa de ventana emergente. Solo en escritorio.",
   "remote_book_info": "Información",
   "remote_book_info_has_audiobook": "Incluye audiolibro",
   "remote_video_info": "Información",

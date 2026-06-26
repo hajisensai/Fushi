@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "Off keeps card media sharper but larger",
   "log_copy_all": "Copy All",
   "hover_auto_lookup": "Look up on hover",
-  "hover_auto_lookup_hint": "Look up automatically when the mouse hovers over a character; no need to hold Shift. Desktop only.",
+  "hover_auto_lookup_hint": "Look up automatically when the mouse hovers over a character; no need to click or hold Shift. Triggers at most one popup layer. Desktop only.",
   "remote_book_info": "Info",
   "remote_book_info_has_audiobook": "Includes audiobook",
   "remote_video_info": "Info",

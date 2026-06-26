@@ -19,8 +19,17 @@ class SurroundingSentence {
 class ReaderSelectionScripts {
   ReaderSelectionScripts._();
 
-  static String selectInvocation(double x, double y, int maxLength) =>
-      'window.hoshiSelection.selectText($x, $y, $maxLength)';
+  /// TODO-851：[fromHover] 区分调用来源——`true` 表示悬停查词（onShiftHover /
+  /// onDismissBarrierHover），命中空白时 JS 端**不** fire `onTapEmpty`（只清选区），
+  /// 避免悬停扫过正文空白反复 toggle 操作栏导致闪烁；`false`（默认）是真点击路径，
+  /// 命中空白仍 fire `onTapEmpty`（保留「点空白隐藏操作栏」行为，向后兼容）。
+  static String selectInvocation(
+    double x,
+    double y,
+    int maxLength, {
+    bool fromHover = false,
+  }) =>
+      'window.hoshiSelection.selectText($x, $y, $maxLength, $fromHover)';
 
   static String highlightInvocation(int count) =>
       'JSON.stringify(window.hoshiSelection.highlightSelection($count))';
@@ -448,14 +457,19 @@ window.hoshiSelection = {
     }
     return null;
   },
-  selectText: function(x, y, maxLength) {
+  selectText: function(x, y, maxLength, fromHover) {
     if (document.elementFromPoint(x, y)?.closest('a')) {
       return null;
     }
     var hit = this.getCharacterAtPoint(x, y);
     if (!hit) {
       this.clearSelection();
-      window.flutter_inappwebview.callHandler('onTapEmpty');
+      // TODO-851：悬停查词（fromHover）命中空白只清选区，绝不 fire onTapEmpty——
+      // 否则鼠标在正文空白移动会反复触发「点空白隐藏操作栏」让操作栏闪烁。
+      // 真点击（fromHover falsy）仍 fire，保留点空白隐藏操作栏的旧行为。
+      if (!fromHover) {
+        window.flutter_inappwebview.callHandler('onTapEmpty');
+      }
       return null;
     }
     if (this.selection && hit.node === this.selection.startNode && hit.offset === this.selection.startOffset) {

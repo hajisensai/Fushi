@@ -2193,6 +2193,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _barrierHoverLastDy = -1;
       return;
     }
+    // TODO-851「限一级弹窗」：已有可见弹窗时遮罩上的悬停不再查词，保证 hover 最多
+    // 叠一层。这是第二个 hover 入口（另一处在 webview.part.dart onShiftHover），
+    // 两处必须都门控，否则遮罩 hover 路径漏网。
+    if (isDictionaryShown) return;
     // TODO-806 真坐标系修复：[event.localPosition] 是相对**dismiss barrier**
     // （Positioned.fill 铺满页面 Stack）的逻辑像素，而 WebView 被 chrome inset
     // （顶栏 [_readerTopOffset] / 底栏预留）挤在 Stack 内部、原点 ≠ barrier 原点。
@@ -2213,7 +2217,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (dx * dx + dy * dy < 64) return;
     _barrierHoverLastDx = local.dx;
     _barrierHoverLastDy = local.dy;
-    _selectTextAt(local.dx, local.dy);
+    // TODO-851：遮罩悬停也是 hover 路径，传 fromHover:true，命中空白不触发 onTapEmpty。
+    _selectTextAt(local.dx, local.dy, fromHover: true);
   }
 
   // ── Reader chrome helpers kept in the shell ─────────────────────────

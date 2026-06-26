@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "끄면 미디어가 더 선명하지만 용량이 커집니다",
   "log_copy_all": "모두 복사",
   "hover_auto_lookup": "마우스를 올리면 사전 찾기",
-  "hover_auto_lookup_hint": "마우스를 글자 위에 올리면 자동으로 사전을 찾습니다. Shift를 누를 필요가 없습니다. 데스크톱 전용.",
+  "hover_auto_lookup_hint": "마우스를 글자 위에 올리면 자동으로 사전을 찾습니다. 클릭하거나 Shift를 누를 필요가 없습니다. 팝업은 최대 1개 층까지. 데스크톱 전용.",
   "remote_book_info": "정보",
   "remote_book_info_has_audiobook": "오디오북 포함",
   "remote_video_info": "정보",

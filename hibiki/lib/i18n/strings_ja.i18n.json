@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "オフにするとメディアはより鮮明ですが容量が大きくなります",
   "log_copy_all": "すべてコピー",
   "hover_auto_lookup": "ホバーで辞書を引く",
-  "hover_auto_lookup_hint": "マウスを文字に重ねると自動で辞書を引きます。Shift を押す必要はありません。デスクトップのみ。",
+  "hover_auto_lookup_hint": "マウスを文字に重ねると自動で辞書を引きます。クリックや Shift を押す必要はありません。ポップアップは最大1層まで。デスクトップのみ。",
   "remote_book_info": "情報",
   "remote_book_info_has_audiobook": "オーディオブックを含む",
   "remote_video_info": "情報",

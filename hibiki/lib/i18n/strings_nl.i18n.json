@@ -1805,7 +1805,7 @@
   "compress_mining_media_hint": "Uit houdt kaartmedia scherper maar groter",
   "log_copy_all": "Alles kopiëren",
   "hover_auto_lookup": "Opzoeken bij hover",
-  "hover_auto_lookup_hint": "Automatisch opzoeken wanneer de muis over een teken zweeft; zonder Shift in te drukken. Alleen desktop.",
+  "hover_auto_lookup_hint": "Automatisch opzoeken wanneer de muis over een teken zweeft; zonder te klikken of Shift in te drukken. Toont hooguit één popuplaag. Alleen desktop.",
   "remote_book_info": "Info",
   "remote_book_info_has_audiobook": "Bevat luisterboek",
   "remote_video_info": "Info",

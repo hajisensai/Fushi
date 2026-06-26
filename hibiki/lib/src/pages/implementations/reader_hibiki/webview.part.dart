@@ -1162,9 +1162,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             handlerName: 'onShiftHover',
             callback: (args) {
               if (args.length < 2) return;
+              // TODO-851「限一级弹窗」：已有可见弹窗时悬停不再查词，保证 hover 最多
+              // 叠一层（不在已有弹窗之上再起查词）。两个 hover 入口都要门控
+              // （另一处见 reader_hibiki_page.dart onDismissBarrierHover）。
+              if (isDictionaryShown) return;
               final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
               final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
-              _selectTextAt(x, y);
+              // TODO-851：悬停路径传 fromHover:true，命中空白不触发 onTapEmpty。
+              _selectTextAt(x, y, fromHover: true);
             },
           );
 
