@@ -1,9 +1,16 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
+import 'package:hibiki/src/utils/misc/collection_exporter.dart';
+import 'package:path/path.dart' as p;
 
 /// Full-screen page for managing profiles, media-type bindings,
 /// and per-profile settings.
@@ -74,6 +81,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
         AdaptiveSettingsSection(
           children: [
             _buildCreateRow(vm),
+            _buildImportRow(vm),
             ..._buildProfileRows(uiState, vm),
           ],
         ),
@@ -124,6 +132,18 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     );
   }
 
+  Widget _buildImportRow(ProfileViewModel vm) {
+    final bool cupertino = isCupertinoPlatform(context);
+    return AdaptiveSettingsRow(
+      icon: cupertino
+          ? CupertinoIcons.square_arrow_down
+          : Icons.file_download_outlined,
+      showIcon: true,
+      title: t.profile_import,
+      onTap: () => _importProfile(vm),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Profile tiles
   // ---------------------------------------------------------------------------
@@ -136,34 +156,42 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     final bool cupertino = isCupertinoPlatform(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return [
-      for (final p in uiState.profiles)
+      for (final profile in uiState.profiles)
         AdaptiveSettingsRow(
-          icon: p.id == uiState.activeProfileId
+          icon: profile.id == uiState.activeProfileId
               ? (cupertino
                   ? CupertinoIcons.check_mark_circled_solid
                   : Icons.check_circle)
               : (cupertino ? CupertinoIcons.circle : Icons.circle_outlined),
-          title: p.name,
+          title: profile.name,
           onTap: () {
-            if (p.id != uiState.activeProfileId) {
-              vm.switchProfile(p.id);
+            if (profile.id != uiState.activeProfileId) {
+              vm.switchProfile(profile.id);
             }
           },
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               _ProfileActionButton(
+                materialIcon: Icons.file_upload_outlined,
+                cupertinoIcon: CupertinoIcons.square_arrow_up,
+                tooltip: t.profile_export,
+                onPressed: () => _exportProfile(vm, profile.id, profile.name),
+              ),
+              SizedBox(width: tokens.spacing.gap / 2),
+              _ProfileActionButton(
                 materialIcon: Icons.copy_outlined,
                 cupertinoIcon: CupertinoIcons.doc_on_doc,
                 tooltip: t.profile_copy,
-                onPressed: () => _showCopyDialog(vm, p.id, p.name),
+                onPressed: () => _showCopyDialog(vm, profile.id, profile.name),
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               _ProfileActionButton(
                 materialIcon: Icons.edit_outlined,
                 cupertinoIcon: CupertinoIcons.pencil,
                 tooltip: t.profile_rename,
-                onPressed: () => _showRenameDialog(vm, p.id, p.name),
+                onPressed: () =>
+                    _showRenameDialog(vm, profile.id, profile.name),
               ),
               if (!isOnly) ...[
                 SizedBox(width: tokens.spacing.gap / 2),
@@ -172,7 +200,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
                   cupertinoIcon: CupertinoIcons.delete,
                   tooltip: t.profile_delete,
                   destructive: true,
-                  onPressed: () => _showDeleteDialog(vm, p.id, p.name),
+                  onPressed: () =>
+                      _showDeleteDialog(vm, profile.id, profile.name),
                 ),
               ],
             ],
@@ -279,6 +308,77 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     );
     if (confirmed == true) {
       await vm.deleteProfile(id);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Export / Import（单 Profile JSON）
+  // ---------------------------------------------------------------------------
+
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 文件名安全化：去掉路径分隔符与控制字符，保证可落盘。
+  String _sanitizeFileName(String name) {
+    final String cleaned =
+        name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_').trim();
+    return cleaned.isEmpty ? 'profile' : cleaned;
+  }
+
+  Future<void> _exportProfile(
+    ProfileViewModel vm,
+    int profileId,
+    String profileName,
+  ) async {
+    final AppModel appModel = ref.read(appProvider);
+    final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
+    String content;
+    try {
+      content = await vm.exportProfile(
+        profileId,
+        fontsRootDirectory: fontsRoot,
+      );
+    } catch (_) {
+      _notify(t.profile_export_failed);
+      return;
+    }
+    if (!mounted) return;
+    await saveOrShareExport(
+      context: context,
+      content: content,
+      fileName: '${_sanitizeFileName(profileName)}.hibikiprofile.json',
+      mimeType: 'application/json',
+      subject: profileName,
+    );
+  }
+
+  Future<void> _importProfile(ProfileViewModel vm) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['json'],
+    );
+    final String? path = result?.files.single.path;
+    if (path == null) return;
+
+    String json;
+    try {
+      json = await File(path).readAsString();
+    } catch (_) {
+      if (mounted) _notify(t.profile_import_failed);
+      return;
+    }
+
+    try {
+      await vm.importProfile(json);
+      _notify(t.profile_import_success);
+    } on ProfileImportException {
+      // 坏文件 / 魔数不符 / 版本不兼容：DB 未被触碰（事务零破坏）。
+      _notify(t.profile_import_invalid);
+    } catch (_) {
+      _notify(t.profile_import_failed);
     }
   }
 }

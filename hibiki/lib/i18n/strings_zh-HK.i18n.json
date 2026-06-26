@@ -1836,5 +1836,12 @@
   "update_install_permission_retry": "重試安裝",
   "update_install_permission_cancel": "取消",
   "popup_auto_expand_dictionaries": "Auto-expand dictionaries",
-  "popup_auto_expand_dictionaries_hint": "Keep the first N dictionary blocks expanded even when 'Collapse dictionaries' is on (0 = collapse all)"
+  "popup_auto_expand_dictionaries_hint": "Keep the first N dictionary blocks expanded even when 'Collapse dictionaries' is on (0 = collapse all)",
+  "profile_export": "Export",
+  "profile_import": "Import",
+  "profile_export_success": "Profile exported",
+  "profile_export_failed": "Export failed",
+  "profile_import_success": "Profile imported",
+  "profile_import_failed": "Import failed",
+  "profile_import_invalid": "Invalid profile file"
 }

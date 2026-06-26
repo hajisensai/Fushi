@@ -131,6 +131,41 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   Future<void> saveCurrentSettingsToActiveProfile() async {
     await _repo.snapshotCurrentSettings(state.activeProfileId);
   }
+
+  /// 把指定 Profile 序列化成可分享的 JSON（凭据已剔除、字体绝对路径已剥离）。
+  /// [fontsRootDirectory] 是本机 `custom_fonts/` 根，用于 A1 字体路径剥离。
+  Future<String> exportProfile(
+    int profileId, {
+    String? fontsRootDirectory,
+  }) =>
+      _repo.exportProfileToJson(
+        profileId,
+        fontsRootDirectory: fontsRootDirectory,
+      );
+
+  /// 从导出 JSON 导回一个 Profile。坏文件在写 DB 前抛 [ProfileImportException]。
+  ///
+  /// 默认新建 Profile（重名加后缀）；overwrite 模式覆盖 [targetProfileId]。
+  /// 导入后刷新 Profile 列表；若覆盖的是当前激活 Profile，立即 [applyProfile]
+  /// 并触发 [_onProfileApplied] 让设置生效。
+  Future<int> importProfile(
+    String json, {
+    ProfileImportMode mode = ProfileImportMode.createNew,
+    int? targetProfileId,
+  }) async {
+    final int writtenId = await _repo.importProfileFromJson(
+      json,
+      mode: mode,
+      targetProfileId: targetProfileId,
+    );
+    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    if (mode == ProfileImportMode.overwrite &&
+        writtenId == state.activeProfileId) {
+      await _repo.applyProfile(writtenId);
+      await _onProfileApplied();
+    }
+    return writtenId;
+  }
 }
 
 final hibikiDatabaseProvider = Provider<HibikiDatabase>((ref) {

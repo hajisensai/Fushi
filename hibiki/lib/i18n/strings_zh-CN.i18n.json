@@ -1836,5 +1836,12 @@
   "update_install_permission_retry": "重试安装",
   "update_install_permission_cancel": "取消",
   "popup_auto_expand_dictionaries": "自动展开词典数",
-  "popup_auto_expand_dictionaries_hint": "即使开启「折叠词典」，也保持前 N 个词典展开（0 = 全部折叠）"
+  "popup_auto_expand_dictionaries_hint": "即使开启「折叠词典」，也保持前 N 个词典展开（0 = 全部折叠）",
+  "profile_export": "导出",
+  "profile_import": "导入",
+  "profile_export_success": "配置方案已导出",
+  "profile_export_failed": "导出失败",
+  "profile_import_success": "配置方案已导入",
+  "profile_import_failed": "导入失败",
+  "profile_import_invalid": "配置方案文件无效"
 }
