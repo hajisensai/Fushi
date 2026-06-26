@@ -723,6 +723,14 @@ void main() {
               'size (content), defaults mirror the allowlisted overlay caption.',
       'lib/src/media/video/video_danmaku_overlay.dart':
           'Danmaku overlay renders timed video content text, not app chrome.',
+      'lib/src/media/video/video_thumbnail_preview_overlay.dart':
+          'TODO-669 hover/seek thumbnail preview overlay: thumbnail frame corner '
+              'radius (BorderRadius.circular(6*uiScale)) and timestamp bubble '
+              'font size (12*uiScale) scale with appUiScale, colors from the '
+              'active ColorScheme; a video-subsystem transient overlay shown on '
+              'progress-bar scrub, not ordinary page chrome — same reviewed '
+              'exception class as the sibling video_volume_overlays HUD and '
+              'video_danmaku_overlay.',
       'lib/src/media/video/video_volume_overlays.dart':
           'TODO-517 split out the compact video volume popover and '
               'volume/brightness HUD to keep visible slider/HUD layers from '
