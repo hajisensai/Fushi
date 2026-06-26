@@ -26,7 +26,7 @@ import 'text_file_io.dart';
 ///
 /// 特性：
 /// - 解析 `[Events]` 段，通过 `Format:` 行动态定位 Start / End / Text 列
-/// - 时间码格式 `H:MM:SS.cc`（厘秒精度）
+/// - 时间码格式 `H:MM:SS.x`（厘秒/毫秒/十分之一秒可变精度，与 SRT/VTT 对齐）
 /// - 剥离 ASS 覆盖标签（`{\an8}`、`{\k50}` 等）
 /// - 软换行符 `\N`、`\n`、`\h` 转为空格
 /// - textFragmentId 格式为 `[data-cue-id="<sentenceIndex>"]`，供 AudiobookBridge CSS selector 定位
@@ -224,10 +224,12 @@ class AssParser {
     return cues;
   }
 
-  /// 将 ASS 时间码 `H:MM:SS.cc`（厘秒）转换为毫秒。
+  /// 将 ASS 时间码 `H:MM:SS.x` 转换为毫秒。小数秒接受 1~3 位
+  /// （厘秒/毫秒/十分之一秒可变精度），归一到毫秒的写法与 SRT/VTT
+  /// 解析器同构（`padRight(3, '0')`），消除外挂 .ass 的孤立特例（TODO-870）。
   static int? _parseAssTime(String timecode) {
     final RegExpMatch? m =
-        RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{2})$').firstMatch(timecode);
+        RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$').firstMatch(timecode);
     if (m == null) {
       return null;
     }
@@ -235,9 +237,9 @@ class AssParser {
     final int am = int.parse(m.group(2)!);
     final int as_ = int.parse(m.group(3)!);
     if (am >= 60 || as_ >= 60) return null;
-    return ah * 3600000 +
-        am * 60000 +
-        as_ * 1000 +
-        int.parse(m.group(4)!) * 10; // 厘秒 → 毫秒
+    // 小数秒右补 0 到 3 位再当毫秒（与 srt_parser.dart 同构）：
+    // '1'→100ms（十分之一秒）/ '67'→670ms（厘秒）/ '000'→0ms（毫秒）。
+    final int frac = int.parse(m.group(4)!.padRight(3, '0'));
+    return ah * 3600000 + am * 60000 + as_ * 1000 + frac;
   }
 }

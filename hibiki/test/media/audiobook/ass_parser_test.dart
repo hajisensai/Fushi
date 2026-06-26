@@ -97,6 +97,33 @@ ${header}Dialogue: 0,0:00:01.67,0:00:03.00,Default,,0,0,0,,厘秒テスト
       expect(cues[0].startMs, 1000 + 670);
     });
 
+    test('时间码 3 位毫秒精度正确（.000 → 0ms，外挂 .ass，TODO-870）', () {
+      // SRT→ASS 转换工具常产出 3 位毫秒时间码（0:00:01.000）；旧正则只认
+      // 2 位厘秒 → startMs=null → cue 被跳过 → 0 cue → 上层误报「不支持」。
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
+${header}Dialogue: 0,0:00:01.000,0:00:04.500,Default,,0,0,0,,毫秒テスト
+''',
+        bookKey: 'test/book.ass',
+      );
+
+      expect(cues.length, 1);
+      expect(cues[0].startMs, 1000);
+      expect(cues[0].endMs, 4500);
+    });
+
+    test('时间码 1 位十分之一秒精度正确（.1 → 100ms，TODO-870）', () {
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '''
+${header}Dialogue: 0,0:00:01.1,0:00:03.0,Default,,0,0,0,,十分の一秒テスト
+''',
+        bookKey: 'test/book.ass',
+      );
+
+      expect(cues.length, 1);
+      expect(cues[0].startMs, 1000 + 100);
+    });
+
     test('带 UTF-8 BOM 的内容正常解析', () {
       final List<AudioCue> cues = AssParser.parseString(
         content:
