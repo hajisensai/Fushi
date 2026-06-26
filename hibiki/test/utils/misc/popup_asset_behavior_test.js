@@ -114,7 +114,36 @@ class FakeElement {
   }
 
   getBoundingClientRect() {
-    return {width: 0, height: 0};
+    // TODO-859: tests inject _rect to model a real rendered image's pixel box so
+    // the image hit-test (pointHitsRenderedImagePixels) can be exercised.
+    return this._rect ?? {left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0};
+  }
+
+  querySelector(selector) {
+    // Minimal selector support exercised by TODO-859 image hit-test: 'tag',
+    // '.class', or 'tag.class' (e.g. 'img.gloss-image' / 'canvas').
+    const parsed = selector.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?$/);
+    if (!parsed || (!parsed[1] && !parsed[2])) {
+      return null;
+    }
+    const wantTag = parsed[1] ? parsed[1].toUpperCase() : null;
+    const wantClass = parsed[2] || null;
+    const matches = (el) =>
+      (wantTag === null || el.tagName === wantTag) &&
+      (wantClass === null || (!!el.classList && el.classList.contains(wantClass)));
+    const visit = (el) => {
+      for (const child of el.children ?? []) {
+        if (matches(child)) {
+          return child;
+        }
+        const found = visit(child);
+        if (found) {
+          return found;
+        }
+      }
+      return null;
+    };
+    return visit(this);
   }
 
   closest(selector) {
@@ -480,6 +509,171 @@ function testTappingDefinitionImageOpensLightbox() {
     ),
     false,
   );
+}
+
+// ── TODO-859 方案1: document-level tap routing on the parent popup ──────────
+// The popup's document 'click' handler decides, for every tap that is NOT on a
+// button/audio/summary, whether to (a) select a word, (b) keep the layer, or
+// (c) ask Flutter to close descendant popups (tapOutside). Before TODO-859 the
+// handler used a BLACKLIST (.entry-header / .entry-tags / .glossary-group /
+// .category-section) so taps in entry-card whitespace OUTSIDE those selectors
+// were a dead zone: neither selecting nor closing — the user reported tapping
+// the dictionary body did not close the child popup.
+// 方案1 replaces it with a POSITIVE predicate: a tap anywhere inside a card root
+// (.entry / .kanji-card) keeps the layer; only a tap on pure popup background
+// fires tapOutside.
+
+function fireDocumentClick(context, target, clientX = 50, clientY = 50) {
+  const handler = context.__listeners.click[0];
+  let tapOutsideCalls = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'tapOutside') {
+      tapOutsideCalls += 1;
+    }
+    return Promise.resolve(true);
+  };
+  let selectCalls = 0;
+  context.window.hoshiSelection = {
+    selectText() {
+      selectCalls += 1;
+    },
+  };
+  // A real mousedown lands at the same spot first (no drag), matching production.
+  const mousedown = context.__listeners.mousedown[0];
+  mousedown({clientX, clientY});
+  handler({target, clientX, clientY});
+  return {tapOutsideCalls, selectCalls};
+}
+
+// Build: body > .entry (card root) > .glossary-content (definition text body).
+function buildEntryCardDom(context) {
+  const entry = new FakeElement('div');
+  entry.classList.add('entry');
+  const glossary = new FakeElement('div');
+  glossary.classList.add('glossary-content');
+  // A bare gap node inside .entry but outside .glossary-content / known selectors:
+  // this is the old dead zone (li margin / category-body padding / the
+  // single-content wrapper that carries no class).
+  const cardGap = new FakeElement('div');
+  context.document.body.appendChild(entry);
+  entry.appendChild(glossary);
+  entry.appendChild(cardGap);
+  return {entry, glossary, cardGap};
+}
+
+// (1) Tapping the definition TEXT body still routes to word selection.
+function testTapOnGlossaryTextSelectsWord() {
+  const context = loadPopup();
+  const {glossary} = buildEntryCardDom(context);
+  const result = fireDocumentClick(context, glossary);
+  assert.equal(result.selectCalls, 1, 'tapping .glossary-content text must select a word');
+  assert.equal(result.tapOutsideCalls, 0, 'selecting a word must not close descendants');
+}
+
+// (2) Tapping entry-card WHITESPACE (the old dead zone) keeps the layer: it must
+// NOT fire tapOutside (方案1 preserves the layer when inside a card root).
+function testTapOnEntryCardWhitespaceKeepsLayer() {
+  const context = loadPopup();
+  const {cardGap} = buildEntryCardDom(context);
+  const result = fireDocumentClick(context, cardGap);
+  assert.equal(result.tapOutsideCalls, 0,
+    'tapping entry-card whitespace must NOT fire tapOutside (no dead zone, layer kept)');
+  assert.equal(result.selectCalls, 0,
+    'card whitespace is not text: no selection, just a no-op that keeps the layer');
+}
+
+// (3) Tapping PURE popup background (outside every card root) fires tapOutside
+// so Flutter closes the descendant child popups (方案1 close path).
+function testTapOnPopupBackgroundFiresTapOutside() {
+  const context = loadPopup();
+  buildEntryCardDom(context);
+  const background = new FakeElement('div');
+  context.document.body.appendChild(background);
+  const result = fireDocumentClick(context, background);
+  assert.equal(result.tapOutsideCalls, 1,
+    'tapping pure popup background must fire tapOutside to close child popups');
+  assert.equal(result.selectCalls, 0, 'background is not text: no selection');
+}
+
+// (4) Tapping inside a kanji card root also keeps the layer (separate render
+// path; 方案1 covers .kanji-card too).
+function testTapInsideKanjiCardKeepsLayer() {
+  const context = loadPopup();
+  const kanjiCard = new FakeElement('div');
+  kanjiCard.classList.add('kanji-card');
+  const kanjiGap = new FakeElement('div');
+  context.document.body.appendChild(kanjiCard);
+  kanjiCard.appendChild(kanjiGap);
+  const result = fireDocumentClick(context, kanjiGap);
+  assert.equal(result.tapOutsideCalls, 0,
+    'tapping inside a .kanji-card must NOT fire tapOutside (layer kept)');
+}
+
+// ── TODO-859 症状B: image lightbox hit-box narrowed to real image pixels ────
+// The .gloss-image-link click listener opens the fullscreen lightbox. Its box is
+// widened by .gloss-image-container min-width:min(100%,200px) and horizontally
+// overflows adjacent text, so a tap on neighbouring text used to flash the black
+// lightbox overlay. pointHitsRenderedImagePixels narrows the hit to the rendered
+// img.gloss-image rect: a tap on the image pixels opens the lightbox, a tap in
+// the container whitespace (outside the pixel rect) does NOT.
+function buildPreviewImageNode(context) {
+  const node = context.createDefinitionImage(
+    {
+      path: 'img/d93ed9600ba7717bd75cd68f5d35760c.png',
+      width: 100,
+      height: 10,
+      data: {alt: 'test image'},
+    },
+    'test-dict',
+    false,
+  );
+  context.document.body.appendChild(node);
+  const img = node.querySelector('img.gloss-image');
+  assert.ok(img, 'a rendered gloss-image must exist for the hit-test');
+  img._rect = {left: 0, top: 0, right: 40, bottom: 40, width: 40, height: 40};
+  return node;
+}
+
+function dispatchImageClick(node, clientX, clientY) {
+  const event = {
+    type: 'click',
+    clientX,
+    clientY,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopPropagation() {
+      this.propagationStopped = true;
+    },
+  };
+  node.dispatchEvent(event);
+  return event;
+}
+
+function testTapOnImagePixelsOpensLightbox() {
+  const context = loadPopup();
+  const node = buildPreviewImageNode(context);
+  dispatchImageClick(node, 20, 20);
+  const lightbox = context.document.body.children.find(
+    (child) => child.className === 'dict-image-lightbox',
+  );
+  assert.ok(lightbox, 'tapping the image pixels must open the lightbox');
+}
+
+function testTapInImageContainerWhitespaceDoesNotOpenLightbox() {
+  const context = loadPopup();
+  const node = buildPreviewImageNode(context);
+  // Point (150,20) is in the widened container overflow, beyond the image rect.
+  const event = dispatchImageClick(node, 150, 20);
+  const lightbox = context.document.body.children.find(
+    (child) => child.className === 'dict-image-lightbox',
+  );
+  assert.equal(lightbox, undefined,
+    'tapping the widened container whitespace (outside image pixels) must NOT open the lightbox');
+  assert.notEqual(event.defaultPrevented, true,
+    'a whitespace tap must not preventDefault: the event keeps bubbling to the tap router');
+  assert.notEqual(event.propagationStopped, true,
+    'a whitespace tap must not stopPropagation: it falls through to the document handler');
 }
 
 function testLongPressTimerSurvivesEarlyTouchEnd() {
@@ -1362,6 +1556,12 @@ testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
 testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
+testTapOnGlossaryTextSelectsWord();
+testTapOnEntryCardWhitespaceKeepsLayer();
+testTapOnPopupBackgroundFiresTapOutside();
+testTapInsideKanjiCardKeepsLayer();
+testTapOnImagePixelsOpensLightbox();
+testTapInImageContainerWhitespaceDoesNotOpenLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
 testStructuredContentTablesUseHorizontalScrollContainer();
 testFormOfGlossaryArrayRendersSeparatedTermAndTags();

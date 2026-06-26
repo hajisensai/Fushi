@@ -557,8 +557,37 @@ function openImageLightbox(imageUrl, alt) {
     document.body.appendChild(overlay);
 }
 
+// TODO-859 症状B：图片预览的 click 监听挂在外层 .gloss-image-link 容器上，但
+// .gloss-image-container 被 popup.css 的 `min-width:min(100%,200px)` 撑到 >=200px，
+// 横向溢出盖住相邻正文。点正文却命中这个隐形大盒 → 触发全屏黑色灯箱遮罩（误触）。
+// 修法：保留外层 click 监听（不动 CSS 布局，避免 TODO-350 Sanseido em-accent 回归），
+// 但用 getBoundingClientRect 把命中收敛到真正渲染的图片像素（img.gloss-image 或
+// canvas）。点击点不在图片像素矩形内 = 落在容器留白上 = 不开灯箱（让事件继续冒泡，由
+// 上面的 tapOutside 正文判定接手）。命中图片像素才 preventDefault + 开灯箱。
+function pointHitsRenderedImagePixels(node, clientX, clientY) {
+    // 真正画出像素的元素：渲染到 canvas 的走 canvas，否则是 <img class="gloss-image">。
+    const pixelEl = (typeof node.querySelector === 'function')
+        ? (node.querySelector('img.gloss-image') || node.querySelector('canvas'))
+        : null;
+    if (!pixelEl || typeof pixelEl.getBoundingClientRect !== 'function') {
+        // 无法测量真实像素矩形时退回旧行为（整盒可点），不让预览功能失效。
+        return true;
+    }
+    const rect = pixelEl.getBoundingClientRect();
+    if (!rect || (rect.width <= 0 && rect.height <= 0)) {
+        return true;
+    }
+    return clientX >= rect.left && clientX <= rect.right
+        && clientY >= rect.top && clientY <= rect.bottom;
+}
+
 function enableDefinitionImagePreview(node, imageUrl, alt) {
     node.addEventListener('click', (event) => {
+        if (!pointHitsRenderedImagePixels(node, event.clientX, event.clientY)) {
+            // 点在容器留白（被 min-width 撑出的横向溢出区）上：不拦截，让外层 click
+            // 处理器按正文/背景判定决定选词还是关后代，避免误触全屏黑遮罩。
+            return;
+        }
         event.preventDefault();
         event.stopPropagation();
         openImageLightbox(imageUrl, alt);
@@ -2707,9 +2736,20 @@ document.addEventListener('click', (e) => {
         window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
         return;
     }
-    if (!target?.closest('.entry-header') && !target?.closest('.entry-tags') && !target?.closest('.glossary-group') && !target?.closest('.category-section')) {
-        window.flutter_inappwebview.callHandler('tapOutside');
+    // TODO-859 方案1：用「点击是否落在某张词条卡片内」的正向判定取代旧黑名单。旧逻辑
+    // 列举 .entry-header/.entry-tags/.glossary-group/.category-section「之外才发
+    // tapOutside」，但词条卡片(.entry)内还有这些选择器都覆盖不到的留白——li 外边距、
+    // category-body padding、词条之间、kanji-card-section、单义项的无 class wrapper——
+    // 点这些留白既不选词(上面 .glossary-content 分支只命中文字本体)也不发 tapOutside，
+    // 成了「关不掉子弹窗」的死区，用户得往父弹窗上面的真空白带才能关。
+    //
+    // 方案1语义：词条卡片区域(卡片本体文字+其留白)一律保留本层(点文字走上面的选词
+    // 分支)，只有点到所有卡片之外的纯弹窗背景(body/no-results 占位)才发 tapOutside 关
+    // 后代。卡片根=.entry(词条卡片) 或 .kanji-card(汉字卡片)，二者覆盖全部正文留白。
+    if (target?.closest('.entry') || target?.closest('.kanji-card')) {
+        return;
     }
+    window.flutter_inappwebview.callHandler('tapOutside');
 });
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
