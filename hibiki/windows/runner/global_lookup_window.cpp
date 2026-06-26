@@ -555,6 +555,35 @@ LRESULT CALLBACK GlobalLookupWindow::WndProc(HWND hwnd, UINT message,
   return DefWindowProc(hwnd, message, wparam, lparam);
 }
 
+// TODO-867 P2: apply a rounded-rectangle window region so the opaque WebView2
+// lookup window has rounded corners that match popup.css's 10px card radius.
+// Called on every WM_SIZE. The corner diameter (2 * radius) is scaled by the
+// window DPI so the rounding stays a constant ~10 logical px across monitors.
+void GlobalLookupWindow::ApplyRoundedRegion() {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  RECT rc;
+  GetClientRect(hwnd_, &rc);
+  const int width = rc.right - rc.left;
+  const int height = rc.bottom - rc.top;
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  UINT dpi = GetDpiForWindow(hwnd_);
+  if (dpi == 0) {
+    dpi = 96;
+  }
+  // 10 logical px radius -> diameter = 20 logical px, scaled to physical px.
+  const int diameter = MulDiv(20, static_cast<int>(dpi), 96);
+  HRGN region =
+      CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
+  if (region != nullptr) {
+    // SetWindowRgn takes ownership of the region on success; the system frees it.
+    SetWindowRgn(hwnd_, region, TRUE);
+  }
+}
+
 LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
                                           LPARAM lparam) {
   switch (message) {
@@ -564,6 +593,13 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         GetClientRect(hwnd_, &rc);
         controller_->put_Bounds(rc);
       }
+      // TODO-867 P2: round the actual window corners to match popup.css's hoshi
+      // card radius. The window is opaque (no WS_EX_LAYERED — it conflicts with
+      // WebView2's composition surface, see ShowAt), so true rounded corners must
+      // come from a window region, not CSS. A real drop-shadow is not achievable
+      // on a non-layered topmost window — that is a platform limitation; the CSS
+      // border supplies the card frame, this region supplies the rounded corners.
+      ApplyRoundedRegion();
       return 0;
     default:
       return DefWindowProc(hwnd_, message, wparam, lparam);

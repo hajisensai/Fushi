@@ -100,6 +100,8 @@ class GlobalLookupWindow {
   static LRESULT CALLBACK MouseHookProc(int code, WPARAM wparam, LPARAM lparam);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
+  // TODO-867 P2: round the window corners to match popup.css's card radius.
+  void ApplyRoundedRegion();
   void EnsureWindowClass();
   void EnsureWebView();
   void ConfigureWebView();

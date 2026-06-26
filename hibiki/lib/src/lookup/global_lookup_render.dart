@@ -41,7 +41,14 @@ String buildOverlayRenderScript({
       '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
   final Color bgColor = appModel.overrideDictionaryColor ?? scheme.surface;
 
+  // TODO-867 P2: tag the document as the app-OUTSIDE global-lookup host so
+  // popup.css can apply the hoshi-style card chrome + flex-wrap variable-height
+  // sub-boxes ONLY here. In-app popups (dictionary_popup_webview) never add this
+  // class, so their Flutter-Material card chrome + tested --dict-columns grid
+  // stay untouched (zero regression). The marker lives on documentElement next
+  // to data-theme so it is re-applied on every render alongside the theme vars.
   final String themeVarsJs = '''
+    document.documentElement.classList.add('global-lookup');
     document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
     document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
     document.documentElement.style.setProperty('--text-color', '${_cssRgb(scheme.onSurface)}');

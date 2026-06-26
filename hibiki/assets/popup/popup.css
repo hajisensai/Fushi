@@ -951,3 +951,67 @@ html[data-theme="dark"] {
     opacity: 0.6;
     -webkit-user-select: none;
 }
+
+/* =====================================================================
+ * TODO-867 P2 — Windows app-OUTSIDE global lookup chrome (SCOPED).
+ *
+ * popup.css is SHARED by the in-app popup (dictionary_popup_webview, whose
+ * outer card chrome is a Flutter Material card, so the WebView body must stay
+ * transparent/flush) AND the app-outside global-lookup WebView2 window (where
+ * the WebView body IS the whole popup, so it needs its own card chrome).
+ *
+ * Every rule below is gated on `html.global-lookup`, a class that ONLY
+ * global_lookup_render.dart adds (in-app never does). So these rules are inert
+ * in-app — zero regression to the in-app popup or to the tested --dict-columns
+ * grid — and only style the bare WebView2 lookup window.
+ *
+ * Card chrome ports hoshi's reader-popup-host.js `.hoshi-reader-popup-shell`
+ * (border 1px rgba(120,120,128,0.36) / radius 10px). The opaque, NON-layered
+ * WebView2 window (see global_lookup_window.cpp: "No WS_EX_LAYERED") cannot
+ * carry a real drop-shadow inside CSS — that is a platform limitation, not an
+ * omission; the true rounded-corner + shadow is supplied by the native window
+ * region (SetWindowRgn) instead. The CSS here gives the content a clean inset
+ * border so it reads as a card, not raw text flush to the window edge.
+ * ===================================================================== */
+
+html.global-lookup body {
+    /* hoshi shell border (light). The dark variant follows below. Inset padding
+       lifts the content off the hard window edge so the border reads as a card
+       frame rather than a hairline glued to the glass. */
+    border: 1px solid rgba(120, 120, 128, 0.36);
+    border-radius: 10px;
+    padding: 8px 10px 10px;
+    min-height: 100%;
+}
+
+html.global-lookup[data-theme="dark"] body {
+    border-color: rgba(255, 255, 255, 0.34);
+}
+
+/* Sub-box layout (complaints #2 + #3): the in-app default is a fixed
+   --dict-columns grid (repeat(N, 1fr)) whose rows STRETCH every dictionary card
+   to the tallest in that row (CSS grid align-items:stretch). That stretch makes
+   the first (richest, most-dictionaries) result's boxes taller than later
+   results' (#2) and forces a rigid fixed-per-row equal-height layout (#3).
+   hoshi instead flows the boxes with flex-wrap at their natural content height:
+   collapsed boxes stay short, a row packs as many as fit, the per-row count is
+   not fixed. Override (not replace) the grid ONLY under .global-lookup so the
+   in-app grid + its source guard test stay intact. */
+html.global-lookup .glossary-section > .category-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start; /* content height, never stretched to row max */
+    column-gap: 6px;
+}
+
+html.global-lookup .glossary-section > .category-body > .glossary-group {
+    /* Each card sizes to its content. flex-basis lets a row hold a variable
+       number of cards (wide cards take a row, narrow collapsed ones pack many),
+       never a fixed 3-up grid. min-width keeps long glossary content from
+       blowing the row width. */
+    flex: 1 1 auto;
+    min-width: 160px;
+    max-width: 100%;
+    height: auto;
+    align-self: flex-start;
+}
