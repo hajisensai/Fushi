@@ -247,6 +247,48 @@ void main() {
           reason: '第一次 setProperty 后、第二次原生下发前必须重校验');
     });
 
+    // ---- selectSubtitleTrack（TODO-409 / BUG-430）----
+    // 切/关字幕路径上唯一一处 await libmpv 原生下发的方法。关字幕（`no()`）是高频路径，
+    // await 期间退出/换集触发 dispose → 向已释放 handle 下发 = 原生 UAF。必须与
+    // selectEmbeddedGraphicTrack 同范式：await 前捕获 loadToken，await 后重校验。
+    String selectSubtitleBody() => methodBody(
+          r'Future<void> selectSubtitleTrack\(SubtitleTrack track\) async \{',
+          r'\n  \}',
+        );
+
+    test(
+        'selectSubtitleTrack captures loadToken before the native await and '
+        'rechecks _isCurrentLoad after it (TODO-409 UAF guard)', () {
+      final String b = selectSubtitleBody();
+      final int tokenAt = b.indexOf('final int loadToken = _loadToken;');
+      final int sendAt = b.indexOf('await player.setSubtitleTrack(track);');
+      final int recheckAt =
+          b.indexOf('_isCurrentLoad(player, loadToken)', sendAt);
+      expect(tokenAt, greaterThanOrEqualTo(0),
+          reason: 'await 前必须捕获 loadToken 快照（与 selectEmbeddedGraphicTrack 一致）');
+      expect(sendAt, greaterThan(tokenAt),
+          reason: 'setSubtitleTrack 原生下发必须在 loadToken 捕获之后');
+      expect(recheckAt, greaterThan(sendAt),
+          reason: 'setSubtitleTrack 后必须重校验 _isCurrentLoad，否则退出/换集期间向已释放 '
+              'libmpv handle 下发 → 原生 UAF（回退字幕闪退，TODO-409）');
+      expect(
+          b.contains('if (!_isCurrentLoad(player, loadToken)) return;'), isTrue,
+          reason: '过期一律干净 return 放弃下发，不触野 handle');
+    });
+
+    test('selectSubtitleTrack snapshots _player into a local before the await',
+        () {
+      final String b = selectSubtitleBody();
+      // 局部化 player（与 selectEmbeddedGraphicTrack 同），杜绝 await 后 `_player?.` 解到
+      // 已被 dispose 置 null / 已被新 load 接管的字段。
+      expect(b.contains('final Player? player = _player;'), isTrue,
+          reason:
+              '必须把 _player 提为局部 player，禁止 await 后裸用 _player?.setSubtitleTrack');
+      expect(b.contains('await _player?.setSubtitleTrack'), isFalse,
+          reason:
+              'TODO-409: 禁止回退到无守卫的 `await _player?.setSubtitleTrack(track)`（原生 UAF 窗口）');
+    });
+
     // ---- load() 主路径（本轮核心）----
     // load() 紧跟着 `bool _isCurrentLoad(...)` getter，用它锚定方法体结束（方法体内
     // 含多处 4/6 空格缩进的 `}`，非贪婪到 `\n  }\n\n  bool _isCurrentLoad` 精确收口）。

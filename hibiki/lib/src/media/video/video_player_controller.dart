@@ -480,8 +480,21 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> selectSubtitleTrack(SubtitleTrack track) async {
     // 关字幕 / 切到文本 overlay 都经 `no()`（图形轨改走 [selectEmbeddedGraphicTrack]
     // 的裸 `player.setSubtitleTrack`，不经此处）→ 离开图形渲染，复位图形标志（BUG-301）。
+    // 这是纯 Dart 同步状态，与 await 后的原生下发无关：必须在 player 空判 / await 之前
+    // 无条件执行，否则未 [load] 时关字幕不复位标志（回归 BUG-301）。
     if (track.id == 'no') _graphicSubtitleActive = false;
-    await _player?.setSubtitleTrack(track);
+    final Player? player = _player;
+    if (player == null) return; // 未 load：原生下发 no-op，标志已复位即可。
+    // 关字幕（`no()`）是高频路径（[_selectSubtitleOff]）：await libmpv 原生下发期间用户
+    // 随时可能退出页面 / 换集，触发 [dispose]（`_loadToken++` + `unawaited(_player.dispose())`
+    // 异步释放底层 libmpv NativePlayer + `_player = null`）。若仍向这里捕获的局部 [player]
+    // 引用（已释放 / 已被新 load 接管的 handle）下发 setSubtitleTrack，就是原生
+    // use-after-free（访问违例，AMD 更敏感）。与 [selectEmbeddedGraphicTrack] / [load]
+    // 一致：await 前捕获 loadToken 快照，await 后用 [_isCurrentLoad] 双判据
+    // （player identity + loadToken）重校验，过期立即放弃（TODO-409）。
+    final int loadToken = _loadToken;
+    await player.setSubtitleTrack(track);
+    if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁：放弃下发。
   }
 
   /// 把内嵌**图形**字幕轨（PGS/DVD 等位图，无法转文本 cue）交给 libmpv 当画面字幕
