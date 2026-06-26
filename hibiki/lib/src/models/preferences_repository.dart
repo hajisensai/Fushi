@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
+import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/player/blur_options.dart';
@@ -505,11 +506,38 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   /// 视频字幕模糊（听力沉浸）开关：默认关闭。开启后字幕默认打码，悬停/点击显形。
+  ///
+  /// TODO-840 Part B：这是遮蔽模式三态的**历史 bool 投影**——[VideoSubtitleObscureMode.blur]
+  /// / [VideoSubtitleObscureMode.hide] 都让本 getter 返回 true（旧版本回滚读到的就是
+  /// 「开着遮蔽」、退化成模糊，不丢遮蔽意图）。真正的精确三态请读
+  /// [videoSubtitleObscureMode]；本 getter 只是派生兼容层。
   bool get videoSubtitleBlur =>
       getPref('video_subtitle_blur', defaultValue: false) as bool;
 
   Future<void> setVideoSubtitleBlur(bool value) async {
     await setPref('video_subtitle_blur', value);
+    notifyListeners();
+  }
+
+  /// 视频字幕「遮蔽模式」三态（TODO-840 Part B）：不遮蔽 / 模糊 / 隐藏。
+  ///
+  /// preferences 层 lazy 投影（非新 Drift schema）：历史键 `video_subtitle_blur`
+  /// （[VideoSubtitleObscureMode.blurFlag]）+ 判别键 `video_subtitle_obscure_hide`
+  /// （[VideoSubtitleObscureMode.hideFlag]）。还原走纯函数
+  /// [VideoSubtitleObscureMode.fromFlags]，是读取与单测的共享真相源；写入两键一并落盘，
+  /// 使旧版本只读历史键时退化成 blur。
+  VideoSubtitleObscureMode get videoSubtitleObscureMode =>
+      VideoSubtitleObscureMode.fromFlags(
+        blurFlag: getPref('video_subtitle_blur', defaultValue: false) as bool,
+        hideFlag:
+            getPref('video_subtitle_obscure_hide', defaultValue: false) as bool,
+      );
+
+  Future<void> setVideoSubtitleObscureMode(
+    VideoSubtitleObscureMode mode,
+  ) async {
+    await setPref('video_subtitle_blur', mode.blurFlag);
+    await setPref('video_subtitle_obscure_hide', mode.hideFlag);
     notifyListeners();
   }
 

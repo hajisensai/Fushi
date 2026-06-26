@@ -37,6 +37,7 @@ import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
+import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
@@ -2035,11 +2036,20 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoMpvShaderDir(String dir) =>
       prefsRepo.setVideoMpvShaderDir(dir);
 
-  /// 视频字幕模糊（听力沉浸）开关；默认关闭。
+  /// 视频字幕模糊（听力沉浸）开关；默认关闭。TODO-840 Part B 起这是遮蔽模式三态的
+  /// 历史 bool 投影（blur/hide 都为 true），精确三态读 [videoSubtitleObscureMode]。
   bool get videoSubtitleBlur => prefsRepo.videoSubtitleBlur;
 
   Future<void> setVideoSubtitleBlur(bool value) =>
       prefsRepo.setVideoSubtitleBlur(value);
+
+  /// 视频字幕遮蔽模式三态（TODO-840 Part B）：不遮蔽 / 模糊 / 隐藏。委托 prefsRepo 的
+  /// lazy 投影持久化（见 [PreferencesRepository.videoSubtitleObscureMode]）。
+  VideoSubtitleObscureMode get videoSubtitleObscureMode =>
+      prefsRepo.videoSubtitleObscureMode;
+
+  Future<void> setVideoSubtitleObscureMode(VideoSubtitleObscureMode mode) =>
+      prefsRepo.setVideoSubtitleObscureMode(mode);
 
   /// 视频字幕列表自动滚动开关（TODO-613，落 Drift preferences，默认开）。
   bool get videoSubtitleListAutoScroll => prefsRepo.videoSubtitleListAutoScroll;

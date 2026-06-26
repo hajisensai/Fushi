@@ -337,7 +337,13 @@ extension _VideoLayout on _VideoHibikiPageState {
                           // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
                           // 后 setState 触发本 builder 重建，标记即时更新。
                           isCueFavorited: _isCueFavorited,
-                          blurEnabled: appModel.videoSubtitleBlur,
+                          // TODO-840 Part B：字幕遮蔽模式三态映射成 overlay 的两个
+                          // 正交标志——模糊态走 blurEnabled、隐藏态走 subtitleHidden
+                          // （互斥，至多一个为 true）。不遮蔽时两者皆 false（历史外观）。
+                          blurEnabled: appModel.videoSubtitleObscureMode ==
+                              VideoSubtitleObscureMode.blur,
+                          subtitleHidden: appModel.videoSubtitleObscureMode ==
+                              VideoSubtitleObscureMode.hide,
                           fontSize: _subtitleStyle.fontSize,
                           textColor: _subtitleStyle.resolveTextColor(
                             _subtitleTextColor(

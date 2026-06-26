@@ -51,6 +51,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.hitTester,
     this.isCueFavorited,
     this.blurEnabled = false,
+    this.subtitleHidden = false,
     this.fontSize = 36,
     this.textColor,
     this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
@@ -104,6 +105,13 @@ class VideoSubtitleOverlay extends StatefulWidget {
 
   /// 听力沉浸：字幕默认模糊，悬停/点击显形。
   final bool blurEnabled;
+
+  /// 遮蔽模式「隐藏」（TODO-840 Part B）：为 true 时主字幕整条不渲染（即时返回空盒），
+  /// 与 [blurEnabled] 正交且优先级更高（两者来自互斥的 [VideoSubtitleObscureMode]，
+  /// 页面侧映射保证不会同时为 true，但即便同时为 true 也以隐藏为准）。默认 false =
+  /// 不隐藏，外观与历史一致。隐藏只针对底部主字幕 overlay，不影响查词 / 字幕列表 /
+  /// cue 同步等其它文本通道。
+  final bool subtitleHidden;
 
   /// 字幕字号（外观设置）。
   final double fontSize;
@@ -271,6 +279,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (BuildContext context, _) {
+        // 遮蔽模式「隐藏」：主字幕整条不渲染，且清空命中状态 + 解绑命中句柄（返回
+        // null 让查词 barrier 走 dismiss，不会反查到一条不可见的字幕）。TODO-840 Part B。
+        if (widget.subtitleHidden) {
+          _charContexts.clear();
+          _currentText = '';
+          _currentBlurred = false;
+          widget.hitTester?.bindHitTest(_charHitTest);
+          return const SizedBox.shrink();
+        }
         // 每帧重置字符命中状态并（重新）绑定句柄——空句也要绑定，使浮层打开但当前
         // 无字幕时 hitTest 返回 null（barrier 走 dismiss）。
         _charContexts.clear();
