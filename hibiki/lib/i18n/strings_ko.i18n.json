@@ -1830,5 +1830,9 @@
   "video_jimaku_episode_hint": "Leave empty to list all",
   "video_jimaku_language": "Language",
   "video_jimaku_language_all": "All",
-  "video_jimaku_show_all_episodes": "Show all episodes"
+  "video_jimaku_show_all_episodes": "Show all episodes",
+  "update_install_permission_title": "Allow installing updates",
+  "update_install_permission_message": "Please allow Hibiki to install apps in system settings, then retry.",
+  "update_install_permission_retry": "Retry install",
+  "update_install_permission_cancel": "Cancel"
 }

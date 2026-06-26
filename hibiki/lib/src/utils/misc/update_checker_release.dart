@@ -507,6 +507,90 @@ class UpdateChecker {
     }
   }
 
+  /// BUG-427/TODO-852: the Android-only install-permission resume/retry net.
+  ///
+  /// [updater.apply] is invoked with the already-downloaded, already-validated
+  /// [apkFile]. If it throws [PlatformException] with code
+  /// `INSTALL_PERMISSION_REQUIRED` (Android API 26+ without "install unknown
+  /// apps" permission), we hide the download overlay (without removing it, so
+  /// the session stays alive), prompt the user, and on confirm recurse with the
+  /// SAME [apkFile] — never re-downloading. Any other error rethrows so the
+  /// caller's catch keeps the original "download failed" handling. Cancelling
+  /// the prompt returns normally (the apk stays cached for a later attempt).
+  static Future<void> _applyWithInstallRetry({
+    required BuildContext context,
+    required PlatformUpdater updater,
+    required File apkFile,
+    required String version,
+    required ValueNotifier<bool> overlayVisible,
+    required ValueNotifier<String> status,
+  }) async {
+    try {
+      await updater.apply(apkFile, version);
+    } on PlatformException catch (e) {
+      if (e.code != 'INSTALL_PERMISSION_REQUIRED') rethrow;
+      // Hide (do not remove) the overlay so the prompt is unobstructed while
+      // the download session — including the cached apk — stays alive.
+      overlayVisible.value = false;
+      // BUG-427/TODO-852: the user may return from the system "install unknown
+      // apps" setting after an Activity rebuild; bail if the context is gone
+      // before driving any dialog/overlay off it.
+      if (!context.mounted) return;
+      final bool retry = await _promptInstallPermissionRetry(context);
+      if (!retry) return;
+      // Re-check after the (async) prompt: the Activity could have been rebuilt
+      // while the dialog was up before we recurse and show the overlay again.
+      if (!context.mounted) return;
+      // Restore the overlay/installing status and retry with the SAME apk.
+      overlayVisible.value = true;
+      status.value = t.update_installing;
+      await _applyWithInstallRetry(
+        context: context,
+        updater: updater,
+        apkFile: apkFile,
+        version: version,
+        overlayVisible: overlayVisible,
+        status: status,
+      );
+    }
+  }
+
+  /// BUG-427/TODO-852: ask the user to grant the install permission and retry.
+  /// Returns true to retry, false to give up (apk stays cached). Guards against
+  /// an unmounted context (the user may return from the system setting after an
+  /// Activity rebuild, which would otherwise make showAppDialog throw).
+  static Future<bool> _promptInstallPermissionRetry(
+    BuildContext context,
+  ) async {
+    if (!context.mounted) return false;
+    final bool? retry = await showAppDialog<bool>(
+      context: context,
+      builder: (_) => const InstallPermissionRetryDialog(),
+    );
+    return retry ?? false;
+  }
+
+  /// BUG-427/TODO-852: drive [_applyWithInstallRetry] from a widget test
+  /// without a full download session (mirrors [runExclusiveUpdateFlowForTest]).
+  @visibleForTesting
+  static Future<void> applyWithInstallRetryForTest({
+    required BuildContext context,
+    required PlatformUpdater updater,
+    required File apkFile,
+    required String version,
+    required ValueNotifier<bool> overlayVisible,
+    required ValueNotifier<String> status,
+  }) {
+    return _applyWithInstallRetry(
+      context: context,
+      updater: updater,
+      apkFile: apkFile,
+      version: version,
+      overlayVisible: overlayVisible,
+      status: status,
+    );
+  }
+
   static Future<void> _runDownloadAndInstall(
     BuildContext context,
     UpdateAsset asset,
@@ -600,7 +684,29 @@ class UpdateChecker {
 
       status.value = t.update_installing;
 
-      await updater.apply(outFile, version);
+      // BUG-427/TODO-852: on Android API 26+ without install permission the
+      // native installApk throws PlatformException(INSTALL_PERMISSION_REQUIRED)
+      // (the user is routed to the system setting). Wrap apply so that case is
+      // handled in-place — keep the download session (overlay/notifiers/apk)
+      // alive and let the user retry with the SAME already-downloaded apk —
+      // instead of falling through to the catch below, showing
+      // update_download_failed, and tearing the session + apk down (forcing a
+      // re-download). Any other failure rethrows and follows the original path.
+      if (context.mounted) {
+        await _applyWithInstallRetry(
+          context: context,
+          updater: updater,
+          apkFile: outFile,
+          version: version,
+          overlayVisible: overlayVisible,
+          status: status,
+        );
+      } else {
+        // Context torn down during download: fall back to a plain install
+        // (no permission-retry UI possible without a live context). Any
+        // PlatformException here surfaces through the catch below as before.
+        await updater.apply(outFile, version);
+      }
     } on UpdateDownloadCancelledException {
       // 用户主动取消（TODO-738）：不是失败，不记错误日志、不弹「下载失败」。
       debugPrint('[Hibiki] update download cancelled by user');

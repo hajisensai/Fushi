@@ -1830,5 +1830,9 @@
   "video_jimaku_episode_hint": "Leave empty to list all",
   "video_jimaku_language": "Language",
   "video_jimaku_language_all": "All",
-  "video_jimaku_show_all_episodes": "Show all episodes"
+  "video_jimaku_show_all_episodes": "Show all episodes",
+  "update_install_permission_title": "允許安裝更新",
+  "update_install_permission_message": "請在系統設定中允許 Hibiki 安裝應用程式，然後重試安裝。",
+  "update_install_permission_retry": "重試安裝",
+  "update_install_permission_cancel": "取消"
 }

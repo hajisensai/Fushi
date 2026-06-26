@@ -61,6 +61,9 @@ public class MainActivity extends AudioServiceActivity {
     private static final String SCREEN_BRIGHTNESS_CHANNEL = ChannelNames.SCREEN_BRIGHTNESS;
     private static final String SPLASH_PREFS = PreferenceKeys.FILE_SPLASH;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
+    // BUG-427/TODO-852: install-permission gate result code. Distinct from
+    // SAF_PICK_DIR_REQUEST so onActivityResult can tell the two flows apart.
+    private static final int INSTALL_PERMISSION_REQUEST = 1002;
     private static MethodChannel floatingLyricChannel;
     private static MethodChannel floatingDictChannel;
 
@@ -69,6 +72,14 @@ public class MainActivity extends AudioServiceActivity {
     private TtsChannelHandler ttsChannelHandler;
     private MethodChannel.Result pendingSafResult;
     private String pendingSafDestPath;
+    // BUG-427/TODO-852: when API 26+ has no install permission we route the
+    // user to the system "install unknown apps" setting with
+    // startActivityForResult and stash the in-flight MethodChannel.Result +
+    // the already-validated cache-dir APK path here, so onActivityResult /
+    // onResume can resume the install once permission is granted instead of
+    // tearing the download session down and forcing a re-download.
+    private MethodChannel.Result pendingInstallResult;
+    private String pendingInstallApkPath;
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(2);
 
     // Reader opens this gate when volume-key page turning is enabled so
@@ -271,6 +282,82 @@ public class MainActivity extends AudioServiceActivity {
                         safResult.error("SAF_ERROR", e.getMessage(), null));
                 }
             });
+            return;
+        }
+        if (requestCode == INSTALL_PERMISSION_REQUEST) {
+            // BUG-427/TODO-852: returning from the "install unknown apps"
+            // setting. resultCode is usually RESULT_CANCELED here (the settings
+            // page does not setResult), so we re-check canRequestPackageInstalls
+            // rather than trust resultCode. On success we resume the install
+            // with the stashed, already-cache-dir-validated APK path — the
+            // updater never re-downloads (HBK-AUDIT-058).
+            resumePendingInstall();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // BUG-427/TODO-852: belt-and-braces for OEMs whose settings page does
+        // not deliver onActivityResult after the permission grant. If a pending
+        // install is still parked and the permission is now granted, resume it
+        // here. resumePendingInstall is a no-op when nothing is parked, and only
+        // proceeds when canRequestPackageInstalls is true, so a benign onResume
+        // (e.g. permission still off) leaves the pending result intact for the
+        // user to grant later — it never double-fires the MethodChannel.Result.
+        if (pendingInstallResult != null
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && context.getPackageManager().canRequestPackageInstalls()) {
+            resumePendingInstall();
+        }
+    }
+
+    // BUG-427/TODO-852: finalize a parked install-permission request exactly
+    // once. Clears the stashed fields up front so it can never re-enter, then
+    // decides the single terminal outcome for the in-flight Result:
+    //   * permission still not granted -> INSTALL_PERMISSION_REQUIRED (Dart
+    //     keeps the apk and offers a manual retry);
+    //   * stashed path lost -> INSTALL_ERROR;
+    //   * otherwise resume the install with the already-validated cache-dir apk.
+    private void resumePendingInstall() {
+        final MethodChannel.Result installResult = pendingInstallResult;
+        final String apkPath = pendingInstallApkPath;
+        pendingInstallResult = null;
+        pendingInstallApkPath = null;
+        if (installResult == null) return;
+        boolean granted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && context.getPackageManager().canRequestPackageInstalls();
+        if (!granted) {
+            installResult.error("INSTALL_PERMISSION_REQUIRED",
+                "Enable installing unknown apps for Hibiki, then retry", null);
+            return;
+        }
+        if (apkPath == null || apkPath.isEmpty()) {
+            installResult.error("INSTALL_ERROR",
+                "Pending install APK path was lost", null);
+            return;
+        }
+        launchApkInstaller(new File(apkPath), installResult);
+    }
+
+    // BUG-427/TODO-852: the actual FileProvider + ACTION_VIEW install launch,
+    // shared by the permission-already-granted path and the resume path so the
+    // intent construction lives in exactly one place (no copy drift). Reports
+    // the terminal outcome on the supplied Result.
+    private void launchApkInstaller(File apkFile, MethodChannel.Result result) {
+        try {
+            Uri apkUri = FileProvider.getUriForFile(
+                    context,
+                    BuildConfig.APPLICATION_ID + ".provider",
+                    apkFile);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+            result.success(true);
+        } catch (Exception e) {
+            result.error("INSTALL_ERROR", e.getMessage(), null);
         }
     }
 
@@ -352,6 +439,14 @@ public class MainActivity extends AudioServiceActivity {
                         result.error("INVALID_PATH", "APK path is null", null);
                         return;
                     }
+                    // BUG-427/TODO-852: a previous install is still parked
+                    // waiting on the permission grant. Finalize it first so a
+                    // stuck/abandoned pending result can never permanently lock
+                    // out the install feature (its Result is resolved here, the
+                    // fields cleared, before we start the new request).
+                    if (pendingInstallResult != null) {
+                        resumePendingInstall();
+                    }
                     try {
                         File apkFile = new File(path);
                         // HBK-AUDIT-058: only install an APK that lives in our
@@ -369,26 +464,28 @@ public class MainActivity extends AudioServiceActivity {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                                 && !context.getPackageManager()
                                         .canRequestPackageInstalls()) {
+                            // BUG-427/TODO-852: route to the setting with
+                            // startActivityForResult (NOT startActivity, and NOT
+                            // FLAG_ACTIVITY_NEW_TASK — a new task detaches the
+                            // result callback so onActivityResult never fires).
+                            // Launch the setting first; only stash the in-flight
+                            // Result + already-validated cache-dir path AFTER the
+                            // launch succeeds, then return immediately. This keeps
+                            // the return path isolated from the catch below: if
+                            // startActivityForResult throws, nothing is parked and
+                            // the catch resolves the Result once with INSTALL_ERROR
+                            // — the same Result is never resolved twice. The parked
+                            // Result is resolved later by resumePendingInstall().
                             Intent settings = new Intent(
                                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                                 Uri.parse("package:" + context.getPackageName()));
-                            settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            context.startActivity(settings);
-                            result.error("INSTALL_PERMISSION_REQUIRED",
-                                "Enable installing unknown apps for Hibiki, then retry",
-                                null);
+                            startActivityForResult(
+                                settings, INSTALL_PERMISSION_REQUEST);
+                            pendingInstallResult = result;
+                            pendingInstallApkPath = apkCanon;
                             return;
                         }
-                        Uri apkUri = FileProvider.getUriForFile(
-                                context,
-                                BuildConfig.APPLICATION_ID + ".provider",
-                                apkFile);
-                        Intent intent = new Intent(Intent.ACTION_VIEW);
-                        intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
-                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        context.startActivity(intent);
-                        result.success(true);
+                        launchApkInstaller(apkFile, result);
                     } catch (Exception e) {
                         result.error("INSTALL_ERROR", e.getMessage(), null);
                     }

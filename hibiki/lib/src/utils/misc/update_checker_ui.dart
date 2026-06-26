@@ -125,6 +125,65 @@ class UpdateAvailableDialog extends StatelessWidget {
   }
 }
 
+/// BUG-427/TODO-852: shown when the Android install fails because the
+/// "install unknown apps" permission is not yet granted. The user is sent to
+/// the system setting by the native side; this dialog lets them retry the
+/// install (reusing the already-downloaded apk) once they return, or cancel.
+/// Pops `true` to retry, `false`/dismiss to cancel.
+class InstallPermissionRetryDialog extends StatelessWidget {
+  const InstallPermissionRetryDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.9,
+      scrollable: false,
+      insetPadding: EdgeInsets.all(tokens.spacing.gap),
+      child: HibikiModalSheetFrame(
+        title: t.update_install_permission_title,
+        leadingIcon: Icons.security_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.update_install_permission_message,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(t.update_install_permission_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(t.update_install_permission_retry),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class WindowsUpdateHandoffResultDialog extends StatelessWidget {
   const WindowsUpdateHandoffResultDialog({
     required this.result,
