@@ -63,4 +63,26 @@ class WindowCaptionChannel {
       // 通道未注册（widget 测试 / 非 window runner 宿主）时静默忽略。
     }
   }
+
+  /// 把窗口/任务栏图标设为 [path] 指向的本地图片（仅 Windows）。
+  ///
+  /// 原生侧用 WIC 解码图片成 big/small HICON 后 WM_SETICON。运行时只改当前
+  /// 窗口图标，改不了 exe 文件本身（文件图标是嵌入资源）。其它平台直接返回
+  /// false 不触达 channel。成功返回 true。
+  static Future<bool> setWindowIcon(String path) async {
+    if (!Platform.isWindows) {
+      return false;
+    }
+    try {
+      final bool? ok = await _channel.invokeMethod<bool>(
+        'setWindowIcon',
+        <String, String>{'path': path},
+      );
+      return ok ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
 }

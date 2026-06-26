@@ -2,28 +2,21 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/base_page.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
+import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
-
-const iconPresetKey = 'app_icon_preset';
-
-const iconAssetMap = <String, String>{
-  'default': 'assets/meta/icon.png',
-  'hibiki_full': 'assets/meta/launcher_icon_full.png',
-  'hibiki_minimal': 'assets/meta/launcher_icon_minimal.png',
-};
 
 /// 应用图标（app icon）设置子页。薄壳：把 [MiscellaneousSettingsBody] 投影进与
 /// 统一设置详情面板完全一致的页壳（见 [buildSettingsDetailShell]），不再使用自带
 /// 的 [AdaptiveSettingsScaffold]——从「外观」设置点进来不会再有脚手架/卡片风格跳变
-/// （TODO-317）。正文是 Android-only 的图标网格，故走 `SettingsDestination.body`
+/// （TODO-317）。正文是 Android/Windows 的图标网格，故走 `SettingsDestination.body`
 /// 逃生口而非 schema items。
 class MiscellaneousSettingsPage extends BasePage {
   const MiscellaneousSettingsPage({super.key});
@@ -87,16 +80,25 @@ class _MiscellaneousSettingsBodyState
   }
 
   Future<void> _loadCurrentIcon() async {
-    if (!Platform.isAndroid) return;
-    final results = await Future.wait([
-      HibikiChannels.iconSwitch.invokeMethod<String>('getCurrentIcon'),
-      HibikiChannels.iconSwitch.invokeMethod<bool>('isCustomShortcutSupported'),
-    ]);
-    if (!mounted) return;
-    setState(() {
-      _currentIcon = (results[0] as String?) ?? 'default';
-      _customSupported = (results[1] as bool?) ?? false;
-    });
+    if (Platform.isAndroid) {
+      final results = await Future.wait([
+        HibikiChannels.iconSwitch.invokeMethod<String>('getCurrentIcon'),
+        HibikiChannels.iconSwitch
+            .invokeMethod<bool>('isCustomShortcutSupported'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _currentIcon = (results[0] as String?) ?? 'default';
+        _customSupported = (results[1] as bool?) ?? false;
+      });
+    } else if (Platform.isWindows) {
+      final String key = await loadIconPresetKey();
+      if (!mounted) return;
+      setState(() {
+        _currentIcon = key;
+        _customSupported = true; // Windows 支持任意图片
+      });
+    }
   }
 
   Future<void> _switchPreset(String key) async {
@@ -104,14 +106,20 @@ class _MiscellaneousSettingsBodyState
     setState(() => _switching = true);
 
     try {
-      final ok = await HibikiChannels.iconSwitch.invokeMethod<bool>(
-        'switchPresetIcon',
-        {'alias': key},
-      );
-      if (ok == true && mounted) {
+      bool ok = false;
+      if (Platform.isAndroid) {
+        ok = (await HibikiChannels.iconSwitch.invokeMethod<bool>(
+              'switchPresetIcon',
+              {'alias': key},
+            )) ==
+            true;
+      } else if (Platform.isWindows) {
+        final String path = await exportPresetIconToFile(key);
+        ok = await WindowCaptionChannel.setWindowIcon(path);
+      }
+      if (ok && mounted) {
         final messenger = ScaffoldMessenger.of(context);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(iconPresetKey, key);
+        await saveIconPresetKey(key);
         if (!mounted) return;
         setState(() => _currentIcon = key);
         messenger.showSnackBar(
@@ -176,17 +184,30 @@ class _MiscellaneousSettingsBodyState
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
 
-    final bytes = await file.readAsBytes();
-    final ok = await HibikiChannels.iconSwitch.invokeMethod<bool>(
-      'createCustomShortcut',
-      {'imageBytes': bytes},
-    );
+    bool ok = false;
+    if (Platform.isAndroid) {
+      final bytes = await file.readAsBytes();
+      ok = (await HibikiChannels.iconSwitch.invokeMethod<bool>(
+            'createCustomShortcut',
+            {'imageBytes': bytes},
+          )) ==
+          true;
+    } else if (Platform.isWindows) {
+      final String persisted = await persistCustomIconFile(file.path);
+      ok = await WindowCaptionChannel.setWindowIcon(persisted);
+      if (ok) {
+        await saveCustomIconPath(persisted);
+        await saveIconPresetKey(customIconKey);
+        if (mounted) setState(() => _currentIcon = customIconKey);
+      }
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-            ok == true ? t.icon_shortcut_created : t.icon_shortcut_unsupported),
+        content: Text(Platform.isAndroid
+            ? (ok ? t.icon_shortcut_created : t.icon_shortcut_unsupported)
+            : (ok ? t.icon_switch_success : t.icon_shortcut_unsupported)),
       ),
     );
   }
@@ -196,7 +217,7 @@ class _MiscellaneousSettingsBodyState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (Platform.isAndroid)
+        if (Platform.isAndroid || Platform.isWindows)
           AdaptiveSettingsSection(
             title: t.app_icon_label,
             children: [
@@ -231,17 +252,17 @@ class _MiscellaneousSettingsBodyState
       _IconOption(
         key: 'default',
         label: t.icon_default,
-        asset: 'assets/meta/splash_source.png',
+        asset: presetIconAssets['default']!,
       ),
       _IconOption(
         key: 'hibiki_full',
         label: t.icon_full,
-        asset: 'assets/meta/launcher_icon_full.png',
+        asset: presetIconAssets['hibiki_full']!,
       ),
       _IconOption(
         key: 'hibiki_minimal',
         label: t.icon_minimal,
-        asset: 'assets/meta/launcher_icon_minimal.png',
+        asset: presetIconAssets['hibiki_minimal']!,
       ),
     ];
 

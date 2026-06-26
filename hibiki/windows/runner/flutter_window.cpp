@@ -153,6 +153,96 @@ std::optional<std::string> CopyImageFileToClipboard(HWND hwnd,
   return std::nullopt;
 }
 
+// Decodes |path| via WIC, scales to |size|x|size| 32bpp BGRA, and builds a
+// color+mask HICON. Returns nullptr on any failure. Caller owns the result and
+// must DestroyIcon it. Mirrors the WIC pipeline used by CopyImageFileToClipboard.
+HICON CreateIconFromImageFile(const std::wstring& path, int size) {
+  if (path.empty() || size <= 0) {
+    return nullptr;
+  }
+  using Microsoft::WRL::ComPtr;
+  ComPtr<IWICImagingFactory> factory;
+  HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  ComPtr<IWICBitmapDecoder> decoder;
+  hr = factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ,
+                                          WICDecodeMetadataCacheOnLoad, &decoder);
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  ComPtr<IWICBitmapFrameDecode> frame;
+  hr = decoder->GetFrame(0, &frame);
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  ComPtr<IWICBitmapScaler> scaler;
+  hr = factory->CreateBitmapScaler(&scaler);
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  hr = scaler->Initialize(frame.Get(), size, size,
+                          WICBitmapInterpolationModeFant);
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  ComPtr<IWICFormatConverter> converter;
+  hr = factory->CreateFormatConverter(&converter);
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  hr = converter->Initialize(scaler.Get(), GUID_WICPixelFormat32bppBGRA,
+                             WICBitmapDitherTypeNone, nullptr, 0.0,
+                             WICBitmapPaletteTypeCustom);
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  const UINT stride = static_cast<UINT>(size) * 4;
+  std::vector<BYTE> pixels(static_cast<size_t>(stride) * size);
+  hr = converter->CopyPixels(nullptr, stride,
+                             static_cast<UINT>(pixels.size()), pixels.data());
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+  BITMAPINFO bmi;
+  ZeroMemory(&bmi, sizeof(bmi));
+  bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bmi.bmiHeader.biWidth = size;
+  bmi.bmiHeader.biHeight = -size;  // top-down
+  bmi.bmiHeader.biPlanes = 1;
+  bmi.bmiHeader.biBitCount = 32;
+  bmi.bmiHeader.biCompression = BI_RGB;
+  void* dib_pixels = nullptr;
+  HBITMAP color = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &dib_pixels,
+                                   nullptr, 0);
+  if (color == nullptr || dib_pixels == nullptr) {
+    if (color != nullptr) {
+      DeleteObject(color);
+    }
+    return nullptr;
+  }
+  memcpy(dib_pixels, pixels.data(), pixels.size());
+  // 32bpp BGRA color bitmap 带 alpha 通道时，CreateIconIndirect 直接用 color 的
+  // alpha 做混合、忽略 AND mask 的内容，故 mask 仅需存在（1bpp 占位）即可，内容
+  // 无关。若日后把 color 改回 24bpp，必须改用真正的 AND mask，否则透明区域花屏。
+  HBITMAP mask = CreateBitmap(size, size, 1, 1, nullptr);
+  if (mask == nullptr) {
+    DeleteObject(color);
+    return nullptr;
+  }
+  ICONINFO icon_info;
+  ZeroMemory(&icon_info, sizeof(icon_info));
+  icon_info.fIcon = TRUE;
+  icon_info.hbmColor = color;
+  icon_info.hbmMask = mask;
+  HICON icon = CreateIconIndirect(&icon_info);
+  DeleteObject(color);
+  DeleteObject(mask);
+  return icon;
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -228,6 +318,29 @@ bool FlutterWindow::OnCreate() {
             FlashWindowEx(&flash_info);
           }
           result->Success();
+        } else if (call.method_name() == "setWindowIcon") {
+          // Runtime window/taskbar icon (preset or user-picked image). Decodes
+          // the file to big+small HICONs and WM_SETICONs them. Cannot change the
+          // exe's embedded file icon — Dart re-applies the preference on startup.
+          const auto* icon_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          std::wstring icon_path;
+          if (icon_args != nullptr) {
+            const auto path_it =
+                icon_args->find(flutter::EncodableValue("path"));
+            if (path_it != icon_args->end()) {
+              const auto* s = std::get_if<std::string>(&path_it->second);
+              if (s != nullptr) {
+                icon_path = Utf8ToWideString(*s);
+              }
+            }
+          }
+          if (icon_path.empty()) {
+            result->Error("bad_args", "Missing icon path");
+          } else {
+            const bool ok = ApplyWindowIcon(icon_path);
+            result->Success(flutter::EncodableValue(ok));
+          }
         } else {
           result->NotImplemented();
         }
@@ -509,7 +622,46 @@ void FlutterWindow::ApplyCaptionColors(uint32_t caption_argb,
   DwmSetWindowAttribute(hwnd, 36, &text, sizeof(text));
 }
 
+bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr) {
+    return false;
+  }
+  int big_size = GetSystemMetrics(SM_CXICON);
+  int small_size = GetSystemMetrics(SM_CXSMICON);
+  HICON new_big = CreateIconFromImageFile(path, big_size > 0 ? big_size : 32);
+  HICON new_small =
+      CreateIconFromImageFile(path, small_size > 0 ? small_size : 16);
+  if (new_big == nullptr && new_small == nullptr) {
+    return false;
+  }
+  if (new_big != nullptr) {
+    SendMessage(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(new_big));
+    if (icon_big_ != nullptr) {
+      DestroyIcon(icon_big_);
+    }
+    icon_big_ = new_big;
+  }
+  if (new_small != nullptr) {
+    SendMessage(hwnd, WM_SETICON, ICON_SMALL,
+                reinterpret_cast<LPARAM>(new_small));
+    if (icon_small_ != nullptr) {
+      DestroyIcon(icon_small_);
+    }
+    icon_small_ = new_small;
+  }
+  return true;
+}
+
 void FlutterWindow::OnDestroy() {
+  if (icon_big_ != nullptr) {
+    DestroyIcon(icon_big_);
+    icon_big_ = nullptr;
+  }
+  if (icon_small_ != nullptr) {
+    DestroyIcon(icon_small_);
+    icon_small_ = nullptr;
+  }
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

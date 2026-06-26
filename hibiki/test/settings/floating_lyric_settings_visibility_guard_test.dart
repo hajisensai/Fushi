@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// controls (TODO-038). The bug: the three floating-lyric items were gated to
 /// `Platform.isAndroid`, so Windows desktop users — whose runner-owned strip is
 /// fully supported — never saw the switch and the feature looked broken /
-/// "permission gated". These guards pin that the gate now also allows Windows
-/// while the unrelated Android-only `app_icon` picker stays Android-only.
+/// "permission gated". These guards pin that the gate now also allows Windows.
+/// The `app_icon` picker likewise now allows Windows (runtime window/taskbar
+/// icon switching — preset + custom image), so its gate widened from
+/// Android-only too.
 void main() {
   late String schema;
 
@@ -59,14 +61,20 @@ void main() {
       });
     }
 
-    test('app_icon picker stays Android-only (unrelated gate untouched)', () {
+    test('app_icon picker is visible on Android and Windows', () {
       final String block = itemBlock('appearance.app_icon');
       expect(
-        RegExp(r'visible:\s*\(_\)\s*=>\s*Platform\.isAndroid,').hasMatch(block),
+        block.contains('Platform.isAndroid || Platform.isWindows'),
         isTrue,
-        reason: 'app_icon is a genuinely Android-only picker; do not widen it.',
+        reason: 'app_icon picker now supports Windows runtime icon switching '
+            '(preset + custom image), so its gate widened from Android-only.',
       );
-      expect(block.contains('Platform.isWindows'), isFalse);
+      // Must not be regated to Android-only.
+      expect(
+        RegExp(r'visible:\s*\(_\)\s*=>\s*Platform\.isAndroid,').hasMatch(block),
+        isFalse,
+        reason: 'app_icon must not be gated to Android only.',
+      );
     });
   });
 }
