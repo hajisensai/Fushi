@@ -344,6 +344,21 @@ jobs:
           mkdir -p hibiki/build/release-artifacts
           rm -f hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
           cp "$installer" "hibiki/build/release-artifacts/$asset_name"
+      # TODO-866: same fragility as the Android release workflow -- the prepared
+      # Windows installer is otherwise only uploaded as a GitHub Release asset
+      # (softprops steps below). When that publish intermittently 403s, the
+      # installer is built successfully but has NO download path and dies with
+      # the runner. Capture it as a workflow-run artifact so the build is always
+      # downloadable from the run page, decoupled from Release publish. Pure
+      # additive capture: touches no tag/publish/Latest/formal logic.
+      - name: Upload Windows installer artifact to workflow run
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hibiki-${{ steps.channel.outputs.channel }}-windows-setup-${{ github.sha }}
+          path: hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
