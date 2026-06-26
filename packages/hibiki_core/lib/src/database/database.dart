@@ -1150,6 +1150,13 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(mediaSources)..where((t) => t.id.equals(id)))
           .write(MediaSourcesCompanion(label: Value(label)));
 
+  /// 更新来源排序权重（来源库 UI 拖拽重排后逐行回写，与 [getAllMediaSources] /
+  /// [getMediaSourcesByKind] 的 orderBy(sortOrder, id) 对齐）。只写 sortOrder 列，
+  /// 不动其它字段。
+  Future<void> updateMediaSourceSortOrder(int id, int sortOrder) =>
+      (update(mediaSources)..where((t) => t.id.equals(id)))
+          .write(MediaSourcesCompanion(sortOrder: Value(sortOrder)));
+
   // ── audio cues ──────────────────────────────────────────────────
   // [bookKey] is the owner key: either an audiobook bookKey OR an srt_books.uid
   // (SRT books still key their cues on their own uid string).

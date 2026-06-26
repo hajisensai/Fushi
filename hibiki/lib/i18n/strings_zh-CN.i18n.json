@@ -1861,5 +1861,19 @@
   "handlebar_video_clip": "视频片段 (GIF)",
   "dict_update_name_mismatch_title": "词典名称不一致",
   "dict_update_name_mismatch_body": "所选文件是「$incoming」，但你正在更新「$existing」。仍要替换吗？",
-  "dialog_replace": "替换"
+  "dialog_replace": "替换",
+  "media_source_manage_title": "管理来源",
+  "media_source_add_local_folder": "本地文件夹",
+  "media_source_add_network": "网络",
+  "media_source_network_coming_soon": "网络来源敬请期待",
+  "media_source_rescan": "重新扫描",
+  "media_source_open_folder": "打开文件夹",
+  "media_source_remove": "移除来源",
+  "media_source_remove_keeps_media": "移除来源不会删除已导入的媒体。",
+  "media_source_scan_error": "扫描失败",
+  "media_source_no_sources": "暂无来源",
+  "media_source_add": "添加来源",
+  "media_source_count_video": "$n 个视频",
+  "media_source_count_book": "$n 本书",
+  "media_source_last_scan": "上次扫描 $time"
 }

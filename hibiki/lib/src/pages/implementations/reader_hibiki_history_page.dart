@@ -289,6 +289,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ref: ref,
           appModel: appModel,
         ),
+        _headerAction(
+          tooltip: t.media_source_manage_title,
+          icon: Icons.folder_copy_outlined,
+          onTap: _openManageSources,
+        ),
         // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
         // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
         // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
@@ -322,6 +327,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       icon: icon,
       onTap: onTap,
     );
+  }
+
+  /// 打开「管理来源」对话框（书籍来源库）。关闭后失效书架 provider 刷新列表
+  /// （扫描可能新增 EPUB）。
+  Future<void> _openManageSources() async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => const MediaSourcesDialog(mediaKind: 'book'),
+    );
+    if (!mounted) return;
+    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(srtBooksProvider);
   }
 
   void _openCollections() {

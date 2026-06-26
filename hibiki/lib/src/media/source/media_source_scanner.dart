@@ -163,7 +163,7 @@ class MediaSourceScanner {
       if (source.mediaKind == 'book') {
         mediaCount = await _importBooks(plan, source.id);
       } else if (source.mediaKind == 'video') {
-        mediaCount = await _importVideos(plan, source.id);
+        mediaCount = await _importVideos(plan, source.id, files);
       } else {
         throw ArgumentError.value(
           source.mediaKind,
@@ -201,55 +201,102 @@ class MediaSourceScanner {
   }
 
   /// Imports every video in the plan (with sidecar subtitle cues); returns count.
-  Future<int> _importVideos(ScanPlan plan, int sourceId) async {
+  ///
+  /// [fs] is the source file system the scan listed from. Subtitles are read via
+  /// [SourceFileSystem.copyToLocal] (local = original path unchanged; network =
+  /// downloaded to a temp dir) then decoded with [readTextWithEncoding] so the
+  /// SJIS/CP932/EUC-JP charset detection used by the manual import path is
+  /// preserved (TODO-817 M1b TODO②). Covers are extracted via [extractVideoCover]
+  /// (TODO-817 M1b TODO①); ffmpeg failure / mobile simply yields a null cover and
+  /// the video still imports (shelf shows a placeholder).
+  Future<int> _importVideos(
+    ScanPlan plan,
+    int sourceId,
+    SourceFileSystem fs,
+  ) async {
     if (plan.videos.isEmpty) return 0;
     // Existing book_uid set for silent same-name dedup (matches import dialog).
     final Set<String> existingKeys =
         (await _videoRepo.listAll()).map((VideoBookRow r) => r.bookUid).toSet();
 
-    int count = 0;
-    for (final ScanVideoItem item in plan.videos) {
-      final String bookUid = uniqueVideoBookUid(
-        singleVideoBookUid(item.videoPath),
-        existingKeys,
-      );
-      existingKeys.add(bookUid);
+    // Temp dir only used by non-local transports (copyToLocal downloads here);
+    // for local transport copyToLocal returns the original path unchanged.
+    Directory? subtitleTmp;
 
-      String? subtitleSource;
-      String? subtitleFormat;
-      List<AudioCue> cues = const <AudioCue>[];
-      if (item.subtitlePath != null) {
-        final String fmt = _extOf(p.basename(item.subtitlePath!));
-        final String content =
-            await readTextWithEncoding(File(item.subtitlePath!));
-        cues = parseSubtitleCues(
-          content: content,
-          format: fmt,
-          bookUid: bookUid,
+    try {
+      int count = 0;
+      for (final ScanVideoItem item in plan.videos) {
+        final String bookUid = uniqueVideoBookUid(
+          singleVideoBookUid(item.videoPath),
+          existingKeys,
         );
-        subtitleSource = item.subtitlePath;
-        subtitleFormat = fmt;
-      }
+        existingKeys.add(bookUid);
 
-      await _videoRepo.saveVideoBook(
-        VideoBooksCompanion(
-          bookUid: Value(bookUid),
-          title: Value(p.basenameWithoutExtension(item.videoPath)),
-          videoPath: Value(item.videoPath),
-          subtitleSource: Value<String?>(subtitleSource),
-          subtitleFormat: Value<String?>(subtitleFormat),
-          embeddedSubtitleTrack: subtitleSource == null
-              ? const Value<int?>(0)
-              : const Value<int?>(null),
-          importedAt: Value(DateTime.now()),
-        ),
-        sourceId: sourceId,
-      );
-      if (cues.isNotEmpty) {
-        await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
+        String? subtitleSource;
+        String? subtitleFormat;
+        List<AudioCue> cues = const <AudioCue>[];
+        if (item.subtitlePath != null) {
+          final String fmt = _extOf(p.basename(item.subtitlePath!));
+          subtitleTmp ??= Directory.systemTemp.createTempSync('m1c_scan_subs_');
+          final String localSub =
+              await fs.copyToLocal(item.subtitlePath!, subtitleTmp.path);
+          // readTextWithEncoding(File) keeps the non-UTF-8 charset detection;
+          // local copyToLocal returns the original path so behaviour is unchanged.
+          final String content = await readTextWithEncoding(File(localSub));
+          cues = parseSubtitleCues(
+            content: content,
+            format: fmt,
+            bookUid: bookUid,
+          );
+          subtitleSource = item.subtitlePath;
+          subtitleFormat = fmt;
+        }
+
+        // Cover only for local files (extractVideoCover needs a local path);
+        // network cover extraction is deferred to M2/M3. Cover is an OPTIONAL
+        // enhancement: ffmpeg-missing returns null, and any unexpected failure
+        // (e.g. path_provider unavailable) must never abort the whole scan, so
+        // it is caught here and degrades to a null cover (shelf placeholder).
+        String? coverPath;
+        if (fs.isLocal) {
+          try {
+            coverPath = await extractVideoCover(
+              videoPath: item.videoPath,
+              bookUid: bookUid,
+            );
+          } catch (e) {
+            debugPrint('MediaSourceScanner cover extract failed for '
+                '$bookUid: $e');
+          }
+        }
+
+        await _videoRepo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(bookUid),
+            title: Value(p.basenameWithoutExtension(item.videoPath)),
+            videoPath: Value(item.videoPath),
+            coverPath: Value<String?>(coverPath),
+            subtitleSource: Value<String?>(subtitleSource),
+            subtitleFormat: Value<String?>(subtitleFormat),
+            embeddedSubtitleTrack: subtitleSource == null
+                ? const Value<int?>(0)
+                : const Value<int?>(null),
+            importedAt: Value(DateTime.now()),
+          ),
+          sourceId: sourceId,
+        );
+        if (cues.isNotEmpty) {
+          await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
+        }
+        count++;
       }
-      count++;
+      return count;
+    } finally {
+      if (subtitleTmp != null) {
+        try {
+          subtitleTmp.deleteSync(recursive: true);
+        } catch (_) {}
+      }
     }
-    return count;
   }
 }
