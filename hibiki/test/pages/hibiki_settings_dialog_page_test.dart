@@ -78,4 +78,9 @@ class _SettingsDialogTestAppModel extends AppModel {
   // prefsRepo，故显式后备，避免渲染该开关时 prefsRepo 空指针。
   @override
   bool get reverseReaderBottomBar => false;
+
+  // TODO-728: gamepad auto-immersive also reads prefsRepo; override so the
+  // empty-prefsRepo dialog harness does not null-check.
+  @override
+  bool get gamepadAutoImmersive => false;
 }

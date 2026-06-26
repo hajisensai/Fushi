@@ -257,7 +257,41 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
+  // TODO-728: single sink that makes the chrome visible/hidden. Shared by the
+  // user toggle ([_toggleChrome]) and the gamepad-presence path
+  // ([_applyGamepadPresence]). It ONLY flips _showChrome + reapplies insets +
+  // requestFocus() -- it NEVER touches the focus model beyond the same cheap
+  // requestFocus() the old _toggleChrome did (TODO-700 invariant: focus stays on
+  // the reading content; the bottom bar remains ExcludeFocus and out of the
+  // traversal pool). No-op when already in the requested state so a redundant
+  // gamepad event does not re-run the WebView inset eval.
+  void _setChromeVisible(bool visible) {
+    if (_showChrome == visible) return;
+    _rebuild(() {
+      _showChrome = visible;
+    });
+    _applyChromeInsets();
+    _focusNode.requestFocus();
+  }
+
+  /// TODO-728: applies the gamepad auto-immersive rule. [present] true while a
+  /// controller is in use, false once it is gone. Hiding is recorded in
+  /// [_chromeHiddenByGamepad] so only a gamepad-driven hide is auto-restored when
+  /// the controller leaves; a manual toggle in between clears the flag and wins.
+  void _applyGamepadPresence(bool present) {
+    final GamepadImmersiveState next = resolveGamepadImmersive(
+      present: present,
+      showChrome: _showChrome,
+      hiddenByGamepad: _chromeHiddenByGamepad,
+    );
+    _chromeHiddenByGamepad = next.hiddenByGamepad;
+    _setChromeVisible(next.showChrome);
+  }
+
   void _toggleChrome() {
+    // A manual toggle takes ownership: clear the gamepad-hide flag so a later
+    // controller-gone event does not override the user's explicit choice.
+    _chromeHiddenByGamepad = false;
     _rebuild(() {
       _showChrome = !_showChrome;
     });

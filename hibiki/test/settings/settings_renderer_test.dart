@@ -1061,6 +1061,11 @@ class _RendererTestAppModel extends AppModel {
 
   @override
   bool get reverseReaderBottomBar => false;
+
+  // TODO-728: gamepad auto-immersive also reads prefsRepo; override so the
+  // empty-prefsRepo renderer harness does not null-check (mirrors above).
+  @override
+  bool get gamepadAutoImmersive => false;
 }
 
 class _VersionedRendererTestAppModel extends _RendererTestAppModel {

@@ -228,6 +228,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 的功能维度由专项 widget 行为测试覆盖（与 reverse-bottom-bar 的位置镜像正交）。
   'reading/Invert bottom-bar skip buttons':
       'test/media/audiobook/audiobook_play_bar_reverse_test.dart',
+  // TODO-728: bottom-bar current-sentence toggle. change/persist/restore proven
+  // here through the DB; the render effect (cue Text shown/hidden without a
+  // layout jump) is covered by a dedicated widget test, and the per-reader
+  // layering by the source pref round-trip.
+  'reading/Show current sentence':
+      'test/media/audiobook/audiobook_play_bar_show_cue_test.dart + test/media/sources/reader_chrome_prefs_728_test.dart',
+  // TODO-728: top reading-progress position (left/center/right). Effect point is
+  // the reader page _buildTopProgressBar Align/textAlign (WebView reader chrome,
+  // not reader CSS / theme tree); covered by pure-fn mapping + tap-toggle guard.
+  'reading/Progress position':
+      'test/reader/reader_top_progress_test.dart + test/media/sources/reader_chrome_prefs_728_test.dart',
+  // TODO-728: gamepad auto-immersive. Effect point is GamepadService presence ->
+  // reader _applyGamepadPresence chrome hide/restore (desktop gamepad, no render
+  // tree); covered by the presence + ownership unit tests.
+  'reading/Auto-immersive on gamepad':
+      'test/shortcuts/gamepad_presence_test.dart + test/reader/reader_gamepad_immersive_test.dart',
 };
 
 /// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。

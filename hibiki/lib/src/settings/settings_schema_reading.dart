@@ -617,6 +617,23 @@ SettingsDestination buildReadingDestination() {
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
           ),
+          // TODO-728: when a game controller is present, auto-enter immersive
+          // (chrome-hidden) reading. Global AppModel preference (desktop/Apple
+          // gamepad players); default false. behavior group order 16.
+          SettingsSwitchItem(
+            id: 'reading_controls.gamepad_auto_immersive',
+            title: t.gamepad_auto_immersive,
+            icon: Icons.sports_esports_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 16,
+            ),
+            value: (SettingsContext c) => c.appModel.gamepadAutoImmersive,
+            onChanged: (SettingsContext c, bool value) {
+              c.appModel.toggleGamepadAutoImmersive();
+              notifyReaderChromeChanged(c);
+            },
+          ),
         ],
       ),
       // TODO-745 / TODO-830：「翻页方向」分组只收**真正反转翻页/句子方向**的

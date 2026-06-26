@@ -45,6 +45,7 @@ import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
+import 'package:hibiki/src/reader/reader_gamepad_immersive.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/reader/reader_top_progress.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
@@ -907,6 +908,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
   bool _showChrome = true;
+  // TODO-728: true when the chrome was hidden BY the gamepad-present auto-immersive
+  // path (not by the user). Used so that losing the controller restores the
+  // chrome ONLY if the gamepad hid it; a manual toggle clears this flag and takes
+  // ownership (a later controller-gone event then does not fight the user).
+  bool _chromeHiddenByGamepad = false;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
   // TODO-690 / BUG-399：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
@@ -1038,6 +1044,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     ReaderHibikiSource.onChromeReloadLive = () {
       if (!mounted) return;
       setState(() {});
+    };
+    // TODO-728: controller presence changes drive the reader's auto-immersive
+    // mode. The AppModel bridge already gates on gamepadAutoImmersive, so this
+    // only fires when the user opted in.
+    ReaderHibikiSource.onGamepadPresenceChanged = (bool present) {
+      if (!mounted) return;
+      _applyGamepadPresence(present);
     };
     _initBook();
   }
@@ -1326,6 +1339,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     ReaderHibikiSource.onSettingsChangedLive = null;
     ReaderHibikiSource.onLayoutReloadLive = null;
     ReaderHibikiSource.onChromeReloadLive = null;
+    ReaderHibikiSource.onGamepadPresenceChanged = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {

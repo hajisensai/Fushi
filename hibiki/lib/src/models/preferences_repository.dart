@@ -467,6 +467,23 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-728: when a physical game controller is present, auto-enter the reader's
+  // immersive (chrome-hidden) mode. Global preference (mirrors
+  // showMediaNotification), default false = current behavior (controllers never
+  // hide the chrome on their own).
+  bool get gamepadAutoImmersive =>
+      getPref('gamepad_auto_immersive', defaultValue: false) as bool;
+
+  void toggleGamepadAutoImmersive() async {
+    await setPref('gamepad_auto_immersive', !gamepadAutoImmersive);
+    notifyListeners();
+  }
+
+  Future<void> setGamepadAutoImmersive(bool value) async {
+    await setPref('gamepad_auto_immersive', value);
+    notifyListeners();
+  }
+
   /// 启用的 mpv 着色器（JSON 字符串数组的文件名，相对着色器目录）。空串=未启用。
   /// 解析/编码见 video_shader_manager.dart 的 encode/decodeEnabledShaders。
   String get videoShadersEnabled =>

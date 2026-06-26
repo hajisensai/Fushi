@@ -437,6 +437,13 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// re-eval + re-anchor) and [onLayoutReloadLive] (which re-runs pagination).
   static VoidCallback? onChromeReloadLive;
 
+  /// TODO-728: fired when a physical game controller's presence changes (true =
+  /// now present, false = gone). The open reader applies/clears its
+  /// gamepad-driven immersive mode. Only wired up by the reader page; the
+  /// AppModel-side bridge already gates on [AppModel.gamepadAutoImmersive] so
+  /// this fires only when the user opted in.
+  static void Function(bool present)? onGamepadPresenceChanged;
+
   bool get volumePageTurningEnabled => getPreference<bool>(
       key: 'volume_page_turning_enabled', defaultValue: true);
 

@@ -533,6 +533,12 @@ class AppModel with ChangeNotifier {
   late final GamepadService gamepadService = GamepadService(
     navigatorKey: navigatorKey,
     registry: shortcutRegistry,
+    // TODO-728: bridge controller presence to the open reader's auto-immersive
+    // mode, gated on the user preference so it is inert unless opted in.
+    onPresenceChanged: (bool present) {
+      if (!gamepadAutoImmersive) return;
+      ReaderHibikiSource.onGamepadPresenceChanged?.call(present);
+    },
   );
 
   /// Resets the focus highlight to touch mode on every route push/pop so a ring
@@ -2140,6 +2146,13 @@ class AppModel with ChangeNotifier {
   bool get reverseReaderBottomBar => prefsRepo.reverseReaderBottomBar;
   void toggleReverseReaderBottomBar() =>
       prefsRepo.toggleReverseReaderBottomBar();
+
+  // TODO-728: gamepad-present auto-immersive preference, delegated to prefsRepo
+  // (mirrors showMediaNotification). Default false.
+  bool get gamepadAutoImmersive => prefsRepo.gamepadAutoImmersive;
+  void toggleGamepadAutoImmersive() => prefsRepo.toggleGamepadAutoImmersive();
+  Future<void> setGamepadAutoImmersive(bool value) =>
+      prefsRepo.setGamepadAutoImmersive(value);
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
