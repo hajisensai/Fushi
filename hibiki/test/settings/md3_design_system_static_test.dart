@@ -632,6 +632,8 @@ void main() {
           'Dictionary popup chip/content typography is dense lookup content.',
       'lib/src/pages/implementations/dictionary_popup_webview.dart':
           'WebView result theming injects MD3 ColorScheme surface roles into popup CSS.',
+      'lib/src/lookup/global_lookup_render.dart':
+          'Global lookup popup theming injects MD3 ColorScheme surface roles into popup CSS (same as dictionary_popup_webview).',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
       'lib/src/pages/implementations/media_item_dialog_page.dart':
