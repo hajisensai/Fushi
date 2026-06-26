@@ -170,8 +170,19 @@ List<Map<String, dynamic>> _pronunciations(dynamic raw) {
       'dictionary': dict,
       'dictionaryIndex': 0,
       'dictionaryAlias': dict,
-      'pitches': pos
-          .map((int p) => <String, dynamic>{'position': p, 'tags': <dynamic>[]})
+      // 一个词典对一词可给多个候选 downstep：把 positions 列表摊平成
+      // 多个 TermPronunciation（每个 int 一个 pitch-accent 对象）。
+      // 注意 positions 是标量 number，不是 [p]。
+      'pronunciations': pos
+          .map(
+            (int p) => <String, dynamic>{
+              'type': 'pitch-accent',
+              'positions': p,
+              'nasalPositions': <int>[],
+              'devoicePositions': <int>[],
+              'tags': <dynamic>[],
+            },
+          )
           .toList(),
     });
   }

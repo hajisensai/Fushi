@@ -8,6 +8,7 @@ DictionaryEntry _entry({
   String reading = 'わかる',
   String meaning = '[{"type":"structured-content","content":"to understand"}]',
   String dict = 'Jitendex',
+  List<int> positions = const <int>[2],
 }) {
   final extra = jsonEncode({
     'definitionTags': 'v5 vi',
@@ -23,10 +24,7 @@ DictionaryEntry _entry({
       }
     ],
     'pitches': [
-      {
-        'dictName': 'Pitch',
-        'positions': [2]
-      }
+      {'dictName': 'Pitch', 'positions': positions}
     ],
   });
   return DictionaryEntry(
@@ -106,6 +104,58 @@ void main() {
                   as List)
               .first as Map<String, dynamic>)['definitions'] as List;
       expect((def.first as Map)['entries'], ['to understand']);
+    });
+
+    test('pronunciations follow official TermPronunciation shape', () {
+      final result = DictionarySearchResult(
+          searchTerm: 'わかる', entries: [_entry()], bestLength: 3);
+      final de =
+          (buildYomitanTermEntriesResponse(result, 0)['dictionaryEntries']
+                  as List)
+              .first as Map<String, dynamic>;
+
+      // 外层键改名 pitches -> pronunciations，旧顶层键不再存在。
+      expect(de.containsKey('pitches'), isFalse);
+      final pron = de['pronunciations'] as List;
+      expect(pron, isNotEmpty);
+
+      final first = pron.first as Map<String, dynamic>;
+      // 外层五字段保留。
+      expect(first['index'], 0);
+      expect(first['headwordIndex'], 0);
+      expect(first['dictionary'], 'Pitch');
+      expect(first['dictionaryIndex'], 0);
+      expect(first['dictionaryAlias'], 'Pitch');
+
+      // 内层 pronunciations 是 pitch-accent 对象列表。
+      final inner = first['pronunciations'] as List;
+      expect(inner.length, 1);
+      final pa = inner.first as Map<String, dynamic>;
+      expect(pa['type'], 'pitch-accent');
+      // positions 是标量 int，不是 [2]。
+      expect(pa['positions'], 2);
+      expect(pa['nasalPositions'], <int>[]);
+      expect(pa['devoicePositions'], <int>[]);
+      expect(pa['tags'], <dynamic>[]);
+    });
+
+    test('multiple positions flatten to one pitch-accent object each', () {
+      final result = DictionarySearchResult(
+          searchTerm: 'わかる',
+          entries: [
+            _entry(positions: [0, 2])
+          ],
+          bestLength: 3);
+      final de =
+          (buildYomitanTermEntriesResponse(result, 0)['dictionaryEntries']
+                  as List)
+              .first as Map<String, dynamic>;
+      final inner = ((de['pronunciations'] as List).first
+          as Map<String, dynamic>)['pronunciations'] as List;
+      expect(inner.length, 2);
+      expect((inner[0] as Map)['type'], 'pitch-accent');
+      expect((inner[0] as Map)['positions'], 0);
+      expect((inner[1] as Map)['positions'], 2);
     });
 
     test('null result yields empty dictionaryEntries', () {
