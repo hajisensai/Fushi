@@ -313,6 +313,11 @@ class GlobalLookupController {
         // resolveWordAudio / queryLocalAudio -> the configured-source URL.
         final String expression = data['expression']?.toString() ?? '';
         final String reading = data['reading']?.toString() ?? '';
+        // Diagnostic: which audio sources are configured/enabled? A null reply
+        // with 0 enabled sources = nothing to query (config), not a wiring bug.
+        glog('audio: resolve "$expression"/"$reading" '
+            'enabled=${model.enabledAudioSources} '
+            'configs=${model.audioSourceConfigs.length}');
         reply = expression.isEmpty
             ? null
             : await resolveLookupAudioUrl(model, expression, reading);
