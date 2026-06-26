@@ -2745,8 +2745,12 @@ document.addEventListener('click', (e) => {
     //
     // 方案1语义：词条卡片区域(卡片本体文字+其留白)一律保留本层(点文字走上面的选词
     // 分支)，只有点到所有卡片之外的纯弹窗背景(body/no-results 占位)才发 tapOutside 关
-    // 后代。卡片根=.entry(词条卡片) 或 .kanji-card(汉字卡片)，二者覆盖全部正文留白。
-    if (target?.closest('.entry') || target?.closest('.kanji-card')) {
+    // 后代。卡片根=.entry(词条卡片) 或 .kanji-card-section(汉字卡片容器)。汉字卡片真正
+    // 的顶层根是 buildKanjiCards 建的 .kanji-card-section，.kanji-card 只是它的子节点；
+    // 用 .kanji-card 会漏掉「两张 kanji-card 之间的 4px 间隙」和「section 自身的上下外
+    // 边距」——点这些留白两个 closest 都不命中→落 tapOutside 关子窗=死区对汉字卡复发。
+    // 改判 .kanji-card-section 才能覆盖卡间留白 + section 外边距。
+    if (target?.closest('.entry') || target?.closest('.kanji-card-section')) {
         return;
     }
     window.flutter_inappwebview.callHandler('tapOutside');

@@ -595,18 +595,49 @@ function testTapOnPopupBackgroundFiresTapOutside() {
   assert.equal(result.selectCalls, 0, 'background is not text: no selection');
 }
 
-// (4) Tapping inside a kanji card root also keeps the layer (separate render
-// path; 方案1 covers .kanji-card too).
+// (4) Tapping inside a kanji card also keeps the layer. In production a
+// .kanji-card is always wrapped by .kanji-card-section (buildKanjiCards), so the
+// DOM here mirrors that: body > .kanji-card-section > .kanji-card > kanjiGap.
 function testTapInsideKanjiCardKeepsLayer() {
   const context = loadPopup();
+  const section = new FakeElement('div');
+  section.classList.add('kanji-card-section');
   const kanjiCard = new FakeElement('div');
   kanjiCard.classList.add('kanji-card');
   const kanjiGap = new FakeElement('div');
-  context.document.body.appendChild(kanjiCard);
+  context.document.body.appendChild(section);
+  section.appendChild(kanjiCard);
   kanjiCard.appendChild(kanjiGap);
   const result = fireDocumentClick(context, kanjiGap);
   assert.equal(result.tapOutsideCalls, 0,
     'tapping inside a .kanji-card must NOT fire tapOutside (layer kept)');
+}
+
+// (5) TODO-859 NON-author follow-up: the kanji card ROOT is .kanji-card-section
+// (buildKanjiCards), not .kanji-card (a child). Multi-kanji results have a 4px
+// gap between cards plus the section's own top/bottom margin. Those whitespace
+// pixels live inside .kanji-card-section but OUTSIDE every .kanji-card, so a
+// .kanji-card-only predicate misses them -> tapOutside fires -> the dead zone
+// reappears for kanji cards. The fix keys the predicate off .kanji-card-section.
+// DOM: body > .kanji-card-section > [.kanji-card, sectionGap]. sectionGap is a
+// direct child of the section (card-to-card gap / section margin), NOT under
+// any .kanji-card.
+function testTapInKanjiSectionGapKeepsLayer() {
+  const context = loadPopup();
+  const section = new FakeElement('div');
+  section.classList.add('kanji-card-section');
+  const kanjiCard = new FakeElement('div');
+  kanjiCard.classList.add('kanji-card');
+  // sectionGap sits between cards / in the section margin: inside the section
+  // root but outside any .kanji-card. This is the whitespace the old predicate
+  // dropped through.
+  const sectionGap = new FakeElement('div');
+  context.document.body.appendChild(section);
+  section.appendChild(kanjiCard);
+  section.appendChild(sectionGap);
+  const result = fireDocumentClick(context, sectionGap);
+  assert.equal(result.tapOutsideCalls, 0,
+    'tapping the kanji-card-section gap/margin must NOT fire tapOutside (layer kept)');
 }
 
 // ── TODO-859 症状B: image lightbox hit-box narrowed to real image pixels ────
@@ -1560,6 +1591,7 @@ testTapOnGlossaryTextSelectsWord();
 testTapOnEntryCardWhitespaceKeepsLayer();
 testTapOnPopupBackgroundFiresTapOutside();
 testTapInsideKanjiCardKeepsLayer();
+testTapInKanjiSectionGapKeepsLayer();
 testTapOnImagePixelsOpensLightbox();
 testTapInImageContainerWhitespaceDoesNotOpenLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
