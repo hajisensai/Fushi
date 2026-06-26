@@ -10,12 +10,14 @@ const String iconPresetPrefKey = 'app_icon_preset';
 /// 用户自定义图标的本地文件路径偏好键（桌面端）。
 const String iconCustomPathPrefKey = 'app_icon_custom_path';
 
-/// 三套预设 key → 用于预览/桌面窗口图标的 asset 路径。
+/// 两套预设 key → 用于预览/桌面窗口图标的 asset 路径。
 /// `default` 指向文字 wordmark（与默认启动器图标一致）。
+/// 历史上曾有第三档 `hibiki_minimal`，但它与 `default` 映射同一张图（仓库只有
+/// full + minimal 两张图，无独立 default 图），属重复选项，已去重移除；
+/// 老用户残留的 `hibiki_minimal` 由 [windowIconAssetForPreset] 安全回退到 default。
 const Map<String, String> presetIconAssets = <String, String>{
   'default': 'assets/meta/launcher_icon_minimal.png',
   'hibiki_full': 'assets/meta/launcher_icon_full.png',
-  'hibiki_minimal': 'assets/meta/launcher_icon_minimal.png',
 };
 
 /// 自定义槽的保留 key。

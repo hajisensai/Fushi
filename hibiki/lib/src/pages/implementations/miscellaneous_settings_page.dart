@@ -259,11 +259,6 @@ class _MiscellaneousSettingsBodyState
         label: t.icon_full,
         asset: presetIconAssets['hibiki_full']!,
       ),
-      _IconOption(
-        key: 'hibiki_minimal',
-        label: t.icon_minimal,
-        asset: presetIconAssets['hibiki_minimal']!,
-      ),
     ];
 
     return Wrap(

@@ -881,7 +881,6 @@
   "icon_custom_hint": "Tap an icon to switch, or pick a custom image below.",
   "icon_default": "Default",
   "icon_full": "Full",
-  "icon_minimal": "Minimal",
   "icon_shortcut_created": "Home screen shortcut created.",
   "icon_shortcut_unsupported": "Shortcuts are not supported on this device.",
   "icon_switch_success": "App icon changed successfully.",

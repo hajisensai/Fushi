@@ -68,4 +68,39 @@ void main() {
       );
     }
   });
+
+  test('TODO-868 去重：图标选择器只剩 default+full 两档，无重复的简约档', () {
+    // 预设映射只剩两档，且不含 hibiki_minimal。
+    final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
+    expect(prefs.contains("'hibiki_minimal':"), isFalse,
+        reason: 'presetIconAssets 不应再映射 hibiki_minimal（与 default 重复）');
+    expect(prefs.contains("'default':"), isTrue);
+    expect(prefs.contains("'hibiki_full':"), isTrue);
+
+    // 设置页不再渲染 hibiki_minimal tile，也不再引用 t.icon_minimal label。
+    final String page =
+        read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
+    expect(page.contains("key: 'hibiki_minimal'"), isFalse,
+        reason: '设置页不应再渲染 hibiki_minimal 预设 tile');
+    expect(page.contains('t.icon_minimal'), isFalse,
+        reason: '设置页不应再引用已删除的 icon_minimal label');
+  });
+
+  test(
+      'TODO-868 Android 老用户安全：minimal alias 仍声明 + IconSwitchHelper 迁移回 default',
+      () {
+    // manifest 保留退役 alias 声明，避免老用户升级后 launcher 图标消失。
+    final String manifest = read('android/app/src/main/AndroidManifest.xml');
+    expect(manifest.contains('.MainActivityHibikiMinimal'), isTrue,
+        reason: '退役 minimal alias 必须保留声明（老用户 launcher 安全）');
+
+    // IconSwitchHelper：不再把 hibiki_minimal 列为可选项，但提供迁移逻辑。
+    final String helper = read(
+        'android/app/src/main/java/app/hibiki/reader/IconSwitchHelper.java');
+    expect(helper.contains('"hibiki_minimal"'), isFalse,
+        reason: 'hibiki_minimal 不应再出现在可选 ALIAS_KEYS 中');
+    expect(helper.contains('migrateRetiredMinimalIfEnabled'), isTrue,
+        reason: '必须提供老用户迁移逻辑，把启用的 minimal alias 迁回 default');
+    expect(helper.contains('RETIRED_MINIMAL_ALIAS'), isTrue);
+  });
 }

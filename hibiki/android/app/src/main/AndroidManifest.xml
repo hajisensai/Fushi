@@ -79,6 +79,11 @@
                 android:resource="@style/NormalTheme"/>
         </activity-alias>
 
+        <!-- 退役的「简约」alias（TODO-868 去重：与默认档映射同一张图，是重复选项）。
+             不再作为可选预设，但保留声明：老用户若当前启动器指向此 alias 且默认
+             alias 已被禁用，删除声明会导致升级后 launcher 图标消失（zero-LAUNCHER）。
+             IconSwitchHelper.getCurrentIcon 会在首次读取时把这类老用户安全迁回
+             .MainActivityDefault（图标字节相同，无视觉变化）。迁移普及后方可删除。 -->
         <activity-alias
             android:name=".MainActivityHibikiMinimal"
             android:targetActivity=".MainActivity"
