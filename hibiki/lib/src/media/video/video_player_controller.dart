@@ -546,6 +546,54 @@ class VideoPlayerController extends ChangeNotifier
     return true;
   }
 
+  /// 选副字幕内嵌轨（TODO-857 视频双字幕 Path A）：副字幕由 libmpv `secondary-sid`
+  /// **自渲染**，与主字幕（可点 overlay + cue 流）完全独立。
+  ///
+  /// [streamIndex] 是 ffmpeg `0:s:N` 的字幕流相对序号（与 [SubtitleSource.streamIndex]
+  /// / [selectEmbeddedGraphicTrack] 同范式），映射到 libmpv `tracks.subtitle` 去掉
+  /// auto/no 后的第 N 条，取其 `.id` 当 libmpv 内部 track id 下发给 `secondary-sid`。
+  ///
+  /// **与主字幕选轨的关键差异**：
+  /// - **绝不调** [setCues] / [setSubtitleTrack]——那会动主字幕 cue 流与主 `sid`。
+  ///   副字幕完全不进 Dart cue 流，故**不可查词**（这是 Path A 的正解：副字幕=纯翻译
+  ///   参考，不要查词/高亮/遮蔽耦合）。
+  /// - 只经 [applySubtitleMpvPropertiesToPlayer] 裸下发 `secondary-sid` /
+  ///   `secondary-sub-visibility`（media_kit 无 `setSecondarySubtitleTrack` 高层 API）。
+  ///
+  /// 选中返回 true；未 [load] / 轨未就绪 / 序号越界 / 期间换片销毁返回 false。每个
+  /// await 后用 [_isCurrentLoad] 双判据（player identity + loadToken）重校验，过期立即
+  /// 放弃下发——裸 setProperty 向已释放的 libmpv NativePlayer 下发是原生 use-after-free
+  /// （与 [selectEmbeddedGraphicTrack] 同 UAF 防护范式）。
+  Future<bool> selectSecondarySubtitleTrack(int streamIndex) async {
+    final Player? player = _player;
+    if (player == null) return false;
+    final int loadToken = _loadToken;
+    await _waitUntilSubtitleTracksReady(player);
+    if (!_isCurrentLoad(player, loadToken)) return false; // 等待期间换片/销毁。
+    final List<SubtitleTrack> real = player.state.tracks.subtitle
+        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
+        .toList(growable: false);
+    if (streamIndex < 0 || streamIndex >= real.length) return false;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSecondarySubtitleProperties(real[streamIndex].id),
+    );
+    return _isCurrentLoad(player, loadToken);
+  }
+
+  /// 关闭副字幕（TODO-857）：把 libmpv `secondary-sid` 设回 `no`。未 [load] 时
+  /// no-op 安全；期间换片销毁则放弃下发（UAF 防护）。绝不碰主字幕 `sid`。
+  Future<void> clearSecondarySubtitleTrack() async {
+    final Player? player = _player;
+    if (player == null) return;
+    final int loadToken = _loadToken;
+    if (!_isCurrentLoad(player, loadToken)) return;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSecondarySubtitleClearProperties(),
+    );
+  }
+
   /// 等 [player] 的字幕轨列表出现至少一条真实轨（`open` 后解析容器需要时间）。
   /// 最多等 5 秒；已就绪立即返回，超时尽力继续（调用方自行判越界）。
   Future<void> _waitUntilSubtitleTracksReady(Player player) async {

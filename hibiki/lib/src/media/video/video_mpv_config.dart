@@ -474,6 +474,30 @@ Map<String, String> buildGraphicSubtitleVisibilityProperties() {
   };
 }
 
+/// 副字幕（TODO-857 视频双字幕 Path A）走 libmpv `secondary-sid` 自渲染。纯函数。
+///
+/// 与主字幕完全独立：主字幕走可点 overlay（[VideoPlayerController] 的 cue 流，可
+/// 查词），副字幕只交给 libmpv 画到画面上（**不进 Dart cue 流，不可查词**）。
+/// [libmpvTrackId] 是 libmpv 内部 track id（不是 ffmpeg streamIndex），由
+/// [VideoPlayerController.selectSecondarySubtitleTrack] 经 `tracks.subtitle` 去
+/// auto/no 取第 N 条的 `.id` 解析得到。`secondary-sub-visibility=yes` 显式打开副字幕
+/// 可见性——与主字幕的 `sub-visibility`（BUG-190 抑制为 no）正交，互不影响。
+Map<String, String> buildSecondarySubtitleProperties(String libmpvTrackId) {
+  return <String, String>{
+    'secondary-sid': libmpvTrackId,
+    'secondary-sub-visibility': 'yes',
+  };
+}
+
+/// 关闭副字幕：把 libmpv `secondary-sid` 设回 `no` 并关副字幕可见性。纯函数。
+/// 只动 `secondary-*`，绝不碰主字幕 `sid` / `sub-visibility`。
+Map<String, String> buildSecondarySubtitleClearProperties() {
+  return <String, String>{
+    'secondary-sid': 'no',
+    'secondary-sub-visibility': 'no',
+  };
+}
+
 /// 构建图形字幕调轴用的 libmpv `sub-delay` 属性 map（`属性名→值`）。纯函数。
 ///
 /// 文本字幕走可点 overlay（cue 同步），其偏移由 [effectiveSubtitlePositionMs] 在

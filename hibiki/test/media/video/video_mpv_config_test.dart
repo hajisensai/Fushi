@@ -267,6 +267,39 @@ keep-open=yes
     });
   });
 
+  group('buildSecondarySubtitleProperties (TODO-857 视频双字幕 Path A)', () {
+    test('sets secondary-sid + secondary-sub-visibility, never main sub-*', () {
+      final Map<String, String> m = buildSecondarySubtitleProperties('2');
+      expect(m['secondary-sid'], '2');
+      expect(m['secondary-sub-visibility'], 'yes');
+      // 副字幕只动 secondary-* 属性，绝不碰主字幕 sid / sub-visibility（否则会
+      // 误关/误开主字幕，破坏可查词 overlay）。
+      expect(m.containsKey('sid'), isFalse);
+      expect(m.containsKey('sub-visibility'), isFalse);
+      expect(m.keys.toSet(),
+          <String>{'secondary-sid', 'secondary-sub-visibility'});
+    });
+
+    test('libmpv track id is passed through verbatim (not streamIndex)', () {
+      // secondary-sid 吃的是 libmpv 内部 track id（由 controller 经 tracks.subtitle
+      // 去 auto/no 取第 N 条的 .id 解析），不是 ffmpeg streamIndex；此处纯透传。
+      final Map<String, String> m = buildSecondarySubtitleProperties('5');
+      expect(m['secondary-sid'], '5');
+    });
+  });
+
+  group('buildSecondarySubtitleClearProperties (TODO-857)', () {
+    test('clears secondary-sid to no, never touches main sub-*', () {
+      final Map<String, String> m = buildSecondarySubtitleClearProperties();
+      expect(m['secondary-sid'], 'no');
+      expect(m['secondary-sub-visibility'], 'no');
+      expect(m.containsKey('sid'), isFalse);
+      expect(m.containsKey('sub-visibility'), isFalse);
+      expect(m.keys.toSet(),
+          <String>{'secondary-sid', 'secondary-sub-visibility'});
+    });
+  });
+
   group('buildSubtitleDelayProperty (BUG-301 图形字幕调轴)', () {
     test('positive delay -> sub-delay seconds, same sign (no flip)', () {
       // _delayMs 正＝字幕延后，mpv sub-delay 正＝字幕延后，同向不翻符号。

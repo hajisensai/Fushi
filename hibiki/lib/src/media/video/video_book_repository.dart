@@ -39,6 +39,14 @@ class VideoBookRepository {
   Future<void> updateSubtitleSource(String bookUid, String? subtitleSource) =>
       _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
 
+  /// 更新用户选中的副字幕源（TODO-857 视频双字幕 Path A）：与 [updateSubtitleSource]
+  /// 同款四态编码（外挂绝对路径 / `embedded:<n>` / `off:` / null）。副字幕由 libmpv
+  /// `secondary-sid` 自渲染（不进 cue 流，不可查词），故无 cue，独立于 cue 事务写入。
+  Future<void> updateSecondarySubtitleSource(
+          String bookUid, String? secondarySubtitleSource) =>
+      _db.updateVideoBookSecondarySubtitleSource(
+          bookUid, secondarySubtitleSource);
+
   /// 更新用户选中的音轨 id（libmpv `AudioTrack.id`；清除存 null）。
   Future<void> updateAudioTrackId(String bookUid, String? audioTrackId) =>
       _db.updateVideoBookAudioTrackId(bookUid, audioTrackId);

@@ -105,6 +105,36 @@ void main() {
     expect((await repo.getByBookUid('video/sel'))!.subtitleSource, isNull);
   });
 
+  test(
+      'updateSecondarySubtitleSource round-trips independently of '
+      'primary subtitle (TODO-857)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/dual'),
+      title: Value('Dual'),
+      videoPath: Value('/dual.mp4'),
+    ));
+
+    // Fresh row: secondary subtitle defaults to NULL (no secondary subtitle).
+    expect((await repo.getByBookUid('video/dual'))!.secondarySubtitleSource,
+        isNull);
+
+    // Set primary + secondary to different sources; both persist independently.
+    await repo.updateSubtitleSource('video/dual', 'embedded:0');
+    await repo.updateSecondarySubtitleSource('video/dual', 'embedded:1');
+    final row = (await repo.getByBookUid('video/dual'))!;
+    expect(row.subtitleSource, 'embedded:0');
+    expect(row.secondarySubtitleSource, 'embedded:1');
+
+    // Clearing secondary (null) leaves primary untouched.
+    await repo.updateSecondarySubtitleSource('video/dual', null);
+    final row2 = (await repo.getByBookUid('video/dual'))!;
+    expect(row2.subtitleSource, 'embedded:0');
+    expect(row2.secondarySubtitleSource, isNull);
+  });
+
   test('listAll returns all video books', () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
