@@ -1322,8 +1322,6 @@
   "sync_server_mode_active": "本機作為同步伺服器",
   "sync_server_mode_clients_drive": "由已連接的客戶端發起同步，本機無需手動同步。",
   "card_export_failed_detail": "匯出卡片失敗：$reason",
-  "video_setting_subtitle_blur": "字幕模糊（沉浸）",
-  "video_setting_subtitle_blur_hint": "預設遮蔽字幕，懸停或點按即可顯示，用於聽力沉浸練習。",
   "video_setting_subtitle_appearance": "字幕外觀",
   "video_setting_subtitle_font_size": "字型大小",
   "video_setting_subtitle_bg_opacity": "背景不透明度",
@@ -1850,5 +1848,12 @@
   "top_progress_pos_center": "Center",
   "top_progress_pos_right": "Top-right",
   "gamepad_auto_immersive": "Auto-immersive on gamepad",
-  "shortcut_action_reader_open_menu": "Open Settings Menu"
+  "shortcut_action_reader_open_menu": "Open Settings Menu",
+  "video_setting_subtitle_obscure": "Obscure subtitles",
+  "video_setting_subtitle_obscure_hint": "Choose how subtitles are obscured for listening practice: off, blurred (hover or tap to reveal), or hidden.",
+  "video_setting_subtitle_obscure_none": "Off",
+  "video_setting_subtitle_obscure_blur": "Blur",
+  "video_setting_subtitle_obscure_hide": "Hide",
+  "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
+  "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles"
 }

@@ -6,6 +6,7 @@ import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
+import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -20,12 +21,12 @@ VideoQuickSettingsSheet _sheet({
   return VideoQuickSettingsSheet(
     initialDelayMs: 0,
     initialSpeed: 1.0,
-    initialSubtitleBlur: false,
+    initialSubtitleObscureMode: VideoSubtitleObscureMode.none,
     initialSubtitleStyle: VideoSubtitleStyle.defaults,
     onSetDelay: (_) async {},
     onPreviewSpeed: (_) async {},
     onSetSpeed: (_) async {},
-    onToggleSubtitleBlur: () async {},
+    onSetSubtitleObscureMode: (_) async {},
     onSubtitleStylePreview: (_) {},
     onSubtitleStyleCommit: (_) async {},
     initialAsbConfig: VideoAsbplayerConfig.defaults,

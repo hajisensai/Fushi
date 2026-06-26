@@ -1322,8 +1322,6 @@
   "sync_server_mode_active": "このデバイスは同期サーバーです",
   "sync_server_mode_clients_drive": "接続中のクライアントが同期を開始します — このデバイスでの手動同期は不要です。",
   "card_export_failed_detail": "カードの書き出しに失敗しました：$reason",
-  "video_setting_subtitle_blur": "字幕をぼかす（イマージョン）",
-  "video_setting_subtitle_blur_hint": "通常は字幕を隠し、ホバーまたはタップで表示します。リスニング練習に。",
   "video_setting_subtitle_appearance": "字幕の見た目",
   "video_setting_subtitle_font_size": "文字サイズ",
   "video_setting_subtitle_bg_opacity": "背景の不透明度",
@@ -1850,5 +1848,12 @@
   "top_progress_pos_center": "Center",
   "top_progress_pos_right": "Top-right",
   "gamepad_auto_immersive": "Auto-immersive on gamepad",
-  "shortcut_action_reader_open_menu": "Open Settings Menu"
+  "shortcut_action_reader_open_menu": "Open Settings Menu",
+  "video_setting_subtitle_obscure": "Obscure subtitles",
+  "video_setting_subtitle_obscure_hint": "Choose how subtitles are obscured for listening practice: off, blurred (hover or tap to reveal), or hidden.",
+  "video_setting_subtitle_obscure_none": "Off",
+  "video_setting_subtitle_obscure_blur": "Blur",
+  "video_setting_subtitle_obscure_hide": "Hide",
+  "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
+  "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles"
 }

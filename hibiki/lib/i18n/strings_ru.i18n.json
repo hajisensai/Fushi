@@ -1322,8 +1322,6 @@
   "sync_server_mode_active": "Это устройство — сервер синхронизации",
   "sync_server_mode_clients_drive": "Синхронизацию запускают подключённые клиенты — вручную здесь не нужно.",
   "card_export_failed_detail": "Не удалось экспортировать карточку: $reason",
-  "video_setting_subtitle_blur": "Размытие субтитров (погружение)",
-  "video_setting_subtitle_blur_hint": "Скрывать субтитры по умолчанию; наведите или коснитесь, чтобы показать — для тренировки восприятия на слух.",
   "video_setting_subtitle_appearance": "Вид субтитров",
   "video_setting_subtitle_font_size": "Размер шрифта",
   "video_setting_subtitle_bg_opacity": "Непрозрачность фона",
@@ -1850,5 +1848,12 @@
   "top_progress_pos_center": "Center",
   "top_progress_pos_right": "Top-right",
   "gamepad_auto_immersive": "Auto-immersive on gamepad",
-  "shortcut_action_reader_open_menu": "Open Settings Menu"
+  "shortcut_action_reader_open_menu": "Open Settings Menu",
+  "video_setting_subtitle_obscure": "Obscure subtitles",
+  "video_setting_subtitle_obscure_hint": "Choose how subtitles are obscured for listening practice: off, blurred (hover or tap to reveal), or hidden.",
+  "video_setting_subtitle_obscure_none": "Off",
+  "video_setting_subtitle_obscure_blur": "Blur",
+  "video_setting_subtitle_obscure_hide": "Hide",
+  "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
+  "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles"
 }

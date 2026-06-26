@@ -1322,8 +1322,6 @@
   "sync_server_mode_active": "이 기기는 동기화 서버입니다",
   "sync_server_mode_clients_drive": "연결된 클라이언트가 동기화를 시작하므로 이 기기에서는 수동 동기화가 필요 없습니다.",
   "card_export_failed_detail": "카드 내보내기 실패: $reason",
-  "video_setting_subtitle_blur": "자막 흐리게(몰입)",
-  "video_setting_subtitle_blur_hint": "기본적으로 자막을 가리고, 마우스를 올리거나 탭하면 보여 듣기 연습에 활용합니다.",
   "video_setting_subtitle_appearance": "자막 외관",
   "video_setting_subtitle_font_size": "글자 크기",
   "video_setting_subtitle_bg_opacity": "배경 불투명도",
@@ -1850,5 +1848,12 @@
   "top_progress_pos_center": "Center",
   "top_progress_pos_right": "Top-right",
   "gamepad_auto_immersive": "Auto-immersive on gamepad",
-  "shortcut_action_reader_open_menu": "Open Settings Menu"
+  "shortcut_action_reader_open_menu": "Open Settings Menu",
+  "video_setting_subtitle_obscure": "Obscure subtitles",
+  "video_setting_subtitle_obscure_hint": "Choose how subtitles are obscured for listening practice: off, blurred (hover or tap to reveal), or hidden.",
+  "video_setting_subtitle_obscure_none": "Off",
+  "video_setting_subtitle_obscure_blur": "Blur",
+  "video_setting_subtitle_obscure_hide": "Hide",
+  "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
+  "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles"
 }

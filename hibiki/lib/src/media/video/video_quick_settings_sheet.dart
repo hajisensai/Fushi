@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
+import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
@@ -38,13 +39,13 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   const VideoQuickSettingsSheet({
     required this.initialDelayMs,
     required this.initialSpeed,
-    required this.initialSubtitleBlur,
+    required this.initialSubtitleObscureMode,
     required this.initialSubtitleStyle,
     required this.onSetDelay,
     this.onAutoAlign,
     required this.onPreviewSpeed,
     required this.onSetSpeed,
-    required this.onToggleSubtitleBlur,
+    required this.onSetSubtitleObscureMode,
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
     required this.initialAsbConfig,
@@ -82,8 +83,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 当前播放倍速。
   final double initialSpeed;
 
-  /// 当前字幕模糊开关。
-  final bool initialSubtitleBlur;
+  /// 当前字幕遮蔽模式三态（TODO-840 Part B：不遮蔽 / 模糊 / 隐藏）。
+  final VideoSubtitleObscureMode initialSubtitleObscureMode;
 
   /// 当前字幕外观样式。
   final VideoSubtitleStyle initialSubtitleStyle;
@@ -102,8 +103,9 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 设播放倍速。
   final Future<void> Function(double speed) onSetSpeed;
 
-  /// 切换字幕模糊。
-  final Future<void> Function() onToggleSubtitleBlur;
+  /// 设字幕遮蔽模式三态（TODO-840 Part B）；即时生效 + 持久化由调用方负责。
+  final Future<void> Function(VideoSubtitleObscureMode mode)
+      onSetSubtitleObscureMode;
 
   /// 拖动字幕外观滑条时的实时预览（更新页面背后的 overlay，不落盘）。
   final void Function(VideoSubtitleStyle style) onSubtitleStylePreview;
@@ -203,7 +205,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   // 故乐观更新本地值（同旧 StatefulBuilder 的语义），再异步回调即时生效 + 落盘。
   late int _delayMs = widget.initialDelayMs;
   late double _speed = widget.initialSpeed;
-  late bool _blur = widget.initialSubtitleBlur;
+  late VideoSubtitleObscureMode _obscureMode =
+      widget.initialSubtitleObscureMode;
   late bool _lockWindowAspectRatio = widget.initialLockWindowAspectRatio;
   late VideoFitMode _videoFitMode = widget.initialVideoFitMode;
   late VideoImmersiveMode _immersiveMode = widget.initialImmersiveMode;
@@ -2096,14 +2099,34 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       children: <Widget>[
         _settingsSection(
           children: <Widget>[
-            AdaptiveSettingsSwitchRow(
-              title: t.video_setting_subtitle_blur,
-              subtitle: t.video_setting_subtitle_blur_hint,
+            // TODO-840 Part B：遮蔽模式三态（不遮蔽 / 模糊 / 隐藏）。chips 分段、焦点
+            // 驱动友好；onChanged 即时回写本地态 + 经回调落盘并实时刷新页面 overlay。
+            AdaptiveSettingsSegmentedRow<VideoSubtitleObscureMode>(
+              title: t.video_setting_subtitle_obscure,
+              subtitle: t.video_setting_subtitle_obscure_hint,
               icon: Icons.blur_on_outlined,
-              value: _blur,
-              onChanged: (_) async {
-                setState(() => _blur = !_blur);
-                await widget.onToggleSubtitleBlur();
+              controlBelow: true,
+              segments: <ButtonSegment<VideoSubtitleObscureMode>>[
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.none,
+                  label: Text(t.video_setting_subtitle_obscure_none),
+                  tooltip: t.video_setting_subtitle_obscure_none,
+                ),
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.blur,
+                  label: Text(t.video_setting_subtitle_obscure_blur),
+                  tooltip: t.video_setting_subtitle_obscure_blur,
+                ),
+                ButtonSegment<VideoSubtitleObscureMode>(
+                  value: VideoSubtitleObscureMode.hide,
+                  label: Text(t.video_setting_subtitle_obscure_hide),
+                  tooltip: t.video_setting_subtitle_obscure_hide,
+                ),
+              ],
+              selected: _obscureMode,
+              onChanged: (VideoSubtitleObscureMode mode) async {
+                setState(() => _obscureMode = mode);
+                await widget.onSetSubtitleObscureMode(mode);
               },
             ),
           ],

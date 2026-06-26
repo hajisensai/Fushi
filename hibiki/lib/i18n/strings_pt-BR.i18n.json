@@ -1322,8 +1322,6 @@
   "sync_server_mode_active": "Este dispositivo é um servidor de sincronização",
   "sync_server_mode_clients_drive": "Os clientes conectados iniciam a sincronização — nenhuma sincronização manual é necessária aqui.",
   "card_export_failed_detail": "Falha ao exportar o cartão: $reason",
-  "video_setting_subtitle_blur": "Desfocar legendas (imersão)",
-  "video_setting_subtitle_blur_hint": "Oculta as legendas por padrão; passe o mouse ou toque para revelar, ideal para praticar escuta.",
   "video_setting_subtitle_appearance": "Aparência da legenda",
   "video_setting_subtitle_font_size": "Tamanho da fonte",
   "video_setting_subtitle_bg_opacity": "Opacidade do fundo",
@@ -1850,5 +1848,12 @@
   "top_progress_pos_center": "Center",
   "top_progress_pos_right": "Top-right",
   "gamepad_auto_immersive": "Auto-immersive on gamepad",
-  "shortcut_action_reader_open_menu": "Open Settings Menu"
+  "shortcut_action_reader_open_menu": "Open Settings Menu",
+  "video_setting_subtitle_obscure": "Obscure subtitles",
+  "video_setting_subtitle_obscure_hint": "Choose how subtitles are obscured for listening practice: off, blurred (hover or tap to reveal), or hidden.",
+  "video_setting_subtitle_obscure_none": "Off",
+  "video_setting_subtitle_obscure_blur": "Blur",
+  "video_setting_subtitle_obscure_hide": "Hide",
+  "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
+  "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles"
 }

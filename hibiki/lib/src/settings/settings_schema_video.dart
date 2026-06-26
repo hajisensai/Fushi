@@ -4,6 +4,7 @@ import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
+import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -298,15 +299,29 @@ SettingsDestination buildVideoDestination() {
       SettingsSection(
         title: t.section_video_subtitles,
         items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'video.subtitle.blur',
-            title: t.video_setting_subtitle_blur,
-            subtitle: t.video_setting_subtitle_blur_hint,
+          // TODO-840 Part B：把原「字幕模糊」单一开关扩成遮蔽模式三态选择器——不遮蔽 /
+          // 模糊（听力沉浸）/ 隐藏（主字幕不显示）。持久化是 preferences 层 lazy 投影
+          // （见 [PreferencesRepository.videoSubtitleObscureMode]），无新 Drift schema。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.subtitle.obscure',
+            title: t.video_setting_subtitle_obscure,
+            subtitle: t.video_setting_subtitle_obscure_hint,
             icon: Icons.blur_on_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSubtitleBlur,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setVideoSubtitleBlur(value);
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleObscureMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              VideoSubtitleObscureMode mode,
+            ) async {
+              await settingsContext.appModel.setVideoSubtitleObscureMode(mode);
             },
           ),
           // 字幕外观（字号/字重/阴影/背景不透明度/位置）全序列化进 videoSubtitleStyle
@@ -601,5 +616,18 @@ String _videoImmersiveModeLabel(VideoImmersiveMode mode) {
       return t.video_immersive_mode_lookup_only;
     case VideoImmersiveMode.unlockOnly:
       return t.video_immersive_mode_unlock_only;
+  }
+}
+
+/// 字幕遮蔽模式三态的本地化标签（TODO-840 Part B）。穷举枚举无 default，新增态
+/// 编译期强制补齐。
+String _videoSubtitleObscureModeLabel(VideoSubtitleObscureMode mode) {
+  switch (mode) {
+    case VideoSubtitleObscureMode.none:
+      return t.video_setting_subtitle_obscure_none;
+    case VideoSubtitleObscureMode.blur:
+      return t.video_setting_subtitle_obscure_blur;
+    case VideoSubtitleObscureMode.hide:
+      return t.video_setting_subtitle_obscure_hide;
   }
 }

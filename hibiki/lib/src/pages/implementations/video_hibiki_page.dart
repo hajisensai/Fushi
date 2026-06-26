@@ -61,6 +61,7 @@ import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_selection.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
@@ -2624,6 +2625,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         toggleSubtitleBlur: () => _runWhenImmersiveAllowsFullControls(
           () => unawaited(_toggleSubtitleBlur()),
         ),
+        // TODO-840 Part B：Shift+B 循环遮蔽三态；H 开/关「隐藏主字幕」。
+        cycleSubtitleObscure: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_cycleSubtitleObscure()),
+        ),
+        toggleSubtitleHide: () => _runWhenImmersiveAllowsFullControls(
+          () => unawaited(_toggleSubtitleHide()),
+        ),
         toggleFavoriteSentence: () => _runWhenImmersiveAllowsFullControls(
           () => unawaited(_toggleFavoriteCurrentCue()),
         ),
@@ -3692,9 +3700,34 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
-  /// 切换字幕模糊（'B' 热键 + 设置面板共用）。
+  /// 切换字幕模糊（'B' 热键 + 设置面板共用）。TODO-840 Part B：在「模糊」与「不遮蔽」
+  /// 之间切换——若当前是模糊则关掉，否则置为模糊（从隐藏态按 B 也回到模糊，符合「B 管
+  /// 模糊」直觉）。隐藏态由 [_toggleSubtitleHide] / [_cycleSubtitleObscure] 管理。
   Future<void> _toggleSubtitleBlur() async {
-    await appModel.setVideoSubtitleBlur(!appModel.videoSubtitleBlur);
+    final VideoSubtitleObscureMode next =
+        appModel.videoSubtitleObscureMode == VideoSubtitleObscureMode.blur
+            ? VideoSubtitleObscureMode.none
+            : VideoSubtitleObscureMode.blur;
+    await _setSubtitleObscureMode(next);
+  }
+
+  /// 循环字幕遮蔽三态（Shift+B，TODO-840 Part B）：不遮蔽 → 模糊 → 隐藏 → …。
+  Future<void> _cycleSubtitleObscure() async {
+    await _setSubtitleObscureMode(appModel.videoSubtitleObscureMode.next);
+  }
+
+  /// 开/关「隐藏主字幕」（H，TODO-840 Part B）：隐藏态按 H 回到不遮蔽，否则置为隐藏。
+  Future<void> _toggleSubtitleHide() async {
+    final VideoSubtitleObscureMode next =
+        appModel.videoSubtitleObscureMode == VideoSubtitleObscureMode.hide
+            ? VideoSubtitleObscureMode.none
+            : VideoSubtitleObscureMode.hide;
+    await _setSubtitleObscureMode(next);
+  }
+
+  /// 落盘字幕遮蔽模式并刷新页面 overlay（热键 + 快速设置面板共用，TODO-840 Part B）。
+  Future<void> _setSubtitleObscureMode(VideoSubtitleObscureMode mode) async {
+    await appModel.setVideoSubtitleObscureMode(mode);
     if (mounted) setState(() {});
   }
 
@@ -3847,7 +3880,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return VideoQuickSettingsSheet(
       initialDelayMs: _delayMs,
       initialSpeed: _playbackSpeed,
-      initialSubtitleBlur: appModel.videoSubtitleBlur,
+      initialSubtitleObscureMode: appModel.videoSubtitleObscureMode,
       initialSubtitleStyle: _subtitleStyle,
       uiScale: _videoUiScale,
       initialAsbConfig: _asbConfig,
@@ -3860,7 +3893,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           : null,
       onPreviewSpeed: (double v) => _setSpeed(v, persist: false),
       onSetSpeed: _setSpeed,
-      onToggleSubtitleBlur: _toggleSubtitleBlur,
+      onSetSubtitleObscureMode: _setSubtitleObscureMode,
       onAsbConfigChanged: _setAsbConfig,
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
         if (mounted) setState(() => _subtitleStyle = s);

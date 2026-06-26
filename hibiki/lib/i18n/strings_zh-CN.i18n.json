@@ -1322,8 +1322,6 @@
   "sync_server_mode_active": "本机作为同步服务端",
   "sync_server_mode_clients_drive": "由已连接的客户端发起同步，本机无需手动同步",
   "card_export_failed_detail": "导出卡片失败：$reason",
-  "video_setting_subtitle_blur": "字幕模糊（沉浸）",
-  "video_setting_subtitle_blur_hint": "默认遮挡字幕，悬停或点击显形，用于听力沉浸。",
   "video_setting_subtitle_appearance": "字幕外观",
   "video_setting_subtitle_font_size": "字号",
   "video_setting_subtitle_bg_opacity": "背景不透明度",
@@ -1850,5 +1848,12 @@
   "top_progress_pos_center": "居中",
   "top_progress_pos_right": "右上",
   "gamepad_auto_immersive": "连接手柄自动沉浸",
-  "shortcut_action_reader_open_menu": "打开设置菜单"
+  "shortcut_action_reader_open_menu": "打开设置菜单",
+  "video_setting_subtitle_obscure": "字幕遮蔽",
+  "video_setting_subtitle_obscure_hint": "选择听力练习时如何遮蔽字幕：关闭、模糊（悬停或点击显形）或隐藏。",
+  "video_setting_subtitle_obscure_none": "关闭",
+  "video_setting_subtitle_obscure_blur": "模糊",
+  "video_setting_subtitle_obscure_hide": "隐藏",
+  "shortcut_action_video_cycle_subtitle_obscure": "循环字幕遮蔽模式",
+  "shortcut_action_video_toggle_subtitle_hide": "切换隐藏字幕"
 }

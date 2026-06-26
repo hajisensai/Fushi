@@ -1322,8 +1322,6 @@
   "sync_server_mode_active": "Questo dispositivo è un server di sincronizzazione",
   "sync_server_mode_clients_drive": "Sono i client connessi ad avviare la sincronizzazione — qui non serve farlo manualmente.",
   "card_export_failed_detail": "Esportazione della carta non riuscita: $reason",
-  "video_setting_subtitle_blur": "Sfoca sottotitoli (immersione)",
-  "video_setting_subtitle_blur_hint": "Nasconde i sottotitoli per impostazione predefinita; passa sopra o tocca per rivelarli e allenare l'ascolto.",
   "video_setting_subtitle_appearance": "Aspetto sottotitoli",
   "video_setting_subtitle_font_size": "Dimensione carattere",
   "video_setting_subtitle_bg_opacity": "Opacità sfondo",
@@ -1850,5 +1848,12 @@
   "top_progress_pos_center": "Center",
   "top_progress_pos_right": "Top-right",
   "gamepad_auto_immersive": "Auto-immersive on gamepad",
-  "shortcut_action_reader_open_menu": "Open Settings Menu"
+  "shortcut_action_reader_open_menu": "Open Settings Menu",
+  "video_setting_subtitle_obscure": "Obscure subtitles",
+  "video_setting_subtitle_obscure_hint": "Choose how subtitles are obscured for listening practice: off, blurred (hover or tap to reveal), or hidden.",
+  "video_setting_subtitle_obscure_none": "Off",
+  "video_setting_subtitle_obscure_blur": "Blur",
+  "video_setting_subtitle_obscure_hide": "Hide",
+  "shortcut_action_video_cycle_subtitle_obscure": "Cycle Subtitle Obscure Mode",
+  "shortcut_action_video_toggle_subtitle_hide": "Toggle Hide Subtitles"
 }

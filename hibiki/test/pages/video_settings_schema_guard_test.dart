@@ -63,7 +63,7 @@ void main() {
       'video.quality.deband',
       'video.quality.loop',
       // Subtitle appearance
-      'video.subtitle.blur',
+      'video.subtitle.obscure',
       'video.subtitle.font_size',
       'video.subtitle.font_weight',
       'video.subtitle.shadow',

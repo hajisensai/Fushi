@@ -10,6 +10,7 @@ import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
+import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_side_panel.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -40,13 +41,13 @@ VideoQuickSettingsSheet _sheet({
   return VideoQuickSettingsSheet(
     initialDelayMs: initialDelayMs,
     initialSpeed: 1.0,
-    initialSubtitleBlur: false,
+    initialSubtitleObscureMode: VideoSubtitleObscureMode.none,
     initialSubtitleStyle: initialSubtitleStyle ?? VideoSubtitleStyle.defaults,
     onSetDelay: (int v) async => onSetDelay?.call(v),
     onAutoAlign: onAutoAlign,
     onPreviewSpeed: (double v) async => onPreviewSpeed?.call(v),
     onSetSpeed: (double v) async => onSetSpeed?.call(v),
-    onToggleSubtitleBlur: () async {},
+    onSetSubtitleObscureMode: (_) async {},
     onSubtitleStylePreview: (VideoSubtitleStyle style) =>
         onSubtitleStylePreview?.call(style),
     onSubtitleStyleCommit: (VideoSubtitleStyle style) async =>
@@ -347,7 +348,7 @@ void main() {
 
     // 选「字幕」→ 下方详情切到字幕详情，仍无返回箭头。
     await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
-    expect(find.text(t.video_setting_subtitle_blur), findsOneWidget);
+    expect(find.text(t.video_setting_subtitle_obscure), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_font_size), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_font_weight), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_shadow), findsOneWidget);
