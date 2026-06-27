@@ -1,19 +1,15 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.0-debug.5970",
-  "tag": "v1.0.0-debug.5970+67798dd",
+  "version": "1.0.0-debug.5972",
+  "tag": "v1.0.0-debug.5972+05db94a",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 5970,
-  "notes": "Automated release-signed debug-channel build from develop @ 67798dd. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 5972,
+  "notes": "Automated release-signed debug-channel build from develop @ 05db94a. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.0.0-debug.5970-67798dd-debug.apk",
-      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.0.0-debug.5970+67798dd/hibiki-1.0.0-debug.5970-67798dd-debug.apk"
-    },
-    {
-      "name": "hibiki-1.0.0-debug.5970-windows-setup.exe",
-      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.0.0-debug.5970+67798dd/hibiki-1.0.0-debug.5970-windows-setup.exe"
+      "name": "hibiki-1.0.0-debug.5972-05db94a-debug.apk",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.0.0-debug.5972+05db94a/hibiki-1.0.0-debug.5972-05db94a-debug.apk"
     }
   ]
 }
