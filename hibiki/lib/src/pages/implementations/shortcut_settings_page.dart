@@ -13,6 +13,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:hibiki/src/shortcuts/visual/keyboard_layout_view.dart';
 
 /// Localised label for a [ShortcutAction].
 String _actionLabel(ShortcutAction action) {
@@ -163,6 +164,12 @@ class ShortcutSettingsPage extends BasePage {
 class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   HibikiShortcutRegistry get _registry => appModel.shortcutRegistry;
 
+  // TODO-612: list vs keyboard-visual view toggle. The figure is a new
+  // read+remap surface over the SAME registry write-through path; the list
+  // view stays the fallback (off-figure keys like BracketLeft remain editable
+  // there). Icon-only segments avoid new i18n in this batch.
+  bool _visualMode = false;
+
   Future<void> _save() async {
     await saveShortcutRegistry(
       _registry,
@@ -246,6 +253,19 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     setState(() {});
   }
 
+  /// 点击键盘图上某个已绑键位。该键位上绑了哪些 action 由 [ReverseBindingIndex]
+  /// 反查得到并传入；阶段 2a 只接「点已绑键位」零新分支，故直接编辑其上第一个
+  /// action，复用现成 [_editBinding] → updateBindingWithReassignments →
+  /// saveShortcutRegistry 写穿路径。空键位在图上不可点（高亮只读），改它走列表
+  /// 视图兜底（必改 3/4）。多绑键位的逐 action 选择留待后续增量。
+  Future<void> _onKeyboardKeyTap(
+    LogicalKeyboardKey key,
+    List<ShortcutAction> boundActions,
+  ) async {
+    if (boundActions.isEmpty) return;
+    await _editBinding(boundActions.first);
+  }
+
   /// 把每个 scope 投影成一张统一的 [AdaptiveSettingsSection] 卡片（标题用共享的
   /// section header 样式，不再是孤立的 primary 色标题），卡片内首行是「恢复默认」
   /// 动作行，其后是各 action 行。返回裸内容（无脚手架），由统一详情壳承载滚动与
@@ -254,6 +274,30 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SegmentedButton<bool>(
+              key: const Key('shortcut_view_toggle'),
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<bool>>[
+                ButtonSegment<bool>(
+                  value: false,
+                  icon: Icon(Icons.list_outlined),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  icon: Icon(Icons.keyboard_outlined),
+                ),
+              ],
+              selected: <bool>{_visualMode},
+              onSelectionChanged: (Set<bool> selection) {
+                setState(() => _visualMode = selection.first);
+              },
+            ),
+          ),
+        ),
         for (final ShortcutScope scope in ShortcutScope.values)
           AdaptiveSettingsSection(
             title: _scopeLabel(scope),
@@ -264,13 +308,26 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
                 showIcon: true,
                 onTap: () => _confirmResetScope(scope),
               ),
-              for (final ShortcutAction action
-                  in ShortcutAction.actionsForScope(scope))
-                _ActionTile(
-                  action: action,
-                  bindings: _registry.bindingsFor(action),
-                  onEdit: () => _editBinding(action),
-                ),
+              if (_visualMode)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: KeyboardLayoutView(
+                    registry: _registry,
+                    scope: scope,
+                    onKeyTap: _onKeyboardKeyTap,
+                  ),
+                )
+              else
+                for (final ShortcutAction action
+                    in ShortcutAction.actionsForScope(scope))
+                  _ActionTile(
+                    action: action,
+                    bindings: _registry.bindingsFor(action),
+                    onEdit: () => _editBinding(action),
+                  ),
             ],
           ),
       ],
