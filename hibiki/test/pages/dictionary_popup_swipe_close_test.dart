@@ -125,24 +125,27 @@ void main() {
   }
 
   testWidgets(
-    'TODO-406: horizontal drag starting on the body does NOT dismiss',
+    'TODO-880: horizontal drag starting on the body DOES dismiss (restores '
+    'whole-window swipe; reverses TODO-406 top-bar-only narrowing)',
     (WidgetTester tester) async {
       bool dismissed = false;
       await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
 
-      // 从 body 占位区中心起手水平拖动过阈值——body 不在 swipe 的 Listener 子树内，
-      // 不应触发关闭（消除"WebView 正文框选误触滑动关闭"）。
+      // 从 body 占位区中心起手水平拖动过阈值。TODO-406 曾把可滑区砍到 40px 顶栏（消除
+      // WebView 正文框选误触），但这造成手机滑关回归 + 桌面开关在弹窗本体上无效
+      // （TODO-880）。修复在最外层 opaque 吸收层追加横拖识别器，可滑区恢复到整窗，
+      // 故正文区起手的横拖现在应关一层。
       final Offset bodyCenter = tester.getCenter(find.byKey(bodyAnchorKey));
 
-      // 判别力守卫：body 起手点必须落在 SwipeDismissWrapper（仅裹顶栏）矩形之外，
-      // 否则本用例没有意义（手势其实落在了可滑区）。
+      // 判别力守卫：body 起手点必须落在顶栏 SwipeDismissWrapper（仅裹顶栏）矩形之外，
+      // 证明触发来自新的弹窗本体横拖识别器，而非顶栏那条 wrapper。
       final Rect swipeRect = tester.getRect(find.byType(SwipeDismissWrapper));
       expect(swipeRect.contains(bodyCenter), isFalse,
-          reason: 'body 起手点须在可滑顶栏区域之外，本用例才有判别力');
+          reason: 'body 起手点须在顶栏可滑区域之外，证明本体横拖识别器生效');
 
       await dragHorizontally(tester, bodyCenter);
 
-      expect(dismissed, isFalse, reason: '正文区起手的水平拖动不得触发滑动关闭');
+      expect(dismissed, isTrue, reason: '正文区起手的水平拖动应触发本体滑动关闭');
     },
   );
 

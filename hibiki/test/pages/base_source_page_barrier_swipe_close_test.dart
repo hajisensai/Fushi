@@ -6,6 +6,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -344,6 +345,40 @@ void main() {
     expect(host.barrierHoverCalls, greaterThan(0),
         reason: 'the drag handlers must not swallow onPointerHover');
     expect(host.debugPopupStack, hasLength(2));
+  });
+
+  testWidgets(
+      'TODO-880 switch ON: horizontal drag on the TOP popup BODY closes only '
+      'the top layer (keeps parent)', (WidgetTester tester) async {
+    await ReaderHibikiSource.instance.setEnableSwipeToClose(true);
+    final appModel = BarrierSwipeAppModel();
+    final hostKey = GlobalKey<BarrierSwipeHostPageState>();
+    await tester.pumpWidget(
+      buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final host = hostKey.currentState!;
+    await _seedTwoVisibleLayers(tester, host);
+    expect(host.debugPopupStack, hasLength(2));
+
+    // The top (nested) layer is the last DictionaryPopupLayer; drag across its
+    // own body, not the bare barrier.
+    final Finder topLayer = find.byType(DictionaryPopupLayer).last;
+    final Offset topCenter = tester.getCenter(topLayer);
+    final TestGesture g = await tester.startGesture(topCenter);
+    for (int i = 0; i < 12; i++) {
+      await g.moveBy(const Offset(20, 0));
+      await tester.pump();
+    }
+    await g.up();
+    await tester.pump();
+
+    expect(host.debugPopupStack, hasLength(1),
+        reason: 'a body drag on the top layer closes only the top layer');
+    expect(host.debugPopupStack.single.visible, isTrue,
+        reason: 'the parent layer survives');
   });
 
   group('swipeDismissThreshold pure function', () {

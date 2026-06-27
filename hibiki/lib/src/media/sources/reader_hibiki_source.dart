@@ -638,10 +638,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
-  /// TODO-407②：查词弹窗是否允许"水平滑动关闭"。与 [dismissSwipeSensitivity] 同一
-  /// 双源模式：优先读 reader profile 快照（[ReaderSettings.enableSwipeToClose]），
-  /// 否则落全局偏好。未持久化时回退到 [ReaderSettings.defaultSwipeToClose]（桌面
-  /// Windows/Linux 默认 false，触摸平台 true）。
+  /// TODO-407②：查词弹窗是否允许"水平滑动关闭"。读全局偏好 `enable_swipe_to_close`；
+  /// 未持久化时回退到 [ReaderSettings.defaultSwipeToClose]（桌面 Windows/Linux 默认
+  /// false，触摸平台 true）。
   bool get enableSwipeToClose => getPreference<bool>(
         key: 'enable_swipe_to_close',
         defaultValue: ReaderSettings.defaultSwipeToClose(defaultTargetPlatform),

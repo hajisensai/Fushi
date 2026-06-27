@@ -444,9 +444,25 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 消失的位置和弹窗外边有差异」。包一层 `HitTestBehavior.opaque` 的吸收层，使整个
     // `Positioned` 矩形（含圆角余白）一律命中真值、停在弹窗层不再下穿 barrier；空
     // `onTap` 在竞技场必输给任何子识别器，按钮 / WebView / 顶栏滑动判定一律不受影响。
-    final Widget content = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},
+    //
+    // TODO-880：手机滑关回归 + 桌面开关不生效都在这一层修。TODO-406 把可滑区砍到 40px
+    // 顶栏后，那条裸 [SwipeDismissWrapper] 的 `Listener` 与本 opaque 吸收层 + header
+    // 按钮在窄带里同处竞技场，横拖被判成 tap / 被按钮吞 → 手机滑关失效；桌面 716
+    // barrier 横拖只在弹窗矩形**外**生效，用户在弹窗本体上拖永远到不了它 → 开关「开了
+    // 也没用」。在 **同一个** opaque GestureDetector 上追加 `onHorizontalDrag*`：tap 与
+    // 横拖共享一个识别器，Flutter 竞技场天然把单击走 `onTap`、横拖走 drag，互斥不互吞，
+    // 可滑区自然恢复到整窗（含顶栏 + 正文外余白），与 805 前体验一致。受
+    // [enableSwipeToClose] 门控（关时只 onTap 如旧）；阈值/灵敏度与顶栏 wrapper、716
+    // barrier 同源（[swipeDismissThreshold] + [dismissSwipeSensitivity]）。双向水平
+    // （左右皆可，对齐手机 `_dragX.abs()`）。顶栏原 wrapper 保留（冗余但无害）。
+    //
+    // 仅有顶栏的层让本吸收层兼管「弹窗本体横拖关」（[bodySwipe]=true）；无顶栏的层
+    // （popup_dictionary_page 嵌套返回层）仍交给下方整窗 [SwipeDismissWrapper]（保留其
+    // 横滑动画反馈），本层只 onTap 吸收命中，避免两条路径同时触发 [onDismiss] 双关。
+    final bool bodySwipe = _swipeActive && topBar != null;
+    final Widget content = _BodySwipeDismissDetector(
+      enableSwipeToClose: bodySwipe,
+      onDismiss: onDismiss,
       child: surface,
     );
 
@@ -607,5 +623,70 @@ class DictionaryPopupLayer extends StatelessWidget {
     // header 不再在此处包 Column——顶栏（header + X）由 [build] 经 [_buildTopBar]
     // 渲染并与 body 拆成上下两块，使 swipe 只裹顶栏、body 脱离滑动判定（TODO-406）。
     return body;
+  }
+}
+
+/// TODO-880：弹窗本体（含顶栏）的「opaque 命中吸收 + 水平滑动关闭」收口层。
+///
+/// 永远是 `HitTestBehavior.opaque` 的吸收层（TODO-805：整个 `Positioned` 矩形命中真
+/// 值、不下穿 barrier，空 `onTap` 在竞技场必输给任何子识别器，按钮/WebView 不受影响）。
+/// 当 [enableSwipeToClose] 为真时，在**同一个** GestureDetector 上追加横拖识别器：累计
+/// dx 过 [swipeDismissThreshold]（灵敏度取 [dismissSwipeSensitivity]，与顶栏 wrapper /
+/// 716 barrier 同源）即调 [onDismiss]（关一层）。tap 与横拖共享一个识别器，竞技场天然
+/// 分流（单击 → onTap、横拖 → drag），互斥不互吞。双向水平（[_dragX].abs()，对齐手机）。
+/// [enableSwipeToClose] 为假时只 onTap，行为同旧。
+class _BodySwipeDismissDetector extends StatefulWidget {
+  const _BodySwipeDismissDetector({
+    required this.enableSwipeToClose,
+    required this.onDismiss,
+    required this.child,
+  });
+
+  final bool enableSwipeToClose;
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  @override
+  State<_BodySwipeDismissDetector> createState() =>
+      _BodySwipeDismissDetectorState();
+}
+
+class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
+  double _dragX = 0;
+
+  double get _threshold => swipeDismissThreshold(
+        ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      );
+
+  void _onHorizontalDragStart(DragStartDetails _) {
+    _dragX = 0;
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    _dragX += details.delta.dx;
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails _) {
+    final double accumulated = _dragX;
+    _dragX = 0;
+    // 双向水平：左右皆可，对齐手机 `_dragX.abs()`。
+    if (accumulated.abs() > _threshold) {
+      widget.onDismiss();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      onHorizontalDragStart:
+          widget.enableSwipeToClose ? _onHorizontalDragStart : null,
+      onHorizontalDragUpdate:
+          widget.enableSwipeToClose ? _onHorizontalDragUpdate : null,
+      onHorizontalDragEnd:
+          widget.enableSwipeToClose ? _onHorizontalDragEnd : null,
+      child: widget.child,
+    );
   }
 }
