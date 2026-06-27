@@ -245,13 +245,6 @@ extension _VideoLayout on _VideoHibikiPageState {
                   onLongPressStart: _handleVideoLongPressStart,
                   onLongPressMoveUpdate: _handleVideoLongPressMoveUpdate,
                   onLongPressEnd: _handleVideoLongPressEnd,
-                  // TODO-754：桌面边缘竖拖 = 左半区调亮度 / 右半区调音量（与移动端
-                  // media_kit 内建竖滑同语义；handler 内 [_isDesktopVideoControls] 门控，
-                  // 移动端走 media_kit 手势避免双份）。竖直裸拖与「长按横拖调速」经手势
-                  // 竞技场天然分流（后者需先长按 + 横向），互不冲突。
-                  onVerticalDragStart: _handleVideoEdgeDragStart,
-                  onVerticalDragUpdate: _handleVideoEdgeDragUpdate,
-                  onVerticalDragEnd: _handleVideoEdgeDragEnd,
                   child: Stack(
                     children: <Widget>[
                       // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
