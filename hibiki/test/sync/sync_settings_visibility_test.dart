@@ -89,6 +89,46 @@ void main() {
           <String>['sync.backup_export', 'sync.backup_import']);
     });
 
+    test(
+        'auto-sync is gated on the hosting role; other content switches are not',
+        () {
+      // Auto-sync is an OUTBOUND switch (TODO-876 / BUG-NNN): a Hibiki host has
+      // no outbound sync, so the toggle is a no-op there and must be hidden in
+      // host mode — same gate as sync_now / compare (BUG-084). The remaining
+      // "what to sync" switches are content-scope settings that still apply to
+      // client mode, so they stay unconditional (always shown).
+      final SettingsSection content = dest.sections[2];
+      SettingsItem byId(String id) =>
+          content.items.firstWhere((SettingsItem i) => i.id == id);
+      expect(byId('sync.auto_sync').visible, isNotNull,
+          reason: 'auto-sync must be hidden when hosting as a server');
+      for (final String id in <String>[
+        'sync.statistics',
+        'sync.dictionary',
+        'sync.local_audio',
+        'sync.content',
+        'sync.audiobook_files',
+      ]) {
+        expect(byId(id).visible, isNull,
+            reason: '$id is a content-scope setting, global to every backend');
+      }
+    });
+
+    test('auto-sync gate keys off the hosting-interconnect role (TODO-876)',
+        () {
+      // Source guard: auto_sync must hide via !_isHostingInterconnect — the same
+      // both-conditions role used by sync_now / compare — so a stale
+      // serverEnabled flag on a cloud backend can't hide auto-sync, and a
+      // client-mode hibikiServer (which DOES have outbound sync) keeps it shown.
+      final String src =
+          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final int autoSyncAt = src.indexOf("id: 'sync.auto_sync'");
+      expect(autoSyncAt, greaterThanOrEqualTo(0));
+      final String autoSyncBlock = src.substring(autoSyncAt, autoSyncAt + 900);
+      expect(autoSyncBlock, contains('!_isHostingInterconnect('),
+          reason: 'auto-sync must hide only while hosting the interconnect');
+    });
+
     test('manual-sync actions are gated on server mode (BUG-084)', () {
       // A pure Hibiki host has no outbound sync, so "sync now" / "compare" must
       // be hidden in server mode and an explanatory note shown instead — every

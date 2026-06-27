@@ -138,6 +138,14 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.auto_sync',
             title: t.sync_auto_sync,
             icon: Icons.sync_outlined,
+            // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
+            // book-close pushes through the resolved backend. A Hibiki host has
+            // no outbound sync (clients pull from / push to it), so every
+            // auto-sync path early-returns on an unconfigured outbound backend —
+            // the toggle does nothing in host mode. Hide it there, matching the
+            // sync_now / compare gates (BUG-084). Client-mode hibikiServer DOES
+            // have outbound sync, so only hide when actively hosting.
+            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
             value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).autoSync = value;
