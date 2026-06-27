@@ -156,6 +156,52 @@ void main() {
     });
   });
 
+  // TODO-890：过阈值松手后 onDismiss 不在松手当帧触发，而是等滑出补间动画跑完
+  // （AnimationStatus.completed）才触发——避免 dismiss 与动画竞争。
+  testWidgets(
+      'TODO-890 dismiss fires only after the slide-out animation '
+      'completes, not on release', (tester) async {
+    int dismissed = 0;
+    await tester.pumpWidget(buildApp(onDismiss: () => dismissed++));
+
+    final center = tester.getCenter(find.byType(SizedBox).first);
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(200, 0)); // clears the 142 threshold
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(dismissed, 0, reason: '松手当帧动画刚开始，dismiss 必须等滑出补间跑完');
+    await tester.pumpAndSettle();
+    expect(dismissed, 1, reason: '滑出补间完成后 onDismiss 触发一次');
+  });
+
+  // TODO-890：滑出补间把退场卡片朝拖动方向平移到「卡片宽 + 边距」之外（远超松手时
+  // 的 _dragX），证明卡片是「滑走」而非停在松手位置定格。
+  testWidgets('TODO-890 slide-out translates the card past its own width',
+      (tester) async {
+    await tester.pumpWidget(buildApp(onDismiss: () {}));
+
+    final center = tester.getCenter(find.byType(SizedBox).first);
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(200, 0));
+    await tester.pump();
+    await gesture.up();
+    // Drive the tween partway: translation should already be heading past the
+    // 200px release toward (childWidth=300 + 24 margin) off-screen.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+
+    final Transform transform = tester.widget<Transform>(
+      find.ancestor(
+        of: find.byType(Opacity),
+        matching: find.byType(Transform),
+      ),
+    );
+    final double dx = transform.transform.getTranslation().x;
+    expect(dx, greaterThan(200), reason: '滑出补间把卡片平移到松手位置之外（朝屏外滑走），而非定格');
+    await tester.pumpAndSettle();
+  });
+
   // BUG-051: SwipeDismissWrapper 基于 Listener（onPointerMove/Up），指针事件会
   // 派发到 hit-test 路径上的所有祖先 Listener。因此把一个嵌套层（自带 wrapper）
   // 套进一个外层 wrapper 时，横滑嵌套层会同时驱动外层 → 整张卡片连带平移/关闭。

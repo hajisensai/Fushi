@@ -216,9 +216,21 @@
         '.global-lookup-frame-shell{' +
         'box-sizing:border-box;overflow:hidden;background:transparent;' +
         'border-radius:10px;' +
-        'box-shadow:0 3px 12px rgba(0,0,0,0.22);}' +
+        'box-shadow:0 3px 12px rgba(0,0,0,0.22);' +
+        // TODO-890 — slide-out close: the shell tweens transform+opacity so a
+        // dismiss slides the card off-screen instead of vanishing instantly
+        // (app-out parity with the in-app _BodySwipeDismissDetector). 200ms
+        // ease-out matches the Flutter side. Scoped to the shell selector so
+        // it never leaks into the in-app popup (which never loads host.js).
+        'transition:transform 200ms ease-out, opacity 200ms ease-out;}' +
         '.global-lookup-frame-shell[data-theme="dark"]{' +
         'box-shadow:0 3px 12px rgba(0,0,0,0.44);}' +
+        // TODO-890 — the dismissing class drives the slide-out: translate the
+        // card fully off its own width + margin and fade to 0; visibility stays
+        // visible during the transition (the reveal gate already passed) so the
+        // transitionend fires before the host posts dismissPopupAt to Dart.
+        '.global-lookup-frame-shell.global-lookup-dismissing{' +
+        'transform:translateX(120%);opacity:0;}' +
         '.global-lookup-frame-shell[' + ATTR_CONTENT_READY + '="true"]' +
         '[' + ATTR_REVEAL_READY + '="true"]{visibility:visible;opacity:1;}';
     var head = document.head ||
@@ -675,6 +687,59 @@
     }
   }
 
+  // TODO-890 — slide the ROOT card off-screen, THEN post dismiss. Adds the
+  // .global-lookup-dismissing class (CSS transitions transform+opacity), waits
+  // for transitionend on the root shell, and only then posts dismissPopupAt([0])
+  // so the Dart hide() lands AFTER the slide-out finishes (no instant vanish).
+  // A safety timer mirrors the CSS duration so a missing transitionend (node
+  // harness / reduced-motion) still posts. Idempotent per root shell.
+  var SLIDE_OUT_MS = 200;
+  var dismissingRoot = false;
+  function dismissRootWithSlide() {
+    if (dismissingRoot) {
+      return;
+    }
+    var rootId = null;
+    frames.forEach(function (record, id) {
+      if (rootId === null) {
+        rootId = id;
+      }
+    });
+    var record = rootId !== null ? frames.get(rootId) : null;
+    var shell = record && record.shell;
+    if (!shell || typeof shell.setAttribute !== 'function' ||
+        !shell.classList || typeof shell.classList.add !== 'function') {
+      // No animatable shell (node harness fake DOM without classList): post now.
+      postToHost('dismissPopupAt', [0]);
+      return;
+    }
+    dismissingRoot = true;
+    var posted = false;
+    var post = function () {
+      if (posted) {
+        return;
+      }
+      posted = true;
+      dismissingRoot = false;
+      postToHost('dismissPopupAt', [0]);
+    };
+    if (typeof shell.addEventListener === 'function') {
+      shell.addEventListener('transitionend', function onEnd(e) {
+        if (e && e.propertyName && e.propertyName !== 'transform' &&
+            e.propertyName !== 'opacity') {
+          return;
+        }
+        if (typeof shell.removeEventListener === 'function') {
+          shell.removeEventListener('transitionend', onEnd);
+        }
+        post();
+      });
+    }
+    shell.classList.add('global-lookup-dismissing');
+    // Safety: fire even if transitionend never arrives.
+    setTimerSafe(post, SLIDE_OUT_MS + 50);
+  }
+
   // C3 — capture-phase pointerdown on the host document. A click inside ANY shell
   // is a card interaction -> do nothing. A click OUTSIDE all shells dismisses the
   // ROOT (index 0) -> whole stack collapses -> empty -> C++ hides.
@@ -684,7 +749,7 @@
         t.closest('.global-lookup-frame-shell')) {
       return;
     }
-    postToHost('dismissPopupAt', [0]);
+    dismissRootWithSlide();
   }
 
   // E2 — C++ WH_MOUSE_LL forwards a global click already converted to host CSS px
@@ -705,7 +770,7 @@
       }
     });
     if (!hit) {
-      postToHost('dismissPopupAt', [0]);
+      dismissRootWithSlide();
     }
     return hit;
   }
@@ -751,6 +816,7 @@
     handleGlobalClick: handleGlobalClick,
     measureAndReport: measureAndReport,
     frameGateState: frameGateState,
+    dismissRootWithSlide: dismissRootWithSlide,
     _frames: frames,
   };
 })();

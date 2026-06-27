@@ -635,4 +635,90 @@ function flushTimers() {
     'data-theme re-stamps on re-render');
 }
 
+// 18. TODO-890 slide-out CSS: the gate <style> carries a transform+opacity
+//     transition AND a .global-lookup-dismissing rule, BOTH scoped to
+//     .global-lookup-frame-shell (never a bare body/html — must not leak into the
+//     in-app popup which has no host.js). The dismissing rule slides the card off
+//     (translateX + opacity 0) so a close animates instead of vanishing.
+{
+  const { host, document } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const style = document.getElementById('global-lookup-host-style');
+  assert.ok(style, 'gate/shell <style> injected');
+  const css = style.textContent;
+  assert.ok(/transition:transform 200ms ease-out, opacity 200ms ease-out/.test(css),
+    'TODO-890: shell carries a transform+opacity transition for the slide-out');
+  assert.ok(/\.global-lookup-frame-shell\.global-lookup-dismissing\{/.test(css),
+    'TODO-890: a .global-lookup-dismissing rule drives the slide-out');
+  assert.ok(/translateX\(120%\)/.test(css),
+    'TODO-890: dismissing slides the card off its own width');
+  // Isolation: every transition/dismissing rule is scoped to the shell selector,
+  // never a bare body/html (would leak the animation into the in-app popup).
+  assert.ok(!/(^|[^-])\bbody\s*\{[^}]*transition/.test(css),
+    'TODO-890: transition must NOT apply to a bare body');
+  assert.ok(!/(^|[^-])\bhtml\s*\{[^}]*transition/.test(css),
+    'TODO-890: transition must NOT apply to a bare html');
+}
+
+// 19. TODO-890 slide-out dismiss path: dismissRootWithSlide adds the dismissing
+//     class to the ROOT shell and posts dismissPopupAt([0]) ONLY after the
+//     shell's transitionend fires — NOT instantly. A fake classList + a
+//     dispatchable transitionend on the root shell model the real CSS transition.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const shell = shellsOf(document)[0];
+  // Augment the fake shell with a classList + transitionend dispatch (the base
+  // fake DOM has neither; host.js falls back to instant-post without them — this
+  // test exercises the animated path explicitly).
+  const classes = new Set();
+  shell.classList = {
+    add: (c) => classes.add(c),
+    remove: (c) => classes.delete(c),
+    contains: (c) => classes.has(c),
+  };
+  let endHandler = null;
+  shell.addEventListener = (type, fn) => {
+    if (type === 'transitionend') endHandler = fn;
+  };
+  shell.removeEventListener = (type, fn) => {
+    if (type === 'transitionend' && endHandler === fn) endHandler = null;
+  };
+  hostPostLog = [];
+  host.dismissRootWithSlide();
+  assert.ok(classes.has('global-lookup-dismissing'),
+    'TODO-890: dismissing class added to the root shell to start the slide');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
+    'TODO-890: dismiss is NOT posted before the slide-out finishes');
+  // Fire the transitionend (slide-out done) -> NOW the host posts dismiss.
+  assert.ok(endHandler, 'transitionend handler registered');
+  endHandler({ propertyName: 'transform' });
+  const dismiss = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
+  assert.ok(dismiss, 'TODO-890: dismiss posted AFTER transitionend');
+  assert.strictEqual(dismiss.args[0], 0, 'dismiss targets the root (index 0)');
+}
+
+// 20. TODO-890 slide-out safety: when no transitionend ever fires (reduced-motion
+//     / detached), the safety timer still posts dismiss so close never hangs.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const shell = shellsOf(document)[0];
+  const classes = new Set();
+  shell.classList = {
+    add: (c) => classes.add(c),
+    remove: (c) => classes.delete(c),
+    contains: (c) => classes.has(c),
+  };
+  shell.addEventListener = () => {}; // transitionend never fires
+  shell.removeEventListener = () => {};
+  hostPostLog = [];
+  host.dismissRootWithSlide();
+  assert.ok(!hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
+    'TODO-890: still not posted before the safety timer');
+  flushTimers(); // safety timer fires
+  const dismiss = hostPostLog.find((m) => m.handler === 'dismissPopupAt');
+  assert.ok(dismiss, 'TODO-890: safety timer posts dismiss when transitionend is absent');
+}
+
 console.log('global_lookup_host_test: PASS');

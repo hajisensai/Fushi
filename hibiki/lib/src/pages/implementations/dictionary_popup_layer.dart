@@ -630,11 +630,22 @@ class DictionaryPopupLayer extends StatelessWidget {
 ///
 /// 永远是 `HitTestBehavior.opaque` 的吸收层（TODO-805：整个 `Positioned` 矩形命中真
 /// 值、不下穿 barrier，空 `onTap` 在竞技场必输给任何子识别器，按钮/WebView 不受影响）。
-/// 当 [enableSwipeToClose] 为真时，在**同一个** GestureDetector 上追加横拖识别器：累计
-/// dx 过 [swipeDismissThreshold]（灵敏度取 [dismissSwipeSensitivity]，与顶栏 wrapper /
-/// 716 barrier 同源）即调 [onDismiss]（关一层）。tap 与横拖共享一个识别器，竞技场天然
-/// 分流（单击 → onTap、横拖 → drag），互斥不互吞。双向水平（[_dragX].abs()，对齐手机）。
-/// [enableSwipeToClose] 为假时只 onTap，行为同旧。
+/// 当 [enableSwipeToClose] 为真时，在**同一个** GestureDetector 上追加横拖识别器：拖动
+/// 期间 [Transform.translate] 实时跟手（[_dragX]）+ 随位移淡出；松手时按累计 dx 是否过
+/// [swipeDismissThreshold]（灵敏度取 [dismissSwipeSensitivity]，与顶栏 wrapper / 716
+/// barrier 同源）分流——
+///   * 过阈值：用 [AnimationController] 从当前 [_dragX] 朝拖动方向补间滑出屏外
+///     （位移 = 卡片宽 + [_kSlideOutMargin]）+ 淡出，[_kSlideDuration] / easeOut，
+///     **动画完成回调里**才调 [onDismiss]（关一层）——宿主在弹窗已滑出不可见之后才移除，
+///     用户看到顺滑滑走而非瞬时消失。
+///   * 未过阈值：补间弹回原位（spring-back）。
+/// tap 与横拖共享一个识别器，竞技场天然分流（单击 → onTap、横拖 → drag），互斥不互吞。
+/// 双向水平（[_dragX].abs()，对齐手机）。[enableSwipeToClose] 为假时只 onTap，行为同旧。
+///
+/// TODO-890 复用复位：reader 复用同一槽位（[Visibility] 保留、换新 child）时，
+/// [didUpdateWidget] 监测 child 身份变化并复位 [AnimationController] / [_dragX]，
+/// 否则复用后的弹窗卡在「已滑出 opacity 0」不可见（镜像 [SwipeDismissWrapper] 的
+/// `_dismissing` + `didUpdateWidget` 复位契约）。
 class _BodySwipeDismissDetector extends StatefulWidget {
   const _BodySwipeDismissDetector({
     required this.enableSwipeToClose,
@@ -651,27 +662,109 @@ class _BodySwipeDismissDetector extends StatefulWidget {
       _BodySwipeDismissDetectorState();
 }
 
-class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
+/// TODO-890：滑出/弹回补间时长与曲线（plan 决策点：200ms easeOut，出场与弹回同曲线）。
+const Duration _kSlideDuration = Duration(milliseconds: 200);
+
+/// TODO-890：滑出目标位移 = 卡片宽 + 该边距，保证弹窗矩形完全移出可视区（plan 决策点：
+/// 用卡片宽而非整屏宽，避免大屏上动画过慢）。
+const double _kSlideOutMargin = 24.0;
+
+class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  /// 当前水平位移（px）。跟手期由拖动累计；松手补间期由 [_controller] 在
+  /// [_dragStartX]→[_dragTargetX] 间插值驱动。
   double _dragX = 0;
+
+  /// 跟手期的卡片宽度（[LayoutBuilder] 提供），决定滑出目标位移与淡出归一分母。
+  double _layerWidth = 0;
+
+  /// 补间起止位移（松手时定）。
+  double _dragStartX = 0;
+  double _dragTargetX = 0;
+
+  /// 过阈值滑出补间是否在进行——完成时调 [onDismiss]（弹回补间不调）。
+  bool _dismissing = false;
 
   double get _threshold => swipeDismissThreshold(
         ReaderHibikiSource.instance.dismissSwipeSensitivity,
       );
 
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _kSlideDuration)
+      ..addListener(_onTick)
+      ..addStatusListener(_onStatus);
+  }
+
+  @override
+  void didUpdateWidget(_BodySwipeDismissDetector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 复用同一槽位换新 child：复位退场态，否则复用后的弹窗卡在「已滑出 opacity 0」。
+    if (_dismissing && !identical(oldWidget.child, widget.child)) {
+      _controller.stop();
+      _dismissing = false;
+      _dragX = 0;
+      _dragStartX = 0;
+      _dragTargetX = 0;
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onTick() {
+    final double next =
+        _dragStartX + (_dragTargetX - _dragStartX) * _controller.value;
+    if (next != _dragX && mounted) {
+      setState(() => _dragX = next);
+    }
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && _dismissing) {
+      // 弹窗已滑出屏外、不可见——此刻才真正关一层（避免 dismiss 与动画竞争）。
+      widget.onDismiss();
+    }
+  }
+
   void _onHorizontalDragStart(DragStartDetails _) {
-    _dragX = 0;
+    _controller.stop();
+    _dismissing = false;
+    setState(() => _dragX = 0);
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    _dragX += details.delta.dx;
+    setState(() => _dragX += details.delta.dx);
   }
 
   void _onHorizontalDragEnd(DragEndDetails _) {
     final double accumulated = _dragX;
-    _dragX = 0;
     // 双向水平：左右皆可，对齐手机 `_dragX.abs()`。
     if (accumulated.abs() > _threshold) {
-      widget.onDismiss();
+      // 过阈值：朝拖动方向补间滑出屏外（卡片宽 + 边距），完成回调里再 onDismiss。
+      final double width = _layerWidth > 0 ? _layerWidth : accumulated.abs();
+      _dragStartX = accumulated;
+      _dragTargetX =
+          (accumulated.isNegative ? -1.0 : 1.0) * (width + _kSlideOutMargin);
+      _dismissing = true;
+      _controller
+        ..reset()
+        ..animateTo(1.0, curve: Curves.easeOut);
+    } else {
+      // 未过阈值：补间弹回原位（spring-back）。
+      _dragStartX = accumulated;
+      _dragTargetX = 0;
+      _dismissing = false;
+      _controller
+        ..reset()
+        ..animateTo(1.0, curve: Curves.easeOut);
     }
   }
 
@@ -686,7 +779,29 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
           widget.enableSwipeToClose ? _onHorizontalDragUpdate : null,
       onHorizontalDragEnd:
           widget.enableSwipeToClose ? _onHorizontalDragEnd : null,
-      child: widget.child,
+      child: widget.enableSwipeToClose
+          ? LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                if (constraints.maxWidth.isFinite) {
+                  _layerWidth = constraints.maxWidth;
+                }
+                final double width = _layerWidth > 0 ? _layerWidth : 1.0;
+                // 跟手淡出：位移越大越淡，最低 0.3（与 SwipeDismissWrapper 同手感）；
+                // 滑出补间末段（_dragTargetX = width + margin）自然趋近 0。
+                final double opacity = _dismissing
+                    ? (1 - (_dragX.abs() / (width + _kSlideOutMargin)))
+                        .clamp(0.0, 1.0)
+                    : (1 - (_dragX.abs() / width) * 0.7).clamp(0.3, 1.0);
+                return Transform.translate(
+                  offset: Offset(_dragX, 0),
+                  child: Opacity(
+                    opacity: opacity,
+                    child: widget.child,
+                  ),
+                );
+              },
+            )
+          : widget.child,
     );
   }
 }

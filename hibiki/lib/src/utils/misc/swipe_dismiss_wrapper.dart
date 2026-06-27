@@ -8,6 +8,12 @@ import 'package:flutter/material.dart';
 double swipeDismissThreshold(double sensitivity) =>
     30 + (1.0 - sensitivity) * 160;
 
+/// TODO-890：松手滑出/弹回补间时长与曲线（与 [_BodySwipeDismissDetector] 同手感）。
+const Duration _kSwipeSlideDuration = Duration(milliseconds: 200);
+
+/// TODO-890：滑出目标位移 = 卡片宽 + 该边距，保证弹窗完全移出可视区。
+const double _kSwipeSlideOutMargin = 24.0;
+
 class SwipeDismissWrapper extends StatefulWidget {
   const SwipeDismissWrapper({
     required this.child,
@@ -23,7 +29,8 @@ class SwipeDismissWrapper extends StatefulWidget {
   State<SwipeDismissWrapper> createState() => _SwipeDismissWrapperState();
 }
 
-class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
+class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
+    with SingleTickerProviderStateMixin {
   double _dragX = 0;
   double _dragY = 0;
   bool _decided = false;
@@ -34,15 +41,54 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
   /// spring-back frame on hosts that hide the layer before rebuilding it.
   bool _dismissing = false;
 
+  /// TODO-890：松手后驱动「补间滑出屏外 / 弹回原位」的控制器。过阈值时朝拖动方向
+  /// 补间到 [_animTarget]（卡片宽 + 边距）再在完成回调里 [onDismiss]；未过阈值补间
+  /// 回 0（spring-back）。控制器只在松手后跑，跟手期由指针事件直接驱动 [_dragX]。
+  late final AnimationController _controller;
+  double _animStart = 0;
+  double _animTarget = 0;
+  double _layerWidth = 0;
+
   double get _threshold => swipeDismissThreshold(widget.sensitivity);
   double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller =
+        AnimationController(vsync: this, duration: _kSwipeSlideDuration)
+          ..addListener(_onAnimTick)
+          ..addStatusListener(_onAnimStatus);
+  }
 
   @override
   void didUpdateWidget(SwipeDismissWrapper oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_dismissing && !identical(oldWidget.child, widget.child)) {
+      _controller.stop();
       _clearDragState();
       _dismissing = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onAnimTick() {
+    final double next =
+        _animStart + (_animTarget - _animStart) * _controller.value;
+    if (next != _dragX && mounted) {
+      setState(() => _dragX = next);
+    }
+  }
+
+  void _onAnimStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && _dismissing) {
+      // 弹窗已补间滑出屏外、不可见——此刻才真正关一层（避免 dismiss 与动画竞争）。
+      widget.onDismiss();
     }
   }
 
@@ -60,6 +106,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
 
   void _beginDrag() {
     if (_dismissing) return;
+    _controller.stop();
     _clearDragState();
   }
 
@@ -80,8 +127,25 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
 
   void _finishDrag() {
     if (_decided && _isHorizontal && _dragX.abs() > _threshold) {
+      // TODO-890：过阈值后不再 opacity 瞬灭，而是朝拖动方向补间滑出屏外（卡片宽 +
+      // 边距）再在完成回调里 onDismiss——与 _BodySwipeDismissDetector 动画一致。
+      final double width = _layerWidth > 0 ? _layerWidth : _dragX.abs();
+      _animStart = _dragX;
+      _animTarget =
+          (_dragX.isNegative ? -1.0 : 1.0) * (width + _kSwipeSlideOutMargin);
       if (mounted) setState(() => _dismissing = true);
-      widget.onDismiss();
+      _controller
+        ..reset()
+        ..animateTo(1.0, curve: Curves.easeOut);
+      return;
+    }
+    // 未过阈值 / 非横滑：补间弹回原位（spring-back）。
+    if (_decided && _isHorizontal && _dragX != 0 && mounted) {
+      _animStart = _dragX;
+      _animTarget = 0;
+      _controller
+        ..reset()
+        ..animateTo(1.0, curve: Curves.easeOut);
       return;
     }
     _reset();
@@ -89,7 +153,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    final bool active = _decided && _isHorizontal;
+    final bool active = (_decided && _isHorizontal) || _dismissing;
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => _beginDrag(),
@@ -99,14 +163,21 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper> {
       onPointerPanZoomStart: (_) => _beginDrag(),
       onPointerPanZoomUpdate: (e) => _handleDragDelta(e.panDelta),
       onPointerPanZoomEnd: (_) => _finishDrag(),
-      child: Transform.translate(
-        offset: Offset(active ? _dragX : 0, 0),
-        child: Opacity(
-          opacity: _dismissing
-              ? 0.0
-              : (active ? (1 - (_dragX.abs() / 300)).clamp(0.3, 1.0) : 1.0),
-          child: widget.child,
-        ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (constraints.maxWidth.isFinite) {
+            _layerWidth = constraints.maxWidth;
+          }
+          return Transform.translate(
+            offset: Offset(active ? _dragX : 0, 0),
+            child: Opacity(
+              opacity: _dismissing
+                  ? 0.0
+                  : (active ? (1 - (_dragX.abs() / 300)).clamp(0.3, 1.0) : 1.0),
+              child: widget.child,
+            ),
+          );
+        },
       ),
     );
   }

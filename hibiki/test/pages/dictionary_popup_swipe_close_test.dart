@@ -99,7 +99,9 @@ void main() {
       await tester.pump();
     }
     await gesture.up();
-    await tester.pump();
+    // TODO-890: dismiss now fires on the slide-out animation's completion,
+    // so settle the 200ms tween (over-threshold) / spring-back (below).
+    await tester.pumpAndSettle();
   }
 
   Future<void> panZoomHorizontally(
@@ -121,7 +123,8 @@ void main() {
       await tester.pump();
     }
     tester.binding.handlePointerEvent(pointer.panZoomEnd());
-    await tester.pump();
+    // TODO-890: settle the slide-out animation before the dismiss assert.
+    await tester.pumpAndSettle();
   }
 
   testWidgets(

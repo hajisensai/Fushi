@@ -87,7 +87,9 @@ Future<void> _dragOn(
     await tester.pump();
   }
   await gesture.up();
-  await tester.pump();
+  // TODO-890: onDismiss now fires only when the slide-out animation completes
+  // (AnimationStatus.completed), so settle the 200ms tween before asserting.
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -204,6 +206,96 @@ void main() {
 
     expect(dismissed, 1,
         reason: 'the headerless layer keeps the whole-window swipe semantics');
+  });
+
+  testWidgets(
+      'TODO-890 switch ON: the popup follows the finger mid-drag '
+      '(Transform.translate tracks accumulated dx)',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host(_layer(
+      onDismiss: () {},
+      enableSwipeToClose: true,
+      onClose: () {},
+    )));
+    await tester.pump();
+
+    final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
+    // Drive the drag incrementally (mirrors _dragOn) so the horizontal-drag
+    // recognizer wins the arena and _onHorizontalDragUpdate accumulates.
+    for (int i = 0; i < 12; i++) {
+      await gesture.moveBy(const Offset(8, 0));
+      await tester.pump();
+    }
+
+    // The popup body is wrapped in a Transform.translate that follows the finger.
+    final Iterable<Transform> transforms =
+        tester.widgetList<Transform>(find.byType(Transform));
+    final bool followed = transforms.any((Transform t) {
+      final double dx = t.transform.getTranslation().x;
+      return dx > 40; // tracks the ~96px drag (gesture slop trims a little)
+    });
+    expect(followed, isTrue,
+        reason:
+            'mid-drag the popup must translate with the finger (follow-hand)');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+      'TODO-890 switch ON: over-threshold does NOT dismiss until the slide-out '
+      'animation completes, then fires exactly once',
+      (WidgetTester tester) async {
+    int dismissed = 0;
+    await tester.pumpWidget(_host(_layer(
+      onDismiss: () => dismissed++,
+      enableSwipeToClose: true,
+      onClose: () {},
+    )));
+    await tester.pump();
+
+    final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
+    for (int i = 0; i < 12; i++) {
+      await gesture.moveBy(const Offset(20, 0)); // 240px total clears ~94px
+      await tester.pump();
+    }
+    await gesture.up();
+    // First frame after release: animation is running, NOT yet completed.
+    await tester.pump();
+    expect(dismissed, 0,
+        reason: 'dismiss must wait for the slide-out animation to finish');
+    // Settle the 200ms tween -> completion callback fires onDismiss once.
+    await tester.pumpAndSettle();
+    expect(dismissed, 1,
+        reason: 'onDismiss fires once when the slide-out completes');
+  });
+
+  testWidgets(
+      'TODO-890 switch ON: below-threshold springs the popup back to origin '
+      '(translation returns to 0, no dismiss)', (WidgetTester tester) async {
+    int dismissed = 0;
+    await tester.pumpWidget(_host(_layer(
+      onDismiss: () => dismissed++,
+      enableSwipeToClose: true,
+      onClose: () {},
+    )));
+    await tester.pump();
+
+    final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
+    for (int i = 0; i < 5; i++) {
+      await gesture.moveBy(const Offset(8, 0)); // 40px total, below ~94px
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(dismissed, 0, reason: 'a below-threshold drag closes nothing');
+    final Iterable<Transform> transforms =
+        tester.widgetList<Transform>(find.byType(Transform));
+    final bool allBack = transforms
+        .every((Transform t) => t.transform.getTranslation().x.abs() < 0.5);
+    expect(allBack, isTrue,
+        reason: 'spring-back returns the popup translation to 0');
   });
 
   test('threshold sanity: default sensitivity 0.6 ~94px', () {

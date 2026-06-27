@@ -373,7 +373,9 @@ void main() {
       await tester.pump();
     }
     await g.up();
-    await tester.pump();
+    // TODO-890: the top layer slides out before the host removes it; settle
+    // the 200ms tween so the dismiss completes.
+    await tester.pumpAndSettle();
 
     expect(host.debugPopupStack, hasLength(1),
         reason: 'a body drag on the top layer closes only the top layer');
