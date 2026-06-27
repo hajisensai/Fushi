@@ -587,4 +587,49 @@ function flushTimers() {
     'a re-measure with an unchanged bbox is de-duped (no thrash / no loop)');
 }
 
+// 16. F2 shell chrome: the injected gate <style> also carries the hoshi outer
+//     shell border + radius + drop shadow, transparent background (the iframe
+//     paints the card fill), and a dark-variant border keyed on data-theme.
+{
+  const { host, document } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const style = document.getElementById('global-lookup-host-style');
+  assert.ok(style, 'gate/shell <style> injected');
+  const css = style.textContent;
+  assert.ok(/\.global-lookup-frame-shell\{/.test(css), 'shell rule present');
+  assert.ok(/border:1px solid rgba\(120,120,128,0\.36\)/.test(css),
+    'hoshi shell border spec');
+  assert.ok(/border-radius:10px/.test(css), 'hoshi 10px card radius');
+  assert.ok(/box-shadow:0 3px 12px rgba\(0,0,0,0\.22\)/.test(css),
+    'hoshi drop shadow');
+  assert.ok(/background:transparent/.test(css),
+    'shell background transparent (iframe paints the fill, no double layer)');
+  assert.ok(/\[data-theme="dark"\]/.test(css),
+    'dark variant keyed on data-theme');
+}
+
+// 17. F2 data-theme stamp: the render payload's `theme` is written onto the shell
+//     so the dark/light border variant applies (host has no theme of its own).
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, theme: 'dark',
+        frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shell = shellsOf(document)[0];
+  assert.strictEqual(shell.getAttribute('data-theme'), 'dark',
+    'shell data-theme stamped from the descriptor');
+  // re-render light flips it.
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, theme: 'light',
+        frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(shell.getAttribute('data-theme'), 'light',
+    'data-theme re-stamps on re-render');
+}
+
 console.log('global_lookup_host_test: PASS');

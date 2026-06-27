@@ -190,8 +190,31 @@
     }
     var style = document.createElement('style');
     style.id = STYLE_ID;
+    // F2 — outer SHELL chrome (ported from hoshi reader-popup-host.js shell:
+    // border 1px rgba(120,120,128,.36) / radius 10px / box-shadow). The iframe
+    // inside the shell already paints the THEME card background + the
+    // html.global-lookup body border (popup.css), so the shell deliberately keeps
+    // a TRANSPARENT background (no double fill); it owns only the rounded clip +
+    // the drop-shadow that the iframe element itself cannot cast. Unlike the P2
+    // single-frame chrome (which lived on the iframe body and got clipped at the
+    // window edge), the shell shadow has room to render inside the enlarged
+    // bounding-box window (E1). Dark variant keyed off data-theme stamped by the
+    // render payload. All rules scoped to .global-lookup-frame-shell -> the
+    // in-app popup (no host.js) is never touched.
+    // D1 reveal gate: a shell paints only when BOTH data-* flags are 'true'.
     style.textContent =
+        // D1 reveal gate FIRST (kept as its own rule so the gate contract stays
+        // a single declarative source: a shell defaults hidden until BOTH flags
+        // flip). The F2 chrome below is a SEPARATE .global-lookup-frame-shell
+        // rule (CSS cascades the two), so the gate substring is unchanged.
         '.global-lookup-frame-shell{visibility:hidden;opacity:0;}' +
+        '.global-lookup-frame-shell{' +
+        'box-sizing:border-box;overflow:hidden;background:transparent;' +
+        'border:1px solid rgba(120,120,128,0.36);border-radius:10px;' +
+        'box-shadow:0 3px 12px rgba(0,0,0,0.22);}' +
+        '.global-lookup-frame-shell[data-theme="dark"]{' +
+        'border-color:rgba(255,255,255,0.34);' +
+        'box-shadow:0 3px 12px rgba(0,0,0,0.44);}' +
         '.global-lookup-frame-shell[' + ATTR_CONTENT_READY + '="true"]' +
         '[' + ATTR_REVEAL_READY + '="true"]{visibility:visible;opacity:1;}';
     var head = document.head ||
@@ -221,6 +244,13 @@
 
   function applyShellStyle(shell, descriptor) {
     var f = (descriptor && descriptor.frame) || {};
+    // F2 — stamp the resolved brightness so the dark shell border/shadow variant
+    // applies (the host document has no data-theme of its own; the render payload
+    // carries it per layer).
+    var theme = descriptor && descriptor.theme;
+    if (theme === 'dark' || theme === 'light') {
+      shell.setAttribute('data-theme', theme);
+    }
     shell.style.position = 'absolute';
     shell.style.left = (typeof f.left === 'number' ? f.left : 0) + 'px';
     shell.style.top = (typeof f.top === 'number' ? f.top : 0) + 'px';

@@ -97,9 +97,24 @@ String buildFrameSettingsJs({
       if (!s) {
         s = document.createElement('style');
         s.id = 'hibiki-overlay-style';
+        // TODO-867 P3c F1 — icon glyph fix (route A: Windows monochrome symbol
+        // font). The popup card icons are popup.js/css-written Unicode chars,
+        // NOT Material codepoints: audio U+266A (popup.js:1737), audio-error
+        // U+2715 (popup.js:1728), collapse arrows U+25B6/U+25BC (popup.css:475/
+        // 481 .glossary-group>summary::before content). Under popup.css's macOS
+        // font stack these glyphs are missing/ugly on Windows; the OLD stack put
+        // the colour-emoji font SECOND, so Windows rendered them as oversized
+        // colour emoji (the "icon shows wrong" symptom). Fix: force the MONOCHROME
+        // "Segoe UI Symbol" (which carries U+266A/U+25B6/U+25BC/U+2715) and DROP
+        // the emoji font so these render as flat single-colour symbols.
+        // .mine-button stays display:none (app-outside lookup hides "+"), so its
+        // glyph never shows. Scoped to this global-lookup iframe only (the in-app
+        // popup never runs buildFrameSettingsJs) -> in-app icons unchanged. If
+        // the real-device glyph is still unacceptable, route B (Material SVG +
+        // CSS mask-image) is the documented fallback.
         s.textContent =
           '.mine-button{display:none !important;}' +
-          '.audio-button,.glossary-group>summary{font-family:"Segoe UI Symbol","Segoe UI Emoji","Segoe UI",sans-serif !important;}';
+          '.audio-button,.glossary-group>summary::before{font-family:"Segoe UI Symbol","Segoe UI",sans-serif !important;}';
         document.head.appendChild(s);
       }
     })();
@@ -190,6 +205,13 @@ String buildStackRenderScript({
   required double maxWidth,
   required double maxHeight,
 }) {
+  // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
+  // TOP-LEVEL host document, which carries no data-theme of its own (the theme
+  // vars live INSIDE each iframe). So the shell's dark/light border variant can't
+  // read a CSS var; stamp the resolved brightness onto each popup descriptor and
+  // host.js sets data-theme on the shell.
+  final String shellTheme =
+      Theme.of(context).brightness == Brightness.dark ? 'dark' : 'light';
   final List<Map<String, Object?>> popups = <Map<String, Object?>>[];
   for (int i = 0; i < payloads.length; i++) {
     final GlobalLookupFramePayload p = payloads[i];
@@ -199,6 +221,7 @@ String buildStackRenderScript({
       result: p.result,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
+    map['theme'] = shellTheme;
     map['frame'] = _frameRectMap(
       anchorRect: p.anchorRect,
       depth: i,

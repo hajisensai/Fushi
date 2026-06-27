@@ -80,6 +80,100 @@ void main() {
     });
   });
 
+  group('P3c F1 — icon glyph fix (route A: monochrome symbol font)', () {
+    late String render;
+    setUpAll(() => render = read('lib/src/lookup/global_lookup_render.dart'));
+
+    test('global-lookup iframe forces the monochrome Segoe UI Symbol font', () {
+      // The popup card icons are Unicode chars (audio U+266A, arrows U+25B6/
+      // U+25BC), NOT Material codepoints. Route A: give them a Windows font that
+      // CARRIES those glyphs and is MONOCHROME, so they don't render as oversized
+      // colour emoji.
+      expect(render.contains('"Segoe UI Symbol"'), isTrue,
+          reason: 'must pin the monochrome symbol font that carries ♪/▶/▼');
+    });
+
+    test('the emoji font is DROPPED (no colour-emoji rendering of ♪/✕)', () {
+      // "Segoe UI Emoji" in the stack is exactly what made Windows render ♪/✕ as
+      // colour emoji (the reported "icon shows wrong"); it must be gone.
+      expect(render.contains('Segoe UI Emoji'), isFalse,
+          reason: 'the emoji font caused the colour-emoji symbol rendering');
+    });
+
+    test('the icon font is applied to the audio button + collapse arrow glyph',
+        () {
+      // .audio-button = ♪ ; .glossary-group>summary::before = ▶/▼ content glyph.
+      expect(render.contains('.audio-button'), isTrue);
+      expect(render.contains('.glossary-group>summary::before'), isTrue,
+          reason: 'the arrow glyph lives in the ::before content, so the font '
+              'override must target the pseudo-element');
+    });
+
+    test('the icon CSS is global-lookup scoped (buildFrameSettingsJs only)',
+        () {
+      // buildFrameSettingsJs is the global-lookup-only per-frame body; the in-app
+      // popup (dictionary_popup_webview) never calls it, so this never leaks.
+      expect(render.contains('String buildFrameSettingsJs('), isTrue);
+      final String inApp =
+          read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+      expect(inApp.contains('buildFrameSettingsJs'), isFalse,
+          reason: 'in-app popup must not run the global-lookup icon override');
+    });
+  });
+
+  group('P3c F2 — outer shell chrome (.global-lookup-frame-shell)', () {
+    late String host;
+    setUpAll(() => host = read('assets/popup/global_lookup_host.js'));
+
+    test('shell carries the hoshi card border + radius + drop shadow', () {
+      expect(host.contains('.global-lookup-frame-shell{'), isTrue);
+      expect(host.contains('border:1px solid rgba(120,120,128,0.36)'), isTrue,
+          reason: 'hoshi shell border spec');
+      expect(host.contains('border-radius:10px'), isTrue,
+          reason: 'hoshi 10px card radius');
+      expect(host.contains('box-shadow:0 3px 12px rgba(0,0,0,0.22)'), isTrue,
+          reason:
+              'hoshi drop shadow (renders inside the enlarged bbox window)');
+    });
+
+    test('shell background stays transparent (iframe paints the card fill)',
+        () {
+      // The iframe (popup.html) already paints the THEME background + the
+      // html.global-lookup body border, so the shell must NOT add a second fill.
+      // The chrome rule is the .global-lookup-frame-shell block carrying the
+      // border (the first such block is the D1 reveal-gate visibility rule).
+      final int chromeAt =
+          host.indexOf('border:1px solid rgba(120,120,128,0.36)');
+      final int ruleStart =
+          host.lastIndexOf('.global-lookup-frame-shell{', chromeAt);
+      final String rule =
+          host.substring(ruleStart, host.indexOf('}', chromeAt));
+      expect(rule.contains('background:transparent'), isTrue,
+          reason: 'shell owns only the rounded clip + shadow, not the fill');
+    });
+
+    test('dark variant is keyed on data-theme stamped by the render payload',
+        () {
+      expect(host.contains('.global-lookup-frame-shell[data-theme="dark"]'),
+          isTrue,
+          reason:
+              'the host document has no theme of its own; the shell reads a '
+              'per-layer data-theme the render payload supplies');
+      expect(host.contains('descriptor && descriptor.theme'), isTrue,
+          reason: 'host.js must stamp data-theme from the descriptor');
+      final String render = read('lib/src/lookup/global_lookup_render.dart');
+      expect(render.contains("map['theme'] ="), isTrue,
+          reason: 'the render payload must carry the resolved brightness');
+    });
+
+    test('the shell chrome stays global-lookup scoped (host.js only)', () {
+      // host.js is C++-injected into the global-lookup window ONLY; the in-app
+      // popup never loads it, so .global-lookup-frame-shell can never reach it.
+      expect(host.contains('window.top !== window.self'), isTrue,
+          reason: 'host runs on the top-level global-lookup document only');
+    });
+  });
+
   group('native rounded window (C++)', () {
     test('global_lookup_window rounds the opaque window via SetWindowRgn', () {
       final String cpp = read('windows/runner/global_lookup_window.cpp');
