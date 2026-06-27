@@ -145,10 +145,14 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     // BUG-438/TODO-889: a gamepad connect/disconnect is a keyboard/navigation
-    // configuration change. This Activity declares keyboard in android:configChanges
-    // so Flutter keeps the Activity alive and onConfigurationChanged fires instead of
-    // a recreate; re-apply the system focus-highlight suppression here too, because
-    // the framework can reset defaultFocusHighlightEnabled when input config changes.
+    // configuration change. This Activity declares both keyboard AND navigation in
+    // android:configChanges (the navigation flag is essential: a gamepad is a
+    // navigation input device, so without it CONFIG_NAVIGATION changes recreate the
+    // Activity instead of calling onConfigurationChanged, re-exposing the system
+    // focus frame and a load spinner). With them declared Flutter keeps the Activity
+    // alive and onConfigurationChanged fires instead of a recreate; re-apply the
+    // system focus-highlight suppression here too, because the framework can reset
+    // defaultFocusHighlightEnabled when input config changes.
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
@@ -310,11 +314,13 @@ public class MainActivity extends AudioServiceActivity {
     protected void onResume() {
         super.onResume();
         // BUG-438/TODO-889: re-apply the system focus-highlight suppression on
-        // resume. disableSystemFocusHighlight() runs once in onCreate, but on some
-        // skins (Samsung OneUI) plugging in a gamepad triggers an Activity recreate
-        // / decorView re-attach that resets defaultFocusHighlightEnabled back to
-        // true, so the system focus rectangle re-appears over Hibiki's own focus
-        // ring. Re-applying here (and in onConfigurationChanged) keeps it killed.
+        // resume. disableSystemFocusHighlight() runs once in onCreate. With
+        // navigation now in android:configChanges a gamepad plug/unplug is kept
+        // alive (onConfigurationChanged), but onResume is still a belt-and-braces
+        // path for skins that re-attach the decorView and reset
+        // defaultFocusHighlightEnabled back to true, re-exposing the system focus
+        // rectangle over Hibiki own focus ring. Re-applying here (and in
+        // onConfigurationChanged) keeps it killed.
         disableSystemFocusHighlight();
         // BUG-427/TODO-852: belt-and-braces for OEMs whose settings page does
         // not deliver onActivityResult after the permission grant. If a pending

@@ -24,7 +24,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
@@ -111,7 +111,7 @@
             android:launchMode="singleTop"
             android:exported="false"
             android:hardwareAccelerated="true"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:windowSoftInputMode="adjustResize">
         </activity>
 
@@ -125,7 +125,7 @@
             android:launchMode="singleTop"
             android:exported="true"
             android:hardwareAccelerated="true"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
