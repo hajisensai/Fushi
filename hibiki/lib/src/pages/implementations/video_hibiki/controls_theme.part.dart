@@ -148,8 +148,9 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       onSeekStart: () => controller.clearSeekTargetSnap(),
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
-      // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。不开
-      // seekGesture（横滑 seek 超范围，且与既有 seek 键 085/090 / 双击全屏语义重叠）。
+      // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek
+      // 见下方 [seekGesture]（TODO-916 症状①，按时长比例换算 + 居中 HUD 显目标绝对
+      // 时间；与既有 seek 键 085/090 / 双击全屏语义并存，竞技场先达成者胜）。
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
       volumeGesture: true,
@@ -162,7 +163,19 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
       // 拉满亮度/音量。值越大越不敏感（见 [_videoVerticalGestureSensitivity]）。
       verticalGestureSensitivity:
           _VideoHibikiPageState._videoVerticalGestureSensitivity,
-      seekGesture: false,
+      // TODO-916 症状①：启用 fork 内置横滑 seek（third_party/media_kit_video 的
+      // MaterialVideoControls.onHorizontalDragUpdate/End）：按 [position + diff *
+      // duration / horizontalGestureSensitivity] 换算目标、松手 player.seek，拖回
+      // 原点（swipeDuration==0）自动取消。仅移动端 theme 启用；桌面
+      // [_desktopControlsTheme] 不含此字段（鼠标拖进度条 + 键盘 seek 键，诚实降级）。
+      seekGesture: true,
+      horizontalGestureSensitivity:
+          _VideoHibikiPageState._videoHorizontalGestureSensitivity,
+      // 居中 HUD：fork 默认只显增量，这里替换成「目标绝对时间 + 增量」两行（主流
+      // 播放器手感）。builder 每帧随拖动重建，读 controller 实时 position + 增量算
+      // 目标时间（clamp [0,duration]）。delta 为 fork 回传的有符号 swipeDuration。
+      seekIndicatorBuilder: (BuildContext context, Duration delta) =>
+          _buildSeekIndicator(controller, delta),
       onVolumeChanged: _onMediaKitVolumeChanged,
       onBrightnessChanged: _onMediaKitBrightnessChanged,
       initialVolume: (controller.volume / 100.0).clamp(0.0, 1.0).toDouble(),
@@ -222,6 +235,60 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
           child: _centeredBottomControlBar(controller, desktop: false),
         ),
       ],
+    );
+  }
+
+  /// TODO-916 症状①：横滑 seek 居中 HUD（替换 fork 默认只显增量的 HUD）。
+  ///
+  /// fork 的 `seekIndicatorBuilder` 只回传增量 [delta]（有符号 swipeDuration）。主流
+  /// 播放器横滑时显示**目标绝对时间**，故这里读 [controller] 实时位置/时长，经纯函数
+  /// [_VideoHibikiPageState.videoSeekIndicatorTargetLabel] /
+  /// [_VideoHibikiPageState.videoSeekIndicatorDeltaLabel] 算出「目标时间」与「±增量」
+  /// 两行。fork 把本 widget 套在居中 `IgnorePointer + AnimatedOpacity` 里，故这里只画
+  /// 圆角半透明盒，不再处理定位/淡入淡出。
+  Widget _buildSeekIndicator(
+    VideoPlayerController controller,
+    Duration delta,
+  ) {
+    final Duration position =
+        Duration(milliseconds: controller.positionMs ?? 0);
+    final Duration duration =
+        Duration(milliseconds: controller.durationMs ?? 0);
+    final String targetLabel =
+        VideoSeekIndicatorLabel.target(position, delta, duration);
+    final String deltaLabel = VideoSeekIndicatorLabel.deltaSigned(delta);
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xCC000000),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            targetLabel,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFFFFFFFF),
+              fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            deltaLabel,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Color(0xCCFFFFFF),
+              fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

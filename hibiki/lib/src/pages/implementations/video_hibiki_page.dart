@@ -29,6 +29,7 @@ import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/media/video/video_resource_check.dart';
+import 'package:hibiki/src/media/video/video_seek_indicator_label.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -605,6 +606,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 仅移动端有此竖滑手势，传给 [_mobileControlsTheme]；桌面 [_desktopControlsTheme]
   /// 无此手势、不设此参数（诚实降级）。
   static const double _videoVerticalGestureSensitivity = 320.0;
+
+  /// TODO-916 症状①：media_kit 移动控制条横滑 seek 的灵敏度（仅移动端有此手势，
+  /// 桌面走鼠标拖进度条 + 键盘 seek 键 085/090，不接横滑）。media_kit 公式是
+  /// `seconds = -(diff.dx * duration / horizontalGestureSensitivity)`——按视频时长
+  /// 比例换算（不是固定 ±N 秒），值越大越不敏感。沿用 fork 默认 1000：满 1000 逻辑
+  /// 像素横拖 = 整段时长，手机屏宽 ~400dp 拖满全屏宽约 = 时长的 40%，与主流播放器
+  /// （bilibili/YouTube）的比例制横拖手感一致。HUD 文本格式见
+  /// [VideoSeekIndicatorLabel]。
+  static const double _videoHorizontalGestureSensitivity = 1000.0;
 
   // TODO-057: 视频左半区竖滑调屏幕亮度、右半区竖滑调音量。手势 + 指示器复用
   // media_kit 移动控制条竖滑手势接线见 [_mobileControlsTheme]；亮度落设备背光经
