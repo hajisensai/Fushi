@@ -1880,5 +1880,10 @@
   "update_custom_proxy_invalid": "Invalid proxy. Use host:port",
   "font_target_video_subtitle": "視頻字幕字體",
   "sync_err_scope_upgrade": "Sync permissions changed — please sign in to Google again to continue syncing.",
-  "reader_open_failed": "Failed to open book"
+  "reader_open_failed": "Failed to open book",
+  "reader_gallery": "Gallery",
+  "reader_gallery_tooltip": "Browse illustrations",
+  "reader_gallery_empty": "No illustrations in this book",
+  "reader_gallery_current": "Reading here",
+  "reader_gallery_jump": "Jump to this illustration"
 }

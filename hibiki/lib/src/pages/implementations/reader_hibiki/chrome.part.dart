@@ -245,6 +245,37 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     );
   }
 
+  // ── Illustration Gallery (TODO-723) ───────────────────────────────────
+  // Browse every image in the book in reading order, with the image(s) in the
+  // current chapter marked, scrolled into view on open. Tapping a thumbnail
+  // reuses [_openImageViewer] (no second zoom path); "jump to this illustration"
+  // reuses [_navigateToChapter] (no second navigation path). Reads
+  // [_currentChapter] only -- never writes reader/WebView state.
+
+  void _openGallery() {
+    final EpubBook? book = _book;
+    if (book == null) return;
+    final List<EpubImageRef> images = book.images;
+    final int currentChapter = _currentChapter;
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (BuildContext routeContext) => _ReaderGalleryPage(
+          images: images,
+          currentChapter: currentChapter,
+          fileForRef: (EpubImageRef ref) =>
+              _readerImageFileForUrl(ReaderHibikiSource.epubUrl(ref.src)),
+          onOpenImage: (EpubImageRef ref) =>
+              _openImageViewer(ReaderHibikiSource.epubUrl(ref.src)),
+          onJumpTo: (EpubImageRef ref) {
+            Navigator.pop(routeContext);
+            unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
+          },
+        ),
+      ),
+    );
+  }
+
   // ── Media Notification ────────────────────────────────────────────
   // TODO-291 阶段2：媒体通知的 cue/播放态同步已上移到 [AudiobookSession] 常驻执行。
   // reader 只保留设置开关，翻转后委托 session 装/清通知卡片。
@@ -592,6 +623,15 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         iconSize: 22,
         tooltip: t.audio_import,
         onPressed: _openAudioImportDialog,
+      ),
+      // TODO-723: illustration gallery -- browse every image in the book around
+      // the current reading position. Reuses the existing image viewer + chapter
+      // navigation; never touches WebView pagination/restore/lookup.
+      IconButton(
+        icon: Icon(Icons.collections_outlined, color: _themeTextColor()),
+        iconSize: 22,
+        tooltip: t.reader_gallery_tooltip,
+        onPressed: _openGallery,
       ),
       const Spacer(),
       IconButton(
@@ -1309,5 +1349,194 @@ extension _ReaderChrome on _ReaderHibikiPageState {
       await _refreshSectionHighlights(section);
     }
     HibikiToast.show(msg: t.favorite_added);
+  }
+}
+
+/// TODO-723: full-screen illustration gallery for the reader. Shows every
+/// [EpubImageRef] in reading order as a thumbnail grid; the image(s) in the
+/// current chapter are marked ("Reading here") and scrolled into view on open.
+/// Decoupled from reader page state -- the page passes in a resolver
+/// ([fileForRef]) plus open/jump callbacks so this widget owns no reader logic.
+class _ReaderGalleryPage extends StatefulWidget {
+  const _ReaderGalleryPage({
+    required this.images,
+    required this.currentChapter,
+    required this.fileForRef,
+    required this.onOpenImage,
+    required this.onJumpTo,
+  });
+
+  final List<EpubImageRef> images;
+  final int currentChapter;
+  final File? Function(EpubImageRef ref) fileForRef;
+  final void Function(EpubImageRef ref) onOpenImage;
+  final void Function(EpubImageRef ref) onJumpTo;
+
+  @override
+  State<_ReaderGalleryPage> createState() => _ReaderGalleryPageState();
+}
+
+class _ReaderGalleryPageState extends State<_ReaderGalleryPage> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-scroll to the first image of the current chapter once laid out.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  int _columnCount(double width) {
+    const double target = 150.0;
+    final int count = (width / target).floor();
+    return count < 2 ? 2 : count;
+  }
+
+  // Grid layout constants — single source of truth shared by [build] and
+  // [_scrollToCurrent] so the auto-scroll estimate matches the real layout.
+  static const double _kGridPadding = 8.0;
+  static const double _kGridSpacing = 8.0;
+  static const double _kTileAspect = 0.78;
+
+  void _scrollToCurrent() {
+    if (!_scrollController.hasClients) return;
+    final int firstCurrent = widget.images.indexWhere(
+        (EpubImageRef r) => r.chapterIndex == widget.currentChapter);
+    if (firstCurrent < 0) return;
+    final double width = MediaQuery.of(context).size.width;
+    final int columns = _columnCount(width);
+    final int row = firstCurrent ~/ columns;
+    // Reproduce the grid's row pitch: subtract the horizontal padding, split the
+    // remaining width across columns (minus inter-column spacing), divide tile
+    // width by the aspect ratio for the tile height, then add the main-axis
+    // spacing between rows. Clamped to the scroll extent so an over-estimate
+    // never throws.
+    final double availWidth =
+        (width - _kGridPadding * 2 - _kGridSpacing * (columns - 1))
+            .clamp(0.0, double.infinity);
+    final double tileWidth = availWidth / columns;
+    final double rowPitch = tileWidth / _kTileAspect + _kGridSpacing;
+    final double target =
+        (row * rowPitch).clamp(0.0, _scrollController.position.maxScrollExtent);
+    _scrollController.jumpTo(target);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(title: Text(t.reader_gallery)),
+      body: widget.images.isEmpty
+          ? Center(
+              child: Text(
+                t.reader_gallery_empty,
+                style: theme.textTheme.bodyLarge,
+              ),
+            )
+          : LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final int columns = _columnCount(constraints.maxWidth);
+                return GridView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(_kGridPadding),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: _kGridSpacing,
+                    mainAxisSpacing: _kGridSpacing,
+                    childAspectRatio: _kTileAspect,
+                  ),
+                  itemCount: widget.images.length,
+                  itemBuilder: (BuildContext context, int index) =>
+                      _buildTile(theme, widget.images[index]),
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildTile(ThemeData theme, EpubImageRef ref) {
+    final bool isCurrent = ref.chapterIndex == widget.currentChapter;
+    final File? file = widget.fileForRef(ref);
+    final Widget thumbnail = file == null
+        ? ColoredBox(
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Center(
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          )
+        : Image.file(file, fit: BoxFit.cover);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(
+          child: GestureDetector(
+            onTap: () => widget.onOpenImage(ref),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: isCurrent
+                    ? Border.all(color: theme.colorScheme.primary, width: 2)
+                    : null,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: thumbnail,
+              ),
+            ),
+          ),
+        ),
+        if (isCurrent)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <Widget>[
+                Flexible(
+                  child: Text(
+                    t.reader_gallery_current,
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: theme.colorScheme.primary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  iconSize: 18,
+                  tooltip: t.reader_gallery_jump,
+                  icon: const Icon(Icons.my_location_outlined),
+                  onPressed: () => widget.onJumpTo(ref),
+                ),
+              ],
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                iconSize: 18,
+                tooltip: t.reader_gallery_jump,
+                icon: const Icon(Icons.my_location_outlined),
+                onPressed: () => widget.onJumpTo(ref),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }

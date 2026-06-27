@@ -34,6 +34,14 @@ class EpubBook {
   final Map<String, EpubResource> resources;
   final String? rootDirectory;
 
+  /// TODO-723: lazily-built, cached index of every `<img>` in the book, ordered
+  /// by spine (reading order) then by DOM order within each chapter. Built once
+  /// on first [images] access and cached; the illustration set is immutable for
+  /// the lifetime of an opened book. Kept *out* of the constructor so [EpubBook]
+  /// stays an immutable value type (all declared fields final) -- this is the one
+  /// derived cache, never assigned from outside.
+  List<EpubImageRef>? _images;
+
   Uint8List? readResource(String path) {
     final String normalized = normalizeHref(path);
     final EpubResource? resource = resources[normalized];
@@ -84,6 +92,38 @@ class EpubBook {
     final html_dom.Document doc = html_parser.parse(chapters[index].html);
     final html_dom.Element? img = doc.querySelector('img');
     return img?.attributes['src'];
+  }
+
+  /// TODO-723: every `<img>` in the book in reading order. Walks [chapters] in
+  /// spine order; for each chapter parses its XHTML with `package:html` and
+  /// collects every `<img>` with a non-empty `src` in DOM order. `orderInBook`
+  /// is a 0-based running index across the whole book; `chapterIndex` is the
+  /// owning spine index. Chapters with no images contribute nothing. SVG
+  /// `<image xlink:href>` is intentionally NOT included yet (deferred).
+  ///
+  /// Built lazily and cached in [_images] (the illustration set does not change
+  /// once a book is open).
+  List<EpubImageRef> get images {
+    final List<EpubImageRef>? cached = _images;
+    if (cached != null) return cached;
+    final List<EpubImageRef> built = <EpubImageRef>[];
+    int order = 0;
+    for (int i = 0; i < chapters.length; i++) {
+      final String chapterHref = chapters[i].href;
+      final html_dom.Document doc = html_parser.parse(chapters[i].html);
+      for (final html_dom.Element img in doc.querySelectorAll('img')) {
+        final String? src = img.attributes['src'];
+        if (src == null || src.trim().isEmpty) continue;
+        built.add(EpubImageRef(
+          chapterIndex: i,
+          orderInBook: order++,
+          src: resolveImageHref(chapterHref, src),
+        ));
+      }
+    }
+    final List<EpubImageRef> result = List<EpubImageRef>.unmodifiable(built);
+    _images = result;
+    return result;
   }
 
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
@@ -176,6 +216,42 @@ class EpubBook {
     if (normalized.isEmpty) return normalized;
     return p.posix.normalize(normalized);
   }
+}
+
+/// TODO-723: resolves an `<img src>` (which the WebView resolves relative to the
+/// *current chapter document*) into an **epub-root-relative href** that
+/// [ReaderHibikiSource.epubUrl] / the `/epub/<path>` intercept treat as relative
+/// to the EPUB root. Mirrors [EpubSpreadAnalyzer._resolveImagePath] /
+/// [_resolveSpreadImageUrl]: join against the chapter's directory then POSIX-
+/// normalize. Pure (no book/IO state) so the root-cause path is directly
+/// unit-testable.
+///
+/// Examples (chapterHref -> src => result):
+/// - `OEBPS/text/ch1.xhtml` + `../images/p1.png` => `OEBPS/images/p1.png`
+/// - `OEBPS/text/ch1.xhtml` + `./img.png`        => `OEBPS/text/img.png`
+/// - `OEBPS/text/ch1.xhtml` + `img.png`          => `OEBPS/text/img.png`
+/// - `ch.xhtml`             + `images/x.png`      => `images/x.png`
+String resolveImageHref(String chapterHref, String src) {
+  final String chapterDir = p.posix.dirname(normalizeHref(chapterHref));
+  return p.posix.normalize(p.posix.join(chapterDir, src));
+}
+
+/// TODO-723: one illustration occurrence in a book, in reading order.
+///
+/// [chapterIndex] is the owning spine chapter; [orderInBook] is a 0-based index
+/// across the whole book (stable reading order); [src] is the **epub-root-
+/// relative href** (already resolved against the owning chapter's directory via
+/// [resolveImageHref]) suitable for [ReaderHibikiSource.epubUrl].
+class EpubImageRef {
+  const EpubImageRef({
+    required this.chapterIndex,
+    required this.orderInBook,
+    required this.src,
+  });
+
+  final int chapterIndex;
+  final int orderInBook;
+  final String src;
 }
 
 class EpubChapter {

@@ -1880,5 +1880,10 @@
   "update_custom_proxy_invalid": "代理格式无效，请用 host:port",
   "font_target_video_subtitle": "视频字幕字体",
   "sync_err_scope_upgrade": "同步权限已更新，请重新登录 Google 账号以继续同步。",
-  "reader_open_failed": "打开书籍失败"
+  "reader_open_failed": "打开书籍失败",
+  "reader_gallery": "插图",
+  "reader_gallery_tooltip": "浏览插图",
+  "reader_gallery_empty": "本书没有插图",
+  "reader_gallery_current": "正在阅读",
+  "reader_gallery_jump": "跳转到此插图"
 }
