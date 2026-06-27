@@ -1,0 +1,12 @@
+## BUG-441 · EPUB有声书卡角标变字幕图标
+- **报告**：2026-06-28（用户：；TODO-919，1.0.0 发布前置）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/pages/implementations/reader_history/books.part.dart:29`（`_buildSrtCard` 的 `coverBadge` 恒 `Icons.subtitles_outlined`）+ `:38-51`（`_buildSrtCover` fallback 图标恒字幕）。
+  - 链路：TODO-894（commit `f8d40fded`）让 EPUB 有声书导入额外落一条 `srt_books` 配对行（stable uid `srtbook_epub_<bookKey>`，`bookKey` 非空 + 携带音频）以打通同步导出。书架因此把这条行当**字幕书**经 `_buildSrtCard` 渲染，角标从耳机（有声书语义，见 `card_widgets.part.dart:460 _audiobookBadge` 用 `Icons.headphones_outlined`）退化成字幕图标。是「同一张卡之前耳机现在字幕」，不是重复卡。
+- **[x] ① 已修复** — commit <PENDING>
+  - `books.part.dart` 新增纯判据 `bool isEpubBackedAudiobookSrt(SrtBook book)`：`bookKey` 非空 **且** 有音频（`audioPaths` 非空或 `audioRoot` 非空）→ EPUB 有声书配对行。
+  - `_buildSrtCard` 角标、`_buildSrtCover` 占位/封面 fallback 图标按此判据选 `Icons.headphones_outlined`（EPUB 有声书）/ `Icons.subtitles_outlined`（纯字幕书）。
+  - 不回退 TODO-894 的 srt_books 配对 / v29 self-heal 逻辑，只改 UI 角标选择。纯字幕书（`bookKey` 空，或 EPUB 关联但无音频）行为不变。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_history_audiobook_badge_guard_test.dart`
+  - 驱动纯判据 `isEpubBackedAudiobookSrt`：EPUB+audioPaths→true、EPUB+audioRoot→true、EPUB 无音频→false、无 bookKey 即便有音频→false。
+  - load-bearing 已验：把判据改回恒 `false` → 前两条断言变红；恢复 → 4/4 绿。
+- **备注**：`flutter analyze`（改动文件）No issues found；`flutter test test/pages/` 1407 全绿。

@@ -1,6 +1,23 @@
 // GENERATED-NOTE: extracted from reader_hibiki_history_page.dart (TODO-587).
 part of '../reader_hibiki_history_page.dart';
 
+/// TODO-919 / BUG-441：判定一条 [SrtBook] 是否为「EPUB 有声书配对行」。
+///
+/// TODO-894 起，EPUB 有声书导入会额外落一条 `srt_books` 行（stable uid
+/// `srtbook_epub_<bookKey>`）以打通同步导出。该行 [SrtBook.bookKey] 非空
+/// 且携带音频（[SrtBook.audioPaths] 非空或 [SrtBook.audioRoot] 非空）。书架对
+/// 这种行渲染时应保留有声书语义的耳机角标（与 `_audiobookBadge` 一致），而不是
+/// 纯字幕书的字幕角标。纯字幕书（无 EPUB 关联，[SrtBook.bookKey] 为空）仍用字幕
+/// 角标——消除特殊情况只在这一处判据。
+bool isEpubBackedAudiobookSrt(SrtBook book) {
+  if (book.bookKey.isEmpty) return false;
+  final List<String>? audioPaths = book.audioPaths;
+  final bool hasAudioPaths = audioPaths != null && audioPaths.isNotEmpty;
+  final String? audioRoot = book.audioRoot;
+  final bool hasAudioRoot = audioRoot != null && audioRoot.isNotEmpty;
+  return hasAudioPaths || hasAudioRoot;
+}
+
 /// books domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   Widget? _buildSrtBookTagLabels(int srtBookId) => _tagLabelsFromMap(
@@ -12,6 +29,11 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
+    // TODO-919 / BUG-441：EPUB 有声书配对行（TODO-894 落的 srt_books）保留耳机角标，
+    // 纯字幕书仍用字幕角标。
+    final IconData badgeIcon = isEpubBackedAudiobookSrt(book)
+        ? Icons.headphones_outlined
+        : Icons.subtitles_outlined;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
@@ -27,7 +49,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         cover: _buildSrtCover(book, epubCoverUri: epubCoverUri),
         tagLabels: tagWidget,
         coverBadge: _cardBadge(
-          icon: Icons.subtitles_outlined,
+          icon: badgeIcon,
           background: theme.colorScheme.secondaryContainer,
           foreground: theme.colorScheme.onSecondaryContainer,
         ),
@@ -36,18 +58,23 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   Widget _buildSrtCover(SrtBook book, {String? epubCoverUri}) {
+    // TODO-919 / BUG-441：占位/封面 fallback 图标随卡片类型走——EPUB 有声书配对行
+    // 用耳机，纯字幕书用字幕，与角标保持同一判据。
+    final IconData fallbackIcon = isEpubBackedAudiobookSrt(book)
+        ? Icons.headphones_outlined
+        : Icons.subtitles_outlined;
     final String? ownCoverPath = _existingCoverFilePath(book.coverPath);
     if (ownCoverPath != null) {
-      return _buildFileCover(ownCoverPath, Icons.subtitles_outlined);
+      return _buildFileCover(ownCoverPath, fallbackIcon);
     }
     if (book.bookKey.isNotEmpty) {
       final Widget? linkedCover = _buildCoverFromUri(
         epubCoverUri,
-        Icons.subtitles_outlined,
+        fallbackIcon,
       );
       if (linkedCover != null) return linkedCover;
     }
-    return _coverPlaceholderIcon(Icons.subtitles_outlined);
+    return _coverPlaceholderIcon(fallbackIcon);
   }
 
   MediaItem _srtBookMediaItem(SrtBook book) {
