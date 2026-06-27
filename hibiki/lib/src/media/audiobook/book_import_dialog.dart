@@ -697,8 +697,14 @@ class _BookImportDialogState extends State<BookImportDialog>
         // 取消必须冒泡到顶层中止整次导入，不能被吞成 bookId=0 继续。
         rethrow;
       } catch (e, stack) {
+        // BUG-439：坏 EPUB（FormatException 等）以前在这里被吞掉、bookKey 留空串，
+        // 下面仍无条件 save 出一条没有 EpubBooks 行的孤儿 SrtBook 壳行——书架有卡
+        // 却打不开（reader 定位磁盘返回 exists:false → book_file_not_found）。
+        // EPUB 是字幕书的正文载体，载体生成/导入失败这本书就不可读，必须让整次
+        // 导入失败而不是落孤儿壳行。与上面的取消同理冒泡到顶层报错。
         ErrorLogService.instance.log('BookImportDialog.epubImport', e, stack);
         debugPrint('[hibiki-import] EPUB generation/import failed: $e');
+        rethrow;
       }
     }
 

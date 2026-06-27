@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 424 条。点号进各自文件。
+> 共 425 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-439](bugs/BUG-439-bad-epub-import-orphan-and-fake-delete.md) | ✅ | ✅ | 坏EPUB导入留孤儿壳行+删除假成功 |
 | [BUG-438](bugs/BUG-438-gamepad-reconnect-loading.md) | ✅ | ✅ | 手柄重连后阅读器无限 loading |
 | [BUG-437](bugs/BUG-437-reader-init-hang-no-timeout.md) | ✅ | ✅ | 打开书籍偶发永久卡加载不恢复 |
 | [BUG-436](bugs/BUG-436-interconnect-host-autosync.md) | ✅ | ✅ | 互联host模式不应显示自动同步开关 |

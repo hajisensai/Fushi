@@ -44,9 +44,13 @@ class SrtBookRepository {
     ));
   }
 
-  Future<void> delete(String uid) async {
-    await _db.deleteSrtBookByUid(uid);
+  /// Deletes the SRT book + its on-disk persist dir. Returns the number of
+  /// srt_books rows actually removed (0 when [uid] matched nothing) so callers
+  /// can count only real deletions (BUG-439).
+  Future<int> delete(String uid) async {
+    final int deleted = await _db.deleteSrtBookByUid(uid);
     await AudiobookStorage.deletePersistDir(uid);
+    return deleted;
   }
 
   Future<List<AudioCue>> cuesFor(String uid) async {

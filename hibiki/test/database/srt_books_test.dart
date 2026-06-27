@@ -41,13 +41,25 @@ void main() {
       expect(await db.getAllSrtBooks(), hasLength(2));
     });
 
-    test('deleteSrtBookByUid removes the row', () async {
+    test('deleteSrtBookByUid removes the row and reports 1 deleted', () async {
       final db = await _openDb();
       await db.upsertSrtBook(_srtBook());
 
-      await db.deleteSrtBookByUid('srt/1');
+      // BUG-439: the deleted-row count must surface so batch delete can count
+      // only real deletions instead of optimistically assuming success.
+      final int removed = await db.deleteSrtBookByUid('srt/1');
 
+      expect(removed, 1);
       expect(await db.getSrtBookByUid('srt/1'), isNull);
+    });
+
+    test('deleteSrtBookByUid reports 0 when the uid matched no row (BUG-439)',
+        () async {
+      final db = await _openDb();
+
+      final int removed = await db.deleteSrtBookByUid('does-not-exist');
+
+      expect(removed, 0);
     });
 
     // insertOnConflictUpdate resolves on primary key (id), not uid.

@@ -1212,9 +1212,13 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> upsertSrtBook(SrtBooksCompanion book) =>
       into(srtBooks).insertOnConflictUpdate(book);
 
-  Future<void> deleteSrtBookByUid(String uid) => transaction(() async {
+  /// Deletes the SRT book row + its cues. Returns the number of srt_books rows
+  /// actually removed (0 when [uid] matched no row) so batch deletion can count
+  /// only genuine deletions instead of optimistically assuming success
+  /// (BUG-439).
+  Future<int> deleteSrtBookByUid(String uid) => transaction(() async {
         await (delete(audioCues)..where((t) => t.bookKey.equals(uid))).go();
-        await (delete(srtBooks)..where((t) => t.uid.equals(uid))).go();
+        return (delete(srtBooks)..where((t) => t.uid.equals(uid))).go();
       });
 
   // ── reader positions ────────────────────────────────────────────

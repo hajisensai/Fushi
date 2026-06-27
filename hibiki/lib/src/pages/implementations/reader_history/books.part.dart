@@ -263,8 +263,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               bookKey: book.bookKey,
             );
           }
-          await repo.delete(uid);
-          deleted++;
+          // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
+          // 末尾照样弹「已删除 N 本」谎报。改为只对真删掉的 srt_books 行计数。
+          final int removed = await repo.delete(uid);
+          if (removed > 0) deleted++;
         }
       } else {
         final String? bookKey = _parseBookKey(key);

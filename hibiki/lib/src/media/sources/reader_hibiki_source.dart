@@ -358,7 +358,18 @@ class ReaderHibikiSource extends ReaderMediaSource {
       final SrtBookRepository srtRepo = SrtBookRepository(db);
       final SrtBook? srt = await srtRepo.findByBookKey(bookKey);
 
-      await db.deleteEpubBook(bookKey);
+      // BUG-439：bookKey 指向的行不存在（孤儿壳行 bookKey==''、key 不匹配、或重复
+      // 删除）时，以前 deleteEpubBook 删 0 行后仍无条件 return true 谎报成功，调用方
+      // 据此把这本计入「已删除 N 本」。这里在删之前就判定：没有任何对应行（EPUB 行
+      // 与按 bookKey 关联的 SRT 行都不存在）→ 真的没东西可删 → return false，不跑
+      // 磁盘清理/VACUUM，也不谎报成功。
+      if (bookRow == null && srt == null) {
+        debugPrint(
+            '[ReaderHibikiSource] deleteBook: no rows for bookKey="$bookKey"');
+        return false;
+      }
+
+      final int deletedRows = await db.deleteEpubBook(bookKey);
 
       // On-disk cleanups (not covered by the DB transaction). The audiobook
       // persist dir is keyed by the book's own key now (no legacy uid).
@@ -405,7 +416,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
             .log('ReaderHibikiSource.deleteBook.vacuum', e, stack);
         debugPrint('[ReaderHibikiSource] VACUUM after delete failed: $e');
       }
-      return true;
+      // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
+      // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
+      return deletedRows > 0 || srt != null;
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibikiSource.deleteBook', e, stack);
       debugPrint('[ReaderHibikiSource] deleteBook failed: $e');

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../pages/reader_history_source_corpus.dart';
 import 'package:hibiki/media.dart';
@@ -10,6 +11,8 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/reader/reader_settings.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('ReaderHibikiSource shelf actions', () {
     test('bookshelf home actions do not expose the tweaks button', () {
       final String source = File(
@@ -505,6 +508,76 @@ void main() {
       final row = await db.getEpubBook('SameKey');
       expect(row, isNotNull, reason: 'bookKey (primary key) must be unchanged');
       expect(row!.author, 'new');
+    });
+  });
+
+  group('ReaderHibikiSource.deleteBook honesty (BUG-439)', () {
+    final TestWidgetsFlutterBinding binding =
+        TestWidgetsFlutterBinding.ensureInitialized();
+    late Directory ppDir;
+
+    setUp(() {
+      // deleteBook resolves on-disk persist/extract dirs via path_provider.
+      ppDir = Directory.systemTemp.createTempSync('hibiki_delete_book_pp');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => ppDir.path,
+      );
+    });
+    tearDown(() {
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      if (ppDir.existsSync()) ppDir.deleteSync(recursive: true);
+    });
+
+    EpubBooksCompanion epubBook(String key) {
+      return EpubBooksCompanion.insert(
+        bookKey: key,
+        title: key,
+        epubPath: '/tmp/$key.epub',
+        extractDir: '/tmp/$key',
+        chapterCount: 1,
+        chaptersJson: '["ch1"]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+
+    test('returns true and removes the row when the EPUB book exists',
+        () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      await db.insertEpubBook(epubBook('Kokoro'));
+
+      final bool ok = await ReaderHibikiSource.instance.deleteBook(
+        db: db,
+        bookKey: 'Kokoro',
+      );
+
+      expect(ok, isTrue);
+      expect(await db.getEpubBook('Kokoro'), isNull);
+    });
+
+    test(
+        'returns false when the bookKey matches no EPUB/SRT row '
+        '(orphan shell / missing key must not fake success)', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      // Empty key (the orphan-shell case) and an arbitrary missing key both
+      // have nothing to delete: deleteBook must report failure, not lie.
+      expect(
+        await ReaderHibikiSource.instance.deleteBook(db: db, bookKey: ''),
+        isFalse,
+      );
+      expect(
+        await ReaderHibikiSource.instance
+            .deleteBook(db: db, bookKey: 'no-such-book'),
+        isFalse,
+      );
     });
   });
 
