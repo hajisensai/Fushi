@@ -181,18 +181,33 @@ class VideoBookRepository {
     return (covers: covers, subtitles: subtitles);
   }
 
-  Future<bool> isVideoPathReferenced(
+  /// 按 `videoPath` 精确匹配返回第一条引用该物理文件的视频书行；无则 null。
+  ///
+  /// 与 [isVideoPathReferenced] 同一 `row.videoPath == videoPath` 比对语义（后者
+  /// 即据此实现），是「同一物理文件是否已入库」的单一真相源。外部
+  /// 「打开方式」入库前用它复用库内已导入的同文件 bookUid，避免派生
+  /// `video/ext/<sha1>` 第二身份重复插行（TODO-903）。
+  ///
+  /// [excludeBookUid] 非 null 时跳过该 book 自己（与其余方法一致）。
+  Future<VideoBookRow?> findByVideoPath(
     String videoPath, {
     String? excludeBookUid,
   }) async {
-    if (videoPath.isEmpty) return false;
+    if (videoPath.isEmpty) return null;
     final List<VideoBookRow> all = await listAll();
     for (final VideoBookRow row in all) {
       if (excludeBookUid != null && row.bookUid == excludeBookUid) continue;
-      if (row.videoPath == videoPath) return true;
+      if (row.videoPath == videoPath) return row;
     }
-    return false;
+    return null;
   }
+
+  Future<bool> isVideoPathReferenced(
+    String videoPath, {
+    String? excludeBookUid,
+  }) async =>
+      (await findByVideoPath(videoPath, excludeBookUid: excludeBookUid)) !=
+      null;
 
   Future<void> saveCues({
     required String bookUid,

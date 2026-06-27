@@ -40,6 +40,8 @@ import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show extractVideoCover;
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:drift/drift.dart' show Value;
@@ -691,18 +693,40 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
     if (navigator == null) return;
 
-    final VideoBookRepository repo = VideoBookRepository(appModel.database);
-    final String bookUid = externalVideoBookUid(videoPath);
+    // ③ 存在性校验：运行中经「打开方式」传来的路径未必有效（冷启动 argv 路径在
+    // main() 已 existsSync 过，但运行时这条没有），文件不存在则不入库、不静默吞，
+    // 给与既有失败路径一致的 toast 反馈（TODO-903）。
+    if (!await File(videoPath).exists()) {
+      HibikiToast.show(msg: t.video_file_not_found);
+      return;
+    }
 
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+
+    String bookUid;
     try {
-      final VideoBookRow? existing = await repo.getByBookUid(bookUid);
-      if (existing == null) {
-        await repo.saveVideoBook(VideoBooksCompanion(
-          bookUid: Value(bookUid),
-          title: Value(p.basenameWithoutExtension(videoPath)),
-          videoPath: Value(videoPath),
-          importedAt: Value(DateTime.now()),
-        ));
+      // ② 去重：同一物理文件若已库内导入（`video/<basename>` 身份），复用其旧
+      // bookUid，不再派生 `video/ext/<sha1>` 第二身份插第二行。按 videoPath 命中
+      // 走仓库单一真相源 findByVideoPath（与 isVideoPathReferenced 同比对语义）。
+      final VideoBookRow? sameFile = await repo.findByVideoPath(videoPath);
+      if (sameFile != null) {
+        bookUid = sameFile.bookUid;
+      } else {
+        bookUid = externalVideoBookUid(videoPath);
+        final VideoBookRow? existing = await repo.getByBookUid(bookUid);
+        if (existing == null) {
+          // ① 封面：复用库内导入同款 extractVideoCover（桌面 ffmpeg 抽帧；移动端无
+          // ffmpeg 时返 null 留空占位）。仅新建外部条目时抽一次。
+          final String? coverPath =
+              await extractVideoCover(videoPath: videoPath, bookUid: bookUid);
+          await repo.saveVideoBook(VideoBooksCompanion(
+            bookUid: Value(bookUid),
+            title: Value(p.basenameWithoutExtension(videoPath)),
+            videoPath: Value(videoPath),
+            coverPath: Value<String?>(coverPath),
+            importedAt: Value(DateTime.now()),
+          ));
+        }
       }
     } catch (e) {
       debugPrint('[Hibiki] external video upsert failed: $e');

@@ -364,4 +364,40 @@ void main() {
     // 其它列不被改名波及（只动 title）。
     expect((await repo.getByBookUid('video/rename'))!.videoPath, '/e0.mkv');
   });
+  test(
+      'findByVideoPath returns the row referencing a physical file; '
+      'isVideoPathReferenced delegates to it (TODO-903 dedup source)',
+      () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+
+    // 库内导入的身份是 video/<basename>。
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/movie.mkv'),
+      title: Value('Movie'),
+      videoPath: Value('/library/movie.mkv'),
+    ));
+
+    // 按 videoPath 命中已导入行（外部「打开方式」据此复用旧 bookUid，不插第二行）。
+    final hit = await repo.findByVideoPath('/library/movie.mkv');
+    expect(hit, isNotNull);
+    expect(hit!.bookUid, 'video/movie.mkv');
+    expect(await repo.isVideoPathReferenced('/library/movie.mkv'), isTrue);
+
+    // 未入库路径无匹配。
+    expect(await repo.findByVideoPath('/elsewhere/other.mkv'), isNull);
+    expect(await repo.isVideoPathReferenced('/elsewhere/other.mkv'), isFalse);
+
+    // 空路径不匹配（守卫提前返回）。
+    expect(await repo.findByVideoPath(''), isNull);
+    expect(await repo.isVideoPathReferenced(''), isFalse);
+
+    // excludeBookUid 跳过自身：删除/自比对时该行不护住自己。
+    expect(
+      await repo.findByVideoPath('/library/movie.mkv',
+          excludeBookUid: 'video/movie.mkv'),
+      isNull,
+    );
+  });
 }
