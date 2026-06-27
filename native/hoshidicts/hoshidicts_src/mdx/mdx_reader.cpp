@@ -240,6 +240,11 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
     if (meta.compressed_size != meta.decompressed_size && meta.compressed_size >= 8) {
       block_data = decompress_block(data + pos, meta.compressed_size, meta.decompressed_size);
     } else {
+      // Uncompressed (or runt < 8B) block: copy decompressed_size bytes straight
+      // from the source buffer. The pos+compressed_size guard above only bounds
+      // compressed_size; a corrupt block whose decompressed_size exceeds the
+      // available source bytes would read past data + size (OOB). Bound it.
+      if (pos + meta.decompressed_size > size) break;
       block_data.assign(data + pos, data + pos + meta.decompressed_size);
     }
     pos += meta.compressed_size;
@@ -352,6 +357,10 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
         all_records.insert(all_records.end(), block.begin(), block.end());
       }
     } else {
+      // Uncompressed (or runt < 8B) record block: same OOB hazard as the key
+      // block path above -- the pos+compressed_size guard does not cover a
+      // decompressed_size that runs past data + size. Bound the copy.
+      if (pos + meta.decompressed_size > size) break;
       all_records.insert(all_records.end(), data + pos, data + pos + meta.decompressed_size);
     }
     pos += meta.compressed_size;
