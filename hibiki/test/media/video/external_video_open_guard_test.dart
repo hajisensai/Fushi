@@ -48,9 +48,9 @@ void main() {
     test('③ validates the file exists before inserting', () {
       final String body = openExternalVideoBody();
       expect(body, contains('File(videoPath).exists('),
-          reason: 'runtime open-with paths are not pre-checked by main(); the '
-              'entry must verify existence and not silently swallow a missing '
-              'file');
+          reason: 'the cold-start argv existsSync in main() can go stale '
+              'before this first-frame insert; the entry must re-verify '
+              'existence and not silently swallow a missing file');
       expect(body, contains('video_file_not_found'),
           reason: 'a missing file must surface user feedback, consistent with '
               'other failure paths');

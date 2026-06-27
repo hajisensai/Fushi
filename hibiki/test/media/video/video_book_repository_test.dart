@@ -400,4 +400,43 @@ void main() {
       isNull,
     );
   });
+  test(
+      'findByVideoPath normalizes both sides so Windows path variants of the '
+      'same physical file dedup to one row (TODO-903 Windows dedup)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+
+    // 库内导入存的是 file_picker 原始路径：Windows 反斜杠分隔符。
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/bar.mp4'),
+      title: Value('Bar'),
+      videoPath: Value(r'D:\Foo\bar.mp4'),
+    ));
+
+    // 外部「打开方式」argv 路径用正斜杠——归一后应命中同一行（不插第二行）。
+    final forward = await repo.findByVideoPath('D:/Foo/bar.mp4');
+    expect(forward, isNotNull);
+    expect(forward!.bookUid, 'video/bar.mp4');
+    expect(await repo.isVideoPathReferenced('D:/Foo/bar.mp4'), isTrue);
+
+    // 含冗余路径段（`.` / `..`）也归一命中同一行。
+    final redundant = await repo.findByVideoPath('D:/Foo/./sub/../bar.mp4');
+    expect(redundant, isNotNull);
+    expect(redundant!.bookUid, 'video/bar.mp4');
+
+    // 反向：库内存正斜杠、查询用反斜杠，同样命中（归一对称）。
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/baz.mkv'),
+      title: Value('Baz'),
+      videoPath: Value('E:/Movies/baz.mkv'),
+    ));
+    final back = await repo.findByVideoPath(r'E:\Movies\baz.mkv');
+    expect(back, isNotNull);
+    expect(back!.bookUid, 'video/baz.mkv');
+
+    // 归一不折叠大小写（与 externalVideoBookUid 保持一致）：盘符大小写不同视为
+    // 不同文件，不应误命中。
+    expect(await repo.findByVideoPath('d:/Foo/bar.mp4'), isNull);
+  });
 }

@@ -693,9 +693,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
     if (navigator == null) return;
 
-    // ③ 存在性校验：运行中经「打开方式」传来的路径未必有效（冷启动 argv 路径在
-    // main() 已 existsSync 过，但运行时这条没有），文件不存在则不入库、不静默吞，
-    // 给与既有失败路径一致的 toast 反馈（TODO-903）。
+    // ③ 存在性校验：冷启动 argv 路径虽在 main() 已 existsSync 过，但从那次检查到
+    // 此处首帧入库之间文件可能被移动/删除（或检查与使用间的竞态），故再校验一次；
+    // 文件不存在则不入库、不静默吞，给与既有失败路径一致的 toast 反馈（TODO-903）。
     if (!await File(videoPath).exists()) {
       HibikiToast.show(msg: t.video_file_not_found);
       return;

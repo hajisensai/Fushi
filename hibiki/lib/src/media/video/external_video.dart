@@ -35,6 +35,16 @@ bool isSupportedVideoFile(String path) {
   return _supportedVideoExtensions.contains(ext);
 }
 
+/// 纯函数：归一化视频路径用于「同一物理文件」比对/派生唯一标识。
+///
+/// 统一分隔符（反斜杠转 `/`）、去掉冗余 `.`、`..` 段，保证 `D:/a/b.mkv` 与
+/// `D:\a\b.mkv`、`D:/a/./c/../b.mkv` 归一到同一字符串。**不做大小写折叠**——
+/// 与历史行为保持一致（Windows 盘符/路径大小写不一致仍视为不同，避免改动既有
+/// uid 派生语义）。[externalVideoBookUid] 与 [VideoBookRepository.findByVideoPath]
+/// 共用此单一真相，确保两侧归一语义完全一致（TODO-903）。
+String normalizeVideoPath(String videoPath) =>
+    p.normalize(videoPath).replaceAll('\\', '/');
+
 /// 纯函数：从外部视频「绝对路径」派生稳定 bookUid：`video/ext/<sha1前12>`。
 ///
 /// 用全路径的 sha1 前 12 位做唯一标识，保证同一文件每次打开命中同一条 VideoBook
@@ -44,7 +54,7 @@ bool isSupportedVideoFile(String path) {
 /// 路径先规范化（统一分隔符 / 去掉冗余 `.`、`..`），保证 `D:/a/b.mkv` 与
 /// `D:\a\b.mkv` 派生同一 uid。
 String externalVideoBookUid(String videoPath) {
-  final String normalized = p.normalize(videoPath).replaceAll('\\', '/');
+  final String normalized = normalizeVideoPath(videoPath);
   final String digest =
       sha1.convert(utf8.encode(normalized)).toString().substring(0, 12);
   return 'video/ext/$digest';

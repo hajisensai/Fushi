@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/video/external_video.dart'
+    show normalizeVideoPath;
 import 'package:hibiki/src/media/video/video_storage.dart';
 
 /// VideoBooks 仓库：视频元数据 + 进度；字幕 cue 复用 audioCues 表。
@@ -181,12 +183,15 @@ class VideoBookRepository {
     return (covers: covers, subtitles: subtitles);
   }
 
-  /// 按 `videoPath` 精确匹配返回第一条引用该物理文件的视频书行；无则 null。
+  /// 按 `videoPath` 匹配返回第一条引用该物理文件的视频书行；无则 null。
   ///
-  /// 与 [isVideoPathReferenced] 同一 `row.videoPath == videoPath` 比对语义（后者
-  /// 即据此实现），是「同一物理文件是否已入库」的单一真相源。外部
-  /// 「打开方式」入库前用它复用库内已导入的同文件 bookUid，避免派生
-  /// `video/ext/<sha1>` 第二身份重复插行（TODO-903）。
+  /// 比对前两侧都经 [normalizeVideoPath] 归一（统一分隔符 / 去冗余路径段，与
+  /// [externalVideoBookUid] 同款语义），因此 Windows 上 `D:\Foo\bar.mkv` 与
+  /// `D:/Foo/bar.mkv`（file_picker 原始路径 vs argv 路径分隔符不一致）视为同一
+  /// 文件命中同一行——既覆盖新写入行也覆盖存的是未归一路径的旧库内导入行。
+  /// 与 [isVideoPathReferenced] 同一比对语义（后者即据此实现），是「同一物理
+  /// 文件是否已入库」的单一真相源。外部「打开方式」入库前用它复用库内已导入的
+  /// 同文件 bookUid，避免派生 `video/ext/<sha1>` 第二身份重复插行（TODO-903）。
   ///
   /// [excludeBookUid] 非 null 时跳过该 book 自己（与其余方法一致）。
   Future<VideoBookRow?> findByVideoPath(
@@ -197,7 +202,9 @@ class VideoBookRepository {
     final List<VideoBookRow> all = await listAll();
     for (final VideoBookRow row in all) {
       if (excludeBookUid != null && row.bookUid == excludeBookUid) continue;
-      if (row.videoPath == videoPath) return row;
+      if (normalizeVideoPath(row.videoPath) == normalizeVideoPath(videoPath)) {
+        return row;
+      }
     }
     return null;
   }
