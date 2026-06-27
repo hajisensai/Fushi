@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -502,6 +503,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   Future<void> _showAnime4kFirstUsePromptIfNeeded() async {
+    // 移动端不弹「开启超分(Anime4K)」首次提示（TODO-874）：着色器超分在手机上掉帧、
+    // 发热（参见 video_shader_mobile_perf_hint 文案），不该主动劝用户开启；仅桌面端
+    // 保留此一次性提示。纯抑制——不置 videoAnime4kPromptShown 标记（零副作用，桌面端
+    // 跨平台同步时仍能在桌面首次弹出）。单点拦截即覆盖 _open / _openRemote 两调用点。
+    if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      return;
+    }
     final AppModel appModel = ref.read(appProvider);
     if (appModel.prefsRepo.videoAnime4kPromptShown) return;
     await appModel.prefsRepo.setVideoAnime4kPromptShown();
