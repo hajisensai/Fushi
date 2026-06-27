@@ -87,7 +87,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'syncBackup/Sync Statistics': 'test/sync/sync_gating_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
-  'syncBackup/Upload audiobook files': 'test/sync/sync_orchestrator_test.dart',
+  'syncBackup/Sync audiobook files': 'test/sync/sync_orchestrator_test.dart',
   'syncBackup/Sync local audio': 'test/sync/sync_orchestrator_test.dart',
   // TODO-212: video destination items are behavior-heavy; schema coverage proves
   // focus/change/persist/restore here, while these narrower probes guard their
