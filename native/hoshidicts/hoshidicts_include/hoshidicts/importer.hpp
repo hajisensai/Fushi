@@ -22,7 +22,8 @@ struct SimpleEntry {
 };
 
 namespace dictionary_importer {
-ImportResult import(const std::string& zip_path, const std::string& output_dir, bool low_ram = false);
+ImportResult import(const std::string& zip_path, const std::string& output_dir, bool low_ram = false,
+                    const std::string& breadcrumb_dir = "");
 ImportResult write_simple_dict(const std::string& title, const std::vector<SimpleEntry>& entries,
                                const std::string& output_dir, const std::string& styles_css = "");
 };

@@ -141,8 +141,8 @@ final class FfiKanjiResults extends Struct {
 
 // ── native function typedefs ────────────────────────────────────────
 
-typedef _ImportDart = FfiImportResult Function(
-    Pointer<Utf8> zipPath, Pointer<Utf8> outputDir);
+typedef _ImportDart = FfiImportResult Function(Pointer<Utf8> zipPath,
+    Pointer<Utf8> outputDir, Pointer<Utf8> breadcrumbDir);
 
 typedef _ProbeDictContentNative = Int32 Function(Pointer<Utf8> dir);
 typedef _ProbeDictContentDart = int Function(Pointer<Utf8> dir);
@@ -196,7 +196,7 @@ class HoshidictsFfiBindings {
     _lib = _openNativeLib();
 
     import_ = _lib.lookupFunction<
-        FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>),
+        FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>),
         _ImportDart>('hoshidicts_import');
     probeDictContent =
         _lib.lookupFunction<_ProbeDictContentNative, _ProbeDictContentDart>(

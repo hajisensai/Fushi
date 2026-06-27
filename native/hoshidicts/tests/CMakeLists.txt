@@ -70,6 +70,29 @@ add_hoshi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_hoshi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
 add_hoshi_test(ipa_import_query_test ipa_import_query_test.cpp)
 
+# --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
+# zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate
+# stream) + "zip/zip.hpp" + the public importer header. hoshidicts links
+# libdeflate_static PRIVATE, so its include dir is not propagated transitively;
+# add HOSHI_SRC (for zip/zip.hpp) and the libdeflate dir explicitly.
+add_hoshi_test(zip_malformed_deflate_test zip_malformed_deflate_test.cpp
+    "${HOSHI_SRC}"
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
+# hoshidicts_src/.
+add_hoshi_test(import_breadcrumb_test import_breadcrumb_test.cpp
+    "${HOSHI_SRC}")
+# Source-scan guard: walk hoshidicts_src/ and require a null check after every
+# libdeflate_alloc_decompressor(). The source root is passed on argv so the
+# test does not depend on the runtime cwd.
+add_executable(decompressor_null_guard_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/decompressor_null_guard_test.cpp")
+if(MSVC)
+  target_compile_options(decompressor_null_guard_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME decompressor_null_guard_test
+         COMMAND decompressor_null_guard_test "${HOSHI_SRC}")
+
 # win_utf8_import_test and dict_name_lifetime_test take external dictionary
 # directories / pre-built zips on argv (no self-contained fixture), so they are
 # NOT auto-registered as no-arg ctest cases. dict_name_uaf_e2e_test below is the

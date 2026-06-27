@@ -26,6 +26,34 @@ bool has_entry_payload(const memory::mapped_file& file, const ZipEntry& e) {
                                   : e.compressed_size;
   return in_bounds(file.size, e.data_offset, payload_size);
 }
+
+// DEFLATE's worst-case expansion ratio is ~1032:1 (a maximally-redundant store
+// of a fixed Huffman block). A real dictionary bank never approaches that; a
+// declared uncompressed_size far beyond this bound versus the compressed
+// payload is a malformed/forged header (e.g. a ZIP64 0x0001 extra injecting a
+// multi-GB uncompressed size over a tiny compressed payload) -- honouring it
+// would make result.resize() attempt a huge allocation (std::bad_alloc on the
+// worker thread, or a worse outcome on a 32-bit ABI). has_entry_payload() only
+// validates that the *compressed* payload fits the file and never constrains
+// uncompressed_size, so this is the only guard against attacker-controlled
+// expansion. Cap at a generous multiple of the compressed size, plus a small
+// fixed floor so tiny entries with legitimate inflation still pass.
+constexpr uint64_t kMaxDeflateExpansionRatio = 1100;
+constexpr uint64_t kMinDeflateExpansionFloor = 64 * 1024;
+
+bool uncompressed_size_in_range(const ZipEntry& e) {
+  if (e.compression_method == 0) {
+    return true;  // stored: uncompressed_size == compressed_size by definition
+  }
+  // Avoid overflow in compressed_size * ratio: cap compressed_size first.
+  const uint64_t ratio_cap =
+      e.compressed_size > std::numeric_limits<uint64_t>::max() / kMaxDeflateExpansionRatio
+          ? std::numeric_limits<uint64_t>::max()
+          : e.compressed_size * kMaxDeflateExpansionRatio;
+  const uint64_t limit =
+      ratio_cap < kMinDeflateExpansionFloor ? kMinDeflateExpansionFloor : ratio_cap;
+  return e.uncompressed_size <= limit;
+}
 }
 
 Zip::~Zip() {
@@ -62,6 +90,9 @@ std::string Zip::read(int index) const {
   if (!has_entry_payload(file, e)) {
     return "";
   }
+  if (!uncompressed_size_in_range(e)) {
+    return "";  // forged/oversized uncompressed_size -> structured error, no huge resize
+  }
 
   std::string result;
   result.resize(e.uncompressed_size);
@@ -71,6 +102,9 @@ std::string Zip::read(int index) const {
     std::memcpy(result.data(), src, e.uncompressed_size);
   } else if (e.compression_method == 8) {
     thread_local auto* d = libdeflate_alloc_decompressor();
+    if (!d) {
+      return "";  // allocation failed -> do not deref null decompressor (0xC0000005)
+    }
     if (libdeflate_deflate_decompress(d, src, e.compressed_size, result.data(), e.uncompressed_size, nullptr) !=
         LIBDEFLATE_SUCCESS) {
       return "";
@@ -89,19 +123,25 @@ std::optional<Zip::MediaResult> Zip::read_media(int index) const {
   const auto& e = entries[index];
   MediaResult out;
   out.path = e.name;
-  out.blob.resize(e.uncompressed_size);
   if (e.uncompressed_size == 0) {
-    return out;
+    return out;  // empty blob; no resize needed
   }
   if (!has_entry_payload(file, e)) {
     return std::nullopt;
   }
+  if (!uncompressed_size_in_range(e)) {
+    return std::nullopt;  // forged/oversized uncompressed_size -> skip this media
+  }
+  out.blob.resize(e.uncompressed_size);
 
   const auto* src = file.data + e.data_offset;
   if (e.compression_method == 0) {
     std::memcpy(out.blob.data(), src, e.uncompressed_size);
   } else if (e.compression_method == 8) {
     thread_local auto* d = libdeflate_alloc_decompressor();
+    if (!d) {
+      return std::nullopt;  // allocation failed -> do not deref null decompressor
+    }
     if (libdeflate_deflate_decompress(d, src, e.compressed_size, out.blob.data(), e.uncompressed_size, nullptr) !=
         LIBDEFLATE_SUCCESS) {
       return std::nullopt;

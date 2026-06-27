@@ -56,4 +56,56 @@ void main() {
     // 下次启动恢复检查：无残留。
     expect(ErrorLogService.readAndClearBreadcrumb(f), isNull);
   });
+
+  group('TODO-892：native 步进面包屑折进 crashRecovered', () {
+    test('importStepBreadcrumbDir 在 init 后指向注入目录', () async {
+      await ErrorLogService.instance.init(directoryOverride: tmp);
+      expect(ErrorLogService.instance.importStepBreadcrumbDir, tmp.path);
+    });
+
+    test('导入面包屑 + native 步进文件都残留：crashRecovered 同时含文件名与最后步骤', () async {
+      File('${tmp.path}/import_crash_breadcrumb.txt')
+          .writeAsStringSync('native 词典导入未返回：C:/dicts/big.zip');
+      // 文件名必须与 native import_breadcrumb::kStepFileName 一致。
+      File('${tmp.path}/import_step_breadcrumb.txt')
+          .writeAsStringSync('yomitan: term_bank #3 / term_bank_3.json');
+
+      await ErrorLogService.instance.init(directoryOverride: tmp);
+
+      final log = ErrorLogService.instance.getFullLog();
+      expect(log, contains('DictImport.crashRecovered'));
+      expect(log, contains('big.zip'));
+      expect(log,
+          contains('native 最后步骤=yomitan: term_bank #3 / term_bank_3.json'));
+
+      // 读完即删：两个面包屑都清掉，下次启动不重复报警。
+      expect(File('${tmp.path}/import_crash_breadcrumb.txt').existsSync(),
+          isFalse);
+      expect(
+          File('${tmp.path}/import_step_breadcrumb.txt').existsSync(), isFalse);
+    });
+
+    test('只有 native 步进文件残留（导入面包屑已清）：仍报告最后步骤', () async {
+      File('${tmp.path}/import_step_breadcrumb.txt')
+          .writeAsStringSync('yomitan: media #1 / cover.png');
+
+      await ErrorLogService.instance.init(directoryOverride: tmp);
+
+      final log = ErrorLogService.instance.getFullLog();
+      expect(log, contains('DictImport.crashRecovered'));
+      expect(log, contains('native 最后步骤=yomitan: media #1 / cover.png'));
+      expect(
+          File('${tmp.path}/import_step_breadcrumb.txt').existsSync(), isFalse);
+    });
+
+    test('两个面包屑都不存在（正常路径）：不产生 crashRecovered', () async {
+      await ErrorLogService.instance.init(directoryOverride: tmp);
+      final log = ErrorLogService.instance.getFullLog();
+      expect(log, isNot(contains('DictImport.crashRecovered')));
+    });
+
+    tearDown(() async {
+      await ErrorLogService.instance.clear();
+    });
+  });
 }

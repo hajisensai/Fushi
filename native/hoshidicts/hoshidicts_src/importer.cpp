@@ -29,6 +29,7 @@
 #include "mdx/mdx_reader.hpp"
 #include "stardict/stardict_reader.hpp"
 #include "util/fs_utf8.hpp"
+#include "util/import_breadcrumb.hpp"
 #include "zip/zip.hpp"
 
 #include "hoshidicts/platform.hpp"
@@ -555,7 +556,8 @@ ProcessedFile process_kanji_bank(const std::string& content) {
 
 void write_kanji(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
                  const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram,
-                 ankerl::unordered_dense::map<uint64_t, uint64_t>& glossaries) {
+                 ankerl::unordered_dense::map<uint64_t, uint64_t>& glossaries,
+                 const std::string& breadcrumb_dir) {
   if (files.empty()) {
     return;
   }
@@ -602,7 +604,14 @@ void write_kanji(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
     result.kanji_count += processed.count;
   };
 
+  int bank_seq = 0;
   for (int file_index : files) {
+    // Main (serial) import thread: record the bank we are about to submit before
+    // fanning out decompression to a worker. If a worker hard-crashes (SEH), the
+    // last breadcrumb pins the crash to this bank +/- the concurrency window.
+    hoshi::import_breadcrumb::set(breadcrumb_dir,
+                                  "yomitan: kanji_bank #" + std::to_string(bank_seq++) + " / " +
+                                      zip.entries[file_index].name);
     threads.push_back(
         std::async(std::launch::async, [&zip, file_index]() { return process_kanji_bank(zip.read(file_index)); }));
 
@@ -619,7 +628,8 @@ void write_kanji(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
 }
 
 void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
-                 const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram) {
+                 const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram,
+                 const std::string& breadcrumb_dir) {
   if (files.empty()) {
     return;
   }
@@ -667,7 +677,11 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
     result.term_count += processed.count;
   };
 
+  int bank_seq = 0;
   for (int file_index : files) {
+    hoshi::import_breadcrumb::set(breadcrumb_dir,
+                                  "yomitan: term_bank #" + std::to_string(bank_seq++) + " / " +
+                                      zip.entries[file_index].name);
     threads.push_back(
         std::async(std::launch::async, [&zip, file_index]() { return process_term_bank(zip.read(file_index)); }));
 
@@ -684,7 +698,8 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
 }
 
 void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
-                const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram) {
+                const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram,
+                const std::string& breadcrumb_dir) {
   if (files.empty()) {
     return;
   }
@@ -715,7 +730,11 @@ void write_meta(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>&
     result.pitch_count += processed.pitch_count;
   };
 
+  int bank_seq = 0;
   for (int file_index : files) {
+    hoshi::import_breadcrumb::set(breadcrumb_dir,
+                                  "yomitan: meta_bank #" + std::to_string(bank_seq++) + " / " +
+                                      zip.entries[file_index].name);
     threads.push_back(
         std::async(std::launch::async, [&zip, file_index]() { return process_meta_bank(zip.read(file_index)); }));
 
@@ -755,7 +774,8 @@ std::vector<char> build_offset_index(std::vector<std::pair<uint64_t, uint64_t>>&
   return offset_buf;
 }
 
-size_t write_media(const std::string& path, const Zip& zip, const std::vector<int>& files) {
+size_t write_media(const std::string& path, const Zip& zip, const std::vector<int>& files,
+                   const std::string& breadcrumb_dir) {
   if (files.empty()) {
     return 0;
   }
@@ -769,7 +789,14 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
   uint32_t write_pos = 0;
   std::vector<char> buf;
   std::vector<std::pair<std::string, uint32_t>> index_entries;
+  int media_seq = 0;
   for (int file_index : files) {
+    // write_media runs on its own std::async thread (in parallel with the term/
+    // meta/kanji loop), so this breadcrumb interleaves with theirs -- the stage
+    // prefix still tells whether the last touched step was media decompression.
+    hoshi::import_breadcrumb::set(breadcrumb_dir,
+                                  "yomitan: media #" + std::to_string(media_seq++) + " / " +
+                                      zip.entries[file_index].name);
     auto media_file = zip.read_media(file_index);
     if (!media_file.has_value()) {
       continue;
@@ -1124,8 +1151,10 @@ ImportResult import_dsl(const std::string& dsl_path, const std::string& output_d
   return dictionary_importer::write_simple_dict(title, entries, output_dir);
 }
 
-ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ram) {
+ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ram,
+                            const std::string& breadcrumb_dir) {
   ImportResult result;
+  hoshi::import_breadcrumb::set(breadcrumb_dir, "yomitan: opened zip, reading index.json");
   try {
     int index_idx = zip.find("index.json");
     if (index_idx < 0) {
@@ -1180,16 +1209,18 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
     const Files files = get_files(zip);
     result.detected_type = detect_type(files, zip);
     std::future<size_t> media_thread =
-        std::async(std::launch::async, [&path, &zip, &files]() { return write_media(path, zip, files.media_files); });
+        std::async(std::launch::async, [&path, &zip, &files, &breadcrumb_dir]() {
+          return write_media(path, zip, files.media_files, breadcrumb_dir);
+        });
 
     std::ofstream blobs(hoshi::fs_path(path + "/blobs.bin"), std::ios::binary);
     setup_stream_exceptions(blobs);
     std::vector<std::pair<uint64_t, uint64_t>> offsets;
     uint64_t write_offset = 0;
-    write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram);
-    write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram);
+    write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram, breadcrumb_dir);
+    write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram, breadcrumb_dir);
     ankerl::unordered_dense::map<uint64_t, uint64_t> kanji_glossaries;
-    write_kanji(blobs, offsets, zip, files.kanji_banks, write_offset, result, low_ram, kanji_glossaries);
+    write_kanji(blobs, offsets, zip, files.kanji_banks, write_offset, result, low_ram, kanji_glossaries, breadcrumb_dir);
     if (offsets.empty()) {
       // A kanji-only dictionary still produces offsets (one per character), so
       // the only way to reach here is a dictionary with no parseable entries of
@@ -1224,6 +1255,9 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
     std::filesystem::remove_all(hoshi::fs_path(output_dir) / hoshi::fs_path(result.title));
   }
 
+  // Clean return (success or caught failure): drop the breadcrumb so the next
+  // launch does not misreport this completed import as a crash.
+  hoshi::import_breadcrumb::clear(breadcrumb_dir);
   return result;
 }
 
@@ -1340,7 +1374,8 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
   return result;
 }
 
-ImportResult dictionary_importer::import(const std::string& file_path, const std::string& output_dir, bool low_ram) {
+ImportResult dictionary_importer::import(const std::string& file_path, const std::string& output_dir, bool low_ram,
+                                        const std::string& breadcrumb_dir) {
   std::string ext;
   {
     auto dot = file_path.rfind('.');
@@ -1360,7 +1395,7 @@ ImportResult dictionary_importer::import(const std::string& file_path, const std
   }
 
   if (zip.find("index.json") >= 0) {
-    return import_yomitan(zip, output_dir, low_ram);
+    return import_yomitan(zip, output_dir, low_ram, breadcrumb_dir);
   }
 
   for (size_t i = 0; i < zip.entries.size(); i++) {

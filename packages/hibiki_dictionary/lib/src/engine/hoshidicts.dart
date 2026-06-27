@@ -460,13 +460,17 @@ class HoshiDicts {
   // The C++ side spawns a pthread with 32 MB stack to handle deep
   // recursion in zip/JSON parsing, so this can safely run in any isolate.
   static Future<HoshiImportResult> importDictionary(
-      String zipPath, String outputDir) async {
+      String zipPath, String outputDir,
+      {String breadcrumbDir = ''}) async {
     return Isolate.run(() {
       _bindings ??= HoshidictsFfiBindings();
       final zp = zipPath.toNativeUtf8(allocator: calloc);
       final od = outputDir.toNativeUtf8(allocator: calloc);
+      // TODO-892: native writes a synchronous '.import_step' crash breadcrumb
+      // into this fixed directory; empty string disables it.
+      final bc = breadcrumbDir.toNativeUtf8(allocator: calloc);
       try {
-        final r = _bindings!.import_(zp, od);
+        final r = _bindings!.import_(zp, od, bc);
         final rPtr = calloc<FfiImportResult>();
         rPtr.ref = r;
         try {
@@ -493,6 +497,7 @@ class HoshiDicts {
       } finally {
         calloc.free(zp);
         calloc.free(od);
+        calloc.free(bc);
       }
     });
   }

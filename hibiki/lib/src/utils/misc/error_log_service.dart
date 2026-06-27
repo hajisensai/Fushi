@@ -49,6 +49,15 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   /// 把残留内容折进错误日志，即可定位是哪本词典把进程带崩的。
   File? _breadcrumbFile;
 
+  /// 目录路径，经 FFI 透传给 native 词典导入（TODO-892）：native 在每条 bank 提交前
+  /// **同步**覆写 [_importStepFile]（`import_step_breadcrumb.txt`），文件名与 native
+  /// `import_breadcrumb::kStepFileName` 保持一致。导入热路径在 worker 线程并发解压时
+  /// 发生 native 访问违例（SEH，绕过所有 Dart / C++ try-catch）会带崩进程，此文件因
+  /// 同步落盘而存活；下次启动把「崩前最后一步（哪本词典 / 哪个 bank / 解压 vs 写盘）」
+  /// 折进 [_breadcrumbFile] 的 `DictImport.crashRecovered`，回应「日志写不清楚」。
+  Directory? _appDir;
+  File? _importStepFile;
+
   /// 查词面包屑文件（TODO-607 P0-2，**独立**于导入面包屑 [_breadcrumbFile]）：
   /// 在每次「查词弹窗栈层进出」（顶层查词 / 嵌套查词 push / 关栈裁层）时**同步**
   /// 写入当前栈深度 + 顶层词。嵌套查词触发的 native 进程级闪退（跨线程 teardown
@@ -65,8 +74,11 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     final dir = directoryOverride ??
         hibikiTestDirectory('app-documents') ??
         await getApplicationDocumentsDirectory();
+    _appDir = dir;
     _logFile = File('${dir.path}/error_log.txt');
     _breadcrumbFile = File('${dir.path}/import_crash_breadcrumb.txt');
+    // 文件名必须与 native `import_breadcrumb::kStepFileName` 完全一致（TODO-892）。
+    _importStepFile = File('${dir.path}/import_step_breadcrumb.txt');
     _lookupBreadcrumbFile = File('${dir.path}/lookup_crash_breadcrumb.txt');
     try {
       if (await _logFile!.exists()) {
@@ -87,9 +99,15 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     // 崩溃恢复：上次有面包屑残留 = 那本词典的 native 导入没返回就崩了。
     try {
       final String? culprit = readAndClearBreadcrumb(_breadcrumbFile!);
-      if (culprit != null) {
+      // TODO-892：native 步进面包屑（崩前最后处理到的 bank / 阶段）。即便导入面包屑
+      // 不在（正常清掉），步进文件若残留也单独读出，定位到「哪一步」而不仅「哪本词典」。
+      final String? nativeStep = readAndClearBreadcrumb(_importStepFile!);
+      if (culprit != null || nativeStep != null) {
+        final String stepSuffix =
+            nativeStep != null ? '，native 最后步骤=$nativeStep' : '';
+        final String head = culprit ?? '（无导入面包屑残留）';
         log('DictImport.crashRecovered',
-            '上次词典导入疑似让 app 崩溃（native 进程级，Dart 无法捕获）：$culprit');
+            '上次词典导入疑似让 app 崩溃（native 进程级，Dart 无法捕获）：$head$stepSuffix');
       }
     } catch (e) {
       debugPrint('[ErrorLogService] breadcrumb recovery failed: $e');
@@ -117,6 +135,10 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   /// 写入内容带时间戳：用户「正常强杀」恰好命中某本 FFI 执行中时，下次启动会
   /// 把残留误报为崩溃（与真硬崩在文件层不可区分）；带上时间戳让人工读日志时
   /// 能判断这条残留有多旧，区分「刚导一半被杀」和「很久以前的残留」。
+  /// TODO-892：native 词典导入步进面包屑要写入的固定目录（应用文档目录）。导入管理器
+  /// 把它经 FFI 透传给 native；[init] 未跑完（极早期）时返回 `''`，native 视为禁用。
+  String get importStepBreadcrumbDir => _appDir?.path ?? '';
+
   void markImportStart(String detail) {
     try {
       _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail',
@@ -131,6 +153,10 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     try {
       final f = _breadcrumbFile;
       if (f != null && f.existsSync()) f.deleteSync();
+      // TODO-892：native 正常返回时本就 clear 了步进文件；这里再兜底删一次，避免
+      // native 端 clear 失败的残留把下次启动误报成崩溃。
+      final step = _importStepFile;
+      if (step != null && step.existsSync()) step.deleteSync();
     } catch (e) {
       debugPrint('[ErrorLogService] markImportEnd failed: $e');
     }

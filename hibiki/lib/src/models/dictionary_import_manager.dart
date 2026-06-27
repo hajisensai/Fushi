@@ -169,6 +169,7 @@ class DictionaryImportManager {
           result = await importDictionaryViaHoshidicts(
             zipPath: tempZipPath,
             outputDir: tempOutputDir.path,
+            breadcrumbDir: ErrorLogService.instance.importStepBreadcrumbDir,
           );
         } finally {
           ErrorLogService.instance.markImportEnd();
@@ -291,6 +292,7 @@ class DictionaryImportManager {
         result = await importDictionaryViaHoshidicts(
           zipPath: file.path,
           outputDir: tempOutputDir.path,
+          breadcrumbDir: ErrorLogService.instance.importStepBreadcrumbDir,
         );
       } finally {
         ErrorLogService.instance.markImportEnd();
