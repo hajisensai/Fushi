@@ -25,6 +25,8 @@ class GlobalLookupShowResult {
     required this.ok,
     required this.workWidth,
     required this.workHeight,
+    this.cursorWorkX = 0,
+    this.cursorWorkY = 0,
   });
 
   /// Whether the native overlay window was created.
@@ -35,6 +37,17 @@ class GlobalLookupShowResult {
 
   /// Cursor monitor work-area height in PHYSICAL px (0 when unavailable).
   final double workHeight;
+
+  /// TODO-893 v2 (symptom 3) — the overlay window-local origin's offset from the
+  /// cursor monitor work-area origin, in PHYSICAL px (0 when unavailable). The
+  /// window-local (0,0) maps to (cursorWorkX, cursorWorkY) inside the work area;
+  /// divide by the device pixel ratio for CSS px. Used to translate the host's
+  /// window-local child anchor rect into the SAME work-area-absolute domain as
+  /// computeFrameRect's screenW/H, eliminating the zero-point mismatch.
+  final double cursorWorkX;
+
+  /// See [cursorWorkX]: the vertical component (PHYSICAL px).
+  final double cursorWorkY;
 }
 
 abstract final class GlobalLookupChannel {
@@ -74,6 +87,8 @@ abstract final class GlobalLookupChannel {
         ok: reply['ok'] == true,
         workWidth: num2(reply['workW']),
         workHeight: num2(reply['workH']),
+        cursorWorkX: num2(reply['cursorWorkX']),
+        cursorWorkY: num2(reply['cursorWorkY']),
       );
     }
     // Legacy/native fallback (bool reply): no work-area reported.

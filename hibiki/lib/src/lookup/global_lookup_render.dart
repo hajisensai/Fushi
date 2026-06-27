@@ -124,6 +124,7 @@ String buildStackRenderScript({
   required double screenHeight,
   required double maxWidth,
   required double maxHeight,
+  Offset selectionScreenOffset = Offset.zero,
 }) {
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -150,6 +151,7 @@ String buildStackRenderScript({
       maxWidth: maxWidth,
       maxHeight: maxHeight,
       isVertical: p.isVertical,
+      selectionScreenOffset: selectionScreenOffset,
     );
     map['settingsJs'] = settingsJs;
     popups.add(map);
@@ -171,10 +173,21 @@ Map<String, Object?> _frameRectMap({
   required double maxWidth,
   required double maxHeight,
   required bool isVertical,
+  Offset selectionScreenOffset = Offset.zero,
 }) {
   if (anchorRect != null && screenWidth > 0 && screenHeight > 0) {
+    // TODO-893 v2 (symptom 3) — the host re-anchored the child's word rect to
+    // WINDOW-LOCAL CSS px (relative to the shell origin = the cursor), but
+    // screenW/H are the work-area dimensions (absolute display domain). Their
+    // zero points differ, so feeding a window-local selY straight in mis-decided
+    // showBelow near the screen bottom edge (spaceBelow over-estimated) and
+    // shoved the parent card off the top. Lift the anchor into the SAME
+    // work-area-absolute domain (add the window origin's work-area offset) for
+    // the cascade math, then shift the result back to window-local for the host
+    // shell. computeFrameRect stays a pure single-domain function (unchanged).
+    final Rect shiftedAnchor = anchorRect.shift(selectionScreenOffset);
     final GlobalLookupFrameRect r = computeFrameRect(
-      selectionRect: anchorRect,
+      selectionRect: shiftedAnchor,
       screenW: screenWidth,
       screenH: screenHeight,
       maxWidth: maxWidth,
@@ -182,8 +195,8 @@ Map<String, Object?> _frameRectMap({
       isVertical: isVertical,
     );
     return <String, Object?>{
-      'left': r.left,
-      'top': r.top,
+      'left': r.left - selectionScreenOffset.dx,
+      'top': r.top - selectionScreenOffset.dy,
       'width': r.width,
       'height': r.height,
     };

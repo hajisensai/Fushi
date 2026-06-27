@@ -43,6 +43,22 @@ body {
     -webkit-user-select: text;
 }
 
+/* TODO-893 v2 (symptom 2) — app-external global lookup ONLY: the visible card
+   body is `body` (it draws the 1px border + 10px radius + padding). The `<html>`
+   documentElement otherwise fills the square iframe with the opaque
+   --background-color (set inline by popup_settings_injection), and the host
+   shell's border-radius:10px;overflow:hidden then clips that square fill into a
+   ring of opaque theme colour OUTSIDE the body's rounded border — read as a
+   "white frame" in light themes. Making documentElement transparent leaves only
+   body's rounded card; the clipped corners reveal the transparent WebView2
+   surface (desktop) instead of theme colour. Scoped to .global-lookup (added to
+   <html> only in the global-lookup path), so the in-app popup is unaffected
+   (zero regression). Higher specificity than the html,body var rule above, so no
+   !important needed. */
+html.global-lookup {
+    background: transparent;
+}
+
 body {
     overflow-x: hidden;
     padding: 0 10px 10px;

@@ -314,6 +314,68 @@ void main() {
     });
   });
 
+  // TODO-893 v2 (symptom 3) — coordinate-domain regression lock. The child
+  // anchor reaches the render builder in WINDOW-LOCAL CSS px (re-anchored to the
+  // shell origin = the cursor), but screenW/H are the WORK-AREA dimensions
+  // (absolute display domain). When the cursor is near the screen BOTTOM edge,
+  // the window-local selY is small, so feeding it straight in over-estimates
+  // spaceBelow -> showBelow wrongly true -> the child is placed below the bottom
+  // edge and the host's bbox shift shoves the parent card off the top. The fix
+  // adds the window-origin work-area offset to lift the anchor into the SAME
+  // absolute domain BEFORE the cascade math (render.dart _frameRectMap), then
+  // shifts the result back. These cases prove the offset flips the decision.
+  group('TODO-893 v2 coordinate-domain (near screen bottom edge)', () {
+    const double screenW = 1920;
+    const double screenH = 1040; // work-area height (CSS px)
+    const double cardW = 360;
+    const double cardH = 480;
+    // The window origin sits 980 px down the work area (cursor near the bottom).
+    const double cursorWorkY = 980;
+    // Child word at window-local (60, 20): on screen it is at absolute y ~ 1000.
+    const Rect windowLocalAnchor = Rect.fromLTWH(60, 20, 30, 18);
+
+    test('WRONG domain (raw window-local selY) mis-decides showBelow=true', () {
+      // Bug reproduction: feed the window-local anchor straight in. selY=20 is
+      // tiny, so spaceBelow = 1040-20-18-4 = 998 >= height -> showBelow true ->
+      // the card is placed BELOW (top > anchor bottom), which on the real screen
+      // is off the bottom edge.
+      final GlobalLookupFrameRect wrong = computeFrameRect(
+        selectionRect: windowLocalAnchor,
+        screenW: screenW,
+        screenH: screenH,
+        maxWidth: cardW,
+        maxHeight: cardH,
+        isVertical: false,
+      );
+      expect(wrong.top, greaterThan(windowLocalAnchor.bottom),
+          reason: 'raw window-local domain wrongly places the card below');
+    });
+
+    test('FIXED domain (anchor lifted by cursorWorkY) flips to ABOVE', () {
+      // The fix lifts the anchor into the absolute domain: selY becomes
+      // 20 + 980 = 1000. spaceBelow = 1040-1000-18-4 = 18 < height -> showBelow
+      // false -> the card flips ABOVE the word. Subtracting the offset back
+      // brings the result into window-local for the shell.
+      final Rect lifted = windowLocalAnchor.shift(const Offset(0, cursorWorkY));
+      final GlobalLookupFrameRect r = computeFrameRect(
+        selectionRect: lifted,
+        screenW: screenW,
+        screenH: screenH,
+        maxWidth: cardW,
+        maxHeight: cardH,
+        isVertical: false,
+      );
+      // Result is in absolute domain; the card is ABOVE the lifted word.
+      expect(r.top + r.height, lessThanOrEqualTo(lifted.top),
+          reason: 'lifted domain correctly flips the card above near the edge');
+      // Shifting back to window-local keeps the card above the original anchor.
+      final double windowLocalTop = r.top - cursorWorkY;
+      expect(
+          windowLocalTop + r.height, lessThanOrEqualTo(windowLocalAnchor.top),
+          reason: 'after shifting back, the card stays above the word locally');
+    });
+  });
+
   group('GlobalLookupFrameRect data class', () {
     test('centerX/centerY derived plus value equality', () {
       const GlobalLookupFrameRect a =

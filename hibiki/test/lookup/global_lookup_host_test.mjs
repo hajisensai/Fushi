@@ -721,4 +721,32 @@ function flushTimers() {
   assert.ok(dismiss, 'TODO-890: safety timer posts dismiss when transitionend is absent');
 }
 
+// 21. TODO-893 v2 (symptom 1): a child iframe's `textSelected` (plain glossary
+//     text tap) LOCAL rect is re-anchored to window-local CSS px EXACTLY like
+//     onLinkClick (same args[1] shape), so the child card cascades off the real
+//     word position instead of iframe-internal coords. The app-external
+//     controller used to ignore textSelected entirely, dropping body taps.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 70, top: 40, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  iframe.contentWindow.chrome.webview.postMessage({
+    handler: 'textSelected',
+    args: ['猫', { x: 10, y: 6, width: 24, height: 16 }],
+  });
+  const out = hostPostLog.find((m) => m.handler === 'textSelected');
+  assert.ok(out, 'textSelected reached the top bridge (not dropped)');
+  assert.strictEqual(out.__frameId, 'frame-0', 'textSelected stamped with frame id');
+  // local (10,6) + shell (70,40) -> window-local (80,46); size preserved.
+  assert.strictEqual(out.args[1].x, 80, 'anchor x = shell.left + local.x');
+  assert.strictEqual(out.args[1].y, 46, 'anchor y = shell.top + local.y');
+  assert.strictEqual(out.args[1].width, 24, 'anchor width preserved');
+  assert.strictEqual(out.args[1].height, 16, 'anchor height preserved');
+}
+
 console.log('global_lookup_host_test: PASS');

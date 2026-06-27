@@ -308,6 +308,108 @@ void main() {
     });
   });
 
+  group('TODO-893 v2 — three reopened symptoms (source guards)', () {
+    test('symptom 1 — controller dispatches BOTH onLinkClick and textSelected',
+        () {
+      // Tapping plain glossary text emits textSelected (not onLinkClick); the
+      // app-external controller used to register only onLinkClick, silently
+      // dropping body taps. Lock that both handlers reach the shared nested
+      // dispatch so a body tap opens a child card.
+      final String controller =
+          read('lib/src/lookup/global_lookup_controller.dart');
+      expect(controller.contains("handler == 'textSelected'"), isTrue,
+          reason: 'controller must handle the textSelected (body tap) trigger');
+      expect(controller.contains("handler == 'onLinkClick'"), isTrue,
+          reason: 'onLinkClick (headword/kanji) must still dispatch');
+      expect(controller.contains('_dispatchNestedLookup('), isTrue,
+          reason: 'both triggers share one dispatch helper (no special case)');
+    });
+
+    test('symptom 1 — host.js re-anchors textSelected like onLinkClick', () {
+      // textSelected carries the same iframe-LOCAL rect in args[1]; without the
+      // re-anchor the child card anchors at iframe-internal coords.
+      final String host = read('assets/popup/global_lookup_host.js');
+      expect(
+        host.contains(
+            "handler === 'onLinkClick' || handler === 'textSelected'"),
+        isTrue,
+        reason: 'transformFrameMessage must re-anchor both link + text taps',
+      );
+    });
+
+    test('symptom 2 — popup.css makes html.global-lookup transparent', () {
+      // The opaque documentElement fill clipped by the shell radius is the
+      // residual "white frame"; transparent <html> leaves only body's rounded
+      // card. Scoped so the in-app popup (no global-lookup class) is untouched.
+      final String css = read('assets/popup/popup.css');
+      expect(
+        RegExp(r'html\.global-lookup\s*\{[^}]*background:\s*transparent')
+            .hasMatch(css),
+        isTrue,
+        reason: 'html.global-lookup must be transparent so the clipped corners '
+            'show the desktop, not opaque theme colour',
+      );
+      // The in-app html background rule stays (no global-lookup scope on it).
+      expect(css.contains('html.global-lookup body {'), isTrue,
+          reason: 'in-app vs global-lookup body scoping must remain intact');
+    });
+
+    test('symptom 3 — native reports the cursor work-area offset', () {
+      // computeFrameRect screenW/H are work-area dimensions; the host child
+      // anchor is window-local. Native must hand the window origin's offset
+      // inside the work area so Dart can align the two zero points.
+      final String fw = read('windows/runner/flutter_window.cpp');
+      expect(fw.contains('cursorWorkX'), isTrue,
+          reason: 'showAt reply must carry the work-area X offset');
+      expect(fw.contains('cursorWorkY'), isTrue,
+          reason: 'showAt reply must carry the work-area Y offset');
+      expect(fw.contains('x - mi.rcWork.left'), isTrue,
+          reason: 'X offset = window origin minus work-area left');
+      expect(fw.contains('y - mi.rcWork.top'), isTrue,
+          reason: 'Y offset = window origin minus work-area top');
+    });
+
+    test('symptom 3 — channel parses cursorWork offset into the show result',
+        () {
+      final String channel = read('lib/src/lookup/global_lookup_channel.dart');
+      expect(channel.contains("reply['cursorWorkX']"), isTrue);
+      expect(channel.contains("reply['cursorWorkY']"), isTrue);
+      expect(channel.contains('this.cursorWorkX'), isTrue);
+      expect(channel.contains('this.cursorWorkY'), isTrue);
+    });
+
+    test('symptom 3 — controller feeds selectionScreenOffset to the builder',
+        () {
+      // The window-local anchor must be lifted into the work-area-absolute
+      // domain before the cascade math (and shifted back after).
+      final String controller =
+          read('lib/src/lookup/global_lookup_controller.dart');
+      expect(controller.contains('_cursorWorkX'), isTrue);
+      expect(controller.contains('_cursorWorkY'), isTrue);
+      expect(
+        controller.contains(
+            'selectionScreenOffset: Offset(_cursorWorkX, _cursorWorkY)'),
+        isTrue,
+        reason: 'the cascade builder must receive the work-area offset',
+      );
+    });
+
+    test('symptom 3 — render builder shifts anchor in then shifts result out',
+        () {
+      // computeFrameRect stays a pure single-domain function: the builder adds
+      // the offset to the anchor before, and subtracts it from left/top after.
+      final String render = read('lib/src/lookup/global_lookup_render.dart');
+      expect(render.contains('Offset selectionScreenOffset'), isTrue,
+          reason: 'builder must accept the offset param');
+      expect(render.contains('anchorRect.shift(selectionScreenOffset)'), isTrue,
+          reason: 'anchor lifted into work-area-absolute domain before layout');
+      expect(render.contains('r.left - selectionScreenOffset.dx'), isTrue,
+          reason: 'result shifted back to window-local (X)');
+      expect(render.contains('r.top - selectionScreenOffset.dy'), isTrue,
+          reason: 'result shifted back to window-local (Y)');
+    });
+  });
+
   group('JS harness (node)', () {
     test('popup.css scoped-style structure (executes parser via node)',
         () async {

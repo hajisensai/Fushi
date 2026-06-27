@@ -699,6 +699,18 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // it uses for window geometry to get CSS px (single dpr source).
           int work_w = 0;
           int work_h = 0;
+          // TODO-893 v2 (symptom 3) — the WINDOW-LOCAL origin's position INSIDE
+          // the cursor monitor work area (physical px). The overlay's
+          // window-local (0,0) sits at the placed top-left (x, y) = cursor+8 on
+          // screen; subtracting rcWork.left/top gives its offset from the work
+          // area origin. Dart translates the host's window-local child anchor
+          // rect into this same work-area-absolute domain before feeding
+          // computeFrameRect (whose screenW/H are work-area dimensions), then
+          // shifts the result back to window-local for the host shell — fixing
+          // the zero-point mismatch that mis-decided showBelow near the screen
+          // bottom edge and shoved the parent card off the top.
+          int cursor_work_x = 0;
+          int cursor_work_y = 0;
           HMONITOR monitor =
               MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
           MONITORINFO mi = {};
@@ -706,6 +718,8 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           if (GetMonitorInfo(monitor, &mi)) {
             work_w = mi.rcWork.right - mi.rcWork.left;
             work_h = mi.rcWork.bottom - mi.rcWork.top;
+            cursor_work_x = x - mi.rcWork.left;
+            cursor_work_y = y - mi.rcWork.top;
           }
           flutter::EncodableMap reply = {
               {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
@@ -713,6 +727,10 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
                flutter::EncodableValue(work_w)},
               {flutter::EncodableValue("workH"),
                flutter::EncodableValue(work_h)},
+              {flutter::EncodableValue("cursorWorkX"),
+               flutter::EncodableValue(cursor_work_x)},
+              {flutter::EncodableValue("cursorWorkY"),
+               flutter::EncodableValue(cursor_work_y)},
           };
           result->Success(flutter::EncodableValue(reply));
         } else if (method == "render") {

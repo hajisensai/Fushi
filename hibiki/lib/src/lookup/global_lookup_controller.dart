@@ -81,6 +81,15 @@ class GlobalLookupController {
   // the top. 0 = native did not report a work area (fall back to the canvas).
   double _screenWorkW = 0;
   double _screenWorkH = 0;
+  // TODO-893 v2 (symptom 3) — the overlay window-local origin's offset from the
+  // cursor monitor work-area origin (CSS px). Child anchor rects from the host
+  // are window-local; computeFrameRect's screenW/H are work-area dimensions.
+  // Adding this offset lifts the anchor into the SAME work-area-absolute domain
+  // (same zero point as screenW/H) so showBelow / clamp decide correctly near
+  // the screen bottom edge; the render builder shifts the result back to
+  // window-local for the host shell. 0 = native did not report a work area.
+  double _cursorWorkX = 0;
+  double _cursorWorkY = 0;
 
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
@@ -193,6 +202,10 @@ class GlobalLookupController {
       // _renderStack's computeFrameRect reasons about the real monitor.
       _screenWorkW = shown.workWidth > 0 ? shown.workWidth / dpr : 0;
       _screenWorkH = shown.workHeight > 0 ? shown.workHeight / dpr : 0;
+      // TODO-893 v2 (symptom 3) — same dpr boundary: the native cursor/work
+      // offset is physical px; convert to CSS px for the cascade layout domain.
+      _cursorWorkX = dpr > 0 ? shown.cursorWorkX / dpr : 0;
+      _cursorWorkY = dpr > 0 ? shown.cursorWorkY / dpr : 0;
       await _renderStack();
       glog('hotkey: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
@@ -356,22 +369,39 @@ class GlobalLookupController {
     if (handler == 'popupRendered' || handler == 'contentHeight') {
       return;
     }
-    // Nested lookup: clicking a term/kanji in the card emits onLinkClick with
-    // the query as args[0] and the clicked word's anchor rect as args[1]. The
-    // host shim (global_lookup_host.js) already re-anchored that rect from the
-    // child iframe's LOCAL coords to window-local CSS px, so the child card
-    // cascades off the real word position. Re-search and push a child frame.
-    if (handler == 'onLinkClick') {
-      final Object? args = message['args'];
-      if (args is List && args.isNotEmpty) {
-        final String query = args.first?.toString() ?? '';
-        if (query.isNotEmpty) {
-          final Rect? anchor =
-              (args.length >= 2) ? _anchorRectFromArg(args[1]) : null;
-          unawaited(_lookupNested(query, anchor));
-        }
-      }
+    // Nested lookup: two popup.js triggers, IDENTICAL arg shape (args[0] =
+    // query, args[1] = clicked word's anchor rect in window-local CSS px, already
+    // re-anchored by the host shim global_lookup_host.js so the child cascades
+    // off the real word position):
+    //   - onLinkClick: headword / kanji-tag / kanji-character / structured href.
+    //   - textSelected: TAPPING PLAIN GLOSSARY TEXT — popup.js's
+    //     hoshiSelection.selectText -> selection.js callHandler('textSelected',
+    //     text, rect). The in-app popup (dictionary_popup_webview) registers
+    //     BOTH; the app-external controller used to register only onLinkClick, so
+    //     a body tap was silently dropped and "clicking plain text never opens a
+    //     lookup" (TODO-893 v2 symptom 1). Both share one dispatch — no special
+    //     case.
+    if (handler == 'onLinkClick' || handler == 'textSelected') {
+      _dispatchNestedLookup(message);
     }
+  }
+
+  /// TODO-893 v2 (symptom 1) — shared nested-lookup dispatch for the two popup.js
+  /// triggers (`onLinkClick`, `textSelected`) that carry the SAME arg shape:
+  /// args[0] = query, args[1] = the clicked word's window-local CSS px anchor
+  /// rect (re-anchored by the host shim). Searches and pushes a child frame.
+  void _dispatchNestedLookup(Map<String, Object?> message) {
+    final Object? args = message['args'];
+    if (args is! List || args.isEmpty) {
+      return;
+    }
+    final String query = args.first?.toString() ?? '';
+    if (query.isEmpty) {
+      return;
+    }
+    final Rect? anchor =
+        (args.length >= 2) ? _anchorRectFromArg(args[1]) : null;
+    unawaited(_lookupNested(query, anchor));
   }
 
   /// Resolves a deferred audio bridge call and pushes the reply back to the
@@ -619,6 +649,10 @@ class GlobalLookupController {
       screenHeight: screenH,
       maxWidth: cardW,
       maxHeight: cardH,
+      // TODO-893 v2 (symptom 3) — lift window-local child anchors into the
+      // work-area-absolute domain (shared zero point with screenW/H) before the
+      // cascade math, then the builder shifts the result back to window-local.
+      selectionScreenOffset: Offset(_cursorWorkX, _cursorWorkY),
     ));
   }
 

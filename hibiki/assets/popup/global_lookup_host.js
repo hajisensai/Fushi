@@ -338,7 +338,14 @@
     if (typeof message.__bridgeId !== 'undefined') {
       out.__bridgeId = message.__bridgeId;
     }
-    if (handler === 'onLinkClick' && Array.isArray(message.args)) {
+    // TODO-893 v2 (symptom 1) — textSelected (tapping plain glossary text) carries
+    // the SAME arg shape as onLinkClick (args[1] = the clicked word's iframe-LOCAL
+    // rect), so it needs the identical iframe-local -> window-local re-anchor;
+    // otherwise the child card anchors at iframe-internal coords (wrong cascade).
+    if (
+      (handler === 'onLinkClick' || handler === 'textSelected') &&
+      Array.isArray(message.args)
+    ) {
       var anchor = anchorRectToScreen(record, message.args[1]);
       var newArgs = message.args.slice();
       if (anchor) {
