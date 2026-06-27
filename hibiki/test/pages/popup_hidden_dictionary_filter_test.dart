@@ -81,8 +81,10 @@ void main() {
   });
 
   test('host injects hiddenDictionaryNames from isHidden on word inject', () {
+    // TODO-895: collapsed/hidden name injection moved into the single source of
+    // truth popup_settings_injection.dart (shared in-app + app-outside body).
     final String dart = File(
-      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      'lib/src/pages/implementations/popup_settings_injection.dart',
     ).readAsStringSync();
 
     // The host must compute the hidden set from Dictionary.isHidden(targetLanguage)

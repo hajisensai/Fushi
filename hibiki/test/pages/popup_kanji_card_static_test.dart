@@ -24,8 +24,10 @@ void main() {
     late String injector;
 
     setUpAll(() {
+      // TODO-895: kanji/term serialization + window.* injection moved into the
+      // single source of truth popup_settings_injection.dart.
       injector = File(
-        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+        'lib/src/pages/implementations/popup_settings_injection.dart',
       ).readAsStringSync();
     });
 
@@ -36,7 +38,7 @@ void main() {
       // channel) and is serialized via the typed HoshiKanjiResult.toMap.
       expect(
         injector,
-        contains('widget.result.kanjiResults'),
+        contains('result.kanjiResults'),
         reason: 'kanji results must come from the SAME DictionarySearchResult '
             'that produced lookupEntries (no parallel channel).',
       );

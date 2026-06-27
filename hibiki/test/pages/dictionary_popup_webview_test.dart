@@ -54,8 +54,10 @@ void main() {
             'into the already-loaded popup WebView.',
       );
       expect(source, contains('appModel.popupInstantScroll'));
-      expect(source,
-          contains('final popupInstantScroll = appModel.popupInstantScroll'));
+      expect(
+          source,
+          contains(
+              'final bool popupInstantScroll = appModel.popupInstantScroll'));
       expect(
         source,
         contains('ReaderCaretScripts.instantScrollInvocation('),
@@ -91,19 +93,37 @@ void main() {
             'the kanji card and emits popupRendered.',
       );
 
+      // TODO-895: the entries / kanji / no-results flags moved into the single
+      // source of truth buildPopupSettingsJs (popup_settings_injection.dart),
+      // which _pushResults emits as `$sharedSettingsJs` BEFORE its own load-more
+      // vs scroll-reset `$beforeRenderJs` + renderPopup(). Verify the ordering
+      // across both halves so empty / kanji-only payloads still reach renderPopup.
+      final String injection = File(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+
+      final int entriesAt = injection.indexOf('window.lookupEntries =');
+      final int kanjiAt = injection.indexOf('window.kanjiResults =');
+      final int noResultsAt = injection.indexOf('window._noResultsMessage =');
+      expect(entriesAt, greaterThanOrEqualTo(0));
+      expect(noResultsAt, greaterThanOrEqualTo(0));
+      expect(kanjiAt, greaterThan(entriesAt),
+          reason: 'kanji results ride alongside the term entries in the shared '
+              'settings body, not a separate code path.');
+
       final int pushStart = source.indexOf('void _pushResults()');
       expect(pushStart, greaterThanOrEqualTo(0));
       final String pushBody = source.substring(pushStart);
 
-      final int entriesAt = pushBody.indexOf('window.lookupEntries =');
-      final int kanjiAt = pushBody.indexOf('window.kanjiResults =');
-      final int noResultsAt = pushBody.indexOf('window._noResultsMessage =');
+      final int sharedAt = pushBody.indexOf(r'$sharedSettingsJs');
       final int beforeRenderAt = pushBody.indexOf(r'$beforeRenderJs');
-
-      expect(entriesAt, greaterThanOrEqualTo(0));
-      expect(kanjiAt, greaterThan(entriesAt));
-      expect(beforeRenderAt, greaterThan(kanjiAt));
-      expect(beforeRenderAt, greaterThan(noResultsAt));
+      expect(sharedAt, greaterThanOrEqualTo(0),
+          reason: 'the shared settings body (entries/kanji/no-results) must be '
+              'emitted into the WebView push');
+      expect(beforeRenderAt, greaterThan(sharedAt),
+          reason: 'the shared body must precede the load-more / scroll-reset '
+              'beforeRenderJs so empty and kanji-only payloads reach '
+              'renderPopup().');
       expect(pushBody, contains('window.renderPopup();'));
     });
   });

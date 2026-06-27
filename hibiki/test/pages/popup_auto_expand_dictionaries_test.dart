@@ -93,8 +93,10 @@ void main() {
   test(
       'host injects window.autoExpandDictionaries next to collapseDictionaries',
       () {
+    // TODO-895: the shared popup settings body (theme vars + every window.* flag)
+    // moved to the single source of truth popup_settings_injection.dart.
     final String dart = File(
-      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      'lib/src/pages/implementations/popup_settings_injection.dart',
     ).readAsStringSync();
 
     final int collapseInject = dart.indexOf('window.collapseDictionaries =');

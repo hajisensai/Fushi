@@ -25,10 +25,24 @@ void main() {
     // TODO-426：选择器 UI 暂时砍掉——sentenceDraftEnabled 由 kSentenceContextPickerEnabled
     // （恒 false）与宿主回调一起门控；常量为 false 时弹窗不渲染选择器。回调链 / handler /
     // i18n 注入全保留，将来把常量改回 true 即恢复。
+    // TODO-895：sentenceDraftEnabled 的 window.* 注入搬进单一真相源
+    // popup_settings_injection.dart；webview 仍按同一谓词把它喂给共享 builder 的
+    // PopupSettingsOptions，injection 体据该 option 注入标量。两段一起钉死等价接线。
     expect(
-        src,
+        src, contains('sentenceDraftEnabled: kSentenceContextPickerEnabled &&'),
+        reason: 'webview must still gate the flag on the SAME predicate '
+            '(kSentenceContextPickerEnabled && host callback present) and pass '
+            'it into the shared popup-settings builder.');
+    expect(src, contains('widget.onSetSentenceContext != null'));
+    final String injection = readSource(
+        'lib/src/pages/implementations/popup_settings_injection.dart');
+    expect(
+        injection,
         contains(
-            r'window.sentenceDraftEnabled = ${kSentenceContextPickerEnabled && widget.onSetSentenceContext != null}'));
+            r'window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};'),
+        reason:
+            'the single source of truth must inject window.sentenceDraftEnabled '
+            'from the option the webview passes.');
     // 上下文方向标签从宿主 i18n 注入（恢复用，保留）。
     expect(src, contains('window.i18nContextPrevLabel ='));
     expect(src, contains('window.i18nContextNextLabel ='));
