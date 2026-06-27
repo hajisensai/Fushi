@@ -150,3 +150,35 @@ theme deliberately does not (touch has no hover), keeping mobile behaviour
 unchanged.
 
 Source-guard test: `hibiki/test/third_party/media_kit_video_seekbar_guard_test.dart`.
+
+## TODO-916: show controls on `onTap` (arena-respecting), not `Listener.onPointerDown`
+
+`lib/media_kit_video_controls/src/controls/material.dart` (mobile controls only),
+the central gesture stack of `MaterialVideoControlsState`.
+
+Upstream wraps the controls' central fill in a raw
+`Listener(onPointerDown: ... => onTap())`, so *any* pointer-down toggled the
+control bar **synchronously, before the gesture arena resolved**. Hibiki layers a
+self-implemented long-press speed-up (`onLongPressStart` on an ancestor
+`GestureDetector`) and a Flutter subtitle overlay that dodges the bottom bar.
+Because the long-press recognizer needs ~500ms to win, the initial down of a
+press-and-hold always fired `onTap()` first: the control bar flashed in, started
+its 2s auto-hide, then collapsed once the long-press began — the "control bar
+flashes once before disappearing" symptom (TODO-916 ②). The same premature
+toggle also shoved the subtitle box up via its 200ms dodge animation *mid-tap*,
+so a tap aimed at a subtitle character landed on a now-moved RenderBox and missed,
+which is why subtitle word lookup "needs a pause and several taps" (TODO-916 ④
+amplifier).
+
+The patch removes the `Listener`/`_handlePointerDown` wiring and binds the
+existing `onTap()` to the central `GestureDetector.onTap:` instead. `onTap` only
+fires for the detector that wins the arena, so a long-press or double-tap
+suppresses it and the controls no longer flash. `_tapPosition` (used by
+double-tap-seek segment checks) is preserved and now also recorded on `onTapDown`
+in addition to `onDoubleTapDown`. `playAndPauseOnTap`, the subtitle
+`shiftSubtitle`/`unshiftSubtitle` dodge, and the `visibilityNotifier` push are all
+unchanged — single tap still toggles the controls, just one arena resolution later
+(imperceptible). Desktop `material_desktop.dart` is untouched (it already toggles
+via `MouseRegion.onHover`, never on pointer-down).
+
+Source-guard test: `hibiki/test/third_party/media_kit_video_controls_tap_arena_guard_test.dart`.

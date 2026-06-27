@@ -845,10 +845,6 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     return _isInSegment(localX, 0);
   }
 
-  void _handlePointerDown(PointerDownEvent event) {
-    onTap();
-  }
-
   void setVolume(double value) {
     _theme(context).onVolumeChanged?.call(value);
     setState(() {
@@ -943,93 +939,101 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                         top: 16.0,
                         right: 16.0,
                         bottom: 16.0 + subtitleVerticalShiftOffset,
-                        child: Listener(
-                          onPointerDown: (event) => _handlePointerDown(event),
-                          child: GestureDetector(
-                            onDoubleTapDown: _handleDoubleTapDown,
-                            onLongPress: _theme(context).speedUpOnLongPress
-                                ? _handleLongPress
-                                : null,
-                            onLongPressEnd: _theme(context).speedUpOnLongPress
-                                ? _handleLongPressEnd
-                                : null,
-                            onDoubleTap: () {
-                              if (_tapPosition == null) {
-                                return;
+                        // Hibiki patch (TODO-916): route "show controls" through
+                        // the gesture arena's [onTap] instead of a raw
+                        // [Listener.onPointerDown]. A pointer-down fires
+                        // synchronously without arena arbitration, so the old
+                        // wiring toggled the controls on every press -- including
+                        // the initial down of a long-press (speed-up) -- making the
+                        // control bar flash in/out and shoving the subtitle box
+                        // mid-tap (breaking subtitle word lookup). With [onTap]
+                        // the long-press / double-tap recognizers win the arena and
+                        // the controls only appear on a real single tap.
+                        child: GestureDetector(
+                          onTap: onTap,
+                          onTapDown: _handleDoubleTapDown,
+                          onDoubleTapDown: _handleDoubleTapDown,
+                          onLongPress: _theme(context).speedUpOnLongPress
+                              ? _handleLongPress
+                              : null,
+                          onLongPressEnd: _theme(context).speedUpOnLongPress
+                              ? _handleLongPressEnd
+                              : null,
+                          onDoubleTap: () {
+                            if (_tapPosition == null) {
+                              return;
+                            }
+                            if (_isInRightSegment(_tapPosition!.dx)) {
+                              if ((!mount && _theme(context).seekOnDoubleTap) ||
+                                  seekOnDoubleTapEnabledWhileControlsAreVisible) {
+                                onDoubleTapSeekForward();
                               }
-                              if (_isInRightSegment(_tapPosition!.dx)) {
+                            } else {
+                              if (_isInLeftSegment(_tapPosition!.dx)) {
                                 if ((!mount &&
                                         _theme(context).seekOnDoubleTap) ||
                                     seekOnDoubleTapEnabledWhileControlsAreVisible) {
-                                  onDoubleTapSeekForward();
-                                }
-                              } else {
-                                if (_isInLeftSegment(_tapPosition!.dx)) {
-                                  if ((!mount &&
-                                          _theme(context).seekOnDoubleTap) ||
-                                      seekOnDoubleTapEnabledWhileControlsAreVisible) {
-                                    onDoubleTapSeekBackward();
-                                  }
+                                  onDoubleTapSeekBackward();
                                 }
                               }
-                            },
-                            onHorizontalDragUpdate: (details) {
-                              if ((!mount && _theme(context).seekGesture) ||
-                                  (_theme(context).seekGesture &&
+                            }
+                          },
+                          onHorizontalDragUpdate: (details) {
+                            if ((!mount && _theme(context).seekGesture) ||
+                                (_theme(context).seekGesture &&
+                                    _theme(context)
+                                        .gesturesEnabledWhileControlsVisible)) {
+                              onHorizontalDragUpdate(details);
+                            }
+                          },
+                          onHorizontalDragEnd: (details) {
+                            onHorizontalDragEnd();
+                          },
+                          onVerticalDragUpdate: (e) async {
+                            final delta = e.delta.dy;
+                            final Offset position = e.localPosition;
+
+                            if (position.dx <= widgetWidth(context) / 2) {
+                              // Left side of screen swiped
+                              if ((!mount &&
+                                      _theme(context).brightnessGesture &&
+                                      _theme(context).onBrightnessChanged !=
+                                          null) ||
+                                  (_theme(context).brightnessGesture &&
                                       _theme(context)
-                                          .gesturesEnabledWhileControlsVisible)) {
-                                onHorizontalDragUpdate(details);
-                              }
-                            },
-                            onHorizontalDragEnd: (details) {
-                              onHorizontalDragEnd();
-                            },
-                            onVerticalDragUpdate: (e) async {
-                              final delta = e.delta.dy;
-                              final Offset position = e.localPosition;
-
-                              if (position.dx <= widgetWidth(context) / 2) {
-                                // Left side of screen swiped
-                                if ((!mount &&
-                                        _theme(context).brightnessGesture &&
-                                        _theme(context).onBrightnessChanged !=
-                                            null) ||
-                                    (_theme(context).brightnessGesture &&
+                                          .gesturesEnabledWhileControlsVisible &&
+                                      _theme(context).onBrightnessChanged !=
+                                          null)) {
+                                final brightness = _brightnessValue -
+                                    delta /
                                         _theme(context)
-                                            .gesturesEnabledWhileControlsVisible &&
-                                        _theme(context).onBrightnessChanged !=
-                                            null)) {
-                                  final brightness = _brightnessValue -
-                                      delta /
-                                          _theme(context)
-                                              .verticalGestureSensitivity;
-                                  final result = brightness.clamp(0.0, 1.0);
-                                  setBrightness(result);
-                                }
-                              } else {
-                                // Right side of screen swiped
-
-                                if ((!mount &&
-                                        _theme(context).volumeGesture &&
-                                        _theme(context).onVolumeChanged !=
-                                            null) ||
-                                    (_theme(context).volumeGesture &&
-                                        _theme(context)
-                                            .gesturesEnabledWhileControlsVisible &&
-                                        _theme(context).onVolumeChanged !=
-                                            null)) {
-                                  final volume = _volumeValue -
-                                      delta /
-                                          _theme(context)
-                                              .verticalGestureSensitivity;
-                                  final result = volume.clamp(0.0, 1.0);
-                                  setVolume(result);
-                                }
+                                            .verticalGestureSensitivity;
+                                final result = brightness.clamp(0.0, 1.0);
+                                setBrightness(result);
                               }
-                            },
-                            child: Container(
-                              color: const Color(0x00000000),
-                            ),
+                            } else {
+                              // Right side of screen swiped
+
+                              if ((!mount &&
+                                      _theme(context).volumeGesture &&
+                                      _theme(context).onVolumeChanged !=
+                                          null) ||
+                                  (_theme(context).volumeGesture &&
+                                      _theme(context)
+                                          .gesturesEnabledWhileControlsVisible &&
+                                      _theme(context).onVolumeChanged !=
+                                          null)) {
+                                final volume = _volumeValue -
+                                    delta /
+                                        _theme(context)
+                                            .verticalGestureSensitivity;
+                                final result = volume.clamp(0.0, 1.0);
+                                setVolume(result);
+                              }
+                            }
+                          },
+                          child: Container(
+                            color: const Color(0x00000000),
                           ),
                         ),
                       ),
