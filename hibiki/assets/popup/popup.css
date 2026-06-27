@@ -608,24 +608,18 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 }
 
 .dict-label {
-    /* TODO-849: turn the dictionary title into a full-width clickable bar so the
-       whole card head (not just the short label text) toggles collapse/expand.
-       display:flex makes the <summary> span the card width = wide hit target. */
-    font-size: 12px;
-    opacity: 0.8;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 2px;
-    border-radius: 6px;
+    /* TODO-877: revert TODO-849's clickable-bar card head back to Hoshi's flat
+       small caption (Hoshi Features/Popup/popup.css .dict-label :328-334:
+       font-size:10px; opacity:0.7; display:block). display:block still spans the
+       full row so the whole <summary> stays a collapse/expand hit target, but the
+       look is a plain dim caption - no padding / radius / surface, matching
+       Pictures/popup_dict.PNG. */
+    font-size: 10px;
+    opacity: 0.7;
+    display: block;
     cursor: pointer;
     -webkit-user-select: none;
     user-select: none;
-}
-
-/* When expanded, give a small gap between the card head and the glossary body. */
-.glossary-group[open] > .dict-label {
-    margin-bottom: 2px;
 }
 
 .dict-label.selected {
@@ -706,23 +700,17 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     column-gap: 6px;
 }
 
-/* TODO-849: card-ify each dictionary's glossary block (collapsed AND expanded).
-   The card border / radius / surface reuse the SAME MD3 theme variables as
-   .kanji-card (see popup.css around .kanji-card) so the card follows the active
-   light / dark / dynamic-colour theme, never a hardcoded panel.
-   Spacing MUST keep flowing through margin-top - grid does NOT collapse item
-   margins, so the parent only sets column-gap (see TODO-776 note above). Using
-   grid gap/row-gap here would stack gap+margin into a DOUBLED row gap at N=1 and
-   break every existing user's default spacing. */
+/* TODO-877: revert TODO-849's per-dictionary card (border / radius / surface /
+   padding) back to Hoshi's flat glossary block (Hoshi Features/Popup/popup.css
+   .glossary-group :239-242: position:relative; margin-top:5px). Dictionaries are
+   now separated only by whitespace, matching Pictures/popup_dict.PNG. The
+   TODO-776 grid spacing model is untouched: spacing still flows through
+   margin-top (grid does NOT collapse item margins, so the parent only sets
+   column-gap), and min-width:0 still keeps long glossary content from forcing the
+   grid track wider than its 1fr share (which would overflow the popup). */
 .glossary-section > .category-body > .glossary-group {
-    margin-top: 6px;
-    /* Keep long glossary content from forcing the grid track wider than its
-       1fr share (which would overflow the popup horizontally). */
+    margin-top: 5px;
     min-width: 0;
-    border: 1px solid var(--outline-variant);
-    border-radius: 8px;
-    background: var(--surface-container);
-    padding: 6px 8px;
 }
 
 /* Cancel the first card's top margin so the glossary section doesn't start with
