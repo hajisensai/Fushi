@@ -605,6 +605,7 @@ class ReaderPaginationScripts {
     double chromeBottomInset = 0.0,
     double? dartPageWidth,
     double? dartPageHeight,
+    bool blurImages = false,
   }) {
     if (continuousMode) {
       return _continuousShellScript(
@@ -616,6 +617,7 @@ class ReaderPaginationScripts {
         chromeBottomInset: chromeBottomInset,
         dartPageWidth: dartPageWidth,
         dartPageHeight: dartPageHeight,
+        blurImages: blurImages,
       );
     }
     return _paginatedShellScript(
@@ -628,6 +630,7 @@ class ReaderPaginationScripts {
       chromeBottomInset: chromeBottomInset,
       dartPageWidth: dartPageWidth,
       dartPageHeight: dartPageHeight,
+      blurImages: blurImages,
     );
   }
 
@@ -1331,7 +1334,21 @@ class ReaderPaginationScripts {
   document.head.appendChild(newViewport);
 ''';
 
-  static String _sharedInitImages() => '''
+  /// TODO-861④（移植 Hoshi `f286108`）：[blurImages] 为 true 时给标记为 block-img 的
+  /// 大图（含 svg 封面）加 `blurred` 类（CSS 盖 24px 模糊），并装一次性点击监听揭开。
+  /// 揭开（移除 `blurred`）连同「吞掉本次放大」由 webview.part.dart 的点击派发处统一
+  /// 处理（见 `_hoshiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
+  static String _sharedInitImages({bool blurImages = false}) {
+    final String blurFn = blurImages
+        ? '''
+  function _hoshiBlurImage(element) {
+    element.classList.add('blurred');
+  }'''
+        : '';
+    final String blurSvgCall = blurImages ? '_hoshiBlurImage(svg);' : '';
+    final String blurImgCall = blurImages ? '_hoshiBlurImage(img);' : '';
+    return '''
+$blurFn
   Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
     var svgImage = svg.querySelector('image');
     if (!svgImage) return;
@@ -1356,6 +1373,7 @@ class ReaderPaginationScripts {
       swrap.className = 'block-img-wrapper';
       svg.parentNode.insertBefore(swrap, svg);
       swrap.appendChild(svg);
+      $blurSvgCall
     }
   });
   var imagePromises = Array.from(document.querySelectorAll('img')).map(function(img) {
@@ -1368,6 +1386,7 @@ class ReaderPaginationScripts {
           wrapper.className = 'block-img-wrapper';
           img.parentNode.insertBefore(wrapper, img);
           wrapper.appendChild(img);
+          $blurImgCall
         }
         resolve();
       };
@@ -1380,6 +1399,7 @@ class ReaderPaginationScripts {
     });
   });
 ''';
+  }
 
   static const String _sharedInitBoot = '''
 window.addEventListener('load', function() {
@@ -1402,6 +1422,7 @@ if (document.readyState === 'complete') {
     double chromeBottomInset = 0.0,
     double? dartPageWidth,
     double? dartPageHeight,
+    bool blurImages = false,
   }) {
     // BUG-162: 优先精确字符偏移恢复（restoreToCharOffset），无精确锚（旧存档）才
     // 回退粗粒度 restoreProgress；书签/fragment 跳转仍走 jumpToFragment。
@@ -1420,7 +1441,7 @@ if (document.readyState === 'complete') {
     const String spacerHeight = ReaderLayoutDefaults.trailingSpacerHeightCss;
     const String spacerWidth = ReaderLayoutDefaults.trailingSpacerWidthCss;
 
-    final String initImages = _sharedInitImages();
+    final String initImages = _sharedInitImages(blurImages: blurImages);
 
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
@@ -2249,6 +2270,7 @@ $_sharedInitBoot
     double chromeBottomInset = 0.0,
     double? dartPageWidth,
     double? dartPageHeight,
+    bool blurImages = false,
   }) {
     // BUG-162: 同分页——优先精确字符偏移恢复，旧存档回退分数。
     final String initialRestoreScript = initialFragment != null
@@ -2263,7 +2285,7 @@ $_sharedInitBoot
 
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
 
-    final String initImages = _sharedInitImages();
+    final String initImages = _sharedInitImages(blurImages: blurImages);
 
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);

@@ -5,6 +5,42 @@ import 'package:dio/dio.dart';
 
 import 'package:path/path.dart' as path;
 
+/// TODO-861③（移植 Hoshi `94d0c41` #59）：词典自动更新的检查周期。`.name` 持久化
+/// （daily/weekly/monthly），默认 weekly。每档对应一个 [Duration]。
+enum DictionaryUpdateInterval {
+  daily(Duration(days: 1)),
+  weekly(Duration(days: 7)),
+  monthly(Duration(days: 30));
+
+  const DictionaryUpdateInterval(this.duration);
+
+  final Duration duration;
+
+  /// 把持久化的 `.name` 解析回枚举；未知值回退 [weekly]（向后兼容、不崩）。
+  static DictionaryUpdateInterval fromName(String? name) {
+    for (final DictionaryUpdateInterval i in DictionaryUpdateInterval.values) {
+      if (i.name == name) return i;
+    }
+    return DictionaryUpdateInterval.weekly;
+  }
+}
+
+/// TODO-861③：纯函数 check-due（移植 Hoshi `autoUpdateDictionaries` 守卫 + 间隔判据）。
+/// 返回 true 当且仅当：未在导入/更新（[isBusy] 为 false）、存在可更新词典
+/// （[hasUpdatable] 为 true）、且距上次成功更新（[lastUpdate]，null = 从未）已达
+/// [interval]。[now] 注入便于测试。无任何副作用。
+bool shouldAutoUpdateDictionaries({
+  required DateTime now,
+  required DateTime? lastUpdate,
+  required DictionaryUpdateInterval interval,
+  required bool hasUpdatable,
+  required bool isBusy,
+}) {
+  if (isBusy || !hasUpdatable) return false;
+  if (lastUpdate == null) return true;
+  return now.difference(lastUpdate) >= interval.duration;
+}
+
 /// TODO-609：在线 revision 比对手动更新词典——纯 Dart 层（零 C++/FFI/schema）。
 ///
 /// C++ importer 把完整 yomitan index.json（含 revision/isUpdatable/indexUrl/

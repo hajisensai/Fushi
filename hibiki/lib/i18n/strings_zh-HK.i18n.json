@@ -1913,5 +1913,16 @@
   "lyrics_blur_hint": "Blur the current line for listening immersion; hover or tap to reveal",
   "collection_export_mined_title": "Mined Sentences",
   "collection_export_scope": "Export scope",
-  "collection_export_all_mined": "All mined sentences"
+  "collection_export_all_mined": "All mined sentences",
+  "ttu_paragraph_spacing": "Paragraph spacing",
+  "ttu_blur_images": "Blur images (spoiler guard)",
+  "scan_non_japanese_text": "Scan non-Japanese text",
+  "scan_non_japanese_text_hint": "When off, selection stops at non-Japanese characters",
+  "dict_auto_update": "Update automatically",
+  "dict_auto_update_hint": "Check for dictionary updates on launch",
+  "dict_auto_update_never": "Never",
+  "dict_auto_update_last": "Last update: $time",
+  "dict_update_interval_daily": "Daily",
+  "dict_update_interval_weekly": "Weekly",
+  "dict_update_interval_monthly": "Monthly"
 }

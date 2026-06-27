@@ -211,6 +211,18 @@ class ReaderSettings {
   Future<void> setTextIndentation(double v) =>
       _set<double>('ttu_text_indentation', v);
 
+  /// TODO-861①（移植 Hoshi `ebf5423`）：段落间距（em）。>0 时给 `<p>` 注入主轴方向
+  /// 的 margin（横排 top/bottom、竖排 left/right，见 `ReaderContentStyles.css`）。
+  /// 默认 `0` = 无段间距，向后兼容历史行为。
+  double get paragraphSpacing => _get<double>('ttu_paragraph_spacing', 0);
+  Future<void> setParagraphSpacing(double v) =>
+      _set<double>('ttu_paragraph_spacing', v);
+
+  /// TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。开启时大图（block-img，
+  /// 含 svg 封面）盖 24px 高斯模糊，点击一次揭开。默认 `false` = 不模糊，向后兼容。
+  bool get blurImages => _get<bool>('ttu_blur_images', false);
+  Future<void> setBlurImages(bool v) => _set<bool>('ttu_blur_images', v);
+
   double get marginTop =>
       _get<double>('ttu_margin_top', defaultMarginTopPercent);
   Future<void> setMarginTop(double v) =>

@@ -1009,6 +1009,28 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// TODO-861①：段落间距（em）。纯 CSS（live re-inject）。默认 0。
+  double get ttuParagraphSpacing =>
+      readerSettings?.paragraphSpacing ??
+      getPreference<double>(key: 'ttu_paragraph_spacing', defaultValue: 0);
+  Future<void> setTtuParagraphSpacing(double v) async {
+    await (readerSettings?.setParagraphSpacing(v) ??
+        setPreference<double>(key: 'ttu_paragraph_spacing', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  /// TODO-861④：图片防剧透模糊开关。切换需重跑分页脚本给大图加 `blurred` 类
+  /// （非纯 CSS），故 schema 走 `notifyReaderLayoutChanged`（结构 reload），不在此
+  /// 触发 live。默认 false。
+  bool get ttuBlurImages =>
+      readerSettings?.blurImages ??
+      getPreference<bool>(key: 'ttu_blur_images', defaultValue: false);
+  Future<void> setTtuBlurImages(bool v) async {
+    await (readerSettings?.setBlurImages(v) ??
+        setPreference<bool>(key: 'ttu_blur_images', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   double get ttuMarginTop =>
       readerSettings?.marginTop ??
       getPreference<double>(

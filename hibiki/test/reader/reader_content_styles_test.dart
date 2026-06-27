@@ -902,4 +902,56 @@ void main() {
           reason: 'overflow-y:hidden 绝不能放 body（否则恢复 root.scrollLeft 幽灵→视口留章首）');
     });
   });
+
+  // TODO-861①（段落间距）：纯 CSS，按书写轴选 margin 轴，=0 不注入。
+  group('TODO-861① paragraph spacing CSS', () {
+    test('横排 paragraphSpacing>0 注入 top/bottom margin', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setParagraphSpacing(1.5);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('margin-top: 1.5em !important;'));
+      expect(css, contains('margin-bottom: 1.5em !important;'));
+      expect(css, isNot(contains('margin-right: 1.5em')));
+    });
+
+    test('竖排 paragraphSpacing>0 注入 left/right margin', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('vertical-rl');
+      await settings.setParagraphSpacing(2.0);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('margin-right: 2.0em !important;'));
+      expect(css, contains('margin-left: 2.0em !important;'));
+      expect(css, isNot(contains('margin-top: 2.0em')));
+    });
+
+    test('paragraphSpacing=0 不注入任何 p{margin', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setParagraphSpacing(0);
+      final String css = ReaderContentStyles.css(settings: settings);
+      // =0 时段距分支返回空串：margin-top/bottom/left/right 任一段距注入都不应出现。
+      expect(css, isNot(contains('margin-top: 0.0em')));
+      expect(css, isNot(contains('margin-right: 0.0em')));
+    });
+  });
+
+  // TODO-861④（图片防剧透）：blurImages=true 注入 .blurred filter、false 不注入。
+  group('TODO-861④ blur images CSS', () {
+    test('blurImages=true 注入 .blurred 的 24px 模糊', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setBlurImages(true);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('img.block-img.blurred'));
+      expect(css, contains('filter: blur(24px) !important;'));
+      expect(css, contains('clip-path: inset(0) !important;'));
+    });
+
+    test('blurImages=false 不注入 .blurred 规则', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setBlurImages(false);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, isNot(contains('.blurred')));
+      expect(css, isNot(contains('filter: blur(24px)')));
+    });
+  });
 }

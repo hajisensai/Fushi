@@ -1004,6 +1004,12 @@ window.hoshiCaret = {
       // images from the pointer-gesture path, not a synthesised click), so call
       // the same onImageTap handler that path uses instead of a no-op el.click().
       if (window.hoshiReader && this.el.tagName === 'IMG' && this.el.src) {
+        // TODO-861④：键盘/手柄激活仍带 `blurred` 类的防剧透图时，先揭开（移除类）
+        // 而非放大；揭开后再次激活才走 onImageTap 放大（与指针点击语义一致）。
+        if (this.el.classList && this.el.classList.contains('blurred')) {
+          this.el.classList.remove('blurred');
+          return 'activated';
+        }
         window.flutter_inappwebview.callHandler('onImageTap', this.el.src);
         return 'activated';
       }

@@ -245,6 +245,53 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // TODO-861②（移植 Hoshi `07b5c09`）：是否扫描非日文文本进选区/查词。默认 true =
+  // 现状（注入端原硬编码 true）。关闭时选区遇非日文码点即停（见
+  // reader_selection_scripts.dart 的 isDelimiter 消费端）。
+  bool get scanNonJapaneseText =>
+      getPref('scan_non_japanese_text', defaultValue: true) as bool;
+
+  Future<void> setScanNonJapaneseText(bool value) async {
+    await setPref('scan_non_japanese_text', value);
+    notifyListeners();
+  }
+
+  // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
+  //
+  // 启动时 check-due 自动更新词典。interval 存 enum `.name`（daily/weekly/monthly），
+  // lastUpdate 存 ISO8601 字符串（'' = 从未更新）。默认 autoUpdate=true、weekly。
+  // MVP 只做启动 check-due，无计费网络门控（本仓库无 connectivity 依赖）。
+
+  bool get autoUpdateDictionaries =>
+      getPref('auto_update_dictionaries', defaultValue: true) as bool;
+
+  Future<void> setAutoUpdateDictionaries(bool value) async {
+    await setPref('auto_update_dictionaries', value);
+    notifyListeners();
+  }
+
+  /// 检查周期的持久化 `.name`（daily/weekly/monthly）。默认 'weekly'。
+  String get dictionaryUpdateIntervalName =>
+      getPref('dictionary_update_interval', defaultValue: 'weekly') as String;
+
+  Future<void> setDictionaryUpdateIntervalName(String name) async {
+    await setPref('dictionary_update_interval', name);
+    notifyListeners();
+  }
+
+  /// 上次成功更新时间（ISO8601）；解析失败/未设 → null（= 从未更新）。
+  DateTime? get lastDictionaryUpdateAt {
+    final String raw =
+        getPref('last_dictionary_update_at', defaultValue: '') as String;
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  Future<void> setLastDictionaryUpdateAt(DateTime when) async {
+    await setPref('last_dictionary_update_at', when.toIso8601String());
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>

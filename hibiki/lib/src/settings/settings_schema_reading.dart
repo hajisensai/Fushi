@@ -75,6 +75,27 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
+          // TODO-861①（移植 Hoshi `ebf5423`）：段落间距（em）。纯 CSS，走 live
+          // re-inject（notifyReaderSettingsChanged）。范围 0..3 step 0.1，对齐 iOS。
+          SettingsStepperItem(
+            id: 'reading_display.paragraph_spacing',
+            title: t.ttu_paragraph_spacing,
+            icon: Icons.format_line_spacing,
+            min: 0,
+            max: 3,
+            step: 0.1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 18,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuParagraphSpacing,
+            format: (double v) => '${v.toStringAsFixed(1)}em',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource
+                  .setTtuParagraphSpacing((v * 10).roundToDouble() / 10);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
           // TODO-362（PR#3 响应式页边距）：四个边距都是百分比（左右 = vw / 上下 = vh），
           // 默认左右各 2%、上下 0%。范围 0~50%，禁止负值（负值与百分比语义冲突，且
           // CSS padding 不接受负值）。格式带 `%` 提示用户这是百分比。
@@ -421,6 +442,22 @@ SettingsDestination buildReadingDestination() {
                 c.readerSource.ttuPrioritizeReaderStyles,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setTtuPrioritizeReaderStyles(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          // TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。加 `blurred` 类需重跑
+          // 分页脚本（非纯 CSS），故走结构 reload（notifyReaderLayoutChanged）。
+          SettingsSwitchItem(
+            id: 'reading_display.blur_images',
+            title: t.ttu_blur_images,
+            icon: Icons.blur_on_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 19,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuBlurImages,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuBlurImages(value);
               notifyReaderLayoutChanged(c);
             },
           ),

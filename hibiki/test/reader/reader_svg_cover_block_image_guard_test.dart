@@ -97,9 +97,17 @@ void main() {
     expect(helper, contains('document.baseURI'));
 
     // The tap branch must route through the helper, not the old IMG-only check.
+    // TODO-861④ refactor: the resolved element is bound to `tapEl` (so the blur
+    // reveal can run before zoom), then passed to the shared resolver — same
+    // invariant, still elementFromPoint(x, y) -> _hoshiBlockImageUrl.
     expect(
       source,
-      contains('_hoshiBlockImageUrl(document.elementFromPoint(x, y))'),
+      contains('var tapEl = document.elementFromPoint(x, y);'),
+      reason: 'the single-tap branch must resolve via elementFromPoint(x, y)',
+    );
+    expect(
+      source,
+      contains('_hoshiBlockImageUrl(tapEl)'),
       reason: 'the single-tap branch must use the shared resolver',
     );
   });

@@ -209,6 +209,39 @@ p {
   -webkit-column-break-inside: avoid !important;
 }''';
 
+    // TODO-861①（移植 Hoshi `ebf5423`）：段落间距。>0 时给 `<p>` 注入主轴方向的
+    // margin —— 横排走 top/bottom、竖排走 left/right（与 iOS 的 verticalWriting
+    // 分支同构，竖排 inline 轴是水平方向）。=0 时不注入（边界，零行为变化）。这是
+    // 顶层规则、对 paginated/continuous 两布局都生效（插在主 return 的 `<body>`
+    // 规则之后，其 `!important` 压过 UA 默认段距）。
+    final double paragraphSpacing = math.max(0, settings.paragraphSpacing);
+    final String paragraphSpacingCss = paragraphSpacing > 0
+        ? (isVertical
+            ? '''
+p {
+  margin-right: ${paragraphSpacing}em !important;
+  margin-left: ${paragraphSpacing}em !important;
+}'''
+            : '''
+p {
+  margin-top: ${paragraphSpacing}em !important;
+  margin-bottom: ${paragraphSpacing}em !important;
+}''')
+        : '';
+
+    // TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。开启时大图盖 24px 高斯
+    // 模糊；JS（reader_pagination_scripts）给这些图加 `blurred` 类，点击揭开。
+    // `clip-path: inset(0)` 复刻 Hoshi `55a32cd` 修复（竖排 0 横向 padding 时
+    // blur 图被裁切/隐藏）。=false 时不注入（边界，零行为变化）。
+    final String blurImagesCss = settings.blurImages
+        ? '''
+img.block-img.blurred,
+svg.block-img.blurred {
+  filter: blur(24px) !important;
+  clip-path: inset(0) !important;
+}'''
+        : '';
+
     final String furiganaCss = _furiganaCss(settings.furiganaMode);
 
     final String textIndentCss = settings.textIndentation > 0
@@ -320,6 +353,7 @@ html {
   background: transparent;
 }
 $layoutCss
+$paragraphSpacingCss
 img.block-img {
   max-width: var(--hoshi-image-max-width, $imageMaxWidth)$readerStylePriority;
   max-height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
@@ -370,6 +404,7 @@ svg.block-img {
   margin: auto$readerStylePriority;
   cursor: pointer;
 }
+$blurImagesCss
 $furiganaCss
 ruby > rt, ruby > rp {
   -webkit-user-select: none;

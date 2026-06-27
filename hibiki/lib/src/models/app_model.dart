@@ -1705,6 +1705,13 @@ class AppModel with ChangeNotifier {
       if (texthookerEnabled) {
         TexthookerWsClientHost.instance.start(texthookerUrls);
       }
+      // TODO-861③：启动 check-due 词典自动更新（前台、静默、不弹错）。fire-and-forget，
+      // 失败自吞 + 记日志，绝不阻塞 / 中断 app init（守卫见 maybeAutoUpdateDictionaries）。
+      unawaited(
+          maybeAutoUpdateDictionaries().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.maybeAutoUpdateDictionaries', e, s);
+      }));
       notifyListeners();
     } on HibikiDatabaseDowngradeException catch (e, stack) {
       // The DB is newer than this build. drift refused to open it WITHOUT
@@ -2329,6 +2336,104 @@ class AppModel with ChangeNotifier {
         forceReplaceExisting: forceReplaceExisting,
         sourceOverride: sourceOverride,
       );
+
+  // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
+
+  bool get autoUpdateDictionaries => prefsRepo.autoUpdateDictionaries;
+  Future<void> setAutoUpdateDictionaries(bool value) =>
+      prefsRepo.setAutoUpdateDictionaries(value);
+
+  DictionaryUpdateInterval get dictionaryUpdateInterval =>
+      DictionaryUpdateInterval.fromName(prefsRepo.dictionaryUpdateIntervalName);
+  Future<void> setDictionaryUpdateInterval(DictionaryUpdateInterval interval) =>
+      prefsRepo.setDictionaryUpdateIntervalName(interval.name);
+
+  DateTime? get lastDictionaryUpdateAt => prefsRepo.lastDictionaryUpdateAt;
+
+  /// 自动更新是否正在进行的再入守卫（与导入并发由 import manager 内部串行，但此处
+  /// 防止启动 hook 与潜在重复触发叠加）。
+  bool _autoUpdateInProgress = false;
+
+  /// TODO-861③：启动时 check-due 自动更新词典（前台、静默、不弹错）。先用纯函数
+  /// [shouldAutoUpdateDictionaries] 守门（未开 / 未到期 / 无可更新 / 正忙 → 直接
+  /// 返回），再逐本拉远端 index 比 revision、有新版才下载 force 重导。**失败不中断
+  /// 整批**（逐本 try/catch 收集失败）；至少一本成功才写 `lastDictionaryUpdateAt`。
+  /// 复用手动更新同款「下载→force 重导（保留 order/hidden/collapsed）」链路。
+  Future<void> maybeAutoUpdateDictionaries() async {
+    if (!autoUpdateDictionaries) return;
+    final List<Dictionary> updatable =
+        dictionaries.where((Dictionary d) => d.isUpdatable).toList();
+    if (!shouldAutoUpdateDictionaries(
+      now: DateTime.now(),
+      lastUpdate: lastDictionaryUpdateAt,
+      interval: dictionaryUpdateInterval,
+      hasUpdatable: updatable.isNotEmpty,
+      isBusy: _autoUpdateInProgress,
+    )) {
+      return;
+    }
+    _autoUpdateInProgress = true;
+    int successCount = 0;
+    try {
+      for (final Dictionary dictionary in updatable) {
+        try {
+          final String? remoteRevision =
+              await DictionaryUpdateService.fetchRemoteIndex(
+                  dictionary.indexUrl);
+          if (!DictionaryUpdateService.needsUpdate(
+              dictionary.revision, remoteRevision)) {
+            continue;
+          }
+          await _autoRedownloadAndReimport(dictionary);
+          successCount++;
+        } catch (e, stack) {
+          // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
+          ErrorLogService.instance
+              .log('AppModel.autoUpdateDictionary', e, stack);
+          debugPrint('[Hibiki] auto dict update failed for '
+              '${dictionary.name}: $e');
+        }
+      }
+      // 至少一本成功才写时间戳（移植 Hoshi：failures < total 才更新 key）。
+      if (successCount > 0) {
+        await prefsRepo.setLastDictionaryUpdateAt(DateTime.now());
+      }
+    } finally {
+      _autoUpdateInProgress = false;
+    }
+  }
+
+  /// 静默下载 + force 重导单本词典（复用手动链路语义：保留 order/hidden/collapsed，
+  /// 回填 isUpdatable/URL 来源）。无 UI ValueNotifier，用一次性内部 notifier。
+  Future<void> _autoRedownloadAndReimport(Dictionary dictionary) async {
+    final Directory tempDir = Directory(
+      path.join(dictionaryResourceDirectory.path, 'auto_update_temp'),
+    );
+    final ValueNotifier<String> progressNotifier = ValueNotifier<String>('');
+    final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0);
+    try {
+      final File zipFile = await DictionaryDownloader.download(
+        url: dictionary.downloadUrl,
+        tempDir: tempDir,
+        progressNotifier: downloadProgress,
+      );
+      await importDictionary(
+        file: zipFile,
+        progressNotifier: progressNotifier,
+        onImportSuccess: () {},
+        forceReplaceExisting: true,
+        sourceOverride: <String, String>{
+          'isUpdatable': 'true',
+          'downloadUrl': dictionary.downloadUrl,
+          'indexUrl': dictionary.indexUrl,
+        },
+      );
+    } finally {
+      progressNotifier.dispose();
+      downloadProgress.dispose();
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    }
+  }
 
   void toggleDictionaryCollapsed(Dictionary dictionary) => dictRepo
       .toggleDictionaryCollapsed(dictionary, targetLanguage.languageCode);
@@ -3269,6 +3374,11 @@ class AppModel with ChangeNotifier {
 
   bool get autoSearchEnabled => prefsRepo.autoSearchEnabled;
   void toggleAutoSearchEnabled() => prefsRepo.toggleAutoSearchEnabled();
+
+  // TODO-861②：是否扫描非日文文本（选区/查词）。默认 true，向后兼容。
+  bool get scanNonJapaneseText => prefsRepo.scanNonJapaneseText;
+  Future<void> setScanNonJapaneseText(bool value) =>
+      prefsRepo.setScanNonJapaneseText(value);
 
   int get defaultSearchDebounceDelay => prefsRepo.defaultSearchDebounceDelay;
   int get searchDebounceDelay => prefsRepo.searchDebounceDelay;

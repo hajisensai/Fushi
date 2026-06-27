@@ -72,9 +72,84 @@ class _DictionaryDialogPageState extends BasePageState {
             : const <Widget>[],
         children: [
           if (!cupertino) _buildActionBar(),
+          _buildAutoUpdateCard(),
           compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
           buildContent(),
         ],
+      ),
+    );
+  }
+
+  /// TODO-861③（移植 Hoshi `94d0c41`）：词典自动更新设置卡——「自动更新」开关 +
+  /// 检查周期分段（开时显示）+「上次更新」只读行。仅 startup check-due（MVP，无
+  /// 计费网络门控）。开关默认 true。
+  Widget _buildAutoUpdateCard() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool autoUpdate = appModel.autoUpdateDictionaries;
+    final DictionaryUpdateInterval interval = appModel.dictionaryUpdateInterval;
+    final DateTime? lastUpdate = appModel.lastDictionaryUpdateAt;
+    final String lastUpdateText = lastUpdate == null
+        ? t.dict_auto_update_never
+        : lastUpdate.toLocal().toString().split('.').first;
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: HibikiCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SwitchListTile.adaptive(
+              secondary: const Icon(Icons.update_outlined),
+              title: Text(t.dict_auto_update),
+              subtitle: Text(t.dict_auto_update_hint),
+              value: autoUpdate,
+              onChanged: (bool value) async {
+                await appModel.setAutoUpdateDictionaries(value);
+                if (mounted) setState(() {});
+              },
+            ),
+            if (autoUpdate)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.gap,
+                  0,
+                  tokens.spacing.gap,
+                  tokens.spacing.gap,
+                ),
+                child: adaptiveSegmentedButton<DictionaryUpdateInterval>(
+                  context: context,
+                  segments: <ButtonSegment<DictionaryUpdateInterval>>[
+                    ButtonSegment<DictionaryUpdateInterval>(
+                      value: DictionaryUpdateInterval.daily,
+                      label: Text(t.dict_update_interval_daily),
+                    ),
+                    ButtonSegment<DictionaryUpdateInterval>(
+                      value: DictionaryUpdateInterval.weekly,
+                      label: Text(t.dict_update_interval_weekly),
+                    ),
+                    ButtonSegment<DictionaryUpdateInterval>(
+                      value: DictionaryUpdateInterval.monthly,
+                      label: Text(t.dict_update_interval_monthly),
+                    ),
+                  ],
+                  selected: <DictionaryUpdateInterval>{interval},
+                  onSelectionChanged:
+                      (Set<DictionaryUpdateInterval> selection) async {
+                    await appModel.setDictionaryUpdateInterval(selection.first);
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ),
+            HibikiListItem(
+              minHeight: 44,
+              leading: const Icon(Icons.schedule_outlined, size: 18),
+              title: Text(
+                t.dict_auto_update_last(time: lastUpdateText),
+                style: textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

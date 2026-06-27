@@ -332,6 +332,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             : _stableBottomInset,
         dartPageWidth: screenSize.width,
         dartPageHeight: screenSize.height,
+        blurImages: s.blurImages,
       ),
     );
 
@@ -349,7 +350,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
     return '''
 (function() {
-  window.scanNonJapaneseText = true;
+  window.scanNonJapaneseText = ${appModel.scanNonJapaneseText};
   $selectionJs
   $paginationJs
   $caretJs
@@ -516,6 +517,26 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
     return null;
   }
+  // TODO-861④（移植 Hoshi `f286108`）：若点击落在仍带 `blurred` 类的防剧透大图上，
+  // 先「揭开」（移除 blurred 类）并吞掉本次——不触发放大 lightbox；揭开后再点才正常
+  // 放大。根因消解「点击=放大」与 iOS「点击=揭开」的语义冲突，无特例分支堆叠。
+  function _hoshiResolveBlockImageElement(target) {
+    if (!target) return null;
+    if ((target.tagName === 'IMG' || target.tagName === 'svg') && target.classList && target.classList.contains('block-img')) {
+      return target;
+    }
+    var wrapper = target.closest ? target.closest('.block-img-wrapper') : null;
+    if (!wrapper) return null;
+    return wrapper.querySelector('img.block-img') || wrapper.querySelector('svg.block-img');
+  }
+  function _hoshiRevealBlurredImage(target) {
+    var el = _hoshiResolveBlockImageElement(target);
+    if (el && el.classList && el.classList.contains('blurred')) {
+      el.classList.remove('blurred');
+      return true;
+    }
+    return false;
+  }
   function clearImageLongPressTimer() {
     if (imageLongPressTimer) {
       clearTimeout(imageLongPressTimer);
@@ -566,7 +587,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
     } else if (absDx < 20 && absDy < 20 && elapsed < 500) {
-      var imgUrl = _hoshiBlockImageUrl(document.elementFromPoint(x, y));
+      var tapEl = document.elementFromPoint(x, y);
+      if (_hoshiRevealBlurredImage(tapEl)) {
+        if (e && e.preventDefault) e.preventDefault();
+        return;
+      }
+      var imgUrl = _hoshiBlockImageUrl(tapEl);
       if (imgUrl) {
         window.flutter_inappwebview.callHandler('onImageTap', imgUrl);
       } else {

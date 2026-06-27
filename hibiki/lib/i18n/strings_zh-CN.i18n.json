@@ -1913,5 +1913,16 @@
   "lyrics_blur_hint": "听力沉浸：模糊当前句，悬停或点击显形",
   "collection_export_mined_title": "制卡语句",
   "collection_export_scope": "导出范围",
-  "collection_export_all_mined": "全部制卡句"
+  "collection_export_all_mined": "全部制卡句",
+  "ttu_paragraph_spacing": "段落间距",
+  "ttu_blur_images": "图片模糊（防剧透）",
+  "scan_non_japanese_text": "扫描非日文文本",
+  "scan_non_japanese_text_hint": "关闭后选区遇非日文字符即停止",
+  "dict_auto_update": "自动更新",
+  "dict_auto_update_hint": "启动时检查词典更新",
+  "dict_auto_update_never": "从未",
+  "dict_auto_update_last": "上次更新：$time",
+  "dict_update_interval_daily": "每天",
+  "dict_update_interval_weekly": "每周",
+  "dict_update_interval_monthly": "每月"
 }

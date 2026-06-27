@@ -109,6 +109,21 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // TODO-861②（移植 Hoshi `07b5c09`）：扫描非日文文本。关闭后选区/查词遇非
+          // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。重进
+          // 阅读器章节后注入端生效（window.scanNonJapaneseText）。
+          SettingsSwitchItem(
+            id: 'lookup.scan_non_japanese',
+            title: t.scan_non_japanese_text,
+            subtitle: t.scan_non_japanese_text_hint,
+            icon: Icons.language_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.scanNonJapaneseText,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setScanNonJapaneseText(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'lookup.remote_lookup',
             title: t.remote_dict_lookup,
