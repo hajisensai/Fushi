@@ -11,11 +11,9 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
-import 'package:hibiki/src/reader/dictionary_font_css.dart';
+import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
 import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
-import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:path/path.dart' as p;
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -487,55 +485,30 @@ class DictionaryPopupWebViewState
     _lastSearchTerm = widget.result.searchTerm;
     _lastEntryCount = widget.result.entries.length;
 
-    final swJson = Stopwatch()..start();
-    final String entriesJson;
-    if (widget.result.popupJson != null) {
-      entriesJson = widget.result.popupJson!;
-      swJson.stop();
-      debugPrint(
-          '[dict-perf] popupJson (pre-built): ${swJson.elapsedMilliseconds}ms len=${entriesJson.length} loadMore=$isLoadMore');
-    } else {
-      entriesJson = buildLookupEntriesJson(widget.result);
-      swJson.stop();
-      debugPrint(
-          '[dict-perf] buildLookupEntriesJson (fallback): ${swJson.elapsedMilliseconds}ms len=${entriesJson.length} loadMore=$isLoadMore');
-    }
-
-    final stylesJson = _getStylesJson();
-
-    // TODO-094 S5: serialize the kanji-dictionary results onto the same
-    // payload the popup WebView receives, so the kanji card renders inline with
-    // the term entries (no parallel channel). HoshiKanjiResult.toMap mirrors the
-    // popup.js field names (character/onyomi/kunyomi/radical/strokes/meanings).
-    final String kanjiResultsJson = jsonEncode(
-      widget.result.kanjiResults
-          .map((HoshiKanjiResult k) => k.toMap())
-          .toList(),
-    );
+    // TODO-895: entries / kanji / styles serialization now lives inside the single
+    // source of truth buildPopupSettingsJs (shared with the app-outside window), so
+    // _pushResults no longer pre-builds them here.
 
     final appModel = ref.read(appProvider);
-    // 内容缩放：跟随「词典字号」与「界面大小」。盒子尺寸在 Dart 侧已乘 appUiScale
-    // （base_source_page / dictionary_page_mixin），这里把内容也等比放大，二者一致。
-    final double popupZoom = popupContentZoom(
-      appUiScale: appModel.appUiScale,
-      dictionaryFontSize: appModel.dictionaryFontSize,
+    // TODO-895: the SHARED settings body (theme vars + dictionary font + content
+    // zoom + every window.* flag, incl. autoExpandDictionaries) is produced by the
+    // single source of truth buildPopupSettingsJs — the SAME builder the app-outside
+    // global-lookup window uses (options.globalLookup:false here). The in-app-only
+    // wiring (instant-scroll pref, __hoshiResetPopupScroll hook, sentence-context
+    // i18n labels, load-more vs scroll-reset beforeRenderJs, scroll-check) layers
+    // around it below. _lastThemeVarsJs still tracks the in-app theme-vars string
+    // for the live theme-switch dedup in didChangeDependencies.
+    final String sharedSettingsJs = buildPopupSettingsJs(
+      appModel: appModel,
+      theme: Theme.of(context),
+      result: widget.result,
+      options: PopupSettingsOptions(
+        sentenceDraftEnabled: kSentenceContextPickerEnabled &&
+            widget.onSetSentenceContext != null,
+      ),
     );
-    final deduplicatePitch = appModel.deduplicatePitchAccents;
-    final harmonicFreq = appModel.harmonicFrequency;
-    final collapseDict = appModel.collapseDictionaries;
-    final autoExpandDicts = appModel.popupAutoExpandDictionaries;
-    final showExprTags = appModel.showExpressionTags;
-    final popupInstantScroll = appModel.popupInstantScroll;
-    final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
-
-    // MD3 tonal roles + base colours injected so the WebView result surfaces
-    // follow the app's ColorScheme (dark mode / dynamic color / user theme)
-    // instead of the hardcoded grey/green fallbacks baked into popup.css.
-    // Shared with the live theme-switch path in didChangeDependencies.
-    final String themeVarsJs = _themeVariablesJs();
-    _lastThemeVarsJs = themeVarsJs;
-    // TODO-049: 词典字体（独立目标），系统名直接用、导入文件内联成 data: URL。
-    final String fontStyleJs = _dictionaryFontStyleJs(appModel);
+    _lastThemeVarsJs = _themeVariablesJs();
+    final bool popupInstantScroll = appModel.popupInstantScroll;
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     final String beforeRenderJs = isLoadMore
@@ -557,68 +530,20 @@ class DictionaryPopupWebViewState
         ''';
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
-      $themeVarsJs
-      $fontStyleJs
-      document.documentElement.style.zoom = '${popupZoom.toStringAsFixed(4)}';
+      $sharedSettingsJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__hoshiResetPopupScroll = function() {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
       };
-      window.audioSources = $audioSourcesJson;
-      window.needsAudio = true;
-      // TODO-393：宿主接受 setSentenceContext（书籍/有声书/视频）时才渲染弹窗「上 N 句
-      // / 下 N 句」上下文选择器——纯查词页（首页词典）无句子上下文，恒 false 不显示。
-      // TODO-426：句子上下文选择器暂时砍掉（[kSentenceContextPickerEnabled]=false），故此处
-      // 恒 false，popup.js 不渲染选择器/清空按钮；后端草稿链路保留，制卡退化为只制当前句。
-      window.sentenceDraftEnabled = ${kSentenceContextPickerEnabled && widget.onSetSentenceContext != null};
       // TODO-382/393：注入「上 N 句 / 下 N 句」选择器的方向标签与「清空」tooltip
-      // （popup.js 无自带 i18n 机制，按钮文字硬编码；文案走宿主 i18n 注入）。
+      // （popup.js 无自带 i18n 机制，按钮文字硬编码；文案走宿主 i18n 注入）。仅 in-app
+      // 路径需要（app 外 sentenceDraftEnabled 恒 false，不渲染选择器）。
       window.i18nAppendSentenceTooltip = ${jsonEncode(t.popup_append_sentence_tooltip)};
       window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
       window.i18nContextPrevLabel = ${jsonEncode(t.popup_sentence_context_prev_label)};
       window.i18nContextNextLabel = ${jsonEncode(t.popup_sentence_context_next_label)};
-      window._noResultsMessage = ${jsonEncode(t.no_search_results)};
-      // 启用制卡时词典媒体（gaiji 外字）嵌入：popup.js 据此把外字渲染成
-      // <img src="hoshi_dict_N.ext"> 并登记到 dictionaryMedia 负载，制卡处理器
-      // (mineEntry handler) 再 writeDictionaryMediaCache 落盘供 repo 嵌进卡片。
-      // 此前该 flag 全代码库从未注入→恒 falsy→外字恒退化成 alt 文本（明鏡义项序号
-      // 显示成烂 alt「3分の2」）。
-      window.embedMedia = true;
-      window.deduplicatePitchAccents = $deduplicatePitch;
-      window.harmonicFrequency = $harmonicFreq;
-      window.showExpressionTags = $showExprTags;
-      window.collapseDictionaries = $collapseDict;
-      // TODO-845: how many leading dictionary blocks the popup auto-expands even
-      // when collapseDictionaries is on. Per-lookup scalar re-injected here (after
-      // collapseDictionaries, not in _themeVariablesJs which is the CSS --dict-*
-      // path) so each new word always sees the latest value with no stale state.
-      window.autoExpandDictionaries = $autoExpandDicts;
-      window.collapsedDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isCollapsed(appModel.targetLanguage)).map((d) => d.name).toList())};
-      // TODO-804: 词典管理里关掉（show/hide 开关 off）的词典 = isHidden。term 词典
-      // 在引擎里恒注册（AppModel.bucketDictPaths：隐藏 term 仍进桶，渲染期才过滤），
-      // FFI 查询仍带回其义项。把隐藏词典名注入 JS，由 popup.js 的 createGlossarySectionWrapper
-      // 在唯一分组点剔除，使被禁用词典的释义不再出现在查词弹窗（与 collapsedDictionaryNames 同源）。
-      window.hiddenDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isHidden(appModel.targetLanguage)).map((d) => d.name).toList())};
-      try { window.lookupEntries = $entriesJson; } catch(e) {
-        console.error('[popup] lookupEntries parse error', e);
-        window.lookupEntries = [];
-      }
-      // TODO-094 S5: single-character lookups carry per-character kanji
-      // dictionary results (onyomi / kunyomi / radical / strokes / meanings)
-      // on the SAME DictionarySearchResult that produced lookupEntries. They
-      // ride the same injection path — popup.js renders a kanji card above the
-      // term entries when this is non-empty, and nothing when it is empty
-      // (multi-char / kana / latin lookups). Empty array keeps renderPopup's
-      // kanji section unrendered.
-      try { window.kanjiResults = $kanjiResultsJson; } catch(e) {
-        console.error('[popup] kanjiResults parse error', e);
-        window.kanjiResults = [];
-      }
-      window.dictionaryStyles = $stylesJson;
-      window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
-      window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''').then((_) {
@@ -626,38 +551,6 @@ class DictionaryPopupWebViewState
       debugPrint(
           '[dict-perf] evaluateJavascript: ${swInject.elapsedMilliseconds}ms');
     });
-  }
-
-  /// TODO-049: builds a JS snippet that injects the user's DICTIONARY font as a
-  /// `<style id="hoshi-dict-font">` element (system family names + inlined
-  /// `data:` URL `@font-face` for imported files). The selected family is placed
-  /// before the popup.css default via a `font-family ... !important` rule on
-  /// `html, body`, so an empty selection leaves the baked-in default untouched.
-  /// Returns an empty string when no dictionary font is configured.
-  String _dictionaryFontStyleJs(AppModel appModel) {
-    final ReaderSettings? settings = ReaderHibikiSource.readerSettings;
-    if (settings == null) return '';
-    final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
-      settings.dictionaryFonts,
-      allowedDirectories: <String>[
-        p.join(appModel.appDirectory.path, 'custom_fonts'),
-      ],
-    );
-    if (css.fontFamily.isEmpty) return '';
-    final String styleCss = '${css.fontFaces}\n'
-        'html, body { font-family: ${css.fontFamily}, '
-        '"Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important; }';
-    final String styleJson = jsonEncode(styleCss);
-    return '''
-      (function(){
-        var el = document.getElementById('hoshi-dict-font');
-        if (!el) {
-          el = document.createElement('style');
-          el.id = 'hoshi-dict-font';
-          document.head.appendChild(el);
-        }
-        el.textContent = $styleJson;
-      })();''';
   }
 
   static String _colorToHex(Color c) {
@@ -1287,7 +1180,8 @@ class DictionaryPopupWebViewState
   static Map<String, String>? _cachedStylesRef;
 
   // _rebuildStylesCache() always assigns a new Map, so identity change == content change.
-  static String _getStylesJson() {
+  // TODO-895: public so the shared buildPopupSettingsJs uses the SAME cached encoding.
+  static String dictionaryStylesJson() {
     final Map<String, String> styles = HoshiDicts.dictionaryStyles;
     if (!identical(styles, _cachedStylesRef)) {
       _cachedStylesJson = jsonEncode(styles);

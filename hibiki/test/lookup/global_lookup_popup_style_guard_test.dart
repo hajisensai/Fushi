@@ -15,14 +15,23 @@ void main() {
   String read(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
 
   group('scope marker', () {
-    test('global_lookup_render injects the global-lookup class', () {
-      final String src = read('lib/src/lookup/global_lookup_render.dart');
+    test('the shared builder injects the global-lookup class (gated)', () {
+      // TODO-895: the document tag moved into the SINGLE source of truth, gated
+      // behind globalLookup so only the app-outside frame applies the scoped
+      // popup.css chrome. The render.dart shim requests it via globalLookup:true.
+      final String inject =
+          read('lib/src/pages/implementations/popup_settings_injection.dart');
       expect(
-        src.contains("document.documentElement.classList.add('global-lookup')"),
+        inject.contains(
+            "document.documentElement.classList.add('global-lookup')"),
         isTrue,
-        reason: 'the app-outside render script must tag the document so the '
-            'scoped popup.css chrome applies',
+        reason: 'the shared builder must tag the document when globalLookup',
       );
+      final String render = read('lib/src/lookup/global_lookup_render.dart');
+      expect(
+          render.contains('PopupSettingsOptions(globalLookup: true)'), isTrue,
+          reason:
+              'the app-outside frame must request the global-lookup options');
     });
 
     test('in-app dictionary_popup_webview NEVER adds the global-lookup class',
@@ -81,43 +90,58 @@ void main() {
   });
 
   group('P3c F1 — icon glyph fix (route A: monochrome symbol font)', () {
-    late String render;
-    setUpAll(() => render = read('lib/src/lookup/global_lookup_render.dart'));
+    // TODO-895: the icon-font override moved into the SINGLE source of truth
+    // popup_settings_injection.dart, gated behind options.globalLookup so only the
+    // app-outside path emits it. The in-app popup still never receives it.
+    late String inject;
+    setUpAll(() => inject =
+        read('lib/src/pages/implementations/popup_settings_injection.dart'));
 
     test('global-lookup iframe forces the monochrome Segoe UI Symbol font', () {
       // The popup card icons are Unicode chars (audio U+266A, arrows U+25B6/
       // U+25BC), NOT Material codepoints. Route A: give them a Windows font that
       // CARRIES those glyphs and is MONOCHROME, so they don't render as oversized
       // colour emoji.
-      expect(render.contains('"Segoe UI Symbol"'), isTrue,
+      expect(inject.contains('"Segoe UI Symbol"'), isTrue,
           reason: 'must pin the monochrome symbol font that carries ♪/▶/▼');
     });
 
     test('the emoji font is DROPPED (no colour-emoji rendering of ♪/✕)', () {
       // "Segoe UI Emoji" in the stack is exactly what made Windows render ♪/✕ as
       // colour emoji (the reported "icon shows wrong"); it must be gone.
-      expect(render.contains('Segoe UI Emoji'), isFalse,
+      expect(inject.contains('Segoe UI Emoji'), isFalse,
           reason: 'the emoji font caused the colour-emoji symbol rendering');
     });
 
     test('the icon font is applied to the audio button + collapse arrow glyph',
         () {
       // .audio-button = ♪ ; .glossary-group>summary::before = ▶/▼ content glyph.
-      expect(render.contains('.audio-button'), isTrue);
-      expect(render.contains('.glossary-group>summary::before'), isTrue,
+      expect(inject.contains('.audio-button'), isTrue);
+      expect(inject.contains('.glossary-group>summary::before'), isTrue,
           reason: 'the arrow glyph lives in the ::before content, so the font '
               'override must target the pseudo-element');
     });
 
-    test('the icon CSS is global-lookup scoped (buildFrameSettingsJs only)',
+    test(
+        'the icon override is gated behind options.globalLookup (in-app never)',
         () {
-      // buildFrameSettingsJs is the global-lookup-only per-frame body; the in-app
-      // popup (dictionary_popup_webview) never calls it, so this never leaks.
-      expect(render.contains('String buildFrameSettingsJs('), isTrue);
+      // The override is only emitted when options.globalLookup is true; the in-app
+      // popup builds the shared body with globalLookup:false, so it never receives
+      // the icon font. The render.dart shim still calls buildPopupSettingsJs with
+      // globalLookup:true.
+      expect(inject.contains('options.globalLookup ? _globalLookupIconFontJs'),
+          isTrue,
+          reason: 'icon override must be conditional on the globalLookup flag');
+      final String render = read('lib/src/lookup/global_lookup_render.dart');
+      expect(
+          render.contains('PopupSettingsOptions(globalLookup: true)'), isTrue,
+          reason:
+              'the app-outside frame must request the global-lookup options');
       final String inApp =
           read('lib/src/pages/implementations/dictionary_popup_webview.dart');
-      expect(inApp.contains('buildFrameSettingsJs'), isFalse,
-          reason: 'in-app popup must not run the global-lookup icon override');
+      expect(inApp.contains('Segoe UI Symbol'), isFalse,
+          reason:
+              'in-app popup must not carry the global-lookup icon override');
     });
   });
 
@@ -219,6 +243,68 @@ void main() {
     test('header declares ApplyRoundedRegion', () {
       final String h = read('windows/runner/global_lookup_window.h');
       expect(h.contains('void ApplyRoundedRegion();'), isTrue);
+    });
+  });
+
+  group('TODO-895 — settings injection is a single source of truth', () {
+    late String inject;
+    late String render;
+    late String inApp;
+    setUpAll(() {
+      inject =
+          read('lib/src/pages/implementations/popup_settings_injection.dart');
+      render = read('lib/src/lookup/global_lookup_render.dart');
+      inApp =
+          read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+    });
+
+    test('both call sites go through the shared buildPopupSettingsJs', () {
+      // app-outside (buildFrameSettingsJs) and in-app (_pushResults) must both
+      // delegate to the one builder, so the settings body can never drift again.
+      expect(inject.contains('String buildPopupSettingsJs('), isTrue,
+          reason: 'the single source of truth builder must exist');
+      expect(render.contains('buildPopupSettingsJs('), isTrue,
+          reason: 'the app-outside frame must call the shared builder');
+      expect(inApp.contains('buildPopupSettingsJs('), isTrue,
+          reason: 'the in-app popup must call the shared builder');
+    });
+
+    test('D1 — the dictionary font is injected by the shared builder', () {
+      // app-outside used to lack the user dictionary font entirely; it now flows
+      // through the shared font helper, so both paths apply the same font.
+      expect(inject.contains("id = 'hoshi-dict-font'"), isTrue,
+          reason: 'the shared builder must inject the dictionary font style');
+      expect(inject.contains('DictionaryFontCss.build('), isTrue,
+          reason: 'the font CSS must be built from the user dictionary fonts');
+      // The app-outside file must NOT carry its own second font injection.
+      expect(render.contains('hoshi-dict-font'), isFalse,
+          reason: 'app-outside must not re-implement the font injection');
+    });
+
+    test('D2 — autoExpandDictionaries is in the shared body', () {
+      // app-outside previously dropped this flag (folded popups never auto-
+      // expanded). It now lives in the one body both paths emit.
+      expect(inject.contains('window.autoExpandDictionaries ='), isTrue,
+          reason: 'the shared body must inject autoExpandDictionaries');
+      expect(inject.contains('appModel.popupAutoExpandDictionaries'), isTrue);
+      // No second INJECTION of the flag in the app-outside file (a doc-comment
+      // mention is fine; the actual `window.autoExpandDictionaries =` must not
+      // be duplicated there).
+      expect(render.contains('window.autoExpandDictionaries ='), isFalse,
+          reason: 'app-outside must not re-inject the flag (single source)');
+    });
+
+    test('D3 — content zoom uses the clamped/NaN-guarded helper only', () {
+      // app-outside used a bare inline `appUiScale * (...)` with no clamp/NaN
+      // guard. The shared body must call popupContentZoom (the clamped helper),
+      // and NEITHER builder may compute zoom inline anymore.
+      expect(inject.contains('DictionaryPopupWebViewState.popupContentZoom('),
+          isTrue,
+          reason: 'the shared body must use the clamped zoom helper');
+      expect(render.contains('appUiScale * ('), isFalse,
+          reason: 'app-outside must not compute zoom inline (drift source)');
+      expect(inject.contains('appModel.appUiScale * ('), isFalse,
+          reason: 'the shared builder must defer zoom to popupContentZoom');
     });
   });
 

@@ -13,15 +13,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/lookup/global_lookup_layout.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
-
-String _cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
-    '${(c.g * 255.0).round().clamp(0, 255)}, '
-    '${(c.b * 255.0).round().clamp(0, 255)})';
 
 // TODO-867 P3c — buildOverlayRenderScript (the single-frame TOP-LEVEL direct
 // renderPopup path) is RETIRED. The top-level WebView2 document is now
@@ -34,12 +30,14 @@ String _cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
 // host (P3c阶段 D/E); per-frame settings keep their own theme/zoom/entries.
 
 /// Builds the per-frame settings JS body for ONE lookup card (TODO-867 P3b
-/// nested stack). This is the SAME configuration body buildOverlayRenderScript
-/// emits for the single-frame overlay (theme vars, window flags, zoom,
-/// lookupEntries/kanjiResults, custom CSS, renderPopup()), but parameterised by
-/// [result] so each stacked iframe can be fed its own entries. It deliberately
-/// omits the bare-overlay self-measure / top-pull gesture wiring — those belong
-/// to the single-frame overlay window, not to an iframe inside the host shell.
+/// nested stack). TODO-895: this now delegates to the SINGLE source of truth
+/// [buildPopupSettingsJs] (shared with the in-app popup _pushResults) with
+/// [PopupSettingsOptions.globalLookup] = true, then appends the host reset hooks
+/// + renderPopup() this per-frame realm needs. Sharing the body keeps the
+/// app-outside window in lock-step with the in-app popup (dictionary font, zoom
+/// clamp, autoExpandDictionaries, all window.* flags) so the two can never drift
+/// again. It deliberately omits the in-app load-more / instant-scroll wiring —
+/// those belong to the in-app popup, not to an iframe inside the host shell.
 ///
 /// The string is meant to be eval'd INSIDE a frame's contentWindow by
 /// global_lookup_host.js injectContent, so every `window.` / `document.`
@@ -49,92 +47,14 @@ String buildFrameSettingsJs({
   required AppModel appModel,
   required DictionarySearchResult result,
 }) {
-  final ThemeData theme = Theme.of(context);
-  final bool isDark = theme.brightness == Brightness.dark;
-  final ColorScheme scheme = theme.colorScheme;
-
-  final Color primary = scheme.primary;
-  final String primaryRgba =
-      'rgba(${(primary.r * 255.0).round().clamp(0, 255)}, '
-      '${(primary.g * 255.0).round().clamp(0, 255)}, '
-      '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
-  final Color bgColor = appModel.overrideDictionaryColor ?? scheme.surface;
-
-  final String themeVarsJs = '''
-    document.documentElement.classList.add('global-lookup');
-    document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-    document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
-    document.documentElement.style.setProperty('--text-color', '${_cssRgb(scheme.onSurface)}');
-    document.documentElement.style.setProperty('--background-color', '${_cssRgb(bgColor)}');
-    document.documentElement.style.setProperty('--md-surface-container', '${_cssRgb(scheme.surfaceContainer)}');
-    document.documentElement.style.setProperty('--md-surface-container-high', '${_cssRgb(scheme.surfaceContainerHigh)}');
-    document.documentElement.style.setProperty('--md-outline-variant', '${_cssRgb(scheme.outlineVariant)}');
-    document.documentElement.style.setProperty('--md-on-surface-variant', '${_cssRgb(scheme.onSurfaceVariant)}');
-    document.documentElement.style.setProperty('--md-primary', '${_cssRgb(scheme.primary)}');
-    document.documentElement.style.setProperty('--dict-columns', '${appModel.popupDictionaryColumns}');
-''';
-
-  final String entriesJson = result.popupJson ?? '[]';
-  final String kanjiResultsJson = jsonEncode(
-    result.kanjiResults.map((HoshiKanjiResult k) => k.toMap()).toList(),
+  final String settingsJs = buildPopupSettingsJs(
+    appModel: appModel,
+    theme: Theme.of(context),
+    result: result,
+    options: const PopupSettingsOptions(globalLookup: true),
   );
-  final String stylesJson = jsonEncode(HoshiDicts.dictionaryStyles);
-  final double zoom =
-      appModel.appUiScale * (appModel.dictionaryFontSize / 16.0);
-  final String collapsedNames = jsonEncode(appModel.dictionaries
-      .where((d) => d.isCollapsed(appModel.targetLanguage))
-      .map((d) => d.name)
-      .toList());
-  final String hiddenNames = jsonEncode(appModel.dictionaries
-      .where((d) => d.isHidden(appModel.targetLanguage))
-      .map((d) => d.name)
-      .toList());
-
   return '''
-    $themeVarsJs
-    (function(){
-      var s = document.getElementById('hibiki-overlay-style');
-      if (!s) {
-        s = document.createElement('style');
-        s.id = 'hibiki-overlay-style';
-        // TODO-867 P3c F1 — icon glyph fix (route A: Windows monochrome symbol
-        // font). The popup card icons are popup.js/css-written Unicode chars,
-        // NOT Material codepoints: audio U+266A (popup.js:1737), audio-error
-        // U+2715 (popup.js:1728), collapse arrows U+25B6/U+25BC (popup.css:475/
-        // 481 .glossary-group>summary::before content). Under popup.css's macOS
-        // font stack these glyphs are missing/ugly on Windows; the OLD stack put
-        // the colour-emoji font SECOND, so Windows rendered them as oversized
-        // colour emoji (the "icon shows wrong" symptom). Fix: force the MONOCHROME
-        // "Segoe UI Symbol" (which carries U+266A/U+25B6/U+25BC/U+2715) and DROP
-        // the emoji font so these render as flat single-colour symbols.
-        // .mine-button stays display:none (app-outside lookup hides "+"), so its
-        // glyph never shows. Scoped to this global-lookup iframe only (the in-app
-        // popup never runs buildFrameSettingsJs) -> in-app icons unchanged. If
-        // the real-device glyph is still unacceptable, route B (Material SVG +
-        // CSS mask-image) is the documented fallback.
-        s.textContent =
-          '.mine-button{display:none !important;}' +
-          '.audio-button,.glossary-group>summary::before{font-family:"Segoe UI Symbol","Segoe UI",sans-serif !important;}';
-        document.head.appendChild(s);
-      }
-    })();
-    document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
-    window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
-    window.needsAudio = true;
-    window.sentenceDraftEnabled = false;
-    window._noResultsMessage = ${jsonEncode(t.no_search_results)};
-    window.embedMedia = true;
-    window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
-    window.harmonicFrequency = ${appModel.harmonicFrequency};
-    window.showExpressionTags = ${appModel.showExpressionTags};
-    window.collapseDictionaries = ${appModel.collapseDictionaries};
-    window.collapsedDictionaryNames = $collapsedNames;
-    window.hiddenDictionaryNames = $hiddenNames;
-    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
-    try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
-    window.dictionaryStyles = $stylesJson;
-    window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
-    window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
+    $settingsJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
