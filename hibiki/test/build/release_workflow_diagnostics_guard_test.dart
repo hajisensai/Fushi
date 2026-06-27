@@ -207,10 +207,12 @@ void main() {
         reason: 'debug + release validation builds must carry the shared '
             'build number so their versionCode matches release.yml');
 
-    // TODO-841: main.yml 的 14 天 debug artifact 也瘦身成 arm64-only。
-    expect(mainWorkflow, contains('flutter build apk --debug '
-        '--target-platform android-arm64'),
-        reason: 'TODO-841: push 的 debug artifact 也只打 arm64-only');
+    // TODO-921: main.yml push CI 不再编译/上传冗余的 debug APK artifact
+    // （push 通道只跑 analyze/test + release-build-validation；debug 包没人装、
+    // 白占 CI 构建时间）。锁住这次删除：main.yml 不得再出现 debug APK 构建。
+    expect(mainWorkflow, isNot(contains('flutter build apk --debug')),
+        reason: 'TODO-921: push CI 已删除冗余 debug APK 构建，只保留 '
+            'release-signed 校验构建（释放 CI 资源）');
 
     // build.gradle owns the one-time migration floor + ceiling assertion.
     expect(buildGradle, contains('def versionCodeBase = 1000000000'),
