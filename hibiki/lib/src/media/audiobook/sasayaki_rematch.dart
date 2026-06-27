@@ -218,8 +218,9 @@ class SasayakiRematch {
         HibikiToast.show(msg: t.sasayaki_all_zero);
         return null;
       }
-      final int pct = (best.value * 100).round();
-      HibikiToast.show(msg: t.sasayaki_auto_picked(window: best.key, pct: pct));
+      final String pctStr = (best.value * 100).toStringAsFixed(2);
+      HibikiToast.show(
+          msg: t.sasayaki_auto_picked(window: best.key, pct: pctStr));
       return best.key;
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] autoProbe failed: $e\n$st');
@@ -286,6 +287,7 @@ class SasayakiRematch {
         cues: cues,
       );
       final int pct = (result.matchRate * 100).round();
+      final String pctStr = (result.matchRate * 100).toStringAsFixed(2);
       final AudiobookHealth health = AudiobookHealth.fromRatePct(
         ratePct: pct,
         reason: '${result.matchedCues}/${result.totalCues} cues matched '
@@ -293,7 +295,7 @@ class SasayakiRematch {
       );
       await repo.updateHealthOverlay(bookKey: ab.bookKey, health: health);
       HibikiToast.show(
-        msg: t.sasayaki_rematch_result(pct: pct, window: searchWindow),
+        msg: t.sasayaki_rematch_result(pct: pctStr, window: searchWindow),
       );
     } catch (e, st) {
       debugPrint('[hibiki-audiobook] SasayakiRematch failed: $e\n$st');

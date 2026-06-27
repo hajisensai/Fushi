@@ -468,5 +468,90 @@ void main() {
       expect(r.matches[1].normCharStart, 5);
       expect(r.matches[2].normCharStart, 10);
     });
+
+    test('TODO-906 收紧虚高：短虚词 cue 不再被 unigram Dice 模糊命中', () {
+      // 正文里根本没有「うん」「はい」这两条短 cue 的精确子串，但它们规范化后
+      // 都 < defaultProbeMinLen(6)，旧实现走 unigram Dice 极易在正文任意位置
+      // 凑够字符重叠误判命中，虚高匹配率。收紧后这类短 cue 只接受精确子串。
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, '吾輩は猫である。名前はまだない。どこで生れたかとんと見当がつかぬ。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '吾輩は猫である。'),
+        mkCue(1, 'うん'), // 短虚词，正文无此精确子串
+        mkCue(2, 'はい'), // 短虚词，正文无此精确子串
+        mkCue(3, 'どこで生れたかとんと見当がつかぬ。'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      // 两条正文长 cue 命中，两条短虚词 cue 不再误判命中。
+      expect(r.matches[0].matched, isTrue);
+      expect(r.matches[1].matched, isFalse, reason: '短虚词 cue 不走模糊不应命中');
+      expect(r.matches[2].matched, isFalse, reason: '短虚词 cue 不走模糊不应命中');
+      expect(r.matches[3].matched, isTrue);
+      expect(r.matchedCues, 2);
+    });
+
+    test('TODO-906 收紧虚高：短 cue 若精确出现在正文仍命中（不误伤真命中）', () {
+      // 「はい」精确出现在正文里，快速通道(精确 indexOf)仍应命中——收紧只关掉
+      // 短 cue 的模糊兜底，不影响其精确命中。短 cue 放在长锚点之后，确保起点
+      // 检测把 cursor 对到锚点开头（短 cue 不参与起点探测），随后短 cue 在窗口
+      // 内精确命中。
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, 'わたしは尋ねました。はい、それで終わりです。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, 'わたしは尋ねました。'),
+        mkCue(1, 'はい'),
+        mkCue(2, 'それで終わりです。'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matches[0].matched, isTrue);
+      expect(r.matches[1].matched, isTrue, reason: '短 cue 精确出现仍走快速通道命中');
+      expect(r.matches[2].matched, isTrue);
+      expect(r.matchedCues, 3);
+    });
+
+    test('TODO-906 两位小数：matchRate*100 格式化为两位小数字符串', () {
+      // 显示层契约：toast 用 (matchRate*100).toStringAsFixed(2)。验证常见非整除
+      // 比例格式化结果，确保 UI 落点稳定显示两位小数。
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, '吾輩は猫である。名前はまだない。どこで生れたかとんと見当がつかぬ。'),
+      ];
+      // 3 条 cue 命中 2 条 → 2/3 = 0.6666... → 66.67%
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '吾輩は猫である。'),
+        mkCue(1, 'この文は正文に存在しない長い別のセリフだ'),
+        mkCue(2, 'どこで生れたかとんと見当がつかぬ。'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect(r.matchedCues, 2);
+      expect(r.totalCues, 3);
+      final String pctStr = (r.matchRate * 100).toStringAsFixed(2);
+      expect(pctStr, '66.67');
+    });
+
+    test('TODO-906 两位小数：满匹配显示 100.00', () {
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, '吾輩は猫である。名前はまだない。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, '吾輩は猫である。'),
+        mkCue(1, '名前はまだない。'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      expect((r.matchRate * 100).toStringAsFixed(2), '100.00');
+    });
   });
 }

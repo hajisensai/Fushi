@@ -78,7 +78,10 @@ class MatchResult {
 /// 4. **主循环**（移植自 ttu-whispersync Match.svelte）：
 ///    a. 快速通道：精确 `indexOf` 命中 → score=1.0，cursor 推进。
 ///    b. 模糊兜底：在 `[cursor, cursor+searchWindow]` 内单次 Dice 滑窗扫描，
-///       取最高位置；达到 [similarityThreshold] 则接受。
+///       取最高位置；达到 [similarityThreshold] 则接受。**仅长 cue
+///       （规范化后 >= [defaultProbeMinLen]）走模糊**；更短的 cue 只接受
+///       精确子串命中，避免高频短虚词（うん/はい）的 unigram Dice 误判
+///       抬高匹配率（TODO-906）。
 ///    c. 恢复机制：连续 miss 达 [maxConsecutiveMisses] 时，用精确 `indexOf`
 ///       在全书 `[cursor..]` 范围做一次恢复扫描。cursor 不做逐字偏移重试
 ///       （O(attempts×window) 太慢），只靠恢复扫描跳过不匹配的段落。
@@ -237,11 +240,17 @@ class EpubSrtMatcher {
       }
 
       // --- 模糊通道：滚动窗口 Dice 系数，O(window) 而非 O(window×len) ---
+      // 收紧虚高（TODO-906）：规范化后 < [defaultProbeMinLen] 的短 cue 退化为
+      // unigram Dice（[_slidingDice] 在 nLen<5 时 n=1），日语高频短虚词
+      // （うん / はい 等）极易在正文任意位置凑够字符重叠误判命中，整体抬高
+      // matchRate。这类短 cue 一律要求精确子串命中（上面的快速通道已处理），
+      // 模糊兜底只留给长 cue（听写/排版 1~2 字差异的真实正文句）。
       double bestSim = 0;
       int bestPos = -1;
       int bestLen = nc.length;
 
-      if (windowEnd - cursor >= nc.length) {
+      final bool allowFuzzy = nc.length >= defaultProbeMinLen;
+      if (allowFuzzy && windowEnd - cursor >= nc.length) {
         final _SlidingDiceResult r = _slidingDice(
           needle: nc,
           haystack: big,
