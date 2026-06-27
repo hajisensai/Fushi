@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +31,27 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 ///
 /// An empty result + not searching + not warm renders the no-results
 /// placeholder, so no real WebView is mounted (no fake platform needed).
+///
+/// TODO-896 contract split (READ THIS before "fixing" the body-point asserts):
+/// The popup-close contract has TWO halves that live in TWO test files —
+///   (a) the `_BodySwipeDismissDetector` itself (the layer's opaque tap+drag
+///       absorber that wraps the whole surface) STILL closes on an over-threshold
+///       horizontal drag of its OWN region (top bar + the popup-frame margin
+///       OUTSIDE the WebView). That half is what THIS file guards, and TODO-896
+///       does NOT change it.
+///   (b) a horizontal drag that STARTS on the real WebView body (a frame-select)
+///       must be eaten by the WebView (TODO-896 symptom①: the WebView now
+///       declares a `HorizontalDragGestureRecognizer`), so the detector never
+///       sees it and the popup does NOT close. The test host here mounts the
+///       no-results PLACEHOLDER (no real platform WebView competes in the
+///       arena), so half (b) is INVISIBLE in a widget test and is locked at the
+///       source level in `dictionary_popup_webview_test.dart` (the
+///       `Factory<HorizontalDragGestureRecognizer>` guard). Do NOT invert the
+///       asserts below to "body drag does not close" — that would break half (a)
+///       (TODO-880's real contract) and still wouldn't prove half (b).
+///
+/// `_popupBodyPoint` below therefore exercises the DETECTOR region (no WebView
+/// present), NOT a real WebView body. The name is kept for git continuity.
 
 DictionaryPopupLayer _layer({
   required VoidCallback onDismiss,
@@ -69,8 +92,11 @@ Widget _host(Widget layer) {
   );
 }
 
-/// A point near the centre of the 360x360 popup body (well below the 40px top
-/// bar) so the drag lands on the popup body, not the header/buttons.
+/// A point near the centre of the 360x360 popup surface (well below the 40px top
+/// bar). With NO real WebView mounted (placeholder body), this lands on the
+/// `_BodySwipeDismissDetector`'s own absorbing region — the half-(a) contract
+/// above — so an over-threshold drag here exercises the detector's dismiss path,
+/// not a real-WebView frame-select (half (b), source-guarded elsewhere).
 const Offset _popupBodyPoint = Offset(400, 300);
 
 Future<void> _dragOn(
@@ -300,5 +326,30 @@ void main() {
 
   test('threshold sanity: default sensitivity 0.6 ~94px', () {
     expect(swipeDismissThreshold(0.6), closeTo(94, 0.5));
+  });
+
+  // TODO-896 half-(b) reconciliation: the "frame-select on a real WebView body
+  // must NOT close the popup" half of the contract can't be exercised in a widget
+  // test (the host mounts the no-results placeholder; no real platform WebView
+  // competes in the gesture arena). It is enforced by the WebView declaring a
+  // HorizontalDragGestureRecognizer, locked at the source level. Asserting that
+  // guard's existence HERE keeps the two files from drifting into opposite
+  // contracts: this file owns half (a) (detector closes on its own region), the
+  // WebView source owns half (b) (WebView eats the body drag).
+  test(
+      'TODO-896 half-(b): the popup WebView declares a horizontal-drag '
+      'recognizer so a real-WebView frame-select never reaches this detector',
+      () {
+    final String webViewSource = File(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    ).readAsStringSync();
+    expect(
+      webViewSource,
+      contains('Factory<HorizontalDragGestureRecognizer>('),
+      reason: 'Without the WebView winning the body-region horizontal drag, a '
+          'frame-select would bubble into _BodySwipeDismissDetector and close '
+          'the popup (TODO-896 symptom①). The detector half-(a) asserts above '
+          'stay valid because they run with NO real WebView mounted.',
+    );
   });
 }

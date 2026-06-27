@@ -405,4 +405,90 @@ void main() {
       expect(json, '[]');
     });
   });
+
+  // TODO-896 源码守卫：查词弹窗两交互修复。整页 widget 测试依赖真实平台 WebView
+  // （测试宿主的 fake 平台渲染空盒、不进手势竞技场、无原生右键菜单），故按既有 popup
+  // 守卫范式在源码层钉死结构不变量；几何对齐（界面大小≠100% 时右键对准鼠标）+ 框选
+  // 不关窗的真实行为只能 Windows 真机肉眼验，自动化测不到。
+  group('TODO-896 popup gesture / context-menu source guards', () {
+    final String source = File(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    ).readAsStringSync();
+
+    test('症状①：WebView 声明 HorizontalDragGestureRecognizer 争正文区水平拖', () {
+      // 没有它，包住整张 surface 的 _BodySwipeDismissDetector（TODO-880 本体横拖关）
+      // 会赢走正文区框选的水平位移→误关弹窗（BUG-299 隔离被打穿）。
+      expect(
+        source,
+        contains('Factory<HorizontalDragGestureRecognizer>('),
+        reason: '正文区水平拖（框选）必须归 WebView，否则被 body-swipe detector '
+            '判成滑动关闭（症状①）。',
+      );
+      // 与 LongPress / VerticalDrag 并列在同一个 gestureRecognizers 集合里。
+      final int setStart = source.indexOf(
+          'gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{');
+      expect(setStart, greaterThanOrEqualTo(0));
+      final int setEnd = source.indexOf('},', setStart);
+      expect(setEnd, greaterThan(setStart));
+      final String setBody = source.substring(setStart, setEnd);
+      expect(setBody.contains('LongPressGestureRecognizer'), isTrue);
+      expect(setBody.contains('VerticalDragGestureRecognizer'), isTrue);
+      expect(setBody.contains('HorizontalDragGestureRecognizer'), isTrue,
+          reason: '三个识别器必须同集合并列声明');
+    });
+
+    test('症状②：Windows 禁原生菜单 + 走 Flutter showMenu（BUG-261 锚点范式）', () {
+      // 原生 WebView2 菜单只在 Windows 偏移（独立 Win32 popup 用未拉伸逻辑坐标），
+      // 故只在 Windows 禁原生改 Flutter 菜单；非 Windows 保持原生（false 不写死）。
+      expect(
+        source,
+        contains('hideDefaultSystemContextMenuItems: isWindowsPlatform'),
+        reason: 'Windows 才禁 WebView2 原生菜单，其它平台保持原生（症状②）。',
+      );
+      // 右键入口 onSecondaryTapDown，仅 Windows 包 GestureDetector。
+      expect(source, contains('onSecondaryTapDown:'),
+          reason: '桌面右键经 GestureDetector.onSecondaryTapDown 进入 Flutter 菜单');
+      expect(source, contains('if (isWindowsPlatform) {'),
+          reason: '右键 GestureDetector 包裹仅在 Windows 生效，其它平台返回裸 WebView');
+
+      final int menuStart =
+          source.indexOf('Future<void> _showWindowsContextMenu(');
+      expect(menuStart, greaterThan(0),
+          reason: '必须有 _showWindowsContextMenu 入口');
+      final String body = source.substring(menuStart, menuStart + 1800);
+      // BUG-261/260 锚点范式：取 showMenu 所用 Overlay 的 RenderBox，把右键点映射到该
+      // Overlay 坐标系（吃掉界面大小 FittedBox 缩放残差），再据 Overlay 尺寸算 RelativeRect。
+      expect(body.contains('Overlay.of(context).context.findRenderObject()'),
+          isTrue,
+          reason: '锚点须落在 showMenu 所用 Overlay 坐标系（取该 Overlay 的 RenderBox）');
+      expect(
+          body.contains('overlayObject.globalToLocal(globalPosition)'), isTrue,
+          reason: '右键 globalPosition 沿真实渲染链映射到 Overlay 空间（吸收缩放残差）');
+      expect(body.contains('RelativeRect.fromLTRB('), isTrue,
+          reason: '右键位置转 RelativeRect 作菜单锚点');
+      expect(body.contains('overlaySize.width - anchor.dx'), isTrue,
+          reason: 'right/bottom 以 Overlay 尺寸算，与 anchor 同系（缩放画布空间）');
+      expect(body.contains('showMenu<_PopupContextMenuAction>('), isTrue,
+          reason: '用 Flutter showMenu 弹 Hibiki 自绘菜单');
+    });
+
+    test('症状②：Flutter 菜单含「查词」+「复制」两项（复制走 BUG-402 范式）', () {
+      final int menuStart =
+          source.indexOf('Future<void> _showWindowsContextMenu(');
+      final String body = source.substring(menuStart, menuStart + 1800);
+      // 「查词」平移自原 WebView2 自定义项；「复制」是原 WebView2 原生项，禁原生后自补。
+      expect(body.contains('_PopupContextMenuAction.search'), isTrue,
+          reason: '保留「查词」项（平移自原 WebView2 自定义项）');
+      expect(body.contains('t.search'), isTrue);
+      expect(body.contains('_PopupContextMenuAction.copy'), isTrue,
+          reason: '「复制」必须自补（原是 WebView2 原生项，禁原生后丢失）');
+      expect(body.contains('t.copy'), isTrue);
+      // 复制走 BUG-402 范式：getSelectedText + Clipboard.setData。
+      expect(body.contains('_controller?.getSelectedText()'), isTrue,
+          reason: '复制取选区文本（BUG-402：桌面 WebView2 原生复制键转发受限）');
+      expect(
+          body.contains('Clipboard.setData(ClipboardData(text: text))'), isTrue,
+          reason: '把选区文本写系统剪贴板（BUG-402 范式）');
+    });
+  });
 }

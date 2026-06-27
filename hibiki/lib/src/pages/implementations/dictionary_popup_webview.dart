@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -51,6 +52,10 @@ class MinePopupResult {
         'noteId': noteId,
       };
 }
+
+/// TODO-896 症状②：Windows 桌面右键 Flutter 上下文菜单的动作枚举（替代被禁用的
+/// WebView2 原生菜单）。两项：查词（平移自原 WebView2 自定义项）+ 复制（自补，BUG-402）。
+enum _PopupContextMenuAction { search, copy }
 
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
@@ -647,7 +652,7 @@ class DictionaryPopupWebViewState
       }
     }
 
-    return InAppWebView(
+    final Widget webView = InAppWebView(
       initialData: winData,
       initialUrlRequest: winData != null
           ? null
@@ -656,8 +661,16 @@ class DictionaryPopupWebViewState
             ),
       contextMenu: ContextMenu(
         settings: ContextMenuSettings(
-          hideDefaultSystemContextMenuItems: false,
+          // TODO-896 症状②：Windows 上禁掉 WebView2 的原生上下文菜单——它是独立的
+          // top-level Win32 popup，按「WebView 内部未拉伸的逻辑光标坐标 + HWND 原点」
+          // 定位，而用户的真实鼠标在被 FittedBox（界面大小 appUiScale）拉伸后的空间，
+          // 故离 WebView 左上角越远菜单偏得越狠（用户报「跑到很远」）。改走下面
+          // [_showWindowsContextMenu] 的 Flutter showMenu（BUG-261 锚点范式，吃掉缩放
+          // 残差）。非 Windows 平台保持原生菜单不变（false）。
+          hideDefaultSystemContextMenuItems: isWindowsPlatform,
         ),
+        // 非 Windows：保留原生菜单 + 自定义「查词」项（原行为）。Windows 下原生菜单已
+        // 被上面禁用，这里的 menuItems 不渲染，右键改由 [_showWindowsContextMenu] 接管。
         menuItems: [
           ContextMenuItem(
             id: 1,
@@ -671,10 +684,20 @@ class DictionaryPopupWebViewState
           ),
         ],
       ),
+      // TODO-896 症状①：WebView 在手势竞技场必须争得正文区的「水平拖」，否则
+      // 用户在正文里左键拖动框选（一个水平位移序列）时，包住整张 surface 的
+      // [_BodySwipeDismissDetector]（dictionary_popup_layer.dart，TODO-880 本体横拖关）
+      // 会赢走横拖、累加位移过阈→误关弹窗（BUG-299 隔离被 TODO-880 重新打穿）。新增
+      // [HorizontalDragGestureRecognizer] 让 WebView 吃掉正文区水平拖（转给原生选区
+      // 扩展），detector 只在非 WebView 区（顶栏 / 外框留白）收到横拖关窗——TODO-880
+      // 的「顶栏/留白横拖关」保留，仅正文区让位给框选。边界由「谁渲染谁吃手势」自然
+      // 划定，无坐标特判。
       gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
         Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer()),
         Factory<VerticalDragGestureRecognizer>(
             () => VerticalDragGestureRecognizer()),
+        Factory<HorizontalDragGestureRecognizer>(
+            () => HorizontalDragGestureRecognizer()),
       },
       initialSettings: InAppWebViewSettings(
         transparentBackground: true,
@@ -1174,6 +1197,69 @@ class DictionaryPopupWebViewState
         return dictionaryMediaCustomSchemeResponse(request.url);
       },
     );
+
+    // TODO-896 症状②：Windows 上原生 WebView2 菜单已禁（hideDefaultSystemContextMenuItems
+    // = isWindowsPlatform），右键改由 Flutter 层 [showMenu] 接管，锚点经 BUG-261 范式映射到
+    // appUiScale 空间。非 Windows 平台不包 GestureDetector，保持原生菜单行为不变。
+    // [HitTestBehavior.translucent] 让右键之外的所有指针事件照常落到 WebView（不抢左键
+    // 框选 / 滚动 / 点击）。
+    if (isWindowsPlatform) {
+      return GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapDown: (TapDownDetails details) =>
+            _showWindowsContextMenu(context, details.globalPosition),
+        child: webView,
+      );
+    }
+    return webView;
+  }
+
+  /// TODO-896 症状②：Windows 桌面右键弹 Flutter [showMenu]（替代偏移的 WebView2 原生
+  /// 菜单）。锚点用 BUG-260/261 已验证范式——把右键的 [globalPosition] 沿真实渲染变换链
+  /// 映射到 showMenu 所用 [Overlay] 的 [RenderBox] 坐标系（`localToGlobal(..., ancestor:
+  /// overlayObject)`），界面大小（appUiScale）的 FittedBox 缩放残差被 ancestor 变换自动
+  /// 吸收，菜单对准鼠标。菜单项：「查词」（平移自原 WebView2 自定义项）+「复制」（原是
+  /// WebView2 原生项，禁原生后用 BUG-402 范式 `getSelectedText` + [Clipboard.setData] 自补）。
+  Future<void> _showWindowsContextMenu(
+      BuildContext context, Offset globalPosition) async {
+    final RenderObject? overlayObject =
+        Overlay.of(context).context.findRenderObject();
+    if (overlayObject is! RenderBox || !overlayObject.hasSize) return;
+    final Offset anchor = overlayObject.globalToLocal(globalPosition);
+    final Size overlaySize = overlayObject.size;
+    final RelativeRect position = RelativeRect.fromLTRB(
+      anchor.dx,
+      anchor.dy,
+      overlaySize.width - anchor.dx,
+      overlaySize.height - anchor.dy,
+    );
+    final t = Translations.of(context);
+    final _PopupContextMenuAction? action =
+        await showMenu<_PopupContextMenuAction>(
+      context: context,
+      position: position,
+      items: <PopupMenuEntry<_PopupContextMenuAction>>[
+        PopupMenuItem<_PopupContextMenuAction>(
+          value: _PopupContextMenuAction.search,
+          child: Text(t.search),
+        ),
+        PopupMenuItem<_PopupContextMenuAction>(
+          value: _PopupContextMenuAction.copy,
+          child: Text(t.copy),
+        ),
+      ],
+    );
+    if (action == null) return;
+    final String text = (await _controller?.getSelectedText()) ?? '';
+    if (text.isEmpty) return;
+    switch (action) {
+      case _PopupContextMenuAction.search:
+        widget.onTextSelected?.call(text, Rect.zero);
+      case _PopupContextMenuAction.copy:
+        // BUG-402 范式：桌面 WebView2 合成模式下原生复制键转发受限，自己把选区文本写
+        // 系统剪贴板。空选区上面已早退，不覆盖剪贴板已有内容。
+        await Clipboard.setData(ClipboardData(text: text));
+    }
   }
 
   static String? _cachedStylesJson;
