@@ -29,7 +29,15 @@ class GoogleDriveAuth {
 
   static bool get useMobileAuth => Platform.isAndroid || Platform.isIOS;
 
-  static const _driveFileScope = 'https://www.googleapis.com/auth/drive.file';
+  // TODO-836: sync data now lives in the hidden, app-private appDataFolder
+  // space (drive.appdata) instead of the user-visible Drive. The old
+  // visible-Drive scope forced findOrCreateRootFolder's whole-Drive name
+  // lookup to be a cross-app query → 403 insufficient_scope; drive.appdata
+  // grants full access to the app's own hidden space so the appDataFolder
+  // root lookup is in-scope. We REPLACE (not add) the old scope to keep the
+  // grant minimal — no visible-Drive write access残留.
+  static const _driveAppdataScope =
+      'https://www.googleapis.com/auth/drive.appdata';
   static const _emailScope = 'https://www.googleapis.com/auth/userinfo.email';
 
   // 安装型应用（installed-app / PKCE）的 OAuth 凭据按 Google 设计属于非机密
@@ -93,7 +101,7 @@ class GoogleDriveAuth {
   GoogleSignIn? _googleSignIn;
   GoogleSignIn get _signIn => _googleSignIn ??= GoogleSignIn(
         clientId: Platform.isIOS ? _iosClientId : null,
-        scopes: [_driveFileScope],
+        scopes: [_driveAppdataScope],
       );
 
   // The signed-in mobile account, populated by authenticate() or by
@@ -241,7 +249,7 @@ class GoogleDriveAuth {
         'client_id': _oauthClientId,
         'response_type': 'code',
         'redirect_uri': redirectUri,
-        'scope': [_driveFileScope, _emailScope].join(' '),
+        'scope': [_driveAppdataScope, _emailScope].join(' '),
         'code_challenge': challenge,
         'code_challenge_method': 'S256',
         // Required for Google to issue a refresh token; without it the desktop
@@ -442,7 +450,7 @@ class GoogleDriveAuth {
         DateTime.parse(map['expiry'] as String),
       ),
       map['refreshToken'] as String?,
-      (map['scopes'] as List?)?.cast<String>() ?? [_driveFileScope],
+      (map['scopes'] as List?)?.cast<String>() ?? [_driveAppdataScope],
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/google_drive_handler.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -15,11 +17,27 @@ class GoogleDriveSyncBackend extends SyncBackend {
   final GoogleDriveHandler _drive = GoogleDriveHandler.instance;
   final GoogleDriveAuth _auth = GoogleDriveAuth.instance;
 
+  /// Maps a [GoogleDriveError] to the sync-layer exception type. A 403
+  /// insufficient_scope is NOT a retryable backend failure (TODO-836): the old
+  /// drive.file grant no longer covers drive.appdata, so the session must be
+  /// re-consented — it becomes a [SyncAuthError] that the manual-sync catch turns
+  /// into a sign-out + re-login prompt, instead of a [SyncBackendError] that
+  /// dead-ends at a generic toast. Extracted as a single source of truth so
+  /// both wraps stay symmetric and the classification is unit-testable.
+  @visibleForTesting
+  static Exception mapDriveError(GoogleDriveError e) {
+    if (e.statusCode == 403 &&
+        e.message.toLowerCase().contains('insufficient_scope')) {
+      return SyncAuthError(e.message);
+    }
+    return SyncBackendError(e.message, isRetryable: e.isStaleCacheError);
+  }
+
   Future<T> _wrapErrors<T>(Future<T> Function() fn) async {
     try {
       return await fn();
     } on GoogleDriveError catch (e) {
-      throw SyncBackendError(e.message, isRetryable: e.isStaleCacheError);
+      throw mapDriveError(e);
     } on GoogleDriveAuthError catch (e) {
       throw SyncAuthError(e.message);
     }
@@ -29,7 +47,7 @@ class GoogleDriveSyncBackend extends SyncBackend {
     try {
       await fn();
     } on GoogleDriveError catch (e) {
-      throw SyncBackendError(e.message, isRetryable: e.isStaleCacheError);
+      throw mapDriveError(e);
     } on GoogleDriveAuthError catch (e) {
       throw SyncAuthError(e.message);
     }

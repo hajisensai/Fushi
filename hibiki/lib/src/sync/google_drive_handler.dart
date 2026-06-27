@@ -49,6 +49,30 @@ bool googleDriveErrorIsUnauthorized(Object error) {
   return false;
 }
 
+/// Whether [error] is a 403 `insufficient_scope` — the access token is valid but
+/// its grant lacks the scope the request needs (TODO-836: a user whose old grant
+/// only carried `drive.file` after we switched to `drive.appdata`). A token
+/// refresh does NOT help: the scope set is fixed at consent time, so refreshing
+/// the access token returns the same insufficient scopes. This must be detected
+/// BEFORE [googleDriveErrorIsUnauthorized] — the latter returns true for ANY
+/// [auth.AccessDeniedException], and a 403 insufficient_scope can arrive in that
+/// shape (www-authenticate `error="insufficient_scope"`); letting it reach the
+/// 401 refresh+retry path would waste a request that must 403 again.
+@visibleForTesting
+bool googleDriveErrorIsInsufficientScope(Object error) {
+  if (error is drive.DetailedApiRequestError) {
+    if (error.status != 403) return false;
+    final String m = (error.message ?? '').toLowerCase();
+    return m.contains('insufficient_scope') ||
+        m.contains('insufficientpermissions') ||
+        m.contains('insufficient permission');
+  }
+  if (error is auth.AccessDeniedException) {
+    return error.toString().toLowerCase().contains('insufficient_scope');
+  }
+  return false;
+}
+
 typedef FolderCache = Map<String, String>;
 
 class GoogleDriveHandler {
@@ -103,6 +127,19 @@ class GoogleDriveHandler {
     } on GoogleDriveAuthError {
       rethrow;
     } catch (e) {
+      if (googleDriveErrorIsInsufficientScope(e)) {
+        // TODO-836: the grant is missing drive.appdata (an old drive.file-only
+        // token). Refreshing the access token cannot add a scope, so do NOT
+        // retry — throw a stable 403 marker the backend turns into a
+        // SyncAuthError to trigger signOut + re-consent. Checked before the
+        // unauthorized branch: a 403 insufficient_scope can arrive as an
+        // AccessDeniedException, which googleDriveErrorIsUnauthorized would
+        // otherwise route into the pointless refresh+retry path.
+        throw GoogleDriveError(
+            'insufficient_scope: re-consent required (scope upgraded to '
+            'drive.appdata)',
+            statusCode: 403);
+      }
       if (!googleDriveErrorIsUnauthorized(e)) {
         if (e is drive.DetailedApiRequestError) {
           throw GoogleDriveError(e.message ?? 'API error',
@@ -126,6 +163,15 @@ class GoogleDriveHandler {
         // next call rebuilds it instead of reusing the poisoned client
         // (HBK-AUDIT-168).
         _cachedApi = null;
+        if (googleDriveErrorIsInsufficientScope(retry)) {
+          // Same as the initial path (TODO-836): a refreshed token still can't
+          // gain a scope, so surface the stable 403 marker rather than a
+          // generic retry failure. Kept symmetric with the pre-retry check.
+          throw GoogleDriveError(
+              'insufficient_scope: re-consent required (scope upgraded to '
+              'drive.appdata)',
+              statusCode: 403);
+        }
         if (retry is drive.DetailedApiRequestError) {
           throw GoogleDriveError(retry.message ?? 'Retry failed',
               statusCode: retry.status);
@@ -145,6 +191,8 @@ class GoogleDriveHandler {
 
     return _call((api) async {
       final list = await api.files.list(
+        // TODO-836: query the hidden App Data space, not the visible Drive.
+        spaces: 'appDataFolder',
         q: "trashed=false and mimeType='application/vnd.google-apps.folder' "
             "and name='$kSyncRootFolderName'",
         $fields: 'files(id,name)',
@@ -158,7 +206,10 @@ class GoogleDriveHandler {
       final created = await api.files.create(
         drive.File()
           ..name = kSyncRootFolderName
-          ..mimeType = 'application/vnd.google-apps.folder',
+          ..mimeType = 'application/vnd.google-apps.folder'
+          // TODO-836: 'appDataFolder' is the reserved alias for the App Data
+          // space root; this anchors the sync root inside the hidden space.
+          ..parents = ['appDataFolder'],
       );
       _rootFolderId = created.id!;
       return _rootFolderId!;
@@ -173,6 +224,9 @@ class GoogleDriveHandler {
 
       do {
         final list = await api.files.list(
+          // TODO-836: subqueries with `in parents` still default to the visible
+          // Drive space and return EMPTY in appDataFolder unless spaces is set.
+          spaces: 'appDataFolder',
           q: "trashed=false and '$q' in parents "
               "and mimeType='application/vnd.google-apps.folder'",
           $fields: 'nextPageToken,files(id,name)',
@@ -212,6 +266,7 @@ class GoogleDriveHandler {
 
     return _call((api) async {
       final list = await api.files.list(
+        spaces: 'appDataFolder', // TODO-836: search the App Data space.
         q: "trashed=false and '$qRoot' in parents "
             "and mimeType='application/vnd.google-apps.folder' "
             "and name='$qName'",
@@ -259,6 +314,7 @@ class GoogleDriveHandler {
 
     return _call((api) async {
       final list = await api.files.list(
+        spaces: 'appDataFolder', // TODO-836: search the App Data space.
         q: "trashed=false and '$qParent' in parents "
             "and mimeType='$_folderMimeType' "
             "and name='$qName'",
@@ -291,6 +347,7 @@ class GoogleDriveHandler {
 
       do {
         final list = await api.files.list(
+          spaces: 'appDataFolder', // TODO-836: search the App Data space.
           q: "'$qParent' in parents and trashed=false",
           $fields: 'nextPageToken,files(id,name,mimeType,size)',
           pageSize: 1000,
@@ -339,6 +396,7 @@ class GoogleDriveHandler {
     final q = _escapeQuery(folderId);
     return _call((api) async {
       final list = await api.files.list(
+        spaces: 'appDataFolder', // TODO-836: search the App Data space.
         q: "trashed=false and '$q' in parents "
             "and mimeType!='application/vnd.google-apps.folder'",
         $fields: 'files(id,name)',
@@ -628,6 +686,7 @@ class GoogleDriveHandler {
     final qName = _escapeQuery(fileName);
     return _call((api) async {
       final list = await api.files.list(
+        spaces: 'appDataFolder', // TODO-836: search the App Data space.
         q: "trashed=false and '$qFolder' in parents and name='$qName'",
         $fields: 'files(id,name)',
       );

@@ -88,6 +88,23 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
             );
           }
       }
+    } on SyncAuthError catch (e) {
+      // TODO-836: insufficient_scope (or any auth error) — the saved session is
+      // no longer usable. Sign out so the account row falls back to "not signed
+      // in" (the sign-in button reappears), then prompt re-login. The sign-out
+      // sequence mirrors the manual sign-out path in account.part.dart.
+      final AppModel appModel = widget.settingsContext.appModel;
+      final SyncRepository repo = SyncRepository(appModel.database);
+      try {
+        final SyncBackend backend =
+            resolveSyncBackend(await repo.getBackendType());
+        await backend.signOut(repo: repo);
+        backend.clearCache();
+        await repo.clearFolderCache();
+      } catch (_) {
+        // Best-effort sign-out; never hide the original re-login prompt.
+      }
+      if (mounted) _showSnackBar(context, friendlySyncError(e));
     } catch (e) {
       if (mounted) {
         _showSnackBar(

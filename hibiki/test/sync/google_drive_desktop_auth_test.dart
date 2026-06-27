@@ -36,7 +36,10 @@ void main() {
       expect(url.queryParameters['response_type'], 'code');
       expect(url.queryParameters['code_challenge_method'], 'S256');
       expect(url.queryParameters['code_challenge'], isNotEmpty);
-      expect(url.queryParameters['scope'], contains('drive.file'));
+      // TODO-836: sync now lives in the appDataFolder space (drive.appdata),
+      // not the user-visible Drive (drive.file).
+      expect(url.queryParameters['scope'], contains('drive.appdata'));
+      expect(url.queryParameters['scope'], isNot(contains('drive.file')));
     });
   });
 

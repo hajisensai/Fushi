@@ -1878,5 +1878,6 @@
   "update_custom_proxy_label": "自定义更新代理",
   "update_custom_proxy_hint": "host:port，例如 127.0.0.1:7890（仅 IPv4/域名）",
   "update_custom_proxy_invalid": "代理格式无效，请用 host:port",
-  "font_target_video_subtitle": "视频字幕字体"
+  "font_target_video_subtitle": "视频字幕字体",
+  "sync_err_scope_upgrade": "同步权限已更新，请重新登录 Google 账号以继续同步。"
 }

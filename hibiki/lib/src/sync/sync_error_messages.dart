@@ -39,6 +39,17 @@ String? _friendlyClause(Object error) {
   if (l.contains('invalid_client')) {
     return t.sync_err_invalid_client;
   }
+  // TODO-836: a 403 insufficient_scope means the sync scope changed
+  // (drive.file → drive.appdata) and the old grant is now insufficient — the
+  // user must re-consent. Matched BEFORE the 401 branch: the www-authenticate
+  // string can carry 'unauthorized' too, and mislabeling this as "sign-in
+  // expired" hides that it's a permission upgrade. The literal substrings here
+  // match the marker GoogleDriveHandler throws ('insufficient_scope').
+  if (l.contains('insufficient_scope') ||
+      l.contains('insufficientpermissions') ||
+      (l.contains('403') && l.contains('insufficient'))) {
+    return t.sync_err_scope_upgrade;
+  }
   // Treat as expired/unauthorized only when the message actually says so;
   // a bare SyncAuthError can also mean "not configured" (handled above).
   if (l.contains('401') ||
