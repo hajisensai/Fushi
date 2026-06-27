@@ -1908,5 +1908,7 @@
   "db_unrecoverable_message": "The database could not be opened even after automatic repair. It is likely corrupt. You can restore a backup in Settings, or clear app data to start fresh.",
   "lyrics_vertical_writing": "Vertical lyrics",
   "lyrics_vertical_writing_hint": "Read lyrics top-to-bottom, right-to-left (independent of book mode)",
-  "video_file_not_found": "Video file not found"
+  "video_file_not_found": "Video file not found",
+  "lyrics_blur": "Blur lyrics",
+  "lyrics_blur_hint": "Blur the current line for listening immersion; hover or tap to reveal"
 }
