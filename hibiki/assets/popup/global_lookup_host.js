@@ -29,6 +29,13 @@
 //         bounding box (overlaySize) so C++ sizes the window to the whole stack.
 //   - E2: handleGlobalClick(x,y) lets the C++ WH_MOUSE_LL hook push a global
 //         click into the host for shell hit-testing (host owns geometry truth).
+//   - D1: a two-flag reveal gate per shell (data-content-ready +
+//         data-reveal-ready). Each shell starts invisible; it only paints once
+//         BOTH its iframe content has arrived (host MutationObserver on the
+//         same-origin contentDocument.body) AND its geometry is placed +
+//         measured. Kills the "empty frame -> content fills in" flash. The
+//         coalesced re-measure (rAF/microtask) keeps the union bbox convergence
+//         stable when several layers report content height at once.
 // Window enlargement + the mouse hooks live in C++ (global_lookup_window.cpp).
 
 (function () {
@@ -47,6 +54,18 @@
 
   var POPUP_SRC = 'https://hibiki.popup/popup.html';
   var LAYER_ID = 'global-lookup-host-layer';
+  var STYLE_ID = 'global-lookup-host-style';
+
+  // D1 — reveal gate. A shell paints only when BOTH flags are 'true'. The
+  // attribute selector below is the single source of truth for visibility; JS
+  // only flips the two data-* attributes, never the inline visibility, so the
+  // gate stays declarative + testable.
+  var ATTR_CONTENT_READY = 'data-content-ready';
+  var ATTR_REVEAL_READY = 'data-reveal-ready';
+  // Host-side safety: if an iframe never reports content (render failure), force
+  // content-ready after this budget so the card is not stuck invisible. Mirrors
+  // the Dart 450ms reveal safety (controller.dart) one layer down.
+  var CONTENT_READY_SAFETY_MS = 450;
 
   // C1 — vertical offset (CSS px) from a frame shell top-left to the popup
   // CONTENT top. In Hibiki the iframe FILLS its shell and the star/audio header
@@ -76,6 +95,73 @@
     }
   }
 
+  // setTimeout / cancel that degrade when the host (node harness) has no timer
+  // API: returns null and the caller treats the deferred work as "do it now"
+  // is NOT applied here — instead the caller relies on the synchronous content
+  // check / direct measure. Returns an opaque handle or null.
+  function setTimerSafe(fn, ms) {
+    if (typeof window.setTimeout === 'function') {
+      try {
+        return window.setTimeout(fn, ms);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function clearTimerSafe(handle) {
+    if (handle != null && typeof window.clearTimeout === 'function') {
+      try {
+        window.clearTimeout(handle);
+      } catch (e) {
+        // no-op
+      }
+    }
+  }
+
+  // D2 convergence — coalesce re-measure requests. Several layers can report
+  // content-ready in the same tick (multi-layer stack filling at once); without
+  // coalescing each would call measureAndReport and thrash the union-bbox
+  // postMessage. Batch them into ONE measure per frame via requestAnimationFrame
+  // (falling back to a microtask, then to a synchronous call when neither timer
+  // API exists, e.g. the node harness). measureAndReport itself de-dupes on the
+  // bbox key, so the worst case is a single redundant measure, never a loop.
+  var measureScheduled = false;
+  function scheduleMeasure() {
+    if (measureScheduled) {
+      return;
+    }
+    var raf = (typeof window.requestAnimationFrame === 'function')
+        ? window.requestAnimationFrame
+        : null;
+    var runner = function () {
+      measureScheduled = false;
+      measureAndReport();
+    };
+    if (raf) {
+      measureScheduled = true;
+      try {
+        raf(runner);
+        return;
+      } catch (e) {
+        measureScheduled = false;
+      }
+    }
+    if (typeof window.queueMicrotask === 'function') {
+      measureScheduled = true;
+      try {
+        window.queueMicrotask(runner);
+        return;
+      } catch (e) {
+        measureScheduled = false;
+      }
+    }
+    // No deferral primitive (node harness): measure synchronously. De-dup on the
+    // bbox key in measureAndReport keeps this from over-posting.
+    measureAndReport();
+  }
+
   // Insertion-order index of a frame id (0 = root). -1 when unknown.
   function layerIndexOf(frameId) {
     var i = 0;
@@ -89,7 +175,33 @@
     return found;
   }
 
+  // D1 — inject the reveal-gate stylesheet once. The shell defaults to hidden;
+  // it only becomes visible when BOTH data-content-ready and data-reveal-ready
+  // are 'true'. Injected here (not host.html / popup.css) because host.js owns
+  // the shell DOM and the gate must ship with the host even though host.html is
+  // C++-injected-only and carries no <style>. Scoped to .global-lookup-frame-
+  // shell so it never leaks into the in-app popup (which never loads host.js).
+  function ensureStyle() {
+    if (!document || typeof document.createElement !== 'function') {
+      return;
+    }
+    if (document.getElementById(STYLE_ID)) {
+      return;
+    }
+    var style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent =
+        '.global-lookup-frame-shell{visibility:hidden;opacity:0;}' +
+        '.global-lookup-frame-shell[' + ATTR_CONTENT_READY + '="true"]' +
+        '[' + ATTR_REVEAL_READY + '="true"]{visibility:visible;opacity:1;}';
+    var head = document.head ||
+        (document.getElementsByTagName &&
+            document.getElementsByTagName('head')[0]);
+    (head || document.documentElement || document.body).appendChild(style);
+  }
+
   function ensureLayer() {
+    ensureStyle();
     var existing = document.getElementById(LAYER_ID);
     if (existing) {
       return existing;
@@ -217,6 +329,10 @@
     var shell = document.createElement('div');
     shell.className = 'global-lookup-frame-shell';
     shell.setAttribute('data-frame-id', descriptor.id);
+    // D1 — start gated-hidden. The two flags flip independently:
+    // content-ready (iframe DOM arrived) + reveal-ready (geometry placed).
+    shell.setAttribute(ATTR_CONTENT_READY, 'false');
+    shell.setAttribute(ATTR_REVEAL_READY, 'false');
 
     var iframe = document.createElement('iframe');
     // Deliberately NO sandbox attribute (same-origin contentWindow injection).
@@ -237,6 +353,10 @@
       shell: shell,
       descriptor: descriptor,
       loaded: false,
+      contentReady: false,
+      revealReady: false,
+      observer: null,
+      contentSafetyTimer: null,
     };
     frameSources.set(iframe, descriptor.id);
 
@@ -244,9 +364,105 @@
       record.loaded = true;
       wrapFrameBridge(record);
       injectContent(record);
-      measureAndReport();
+      observeContent(record);
+      scheduleMeasure();
     });
     return record;
+  }
+
+  // D1 — flip a gate flag and, if both are now set, the shell paints (the CSS
+  // attribute selector does the actual reveal). Idempotent.
+  function setGateFlag(record, attr, key) {
+    if (record[key]) {
+      return;
+    }
+    record[key] = true;
+    if (record.shell && typeof record.shell.setAttribute === 'function') {
+      record.shell.setAttribute(attr, 'true');
+    }
+  }
+
+  function markContentReady(record) {
+    if (record.contentSafetyTimer != null) {
+      clearTimerSafe(record.contentSafetyTimer);
+      record.contentSafetyTimer = null;
+    }
+    if (record.observer && typeof record.observer.disconnect === 'function') {
+      try {
+        record.observer.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      record.observer = null;
+    }
+    setGateFlag(record, ATTR_CONTENT_READY, 'contentReady');
+    // Content height just changed -> the union bbox may grow. Re-measure
+    // (coalesced) so Dart resizes the window to fit the filled card.
+    scheduleMeasure();
+  }
+
+  // D1 — observe the SAME-ORIGIN iframe contentDocument.body for real content:
+  // popup.js renders a `.glossary-content` (or the no-results card gives body a
+  // non-zero height). No popup.js change needed (host reads the same-origin DOM
+  // directly). Degrades gracefully where MutationObserver is unavailable (node
+  // harness): fall back to the safety timer / an immediate content check.
+  function observeContent(record) {
+    if (record.contentReady) {
+      return;
+    }
+    if (hasContent(record)) {
+      markContentReady(record);
+      return;
+    }
+    var body = null;
+    try {
+      var doc = record.iframe.contentDocument;
+      body = doc && doc.body;
+    } catch (e) {
+      body = null;
+    }
+    if (body && typeof window.MutationObserver === 'function') {
+      try {
+        record.observer = new window.MutationObserver(function () {
+          if (hasContent(record)) {
+            markContentReady(record);
+          }
+        });
+        record.observer.observe(body, {
+          childList: true,
+          subtree: true,
+          attributes: false,
+        });
+      } catch (e) {
+        record.observer = null;
+      }
+    }
+    // Safety: force content-ready after a budget so a render failure never
+    // leaves the card invisible (mirrors the Dart reveal safety).
+    record.contentSafetyTimer = setTimerSafe(function () {
+      record.contentSafetyTimer = null;
+      markContentReady(record);
+    }, CONTENT_READY_SAFETY_MS);
+  }
+
+  // True once the iframe document has real content: a rendered glossary node OR
+  // a body with a non-zero rendered height (the no-results card path).
+  function hasContent(record) {
+    try {
+      var doc = record.iframe.contentDocument;
+      if (!doc || !doc.body) {
+        return false;
+      }
+      if (typeof doc.querySelector === 'function' &&
+          doc.querySelector('.glossary-content')) {
+        return true;
+      }
+      var body = doc.body;
+      var h = Math.max(body.scrollHeight || 0, body.offsetHeight || 0);
+      return h > 0;
+    } catch (e) {
+      return false;
+    }
   }
 
   function injectContent(record) {
@@ -280,9 +496,14 @@
       record.descriptor = descriptor;
     }
     applyShellStyle(record.shell, descriptor);
+    // D1 — geometry is placed for this layer -> reveal-ready. The shell still
+    // stays hidden until content-ready also flips (the CSS gate needs BOTH), so
+    // a placed-but-empty frame never flashes.
+    setGateFlag(record, ATTR_REVEAL_READY, 'revealReady');
     if (record.loaded) {
       wrapFrameBridge(record);
       injectContent(record);
+      observeContent(record);
     }
     return record;
   }
@@ -298,8 +519,25 @@
     for (var i = 0; i < toRemove.length; i++) {
       var id = toRemove[i];
       var record = frames.get(id);
-      if (record && record.shell && record.shell.parentNode) {
-        record.shell.parentNode.removeChild(record.shell);
+      if (record) {
+        // D1 — tear down the content observer + safety timer so a removed layer
+        // leaves no dangling MutationObserver / timeout.
+        if (record.observer &&
+            typeof record.observer.disconnect === 'function') {
+          try {
+            record.observer.disconnect();
+          } catch (e) {
+            // no-op
+          }
+          record.observer = null;
+        }
+        if (record.contentSafetyTimer != null) {
+          clearTimerSafe(record.contentSafetyTimer);
+          record.contentSafetyTimer = null;
+        }
+        if (record.shell && record.shell.parentNode) {
+          record.shell.parentNode.removeChild(record.shell);
+        }
       }
       frames.delete(id);
     }
@@ -323,7 +561,7 @@
       renderPayload(layer, descriptor);
     }
     removeMissing(ids);
-    measureAndReport();
+    scheduleMeasure();
   }
 
   // D2 — measure every live frame same-origin content height and report the UNION
@@ -454,6 +692,22 @@
     document.addEventListener('pointerdown', onHostPointerDown, true);
   }
 
+  // D1 — read the {contentReady, revealReady, visible} gate state of a frame.
+  // visible mirrors the CSS gate (both flags true). For diagnostics + the host
+  // test harness; never used to drive rendering (the CSS attribute selector is
+  // the single visibility source).
+  function frameGateState(frameId) {
+    var record = frames.get(frameId);
+    if (!record) {
+      return null;
+    }
+    return {
+      contentReady: !!record.contentReady,
+      revealReady: !!record.revealReady,
+      visible: !!record.contentReady && !!record.revealReady,
+    };
+  }
+
   window.__globalLookupHost = {
     __installed: true,
     renderStack: renderStack,
@@ -462,6 +716,7 @@
     layerIndexOf: layerIndexOf,
     handleGlobalClick: handleGlobalClick,
     measureAndReport: measureAndReport,
+    frameGateState: frameGateState,
     _frames: frames,
   };
 })();

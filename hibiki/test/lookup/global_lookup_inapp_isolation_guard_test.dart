@@ -226,6 +226,37 @@ void main() {
               'native RevealStack positions + sizes the window to the bbox');
     });
 
+    test('D1: two-flag reveal gate hides a shell until content + geometry', () {
+      // The gate is a declarative CSS attribute selector (single visibility
+      // source) flipped by two independent flags; JS never sets inline
+      // visibility on the shell, so the gate cannot be bypassed by a stray
+      // style write.
+      expect(hostJs.contains("var ATTR_CONTENT_READY = 'data-content-ready';"),
+          isTrue,
+          reason: 'content-ready flag attribute is named + explicit');
+      expect(hostJs.contains("var ATTR_REVEAL_READY = 'data-reveal-ready';"),
+          isTrue,
+          reason: 'reveal-ready flag attribute is named + explicit');
+      expect(hostJs.contains('function ensureStyle('), isTrue,
+          reason:
+              'host injects the reveal-gate stylesheet (it owns the shell)');
+      expect(hostJs.contains('.global-lookup-frame-shell{visibility:hidden'),
+          isTrue,
+          reason: 'shells default hidden so an empty frame never flashes');
+      expect(hostJs.contains('function observeContent('), isTrue,
+          reason: 'host watches the same-origin iframe DOM for content-ready '
+              '(no popup.js change)');
+      expect(hostJs.contains('window.MutationObserver'), isTrue,
+          reason: 'content-ready uses a MutationObserver on contentDocument');
+      // The shell visibility must NOT be driven by an inline style write — only
+      // the two data-* attributes flip (the CSS selector reveals). Guard that
+      // the shell visibility is declarative.
+      expect(hostJs.contains('shell.style.visibility'), isFalse,
+          reason: 'shell visibility is the CSS gate, never an inline JS write');
+      expect(hostJs.contains('function scheduleMeasure('), isTrue,
+          reason: 'D2 convergence: content-ready bursts coalesce one measure');
+    });
+
     test('coordinate-domain rule: host.js + computeFrameRect carry NO dpr math',
         () {
       // The layout math is CSS / logical px throughout; the only dpr boundary is
@@ -263,6 +294,31 @@ void main() {
     });
   });
 
+  group('JS harness (node) — renderStack diff + reveal gate', () {
+    test('global_lookup_host_test.mjs executes host.js end-to-end', () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped('node not found on PATH; skipping host JS harness');
+        return;
+      }
+      final File jsTest = File('test/lookup/global_lookup_host_test.mjs');
+      expect(jsTest.existsSync(), isTrue);
+      final ProcessResult result = await Process.run(
+        nodeExe,
+        <String>[jsTest.path],
+        workingDirectory: Directory.current.path,
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason: 'global_lookup_host JS harness failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(
+          result.stdout.toString(), contains('global_lookup_host_test: PASS'));
+    });
+  });
+
   group('host.js iframe bridge contract', () {
     late String hostJs;
     setUpAll(() => hostJs = read('assets/popup/global_lookup_host.js'));
@@ -292,4 +348,21 @@ void main() {
       expect(hostJs.contains('window.__globalLookupHost'), isTrue);
     });
   });
+}
+
+/// Resolve a usable `node` executable, returning null when none is on PATH.
+String? _resolveNode() {
+  final List<String> candidates =
+      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  for (final String name in candidates) {
+    try {
+      final ProcessResult probe = Process.runSync(name, <String>['--version']);
+      if (probe.exitCode == 0) {
+        return name;
+      }
+    } on ProcessException {
+      // Not found; try next candidate.
+    }
+  }
+  return null;
 }

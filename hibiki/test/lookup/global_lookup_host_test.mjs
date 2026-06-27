@@ -15,7 +15,15 @@
 //   4. growing the payload (push child) adds a frame, keeps the survivors;
 //   5. an empty payload clears the whole stack;
 //   6. topPopupId() returns the deepest (last) frame id;
-//   7. per-frame settingsJs is eval'd inside that frame's contentWindow realm.
+//   7. per-frame settingsJs is eval'd inside that frame's contentWindow realm;
+//   8. D1 reveal gate: a shell starts gated-hidden (content-ready=false,
+//      reveal-ready=false), flips reveal-ready once geometry is placed and
+//      content-ready once the iframe DOM has a .glossary-content / non-zero body
+//      height, and is only "visible" when BOTH flags are true;
+//   9. D1 safety: a frame whose content never arrives is forced content-ready by
+//      the host safety timer (no card stuck invisible);
+//  10. D2 convergence: a content-ready burst across layers coalesces into a
+//      single union-bbox overlaySize per frame (no thrash), de-duped on the box.
 
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
@@ -96,10 +104,29 @@ function makeElement(tag) {
         },
       },
     };
-    // contentDocument.body for D2 measureContentHeight (same-origin reachable).
+    // contentDocument for D1/D2: a mutable body height + a .glossary-content
+    // flag + querySelector. _observers holds MutationObserver callbacks bound to
+    // body so a test can simulate popup.js rendering content (fire the observer).
+    const body = { scrollHeight: 0, offsetHeight: 0, _observers: [] };
     el.contentDocument = {
-      body: { scrollHeight: 0, offsetHeight: 0 },
+      body,
       documentElement: { scrollHeight: 0 },
+      _hasGlossary: false,
+      querySelector(sel) {
+        if (sel === '.glossary-content') {
+          return el.contentDocument._hasGlossary ? { tagName: 'DIV' } : null;
+        }
+        return null;
+      },
+    };
+    // Test helper: simulate popup.js finishing render inside this iframe.
+    el._renderContent = function (height) {
+      el.contentDocument._hasGlossary = true;
+      body.scrollHeight = height || 120;
+      body.offsetHeight = height || 120;
+      for (const cb of body._observers.slice()) {
+        cb([{ type: 'childList' }]);
+      }
     };
   }
   return el;
@@ -107,34 +134,63 @@ function makeElement(tag) {
 
 function makeDocument() {
   const body = makeElement('body');
+  const head = makeElement('head');
   const doc = {
     body,
+    head,
     documentElement: makeElement('html'),
     _byId: {},
     createElement(tag) {
       return makeElement(tag);
     },
     getElementById(id) {
-      // host.js only looks up the layer it created; track ids on append.
+      // host.js only looks up the layer + the gate <style> it created; track
+      // ids on append (both body and head register).
       return doc._byId[id] || null;
     },
   };
-  // Patch body.appendChild to register ids (host.js sets layer.id then appends).
-  const origAppend = body.appendChild;
+  // Patch body+head appendChild to register ids (host.js sets layer.id /
+  // style.id then appends). The gate <style> goes to head, the layer to body.
+  const origBodyAppend = body.appendChild;
   body.appendChild = function (child) {
     if (child.id) doc._byId[child.id] = child;
-    return origAppend.call(body, child);
+    return origBodyAppend.call(body, child);
+  };
+  const origHeadAppend = head.appendChild;
+  head.appendChild = function (child) {
+    if (child.id) doc._byId[child.id] = child;
+    return origHeadAppend.call(head, child);
   };
   return doc;
 }
 
 // Build a fresh sandbox + load host.js into it.
 let hostPostLog = [];
-function freshHost() {
+let pendingTimers = [];
+function freshHost(opts) {
+  opts = opts || {};
   evalLog = [];
   framePostLog = [];
   hostPostLog = [];
+  pendingTimers = [];
   const document = makeDocument();
+  // MutationObserver stub: records observed body so a test can fire it via
+  // el._renderContent (which walks body._observers). Disconnect detaches.
+  function FakeMutationObserver(cb) {
+    this._cb = cb;
+    this._body = null;
+  }
+  FakeMutationObserver.prototype.observe = function (body) {
+    this._body = body;
+    body._observers.push(this._cb);
+  };
+  FakeMutationObserver.prototype.disconnect = function () {
+    if (this._body) {
+      const i = this._body._observers.indexOf(this._cb);
+      if (i >= 0) this._body._observers.splice(i, 1);
+      this._body = null;
+    }
+  };
   const sandbox = {
     window: {},
     document,
@@ -148,6 +204,26 @@ function freshHost() {
     isFinite,
     console,
   };
+  // The observer path is opt-in per test (default OFF so the legacy tests keep
+  // exercising the synchronous content check + safety-timer fallback).
+  if (opts.withObserver) {
+    sandbox.window.MutationObserver = FakeMutationObserver;
+  }
+  // Deferred timers are captured (not auto-run) so a test flushes them
+  // explicitly. Default OFF so the synchronous scheduleMeasure fallback (node
+  // harness reality) is what the existing tests see.
+  if (opts.withTimers) {
+    let nextId = 1;
+    sandbox.window.setTimeout = function (fn, ms) {
+      const id = nextId++;
+      pendingTimers.push({ id, fn, ms });
+      return id;
+    };
+    sandbox.window.clearTimeout = function (id) {
+      const i = pendingTimers.findIndex((t) => t.id === id);
+      if (i >= 0) pendingTimers.splice(i, 1);
+    };
+  }
   sandbox.window.document = document;
   // The TOP-LEVEL bridge: host.js posts overlaySize / dismissPopupAt here, and
   // wrapFrameBridge routes the re-anchored child messages through it too.
@@ -388,6 +464,127 @@ function descriptor(id, parentIndex, settingsJs) {
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '40px', 'layer shifted by -minLeft');
   assert.strictEqual(layer.style.top, '0px', 'layer shifted by -minTop');
+}
+
+// Flush all captured safety timers (simulate the timeout firing).
+function flushTimers() {
+  const due = pendingTimers.slice();
+  pendingTimers = [];
+  for (const t of due) {
+    t.fn();
+  }
+}
+
+// 12. D1 reveal gate: a freshly-rendered shell is gated-hidden — reveal-ready
+//     flips once geometry is placed, but content-ready stays false until the
+//     iframe DOM actually renders, so the shell is NOT visible yet.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  // The gate <style> is injected (on first ensureLayer) with both selectors so
+  // visibility has a single declarative source.
+  const style = document.getElementById('global-lookup-host-style');
+  assert.ok(style, 'reveal-gate <style> injected');
+  assert.ok(
+    /visibility:hidden/.test(style.textContent),
+    'gate CSS hides shells by default',
+  );
+  assert.ok(
+    style.textContent.indexOf(
+      '[data-content-ready="true"][data-reveal-ready="true"]') >= 0,
+    'gate CSS reveals only when BOTH flags are true',
+  );
+  const shell = shellsOf(document)[0];
+  // Geometry placed -> reveal-ready true; content not rendered -> content-ready
+  // still false; therefore NOT visible.
+  assert.strictEqual(shell.getAttribute('data-reveal-ready'), 'true',
+    'reveal-ready flips once geometry is placed');
+  assert.strictEqual(shell.getAttribute('data-content-ready'), 'false',
+    'content-ready stays false until the iframe DOM renders');
+  const gate = host.frameGateState('frame-0');
+  assert.strictEqual(gate.revealReady, true, 'gate revealReady');
+  assert.strictEqual(gate.contentReady, false, 'gate contentReady false');
+  assert.strictEqual(gate.visible, false, 'shell NOT visible (one flag missing)');
+}
+
+// 13. D1: once the iframe renders .glossary-content the MutationObserver flips
+//     content-ready -> BOTH flags set -> the shell becomes visible.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  assert.strictEqual(host.frameGateState('frame-0').visible, false,
+    'invisible before content arrives');
+  // Simulate popup.js finishing render: fires the host MutationObserver.
+  iframe._renderContent(140);
+  assert.strictEqual(shell.getAttribute('data-content-ready'), 'true',
+    'observer flips content-ready when .glossary-content appears');
+  assert.strictEqual(host.frameGateState('frame-0').visible, true,
+    'shell visible once BOTH content-ready and reveal-ready are set');
+}
+
+// 14. D1 safety: a frame whose content never arrives is forced content-ready by
+//     the host safety timer so the card is never stuck invisible.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(host.frameGateState('frame-0').visible, false,
+    'still invisible while waiting for content');
+  flushTimers(); // the CONTENT_READY_SAFETY_MS timeout fires
+  assert.strictEqual(host.frameGateState('frame-0').contentReady, true,
+    'safety timer forces content-ready on render failure');
+  assert.strictEqual(host.frameGateState('frame-0').visible, true,
+    'shell revealed by the safety path (no stuck-invisible card)');
+}
+
+// 15. D2 convergence: a content-ready burst across MULTIPLE layers converges to
+//     a STABLE bbox without thrash. Each layer's content refines its height
+//     (measureContentHeight caps to the planned shell height), so the union bbox
+//     settles after the burst; a redundant re-measure of the SAME state emits
+//     zero overlaySize (de-dup on the bbox key), proving no oscillation loop.
+{
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 200 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 120, top: 40, width: 100, height: 200 }, settingsJs: '' },
+    ],
+  });
+  const shells = shellsOf(document);
+  const if0 = shells.find((s) => s.getAttribute('data-frame-id') === 'frame-0')
+    .children.find((c) => c.tagName === 'IFRAME');
+  const if1 = shells.find((s) => s.getAttribute('data-frame-id') === 'frame-1')
+    .children.find((c) => c.tagName === 'IFRAME');
+  hostPostLog = [];
+  // Both layers render content shorter than planned (200): the bbox refines once
+  // per real change, then stops. Drive the whole burst, then re-measure twice.
+  if0._renderContent(150);
+  if1._renderContent(150);
+  const afterBurst = hostPostLog.filter((m) => m.handler === 'overlaySize').length;
+  // The burst converges to a bounded number of reports (<= one per layer that
+  // actually changed the bbox), NOT an unbounded loop.
+  assert.ok(afterBurst >= 1 && afterBurst <= 2,
+    'a content burst converges to a bounded number of bbox reports, not a loop');
+  hostPostLog = [];
+  // The state is now STABLE: re-measuring the identical bbox emits nothing.
+  host.measureAndReport();
+  host.measureAndReport();
+  const repeat = hostPostLog.filter((m) => m.handler === 'overlaySize');
+  assert.strictEqual(repeat.length, 0,
+    'a re-measure with an unchanged bbox is de-duped (no thrash / no loop)');
 }
 
 console.log('global_lookup_host_test: PASS');
