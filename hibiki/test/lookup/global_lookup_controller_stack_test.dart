@@ -188,6 +188,61 @@ void main() {
     });
   });
 
+  group('GlobalLookupController P3c anchor + layer attribution', () {
+    // The controller maps a tapOutside stamped with a frame id to that frame's
+    // insertion-order layer index, then closeChildPopups(layerIndex). This models
+    // _layerIndexForFrameId + the tapOutside C3 branch (the controller is a
+    // Windows singleton not headless-instantiable, so the mapping is modelled on
+    // the same pure stack the controller drives).
+    int layerIndexForFrameId(GlobalLookupStack stack, String id) {
+      final List<GlobalLookupFrame> frames = stack.frames;
+      for (int i = 0; i < frames.length; i++) {
+        if (frames[i].id == id) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    GlobalLookupStack deep() {
+      GlobalLookupStack stack = pushLookupFrame(GlobalLookupStack.empty,
+          _frame(_mintId(0), 'a', parentIndex: -1, resultCount: 1));
+      stack = pushLookupFrame(
+          stack, _frame(_mintId(1), 'b', parentIndex: 0, resultCount: 1));
+      stack = pushLookupFrame(
+          stack, _frame(_mintId(2), 'c', parentIndex: 1, resultCount: 1));
+      return stack;
+    }
+
+    test('tapOutside on a middle layer closes that layer children', () {
+      final GlobalLookupStack stack = deep();
+      // tapOutside stamped with frame-1 -> layer index 1 -> close its children.
+      final int layer = layerIndexForFrameId(stack, 'frame-1');
+      expect(layer, 1, reason: 'insertion order index of frame-1 is 1');
+      final GlobalLookupStack next =
+          closeChildPopupsAndClearSelection(stack, layer);
+      expect(_ids(next), <String>['frame-0', 'frame-1'],
+          reason: 'children above layer 1 are closed');
+      expect(next.frames.last.clearSelectionSignal, 1,
+          reason: 'the tapped layer gets a clear-selection signal');
+    });
+
+    test('tapOutside on the root layer closes all children', () {
+      final GlobalLookupStack stack = deep();
+      final int layer = layerIndexForFrameId(stack, 'frame-0');
+      expect(layer, 0);
+      final GlobalLookupStack next =
+          closeChildPopupsAndClearSelection(stack, layer);
+      expect(_ids(next), <String>['frame-0'],
+          reason: 'tapping the root collapses to just the root');
+    });
+
+    test('an unknown frame id maps to -1 (controller falls back to hide)', () {
+      final GlobalLookupStack stack = deep();
+      expect(layerIndexForFrameId(stack, 'frame-99'), -1);
+    });
+  });
+
   group('GlobalLookupFrame.toRenderMap (host payload contract)', () {
     test('serialises identity + linkage for the host renderStack payload', () {
       final GlobalLookupFrame frame = GlobalLookupFrame(

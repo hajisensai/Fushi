@@ -67,6 +67,12 @@ class GlobalLookupWindow {
   // lookup after the page has self-measured, so the user never sees the
   // measure->resize jitter. Pass <=0 to keep the current size.
   void Reveal(int width, int height);
+  // TODO-867 P3c E1 — reveals/resizes to the nested-stack union bounding box.
+  // |dx|/|dy| offset the window from the pending cursor anchor (physical px; the
+  // host bbox origin × dpr) so a left/up cascade shifts the window while the root
+  // card stays pinned at the cursor; |width|/|height| are the bbox size (physical
+  // px). Clamps to the monitor work area like Reveal/ResizeTo.
+  void RevealStack(int dx, int dy, int width, int height);
   void Hide();
   bool IsShowing() const;
 
@@ -102,6 +108,10 @@ class GlobalLookupWindow {
   int OffscreenX() const;
   // TODO-867 P2: round the window corners to match popup.css's card radius.
   void ApplyRoundedRegion();
+  // TODO-867 P3c E2: forward a global click (screen physical px) into the web
+  // host as host CSS px relative to the window, so the host hit-tests its shells
+  // and dismisses the appropriate layer (the host owns the shell geometry truth).
+  void ForwardGlobalClickToHost(int screen_x, int screen_y);
   void EnsureWindowClass();
   void EnsureWebView();
   void ConfigureWebView();

@@ -700,6 +700,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           global_lookup_window_->Reveal(IntFromValue(args, "width", 0),
                                         IntFromValue(args, "height", 0));
           result->Success();
+        } else if (method == "revealStack") {
+          // TODO-867 P3c E1 — reveal/resize to the nested-stack union bbox.
+          global_lookup_window_->RevealStack(
+              IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
+              IntFromValue(args, "width", 0), IntFromValue(args, "height", 0));
+          result->Success();
         } else if (method == "resolveBridge") {
           // Dart's real reply for a deferred audio handler. "value" is a JSON
           // literal string (jsonEncode'd in Dart): pass it straight through.

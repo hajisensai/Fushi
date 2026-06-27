@@ -110,8 +110,18 @@ LRESULT CALLBACK GlobalLookupWindow::MouseHookProc(int code, WPARAM wparam,
           reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
       RECT rc;
       GetWindowRect(self->hwnd_, &rc);
+      // TODO-867 P3c C4/E2 — the window is now the whole nested-stack bounding
+      // box (E1): the transparent area BETWEEN cards is inside the HWND rect, so
+      // a coarse "PtInRect -> Hide" would wrongly close on a click in that gap.
+      // Split the decision: a click OUTSIDE the whole window rect dismisses the
+      // overlay (clicked another app); a click INSIDE the window is forwarded to
+      // the web host, which owns the per-shell geometry truth and decides whether
+      // to keep (hit a card) or dismiss the root (gap between cards). C++ only
+      // feeds coordinates; the host hit-tests (no shell geometry duplicated here).
       if (!PtInRect(&rc, info->pt)) {
-        self->Hide();  // Click outside the card -> dismiss.
+        self->Hide();  // Click outside the whole stack window -> dismiss.
+      } else {
+        self->ForwardGlobalClickToHost(info->pt.x, info->pt.y);
       }
     }
   }
@@ -234,6 +244,51 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   visible_ = true;
   // Arm the click-outside dismiss only now that the card is on-screen (skip our
   // own process so interacting with the card / main window does not close it).
+  s_hook_owner_ = this;
+  if (foreground_hook_ == nullptr) {
+    foreground_hook_ = SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+  }
+  if (mouse_hook_ == nullptr) {
+    mouse_hook_ = SetWindowsHookEx(WH_MOUSE_LL,
+                                   &GlobalLookupWindow::MouseHookProc,
+                                   GetModuleHandle(nullptr), 0);
+  }
+}
+
+void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height) {
+  if (hwnd_ == nullptr || width <= 0 || height <= 0) {
+    return;
+  }
+  // The window moves to (cursor + dx, cursor + dy) and grows to the bbox size.
+  // The host (global_lookup_host.js) shifted its layer by (-bbox.left, -bbox.top)
+  // so the ROOT card stays pinned at the cursor while the whole cascade fits in
+  // the window. Clamp to the cursor monitor work area like Reveal/ResizeTo.
+  int x = pending_x_ + dx;
+  int y = pending_y_ + dy;
+  POINT cursor = {pending_x_, pending_y_};
+  HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO mi = {};
+  mi.cbSize = sizeof(mi);
+  if (GetMonitorInfo(monitor, &mi)) {
+    const int work_w = mi.rcWork.right - mi.rcWork.left;
+    const int work_h = mi.rcWork.bottom - mi.rcWork.top;
+    width = width < work_w ? width : work_w;
+    height = height < work_h ? height : work_h;
+    if (x + width > mi.rcWork.right) x = mi.rcWork.right - width;
+    if (y + height > mi.rcWork.bottom) y = mi.rcWork.bottom - height;
+    if (x < mi.rcWork.left) x = mi.rcWork.left;
+    if (y < mi.rcWork.top) y = mi.rcWork.top;
+  }
+  SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
+               SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+  ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+  revealed_ = true;
+  visible_ = true;
+  // Arm the click-outside dismiss hooks now that the stack is on-screen (the
+  // first reveal arms; later resizes are idempotent re-arms).
   s_hook_owner_ = this;
   if (foreground_hook_ == nullptr) {
     foreground_hook_ = SetWinEventHook(
@@ -611,6 +666,29 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
     // SetWindowRgn takes ownership of the region on success; the system frees it.
     SetWindowRgn(hwnd_, region, TRUE);
   }
+}
+
+void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
+  if (webview_ == nullptr || hwnd_ == nullptr) {
+    return;
+  }
+  RECT rc;
+  GetWindowRect(hwnd_, &rc);
+  // Screen physical px -> window-local physical px -> host CSS px (÷ dpr). This
+  // is the documented "WH_MOUSE_LL physical -> web CSS px" boundary; the host
+  // layout math stays in CSS px throughout. Window DPI (96-based) gives dpr.
+  UINT dpi = GetDpiForWindow(hwnd_);
+  if (dpi == 0) {
+    dpi = 96;
+  }
+  const double dpr = static_cast<double>(dpi) / 96.0;
+  const double local_x = static_cast<double>(screen_x - rc.left) / dpr;
+  const double local_y = static_cast<double>(screen_y - rc.top) / dpr;
+  std::wstring script =
+      L"window.__globalLookupHost && "
+      L"window.__globalLookupHost.handleGlobalClick(" +
+      std::to_wstring(local_x) + L", " + std::to_wstring(local_y) + L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
 }
 
 LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,

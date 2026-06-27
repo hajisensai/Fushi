@@ -61,6 +61,19 @@ class GlobalLookupController {
       <String, DictionarySearchResult>{};
   int _frameSeq = 0;
 
+  // TODO-867 P3c C2 — per-frame anchor rect (window-local CSS px). The root
+  // anchor is null (placeholder cascade at window-local origin, the window is
+  // already positioned at the cursor); a child's anchor is the clicked word's
+  // rect, re-anchored to window-local CSS px by the host shim (global_lookup_
+  // host.js anchorRectToScreen) and delivered via onLinkClick args[1]. Fed to
+  // computeFrameRect so each child card cascades off its word.
+  final Map<String, Rect?> _frameAnchors = <String, Rect?>{};
+  // TODO-867 P3c E1/D2 — the cascade layout bounds (window-local CSS px) the
+  // off-screen measurement window is sized to. Children cascade WITHIN these
+  // bounds; D2's union bbox then reveals/resizes the window to the real extent.
+  double _layoutBoundsW = 0;
+  double _layoutBoundsH = 0;
+
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
   Future<void> start({required AppModel appModel}) async {
@@ -152,20 +165,34 @@ class GlobalLookupController {
       // overlaySize and Reveal uses that. Position natively (GetCursorPos =
       // physical px) to avoid the logical/physical DPI mismatch.
       final double dpr = _devicePixelRatio();
-      final int w0 = (model.popupMaxWidth * model.appUiScale * dpr).round();
-      final int h0 = (model.popupMaxHeight * model.appUiScale * dpr).round();
+      // TODO-867 P3c E1 — the off-screen measurement window is sized to the
+      // cascade LAYOUT BOUNDS (window-local CSS px) so a nested child card has
+      // room to cascade beside the root during measurement; D2's union bbox
+      // (overlaySize) then reveals/resizes the window down to the real extent.
+      // The root card itself stays anchored at the window-local origin (its
+      // anchor is null), so a single-frame lookup still reveals exactly at the
+      // card size after the bbox trims the bounds — no regression.
+      final double cardW = model.popupMaxWidth * model.appUiScale;
+      final double cardH = model.popupMaxHeight * model.appUiScale;
+      _layoutBoundsW = cardW * kGlobalLookupLayoutBoundsWidthFactor;
+      _layoutBoundsH = cardH * kGlobalLookupLayoutBoundsHeightFactor;
+      final int w0 = (_layoutBoundsW * dpr).round();
+      final int h0 = (_layoutBoundsH * dpr).round();
       final bool shown = await GlobalLookupChannel.showAt(
           x: 0, y: 0, width: w0, height: h0, atCursor: true);
       await _renderStack();
       glog('hotkey: showAt(atCursor)=$shown off-screen w0=$w0 h0=$h0 rendered');
       _autoReadFirstEntry(model, result);
       // Safety: if the page never reports a size (render failure), reveal at the
-      // provisional size anyway so the card is not stuck invisible off-screen.
+      // single-card size (NOT the larger measurement bounds w0/h0) so the card is
+      // not stuck invisible off-screen and the fallback window is not oversized.
+      final int safeW = (cardW * dpr).round();
+      final int safeH = (cardH * dpr).round();
       _revealSafety = Timer(const Duration(milliseconds: 450), () {
         if (!_revealed) {
           _revealed = true;
-          glog('reveal: SAFETY timeout w=$w0 h=$h0');
-          unawaited(GlobalLookupChannel.reveal(width: w0, height: h0));
+          glog('reveal: SAFETY timeout w=$safeW h=$safeH');
+          unawaited(GlobalLookupChannel.reveal(width: safeW, height: safeH));
         }
       });
     } catch (e, st) {
@@ -214,6 +241,24 @@ class GlobalLookupController {
     final Object? handler = message['handler'];
     glog('js: handler=$handler args=${message['args']}');
     if (handler == 'tapOutside' || handler == 'dismiss') {
+      // TODO-867 P3c C3 — a tapOutside stamped with the source layer's frame id
+      // (by the host shim) means "tap inside layer L outside its glossary" ->
+      // close L's children (point a layer -> close the cards above it). Without
+      // a frame id (or when L is the root) fall back to hiding the whole overlay.
+      final String? frameId = message['__frameId'] as String?;
+      if (handler == 'tapOutside' && frameId != null) {
+        final int layerIndex = _layerIndexForFrameId(frameId);
+        if (layerIndex >= 0) {
+          _stack = closeChildPopupsAndClearSelection(_stack, layerIndex);
+          _pruneFrameResults();
+          if (_stack.isEmpty) {
+            GlobalLookupChannel.hide();
+          } else {
+            unawaited(_renderStack());
+          }
+          return;
+        }
+      }
       GlobalLookupChannel.hide();
       return;
     }
@@ -265,48 +310,28 @@ class GlobalLookupController {
       unawaited(_handleAudioBridge(handler! as String, message));
       return;
     }
-    // Size the bare overlay window from the page's self-measurement
-    // (overlaySize = [devicePixelRatio, physicalScrollHeight]). The card fills
-    // the viewport (no intrinsic width), so the WIDTH is the in-app logical box
-    // (popupMaxWidth * appUiScale) converted to physical px via the monitor DPR;
-    // the HEIGHT is the reported physical scrollHeight. Font size / zoom do NOT
-    // enter the width — the card reflows inside a fixed box, matching the in-app
-    // popup. Native further clamps to the monitor work area.
+    // TODO-867 P3c D2 — size + place the overlay window from the host's stack
+    // self-measurement. The host reports overlaySize = [dpr, box] where box is
+    // the UNION bounding box of all card shells in window-local CSS px
+    // ({left, top, width, height}); the legacy single-card form [dpr, physH]
+    // (physH = physical scrollHeight) is still accepted as a fallback. The
+    // window is REVEALED/RESIZED to the bbox: it moves to (cursor + box.left,
+    // cursor + box.top) ×dpr and grows to box.width/height ×dpr, while the host
+    // shifts its layer by (-box.left, -box.top) so the ROOT card stays pinned at
+    // the cursor and the whole cascade fits inside the window (E1).
     if (handler == 'overlaySize') {
       final AppModel? model = _appModel;
       final Object? args = message['args'];
       if (model != null && args is List && args.length >= 2) {
         final double dpr = (args[0] is num) ? (args[0] as num).toDouble() : 1.0;
-        final num? physH = args[1] is num ? args[1] as num : null;
-        if (dpr > 0 && physH != null && physH > 0) {
-          // Faithful to the reader popup: both dimensions are
-          // popupMax* × appUiScale, converted to physical px via dpr. WIDTH is
-          // fixed; HEIGHT is the content height CAPPED at popupMaxHeight (the
-          // card scrolls inside) — without the cap a long entry makes the
-          // window fill the whole screen.
-          final int width =
-              (model.popupMaxWidth * model.appUiScale * dpr).round();
-          final double maxHeight =
-              model.popupMaxHeight * model.appUiScale * dpr;
-          final int height =
-              (physH > maxHeight ? maxHeight : physH.toDouble()).round();
-          if (!_revealed) {
-            // First measurement (off-screen): reveal the card at its final size
-            // in one shot — the user never sees the measure→resize jitter.
-            _revealed = true;
-            _revealSafety?.cancel();
-            _lastSentWidth = width;
-            _lastSentHeight = height;
-            glog('reveal: dpr=$dpr popupMaxWidth=${model.popupMaxWidth} '
-                'appUiScale=${model.appUiScale} physH=$physH -> w=$width h=$height');
-            unawaited(GlobalLookupChannel.reveal(width: width, height: height));
-          } else if (width != _lastSentWidth || height != _lastSentHeight) {
-            // Already on-screen (e.g. nested re-lookup changed the content):
-            // resize in place. Guarded so the resize→re-measure loop settles.
-            _lastSentWidth = width;
-            _lastSentHeight = height;
-            glog('resize: dpr=$dpr physH=$physH -> w=$width h=$height');
-            unawaited(GlobalLookupChannel.resize(width: width, height: height));
+        if (dpr > 0) {
+          final Object? second = args[1];
+          if (second is Map) {
+            // D2 union bounding box (window-local CSS px) -> place + size window.
+            _applyOverlayBox(model, dpr, second.cast<Object?, Object?>());
+          } else if (second is num && second > 0) {
+            // Legacy single-card form: physical scrollHeight, fixed width.
+            _applyOverlayScalar(model, dpr, second.toDouble());
           }
         }
       }
@@ -318,13 +343,18 @@ class GlobalLookupController {
       return;
     }
     // Nested lookup: clicking a term/kanji in the card emits onLinkClick with
-    // the query as the first arg. Re-search and re-render in place.
+    // the query as args[0] and the clicked word's anchor rect as args[1]. The
+    // host shim (global_lookup_host.js) already re-anchored that rect from the
+    // child iframe's LOCAL coords to window-local CSS px, so the child card
+    // cascades off the real word position. Re-search and push a child frame.
     if (handler == 'onLinkClick') {
       final Object? args = message['args'];
       if (args is List && args.isNotEmpty) {
         final String query = args.first?.toString() ?? '';
         if (query.isNotEmpty) {
-          unawaited(_lookupNested(query));
+          final Rect? anchor =
+              (args.length >= 2) ? _anchorRectFromArg(args[1]) : null;
+          unawaited(_lookupNested(query, anchor));
         }
       }
     }
@@ -419,7 +449,7 @@ class GlobalLookupController {
     );
   }
 
-  Future<void> _lookupNested(String query) async {
+  Future<void> _lookupNested(String query, Rect? anchorRect) async {
     final AppModel? model = _appModel;
     if (model == null) {
       return;
@@ -436,7 +466,7 @@ class GlobalLookupController {
       // so an empty nested search leaves the stack unchanged (identical object)
       // — no empty child card is stacked. Rendering goes through the host stack
       // (renderStack); there is no top-level direct render anymore.
-      _pushChildFrame(query, result);
+      _pushChildFrame(query, result, anchorRect);
       await _renderStack();
       glog('nested: "$query" entries=${result.entries.length}');
       _autoReadFirstEntry(model, result);
@@ -456,6 +486,7 @@ class GlobalLookupController {
   /// diagnostics/linkage.
   void _resetStackRoot(String text, DictionarySearchResult result) {
     _frameResults.clear();
+    _frameAnchors.clear();
     final String id = _nextFrameId();
     final GlobalLookupFrame root = GlobalLookupFrame(
       id: id,
@@ -465,13 +496,17 @@ class GlobalLookupController {
     );
     _stack = GlobalLookupStack(<GlobalLookupFrame>[root]);
     _frameResults[id] = result;
+    // Root anchor stays null: the window is positioned at the cursor, so the
+    // root card sits at the window-local origin (no cascade for the root).
+    _frameAnchors[id] = null;
   }
 
   /// Pushes a child frame (nested lookup) whose parent is the current top.
   /// pushLookupFrame drops a no-result lookup, so the stack is unchanged when
   /// [result] is empty (identical object returned). [query] is the clicked
   /// term; [result] its search result.
-  void _pushChildFrame(String query, DictionarySearchResult result) {
+  void _pushChildFrame(
+      String query, DictionarySearchResult result, Rect? anchorRect) {
     final int parentIndex = _stack.length - 1;
     final String id = _nextFrameId();
     final GlobalLookupFrame child = GlobalLookupFrame(
@@ -484,6 +519,9 @@ class GlobalLookupController {
     if (!identical(next, _stack)) {
       _stack = next;
       _frameResults[id] = result;
+      // The clicked word window-local CSS px rect (re-anchored by the host
+      // shim) so this child cascades off it via computeFrameRect.
+      _frameAnchors[id] = anchorRect;
     }
   }
 
@@ -498,6 +536,7 @@ class GlobalLookupController {
     final Set<String> live =
         _stack.frames.map((GlobalLookupFrame f) => f.id).toSet();
     _frameResults.removeWhere((String id, _) => !live.contains(id));
+    _frameAnchors.removeWhere((String id, _) => !live.contains(id));
   }
 
   /// Extracts the first int argument from a host JS message (args[0]).
@@ -534,16 +573,126 @@ class GlobalLookupController {
       if (result == null) {
         continue;
       }
-      payloads.add(GlobalLookupFramePayload(frame: frame, result: result));
+      payloads.add(GlobalLookupFramePayload(
+        frame: frame,
+        result: result,
+        anchorRect: _frameAnchors[frame.id],
+        isVertical: false,
+      ));
     }
     if (payloads.isEmpty) {
       return;
     }
+    // Cascade layout bounds (window-local CSS px) the off-screen measurement
+    // window was sized to (see _onHotKey). maxWidth/maxHeight are the single
+    // card size; children cascade WITHIN the bounds and D2 bbox trims the
+    // window. Fall back to the single card when bounds are unset.
+    final double cardW = model.popupMaxWidth * model.appUiScale;
+    final double cardH = model.popupMaxHeight * model.appUiScale;
+    final double boundsW = _layoutBoundsW > 0 ? _layoutBoundsW : cardW;
+    final double boundsH = _layoutBoundsH > 0 ? _layoutBoundsH : cardH;
     await GlobalLookupChannel.render(buildStackRenderScript(
       context: ctx,
       appModel: model,
       payloads: payloads,
+      screenWidth: boundsW,
+      screenHeight: boundsH,
+      maxWidth: cardW,
+      maxHeight: cardH,
     ));
+  }
+
+  /// TODO-867 P3c C2 — parses the onLinkClick anchor arg ({x,y,width,height} in
+  /// window-local CSS px, re-anchored by the host shim) into a [Rect]. Returns
+  /// null when the arg is absent/malformed (the render layer then falls back to
+  /// the placeholder cascade offset).
+  Rect? _anchorRectFromArg(Object? arg) {
+    if (arg is! Map) {
+      return null;
+    }
+    double? num2(Object? v) => (v is num) ? v.toDouble() : null;
+    final double? x = num2(arg['x']);
+    final double? y = num2(arg['y']);
+    final double? w = num2(arg['width']);
+    final double? h = num2(arg['height']);
+    if (x == null || y == null || w == null || h == null) {
+      return null;
+    }
+    return Rect.fromLTWH(x, y, w, h);
+  }
+
+  /// TODO-867 P3c C3 — insertion-order index (stack depth, 0 = root) of the frame
+  /// with [frameId], or -1 when unknown. The host stamps tapOutside with the
+  /// frame id; Dart maps it to the layer index for closeChildPopups.
+  int _layerIndexForFrameId(String frameId) {
+    final List<GlobalLookupFrame> frames = _stack.frames;
+    for (int i = 0; i < frames.length; i++) {
+      if (frames[i].id == frameId) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /// TODO-867 P3c D2/E1 — reveals/resizes the window to the host union bounding
+  /// box [box] (window-local CSS px {left,top,width,height}). Converts to
+  /// physical px via [dpr] at this C++ window boundary (the layout math itself is
+  /// CSS px). The window moves by (box.left, box.top) x dpr off the cursor anchor
+  /// and grows to box.width/height x dpr; the host shifted its layer by
+  /// (-box.left, -box.top) so the root card stays pinned at the cursor.
+  void _applyOverlayBox(AppModel model, double dpr, Map<Object?, Object?> box) {
+    double? num2(Object? v) => (v is num) ? v.toDouble() : null;
+    final double left = num2(box['left']) ?? 0;
+    final double top = num2(box['top']) ?? 0;
+    final double width = num2(box['width']) ?? 0;
+    final double height = num2(box['height']) ?? 0;
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    final int dx = (left * dpr).round();
+    final int dy = (top * dpr).round();
+    final int w = (width * dpr).round();
+    final int h = (height * dpr).round();
+    if (!_revealed) {
+      _revealed = true;
+      _revealSafety?.cancel();
+      _lastSentWidth = w;
+      _lastSentHeight = h;
+      glog('reveal(box): dpr=$dpr box=($left,$top,$width,$height) '
+          '-> dx=$dx dy=$dy w=$w h=$h');
+      unawaited(
+          GlobalLookupChannel.revealStack(dx: dx, dy: dy, width: w, height: h));
+    } else if (w != _lastSentWidth || h != _lastSentHeight) {
+      _lastSentWidth = w;
+      _lastSentHeight = h;
+      glog('resize(box): dpr=$dpr box=($left,$top,$width,$height) '
+          '-> dx=$dx dy=$dy w=$w h=$h');
+      unawaited(
+          GlobalLookupChannel.revealStack(dx: dx, dy: dy, width: w, height: h));
+    }
+  }
+
+  /// TODO-867 P3c — legacy single-card sizing (host reported [dpr, physH] rather
+  /// than a bbox): reveal/resize at the fixed card width x capped physical
+  /// scrollHeight, exactly as before D2. Kept as a fallback so a frame that
+  /// somehow reports the scalar form still sizes correctly.
+  void _applyOverlayScalar(AppModel model, double dpr, double physH) {
+    final int width = (model.popupMaxWidth * model.appUiScale * dpr).round();
+    final double maxHeight = model.popupMaxHeight * model.appUiScale * dpr;
+    final int height = (physH > maxHeight ? maxHeight : physH).round();
+    if (!_revealed) {
+      _revealed = true;
+      _revealSafety?.cancel();
+      _lastSentWidth = width;
+      _lastSentHeight = height;
+      glog('reveal(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
+      unawaited(GlobalLookupChannel.reveal(width: width, height: height));
+    } else if (width != _lastSentWidth || height != _lastSentHeight) {
+      _lastSentWidth = width;
+      _lastSentHeight = height;
+      glog('resize(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
+      unawaited(GlobalLookupChannel.resize(width: width, height: height));
+    }
   }
 }
 

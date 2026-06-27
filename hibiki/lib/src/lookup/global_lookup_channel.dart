@@ -83,6 +83,24 @@ abstract final class GlobalLookupChannel {
         'height': height,
       });
 
+  /// TODO-867 P3c E1 — reveals/resizes the overlay to the nested-stack union
+  /// bounding box. [dx]/[dy] offset the window from the cursor anchor (physical
+  /// px; the host bbox origin times dpr) so a child cascading left/up shifts the
+  /// window while keeping the root card pinned at the cursor; [width]/[height]
+  /// are the bbox size (physical px). Native clamps to the monitor work area.
+  static Future<void> revealStack({
+    required int dx,
+    required int dy,
+    required int width,
+    required int height,
+  }) =>
+      _channel.invokeMethod<void>('revealStack', <String, Object?>{
+        'dx': dx,
+        'dy': dy,
+        'width': width,
+        'height': height,
+      });
+
   static Future<void> hide() => _channel.invokeMethod<void>('hide');
 
   static Future<bool> isShowing() async =>

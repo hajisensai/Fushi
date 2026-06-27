@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -137,6 +138,128 @@ void main() {
       final String h = read('windows/runner/global_lookup_window.h');
       expect(h.contains('std::wstring LoadHostScript() const;'), isTrue,
           reason: 'the header must declare LoadHostScript');
+    });
+  });
+
+  group('P3c nested-stack host wiring (C1/C3/E2/D2/E1)', () {
+    late String hostJs;
+    late String cpp;
+    late String controller;
+    late String render;
+    late String channel;
+    setUpAll(() {
+      hostJs = read('assets/popup/global_lookup_host.js');
+      cpp = read('windows/runner/global_lookup_window.cpp');
+      controller = read('lib/src/lookup/global_lookup_controller.dart');
+      render = read('lib/src/lookup/global_lookup_render.dart');
+      channel = read('lib/src/lookup/global_lookup_channel.dart');
+    });
+
+    test('C1: host re-anchors a child onLinkClick rect + stamps the frame id',
+        () {
+      expect(hostJs.contains('function anchorRectToScreen('), isTrue,
+          reason:
+              'the host converts a child LOCAL rect to window-local CSS px');
+      expect(hostJs.contains('function transformFrameMessage('), isTrue);
+      expect(hostJs.contains('__frameId'), isTrue,
+          reason: 'every bubbled message is stamped with its source frame id');
+      expect(hostJs.contains('function wrapFrameBridge('), isTrue,
+          reason: 'the host wraps each iframe chrome.webview.postMessage');
+      expect(hostJs.contains('var FRAME_CONTENT_TOP = 0;'), isTrue,
+          reason: 'Hibiki iframe fills its shell -> content-top offset is 0 '
+              '(not hoshi 74); explicit + testable per plan section 8');
+    });
+
+    test('C3: host dismisses on a backdrop pointerdown / forwarded click', () {
+      expect(hostJs.contains('function onHostPointerDown('), isTrue,
+          reason:
+              'capture-phase pointerdown outside all shells dismisses root');
+      expect(hostJs.contains("postToHost('dismissPopupAt', [0])"), isTrue,
+          reason: 'a click outside all shells dismisses the root (index 0)');
+      expect(hostJs.contains('function handleGlobalClick('), isTrue,
+          reason: 'E2: C++ forwards a global click; the host hit-tests shells');
+      final String c = controller;
+      expect(c.contains('_layerIndexForFrameId('), isTrue,
+          reason:
+              'controller maps a stamped tapOutside to its layer index (C3)');
+      expect(
+          c.contains('closeChildPopupsAndClearSelection(_stack, layerIndex)'),
+          isTrue,
+          reason: 'tapping a layer closes its children (point a layer -> close '
+              'the cards above it)');
+    });
+
+    test(
+        'C4/E2: MouseHookProc no longer unconditionally hides; forwards inside',
+        () {
+      // The old coarse "PtInRect outside -> Hide" is replaced: outside the whole
+      // window -> Hide; inside -> ForwardGlobalClickToHost (the host owns the
+      // per-shell hit-test). Lock that the forward path exists and the hook is
+      // not a bare always-hide anymore.
+      expect(cpp.contains('ForwardGlobalClickToHost'), isTrue,
+          reason: 'a click inside the stack window is forwarded to the host');
+      expect(cpp.contains('handleGlobalClick('), isTrue,
+          reason: 'C++ calls the host hit-test entry via ExecuteScript');
+      // The MouseHookProc body must reach the forward branch (else-of PtInRect),
+      // i.e. it is no longer "PtInRect -> Hide" with nothing else.
+      final int hookAt = cpp.indexOf('GlobalLookupWindow::MouseHookProc');
+      expect(hookAt, greaterThan(-1));
+      final String hookBody =
+          cpp.substring(hookAt, cpp.indexOf('CallNextHookEx', hookAt));
+      expect(hookBody.contains('ForwardGlobalClickToHost'), isTrue,
+          reason: 'the hook forwards an in-window click instead of hiding it');
+    });
+
+    test('D2/E1: host reports a union bbox; Dart reveals the window to it', () {
+      expect(hostJs.contains('function measureAndReport('), isTrue);
+      expect(hostJs.contains("postToHost('overlaySize'"), isTrue,
+          reason: 'the host reports the union bbox as overlaySize');
+      expect(hostJs.contains('LAYER_ID'), isTrue);
+      expect(render.contains('computeFrameRect('), isTrue,
+          reason: 'the stack renderer computes real cascade geometry');
+      expect(render.contains('Rect? anchorRect'), isTrue,
+          reason: 'each frame payload carries its anchor rect (C2)');
+      expect(channel.contains("invokeMethod<void>('revealStack'"), isTrue,
+          reason: 'E1: a revealStack channel reveals/resizes to the bbox');
+      expect(cpp.contains('void GlobalLookupWindow::RevealStack('), isTrue,
+          reason:
+              'native RevealStack positions + sizes the window to the bbox');
+    });
+
+    test('coordinate-domain rule: host.js + computeFrameRect carry NO dpr math',
+        () {
+      // The layout math is CSS / logical px throughout; the only dpr boundary is
+      // C++ window geometry / the WH_MOUSE_LL hook. So neither host.js nor the
+      // pure layout function may multiply/divide by a device pixel ratio.
+      // Strip // line comments first (the Chinese docs legitimately mention
+      // "dpr" to EXPLAIN the rule); the CODE must carry no dpr arithmetic.
+      final String layoutRaw = read('lib/src/lookup/global_lookup_layout.dart');
+      final StringBuffer codeOnly = StringBuffer();
+      for (final String line in const LineSplitter().convert(layoutRaw)) {
+        final int c = line.indexOf('//');
+        codeOnly.writeln(c >= 0 ? line.substring(0, c) : line);
+      }
+      final String layoutCode = codeOnly.toString();
+      for (final String token in <String>[
+        'dpr',
+        'devicePixelRatio',
+        'pixelRatio'
+      ]) {
+        expect(layoutCode.contains(token), isFalse,
+            reason: 'global_lookup_layout CODE must stay unit-agnostic CSS px '
+                '(no "$token") — the dpr boundary is the C++ window only');
+      }
+      // host.js forwards devicePixelRatio to C++ but performs NO dpr arithmetic
+      // on shell geometry (it only reads window.devicePixelRatio to report it).
+      expect(
+          hostJs.contains('* dpr') ||
+              hostJs.contains('/ dpr') ||
+              hostJs.contains('*dpr') ||
+              hostJs.contains('/dpr'),
+          isFalse,
+          reason:
+              'host.js must not scale shell geometry by dpr; geometry stays '
+              'CSS px and the dpr is converted at the C++ window boundary');
     });
   });
 
