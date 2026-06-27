@@ -1907,5 +1907,6 @@
   "db_unrecoverable_title": "数据库已损坏",
   "db_unrecoverable_message": "自动修复后仍无法打开数据库，文件可能已损坏。可在设置中恢复备份，或清除应用数据重新开始。",
   "lyrics_vertical_writing": "竖排歌词",
-  "lyrics_vertical_writing_hint": "歌词竖排显示，从右到左（独立于书本模式）"
+  "lyrics_vertical_writing_hint": "歌词竖排显示，从右到左（独立于书本模式）",
+  "video_file_not_found": "找不到视频文件"
 }
