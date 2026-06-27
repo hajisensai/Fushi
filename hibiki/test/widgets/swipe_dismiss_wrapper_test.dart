@@ -76,9 +76,11 @@ void main() {
     });
 
     // 闪回回归守卫：松手命中阈值的那一帧，浮层必须保持「已滑走」状态
-    // （Opacity 归 0、Transform 位移不回弹到 0），由上层负责移除——绝不能回弹到
-    // 原位且满不透明（那一帧的回弹＝用户看到的「闪回一下再关闭」）。
-    testWidgets('dismiss frame does NOT snap back: opacity 0, offset held',
+    // （位移不回弹到 0、opacity 已开始淡出但不回弹到满不透明），由上层负责移除——
+    // 绝不能回弹到原位且满不透明（那一帧的回弹＝用户看到的「闪回一下再关闭」）。
+    // TODO-890：退场帧 opacity 随位移淡出（对齐 _BodySwipeDismissDetector），松手当帧
+    // 卡片仍在屏内（_dragX≈200 < 卡片宽300+边距24）故 opacity 介于 0 与 1，而非瞬灭到 0。
+    testWidgets('dismiss frame does NOT snap back: faded, offset held',
         (tester) async {
       // onDismiss 不移除子树（模拟 reader 的 Visibility 保留 / 上层尚未移除的一帧），
       // 这样才能观察退场帧 wrapper 自身的视觉，而非被移除。
@@ -99,7 +101,10 @@ void main() {
           matching: find.byType(Opacity),
         ),
       );
-      expect(opacity.opacity, 0.0, reason: '退场帧必须透明（视觉已滑出），不得回弹到满不透明＝闪回');
+      expect(opacity.opacity, lessThan(1.0),
+          reason: '退场帧必须开始淡出（视觉正滑出），不得回弹到满不透明＝闪回');
+      expect(opacity.opacity, greaterThan(0.0),
+          reason: '退场帧卡片仍在屏内，opacity 不应瞬灭到 0（那等于不可见滑出）');
 
       final Transform transform = tester.widget<Transform>(
         find.ancestor(
@@ -200,6 +205,60 @@ void main() {
     final double dx = transform.transform.getTranslation().x;
     expect(dx, greaterThan(200), reason: '滑出补间把卡片平移到松手位置之外（朝屏外滑走），而非定格');
     await tester.pumpAndSettle();
+  });
+
+  // TODO-890 复核盲区守卫：滑出补间「中段」卡片必须可见（opacity 严格介于 0 与 1）。
+  // 旧 B 路径退场期 opacity 硬 =0.0，整段补间用一张完全透明的卡片平移→滑出动画不可见
+  // ＝等于没做。本断言锁住：补间中段 opacity ∈ (0,1)，对齐 A 路径随位移淡出。
+  testWidgets(
+      'TODO-890 slide-out card stays visible mid-tween (opacity in 0..1)',
+      (tester) async {
+    await tester.pumpWidget(buildApp(onDismiss: () {}));
+
+    final center = tester.getCenter(find.byType(SizedBox).first);
+    final gesture = await tester.startGesture(center);
+    await gesture.moveBy(const Offset(200, 0));
+    await tester.pump();
+    await gesture.up();
+    // 推进到补间中段（200ms 时长的约一半）。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final Opacity opacity = tester.widget<Opacity>(
+      find.ancestor(
+        of: find.byType(ColoredBox),
+        matching: find.byType(Opacity),
+      ),
+    );
+    expect(opacity.opacity, greaterThan(0.0),
+        reason: '滑出补间中段卡片必须可见，opacity 不得为 0（否则动画用透明卡片＝不可见）');
+    expect(opacity.opacity, lessThan(1.0),
+        reason: '滑出补间中段已部分淡出，opacity 应随位移降到满不透明以下');
+    await tester.pumpAndSettle();
+  });
+
+  // TODO-890 顺修守卫：未过阈值的 spring-back 补间完成后，残留的决策/方向状态必须
+  // 复位——否则下一次拖动会带着上一手的 _decided / _isHorizontal。通过「先一次未过
+  // 阈值横滑（弹回），再一次小幅纵滑不触发关闭」间接验证状态已复位、无横滑残留。
+  testWidgets('TODO-890 spring-back resets decision state after settle',
+      (tester) async {
+    int dismissed = 0;
+    // 灵敏度 0.3 → 阈值 142；先拖 80px（< 142）不过阈值，松手 spring-back。
+    await tester.pumpWidget(buildApp(onDismiss: () => dismissed++));
+
+    final center = tester.getCenter(find.byType(SizedBox).first);
+    final g1 = await tester.startGesture(center);
+    await g1.moveBy(const Offset(80, 0));
+    await g1.up();
+    await tester.pumpAndSettle();
+    expect(dismissed, 0, reason: '未过阈值不应关闭');
+
+    // 复位后再来一次纵向拖动：不得被上一手的横滑决策残留误判为横滑关闭。
+    final g2 = await tester.startGesture(center);
+    await g2.moveBy(const Offset(0, 200));
+    await g2.up();
+    await tester.pumpAndSettle();
+    expect(dismissed, 0, reason: 'spring-back 后状态已复位，纵向拖动不应触发关闭');
   });
 
   // BUG-051: SwipeDismissWrapper 基于 Listener（onPointerMove/Up），指针事件会

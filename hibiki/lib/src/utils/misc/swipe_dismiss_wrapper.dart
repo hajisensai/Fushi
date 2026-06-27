@@ -86,10 +86,15 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
   }
 
   void _onAnimStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && _dismissing) {
+    if (status != AnimationStatus.completed) return;
+    if (_dismissing) {
       // 弹窗已补间滑出屏外、不可见——此刻才真正关一层（避免 dismiss 与动画竞争）。
       widget.onDismiss();
+      return;
     }
+    // 未过阈值的 spring-back 补间已回到原位：复位决策/方向残留状态，否则下次拖动
+    // 会带着上一手的 _decided / _isHorizontal（_dragX 已为 0 但谓词未清）。
+    if (mounted) setState(_clearDragState);
   }
 
   void _clearDragState() {
@@ -168,11 +173,16 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
           if (constraints.maxWidth.isFinite) {
             _layerWidth = constraints.maxWidth;
           }
+          // 退场期随位移淡出（对齐 _BodySwipeDismissDetector）：补间把 _dragX 推向
+          // 「卡片宽 + 边距」屏外，opacity 同步从当前值趋近 0；中段卡片仍可见（介于
+          // 0 与 1），朝屏外滑走而非瞬灭。归一分母用真实卡片宽 + 边距，无宽度回退 300。
+          final double slideOutSpan =
+              (_layerWidth > 0 ? _layerWidth : 300) + _kSwipeSlideOutMargin;
           return Transform.translate(
             offset: Offset(active ? _dragX : 0, 0),
             child: Opacity(
               opacity: _dismissing
-                  ? 0.0
+                  ? (1 - (_dragX.abs() / slideOutSpan)).clamp(0.0, 1.0)
                   : (active ? (1 - (_dragX.abs() / 300)).clamp(0.3, 1.0) : 1.0),
               child: widget.child,
             ),
