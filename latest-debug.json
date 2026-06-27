@@ -5,11 +5,15 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 5960,
-  "notes": "Automated release-signed debug-channel build from develop @ 26a3455. Push releases are always prerelease and never Latest.",
+  "notes": "Automated desktop debug-channel build from develop @ 26a3455. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-0.11.2-debug.5960-26a3455-debug.apk",
       "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.2-debug.5960+26a3455/hibiki-0.11.2-debug.5960-26a3455-debug.apk"
+    },
+    {
+      "name": "hibiki-0.11.2-debug.5960-windows-setup.exe",
+      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v0.11.2-debug.5960+26a3455/hibiki-0.11.2-debug.5960-windows-setup.exe"
     }
   ]
 }
