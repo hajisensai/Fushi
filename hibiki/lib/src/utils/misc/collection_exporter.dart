@@ -66,6 +66,32 @@ class ExportWord {
   final DateTime createdAt;
 }
 
+/// 导出用的轻量制卡句载体（与 `MinedSentenceRow` 解耦，纯数据，便于单测）。
+class ExportMinedSentence {
+  const ExportMinedSentence({
+    required this.sentence,
+    required this.expression,
+    required this.reading,
+    required this.glossary,
+    required this.bookTitle,
+    required this.createdAt,
+    this.source,
+  });
+
+  /// 制卡时的整句上下文（可能为空：独立查词页制卡无句）。
+  final String sentence;
+  final String expression;
+  final String reading;
+  final String glossary;
+
+  /// 分组键：恒非空（`documentTitle` 可空时回退到「制卡语句」占位）。
+  final String bookTitle;
+  final DateTime createdAt;
+
+  /// 制卡来源（`book`/`video`/`audiobook`/`lyrics`），可空。
+  final String? source;
+}
+
 /// 文件元信息：扩展名（不含点）+ MIME 类型。
 class ExportFileMeta {
   const ExportFileMeta({required this.extension, required this.mimeType});
@@ -318,6 +344,134 @@ String _buildWordJson(List<ExportWord> words) {
             'glossary': w.glossary,
             'sourceType': w.sourceType,
             'createdAt': w.createdAt.toIso8601String(),
+          })
+      .toList();
+  return const JsonEncoder.withIndent('  ').convert(list);
+}
+
+/// 把 [items] 按 [ExportMinedSentence.bookTitle] 分组（保持首次出现的书序）。
+Map<String, List<ExportMinedSentence>> _groupMinedByBook(
+  List<ExportMinedSentence> items,
+) {
+  final Map<String, List<ExportMinedSentence>> grouped =
+      <String, List<ExportMinedSentence>>{};
+  for (final ExportMinedSentence m in items) {
+    grouped.putIfAbsent(m.bookTitle, () => <ExportMinedSentence>[]).add(m);
+  }
+  return grouped;
+}
+
+/// 制卡句（含整句 + 词条/读音/释义）导出为指定格式的完整文件内容。
+///
+/// - Markdown：按书名分组（`## 书名` + 引用块整句 + 词条/读音/释义行），不带 BOM。
+/// - TXT：逐条纯文本，不带 BOM。
+/// - CSV：表头 + 每行（sentence,expression,reading,glossary,source,createdAt），
+///   默认带 UTF-8 BOM。
+/// - JSON：结构化数组，不带 BOM。
+String buildMinedExport(
+  List<ExportMinedSentence> items, {
+  required ExportFormat format,
+  bool csvBom = true,
+}) {
+  switch (format) {
+    case ExportFormat.markdown:
+      return _buildMinedMarkdown(items);
+    case ExportFormat.txt:
+      return _buildMinedTxt(items);
+    case ExportFormat.csv:
+      return _buildMinedCsv(items, csvBom: csvBom);
+    case ExportFormat.json:
+      return _buildMinedJson(items);
+  }
+}
+
+String _buildMinedMarkdown(List<ExportMinedSentence> items) {
+  final Map<String, List<ExportMinedSentence>> grouped =
+      _groupMinedByBook(items);
+  final StringBuffer buf = StringBuffer();
+  buf.writeln('# ${t.collection_export_mined_title}');
+  buf.writeln();
+  bool firstBook = true;
+  grouped.forEach((String bookTitle, List<ExportMinedSentence> group) {
+    if (!firstBook) buf.writeln();
+    firstBook = false;
+    buf.writeln('## $bookTitle');
+    buf.writeln();
+    for (final ExportMinedSentence m in group) {
+      if (m.sentence.isNotEmpty) {
+        for (final String line in const LineSplitter().convert(m.sentence)) {
+          buf.writeln('> $line');
+        }
+      }
+      final String head = m.reading.isEmpty
+          ? '**${m.expression}**'
+          : '**${m.expression}**（${m.reading}）';
+      buf.writeln('>');
+      buf.writeln('> $head');
+      if (m.glossary.isNotEmpty) {
+        for (final String line in const LineSplitter().convert(m.glossary)) {
+          buf.writeln('> - $line');
+        }
+      }
+      buf.writeln('>');
+      buf.writeln('> *${_formatDateTime(m.createdAt)}*');
+      buf.writeln();
+    }
+  });
+  return buf.toString().trimRight();
+}
+
+String _buildMinedTxt(List<ExportMinedSentence> items) {
+  final StringBuffer buf = StringBuffer();
+  for (final ExportMinedSentence m in items) {
+    if (m.sentence.isNotEmpty) buf.writeln(m.sentence);
+    final String head =
+        m.reading.isEmpty ? m.expression : '${m.expression}（${m.reading}）';
+    if (m.glossary.isEmpty) {
+      buf.writeln(head);
+    } else {
+      buf.writeln('$head\t${m.glossary.replaceAll('\n', ' ')}');
+    }
+  }
+  return buf.toString().trimRight();
+}
+
+String _buildMinedCsv(List<ExportMinedSentence> items, {required bool csvBom}) {
+  final StringBuffer buf = StringBuffer();
+  if (csvBom) buf.write(_utf8Bom);
+  buf.write(<String>[
+    'sentence',
+    'expression',
+    'reading',
+    'glossary',
+    'source',
+    'createdAt',
+  ].map(_csvEscape).join(','));
+  buf.write(_csvNewline);
+  for (final ExportMinedSentence m in items) {
+    buf.write(<String>[
+      m.sentence,
+      m.expression,
+      m.reading,
+      m.glossary,
+      m.source ?? '',
+      m.createdAt.toIso8601String(),
+    ].map(_csvEscape).join(','));
+    buf.write(_csvNewline);
+  }
+  return buf.toString();
+}
+
+String _buildMinedJson(List<ExportMinedSentence> items) {
+  final List<Map<String, dynamic>> list = items
+      .map((ExportMinedSentence m) => <String, dynamic>{
+            'sentence': m.sentence,
+            'expression': m.expression,
+            'reading': m.reading,
+            'glossary': m.glossary,
+            'bookTitle': m.bookTitle,
+            if (m.source != null) 'source': m.source,
+            'createdAt': m.createdAt.toIso8601String(),
           })
       .toList();
   return const JsonEncoder.withIndent('  ').convert(list);

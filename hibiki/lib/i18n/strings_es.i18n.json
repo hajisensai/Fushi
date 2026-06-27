@@ -1910,5 +1910,8 @@
   "lyrics_vertical_writing_hint": "Read lyrics top-to-bottom, right-to-left (independent of book mode)",
   "video_file_not_found": "Video file not found",
   "lyrics_blur": "Blur lyrics",
-  "lyrics_blur_hint": "Blur the current line for listening immersion; hover or tap to reveal"
+  "lyrics_blur_hint": "Blur the current line for listening immersion; hover or tap to reveal",
+  "collection_export_mined_title": "Mined Sentences",
+  "collection_export_scope": "Export scope",
+  "collection_export_all_mined": "All mined sentences"
 }

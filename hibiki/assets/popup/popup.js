@@ -1749,6 +1749,37 @@ function createAudioButton(expression, reading, entryIndex) {
     return button;
 }
 
+// 收藏按钮（☆/★）：切换收藏当前词条。书内阅读与视频共用同一套弹窗，故两表面
+// 都获得此按钮；落库/计入统计的来源由 Dart 侧 dictionarySourceType 决定。
+function createFavoriteButton(expression, reading) {
+    const button = el('button', {
+        className: 'favorite-button',
+        textContent: '☆',
+        onclick: async () => {
+            button.disabled = true;
+            try {
+                const nowFav = await window.flutter_inappwebview.callHandler(
+                    'favoriteEntry', { expression, reading });
+                button.textContent = nowFav ? '★' : '☆';
+                button.classList.toggle('favorited', !!nowFav);
+            } catch (e) {
+                // 收藏失败不能让按钮卡死，恢复可点状态并记日志。
+                console.error('favorite button: favoriteEntry failed', e);
+            } finally {
+                button.disabled = false;
+            }
+        }
+    });
+    // 初始状态：查询是否已收藏，设 ☆/★。
+    window.flutter_inappwebview.callHandler('favoriteCheck', { expression, reading })
+        .then(isFav => {
+            button.textContent = isFav ? '★' : '☆';
+            button.classList.toggle('favorited', !!isFav);
+        })
+        .catch(() => {});
+    return button;
+}
+
 function createKanjiBreakdown(expression) {
     const seen = new Set();
     const kanjiChars = [];
@@ -1818,6 +1849,8 @@ function createEntryHeader(entry, idx) {
     if (window.audioSources?.length) {
         buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
     }
+
+    buttonsContainer.appendChild(createFavoriteButton(expression, reading));
 
     // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
     // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.

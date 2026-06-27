@@ -224,4 +224,108 @@ void main() {
       expect(const LineSplitter().convert(csv).length, 1);
     });
   });
+
+  List<ExportMinedSentence> sampleMined() => <ExportMinedSentence>[
+        ExportMinedSentence(
+          sentence: '吾輩は猫である。',
+          expression: '猫',
+          reading: 'ねこ',
+          glossary: 'cat',
+          bookTitle: '吾輩は猫である',
+          source: 'book',
+          createdAt: DateTime(2026, 6, 20, 9, 5),
+        ),
+        ExportMinedSentence(
+          sentence: 'カンマ, と "引用" を含む',
+          expression: '引用',
+          reading: 'いんよう',
+          glossary: 'quote',
+          bookTitle: '吾輩は猫である',
+          source: 'book',
+          createdAt: DateTime(2026, 6, 21, 10, 30),
+        ),
+      ];
+
+  group('buildMinedExport', () {
+    test('BOM 仅 CSV 带，其它格式不带', () {
+      final List<ExportMinedSentence> m = sampleMined();
+      expect(buildMinedExport(m, format: ExportFormat.csv).startsWith(bom),
+          isTrue);
+      expect(
+          buildMinedExport(m, format: ExportFormat.csv, csvBom: false)
+              .startsWith(bom),
+          isFalse);
+      expect(buildMinedExport(m, format: ExportFormat.json).startsWith(bom),
+          isFalse);
+      expect(buildMinedExport(m, format: ExportFormat.markdown).startsWith(bom),
+          isFalse);
+      expect(buildMinedExport(m, format: ExportFormat.txt).startsWith(bom),
+          isFalse);
+    });
+
+    test('csv 表头 + 逗号/引号字段转义', () {
+      final String csv = buildMinedExport(
+        sampleMined(),
+        format: ExportFormat.csv,
+        csvBom: false,
+      );
+      final List<String> lines = const LineSplitter().convert(csv);
+      expect(
+          lines.first, 'sentence,expression,reading,glossary,source,createdAt');
+      // 含逗号与引号的整句必须被双引号包裹且内部引号翻倍。
+      expect(csv, contains('"カンマ, と ""引用"" を含む"'));
+    });
+
+    test('json 含 sentence + expression/reading/glossary', () {
+      final String json =
+          buildMinedExport(sampleMined(), format: ExportFormat.json);
+      final List<dynamic> list = jsonDecode(json) as List<dynamic>;
+      expect(list, hasLength(2));
+      final Map<String, dynamic> first = list.first as Map<String, dynamic>;
+      expect(first['sentence'], '吾輩は猫である。');
+      expect(first['expression'], '猫');
+      expect(first['reading'], 'ねこ');
+      expect(first['glossary'], 'cat');
+      expect(first['source'], 'book');
+    });
+
+    test('markdown 按 bookTitle 分组并含整句引用块', () {
+      final String md =
+          buildMinedExport(sampleMined(), format: ExportFormat.markdown);
+      expect(md, contains('## 吾輩は猫である'));
+      expect(md, contains('> 吾輩は猫である。'));
+      expect(md, contains('**猫**（ねこ）'));
+    });
+
+    test('空列表', () {
+      expect(
+          buildMinedExport(<ExportMinedSentence>[], format: ExportFormat.txt),
+          isEmpty);
+      expect(
+          jsonDecode(buildMinedExport(<ExportMinedSentence>[],
+              format: ExportFormat.json)),
+          isEmpty);
+      final String csv = buildMinedExport(
+        <ExportMinedSentence>[],
+        format: ExportFormat.csv,
+        csvBom: false,
+      );
+      expect(const LineSplitter().convert(csv).length, 1);
+    });
+
+    test('documentTitle 空时调用方回退占位（bookTitle 恒非空）', () {
+      // 载体的 bookTitle 是 required 非空：模拟调用方对空 documentTitle 的回退。
+      final ExportMinedSentence m = ExportMinedSentence(
+        sentence: 's',
+        expression: 'e',
+        reading: '',
+        glossary: '',
+        bookTitle: t.collection_export_mined_title,
+        createdAt: DateTime(2026, 6, 20),
+      );
+      final String md = buildMinedExport(<ExportMinedSentence>[m],
+          format: ExportFormat.markdown);
+      expect(md, contains('## ${t.collection_export_mined_title}'));
+    });
+  });
 }

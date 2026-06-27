@@ -1,0 +1,16 @@
+## BUG-444 · 收藏词导出为空+制卡句缺失
+- **报告**：2026-06-28（用户：）
+- **真实性**：✅ 真 bug。
+  - ① 全部收藏词导出为空：`894fe165d`（修 BUG-123 的同一 commit）顺手删了 `hibiki/assets/popup/popup.js` 的 ☆ 收藏词按钮（`createFavoriteButton`）→ `FavoriteWords` 表没了 JS 端写入入口 → `getAllFavoriteWords()`（`packages/hibiki_core/lib/src/database/database.dart:1790`）恒空。Dart 写入全链（webview handler `dictionary_popup_webview.dart:904/928` → layer → mixin `dictionary_page_mixin.dart:264` `onFavoriteEntry`/`onFavoriteCheck` → `addFavoriteWord`）完好，唯一缺口是 JS 不再调桥。与 BUG-123/125 的竖排选区 ruby 高亮（`reader_content_styles.dart`）零耦合。
+  - ② 没有导出制卡句：`MinedSentences`（`getAllMinedSentences` `database.dart:1907`，含 sentence+expression/reading/glossary）从未进 `hibiki/lib/src/utils/misc/collection_exporter.dart` 导出管线。
+  - ③ 导出抽屉裸 `showModalBottomSheet` + 手写 `Padding(16)`/`RadioListTile`，没走项目 MD3 范式。
+- **[x] ① 已修复** — commit `32e9212435`
+  - 任务1：`popup.js` 复活 `createFavoriteButton`（self-contained，调 `favoriteEntry`/`favoriteCheck` 桥，try/catch+finally 防卡死）+ `popup.css` 复活 `.favorite-button*` 样式。
+  - 任务2：`collection_exporter.dart` 新增 `ExportMinedSentence` 载体 + `buildMinedExport`（md/txt/csv带BOM/json 四格式）；`collections_page.dart` `_ExportKind` 加 `allMined`、新增 `_exportAllMined`（读 `getAllMinedSentences`）、门控放开为 `_hasExportableItems`（收藏句或制卡句任一）。
+  - 任务3：`_ExportSheet` 外壳改 `HibikiModalSheetFrame` + `HibikiDesignTokens`，范围三态（全部制卡句/全部收藏词/收藏句按书），格式 ChoiceChip，焦点驱动可达。
+- **[x] ② 已加自动化测试** — commit `32e9212435`
+  - 反向守卫反转：`hibiki/test/pages/favorite_button_wiring_static_test.dart` 前 3 个 test 由「不得含 ☆ 按钮」反转为正向（必须含 `createFavoriteButton` + 调 `favoriteEntry`/`favoriteCheck` + `.favorite-button` 样式）。
+  - 纯函数：`hibiki/test/utils/collection_exporter_test.dart` 扩 `buildMinedExport` 四格式（CSV 带 BOM/逗号引号转义、JSON 不带 BOM 含整句、空列表、documentTitle 空回退占位）。
+  - widget（焦点驱动）：`hibiki/test/pages/collections_export_test.dart` 加「仅有制卡句时导出按钮仍显示」+「getAllMinedSentences 非空 → buildMinedExport 非空」。
+  - 源码守卫：`hibiki/test/pages/collections_export_mined_guard_test.dart`（popup.js 含 favoriteEntry+createFavoriteButton；collections_page 经 getAllMinedSentences 导出 + `HibikiModalSheetFrame`/`HibikiDesignTokens` + `_ExportKind` 含 allMined；不回归 BUG-123/125 的 ruby class 分流机制）。
+- **备注**：BUG-123 真实修复在 `reader_content_styles.dart`（竖排选区 ruby class 分流，rt/rp 不透明遮罩后被 BUG-125 删除），复活 ☆ 与之无耦合，`ruby_highlight_guard_test.dart` 不动且仍绿。采番：bug.dart 在本 worktree 取 442，但 442/443 已被其它 worktree 分支占用，手动改为 444（高于全局最大 443）防合并撞号。

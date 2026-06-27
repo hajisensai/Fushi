@@ -9,6 +9,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
+import 'package:hibiki/src/utils/misc/collection_exporter.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -166,5 +167,83 @@ void main() {
     expect(find.text('Markdown'), findsOneWidget);
     expect(find.text('CSV'), findsOneWidget);
     expect(find.text('JSON'), findsOneWidget);
+  });
+
+  Future<void> seedMined({
+    required String expression,
+    required String sentence,
+    required String source,
+    String? documentTitle,
+  }) {
+    return db.addMinedSentence(
+      source: source,
+      dateKey: '2026-06-28',
+      expression: expression,
+      reading: '',
+      glossary: 'gloss',
+      sentence: sentence,
+      documentTitle: documentTitle,
+    );
+  }
+
+  testWidgets(
+      'gating: export button shows when only mined sentences exist '
+      '(no favorite sentences)', (WidgetTester tester) async {
+    await seedMined(
+      expression: '猫',
+      sentence: '吾輩は猫である。',
+      source: 'book',
+      documentTitle: '吾輩は猫である',
+    );
+
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+
+    // 仅有制卡句、无收藏句时导出按钮仍显示（TODO-913 放开门控）。
+    expect(exportButton(), findsOneWidget);
+  });
+
+  testWidgets(
+      'all-mined export path: getAllMinedSentences non-empty yields non-empty '
+      'export content', (WidgetTester tester) async {
+    await seedMined(
+      expression: '猫',
+      sentence: '吾輩は猫である。',
+      source: 'book',
+      documentTitle: '吾輩は猫である',
+    );
+    await seedMined(
+      expression: 'メロス',
+      sentence: '走れメロス。',
+      source: 'video',
+      documentTitle: null,
+    );
+
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+
+    // 数据源非空 → 导出管线产出非空内容（buildMinedExport 走真实纯函数）。
+    final List<MinedSentenceRow> rows = await db.getAllMinedSentences();
+    expect(rows, hasLength(2));
+    final List<ExportMinedSentence> items = rows
+        .map((MinedSentenceRow r) => ExportMinedSentence(
+              sentence: r.sentence,
+              expression: r.expression,
+              reading: r.reading,
+              glossary: r.glossary,
+              bookTitle:
+                  (r.documentTitle != null && r.documentTitle!.isNotEmpty)
+                      ? r.documentTitle!
+                      : t.collection_export_mined_title,
+              source: r.source,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+            ))
+        .toList();
+    final String content =
+        buildMinedExport(items, format: ExportFormat.markdown);
+    expect(content, isNotEmpty);
+    expect(content, contains('吾輩は猫である。'));
+    // documentTitle 为空的视频条回退到占位标题。
+    expect(content, contains(t.collection_export_mined_title));
   });
 }

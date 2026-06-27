@@ -1910,5 +1910,8 @@
   "lyrics_vertical_writing_hint": "歌词竖排显示，从右到左（独立于书本模式）",
   "video_file_not_found": "找不到视频文件",
   "lyrics_blur": "模糊歌词",
-  "lyrics_blur_hint": "听力沉浸：模糊当前句，悬停或点击显形"
+  "lyrics_blur_hint": "听力沉浸：模糊当前句，悬停或点击显形",
+  "collection_export_mined_title": "制卡语句",
+  "collection_export_scope": "导出范围",
+  "collection_export_all_mined": "全部制卡句"
 }

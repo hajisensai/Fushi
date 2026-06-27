@@ -634,10 +634,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     });
   }
 
-  /// 当前列表中是否存在收藏句条目（TODO-829）。AppBar 的「导出」按钮仅在为真时显示
-  /// （没有收藏句就没有可导出内容——收藏词单独由导出面板内的全部导出处理）。
-  bool get _hasExportableSentences =>
-      _items.any((item) => item.type == _CollectionType.sentence);
+  /// 当前列表中是否存在可导出条目（收藏句或制卡句任一存在即显示，TODO-913）。
+  /// AppBar 的「导出」按钮仅在为真时显示；收藏词单独由导出面板内的全部导出处理。
+  bool get _hasExportableItems => _items.any((item) =>
+      item.type == _CollectionType.sentence ||
+      item.type == _CollectionType.mined);
 
   /// 把当前列表里的收藏句转成导出载体（按 bookTitle 分组、来源透传）。
   List<ExportSentence> _favoriteSentencesForExport() => _items
@@ -668,11 +669,53 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     );
     if (choice == null || !mounted) return;
 
-    if (choice.kind == _ExportKind.sentencesByBook) {
-      await _exportSentencesForBook(choice.bookTitle!, choice.format);
-    } else {
-      await _exportAllWords(choice.format);
+    switch (choice.kind) {
+      case _ExportKind.sentencesByBook:
+        await _exportSentencesForBook(choice.bookTitle!, choice.format);
+      case _ExportKind.allWords:
+        await _exportAllWords(choice.format);
+      case _ExportKind.allMined:
+        await _exportAllMined(choice.format);
     }
+  }
+
+  /// 导出全部制卡句（含整句 + 词条/读音/释义，TODO-913）。
+  Future<void> _exportAllMined(ExportFormat format) async {
+    final List<MinedSentenceRow> rows =
+        await appModel.database.getAllMinedSentences();
+    if (!mounted) return;
+    if (rows.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.collection_export_no_items)),
+      );
+      return;
+    }
+    final List<ExportMinedSentence> items = rows
+        .map((r) => ExportMinedSentence(
+              sentence: r.sentence,
+              expression: r.expression,
+              reading: r.reading,
+              glossary: r.glossary,
+              bookTitle:
+                  (r.documentTitle != null && r.documentTitle!.isNotEmpty)
+                      ? r.documentTitle!
+                      : t.collection_export_mined_title,
+              source: r.source,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+            ))
+        .toList();
+    final String content = buildMinedExport(items, format: format);
+    final ExportFileMeta meta = exportFileMeta(format);
+    final String fileName =
+        '${_sanitizeFileName(t.collection_export_mined_title)}.${meta.extension}';
+    if (!mounted) return;
+    await saveOrShareExport(
+      context: context,
+      content: content,
+      fileName: fileName,
+      mimeType: meta.mimeType,
+      subject: t.collection_export_mined_title,
+    );
   }
 
   /// 导出某本书的收藏句。
@@ -831,7 +874,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       title: t.collections,
       actions: <Widget>[
         // TODO-829: 仅当存在收藏句条目时显示「导出/分享」。
-        if (!_loading && _hasExportableSentences)
+        if (!_loading && _hasExportableItems)
           HibikiIconButton(
             tooltip: t.dialog_export,
             icon: Icons.ios_share_outlined,
@@ -1152,8 +1195,8 @@ class CollectionDeleteDialog extends StatelessWidget {
   }
 }
 
-/// 导出目标种类（TODO-829）。
-enum _ExportKind { sentencesByBook, allWords }
+/// 导出目标种类（TODO-829 + TODO-913 allMined）。
+enum _ExportKind { allMined, allWords, sentencesByBook }
 
 /// 导出面板的选择结果。
 class _ExportChoice {
@@ -1170,9 +1213,11 @@ class _ExportChoice {
   final String? bookTitle;
 }
 
-/// 导出面板（TODO-829）：选目标（按书的收藏句 / 全部收藏词）+ 选格式（默认 Markdown）
-/// → 确认返回 [_ExportChoice]。焦点驱动可达：所有可选项是 [RadioListTile]，格式是
-/// [ChoiceChip]，确认是 [FilledButton]，Tab 可遍历、Enter 可确认。
+/// 导出面板（TODO-829 + TODO-913 MD3 重做）：选导出范围（全部制卡句 / 全部收藏词 /
+/// 收藏句按书）+ 选格式（默认 Markdown）→ 确认返回 [_ExportChoice]。外壳走
+/// [HibikiModalSheetFrame] + [HibikiDesignTokens]（与同文件 [CollectionItemDialogFrame]
+/// 一致）。焦点驱动可达：范围是 [RadioListTile]（Tab + 方向键 / Enter），格式是
+/// [ChoiceChip]，确认是 [FilledButton]（Tab → Enter）。
 class _ExportSheet extends StatefulWidget {
   const _ExportSheet({required this.bookTitles});
 
@@ -1183,7 +1228,10 @@ class _ExportSheet extends StatefulWidget {
 }
 
 class _ExportSheetState extends State<_ExportSheet> {
-  // 目标：null 表示「全部收藏词」，否则为书名。
+  // 范围三态：全部制卡句 / 全部收藏词 / 收藏句按书；按书时取 _targetBookTitle。
+  late _ExportKind _scope = widget.bookTitles.isNotEmpty
+      ? _ExportKind.sentencesByBook
+      : _ExportKind.allMined;
   late String? _targetBookTitle =
       widget.bookTitles.isNotEmpty ? widget.bookTitles.first : null;
   ExportFormat _format = ExportFormat.markdown;
@@ -1196,91 +1244,140 @@ class _ExportSheetState extends State<_ExportSheet> {
   };
 
   void _confirm() {
-    final _ExportChoice choice = _targetBookTitle == null
-        ? _ExportChoice(kind: _ExportKind.allWords, format: _format)
-        : _ExportChoice(
+    final _ExportChoice choice = _scope == _ExportKind.sentencesByBook
+        ? _ExportChoice(
             kind: _ExportKind.sentencesByBook,
             format: _format,
             bookTitle: _targetBookTitle,
-          );
+          )
+        : _ExportChoice(kind: _scope, format: _format);
     Navigator.pop(context, choice);
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                t.dialog_export,
-                style: Theme.of(context).textTheme.titleMedium,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final EdgeInsets sectionPad = EdgeInsets.symmetric(
+      horizontal: tokens.spacing.card,
+    );
+
+    return HibikiModalSheetFrame(
+      title: t.dialog_export,
+      maxHeightFactor: 0.82,
+      scrollable: true,
+      bodyPadding: EdgeInsets.fromLTRB(
+        0,
+        tokens.spacing.gap,
+        0,
+        tokens.spacing.gap,
+      ),
+      footerPadding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        tokens.spacing.card,
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // ── 导出范围 ──
+          Padding(
+            padding: sectionPad,
+            child: Text(
+              t.collection_export_scope,
+              style: tokens.type.listSubtitle.copyWith(
+                fontWeight: FontWeight.w600,
               ),
             ),
-            // ── 收藏句（按书） ──
-            if (widget.bookTitles.isNotEmpty) ...<Widget>[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  t.collection_export_pick_book,
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
+          ),
+          RadioListTile<_ExportKind>(
+            value: _ExportKind.allMined,
+            groupValue: _scope,
+            onChanged: (_ExportKind? v) => setState(() => _scope = v ?? _scope),
+            title: Text(t.collection_export_all_mined),
+          ),
+          RadioListTile<_ExportKind>(
+            value: _ExportKind.allWords,
+            groupValue: _scope,
+            onChanged: (_ExportKind? v) => setState(() => _scope = v ?? _scope),
+            title: Text(t.collection_export_all_words),
+          ),
+          if (widget.bookTitles.isNotEmpty)
+            RadioListTile<_ExportKind>(
+              value: _ExportKind.sentencesByBook,
+              groupValue: _scope,
+              onChanged: (_ExportKind? v) =>
+                  setState(() => _scope = v ?? _scope),
+              title: Text(t.collection_export_sentences_title),
+            ),
+          // 选「收藏句按书」时展开书名子单选。
+          if (_scope == _ExportKind.sentencesByBook &&
+              widget.bookTitles.isNotEmpty) ...<Widget>[
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
               ),
-              for (final String title in widget.bookTitles)
-                RadioListTile<String?>(
+              child: Text(
+                t.collection_export_pick_book,
+                style: tokens.type.listSubtitle,
+              ),
+            ),
+            for (final String title in widget.bookTitles)
+              Padding(
+                padding: EdgeInsets.only(left: tokens.spacing.card),
+                child: RadioListTile<String?>(
                   value: title,
                   groupValue: _targetBookTitle,
                   onChanged: (String? v) =>
                       setState(() => _targetBookTitle = v),
                   title: Text(title, maxLines: 2),
                 ),
-            ],
-            // ── 全部收藏词 ──
-            RadioListTile<String?>(
-              value: null,
-              groupValue: _targetBookTitle,
-              onChanged: (String? v) => setState(() => _targetBookTitle = v),
-              title: Text(t.collection_export_all_words),
-            ),
-            const Divider(),
-            // ── 格式 ──
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                t.collection_export_format,
-                style: Theme.of(context).textTheme.labelLarge,
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Wrap(
-                spacing: 8,
-                children: <Widget>[
-                  for (final ExportFormat f in ExportFormat.values)
-                    ChoiceChip(
-                      label: Text(_formatLabels[f]!),
-                      selected: _format == f,
-                      onSelected: (_) => setState(() => _format = f),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.ios_share_outlined, size: 18),
-                  label: Text(t.dialog_export),
-                  onPressed: _confirm,
-                ),
-              ),
-            ),
           ],
+          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+          SizedBox(height: tokens.spacing.gap),
+          // ── 格式 ──
+          Padding(
+            padding: sectionPad,
+            child: Text(
+              t.collection_export_format,
+              style: tokens.type.listSubtitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              0,
+            ),
+            child: Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                for (final ExportFormat f in ExportFormat.values)
+                  ChoiceChip(
+                    label: Text(_formatLabels[f]!),
+                    selected: _format == f,
+                    onSelected: (_) => setState(() => _format = f),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          icon: const Icon(Icons.ios_share_outlined, size: 18),
+          label: Text(t.dialog_export),
+          onPressed: _confirm,
         ),
       ),
     );

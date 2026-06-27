@@ -172,6 +172,7 @@ html {
 }
 
 .audio-button,
+.favorite-button,
 .mine-button {
     padding: 0 4px;
     border: none;
@@ -180,6 +181,15 @@ html {
     font-size: 18px;
     opacity: 0.5;
     -webkit-user-select: none;
+}
+
+.favorite-button.favorited {
+    opacity: 1;
+    color: #f5a623;
+}
+
+.favorite-button:disabled {
+    opacity: 0.15;
 }
 
 .mine-button.duplicate {

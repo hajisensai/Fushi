@@ -2,21 +2,31 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-// 收藏按钮已按用户要求从查词弹窗移除（音频按钮旁 / 加号旁的「☆/★」）。
-// 这里改成「不得回归」的负向守卫：popup.js 不再渲染收藏按钮，popup.css 不再保留其样式。
-// 后端 favoriteEntry/favoriteCheck 接线（webview handler→layer→mixin→视频来源覆写）
-// 仍保留供其它入口（收藏夹页）使用，故下方接线守卫继续校验后端未断链。
+// 收藏按钮（音频按钮旁的「☆/★」）曾被 894fe165d 顺手删除，导致 FavoriteWords 表
+// 没有写入入口、getAllFavoriteWords 恒空、收藏夹「全部收藏词」导出为空（TODO-913）。
+// 已复活：与 BUG-123（reader_content_styles.dart 竖排选区 rt/rp 遮罩）无任何耦合，
+// 复活 ☆ 不回归 BUG-123（ruby_highlight_guard_test.dart 仍绿）。
+// 这里改成正向守卫：popup.js 必须渲染收藏按钮并调 favoriteEntry/favoriteCheck 桥，
+// popup.css 必须保留其样式；下方接线守卫继续校验后端未断链。
 void main() {
-  test('popup.js 不再渲染收藏按钮', () {
+  test('popup.js 渲染收藏按钮并接 favoriteEntry / favoriteCheck 桥', () {
     final String js = File('assets/popup/popup.js').readAsStringSync();
-    expect(js, isNot(contains('createFavoriteButton')), reason: '收藏按钮工厂应已删除');
-    expect(js, isNot(contains("className: 'favorite-button'")),
-        reason: '不应再创建 favorite-button 元素');
+    expect(js, contains('createFavoriteButton'), reason: '收藏按钮工厂必须存在');
+    expect(js, contains("className: 'favorite-button'"),
+        reason: '必须创建 favorite-button 元素');
+    expect(js, contains("'favoriteEntry'"),
+        reason: '点击应调 favoriteEntry 桥写入 FavoriteWords');
+    expect(js, contains("callHandler('favoriteCheck'"),
+        reason: '初始态应查 favoriteCheck 设 ☆/★');
+    expect(js, contains('buttonsContainer.appendChild(createFavoriteButton('),
+        reason: '收藏按钮要挂进词条头');
   });
 
-  test('popup.css 不再保留 .favorite-button 样式', () {
+  test('popup.css 保留 .favorite-button 样式', () {
     final String css = File('assets/popup/popup.css').readAsStringSync();
-    expect(css, isNot(contains('.favorite-button')), reason: '收藏按钮样式应已删除');
+    expect(css, contains('.favorite-button'), reason: '收藏按钮样式必须存在');
+    expect(css, contains('.favorite-button.favorited'),
+        reason: '已收藏态（★ 金色）样式必须存在');
   });
 
   test('后端仍注册 favoriteEntry / favoriteCheck handler（供收藏夹页等其它入口）', () {
