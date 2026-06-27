@@ -537,24 +537,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 SliverToBoxAdapter(
                   child: _buildRemoteBookSection(remoteState, constraints),
                 ),
-              if (srtBooks.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                    child: _buildSectionHeader(t.srt_books_section)),
-                SliverPadding(
-                  padding: EdgeInsets.zero,
-                  sliver: SliverGrid.builder(
-                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: _gridExtent(context, constraints),
-                      childAspectRatio: kShelfBookCardAspectRatio,
-                    ),
-                    itemCount: srtBooks.length,
-                    itemBuilder: (_, i) => _buildSrtCard(
-                      srtBooks[i],
-                      epubCoverUri: epubCoverUrisByBookKey[srtBooks[i].bookKey],
-                    ),
+              // TODO-902: 不再渲染 srt_books_section 分区头，SRT 卡直接进网格。
+              if (srtBooks.isNotEmpty)
+                SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: _gridExtent(context, constraints),
+                    childAspectRatio: kShelfBookCardAspectRatio,
+                  ),
+                  itemCount: srtBooks.length,
+                  itemBuilder: (_, i) => _buildSrtCard(
+                    srtBooks[i],
+                    epubCoverUri: epubCoverUrisByBookKey[srtBooks[i].bookKey],
                   ),
                 ),
-              ],
               SliverToBoxAdapter(
                 child: Padding(
                   padding:
@@ -589,24 +584,24 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               SliverToBoxAdapter(
                 child: _buildRemoteBookSection(remoteState, constraints),
               ),
-            if (srtBooks.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                  child: _buildSectionHeader(t.srt_books_section)),
-              SliverPadding(
-                padding: EdgeInsets.zero,
-                sliver: SliverGrid.builder(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: _gridExtent(context, constraints),
-                    childAspectRatio: kShelfBookCardAspectRatio,
-                  ),
-                  itemCount: srtBooks.length,
-                  itemBuilder: (_, i) => _buildSrtCard(
-                    srtBooks[i],
-                    epubCoverUri: epubCoverUrisByBookKey[srtBooks[i].bookKey],
-                  ),
+            // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+            // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+            // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频仍是独立分区。
+            if (srtBooks.isNotEmpty || epubBooks.isNotEmpty)
+              SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: _gridExtent(context, constraints),
+                  childAspectRatio: kShelfBookCardAspectRatio,
                 ),
+                itemCount: srtBooks.length + epubBooks.length,
+                itemBuilder: (_, i) => i < srtBooks.length
+                    ? _buildSrtCard(
+                        srtBooks[i],
+                        epubCoverUri:
+                            epubCoverUrisByBookKey[srtBooks[i].bookKey],
+                      )
+                    : buildMediaItem(epubBooks[i - srtBooks.length]),
               ),
-            ],
             if (videoBooks.isNotEmpty) ...[
               SliverToBoxAdapter(
                   child: _buildSectionHeader(t.shelf_video_section)),
@@ -618,18 +613,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 ),
                 itemCount: videoBooks.length,
                 itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
-              ),
-            ],
-            if (epubBooks.isNotEmpty) ...[
-              if (srtBooks.isNotEmpty || videoBooks.isNotEmpty)
-                SliverToBoxAdapter(child: _buildSectionHeader(t.section_epub)),
-              SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: _gridExtent(context, constraints),
-                  childAspectRatio: kShelfBookCardAspectRatio,
-                ),
-                itemCount: epubBooks.length,
-                itemBuilder: (_, i) => buildMediaItem(epubBooks[i]),
               ),
             ],
           ],
