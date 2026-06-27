@@ -125,15 +125,43 @@ void main() {
     late String host;
     setUpAll(() => host = read('assets/popup/global_lookup_host.js'));
 
-    test('shell carries the hoshi card border + radius + drop shadow', () {
+    test('shell carries ONLY the radius + drop shadow (TODO-893: no border)',
+        () {
+      // TODO-893 symptom 1 — RESPONSIBILITY SPLIT. The single visible card
+      // border belongs to the iframe (popup.css `html.global-lookup body`); the
+      // shell must NOT draw a second border (that produced two concentric grey
+      // rings with a white gap = the reported "white frame"). The shell keeps
+      // the radius (so the shadow + overflow clip follow the rounded card) and
+      // the drop-shadow the iframe element cannot cast.
       expect(host.contains('.global-lookup-frame-shell{'), isTrue);
-      expect(host.contains('border:1px solid rgba(120,120,128,0.36)'), isTrue,
-          reason: 'hoshi shell border spec');
       expect(host.contains('border-radius:10px'), isTrue,
-          reason: 'hoshi 10px card radius');
+          reason: 'hoshi 10px card radius (drives shadow + clip silhouette)');
       expect(host.contains('box-shadow:0 3px 12px rgba(0,0,0,0.22)'), isTrue,
           reason:
               'hoshi drop shadow (renders inside the enlarged bbox window)');
+    });
+
+    test('shell draws NO solid border (single border lives on the iframe body)',
+        () {
+      // The fix is exactly the removal of the shell border. Lock it so a later
+      // edit cannot reintroduce the double-border. The border lives ONLY in
+      // popup.css `html.global-lookup body` now.
+      expect(host.contains('border:1px solid rgba(120,120,128,0.36)'), isFalse,
+          reason: 'shell border was the double-border main cause; it is gone');
+      expect(host.contains('border-color:rgba(255,255,255,0.34)'), isFalse,
+          reason: 'the dark shell border-color override is gone too');
+    });
+
+    test('the SINGLE border lives on the iframe body (popup.css), not doubled',
+        () {
+      final String css = read('assets/popup/popup.css');
+      // popup.css owns the one visible border.
+      expect(css.contains('html.global-lookup body {'), isTrue);
+      final int bodyAt = css.indexOf('html.global-lookup body {');
+      final String bodyRule = css.substring(bodyAt, css.indexOf('}', bodyAt));
+      expect(bodyRule.contains('border: 1px solid rgba(120, 120, 128, 0.36)'),
+          isTrue,
+          reason: 'the iframe body owns the one visible card border');
     });
 
     test('shell background stays transparent (iframe paints the card fill)',
@@ -141,9 +169,8 @@ void main() {
       // The iframe (popup.html) already paints the THEME background + the
       // html.global-lookup body border, so the shell must NOT add a second fill.
       // The chrome rule is the .global-lookup-frame-shell block carrying the
-      // border (the first such block is the D1 reveal-gate visibility rule).
-      final int chromeAt =
-          host.indexOf('border:1px solid rgba(120,120,128,0.36)');
+      // radius (the first such block is the D1 reveal-gate visibility rule).
+      final int chromeAt = host.indexOf('border-radius:10px');
       final int ruleStart =
           host.lastIndexOf('.global-lookup-frame-shell{', chromeAt);
       final String rule =

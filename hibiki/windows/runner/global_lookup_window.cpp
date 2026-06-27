@@ -427,6 +427,24 @@ void GlobalLookupWindow::EnsureWebView() {
                       controller_ = ctrl;
                       controller_->get_CoreWebView2(&webview_);
                       controller_->put_IsVisible(TRUE);
+                      // TODO-893 — paint the WebView2 composition surface
+                      // TRANSPARENT (symptom 1, white-background half). The
+                      // default DefaultBackgroundColor is opaque white, so the
+                      // area OUTSIDE the rounded card shell (the host document
+                      // has no body background of its own) shows as a hard white
+                      // box — most visible once E1 enlarges the window into the
+                      // cascade bounding box, where the white shows around the
+                      // shell. ICoreWebView2Controller2::put_DefaultBackgroundColor
+                      // with A=0 makes the surface transparent so only the shell
+                      // (its theme card fill) paints. Available since WebView2
+                      // 1.0.774+ (well below our SDK floor); a no-op if the
+                      // interface is absent on an ancient runtime.
+                      wil::com_ptr<ICoreWebView2Controller2> controller2;
+                      if (SUCCEEDED(controller_->QueryInterface(
+                              IID_PPV_ARGS(&controller2)))) {
+                        COREWEBVIEW2_COLOR transparent = {0, 0, 0, 0};
+                        controller2->put_DefaultBackgroundColor(transparent);
+                      }
                       RECT rc;
                       GetClientRect(hwnd_, &rc);
                       controller_->put_Bounds(rc);

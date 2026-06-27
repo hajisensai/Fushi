@@ -587,9 +587,11 @@ function flushTimers() {
     'a re-measure with an unchanged bbox is de-duped (no thrash / no loop)');
 }
 
-// 16. F2 shell chrome: the injected gate <style> also carries the hoshi outer
-//     shell border + radius + drop shadow, transparent background (the iframe
-//     paints the card fill), and a dark-variant border keyed on data-theme.
+// 16. F2 shell chrome: the injected gate <style> carries ONLY the hoshi radius +
+//     drop shadow, transparent background (the iframe paints the card fill + the
+//     single visible border), and a dark-variant shadow keyed on data-theme.
+//     TODO-893 symptom 1: the shell must NOT draw a second border (the
+//     double-border / "white frame"); the one border lives on the iframe body.
 {
   const { host, document } = freshHost();
   host.renderStack({ popups: [descriptor('frame-0', -1)] });
@@ -597,8 +599,9 @@ function flushTimers() {
   assert.ok(style, 'gate/shell <style> injected');
   const css = style.textContent;
   assert.ok(/\.global-lookup-frame-shell\{/.test(css), 'shell rule present');
-  assert.ok(/border:1px solid rgba\(120,120,128,0\.36\)/.test(css),
-    'hoshi shell border spec');
+  assert.ok(!/border:1px solid rgba\(120,120,128,0\.36\)/.test(css),
+    'TODO-893: shell must NOT draw a border (single border lives on the iframe '
+    + 'body) — this was the double-border main cause');
   assert.ok(/border-radius:10px/.test(css), 'hoshi 10px card radius');
   assert.ok(/box-shadow:0 3px 12px rgba\(0,0,0,0\.22\)/.test(css),
     'hoshi drop shadow');

@@ -16,6 +16,27 @@ import 'package:hibiki/src/utils/misc/channel_constants.dart';
 
 /// Thin wrapper over [HibikiChannels.globalLookup]. Static because there is a
 /// single overlay per process.
+/// Native reply for [GlobalLookupChannel.showAt]: window-created flag plus the
+/// cursor monitor's work area in PHYSICAL px (0 when unavailable). Divide the
+/// work dimensions by the device pixel ratio to get CSS px for the cascade
+/// layout (TODO-893 symptom 2).
+class GlobalLookupShowResult {
+  const GlobalLookupShowResult({
+    required this.ok,
+    required this.workWidth,
+    required this.workHeight,
+  });
+
+  /// Whether the native overlay window was created.
+  final bool ok;
+
+  /// Cursor monitor work-area width in PHYSICAL px (0 when unavailable).
+  final double workWidth;
+
+  /// Cursor monitor work-area height in PHYSICAL px (0 when unavailable).
+  final double workHeight;
+}
+
 abstract final class GlobalLookupChannel {
   static const MethodChannel _channel = HibikiChannels.globalLookup;
 
@@ -28,23 +49,39 @@ abstract final class GlobalLookupChannel {
       });
 
   /// Shows the overlay at screen coordinates (physical pixels) without stealing
-  /// focus. Returns false if the native window could not be created.
-  static Future<bool> showAt({
+  /// focus. Returns the native reply: whether the window was created plus the
+  /// cursor monitor's work area in PHYSICAL px (TODO-893 — so the Dart cascade
+  /// layout reasons about the real display, not the off-screen measurement
+  /// canvas). `workW`/`workH` are 0 when the monitor could not be queried.
+  static Future<GlobalLookupShowResult> showAt({
     required int x,
     required int y,
     int width = 420,
     int height = 600,
     bool atCursor = false,
   }) async {
-    final bool? ok =
-        await _channel.invokeMethod<bool>('showAt', <String, Object?>{
+    final Object? reply =
+        await _channel.invokeMethod<Object?>('showAt', <String, Object?>{
       'x': x,
       'y': y,
       'width': width,
       'height': height,
       'atCursor': atCursor,
     });
-    return ok ?? false;
+    if (reply is Map) {
+      double num2(Object? v) => (v is num) ? v.toDouble() : 0;
+      return GlobalLookupShowResult(
+        ok: reply['ok'] == true,
+        workWidth: num2(reply['workW']),
+        workHeight: num2(reply['workH']),
+      );
+    }
+    // Legacy/native fallback (bool reply): no work-area reported.
+    return GlobalLookupShowResult(
+      ok: reply == true,
+      workWidth: 0,
+      workHeight: 0,
+    );
   }
 
   /// Injects [popupJson] and calls window.renderPopup() in the overlay WebView.

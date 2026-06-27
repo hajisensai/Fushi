@@ -676,11 +676,13 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "showAt") {
           int x = IntFromValue(args, "x", 0);
           int y = IntFromValue(args, "y", 0);
+          POINT cursor = {x, y};
           if (BoolFromValue(args, "atCursor", false)) {
             // GetCursorPos returns physical screen pixels, matching
             // CreateWindowEx — no logical/physical DPI mismatch.
             POINT pt;
             if (GetCursorPos(&pt)) {
+              cursor = pt;
               x = pt.x + 8;
               y = pt.y + 8;
             }
@@ -688,7 +690,31 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           const bool ok = global_lookup_window_->ShowAt(
               x, y, IntFromValue(args, "width", 420),
               IntFromValue(args, "height", 600), GetHandle());
-          result->Success(flutter::EncodableValue(ok));
+          // TODO-893 (symptom 2) — report the CURSOR MONITOR work area
+          // (physical px) so Dart's cascade layout uses the real screen, not
+          // the off-screen measurement canvas. computeFrameRect's showBelow /
+          // clamp must reason about the actual display: feeding the 2x card
+          // canvas made every child cascade up (spaceBelow tiny), shoving the
+          // parent card off the top. Dart divides workW/workH by the same dpr
+          // it uses for window geometry to get CSS px (single dpr source).
+          int work_w = 0;
+          int work_h = 0;
+          HMONITOR monitor =
+              MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+          MONITORINFO mi = {};
+          mi.cbSize = sizeof(mi);
+          if (GetMonitorInfo(monitor, &mi)) {
+            work_w = mi.rcWork.right - mi.rcWork.left;
+            work_h = mi.rcWork.bottom - mi.rcWork.top;
+          }
+          flutter::EncodableMap reply = {
+              {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
+              {flutter::EncodableValue("workW"),
+               flutter::EncodableValue(work_w)},
+              {flutter::EncodableValue("workH"),
+               flutter::EncodableValue(work_h)},
+          };
+          result->Success(flutter::EncodableValue(reply));
         } else if (method == "render") {
           global_lookup_window_->RenderJson(StringFromValue(args, "json", ""));
           result->Success();

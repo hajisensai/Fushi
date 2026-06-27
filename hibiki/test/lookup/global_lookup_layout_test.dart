@@ -181,6 +181,75 @@ void main() {
     });
   });
 
+  // TODO-893 — regression lock for symptom 2 (nested child shoved the parent
+  // card off the top). Root cause was NOT computeFrameRect: it was fed the
+  // off-screen MEASUREMENT CANVAS height (~2x the card) as screenH instead of
+  // the real monitor work area. With the tiny canvas, spaceBelow is almost
+  // always < height -> showBelow false -> every child cascades UP, and the host
+  // bbox-shift then moves the whole window (root included) up. Feeding the real
+  // screen makes showBelow correctly decide the word's card fits below.
+  group('TODO-893 screenH must be the real screen, not the measurement canvas',
+      () {
+    // A word near the top of the window (window origin = cursor). cardH = 480.
+    const Rect sel = Rect.fromLTWH(120, 40, 60, 24);
+    const double cardH = 480;
+    const double cardW = 360;
+
+    test('canvas-height screenH (the BUG) forces the child to flip UP', () {
+      // boundsH = cardH * 2 = 960 (the old off-screen canvas). spaceBelow =
+      // 960 - 40 - 24 - 4 = 892; height = min(max(spaceAbove,spaceBelow)-6,480)
+      // = 480. showBelow 892>=480 true here actually — so to expose the real
+      // regression we use the SMALLER canvas factor the bug produced when the
+      // card sits low in the canvas. Model the reported case: selection near the
+      // canvas BOTTOM (the cascade child measured low), canvas just ~1.2x card.
+      const double canvasH = cardH * 1.2; // 576
+      const Rect lowSel = Rect.fromLTWH(120, 360, 60, 24);
+      final GlobalLookupFrameRect r = computeFrameRect(
+        selectionRect: lowSel,
+        screenW: cardW * 2,
+        screenH: canvasH,
+        maxWidth: cardW,
+        maxHeight: cardH,
+        isVertical: false,
+      );
+      // spaceBelow = 576-360-24-4 = 188; height=min(max(356,188)-6,480)=350.
+      // showBelow 188>=350 false -> flips ABOVE: top = 360-4-350 = 6.
+      expect(r.top + r.height, lessThan(lowSel.top),
+          reason: 'with the canvas height the card is forced above the word');
+    });
+
+    test('real screen-work-area screenH keeps the child BELOW the word', () {
+      // Same low selection, but the real 1080p work area (≈1040 CSS px tall).
+      const Rect lowSel = Rect.fromLTWH(120, 360, 60, 24);
+      final GlobalLookupFrameRect r = computeFrameRect(
+        selectionRect: lowSel,
+        screenW: 1920,
+        screenH: 1040,
+        maxWidth: cardW,
+        maxHeight: cardH,
+        isVertical: false,
+      );
+      // spaceBelow = 1040-360-24-4 = 652; height=min(max(356,652)-6,480)=480.
+      // showBelow 652>=480 true -> stays BELOW: top = 360+24+4 = 388.
+      expect(r.top, greaterThanOrEqualTo(lowSel.bottom),
+          reason:
+              'with the real screen the card stays below (no upward shove)');
+    });
+
+    test('a word high on the real screen also drops below', () {
+      final GlobalLookupFrameRect r = computeFrameRect(
+        selectionRect: sel,
+        screenW: 1920,
+        screenH: 1040,
+        maxWidth: cardW,
+        maxHeight: cardH,
+        isVertical: false,
+      );
+      expect(r.top, greaterThanOrEqualTo(sel.bottom),
+          reason: 'ample space below the high word -> card drops below');
+    });
+  });
+
   group('GlobalLookupFrameRect data class', () {
     test('centerX/centerY derived plus value equality', () {
       const GlobalLookupFrameRect a =

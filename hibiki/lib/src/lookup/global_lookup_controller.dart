@@ -73,6 +73,13 @@ class GlobalLookupController {
   // bounds; D2's union bbox then reveals/resizes the window to the real extent.
   double _layoutBoundsW = 0;
   double _layoutBoundsH = 0;
+  // TODO-893 — the cursor MONITOR work area (CSS px) reported by the native
+  // showAt. computeFrameRect's showBelow / clamp must reason about the REAL
+  // display, not the off-screen measurement canvas (boundsW/boundsH). Feeding
+  // the 2x card canvas made every child cascade up and shoved the parent off
+  // the top. 0 = native did not report a work area (fall back to the canvas).
+  double _screenWorkW = 0;
+  double _screenWorkH = 0;
 
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
@@ -178,10 +185,16 @@ class GlobalLookupController {
       _layoutBoundsH = cardH * kGlobalLookupLayoutBoundsHeightFactor;
       final int w0 = (_layoutBoundsW * dpr).round();
       final int h0 = (_layoutBoundsH * dpr).round();
-      final bool shown = await GlobalLookupChannel.showAt(
+      final GlobalLookupShowResult shown = await GlobalLookupChannel.showAt(
           x: 0, y: 0, width: w0, height: h0, atCursor: true);
+      // TODO-893 — convert the native physical-px work area to CSS px (the
+      // cascade layout domain) with the same dpr used for window geometry, so
+      // _renderStack's computeFrameRect reasons about the real monitor.
+      _screenWorkW = shown.workWidth > 0 ? shown.workWidth / dpr : 0;
+      _screenWorkH = shown.workHeight > 0 ? shown.workHeight / dpr : 0;
       await _renderStack();
-      glog('hotkey: showAt(atCursor)=$shown off-screen w0=$w0 h0=$h0 rendered');
+      glog('hotkey: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
+          'workCss=${_screenWorkW}x$_screenWorkH rendered');
       _autoReadFirstEntry(model, result);
       // Safety: if the page never reports a size (render failure), reveal at the
       // single-card size (NOT the larger measurement bounds w0/h0) so the card is
@@ -583,20 +596,30 @@ class GlobalLookupController {
     if (payloads.isEmpty) {
       return;
     }
-    // Cascade layout bounds (window-local CSS px) the off-screen measurement
-    // window was sized to (see _onHotKey). maxWidth/maxHeight are the single
-    // card size; children cascade WITHIN the bounds and D2 bbox trims the
-    // window. Fall back to the single card when bounds are unset.
+    // maxWidth/maxHeight are the single card size; children cascade and D2 bbox
+    // trims the window down to the real extent.
     final double cardW = model.popupMaxWidth * model.appUiScale;
     final double cardH = model.popupMaxHeight * model.appUiScale;
-    final double boundsW = _layoutBoundsW > 0 ? _layoutBoundsW : cardW;
-    final double boundsH = _layoutBoundsH > 0 ? _layoutBoundsH : cardH;
+    // TODO-893 — screenWidth/screenHeight MUST be the real monitor work area
+    // (CSS px), NOT the off-screen measurement canvas (_layoutBounds*). The
+    // canvas is only ~2x the card, so computeFrameRect's showBelow (spaceBelow
+    // >= height) was almost always false -> every child cascaded UP and pushed
+    // the parent card off the top of the window. Feeding the true screen lets
+    // showBelow correctly decide whether the word's card fits below on screen.
+    // Fall back to the measurement canvas only when native reported no work
+    // area (e.g. monitor query failed).
+    final double screenW = _screenWorkW > 0
+        ? _screenWorkW
+        : (_layoutBoundsW > 0 ? _layoutBoundsW : cardW);
+    final double screenH = _screenWorkH > 0
+        ? _screenWorkH
+        : (_layoutBoundsH > 0 ? _layoutBoundsH : cardH);
     await GlobalLookupChannel.render(buildStackRenderScript(
       context: ctx,
       appModel: model,
       payloads: payloads,
-      screenWidth: boundsW,
-      screenHeight: boundsH,
+      screenWidth: screenW,
+      screenHeight: screenH,
       maxWidth: cardW,
       maxHeight: cardH,
     ));

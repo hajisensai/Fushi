@@ -190,17 +190,22 @@
     }
     var style = document.createElement('style');
     style.id = STYLE_ID;
-    // F2 — outer SHELL chrome (ported from hoshi reader-popup-host.js shell:
-    // border 1px rgba(120,120,128,.36) / radius 10px / box-shadow). The iframe
-    // inside the shell already paints the THEME card background + the
-    // html.global-lookup body border (popup.css), so the shell deliberately keeps
-    // a TRANSPARENT background (no double fill); it owns only the rounded clip +
-    // the drop-shadow that the iframe element itself cannot cast. Unlike the P2
-    // single-frame chrome (which lived on the iframe body and got clipped at the
-    // window edge), the shell shadow has room to render inside the enlarged
-    // bounding-box window (E1). Dark variant keyed off data-theme stamped by the
-    // render payload. All rules scoped to .global-lookup-frame-shell -> the
-    // in-app popup (no host.js) is never touched.
+    // F2 — outer SHELL chrome (ported from hoshi reader-popup-host.js shell).
+    // TODO-893 — RESPONSIBILITY SPLIT to kill the double-border (symptom 1):
+    // the iframe inside the shell already paints the THEME card background AND
+    // the single visible card border (popup.css `html.global-lookup body`
+    // border + radius + padding). The shell therefore owns ONLY the rounded
+    // clip + the drop-shadow that the iframe element itself cannot cast — it
+    // must NOT draw a second `border` (that produced two concentric grey rings
+    // with a white gap between them). `border-radius` stays so the shadow +
+    // overflow clip follow the same rounded silhouette as the body border;
+    // `background:transparent` keeps the shell from painting a second fill.
+    // Unlike the P2 single-frame chrome (which lived on the iframe body and got
+    // clipped at the window edge), the shell shadow has room to render inside
+    // the enlarged bounding-box window (E1). Dark variant keyed off data-theme
+    // stamped by the render payload. All rules scoped to
+    // .global-lookup-frame-shell -> the in-app popup (no host.js) is never
+    // touched.
     // D1 reveal gate: a shell paints only when BOTH data-* flags are 'true'.
     style.textContent =
         // D1 reveal gate FIRST (kept as its own rule so the gate contract stays
@@ -210,10 +215,9 @@
         '.global-lookup-frame-shell{visibility:hidden;opacity:0;}' +
         '.global-lookup-frame-shell{' +
         'box-sizing:border-box;overflow:hidden;background:transparent;' +
-        'border:1px solid rgba(120,120,128,0.36);border-radius:10px;' +
+        'border-radius:10px;' +
         'box-shadow:0 3px 12px rgba(0,0,0,0.22);}' +
         '.global-lookup-frame-shell[data-theme="dark"]{' +
-        'border-color:rgba(255,255,255,0.34);' +
         'box-shadow:0 3px 12px rgba(0,0,0,0.44);}' +
         '.global-lookup-frame-shell[' + ATTR_CONTENT_READY + '="true"]' +
         '[' + ATTR_REVEAL_READY + '="true"]{visibility:visible;opacity:1;}';
