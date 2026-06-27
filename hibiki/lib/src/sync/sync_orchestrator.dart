@@ -982,14 +982,37 @@ class SyncOrchestrator {
       remoteKeys: remoteKeys,
     );
 
-    // toPull = 远端有 ∧ 本端无有声书；再筛出本端已有同 bookKey EPUB 的项。
-    // 无本地 EPUB 的远端项不拉（防孤儿），留给手动下载补音频。
-    final List<String> toPull = <String>[
+    // toPullAudioOnly（场景B 已绿）= 远端有 ∧ 本端无有声书 ∧ 本端已有同 bookKey
+    // EPUB → 只补音频不重导 EPUB（走下方现有 pull 循环，逻辑完全不动）。
+    final List<String> toPullAudioOnly = <String>[
       for (final String key in diff.toPull)
         if (localBookKeys.contains(key)) key,
     ];
 
-    final int total = diff.toPush.length + toPull.length;
+    // toPullFullBook（场景A 新增 TODO-873）= 远端有有声书 ∧ 本端**完全没有这本书**
+    // （无 EPUB 行）∧ 远端书有可导出内容（hasContent==true）→ 先拉 EPUB 灌书架、
+    // 再拉音频。无内容的远端书跳过（无法导入 EPUB），只能等手动下载。
+    //
+    // 用 host 书清单解析每本远端书的 hasContent 与原始 title（端点按原始 title
+    // 寻址）。按 bookKey 匹配：host 清单条目带真实 bookKey（= EpubBooks PK），
+    // 缺省回退 sanitizeTtuFilename(title)（与 host listBooks 同源）。
+    final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
+    final Map<String, RemoteBookInfo> remoteBookByKey =
+        <String, RemoteBookInfo>{
+      for (final RemoteBookInfo r in remoteBooks)
+        (r.bookKey ?? sanitizeTtuFilename(r.title)): r,
+    };
+    final List<({String audiobookKey, String title})> toPullFullBook =
+        <({String audiobookKey, String title})>[
+      for (final String key in diff.toPull)
+        if (!localBookKeys.contains(key))
+          if (remoteBookByKey[key] case final RemoteBookInfo book
+              when book.hasContent)
+            (audiobookKey: key, title: book.title),
+    ];
+
+    final int total =
+        diff.toPush.length + toPullAudioOnly.length + toPullFullBook.length;
     int index = 0;
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
@@ -1026,8 +1049,8 @@ class SyncOrchestrator {
       index++;
     }
 
-    // ── Pull：远端有、本端有书但缺音频 → 下载并解包落盘 ────────────
-    for (final String key in toPull) {
+    // ── Pull A（场景B）：远端有、本端有书但缺音频 → 下载并解包落盘 ────────────
+    for (final String key in toPullAudioOnly) {
       _emit(SyncPhase.audiobooks,
           itemIndex: index, itemTotal: total, title: key);
       File? tmp;
@@ -1053,6 +1076,69 @@ class SyncOrchestrator {
         _safeDelete(tmp);
       }
       index++;
+    }
+
+    // ── Pull B（场景A · TODO-873）：远端-only 带有声书的书 → 先拉 EPUB 灌书架、
+    // 再拉音频。配对纪律见 [_pullRemoteOnlyAudiobook]（BUG-414）。──────────────
+    for (final ({String audiobookKey, String title}) item in toPullFullBook) {
+      _emit(SyncPhase.audiobooks,
+          itemIndex: index, itemTotal: total, title: item.title);
+      await _pullRemoteOnlyAudiobook(
+        backend,
+        item.title,
+        item.audiobookKey,
+        report,
+      );
+      index++;
+    }
+  }
+
+  /// 拉取一本「远端-only 带有声书」的书：先拉 EPUB 灌本地书架，再用本地新 EPUB 的
+  /// bookKey 绑定拉音频包（TODO-873）。
+  ///
+  /// **BUG-414 配对纪律**：
+  /// - EPUB 用 [HibikiClientSyncBackend.getRemoteBook]（端点按原始 [title] 寻址）下载，
+  ///   经 [EpubImporter.importFromPath] 导入，返回值即本地新 `localBookKey`（=
+  ///   `sanitizeTtuFilename(storedTitle)`，本地唯一）。
+  /// - 音频用 host 清单里该书的真实 [remoteAudiobookKey] 下载（**不重算**
+  ///   `sanitizeTtuFilename(title)`），解包时 `bookKeyOverride: localBookKey` 绑定到
+  ///   本地刚导入的 EPUB，保证写入的 Audiobooks 行与本地 EPUB 行 bookKey 相等（书架
+  ///   类型徽章亮，否则退化为普通书）。
+  ///
+  /// 逐项 try/catch 进 [report.errors] 不中断整体；临时文件 finally 清理。
+  Future<void> _pullRemoteOnlyAudiobook(
+    HibikiClientSyncBackend backend,
+    String title,
+    String remoteAudiobookKey,
+    SyncRunReport report,
+  ) async {
+    File? epubTmp;
+    File? audioTmp;
+    try {
+      // ① 拉 EPUB → 导入书架，拿本地新 bookKey。
+      epubTmp = _tmpFile('.epub');
+      await backend.getRemoteBook(title, epubTmp);
+      final String localBookKey = await EpubImporter.importFromPath(
+        db: _db,
+        filePath: epubTmp.path,
+        fileName: '$title.epub',
+      );
+      report.booksImported++;
+
+      // ② 拉音频包 → 解包，bookKeyOverride 绑定本地 EPUB bookKey（徽章配对）。
+      audioTmp = _tmpFile('.hibikiaudio');
+      await backend.getRemoteAudiobook(remoteAudiobookKey, audioTmp);
+      await _packages.importAudioDatabasePackage(
+        packageFile: audioTmp,
+        audioDatabaseRoot: _audioDatabaseRoot,
+        bookKeyOverride: localBookKey,
+      );
+      report.audiobooksImported++;
+    } catch (e) {
+      report.errors.add('live pull remote-only audiobook "$title": $e');
+    } finally {
+      _safeDelete(epubTmp);
+      _safeDelete(audioTmp);
     }
   }
 

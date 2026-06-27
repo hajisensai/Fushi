@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -18,6 +19,17 @@ import 'package:hibiki/src/startup/test_environment.dart';
 /// column and operate on that absolute path (e.g. [deleteBookDir]).
 class EpubStorage {
   static String? _cachedBaseDir;
+
+  /// Test-only override for the base directory, used by suites that exercise
+  /// the real [EpubImporter] without a Flutter binding / path_provider plugin
+  /// (e.g. the interconnect orchestrator tests that download over a real HTTP
+  /// server, where installing `TestWidgetsFlutterBinding` would break the
+  /// socket). Production never sets this — it stays null and resolution falls
+  /// through to [hibikiTestDirectory] / [getApplicationDocumentsDirectory].
+  @visibleForTesting
+  static set debugBaseDirectoryOverride(String? path) {
+    _cachedBaseDir = path == null ? null : p.join(path, 'hoshi_books');
+  }
 
   /// Base directory for all extracted books.
   static Future<String> baseDirectory() async {

@@ -16,6 +16,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/epub/epub_storage.dart' show EpubStorage;
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
 import 'package:hibiki/src/models/local_audio_source_pref.dart'
@@ -38,6 +39,64 @@ import 'fake_asset_store.dart';
 
 HibikiDatabase _memDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+
+/// 在 host [db] 里植入一本「带内容」的 EPUB：把一个 [EpubImporter] 能真正解析的
+/// 最小 EPUB 结构（mimetype + container.xml + content.opf + 一个 xhtml 章节）写入
+/// [extractDir]，并插入 EpubBooks 行。host 的 `exportBook` 会把该目录重打包成 .epub
+/// 供 `getRemoteBook` 下载，client 再走真实 `EpubImporter.importFromPath` 导入。
+Future<void> _seedHostBookWithContent({
+  required HibikiDatabase db,
+  required String title,
+  required String bookKey,
+  required String extractDir,
+}) async {
+  Directory(extractDir).createSync(recursive: true);
+  File(p.join(extractDir, 'mimetype'))
+      .writeAsStringSync('application/epub+zip');
+  final Directory metaInf = Directory(p.join(extractDir, 'META-INF'))
+    ..createSync();
+  File(p.join(metaInf.path, 'container.xml')).writeAsStringSync('''
+<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+''');
+  File(p.join(extractDir, 'content.opf')).writeAsStringSync('''
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>$title</dc:title>
+  </metadata>
+  <manifest>
+    <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="chapter"/>
+  </spine>
+</package>
+''');
+  File(p.join(extractDir, 'chapter.xhtml')).writeAsStringSync('''
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><title>Chapter</title></head>
+  <body><p>Hello.</p></body>
+</html>
+''');
+
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: title,
+      epubPath: p.join(extractDir, 'original.epub'),
+      extractDir: extractDir,
+      chapterCount: 1,
+      chaptersJson: '["ch1"]',
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
+}
 
 /// 构造并认证一个 [HibikiClientSyncBackend]，fake probe 总返回 true。
 Future<HibikiClientSyncBackend> _buildClientBackend({
@@ -211,13 +270,25 @@ class _FakeSyncBackend implements SyncBackend {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 void main() {
+  // 这些用例跑真实 HibikiSyncServer（真 socket），故**不能**初始化
+  // TestWidgetsFlutterBinding（它会把所有 HttpClient 请求拦成 HTTP 400）。
+  // 用例 B2 的 client 侧真实 EpubImporter 需要书籍存储基目录，而 path_provider
+  // 在无 binding 时不可用 → 改用 EpubStorage.debugBaseDirectoryOverride 注入。
   late Directory work;
+  late Directory epubBaseDir;
 
   setUp(() async {
     work = await Directory.systemTemp.createTemp('orch_live_audio_');
+    epubBaseDir =
+        await Directory.systemTemp.createTemp('orch_live_audio_epub_base_');
+    EpubStorage.debugBaseDirectoryOverride = epubBaseDir.path;
   });
   tearDown(() async {
+    EpubStorage.debugBaseDirectoryOverride = null;
     if (work.existsSync()) await work.delete(recursive: true);
+    try {
+      if (epubBaseDir.existsSync()) await epubBaseDir.delete(recursive: true);
+    } catch (_) {}
   });
 
   // ── 用例 A：互联 live + syncLocalAudio=true ──────────────────────────────
@@ -548,6 +619,8 @@ void main() {
           reason: 'live pull audiobook 无错误: ${report.errors}');
       expect(report.audiobooksImported, 1,
           reason: 'host 独有有声书且本地有同 bookKey EPUB → 应被拉取导入');
+      expect(report.booksImported, 0,
+          reason: '场景B：本地已有 EPUB → 只补音频，绝不重导 EPUB（TODO-873 守护绿路径）');
       expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNotNull,
           reason: '拉取后本地应出现 HostAudioBook 的 Audiobook 行');
     });
@@ -613,6 +686,174 @@ void main() {
           reason: 'live push audiobook 无错误: ${report.errors}');
       expect(report.audiobooksExported, 1,
           reason: 'LocalAudioBook 有声书应被推送到 host');
+    });
+  });
+
+  // ── 用例 B2：互联 live + 远端-only 带有声书自动灌 EPUB+音频（TODO-873）───
+
+  group('用例B2: 远端-only 带有声书 → 自动下载 EPUB+音频（TODO-873）', () {
+    late HibikiSyncServer server;
+    late HibikiDatabase hostDb;
+    late String serverBase;
+    const String token = 'orch-live-remote-only-token';
+
+    // host 端书名/bookKey：纯 ASCII，sanitizeTtuFilename 不变形，
+    // client 导入后 localBookKey 与 host audiobook bookKey 一致（徽章配对硬保证）。
+    const String remoteOnlyTitle = 'Remote Only Audio Book';
+    const String remoteOnlyKey = 'Remote Only Audio Book';
+    // host 上一本纯文本远端书（无有声书）——回归边界用，不应被自动灌。
+    const String textOnlyTitle = 'Remote Text Only Book';
+    const String textOnlyKey = 'Remote Text Only Book';
+
+    setUp(() async {
+      hostDb = _memDb();
+
+      final Directory hostAudioRoot =
+          Directory(p.join(work.path, 'host_b2_audio_root'))
+            ..createSync(recursive: true);
+
+      // ① 带有声书的远端-only 书：有内容 EPUB + Audiobook/SrtBook 行。
+      await _seedHostBookWithContent(
+        db: hostDb,
+        title: remoteOnlyTitle,
+        bookKey: remoteOnlyKey,
+        extractDir: p.join(work.path, 'host_b2_extract'),
+      );
+      final File hostSrt = File(p.join(work.path, 'host_b2.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
+      await hostDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'uid-b2-srt-1',
+          title: remoteOnlyTitle,
+          srtPath: hostSrt.path,
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          bookKey: const Value(remoteOnlyKey),
+          audioRoot: Value(hostAudioRoot.path),
+        ),
+      );
+      await hostDb.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: remoteOnlyKey,
+          audioRoot: Value(hostAudioRoot.path),
+          alignmentFormat: 'srt',
+          alignmentPath: hostSrt.path,
+        ),
+      );
+
+      // ② 纯文本远端-only 书：有内容 EPUB，但无 Audiobook → 不进 listRemoteAudiobooks。
+      await _seedHostBookWithContent(
+        db: hostDb,
+        title: textOnlyTitle,
+        bookKey: textOnlyKey,
+        extractDir: p.join(work.path, 'host_b2_text_extract'),
+      );
+
+      final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
+        db: hostDb,
+        dictionaryResourceRoot: Directory(work.path),
+        packages: SyncAssetPackageService(db: hostDb),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+        audioDatabaseRoot: hostAudioRoot,
+        onLocalAudioImported: (LocalAudioPackageContents c) async {},
+      );
+
+      server = HibikiSyncServer(
+        syncDataDir: p.join(work.path, 'server_data_b2'),
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: libSvc,
+      );
+      await server.start();
+      serverBase = 'http://127.0.0.1:${server.port}';
+    });
+
+    tearDown(() async => server.stop());
+
+    test(
+        '远端-only 带有声书 → sweep 后本地有 EpubBooks + Audiobooks 行，'
+        '且 Audiobooks.bookKey == 本地 EpubBooks.bookKey（徽章配对硬断言）', () async {
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+
+      // 前置：本地完全没有这本书。
+      expect(await localDb.getAllEpubBooks(), isEmpty);
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_b2_full'))
+        ..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      // 无 widget binding（保真 socket），真实事件循环直接推进 EpubImporter
+      // 的 compute + 文件 IO，无需 runAsync。
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty,
+          reason: 'remote-only full book sync 无错误: ${report.errors}');
+      expect(report.booksImported, greaterThanOrEqualTo(1),
+          reason: '远端-only 带有声书的 EPUB 应被自动拉入书架');
+      expect(report.audiobooksImported, greaterThanOrEqualTo(1),
+          reason: '远端-only 书的音频包应被自动拉取导入');
+
+      final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
+      expect(
+          localBooks.map((EpubBookRow b) => b.title), contains(remoteOnlyTitle),
+          reason: 'EPUB 应落本地书架');
+
+      final List<AudiobookRow> localAudiobooks =
+          await localDb.getAllAudiobooks();
+      expect(localAudiobooks, isNotEmpty, reason: '本地应出现 Audiobooks 行（徽章亮的前提）');
+
+      // 徽章配对硬保证：Audiobooks 行的 bookKey 必须等于本地 EPUB 行的 bookKey，
+      // 否则书架显示成普通书（症状① 直接回归点）。
+      final EpubBookRow importedBook =
+          localBooks.firstWhere((EpubBookRow b) => b.title == remoteOnlyTitle);
+      expect(
+        localAudiobooks
+            .any((AudiobookRow a) => a.bookKey == importedBook.bookKey),
+        isTrue,
+        reason: 'Audiobooks.bookKey 必须与本地 EpubBooks.bookKey 配对，'
+            '否则书架徽章退化为普通书',
+      );
+      expect(
+          await localDb.getAudiobookByBookKey(importedBook.bookKey), isNotNull,
+          reason: '按本地 EPUB bookKey 应能查到 Audiobook 行');
+    });
+
+    test('回归：远端-only 纯文本书（无有声书）→ sweep 后本地仍无此书（守边界）', () async {
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_b2_text'))
+        ..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty, reason: '无错误: ${report.errors}');
+      // 带有声书的书会被灌（booksImported>=1），但纯文本远端书绝不应进本地。
+      final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
+      expect(
+        localBooks.map((EpubBookRow b) => b.title),
+        isNot(contains(textOnlyTitle)),
+        reason: '纯文本远端书（不在 listRemoteAudiobooks）不应被自动灌',
+      );
     });
   });
 
