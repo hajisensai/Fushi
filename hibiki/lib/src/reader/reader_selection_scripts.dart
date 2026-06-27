@@ -238,17 +238,31 @@ window.hoshiSelection = {
       acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
     });
   },
-  inCharRange: function(charRange, x, y) {
+  inCharRange: function(charRange, x, y, pad) {
+    // TODO-916 症状④：字符矩形按 [pad]（默认 0 = 旧的精确包含）外扩一圈再判包含，
+    // 消除落在字缝/行距/描边外缘的 miss。pad 仅在 getCaretRange 的逐字符兜底里传入小值，
+    // 其它调用点（±1 offset 确认）仍走精确 0。
+    pad = pad || 0;
     var rects = charRange.getClientRects();
     if (rects.length) {
       for (var i = 0; i < rects.length; i++) {
         var rect = rects[i];
-        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true;
+        if (x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad) return true;
       }
       return false;
     }
     var fallback = charRange.getBoundingClientRect();
-    return x >= fallback.left && x <= fallback.right && y >= fallback.top && y <= fallback.bottom;
+    return x >= fallback.left - pad && x <= fallback.right + pad && y >= fallback.top - pad && y <= fallback.bottom + pad;
+  },
+  // TODO-916 症状④：点到字符矩形中心的距离平方（落在矩形内为 0），供逐字符兜底取最近字符。
+  charRangeDistanceSq: function(charRange, x, y) {
+    var rect = charRange.getClientRects()[0] || charRange.getBoundingClientRect();
+    if (!rect) return Infinity;
+    var cx = x < rect.left ? rect.left : (x > rect.right ? rect.right : x);
+    var cy = y < rect.top ? rect.top : (y > rect.bottom ? rect.bottom : y);
+    var dx = cx - x;
+    var dy = cy - y;
+    return dx * dx + dy * dy;
   },
   getCaretRange: function(x, y) {
     if (document.caretPositionFromPoint) {
@@ -265,6 +279,7 @@ window.hoshiSelection = {
     var walker = this.createWalker(container);
     var range = document.createRange();
     var node;
+    // 第一遍：精确包含（旧行为，零回归）。
     while (node = walker.nextNode()) {
       for (var i = 0; i < node.textContent.length; i++) {
         range.setStart(node, i);
@@ -274,6 +289,34 @@ window.hoshiSelection = {
           return range;
         }
       }
+    }
+    // 第二遍（TODO-916 症状④）：精确全 miss 时回退到「最近字符」——仅当该字符在一个
+    // 保守容差内（半行高，约半个字宽）才采纳，避免点空白处误选远字。walker 已 REJECT
+    // furigana（rt/rp），故振假名永不被兜底命中；只放宽正文字符命中精度。
+    var walker2 = this.createWalker(container);
+    var bestNode = null;
+    var bestOffset = -1;
+    var bestDistSq = Infinity;
+    while (node = walker2.nextNode()) {
+      for (var j = 0; j < node.textContent.length; j++) {
+        range.setStart(node, j);
+        range.setEnd(node, j + 1);
+        var distSq = this.charRangeDistanceSq(range, x, y);
+        if (distSq >= bestDistSq) continue;
+        var rect = range.getClientRects()[0] || range.getBoundingClientRect();
+        if (!rect) continue;
+        var tol = Math.max(6, Math.max(rect.width, rect.height) / 2);
+        if (distSq <= tol * tol) {
+          bestDistSq = distSq;
+          bestNode = node;
+          bestOffset = j;
+        }
+      }
+    }
+    if (bestNode) {
+      range.setStart(bestNode, bestOffset);
+      range.collapse(true);
+      return range;
     }
     return document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
   },
@@ -285,15 +328,20 @@ window.hoshiSelection = {
     var text = node.textContent;
     var caret = range.startOffset;
     var offsets = [caret, caret - 1, caret + 1];
-    for (var i = 0; i < offsets.length; i++) {
-      var offset = offsets[i];
-      if (offset < 0 || offset >= text.length) continue;
-      var charRange = document.createRange();
-      charRange.setStart(node, offset);
-      charRange.setEnd(node, offset + 1);
-      if (this.inCharRange(charRange, x, y)) {
-        if (this.isScanBoundary(text[offset])) return null;
-        return { node: node, offset: offset };
+    // 第一遍精确确认（旧行为，零回归）；TODO-916 症状④：精确全 miss 时第二遍带容差
+    // （半字宽/行高）兜底，消除字缝/行距点不中。scan 边界字（空白/标点）任一遍命中均不查词。
+    var pads = [0, 6];
+    for (var p = 0; p < pads.length; p++) {
+      for (var i = 0; i < offsets.length; i++) {
+        var offset = offsets[i];
+        if (offset < 0 || offset >= text.length) continue;
+        var charRange = document.createRange();
+        charRange.setStart(node, offset);
+        charRange.setEnd(node, offset + 1);
+        if (this.inCharRange(charRange, x, y, pads[p])) {
+          if (this.isScanBoundary(text[offset])) return null;
+          return { node: node, offset: offset };
+        }
       }
     }
     return null;
