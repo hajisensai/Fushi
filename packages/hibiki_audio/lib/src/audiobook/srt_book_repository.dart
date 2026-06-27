@@ -31,6 +31,11 @@ class SrtBookRepository {
 
   Future<void> save(SrtBook book) async {
     await _db.upsertSrtBook(SrtBooksCompanion(
+      // Carry the primary key when known so insertOnConflictUpdate (which
+      // resolves on the `id` PK, not the `uid` unique index) performs a real
+      // in-place update instead of hitting the UNIQUE(uid) constraint. Callers
+      // that don't load `id` (fresh inserts) leave it absent — unchanged.
+      id: book.id != null ? Value(book.id!) : const Value.absent(),
       uid: Value(book.uid),
       title: Value(book.title),
       author: Value(book.author),

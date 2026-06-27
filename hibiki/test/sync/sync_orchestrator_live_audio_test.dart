@@ -979,4 +979,187 @@ void main() {
           reason: '云后端 audiobook 路径运行无错误: ${report.errors}');
     });
   });
+
+  // ── 用例 E：两条 push 路径都被「配对 SrtBook 是否存在」门控（TODO-894）─────
+  //
+  // TODO-894 的修复点是「让 EPUB-backed 导入/迁移补出配对 srt_books 行」，使整本
+  // 能上传。本组用同一份本地数据（EpubBook + Audiobook）在「有配对 SrtBook」与
+  // 「无配对 SrtBook」两态下，分别验证 **两条 push 消费路径**：
+  //   ① live push：_syncAudiobooksLive (sync_orchestrator.dart:1024)
+  //   ② 文件夹式全量 push：syncAudiobookPackages (:1270, hasLocal = ab!=null && srt!=null)
+  // 有配对 → 导出计数 +1（整本上传）；无配对 → skip（守住正确的防御契约）。
+
+  group('用例E: 两条 push 路径都受配对 SrtBook 门控（TODO-894）', () {
+    late HibikiSyncServer server;
+    late HibikiDatabase hostDb;
+    late String serverBase;
+    const String token = 'orch-todo894-token';
+
+    setUp(() async {
+      hostDb = _memDb();
+      final Directory hostAudioRoot =
+          Directory(p.join(work.path, 'host_e_audio_root'))
+            ..createSync(recursive: true);
+      final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
+        db: hostDb,
+        dictionaryResourceRoot: Directory(work.path),
+        packages: SyncAssetPackageService(db: hostDb),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+        audioDatabaseRoot: hostAudioRoot,
+        onLocalAudioImported: (LocalAudioPackageContents c) async {},
+      );
+      server = HibikiSyncServer(
+        syncDataDir: p.join(work.path, 'server_data_e'),
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: libSvc,
+      );
+      await server.start();
+      serverBase = 'http://127.0.0.1:${server.port}';
+    });
+    tearDown(() async => server.stop());
+
+    /// Seeds an EPUB-backed audiobook (EpubBook + Audiobook) on [db]. When
+    /// [withSrtBook] is true also writes the paired srt_books row (the TODO-894
+    /// fix). Returns the bookKey.
+    Future<String> seedLocalAudiobook(
+      HibikiDatabase db, {
+      required bool withSrtBook,
+    }) async {
+      const String bookKey = 'Todo894Book';
+      final File srt = File(p.join(work.path, '$bookKey.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: bookKey,
+          title: 'Todo894 Book',
+          epubPath: p.join(work.path, '$bookKey.epub'),
+          extractDir: '',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: bookKey,
+          alignmentFormat: 'srt',
+          alignmentPath: srt.path,
+        ),
+      );
+      if (withSrtBook) {
+        // 等价于导入路径补写的配对行（稳定派生 uid）。
+        await db.upsertSrtBook(
+          SrtBooksCompanion.insert(
+            uid: 'srtbook_epub_$bookKey',
+            title: 'Todo894 Book',
+            srtPath: srt.path,
+            importedAt: DateTime.now().millisecondsSinceEpoch,
+            bookKey: const Value(bookKey),
+          ),
+        );
+      }
+      return bookKey;
+    }
+
+    test('① live push：有配对 SrtBook → 整本上传（audiobooksExported=1）', () async {
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await seedLocalAudiobook(localDb, withSrtBook: true);
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_e_live_ok'))
+        ..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty, reason: 'live push 无错误: ${report.errors}');
+      expect(report.audiobooksExported, 1, reason: '有配对 SrtBook → 本端独有有声书应上传');
+    });
+
+    test('① live push：无配对 SrtBook → skip（audiobooksExported=0，守防御分支）',
+        () async {
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await seedLocalAudiobook(localDb, withSrtBook: false);
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_e_live_skip'))
+        ..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.audiobooksExported, 0,
+          reason: '无配对 SrtBook → live push 应 skip（防御契约）');
+      expect(report.errors.any((String e) => e.contains('srtBook not found')),
+          isTrue,
+          reason: 'skip 必须落一条 srtBook not found 记录');
+    });
+
+    test('② syncAudiobookPackages：有配对 SrtBook → 整本上传（audiobooksExported=1）',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final _FakeSyncBackend backend = _FakeSyncBackend(store);
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await seedLocalAudiobook(localDb, withSrtBook: true);
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_e_pkg_ok'))
+        ..createSync();
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobookPackages('root', report);
+
+      expect(report.errors, isEmpty,
+          reason: 'syncAudiobookPackages 无错误: ${report.errors}');
+      expect(report.audiobooksExported, 1,
+          reason: 'hasLocal=(ab!=null && srt!=null) 成立 → 文件夹式 push 应上传');
+    });
+
+    test('② syncAudiobookPackages：无配对 SrtBook → skip（audiobooksExported=0）',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final _FakeSyncBackend backend = _FakeSyncBackend(store);
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await seedLocalAudiobook(localDb, withSrtBook: false);
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_e_pkg_skip'))
+        ..createSync();
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobookPackages('root', report);
+
+      expect(report.audiobooksExported, 0,
+          reason: '无配对 SrtBook → hasLocal=false → 文件夹式 push skip（防御契约）');
+      expect(report.errors, isEmpty,
+          reason: 'syncAudiobookPackages 的 skip 是静默不导出，不落 error');
+    });
+  });
 }

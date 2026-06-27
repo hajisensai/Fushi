@@ -87,7 +87,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 28;
+  int get schemaVersion => 29;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -426,6 +426,13 @@ class HibikiDatabase extends _$HibikiDatabase {
               await m.addColumn(videoBooks, videoBooks.secondarySubtitleSource);
             }
           }
+          if (from < 29) {
+            // TODO-894：自愈 EPUB-backed 有声书缺失的配对 srt_books 行。历史上
+            // _importEpubWithAlignment 只写 audiobooks，不写 srt_books → push 两条
+            // 消费路径（live push + syncAudiobookPackages）查 getSrtBookByBookKey
+            // ==null → 整本永不上传。本步只 INSERT 缺失的配对行（不改既有列/不删行）。
+            await backfillMissingAudiobookSrtBooksV29();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -745,6 +752,76 @@ class HibikiDatabase extends _$HibikiDatabase {
         'skippedAmbiguousOldKey=$skippedAmbiguousOldKey, '
         'skippedTargetOccupied=$skippedTargetOccupied '
         '(orphans/同名歧义的失配行保持原值不动)',
+      );
+    });
+  }
+
+  /// TODO-894：为缺失配对 srt_books 行的 EPUB-backed 有声书补写一条 srt_books
+  /// 行（v29 自愈迁移），仿 [backfillMismatchedAudiobookKeysV26] 范式：表/列守卫 →
+  /// transaction → 裸 SQL → debugPrint 计数。
+  ///
+  /// 候选只取「audiobooks.book_key 能 JOIN 上 epub_books（即 EPUB-backed），且其
+  /// book_key 不在任何 srt_books.book_key 里」。standalone 纯字幕书（有 srt_books
+  /// 但**无 audiobooks 行**）天然不进 `FROM audiobooks a`，永不误伤。
+  ///
+  /// uid 与导入路径共用稳定派生 `srtbook_epub_<book_key>`；`INSERT OR IGNORE` +
+  /// `WHERE NOT IN` 双重幂等（重复跑迁移不新增行、不改既有行）。cover_path 留空
+  /// （export 不依赖 srtBook.coverPath）。
+  Future<void> backfillMissingAudiobookSrtBooksV29() async {
+    if (!await _tableExists('audiobooks') ||
+        !await _tableExists('srt_books') ||
+        !await _tableExists('epub_books')) {
+      return;
+    }
+    if (!await _columnExists('audiobooks', 'book_key') ||
+        !await _columnExists('audiobooks', 'alignment_path') ||
+        !await _columnExists('audiobooks', 'audio_paths_json') ||
+        !await _columnExists('srt_books', 'uid') ||
+        !await _columnExists('srt_books', 'book_key') ||
+        !await _columnExists('srt_books', 'srt_path') ||
+        !await _columnExists('srt_books', 'title') ||
+        !await _columnExists('epub_books', 'book_key') ||
+        !await _columnExists('epub_books', 'title') ||
+        !await _columnExists('epub_books', 'imported_at')) {
+      return;
+    }
+
+    await transaction(() async {
+      final List<QueryRow> candidates = await customSelect(
+        'SELECT a.book_key AS book_key, '
+        'a.alignment_path AS srt_path, '
+        'a.audio_paths_json AS audio_json, '
+        'e.title AS title, e.author AS author, e.imported_at AS imported '
+        'FROM audiobooks a '
+        'JOIN epub_books e ON e.book_key = a.book_key '
+        'WHERE a.book_key NOT IN (SELECT book_key FROM srt_books)',
+      ).get();
+
+      int inserted = 0;
+      for (final QueryRow row in candidates) {
+        final String bookKey = row.read<String>('book_key');
+        await customStatement(
+          'INSERT OR IGNORE INTO srt_books '
+          '(uid, title, author, audio_paths_json, srt_path, cover_path, '
+          'imported_at, book_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          <Object?>[
+            'srtbook_epub_$bookKey',
+            row.read<String>('title'),
+            row.read<String?>('author'),
+            row.read<String?>('audio_json'),
+            row.read<String>('srt_path'),
+            null, // cover_path: export 不依赖
+            row.read<int>('imported'),
+            bookKey,
+          ],
+        );
+        inserted += 1;
+      }
+
+      debugPrint(
+        '[hibiki-migration v29] EPUB-backed audiobook srt_books backfill: '
+        'inserted=$inserted '
+        '(standalone 字幕书无 audiobooks 行天然豁免，重复迁移幂等)',
       );
     });
   }

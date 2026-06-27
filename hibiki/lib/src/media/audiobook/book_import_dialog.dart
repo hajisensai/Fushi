@@ -938,6 +938,18 @@ class _BookImportDialogState extends State<BookImportDialog>
     health.packInto(audiobook);
 
     await widget.audiobookRepo.saveAudiobook(audiobook);
+    // TODO-894：EPUB-backed 有声书必须同时补写一条配对 srt_books 行，否则
+    // push 消费点（sync_orchestrator.dart live push :1024 + syncAudiobookPackages
+    // :1270 hasLocal）查 getSrtBookByBookKey==null → 整本永不上传。uid 稳定派生
+    // 保证幂等（重复导入同 bookKey 走 upsert-on-uid 覆盖同行，不落第二行）。
+    await writeEpubBackedSrtBook(
+      repo: widget.repo,
+      bookKey: bookKey,
+      title: title,
+      author: _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim(),
+      srtPath: persistedSrt,
+      audioPaths: persistedAudioPaths,
+    );
     await widget.audiobookRepo.saveCues(
       bookKey: bookKey,
       cues: cues,
@@ -1053,4 +1065,46 @@ class BookImportDialogFrame extends StatelessWidget {
       ),
     );
   }
+}
+
+/// TODO-894：为一条 EPUB-backed 有声书补写配对的 srt_books 行。
+///
+/// EPUB-backed 路径（[BookImportDialog._importEpubWithAlignment]）只写 Audiobooks
+/// 行，但 push 两条消费路径（`sync_orchestrator.dart` live push 与
+/// `syncAudiobookPackages`）都靠 `srt_books.book_key == audiobooks.book_key` 找配对
+/// 的 SrtBook，缺它整本永不上传。导入路径与 backfill 迁移共用同一稳定派生 uid
+/// `srtbook_epub_<bookKey>`：同 bookKey 恒定 → 经 upsert-on-uid 幂等（重复导入覆盖
+/// 同行，绝不落第二行）。禁用 `DateTime.now()` 做 uid（破幂等）。
+///
+/// cover_path 刻意留空——export 打包不依赖 srtBook.coverPath（封面来自 epub_books /
+/// audiobook 落盘文件），新导入与 backfill 两路径对此保持同一策略。
+String epubBackedSrtBookUid(String bookKey) => 'srtbook_epub_$bookKey';
+
+Future<void> writeEpubBackedSrtBook({
+  required SrtBookRepository repo,
+  required String bookKey,
+  required String title,
+  required String? author,
+  required String srtPath,
+  required List<String> audioPaths,
+}) async {
+  final String uid = epubBackedSrtBookUid(bookKey);
+  // Re-import of the same bookKey must update the existing paired row in place
+  // (idempotent), not collide on UNIQUE(uid). upsertSrtBook resolves on the
+  // `id` PK, so carry the existing row's id when present.
+  final SrtBook? existing = await repo.findByUid(uid);
+  final SrtBook book = SrtBook()
+    ..id = existing?.id
+    ..uid = uid
+    ..title = title
+    ..srtPath = srtPath
+    ..importedAt = DateTime.now().millisecondsSinceEpoch
+    ..bookKey = bookKey;
+  if (audioPaths.isNotEmpty) {
+    book.audioPaths = List<String>.of(audioPaths);
+  }
+  if (author != null) {
+    book.author = author;
+  }
+  await repo.save(book);
 }

@@ -357,6 +357,104 @@ CREATE TABLE video_books (
   return db;
 }
 
+/// Opens a `user_version = 28` database whose audiobooks/srt_books/epub_books
+/// have the v28 shape, seeded with:
+///  - EPUB-backed audiobook key='A' (epub_books + audiobooks rows, NO srt_books
+///    row) — the TODO-894 bug shape that the v29 backfill must heal.
+///  - a standalone subtitle book (epub_books + a srt_books row with a non-empty
+///    book_key but NO audiobooks row) — the天然豁免对照 that must survive
+///    untouched (it never enters `FROM audiobooks a`).
+Future<HibikiDatabase> _openV28DbWithUnpairedAudiobook() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA foreign_keys = OFF');
+        rawDb.execute('''
+CREATE TABLE epub_books (
+  book_key TEXT NOT NULL PRIMARY KEY,
+  title TEXT NOT NULL,
+  author TEXT,
+  cover_path TEXT,
+  epub_path TEXT NOT NULL,
+  extract_dir TEXT NOT NULL,
+  chapter_count INTEGER NOT NULL,
+  chapters_json TEXT NOT NULL,
+  toc_json TEXT,
+  source_metadata TEXT,
+  imported_at INTEGER NOT NULL,
+  source_id INTEGER
+)
+''');
+        rawDb.execute('''
+CREATE TABLE audiobooks (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  book_key TEXT NOT NULL UNIQUE,
+  audio_root TEXT,
+  audio_paths_json TEXT,
+  alignment_format TEXT NOT NULL,
+  alignment_path TEXT NOT NULL,
+  health_kind_raw TEXT,
+  match_rate_pct INTEGER,
+  health_measured_at INTEGER,
+  health_reason TEXT,
+  follow_audio INTEGER
+)
+''');
+        rawDb.execute('''
+CREATE TABLE srt_books (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  uid TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  author TEXT,
+  audio_root TEXT,
+  audio_paths_json TEXT,
+  srt_path TEXT NOT NULL,
+  cover_path TEXT,
+  imported_at INTEGER NOT NULL,
+  book_key TEXT NOT NULL DEFAULT ''
+)
+''');
+
+        // (1) EPUB-backed unpaired audiobook (the bug): epub_books + audiobooks
+        //     keyed 'A', NO srt_books row.
+        rawDb.execute('''
+INSERT INTO epub_books
+(book_key, title, author, epub_path, extract_dir, chapter_count,
+ chapters_json, imported_at)
+VALUES ('A', '安達としまむら', '入間人間', '/abs/A.epub',
+ '/abs/A/extract', 1, '["ch1"]', 111000)
+''');
+        rawDb.execute('''
+INSERT INTO audiobooks
+(book_key, audio_paths_json, alignment_format, alignment_path)
+VALUES ('A', '["/abs/persist/A/disc1.mp3"]', 'srt',
+ '/abs/persist/A/aligned.srt')
+''');
+
+        // (2) standalone subtitle book: epub_books + a srt_books row with a
+        //     non-empty book_key but NO audiobooks row -> must stay untouched.
+        rawDb.execute('''
+INSERT INTO epub_books
+(book_key, title, epub_path, extract_dir, chapter_count,
+ chapters_json, imported_at)
+VALUES ('Standalone', 'Standalone Sub', '/abs/S.epub',
+ '/abs/S/extract', 1, '["ch1"]', 222000)
+''');
+        rawDb.execute('''
+INSERT INTO srt_books
+(uid, title, srt_path, imported_at, book_key)
+VALUES ('srtbook_222', 'Standalone Sub', '/abs/persist/S/s.srt',
+ 222000, 'Standalone')
+''');
+
+        rawDb.execute('PRAGMA user_version = 28');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
@@ -716,6 +814,71 @@ void main() {
       expect(video.read<String>('book_uid'), 'video/seed27');
       expect(video.read<String>('subtitle_source'), 'embedded:0');
       expect(video.data['secondary_subtitle_source'], isNull);
+    });
+
+    test(
+        'real v28->v29 backfills a paired srt_books row for an EPUB-backed '
+        'audiobook (TODO-894), heals push gating', () async {
+      // TODO-894: a v28 DB with an EPUB-backed audiobook (key 'A') but NO
+      // srt_books row is the bug shape — push (live + syncAudiobookPackages)
+      // looks up getSrtBookByBookKey('A')==null and skips the whole book. The
+      // from<29 backfill must INSERT exactly one paired srt_books row.
+      final db = await _openV28DbWithUnpairedAudiobook();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+      expect(db.schemaVersion, 29, reason: 'TODO-894 bumps schema to v29');
+
+      // The previously-unpaired EPUB-backed audiobook now has a srt_books row.
+      final paired = await db.getSrtBookByBookKey('A');
+      expect(paired, isNotNull,
+          reason: 'backfill must create the missing paired SrtBook for key A');
+      expect(paired!.uid, 'srtbook_epub_A',
+          reason: 'uid must be the stable derivation shared with the importer');
+      expect(paired.title, '安達としまむら', reason: 'title from epub_books');
+      expect(paired.author, '入間人間', reason: 'author from epub_books');
+      expect(paired.srtPath, '/abs/persist/A/aligned.srt',
+          reason: 'srt_path = audiobooks.alignment_path');
+      expect(paired.audioPathsJson, '["/abs/persist/A/disc1.mp3"]',
+          reason: 'audio_paths_json passed through from audiobooks');
+      expect(paired.coverPath, isNull,
+          reason: 'cover_path intentionally empty');
+      expect(paired.importedAt, 111000, reason: 'imported_at from epub_books');
+
+      // The standalone subtitle book (no audiobooks row) is untouched: still
+      // exactly one srt_books row for it, original uid/title preserved, and the
+      // backfill never created a phantom audiobook for it.
+      final standalone = await db.getSrtBookByBookKey('Standalone');
+      expect(standalone, isNotNull);
+      expect(standalone!.uid, 'srtbook_222',
+          reason: 'standalone row must keep its original uid (untouched)');
+      expect(standalone.title, 'Standalone Sub');
+      expect(await db.getAudiobookByBookKey('Standalone'), isNull,
+          reason: 'backfill must not invent an audiobook for standalone books');
+
+      // Exactly two srt_books rows total: the healed 'A' + the standalone.
+      final all = await db.getAllSrtBooks();
+      expect(all, hasLength(2));
+    });
+
+    test('v28->v29 backfill is idempotent: re-running adds no rows, uid stable',
+        () async {
+      final db = await _openV28DbWithUnpairedAudiobook();
+      // First open already ran the migration (schemaVersion now 29).
+      final beforeAll = await db.getAllSrtBooks();
+      expect(beforeAll, hasLength(2));
+      final healedBefore = (await db.getSrtBookByBookKey('A'))!;
+
+      // Re-run the backfill path directly (simulates an extra migration pass):
+      // WHERE NOT IN + INSERT OR IGNORE must be a no-op now.
+      await db.backfillMissingAudiobookSrtBooksV29();
+
+      final afterAll = await db.getAllSrtBooks();
+      expect(afterAll, hasLength(2), reason: '幂等：re-run must not add rows');
+      final healedAfter = (await db.getSrtBookByBookKey('A'))!;
+      expect(healedAfter.uid, healedBefore.uid,
+          reason: 'uid stable across runs');
+      expect(healedAfter.uid, 'srtbook_epub_A');
     });
 
     test(
