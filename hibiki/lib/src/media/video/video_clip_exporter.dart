@@ -217,6 +217,7 @@ String extractFfmpegFailureReason(String stderr) {
     'not found',
     'unsupported',
     'unrecognized',
+    'unknown',
     'does not contain',
   ];
   for (int i = lines.length - 1; i >= 0; i--) {
