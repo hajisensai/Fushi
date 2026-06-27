@@ -246,6 +246,89 @@ void main() {
       expect(logged.error, contains('matches no streams'));
     });
   });
+  group('extractFfmpegFailureReason (TODO-910)', () {
+    // 真实形态：开头是 ffmpeg `-hide_banner` 仍保留的输入 banner（`Input #0 ...`
+    // + `Metadata: encoder :...`），真正的失败行在 stderr **末尾**。
+    const String realStderr = '''
+Input #0, matroska,webm, from '/media/himoto/[Kamigami] Himouto! Umaru-chan - 11 [1920x1080 x264 AAC Sub(Chs,Cht,Jap)].mkv':
+  Metadata:
+    encoder         : libebml v1.3.0 + libmatroska v1.4.1
+  Duration: 00:23:40.00, start: 0.000000, bitrate: 2543 kb/s
+  Stream #0:0: Video: h264 (High), yuv420p(progressive), 1920x1080
+  Stream #0:1(jpn): Audio: aac (LC), 48000 Hz, stereo, fltp
+[matroska @ 0000020f] Could not find codec parameters for stream 2
+Conversion failed!
+''';
+
+    test('returns the real error line from the tail, not the input banner', () {
+      final String reason = extractFfmpegFailureReason(realStderr);
+      // load-bearing：若改回从头截断，这里会拿到 `Input #0`/`encoder` banner → 红。
+      expect(reason, 'Conversion failed!');
+      expect(reason, isNot(contains('Input #0')));
+      expect(reason, isNot(contains('encoder')));
+    });
+
+    test('prefers an error-keyword line over later non-error noise', () {
+      const String stderr = '''
+Input #0, matroska,webm, from 'a.mkv':
+  Metadata:
+    encoder         : libebml
+Stream map '0:a:3' matches no streams.
+frame=    1 fps=0.0 q=-1.0 size=       0kB time=00:00:00.00
+''';
+      final String reason = extractFfmpegFailureReason(stderr);
+      expect(reason, contains('matches no streams'));
+      expect(reason, isNot(contains('Input #0')));
+    });
+
+    test('degrades to the last non-noise line when no error keyword exists',
+        () {
+      // 退化输入：只有 banner / Metadata，无真错误行——绝不能返回 `Input #0` banner。
+      const String bannerOnly = '''
+Input #0, matroska,webm, from 'a.mkv':
+  Metadata:
+    encoder         : libebml v1.3.0
+  Duration: 00:23:40.00, start: 0.000000, bitrate: 2543 kb/s
+  Stream #0:0: Video: h264 (High), yuv420p, 1920x1080
+''';
+      final String reason = extractFfmpegFailureReason(bannerOnly);
+      expect(reason, isNot(startsWith('Input #0')));
+      expect(reason, isNot(contains('encoder')));
+      expect(reason, isNotEmpty);
+    });
+
+    test('returns empty string for blank stderr', () {
+      expect(extractFfmpegFailureReason(''), '');
+      expect(extractFfmpegFailureReason('   \n  \n'), '');
+    });
+
+    test('exportVideoClipViaFfmpeg detail carries the tail error, not banner',
+        () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_export_tail');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mkv');
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) =>
+            const FfmpegRunResult(returnCode: 1, output: realStderr),
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 1000,
+        outputPath: output.path,
+        backend: backend,
+      );
+
+      expect(result.failure, VideoClipExportFailure.ffmpegFailed);
+      // detail = 尾段真因，不再是全量 stderr / 头部 banner。
+      expect(result.detail, 'Conversion failed!');
+      expect(result.detail, isNot(contains('Input #0')));
+    });
+  });
 }
 
 typedef _RunHandler = FutureOr<FfmpegRunResult> Function(List<String> args);

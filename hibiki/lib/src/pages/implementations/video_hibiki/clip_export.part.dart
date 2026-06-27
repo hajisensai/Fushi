@@ -110,15 +110,17 @@ extension _VideoClipExport on _VideoHibikiPageState {
         ], subject: p.basename(exported));
       }
     } else {
-      _showOsd(t.video_clip_export_failed(
-        reason: _clipExportFailureReason(result),
-      ));
-      // C 修（BUG-345）：把 ffmpeg 真实 detail 截断追加到 OSD，给用户/真机一个可见
-      // 线索（完整 stderr 已由 exportVideoClipViaFfmpeg 写进错误日志页）。
+      // TODO-910：合成**单条** OSD（旧实现两条 _showOsd 互相覆盖，第二条把第一条
+      // 可读 reason 顶掉），且 detail 取 ffmpeg stderr **尾段**真因（见
+      // exportVideoClipViaFfmpeg → extractFfmpegFailureReason），而非旧的从头
+      // substring(0,160)——后者只截到没用的 `Input #0 ... encoder :` 输入 banner。
+      // 完整 stderr 仍由 exportVideoClipViaFfmpeg 写进错误日志页。
+      final String readable = _clipExportFailureReason(result);
       final String? detail = result.detail?.trim();
-      if (detail != null && detail.isNotEmpty) {
-        _showOsd(detail.length > 160 ? '${detail.substring(0, 160)}…' : detail);
-      }
+      final String reason = (detail == null || detail.isEmpty)
+          ? readable
+          : '$readable — ${detail.length > 200 ? '${detail.substring(detail.length - 200)}…' : detail}';
+      _showOsd(t.video_clip_export_failed(reason: reason));
     }
     _refocusVideo();
   }
