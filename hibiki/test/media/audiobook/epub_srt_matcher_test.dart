@@ -469,29 +469,37 @@ void main() {
       expect(r.matches[2].normCharStart, 10);
     });
 
-    test('TODO-906 收紧虚高：短虚词 cue 不再被 unigram Dice 模糊命中', () {
-      // 正文里根本没有「うん」「はい」这两条短 cue 的精确子串，但它们规范化后
-      // 都 < defaultProbeMinLen(6)，旧实现走 unigram Dice 极易在正文任意位置
-      // 凑够字符重叠误判命中，虚高匹配率。收紧后这类短 cue 只接受精确子串。
+    test('TODO-906 收紧虚高：短 cue 散字异位时 gate 必须挡住模糊误命中（判别性）', () {
+      // 判别性语料：needle「あい」(2字 < defaultProbeMinLen=6) 在正文里没有
+      // 精确子串「あい」，但正文夹了异位散字「いあ」——含 あ/い 两字符却顺序
+      // 颠倒。开模糊(allowFuzzy=true)时短 cue 走 unigram Dice，{あ,い} 对窗口
+      // {い,あ} 完全重叠 → score=1.0 ≥ 0.8 误命中；当前 gate(allowFuzzy=false)
+      // 关掉短 cue 的模糊兜底 → 只剩精确 indexOf，正文无「あい」精确子串 → 不命中。
+      //
+      // 【gate load-bearing】此断言锁住 epub_srt_matcher.dart 的 allowFuzzy 门控：
+      // 若把 `nc.length >= defaultProbeMinLen` 改回 `true`（=移除 TODO-906 收紧），
+      // 短 cue 会被 unigram Dice 误命中 → matchedCues 变 3、matches[1] 变 true →
+      // 本测试变红。（上一版以「吾輩は猫である…」为语料的守卫对该门控 vacuous：
+      // うん/はい 即使开模糊也凑不够 0.8 阈值，删门控不改变结果，故换成散字异位。）
       final List<EpubSection> sections = <EpubSection>[
-        mkSection(0, '吾輩は猫である。名前はまだない。どこで生れたかとんと見当がつかぬ。'),
+        // 锚点1（精确命中推进 cursor）→ 异位散字「いあ」→ 锚点2。
+        mkSection(0, 'わたしは尋ねました。いあそれで終わりです。'),
       ];
       final List<AudioCue> cues = <AudioCue>[
-        mkCue(0, '吾輩は猫である。'),
-        mkCue(1, 'うん'), // 短虚词，正文无此精确子串
-        mkCue(2, 'はい'), // 短虚词，正文无此精确子串
-        mkCue(3, 'どこで生れたかとんと見当がつかぬ。'),
+        mkCue(0, 'わたしは尋ねました。'),
+        mkCue(1, 'あい'), // 2 字短 cue：正文无精确「あい」，仅异位散字「いあ」
+        mkCue(2, 'それで終わりです。'),
       ];
 
       final MatchResult r =
           EpubSrtMatcher.match(sections: sections, cues: cues);
 
-      // 两条正文长 cue 命中，两条短虚词 cue 不再误判命中。
+      // 两条锚点 cue 命中，短 cue 因 gate 挡住模糊兜底而不命中。
       expect(r.matches[0].matched, isTrue);
-      expect(r.matches[1].matched, isFalse, reason: '短虚词 cue 不走模糊不应命中');
-      expect(r.matches[2].matched, isFalse, reason: '短虚词 cue 不走模糊不应命中');
-      expect(r.matches[3].matched, isTrue);
-      expect(r.matchedCues, 2);
+      expect(r.matches[1].matched, isFalse,
+          reason: '短 cue 散字异位：gate 挡住模糊，精确子串又缺失，不应命中');
+      expect(r.matches[2].matched, isTrue);
+      expect(r.matchedCues, 2, reason: '移除 allowFuzzy 门控会让此值变 3（守卫即变红）');
     });
 
     test('TODO-906 收紧虚高：短 cue 若精确出现在正文仍命中（不误伤真命中）', () {
