@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
 
 const double _dictionaryHeadwordBaseFontSize = 26.0;
 
@@ -52,7 +53,14 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
     final ThemeData theme = Theme.of(context);
-    final List<String> chars = trimmed.characters.toList(growable: false);
+    // BUG-442：逐字符建一个可点 widget 塞进 Wrap，节点数 = 码点数。超长剪贴板
+    // 文本（成千上万码点）会在构建期产出巨量 widget → 主 isolate OOM / 引擎崩溃。
+    // 硬兜底：只渲染前 kMaxLookupInputChars 个可点字符（上游通常已截断，这里是
+    // 即便上游漏截断也永不爆的最后防线）。截断后的文本同时作为 _lookupAt 的后缀真值。
+    final List<String> allChars = trimmed.characters.toList(growable: false);
+    final List<String> chars = allChars.length > kMaxLookupInputChars
+        ? allChars.sublist(0, kMaxLookupInputChars)
+        : allChars;
     // 每个字符是独立可点 span，逐字保持原有点击/Shift 悬停查词行为。
     final TextStyle charStyle = _dictionaryHeadwordTextStyle(context).copyWith(
       color: theme.colorScheme.onSurface,
@@ -136,8 +144,12 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     BuildContext charContext,
   ) {
     final String trimmed = widget.text.trim();
+    // BUG-442：与 build 同一上限——查词后缀从截断后的字符序列取，避免对超长串
+    // 重新展开整个 characters（也与渲染出来的可点字符一一对应）。
+    final Iterable<String> capped =
+        trimmed.characters.take(kMaxLookupInputChars);
     widget.onLookup(
-      trimmed.characters.skip(index).join(),
+      capped.skip(index).join(),
       _localRectOf(panelContext, charContext),
     );
   }

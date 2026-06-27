@@ -25,6 +25,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
@@ -258,6 +259,12 @@ NormalizedSearchTerm normalizeSearchTerm(
   required RegExp punctuationRegex,
   required RegExp loneSurrogateRegex,
 }) {
+  // BUG-442：词典查询前先按同一码点上限截断（用 characters 不切碎代理对 / 字素簇）。
+  // 防止超长串（如误把整章文本送进查词）让后续逐次 replaceAll 线性清洗卡顿，也与
+  // 渲染层 / 排队层共用同一上限，单一真相。
+  if (searchTerm.characters.length > kMaxLookupInputChars) {
+    searchTerm = searchTerm.characters.take(kMaxLookupInputChars).toString();
+  }
   searchTerm = searchTerm.replaceAll('\n', ' ');
 
   final swEmoji = Stopwatch()..start();

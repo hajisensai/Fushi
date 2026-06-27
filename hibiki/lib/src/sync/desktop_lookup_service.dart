@@ -3,12 +3,14 @@ import 'dart:io';
 
 import 'package:clipboard_watcher/clipboard_watcher.dart';
 import 'package:flutter/foundation.dart';
+import 'package:characters/characters.dart';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
+import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 
@@ -80,6 +82,10 @@ class DesktopLookupService extends ChangeNotifier
     bool showSourcePanel = true,
     bool dedupe = true,
   }) {
+    // BUG-442：剪贴板/热键/显式查词的统一入口。所有来源在排队前先按同一码点上限
+    // 截断（用 characters 不切碎代理对 / 字素簇），避免超长串一路流到逐字渲染的
+    // SourceLookupTextPanel 把主 isolate 撑爆，也省掉对超长串做线性清洗。
+    raw = _capLookupInput(raw);
     if (!dedupe) {
       final String trimmed = raw.trim();
       if (trimmed.isEmpty) return;
@@ -103,6 +109,20 @@ class DesktopLookupService extends ChangeNotifier
       showSourcePanel: showSourcePanel,
     );
     notifyListeners();
+  }
+
+  /// BUG-442：把查词输入截断到 [kMaxLookupInputChars] 个码点（字素簇），防止超长
+  /// 剪贴板文本一路流到逐字建 widget 的 [SourceLookupTextPanel] 触发主 isolate OOM。
+  /// 用 `characters` 截断不切碎代理对 / 组合字素；截断时记 info 级日志（非 error，
+  /// 这是正常的防御性裁剪而非异常）。
+  String _capLookupInput(String raw) {
+    final Characters chars = raw.characters;
+    if (chars.length <= kMaxLookupInputChars) return raw;
+    debugPrint(
+      '[desktop-lookup] clipboard input ${chars.length} chars exceeds '
+      '$kMaxLookupInputChars; truncating for lookup.',
+    );
+    return chars.take(kMaxLookupInputChars).toString();
   }
 
   void clearPending() {

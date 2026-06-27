@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:characters/characters.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -511,6 +513,57 @@ void main() {
     // 唤前台后清掉可能残留的任务栏高亮（clearTaskbarFlash 仅 Windows 下发 channel）。
     if (Platform.isWindows) {
       expect(captionCalls, contains('clearTaskbarFlash'));
+    }
+  });
+
+  // BUG-442：剪贴板/热键/显式查词排队入口对超长串统一截断到 kMaxLookupInputChars
+  // 码点（防止超长文本流到逐字渲染的 SourceLookupTextPanel 把主 isolate 撑爆）。
+  test('submitText caps over-long input to kMaxLookupInputChars (BUG-442)', () {
+    final String longText = 'あ' * (kMaxLookupInputChars + 500);
+    DesktopLookupService.instance.submitText(longText);
+    final String? pending = DesktopLookupService.instance.pendingText;
+    expect(pending, isNotNull);
+    expect(pending!.characters.length, kMaxLookupInputChars);
+  });
+
+  test('triggerLookup caps over-long input to kMaxLookupInputChars (BUG-442)',
+      () {
+    final String longText = 'い' * (kMaxLookupInputChars * 3);
+    DesktopLookupService.instance.triggerLookup(longText);
+    final String? pending = DesktopLookupService.instance.pendingText;
+    expect(pending, isNotNull);
+    expect(pending!.characters.length, kMaxLookupInputChars);
+  });
+
+  test('input exactly at the cap is not truncated (BUG-442 boundary)', () {
+    final String exact = 'う' * kMaxLookupInputChars;
+    DesktopLookupService.instance.submitText(exact);
+    expect(
+      DesktopLookupService.instance.pendingText!.characters.length,
+      kMaxLookupInputChars,
+    );
+
+    // 上限 + 1 → 截掉恰好一个码点。
+    DesktopLookupService.instance.debugReset();
+    DesktopLookupService.instance.submitText('え' * (kMaxLookupInputChars + 1));
+    expect(
+      DesktopLookupService.instance.pendingText!.characters.length,
+      kMaxLookupInputChars,
+    );
+  });
+
+  test('emoji surrogate pairs are not split when capping (BUG-442)', () {
+    // 每个 emoji 是一个 grapheme（两个 UTF-16 码元）。用 characters 截断不应
+    // 在代理对中间切断产生孤立代理项。构造 cap+10 个 emoji，截断到 cap 个。
+    const String emoji = '😀';
+    final String longText = emoji * (kMaxLookupInputChars + 10);
+    DesktopLookupService.instance.submitText(longText);
+    final String pending = DesktopLookupService.instance.pendingText!;
+    expect(pending.characters.length, kMaxLookupInputChars);
+    // 每个 grapheme 是完整 emoji（两码元），总码元数 = 2 × kMaxLookupInputChars。
+    expect(pending.length, kMaxLookupInputChars * 2);
+    for (final String g in pending.characters) {
+      expect(g, emoji);
     }
   });
 }

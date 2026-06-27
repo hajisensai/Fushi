@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:characters/characters.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 
@@ -32,6 +34,20 @@ void main() {
   }
 
   group('normalizeSearchTerm query cleanup (byte-exact vs legacy inline)', () {
+    // BUG-442：词典查询前先按 kMaxLookupInputChars 截断（用 characters 不切碎
+    // 代理对 / 字素簇），避免超长串让逐次 replaceAll 线性清洗卡顿。注意：这一步
+    // 不在 legacyNormalize 内，故超长输入不能用 expectEquivalent。
+    test('over-long input is capped to kMaxLookupInputChars (BUG-442)', () {
+      final String longText = 'あ' * (kMaxLookupInputChars + 1000);
+      final String out = normalize(longText);
+      expect(out.characters.length, kMaxLookupInputChars);
+    });
+
+    test('input exactly at the cap is not truncated (BUG-442 boundary)', () {
+      final String exact = 'い' * kMaxLookupInputChars;
+      expect(normalize(exact).characters.length, kMaxLookupInputChars);
+    });
+
     test('plain japanese term returned as-is', () {
       expect(normalize('図書館'), '図書館');
       expectEquivalent('図書館');
