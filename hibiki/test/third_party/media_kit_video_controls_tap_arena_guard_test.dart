@@ -28,7 +28,8 @@ void main() {
   test('显示控制条不再走 Listener.onPointerDown / _handlePointerDown', () {
     // 不得再有把 onPointerDown 接到 toggle 的裸 Listener。
     expect(
-      RegExp(r'onPointerDown:\s*\(event\)\s*=>\s*_handlePointerDown').hasMatch(src),
+      RegExp(r'onPointerDown:\s*\(event\)\s*=>\s*_handlePointerDown')
+          .hasMatch(src),
       isFalse,
       reason: 'TODO-916：toggle 必须脱离 Listener.onPointerDown（不等竞技场裁决）',
     );

@@ -247,5 +247,52 @@ void main() {
       expect(js, contains("'「':'」'"));
       expect(js, contains("'『': '』'"));
     });
+
+    // TODO-916 症状④：点字缝/行距点不中时回退到最近字符（强守卫，删掉修复源码即转红）。
+    test('TODO-916 getCaretRange/getCharacterAtPoint 命中容差 + furigana 排除守卫', () {
+      // ① inCharRange 增加 pad 形参（矩形按 pad 外扩再判包含）。
+      expect(
+        js,
+        contains('inCharRange: function(charRange, x, y, pad)'),
+        reason: 'inCharRange must accept a pad tolerance parameter',
+      );
+
+      // ① getCaretRange 第二遍「最近字符」兜底：距离平方 helper + best 候选回退分支。
+      expect(
+        js,
+        contains('charRangeDistanceSq: function(charRange, x, y)'),
+        reason: 'getCaretRange nearest-char fallback needs charRangeDistanceSq',
+      );
+      expect(js, contains('var bestNode = null'));
+      expect(js, contains('var bestOffset = -1'));
+      // best 候选确实被采纳并返回（删掉这段则精确 miss 时不再回退最近字符）。
+      final RegExp nearestFallback = RegExp(
+        r'if\s*\(\s*bestNode\s*\)\s*\{\s*'
+        r'range\.setStart\(\s*bestNode\s*,\s*bestOffset\s*\)\s*;',
+      );
+      expect(
+        nearestFallback.hasMatch(js),
+        isTrue,
+        reason: 'getCaretRange must adopt the nearest-char candidate on miss',
+      );
+
+      // ② walker 仍 REJECT furigana（rt/rp），振假名永不被兜底命中。
+      expect(js, contains("el.closest('rt, rp')"));
+      expect(
+        js,
+        contains(
+            'this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT'),
+        reason: 'walker must keep rejecting furigana (rt/rp) nodes',
+      );
+
+      // ③ getCharacterAtPoint：strict-first 再 padded —— pad 0 然后 pad 6 两遍。
+      expect(
+        js,
+        contains('var pads = [0, 6]'),
+        reason: 'getCharacterAtPoint must try strict (pad 0) then padded (6)',
+      );
+      // 两遍 pad 循环把 pad 透传给 inCharRange。
+      expect(js, contains('this.inCharRange(charRange, x, y, pads[p])'));
+    });
   });
 }

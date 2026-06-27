@@ -242,8 +242,8 @@ extension _VideoControlsTheme on _VideoHibikiPageState {
   ///
   /// fork 的 `seekIndicatorBuilder` 只回传增量 [delta]（有符号 swipeDuration）。主流
   /// 播放器横滑时显示**目标绝对时间**，故这里读 [controller] 实时位置/时长，经纯函数
-  /// [_VideoHibikiPageState.videoSeekIndicatorTargetLabel] /
-  /// [_VideoHibikiPageState.videoSeekIndicatorDeltaLabel] 算出「目标时间」与「±增量」
+  /// [VideoSeekIndicatorLabel.target] /
+  /// [VideoSeekIndicatorLabel.deltaSigned] 算出「目标时间」与「±增量」
   /// 两行。fork 把本 widget 套在居中 `IgnorePointer + AnimatedOpacity` 里，故这里只画
   /// 圆角半透明盒，不再处理定位/淡入淡出。
   Widget _buildSeekIndicator(
