@@ -9,6 +9,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/utils/misc/app_icon_preferences.dart';
+import 'package:hibiki/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
@@ -116,6 +117,11 @@ class _MiscellaneousSettingsBodyState
       } else if (Platform.isWindows) {
         final String path = await exportPresetIconToFile(key);
         ok = await WindowCaptionChannel.setWindowIcon(path);
+        if (ok) {
+          // TODO-901：换图标后把桌面 / 开始菜单的 .lnk 图标也同步成新图。
+          // 失败只降级 debugPrint，不影响上面已成功的运行时窗口图标。
+          await syncWindowsShortcutIcons(await File(path).readAsBytes());
+        }
       }
       if (ok && mounted) {
         final messenger = ScaffoldMessenger.of(context);
@@ -198,6 +204,8 @@ class _MiscellaneousSettingsBodyState
       if (ok) {
         await saveCustomIconPath(persisted);
         await saveIconPresetKey(customIconKey);
+        // TODO-901：同步桌面 / 开始菜单 .lnk 图标到用户自定义图。
+        await syncWindowsShortcutIcons(await File(persisted).readAsBytes());
         if (mounted) setState(() => _currentIcon = customIconKey);
       }
     }

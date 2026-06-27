@@ -46,6 +46,10 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 # dwmapi: DWM caption/text color theming for the native title bar.
 target_link_libraries(${BINARY_NAME} PRIVATE dwmapi)
+# ole32 / shell32: IShellLink + IPersistFile + SHGetKnownFolderPath /
+# SHChangeNotify for TODO-901 (rewriting desktop/Start-menu .lnk icons on app
+# icon change).
+target_link_libraries(${BINARY_NAME} PRIVATE ole32 shell32)
 # d2d1 / dwrite: rendering + char hit-testing for the desktop floating lyric
 # strip (floating_lyric_window.cpp).
 target_link_libraries(${BINARY_NAME} PRIVATE d2d1 dwrite)

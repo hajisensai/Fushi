@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <dwmapi.h>
+#include <shlobj.h>
+#include <shobjidl.h>
 #include <wincodec.h>
 #include <windows.h>
 #include <wrl/client.h>
@@ -247,6 +249,94 @@ HICON CreateIconFromImageFile(const std::wstring& path, int size) {
   return icon;
 }
 
+// Rewrites the IconLocation of a single existing .lnk to |icon_path| (index 0),
+// preserving its target/args/workdir, then notifies the shell to re-read it.
+// Returns true on success. A missing .lnk (user deleted it, or a portable
+// unzip install with no shortcuts) is a soft no-op and returns false without
+// being an error.
+bool SetShortcutIconLocation(const std::wstring& lnk_path,
+                             const std::wstring& icon_path) {
+  if (lnk_path.empty() || icon_path.empty()) {
+    return false;
+  }
+  if (GetFileAttributesW(lnk_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    return false;  // No such .lnk: soft skip.
+  }
+  using Microsoft::WRL::ComPtr;
+  ComPtr<IShellLinkW> shell_link;
+  HRESULT hr =
+      CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                       IID_PPV_ARGS(&shell_link));
+  if (FAILED(hr)) {
+    return false;
+  }
+  ComPtr<IPersistFile> persist_file;
+  hr = shell_link.As(&persist_file);
+  if (FAILED(hr)) {
+    return false;
+  }
+  // Load the existing .lnk so target/args/workdir survive; we only touch icon.
+  hr = persist_file->Load(lnk_path.c_str(), STGM_READWRITE);
+  if (FAILED(hr)) {
+    return false;
+  }
+  hr = shell_link->SetIconLocation(icon_path.c_str(), 0);
+  if (FAILED(hr)) {
+    return false;
+  }
+  hr = persist_file->Save(lnk_path.c_str(), TRUE);
+  if (FAILED(hr)) {
+    return false;
+  }
+  // Ask the shell to re-read this .lnk's icon.
+  SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW, lnk_path.c_str(), nullptr);
+  return true;
+}
+
+// Joins a known-folder path with "\Hibiki.lnk". Returns empty on failure.
+std::wstring HibikiShortcutInFolder(REFKNOWNFOLDERID folder_id) {
+  PWSTR folder = nullptr;
+  HRESULT hr = SHGetKnownFolderPath(folder_id, 0, nullptr, &folder);
+  if (FAILED(hr) || folder == nullptr) {
+    if (folder != nullptr) {
+      CoTaskMemFree(folder);
+    }
+    return std::wstring();
+  }
+  std::wstring path(folder);
+  CoTaskMemFree(folder);
+  if (!path.empty() && path.back() != L'\\') {
+    path.push_back(L'\\');
+  }
+  path += L"Hibiki.lnk";
+  return path;
+}
+
+// TODO-901: points the desktop + Start menu Hibiki shortcuts at |icon_path|
+// (a freshly generated multi-size .ico). Installer (hibiki.iss) drops the .lnk
+// at {userdesktop}\Hibiki and Programs root\Hibiki (DisableProgramGroupPage).
+// Returns true if at least one shortcut was updated. Taskbar pinned items are
+// intentionally NOT touched (fragile, cached in the registry; see plan).
+bool ApplyShortcutIcon(const std::wstring& icon_path) {
+  if (icon_path.empty()) {
+    return false;
+  }
+  bool any = false;
+  const std::wstring desktop_lnk = HibikiShortcutInFolder(FOLDERID_Desktop);
+  if (!desktop_lnk.empty()) {
+    any |= SetShortcutIconLocation(desktop_lnk, icon_path);
+  }
+  const std::wstring programs_lnk = HibikiShortcutInFolder(FOLDERID_Programs);
+  if (!programs_lnk.empty()) {
+    any |= SetShortcutIconLocation(programs_lnk, icon_path);
+  }
+  // One global associations-changed notify so already-open Explorer views pick
+  // the new icon up sooner (best-effort; shell icon cache is not guaranteed to
+  // refresh instantly).
+  SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+  return any;
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -343,6 +433,29 @@ bool FlutterWindow::OnCreate() {
             result->Error("bad_args", "Missing icon path");
           } else {
             const bool ok = ApplyWindowIcon(icon_path);
+            result->Success(flutter::EncodableValue(ok));
+          }
+        } else if (call.method_name() == "setShortcutIcon") {
+          // TODO-901: rewrite the desktop + Start menu Hibiki .lnk IconLocation
+          // to the freshly generated multi-size .ico Dart wrote to disk. Note
+          // the arg key is 'iconPath' (distinct from setWindowIcon's 'path').
+          const auto* shortcut_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          std::wstring ico_path;
+          if (shortcut_args != nullptr) {
+            const auto path_it =
+                shortcut_args->find(flutter::EncodableValue("iconPath"));
+            if (path_it != shortcut_args->end()) {
+              const auto* s = std::get_if<std::string>(&path_it->second);
+              if (s != nullptr) {
+                ico_path = Utf8ToWideString(*s);
+              }
+            }
+          }
+          if (ico_path.empty()) {
+            result->Error("bad_args", "Missing iconPath");
+          } else {
+            const bool ok = ApplyShortcutIcon(ico_path);
             result->Success(flutter::EncodableValue(ok));
           }
         } else {
