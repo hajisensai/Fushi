@@ -1894,5 +1894,8 @@
   "video_import_stream_referer": "Referer (optional)",
   "video_import_stream_user_agent": "User-Agent (optional)",
   "video_import_stream_play": "Play stream",
-  "video_import_stream_url_invalid": "Enter a valid http(s) stream URL"
+  "video_import_stream_url_invalid": "Enter a valid http(s) stream URL",
+  "settings_check_update_now": "Check for updates",
+  "update_checking_now": "Checking for updates…",
+  "update_already_latest": "You're on the latest version"
 }

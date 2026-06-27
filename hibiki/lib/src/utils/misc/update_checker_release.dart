@@ -36,7 +36,17 @@ class UpdateChecker {
   /// 同一时刻只跑一轮检查（`scheduleCheck` 走 post-frame 单次触发），单个足矣。
   static UpdateCheckCancellation? _activeCheckCancellation;
 
-  static void scheduleCheck(
+  /// 调度一轮更新检查（post-frame 单次触发）。
+  ///
+  /// TODO-898：新增可选结果回调，默认 `null` = 自动检查路径字节级零变化。
+  /// - [onUpToDate]：检查完成且**无可更新版本**时触发（覆盖 `_check` 三条等价
+  ///   「无更新」早退：无匹配 release / tag 为空 / 已是最新）。手动按钮据此给反馈。
+  /// - [onError]：检查抛错（网络等）时触发。
+  ///
+  /// 返回 `Future<void>`，在整轮检查（含 post-frame 调度 + `_check` 全程）完成后
+  /// 完成，供调用方（如手动按钮）`await` 后复位防连点旗标。旧调用忽略返回值即可，
+  /// 向后兼容。
+  static Future<void> scheduleCheck(
     BuildContext context,
     String currentVersion, {
     bool neverRemind = false,
@@ -44,19 +54,34 @@ class UpdateChecker {
     bool betaChannel = false,
     bool debugChannel = false,
     String customProxy = '',
+    void Function()? onUpToDate,
+    void Function(Object error)? onError,
+    // TODO-898 必修2：仅测试注入 fake「拉 release」函数指针，生产恒 null。
+    @visibleForTesting
+    Future<List<Map<String, dynamic>>> Function(
+            HttpClient client, UpdateChannel channel)?
+        fetchReleasesForTesting,
   }) {
     final UpdateChannel channel = debugChannel
         ? UpdateChannel.debug
         : betaChannel
             ? UpdateChannel.beta
             : UpdateChannel.stable;
+    final Completer<void> completer = Completer<void>();
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _check(context, currentVersion,
-          neverRemind: neverRemind,
-          autoInstall: autoInstall,
-          channel: channel,
-          customProxy: customProxy);
+              neverRemind: neverRemind,
+              autoInstall: autoInstall,
+              channel: channel,
+              customProxy: customProxy,
+              onUpToDate: onUpToDate,
+              onError: onError,
+              fetchReleases: fetchReleasesForTesting)
+          .whenComplete(() {
+        if (!completer.isCompleted) completer.complete();
+      });
     });
+    return completer.future;
   }
 
   static Future<void> _cleanupOldApks(String _) async {
@@ -111,6 +136,14 @@ class UpdateChecker {
     bool autoInstall = false,
     UpdateChannel channel = UpdateChannel.stable,
     String customProxy = '',
+    void Function()? onUpToDate,
+    void Function(Object error)? onError,
+    // TODO-898 必修2：可测 seam = 可选注入的「拉 release」函数指针。默认 null →
+    // 走现有 _fetchReleasesForChannel（生产路径零改动，不拆 _check 网络层）；
+    // 测试传 fake fetcher 即可覆盖三回调路径，不触网络。
+    Future<List<Map<String, dynamic>>> Function(
+            HttpClient client, UpdateChannel channel)?
+        fetchReleases,
   }) async {
     final PlatformUpdater updater = updaterForCurrentPlatform();
     if (!updater.supportsUpdateCheck) return;
@@ -136,7 +169,7 @@ class UpdateChecker {
       cancellation.registerAbort(() => abortClient.close(force: true));
 
       final List<Map<String, dynamic>> releases =
-          await _fetchReleasesForChannel(client, channel);
+          await (fetchReleases ?? _fetchReleasesForChannel)(client, channel);
       final UpdateReleaseSelection? selection =
           await selectUpdateReleaseForCurrentPlatform(
         releases,
@@ -144,16 +177,24 @@ class UpdateChecker {
         channel: channel,
         updater: updater,
       );
-      if (selection == null) return;
+      if (selection == null) {
+        // 无匹配 release = 等价「无可更新版本」（TODO-898）。
+        onUpToDate?.call();
+        return;
+      }
       final Map<String, dynamic> json = selection.release;
 
       final String? tagName =
           normalizeReleaseVersionTag(json['tag_name'] as String? ?? '');
       if (tagName == null || tagName.isEmpty) {
+        // tag 为空 = 等价「无可更新版本」（TODO-898）。
+        onUpToDate?.call();
         return;
       }
 
       if (!isUpdateVersionNewer(tagName, currentVersion, channel)) {
+        // 已是最新（TODO-898）。
+        onUpToDate?.call();
         return;
       }
 
@@ -191,6 +232,7 @@ class UpdateChecker {
     } catch (e, stack) {
       ErrorLogService.instance.log('UpdateChecker.check', e, stack);
       debugPrint('[Hibiki] update check failed: $e');
+      onError?.call(e); // TODO-898：手动检查失败反馈。
     } finally {
       // TODO-821：先注销 abort 回调（避免后续 cancel 误关已释放的 client），清空在途令牌，
       // 再常规关闭。中断路径已 close(force: true)，这里再 close() 幂等无害。

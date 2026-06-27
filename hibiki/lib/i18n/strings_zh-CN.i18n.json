@@ -1894,5 +1894,8 @@
   "video_import_stream_referer": "Referer（可选）",
   "video_import_stream_user_agent": "User-Agent（可选）",
   "video_import_stream_play": "播放流",
-  "video_import_stream_url_invalid": "请输入有效的 http(s) 流地址"
+  "video_import_stream_url_invalid": "请输入有效的 http(s) 流地址",
+  "settings_check_update_now": "检查更新",
+  "update_checking_now": "正在检查更新…",
+  "update_already_latest": "已是最新版本"
 }

@@ -54,6 +54,14 @@ SettingsDestination buildSystemDestination() {
             selected: _selectedUpdateChannel,
             onChanged: setUpdateChannel,
           ),
+          // TODO-898：手动「立即检查更新」。分区已被 platformSupportsUpdateCheck()
+          // 网关，按钮全平台可见（不能自装的平台仍可「检查→打开发布页」）。
+          SettingsActionItem(
+            id: 'system.check_update_now',
+            title: t.settings_check_update_now,
+            icon: Icons.system_update_outlined,
+            onTap: _checkUpdateNow,
+          ),
           SettingsSwitchItem(
             id: 'system.update_never_remind',
             title: t.update_never_remind,
@@ -196,6 +204,37 @@ SettingsDestination buildSystemDestination() {
       ),
     ],
   );
+}
+
+/// TODO-898：手动「立即检查更新」防连点旗标（模块级）。UI 重入保护真正靠它——
+/// UpdateChecker 内部的 `_activeCheckCancellation` 是「中断」语义、不挡重入。
+bool _manualCheckInFlight = false;
+
+/// 手动「立即检查更新」编排（TODO-898）。
+///
+/// 手动语义：`neverRemind: false`（无视用户「免提醒」偏好，主动点就要看到结果）+
+/// `autoInstall: false`（发现新版只弹确认对话框，不沿用自动安装偏好静默装）。
+/// 三种反馈走 toast：点击即时「检查中」、已是最新、检查失败；发现新版复用
+/// UpdateChecker 既有对话框/打开发布页（零改动）。
+Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
+  if (_manualCheckInFlight) return;
+  _manualCheckInFlight = true;
+  HibikiToast.show(msg: t.update_checking_now);
+  try {
+    await UpdateChecker.scheduleCheck(
+      settingsContext.context,
+      settingsContext.appModel.packageInfo.version,
+      neverRemind: false,
+      autoInstall: false,
+      betaChannel: settingsContext.appModel.updateBetaChannel,
+      debugChannel: settingsContext.appModel.updateDebugChannel,
+      customProxy: settingsContext.appModel.updateCustomProxy,
+      onUpToDate: () => HibikiToast.show(msg: t.update_already_latest),
+      onError: (Object _) => HibikiToast.show(msg: t.update_check_failed),
+    );
+  } finally {
+    _manualCheckInFlight = false;
+  }
 }
 
 /// 「自定义更新代理」输入框（TODO-871/862）：fake-ip/TUN 模式下系统代理写注册表、
