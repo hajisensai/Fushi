@@ -259,11 +259,12 @@ class PreferencesRepository extends ChangeNotifier {
   // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
   //
   // 启动时 check-due 自动更新词典。interval 存 enum `.name`（daily/weekly/monthly），
-  // lastUpdate 存 ISO8601 字符串（'' = 从未更新）。默认 autoUpdate=true、weekly。
+  // lastUpdate 存 ISO8601 字符串（'' = 从未更新）。默认 autoUpdate=false（opt-in，
+  // 向后兼容，不在升级后静默联网/自动下载重导词典；用户须主动开启）、weekly。
   // MVP 只做启动 check-due，无计费网络门控（本仓库无 connectivity 依赖）。
 
   bool get autoUpdateDictionaries =>
-      getPref('auto_update_dictionaries', defaultValue: true) as bool;
+      getPref('auto_update_dictionaries', defaultValue: false) as bool;
 
   Future<void> setAutoUpdateDictionaries(bool value) async {
     await setPref('auto_update_dictionaries', value);

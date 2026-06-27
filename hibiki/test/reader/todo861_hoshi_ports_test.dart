@@ -77,7 +77,12 @@ void main() {
       await db.close();
     });
 
-    test('autoUpdateDictionaries 默认 true', () {
+    test('autoUpdateDictionaries 默认 false（opt-in，向后兼容，不在升级后静默联网）', () {
+      expect(repo.autoUpdateDictionaries, isFalse);
+    });
+
+    test('设 true 写穿读回', () async {
+      await repo.setAutoUpdateDictionaries(true);
       expect(repo.autoUpdateDictionaries, isTrue);
     });
 
@@ -128,6 +133,21 @@ void main() {
         'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
       );
       expect(src, contains('_hoshiRevealBlurredImage'));
+    });
+
+    test('④ 长按 onImageLongPress 前也先 _hoshiRevealBlurredImage（揭开优先一致）', () {
+      final String src = _read(
+        'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
+      );
+      // 长按定时器体内：必须在调用 onImageLongPress 之前先尝试揭开仍 blurred 的图。
+      final int revealIdx =
+          src.indexOf('if (_hoshiRevealBlurredImage(pressEl)) return;');
+      final int longPressIdx = src.indexOf(
+          "window.flutter_inappwebview.callHandler('onImageLongPress', imgUrl);");
+      expect(revealIdx, isNonNegative, reason: '长按分支必须先尝试揭开 blurred 图');
+      expect(longPressIdx, isNonNegative);
+      expect(revealIdx, lessThan(longPressIdx),
+          reason: '揭开必须在 onImageLongPress 之前（揭开优先）');
     });
   });
 }

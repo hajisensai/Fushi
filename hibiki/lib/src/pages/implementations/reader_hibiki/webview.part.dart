@@ -645,6 +645,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     imageLongPressTimer = setTimeout(function() {
       imageLongPressTimer = null;
       imageLongPressConsumed = true;
+      // TODO-861④：长按仍带 `blurred` 类的防剧透图时，先揭开（移除类）并吞掉本次——
+      // 与单击（_gestureEnd）/键盘·手柄激活（reader_caret_scripts.dart）语义一致：
+      // 「揭开优先」，揭开后再长按才弹出图片操作菜单。复用同一 _hoshiRevealBlurredImage。
+      var pressEl = document.elementFromPoint(imageLongPressStartX, imageLongPressStartY);
+      if (_hoshiRevealBlurredImage(pressEl)) return;
       window.flutter_inappwebview.callHandler('onImageLongPress', imgUrl);
     }, 550);
   }, {passive: true});
