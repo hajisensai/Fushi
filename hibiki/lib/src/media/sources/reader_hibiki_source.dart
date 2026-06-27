@@ -895,6 +895,17 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// TODO-907: 歌词竖排开关（独立 key，**不复用** `ttu_writing_mode` 正文真值）。
+  /// 默认 `false` = 横排。切换走整页重建（`_loadLyricsPage`），不在此触发 live。
+  bool get lyricsVerticalWriting =>
+      readerSettings?.lyricsVerticalWriting ??
+      getPreference<bool>(key: 'lyrics_vertical_writing', defaultValue: false);
+  Future<void> setLyricsVerticalWriting(bool v) async {
+    await (readerSettings?.setLyricsVerticalWriting(v) ??
+        setPreference<bool>(key: 'lyrics_vertical_writing', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   double get ttuLineHeight =>
       readerSettings?.lineHeight ??
       getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);

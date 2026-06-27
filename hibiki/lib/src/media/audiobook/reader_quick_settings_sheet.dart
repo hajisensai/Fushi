@@ -64,6 +64,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onToggleLyricsMode,
     this.extractDir,
     this.onReloadChapter,
+    this.onLyricsReload,
     this.onAudioImport,
     super.key,
   });
@@ -122,6 +123,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   final String? extractDir;
   final Future<void> Function()? onReloadChapter;
+
+  /// TODO-907: 歌词模式整页重建（切竖排/横排）。歌词页是 WebView 整页 HTML，
+  /// writing-mode 改了只能重建文档（[_loadLyricsPage]），不能 live 改样式。
+  final Future<void> Function()? onLyricsReload;
   final VoidCallback? onAudioImport;
 
   @override
@@ -1354,6 +1359,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: [
         AdaptiveSettingsRow(
           title: t.lyrics_font_size_hint,
+        ),
+        // TODO-907: 歌词竖排开关（独立于正文 writing-mode）。切换走整页重建。
+        AdaptiveSettingsSwitchRow(
+          title: t.lyrics_vertical_writing,
+          subtitle: t.lyrics_vertical_writing_hint,
+          value: _src.lyricsVerticalWriting,
+          onChanged: (bool enabled) async {
+            await _src.setLyricsVerticalWriting(enabled);
+            if (!mounted) return;
+            setState(() {});
+            await widget.onLyricsReload?.call();
+          },
         ),
         _numberStepper(
           label: t.lyrics_font_size,

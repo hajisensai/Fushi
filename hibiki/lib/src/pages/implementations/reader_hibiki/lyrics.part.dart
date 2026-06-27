@@ -101,6 +101,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       marginBottom: ReaderHibikiSource.instance.lyricsMarginBottom,
       marginLeft: ReaderHibikiSource.instance.lyricsMarginLeft,
       marginRight: ReaderHibikiSource.instance.lyricsMarginRight,
+      vertical: ReaderHibikiSource.instance.lyricsVerticalWriting,
     );
 
     await _controller!.loadData(

@@ -154,6 +154,13 @@ class ReaderSettings {
   Future<void> setLyricsMarginRight(double v) =>
       _set<double>('lyrics_margin_right', v);
 
+  /// TODO-907: 歌词模式竖排开关，**独立**于正文 `ttu_writing_mode`（正文默认
+  /// vertical-rl，复用会连坐正文）。默认 `false` = 横排，向后兼容历史行为。
+  bool get lyricsVerticalWriting =>
+      _get<bool>('lyrics_vertical_writing', false);
+  Future<void> setLyricsVerticalWriting(bool v) =>
+      _set<bool>('lyrics_vertical_writing', v);
+
   double get lineHeight => _get<double>('ttu_line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('ttu_line_height', v);
 

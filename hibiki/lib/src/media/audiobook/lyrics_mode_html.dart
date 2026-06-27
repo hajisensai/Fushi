@@ -15,6 +15,7 @@ class LyricsModeHtml {
     double marginBottom = 0,
     double marginLeft = 0,
     double marginRight = 0,
+    bool vertical = false,
   }) {
     final StringBuffer cueHtml = StringBuffer();
     for (int i = 0; i < cues.length; i++) {
@@ -35,6 +36,31 @@ class LyricsModeHtml {
 
     final String selectionJs = ReaderSelectionScripts.source();
 
+    // ── TODO-907: 轴依赖样式（横排=纵滚，竖排 vertical-rl=横滚） ──
+    // 把横/竖排差异收敛成三段 CSS 片段，模板里只插一次，正文逻辑不再撒分支。
+    // 竖排 vertical-rl 是右起左推：主轴为列、横向滚动、纵向溢出隐藏。
+    final String htmlBodyAxisCss = vertical
+        ? 'writing-mode: vertical-rl; overflow-x: auto; overflow-y: hidden;'
+        : 'overflow-x: hidden;';
+    final String containerAxisCss = vertical
+        ? 'flex-direction: row; justify-content: flex-start; align-items: center;'
+        : 'flex-direction: column; align-items: center;';
+    // 主轴方向的「45vh/45vw 居中余量 + 用户边距」。横排=上下(vh)，竖排=左右(vw)。
+    // 注意竖排 vertical-rl 视觉「先读」在右，但 padding 仍按物理 left/right 写，
+    // 由 writing-mode 决定读序，无需翻 padding 值。
+    final double padTop = vertical ? marginTop : 45 + marginTop;
+    final double padBottom = vertical ? marginBottom : 45 + marginBottom;
+    final double padLeft =
+        vertical ? 45 + marginLeft : (marginLeft > 0 ? marginLeft : 2.5);
+    final double padRight =
+        vertical ? 45 + marginRight : (marginRight > 0 ? marginRight : 2.5);
+    final String containerPaddingCss = vertical
+        ? 'padding: ${padTop}vh ${padRight}vw ${padBottom}vh ${padLeft}vw;'
+        : 'padding: calc(45vh + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw '
+            'calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
+    // JS 端轴标记：true=竖排横滚（用 scrollBy 增量绕开 vertical-rl 负向 scrollX）。
+    final String verticalJs = vertical ? 'true' : 'false';
+
     return '''
 <!DOCTYPE html>
 <html lang="ja">
@@ -46,8 +72,9 @@ class LyricsModeHtml {
 :root { --cue-scale: 1.15; }
 html, body {
   width: 100%;
+  height: 100%;
   background: $backgroundColor;
-  overflow-x: hidden;
+  $htmlBodyAxisCss
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   /* Themed scrollbar: transparent track shows the lyrics background, thumb
@@ -73,9 +100,8 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 }
 .lyrics-container {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: calc(45vh + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;
+  $containerAxisCss
+  $containerPaddingCss
   gap: 0;
 }
 .cue {
@@ -134,25 +160,44 @@ $cueHtml
 $selectionJs
 
 // ── 滚动动画 ──
+// TODO-907: 横/竖排统一走「getBoundingClientRect 相对视口中线的 delta + 增量
+// scrollBy」。delta 是轴无关的相对量，竖排 vertical-rl 的 scrollX 是负向坐标，
+// 用相对 delta 增量滚动绕开 RTL 绝对坐标符号坑（参考正文横排亚像素累积教训）。
+var __lyricsVertical = $verticalJs;
 var _animId = 0;
+// 返回元素中心相对视口中线的偏移（沿当前滚动轴）：>0 表示需正向 scrollBy。
+function _lyricsCenterDelta(el) {
+  var r = el.getBoundingClientRect();
+  if (__lyricsVertical) {
+    var elCenterX = r.left + r.width / 2;
+    return elCenterX - (window.innerWidth / 2);
+  }
+  var elCenterY = r.top + r.height / 2;
+  return elCenterY - (window.innerHeight / 2);
+}
+function _lyricsScrollByAxis(d) {
+  if (__lyricsVertical) window.scrollBy(d, 0);
+  else window.scrollBy(0, d);
+}
 function scrollToCenter(el, duration) {
   if (!el) return;
   _animId++;
   var myId = _animId;
-  var targetY = el.offsetTop - (window.innerHeight / 2) + (el.offsetHeight / 2);
-  var startY = window.scrollY;
-  var diff = targetY - startY;
+  var diff = _lyricsCenterDelta(el);
   if (Math.abs(diff) < 1) return;
   var absDiff = Math.abs(diff);
   var adaptDuration = Math.min(700, Math.max(300, absDiff * 0.5));
   if (duration) adaptDuration = duration;
   var startTime = performance.now();
+  var lastApplied = 0;
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
   function step(now) {
     if (myId !== _animId) return;
     var elapsed = now - startTime;
     var progress = Math.min(elapsed / adaptDuration, 1);
-    window.scrollTo(0, startY + diff * easeOutCubic(progress));
+    var want = diff * easeOutCubic(progress);
+    _lyricsScrollByAxis(want - lastApplied);
+    lastApplied = want;
     if (progress < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
@@ -308,21 +353,25 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
       r.style.setProperty('background-color', accentColor);
       r.style.color = bgColor;
     } else if (r.selectorText === '.lyrics-container') {
-      var lv = (ml != null && ml > 0) ? ml : 2.5;
-      var rv = (mr != null && mr > 0) ? mr : 2.5;
-      r.style.padding = 'calc(45vh + ' + (mt||0) + 'vh) ' + lv + 'vw calc(45vh + ' + (mb||0) + 'vh) ' + rv + 'vw';
+      if (__lyricsVertical) {
+        // 竖排 vertical-rl：居中余量在左右(45vw)，上下吃用户 vh 边距。
+        r.style.padding = (mt||0) + 'vh calc(45vw + ' + (mr||0) + 'vw) ' + (mb||0) + 'vh calc(45vw + ' + (ml||0) + 'vw)';
+      } else {
+        var lv = (ml != null && ml > 0) ? ml : 2.5;
+        var rv = (mr != null && mr > 0) ? mr : 2.5;
+        r.style.padding = 'calc(45vh + ' + (mt||0) + 'vh) ' + lv + 'vw calc(45vh + ' + (mb||0) + 'vh) ' + rv + 'vw';
+      }
     }
   }
 };
 
 // ── 初始定位（即时跳转，不用动画，避免与 Dart 端 setCue 竞争） ──
+// TODO-907: 同样走 delta 增量滚动，横竖排一致；竖排 vertical-rl 的负向 scrollX
+// 用 scrollBy 增量打到位，不硬算绝对坐标。
 _currentIdx = $currentIndex;
 if ($currentIndex >= 0 && $currentIndex < _cues.length) {
   var _initEl = _cues[$currentIndex];
-  if (_initEl) {
-    var _iy = _initEl.offsetTop - (window.innerHeight / 2) + (_initEl.offsetHeight / 2);
-    window.scrollTo(0, Math.max(0, _iy));
-  }
+  if (_initEl) _lyricsScrollByAxis(_lyricsCenterDelta(_initEl));
 }
 </script>
 </body>

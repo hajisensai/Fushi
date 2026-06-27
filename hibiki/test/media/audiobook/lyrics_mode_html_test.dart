@@ -147,6 +147,55 @@ void main() {
       expect(html, contains("r.selectorText === 'html, body'"));
       expect(html, contains("setProperty('scrollbar-color'"));
     });
+
+    // TODO-907: vertical lyrics mode is a separate `vertical` flag (default
+    // false = horizontal, backward-compatible). Horizontal output must NOT
+    // carry the vertical writing-mode; vertical output must.
+    test('default (horizontal) page has no vertical writing-mode', () {
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+      );
+
+      expect(html, isNot(contains('writing-mode: vertical-rl')));
+      expect(html, contains('var __lyricsVertical = false;'));
+      final String rootRule = _cssBlock(html, 'html, body {');
+      expect(rootRule, contains('overflow-x: hidden;'));
+    });
+
+    test('vertical mode emits vertical-rl writing-mode and horizontal scroll',
+        () {
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0), _cue(1)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+        vertical: true,
+      );
+
+      // The body switches to vertical-rl (top-to-bottom, right-to-left) and
+      // scrolls horizontally; the JS axis flag must follow.
+      final String rootRule = _cssBlock(html, 'html, body {');
+      expect(rootRule, contains('writing-mode: vertical-rl;'));
+      expect(rootRule, contains('overflow-x: auto;'));
+      expect(rootRule, contains('overflow-y: hidden;'));
+      expect(html, contains('var __lyricsVertical = true;'));
+
+      // The container main axis flips to a row so cues lay out as columns.
+      final String containerRule = _cssBlock(html, '.lyrics-container {');
+      expect(containerRule, contains('flex-direction: row;'));
+
+      // Scrolling is delta/incremental (scrollBy) to dodge vertical-rl's
+      // negative scrollX coordinate, not absolute scrollTo.
+      expect(html, contains('window.scrollBy(d, 0)'));
+      expect(html, contains('_lyricsScrollByAxis'));
+    });
   });
 }
 

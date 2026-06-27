@@ -1905,5 +1905,7 @@
   "backup_import_mode_overwrite": "Overwrite entire library",
   "backup_import_mode_merge": "Merge into current library",
   "db_unrecoverable_title": "Database damaged",
-  "db_unrecoverable_message": "The database could not be opened even after automatic repair. It is likely corrupt. You can restore a backup in Settings, or clear app data to start fresh."
+  "db_unrecoverable_message": "The database could not be opened even after automatic repair. It is likely corrupt. You can restore a backup in Settings, or clear app data to start fresh.",
+  "lyrics_vertical_writing": "Vertical lyrics",
+  "lyrics_vertical_writing_hint": "Read lyrics top-to-bottom, right-to-left (independent of book mode)"
 }

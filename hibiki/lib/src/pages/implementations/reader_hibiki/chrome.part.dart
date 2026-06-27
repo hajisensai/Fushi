@@ -740,6 +740,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         onThemeChanged: _onThemeChanged,
         extractDir: _extractDir,
         onReloadChapter: _reloadWithCurrentSettings,
+        onLyricsReload: _loadLyricsPage,
         onAudioImport: _srtBookUid != null ? _openAudioImportDialog : null,
         lyricsMode: _lyricsMode,
         onToggleLyricsMode: _toggleLyricsMode,
