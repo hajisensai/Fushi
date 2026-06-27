@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -309,22 +310,58 @@ void main() {
     expect(find.text(t.dialog_read), findsNothing);
   });
 
-  testWidgets('first video open prompts for Anime4K recommended shaders',
+  testWidgets(
+      'first video open prompts for Anime4K recommended shaders (desktop)',
       (WidgetTester tester) async {
-    await seedTaggedVideo();
-    await tester.pumpWidget(buildApp());
-    await tester.pumpAndSettle();
+    // TODO-874：首次提示只在桌面端弹（移动端着色器超分掉帧/发热，纯抑制）。
+    // widget 测试默认平台是 android，需显式 override 到桌面端验证弹窗路径。
+    // override 必须在测试体内 try/finally 复位（绑定的 invariant 检查在
+    // tearDown 之前跑，用 addTearDown 复位会触发 foundation debug var 泄漏断言）。
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await seedTaggedVideo();
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('My Episode'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('My Episode'));
+      await tester.pumpAndSettle();
 
-    expect(find.text(t.video_shader_first_use_title), findsOneWidget);
-    expect(find.text(t.video_shader_first_use_body), findsOneWidget);
-    expect(
-      await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
-      'b:true',
-    );
-    expect(appModel.prefsRepo.videoAnime4kPromptShown, isTrue);
+      expect(find.text(t.video_shader_first_use_title), findsOneWidget);
+      expect(find.text(t.video_shader_first_use_body), findsOneWidget);
+      expect(
+        await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
+        'b:true',
+      );
+      expect(appModel.prefsRepo.videoAnime4kPromptShown, isTrue);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets(
+      'TODO-874 mobile first video open suppresses Anime4K prompt (no side effect)',
+      (WidgetTester tester) async {
+    // 移动端首次打开视频不弹 Anime4K 提示，且不置 videoAnime4kPromptShown 标记
+    // （零副作用，保证桌面端跨平台同步后仍能首次弹出）。
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await seedTaggedVideo();
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('My Episode'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.video_shader_first_use_title), findsNothing);
+      expect(find.text(t.video_shader_first_use_body), findsNothing);
+      expect(
+        await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
+        isNull,
+      );
+      expect(appModel.prefsRepo.videoAnime4kPromptShown, isFalse);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('顶部标签可拖到视频卡并写入视频标签映射', (WidgetTester tester) async {

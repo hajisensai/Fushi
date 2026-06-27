@@ -45,12 +45,23 @@ void main() {
     expect(schema.contains('Platform.isWindows'), isTrue);
   });
 
-  test('pubspec Windows 图标源是文字 wordmark', () {
-    final String pubspec = read('pubspec.yaml');
-    final RegExp windowsIcon = RegExp(
-      r'windows:[\s\S]*?image_path:\s*"assets/meta/launcher_icon_minimal\.png"',
+  test('Windows app icon 用已提交的 app_icon.ico wordmark', () {
+    // TODO-879（f9f5bb380）删除了 flutter_launcher_icons 配置块（generator 会
+    // 覆盖手调 adaptive 图标），Windows 改用已提交的 app_icon.ico。
+    // 守卫真实不变量：已提交的 ico 存在且非空 + Runner.rc 引用它。
+    final File ico = File('windows/runner/resources/app_icon.ico');
+    expect(ico.existsSync(), isTrue,
+        reason: '缺失已提交的 Windows 图标: windows/runner/resources/app_icon.ico');
+    expect(ico.lengthSync() > 0, isTrue,
+        reason: 'app_icon.ico 不应为空（应是文字 wordmark 图标）');
+
+    final String rc = read('windows/runner/Runner.rc');
+    // .rc 里路径用双反斜杠转义：resources\app_icon.ico。
+    final RegExp iconRef = RegExp(
+      r'IDI_APP_ICON\s+ICON\s+"resources\\\\app_icon\.ico"',
     );
-    expect(windowsIcon.hasMatch(pubspec), isTrue);
+    expect(iconRef.hasMatch(rc), isTrue,
+        reason: 'Runner.rc 应以 IDI_APP_ICON 引用 resources\\\\app_icon.ico');
   });
 
   test('Android 12+ 系统 splash 图标用文字 wordmark 前景', () {
