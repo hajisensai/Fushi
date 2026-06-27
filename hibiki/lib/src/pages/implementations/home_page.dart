@@ -7,6 +7,8 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart'
+    show HibikiFocusController, HibikiFocusRoot;
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
@@ -190,6 +192,10 @@ class _HomePageState extends BasePageState<HomePage>
         searchWithWildcards: false,
         useCache: false,
       );
+      // TODO-900: OS 层失焦（Alt+Tab 切窗）后 Flutter 不保证把 primaryFocus 归还到
+      // 首页键事件 Focus，导致切窗回来后页级 / 全局快捷键全死，只能重启 app 才靠
+      // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
+      _reclaimHomeFocusIfOwned();
     } else if (AppLifecycleState.paused == state) {
       if (appModel.lowMemoryMode) {
         PaintingBinding.instance.imageCache.clear();
@@ -201,6 +207,30 @@ class _HomePageState extends BasePageState<HomePage>
           mediaIdentifier: item.mediaIdentifier,
         );
       }
+    }
+  }
+
+  /// TODO-900：app 回前台时把 Flutter 焦点收回首页键事件入口，修复「切窗回来后
+  /// 首页 / 全局快捷键整体失灵、只能重启复活」。两态分支（对齐 [_wrapFocusNavigation]）：
+  /// - 实验焦点导航开（存在 [HibikiFocusRoot] 控制器）→ `controller.ensureFocus()`，
+  ///   把焦点 home 到一个真实可聚焦目标（仍落在首页 Focus 子树内，键事件照常冒泡到
+  ///   [_handleKeyEvent]）。
+  /// - 关（默认，无 HibikiFocusRoot）→ 直接 requestFocus **既有** [_keyboardFocusNode]
+  ///   （绑定 [_handleKeyEvent] 的同一节点，不新造节点）。
+  /// 路由门控：首页非当前路由（上方压着对话框）时不抢焦点，避免夺走对话框焦点
+  /// （Never break userspace）——对话框关闭时各自的返回点会归还焦点。
+  void _reclaimHomeFocusIfOwned() {
+    if (!mounted) return;
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    if (owner != null && !owner.isCurrent) return;
+    final HibikiFocusController? controller =
+        HibikiFocusRoot.maybeControllerOf(context, listen: false);
+    if (controller != null) {
+      controller.ensureFocus();
+      return;
+    }
+    if (_keyboardFocusNode.canRequestFocus) {
+      _keyboardFocusNode.requestFocus();
     }
   }
 

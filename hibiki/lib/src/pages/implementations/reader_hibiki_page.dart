@@ -1561,6 +1561,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // in lyrics mode persists the current playback position, not a stale scroll.
       _syncAndFlushPosition();
       _flushReadingStats();
+    } else if (state == AppLifecycleState.resumed) {
+      // TODO-900: OS 层失焦（Alt+Tab 切窗）后 Flutter 不保证把 primaryFocus 归还到
+      // 页级 [_focusNode]，导致切窗回来后页级 / 全局快捷键全死，且因是焦点状态而非可
+      // 重建对象，只有重启 app 才靠 autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned]
+      // 的 resumed 回收范式，把焦点收回正文（门控见 helper，绝不抢对话框 / 查词焦点）。
+      _reclaimReaderFocusIfOwned();
     }
   }
 
@@ -2152,6 +2158,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!mounted || !_readerContentReady || _lyricsMode) return;
     if (_caretActive || _caretSurface != CaretSurface.none) return;
     if (isDictionaryShown) return; // 弹窗 WebView 持焦点期间不抢
+    _focusNode.requestFocus();
+  }
+
+  /// TODO-900：app 回前台（[AppLifecycleState.resumed]）时把 Flutter 焦点收回正文
+  /// [_focusNode]，修复「切窗回来后阅读器 / 全局快捷键整体失灵、只能重启复活」。
+  /// 复用 [_settleFocusOnContentReady] 的既有门控（内容就绪 / 非歌词 / 无光标占用 /
+  /// 无查词弹窗），并在其上**追加路由 `isCurrent` 判定**（对齐视频页
+  /// [_reclaimVideoFocusIfOwned] 的 `owner.isCurrent`）：resumed 是全局生命周期回调，
+  /// 阅读器上方压着设置 / 查词大对话框（所有者路由非 current）时直接 requestFocus 会
+  /// 夺走对话框焦点（Never break userspace 红线），故非当前路由时不抢——那些覆盖层关闭
+  /// 时各自的返回点会归还焦点。
+  void _reclaimReaderFocusIfOwned() {
+    if (!mounted || !_readerContentReady || _lyricsMode) return;
+    if (_caretActive || _caretSurface != CaretSurface.none) return;
+    if (isDictionaryShown) return; // 弹窗 WebView 持焦点期间不抢
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    if (owner != null && !owner.isCurrent) return;
     _focusNode.requestFocus();
   }
 
