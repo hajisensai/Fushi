@@ -223,6 +223,19 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
 
 // ── Backup import widget ─────────────────────────────────────────────
 
+/// How a backup is applied (TODO-888). [overwrite] is the legacy behavior
+/// (replace the whole DB + content trees); [merge] keeps everything on this
+/// device and only ADDS what's missing from the backup (no overwrite/delete).
+enum _BackupImportMode { overwrite, merge }
+
+/// The user's choices from the import confirm dialog: which [mode] to apply and
+/// (overwrite-only) whether to also pull the backup's settings layer.
+class _BackupImportChoice {
+  const _BackupImportChoice({required this.mode, required this.importSettings});
+  final _BackupImportMode mode;
+  final bool importSettings;
+}
+
 class _BackupImportWidget extends StatefulWidget {
   const _BackupImportWidget({required this.settingsContext});
   final SettingsContext settingsContext;
@@ -274,25 +287,49 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 
       if (!mounted) return;
 
-      final bool? importSettings = await _showConfirmDialog(meta);
-      if (importSettings == null || !mounted) return;
+      final _BackupImportChoice? choice = await _showConfirmDialog(meta);
+      if (choice == null || !mounted) return;
+
+      final String booksRoot =
+          p.join(appModel.appDirectory.path, 'hoshi_books');
+      final String audiobooksRoot =
+          p.join(appModel.appDirectory.path, 'audiobooks');
+      final String fontsRoot =
+          p.join(appModel.appDirectory.path, 'custom_fonts');
+      final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
 
       await appModel.closeDatabase();
-      await BackupService.importBackupFiles(
-        dbDirectory: appModel.databaseDirectory.path,
-        zipPath: filePath,
-        importSettings: importSettings,
-        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-        // Full-data restore: extract the content trees and rebase the DB's
-        // absolute paths onto this device's roots.
-        booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
-        audiobooksRootDirectory:
-            p.join(appModel.appDirectory.path, 'audiobooks'),
-        // BUG-183: restore the custom-font files and rebase the stored font
-        // config paths onto this device's root.
-        fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
-        videosRootDirectory: p.join(appModel.appDirectory.path, 'videos'),
-      );
+      if (choice.mode == _BackupImportMode.merge) {
+        // TODO-888 merge: keep this device's library + settings, only ADD what
+        // the backup carries (row-level upsert + copy-if-absent content trees).
+        // Never overwrites/deletes existing data, so importSettings is moot.
+        await BackupService.mergeImportBackupFiles(
+          dbDirectory: appModel.databaseDirectory.path,
+          zipPath: filePath,
+          dictionaryResourceDirectory:
+              appModel.dictionaryResourceDirectory.path,
+          booksRootDirectory: booksRoot,
+          audiobooksRootDirectory: audiobooksRoot,
+          fontsRootDirectory: fontsRoot,
+          videosRootDirectory: videosRoot,
+        );
+      } else {
+        await BackupService.importBackupFiles(
+          dbDirectory: appModel.databaseDirectory.path,
+          zipPath: filePath,
+          importSettings: choice.importSettings,
+          dictionaryResourceDirectory:
+              appModel.dictionaryResourceDirectory.path,
+          // Full-data restore: extract the content trees and rebase the DB's
+          // absolute paths onto this device's roots.
+          booksRootDirectory: booksRoot,
+          audiobooksRootDirectory: audiobooksRoot,
+          // BUG-183: restore the custom-font files and rebase the stored font
+          // config paths onto this device's root.
+          fontsRootDirectory: fontsRoot,
+          videosRootDirectory: videosRoot,
+        );
+      }
 
       if (mounted) {
         _showSnackBar(context, t.backup_import_success);
@@ -321,13 +358,17 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     }
   }
 
-  /// Returns the chosen import mode: `false` = keep this device's settings &
-  /// profiles and restore only content (default); `true` = full restore.
-  /// Returns `null` if the user cancels.
-  Future<bool?> _showConfirmDialog(BackupMeta meta) async {
+  /// Asks how to apply the backup (TODO-888): OVERWRITE the whole library
+  /// (legacy default) or MERGE into the current one. For overwrite, a secondary
+  /// switch chooses whether to also pull the backup's settings layer. Returns
+  /// the choice, or `null` if the user cancels.
+  Future<_BackupImportChoice?> _showConfirmDialog(BackupMeta meta) async {
     final dateStr =
         '${meta.createdAt.year}-${meta.createdAt.month.toString().padLeft(2, '0')}-${meta.createdAt.day.toString().padLeft(2, '0')}';
-    bool importSettings = false; // default: keep this device's settings
+    // Default: OVERWRITE (Never break userspace — the existing behavior), and
+    // within overwrite, keep this device's settings (importSettings=false).
+    _BackupImportMode mode = _BackupImportMode.overwrite;
+    bool importSettings = false;
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => StatefulBuilder(
@@ -366,15 +407,42 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
                       statsCount: meta.statsCount.toString(),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  AdaptiveSettingsSwitchRow(
-                    title: t.backup_import_settings_toggle,
-                    subtitle: importSettings
-                        ? t.backup_import_settings_on_hint
-                        : t.backup_import_settings_off_hint,
-                    value: importSettings,
-                    onChanged: (bool v) => setLocal(() => importSettings = v),
+                  const SizedBox(height: 8),
+                  Text(
+                    t.backup_import_mode_label,
+                    style: Theme.of(ctx).textTheme.labelLarge,
                   ),
+                  RadioListTile<_BackupImportMode>(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(t.backup_import_mode_overwrite),
+                    value: _BackupImportMode.overwrite,
+                    groupValue: mode,
+                    onChanged: (_BackupImportMode? v) =>
+                        setLocal(() => mode = v ?? _BackupImportMode.overwrite),
+                  ),
+                  RadioListTile<_BackupImportMode>(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(t.backup_import_mode_merge),
+                    value: _BackupImportMode.merge,
+                    groupValue: mode,
+                    onChanged: (_BackupImportMode? v) =>
+                        setLocal(() => mode = v ?? _BackupImportMode.overwrite),
+                  ),
+                  // The settings-layer toggle only applies to overwrite; merge
+                  // always keeps this device's settings.
+                  if (mode == _BackupImportMode.overwrite) ...<Widget>[
+                    const SizedBox(height: 4),
+                    AdaptiveSettingsSwitchRow(
+                      title: t.backup_import_settings_toggle,
+                      subtitle: importSettings
+                          ? t.backup_import_settings_on_hint
+                          : t.backup_import_settings_off_hint,
+                      value: importSettings,
+                      onChanged: (bool v) => setLocal(() => importSettings = v),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     t.backup_import_preserve_sync_note,
@@ -394,7 +462,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
                   adaptiveDialogAction(
                     context: ctx,
                     isDefaultAction: true,
-                    isDestructiveAction: true,
+                    isDestructiveAction: mode == _BackupImportMode.overwrite,
                     onPressed: () => Navigator.pop(ctx, true),
                     child: Text(t.dialog_ok),
                   ),
@@ -405,7 +473,8 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         },
       ),
     );
-    return confirmed == true ? importSettings : null;
+    if (confirmed != true) return null;
+    return _BackupImportChoice(mode: mode, importSettings: importSettings);
   }
 
   @override

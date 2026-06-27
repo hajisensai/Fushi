@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/backup_merge_engine.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -752,11 +753,216 @@ class BackupService {
     }
   }
 
+  /// Sidecar file marking a pending MERGE import (TODO-888). The merge runs in
+  /// one Drift transaction, so a crash leaves the DB already-consistent (the
+  /// transaction either committed or rolled back); this sidecar only drives
+  /// startup cleanup of the temp `merge-src` + `pre-merge.bak` files.
+  static const String _mergeSidecar = 'hibiki.db.merge-preserve.json';
+  static const String _mergeSrcName = 'hibiki.db.merge-src';
+
+  /// MERGE a backup into the current database instead of overwriting it
+  /// (TODO-888). The device keeps everything it has; the backup only ADDS what
+  /// is missing and MAX-unions statistics, so re-importing the same backup is
+  /// idempotent. Unlike [importBackupFiles] this NEVER touches the destructive
+  /// overwrite path (`writeAsBytes`) or the two-phase tree swap; content trees
+  /// are restored copy-if-absent (existing files are never replaced or deleted).
+  ///
+  /// The caller must close the app's DB first (same contract as
+  /// [importBackupFiles]); this opens its own connections. Crash safety: the
+  /// whole row merge is ONE [HibikiDatabase.transaction] (rolled back on any
+  /// failure) plus a `pre-merge.bak` snapshot for manual recovery, and a
+  /// `mode:'merge'` sidecar so [recoverPendingImport] cleans up temp files.
+  static Future<void> mergeImportBackupFiles({
+    required String dbDirectory,
+    required String zipPath,
+    String? dictionaryResourceDirectory,
+    String? booksRootDirectory,
+    String? audiobooksRootDirectory,
+    String? fontsRootDirectory,
+    String? videosRootDirectory,
+  }) async {
+    final String dbPath = p.join(dbDirectory, _dbName);
+    final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
+    final String bakPath = '$dbPath.pre-merge.bak';
+    final File sidecar = File(p.join(dbDirectory, _mergeSidecar));
+
+    final InputFileStream input = InputFileStream(zipPath);
+    try {
+      final Archive archive = ZipDecoder().decodeBuffer(input);
+      final ArchiveFile? dbFile = archive.findFile(_dbName);
+      if (dbFile == null) throw StateError('No $_dbName in backup archive');
+
+      BackupMeta? meta;
+      final ArchiveFile? metaFile = archive.findFile(_metaName);
+      if (metaFile != null) {
+        meta = BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
+      }
+
+      // 1) Extract the backup DB to a sibling temp file (NEVER overwrite the
+      //    live DB). Drop any stale merge-src/-wal/-shm from a prior crash.
+      await _safeDelete(mergeSrcPath);
+      await _safeDelete('$mergeSrcPath-wal');
+      await _safeDelete('$mergeSrcPath-shm');
+      await File(mergeSrcPath)
+          .writeAsBytes(dbFile.content as List<int>, flush: true);
+
+      // 2) Migrate the backup DB up to the current schema so its columns align
+      //    with the live DB for the ATTACH-based row merge. (Its schemaVersion
+      //    is <= current — validated by the caller.) Opening + closing
+      //    HibikiDatabase on its file runs onUpgrade if needed.
+      final HibikiDatabase srcMigrate = HibikiDatabase.atFile(mergeSrcPath);
+      try {
+        await srcMigrate.customStatement('PRAGMA user_version');
+      } finally {
+        await srcMigrate.close();
+      }
+      await _safeDelete('$mergeSrcPath-wal');
+      await _safeDelete('$mergeSrcPath-shm');
+
+      // 3) Snapshot the live DB for manual recovery + drop the crash-cleanup
+      //    sidecar BEFORE mutating the live DB.
+      final File currentDb = File(dbPath);
+      if (currentDb.existsSync()) {
+        await currentDb.copy(bakPath);
+      }
+      await sidecar.writeAsString(jsonEncode(<String, dynamic>{
+        'mode': 'merge',
+        'mergeSrc': mergeSrcPath,
+      }));
+
+      // 4) Open the live DB, ATTACH the backup, run the whole row merge in one
+      //    transaction (rolled back on any failure -> DB unchanged).
+      final HibikiDatabase db = HibikiDatabase(dbDirectory);
+      try {
+        final String safeSrc =
+            mergeSrcPath.replaceAll(r'\', '/').replaceAll("'", "''");
+        await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
+        try {
+          await BackupMergeEngine(db).merge();
+        } finally {
+          await db.customStatement('DETACH DATABASE mergesrc');
+        }
+        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+      } finally {
+        await db.close();
+      }
+
+      // 5) Restore content trees COPY-IF-ABSENT (never delete/replace existing
+      //    files — the device's own library must stay intact).
+      if (dictionaryResourceDirectory != null) {
+        await _copyTreeIfAbsent(
+            archive, _dictionaryResourcesPrefix, dictionaryResourceDirectory);
+      }
+      if (booksRootDirectory != null) {
+        await _copyTreeIfAbsent(archive, _booksPrefix, booksRootDirectory);
+      }
+      if (audiobooksRootDirectory != null) {
+        await _copyTreeIfAbsent(
+            archive, _audiobooksPrefix, audiobooksRootDirectory);
+      }
+      if (fontsRootDirectory != null) {
+        await _copyTreeIfAbsent(archive, _fontsPrefix, fontsRootDirectory);
+      }
+      if (videosRootDirectory != null) {
+        await _copyTreeIfAbsent(archive, _videosPrefix, videosRootDirectory);
+      }
+
+      // 6) Rebase the newly-merged backup rows' stored paths onto this device's
+      //    roots. Device-local rows aren't under the backup's source root, so
+      //    rebasePath leaves them untouched (a no-op for them).
+      if (meta != null) {
+        await _rebaseContentPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newBooksRoot: booksRootDirectory,
+          newAudiobooksRoot: audiobooksRootDirectory,
+        );
+        await _rebaseFontPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newFontsRoot: fontsRootDirectory,
+        );
+        await _rebaseVideoPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newVideosRoot: videosRootDirectory,
+        );
+      }
+
+      // 7) Success: drop the merge-src temp, the bak, and the sidecar.
+      await _safeDelete(mergeSrcPath);
+      await _safeDelete('$mergeSrcPath-wal');
+      await _safeDelete('$mergeSrcPath-shm');
+      await _safeDelete(bakPath);
+      await _safeDelete(sidecar.path);
+    } finally {
+      await input.close();
+    }
+  }
+
+  /// Copies every file under `<prefix>/` in [archive] into [targetRootPath],
+  /// SKIPPING any whose destination already exists (the merge-import invariant:
+  /// never delete or overwrite the device's own content). Reuses the same path
+  /// traversal safety checks as the overwrite path's [_buildTreeRestorePlan].
+  static Future<void> _copyTreeIfAbsent(
+    Archive archive,
+    String prefix,
+    String targetRootPath,
+  ) async {
+    final List<MapEntry<ArchiveFile, String>> plan = _buildTreeRestorePlan(
+      archive: archive,
+      prefix: prefix,
+      targetRootPath: targetRootPath,
+    );
+    for (final MapEntry<ArchiveFile, String> entry in plan) {
+      final File dest = File(entry.value);
+      if (await dest.exists()) continue; // copy-if-absent: never overwrite
+      dest.parent.createSync(recursive: true);
+      await dest.writeAsBytes(entry.key.content as List<int>, flush: true);
+    }
+  }
+
+  /// Cleans up a crashed/finished MERGE import's temp files (TODO-888). Returns
+  /// true when a merge sidecar was present (and was handled), false otherwise.
+  /// The DB itself is untouched: the merge transaction is all-or-nothing, so the
+  /// live DB is already consistent regardless of when a crash happened.
+  static Future<bool> recoverMergeImport(String dbDirectory) async {
+    final File sidecar = File(p.join(dbDirectory, _mergeSidecar));
+    if (!sidecar.existsSync()) return false;
+    try {
+      final Map<String, dynamic> decoded =
+          jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
+      final Object? mergeSrc = decoded['mergeSrc'];
+      if (mergeSrc is String) {
+        await _safeDelete(mergeSrc);
+        await _safeDelete('$mergeSrc-wal');
+        await _safeDelete('$mergeSrc-shm');
+      }
+    } catch (e, st) {
+      debugPrint('BackupService.recoverMergeImport failed: $e\n$st');
+    }
+    await _safeDelete(p.join(dbDirectory, _mergeSrcName));
+    await _safeDelete(p.join(dbDirectory, '$_mergeSrcName-wal'));
+    await _safeDelete(p.join(dbDirectory, '$_mergeSrcName-shm'));
+    await _safeDelete(p.join(dbDirectory, '$_dbName.pre-merge.bak'));
+    await _safeDelete(sidecar.path);
+    return true;
+  }
+
   /// Finish a pending import at startup, before any sync code reads prefs.
   /// Handles both: (a) re-applying device-local sync prefs if a full-restore
   /// import crashed mid-way; (b) restoring this device's settings layer for a
   /// keep-settings import. No-op when no sidecar is present.
   static Future<void> recoverPendingImport(String dbDirectory) async {
+    // MERGE import (TODO-888) leaves its own sidecar. The row merge ran in ONE
+    // Drift transaction, so the live DB is already consistent whether or not we
+    // crashed (the transaction either committed or rolled back) — there is
+    // NOTHING to apply to the DB, only leftover temp files to sweep. Handle it
+    // first + return so a 'merge' marker can never fall through to the legacy
+    // bare-map prefs path and get mis-applied. (recoverMergeImport is reused by
+    // tests; keep the sweep there.)
+    if (await recoverMergeImport(dbDirectory)) return;
+
     final sidecar = File(p.join(dbDirectory, _preserveSidecar));
     if (!sidecar.existsSync()) return;
     try {

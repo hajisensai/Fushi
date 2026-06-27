@@ -50,6 +50,23 @@ LazyDatabase _openDb(String dbDirectory) {
   });
 }
 
+/// Opens an arbitrary `.db` FILE (not a directory). Used by the backup MERGE
+/// import (TODO-888) to migrate an extracted backup DB up to the current schema
+/// before ATTACHing it to the live DB. Same PRAGMAs as [_openDb].
+LazyDatabase _openDbFile(String dbFilePath) {
+  return LazyDatabase(() async {
+    final file = File(dbFilePath);
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (db) {
+        db.execute('PRAGMA journal_mode=WAL');
+        db.execute('PRAGMA foreign_keys = ON');
+        db.execute('PRAGMA busy_timeout = 5000');
+      },
+    );
+  });
+}
+
 @DriftDatabase(tables: [
   MediaItems,
   AnkiMappings,
@@ -84,6 +101,12 @@ LazyDatabase _openDb(String dbDirectory) {
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
+
+  /// Opens a specific `.db` FILE (not a directory). Backup MERGE import
+  /// (TODO-888) uses this to migrate an extracted backup DB to the current
+  /// schema before merging it into the live DB.
+  HibikiDatabase.atFile(String dbFilePath) : super(_openDbFile(dbFilePath));
+
   HibikiDatabase.forTesting(super.e);
 
   @override
@@ -1568,6 +1591,39 @@ class HibikiDatabase extends _$HibikiDatabase {
               sourceType: sourceType,
               dateKey: dateKey,
               count: Value(delta),
+            ),
+          );
+        }
+      });
+
+  /// MAX-union semantics: sets the (sourceType, dateKey) bucket to
+  /// `max(existing, count)` rather than accumulating. Use this for backup-merge
+  /// import — accumulating with [addMiningCount] would double-count on a
+  /// re-import of the same backup, breaking the "merge is idempotent" invariant
+  /// (mirrors [setReadingStatistic]'s absolute / `mergeStatistics` max
+  /// semantics).
+  Future<void> setMiningCount({
+    required String sourceType,
+    required String dateKey,
+    required int count,
+  }) =>
+      transaction(() async {
+        final existing = await (select(miningStatistics)
+              ..where((t) =>
+                  t.sourceType.equals(sourceType) & t.dateKey.equals(dateKey)))
+            .getSingleOrNull();
+        if (existing != null) {
+          if (count > existing.count) {
+            await (update(miningStatistics)
+                  ..where((t) => t.id.equals(existing.id)))
+                .write(MiningStatisticsCompanion(count: Value(count)));
+          }
+        } else {
+          await into(miningStatistics).insert(
+            MiningStatisticsCompanion.insert(
+              sourceType: sourceType,
+              dateKey: dateKey,
+              count: Value(count),
             ),
           );
         }

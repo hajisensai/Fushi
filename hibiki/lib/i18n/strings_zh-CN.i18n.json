@@ -1900,5 +1900,8 @@
   "update_already_latest": "已是最新版本",
   "video_resource_missing_title": "视频无法访问",
   "video_resource_missing_message": "找不到『$title』的视频文件。资源位置可能已变化，或所在磁盘未连接。你可以重新导入，或删除此条目。",
-  "video_resource_missing_reimport": "重新导入"
+  "video_resource_missing_reimport": "重新导入",
+  "backup_import_mode_label": "导入方式",
+  "backup_import_mode_overwrite": "覆盖整库",
+  "backup_import_mode_merge": "合并到现有库"
 }

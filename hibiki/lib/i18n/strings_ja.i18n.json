@@ -1900,5 +1900,8 @@
   "update_already_latest": "You're on the latest version",
   "video_resource_missing_title": "Video unavailable",
   "video_resource_missing_message": "The file for 『$title』 could not be found. Its location may have changed, or the drive may not be connected. You can re-import it, or remove this entry.",
-  "video_resource_missing_reimport": "Re-import"
+  "video_resource_missing_reimport": "Re-import",
+  "backup_import_mode_label": "Import mode",
+  "backup_import_mode_overwrite": "Overwrite entire library",
+  "backup_import_mode_merge": "Merge into current library"
 }
