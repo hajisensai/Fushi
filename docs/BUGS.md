@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 422 条。点号进各自文件。
+> 共 423 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-437](bugs/BUG-437-reader-init-hang-no-timeout.md) | ✅ | ✅ | 打开书籍偶发永久卡加载不恢复 |
 | [BUG-436](bugs/BUG-436-interconnect-host-autosync.md) | ✅ | ✅ | 互联host模式不应显示自动同步开关 |
 | [BUG-435](bugs/BUG-435-dict-glossary-link-misplaced.md) | ✅ | ✅ | 查词弹窗词典释义内链接错位跑到旁边 |
 | [BUG-434](bugs/BUG-434-in-app-nested-popup-parent-tap.md) | ✅ | ✅ | app内查词父弹窗点击不关子弹窗 |

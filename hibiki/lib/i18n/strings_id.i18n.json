@@ -1879,5 +1879,6 @@
   "update_custom_proxy_hint": "host:port, e.g. 127.0.0.1:7890 (IPv4/host only)",
   "update_custom_proxy_invalid": "Invalid proxy. Use host:port",
   "font_target_video_subtitle": "Video Subtitle Font",
-  "sync_err_scope_upgrade": "Sync permissions changed — please sign in to Google again to continue syncing."
+  "sync_err_scope_upgrade": "Sync permissions changed — please sign in to Google again to continue syncing.",
+  "reader_open_failed": "Failed to open book"
 }

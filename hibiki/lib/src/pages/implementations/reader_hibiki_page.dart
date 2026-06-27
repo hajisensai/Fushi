@@ -1056,6 +1056,27 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   Future<void> _initBook() async {
+    // BUG-437: 整个 init 链里多处 DB await（_resolveProfileAndSettings /
+    // db.getEpubBook / _resolveAudioSlot / repo.findByBookKey）此前无任何 top-level
+    // 错误兜底。任一抛异常（双实例共享 WAL DB 写锁超 busy_timeout 抛 SQLITE_BUSY、
+    // 磁盘/解析故障等）就逃逸出这个 async 链 → _book / _audioSlotResolved 永不置好 →
+    // 尾部 setState 永不执行 → _buildBody 永远返回 spinner → WebView 从不构造 →
+    // 唯一兜底超时 _startContentReadyTimeout（只在 onWebViewCreated 启动）从不触发 →
+    // 永久卡加载、无任何恢复路径。这里加 top-level try/catch：捕获任何异常后确定性归还
+    // 加载态——记真实异常 + 提示打开失败 + 退回书架（复用 not-found 分支同款 toast+pop
+    // 恢复机制），绝不让 spinner 永挂。这是根因修，非纯计时绕过。
+    try {
+      await _initBookInner();
+    } catch (e, stack) {
+      debugPrint('[ReaderHibiki] _initBook failed: $e\n$stack');
+      ErrorLogService.instance.log('ReaderHibiki._initBook', e, stack);
+      if (!mounted) return;
+      HibikiToast.show(msg: t.reader_open_failed);
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _initBookInner() async {
     final HibikiDatabase db = appModelNoUpdate.database;
 
     // TODO-131: profile→settings 链与 book 定位→解析链互不依赖（前者动
