@@ -17,6 +17,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/lookup/global_lookup_channel.dart';
+import 'package:hibiki/src/lookup/global_lookup_layout.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/global_lookup_render.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
@@ -608,12 +609,8 @@ class GlobalLookupController {
     // showBelow correctly decide whether the word's card fits below on screen.
     // Fall back to the measurement canvas only when native reported no work
     // area (e.g. monitor query failed).
-    final double screenW = _screenWorkW > 0
-        ? _screenWorkW
-        : (_layoutBoundsW > 0 ? _layoutBoundsW : cardW);
-    final double screenH = _screenWorkH > 0
-        ? _screenWorkH
-        : (_layoutBoundsH > 0 ? _layoutBoundsH : cardH);
+    final double screenW = pickScreenDim(_screenWorkW, _layoutBoundsW, cardW);
+    final double screenH = pickScreenDim(_screenWorkH, _layoutBoundsH, cardH);
     await GlobalLookupChannel.render(buildStackRenderScript(
       context: ctx,
       appModel: model,

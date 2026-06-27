@@ -5,6 +5,8 @@
 // annotates the matching Hoshi branch (width/height/centerX/centerY/showBelow/
 // showOnRight/clampLikeIos).
 
+import 'dart:io';
+
 import 'dart:ui' show Rect;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -247,6 +249,68 @@ void main() {
       );
       expect(r.top, greaterThanOrEqualTo(sel.bottom),
           reason: 'ample space below the high word -> card drops below');
+    });
+  });
+
+  // TODO-893 — REAL wiring regression lock for symptom 2. The earlier
+  // 'screenH must be the real screen' group only proves computeFrameRect's math;
+  // it hand-feeds screenH and never touches WHICH dimension _renderStack passes.
+  // pickScreenDim is the extracted selection (`_screenWork* > 0 ? work :
+  // bounds`) that _renderStack now calls verbatim. Locking it here means: if
+  // anyone rewires _renderStack to pass the measurement canvas (_layoutBounds*)
+  // instead of the work area, the work-vs-bounds case below turns red.
+  group('TODO-893 pickScreenDim wiring (work area beats measurement canvas)',
+      () {
+    test('work area valid -> returns work area (the FIX)', () {
+      // Real 1080p work area vs the ~2x card measurement canvas: must pick work.
+      expect(pickScreenDim(1040, 960, 480), 1040);
+      expect(pickScreenDim(1920, 720, 360), 1920);
+    });
+
+    test('REGRESSION LOCK: work != bounds -> chooses work, never bounds', () {
+      const double work = 1040;
+      const double bounds = 576; // cardH * 1.2 — the tiny off-screen canvas
+      final double picked = pickScreenDim(work, bounds, 480);
+      expect(picked, work,
+          reason: 'must feed the real screen, not the measurement canvas');
+      expect(picked, isNot(bounds),
+          reason: 'reverting the fix to _layoutBounds* must turn this red');
+    });
+
+    test('work area unreported (0, native query failed) -> measurement canvas',
+        () {
+      expect(pickScreenDim(0, 960, 480), 960);
+    });
+
+    test('neither work nor bounds -> single-card fallback', () {
+      expect(pickScreenDim(0, 0, 480), 480);
+    });
+
+    test('negative/degenerate work treated as unreported', () {
+      // workDim is CSS px; only > 0 counts as a real report.
+      expect(pickScreenDim(-1, 960, 480), 960);
+    });
+  });
+
+  // TODO-893 — source guard: _renderStack must keep feeding pickScreenDim with
+  // the work area FIRST. A behavioural lock (above) catches a logic flip; this
+  // catches someone bypassing the helper and inlining _layoutBounds* again.
+  group('TODO-893 _renderStack source wiring guard', () {
+    test('screenW/screenH are sourced via pickScreenDim(_screenWork*, ...)',
+        () {
+      final File controller =
+          File('lib/src/lookup/global_lookup_controller.dart');
+      final String body = controller.readAsStringSync();
+      expect(
+        body.contains('pickScreenDim(_screenWorkW, _layoutBoundsW, cardW)'),
+        isTrue,
+        reason: 'screenW must come from the work area first via pickScreenDim',
+      );
+      expect(
+        body.contains('pickScreenDim(_screenWorkH, _layoutBoundsH, cardH)'),
+        isTrue,
+        reason: 'screenH must come from the work area first via pickScreenDim',
+      );
     });
   });
 

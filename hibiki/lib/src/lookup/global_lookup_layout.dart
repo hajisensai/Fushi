@@ -179,3 +179,27 @@ double _clampLikeIos(double value, double minimum, double maximum) {
 double _min(double a, double b) => a < b ? a : b;
 
 double _max(double a, double b) => a > b ? a : b;
+
+/// TODO-893 — 选出喂给 [computeFrameRect] 的「屏幕一维尺寸」(CSS px)。
+///
+/// 这是 symptom-2（嵌套子弹窗把父卡片顶出窗口顶部）修复的**接线真值**：
+/// `_renderStack` 必须把**真实显示器工作区** [workDim] 喂给 [computeFrameRect]
+/// 的 screenWidth/screenHeight，而**不是**离屏测量画布 [boundsDim]
+/// (`_layoutBounds*`，仅约卡片 ~2×)。用测量画布时 spaceBelow 几乎恒 < height →
+/// showBelow false → 每个子弹窗都向上级联，host 的 bbox-shift 再把整窗（含根卡片）
+/// 上移，根卡片被顶出顶部。
+///
+/// 选择规则：工作区有效（native 报到 > 0）就用工作区；否则（native 未报 / 查询失败）
+/// 退回测量画布；测量画布也无效时退回单卡片尺寸 [cardDim]（最末兜底）。
+///
+/// 纯函数（无 IO / 无平台 / 无状态），便于对「工作区优先」这条回归锁单测断言：
+/// 一旦有人把实参改回 [boundsDim]，针对 workDim != boundsDim 的用例即转红。
+double pickScreenDim(double workDim, double boundsDim, double cardDim) {
+  if (workDim > 0) {
+    return workDim;
+  }
+  if (boundsDim > 0) {
+    return boundsDim;
+  }
+  return cardDim;
+}
