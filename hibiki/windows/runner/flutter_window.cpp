@@ -293,8 +293,11 @@ bool SetShortcutIconLocation(const std::wstring& lnk_path,
   return true;
 }
 
-// Joins a known-folder path with "\Hibiki.lnk". Returns empty on failure.
-std::wstring HibikiShortcutInFolder(REFKNOWNFOLDERID folder_id) {
+// Joins a known-folder path with |relative| (a path tail relative to the
+// folder root, e.g. the desktop .lnk filename or the Start menu group
+// subfolder + .lnk). Returns empty on failure.
+std::wstring HibikiShortcutInFolder(REFKNOWNFOLDERID folder_id,
+                                    const wchar_t* relative) {
   PWSTR folder = nullptr;
   HRESULT hr = SHGetKnownFolderPath(folder_id, 0, nullptr, &folder);
   if (FAILED(hr) || folder == nullptr) {
@@ -308,25 +311,31 @@ std::wstring HibikiShortcutInFolder(REFKNOWNFOLDERID folder_id) {
   if (!path.empty() && path.back() != L'\\') {
     path.push_back(L'\\');
   }
-  path += L"Hibiki.lnk";
+  path += relative;
   return path;
 }
 
 // TODO-901: points the desktop + Start menu Hibiki shortcuts at |icon_path|
 // (a freshly generated multi-size .ico). Installer (hibiki.iss) drops the .lnk
-// at {userdesktop}\Hibiki and Programs root\Hibiki (DisableProgramGroupPage).
-// Returns true if at least one shortcut was updated. Taskbar pinned items are
-// intentionally NOT touched (fragile, cached in the registry; see plan).
+// at {userdesktop}\Hibiki (Desktop\Hibiki.lnk) and {group}\Hibiki, where
+// {group} = {autoprograms}\{DefaultGroupName=Hibiki} -> Programs\Hibiki\Hibiki.lnk
+// (DisableProgramGroupPage only hides the wizard page; the Hibiki subfolder
+// still exists). Returns true if at least one shortcut was updated. Taskbar
+// pinned items are intentionally NOT touched (fragile, cached in the registry;
+// see plan).
 bool ApplyShortcutIcon(const std::wstring& icon_path) {
   if (icon_path.empty()) {
     return false;
   }
   bool any = false;
-  const std::wstring desktop_lnk = HibikiShortcutInFolder(FOLDERID_Desktop);
+  const std::wstring desktop_lnk =
+      HibikiShortcutInFolder(FOLDERID_Desktop, L"Hibiki.lnk");
   if (!desktop_lnk.empty()) {
     any |= SetShortcutIconLocation(desktop_lnk, icon_path);
   }
-  const std::wstring programs_lnk = HibikiShortcutInFolder(FOLDERID_Programs);
+  // Start menu lives under the Hibiki program group subfolder, not Programs root.
+  const std::wstring programs_lnk =
+      HibikiShortcutInFolder(FOLDERID_Programs, L"Hibiki\\Hibiki.lnk");
   if (!programs_lnk.empty()) {
     any |= SetShortcutIconLocation(programs_lnk, icon_path);
   }
