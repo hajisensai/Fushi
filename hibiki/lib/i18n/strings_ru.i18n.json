@@ -1903,5 +1903,7 @@
   "video_resource_missing_reimport": "Re-import",
   "backup_import_mode_label": "Import mode",
   "backup_import_mode_overwrite": "Overwrite entire library",
-  "backup_import_mode_merge": "Merge into current library"
+  "backup_import_mode_merge": "Merge into current library",
+  "db_unrecoverable_title": "Database damaged",
+  "db_unrecoverable_message": "The database could not be opened even after automatic repair. It is likely corrupt. You can restore a backup in Settings, or clear app data to start fresh."
 }

@@ -1903,5 +1903,7 @@
   "video_resource_missing_reimport": "重新导入",
   "backup_import_mode_label": "导入方式",
   "backup_import_mode_overwrite": "覆盖整库",
-  "backup_import_mode_merge": "合并到现有库"
+  "backup_import_mode_merge": "合并到现有库",
+  "db_unrecoverable_title": "数据库已损坏",
+  "db_unrecoverable_message": "自动修复后仍无法打开数据库，文件可能已损坏。可在设置中恢复备份，或清除应用数据重新开始。"
 }

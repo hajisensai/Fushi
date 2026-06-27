@@ -582,6 +582,16 @@ class AppModel with ChangeNotifier {
   HibikiDatabaseDowngradeException? get downgradeError => _downgradeError;
   HibikiDatabaseDowngradeException? _downgradeError;
 
+  /// Non-null when init failed because the database could NOT be opened even
+  /// after the full WAL/sidecar recovery ladder (TODO-905) — i.e. the main
+  /// `hibiki.db` itself is corrupt, not just a stale `-wal`/`-shm`. The UI shows
+  /// an actionable "restore a backup / clear data" notice; a plain Retry would
+  /// loop forever (the very bug TODO-905 fixes), so recovery already ran inside
+  /// the open path and a fresh open of the same corrupt file would fail again.
+  HibikiDatabaseUnrecoverableException? get unrecoverableDbError =>
+      _unrecoverableDbError;
+  HibikiDatabaseUnrecoverableException? _unrecoverableDbError;
+
   /// Clears the error state and re-runs [initialise].
   Future<void> retryInitialise() async {
     // A previous attempt may have partially initialised resources. Tear down
@@ -603,6 +613,7 @@ class AppModel with ChangeNotifier {
     }
     _initError = null;
     _downgradeError = null;
+    _unrecoverableDbError = null;
     _isInitialised = false;
     notifyListeners();
     await initialise();
@@ -1698,6 +1709,17 @@ class AppModel with ChangeNotifier {
       _downgradeError = e;
       _initError = '$e';
       notifyListeners();
+    } on HibikiDatabaseUnrecoverableException catch (e, stack) {
+      // TODO-905: the WAL/sidecar recovery ladder already ran inside the open
+      // path and exhausted — the main hibiki.db is corrupt. Surface a dedicated,
+      // actionable notice (restore backup / clear data) instead of looping the
+      // generic Retry button forever against the same un-openable file.
+      debugPrint('[Hibiki] init FAILED (DB unrecoverable): $e\n$stack');
+      ErrorLogService.instance
+          .log('AppModel.initialise.unrecoverableDb', e, stack);
+      _unrecoverableDbError = e;
+      _initError = '$e';
+      notifyListeners();
     } catch (e, stack) {
       debugPrint('[Hibiki] init FAILED: $e\n$stack');
       ErrorLogService.instance.log('AppModel.initialise', e, stack);
@@ -1726,7 +1748,9 @@ class AppModel with ChangeNotifier {
       await _prepareRuntimeDirectories();
 
       debugPrint('[Hibiki-popup] init: Drift database');
-      _database = HibikiDatabase(_databaseDirectory.path);
+      // TODO-905 D3: the :popup process must NOT delete a poisoned -wal/-shm
+      // sidecar (the main process owns recovery); it backs off on IOERR.
+      _database = HibikiDatabase(_databaseDirectory.path, isMainProcess: false);
       _databaseOpened = true;
 
       _prefsRepo = PreferencesRepository(_database);

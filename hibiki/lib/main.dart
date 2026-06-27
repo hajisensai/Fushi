@@ -809,6 +809,70 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         ),
       );
     }
+    // TODO-905: the DB could not be opened even after WAL/sidecar recovery —
+    // the main hibiki.db is corrupt. Show an actionable notice (the recovery
+    // ladder already ran inside the open path, so a plain Retry would loop
+    // forever against the same un-openable file). Checked BEFORE the generic
+    // init-error screen so the user gets the corrupt-DB guidance, not a raw
+    // "disk I/O error" with a dead Retry loop.
+    final unrecoverable = appModel.unrecoverableDbError;
+    if (unrecoverable != null) {
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          home: Scaffold(
+            backgroundColor: _savedSplashColor,
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.broken_image_outlined,
+                        size: 48, color: cs.error),
+                    const SizedBox(height: 16),
+                    Text(
+                      t.db_unrecoverable_title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: cs.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      t.db_unrecoverable_message,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      appModel.initError!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     if (appModel.initError != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
