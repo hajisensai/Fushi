@@ -632,6 +632,12 @@ void main() {
           'Dictionary popup chip/content typography is dense lookup content.',
       'lib/src/pages/implementations/dictionary_popup_webview.dart':
           'WebView result theming injects MD3 ColorScheme surface roles into popup CSS.',
+      'lib/src/pages/implementations/popup_settings_injection.dart':
+          'TODO-895 single-source-of-truth popup settings injection builds the '
+              'shared WebView CSS custom properties (--md-surface-container-high '
+              'etc.) from the MD3 ColorScheme; surface roles are injected into '
+              'popup CSS, not ordinary Flutter page chrome — same reviewed '
+              'exception class as dictionary_popup_webview / global_lookup_render.',
       'lib/src/lookup/global_lookup_render.dart':
           'Global lookup popup theming injects MD3 ColorScheme surface roles into popup CSS (same as dictionary_popup_webview).',
       'lib/src/pages/implementations/history_reader_page.dart':

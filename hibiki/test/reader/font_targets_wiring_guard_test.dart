@@ -52,12 +52,23 @@ void main() {
   });
 
   test('dictionary popup injects the dictionaryFonts target', () {
+    // TODO-895 moved the dictionary-font injection out of the in-app WebView
+    // file into the shared single source of truth popup_settings_injection.dart
+    // (dictionaryFontStyleJs / buildPopupSettingsJs), which the in-app popup
+    // (dictionary_popup_webview.dart) and the app-outside global-lookup window
+    // both call. Pin the wiring at the source-of-truth builder so the
+    // dictionaryFonts target stays wired.
     final String src =
-        read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+        read('lib/src/pages/implementations/popup_settings_injection.dart');
     expect(src.contains('DictionaryFontCss.build('), isTrue);
     expect(src.contains('settings.dictionaryFonts'), isTrue);
     // The injected style element id is the contract popup.css/JS keys off.
     expect(src.contains("'hoshi-dict-font'"), isTrue);
+    // The in-app WebView path must feed through the shared builder (not a
+    // re-introduced local copy that could drift from the app-outside window).
+    final String webview =
+        read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+    expect(webview.contains('buildPopupSettingsJs('), isTrue);
   });
 
   test('structured dictionary page injects the dictionaryFonts target', () {
