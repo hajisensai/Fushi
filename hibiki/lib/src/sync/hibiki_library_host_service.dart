@@ -402,6 +402,23 @@ String videoRemotePositionPrefKey(String bookUid) =>
 String videoRemotePositionAtPrefKey(String bookUid) =>
     'video_remote_position_at_$bookUid';
 
+/// 远端**播放列表按集**断点位置 prefs key（TODO-885）——单一真相源，host service 与
+/// video_hibiki_page 共用同一公式。
+///
+/// 设计：[episodeIndex] == 0 时回退到整书 [videoRemotePositionPrefKey]（与单视频 /
+/// 旧 TODO-559 prefs 完全同键，无迁移、向后兼容）；index>0 才用带 `#ep<index>` 后缀的
+/// 按集键，各集进度互不干扰。client 恢复某集、host 反查某集进度都用它。
+String videoRemotePositionEpisodePrefKey(String bookUid, int episodeIndex) =>
+    episodeIndex <= 0
+        ? videoRemotePositionPrefKey(bookUid)
+        : 'video_remote_position_$bookUid#ep$episodeIndex';
+
+/// [videoRemotePositionEpisodePrefKey] 对应的「最后更新时间」prefs key（epoch 毫秒）。
+String videoRemotePositionEpisodeAtPrefKey(String bookUid, int episodeIndex) =>
+    episodeIndex <= 0
+        ? videoRemotePositionAtPrefKey(bookUid)
+        : 'video_remote_position_at_$bookUid#ep$episodeIndex';
+
 /// [videoRemotePositionPrefKey] 的逆：从位置 prefs key 反解出 bookUid，非该 key 返回
 /// null。用于全量同步枚举「本地看过的流式视频 uid」（无 VideoBooks 行也有此 prefs，
 /// TODO-816 断点①）。必须排除更长前缀的时间戳键 [videoRemotePositionAtPrefKey]
@@ -513,6 +530,31 @@ class RemoteVideoEmbeddedSubtitleTrack {
       );
 }
 
+/// 远端播放列表中的一集（TODO-885）。
+///
+/// **铁律：只带 [index]+[title]，绝不带 host 端文件 path**——path 是 host 本地绝对
+/// 路径，client 无意义且会泄露 host 文件结构。client 持 (bookUid, episodeIndex) 向
+/// server 请求该集的流式 url / 字幕，server 端按 `playlistJson[episodeIndex].path`
+/// 反查真实文件（DB-only，沿用既有「绝不接受外部传入 path」安全契约）。
+class RemoteVideoEpisode {
+  const RemoteVideoEpisode({required this.index, required this.title});
+
+  /// 该集在 `VideoBooks.playlistJson` 数组里的下标（= client 请求时传的 episodeIndex）。
+  final int index;
+
+  /// 集标题（来自 m3u8 `#EXTINF` 解析，或回退文件名）。
+  final String title;
+
+  Map<String, Object?> toJson() =>
+      <String, Object?>{'index': index, 'title': title};
+
+  static RemoteVideoEpisode fromJson(Map<String, Object?> json) =>
+      RemoteVideoEpisode(
+        index: _jsonInt(json['index']) ?? 0,
+        title: json['title']?.toString() ?? '',
+      );
+}
+
 class RemoteVideoInfo {
   const RemoteVideoInfo({
     required this.id,
@@ -527,6 +569,8 @@ class RemoteVideoInfo {
     this.coverPath,
     this.positionMs = 0,
     this.positionUpdatedAtMs = 0,
+    this.episodes = const <RemoteVideoEpisode>[],
+    this.currentEpisode = 0,
   });
 
   final String id;
@@ -539,6 +583,15 @@ class RemoteVideoInfo {
   final bool hasCover;
   final String? coverUrl;
   final String? coverPath;
+
+  /// 远端播放列表的剧集（TODO-885）。空 = 单视频（向后兼容）；length>1 = 多集播放列表。
+  final List<RemoteVideoEpisode> episodes;
+
+  /// 默认起播集下标（= host 端 `VideoBooks.currentEpisode`）。单视频恒 0。
+  final int currentEpisode;
+
+  /// 是否为多集远端播放列表（≥2 集）。client UI 据此渲染集数角标 + 切集面板。
+  bool get isPlaylist => episodes.length > 1;
 
   /// host 端记录的该视频上次播放断点（毫秒，TODO-653 跨设备视频进度同步）。
   ///
@@ -573,6 +626,13 @@ class RemoteVideoInfo {
         if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
         if (positionMs > 0) 'positionMs': positionMs,
         if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
+        // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
+        if (episodes.length > 1) ...<String, Object?>{
+          'episodes': <Map<String, Object?>>[
+            for (final RemoteVideoEpisode ep in episodes) ep.toJson(),
+          ],
+          if (currentEpisode > 0) 'currentEpisode': currentEpisode,
+        },
       };
 
   RemoteVideoInfo copyWith({
@@ -621,8 +681,19 @@ class RemoteVideoInfo {
       coverPath: coverPath,
       positionMs: _jsonInt(json['positionMs']) ?? 0,
       positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
+      episodes: _jsonVideoEpisodes(json['episodes']),
+      currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
     );
   }
+}
+
+List<RemoteVideoEpisode> _jsonVideoEpisodes(Object? value) {
+  if (value is! List) return const <RemoteVideoEpisode>[];
+  return <RemoteVideoEpisode>[
+    for (final Object? item in value)
+      if (item is Map)
+        RemoteVideoEpisode.fromJson(item.cast<String, Object?>()),
+  ];
 }
 
 String? _jsonString(Object? value) {
@@ -798,21 +869,38 @@ abstract class HibikiLibraryHostService {
   /// 实现**只查 DB** 得到 videoPath，然后验证文件存在后返回；文件不存在或 id 未知
   /// 时返回 null。绝不接受外部任意路径——[id] 只能来自 [listVideos] 返回的条目，
   /// 防止路径穿越。
-  Future<File?> resolveVideoFile(String id);
+  ///
+  /// [episodeIndex]>0（远端播放列表，TODO-885）时反查 `playlistJson[episodeIndex].path`
+  /// 那一集的文件（仍 DB-only，不接受外部 path）；0 = 当前选中集（`videoPath`）。
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0});
 
   /// 按 [id] 查找对应视频的外挂字幕文件（sidecar）。
   ///
   /// 用 [langCode] 优先匹配带语言标记的字幕（如 `.ja.srt`）；内封字幕不在此列。
-  /// 找不到外挂字幕或视频未知时返回 null。
-  Future<File?> resolveVideoSubtitle(String id, {String langCode = ''});
+  /// 找不到外挂字幕或视频未知时返回 null。[episodeIndex]>0（TODO-885）时按
+  /// `playlistJson[episodeIndex]` 那一集的视频路径找 sidecar。
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = '',
+    int episodeIndex = 0,
+  });
 
   /// 读 host 端记录的视频 [id] 播放断点（TODO-653）。返回 (位置毫秒, 更新时间毫秒)；
-  /// 无记录时返回 (0, 0)。
-  Future<({int positionMs, int updatedAtMs})> getVideoPosition(String id);
+  /// 无记录时返回 (0, 0)。[episodeIndex]>0（TODO-885）按集隔离读断点。
+  Future<({int positionMs, int updatedAtMs})> getVideoPosition(
+    String id, {
+    int episodeIndex = 0,
+  });
 
   /// 把 client 上报的视频 [id] 播放断点写入 host（TODO-653）。
   ///
   /// 冲突解决「取较新时间戳」（见 [resolveVideoPositionSync]）：仅当 [updatedAtMs]
   /// 严格新于 host 已存时间戳才覆盖，避免旧设备的滞后上报回退新进度。
-  Future<void> putVideoPosition(String id, int positionMs, int updatedAtMs);
+  /// [episodeIndex]>0（TODO-885）按集隔离写断点。
+  Future<void> putVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  });
 }

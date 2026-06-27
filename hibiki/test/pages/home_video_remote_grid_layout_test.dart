@@ -344,7 +344,8 @@ class _GridFakeRemoteVideoClient implements RemoteVideoClient {
       );
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async =>
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
+          {int episodeIndex = 0}) async =>
       RemoteVideoStreamUrls(
         streamUrl: 'http://127.0.0.1:1/stream',
         subtitleUrl: null,
@@ -357,6 +358,7 @@ class _GridFakeRemoteVideoClient implements RemoteVideoClient {
     File dest, {
     int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
+    int episodeIndex = 0,
   }) async {}
 
   @override
@@ -368,16 +370,18 @@ class _GridFakeRemoteVideoClient implements RemoteVideoClient {
 
   @override
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
-    String id,
-  ) async =>
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
       (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {}
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {}
 }
 
 final List<int> _tinyPngBytes =

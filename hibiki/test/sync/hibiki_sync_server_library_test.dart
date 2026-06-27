@@ -97,25 +97,28 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[];
 
   @override
-  Future<File?> resolveVideoFile(String id) async => null;
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
+      null;
 
   @override
   Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja'}) async =>
+          {String langCode = 'ja', int episodeIndex = 0}) async =>
       null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
-    String id,
-  ) async =>
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
       (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {}
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {}
 }
 
 void main() {

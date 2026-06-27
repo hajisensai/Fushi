@@ -1291,7 +1291,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   Future<void> _initRemote() async {
     final RemoteVideoInfo info = widget.remoteInfo!;
-    final RemoteVideoClient client = widget.remoteClient!;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     _currentAudioTrackId = null;
@@ -1302,9 +1301,43 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
 
+    // TODO-885: 远端播放列表——把 host 下发的 episodes 映射成 _episodes（path 留空，
+    // 切集靠 episodeIndex 向 host 重新建流），复用既有 _isPlaylist / 剧集面板 / 上下集。
+    final int startIndex = info.isPlaylist
+        ? (widget.initialEpisodeIndex ?? info.currentEpisode)
+            .clamp(0, info.episodes.length - 1)
+        : 0;
+    if (info.isPlaylist) {
+      _episodes = <PlaylistEntry>[
+        for (final RemoteVideoEpisode ep in info.episodes)
+          PlaylistEntry(title: ep.title, path: ''),
+      ];
+    }
+    await _loadRemoteEpisode(
+      startIndex,
+      startIntent: EpisodeStartIntent.initialOpen,
+      // 起播集恢复其按集断点（host 真相 vs 本地 prefs 取较新者）。
+      initialPositionMsOverride:
+          _resolveRemoteInitialPositionMs(info, startIndex),
+    );
+  }
+
+  /// 载入远端第 [index] 集（TODO-885）：向 host 按 episodeIndex 换流式 url + 字幕，
+  /// 复用 [_applyLoad]。单视频 [index]==0。慢路径（下字幕）期间若已切走则放弃应用。
+  Future<void> _loadRemoteEpisode(
+    int index, {
+    required EpisodeStartIntent startIntent,
+    int? initialPositionMsOverride,
+  }) async {
+    final RemoteVideoInfo info = widget.remoteInfo!;
+    final RemoteVideoClient client = widget.remoteClient!;
+    final int seq = ++_episodeLoadSeq;
+    final int initialPositionMs = initialPositionMsOverride ??
+        _readPersistedRemotePositionForEpisode(index);
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
         info.id,
+        episodeIndex: index,
       );
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
       String? externalSub;
@@ -1314,28 +1347,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         final File subtitle = File(
           p.join(
             temp.path,
-            _remoteSubtitleTempFileName(info.id, urls.subtitleFileName),
+            _remoteSubtitleTempFileName(
+              '${info.id}_ep$index',
+              urls.subtitleFileName,
+            ),
           ),
         );
-        await client.getRemoteVideoSubtitle(info.id, subtitle);
+        await client.getRemoteVideoSubtitle(
+          info.id,
+          subtitle,
+          episodeIndex: index,
+        );
         externalSub = subtitle.path;
         _remoteSubtitlePath = subtitle.path;
         cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
       }
+      if (seq != _episodeLoadSeq || !mounted) return;
+      _currentEpisode = index;
       await _applyLoad(
         videoPath: null,
         mediaUri: urls.streamUrl,
         cues: cues,
         title: info.title,
-        // TODO-559/653: 远端断点恢复——在 host 真相（随清单带回的 info.positionMs）
-        // 与本地 prefs 之间取较新者（跨设备同步：A 设备看到第 10 分钟，B 设备恢复到
-        // 第 10 分钟）。host 无记录 / 旧 host 时退回本地（离线可用）。
-        initialPositionMs: _resolveRemoteInitialPositionMs(info),
-        startIntent: EpisodeStartIntent.initialOpen,
+        initialPositionMs: initialPositionMs,
+        startIntent: startIntent,
         externalSubtitlePath: externalSub,
       );
     } catch (e, stack) {
-      debugPrint('[VideoHibikiPage] remote video load failed: $e\n$stack');
+      debugPrint(
+        '[VideoHibikiPage] remote episode $index load failed: $e\n$stack',
+      );
       if (mounted) setState(() => _failed = true);
     }
   }
@@ -1364,49 +1405,48 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return v.clamp(0.0, 100.0).toDouble();
   }
 
-  /// per-book 远端视频断点位置偏好 key（TODO-559）。
+  /// 读 per-book/per-episode 远端断点位置（无则 0，从头）。
   ///
   /// 在线远端视频（[_isRemote]）在 client 本地 DB 没有 VideoBooks 行（书架不收录
-  /// 远端在线视频，[home_video_page._openRemote] 直接 push 播放页不 upsert），因此
-  /// 本地视频走 `VideoBooks.lastPositionMs` 的进度链路对远端不可用。沿用 speed/volume
-  /// 同款 per-book prefs 范式（落 Drift `preferences` 表，跨重启保留），key 用稳定的
-  /// `widget.bookUid`（= 远端 `RemoteVideoInfo.id` = host 端文件名派生的 bookUid，
-  /// 每次列举不变，见 app_model_library_host_service `RemoteVideoInfo.id = row.bookUid`），
-  /// 避免为远端在线视频建 VideoBooks 行污染书架 / 触发资产 GC / 同步逻辑。
-  String get _remotePositionPrefKey =>
-      videoRemotePositionPrefKey(widget.bookUid);
-
-  /// [_remotePositionPrefKey] 对应的「最后更新时间」key（epoch 毫秒，TODO-653 冲突解决）。
-  String get _remotePositionAtPrefKey =>
-      videoRemotePositionAtPrefKey(widget.bookUid);
-
-  /// 读 per-book 远端断点位置（无则 0，从头）。
-  int _readPersistedRemotePosition() {
-    final Object? raw =
-        appModel.prefsRepo.getPref(_remotePositionPrefKey, defaultValue: 0);
+  /// 远端在线视频，[home_video_page._openRemote] 直接 push 播放页不 upsert），因此本地
+  /// 视频走 `VideoBooks.lastPositionMs` 的进度链路对远端不可用。沿用 speed/volume 同款
+  /// per-book prefs 范式（落 Drift `preferences` 表，跨重启保留），key 用稳定的
+  /// `widget.bookUid`（= 远端 `RemoteVideoInfo.id`，每次列举不变）。TODO-885：
+  /// [episodeIndex]>0 用按集 key（`#ep<index>` 后缀），0 回退整书 key（向后兼容单视频 /
+  /// 旧 TODO-559 prefs）。
+  int _readPersistedRemotePositionForEpisode(int episodeIndex) {
+    final Object? raw = appModel.prefsRepo.getPref(
+        videoRemotePositionEpisodePrefKey(widget.bookUid, episodeIndex),
+        defaultValue: 0);
     final int v =
         raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
     return v < 0 ? 0 : v;
   }
 
-  /// 读 per-book 远端断点的本地「最后更新时间」（无则 0）。TODO-653 冲突解决用。
-  int _readPersistedRemotePositionAt() {
-    final Object? raw =
-        appModel.prefsRepo.getPref(_remotePositionAtPrefKey, defaultValue: 0);
+  /// 读 per-book/per-episode 远端断点的本地「最后更新时间」（无则 0）。TODO-653 冲突解决用。
+  int _readPersistedRemotePositionAtForEpisode(int episodeIndex) {
+    final Object? raw = appModel.prefsRepo.getPref(
+        videoRemotePositionEpisodeAtPrefKey(widget.bookUid, episodeIndex),
+        defaultValue: 0);
     final int v =
         raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
     return v < 0 ? 0 : v;
   }
 
-  /// 远端视频开播位置（TODO-653）：在 host 真相（[info] 随清单带回的 positionMs）与
-  /// 本地 prefs 之间「取较新时间戳」（[resolveVideoPositionSync]）。host 进度新于本地
-  /// 时跨设备恢复；本地新于 host（如本端刚看、上报尚未列举刷新）时不被旧 host 回退。
-  int _resolveRemoteInitialPositionMs(RemoteVideoInfo info) {
+  /// 远端视频开播位置（TODO-653/885）：在 host 真相（[info] 随清单带回的整书 positionMs，
+  /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集 prefs 之间「取较新时间
+  /// 戳」（[resolveVideoPositionSync]）。host 进度新于本地时跨设备恢复；本地新于 host 时
+  /// 不被旧 host 回退。非起播集只用本地按集 prefs（host 清单只带整书/当前集进度）。
+  int _resolveRemoteInitialPositionMs(RemoteVideoInfo info, int episodeIndex) {
+    // host 的 info.positionMs 是整书/当前集进度，只对 host 的 currentEpisode 那集叠加；
+    // 其它集 host 没带进度 → 退本地按集 prefs。
+    final bool hostProgressApplies =
+        !info.isPlaylist || episodeIndex == info.currentEpisode;
     final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
-      localPositionMs: _readPersistedRemotePosition(),
-      localUpdatedAtMs: _readPersistedRemotePositionAt(),
-      remotePositionMs: info.positionMs,
-      remoteUpdatedAtMs: info.positionUpdatedAtMs,
+      localPositionMs: _readPersistedRemotePositionForEpisode(episodeIndex),
+      localUpdatedAtMs: _readPersistedRemotePositionAtForEpisode(episodeIndex),
+      remotePositionMs: hostProgressApplies ? info.positionMs : 0,
+      remoteUpdatedAtMs: hostProgressApplies ? info.positionUpdatedAtMs : 0,
     );
     return winner.positionMs < 0 ? 0 : winner.positionMs;
   }
@@ -1421,13 +1461,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （离线 / 旧 host 无端点）只记日志不抛——本地 prefs 已写，不阻塞播放也不丢进度。
   Future<void> _persistRemotePosition(String uid, int posMs) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    final int clamped = posMs < 0 ? 0 : posMs;
+    // TODO-885: 按当前集 key 落库 + 上报（_currentEpisode 是状态真相；单视频恒 0 回退
+    // 整书 key，与旧 prefs 兼容）。
+    final int episodeIndex = _currentEpisode;
     await appModel.prefsRepo
-        .setPref(videoRemotePositionPrefKey(uid), posMs < 0 ? 0 : posMs);
-    await appModel.prefsRepo.setPref(videoRemotePositionAtPrefKey(uid), nowMs);
+        .setPref(videoRemotePositionEpisodePrefKey(uid, episodeIndex), clamped);
+    await appModel.prefsRepo
+        .setPref(videoRemotePositionEpisodeAtPrefKey(uid, episodeIndex), nowMs);
     final RemoteVideoClient? client = widget.remoteClient;
     if (client == null) return;
     try {
-      await client.putRemoteVideoPosition(uid, posMs < 0 ? 0 : posMs, nowMs);
+      await client.putRemoteVideoPosition(
+        uid,
+        clamped,
+        nowMs,
+        episodeIndex: episodeIndex,
+      );
     } catch (e) {
       debugPrint('[VideoHibikiPage] remote position upload failed: $e');
     }
@@ -1915,22 +1965,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `video_remote_position_at_<uid>` prefs（TODO-816 断点②）。
   ///
   /// 镜像目的：host 本机播放此视频时，client 拉清单经 host 的 getVideoPosition 读的是
-  /// prefs 键空间；若本机播放只写 lastPositionMs 不写 prefs，host 自看进度就进不了同步
-  /// 读取键 → client 拿不到。镜像后与远端 resume 路径（[_persistRemotePosition]）统一键
-  /// 空间，消除「两套键」特殊情况。播放列表（多集）进度是 per-episode 语义，与 host
-  /// 按 bookUid 的单一进度模型不对应，不镜像。
+  /// prefs 键空间；若本机播放只写 lastPositionMs / playlistJson 不写 prefs，host 自看
+  /// 进度就进不了同步读取键 → client 拿不到（用户报「服务端看了视频，客户端再看进度是
+  /// 0」）。镜像后与远端 resume 路径（[_persistRemotePosition]）统一键空间。TODO-885：
+  /// 播放列表也按集镜像到 `video_remote_position_<uid>#ep<N>`，让 client 按集恢复 host
+  /// 自看进度（与远端剧集列表的按集 key 同源）。
   Future<void> _persistPosition(String uid, int posMs) async {
+    final int clamped = posMs < 0 ? 0 : posMs;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
     if (_episodes.isEmpty) {
       await widget.repo.updatePosition(uid, posMs);
-      final int clamped = posMs < 0 ? 0 : posMs;
       await appModel.prefsRepo
-          .setPref(videoRemotePositionPrefKey(uid), clamped);
-      await appModel.prefsRepo.setPref(videoRemotePositionAtPrefKey(uid),
-          DateTime.now().millisecondsSinceEpoch);
+          .setPref(videoRemotePositionEpisodePrefKey(uid, 0), clamped);
+      await appModel.prefsRepo
+          .setPref(videoRemotePositionEpisodeAtPrefKey(uid, 0), nowMs);
       return;
     }
     _episodes = updateEntryPosition(_episodes, _currentEpisode, posMs);
     await widget.repo.updatePlaylistJson(uid, _encodeEpisodes());
+    // TODO-885: 按当前集镜像到远端进度键空间，client 据此按集恢复 host 自看进度。
+    await appModel.prefsRepo.setPref(
+        videoRemotePositionEpisodePrefKey(uid, _currentEpisode), clamped);
+    await appModel.prefsRepo.setPref(
+        videoRemotePositionEpisodeAtPrefKey(uid, _currentEpisode), nowMs);
   }
 
   /// 把当前 [_episodes] 序列化回 playlistJson（带各集 positionMs）。

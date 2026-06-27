@@ -1185,6 +1185,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                       ),
                     ),
                   ),
+                // TODO-885: 远端播放列表集数角标（与本地卡同款，左下避开右上字幕/下载）。
+                if (video.isPlaylist)
+                  Positioned(
+                    bottom: 6,
+                    left: 6,
+                    child: _buildPlaylistBadge(video.episodes.length),
+                  ),
               ],
             ),
           ),

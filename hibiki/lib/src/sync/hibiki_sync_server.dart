@@ -985,6 +985,16 @@ class HibikiSyncServer {
   /// - id 允许包含 `/`（如 `video/my_film`），但不允许 `..`（路径穿越）
   ///
   /// 解析失败（id 为空或含 `..`）时返回 null。
+  /// 解析 `?episode=N` query 成集下标（TODO-885）；缺省 / 非法 / 负数都回退 0
+  /// （= 当前集 / 单视频，向后兼容）。
+  static int _episodeIndexFromRequest(shelf.Request request) {
+    final String? raw = request.url.queryParameters['episode'];
+    if (raw == null) return 0;
+    final int? n = int.tryParse(raw);
+    if (n == null || n < 0) return 0;
+    return n;
+  }
+
   static String? _extractVideoId(String reqPath, String suffix) {
     const String prefix = '/api/library/videos/';
     final String fullSuffix = '/$suffix';
@@ -1034,24 +1044,36 @@ class HibikiSyncServer {
     final String? streamUrlId = _extractVideoId(reqPath, 'streamurl');
     if (streamUrlId != null) {
       if (method != 'GET') return shelf.Response(405);
-      final File? file = await svc.resolveVideoFile(streamUrlId);
+      // TODO-885: 远端播放列表按集——?episode=N 决定流式哪一集（DB-only 反查）。
+      final int episodeIndex = _episodeIndexFromRequest(request);
+      final File? file =
+          await svc.resolveVideoFile(streamUrlId, episodeIndex: episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
       final String tokenValue = _generateVideoToken();
       _videoStreamTokens[tokenValue] = _VideoStreamToken(
         videoId: streamUrlId,
         createdAt: _now(),
+        episodeIndex: episodeIndex,
       );
       final String encodedId = Uri.encodeFull(streamUrlId);
+      // stream / subtitle URL 都带 episode=N，让 client 取流 / 下字幕命中同一集。
+      final Map<String, String> streamQuery = <String, String>{
+        'token': tokenValue,
+        if (episodeIndex > 0) 'episode': '$episodeIndex',
+      };
       final Uri streamUri = request.requestedUri.replace(
         path: '/api/library/videos/$encodedId/stream',
-        queryParameters: <String, String>{'token': tokenValue},
+        queryParameters: streamQuery,
       );
-      // subtitle URL 不含 token（走 Basic 鉴权）
-      final File? sub = await svc.resolveVideoSubtitle(streamUrlId);
+      // subtitle URL 不含 token（走 Basic 鉴权），但带 episode=N。
+      final File? sub = await svc.resolveVideoSubtitle(streamUrlId,
+          episodeIndex: episodeIndex);
       final Uri? subtitleUri = sub != null
           ? request.requestedUri.replace(
               path: '/api/library/videos/$encodedId/subtitle',
-              queryParameters: <String, String>{},
+              queryParameters: <String, String>{
+                if (episodeIndex > 0) 'episode': '$episodeIndex',
+              },
             )
           : null;
       final List<RemoteVideoEmbeddedSubtitleTrack> embeddedTracks =
@@ -1059,6 +1081,7 @@ class HibikiSyncServer {
         file,
         request,
         streamUrlId,
+        episodeIndex,
       );
       return _jsonResponse(<String, dynamic>{
         'url': streamUri.toString(),
@@ -1089,7 +1112,10 @@ class HibikiSyncServer {
             body: 'Invalid or expired token',
             headers: <String, String>{'Content-Type': 'text/plain'});
       }
-      final File? file = await svc.resolveVideoFile(streamId);
+      // TODO-885: 用 token 绑定的集下标反查（token 是 streamurl 签发时定的，client 不能
+      // 自己改集——?episode 只决定 streamurl 阶段，stream 阶段以 token 为准）。
+      final File? file =
+          await svc.resolveVideoFile(streamId, episodeIndex: tok.episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
       return serveFileWithRange(file, request);
     }
@@ -1098,14 +1124,17 @@ class HibikiSyncServer {
     final String? subtitleId = _extractVideoId(reqPath, 'subtitle');
     if (subtitleId != null) {
       if (method != 'GET') return shelf.Response(405);
+      final int episodeIndex = _episodeIndexFromRequest(request);
       final String? embeddedIndexText =
           request.url.queryParameters['embeddedStreamIndex'];
       final File? sub = embeddedIndexText == null
-          ? await svc.resolveVideoSubtitle(subtitleId)
+          ? await svc.resolveVideoSubtitle(subtitleId,
+              episodeIndex: episodeIndex)
           : await _resolveEmbeddedVideoSubtitle(
               svc,
               subtitleId,
               int.tryParse(embeddedIndexText),
+              episodeIndex,
             );
       if (sub == null) return shelf.Response.notFound('Subtitle not found');
       final int length = sub.lengthSync();
@@ -1122,13 +1151,15 @@ class HibikiSyncServer {
     // GET 让 client 拉取 host 真相源进度；PUT 让 client 上报本端进度（host 取较新者）。
     final String? positionId = _extractVideoId(reqPath, 'position');
     if (positionId != null) {
-      // 先确认该视频 id 在 host DB 真实存在，防止任意 id 写脏 prefs。
-      final File? file = await svc.resolveVideoFile(positionId);
+      final int episodeIndex = _episodeIndexFromRequest(request);
+      // 先确认该视频 id（含集下标）在 host DB 真实存在，防止任意 id 写脏 prefs。
+      final File? file =
+          await svc.resolveVideoFile(positionId, episodeIndex: episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
       switch (method) {
         case 'GET':
-          final ({int positionMs, int updatedAtMs}) p =
-              await svc.getVideoPosition(positionId);
+          final ({int positionMs, int updatedAtMs}) p = await svc
+              .getVideoPosition(positionId, episodeIndex: episodeIndex);
           return _jsonResponse(<String, dynamic>{
             'positionMs': p.positionMs,
             'positionUpdatedAtMs': p.updatedAtMs,
@@ -1144,7 +1175,8 @@ class HibikiSyncServer {
           final int posMs = (json['positionMs'] as num?)?.toInt() ?? 0;
           final int updatedAtMs =
               (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0;
-          await svc.putVideoPosition(positionId, posMs, updatedAtMs);
+          await svc.putVideoPosition(positionId, posMs, updatedAtMs,
+              episodeIndex: episodeIndex);
           return shelf.Response(200);
         default:
           return shelf.Response(405);
@@ -1177,6 +1209,7 @@ class HibikiSyncServer {
     File videoFile,
     shelf.Request request,
     String videoId,
+    int episodeIndex,
   ) async {
     final List<EmbeddedSubtitleTrack> tracks =
         await listEmbeddedSubtitleTracks(videoFile.path);
@@ -1189,6 +1222,7 @@ class HibikiSyncServer {
           request,
           encodedId,
           videoStem,
+          episodeIndex,
         ),
     ];
   }
@@ -1198,6 +1232,7 @@ class HibikiSyncServer {
     shelf.Request request,
     String encodedId,
     String videoStem,
+    int episodeIndex,
   ) {
     final String? extension = subtitleExtensionForCodec(track.codec);
     final bool isText = extension != null;
@@ -1212,6 +1247,7 @@ class HibikiSyncServer {
               path: '/api/library/videos/$encodedId/subtitle',
               queryParameters: <String, String>{
                 'embeddedStreamIndex': '${track.streamIndex}',
+                if (episodeIndex > 0) 'episode': '$episodeIndex',
               },
             ).toString()
           : null,
@@ -1230,9 +1266,11 @@ class HibikiSyncServer {
     HibikiLibraryHostService service,
     String id,
     int? streamIndex,
+    int episodeIndex,
   ) async {
     if (streamIndex == null || streamIndex < 0) return null;
-    final File? videoFile = await service.resolveVideoFile(id);
+    final File? videoFile =
+        await service.resolveVideoFile(id, episodeIndex: episodeIndex);
     if (videoFile == null) return null;
     final List<EmbeddedSubtitleTrack> tracks =
         await listEmbeddedSubtitleTracks(videoFile.path);
@@ -1713,9 +1751,13 @@ class _VideoStreamToken {
   const _VideoStreamToken({
     required this.videoId,
     required this.createdAt,
+    this.episodeIndex = 0,
   });
 
   /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
   final String videoId;
   final DateTime createdAt;
+
+  /// 远端播放列表集下标（TODO-885）；单视频 / 当前集恒 0。
+  final int episodeIndex;
 }

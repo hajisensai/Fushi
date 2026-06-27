@@ -158,7 +158,8 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => _videos;
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async =>
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
+          {int episodeIndex = 0}) async =>
       const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
 
   @override
@@ -167,6 +168,7 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
     File dest, {
     int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
+    int episodeIndex = 0,
   }) async {}
 
   @override
@@ -180,16 +182,18 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
 
   @override
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
-    String id,
-  ) async =>
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
       (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {}
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {}
 }
 
 class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
@@ -201,7 +205,8 @@ class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
       ];
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async =>
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
+          {int episodeIndex = 0}) async =>
       const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
 
   @override
@@ -210,6 +215,7 @@ class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
     File dest, {
     int? embeddedStreamIndex,
     void Function(double progress)? onProgress,
+    int episodeIndex = 0,
   }) async {}
 
   @override
@@ -224,14 +230,16 @@ class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
 
   @override
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
-    String id,
-  ) async =>
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
       (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {}
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {}
 }

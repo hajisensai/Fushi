@@ -31,6 +31,12 @@ class _FakeLibraryService implements HibikiLibraryHostService {
       'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,テスト\n',
     );
     coverFile = File('${tmp.path}/sample.png')..writeAsBytesSync(_coverBytes);
+    // TODO-885 多集播放列表 fake：两集各自的视频文件（按 episodeIndex 反查）。
+    ep0File = File('${tmp.path}/ep0.mp4')
+      ..writeAsBytesSync(<int>[10, 11, 12, 13]);
+    ep1File = File('${tmp.path}/ep1.mp4')
+      ..writeAsBytesSync(<int>[20, 21, 22, 23, 24]);
+    ep1SubFile = File('${tmp.path}/ep1.ja.srt')..writeAsStringSync('ep1 sub');
   }
 
   static final List<int> _videoBytes = List<int>.generate(16, (int i) => i);
@@ -38,9 +44,15 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   late final File videoFile;
   late final File subtitleFile;
   late final File coverFile;
+  late final File ep0File;
+  late final File ep1File;
+  late final File ep1SubFile;
 
   /// id 含斜杠，模拟真实 VideoBooks.bookUid
   static const String videoId = 'video/sample';
+
+  /// TODO-885 多集播放列表 id（含斜杠）。
+  static const String playlistId = 'video/playlist';
 
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
@@ -61,15 +73,21 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }
 
   @override
-  Future<File?> resolveVideoFile(String id) async {
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
     if (id == videoId) return videoFile;
+    if (id == playlistId) {
+      if (episodeIndex == 0) return ep0File;
+      if (episodeIndex == 1) return ep1File;
+      return null; // 越界安全拒绝。
+    }
     return null;
   }
 
   @override
   Future<File?> resolveVideoSubtitle(String id,
-      {String langCode = 'ja'}) async {
+      {String langCode = 'ja', int episodeIndex = 0}) async {
     if (id == videoId) return subtitleFile;
+    if (id == playlistId && episodeIndex == 1) return ep1SubFile;
     return null;
   }
 
@@ -155,21 +173,28 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   final Map<String, ({int positionMs, int updatedAtMs})> videoPositions =
       <String, ({int positionMs, int updatedAtMs})>{};
 
+  static String _posKey(String id, int episodeIndex) =>
+      episodeIndex <= 0 ? id : '$id#ep$episodeIndex';
+
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
-    String id,
-  ) async =>
-      videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
+      videoPositions[_posKey(id, episodeIndex)] ??
+      (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {
+    final String key = _posKey(id, episodeIndex);
     final ({int positionMs, int updatedAtMs}) current =
-        videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
-    videoPositions[id] = resolveVideoPositionSync(
+        videoPositions[key] ?? (positionMs: 0, updatedAtMs: 0);
+    videoPositions[key] = resolveVideoPositionSync(
       localPositionMs: current.positionMs,
       localUpdatedAtMs: current.updatedAtMs,
       remotePositionMs: positionMs < 0 ? 0 : positionMs,
@@ -670,6 +695,131 @@ void main() {
     expect(first['positionMs'], 420000, reason: 'host 进度应随清单条目带回，client 据此恢复');
     expect(first['positionUpdatedAtMs'], 1700000000000);
     c.close();
+  });
+
+  // ── TODO-885 per-episode streamurl / subtitle / position ──────────────────
+  group('TODO-885 remote playlist per-episode', () {
+    String enc(String id) => Uri.encodeFull(id);
+
+    Future<Map<String, dynamic>> streamUrlForEpisode(
+      HttpClient c,
+      int episode,
+    ) async {
+      final HttpClientRequest req = await c.getUrl(Uri.parse(
+        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+        '/streamurl?episode=$episode',
+      ));
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200, reason: 'episode $episode streamurl ok');
+      return jsonDecode(await res.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+    }
+
+    test('streamurl?episode=N streams that episode file (DB-only lookup)',
+        () async {
+      final HttpClient c = HttpClient();
+      final Map<String, dynamic> j1 = await streamUrlForEpisode(c, 1);
+      final String url1 = j1['url'] as String;
+      expect(url1, contains('/stream'));
+      expect(url1, contains('episode=1'),
+          reason: 'stream url must carry the episode index');
+
+      // 拉 ep1 流，断言拿到的是 ep1 的字节（5 字节），不是 ep0。
+      final HttpClientRequest streamReq = await c.getUrl(Uri.parse(url1));
+      final HttpClientResponse streamRes = await streamReq.close();
+      expect(streamRes.statusCode, 200);
+      final List<int> body =
+          await streamRes.fold(<int>[], (List<int> a, List<int> b) {
+        return a..addAll(b);
+      });
+      expect(body, <int>[20, 21, 22, 23, 24],
+          reason: 'episode 1 stream must serve ep1 bytes, not ep0');
+      c.close();
+    });
+
+    test('streamurl?episode=N exposes that episode sidecar subtitle', () async {
+      final HttpClient c = HttpClient();
+      final Map<String, dynamic> j1 = await streamUrlForEpisode(c, 1);
+      expect(j1['subtitleUrl'], isNotNull,
+          reason: 'episode 1 has a sidecar subtitle');
+      final Uri subUri = Uri.parse(j1['subtitleUrl'] as String);
+      expect(subUri.queryParameters['episode'], '1',
+          reason: 'subtitle url must carry the episode index');
+      final HttpClientRequest subReq = await c.getUrl(subUri);
+      subReq.headers.set('authorization', authHeader());
+      final HttpClientResponse subRes = await subReq.close();
+      expect(subRes.statusCode, 200);
+      final String subBody = await subRes.transform(utf8.decoder).join();
+      expect(subBody, contains('ep1 sub'));
+      c.close();
+
+      // episode 0 has no sidecar -> no subtitleUrl.
+      final HttpClient c2 = HttpClient();
+      final Map<String, dynamic> j0 = await streamUrlForEpisode(c2, 0);
+      expect(j0['subtitleUrl'], isNull,
+          reason: 'episode 0 has no sidecar subtitle');
+      c2.close();
+    });
+
+    test('out-of-range episode index is rejected (404, no path traversal)',
+        () async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(Uri.parse(
+        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+        '/streamurl?episode=99',
+      ));
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 404,
+          reason: 'unknown episode index must not resolve any file');
+      await res.drain<void>();
+      c.close();
+    });
+
+    test('position?episode=N is isolated per episode', () async {
+      final HttpClient c = HttpClient();
+      // PUT ep1 position.
+      final HttpClientRequest put = await c.putUrl(Uri.parse(
+        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+        '/position?episode=1',
+      ));
+      put.headers.set('authorization', authHeader());
+      put.headers.set('content-type', 'application/json');
+      put.write(jsonEncode(<String, Object?>{
+        'positionMs': 88000,
+        'positionUpdatedAtMs': 1700000000000,
+      }));
+      final HttpClientResponse putRes = await put.close();
+      expect(putRes.statusCode, 200);
+      await putRes.drain<void>();
+
+      // GET ep1 -> 88000.
+      final HttpClientRequest get1 = await c.getUrl(Uri.parse(
+        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+        '/position?episode=1',
+      ));
+      get1.headers.set('authorization', authHeader());
+      final HttpClientResponse get1Res = await get1.close();
+      final Map<String, dynamic> j1 =
+          jsonDecode(await get1Res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      expect(j1['positionMs'], 88000);
+
+      // GET ep0 -> still 0 (per-episode isolation).
+      final HttpClientRequest get0 = await c.getUrl(Uri.parse(
+        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+        '/position?episode=0',
+      ));
+      get0.headers.set('authorization', authHeader());
+      final HttpClientResponse get0Res = await get0.close();
+      final Map<String, dynamic> j0 =
+          jsonDecode(await get0Res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      expect(j0['positionMs'], 0,
+          reason: 'episode 0 must not inherit episode 1 progress');
+      c.close();
+    });
   });
 }
 

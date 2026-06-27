@@ -909,12 +909,16 @@ class HibikiClientSyncBackend extends SyncBackend
   /// Authorization 头。字幕 URL（若存在）仍是普通受 Basic 鉴权的 API URL，UI
   /// 可先用 [getRemoteVideoSubtitle] 下载到本地后交给现有字幕加载逻辑。
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async {
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
     await _ensureResolved();
     final String encodedId = _encodeVideoId(id);
+    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase/api/library/videos/$encodedId/streamurl',
+      '$_apiBase/api/library/videos/$encodedId/streamurl$query',
     );
     final HttpClientResponse res = await req.close();
     _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/streamurl');
@@ -932,16 +936,18 @@ class HibikiClientSyncBackend extends SyncBackend
     String id,
     File dest, {
     int? embeddedStreamIndex,
+    int episodeIndex = 0,
     void Function(double progress)? onProgress,
   }) async {
     await _ensureResolved();
+    final Map<String, String> query = <String, String>{
+      if (embeddedStreamIndex != null)
+        'embeddedStreamIndex': '$embeddedStreamIndex',
+      if (episodeIndex > 0) 'episode': '$episodeIndex',
+    };
     final Uri uri = Uri.parse(
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
-    ).replace(
-      queryParameters: embeddedStreamIndex == null
-          ? null
-          : <String, String>{'embeddedStreamIndex': '$embeddedStreamIndex'},
-    );
+    ).replace(queryParameters: query.isEmpty ? null : query);
     await downloadContentFile(
       fileId: uri.toString(),
       destination: dest,
@@ -1013,12 +1019,14 @@ class HibikiClientSyncBackend extends SyncBackend
   /// 异常时返回 (0, 0)，让调用方退回本地 prefs（离线/旧 host 不致崩溃）。
   @override
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
-    String id,
-  ) async {
+    String id, {
+    int episodeIndex = 0,
+  }) async {
     await _ensureResolved();
+    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position$query',
     );
     final HttpClientResponse res = await req.close();
     if (res.statusCode == 404) {
@@ -1039,12 +1047,14 @@ class HibikiClientSyncBackend extends SyncBackend
   Future<void> putRemoteVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {
     await _ensureResolved();
+    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
-      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/position$query',
     );
     req.headers.set('Content-Type', 'application/json');
     req.write(jsonEncode(<String, Object?>{

@@ -46,12 +46,12 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }
 
   @override
-  Future<File?> resolveVideoFile(String id) async =>
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       id == videoId ? videoFile : null;
 
   @override
   Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja'}) async =>
+          {String langCode = 'ja', int episodeIndex = 0}) async =>
       id == videoId ? subtitleFile : null;
 
   @override
@@ -133,16 +133,18 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
-    String id,
-  ) async =>
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
       videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {
     final ({int positionMs, int updatedAtMs}) current =
         videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
     videoPositions[id] = resolveVideoPositionSync(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -215,6 +216,195 @@ void main() {
       );
       final Map<String, Object?> json = info.toJson();
       expect(json.containsKey('durationMs'), isFalse);
+    });
+  });
+
+  // TODO-885 remote episode list (four-layer wiring).
+  group('TODO-885 remote episodes', () {
+    test('playlistJson rows map to episodes (index+title, never host path)',
+        () async {
+      final Directory series = Directory(p.join(tmp.path, 'series'))
+        ..createSync();
+      final File ep0 = File(p.join(series.path, 'ep0.mp4'))
+        ..writeAsBytesSync(<int>[0]);
+      final File ep1 = File(p.join(series.path, 'ep1.mp4'))
+        ..writeAsBytesSync(<int>[0]);
+      final String playlistJson = jsonEncode(<Map<String, dynamic>>[
+        <String, dynamic>{
+          'title': 'Episode 1',
+          'path': ep0.path,
+          'positionMs': 0
+        },
+        <String, dynamic>{
+          'title': 'Episode 2',
+          'path': ep1.path,
+          'positionMs': 0
+        },
+      ]);
+
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/series',
+        title: 'My Series',
+        videoPath: ep0.path,
+        playlistJson: Value<String?>(playlistJson),
+        currentEpisode: const Value<int>(1),
+      ));
+
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+      expect(list.single.episodes, hasLength(2));
+      expect(list.single.episodes[0].index, 0);
+      expect(list.single.episodes[0].title, 'Episode 1');
+      expect(list.single.episodes[1].index, 1);
+      expect(list.single.episodes[1].title, 'Episode 2');
+      expect(list.single.currentEpisode, 1,
+          reason: 'currentEpisode picks the default start episode');
+
+      final String dumped = jsonEncode(list.single.toJson());
+      expect(dumped.contains(ep0.path), isFalse,
+          reason: 'episode JSON must not leak host file path');
+      expect(dumped.contains(ep1.path), isFalse);
+      expect(dumped.contains(series.path), isFalse,
+          reason: 'episode JSON must not leak host directory structure');
+    });
+
+    test('single video (no playlistJson) has empty episodes and omits the key',
+        () async {
+      final File f = File(p.join(tmp.path, 'single.mp4'))
+        ..writeAsBytesSync(<int>[0]);
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/single',
+        title: 'Single',
+        videoPath: f.path,
+      ));
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+      expect(list.single.episodes, isEmpty);
+      expect(list.single.toJson().containsKey('episodes'), isFalse,
+          reason: 'single video stays backward compatible (no episodes key)');
+    });
+
+    test('episodes round-trip preserves index+title (only when length>1)', () {
+      const RemoteVideoInfo info = RemoteVideoInfo(
+        id: 'video/s',
+        title: 'S',
+        currentEpisode: 2,
+        episodes: <RemoteVideoEpisode>[
+          RemoteVideoEpisode(index: 0, title: 'A'),
+          RemoteVideoEpisode(index: 1, title: 'B'),
+          RemoteVideoEpisode(index: 2, title: 'C'),
+        ],
+      );
+      final Map<String, Object?> json = info.toJson();
+      expect(json['currentEpisode'], 2);
+      final RemoteVideoInfo restored = RemoteVideoInfo.fromJson(json);
+      expect(restored.episodes, hasLength(3));
+      expect(restored.episodes[1].index, 1);
+      expect(restored.episodes[1].title, 'B');
+      expect(restored.currentEpisode, 2);
+    });
+
+    test('single-element episodes are not serialized (backward compat)', () {
+      const RemoteVideoInfo info = RemoteVideoInfo(
+        id: 'video/one',
+        title: 'One',
+        episodes: <RemoteVideoEpisode>[
+          RemoteVideoEpisode(index: 0, title: 'A')
+        ],
+      );
+      expect(info.toJson().containsKey('episodes'), isFalse);
+    });
+  });
+
+  // TODO-885 per-episode DB-only resolution.
+  group('TODO-885 per-episode DB-only resolution', () {
+    Future<void> seedSeries() async {
+      final Directory series = Directory(p.join(tmp.path, 'series2'))
+        ..createSync();
+      final File ep0 = File(p.join(series.path, 'ep0.mkv'))
+        ..writeAsBytesSync(<int>[1]);
+      final File ep1 = File(p.join(series.path, 'ep1.mkv'))
+        ..writeAsBytesSync(<int>[2]);
+      File(p.join(series.path, 'ep1.ja.srt')).writeAsStringSync('sub1');
+      final String playlistJson = jsonEncode(<Map<String, dynamic>>[
+        <String, dynamic>{'title': 'E0', 'path': ep0.path, 'positionMs': 0},
+        <String, dynamic>{'title': 'E1', 'path': ep1.path, 'positionMs': 0},
+      ]);
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/series2',
+        title: 'Series2',
+        videoPath: ep0.path,
+        playlistJson: Value<String?>(playlistJson),
+      ));
+    }
+
+    test('resolveVideoFile(episodeIndex) looks up playlistJson[N].path',
+        () async {
+      await seedSeries();
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final File? f0 =
+          await svc.resolveVideoFile('video/series2', episodeIndex: 0);
+      final File? f1 =
+          await svc.resolveVideoFile('video/series2', episodeIndex: 1);
+      expect(f0, isNotNull);
+      expect(f1, isNotNull);
+      expect(p.basename(f0!.path), 'ep0.mkv');
+      expect(p.basename(f1!.path), 'ep1.mkv');
+    });
+
+    test('out-of-range episodeIndex returns null (safe reject)', () async {
+      await seedSeries();
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      expect(
+          await svc.resolveVideoFile('video/series2', episodeIndex: 9), isNull);
+      expect(await svc.resolveVideoFile('video/series2', episodeIndex: -1),
+          isNull);
+    });
+
+    test('resolveVideoSubtitle(episodeIndex) per-episode sidecar', () async {
+      await seedSeries();
+      final AppModelLibraryHostService svc =
+          _makeService(db: db, tmp: tmp, langCode: 'ja');
+      final File? sub1 =
+          await svc.resolveVideoSubtitle('video/series2', episodeIndex: 1);
+      expect(sub1, isNotNull);
+      expect(p.basename(sub1!.path), 'ep1.ja.srt');
+      final File? sub0 =
+          await svc.resolveVideoSubtitle('video/series2', episodeIndex: 0);
+      expect(sub0, isNull);
+    });
+
+    test('episodeIndex=0 equals legacy single-video behavior (videoPath)',
+        () async {
+      final File f = File(p.join(tmp.path, 'plain.mp4'))
+        ..writeAsBytesSync(<int>[0]);
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/plain',
+        title: 'Plain',
+        videoPath: f.path,
+      ));
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final File? r =
+          await svc.resolveVideoFile('video/plain', episodeIndex: 0);
+      expect(r, isNotNull);
+      expect(r!.path, f.path);
+    });
+
+    test('per-episode progress prefs keys are isolated by episode', () async {
+      await seedSeries();
+      await db.setPrefTyped<int>(
+          videoRemotePositionEpisodePrefKey('video/series2', 1), 50000);
+      await db.setPrefTyped<int>(
+          videoRemotePositionEpisodeAtPrefKey('video/series2', 1), 9000);
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      final ({int positionMs, int updatedAtMs}) ep1 =
+          await svc.getVideoPosition('video/series2', episodeIndex: 1);
+      expect(ep1.positionMs, 50000);
+      expect(ep1.updatedAtMs, 9000);
+      final ({int positionMs, int updatedAtMs}) ep0 =
+          await svc.getVideoPosition('video/series2', episodeIndex: 0);
+      expect(ep0.positionMs, 0);
     });
   });
 

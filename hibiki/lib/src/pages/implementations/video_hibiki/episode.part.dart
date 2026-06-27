@@ -102,6 +102,19 @@ extension _VideoEpisode on _VideoHibikiPageState {
     // 倒计时 overlay，避免它停在旧目标上。
     _cancelAutoAdvanceCountdown();
 
+    // TODO-885: 远端播放列表换集——本端无 VideoBooks 行，先把当前集精确位置落按集
+    // prefs（_persistRemotePosition 用 _currentEpisode），再按 episodeIndex 向 host
+    // 重新建流（_loadRemoteEpisode 内 ++_episodeLoadSeq 取代慢路径旧集）。
+    if (_isRemote) {
+      final int? curPos = _controller?.positionMs;
+      if (curPos != null) {
+        await _persistRemotePosition(widget.bookUid, curPos);
+      }
+      _watchTracker?.onEpisodeChanged();
+      await _loadRemoteEpisode(index, startIntent: intent);
+      return;
+    }
+
     // 切前补记当前集精确位置（tick 只整秒写，补这一下避免丢尾部几百 ms）。
     final int? curPos = _controller?.positionMs;
     if (curPos != null) {

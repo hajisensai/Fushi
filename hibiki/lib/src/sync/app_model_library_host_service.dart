@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -10,6 +11,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:hibiki/src/media/video/video_sidecar.dart'
     show findSidecarSubtitle;
+import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
@@ -611,6 +613,11 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     // TODO-653: 把 host 端记录的播放断点带进清单条目，供 client 跨设备恢复。
     final ({int positionMs, int updatedAtMs}) progress =
         await getVideoPosition(row.bookUid);
+    // TODO-885: 解析 playlistJson → 远端剧集（只 index+title，绝不带 host path）。
+    final List<RemoteVideoEpisode> episodes = _episodesFromRow(row);
+    final int currentEpisode = episodes.length > 1
+        ? row.currentEpisode.clamp(0, episodes.length - 1)
+        : 0;
     return RemoteVideoInfo(
       id: row.bookUid,
       title: row.title,
@@ -623,7 +630,59 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       coverPath: coverPath,
       positionMs: progress.positionMs,
       positionUpdatedAtMs: progress.updatedAtMs,
+      episodes: episodes,
+      currentEpisode: currentEpisode,
     );
+  }
+
+  /// 把 [row] 的 `playlistJson` 解析成远端剧集列表（TODO-885）。坏 JSON / 单视频
+  /// （≤1 集）返回空列表 = 单视频语义（向后兼容）。**只取 index+title**，host 端
+  /// 文件 path 留在 host（client 用 episodeIndex 反查），绝不进 [RemoteVideoEpisode]。
+  List<RemoteVideoEpisode> _episodesFromRow(VideoBookRow row) {
+    final List<PlaylistEntry> entries = _parsePlaylistEntries(row.playlistJson);
+    if (entries.length <= 1) return const <RemoteVideoEpisode>[];
+    return <RemoteVideoEpisode>[
+      for (int i = 0; i < entries.length; i++)
+        RemoteVideoEpisode(index: i, title: entries[i].title),
+    ];
+  }
+
+  /// 纯解析 `playlistJson` 为 [PlaylistEntry] 列表（坏 JSON 返回空）。host 端按集反查
+  /// 文件 path 用（[_resolveEpisodeVideoPath]）。
+  List<PlaylistEntry> _parsePlaylistEntries(String? playlistJson) {
+    if (playlistJson == null || playlistJson.isEmpty) {
+      return const <PlaylistEntry>[];
+    }
+    try {
+      final dynamic decoded = jsonDecode(playlistJson);
+      if (decoded is! List) return const <PlaylistEntry>[];
+      return <PlaylistEntry>[
+        for (final dynamic e in decoded)
+          if (e is Map) PlaylistEntry.fromJson(e.cast<String, dynamic>()),
+      ];
+    } catch (_) {
+      return const <PlaylistEntry>[];
+    }
+  }
+
+  /// 按 (bookUid=[id], [episodeIndex]) 从 host DB 反查该集真实视频文件路径（TODO-885）。
+  ///
+  /// **DB-only 安全契约**：path 永远来自 host 自己 `playlistJson` 解析，绝不接受外部
+  /// 传入。[episodeIndex]<=0 或非播放列表时回退 `videoPath`（当前选中集 / 单视频）。
+  /// 越界 [episodeIndex] 返回 null（安全拒绝）。
+  Future<String?> _resolveEpisodeVideoPath(String id, int episodeIndex) async {
+    if (episodeIndex < 0) return null; // 非法下标安全拒绝。
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    // 当前集 / 单视频（episodeIndex==0）：用 row.videoPath，等价旧行为。
+    if (episodeIndex == 0) {
+      return row.videoPath.isEmpty ? null : row.videoPath;
+    }
+    // 播放列表按集：DB 解析 playlistJson，越界安全拒绝。
+    final List<PlaylistEntry> entries = _parsePlaylistEntries(row.playlistJson);
+    if (episodeIndex >= entries.length) return null;
+    final String path = entries[episodeIndex].path;
+    return path.isEmpty ? null : path;
   }
 
   Future<List<RemoteVideoEmbeddedSubtitleTrack>>
@@ -648,11 +707,9 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   ///
   /// **只查 DB**，不接受外部文件路径。文件不存在或 id 未知时返回 null。
   @override
-  Future<File?> resolveVideoFile(String id) async {
-    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-    if (row == null) return null;
-    final String path = row.videoPath;
-    if (path.isEmpty) return null;
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
+    final String? path = await _resolveEpisodeVideoPath(id, episodeIndex);
+    if (path == null || path.isEmpty) return null;
     final File f = File(path);
     return f.existsSync() ? f : null;
   }
@@ -665,11 +722,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   Future<File?> resolveVideoSubtitle(
     String id, {
     String langCode = '',
+    int episodeIndex = 0,
   }) async {
-    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-    if (row == null) return null;
-    final String videoPath = row.videoPath;
-    if (videoPath.isEmpty) return null;
+    final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
+    if (videoPath == null || videoPath.isEmpty) return null;
     final String effectiveLangCode =
         langCode.isEmpty ? _videoSubtitleLangCode : langCode;
     final String? subPath =
@@ -691,14 +747,18 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   /// 出旧本机播放进度（client 跨设备恢复），又不让无时间戳的旧值盖过更新的 prefs 进度。
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
-    String id,
-  ) async {
-    final int prefsPos =
-        await _db.getPrefTyped<int>(videoRemotePositionPrefKey(id), 0);
-    final int prefsAt =
-        await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(id), 0);
-    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-    final int rowPos = row?.lastPositionMs ?? 0;
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    final int prefsPos = await _db.getPrefTyped<int>(
+        videoRemotePositionEpisodePrefKey(id, episodeIndex), 0);
+    final int prefsAt = await _db.getPrefTyped<int>(
+        videoRemotePositionEpisodeAtPrefKey(id, episodeIndex), 0);
+    // 旧 host 本机播放只写 VideoBooks.lastPositionMs（整书一个值，无按集语义）；只在
+    // episodeIndex<=0（当前集 / 单视频）回退它，避免给某集错配整书的旧进度。
+    final int rowPos = episodeIndex <= 0
+        ? ((await _db.getVideoBookByBookUid(id))?.lastPositionMs ?? 0)
+        : 0;
     return resolveVideoPositionSync(
       localPositionMs: prefsPos,
       localUpdatedAtMs: prefsAt,
@@ -715,10 +775,11 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   Future<void> putVideoPosition(
     String id,
     int positionMs,
-    int updatedAtMs,
-  ) async {
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {
     final ({int positionMs, int updatedAtMs}) current =
-        await getVideoPosition(id);
+        await getVideoPosition(id, episodeIndex: episodeIndex);
     final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
       localPositionMs: current.positionMs,
       localUpdatedAtMs: current.updatedAtMs,
@@ -730,8 +791,9 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       return; // host 已存更新或相等，no-op。
     }
     await _db.setPrefTyped<int>(
-        videoRemotePositionPrefKey(id), winner.positionMs);
+        videoRemotePositionEpisodePrefKey(id, episodeIndex), winner.positionMs);
     await _db.setPrefTyped<int>(
-        videoRemotePositionAtPrefKey(id), winner.updatedAtMs);
+        videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
+        winner.updatedAtMs);
   }
 }

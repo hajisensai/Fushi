@@ -112,14 +112,14 @@ void main() {
         () {
       final String initRemote = region(
         'Future<void> _initRemote() async {',
-        'String get _speedPrefKey',
+        '/// per-book 播放倍速偏好 key',
       );
-      // TODO-653：恢复改走 _resolveRemoteInitialPositionMs(info)——它在 host 真相
-      // （info.positionMs，随清单带回）与本地 prefs 之间取较新者（跨设备同步），仍
-      // 绝不硬编码 0（TODO-559 回归守卫保留）。
+      // TODO-653/885：恢复改走 _resolveRemoteInitialPositionMs(info, index)——它在 host
+      // 真相（info.positionMs，随清单带回）与本地按集 prefs 之间取较新者（跨设备同步），
+      // 仍绝不硬编码 0（TODO-559 回归守卫保留）。
       expect(
-        initRemote
-            .contains('initialPositionMs: _resolveRemoteInitialPositionMs('),
+        initRemote.contains('initialPositionMsOverride:') &&
+            initRemote.contains('_resolveRemoteInitialPositionMs('),
         isTrue,
         reason: 'remote restore must resolve persisted vs host-synced position',
       );
@@ -149,20 +149,19 @@ void main() {
       );
     });
 
-    test('remote position helpers use the stable bookUid key', () {
-      // 读侧 key getter（TODO-653：改用单一真相源函数 videoRemotePositionPrefKey，
-      // 与 host service / 测试共用同一公式，消除散落的字面量漂移）。
-      expect(src.contains('String get _remotePositionPrefKey'), isTrue);
+    test('remote position helpers use the stable bookUid + episode key', () {
+      // TODO-885：读侧改用单一真相源函数 videoRemotePositionEpisodePrefKey（按集 key，
+      // episodeIndex<=0 回退整书 key），与 host service / 测试共用同一公式。
       expect(
-        src.contains('videoRemotePositionPrefKey(widget.bookUid)'),
+        src.contains('videoRemotePositionEpisodePrefKey(widget.bookUid,'),
         isTrue,
-        reason: 'read-side key must derive from the stable bookUid',
+        reason: 'read-side key must derive from the stable bookUid + episode',
       );
-      // 写侧（_persistRemotePosition）用回调透传的同一 bookUid 构造 key。
+      // 写侧（_persistRemotePosition）用回调透传的同一 bookUid 构造按集 key。
       expect(
-        src.contains('videoRemotePositionPrefKey(uid)'),
+        src.contains('videoRemotePositionEpisodePrefKey(uid,'),
         isTrue,
-        reason: 'write-side key must use the same bookUid passed by controller',
+        reason: 'write-side key must use the same bookUid + current episode',
       );
     });
 
@@ -172,11 +171,11 @@ void main() {
         'Future<void> _persistRemotePosition(String uid, int posMs) async {',
         'Future<void> _persistPosition',
       );
-      // 写侧仍落本地 prefs（离线可用）。
+      // 写侧仍落本地按集 prefs（离线可用，TODO-885）。
       expect(
-        persist.contains('videoRemotePositionPrefKey(uid)'),
+        persist.contains('videoRemotePositionEpisodePrefKey(uid,'),
         isTrue,
-        reason: 'must still persist locally for offline restore',
+        reason: 'must still persist locally (per-episode) for offline restore',
       );
       // 且 best-effort 上报到 host（跨设备真相源），失败不抛。
       expect(
@@ -203,16 +202,24 @@ void main() {
         reason:
             'single video must still write lastPositionMs (backward compat)',
       );
+      // TODO-885: 镜像改用按集 key 函数（episodeIndex 0 等价整书 key，向后兼容）；
+      // 播放列表按 _currentEpisode 镜像，让 client 按集恢复 host 自看进度。
       expect(
-        persist.contains('videoRemotePositionPrefKey(uid)'),
+        persist.contains('videoRemotePositionEpisodePrefKey(uid,'),
         isTrue,
         reason: 'host self-play must mirror into the remote-position key space',
       );
       expect(
-        persist.contains('videoRemotePositionAtPrefKey(uid)'),
+        persist.contains('videoRemotePositionEpisodeAtPrefKey(uid,'),
         isTrue,
         reason:
             'host self-play must stamp an updatedAt for conflict resolution',
+      );
+      expect(
+        persist.contains(
+            'videoRemotePositionEpisodePrefKey(uid, _currentEpisode)'),
+        isTrue,
+        reason: 'playlist host self-play must mirror per current episode',
       );
     });
   });
