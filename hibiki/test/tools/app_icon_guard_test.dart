@@ -64,7 +64,10 @@ void main() {
         reason: 'Runner.rc 应以 IDI_APP_ICON 引用 resources\\\\app_icon.ico');
   });
 
-  test('Android 12+ 系统 splash 图标用文字 wordmark 前景', () {
+  test('Android 12+ 系统 splash 图标用专用 splash wordmark 前景（TODO-886）', () {
+    // TODO-886：splash 前景改用专用 ic_splash_minimal_foreground（内容窄于
+    // 自适应安全区），避免启动器前景 wordmark 太宽被圆遮罩裁切。
+    // 几何断言详见 test/android/splash_icon_guard_test.dart。
     for (final String rel in <String>[
       'android/app/src/main/res/values-v31/styles.xml',
       'android/app/src/main/res/values-night-v31/styles.xml',
@@ -72,10 +75,9 @@ void main() {
       final String styles = read(rel);
       expect(
         styles.contains('android:windowSplashScreenAnimatedIcon') &&
-            styles.contains('@drawable/ic_launcher_minimal_foreground'),
+            styles.contains('@drawable/ic_splash_minimal_foreground'),
         isTrue,
-        reason: '$rel 的 Android 12+ splash 应显示文字 wordmark 前景'
-            '（与默认启动器图标一致）',
+        reason: '$rel 的 Android 12+ splash 应显示专用 splash wordmark 前景',
       );
     }
   });
