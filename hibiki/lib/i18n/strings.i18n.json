@@ -1197,7 +1197,7 @@
   "sync_role_locked_by_server": "This device is hosting as a server. Turn off the server before connecting to other devices.",
   "sync_role_locked_by_client": "Already connected to another device. Remove the connection before hosting as a server.",
   "sync_compare_unavailable": "Set up a sync backend first",
-  "sync_audiobook_files": "Upload audiobook files",
+  "sync_audiobook_files": "Sync audiobook files",
   "sync_audiobook_files_warning": "Audio and subtitles can be large.",
   "book_import_duplicate_title": "Duplicate book",
   "book_import_duplicate_keep": "Yes, add suffix",

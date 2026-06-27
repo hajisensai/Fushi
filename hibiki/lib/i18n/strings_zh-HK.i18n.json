@@ -1197,7 +1197,7 @@
   "sync_role_locked_by_server": "本機正以伺服器身分執行。連接其他裝置前請先關閉伺服器。",
   "sync_role_locked_by_client": "已連接其他裝置。作為伺服器前請先移除連線。",
   "sync_compare_unavailable": "請先設定同步後端",
-  "sync_audiobook_files": "上傳有聲書文件",
+  "sync_audiobook_files": "同步有聲書文件",
   "sync_audiobook_files_warning": "音訊與字幕可能很大。",
   "book_import_duplicate_title": "同名書籍",
   "book_import_duplicate_keep": "是，加上後綴",
