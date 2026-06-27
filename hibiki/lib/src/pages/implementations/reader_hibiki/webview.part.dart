@@ -1413,6 +1413,22 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           await _onChapterLoadComplete(controller);
         },
         onReceivedError: (controller, request, error) async {
+          // TODO-904: native WebView2 实例创建失败（Windows 反复开关书后
+          // `Cannot create the InAppWebView instance!`）经 fork 合成的带 sentinel
+          // 的 WebResourceError 转交到这里。普通页面加载错误不带 sentinel、不触发
+          // 恢复。命中 sentinel 时走与 _initBook 同款可见恢复（toast + 退回书架），
+          // 不再永久 spinner。
+          if (error.description
+              .contains(kReaderWebViewCreationFailedSentinel)) {
+            debugPrint('[ReaderHibiki] WebView creation failed: '
+                '${error.description}');
+            ErrorLogService.instance.log('ReaderHibiki.onWebViewCreationFailed',
+                error.description, null);
+            if (!mounted) return;
+            HibikiToast.show(msg: t.reader_open_failed);
+            Navigator.of(context).pop();
+            return;
+          }
           if (request.isForMainFrame ?? false) {
             debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
                 'url=${request.url}');

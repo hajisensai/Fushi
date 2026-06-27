@@ -1,0 +1,17 @@
+## BUG-440 · Windows 反复开关书后 Cannot create InAppWebView 打不开书籍
+- **报告**：2026-06-28（用户：TODO-904）
+- **真实性**：✅ 真 bug。两件独立缺陷叠加成死亡螺旋：
+  - **native 孤儿 hwnd 泄漏**：`packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp:138` `CreateWindowEx` 先建 hwnd，异步 `createInAppWebViewEnv` 失败回调走 `:218 else` 分支（`result_->Error("0", "Cannot create the InAppWebView instance!")`），从不构造 `InAppWebView`/`CustomPlatformView` → 该 hwnd 无人 `DestroyWindow`（唯一清理在 `~InAppWebView` 的 `in_app_webview.cpp:1976`，而它没被构造）→ 反复开关书时孤儿 hwnd 单调累积、逼近 WebView2 资源上限 → 之后稳定抛 904。
+  - **Dart dispose await-gate 永挂**：`custom_platform_view.dart:189` `dispose()` 首行 `await _creatingCompleter.future`，而 `_creatingCompleter` 仅在成功路径（`:182`）complete，失败时永不完成 → native `'dispose'`（`:193`）永远到不了 → 资源不回收，加重螺旋。失败还被 UncaughtZone 静默吞（`:318` 裸 fire-and-forget）→ reader 永久 spinner。
+  - 放大器：`hibiki/windows/runner/main.cpp:12` 只 `CreateMutexW` 不查 `ERROR_ALREADY_EXISTS` = 无真单实例 → 双实例共享默认 WebView2 userDataFolder 锁冲突致 env 创建失败。
+- **[x] ① 已修复** —
+  - native 止血：`in_app_webview_manager.cpp` 异步失败 `else` 分支补 `DestroyWindow(hwnd)` 回收孤儿 hwnd。
+  - Dart await-gate：`custom_platform_view.dart` `initialize()` 失败路径 `completeError`；`dispose()` 不无条件 await 失败 completer（吞等待异常继续走 native dispose 兜底，失败时 id=0 对 native 是 no-op 不 double-free）；`dispose()` 加 `_isDisposed` 早退防 double `super.dispose()`。
+  - 可见恢复：`custom_platform_view.dart` 新增 `onCreationError` 回调 + initState `.catchError` 冒泡；`in_app_webview.dart` `_onCreationError` 合成带 sentinel(`kInAppWebViewCreationFailedSentinel`) 的 `WebResourceError` 经 `onReceivedError` 转交；reader `webview.part.dart` `onReceivedError` 命中 sentinel 走 `HibikiToast.show(t.reader_open_failed) + Navigator.pop`（复用既有 i18n key，仿 BUG-437）。
+  - 单实例：`main.cpp` 检测 `GetLastError()==ERROR_ALREADY_EXISTS` 则前置首实例窗口并退出本进程。
+- **[x] ② 已加自动化测试** —
+  - `packages/flutter_inappwebview_windows/test/custom_platform_view_dispose_test.dart`（fake channel 抛错 → dispose 有限时间完成 + 不 double-dispose + 成功路径零变化）。
+  - `hibiki/test/native/inappwebview_orphan_hwnd_guard_static_test.dart`（断言异步失败 else 分支含 `DestroyWindow`）。
+  - `hibiki/test/native/windows_single_instance_guard_static_test.dart`（断言 `GetLastError()==ERROR_ALREADY_EXISTS` 早退）。
+  - `hibiki/test/pages/reader_webview_creation_recovery_guard_static_test.dart`（断言三段恢复链结构在位）。
+- **备注**：TODO-904。native FFI 改动需合并后 CI 全平台重建。真机待验：反复开关书 N 次不再 904 + 任务管理器 `msedgewebview2.exe` 子进程数不单调增。

@@ -9,6 +9,12 @@ import 'in_app_webview_controller.dart';
 
 import 'custom_platform_view.dart';
 
+/// TODO-904: WebView2 实例创建失败时，经 onReceivedError 转交上层的合成
+/// [WebResourceError] 描述前缀。上层（reader）凭此 sentinel 区分「native 实例创建
+/// 失败」与普通页面加载错误，只对前者走可见恢复（toast + 退回书架）。
+const String kInAppWebViewCreationFailedSentinel =
+    'HIBIKI_INAPPWEBVIEW_CREATION_FAILED';
+
 /// Object specifying creation parameters for creating a [PlatformInAppWebViewWidget].
 ///
 /// Platform specific implementations can add additional fields by extending
@@ -310,6 +316,7 @@ class WindowsInAppWebViewWidget extends PlatformInAppWebViewWidget {
 
     return CustomPlatformView(
       onPlatformViewCreated: _onPlatformViewCreated,
+      onCreationError: _onCreationError,
       creationParams: <String, dynamic>{
         'initialUrlRequest': params.initialUrlRequest?.toMap(),
         'initialFile': params.initialFile,
@@ -350,6 +357,34 @@ class WindowsInAppWebViewWidget extends PlatformInAppWebViewWidget {
       params.onWebViewCreated!(
           params.controllerFromPlatform?.call(_controller!) ?? _controller!);
     }
+  }
+
+  /// TODO-904: native WebView2 实例创建失败（如
+  /// `Cannot create the InAppWebView instance!`，见
+  /// in_app_webview_manager.cpp:219）经 [CustomPlatformView.onCreationError] 冒泡
+  /// 到这里，合成一个带 [kInAppWebViewCreationFailedSentinel] 描述的
+  /// [WebResourceError] 经 onReceivedError 转交上层。上层（reader）凭该 sentinel
+  /// 区分「实例创建失败」与普通页面加载错误，走可见恢复（toast + 退回书架），
+  /// 不再永久 spinner。
+  void _onCreationError(Object error, StackTrace stackTrace) {
+    debugLog(
+        className: runtimeType.toString(),
+        debugLoggingSettings:
+            PlatformInAppWebViewController.debugLoggingSettings,
+        method: "onCreationError",
+        args: [error.toString()]);
+    final void Function(PlatformInAppWebViewController, WebResourceRequest,
+        WebResourceError)? onReceivedError = params.onReceivedError;
+    if (onReceivedError == null) {
+      return;
+    }
+    final request = WebResourceRequest(url: WebUri('about:blank'));
+    final webError = WebResourceError(
+      type: WebResourceErrorType.UNKNOWN,
+      description: '$kInAppWebViewCreationFailedSentinel: $error',
+    );
+    onReceivedError(_controller ?? WindowsInAppWebViewController.static(),
+        request, webError);
   }
 
   void _inferInitialSettings(InAppWebViewSettings settings) {

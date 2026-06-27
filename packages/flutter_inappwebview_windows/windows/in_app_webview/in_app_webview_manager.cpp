@@ -216,6 +216,13 @@ namespace flutter_inappwebview_plugin
           result_->Success(textureId);
         }
         else {
+          // TODO-904: 异步失败分支从不构造 InAppWebView/CustomPlatformView，故
+          // 上面 :138 CreateWindowEx 建的 hwnd 无人接管（唯一清理在
+          // ~InAppWebView 的 DestroyWindow，而它没被构造）。必须在此就地回收，
+          // 否则反复开关书时 hwnd 单调累积、耗尽资源 → 之后稳定抛此错（死亡螺旋）。
+          if (hwnd) {
+            DestroyWindow(hwnd);
+          }
           result_->Error("0", "Cannot create the InAppWebView instance!");
         }
       }
