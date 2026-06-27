@@ -31,6 +31,48 @@ class VideoSubtitleHitTester {
   SubtitleCharHit? hitTest(Offset globalPos) => _impl?.call(globalPos);
 }
 
+/// 按全局坐标在一组字符屏幕矩形里反查命中的字符下标（纯函数，可测）。
+///
+/// TODO-916 症状④：字幕字符之间有 [Wrap] 间隙 + 描边层不计入命中盒，落在字缝/描边
+/// 外缘的点用「精确 [Rect.contains]」会全 miss、查不到词。两段判据消除 miss：
+/// 1. 先精确包含：命中第一个 `contains(point)` 的字符（旧行为，零容差时等价）。
+/// 2. 未命中则取**距点击点最近**的字符，且仅当该距离在合理阈值内才采纳——阈值取该候选
+///    字符的半个宽度（再夹一个最小值 [minTolerance]，防极窄字符阈值过小），保证只在字缝/
+///    描边一字之内兜底，不会跨到隔壁字符或远处误命中。
+///
+/// [Rect.zero]（无 RenderBox 的字符）跳过。无任何有效矩形或全部超阈值时返回 -1。
+@visibleForTesting
+int resolveSubtitleCharHit(
+  List<Rect> charRects,
+  Offset point, {
+  double minTolerance = 6.0,
+}) {
+  // 第一段：精确包含。
+  for (int i = 0; i < charRects.length; i++) {
+    final Rect r = charRects[i];
+    if (r == Rect.zero) continue;
+    if (r.contains(point)) return i;
+  }
+  // 第二段：最近字符兜底（在该字符半字宽 / [minTolerance] 容差内）。
+  int bestIndex = -1;
+  double bestDistance = double.infinity;
+  for (int i = 0; i < charRects.length; i++) {
+    final Rect r = charRects[i];
+    if (r == Rect.zero) continue;
+    final double dx = (point.dx.clamp(r.left, r.right)) - point.dx;
+    final double dy = (point.dy.clamp(r.top, r.bottom)) - point.dy;
+    final double distance = (dx * dx + dy * dy);
+    if (distance >= bestDistance) continue;
+    final double tolerance =
+        (r.width / 2).clamp(minTolerance, double.infinity).toDouble();
+    if (distance <= tolerance * tolerance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
 /// 视频底部当前句字幕 overlay；监听 [VideoPlayerController.currentCue]。
 ///
 /// 字幕逐字符可点击：点击第 [int] 个 grapheme 时回调
@@ -193,6 +235,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// [_charHitTest] 按全局坐标反查命中的字符。
   final List<BuildContext> _charContexts = <BuildContext>[];
 
+  /// TODO-916 症状④-A（down-snap）：onTapDown 时刻 [_charHitTest] 命中的 grapheme 下标，
+  /// onTapUp 用它经 [_charHitByIndex] 查词，使命中锁定按下时刻（字幕盒尚未被控制条避让
+  /// 动画推移），而非 up 时刻的实时反查。-1 表示按下未命中字符。
+  int _pendingTapGrapheme = -1;
+
   /// Shift-悬停查词的移动节流阈值（像素，TODO-756a）。与阅读器 `webview.part.dart` 的
   /// `dx*dx+dy*dy < 64`（8px）同构：鼠标移动距离平方未超 64 时不重新命中查词。
   static const double _kShiftHoverThresholdPx = 8;
@@ -212,13 +259,23 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// 查词）。供 [VideoSubtitleHitTester] 绑定。
   SubtitleCharHit? _charHitTest(Offset globalPos) {
     if (_currentBlurred || _currentText.isEmpty) return null;
-    for (int i = 0; i < _charContexts.length; i++) {
-      final Rect r = _globalRectOf(_charContexts[i]);
-      if (r != Rect.zero && r.contains(globalPos)) {
-        return (sentence: _currentText, graphemeIndex: i, charRect: r);
-      }
-    }
-    return null;
+    final List<Rect> rects = <Rect>[
+      for (final BuildContext c in _charContexts) _globalRectOf(c),
+    ];
+    final int i = resolveSubtitleCharHit(rects, globalPos);
+    if (i < 0) return null;
+    return (sentence: _currentText, graphemeIndex: i, charRect: rects[i]);
+  }
+
+  /// 按已知 grapheme 下标取命中三元组（TODO-916 症状④-A 的 down-snap 用）：down 时刻已
+  /// 经 [_charHitTest] 确定命中下标，up 时刻直接用该下标重算当前字符矩形即可，**不再**用
+  /// up 时刻的点重新反查——这样即便 down 唤起控制条致字幕盒在 down→up 间被避让动画上移，
+  /// 命中仍锁定按下瞄准的那个字符。下标越界 / 模糊态 / 空句返回 null。
+  SubtitleCharHit? _charHitByIndex(int graphemeIndex) {
+    if (_currentBlurred || _currentText.isEmpty) return null;
+    if (graphemeIndex < 0 || graphemeIndex >= _charContexts.length) return null;
+    final Rect r = _globalRectOf(_charContexts[graphemeIndex]);
+    return (sentence: _currentText, graphemeIndex: graphemeIndex, charRect: r);
   }
 
   /// 桌面 Shift-鼠标悬停查词（TODO-756a）。仅在 [VideoSubtitleOverlay.onCharHover] 注册时由
@@ -385,12 +442,23 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         if (widget.onCharTap != null) {
           box = GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTapUp: (TapUpDetails details) {
+            // down-snap（TODO-916 ④-A）：按下时刻字幕盒尚未被控制条避让动画推移，此刻
+            // 反查命中字符并记下其下标；up 时刻用该下标（[_charHitByIndex]）查词，即便
+            // 控制条已唤起、字幕盒上移，命中仍锁按下瞄准的字符。
+            onTapDown: (TapDownDetails details) {
               final SubtitleCharHit? hit = _charHitTest(details.globalPosition);
+              _pendingTapGrapheme = hit?.graphemeIndex ?? -1;
+            },
+            onTapUp: (TapUpDetails details) {
+              final SubtitleCharHit? hit = _charHitByIndex(_pendingTapGrapheme);
+              _pendingTapGrapheme = -1;
               if (hit != null) {
                 widget.onCharTap!(
                     hit.sentence, hit.graphemeIndex, hit.charRect);
               }
+            },
+            onTapCancel: () {
+              _pendingTapGrapheme = -1;
             },
             child: box,
           );
