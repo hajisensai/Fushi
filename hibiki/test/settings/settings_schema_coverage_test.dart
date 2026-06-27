@@ -82,6 +82,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （非 reader CSS / 主题树）。
   'lookup/Swipe to close popup':
       'test/pages/dictionary_popup_swipe_close_test.dart',
+  // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
+  // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的
+  // window.scanNonJapaneseText + reader_selection_scripts 的 `scanNonJapaneseText
+  // === false` 选区边界分支（非 reader CSS / 主题树），无适用 T4 探针；由专项持久化
+  // 往返 + webview 注入 + 选区消费端源码守卫覆盖。
+  'lookup/Scan non-Japanese text': 'test/reader/todo861_hoshi_ports_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
   'syncBackup/Auto Sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync Statistics': 'test/sync/sync_gating_test.dart',

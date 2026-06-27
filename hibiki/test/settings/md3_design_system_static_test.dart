@@ -784,6 +784,14 @@ void main() {
               'speed-label typography scales with appUiScale and is the same '
               'reviewed media-page exception class as the parent video player '
               'page allowlist entry.',
+      'lib/src/pages/implementations/video_hibiki/controls_theme.part.dart':
+          'Mobile/desktop media-controls theme + horizontal-seek absolute-time '
+              'HUD indicator chrome (BorderRadius.circular frame, fontSize '
+              'target/delta time labels in _buildSeekIndicator) extracted from '
+              'video_hibiki_page.dart (TODO-590) and extended by TODO-916; the '
+              'seek HUD typography scales with appUiScale and is the same '
+              'reviewed media-page exception class as the parent video player '
+              'page allowlist entry and the sibling control popover/OSD entries.',
       'lib/src/pages/implementations/video_hibiki/volume_osd.part.dart':
           'Volume + OSD / level-HUD / brightness overlay chrome '
               '(left-top OSD notification card with BorderRadius/fontSize, '

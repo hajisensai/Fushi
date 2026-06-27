@@ -46,9 +46,25 @@ void main() {
       );
     });
 
-    test('does NOT enable horizontal seek-drag gesture', () {
-      // 横滑 seek 超出本任务范围，且与既有 seek 键 / 双击全屏语义重叠 → 明确关闭。
-      expect(videoPage.contains('seekGesture: false'), isTrue);
+    test(
+        'enables horizontal seek-drag gesture with absolute-time HUD (TODO-916)',
+        () {
+      // TODO-916 症状①：移动控制条启用 fork 内置横滑 seek（之前明确关闭），按时长比例
+      // 换算目标 + 居中 HUD 显「目标绝对时间」。与 seek 键 / 双击全屏语义并存（竞技场
+      // 先达成者胜）。旧 `seekGesture: false` 守卫随该特性合并作废。
+      expect(videoPage.contains('seekGesture: false'), isFalse,
+          reason:
+              'TODO-916 enabled horizontal seek; stale disable must be gone');
+      expect(videoPage.contains('seekGesture: true'), isTrue);
+      expect(videoPage.contains('horizontalGestureSensitivity:'), isTrue);
+      // 居中 HUD 替换 fork 默认增量条，显目标绝对时间 + 增量两行。
+      expect(
+        videoPage.contains(
+            'seekIndicatorBuilder: (BuildContext context, Duration delta) =>'),
+        isTrue,
+      );
+      expect(
+          videoPage.contains('_buildSeekIndicator(controller, delta)'), isTrue);
     });
 
     test('volume callback reuses the existing 0..100 volume channel', () {
