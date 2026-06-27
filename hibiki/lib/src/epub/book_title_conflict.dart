@@ -22,14 +22,23 @@ typedef DuplicateTitleCallback = Future<DuplicateTitleResolution> Function(
 /// 有回调则询问——addSuffix 返回唯一后缀标题（`X (2)`），cancel 抛
 /// [DuplicateImportCancelledException]；无回调则自动加后缀（保持"本地不出现
 /// 两本同 key 书"这一同步层依赖的不变量，供后台同步/程序化调用安全使用）。
+///
+/// [skipIfExists] 为 true 时（文件夹扫描器的静默去重路径，BUG-443）：身份 key
+/// 命中已存在书时直接抛 [DuplicateImportCancelledException]（不加后缀、不询问），
+/// 让批量扫描像视频 `_importVideos` 那样静默跳过同名书，避免静默复制成 `X (2)`。
+/// 不影响单文件手动导入路径（默认 false，保留原弹窗/自动后缀语义）。
 Future<String> resolveBookTitleConflict({
   required List<String> existingTitles,
   required String proposedTitle,
   DuplicateTitleCallback? onDuplicateTitle,
+  bool skipIfExists = false,
 }) async {
   final Set<String> keys = existingTitles.map(sanitizeTtuFilename).toSet();
   if (!keys.contains(sanitizeTtuFilename(proposedTitle))) {
     return proposedTitle;
+  }
+  if (skipIfExists) {
+    throw DuplicateImportCancelledException(proposedTitle);
   }
   if (onDuplicateTitle != null) {
     final DuplicateTitleResolution res = await onDuplicateTitle(proposedTitle);

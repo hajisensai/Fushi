@@ -68,6 +68,7 @@ class EpubImporter {
     required String fileName,
     DuplicateTitleCallback? onDuplicateTitle,
     int? sourceId,
+    bool skipIfExists = false,
   }) async {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
@@ -83,6 +84,7 @@ class EpubImporter {
       tempDir: tempDir,
       onDuplicateTitle: onDuplicateTitle,
       sourceId: sourceId,
+      skipIfExists: skipIfExists,
     );
   }
 
@@ -102,6 +104,7 @@ class EpubImporter {
     required String tempDir,
     DuplicateTitleCallback? onDuplicateTitle,
     int? sourceId,
+    bool skipIfExists = false,
   }) async {
     String? insertedKey;
     String extractDir = tempDir;
@@ -143,6 +146,7 @@ class EpubImporter {
         existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
         proposedTitle: resolvedTitle,
         onDuplicateTitle: onDuplicateTitle,
+        skipIfExists: skipIfExists,
       );
 
       // bookKey is the EpubBooks primary key (= sanitized stored title). It is

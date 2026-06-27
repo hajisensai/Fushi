@@ -24,6 +24,7 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
@@ -186,16 +187,33 @@ class MediaSourceScanner {
   }
 
   /// Imports every EPUB in the plan; returns the count successfully inserted.
+  ///
+  /// BUG-443: silent same-title dedup, mirroring [_importVideos]. Manual single-
+  /// file import asks the user (or auto-suffixes to `X (2)`), but a batch folder
+  /// scan must NOT re-import already-imported books as `X (2)`. We pass
+  /// `skipIfExists: true` so [EpubImporter.importFromPath] reuses the existing
+  /// `sanitizeTtuFilename` identity key: on a collision it throws
+  /// [DuplicateImportCancelledException], which we catch per book and skip
+  /// (not counted, not an error). The within-isolate parse + DB read picks up
+  /// books inserted earlier in the same scan, so a same-batch duplicate is also
+  /// skipped.
   Future<int> _importBooks(ScanPlan plan, int sourceId) async {
     int count = 0;
     for (final String epubPath in plan.epubPaths) {
-      await EpubImporter.importFromPath(
-        db: _db,
-        filePath: epubPath,
-        fileName: p.basename(epubPath),
-        sourceId: sourceId,
-      );
-      count++;
+      try {
+        await EpubImporter.importFromPath(
+          db: _db,
+          filePath: epubPath,
+          fileName: p.basename(epubPath),
+          sourceId: sourceId,
+          skipIfExists: true,
+        );
+        count++;
+      } on DuplicateImportCancelledException catch (e) {
+        // Already-imported same-title book: silently skip (matches _importVideos).
+        debugPrint('MediaSourceScanner skip duplicate book '
+            '${e.title} ($epubPath)');
+      }
     }
     return count;
   }

@@ -27,11 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 427 条。点号进各自文件。
+> 共 429 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-443](bugs/BUG-443-folder-import-book-dedup.md) | ✅ | ✅ | 文件夹导入书籍缺去重 |
 | [BUG-442](bugs/BUG-442-clipboard-long-text-crash.md) | ✅ | ✅ | 剪贴板超长文本闪退 |
+| [BUG-441](bugs/BUG-441-audiobook-shelf-badge-subtitle.md) | ✅ | ✅ | EPUB有声书卡角标变字幕图标 |
 | [BUG-440](bugs/BUG-440-webview-create-fail.md) | ✅ | ✅ | Windows 反复开关书后 Cannot create InAppWebView 打不开书籍 |
 | [BUG-439](bugs/BUG-439-bad-epub-import-orphan-and-fake-delete.md) | ✅ | ✅ | 坏EPUB导入留孤儿壳行+删除假成功 |
 | [BUG-438](bugs/BUG-438-gamepad-reconnect-loading.md) | ✅ | ✅ | 手柄重连后阅读器无限 loading |

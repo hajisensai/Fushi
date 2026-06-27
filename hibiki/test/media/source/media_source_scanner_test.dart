@@ -19,6 +19,7 @@ import 'package:flutter_charset_detector_platform_interface/decoding_result.dart
 import 'package:flutter_charset_detector_platform_interface/flutter_charset_detector_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/source/media_source_scanner.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -274,6 +275,162 @@ void main() {
       expect(after.lastScannedAt, isNotNull);
       expect(after.lastScanError, isNull);
     });
+  });
+
+  // ── BUG-443: folder-scan book dedup (no silent X (2) re-import) ──────
+  // Manual single-file import asks / auto-suffixes; a batch folder scan must NOT
+  // re-import an already-imported same-title book as "X (2)". _importBooks passes
+  // skipIfExists:true -> EpubImporter throws DuplicateImportCancelledException on
+  // a sanitizeTtuFilename key collision, which the scanner catches and skips.
+  group('MediaSourceScanner.scan book dedup (BUG-443)', () {
+    late Directory tmp;
+    late Directory pp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('bug443_scan_');
+      pp = Directory.systemTemp.createTempSync('bug443_pp_');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => pp.path,
+      );
+      // EpubStorage caches the base dir in a process-global static; pin it to
+      // this test's pp so a prior test's (now-deleted) cached base can't leak.
+      EpubStorage.debugBaseDirectoryOverride = pp.path;
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      for (final Directory d in <Directory>[tmp, pp]) {
+        try {
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    testWidgets('re-scanning an already-imported title imports no duplicate',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      _writeEpub(p.join(tmp.path, 'dup.epub'), 'DupNovel');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      // First scan imports the book.
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+      expect(await db.getAllEpubBooks(), hasLength(1));
+
+      // Second scan of the SAME folder must NOT import a second copy / "X (2)".
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1),
+          reason: 'folder re-scan must dedup by title key, not create X (2)');
+      expect(books.single.title, 'DupNovel');
+      expect(
+        books.where((EpubBookRow b) => b.title.contains('(2)')),
+        isEmpty,
+        reason: 'no silent X (2) duplicate from folder scan',
+      );
+      // mediaCount reflects only the newly-inserted (0 on the dedup re-scan).
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 0,
+          reason: 'second scan inserted nothing (all duplicates skipped)');
+      expect(after.lastScanError, isNull);
+    });
+
+    testWidgets('a new title still imports while the duplicate is skipped',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // Pre-import "DupNovel" manually.
+      _writeEpub(p.join(tmp.path, 'dup.epub'), 'DupNovel');
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+      expect(await db.getAllEpubBooks(), hasLength(1));
+
+      // Add a brand-new book to the folder, re-scan.
+      _writeEpub(p.join(tmp.path, 'fresh.epub'), 'FreshNovel');
+      source = (await db.getMediaSourceById(sid))!;
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(2),
+          reason: 'new title imports; duplicate skipped');
+      expect(
+        books.map((EpubBookRow b) => b.title).toSet(),
+        <String>{'DupNovel', 'FreshNovel'},
+      );
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 1,
+          reason: 'only the one new book counted on the second scan');
+    });
+
+    testWidgets('two same-title EPUBs in one scan import only one',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // Two different filenames but the SAME embedded title -> same identity key.
+      _writeEpub(p.join(tmp.path, 'a.epub'), 'SameTitle');
+      _writeEpub(p.join(tmp.path, 'b.epub'), 'SameTitle');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1),
+          reason: 'same-batch duplicate title imports once, no X (2)');
+      expect(books.single.title, 'SameTitle');
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 1);
+    });
+  });
+
+  // Source guard: _importBooks must keep the BUG-443 dedup wiring so a future
+  // edit can't silently drop it and re-introduce X (2) folder-scan duplicates.
+  test('source guard: _importBooks passes skipIfExists for dedup (BUG-443)',
+      () {
+    final String src = File(
+      'lib/src/media/source/media_source_scanner.dart',
+    ).readAsStringSync();
+    expect(src.contains('skipIfExists: true'), isTrue,
+        reason: '_importBooks must request silent dedup from the importer');
+    expect(src.contains('DuplicateImportCancelledException'), isTrue,
+        reason: '_importBooks must catch+skip the duplicate-cancel signal');
   });
 
   // ── TODO-817 M1c T5: subtitle charset detection via copyToLocal ────────────
