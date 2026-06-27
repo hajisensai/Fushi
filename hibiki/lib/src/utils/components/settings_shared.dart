@@ -744,16 +744,22 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
   }
 }
 
-/// Hosts the segmented [strip] either FULL-WIDTH (every segment equally sized,
-/// no scroll) when it fits, or in a horizontal scroll view when it would not.
+/// Hosts the segmented [strip] in a FULL-WIDTH box that occupies the whole row
+/// ([controlBelow] true), so every segmented box in the same section is the same
+/// width (TODO-882). Only the box's CHILD varies with whether the strip fits:
+/// when it fits, the [SegmentedButton] takes the full width directly (every
+/// segment equally sized, no scroll); when it does not, the intrinsic-width strip
+/// is placed in a horizontal scroll view INSIDE the full-width box (BUG-008:
+/// every segment stays reachable, nothing clipped off the edge).
 ///
-/// A segmented strip in a config row is intrinsically wide. When the strip owns
-/// its own full-width row ([controlBelow] true) and there is room, stretching it
-/// to fill the pane (Material [SegmentedButton] under a `double.infinity` width
-/// divides the space equally between segments) reads as a deliberate, balanced
-/// control. Only when the strip cannot fit — a narrow pane and/or many/long
-/// segments — do we fall back to the horizontal scroll view that keeps every
-/// segment reachable (BUG-008: never clip trailing segments off the edge).
+/// A segmented strip in a config row is intrinsically wide. Giving a controlBelow
+/// strip its own full-width row and stretching it (Material [SegmentedButton]
+/// under a `double.infinity` width divides the space equally between segments)
+/// reads as a deliberate, balanced control. Previously a fitting strip stretched
+/// while a too-wide one fell back to a bare scroll view sized to its narrow
+/// intrinsic width — so two boxes in one section rendered at different widths
+/// (the TODO-882 bug). Now the outer box is unconditionally full-width and only
+/// the inner content differs.
 ///
 /// When hosted inline ([controlBelow] false) the strip shares the row with the
 /// label and must stay scroll-only, exactly as before, so it never steals the
@@ -792,15 +798,21 @@ class _SegmentedStripHost extends StatelessWidget {
           fontSize: fontSize,
           textScaleFactor: textScale,
         );
-        // Fits -> stretch to fill the row (equal-width segments, no scroll).
-        // The width must be bounded for the scroll-free full-width layout, so
-        // guard against an unbounded LayoutBuilder (defensive: the full-width
-        // column row is always bounded in practice).
-        if (available.isFinite && estimated <= available) {
-          return SizedBox(width: double.infinity, child: strip);
-        }
-        // Does not fit -> horizontal scroll, every segment stays reachable.
-        return scrolling;
+        // A controlBelow strip ALWAYS occupies the full row width so that every
+        // segmented box in the same section reads as equal-width (TODO-882: a
+        // short strip stretched to fill and a long strip falling back to its
+        // intrinsic width previously rendered at different widths). The outer
+        // box is therefore unconditionally `width: double.infinity`; only the
+        // CHILD differs: when the strip fits we hand the SegmentedButton the
+        // bounded full width directly (equal-width segments, no scroll); when it
+        // does not fit we put the intrinsic-width strip in a horizontal scroll
+        // view so the full-width box still scrolls to the last segment (BUG-008:
+        // never clip trailing segments off the edge).
+        final bool fits = available.isFinite && estimated <= available;
+        return SizedBox(
+          width: double.infinity,
+          child: fits ? strip : scrolling,
+        );
       },
     );
   }
