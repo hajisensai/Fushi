@@ -395,6 +395,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   /// 守卫：确保外部打开的视频只被打开一次（[build] 可能多次重建）。
   bool _externalVideoHandled = false;
 
+  /// TODO-904 P0 回归：Windows 单实例守卫下，第二实例（文件关联 / 拖到 exe / CLI
+  /// `hibiki.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
+  /// （见 `windows/runner/external_video_handoff.*` + `flutter_window.cpp`）。首实例
+  /// 经此 MethodChannel 收到 `openExternalVideo`，复用现有 [_openExternalVideo]
+  /// 打开链路。仅 Windows 注册（其它桌面平台暂无单实例守卫，走首启 argv 路径）。
+  static const MethodChannel _externalVideoChannel =
+      MethodChannel('app.hibiki/external_video');
+
   /// 守卫：退出清理（停 Bonsoir 事件源）只跑一次，避免 [onWindowClose] 与
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
@@ -418,6 +426,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     // 停掉 Bonsoir mDNS 事件源（TODO-036）。
     if (_isDesktop) {
       windowManager.addListener(this);
+    }
+    if (Platform.isWindows) {
+      _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
     }
     HibikiToast.navigatorKey = ref.read(appProvider).navigatorKey;
 
@@ -680,6 +691,34 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     } catch (e) {
       HibikiToast.show(msg: friendlySyncError(e));
     }
+  }
+
+  /// TODO-904 P0 回归：首实例收到第二实例经 WM_COPYDATA 转交的外部视频路径
+  /// （`windows/runner` → `app.hibiki/external_video` channel）。这里做与首启 argv
+  /// 路径（[main]）等价的校验：扩展名白名单（[isSupportedVideoFile]）+ 存在性
+  /// （`File.existsSync`），通过后复用 [_openExternalVideo] 打开。
+  ///
+  /// 若 app 尚未初始化完成（首实例还在 LoadingPage），无法立刻 push 播放页：把路径
+  /// 暂存到 [_pendingExternalVideoPath] 并复位 [_externalVideoHandled]，由 [build]
+  /// 在 `isInitialised` 后的一次性 post-frame 分支接手——与首启路径汇聚到同一出口。
+  Future<dynamic> _handleExternalVideoChannel(MethodCall call) async {
+    if (call.method != 'openExternalVideo') return null;
+    final Object? raw = call.arguments;
+    if (raw is! String) return null;
+    final String videoPath = raw;
+    if (videoPath.isEmpty) return null;
+    if (!isSupportedVideoFile(videoPath)) return null;
+    if (!File(videoPath).existsSync()) return null;
+
+    if (!appModel.isInitialised || appModel.navigatorKey.currentState == null) {
+      // 首实例尚未就绪：交还首启路径，build 完成后接手打开。
+      _pendingExternalVideoPath = videoPath;
+      _externalVideoHandled = false;
+      if (mounted) setState(() {});
+      return null;
+    }
+    await _openExternalVideo(videoPath);
+    return null;
   }
 
   /// 处理「从 app 外用 Hibiki 打开视频」：建/取一条外部视频 VideoBook（videoPath

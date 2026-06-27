@@ -61,17 +61,29 @@
 hibiki.exe "D:\video\Dragon Maid\S01E01.mkv"
 ```
 
-## 已知限制：无 single-instance 转发
+## single-instance 转发（TODO-904：已实现）
 
-runner 仅 `CreateMutexW(L"HibikiSingleInstanceMutex")`（供 Inno Setup 静默更新
-检测），**未做**「app 已开时把新视频路径转发给已运行实例」。所以当前：app 已开着
-时再从外部打开一个视频，会**起一个新进程**播放该视频（仍能播放 + 入库），不会复用
-已开窗口。
+runner 用 `CreateMutexW(L"HibikiSingleInstanceMutex")` 做**真单实例**（检测
+`ERROR_ALREADY_EXISTS`）：app 已开着时再从外部打开一个视频，第二实例**不会**起新
+窗口（避免双实例共享同一 WebView2 userDataFolder 的锁冲突），而是把视频路径**转交**
+给首实例后退出。链路：
 
-后续要做 single-instance 转发的方案（未实现，避免为它引入大改）：runner 启动时
-`OpenMutex` 检测到已有实例 → 通过 `FindWindow` + `WM_COPYDATA` 把视频路径发给已有
-窗口的消息循环 → Dart 侧经一个 MethodChannel 收到后调用 `_openExternalVideo`，本进程
-随即退出。
+1. 第二实例 `main.cpp`：`FirstFileArgFromCommandLine()` 从 argv 取第一个文件参数 →
+   `::hibiki::SendExternalVideoPath(existing, file_arg)`（`external_video_handoff.*`）
+   用 `WM_COPYDATA`（dwData magic `kExternalVideoCopyDataMagic`，lpData 为 UTF-8
+   路径字节）发给首实例窗口 → 前置窗口 → `return EXIT_SUCCESS`。**无文件参数**（纯
+   第二次启动）则只前置 + 退出，不发消息。
+2. 首实例 `flutter_window.cpp::MessageHandler` 收到 `WM_COPYDATA` →
+   `DecodeExternalVideoPath`（magic 不匹配则忽略）→ 经 `app.hibiki/external_video`
+   MethodChannel `InvokeMethod("openExternalVideo", path)` 推给 Dart。
+3. Dart `_HoshiReaderAppState._handleExternalVideoChannel`（`main.dart`，仅 Windows
+   注册）：做与首启 argv 等价的校验（`isSupportedVideoFile` + `File.existsSync`），
+   通过后复用 `_openExternalVideo`（同一打开链路，不另造第二套）。若首实例尚未初始化
+   完成，则暂存到 `_pendingExternalVideoPath` 交由 `build` 的首启分支接手。
+
+守卫：`test/native/windows_single_instance_guard_static_test.dart`（转交链路源码扫描）。
+WM_COPYDATA 真实跨进程行为 headless 测不到，须真机验证（app 已开 → 双击/右键用
+Hibiki 打开另一个视频 → 复用已开窗口打开播放页，不起第二进程）。
 
 ## 验证
 

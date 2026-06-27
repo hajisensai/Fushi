@@ -299,11 +299,9 @@ class WindowsInAppWebViewWidget extends PlatformInAppWebViewWidget {
             params.initialOptions?.toMap() ??
             initialSettings.toMap();
 
-    Map<String, dynamic> pullToRefreshSettings =
-        params.pullToRefreshController?.params.settings.toMap() ??
-            // ignore: deprecated_member_use_from_same_package
-            params.pullToRefreshController?.params.options.toMap() ??
-            PullToRefreshSettings(enabled: false).toMap();
+    // TODO-904: Windows fork 不支持 pull-to-refresh，此前这里构造的
+    // pullToRefreshSettings 从未被使用（dead local），触发 unused_local_variable
+    // warning（CI 把 warning 当致命）。直接删除以保持 analyze 干净。
 
     if ((params.headlessWebView?.isRunning() ?? false) &&
         params.keepAlive != null) {

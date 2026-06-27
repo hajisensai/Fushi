@@ -1,10 +1,44 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <shellapi.h>
 #include <windows.h>
 
+#include <string>
+
 #include "crash_dump.h"
+#include "external_video_handoff.h"
 #include "flutter_window.h"
 #include "utils.h"
+
+namespace {
+
+// 从本进程 argv 里挑出第一个「文件」参数（跳过以 `-` 开头的 flag / 调试器注入参数）。
+// 这是「用 Hibiki 打开视频」时资源管理器 / 命令行传进来的 `"%1"`。只做字符串级判定，
+// 真正的视频扩展名白名单 + 存在性校验仍由首实例 Dart 侧（firstExternalVideoArg +
+// File.existsSync）负责——这里转交的是「候选路径」，首实例自行决定是否打开。
+std::wstring FirstFileArgFromCommandLine() {
+  int argc = 0;
+  wchar_t **argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+  if (argv == nullptr) {
+    return std::wstring();
+  }
+  std::wstring file_arg;
+  // 跳过 argv[0]（binary 名）。
+  for (int i = 1; i < argc; ++i) {
+    if (argv[i] == nullptr || argv[i][0] == 0) {
+      continue;
+    }
+    if (argv[i][0] == L'-') {
+      continue;  // flag（如调试器注入），不是文件路径。
+    }
+    file_arg = argv[i];
+    break;
+  }
+  ::LocalFree(argv);
+  return file_arg;
+}
+
+}  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -19,9 +53,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       ::CreateMutexW(nullptr, FALSE, L"HibikiSingleInstanceMutex");
   if (single_instance_mutex != nullptr &&
       ::GetLastError() == ERROR_ALREADY_EXISTS) {
-    // 已有实例在跑：尽力把首实例主窗口前置，再退出本进程。
+    // 已有实例在跑：找到首实例主窗口。
     HWND existing = ::FindWindowW(nullptr, L"Hibiki");
     if (existing != nullptr) {
+      // TODO-904 P0 回归修复：本次启动若带视频文件参数（文件关联 / 拖到 exe /
+      // CLI `hibiki.exe "%1"`），必须把路径**转交**首实例，否则第二实例只前置窗口
+      // 就退出 → 视频路径整个丢掉、首实例从不知情 →「点了没反应」。用 WM_COPYDATA
+      // 把 UTF-8 路径字节跨进程发给首实例的窗口过程（见 flutter_window.cpp 的
+      // WM_COPYDATA 处理 → app.hibiki/external_video MethodChannel →
+      // _openExternalVideo）。无文件参数（纯第二次启动）则只前置 + 退出。
+      const std::wstring file_arg = FirstFileArgFromCommandLine();
+      if (!file_arg.empty()) {
+        ::hibiki::SendExternalVideoPath(existing, file_arg);
+      }
       if (::IsIconic(existing)) {
         ::ShowWindow(existing, SW_RESTORE);
       }

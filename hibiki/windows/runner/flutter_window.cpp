@@ -16,6 +16,7 @@
 
 #include <flutter/method_result_functions.h>
 
+#include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -386,6 +387,14 @@ bool FlutterWindow::OnCreate() {
         }
         result->Success();
       });
+
+  // TODO-904 P0 回归：外部视频路径转交 channel。首实例无需主动调用任何方法，仅作为
+  // MessageHandler 收到 WM_COPYDATA 后把路径 InvokeMethod 给 Dart 的出口。
+  external_video_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki/external_video",
+          &flutter::StandardMethodCodec::GetInstance());
 
   RegisterFloatingLyricChannel();
   RegisterGlobalLookupChannel();
@@ -867,6 +876,21 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_COPYDATA: {
+      // TODO-904 P0 回归：第二实例转交「用 Hibiki 打开视频」的路径。解出 UTF-8 路径
+      // （dwData magic 不匹配则 DecodeExternalVideoPath 返回空串，忽略非本协议消息），
+      // 经 app.hibiki/external_video channel 推给 Dart 复用 _openExternalVideo。
+      // WndProc 跑在 platform 线程，InvokeMethod 可直接调用。
+      const auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
+      const std::string video_path = ::hibiki::DecodeExternalVideoPath(cds);
+      if (!video_path.empty() && external_video_channel_) {
+        external_video_channel_->InvokeMethod(
+            "openExternalVideo",
+            std::make_unique<flutter::EncodableValue>(video_path));
+        return TRUE;  // 已处理本 WM_COPYDATA。
+      }
+      break;
+    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
