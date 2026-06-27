@@ -209,6 +209,33 @@ bool readerLayoutResizeNeedsRepaginate({
   return changed.width || changed.height;
 }
 
+/// BUG-438 / TODO-889：内容就绪兜底超时的 wall-clock 绝对 deadline 计算（纯函数）。
+///
+/// 根因：手柄连/断引发系统 inset 抖动 → `didChangeMetrics` 每次直连 `_syncPageSize`
+/// → 宽变判定触发 `_navigateToChapter` → `_beginNavigation` 把 `_readerContentReady`
+/// 置 false 重挂 loading 遮罩，并调 `_startContentReadyTimeout`。旧实现每次都 cancel
+/// 旧 8s timer 再起新 8s（相对 deadline）：抖动间隔 < 8s 时兜底永远被推迟、到不了点，
+/// loading 遮罩永挂 = 无限 loading（断+重连多次抖动解释「重连概率更大」）。
+///
+/// 修复 = 改 wall-clock 绝对 deadline。一次 content-not-ready 周期里第一次武装时记下
+/// `now + 8s` 的绝对截止时刻；后续抖动重复武装时**保留**仍在未来的旧 deadline（不外推），
+/// 抖动多少次兜底都在原 deadline 到点解除 loading。content 真正就绪时清空 deadline，
+/// 下一次真实导航重新拿到一个新的 8s 窗口（见 `_clearContentReadyTimeout`）。
+///
+/// 返回本次 timer 应使用的绝对 deadline：
+///   * `existingDeadline` 为 null 或已过期（<= now）→ 开新窗口 `now + timeout`；
+///   * 否则保留 `existingDeadline`（抖动不外推）。
+DateTime contentReadyTimeoutDeadline({
+  required DateTime now,
+  required DateTime? existingDeadline,
+  Duration timeout = const Duration(seconds: 8),
+}) {
+  if (existingDeadline == null || !existingDeadline.isAfter(now)) {
+    return now.add(timeout);
+  }
+  return existingDeadline;
+}
+
 /// 阅读器主题用的四个颜色角色：正文背景、正文字色、私语(振假名/sasayaki)叠色、
 /// 是否暗色。preset 主题在 [_ReaderHibikiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
@@ -863,6 +890,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   DateTime? _reanchorClearedAt;
   Timer? _scrollProgressThrottleTimer;
   Timer? _contentReadyTimer;
+  // BUG-438 / TODO-889：内容就绪兜底超时的 wall-clock 绝对截止时刻。手柄连/断
+  // inset 抖动反复触发 _beginNavigation → _startContentReadyTimeout 重复武装时，
+  // 保留这个仍在未来的 deadline（不外推），保证抖动多次后兜底仍能到点解除 loading。
+  // content 真正就绪 / dispose 时由 _clearContentReadyTimeout 清空，下次真实导航
+  // 重新拿到新窗口。null = 当前没有武装中的兜底超时。
+  DateTime? _contentReadyDeadline;
   Timer? _gamepadAHoldTimer;
   // HBK-AUDIT-120: volume-key throttle uses a last-fire timestamp instead of an
   // empty-callback Timer. The old timer-as-flag pattern obscured intent and left
@@ -1372,6 +1405,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();
     _contentReadyTimer?.cancel();
+    _contentReadyDeadline = null;
     _resizeRepaginateDebounce?.cancel();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
@@ -1505,9 +1539,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return;
     }
     setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncPageSize();
-    });
+    // BUG-438 / TODO-889：手柄连/断引发系统 inset 抖动，旧实现每帧 postFrame 直连
+    // _syncPageSize → 宽变触发 _navigateToChapter → 反复把 _readerContentReady 置 false
+    // 重挂 loading，配合相对 8s 兜底超时被反复推迟 → 无限 loading。改走与
+    // _onReaderConstraintsChanged 同一条 ~50ms 尾沿防抖（_resizeRepaginateDebounce），
+    // 多次抖动只在 settle 后触发一次重排，且 _syncPageSize 内部基线判定天然去重幂等。
+    _resizeRepaginateDebounce?.cancel();
+    _resizeRepaginateDebounce = Timer(
+      const Duration(milliseconds: 50),
+      () {
+        if (mounted) _syncPageSize();
+      },
+    );
   }
 
   @override

@@ -144,6 +144,17 @@ public class MainActivity extends AudioServiceActivity {
         }
     }
 
+    // BUG-438/TODO-889: a gamepad connect/disconnect is a keyboard/navigation
+    // configuration change. This Activity declares keyboard in android:configChanges
+    // so Flutter keeps the Activity alive and onConfigurationChanged fires instead of
+    // a recreate; re-apply the system focus-highlight suppression here too, because
+    // the framework can reset defaultFocusHighlightEnabled when input config changes.
+    @Override
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        disableSystemFocusHighlight();
+    }
+
     @Override
     protected void onDestroy() {
         if (ttsChannelHandler != null) {
@@ -298,6 +309,13 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // BUG-438/TODO-889: re-apply the system focus-highlight suppression on
+        // resume. disableSystemFocusHighlight() runs once in onCreate, but on some
+        // skins (Samsung OneUI) plugging in a gamepad triggers an Activity recreate
+        // / decorView re-attach that resets defaultFocusHighlightEnabled back to
+        // true, so the system focus rectangle re-appears over Hibiki's own focus
+        // ring. Re-applying here (and in onConfigurationChanged) keeps it killed.
+        disableSystemFocusHighlight();
         // BUG-427/TODO-852: belt-and-braces for OEMs whose settings page does
         // not deliver onActivityResult after the permission grant. If a pending
         // install is still parked and the permission is now granted, resume it

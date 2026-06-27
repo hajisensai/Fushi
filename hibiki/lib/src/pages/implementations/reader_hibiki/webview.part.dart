@@ -1313,6 +1313,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               }
               _restoreCompleter = null;
               if (mounted) {
+                // BUG-438 / TODO-889：spread 内容就绪，清兜底 deadline，下次导航拿新窗口。
+                _clearContentReadyTimeout();
                 _rebuild(() {
                   _readerContentReady = true;
                   // spread(漫画双页)路径只发 'spreadReady'，从不发 'onRestoreComplete'，
@@ -1436,6 +1438,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
     if (_lyricsMode) {
       if (!_readerContentReady) {
+        // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
+        _clearContentReadyTimeout();
         _rebuild(() {
           _readerContentReady = true;
           _hasEverLoaded = true;

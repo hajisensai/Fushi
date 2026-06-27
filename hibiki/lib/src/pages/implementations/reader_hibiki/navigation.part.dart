@@ -18,24 +18,53 @@ part of '../reader_hibiki_page.dart';
 /// these blocks remain in the shell, reachable via the shared private class
 /// scope.
 extension _ReaderNavigation on _ReaderHibikiPageState {
+  /// BUG-438 / TODO-889：内容就绪兜底超时，改 wall-clock 绝对 deadline。
+  ///
+  /// 旧实现每次 cancel 旧 8s timer 再起新 8s（相对 deadline）：手柄连/断 inset 抖动
+  /// 在 <8s 内反复 `_beginNavigation` → 反复重武装 → 兜底永远被推迟、永挂 loading
+  /// （无限 loading）。改用 [contentReadyTimeoutDeadline] 计算绝对截止时刻——一次
+  /// content-not-ready 周期里只在第一次（或上次 deadline 已过）武装时开 `now+8s` 窗口，
+  /// 之后抖动重复武装保留旧 deadline 不外推，timer 按 `deadline-now` 续命到原截止点。
+  /// content 真正就绪 / dispose 由 [_clearContentReadyTimeout] 清空 deadline，下次真实
+  /// 导航重新拿到新窗口。
   void _startContentReadyTimeout() {
+    final DateTime now = DateTime.now();
+    final DateTime deadline = contentReadyTimeoutDeadline(
+      now: now,
+      existingDeadline: _contentReadyDeadline,
+    );
+    _contentReadyDeadline = deadline;
+    final Duration remaining = deadline.difference(now);
     _contentReadyTimer?.cancel();
-    _contentReadyTimer = Timer(const Duration(seconds: 8), () {
-      if (!mounted || _readerContentReady) return;
-      debugPrint(
-          '[ReaderHibiki] content ready timeout — forcing overlay removal');
-      _rebuild(() {
-        _readerContentReady = true;
-        _hasEverLoaded = true;
-      });
-      // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
-      _settleFocusOnContentReady();
-      HibikiToast.show(msg: t.reader_content_timeout);
-    });
+    _contentReadyTimer = Timer(
+      remaining.isNegative ? Duration.zero : remaining,
+      () {
+        _contentReadyDeadline = null;
+        if (!mounted || _readerContentReady) return;
+        debugPrint(
+            '[ReaderHibiki] content ready timeout — forcing overlay removal');
+        _rebuild(() {
+          _readerContentReady = true;
+          _hasEverLoaded = true;
+        });
+        // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
+        _settleFocusOnContentReady();
+        HibikiToast.show(msg: t.reader_content_timeout);
+      },
+    );
+  }
+
+  /// BUG-438 / TODO-889：内容真正就绪（或不再需要兜底）时清掉超时 timer + 绝对 deadline，
+  /// 让下一次真实导航重新拿到一个完整的 8s 兜底窗口（而不是续上一周期残留的旧 deadline）。
+  void _clearContentReadyTimeout() {
+    _contentReadyTimer?.cancel();
+    _contentReadyTimer = null;
+    _contentReadyDeadline = null;
   }
 
   void _onRestoreComplete() {
-    _contentReadyTimer?.cancel();
+    // BUG-438 / TODO-889：恢复完成=内容真正就绪，清掉兜底 deadline，下次导航拿新窗口。
+    _clearContentReadyTimeout();
     if (!mounted) {
       return;
     }
