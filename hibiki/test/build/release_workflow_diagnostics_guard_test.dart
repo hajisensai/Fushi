@@ -227,6 +227,40 @@ void main() {
             '(plus the pre-existing keystore guards)');
   });
 
+  test(
+      'TODO-923: beta/formal manual release channels must not build/attach the '
+      'unsigned debug APK', () {
+    final String workflow = readReleaseWorkflow();
+
+    // Extracts a single `case` arm body inside the workflow_dispatch channel
+    // switch, e.g. the text between `<name>)` and its closing `;;`.
+    String dispatchCaseBody(String name) {
+      final String marker = '              $name)\n';
+      final int start = workflow.indexOf(marker);
+      expect(start, isNonNegative,
+          reason: 'missing workflow_dispatch case arm: $name)');
+      final int end = workflow.indexOf('\n                ;;', start);
+      expect(end, isNonNegative, reason: 'unterminated case arm: $name)');
+      return workflow.substring(start, end);
+    }
+
+    final String betaCase = dispatchCaseBody('beta');
+    final String formalCase = dispatchCaseBody('formal');
+
+    // The case-level default at the top of the channel resolver is
+    // BUILD_DEBUG_APK=true. Each release-grade channel must explicitly turn the
+    // unsigned debug APK off, otherwise it inherits the default and the
+    // ~314MB debug APK gets matched by the hibiki-*.apk FILES glob and uploaded
+    // (formal even as Latest). push) and debug) already set it false; beta) and
+    // formal) must too.
+    expect(betaCase, contains('BUILD_DEBUG_APK=false'),
+        reason: 'TODO-923: beta manual release must not build the unsigned '
+            'debug APK (it would be attached to the beta release)');
+    expect(formalCase, contains('BUILD_DEBUG_APK=false'),
+        reason: 'TODO-923: formal release must not build the unsigned debug '
+            'APK (it would be attached to the Latest release)');
+  });
+
   test('Windows desktop release smokes bundled ffmpeg in final bundle', () {
     final String workflow = readReleaseDesktopWorkflow();
     final String smoke = workflowStep(

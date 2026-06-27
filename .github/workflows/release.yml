@@ -128,6 +128,7 @@ jobs:
                 NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                 FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+                BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
                 ;;
@@ -138,6 +139,7 @@ jobs:
                 PRERELEASE=false
                 MAKE_LATEST=true
                 FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+                BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
                 ;;
