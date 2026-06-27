@@ -28,6 +28,7 @@ import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:hibiki/src/media/video/video_resource_check.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -83,6 +84,7 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
+import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
@@ -221,6 +223,9 @@ String videoFavoriteCacheKey({
       ? 'legacy|$text'
       : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
 }
+
+/// TODO-897：缺失资源对话框的用户选择。
+enum _MissingResourceChoice { reimport, delete, cancel }
 
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
@@ -654,6 +659,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VideoPlayerController? _chapterListenerController;
   VoidCallback? _chapterListener;
   bool _failed = false;
+
+  /// TODO-897：本地视频资源缺失（被移动 / 删除 / 所在盘未挂载）。置位后
+  /// [_buildScaffold] 在转圈判据之前短路成「资源缺失」态，不再无限转圈。
+  bool _missingResource = false;
+
+  /// 缺失态对应的 video book 行（用于复用 [_confirmMissingResourceDelete] 的删除
+  /// 序列：删条目要 coverPath / subtitleSource / videoPath 三参数）。仅本地路径
+  /// 缺失时置；远端 / 流不进缺失态故恒 null。
+  VideoBookRow? _missingRow;
+
+  /// 本次 _init 加载到的 video book 行（单视频 / 播放列表共用，远端为 null）。
+  /// 缺失态删除序列复用其 coverPath / subtitleSource / videoPath。
+  VideoBookRow? _bookRow;
   String? _title;
 
   /// 播放列表（系列）名（TODO-761，方案 B）。仅当本视频是播放列表（多集，
@@ -1239,6 +1257,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (mounted) setState(() => _failed = true);
       return;
     }
+    _bookRow = row;
 
     // 记录持久化的字幕源（菜单高亮当前项用）+ 音轨偏好（换集复用）+ 音画延迟
     // （跨重启保留）+ 播放倍速（per-book 偏好，速度记忆）。
@@ -1808,6 +1827,24 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     String? externalSubtitlePath,
     int? renderGraphicStreamIndex,
   }) async {
+    // TODO-897：本地视频资源缺失（被移动 / 删除 / 所在盘未挂载）前置短路。
+    // libmpv 对失效本地路径静默失败（不抛、不回调），下面的 try/catch 与页级
+    // spinner 都救不了→media_kit 自带缓冲圈无限转。故在 controller.load 之前判定：
+    // 缺失则不 load，置缺失态（[_buildScaffold] 在转圈判据前短路）+ 弹中性对话框。
+    // 远端 / 流（videoPath==null 或 http(s) URL）天然豁免（见 video_resource_check）。
+    if (await isLocalVideoResourceMissing(videoPath)) {
+      debugPrint('[VideoHibikiPage] local video resource missing: $videoPath');
+      if (!mounted) return;
+      setState(() {
+        _failed = false;
+        _missingResource = true;
+        _missingRow = _bookRow;
+        _title = title;
+        _titleNotifier.value = title;
+      });
+      await _promptMissingResource(title);
+      return;
+    }
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
     final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
@@ -1873,6 +1910,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _hasChapters = controller.chapters.isNotEmpty;
       _title = title;
       _failed = false;
+      _missingResource = false;
+      _missingRow = null;
       _currentVideoPath = videoPath;
       // externalSubtitlePath 即持久化值：外挂路径 / `embedded:<n>` / `off:`（显式关闭
       // 哨兵，TODO-818）都按原样写进 _currentSubtitleSource 供菜单高亮。内嵌自动加载
@@ -1951,6 +1990,101 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // TODO-857：恢复用户选过的副字幕轨（libmpv secondary-sid 自渲染）。与主
     // 字幕独立，仅内嵌轨；其内部 _waitUntilSubtitleTracksReady 等轨就绪。
     unawaited(_restoreSecondarySubtitle(controller));
+  }
+
+  /// TODO-897：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 / 删除条目 /
+  /// 取消）。措辞中性、不诱导直删；删除走二次确认 [_confirmMissingResourceDelete]。
+  ///
+  /// 误删缓解（Never-break-userspace 红线）：外接盘 / 网络盘未挂载时 `exists()` 也
+  /// 返 false（误报缺失）。故①文案中性（「位置可能变化或磁盘未连接」），不预设是
+  /// 「文件被删」；②「取消」是默认 / 主动作（停在缺失态，可重连磁盘后退页重进），
+  /// 「删除」是次要、且本身再过一道 [video_delete_confirm] 二次确认；③播放列表
+  /// （多集）单集缺失不提供删除（删除粒度只有整张 video book，删一整部太重），
+  /// 只给「重新导入 / 取消」（M1，见计划待定夺 #3）。
+  Future<void> _promptMissingResource(String title) async {
+    final NavigatorState nav = Navigator.of(context);
+    final VideoBookRow? row = _missingRow;
+    // 仅单视频条目（非播放列表、非远端）提供「删除条目」；缺 row 也不提供删除。
+    final bool canDelete = row != null && !_isPlaylist && !_isRemote;
+    final _MissingResourceChoice? choice =
+        await showAppDialog<_MissingResourceChoice>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.video_resource_missing_title),
+        content: Text(t.video_resource_missing_message(title: title)),
+        actions: <Widget>[
+          // 取消 = 默认 / 主动作：不删任何东西，停在缺失态。
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _MissingResourceChoice.cancel),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx, _MissingResourceChoice.reimport),
+            child: Text(t.video_resource_missing_reimport),
+          ),
+          // 删除是次要动作（非默认、不染红强调），且后接二次确认。
+          if (canDelete)
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(ctx, _MissingResourceChoice.delete),
+              child: Text(t.dialog_delete),
+            ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case _MissingResourceChoice.reimport:
+        // M1：退回视频库，由用户在库内重新导入（最小落地，零新依赖）。
+        nav.pop();
+      case _MissingResourceChoice.delete:
+        await _confirmMissingResourceDelete(row!);
+      case _MissingResourceChoice.cancel:
+      case null:
+        // 停在缺失态（不转圈）。可重连磁盘 / 移回文件后退页重进。
+        break;
+    }
+  }
+
+  /// 缺失态删除：二次确认后复用 home_video_page._confirmDelete 的删除序列
+  /// （deleteVideoBook + reclaimDeletedVideoBookAssets + compactAfterVideoDeleteBestEffort），
+  /// 删完退回视频库。与库内删除粒度 / 资产回收完全一致，不重写删除逻辑。
+  Future<void> _confirmMissingResourceDelete(VideoBookRow row) async {
+    final NavigatorState nav = Navigator.of(context);
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.video_delete_title),
+        content: Text(t.video_delete_confirm(title: row.title)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              t.dialog_delete,
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final String? deletedCoverPath = row.coverPath;
+    final String? deletedSubtitlePath = row.subtitleSource;
+    final String deletedVideoPath = row.videoPath;
+    await widget.repo.deleteVideoBook(row.bookUid);
+    await widget.repo.reclaimDeletedVideoBookAssets(
+      deletedBookUid: row.bookUid,
+      deletedCoverPath: deletedCoverPath,
+      deletedSubtitlePath: deletedSubtitlePath,
+      deletedVideoPath: deletedVideoPath,
+    );
+    await widget.repo.compactAfterVideoDeleteBestEffort();
+    if (mounted) nav.pop();
   }
 
   void _handleEmbeddedSubtitleAutoLoad(
@@ -4129,15 +4263,63 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       backgroundColor: cs.surface,
       body: _failed
           ? Center(child: Icon(Icons.error_outline, color: cs.error, size: 48))
-          : (controller == null || videoController == null)
-              ? const Center(child: CircularProgressIndicator())
-              : _withPageSpaceOverride(
-                  controller,
-                  _pageDropTarget(
-                    controller,
-                    _buildVideoBody(controller, videoController),
-                  ),
+          // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
+          // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
+          : _missingResource
+              ? _buildMissingResourceBody(cs)
+              : (controller == null || videoController == null)
+                  ? const Center(child: CircularProgressIndicator())
+                  : _withPageSpaceOverride(
+                      controller,
+                      _pageDropTarget(
+                        controller,
+                        _buildVideoBody(controller, videoController),
+                      ),
+                    ),
+    );
+  }
+
+  /// TODO-897：本地资源缺失态正文（不转圈）。中性图标 + 文案 + 「重新导入 / 删除
+  /// 条目（仅单视频）」按钮，对应 [_promptMissingResource] 的选项；首帧若对话框
+  /// 被取消，用户仍能从这里再次触发。
+  Widget _buildMissingResourceBody(ColorScheme cs) {
+    final VideoBookRow? row = _missingRow;
+    final bool canDelete = row != null && !_isPlaylist && !_isRemote;
+    final String title = _title ?? row?.title ?? '';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.video_file_outlined, color: cs.error, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              t.video_resource_missing_message(title: title),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: <Widget>[
+                FilledButton.tonal(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(t.video_resource_missing_reimport),
                 ),
+                if (canDelete)
+                  TextButton(
+                    onPressed: () =>
+                        unawaited(_confirmMissingResourceDelete(row)),
+                    child: Text(t.dialog_delete),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

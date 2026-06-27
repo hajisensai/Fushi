@@ -1897,5 +1897,8 @@
   "video_import_stream_url_invalid": "请输入有效的 http(s) 流地址",
   "settings_check_update_now": "检查更新",
   "update_checking_now": "正在检查更新…",
-  "update_already_latest": "已是最新版本"
+  "update_already_latest": "已是最新版本",
+  "video_resource_missing_title": "视频无法访问",
+  "video_resource_missing_message": "找不到『$title』的视频文件。资源位置可能已变化，或所在磁盘未连接。你可以重新导入，或删除此条目。",
+  "video_resource_missing_reimport": "重新导入"
 }

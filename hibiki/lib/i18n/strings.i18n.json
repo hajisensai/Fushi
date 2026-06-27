@@ -1897,5 +1897,8 @@
   "video_import_stream_url_invalid": "Enter a valid http(s) stream URL",
   "settings_check_update_now": "Check for updates",
   "update_checking_now": "Checking for updates…",
-  "update_already_latest": "You're on the latest version"
+  "update_already_latest": "You're on the latest version",
+  "video_resource_missing_title": "Video unavailable",
+  "video_resource_missing_message": "The file for 『$title』 could not be found. Its location may have changed, or the drive may not be connected. You can re-import it, or remove this entry.",
+  "video_resource_missing_reimport": "Re-import"
 }
