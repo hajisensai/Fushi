@@ -50,14 +50,41 @@ void main() {
       expect(stack.topFrameId, 'frame-0');
     });
 
-    test('hotkey with no results leaves the stack empty (root not pushed)', () {
-      // _resetStackRoot with an empty result -> pushLookupFrame drops it.
+    test('hotkey ALWAYS seeds a single root frame even on no results', () {
+      // TODO-867 P3c: _resetStackRoot now builds the root frame DIRECTLY
+      // (GlobalLookupStack([root])), NOT via pushLookupFrame — so a no-result
+      // hotkey still seeds exactly one root frame whose iframe shows popup.js's
+      // own no-results card (the old single-frame no-results behaviour is
+      // preserved through the host stack, not a top-level direct render).
       final GlobalLookupFrame root =
           _frame(_mintId(0), 'zzz', parentIndex: -1, resultCount: 0);
       final GlobalLookupStack stack =
-          pushLookupFrame(GlobalLookupStack.empty, root);
-      expect(stack.isEmpty, isTrue,
-          reason: 'a no-result hotkey must not seed a root frame');
+          GlobalLookupStack(<GlobalLookupFrame>[root]);
+      expect(stack.length, 1,
+          reason: 'the user-invoked root card must show even with no entries');
+      expect(stack.frames.first.parentIndex, -1);
+      expect(stack.topFrameId, 'frame-0');
+    });
+
+    test('single-frame hotkey lookup is stack depth 1 (one renderStack popup)',
+        () {
+      // TODO-867 P3c B1 behaviour lock: a single-frame hotkey lookup (no nested
+      // click) leaves the stack at depth 1, so the host renderStack payload
+      // carries exactly ONE popup — the single frame is rendered the SAME way as
+      // a nested card (window.__globalLookupHost.renderStack), with no top-level
+      // direct renderPopup. (_renderStack only emits frames that have a cached
+      // result; the root always does, see _resetStackRoot.)
+      final GlobalLookupFrame root =
+          _frame(_mintId(0), 'neko', parentIndex: -1, resultCount: 4);
+      final GlobalLookupStack stack =
+          GlobalLookupStack(<GlobalLookupFrame>[root]);
+      expect(stack.length, 1, reason: 'single frame = stack depth 1');
+      // The render layer maps each live frame to one renderStack popup; with a
+      // single root that is exactly one popup.
+      final List<GlobalLookupFrame> live = stack.frames;
+      expect(live.length, 1,
+          reason: 'one live frame -> one renderStack popup (depth-1 path)');
+      expect(live.first.id, 'frame-0');
     });
 
     test('a fresh hotkey lookup resets the whole stack to one root', () {

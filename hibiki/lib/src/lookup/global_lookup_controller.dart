@@ -136,11 +136,13 @@ class GlobalLookupController {
       _revealed = false;
       _revealSafety?.cancel();
 
-      // TODO-867 P3b: a new hotkey lookup RESETS the whole stack to a single
-      // root frame (no result -> empty stack, nothing pushed; see
-      // pushLookupFrame). The single-frame overlay (_renderResult below) is
-      // unchanged; _renderStack additionally emits the host stack payload
-      // (inert until P3c injects global_lookup_host.js + navigates host.html).
+      // TODO-867 P3c: a new hotkey lookup RESETS the whole stack to a single
+      // root frame. The single-frame card is now stack depth 1 rendered through
+      // the host iframe (window.__globalLookupHost.renderStack) — the top-level
+      // document is global_lookup_host.html (zero popup.js instance), so there
+      // is NO top-level direct render anymore (the old buildOverlayRenderScript
+      // path is retired). A no-result lookup still seeds a root frame so
+      // its iframe shows popup.js's own no-results card (see _resetStackRoot).
       _resetStackRoot(text, result);
 
       // Render OFF-SCREEN at the reader-faithful size (popupMax* × appUiScale ×
@@ -154,7 +156,6 @@ class GlobalLookupController {
       final int h0 = (model.popupMaxHeight * model.appUiScale * dpr).round();
       final bool shown = await GlobalLookupChannel.showAt(
           x: 0, y: 0, width: w0, height: h0, atCursor: true);
-      await _renderResult(result);
       await _renderStack();
       glog('hotkey: showAt(atCursor)=$shown off-screen w0=$w0 h0=$h0 rendered');
       _autoReadFirstEntry(model, result);
@@ -207,26 +208,6 @@ class GlobalLookupController {
     } catch (_) {
       return Uint8List(0);
     }
-  }
-
-  /// Builds the full settings+entries render script (theme colours, zoom, dict
-  /// filters, CSS, gaiji, no-results message) and pushes it to the overlay.
-  Future<void> _renderResult(DictionarySearchResult result) async {
-    final BuildContext? ctx = _appModel?.navigatorKey.currentContext;
-    final AppModel? model = _appModel;
-    if (ctx == null || model == null) {
-      // Fallback: render just the entries so something still shows.
-      await GlobalLookupChannel.render(
-        'window.lookupEntries = ${result.popupJson ?? '[]'};'
-        ' window.renderPopup && window.renderPopup();',
-      );
-      return;
-    }
-    await GlobalLookupChannel.render(buildOverlayRenderScript(
-      context: ctx,
-      appModel: model,
-      result: result,
-    ));
   }
 
   void _onJsMessage(Map<String, Object?> message) {
@@ -450,12 +431,12 @@ class GlobalLookupController {
       );
       _lastSentWidth = -1;
       _lastSentHeight = -1;
-      // TODO-867 P3b: push a CHILD frame onto the stack (parent = current
-      // top). pushLookupFrame drops a no-result lookup (resultCount<=0), so an
-      // empty nested search leaves the stack unchanged (identical object) and
-      // only re-renders the single-frame overlay's no-results state.
+      // TODO-867 P3c: push a CHILD frame onto the stack (parent = current
+      // top). pushLookupFrame drops a no-result nested lookup (resultCount<=0),
+      // so an empty nested search leaves the stack unchanged (identical object)
+      // — no empty child card is stacked. Rendering goes through the host stack
+      // (renderStack); there is no top-level direct render anymore.
       _pushChildFrame(query, result);
-      await _renderResult(result);
       await _renderStack();
       glog('nested: "$query" entries=${result.entries.length}');
       _autoReadFirstEntry(model, result);
@@ -464,10 +445,15 @@ class GlobalLookupController {
     }
   }
 
-  /// Resets the stack to a single root frame for a fresh hotkey lookup. A
-  /// no-result lookup leaves the stack empty (pushLookupFrame drops it), so
-  /// the host shows nothing while the single-frame overlay shows its own
-  /// no-results state. [text] is the query, [result] its search result.
+  /// Resets the stack to a single root frame for a fresh hotkey lookup. The
+  /// root is ALWAYS seeded (even on a no-result lookup): the user explicitly
+  /// invoked the lookup, so its card must show — popup.js inside the root iframe
+  /// renders its own no-results state from window._noResultsMessage. Only NESTED
+  /// children drop on no result (see _pushChildFrame), so a click on a word with
+  /// no entries does not stack an empty child. [text] is the query, [result] its
+  /// search result. Builds the root frame directly (not via pushLookupFrame,
+  /// which would drop a no-result root). resultCount stays accurate for
+  /// diagnostics/linkage.
   void _resetStackRoot(String text, DictionarySearchResult result) {
     _frameResults.clear();
     final String id = _nextFrameId();
@@ -477,10 +463,8 @@ class GlobalLookupController {
       parentIndex: -1,
       resultCount: result.entries.length,
     );
-    _stack = pushLookupFrame(GlobalLookupStack.empty, root);
-    if (_stack.isNotEmpty) {
-      _frameResults[id] = result;
-    }
+    _stack = GlobalLookupStack(<GlobalLookupFrame>[root]);
+    _frameResults[id] = result;
   }
 
   /// Pushes a child frame (nested lookup) whose parent is the current top.

@@ -35,6 +35,15 @@
 (function () {
   'use strict';
 
+  // TODO-867 P3c — only run on the TOP-LEVEL host document. C++
+  // AddScriptToExecuteOnDocumentCreated injects this script into EVERY frame
+  // (incl. the child popup.html iframes). Sub-frames have window.top !==
+  // window.self; bail there so each iframe stays a clean popup.js singleton
+  // and only the host document installs the frames Map / renderStack.
+  if (window.top !== window.self) {
+    return;
+  }
+
   if (window.__globalLookupHost && window.__globalLookupHost.__installed) {
     return;
   }

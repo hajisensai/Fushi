@@ -14,9 +14,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// M1a-2 swipe-close: the top-pull dismiss JS must drive both touch (mobile) and
 /// pointer/mouse (desktop WebView2 — incl. the global overlay), live in ONE
-/// shared source of truth, be injected into the bare overlay, and the overlay
-/// must gate the resulting `topPullReleased` on the user's enableSwipeToClose
-/// preference.
+/// shared source of truth, and the overlay must gate the resulting
+/// `topPullReleased` on the user's enableSwipeToClose preference. (TODO-867 P3c
+/// retired buildOverlayRenderScript: the overlay's injection site for this JS
+/// migrates from the single-frame render body to the host in a later P3c commit;
+/// the shared source of truth + the controller gate are unchanged.)
 void main() {
   String read(String p) => File(p).readAsStringSync();
 
@@ -93,13 +95,25 @@ void main() {
           src.contains('_topPullReleaseJs = kPopupTopPullReleaseJs'), isTrue);
     });
 
-    test('bare overlay render script injects the shared swipe JS', () {
+    test('top-pull swipe JS migrated off the retired single-frame render path',
+        () {
+      // TODO-867 P3c: buildOverlayRenderScript (the single-frame TOP-LEVEL
+      // direct-render path) is RETIRED — the top document is now the bare iframe
+      // host, so the swipe JS no longer belongs in global_lookup_render.dart's
+      // single-frame body (it migrates to the host in a later P3c commit). The
+      // controller still gates topPullReleased on the user's preference (next
+      // test), so the bridge contract is intact; only the injection site moved.
       final String src = read('lib/src/lookup/global_lookup_render.dart');
-      expect(
-          src.contains(
-              "import 'package:hibiki/src/reader/popup_swipe_close_script.dart';"),
-          isTrue);
-      expect(src.contains('\$kPopupTopPullReleaseJs'), isTrue);
+      expect(src.contains('String buildOverlayRenderScript('), isFalse,
+          reason: 'the retired single-frame render entry must be gone');
+      // The shared swipe-close source of truth itself is unchanged (locked by
+      // the JS-source-of-truth test above), and the in-app popup still uses it.
+      final String shared =
+          read('lib/src/reader/popup_swipe_close_script.dart');
+      expect(shared.contains("callHandler('topPullReleased')"), isTrue,
+          reason:
+              'the single shared swipe source must still exist for in-app + '
+              'the future host re-wiring');
     });
 
     test('overlay gates topPullReleased on enableSwipeToClose preference', () {

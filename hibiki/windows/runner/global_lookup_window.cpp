@@ -313,6 +313,25 @@ std::wstring GlobalLookupWindow::LoadAdapterScript() const {
   return Utf8ToWide(ss.str());
 }
 
+// TODO-867 P3c — load the app-OUTSIDE nested-stack host script. Injected into
+// the top-level WebView2 document (global_lookup_host.html) so
+// window.__globalLookupHost.renderStack exists; the single-frame and nested
+// lookups both render through the host iframe stack (no top-level direct
+// renderPopup). Mirrors LoadAdapterScript exactly (read + UTF8->Wide).
+std::wstring GlobalLookupWindow::LoadHostScript() const {
+  if (popup_assets_dir_.empty()) {
+    return std::wstring();
+  }
+  std::wstring path = popup_assets_dir_ + L"\\global_lookup_host.js";
+  std::ifstream file(path.c_str(), std::ios::binary);
+  if (!file) {
+    return std::wstring();
+  }
+  std::ostringstream ss;
+  ss << file.rdbuf();
+  return Utf8ToWide(ss.str());
+}
+
 void GlobalLookupWindow::EnsureWebView() {
   CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   auto options = Make<CoreWebView2EnvironmentOptions>();
@@ -368,7 +387,7 @@ void GlobalLookupWindow::EnsureWebView() {
                             COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
                       }
                       if (webview_) {
-                        webview_->Navigate(L"https://hibiki.popup/popup.html");
+                        webview_->Navigate(L"https://hibiki.popup/global_lookup_host.html");
                       }
                       // webview_ready_ is set in NavigationCompleted (popup.js
                       // must be loaded before renderPopup() exists).
@@ -390,6 +409,16 @@ void GlobalLookupWindow::ConfigureWebView() {
   std::wstring adapter = LoadAdapterScript();
   if (!adapter.empty()) {
     webview_->AddScriptToExecuteOnDocumentCreated(adapter.c_str(), nullptr);
+  }
+
+  // TODO-867 P3c — inject the nested-stack host AFTER the adapter (host.js does
+  // not depend on the adapter, but keeping adapter-first is the stable order).
+  // AddScriptToExecuteOnDocumentCreated runs on EVERY frame incl. child iframes;
+  // host.js bails on sub-frames via its `window.top !== window.self` guard so it
+  // only installs on the top-level host document.
+  std::wstring host = LoadHostScript();
+  if (!host.empty()) {
+    webview_->AddScriptToExecuteOnDocumentCreated(host.c_str(), nullptr);
   }
 
   // Render only after popup.html (and popup.js) finished loading, otherwise

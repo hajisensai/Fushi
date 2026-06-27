@@ -106,6 +106,8 @@ class GlobalLookupWindow {
   void EnsureWebView();
   void ConfigureWebView();
   std::wstring LoadAdapterScript() const;
+  // TODO-867 P3c — reads global_lookup_host.js for top-level injection.
+  std::wstring LoadHostScript() const;
 
   HWND hwnd_ = nullptr;
   HWINEVENTHOOK foreground_hook_ = nullptr;
