@@ -102,6 +102,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
       marginLeft: ReaderHibikiSource.instance.lyricsMarginLeft,
       marginRight: ReaderHibikiSource.instance.lyricsMarginRight,
       vertical: ReaderHibikiSource.instance.lyricsVerticalWriting,
+      blur: ReaderHibikiSource.instance.lyricsBlur,
     );
 
     await _controller!.loadData(
@@ -140,10 +141,15 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     final double mb = src.lyricsMarginBottom;
     final double ml = src.lyricsMarginLeft;
     final double mr = src.lyricsMarginRight;
+    final bool blur = src.lyricsBlur;
     try {
       await _controller!.evaluateJavascript(
         source: 'window.__lyricsUpdateStyle && window.__lyricsUpdateStyle('
             "'$bgCss','$fgCss','$accentCss',$fontSize,$mt,$mb,$ml,$mr);",
+      );
+      // TODO-908: 模糊态是独立维度，单独热更（不重建整页），与样式同一路下发。
+      await _controller!.evaluateJavascript(
+        source: 'window.__lyricsSetBlur && window.__lyricsSetBlur($blur);',
       );
     } catch (e, stack) {
       // 与 _applyStylesLive/_reloadWithCurrentSettings 对称：半销毁 WebView 上

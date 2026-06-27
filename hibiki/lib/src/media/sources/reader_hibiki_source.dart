@@ -906,6 +906,18 @@ class ReaderHibikiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// TODO-908: 歌词听力沉浸模糊开关（独立 key `lyrics_blur`，默认 `false`）。
+  /// 切换走 live 样式更新（`onSettingsChangedLive` → `_updateLyricsStyleLive` →
+  /// `__lyricsSetBlur`），不重建整页。
+  bool get lyricsBlur =>
+      readerSettings?.lyricsBlur ??
+      getPreference<bool>(key: 'lyrics_blur', defaultValue: false);
+  Future<void> setLyricsBlur(bool v) async {
+    await (readerSettings?.setLyricsBlur(v) ??
+        setPreference<bool>(key: 'lyrics_blur', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   double get ttuLineHeight =>
       readerSettings?.lineHeight ??
       getPreference<double>(key: 'ttu_line_height', defaultValue: 1.65);

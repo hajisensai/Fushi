@@ -161,6 +161,12 @@ class ReaderSettings {
   Future<void> setLyricsVerticalWriting(bool v) =>
       _set<bool>('lyrics_vertical_writing', v);
 
+  /// TODO-908: 歌词听力沉浸模糊开关，**独立** bool key（不复用视频字幕键）。
+  /// 默认 `false` = 不模糊，向后兼容历史行为。开启时仅当前句盖 8px 高斯模糊，
+  /// hover / 点击显形。
+  bool get lyricsBlur => _get<bool>('lyrics_blur', false);
+  Future<void> setLyricsBlur(bool v) => _set<bool>('lyrics_blur', v);
+
   double get lineHeight => _get<double>('ttu_line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('ttu_line_height', v);
 

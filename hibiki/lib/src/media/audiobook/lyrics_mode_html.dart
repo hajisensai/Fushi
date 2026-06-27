@@ -16,6 +16,7 @@ class LyricsModeHtml {
     double marginLeft = 0,
     double marginRight = 0,
     bool vertical = false,
+    bool blur = false,
   }) {
     final StringBuffer cueHtml = StringBuffer();
     for (int i = 0; i < cues.length; i++) {
@@ -60,6 +61,10 @@ class LyricsModeHtml {
             'calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
     // JS 端轴标记：true=竖排横滚（用 scrollBy 增量绕开 vertical-rl 负向 scrollX）。
     final String verticalJs = vertical ? 'true' : 'false';
+    // TODO-908：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS 只对
+    // 当前句（.cue.current）盖 8px 高斯模糊；hover 或点击（.revealed）显形。模糊维度
+    // 与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
+    final String blurBodyClass = blur ? ' class="lyrics-blur"' : '';
 
     return '''
 <!DOCTYPE html>
@@ -129,6 +134,18 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 .cue.near-1 { opacity: 0.55; transform: scale(1.05); }
 .cue.near-2 { opacity: 0.35; }
 .cue.near-3 { opacity: 0.25; }
+/* TODO-908: 听力沉浸模糊 —— body.lyrics-blur 时只对当前句盖 8px 高斯模糊，
+   hover 或点击显形（.revealed）。与视频字幕的 ImageFilter.blur(sigma:8) 等价。
+   仅作用 .cue（与 writing-mode 正交，不碰 TODO-907 轴 CSS）。 */
+body.lyrics-blur .cue.current {
+  filter: blur(8px);
+  transition: filter 0.2s ease-out, opacity 0.35s ease-out,
+      transform 0.3s ease-out, color 0.3s ease-out;
+}
+body.lyrics-blur .cue.current:hover,
+body.lyrics-blur .cue.current.revealed {
+  filter: blur(0);
+}
 ::highlight(hoshi-selection) {
   background-color: $accentColor;
   color: $backgroundColor;
@@ -152,7 +169,7 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 }
 </style>
 </head>
-<body>
+<body$blurBodyClass>
 <div class="lyrics-container" id="lc">
 $cueHtml
 </div>
@@ -217,7 +234,7 @@ function setCue(index, scroll) {
   var len = _cues.length;
   if (old >= 0) {
     for (var i = Math.max(0, old - 3), e = Math.min(len - 1, old + 3); i <= e; i++)
-      _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3');
+      _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3', 'revealed');
   }
   for (var i = Math.max(0, index - 3), e = Math.min(len - 1, index + 3); i <= e; i++) {
     var d = Math.abs(i - index);
@@ -258,7 +275,10 @@ function _lyTapEnd(x, y) {
   _lyHasTap = false;
   if (_lyTapMoved) return;
   var el = document.elementFromPoint(x, y);
-  if (!el || !el.closest('.cue')) return;
+  var cueEl = el ? el.closest('.cue') : null;
+  if (!cueEl) return;
+  // TODO-908: 模糊态下点句显形（同视频「点击显形」语义）；非模糊态无影响。
+  if (document.body.classList.contains('lyrics-blur')) cueEl.classList.add('revealed');
   if (window.hoshiSelection) {
     window.hoshiSelection.selectText(x, y, 400);
   }
@@ -362,6 +382,19 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
         r.style.padding = 'calc(45vh + ' + (mt||0) + 'vh) ' + lv + 'vw calc(45vh + ' + (mb||0) + 'vh) ' + rv + 'vw';
       }
     }
+  }
+};
+
+// ── 实时模糊开关（TODO-908，仿 __lyricsUpdateStyle，不重建整页） ──
+// on=true 给 body 挂 lyrics-blur（CSS 只模糊当前句，hover/点击显形）；off 摘掉并
+// 清掉所有遗留的 .revealed，回到无模糊态。
+window.__lyricsSetBlur = function(on) {
+  if (on) {
+    document.body.classList.add('lyrics-blur');
+  } else {
+    document.body.classList.remove('lyrics-blur');
+    var revealed = document.querySelectorAll('.cue.revealed');
+    for (var i = 0; i < revealed.length; i++) revealed[i].classList.remove('revealed');
   }
 };
 

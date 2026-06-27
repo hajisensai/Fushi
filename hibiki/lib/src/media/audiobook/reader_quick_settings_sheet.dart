@@ -1372,6 +1372,19 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             await widget.onLyricsReload?.call();
           },
         ),
+        // TODO-908: 歌词听力沉浸模糊开关（独立 key）。模糊是 live 维度，走
+        // onStyleChanged（_updateLyricsStyleLive → __lyricsSetBlur），不重建整页。
+        AdaptiveSettingsSwitchRow(
+          title: t.lyrics_blur,
+          subtitle: t.lyrics_blur_hint,
+          value: _src.lyricsBlur,
+          onChanged: (bool enabled) async {
+            await _src.setLyricsBlur(enabled);
+            if (!mounted) return;
+            setState(() {});
+            widget.onStyleChanged?.call();
+          },
+        ),
         _numberStepper(
           label: t.lyrics_font_size,
           value: _src.lyricsFontSize,
