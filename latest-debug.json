@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 5976,
-  "notes": "Automated release-signed debug-channel build from develop @ 9636a75. Push releases are always prerelease and never Latest.",
+  "notes": "Automated release-signed debug-channel build from main @ 9636a75. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.0.0-debug.5976-9636a75-debug.apk",
