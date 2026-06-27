@@ -211,6 +211,47 @@ int resolveMiningCueIndexForPosition({
 int miningClipTimeMs(int subtitleTimeMs, int delayMs) =>
     (subtitleTimeMs + delayMs).clamp(0, 1 << 30);
 
+/// 判定一个**字位簇**（grapheme cluster）是否属于「拉丁单词字符」：拉丁字母
+/// （含 café 的 é、连字号外的重音字母）或 ASCII 数字。用字位簇的首个码点的
+/// Unicode `Script=Latin` 属性判定，故 NFC/NFD 的重音字母都按基字母（拉丁）归类。
+/// CJK（汉字 / 假名 / 谚文）不是拉丁脚本，恒返回 false → 逐字查词行为不变。
+bool _isLatinWordGrapheme(String grapheme) {
+  if (grapheme.isEmpty) return false;
+  return _kLatinWordCharRegExp.hasMatch(grapheme);
+}
+
+final RegExp _kLatinWordCharRegExp =
+    RegExp(r'^[\p{Script=Latin}0-9]', unicode: true);
+
+/// 点字幕第 [graphemeIndex] 个字位起的查词词面（TODO-916 症状③）。
+///
+/// 默认（CJK / 日文）行为：从被点字位一直取到**句尾**，逐字查词（与历史一致，
+/// 不能套「延伸到词尾」——中日文按字 / 词查）。
+///
+/// 仅当**被点字位本身是拉丁单词字符**时，回退到该拉丁单词的**词首**并延伸到
+/// **词尾**，返回整个单词。这样点 "hello" 的任意字母（含 'e' / 'o'）都返回
+/// "hello"，而不是旧 `skip(index)` 的 "ello" 查不到（拉丁词非逐字、点中间字母
+/// 取不到整词 → 查不到）。空格 / 标点 / 连字号 / CJK 都是词边界。
+@visibleForTesting
+String subtitleLookupTerm(String sentence, int graphemeIndex) {
+  final List<String> graphemes = sentence.characters.toList();
+  if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
+  // 非拉丁（CJK / 标点 / 空白）：维持历史「取到句尾逐字查」语义。
+  if (!_isLatinWordGrapheme(graphemes[graphemeIndex])) {
+    return graphemes.skip(graphemeIndex).join();
+  }
+  int start = graphemeIndex;
+  while (start > 0 && _isLatinWordGrapheme(graphemes[start - 1])) {
+    start--;
+  }
+  int end = graphemeIndex; // inclusive index of last word grapheme
+  while (
+      end + 1 < graphemes.length && _isLatinWordGrapheme(graphemes[end + 1])) {
+    end++;
+  }
+  return graphemes.sublist(start, end + 1).join();
+}
+
 @visibleForTesting
 String videoFavoriteCacheKey({
   required String text,

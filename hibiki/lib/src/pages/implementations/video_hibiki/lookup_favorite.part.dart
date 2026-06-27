@@ -37,7 +37,7 @@ extension _VideoLookupFavorite on _VideoHibikiPageState {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final Stopwatch swLookup = Stopwatch()..start();
-    final String term = sentence.characters.skip(graphemeIndex).join();
+    final String term = subtitleLookupTerm(sentence, graphemeIndex);
     debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
