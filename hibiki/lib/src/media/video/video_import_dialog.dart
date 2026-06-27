@@ -9,8 +9,11 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
+import 'package:hibiki/src/media/video/url_stream_video.dart';
+import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/utils.dart';
@@ -182,6 +185,14 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   String? _videoPath;
   String? _subtitlePath;
   bool _busy = false;
+  final TextEditingController _streamUrlController = TextEditingController();
+  final TextEditingController _streamSubtitleUrlController =
+      TextEditingController();
+  final TextEditingController _streamRefererController =
+      TextEditingController();
+  final TextEditingController _streamUserAgentController =
+      TextEditingController();
+  bool _streamAdvancedExpanded = false;
 
   @override
   void initState() {
@@ -196,6 +207,15 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         if (mounted) _importPlaylistFromPath(dropped);
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _streamUrlController.dispose();
+    _streamSubtitleUrlController.dispose();
+    _streamRefererController.dispose();
+    _streamUserAgentController.dispose();
+    super.dispose();
   }
 
   bool get _canImport => videoImportCanImport(
@@ -449,6 +469,73 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     }
   }
 
+  /// 当前粘贴的视频 URL 是否可播（http/https 直链）。空串/非法 scheme → false。
+  bool get _streamUrlValid => isPlayableStreamUrl(_streamUrlController.text);
+
+  /// 「播放流」（TODO-850 阶段①）：把粘贴的 URL + 可选字幕 URL + 可选防盗链 header
+  /// 包成 [UrlStreamVideoClient] 喂进既有远端播放链（[VideoHibikiPage.neutralizedRemote]）。
+  ///
+  /// 阶段①只播不入库：不写 VideoBooks、不碰 DB schema。bookUid 由 [streamVideoBookUid]
+  /// 派生（同一 URL 稳定，断点 prefs 续看可对齐）。直接 push 远端播放页后 pop(null)——
+  /// 调用方（home_video / 书架）把 null 当「无新增入库，不刷新书架」，既有 import 路径
+  /// 行为不变（Never break userspace）。
+  void _playStreamUrl() {
+    final String url = _streamUrlController.text.trim();
+    if (!isPlayableStreamUrl(url)) return;
+    final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
+    final String? subtitleUrl =
+        isPlayableStreamUrl(subtitleUrlRaw) ? subtitleUrlRaw : null;
+    final Map<String, String> headers = <String, String>{};
+    final String referer = _streamRefererController.text.trim();
+    final String userAgent = _streamUserAgentController.text.trim();
+    if (referer.isNotEmpty) headers['Referer'] = referer;
+    if (userAgent.isNotEmpty) headers['User-Agent'] = userAgent;
+
+    final String bookUid = streamVideoBookUid(url);
+    final UrlStreamVideoClient client = UrlStreamVideoClient(
+      streamUrl: url,
+      subtitleUrl: subtitleUrl,
+      subtitleFileName:
+          subtitleUrl == null ? null : _subtitleFileNameForUrl(subtitleUrl),
+      httpHeaderFields: headers,
+    );
+    final RemoteVideoInfo info = RemoteVideoInfo(
+      id: bookUid,
+      title: _streamTitleForUrl(url),
+    );
+    final NavigatorState navigator = Navigator.of(context);
+    // 先关本对话框（避免播放页叠在对话框之上），再 push 远端播放页。
+    navigator.pop();
+    navigator.push(
+      adaptivePageRoute<void>(
+        builder: (_) => VideoHibikiPage.neutralizedRemote(
+          info: info,
+          repo: widget.repo,
+          client: client,
+        ),
+      ),
+    );
+  }
+
+  /// 从字幕 URL 末段取文件名（保留扩展名给字幕格式路由）；取不到回退 `subtitle`。
+  String _subtitleFileNameForUrl(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    final String last = (uri != null && uri.pathSegments.isNotEmpty)
+        ? uri.pathSegments.last
+        : '';
+    return last.isEmpty ? 'subtitle' : last;
+  }
+
+  /// 流标题：取 URL 末段文件名（无扩展名）；取不到回退 host；再不行回退原 URL。
+  String _streamTitleForUrl(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return url;
+    if (uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty) {
+      return p.basenameWithoutExtension(uri.pathSegments.last);
+    }
+    return uri.host.isNotEmpty ? uri.host : url;
+  }
+
   /// 拖文件进本对话框 → 有 m3u8/m3u 播放列表则走 [_importPlaylistFromPath]
   /// 一次性解析导入（与手动点「播放列表」一致，会关窗）；否则第一个视频写
   /// `_videoPath`、第一个字幕写 `_subtitlePath`。纯解析交给 [resolveVideoDialogDrop]。
@@ -476,56 +563,139 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       onDrop: _handleDialogDrop,
       child: AlertDialog(
         title: Text(t.video_import_title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FilledButton.tonalIcon(
-              onPressed: _busy ? null : _pickFolder,
-              icon: const Icon(Icons.create_new_folder_outlined),
-              label: Text(
-                t.video_import_pick_folder,
-                overflow: TextOverflow.ellipsis,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // 粘贴 URL 在线流（TODO-850 阶段①）：直链/HLS/m3u8 即播 + 可选外挂字幕 +
+              // 可选防盗链 header。与本地文件导入区分（独立分支，不走 _pickPlaylist）。
+              TextField(
+                controller: _streamUrlController,
+                enabled: !_busy,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  labelText: t.video_import_stream_url_field,
+                  hintText: 'https://...',
+                  prefixIcon: const Icon(Icons.link),
+                  isDense: true,
+                ),
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) {
+                  if (_streamUrlValid) _playStreamUrl();
+                },
               ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton.tonalIcon(
-              onPressed: _busy ? null : _pickPlaylist,
-              icon: const Icon(Icons.playlist_play),
-              label: Text(
-                t.video_import_pick_playlist,
-                overflow: TextOverflow.ellipsis,
+              const SizedBox(height: 4),
+              Text(
+                t.video_import_stream_url_hint,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
-            ),
-            const SizedBox(height: 8),
-            const Divider(height: 16),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _pickVideo,
-              icon: const Icon(Icons.movie_outlined),
-              label: Text(
-                _videoPath == null
-                    ? t.video_import_pick_video
-                    : p.basename(_videoPath!),
-                overflow: TextOverflow.ellipsis,
+              const SizedBox(height: 8),
+              TextField(
+                controller: _streamSubtitleUrlController,
+                enabled: !_busy,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  labelText: t.video_import_stream_subtitle_url_field,
+                  hintText: 'https://...',
+                  prefixIcon: const Icon(Icons.subtitles_outlined),
+                  isDense: true,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _pickSubtitle,
-              icon: const Icon(Icons.subtitles_outlined),
-              label: Text(
-                _subtitlePath == null
-                    ? t.video_import_pick_subtitle
-                    : p.basename(_subtitlePath!),
-                overflow: TextOverflow.ellipsis,
+              const SizedBox(height: 4),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() =>
+                          _streamAdvancedExpanded = !_streamAdvancedExpanded),
+                  icon: Icon(_streamAdvancedExpanded
+                      ? Icons.expand_less
+                      : Icons.expand_more),
+                  label: Text(t.video_import_stream_advanced),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              t.video_import_subtitle_optional,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
+              if (_streamAdvancedExpanded) ...<Widget>[
+                TextField(
+                  controller: _streamRefererController,
+                  enabled: !_busy,
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: t.video_import_stream_referer,
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _streamUserAgentController,
+                  enabled: !_busy,
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: t.video_import_stream_user_agent,
+                    isDense: true,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: (_busy || !_streamUrlValid) ? null : _playStreamUrl,
+                icon: const Icon(Icons.play_circle_outline),
+                label: Text(
+                  t.video_import_stream_play,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Divider(height: 24),
+              FilledButton.tonalIcon(
+                onPressed: _busy ? null : _pickFolder,
+                icon: const Icon(Icons.create_new_folder_outlined),
+                label: Text(
+                  t.video_import_pick_folder,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: _busy ? null : _pickPlaylist,
+                icon: const Icon(Icons.playlist_play),
+                label: Text(
+                  t.video_import_pick_playlist,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Divider(height: 16),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _pickVideo,
+                icon: const Icon(Icons.movie_outlined),
+                label: Text(
+                  _videoPath == null
+                      ? t.video_import_pick_video
+                      : p.basename(_videoPath!),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _pickSubtitle,
+                icon: const Icon(Icons.subtitles_outlined),
+                label: Text(
+                  _subtitlePath == null
+                      ? t.video_import_pick_subtitle
+                      : p.basename(_subtitlePath!),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                t.video_import_subtitle_optional,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
         actions: <Widget>[
           TextButton(

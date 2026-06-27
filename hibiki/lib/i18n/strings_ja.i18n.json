@@ -1885,5 +1885,14 @@
   "reader_gallery_tooltip": "Browse illustrations",
   "reader_gallery_empty": "No illustrations in this book",
   "reader_gallery_current": "Reading here",
-  "reader_gallery_jump": "Jump to this illustration"
+  "reader_gallery_jump": "Jump to this illustration",
+  "video_import_paste_url": "Paste video URL",
+  "video_import_stream_url_hint": "Play HLS/m3u8/mp4 stream URL (with optional external subtitle URL and anti-leech Referer/User-Agent)",
+  "video_import_stream_url_field": "Video stream URL",
+  "video_import_stream_subtitle_url_field": "External subtitle URL (optional)",
+  "video_import_stream_advanced": "Advanced (anti-leech headers)",
+  "video_import_stream_referer": "Referer (optional)",
+  "video_import_stream_user_agent": "User-Agent (optional)",
+  "video_import_stream_play": "Play stream",
+  "video_import_stream_url_invalid": "Enter a valid http(s) stream URL"
 }

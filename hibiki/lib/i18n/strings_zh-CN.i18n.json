@@ -1885,5 +1885,14 @@
   "reader_gallery_tooltip": "浏览插图",
   "reader_gallery_empty": "本书没有插图",
   "reader_gallery_current": "正在阅读",
-  "reader_gallery_jump": "跳转到此插图"
+  "reader_gallery_jump": "跳转到此插图",
+  "video_import_paste_url": "粘贴视频 URL",
+  "video_import_stream_url_hint": "播放 HLS/m3u8/mp4 直链（可选外挂字幕 URL 与防盗链 Referer/User-Agent）",
+  "video_import_stream_url_field": "视频流 URL",
+  "video_import_stream_subtitle_url_field": "外挂字幕 URL（可选）",
+  "video_import_stream_advanced": "高级（防盗链请求头）",
+  "video_import_stream_referer": "Referer（可选）",
+  "video_import_stream_user_agent": "User-Agent（可选）",
+  "video_import_stream_play": "播放流",
+  "video_import_stream_url_invalid": "请输入有效的 http(s) 流地址"
 }

@@ -785,6 +785,7 @@ class VideoPlayerController extends ChangeNotifier
     int? renderGraphicStreamIndex,
     List<String> shaderPaths = const <String>[],
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
+    Map<String, String> httpHeaderFields = const <String, String>{},
     bool autoPlay = false,
     void Function(DefaultEmbeddedSubtitleLoadResult result)?
         onEmbeddedSubtitleAutoLoad,
@@ -861,6 +862,13 @@ class VideoPlayerController extends ChangeNotifier
     // network-timeout=5 / demuxer-max-bytes=32MiB 对局域网 WiFi 流偏紧。
     await applyNetworkCachePropertiesToPlayer(player, sourceUri);
     if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
+
+    // 防盗链流（TODO-850 阶段①）：把用户填的 Referer/User-Agent 等注入
+    // libmpv `http-header-fields`。仅 [httpHeaderFields] 非空时生效（普通流/本地文件
+    // no-op），与上面的网络缓存调优同为”仅网络流才下发”的叠加属性，不改
+    // 既有 `Media`/缓存判据（播放内核零改）。
+    await applyHttpHeaderFieldsToPlayer(player, httpHeaderFields);
+    if (!_isCurrentLoad(player, loadToken)) return; // header 注入后换片/销毁。
 
     // 关闭 libmpv 画面字幕渲染——字幕统一走可点击 overlay（cue 同步 + 逐字查词）。
     // mkv 内嵌字幕会被 libmpv 默认渲染成画面像素（不可点）；用户点它会穿透到视频层

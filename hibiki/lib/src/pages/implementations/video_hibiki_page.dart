@@ -27,6 +27,7 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/video_episode_start_policy.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
+import 'package:hibiki/src/media/video/url_stream_video.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -1787,6 +1788,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 共享 load 装配：复用或新建 controller，载入视频 + cue，挂位置持久化回调。
+  /// 单 URL 流（TODO-850 阶段①）的防盗链 header（Referer/User-Agent 等）。仅当远端
+  /// client 是 [UrlStreamVideoClient] 时取其 [UrlStreamVideoClient.httpHeaderFields]；
+  /// 其它远端/本地播放恒返回空 map（[applyHttpHeaderFieldsToPlayer] 据此 no-op，
+  /// 既有播放路径零影响）。
+  Map<String, String> get _streamHttpHeaderFields {
+    final RemoteVideoClient? client = widget.remoteClient;
+    if (client is UrlStreamVideoClient) return client.httpHeaderFields;
+    return const <String, String>{};
+  }
+
   Future<void> _applyLoad({
     required String? videoPath,
     String? mediaUri,
@@ -1827,6 +1838,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         renderGraphicStreamIndex: renderGraphicStreamIndex,
         shaderPaths: shaderPaths,
         mpvConfig: mpvConfig,
+        httpHeaderFields: _streamHttpHeaderFields,
         autoPlay: true,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );

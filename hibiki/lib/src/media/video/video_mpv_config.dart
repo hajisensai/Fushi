@@ -534,3 +534,45 @@ Future<void> applySubtitleMpvPropertiesToPlayer(
     }
   }
 }
+
+/// 构建防盗链 header 注入用的 libmpv `http-header-fields` 属性 map（TODO-850 阶段①）。
+/// 纯函数。
+///
+/// libmpv 的 `http-header-fields` 是 `Field: value` 列表属性，给网络流请求附加自定义
+/// HTTP 头（典型用于带 Referer / User-Agent 的防盗链直链）。media_kit 经
+/// `mpv_set_property_string` 逐条设属性，列表项以逗号分隔——故把每个 `key: value`
+/// 拼成 `Key: Value` 并用逗号连接。[headers] 为空时返回空 map（调用方据此不下发，
+/// 普通流 / 本地文件零影响）。
+///
+/// **不进 [VideoMpvConfig]/[buildMpvProperties]**：header 是每条流的会话级防盗链
+/// 凭据（per-stream，阶段①只在 session 内有效、不落 DB），不是全局画质/音频偏好；
+/// 与字幕调轴 `sub-delay`（[buildSubtitleDelayProperty]）同范式独立可测。
+Map<String, String> buildHttpHeaderFieldsProperty(Map<String, String> headers) {
+  if (headers.isEmpty) return const <String, String>{};
+  final List<String> fields = <String>[
+    for (final MapEntry<String, String> e in headers.entries)
+      if (e.key.trim().isNotEmpty) '${e.key.trim()}: ${e.value.trim()}',
+  ];
+  if (fields.isEmpty) return const <String, String>{};
+  return <String, String>{'http-header-fields': fields.join(',')};
+}
+
+/// 仅当 [headers] 非空时，把 [buildHttpHeaderFieldsProperty] 注入 media_kit [player]
+/// （仅 libmpv 后端/桌面生效）。空 header 直接 no-op（普通流/本地文件零影响）。
+///
+/// best-effort：与 [applyMpvConfigToPlayer] / [applyNetworkCachePropertiesToPlayer]
+/// 同范式，单条属性失败静默吞掉。
+Future<void> applyHttpHeaderFieldsToPlayer(
+    Player player, Map<String, String> headers) async {
+  final Map<String, String> props = buildHttpHeaderFieldsProperty(headers);
+  if (props.isEmpty) return;
+  final dynamic native = player.platform;
+  if (native == null) return;
+  for (final MapEntry<String, String> e in props.entries) {
+    try {
+      await native.setProperty(e.key, e.value);
+    } catch (_) {
+      // 非 libmpv / 该属性不支持运行时设置：跳过这条，继续下一条。
+    }
+  }
+}
