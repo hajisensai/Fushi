@@ -151,6 +151,36 @@ class ReaderPaginationScripts {
     }
   }
 
+  /// JS `window.hoshiReader.scrollToRange` 落页锚的纯 Dart 影子（TODO-881）。
+  ///
+  /// cue 高亮 reveal / search-highlight 共用这条落页路径。历史上它用首段 client
+  /// rect 的**几何中点**当锚（`(top+bottom)/2` 或 `(left+right)/2`）再 `alignToPage`
+  /// (floor) 落页；这是分页引擎里**唯一**用中点的落页路径，其余（恢复 `restoreToCharOffset`
+  /// / `jumpToFragment` / `scrollToCharOffset`）全用**起始边**。
+  ///
+  /// 当一句 cue 首行 rect 在分页轴向占大半列宽/列高、且这句可见**起点**落在当前列
+  /// 后半段时，rect 中点越界进相邻列，floor 落到下一页（前翻）；下一句中点又落回 →
+  /// 翻回。逐句在「中点越界/不越界」间摆动 = 有声书自动读来回抖动（手机分页 + 列窄
+  /// 字大最明显）。
+  ///
+  /// 修复：锚取**起始边**，与引擎其余统一（竖排 `rect.top`、横排 `rect.left`，轴向
+  /// 语义被 `restoreToCharOffset` :706 / `jumpToFragment` 锁定，**不自创轴向**）。
+  /// 起始边锚恒等于「这句开头所在那一页」，不越界。
+  ///
+  /// 返回 floor 对齐后的目标滚动量（`alignToPage`：`floor(anchor/pageSize)*pageSize`，
+  /// anchor 先 clamp 到 >=0）。
+  @visibleForTesting
+  static double revealAnchorTargetScrollForTesting({
+    required double rectStart,
+    required double currentScroll,
+    required double pageSize,
+  }) {
+    if (pageSize <= 0) return currentScroll;
+    final double anchor = rectStart + currentScroll;
+    final double safe = anchor < 0 ? 0 : anchor;
+    return (safe / pageSize).floorToDouble() * pageSize;
+  }
+
   static double _pageStepPosition(double currentScroll, double columnPitch) {
     if (columnPitch <= 0) return currentScroll;
     final double nearestPage =
@@ -1548,7 +1578,12 @@ $_sharedJs
     if (context.pageSize <= 0) return false;
     var rect = this.getRect(range);
     var currentScroll = this.getPagePosition(context);
-    var anchor = (context.vertical ? (rect.top + rect.bottom) / 2 : (rect.left + rect.right) / 2) + currentScroll;
+    // TODO-881：落页锚取起始边（竖排 rect.top、横排 rect.left），与
+    // restoreToCharOffset / jumpToFragment / scrollToCharOffset 统一。
+    // 旧实现用首段 rect 的几何中点（top/bottom 或 left/right 取中），句首落列后
+    // 半段时中点越界相邻列 → floor 前翻，下一句又翻回 = 有声书自动读翻页抖动。
+    // 起始边锚恒落「句子起点所在页」，不越界。轴向语义已被起始边路径锁定，不自创轴向。
+    var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
     // TODO-792 [792-REVEAL] 逐句 reveal 取证探针（仅竖排，零行为变化）。
     // 有声书跨章自动翻页时连续打印 delta = anchor − targetScroll 数列：
