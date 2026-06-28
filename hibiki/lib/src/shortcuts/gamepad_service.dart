@@ -208,8 +208,11 @@ class GamepadFrameBits {
 /// `LogicalKeyboardKey.gameButton*` key events.
 ///
 /// - **Android**: the engine already delivers gamepad buttons / D-pad as key
-///   events, which the reader/home `Focus.onKeyEvent` handlers resolve. The
-///   service is a no-op there (starting it would double-deliver).
+///   events, which the reader/home `Focus.onKeyEvent` handlers resolve, so the
+///   `gamepads` POLLER is not started (it would double-deliver). TODO-939: the
+///   highlight-strategy tracking (pointer route + key handler + startup seed)
+///   STILL runs here, so a focus ring lit by a controller/D-pad key event drops
+///   back to touch on the next tap/swipe instead of staying stuck.
 /// - **Windows / iOS / macOS / Linux**: uses the `gamepads` plugin (GameInput /
 ///   GameController / evdev), normalized through one [GamepadFrameProcessor] so
 ///   every platform shares the SAME normalization + dispatch path.
@@ -259,17 +262,63 @@ class GamepadService {
   Timer? _presenceIdleTimer;
   static const Duration _presenceIdleTimeout = Duration(seconds: 30);
 
-  /// Android delivers controllers as engine key events; every other non-web
-  /// platform polls the gamepads plugin.
-  static bool get isSupportedPlatform =>
+  /// Whether the platform needs the `gamepads` plugin POLLER. Android delivers
+  /// controllers as engine `gameButton*` key events (so it needs NO poller —
+  /// polling would double-deliver); every other non-web platform polls the
+  /// plugin.
+  ///
+  /// NOTE: this gates ONLY the poller, NOT the highlight-strategy tracking.
+  /// TODO-939: the input-device → [FocusHighlightStrategy] management (pointer
+  /// route + key handler + startup seed) is installed on EVERY platform,
+  /// including Android, so a focus ring lit by gamepad/keyboard navigation drops
+  /// back to touch on the next pointer event. Before TODO-939 Android early-
+  /// returned out of [start] entirely, leaving Flutter's `automatic` strategy in
+  /// charge — and `automatic` never flips back to touch on a PointerMove
+  /// (swipe), so a ring lit by a controller key event stayed stuck.
+  static bool get needsGamepadPoller =>
       Platform.isWindows ||
       Platform.isIOS ||
       Platform.isMacOS ||
       Platform.isLinux;
 
   void start() {
+    if (_inputRoutesInstalled) return; // already started (idempotent)
+    // TODO-939: the input-device → highlight-strategy tracking runs on EVERY
+    // platform (Android included). Only the gamepads POLLER is platform-gated.
+    _installHighlightTracking();
+    if (!needsGamepadPoller) return; // Android: engine key events, no poller
+    _startGamepadPoller();
+  }
+
+  /// TODO-939: seeds the explicit [FocusHighlightStrategy] management and the
+  /// input-device routes that drive it. Platform-independent so Android also
+  /// gets a touch-resetting pointer route (the fix for "滑动/手柄点亮焦点框消
+  /// 不掉"): without it Android stays on Flutter's `automatic` strategy, which a
+  /// gamepad key event pushes to traditional but a PointerMove (swipe) never
+  /// pulls back to touch.
+  void _installHighlightTracking() {
+    // Start with the ring HIDDEN: it must only appear AFTER the user actually
+    // drives with a controller or physical keyboard ("焦点应该在使用手柄或者键盘
+    // 以后才会出来"). Desktop's default `automatic` strategy treats a mouse as
+    // "traditional" and shows the ring from launch / during mouse use, which is
+    // exactly what we don't want — so we own the strategy explicitly here and in
+    // the pointer/key handlers below. On Android the same explicit ownership
+    // makes the ring (lit by a controller/D-pad key event) drop back on any
+    // touch/swipe, which Flutter's `automatic` strategy would not do for a move.
+    FocusManager.instance.highlightStrategy =
+        FocusHighlightStrategy.alwaysTouch;
+    // Track the active input device so the focus ring follows it (pointer →
+    // hidden, hardware nav → shown). Installed on all platforms (TODO-939).
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointerGlobal);
+    HardwareKeyboard.instance.addHandler(_onKey);
+    _inputRoutesInstalled = true;
+  }
+
+  /// Desktop/Apple only: spins up the `gamepads` plugin poller that translates
+  /// physical controller frames into the same dispatch path Android's engine
+  /// key events use. Android does NOT call this (engine delivers the keys).
+  void _startGamepadPoller() {
     if (_poller != null) return;
-    if (!isSupportedPlatform) return; // Android uses engine key events
     _poller = _PluginGamepadPoller(
       processor: GamepadFrameProcessor(
         onButton: _dispatchButton,
@@ -288,21 +337,6 @@ class GamepadService {
     if (onPresenceChanged != null) {
       unawaited(_probeGamepadPresence());
     }
-    // Start with the ring HIDDEN: it must only appear AFTER the user actually
-    // drives with a controller or physical keyboard ("焦点应该在使用手柄或者键盘
-    // 以后才会出来"). Desktop's default `automatic` strategy treats a mouse as
-    // "traditional" and shows the ring from launch / during mouse use, which is
-    // exactly what we don't want — so we own the strategy explicitly here and in
-    // the pointer/key handlers below. Android (service no-op) keeps Flutter's
-    // automatic strategy, which already starts in touch mode on touch devices.
-    FocusManager.instance.highlightStrategy =
-        FocusHighlightStrategy.alwaysTouch;
-    // Track the active input device so the focus ring follows it (pointer →
-    // hidden, hardware nav → shown). Desktop/Apple only (where this service
-    // runs); Android keeps Flutter's automatic strategy.
-    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointerGlobal);
-    HardwareKeyboard.instance.addHandler(_onKey);
-    _inputRoutesInstalled = true;
   }
 
   void dispose() {
@@ -516,9 +550,9 @@ class GamepadService {
   // (mouse / touch / trackpad) hides it (alwaysTouch). A polled gamepad emits no
   // FocusManager events, so the `automatic` strategy can't react to it — hence
   // we drive the strategy explicitly from each source. This is why a global
-  // pointer route + a key handler are installed: clicking with the mouse should
-  // NOT leave a focus ring behind ("点击正常使用不需要焦点"), while keyboard /
-  // gamepad navigation should.
+  // pointer route + a key handler are installed (on ALL platforms incl. Android,
+  // TODO-939): clicking/tapping/swiping should NOT leave a focus ring behind
+  // ("点击正常使用不需要焦点"), while keyboard / gamepad navigation should.
   void _setHighlightForHardwareNav() {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTraditional;
@@ -553,7 +587,9 @@ class GamepadService {
   /// (route push/pop or home-tab switch) so a ring lit by keyboard/gamepad
   /// navigation on one surface is not carried onto the next one (BUG-398). Safe
   /// to call unconditionally: [start] also seeds [FocusHighlightStrategy.alwaysTouch]
-  /// on the supported platforms this service runs on, so this just re-asserts it.
+  /// on every platform (TODO-939), so this just re-asserts it. On Android, with
+  /// the explicit strategy now owned by this service, the reset is no longer
+  /// immediately clobbered by `automatic` on the next input — it actually holds.
   void resetHighlightForScreenSwitch() {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTouch;

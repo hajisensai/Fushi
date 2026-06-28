@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 437 条。点号进各自文件。
+> 共 438 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-452](bugs/BUG-452-android-focus-highlight-stuck.md) | ✅ | ✅ | Android 焦点高亮手柄/滑动消不掉 |
 | [BUG-451](bugs/BUG-451-scroll-caret-follow.md) | ✅ | ✅ | 连续模式滚动焦点环不跟随可视区 |
 | [BUG-450](bugs/BUG-450-home-lookup-webview-uaf.md) | ✅ | ✅ | 首页查词连点 Windows 崩溃（inappwebview 拦截 deferral UAF） |
 | [BUG-449](bugs/BUG-449-continuous-progress-bar-first-frame.md) | ✅ | ✅ | 连续模式进度条初次不显示·滑动一下才出来 |

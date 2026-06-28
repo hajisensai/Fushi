@@ -23,7 +23,7 @@ const double _kMenuMaxHeightFactor = 0.6;
 /// takes the gamepad-enterable [MenuAnchor] path, so all controls answer the
 /// same navigation intents instead of relying on a DropdownMenu silently
 /// consuming arrow keys. The polled set mirrors
-/// `GamepadService.isSupportedPlatform` (host-keyed); this is Theme-keyed so
+/// `GamepadService.needsGamepadPoller` (host-keyed); this is Theme-keyed so
 /// widget tests can simulate the platform.
 bool _isPolledGamepadPlatform(BuildContext context) {
   return Theme.of(context).platform != TargetPlatform.android;
