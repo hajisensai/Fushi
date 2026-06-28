@@ -25,7 +25,14 @@ void main() {
     HibikiShortcutRegistry registry,
     ShortcutScope scope, {
     required InputBinding addKey,
+    Size? surfaceSize,
   }) async {
+    if (surfaceSize != null) {
+      tester.view.physicalSize = surfaceSize;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
@@ -143,5 +150,52 @@ void main() {
     expect(after.mouseBindings, contains(const MouseBinding(1)),
         reason: 'editing keyboard must not clear MouseBinding(1)');
     expect(registry.toJsonString(), contains('MouseMiddle'));
+  });
+
+  testWidgets(
+      'modifier caps are drawn but read-only (TODO-942 partition, not tappable)',
+      (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    await pumpView(tester, registry, ShortcutScope.reader,
+        addKey: const InputBinding(key: LogicalKeyboardKey.f9));
+
+    // The Ctrl modifier cap is drawn (visual partition) ...
+    expect(
+      find.byKey(Key('keycap_${LogicalKeyboardKey.controlLeft.keyId}')),
+      findsOneWidget,
+    );
+    // ... but read-only: no InkWell underneath it. Tapping it must be a no-op
+    // (it never routes onKeyTap), matching the unbound-key contract.
+    final Finder ctrlInkWell = find.descendant(
+      of: find.byKey(Key('keycap_${LogicalKeyboardKey.controlLeft.keyId}')),
+      matching: find.byType(InkWell),
+    );
+    expect(ctrlInkWell, findsNothing,
+        reason: 'modifier caps must not be tappable');
+  });
+
+  testWidgets(
+      'narrow screen falls back to a horizontal scroll, no overflow '
+      '(TODO-942)', (WidgetTester tester) async {
+    final HibikiShortcutRegistry registry = buildRegistry();
+    // 320 logical px is a phone-width surface; the 13-key function row cannot
+    // fit at a readable size, so the view must wrap in a horizontal scroll
+    // instead of squashing the caps into unreadable slivers / overflowing.
+    await pumpView(tester, registry, ShortcutScope.reader,
+        addKey: const InputBinding(key: LogicalKeyboardKey.f9),
+        surfaceSize: const Size(320, 900));
+
+    expect(tester.takeException(), isNull,
+        reason: 'narrow layout must not overflow');
+    // A horizontal SingleChildScrollView is present as the fallback. (The outer
+    // host scroll in pumpView is vertical, so a horizontal one is the new one.)
+    final Iterable<SingleChildScrollView> scrolls = tester
+        .widgetList<SingleChildScrollView>(find.byType(SingleChildScrollView));
+    expect(
+      scrolls.any(
+          (SingleChildScrollView s) => s.scrollDirection == Axis.horizontal),
+      isTrue,
+      reason: 'narrow keyboard must add a horizontal scroll fallback',
+    );
   });
 }
