@@ -1950,5 +1950,13 @@
   "audiobook_reference_original_desc": "音频保留在原位置、按原路径播放；原文件被移动或删除后这本书会失效。",
   "audiobook_audio_missing": "音频文件丢失",
   "audiobook_relocate": "重新定位文件",
-  "audiobook_relocate_done": "音频已重新定位"
+  "audiobook_relocate_done": "音频已重新定位",
+  "rename_series": "重命名系列",
+  "delete_series": "删除系列",
+  "delete_series_confirm": "删除此系列？书籍会散回书架。",
+  "remove_from_series": "移出系列",
+  "series_name_hint": "系列名称",
+  "series_created": "已创建系列",
+  "combine_into_series": "组合成系列",
+  "series_empty": "此系列暂无书籍"
 }

@@ -1950,5 +1950,13 @@
   "audiobook_reference_original_desc": "Keep audio where it is and play from its original path; the book breaks if the file is moved or deleted.",
   "audiobook_audio_missing": "Audio file missing",
   "audiobook_relocate": "Relocate file",
-  "audiobook_relocate_done": "Audio relocated"
+  "audiobook_relocate_done": "Audio relocated",
+  "rename_series": "Rename series",
+  "delete_series": "Delete series",
+  "delete_series_confirm": "Delete this series? Books stay on the shelf.",
+  "remove_from_series": "Remove from series",
+  "series_name_hint": "Series name",
+  "series_created": "Series created",
+  "combine_into_series": "Combine into series",
+  "series_empty": "No books in this series"
 }

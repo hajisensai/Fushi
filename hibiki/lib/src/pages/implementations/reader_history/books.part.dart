@@ -294,6 +294,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
               const Spacer(),
               HibikiIconButton(
                 enabled: _selectedKeys.isNotEmpty,
+                onTap: _batchCombineIntoSeries,
+                icon: Icons.collections_bookmark_outlined,
+                tooltip: t.combine_into_series,
+              ),
+              SizedBox(width: tokens.spacing.gap / 2),
+              HibikiIconButton(
+                enabled: _selectedKeys.isNotEmpty,
                 onTap: _batchShowTagPicker,
                 icon: Icons.sell_outlined,
                 tooltip: t.tag_label,
@@ -384,6 +391,35 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     ref.invalidate(srtBookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
     ref.invalidate(filteredSrtBookIdsProvider);
+  }
+
+  /// TODO-616 A1：把选中条目「组合成系列」。命名 → createSeries → 逐条
+  /// setSeriesForEntry（书架选择键经 shelfSelectionToEntry 解码成 (mediaType,
+  /// entryKey)）→ 退出选择态 → 重载分组渲染。
+  Future<void> _batchCombineIntoSeries() async {
+    if (_selectedKeys.isEmpty) return;
+    final List<ShelfEntryRef> refs = <ShelfEntryRef>[
+      for (final String key in _selectedKeys)
+        if (shelfSelectionToEntry(key, ShelfSelectionSurface.books)
+            case final ShelfEntryRef ref)
+          ref,
+    ];
+    if (refs.isEmpty) return;
+    final String? name = await showSeriesNameDialog(
+      context: context,
+      title: t.create_series,
+    );
+    if (name == null || !mounted) return;
+    final int seriesId = await appModel.database.createSeries(name);
+    for (final ShelfEntryRef ref in refs) {
+      await appModel.database
+          .setSeriesForEntry(ref.mediaType, ref.entryKey, seriesId);
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    _shelfOrderFuture = _loadShelfOrder();
+    _rebuild(() {});
+    HibikiToast.show(msg: t.series_created);
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {

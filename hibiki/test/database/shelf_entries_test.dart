@@ -123,6 +123,24 @@ void main() {
       expect(await db.getShelfEntry('epub', 'target'), isNull);
       expect(await db.getAllShelfEntries(), isEmpty);
     });
+
+    // TODO-616 A3：远端书先归入系列（以 downloadId 登记），下载后 bookKey 漂移，
+    // 改键迁移后系列归属延续——getShelfEntriesBySeries 反映新键、旧键不再属系列。
+    test('远端书归系列 → 下载改键后系列归属延续（A3 路径）', () async {
+      final int sid = await db.createSeries('远端系列');
+      const String downloadId = 'remote-download-id';
+      const String localBookKey = 'local_book_key_after_import';
+      await db.setSeriesForEntry('epub', downloadId, sid);
+
+      await db.migrateShelfEntryKey('epub', downloadId, localBookKey);
+
+      final List<ShelfEntryRow> members = await db.getShelfEntriesBySeries(sid);
+      expect(members, hasLength(1));
+      expect(members.single.entryKey, localBookKey,
+          reason: '系列成员改键到本地 bookKey');
+      expect(await db.getShelfEntry('epub', downloadId), isNull,
+          reason: '旧 downloadId 行迁移后删除，不再属系列');
+    });
   });
 
   group('删书四方法同事务清 shelf_entry（无孤儿 §0🔴3）', () {

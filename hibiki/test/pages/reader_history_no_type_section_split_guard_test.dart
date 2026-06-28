@@ -10,9 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 本守卫断言书架 body（`_buildBodyWithSrtBooks`）：
 /// 1. 不再用 `_buildSectionHeader` 渲染 `t.srt_books_section` / `t.section_epub`；
 /// 2. SRT 与 EPUB 合并进同一网格：把 srtBooks 与 epubBooks 各自构造成
-///    `_ShelfBookSlot` 推进单一 `mergedBooks` 列表（TODO-616 B2 跨类型排序），
-///    再用 `itemCount: mergedBooks.length` 渲染——证明两类卡进同一个 itemCount 网格、
-///    无分区头；
+///    `_ShelfBookSlot` payload 合进单一 `shelfGroups`（TODO-616 A2 分组 + 跨类型排序），
+///    再用 `itemCount: shelfGroups.length` 渲染——证明两类卡（+ 系列卡）进同一个
+///    itemCount 网格、无分区头；
 /// 3. 视频分区头 `t.shelf_video_section` 保持不动（本回归不碰视频）。
 ///
 /// 纯静态切片守卫——书架页依赖 WebView/DB，整页 pumpWidget 过重，故沿用本仓库
@@ -49,20 +49,21 @@ void main() {
 
   test('书架 body 把 SRT 与 EPUB 合并进单一网格', () {
     final String body = readBody();
-    // TODO-616 B2 把按类型分别 itemCount 的旧写法重构为：srtBooks / epubBooks 各自
-    // 构造 _ShelfBookSlot 推进单一 mergedBooks 列表，再用 mergedBooks.length 作为
-    // 唯一网格的 itemCount。下列三条共同证明「SRT + EPUB 进同一个 itemCount 网格、
-    // 不再按类型拆」的合并不变式（即使表达从字面 `srtBooks.length + epubBooks.length`
-    // 变成 mergedBooks 列表，不变式仍成立）。
+    // TODO-616 A2 把单一 mergedBooks 列表进一步经 groupAndSortShelfEntries 分组：
+    // srtBooks / epubBooks 各自构造成 ShelfOrderingItem<_ShelfBookSlot>（payload 仍是
+    // _ShelfBookSlot，srt/epub 各填一个），合进单一 shelfItems → shelfGroups，再用
+    // `itemCount: shelfGroups.length` 渲染唯一网格。散书每条单独成 group、系列折叠成
+    // 一张卡，但**仍是同一个网格、无类型分区头**。下列共同证明「SRT + EPUB（+ 系列卡）
+    // 进同一个 itemCount 网格、不再按类型拆」的合并不变式。
     expect(
       body.contains('srt: srtBooks[i]'),
       isTrue,
-      reason: 'SRT 卡应作为 _ShelfBookSlot 进入合并列表',
+      reason: 'SRT 卡应作为 _ShelfBookSlot payload 进入合并列表',
     );
     expect(
       body.contains('epub: epubBooks[i]'),
       isTrue,
-      reason: 'EPUB 卡应作为 _ShelfBookSlot 进入同一合并列表',
+      reason: 'EPUB 卡应作为 _ShelfBookSlot payload 进入同一合并列表',
     );
     expect(
       body.contains('seq: srtBooks.length + i'),
@@ -70,9 +71,9 @@ void main() {
       reason: 'EPUB 默认排在 SRT 之后（seq 偏移 srtBooks.length），证明两类同序进一个网格',
     );
     expect(
-      body.contains('itemCount: mergedBooks.length'),
+      body.contains('itemCount: shelfGroups.length'),
       isTrue,
-      reason: 'SRT 卡与 EPUB 卡应混排进同一网格（单一 mergedBooks 的 itemCount）',
+      reason: 'SRT 卡与 EPUB 卡（+ 系列卡）应混排进同一网格（单一 shelfGroups 的 itemCount）',
     );
   });
 

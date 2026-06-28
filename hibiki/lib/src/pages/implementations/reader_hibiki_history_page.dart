@@ -30,6 +30,9 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:hibiki/src/pages/implementations/series_detail_page.dart';
+import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
+import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -147,6 +150,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 加载一次，渲染时把 SRT+EPUB 混排网格按它稳定排序（无行的条目退化原序）。
   Future<Map<String, int>>? _shelfOrderFuture;
   Map<String, int> _shelfOrder = const <String, int>{};
+
+  /// TODO-616 A2：分组渲染所需的全部 ShelfEntries 原始行 + 系列字典，与
+  /// [_shelfOrder] 同一次 [_loadShelfOrder] 预取（避免二次查库）。
+  List<ShelfEntryRow> _allShelfEntries = const <ShelfEntryRow>[];
+  Map<int, SeriesRow> _seriesById = const <int, SeriesRow>{};
   RemoteBookClient? _remoteBookClient;
 
   /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
@@ -435,11 +443,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Future<Map<String, int>> _loadShelfOrder() async {
     final List<ShelfEntryRow> rows =
         await appModel.database.getAllShelfEntries();
+    final List<SeriesRow> series = await appModel.database.getAllSeries();
     final Map<String, int> map = <String, int>{
       for (final ShelfEntryRow r in rows)
         '${r.mediaType}|${r.entryKey}': r.sortOrder,
     };
     _shelfOrder = map;
+    _allShelfEntries = rows;
+    _seriesById = <int, SeriesRow>{for (final SeriesRow s in series) s.id: s};
     return map;
   }
 
@@ -597,27 +608,41 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
-    // TODO-616 B2：把 SRT + EPUB 混排序列按 ShelfEntries.sortOrder 稳定重排（无行的
-    // 条目退化为「原序列下标」=SRT 在前 EPUB 在后，零自定义排序时与历史完全一致）。
-    // 用单一合并列表渲染，使重排页里跨类型拖拽（EPUB 拖到 SRT 上方）能真实生效。
-    final List<_ShelfBookSlot> mergedBooks = <_ShelfBookSlot>[
+    // TODO-616 A2：把 SRT + EPUB 混排序列经 groupAndSortShelfEntries 分组——散书每条
+    // 单独成 group、同 seriesId 折叠成系列卡片，散书与系列卡片同层混排。零系列时每条
+    // 散书单独成 group，顺序与历史 mergedBooks（sortOrder asc, 原序 tie-break）一致。
+    final List<ShelfOrderingItem<_ShelfBookSlot>> shelfItems =
+        <ShelfOrderingItem<_ShelfBookSlot>>[
       for (int i = 0; i < srtBooks.length; i++)
-        _ShelfBookSlot(
-          seq: i,
-          order: _orderOf('srt', srtBooks[i].uid),
-          srt: srtBooks[i],
+        ShelfOrderingItem<_ShelfBookSlot>(
+          mediaType: 'srt',
+          entryKey: srtBooks[i].uid,
+          importedAt: -i,
+          payload: _ShelfBookSlot(
+            seq: i,
+            order: _orderOf('srt', srtBooks[i].uid),
+            srt: srtBooks[i],
+          ),
         ),
       for (int i = 0; i < epubBooks.length; i++)
-        _ShelfBookSlot(
-          seq: srtBooks.length + i,
-          order: _orderOf(
-              'epub', _parseBookKey(epubBooks[i].mediaIdentifier) ?? ''),
-          epub: epubBooks[i],
+        ShelfOrderingItem<_ShelfBookSlot>(
+          mediaType: 'epub',
+          entryKey: _parseBookKey(epubBooks[i].mediaIdentifier) ?? '',
+          importedAt: -(srtBooks.length + i),
+          payload: _ShelfBookSlot(
+            seq: srtBooks.length + i,
+            order: _orderOf(
+                'epub', _parseBookKey(epubBooks[i].mediaIdentifier) ?? ''),
+            epub: epubBooks[i],
+          ),
         ),
-    ]..sort((_ShelfBookSlot a, _ShelfBookSlot b) {
-        final int o = a.order.compareTo(b.order);
-        return o != 0 ? o : a.seq.compareTo(b.seq);
-      });
+    ];
+    final List<ShelfGroup<_ShelfBookSlot>> shelfGroups =
+        groupAndSortShelfEntries<_ShelfBookSlot>(
+      items: shelfItems,
+      shelfEntries: _allShelfEntries,
+      seriesById: _seriesById,
+    );
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     final _RemoteBookState? remoteState = remoteSnapshot?.data;
     final bool showRemoteBooks = remoteState != null &&
@@ -706,18 +731,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   maxCrossAxisExtent: _gridExtent(context, constraints),
                   childAspectRatio: kShelfBookCardAspectRatio,
                 ),
-                itemCount: mergedBooks.length,
-                itemBuilder: (_, i) {
-                  final _ShelfBookSlot slot = mergedBooks[i];
-                  final SrtBook? srt = slot.srt;
-                  if (srt != null) {
-                    return _buildSrtCard(
-                      srt,
-                      epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
-                    );
-                  }
-                  return buildMediaItem(slot.epub!);
-                },
+                itemCount: shelfGroups.length,
+                itemBuilder: (_, i) => _buildShelfGroupCard(
+                  shelfGroups[i],
+                  epubCoverUrisByBookKey,
+                ),
               ),
             if (videoBooks.isNotEmpty) ...[
               SliverToBoxAdapter(
@@ -736,6 +754,105 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ),
       ),
     );
+  }
+
+  /// TODO-616 A2：渲染一个书架 group——散书（seriesId==null，单成员）回退到原有卡片
+  /// 渲染（与历史逐像素一致）；系列 group 渲染 [SeriesShelfCard]（首卷封面 + 角标）。
+  Widget _buildShelfGroupCard(
+    ShelfGroup<_ShelfBookSlot> group,
+    Map<String, String> epubCoverUrisByBookKey,
+  ) {
+    if (group.seriesId == null) {
+      final _ShelfBookSlot slot = group.coverItem.payload;
+      final SrtBook? srt = slot.srt;
+      if (srt != null) {
+        return _buildSrtCard(
+          srt,
+          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
+        );
+      }
+      return buildMediaItem(slot.epub!);
+    }
+    final int seriesId = group.seriesId!;
+    final SeriesRow? series = _seriesById[seriesId];
+    final _ShelfBookSlot coverSlot = group.coverItem.payload;
+    return SeriesShelfCard(
+      name: series?.name ?? t.series,
+      itemCount: group.items.length,
+      slotAspectRatio: kShelfBookCardAspectRatio,
+      cover: _slotCover(coverSlot, epubCoverUrisByBookKey),
+      onTap: () => _openSeriesDetail(seriesId, series?.name ?? t.series),
+    );
+  }
+
+  /// 取一个排序槽的封面图（仅封面，无交互），供系列折叠卡片复用。
+  Widget _slotCover(
+    _ShelfBookSlot slot,
+    Map<String, String> epubCoverUrisByBookKey,
+  ) {
+    final SrtBook? srt = slot.srt;
+    if (srt != null) {
+      return _buildSrtCover(
+        srt,
+        epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
+      );
+    }
+    final MediaItem item = slot.epub!;
+    return FadeInImage(
+      imageErrorBuilder: (_, __, ___) =>
+          _coverPlaceholderIcon(Icons.menu_book_outlined),
+      placeholder: MemoryImage(kTransparentImage),
+      image: mediaSource.getDisplayThumbnailFromMediaItem(
+        appModel: appModel,
+        item: item,
+      ),
+      alignment: Alignment.topCenter,
+      fit: _bookCardCoverFit,
+    );
+  }
+
+  /// 打开系列详情页（成员网格 / 重命名 / 删除 / 移出 / 重排）。写库后重载分组渲染。
+  void _openSeriesDetail(int seriesId, String name) {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) => SeriesDetailPage(
+          database: appModel.database,
+          seriesId: seriesId,
+          initialName: name,
+          memberCardBuilder: _buildSeriesMemberCard,
+          onChanged: () {
+            _shelfOrderFuture = _loadShelfOrder();
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 系列详情页按成员行渲染卡片：epub → 经书架 provider 找 MediaItem；srt → 经 uid
+  /// 找 SrtBook。找不到（条目已删 / 远端离线）返回 null，详情页跳过该成员。
+  Widget? _buildSeriesMemberCard(ShelfEntryRow row) {
+    if (row.mediaType == 'srt') {
+      for (final SrtBook book in _visibleSrtBooks) {
+        if (book.uid == row.entryKey) {
+          return _buildSrtCard(
+            book,
+            epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
+          );
+        }
+      }
+      return null;
+    }
+    if (row.mediaType == 'epub') {
+      for (final MediaItem item in _visibleEpubBooks) {
+        if (_parseBookKey(item.mediaIdentifier) == row.entryKey) {
+          return buildMediaItem(item);
+        }
+      }
+      return null;
+    }
+    return null;
   }
 
   Widget _buildSectionHeader(String label) {

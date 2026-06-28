@@ -43,6 +43,9 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/pages/implementations/shelf_reorder_page.dart';
+import 'package:hibiki/src/pages/implementations/series_detail_page.dart';
+import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
+import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -96,11 +99,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 加载一次，本地网格按它稳定排序（无行的视频退化原序）。
   Map<String, int> _videoOrder = const <String, int>{};
 
+  /// TODO-616 A2：分组渲染所需的 video 类 ShelfEntries 原始行 + 系列字典，与
+  /// [_videoOrder] 同一次 [_loadVideoOrder] 预取。
+  List<ShelfEntryRow> _videoShelfEntries = const <ShelfEntryRow>[];
+  Map<int, SeriesRow> _seriesById = const <int, SeriesRow>{};
+
   @override
   void initState() {
     super.initState();
     _future = widget.repo.listAll();
     _remoteFuture = _loadRemoteVideos();
+    // TODO-616 A2: also prefetch order / series maps on first frame (order
+    // defaulting to 0 was harmless before, but series grouping needs
+    // _seriesById on the first paint, not only after a refresh).
+    _loadVideoOrder();
   }
 
   void _refresh() {
@@ -113,13 +125,26 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   /// 一次性预取全部 ShelfEntries（video 类）组装成 `"video|bookUid" → sortOrder`。
   Future<void> _loadVideoOrder() async {
-    final List<ShelfEntryRow> rows =
-        await ref.read(appProvider).database.getAllShelfEntries();
-    final Map<String, int> map = <String, int>{
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<ShelfEntryRow> rows = await db.getAllShelfEntries();
+    final List<SeriesRow> series = await db.getAllSeries();
+    final List<ShelfEntryRow> videoRows = <ShelfEntryRow>[
       for (final ShelfEntryRow r in rows)
-        if (r.mediaType == 'video') 'video|${r.entryKey}': r.sortOrder,
+        if (r.mediaType == 'video') r,
+    ];
+    final Map<String, int> map = <String, int>{
+      for (final ShelfEntryRow r in videoRows)
+        'video|${r.entryKey}': r.sortOrder,
     };
-    if (mounted) setState(() => _videoOrder = map);
+    if (mounted) {
+      setState(() {
+        _videoOrder = map;
+        _videoShelfEntries = videoRows;
+        _seriesById = <int, SeriesRow>{
+          for (final SeriesRow s in series) s.id: s,
+        };
+      });
+    }
   }
 
   Future<RemoteVideoClient?> _resolveRemoteVideoClient() async {
@@ -482,6 +507,34 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 构造成可重排条目 push 进 [ShelfReorderPage]，退出时按最终顺序批量回写
   /// ShelfEntries.sortOrder（mediaType='video'，entryKey=bookUid）。远端视频不入
   /// 重排（下载后才有本地 bookUid，与本地同键）。
+  /// TODO-616 A1：把选中视频「组合成系列」。命名 → createSeries → 逐条
+  /// setSeriesForEntry（视频选择键是裸 bookUid，经 shelfSelectionToEntry 编成
+  /// ('video', uid)）→ 退出选择态 → 重载分组渲染。
+  Future<void> _batchCombineIntoSeries() async {
+    if (_selectedUids.isEmpty) return;
+    final List<ShelfEntryRef> refs = <ShelfEntryRef>[
+      for (final String uid in _selectedUids)
+        if (shelfSelectionToEntry(uid, ShelfSelectionSurface.video)
+            case final ShelfEntryRef ref)
+          ref,
+    ];
+    if (refs.isEmpty) return;
+    final String? name = await showSeriesNameDialog(
+      context: context,
+      title: t.create_series,
+    );
+    if (name == null || !mounted) return;
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final int seriesId = await db.createSeries(name);
+    for (final ShelfEntryRef ref in refs) {
+      await db.setSeriesForEntry(ref.mediaType, ref.entryKey, seriesId);
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    await _loadVideoOrder();
+    HibikiToast.show(msg: t.series_created);
+  }
+
   Future<void> _openVideoSort() async {
     if (_selectionMode) _exitSelectionMode();
     final List<VideoBookRow> books = _visibleVideos;
@@ -1507,6 +1560,25 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 不变（与远端区同的 SliverGridDelegateWithMaxCrossAxisExtent）。
   Widget _buildLocalVideoGridSliver(List<VideoBookRow> books) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // TODO-616 A2：把已排序的视频条目经 groupAndSortShelfEntries 分组——散视频单卡、
+    // 同 seriesId 折叠成系列卡片。零系列时每条散视频单独成 group，顺序与 [books]
+    // （已按 sortOrder 排）一致，向后兼容。
+    final List<ShelfOrderingItem<VideoBookRow>> items =
+        <ShelfOrderingItem<VideoBookRow>>[
+      for (int i = 0; i < books.length; i++)
+        ShelfOrderingItem<VideoBookRow>(
+          mediaType: 'video',
+          entryKey: books[i].bookUid,
+          importedAt: -i,
+          payload: books[i],
+        ),
+    ];
+    final List<ShelfGroup<VideoBookRow>> groups =
+        groupAndSortShelfEntries<VideoBookRow>(
+      items: items,
+      shelfEntries: _videoShelfEntries,
+      seriesById: _seriesById,
+    );
     return SliverPadding(
       padding: EdgeInsets.all(tokens.spacing.card),
       sliver: SliverGrid.builder(
@@ -1516,10 +1588,52 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
-        itemCount: books.length,
-        itemBuilder: (BuildContext context, int i) => _buildCard(books[i]),
+        itemCount: groups.length,
+        itemBuilder: (BuildContext context, int i) =>
+            _buildVideoGroupCard(groups[i]),
       ),
     );
+  }
+
+  /// TODO-616 A2：渲染一个视频 group——散视频回退到原 [_buildCard]（逐像素一致）；
+  /// 系列 group 渲染 [SeriesShelfCard]（首卷封面 + 角标），点击进系列详情。
+  Widget _buildVideoGroupCard(ShelfGroup<VideoBookRow> group) {
+    if (group.seriesId == null) {
+      return _buildCard(group.coverItem.payload);
+    }
+    final int seriesId = group.seriesId!;
+    final SeriesRow? series = _seriesById[seriesId];
+    return SeriesShelfCard(
+      name: series?.name ?? t.series,
+      itemCount: group.items.length,
+      slotAspectRatio: 280 / 200,
+      cover: _buildCover(group.coverItem.payload),
+      onTap: () => _openSeriesDetail(seriesId, series?.name ?? t.series),
+    );
+  }
+
+  /// 打开视频系列详情页。成员卡按 video bookUid 找 VideoBookRow 渲染；写库后重载。
+  void _openSeriesDetail(int seriesId, String name) {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) => SeriesDetailPage(
+          database: ref.read(appProvider).database,
+          seriesId: seriesId,
+          initialName: name,
+          memberCardBuilder: _buildVideoSeriesMemberCard,
+          onChanged: _refresh,
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildVideoSeriesMemberCard(ShelfEntryRow row) {
+    if (row.mediaType != 'video') return null;
+    for (final VideoBookRow book in _visibleVideos) {
+      if (book.bookUid == row.entryKey) return _buildCard(book);
+    }
+    return null;
   }
 
   Widget _buildCard(VideoBookRow book) {
@@ -1670,6 +1784,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 child: Text(t.batch_invert_selection),
               ),
               const Spacer(),
+              HibikiIconButton(
+                enabled: _selectedUids.isNotEmpty,
+                onTap: _batchCombineIntoSeries,
+                icon: Icons.collections_bookmark_outlined,
+                tooltip: t.combine_into_series,
+              ),
+              SizedBox(width: tokens.spacing.gap / 2),
               HibikiIconButton(
                 enabled: _selectedUids.isNotEmpty,
                 onTap: _batchShowTagPicker,
