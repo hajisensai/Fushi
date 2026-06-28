@@ -144,7 +144,7 @@ class SeriesShelfCard extends StatelessWidget {
   Widget _stackBackLayer(ThemeData theme, HibikiDesignTokens tokens) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: tokens.surfaces.overlay,
         borderRadius: tokens.radii.cardRadius,
         border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
@@ -156,7 +156,7 @@ class SeriesShelfCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: tokens.radii.chipRadius,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -169,9 +169,8 @@ class SeriesShelfCard extends StatelessWidget {
           const SizedBox(width: 3),
           Text(
             t.series_item_count(n: itemCount),
-            style: TextStyle(
+            style: tokens.type.metadata.copyWith(
               color: theme.colorScheme.onSecondaryContainer,
-              fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
           ),
