@@ -53,7 +53,9 @@ extension _ReaderHistoryVideo on _ReaderHibikiHistoryPageState {
         placeholder: MemoryImage(kTransparentImage),
         image: FileImage(File(cover)),
         alignment: Alignment.topCenter,
-        fit: _bookCardCoverFit,
+        // TODO-616：书架视频卡封面用 contain 完整显示（16:9 横构图不被卡槽裁切），
+        // 与阶段 C 的视频库页一致；书封仍用 _bookCardCoverFit。
+        fit: _videoCardCoverFit,
       );
     }
     return _coverPlaceholderIcon(Icons.movie_outlined);

@@ -42,6 +42,17 @@ const double kShelfCoverBadgeDimension = 22.0;
 /// 裁掉，封面竖向全貌完整不变形。
 BoxFit get _bookCardCoverFit => BoxFit.fitHeight;
 
+/// 书架视频卡封面按比例完整显示、不裁切。
+///
+/// TODO-616 阶段 C 把视频库页（home_video_page.dart）的视频封面从 `BoxFit.cover`
+/// 改成 `BoxFit.contain`，但书架/历史页的视频卡封面仍走共享的 [_bookCardCoverFit]
+/// （[BoxFit.fitHeight]）。视频缩略图是 16:9 横构图，卡槽比它更窄，`fitHeight`
+/// 等比铺满高度后宽度溢出、两侧被 `ClipRect` 裁掉 —— 横向视频封面显示不完整。
+/// 用户诉求「至少保证正常视频的能显示完整」，故书架视频卡改用 `contain`：整帧
+/// 完整、上下留少量空带（letterbox），与阶段 C 的视频库页保持一致语义。书封
+/// （及远端书封）仍用 [_bookCardCoverFit] 不变（竖版书封 `fitHeight` 是对的）。
+BoxFit get _videoCardCoverFit => BoxFit.contain;
+
 /// Stable below-cover title footer height for reader shelf cards.
 ///
 /// The cover and title areas must not resize when a title wraps to two lines;
