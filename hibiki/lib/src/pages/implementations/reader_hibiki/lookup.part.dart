@@ -154,8 +154,17 @@ extension _ReaderLookup on _ReaderHibikiPageState {
             height: 1,
           );
 
+    // TODO-956：契约——选中可见词 ⇒ currentSentence 必非空。data.sentence 在歌词 /
+    // 合成有声书 / 竖排空段 DOM 等模式可能回空（即便 JS 已有块级 textContent 兜底），
+    // 而 data.text 由本方法开头 `if (data.text.isEmpty) return;` 守卫保证非空。空 sentence
+    // 时退回选中的词，杜绝收藏读点（chrome.part.dart）误报「未选择句子」。
+    final String sentenceText =
+        ReaderSelectionScripts.resolveCurrentSentenceText(
+      data.sentence,
+      data.text,
+    );
     appModel.currentMediaSource?.setCurrentSentence(
-      selection: HibikiTextSelection(text: data.sentence),
+      selection: HibikiTextSelection(text: sentenceText),
     );
     _cachedSentenceOffset = data.sentenceOffset;
 

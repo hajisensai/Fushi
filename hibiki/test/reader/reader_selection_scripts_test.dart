@@ -300,4 +300,41 @@ void main() {
       expect(js, contains('this.inCharRange(charRange, x, y, pads[p])'));
     });
   });
+
+  // TODO-956：「收藏句子」契约——选中可见词 ⇒ currentSentence 必非空。空 sentence
+  // 退回选中的词，杜绝阅读器收藏读点误报「未选择句子」。
+  group('ReaderSelectionScripts.resolveCurrentSentenceText', () {
+    test('non-empty sentence is used verbatim', () {
+      expect(
+        ReaderSelectionScripts.resolveCurrentSentenceText('全文の文。', '文'),
+        '全文の文。',
+      );
+    });
+
+    test('empty sentence falls back to the selected word', () {
+      // 旧逻辑直接写 data.sentence（空）→ 收藏读点读到空串误报；新契约退回词。
+      expect(
+        ReaderSelectionScripts.resolveCurrentSentenceText('', '言葉'),
+        '言葉',
+      );
+    });
+
+    test('whitespace-only sentence is NOT treated as empty (kept as-is)', () {
+      // 契约只看 isNotEmpty（与写点守卫 data.text.isEmpty 对称）；空白非空，
+      // 保留原句不丢，不在此层做 trim（避免吞掉合法含空白的句子）。
+      expect(
+        ReaderSelectionScripts.resolveCurrentSentenceText('   ', '語'),
+        '   ',
+      );
+    });
+
+    test('both empty yields empty (word also empty — only when no selection)',
+        () {
+      // data.text 由调用方守卫保证非空，此处仅证 helper 本身不凭空造串。
+      expect(
+        ReaderSelectionScripts.resolveCurrentSentenceText('', ''),
+        '',
+      );
+    });
+  });
 }

@@ -19,6 +19,19 @@ class SurroundingSentence {
 class ReaderSelectionScripts {
   ReaderSelectionScripts._();
 
+  /// TODO-956：「收藏句子」的数据契约——选中可见词 ⇒ currentSentence 必非空。
+  /// 唯一写点 `lookup.part.dart` 把 `currentSentence` 写成 JS 回传的 [sentence]
+  /// （`ReaderSelectionData.sentence`），但某些书籍模式（歌词模式 / TextToEpub
+  /// 合成有声书 / 竖排或空段 DOM 使 findParagraph 落到空容器）即便 JS 端已有块级
+  /// textContent 兜底，[sentence] 仍可能回空。此时收藏读点（chrome.part.dart
+  /// `_toggleFavoriteSentence`）读到空串，误报「未选择句子」。
+  ///
+  /// 本 helper 是模式无关的下限兜底：能派生出完整句子（[sentence] 非空）就用句子；
+  /// 派生不出时退回 [word]（被选中的词本身，由调用方 `data.text.isEmpty` 守卫保证
+  /// 非空）。与 JS 块级兜底叠加，彻底消灭「未选择句子」误报。
+  static String resolveCurrentSentenceText(String sentence, String word) =>
+      sentence.isNotEmpty ? sentence : word;
+
   /// TODO-851：[fromHover] 区分调用来源——`true` 表示悬停查词（onShiftHover /
   /// onDismissBarrierHover），命中空白时 JS 端**不** fire `onTapEmpty`（只清选区），
   /// 避免悬停扫过正文空白反复 toggle 操作栏导致闪烁；`false`（默认）是真点击路径，
