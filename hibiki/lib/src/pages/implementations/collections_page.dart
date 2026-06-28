@@ -1303,9 +1303,10 @@ class _ExportChoice {
 
 /// 导出面板（TODO-829 + 913 MD3 + 914 可勾选去重）：勾选制卡句/收藏句（默认全勾）
 /// + 去重开关（默认开）+ 可选收藏词 + 选格式（默认 Markdown）→ 确认返回 [_ExportChoice]。
-/// 外壳走 [HibikiModalSheetFrame] + [HibikiDesignTokens]。焦点驱动可达：勾选项是
-/// [CheckboxListTile]、去重是 [SwitchListTile]（Tab → Enter 翻转），格式是 [ChoiceChip]，
-/// 确认是 [FilledButton]（勾选集空且未勾收藏词时 `onPressed: null` 灰掉）。
+/// 外壳走 [HibikiModalSheetFrame] + [HibikiDesignTokens]。焦点驱动可达：勾选项与去重
+/// 均为共享 [HibikiListItem]（leading [Checkbox] / trailing [Switch]，整行 Tab → Enter
+/// 翻转），格式是 [ChoiceChip]，确认是 [FilledButton]（勾选集空且未勾收藏词时
+/// `onPressed: null` 灰掉）。
 class _ExportSheet extends StatefulWidget {
   const _ExportSheet({required this.bookTitles});
 
@@ -1358,6 +1359,43 @@ class _ExportSheetState extends State<_ExportSheet> {
     Navigator.pop(context, choice);
   }
 
+  /// 导出范围复选行（MD3）：共享 [HibikiListItem] + 裸 [Checkbox] 为 leading，
+  /// 整行 `onTap` 翻转勾选——等价旧 [CheckboxListTile] 的勾选/回调/标题，外观
+  /// 走设计令牌而非框架默认行。焦点驱动可达（Tab → Enter）。
+  Widget _exportCheckRow({
+    required String label,
+    required bool checked,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return HibikiListItem(
+      selected: checked,
+      onTap: () => onChanged(!checked),
+      leading: Checkbox(
+        value: checked,
+        onChanged: (bool? v) => onChanged(v ?? false),
+      ),
+      title: Text(label),
+    );
+  }
+
+  /// 去重开关行（MD3）：共享 [HibikiListItem] + 裸 [Switch] 为 trailing，整行
+  /// `onTap` 翻转——等价旧 [SwitchListTile] 的开关/回调/标题。
+  Widget _exportSwitchRow({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return HibikiListItem(
+      selected: value,
+      onTap: () => onChanged(!value),
+      title: Text(label),
+      trailing: Switch(
+        value: value,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
@@ -1395,20 +1433,20 @@ class _ExportSheetState extends State<_ExportSheet> {
               ),
             ),
           ),
-          CheckboxListTile(
-            value: _scopes.contains(ExportScope.mined),
-            onChanged: (bool? v) => _toggleScope(ExportScope.mined, v),
-            title: Text(t.collection_export_all_mined),
+          _exportCheckRow(
+            label: t.collection_export_all_mined,
+            checked: _scopes.contains(ExportScope.mined),
+            onChanged: (bool v) => _toggleScope(ExportScope.mined, v),
           ),
-          CheckboxListTile(
-            value: _scopes.contains(ExportScope.favorites),
-            onChanged: (bool? v) => _toggleScope(ExportScope.favorites, v),
-            title: Text(t.collection_export_favorites_scope),
+          _exportCheckRow(
+            label: t.collection_export_favorites_scope,
+            checked: _scopes.contains(ExportScope.favorites),
+            onChanged: (bool v) => _toggleScope(ExportScope.favorites, v),
           ),
-          CheckboxListTile(
-            value: _includeWords,
-            onChanged: (bool? v) => setState(() => _includeWords = v ?? false),
-            title: Text(t.collection_export_all_words),
+          _exportCheckRow(
+            label: t.collection_export_all_words,
+            checked: _includeWords,
+            onChanged: (bool v) => setState(() => _includeWords = v),
           ),
           // 勾了「收藏句」且存在书目时展开「全部书籍 / 某本书」二级。
           if (_scopes.contains(ExportScope.favorites) &&
@@ -1448,10 +1486,10 @@ class _ExportSheetState extends State<_ExportSheet> {
           ],
           SizedBox(height: tokens.spacing.gap),
           // ── 去重开关 ──
-          SwitchListTile(
+          _exportSwitchRow(
+            label: t.collection_export_dedupe,
             value: _dedupe,
             onChanged: (bool v) => setState(() => _dedupe = v),
-            title: Text(t.collection_export_dedupe),
           ),
           Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
           SizedBox(height: tokens.spacing.gap),

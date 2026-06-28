@@ -65,7 +65,8 @@ void main() {
     // 去重聚合纯函数 + 载体 + 全部模式合并 builder 必须存在。
     expect(exporter, contains('enum ExportScope'));
     expect(exporter, contains('class ExportMinedSentenceGroup'));
-    expect(exporter, contains('List<ExportMinedSentenceGroup> dedupeMinedBySentence('));
+    expect(exporter,
+        contains('List<ExportMinedSentenceGroup> dedupeMinedBySentence('));
     expect(exporter, contains('List<ExportSentence> dedupeSentences('));
     expect(exporter, contains('String buildMinedGroupedExport('));
     expect(exporter, contains('String buildCombinedExport('));
@@ -73,14 +74,18 @@ void main() {
     final String src =
         File('lib/src/pages/implementations/collections_page.dart')
             .readAsStringSync();
-    // 范围从单选 RadioListTile 升级为可勾选 CheckboxListTile + 去重 SwitchListTile。
-    expect(src, contains('CheckboxListTile('));
-    expect(src, contains('SwitchListTile('));
+    // 范围从单选 RadioListTile 升级为可勾选复选行 + 去重开关行；TODO-936 把这两类
+    // 控件从 CheckboxListTile/SwitchListTile 迁到共享 MD3 行（HibikiListItem +
+    // 裸 Checkbox/Switch，见 md3_design_system_static_test 守卫），故守卫改断言迁移后
+    // 的共享行 helper + 裸控件存在（行为等价：多选勾选 + 去重开关仍在）。
+    expect(src, contains('Widget _exportCheckRow('));
+    expect(src, contains('Widget _exportSwitchRow('));
+    expect(src, contains('Checkbox('));
+    expect(src, contains('Switch('));
     expect(src, contains('ExportScope.mined'));
     expect(src, contains('ExportScope.favorites'));
     // 去重接线：勾选去重时走聚合 builder。
     expect(src, contains('dedupeMinedBySentence('));
     expect(src, contains('buildCombinedExport('));
   });
-
 }

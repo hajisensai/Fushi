@@ -311,37 +311,36 @@ void main() {
         reason: 'focus-driven open failed');
 
     // 默认：制卡句 + 收藏句两个 Checkbox 都勾，去重 Switch 开。
-    final List<CheckboxListTile> checkboxes = tester
-        .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
-        .toList();
+    // TODO-936：复选/开关行已迁到共享 HibikiListItem + 裸 Checkbox/Switch，故按裸
+    // 控件类型断言（行为等价：value/onChanged 不变）。
+    final List<Checkbox> checkboxes =
+        tester.widgetList<Checkbox>(find.byType(Checkbox)).toList();
     // 至少有 制卡句/收藏句/收藏词 三个；前两个默认 true，收藏词默认 false。
     expect(checkboxes.length, greaterThanOrEqualTo(3));
     final int checkedCount =
-        checkboxes.where((CheckboxListTile c) => c.value == true).length;
+        checkboxes.where((Checkbox c) => c.value == true).length;
     expect(checkedCount, 2, reason: '默认勾制卡句 + 收藏句（收藏词不默认勾）');
 
-    final SwitchListTile dedupeSwitch =
-        tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    final Switch dedupeSwitch = tester.widget<Switch>(find.byType(Switch));
     expect(dedupeSwitch.value, isTrue, reason: '去重开关默认开');
 
     // 导出按钮默认可用（有勾选）。
     final Finder exportFab = find.widgetWithText(FilledButton, t.dialog_export);
     expect(tester.widget<FilledButton>(exportFab).onPressed, isNotNull);
 
-    // 焦点驱动取消两个范围勾选：Tab 到每个 CheckboxListTile（其 value==true）Enter。
+    // 焦点驱动取消两个范围勾选：找到仍勾选的范围 Checkbox（其 value==true）翻转。
     // 简化：直接断言 onChanged 回调把状态清空后按钮 disabled——通过逐个翻转。
     for (final ExportScope _ in <ExportScope>[
       ExportScope.mined,
       ExportScope.favorites,
     ]) {
       // 找到当前仍勾选的范围 Checkbox（排除收藏词，它默认 false）。
-      final Finder checkedTile = find.byWidgetPredicate(
-        (Widget w) => w is CheckboxListTile && w.value == true,
+      final Finder checkedBox = find.byWidgetPredicate(
+        (Widget w) => w is Checkbox && w.value == true,
       );
-      expect(checkedTile, findsWidgets);
-      final CheckboxListTile tile =
-          tester.widget<CheckboxListTile>(checkedTile.first);
-      tile.onChanged!(false);
+      expect(checkedBox, findsWidgets);
+      final Checkbox box = tester.widget<Checkbox>(checkedBox.first);
+      box.onChanged!(false);
       await tester.pumpAndSettle();
     }
 
@@ -376,21 +375,22 @@ void main() {
     expect(tester.widget<FilledButton>(exportFab).onPressed, isNotNull);
 
     int checkedScopeCount() => tester
-        .widgetList<CheckboxListTile>(find.byWidgetPredicate(
-          (Widget w) => w is CheckboxListTile && w.value == true,
+        .widgetList<Checkbox>(find.byWidgetPredicate(
+          (Widget w) => w is Checkbox && w.value == true,
         ))
         .length;
     expect(checkedScopeCount(), 2, reason: '初始勾制卡句 + 收藏句');
 
-    // 焦点驱动：Tab 遍历，当 primaryFocus 落在某个 value==true 的 CheckboxListTile
-    // 子树上时按 Enter 翻转它（禁 tester.tap、禁裸空格）。重复直到两项都取消。
+    // 焦点驱动：Tab 遍历，当 primaryFocus 落在某个 value==true 的 Checkbox 子树上
+    // 时按 Enter 翻转它（禁 tester.tap、禁裸空格）。TODO-936 迁移后复选项是共享
+    // HibikiListItem 内的裸 Checkbox（自身可聚焦），重复直到两项都取消。
     bool focusOnCheckedCheckbox() {
       final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
       if (ctx is! Element) return false;
       bool hit = false;
       ctx.visitAncestorElements((Element e) {
         final Widget w = e.widget;
-        if (w is CheckboxListTile && w.value == true) {
+        if (w is Checkbox && w.value == true) {
           hit = true;
           return false;
         }
