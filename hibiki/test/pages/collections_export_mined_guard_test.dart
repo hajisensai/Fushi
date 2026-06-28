@@ -32,8 +32,10 @@ void main() {
     // 制卡句导出读真实 DB API。
     expect(src, contains('getAllMinedSentences()'));
     expect(src, contains('buildMinedExport('));
-    // 范围枚举含 allMined。
-    expect(src, contains('enum _ExportKind { allMined, allWords, '));
+    // TODO-914：范围从单选 _ExportKind 升级为可勾选 ExportScope，原 enum 已移除；
+    // 制卡句范围标签（collection_export_all_mined）仍是导出抽屉的勾选项。
+    expect(src, contains('ExportScope.mined'));
+    expect(src, contains('t.collection_export_all_mined'));
     // 抽屉外壳走 MD3 范式，不再裸 showModalBottomSheet + 手写 Padding(16)。
     expect(src, contains('class _ExportSheet'));
     expect(src, contains('HibikiModalSheetFrame('));
@@ -56,4 +58,29 @@ void main() {
     expect(css.contains('ruby.hoshi-selection-ruby-active > rt'), isFalse,
         reason: 'BUG-125 已删除会抹基字的 rt 遮罩，不得复活');
   });
+
+  test('⑤ TODO-914 去重聚合 + 可勾选模式守卫（纯函数 + UI 控件存在）', () {
+    final String exporter =
+        File('lib/src/utils/misc/collection_exporter.dart').readAsStringSync();
+    // 去重聚合纯函数 + 载体 + 全部模式合并 builder 必须存在。
+    expect(exporter, contains('enum ExportScope'));
+    expect(exporter, contains('class ExportMinedSentenceGroup'));
+    expect(exporter, contains('List<ExportMinedSentenceGroup> dedupeMinedBySentence('));
+    expect(exporter, contains('List<ExportSentence> dedupeSentences('));
+    expect(exporter, contains('String buildMinedGroupedExport('));
+    expect(exporter, contains('String buildCombinedExport('));
+
+    final String src =
+        File('lib/src/pages/implementations/collections_page.dart')
+            .readAsStringSync();
+    // 范围从单选 RadioListTile 升级为可勾选 CheckboxListTile + 去重 SwitchListTile。
+    expect(src, contains('CheckboxListTile('));
+    expect(src, contains('SwitchListTile('));
+    expect(src, contains('ExportScope.mined'));
+    expect(src, contains('ExportScope.favorites'));
+    // 去重接线：勾选去重时走聚合 builder。
+    expect(src, contains('dedupeMinedBySentence('));
+    expect(src, contains('buildCombinedExport('));
+  });
+
 }

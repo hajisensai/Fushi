@@ -328,4 +328,222 @@ void main() {
       expect(md, contains('## ${t.collection_export_mined_title}'));
     });
   });
+
+  group('TODO-914 dedupeMinedBySentence / dedupeSentences / combined', () {
+    ExportMinedSentence mined({
+      required String sentence,
+      required String expression,
+      String reading = '',
+      String glossary = 'gloss',
+      String bookTitle = 'Book',
+      String? source = 'book',
+      DateTime? createdAt,
+    }) =>
+        ExportMinedSentence(
+          sentence: sentence,
+          expression: expression,
+          reading: reading,
+          glossary: glossary,
+          bookTitle: bookTitle,
+          source: source,
+          createdAt: createdAt ?? DateTime(2026, 6, 20, 9, 0),
+        );
+
+    test('same sentence with two words → one group with two words', () {
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(sentence: '彼は本を読んだ。', expression: '本', reading: 'ほん'),
+          mined(sentence: '彼は本を読んだ。', expression: '読む', reading: 'よむ'),
+        ],
+      );
+      expect(groups, hasLength(1));
+      expect(groups.first.words, hasLength(2));
+      expect(groups.first.words.map((ExportMinedWord w) => w.expression),
+          <String>['本', '読む']);
+      expect(groups.first.sentence, '彼は本を読んだ。');
+    });
+
+    test('full-width period vs half-width period judged same sentence', () {
+      // 全角句号「。」vs 半角句号「.」——归一后判同句聚合。
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(sentence: '本。', expression: '本'),
+          mined(sentence: '本.', expression: 'ほん'),
+        ],
+      );
+      expect(groups, hasLength(1), reason: '全角。与半角. 应归一为同句');
+      expect(groups.first.words, hasLength(2));
+    });
+
+    test('leading/trailing whitespace + full-width space folded → same sentence',
+        () {
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(sentence: '本 を読む', expression: 'a'),
+          // 全角空格 U+3000 + 首尾空白：折叠后与上句归一相同。
+          mined(sentence: '  本　を読む  ', expression: 'b'),
+        ],
+      );
+      expect(groups, hasLength(1));
+    });
+
+    test('empty-sentence rows do NOT collapse into one bucket', () {
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(sentence: '', expression: '猫', glossary: 'cat'),
+          mined(sentence: '', expression: '犬', glossary: 'dog'),
+        ],
+      );
+      expect(groups, hasLength(2), reason: '空句行按词三元组各自成组，不塌成一桶');
+    });
+
+    test('createdAt takes the latest within a group', () {
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(
+              sentence: '同じ。',
+              expression: 'a',
+              createdAt: DateTime(2026, 6, 20)),
+          mined(
+              sentence: '同じ。',
+              expression: 'b',
+              createdAt: DateTime(2026, 6, 25)),
+        ],
+      );
+      expect(groups, hasLength(1));
+      expect(groups.first.createdAt, DateTime(2026, 6, 25));
+    });
+
+    test('word triple dedupe within a group keeps first occurrence', () {
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(sentence: '同じ。', expression: '本', reading: 'ほん', glossary: 'g'),
+          mined(sentence: '同じ。', expression: '本', reading: 'ほん', glossary: 'g'),
+          mined(sentence: '同じ。', expression: '本', reading: 'ほん', glossary: 'h'),
+        ],
+      );
+      expect(groups.first.words, hasLength(2),
+          reason: '完全相同三元组去重，glossary 不同保留');
+    });
+
+    test('dedupeSentences removes duplicate text by normalized key', () {
+      final List<ExportSentence> rows = dedupeSentences(<ExportSentence>[
+        ExportSentence(
+            text: '同じ文。',
+            bookTitle: 'B',
+            createdAt: DateTime(2026, 6, 20)),
+        ExportSentence(
+            text: '  同じ文。 ',
+            bookTitle: 'B',
+            createdAt: DateTime(2026, 6, 21)),
+        ExportSentence(
+            text: '別の文。',
+            bookTitle: 'B',
+            createdAt: DateTime(2026, 6, 22)),
+      ]);
+      expect(rows, hasLength(2));
+      expect(rows.first.createdAt, DateTime(2026, 6, 20),
+          reason: '保留首现');
+    });
+
+    test('buildMinedGroupedExport json carries words array', () {
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(sentence: '彼は本を読んだ。', expression: '本', reading: 'ほん'),
+          mined(sentence: '彼は本を読んだ。', expression: '読む', reading: 'よむ'),
+        ],
+      );
+      final String jsonStr =
+          buildMinedGroupedExport(groups, format: ExportFormat.json);
+      final List<dynamic> parsed = jsonDecode(jsonStr) as List<dynamic>;
+      expect(parsed, hasLength(1));
+      final Map<String, dynamic> obj = parsed.first as Map<String, dynamic>;
+      expect(obj['sentence'], '彼は本を読んだ。');
+      expect((obj['words'] as List<dynamic>), hasLength(2));
+    });
+
+    test('buildMinedGroupedExport csv repeats sentence per word + BOM', () {
+      final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
+        <ExportMinedSentence>[
+          mined(sentence: 'S。', expression: 'a'),
+          mined(sentence: 'S。', expression: 'b'),
+        ],
+      );
+      final String csv =
+          buildMinedGroupedExport(groups, format: ExportFormat.csv);
+      expect(csv.startsWith(bom), isTrue);
+      // 一词一行 → sentence 列出现两次。
+      final RegExp re = RegExp(r'S。');
+      expect(re.allMatches(csv).length, 2);
+    });
+
+    test('buildCombinedExport json has both mined and favorites keys', () {
+      final List<ExportMinedSentenceGroup> mineds = dedupeMinedBySentence(
+        <ExportMinedSentence>[mined(sentence: 'M。', expression: '本')],
+      );
+      final List<ExportSentence> favs = <ExportSentence>[
+        ExportSentence(
+            text: 'F。', bookTitle: 'B', createdAt: DateTime(2026, 6, 20)),
+      ];
+      final String jsonStr = buildCombinedExport(
+        mined: mineds,
+        favorites: favs,
+        format: ExportFormat.json,
+      );
+      final Map<String, dynamic> obj =
+          jsonDecode(jsonStr) as Map<String, dynamic>;
+      expect(obj.containsKey('mined'), isTrue);
+      expect(obj.containsKey('favorites'), isTrue);
+      expect((obj['mined'] as List<dynamic>), hasLength(1));
+      expect((obj['favorites'] as List<dynamic>), hasLength(1));
+    });
+
+    test('buildCombinedExport markdown shows both section titles', () {
+      final String md = buildCombinedExport(
+        mined: dedupeMinedBySentence(
+            <ExportMinedSentence>[mined(sentence: 'M。', expression: '本')]),
+        favorites: <ExportSentence>[
+          ExportSentence(
+              text: 'F。', bookTitle: 'B', createdAt: DateTime(2026, 6, 20)),
+        ],
+        format: ExportFormat.markdown,
+      );
+      expect(md, contains('# ${t.collection_export_mined_title}'));
+      expect(md, contains('# ${t.collection_export_sentences_title}'));
+    });
+
+    test('buildCombinedExport csv has kind column distinguishing segments', () {
+      final String csv = buildCombinedExport(
+        mined: dedupeMinedBySentence(
+            <ExportMinedSentence>[mined(sentence: 'M。', expression: '本')]),
+        favorites: <ExportSentence>[
+          ExportSentence(
+              text: 'F。', bookTitle: 'B', createdAt: DateTime(2026, 6, 20)),
+        ],
+        format: ExportFormat.csv,
+      );
+      expect(csv, contains('kind,'));
+      expect(csv, contains('mined,'));
+      expect(csv, contains('favorite,'));
+    });
+
+    // 段间不互消：同一句既制卡又收藏 → 两段各出现一次。
+    test('combined export does NOT cross-dedupe between segments', () {
+      final String jsonStr = buildCombinedExport(
+        mined: dedupeMinedBySentence(
+            <ExportMinedSentence>[mined(sentence: '共有。', expression: '本')]),
+        favorites: <ExportSentence>[
+          ExportSentence(
+              text: '共有。', bookTitle: 'B', createdAt: DateTime(2026, 6, 20)),
+        ],
+        format: ExportFormat.json,
+      );
+      final Map<String, dynamic> obj =
+          jsonDecode(jsonStr) as Map<String, dynamic>;
+      expect((obj['mined'] as List<dynamic>), hasLength(1));
+      expect((obj['favorites'] as List<dynamic>), hasLength(1),
+          reason: '段间不互消，收藏段仍保留同句');
+    });
+  });
+
 }

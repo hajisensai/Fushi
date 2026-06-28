@@ -66,6 +66,11 @@ class ExportWord {
   final DateTime createdAt;
 }
 
+/// 导出内容范围（可勾选；至少勾一项才可导出）。TODO-914。
+///
+/// `{mined, favorites}`（两个都勾）= 「全部」；勾选集天然表达全部，无需独立 `all`。
+enum ExportScope { mined, favorites }
+
 /// 导出用的轻量制卡句载体（与 `MinedSentenceRow` 解耦，纯数据，便于单测）。
 class ExportMinedSentence {
   const ExportMinedSentence({
@@ -475,6 +480,387 @@ String _buildMinedJson(List<ExportMinedSentence> items) {
           })
       .toList();
   return const JsonEncoder.withIndent('  ').convert(list);
+}
+
+/// 按句聚合后的单个生词（喂 AI 友好：去掉 createdAt/source，只留词三元组）。TODO-914。
+class ExportMinedWord {
+  const ExportMinedWord({
+    required this.expression,
+    required this.reading,
+    required this.glossary,
+  });
+
+  final String expression;
+  final String reading;
+  final String glossary;
+}
+
+/// 按句聚合后的制卡句（一句 + 该句生词表）。喂 AI / 复习友好。TODO-914。
+class ExportMinedSentenceGroup {
+  const ExportMinedSentenceGroup({
+    required this.sentence,
+    required this.words,
+    required this.bookTitle,
+    required this.createdAt,
+    this.source,
+  });
+
+  /// 组内首条原文（不归一，归一只决定是否同句）。
+  final String sentence;
+
+  /// 该句聚合到的所有生词（三元组去重、保持首现序）。
+  final List<ExportMinedWord> words;
+  final String bookTitle;
+
+  /// 组内最新制卡时间（最近优先，与列表 createdAt desc 一致）。
+  final DateTime createdAt;
+  final String? source;
+}
+
+/// 句键归一（仅用于分组判同句，**不改输出文本**）。TODO-914。
+///
+/// 规则：①`trim()` 去首尾空白；②内部连续空白（含全角空格 `　` U+3000、`\t`、
+/// `\r\n`、`\n`）折叠为单个半角空格；③全角 ASCII（U+FF01–U+FF5E）→ 半角。
+/// **不依赖 NFKC**（Dart 标准库无 `String.normalize`），用确定的小映射即可覆盖
+/// 全角句号/标点折叠，且可单测。不做大小写折叠（日文无意义、误伤罗马字）。
+///
+/// 取舍：U+200B 零宽空格、NFC↔NFD 组合假名差异**不处理**——这类 codepoint 级
+/// 差异在真实收藏/制卡数据里罕见，且引入 ICU 归一是过度依赖；如出现会被判为
+/// 不同句（保守不误合并），符合「宁可不合并也不错合」的导出语义。
+/// 常见 CJK 标点 → 对应半角 ASCII（仅用于归一判同句，不改输出文本）。让「本。」≡「本.」。
+const Map<int, int> _cjkPunctToAscii = <int, int>{
+  0x3002: 0x2E, // 。 → .
+  0x3001: 0x2C, // 、 → ,
+  0x30FB: 0x2E, // ・ → .
+  0x3008: 0x3C, // 〈 → <
+  0x3009: 0x3E, // 〉 → >
+};
+
+String _normalizeSentenceKey(String s) {
+  // ③④ 全角 ASCII / 全角空格 U+3000 / CJK 标点（。、・〈〉）→ 半角 ASCII。
+  final StringBuffer halfWidth = StringBuffer();
+  for (final int rune in s.runes) {
+    if (rune == 0x3000) {
+      halfWidth.writeCharCode(0x20); // 全角空格 → 半角空格
+    } else if (rune >= 0xFF01 && rune <= 0xFF5E) {
+      halfWidth.writeCharCode(rune - 0xFEE0); // 全角 ASCII → 半角
+    } else if (_cjkPunctToAscii.containsKey(rune)) {
+      halfWidth.writeCharCode(_cjkPunctToAscii[rune]!); // CJK 标点 → 半角
+    } else {
+      halfWidth.writeCharCode(rune);
+    }
+  }
+  // ② 内部连续空白（此时全角空格已转半角）折叠为单个半角空格；① trim。
+  return halfWidth.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+/// 制卡句去重聚合：把 [rows] 按归一句键分组，同句的多个挖词合进一组的 [words]。
+///
+/// - 空 `sentence` 的行（独立查词制卡，无句）按 `(expression,reading,glossary)`
+///   三元组各自成组（不与他句、也不互相塌成一桶）。
+/// - 保持每组首次出现的顺序；组内词按传入顺序、按三元组去重。
+/// - `createdAt` 取组内**最新**；`bookTitle`/`source` 取组内首条（首次出现）。
+/// TODO-914。
+List<ExportMinedSentenceGroup> dedupeMinedBySentence(
+  List<ExportMinedSentence> rows,
+) {
+  // 分组键 → 可变累加器（保持首现序用 LinkedHashMap 语义，Dart Map 默认即是）。
+  final Map<String, _MinedGroupAccumulator> groups =
+      <String, _MinedGroupAccumulator>{};
+  for (final ExportMinedSentence m in rows) {
+    final String normalized = _normalizeSentenceKey(m.sentence);
+    // 空句行不塌桶：用词三元组拼独立键（前缀避免与真实空句撞）。
+    final String key = normalized.isEmpty
+        ? 'word::${m.expression} ${m.reading} ${m.glossary}'
+        : 'sentence::$normalized';
+    final _MinedGroupAccumulator acc = groups.putIfAbsent(
+      key,
+      () => _MinedGroupAccumulator(
+        sentence: m.sentence,
+        bookTitle: m.bookTitle,
+        source: m.source,
+        createdAt: m.createdAt,
+      ),
+    );
+    if (m.createdAt.isAfter(acc.createdAt)) acc.createdAt = m.createdAt;
+    final String wordKey = '${m.expression} ${m.reading} ${m.glossary}';
+    if (acc.seenWords.add(wordKey)) {
+      acc.words.add(ExportMinedWord(
+        expression: m.expression,
+        reading: m.reading,
+        glossary: m.glossary,
+      ));
+    }
+  }
+  return groups.values
+      .map((_MinedGroupAccumulator a) => ExportMinedSentenceGroup(
+            sentence: a.sentence,
+            words: a.words,
+            bookTitle: a.bookTitle,
+            createdAt: a.createdAt,
+            source: a.source,
+          ))
+      .toList();
+}
+
+/// [dedupeMinedBySentence] 内部累加器（可变，仅本文件用）。
+class _MinedGroupAccumulator {
+  _MinedGroupAccumulator({
+    required this.sentence,
+    required this.bookTitle,
+    required this.source,
+    required this.createdAt,
+  });
+
+  final String sentence;
+  final String bookTitle;
+  final String? source;
+  DateTime createdAt;
+  final List<ExportMinedWord> words = <ExportMinedWord>[];
+  final Set<String> seenWords = <String>{};
+}
+
+/// 收藏句按归一文本去重（保留首现）。复用 [_normalizeSentenceKey]。TODO-914。
+List<ExportSentence> dedupeSentences(List<ExportSentence> rows) {
+  final Set<String> seen = <String>{};
+  final List<ExportSentence> out = <ExportSentence>[];
+  for (final ExportSentence s in rows) {
+    if (seen.add(_normalizeSentenceKey(s.text))) out.add(s);
+  }
+  return out;
+}
+
+/// 把按句聚合后的 [groups] 按 [ExportMinedSentenceGroup.bookTitle] 分组（保持首现书序）。
+Map<String, List<ExportMinedSentenceGroup>> _groupMinedGroupsByBook(
+  List<ExportMinedSentenceGroup> groups,
+) {
+  final Map<String, List<ExportMinedSentenceGroup>> grouped =
+      <String, List<ExportMinedSentenceGroup>>{};
+  for (final ExportMinedSentenceGroup g in groups) {
+    grouped.putIfAbsent(g.bookTitle, () => <ExportMinedSentenceGroup>[]).add(g);
+  }
+  return grouped;
+}
+
+/// 去重聚合制卡句导出（一句一对象，含 words 数组）。四格式。TODO-914。
+///
+/// - Markdown：`## 书名` → `> 整句` → 每词 `- **expr**（reading）· glossary`。
+/// - TXT：整句行 + 每词缩进行。
+/// - CSV：表头 `sentence,expression,reading,glossary,source,createdAt`，**一词一行**
+///   （sentence 列在同句多词时重复），带 BOM（Excel 友好）。
+/// - JSON：`[{sentence, words:[{expression,reading,glossary}], bookTitle, source, createdAt}]`。
+String buildMinedGroupedExport(
+  List<ExportMinedSentenceGroup> groups, {
+  required ExportFormat format,
+  bool csvBom = true,
+}) {
+  switch (format) {
+    case ExportFormat.markdown:
+      return _buildMinedGroupedMarkdown(groups);
+    case ExportFormat.txt:
+      return _buildMinedGroupedTxt(groups);
+    case ExportFormat.csv:
+      return _buildMinedGroupedCsv(groups, csvBom: csvBom);
+    case ExportFormat.json:
+      return _buildMinedGroupedJson(groups);
+  }
+}
+
+String _buildMinedGroupedMarkdown(List<ExportMinedSentenceGroup> groups) {
+  final Map<String, List<ExportMinedSentenceGroup>> grouped =
+      _groupMinedGroupsByBook(groups);
+  final StringBuffer buf = StringBuffer();
+  buf.writeln('# ${t.collection_export_mined_title}');
+  buf.writeln();
+  bool firstBook = true;
+  grouped.forEach((String bookTitle, List<ExportMinedSentenceGroup> list) {
+    if (!firstBook) buf.writeln();
+    firstBook = false;
+    buf.writeln('## $bookTitle');
+    buf.writeln();
+    for (final ExportMinedSentenceGroup g in list) {
+      if (g.sentence.isNotEmpty) {
+        for (final String line in const LineSplitter().convert(g.sentence)) {
+          buf.writeln('> $line');
+        }
+        buf.writeln('>');
+      }
+      for (final ExportMinedWord w in g.words) {
+        final String head = w.reading.isEmpty
+            ? '**${w.expression}**'
+            : '**${w.expression}**（${w.reading}）';
+        final String gloss =
+            w.glossary.isEmpty ? '' : ' · ${w.glossary.replaceAll('\n', ' ')}';
+        buf.writeln('> - $head$gloss');
+      }
+      buf.writeln('>');
+      buf.writeln('> *${_formatDateTime(g.createdAt)}*');
+      buf.writeln();
+    }
+  });
+  return buf.toString().trimRight();
+}
+
+String _buildMinedGroupedTxt(List<ExportMinedSentenceGroup> groups) {
+  final StringBuffer buf = StringBuffer();
+  for (final ExportMinedSentenceGroup g in groups) {
+    if (g.sentence.isNotEmpty) buf.writeln(g.sentence);
+    for (final ExportMinedWord w in g.words) {
+      final String head =
+          w.reading.isEmpty ? w.expression : '${w.expression}（${w.reading}）';
+      if (w.glossary.isEmpty) {
+        buf.writeln('\t$head');
+      } else {
+        buf.writeln('\t$head\t${w.glossary.replaceAll('\n', ' ')}');
+      }
+    }
+  }
+  return buf.toString().trimRight();
+}
+
+String _buildMinedGroupedCsv(
+  List<ExportMinedSentenceGroup> groups, {
+  required bool csvBom,
+}) {
+  final StringBuffer buf = StringBuffer();
+  if (csvBom) buf.write(_utf8Bom);
+  buf.write(<String>[
+    'sentence',
+    'expression',
+    'reading',
+    'glossary',
+    'source',
+    'createdAt',
+  ].map(_csvEscape).join(','));
+  buf.write(_csvNewline);
+  for (final ExportMinedSentenceGroup g in groups) {
+    for (final ExportMinedWord w in g.words) {
+      buf.write(<String>[
+        g.sentence,
+        w.expression,
+        w.reading,
+        w.glossary,
+        g.source ?? '',
+        g.createdAt.toIso8601String(),
+      ].map(_csvEscape).join(','));
+      buf.write(_csvNewline);
+    }
+  }
+  return buf.toString();
+}
+
+List<Map<String, dynamic>> _minedGroupsToJsonList(
+  List<ExportMinedSentenceGroup> groups,
+) =>
+    groups
+        .map((ExportMinedSentenceGroup g) => <String, dynamic>{
+              'sentence': g.sentence,
+              'words': g.words
+                  .map((ExportMinedWord w) => <String, dynamic>{
+                        'expression': w.expression,
+                        'reading': w.reading,
+                        'glossary': w.glossary,
+                      })
+                  .toList(),
+              'bookTitle': g.bookTitle,
+              if (g.source != null) 'source': g.source,
+              'createdAt': g.createdAt.toIso8601String(),
+            })
+        .toList();
+
+String _buildMinedGroupedJson(List<ExportMinedSentenceGroup> groups) =>
+    const JsonEncoder.withIndent('  ').convert(_minedGroupsToJsonList(groups));
+
+List<Map<String, dynamic>> _sentencesToJsonList(List<ExportSentence> rows) =>
+    rows
+        .map((ExportSentence s) => <String, dynamic>{
+              'text': s.text,
+              'bookTitle': s.bookTitle,
+              if (s.chapterLabel != null) 'chapterLabel': s.chapterLabel,
+              if (s.source != null) 'source': s.source,
+              'createdAt': s.createdAt.toIso8601String(),
+            })
+        .toList();
+
+/// 「全部」导出：制卡句段 + 收藏句段，按格式各自渲染后拼接（两段**分开**，段间不互消）。
+///
+/// 符合用户「收藏和制卡应该分开」：同一句既被制卡又被收藏时，两段各出现一次。
+/// - Markdown / TXT：`# 制卡句` 段 + `# 收藏句` 段。
+/// - JSON：`{"mined":[...句+words...], "favorites":[...纯句...]}`（两键天然分开）。
+/// - CSV：单表加 `kind` 首列（`mined`/`favorite`），列并集（收藏句无词字段留空），
+///   制卡句一词一行。带 BOM。
+/// TODO-914。
+String buildCombinedExport({
+  required List<ExportMinedSentenceGroup> mined,
+  required List<ExportSentence> favorites,
+  required ExportFormat format,
+  bool csvBom = true,
+}) {
+  switch (format) {
+    case ExportFormat.markdown:
+    case ExportFormat.txt:
+      final StringBuffer buf = StringBuffer();
+      buf.writeln('# ${t.collection_export_mined_title}');
+      buf.writeln();
+      buf.writeln(buildMinedGroupedExport(mined, format: format));
+      buf.writeln();
+      buf.writeln();
+      buf.writeln('# ${t.collection_export_sentences_title}');
+      buf.writeln();
+      buf.writeln(buildSentenceExport(favorites, format: format));
+      return buf.toString().trimRight();
+    case ExportFormat.json:
+      return const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
+        'mined': _minedGroupsToJsonList(mined),
+        'favorites': _sentencesToJsonList(favorites),
+      });
+    case ExportFormat.csv:
+      final StringBuffer buf = StringBuffer();
+      if (csvBom) buf.write(_utf8Bom);
+      buf.write(<String>[
+        'kind',
+        'sentence',
+        'expression',
+        'reading',
+        'glossary',
+        'bookTitle',
+        'chapter',
+        'source',
+        'createdAt',
+      ].map(_csvEscape).join(','));
+      buf.write(_csvNewline);
+      for (final ExportMinedSentenceGroup g in mined) {
+        for (final ExportMinedWord w in g.words) {
+          buf.write(<String>[
+            'mined',
+            g.sentence,
+            w.expression,
+            w.reading,
+            w.glossary,
+            g.bookTitle,
+            '',
+            g.source ?? '',
+            g.createdAt.toIso8601String(),
+          ].map(_csvEscape).join(','));
+          buf.write(_csvNewline);
+        }
+      }
+      for (final ExportSentence s in favorites) {
+        buf.write(<String>[
+          'favorite',
+          s.text,
+          '',
+          '',
+          '',
+          s.bookTitle,
+          s.chapterLabel ?? '',
+          s.source ?? '',
+          s.createdAt.toIso8601String(),
+        ].map(_csvEscape).join(','));
+        buf.write(_csvNewline);
+      }
+      return buf.toString();
+  }
 }
 
 bool get _isDesktop =>

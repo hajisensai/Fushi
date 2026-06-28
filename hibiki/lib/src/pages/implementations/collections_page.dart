@@ -654,7 +654,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           ))
       .toList();
 
-  /// 打开导出面板（TODO-829）：第一项按书分组导出收藏句，第二项导出全部收藏词。
+  /// 打开导出面板（TODO-829 / 913 / 914）：勾选制卡句/收藏句（默认全勾）+ 去重开关
+  /// （默认开），可单独导出收藏词；「全部」= 两类都勾，产出两段一份文件。
   Future<void> _openExportSheet() async {
     final List<ExportSentence> sentences = _favoriteSentencesForExport();
     // 按 bookTitle 分组出可选书目（恒非空键）。
@@ -669,28 +670,30 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     );
     if (choice == null || !mounted) return;
 
-    switch (choice.kind) {
-      case _ExportKind.sentencesByBook:
-        await _exportSentencesForBook(choice.bookTitle!, choice.format);
-      case _ExportKind.allWords:
-        await _exportAllWords(choice.format);
-      case _ExportKind.allMined:
-        await _exportAllMined(choice.format);
+    // 收藏词独立项：与三模式并列，单独成文件（不进句料、不参与去重）。
+    if (choice.includeWords) {
+      await _exportAllWords(choice.format);
+      if (!mounted) return;
+    }
+
+    final bool wantMined = choice.scopes.contains(ExportScope.mined);
+    final bool wantFavorites = choice.scopes.contains(ExportScope.favorites);
+    if (!wantMined && !wantFavorites) return; // 仅导收藏词时已处理完。
+
+    if (wantMined && wantFavorites) {
+      await _exportCombined(choice);
+    } else if (wantMined) {
+      await _exportMinedOnly(choice);
+    } else {
+      await _exportFavoritesOnly(choice);
     }
   }
 
-  /// 导出全部制卡句（含整句 + 词条/读音/释义，TODO-913）。
-  Future<void> _exportAllMined(ExportFormat format) async {
+  /// 读 DB 全量制卡句并映射成导出载体（与 913 口径一致）。
+  Future<List<ExportMinedSentence>> _loadMinedForExport() async {
     final List<MinedSentenceRow> rows =
         await appModel.database.getAllMinedSentences();
-    if (!mounted) return;
-    if (rows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.collection_export_no_items)),
-      );
-      return;
-    }
-    final List<ExportMinedSentence> items = rows
+    return rows
         .map((r) => ExportMinedSentence(
               sentence: r.sentence,
               expression: r.expression,
@@ -704,39 +707,118 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
             ))
         .toList();
-    final String content = buildMinedExport(items, format: format);
-    final ExportFileMeta meta = exportFileMeta(format);
-    final String fileName =
-        '${_sanitizeFileName(t.collection_export_mined_title)}.${meta.extension}';
+  }
+
+  /// 读 DB 全量收藏句并映射成导出载体（口径=DB 全量，对齐制卡句 全量；不依赖页面
+  /// 内存 [_items]，避免「全部」模式两段覆盖范围隐性不一致）。可选按书过滤。
+  Future<List<ExportSentence>> _loadFavoritesForExport(
+      {String? bookTitle}) async {
+    final List<FavoriteSentence> all =
+        await FavoriteSentenceRepository(appModel.database).getAll();
+    final List<ExportSentence> mapped = all
+        .map((FavoriteSentence f) => ExportSentence(
+              text: f.text,
+              bookTitle:
+                  f.bookTitle.isNotEmpty ? f.bookTitle : t.collection_sentence,
+              chapterLabel: f.chapterLabel,
+              source: f.source,
+              createdAt: f.createdAt,
+            ))
+        .toList();
+    if (bookTitle == null) return mapped;
+    return mapped
+        .where((ExportSentence s) => s.bookTitle == bookTitle)
+        .toList();
+  }
+
+  Future<void> _emptyExportToast() async {
     if (!mounted) return;
-    await saveOrShareExport(
-      context: context,
-      content: content,
-      fileName: fileName,
-      mimeType: meta.mimeType,
-      subject: t.collection_export_mined_title,
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.collection_export_no_items)),
     );
   }
 
-  /// 导出某本书的收藏句。
-  Future<void> _exportSentencesForBook(
-    String bookTitle,
-    ExportFormat format,
-  ) async {
-    final List<ExportSentence> all = _favoriteSentencesForExport();
-    final List<ExportSentence> forBook =
-        all.where((s) => s.bookTitle == bookTitle).toList();
-    if (forBook.isEmpty) return;
-    final String content = buildSentenceExport(forBook, format: format);
+  /// 仅制卡句（去重聚合 / 平铺二分，TODO-914）。
+  Future<void> _exportMinedOnly(_ExportChoice choice) async {
+    final List<ExportMinedSentence> items = await _loadMinedForExport();
+    if (!mounted) return;
+    if (items.isEmpty) {
+      await _emptyExportToast();
+      return;
+    }
+    final String content = choice.dedupe
+        ? buildMinedGroupedExport(dedupeMinedBySentence(items),
+            format: choice.format)
+        : buildMinedExport(items, format: choice.format);
+    await _saveExport(
+      content: content,
+      format: choice.format,
+      baseName: t.collection_export_mined_title,
+    );
+  }
+
+  /// 仅收藏句（去重 / 平铺二分；选具体书则只导该书，TODO-914）。
+  Future<void> _exportFavoritesOnly(_ExportChoice choice) async {
+    final List<ExportSentence> all =
+        await _loadFavoritesForExport(bookTitle: choice.bookTitle);
+    if (!mounted) return;
+    if (all.isEmpty) {
+      await _emptyExportToast();
+      return;
+    }
+    final List<ExportSentence> rows =
+        choice.dedupe ? dedupeSentences(all) : all;
+    final String content = buildSentenceExport(rows, format: choice.format);
+    await _saveExport(
+      content: content,
+      format: choice.format,
+      baseName: choice.bookTitle ?? t.collection_export_sentences_title,
+    );
+  }
+
+  /// 「全部」= 制卡句段 + 收藏句段，两段一份文件（段内各自去重，段间不互消，TODO-914）。
+  Future<void> _exportCombined(_ExportChoice choice) async {
+    final List<ExportMinedSentence> minedRows = await _loadMinedForExport();
+    if (!mounted) return;
+    final List<ExportSentence> favRows =
+        await _loadFavoritesForExport(bookTitle: choice.bookTitle);
+    if (!mounted) return;
+    if (minedRows.isEmpty && favRows.isEmpty) {
+      await _emptyExportToast();
+      return;
+    }
+    // 「全部」模式两段语义需要 words 结构，制卡段恒按句聚合（dedupe 开关对收藏段生效）。
+    final List<ExportMinedSentenceGroup> mined =
+        dedupeMinedBySentence(minedRows);
+    final List<ExportSentence> favorites =
+        choice.dedupe ? dedupeSentences(favRows) : favRows;
+    final String content = buildCombinedExport(
+      mined: mined,
+      favorites: favorites,
+      format: choice.format,
+    );
+    await _saveExport(
+      content: content,
+      format: choice.format,
+      baseName: t.dialog_export,
+    );
+  }
+
+  /// 落盘/分享导出内容（统一文件名/meta 处理）。
+  Future<void> _saveExport({
+    required String content,
+    required ExportFormat format,
+    required String baseName,
+  }) async {
     final ExportFileMeta meta = exportFileMeta(format);
-    final String fileName = '${_sanitizeFileName(bookTitle)}.${meta.extension}';
+    final String fileName = '${_sanitizeFileName(baseName)}.${meta.extension}';
     if (!mounted) return;
     await saveOrShareExport(
       context: context,
       content: content,
       fileName: fileName,
       mimeType: meta.mimeType,
-      subject: bookTitle,
+      subject: baseName,
     );
   }
 
@@ -1195,29 +1277,35 @@ class CollectionDeleteDialog extends StatelessWidget {
   }
 }
 
-/// 导出目标种类（TODO-829 + TODO-913 allMined）。
-enum _ExportKind { allMined, allWords, sentencesByBook }
-
-/// 导出面板的选择结果。
+/// 导出面板的选择结果（TODO-914：可勾选多选 + 去重）。
 class _ExportChoice {
   const _ExportChoice({
-    required this.kind,
+    required this.scopes,
+    required this.includeWords,
+    required this.dedupe,
     required this.format,
     this.bookTitle,
   });
 
-  final _ExportKind kind;
+  /// 勾选的内容范围（制卡句 / 收藏句）；空集合且未勾收藏词时导出按钮 disabled。
+  final Set<ExportScope> scopes;
+
+  /// 是否额外导出全部收藏词（独立成文件，不进句料、不去重）。
+  final bool includeWords;
+
+  /// 句级去重开关（默认 on）。
+  final bool dedupe;
   final ExportFormat format;
 
-  /// [_ExportKind.sentencesByBook] 时为目标书名（恒非空）。
+  /// 收藏句仅导某本书时为目标书名；null = 全部书籍。
   final String? bookTitle;
 }
 
-/// 导出面板（TODO-829 + TODO-913 MD3 重做）：选导出范围（全部制卡句 / 全部收藏词 /
-/// 收藏句按书）+ 选格式（默认 Markdown）→ 确认返回 [_ExportChoice]。外壳走
-/// [HibikiModalSheetFrame] + [HibikiDesignTokens]（与同文件 [CollectionItemDialogFrame]
-/// 一致）。焦点驱动可达：范围是 [RadioListTile]（Tab + 方向键 / Enter），格式是
-/// [ChoiceChip]，确认是 [FilledButton]（Tab → Enter）。
+/// 导出面板（TODO-829 + 913 MD3 + 914 可勾选去重）：勾选制卡句/收藏句（默认全勾）
+/// + 去重开关（默认开）+ 可选收藏词 + 选格式（默认 Markdown）→ 确认返回 [_ExportChoice]。
+/// 外壳走 [HibikiModalSheetFrame] + [HibikiDesignTokens]。焦点驱动可达：勾选项是
+/// [CheckboxListTile]、去重是 [SwitchListTile]（Tab → Enter 翻转），格式是 [ChoiceChip]，
+/// 确认是 [FilledButton]（勾选集空且未勾收藏词时 `onPressed: null` 灰掉）。
 class _ExportSheet extends StatefulWidget {
   const _ExportSheet({required this.bookTitles});
 
@@ -1228,12 +1316,15 @@ class _ExportSheet extends StatefulWidget {
 }
 
 class _ExportSheetState extends State<_ExportSheet> {
-  // 范围三态：全部制卡句 / 全部收藏词 / 收藏句按书；按书时取 _targetBookTitle。
-  late _ExportKind _scope = widget.bookTitles.isNotEmpty
-      ? _ExportKind.sentencesByBook
-      : _ExportKind.allMined;
-  late String? _targetBookTitle =
-      widget.bookTitles.isNotEmpty ? widget.bookTitles.first : null;
+  // 默认「全部」= 制卡句 + 收藏句都勾。
+  final Set<ExportScope> _scopes = <ExportScope>{
+    ExportScope.mined,
+    ExportScope.favorites,
+  };
+  bool _includeWords = false;
+  bool _dedupe = true;
+  // 收藏句二级：null = 全部书籍；否则某本书。
+  String? _targetBookTitle;
   ExportFormat _format = ExportFormat.markdown;
 
   static const Map<ExportFormat, String> _formatLabels = <ExportFormat, String>{
@@ -1243,14 +1334,27 @@ class _ExportSheetState extends State<_ExportSheet> {
     ExportFormat.json: 'JSON',
   };
 
+  bool get _canExport => _scopes.isNotEmpty || _includeWords;
+
+  void _toggleScope(ExportScope scope, bool? on) {
+    setState(() {
+      if (on ?? false) {
+        _scopes.add(scope);
+      } else {
+        _scopes.remove(scope);
+      }
+    });
+  }
+
   void _confirm() {
-    final _ExportChoice choice = _scope == _ExportKind.sentencesByBook
-        ? _ExportChoice(
-            kind: _ExportKind.sentencesByBook,
-            format: _format,
-            bookTitle: _targetBookTitle,
-          )
-        : _ExportChoice(kind: _scope, format: _format);
+    final _ExportChoice choice = _ExportChoice(
+      scopes: Set<ExportScope>.of(_scopes),
+      includeWords: _includeWords,
+      dedupe: _dedupe,
+      format: _format,
+      bookTitle:
+          _scopes.contains(ExportScope.favorites) ? _targetBookTitle : null,
+    );
     Navigator.pop(context, choice);
   }
 
@@ -1281,7 +1385,7 @@ class _ExportSheetState extends State<_ExportSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          // ── 导出范围 ──
+          // ── 导出范围（可勾选多选）──
           Padding(
             padding: sectionPad,
             child: Text(
@@ -1291,28 +1395,23 @@ class _ExportSheetState extends State<_ExportSheet> {
               ),
             ),
           ),
-          RadioListTile<_ExportKind>(
-            value: _ExportKind.allMined,
-            groupValue: _scope,
-            onChanged: (_ExportKind? v) => setState(() => _scope = v ?? _scope),
+          CheckboxListTile(
+            value: _scopes.contains(ExportScope.mined),
+            onChanged: (bool? v) => _toggleScope(ExportScope.mined, v),
             title: Text(t.collection_export_all_mined),
           ),
-          RadioListTile<_ExportKind>(
-            value: _ExportKind.allWords,
-            groupValue: _scope,
-            onChanged: (_ExportKind? v) => setState(() => _scope = v ?? _scope),
+          CheckboxListTile(
+            value: _scopes.contains(ExportScope.favorites),
+            onChanged: (bool? v) => _toggleScope(ExportScope.favorites, v),
+            title: Text(t.collection_export_favorites_scope),
+          ),
+          CheckboxListTile(
+            value: _includeWords,
+            onChanged: (bool? v) => setState(() => _includeWords = v ?? false),
             title: Text(t.collection_export_all_words),
           ),
-          if (widget.bookTitles.isNotEmpty)
-            RadioListTile<_ExportKind>(
-              value: _ExportKind.sentencesByBook,
-              groupValue: _scope,
-              onChanged: (_ExportKind? v) =>
-                  setState(() => _scope = v ?? _scope),
-              title: Text(t.collection_export_sentences_title),
-            ),
-          // 选「收藏句按书」时展开书名子单选。
-          if (_scope == _ExportKind.sentencesByBook &&
+          // 勾了「收藏句」且存在书目时展开「全部书籍 / 某本书」二级。
+          if (_scopes.contains(ExportScope.favorites) &&
               widget.bookTitles.isNotEmpty) ...<Widget>[
             Padding(
               padding: EdgeInsets.fromLTRB(
@@ -1324,6 +1423,15 @@ class _ExportSheetState extends State<_ExportSheet> {
               child: Text(
                 t.collection_export_pick_book,
                 style: tokens.type.listSubtitle,
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.only(left: tokens.spacing.card),
+              child: RadioListTile<String?>(
+                value: null,
+                groupValue: _targetBookTitle,
+                onChanged: (String? v) => setState(() => _targetBookTitle = v),
+                title: Text(t.collection_export_all_books),
               ),
             ),
             for (final String title in widget.bookTitles)
@@ -1338,6 +1446,13 @@ class _ExportSheetState extends State<_ExportSheet> {
                 ),
               ),
           ],
+          SizedBox(height: tokens.spacing.gap),
+          // ── 去重开关 ──
+          SwitchListTile(
+            value: _dedupe,
+            onChanged: (bool v) => setState(() => _dedupe = v),
+            title: Text(t.collection_export_dedupe),
+          ),
           Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
           SizedBox(height: tokens.spacing.gap),
           // ── 格式 ──
@@ -1377,7 +1492,7 @@ class _ExportSheetState extends State<_ExportSheet> {
         child: FilledButton.icon(
           icon: const Icon(Icons.ios_share_outlined, size: 18),
           label: Text(t.dialog_export),
-          onPressed: _confirm,
+          onPressed: _canExport ? _confirm : null,
         ),
       ),
     );

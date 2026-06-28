@@ -1924,5 +1924,8 @@
   "dict_auto_update_last": "Last update: $time",
   "dict_update_interval_daily": "Daily",
   "dict_update_interval_weekly": "Weekly",
-  "dict_update_interval_monthly": "Monthly"
+  "dict_update_interval_monthly": "Monthly",
+  "collection_export_dedupe": "Deduplicate by sentence",
+  "collection_export_favorites_scope": "Favorite sentences",
+  "collection_export_all_books": "All books"
 }

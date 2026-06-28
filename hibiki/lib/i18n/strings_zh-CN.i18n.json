@@ -1924,5 +1924,8 @@
   "dict_auto_update_last": "上次更新：$time",
   "dict_update_interval_daily": "每天",
   "dict_update_interval_weekly": "每周",
-  "dict_update_interval_monthly": "每月"
+  "dict_update_interval_monthly": "每月",
+  "collection_export_dedupe": "按句去重",
+  "collection_export_favorites_scope": "收藏句",
+  "collection_export_all_books": "全部书籍"
 }
