@@ -1986,5 +1986,7 @@
   "folder_picker_select": "选择此文件夹",
   "folder_picker_up": "上一级",
   "folder_picker_empty": "没有子文件夹",
-  "folder_picker_permission_required": "浏览文件夹需要存储权限"
+  "folder_picker_permission_required": "浏览文件夹需要存储权限",
+  "word_favorite_added": "已收藏该词",
+  "word_favorite_removed": "已取消收藏该词"
 }

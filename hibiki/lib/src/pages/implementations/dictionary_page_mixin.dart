@@ -277,6 +277,10 @@ mixin DictionaryPageMixin {
         reading: reading,
         sourceType: dictionarySourceType,
       );
+      // TODO-956 A：与 [base_source_page] 同因——桌面 callHandler 返回值不一定回传
+      // JS，弹窗 ☆→★ 变色不可靠。视频弹窗走本 mixin，DB 写成功后同样解耦弹 toast，
+      // 保证 reader / 有声书 / 视频三宿主收藏反馈一致。
+      HibikiToast.show(msg: t.word_favorite_removed);
       return false;
     }
     await db.addFavoriteWord(
@@ -286,6 +290,7 @@ mixin DictionaryPageMixin {
       sourceType: dictionarySourceType,
       dateKey: _statTodayKey(),
     );
+    HibikiToast.show(msg: t.word_favorite_added);
     return true;
   }
 

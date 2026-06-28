@@ -1986,5 +1986,7 @@
   "folder_picker_select": "Select this folder",
   "folder_picker_up": "Up",
   "folder_picker_empty": "No subfolders",
-  "folder_picker_permission_required": "Storage permission is required to browse folders"
+  "folder_picker_permission_required": "Storage permission is required to browse folders",
+  "word_favorite_added": "Word saved to favorites",
+  "word_favorite_removed": "Word removed from favorites"
 }

@@ -788,6 +788,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         reading: reading,
         sourceType: dictionarySourceType,
       );
+      // TODO-956 A：桌面 flutter_inappwebview_windows fork 的 callHandler 返回值
+      // marshalling 与移动端不同，弹窗里 ☆→★ 变色依赖 JS 往返的返回值（popup.js
+      // favoriteEntry），桌面可能收不到 → 星标不变色 → 用户判定「点了没用」（DB 其实
+      // 已写）。DB 写成功后**与 callHandler 返回值解耦**直接弹 toast，保证两宿主都有
+      // 确定反馈，不依赖也不改动返回值通道。
+      HibikiToast.show(msg: t.word_favorite_removed);
       return false;
     }
     await db.addFavoriteWord(
@@ -797,6 +803,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       sourceType: dictionarySourceType,
       dateKey: statTodayKey(),
     );
+    HibikiToast.show(msg: t.word_favorite_added);
     return true;
   }
 
