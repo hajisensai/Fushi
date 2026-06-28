@@ -488,6 +488,10 @@ bool readerScrollWithinReanchorSettle({
 /// - [schedulePostFrame]：把 commit 调度到过渡帧 settle 之后（生产用 addPostFrameCallback）。
 /// - [stillAlive]：复检 `mounted && _controller != null`，dispose 竞态时中止。
 /// - [onBeginError] / [onCommitError]：阶段1/阶段2 求值异常上报（吞掉异常不外抛）。
+/// - [onAfterCommit]（可选，TODO-933）：commit 成功**清旗之后**确定性回调一次。恢复路径用它
+///   补刷进度——`_reanchorPending` 此刻已被 `commitUiScaleReanchorInvocation` 清掉，故补刷读到的
+///   `stableProgressInvocation` 不再被 null gate 挡掉，首屏进度条得以 seed。commit 抛异常时
+///   **不**调用（旗未确定性清，补刷仍会被挡，没意义）。默认 no-op，不影响缩放/样式重锚路径。
 ///
 /// 行为与原方法逐句等价；纯编排无 Flutter 依赖（postFrame 经回调注入）。
 Future<void> runUiScaleReanchorOrchestration({
@@ -498,6 +502,7 @@ Future<void> runUiScaleReanchorOrchestration({
   required bool Function() stillAlive,
   required void Function(Object error, StackTrace stack) onBeginError,
   required void Function(Object error, StackTrace stack) onCommitError,
+  Future<void> Function()? onAfterCommit,
 }) async {
   if (!gateAllowed) {
     return;
@@ -523,6 +528,18 @@ Future<void> runUiScaleReanchorOrchestration({
       await evalCommit();
     } catch (e, stack) {
       onCommitError(e, stack);
+      // commit 失败：旗未确定性清，不跑 onAfterCommit 补刷（补刷仍会被 null gate 挡）。
+      return;
+    }
+    // TODO-933：commit 成功清旗之后，确定性补跑一次补刷（恢复路径 seed 首屏进度）。
+    // dispose 竞态复检（evalCommit 期间可能 dispose）；补刷异常经 onCommitError 上报后吞掉，
+    // 不外抛——它跑在 postFrame 回调里，逃逸会被引擎吞或崩。
+    if (onAfterCommit != null && stillAlive()) {
+      try {
+        await onAfterCommit();
+      } catch (e, stack) {
+        onCommitError(e, stack);
+      }
     }
   });
 }

@@ -485,6 +485,12 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         e,
         stack,
       ),
+      // TODO-933：恢复重锚 commit 清旗后确定性补刷一次进度。根因——_onRestoreComplete 里
+      // 紧跟 _reanchorContinuousAfterRestore() 调的首发 _refreshProgress() 撞上 begin 刚同步
+      // 置的 _reanchorPending=true，stableProgressInvocation 返 null → 早退 → _progressCurrentChars
+      // 保持 null → 顶部进度条隐藏（要滑一下旗清后才出）。这里挂在清旗之后补刷，旗已清不再撞旗，
+      // 首屏进度条确定性可见。只此恢复路径补刷；缩放/样式重锚不传 onAfterCommit，行为不变。
+      onAfterCommit: () => _refreshProgress(),
     );
   }
 
