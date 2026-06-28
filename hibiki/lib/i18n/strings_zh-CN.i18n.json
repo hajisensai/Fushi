@@ -1981,5 +1981,10 @@
   "card_mined_unmapped_sentence_audio_field": "卡片已创建并含句子音频，但当前 Anki 卡片模板没有字段映射到它。请把某字段映射到 {sasayaki-audio}。",
   "audiobook_export_clip_in_progress": "正在导出片段…",
   "audiobook_export_clip_saved": "片段已保存",
-  "audiobook_export_clip_failed": "片段导出失败"
+  "audiobook_export_clip_failed": "片段导出失败",
+  "folder_picker_title": "选择文件夹",
+  "folder_picker_select": "选择此文件夹",
+  "folder_picker_up": "上一级",
+  "folder_picker_empty": "没有子文件夹",
+  "folder_picker_permission_required": "浏览文件夹需要存储权限"
 }

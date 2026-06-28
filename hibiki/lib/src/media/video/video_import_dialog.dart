@@ -3,10 +3,13 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/url_stream_video.dart';
@@ -330,8 +333,14 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 同番归一组、按集号排序）→ 每组建一个 VideoBook（多集=playlist，单集=单片）→
   /// pop 回最后一个 bookUid。不复制视频，存绝对路径；sidecar 字幕在播放页按集探测。
   Future<void> _pickFolder() async {
-    final String? dir = await FilePicker.platform.getDirectoryPath();
+    final AppModel appModel =
+        ProviderScope.containerOf(context, listen: false).read(appProvider);
+    final String? dir = await pickRealDirectoryPath(
+      context: context,
+      appModel: appModel,
+    );
     if (dir == null) return;
+    if (!mounted) return;
 
     setState(() => _busy = true);
     try {

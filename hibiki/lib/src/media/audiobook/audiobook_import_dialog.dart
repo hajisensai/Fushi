@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
     show BookImportDialog;
 import 'package:path/path.dart' as p;
@@ -493,7 +496,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final String? dir = await FilePicker.platform.getDirectoryPath();
+      final AppModel appModel =
+          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final String? dir = await pickRealDirectoryPath(
+        context: context,
+        appModel: appModel,
+      );
       if (dir != null && mounted) {
         setState(() {
           _audioDir = dir;

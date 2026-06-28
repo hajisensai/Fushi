@@ -1981,5 +1981,10 @@
   "card_mined_unmapped_sentence_audio_field": "Card created with sentence audio, but your Anki note type has no field mapped to it. Map a field to {sasayaki-audio}.",
   "audiobook_export_clip_in_progress": "Exporting clip…",
   "audiobook_export_clip_saved": "Clip saved",
-  "audiobook_export_clip_failed": "Clip export failed"
+  "audiobook_export_clip_failed": "Clip export failed",
+  "folder_picker_title": "Select a folder",
+  "folder_picker_select": "Select this folder",
+  "folder_picker_up": "Up",
+  "folder_picker_empty": "No subfolders",
+  "folder_picker_permission_required": "Storage permission is required to browse folders"
 }
