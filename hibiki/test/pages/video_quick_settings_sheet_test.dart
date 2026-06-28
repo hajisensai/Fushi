@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
@@ -137,6 +138,11 @@ void main() {
   late Directory shaderTempDir;
 
   setUp(() {
+    // TODO-935 E1：桌面下 AppPaths._resolveDataRoot 会读 SharedPreferences
+    // 的 data_root（Linux/Windows 测试宿主 isDesktopPlatform=true）。未 mock 时
+    // getInstance() 在本绑定下挂起（着色器面板的 listShaderFiles 永不返回 →
+    // 旋转进度条让 pumpAndSettle 超时）。给个空初值让其即时返回、回退默认根。
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     shaderTempDir =
         Directory.systemTemp.createTempSync('hibiki_video_shader_settings');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -103,6 +104,11 @@ void main() {
   late GlobalKey<NavigatorState> toastNavigatorKey;
 
   setUp(() async {
+    // TODO-935 E1：桌面测试宿主 isDesktopPlatform=true，AppPaths._resolveDataRoot
+    // 会读 SharedPreferences 的 data_root。未 mock 时 getInstance() 在本绑定下挂起，
+    // 连累经 VideoStorage→AppPaths 的资产回收（封面/字幕目录解析永不返回 → 回收
+    // 不完整，断言计数偏少）。给空初值让其即时回退默认根（mock 的 path_provider）。
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
