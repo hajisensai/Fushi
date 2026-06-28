@@ -142,6 +142,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   List<VideoBookRow> _videoBooks = const [];
   Future<List<VideoBookRow>>? _videoBooksFuture;
   Future<_RemoteBookState?>? _remoteBooksFuture;
+
+  /// TODO-616 B2：自定义排序映射 `"mediaType|entryKey" → sortOrder`，开页/落盘后
+  /// 加载一次，渲染时把 SRT+EPUB 混排网格按它稳定排序（无行的条目退化原序）。
+  Future<Map<String, int>>? _shelfOrderFuture;
+  Map<String, int> _shelfOrder = const <String, int>{};
   RemoteBookClient? _remoteBookClient;
 
   /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
@@ -222,6 +227,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                       _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
                       _videoBooksFuture ??= _loadVideoBooks();
                       _remoteBooksFuture ??= _loadRemoteBooks();
+                      _shelfOrderFuture ??= _loadShelfOrder();
                       final Set<String>? filterSet = filteredIds.valueOrNull;
                       final List<MediaItem> filtered;
                       if (filterSet == null) {
@@ -242,7 +248,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                               FutureBuilder<_RemoteBookState?>(
                             future: _remoteBooksFuture,
                             builder: (context, remoteSnapshot) =>
-                                buildBody(filtered, remoteSnapshot),
+                                FutureBuilder<Map<String, int>>(
+                              future: _shelfOrderFuture,
+                              builder: (context, _) =>
+                                  buildBody(filtered, remoteSnapshot),
+                            ),
                           ),
                         ),
                       );
@@ -313,6 +323,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.bar_chart_outlined,
           onTap: _openReadingStatistics,
         ),
+        _headerAction(
+          tooltip: t.shelf_edit_order,
+          icon: Icons.swap_vert,
+          onTap: _openShelfSort,
+        ),
       ],
     );
   }
@@ -354,6 +369,83 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       adaptivePageRoute(builder: (_) => const ReadingStatisticsPage()),
     );
   }
+
+  /// TODO-616 B2：打开书架「编辑排序」独立重排页。把当前可见的 SRT + EPUB 卡片
+  /// （与网格同序：SRT 在前、EPUB 在后）构造成可重排条目 push 进 [ShelfReorderPage]，
+  /// 退出时按最终顺序批量回写 ShelfEntries.sortOrder（下标即新 sortOrder）。视频在
+  /// 书架是独立分区且归视频 tab 管，不纳入本页（在视频库页单独排序）。
+  Future<void> _openShelfSort() async {
+    if (_selectionMode) _exitSelectionMode();
+    final List<ShelfReorderItem> items = <ShelfReorderItem>[];
+    for (final SrtBook book in _visibleSrtBooks) {
+      items.add(ShelfReorderItem(
+        mediaType: 'srt',
+        entryKey: book.uid,
+        card: _buildSrtCard(
+          book,
+          epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
+        ),
+      ));
+    }
+    for (final MediaItem item in _visibleEpubBooks) {
+      final String? bookKey = _parseBookKey(item.mediaIdentifier);
+      if (bookKey == null) continue;
+      items.add(ShelfReorderItem(
+        mediaType: 'epub',
+        entryKey: bookKey,
+        card: buildMediaItem(item),
+      ));
+    }
+    if (items.length < 2) {
+      HibikiToast.show(msg: t.shelf_sort_saved);
+      return;
+    }
+    await Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) => ShelfReorderPage(
+          title: t.shelf_edit_order,
+          initialItems: items,
+          cellExtent: 180,
+          childAspectRatio: kShelfBookCardAspectRatio,
+          feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
+          onPersist: _persistShelfOrder,
+        ),
+      ),
+    );
+  }
+
+  /// 把重排页给回的最终顺序按下标批量回写 ShelfEntries.sortOrder（单事务）。
+  Future<void> _persistShelfOrder(List<ShelfReorderItem> ordered) async {
+    final List<({String mediaType, String entryKey, int sortOrder})> orders =
+        <({String mediaType, String entryKey, int sortOrder})>[
+      for (int i = 0; i < ordered.length; i++)
+        (
+          mediaType: ordered[i].mediaType,
+          entryKey: ordered[i].entryKey,
+          sortOrder: i,
+        ),
+    ];
+    await appModel.database.batchUpsertShelfOrder(orders);
+    _shelfOrderFuture = _loadShelfOrder();
+    if (mounted) setState(() {});
+  }
+
+  /// 一次性预取全部 ShelfEntries，组装成 `"mediaType|entryKey" → sortOrder` 映射。
+  Future<Map<String, int>> _loadShelfOrder() async {
+    final List<ShelfEntryRow> rows =
+        await appModel.database.getAllShelfEntries();
+    final Map<String, int> map = <String, int>{
+      for (final ShelfEntryRow r in rows)
+        '${r.mediaType}|${r.entryKey}': r.sortOrder,
+    };
+    _shelfOrder = map;
+    return map;
+  }
+
+  /// 某条目的自定义排序权重（无行退化为 0；与 groupAndSortShelfEntries 同语义）。
+  int _orderOf(String mediaType, String entryKey) =>
+      _shelfOrder['$mediaType|$entryKey'] ?? 0;
 
   void _toggleFilter(int tagId) {
     final current = Set<int>.from(ref.read(selectedTagIdsProvider));
@@ -505,6 +597,27 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
+    // TODO-616 B2：把 SRT + EPUB 混排序列按 ShelfEntries.sortOrder 稳定重排（无行的
+    // 条目退化为「原序列下标」=SRT 在前 EPUB 在后，零自定义排序时与历史完全一致）。
+    // 用单一合并列表渲染，使重排页里跨类型拖拽（EPUB 拖到 SRT 上方）能真实生效。
+    final List<_ShelfBookSlot> mergedBooks = <_ShelfBookSlot>[
+      for (int i = 0; i < srtBooks.length; i++)
+        _ShelfBookSlot(
+          seq: i,
+          order: _orderOf('srt', srtBooks[i].uid),
+          srt: srtBooks[i],
+        ),
+      for (int i = 0; i < epubBooks.length; i++)
+        _ShelfBookSlot(
+          seq: srtBooks.length + i,
+          order: _orderOf(
+              'epub', _parseBookKey(epubBooks[i].mediaIdentifier) ?? ''),
+          epub: epubBooks[i],
+        ),
+    ]..sort((_ShelfBookSlot a, _ShelfBookSlot b) {
+        final int o = a.order.compareTo(b.order);
+        return o != 0 ? o : a.seq.compareTo(b.seq);
+      });
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     final _RemoteBookState? remoteState = remoteSnapshot?.data;
     final bool showRemoteBooks = remoteState != null &&
@@ -593,14 +706,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   maxCrossAxisExtent: _gridExtent(context, constraints),
                   childAspectRatio: kShelfBookCardAspectRatio,
                 ),
-                itemCount: srtBooks.length + epubBooks.length,
-                itemBuilder: (_, i) => i < srtBooks.length
-                    ? _buildSrtCard(
-                        srtBooks[i],
-                        epubCoverUri:
-                            epubCoverUrisByBookKey[srtBooks[i].bookKey],
-                      )
-                    : buildMediaItem(epubBooks[i - srtBooks.length]),
+                itemCount: mergedBooks.length,
+                itemBuilder: (_, i) {
+                  final _ShelfBookSlot slot = mergedBooks[i];
+                  final SrtBook? srt = slot.srt;
+                  if (srt != null) {
+                    return _buildSrtCard(
+                      srt,
+                      epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
+                    );
+                  }
+                  return buildMediaItem(slot.epub!);
+                },
               ),
             if (videoBooks.isNotEmpty) ...[
               SliverToBoxAdapter(
@@ -812,4 +929,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ReaderHibikiSource.parseBookKey(mediaIdentifier);
 
   // ── 拖拽导入（books 表面） ──────────────────────────────────────────────────
+}
+
+/// TODO-616 B2：书架 SRT+EPUB 混排网格的单个排序槽（合并两类卡片到一个有序列表）。
+/// [srt]/[epub] 恰有一个非空。[order] = ShelfEntries.sortOrder（无行退化 0），
+/// [seq] = 原序列下标（SRT 在前 EPUB 在后），作零自定义排序时的稳定 tie-break。
+class _ShelfBookSlot {
+  const _ShelfBookSlot({
+    required this.seq,
+    required this.order,
+    this.srt,
+    this.epub,
+  });
+
+  final int seq;
+  final int order;
+  final SrtBook? srt;
+  final MediaItem? epub;
 }

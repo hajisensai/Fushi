@@ -42,6 +42,7 @@ import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/pages/implementations/shelf_reorder_page.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -91,6 +92,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
 
+  /// TODO-616 B2：视频自定义排序映射 `"video|bookUid" → sortOrder`，开页/落盘后
+  /// 加载一次，本地网格按它稳定排序（无行的视频退化原序）。
+  Map<String, int> _videoOrder = const <String, int>{};
+
   @override
   void initState() {
     super.initState();
@@ -103,6 +108,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       _future = widget.repo.listAll();
       _remoteFuture = _loadRemoteVideos();
     });
+    _loadVideoOrder();
+  }
+
+  /// 一次性预取全部 ShelfEntries（video 类）组装成 `"video|bookUid" → sortOrder`。
+  Future<void> _loadVideoOrder() async {
+    final List<ShelfEntryRow> rows =
+        await ref.read(appProvider).database.getAllShelfEntries();
+    final Map<String, int> map = <String, int>{
+      for (final ShelfEntryRow r in rows)
+        if (r.mediaType == 'video') 'video|${r.entryKey}': r.sortOrder,
+    };
+    if (mounted) setState(() => _videoOrder = map);
   }
 
   Future<RemoteVideoClient?> _resolveRemoteVideoClient() async {
@@ -459,6 +476,56 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       context,
       adaptivePageRoute<void>(builder: (_) => const VideoStatisticsPage()),
     );
+  }
+
+  /// TODO-616 B2：打开视频库「编辑排序」独立重排页。把当前可见的本地视频卡片
+  /// 构造成可重排条目 push 进 [ShelfReorderPage]，退出时按最终顺序批量回写
+  /// ShelfEntries.sortOrder（mediaType='video'，entryKey=bookUid）。远端视频不入
+  /// 重排（下载后才有本地 bookUid，与本地同键）。
+  Future<void> _openVideoSort() async {
+    if (_selectionMode) _exitSelectionMode();
+    final List<VideoBookRow> books = _visibleVideos;
+    if (books.length < 2) {
+      HibikiToast.show(msg: t.shelf_sort_saved);
+      return;
+    }
+    final List<ShelfReorderItem> items = <ShelfReorderItem>[
+      for (final VideoBookRow book in books)
+        ShelfReorderItem(
+          mediaType: 'video',
+          entryKey: book.bookUid,
+          card: _buildCard(book),
+        ),
+    ];
+    await Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) => ShelfReorderPage(
+          title: t.shelf_edit_order,
+          initialItems: items,
+          cellExtent: 280,
+          mainAxisExtent: 200,
+          feedbackBorderRadius: const BorderRadius.all(Radius.circular(12)),
+          onPersist: _persistVideoOrder,
+        ),
+      ),
+    );
+  }
+
+  /// 把重排页给回的最终顺序按下标批量回写 ShelfEntries.sortOrder（单事务），
+  /// 重载排序映射后刷新网格。
+  Future<void> _persistVideoOrder(List<ShelfReorderItem> ordered) async {
+    final List<({String mediaType, String entryKey, int sortOrder})> orders =
+        <({String mediaType, String entryKey, int sortOrder})>[
+      for (int i = 0; i < ordered.length; i++)
+        (
+          mediaType: ordered[i].mediaType,
+          entryKey: ordered[i].entryKey,
+          sortOrder: i,
+        ),
+    ];
+    await ref.read(appProvider).database.batchUpsertShelfOrder(orders);
+    await _loadVideoOrder();
   }
 
   /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
@@ -975,9 +1042,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             : all
                 .where((VideoBookRow b) => filter.contains(b.bookUid))
                 .toList();
-        // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。同步赋字段
-        // （不 setState），仅在批量操作回调时读取。
-        _visibleVideos = books;
+        // TODO-616 B2：按 ShelfEntries.sortOrder 稳定重排（无行退化原序，零自定义
+        // 排序时与历史 listAll 顺序一致）。
+        final List<VideoBookRow> ordered = List<VideoBookRow>.of(books);
+        ordered.sort((VideoBookRow a, VideoBookRow b) {
+          final int oa = _videoOrder['video|${a.bookUid}'] ?? 0;
+          final int ob = _videoOrder['video|${b.bookUid}'] ?? 0;
+          final int c = oa.compareTo(ob);
+          return c != 0 ? c : books.indexOf(a).compareTo(books.indexOf(b));
+        });
+        // 记录当前可见（已过滤+排序）的本地视频，供批量「全选 / 反选」用。
+        _visibleVideos = ordered;
         return FutureBuilder<_RemoteVideoState?>(
           future: _remoteFuture,
           builder: (BuildContext context,
@@ -997,7 +1072,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             return CustomScrollView(
               slivers: <Widget>[
                 if (hasRemoteSection) SliverToBoxAdapter(child: remoteSection),
-                ..._buildLocalVideoSlivers(all, books),
+                ..._buildLocalVideoSlivers(all, ordered),
               ],
             );
           },
@@ -1273,6 +1348,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           tooltip: t.video_statistics,
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
+        ),
+        HibikiIconButton(
+          tooltip: t.shelf_edit_order,
+          icon: Icons.swap_vert,
+          onTap: _openVideoSort,
         ),
       ],
     );
