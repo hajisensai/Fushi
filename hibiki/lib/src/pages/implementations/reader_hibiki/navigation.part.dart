@@ -257,6 +257,16 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _scrollProgressThrottleTimer = null;
     _lastScrollProgressAt = now;
     _scrollProgressInFlight = true;
+    // TODO-937：连续模式手动滚动后，在进度刷新落地的同一 50ms 节流相位补一次
+    // _caretRefresh()，让字符级焦点环重锚到首个可见字符（详见
+    // readerScrollCaretFollowAllowed 门控真值表 + _caretRefresh 文档）。
+    if (readerScrollCaretFollowAllowed(
+      continuousMode: _settings?.isContinuousMode == true,
+      caretActive: _caretActive,
+      caretOnReader: _caretOnReader,
+    )) {
+      _caretRefresh();
+    }
     _refreshProgress().whenComplete(() {
       _scrollProgressInFlight = false;
       if (_scrollProgressPending && mounted) {

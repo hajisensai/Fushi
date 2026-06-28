@@ -382,6 +382,26 @@ bool readerScrollProgressRefreshAllowed({
       controllerAvailable;
 }
 
+/// TODO-937：连续/滚动模式下手动滚动后，是否应重定位字符级焦点环（caret）到
+/// 首个可见字符。caret 没有 JS scroll 监听，只在 Dart 显式调 _caretRefresh()
+/// 时移动；连续模式手动滚动只走 _refreshProgressFromScroll 刷进度、从不碰
+/// caret，旧锚字符随内容滚出视口后焦点环钉死在屏外。该谓词决定是否在
+/// 滚动进度刷新落地的同一节流相位补一次 _caretRefresh()：
+/// - !`continuousMode`（分页模式）：翻页走 _caretReanchor 已跟随，不走此支；
+/// - !`caretActive`：纯触屏无键盘/手柄用户，caret 未激活，零开销；
+/// - !`caretOnReader`：caret 在查词弹窗/歌词表面时不动（弹窗滚动是另一套 _scrollIntoView）。
+///
+/// 门控与 [readerScrollProgressRefreshAllowed] 正交：调用点已在进度门控通过后，
+/// 恢复期/重锚 settle/未就绪由那里统一抑制，此谓词只管「连续模式 + caret 在正文」。
+/// 纯函数，无副作用，供单测锁定门控真值表（撤销任一守卫 → 对应用例转红）。
+bool readerScrollCaretFollowAllowed({
+  required bool continuousMode,
+  required bool caretActive,
+  required bool caretOnReader,
+}) {
+  return continuousMode && caretActive && caretOnReader;
+}
+
 /// TODO-693: appUiScale 缩放重锚（连续模式）的门控真值表纯函数。
 ///
 /// 仅**连续模式**中招（裸 `window.scrollY` 无分页模式的 snap/lock 保护，缩放 reflow 把
