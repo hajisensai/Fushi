@@ -134,8 +134,17 @@ jobs:
     # regressions stayed invisible until a tagged release (HBK-AUDIT-026).
     # build.gradle refuses debug-signed release APKs, so we mint a throwaway
     # keystore to run the full release pipeline (artifact is NOT distributable).
+    #
+    # TODO-950: this verification APK only runs on PULL REQUESTS. On push to
+    # main/develop, release.yml already does the real release-signed arm64 build
+    # (debug channel) and publishes it -- so a second release build here was a
+    # redundant duplicate APK ("why two APKs on push"). PRs do NOT trigger
+    # release.yml (no pull_request trigger there), so the PR-only verification
+    # below stays the sole R8/proguard/native gate for PRs (HBK-AUDIT-026). It is
+    # also arm64-only now (matches the shipped debug-channel slice; no need to
+    # raster the unshipped armv7/x86_64 slices just to exercise R8 keep-rules).
     - name: Generate throwaway keystore (no signing secret present)
-      if: env.HAS_KEYSTORE != 'true'
+      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE != 'true'
       working-directory: hibiki/android
       run: |
         keytool -genkeypair -v -keystore hibiki-release.jks \
@@ -152,23 +161,23 @@ jobs:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Verify release build (minify/R8/proguard/native)
-      if: env.HAS_KEYSTORE != 'true'
+      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE != 'true'
       working-directory: hibiki
       run: >-
-        flutter build apk --release
+        flutter build apk --release --target-platform android-arm64
         --build-number "$RELEASE_SEQUENCE"
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Decode keystore
-      if: env.HAS_KEYSTORE == 'true'
+      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
       run: |
         echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > hibiki/android/hibiki-release.jks
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Create key.properties
-      if: env.HAS_KEYSTORE == 'true'
+      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
       working-directory: hibiki/android
       run: |
         cat > key.properties <<EOF
@@ -180,11 +189,14 @@ jobs:
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
-    - name: Build release APK
-      if: env.HAS_KEYSTORE == 'true'
+    # TODO-950: arm64-only + PR-only (see the keystore-gen comment above). This
+    # is the keystore-present twin of "Verify release build"; on push it would
+    # otherwise duplicate release.yml's published arm64 APK.
+    - name: Verify release build (signed, minify/R8/proguard/native)
+      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
       working-directory: hibiki
       run: >-
-        flutter build apk --release
+        flutter build apk --release --target-platform android-arm64
         --build-number "$RELEASE_SEQUENCE"
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
