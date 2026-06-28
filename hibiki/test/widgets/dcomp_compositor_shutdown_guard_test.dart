@@ -2,6 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+/// 剥掉 Dart 源码里的行注释（`//` 到行尾，含 `///` 文档注释），用于「先于 exit(0)
+/// 调用 native pre-exit hook」这类**代码顺序**断言：源文件的文档注释里常出现
+/// `` `exit(0)` `` 字面（如 desktop_lifecycle_service.dart 的方法说明），裸
+/// `indexOf('exit(0)')` 会命中注释而非真实代码调用，造成顺序误判（TODO-950）。
+/// 这些被守卫的源文件不含「字符串字面量里嵌 `//`」的情况，按行去尾注释即可。
+String _stripDartLineComments(String src) {
+  return src.split('\n').map((String line) {
+    final int idx = line.indexOf('//');
+    return idx >= 0 ? line.substring(0, idx) : line;
+  }).join('\n');
+}
+
 /// BUG-255 / TODO-313 Family B 源码守卫：vendored fork flutter_inappwebview_windows
 /// 的进程级 DirectComposition Compositor 单例必须在**受控退出时机**释放，绝不能
 /// 把最终 COM Release 留给 CRT atexit 表。
@@ -256,9 +268,12 @@ void main() {
         reason:
             'Each exit reason is one-shot via a per-reason guard set, not a shared bool.');
 
+    // TODO-950: 剥注释后再定位，避免命中文档注释里的 `exit(0)` 字面（935-E2 给
+    // restartApp 加的 `///` 说明含该字面，曾导致顺序断言误判失败）。
+    final String lifecycleCode = _stripDartLineComments(lifecycleSrc);
     final int lifecycleHook =
-        lifecycleSrc.indexOf('WindowsNativePreExit.prepareForExit(');
-    final int lifecycleExit = lifecycleSrc.indexOf('exit(0)');
+        lifecycleCode.indexOf('WindowsNativePreExit.prepareForExit(');
+    final int lifecycleExit = lifecycleCode.indexOf('exit(0)');
     expect(lifecycleHook, greaterThanOrEqualTo(0),
         reason:
             'DesktopLifecycleService.exitApp must call the native pre-exit hook.');
@@ -267,9 +282,10 @@ void main() {
         reason:
             'Native pre-exit must run before DesktopLifecycleService calls exit(0).');
 
+    final String updaterCode = _stripDartLineComments(updaterSrc);
     final int updaterHook =
-        updaterSrc.indexOf('WindowsNativePreExit.prepareForExit(');
-    final int updaterExit = updaterSrc.indexOf('(exitProcess ?? exit)(0)');
+        updaterCode.indexOf('WindowsNativePreExit.prepareForExit(');
+    final int updaterExit = updaterCode.indexOf('(exitProcess ?? exit)(0)');
     expect(updaterHook, greaterThanOrEqualTo(0),
         reason:
             'WindowsInstaller.runAndExit must share the same native pre-exit hook.');
