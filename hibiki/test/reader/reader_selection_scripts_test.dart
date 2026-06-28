@@ -276,13 +276,18 @@ void main() {
         reason: 'getCaretRange must adopt the nearest-char candidate on miss',
       );
 
-      // ② walker 仍 REJECT furigana（rt/rp），振假名永不被兜底命中。
+      // ② walker 仍 REJECT furigana（rt/rp），振假名永不被兜底命中；TODO-956 起
+      // 同样 REJECT 纯空白 / 纯换行文本节点，避免句子游走把块间空白当内容。
       expect(js, contains("el.closest('rt, rp')"));
       expect(
         js,
-        contains(
-            'this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT'),
+        contains('if (self.isFurigana(n)) return NodeFilter.FILTER_REJECT;'),
         reason: 'walker must keep rejecting furigana (rt/rp) nodes',
+      );
+      expect(
+        js,
+        contains(r'/^[\s　]*$/.test(v)'),
+        reason: 'walker must reject whitespace-only text nodes (TODO-956)',
       );
 
       // ③ getCharacterAtPoint：strict-first 再 padded —— pad 0 然后 pad 6 两遍。
