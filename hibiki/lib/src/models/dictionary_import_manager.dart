@@ -62,12 +62,21 @@ class DictionaryImportManager {
   /// 可查）。成功但各类计数全为 0 通常意味着 native 端把所有 bank 解成空——这正是
   /// TODO-892 的 zip.cpp 压缩比守卫误杀合法 yomitan bank 时的症状——留下这条摘要后
   /// 「某本词典导入后没有词条」就能从日志直接定位，而不必逐本盲猜。
+  ///
+  /// TODO-943：错误日志页是**单通道无级别**日志器（所有 entry 同显于「错误日志」），
+  /// 旧实现**无条件**把每本导入结果写进去——连「成功导入 N 词条」的正常摘要也被
+  /// 当成错误展示，用户看到成功结果出现在错误日志里困惑。改为仅在真正需要排查的
+  /// 情况（导入失败、或成功但 0 词条＝被吞空）才写入；正常成功不再落错误日志。
+  /// BUG-927 想要的诊断（失败 / 0 词条）依旧可在错误日志查到。
   void _logImportResultSummary(String source, HoshiImportResult result) {
     final int total = result.termCount +
         result.metaCount +
         result.freqCount +
         result.pitchCount +
         result.kanjiCount;
+    if (!shouldLogImportResult(success: result.success, totalEntries: total)) {
+      return;
+    }
     ErrorLogService.instance.log(
       'DictImport.result',
       '$source success=${result.success} title="${result.title}" '
@@ -78,6 +87,22 @@ class DictionaryImportManager {
           '${result.error.isNotEmpty ? ' error=${result.error}' : ''}'
           '${result.success && total == 0 ? ' [WARN:0 entries imported]' : ''}',
     );
+  }
+
+  /// TODO-943：是否把一次词典导入结果摘要写进 [ErrorLogService]（错误日志页）。
+  ///
+  /// 错误日志是单通道无级别日志器，只该收真正需要排查的情况：
+  /// - 导入失败（`!success`）→ 写；
+  /// - 成功但 0 词条（`success && totalEntries == 0`，native 把 bank 解空，
+  ///   BUG-927/TODO-892 症状）→ 写；
+  /// - 正常成功（`success && totalEntries > 0`）→ **不写**（否则成功结果误现于
+  ///   错误日志，TODO-943 用户困惑的根因）。
+  @visibleForTesting
+  static bool shouldLogImportResult({
+    required bool success,
+    required int totalEntries,
+  }) {
+    return !success || totalEntries == 0;
   }
 
   Future<void> importFromDirectory({
