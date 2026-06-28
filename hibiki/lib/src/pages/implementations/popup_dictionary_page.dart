@@ -15,12 +15,19 @@ import 'package:hibiki/utils.dart';
 class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
     required this.searchTerm,
+    this.searchGeneration = 0,
     this.closeInApp,
     this.autoSearchOnOpen = true,
     super.key,
   });
 
   final String searchTerm;
+
+  /// TODO-951 症状C：app 外查词窗常驻不重建，宿主（popup_main）每次新 ProcessText
+  /// 把递增的 generation 一并透传——即便是同一个词的连续查词，widget 配置也会变，
+  /// [didUpdateWidget] 据此触发复用热槽的原地重查（消除 ValueKey 重建整页的闪烁）。
+  final int searchGeneration;
+
   final VoidCallback? closeInApp;
   final bool autoSearchOnOpen;
 
@@ -65,12 +72,46 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     _searchController = TextEditingController(text: widget.searchTerm);
     _sourceLookupText = widget.searchTerm.trim();
     debugPrint('[popup-perf] init search="${widget.searchTerm}"');
+    // TODO-951 症状C：开页 seed 一个常驻隐藏热槽，弹窗 WebView 冷加载一次后全程复用
+    // （与 reader/video/首页查词同范式），消除「每次查词重建 WebView 露白屏一瞬」。
+    // appModel 未初始化时 seedWarmSlot 内部据 lowMemory 早退前先设真值；此处与首页
+    // 查词一致——独立查词窗在 appModel 初始化完成（popupMain 的 initialiseForDictionaryPopup）
+    // 后才有真实查词，未就绪则跳过 seed（无热槽，等价旧行为），不引入新崩溃。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _seedWarmPopup();
+    });
     if (widget.autoSearchOnOpen && appModel.isInitialised) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _pushSearch(widget.searchTerm, Rect.zero);
+        _pushSearch(widget.searchTerm, Rect.zero, reuseWarmSlot: true);
       });
     }
+  }
+
+  /// TODO-951 症状C：seed 常驻隐藏热槽。低内存模式 [DictionaryPopupController.seedWarmSlot]
+  /// 内部早退；未初始化（早帧 / 测试桩）读 lowMemoryMode 会抛，跳过 seed（无热槽，
+  /// 等价旧行为）。与 home_dictionary_page._seedWarmPopup 同范式。
+  void _seedWarmPopup() {
+    if (!mounted || !appModel.isInitialised) return;
+    _popup.lowMemory = appModel.lowMemoryMode;
+    setState(() => _popup.seedWarmSlot());
+  }
+
+  @override
+  void didUpdateWidget(PopupDictionaryPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // TODO-951 症状C：宿主常驻本页、每次新 ProcessText 改 searchTerm/searchGeneration。
+    // 复用常驻热槽原地查新词（reuseWarmSlot:true），不重建整页 → 不闪。term 与
+    // generation 任一变化都重查（同词连续查词靠 generation 触发）。
+    final bool changed = oldWidget.searchTerm != widget.searchTerm ||
+        oldWidget.searchGeneration != widget.searchGeneration;
+    if (!changed) return;
+    final String trimmed = widget.searchTerm.trim();
+    if (trimmed.isEmpty || !appModel.isInitialised) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pushSearch(trimmed, Rect.zero, reuseWarmSlot: true);
+    });
   }
 
   @override
@@ -82,7 +123,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     super.dispose();
   }
 
-  Future<void> _pushSearch(String query, Rect selectionRect) async {
+  /// 顶层查词（来自宿主新词 / 搜索栏提交 / 源文本面板点选）传 [reuseWarmSlot]=true，
+  /// 复用常驻热槽原地查新词（不重建 WebView）；嵌套下钻（弹窗内点词/链接）默认
+  /// [reuseWarmSlot]=false，[pushNestedPopup] append 一条子层。
+  Future<void> _pushSearch(
+    String query,
+    Rect selectionRect, {
+    bool reuseWarmSlot = false,
+  }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
     debugPrint('[popup-perf] search start "$trimmed" '
@@ -99,6 +147,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       selectionRect: selectionRect,
       controller: _popup,
       autoRead: true,
+      // TODO-951 症状C：顶层查词复用常驻热槽（已预热 WebView 原地查新词，不重建 → 不闪）。
+      reuseWarmSlot: reuseWarmSlot,
       // 独立查词窗是整窗卡片（非贴选区小浮卡），搜索期保持卡片显示、空白由
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
@@ -126,8 +176,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void _onSearchSubmit(String text) {
     if (text.trim().isEmpty) return;
     _searchFocusNode.unfocus();
-    setState(_popup.clear);
-    _pushSearch(text.trim(), Rect.zero);
+    // TODO-951 症状C：保留常驻热槽（pruneToWarmSlot），别 clear 掉热 WebView；
+    // 顶层重查走 reuseWarmSlot 原地复用。
+    setState(_popup.pruneToWarmSlot);
+    _pushSearch(text.trim(), Rect.zero, reuseWarmSlot: true);
   }
 
   @override
@@ -197,14 +249,25 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       color: appModel.overrideDictionaryColor ?? tokens.surfaces.page,
       child: Column(
         children: [
-          _buildSwipeChrome(_buildSearchBar()),
+          // TODO-951 症状B：关闭是「结果」，滑动只是其中一种「触发行为」，二者解耦。
+          // 关闭 X 渲染在 [SwipeDismissWrapper] 之外（不在其 Listener 子树内）——点 X 永远
+          // 直接 [_close]（无滑出动画），不会因 X 落在可滑区里被横拖手势误判/连带播放滑动
+          // 特效。横滑只裹搜索栏本体（拖它仍可滑出关闭，那是滑动这一触发行为本身的动画）。
+          Row(
+            children: <Widget>[
+              _buildCloseButton(),
+              Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+            ],
+          ),
           Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
           if (_sourceLookupText.trim().isNotEmpty)
             SourceLookupTextPanel(
               text: _sourceLookupText,
               coordinateSpaceKey: _resultStackKey,
               dictionaryHeadwordScale: _dictionaryHeadwordScale,
-              onLookup: _pushSearch,
+              // 源文本面板点选 = 顶层新词，复用常驻热槽（TODO-951 症状C）。
+              onLookup: (String query, Rect rect) =>
+                  _pushSearch(query, rect, reuseWarmSlot: true),
             ),
           Expanded(child: _buildStack(context)),
         ],
@@ -232,22 +295,44 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   }
 
   Widget _buildSearchBar() {
+    // onClose: null —— 关闭 X 由 [_buildCloseButton] 在 swipe wrapper 之外独立渲染
+    // （TODO-951 症状B 解耦），搜索栏本身不再带 X。
     return PopupDictionarySearchBar(
       controller: _searchController,
       focusNode: _searchFocusNode,
-      onClose: _close,
+      onClose: null,
       onSubmit: _onSearchSubmit,
+    );
+  }
+
+  /// TODO-951 症状B：独立于滑动手势的关闭入口。点它直接 [_close]（无滑出动画），
+  /// 渲染在 [SwipeDismissWrapper] 之外，任何平台/是否启用滑动关闭都恒可关、不耦合动画。
+  Widget _buildCloseButton() {
+    return _CompactPopupCloseButton(
+      key: const ValueKey<String>('popup_dictionary_close_button'),
+      onClose: _close,
     );
   }
 
   Widget _buildStack(BuildContext context) {
     if (_popup.entries.isEmpty) return const SizedBox.shrink();
 
-    return Stack(
-      key: _resultStackKey,
-      children: [
-        for (int i = 0; i < _popup.entries.length; i++) _buildLayer(context, i),
-      ],
+    // TODO-951 症状C：常驻热槽（visible=false）也要进树保持其 WebView 预热，但要停到
+    // 卡片可视区之外，避免隐藏层（Android 原生 WebView）截获触摸盖住可见层（BUG-135
+    // 同范式，这里在卡片局部坐标系内停到卡片右外侧）。Clip.none 让停在外侧的层不被裁。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double cardWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 0;
+        return Stack(
+          key: _resultStackKey,
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            for (int i = 0; i < _popup.entries.length; i++)
+              _buildLayer(context, i, cardWidth: cardWidth),
+          ],
+        );
+      },
     );
   }
 
@@ -255,64 +340,90 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// （那是全屏阅读器内 `buildNestedPopupLayer` 的语义，套进小卡里会被压成小窗），
   /// 而是与基础层一样满卡渲染、不透明覆盖下层（BUG-051 的第一症状）。
   /// 基础层（index 0）透明、横滑交由整卡外层；嵌套层不透明、自带横滑返回上一层。
-  Widget _buildLayer(BuildContext context, int index) {
+  Widget _buildLayer(
+    BuildContext context,
+    int index, {
+    required double cardWidth,
+  }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final DictionaryPopupEntry entry = _popup.entries[index];
     final bool isBase = index == 0;
     final bool isDark =
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
-    return Positioned.fill(
-      child: Visibility(
-        visible: entry.visible,
-        maintainState: true,
-        maintainAnimation: true,
-        maintainSize: true,
-        child: DictionaryPopupLayer(
-          result: entry.result,
-          isSearching: entry.isSearching,
-          webViewKey: entry.webViewKey,
-          // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
-          hasChildPopup: index < _popup.entries.length - 1,
-          isDark: isDark,
-          showBorder: false,
-          swipeDismissible: !isBase,
-          enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
-          overrideFillColor: isBase
-              ? Colors.transparent
-              : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
-          onDismiss: isBase ? _close : () => _popAt(index),
-          onClose: isBase ? null : () => _popAt(index),
-          onBack: null,
-          onRendered: () {
-            debugPrint('[popup-perf] render "${entry.searchTerm}" '
-                '${_startupStopwatch.elapsedMilliseconds}ms');
-            if (_popup.revealRendered(entry) && mounted) setState(() {});
-          },
-          // TODO-485：基础层已有搜索栏/外层关闭入口；子层在禁用滑动时仍显示返回。
-          onTapOutside: isBase ? _close : () => _popAt(index),
-          onScrolledToBottom: entry.allLoaded
-              ? null
-              : () => loadMoreForEntry(entry: entry, controller: _popup),
-          onTextSelected: (text, localRect) {
-            if (_popup.entries.length > index + 1) {
-              setState(() => _popup.truncateTo(index + 1));
-            }
-            _pushSearch(text, localRect);
-          },
-          onLinkClick: (query, localRect) {
-            if (_popup.entries.length > index + 1) {
-              setState(() => _popup.truncateTo(index + 1));
-            }
-            _pushSearch(query, localRect);
-          },
-          onMineEntry: onMineEntry,
-          onUpdateEntry: onUpdateEntry,
-          onDuplicateCheck: checkDuplicate,
-          onOverwriteTargetNoteId: findOverwriteTargetNoteId,
-        ),
-      ),
+    final Widget layer = DictionaryPopupLayer(
+      result: entry.result,
+      isSearching: entry.isSearching,
+      // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，
+      // 消除「每次查词重建弹窗 WebView 露白屏一瞬」。与 reader/video/首页查词同口径。
+      keepWebViewWarm: entry.isWarmSlot,
+      webViewKey: entry.webViewKey,
+      // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
+      hasChildPopup: index < _popup.entries.length - 1,
+      isDark: isDark,
+      showBorder: false,
+      swipeDismissible: !isBase,
+      enableSwipeToClose: ReaderHibikiSource.instance.enableSwipeToClose,
+      overrideFillColor: isBase
+          ? Colors.transparent
+          : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
+      onDismiss: isBase ? _close : () => _popAt(index),
+      onClose: isBase ? null : () => _popAt(index),
+      onBack: null,
+      onRendered: () {
+        debugPrint('[popup-perf] render "${entry.searchTerm}" '
+            '${_startupStopwatch.elapsedMilliseconds}ms');
+        if (_popup.revealRendered(entry) && mounted) setState(() {});
+      },
+      // TODO-951 症状A：点**本层卡片本体的空白区**（popup.js 在 __hasChildPopup 为真时
+      // 发 tapOutside，见 BUG-434）只关该层衍生的后代层（关一层），保留本层 + 祖先——
+      // 不再 base 层 `_close` 整窗、nested 层 `_popAt(index)` 连本层一起关。与三个 in-app
+      // 宿主的 dismissDescendantsOf(index) / truncateTo(index+1) 同语义。
+      onTapOutside: () => _dismissDescendantsOf(index),
+      onScrolledToBottom: entry.allLoaded
+          ? null
+          : () => loadMoreForEntry(entry: entry, controller: _popup),
+      onTextSelected: (text, localRect) {
+        if (_popup.entries.length > index + 1) {
+          setState(() => _popup.truncateTo(index + 1));
+        }
+        _pushSearch(text, localRect);
+      },
+      onLinkClick: (query, localRect) {
+        if (_popup.entries.length > index + 1) {
+          setState(() => _popup.truncateTo(index + 1));
+        }
+        _pushSearch(query, localRect);
+      },
+      onMineEntry: onMineEntry,
+      onUpdateEntry: onUpdateEntry,
+      onDuplicateCheck: checkDuplicate,
+      onOverwriteTargetNoteId: findOverwriteTargetNoteId,
     );
+
+    // TODO-951 症状C：可见层满卡渲染（BUG-051）；隐藏层（常驻热槽 / 挂起冷层）停到卡片
+    // 右外侧继续预热，并用 IgnorePointer 兜住（Android 隐藏原生 WebView 仍可能截触摸，
+    // 与 BUG-135 parkedPopupLayer 同范式，这里在卡片局部坐标系内停到外侧）。
+    if (entry.visible) {
+      return Positioned.fill(child: layer);
+    }
+    return Positioned(
+      left: cardWidth + 8,
+      top: 0,
+      width: cardWidth > 0 ? cardWidth : null,
+      bottom: 0,
+      child: IgnorePointer(child: layer),
+    );
+  }
+
+  /// TODO-951 症状A：关闭第 [index] 层**衍生的所有后代层**（index 更大的全部），保留
+  /// 本层 + 祖先。线性扁平栈里 index 即 depth，故后代 = `index+1..end`，用
+  /// [DictionaryPopupController.truncateTo] 精确裁。点最顶层（无后代）= no-op 栈不变。
+  /// 与三个 in-app 宿主（base_source_page.dismissDescendantsOf /
+  /// dictionary_page_mixin._dismissDescendantsOfLayer）同语义。
+  void _dismissDescendantsOf(int index) {
+    if (index < 0 || index >= _popup.entries.length - 1) return; // 无后代=no-op
+    setState(() => _popup.truncateTo(index + 1));
   }
 }
 
@@ -341,6 +452,36 @@ class PopupDictionarySearchBar extends StatelessWidget {
       closeButtonKey: const ValueKey<String>('popup_dictionary_close_button'),
       fieldKey: const ValueKey<String>('popup_dictionary_search_field'),
       searchButtonKey: const ValueKey<String>('popup_dictionary_search_button'),
+    );
+  }
+}
+
+/// TODO-951 症状B：独立于滑动手势的关闭按钮。渲染在 [SwipeDismissWrapper] 之外，
+/// 点它直接调 [onClose]（无滑出动画），与 search bar 内的旧关闭按钮视觉一致（[Icons.close]
+/// + 36×36 命中区 + 20 图标）。键沿用 `popup_dictionary_close_button`（桌面焦点驱动测试
+/// + 既有 widget 测试都按此键定位）。
+class _CompactPopupCloseButton extends StatelessWidget {
+  const _CompactPopupCloseButton({
+    required this.onClose,
+    super.key,
+  });
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: HibikiIconButton(
+        icon: Icons.close,
+        enabledColor: tokens.surfaces.onVariant,
+        size: 20,
+        tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+        padding: EdgeInsets.zero,
+        onTap: onClose,
+      ),
     );
   }
 }

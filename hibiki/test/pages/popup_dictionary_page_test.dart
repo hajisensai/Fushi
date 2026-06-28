@@ -383,9 +383,15 @@ void main() {
     expect(popup, contains('SourceLookupTextPanel'),
         reason: 'non-clipboard popup queries need the same clickable source '
             'text panel outside the WebView.');
-    expect(popup, contains('visible: entry.visible'),
+    // TODO-951 症状C：可见层满卡渲染、隐藏层（常驻热槽/挂起冷层）停到卡外继续预热
+    // （IgnorePointer 兜住触摸）。可见性闸门由 `if (entry.visible)` 分流，不再是裸
+    // Visibility(visible: entry.visible)。
+    expect(popup, contains('if (entry.visible) {'),
         reason: 'external popup layers must honor controller visibility before '
             'any hidden/preload state can be safe.');
+    expect(popup, contains('keepWebViewWarm: entry.isWarmSlot'),
+        reason: 'external popup must keep the warm slot WebView pre-warmed to '
+            'kill the per-lookup flash (TODO-951 symptom C).');
     expect(popup, contains('[popup-perf]'),
         reason: 'Windows popup first lookup needs startup/search/render timing '
             'breadcrumbs.');

@@ -160,9 +160,15 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         themeMode: appModel.overrideDictionaryTheme != null
             ? ThemeMode.light
             : appModel.themeMode,
+        // TODO-951 症状C：不再用 ValueKey 强制重建整页——那会每次新 ProcessText 都丢弃
+        // 并重建 PopupDictionaryPage（含其 DictionaryPopupController + 弹窗 WebView），
+        // 冷加载一次 popup.html/JS/CSS 露白屏一瞬（用户报「每次查词已有弹窗会闪」）。
+        // 改为页面常驻、把新词经 searchTerm + searchGeneration 透传，
+        // PopupDictionaryPage.didUpdateWidget 复用常驻热槽原地查新词。searchGeneration
+        // 让相同词的连续 ProcessText 也能触发 didUpdateWidget（否则同词不变 widget 配置）。
         home: PopupDictionaryPage(
-          key: ValueKey('$_searchTerm:$_searchGeneration'),
           searchTerm: _searchTerm,
+          searchGeneration: _searchGeneration,
         ),
       ),
     );

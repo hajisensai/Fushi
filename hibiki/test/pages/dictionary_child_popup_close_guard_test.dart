@@ -45,6 +45,30 @@ void main() {
     expect(popup, contains('swipeDismissible: !isBase'));
   });
 
+  // TODO-951 症状A：app 外查词父弹窗点卡片本体只关一层（后代），不再 base 整窗 _close。
+  test('standalone popup onTapOutside closes descendants of the tapped layer',
+      () {
+    final String popup =
+        read('lib/src/pages/implementations/popup_dictionary_page.dart');
+
+    // 点本层卡片本体空白只关其后代（带本层 index 走 truncateTo(index+1)）。
+    expect(popup, contains('onTapOutside: () => _dismissDescendantsOf(index)'),
+        reason: '点某层本体空白只关其后代，不再 base 层 _close 整窗 / nested 连本层一起关');
+    // 旧的「base 整窗关 / nested 连本层关」一律不得残留。
+    expect(popup, isNot(contains('onTapOutside: isBase ? _close')),
+        reason: 'base 层 onTapOutside 不再整窗关');
+    // 关后代原语：truncateTo(index+1)，点顶层（无后代）no-op。
+    expect(popup, contains('void _dismissDescendantsOf(int index)'),
+        reason: '关后代 helper 存在');
+    expect(popup, contains('_popup.truncateTo(index + 1)'),
+        reason: '关后代用 truncateTo(index+1) 精确裁后代');
+    expect(
+        popup,
+        contains(
+            'if (index < 0 || index >= _popup.entries.length - 1) return;'),
+        reason: '点顶层（无后代）no-op 栈不变');
+  });
+
   test('swipe dismiss keeps host layer routing separate from onBack', () {
     final String base = read('lib/src/pages/base_source_page.dart');
     final String mixin =
