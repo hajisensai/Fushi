@@ -111,7 +111,14 @@ void main() {
       2,
       reason: 'remote cached and network covers must both fill the card',
     );
-    expect(videoCover, contains('fit: _bookCardCoverFit'));
+    // TODO-616 phase C：视频封面改用 _videoCardCoverFit（BoxFit.contain）以
+    // 完整显示整张封面，不再与书封共用 fitHeight。
+    expect(videoCover, contains('fit: _videoCardCoverFit'));
+    expect(
+      source,
+      contains('BoxFit get _videoCardCoverFit => BoxFit.contain;'),
+      reason: 'video covers must show the whole artwork (TODO-616 phase C)',
+    );
     expect(srtCover, contains('_buildFileCover'));
     expect(fileCover, contains('fit: _bookCardCoverFit'));
     expect(epubCover, contains('fit: _bookCardCoverFit'));
