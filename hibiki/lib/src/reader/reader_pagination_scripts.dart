@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
+import 'package:hibiki/src/reader/reader_visual_novel_scripts.dart';
 
 enum ReaderNavigationDirection {
   forward('forward'),
@@ -598,6 +599,10 @@ class ReaderPaginationScripts {
     double initialProgress = 0.0,
     int initialCharOffset = -1,
     bool continuousMode = false,
+    // TODO-909: VN is the third view-mode. It is mutually exclusive with
+    // [continuousMode] (VN is a page-flip stage, not native scroll). When true
+    // it overrides [continuousMode] and selects the VN shell.
+    bool vnMode = false,
     int fontSize = ReaderLayoutDefaults.fontSizePx,
     String? sasayakiCuesJson,
     String? initialFragment,
@@ -606,7 +611,26 @@ class ReaderPaginationScripts {
     double? dartPageWidth,
     double? dartPageHeight,
     bool blurImages = false,
+    int vnRevealSpeed = 0,
+    String vnScreenMode = 'block',
+    int vnSentencesPerScreen = 1,
+    bool vnPreserveDialogue = false,
+    bool vnMergeCrossScreenSasayakiCues = false,
   }) {
+    if (vnMode) {
+      return ReaderVisualNovelScripts.vnShellScript(
+        initialProgress: initialProgress,
+        initialCharOffset: initialCharOffset,
+        sasayakiCuesJson: sasayakiCuesJson,
+        initialFragment: initialFragment,
+        blurImages: blurImages,
+        revealSpeed: vnRevealSpeed,
+        screenMode: vnScreenMode,
+        sentencesPerScreen: vnSentencesPerScreen,
+        preserveDialogue: vnPreserveDialogue,
+        mergeCrossScreenSasayakiCues: vnMergeCrossScreenSasayakiCues,
+      );
+    }
     if (continuousMode) {
       return _continuousShellScript(
         initialProgress: initialProgress,

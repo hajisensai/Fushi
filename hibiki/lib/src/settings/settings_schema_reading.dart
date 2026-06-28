@@ -306,6 +306,13 @@ SettingsDestination buildReadingDestination() {
                 label: t.ttu_scroll,
                 tooltip: t.ttu_scroll,
               ),
+              // TODO-909: third book view-mode. M0 exposes it so the device
+              // Gate can select VN; the 6 VN-specific sub-settings are M1.
+              SettingsSegmentOption<String>(
+                value: 'vn',
+                label: t.ttu_vn,
+                tooltip: t.ttu_vn,
+              ),
             ],
             selected: (SettingsContext c) => c.readerSource.ttuViewMode,
             onChanged: (SettingsContext c, String v) {

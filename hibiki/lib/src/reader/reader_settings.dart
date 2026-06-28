@@ -176,7 +176,63 @@ class ReaderSettings {
   String get viewMode => _get<String>('ttu_view_mode', 'paginated');
   Future<void> setViewMode(String v) => _set<String>('ttu_view_mode', v);
 
+  /// `true` only in the legacy native-scroll (连续) mode. VN mode is a
+  /// distinct page-flip stage, NOT continuous — keep this strict so the
+  /// continuous-only reanchor/scroll-zero guards (chrome/navigation parts) do
+  /// NOT fire for VN. TODO-909.
   bool get isContinuousMode => viewMode == 'continuous';
+
+  /// TODO-909: VN (Visual-Novel) is the third book view-mode, alongside
+  /// `'paginated'` / `'continuous'`. It detaches the chapter and renders one
+  /// Block/sentence screen at a time on its own stage.
+  bool get isVnMode => viewMode == 'vn';
+
+  // ── VN (Visual-Novel) settings (TODO-909) ──────────────────────────────
+  // Defaults copied from hoshi a ReaderSettings.kt (🔒③). per-Profile global,
+  // same `src:reader_ttu:` Drift mechanism as view_mode. M0 wires these into
+  // the VN shell; the dedicated settings UI for them lands in M1.
+
+  /// Typewriter reveal speed in chars/sec (0 = instant). hoshi default 45.
+  int get visualNovelRevealSpeed =>
+      _get<int>('vn_reveal_speed', 45).clamp(0, 120);
+  Future<void> setVisualNovelRevealSpeed(int v) =>
+      _set<int>('vn_reveal_speed', v.clamp(0, 120));
+
+  /// `'block'` (one Block per screen) or `'sentences'` (group N sentences).
+  String get visualNovelScreenMode {
+    final String raw = _get<String>('vn_screen_mode', 'block').toLowerCase();
+    return raw == 'sentence' || raw == 'sentences' ? 'sentences' : 'block';
+  }
+
+  Future<void> setVisualNovelScreenMode(String v) {
+    final String norm = v.toLowerCase() == 'sentences' ? 'sentences' : 'block';
+    return _set<String>('vn_screen_mode', norm);
+  }
+
+  /// Sentences per screen in `'sentences'` mode (1-12). hoshi default 1.
+  int get visualNovelSentencesPerScreen =>
+      _get<int>('vn_sentences_per_screen', 1).clamp(1, 12);
+  Future<void> setVisualNovelSentencesPerScreen(int v) =>
+      _set<int>('vn_sentences_per_screen', v.clamp(1, 12));
+
+  /// Keep 「」/『』 dialogue brackets intact when splitting sentences.
+  bool get visualNovelPreserveDialogueBubbles =>
+      _get<bool>('vn_preserve_dialogue', false);
+  Future<void> setVisualNovelPreserveDialogueBubbles(bool v) =>
+      _set<bool>('vn_preserve_dialogue', v);
+
+  /// Advance to the next screen on a blank tap. hoshi default false
+  /// (commit `42c0bab`). M0 force-enables the tap binding in the host for
+  /// device verification; this getter is the M1 default it falls back to.
+  bool get visualNovelClickAdvance => _get<bool>('vn_click_advance', false);
+  Future<void> setVisualNovelClickAdvance(bool v) =>
+      _set<bool>('vn_click_advance', v);
+
+  /// Merge Sasayaki cues that straddle a screen boundary (M1 feature).
+  bool get visualNovelMergeCrossScreenSasayakiCues =>
+      _get<bool>('vn_merge_cross_screen_cues', false);
+  Future<void> setVisualNovelMergeCrossScreenSasayakiCues(bool v) =>
+      _set<bool>('vn_merge_cross_screen_cues', v);
 
   String get theme => _get<String>('ttu_theme', 'light-theme');
   Future<void> setTheme(String v) => _set<String>('ttu_theme', v);

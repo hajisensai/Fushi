@@ -137,6 +137,10 @@ function makeHarness(continuousMode) {
     // 这里固定替成 false（探针整段不进 JS），与默认行为一致、不影响 swipe 断言。
     .replace(/\$\{DebugLogService\.instance\.enabled\}/g, 'false')
     .replace(/\$continuousMode/g, continuousMode ? 'true' : 'false')
+    // TODO-909: VN flags default false here (this harness exercises the paged
+    // path); keeps the slice self-contained when VN tap-advance was added.
+    .replace(/\$vnMode/g, 'false')
+    .replace(/\$vnClickAdvance/g, 'false')
     .replace(/\$hoverAutoLookup/g, 'false')
     .replace(/\$swipeDistThreshold/g, '72')
     .replace(/\$swipeFastDistThreshold/g, '36');

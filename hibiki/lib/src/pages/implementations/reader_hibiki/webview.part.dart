@@ -308,6 +308,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
     // 原生滚动产生轴向冲突，故注入 continuousMode 标志在 _gestureEnd 内门控。
     final bool continuousMode = s.isContinuousMode;
+    // TODO-909 M0: VN blank-tap advance. hoshi default clickAdvance=false
+    // (commit `42c0bab`); M0 force-enables the tap binding so the device Gate
+    // can verify click-to-advance. M1 falls back to s.visualNovelClickAdvance.
+    final bool vnMode = s.isVnMode;
+    const bool vnClickAdvanceM0ForceOn = true; // M1: s.visualNovelClickAdvance
+    final bool vnClickAdvance = vnMode && vnClickAdvanceM0ForceOn;
     // TODO-756b：是否“鼠标悬停即自动查词”。注入为 JS 全局初值，mousemove 监听器
     // 据此跳过 Shift 门控（纯悬停查词）。live 变更经 _applyHoverAutoLookupLive
     // 改同一全局，无需整章重注入。
@@ -323,6 +329,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         initialProgress: _initialProgress,
         initialCharOffset: _initialCharOffset,
         continuousMode: s.isContinuousMode,
+        // TODO-909: select the VN shell when view-mode == 'vn'. VN is mutually
+        // exclusive with continuous (it is a page-flip stage, not native
+        // scroll), so continuousMode stays false here.
+        vnMode: s.isVnMode,
         fontSize: s.fontSize.round(),
         initialFragment: _initialFragment,
         sasayakiCuesJson: sasayakiCuesJson,
@@ -333,6 +343,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         dartPageWidth: screenSize.width,
         dartPageHeight: screenSize.height,
         blurImages: s.blurImages,
+        vnRevealSpeed: s.visualNovelRevealSpeed,
+        vnScreenMode: s.visualNovelScreenMode,
+        vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
+        vnPreserveDialogue: s.visualNovelPreserveDialogueBubbles,
+        vnMergeCrossScreenSasayakiCues:
+            s.visualNovelMergeCrossScreenSasayakiCues,
       ),
     );
 
@@ -359,6 +375,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   // BUG-239: 连续模式不让 _gestureEnd 回传 onSwipe（交给原生滚动 + 边界 IIFE），
   // 消除横向滑动 90% 跳页与原生滚动的轴向冲突；分页模式照旧水平滑动翻页。
   var hoshiContinuousMode = $continuousMode;
+  // TODO-909 M0: VN-mode blank-tap advance flag (see Dart above).
+  var hoshiVnMode = $vnMode;
+  var hoshiVnClickAdvance = $vnClickAdvance;
   window.__hoverAutoLookup = $hoverAutoLookup;
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   var imageLongPressTimer = null;
@@ -373,6 +392,20 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var _hoshiReaderMouseDragSwipeSent = false;
   var _hoshiReaderMouseDragIgnoreTouchEnd = false;
   function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  // TODO-909 M0: a VN tap is "blank" when caretRangeFromPoint resolves to no
+  // text node (or an empty/whitespace one), i.e. the user tapped margin/gap
+  // rather than a word. Text taps still go to onTap (word lookup).
+  function _hoshiVnTapIsBlank(x, y) {
+    try {
+      var range = _hoshiReaderCaretRangeAtPoint(x, y);
+      if (!range || !range.startContainer) return true;
+      var node = range.startContainer;
+      if (node.nodeType !== Node.TEXT_NODE) return true;
+      return !String(node.textContent || '').trim();
+    } catch (err) {
+      return true;
+    }
+  }
   function _hoshiReaderCaretRangeAtPoint(x, y) {
     try {
       var range = null;
@@ -595,6 +628,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       var imgUrl = _hoshiBlockImageUrl(tapEl);
       if (imgUrl) {
         window.flutter_inappwebview.callHandler('onImageTap', imgUrl);
+      } else if (hoshiVnMode && hoshiVnClickAdvance &&
+          _hoshiVnTapIsBlank(x, y) &&
+          window.hoshiReader && window.hoshiReader.paginate) {
+        // TODO-909 M0: VN blank-tap advance. Only when the tap is NOT over
+        // matchable text (so word lookup still wins on text). Mirrors hoshi a's
+        // host binding blank-tap -> paginate("forward").
+        if (e && e.preventDefault) e.preventDefault();
+        window.hoshiReader.paginate('forward');
       } else {
         // TODO-806 [806-TAP] 框选点击坐标取证探针（默认 off，由 DebugLogService 门控
         // 注入：${DebugLogService.instance.enabled} 为 false 时整段不进 JS）。打印 onTap

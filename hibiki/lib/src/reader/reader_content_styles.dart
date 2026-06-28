@@ -269,8 +269,13 @@ svg.block-img.blurred {
     const String imageMaxHeight =
         ReaderLayoutDefaults.imageMaxHeightFallbackCss;
 
-    final String layoutCss = settings.isContinuousMode
-        ? _continuousLayoutCss(
+    // TODO-909: three-state layout. VN gets its own stage layout (NOT the
+    // paginated column geometry — a VN screen is one detached Block rendered on
+    // `hoshi-vn-stage`, so reusing column-width/gap geometry would fight the
+    // stage). Falling through to the paginated `else` would silently give VN the
+    // column model, so VN must be selected explicitly here.
+    final String layoutCss = settings.isVnMode
+        ? _vnLayoutCss(
             settings: settings,
             isVertical: isVertical,
             colors: colors,
@@ -285,25 +290,41 @@ svg.block-img.blurred {
             clampedMarginTop: mt,
             clampedMarginBottom: mb,
           )
-        : _paginatedLayoutCss(
-            settings: settings,
-            isVertical: isVertical,
-            colors: colors,
-            resolvedFontFamily: resolvedFontFamily,
-            textSpacingCss: textSpacingCss,
-            paddingCss: paddingCss,
-            columnGapCss: columnGapCss,
-            columnWidthCss: columnWidthCss,
-            gridCss: gridCss,
-            textIndentCss: textIndentCss,
-            vertKerningCss: vertKerningCss,
-            vpalCss: vpalCss,
-            textOrientCss: textOrientCss,
-            columnsCss: columnsCss,
-            clampedMarginTop: mt,
-            clampedMarginBottom: mb,
-            contentClipCss: contentClipCss,
-          );
+        : settings.isContinuousMode
+            ? _continuousLayoutCss(
+                settings: settings,
+                isVertical: isVertical,
+                colors: colors,
+                resolvedFontFamily: resolvedFontFamily,
+                textSpacingCss: textSpacingCss,
+                paddingCss: paddingCss,
+                gridCss: gridCss,
+                textIndentCss: textIndentCss,
+                vertKerningCss: vertKerningCss,
+                vpalCss: vpalCss,
+                textOrientCss: textOrientCss,
+                clampedMarginTop: mt,
+                clampedMarginBottom: mb,
+              )
+            : _paginatedLayoutCss(
+                settings: settings,
+                isVertical: isVertical,
+                colors: colors,
+                resolvedFontFamily: resolvedFontFamily,
+                textSpacingCss: textSpacingCss,
+                paddingCss: paddingCss,
+                columnGapCss: columnGapCss,
+                columnWidthCss: columnWidthCss,
+                gridCss: gridCss,
+                textIndentCss: textIndentCss,
+                vertKerningCss: vertKerningCss,
+                vpalCss: vpalCss,
+                textOrientCss: textOrientCss,
+                columnsCss: columnsCss,
+                clampedMarginTop: mt,
+                clampedMarginBottom: mb,
+                contentClipCss: contentClipCss,
+              );
 
     final String readerStylePriority =
         settings.prioritizeReaderStyles ? '' : ' !important';
@@ -575,6 +596,81 @@ body {
   $vpalCss
   $columnsCss
 }''';
+  }
+
+  /// TODO-909: VN (Visual-Novel) stage layout. The chapter is detached by the
+  /// VN JS and one Block/sentence screen is rendered onto `hoshi-vn-stage` >
+  /// `hoshi-vn-screen` > `hoshi-vn-content`. The stage fills the viewport; the
+  /// screen reserves the reader chrome insets (top/bottom) and centres its
+  /// content. No multicol columns — text flows naturally within one screen, so
+  /// this does NOT reuse the paginated column geometry.
+  static String _vnLayoutCss({
+    required ReaderSettings settings,
+    required bool isVertical,
+    required _ThemeColors colors,
+    required String resolvedFontFamily,
+    required String textSpacingCss,
+    required String paddingCss,
+    required String gridCss,
+    required String textIndentCss,
+    required String vertKerningCss,
+    required String vpalCss,
+    required String textOrientCss,
+    required double clampedMarginTop,
+    required double clampedMarginBottom,
+  }) {
+    return '''
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: ${colors.backgroundColor} !important;
+  color: ${colors.textColor} !important;
+  writing-mode: ${settings.writingMode} !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+}
+body {
+  font-family: $resolvedFontFamily !important;
+  font-size: ${settings.fontSize}px !important;
+  -webkit-text-size-adjust: none !important;
+  overflow-wrap: anywhere !important;
+  box-sizing: border-box !important;
+  $textSpacingCss
+  $gridCss
+  $textOrientCss
+  $textIndentCss
+  $vertKerningCss
+  $vpalCss
+}
+.hoshi-vn-stage {
+  position: fixed !important;
+  inset: 0 !important;
+  box-sizing: border-box !important;
+  /* Reserve the reader chrome (top/bottom bars) + the user's vertical margins
+     so the screen never sits under the notch or the bottom chrome. */
+  padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
+  padding-bottom: calc(${clampedMarginBottom}vh + var(--chrome-bottom-inset, 0px)) !important;
+}
+.hoshi-vn-screen {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding: $paddingCss !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+}
+.hoshi-vn-content {
+  width: 100% !important;
+  max-height: 100% !important;
+}
+/* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */
+[data-hoshi-visual-novel-unrevealed] {
+  visibility: hidden !important;
+}
+''';
   }
 
   static String _continuousLayoutCss({
