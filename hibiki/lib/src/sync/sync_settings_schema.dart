@@ -10,6 +10,8 @@ import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
+import 'package:hibiki/src/storage/data_root_migrator.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
@@ -30,7 +32,10 @@ import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:hibiki_platform/hibiki_platform.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -40,6 +45,7 @@ part 'sync_settings_schema/backend_config.part.dart';
 part 'sync_settings_schema/interconnect.part.dart';
 part 'sync_settings_schema/actions.part.dart';
 part 'sync_settings_schema/backup.part.dart';
+part 'sync_settings_schema/data_root.part.dart';
 
 SettingsDestination buildSyncBackupDestination() {
   return SettingsDestination(
@@ -273,6 +279,22 @@ SettingsDestination buildSyncBackupDestination() {
             icon: Icons.download_outlined,
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+      // Group 6: Data storage location — desktop only (TODO-935 E2), appended last so the
+      // existing five-section index contract above is untouched. 移动端沙箱固定，整个 section 用 isDesktopPlatform 门控隐藏；桌面选新目录后走
+      // 已实现的 DataRootMigrator 整目录迁移 + 迁移成功后自动重启。
+      SettingsSection(
+        title: t.settings_section_data_storage,
+        visible: (SettingsContext ctx) => isDesktopPlatform,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.data_storage_location',
+            icon: Icons.folder_special_outlined,
+            visible: (SettingsContext ctx) => isDesktopPlatform,
+            builder: (SettingsContext ctx) =>
+                _DataRootWidget(settingsContext: ctx),
           ),
         ],
       ),

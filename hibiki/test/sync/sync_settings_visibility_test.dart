@@ -34,8 +34,17 @@ void main() {
     List<String> idsOf(SettingsSection s) =>
         s.items.map((SettingsItem i) => i.id).toList();
 
-    test('regroups into five intent-based sections', () {
-      expect(dest.sections, hasLength(5));
+    test(
+        'regroups into five intent-based sections + a desktop data-storage tail',
+        () {
+      // TODO-935 E2 appends a sixth, desktop-only "data storage location"
+      // section AFTER the original five so the index contract below (0..4)
+      // stays byte-for-byte intact (Never break userspace).
+      expect(dest.sections, hasLength(6));
+      // The appended section is desktop-gated and carries only the data-root row.
+      expect(dest.sections[5].visible, isNotNull,
+          reason: 'data-storage section must be desktop-only gated');
+      expect(idsOf(dest.sections[5]), <String>['sync.data_storage_location']);
     });
 
     test('group 1 (sync method) holds selector + scoped account/config/LAN',
