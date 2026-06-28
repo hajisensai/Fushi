@@ -1938,5 +1938,6 @@
   "manage_series": "Manage series",
   "add_to_series": "Add to series",
   "create_series": "Create series",
-  "series_item_count": "$n items"
+  "series_item_count": "$n items",
+  "shelf_sort_saved": "Order saved"
 }

@@ -1938,5 +1938,6 @@
   "manage_series": "管理系列",
   "add_to_series": "加入系列",
   "create_series": "新建系列",
-  "series_item_count": "$n 项"
+  "series_item_count": "$n 项",
+  "shelf_sort_saved": "排序已保存"
 }
