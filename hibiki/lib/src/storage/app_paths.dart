@@ -89,9 +89,20 @@ class AppPaths {
   static Future<Directory?> _resolveDataRoot() async {
     if (!isDesktopPlatform) return null;
     final Future<String?> Function()? reader = debugDataRootReader;
-    final String? raw = reader != null
-        ? await reader()
-        : (await SharedPreferences.getInstance()).getString(dataRootPrefKey);
+    String? raw;
+    if (reader != null) {
+      raw = await reader();
+    } else {
+      try {
+        raw =
+            (await SharedPreferences.getInstance()).getString(dataRootPrefKey);
+      } catch (_) {
+        // SharedPreferences 平台通道不可用（无插件注册的纯 Dart 测试环境 / 极端
+        // 启动早期）→ 按「无覆盖」处理，退回 path_provider 默认根，与 E1 前行为
+        // 逐字节一致。生产端插件恒注册，正常读到 data_root 覆盖值。
+        return null;
+      }
+    }
     if (raw == null || raw.trim().isEmpty) return null;
     final Directory dir = Directory(raw);
     if (!dir.existsSync()) return null; // 失效路径（盘符没挂/被删）→ 退回默认根

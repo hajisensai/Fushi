@@ -92,6 +92,19 @@ void main() {
           paths.supportRoot.path, equals(p.join(tmp.path, 'default_support')));
     });
 
+    test('SharedPreferences 平台通道不可用（未 mock）→ 回退默认不抛（E1 回归守卫）', () async {
+      // debugDataRootReader 留 null → 走真实 SharedPreferences.getInstance()。
+      // 本测试刻意不 mock shared_preferences 通道，模拟纯 Dart 单测环境：
+      // 旧实现会抛 MissingPluginException 连累所有经 AppPaths 的导入/扫描测试，
+      // 修复后应 catch 回退 path_provider 默认根。
+      AppPaths.debugDataRootReader = null;
+      final AppPaths paths = await AppPaths.resolve();
+      expect(paths.documentsRoot.path,
+          equals(p.join(tmp.path, 'default_documents')));
+      expect(
+          paths.supportRoot.path, equals(p.join(tmp.path, 'default_support')));
+    });
+
     test('rootsForDataRoot 纯派生（子目录名固定）', () {
       final (Directory docs, Directory support) =
           AppPaths.rootsForDataRoot('/x/y/Z');
