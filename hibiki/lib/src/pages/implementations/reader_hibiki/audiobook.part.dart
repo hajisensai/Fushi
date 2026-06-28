@@ -779,6 +779,84 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     return clip;
   }
 
+  /// TODO-945 M1：有声书查词弹窗「导出片段视频」入口。**M1 不做任何 ffmpeg / 视频
+  /// 合成**——只把当前查词选区扩成整句 cue 区间（复用 [_currentSentenceAudioRange]），
+  /// 用纯函数 [classifyAudiobookClipSelection] 判定四类边界（空选区 / 纯外字 / 跨章 /
+  /// 跨音频文件），逐类打日志 + 安全兜底（toast，不崩），可导出时打出
+  /// {文本, startMs, endMs, audioFileIndex, 文件路径} 供 M2 起步。
+  ///
+  /// 边界与数据流事实（实测，见 audiobook_clip_export_test.dart）：
+  /// - 纯外字选区：JS 端选区文本剔除 gaiji 图 → [_cachedSelectionRange] 文本为空 →
+  ///   走 emptySelection 分支（与「无选区」同一兜底）。
+  /// - 跨章 / 跨音频文件：[_sentenceAudioRangeFor] 天生只返回**单个** [AudioPlaybackRange]
+  ///   （单 audioFileIndex）；跨文件时只会落在它命中的那一段或返回 null，永不拼跨文件 →
+  ///   null / 越界 → unsupportedRange 兜底。D-RANGE 限单 cue/单文件即由此事实兜底。
+  void _exportAudiobookClip() {
+    final String selectedText = _cachedSelectionRange?.text ??
+        appModel.currentMediaSource?.currentSentence.text ??
+        '';
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final int audioFileCount = ctrl?.audioFiles.length ?? 0;
+    final AudioPlaybackRange? sentenceRange = _currentSentenceAudioRange();
+
+    final AudiobookClipBoundaryResult result = classifyAudiobookClipSelection(
+      selectedText: selectedText,
+      audioFileCount: audioFileCount,
+      sentenceRange: sentenceRange,
+    );
+
+    switch (result.kind) {
+      case AudiobookClipBoundaryKind.emptySelection:
+        debugPrint(
+          '[ReaderHibiki] export-clip M1: empty/gaiji-only selection — '
+          'no renderable text (selectedText.isEmpty).',
+        );
+        HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+        return;
+      case AudiobookClipBoundaryKind.noAudio:
+        debugPrint(
+          '[ReaderHibiki] export-clip M1: no audio files for this book '
+          '(audioFileCount=$audioFileCount).',
+        );
+        HibikiToast.show(msg: t.audiobook_export_clip_no_selection);
+        return;
+      case AudiobookClipBoundaryKind.unsupportedRange:
+        debugPrint(
+          '[ReaderHibiki] export-clip M1: no single-file cue range '
+          '(cross-chapter / cross-file / gap). sentenceRange='
+          '${sentenceRange == null ? 'null' : 'file=${sentenceRange.audioFileIndex} '
+              '${sentenceRange.startMs}->${sentenceRange.endMs}ms'}, '
+          'audioFileCount=$audioFileCount.',
+        );
+        ErrorLogService.instance.log(
+          'ReaderHibiki.exportClip.unsupportedRange',
+          'selection has no single-file cue range (cross-chapter/cross-file)',
+          StackTrace.current,
+        );
+        HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
+        return;
+      case AudiobookClipBoundaryKind.exportable:
+        final AudioPlaybackRange range = result.range!;
+        final List<File> audioFiles = ctrl?.audioFiles ?? const <File>[];
+        final File? inputFile = range.audioFileIndex < audioFiles.length
+            ? audioFiles[range.audioFileIndex]
+            : null;
+        // M1 stops here: log the resolved {text, ms, file} so M2 (audio clip)
+        // has a verified starting point. No ffmpeg / video synthesis yet.
+        debugPrint(
+          '[ReaderHibiki] export-clip M1 OK: text="${selectedText.trim()}" '
+          'audioFileIndex=${range.audioFileIndex} '
+          'startMs=${range.startMs} endMs=${range.endMs} '
+          'durationMs=${range.endMs - range.startMs} '
+          'file=${inputFile?.path ?? '<unresolved>'}',
+        );
+        // M1: no export UI yet — surface a neutral toast so the button has
+        // user-visible feedback while the synthesis pipeline (M2-M5) is built.
+        HibikiToast.show(msg: t.audiobook_export_clip);
+        return;
+    }
+  }
+
   /// 有声书是否已激活（有控制器且本章有 cue）。Space 播放/暂停覆写的统一闸门，
   /// 正文焦点路径与底栏焦点路径（BUG-204）共用同一判据。
   bool get _hasActiveAudiobook =>

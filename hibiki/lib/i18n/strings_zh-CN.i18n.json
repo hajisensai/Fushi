@@ -1960,5 +1960,9 @@
   "combine_into_series": "组合成系列",
   "series_empty": "此系列暂无书籍",
   "backup_category_local_audio": "本地音频数据库",
-  "shortcut_tap_to_assign": "未设置 · 点击设置"
+  "shortcut_tap_to_assign": "未设置 · 点击设置",
+  "audiobook_export_clip": "导出片段视频",
+  "audiobook_export_clip_no_selection": "请先选中文本再导出片段",
+  "audiobook_export_clip_no_text": "该选区没有可渲染的文本",
+  "audiobook_export_clip_unsupported_range": "该选区暂不支持导出（跨章或跨音频文件）"
 }

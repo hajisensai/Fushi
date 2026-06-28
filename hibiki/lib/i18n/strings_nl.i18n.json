@@ -1960,5 +1960,9 @@
   "combine_into_series": "Combine into series",
   "series_empty": "No books in this series",
   "backup_category_local_audio": "Local audio databases",
-  "shortcut_tap_to_assign": "Not set · tap to assign"
+  "shortcut_tap_to_assign": "Not set · tap to assign",
+  "audiobook_export_clip": "Export clip video",
+  "audiobook_export_clip_no_selection": "Select text first to export a clip",
+  "audiobook_export_clip_no_text": "This selection has no text to render",
+  "audiobook_export_clip_unsupported_range": "This selection can't be exported (crosses chapter or audio file)"
 }
