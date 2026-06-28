@@ -6,6 +6,7 @@ export 'src/utils/components/cache_image_provider.dart';
 export 'src/utils/components/hibiki_gamepad_keyboard.dart';
 export 'src/utils/components/hibiki_icon_button.dart';
 export 'src/utils/components/hibiki_reorderable_column.dart';
+export 'src/utils/components/hibiki_reorderable_grid.dart';
 export 'src/utils/components/hibiki_reorder_drag_listener.dart';
 export 'src/utils/components/hibiki_bottom_sheet.dart';
 export 'src/utils/components/hibiki_divider.dart';
