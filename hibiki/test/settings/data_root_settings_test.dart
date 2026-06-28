@@ -99,11 +99,13 @@ void main() {
       expect(src.contains('AppPaths.dataRootPrefKey'), isTrue);
       // Auto-restarts after a successful migration.
       expect(src.contains('restartApp()'), isTrue);
+      // This entry is still experimental and must be labeled in-app.
+      expect(src.contains('t.settings_experimental_suffix'), isTrue);
     });
 
     test('data-storage section is gated desktop-only', () {
-      final String src =
-          readSource('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final String src = readSource('lib/src/sync/sync_settings_schema.dart')
+          .readAsStringSync();
       expect(src.contains("id: 'sync.data_storage_location'"), isTrue);
       expect(src.contains('_DataRootWidget(settingsContext: ctx)'), isTrue);
       // The section + item both gate on isDesktopPlatform so mobile never sees

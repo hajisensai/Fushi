@@ -123,6 +123,11 @@ void main() {
       source,
       contains('Future<void> _exportAudiobookClipFromSelection()'),
     );
+    final String selectionStateHelper = functionSource(
+      source,
+      'Future<ReaderSelectionData?> _fillLookupStateFromNativeSelection()',
+      'Future<void> _exportAudiobookClipFromSelection()',
+    );
     final String resolver = functionSource(
       source,
       'Future<void> _exportAudiobookClipFromSelection()',
@@ -133,13 +138,14 @@ void main() {
     // helper, NOT through _handleTextSelected (which would pop the lookup popup
     // and pause audio — the whole point of TODO-954 is to decouple export).
     expect(
-      resolver,
+      selectionStateHelper,
       contains(
           'ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation()'),
     );
-    expect(resolver, isNot(contains('_handleTextSelected(')));
-    expect(resolver, contains('ReaderSelectionData.fromJson'));
-    expect(resolver, contains('_cachedSentenceRange'));
+    expect(selectionStateHelper, isNot(contains('_handleTextSelected(')));
+    expect(selectionStateHelper, contains('ReaderSelectionData.fromJson'));
+    expect(selectionStateHelper, contains('_cachedSentenceRange'));
+    expect(resolver, contains('_fillLookupStateFromNativeSelection()'));
     expect(resolver, contains('_exportAudiobookClip()'));
   });
 

@@ -289,7 +289,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       title: t.data_storage_location_title,
       subtitle: _migrating
           ? t.data_storage_migrating
-          : '${t.data_storage_location_hint}\n${_currentLocationLabel()}',
+          : '${t.data_storage_location_hint}${t.settings_experimental_suffix}\n${_currentLocationLabel()}',
       icon: Icons.folder_special_outlined,
       controlBelow: true,
       // 行 onTap 注册焦点目标（方向导航可达）；trailing 按钮是视觉入口。
