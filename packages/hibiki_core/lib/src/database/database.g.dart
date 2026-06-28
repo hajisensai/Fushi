@@ -11982,6 +11982,604 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
   }
 }
 
+class $SeriesTable extends Series with TableInfo<$SeriesTable, SeriesRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SeriesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _coverSourceMeta =
+      const VerificationMeta('coverSource');
+  @override
+  late final GeneratedColumn<String> coverSource = GeneratedColumn<String>(
+      'cover_source', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, name, coverSource, sortOrder, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'series';
+  @override
+  VerificationContext validateIntegrity(Insertable<SeriesRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('cover_source')) {
+      context.handle(
+          _coverSourceMeta,
+          coverSource.isAcceptableOrUnknown(
+              data['cover_source']!, _coverSourceMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SeriesRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SeriesRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      coverSource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_source']),
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $SeriesTable createAlias(String alias) {
+    return $SeriesTable(attachedDatabase, alias);
+  }
+}
+
+class SeriesRow extends DataClass implements Insertable<SeriesRow> {
+  final int id;
+
+  /// 系列名（必填）。
+  final String name;
+
+  /// 系列封面来源：NULL = 自动取系列内 sortOrder 最小成员封面（拍板「首卷自动」）；
+  /// 非空 = 手动指定（预留，本期恒 NULL）。不存首卷 entryKey 快照——首卷随增删 / 重排
+  /// 变化，渲染时纯函数推导。
+  final String? coverSource;
+
+  /// 系列卡片之间的排序权重（同 [MediaSources].sortOrder 范式）。
+  final int sortOrder;
+
+  /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
+  final int createdAt;
+  const SeriesRow(
+      {required this.id,
+      required this.name,
+      this.coverSource,
+      required this.sortOrder,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || coverSource != null) {
+      map['cover_source'] = Variable<String>(coverSource);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  SeriesCompanion toCompanion(bool nullToAbsent) {
+    return SeriesCompanion(
+      id: Value(id),
+      name: Value(name),
+      coverSource: coverSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverSource),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SeriesRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SeriesRow(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      coverSource: serializer.fromJson<String?>(json['coverSource']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'coverSource': serializer.toJson<String?>(coverSource),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  SeriesRow copyWith(
+          {int? id,
+          String? name,
+          Value<String?> coverSource = const Value.absent(),
+          int? sortOrder,
+          int? createdAt}) =>
+      SeriesRow(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        coverSource: coverSource.present ? coverSource.value : this.coverSource,
+        sortOrder: sortOrder ?? this.sortOrder,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  SeriesRow copyWithCompanion(SeriesCompanion data) {
+    return SeriesRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      coverSource:
+          data.coverSource.present ? data.coverSource.value : this.coverSource,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SeriesRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('coverSource: $coverSource, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, coverSource, sortOrder, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SeriesRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.coverSource == this.coverSource &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt);
+}
+
+class SeriesCompanion extends UpdateCompanion<SeriesRow> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<String?> coverSource;
+  final Value<int> sortOrder;
+  final Value<int> createdAt;
+  const SeriesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.coverSource = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  SeriesCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    this.coverSource = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    required int createdAt,
+  })  : name = Value(name),
+        createdAt = Value(createdAt);
+  static Insertable<SeriesRow> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<String>? coverSource,
+    Expression<int>? sortOrder,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (coverSource != null) 'cover_source': coverSource,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  SeriesCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? name,
+      Value<String?>? coverSource,
+      Value<int>? sortOrder,
+      Value<int>? createdAt}) {
+    return SeriesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      coverSource: coverSource ?? this.coverSource,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (coverSource.present) {
+      map['cover_source'] = Variable<String>(coverSource.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SeriesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('coverSource: $coverSource, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ShelfEntriesTable extends ShelfEntries
+    with TableInfo<$ShelfEntriesTable, ShelfEntryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ShelfEntriesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _entryKeyMeta =
+      const VerificationMeta('entryKey');
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+      'entry_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _seriesIdMeta =
+      const VerificationMeta('seriesId');
+  @override
+  late final GeneratedColumn<int> seriesId = GeneratedColumn<int>(
+      'series_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES series (id) ON DELETE SET NULL'));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [mediaType, entryKey, sortOrder, seriesId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'shelf_entries';
+  @override
+  VerificationContext validateIntegrity(Insertable<ShelfEntryRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(_entryKeyMeta,
+          entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta));
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    if (data.containsKey('series_id')) {
+      context.handle(_seriesIdMeta,
+          seriesId.isAcceptableOrUnknown(data['series_id']!, _seriesIdMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaType, entryKey};
+  @override
+  ShelfEntryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ShelfEntryRow(
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      entryKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}entry_key'])!,
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      seriesId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}series_id']),
+    );
+  }
+
+  @override
+  $ShelfEntriesTable createAlias(String alias) {
+    return $ShelfEntriesTable(attachedDatabase, alias);
+  }
+}
+
+class ShelfEntryRow extends DataClass implements Insertable<ShelfEntryRow> {
+  /// 媒体种类：'epub' | 'srt' | 'video'。
+  final String mediaType;
+
+  /// 条目稳定身份：本地 = bookKey / srtUid / videoBookUid；远端 = downloadId /
+  /// video.id。远端书下载后 bookKey 漂移 → 由 _downloadRemoteBook 改键迁移（独立
+  /// 事务），归属延续。**逻辑外键**（不对本地三表加 FK：远端 entryKey 无本地表行，
+  /// 写 FK 会在插远端归属时违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
+  final String entryKey;
+
+  /// 自定义排序权重（拖拽回写）。无行的旧条目退化为 importedAt 倒序（向后兼容）。
+  final int sortOrder;
+
+  /// 归属系列（NULL = 散书）。onDelete:setNull 仿 [EpubBooks].sourceId：移除系列时
+  /// 成员归 NULL（散回书架），不连坐删条目。
+  final int? seriesId;
+  const ShelfEntryRow(
+      {required this.mediaType,
+      required this.entryKey,
+      required this.sortOrder,
+      this.seriesId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_type'] = Variable<String>(mediaType);
+    map['entry_key'] = Variable<String>(entryKey);
+    map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || seriesId != null) {
+      map['series_id'] = Variable<int>(seriesId);
+    }
+    return map;
+  }
+
+  ShelfEntriesCompanion toCompanion(bool nullToAbsent) {
+    return ShelfEntriesCompanion(
+      mediaType: Value(mediaType),
+      entryKey: Value(entryKey),
+      sortOrder: Value(sortOrder),
+      seriesId: seriesId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(seriesId),
+    );
+  }
+
+  factory ShelfEntryRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ShelfEntryRow(
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      seriesId: serializer.fromJson<int?>(json['seriesId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaType': serializer.toJson<String>(mediaType),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'seriesId': serializer.toJson<int?>(seriesId),
+    };
+  }
+
+  ShelfEntryRow copyWith(
+          {String? mediaType,
+          String? entryKey,
+          int? sortOrder,
+          Value<int?> seriesId = const Value.absent()}) =>
+      ShelfEntryRow(
+        mediaType: mediaType ?? this.mediaType,
+        entryKey: entryKey ?? this.entryKey,
+        sortOrder: sortOrder ?? this.sortOrder,
+        seriesId: seriesId.present ? seriesId.value : this.seriesId,
+      );
+  ShelfEntryRow copyWithCompanion(ShelfEntriesCompanion data) {
+    return ShelfEntryRow(
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      seriesId: data.seriesId.present ? data.seriesId.value : this.seriesId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ShelfEntryRow(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('seriesId: $seriesId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaType, entryKey, sortOrder, seriesId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ShelfEntryRow &&
+          other.mediaType == this.mediaType &&
+          other.entryKey == this.entryKey &&
+          other.sortOrder == this.sortOrder &&
+          other.seriesId == this.seriesId);
+}
+
+class ShelfEntriesCompanion extends UpdateCompanion<ShelfEntryRow> {
+  final Value<String> mediaType;
+  final Value<String> entryKey;
+  final Value<int> sortOrder;
+  final Value<int?> seriesId;
+  final Value<int> rowid;
+  const ShelfEntriesCompanion({
+    this.mediaType = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.seriesId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ShelfEntriesCompanion.insert({
+    required String mediaType,
+    required String entryKey,
+    this.sortOrder = const Value.absent(),
+    this.seriesId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : mediaType = Value(mediaType),
+        entryKey = Value(entryKey);
+  static Insertable<ShelfEntryRow> custom({
+    Expression<String>? mediaType,
+    Expression<String>? entryKey,
+    Expression<int>? sortOrder,
+    Expression<int>? seriesId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaType != null) 'media_type': mediaType,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (seriesId != null) 'series_id': seriesId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ShelfEntriesCompanion copyWith(
+      {Value<String>? mediaType,
+      Value<String>? entryKey,
+      Value<int>? sortOrder,
+      Value<int?>? seriesId,
+      Value<int>? rowid}) {
+    return ShelfEntriesCompanion(
+      mediaType: mediaType ?? this.mediaType,
+      entryKey: entryKey ?? this.entryKey,
+      sortOrder: sortOrder ?? this.sortOrder,
+      seriesId: seriesId ?? this.seriesId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (seriesId.present) {
+      map['series_id'] = Variable<int>(seriesId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ShelfEntriesCompanion(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('seriesId: $seriesId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -12029,6 +12627,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $MiningStatisticsTable miningStatistics =
       $MiningStatisticsTable(this);
   late final $MinedSentencesTable minedSentences = $MinedSentencesTable(this);
+  late final $SeriesTable series = $SeriesTable(this);
+  late final $ShelfEntriesTable shelfEntries = $ShelfEntriesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -12063,7 +12663,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         videoHourlyLogs,
         favoriteWords,
         miningStatistics,
-        minedSentences
+        minedSentences,
+        series,
+        shelfEntries
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -12150,6 +12752,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('video_book_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('series',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('shelf_entries', kind: UpdateKind.update),
             ],
           ),
         ],
@@ -20304,6 +20913,509 @@ typedef $$MinedSentencesTableProcessedTableManager = ProcessedTableManager<
     ),
     MinedSentenceRow,
     PrefetchHooks Function()>;
+typedef $$SeriesTableCreateCompanionBuilder = SeriesCompanion Function({
+  Value<int> id,
+  required String name,
+  Value<String?> coverSource,
+  Value<int> sortOrder,
+  required int createdAt,
+});
+typedef $$SeriesTableUpdateCompanionBuilder = SeriesCompanion Function({
+  Value<int> id,
+  Value<String> name,
+  Value<String?> coverSource,
+  Value<int> sortOrder,
+  Value<int> createdAt,
+});
+
+final class $$SeriesTableReferences
+    extends BaseReferences<_$HibikiDatabase, $SeriesTable, SeriesRow> {
+  $$SeriesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$ShelfEntriesTable, List<ShelfEntryRow>>
+      _shelfEntriesRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.shelfEntries,
+              aliasName: 'series__id__shelf_entries__series_id');
+
+  $$ShelfEntriesTableProcessedTableManager get shelfEntriesRefs {
+    final manager = $$ShelfEntriesTableTableManager($_db, $_db.shelfEntries)
+        .filter((f) => f.seriesId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_shelfEntriesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$SeriesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $SeriesTable> {
+  $$SeriesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverSource => $composableBuilder(
+      column: $table.coverSource, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  Expression<bool> shelfEntriesRefs(
+      Expression<bool> Function($$ShelfEntriesTableFilterComposer f) f) {
+    final $$ShelfEntriesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.shelfEntries,
+        getReferencedColumn: (t) => t.seriesId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ShelfEntriesTableFilterComposer(
+              $db: $db,
+              $table: $db.shelfEntries,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$SeriesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $SeriesTable> {
+  $$SeriesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverSource => $composableBuilder(
+      column: $table.coverSource, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SeriesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $SeriesTable> {
+  $$SeriesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get coverSource => $composableBuilder(
+      column: $table.coverSource, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  Expression<T> shelfEntriesRefs<T extends Object>(
+      Expression<T> Function($$ShelfEntriesTableAnnotationComposer a) f) {
+    final $$ShelfEntriesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.shelfEntries,
+        getReferencedColumn: (t) => t.seriesId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ShelfEntriesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.shelfEntries,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$SeriesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $SeriesTable,
+    SeriesRow,
+    $$SeriesTableFilterComposer,
+    $$SeriesTableOrderingComposer,
+    $$SeriesTableAnnotationComposer,
+    $$SeriesTableCreateCompanionBuilder,
+    $$SeriesTableUpdateCompanionBuilder,
+    (SeriesRow, $$SeriesTableReferences),
+    SeriesRow,
+    PrefetchHooks Function({bool shelfEntriesRefs})> {
+  $$SeriesTableTableManager(_$HibikiDatabase db, $SeriesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SeriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SeriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SeriesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String?> coverSource = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              SeriesCompanion(
+            id: id,
+            name: name,
+            coverSource: coverSource,
+            sortOrder: sortOrder,
+            createdAt: createdAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String name,
+            Value<String?> coverSource = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            required int createdAt,
+          }) =>
+              SeriesCompanion.insert(
+            id: id,
+            name: name,
+            coverSource: coverSource,
+            sortOrder: sortOrder,
+            createdAt: createdAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) =>
+                  (e.readTable(table), $$SeriesTableReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: ({shelfEntriesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (shelfEntriesRefs) db.shelfEntries],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (shelfEntriesRefs)
+                    await $_getPrefetchedData<SeriesRow, $SeriesTable,
+                            ShelfEntryRow>(
+                        currentTable: table,
+                        referencedTable:
+                            $$SeriesTableReferences._shelfEntriesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$SeriesTableReferences(db, table, p0)
+                                .shelfEntriesRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.seriesId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$SeriesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $SeriesTable,
+    SeriesRow,
+    $$SeriesTableFilterComposer,
+    $$SeriesTableOrderingComposer,
+    $$SeriesTableAnnotationComposer,
+    $$SeriesTableCreateCompanionBuilder,
+    $$SeriesTableUpdateCompanionBuilder,
+    (SeriesRow, $$SeriesTableReferences),
+    SeriesRow,
+    PrefetchHooks Function({bool shelfEntriesRefs})>;
+typedef $$ShelfEntriesTableCreateCompanionBuilder = ShelfEntriesCompanion
+    Function({
+  required String mediaType,
+  required String entryKey,
+  Value<int> sortOrder,
+  Value<int?> seriesId,
+  Value<int> rowid,
+});
+typedef $$ShelfEntriesTableUpdateCompanionBuilder = ShelfEntriesCompanion
+    Function({
+  Value<String> mediaType,
+  Value<String> entryKey,
+  Value<int> sortOrder,
+  Value<int?> seriesId,
+  Value<int> rowid,
+});
+
+final class $$ShelfEntriesTableReferences extends BaseReferences<
+    _$HibikiDatabase, $ShelfEntriesTable, ShelfEntryRow> {
+  $$ShelfEntriesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $SeriesTable _seriesIdTable(_$HibikiDatabase db) =>
+      db.series.createAlias('shelf_entries__series_id__series__id');
+
+  $$SeriesTableProcessedTableManager? get seriesId {
+    final $_column = $_itemColumn<int>('series_id');
+    if ($_column == null) return null;
+    final manager = $$SeriesTableTableManager($_db, $_db.series)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_seriesIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$ShelfEntriesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $ShelfEntriesTable> {
+  $$ShelfEntriesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  $$SeriesTableFilterComposer get seriesId {
+    final $$SeriesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.seriesId,
+        referencedTable: $db.series,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SeriesTableFilterComposer(
+              $db: $db,
+              $table: $db.series,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ShelfEntriesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $ShelfEntriesTable> {
+  $$ShelfEntriesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+      column: $table.entryKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+
+  $$SeriesTableOrderingComposer get seriesId {
+    final $$SeriesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.seriesId,
+        referencedTable: $db.series,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SeriesTableOrderingComposer(
+              $db: $db,
+              $table: $db.series,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ShelfEntriesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $ShelfEntriesTable> {
+  $$ShelfEntriesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  $$SeriesTableAnnotationComposer get seriesId {
+    final $$SeriesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.seriesId,
+        referencedTable: $db.series,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SeriesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.series,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ShelfEntriesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $ShelfEntriesTable,
+    ShelfEntryRow,
+    $$ShelfEntriesTableFilterComposer,
+    $$ShelfEntriesTableOrderingComposer,
+    $$ShelfEntriesTableAnnotationComposer,
+    $$ShelfEntriesTableCreateCompanionBuilder,
+    $$ShelfEntriesTableUpdateCompanionBuilder,
+    (ShelfEntryRow, $$ShelfEntriesTableReferences),
+    ShelfEntryRow,
+    PrefetchHooks Function({bool seriesId})> {
+  $$ShelfEntriesTableTableManager(_$HibikiDatabase db, $ShelfEntriesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ShelfEntriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ShelfEntriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ShelfEntriesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> mediaType = const Value.absent(),
+            Value<String> entryKey = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int?> seriesId = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ShelfEntriesCompanion(
+            mediaType: mediaType,
+            entryKey: entryKey,
+            sortOrder: sortOrder,
+            seriesId: seriesId,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String mediaType,
+            required String entryKey,
+            Value<int> sortOrder = const Value.absent(),
+            Value<int?> seriesId = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ShelfEntriesCompanion.insert(
+            mediaType: mediaType,
+            entryKey: entryKey,
+            sortOrder: sortOrder,
+            seriesId: seriesId,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$ShelfEntriesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({seriesId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (seriesId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.seriesId,
+                    referencedTable:
+                        $$ShelfEntriesTableReferences._seriesIdTable(db),
+                    referencedColumn:
+                        $$ShelfEntriesTableReferences._seriesIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$ShelfEntriesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $ShelfEntriesTable,
+    ShelfEntryRow,
+    $$ShelfEntriesTableFilterComposer,
+    $$ShelfEntriesTableOrderingComposer,
+    $$ShelfEntriesTableAnnotationComposer,
+    $$ShelfEntriesTableCreateCompanionBuilder,
+    $$ShelfEntriesTableUpdateCompanionBuilder,
+    (ShelfEntryRow, $$ShelfEntriesTableReferences),
+    ShelfEntryRow,
+    PrefetchHooks Function({bool seriesId})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -20368,4 +21480,8 @@ class $HibikiDatabaseManager {
       $$MiningStatisticsTableTableManager(_db, _db.miningStatistics);
   $$MinedSentencesTableTableManager get minedSentences =>
       $$MinedSentencesTableTableManager(_db, _db.minedSentences);
+  $$SeriesTableTableManager get series =>
+      $$SeriesTableTableManager(_db, _db.series);
+  $$ShelfEntriesTableTableManager get shelfEntries =>
+      $$ShelfEntriesTableTableManager(_db, _db.shelfEntries);
 }

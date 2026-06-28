@@ -455,6 +455,48 @@ VALUES ('srtbook_222', 'Standalone Sub', '/abs/persist/S/s.srt',
   return db;
 }
 
+/// Opens a minimal `user_version = 29` database for the TODO-616 v29->v30
+/// migration. It has the v29-shape epub_books table seeded with one row (to
+/// assert既有数据不丢 across the bump) and NO series / shelf_entries tables —
+/// forcing the real `if (from < 30) createTable(series/shelfEntries)` onUpgrade
+/// branch to run. No audiobooks/srt_books seeding needed: the from<29 backfill
+/// only INSERTs paired rows for EPUB-backed audiobooks, and this DB seeds none.
+Future<HibikiDatabase> _openV29Db() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA foreign_keys = OFF');
+        rawDb.execute('''
+CREATE TABLE epub_books (
+  book_key TEXT NOT NULL PRIMARY KEY,
+  title TEXT NOT NULL,
+  author TEXT,
+  cover_path TEXT,
+  epub_path TEXT NOT NULL,
+  extract_dir TEXT NOT NULL,
+  chapter_count INTEGER NOT NULL,
+  chapters_json TEXT NOT NULL,
+  toc_json TEXT,
+  source_metadata TEXT,
+  imported_at INTEGER NOT NULL,
+  source_id INTEGER
+)
+''');
+        rawDb.execute('''
+INSERT INTO epub_books
+(book_key, title, author, epub_path, extract_dir, chapter_count,
+ chapters_json, imported_at)
+VALUES ('PreV30', 'PreExistingBook', 'AuthorX', '/abs/p.epub',
+ '/abs/p/extract', 1, '["ch1"]', 333000)
+''');
+        rawDb.execute('PRAGMA user_version = 29');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
@@ -827,7 +869,12 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 29, reason: 'TODO-894 bumps schema to v29');
+      // NOTE(TODO-616): schemaVersion is the single global getter, now 30.
+      // This v28 DB upgrades all the way to current; TODO-894's backfill
+      // still ran (asserted below). The literal had to track the bump.
+      expect(db.schemaVersion, 30,
+          reason: 'global schemaVersion is now 30 (TODO-616); TODO-894 '
+              'backfill behavior asserted by the srt_books checks below');
 
       // The previously-unpaired EPUB-backed audiobook now has a srt_books row.
       final paired = await db.getSrtBookByBookKey('A');
@@ -999,6 +1046,63 @@ void main() {
           .get();
       final tables = fks.map((r) => r.data['table'] as String).toSet();
       expect(tables, contains('book_tags'));
+    });
+
+    test(
+        'real v29->v30 creates series + shelf_entries, bumps user_version to 30, '
+        'preserves既有数据 (TODO-616)', () async {
+      final db = await _openV29Db();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), db.schemaVersion);
+      expect(db.schemaVersion, 30, reason: 'TODO-616 bumps schema to v30');
+
+      // Both new tables now exist.
+      final tableNames = (await db
+              .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
+              .get())
+          .map((r) => r.data['name'] as String)
+          .toSet();
+      expect(tableNames, contains('series'),
+          reason: 'from<30 must createTable(series)');
+      expect(tableNames, contains('shelf_entries'),
+          reason: 'from<30 must createTable(shelf_entries)');
+
+      // shelf_entries.series_id is a real FK to series(id) (onDelete:setNull).
+      final fks = await db
+          .customSelect("PRAGMA foreign_key_list('shelf_entries')")
+          .get();
+      final fkTables = fks.map((r) => r.data['table'] as String).toSet();
+      expect(fkTables, contains('series'),
+          reason: 'shelf_entries.series_id references series(id)');
+
+      // 既有数据不丢：the seeded pre-v30 epub_books row survives the bump.
+      final preserved = await db.getEpubBook('PreV30');
+      expect(preserved, isNotNull,
+          reason: 'v30 createTable migration must not touch existing rows');
+      expect(preserved!.title, 'PreExistingBook');
+      expect(preserved.author, 'AuthorX');
+      expect(preserved.importedAt, 333000);
+
+      // The new tables start empty (no backfill) -> default散书 + importedAt
+      // 倒序退化 (Never break userspace).
+      expect(await db.getAllSeries(), isEmpty);
+      expect(await db.getAllShelfEntries(), isEmpty);
+    });
+
+    test('v29->v30 createTable migration is idempotent on a fresh DB',
+        () async {
+      // A fresh DB is created at v30 by onCreate's createAll; the from<30 guard
+      // (_tableExists) must make re-entering the step a no-op rather than a
+      // "table already exists" failure.
+      final db = await _openDb();
+      final tableNames = (await db
+              .customSelect("SELECT name FROM sqlite_master WHERE type='table'")
+              .get())
+          .map((r) => r.data['name'] as String)
+          .toSet();
+      expect(tableNames, containsAll(['series', 'shelf_entries']));
+      expect(db.schemaVersion, 30);
     });
   });
 }

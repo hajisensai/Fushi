@@ -539,3 +539,54 @@ class MediaSources extends Table {
   /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
   IntColumn get createdAt => integer()();
 }
+
+// ── series ───────────────────────────────────
+// TODO-616 A 合集/系列：把多本独立书 / 多个视频条目折叠成一张「系列卡片」。
+// 仿 [MediaSources] 范式（自增 id + sortOrder + createdAt int 毫秒戳）。
+@DataClassName('SeriesRow')
+class Series extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 系列名（必填）。
+  TextColumn get name => text()();
+
+  /// 系列封面来源：NULL = 自动取系列内 sortOrder 最小成员封面（拍板「首卷自动」）；
+  /// 非空 = 手动指定（预留，本期恒 NULL）。不存首卷 entryKey 快照——首卷随增删 / 重排
+  /// 变化，渲染时纯函数推导。
+  TextColumn get coverSource => text().nullable()();
+
+  /// 系列卡片之间的排序权重（同 [MediaSources].sortOrder 范式）。
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// 创建时间（毫秒戳，同 [EpubBooks].importedAt int 范式）。
+  IntColumn get createdAt => integer()();
+}
+
+// ── shelf_entries ───────────────────────────────
+// TODO-616 B 排序 + A 归属：以 (mediaType, entryKey) 为稳定身份统管本地 + 远端条目
+// 的自定义排序权重与系列归属。三大媒体表不加 seriesId/sortOrder 列（避免双真相源）；
+// 远端-only 条目无本地 row 可挂列，故用独立映射表。
+@DataClassName('ShelfEntryRow')
+class ShelfEntries extends Table {
+  /// 媒体种类：'epub' | 'srt' | 'video'。
+  TextColumn get mediaType => text()();
+
+  /// 条目稳定身份：本地 = bookKey / srtUid / videoBookUid；远端 = downloadId /
+  /// video.id。远端书下载后 bookKey 漂移 → 由 _downloadRemoteBook 改键迁移（独立
+  /// 事务），归属延续。**逻辑外键**（不对本地三表加 FK：远端 entryKey 无本地表行，
+  /// 写 FK 会在插远端归属时违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
+  TextColumn get entryKey => text()();
+
+  /// 自定义排序权重（拖拽回写）。无行的旧条目退化为 importedAt 倒序（向后兼容）。
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// 归属系列（NULL = 散书）。onDelete:setNull 仿 [EpubBooks].sourceId：移除系列时
+  /// 成员归 NULL（散回书架），不连坐删条目。
+  IntColumn get seriesId => integer()
+      .nullable()
+      .references(Series, #id, onDelete: KeyAction.setNull)();
+
+  /// 复合主键：一条目一行。
+  @override
+  Set<Column> get primaryKey => {mediaType, entryKey};
+}
