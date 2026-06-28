@@ -612,6 +612,11 @@ class GlobalLookupController {
     }
     final List<GlobalLookupFramePayload> payloads =
         <GlobalLookupFramePayload>[];
+    // TODO-938 — pop the cascade left/right when the last-active reader is a
+    // vertical-writing book; null (no book open / lookup over another app)
+    // falls back to the horizontal cascade. Same判据 as the in-app reader.
+    final bool isVertical = isVerticalFromWritingMode(
+        ReaderHibikiSource.readerSettings?.writingMode);
     for (final GlobalLookupFrame frame in _stack.frames) {
       final DictionarySearchResult? result = _frameResults[frame.id];
       if (result == null) {
@@ -621,7 +626,7 @@ class GlobalLookupController {
         frame: frame,
         result: result,
         anchorRect: _frameAnchors[frame.id],
-        isVertical: false,
+        isVertical: isVertical,
       ));
     }
     if (payloads.isEmpty) {

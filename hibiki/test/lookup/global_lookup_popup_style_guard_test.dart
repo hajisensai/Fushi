@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/lookup/global_lookup_render.dart';
 
 /// TODO-867 P2 — guards for the app-OUTSIDE global-lookup popup styling.
 ///
@@ -407,6 +408,49 @@ void main() {
           reason: 'result shifted back to window-local (X)');
       expect(render.contains('r.top - selectionScreenOffset.dy'), isTrue,
           reason: 'result shifted back to window-local (Y)');
+    });
+  });
+
+  group('TODO-938 — vertical cascade wired from writingMode', () {
+    // App-OUTSIDE global lookup popped its nested cards with isVertical
+    // HARDCODED false, so a vertical-writing book's lookup cards always cascaded
+    // up/down (horizontal-writing layout). The render styling itself is already
+    // shared with the in-app popup (TODO-895); this was the one布局参数 still
+    // hardcoded. The fix reads the active reader's writingMode (same接口/判据 as
+    // the in-app reader) with a null fallback for the over-another-app case.
+    test('isVerticalFromWritingMode: vertical modes -> true', () {
+      expect(isVerticalFromWritingMode('vertical-rl'), isTrue);
+      expect(isVerticalFromWritingMode('vertical-lr'), isTrue);
+    });
+
+    test('isVerticalFromWritingMode: horizontal / null / empty -> false', () {
+      expect(isVerticalFromWritingMode('horizontal-tb'), isFalse,
+          reason: 'horizontal book cascades up/down');
+      expect(isVerticalFromWritingMode(null), isFalse,
+          reason: 'no active reader (lookup over another app) -> horizontal');
+      expect(isVerticalFromWritingMode(''), isFalse);
+    });
+
+    test('controller no longer hardcodes isVertical:false; reads writingMode',
+        () {
+      final String controller =
+          read('lib/src/lookup/global_lookup_controller.dart');
+      // The dead `isVertical: false,` literal in the stack payload must be gone.
+      expect(controller.contains('isVertical: false'), isFalse,
+          reason: 'the hardcoded false cascade flag must be removed');
+      // It must now derive the flag from the active reader writingMode via the
+      // shared判据 helper.
+      // Whitespace-collapsed so dart format line-wrapping at the `(` can't break
+      // the match (the call is long and the formatter splits the argument).
+      final String controllerFlat = controller.replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+        controllerFlat.contains(
+            'isVerticalFromWritingMode( ReaderHibikiSource.readerSettings?.writingMode)'),
+        isTrue,
+        reason: 'cascade vertical flag must come from the reader writingMode',
+      );
+      expect(controller.contains('isVertical: isVertical'), isTrue,
+          reason: 'the resolved flag must feed the frame payload');
     });
   });
 

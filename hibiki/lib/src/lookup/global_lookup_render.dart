@@ -87,6 +87,20 @@ class GlobalLookupFramePayload {
   final bool isVertical;
 }
 
+/// TODO-938 — resolves the cascade vertical-writing flag for a global-lookup
+/// stack from the active reader's [ReaderSettings.writingMode]. The
+/// bare-WebView2 overlay can pop up over ANY foreground app, so there may be no
+/// active reader (no book open) — in that case [writingMode] is null and we
+/// fall back to false (horizontal cascade), exactly as before. When a
+/// vertical-writing book IS the last-active reader, nested lookup cards cascade
+/// left/right instead of up/down, matching the in-app reader's own判据
+/// ([ReaderContentStyles] uses the same `writingMode.startsWith('vertical')`).
+/// This is the ONE field the app-outside path still hardcoded; everything else
+/// (theme/zoom/font/flags) already flows through the shared
+/// [buildPopupSettingsJs] (TODO-895).
+bool isVerticalFromWritingMode(String? writingMode) =>
+    writingMode?.startsWith('vertical') ?? false;
+
 /// Deterministic placeholder cascade offset (CSS px) per stack depth, used ONLY
 /// when a frame has no real [GlobalLookupFramePayload.anchorRect] yet (defensive
 /// fallback). With a real anchor the geometry comes from [computeFrameRect].
