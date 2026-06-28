@@ -2213,7 +2213,14 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
   // 错误/调试日志页「复制整段去排障」是核心用途，所以「复制全部」直走
   // [widget.log] 全量、绕开 SelectionArea 的视口限制，保证一定拿到整段日志。
   Future<void> _copyAllToClipboard() async {
-    await Clipboard.setData(ClipboardData(text: widget.log));
+    // BUG-925：Windows 平台通道偶发把剪贴板 setData 抛成 PlatformException（剪贴板被
+    // 其它进程独占 / 通道竞态）。这是「复制全部」的兜底入口，绝不能让一次复制失败把
+    // 异常逃逸到 framework 顶层（与崩溃签名混淆）。失败时降级 debugPrint，不打断 UI。
+    try {
+      await Clipboard.setData(ClipboardData(text: widget.log));
+    } catch (e) {
+      debugPrint('[HibikiLogPanel] copy-all to clipboard failed: $e');
+    }
   }
 
   // 上下文菜单：覆盖框架默认的「复制」（只拿视口选区）语义。保留默认
@@ -2295,10 +2302,28 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
                           // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
                           // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
                           // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
-                          return Text(
-                            _lines[index],
-                            style: lineStyle,
-                            softWrap: false,
+                          //
+                          // BUG-925：仅 softWrap:false 时，行 Text 的布局宽度 =
+                          // 整行无界单行宽（ListView 只纵向滚动，水平方向没有约束
+                          // 收口它）。SelectionArea 对这种无界宽度的 Selectable 做
+                          // 命中测试 / getBoxesForSelection 时（单击 / 框选触发），
+                          // 会对超出视口的极端横坐标求交，触发越界（与 BUG-413/423
+                          // 同族坐标错位）→ 点一下调试日志文字就崩。把每行 Text 的
+                          // 布局宽度钉死在视口可用宽度内（ConstrainedBox + ClipRect），
+                          // Selectable 的矩形不再越界，同时保留逐行选择能力——超视口
+                          // 的长行仍按原设计在右侧裁切（看全整段走「复制全部」）。
+                          return ClipRect(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: constraints.maxWidth,
+                              ),
+                              child: Text(
+                                _lines[index],
+                                style: lineStyle,
+                                softWrap: false,
+                                overflow: TextOverflow.clip,
+                              ),
+                            ),
                           );
                         },
                       ),

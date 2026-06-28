@@ -300,4 +300,77 @@ void main() {
       );
     });
   });
+
+  // —— BUG-448：点击 / 选中超长单行日志不崩 ——
+  // 根因：行 Text(softWrap:false) 无宽度上限 → ListView 只纵向滚动、水平无约束收口 →
+  // SelectionArea 对无界单行宽度的 Selectable 做命中测试 / getBoxesForSelection 时落到
+  // 超出视口的极端横坐标越界（同族 BUG-413/423、TODO-806/822）。修复 = 每行 Text 包
+  // ClipRect + ConstrainedBox(maxWidth: 视口宽) 把布局宽度钉死视口内，Selectable 矩形
+  // 不再越界。真实命中越界几何要真机/真渲染，headless 难稳定复现，故在最强可落地层守住：
+  // ① widget 行为——含超长单行时构建 / 点击 / 选中不抛异常；② 源码守卫——每行 Text 受
+  // 宽度约束（ConstrainedBox + ClipRect 在场，softWrap:false 仍在）。
+  testWidgets(
+      'BUG-448: tapping/selecting a log with an extremely long single line does '
+      'not throw (line Text width is bounded)', (WidgetTester tester) async {
+    // 一行远超视口宽度（400px）的超长 monospace 单行日志。
+    final String longLine = 'X' * 20000;
+    final String log = 'head\n$longLine\ntail';
+    await tester.pumpWidget(
+      buildSubject(HibikiLogPanel(log: log, shareAction: (_) {})),
+    );
+    await tester.pump();
+
+    // 超长行已渲染（在视口内），且其 Text 的祖先链上有把宽度收口到视口的约束。
+    final Finder longText = find.text(longLine);
+    expect(longText, findsOneWidget);
+    final Finder boundedAncestor = find.ancestor(
+      of: longText,
+      matching: find.byType(ConstrainedBox),
+    );
+    expect(boundedAncestor, findsWidgets,
+        reason: '超长行 Text 必须被宽度约束包裹（消除无界单行宽度根因）');
+
+    // 点击超长行触发 selection 命中测试：修复前对无界宽度 Selectable 求交会越界崩溃。
+    await tester.tapAt(tester.getCenter(longText));
+    await tester.pump();
+
+    // 在超长行内部做一次拖选（横向超视口）也不得抛异常。
+    final Rect r = tester.getRect(longText);
+    final TestGesture g = await tester.startGesture(
+      Offset(r.left + 5, r.center.dy),
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+    await g.moveTo(Offset(r.left + 380, r.center.dy));
+    await tester.pump(const Duration(milliseconds: 20));
+    await g.up();
+    await tester.pump();
+
+    // 走到这里没抛异常即通过；显式断言无 Flutter 错误。
+    expect(tester.takeException(), isNull,
+        reason: '点击 / 框选超长单行日志不应抛异常（BUG-448 越界崩溃）');
+  });
+
+  test(
+      'BUG-448 source guard: each log line Text is width-bounded (ConstrainedBox '
+      '+ ClipRect) so SelectionArea hit-test cannot go out of bounds', () {
+    final String source = File(
+      'lib/src/utils/components/hibiki_material_components.dart',
+    ).readAsStringSync();
+    final String panel = source.substring(
+      source.indexOf('class _HibikiLogPanelState'),
+      source.indexOf('class _LogSelectionScrollController'),
+    );
+    // 行 Text 必须被宽度约束 + 裁切包裹（消除无界单行宽度）。
+    expect(panel, contains('ConstrainedBox('),
+        reason: '每行 Text 必须被 ConstrainedBox 收口宽度（BUG-448）');
+    expect(panel, contains('ClipRect('),
+        reason: '超视口长行需 ClipRect 裁切溢出（BUG-448）');
+    expect(panel, contains('maxWidth: constraints.maxWidth'),
+        reason: '行宽度上限必须取自外层 LayoutBuilder 的视口宽度');
+    // softWrap:false 仍在（BUG-423/TODO-806 命中成本），但现在配宽度约束不再无界。
+    expect(panel, contains('softWrap: false'));
+    // 复制全部的 setData 加了平台异常降级 try（Windows 剪贴板通道兜底）。
+    expect(panel, contains('copy-all to clipboard failed'),
+        reason: '复制全部的 Clipboard.setData 必须有平台异常降级，不让异常逃逸');
+  });
 }
