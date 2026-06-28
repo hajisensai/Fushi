@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
@@ -92,8 +93,220 @@ ColorScheme buildHibikiColorScheme({
   );
 }
 
+/// Default seed for a brand-new / unconfigured custom theme. Matches the legacy
+/// `custom_theme_seed` default (the Hibiki brand teal); used by migration to
+/// decide whether a legacy custom theme was ever actually configured.
+const int kCustomThemeDefaultSeed = 0xFF1F4959;
+
+/// One self-contained custom theme. Replaces the old flat single-set
+/// `custom_theme_*` prefs with a value type so the notifier can hold a list of
+/// them (TODO-930). `null` on a role color means "not enabled" (the old flat
+/// prefs used the `0 == null` sentinel; inside an entry we use real `null`).
+class CustomThemeEntry {
+  const CustomThemeEntry({
+    required this.id,
+    required this.name,
+    required this.seed,
+    this.fontColor,
+    this.bgColor,
+    this.selectionColor,
+    this.primaryColor,
+    this.secondaryColor,
+    this.tertiaryColor,
+    this.containerColor,
+    this.sasayakiColor,
+    this.linkColor,
+  });
+
+  final String id;
+  final String name;
+  final int seed;
+  final int? fontColor;
+  final int? bgColor;
+  final int? selectionColor;
+  final int? primaryColor;
+  final int? secondaryColor;
+  final int? tertiaryColor;
+  final int? containerColor;
+  final int? sasayakiColor;
+  final int? linkColor;
+
+  CustomThemeEntry copyWith({
+    String? id,
+    String? name,
+    int? seed,
+  }) {
+    return CustomThemeEntry(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      seed: seed ?? this.seed,
+      fontColor: fontColor,
+      bgColor: bgColor,
+      selectionColor: selectionColor,
+      primaryColor: primaryColor,
+      secondaryColor: secondaryColor,
+      tertiaryColor: tertiaryColor,
+      containerColor: containerColor,
+      sasayakiColor: sasayakiColor,
+      linkColor: linkColor,
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'name': name,
+        'seed': seed,
+        if (fontColor != null) 'fontColor': fontColor,
+        if (bgColor != null) 'bgColor': bgColor,
+        if (selectionColor != null) 'selectionColor': selectionColor,
+        if (primaryColor != null) 'primaryColor': primaryColor,
+        if (secondaryColor != null) 'secondaryColor': secondaryColor,
+        if (tertiaryColor != null) 'tertiaryColor': tertiaryColor,
+        if (containerColor != null) 'containerColor': containerColor,
+        if (sasayakiColor != null) 'sasayakiColor': sasayakiColor,
+        if (linkColor != null) 'linkColor': linkColor,
+      };
+
+  factory CustomThemeEntry.fromJson(Map<String, dynamic> json) {
+    int? asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : null);
+    return CustomThemeEntry(
+      id: (json['id'] as String?) ?? '',
+      name: (json['name'] as String?) ?? '',
+      seed: asInt(json['seed']) ?? kCustomThemeDefaultSeed,
+      fontColor: asInt(json['fontColor']),
+      bgColor: asInt(json['bgColor']),
+      selectionColor: asInt(json['selectionColor']),
+      primaryColor: asInt(json['primaryColor']),
+      secondaryColor: asInt(json['secondaryColor']),
+      tertiaryColor: asInt(json['tertiaryColor']),
+      containerColor: asInt(json['containerColor']),
+      sasayakiColor: asInt(json['sasayakiColor']),
+      linkColor: asInt(json['linkColor']),
+    );
+  }
+}
+
+/// Result of [migrateLegacyCustomTheme]. [shouldWrite] is false when nothing
+/// needs persisting (already migrated, or a brand-new user with no legacy data).
+class LegacyCustomThemeMigration {
+  const LegacyCustomThemeMigration({
+    required this.entries,
+    required this.selectedId,
+    required this.shouldWrite,
+  });
+
+  final List<CustomThemeEntry> entries;
+  final String? selectedId;
+  final bool shouldWrite;
+}
+
+/// Idempotent, pure migration of the legacy flat single-set custom theme into
+/// the new list model (TODO-930).
+///
+/// - If [existing] (the `custom_themes` list) is already non-empty: parse and
+///   return it, [shouldWrite] = false (idempotent — re-running is a no-op).
+/// - Otherwise, if any legacy flat key is "configured" (seed differs from the
+///   default, or any role color is non-zero): build exactly one entry from the
+///   legacy values (id generated once, empty name → UI shows a default name) and
+///   request a write of `custom_themes=[entry]` + `selected_custom_theme_id=id`.
+/// - Otherwise (brand-new user, no legacy data): empty list, [shouldWrite] =
+///   false.
+///
+/// Legacy role colors use the `0 == null` sentinel; this maps `0` back to null
+/// inside the entry. The legacy flat keys are NOT deleted (kept as read-only
+/// fallback, same as TODO-928's handling of custom_theme_dark).
+LegacyCustomThemeMigration migrateLegacyCustomTheme({
+  required List<String> existing,
+  required int legacySeed,
+  required int legacyFontColor,
+  required int legacyBgColor,
+  required int legacySelectionColor,
+  required int legacyPrimaryColor,
+  required int legacySecondaryColor,
+  required int legacyTertiaryColor,
+  required int legacyContainerColor,
+  required int legacySasayakiColor,
+  required int legacyLinkColor,
+  required String Function() idGenerator,
+}) {
+  if (existing.isNotEmpty) {
+    final List<CustomThemeEntry> parsed = <CustomThemeEntry>[];
+    for (final String s in existing) {
+      try {
+        final dynamic decoded = jsonDecode(s);
+        if (decoded is Map) {
+          parsed.add(CustomThemeEntry.fromJson(
+              decoded.map((k, v) => MapEntry(k.toString(), v))));
+        }
+      } catch (_) {
+        // Skip malformed rows.
+      }
+    }
+    return LegacyCustomThemeMigration(
+      entries: parsed,
+      selectedId: parsed.isEmpty ? null : parsed.first.id,
+      shouldWrite: false,
+    );
+  }
+
+  final bool configured = legacySeed != kCustomThemeDefaultSeed ||
+      legacyFontColor != 0 ||
+      legacyBgColor != 0 ||
+      legacySelectionColor != 0 ||
+      legacyPrimaryColor != 0 ||
+      legacySecondaryColor != 0 ||
+      legacyTertiaryColor != 0 ||
+      legacyContainerColor != 0 ||
+      legacySasayakiColor != 0 ||
+      legacyLinkColor != 0;
+
+  if (!configured) {
+    return const LegacyCustomThemeMigration(
+      entries: <CustomThemeEntry>[],
+      selectedId: null,
+      shouldWrite: false,
+    );
+  }
+
+  int? nz(int v) => v == 0 ? null : v;
+  final CustomThemeEntry entry = CustomThemeEntry(
+    id: idGenerator(),
+    name: '',
+    seed: legacySeed,
+    fontColor: nz(legacyFontColor),
+    bgColor: nz(legacyBgColor),
+    selectionColor: nz(legacySelectionColor),
+    primaryColor: nz(legacyPrimaryColor),
+    secondaryColor: nz(legacySecondaryColor),
+    tertiaryColor: nz(legacyTertiaryColor),
+    containerColor: nz(legacyContainerColor),
+    sasayakiColor: nz(legacySasayakiColor),
+    linkColor: nz(legacyLinkColor),
+  );
+  return LegacyCustomThemeMigration(
+    entries: <CustomThemeEntry>[entry],
+    selectedId: entry.id,
+    shouldWrite: true,
+  );
+}
+
 class ThemeNotifier extends ChangeNotifier {
-  ThemeNotifier(this._db, this._textThemeBuilder);
+  ThemeNotifier(
+    this._db,
+    this._textThemeBuilder, {
+    String Function()? customThemeIdGenerator,
+  }) : _customThemeIdGenerator =
+            customThemeIdGenerator ?? _defaultCustomThemeIdGenerator;
+
+  // Stable, testable id source. Defaults to epoch-millis + a monotonic counter
+  // so two entries created in the same millisecond never collide. Tests can
+  // inject a deterministic generator. (TODO-930)
+  final String Function() _customThemeIdGenerator;
+  static int _customThemeIdCounter = 0;
+  static String _defaultCustomThemeIdGenerator() {
+    final int n = _customThemeIdCounter++;
+    return 'ct-${DateTime.now().millisecondsSinceEpoch}-$n';
+  }
 
   static const String appUiScaleModeAuto = 'auto';
   static const String appUiScaleModeCustom = 'custom';
@@ -241,15 +454,58 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Theme getters ────────────────────────────────────────────────
 
+  /// Prefix marking the active app theme as a custom theme. The stored value is
+  /// either bare `'custom-theme'` (= whichever custom theme is currently
+  /// selected, backward-compatible with the legacy single-set users) or
+  /// `'custom-theme:<id>'` to pin a specific entry (TODO-930).
+  static const String customThemeKeyPrefix = 'custom-theme';
+
+  /// True when [key] selects a custom theme in either form.
+  static bool isCustomThemeKey(String key) =>
+      key == customThemeKeyPrefix || key.startsWith('$customThemeKeyPrefix:');
+
+  /// The custom-theme id embedded in [key] (`custom-theme:<id>`), or null for
+  /// the bare `custom-theme` form / non-custom keys.
+  static String? customThemeIdFromKey(String key) {
+    const String prefix = '$customThemeKeyPrefix:';
+    if (key.startsWith(prefix)) return key.substring(prefix.length);
+    return null;
+  }
+
   String get appThemeKey {
     final String key = _get('app_theme_key', defaultValue: '');
     if (key.isEmpty ||
         (!themePresets.containsKey(key) &&
-            key != 'custom-theme' &&
+            !isCustomThemeKey(key) &&
             key != 'system-theme')) {
       return 'system-theme';
     }
     return key;
+  }
+
+  /// Resolve the [CustomThemeEntry] the current [appThemeKey] points at, applying
+  /// the documented fallback chain when the key is custom:
+  /// explicit `custom-theme:<id>` → that id if it exists → otherwise
+  /// [selectedCustomThemeId] → otherwise the first entry in the list. Returns
+  /// null only when no custom theme is active or the list is empty (the caller
+  /// then falls back to the legacy flat getters, keeping migrate-time behavior
+  /// identical).
+  CustomThemeEntry? get activeCustomThemeEntry {
+    final String key = appThemeKey;
+    if (!isCustomThemeKey(key)) return null;
+    final List<CustomThemeEntry> list = customThemes;
+    if (list.isEmpty) return null;
+    final String? pinnedId = customThemeIdFromKey(key);
+    if (pinnedId != null) {
+      final CustomThemeEntry? byId = customThemeById(pinnedId);
+      if (byId != null) return byId;
+    }
+    final String? selId = selectedCustomThemeId;
+    if (selId != null) {
+      final CustomThemeEntry? sel = customThemeById(selId);
+      if (sel != null) return sel;
+    }
+    return list.first;
   }
 
   String get brightnessMode {
@@ -257,7 +513,7 @@ class ThemeNotifier extends ChangeNotifier {
     if (mode.isNotEmpty) return mode;
     final key = appThemeKey;
     if (key == 'system-theme') return 'system';
-    if (key == 'custom-theme') return customThemeDark ? 'dark' : 'light';
+    if (isCustomThemeKey(key)) return customThemeDark ? 'dark' : 'light';
     final preset = themePresets[key];
     if (preset != null) {
       return preset.brightness == Brightness.dark ? 'dark' : 'light';
@@ -400,7 +656,13 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   Color get _seedColor {
-    if (appThemeKey == 'custom-theme') return customThemeSeed;
+    if (isCustomThemeKey(appThemeKey)) {
+      final CustomThemeEntry? entry = activeCustomThemeEntry;
+      if (entry != null) return Color(entry.seed);
+      // No list entry yet (pre-migration race): fall back to the legacy flat
+      // pref so behavior is identical to before TODO-930.
+      return customThemeSeed;
+    }
     return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
   }
 
@@ -424,15 +686,26 @@ class ThemeNotifier extends ChangeNotifier {
         fallbackSeed: _seedColor,
       );
     }
-    final bool useCustomRoles = appThemeKey == 'custom-theme';
+    final bool useCustomRoles = isCustomThemeKey(appThemeKey);
+    // Prefer the selected entry's roles; fall back to the legacy flat getters
+    // when no entry is resolvable (pre-migration), keeping output identical.
+    final CustomThemeEntry? entry = activeCustomThemeEntry;
+    Color? roleColor(int? entryValue, Color? Function() legacy) {
+      if (!useCustomRoles) return null;
+      if (entry != null) return entryValue == null ? null : Color(entryValue);
+      return legacy();
+    }
+
     return buildHibikiColorScheme(
       seedColor: _seedColor,
       brightness: brightness,
       variant: _variant,
-      primary: useCustomRoles ? customThemePrimaryColor : null,
-      secondary: useCustomRoles ? customThemeSecondaryColor : null,
-      tertiary: useCustomRoles ? customThemeTertiaryColor : null,
-      primaryContainer: useCustomRoles ? customThemeContainerColor : null,
+      primary: roleColor(entry?.primaryColor, () => customThemePrimaryColor),
+      secondary:
+          roleColor(entry?.secondaryColor, () => customThemeSecondaryColor),
+      tertiary: roleColor(entry?.tertiaryColor, () => customThemeTertiaryColor),
+      primaryContainer:
+          roleColor(entry?.containerColor, () => customThemeContainerColor),
     );
   }
 
@@ -645,6 +918,154 @@ class ThemeNotifier extends ChangeNotifier {
     await _set(key, color?.toARGB32() ?? 0);
   }
 
+  // ── Multi custom theme list (TODO-930) ────────────────────────────
+  //
+  // Storage: the new `custom_themes` pref holds a List<String>, each element a
+  // JSON-encoded [CustomThemeEntry]; `selected_custom_theme_id` holds the
+  // currently-selected entry id. Both are per-Profile (NOT in
+  // ProfileKeys._excludedPrefKeys) so the existing snapshot/apply/prune machinery
+  // carries them, exactly like the legacy flat custom_theme_* keys.
+  //
+  // The legacy flat 11-key custom theme is migrated into a single list entry on
+  // first read (idempotent). The flat keys are kept as read-only fallback and
+  // never written again (same approach as TODO-928 stopping custom_theme_dark).
+  static const String customThemesPrefKey = 'custom_themes';
+  static const String selectedCustomThemeIdPrefKey = 'selected_custom_theme_id';
+
+  bool _legacyCustomThemeMigrated = false;
+
+  List<String> _rawCustomThemes() {
+    final Object value =
+        _get(customThemesPrefKey, defaultValue: const <String>[]);
+    if (value is List) return value.map((dynamic e) => e.toString()).toList();
+    return const <String>[];
+  }
+
+  List<CustomThemeEntry> _decodeCustomThemes(List<String> raw) {
+    final List<CustomThemeEntry> out = <CustomThemeEntry>[];
+    for (final String s in raw) {
+      try {
+        final dynamic decoded = jsonDecode(s);
+        if (decoded is Map<String, dynamic>) {
+          out.add(CustomThemeEntry.fromJson(decoded));
+        } else if (decoded is Map) {
+          out.add(CustomThemeEntry.fromJson(
+              decoded.map((k, v) => MapEntry(k.toString(), v))));
+        }
+      } catch (_) {
+        // Skip a malformed row rather than aborting the whole read.
+      }
+    }
+    return out;
+  }
+
+  /// All custom themes. First read performs the idempotent legacy migration so
+  /// pre-TODO-930 users transparently get a one-entry list pointing at their old
+  /// flat custom theme.
+  List<CustomThemeEntry> get customThemes {
+    _ensureLegacyCustomThemeMigrated();
+    return _decodeCustomThemes(_rawCustomThemes());
+  }
+
+  CustomThemeEntry? customThemeById(String id) {
+    for (final CustomThemeEntry e in customThemes) {
+      if (e.id == id) return e;
+    }
+    return null;
+  }
+
+  String? get selectedCustomThemeId {
+    _ensureLegacyCustomThemeMigrated();
+    final String v =
+        _get(selectedCustomThemeIdPrefKey, defaultValue: '') as String;
+    return v.isEmpty ? null : v;
+  }
+
+  Future<void> _writeCustomThemes(List<CustomThemeEntry> entries) async {
+    await _set(
+      customThemesPrefKey,
+      entries.map((CustomThemeEntry e) => jsonEncode(e.toJson())).toList(),
+    );
+  }
+
+  Future<void> _writeSelectedCustomThemeId(String? id) async {
+    await _set(selectedCustomThemeIdPrefKey, id ?? '');
+  }
+
+  /// Insert a new entry (and select it) or replace an existing one by id.
+  Future<void> upsertCustomTheme(CustomThemeEntry entry) async {
+    final List<CustomThemeEntry> list =
+        List<CustomThemeEntry>.from(customThemes);
+    final int idx = list.indexWhere((CustomThemeEntry e) => e.id == entry.id);
+    if (idx >= 0) {
+      list[idx] = entry;
+      await _writeCustomThemes(list);
+    } else {
+      list.add(entry);
+      await _writeCustomThemes(list);
+      await _writeSelectedCustomThemeId(entry.id);
+    }
+    notifyListeners();
+  }
+
+  /// Remove the entry with [id]. If it was selected, selection falls back to the
+  /// first remaining entry (or clears when the list becomes empty).
+  Future<void> deleteCustomTheme(String id) async {
+    final List<CustomThemeEntry> list =
+        customThemes.where((CustomThemeEntry e) => e.id != id).toList();
+    await _writeCustomThemes(list);
+    if (selectedCustomThemeId == id) {
+      await _writeSelectedCustomThemeId(list.isEmpty ? null : list.first.id);
+    }
+    notifyListeners();
+  }
+
+  /// Make [id] the selected custom theme (no-op for an unknown id).
+  Future<void> selectCustomTheme(String id) async {
+    if (customThemeById(id) == null) return;
+    await _writeSelectedCustomThemeId(id);
+    notifyListeners();
+  }
+
+  void _ensureLegacyCustomThemeMigrated() {
+    if (_legacyCustomThemeMigrated) return;
+    _legacyCustomThemeMigrated = true;
+    final LegacyCustomThemeMigration result = migrateLegacyCustomTheme(
+      existing: _rawCustomThemes(),
+      legacySeed:
+          _get('custom_theme_seed', defaultValue: kCustomThemeDefaultSeed)
+              as int,
+      legacyFontColor: _get('custom_theme_font_color', defaultValue: 0) as int,
+      legacyBgColor: _get('custom_theme_bg_color', defaultValue: 0) as int,
+      legacySelectionColor:
+          _get('custom_theme_selection_color', defaultValue: 0) as int,
+      legacyPrimaryColor:
+          _get('custom_theme_primary_color', defaultValue: 0) as int,
+      legacySecondaryColor:
+          _get('custom_theme_secondary_color', defaultValue: 0) as int,
+      legacyTertiaryColor:
+          _get('custom_theme_tertiary_color', defaultValue: 0) as int,
+      legacyContainerColor:
+          _get('custom_theme_container_color', defaultValue: 0) as int,
+      legacySasayakiColor:
+          _get('custom_theme_sasayaki_color', defaultValue: 0) as int,
+      legacyLinkColor: _get('custom_theme_link_color', defaultValue: 0) as int,
+      idGenerator: _customThemeIdGenerator,
+    );
+    if (!result.shouldWrite) return;
+    // Persist synchronously into _prefs so the very same read returns migrated
+    // data, then flush to DB (fire-and-forget like other seed paths).
+    final List<String> encoded = result.entries
+        .map((CustomThemeEntry e) => jsonEncode(e.toJson()))
+        .toList();
+    _prefs[customThemesPrefKey] = PrefCodec.encode(encoded);
+    _prefs[selectedCustomThemeIdPrefKey] =
+        PrefCodec.encode(result.selectedId ?? '');
+    unawaited(_db.setPref(customThemesPrefKey, PrefCodec.encode(encoded)));
+    unawaited(_db.setPref(selectedCustomThemeIdPrefKey,
+        PrefCodec.encode(result.selectedId ?? '')));
+  }
+
   // ── Setters ───────────────────────────────────────────────────────
 
   Future<void> setAppThemeKey(String key) async {
@@ -691,6 +1112,10 @@ class ThemeNotifier extends ChangeNotifier {
     Color? sasayakiColor,
     Color? linkColor,
   }) async {
+    // TODO-930: write the same values into the new list model so the share-code
+    // import path keeps working: replace the currently-selected entry, or create
+    // one when the list is empty. The legacy flat keys are still written so
+    // pre-migration fallback and any code still reading them stays consistent.
     await setCustomThemeSeed(seed);
     await setCustomThemeFontColor(fontColor);
     await setCustomThemeBackgroundColor(backgroundColor);
@@ -701,6 +1126,25 @@ class ThemeNotifier extends ChangeNotifier {
     await setCustomThemeContainerColor(containerColor);
     await setCustomThemeSasayakiColor(sasayakiColor);
     await setCustomThemeLinkColor(linkColor);
+
+    int? argb(Color? c) => c?.toARGB32();
+    final CustomThemeEntry? current = activeCustomThemeEntry;
+    final CustomThemeEntry entry = CustomThemeEntry(
+      id: current?.id ?? _customThemeIdGenerator(),
+      name: current?.name ?? '',
+      seed: seed.toARGB32(),
+      fontColor: argb(fontColor),
+      bgColor: argb(backgroundColor),
+      selectionColor: argb(selectionColor),
+      primaryColor: argb(primaryColor),
+      secondaryColor: argb(secondaryColor),
+      tertiaryColor: argb(tertiaryColor),
+      containerColor: argb(containerColor),
+      sasayakiColor: argb(sasayakiColor),
+      linkColor: argb(linkColor),
+    );
+    await upsertCustomTheme(entry);
+
     await _set('app_theme_key', 'custom-theme');
     notifyListeners();
     _persistSplashColor();

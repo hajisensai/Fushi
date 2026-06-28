@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
@@ -523,6 +525,259 @@ void main() {
 
       // 让 fire-and-forget 的种子落盘完成，避免其在 tearDown 关库后才命中（测试侧时序）。
       await Future<void>.delayed(Duration.zero);
+    });
+  });
+
+  group('TODO-930 multi custom theme model + idempotent migration', () {
+    Future<void> seedLegacyFlat({
+      int seed = 0xFFFF5500,
+      int? primary,
+      int? font,
+    }) async {
+      await db.setPref('custom_theme_seed', PrefCodec.encode(seed));
+      if (primary != null) {
+        await db.setPref(
+            'custom_theme_primary_color', PrefCodec.encode(primary));
+      }
+      if (font != null) {
+        await db.setPref('custom_theme_font_color', PrefCodec.encode(font));
+      }
+      await db.setPref('app_theme_key', PrefCodec.encode('custom-theme'));
+      await notifier.refreshFromDb();
+    }
+
+    ThemeNotifier freshNotifier({String Function()? idGen}) {
+      final ThemeNotifier n = ThemeNotifier(
+        db,
+        textThemeBuilder,
+        customThemeIdGenerator: idGen,
+      );
+      addTearDown(n.dispose);
+      return n;
+    }
+
+    test('CustomThemeEntry JSON round-trips with null-color omission', () {
+      const CustomThemeEntry e = CustomThemeEntry(
+        id: 'ct-1',
+        name: 'My theme',
+        seed: 0xFFFF0000,
+        primaryColor: 0xFF00FF00,
+      );
+      final Map<String, dynamic> j = e.toJson();
+      expect(j.containsKey('fontColor'), isFalse);
+      final CustomThemeEntry back = CustomThemeEntry.fromJson(j);
+      expect(back.id, 'ct-1');
+      expect(back.name, 'My theme');
+      expect(back.seed, 0xFFFF0000);
+      expect(back.primaryColor, 0xFF00FF00);
+      expect(back.fontColor, isNull);
+    });
+
+    test('new user has empty custom theme list and no selection', () async {
+      final ThemeNotifier n = freshNotifier();
+      await n.refreshFromDb();
+      expect(n.customThemes, isEmpty);
+      expect(n.selectedCustomThemeId, isNull);
+    });
+
+    test('legacy flat migrates to a single selected list entry', () async {
+      await seedLegacyFlat(seed: 0xFFFF5500, primary: 0xFF0000FF);
+      final ThemeNotifier n = freshNotifier(idGen: () => 'ct-fixed');
+      await n.refreshFromDb();
+
+      final List<CustomThemeEntry> list = n.customThemes;
+      expect(list, hasLength(1));
+      expect(list.first.id, 'ct-fixed');
+      expect(list.first.seed, 0xFFFF5500);
+      expect(list.first.primaryColor, 0xFF0000FF);
+      expect(list.first.fontColor, isNull);
+      expect(list.first.name, isEmpty);
+      expect(n.selectedCustomThemeId, 'ct-fixed');
+
+      expect(n.appThemeKey, 'custom-theme');
+      expect(n.activeCustomThemeEntry, isNotNull);
+      expect(n.activeCustomThemeEntry!.id, 'ct-fixed');
+      // 让迁移的 fire-and-forget 落盘完成，避免其在 tearDown 关库后命中。
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test('migration is idempotent', () async {
+      await seedLegacyFlat(seed: 0xFFFF5500);
+      int idCalls = 0;
+      final ThemeNotifier n = freshNotifier(idGen: () {
+        idCalls++;
+        return 'ct-$idCalls';
+      });
+      await n.refreshFromDb();
+      final List<CustomThemeEntry> first = n.customThemes;
+      final List<CustomThemeEntry> second = n.customThemes;
+      expect(first, hasLength(1));
+      expect(second, hasLength(1));
+      expect(first.first.id, second.first.id);
+
+      final ThemeNotifier reloaded =
+          freshNotifier(idGen: () => 'ct-should-not-be-used');
+      await reloaded.refreshFromDb();
+      expect(reloaded.customThemes, hasLength(1));
+      expect(reloaded.customThemes.first.id, first.first.id);
+      // 让迁移的 fire-and-forget 落盘完成，避免其在 tearDown 关库后命中。
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test('upsert adds + selects new, replaces by id keeping selection',
+        () async {
+      final ThemeNotifier n = freshNotifier();
+      await n.refreshFromDb();
+      const CustomThemeEntry a =
+          CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111);
+      const CustomThemeEntry b =
+          CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222);
+      await n.upsertCustomTheme(a);
+      await n.upsertCustomTheme(b);
+      expect(n.customThemes.map((e) => e.id), <String>['a', 'b']);
+      expect(n.selectedCustomThemeId, 'b');
+
+      const CustomThemeEntry b2 =
+          CustomThemeEntry(id: 'b', name: 'B2', seed: 0xFF333333);
+      await n.upsertCustomTheme(b2);
+      expect(n.customThemes, hasLength(2));
+      expect(n.customThemeById('b')!.name, 'B2');
+      expect(n.customThemeById('b')!.seed, 0xFF333333);
+      expect(n.selectedCustomThemeId, 'b');
+    });
+
+    test('select + delete round-trip with selection fallback', () async {
+      final ThemeNotifier n = freshNotifier();
+      await n.refreshFromDb();
+      await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+      await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222));
+      await n.selectCustomTheme('a');
+      expect(n.selectedCustomThemeId, 'a');
+
+      await n.deleteCustomTheme('a');
+      expect(n.customThemes.map((e) => e.id), <String>['b']);
+      expect(n.selectedCustomThemeId, 'b');
+
+      await n.deleteCustomTheme('b');
+      expect(n.customThemes, isEmpty);
+      expect(n.selectedCustomThemeId, isNull);
+    });
+
+    test('app_theme_key custom-theme colon id resolves to that entry',
+        () async {
+      final ThemeNotifier n = freshNotifier();
+      await n.refreshFromDb();
+      await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+      await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222));
+      await db.setPref('app_theme_key', PrefCodec.encode('custom-theme:a'));
+      await n.refreshFromDb();
+      expect(n.appThemeKey, 'custom-theme:a');
+      expect(n.activeCustomThemeEntry!.id, 'a');
+    });
+
+    test('app_theme_key custom-theme colon missing falls back to selected',
+        () async {
+      final ThemeNotifier n = freshNotifier();
+      await n.refreshFromDb();
+      await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'a', name: 'A', seed: 0xFF111111));
+      await n.upsertCustomTheme(
+          const CustomThemeEntry(id: 'b', name: 'B', seed: 0xFF222222));
+      await n.selectCustomTheme('a');
+      await db.setPref('app_theme_key', PrefCodec.encode('custom-theme:zzz'));
+      await n.refreshFromDb();
+      expect(n.appThemeKey, 'custom-theme:zzz');
+      expect(n.activeCustomThemeEntry!.id, 'a');
+    });
+
+    test('backward-compat: legacy custom user keeps identical colors',
+        () async {
+      await seedLegacyFlat(seed: 0xFFFF0000, primary: 0xFF00FF00);
+
+      final ColorScheme legacyScheme =
+          notifier.buildColorScheme(Brightness.light);
+      expect(legacyScheme.primary, const Color(0xFF00FF00));
+
+      final ThemeNotifier n = freshNotifier(idGen: () => 'ct-fixed');
+      await n.refreshFromDb();
+      final ColorScheme migratedScheme = n.buildColorScheme(Brightness.light);
+      expect(migratedScheme.primary, const Color(0xFF00FF00));
+      expect(migratedScheme.primary, legacyScheme.primary);
+      // 让迁移的 fire-and-forget 落盘完成，避免其在 tearDown 关库后命中。
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test('migrateLegacyCustomTheme pure: configured legacy gives one entry',
+        () {
+      final LegacyCustomThemeMigration r = migrateLegacyCustomTheme(
+        existing: const <String>[],
+        legacySeed: 0xFFABCDEF,
+        legacyFontColor: 0,
+        legacyBgColor: 0,
+        legacySelectionColor: 0,
+        legacyPrimaryColor: 0xFF112233,
+        legacySecondaryColor: 0,
+        legacyTertiaryColor: 0,
+        legacyContainerColor: 0,
+        legacySasayakiColor: 0,
+        legacyLinkColor: 0,
+        idGenerator: () => 'ct-x',
+      );
+      expect(r.shouldWrite, isTrue);
+      expect(r.entries, hasLength(1));
+      expect(r.entries.first.id, 'ct-x');
+      expect(r.entries.first.seed, 0xFFABCDEF);
+      expect(r.entries.first.primaryColor, 0xFF112233);
+      expect(r.entries.first.fontColor, isNull);
+      expect(r.selectedId, 'ct-x');
+    });
+
+    test('migrateLegacyCustomTheme pure: default-only legacy is no-write', () {
+      final LegacyCustomThemeMigration r = migrateLegacyCustomTheme(
+        existing: const <String>[],
+        legacySeed: 0xFF1F4959,
+        legacyFontColor: 0,
+        legacyBgColor: 0,
+        legacySelectionColor: 0,
+        legacyPrimaryColor: 0,
+        legacySecondaryColor: 0,
+        legacyTertiaryColor: 0,
+        legacyContainerColor: 0,
+        legacySasayakiColor: 0,
+        legacyLinkColor: 0,
+        idGenerator: () => 'ct-x',
+      );
+      expect(r.shouldWrite, isFalse);
+      expect(r.entries, isEmpty);
+      expect(r.selectedId, isNull);
+    });
+
+    test('migrateLegacyCustomTheme pure: existing list is idempotent no-write',
+        () {
+      const CustomThemeEntry e =
+          CustomThemeEntry(id: 'keep', name: 'Keep', seed: 0xFF010203);
+      final LegacyCustomThemeMigration r = migrateLegacyCustomTheme(
+        existing: <String>[jsonEncode(e.toJson())],
+        legacySeed: 0xFFFF0000,
+        legacyFontColor: 0,
+        legacyBgColor: 0,
+        legacySelectionColor: 0,
+        legacyPrimaryColor: 0,
+        legacySecondaryColor: 0,
+        legacyTertiaryColor: 0,
+        legacyContainerColor: 0,
+        legacySasayakiColor: 0,
+        legacyLinkColor: 0,
+        idGenerator: () => 'ct-should-not-be-used',
+      );
+      expect(r.shouldWrite, isFalse);
+      expect(r.entries, hasLength(1));
+      expect(r.entries.first.id, 'keep');
+      expect(r.selectedId, 'keep');
     });
   });
 }
