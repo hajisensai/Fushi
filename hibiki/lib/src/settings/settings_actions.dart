@@ -334,6 +334,8 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
 
   return AdaptiveSettingsRow(
     title: t.ttu_theme,
+    // TODO-928: 提示自定义主题「点击切换 · 长按编辑」的发现性文案。
+    subtitle: t.custom_theme_long_press_hint,
     icon: Icons.color_lens_outlined,
     controlBelow: true,
     trailing: Wrap(
@@ -384,15 +386,18 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             );
           },
         ),
+        // TODO-928: 自定义 swatch 单击=切换主题（与系统/预设 swatch 语义统一），
+        // 长按=进编辑页（鼠标/触摸）。预览圈明暗读 isDarkMode（当前真实明暗），
+        // 因为 custom_theme_dark 已停写、不再是真值。
         HibikiSchemeSwatch(
-          // Mirror ThemeNotifier.buildColorScheme's custom branch (seed + role
-          // overrides + the custom theme's own brightness) so the preview circle
-          // matches the theme that custom-theme actually applies.
+          // Mirror ThemeNotifier.buildColorScheme's custom branch (seed +
+          // role overrides + the current global brightness) so the preview
+          // circle matches the theme that custom-theme actually applies.
           colors: hibikiSchemeSwatchColors(
             buildHibikiColorScheme(
               seedColor: appModel.customThemeSeed,
               brightness:
-                  appModel.customThemeDark ? Brightness.dark : Brightness.light,
+                  appModel.isDarkMode ? Brightness.dark : Brightness.light,
               primary: appModel.customThemePrimaryColor,
               secondary: appModel.customThemeSecondaryColor,
               tertiary: appModel.customThemeTertiaryColor,
@@ -401,15 +406,44 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           ),
           size: _swatchSize,
           selected: appModel.appThemeKey == 'custom-theme',
-          // Size inherited from the badge IconTheme (14); see system swatch above.
+          // Size inherited from the badge IconTheme; see system swatch above.
           overlay: const Icon(Icons.palette_outlined),
           onTap: () async {
+            await appModel.setAppThemeKey('custom-theme');
+            notifyReaderSettingsChanged(settingsContext);
+          },
+          onLongPress: () async {
             await pushSettingsPage(
               settingsContext,
               (_) => const CustomThemePage(),
             );
             notifyReaderSettingsChanged(settingsContext);
           },
+        ),
+        // TODO-928: 手柄/焦点用户没有长按，故并排一个焦点可达的「编辑」图标按钮作为
+        // 编辑入口（无障碍不回归）。作为 Wrap 的直接子项（与各 swatch 同级），由
+        // Wrap 处理换行/对齐，避免在 trailing 的无界宽度 Row 里溢出。约束成与
+        // swatch 同高的方框，视觉上与自定义 swatch 成一组。
+        // Material 祖先：Cupertino 渲染器（CupertinoPageScaffold）下没有 Material，
+        // 而 HibikiIconButton 内部用 InkWell 需要 Material 祖先；各 swatch 自带
+        // Material（见 _buildSwatchInteractive），独立的编辑按钮要自己补一个。
+        Material(
+          type: MaterialType.transparency,
+          child: HibikiIconButton(
+            icon: Icons.edit_outlined,
+            tooltip: t.edit_custom_theme,
+            constraints: BoxConstraints.tightFor(
+              width: _swatchSize,
+              height: _swatchSize,
+            ),
+            onTap: () async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const CustomThemePage(),
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
         ),
       ],
     ),

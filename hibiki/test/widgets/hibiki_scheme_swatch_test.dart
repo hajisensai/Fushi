@@ -112,6 +112,63 @@ void main() {
     expect(taps, 1);
   });
 
+  testWidgets('TODO-928 · onTap (切换) 与 onLongPress (编辑) 各自独立触发',
+      (WidgetTester tester) async {
+    int taps = 0;
+    int longPresses = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: HibikiSchemeSwatch(
+              colors: const <Color>[
+                Color(0xFF112233),
+                Color(0xFF445566),
+                Color(0xFF778899),
+                Color(0xFFAABBCC),
+              ],
+              onTap: () => taps++,
+              onLongPress: () => longPresses++,
+            ),
+          ),
+        ),
+      ),
+    );
+    // 单击只触发切换，不触发编辑。
+    await tester.tap(find.byType(HibikiSchemeSwatch));
+    await tester.pumpAndSettle();
+    expect(taps, 1);
+    expect(longPresses, 0);
+    // 长按只触发编辑，不触发切换。
+    await tester.longPress(find.byType(HibikiSchemeSwatch));
+    await tester.pumpAndSettle();
+    expect(longPresses, 1);
+    expect(taps, 1);
+  });
+
+  testWidgets('TODO-928 · onLongPress 可选：不传也不抛（向后兼容）',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: HibikiSchemeSwatch(
+              colors: const <Color>[
+                Color(0xFF112233),
+                Color(0xFF445566),
+                Color(0xFF778899),
+                Color(0xFFAABBCC),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.longPress(find.byType(HibikiSchemeSwatch));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('rounded card uses the background colour as fill + ring',
       (WidgetTester tester) async {
     // The swatch is a rounded-square card whose decoration fill IS the scheme

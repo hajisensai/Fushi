@@ -1996,9 +1996,9 @@ class AppModel with ChangeNotifier {
   Future<void> setCustomThemeLinkColor(Color? c) =>
       themeNotifier.setCustomThemeLinkColor(c);
 
+  // TODO-928: 委托层同步删 `brightnessMode` 参数（不再透传）。
   Future<void> applyCustomTheme({
     required Color seed,
-    required String brightnessMode,
     Color? fontColor,
     Color? backgroundColor,
     Color? selectionColor,
@@ -2011,7 +2011,6 @@ class AppModel with ChangeNotifier {
   }) =>
       themeNotifier.applyCustomTheme(
         seed: seed,
-        brightnessMode: brightnessMode,
         fontColor: fontColor,
         backgroundColor: backgroundColor,
         selectionColor: selectionColor,

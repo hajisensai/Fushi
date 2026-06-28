@@ -1188,6 +1188,7 @@ Widget _buildSwatchInteractive(
   required BorderRadius inkRadius,
   required bool selected,
   required VoidCallback? onTap,
+  VoidCallback? onLongPress,
   String? label,
   Color? textColor,
 }) {
@@ -1203,6 +1204,9 @@ Widget _buildSwatchInteractive(
       child: InkWell(
         borderRadius: inkRadius,
         onTap: onTap,
+        // TODO-928: 长按是鼠标/触摸语义；手柄/焦点路径走下面的
+        // HibikiActivatableFocusTarget（只有 onTap），长按在那里不生效，符合现状无障碍。
+        onLongPress: onLongPress,
         canRequestFocus: !underFocusRoot,
         child: visual,
       ),
@@ -1332,6 +1336,7 @@ class HibikiSchemeSwatch extends StatelessWidget {
     this.size = 48,
     this.selected = false,
     this.onTap,
+    this.onLongPress,
     this.overlay,
     this.label,
     this.textColor,
@@ -1343,6 +1348,11 @@ class HibikiSchemeSwatch extends StatelessWidget {
   final double size;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// TODO-928: 长按动作（鼠标/触摸语义）。自定义 swatch 用它「长按进编辑页」，
+  /// 而单击统一为「切换主题」。手柄/焦点路径无长按（见 [_buildSwatchInteractive]），
+  /// 故焦点用户的编辑入口另由可达的「编辑」图标按钮提供，不靠此回调。
+  final VoidCallback? onLongPress;
 
   /// Centred badge icon for non-preset swatches (system = auto, custom = palette).
   final Widget? overlay;
@@ -1445,6 +1455,7 @@ class HibikiSchemeSwatch extends StatelessWidget {
       inkRadius: tokens.radii.chipRadius,
       selected: selected,
       onTap: onTap,
+      onLongPress: onLongPress,
       label: label,
       textColor: textColor,
     );

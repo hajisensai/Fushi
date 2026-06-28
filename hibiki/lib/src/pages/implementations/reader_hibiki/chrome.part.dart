@@ -1176,7 +1176,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   /// custom-theme 的角色色（用户自定义；任一项缺省回落到合理默认）。
   ReaderThemeColors get _customReaderThemeColors {
-    final bool dark = appModel.customThemeDark;
+    // TODO-928: 自定义主题跟随当前全局明暗，不再读已停写的 `custom_theme_dark`。
+    final bool dark = appModel.isDarkMode;
     return (
       bg: appModel.customThemeBackgroundColor ?? const Color(0xFFFFFFFF),
       fg: appModel.customThemeFontColor ??

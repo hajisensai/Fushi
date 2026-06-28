@@ -36,6 +36,11 @@ class _CustomThemePageState extends BasePageState {
 
   ScrollHoldController? _pickerScrollHold;
 
+  // TODO-928: 种子色选色区默认收起，避免手机端滑动页面误触又大又宽的色板。
+  // 种子色是必填基色、无「启用/禁用」语义，故不复用 _buildOptionalColorPicker 的
+  // switch+panel，而用这个 ExpansionTile 式的展开/收起状态。
+  bool _seedExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -77,16 +82,10 @@ class _CustomThemePageState extends BasePageState {
     super.dispose();
   }
 
-  Brightness get _previewBrightness {
-    switch (_brightnessMode) {
-      case 'light':
-        return Brightness.light;
-      case 'dark':
-        return Brightness.dark;
-      default:
-        return WidgetsBinding.instance.platformDispatcher.platformBrightness;
-    }
-  }
+  // TODO-928: 预览跟随当前真实全局明暗（自定义主题不再有自己的明暗开关）。
+  // 同一组自定义色在 light/dark 下由 buildHibikiColorScheme 各自从 seed 派生。
+  Brightness get _previewBrightness =>
+      appModelNoUpdate.isDarkMode ? Brightness.dark : Brightness.light;
 
   ColorScheme get _generatedScheme =>
       ColorScheme.fromSeed(seedColor: _seed, brightness: _previewBrightness);
@@ -112,13 +111,6 @@ class _CustomThemePageState extends BasePageState {
   void _setSeed(Color color) {
     setState(() {
       _seed = color;
-      _refreshInactiveRoleColors();
-    });
-  }
-
-  void _setBrightnessMode(String mode) {
-    setState(() {
-      _brightnessMode = mode;
       _refreshInactiveRoleColors();
     });
   }
@@ -417,34 +409,8 @@ class _CustomThemePageState extends BasePageState {
       children: [
         _buildPreviewCard(cs),
         SizedBox(height: tokens.spacing.card),
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsSegmentedRow<String>(
-              title: t.dark_mode,
-              icon: Icons.dark_mode_outlined,
-              controlBelow: true,
-              segments: [
-                ButtonSegment<String>(
-                  value: 'light',
-                  icon: const Icon(Icons.light_mode_outlined, size: 16),
-                  tooltip: t.dark_mode_light,
-                ),
-                ButtonSegment<String>(
-                  value: 'system',
-                  icon: const Icon(Icons.brightness_auto_outlined, size: 16),
-                  tooltip: t.dark_mode_system,
-                ),
-                ButtonSegment<String>(
-                  value: 'dark',
-                  icon: const Icon(Icons.dark_mode_outlined, size: 16),
-                  tooltip: t.dark_mode_dark,
-                ),
-              ],
-              selected: _brightnessMode,
-              onChanged: _setBrightnessMode,
-            ),
-          ],
-        ),
+        // TODO-928: 删自定义主题专属的「深色模式」三段开关——自定义主题跟随全局明暗，
+        // 改明暗去外观设置里的全局 brightness 选择器（自带/自定义一视同仁）。
         // ── 板块 1：系统主题色（种子色 + 主色）──
         // TODO-072：把种子色与全局主色归到「系统主题色」一块。
         AdaptiveSettingsSection(
@@ -453,39 +419,7 @@ class _CustomThemePageState extends BasePageState {
             // TODO-071：提示用户色板预览的是种子实际生成的色；想固定某色当主色
             // 强调色，请打开「主色」开关显式指定（否则灰种子会回退成绿）。
             _buildHintRow(t.theme_seed_preview_hint),
-            AdaptiveSettingsRow(
-              title: t.seed_color,
-              subtitle: t.seed_color_desc,
-              icon: Icons.palette_outlined,
-              controlBelow: true,
-              trailing: LayoutBuilder(
-                builder: (layoutContext, constraints) {
-                  final double pickerWidth = constraints.maxWidth.clamp(
-                    0.0,
-                    MediaQuery.of(layoutContext).size.width - 64,
-                  );
-                  final bool isLandscape =
-                      MediaQuery.of(layoutContext).orientation ==
-                          Orientation.landscape;
-                  return Listener(
-                    onPointerDown: (_) => _holdScroll(layoutContext),
-                    onPointerUp: (_) => _releaseScroll(),
-                    onPointerCancel: (_) => _releaseScroll(),
-                    child: ColorPicker(
-                      pickerColor: _seed,
-                      onColorChanged: _setSeed,
-                      portraitOnly: true,
-                      colorPickerWidth: pickerWidth,
-                      pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
-                      enableAlpha: false,
-                      displayThumbColor: true,
-                      hexInputBar: true,
-                      labelTypes: const [],
-                    ),
-                  );
-                },
-              ),
-            ),
+            _buildSeedColorPicker(),
             _buildOptionalColorPicker(
               label: t.color_primary,
               description: t.color_primary_desc,
@@ -648,7 +582,6 @@ class _CustomThemePageState extends BasePageState {
             final NavigatorState navigator = Navigator.of(context);
             await appModel.applyCustomTheme(
               seed: _seed,
-              brightnessMode: _brightnessMode,
               fontColor: _useFontColor ? _fontColor : null,
               backgroundColor: _useBgColor ? _bgColor : null,
               selectionColor: _useSelectionColor ? _selectionColor : null,
@@ -1016,6 +949,79 @@ class _CustomThemePageState extends BasePageState {
   }
 
   // ── 通用组件 ──
+
+  /// TODO-928: 种子色折叠选色区。默认收起，点标题行展开/收起；展开后才挂
+  /// ColorPicker，避免它常驻滚动主路径被手指扫到改色（诉求3）。种子色无启用语义，
+  /// 故不是 switch 而是 ExpansionTile 式的纯展开/收起。
+  Widget _buildSeedColorPicker() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        InkWell(
+          onTap: () => setState(() => _seedExpanded = !_seedExpanded),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.gap,
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.palette_outlined, color: cs.onSurfaceVariant),
+                SizedBox(width: tokens.spacing.gap),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(t.seed_color, style: tokens.type.listTitle),
+                      SizedBox(height: tokens.spacing.gap / 4),
+                      Text(
+                        t.seed_color_desc,
+                        style: tokens.type.metadata.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(width: tokens.spacing.gap),
+                HibikiColorSwatch(
+                  color: _seed,
+                  size: 20,
+                  shape: HibikiColorSwatchShape.dot,
+                  borderColor: Theme.of(context).dividerColor,
+                ),
+                SizedBox(width: tokens.spacing.gap),
+                AnimatedRotation(
+                  turns: _seedExpanded ? 0.5 : 0.0,
+                  duration: hibikiMd3StateDuration,
+                  child: Icon(
+                    Icons.expand_more,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_seedExpanded)
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            child: _buildCompactColorPicker(
+              color: _seed,
+              onChanged: _setSeed,
+              enableAlpha: false,
+            ),
+          ),
+      ],
+    );
+  }
 
   Widget _buildCompactColorPicker({
     required Color color,

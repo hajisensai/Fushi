@@ -669,9 +669,18 @@ class ThemeNotifier extends ChangeNotifier {
     _persistSplashColor();
   }
 
+  // TODO-928: 自定义主题不再拥有自己的明暗真值。删掉 `brightnessMode` 参数后，
+  // applyCustomTheme 只落 seed + 角色色 + `app_theme_key='custom-theme'`，**不再写**
+  // `custom_theme_dark`、**不再写** `brightness_mode`。切到自定义主题保留用户当前的
+  // 全局明暗（浅色态切自定义=浅色，深色态=深色），明暗变体由
+  // buildHibikiColorScheme(seed, brightness) 在 light/dark 各自从 seed 派生。
+  // 想改明暗用全局的 brightness 选择器，自带/自定义一视同仁。
+  //
+  // 向后兼容（Never break userspace）：老用户历史一直双写过 `brightness_mode`，故其
+  // 全局明暗持久值仍在、不回归；`customThemeDark` getter + brightnessMode 的 custom
+  // 回退（:260）保留为纯只读兜底，只是不再产生新值。
   Future<void> applyCustomTheme({
     required Color seed,
-    required String brightnessMode,
     Color? fontColor,
     Color? backgroundColor,
     Color? selectionColor,
@@ -683,7 +692,6 @@ class ThemeNotifier extends ChangeNotifier {
     Color? linkColor,
   }) async {
     await setCustomThemeSeed(seed);
-    await setCustomThemeDark(brightnessMode == 'dark');
     await setCustomThemeFontColor(fontColor);
     await setCustomThemeBackgroundColor(backgroundColor);
     await setCustomThemeSelectionColor(selectionColor);
@@ -694,7 +702,8 @@ class ThemeNotifier extends ChangeNotifier {
     await setCustomThemeSasayakiColor(sasayakiColor);
     await setCustomThemeLinkColor(linkColor);
     await _set('app_theme_key', 'custom-theme');
-    await setBrightnessMode(brightnessMode);
+    notifyListeners();
+    _persistSplashColor();
   }
 
   // ── Splash ────────────────────────────────────────────────────────

@@ -238,9 +238,11 @@ void main() {
     });
 
     test('applyCustomTheme sets all fields at once', () async {
+      // TODO-928: applyCustomTheme 不再带 brightnessMode 参数，也不写 brightness_mode。
+      // 切到自定义保留当前全局明暗：先把全局设深色，应用自定义后仍是深色。
+      await notifier.setBrightnessMode('dark');
       await notifier.applyCustomTheme(
         seed: const Color(0xFFFF5500),
-        brightnessMode: 'dark',
         fontColor: const Color(0xFFFFFFFF),
         primaryColor: const Color(0xFF0000FF),
       );
@@ -249,6 +251,54 @@ void main() {
       expect(notifier.customThemeSeed, const Color(0xFFFF5500));
       expect(notifier.customThemeFontColor, const Color(0xFFFFFFFF));
       expect(notifier.customThemePrimaryColor, const Color(0xFF0000FF));
+    });
+
+    group('TODO-928 · 自定义主题跟随当前全局明暗', () {
+      test('切到自定义不改 brightness_mode：当前深色态保持深色', () async {
+        await notifier.setBrightnessMode('dark');
+        await notifier.applyCustomTheme(seed: const Color(0xFFFF5500));
+        expect(notifier.appThemeKey, 'custom-theme');
+        expect(notifier.brightnessMode, 'dark');
+        expect(notifier.themeMode, ThemeMode.dark);
+        expect(notifier.isDarkMode, isTrue);
+      });
+
+      test('当前浅色态切自定义保持浅色', () async {
+        await notifier.setBrightnessMode('light');
+        await notifier.applyCustomTheme(seed: const Color(0xFFFF5500));
+        expect(notifier.appThemeKey, 'custom-theme');
+        expect(notifier.brightnessMode, 'light');
+        expect(notifier.themeMode, ThemeMode.light);
+        expect(notifier.isDarkMode, isFalse);
+      });
+
+      test('applyCustomTheme 不再写 custom_theme_dark（停止产生第二真值）', () async {
+        await notifier.setBrightnessMode('light');
+        await notifier.applyCustomTheme(seed: const Color(0xFFFF5500));
+        // 未显式写过 custom_theme_dark，getter 仍是默认 false（只读兜底未被污染）。
+        expect(notifier.customThemeDark, isFalse);
+      });
+
+      test('向后兼容：老深色自定义用户（brightness_mode=dark 已存）不回归明暗', () async {
+        // 模拟老用户：历史 applyCustomTheme 双写过 brightness_mode 与 custom_theme_dark。
+        await db.setPref('brightness_mode', PrefCodec.encode('dark'));
+        await db.setPref('custom_theme_dark', PrefCodec.encode(true));
+        await db.setPref('app_theme_key', PrefCodec.encode('custom-theme'));
+        await notifier.refreshFromDb();
+        expect(notifier.appThemeKey, 'custom-theme');
+        expect(notifier.brightnessMode, 'dark');
+        expect(notifier.isDarkMode, isTrue);
+      });
+
+      test('只读兜底：仅有 custom_theme_dark、无 brightness_mode 时仍判深色', () async {
+        // 理论历史路径只写过 custom_theme_dark：brightnessMode 的 custom 回退（:260）
+        // 继续读 customThemeDark 作纯兜底，老用户零回归。
+        await db.setPref('custom_theme_dark', PrefCodec.encode(true));
+        await db.setPref('app_theme_key', PrefCodec.encode('custom-theme'));
+        await notifier.refreshFromDb();
+        expect(notifier.brightnessMode, 'dark');
+        expect(notifier.isDarkMode, isTrue);
+      });
     });
 
     test('material design system keeps the real platform', () async {
@@ -274,7 +324,6 @@ void main() {
     test('custom theme uses custom primary color', () async {
       await notifier.applyCustomTheme(
         seed: const Color(0xFFFF0000),
-        brightnessMode: 'light',
         primaryColor: const Color(0xFF00FF00),
       );
       final cs = notifier.buildColorScheme(Brightness.light);

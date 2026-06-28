@@ -59,6 +59,28 @@ void main() {
     });
   });
 
+  group('CustomThemePage TODO-928 自定义主题跟随全局明暗 + 折叠种子色', () {
+    test('不再引用自定义专属的「深色模式」开关（已删第二明暗真值的 UI）', () {
+      // 删段后页面不应再出现深色三段开关的 onChanged 接线或 t.dark_mode 引用。
+      expect(source.contains('t.dark_mode'), isFalse,
+          reason: '自定义页仍引用 dark_mode 文案 → 深色开关未删干净');
+      expect(source.contains('_setBrightnessMode'), isFalse,
+          reason: '_setBrightnessMode 应随深色开关一并删除');
+    });
+
+    test('applyCustomTheme 调用不再传 brightnessMode（停写第二真值）', () {
+      expect(source.contains('brightnessMode: _brightnessMode'), isFalse,
+          reason: '应用按钮不应再把 _brightnessMode 写进 applyCustomTheme');
+    });
+
+    test('种子色走折叠式 _buildSeedColorPicker（默认收起，防误触）', () {
+      expect(source.contains('_buildSeedColorPicker('), isTrue,
+          reason: '种子色应改为折叠选色区，不再裸挂在滚动主路径');
+      expect(source.contains('bool _seedExpanded = false'), isTrue,
+          reason: '折叠状态应默认收起');
+    });
+  });
+
   group('CustomThemePage TODO-071 seed preview hint', () {
     test('renders the seed-preview hint through _buildHintRow', () {
       expect(source.contains('t.theme_seed_preview_hint'), isTrue,
