@@ -65,6 +65,24 @@ void main() {
       expect(cleared.seriesId, isNull);
       expect(cleared.sortOrder, 7);
     });
+
+    test('batchUpsertShelfOrder 单事务批量回写：建行 + 改行 + 不清 seriesId', () async {
+      // 预置一行带 seriesId，验证批量回写只改 sortOrder 不清归属。
+      final int sid = await db.createSeries('S');
+      await db.setSeriesForEntry('epub', 'X', sid);
+      await db.batchUpsertShelfOrder(
+        <({String mediaType, String entryKey, int sortOrder})>[
+          (mediaType: 'epub', entryKey: 'X', sortOrder: 0),
+          (mediaType: 'srt', entryKey: 'Y', sortOrder: 1),
+          (mediaType: 'video', entryKey: 'Z', sortOrder: 2),
+        ],
+      );
+      final x = (await db.getShelfEntry('epub', 'X'))!;
+      expect(x.sortOrder, 0);
+      expect(x.seriesId, sid, reason: '批量回写部分更新不清 seriesId');
+      expect((await db.getShelfEntry('srt', 'Y'))!.sortOrder, 1);
+      expect((await db.getShelfEntry('video', 'Z'))!.sortOrder, 2);
+    });
   });
 
   group('migrateShelfEntryKey (远端书改键迁移 §0🔴2)', () {
