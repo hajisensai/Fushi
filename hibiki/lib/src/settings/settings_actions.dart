@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
+import 'package:hibiki/src/models/theme_notifier.dart'
+    show ThemeNotifier, CustomThemeEntry, kCustomThemeDefaultSeed;
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/utils.dart';
@@ -325,6 +326,39 @@ Widget buildLanguageSelector(SettingsContext settingsContext) {
   );
 }
 
+/// TODO-930: a custom theme entry's display name. The name is optional
+/// (decision 3); an empty name falls back to the localized default
+/// `Custom N`, where N is the entry's 1-based position in the list. Pure so
+/// both the swatch row and the editor hint can share one source of truth.
+String customThemeDisplayName(AppModel appModel, CustomThemeEntry entry) {
+  if (entry.name.trim().isNotEmpty) return entry.name;
+  final int index = appModel.customThemes.indexWhere(
+    (CustomThemeEntry e) => e.id == entry.id,
+  );
+  final int position =
+      index >= 0 ? index + 1 : appModel.customThemes.length + 1;
+  return t.custom_theme_default_name(n: position);
+}
+
+/// TODO-930: the default seed for a brand-new custom theme. Sticks with the
+/// 928 brand-teal default (the new theme then follows the current global
+/// brightness, decision 6); kept as a helper so the swatch row and editor agree.
+Color blankCustomThemeSeed() => const Color(kCustomThemeDefaultSeed);
+
+/// TODO-930: create + persist a brand-new empty custom theme and return it.
+/// upsert adds it to the list and selects it; the caller then pushes the editor
+/// for `entry.id`. The seed defaults to [blankCustomThemeSeed]; name is empty so
+/// the UI shows the `Custom N` default until the user types one.
+Future<CustomThemeEntry> createBlankCustomTheme(AppModel appModel) async {
+  final CustomThemeEntry entry = CustomThemeEntry(
+    id: 'ct-${DateTime.now().microsecondsSinceEpoch}',
+    name: '',
+    seed: blankCustomThemeSeed().toARGB32(),
+  );
+  await appModel.upsertCustomTheme(entry);
+  return entry;
+}
+
 Widget buildThemeSelector(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   final Color systemColor =
@@ -386,47 +420,77 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             );
           },
         ),
-        // TODO-928: 自定义 swatch 单击=切换主题（与系统/预设 swatch 语义统一），
-        // 长按=进编辑页（鼠标/触摸）。预览圈明暗读 isDarkMode（当前真实明暗），
-        // 因为 custom_theme_dark 已停写、不再是真值。
+        // TODO-930 M1: 每个自定义主题一个 swatch。单击=切换到该主题
+        // （写 app_theme_key=custom-theme:<id>），长按=进编辑页编辑该主题。
+        // 预览圈读各 entry 的种子+角色色 + 当前真实全局明暗（自定义主题跟随
+        // 全局明暗，custom_theme_dark 已停写、不是真值）。
+        ...appModel.customThemes.map((CustomThemeEntry e) {
+          final String key = 'custom-theme:${e.id}';
+          return HibikiSchemeSwatch(
+            colors: hibikiSchemeSwatchColors(
+              buildHibikiColorScheme(
+                seedColor: Color(e.seed),
+                brightness:
+                    appModel.isDarkMode ? Brightness.dark : Brightness.light,
+                primary: e.primaryColor != null ? Color(e.primaryColor!) : null,
+                secondary:
+                    e.secondaryColor != null ? Color(e.secondaryColor!) : null,
+                tertiary:
+                    e.tertiaryColor != null ? Color(e.tertiaryColor!) : null,
+                primaryContainer:
+                    e.containerColor != null ? Color(e.containerColor!) : null,
+              ),
+            ),
+            size: _swatchSize,
+            // 选中 = 当前 app_theme_key 指向这个 entry（精确 custom-theme:<id>，
+            // 或裸 custom-theme 解析到的当前活跃 entry）。
+            selected: appModel.appThemeKey == key ||
+                (appModel.appThemeKey == 'custom-theme' &&
+                    appModel.activeCustomThemeEntry?.id == e.id),
+            label: customThemeDisplayName(appModel, e),
+            onTap: () async {
+              await appModel.setAppThemeKey(key);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            onLongPress: () async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => CustomThemePage(themeId: e.id),
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          );
+        }),
+        // TODO-930 M1: 末尾「+新建」圈。新建一个空 entry（种子取当前全局明暗对应
+        // 的品牌默认色，沿用 928），upsert 后进编辑页编辑它。焦点/手柄用户单击
+        // （Enter / A）即可新建，无需长按。
         HibikiSchemeSwatch(
-          // Mirror ThemeNotifier.buildColorScheme's custom branch (seed +
-          // role overrides + the current global brightness) so the preview
-          // circle matches the theme that custom-theme actually applies.
           colors: hibikiSchemeSwatchColors(
             buildHibikiColorScheme(
-              seedColor: appModel.customThemeSeed,
+              seedColor: const Color(kCustomThemeDefaultSeed),
               brightness:
                   appModel.isDarkMode ? Brightness.dark : Brightness.light,
-              primary: appModel.customThemePrimaryColor,
-              secondary: appModel.customThemeSecondaryColor,
-              tertiary: appModel.customThemeTertiaryColor,
-              primaryContainer: appModel.customThemeContainerColor,
             ),
           ),
           size: _swatchSize,
-          selected: appModel.appThemeKey == 'custom-theme',
-          // Size inherited from the badge IconTheme; see system swatch above.
-          overlay: const Icon(Icons.palette_outlined),
+          selected: false,
+          overlay: const Icon(Icons.add),
           onTap: () async {
-            await appModel.setAppThemeKey('custom-theme');
-            notifyReaderSettingsChanged(settingsContext);
-          },
-          onLongPress: () async {
+            final CustomThemeEntry created = await createBlankCustomTheme(
+              appModel,
+            );
             await pushSettingsPage(
               settingsContext,
-              (_) => const CustomThemePage(),
+              (_) => CustomThemePage(themeId: created.id),
             );
             notifyReaderSettingsChanged(settingsContext);
           },
         ),
-        // TODO-928: 手柄/焦点用户没有长按，故并排一个焦点可达的「编辑」图标按钮作为
-        // 编辑入口（无障碍不回归）。作为 Wrap 的直接子项（与各 swatch 同级），由
-        // Wrap 处理换行/对齐，避免在 trailing 的无界宽度 Row 里溢出。约束成与
-        // swatch 同高的方框，视觉上与自定义 swatch 成一组。
-        // Material 祖先：Cupertino 渲染器（CupertinoPageScaffold）下没有 Material，
-        // 而 HibikiIconButton 内部用 InkWell 需要 Material 祖先；各 swatch 自带
-        // Material（见 _buildSwatchInteractive），独立的编辑按钮要自己补一个。
+        // TODO-930 M1: 焦点/手柄没有长按，故保留一个焦点可达的「编辑」按钮，编辑
+        // 当前活跃的自定义主题（先切到某个自定义 swatch，再用此按钮编辑它）。
+        // 列表为空时无活跃 entry，按钮新建一个再编辑。
+        // Material 祖先：Cupertino 渲染器下没有 Material，HibikiIconButton 的
+        // InkWell 需要 Material 祖先；各 swatch 自带 Material，独立按钮要自己补。
         Material(
           type: MaterialType.transparency,
           child: HibikiIconButton(
@@ -437,9 +501,12 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
               height: _swatchSize,
             ),
             onTap: () async {
+              final CustomThemeEntry? active = appModel.activeCustomThemeEntry;
+              final String themeId =
+                  active?.id ?? (await createBlankCustomTheme(appModel)).id;
               await pushSettingsPage(
                 settingsContext,
-                (_) => const CustomThemePage(),
+                (_) => CustomThemePage(themeId: themeId),
               );
               notifyReaderSettingsChanged(settingsContext);
             },

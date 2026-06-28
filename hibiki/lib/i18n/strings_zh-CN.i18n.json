@@ -1939,5 +1939,11 @@
   "add_to_series": "加入系列",
   "create_series": "新建系列",
   "series_item_count": "$n 项",
-  "shelf_sort_saved": "排序已保存"
+  "shelf_sort_saved": "排序已保存",
+  "custom_theme_name": "名称",
+  "custom_theme_name_hint": "可选，默认「自定义 N」",
+  "new_custom_theme": "新建自定义主题",
+  "delete_custom_theme": "删除主题",
+  "delete_custom_theme_confirm": "删除这个自定义主题？此操作不可撤销。",
+  "custom_theme_default_name": "自定义 $n"
 }

@@ -50,7 +50,11 @@ import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
-import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
+import 'package:hibiki/src/models/theme_notifier.dart'
+    show ThemeNotifier, CustomThemeEntry;
+// TODO-930: re-export the multi-theme value type so `hibiki/models.dart`
+// consumers (theme swatch row, CustomThemePage) can name it.
+export 'package:hibiki/src/models/theme_notifier.dart' show CustomThemeEntry;
 import 'package:hibiki/src/models/audio_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_session_launcher.dart';
@@ -1927,6 +1931,22 @@ class AppModel with ChangeNotifier {
 
   String get appThemeKey => themeNotifier.appThemeKey;
   Future<void> setAppThemeKey(String key) => themeNotifier.setAppThemeKey(key);
+
+  // TODO-930: multi custom theme list delegation. The UI (theme swatch row +
+  // CustomThemePage) talks to AppModel, so mirror ThemeNotifier's list API here
+  // exactly like the legacy flat custom_theme_* getters above.
+  List<CustomThemeEntry> get customThemes => themeNotifier.customThemes;
+  CustomThemeEntry? customThemeById(String id) =>
+      themeNotifier.customThemeById(id);
+  String? get selectedCustomThemeId => themeNotifier.selectedCustomThemeId;
+  CustomThemeEntry? get activeCustomThemeEntry =>
+      themeNotifier.activeCustomThemeEntry;
+  Future<void> upsertCustomTheme(CustomThemeEntry entry) =>
+      themeNotifier.upsertCustomTheme(entry);
+  Future<void> deleteCustomTheme(String id) =>
+      themeNotifier.deleteCustomTheme(id);
+  Future<void> selectCustomTheme(String id) =>
+      themeNotifier.selectCustomTheme(id);
 
   String get brightnessMode => themeNotifier.brightnessMode;
   Future<void> setBrightnessMode(String mode) =>

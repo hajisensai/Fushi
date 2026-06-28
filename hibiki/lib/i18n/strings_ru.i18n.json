@@ -1939,5 +1939,11 @@
   "add_to_series": "Add to series",
   "create_series": "Create series",
   "series_item_count": "$n items",
-  "shelf_sort_saved": "Order saved"
+  "shelf_sort_saved": "Order saved",
+  "custom_theme_name": "Name",
+  "custom_theme_name_hint": "Optional, defaults to \"Custom N\"",
+  "new_custom_theme": "New custom theme",
+  "delete_custom_theme": "Delete theme",
+  "delete_custom_theme_confirm": "Delete this custom theme? This cannot be undone.",
+  "custom_theme_default_name": "Custom $n"
 }

@@ -6,13 +6,18 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
 class CustomThemePage extends BasePage {
-  const CustomThemePage({super.key});
+  // TODO-930: edit an existing custom theme by id, or (null) create a new one.
+  // The swatch row passes a concrete id (long-press / edit button / +new after
+  // upsert); a null id keeps the legacy "edit the active custom theme" path.
+  const CustomThemePage({super.key, this.themeId});
+
+  final String? themeId;
 
   @override
   BasePageState createState() => _CustomThemePageState();
 }
 
-class _CustomThemePageState extends BasePageState {
+class _CustomThemePageState extends BasePageState<CustomThemePage> {
   late Color _seed;
   late String _brightnessMode;
   Color? _fontColor;
@@ -34,6 +39,11 @@ class _CustomThemePageState extends BasePageState {
   Color? _linkColor;
   bool _useLinkColor = false;
 
+  // TODO-930: the entry being edited. Resolved in initState from widget.themeId
+  // (or the active custom theme / a fresh id when null). Name is optional.
+  late String _entryId;
+  late TextEditingController _nameController;
+
   ScrollHoldController? _pickerScrollHold;
 
   // TODO-928: 种子色选色区默认收起，避免手机端滑动页面误触又大又宽的色板。
@@ -44,42 +54,99 @@ class _CustomThemePageState extends BasePageState {
   @override
   void initState() {
     super.initState();
-    _seed = appModelNoUpdate.customThemeSeed;
+    // TODO-930: resolve which entry we are editing. Prefer the explicit
+    // widget.themeId; else fall back to the active custom theme; else a fresh
+    // id for a brand-new theme. Initial colors come from that entry when it
+    // exists, otherwise from the legacy flat getters (keeps the pre-930
+    // single-theme edit path identical for a null/missing id).
+    final CustomThemeEntry? entry = widget.themeId != null
+        ? appModelNoUpdate.customThemeById(widget.themeId!)
+        : appModelNoUpdate.activeCustomThemeEntry;
+    _entryId = entry?.id ??
+        widget.themeId ??
+        'ct-${DateTime.now().microsecondsSinceEpoch}';
+    _nameController = TextEditingController(text: entry?.name ?? '');
+
+    Color? roleColor(int? fromEntry, Color? Function() legacy) {
+      if (entry != null) return fromEntry != null ? Color(fromEntry) : null;
+      return legacy();
+    }
+
+    _seed =
+        entry != null ? Color(entry.seed) : appModelNoUpdate.customThemeSeed;
     _brightnessMode = appModelNoUpdate.brightnessMode;
-    _fontColor = appModelNoUpdate.customThemeFontColor;
+    _fontColor = roleColor(
+        entry?.fontColor, () => appModelNoUpdate.customThemeFontColor);
     _useFontColor = _fontColor != null;
     _fontColor ??= Colors.black;
-    _bgColor = appModelNoUpdate.customThemeBackgroundColor;
+    _bgColor = roleColor(
+        entry?.bgColor, () => appModelNoUpdate.customThemeBackgroundColor);
     _useBgColor = _bgColor != null;
     _bgColor ??= Colors.white;
-    _selectionColor = appModelNoUpdate.customThemeSelectionColor;
+    _selectionColor = roleColor(entry?.selectionColor,
+        () => appModelNoUpdate.customThemeSelectionColor);
     _useSelectionColor = _selectionColor != null;
     _selectionColor ??= Colors.grey;
     final ColorScheme generated = _generatedScheme;
-    _primaryColor = appModelNoUpdate.customThemePrimaryColor;
+    _primaryColor = roleColor(
+        entry?.primaryColor, () => appModelNoUpdate.customThemePrimaryColor);
     _usePrimaryColor = _primaryColor != null;
     _primaryColor ??= generated.primary;
-    _secondaryColor = appModelNoUpdate.customThemeSecondaryColor;
+    _secondaryColor = roleColor(entry?.secondaryColor,
+        () => appModelNoUpdate.customThemeSecondaryColor);
     _useSecondaryColor = _secondaryColor != null;
     _secondaryColor ??= generated.secondary;
-    _tertiaryColor = appModelNoUpdate.customThemeTertiaryColor;
+    _tertiaryColor = roleColor(
+        entry?.tertiaryColor, () => appModelNoUpdate.customThemeTertiaryColor);
     _useTertiaryColor = _tertiaryColor != null;
     _tertiaryColor ??= generated.tertiary;
-    _containerColor = appModelNoUpdate.customThemeContainerColor;
+    _containerColor = roleColor(entry?.containerColor,
+        () => appModelNoUpdate.customThemeContainerColor);
     _useContainerColor = _containerColor != null;
     _containerColor ??= generated.primaryContainer;
-    _sasayakiColor = appModelNoUpdate.customThemeSasayakiColor;
+    _sasayakiColor = roleColor(
+        entry?.sasayakiColor, () => appModelNoUpdate.customThemeSasayakiColor);
     _useSasayakiColor = _sasayakiColor != null;
     _sasayakiColor ??= HibikiColor.defaultSasayakiColor;
-    _linkColor = appModelNoUpdate.customThemeLinkColor;
+    _linkColor = roleColor(
+        entry?.linkColor, () => appModelNoUpdate.customThemeLinkColor);
     _useLinkColor = _linkColor != null;
     _linkColor ??= generated.primary;
   }
 
   @override
   void dispose() {
+    _nameController.dispose();
     _pickerScrollHold?.cancel();
     super.dispose();
+  }
+
+  /// TODO-930: build the [CustomThemeEntry] from the current editor state.
+  CustomThemeEntry _buildEntry() {
+    int? argb(Color? c) => c?.toARGB32();
+    return CustomThemeEntry(
+      id: _entryId,
+      name: _nameController.text.trim(),
+      seed: _seed.toARGB32(),
+      fontColor: _useFontColor ? argb(_fontColor) : null,
+      bgColor: _useBgColor ? argb(_bgColor) : null,
+      selectionColor: _useSelectionColor ? argb(_selectionColor) : null,
+      primaryColor: _usePrimaryColor ? argb(_primaryColor) : null,
+      secondaryColor: _useSecondaryColor ? argb(_secondaryColor) : null,
+      tertiaryColor: _useTertiaryColor ? argb(_tertiaryColor) : null,
+      containerColor: _useContainerColor ? argb(_containerColor) : null,
+      sasayakiColor: _useSasayakiColor ? argb(_sasayakiColor) : null,
+      linkColor: _useLinkColor ? argb(_linkColor) : null,
+    );
+  }
+
+  /// TODO-930: 1-based index of this entry in the list, for the default name
+  /// hint (`Custom N`). Falls back to list length + 1 for a not-yet-persisted
+  /// new entry.
+  int get _defaultNameIndex {
+    final int idx = appModelNoUpdate.customThemes
+        .indexWhere((CustomThemeEntry e) => e.id == _entryId);
+    return idx >= 0 ? idx + 1 : appModelNoUpdate.customThemes.length + 1;
   }
 
   // TODO-928: 预览跟随当前真实全局明暗（自定义主题不再有自己的明暗开关）。
@@ -416,6 +483,8 @@ class _CustomThemePageState extends BasePageState {
         AdaptiveSettingsSection(
           title: t.section_system_theme,
           children: [
+            // TODO-930: 主题名称（可选，留空显示「自定义 N」默认名）。
+            _buildNameField(),
             // TODO-071：提示用户色板预览的是种子实际生成的色；想固定某色当主色
             // 强调色，请打开「主色」开关显式指定（否则灰种子会回退成绿）。
             _buildHintRow(t.theme_seed_preview_hint),
@@ -578,29 +647,129 @@ class _CustomThemePageState extends BasePageState {
         ),
         SizedBox(height: tokens.spacing.card),
         FilledButton.icon(
-          onPressed: () async {
-            final NavigatorState navigator = Navigator.of(context);
-            await appModel.applyCustomTheme(
-              seed: _seed,
-              fontColor: _useFontColor ? _fontColor : null,
-              backgroundColor: _useBgColor ? _bgColor : null,
-              selectionColor: _useSelectionColor ? _selectionColor : null,
-              primaryColor: _usePrimaryColor ? _primaryColor : null,
-              secondaryColor: _useSecondaryColor ? _secondaryColor : null,
-              tertiaryColor: _useTertiaryColor ? _tertiaryColor : null,
-              containerColor: _useContainerColor ? _containerColor : null,
-              sasayakiColor: _useSasayakiColor ? _sasayakiColor : null,
-              linkColor: _useLinkColor ? _linkColor : null,
-            );
-            if (!mounted) {
-              return;
-            }
-            navigator.pop();
-          },
+          onPressed: _applyAndClose,
           icon: const Icon(Icons.check),
           label: Text(t.apply_theme),
         ),
+        SizedBox(height: tokens.spacing.gap),
+        // TODO-930 M2: 删除当前编辑的主题（确认后），回退由 deleteCustomTheme +
+        // _resolveThemeKeyAfterDelete 处理（决策 1：列表非空选第一项，空→system）。
+        OutlinedButton.icon(
+          onPressed: _confirmDelete,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
+          icon: const Icon(Icons.delete_outline),
+          label: Text(t.delete_custom_theme),
+        ),
       ],
+    );
+  }
+
+  /// TODO-930 M2: persist the edited theme into the list, select it, point the
+  /// app theme key at it, then close. Replaces the legacy applyCustomTheme call
+  /// so naming + multi-theme selection round-trip through the list model.
+  Future<void> _applyAndClose() async {
+    final NavigatorState navigator = Navigator.of(context);
+    final CustomThemeEntry entry = _buildEntry();
+    await appModel.upsertCustomTheme(entry);
+    await appModel.selectCustomTheme(entry.id);
+    await appModel.setAppThemeKey('custom-theme:${entry.id}');
+    if (!mounted) return;
+    navigator.pop();
+  }
+
+  /// TODO-930 M2: confirm + delete the current theme. After delete, repoint the
+  /// app theme key per decision 1 (first remaining custom theme, else
+  /// system-theme) so the app never points at a now-missing custom entry.
+  Future<void> _confirmDelete() async {
+    final NavigatorState navigator = Navigator.of(context);
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) {
+            final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+            return HibikiDialogFrame(
+              maxWidth: 420,
+              maxHeightFactor: 0.6,
+              scrollable: false,
+              child: HibikiModalSheetFrame(
+                title: t.delete_custom_theme,
+                leadingIcon: Icons.delete_outline,
+                bodyPadding: EdgeInsets.fromLTRB(
+                  tokens.spacing.card,
+                  0,
+                  tokens.spacing.card,
+                  tokens.spacing.gap,
+                ),
+                footerPadding: EdgeInsets.fromLTRB(
+                  tokens.spacing.card,
+                  tokens.spacing.gap,
+                  tokens.spacing.card,
+                  tokens.spacing.card,
+                ),
+                body: Text(
+                  t.delete_custom_theme_confirm,
+                  style: tokens.type.listSubtitle,
+                ),
+                footer: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: tokens.spacing.gap,
+                  runSpacing: tokens.spacing.gap,
+                  children: [
+                    adaptiveDialogAction(
+                      context: ctx,
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(t.dialog_close),
+                    ),
+                    adaptiveDialogAction(
+                      context: ctx,
+                      isDestructiveAction: true,
+                      isDefaultAction: true,
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(t.delete_custom_theme),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    final String nextKey = _resolveThemeKeyAfterDelete(_entryId);
+    await appModel.deleteCustomTheme(_entryId);
+    await appModel.setAppThemeKey(nextKey);
+    if (!mounted) return;
+    navigator.pop();
+  }
+
+  /// TODO-930 M2 decision 1: after deleting [deletedId], the app theme key
+  /// should point at the first remaining custom theme (`custom-theme:<id>`), or
+  /// fall back to `system-theme` when the list becomes empty. Pure for testing.
+  String _resolveThemeKeyAfterDelete(String deletedId) {
+    final List<CustomThemeEntry> remaining = appModelNoUpdate.customThemes
+        .where((CustomThemeEntry e) => e.id != deletedId)
+        .toList();
+    if (remaining.isEmpty) return 'system-theme';
+    return 'custom-theme:${remaining.first.id}';
+  }
+
+  /// TODO-930 M2: the optional name field. Empty name is allowed (decision 3);
+  /// the hint shows the localized default `Custom N`.
+  Widget _buildNameField() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap,
+      ),
+      child: HibikiTextField(
+        controller: _nameController,
+        labelText: t.custom_theme_name,
+        hintText: t.custom_theme_default_name(n: _defaultNameIndex),
+        onChanged: (_) => setState(() {}),
+      ),
     );
   }
 
