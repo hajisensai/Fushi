@@ -1081,454 +1081,482 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox
     // for global→local coordinate mapping (TODO-806), while the ValueKey stays on
     // the InAppWebView itself for the integration-test finders (hoshi_webview).
-    return KeyedSubtree(
-      key: _webViewKey,
-      child: InAppWebView(
-        key: const ValueKey<String>('hoshi_webview'),
-        contextMenu: ContextMenu(
-          settings: ContextMenuSettings(
-            hideDefaultSystemContextMenuItems: false,
-          ),
-          menuItems: [
-            ContextMenuItem(
-              id: 1,
-              title: t.search,
-              action: () async {
-                final text = await _controller?.getSelectedText();
-                if (text == null || text.isEmpty) return;
-                if (!mounted) return;
-                final size = MediaQuery.of(context).size;
-                final rect = Rect.fromCenter(
-                  center: Offset(size.width / 2, size.height / 3),
-                  width: 1,
-                  height: 1,
-                );
-                _webviewPrunePopupStack(0);
-                await searchDictionaryResult(
-                  searchTerm: text,
-                  selectionRect: rect,
-                );
-              },
+    final Widget webView = InAppWebView(
+      key: const ValueKey<String>('hoshi_webview'),
+      // TODO-954：Windows 的文字选区右键改用 Flutter 菜单（`_showReaderTextContextMenu`，
+      // 经 GestureDetector.onSecondaryTapDown 触发），它在 HibikiAppUiScale 内能跟随界面
+      // 大小缩放；故 Windows 下禁掉平台原生 WebView2 菜单（它不在 Flutter 树里、永远不
+      // 缩放）。移动端无 onSecondaryTapDown，仍走原生 ContextMenu（查词 + 导出）。
+      contextMenu: isWindowsPlatform
+          ? ContextMenu(
+              settings: ContextMenuSettings(
+                hideDefaultSystemContextMenuItems: true,
+              ),
+              menuItems: const [],
+            )
+          : ContextMenu(
+              settings: ContextMenuSettings(
+                hideDefaultSystemContextMenuItems: false,
+              ),
+              menuItems: [
+                ContextMenuItem(
+                  id: 1,
+                  title: t.search,
+                  action: () async {
+                    final text = await _controller?.getSelectedText();
+                    if (text == null || text.isEmpty) return;
+                    if (!mounted) return;
+                    final size = MediaQuery.of(context).size;
+                    final rect = Rect.fromCenter(
+                      center: Offset(size.width / 2, size.height / 3),
+                      width: 1,
+                      height: 1,
+                    );
+                    _webviewPrunePopupStack(0);
+                    await searchDictionaryResult(
+                      searchTerm: text,
+                      selectionRect: rect,
+                    );
+                  },
+                ),
+                // TODO-954：移动端选区右键也提供「导出片段」，与 Windows 一致都从选区
+                // 触发；handler 内部判 hasCue/音频，无音频时走 noAudio 兜底 toast。
+                ContextMenuItem(
+                  id: 2,
+                  title: t.audiobook_export_clip,
+                  action: () async {
+                    await _exportAudiobookClipFromSelection();
+                  },
+                ),
+              ],
             ),
-          ],
+      initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
+        UserScript(
+          source:
+              'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
-        initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
-          UserScript(
-            source:
-                'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
-            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-          ),
-        ]),
-        initialSettings: InAppWebViewSettings(
-          mediaPlaybackRequiresUserGesture: false,
-          verticalScrollBarEnabled: false,
-          horizontalScrollBarEnabled: false,
-          verticalScrollbarThumbColor: Colors.transparent,
-          verticalScrollbarTrackColor: Colors.transparent,
-          horizontalScrollbarThumbColor: Colors.transparent,
-          horizontalScrollbarTrackColor: Colors.transparent,
-          scrollbarFadingEnabled: false,
-          databaseEnabled: false,
-          domStorageEnabled: false,
-          useShouldInterceptRequest: true,
-          mixedContentMode: MixedContentMode.MIXED_CONTENT_COMPATIBILITY_MODE,
-          useShouldOverrideUrlLoading: true,
-        ),
-        onWebViewCreated: (controller) {
-          _controller = controller;
-          assert(() {
-            assert(
-              ReaderHibikiPage.debugEvaluateJavascript == null,
-              'debugEvaluateJavascript already set — a previous reader did not '
-              'clear it on dispose, or two readers are live at once.',
-            );
-            ReaderHibikiPage.debugEvaluateJavascript = (String source) =>
-                controller.evaluateJavascript(source: source);
-            ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
-            ReaderHibikiPage.debugEvaluateTopPopup = (String source) async =>
-                _webviewTopPopupState?.debugEval(source);
-            ReaderHibikiPage.debugInjectAudiobookBridge = () =>
-                AudiobookBridge.inject(controller,
-                    primaryColor: _themeSasayakiColor());
-            return true;
-          }());
-          _startContentReadyTimeout();
-          if (_lyricsMode && _audiobookController != null) {
-            final List<AudioCue> allCues =
-                _audiobookController!.allBookCuesSnapshot;
-            if (allCues.isNotEmpty) {
-              _audiobookController!.setChapterCues(allCues);
+      ]),
+      initialSettings: InAppWebViewSettings(
+        mediaPlaybackRequiresUserGesture: false,
+        verticalScrollBarEnabled: false,
+        horizontalScrollBarEnabled: false,
+        verticalScrollbarThumbColor: Colors.transparent,
+        verticalScrollbarTrackColor: Colors.transparent,
+        horizontalScrollbarThumbColor: Colors.transparent,
+        horizontalScrollbarTrackColor: Colors.transparent,
+        scrollbarFadingEnabled: false,
+        databaseEnabled: false,
+        domStorageEnabled: false,
+        useShouldInterceptRequest: true,
+        mixedContentMode: MixedContentMode.MIXED_CONTENT_COMPATIBILITY_MODE,
+        useShouldOverrideUrlLoading: true,
+      ),
+      onWebViewCreated: (controller) {
+        _controller = controller;
+        assert(() {
+          assert(
+            ReaderHibikiPage.debugEvaluateJavascript == null,
+            'debugEvaluateJavascript already set — a previous reader did not '
+            'clear it on dispose, or two readers are live at once.',
+          );
+          ReaderHibikiPage.debugEvaluateJavascript =
+              (String source) => controller.evaluateJavascript(source: source);
+          ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
+          ReaderHibikiPage.debugEvaluateTopPopup =
+              (String source) async => _webviewTopPopupState?.debugEval(source);
+          ReaderHibikiPage.debugInjectAudiobookBridge = () =>
+              AudiobookBridge.inject(controller,
+                  primaryColor: _themeSasayakiColor());
+          return true;
+        }());
+        _startContentReadyTimeout();
+        if (_lyricsMode && _audiobookController != null) {
+          final List<AudioCue> allCues =
+              _audiobookController!.allBookCuesSnapshot;
+          if (allCues.isNotEmpty) {
+            _audiobookController!.setChapterCues(allCues);
+          }
+          _lyricsEntryChapter = _currentChapter;
+          _lyricsEntryCueIndex = allCues.isNotEmpty
+              ? _audiobookController!.allBookCueIdx
+              : _audiobookController!.currentCueIdx;
+          _loadLyricsPage();
+        } else {
+          _restoreInFlight = true;
+          _loadChapterDirectly(_currentChapter);
+        }
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onTextSelected',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            try {
+              final Map<String, dynamic> payload =
+                  jsonDecode(args[0] as String) as Map<String, dynamic>;
+              await _handleTextSelected(ReaderSelectionData.fromJson(payload));
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('ReaderHibiki.onTextSelected', e, stack);
+              debugPrint('[ReaderHibiki] onTextSelected error: $e');
             }
-            _lyricsEntryChapter = _currentChapter;
-            _lyricsEntryCueIndex = allCues.isNotEmpty
-                ? _audiobookController!.allBookCueIdx
-                : _audiobookController!.currentCueIdx;
-            _loadLyricsPage();
-          } else {
-            _restoreInFlight = true;
-            _loadChapterDirectly(_currentChapter);
-          }
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onTextSelected',
-            callback: (args) async {
-              if (args.isEmpty) return;
-              try {
-                final Map<String, dynamic> payload =
-                    jsonDecode(args[0] as String) as Map<String, dynamic>;
-                await _handleTextSelected(
-                    ReaderSelectionData.fromJson(payload));
-              } catch (e, stack) {
-                ErrorLogService.instance
-                    .log('ReaderHibiki.onTextSelected', e, stack);
-                debugPrint('[ReaderHibiki] onTextSelected error: $e');
-              }
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onRestoreComplete',
+          callback: (_) => _onRestoreComplete(),
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onRestoreComplete',
-            callback: (_) => _onRestoreComplete(),
-          );
+        // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸·trackpad·键盘
+        // 箭头落 body 的原生滚动）经 setup 脚本的 scroll reporter 回传，刷新章内进度
+        // 条。门控由 readerScrollProgressRefreshAllowed 纯函数统一判定，恢复期/歌词/
+        // 未就绪一律不触发（JS 侧已抑制 _reanchorPending 重锚瞬态）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onReaderScroll',
+          callback: (_) => _handleReaderScroll(),
+        );
 
-          // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸·trackpad·键盘
-          // 箭头落 body 的原生滚动）经 setup 脚本的 scroll reporter 回传，刷新章内进度
-          // 条。门控由 readerScrollProgressRefreshAllowed 纯函数统一判定，恢复期/歌词/
-          // 未就绪一律不触发（JS 侧已抑制 _reanchorPending 重锚瞬态）。
-          controller.addJavaScriptHandler(
-            handlerName: 'onReaderScroll',
-            callback: (_) => _handleReaderScroll(),
-          );
+        // BUG-117: primary internal-link path. The JS click interceptor (in the
+        // reader setup script) preventDefaults <a> clicks and forwards the
+        // browser-resolved absolute href here, so link navigation works on every
+        // platform — including the Windows fork, whose shouldOverrideUrlLoading
+        // never fires for clicks.
+        controller.addJavaScriptHandler(
+          handlerName: 'onInternalLink',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            await _handleInternalLinkUrl(args[0] as String);
+          },
+        );
 
-          // BUG-117: primary internal-link path. The JS click interceptor (in the
-          // reader setup script) preventDefaults <a> clicks and forwards the
-          // browser-resolved absolute href here, so link navigation works on every
-          // platform — including the Windows fork, whose shouldOverrideUrlLoading
-          // never fires for clicks.
-          controller.addJavaScriptHandler(
-            handlerName: 'onInternalLink',
-            callback: (args) async {
-              if (args.isEmpty) return;
-              await _handleInternalLinkUrl(args[0] as String);
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onTap',
-            callback: (args) {
-              if (args.length < 2) return;
-              final bool shiftKey = args.length >= 3 && args[2] == true;
-              if (!_showChrome && !shiftKey) {
-                _toggleChrome();
-                // Tap handed OS focus to the WebView; reclaim it so ESC still
-                // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
-                // here does not move focus to the bar, so the reader keeps it.
-                _reclaimReaderFocusAfterGesture();
-                return;
-              }
-              if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
-                // Tap consumed without a selection/popup — reclaim reader focus.
-                _reclaimReaderFocusAfterGesture();
-                return;
-              }
-              final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
-              final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
-              // Selection → onTextSelected → popup, which takes focus itself; do
-              // not reclaim here or we would fight the popup for focus.
-              _selectTextAt(x, y);
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onShiftHover',
-            callback: (args) {
-              if (args.length < 2) return;
-              // TODO-851「限一级弹窗」：已有可见弹窗时悬停不再查词，保证 hover 最多
-              // 叠一层（不在已有弹窗之上再起查词）。两个 hover 入口都要门控
-              // （另一处见 reader_hibiki_page.dart onDismissBarrierHover）。
-              if (isDictionaryShown) return;
-              final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
-              final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
-              // TODO-851：悬停路径传 fromHover:true，命中空白不触发 onTapEmpty。
-              _selectTextAt(x, y, fromHover: true);
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onTapEmpty',
-            callback: (_) {
-              if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
-                _toggleChrome();
-              }
-              // Tap on empty space handed OS focus to the WebView; reclaim it so
-              // ESC still exits the book afterward (BUG-136).
+        controller.addJavaScriptHandler(
+          handlerName: 'onTap',
+          callback: (args) {
+            if (args.length < 2) return;
+            final bool shiftKey = args.length >= 3 && args[2] == true;
+            if (!_showChrome && !shiftKey) {
+              _toggleChrome();
+              // Tap handed OS focus to the WebView; reclaim it so ESC still
+              // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
+              // here does not move focus to the bar, so the reader keeps it.
               _reclaimReaderFocusAfterGesture();
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onSwipe',
-            callback: (List<dynamic> args) {
-              if (args.isEmpty || _lyricsMode) return;
-              // The swipe/wheel gesture handed OS focus to the WebView; reclaim it
-              // so ESC still exits the book after a page turn (BUG-136).
+              return;
+            }
+            if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
+              // Tap consumed without a selection/popup — reclaim reader focus.
               _reclaimReaderFocusAfterGesture();
-              final String dir = args[0] as String;
-              final bool invert =
-                  ReaderHibikiSource.instance.invertSwipeDirection;
-              if (dir == 'left') {
-                _paginate(invert
-                    ? ReaderNavigationDirection.backward
-                    : ReaderNavigationDirection.forward);
-              } else if (dir == 'right') {
-                _paginate(invert
-                    ? ReaderNavigationDirection.forward
-                    : ReaderNavigationDirection.backward);
-              }
-            },
-          );
+              return;
+            }
+            final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
+            final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
+            // Selection → onTextSelected → popup, which takes focus itself; do
+            // not reclaim here or we would fight the popup for focus.
+            _selectTextAt(x, y);
+          },
+        );
 
-          // TODO-737: 分页滚轮翻页专用 handler。JS 已把滚轮方向归一成「语义意图」
-          // (forward/backward·deltaY>0=forward 对齐连续滚轮)，这里**不读
-          // invertSwipeDirection**（该开关从此只管触摸滑动 / 鼠标拖动，不管滚轮），
-          // 直接映射成 _paginate 的导航方向。节流统一走 _paginate 入口时间戳闸门
-          // （throttleMs: wheelPageTurnInterval），不再依赖 JS _wheelTimer。
-          controller.addJavaScriptHandler(
-            handlerName: 'onWheelPaginate',
-            callback: (List<dynamic> args) {
-              if (args.isEmpty || _lyricsMode) return;
-              _reclaimReaderFocusAfterGesture();
-              final String dir = args[0] as String;
-              final int throttleMs =
-                  ReaderHibikiSource.instance.wheelPageTurnInterval;
-              if (dir == 'forward') {
-                _paginate(ReaderNavigationDirection.forward,
-                    throttleMs: throttleMs);
-              } else if (dir == 'backward') {
-                _paginate(ReaderNavigationDirection.backward,
-                    throttleMs: throttleMs);
-              }
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onShiftHover',
+          callback: (args) {
+            if (args.length < 2) return;
+            // TODO-851「限一级弹窗」：已有可见弹窗时悬停不再查词，保证 hover 最多
+            // 叠一层（不在已有弹窗之上再起查词）。两个 hover 入口都要门控
+            // （另一处见 reader_hibiki_page.dart onDismissBarrierHover）。
+            if (isDictionaryShown) return;
+            final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
+            final double y = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
+            // TODO-851：悬停路径传 fromHover:true，命中空白不触发 onTapEmpty。
+            _selectTextAt(x, y, fromHover: true);
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onBoundarySwipe',
-            callback: (List<dynamic> args) {
-              if (args.isEmpty || _lyricsMode) return;
-              // Boundary swipe → chapter turn also stole focus to the WebView
-              // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
-              _reclaimReaderFocusAfterGesture();
-              final String dir = args[0] as String;
-              // TODO-737 节流分流（4 必补点 #1）：连续滚轮跨章直接调
-              // _handlePageTurnLimit、**绕过 _paginate 入口闸门**，否则归一节流后连续
-              // 滚轮跨章不受任何节流。这里就地用与 _paginate 同款 _lastPaginateTime
-              // 时间戳闸门拦绕过路径；闸门只放这一处（不放 _handlePageTurnLimit 本体），
-              // 故分页跨章经 _paginate 内部调 _handlePageTurnLimit 时不会被自己盖的戳
-              // 吞掉（章末翻得过去）。
-              final int throttleMs =
-                  ReaderHibikiSource.instance.wheelPageTurnInterval;
-              if (throttleMs > 0 && _lastPaginateTime != null) {
-                final int elapsedMs = DateTime.now()
-                    .difference(_lastPaginateTime!)
-                    .inMilliseconds;
-                if (elapsedMs < throttleMs) return;
-              }
-              // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
-              debugPrint('[xchapter] onBoundarySwipe dir=$dir '
-                  'chapter=$_currentChapter');
-              if (dir == 'forward') {
-                _handlePageTurnLimit('forward');
-              } else if (dir == 'backward') {
-                _handlePageTurnLimit('backward');
-              }
-              if (throttleMs > 0) {
-                _lastPaginateTime = DateTime.now();
-              }
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onTapEmpty',
+          callback: (_) {
+            if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
+              _toggleChrome();
+            }
+            // Tap on empty space handed OS focus to the WebView; reclaim it so
+            // ESC still exits the book afterward (BUG-136).
+            _reclaimReaderFocusAfterGesture();
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onImageDetected',
-            callback: (_) => _audiobookController?.triggerImagePause(),
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onSwipe',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _lyricsMode) return;
+            // The swipe/wheel gesture handed OS focus to the WebView; reclaim it
+            // so ESC still exits the book after a page turn (BUG-136).
+            _reclaimReaderFocusAfterGesture();
+            final String dir = args[0] as String;
+            final bool invert =
+                ReaderHibikiSource.instance.invertSwipeDirection;
+            if (dir == 'left') {
+              _paginate(invert
+                  ? ReaderNavigationDirection.backward
+                  : ReaderNavigationDirection.forward);
+            } else if (dir == 'right') {
+              _paginate(invert
+                  ? ReaderNavigationDirection.forward
+                  : ReaderNavigationDirection.backward);
+            }
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onImageTap',
-            callback: (args) {
-              if (args.isEmpty) return;
-              _openImageViewer(args[0] as String);
-            },
-          );
+        // TODO-737: 分页滚轮翻页专用 handler。JS 已把滚轮方向归一成「语义意图」
+        // (forward/backward·deltaY>0=forward 对齐连续滚轮)，这里**不读
+        // invertSwipeDirection**（该开关从此只管触摸滑动 / 鼠标拖动，不管滚轮），
+        // 直接映射成 _paginate 的导航方向。节流统一走 _paginate 入口时间戳闸门
+        // （throttleMs: wheelPageTurnInterval），不再依赖 JS _wheelTimer。
+        controller.addJavaScriptHandler(
+          handlerName: 'onWheelPaginate',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _lyricsMode) return;
+            _reclaimReaderFocusAfterGesture();
+            final String dir = args[0] as String;
+            final int throttleMs =
+                ReaderHibikiSource.instance.wheelPageTurnInterval;
+            if (dir == 'forward') {
+              _paginate(ReaderNavigationDirection.forward,
+                  throttleMs: throttleMs);
+            } else if (dir == 'backward') {
+              _paginate(ReaderNavigationDirection.backward,
+                  throttleMs: throttleMs);
+            }
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onImageContextMenu',
-            callback: (args) async {
-              if (args.isEmpty) return;
-              final double x = args.length > 1
-                  ? (_ReaderHibikiPageState._toDouble(args[1]) ?? 0)
-                  : 0;
-              final double y = args.length > 2
-                  ? (_ReaderHibikiPageState._toDouble(args[2]) ?? 0)
-                  : 0;
-              await _showReaderImageContextMenu(
-                  args[0] as String, Offset(x, y));
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onBoundarySwipe',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _lyricsMode) return;
+            // Boundary swipe → chapter turn also stole focus to the WebView
+            // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
+            _reclaimReaderFocusAfterGesture();
+            final String dir = args[0] as String;
+            // TODO-737 节流分流（4 必补点 #1）：连续滚轮跨章直接调
+            // _handlePageTurnLimit、**绕过 _paginate 入口闸门**，否则归一节流后连续
+            // 滚轮跨章不受任何节流。这里就地用与 _paginate 同款 _lastPaginateTime
+            // 时间戳闸门拦绕过路径；闸门只放这一处（不放 _handlePageTurnLimit 本体），
+            // 故分页跨章经 _paginate 内部调 _handlePageTurnLimit 时不会被自己盖的戳
+            // 吞掉（章末翻得过去）。
+            final int throttleMs =
+                ReaderHibikiSource.instance.wheelPageTurnInterval;
+            if (throttleMs > 0 && _lastPaginateTime != null) {
+              final int elapsedMs =
+                  DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
+              if (elapsedMs < throttleMs) return;
+            }
+            // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
+            debugPrint('[xchapter] onBoundarySwipe dir=$dir '
+                'chapter=$_currentChapter');
+            if (dir == 'forward') {
+              _handlePageTurnLimit('forward');
+            } else if (dir == 'backward') {
+              _handlePageTurnLimit('backward');
+            }
+            if (throttleMs > 0) {
+              _lastPaginateTime = DateTime.now();
+            }
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onImageLongPress',
-            callback: (args) async {
-              if (args.isEmpty) return;
-              await _shareReaderImage(args[0] as String);
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageDetected',
+          callback: (_) => _audiobookController?.triggerImagePause(),
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'spreadReady',
-            callback: (_) {
-              _isNavigatingToChapter = false;
-              _restoreInFlight = false;
-              if (_restoreCompleter != null &&
-                  !_restoreCompleter!.isCompleted) {
-                _restoreCompleter!.complete(true);
-              }
-              _restoreCompleter = null;
-              if (mounted) {
-                // BUG-438 / TODO-889：spread 内容就绪，清兜底 deadline，下次导航拿新窗口。
-                _clearContentReadyTimeout();
-                _rebuild(() {
-                  _readerContentReady = true;
-                  // spread(漫画双页)路径只发 'spreadReady'，从不发 'onRestoreComplete'，
-                  // 故不走 _onRestoreComplete 的 _hasEverLoaded 置位。这里补齐，与另外
-                  // 三个 content-ready 完成点对齐 —— 否则 spread 书冷开时底栏(有声书条/
-                  // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
-                  _hasEverLoaded = true;
-                });
-                // TODO-700 T3：spread 内容就绪确定性落焦到正文（门控见 helper）。
-                _settleFocusOnContentReady();
-              }
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageTap',
+          callback: (args) {
+            if (args.isEmpty) return;
+            _openImageViewer(args[0] as String);
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onCueTap',
-            callback: (List<dynamic> args) {
-              if (args.isEmpty || _audiobookController == null) return;
-              final int sentenceIndex = (args[0] as num).toInt();
-              final List<AudioCue>? allCues = _cachedAllCues;
-              if (allCues == null) return;
-              final int idx = allCues
-                  .indexWhere((AudioCue c) => c.sentenceIndex == sentenceIndex);
-              if (idx >= 0) {
-                _audiobookController!.playCueAndContinue(allCues[idx]);
-              }
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageContextMenu',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            final double x = args.length > 1
+                ? (_ReaderHibikiPageState._toDouble(args[1]) ?? 0)
+                : 0;
+            final double y = args.length > 2
+                ? (_ReaderHibikiPageState._toDouble(args[2]) ?? 0)
+                : 0;
+            await _showReaderImageContextMenu(args[0] as String, Offset(x, y));
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onPointerSeek',
-            callback: (List<dynamic> args) async {
-              if (args.length < 3 || _audiobookController == null) return;
-              final int button = (args[0] as num?)?.toInt() ?? -1;
-              if (!isSeekToClickedSentenceButton(
-                  appModel.shortcutRegistry, button)) {
-                return;
-              }
-              final double x = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
-              final double y = _ReaderHibikiPageState._toDouble(args[2]) ?? 0;
-              await _seekToClickedSentence(x, y);
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageLongPress',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            await _shareReaderImage(args[0] as String);
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onLyricsPointerSeek',
-            callback: (List<dynamic> args) {
-              if (args.length < 2 || _audiobookController == null) return;
-              final int button = (args[0] as num?)?.toInt() ?? -1;
-              final int idx = (args[1] as num?)?.toInt() ?? -1;
-              final AudioCue? cue = cueForLyricsPointer(
-                appModel.shortcutRegistry,
-                button,
-                idx,
-                _lyricsCueList,
-              );
-              if (cue != null) _audiobookController!.playCueAndContinue(cue);
-            },
-          );
-        },
-        shouldInterceptRequest: (controller, request) async {
-          return await _interceptRequest(request.url);
-        },
-        shouldOverrideUrlLoading: (controller, action) async {
-          final String url = action.request.url?.toString() ?? '';
-          if (_isNavigatingToChapter) {
-            return NavigationActionPolicy.ALLOW;
-          }
-          // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
-          // flutter_inappwebview_windows fork (the WebView2 NavigationStarting hook
-          // is unwired), so internal links navigated the WebView natively, bypassing
-          // our paginated navigation — _currentChapter went stale and onLoadStop
-          // then dropped the page as "stale", leaving the reader broken. Link clicks
-          // are now intercepted in JS (onInternalLink handler) on every platform, so
-          // this callback is only a fallback for non-click navigations (still fires
-          // on mobile). Both paths funnel through _handleInternalLinkUrl.
-          await _handleInternalLinkUrl(url);
-          return NavigationActionPolicy.CANCEL;
-        },
-        onLoadStop: (controller, url) async {
-          _isNavigatingToChapter = false;
-          final int chapterSnapshot = _currentChapter;
-          debugPrint('[ReaderHibiki] onLoadStop: url=$url '
-              'chapter=$chapterSnapshot progress=$_initialProgress');
-          if (_lyricsMode) {
-            await _onChapterLoadComplete(controller);
-            return;
-          }
-          final String expectedUrl = _chapterUrl(chapterSnapshot);
-          if (url != null &&
-              Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
-            debugPrint(
-                '[ReaderHibiki] onLoadStop: stale page (expected=$expectedUrl), ignoring');
-            return;
-          }
-          await _onChapterLoadComplete(controller);
-        },
-        onReceivedError: (controller, request, error) async {
-          // TODO-904: native WebView2 实例创建失败（Windows 反复开关书后
-          // `Cannot create the InAppWebView instance!`）经 fork 合成的带 sentinel
-          // 的 WebResourceError 转交到这里。普通页面加载错误不带 sentinel、不触发
-          // 恢复。命中 sentinel 时走与 _initBook 同款可见恢复（toast + 退回书架），
-          // 不再永久 spinner。
-          if (error.description
-              .contains(kReaderWebViewCreationFailedSentinel)) {
-            debugPrint('[ReaderHibiki] WebView creation failed: '
-                '${error.description}');
-            ErrorLogService.instance.log('ReaderHibiki.onWebViewCreationFailed',
-                error.description, null);
-            if (!mounted) return;
-            HibikiToast.show(msg: t.reader_open_failed);
-            Navigator.of(context).pop();
-            return;
-          }
-          if (request.isForMainFrame ?? false) {
-            debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
-                'url=${request.url}');
-            // Windows 拦截域 (hoshi.local) 的 NavigationCompleted 假失败已在 fork
-            // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
-            // 时按成功走 onLoadStop），此处不再做事后补偿；下面是真实加载失败处理。
-            if (_restoreExpectedGeneration != _navigateGeneration) return;
+        controller.addJavaScriptHandler(
+          handlerName: 'spreadReady',
+          callback: (_) {
             _isNavigatingToChapter = false;
             _restoreInFlight = false;
             if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-              _restoreCompleter!.complete(false);
+              _restoreCompleter!.complete(true);
             }
             _restoreCompleter = null;
+            if (mounted) {
+              // BUG-438 / TODO-889：spread 内容就绪，清兜底 deadline，下次导航拿新窗口。
+              _clearContentReadyTimeout();
+              _rebuild(() {
+                _readerContentReady = true;
+                // spread(漫画双页)路径只发 'spreadReady'，从不发 'onRestoreComplete'，
+                // 故不走 _onRestoreComplete 的 _hasEverLoaded 置位。这里补齐，与另外
+                // 三个 content-ready 完成点对齐 —— 否则 spread 书冷开时底栏(有声书条/
+                // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
+                _hasEverLoaded = true;
+              });
+              // TODO-700 T3：spread 内容就绪确定性落焦到正文（门控见 helper）。
+              _settleFocusOnContentReady();
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onCueTap',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _audiobookController == null) return;
+            final int sentenceIndex = (args[0] as num).toInt();
+            final List<AudioCue>? allCues = _cachedAllCues;
+            if (allCues == null) return;
+            final int idx = allCues
+                .indexWhere((AudioCue c) => c.sentenceIndex == sentenceIndex);
+            if (idx >= 0) {
+              _audiobookController!.playCueAndContinue(allCues[idx]);
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onPointerSeek',
+          callback: (List<dynamic> args) async {
+            if (args.length < 3 || _audiobookController == null) return;
+            final int button = (args[0] as num?)?.toInt() ?? -1;
+            if (!isSeekToClickedSentenceButton(
+                appModel.shortcutRegistry, button)) {
+              return;
+            }
+            final double x = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
+            final double y = _ReaderHibikiPageState._toDouble(args[2]) ?? 0;
+            await _seekToClickedSentence(x, y);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsPointerSeek',
+          callback: (List<dynamic> args) {
+            if (args.length < 2 || _audiobookController == null) return;
+            final int button = (args[0] as num?)?.toInt() ?? -1;
+            final int idx = (args[1] as num?)?.toInt() ?? -1;
+            final AudioCue? cue = cueForLyricsPointer(
+              appModel.shortcutRegistry,
+              button,
+              idx,
+              _lyricsCueList,
+            );
+            if (cue != null) _audiobookController!.playCueAndContinue(cue);
+          },
+        );
+      },
+      shouldInterceptRequest: (controller, request) async {
+        return await _interceptRequest(request.url);
+      },
+      shouldOverrideUrlLoading: (controller, action) async {
+        final String url = action.request.url?.toString() ?? '';
+        if (_isNavigatingToChapter) {
+          return NavigationActionPolicy.ALLOW;
+        }
+        // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
+        // flutter_inappwebview_windows fork (the WebView2 NavigationStarting hook
+        // is unwired), so internal links navigated the WebView natively, bypassing
+        // our paginated navigation — _currentChapter went stale and onLoadStop
+        // then dropped the page as "stale", leaving the reader broken. Link clicks
+        // are now intercepted in JS (onInternalLink handler) on every platform, so
+        // this callback is only a fallback for non-click navigations (still fires
+        // on mobile). Both paths funnel through _handleInternalLinkUrl.
+        await _handleInternalLinkUrl(url);
+        return NavigationActionPolicy.CANCEL;
+      },
+      onLoadStop: (controller, url) async {
+        _isNavigatingToChapter = false;
+        final int chapterSnapshot = _currentChapter;
+        debugPrint('[ReaderHibiki] onLoadStop: url=$url '
+            'chapter=$chapterSnapshot progress=$_initialProgress');
+        if (_lyricsMode) {
+          await _onChapterLoadComplete(controller);
+          return;
+        }
+        final String expectedUrl = _chapterUrl(chapterSnapshot);
+        if (url != null &&
+            Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
+          debugPrint(
+              '[ReaderHibiki] onLoadStop: stale page (expected=$expectedUrl), ignoring');
+          return;
+        }
+        await _onChapterLoadComplete(controller);
+      },
+      onReceivedError: (controller, request, error) async {
+        // TODO-904: native WebView2 实例创建失败（Windows 反复开关书后
+        // `Cannot create the InAppWebView instance!`）经 fork 合成的带 sentinel
+        // 的 WebResourceError 转交到这里。普通页面加载错误不带 sentinel、不触发
+        // 恢复。命中 sentinel 时走与 _initBook 同款可见恢复（toast + 退回书架），
+        // 不再永久 spinner。
+        if (error.description.contains(kReaderWebViewCreationFailedSentinel)) {
+          debugPrint('[ReaderHibiki] WebView creation failed: '
+              '${error.description}');
+          ErrorLogService.instance.log(
+              'ReaderHibiki.onWebViewCreationFailed', error.description, null);
+          if (!mounted) return;
+          HibikiToast.show(msg: t.reader_open_failed);
+          Navigator.of(context).pop();
+          return;
+        }
+        if (request.isForMainFrame ?? false) {
+          debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
+              'url=${request.url}');
+          // Windows 拦截域 (hoshi.local) 的 NavigationCompleted 假失败已在 fork
+          // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
+          // 时按成功走 onLoadStop），此处不再做事后补偿；下面是真实加载失败处理。
+          if (_restoreExpectedGeneration != _navigateGeneration) return;
+          _isNavigatingToChapter = false;
+          _restoreInFlight = false;
+          if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+            _restoreCompleter!.complete(false);
           }
-        },
-        onConsoleMessage: (controller, msg) {
-          debugPrint('[WebView] ${msg.message}');
-        },
-      ),
+          _restoreCompleter = null;
+        }
+      },
+      onConsoleMessage: (controller, msg) {
+        debugPrint('[WebView] ${msg.message}');
+      },
+    );
+    // KeyedSubtree carries [_webViewKey] (a GlobalKey) on the InAppWebView's own
+    // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox
+    // for global→local coordinate mapping (TODO-806), while the ValueKey stays on
+    // the InAppWebView itself for the integration-test finders (hoshi_webview).
+    final Widget keyed = KeyedSubtree(key: _webViewKey, child: webView);
+    // TODO-954：Windows 文字选区右键。`HitTestBehavior.translucent` 让左键框选 / 滚动 /
+    // 查词点击照常落进 WebView（与 dictionary_popup_webview 的 BUG-261 范式同），只额外
+    // 截右键（onSecondaryTapDown）弹出 Flutter 菜单——后者随界面大小缩放。
+    if (!isWindowsPlatform) return keyed;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onSecondaryTapDown: (TapDownDetails details) {
+        _showReaderTextContextMenu(details.globalPosition);
+      },
+      child: keyed,
     );
   }
 

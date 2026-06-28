@@ -2472,17 +2472,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                     tooltip: t.play_from_cue,
                     padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   ),
-                  SizedBox(width: tokens.spacing.gap),
-                  // TODO-945 M1：导出片段视频入口（门控 hasCue，仅选区触发的弹窗里出现，
-                  // 天然「非常驻、不碍事」）。M1 点击只走 _exportAudiobookClip 收集选区→
-                  // 整句 cue 区间 + 打日志 + 边界兜底，不做真正的视频合成。
-                  HibikiIconButton(
-                    icon: Icons.movie_creation_outlined,
-                    size: 20,
-                    onTap: hasCue ? _exportAudiobookClip : null,
-                    tooltip: t.audiobook_export_clip,
-                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  ),
+                  // TODO-954：导出片段入口已从查词弹窗 header 迁到「文字选区右键菜单」
+                  // （Windows Flutter 菜单 / 移动端原生 ContextMenu），见
+                  // chrome.part.dart `_showReaderTextContextMenu` 与 webview.part.dart。
+                  // 这里只保留播放控制，避免弹窗里塞与查词无关的导出按钮。
                 ],
               ],
             ),

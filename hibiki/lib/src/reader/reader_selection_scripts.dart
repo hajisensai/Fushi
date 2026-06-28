@@ -114,6 +114,12 @@ class ReaderSelectionScripts {
     }
   }
 
+  /// TODO-954：取**浏览器原生选区**的句级归一化区间（阅读器右键「导出片段」用）。
+  /// 回传 JSON 字段与 onTextSelected 同构（[ReaderSelectionData.fromJson] 直接可解），
+  /// 让右键导出复用 tap 路径同一套选区→cue 状态，不另起特例。无选区回传 `null`。
+  static String nativeSelectionSentenceRangeInvocation() =>
+      'JSON.stringify(window.hoshiSelection.nativeSelectionSentenceRange())';
+
   static bool didSelectNothing(String? result) {
     if (result == null) return true;
     final String trimmed = result.trim().replaceAll('"', '');
@@ -476,6 +482,80 @@ window.hoshiSelection = {
       anchorOffset = ctxN.sEndOffset;
     }
     return result;
+  },
+  // TODO-954：从**浏览器原生选区**（window.getSelection()，长按/拖动框选建立）解析出
+  // 句级归一化区间，供阅读器右键「导出片段」在没有查词弹窗（未走 onTextSelected 的
+  // tap 路径、_cachedSentenceRange 为空）时也能定位 cue。复用与 tap 路径同一套
+  // getSentenceContext + getNormalizedOffset 机制，回传字段与 onTextSelected 同构，
+  // 故宿主可填进同样的 _cachedSelectionRange / _cachedSentenceRange 状态后走既有导出链。
+  // 无选区 / 选区不在文本节点上 → 返回 null（宿主走空选区兜底 toast）。
+  nativeSelectionSentenceRange: function() {
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (!sel || sel.rangeCount === 0) return null;
+    var text = sel.toString();
+    if (!text) return null;
+    var range = sel.getRangeAt(0);
+    var startNode = range.startContainer;
+    var startOffset = range.startOffset;
+    // 选区起点可能落在元素节点上（如 <p> 的子节点边界）；下钻到其首个文本节点，
+    // 与 getNormalizedOffset / getSentenceContext 的「文本节点 + 字符偏移」契约对齐。
+    if (startNode.nodeType !== Node.TEXT_NODE) {
+      var firstText = this.firstTextNode(startNode);
+      if (!firstText) return null;
+      startNode = firstText.node;
+      startOffset = firstText.offset;
+    }
+    var endNode = range.endContainer;
+    var endOffset = range.endOffset;
+    if (endNode.nodeType !== Node.TEXT_NODE) {
+      var firstEnd = this.firstTextNode(endNode);
+      if (firstEnd) { endNode = firstEnd.node; endOffset = firstEnd.offset; }
+      else { endNode = startNode; endOffset = startOffset; }
+    }
+    var sentenceContext = this.getSentenceContext(startNode, startOffset);
+    var normalizedOffset = window.hoshiReader
+      ? this.getNormalizedOffset(startNode, startOffset) : null;
+    var normalizedLength = null;
+    if (normalizedOffset !== null) {
+      var normalizedEnd = this.getNormalizedOffset(endNode, endOffset);
+      if (normalizedEnd !== null) {
+        normalizedLength = Math.max(0, normalizedEnd - normalizedOffset);
+      }
+    }
+    var sentenceNormalizedOffset = null;
+    var sentenceNormalizedLength = null;
+    if (window.hoshiReader) {
+      var snStart = this.getNormalizedOffset(
+        sentenceContext.sStartNode, sentenceContext.sStartOffset);
+      var snEnd = this.getNormalizedOffset(
+        sentenceContext.sEndNode, sentenceContext.sEndOffset);
+      if (snStart !== null && snEnd !== null) {
+        sentenceNormalizedOffset = snStart;
+        sentenceNormalizedLength = Math.max(0, snEnd - snStart);
+      }
+    }
+    return {
+      text: text,
+      sentence: sentenceContext.sentence,
+      normalizedOffset: normalizedOffset,
+      normalizedLength: normalizedLength,
+      sentenceOffset: sentenceContext.sentenceOffset,
+      sentenceNormalizedOffset: sentenceNormalizedOffset,
+      sentenceNormalizedLength: sentenceNormalizedLength
+    };
+  },
+  // 从任意节点下钻到它包含的第一个非空文本节点（含自身），返回 {node, offset:0}。
+  firstTextNode: function(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent.length > 0 ? { node: node, offset: 0 } : null;
+    }
+    var walker = this.createWalker(node);
+    var next = walker.nextNode();
+    while (next) {
+      if (next.textContent.length > 0) return { node: next, offset: 0 };
+      next = walker.nextNode();
+    }
+    return null;
   },
   // 返回 (node, offset) 之前一个文本字符的位置（跨文本节点，跳振假名），无则 null。
   charBefore: function(node, offset) {

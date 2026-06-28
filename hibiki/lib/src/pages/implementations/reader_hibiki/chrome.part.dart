@@ -177,6 +177,178 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
   }
 
+  // TODO-954：阅读器文字选区右键菜单（Windows）。完全复用图片右键的「锚点经 Overlay
+  // RenderBox 映射 + menuScale 只缩放菜单自身」范式（见上方 BUG-381 长注释），让查词/
+  // 复制/导出三项随界面大小缩放，而鼠标锚点与 WebView 命中测试不受影响。导出项仅在本书
+  // 有音频 cue 时出现；其它两项恒在。
+  Future<void> _showReaderTextContextMenu(Offset globalPosition) async {
+    if (!mounted || !isWindowsPlatform) return;
+    // 没有原生选区文本就不弹菜单（右键空白处不打扰）。
+    final Object? rawText = await _controller?.evaluateJavascript(
+      source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
+    );
+    final String selectedText =
+        ReaderSelectionScripts.nativeSelectionTextFromResult(rawText);
+    if (selectedText.isEmpty) return;
+    if (!mounted) return;
+
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final double menuScale = _readerImageMenuScale;
+    final Offset anchor = overlay.globalToLocal(globalPosition);
+
+    final bool hasAudio = _audiobookController != null &&
+        _audiobookController!.chapterCueCount > 0;
+
+    final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
+      PopupMenuItem<String>(
+        value: 'search',
+        height: kMinInteractiveDimension * menuScale,
+        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.search_outlined, size: 18.0 * menuScale),
+            SizedBox(width: 12.0 * menuScale),
+            Text(t.search, style: TextStyle(fontSize: 14.0 * menuScale)),
+          ],
+        ),
+      ),
+      PopupMenuItem<String>(
+        value: 'copy',
+        height: kMinInteractiveDimension * menuScale,
+        padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.copy_outlined, size: 18.0 * menuScale),
+            SizedBox(width: 12.0 * menuScale),
+            Text(t.copy, style: TextStyle(fontSize: 14.0 * menuScale)),
+          ],
+        ),
+      ),
+      if (hasAudio)
+        PopupMenuItem<String>(
+          value: 'export',
+          height: kMinInteractiveDimension * menuScale,
+          padding: EdgeInsets.symmetric(horizontal: 16.0 * menuScale),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.movie_creation_outlined, size: 18.0 * menuScale),
+              SizedBox(width: 12.0 * menuScale),
+              Text(t.audiobook_export_clip,
+                  style: TextStyle(fontSize: 14.0 * menuScale)),
+            ],
+          ),
+        ),
+    ];
+
+    final String? action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      constraints: BoxConstraints(
+        minWidth: 112.0 * menuScale,
+        maxWidth: 280.0 * menuScale,
+      ),
+      menuPadding: EdgeInsets.symmetric(vertical: 8.0 * menuScale),
+      items: items,
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'search':
+        final size = MediaQuery.of(context).size;
+        final Rect rect = Rect.fromCenter(
+          center: Offset(size.width / 2, size.height / 3),
+          width: 1,
+          height: 1,
+        );
+        _webviewPrunePopupStack(0);
+        await searchDictionaryResult(
+            searchTerm: selectedText, selectionRect: rect);
+        return;
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: selectedText));
+        HibikiToast.show(msg: t.copied_to_clipboard);
+        return;
+      case 'export':
+        await _exportAudiobookClipFromSelection();
+        return;
+      default:
+        return;
+    }
+  }
+
+  // TODO-954：从当前**原生选区**解析句级 cue 区间后走既有导出链 [_exportAudiobookClip]。
+  // 右键导出场景没经过 tap 查词（onTextSelected），故 [_lookupCue] / [_cachedSentenceRange]
+  // 可能为空——这里用 [ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation] 从
+  // 原生选区端点算句级 normOffset/normLength（复用 tap 路径同一套 JS 机制），再填进与 tap
+  // 路径同样的 [_handleTextSelected] 状态（_lookupCue / _cachedSelectionRange /
+  // _cachedSentenceRange / currentSentence），让 [_exportAudiobookClip] 的四类边界兜底
+  // （空选区 / 无音频 / 跨章跨文件 / 可导出）原样生效，不另起特例分支。
+  Future<void> _exportAudiobookClipFromSelection() async {
+    final Object? raw = await _controller?.evaluateJavascript(
+      source: ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation(),
+    );
+    if (!mounted) return;
+    Map<String, dynamic>? json;
+    if (raw is String) {
+      final String trimmed = raw.trim();
+      if (trimmed.isNotEmpty && trimmed != 'null') {
+        try {
+          final Object? decoded = jsonDecode(trimmed);
+          if (decoded is Map) json = Map<String, dynamic>.from(decoded);
+        } catch (_) {
+          json = null;
+        }
+      }
+    } else if (raw is Map) {
+      json = Map<String, dynamic>.from(raw);
+    }
+    if (json == null) {
+      // 无选区 / 解析失败：走与 _exportAudiobookClip 空选区分支一致的兜底文案。
+      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+      return;
+    }
+    final ReaderSelectionData data = ReaderSelectionData.fromJson(json);
+    if (data.text.isEmpty) {
+      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+      return;
+    }
+    // 只填 [_exportAudiobookClip] 读取的选区→cue 状态，**不**走 _handleTextSelected
+    // （那会顺带弹查词浮窗 + 暂停音频）——导出与查词解耦正是本 TODO 的诉求。复刻
+    // lookup.part.dart 里 onTextSelected 的 cue/缓存填充（不含 highlight/popup）：
+    appModel.currentMediaSource?.setCurrentSentence(
+      selection: HibikiTextSelection(text: data.sentence),
+    );
+    _cachedSentenceOffset = data.sentenceOffset;
+    _lookupCue = data.normalizedOffset != null
+        ? _findCueForOffset(data.normalizedOffset!)
+        : null;
+    if (_lookupCue == null && _srtBookUid != null) {
+      _lookupCue = _findCueForSentence(data.sentence);
+    }
+    _cachedSelectionRange =
+        (data.normalizedOffset != null && data.normalizedLength != null)
+            ? (
+                offset: data.normalizedOffset!,
+                length: data.normalizedLength!,
+                text: data.text,
+              )
+            : null;
+    _cachedSentenceRange = (data.sentenceNormalizedOffset != null &&
+            data.sentenceNormalizedLength != null)
+        ? (
+            offset: data.sentenceNormalizedOffset!,
+            length: data.sentenceNormalizedLength!,
+          )
+        : null;
+    _exportAudiobookClip();
+  }
+
   Future<void> _shareReaderImage(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
