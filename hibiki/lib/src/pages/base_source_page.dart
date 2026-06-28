@@ -9,6 +9,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
@@ -515,6 +516,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         },
         onMineEntry: onMineFromPopup,
         onUpdateEntry: onUpdateFromPopup,
+        // TODO-948②：阅读器/有声书弹窗收藏按钮接线（视频走 mixin，不经此处）。
+        onFavoriteEntry: onFavoriteFromPopup,
+        onFavoriteCheck: onFavoriteCheckFromPopup,
         onDuplicateCheck: (expression, reading) async {
           final repo = ref.read(ankiRepositoryProvider);
           return repo.isDuplicate(expression, reading);
@@ -757,6 +761,54 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     Map<String, String> fields,
   ) async {
     return const MinePopupResult();
+  }
+
+  /// 收藏/制卡计入统计时的来源标识。阅读器（EPUB）/有声书都归书籍统计
+  /// （[kStatSourceBook]）；视频走 [DictionaryPageMixin] 自己覆写，不经本基类。
+  @protected
+  String get dictionarySourceType => kStatSourceBook;
+
+  /// TODO-948②：弹窗右部「收藏」按钮回调（阅读器 EPUB 走本基类的 [_buildPopupLayer]，
+  /// 不经 [DictionaryPageMixin]，曾因这里漏接线导致点击无反应）。切换收藏当前词条：
+  /// 已收藏则取消（返回 false），否则按 [dictionarySourceType] 落 DB（返回 true）。
+  /// 与 [DictionaryPageMixin.onFavoriteEntry] 行为一致，真写穿 FavoriteWords 表。
+  Future<bool> onFavoriteFromPopup(Map<String, String> fields) async {
+    final String expression = fields['expression'] ?? '';
+    final String reading = fields['reading'] ?? '';
+    if (expression.isEmpty) return false;
+    final db = appModel.database;
+    final bool already = await db.isFavoriteWord(
+      expression: expression,
+      reading: reading,
+      sourceType: dictionarySourceType,
+    );
+    if (already) {
+      await db.removeFavoriteWord(
+        expression: expression,
+        reading: reading,
+        sourceType: dictionarySourceType,
+      );
+      return false;
+    }
+    await db.addFavoriteWord(
+      expression: expression,
+      reading: reading,
+      glossary: fields['glossary'] ?? '',
+      sourceType: dictionarySourceType,
+      dateKey: statTodayKey(),
+    );
+    return true;
+  }
+
+  /// TODO-948②：查询某词条当前是否已收藏（供弹窗按钮初始 ☆/★ 状态）。
+  Future<bool> onFavoriteCheckFromPopup(
+      String expression, String reading) async {
+    if (expression.isEmpty) return false;
+    return appModel.database.isFavoriteWord(
+      expression: expression,
+      reading: reading,
+      sourceType: dictionarySourceType,
+    );
   }
 
   /// Placeholder when there are no search results.

@@ -61,6 +61,26 @@ void main() {
         reason: 'mixin 要把收藏 handler 接进 layer');
   });
 
+  test('BaseSourcePage（阅读器/有声书弹窗宿主）也接 favorite handler 并接进 layer', () {
+    // TODO-948②：阅读器 EPUB 弹窗走 BaseSourcePage._buildPopupLayer（不经
+    // DictionaryPageMixin），曾因这里漏传 onFavoriteEntry / onFavoriteCheck 导致
+    // 收藏按钮点击无反应。本守卫防回归再漏接线。
+    final String src =
+        File('lib/src/pages/base_source_page.dart').readAsStringSync();
+    expect(src, contains('String get dictionarySourceType => kStatSourceBook'),
+        reason: '阅读器/有声书默认归书籍统计');
+    expect(src, contains('Future<bool> onFavoriteFromPopup('),
+        reason: '基类必须提供收藏切换 handler');
+    expect(src, contains('Future<bool> onFavoriteCheckFromPopup('),
+        reason: '基类必须提供收藏状态查询 handler');
+    expect(src, contains('addFavoriteWord('),
+        reason: '收藏必须真写穿 FavoriteWords 表，而非 UI 假动作');
+    expect(src, contains('onFavoriteEntry: onFavoriteFromPopup'),
+        reason: '_buildPopupLayer 必须把收藏写入 handler 接进 layer');
+    expect(src, contains('onFavoriteCheck: onFavoriteCheckFromPopup'),
+        reason: '_buildPopupLayer 必须把收藏查询 handler 接进 layer');
+  });
+
   test('视频页把来源覆写为 video（收藏/制卡落视频统计）', () {
     final String src =
         File('lib/src/pages/implementations/video_hibiki_page.dart')
