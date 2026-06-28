@@ -104,21 +104,17 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     );
   }
 
-  void _openSrtBook(SrtBook book) {
+  Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {
       HibikiToast.show(msg: t.srt_epub_not_ready);
       return;
     }
-    Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        builder: (_) => HibikiAppUiScaleNeutralizer(
-          child: ReaderHibikiPage(
-            bookKey: book.bookKey,
-            item: _srtBookMediaItem(book),
-          ),
-        ),
-      ),
+    // BUG-456: SRT books must use the normal media entry so AppModel registers
+    // ReaderHibikiSource; direct page pushes leave currentMediaSource null.
+    await appModel.openMedia(
+      ref: ref,
+      mediaSource: ReaderHibikiSource.instance,
+      item: _srtBookMediaItem(book),
     );
   }
 
