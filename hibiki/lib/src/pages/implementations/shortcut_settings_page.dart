@@ -390,11 +390,17 @@ class _ActionTile extends StatelessWidget {
       ...bindings.gamepadBindings.map((GamepadBinding b) => b.button.label),
     ];
 
+    // TODO-944: the whole row taps into the SAME assign/edit flow, so unmapped
+    // rows (no chips, only the dim "tap to assign" hint) are reachable instead
+    // of relying on the tiny trailing edit icon. Routing `onTap` through
+    // [HibikiListItem] also registers a focus target, making every row — mapped
+    // or not — keyboard/gamepad navigable.
     return HibikiListItem(
+      onTap: onEdit,
       title: Text(_actionLabel(action)),
       subtitle: labels.isEmpty
           ? Text(
-              t.shortcut_none,
+              t.shortcut_tap_to_assign,
             )
           : Wrap(
               spacing: tokens.spacing.gap / 2,

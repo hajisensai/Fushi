@@ -1959,5 +1959,6 @@
   "series_created": "Series created",
   "combine_into_series": "Combine into series",
   "series_empty": "No books in this series",
-  "backup_category_local_audio": "Local audio databases"
+  "backup_category_local_audio": "Local audio databases",
+  "shortcut_tap_to_assign": "Not set · tap to assign"
 }
