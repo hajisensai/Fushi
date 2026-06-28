@@ -155,4 +155,55 @@ void main() {
     expect(order.indexOf('nhk16'), greaterThan(order.indexOf('forvo')));
     expect(order.length, 3);
   });
+
+  // BUG-445：行数多到超过对话框受限高度时，列表必须可滚动且不 RenderFlex 溢出
+  // （此前 HibikiReorderableColumn 自身不滚动、直接塞进 maxHeight 受限的 ConstrainedBox
+  // → 出框 + 无法滚动看到下面的行）。修复后外层包了 SingleChildScrollView。
+  testWidgets(
+      'many sources scroll without overflow inside the constrained dialog '
+      '(BUG-445)', (WidgetTester tester) async {
+    // 给一个矮窗口（高 240），强制内容（24 行）远超 maxHeight 上限（被 clamp 到 128），
+    // 复现「行多到超过受限高度」的真实条件。
+    tester.view.physicalSize = const Size(800, 240);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final List<String> manySources =
+        List<String>.generate(24, (int i) => 'source_$i');
+    await tester.pumpWidget(
+      buildApp(
+        LocalAudioSourcesDialog(
+          dbPath: '/tmp/many.db',
+          savedPrefs: const <LocalAudioSourcePref>[],
+          listSources: () async => manySources,
+          onApply: (_) async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1) 内容超高也不抛 RenderFlex 溢出异常。
+    expect(tester.takeException(), isNull);
+
+    // 2) 列表确实落在一个可滚动视口里（出框无法滚动的根因就是缺这一层）。
+    final Finder scrollable = find.descendant(
+      of: find.byType(HibikiReorderableColumn),
+      matching: find.byType(Scrollable),
+    );
+    // HibikiReorderableColumn 自身不含 Scrollable，故这里命中的是包住它的外层视口。
+    final Finder outerScrollable = find.ancestor(
+      of: find.byType(HibikiReorderableColumn),
+      matching: find.byType(Scrollable),
+    );
+    expect(scrollable, findsNothing); // 组件本体仍不带滚动（向后兼容）
+    expect(outerScrollable, findsWidgets); // 但被外层滚动视口包住
+
+    // 3) 实际可滚：滚动后能看到原本被裁掉的尾部行。
+    final ScrollableState state = tester.state(outerScrollable.first);
+    expect(state.position.maxScrollExtent, greaterThan(0));
+    state.position.jumpTo(state.position.maxScrollExtent);
+    await tester.pump();
+    expect(find.text('source_23'), findsOneWidget);
+  });
 }

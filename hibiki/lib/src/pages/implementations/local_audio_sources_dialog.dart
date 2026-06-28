@@ -87,12 +87,19 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
+        // 整体可滚动：HibikiReorderableColumn 自身不带滚动（内部 Stack + Column.min），
+        // 行数多到超过 maxHeight 时会 RenderFlex 溢出（出框）且无法滚动看到下面的行
+        // （BUG-445）。外层套 SingleChildScrollView：内容超高时整体滚动而非溢出，行少
+        // 时仍按内容收缩。与「管理音频来源」主对话框（dictionary_settings_dialog_page）
+        // 同款修法。拖拽重排不与滚动冲突：触摸屏用 DelayedMultiDrag（长按起拖，快速滑动
+        // 仍归滚动）；鼠标用滚轮（PointerScroll）滚动、按下拖动起拖（ImmediateMultiDrag），
+        // 二者各走不同指针序列、不争用手势竞技场（见 HibikiReorderableColumn 类注释）。
         body: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: double.maxFinite,
             maxHeight: maxHeight,
           ),
-          child: _buildBody(tokens),
+          child: SingleChildScrollView(child: _buildBody(tokens)),
         ),
         footer: Align(
           alignment: Alignment.centerRight,

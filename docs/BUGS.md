@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 430 条。点号进各自文件。
+> 共 432 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-446](bugs/BUG-446-audio-db-import-swallowed-error.md) | 🚧 | 🚧 | 添加音频数据库失败文案无信息吞异常 |
+| [BUG-445](bugs/BUG-445-audio-source-reorder-overflow.md) | ✅ | ✅ | 管理音频来源排序对话框出框无法滚动且弹窗过小 |
 | [BUG-444](bugs/BUG-444-favorites-word-export-empty.md) | ✅ | ✅ | 收藏词导出为空+制卡句缺失 |
 | [BUG-443](bugs/BUG-443-folder-import-book-dedup.md) | ✅ | ✅ | 文件夹导入书籍缺去重 |
 | [BUG-442](bugs/BUG-442-clipboard-long-text-crash.md) | ✅ | ✅ | 剪贴板超长文本闪退 |
