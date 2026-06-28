@@ -1113,10 +1113,22 @@ extension _ReaderWebView on _ReaderHibikiPageState {
                       height: 1,
                     );
                     _webviewPrunePopupStack(0);
+                    // BUG-455：原生菜单查词不经 tap（_handleTextSelected），必须显式把
+                    // 原生选区写进查词状态，否则弹窗顶栏「收藏句子」读 currentSentence 为空
+                    // → 误报「未选择句子」。句级解析失败也要满足非空契约：退回选中文本。
+                    final ReaderSelectionData? sel =
+                        await _fillLookupStateFromNativeSelection();
+                    if (!mounted) return;
+                    if (sel == null) {
+                      appModel.currentMediaSource?.setCurrentSentence(
+                        selection: HibikiTextSelection(text: text),
+                      );
+                    }
                     await searchDictionaryResult(
                       searchTerm: text,
                       selectionRect: rect,
                     );
+                    if (mounted) _checkFavoriteStatus();
                   },
                 ),
                 // TODO-954：移动端选区右键也提供「导出片段」，与 Windows 一致都从选区

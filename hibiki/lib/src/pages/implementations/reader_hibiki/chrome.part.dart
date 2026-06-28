@@ -267,8 +267,20 @@ extension _ReaderChrome on _ReaderHibikiPageState {
           height: 1,
         );
         _webviewPrunePopupStack(0);
+        // BUG-455：右键查词不经 tap（_handleTextSelected），必须显式把原生选区写进查词
+        // 状态，否则弹窗顶栏「收藏句子」读 currentSentence 为空 → 误报「未选择句子」。
+        // 句级解析失败（无 norm 区间）也要满足非空契约：退回选中文本本身。
+        final ReaderSelectionData? sel =
+            await _fillLookupStateFromNativeSelection();
+        if (!mounted) return;
+        if (sel == null) {
+          appModel.currentMediaSource?.setCurrentSentence(
+            selection: HibikiTextSelection(text: selectedText),
+          );
+        }
         await searchDictionaryResult(
             searchTerm: selectedText, selectionRect: rect);
+        if (mounted) _checkFavoriteStatus();
         return;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: selectedText));
@@ -282,18 +294,33 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     }
   }
 
-  // TODO-954：从当前**原生选区**解析句级 cue 区间后走既有导出链 [_exportAudiobookClip]。
-  // 右键导出场景没经过 tap 查词（onTextSelected），故 [_lookupCue] / [_cachedSentenceRange]
-  // 可能为空——这里用 [ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation] 从
-  // 原生选区端点算句级 normOffset/normLength（复用 tap 路径同一套 JS 机制），再填进与 tap
-  // 路径同样的 [_handleTextSelected] 状态（_lookupCue / _cachedSelectionRange /
-  // _cachedSentenceRange / currentSentence），让 [_exportAudiobookClip] 的四类边界兜底
-  // （空选区 / 无音频 / 跨章跨文件 / 可导出）原样生效，不另起特例分支。
-  Future<void> _exportAudiobookClipFromSelection() async {
-    final Object? raw = await _controller?.evaluateJavascript(
-      source: ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation(),
-    );
-    if (!mounted) return;
+  // TODO-954 / BUG-455：把当前**原生选区**（`window.getSelection()`）解析成与 tap 查词
+  // （onTextSelected → [_handleTextSelected]）等价的查词状态——currentSentence /
+  // [_lookupCue] / [_cachedSelectionRange] / [_cachedSentenceRange] /
+  // [_cachedSentenceOffset]，但**不**触发 highlight / 弹窗 / 暂停。右键「查词」「导出片段」
+  // 与移动端原生菜单「查词」都不经 tap 查词，必须显式补这套状态，否则：导出读不到 cue 区间；
+  // 查词弹窗顶栏「收藏句子」读 currentSentence 为空 → 误报「未选择句子」(BUG-455)。
+  // 用 [ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation] 从原生选区端点算句级
+  // normOffset/normLength（复用 tap 路径同一套 JS）；currentSentence 经
+  // [ReaderSelectionScripts.resolveCurrentSentenceText] 保证非空（句子优先、派生不出退回
+  // 选中词）。返回解析出的 [ReaderSelectionData]；无选区 / 选区文本为空时返回 null（调用方
+  // 据此走各自的空选区兜底，查词路径再对 null 退回选中文本本身补满非空契约）。
+  Future<ReaderSelectionData?> _fillLookupStateFromNativeSelection() async {
+    Object? raw;
+    try {
+      raw = await _controller?.evaluateJavascript(
+        source: ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation(),
+      );
+    } catch (e, stack) {
+      // BUG-005 同根因（TODO-678）：半销毁 WebView / window.hoshiSelection 未注入时
+      // eval 抛 MissingPluginException / TypeError，且本方法被菜单 fire-and-forget 调用，
+      // 异常会逃当前 zone。失败退回 null —— 菜单「查词」调用方据此用 selectedText 兜底
+      // 补满 currentSentence 非空契约，导出路径走空选区文案。
+      ErrorLogService.instance.log(
+          'ReaderHibiki.fillLookupStateFromNativeSelection.eval', e, stack);
+      return null;
+    }
+    if (!mounted) return null;
     Map<String, dynamic>? json;
     if (raw is String) {
       final String trimmed = raw.trim();
@@ -308,21 +335,18 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     } else if (raw is Map) {
       json = Map<String, dynamic>.from(raw);
     }
-    if (json == null) {
-      // 无选区 / 解析失败：走与 _exportAudiobookClip 空选区分支一致的兜底文案。
-      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
-      return;
-    }
+    if (json == null) return null;
     final ReaderSelectionData data = ReaderSelectionData.fromJson(json);
-    if (data.text.isEmpty) {
-      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
-      return;
-    }
-    // 只填 [_exportAudiobookClip] 读取的选区→cue 状态，**不**走 _handleTextSelected
-    // （那会顺带弹查词浮窗 + 暂停音频）——导出与查词解耦正是本 TODO 的诉求。复刻
-    // lookup.part.dart 里 onTextSelected 的 cue/缓存填充（不含 highlight/popup）：
+    if (data.text.isEmpty) return null;
+
+    // currentSentence 非空契约（与 lookup.part.dart tap 写点一致）：句子优先、退回选中词。
     appModel.currentMediaSource?.setCurrentSentence(
-      selection: HibikiTextSelection(text: data.sentence),
+      selection: HibikiTextSelection(
+        text: ReaderSelectionScripts.resolveCurrentSentenceText(
+          data.sentence,
+          data.text,
+        ),
+      ),
     );
     _cachedSentenceOffset = data.sentenceOffset;
     _lookupCue = data.normalizedOffset != null
@@ -346,6 +370,23 @@ extension _ReaderChrome on _ReaderHibikiPageState {
             length: data.sentenceNormalizedLength!,
           )
         : null;
+    return data;
+  }
+
+  // TODO-954：从当前**原生选区**解析句级 cue 区间后走既有导出链 [_exportAudiobookClip]。
+  // 右键导出没经过 tap 查词（onTextSelected），故先经 [_fillLookupStateFromNativeSelection]
+  // 把 _lookupCue / _cachedSelectionRange / _cachedSentenceRange / currentSentence 填成与
+  // tap 路径同样的状态（不含 highlight / popup / 暂停）——导出与查词解耦正是本 TODO 的诉求——
+  // 让 [_exportAudiobookClip] 的四类边界兜底（空选区 / 无音频 / 跨章跨文件 / 可导出）原样生效。
+  Future<void> _exportAudiobookClipFromSelection() async {
+    final ReaderSelectionData? data =
+        await _fillLookupStateFromNativeSelection();
+    if (!mounted) return;
+    if (data == null) {
+      // 无选区 / 解析失败：走与 _exportAudiobookClip 空选区分支一致的兜底文案。
+      HibikiToast.show(msg: t.audiobook_export_clip_no_text);
+      return;
+    }
     _exportAudiobookClip();
   }
 
