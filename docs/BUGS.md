@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 435 条。点号进各自文件。
+> 共 436 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-450](bugs/BUG-450-home-lookup-webview-uaf.md) | ✅ | ✅ | 首页查词连点 Windows 崩溃（inappwebview 拦截 deferral UAF） |
 | [BUG-449](bugs/BUG-449-continuous-progress-bar-first-frame.md) | ✅ | ✅ | 连续模式进度条初次不显示·滑动一下才出来 |
 | [BUG-448](bugs/BUG-448-log-line-tap-crash.md) | ✅ | ✅ | 点击调试日志文字崩溃 |
 | [BUG-447](bugs/BUG-447-dict-download-ratio-guard.md) | ✅ | ✅ | 在线下载多本词典只成功第一本 |

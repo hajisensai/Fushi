@@ -19,8 +19,9 @@ void main() {
     expect(src, contains('DesktopLookupService.instance.pendingRequest'));
     expect(src, contains('DesktopLookupService.instance.clearPending()'));
     expect(src, contains('_sourceLookupText = request.showSourcePanel'));
-    // TODO-617：源文本条点字仍走 _pushNestedPopup（replaceStack 顶层查词），但回报的是
-    // 屏幕（global）坐标（screenRect）而非旧的子区域局部 localRect——弹窗已提到根 Overlay。
+    // TODO-617：源文本条点字仍走 _pushNestedPopup（顶层查词），但回报的是屏幕（global）坐标
+    // （screenRect）而非旧的子区域局部 localRect——弹窗已提到根 Overlay。TODO-931 后顶层查词
+    // 复用常驻热槽（reuseWarmSlot）而非 replaceStack，消除连点重建 WebView 的 Windows UAF。
     expect(src, contains('_pushNestedPopup(query, screenRect'));
     expect(
       _withoutWhitespace(resultBody),

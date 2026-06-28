@@ -204,6 +204,12 @@ namespace flutter_inappwebview_plugin
     std::shared_ptr<NavigationAction> lastNavigationAction_;
     bool isLoading_ = false;
     std::string pageFrameId_;
+    // 对象存活标志：所有跨 Dart 桥异步回来的 WebResourceRequested deferral 回调都捕获它的
+    // 拷贝，回调入口先解引用判断本对象是否仍存活。析构里翻成 false，使迟到回调不再触碰
+    // this/channelDelegate/args，避免 use-after-free（TODO-931）。
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+    // add_WebResourceRequested 的注册 token，析构时 remove 以阻止析构后再触发新拦截回调。
+    EventRegistrationToken webResourceRequestedToken_ = {};
     std::map<std::string, std::pair<wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver>, EventRegistrationToken>> devToolsProtocolEventListener_ = {};
 
     void registerEventHandlers();

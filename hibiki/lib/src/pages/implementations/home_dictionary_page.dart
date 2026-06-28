@@ -116,6 +116,30 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onDesktopLookupPending();
     });
+    // TODO-931: 首页查词原本每次 lookup 走 replaceStack 销毁+冷建弹窗 WebView，连点会让某次
+    // WebView 析构撞上上一个 WebView 仍在途的 WebResourceRequested 拦截 deferral → Windows
+    // inappwebview fork 里 use-after-free 崩溃。与 reader（base_source_page）/ video 一致，
+    // 开页 seed 一个常驻隐藏热槽：弹窗 WebView 冷加载一次后全程复用，消除「每次查词销毁+重建
+    // WebView」的高频 create/destroy。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _seedWarmPopup();
+    });
+  }
+
+  /// TODO-931：开页 seed 一个常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用
+  /// （消除连点时反复 create/destroy WebView 触发的 Windows UAF 崩溃）。低内存模式不保留
+  /// 热槽（[DictionaryPopupController.seedWarmSlot] 据 lowMemory 早退）。热槽隐藏在栈中，
+  /// 真实挂载到根 Overlay 由 [_syncPopupOverlay] 在结果区渲染后完成（彼时才有可 lookup 的
+  /// 词条 WebView）。
+  void _seedWarmPopup() {
+    if (!mounted) return;
+    // 生产里 HomeDictionaryPage 只在 LoadingPage→HomePage（isInitialised=true）之后才挂载，
+    // 故 seed 时 AppModel 必已初始化；未初始化（早帧 / widget 测试桩）则 prefsRepo 为 null，
+    // 读 lowMemoryMode / popupBottomDocked 会抛，此刻也没有真实查词，直接跳过 seed（无热槽，
+    // 等价旧行为），不引入新崩溃。与 video `_seedWarmPopup` 的「成功路径必已初始化」同范式。
+    if (!appModel.isInitialised) return;
+    _popup.lowMemory = appModel.lowMemoryMode;
+    setState(() => _popup.seedWarmSlot());
   }
 
   void _onFocusSignal() {
@@ -240,7 +264,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _debounceTimer?.cancel();
     _debounceTimer = null;
     _controller.clear();
-    _popup.clear();
+    // TODO-931：保留常驻热槽（pruneToWarmSlot），别 clear 掉热 WebView。
+    _popup.pruneToWarmSlot();
     _result = null;
     _isSearching = false;
     _lastQuery = '';
@@ -254,7 +279,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   void _clearSearchFromResultPull() {
-    if (_popup.entries.isNotEmpty || _popup.isSearchingUi) return;
+    // TODO-931：常驻热槽使 entries 永不空，可见性判据改用 hasVisiblePopup（隐藏热槽不算）。
+    if (_popup.hasVisiblePopup || _popup.isSearchingUi) return;
     _clearSearch();
   }
 
@@ -263,11 +289,12 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_hasActiveQuery && _popup.entries.isEmpty,
+      // TODO-931：常驻热槽永远占着 entries[0]，返回判据改用 hasVisiblePopup（隐藏热槽不拦返回）。
+      canPop: !_hasActiveQuery && !_popup.hasVisiblePopup,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (_popup.entries.isNotEmpty) {
-          _popNestedPopupAt(_popup.entries.length - 1);
+        if (_popup.hasVisiblePopup) {
+          _popNestedPopupAt(_popup.lastVisibleIndex);
         } else if (_hasActiveQuery) {
           _clearSearch();
         }
@@ -506,7 +533,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       // _loadMore will set _allLoaded if nothing new comes back.
       _allLoaded = cached.entries.isEmpty;
       _lastQuery = cached.searchTerm.trim();
-      _popup.clear();
+      // TODO-931：保留常驻热槽。
+      _popup.pruneToWarmSlot();
     });
   }
 
@@ -550,7 +578,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       setState(() {
         _isSearching = true;
         if (replaceSourceLookupText) _sourceLookupText = trimmed;
-        _popup.clear();
+        // TODO-931：保留常驻热槽。
+        _popup.pruneToWarmSlot();
       });
       final Future<void> dispatched = _searchWithGeneration(
         trimmed: trimmed,
@@ -668,7 +697,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
             dictionaryHeadwordScale: appModel.dictionaryFontSize /
                 appModel.defaultDictionaryFontSize,
             onLookup: (String query, Rect screenRect) {
-              _pushNestedPopup(query, screenRect, replaceStack: true);
+              _pushNestedPopup(query, screenRect, reuseWarmSlot: true);
             },
           ),
         // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
@@ -693,14 +722,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                     _pushNestedPopup(
                       text,
                       _resultWordScreenRect(localRect),
-                      replaceStack: true,
+                      reuseWarmSlot: true,
                     );
                   },
                   onLinkClick: (query, localRect) {
                     _pushNestedPopup(
                       query,
                       _resultWordScreenRect(localRect),
-                      replaceStack: true,
+                      reuseWarmSlot: true,
                     );
                   },
                   onMineEntry: onMineEntry,
@@ -779,7 +808,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               // 屏外照常预热又不被裁；飘出窗的弹窗同理不裁。
               clipBehavior: Clip.none,
               children: <Widget>[
-                if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
+                if (_hasVisiblePopup || _popup.isSearchingUi)
                   Positioned.fill(
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
@@ -806,16 +835,19 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   Future<void> _pushNestedPopup(
     String query,
     Rect selectionRect, {
-    bool replaceStack = false,
+    bool reuseWarmSlot = false,
   }) {
     return pushNestedPopup(
       query: query,
       selectionRect: selectionRect,
       controller: _popup,
-      replaceStack: replaceStack,
+      reuseWarmSlot: reuseWarmSlot,
       autoRead: true,
     );
   }
+
+  /// TODO-931：是否有任何**可见**弹窗层（常驻隐藏热槽不算）。
+  bool get _hasVisiblePopup => _popup.hasVisiblePopup;
 
   void _popNestedPopupAt(int index) {
     popNestedPopupAt(index, _popup);

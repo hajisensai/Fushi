@@ -205,9 +205,10 @@ void main() {
     expect(clearFromPullStart, isNonNegative);
     expect(buildStart, greaterThan(clearFromPullStart));
     final String clearFromPull = src.substring(clearFromPullStart, buildStart);
+    // TODO-931：常驻热槽使 entries 永不空，pull-clear 判据改用 hasVisiblePopup（隐藏热槽不算）。
     expect(
       clearFromPull,
-      contains('_popup.entries.isNotEmpty || _popup.isSearchingUi'),
+      contains('_popup.hasVisiblePopup || _popup.isSearchingUi'),
     );
     expect(clearFromPull, contains('_clearSearch();'));
 
@@ -229,11 +230,12 @@ void main() {
           'an outer Flutter scroll wrapper would not reliably receive WebView '
           'touch drags.',
     );
+    // TODO-931：外点遮罩同样改用 _hasVisiblePopup（隐藏热槽不该挂遮罩）。
     expect(
       resultBody,
-      contains('_popup.entries.isNotEmpty || _popup.isSearchingUi'),
+      contains('_hasVisiblePopup || _popup.isSearchingUi'),
       reason:
-          'The outside-tap shield should exist only for nested popup state, '
+          'The outside-tap shield should exist only for visible popup state, '
           'not as a general result-body gesture catcher.',
     );
   });

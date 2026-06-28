@@ -1,0 +1,13 @@
+## BUG-450 · 首页查词连点 Windows 崩溃（inappwebview 拦截 deferral UAF）
+- **报告**：2026-06-28（用户：）· TODO-931
+- **真实性**：✅ 真 bug（cdb minidump 确证）。崩溃 = `c0000005` INVALID_POINTER_READ，故障指令 `mov rax,[rcx]` 的 rcx 装着 "User-Agent" HTTP 头字符串（被释放并复用的堆块当指针解引用）= use-after-free。
+- **根因**：
+  - 平台层（治本）：`packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp:895` `add_WebResourceRequested` 的 handler 把 `[this]`/`deferral`/`args`/`request`（含 User-Agent 等请求头）捕获进**跨 Dart 桥异步**回来的 success/null/default 回调（执行 `args->put_Response` / `deferral->Complete()` / 读 `channelDelegate`/`webViewEnv`）。`~InAppWebView()`（`in_app_webview.cpp:1965`）只 `Stop()`+`Close()`，**不注销 handler、不绑定回调生命周期**——WebView2 的 Close() 不同步冲刷未完成的 WebResourceRequested deferral，对象已析构、回调随后触发 → 悬空 this/捕获对象 → 崩。
+  - Dart 触发面：`hibiki/lib/src/pages/implementations/home_dictionary_page.dart` 首页查词**没有 seedWarmSlot**（reader `base_source_page.dart:100` / video `video_hibiki_page.dart` 都 seed 常驻热槽复用同一 WebView）。首页每次查词 `_pushNestedPopup(..., replaceStack: true)` → 销毁旧 WebView、冷建新 WebView → 连点反复快速 create/destroy → 某次析构撞上上一个 WebView 未完成的资源拦截 deferral → UAF。reader/video 因复用热槽不重建 WebView 故不崩。
+- **[x] ① 已修复** —
+  - A（C++ 生命周期根治）：`in_app_webview.h` 新增 `std::shared_ptr<bool> alive_`（存活标志）+ `EventRegistrationToken webResourceRequestedToken_`。`in_app_webview.cpp` handler 捕获 `alive_` 拷贝，每个异步回调（onLoadResourceWithCustomScheme / shouldInterceptRequest 的 nonNullSuccess / nullSuccess）入口先 `if (!*alive)` → 只 `deferral->Complete()`（COM 引用计数仍有效）后返回，**不再触碰 this/channelDelegate/args/webViewEnv**；`add_WebResourceRequested` 保存 token。`~InAppWebView()` 里先 `*alive_ = false` 再 `webView->remove_WebResourceRequested(token)`，最后才 Stop/Close。dead 分支与 live 分支互斥，一个 deferral 仅 Complete 一次（无 double-complete）。提交 5d005deac。
+  - B（Dart 纵深）：`home_dictionary_page.dart` 开页（initState post-frame，门控 `appModel.isInitialised`）`_seedWarmPopup()` → `_popup.seedWarmSlot()`，顶层查词改 `reuseWarmSlot: true`（不再 replaceStack 重建 WebView）；清空/新查词改 `pruneToWarmSlot()` 保留热槽；可见性判据（PopScope canPop / pop / 外点遮罩 / pull-clear）改用 `hasVisiblePopup`/`lastVisibleIndex`（隐藏热槽不算）。消除连点高频 create/destroy。提交 5d005deac。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/pages/home_dictionary_warm_popup_guard_test.dart`（新增源码守卫：钉住 seed/reuse 接线 + 禁 replaceStack + 可见性判据用 hasVisiblePopup + 保留热槽不 clear）。
+  - 更新 `home_dictionary_pull_preserve_query_test.dart` / `desktop_clipboard_click_lookup_static_test.dart` 对齐 warm-slot 后的判据。C++ 生命周期难单测，以「`flutter build windows --debug` 编过 + 逻辑自洽」验收，真机连点不崩留用户验。
+- **备注**：A 让所有重建 WebView 的表面都受益。待真机：Windows 首页查词连点 N 次不崩。同文件 `dictionary_popup_webview.dart:389` 已记过另一处 double-dispose 崩溃，本次小心未引入 double-complete。

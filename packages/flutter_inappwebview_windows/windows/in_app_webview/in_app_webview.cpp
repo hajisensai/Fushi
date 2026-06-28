@@ -892,6 +892,10 @@ namespace flutter_inappwebview_plugin
     ).Get(), nullptr));
 
     failedLog(webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL));
+    // TODO-931: WebResourceRequested 的 success/null/default 回调跨 Dart 桥异步回来，可能晚于
+    // ~InAppWebView。捕获 alive_ 的拷贝，每个异步回调入口先判存活：对象已析构则只 Complete
+    // 在途 deferral（COM 引用计数仍有效）后直接返回，绝不触碰 this/channelDelegate/args/webViewEnv。
+    // 一个 deferral 仅在恰好一条分支里 Complete 一次，dead 分支与 live 分支互斥，故不会 double-complete。
     failedLog(webView->add_WebResourceRequested(
       Callback<ICoreWebView2WebResourceRequestedEventHandler>(
         [this](
@@ -901,6 +905,9 @@ namespace flutter_inappwebview_plugin
           wil::com_ptr<ICoreWebView2WebResourceRequest> webResourceRequest;
           if (channelDelegate && succeededOrLog(args->get_Request(&webResourceRequest)) && succeededOrLog(args->GetDeferral(&deferral))) {
             auto request = std::make_shared<WebResourceRequest>(webResourceRequest);
+            // 异步回调存活守卫：alive 是 alive_ 的 shared_ptr 拷贝，回调触发时若 *alive==false
+            // 说明 InAppWebView 已析构。
+            auto alive = alive_;
 
             // The add_WebResourceRequested event is by default raised for file, http, and https URI schemes.
             // This is also raised for registered custom URI schemes.
@@ -908,16 +915,24 @@ namespace flutter_inappwebview_plugin
             auto url = request->url.has_value() ? request->url.value() : "";
             auto isCustomScheme = !url.empty() && !starts_with(url, std::string{ "file://" }) && !starts_with(url, std::string{ "http://" }) && !starts_with(url, std::string{ "https://" });
 
-            auto onLoadResourceWithCustomSchemeCallback = [this, deferral, request, args]()
+            auto onLoadResourceWithCustomSchemeCallback = [this, deferral, request, args, alive]()
               {
+                if (!*alive) {
+                  failedLog(deferral->Complete());
+                  return;
+                }
                 if (channelDelegate) {
                   auto callback = std::make_unique<WebViewChannelDelegate::LoadResourceWithCustomSchemeCallback>();
-                  auto defaultBehaviour = [this, deferral, args](const std::optional<std::shared_ptr<CustomSchemeResponse>> response)
+                  auto defaultBehaviour = [this, deferral, args, alive](const std::optional<std::shared_ptr<CustomSchemeResponse>> response)
                     {
                       failedLog(deferral->Complete());
                     };
-                  callback->nonNullSuccess = [this, deferral, args](const std::shared_ptr<CustomSchemeResponse> response)
+                  callback->nonNullSuccess = [this, deferral, args, alive](const std::shared_ptr<CustomSchemeResponse> response)
                     {
+                      if (!*alive) {
+                        failedLog(deferral->Complete());
+                        return false;
+                      }
                       args->put_Response(response->toWebView2Response(webViewEnv));
                       failedLog(deferral->Complete());
                       return false;
@@ -937,12 +952,16 @@ namespace flutter_inappwebview_plugin
 
             if (settings->useShouldInterceptRequest) {
               auto callback = std::make_unique<WebViewChannelDelegate::ShouldInterceptRequestCallback>();
-              auto defaultBehaviour = [this, deferral, args](const std::optional<std::shared_ptr<WebResourceResponse>> response)
+              auto defaultBehaviour = [this, deferral, args, alive](const std::optional<std::shared_ptr<WebResourceResponse>> response)
                 {
                   failedLog(deferral->Complete());
                 };
-              callback->nonNullSuccess = [this, deferral, args, request](const std::shared_ptr<WebResourceResponse> response)
+              callback->nonNullSuccess = [this, deferral, args, request, alive](const std::shared_ptr<WebResourceResponse> response)
                 {
+                  if (!*alive) {
+                    failedLog(deferral->Complete());
+                    return false;
+                  }
                   args->put_Response(response->toWebView2Response(webViewEnv));
                   // 根治准备：拦截器为主框架 document 注入了 2xx 响应时记下其 URL，
                   // 供 NavigationCompleted 把 hoshi.local 的 DNS 假失败纠正为成功。
@@ -956,8 +975,12 @@ namespace flutter_inappwebview_plugin
                   failedLog(deferral->Complete());
                   return false;
                 };
-              callback->nullSuccess = [this, deferral, args, isCustomScheme, onLoadResourceWithCustomSchemeCallback]()
+              callback->nullSuccess = [this, deferral, args, isCustomScheme, onLoadResourceWithCustomSchemeCallback, alive]()
                 {
+                  if (!*alive) {
+                    failedLog(deferral->Complete());
+                    return false;
+                  }
                   if (isCustomScheme) {
                     onLoadResourceWithCustomSchemeCallback();
                   }
@@ -983,7 +1006,7 @@ namespace flutter_inappwebview_plugin
           }
           return S_OK;
         }
-      ).Get(), nullptr));
+      ).Get(), &webResourceRequestedToken_));
 
     wil::com_ptr<ICoreWebView2_2> webView2;
     if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView2)))) {
@@ -1965,6 +1988,13 @@ namespace flutter_inappwebview_plugin
   InAppWebView::~InAppWebView()
   {
     debugLog("dealloc InAppWebView");
+    // TODO-931: 先翻存活标志，让任何仍在 Dart 桥途中的 WebResourceRequested deferral 回调走
+    // dead 分支（仅 Complete 在途 deferral，不再触碰已析构的 this/channelDelegate/args）。
+    *alive_ = false;
+    // 注销 WebResourceRequested handler，阻止析构开始后 WebView2 再投递新的拦截事件。
+    if (webView) {
+      failedLog(webView->remove_WebResourceRequested(webResourceRequestedToken_));
+    }
     userContentController = nullptr;
     if (webView) {
       failedLog(webView->Stop());
