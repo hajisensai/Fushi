@@ -78,6 +78,12 @@ add_hoshi_test(ipa_import_query_test ipa_import_query_test.cpp)
 add_hoshi_test(zip_malformed_deflate_test zip_malformed_deflate_test.cpp
     "${HOSHI_SRC}"
     "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
+# BUG-927: a legitimate high-compression yomitan bank (ratio > the old 1100:1
+# cap) must NOT be rejected; the guard is now an absolute-size bound. Pins the
+# now-public zip_uncompressed_size_in_range() boundary + an end-to-end inflate.
+add_hoshi_test(zip_high_ratio_bank_test zip_high_ratio_bank_test.cpp
+    "${HOSHI_SRC}"
+    "${HOSHI_ROOT}/hoshidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
 # hoshidicts_src/.
 add_hoshi_test(import_breadcrumb_test import_breadcrumb_test.cpp

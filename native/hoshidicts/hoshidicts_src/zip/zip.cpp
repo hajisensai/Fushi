@@ -7,6 +7,7 @@
 #include <limits>
 
 #include "../memory/memory.hpp"
+#include "hoshidicts/platform.hpp"  // HOSHI_LOGW
 
 namespace {
 template <typename T>
@@ -27,33 +28,45 @@ bool has_entry_payload(const memory::mapped_file& file, const ZipEntry& e) {
   return in_bounds(file.size, e.data_offset, payload_size);
 }
 
-// DEFLATE's worst-case expansion ratio is ~1032:1 (a maximally-redundant store
-// of a fixed Huffman block). A real dictionary bank never approaches that; a
-// declared uncompressed_size far beyond this bound versus the compressed
-// payload is a malformed/forged header (e.g. a ZIP64 0x0001 extra injecting a
-// multi-GB uncompressed size over a tiny compressed payload) -- honouring it
-// would make result.resize() attempt a huge allocation (std::bad_alloc on the
-// worker thread, or a worse outcome on a 32-bit ABI). has_entry_payload() only
-// validates that the *compressed* payload fits the file and never constrains
-// uncompressed_size, so this is the only guard against attacker-controlled
-// expansion. Cap at a generous multiple of the compressed size, plus a small
-// fixed floor so tiny entries with legitimate inflation still pass.
-constexpr uint64_t kMaxDeflateExpansionRatio = 1100;
-constexpr uint64_t kMinDeflateExpansionFloor = 64 * 1024;
+// Guard against a forged/oversized declared uncompressed_size: has_entry_payload()
+// only validates that the *compressed* payload fits the file and never constrains
+// uncompressed_size, so without this guard a malformed header (e.g. a ZIP64 0x0001
+// extra injecting a multi-GB uncompressed size over a tiny compressed payload)
+// would drive result.resize() into a huge allocation (std::bad_alloc on the worker
+// thread, or a worse outcome on a 32-bit ABI).
+//
+// BUG-927 (TODO-892 regression): the previous guard was a *compression-ratio* cap
+// (uncompressed <= compressed * 1100). That is the wrong discriminator. A real
+// yomitan term/meta/kanji bank is JSON -- a maximally-redundant text of repeated
+// `["","","",...]` tuples -- whose single-bank DEFLATE ratio legitimately exceeds
+// 1100:1, so the ratio cap rejected *valid* banks: read() returned "" -> 0 entries
+// -> the import of that dictionary failed silently. (Different dictionaries pass or
+// fail purely by how compressible their banks happen to be, matching the user's
+// "only the first one succeeded, proxy makes no difference" report -- the failure
+// is in native unzip, not the network.)
+//
+// The thing we actually need to bound is the *allocation size*, which is exactly
+// the absolute uncompressed_size -- independent of the compression ratio. So cap on
+// an absolute upper bound instead. 1 GiB is far above any real single dictionary
+// bank (the largest shipped yomitan banks are tens of MB uncompressed) yet still
+// rejects the forged multi-GB ZIP64 sizes the original guard defended against.
+// (kMaxUncompressedEntryBytes is declared in zip.hpp so tests can reach it.)
+}  // namespace
 
-bool uncompressed_size_in_range(const ZipEntry& e) {
-  if (e.compression_method == 0) {
-    return true;  // stored: uncompressed_size == compressed_size by definition
+bool zip_uncompressed_size_in_range(const ZipEntry& e) {
+  if (e.uncompressed_size <= kMaxUncompressedEntryBytes) {
+    return true;
   }
-  // Avoid overflow in compressed_size * ratio: cap compressed_size first.
-  const uint64_t ratio_cap =
-      e.compressed_size > std::numeric_limits<uint64_t>::max() / kMaxDeflateExpansionRatio
-          ? std::numeric_limits<uint64_t>::max()
-          : e.compressed_size * kMaxDeflateExpansionRatio;
-  const uint64_t limit =
-      ratio_cap < kMinDeflateExpansionFloor ? kMinDeflateExpansionFloor : ratio_cap;
-  return e.uncompressed_size <= limit;
-}
+  // BUG-927: surface why an entry is skipped (a single bank > 1 GiB is almost
+  // certainly a forged ZIP64 size, not a real dictionary) so a future "import
+  // produced fewer entries than expected" is diagnosable from the native log
+  // rather than silently dropping the bank.
+  HOSHI_LOGW(
+      "zip entry '%s' rejected: uncompressed=%llu compressed=%llu exceeds %llu",
+      e.name.c_str(), static_cast<unsigned long long>(e.uncompressed_size),
+      static_cast<unsigned long long>(e.compressed_size),
+      static_cast<unsigned long long>(kMaxUncompressedEntryBytes));
+  return false;
 }
 
 Zip::~Zip() {
@@ -90,7 +103,7 @@ std::string Zip::read(int index) const {
   if (!has_entry_payload(file, e)) {
     return "";
   }
-  if (!uncompressed_size_in_range(e)) {
+  if (!zip_uncompressed_size_in_range(e)) {
     return "";  // forged/oversized uncompressed_size -> structured error, no huge resize
   }
 
@@ -129,7 +142,7 @@ std::optional<Zip::MediaResult> Zip::read_media(int index) const {
   if (!has_entry_payload(file, e)) {
     return std::nullopt;
   }
-  if (!uncompressed_size_in_range(e)) {
+  if (!zip_uncompressed_size_in_range(e)) {
     return std::nullopt;  // forged/oversized uncompressed_size -> skip this media
   }
   out.blob.resize(e.uncompressed_size);

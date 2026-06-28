@@ -850,6 +850,11 @@ class _DictionaryDialogPageState extends BasePageState {
 
     int successCount = 0;
     String? lastError;
+    // BUG-927：逐本下载失败不再只压成一个 2 秒就消失的进度文案——收集失败的词典名
+    // 与原因，循环后弹一条持久可见（LENGTH_LONG）的失败汇总，并把完整诊断（异常 +
+    // 栈 + URL）写进 ErrorLogService（错误日志页可查、可回传），与「导入词典」按钮的
+    // 文件导入路径（_importDictionaryPaths）同一套「记日志 + 汇总 toast」反馈。
+    final List<String> failedNames = <String>[];
 
     try {
       for (final RecommendedDictionary rec in toDownload) {
@@ -875,8 +880,15 @@ class _DictionaryDialogPageState extends BasePageState {
             sourceOverride: <String, String>{'downloadUrl': rec.url},
           );
           successCount++;
-        } catch (e) {
+        } catch (e, st) {
+          // 完整诊断进错误日志（含异常类型 / URL / 栈），不再被静默吞掉。
+          ErrorLogService.instance.log(
+            'DictionaryDialog.download',
+            '${e.runtimeType} 下载/导入「${rec.name}」失败（${rec.url}）：$e',
+            st,
+          );
           lastError = '${rec.name}: $e';
+          failedNames.add(rec.name);
         }
       }
 
@@ -902,6 +914,14 @@ class _DictionaryDialogPageState extends BasePageState {
       if (mounted) {
         Navigator.pop(context);
         setState(() {});
+      }
+      // BUG-927：进度框关闭后，把失败的词典名持久汇总给用户（LENGTH_LONG），而不是
+      // 只在那个 2 秒就消失的进度框里一闪而过。与文件导入路径同一套失败汇总文案。
+      if (failedNames.isNotEmpty) {
+        HibikiToast.show(
+          msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
+          toastLength: Toast.LENGTH_LONG,
+        );
       }
     }
   }

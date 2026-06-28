@@ -1,0 +1,14 @@
+## BUG-447 · 在线下载多本词典只成功第一本
+- **报告**：2026-06-28（用户：在线词典批量下载只成功第一本，挂不挂代理一样）
+- **真实性**：✅ 真 bug（TODO-892 引入的功能回归）。双重根因：
+  - ①【native 根因】`native/hoshidicts/hoshidicts_src/zip/zip.cpp`：TODO-892（提交 `822011293`）给 zip 解压加的**压缩比守卫**判据错了。原 `uncompressed_size_in_range`（旧 :41-55）用「uncompressed ≤ compressed × 1100」的比例上限，并在 `Zip::read`（:93-95）/ `read_media`（:132-134）超比时 `return ""` / `nullopt`。yomitan 的 term/meta/kanji bank 是高度重复的 JSON，单 bank 真实压缩比可超 1100:1 → **合法 bank 被误判成 forged 返空 → 0 条 → 该词典导入空/失败**。不同词典 bank 压缩比不同，故部分过、其余静默失败；与网络无关（「挂不挂代理一样」）。
+  - ②【Dart 静默吞】`hibiki/lib/src/pages/implementations/dictionary_dialog_page.dart`：`_downloadSelectedDictionaries` 串行 for（旧 :855）的 `catch (e)`（旧 :878-880）只把 `'$rec.name: $e'` 存进 `lastError` 字符串，不记日志、不持久反馈；进度框关闭前的失败文案只在 `progressNotifier` 里停 2 秒（`Future.delayed` :894）就被 `finally` 的 `Navigator.pop` 关掉 → 用户看不到哪本为什么失败。
+- **[x] ① 已修复** —
+  - **native 根治**：删掉比例守卫，改为**绝对上限** `kMaxUncompressedEntryBytes = 1 GiB`（`zip.hpp` 声明、`zip.cpp` 实现 `zip_uncompressed_size_in_range`）。绝对上限正是 `result.resize()` 要申请的分配量，与压缩比无关：合法 yomitan bank（最大也就几十 MB 解压）全过，仍拒绝 forged 的多 GB ZIP64 size（防 zip bomb / `std::bad_alloc`，TODO-892 原意保留）。拒绝分支加 `HOSHI_LOGW`（entry 名 + compressed/uncompressed/上限）便于诊断。**native 源码已改，二进制随下次 `flutter build` 重编生效**（仓库不入库预编译 lib，源即真值；已用 cl + `/DNOMINMAX` 隔离编译 zip.cpp + 新测试 + zip64 旧测试全过，见 ②）。
+  - **Dart 暴露错误**：`_downloadSelectedDictionaries` 的 `catch (e)` → `catch (e, st)`，用 `ErrorLogService.instance.log('DictionaryDialog.download', '${e.runtimeType} ... ${rec.url} ... $e', st)` 记完整诊断；循环后弹持久 `HibikiToast`（`LENGTH_LONG`）失败汇总（复用 `DictionaryImportManager.formatImportFailureSummary`），与文件导入路径（`_importDictionaryPaths`）同一套反馈。
+  - **多点日志**：`dictionary_import_manager.dart` 两个 `importDictionaryViaHoshidicts` 调用点后新增 `_logImportResultSummary`（记 title + term/meta/freq/pitch/kanji/media 计数 + total + error；success 但 total==0 标 `[WARN:0 entries imported]`），一眼定位「哪本被解空」。
+  - 提交：见本轮 commit 哈希（fix(dict): BUG-447）。
+- **[x] ② 已加自动化测试** —
+  - **native**：`native/hoshidicts/tests/zip_high_ratio_bank_test.cpp`（注册进 `tests/CMakeLists.txt`，CI ctest 覆盖）：①回归边界——一个合法 2000:1 bank（compressed=10KB/uncompressed=20MB）被旧 1100 比例守卫拒绝、被新绝对守卫接受；②forged ~3.5GB size 仍被拒（防 zip bomb）；③1 GiB 上限 off-by-one 精确（恰好接受、+1 拒绝）；④端到端 `Zip::read` 对真实小 DEFLATE bank 逐字节还原。本机 cl + `/DNOMINMAX` 编译运行 `PASS`。
+  - **Dart**：`hibiki/test/models/dictionary_download_error_surfacing_guard_test.dart`（下载 catch 捕获栈 + 记 `ErrorLogService` 完整诊断 + 收集 failedNames + 持久 `LENGTH_LONG` 失败汇总 toast；import_manager 两调用点 + helper 记结果摘要、success 但 0 条标 WARN）。
+- **备注**：TODO-892 回归。native 二进制最终在 CI / 真机 `flutter build` 重编后生效；声明「彻底修好」前需真机批量下载多本含高压缩比 bank 的词典验证全部成功。把守卫谓词从匿名命名空间提到 `zip.hpp` 公开（`zip_uncompressed_size_in_range`）只为可单测边界，不改运行时行为。

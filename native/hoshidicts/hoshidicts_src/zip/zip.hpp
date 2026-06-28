@@ -19,6 +19,16 @@ struct ZipEntry {
   size_t data_offset;
 };
 
+// BUG-927: absolute upper bound (1 GiB) on a single entry's declared
+// uncompressed_size. has_entry_payload() only bounds the *compressed* payload, so
+// this is the sole guard stopping a forged/oversized ZIP64 uncompressed_size from
+// driving result.resize() into a multi-GB allocation. Exposed (was an anonymous
+// helper) so the boundary can be unit-tested without depending on the exact ratio
+// libdeflate happens to emit. The previous ratio-based cap (uncompressed <=
+// compressed * 1100) wrongly rejected legitimate high-compression yomitan banks.
+constexpr uint64_t kMaxUncompressedEntryBytes = 1024ull * 1024ull * 1024ull;
+bool zip_uncompressed_size_in_range(const ZipEntry& e);
+
 struct Zip {
   memory::mapped_file file;
   std::vector<ZipEntry> entries;

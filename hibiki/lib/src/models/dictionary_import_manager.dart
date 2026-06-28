@@ -58,6 +58,28 @@ class DictionaryImportManager {
     throw Exception(t.dictionary_unrecognized_format);
   }
 
+  /// BUG-927：把一本词典的 native 导入结果摘要写进 [ErrorLogService]（错误日志页
+  /// 可查）。成功但各类计数全为 0 通常意味着 native 端把所有 bank 解成空——这正是
+  /// TODO-892 的 zip.cpp 压缩比守卫误杀合法 yomitan bank 时的症状——留下这条摘要后
+  /// 「某本词典导入后没有词条」就能从日志直接定位，而不必逐本盲猜。
+  void _logImportResultSummary(String source, HoshiImportResult result) {
+    final int total = result.termCount +
+        result.metaCount +
+        result.freqCount +
+        result.pitchCount +
+        result.kanjiCount;
+    ErrorLogService.instance.log(
+      'DictImport.result',
+      '$source success=${result.success} title="${result.title}" '
+          'term=${result.termCount} meta=${result.metaCount} '
+          'freq=${result.freqCount} pitch=${result.pitchCount} '
+          'kanji=${result.kanjiCount} media=${result.mediaCount} '
+          'total=$total'
+          '${result.error.isNotEmpty ? ' error=${result.error}' : ''}'
+          '${result.success && total == 0 ? ' [WARN:0 entries imported]' : ''}',
+    );
+  }
+
   Future<void> importFromDirectory({
     required Directory directory,
     required ValueNotifier<String> progressNotifier,
@@ -174,6 +196,10 @@ class DictionaryImportManager {
         } finally {
           ErrorLogService.instance.markImportEnd();
         }
+        // BUG-927：记每本导入的结果摘要（标题 + 各类计数）。零计数 + success
+        // 说明 native 把 bank 解空了（曾被 zip.cpp 压缩比守卫误杀），这里留痕即可
+        // 一眼定位「哪本被吞空」而不必猜。
+        _logImportResultSummary('dir:${directory.path}', result);
 
         if (!result.success) {
           throw Exception(
@@ -297,6 +323,8 @@ class DictionaryImportManager {
       } finally {
         ErrorLogService.instance.markImportEnd();
       }
+      // BUG-927：记每本导入结果摘要（见上 dir 路径同名 helper 的说明）。
+      _logImportResultSummary('file:${file.path}', result);
 
       if (!result.success) {
         throw Exception(
