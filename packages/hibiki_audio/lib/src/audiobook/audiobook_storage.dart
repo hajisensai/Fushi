@@ -25,6 +25,15 @@ abstract final class AudiobookStorage {
   static bool isAudioFile(String path) =>
       audioExtensions.contains(p.extension(path).toLowerCase());
 
+  /// TODO-935 E0：`hibiki_audio` 包内 documents 根的**单一解析点**。
+  ///
+  /// 本包是 `hibiki` 的上游依赖（`hibiki_audio` 不依赖 `hibiki`），故**无法**导入 app
+  /// 层的 `AppPaths`。这里把包内三处原本各自直连的 `getApplicationDocumentsDirectory()`
+  /// 收敛成一处，与 app 层 `AppPaths.documentsRootDirectory()` 的解析**逐字节等价**
+  /// （E0 行为不变）；E1 换根时此处需与 `AppPaths` 同步（搜索 TODO-935）。
+  static Future<Directory> _documentsRoot() =>
+      getApplicationDocumentsDirectory();
+
   /// TODO-811: 逐个探测音频文件时长（毫秒），下标与 [paths] 对齐。某个文件探测失败
   /// （损坏/解码不支持）返回 0（调用方据此判定无法可靠分文件）。多文件单时间轴有声书
   /// 导入时用这些边界给 cue 重新分配 [AudioCue.audioFileIndex]（见
@@ -56,7 +65,7 @@ abstract final class AudiobookStorage {
   }
 
   static Future<Directory> ensurePersistDir(String bookUid) async {
-    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory docs = await _documentsRoot();
     final String hash = _stableHash(bookUid);
     final Directory oldDir = Directory(
         p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)));
@@ -181,7 +190,7 @@ abstract final class AudiobookStorage {
 
   /// `<appDoc>/audiobooks` 的绝对路径（复制导入的统一持久根）。
   static Future<String> audiobooksRootDir() async {
-    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory docs = await _documentsRoot();
     return p.join(docs.path, 'audiobooks');
   }
 
@@ -225,7 +234,7 @@ abstract final class AudiobookStorage {
   }
 
   static Future<void> deletePersistDir(String bookUid) async {
-    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory docs = await _documentsRoot();
     final String hash = _stableHash(bookUid);
     final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
     if (dir.existsSync()) {

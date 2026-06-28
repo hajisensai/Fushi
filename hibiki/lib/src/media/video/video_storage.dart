@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/painting.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 /// 视频媒体在磁盘上的「app 拥有」副本目录管理 + 删除回收（BUG-276 / TODO-365）。
 ///
@@ -44,17 +44,11 @@ class VideoStorage {
   static const String coversDirName = 'video_covers';
   static const String subtitlesDirName = 'video_subtitles';
 
-  /// 封面目录绝对路径（不创建）。
-  static Future<Directory> coversDir() async {
-    final Directory docs = await getApplicationDocumentsDirectory();
-    return Directory(p.join(docs.path, coversDirName));
-  }
+  /// 封面目录绝对路径（不创建）。TODO-935 E0：经唯一入口 [AppPaths] 派生。
+  static Future<Directory> coversDir() => AppPaths.videoCoversDirectory();
 
-  /// 导入字幕目录绝对路径（不创建）。
-  static Future<Directory> subtitlesDir() async {
-    final Directory docs = await getApplicationDocumentsDirectory();
-    return Directory(p.join(docs.path, subtitlesDirName));
-  }
+  /// 导入字幕目录绝对路径（不创建）。TODO-935 E0：经唯一入口 [AppPaths] 派生。
+  static Future<Directory> subtitlesDir() => AppPaths.videoSubtitlesDirectory();
 
   /// 删除一本视频后回收**它自己**的 app 拥有副本：把 [deletedCoverPath] /
   /// [deletedSubtitlePath]（被删 book 删前的 `coverPath` / `subtitleSource`）里、

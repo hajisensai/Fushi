@@ -2,9 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
-import 'package:hibiki/src/startup/test_environment.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 
 /// Manages on-disk storage of extracted EPUB content.
 ///
@@ -25,7 +24,7 @@ class EpubStorage {
   /// (e.g. the interconnect orchestrator tests that download over a real HTTP
   /// server, where installing `TestWidgetsFlutterBinding` would break the
   /// socket). Production never sets this — it stays null and resolution falls
-  /// through to [hibikiTestDirectory] / [getApplicationDocumentsDirectory].
+  /// through to [AppPaths.documentsRootDirectory].
   @visibleForTesting
   static set debugBaseDirectoryOverride(String? path) {
     _cachedBaseDir = path == null ? null : p.join(path, 'hoshi_books');
@@ -34,8 +33,9 @@ class EpubStorage {
   /// Base directory for all extracted books.
   static Future<String> baseDirectory() async {
     if (_cachedBaseDir != null) return _cachedBaseDir!;
-    final Directory appDir = hibikiTestDirectory('app-documents') ??
-        await getApplicationDocumentsDirectory();
+    // TODO-935 E0：经唯一入口 [AppPaths] 取 documents 根（内部 honor 测试分支），
+    // 派生 `<documents>/hoshi_books`——与旧解析逐字节等价。
+    final Directory appDir = await AppPaths.documentsRootDirectory();
     _cachedBaseDir = p.join(appDir.path, 'hoshi_books');
     return _cachedBaseDir!;
   }

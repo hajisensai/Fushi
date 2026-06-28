@@ -19,8 +19,8 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 // TODO-817 M1c: videoCoverFileName / extractVideoCover 已下沉到
 // desktop_audio_clipper.dart（ffmpeg 封面抽取的归宿，使扫描器无需 import UI 层）；
 // 从这里 re-export 让既有调用点（home_video_page / playlist_book_uid_test）零改动。
@@ -88,8 +88,8 @@ Future<String> setVideoCoverFromPickedFile({
   required String bookUid,
   required String pickedPath,
 }) async {
-  final Directory docs = await getApplicationDocumentsDirectory();
-  final Directory coverDir = Directory(p.join(docs.path, 'video_covers'));
+  // TODO-935 E0：封面目录经唯一入口 [AppPaths] 派生 `<documents>/video_covers`。
+  final Directory coverDir = await AppPaths.videoCoversDirectory();
   await coverDir.create(recursive: true);
   final String dest = p.join(coverDir.path, videoCoverFileName(bookUid));
   await File(pickedPath).copy(dest);

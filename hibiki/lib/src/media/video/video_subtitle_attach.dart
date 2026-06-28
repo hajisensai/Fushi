@@ -5,8 +5,8 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 /// 在**主页视频卡**上拖入外挂字幕、把它挂到那张卡所代表视频书的结果分类。
 enum SubtitleAttachOutcome {
@@ -129,6 +129,7 @@ Future<SubtitleAttachResult> attachSubtitleToVideoBook({
 }
 
 Future<String> _defaultSubtitleDir() async {
-  final Directory docs = await getApplicationDocumentsDirectory();
-  return p.join(docs.path, 'video_subtitles');
+  // TODO-935 E0：字幕副本目录经唯一入口 [AppPaths] 派生 `<documents>/video_subtitles`。
+  final Directory dir = await AppPaths.videoSubtitlesDirectory();
+  return dir.path;
 }

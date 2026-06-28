@@ -14,7 +14,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,6 +23,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -74,7 +74,6 @@ import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
-import 'package:hibiki/src/startup/test_environment.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 
@@ -679,6 +678,12 @@ class AppModel with ChangeNotifier {
   void requestHomeDictionaryTab() {
     homeDictionaryTabRequest.value++;
   }
+
+  /// TODO-935 E0：应用数据根的唯一入口快照（启动期 [AppPaths.resolve] 解析一次）。
+  /// [temporaryDirectory] / [appDirectory] / [databaseDirectory] 都从它派生，
+  /// 后续 E1/E2/E3 换根只动 [AppPaths]，不必再碰这三个 getter 各自的调用点。
+  AppPaths get appPaths => _appPaths;
+  late AppPaths _appPaths;
 
   /// These directories are prepared at startup in order to reduce redundancy
   /// in actual runtime.
@@ -1481,16 +1486,12 @@ class AppModel with ChangeNotifier {
   /// the application. [AppModel] is initialised in the main function before
   /// [runApp] is executed.
   Future<void> _prepareRuntimeDirectories() async {
-    final Directory? testTemp = hibikiTestDirectory('temp');
-    if (testTemp != null) {
-      _temporaryDirectory = testTemp;
-      _appDirectory = hibikiTestDirectory('app-documents')!;
-      _databaseDirectory = hibikiTestDirectory('app-support')!;
-      return;
-    }
-    _temporaryDirectory = await getTemporaryDirectory();
-    _appDirectory = await getApplicationDocumentsDirectory();
-    _databaseDirectory = await getApplicationSupportDirectory();
+    // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
+    // [hibikiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
+    _appPaths = await AppPaths.resolve();
+    _temporaryDirectory = _appPaths.tempRoot;
+    _appDirectory = _appPaths.documentsRoot;
+    _databaseDirectory = _appPaths.supportRoot;
   }
 
   Future<void> initialise() async {

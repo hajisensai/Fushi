@@ -22,7 +22,7 @@ import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
@@ -47,7 +47,6 @@ import 'package:hibiki/src/pages/implementations/series_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
@@ -810,9 +809,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       return (source: null, format: null, cues: const <AudioCue>[]);
     }
     final String ext = _remoteSubtitleExtension(video.subtitleFileName);
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final Directory dir =
-        Directory(p.join(docs.path, VideoStorage.subtitlesDirName));
+    // TODO-935 E0：经唯一入口 [AppPaths] 派生 `<documents>/video_subtitles`。
+    final Directory dir = await AppPaths.videoSubtitlesDirectory();
     await dir.create(recursive: true);
     final String safeUid = video.id.replaceAll(RegExp(r'[\/:*?"<>|]'), '_');
     final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
@@ -839,8 +837,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final Future<File> Function(RemoteVideoInfo video)? injected =
         widget.remoteVideoDownloadDestination;
     if (injected != null) return injected(video);
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final Directory dir = Directory(p.join(docs.path, 'remote_videos'));
+    // TODO-935 E0：经唯一入口 [AppPaths] 派生 `<documents>/remote_videos`。
+    final Directory dir = await AppPaths.remoteVideosDirectory();
     await dir.create(recursive: true);
     final String safeTitle =
         video.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');

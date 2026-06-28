@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 /// mpv 着色器（Anime4K 等）管理：导入到固定目录、列出、启用集持久化、应用到播放器。
 ///
@@ -23,8 +23,8 @@ const Set<String> kShaderExtensions = <String>{'.glsl', '.hook'};
 
 /// 着色器存放目录：`<appDocs>/mpv_shaders`（不存在则创建）。
 Future<Directory> mpvShaderDirectory() async {
-  final Directory docs = await getApplicationDocumentsDirectory();
-  final Directory dir = Directory(p.join(docs.path, 'mpv_shaders'));
+  // TODO-935 E0：经唯一入口 [AppPaths] 派生 `<documents>/mpv_shaders`。
+  final Directory dir = await AppPaths.mpvShadersDirectory();
   if (!dir.existsSync()) dir.createSync(recursive: true);
   return dir;
 }
