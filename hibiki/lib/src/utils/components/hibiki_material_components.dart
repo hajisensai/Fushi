@@ -1661,9 +1661,19 @@ class HibikiPageHeader extends StatelessWidget {
               ),
               if (actions.isNotEmpty) ...<Widget>[
                 SizedBox(width: tokens.spacing.gap),
-                Align(
-                  alignment: Alignment.topRight,
-                  child: _buildActionRow(tokens),
+                // 窄窗（如桌面 master-detail 208px 左栏 / 手机竖屏）下多个动作按钮的
+                // 自然宽度可能超过页头可用宽，旧实现用不受约束的 Align 直接让 Row 溢出
+                // （RenderFlex OVERFLOWING）。这里把动作区改成 [Flexible] + 横向
+                // [SingleChildScrollView]：可用宽足够时（桌面/平板）按钮原样靠右排列、
+                // 不内滚；可用宽不足时动作区收缩到剩余宽并允许横向滚动，靠右对齐保证最右
+                // 侧动作可见，彻底消除溢出。标题列仍是 [Expanded] 优先占位。
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    reverse: true,
+                    physics: const ClampingScrollPhysics(),
+                    child: _buildActionRow(tokens),
+                  ),
                 ),
               ],
             ],
