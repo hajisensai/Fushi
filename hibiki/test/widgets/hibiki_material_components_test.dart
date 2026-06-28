@@ -360,6 +360,99 @@ void main() {
     expect(statisticsTop, importTop);
   });
 
+  // TODO-955: 内容放得下时，4 个动作 icon 必须贴页头最右侧（回归前被 7ce19740c 的
+  // Flexible+反向 ScrollView 平分宽度推到了页头中间）。断言最右动作的右缘 ~= 页头右
+  // 内边界，而非停在中部。
+  testWidgets('HibikiPageHeader right-aligns actions when content fits',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        SizedBox(
+          width: 600,
+          child: HibikiPageHeader(
+            title: '书架',
+            padding: EdgeInsets.zero,
+            actions: <Widget>[
+              HibikiIconButton(
+                tooltip: 'Import',
+                icon: Icons.library_add_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Collections',
+                icon: Icons.collections_bookmark_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Statistics',
+                icon: Icons.bar_chart_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final double headerRight =
+        tester.getTopRight(find.byType(HibikiPageHeader)).dx;
+    // bar_chart 是 _buildActionRow 里最后一个动作，视觉上最靠右。
+    final double lastActionRight =
+        tester.getTopRight(find.byIcon(Icons.bar_chart_outlined)).dx;
+    final double headerLeft =
+        tester.getTopLeft(find.byType(HibikiPageHeader)).dx;
+    final double headerMid = headerLeft + (headerRight - headerLeft) / 2;
+
+    // 必须贴右（48px 按钮内 icon 居中，icon 右缘距按钮右缘约 12px，留 40px 余量）。
+    expect(lastActionRight, greaterThan(headerRight - 40));
+    // 且明显不在中部（回归态下最右动作约落在 headerMid+96 处）。
+    expect(lastActionRight, greaterThan(headerMid + 120));
+  });
+
+  // TODO-955 / TODO-616: 窄窗动作总宽超过可用宽时仍不得抛 RenderFlex overflow（动作区
+  // 收缩 + 横向可滚），守住 616 修的溢出场景不被 955 的靠右修复带回归。
+  testWidgets(
+      'HibikiPageHeader scrolls actions without overflow on narrow width',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        SizedBox(
+          width: 160,
+          child: HibikiPageHeader(
+            title: '一本标题很长很长很长很长很长很长的书',
+            padding: EdgeInsets.zero,
+            actions: <Widget>[
+              HibikiIconButton(
+                tooltip: 'Import',
+                icon: Icons.library_add_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Collections',
+                icon: Icons.collections_bookmark_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Statistics',
+                icon: Icons.bar_chart_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+  });
+
   // TODO-667: 手机竖排 / 窄窗（compact 尺寸类，宽 < 600）下页头顶距应收到 `page`
   // (16)，而桌面 / 平板（>= 600）保持 `page + 8`(24)。验证三档行为，并守住手机首页
   // 书架标题不再离顶部多空一行。

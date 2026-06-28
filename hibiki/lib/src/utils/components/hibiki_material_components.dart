@@ -1664,15 +1664,22 @@ class HibikiPageHeader extends StatelessWidget {
                 // 窄窗（如桌面 master-detail 208px 左栏 / 手机竖屏）下多个动作按钮的
                 // 自然宽度可能超过页头可用宽，旧实现用不受约束的 Align 直接让 Row 溢出
                 // （RenderFlex OVERFLOWING）。这里把动作区改成 [Flexible] + 横向
-                // [SingleChildScrollView]：可用宽足够时（桌面/平板）按钮原样靠右排列、
-                // 不内滚；可用宽不足时动作区收缩到剩余宽并允许横向滚动，靠右对齐保证最右
-                // 侧动作可见，彻底消除溢出。标题列仍是 [Expanded] 优先占位。
+                // [SingleChildScrollView]：可用宽不足时动作区收缩到剩余宽并允许横向滚动，
+                // 彻底消除溢出。但 [Flexible](flex:1) 与标题 [Expanded](flex:1) 平分剩余宽，
+                // 动作视口恒占右半幅；[SingleChildScrollView] 内容未溢出时停在视口起始边，
+                // 故必须再套一层 [Align](centerRight) 把按钮推到右半幅的右缘——而右半幅是
+                // 本行最后一个子项，其右缘即整条页头的最右侧，从而恢复「按钮靠最右」。
+                // 内容溢出时 Align 不改变滚动行为，仍可横向滚到最右侧动作可见。
                 Flexible(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    reverse: true,
-                    physics: const ClampingScrollPhysics(),
-                    child: _buildActionRow(tokens),
+                  fit: FlexFit.loose,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      reverse: true,
+                      physics: const ClampingScrollPhysics(),
+                      child: _buildActionRow(tokens),
+                    ),
                   ),
                 ),
               ],
