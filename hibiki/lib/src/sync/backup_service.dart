@@ -614,6 +614,18 @@ class BackupService {
           dictionaryResourceDirectory: dictionaryRestoreDirectory,
         );
       }
+      // BUG-454: a backup exported WITHOUT the dictionary category carries no
+      // `dictionaryResources/` files AND has its dictionary DB rows stripped on
+      // export (`_stripDictionaryState`). Detecting "the backup has no
+      // dictionary files" lets the overwrite import PRESERVE this device's
+      // existing dictionaries (metadata rows + resource files) instead of
+      // wiping them — the backup simply didn't include that category, the same
+      // selective-preserve contract the device-local sync prefs already follow.
+      final bool backupHasDictionaries = archive.files.any((ArchiveFile f) =>
+          f.isFile &&
+          f.name
+              .replaceAll(r'\', '/')
+              .startsWith('$_dictionaryResourcesPrefix/'));
 
       final sidecar = File(p.join(dbDirectory, _preserveSidecar));
       final String bakPath = '$dbPath.pre-restore.bak';
@@ -650,11 +662,28 @@ class BackupService {
       // 2) Overwrite with the backup DB bytes.
       await currentDb.writeAsBytes(dbFile.content as List<int>);
 
-      if (dictionaryRestorePlan != null && dictionaryRestoreDirectory != null) {
+      if (backupHasDictionaries &&
+          dictionaryRestorePlan != null &&
+          dictionaryRestoreDirectory != null) {
+        // Backup carries dictionaries → replace this device's resources with
+        // the backup's (the DB overwrite already brought the matching rows).
         await _restoreDictionaryResources(
           restorePlan: dictionaryRestorePlan,
           dictionaryResourceDirectory: dictionaryRestoreDirectory,
         );
+      } else if (!backupHasDictionaries &&
+          haveCurrent &&
+          dictionaryRestoreDirectory != null) {
+        // BUG-454: backup has NO dictionaries → keep this device's. The DB was
+        // just overwritten with the backup's (dictionary tables empty), so
+        // re-seat the local dictionary rows from pre-restore.bak. The resource
+        // FILES on disk were never touched (we skipped the unconditional wipe
+        // in _restoreDictionaryResources), so rows + files stay consistent.
+        // Gated on a managed dictionary dir: the live app always supplies it;
+        // a null dir means the caller isn't managing dictionaries at all, so
+        // there is nothing to preserve (and bak may not even be a real DB in
+        // such minimal call sites).
+        await _restoreDictionaryTablesFromBak(dbDirectory, bakPath);
       }
 
       // 2b) Restore the book + audiobook content trees (full-data backup).
@@ -1021,6 +1050,52 @@ class BackupService {
         }
       });
       await db.customStatement('DETACH DATABASE bak');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Tables holding this device's imported dictionaries. Re-seated from
+  /// pre-restore.bak when a backup that carries NO dictionaries is imported in
+  /// overwrite mode (BUG-454), so an unselected-dictionary backup never wipes
+  /// the device's dictionary library. `dictionary_metadata` is the queryable
+  /// dictionary set; `dictionary_history` is its recent-lookup list. Neither is
+  /// FK-targeted by content tables, so a wholesale per-table swap is FK-safe.
+  static const List<String> _dictionaryLayerTables = <String>[
+    'dictionary_metadata',
+    'dictionary_history',
+  ];
+
+  /// Restores [_dictionaryLayerTables] from [bakPath] (this device's pre-import
+  /// snapshot) into the freshly-overwritten DB in [dbDirectory]. Runs inline
+  /// during import while both DBs are at the current schema (bak is a copy of
+  /// the live DB), so `SELECT *` columns align. No-op (logged) if bak is gone.
+  static Future<void> _restoreDictionaryTablesFromBak(
+    String dbDirectory,
+    String bakPath,
+  ) async {
+    if (!File(bakPath).existsSync()) {
+      // bak is the only copy of this device's dictionary rows after the
+      // overwrite. Missing it means a crash + external deletion before this
+      // ran; surface loudly rather than silently dropping the dictionaries.
+      debugPrint('BackupService._restoreDictionaryTablesFromBak: '
+          'pre-restore.bak missing — local dictionaries could not be '
+          'preserved on import.');
+      return;
+    }
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      final String safeBak =
+          bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
+      await db.customStatement("ATTACH DATABASE '$safeBak' AS dictbak");
+      await db.transaction(() async {
+        for (final String t in _dictionaryLayerTables) {
+          await db.customStatement('DELETE FROM $t');
+          await db.customStatement('INSERT INTO $t SELECT * FROM dictbak.$t');
+        }
+      });
+      await db.customStatement('DETACH DATABASE dictbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();

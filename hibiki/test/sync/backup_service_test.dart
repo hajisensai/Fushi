@@ -519,8 +519,10 @@ void main() {
       }
     });
 
-    test('importBackupFiles clears stale dictionary resources when none exist',
-        () async {
+    test(
+        'importBackupFiles PRESERVES existing dictionary resources when the '
+        'backup carries none (BUG-454: an unselected-dictionary backup must '
+        "not wipe this device's dictionaries)", () async {
       final srcDir =
           await Directory.systemTemp.createTemp('backup_no_dict_src_');
       final srcDb = HibikiDatabase(srcDir.path);
@@ -551,8 +553,21 @@ void main() {
             dictionaryResourceDirectory: dstDictDir.path,
           );
 
+          // BUG-454: the backup carried no dictionaries, so the device's
+          // existing dictionary resources are KEPT (not wiped to empty).
           expect(await dstDictDir.exists(), isTrue);
-          expect(await dstDictDir.list().toList(), isEmpty);
+          expect(
+            File('${dstDictDir.path}/OldDict/blobs.bin').existsSync(),
+            isTrue,
+          );
+          expect(
+            File('${dstDictDir.path}/OldDict/media/old.png').existsSync(),
+            isTrue,
+          );
+          expect(
+            await File('${dstDictDir.path}/OldDict/blobs.bin').readAsString(),
+            'stale index',
+          );
         } finally {
           if (dstDir.existsSync()) await dstDir.delete(recursive: true);
           if (dstDictDir.existsSync()) {
