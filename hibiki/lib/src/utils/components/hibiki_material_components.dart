@@ -2370,31 +2370,40 @@ class _HibikiLogPanelState extends State<HibikiLogPanel> {
 /// 抽出，便于在 widget 渲染之外单测——把不变式钉死，防止有人把拦截逻辑掏空后
 /// 结构守卫仍全绿（复核 ③ 指出旧守卫名存实亡）。
 ///
-/// 规则（TODO-822 简化后——拖拽选区期间一律拦掉程序化滚动）：
+/// 规则（TODO-934——按滚动 API 区分边缘自动滚动 vs 键盘拽回）：
 /// * 选区拖拽未激活 → 一律放行（非选区期的滚动不受影响）。
 /// * 位移可忽略（<=0.5px）→ 放行（无实质滚动）。
-/// * 选区拖拽激活且有实质位移 → 一律拦截。
+/// * 选区拖拽激活 + 有实质位移 + 动画滚动（`animateTo`，[animated]=true）→ 放行：
+///   这是 `EdgeDraggingAutoScroller` 的边缘自动滚动（拖到边区继续滚动延伸选区），
+///   每帧步长被 SDK 钳在 ≤20px，不是一次跳到底。
+/// * 选区拖拽激活 + 有实质位移 + 瞬跳滚动（`jumpTo`，[animated]=false）→ 拦截：
+///   纯 SelectionArea + Text 结构下，拖拽框选期间唯一会瞬跳的程序化滚动是
+///   `_ScrollableSelectionContainerDelegate._jumpToEdge`（键盘 granular/directional
+///   扩展选区把视口往 extent 拽回，BUG-119 同源），拖拽期间一律拦掉。
 ///
-/// TODO-822（调试日志框选拖拽卡死）的根因消除：
-/// 旧规则在「指针贴边且朝外侧」时放行边缘自动滚动。但正文是
-/// `ListView.builder` 懒构造 + `SelectionArea` 跨行选区——拖拽贴边触发边缘自动
-/// 滚动 → 列表持续构造视口外新行 → SelectionArea 注册的 Selectable 集合随拖拽
-/// 时长单调膨胀 → 每次指针 move 都对全部 Selectable 做命中/边界重算占满 UI 线程
-/// → 未响应卡死。把「边缘自动滚动」这条放行分支删掉后，拖拽选区期间 Selectable
-/// 集合被钉在视口内有限行，膨胀链路从根上断掉，决策退化成纯粹的「拽回拦截」
-/// （不再有按指针位置/方向区分的特殊情况）。
+/// TODO-934（调试日志框选拖到边区不响应）的根因修复：
+/// BUG-423 当时一刀切「拖拽期一律拦掉程序化滚动」止住了卡死，代价是边缘自动滚动
+/// 也被拦——拖到边区不再滚动延伸选区。但 BUG-423 把「Selectable 集合单调膨胀」当
+/// 根因其实不准确：`ListView.builder` 离屏行会被回收（其 `Selectable` 从
+/// `SelectionContainer` `remove()` 掉），`selectables` 大小被钉在「视口 + cacheExtent」
+/// 内有界，不随滚动距离膨胀。真正的卡死放大器是 `softWrap:true` 长行——其
+/// `RenderParagraph.getBoxesForSelection` 成本随该行换行成的视觉行数 O(N) 放大，
+/// 而边缘自动滚动每帧持续重算选区几何。BUG-423 的 `softWrap:false` + BUG-448 的
+/// `ConstrainedBox`+`ClipRect`（把每行布局宽度钉死在视口内）已经把每帧几何成本压成
+/// O(视口可见内容)、与滚动距离无关——卡死链路已从根上断掉。因此可以安全恢复边缘
+/// 自动滚动：放行 `animateTo`（有界一小步），仅保留拦掉 `jumpTo`（键盘拽回，纵深防御）。
 ///
-/// Never break userspace：滚到视口外去框选本就不可靠（SelectionArea 不为滚出
-/// 视口的行保留选区），且「复制整段日志去排障」这一真实用途已由常驻「复制全部」
-/// 按钮（绕开 SelectionArea 走 widget.log 全量）完整覆盖，禁用边缘自动滚动不损失
-/// 任何可用能力。手动滚动（applyUserOffset / pointerScroll）不经本判据，不受影响。
+/// 手动滚动（applyUserOffset / pointerScroll）不经本判据，不受影响。
 bool logSelectionScrollDecision({
   required bool pointerSelectionActive,
   required double delta,
+  required bool animated,
 }) {
   if (!pointerSelectionActive) return true;
   if (delta.abs() <= 0.5) return true;
-  return false;
+  // 动画滚动 = 边缘自动滚动（有界一小步），放行以延伸选区；
+  // 瞬跳滚动 = 键盘拽回（_jumpToEdge），拖拽期一律拦。
+  return animated;
 }
 
 class _LogSelectionScrollController extends ScrollController {
@@ -2414,13 +2423,16 @@ class _LogSelectionScrollController extends ScrollController {
     _pointerSelectionActive = false;
   }
 
-  bool _allowProgrammaticScroll(double targetOffset) {
+  // [animated]=true 表示来自 animateTo（边缘自动滚动），false 表示来自 jumpTo
+  // （键盘拽回）。判据据此放行边缘自动滚动、仅拦掉拽回（TODO-934）。
+  bool _allowProgrammaticScroll(double targetOffset, {required bool animated}) {
     // 仅当当前确实附着了唯一 ScrollPosition 时才有「当前像素」可比对；否则
     // 无可拦截的拽回，直接放行（纯判据下沉到 [logSelectionScrollDecision]）。
     if (!hasClients || positions.length != 1) return true;
     return logSelectionScrollDecision(
       pointerSelectionActive: _pointerSelectionActive,
       delta: targetOffset - position.pixels,
+      animated: animated,
     );
   }
 
@@ -2445,7 +2457,7 @@ class _LogSelectionScrollController extends ScrollController {
     required Duration duration,
     required Curve curve,
   }) {
-    if (!_allowProgrammaticScroll(offset)) {
+    if (!_allowProgrammaticScroll(offset, animated: true)) {
       return Future<void>.value();
     }
     return super.animateTo(offset, duration: duration, curve: curve);
@@ -2453,7 +2465,7 @@ class _LogSelectionScrollController extends ScrollController {
 
   @override
   void jumpTo(double value) {
-    if (!_allowProgrammaticScroll(value)) return;
+    if (!_allowProgrammaticScroll(value, animated: false)) return;
     super.jumpTo(value);
   }
 }
@@ -2470,15 +2482,16 @@ class _LogSelectionScrollPosition extends ScrollPositionWithSingleContext {
   final _LogSelectionScrollController controller;
 
   // 手动滚动（applyUserOffset / pointerScroll）不 override：它们是用户拖滚动条 /
-  // 滚轮的入口，本就该照常生效，不经拦截判据。只拦程序化 animateTo / jumpTo
-  // （SelectionArea 的边缘自动滚动 / bringIntoView 拽回都走这两条）。
+  // 滚轮的入口，本就该照常生效，不经拦截判据。程序化滚动按 API 区分（TODO-934）：
+  // animateTo = 边缘自动滚动（EdgeDraggingAutoScroller，放行以拖到边区延伸选区）、
+  // jumpTo = 键盘 granular/directional 扩展的 _jumpToEdge 拽回（拖拽期拦掉）。
   @override
   Future<void> animateTo(
     double to, {
     required Duration duration,
     required Curve curve,
   }) {
-    if (!controller._allowProgrammaticScroll(to)) {
+    if (!controller._allowProgrammaticScroll(to, animated: true)) {
       return Future<void>.value();
     }
     return super.animateTo(to, duration: duration, curve: curve);
@@ -2486,7 +2499,7 @@ class _LogSelectionScrollPosition extends ScrollPositionWithSingleContext {
 
   @override
   void jumpTo(double value) {
-    if (!controller._allowProgrammaticScroll(value)) return;
+    if (!controller._allowProgrammaticScroll(value, animated: false)) return;
     super.jumpTo(value);
   }
 }

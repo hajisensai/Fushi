@@ -235,24 +235,37 @@ void main() {
         reason: '复制/分享一旦读 _selectedText 就只拿视口选区（TODO-762 回归）');
   });
 
-  // —— BUG-119 拽回 + BUG-423/TODO-822 防膨胀判据纯函数守卫 ——
+  // —— BUG-119 拽回 + BUG-423 防卡死 + TODO-934 恢复边缘自动滚动 判据纯函数守卫 ——
   // 复核 ③：旧的结构守卫即使把 _allowProgrammaticScroll 掏空（恒 return true）也全绿。
   // 把判据下沉成纯函数 logSelectionScrollDecision 后，这组单测直接钉死它的真值表：
   // 掏空（恒 true）或退化拦截逻辑都会让某条断言转红。
   //
-  // BUG-423 / TODO-822（调试日志框选拖拽卡死）后判据简化：正文是 ListView.builder
-  // 懒构造 + SelectionArea 跨行选区，拖拽贴边触发边缘自动滚动会持续构造视口外新行 →
-  // SelectionArea 的 Selectable 集合随拖拽时长单调膨胀 → 每次指针 move 全量重算占满
-  // UI 线程 → 未响应。修复 = 拖拽选区激活且有实质位移时一律拦截程序化滚动（边缘
-  // 自动滚动这条放行分支被删掉，Selectable 集合钉在视口内有限行）。本组真值表把
-  // 「拖拽期一律拦」钉死——任何人把边缘自动滚动放行加回来都会让 BLOCK 断言转红。
-  group('logSelectionScrollDecision (BUG-119 + BUG-423 anti-bloat gate, pure)',
+  // TODO-934（调试日志框选拖到边区不响应）：BUG-423 当年一刀切「拖拽期一律拦掉程序化
+  // 滚动」止住了卡死，代价是边缘自动滚动也被拦——拖到边区不再滚动延伸选区。SDK 证据
+  // 表明纯 SelectionArea + ListView.builder(Text) 结构下，拖拽框选期间唯一的程序化滚动
+  // 来源是 EdgeDraggingAutoScroller 的 animateTo（边缘自动滚动，每帧 ≤20px 有界一小步）；
+  // 而键盘 granular/directional 扩展选区的 _jumpToEdge 拽回走 jumpTo。离屏行被
+  // ListView 回收时其 Selectable 从 SelectionContainer remove 掉，selectables 大小被钉在
+  // 视口 + cacheExtent 内有界、不随滚动膨胀，卡死放大器（softWrap:true 长行）已由
+  // BUG-423 softWrap:false + BUG-448 宽度约束消除。故按 API 区分：放行 animateTo（边缘
+  // 自动滚动）、仍拦 jumpTo（拽回）。本组真值表把「animated 放行 / 非 animated 拦」钉死。
+  group(
+      'logSelectionScrollDecision (BUG-119 pull-back + TODO-934 edge auto-scroll, pure)',
       () {
     test('drag inactive -> always allow (non-selection scroll untouched)', () {
       expect(
         logSelectionScrollDecision(
           pointerSelectionActive: false,
           delta: -200,
+          animated: false,
+        ),
+        isTrue,
+      );
+      expect(
+        logSelectionScrollDecision(
+          pointerSelectionActive: false,
+          delta: 200,
+          animated: true,
         ),
         isTrue,
       );
@@ -260,42 +273,106 @@ void main() {
 
     test('negligible delta (<=0.5) -> allow (no real scroll to gate)', () {
       expect(
-        logSelectionScrollDecision(pointerSelectionActive: true, delta: 0.4),
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: 0.4,
+          animated: false,
+        ),
         isTrue,
       );
       expect(
-        logSelectionScrollDecision(pointerSelectionActive: true, delta: -0.5),
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: -0.5,
+          animated: true,
+        ),
         isTrue,
       );
     });
 
-    // BUG-423 核心：拖拽选区期间，任何有实质位移的程序化滚动都拦——含「边缘自动
-    // 滚动」（向上拖到顶/向下拖到底）。这正是 Selectable 集合无界膨胀的来源，必须拦。
+    // TODO-934 核心：拖拽选区期间，动画滚动（animateTo = 边缘自动滚动）必须放行——
+    // 这正是「拖到边区继续滚动延伸选区」的来源。任何人把它改回拦掉（恢复 BUG-423
+    // 一刀切）都会让本组 ALLOW 断言转红。
     test(
-        'drag active + downward programmatic scroll -> BLOCK '
-        '(no edge auto-scroll bloat)', () {
+        'drag active + downward ANIMATED scroll -> ALLOW '
+        '(edge auto-scroll extends selection)', () {
       expect(
-        logSelectionScrollDecision(pointerSelectionActive: true, delta: 200),
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: 200,
+          animated: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+        'drag active + upward ANIMATED scroll -> ALLOW '
+        '(edge auto-scroll extends selection)', () {
+      expect(
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: -200,
+          animated: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('drag active + small-but-real ANIMATED delta -> ALLOW', () {
+      expect(
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: 5,
+          animated: true,
+        ),
+        isTrue,
+      );
+    });
+
+    // BUG-119 不变式：拖拽选区期间，瞬跳滚动（jumpTo = 键盘 _jumpToEdge 拽回）一律拦。
+    // 任何人把它改成放行都会重新引入「把视口往选区 extent 拽回」的 BUG-119。
+    test(
+        'drag active + downward JUMP scroll -> BLOCK '
+        '(keyboard _jumpToEdge pull-back)', () {
+      expect(
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: 200,
+          animated: false,
+        ),
         isFalse,
       );
     });
 
     test(
-        'drag active + upward programmatic scroll -> BLOCK '
-        '(no edge auto-scroll bloat / no pull-back)', () {
+        'drag active + upward JUMP scroll -> BLOCK '
+        '(keyboard _jumpToEdge pull-back / no pull-back)', () {
       expect(
-        logSelectionScrollDecision(pointerSelectionActive: true, delta: -200),
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: -200,
+          animated: false,
+        ),
         isFalse,
       );
     });
 
-    test('drag active + small-but-real delta -> BLOCK', () {
+    test('drag active + small-but-real JUMP delta -> BLOCK', () {
       expect(
-        logSelectionScrollDecision(pointerSelectionActive: true, delta: 5),
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: 5,
+          animated: false,
+        ),
         isFalse,
       );
       expect(
-        logSelectionScrollDecision(pointerSelectionActive: true, delta: -5),
+        logSelectionScrollDecision(
+          pointerSelectionActive: true,
+          delta: -5,
+          animated: false,
+        ),
         isFalse,
       );
     });
@@ -372,5 +449,105 @@ void main() {
     // 复制全部的 setData 加了平台异常降级 try（Windows 剪贴板通道兜底）。
     expect(panel, contains('copy-all to clipboard failed'),
         reason: '复制全部的 Clipboard.setData 必须有平台异常降级，不让异常逃逸');
+  });
+
+  // —— TODO-934：边缘自动滚动恢复 + Selectable 集合有界（防 BUG-423 卡死回归） ——
+  // 用户诉求：拖拽框选时拖到面板边区，列表应继续自动滚动并延伸选区。BUG-423 当年
+  // 一刀切禁掉了边缘自动滚动（拖到边区不响应），TODO-934 按滚动 API 区分恢复它。
+  //
+  // 核心矛盾的验收硬线：恢复边缘自动滚动 ⇄ 绝不重引 BUG-423 卡死（Selectable 集合
+  // 无界膨胀）。真实的「拖到边缘触发 EdgeDraggingAutoScroller」几何在 headless
+  // flutter_test 里不可靠复现（选区拖拽手势 + scrollable 选区容器的边缘带命中需要真
+  // 设备/真渲染，见文件头说明），故这里把不变式拆成可确定性落地的两条：
+  //   ① 行为层——直接驱动 ListView 滚过很多屏（边缘自动滚动每帧就是一次有界 animateTo
+  //      / 位置推进），断言渲染的行 Text 数（≈ SelectionArea 跟踪的 Selectable 数，每行
+  //      注册一个 _SelectableFragment）始终有界 ≈ 视口容量，而非 ∝ 已滚过总行数。这正面
+  //      钉死 BUG-423 误判的「Selectable 集合单调膨胀」——只要 ListView 正常回收离屏行
+  //      （其 Selectable 从 SelectionContainer remove 掉），集合就有界，卡死链路不复活。
+  //      若有人改坏回收（addAutomaticKeepAlives:true / shrinkWrap 撑开全部行 / 换回一次性
+  //      渲染），渲染行数随滚动膨胀 → 本测试转红。
+  //   ② 判据层——拖拽激活期间放行 animateTo（边缘自动滚动）由上面纯函数真值表钉死。
+  testWidgets(
+      'TODO-934: scrolling many screens keeps the rendered line count (≈ tracked '
+      'Selectables) bounded — ListView recycles off-screen rows (no BUG-423 bloat)',
+      (WidgetTester tester) async {
+    // 远超视口容纳行数的大日志。
+    final List<String> lines =
+        List<String>.generate(5000, (int i) => 'log-line-$i');
+    final String log = lines.join('\n');
+    await tester.pumpWidget(
+      buildSubject(HibikiLogPanel(log: log, shareAction: (_) {})),
+    );
+    await tester.pump();
+
+    int renderedLineCount() => tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Text),
+          ),
+        )
+        .length;
+
+    final int initialRendered = renderedLineCount();
+    expect(initialRendered, greaterThan(0));
+    // 起始视口只渲染少量行（虚拟化生效，测试前提）。
+    expect(initialRendered, lessThan(500));
+
+    final ScrollableState scrollable =
+        tester.state<ScrollableState>(find.byType(Scrollable).first);
+
+    // 模拟边缘自动滚动：每帧把视口往下推进一个有界小步（SDK 的边缘自动滚动每帧 ≤20px，
+    // 这里用 16px 步进逐帧 jumpTo 模拟其位置推进效果），滚过很多屏。
+    int maxRenderedDuringScroll = initialRendered;
+    final double maxExtent = scrollable.position.maxScrollExtent;
+    expect(maxExtent, greaterThan(2000), reason: '5000 行应产生远超视口的可滚动范围（虚拟化前提）');
+    double target = 0;
+    while (target < maxExtent) {
+      target += 16;
+      scrollable.position.jumpTo(target.clamp(0, maxExtent));
+      await tester.pump(const Duration(milliseconds: 16));
+      final int now = renderedLineCount();
+      if (now > maxRenderedDuringScroll) maxRenderedDuringScroll = now;
+    }
+
+    // ① 确实滚过了很多屏（滚到底）。
+    expect(scrollable.position.pixels, greaterThan(2000),
+        reason: '应滚过很多屏（滚到接近底部）');
+
+    // ② 防 BUG-423 卡死回归：滚过很多屏的整个过程里，渲染行数（≈ 跟踪的 Selectable 数）
+    //    始终有界 ≈ 视口容量，绝不随已滚过的总行数膨胀。给一个宽松但远小于 5000 的上界。
+    expect(maxRenderedDuringScroll, lessThan(500),
+        reason: '滚动期间渲染行数（≈ Selectable 数）必须有界；接近已滚过总行数说明'
+            '离屏行未回收 = Selectable 集合膨胀 = BUG-423 卡死回归');
+
+    expect(tester.takeException(), isNull);
+  });
+
+  // 源码守卫：判据按滚动 API 区分（animated 参数在场），且 controller / position 的
+  // animateTo 传 animated:true（放行边缘自动滚动）、jumpTo 传 animated:false（拦拽回）。
+  // 防止有人把 animated 维度删掉退回 BUG-423 一刀切。
+  test(
+      'TODO-934 source guard: decision is API-aware (animated param); animateTo '
+      'passes animated:true (edge auto-scroll allowed), jumpTo animated:false',
+      () {
+    final String source = File(
+      'lib/src/utils/components/hibiki_material_components.dart',
+    ).readAsStringSync();
+    // 判据带 animated 维度。
+    expect(source, contains('required bool animated'),
+        reason: '判据必须按滚动 API 区分（animated 参数），否则无法只放行边缘自动滚动');
+    // 边缘自动滚动（animateTo）放行：两处 animateTo 闸门都传 animated:true。
+    expect(source, contains('_allowProgrammaticScroll(offset, animated: true)'),
+        reason: 'controller.animateTo 必须 animated:true（放行边缘自动滚动）');
+    expect(source,
+        contains('controller._allowProgrammaticScroll(to, animated: true)'),
+        reason: 'position.animateTo 必须 animated:true（放行边缘自动滚动）');
+    // 拽回（jumpTo）拦掉：两处 jumpTo 闸门都传 animated:false。
+    expect(source, contains('_allowProgrammaticScroll(value, animated: false)'),
+        reason: 'jumpTo 必须 animated:false（拦键盘 _jumpToEdge 拽回，BUG-119）');
+    expect(source,
+        contains('controller._allowProgrammaticScroll(value, animated: false)'),
+        reason: 'position.jumpTo 必须 animated:false（拦拽回）');
   });
 }
