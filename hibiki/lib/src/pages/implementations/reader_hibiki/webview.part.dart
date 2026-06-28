@@ -314,6 +314,15 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final bool vnMode = s.isVnMode;
     const bool vnClickAdvanceM0ForceOn = true; // M1: s.visualNovelClickAdvance
     final bool vnClickAdvance = vnMode && vnClickAdvanceM0ForceOn;
+    // TODO-909 M0: reveal（打字渐显）是 M1 功能。在 M0 强制 revealSpeed=0，使每屏
+    // renderScreen 即 revealComplete=true、paginate 只返 "scrolled"/"limit"。否则
+    // revealSpeed>0 时新屏停在 revealComplete=false，forward 翻屏会命中 paginate 的
+    // `if(!revealComplete) completeCurrentReveal(); return "revealed"` 分支，而
+    // Dart 的 _didScroll（chrome.part.dart）只认 "scrolled" 为真 → 误判章节边界
+    // 触发 _handlePageTurnLimit 跨章。M1 去掉本强制、改走 s.visualNovelRevealSpeed
+    // 即可放开渐显。
+    const int vnRevealSpeedM0ForceZero = 0; // M1: s.visualNovelRevealSpeed
+    final int vnRevealSpeed = vnMode ? vnRevealSpeedM0ForceZero : 0;
     // TODO-756b：是否“鼠标悬停即自动查词”。注入为 JS 全局初值，mousemove 监听器
     // 据此跳过 Shift 门控（纯悬停查词）。live 变更经 _applyHoverAutoLookupLive
     // 改同一全局，无需整章重注入。
@@ -343,7 +352,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         dartPageWidth: screenSize.width,
         dartPageHeight: screenSize.height,
         blurImages: s.blurImages,
-        vnRevealSpeed: s.visualNovelRevealSpeed,
+        vnRevealSpeed: vnRevealSpeed,
         vnScreenMode: s.visualNovelScreenMode,
         vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
         vnPreserveDialogue: s.visualNovelPreserveDialogueBubbles,

@@ -151,10 +151,32 @@ void main() {
           isTrue,
           reason: 'webview must select the VN shell from view-mode',
         );
+        // TODO-909 M0: reveal 渐显是 M1 功能。M0 强制 vnRevealSpeed=0，避免新屏停在
+        // revealComplete=false 时 forward 翻屏命中 paginate 的 "revealed" 分支，与
+        // Dart 端只认 "scrolled" 的 _didScroll 撞车而误跨章。
         expect(
-          webview.contains('vnRevealSpeed: s.visualNovelRevealSpeed'),
+          webview.contains('const int vnRevealSpeedM0ForceZero = 0;'),
           isTrue,
-          reason: 'webview must forward VN reveal speed',
+          reason: 'M0 must define the reveal-speed force-zero constant',
+        );
+        expect(
+          webview.contains(
+            'final int vnRevealSpeed = vnMode ? vnRevealSpeedM0ForceZero : 0;',
+          ),
+          isTrue,
+          reason: 'M0 must force VN reveal speed to 0 at the wire point',
+        );
+        expect(
+          webview.contains('vnRevealSpeed: vnRevealSpeed,'),
+          isTrue,
+          reason: 'webview must forward the M0-forced reveal speed into shell',
+        );
+        // M0 must NOT wire the live setting through (that is the M1 default 45).
+        expect(
+          _stripLineComments(webview)
+              .contains('vnRevealSpeed: s.visualNovelRevealSpeed'),
+          isFalse,
+          reason: 'M0 must not pass the live reveal-speed setting to the shell',
         );
         expect(
           webview.contains("window.hoshiReader.paginate('forward')"),
