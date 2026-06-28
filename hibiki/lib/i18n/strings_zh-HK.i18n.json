@@ -1931,5 +1931,7 @@
   "local_audio_import_failed_detail": "Failed to import audio database: $reason",
   "ttu_vn": "Visual Novel",
   "edit_custom_theme": "Edit custom theme",
-  "custom_theme_long_press_hint": "Tap to switch · long-press to edit"
+  "custom_theme_long_press_hint": "Tap to switch · long-press to edit",
+  "shelf_edit_order": "Edit order",
+  "shelf_done": "Done"
 }

@@ -1931,5 +1931,7 @@
   "local_audio_import_failed_detail": "导入音频数据库失败：$reason",
   "ttu_vn": "视觉小说",
   "edit_custom_theme": "编辑自定义主题",
-  "custom_theme_long_press_hint": "点击切换 · 长按编辑"
+  "custom_theme_long_press_hint": "点击切换 · 长按编辑",
+  "shelf_edit_order": "编辑排序",
+  "shelf_done": "完成"
 }

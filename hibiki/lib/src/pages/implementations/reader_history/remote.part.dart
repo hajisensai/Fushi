@@ -375,6 +375,21 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         },
       );
       final String? localBookKey = await _importRemoteBookFile(dest);
+      // TODO-616 §0🔴2：远端书的排序/系列归属（以 downloadId 登记的 shelf_entry）
+      // 在下载后延续。EPUB 落库后 bookKey 可能漂移（标题派生 + 同名重命名，BUG-414），
+      // 故把 ShelfEntries 的 entryKey 从 downloadId 改键到本地 bookKey。改键迁移是
+      // EPUB 行 commit 之后的独立 DAO 事务（非同一事务），失败不阻断下载主流程——
+      // 失败留旧 downloadId 孤儿行交读取期过滤兜底。仅在真发生漂移时迁移。
+      if (localBookKey != null && localBookKey != book.downloadId) {
+        try {
+          await appModel.database
+              .migrateShelfEntryKey('epub', book.downloadId, localBookKey);
+        } catch (e, stack) {
+          // 排序/系列元数据迁移失败不能让已成功的下载失败。
+          ErrorLogService.instance.log(
+              'ReaderHibikiHistoryPage.migrateShelfEntryKey', e, stack);
+        }
+      }
       // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
       await _downloadRemoteAudiobook(book, client, localBookKey);
     } on _RemoteAudiobookException catch (e, stack) {
