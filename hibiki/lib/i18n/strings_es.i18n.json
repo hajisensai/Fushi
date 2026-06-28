@@ -1945,5 +1945,10 @@
   "new_custom_theme": "New custom theme",
   "delete_custom_theme": "Delete theme",
   "delete_custom_theme_confirm": "Delete this custom theme? This cannot be undone.",
-  "custom_theme_default_name": "Custom $n"
+  "custom_theme_default_name": "Custom $n",
+  "audiobook_reference_original": "Reference original files",
+  "audiobook_reference_original_desc": "Keep audio where it is and play from its original path; the book breaks if the file is moved or deleted.",
+  "audiobook_audio_missing": "Audio file missing",
+  "audiobook_relocate": "Relocate file",
+  "audiobook_relocate_done": "Audio relocated"
 }

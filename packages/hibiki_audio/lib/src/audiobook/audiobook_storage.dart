@@ -158,6 +158,63 @@ abstract final class AudiobookStorage {
     return dest;
   }
 
+  /// TODO-935 ①A：判断 [filePath] 是否「引用原文件」(reference)，即**不在** app
+  /// 内部有声书持久目录 `<appDoc>/audiobooks/` 之下。
+  ///
+  /// 复制导入的文件恒落 [ensurePersistDir] 派生的 `<appDoc>/audiobooks/<hash>/`，
+  /// 故「引用 vs 已复制」无需额外持久化标记，纯由路径与持久根的从属关系派生
+  /// （消除特殊情况、零 schema 改动、旧已复制书自动判为已复制）。
+  ///
+  /// [persistRoot] 为 `<appDoc>/audiobooks` 绝对路径；测试可注入假根。生产取
+  /// [audiobooksRootDir]。空路径返回 false（无法判定时按「已复制」保守处理，
+  /// 避免误触发删源守卫）。
+  static bool isReferencedPath({
+    required String filePath,
+    required String persistRoot,
+  }) {
+    if (filePath.isEmpty || persistRoot.isEmpty) return false;
+    final String canonicalFile = p.canonicalize(filePath);
+    final String canonicalRoot = p.canonicalize(persistRoot);
+    if (p.equals(canonicalFile, canonicalRoot)) return false;
+    return !p.isWithin(canonicalRoot, canonicalFile);
+  }
+
+  /// `<appDoc>/audiobooks` 的绝对路径（复制导入的统一持久根）。
+  static Future<String> audiobooksRootDir() async {
+    final Directory docs = await getApplicationDocumentsDirectory();
+    return p.join(docs.path, 'audiobooks');
+  }
+
+  /// 任一 [paths] 落在持久根之外即视为「引用导入」。空列表返回 false。
+  static bool anyReferenced({
+    required List<String> paths,
+    required String persistRoot,
+  }) =>
+      paths.any(
+        (String path) => isReferencedPath(
+          filePath: path,
+          persistRoot: persistRoot,
+        ),
+      );
+
+  /// TODO-935 ①A 断链检测：返回 [paths] 中在磁盘上不存在的路径子集（保持原序）。
+  /// [exists] 默认查真实文件系统，测试可注入假谓词。空列表返回空列表。
+  static List<String> missingPaths(
+    List<String> paths, {
+    bool Function(String path)? exists,
+  }) {
+    final bool Function(String) probe =
+        exists ?? (String path) => File(path).existsSync();
+    return paths.where((String path) => !probe(path)).toList();
+  }
+
+  /// [paths] 中是否存在任一断链文件（引用导入后原文件被移动/删除）。
+  static bool hasMissingPaths(
+    List<String> paths, {
+    bool Function(String path)? exists,
+  }) =>
+      missingPaths(paths, exists: exists).isNotEmpty;
+
   static Future<void> cleanAudioFiles(Directory persistDir) async {
     if (!persistDir.existsSync()) return;
     for (final FileSystemEntity f in persistDir.listSync()) {

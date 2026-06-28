@@ -1945,5 +1945,10 @@
   "new_custom_theme": "新建自定义主题",
   "delete_custom_theme": "删除主题",
   "delete_custom_theme_confirm": "删除这个自定义主题？此操作不可撤销。",
-  "custom_theme_default_name": "自定义 $n"
+  "custom_theme_default_name": "自定义 $n",
+  "audiobook_reference_original": "引用原文件（不复制）",
+  "audiobook_reference_original_desc": "音频保留在原位置、按原路径播放；原文件被移动或删除后这本书会失效。",
+  "audiobook_audio_missing": "音频文件丢失",
+  "audiobook_relocate": "重新定位文件",
+  "audiobook_relocate_done": "音频已重新定位"
 }

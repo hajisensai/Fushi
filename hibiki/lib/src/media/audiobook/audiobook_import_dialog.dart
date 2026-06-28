@@ -63,6 +63,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   String? _alignmentName;
   bool _pickerActive = false;
 
+  /// TODO-935 ①A：导入时「引用原文件（不复制）」开关。仅桌面可见/可选；
+  /// 移动端 file_picker 返回的是缓存临时副本，引用即指向会被系统清掉的文件，
+  /// 故移动端恒 false（隐藏开关、保持复制行为，零回归）。
+  bool _referenceOriginal = false;
+
   /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
   bool _patchingAudio = false;
 
@@ -400,6 +405,22 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             if (!widget.audioOnly) _alignmentRow(),
           ],
         ),
+        if (isDesktopPlatform) ...[
+          SizedBox(height: tokens.spacing.gap),
+          AdaptiveSettingsSection(
+            children: [
+              AdaptiveSettingsSwitchRow(
+                title: t.audiobook_reference_original,
+                subtitle: t.audiobook_reference_original_desc,
+                icon: Icons.link_outlined,
+                value: _referenceOriginal,
+                onChanged: importing
+                    ? null
+                    : (bool v) => setState(() => _referenceOriginal = v),
+              ),
+            ],
+          ),
+        ],
         if (!widget.audioOnly && _willRunMatcher) ...[
           SizedBox(height: tokens.spacing.rowVertical),
           SasayakiWindowSlider(
@@ -711,33 +732,42 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         }
       }
 
-      for (final File f in audioCopyFiles) {
-        if (!p.isWithin(
-            p.canonicalize(persistDir.path), p.canonicalize(f.path))) {
-          grandTotal += await f.length();
-        }
-      }
-      int grandCopied = 0;
-
-      await AudiobookStorage.cleanAudioFiles(persistDir);
+      // TODO-935 ①A：引用模式（仅桌面）下不复制音频，直接存原始绝对路径
+      // （仿 VideoBooks 的 `videoPath: Value(only.path)`）。读取/删除按路径是否在
+      // 持久根之外派生「引用 vs 已复制」，无需额外标记列。
+      final bool referenceAudio = _referenceOriginal && isDesktopPlatform;
       final List<String> persistedPaths = <String>[];
-      for (final File srcFile in audioCopyFiles) {
-        final int fileLen = await srcFile.length();
-        final int capturedGrandCopied = grandCopied;
-        persistedPaths.add(
-          await AudiobookStorage.persistFileWithProgress(
-            srcFile,
-            persistDir,
-            onProgress: (int copied, int total) {
-              final double ratio = grandTotal > 0
-                  ? (capturedGrandCopied + copied) / grandTotal
-                  : 0.0;
-              reportProgress(0.5 + ratio * 0.3,
-                  t.import_step_copying_file(name: p.basename(srcFile.path)));
-            },
-          ),
-        );
-        grandCopied += fileLen;
+      if (referenceAudio) {
+        await AudiobookStorage.cleanAudioFiles(persistDir);
+        persistedPaths.addAll(audioCopyFiles.map((File f) => f.path));
+      } else {
+        for (final File f in audioCopyFiles) {
+          if (!p.isWithin(
+              p.canonicalize(persistDir.path), p.canonicalize(f.path))) {
+            grandTotal += await f.length();
+          }
+        }
+        int grandCopied = 0;
+
+        await AudiobookStorage.cleanAudioFiles(persistDir);
+        for (final File srcFile in audioCopyFiles) {
+          final int fileLen = await srcFile.length();
+          final int capturedGrandCopied = grandCopied;
+          persistedPaths.add(
+            await AudiobookStorage.persistFileWithProgress(
+              srcFile,
+              persistDir,
+              onProgress: (int copied, int total) {
+                final double ratio = grandTotal > 0
+                    ? (capturedGrandCopied + copied) / grandTotal
+                    : 0.0;
+                reportProgress(0.5 + ratio * 0.3,
+                    t.import_step_copying_file(name: p.basename(srcFile.path)));
+              },
+            ),
+          );
+          grandCopied += fileLen;
+        }
       }
 
       reportProgress(0.8, t.import_step_saving);

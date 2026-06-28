@@ -444,12 +444,15 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     required IconData icon,
     required Color background,
     required Color foreground,
+    String? tooltip,
   }) {
-    return HibikiBadge(
+    final Widget badge = HibikiBadge(
       icon: icon,
       background: background,
       foreground: foreground,
     );
+    if (tooltip == null) return badge;
+    return Tooltip(message: tooltip, child: badge);
   }
 
   Widget _progressBar(MediaItem item) {

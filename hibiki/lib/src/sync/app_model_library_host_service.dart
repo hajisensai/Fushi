@@ -17,6 +17,7 @@ import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki_audio/hibiki_audio.dart' show AudiobookStorage;
 import 'package:path/path.dart' as p;
 
 /// 用真实 Hibiki 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
@@ -539,10 +540,18 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       // 删除 Audiobooks 行（及其 audioCues 级联，via deleteAudiobookByBookKey）。
       await _db.deleteAudiobookByBookKey(bookKey);
 
-      // 磁盘音频目录。
+      // 磁盘音频目录。TODO-935 ①A：仅删 app 内部持久根下的复制目录，绝不递归删
+      // 用户「引用导入」的原始外部目录（按路径是否在 <appDoc>/audiobooks 之外派生）。
       if (audioRoot != null && audioRoot.isNotEmpty) {
-        final Directory dir = Directory(audioRoot);
-        if (dir.existsSync()) await dir.delete(recursive: true);
+        final String persistRoot = await AudiobookStorage.audiobooksRootDir();
+        final bool referenced = AudiobookStorage.isReferencedPath(
+          filePath: audioRoot,
+          persistRoot: persistRoot,
+        );
+        if (!referenced) {
+          final Directory dir = Directory(audioRoot);
+          if (dir.existsSync()) await dir.delete(recursive: true);
+        }
       }
     });
   }

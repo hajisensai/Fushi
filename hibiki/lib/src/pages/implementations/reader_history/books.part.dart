@@ -31,9 +31,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final int? srtBookId = book.id;
     // TODO-919 / BUG-441：EPUB 有声书配对行（TODO-894 落的 srt_books）保留耳机角标，
     // 纯字幕书仍用字幕角标。
-    final IconData badgeIcon = isEpubBackedAudiobookSrt(book)
-        ? Icons.headphones_outlined
-        : Icons.subtitles_outlined;
+    // TODO-935 ①A：引用导入后原音频断链 → 角标改成错误态「文件丢失」提示。
+    final bool audioMissing = _srtBookHasMissingAudio(book);
+    final IconData badgeIcon = audioMissing
+        ? Icons.error_outline
+        : isEpubBackedAudiobookSrt(book)
+            ? Icons.headphones_outlined
+            : Icons.subtitles_outlined;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
@@ -50,8 +54,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         tagLabels: tagWidget,
         coverBadge: _cardBadge(
           icon: badgeIcon,
-          background: theme.colorScheme.secondaryContainer,
-          foreground: theme.colorScheme.onSecondaryContainer,
+          tooltip: audioMissing ? t.audiobook_audio_missing : null,
+          background: audioMissing
+              ? theme.colorScheme.errorContainer
+              : theme.colorScheme.secondaryContainer,
+          foreground: audioMissing
+              ? theme.colorScheme.onErrorContainer
+              : theme.colorScheme.onSecondaryContainer,
         ),
       ),
     );
@@ -133,6 +142,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           await _pickSrtBookCover(book);
         },
       ),
+      if (_srtBookHasMissingAudio(book))
+        DialogQuickAction(
+          label: t.audiobook_relocate,
+          icon: Icons.find_replace_outlined,
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _relocateSrtBookAudio(book);
+          },
+        ),
       if (bookKey.isNotEmpty) ...[
         DialogQuickAction(
           label: t.audio_import,
@@ -186,6 +204,37 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     book.coverPath = dest;
     await SrtBookRepository(appModel.database).save(book);
     if (mounted) _rebuild(() {});
+  }
+
+  /// TODO-935 ①A：字幕书引用导入后原音频被移动/删除 → 任一 audioPaths 断链。
+  /// 仅对 files 模式（audioPaths）判定；folder 模式（audioRoot）不在本期范围。
+  bool _srtBookHasMissingAudio(SrtBook book) {
+    final List<String>? paths = book.audioPaths;
+    if (paths == null || paths.isEmpty) return false;
+    return AudiobookStorage.hasMissingPaths(paths);
+  }
+
+  /// 重新定位断链音频：让用户重选文件 → 重写 [SrtBook.audioPaths] → 落库。
+  /// 复用与导入一致的「引用原路径」语义（重选的桌面真实路径直接存）。
+  Future<void> _relocateSrtBookAudio(SrtBook book) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowMultiple: true,
+    );
+    if (result == null || !mounted) return;
+    final List<String> picked = result.files
+        .map((PlatformFile f) => f.path)
+        .whereType<String>()
+        .toList()
+      ..sort(compareAudioFilePath);
+    if (picked.isEmpty) return;
+    book.audioPaths = picked;
+    await SrtBookRepository(appModel.database).save(book);
+    if (mounted) {
+      _refreshSrtBooks();
+      _rebuild(() {});
+      HibikiToast.show(msg: t.audiobook_relocate_done);
+    }
   }
 
   void _selectAll() {

@@ -76,6 +76,10 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   bool _pickerActive = false;
 
+  /// TODO-935 ①A：「引用原文件（不复制）」开关。仅桌面可见/可选；移动端
+  /// file_picker 返回缓存临时副本，引用即指向会被清掉的文件，故恒 false。
+  bool _referenceOriginal = false;
+
   bool _autoWindow = true;
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
   double _similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold;
@@ -223,6 +227,22 @@ class _BookImportDialogState extends State<BookImportDialog>
             _coverRow(),
           ],
         ),
+        if (isDesktopPlatform && _audioPaths.isNotEmpty) ...[
+          SizedBox(height: tokens.spacing.gap),
+          AdaptiveSettingsSection(
+            children: [
+              AdaptiveSettingsSwitchRow(
+                title: t.audiobook_reference_original,
+                subtitle: t.audiobook_reference_original_desc,
+                icon: Icons.link_outlined,
+                value: _referenceOriginal,
+                onChanged: importing
+                    ? null
+                    : (bool v) => setState(() => _referenceOriginal = v),
+              ),
+            ],
+          ),
+        ],
         SizedBox(height: tokens.spacing.rowVertical),
         HibikiTextField(
           controller: _titleCtrl,
@@ -719,19 +739,25 @@ class _BookImportDialogState extends State<BookImportDialog>
       },
     );
 
+    // TODO-935 ①A：引用模式（仅桌面）直接存原始绝对路径，不复制（仿 VideoBooks）。
+    final bool referenceAudio = _referenceOriginal && isDesktopPlatform;
     await AudiobookStorage.cleanAudioFiles(persistDir);
     final List<String> persistedAudioPaths = [];
-    for (final String src in _audioPaths) {
-      persistedAudioPaths.add(
-        await AudiobookStorage.persistFileWithProgress(
-          File(src),
-          persistDir,
-          onProgress: (int copied, int total) {
-            reportProgress(
-                0.8, t.import_step_copying_file(name: p.basename(src)));
-          },
-        ),
-      );
+    if (referenceAudio) {
+      persistedAudioPaths.addAll(_audioPaths);
+    } else {
+      for (final String src in _audioPaths) {
+        persistedAudioPaths.add(
+          await AudiobookStorage.persistFileWithProgress(
+            File(src),
+            persistDir,
+            onProgress: (int copied, int total) {
+              reportProgress(
+                  0.8, t.import_step_copying_file(name: p.basename(src)));
+            },
+          ),
+        );
+      }
     }
 
     reportProgress(0.9, t.import_step_saving);
