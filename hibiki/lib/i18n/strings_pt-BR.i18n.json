@@ -1933,5 +1933,10 @@
   "edit_custom_theme": "Edit custom theme",
   "custom_theme_long_press_hint": "Tap to switch · long-press to edit",
   "shelf_edit_order": "Edit order",
-  "shelf_done": "Done"
+  "shelf_done": "Done",
+  "series": "Series",
+  "manage_series": "Manage series",
+  "add_to_series": "Add to series",
+  "create_series": "Create series",
+  "series_item_count": "$n items"
 }

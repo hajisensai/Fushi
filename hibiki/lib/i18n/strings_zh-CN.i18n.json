@@ -1933,5 +1933,10 @@
   "edit_custom_theme": "编辑自定义主题",
   "custom_theme_long_press_hint": "点击切换 · 长按编辑",
   "shelf_edit_order": "编辑排序",
-  "shelf_done": "完成"
+  "shelf_done": "完成",
+  "series": "系列",
+  "manage_series": "管理系列",
+  "add_to_series": "加入系列",
+  "create_series": "新建系列",
+  "series_item_count": "$n 项"
 }
