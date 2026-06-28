@@ -169,6 +169,12 @@ extension _ReaderMining on _ReaderHibikiPageState {
       return const MinePopupResult();
     }
 
+    // TODO-948/952 诊断可见性：制卡链路自身字节稳定，但用户报「卡片没有句子/句子
+    // 音频」。真因是运行时二选一——句子真空（抽句回空）或 Anki 卡片模板没有字段
+    // 映射到 {sentence}/{sasayaki-audio}（字段恒空）。这里在制卡前把『为什么会空』
+    // 摊到用户面前（toast + 日志），不改任何制卡行为（卡照常创建）。
+    await _emitSentenceDiagnostics(repo, miningContext);
+
     final MineOutcome outcome;
     try {
       outcome = await repo.mineEntry(
@@ -240,6 +246,62 @@ extension _ReaderMining on _ReaderHibikiPageState {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
     return const MinePopupResult();
+  }
+
+  /// TODO-948/952：制卡『句子为空 / 字段未映射』诊断（加性、零行为改动）。
+  ///
+  /// 制卡链路（getSentenceContext → setCurrentSentence → currentSentence → 卡片
+  /// {sentence} 字段）自字节稳定，但用户报「卡片没有句子和句子音频」。空的来源只有
+  /// 两条运行时路径，这里把它们摊给用户而**不改任何捕获/制卡逻辑**：
+  ///
+  /// - [context].sentence 为空 → 运行时根本没捕获到句子（无标点/无 <p> 等内容让
+  ///   JS 抽句回空，或没选词）。
+  /// - 句子非空、但当前 Anki note-type 的 fieldMappings **没有任何字段消费**
+  ///   `{sentence}`/`{cue-sentence}`（句子）或 `{sasayaki-audio}`（句子音频）→ 字段
+  ///   渲染恒空，卡片上自然「没有句子」。判据复用 hibiki_anki 的纯函数
+  ///   [AnkiHandlebarOptions.anyFieldConsumesSentence] / [anyFieldConsumesToken]，
+  ///   与 [AnkiHandlebarRenderer] 同一套 token 语义，不自己重造解析。
+  ///
+  /// 两条提示互斥（空句子优先），都是 toast + 日志，不阻断、不改变制卡结果。
+  Future<void> _emitSentenceDiagnostics(
+    BaseAnkiRepository repo,
+    AnkiMiningContext context,
+  ) async {
+    if (context.sentence.trim().isEmpty) {
+      debugPrint('[mine-diag] empty sentence: no sentence captured for this '
+          'selection (JS sentence extraction returned empty or no selection).');
+      HibikiToast.show(msg: t.card_mined_no_sentence_captured);
+      return;
+    }
+
+    // 句子非空 → 检查卡片模板是否有字段接它。loadSettings 拿到的是用户持久化的
+    // fieldMappings（与 mineEntry 渲染同一来源）。读不到设置（未配置 Anki 等）时
+    // 静默跳过——制卡本会在 mineEntry 走 notConfigured 分支提示，这里不重复报噪。
+    final Map<String, String> fieldMappings;
+    try {
+      fieldMappings = (await repo.loadSettings()).fieldMappings;
+    } catch (e, st) {
+      debugPrint('[mine-diag] loadSettings failed, skip mapping check: '
+          '$e | $st');
+      return;
+    }
+    if (fieldMappings.isEmpty) return;
+
+    if (!AnkiHandlebarOptions.anyFieldConsumesSentence(fieldMappings)) {
+      debugPrint('[mine-diag] sentence non-empty but no field maps {sentence}/'
+          '{cue-sentence}; card will have an empty sentence field.');
+      HibikiToast.show(msg: t.card_mined_unmapped_sentence_field);
+      return;
+    }
+
+    final bool hasSentenceAudio = (context.sasayakiAudioPath ?? '').isNotEmpty;
+    if (hasSentenceAudio &&
+        !AnkiHandlebarOptions.anyFieldConsumesToken(
+            fieldMappings, '{sasayaki-audio}')) {
+      debugPrint('[mine-diag] sentence audio attached but no field maps '
+          '{sasayaki-audio}; the audio will not land on the card.');
+      HibikiToast.show(msg: t.card_mined_unmapped_sentence_audio_field);
+    }
   }
 
   /// 把一次成功制卡计入书籍统计。reader 走 [BaseSourcePageState.onMineFromPopup]，

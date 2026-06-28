@@ -500,6 +500,28 @@ class AnkiHandlebarOptions {
         ...coreOptions,
         ...dictionaryNames.toSet().map((name) => '{single-glossary-$name}'),
       ];
+
+  /// TODO-948/952 诊断（纯函数）：当前 note-type 的 [fieldMappings]（Anki 字段名 →
+  /// handlebar 模板）里是否**有任何一个字段消费了** [token]（如 `{sentence}` /
+  /// `{sasayaki-audio}`）。字段模板可以是裸 token，也可以是把多个 token 拼进 HTML 的
+  /// 大模板，故按子串包含判断（与 [AnkiHandlebarRenderer.render] 用同一套 `{...}`
+  /// token 语义）。fieldMappings 为空、或所有字段都映成 `-`/纯字面量时返回 false——
+  /// 这正是「句子写进了 context 但卡片没字段接它 → 字段恒空」的可见判据。
+  ///
+  /// 注意：这只回答「**有没有字段引用这个 token**」，不渲染、不触碰运行时数据，纯
+  /// 静态读 [fieldMappings]，因此可单元测试、零副作用。
+  static bool anyFieldConsumesToken(
+    Map<String, String> fieldMappings,
+    String token,
+  ) =>
+      fieldMappings.values.any((String template) => template.contains(token));
+
+  /// TODO-948/952：是否有字段消费句子文本（`{sentence}` 或语义等价的
+  /// `{cue-sentence}`，后者在有声书 cue 场景下也渲染句子文本）。两者任一被引用即视为
+  /// 「句子有去处」，避免把只用了 `{cue-sentence}` 的 Lapis 变体误报成未映射。
+  static bool anyFieldConsumesSentence(Map<String, String> fieldMappings) =>
+      anyFieldConsumesToken(fieldMappings, '{sentence}') ||
+      anyFieldConsumesToken(fieldMappings, '{cue-sentence}');
 }
 
 String mimeTypeForPath(String path) {
