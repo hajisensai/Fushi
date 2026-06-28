@@ -84,9 +84,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
 
     final Color bg = _themeBackgroundColor();
     final Color fg = _lyricsTextColor();
-    final Color accent = _isReaderThemeDark
-        ? HibikiColor.defaultHighlightYellow
-        : Theme.of(context).colorScheme.primary;
+    final Color accent = _readerLyricAccentColor();
 
     String colorToCss(Color c) => readerColorToCssRgba(c);
 
@@ -121,13 +119,26 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     return _themeTextColor();
   }
 
+  /// 歌词 / 悬浮窗高亮强调色。深色主题用固定高亮黄，浅色主题取当前主题 primary。
+  ///
+  /// TODO-953: 必须 context-free。本 getter 经 [AudiobookSession.installReaderSurfaces]
+  /// 注入到进程级 session，悬浮窗样式可能在 reader 页 dispose / 未 mounted 之后被求值
+  /// （退出书籍后台听书）。原实现浅色支取 reader 页 State.context 上的 ColorScheme
+  /// primary，求值时 `State.context`（`_element!`）为 null 抛
+  /// "Null check operator used on a null value" → 有声书加载崩溃。改用
+  /// [AppModel.buildColorScheme]（themeNotifier 同源，与 `_buildThemeData` 喂给
+  /// ThemeData 的 ColorScheme 完全一致，颜色不变），明暗按 [_isReaderThemeDark] 派生，
+  /// 彻底去掉对 reader State.context 的脆弱依赖。
+  Color _readerLyricAccentColor() {
+    if (_isReaderThemeDark) return HibikiColor.defaultHighlightYellow;
+    return appModel.buildColorScheme(Brightness.light).primary;
+  }
+
   Future<void> _updateLyricsStyleLive() async {
     if (!mounted || _controller == null || !_lyricsPageReady) return;
     final Color bg = _themeBackgroundColor();
     final Color fg = _lyricsTextColor();
-    final Color accent = _isReaderThemeDark
-        ? HibikiColor.defaultHighlightYellow
-        : Theme.of(context).colorScheme.primary;
+    final Color accent = _readerLyricAccentColor();
     final double fontSize = ReaderHibikiSource.instance.lyricsFontSize;
 
     String colorToCss(Color c) => readerColorToCssRgba(c);
@@ -225,9 +236,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final bool dark = _isReaderThemeDark;
-    final Color accent = dark
-        ? HibikiColor.defaultHighlightYellow
-        : Theme.of(context).colorScheme.primary;
+    final Color accent = _readerLyricAccentColor();
     final int textOpacity = appModel.floatingLyricTextOpacity;
     final int buttonBgOpacity = appModel.floatingLyricButtonBgOpacity;
     final int bgOpacity = appModel.floatingLyricBgOpacity;
