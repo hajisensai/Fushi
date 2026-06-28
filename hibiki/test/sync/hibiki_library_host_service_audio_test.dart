@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
@@ -89,6 +90,8 @@ AppModelLibraryHostService _buildSvc({
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   // ══════════════════════════════════════════════════════════════════════════
   // computeLocalAudioSyncDiff 纯函数
   // ══════════════════════════════════════════════════════════════════════════
@@ -457,10 +460,30 @@ void main() {
     setUp(() {
       tmp = Directory.systemTemp.createTempSync('hibiki_audiobook_svc');
       db = _memDb();
+      // deleteAudiobook 经 AudiobookStorage.audiobooksRootDir() →
+      // getApplicationDocumentsDirectory()；mock path_provider 让持久根落在受控
+      // <tmp>/docs 下，使「内部复制」与「引用导入」路径可被正确判定。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async {
+          if (call.method == 'getApplicationDocumentsDirectory') {
+            final Directory docs = Directory(p.join(tmp.path, 'docs'))
+              ..createSync(recursive: true);
+            return docs.path;
+          }
+          return null;
+        },
+      );
     });
 
     tearDown(() async {
       await db.close();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     });
 
@@ -581,8 +604,11 @@ void main() {
 
     // ── deleteAudiobook ──────────────────────────────────────────────────────
 
-    test('deleteAudiobook 后 listAudiobooks 不含该书，audioRoot 目录被删', () async {
-      final Directory audioDir = Directory(p.join(tmp.path, 'del-audio'));
+    test('deleteAudiobook 后 listAudiobooks 不含该书，内部复制的 audioRoot 目录被删',
+        () async {
+      // 内部复制音频落在 <docs>/audiobooks 持久根内 → isReferencedPath=false → 删。
+      final Directory audioDir =
+          Directory(p.join(tmp.path, 'docs', 'audiobooks', 'del-audio'));
       await _insertAudiobook(
         db: db,
         bookKey: 'ttu-del',
@@ -597,6 +623,27 @@ void main() {
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
       expect(list, isEmpty);
       expect(audioDir.existsSync(), isFalse);
+    });
+
+    test('deleteAudiobook 保留「引用导入」的外部 audioRoot（TODO-935 ①A 守卫）', () async {
+      // 引用导入：音频在持久根外的用户原始目录 → isReferencedPath=true → 绝不删源。
+      final Directory externalDir =
+          Directory(p.join(tmp.path, 'user-external', 'ref-audio'));
+      await _insertAudiobook(
+        db: db,
+        bookKey: 'ttu-ref',
+        audioDir: externalDir,
+      );
+
+      expect(externalDir.existsSync(), isTrue);
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      await svc.deleteAudiobook('ttu-ref');
+
+      final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
+      expect(list, isEmpty);
+      // DB 行已删，但用户外部原始目录保留。
+      expect(externalDir.existsSync(), isTrue);
     });
 
     test('deleteAudiobook 不存在的 bookKey 静默跳过（幂等）', () async {
