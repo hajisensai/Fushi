@@ -63,12 +63,32 @@ SettingsDestination buildLookupDestination() {
                   onPickLocalDb: () async {
                     final FilePickerResult? result =
                         await FilePicker.platform.pickFiles();
-                    final String? pickedPath = result?.files.single.path;
-                    if (pickedPath == null) return null;
+                    // 用户取消选择：result 为 null，正常无声返回（不是失败）。
+                    if (result == null) return null;
+                    // BUG-446：旧实现用 `result.files.single`，0/多文件时抛 StateError
+                    // 被上层 `catch (_)` 吞成「导入失败」无信息文案。改为显式区分
+                    // 「文件数异常」与「path 为空」，各记一条诊断日志（含文件数）。
+                    final PlatformFile picked = result.files.first;
+                    final String? pickedPath = picked.path;
+                    if (result.files.length != 1 || pickedPath == null) {
+                      ErrorLogService.instance.log(
+                        'AudioSourcesDialog.pickLocalDb',
+                        'unexpected file selection: count=${result.files.length}, '
+                            'pathNull=${pickedPath == null}, '
+                            'name=${picked.name}',
+                      );
+                      // path 为空（部分平台只回 bytes 不回 path）才算失败，交给上层
+                      // catch 弹可见反馈；多文件但首个有 path 时仍按首个导入（容错）。
+                      if (pickedPath == null) {
+                        throw Exception(
+                            'picked audio db has no file path (platform '
+                            'returned bytes without a path)');
+                      }
+                    }
                     final LocalAudioDbEntry entry =
                         await appModel.importLocalAudioDbFile(
                       pickedPath,
-                      displayName: result!.files.single.name,
+                      displayName: picked.name,
                     );
                     return AudioSourceConfig.localAudio(
                       label: entry.displayName,

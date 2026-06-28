@@ -1927,5 +1927,6 @@
   "dict_update_interval_monthly": "Monthly",
   "collection_export_dedupe": "Deduplicate by sentence",
   "collection_export_favorites_scope": "Favorite sentences",
-  "collection_export_all_books": "All books"
+  "collection_export_all_books": "All books",
+  "local_audio_import_failed_detail": "Failed to import audio database: $reason"
 }

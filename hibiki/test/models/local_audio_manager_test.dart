@@ -167,6 +167,19 @@ void main() {
     await src.delete(recursive: true);
   });
 
+  // BUG-446：源文件不存在时旧实现静默跳过 copy，返回指向空 internalPath 的 entry
+  // （「假成功」）。修复后必须显式抛 FileSystemException，让上层记录真因并反馈用户。
+  test('importFile throws when the source file does not exist (BUG-446)',
+      () async {
+    expect(
+      () => manager.importFile('/no/such/file/missing.db', displayName: 'x'),
+      throwsA(isA<FileSystemException>()),
+    );
+    // 未在库目录留下任何空副本。
+    final List<FileSystemEntity> leftover = directory.listSync();
+    expect(leftover, isEmpty);
+  });
+
   test('deleteFiles removes db + wal + shm', () async {
     final File dbf = File('${directory.path}/x.db')..writeAsStringSync('a');
     final File wal = File('${directory.path}/x.db-wal')..writeAsStringSync('b');

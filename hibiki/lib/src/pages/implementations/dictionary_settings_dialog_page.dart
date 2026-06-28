@@ -326,8 +326,14 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
         _showSnack(t.local_audio_imported);
       }
       // added == null 表示用户取消选择，不弹反馈。
-    } catch (_) {
-      if (mounted) _showSnack(t.local_audio_import_failed);
+    } catch (e, st) {
+      // BUG-446：原 `catch (_)` 整个吞掉异常对象，只弹通用文案，真因（PlatformException /
+      // StateError / FileSystemException + errno）全丢。改为记完整诊断进 ErrorLogService
+      // （错误日志页可查、可回传），并把异常类型摘要带进可见 snackbar，让用户能复述。
+      ErrorLogService.instance.log('AudioSourcesDialog.addLocalDb', e, st);
+      if (mounted) {
+        _showSnack(t.local_audio_import_failed_detail(reason: '$e'));
+      }
     } finally {
       if (mounted) setState(() => _importing = false);
     }

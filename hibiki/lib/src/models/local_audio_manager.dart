@@ -146,8 +146,24 @@ class LocalAudioManager {
     final String internalPath =
         path.join(_databaseDirectory.path, internalName);
     final File sourceFile = File(sourcePath);
-    if (await sourceFile.exists()) {
+    // 源文件不存在不再静默跳过 copy（BUG-446「假成功」根因：旧实现会返回一个指向
+    // 空 internalPath 的 entry，导入「成功」却拷不出任何文件）。显式失败抛错，让上层
+    // catch 记录真因（路径/选择问题）并把可见反馈带给用户。
+    if (!await sourceFile.exists()) {
+      throw FileSystemException(
+          'local audio db source file not found', sourcePath);
+    }
+    try {
       await sourceFile.copy(internalPath);
+    } on FileSystemException catch (e) {
+      // copy 失败（磁盘满 / 无写权限 / 目录不存在 / 源被占用）：带上真 errno
+      // （FileSystemException.osError）重抛，让上层日志能定位具体系统级原因。
+      throw FileSystemException(
+        'failed to copy local audio db into store: ${e.message}'
+        '${e.osError != null ? ' (${e.osError})' : ''}',
+        sourcePath,
+        e.osError,
+      );
     }
     return LocalAudioDbEntry(
       path: internalPath,

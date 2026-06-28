@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-446](bugs/BUG-446-audio-db-import-swallowed-error.md) | 🚧 | 🚧 | 添加音频数据库失败文案无信息吞异常 |
+| [BUG-446](bugs/BUG-446-audio-db-import-swallowed-error.md) | ✅ | ✅ | 添加音频数据库失败文案无信息（吞异常） |
 | [BUG-445](bugs/BUG-445-audio-source-reorder-overflow.md) | ✅ | ✅ | 管理音频来源排序对话框出框无法滚动且弹窗过小 |
 | [BUG-444](bugs/BUG-444-favorites-word-export-empty.md) | ✅ | ✅ | 收藏词导出为空+制卡句缺失 |
 | [BUG-443](bugs/BUG-443-folder-import-book-dedup.md) | ✅ | ✅ | 文件夹导入书籍缺去重 |
