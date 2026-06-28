@@ -89,8 +89,29 @@ AudioPlaybackRange? _rangeFromSentencePosition({
   if (cue != null) {
     final SasayakiFragment? cueFragment =
         SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-    if (cueFragment == null || cueFragment.sectionIndex != sectionIndex) {
+    if (cueFragment == null) {
+      // The cue carries no sasayaki position (plain SRT selector / empty): it
+      // cannot vouch for the section, and the section's cues may not be sasayaki
+      // either, so trusting the text fallback here could anchor on a repeated
+      // sentence elsewhere. Defer to the caller's cue-anchored _expandAroundCue.
       return null;
+    }
+    if (cueFragment.sectionIndex != sectionIndex) {
+      // TODO-956 (C-audio): cue/reader divergence — the lookup cue decoded to a
+      // DIFFERENT section than the reader's authoritative sentence span. The old
+      // code returned null and fell through to _expandAroundCue's CONTIGUOUS
+      // substring match, which is exactly what produced no sentence audio when
+      // the cue and reader texts diverge. Instead, prefer anchoring on the
+      // sentence span by POSITION in the reader's section. We pass text:null so
+      // this attempt never falls back to text matching (which could grab a
+      // repeated sentence); when the section's cues carry no sasayaki position
+      // the call returns null and we still defer to the caller's cue expansion.
+      return CollectionAudioMatcher.findPlaybackRange(
+        cues: cues,
+        sectionIndex: sectionIndex,
+        normCharOffset: sentenceNormCharOffset,
+        normCharLength: sentenceNormCharLength,
+      );
     }
   }
   return CollectionAudioMatcher.findPlaybackRange(

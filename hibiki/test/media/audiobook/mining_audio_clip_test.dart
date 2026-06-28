@@ -223,6 +223,60 @@ void main() {
       expect(clip.endMs, 4300);
     });
 
+    // TODO-956 (C-audio): cue/reader divergence. The looked-up word's cue decoded
+    // to section 1 (a neighbouring fragment the matcher mis-assigned), but the
+    // reader's authoritative sentence span points to section 0, whose cues carry
+    // sasayaki positions spanning the whole sentence. BEFORE the span-anchor
+    // preference, the section guard returned null and _expandAroundCue tried a
+    // contiguous-substring match around the section-1 cue; with divergent text it
+    // recovered no range -> the card lost its sentence audio. AFTER, the span is
+    // anchored by position in section 0 and the full range is recovered.
+    test(
+        'prefers the sentence span when the lookup cue decodes to another '
+        'section', () {
+      final List<AudioCue> cues = <AudioCue>[
+        // Section 0 cues — the reader's actual sentence lives here.
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕',
+          textFragmentId: _frag(0, 0, 10),
+        ),
+        _cue(
+          startMs: 1600,
+          endMs: 2300,
+          text: 'は',
+          textFragmentId: _frag(0, 10, 20),
+        ),
+        _cue(
+          startMs: 2300,
+          endMs: 4300,
+          text: '学校へ行った',
+          textFragmentId: _frag(0, 20, 60),
+        ),
+        // Section 1 cue — the matcher mis-assigned the looked-up word here.
+        _cue(
+          startMs: 8000,
+          endMs: 8600,
+          text: '別の章の語',
+          textFragmentId: _frag(1, 0, 12),
+        ),
+      ];
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[3], // decodes to section 1, != span section 0
+        sentence: '「僕は学校へ行った。」',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 60,
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 1000);
+      expect(clip.endMs, 4300);
+    });
+
     test('returns null when there is no cue and no usable sentence span', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(
