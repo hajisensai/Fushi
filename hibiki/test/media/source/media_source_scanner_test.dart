@@ -97,7 +97,10 @@ void main() {
 
       final ScanPlan plan = planScanFromFileList(files);
 
-      expect(plan.epubPaths, <String>['/lib/book.epub']);
+      expect(plan.books, hasLength(1));
+      expect(plan.books.single.epubPath, '/lib/book.epub');
+      // No sidecar audio -> plain EPUB (not an audiobook).
+      expect(plan.books.single.isAudiobook, isFalse);
       expect(plan.videos, hasLength(1));
       expect(plan.videos.single.videoPath, '/lib/movie.mp4');
       // Same-stem srt attaches to the video; .txt is ignored, dir skipped.
@@ -127,8 +130,65 @@ void main() {
 
     test('empty input yields empty plan; no IO', () {
       final ScanPlan plan = planScanFromFileList(const <SourceFileEntry>[]);
-      expect(plan.epubPaths, isEmpty);
+      expect(plan.books, isEmpty);
       expect(plan.videos, isEmpty);
+    });
+
+    // TODO-946: a book with a same-stem sidecar subtitle AND audio becomes an
+    // audiobook item (subtitle = alignment source, audio attached).
+    test('EPUB + same-stem srt + mp3 -> audiobook book item', () {
+      final List<SourceFileEntry> files = <SourceFileEntry>[
+        _file('/lib/book.epub'),
+        _file('/lib/book.srt'),
+        _file('/lib/book.mp3'),
+      ];
+      final ScanPlan plan = planScanFromFileList(files);
+      expect(plan.books, hasLength(1));
+      final ScanBookItem b = plan.books.single;
+      expect(b.epubPath, '/lib/book.epub');
+      expect(b.subtitlePath, p.join('/lib', 'book.srt'));
+      expect(b.audioPaths, <String>[p.join('/lib', 'book.mp3')]);
+      expect(b.isAudiobook, isTrue);
+    });
+
+    test('EPUB + srt but no audio -> plain book (not audiobook)', () {
+      final List<SourceFileEntry> files = <SourceFileEntry>[
+        _file('/lib/book.epub'),
+        _file('/lib/book.srt'),
+      ];
+      final ScanPlan plan = planScanFromFileList(files);
+      final ScanBookItem b = plan.books.single;
+      expect(b.subtitlePath, p.join('/lib', 'book.srt'));
+      expect(b.audioPaths, isEmpty);
+      expect(b.isAudiobook, isFalse,
+          reason: 'audio is required to import as an audiobook');
+    });
+
+    test('EPUB + mp3 but no subtitle -> plain book (audio needs subtitle)', () {
+      final List<SourceFileEntry> files = <SourceFileEntry>[
+        _file('/lib/book.epub'),
+        _file('/lib/book.mp3'),
+      ];
+      final ScanPlan plan = planScanFromFileList(files);
+      final ScanBookItem b = plan.books.single;
+      expect(b.subtitlePath, isNull);
+      // Audio is collected, but without a subtitle it cannot align -> plain EPUB.
+      expect(b.isAudiobook, isFalse,
+          reason: 'audio must be paired with a subtitle (sidecar semantics)');
+    });
+
+    test('multi-part audio (book + book 01 / book-02) attaches to the book',
+        () {
+      final List<SourceFileEntry> files = <SourceFileEntry>[
+        _file('/lib/book.epub'),
+        _file('/lib/book.srt'),
+        _file('/lib/book 01.mp3'),
+        _file('/lib/book-02.mp3'),
+      ];
+      final ScanPlan plan = planScanFromFileList(files);
+      final ScanBookItem b = plan.books.single;
+      expect(b.audioPaths, hasLength(2));
+      expect(b.isAudiobook, isTrue);
     });
   });
 
@@ -498,6 +558,118 @@ void main() {
       expect(cues.first.cueText, contains('こんにちは'),
           reason: 'cue text must be the decoded Japanese, proving the scanner '
               'routed through readTextWithEncoding (SJIS), not fs.readText');
+    });
+  });
+
+  // ── TODO-946: manage-sources book scan auto-attaches sibling audio ─────────
+  // An EPUB with a same-stem .srt AND .mp3 in the same folder must import as an
+  // AUDIOBOOK (paired Audiobooks row + cues + paired SrtBook), not a plain text
+  // EPUB. Reuses the non-UI alignAndPersistAudiobook service extracted from the
+  // import dialog. An EPUB with no sidecar audio must stay a plain EPUB (no
+  // Audiobooks row) — proving the routing is gated on a sibling audio.
+  group('MediaSourceScanner.scan book sidecar audio (TODO-946)', () {
+    late Directory tmp;
+    late Directory pp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('todo946_scan_');
+      pp = Directory.systemTemp.createTempSync('todo946_pp_');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => pp.path,
+      );
+      EpubStorage.debugBaseDirectoryOverride = pp.path;
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      for (final Directory d in <Directory>[tmp, pp]) {
+        try {
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    testWidgets('book.epub + book.srt + book.mp3 -> audiobook (cues + SrtBook)',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      _writeEpub(p.join(tmp.path, 'book.epub'), 'AudiobookNovel');
+      File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
+      // A fake mp3: the alignment service only copies the bytes + runs the text
+      // matcher; it never decodes the audio, so raw bytes are sufficient.
+      File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      final String bookKey = books.single.bookKey;
+      expect(books.single.sourceId, sid);
+
+      // The sibling audio promoted this book to an audiobook.
+      final AudiobookRow? ab = await db.getAudiobookByBookKey(bookKey);
+      expect(ab, isNotNull,
+          reason: 'sibling srt + mp3 must auto-import as an audiobook');
+      expect(ab!.audioPathsJson, isNotNull,
+          reason: 'the sibling audio must be persisted onto the audiobook');
+
+      // Cues parsed from the sidecar srt are stored under the bookKey.
+      final List<AudioCueRow> cues = await db.getCuesForBook(bookKey);
+      expect(cues, isNotEmpty,
+          reason: 'the sidecar subtitle must be parsed into cues');
+
+      // TODO-894 paired SrtBook row written so sync push can find it.
+      final SrtBookRow? srtBook = await db.getSrtBookByBookKey(bookKey);
+      expect(srtBook, isNotNull,
+          reason: 'epub-backed audiobook needs a paired srt_books row');
+
+      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 1);
+      expect(after.lastScanError, isNull);
+    });
+
+    testWidgets('book.epub with NO sibling audio stays a plain EPUB',
+        (WidgetTester tester) async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // EPUB + same-stem srt but NO audio -> must stay a plain text EPUB.
+      _writeEpub(p.join(tmp.path, 'plain.epub'), 'PlainNovel');
+      File(p.join(tmp.path, 'plain.srt')).writeAsStringSync(_srt);
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await MediaSourceScanner(db).scan(source);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      final AudiobookRow? ab =
+          await db.getAudiobookByBookKey(books.single.bookKey);
+      expect(ab, isNull,
+          reason: 'no sibling audio -> plain EPUB, no audiobook promotion');
     });
   });
 }

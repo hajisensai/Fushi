@@ -11,14 +11,13 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/utils.dart';
 
 /// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
@@ -861,132 +860,34 @@ class _BookImportDialogState extends State<BookImportDialog>
 
     await _applyBestCoverToEpub(bookKey);
 
-    reportProgress(0.35, t.import_step_reading_idb);
-    List<EpubSection> sections = const <EpubSection>[];
-    try {
-      final EpubBookRow? bookRow = await widget.db.getEpubBook(bookKey);
-      final String extractDir = bookRow?.extractDir ?? '';
-      final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
-      sections = List<EpubSection>.generate(
-        epubBook.chapters.length,
-        (i) => EpubSection(
-          index: i,
-          href: epubBook.chapters[i].href,
-          text: epubBook.chapterPlainText(i),
-        ),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('BookImportDialog.parseEpub', e, stack);
-      debugPrint('[hibiki-import] parseFromExtracted failed: $e');
-    }
-    reportProgress(0.45, t.import_step_parsing);
-    final String ext = _subtitlePath!.split('.').last.toLowerCase();
-    final List<AudioCue> cues = await _parseCuesWithIndex(
-      File(_subtitlePath!),
-      bookKey,
-      0,
-    );
-    AudiobookHealth health;
-    final bool runMatcher = SasayakiRematch.supportedFormats.contains(ext);
-    if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
-      reportProgress(0.55, t.import_step_matching);
-      MatchResult? matchResult;
-      int chosenWindow = _searchWindow;
-      if (_autoWindow) {
-        final ProbeResult probe = await EpubCueMatcher.probeInIsolate(
-          sections: sections,
-          cues: cues,
-        );
-        final MapEntry<int, double>? best = probe.best;
-        if (best != null && best.value > 0) {
-          chosenWindow = best.key;
-          matchResult = probe.bestResult;
-        }
-      }
-      matchResult ??= await EpubCueMatcher.matchInIsolate(
-        sections: sections,
-        cues: cues,
-        searchWindow: chosenWindow,
-        similarityThreshold: _similarityThreshold,
-      );
-      SasayakiMatchCodec.applyToCues(cues: cues, result: matchResult);
-      final int pct = (matchResult.matchRate * 100).round();
-      health = AudiobookHealth.fromRatePct(
-        ratePct: pct,
-        reason:
-            '${matchResult.matchedCues}/${matchResult.totalCues} cues matched '
-            '(window=$chosenWindow)',
-      );
-    } else if (runMatcher) {
-      health = sections.isEmpty
-          ? AudiobookHealth.failed(reason: 'ttu IDB record had 0 sections')
-          : AudiobookHealth.failed(reason: 'parser returned 0 cues');
-    } else {
-      health = AudiobookHealth.notApplicable(
-        reason: '$ext format uses file anchors, no matcher needed',
-      );
-    }
-
-    reportProgress(0.8, t.import_step_persisting);
-    final Directory persistDir = await _ensurePersistDir(bookKey);
-    final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
-      File(_subtitlePath!),
-      persistDir,
-      onProgress: (int copied, int total) {
-        reportProgress(
-            0.8, t.import_step_copying_file(name: p.basename(_subtitlePath!)));
-      },
-    );
-
-    await AudiobookStorage.cleanAudioFiles(persistDir);
-    final List<String> persistedAudioPaths = [];
-    for (final String src in _audioPaths) {
-      persistedAudioPaths.add(
-        await AudiobookStorage.persistFileWithProgress(
-          File(src),
-          persistDir,
-          onProgress: (int copied, int total) {
-            reportProgress(
-                0.85, t.import_step_copying_file(name: p.basename(src)));
-          },
-        ),
-      );
-    }
-
-    reportProgress(0.9, t.import_step_saving);
-    final Audiobook audiobook = Audiobook()
-      ..bookKey = bookKey
-      ..alignmentFormat = ext
-      ..alignmentPath = persistedSrt;
-    if (persistedAudioPaths.isNotEmpty) {
-      audiobook.audioPaths = persistedAudioPaths;
-    }
-    health.packInto(audiobook);
-
-    await widget.audiobookRepo.saveAudiobook(audiobook);
-    // TODO-894：EPUB-backed 有声书必须同时补写一条配对 srt_books 行，否则
-    // push 消费点（sync_orchestrator.dart live push :1024 + syncAudiobookPackages
-    // :1270 hasLocal）查 getSrtBookByBookKey==null → 整本永不上传。uid 稳定派生
-    // 保证幂等（重复导入同 bookKey 走 upsert-on-uid 覆盖同行，不落第二行）。
-    await writeEpubBackedSrtBook(
+    // EPUB 导入之后的对齐落库下沉到非 UI 的 alignAndPersistAudiobook：解析章节、
+    // 解析 cue、跑 matcher、持久字幕/音频、写 Audiobooks + 配对 SrtBook + cue +
+    // health overlay。对话框只把进度/文案/字段透传给 service，行为逐字节等价。
+    final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
+      db: widget.db,
       repo: widget.repo,
+      audiobookRepo: widget.audiobookRepo,
       bookKey: bookKey,
       title: title,
       author: _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim(),
-      srtPath: persistedSrt,
-      audioPaths: persistedAudioPaths,
+      subtitlePath: _subtitlePath!,
+      audioPaths: _audioPaths,
+      autoWindow: _autoWindow,
+      searchWindow: _searchWindow,
+      similarityThreshold: _similarityThreshold,
+      onProgress: reportProgress,
+      messages: AudiobookAlignmentMessages(
+        readingIdb: t.import_step_reading_idb,
+        parsing: t.import_step_parsing,
+        matching: t.import_step_matching,
+        persisting: t.import_step_persisting,
+        saving: t.import_step_saving,
+        done: t.import_step_done,
+        copyingFile: (String name) => t.import_step_copying_file(name: name),
+      ),
     );
-    await widget.audiobookRepo.saveCues(
-      bookKey: bookKey,
-      cues: cues,
-    );
-    await widget.audiobookRepo.updateHealthOverlay(
-      bookKey: bookKey,
-      health: health,
-    );
-    reportProgress(1, t.import_step_done);
 
-    return _summarizeHealth(health);
+    return _summarizeHealth(result.health);
   }
 
   String? _summarizeHealth(AudiobookHealth h) {

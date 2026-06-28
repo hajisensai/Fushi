@@ -26,6 +26,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/source/source_file_system.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -37,6 +38,51 @@ const Set<String> kScanEpubExtensions = <String>{'epub'};
 
 /// Subtitle whitelist shared with the video import dialog (no lrc).
 const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
+
+/// One pending book item: EPUB path + optional same-stem sidecar subtitle/audio.
+///
+/// TODO-946：当 EPUB 旁有同名字幕**且**有同名音频时，[subtitlePath] / [audioPaths]
+/// 非空，扫描器据此把这本书导成有声书（字幕做对齐源 + 音频）；二者缺一则按纯
+/// EPUB 导入（音频必配字幕，沿用 sidecar_finder 既有语义）。
+@immutable
+class ScanBookItem {
+  const ScanBookItem({
+    required this.epubPath,
+    this.subtitlePath,
+    this.audioPaths = const <String>[],
+  });
+
+  /// EPUB 文件完整路径（来源命名空间）。
+  final String epubPath;
+
+  /// 同名字幕完整路径；无同名字幕为 null。
+  final String? subtitlePath;
+
+  /// 同名（含同前缀多段）音频完整路径列表；无为空。
+  final List<String> audioPaths;
+
+  /// 是否应导成有声书：同名字幕与音频齐备（音频必配字幕）。
+  bool get isAudiobook => subtitlePath != null && audioPaths.isNotEmpty;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanBookItem &&
+      other.epubPath == epubPath &&
+      other.subtitlePath == subtitlePath &&
+      _listEquals(other.audioPaths, audioPaths);
+
+  @override
+  int get hashCode =>
+      Object.hash(epubPath, subtitlePath, Object.hashAll(audioPaths));
+}
+
+bool _listEquals(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
 
 /// One pending video item: video path + associated same-stem subtitle (or null).
 @immutable
@@ -63,12 +109,12 @@ class ScanVideoItem {
 @immutable
 class ScanPlan {
   const ScanPlan({
-    this.epubPaths = const <String>[],
+    this.books = const <ScanBookItem>[],
     this.videos = const <ScanVideoItem>[],
   });
 
-  /// Pending EPUB file full paths.
-  final List<String> epubPaths;
+  /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
+  final List<ScanBookItem> books;
 
   /// Pending video items (with associated subtitles).
   final List<ScanVideoItem> videos;
@@ -98,14 +144,28 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
     (namesByDir[dir] ??= <String>[]).add(e.name);
   }
 
-  final List<String> epubPaths = <String>[];
+  final List<ScanBookItem> books = <ScanBookItem>[];
   final List<ScanVideoItem> videos = <ScanVideoItem>[];
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
     final String ext = _extOf(e.name);
     if (kScanEpubExtensions.contains(ext)) {
-      epubPaths.add(e.path);
+      // TODO-946：EPUB 同目录扫同名字幕 + 音频（wantAudio:true，字幕扩展含 lrc）。
+      // 命中音频 -> 导成有声书（字幕作对齐源）；否则纯 EPUB。同目录作用域，与
+      // 视频 sidecar 关联一致。
+      final String dir = p.dirname(e.path);
+      final List<String> siblings = namesByDir[dir] ?? const <String>[];
+      final ({String? subtitle, List<String> audio}) sel = selectSidecarNames(
+        mainFileName: e.name,
+        siblingNames: siblings,
+        wantAudio: true,
+      );
+      books.add(ScanBookItem(
+        epubPath: e.path,
+        subtitlePath: sel.subtitle == null ? null : p.join(dir, sel.subtitle!),
+        audioPaths: sel.audio.map((String n) => p.join(dir, n)).toList(),
+      ));
       continue;
     }
     if (kVideoExtensions.contains('.$ext')) {
@@ -124,7 +184,7 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
     }
   }
 
-  return ScanPlan(epubPaths: epubPaths, videos: videos);
+  return ScanPlan(books: books, videos: videos);
 }
 
 /// Source-library scanner: scans one [MediaSourceRow] root, inserts the media
@@ -162,7 +222,7 @@ class MediaSourceScanner {
       final ScanPlan plan = planScanFromFileList(entries);
 
       if (source.mediaKind == 'book') {
-        mediaCount = await _importBooks(plan, source.id);
+        mediaCount = await _importBooks(plan, source.id, files);
       } else if (source.mediaKind == 'video') {
         mediaCount = await _importVideos(plan, source.id, files);
       } else {
@@ -197,22 +257,44 @@ class MediaSourceScanner {
   /// (not counted, not an error). The within-isolate parse + DB read picks up
   /// books inserted earlier in the same scan, so a same-batch duplicate is also
   /// skipped.
-  Future<int> _importBooks(ScanPlan plan, int sourceId) async {
+  Future<int> _importBooks(
+    ScanPlan plan,
+    int sourceId,
+    SourceFileSystem fs,
+  ) async {
     int count = 0;
-    for (final String epubPath in plan.epubPaths) {
+    for (final ScanBookItem item in plan.books) {
       try {
-        await EpubImporter.importFromPath(
+        // skipIfExists:true reuses the sanitizeTtuFilename identity key so a
+        // re-scan / same-batch duplicate throws DuplicateImportCancelledException
+        // (caught below) instead of a silent "X (2)" (BUG-443). The returned
+        // bookKey is the audiobook anchor when a sidecar audio attaches.
+        final String bookKey = await EpubImporter.importFromPath(
           db: _db,
-          filePath: epubPath,
-          fileName: p.basename(epubPath),
+          filePath: item.epubPath,
+          fileName: p.basename(item.epubPath),
           sourceId: sourceId,
           skipIfExists: true,
         );
         count++;
+        // TODO-946：同目录有同名字幕 + 音频 -> 复用对话框抽出的非 UI 落库 service
+        // 把这本 EPUB 升级成有声书（字幕做对齐源 + 音频）。仅本地传输支持（service
+        // 直读磁盘路径）；网络传输的 sidecar 音频留待 M2/M3，先按纯 EPUB 导入不阻塞。
+        if (item.isAudiobook && fs.isLocal) {
+          await alignAndPersistAudiobook(
+            db: _db,
+            repo: SrtBookRepository(_db),
+            audiobookRepo: AudiobookRepository(_db),
+            bookKey: bookKey,
+            title: p.basenameWithoutExtension(item.epubPath),
+            subtitlePath: item.subtitlePath!,
+            audioPaths: item.audioPaths,
+          );
+        }
       } on DuplicateImportCancelledException catch (e) {
         // Already-imported same-title book: silently skip (matches _importVideos).
         debugPrint('MediaSourceScanner skip duplicate book '
-            '${e.title} ($epubPath)');
+            '${e.title} (${item.epubPath})');
       }
     }
     return count;
