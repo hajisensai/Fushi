@@ -77,21 +77,39 @@ class _ShelfReorderPageState extends State<ShelfReorderPage> {
     });
   }
 
-  /// 退出页面：脏了才落盘（避免无改动空写），落盘后弹回。
+  /// 正在执行退出收口（落盘 -> 真正 pop）。置位后 [PopScope.canPop] 翻成 true，
+  /// 使我们手动发起的 pop 直接放行，不再被本 PopScope 二次拦截。
+  bool _finishing = false;
+
+  /// 退出页面：脏了才落盘（避免无改动空写），落盘后真正弹回。
+  ///
+  /// 根因（TODO-947）：旧实现 `canPop:false` 恒定 + `_finish()` 永远走
+  /// `maybePop()`——而 `maybePop` 又触发本页 `PopScope.onPopInvokedWithResult`
+  /// (`didPop==false`) -> 再调 `_finish()` -> 再 `maybePop()`，形成无限递归，页面
+  /// 永远退不出（用户报「左上角退出未响应」）。这里改为：进入收口先置
+  /// `_finishing=true` 让 `canPop` 翻 true，落盘后用 `Navigator.pop()` 真正出栈
+  /// （此时 PopScope 放行，didPop==true 直接 return，不再递归）。
   Future<void> _finish() async {
+    if (_finishing) return;
+    _finishing = true;
     if (_dirty) {
       await widget.onPersist(_items);
       if (mounted) HibikiToast.show(msg: t.shelf_sort_saved);
     }
-    if (mounted) Navigator.of(context).maybePop();
+    if (!mounted) return;
+    final NavigatorState navigator = Navigator.of(context);
+    // 翻开 canPop 闸门，让下面这次 pop 不再被本 PopScope 拦回。
+    setState(() {});
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      // 拦截裸返回：先把顺序落盘再真正退出（didPop 时已无 context 可用，故走
-      // canPop:false + 手动 maybePop 收口持久化）。
-      canPop: false,
+      // 收口期（_finishing）放行真正的 pop；其余时候拦下裸返回，先落盘再退出。
+      canPop: _finishing,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
         _finish();

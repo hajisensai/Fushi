@@ -19,6 +19,7 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
     required this.onReorder,
     this.selectionMode = false,
     this.onToggleSelectionMode,
+    this.onOrganize,
     this.onTagsChanged,
     super.key,
   });
@@ -32,6 +33,11 @@ class HibikiTagFilterBar extends ConsumerStatefulWidget {
 
   /// 切换批量选择模式。为 null（如视频 tab 无批量选择）时不显示批量选择动作。
   final VoidCallback? onToggleSelectionMode;
+
+  /// 「整理」入口：点开进入拖动排序（合集入口在相邻的多选批量栏）。为 null 时不渲染。
+  /// TODO-947：把原本散在页头的「编辑排序」(swap_vert) 入口挪到多选按钮旁，与
+  /// 「组合成系列」(多选批量栏) 聚成一组整理动作。
+  final VoidCallback? onOrganize;
 
   /// 管理标签返回后，调用方据此刷新自身的标签映射 provider（book / video）。
   final VoidCallback? onTagsChanged;
@@ -71,6 +77,13 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
               : t.batch_select,
           selected: widget.selectionMode,
           onTap: widget.onToggleSelectionMode!,
+        ),
+      // 「整理」入口（拖动排序 + 相邻多选批量栏的「组合成系列」），挂在多选按钮旁。
+      if (widget.onOrganize != null && !widget.selectionMode)
+        _tagBarAction(
+          icon: Icons.swap_vert,
+          tooltip: t.shelf_edit_order,
+          onTap: widget.onOrganize!,
         ),
     ];
 

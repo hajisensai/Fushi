@@ -1400,11 +1400,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           icon: Icons.bar_chart_outlined,
           onTap: _openStatistics,
         ),
-        HibikiIconButton(
-          tooltip: t.shelf_edit_order,
-          icon: Icons.swap_vert,
-          onTap: _openVideoSort,
-        ),
+        // TODO-947：原页头「编辑排序」(swap_vert) 入口已移到标签栏多选按钮旁
+        // （见 _buildTagFilterBar 的 onOrganize），与书架对齐。
       ],
     );
   }
@@ -1487,6 +1484,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
+      onOrganize: _openVideoSort,
       onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
     );
   }

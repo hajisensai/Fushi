@@ -294,6 +294,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
+      onOrganize: _openShelfSort,
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
     );
   }
@@ -331,11 +332,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.bar_chart_outlined,
           onTap: _openReadingStatistics,
         ),
-        _headerAction(
-          tooltip: t.shelf_edit_order,
-          icon: Icons.swap_vert,
-          onTap: _openShelfSort,
-        ),
+        // TODO-947：原页头「编辑排序」(swap_vert) 入口已移到标签栏多选按钮旁
+        // （见 _buildTagBar 的 onOrganize），与「组合成系列」聚成一组整理动作。
       ],
     );
   }
