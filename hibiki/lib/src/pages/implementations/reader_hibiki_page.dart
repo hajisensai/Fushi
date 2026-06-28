@@ -30,6 +30,9 @@ import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+    show extractAudioSegmentViaFfmpeg;
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -62,6 +65,7 @@ import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/serial_task_queue.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
@@ -963,6 +967,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   List<(int firstIdx, int lastIdx)>? _srtChapterRanges;
 
   bool _audioSlotResolved = false;
+  // TODO-945：有声书片段导出进行中标志（防重入），管线在 audiobook.part.dart。
+  bool _audiobookClipExporting = false;
   List<FavoriteSentence>? _favoriteSentencesForBookCache;
   Future<List<FavoriteSentence>>? _favoriteSentencesForBookFuture;
 

@@ -841,20 +841,176 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         final File? inputFile = range.audioFileIndex < audioFiles.length
             ? audioFiles[range.audioFileIndex]
             : null;
-        // M1 stops here: log the resolved {text, ms, file} so M2 (audio clip)
-        // has a verified starting point. No ffmpeg / video synthesis yet.
+        if (inputFile == null) {
+          // 越界已被 classify 拦在 unsupportedRange，这里只是 null-safety 兜底。
+          HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
+          return;
+        }
+        // D4 时长安全上限 120s：单句天然短，仅兜底超长选区，避免巨型编码。超限走
+        // unsupportedRange 文案（选区不可导出）而非崩溃。
+        if (range.endMs - range.startMs > _kAudiobookClipMaxDurationMs) {
+          debugPrint(
+            '[ReaderHibiki] export-clip: range too long '
+            '(${range.endMs - range.startMs}ms > '
+            '${_kAudiobookClipMaxDurationMs}ms) — refusing export.',
+          );
+          HibikiToast.show(msg: t.audiobook_export_clip_unsupported_range);
+          return;
+        }
+        // M2-M5：裁音频 → 渲文本图 → mjpeg/.mov 合成 → 分享/存盘。异步推进，先给一个
+        // 反馈 toast；失败在管线内各自 toast。防重入：导出进行中再点直接忽略。
+        if (_audiobookClipExporting) return;
         debugPrint(
-          '[ReaderHibiki] export-clip M1 OK: text="${selectedText.trim()}" '
+          '[ReaderHibiki] export-clip start: text="${selectedText.trim()}" '
           'audioFileIndex=${range.audioFileIndex} '
           'startMs=${range.startMs} endMs=${range.endMs} '
           'durationMs=${range.endMs - range.startMs} '
-          'file=${inputFile?.path ?? '<unresolved>'}',
+          'file=${inputFile.path}',
         );
-        // M1: no export UI yet — surface a neutral toast so the button has
-        // user-visible feedback while the synthesis pipeline (M2-M5) is built.
-        HibikiToast.show(msg: t.audiobook_export_clip);
+        unawaited(_runAudiobookClipPipeline(
+          text: selectedText.trim(),
+          inputFile: inputFile,
+          startMs: range.startMs,
+          endMs: range.endMs,
+        ));
         return;
     }
+  }
+
+  /// D4：片段视频时长安全上限（120s）。单句天然短，仅兜底超长选区。
+  static const int _kAudiobookClipMaxDurationMs = 120 * 1000;
+
+  /// TODO-945 M2-M5：把已验证的 {文本, 音频文件, 起止 ms} 走完整管线——裁音频片段
+  /// （M2，复用 [extractAudioSegmentViaFfmpeg]）→ 文本离屏渲 PNG（M3，复用
+  /// [renderAudiobookClipTextToPng]）→ 图+音频合成 mjpeg/.mov（M4，复用
+  /// [synthAudiobookClipVideoViaFfmpeg]）→ 分享/存盘（M5，桌面 FilePicker / 移动
+  /// Share）。任一步失败各自 toast，绝不崩。临时文件落 systemTemp，桌面导出后清理。
+  Future<void> _runAudiobookClipPipeline({
+    required String text,
+    required File inputFile,
+    required int startMs,
+    required int endMs,
+  }) async {
+    _audiobookClipExporting = true;
+    HibikiToast.show(msg: t.audiobook_export_clip_in_progress);
+
+    // 渲图前先抓阅读主题色 + 写排方向 + 字号（在 await 前读，避免跨 await 用 context）。
+    final ReaderThemeColors themeColors = _readerThemeColors;
+    final bool vertical =
+        _settings?.writingMode.startsWith('vertical') ?? false;
+    final double baseFontSize = _settings?.fontSize ?? 22;
+    final double lineHeight = _settings?.lineHeight ?? 1.65;
+    final OverlayState? overlay = Overlay.maybeOf(context);
+
+    File? audioClip;
+    File? imageFile;
+    File? videoFile;
+    final bool isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    try {
+      final Directory tmpDir = await getTemporaryDirectory();
+      final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
+      final String base = p.join(tmpDir.path, 'audiobook_clip_$stamp');
+
+      // M2：裁音频片段（AAC）。cue.startMs/endMs 已是文件内相对偏移。
+      final String? clipPath = await extractAudioSegmentViaFfmpeg(
+        inputPath: inputFile.path,
+        startMs: startMs,
+        endMs: endMs,
+        outputPath: '$base.m4a',
+      );
+      if (clipPath == null) {
+        if (mounted) {
+          HibikiToast.show(msg: t.audiobook_export_clip_failed);
+        }
+        return;
+      }
+      audioClip = File(clipPath);
+
+      // M3：文本离屏渲 PNG（沿用阅读主题 / 写排方向 / 字号）。
+      if (overlay == null) {
+        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+        return;
+      }
+      final AudiobookClipTextLayout layout = computeClipTextLayout(
+        textLength: text.runes.length,
+        baseFontSize: baseFontSize,
+        vertical: vertical,
+        lineHeight: lineHeight,
+        background: themeColors.bg,
+        foreground: themeColors.fg,
+      );
+      final Uint8List? pngBytes = await renderAudiobookClipTextToPng(
+        overlay: overlay,
+        text: text,
+        layout: layout,
+      );
+      if (pngBytes == null) {
+        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+        return;
+      }
+      imageFile = File('$base.png');
+      await imageFile.writeAsBytes(pngBytes);
+
+      // M4：图 + 音频 → mjpeg/.mov 短视频。
+      videoFile = File('$base.mov');
+      final AudiobookClipSynthResult synth =
+          await synthAudiobookClipVideoViaFfmpeg(
+        imagePath: imageFile.path,
+        audioPath: audioClip.path,
+        outputPath: videoFile.path,
+        width: layout.width,
+        height: layout.height,
+      );
+      if (!synth.isSuccess || synth.outputPath == null) {
+        debugPrint(
+          '[ReaderHibiki] export-clip synth failed: '
+          '${synth.failure} ${synth.detail ?? ''}',
+        );
+        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+        return;
+      }
+      final String outPath = synth.outputPath!;
+
+      // M5：分享/存盘。桌面（含 Linux）走 FilePicker 存盘；移动走系统 Share。
+      if (isDesktop) {
+        final String? savePath = await FilePicker.platform.saveFile(
+          dialogTitle: t.audiobook_export_clip,
+          fileName: 'audiobook_clip_$stamp.mov',
+          type: FileType.custom,
+          allowedExtensions: const <String>['mov'],
+        );
+        if (savePath != null) {
+          await File(outPath).copy(savePath);
+          if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
+        }
+      } else {
+        await Share.shareXFiles(
+          <XFile>[XFile(outPath, mimeType: 'video/quicktime')],
+          subject: text,
+        );
+        if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.exportClip.pipeline', e, stack);
+      debugPrint('[ReaderHibiki] export-clip pipeline error: $e');
+      if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_failed);
+    } finally {
+      _audiobookClipExporting = false;
+      // 清理临时中间文件。桌面端最终视频已 copy 到用户选定路径，可一并清理；移动端
+      // 系统 Share 异步读取 outPath，保留视频文件供其读取，仅清理音频/图中间产物。
+      await _deleteClipTempFile(audioClip);
+      await _deleteClipTempFile(imageFile);
+      if (isDesktop) await _deleteClipTempFile(videoFile);
+    }
+  }
+
+  Future<void> _deleteClipTempFile(File? file) async {
+    if (file == null) return;
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 
   /// 有声书是否已激活（有控制器且本章有 cue）。Space 播放/暂停覆写的统一闸门，
