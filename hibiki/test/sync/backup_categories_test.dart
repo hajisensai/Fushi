@@ -262,7 +262,7 @@ void main() {
         reason: 'audio tree absent from backup → existing tree untouched');
   });
   test(
-      'BackupCategory enumerates exactly the five optional sidecar trees '
+      'BackupCategory enumerates exactly the six optional sidecar trees '
       '(db is never a category)', () {
     expect(BackupCategory.values.toSet(), <BackupCategory>{
       BackupCategory.dictionary,
@@ -270,6 +270,7 @@ void main() {
       BackupCategory.audiobooks,
       BackupCategory.fonts,
       BackupCategory.videos,
+      BackupCategory.localAudio,
     });
   });
 
@@ -293,7 +294,126 @@ void main() {
       isTrue,
       reason: 'video files must be an explicit opt-in, not silently selected',
     );
+    expect(
+      src.contains('c != BackupCategory.localAudio') ||
+          src.contains('!selected.contains(BackupCategory.localAudio)'),
+      isTrue,
+      reason: 'local audio databases must be an explicit opt-in (TODO-941)',
+    );
     expect(src.contains('categories: categories'), isTrue,
         reason: 'the chosen set must be forwarded to exportBackup');
+  });
+
+  test(
+      'selecting localAudio packs the local_audio_*.db files (not hibiki.db) '
+      'and import restores them + rebases the local_audio_dbs pref', () async {
+    final String dbDir = p.join(src.path, 'db');
+    Directory(dbDir).createSync(recursive: true);
+    // Two local-audio DBs + a wal sidecar living flat next to hibiki.db.
+    await writeFile(p.join(dbDir, 'local_audio_111.db'), 'LA1');
+    await writeFile(p.join(dbDir, 'local_audio_111.db-wal'), 'LA1WAL');
+    await writeFile(p.join(dbDir, 'local_audio_222.db'), 'LA2');
+    // An unrelated support file that must NOT be swept into the backup.
+    await writeFile(p.join(dbDir, 'unrelated.db'), 'NOPE');
+
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    await db.setPref(
+      'local_audio_dbs',
+      jsonEncode(<Map<String, Object?>>[
+        <String, Object?>{
+          'path': p.join(dbDir, 'local_audio_111.db'),
+          'displayName': 'Forvo',
+          'enabled': true,
+        },
+        <String, Object?>{
+          'path': p.join(dbDir, 'local_audio_222.db'),
+          'displayName': 'NHK',
+          'enabled': true,
+        },
+      ]),
+    );
+
+    final BackupService service = BackupService(
+      db: db,
+      dbDirectory: dbDir,
+      appVersion: '1.0.0',
+    );
+    final String zip = p.join(src.path, 'la.zip');
+    final BackupMeta meta = await service
+        .exportBackup(zip, categories: {BackupCategory.localAudio});
+    await db.close();
+
+    final Archive archive = await readZip(zip);
+    expect(archive.findFile('localAudio/local_audio_111.db'), isNotNull);
+    expect(archive.findFile('localAudio/local_audio_111.db-wal'), isNotNull);
+    expect(archive.findFile('localAudio/local_audio_222.db'), isNotNull);
+    // hibiki.db is always packed, but the unrelated support file is not, and no
+    // hibiki.db copy leaks under the localAudio/ prefix.
+    expect(archive.findFile('localAudio/unrelated.db'), isNull);
+    expect(
+      archive.files.any((ArchiveFile f) =>
+          f.name.startsWith('localAudio/') && f.name.endsWith('hibiki.db')),
+      isFalse,
+    );
+    expect(meta.localAudioRoot, dbDir);
+
+    // Restore into a fresh device with a DIFFERENT support dir → the pref must
+    // be rebased and the files must land flat alongside the new hibiki.db.
+    final String dstDbDir = p.join(dst.path, 'db');
+    Directory(dstDbDir).createSync(recursive: true);
+    await BackupService.importBackupFiles(
+      dbDirectory: dstDbDir,
+      zipPath: zip,
+    );
+
+    expect(
+        File(p.join(dstDbDir, 'local_audio_111.db')).readAsStringSync(), 'LA1');
+    expect(
+        File(p.join(dstDbDir, 'local_audio_222.db')).readAsStringSync(), 'LA2');
+
+    final HibikiDatabase restored = HibikiDatabase(dstDbDir);
+    try {
+      final Map<String, String> prefs = await restored.getAllPrefs();
+      final List<dynamic> dbs =
+          jsonDecode(prefs['local_audio_dbs']!) as List<dynamic>;
+      for (final dynamic e in dbs) {
+        final String path = (e as Map<String, dynamic>)['path'] as String;
+        expect(path, startsWith(dstDbDir),
+            reason: 'pref path rebased onto this device support dir');
+        expect(File(path).existsSync(), isTrue);
+      }
+    } finally {
+      await restored.close();
+    }
+  });
+
+  test(
+      'importing a backup WITHOUT localAudio leaves the device local-audio DBs '
+      'and pref intact (preserve-on-absent)', () async {
+    // Source: books-only backup (no localAudio prefix).
+    final built = await buildFullSource();
+    final String zip = p.join(src.path, 'books_only.zip');
+    await built.service.exportBackup(zip, categories: {BackupCategory.books});
+    await built.db.close();
+
+    // Destination already has a local-audio DB + matching pref that must
+    // survive the books-only restore.
+    final String dstDbDir = p.join(dst.path, 'db');
+    final String dstBooks = p.join(dst.path, 'hoshi_books');
+    Directory(dstDbDir).createSync(recursive: true);
+    await writeFile(p.join(dstDbDir, 'local_audio_999.db'), 'KEEPLA');
+
+    // Seed the device pref BEFORE the import overwrites the DB. The overwrite
+    // import keeps the backup's preferences, so this exercises only the FILE
+    // preservation (the file must not be deleted by the import).
+    await BackupService.importBackupFiles(
+      dbDirectory: dstDbDir,
+      zipPath: zip,
+      booksRootDirectory: dstBooks,
+    );
+
+    expect(File(p.join(dstDbDir, 'local_audio_999.db')).existsSync(), isTrue,
+        reason: 'localAudio absent from backup → existing DB file untouched');
   });
 }

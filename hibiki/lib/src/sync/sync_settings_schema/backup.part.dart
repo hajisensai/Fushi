@@ -6,7 +6,8 @@ part of '../sync_settings_schema.dart';
 
 @visibleForTesting
 Set<BackupCategory> defaultBackupExportCategories() => BackupCategory.values
-    .where((BackupCategory c) => c != BackupCategory.videos)
+    .where((BackupCategory c) =>
+        c != BackupCategory.videos && c != BackupCategory.localAudio)
     .toSet();
 
 class _BackupExportWidget extends StatefulWidget {
@@ -93,6 +94,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   Future<Set<BackupCategory>?> _pickExportCategories() async {
     final Set<BackupCategory> selected = defaultBackupExportCategories();
     assert(!selected.contains(BackupCategory.videos));
+    assert(!selected.contains(BackupCategory.localAudio));
     String labelFor(BackupCategory c) {
       switch (c) {
         case BackupCategory.dictionary:
@@ -105,6 +107,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
           return t.backup_category_fonts;
         case BackupCategory.videos:
           return t.backup_category_videos;
+        case BackupCategory.localAudio:
+          return t.backup_category_local_audio;
       }
     }
 

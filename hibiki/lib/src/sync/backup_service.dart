@@ -38,6 +38,15 @@ enum BackupCategory {
   /// Videos can be very large and are often stored outside the app documents
   /// directory, so the UI leaves this category opt-in by default.
   videos,
+
+  /// Local audio pronunciation databases (`local_audio_*.db` + `-wal`/`-shm`),
+  /// stored flat in the support/database directory alongside `hibiki.db`. The
+  /// `local_audio_dbs` preference stores their absolute paths, so without
+  /// packing the files a restore points at databases that never crossed over
+  /// and the local audio sources silently disappear (TODO-941). Packed under
+  /// the `localAudio/` archive prefix; these sets can be large (Forvo-style
+  /// audio), so the UI leaves this opt-in by default like videos.
+  localAudio,
 }
 
 /// Rewrites an absolute [oldPath] that lives under [oldRoot] so it lives under
@@ -125,6 +134,33 @@ String rebaseFontCatalogJson(String json, String oldRoot, String newRoot) {
   }
 }
 
+/// Rebases every entry's `path` inside a persisted `local_audio_dbs` JSON
+/// string (`[{path, displayName, enabled, sources}, ...]`) from [oldRoot] onto
+/// [newRoot] via [rebasePath]. Each `path` points at a `local_audio_*.db` file
+/// under the source device's support directory; the importing device's root
+/// differs, so without rebasing the restored config points at databases that
+/// never crossed over and the local audio sources silently never apply
+/// (TODO-941). A malformed value (not a JSON list of maps) is returned verbatim
+/// so a corrupt pref never aborts the import.
+String rebaseLocalAudioDbsJson(String json, String oldRoot, String newRoot) {
+  try {
+    final dynamic decoded = jsonDecode(json);
+    if (decoded is! List) return json;
+    final List<dynamic> out = decoded.map<dynamic>((dynamic e) {
+      if (e is! Map) return e;
+      final Object? path = e['path'];
+      if (path is! String) return e;
+      return <String, dynamic>{
+        ...Map<String, dynamic>.from(e),
+        'path': rebasePath(path, oldRoot, newRoot),
+      };
+    }).toList();
+    return jsonEncode(out);
+  } catch (_) {
+    return json; // never throw on a corrupt pref value
+  }
+}
+
 class BackupMeta {
   BackupMeta({
     required this.appVersion,
@@ -135,6 +171,7 @@ class BackupMeta {
     this.booksRoot,
     this.audiobooksRoot,
     this.fontsRoot,
+    this.localAudioRoot,
     this.videoFiles = const <String, String>{},
   });
 
@@ -160,6 +197,13 @@ class BackupMeta {
   /// this device's root. Null for legacy backups → import skips font rebasing.
   final String? fontsRoot;
 
+  /// Absolute root of the support/database directory on the SOURCE device,
+  /// where the local-audio pronunciation databases (`local_audio_*.db`) live
+  /// flat alongside `hibiki.db`. Captured so import can rebase the stored
+  /// `local_audio_dbs` preference paths onto this device's root. Null when the
+  /// local-audio category was not packed (or a legacy backup).
+  final String? localAudioRoot;
+
   /// Exact source video path -> archive-relative path under `videos/`.
   ///
   /// Imported videos are not copied into one stable app directory today; the DB
@@ -178,6 +222,7 @@ class BackupMeta {
         if (booksRoot != null) 'booksRoot': booksRoot,
         if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
         if (fontsRoot != null) 'fontsRoot': fontsRoot,
+        if (localAudioRoot != null) 'localAudioRoot': localAudioRoot,
         if (videoFiles.isNotEmpty) 'videoFiles': videoFiles,
       };
 
@@ -191,6 +236,7 @@ class BackupMeta {
         booksRoot: json['booksRoot'] as String?,
         audiobooksRoot: json['audiobooksRoot'] as String?,
         fontsRoot: json['fontsRoot'] as String?,
+        localAudioRoot: json['localAudioRoot'] as String?,
         videoFiles: (json['videoFiles'] as Map?)?.map(
                 (dynamic k, dynamic v) => MapEntry(k as String, v as String)) ??
             const <String, String>{},
@@ -252,6 +298,19 @@ class BackupService {
   static const String _audiobooksPrefix = 'audiobooks';
   static const String _fontsPrefix = 'custom_fonts';
   static const String _videosPrefix = 'videos';
+  static const String _localAudioPrefix = 'localAudio';
+
+  /// Preference key (in the `preferences` table) whose JSON value is the
+  /// local-audio library list `[{path, displayName, enabled, sources}]`. The
+  /// `path` of each entry points at a `local_audio_*.db` file in the support
+  /// directory and is rebased onto this device's root on import (TODO-941).
+  static const String _localAudioDbsPrefKey = 'local_audio_dbs';
+
+  /// Matches a packed local-audio database file (and its `-wal`/`-shm`
+  /// siblings). Only these are packed from the support directory so the export
+  /// never sweeps in `hibiki.db` or other unrelated support files.
+  static final RegExp _localAudioFileName =
+      RegExp(r'^local_audio_\d+\.db(-wal|-shm)?$');
 
   /// Persisted preference key (ReaderSettings prefix included) whose JSON
   /// value is the canonical catalog `{version, fonts:[{id, name, path}]}`.
@@ -354,6 +413,9 @@ class BackupService {
       if (wants(BackupCategory.videos)) {
         videoFiles = await _collectVideoFiles(files);
       }
+      if (wants(BackupCategory.localAudio)) {
+        await _collectLocalAudioFiles(files);
+      }
 
       // Record the SOURCE-device content roots so import can rebase the stored
       // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
@@ -372,6 +434,7 @@ class BackupService {
         audiobooksRoot:
             wants(BackupCategory.audiobooks) ? _audiobooksRootDirectory : null,
         fontsRoot: wants(BackupCategory.fonts) ? _fontsRootDirectory : null,
+        localAudioRoot: wants(BackupCategory.localAudio) ? _dbDirectory : null,
         videoFiles: videoFiles,
       );
 
@@ -735,6 +798,13 @@ class BackupService {
         await _commitPreparedTree(root);
       }
 
+      // 2c) Restore local-audio databases into the support directory. These are
+      //     individual files sharing the directory with hibiki.db, so they are
+      //     extracted file-by-file (never the destructive tree swap). When the
+      //     backup carries no localAudio/ prefix the existing local-audio DBs
+      //     are left untouched (same preserve-on-absent contract as the trees).
+      await _restoreLocalAudioFiles(archive, dbDirectory);
+
       // 3) Restore what must stay on this device — inline, not deferred to
       //    startup, so the common path never depends on bak surviving a restart.
       if (importSettings) {
@@ -766,6 +836,15 @@ class BackupService {
           dbDirectory: dbDirectory,
           meta: meta,
           newFontsRoot: fontsRootDirectory,
+        );
+        // Local-audio DBs are content (their files come from the backup), so
+        // rebase the stored `local_audio_dbs` pref paths onto this device's
+        // support directory. No-op for a legacy/db-only backup (no
+        // localAudioRoot in meta).
+        await _rebaseLocalAudioPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newLocalAudioRoot: dbDirectory,
         );
         await _rebaseVideoPaths(
           dbDirectory: dbDirectory,
@@ -895,6 +974,9 @@ class BackupService {
       if (videosRootDirectory != null) {
         await _copyTreeIfAbsent(archive, _videosPrefix, videosRootDirectory);
       }
+      // Local-audio DBs are copy-if-absent into the support directory (never
+      // overwrite the device's own local_audio_*.db files).
+      await _restoreLocalAudioFiles(archive, dbDirectory, overwrite: false);
 
       // 6) Rebase the newly-merged backup rows' stored paths onto this device's
       //    roots. Device-local rows aren't under the backup's source root, so
@@ -910,6 +992,11 @@ class BackupService {
           dbDirectory: dbDirectory,
           meta: meta,
           newFontsRoot: fontsRootDirectory,
+        );
+        await _rebaseLocalAudioPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newLocalAudioRoot: dbDirectory,
         );
         await _rebaseVideoPaths(
           dbDirectory: dbDirectory,
@@ -1165,6 +1252,22 @@ class BackupService {
     }
   }
 
+  /// Adds every local-audio pronunciation database file (`local_audio_*.db`
+  /// plus its `-wal`/`-shm` siblings) from the support/database directory to
+  /// [into], keyed by its zip path (`localAudio/<filename>`). Only files
+  /// matching [_localAudioFileName] are packed, so `hibiki.db`, sidecars and
+  /// every other support file stay out of the backup (TODO-941).
+  Future<void> _collectLocalAudioFiles(Map<String, String> into) async {
+    final Directory root = Directory(_dbDirectory);
+    if (!await root.exists()) return;
+    await for (final FileSystemEntity entity in root.list()) {
+      if (entity is! File) continue;
+      final String name = p.basename(entity.path);
+      if (!_localAudioFileName.hasMatch(name)) continue;
+      into[p.posix.join(_localAudioPrefix, name)] = entity.path;
+    }
+  }
+
   Future<Map<String, String>> _collectVideoFiles(
     Map<String, String> into,
   ) async {
@@ -1362,6 +1465,45 @@ class BackupService {
         entry.key.content as List<int>,
         flush: true,
       );
+    }
+  }
+
+  /// Extracts the packed local-audio databases (`localAudio/<file>`) into the
+  /// support directory [dbDirectory]. Unlike the content TREES these are
+  /// individual files SHARING the directory with `hibiki.db`, so they are
+  /// written file-by-file rather than via the destructive tree swap. Only file
+  /// names matching [_localAudioFileName] are accepted (defense in depth: an
+  /// archive entry naming `hibiki.db` under `localAudio/` is rejected).
+  ///
+  /// When the backup carries no `localAudio/` entries this is a no-op, so an
+  /// audio-less backup leaves this device's local-audio DBs intact (the same
+  /// preserve-on-absent contract the content trees follow — BUG-454 family).
+  ///
+  /// [overwrite] true (overwrite import) replaces an existing same-named file;
+  /// false (merge import) keeps the device's own file (copy-if-absent).
+  static Future<void> _restoreLocalAudioFiles(
+    Archive archive,
+    String dbDirectory, {
+    bool overwrite = true,
+  }) async {
+    final Directory targetRoot = Directory(dbDirectory);
+    for (final ArchiveFile file in archive.files) {
+      if (!file.isFile) continue;
+      final String rawName = file.name.replaceAll(r'\', '/');
+      if (!rawName.startsWith('$_localAudioPrefix/')) continue;
+      final String name = rawName.substring(_localAudioPrefix.length + 1);
+      // Reject nested paths / traversal / non-local-audio names: these files
+      // must land flat in the support dir and never escape it or clobber
+      // hibiki.db.
+      if (name.isEmpty ||
+          name.contains('/') ||
+          !_localAudioFileName.hasMatch(name)) {
+        throw FormatException('Invalid local audio backup path: ${file.name}');
+      }
+      final File dest = File(p.join(targetRoot.path, name));
+      if (!overwrite && await dest.exists()) continue;
+      dest.parent.createSync(recursive: true);
+      await dest.writeAsBytes(file.content as List<int>, flush: true);
     }
   }
 
@@ -1586,6 +1728,34 @@ class BackupService {
         if (raw == null) continue;
         final String rebased = rebaseFontListJson(raw, oldFonts, newFontsRoot);
         if (rebased != raw) await db.setPref(key, rebased);
+      }
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Rebases the imported DB's `local_audio_dbs` preference paths from the
+  /// backup's [BackupMeta.localAudioRoot] onto this device's
+  /// [newLocalAudioRoot] (its support directory). No-op when the backup did not
+  /// pack local-audio DBs (meta has no localAudioRoot) or the value is absent.
+  static Future<void> _rebaseLocalAudioPaths({
+    required String dbDirectory,
+    required BackupMeta meta,
+    required String? newLocalAudioRoot,
+  }) async {
+    final String? oldRoot = meta.localAudioRoot;
+    if (oldRoot == null || newLocalAudioRoot == null) return;
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      final Map<String, String> prefs = await db.getAllPrefs();
+      final String? raw = prefs[_localAudioDbsPrefKey];
+      if (raw != null) {
+        final String rebased =
+            rebaseLocalAudioDbsJson(raw, oldRoot, newLocalAudioRoot);
+        if (rebased != raw) {
+          await db.setPref(_localAudioDbsPrefKey, rebased);
+        }
       }
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {

@@ -1958,5 +1958,6 @@
   "series_name_hint": "系列名称",
   "series_created": "已创建系列",
   "combine_into_series": "组合成系列",
-  "series_empty": "此系列暂无书籍"
+  "series_empty": "此系列暂无书籍",
+  "backup_category_local_audio": "本地音频数据库"
 }
