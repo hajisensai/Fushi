@@ -129,29 +129,56 @@ class _RealPathDirectoryBrowserState extends State<_RealPathDirectoryBrowser> {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              ListTile(
-                leading: _atRootList
-                    ? const Icon(Icons.folder_open)
-                    : IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        tooltip: t.folder_picker_up,
-                        onPressed: _goUp,
-                      ),
-                title: Text(
-                  _atRootList
-                      ? t.folder_picker_title
-                      : p.basename(cur!).isEmpty
-                          ? cur
-                          : p.basename(cur),
-                  overflow: TextOverflow.ellipsis,
+              // 表单顶部是工具栏 header（返回按钮 + 选择按钮），不是普通列表项，
+              // 重建为 Padding+Row（不再用 ListTile）以走 MD3 共享组件守卫。
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
                 ),
-                subtitle: _atRootList ? null : Text(cur!, maxLines: 1),
-                trailing: _atRootList
-                    ? null
-                    : FilledButton(
+                child: Row(
+                  children: <Widget>[
+                    _atRootList
+                        ? const Icon(Icons.folder_open)
+                        : IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            tooltip: t.folder_picker_up,
+                            onPressed: _goUp,
+                          ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            _atRootList
+                                ? t.folder_picker_title
+                                : p.basename(cur!).isEmpty
+                                    ? cur
+                                    : p.basename(cur),
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          if (!_atRootList)
+                            Text(
+                              cur!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (!_atRootList) ...<Widget>[
+                      const SizedBox(width: 8),
+                      FilledButton(
                         onPressed: () => Navigator.pop(context, cur),
                         child: Text(t.folder_picker_select),
                       ),
+                    ],
+                  ],
+                ),
               ),
               const Divider(height: 1),
               Expanded(
@@ -162,14 +189,13 @@ class _RealPathDirectoryBrowserState extends State<_RealPathDirectoryBrowser> {
                         itemCount: entries.length,
                         itemBuilder: (BuildContext context, int index) {
                           final String path = entries[index];
-                          return ListTile(
-                            leading: const Icon(Icons.folder),
-                            title: Text(
-                              p.basename(path).isEmpty
-                                  ? path
-                                  : p.basename(path),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                          return HibikiListTile(
+                            icon: Icons.folder,
+                            selected: false,
+                            title: p.basename(path).isEmpty
+                                ? path
+                                : p.basename(path),
+                            subtitle: '',
                             onTap: () => _enter(path),
                           );
                         },
