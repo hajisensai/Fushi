@@ -350,4 +350,70 @@ void main() {
         reason: '勾选集为空且未勾收藏词 → 导出按钮 disabled');
   });
 
+  testWidgets(
+      'TODO-914 focus-driven uncheck: Tab to a checked scope checkbox, Enter '
+      'flips it (no tap, no bare space)', (WidgetTester tester) async {
+    await seedSentence(
+      text: '吾輩は猫である。',
+      bookTitle: '吾輩は猫である',
+      source: kFavoriteSentenceSourceBook,
+      bookKey: 'book-1',
+    );
+    await seedMined(
+      expression: '猫',
+      sentence: '吾輩は猫である。',
+      source: 'book',
+      documentTitle: '吾輩は猫である',
+    );
+
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    expect(await openExportSheet(tester), isTrue,
+        reason: 'focus-driven open failed');
+
+    // 默认两个范围勾选 → 导出按钮可用。
+    final Finder exportFab = find.widgetWithText(FilledButton, t.dialog_export);
+    expect(tester.widget<FilledButton>(exportFab).onPressed, isNotNull);
+
+    int checkedScopeCount() => tester
+        .widgetList<CheckboxListTile>(find.byWidgetPredicate(
+          (Widget w) => w is CheckboxListTile && w.value == true,
+        ))
+        .length;
+    expect(checkedScopeCount(), 2, reason: '初始勾制卡句 + 收藏句');
+
+    // 焦点驱动：Tab 遍历，当 primaryFocus 落在某个 value==true 的 CheckboxListTile
+    // 子树上时按 Enter 翻转它（禁 tester.tap、禁裸空格）。重复直到两项都取消。
+    bool focusOnCheckedCheckbox() {
+      final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+      if (ctx is! Element) return false;
+      bool hit = false;
+      ctx.visitAncestorElements((Element e) {
+        final Widget w = e.widget;
+        if (w is CheckboxListTile && w.value == true) {
+          hit = true;
+          return false;
+        }
+        return true;
+      });
+      return hit;
+    }
+
+    int flips = 0;
+    for (int i = 0; i < 80 && checkedScopeCount() > 0; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      if (focusOnCheckedCheckbox()) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        flips++;
+      }
+    }
+    expect(flips, greaterThanOrEqualTo(2), reason: 'Tab→Enter 应翻转两个已勾范围');
+    expect(checkedScopeCount(), 0, reason: '两个范围均经 Enter 取消');
+
+    // 全部范围取消且未勾收藏词 → 导出按钮 disabled。
+    expect(tester.widget<FilledButton>(exportFab).onPressed, isNull,
+        reason: '焦点驱动取消所有范围后导出按钮 disabled');
+  });
 }

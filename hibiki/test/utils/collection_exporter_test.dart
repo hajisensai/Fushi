@@ -375,7 +375,8 @@ void main() {
       expect(groups.first.words, hasLength(2));
     });
 
-    test('leading/trailing whitespace + full-width space folded → same sentence',
+    test(
+        'leading/trailing whitespace + full-width space folded → same sentence',
         () {
       final List<ExportMinedSentenceGroup> groups = dedupeMinedBySentence(
         <ExportMinedSentence>[
@@ -429,21 +430,14 @@ void main() {
     test('dedupeSentences removes duplicate text by normalized key', () {
       final List<ExportSentence> rows = dedupeSentences(<ExportSentence>[
         ExportSentence(
-            text: '同じ文。',
-            bookTitle: 'B',
-            createdAt: DateTime(2026, 6, 20)),
+            text: '同じ文。', bookTitle: 'B', createdAt: DateTime(2026, 6, 20)),
         ExportSentence(
-            text: '  同じ文。 ',
-            bookTitle: 'B',
-            createdAt: DateTime(2026, 6, 21)),
+            text: '  同じ文。 ', bookTitle: 'B', createdAt: DateTime(2026, 6, 21)),
         ExportSentence(
-            text: '別の文。',
-            bookTitle: 'B',
-            createdAt: DateTime(2026, 6, 22)),
+            text: '別の文。', bookTitle: 'B', createdAt: DateTime(2026, 6, 22)),
       ]);
       expect(rows, hasLength(2));
-      expect(rows.first.createdAt, DateTime(2026, 6, 20),
-          reason: '保留首现');
+      expect(rows.first.createdAt, DateTime(2026, 6, 20), reason: '保留首现');
     });
 
     test('buildMinedGroupedExport json carries words array', () {
@@ -510,6 +504,28 @@ void main() {
       );
       expect(md, contains('# ${t.collection_export_mined_title}'));
       expect(md, contains('# ${t.collection_export_sentences_title}'));
+      // 每个段标题只出现一次（combined 不再与内层 builder 各写一遍致重复）。
+      expect('# ${t.collection_export_mined_title}'.allMatches(md).length, 1,
+          reason: 'combined markdown 制卡段标题只出现一次');
+      expect(
+          '# ${t.collection_export_sentences_title}'.allMatches(md).length, 1,
+          reason: 'combined markdown 收藏段标题只出现一次');
+    });
+
+    test('buildCombinedExport txt keeps both section titles exactly once', () {
+      // TXT 内层不写标题 → combined 自写两段标题，各一次。
+      final String txt = buildCombinedExport(
+        mined: dedupeMinedBySentence(
+            <ExportMinedSentence>[mined(sentence: 'M。', expression: '本')]),
+        favorites: <ExportSentence>[
+          ExportSentence(
+              text: 'F。', bookTitle: 'B', createdAt: DateTime(2026, 6, 20)),
+        ],
+        format: ExportFormat.txt,
+      );
+      expect('# ${t.collection_export_mined_title}'.allMatches(txt).length, 1);
+      expect(
+          '# ${t.collection_export_sentences_title}'.allMatches(txt).length, 1);
     });
 
     test('buildCombinedExport csv has kind column distinguishing segments', () {
@@ -545,5 +561,4 @@ void main() {
           reason: '段间不互消，收藏段仍保留同句');
     });
   });
-
 }

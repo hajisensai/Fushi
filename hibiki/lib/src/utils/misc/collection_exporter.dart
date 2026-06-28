@@ -798,7 +798,16 @@ String buildCombinedExport({
 }) {
   switch (format) {
     case ExportFormat.markdown:
+      // Markdown 内层 builder 各自已写 `# 段标题`（_buildMinedGroupedMarkdown /
+      // _buildSentenceMarkdown），combined 不再重复写，否则每段标题出现两次。
+      final StringBuffer mdBuf = StringBuffer();
+      mdBuf.writeln(buildMinedGroupedExport(mined, format: format));
+      mdBuf.writeln();
+      mdBuf.writeln();
+      mdBuf.writeln(buildSentenceExport(favorites, format: format));
+      return mdBuf.toString().trimRight();
     case ExportFormat.txt:
+      // TXT 内层 builder 不写标题，故 combined 自己写两段 `# 段标题` 分隔。
       final StringBuffer buf = StringBuffer();
       buf.writeln('# ${t.collection_export_mined_title}');
       buf.writeln();
