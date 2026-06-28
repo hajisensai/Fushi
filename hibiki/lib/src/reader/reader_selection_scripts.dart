@@ -234,14 +234,35 @@ window.hoshiSelection = {
     });
     this.selectionRubyElements = [];
   },
+  // TODO-956：从选区节点解析「界定句子游走范围」的块级祖先。原实现只认
+  // p/.glossary-content/.cue，落在 h1-h6 / div / li / figcaption / blockquote /
+  // section / td / dd 里的词解析不到段落 → getSentenceContext 回退到 document.body
+  // → TreeWalker 跨兄弟块游走，把块间空白 / 换行 nodeValue 当唯一内容 → 句子 trim 成
+  // 空。修：扩到常见块级标签，且永不回退到整个 body：找不到块级祖先时退到选区容器的
+  // 父元素（仍把游走限制在词自身的局部块内），保持 createWalker 的边界永远是「词的块」
+  // 而非整篇文档。
+  BLOCK_SELECTOR: 'p, .glossary-content, .cue, h1, h2, h3, h4, h5, h6, div, li, figcaption, blockquote, section, td, dd',
   findParagraph: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return (el && el.closest('p, .glossary-content, .cue')) || null;
+    if (!el) return null;
+    var block = el.closest ? el.closest(this.BLOCK_SELECTOR) : null;
+    if (block) return block;
+    // 没有任何块级祖先：绝不放到整个 body 上游走，退到选区容器的父元素（最坏情况也
+    // 只覆盖词所在的直接父节点，绝不跨整篇）。
+    return el.parentElement || el;
   },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;
+    var self = this;
     return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => this.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+      acceptNode: function(n) {
+        if (self.isFurigana(n)) return NodeFilter.FILTER_REJECT;
+        // TODO-956：跳过纯空白 / 纯换行文本节点（块间缩进、HTML 排版换行）。它们的
+        // nodeValue 全是空白，被当作句子内容会让 rawSentence.trim() 退化成空字符串。
+        var v = n.nodeValue;
+        if (v != null && /^[\s　]*$/.test(v)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
     });
   },
   inCharRange: function(charRange, x, y, pad) {
@@ -409,10 +430,24 @@ window.hoshiSelection = {
     }
     var beforeText = partsBefore.reverse().join('');
     var rawSentence = beforeText + partsAfter.join('');
+    var trimmedSentence = rawSentence.trim();
     var leadingTrim = rawSentence.length - rawSentence.trimStart().length;
+    var sentenceOffset = Math.max(0, beforeText.length - leadingTrim);
+    // TODO-956：契约——可见正文里选中的可见词必须产出非空句子。若逐分隔符游走拼出的
+    // 句子 trim 后仍为空（例如游走只命中了块间空白 / 换行节点，或被分隔符切成空片段），
+    // 退回到「词所在块自身的可见文本」。container 已是 findParagraph 解析出的块级元素
+    // （绝不会是整个 body），故这层兜底不会越界跨块。仅当块本身就没有可见文本（纯空白
+    // 容器）时才仍返回空字符串——这正是 card_mined_no_sentence_captured 该触发的真空选。
+    if (trimmedSentence === '' && container && container.textContent) {
+      var blockText = container.textContent.trim();
+      if (blockText !== '') {
+        trimmedSentence = blockText;
+        sentenceOffset = 0;
+      }
+    }
     return {
-      sentence: rawSentence.trim(),
-      sentenceOffset: Math.max(0, beforeText.length - leadingTrim),
+      sentence: trimmedSentence,
+      sentenceOffset: sentenceOffset,
       sStartNode: sStartNode,
       sStartOffset: sStartOffset,
       sEndNode: sEndNode,
@@ -546,13 +581,18 @@ window.hoshiSelection = {
   },
   // 从任意节点下钻到它包含的第一个非空文本节点（含自身），返回 {node, offset:0}。
   firstTextNode: function(node) {
+    // TODO-956：下钻首个**含可见文本**的节点。纯空白 / 纯换行文本节点不算正文（其
+    // textContent 全是换行或空格），跳过它们；否则导出路径会把这样一个空白节点当选区
+    // 起点，解析出的句子游走从空白起锚 → 句子退化成空白。createWalker 已 REJECT 纯空白
+    // 节点，但自身是文本节点的入参仍需在此判一次。
+    var isVisible = function(text) { return !!text && /[^\s　]/.test(text); };
     if (node.nodeType === Node.TEXT_NODE) {
-      return node.textContent.length > 0 ? { node: node, offset: 0 } : null;
+      return isVisible(node.textContent) ? { node: node, offset: 0 } : null;
     }
     var walker = this.createWalker(node);
     var next = walker.nextNode();
     while (next) {
-      if (next.textContent.length > 0) return { node: next, offset: 0 };
+      if (isVisible(next.textContent)) return { node: next, offset: 0 };
       next = walker.nextNode();
     }
     return null;
