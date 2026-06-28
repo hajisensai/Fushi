@@ -1,3 +1,9 @@
+import 'dart:io';
+
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
+import 'package:hibiki/src/media/video/video_clip_exporter.dart'
+    show extractFfmpegFailureReason;
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// TODO-945 M1：把「有声书查词选区 → 整句 cue 区间」的边界判定抽成纯函数，方便单测
@@ -79,4 +85,179 @@ AudiobookClipBoundaryResult classifyAudiobookClipSelection({
     kind: AudiobookClipBoundaryKind.exportable,
     range: range,
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// TODO-945 M4：把文本图（PNG）+ 音频片段（AAC）合成成一段短视频（mjpeg/.mov）。
+//
+// D-CODEC（实测捆绑 ffmpeg 只有 gif/mjpeg/png 视频编码器，无 libx264/mpeg4）：
+// 用 `-c:v mjpeg`（Motion JPEG）+ `-c:a aac` 落 `.mov` 容器，零额外打包。GIF 无
+// 音轨故排除。画面是静态文本图 `-loop 1`，音频驱动时长 `-shortest`。
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 片段视频合成的失败原因。
+enum AudiobookClipSynthFailure {
+  /// 输入图片或音频缺失。
+  inputMissing,
+
+  /// ffmpeg 不可用（桌面无 CLI / 移动无 kit）。
+  ffmpegUnavailable,
+
+  /// ffmpeg 跑了但失败（非零退出 / 超时）。
+  ffmpegFailed,
+
+  /// ffmpeg 成功但没产出文件。
+  outputMissing,
+}
+
+/// 片段视频合成结果（成功带输出路径，失败带原因 + ffmpeg 真因尾段）。
+class AudiobookClipSynthResult {
+  const AudiobookClipSynthResult._({
+    required this.outputPath,
+    required this.failure,
+    this.detail,
+  });
+
+  const AudiobookClipSynthResult.success(String outputPath)
+      : this._(outputPath: outputPath, failure: null);
+
+  const AudiobookClipSynthResult.failure(
+    AudiobookClipSynthFailure failure, {
+    String? detail,
+  }) : this._(outputPath: null, failure: failure, detail: detail);
+
+  final String? outputPath;
+  final AudiobookClipSynthFailure? failure;
+  final String? detail;
+
+  bool get isSuccess => outputPath != null && failure == null;
+}
+
+/// 纯函数：构建「静态图 + 音频 → mjpeg/.mov 短视频」的 ffmpeg 参数表。可单测。
+///
+/// 关键参数与理由：
+/// - `-loop 1 -i img`：把单张 PNG 当无限循环视频流（静态画面）。
+/// - `-i audio`：音频输入。两输入默认映射（无显式 -map，单流无歧义）。
+/// - `-c:v mjpeg`：**捆绑包唯一带音轨容器可用的视频编码器**（D-CODEC，非 libx264）。
+/// - `-pix_fmt yuvj420p`：mjpeg 的全范围 YUV420，最通用播放器兼容。
+/// - `-c:a aac`：音频转 AAC（捆绑包唯一音频编码器，与桌面音频裁剪同源）。
+/// - `-shortest`：以较短的输入（音频）定时长——图是无限 loop，必须靠音频收尾。
+/// - `-r [fps]`：低帧率（静态画面无需高帧率，省体积/编码时间）。
+/// - `-vf scale=...:force_original_aspect_ratio=decrease,pad=...`：把图缩放进
+///   [width]×[height] 并居中黑边填充，保证输出维度恒定且为偶数（mjpeg 要求）。
+///
+/// 注意 mjpeg 不接受奇数维度；[width]/[height] 由调用方传偶数（720×1280 天然偶数）。
+List<String> buildFfmpegImageAudioToVideoArgs({
+  required String imagePath,
+  required String audioPath,
+  required String outputPath,
+  int width = 720,
+  int height = 1280,
+  int fps = 12,
+}) {
+  // pad 居中黑边：scale 先按比例缩进框内，再 pad 到精确 WxH（偶数维度安全）。
+  final String filter = 'scale=$width:$height:'
+      'force_original_aspect_ratio=decrease,'
+      'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black';
+  return <String>[
+    '-hide_banner',
+    '-y',
+    '-loop',
+    '1',
+    '-i',
+    imagePath,
+    '-i',
+    audioPath,
+    '-c:v',
+    'mjpeg',
+    '-pix_fmt',
+    'yuvj420p',
+    '-r',
+    '$fps',
+    '-vf',
+    filter,
+    '-c:a',
+    'aac',
+    '-shortest',
+    outputPath,
+  ];
+}
+
+/// 把 [imagePath]（文本图）+ [audioPath]（片段音频）合成成 [outputPath]
+/// （mjpeg/.mov 短视频）。返回成功/失败结果，绝不对调用方抛。
+///
+/// 镜像 [exportVideoClipViaFfmpeg]：有界超时、失败/超时清理半成品、ffmpeg 真因尾段
+/// 写日志 + 回传 detail。[backend] 仅供测试注入，生产用 [resolveFfmpegBackend]。
+Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
+  required String imagePath,
+  required String audioPath,
+  required String outputPath,
+  int width = 720,
+  int height = 1280,
+  int fps = 12,
+  FfmpegBackend? backend,
+  Duration timeout = const Duration(minutes: 3),
+}) async {
+  final File output = File(outputPath);
+  if (!File(imagePath).existsSync() || !File(audioPath).existsSync()) {
+    _deleteClipSynthOutput(output);
+    return const AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.inputMissing,
+    );
+  }
+
+  try {
+    output.parent.createSync(recursive: true);
+    final FfmpegRunResult result =
+        await (backend ?? resolveFfmpegBackend()).run(
+      buildFfmpegImageAudioToVideoArgs(
+        imagePath: imagePath,
+        audioPath: audioPath,
+        outputPath: outputPath,
+        width: width,
+        height: height,
+        fps: fps,
+      ),
+      timeout,
+    );
+    if (result.isSuccess && output.existsSync() && output.lengthSync() > 0) {
+      return AudiobookClipSynthResult.success(outputPath);
+    }
+    _deleteClipSynthOutput(output);
+    if (result.isSuccess) {
+      return const AudiobookClipSynthResult.failure(
+        AudiobookClipSynthFailure.outputMissing,
+      );
+    }
+    ErrorLogService.instance.log('AudiobookClipSynth', result.failureSummary);
+    final String reason = extractFfmpegFailureReason(result.output);
+    return AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.ffmpegFailed,
+      detail: reason.isEmpty ? null : reason,
+    );
+  } on ProcessException catch (e, stack) {
+    _deleteClipSynthOutput(output);
+    ErrorLogService.instance.log(
+      'AudiobookClipSynth',
+      describeFfmpegProcessException(e),
+      stack,
+    );
+    return AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.ffmpegUnavailable,
+      detail: e.message,
+    );
+  } catch (e, stack) {
+    _deleteClipSynthOutput(output);
+    ErrorLogService.instance.log('AudiobookClipSynth', e, stack);
+    return AudiobookClipSynthResult.failure(
+      AudiobookClipSynthFailure.ffmpegFailed,
+      detail: e.toString(),
+    );
+  }
+}
+
+void _deleteClipSynthOutput(File file) {
+  try {
+    if (file.existsSync()) file.deleteSync();
+  } catch (_) {}
 }

@@ -706,6 +706,12 @@ void main() {
       'lib/src/media/video/video_subtitle_overlay.dart':
           'Video subtitle overlay renders caption content (fixed '
               'white-on-black caption radius/size), not ordinary page chrome.',
+      'lib/src/media/audiobook/audiobook_clip_text_render.dart':
+          'TODO-945 audiobook clip share renders the selected sentence into '
+              'a shareable video frame (offscreen RepaintBoundary → PNG); the '
+              'fontSize: is rendered media content (auto-scaled to fit the clip '
+              'image), not ordinary page chrome — same reviewed exception class '
+              'as the video subtitle overlay caption.',
       'lib/src/media/video/video_subtitle_jump_panel.dart':
           'Subtitle jump list (asbplayer-style transcript panel) renders cue '
               'text + timestamp rows as video-subsystem content; row/timestamp '
