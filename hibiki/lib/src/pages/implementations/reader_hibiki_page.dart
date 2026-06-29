@@ -778,6 +778,11 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<dynamic> Function(String source)? debugEvaluateJavascript;
 
+  /// 测试钩子：抓当前阅读器 WebView 正文为 PNG（经 WebView2 CDP，离屏可用）。
+  /// 仅 debug/profile build 在 onWebViewCreated 注册；release / 未在阅读器页时为 null。
+  @visibleForTesting
+  static Future<Uint8List?> Function()? debugCaptureWebView;
+
   /// Test hook: reports which surface the char cursor lives on
   /// (`none`/`reader`/`popup`). Set in build, cleared on dispose, asserted out of
   /// release builds. Lets integration tests observe the cursor↔popup transfer.
@@ -1436,6 +1441,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void dispose() {
     assert(() {
       ReaderHibikiPage.debugEvaluateJavascript = null;
+      ReaderHibikiPage.debugCaptureWebView = null;
       ReaderHibikiPage.debugCaretSurface = null;
       ReaderHibikiPage.debugEvaluateTopPopup = null;
       ReaderHibikiPage.debugInjectAudiobookBridge = null;

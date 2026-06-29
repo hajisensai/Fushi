@@ -1174,6 +1174,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           );
           ReaderHibikiPage.debugEvaluateJavascript =
               (String source) => controller.evaluateJavascript(source: source);
+          assert(
+            ReaderHibikiPage.debugCaptureWebView == null,
+            'debugCaptureWebView already set — a previous reader did not '
+            'clear it on dispose, or two readers are live at once.',
+          );
+          ReaderHibikiPage.debugCaptureWebView = () => controller.takeScreenshot();
           ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
           ReaderHibikiPage.debugEvaluateTopPopup =
               (String source) async => _webviewTopPopupState?.debugEval(source);
