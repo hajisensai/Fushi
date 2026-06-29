@@ -71,6 +71,12 @@ class HomeVideoPage extends ConsumerStatefulWidget {
   final Future<File> Function(RemoteVideoInfo video)?
       remoteVideoDownloadDestination;
 
+  /// 测试钩子：强制重查本地视频列表（程序化 seed 视频后让其出现在网格）。
+  /// 视频页用 initState 一次性 FutureBuilder + IndexedStack 保活，seed 晚于
+  /// 首次查询时不会自动重查；仅 debug/profile build 在 initState 注册。
+  @visibleForTesting
+  static void Function()? debugRefreshVideos;
+
   @override
   ConsumerState<HomeVideoPage> createState() => _HomeVideoPageState();
 }
@@ -112,6 +118,19 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // defaulting to 0 was harmless before, but series grouping needs
     // _seriesById on the first paint, not only after a refresh).
     _loadVideoOrder();
+    assert(() {
+      HomeVideoPage.debugRefreshVideos = _refresh;
+      return true;
+    }());
+  }
+
+  @override
+  void dispose() {
+    assert(() {
+      HomeVideoPage.debugRefreshVideos = null;
+      return true;
+    }());
+    super.dispose();
   }
 
   void _refresh() {

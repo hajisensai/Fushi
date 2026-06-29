@@ -11,6 +11,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/home_video_page.dart'
+    show HomeVideoPage;
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
@@ -296,8 +298,12 @@ Future<String> seedVideo(
     videoPath: Value(videoFile.absolute.path),
   ));
 
-  // 视频页无列表 provider 可刷；tag 筛选 provider 失效是无害的 best-effort。
+  // 视频页用 initState 一次性 FutureBuilder（IndexedStack 保活），seed 晚于首次
+  // 查询不会自动重查 → 经测试钩子 debugRefreshVideos 强制重查让视频出现；tag 筛选
+  // provider 也刷一下（无害 best-effort）。
   container.invalidate(filteredVideoBookUidsProvider);
+  HomeVideoPage.debugRefreshVideos?.call();
+  await tester.pump();
 
   final Finder videoCard = find.byKey(ValueKey<String>('home_video_$bookUid'));
   for (int i = 0; i < 40; i++) {
