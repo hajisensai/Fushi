@@ -43,9 +43,13 @@ void main() {
       'Locale get locale',
       '}\n\n/// 按实验开关',
     );
+    // TODO-960: the primary app subtree is now wrapped in a locale-keyed
+    // [KeyedSubtree] (so a desktop hot language switch remounts everything),
+    // so anchor on that wrapper. The MaterialApp constructor still lives
+    // immediately inside it, so the assertions below are unchanged.
     primaryMaterialAppSource = _functionSource(
       mainSource,
-      'return TranslationProvider(\n      child: MaterialApp(',
+      'return KeyedSubtree(',
       '\n  }\n\n  /// Responsible for managing global app-wide state.',
     );
   });

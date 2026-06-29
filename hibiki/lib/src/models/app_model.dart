@@ -2096,12 +2096,32 @@ class AppModel with ChangeNotifier {
 
   String? get lastSelectedModel => prefsRepo.lastSelectedModel;
 
-  /// Persist a new app locale in preferences. Restarts the app so every
-  /// widget re-resolves [t] with the new locale (Method A lookups don't
-  /// automatically rebuild on locale change).
+  /// Persist a new app locale in preferences and switch the UI language.
+  ///
+  /// Desktop (TODO-960): live hot-reload, **never** restart the process. The
+  /// desktop restart path (`Process.start(detached) + exit(0)`) races the
+  /// Windows single-instance mutex (`windows/runner/main.cpp`): the freshly
+  /// spawned process reaches `CreateMutexW` before the old process has called
+  /// `exit(0)`, gets `ERROR_ALREADY_EXISTS`, fronts the old window then
+  /// `return EXIT_SUCCESS` (self-terminates) — moments later the old process
+  /// also exits, leaving no process at all (app closes, never reopens). So on
+  /// desktop we mutate [LocaleSettings] in place and [notifyListeners]; because
+  /// the bulk of the UI reads the global Method A `t` (which does NOT rebuild
+  /// on a [LocaleSettings] change by itself), the root widget tree is
+  /// additionally remounted via a locale-keyed [Key] at [main]'s
+  /// [TranslationProvider] (see `_HoshiReaderAppState.build`).
+  ///
+  /// Mobile (Android/iOS) keeps the native restart path (`restart_app` plugin
+  /// rebuilds the Activity/scene — no mutex race). The data-root migration
+  /// path still restarts on every platform via its own call site
+  /// (`data_root.part.dart`), and is intentionally unaffected by this method.
   Future<void> setAppLocale(String localeTag) async {
     await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
+    if (isDesktopPlatform) {
+      notifyListeners();
+      return;
+    }
     if (platformServices.lifecycle.supportsRestart) {
       await platformServices.lifecycle.restartApp();
     } else {

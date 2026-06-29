@@ -1044,85 +1044,101 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       });
     }
 
-    return TranslationProvider(
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        navigatorKey: appModel.navigatorKey,
-        // Resets the focus highlight to touch on every route push/pop so a ring
-        // lit by keyboard/gamepad navigation on one page is not carried onto the
-        // freshly-entered page (BUG-398).
-        navigatorObservers: <NavigatorObserver>[
-          appModel.focusHighlightObserver
-        ],
-        home: home,
-        locale: locale,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        supportedLocales: appModel.locales.values,
-        themeMode: themeMode,
-        theme: appModel.theme,
-        darkTheme: appModel.darkTheme,
-        // This is responsible for the initialising the global spacing across
-        // the entire project, making use of the [spaces] package.
-        builder: (context, child) {
-          _scheduleWindowsUpdateHandoffReconcile();
-          final cs = Theme.of(context).colorScheme;
-          // Keep the native Windows title bar in sync with the live app theme
-          // (surface background + onSurface text). No-op on other platforms.
-          // The channel de-dupes identical values so this is cheap per rebuild.
-          WindowCaptionChannel.setCaptionColors(
-            caption: cs.surface,
-            text: cs.onSurface,
-          );
-          // Drive the status/navigation bar icon brightness from the *live*
-          // theme so switching themes repaints the system bars. The builder
-          // reruns on every theme change, so the AnnotatedRegion re-emits the
-          // matching overlay style.
-          return AnnotatedRegion<SystemUiOverlayStyle>(
-            value: hibikiSystemOverlayStyle(cs.brightness),
-            child: CupertinoTheme(
-              data:
-                  hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final Size viewport = constraints.hasBoundedWidth &&
-                          constraints.hasBoundedHeight
-                      ? constraints.biggest
-                      : MediaQuery.sizeOf(context);
-                  final double uiScale = appModel.resolveAppUiScaleForViewport(
-                    viewport: viewport,
-                    platform: Theme.of(context).platform,
-                  );
-                  return HibikiAppUiScale(
-                    scale: uiScale,
-                    child: _wrapFocusNavigation(
-                      enabled: appModel.experimentalFocusNavigationEnabled,
-                      child: wrapWithGlobalNavigation(
-                        navigatorKey: appModel.navigatorKey,
-                        focusNavigationEnabled:
-                            appModel.experimentalFocusNavigationEnabled,
-                        registry: appModel.shortcutRegistry,
+    // TODO-960: live UI-language switch on desktop. [setAppLocale] no longer
+    // restarts the process there (it raced the Windows single-instance mutex
+    // and killed the app); it mutates [LocaleSettings] + notifyListeners
+    // instead. Most of the UI reads the global Method A `t`, which does NOT
+    // rebuild on a [LocaleSettings] change on its own, so this locale-keyed
+    // [KeyedSubtree] remounts the whole app subtree whenever the display
+    // language changes, forcing every widget (incl. global-`t` readers) to
+    // re-resolve its strings. (The generated [TranslationProvider] takes no
+    // `key`, so the key lives on the enclosing [KeyedSubtree].) The remount
+    // returns to [home]; this is acceptable (a real restart also dropped the
+    // navigation stack) and only fires on an explicit language change, not on
+    // ordinary [notifyListeners] ticks.
+    return KeyedSubtree(
+      key: ValueKey<String>('app-locale-${locale.toLanguageTag()}'),
+      child: TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          navigatorKey: appModel.navigatorKey,
+          // Resets the focus highlight to touch on every route push/pop so a ring
+          // lit by keyboard/gamepad navigation on one page is not carried onto the
+          // freshly-entered page (BUG-398).
+          navigatorObservers: <NavigatorObserver>[
+            appModel.focusHighlightObserver
+          ],
+          home: home,
+          locale: locale,
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: appModel.locales.values,
+          themeMode: themeMode,
+          theme: appModel.theme,
+          darkTheme: appModel.darkTheme,
+          // This is responsible for the initialising the global spacing across
+          // the entire project, making use of the [spaces] package.
+          builder: (context, child) {
+            _scheduleWindowsUpdateHandoffReconcile();
+            final cs = Theme.of(context).colorScheme;
+            // Keep the native Windows title bar in sync with the live app theme
+            // (surface background + onSurface text). No-op on other platforms.
+            // The channel de-dupes identical values so this is cheap per rebuild.
+            WindowCaptionChannel.setCaptionColors(
+              caption: cs.surface,
+              text: cs.onSurface,
+            );
+            // Drive the status/navigation bar icon brightness from the *live*
+            // theme so switching themes repaints the system bars. The builder
+            // reruns on every theme change, so the AnnotatedRegion re-emits the
+            // matching overlay style.
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: hibikiSystemOverlayStyle(cs.brightness),
+              child: CupertinoTheme(
+                data: hibikiCupertinoTheme(cs,
+                    fontFamily: appModel.appFontFamily),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Size viewport = constraints.hasBoundedWidth &&
+                            constraints.hasBoundedHeight
+                        ? constraints.biggest
+                        : MediaQuery.sizeOf(context);
+                    final double uiScale =
+                        appModel.resolveAppUiScaleForViewport(
+                      viewport: viewport,
+                      platform: Theme.of(context).platform,
+                    );
+                    return HibikiAppUiScale(
+                      scale: uiScale,
+                      child: _wrapFocusNavigation(
+                        enabled: appModel.experimentalFocusNavigationEnabled,
+                        child: wrapWithGlobalNavigation(
+                          navigatorKey: appModel.navigatorKey,
+                          focusNavigationEnabled:
+                              appModel.experimentalFocusNavigationEnabled,
+                          registry: appModel.shortcutRegistry,
 
-                        // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
-                        // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
-                        // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
-                        child: Stack(
-                          children: <Widget>[
-                            child!,
-                            const FloatingLyricLookupHost(),
-                          ],
+                          // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/首页
+                          // 开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无挂起请求时
+                          // 整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                          child: Stack(
+                            children: <Widget>[
+                              child!,
+                              const FloatingLyricLookupHost(),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
