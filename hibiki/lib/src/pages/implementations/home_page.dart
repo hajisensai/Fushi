@@ -653,15 +653,17 @@ class _HomePageState extends BasePageState<HomePage>
       resizeToAvoidBottomInset: false,
       body: SafeArea(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
       // TODO-973: the bottom bar collapses while gamepad auto-immersive is active
-      // (single source of truth on AppModel.gamepadImmersiveActive). A null
-      // bottomNavigationBar removes it from the Scaffold entirely so the body gets
-      // the full height; opted-out users keep it (default false).
-      bottomNavigationBar: ValueListenableBuilder<bool>(
-        valueListenable: appModel.gamepadImmersiveActive,
-        builder: (BuildContext context, bool immersive, _) {
-          if (immersive) return const SizedBox.shrink();
-          return FocusTraversalGroup(
-            child: adaptiveBottomBar(
+      // (single source of truth on AppModel.gamepadImmersiveActive); immersive
+      // returns a zero-size child so the body gets the full height, opted-out
+      // users keep it (default false). The FocusTraversalGroup must wrap the
+      // ValueListenableBuilder (not the inverse) so the bottom-nav stays isolated
+      // as one closed traversal block (TODO-713) regardless of immersive state.
+      bottomNavigationBar: FocusTraversalGroup(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: appModel.gamepadImmersiveActive,
+          builder: (BuildContext context, bool immersive, _) {
+            if (immersive) return const SizedBox.shrink();
+            return adaptiveBottomBar(
               context: context,
               currentIndex: visualIndex,
               onTap: (int index) {
@@ -673,9 +675,9 @@ class _HomePageState extends BasePageState<HomePage>
               },
               items: displayItems,
               gamepadImmersiveActive: immersive,
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

@@ -1209,9 +1209,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
     // TODO-973：手柄沉浸（全局单一真相源 AppModel.gamepadImmersiveActive）也作为
-    // 控制条压制门控之一，与上面各本地门控同一派生路径——升降沿都重跑可见性派生。
-    appModel.gamepadImmersiveActive
-        .addListener(_applyControlsVisibilityFromMediaKit);
+    // 控制条压制门控之一。但**不能在 initState 订阅**——读 appModel 会强制构造
+    // AppModel（错误态 smoke 用未初始化 AppModel，platformServicesProvider 未 override
+    // 会抛）。与上面 lowMemory 同范式：留到成功路径 [_seedWarmPopup]（缺书/错误态无
+    // 视频无控制条，本就无需此门控）再 attach，dispose 按 [_gamepadImmersiveListenerAttached]
+    // 守卫摘除。
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
@@ -2305,9 +2307,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     // TODO-973：手柄沉浸 notifier 归 AppModel 所有（生命周期长于本页），必须在本页
     // dispose 时摘掉本页注册的监听，否则页面销毁后它仍会回调 [_applyControlsVisibility
-    // FromMediaKit] 触碰下面即将 dispose 的本地 notifier。
-    appModel.gamepadImmersiveActive
-        .removeListener(_applyControlsVisibilityFromMediaKit);
+    // FromMediaKit] 触碰下面即将 dispose 的本地 notifier。仅当成功路径真挂过才摘除
+    // （[_gamepadImmersiveListenerAttached]）——错误态从未 attach，也绝不读 appModel。
+    if (_gamepadImmersiveListenerAttached) {
+      appModel.gamepadImmersiveActive
+          .removeListener(_applyControlsVisibilityFromMediaKit);
+    }
     _subtitleListVisible.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
@@ -2536,11 +2541,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [DictionaryPopupWebView] cold-loads popup.html/JS/CSS ONCE while idle and
   /// is reused warm for every lookup — no per-lookup cold-load (white flash) in
   /// the video player. Low-memory mode keeps no warm slot (disposes on close).
+  /// 是否已把本页的可见性派生监听挂到全局 [AppModel.gamepadImmersiveActive]。
+  /// 仅成功路径（[_seedWarmPopup]）attach，dispose 据此守卫摘除——错误态从不读 appModel。
+  bool _gamepadImmersiveListenerAttached = false;
+
   void _seedWarmPopup() {
     if (!mounted) return;
     // 成功路径调用，此刻 AppModel 必已初始化 → 安全读取真实 lowMemory 设入 controller
     // （seedWarmSlot/dismissAt 据此决定是否保留热槽）。
     _popup.lowMemory = appModel.lowMemoryMode;
+    // TODO-973：手柄沉浸门控的订阅也在此成功路径挂载（此刻 appModel 必已初始化）。
+    if (!_gamepadImmersiveListenerAttached) {
+      appModel.gamepadImmersiveActive
+          .addListener(_applyControlsVisibilityFromMediaKit);
+      _gamepadImmersiveListenerAttached = true;
+    }
     setState(() => _popup.seedWarmSlot());
     _syncPopupOverlay();
   }
