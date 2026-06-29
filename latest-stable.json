@@ -1,27 +1,23 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.0",
-  "tag": "v1.0.0",
+  "version": "1.0.1",
+  "tag": "v1.0.1",
   "channel": "formal",
   "prerelease": false,
-  "releaseSequence": 5976,
-  "notes": "Manual formal release from v1.0.0 @ 9636a75.",
+  "releaseSequence": 6096,
+  "notes": "Manual formal release from codex/fix-beta-update-repeat @ ade12a8.",
   "assets": [
     {
-      "name": "hibiki-1.0.0-9636a75-debug.apk",
-      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.0.0/hibiki-1.0.0-9636a75-debug.apk"
+      "name": "hibiki-1.0.1-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1/hibiki-1.0.1-arm64-v8a.apk"
     },
     {
-      "name": "hibiki-1.0.0-arm64-v8a.apk",
-      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.0.0/hibiki-1.0.0-arm64-v8a.apk"
+      "name": "hibiki-1.0.1-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1/hibiki-1.0.1-armeabi-v7a.apk"
     },
     {
-      "name": "hibiki-1.0.0-armeabi-v7a.apk",
-      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.0.0/hibiki-1.0.0-armeabi-v7a.apk"
-    },
-    {
-      "name": "hibiki-1.0.0-x86_64.apk",
-      "browser_download_url": "https://github.com/hdjsadgfwtg/hibiki/releases/download/v1.0.0/hibiki-1.0.0-x86_64.apk"
+      "name": "hibiki-1.0.1-x86_64.apk",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/v1.0.1/hibiki-1.0.1-x86_64.apk"
     }
   ]
 }
