@@ -56,6 +56,7 @@ class UpdateChecker {
   static Future<void> scheduleCheck(
     BuildContext context,
     String currentVersion, {
+    String? currentBuildNumber,
     bool neverRemind = false,
     bool autoInstall = false,
     bool betaChannel = false,
@@ -74,9 +75,15 @@ class UpdateChecker {
         : betaChannel
             ? UpdateChannel.beta
             : UpdateChannel.stable;
+    final String comparableCurrentVersion =
+        effectiveCurrentVersionForUpdateChannel(
+      version: currentVersion,
+      buildNumber: currentBuildNumber,
+      channel: channel,
+    );
     final Completer<void> completer = Completer<void>();
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _check(context, currentVersion,
+      _check(context, comparableCurrentVersion,
               neverRemind: neverRemind,
               autoInstall: autoInstall,
               channel: channel,
@@ -1179,6 +1186,45 @@ bool isUpdateVersionNewer(
 
   final String remotePrerelease = _prereleasePart(remoteVersion)!;
   return _comparePrerelease(remotePrerelease, localPrerelease) > 0;
+}
+
+@visibleForTesting
+String effectiveCurrentVersionForUpdateChannel({
+  required String version,
+  required String? buildNumber,
+  required UpdateChannel channel,
+}) {
+  final String normalized = _stripBuildMetadata(version.trim());
+  if (channel == UpdateChannel.stable) return normalized;
+  if (_versionBelongsToChannel(normalized, channel)) return normalized;
+  if (_prereleasePart(normalized) != null) return normalized;
+
+  final int? releaseSequence =
+      _releaseSequenceFromPlatformBuildNumber(buildNumber);
+  if (releaseSequence == null) return normalized;
+
+  final String channelName = switch (channel) {
+    UpdateChannel.beta => 'beta',
+    UpdateChannel.debug => 'debug',
+    UpdateChannel.stable => throw StateError('stable handled above'),
+  };
+  return '${_basePart(normalized)}-$channelName.$releaseSequence';
+}
+
+int? _releaseSequenceFromPlatformBuildNumber(String? buildNumber) {
+  final int? parsed = int.tryParse(buildNumber?.trim() ?? '');
+  if (parsed == null || parsed <= 0) return null;
+
+  // Android release APKs use versionCodeBase + 100 * releaseSequence + ABI
+  // offset. Desktop builds expose the raw Flutter build number directly.
+  const int androidVersionCodeBase = 1000000000;
+  if (parsed < androidVersionCodeBase) return parsed;
+
+  final int adjusted = parsed - androidVersionCodeBase;
+  final int abiOffset = adjusted % 100;
+  if (abiOffset > 3) return null;
+  final int releaseSequence = adjusted ~/ 100;
+  return releaseSequence > 0 ? releaseSequence : null;
 }
 
 bool isVersionNewer(String remote, String local) {

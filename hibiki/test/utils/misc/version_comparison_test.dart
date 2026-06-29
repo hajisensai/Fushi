@@ -211,6 +211,41 @@ void main() {
         isFalse,
       );
     });
+
+    test('desktop beta build number restores the installed beta sequence', () {
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.0.1',
+          buildNumber: '6095',
+          channel: UpdateChannel.beta,
+        ),
+        '1.0.1-beta.6095',
+      );
+      expect(
+        isUpdateVersionNewer(
+          '1.0.1-beta.6095',
+          effectiveCurrentVersionForUpdateChannel(
+            version: '1.0.1',
+            buildNumber: '6095',
+            channel: UpdateChannel.beta,
+          ),
+          UpdateChannel.beta,
+        ),
+        isFalse,
+        reason: 'installed beta 6095 must not prompt for beta 6095 again',
+      );
+    });
+
+    test('Android ABI versionCode restores the installed beta sequence', () {
+      expect(
+        effectiveCurrentVersionForUpdateChannel(
+          version: '1.0.1',
+          buildNumber: '1000609502',
+          channel: UpdateChannel.beta,
+        ),
+        '1.0.1-beta.6095',
+      );
+    });
   });
 }
 
