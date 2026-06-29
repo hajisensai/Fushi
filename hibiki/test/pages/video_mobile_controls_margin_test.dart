@@ -241,6 +241,25 @@ void main() {
         reason: '轨道基线必须高于 media_kit 默认 2.4');
   });
 
+  test('触摸热区基线收窄（TODO-971：透明命中带不过大 ≤ 40）', () {
+    // fork 把整条 container height 做成可拖 seek 命中区，轨道上方一大片透明命中带
+    // 吞掉底部点击。原 52×缩放 过大；收窄到 ≤ 40（仍高于 media_kit 默认 36 保留易
+    // 命中），缩短透明命中带。
+    double baseOf(String name) {
+      final RegExpMatch? m = RegExp(
+        'static const double $name = ' r'(\d+(?:\.\d+)?);',
+      ).firstMatch(src);
+      expect(m, isNotNull, reason: '应定义常量 $name');
+      return double.parse(m!.group(1)!);
+    }
+
+    expect(
+      baseOf('_videoSeekBarContainerHeightBase'),
+      lessThanOrEqualTo(40.0),
+      reason: 'TODO-971：触摸热区透明命中带过大会吞掉底部点击，基线须 ≤ 40',
+    );
+  });
+
   test('三个 seekBar 尺寸 getter 随界面大小缩放（_videoUiScale）', () {
     for (final String getter in <String>[
       '_videoSeekBarContainerHeight',

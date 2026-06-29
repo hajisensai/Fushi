@@ -200,4 +200,24 @@ void main() {
     expect(mineCard, contains('degradedToStill && mounted'),
         reason: '降级提示须 mounted 守卫，避免向已销毁页面 _showOsd。');
   });
+
+  test('TODO-971：制卡成功 OSD 用突出变体（醒目，区别于音量小角标）', () {
+    // 视频页刻意不用底部 toast（会遮控制条）。但制卡成功旧走 _showOsd(message) 与
+    // 音量/亮度同款左上角小角标，太轻易忽略。根因修复=保留 OSD 通道但制卡成功用
+    // 突出（居中、更大、停留更久）变体。文案仍同源 describeMineOutcome →
+    // card_exported(deck:)/card_overwritten(deck:)。
+    final String mineImpl = region(
+      'Future<MinePopupResult> _onMineEntryImpl(',
+      'Future<void> _recordMinedSentenceForVideo(',
+    );
+    // 成功消息仍由 describeMineOutcome 统一产出（含牌组名）。
+    expect(mineImpl.contains('describeMineOutcome('), isTrue,
+        reason: '制卡成功/覆盖消息须由 describeMineOutcome 统一产出（含 deck 名）。');
+    // 成功分支发出突出 OSD。
+    expect(
+      mineImpl.contains('_showOsd(described.message, prominent: true)'),
+      isTrue,
+      reason: 'TODO-971：制卡成功须走突出 OSD（prominent: true），不再是易忽略的小角标。',
+    );
+  });
 }

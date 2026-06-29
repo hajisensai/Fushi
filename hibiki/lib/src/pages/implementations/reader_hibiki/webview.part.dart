@@ -628,7 +628,14 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       } else {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
-    } else if (absDx < 20 && absDy < 20 && elapsed < 500) {
+    } else if (absDx < $swipeDistThreshold && absDy < $swipeDistThreshold) {
+      // TODO-971: 消除「20~72px 漂移既不算 tap 也不算 swipe」的死区。旧判据
+      // `absDx<20 && absDy<20 && elapsed<500` 把稳而慢 / 略有漂移的点词手势整个丢
+      // 掉（用户报「单词难点中」）。把 tap 上界从 20px 放宽到 swipe 距离阈值
+      // （$swipeDistThreshold），并去掉 500ms 时限：在「翻页阈值」以内的非翻页手势
+      // 一律当点击查词。仍保留 swipe 阈值上界，使连续模式的整页竖向滚动拖拽（dy 远
+      // 超阈值）不会被误判成 tap 触发查词（保留原 20px 时「大拖拽不查词」的语义、
+      // 只是把可点击区从 20px 扩到 72px）。
       var tapEl = document.elementFromPoint(x, y);
       if (_hoshiRevealBlurredImage(tapEl)) {
         if (e && e.preventDefault) e.preventDefault();

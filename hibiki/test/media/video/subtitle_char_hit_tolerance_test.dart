@@ -52,4 +52,23 @@ void main() {
   test('空列表返回 -1', () {
     expect(resolveSubtitleCharHit(<Rect>[], const Offset(5, 10)), -1);
   });
+
+  test('TODO-971：默认容差 ≥ 10（手指比 6px 宽，放宽兜底命中）', () {
+    // 极窄字符（width=4 → 半字宽=2）下，默认 minTolerance 决定实际容差。手指比 6px
+    // 宽，旧 6.0 仍偏小，手机字幕点词常 miss。默认放宽到 ≥ 10：距字符 9px 的点必须
+    // 兜底命中，证明默认容差至少 10。
+    final List<Rect> narrow = <Rect>[const Rect.fromLTWH(0, 0, 4, 20)];
+    // 点在字符右缘外 9px（x=13，char right=4 → 距 9）。容差 6 时 miss，容差 ≥ 10 命中。
+    expect(
+      resolveSubtitleCharHit(narrow, const Offset(13, 10)),
+      0,
+      reason: 'TODO-971：默认容差须 ≥ 10，距字符 9px 的点应兜底命中',
+    );
+    // 反向：距 11px（x=15）仍应 miss（容差不会无限放大，仍夹在 10 附近）。
+    expect(
+      resolveSubtitleCharHit(narrow, const Offset(15, 10)),
+      -1,
+      reason: '距 11px 超出 ~10px 容差应 miss，证明容差有界不误命中远处',
+    );
+  });
 }

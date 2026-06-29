@@ -45,7 +45,9 @@ class VideoSubtitleHitTester {
 int resolveSubtitleCharHit(
   List<Rect> charRects,
   Offset point, {
-  double minTolerance = 6.0,
+  // TODO-971：手指比 6px 宽，旧 6.0 下手机字幕点词常落在字缝/描边外缘 miss。
+  // 放宽到 10.0，字缝/描边一字之内更易兜底命中（仍夹半字宽，不跨到隔壁字）。
+  double minTolerance = 10.0,
 }) {
   // 第一段：精确包含。
   for (int i = 0; i < charRects.length; i++) {

@@ -398,11 +398,21 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
 }
 
 class _VideoOsdMessage {
-  const _VideoOsdMessage({required this.message, this.icon, this.progress});
+  const _VideoOsdMessage({
+    required this.message,
+    this.icon,
+    this.progress,
+    this.prominent = false,
+  });
 
   final String message;
   final IconData? icon;
   final double? progress;
+
+  /// TODO-971：突出变体（制卡成功用）。普通 OSD 沿用音量/亮度同款左上角小角标，
+  /// 太轻易被忽略；制卡成功这类用户主动操作的确认改成居中、更大字号、停留更久的
+  /// 卡片，区别于被动的音量小角标。
+  final bool prominent;
 }
 
 enum _VideoLevelHudKind { leftBrightness, rightVolume }
@@ -525,8 +535,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 移动控制条进度条触摸热区高度基线（TODO-157/BUG-218）。media_kit 默认
   /// `seekBarContainerHeight=36`，对准才滑得到；抬高扩大可命中热区。随界面缩放。
   /// 热区向上长（[_mobileControlsTheme] 把进度条整体抬到按钮条上方），不向下侵入
-  /// 系统边缘手势区。
-  static const double _videoSeekBarContainerHeightBase = 52;
+  /// 系统边缘手势区。TODO-971：原 52×缩放 的透明命中带过大，吞掉轨道上方一大片
+  /// 区域的底部点击；收窄到 40（仍高于 media_kit 默认 36，保留易命中），缩短透明
+  /// 命中带又不丢可命中性。
+  static const double _videoSeekBarContainerHeightBase = 40;
 
   /// 移动控制条进度条拖动滑块尺寸基线（TODO-157/BUG-218）。media_kit 默认 12.8；
   /// 抬高让滑块更易对准。随界面缩放。
