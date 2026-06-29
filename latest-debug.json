@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 6097,
-  "notes": "Automated desktop debug-channel build from main @ 76ed17b. Push releases are always prerelease and never Latest.",
+  "notes": "Automated desktop debug-channel build from develop @ 76ed17b. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.0.1-debug.6097-windows-setup.exe",
