@@ -331,15 +331,17 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
-    wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver> fetchRequestPausedEventReceiver;
-
-    if (succeededOrLog(webView->GetDevToolsProtocolEventReceiver(L"Fetch.requestPaused", &fetchRequestPausedEventReceiver))) {
-      failedAndLog(fetchRequestPausedEventReceiver->add_DevToolsProtocolEventReceived(
+    if (succeededOrLog(webView->GetDevToolsProtocolEventReceiver(L"Fetch.requestPaused", &fetchRequestPausedEventReceiver_))) {
+      auto alive = alive_;
+      failedAndLog(fetchRequestPausedEventReceiver_->add_DevToolsProtocolEventReceived(
         Callback<ICoreWebView2DevToolsProtocolEventReceivedEventHandler>(
-          [this](
+          [this, alive](
             ICoreWebView2* sender,
             ICoreWebView2DevToolsProtocolEventReceivedEventArgs* args) -> HRESULT
           {
+            if (!*alive) {
+              return S_OK;
+            }
             wil::unique_cotaskmem_string json;
             if (succeededOrLog(args->get_ParameterObjectAsJson(&json))) {
               auto requestPausedData = nlohmann::json::parse(wide_to_utf8(json.get()));
@@ -357,8 +359,11 @@ namespace flutter_inappwebview_plugin
               }
               auto isForMainFrame = pageFrameId_.empty() || string_equals(pageFrameId_, frameId);
 
-              auto allowRequest = [this, requestId, url, isForMainFrame]()
+              auto allowRequest = [this, requestId, url, isForMainFrame, alive]()
                 {
+                  if (!*alive) {
+                    return;
+                  }
                   failedAndLog(webView->CallDevToolsProtocolMethod(L"Fetch.continueRequest",
                     utf8_to_wide("{\"requestId\":\"" + requestId + "\"}").c_str(),
                     Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
@@ -377,8 +382,11 @@ namespace flutter_inappwebview_plugin
                   }
                 };
 
-              auto cancelRequest = [this, requestId]()
+              auto cancelRequest = [this, requestId, alive]()
                 {
+                  if (!*alive) {
+                    return;
+                  }
                   failedAndLog(webView->CallDevToolsProtocolMethod(L"Fetch.failRequest",
                     utf8_to_wide("{\"requestId\":\"" + requestId + "\", \"errorReason\": \"Aborted\"}").c_str(),
                     Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
@@ -468,13 +476,16 @@ namespace flutter_inappwebview_plugin
 
             return S_OK;
           })
-        .Get(), nullptr));
+        .Get(), &fetchRequestPausedToken_));
     }
 
     failedLog(webView->add_NavigationStarting(
       Callback<ICoreWebView2NavigationStartingEventHandler>(
-        [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
+        [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
         {
+          if (!*alive) {
+            return S_OK;
+          }
           isLoading_ = true;
 
           if (!channelDelegate) {
@@ -571,23 +582,29 @@ namespace flutter_inappwebview_plugin
 
           return S_OK;
         }
-      ).Get(), nullptr));
+      ).Get(), &navigationStartingToken_));
 
     failedLog(webView->add_ContentLoading(
       Callback<ICoreWebView2ContentLoadingEventHandler>(
-        [this](ICoreWebView2* sender, ICoreWebView2ContentLoadingEventArgs* args)
+        [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2ContentLoadingEventArgs* args)
         {
+          if (!*alive) {
+            return S_OK;
+          }
           if (channelDelegate) {
             channelDelegate->onProgressChanged(33);
           }
           return S_OK;
         }
-      ).Get(), nullptr));
+      ).Get(), &contentLoadingToken_));
 
     failedLog(webView->add_NavigationCompleted(
       Callback<ICoreWebView2NavigationCompletedEventHandler>(
-        [this](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args)
+        [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args)
         {
+          if (!*alive) {
+            return S_OK;
+          }
           isLoading_ = false;
 
           evaluateJavascript(PLATFORM_READY_JS_SOURCE, ContentWorld::page(), nullptr);
@@ -648,11 +665,14 @@ namespace flutter_inappwebview_plugin
 
           return S_OK;
         }
-      ).Get(), nullptr));
+      ).Get(), &navigationCompletedToken_));
 
     failedLog(webView->add_DocumentTitleChanged(Callback<ICoreWebView2DocumentTitleChangedEventHandler>(
-      [this](ICoreWebView2* sender, IUnknown* args)
+      [this, alive = alive_](ICoreWebView2* sender, IUnknown* args)
       {
+        if (!*alive) {
+          return S_OK;
+        }
         if (channelDelegate) {
           wil::unique_cotaskmem_string title;
           sender->get_DocumentTitle(&title);
@@ -660,11 +680,14 @@ namespace flutter_inappwebview_plugin
         }
         return S_OK;
       }
-    ).Get(), nullptr));
+    ).Get(), &documentTitleChangedToken_));
 
     failedLog(webView->add_HistoryChanged(Callback<ICoreWebView2HistoryChangedEventHandler>(
-      [this](ICoreWebView2* sender, IUnknown* args)
+      [this, alive = alive_](ICoreWebView2* sender, IUnknown* args)
       {
+        if (!*alive) {
+          return S_OK;
+        }
         if (channelDelegate) {
           std::optional<bool> isReload = std::nullopt;
           if (lastNavigationAction_ && lastNavigationAction_->navigationType.has_value()) {
@@ -674,11 +697,18 @@ namespace flutter_inappwebview_plugin
         }
         return S_OK;
       }
-    ).Get(), nullptr));
+    ).Get(), &historyChangedToken_));
 
+    // TODO-964：cdb dump 确证的崩点。WebMessageReceived 解析含 "name" 字段的 JSON，
+    // 析构后迟到回调把已被复用为 JSON 消息缓冲的内存当 this 解引用 → UAF。
+    // 捕获 alive_ 拷贝，入口先判存活；内部 callHandler 的 resolve/reject 回调经 Dart 桥
+    // 异步回来仍会触碰 this->evaluateJavascript，也各自捕获 alive 并先判存活。
     failedLog(webView->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-      [this](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args)
+      [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args)
       {
+        if (!*alive) {
+          return S_OK;
+        }
         if (!channelDelegate) {
           return S_OK;
         }
@@ -697,8 +727,11 @@ namespace flutter_inappwebview_plugin
               std::string handlerArgs = body.at("args").is_string() ? body.at("args").get<std::string>() : "";
 
               auto callback = std::make_unique<WebViewChannelDelegate::CallJsHandlerCallback>();
-              callback->defaultBehaviour = [this, callHandlerID](const std::optional<const flutter::EncodableValue*> response)
+              callback->defaultBehaviour = [this, callHandlerID, alive](const std::optional<const flutter::EncodableValue*> response)
                 {
+                  if (!*alive) {
+                    return;
+                  }
                   std::string json = "null";
                   if (response.has_value() && !response.value()->IsNull()) {
                     json = std::get<std::string>(*(response.value()));
@@ -709,8 +742,11 @@ namespace flutter_inappwebview_plugin
                       delete window." + JAVASCRIPT_BRIDGE_NAME + "[" + std::to_string(callHandlerID) + "]; \
                     }", ContentWorld::page(), nullptr);
                 };
-              callback->error = [this, callHandlerID](const std::string& error_code, const std::string& error_message, const flutter::EncodableValue* error_details)
+              callback->error = [this, callHandlerID, alive](const std::string& error_code, const std::string& error_message, const flutter::EncodableValue* error_details)
                 {
+                  if (!*alive) {
+                    return;
+                  }
                   auto errorMessage = error_code + ", " + error_message;
                   debugLog(errorMessage);
 
@@ -726,17 +762,19 @@ namespace flutter_inappwebview_plugin
 
         return S_OK;
       }
-    ).Get(), nullptr));
+    ).Get(), &webMessageReceivedToken_));
 
-    wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver> consoleMessageReceiver;
-    if (succeededOrLog(webView->GetDevToolsProtocolEventReceiver(L"Runtime.consoleAPICalled", &consoleMessageReceiver))) {
-      failedLog(consoleMessageReceiver->add_DevToolsProtocolEventReceived(
+    if (succeededOrLog(webView->GetDevToolsProtocolEventReceiver(L"Runtime.consoleAPICalled", &consoleMessageEventReceiver_))) {
+      auto alive = alive_;
+      failedLog(consoleMessageEventReceiver_->add_DevToolsProtocolEventReceived(
         Callback<ICoreWebView2DevToolsProtocolEventReceivedEventHandler>(
-          [this](
+          [this, alive](
             ICoreWebView2* sender,
             ICoreWebView2DevToolsProtocolEventReceivedEventArgs* args) -> HRESULT
           {
-
+            if (!*alive) {
+              return S_OK;
+            }
             if (!channelDelegate) {
               return S_OK;
             }
@@ -770,13 +808,16 @@ namespace flutter_inappwebview_plugin
 
             return S_OK;
           })
-        .Get(), nullptr));
+        .Get(), &consoleMessageToken_));
     }
 
     failedLog(webView->add_NewWindowRequested(
       Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-        [this](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args)
+        [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args)
         {
+          if (!*alive) {
+            return S_OK;
+          }
           wil::com_ptr<ICoreWebView2Deferral> deferral;
           if (channelDelegate && plugin && plugin->inAppWebViewManager && succeededOrLog(args->GetDeferral(&deferral))) {
             plugin->inAppWebViewManager->windowAutoincrementId++;
@@ -807,8 +848,12 @@ namespace flutter_inappwebview_plugin
               std::move(windowFeatures));
 
             auto callback = std::make_unique<WebViewChannelDelegate::CreateWindowCallback>();
-            auto defaultBehaviour = [this, windowId, urlRequest, deferral, args](const std::optional<const bool> handledByClient)
+            auto defaultBehaviour = [this, windowId, urlRequest, deferral, args, alive](const std::optional<const bool> handledByClient)
               {
+                if (!*alive) {
+                  failedLog(deferral->Complete());
+                  return;
+                }
                 if (plugin && plugin->inAppWebViewManager && map_contains(plugin->inAppWebViewManager->windowWebViews, windowId)) {
                   plugin->inAppWebViewManager->windowWebViews.erase(windowId);
                 }
@@ -830,21 +875,27 @@ namespace flutter_inappwebview_plugin
           }
           return S_OK;
         }
-      ).Get(), nullptr));
+      ).Get(), &newWindowRequestedToken_));
 
     failedLog(webView->add_WindowCloseRequested(Callback<ICoreWebView2WindowCloseRequestedEventHandler>(
-      [this](ICoreWebView2* sender, IUnknown* args)
+      [this, alive = alive_](ICoreWebView2* sender, IUnknown* args)
       {
+        if (!*alive) {
+          return S_OK;
+        }
         if (channelDelegate) {
           channelDelegate->onCloseWindow();
         }
         return S_OK;
       }
-    ).Get(), nullptr));
+    ).Get(), &windowCloseRequestedToken_));
 
     failedLog(webView->add_PermissionRequested(Callback<ICoreWebView2PermissionRequestedEventHandler>(
-      [this](ICoreWebView2* sender, ICoreWebView2PermissionRequestedEventArgs* args)
+      [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2PermissionRequestedEventArgs* args)
       {
+        if (!*alive) {
+          return S_OK;
+        }
         wil::com_ptr<ICoreWebView2Deferral> deferral;
         if (channelDelegate && succeededOrLog(args->GetDeferral(&deferral))) {
           wil::unique_cotaskmem_string uri;
@@ -854,13 +905,21 @@ namespace flutter_inappwebview_plugin
           failedAndLog(args->get_PermissionKind(&resource));
 
           auto callback = std::make_unique<WebViewChannelDelegate::PermissionRequestCallback>();
-          auto defaultBehaviour = [this, deferral, args](const std::optional<const std::shared_ptr<PermissionResponse>> permissionResponse)
+          auto defaultBehaviour = [this, deferral, args, alive](const std::optional<const std::shared_ptr<PermissionResponse>> permissionResponse)
             {
+              if (!*alive) {
+                failedLog(deferral->Complete());
+                return;
+              }
               failedLog(args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY));
               failedLog(deferral->Complete());
             };
-          callback->nonNullSuccess = [this, deferral, args](const std::shared_ptr<PermissionResponse> permissionResponse)
+          callback->nonNullSuccess = [this, deferral, args, alive](const std::shared_ptr<PermissionResponse> permissionResponse)
             {
+              if (!*alive) {
+                failedLog(deferral->Complete());
+                return false;
+              }
               auto action = permissionResponse->action;
               if (action.has_value()) {
                 switch (action.value()) {
@@ -889,7 +948,7 @@ namespace flutter_inappwebview_plugin
         }
         return S_OK;
       }
-    ).Get(), nullptr));
+    ).Get(), &permissionRequestedToken_));
 
     failedLog(webView->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL));
     // TODO-931: WebResourceRequested 的 success/null/default 回调跨 Dart 桥异步回来，可能晚于
@@ -1012,14 +1071,17 @@ namespace flutter_inappwebview_plugin
     if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView2)))) {
       failedLog(webView2->add_DOMContentLoaded(
         Callback<ICoreWebView2DOMContentLoadedEventHandler>(
-          [this](ICoreWebView2* sender, ICoreWebView2DOMContentLoadedEventArgs* args)
+          [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2DOMContentLoadedEventArgs* args)
           {
+            if (!*alive) {
+              return S_OK;
+            }
             if (channelDelegate) {
               channelDelegate->onProgressChanged(66);
             }
             return S_OK;
           }
-        ).Get(), nullptr));
+        ).Get(), &domContentLoadedToken_));
     }
 
     /*
@@ -1054,9 +1116,12 @@ namespace flutter_inappwebview_plugin
 
     failedLog(webViewCompositionController->add_CursorChanged(
       Callback<ICoreWebView2CursorChangedEventHandler>(
-        [this](ICoreWebView2CompositionController* sender,
+        [this, alive = alive_](ICoreWebView2CompositionController* sender,
           IUnknown* args) -> HRESULT
         {
+          if (!*alive) {
+            return S_OK;
+          }
           HCURSOR cursor;
           if (cursorChangedCallback_ &&
             sender->get_Cursor(&cursor) == S_OK) {
@@ -1064,7 +1129,7 @@ namespace flutter_inappwebview_plugin
           }
           return S_OK;
         })
-      .Get(), nullptr));
+      .Get(), &cursorChangedToken_));
   }
 
   std::optional<std::string> InAppWebView::getUrl() const
@@ -1605,10 +1670,13 @@ namespace flutter_inappwebview_plugin
       EventRegistrationToken token = {};
       auto hr = eventReceiver->add_DevToolsProtocolEventReceived(
         Callback<ICoreWebView2DevToolsProtocolEventReceivedEventHandler>(
-          [this, eventName](
+          [this, eventName, alive = alive_](
             ICoreWebView2* sender,
             ICoreWebView2DevToolsProtocolEventReceivedEventArgs* args) -> HRESULT
           {
+            if (!*alive) {
+              return S_OK;
+            }
             if (!channelDelegate) {
               return S_OK;
             }
@@ -1991,10 +2059,44 @@ namespace flutter_inappwebview_plugin
     // TODO-931: 先翻存活标志，让任何仍在 Dart 桥途中的 WebResourceRequested deferral 回调走
     // dead 分支（仅 Complete 在途 deferral，不再触碰已析构的 this/channelDelegate/args）。
     *alive_ = false;
-    // 注销 WebResourceRequested handler，阻止析构开始后 WebView2 再投递新的拦截事件。
+    // 注销所有 WebView2 事件 handler，阻止析构开始后引擎再投递事件触发已析构对象的回调
+    // （TODO-964：与 TODO-931 同一 UAF 模式，把范式推广到全部裸 [this] handler）。
     if (webView) {
       failedLog(webView->remove_WebResourceRequested(webResourceRequestedToken_));
+      failedLog(webView->remove_NavigationStarting(navigationStartingToken_));
+      failedLog(webView->remove_ContentLoading(contentLoadingToken_));
+      failedLog(webView->remove_NavigationCompleted(navigationCompletedToken_));
+      failedLog(webView->remove_DocumentTitleChanged(documentTitleChangedToken_));
+      failedLog(webView->remove_HistoryChanged(historyChangedToken_));
+      failedLog(webView->remove_WebMessageReceived(webMessageReceivedToken_));
+      failedLog(webView->remove_NewWindowRequested(newWindowRequestedToken_));
+      failedLog(webView->remove_WindowCloseRequested(windowCloseRequestedToken_));
+      failedLog(webView->remove_PermissionRequested(permissionRequestedToken_));
+      // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，需重新 QueryInterface 该接口才能 remove。
+      wil::com_ptr<ICoreWebView2_2> webView2;
+      if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView2)))) {
+        failedLog(webView2->remove_DOMContentLoaded(domContentLoadedToken_));
+      }
     }
+    // DevTools 事件 receiver 注册在各自 receiver 对象上（成员保活），逐个 remove。
+    if (fetchRequestPausedEventReceiver_) {
+      failedLog(fetchRequestPausedEventReceiver_->remove_DevToolsProtocolEventReceived(fetchRequestPausedToken_));
+    }
+    if (consoleMessageEventReceiver_) {
+      failedLog(consoleMessageEventReceiver_->remove_DevToolsProtocolEventReceived(consoleMessageToken_));
+    }
+    // CursorChanged 注册在 webViewCompositionController 上。
+    if (webViewCompositionController) {
+      failedLog(webViewCompositionController->remove_CursorChanged(cursorChangedToken_));
+    }
+    // 动态注册的 DevTools 协议事件监听器（addDevToolsProtocolEventListener）也捕获 [this]，
+    // 析构前从各自 receiver remove，否则迟到回调同样 UAF。
+    for (auto& entry : devToolsProtocolEventListener_) {
+      if (entry.second.first) {
+        failedLog(entry.second.first->remove_DevToolsProtocolEventReceived(entry.second.second));
+      }
+    }
+    devToolsProtocolEventListener_.clear();
     userContentController = nullptr;
     if (webView) {
       failedLog(webView->Stop());

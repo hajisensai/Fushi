@@ -210,6 +210,28 @@ namespace flutter_inappwebview_plugin
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     // add_WebResourceRequested 的注册 token，析构时 remove 以阻止析构后再触发新拦截回调。
     EventRegistrationToken webResourceRequestedToken_ = {};
+    // TODO-964（BUG 同 931 模式的其余 handler）：以下每个 token 配套各自 add_Xxx 的迟到回调
+    // 守卫——析构里翻 *alive_=false 后逐个 remove_Xxx，阻止析构开始后 WebView2 再投递这些事件；
+    // lambda 各自捕获 alive_ 拷贝，入口先判存活，绝不在死分支触碰 this/channelDelegate/成员。
+    EventRegistrationToken navigationStartingToken_ = {};
+    EventRegistrationToken contentLoadingToken_ = {};
+    EventRegistrationToken navigationCompletedToken_ = {};
+    EventRegistrationToken documentTitleChangedToken_ = {};
+    EventRegistrationToken historyChangedToken_ = {};
+    EventRegistrationToken webMessageReceivedToken_ = {};
+    EventRegistrationToken newWindowRequestedToken_ = {};
+    EventRegistrationToken windowCloseRequestedToken_ = {};
+    EventRegistrationToken permissionRequestedToken_ = {};
+    // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，析构时需重新 QueryInterface 该接口才能 remove。
+    EventRegistrationToken domContentLoadedToken_ = {};
+    // CursorChanged 注册在 webViewCompositionController 上。
+    EventRegistrationToken cursorChangedToken_ = {};
+    // Fetch.requestPaused / Runtime.consoleAPICalled 注册在各自的 DevTools 事件 receiver 上；
+    // receiver 与 token 都要留作成员，析构时才能 remove（否则裸 [this] 回调在析构后 UAF）。
+    wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver> fetchRequestPausedEventReceiver_;
+    EventRegistrationToken fetchRequestPausedToken_ = {};
+    wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver> consoleMessageEventReceiver_;
+    EventRegistrationToken consoleMessageToken_ = {};
     std::map<std::string, std::pair<wil::com_ptr<ICoreWebView2DevToolsProtocolEventReceiver>, EventRegistrationToken>> devToolsProtocolEventListener_ = {};
 
     void registerEventHandlers();
