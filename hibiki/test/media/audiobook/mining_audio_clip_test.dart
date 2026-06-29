@@ -277,6 +277,66 @@ void main() {
       expect(clip.endMs, 4300);
     });
 
+    // TODO-970 / BUG-458: empty DOM sentence span (offset/length null) + a non-null lookup
+    // cue that sits OUTSIDE the sentence (the looked-up token landed on a
+    // plain-selector boundary cue — punctuation / adjacent-sentence fragment —
+    // common on local audiobooks whose cues carry no sasayaki positions). The
+    // span guard trips (no normalized offset/length), so the old code returned
+    // from the position attempt without trying text and fell straight into
+    // _expandAroundCue. _expandAroundCue is cue-anchored: it only keeps text
+    // matches that COVER the anchor cue and only expands to neighbours whose text
+    // is a substring of the sentence. With the anchor cue outside the sentence,
+    // the anchored match is rejected and expansion stops immediately, collapsing
+    // to the single boundary cue — the wrong (or missing) audio. The plain
+    // sentence-text search recovers the full range instead, so when there is
+    // sentence text it must be tried even though cue != null.
+    test(
+        'recovers the full sentence via text when span is empty and the cue is '
+        'outside the sentence', () {
+      final List<AudioCue> cues = <AudioCue>[
+        // Boundary cue the looked-up token landed on (plain selector, outside the
+        // sentence the reader extracted). startMs marks it clearly distinct.
+        _cue(
+          startMs: 100,
+          endMs: 300,
+          text: '前の章の語',
+          textFragmentId: '[data-cue-id="0"]',
+        ),
+        // The sentence '僕は学校へ行った' spans these three cues.
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕は',
+          textFragmentId: '[data-cue-id="1"]',
+        ),
+        _cue(
+          startMs: 1600,
+          endMs: 2300,
+          text: '学校へ',
+          textFragmentId: '[data-cue-id="2"]',
+        ),
+        _cue(
+          startMs: 2300,
+          endMs: 4300,
+          text: '行った',
+          textFragmentId: '[data-cue-id="3"]',
+        ),
+      ];
+
+      final AudioPlaybackRange? clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[0], // outside the sentence; span unavailable below
+        sentence: '「僕は学校へ行った。」',
+        sectionIndex: 0,
+        sentenceNormCharOffset: null,
+        sentenceNormCharLength: null,
+      );
+
+      expect(clip, isNotNull);
+      expect(clip!.startMs, 1000);
+      expect(clip.endMs, 4300);
+    });
+
     test('returns null when there is no cue and no usable sentence span', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(

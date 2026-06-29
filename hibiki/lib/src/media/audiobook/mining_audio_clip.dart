@@ -69,16 +69,35 @@ AudioPlaybackRange? _rangeFromSentencePosition({
       sentenceNormCharOffset == null ||
       sentenceNormCharLength == null ||
       sentenceNormCharLength <= 0) {
-    // No usable normalized span. Still try the text fallback when there is no
-    // lookup cue to anchor a section (gap word); when a cue exists the caller's
-    // _expandAroundCue path already handles text-based expansion.
-    if (cue != null || textFallback.isEmpty) {
+    // No usable normalized span. The sentence text is then the only span anchor.
+    //
+    // TODO-970: try the plain-text match whenever there IS sentence text, even
+    // when a lookup cue exists. The old guard returned null on `cue != null` and
+    // deferred entirely to the caller's _expandAroundCue. But _expandAroundCue is
+    // cue-anchored: it only keeps a text match that COVERS the lookup cue and only
+    // expands to neighbours whose text is a substring of the sentence. When the
+    // looked-up token landed on a plain-selector boundary cue OUTSIDE the
+    // sentence (punctuation / adjacent-sentence fragment, common on local
+    // audiobooks with no sasayaki positions), the anchored match is rejected and
+    // expansion collapses to that single boundary cue — the wrong/missing audio
+    // (BUG-458 残留). The non-anchored text search recovers the full sentence
+    // range from the cue texts instead. On a hit, use it; on a miss return null
+    // so the caller's cue-anchored _expandAroundCue still gets its chance.
+    if (textFallback.isEmpty) {
       return null;
     }
-    return CollectionAudioMatcher.findPlaybackRange(
+    final AudioPlaybackRange? textRange =
+        CollectionAudioMatcher.findPlaybackRange(
       cues: cues,
       text: textFallback,
     );
+    if (textRange != null) {
+      return textRange;
+    }
+    // Text matched nothing. With no cue there is no further anchor; with a cue
+    // defer to the caller's _expandAroundCue (returning null here lets the main
+    // function fall through to the cue-relative path).
+    return null;
   }
   // When a lookup cue exists, keep the original guard: trust the sentence span
   // only if the cue actually decodes to this section (the word truly belongs to
