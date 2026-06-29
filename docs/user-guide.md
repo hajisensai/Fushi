@@ -10,7 +10,7 @@ This is free software for Android / Windows (iOS / macOS planned) -- an epoch-ma
 
 https://github.com/hajisensai/hibiki
 
-Please Star the repository first.
+Actively developed — Your feedback will be addressed promptly. Bug reports and feature requests are welcome. If you find Hibiki useful, sharing it with others or leaving a ⭐ on the repository is appreciated.
 
 ### Download
 
