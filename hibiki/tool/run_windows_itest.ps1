@@ -1,9 +1,12 @@
 # Runs a Hibiki Windows integration test in an isolated background runner.
 #
-# The script intentionally does not close, kill, or block on existing Hibiki
-# processes. A user-owned Hibiki instance is recorded as evidence, then the
-# test runner starts with a unique run id, off-screen window mode, isolated app
-# data/log/temp roots, and an isolated WebView2 profile.
+# The script never touches user-owned Hibiki instances (e.g.
+# D:\APP\Hibiki\hibiki.exe) or IDE dart/flutter processes: those are only recorded
+# as evidence. It DOES reap stale TEST-RUNNER processes from a previous crashed run
+# of this same runner, scoped strictly to this worktree's build\windows\x64\runner
+# path (a stuck prior runner locks the build/debug port -> "Unable to start the
+# app"). The test runner then starts with a unique run id, off-screen window mode,
+# isolated app data/log/temp roots, and an isolated WebView2 profile.
 #
 # Usage (from hibiki/):
 #   .\tool\run_windows_itest.ps1
@@ -287,6 +290,29 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
   "[itest] visible=$($Visible.IsPresent)"
 ) | Out-File -LiteralPath $commandLog -Encoding UTF8
 
+# Reap stale TEST-RUNNER processes left by a PREVIOUS crashed run of THIS runner.
+# Scope is strictly this worktree's build\windows\x64\runner path (isTestRunner is
+# set by exact path-prefix match in Get-HibikiProcessSnapshot), so this NEVER kills
+# the user's installed Hibiki (e.g. D:\APP\Hibiki\hibiki.exe) or IDE dart/flutter
+# processes. A stuck prior test-runner locks the build output / debug port and is a
+# known cause of "Unable to start the app on the device". Never hand-kill by name.
+if (-not $DryRun) {
+  foreach ($proc in $before) {
+    if ($proc.isTestRunner) {
+      try {
+        Stop-Process -Id ([int]$proc.pid) -Force -ErrorAction Stop
+        Add-Content -LiteralPath $commandLog `
+          -Value "[itest] reaped stale test-runner pid=$($proc.pid) path=$($proc.path)"
+        Write-Host "[itest] reaped stale test-runner pid=$($proc.pid)" `
+          -ForegroundColor DarkYellow
+      } catch {
+        Add-Content -LiteralPath $commandLog `
+          -Value "[itest] could not reap pid=$($proc.pid): $($_.Exception.Message)"
+      }
+    }
+  }
+}
+
 $runnerRecords = [System.Collections.ArrayList]::new()
 Write-JsonFile ([pscustomobject]@{
   runId = $RunId
@@ -439,4 +465,6 @@ $exitCode | Out-File -LiteralPath (Join-Path $EvidenceDir "exit-code.txt") `
 
 Write-Host "[itest] evidence: $EvidenceDir" -ForegroundColor Cyan
 Write-Host "[itest] exit code: $exitCode" -ForegroundColor Cyan
+Write-Host "[itest] observe evidence: $($Paths.screenshotDir)\observe-*.png are authoritative (real pixels, off-screen capable)" -ForegroundColor Cyan
+Write-Host "[itest] note: shot-NN.png (PrintWindow) is usually blank for Flutter/WebView; only proves the window exists" -ForegroundColor DarkGray
 exit $exitCode

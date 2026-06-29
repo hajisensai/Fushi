@@ -44,6 +44,10 @@
 
 **为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `HIBIKI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
 
+> 离屏抓**真实像素**（观察功能是否渲染出来）走 Dart 抓图，不是 OS PrintWindow（后者对
+> Flutter/WebView 离屏全白）。见 [computer-use-testing.md](computer-use-testing.md) 的
+> 「离屏观察」与 `integration_test/helpers/observe_capture.dart`。
+
 **三端跑同一份焦点驱动测试**（可见应用巡检和截图取证流程见 [computer-use-testing.md](computer-use-testing.md)）：
 ```bash
 # 模拟器（Android，gameButtonA 可合成）
