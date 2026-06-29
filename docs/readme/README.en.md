@@ -10,7 +10,7 @@
 
 [简体中文](../../README.md) | **English** | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-hibiki is an immersive language-learning tool for Android and Windows that brings EPUB reading, audiobook sync, video subtitle lookup, and one-tap Anki card creation together — so every input naturally becomes reviewable vocabulary.
+hibiki is an immersive language-learning tool for Android and Windows (iOS and macOS planned) that brings EPUB reading, audiobook sync, video subtitle lookup, and one-tap Anki card creation together — so every input naturally becomes reviewable vocabulary.
 
 Reading a book and hit an unknown word? Tap it to look it up, then create an Anki card in one tap.<br>
 Listening to an audiobook? The text highlights sentence by sentence and turns pages automatically.<br>
@@ -104,6 +104,8 @@ Every input mode shares the same dictionaries, statistics, and review workflow.
 |---|---|---|
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material |
+| iOS | Planned | Cupertino |
+| macOS | Planned | Material |
 
 > Minimum Android 7.0 (API 24). The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language.
 

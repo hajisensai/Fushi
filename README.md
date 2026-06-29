@@ -12,7 +12,7 @@
 
 [使用文档](docs/user-guide.md) | [下载最新版本](https://github.com/hajisensai/hibiki/releases)
 
-hibiki 是一款面向 Android 与 Windows 的沉浸式语言学习工具，把 EPUB 阅读、有声书同步、视频字幕查词和一键 Anki 制卡整合在一起，让每一次输入都自然沉淀为可复习的词汇记忆。
+hibiki 是一款面向 Android 与 Windows（iOS、macOS 计划中）的沉浸式语言学习工具，把 EPUB 阅读、有声书同步、视频字幕查词和一键 Anki 制卡整合在一起，让每一次输入都自然沉淀为可复习的词汇记忆。
 
 读一本书，遇到不认识的词——点一下就能查词典，查完一键制成 Anki 卡片。<br>
 听有声书时，正文逐句高亮跟读，自动翻页。<br>
@@ -106,6 +106,8 @@ hibiki 是一款面向 Android 与 Windows 的沉浸式语言学习工具，把 
 |---|---|---|
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material |
+| iOS | 计划中 | Cupertino |
+| macOS | 计划中 | Material |
 
 > 最低 Android 7.0（API 24）。词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。
 
