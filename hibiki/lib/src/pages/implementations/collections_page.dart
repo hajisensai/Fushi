@@ -356,10 +356,21 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       title: title,
     );
 
+    // BUG-459: 三类行的 normCharOffset 计量不同——
+    //   bookmark：0-10000 章内进度分数（reader `_addBookmarkAtCurrentPosition` 写）。
+    //   sentence/mined：`getNormalizedOffset` 的章节内绝对可匹配字符索引（0..数千，
+    //                   收藏 `_toggleFavoriteSentence` / 制卡 `_recordMinedSentence` 写）。
+    // 旧代码把后者也塞进 Bookmark.normCharOffset，跳转端按分数 `/10000≈0` 还原 → 恒
+    // 跳章首。这里按行类型分流：句子/制卡走绝对字符锚（charAnchor）让阅读器精确恢复，
+    // 且标 preserveSavedPosition——临时浏览跳转不覆盖用户真实阅读进度。
+    final bool isSentenceJump = item.type == _CollectionType.sentence ||
+        item.type == _CollectionType.mined;
     final Bookmark? bookmark = item.sectionIndex != null
         ? Bookmark(
             sectionIndex: item.sectionIndex!,
-            normCharOffset: item.normCharOffset ?? 0,
+            normCharOffset: isSentenceJump ? 0 : (item.normCharOffset ?? 0),
+            charAnchor: isSentenceJump ? item.normCharOffset : null,
+            preserveSavedPosition: isSentenceJump,
             label: item.label ?? '',
             createdAt: item.createdAt,
           )

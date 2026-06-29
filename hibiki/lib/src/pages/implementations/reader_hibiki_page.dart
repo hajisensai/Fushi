@@ -857,6 +857,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   int _initialCharOffset = -1;
   // _refreshProgress 算得的最新精确字符偏移，供退出 flush 与 debounce 保存共用。
   int _lastProgressCharOffset = -1;
+  // BUG-459: 临时浏览跳转（收藏句 / 制卡历史跳回原文）整页生命周期内抑制 ReaderPosition
+  // 持久化——用户从收藏 / 制卡历史点进来看某句，不应把该书真实阅读进度覆盖成跳转锚。
+  // 由 widget.initialBookmarkJump.preserveSavedPosition 在开书时置位；普通打开 / 真实
+  // 书签跳转恒 false，照常 debounce / 退出 flush 保存。
+  bool _suppressPositionPersist = false;
   String? _initialFragment;
 
   double _stableTopInset = 0;
@@ -1250,12 +1255,28 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         bm.sectionIndex >= 0 &&
         bm.sectionIndex < _book!.chapters.length) {
       _currentChapter = bm.sectionIndex;
-      _initialProgress = bm.normCharOffset / 10000.0;
-      _initialCharOffset = -1; // BUG-162: 书签按 normCharOffset 分数跳转，非 char 锚。
+      // BUG-459: 收藏句 / 制卡历史跳转带 charAnchor（getNormalizedOffset 口径的章节内
+      // 绝对字符索引，与 _initialCharOffset / ReaderPosition.charOffset 同计量）→ 走精确
+      // 字符锚恢复（scrollToCharOffset），不再把绝对索引误当 0-10000 分数 /10000≈0 而
+      // 恒跳章首。真实书签 charAnchor==null → 仍按 normCharOffset 分数跳（BUG-162 不变）。
+      final int? charAnchor = bm.charAnchor;
+      if (charAnchor != null && charAnchor >= 0) {
+        _initialCharOffset = charAnchor;
+        _initialProgress = 0.0; // 精确锚优先；分数仅作锚算不出时的兜底。
+      } else {
+        _initialProgress = bm.normCharOffset / 10000.0;
+        _initialCharOffset = -1; // BUG-162: 书签按 normCharOffset 分数跳转，非 char 锚。
+      }
+      // BUG-459: 临时浏览跳转（收藏 / 制卡历史）进入后不覆盖该书已保存的阅读进度——
+      // 用户点进来看某句不该毁掉真正的阅读位置。普通书签跳转照常持久化。
+      _suppressPositionPersist = bm.preserveSavedPosition;
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
+      _lastProgressCharOffset = _initialCharOffset;
       debugPrint('[ReaderHibiki] restore from bookmark: '
-          'chapter=$_currentChapter progress=$_initialProgress');
+          'chapter=$_currentChapter progress=$_initialProgress '
+          'charAnchor=$_initialCharOffset '
+          'preserveSavedPosition=$_suppressPositionPersist');
     } else {
       final ReaderPositionRepository repo = ReaderPositionRepository(db);
       final ReaderPosition? saved = await repo.findByBookKey(widget.bookKey);

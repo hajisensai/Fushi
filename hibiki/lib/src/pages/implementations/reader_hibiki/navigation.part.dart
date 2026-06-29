@@ -839,6 +839,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   Future<void> _persistPosition(
       int section, double progress, int charOffset) async {
+    // BUG-459: 临时浏览跳转（收藏句 / 制卡历史跳回原文）整页生命周期内不落盘——保住
+    // 用户真实阅读进度，不被跳转锚覆盖。debounce 保存与退出 flush 都汇聚此处，单点拦截。
+    if (_suppressPositionPersist) {
+      return;
+    }
     _lastSavedSection = section;
     _lastSavedProgress = progress;
 
