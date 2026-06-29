@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,9 +11,17 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_import_dialog.dart'
+    show singleVideoBookUid;
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart'
+    show filteredVideoBookUidsProvider;
+import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki_core/hibiki_core.dart' show VideoBooksCompanion;
 
 import 'generate_test_epub.dart' show EpubGenerator;
+import 'media_fixtures.dart';
 
 /// Shared self-provisioning helpers so library-dependent integration tests are
 /// hermetic on a fresh install.
@@ -171,4 +180,135 @@ bool _hasGeneratedDictionary(AppModel appModel) {
 ArchiveFile _jsonFile(String name, Object json) {
   final List<int> bytes = utf8.encode(jsonEncode(json));
   return ArchiveFile(name, bytes.length, bytes);
+}
+
+/// 落盘目录：`HIBIKI_TEST_ROOT/fixtures`（隔离测试根），未设时回退系统临时目录。
+///
+/// 与 `video_chapter_first_load_test.dart` 同款约定，保证音视频素材落进 e2e
+/// 隔离根、可被 runner 取证 / 清理。
+Future<Directory> _fixturesDir() async {
+  const String testRoot = String.fromEnvironment('HIBIKI_TEST_ROOT');
+  final Directory dir = testRoot.isEmpty
+      ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
+      : Directory('$testRoot${Platform.pathSeparator}fixtures');
+  await dir.create(recursive: true);
+  return dir;
+}
+
+/// 程序化播种一本有声书（合成 EPUB + cue + 静音音频），返回 bookKey。
+///
+/// 流程：[buildSampleCues] → [buildAudiobookEpubBytes] → [EpubImporter.import]
+/// 拿真实 bookKey → [generateSilentAudio] 落 fixtures → [AudiobookRepository]
+/// 写 [Audiobook] 元数据 + [AudiobookRepository.saveCues] cue → invalidate 书架
+/// provider → 轮询书卡出现（与 [seedReaderBook] 一致：轮询失败不抛、打 warning）。
+///
+/// 有声书是「EPUB + 挂载的 cue/音频」，故书架以普通 `book_entry_` 形态呈现
+/// （与 [seedReaderBook] 同一 [hibikiBooksProvider] 列表）。
+Future<String> seedAudiobook(
+  WidgetTester tester, {
+  String title = 'Hibiki Test Audiobook',
+}) async {
+  final AppModel appModel = await readyAppModel(tester);
+  final ProviderContainer container = ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp).first),
+  );
+
+  // 先用占位 bookKey 造 cue/EPUB；导入后拿到真实 bookKey 再回填 cue 的 bookKey。
+  final List<AudioCue> seedCues =
+      buildSampleCues(bookKey: 'pending', chapterHref: kFixtureChapterHref);
+  final Uint8List epubBytes =
+      await buildAudiobookEpubBytes(title: title, cues: seedCues);
+  final String bookKey = await EpubImporter.import(
+    db: appModel.database,
+    bytes: epubBytes,
+    fileName: '$title.epub',
+  );
+  debugPrint('[fixture] Seeded audiobook epub key=$bookKey ($title)');
+
+  final Directory dir = await _fixturesDir();
+  final String audioPath = '${dir.path}${Platform.pathSeparator}$bookKey.m4a';
+  final File audioFile = await generateSilentAudio(outPath: audioPath);
+
+  // 用真实 bookKey 重建 cue（chapterHref 与 EPUB 内 spine 一致）。
+  final List<AudioCue> cues =
+      buildSampleCues(bookKey: bookKey, chapterHref: kFixtureChapterHref);
+
+  final AudiobookRepository repo = AudiobookRepository(appModel.database);
+  final Audiobook audiobook = Audiobook()
+    ..bookKey = bookKey
+    ..audioRoot = null
+    ..audioPaths = <String>[audioFile.path]
+    ..alignmentFormat = 'srt'
+    ..alignmentPath = audioPath;
+  await repo.saveAudiobook(audiobook);
+  await repo.saveCues(bookKey: bookKey, cues: cues);
+  debugPrint('[fixture] Saved audiobook meta + ${cues.length} cues');
+
+  container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+
+  final Finder bookEntries = find.byWidgetPredicate((Widget w) {
+    final Key? key = w.key;
+    return key is ValueKey<String> &&
+        (key.value.startsWith('book_entry_') ||
+            key.value.startsWith('srt_entry_'));
+  });
+  for (int i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 500));
+    if (bookEntries.evaluate().isNotEmpty) {
+      debugPrint('[fixture] Audiobook entry visible after ${i * 500}ms');
+      return bookKey;
+    }
+  }
+  debugPrint(
+      '[fixture] WARNING: seeded audiobook key=$bookKey not visible after 20s');
+  return bookKey;
+}
+
+/// 程序化播种一个视频（ffmpeg 造 mp4），返回 bookUid。
+///
+/// 流程：[generateTestVideo] 落 fixtures → [singleVideoBookUid] 算 uid →
+/// [VideoBookRepository.saveVideoBook] 写元数据 → invalidate（best-effort）→
+/// 轮询视频卡出现（与 [seedReaderBook] 一致：轮询失败不抛、打 warning）。
+///
+/// 视频库列表是 [home_video_page] 页内 `repo.listAll()` 的 FutureBuilder（非
+/// Riverpod 列表 provider），仅 `filteredVideoBookUidsProvider` 受 tag 影响；故
+/// 视频卡通常在 e2e 打开视频页（`initState` 重新 `listAll`）后才出现，这里轮询
+/// 仅作 best-effort，未见也只 warning 返回 uid，不阻断 seed。
+Future<String> seedVideo(
+  WidgetTester tester, {
+  String title = 'Hibiki Test Video',
+}) async {
+  final AppModel appModel = await readyAppModel(tester);
+  final ProviderContainer container = ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp).first),
+  );
+
+  final Directory dir = await _fixturesDir();
+  final String videoPath = '${dir.path}${Platform.pathSeparator}$title.mp4';
+  final File videoFile = await generateTestVideo(outPath: videoPath);
+  final String bookUid = singleVideoBookUid(videoFile.path);
+  debugPrint('[fixture] Seeded video uid=$bookUid ($title)');
+
+  final VideoBookRepository repo = VideoBookRepository(appModel.database);
+  await repo.saveVideoBook(VideoBooksCompanion(
+    bookUid: Value(bookUid),
+    title: Value(title),
+    videoPath: Value(videoFile.absolute.path),
+  ));
+
+  // 视频页无列表 provider 可刷；tag 筛选 provider 失效是无害的 best-effort。
+  container.invalidate(filteredVideoBookUidsProvider);
+
+  final Finder videoCard = find.byKey(ValueKey<String>('home_video_$bookUid'));
+  for (int i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 500));
+    if (videoCard.evaluate().isNotEmpty) {
+      debugPrint('[fixture] Video card visible after ${i * 500}ms');
+      return bookUid;
+    }
+  }
+  debugPrint(
+      '[fixture] WARNING: seeded video uid=$bookUid not visible after 20s '
+      '(expected if video page not yet open)');
+  return bookUid;
 }
