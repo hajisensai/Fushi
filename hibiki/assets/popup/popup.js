@@ -2776,6 +2776,15 @@ document.addEventListener('click', (e) => {
     if (target?.closest('summary')) return;
     if (target?.closest('.glossary-content')) {
         if (target?.closest('a[href]')) return;
+        // TODO-869 收尾：词典释义正文（.glossary-content）是父卡片占面积最大的可点
+        // 区，也是用户说的「词典部分」。若本层有子弹窗（__hasChildPopup，宿主据
+        // index < entries.length-1 注入），点正文应先关掉后代层（dismissDescendantsOf），
+        // 与点卡片留白/背景同语义——否则点父窗正文只选词、子窗永远关不掉（用户原始
+        // 症状）。叶子层（__hasChildPopup falsy）仍选词，TODO-859 不回归。
+        if (window.__hasChildPopup) {
+            window.flutter_inappwebview.callHandler('tapOutside');
+            return;
+        }
         window.hoshiSelection?.selectText(e.clientX, e.clientY, 20);
         return;
     }

@@ -1,15 +1,15 @@
 ## BUG-434 · app内查词父弹窗点击不关子弹窗
 - **报告**：2026-06-27（用户：）· TODO-869
 - **真实性**：✅ 真 bug，根因 `hibiki/assets/popup/popup.js:2763`
-- **现象**：app 内阅读器 / 视频查词，弹出子弹窗后，点父弹窗的卡片区域（.entry / .kanji-card-section，占父弹窗绝大面积）不关闭子弹窗；只有点父弹窗卡片之外的纯背景才关得掉。
+- **现象**：app 内阅读器 / 视频查词，弹出子弹窗后，点父弹窗的卡片区域（含「词典部分」释义正文，占父弹窗绝大面积）不关闭子弹窗；只有点父弹窗卡片之外的纯背景才关得掉。
 - **根因**：TODO-859（方案1，`popup.js` document click handler）把「点卡片本体留白」改为裸 `return`（保留本层、不发 `tapOutside`）。这对叶子层正确，但父层有子弹窗时点卡片区也裸 return，宿主侧 `dismissDescendantsOf(index)` / `truncateTo(index+1)`（TODO-834，`base_source_page.dart:476` / `dictionary_page_mixin.dart:344`）永不被触发，子弹窗关不掉。
+- **根因二（93e9660f7 第一次修复盲区·本轮补）**：93e9660f7 只给 `.entry` / `.kanji-card-section` 卡片**留白**分支加了 `__hasChildPopup` 门控，但 `.glossary-content`（释义正文＝用户说的「词典部分」）分支（`popup.js:2777`）在卡片分支**之前**就 `return` 进 `selectText` 选词，从不检查 `__hasChildPopup`。释义正文是卡片占面积最大的可点区，用户点它（父窗有子弹窗时）只选词、子窗仍关不掉——原始症状复发。用户复测原话：「点击父窗口，子窗口没反应，没有关闭」「点了上一个查词弹窗的词典部分，没有关闭」。
 - **[x] ① 已修复** —
-  - `popup.js:2763` 卡片分支改门控：`if (window.__hasChildPopup) callHandler('tapOutside'); return;`（叶子层 `__hasChildPopup` falsy 仍裸 return 保持 859）。
+  - 第一轮 93e9660f7：`popup.js` 卡片留白分支改门控：`if (window.__hasChildPopup) callHandler('tapOutside'); return;`（叶子层 `__hasChildPopup` falsy 仍裸 return 保持 859）。
   - `DictionaryPopupWebView` 新增 `hasChildPopup` 入参 + `_setHasChildPopupJs(bool)` 注入 `window.__hasChildPopup`，`didUpdateWidget` 用**独立 if**（不搭 result 便车）、onLoadStop 冷加载补发初值。
   - `DictionaryPopupLayer` 透传 `hasChildPopup`；三处 in-app 渲染点（`base_source_page.dart` / `dictionary_page_mixin.dart` / `popup_dictionary_page.dart`）按 `index < entries.length - 1` 派生传入。
-  - 提交：93e9660f7
+  - **本轮收尾**：`.glossary-content`（释义正文）分支同样加 `__hasChildPopup` 门控——有子弹窗时点正文发 `tapOutside` 关后代（而非 `selectText`），叶子层仍选词（859 不回归）。复用第一轮已就位的整条注入链路（webview/layer/三 host 派生不需再改）。
 - **[x] ② 已加自动化测试** —
-  - JS 纯守卫 `hibiki/test/utils/misc/popup_asset_behavior_test.js`：`__hasChildPopup` true/false 点 .entry / .kanji-card-section 两分支、点 .glossary-content 文字不被门控波及、点纯背景两态都发 tapOutside（撤修复转红已实测）。
-  - 源码守卫 `hibiki/test/pages/dictionary_child_popup_close_guard_test.dart`：popup.js 门控正则、webview 两个独立 if、三处 host 的派生表达式。
-  - 提交：93e9660f7
+  - JS 纯守卫 `hibiki/test/utils/misc/popup_asset_behavior_test.js`：`__hasChildPopup` true/false 点 .entry / .kanji-card-section 两分支、点纯背景两态都发 tapOutside；本轮把 `.glossary-content` 用例从「有子层仍选词」翻转为「有子层发 tapOutside 关后代」（`testGlossaryTextWithChildClosesDescendants`），叶子层选词由 `testTapOnGlossaryTextSelectsWord` 守住。
+  - 源码守卫 `hibiki/test/pages/dictionary_child_popup_close_guard_test.dart`：popup.js 卡片分支门控正则、webview 两个独立 if、三处 host 的派生表达式；本轮加 `popup.js gates the glossary-content branch on __hasChildPopup too` 守 `.glossary-content` 分支也被门控。
 - **备注**：与 TODO-859（点卡片留白保留本层）/ TODO-834（dismissDescendantsOf 关后代）配套；global_lookup 走独立 native WebView2 不经 layer，不受影响。
